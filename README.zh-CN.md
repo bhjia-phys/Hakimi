@@ -178,7 +178,8 @@ formula capsule
 - 0.0.4 已经开始实现 schema-checked `ResearchLedger.write_event` 和 controlled `capture_event`：紧凑的 source-backed events 可以写入确定性的 `.aitp/research-ledger/<topic>/events/*.md` 路径，立即注册到当前 registry，通过 `research_ledger.event_written` 审计，并经过 source/git-diff/benchmark/failure capture policy 过滤。详见 [AITP Agent 0.0.4 Audit](docs/internal/aitp-agent-0.0.4-audit.md)。
 - 0.0.5 已经开始实现 active WorkFrame runtime state 和 ResearchAction call trace：`ResearchAction` 可以打开、切换、列出、关闭 WorkFrames，也可以 start/finish action calls；二者都可以 replay；action result 可以携带 ledger event ids；primitive tool lifecycle records 现在会携带 active `workFrameId` 和 `actionCallId`。详见 [AITP Agent 0.0.5 Audit](docs/internal/aitp-agent-0.0.5-audit.md)。
 - 0.0.6 已经开始实现 LibRPA head-wing micro vertical slice：LibRPA-specific research actions、CI-safe head-wing smoke benchmark stand-in、scheduler expectations、controlled failure capture 和 harness candidate conversion。详见 [AITP Agent 0.0.6 Audit](docs/internal/aitp-agent-0.0.6-audit.md)。
-- 剩余阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)：obligation generation、dynamic tool exposure、real diff/artifact capture、capsule boundary、physics lenses、final gate、harness/eval 和 FQHE/CS vertical slice。
+- 0.0.7 已经开始实现 capsule boundary compiler：局部自洽的 `ResearchBlock` 可以编译成未提升的 `PhysicsCapsule` candidate，并保留 assumptions、conventions、source refs、open questions 和 required checks。详见 [AITP Agent 0.0.7 Audit](docs/internal/aitp-agent-0.0.7-audit.md)。
+- 剩余阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)：obligation generation、dynamic tool exposure、real diff/artifact capture、physics lenses、final gate、harness/eval 和 FQHE/CS vertical slice。
 
 ## 本地开发
 
@@ -242,6 +243,14 @@ pnpm exec oxlint packages/agent-core/src/research-action/types.ts packages/agent
 pnpm vitest run packages/agent-core/test/integration/librpa-head-wing.test.ts packages/agent-core/test/research-action/scheduler.test.ts packages/agent-core/test/tools/research-action-tool.test.ts
 pnpm --filter @moonshot-ai/agent-core typecheck
 pnpm exec oxlint packages/agent-core/src/research-action/librpa-head-wing.ts packages/agent-core/src/research-action/default-actions.ts packages/agent-core/src/research-action/index.ts packages/agent-core/test/integration/librpa-head-wing.test.ts
+```
+
+0.0.7 capsule boundary compiler 的聚焦验证命令：
+
+```sh
+pnpm vitest run packages/agent-core/test/research-block/compiler.test.ts
+pnpm --filter @moonshot-ai/agent-core typecheck
+pnpm exec oxlint packages/agent-core/src/research-block packages/agent-core/src/index.ts packages/agent-core/test/research-block/compiler.test.ts
 ```
 
 仓库工作规则：

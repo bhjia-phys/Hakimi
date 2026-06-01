@@ -390,11 +390,11 @@ Compile locally self-consistent research blocks into candidate capsules at bound
 
 ### Tasks
 
-- [ ] Define `ResearchBlock` with topic, domain, local claims, formulas, assumptions, source refs, and open questions.
-- [ ] Add `compile_block_to_candidate_capsule`.
-- [ ] Extract assumptions and conventions from block metadata, not from every micro-step.
-- [ ] Preserve unresolved questions as obligations.
-- [ ] Mark candidate capsules as unpromoted.
+- [x] Define `ResearchBlock` with topic, domain, local claims, formulas, assumptions, source refs, and open questions.
+- [x] Add `compile_block_to_candidate_capsule`.
+- [x] Extract assumptions and conventions from block metadata, not from every micro-step.
+- [x] Preserve unresolved questions on the capsule boundary.
+- [x] Mark candidate capsules as unpromoted.
 
 ### Acceptance
 

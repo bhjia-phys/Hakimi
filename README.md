@@ -178,7 +178,8 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.0.4 has started with schema-checked `ResearchLedger.write_event` and controlled `capture_event`: compact source-backed events can be written to deterministic `.aitp/research-ledger/<topic>/events/*.md` paths, registered immediately, audited through `research_ledger.event_written`, and filtered through source/git-diff/benchmark/failure capture policy. See [AITP Agent 0.0.4 Audit](docs/internal/aitp-agent-0.0.4-audit.md).
 - 0.0.5 has started with active WorkFrame runtime state and ResearchAction call trace: `ResearchAction` can open/switch/list/close WorkFrames, start/finish action calls, replay both, attach ledger event ids to action results, and primitive tool lifecycle records now carry active `workFrameId` and `actionCallId`. See [AITP Agent 0.0.5 Audit](docs/internal/aitp-agent-0.0.5-audit.md).
 - 0.0.6 has started with a LibRPA head-wing micro vertical slice: LibRPA-specific research actions, a CI-safe head-wing smoke benchmark stand-in, scheduler expectations, controlled failure capture, and harness candidate conversion. See [AITP Agent 0.0.6 Audit](docs/internal/aitp-agent-0.0.6-audit.md).
-- The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md): obligation generation, dynamic tool exposure, real diff/artifact capture, capsule boundaries, physics lenses, final gate, harness/eval, and FQHE/CS vertical slice.
+- 0.0.7 has started with a capsule boundary compiler: locally self-contained `ResearchBlock` objects can compile into unpromoted `PhysicsCapsule` candidates with assumptions, conventions, source refs, open questions, and required checks preserved. See [AITP Agent 0.0.7 Audit](docs/internal/aitp-agent-0.0.7-audit.md).
+- The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md): obligation generation, dynamic tool exposure, real diff/artifact capture, physics lenses, final gate, harness/eval, and FQHE/CS vertical slice.
 
 ## Development
 
@@ -242,6 +243,14 @@ Focused verification for the 0.0.6 LibRPA micro slice is:
 pnpm vitest run packages/agent-core/test/integration/librpa-head-wing.test.ts packages/agent-core/test/research-action/scheduler.test.ts packages/agent-core/test/tools/research-action-tool.test.ts
 pnpm --filter @moonshot-ai/agent-core typecheck
 pnpm exec oxlint packages/agent-core/src/research-action/librpa-head-wing.ts packages/agent-core/src/research-action/default-actions.ts packages/agent-core/src/research-action/index.ts packages/agent-core/test/integration/librpa-head-wing.test.ts
+```
+
+Focused verification for the 0.0.7 capsule boundary compiler is:
+
+```sh
+pnpm vitest run packages/agent-core/test/research-block/compiler.test.ts
+pnpm --filter @moonshot-ai/agent-core typecheck
+pnpm exec oxlint packages/agent-core/src/research-block packages/agent-core/src/index.ts packages/agent-core/test/research-block/compiler.test.ts
 ```
 
 Repository workflow note:
