@@ -92,6 +92,21 @@ export interface PromotionPacket {
   readonly requiredHumanCheckpoint: boolean;
 }
 
+export interface ResearchLedgerCompileDiagnostic {
+  readonly severity: 'info' | 'warning' | 'error';
+  readonly code: string;
+  readonly message: string;
+  readonly eventId?: ResearchLedgerEventId;
+  readonly proposalId?: string;
+}
+
+export interface ResearchLedgerCompileResult {
+  readonly topic?: ResearchTopicId;
+  readonly domain?: PhysicsDomainId;
+  readonly proposals: readonly CompileProposal[];
+  readonly diagnostics: readonly ResearchLedgerCompileDiagnostic[];
+}
+
 export function isResearchLedgerEventType(value: string): value is ResearchLedgerEventType {
   return (RESEARCH_LEDGER_EVENT_TYPES as readonly string[]).includes(value);
 }
