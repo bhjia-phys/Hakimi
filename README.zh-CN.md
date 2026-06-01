@@ -175,7 +175,8 @@ formula capsule
 - Windows 环境中 broader `agent-core` suite 的基线失败已经修复；详见 [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md)。
 - 0.0.2 foundation 已经实现：`research-ledger` types/parser/scanner/registry/compiler、session scanning、append-only records、`ResearchLedger` tool、ActionAlgebra types、默认 research actions、scheduler、`ResearchAction` tool、raw-tool escape records，以及 harness candidate conversion。详见 [AITP Agent 0.0.2 Audit](docs/internal/aitp-agent-0.0.2-audit.md)。
 - 0.0.3 已经开始实现 thin primitive tool lifecycle spine：真实 loop 层工具调用现在会写入 `tool_lifecycle.started` 和 `tool_lifecycle.completed` records，包含 status、bounded summaries、timing、cwd，以及后续 WorkFrame/ResearchAction 归因预留槽。详见 [AITP Agent 0.0.3 Audit](docs/internal/aitp-agent-0.0.3-audit.md)。
-- 剩余阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)：action/workframe attribution、diff/artifact capture、controlled ledger capture、WorkFrames/action traces、LibRPA micro slice、capsule boundary、physics lenses、final gate、harness/eval 和 FQHE/CS vertical slice。
+- 0.0.4 已经开始实现 schema-checked `ResearchLedger.write_event`：紧凑的 source-backed events 可以写入确定性的 `.aitp/research-ledger/<topic>/events/*.md` 路径，并立即注册到当前 registry，同时通过 `research_ledger.event_written` 审计。详见 [AITP Agent 0.0.4 Audit](docs/internal/aitp-agent-0.0.4-audit.md)。
+- 剩余阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)：action/workframe attribution、diff/artifact capture、capture policy、WorkFrames/action traces、LibRPA micro slice、capsule boundary、physics lenses、final gate、harness/eval 和 FQHE/CS vertical slice。
 
 ## 本地开发
 
@@ -215,6 +216,14 @@ pnpm --filter @moonshot-ai/agent-core typecheck
 pnpm vitest run packages/agent-core/test/agent/tool-lifecycle.test.ts packages/agent-core/test/agent/basic.test.ts
 pnpm --filter @moonshot-ai/agent-core typecheck
 pnpm exec oxlint packages/agent-core/src/agent/tool-lifecycle/index.ts packages/agent-core/src/agent/index.ts packages/agent-core/src/agent/turn/index.ts packages/agent-core/src/agent/records/types.ts packages/agent-core/src/agent/records/index.ts packages/agent-core/test/agent/tool-lifecycle.test.ts packages/agent-core/test/agent/harness/snapshots.ts
+```
+
+0.0.4 research ledger writer 工作的聚焦验证命令：
+
+```sh
+pnpm vitest run packages/agent-core/test/research-ledger/writer.test.ts packages/agent-core/test/tools/research-ledger-tool.test.ts
+pnpm --filter @moonshot-ai/agent-core typecheck
+pnpm exec oxlint packages/agent-core/src/research-ledger/writer.ts packages/agent-core/src/research-ledger/index.ts packages/agent-core/src/research-ledger/registry.ts packages/agent-core/src/agent/research-ledger/index.ts packages/agent-core/src/tools/builtin/collaboration/research-ledger-tool.ts packages/agent-core/test/research-ledger/writer.test.ts packages/agent-core/test/tools/research-ledger-tool.test.ts
 ```
 
 仓库工作规则：

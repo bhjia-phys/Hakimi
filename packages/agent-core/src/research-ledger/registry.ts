@@ -57,7 +57,7 @@ export class ResearchLedgerRegistry {
 
   async loadRoots(roots: readonly ResearchLedgerRoot[]): Promise<void> {
     for (const root of roots) {
-      if (!this.roots.some((existing) => existing.path === root.path)) this.roots.push(root);
+      this.ensureRoot(root);
     }
     const events = await this.discoverImpl({
       roots,
@@ -89,6 +89,10 @@ export class ResearchLedgerRegistry {
     if (options.replace === true || !this.byId.has(id)) {
       this.byId.set(id, event);
     }
+  }
+
+  ensureRoot(root: ResearchLedgerRoot): void {
+    if (!this.roots.some((existing) => existing.path === root.path)) this.roots.push(root);
   }
 
   getEvent(id: ResearchLedgerEventId): ResearchLedgerEvent | undefined {

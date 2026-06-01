@@ -1,6 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 
-import { Agent } from '../../src/agent';
+import { join } from 'pathe';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
+
+import { Agent, type AgentRecord } from '../../src/agent';
+import { InMemoryAgentRecordPersistence } from '../../src/agent/records';
 import { ResearchLedgerRegistry, type ResearchLedgerEvent } from '../../src/research-ledger';
 import { ProviderManager } from '../../src/session/provider-manager';
 import { ResearchLedgerTool } from '../../src/tools/builtin/collaboration/research-ledger-tool';
@@ -69,6 +74,56 @@ describe('ResearchLedgerTool', () => {
     expect(result).toMatchObject({ isError: true });
     expect(result.output).toContain('requires an id');
   });
+
+  it('writes schema-checked events through the session manager and registers them immediately', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'aitp-ledger-tool-'));
+    const records: AgentRecord[] = [];
+    onTestFinishedRm(cwd);
+    const agent = makeAgent(new ResearchLedgerRegistry(), { cwd, records });
+    const manager = agent.researchLedger;
+    if (manager === null) throw new Error('Expected research ledger manager');
+    const tool = new ResearchLedgerTool(manager);
+
+    const result = await execute(tool, {
+      action: 'write_event',
+      id: 'event.librpa.head-wing.diff',
+      type: 'git_diff_observation',
+      topic: 'librpa-head-wing',
+      domain: 'librpa',
+      status: 'captured',
+      source_refs: ['git:diff:head-wing'],
+      depends_on: ['event.librpa.head-wing.code'],
+      candidate_capsule_kind: 'CodeMapping',
+      open_questions: ['confirm head-wing convention'],
+      related_objects: ['code:librpa/head-wing'],
+      body: 'Captured a deterministic head-wing diff observation.',
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.output).toContain('event.librpa.head-wing.diff');
+    expect(result.output).toContain('created="true"');
+    const event = manager.registry.requireEvent('event.librpa.head-wing.diff');
+    expect(event.body).toContain('deterministic head-wing diff');
+    expect(await readFile(event.path, 'utf8')).toContain('git_diff_observation');
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_ledger.event_written',
+        source: 'model-tool',
+        eventId: 'event.librpa.head-wing.diff',
+        topic: 'librpa-head-wing',
+        domain: 'librpa',
+        eventType: 'git_diff_observation',
+        status: 'captured',
+        toolCallId: 'call_research_ledger',
+      }),
+    );
+
+    const loaded = await execute(tool, {
+      action: 'load_event',
+      id: 'event.librpa.head-wing.diff',
+    });
+    expect(loaded.output).toContain('Captured a deterministic head-wing diff observation.');
+  });
 });
 
 describe('ToolManager ResearchLedger registration', () => {
@@ -112,7 +167,11 @@ function execute(tool: ResearchLedgerTool, args: Parameters<typeof tool.resolveE
   });
 }
 
-function makeAgent(researchLedger?: ResearchLedgerRegistry): Agent {
+function makeAgent(
+  researchLedger?: ResearchLedgerRegistry,
+  options: { readonly cwd?: string; readonly records?: AgentRecord[] } = {},
+): Agent {
+  const records = options.records;
   const agent = new Agent({
     kaos: testKaos,
     rpc: {
@@ -121,6 +180,12 @@ function makeAgent(researchLedger?: ResearchLedgerRegistry): Agent {
       requestQuestion: vi.fn(),
       toolCall: vi.fn(),
     },
+    persistence:
+      records === undefined
+        ? undefined
+        : new InMemoryAgentRecordPersistence([], {
+            onRecord: (record) => records.push(record),
+          }),
     modelProvider: new ProviderManager({
       config: {
         providers: {
@@ -141,11 +206,17 @@ function makeAgent(researchLedger?: ResearchLedgerRegistry): Agent {
     researchLedger,
   });
   agent.config.update({
-    cwd: process.cwd(),
+    cwd: options.cwd ?? process.cwd(),
     modelAlias: MOCK_PROVIDER.model,
   });
   agent.tools.initializeBuiltinTools();
   return agent;
+}
+
+function onTestFinishedRm(path: string): void {
+  onTestFinished(async () => {
+    await rm(path, { recursive: true, force: true });
+  });
 }
 
 function event(
