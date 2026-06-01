@@ -1,12 +1,12 @@
 # AITP Agent
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-0.0.2--foundation-green)](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-runtime--roadmap-blue)](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)
 
 [English](README.md) | [上游 Kimi Code 文档](https://moonshotai.github.io/kimi-code/zh/)
 
 AITP Agent 是一个面向理论物理科研的 agent runtime 项目。它以 Kimi Code CLI 代码库为基线，目标是在 agent 底层运行时中原生嵌入理论物理记忆、知识编译、科研动作、验证、benchmark 证据、replay 和失败回灌。
 
-当前仓库仍处在早期阶段，是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 fork。默认产品行为仍继承 Kimi Code；只有当 AITP 实验 flag 明确开启时，新的 runtime feature 才会生效。已完成的第一阶段见 [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md)；下一阶段见 [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md)。
+当前仓库仍处在早期阶段，是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 fork。默认产品行为仍继承 Kimi Code；只有当 AITP 实验 flag 明确开启时，新的 runtime feature 才会生效。已完成的第一批切片见 [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md) 和 [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md)。跨 slice 的 runtime 路线图见 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)。
 
 ## 项目目标
 
@@ -98,22 +98,36 @@ ForgeCode 是 harness 和 eval 参考。它值得借鉴的部分包括明确的 
 - 在 experimental flags 后暴露 `ResearchLedger` 和 `ResearchAction` model tools；
 - 协调 Kimi primitive tools、Codex-style lifecycle ideas 和 ForgeCode-style harness boundaries，但不替换 Kimi 的 tool manager。
 
-### 0.0.3: Runtime Controller And Tool Exposure Policy
+### 0.0.3: Thin Base Runtime Spine
 
-- 更深地把 semantic research actions 接入 Kimi tool loop 和 permission system；
-- 根据 WorkFrame 控制工具暴露，让理论推导、LibRPA feature work、文献学习、benchmark 工作看到不同 action surface；
-- 尽可能把 primitive tool calls 归因到 semantic research actions；
-- 对高风险物理 claim 和 formula-code mapping 触发 hidden checks。
+先补一条最小的 Codex-style runtime reliability 脊梁：
 
-### 0.0.4: Harness And Eval Feedback
+- primitive tool lifecycle envelope；
+- tool call 到 action/workframe 的归因；
+- result status 和 artifact refs；
+- diff/output capture 边界；
+- 必要的 interruption/background 状态。
 
-- 把 failed 或 inconclusive 的 action traces 转成 benchmark candidates；
-- 增加 physics memory、research ledger、graph query、action selection 和 validation outcome 的 eval fixtures；
-- 在合适的地方借鉴 ForgeCode 风格的可复现 eval 组织方式。
+这个 slice 不搬 Codex，也不重写 Kimi 的 tool manager。
 
-### 0.0.5: LibRPA End-To-End Slice
+### 0.0.4: LedgerWriter And Controlled Capture
 
-闭环一个真实的计算物理工作流：
+- 增加 schema-checked `ResearchLedger.write_event`；
+- 写入确定性的 `.aitp/research-ledger/<topic>/events/*.md`；
+- 第一阶段只捕获高价值的 source、git diff、benchmark 和 failure observations；
+- 长输出保存为 artifact refs，避免 ledger 变成噪音堆。
+
+### 0.0.5: WorkFrame And ResearchAction Call Trace
+
+- 让 WorkFrame 成为 active session context；
+- 支持打开、切换、列出、关闭 WorkFrame；
+- 把 ResearchAction call 和 primitive tool call、ledger event 连接起来；
+- 从 action effects 生成 obligations；
+- 在多个 research frame 之间保持 domain isolation。
+
+### 0.0.6: LibRPA Micro Vertical Slice
+
+先用一个窄的计算物理工作流证明 runtime spine 真的有用：
 
 ```text
 formula capsule
@@ -125,6 +139,34 @@ formula capsule
 -> harness regression case
 ```
 
+### 0.0.7: Capsule Boundary Compiler
+
+- 把局部自洽的推导/代码块编译成 candidate capsule；
+- 推导内部保持轻量；
+- 只有当局部块要连接 memory、graph、final answer 或其他块时，才进入 capsule boundary。
+
+### 0.0.8: PhysicsDirectionEngine And Lenses
+
+- 增加带 applicability check 的 physics lenses，而不是关键词触发；
+- 先做 `topological-order/fqhe-cs` 和 `librpa/head-wing` domain packs；
+- 增加 charge-flux quantization lens，并明确区分 external electromagnetic flux、emergent Chern-Simons flux 和 quasiparticle AB flux period。
+
+### 0.0.9: EscalationPolicy And Final Gate
+
+- 简单问题保持轻量；
+- 代码修改、benchmark、promotion 和高风险理论 claim 自动升级；
+- blocking obligations 未关闭时，final answer 不能声称 validated。
+
+### 0.1: Harness And Eval Runner
+
+- 把 failed 或 inconclusive action traces 转成可审查的 harness candidates；
+- 把确认后的 candidates 提升为确定性的 eval cases；
+- 增加 FQHE/CS reasoning 和 LibRPA head-wing workflows 的端到端 eval。
+
+### 0.2: FQHE/CS Theory Vertical Slice
+
+闭环第一个形式理论切片：围绕 Laughlin wavefunction、flux insertion、charge-flux quantization、Chern-Simons effective theory 和 K-matrix response，实现 capsules、derivation blocks、physics lenses、convention checks 和 final-answer status。
+
 ## 当前状态
 
 - 2026-06-01 检查过 `MoonshotAI/kimi-code:main` 上游状态；本 fork 当时与上游在 commit `933cf67` 处一致。
@@ -132,6 +174,7 @@ formula capsule
 - `packages/agent-core` 现在包含 physics-memory types、parser、scanner、registry、compiler、session scanning、append-only records、模型可调用的 `PhysicsMemory` builtin tool、LibRPA fixture capsules，以及基础版 `ResearchActionRegistry`。
 - Windows 环境中 broader `agent-core` suite 的基线失败已经修复；详见 [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md)。
 - 0.0.2 foundation 已经实现：`research-ledger` types/parser/scanner/registry/compiler、session scanning、append-only records、`ResearchLedger` tool、ActionAlgebra types、默认 research actions、scheduler、`ResearchAction` tool、raw-tool escape records，以及 harness candidate conversion。详见 [AITP Agent 0.0.2 Audit](docs/internal/aitp-agent-0.0.2-audit.md)。
+- 下一阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)：thin base runtime spine、controlled ledger capture、WorkFrames/action traces、LibRPA micro slice、capsule boundary、physics lenses、final gate、harness/eval 和 FQHE/CS vertical slice。
 
 ## 本地开发
 
