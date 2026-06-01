@@ -174,7 +174,8 @@ formula capsule
 - `packages/agent-core` 现在包含 physics-memory types、parser、scanner、registry、compiler、session scanning、append-only records、模型可调用的 `PhysicsMemory` builtin tool、LibRPA fixture capsules，以及基础版 `ResearchActionRegistry`。
 - Windows 环境中 broader `agent-core` suite 的基线失败已经修复；详见 [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md)。
 - 0.0.2 foundation 已经实现：`research-ledger` types/parser/scanner/registry/compiler、session scanning、append-only records、`ResearchLedger` tool、ActionAlgebra types、默认 research actions、scheduler、`ResearchAction` tool、raw-tool escape records，以及 harness candidate conversion。详见 [AITP Agent 0.0.2 Audit](docs/internal/aitp-agent-0.0.2-audit.md)。
-- 下一阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)：thin base runtime spine、controlled ledger capture、WorkFrames/action traces、LibRPA micro slice、capsule boundary、physics lenses、final gate、harness/eval 和 FQHE/CS vertical slice。
+- 0.0.3 已经开始实现 thin primitive tool lifecycle spine：真实 loop 层工具调用现在会写入 `tool_lifecycle.started` 和 `tool_lifecycle.completed` records，包含 status、bounded summaries、timing、cwd，以及后续 WorkFrame/ResearchAction 归因预留槽。详见 [AITP Agent 0.0.3 Audit](docs/internal/aitp-agent-0.0.3-audit.md)。
+- 剩余阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)：action/workframe attribution、diff/artifact capture、controlled ledger capture、WorkFrames/action traces、LibRPA micro slice、capsule boundary、physics lenses、final gate、harness/eval 和 FQHE/CS vertical slice。
 
 ## 本地开发
 
@@ -206,6 +207,14 @@ pnpm --filter @moonshot-ai/agent-core typecheck
 pnpm vitest run packages/agent-core/test/research-ledger packages/agent-core/test/research-action packages/agent-core/test/tools/research-ledger-tool.test.ts packages/agent-core/test/tools/research-action-tool.test.ts
 pnpm --filter @moonshot-ai/agent-core test
 pnpm --filter @moonshot-ai/agent-core typecheck
+```
+
+0.0.3 primitive tool lifecycle 工作的聚焦验证命令：
+
+```sh
+pnpm vitest run packages/agent-core/test/agent/tool-lifecycle.test.ts packages/agent-core/test/agent/basic.test.ts
+pnpm --filter @moonshot-ai/agent-core typecheck
+pnpm exec oxlint packages/agent-core/src/agent/tool-lifecycle/index.ts packages/agent-core/src/agent/index.ts packages/agent-core/src/agent/turn/index.ts packages/agent-core/src/agent/records/types.ts packages/agent-core/src/agent/records/index.ts packages/agent-core/test/agent/tool-lifecycle.test.ts packages/agent-core/test/agent/harness/snapshots.ts
 ```
 
 仓库工作规则：

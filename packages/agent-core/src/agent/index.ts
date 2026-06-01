@@ -56,6 +56,7 @@ import { ReplayBuilder, type ReplayBuilderOptions } from './replay';
 import { SkillManager } from './skill';
 import type { SkillRegistry } from './skill/types';
 import { SwarmMode } from './swarm';
+import { PrimitiveToolLifecycleManager } from './tool-lifecycle';
 import { ToolManager } from './tool/index';
 import { TurnFlow } from './turn';
 import { KosongLLM } from './turn/kosong-llm';
@@ -160,6 +161,7 @@ export class Agent {
   readonly physicsMemory: PhysicsMemoryManager | null;
   readonly researchLedger: ResearchLedgerManager | null;
   readonly researchAction: ResearchActionManager;
+  readonly toolLifecycle: PrimitiveToolLifecycleManager;
   readonly tools: ToolManager;
   readonly background: BackgroundManager;
   readonly cron: CronManager | null;
@@ -248,6 +250,7 @@ export class Agent {
         ? null
         : new ResearchLedgerManager(this, options.researchLedger);
     this.researchAction = new ResearchActionManager(this);
+    this.toolLifecycle = new PrimitiveToolLifecycleManager(this);
     this.tools = new ToolManager(this);
     this.background = new BackgroundManager(
       this,

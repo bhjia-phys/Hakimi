@@ -27,6 +27,11 @@ import type {
   ResearchTopicId,
 } from '../../research-ledger';
 import type { ResearchLedgerRecordSource } from '../research-ledger';
+import type {
+  PrimitiveToolLifecycleRecordSource,
+  PrimitiveToolLifecycleStatus,
+  PrimitiveToolOutputKind,
+} from '../tool-lifecycle';
 
 /** One entry of a tools table as sent in a request's top-level `tools[]`. */
 export interface LlmRequestToolSchema {
@@ -212,6 +217,39 @@ export interface AgentRecordEvents {
     tools: readonly MCPToolDefinition[];
     enabledNames: readonly string[];
     collisions?: readonly McpToolCollision[];
+  };
+
+  'tool_lifecycle.started': {
+    source: PrimitiveToolLifecycleRecordSource;
+    turnId: number;
+    step: number;
+    stepUuid: string;
+    toolCallId: string;
+    toolName: string;
+    cwd: string;
+    argsSummary: string;
+    description?: string | undefined;
+    workFrameId?: string | undefined;
+    actionCallId?: string | undefined;
+    startedAt: number;
+  };
+  'tool_lifecycle.completed': {
+    source: PrimitiveToolLifecycleRecordSource;
+    turnId: number;
+    step?: number | undefined;
+    stepUuid?: string | undefined;
+    toolCallId: string;
+    toolName: string;
+    cwd?: string | undefined;
+    status: PrimitiveToolLifecycleStatus;
+    isError: boolean;
+    outputKind: PrimitiveToolOutputKind;
+    outputSummary: string;
+    durationMs?: number | undefined;
+    completedAt: number;
+    workFrameId?: string | undefined;
+    actionCallId?: string | undefined;
+    artifactRefs: readonly string[];
   };
 
   'physics_memory.roots_loaded': {

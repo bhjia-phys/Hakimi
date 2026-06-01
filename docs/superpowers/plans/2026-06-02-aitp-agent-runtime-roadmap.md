@@ -189,12 +189,13 @@ Add the smallest Codex-inspired runtime spine needed for later AITP capture: pri
 
 ### Tasks
 
-- [ ] Define a `PrimitiveToolEnvelope` type with tool name, call id, cwd, source, action call id, WorkFrame id, start/end timestamps, status, output summary, and artifact refs.
-- [ ] Add a narrow tool lifecycle hook around builtin tool execution.
-- [ ] Record successful, failed, interrupted, and background-running primitive tool states.
+- [x] Define a primitive tool lifecycle envelope type with tool name, call id, cwd, source, action call id, WorkFrame id, start/end timestamps, status, output summary, and artifact refs.
+- [x] Add a narrow tool lifecycle hook around real loop-level primitive tool execution.
+- [x] Record successful and failed primitive tool result states.
+- [ ] Record interrupted and background-running primitive tool states.
 - [ ] Capture file diff metadata after edit/shell tools where Kimi already exposes enough information.
-- [ ] Expose a read-only helper for later ResearchCapture to inspect recent primitive tool envelopes.
-- [ ] Add tests that execute a fake builtin tool and assert pre/post records are emitted.
+- [x] Expose a read-only helper for later ResearchCapture to inspect recent primitive tool envelopes.
+- [x] Add tests that execute a fake builtin tool and assert pre/post records are emitted.
 
 ### Acceptance
 

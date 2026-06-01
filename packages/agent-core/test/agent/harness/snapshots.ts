@@ -47,7 +47,9 @@ export function eventSnapshot(
   events: readonly EventSnapshotEntry[],
   uuidLabels: Map<string, string>,
 ) {
-  const normalized = events.map((event) => normalizeValue(event, uuidLabels));
+  const normalized = events
+    .filter((event) => !isAuditOnlyWireEvent(event))
+    .map((event) => normalizeValue(event, uuidLabels));
   (normalized as unknown as Record<symbol, true>)[IS_EVENT_ARRAY] = true;
   return normalized;
 }
@@ -323,6 +325,10 @@ function isVolatileDurationKey(key: string): boolean {
     key === 'llmClientConsumeMs' ||
     key === 'durationMs'
   );
+}
+
+function isAuditOnlyWireEvent(event: EventSnapshotEntry): boolean {
+  return event.type === '[wire]' && event.event.startsWith('tool_lifecycle.');
 }
 
 function isPlanModeReminder(value: string): boolean {
