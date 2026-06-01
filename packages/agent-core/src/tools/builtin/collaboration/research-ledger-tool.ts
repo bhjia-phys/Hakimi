@@ -20,10 +20,17 @@ import {
   type ResearchLedgerEventStatus,
   type ResearchLedgerEventType,
 } from '../../../research-ledger';
+import { PHYSICS_CAPSULE_KINDS, type PhysicsCapsuleKind } from '../../../physics-memory';
 import { toInputJsonSchema } from '../../support/input-schema';
 import DESCRIPTION from './research-ledger-tool.md';
 
-const ACTIONS = ['list_topics', 'list_events', 'load_event', 'compile_proposals'] as const;
+const ACTIONS = [
+  'list_topics',
+  'list_events',
+  'load_event',
+  'compile_proposals',
+  'write_event',
+] as const;
 
 export const ResearchLedgerToolInputSchema = z.object({
   action: z.enum(ACTIONS).describe('The research-ledger operation to perform.'),
@@ -33,6 +40,17 @@ export const ResearchLedgerToolInputSchema = z.object({
   status: z.enum(RESEARCH_LEDGER_EVENT_STATUSES).optional().describe('Optional event status filter.'),
   id: z.string().optional().describe('Event id for load_event.'),
   include_body: z.boolean().optional().describe('Whether load_event should include event body.'),
+  body: z.string().optional().describe('Markdown body for write_event.'),
+  source_refs: z.array(z.string()).optional().describe('Source refs for write_event.'),
+  depends_on: z.array(z.string()).optional().describe('Dependency event ids for write_event.'),
+  candidate_capsule_kind: z
+    .enum(PHYSICS_CAPSULE_KINDS)
+    .optional()
+    .describe('Candidate capsule kind for write_event.'),
+  open_questions: z.array(z.string()).optional().describe('Open questions for write_event.'),
+  related_objects: z.array(z.string()).optional().describe('Related object ids for write_event.'),
+  created_at: z.string().optional().describe('Optional ISO timestamp for write_event.'),
+  overwrite: z.boolean().optional().describe('Allow write_event to replace an existing event file/id.'),
 });
 
 export type ResearchLedgerToolInput = z.Infer<typeof ResearchLedgerToolInputSchema>;
@@ -55,7 +73,10 @@ export class ResearchLedgerTool implements BuiltinTool<ResearchLedgerToolInput> 
 
   resolveExecution(args: ResearchLedgerToolInput): ToolExecution {
     return {
-      accesses: ToolAccesses.none(),
+      accesses:
+        args.action === 'write_event' && this.manager !== undefined
+          ? ToolAccesses.writeTree(this.manager.defaultWriteRoot().path)
+          : ToolAccesses.none(),
       description: `Research ledger: ${args.action}`,
       approvalRule: this.name,
       execute: (ctx) => this.execution(args, ctx),
@@ -85,6 +106,8 @@ export class ResearchLedgerTool implements BuiltinTool<ResearchLedgerToolInput> 
           return this.loadEvent(args, ctx);
         case 'compile_proposals':
           return this.compileProposals(args, ctx);
+        case 'write_event':
+          return await this.writeEvent(args, ctx);
       }
     } catch (error) {
       return {
@@ -132,6 +155,63 @@ export class ResearchLedgerTool implements BuiltinTool<ResearchLedgerToolInput> 
       isError: hasError ? true : undefined,
       output: renderCompileResult(result),
     };
+  }
+
+  private async writeEvent(
+    args: ResearchLedgerToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult('ResearchLedger write_event requires a session research ledger manager.');
+    }
+    const id = args.id;
+    const topic = args.topic;
+    const domain = args.domain;
+    const type = args.type;
+    const body = args.body;
+    if (id === undefined || id.length === 0) {
+      return errorResult('ResearchLedger write_event requires id.');
+    }
+    if (topic === undefined || topic.length === 0) {
+      return errorResult('ResearchLedger write_event requires topic.');
+    }
+    if (domain === undefined || domain.length === 0) {
+      return errorResult('ResearchLedger write_event requires domain.');
+    }
+    if (type === undefined || type.length === 0) {
+      return errorResult('ResearchLedger write_event requires type.');
+    }
+    if (body === undefined || body.length === 0) {
+      return errorResult('ResearchLedger write_event requires body.');
+    }
+    if (args.source_refs === undefined || args.source_refs.length === 0) {
+      return errorResult('ResearchLedger write_event requires at least one source_refs entry.');
+    }
+    const result = await this.manager.writeEvent(
+      {
+        metadata: {
+          id,
+          type,
+          topic,
+          domain,
+          status: (args.status as ResearchLedgerEventStatus | undefined) ?? 'captured',
+          sourceRefs: args.source_refs,
+          dependsOn: args.depends_on ?? [],
+          candidateCapsuleKind: args.candidate_capsule_kind as PhysicsCapsuleKind | undefined,
+          openQuestions: args.open_questions ?? [],
+          relatedObjects: args.related_objects ?? [],
+          createdAt: args.created_at,
+        },
+        body,
+        overwrite: args.overwrite,
+      },
+      {
+        source: 'model-tool',
+        toolCallId: ctx.toolCallId,
+        overwrite: args.overwrite,
+      },
+    );
+    return ok(renderWriteResult(result));
   }
 }
 
@@ -200,6 +280,20 @@ function renderCompileResult(result: ResearchLedgerCompileResult): string {
     ...result.proposals.map((proposal) => renderProposal(proposal, '    ')),
     '  </proposals>',
     '</research_ledger_compile>',
+    '',
+  ].join('\n');
+}
+
+function renderWriteResult(result: {
+  readonly event: ResearchLedgerEvent;
+  readonly path: string;
+  readonly created: boolean;
+}): string {
+  return [
+    `<research_ledger_write event_id="${escapeXml(result.event.metadata.id)}" created="${String(result.created)}">`,
+    `  <path>${escapeXml(result.path)}</path>`,
+    renderEventSummary(result.event, '  '),
+    '</research_ledger_write>',
     '',
   ].join('\n');
 }
