@@ -182,7 +182,8 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.0.8 has started with PhysicsDirectionEngine and applicability-gated lenses: FQHE/CS charge-flux quantization and LibRPA head-wing formula-code mapping can now be recommended, rejected, and audited with caveats, guiding questions, required checks, and suggested ResearchAction ids. See [AITP Agent 0.0.8 Audit](docs/internal/aitp-agent-0.0.8-audit.md).
 - 0.0.9 has started with EscalationPolicy and Final Gate: simple physics questions remain lightweight, code/benchmark/high-risk theory/promotion work escalates into required runtime controls, and validated final claims are downgraded or blocked while blocking obligations remain open. See [AITP Agent 0.0.9 Audit](docs/internal/aitp-agent-0.0.9-audit.md).
 - 0.1 has started with Harness and Eval Runner: failed/inconclusive action traces can become deterministic eval cases, and eval runs can check action sequence, action outcomes, evidence refs, and required checks. See [AITP Agent 0.1 Audit](docs/internal/aitp-agent-0.1-audit.md).
-- The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md): obligation generation, dynamic tool exposure, real diff/artifact capture, and FQHE/CS vertical slice.
+- 0.2 has started with an executable FQHE/CS theory vertical slice: Laughlin wavefunction, flux insertion, Abelian CS action, and K-matrix response blocks compile into candidate capsules, pass through charge-flux lens/convention checks, produce an eval case, and reach the final gate. See [AITP Agent 0.2 Audit](docs/internal/aitp-agent-0.2-audit.md).
+- The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md): obligation generation, dynamic tool exposure, real diff/artifact capture, model-loop wiring, and broader domain memory.
 
 ## Development
 
@@ -278,6 +279,14 @@ Focused verification for the 0.1 harness and eval runner is:
 pnpm vitest run packages/agent-core/test/research-harness/runner.test.ts packages/agent-core/test/research-action/harness.test.ts
 pnpm --filter @moonshot-ai/agent-core typecheck
 pnpm exec oxlint packages/agent-core/src/research-harness packages/agent-core/src/index.ts packages/agent-core/test/research-harness/runner.test.ts
+```
+
+Focused verification for the 0.2 FQHE/CS vertical slice is:
+
+```sh
+pnpm vitest run packages/agent-core/test/physics-verticals/fqhe-cs.test.ts packages/agent-core/test/physics-direction/lens.test.ts packages/agent-core/test/research-harness/runner.test.ts
+pnpm --filter @moonshot-ai/agent-core typecheck
+pnpm exec oxlint packages/agent-core/src/physics-verticals packages/agent-core/src/index.ts packages/agent-core/test/physics-verticals/fqhe-cs.test.ts
 ```
 
 Repository workflow note:
