@@ -201,6 +201,45 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     ],
   }),
   action({
+    id: 'physics.apply_direction_lens',
+    category: 'physics',
+    exposure: 'direct',
+    phase: 'explore',
+    title: 'Apply physics direction lens',
+    description:
+      'Evaluate an applicability-gated physics lens before connecting a local block to graph memory or another domain concept.',
+    inputKinds: ['Claim', 'Formula', 'DerivationStep', 'CapsuleProposal'],
+    outputKinds: ['LedgerEvent'],
+    generatedObligations: [
+      {
+        kind: 'dependency_closure',
+        severity: 'important',
+        reason: 'Direction lenses should be tied back to graph dependencies before promotion.',
+        requiredActionId: 'graph.query_dependency_closure',
+      },
+    ],
+  }),
+  action({
+    id: 'physics.check_flux_quantization_convention',
+    category: 'physics',
+    exposure: 'direct',
+    phase: 'validate',
+    title: 'Check flux quantization convention',
+    description:
+      'Check charge normalization and flux identity before using charge-flux quantization reasoning.',
+    inputKinds: ['Claim', 'Formula', 'ConventionSet'],
+    outputKinds: ['LedgerEvent'],
+    domains: ['topological-order', 'topological-order/fqhe-cs'],
+    triggerHints: [
+      'fractional charge',
+      'flux quantum',
+      'dirac quantization',
+      'AB phase',
+      'Chern-Simons flux',
+    ],
+    suggestedNextActions: ['validate.check_convention', 'derive.compare_with_known_result'],
+  }),
+  action({
     id: 'validate.check_dimension',
     category: 'physics',
     exposure: 'direct',
