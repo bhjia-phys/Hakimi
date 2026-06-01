@@ -5,6 +5,7 @@ export * from './config';
 export * from './flags';
 export * from './physics-memory';
 export * from './research-action';
+export * from './research-ledger';
 export * from './session/export';
 export * from './telemetry';
 export * from './errors';
