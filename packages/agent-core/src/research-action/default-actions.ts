@@ -1,4 +1,5 @@
 import type { ResearchActionDefinition } from './types';
+import { LIBRPA_HEAD_WING_ACTIONS } from './librpa-head-wing';
 
 export const DEFAULT_RESEARCH_ACTIONS = [
   action({
@@ -361,6 +362,7 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     inputKinds: ['FailureMode', 'LedgerEvent'],
     outputKinds: ['HarnessCandidate'],
   }),
+  ...LIBRPA_HEAD_WING_ACTIONS,
 ] as const satisfies readonly ResearchActionDefinition[];
 
 export function registerDefaultResearchActions(registry: {

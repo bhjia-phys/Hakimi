@@ -342,15 +342,15 @@ Use a narrow real computational-physics workflow to prove the runtime spine is u
 
 - [ ] Define a `librpa/head-wing` WorkFrame fixture.
 - [ ] Add fixture ledger events for code observation, git diff observation, benchmark observation, and failure observation.
-- [ ] Add default actions:
+- [x] Add default actions:
   - `code.inspect_call_sites`;
   - `code.map_formula_to_code_region`;
   - `code.capture_git_diff_observation`;
   - `benchmark.run_minimal_librpa_case`;
   - `harness.build_eval_from_failure`.
-- [ ] Add a minimal local benchmark stand-in fixture that can run in CI without external binaries.
-- [ ] Assert that a head-wing code task recommends call-site inspection before benchmark.
-- [ ] Assert that a failed benchmark becomes a harness candidate.
+- [x] Add a minimal local benchmark stand-in fixture that can run in CI without external binaries.
+- [x] Assert that a head-wing code task recommends call-site inspection before benchmark.
+- [x] Assert that a failed benchmark becomes a harness candidate.
 
 ### Acceptance
 
