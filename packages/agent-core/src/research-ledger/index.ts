@@ -4,3 +4,4 @@ export * from './scanner';
 export * from './registry';
 export * from './compiler';
 export * from './writer';
+export * from './capture-policy';

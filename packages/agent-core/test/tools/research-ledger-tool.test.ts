@@ -124,6 +124,49 @@ describe('ResearchLedgerTool', () => {
     });
     expect(loaded.output).toContain('Captured a deterministic head-wing diff observation.');
   });
+
+  it('captures controlled observations through the capture policy', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'aitp-ledger-tool-'));
+    onTestFinishedRm(cwd);
+    const agent = makeAgent(new ResearchLedgerRegistry(), { cwd });
+    const manager = agent.researchLedger;
+    if (manager === null) throw new Error('Expected research ledger manager');
+    const tool = new ResearchLedgerTool(manager);
+
+    const result = await execute(tool, {
+      action: 'capture_event',
+      capture_class: 'benchmark_observation',
+      topic: 'librpa-head-wing',
+      domain: 'librpa',
+      title: 'Head-wing smoke benchmark',
+      body: 'The smoke benchmark passed with the deterministic fixture.',
+      source_refs: ['local:benchmark-smoke'],
+      artifact_refs: ['artifact:benchmark-smoke.log'],
+      related_objects: ['benchmark:librpa/head-wing-smoke'],
+    });
+
+    expect(result.isError).toBeUndefined();
+    const event = manager.registry.listEvents({ type: 'benchmark_observation' })[0];
+    expect(event?.metadata.id).toBe(
+      'event.librpa-head-wing.benchmark_observation.Head-wing-smoke-benchmark',
+    );
+    expect(event?.metadata.sourceRefs).toEqual([
+      'local:benchmark-smoke',
+      'artifact:benchmark-smoke.log',
+    ]);
+    expect(event?.body).toContain('## Artifact Refs');
+
+    const rejected = await execute(tool, {
+      action: 'capture_event',
+      capture_class: 'failure_observation',
+      topic: 'librpa-head-wing',
+      domain: 'librpa',
+      title: 'Unprovenanced failure',
+      body: 'No source.',
+    });
+    expect(rejected).toMatchObject({ isError: true });
+    expect(rejected.output).toContain('missing-provenance');
+  });
 });
 
 describe('ToolManager ResearchLedger registration', () => {

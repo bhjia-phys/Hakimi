@@ -242,12 +242,12 @@ Make `.aitp/research-ledger` writable through a safe, schema-checked path and ca
 - [x] Implement `LedgerWriter` that generates deterministic topic-scoped Markdown paths.
 - [x] Validate event type, status, topic, domain, source refs, dependencies, and candidate capsule kind before writing.
 - [x] Emit `research_ledger.event_written` after a successful write.
-- [ ] Add `ResearchCapturePolicy` with four initial capture classes:
+- [x] Add `ResearchCapturePolicy` with four initial capture classes:
   - `source_excerpt`;
   - `git_diff_observation`;
   - `benchmark_observation`;
   - `failure_observation`.
-- [ ] Store long outputs as artifact refs rather than embedding unbounded text in event bodies.
+- [x] Store long outputs as artifact refs rather than embedding unbounded text in event bodies.
 
 ### Acceptance
 

@@ -2,7 +2,7 @@
 
 ## Scope
 
-This audit currently covers the first coherent 0.0.4 sub-slice: schema-checked research ledger writes.
+This audit currently covers the first coherent 0.0.4 sub-slices: schema-checked research ledger writes and controlled capture policy.
 
 Implemented areas:
 
@@ -13,11 +13,13 @@ Implemented areas:
 - path slug checks to avoid path traversal;
 - duplicate-id/file protection unless `overwrite` is explicitly set;
 - `ResearchLedgerManager.writeEvent`, which writes the event, registers it in the current session registry, and records `research_ledger.event_written`;
-- `ResearchLedger.write_event` model tool action behind the existing `KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER=1` feature flag.
+- `ResearchLedger.write_event` model tool action behind the existing `KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER=1` feature flag;
+- `ResearchCapturePolicy` with source excerpt, git diff observation, benchmark observation, and failure observation classes;
+- `ResearchLedger.capture_event`, which applies controlled capture policy before writing.
 
 ## Runtime Behavior
 
-`write_event` is intentionally controlled capture, not automatic logging.
+`write_event` is intentionally controlled writing, not automatic logging.
 
 Required fields:
 
@@ -46,6 +48,12 @@ After a successful write, the new event is immediately available to:
 
 without restarting the session.
 
+`capture_event` accepts the same topic/domain/provenance shape but adds a `capture_class` and `title`. It maps capture classes to ledger event types and rejects:
+
+- provenance-free captures;
+- captures with neither body nor artifact refs;
+- long inline bodies without artifact refs.
+
 ## Audit Records
 
 Successful writes emit:
@@ -70,7 +78,6 @@ Key fields:
 This sub-slice intentionally does not yet implement:
 
 - automatic capture after every web/git/code/benchmark action;
-- capture policy classification;
 - artifact storage for long outputs;
 - WorkFrame-aware write routing;
 - promotion from ledger events into trusted physics memory.
@@ -82,13 +89,13 @@ Those are later 0.0.4 and 0.0.5 steps.
 Focused writer/tool tests:
 
 ```powershell
-corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/research-ledger/writer.test.ts packages/agent-core/test/tools/research-ledger-tool.test.ts packages/agent-core/test/research-ledger packages/agent-core/test/tools/research-ledger-tool.test.ts
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/research-ledger/writer.test.ts packages/agent-core/test/research-ledger/capture-policy.test.ts packages/agent-core/test/tools/research-ledger-tool.test.ts packages/agent-core/test/research-ledger
 ```
 
 Result:
 
-- 7 test files passed.
-- 19 tests passed.
+- 8 test files passed.
+- 22 tests passed.
 
 Typecheck:
 
@@ -101,7 +108,7 @@ Result: passed.
 Focused lint:
 
 ```powershell
-corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/research-ledger/writer.ts packages/agent-core/src/research-ledger/index.ts packages/agent-core/src/research-ledger/registry.ts packages/agent-core/src/agent/research-ledger/index.ts packages/agent-core/src/tools/builtin/collaboration/research-ledger-tool.ts packages/agent-core/test/research-ledger/writer.test.ts packages/agent-core/test/tools/research-ledger-tool.test.ts
+corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/research-ledger/writer.ts packages/agent-core/src/research-ledger/capture-policy.ts packages/agent-core/src/research-ledger/index.ts packages/agent-core/src/research-ledger/registry.ts packages/agent-core/src/agent/research-ledger/index.ts packages/agent-core/src/tools/builtin/collaboration/research-ledger-tool.ts packages/agent-core/test/research-ledger/writer.test.ts packages/agent-core/test/research-ledger/capture-policy.test.ts packages/agent-core/test/tools/research-ledger-tool.test.ts
 ```
 
 Result: 0 warnings, 0 errors.
@@ -114,9 +121,9 @@ corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core test
 
 Result:
 
-- 174 test files passed.
+- 175 test files passed.
 - 1 test file skipped.
-- 2290 tests passed.
+- 2293 tests passed.
 - 7 tests skipped.
 - 1 todo remains.
 
