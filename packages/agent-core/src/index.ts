@@ -3,6 +3,8 @@ export * from './session';
 export * from './rpc';
 export * from './config';
 export * from './flags';
+export * from './physics-memory';
+export * from './research-action';
 export * from './session/export';
 export * from './telemetry';
 export * from './errors';

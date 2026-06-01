@@ -163,7 +163,9 @@ describe('parseManifest', () => {
     );
   });
 
-  it('rejects a skills path that escapes via a symlink', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'rejects a skills path that escapes via a symlink',
+    async () => {
     const root = await makePlugin({
       'kimi.plugin.json': JSON.stringify({ name: 'demo', skills: './sym' }),
     });
@@ -176,7 +178,8 @@ describe('parseManifest', () => {
         message: expect.stringContaining('resolves outside the plugin'),
       }),
     );
-  });
+    },
+  );
 
   it('warns when skills resolves to a non-directory', async () => {
     const root = await makePlugin({

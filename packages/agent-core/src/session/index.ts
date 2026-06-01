@@ -34,6 +34,7 @@ import {
   type McpServerEntry,
   type SessionMcpConfig,
 } from '../mcp';
+import { PhysicsMemoryRegistry, resolvePhysicsMemoryRoots } from '../physics-memory';
 import type { EnabledPluginSessionStart, PluginCommandDef } from '../plugin';
 import {
   DEFAULT_AGENT_PROFILES,
@@ -74,6 +75,7 @@ export interface SessionOptions {
   readonly hooks?: readonly HookDef[];
   readonly permissionRules?: readonly PermissionRule[];
   readonly skills?: SessionSkillConfig;
+  readonly physicsMemory?: SessionPhysicsMemoryConfig;
   readonly mcpConfig?: SessionMcpConfig;
   readonly telemetry?: TelemetryClient | undefined;
   readonly pluginSessionStarts?: readonly EnabledPluginSessionStart[];
@@ -100,6 +102,12 @@ export interface SessionSkillConfig {
   readonly pluginSkillRoots?: readonly SkillRoot[];
   readonly mergeAllAvailableSkills?: boolean;
   readonly builtinDir?: string;
+}
+
+export interface SessionPhysicsMemoryConfig {
+  readonly userHomeDir?: string;
+  readonly explicitDirs?: readonly string[];
+  readonly extraDirs?: readonly string[];
 }
 
 export interface AgentMeta {
@@ -174,6 +182,7 @@ export class Session {
   readonly rpc: SDKSessionRPC;
   readonly telemetry: TelemetryClient;
   readonly skills: SessionSkillRegistry;
+  readonly physicsMemory: PhysicsMemoryRegistry | null;
   readonly agents: Map<string, AgentEntry> = new Map();
   readonly mcp: McpConnectionManager;
   readonly log: Logger;
@@ -188,6 +197,7 @@ export class Session {
   private readonly pluginCommands: readonly PluginCommandDef[];
   private agentIdCounter = 0;
   private readonly skillsReady: Promise<void>;
+  private readonly physicsMemoryReady: Promise<void>;
   metadata: SessionMeta = {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -230,6 +240,13 @@ export class Session {
     this.skills = new SessionSkillRegistry({
       sessionId: options.id,
     });
+    this.physicsMemory = this.experimentalFlags.enabled('physics-memory')
+      ? new PhysicsMemoryRegistry({
+          onWarning: (message, cause) => {
+            this.log.warn('physics memory load warning', { message, cause });
+          },
+        })
+      : null;
     this.mcp = new McpConnectionManager({
       oauthService: new McpOAuthService({ kimiHomeDir: options.kimiHomeDir }),
       log: this.log,
@@ -243,6 +260,13 @@ export class Session {
     this.skillsReady = this.loadSkills()
       .catch((error: unknown) => {
         this.log.error('skills load failed', error);
+      })
+      .then(() => {
+        this.refreshAgentBuiltinTools();
+      });
+    this.physicsMemoryReady = this.loadPhysicsMemory()
+      .catch((error: unknown) => {
+        this.log.error('physics memory load failed', error);
       })
       .then(() => {
         this.refreshAgentBuiltinTools();
@@ -350,6 +374,7 @@ export class Session {
 
   async resume(): Promise<{ warning?: string }> {
     await this.skillsReady;
+    await this.physicsMemoryReady;
     this.log.info('session resume', { app_version: this.options.appVersion });
     const { agents, additionalDirs = [] } = await this.readMetadata();
     const cwd = this.toolKaos.getcwd();
@@ -629,6 +654,7 @@ export class Session {
     options: CreateAgentOptions = {},
   ): Promise<{ readonly id: string; readonly agent: Agent }> {
     await this.skillsReady;
+    await this.physicsMemoryReady;
     const type = config.type ?? 'main';
     const id = type === 'main' ? 'main' : this.nextGeneratedAgentId();
     const homedir = config.homedir ?? join(this.options.homedir, 'agents', id);
@@ -637,6 +663,7 @@ export class Session {
     if (options.profile) {
       await this.bootstrapAgentProfile(agent, options.profile);
     }
+    agent.physicsMemory?.recordRootsLoaded('session-start');
 
     this.agents.set(id, agent);
     if (options.persistMetadata !== false) {
@@ -860,6 +887,22 @@ export class Session {
     registerBuiltinSkills(this.skills);
   }
 
+  private async loadPhysicsMemory(): Promise<void> {
+    if (this.physicsMemory === null) return;
+    const roots = await resolvePhysicsMemoryRoots({
+      paths: {
+        userHomeDir:
+          this.options.physicsMemory?.userHomeDir ??
+          this.options.skills?.userHomeDir ??
+          homedir(),
+        workDir: this.options.kaos.getcwd(),
+      },
+      explicitDirs: this.options.physicsMemory?.explicitDirs,
+      extraDirs: this.options.physicsMemory?.extraDirs,
+    });
+    await this.physicsMemory.loadRoots(roots);
+  }
+
   private async loadMcpServers(): Promise<void> {
     const servers = this.options.mcpConfig?.servers;
     if (servers === undefined || Object.keys(servers).length === 0) return;
@@ -939,6 +982,7 @@ export class Session {
       // compression captions live with the session, not the agent.
       mediaOriginalsDir: sessionMediaOriginalsDir(this.options.homedir),
       skills: this.skills,
+      physicsMemory: this.physicsMemory ?? undefined,
       rpc: proxyWithExtraPayload(this.rpc, { agentId: id }),
       modelProvider: this.options.providerManager,
       hookEngine: config.hookEngine ?? this.hookEngine,

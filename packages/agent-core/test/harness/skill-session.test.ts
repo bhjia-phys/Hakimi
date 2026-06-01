@@ -130,7 +130,7 @@ describe('HarnessAPI session skills', () => {
 
   it('resolves user brand skills from KIMI_CODE_HOME when no explicit home is set', async () => {
     const processHome = join(tmp, 'env-process-home');
-    vi.stubEnv('HOME', processHome);
+    stubProcessHome(processHome);
     vi.stubEnv('KIMI_CODE_HOME', homeDir);
     await writeLegacyUserSkill(processHome, 'env-real-home-only', 'Env real home skill');
     await writeBrandUserSkill(homeDir, 'env-sandbox-only', 'Env sandbox skill');
@@ -704,7 +704,16 @@ describe('HarnessAPI session skills', () => {
     });
     return { core, events, rpc };
   }
+
+  function stubProcessHome(home: string): void {
+    vi.stubEnv('HOME', home);
+    vi.stubEnv('USERPROFILE', home);
+  }
 });
+
+async function normalizedRealpath(filePath: string): Promise<string> {
+  return (await realpath(filePath)).replaceAll('\\', '/');
+}
 
 async function waitForEvent(
   events: readonly Event[],

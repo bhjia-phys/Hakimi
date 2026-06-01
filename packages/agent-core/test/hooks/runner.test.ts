@@ -25,6 +25,10 @@ async function importRunHook(): Promise<RunHook> {
   return mod.runHook;
 }
 
+function nodeCommand(source: string): string {
+  return `node -e "${source.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
 describe('runHook process runner', () => {
   it('returns allow when the hook exits 0 and captures stdout', async () => {
     const runHook = await importRunHook();
@@ -72,7 +76,11 @@ describe('runHook process runner', () => {
 
   it('returns allow on non-zero, non-2 exit codes (e.g. exit 1)', async () => {
     const runHook = await importRunHook();
-    const result = await runHook('exit 1', { tool_name: 'Shell' }, { timeout: 5 });
+    const result = await runHook(
+      nodeCommand('process.exit(1)'),
+      { tool_name: 'Shell' },
+      { timeout: 5 },
+    );
     expect(result.action).toBe('allow');
   });
 
@@ -94,8 +102,9 @@ describe('runHook process runner', () => {
 
   it('writes the input payload to the hook process stdin as JSON', async () => {
     const runHook = await importRunHook();
-    const cmd =
-      'node -e "let s=\\"\\";process.stdin.on(\\"data\\",d=>s+=d);process.stdin.on(\\"end\\",()=>{const o=JSON.parse(s);process.stdout.write(o.tool_name);})"';
+    const cmd = nodeCommand(
+      "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const o=JSON.parse(s);process.stdout.write(o.tool_name);})",
+    );
     const result = await runHook(cmd, { tool_name: 'WriteFile' }, { timeout: 5 });
     expect(result.stdout?.trim()).toBe('WriteFile');
   });

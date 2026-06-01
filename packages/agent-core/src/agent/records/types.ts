@@ -11,6 +11,12 @@ import type { PermissionApprovalResultRecord, PermissionMode } from '../permissi
 import type { McpToolCollision, UserToolRegistration } from '../tool';
 import type { UsageRecordScope } from '../usage';
 import type { SwarmModeTrigger } from '../swarm';
+import type {
+  PhysicsCapsuleKind,
+  PhysicsDomainId,
+  PhysicsMemoryRoot,
+} from '../../physics-memory';
+import type { PhysicsMemoryRecordSource } from '../physics-memory';
 
 /** One entry of a tools table as sent in a request's top-level `tools[]`. */
 export interface LlmRequestToolSchema {
@@ -196,6 +202,39 @@ export interface AgentRecordEvents {
     tools: readonly MCPToolDefinition[];
     enabledNames: readonly string[];
     collisions?: readonly McpToolCollision[];
+  };
+
+  'physics_memory.roots_loaded': {
+    roots: readonly PhysicsMemoryRoot[];
+    source: PhysicsMemoryRecordSource;
+    capsuleCount: number;
+    domains: readonly PhysicsDomainId[];
+    diagnostics: readonly {
+      severity: 'info' | 'warning' | 'error';
+      code: string;
+      capsuleId?: string | undefined;
+      path?: string | undefined;
+      rootPath?: string | undefined;
+    }[];
+  };
+  'physics_memory.capsule_loaded': {
+    source: PhysicsMemoryRecordSource;
+    capsuleId: string;
+    domain: PhysicsDomainId;
+    kind: PhysicsCapsuleKind;
+    toolCallId?: string | undefined;
+  };
+  'physics_memory.context_compiled': {
+    source: PhysicsMemoryRecordSource;
+    domain: PhysicsDomainId;
+    focus: readonly string[];
+    capsuleIds: readonly string[];
+    diagnostics: readonly {
+      severity: 'info' | 'warning' | 'error';
+      code: string;
+      capsuleId?: string | undefined;
+    }[];
+    toolCallId?: string | undefined;
   };
 }
 

@@ -17,6 +17,10 @@ import { executeTool } from '../tools/fixtures/execute-tool';
 
 const signal = new AbortController().signal;
 
+function nodeCommand(source: string): string {
+  return `node -e "${source.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
 describe('Agent tools', () => {
   it('blocks tools through PreToolUse before permission and emits PostToolUseFailure', async () => {
     const execWithEnv = vi.fn().mockRejectedValue(new Error('Bash should not execute'));
@@ -31,7 +35,7 @@ describe('Agent tools', () => {
         {
           event: 'PostToolUseFailure',
           matcher: 'Bash',
-          command: 'exit 0',
+          command: nodeCommand('process.exit(0)'),
         },
       ],
       {
@@ -169,6 +173,10 @@ describe('Agent tools', () => {
       arguments: '{"query":"moon"}',
     };
     const resolved: Array<[string, string, string]> = [];
+    let markResolved: () => void = () => {};
+    const resolvedOnce = new Promise<void>((resolve) => {
+      markResolved = resolve;
+    });
     const hookEngine = new HookEngine(
       [
         {
@@ -180,6 +188,7 @@ describe('Agent tools', () => {
       {
         onResolved: (event, target, action) => {
           resolved.push([event, target, action]);
+          markResolved();
         },
       },
     );
@@ -209,9 +218,8 @@ describe('Agent tools', () => {
     ctx.mockNextResponse({ type: 'text', text: 'The lookup failed.' });
     await ctx.untilTurnEnd();
 
-    await vi.waitFor(() => {
-      expect(resolved).toEqual([['PostToolUseFailure', 'Lookup', 'allow']]);
-    });
+    await resolvedOnce;
+    expect(resolved).toEqual([['PostToolUseFailure', 'Lookup', 'allow']]);
   });
 
   it('uses the active builtin tool set as the LLM visible tools', async () => {
