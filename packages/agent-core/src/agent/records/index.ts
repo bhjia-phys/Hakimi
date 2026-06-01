@@ -143,6 +143,8 @@ function restoreAgentRecord(agent: Agent, input: AgentRecord): void {
     case 'mcp.tools_discovered':
       agent.tools.restoreMcpDiscovery(input.serverName, input.hash);
       return;
+    case 'tool_lifecycle.started':
+    case 'tool_lifecycle.completed':
     case 'physics_memory.roots_loaded':
     case 'physics_memory.capsule_loaded':
     case 'physics_memory.context_compiled':
