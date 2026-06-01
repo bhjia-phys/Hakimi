@@ -307,6 +307,13 @@ export interface AgentRecordEvents {
     nextSuggestedActions: readonly string[];
     toolCallId?: string | undefined;
   };
+  'research_action.raw_tool_escape': {
+    reason: string;
+    primitiveToolName: string;
+    primitiveToolCallId?: string | undefined;
+    followupActionId?: string | undefined;
+    evidenceRefs: readonly string[];
+  };
 }
 
 export type AgentRecord = {

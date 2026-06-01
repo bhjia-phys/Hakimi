@@ -35,6 +35,23 @@ export class ResearchActionManager {
       ...(options.toolCallId === undefined ? {} : { toolCallId: options.toolCallId }),
     });
   }
+
+  recordRawToolEscape(input: {
+    readonly reason: string;
+    readonly primitiveToolName: string;
+    readonly primitiveToolCallId?: string | undefined;
+    readonly followupActionId?: string | undefined;
+    readonly evidenceRefs?: readonly string[] | undefined;
+  }): void {
+    this.agent.records.logRecord({
+      type: 'research_action.raw_tool_escape',
+      reason: input.reason,
+      primitiveToolName: input.primitiveToolName,
+      primitiveToolCallId: input.primitiveToolCallId,
+      followupActionId: input.followupActionId,
+      evidenceRefs: input.evidenceRefs ?? [],
+    });
+  }
 }
 
 export type { ResearchActionOutcome };
