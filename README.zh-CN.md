@@ -179,7 +179,8 @@ formula capsule
 - 0.0.5 已经开始实现 active WorkFrame runtime state 和 ResearchAction call trace：`ResearchAction` 可以打开、切换、列出、关闭 WorkFrames，也可以 start/finish action calls；二者都可以 replay；action result 可以携带 ledger event ids；primitive tool lifecycle records 现在会携带 active `workFrameId` 和 `actionCallId`。详见 [AITP Agent 0.0.5 Audit](docs/internal/aitp-agent-0.0.5-audit.md)。
 - 0.0.6 已经开始实现 LibRPA head-wing micro vertical slice：LibRPA-specific research actions、CI-safe head-wing smoke benchmark stand-in、scheduler expectations、controlled failure capture 和 harness candidate conversion。详见 [AITP Agent 0.0.6 Audit](docs/internal/aitp-agent-0.0.6-audit.md)。
 - 0.0.7 已经开始实现 capsule boundary compiler：局部自洽的 `ResearchBlock` 可以编译成未提升的 `PhysicsCapsule` candidate，并保留 assumptions、conventions、source refs、open questions 和 required checks。详见 [AITP Agent 0.0.7 Audit](docs/internal/aitp-agent-0.0.7-audit.md)。
-- 剩余阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)：obligation generation、dynamic tool exposure、real diff/artifact capture、physics lenses、final gate、harness/eval 和 FQHE/CS vertical slice。
+- 0.0.8 已经开始实现 PhysicsDirectionEngine 和带 applicability check 的 physics lenses：FQHE/CS 的 charge-flux quantization、LibRPA head-wing 的 formula-code mapping 现在可以被推荐、拒绝并审计，输出 caveats、guiding questions、required checks 和 suggested ResearchAction ids。详见 [AITP Agent 0.0.8 Audit](docs/internal/aitp-agent-0.0.8-audit.md)。
+- 剩余阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)：obligation generation、dynamic tool exposure、real diff/artifact capture、final gate、harness/eval 和 FQHE/CS vertical slice。
 
 ## 本地开发
 
@@ -251,6 +252,14 @@ pnpm exec oxlint packages/agent-core/src/research-action/librpa-head-wing.ts pac
 pnpm vitest run packages/agent-core/test/research-block/compiler.test.ts
 pnpm --filter @moonshot-ai/agent-core typecheck
 pnpm exec oxlint packages/agent-core/src/research-block packages/agent-core/src/index.ts packages/agent-core/test/research-block/compiler.test.ts
+```
+
+0.0.8 physics direction engine 的聚焦验证命令：
+
+```sh
+pnpm vitest run packages/agent-core/test/physics-direction/lens.test.ts packages/agent-core/test/research-action/default-actions.test.ts
+pnpm --filter @moonshot-ai/agent-core typecheck
+pnpm exec oxlint packages/agent-core/src/physics-direction packages/agent-core/src/research-action/default-actions.ts packages/agent-core/src/index.ts packages/agent-core/test/physics-direction/lens.test.ts packages/agent-core/test/research-action/default-actions.test.ts
 ```
 
 仓库工作规则：

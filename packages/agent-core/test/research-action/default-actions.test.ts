@@ -32,6 +32,8 @@ describe('default research actions', () => {
       'memory.promote_capsule',
       'memory.propose_capsule',
       'memory.reject_or_downgrade',
+      'physics.apply_direction_lens',
+      'physics.check_flux_quantization_convention',
       'scope.compile_context_pack',
       'scope.declare_convention_set',
       'scope.open_work_frame',

@@ -4,6 +4,7 @@ export * from './rpc';
 export * from './config';
 export * from './flags';
 export * from './physics-memory';
+export * from './physics-direction';
 export * from './research-action';
 export * from './research-block';
 export * from './research-ledger';
