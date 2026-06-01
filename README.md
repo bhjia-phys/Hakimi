@@ -180,7 +180,8 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.0.6 has started with a LibRPA head-wing micro vertical slice: LibRPA-specific research actions, a CI-safe head-wing smoke benchmark stand-in, scheduler expectations, controlled failure capture, and harness candidate conversion. See [AITP Agent 0.0.6 Audit](docs/internal/aitp-agent-0.0.6-audit.md).
 - 0.0.7 has started with a capsule boundary compiler: locally self-contained `ResearchBlock` objects can compile into unpromoted `PhysicsCapsule` candidates with assumptions, conventions, source refs, open questions, and required checks preserved. See [AITP Agent 0.0.7 Audit](docs/internal/aitp-agent-0.0.7-audit.md).
 - 0.0.8 has started with PhysicsDirectionEngine and applicability-gated lenses: FQHE/CS charge-flux quantization and LibRPA head-wing formula-code mapping can now be recommended, rejected, and audited with caveats, guiding questions, required checks, and suggested ResearchAction ids. See [AITP Agent 0.0.8 Audit](docs/internal/aitp-agent-0.0.8-audit.md).
-- The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md): obligation generation, dynamic tool exposure, real diff/artifact capture, final gate, harness/eval, and FQHE/CS vertical slice.
+- 0.0.9 has started with EscalationPolicy and Final Gate: simple physics questions remain lightweight, code/benchmark/high-risk theory/promotion work escalates into required runtime controls, and validated final claims are downgraded or blocked while blocking obligations remain open. See [AITP Agent 0.0.9 Audit](docs/internal/aitp-agent-0.0.9-audit.md).
+- The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md): obligation generation, dynamic tool exposure, real diff/artifact capture, harness/eval, and FQHE/CS vertical slice.
 
 ## Development
 
@@ -260,6 +261,14 @@ Focused verification for the 0.0.8 physics direction engine is:
 pnpm vitest run packages/agent-core/test/physics-direction/lens.test.ts packages/agent-core/test/research-action/default-actions.test.ts
 pnpm --filter @moonshot-ai/agent-core typecheck
 pnpm exec oxlint packages/agent-core/src/physics-direction packages/agent-core/src/research-action/default-actions.ts packages/agent-core/src/index.ts packages/agent-core/test/physics-direction/lens.test.ts packages/agent-core/test/research-action/default-actions.test.ts
+```
+
+Focused verification for the 0.0.9 escalation policy and final gate is:
+
+```sh
+pnpm vitest run packages/agent-core/test/research-policy packages/agent-core/test/physics-direction/lens.test.ts packages/agent-core/test/research-action/obligation.test.ts
+pnpm --filter @moonshot-ai/agent-core typecheck
+pnpm exec oxlint packages/agent-core/src/research-policy packages/agent-core/src/index.ts packages/agent-core/test/research-policy
 ```
 
 Repository workflow note:
