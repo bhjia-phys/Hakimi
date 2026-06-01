@@ -165,6 +165,13 @@ function restoreAgentRecord(agent: Agent, input: AgentRecord): void {
     case 'research_ledger.event_loaded':
     case 'research_ledger.event_written':
     case 'research_ledger.proposals_compiled':
+      return;
+    case 'research_action.call_started':
+      agent.researchAction.restoreActionCallStarted(input);
+      return;
+    case 'research_action.call_finished':
+      agent.researchAction.restoreActionCallFinished(input);
+      return;
     case 'research_action.result_recorded':
     case 'research_action.raw_tool_escape':
       return;

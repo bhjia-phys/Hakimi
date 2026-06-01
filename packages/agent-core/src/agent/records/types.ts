@@ -355,12 +355,38 @@ export interface AgentRecordEvents {
     actionId: string;
     callId: string;
     outcome: ResearchActionOutcome;
+    workFrameId?: string | undefined;
     graphRefs: readonly GraphRef[];
     capsuleRefs: readonly PhysicsCapsuleId[];
+    ledgerEventIds: readonly string[];
     evidenceRefs: readonly string[];
     generatedObligationIds: readonly string[];
     primitiveToolCallIds: readonly string[];
     nextSuggestedActions: readonly string[];
+    toolCallId?: string | undefined;
+  };
+  'research_action.call_started': {
+    source: ResearchActionSource;
+    actionId: string;
+    callId: string;
+    workFrameId?: string | undefined;
+    input?: unknown;
+    startedAt: number;
+    toolCallId?: string | undefined;
+  };
+  'research_action.call_finished': {
+    source: ResearchActionSource;
+    actionId: string;
+    callId: string;
+    outcome: ResearchActionOutcome;
+    workFrameId?: string | undefined;
+    output?: unknown;
+    ledgerEventIds: readonly string[];
+    evidenceRefs: readonly string[];
+    generatedObligationIds: readonly string[];
+    primitiveToolCallIds: readonly string[];
+    nextSuggestedActions: readonly string[];
+    finishedAt: number;
     toolCallId?: string | undefined;
   };
   'research_action.raw_tool_escape': {

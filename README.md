@@ -176,8 +176,8 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - The 0.0.2 foundation is implemented: `research-ledger` types/parser/scanner/registry/compiler, session scanning, append-only records, `ResearchLedger` tool, ActionAlgebra types, default research actions, scheduler, `ResearchAction` tool, raw-tool escape records, and harness candidate conversion. See [AITP Agent 0.0.2 Audit](docs/internal/aitp-agent-0.0.2-audit.md).
 - 0.0.3 has started with the thin primitive tool lifecycle spine: real loop-level tool calls now emit `tool_lifecycle.started` and `tool_lifecycle.completed` records with status, bounded summaries, timing, cwd, and future WorkFrame/ResearchAction attribution slots. See [AITP Agent 0.0.3 Audit](docs/internal/aitp-agent-0.0.3-audit.md).
 - 0.0.4 has started with schema-checked `ResearchLedger.write_event` and controlled `capture_event`: compact source-backed events can be written to deterministic `.aitp/research-ledger/<topic>/events/*.md` paths, registered immediately, audited through `research_ledger.event_written`, and filtered through source/git-diff/benchmark/failure capture policy. See [AITP Agent 0.0.4 Audit](docs/internal/aitp-agent-0.0.4-audit.md).
-- 0.0.5 has started with active WorkFrame runtime state: `ResearchAction` can open/switch/list/close WorkFrames, WorkFrame records replay, and primitive tool lifecycle records now carry the active `workFrameId`. See [AITP Agent 0.0.5 Audit](docs/internal/aitp-agent-0.0.5-audit.md).
-- The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md): ResearchAction call trace, diff/artifact capture, LibRPA micro slice, capsule boundaries, physics lenses, final gate, harness/eval, and FQHE/CS vertical slice.
+- 0.0.5 has started with active WorkFrame runtime state and ResearchAction call trace: `ResearchAction` can open/switch/list/close WorkFrames, start/finish action calls, replay both, attach ledger event ids to action results, and primitive tool lifecycle records now carry active `workFrameId` and `actionCallId`. See [AITP Agent 0.0.5 Audit](docs/internal/aitp-agent-0.0.5-audit.md).
+- The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md): obligation generation, dynamic tool exposure, diff/artifact capture, LibRPA micro slice, capsule boundaries, physics lenses, final gate, harness/eval, and FQHE/CS vertical slice.
 
 ## Development
 
@@ -230,9 +230,9 @@ pnpm exec oxlint packages/agent-core/src/research-ledger/writer.ts packages/agen
 Focused verification for the 0.0.5 WorkFrame runtime work is:
 
 ```sh
-pnpm vitest run packages/agent-core/test/agent/workframe.test.ts packages/agent-core/test/tools/research-action-tool.test.ts packages/agent-core/test/agent/tool-lifecycle.test.ts packages/agent-core/test/research-action/workframe.test.ts
+pnpm vitest run packages/agent-core/test/agent/workframe.test.ts packages/agent-core/test/tools/research-action-tool.test.ts packages/agent-core/test/agent/tool-lifecycle.test.ts packages/agent-core/test/research-action/harness.test.ts
 pnpm --filter @moonshot-ai/agent-core typecheck
-pnpm exec oxlint packages/agent-core/src/agent/workframe/index.ts packages/agent-core/src/agent/index.ts packages/agent-core/src/agent/records/types.ts packages/agent-core/src/agent/records/index.ts packages/agent-core/src/agent/research-action/index.ts packages/agent-core/src/agent/turn/index.ts packages/agent-core/src/research-action/workframe.ts packages/agent-core/src/tools/builtin/collaboration/research-action-tool.ts packages/agent-core/test/agent/workframe.test.ts packages/agent-core/test/tools/research-action-tool.test.ts packages/agent-core/test/agent/tool-lifecycle.test.ts packages/agent-core/test/research-action/workframe.test.ts
+pnpm exec oxlint packages/agent-core/src/research-action/types.ts packages/agent-core/src/agent/records/types.ts packages/agent-core/src/agent/records/index.ts packages/agent-core/src/agent/research-action/index.ts packages/agent-core/src/agent/turn/index.ts packages/agent-core/src/tools/builtin/collaboration/research-action-tool.ts packages/agent-core/test/tools/research-action-tool.test.ts packages/agent-core/test/agent/tool-lifecycle.test.ts packages/agent-core/test/agent/workframe.test.ts packages/agent-core/test/research-action/harness.test.ts
 ```
 
 Repository workflow note:

@@ -22,6 +22,13 @@ describe('primitive tool lifecycle records', () => {
       },
       { source: 'controller' },
     );
+    ctx.agent.researchAction.startActionCall(
+      {
+        actionId: 'code.map_formula_to_code_region',
+        callId: 'call.map-head-wing',
+      },
+      { source: 'controller' },
+    );
 
     ctx.mockNextResponse({ type: 'text', text: 'I will run Bash.' }, bashCall);
     await ctx.rpc.prompt({
@@ -45,6 +52,7 @@ describe('primitive tool lifecycle records', () => {
       argsSummary: '{"command":"printf lifecycle-result","timeout":60}',
       description: 'Running: printf lifecycle-result',
       workFrameId: 'frame.librpa',
+      actionCallId: 'call.map-head-wing',
       startedAt: expect.any(Number),
       time: expect.any(Number),
     });
@@ -61,6 +69,7 @@ describe('primitive tool lifecycle records', () => {
       outputSummary: 'lifecycle-result',
       durationMs: expect.any(Number),
       workFrameId: 'frame.librpa',
+      actionCallId: 'call.map-head-wing',
       completedAt: expect.any(Number),
       artifactRefs: [],
       time: expect.any(Number),

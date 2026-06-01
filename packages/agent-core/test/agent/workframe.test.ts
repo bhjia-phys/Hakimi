@@ -60,6 +60,58 @@ describe('WorkFrameManager', () => {
       sourceRefs: ['ledger:event.fqhe.source'],
     });
   });
+
+  it('restores active ResearchAction calls around WorkFrames', () => {
+    const records: AgentRecord[] = [];
+    const agent = makeAgent(records);
+    agent.workFrames.open(
+      {
+        id: 'frame.librpa',
+        domain: 'librpa',
+        topic: 'head-wing',
+        goal: 'Check head-wing action traces.',
+      },
+      { source: 'controller' },
+    );
+
+    agent.researchAction.startActionCall(
+      {
+        actionId: 'code.map_formula_to_code_region',
+        callId: 'call.map-head-wing',
+        input: { formulaId: 'formula.head-wing' },
+      },
+      { source: 'controller' },
+    );
+    expect(agent.researchAction.activeActionCall).toMatchObject({
+      actionId: 'code.map_formula_to_code_region',
+      callId: 'call.map-head-wing',
+      workFrameId: 'frame.librpa',
+    });
+
+    const restoredStarted = makeAgent();
+    for (const record of records) {
+      restoredStarted.records.restore(record);
+    }
+    expect(restoredStarted.researchAction.activeActionCall?.callId).toBe('call.map-head-wing');
+
+    agent.researchAction.finishActionCall(
+      {
+        actionId: 'code.map_formula_to_code_region',
+        callId: 'call.map-head-wing',
+        outcome: 'pass',
+        ledgerEventIds: ['event.librpa.mapping'],
+        primitiveToolCallIds: ['tool_call_read_mapping'],
+      },
+      { source: 'controller' },
+    );
+    expect(agent.researchAction.activeActionCall).toBeUndefined();
+
+    const restoredFinished = makeAgent();
+    for (const record of records) {
+      restoredFinished.records.restore(record);
+    }
+    expect(restoredFinished.researchAction.activeActionCall).toBeUndefined();
+  });
 });
 
 function makeAgent(records?: AgentRecord[]): Agent {

@@ -33,6 +33,8 @@ const ACTIONS = [
   'switch_work_frame',
   'close_work_frame',
   'list_work_frames',
+  'start_action_call',
+  'finish_action_call',
 ] as const;
 const EXPOSURES = ['direct', 'deferred', 'direct-model-only', 'hidden'] as const;
 const CATEGORIES = ['graph', 'derivation', 'physics', 'code', 'benchmark', 'memory', 'harness'] as const;
@@ -95,6 +97,7 @@ export const ResearchActionToolInputSchema = z.object({
   graph_refs: z.array(GraphRefSchema).optional().describe('Graph refs touched by the action.'),
   capsule_refs: z.array(z.string()).optional().describe('Capsule refs touched by the action.'),
   evidence_refs: z.array(z.string()).optional().describe('Evidence refs produced by the action.'),
+  ledger_event_ids: z.array(z.string()).optional().describe('Ledger event ids produced or used by the action.'),
   generated_obligation_ids: z
     .array(z.string())
     .optional()
@@ -107,6 +110,8 @@ export const ResearchActionToolInputSchema = z.object({
     .array(z.string())
     .optional()
     .describe('Follow-up action ids suggested by the action.'),
+  action_input: z.unknown().optional().describe('Optional structured input for start_action_call.'),
+  action_output: z.unknown().optional().describe('Optional structured output for finish_action_call.'),
 });
 
 export type ResearchActionToolInput = z.Infer<typeof ResearchActionToolInputSchema>;
@@ -153,6 +158,10 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return this.closeWorkFrame(args, ctx);
         case 'list_work_frames':
           return this.listWorkFrames();
+        case 'start_action_call':
+          return this.startActionCall(args, ctx);
+        case 'finish_action_call':
+          return this.finishActionCall(args, ctx);
       }
     } catch (error) {
       return {
@@ -212,6 +221,7 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       output: {},
       graphRefs: (args.graph_refs ?? []) as GraphRef[],
       capsuleRefs: args.capsule_refs ?? [],
+      ledgerEventIds: args.ledger_event_ids ?? [],
       evidenceRefs: args.evidence_refs ?? [],
       outcome: args.outcome as ResearchActionOutcome,
       generatedObligationIds: args.generated_obligation_ids ?? [],
@@ -224,6 +234,73 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     });
     return ok(
       `<research_action_recorded action_id="${escapeXml(record.actionId)}" call_id="${escapeXml(record.callId)}" outcome="${record.outcome}" />\n`,
+    );
+  }
+
+  private startActionCall(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction start_action_call requires a session manager.');
+    }
+    if (args.action_id === undefined || args.action_id.length === 0) {
+      return errorResult('ResearchAction start_action_call requires action_id.');
+    }
+    if (args.call_id === undefined || args.call_id.length === 0) {
+      return errorResult('ResearchAction start_action_call requires call_id.');
+    }
+    const started = this.manager.startActionCall(
+      {
+        actionId: args.action_id,
+        callId: args.call_id,
+        input: args.action_input,
+      },
+      {
+        source: 'model',
+        toolCallId: ctx.toolCallId,
+      },
+    );
+    return ok(
+      `<research_action_call_started action_id="${escapeXml(started.actionId)}" call_id="${escapeXml(started.callId)}"${started.workFrameId === undefined ? '' : ` work_frame_id="${escapeXml(started.workFrameId)}"`} />\n`,
+    );
+  }
+
+  private finishActionCall(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction finish_action_call requires a session manager.');
+    }
+    if (args.action_id === undefined || args.action_id.length === 0) {
+      return errorResult('ResearchAction finish_action_call requires action_id.');
+    }
+    if (args.call_id === undefined || args.call_id.length === 0) {
+      return errorResult('ResearchAction finish_action_call requires call_id.');
+    }
+    if (args.outcome === undefined) {
+      return errorResult('ResearchAction finish_action_call requires outcome.');
+    }
+    this.manager.finishActionCall(
+      {
+        actionId: args.action_id,
+        callId: args.call_id,
+        outcome: args.outcome,
+        output: args.action_output,
+        ledgerEventIds: args.ledger_event_ids,
+        evidenceRefs: args.evidence_refs,
+        generatedObligationIds: args.generated_obligation_ids,
+        primitiveToolCallIds: args.primitive_tool_call_ids,
+        nextSuggestedActions: args.next_suggested_actions,
+      },
+      {
+        source: 'model',
+        toolCallId: ctx.toolCallId,
+      },
+    );
+    return ok(
+      `<research_action_call_finished action_id="${escapeXml(args.action_id)}" call_id="${escapeXml(args.call_id)}" outcome="${args.outcome}" />\n`,
     );
   }
 

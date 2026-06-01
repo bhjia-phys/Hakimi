@@ -12,8 +12,40 @@ export interface ResearchActionRecordOptions {
   readonly toolCallId?: string | undefined;
 }
 
+export interface StartResearchActionCallInput {
+  readonly actionId: string;
+  readonly callId: string;
+  readonly input?: unknown;
+}
+
+export interface FinishResearchActionCallInput {
+  readonly actionId: string;
+  readonly callId: string;
+  readonly outcome: ResearchActionOutcome;
+  readonly output?: unknown;
+  readonly ledgerEventIds?: readonly string[] | undefined;
+  readonly evidenceRefs?: readonly string[] | undefined;
+  readonly generatedObligationIds?: readonly string[] | undefined;
+  readonly primitiveToolCallIds?: readonly string[] | undefined;
+  readonly nextSuggestedActions?: readonly string[] | undefined;
+}
+
+export interface ActiveResearchActionCall {
+  readonly actionId: string;
+  readonly callId: string;
+  readonly workFrameId?: string | undefined;
+  readonly input?: unknown;
+  readonly startedAt: number;
+}
+
 export class ResearchActionManager {
+  private activeCall: ActiveResearchActionCall | undefined;
+
   constructor(private readonly agent: Agent) {}
+
+  get activeActionCall(): ActiveResearchActionCall | undefined {
+    return this.activeCall === undefined ? undefined : { ...this.activeCall };
+  }
 
   openWorkFrame(input: OpenWorkFrameInput, options: WorkFrameRecordOptions): WorkFrame {
     return this.agent.workFrames.open(input, options);
@@ -35,6 +67,82 @@ export class ResearchActionManager {
     return this.agent.workFrames.active;
   }
 
+  startActionCall(
+    input: StartResearchActionCallInput,
+    options: ResearchActionRecordOptions,
+  ): ActiveResearchActionCall {
+    const started: ActiveResearchActionCall = {
+      actionId: input.actionId,
+      callId: input.callId,
+      workFrameId: this.agent.workFrames.active?.id,
+      input: input.input,
+      startedAt: Date.now(),
+    };
+    this.activeCall = started;
+    this.agent.records.logRecord({
+      type: 'research_action.call_started',
+      source: options.source,
+      actionId: started.actionId,
+      callId: started.callId,
+      ...(started.workFrameId === undefined ? {} : { workFrameId: started.workFrameId }),
+      ...(started.input === undefined ? {} : { input: started.input }),
+      startedAt: started.startedAt,
+      ...(options.toolCallId === undefined ? {} : { toolCallId: options.toolCallId }),
+    });
+    return started;
+  }
+
+  finishActionCall(
+    input: FinishResearchActionCallInput,
+    options: ResearchActionRecordOptions,
+  ): void {
+    const workFrameId =
+      this.activeCall?.callId === input.callId
+        ? this.activeCall.workFrameId
+        : this.agent.workFrames.active?.id;
+    this.agent.records.logRecord({
+      type: 'research_action.call_finished',
+      source: options.source,
+      actionId: input.actionId,
+      callId: input.callId,
+      outcome: input.outcome,
+      ...(workFrameId === undefined ? {} : { workFrameId }),
+      ...(input.output === undefined ? {} : { output: input.output }),
+      ledgerEventIds: input.ledgerEventIds ?? [],
+      evidenceRefs: input.evidenceRefs ?? [],
+      generatedObligationIds: input.generatedObligationIds ?? [],
+      primitiveToolCallIds: input.primitiveToolCallIds ?? [],
+      nextSuggestedActions: input.nextSuggestedActions ?? [],
+      finishedAt: Date.now(),
+      ...(options.toolCallId === undefined ? {} : { toolCallId: options.toolCallId }),
+    });
+    if (this.activeCall?.callId === input.callId) {
+      this.activeCall = undefined;
+    }
+  }
+
+  restoreActionCallStarted(input: {
+    readonly actionId: string;
+    readonly callId: string;
+    readonly workFrameId?: string | undefined;
+    readonly input?: unknown;
+    readonly startedAt: number;
+  }): void {
+    this.activeCall = {
+      actionId: input.actionId,
+      callId: input.callId,
+      workFrameId: input.workFrameId,
+      input: input.input,
+      startedAt: input.startedAt,
+    };
+  }
+
+  restoreActionCallFinished(input: { readonly callId: string }): void {
+    if (this.activeCall?.callId === input.callId) {
+      this.activeCall = undefined;
+    }
+  }
+
   recordActionResult(
     input: Omit<ResearchActionRecord, 'source'> & {
       readonly generatedObligationIds?: readonly string[] | undefined;
@@ -48,8 +156,12 @@ export class ResearchActionManager {
       actionId: input.actionId,
       callId: input.callId,
       outcome: input.outcome,
+      ...(this.agent.workFrames.active?.id === undefined
+        ? {}
+        : { workFrameId: this.agent.workFrames.active.id }),
       graphRefs: input.graphRefs,
       capsuleRefs: input.capsuleRefs,
+      ledgerEventIds: input.ledgerEventIds,
       evidenceRefs: input.evidenceRefs,
       generatedObligationIds: input.generatedObligationIds ?? [],
       primitiveToolCallIds: input.primitiveToolCallIds ?? [],
