@@ -15,5 +15,5 @@ import nunjucks from 'nunjucks';
 const env = new nunjucks.Environment(null, { autoescape: false, throwOnUndefined: true });
 
 export function renderPrompt(template: string, vars: Record<string, unknown>): string {
-  return env.renderString(template, vars);
+  return env.renderString(template.replaceAll('\r\n', '\n'), vars).replaceAll('\r\n', '\n');
 }

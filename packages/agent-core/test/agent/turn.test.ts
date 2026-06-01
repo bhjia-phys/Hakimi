@@ -73,6 +73,10 @@ function captureLogs(): { logger: Logger; entries: CapturedLogEntry[] } {
   return { logger, entries };
 }
 
+function nodeCommand(source: string): string {
+  return `node -e "${source.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
 describe('Agent turn flow', () => {
   it('degrades older history media and retries when the provider rejects the request body as too large', async () => {
     let attempts = 0;
@@ -1139,8 +1143,9 @@ describe('Agent turn flow', () => {
       {
         event: 'UserPromptSubmit',
         matcher: 'hooked input',
-        command:
-          'node -e "let s=\\"\\";process.stdin.on(\\"data\\",d=>s+=d);process.stdin.on(\\"end\\",()=>{const o=JSON.parse(s);if(Array.isArray(o.prompt)&&o.prompt[0]?.text===\\"hooked input\\"){process.stdout.write(\\"hook response 1\\");process.exit(0);}console.error(\\"bad prompt\\");process.exit(1);})"',
+        command: nodeCommand(
+          "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const o=JSON.parse(s);if(Array.isArray(o.prompt)&&o.prompt[0]?.text==='hooked input'){process.stdout.write('hook response 1');process.exit(0);}process.stderr.write('bad prompt');process.exit(1);})",
+        ),
       },
       {
         event: 'UserPromptSubmit',
@@ -1330,7 +1335,7 @@ describe('Agent turn flow', () => {
     const hookEngine = new HookEngine([
       {
         event: 'UserPromptSubmit',
-        command: 'node -e "setTimeout(() => process.stdout.write(\\"late hook\\"), 250)"',
+        command: nodeCommand("setTimeout(()=>process.stdout.write('late hook'),250)"),
         timeout: 5,
       },
     ]);

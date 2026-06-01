@@ -32,6 +32,14 @@ export const FLAG_DEFINITIONS = [
     default: false,
     surface: 'core',
   },
+  {
+    id: 'physics-memory',
+    title: 'Physics memory',
+    description: 'Load theoretical-physics memory capsules into Hakimi sessions.',
+    env: 'KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY',
+    default: false,
+    surface: 'core',
+  },
 ] as const satisfies readonly FlagDefinitionInput[];
 
 /** Literal union of registered flag ids. */

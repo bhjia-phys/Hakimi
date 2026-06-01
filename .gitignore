@@ -16,6 +16,10 @@ coverage/
 .conductor
 .kimi-stash-dir
 plugins/cdn/
+superpowers
+!docs/superpowers/
+!docs/superpowers/plans/
+!docs/superpowers/plans/**
 .worktrees/
 .kimi-code/local.toml
 .kimi-sandbox/

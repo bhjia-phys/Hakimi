@@ -132,7 +132,9 @@ describe('PluginManager', () => {
     await expect(manager.install('relative/plugin')).rejects.toThrow(/absolute path/i);
   });
 
-  it('install() copies a symlinked plugin root into the managed plugins dir', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'install() copies a symlinked plugin root into the managed plugins dir',
+    async () => {
     const home = await makeKimiHome();
     const pluginRoot = await makePlugin('demo');
     const link = path.join(await mkdtemp(path.join(tmpdir(), 'plugin-link-')), 'demo-link');
@@ -148,7 +150,8 @@ describe('PluginManager', () => {
     const reloaded = new PluginManager({ kimiHomeDir: home });
     await reloaded.load();
     expect(reloaded.get('demo')?.root).toBe(managedRoot);
-  });
+    },
+  );
 
   it('setEnabled() persists the new state', async () => {
     const home = await makeKimiHome();

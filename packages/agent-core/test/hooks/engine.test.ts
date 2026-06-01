@@ -84,6 +84,10 @@ async function importEngine(): Promise<EngineModule> {
   return (await import(ENGINE_MODULE)) as EngineModule;
 }
 
+function nodeCommand(source: string): string {
+  return `node -e "${source.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
 describe('HookEngine', () => {
   it('fires a PreToolUse hook whose matcher regex matches the matcher value', async () => {
     const { HookEngine } = await importEngine();
@@ -166,7 +170,7 @@ describe('HookEngine', () => {
       {
         event: 'PreToolUse',
         matcher: 'Shell',
-        command: 'node -e "setTimeout(() => {}, 10000)"',
+        command: nodeCommand('setTimeout(()=>{},10000)'),
         timeout: 5,
       },
     ]);
@@ -193,8 +197,9 @@ describe('HookEngine', () => {
       {
         event: 'PreToolUse',
         matcher: 'Shell',
-        command:
-          'node -e "let s=\\"\\";process.stdin.on(\\"data\\",d=>s+=d);process.stdin.on(\\"end\\",()=>{const o=JSON.parse(s);process.stdout.write(o.tool_name+\\" \\"+o.tool_call_id);})"',
+        command: nodeCommand(
+          "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const o=JSON.parse(s);process.stdout.write(o.tool_name+' '+o.tool_call_id);})",
+        ),
         timeout: 5,
       },
     ]);
@@ -213,8 +218,9 @@ describe('HookEngine', () => {
       [
         {
           event: 'SessionStart',
-          command:
-            'node -e "let s=\\"\\";process.stdin.on(\\"data\\",d=>s+=d);process.stdin.on(\\"end\\",()=>{const o=JSON.parse(s);process.stdout.write(o.hook_event_name+\\" \\"+o.session_id+\\" \\"+o.cwd);})"',
+          command: nodeCommand(
+            "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const o=JSON.parse(s);process.stdout.write(o.hook_event_name+' '+o.session_id+' '+o.cwd);})",
+          ),
           timeout: 5,
         },
       ],

@@ -747,6 +747,9 @@ export class ToolManager {
         this.agent.cron && new b.CronDeleteTool(this.agent.cron),
         this.agent.skills?.registry.listInvocableSkills().length &&
           new b.SkillTool(this.agent),
+        this.agent.experimentalFlags.enabled('physics-memory') &&
+          this.agent.physicsMemory &&
+          new b.PhysicsMemoryTool(this.agent.physicsMemory),
         this.agent.subagentHost &&
           new b.AgentTool(
             this.agent.subagentHost,

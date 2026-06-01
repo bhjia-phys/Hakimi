@@ -1,135 +1,155 @@
-# Kimi Code CLI
+# AITP Agent
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Docs](https://img.shields.io/badge/docs-online-blue)](https://moonshotai.github.io/kimi-code/zh/)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-pre--0.0.1-orange)](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md)
 
-[Documentation](https://moonshotai.github.io/kimi-code/zh/) · [Issues](https://github.com/MoonshotAI/kimi-code/issues) · [English](README.md)
+[English](README.md) | [上游 Kimi Code 文档](https://moonshotai.github.io/kimi-code/zh/)
 
+AITP Agent 是一个面向理论物理科研的 agent runtime 项目。它以 Kimi Code CLI 代码库为基座，目标是在 agent 底层运行时中原生嵌入理论物理记忆、知识编译、科研动作、验证、benchmark 证据、replay 和失败回灌。
 
-![Kimi Code 的使用演示](./docs/media/intro.gif)
+当前仓库仍处在早期阶段，是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 fork。默认产品行为仍继承 Kimi Code；只有当 AITP 实验 flag 明确开启时，新的 runtime feature 才会生效。第一阶段实现计划见 [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md)。
 
+## 项目目标
 
-## 什么是 Kimi Code CLI
+AITP Agent 不应该是在 coding agent 外面套一个研究记录本，也不应该依赖一段越来越大的提示词。它的目标是把理论物理科研需要的结构直接放进 agent runtime：
 
-Kimi Code CLI 是一个运行在终端里的 AI 编程 agent，可以帮你读写代码、执行 shell 命令、检索文件、抓取网页，并根据反馈自主决定下一步动作。开箱即用对接 Moonshot AI 的 Kimi 模型，也可指向其他兼容厂商。
+- 在会话中渐进式加载和当前课题相关的物理记忆；
+- 把论文、笔记、推导、代码映射、benchmark 输出和失败经验编译成 typed graph objects；
+- 用小而准的 context pack 给模型提供输入，而不是把整个知识库塞进 prompt；
+- 不同研究方向默认隔离，只有显式 bridge 才允许跨域上下文进入；
+- 提供细粒度科研动作，例如约定检查、量纲检查、公式到代码映射、smoke benchmark、失败分析；
+- 记录 action trace，让 harness 和科研工作流可以从失败中自我改进。
 
-## 安装
+## 架构方向
 
-推荐使用官方安装脚本，不需要提前安装 Node.js。
+AITP Agent 计划分成四个运行时层。
 
-- **macOS / Linux**：
+### Skills
 
-```sh
-curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash
+Skills 是程序性记忆，回答“agent 应该怎么工作”。例如公式到代码 debug、先推导再检查量纲、从失败构造 benchmark、LibRPA 运行准备等。
+
+### Physics Memory Capsules
+
+Physics memory capsules 是语义记忆，回答“知道什么、在哪些假设和范围内成立、证据是什么、依赖什么”。Capsule 比知识图谱原子更粗，是可以直接暴露给模型或科研动作的编译单元，并且应该能进一步展开到图谱内部的定义、公式、推导步、代码映射、benchmark 和失败模式。
+
+### Compiler
+
+Compiler 不是摘要器，而是知识编译器。它把 raw sources、topic notes、derivations、code traces、benchmark outputs 和 failures 编译成 typed graph objects 和 context packs，同时保留依赖、scope、矛盾标记、验证状态和失败条件。
+
+### Research Actions
+
+Research actions 是作用在物理图谱和本地工具环境上的细粒度科研动作。它们比“调用某个 MCP”更底层、更可审计；又比原始 shell 命令更接近科研语义。例如：
+
+- `graph.expand_capsule`
+- `graph.trace_dependency_closure`
+- `derive.check_dimension_consistency`
+- `derive.check_convention_consistency`
+- `physics.check_flux_quantization_convention`
+- `code.map_formula_to_code_region`
+- `code.compare_git_diff_to_mapping`
+- `benchmark.run_smoke_case`
+- `memory.propose_failure_mode`
+- `harness.build_eval_from_failure`
+
+这层 action 必须覆盖知识图谱查询、推导检查、代码映射、数值验证、失败回灌和 harness 进化。
+
+## 与其他 agent runtime 的关系
+
+### Kimi Code
+
+Kimi Code 是主基座。它已经有 TypeScript monorepo、终端 agent runtime、model/tool loop、skills、MCP、subagents、sessions、records/replay、compaction、permissions 和 lifecycle hooks。AITP Agent 应该在这个 runtime 里扩展，而不是作为外部插件或 prompt wrapper。
+
+### Codex
+
+Codex 是工具工程参考。最值得迁移的不是整体架构，而是 tool exposure 分层、稳定的 pre/post tool-use payload、结构化 tool output、tool-call source tracking、deferred tool discovery，以及适合 harness 分析的 action trace。
+
+### ForgeCode
+
+ForgeCode 是 harness 和 eval 参考。它值得借鉴的部分包括明确的 agent definitions、tool boundaries、benchmark cases 和可复现 eval 工作流。
+
+## 版本规划
+
+### 0.0.1: Physics Memory Vertical Slice
+
+第一步是在 `packages/agent-core` 内实现 runtime-native memory 路径：
+
+- 新增 `physics-memory` types、parser、scanner、registry、compiler 和 exports；
+- 新增模型可调用的 `PhysicsMemory` builtin tool；
+- 支持 `list_domains`、`list_capsules`、`load_capsule`、`compile_context`；
+- 让 physics memory 平行于 skills，而不是塞进 skills；
+- 用 experimental flag 默认关闭；
+- 用一个窄的 LibRPA fixture set 证明形状。
+
+0.0.1 的 schema 就要预留 `graphRefs`、`expansionHandles`、`requiredChecks` 和 `actionAffordances`，这样后续 research-action 层有稳定接口。
+
+### 0.0.2: Physics Graph Query And Research Action Registry
+
+- 增加 universal graph queries，例如 lookup、expand、dependency tracing、contradiction lookup、benchmark lookup、failure-mode lookup；
+- 增加 `ResearchActionRegistry`；
+- 增加 direct、deferred、hidden action exposure；
+- 实现第一批 graph、derivation-check、code-mapping 和 benchmark actions。
+
+### 0.0.3: Runtime Controller And Action Traces
+
+- 通过 Kimi tool loop hooks 接入 research actions；
+- 记录 action source：model、controller、hidden check、subagent 或 replay；
+- 记录结构化 `ResearchActionRecord`；
+- 对高风险物理声明触发 hidden checks。
+
+### 0.0.4: Harness And Eval Feedback
+
+- 把 failed 或 inconclusive 的 action traces 转成 benchmark candidates；
+- 增加 physics memory、graph query、action selection、validation outcome 的 eval fixtures；
+- 在合适的地方借鉴 ForgeCode 风格的可复现 eval 组织方式。
+
+### 0.0.5: LibRPA End-To-End Slice
+
+闭环一个真实的计算物理工作流：
+
+```text
+formula capsule
+-> code mapping
+-> git diff / implementation trace
+-> smoke benchmark
+-> intermediate observable check
+-> failure mode or validated memory update
+-> harness regression case
 ```
 
-- **Homebrew（macOS / Linux）**：
+## 当前状态
 
-```sh
-brew install kimi-code
-```
-
-- **Windows（PowerShell）**：
-
-```powershell
-irm https://code.kimi.com/kimi-code/install.ps1 | iex
-```
-
-> Windows 用户首次启动前还需要安装 [Git for Windows](https://gitforwindows.org/)，Kimi Code CLI 会使用其中的 Git Bash 作为 Shell 环境。如果 Git Bash 安装在非标准路径，请把 `KIMI_SHELL_PATH` 设为 `bash.exe` 的绝对路径。
-
-随后在新的终端会话中运行：
-
-```sh
-kimi --version
-```
-
-npm 安装、升级、卸载方式，见[快速上手](https://moonshotai.github.io/kimi-code/zh/guides/getting-started)。
-
-## 快速开始
-
-进入项目目录并启动交互界面：
-
-```sh
-cd your-project
-kimi
-```
-
-首次启动时，在 Kimi Code CLI 里输入 `/login`，选择 Kimi Code OAuth 或 Moonshot AI Open Platform API 密钥登录。登录完成后，可以先让它熟悉项目：
-
-```
-帮我看一下这个项目的目录结构，简单介绍一下每个目录是做什么的
-```
-
-## 核心特性
-
-- **二进制发行，零环境依赖** 一行命令安装，不需要预装 Node.js，不用折腾 PATH，也不会和全局模块冲突。
-- **极速启动** TUI 在毫秒级就绪，开一个新会话没有任何心智负担。
-- **精致的 TUI 体验** 端到端打磨的交互界面，专为长时间、专注的 Agent 会话优化。
-- **视频也能输入** 把屏幕录像、演示视频拖进对话，让 Agent 看那些难以用文字描述的东西——把参考片段做成 LUT、把长视频剪成短视频、把录屏变成代码，等等。
-- **AI-native 的 MCP 配置** 通过 `/mcp-config` 对话式添加、编辑、认证 MCP 服务器，无需手写 JSON。
-- **丰富的插件生态** 从插件市场或任意 GitHub 仓库安装 skills、MCP 服务器和数据源，每次安装都会标明来源的信任级别。
-- **子 Agent 聚焦并行工作** 内置 `coder`、`explore`、`plan` 子 Agent 在隔离上下文中处理子任务，主对话保持清爽。
-- **生命周期 hooks** 在关键节点执行本地命令：拦截高风险工具调用、审计决策、发送桌面通知，或对接你自己的自动化脚本。
-- **编辑器 / IDE 集成（ACP）** 用 `kimi acp` 让 Zed、JetBrains 等任意 [Agent Client Protocol](https://agentclientprotocol.com/) 客户端直接驱动会话。
-
-
-## 在编辑器里使用（ACP）
-
-Kimi Code CLI 支持 [Agent Client Protocol](https://agentclientprotocol.com/)，ACP 兼容的编辑器 / IDE（Zed、JetBrains……）可以通过 stdio 直接驱动会话。登录一次后，把编辑器指向 `kimi acp` 子命令即可，无需重复登录。
-
-以 Zed 为例，在 `~/.config/zed/settings.json` 中加入：
-
-```json
-{
-  "agent_servers": {
-    "Kimi Code CLI": {
-      "type": "custom",
-      "command": "kimi",
-      "args": ["acp"],
-      "env": {}
-    }
-  }
-}
-```
-
-随后在 Zed 的 Agent 面板新建对话即可。JetBrains 配置与排障见[在 IDE 中使用](https://moonshotai.github.io/kimi-code/zh/guides/ides)，完整能力矩阵见 [`kimi acp` 参考](https://moonshotai.github.io/kimi-code/zh/reference/kimi-acp)。
-
-## 文档
-
-- [快速上手](https://moonshotai.github.io/kimi-code/zh/guides/getting-started)
-- [交互与审批](https://moonshotai.github.io/kimi-code/zh/guides/interaction)
-- [会话](https://moonshotai.github.io/kimi-code/zh/guides/sessions)
-- [在 IDE 中使用（ACP）](https://moonshotai.github.io/kimi-code/zh/guides/ides)
-- [配置](https://moonshotai.github.io/kimi-code/zh/configuration/config-files)
-- [命令参考](https://moonshotai.github.io/kimi-code/zh/reference/kimi-command)
+- 2026-06-01 检查过 `MoonshotAI/kimi-code:main` 上游状态；本 fork 当时与上游在 commit `933cf67` 处一致。
+- AITP Agent 0.0.1 的 physics-memory vertical slice 已经实现，并通过 `KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY=1` 默认关闭式启用。
+- `packages/agent-core` 现在包含 physics-memory types、parser、scanner、registry、compiler、session scanning、append-only records、模型可调用的 `PhysicsMemory` builtin tool、LibRPA fixture capsules，以及基础版 `ResearchActionRegistry`。
+- Windows 环境下 broader `agent-core` suite 的基线失败已经修复；详见 [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md)。
 
 ## 本地开发
 
-环境要求：Node.js ≥ 24.15.0，pnpm 10.33.0。
+环境要求继承自 Kimi Code：
+
+- Node.js `>=24.15.0`
+- pnpm `10.33.0`
 
 ```sh
-git clone https://github.com/MoonshotAI/kimi-code.git
-cd kimi-code
 pnpm install
+pnpm dev:cli
+pnpm test
+pnpm typecheck
+pnpm lint
+pnpm build
 ```
+
+0.0.1 计划工作的聚焦验证命令：
 
 ```sh
-pnpm dev:cli    # 以开发模式运行 CLI
-pnpm test       # 运行测试
-pnpm typecheck  # TypeScript 检查
-pnpm lint       # 运行 oxlint
-pnpm build      # 构建所有包
+pnpm vitest run packages/agent-core/test/physics-memory packages/agent-core/test/tools/physics-memory-tool.test.ts
+pnpm --filter @moonshot-ai/agent-core test
+pnpm --filter @moonshot-ai/agent-core typecheck
 ```
 
-完整贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+仓库工作规则：
 
-## 社区
-
-- [Issues](https://github.com/MoonshotAI/kimi-code/issues)
-- 安全漏洞反馈，请见 [SECURITY.md](SECURITY.md)。
-
-## 致谢
-
-我们的 TUI 构建在 [`pi-tui`](https://github.com/earendil-works/pi-mono/tree/main/packages/tui) 之上。我们衷心感谢 `pi-tui` 作者的工作。
+- 每完成一个 coherent runtime change，都应该先提交 commit，再进入下一块；
+- 当项目目标、feature 状态、安装验证方式或用户可见行为变化时，同步更新 `README.md` 和 `README.zh-CN.md`。
 
 ## 许可证
 
