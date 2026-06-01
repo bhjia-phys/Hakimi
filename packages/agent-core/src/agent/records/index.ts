@@ -146,6 +146,10 @@ function restoreAgentRecord(agent: Agent, input: AgentRecord): void {
     case 'physics_memory.roots_loaded':
     case 'physics_memory.capsule_loaded':
     case 'physics_memory.context_compiled':
+    case 'research_ledger.roots_loaded':
+    case 'research_ledger.event_loaded':
+    case 'research_ledger.event_written':
+    case 'research_ledger.proposals_compiled':
       return;
   }
 }
