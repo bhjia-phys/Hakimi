@@ -9,7 +9,9 @@ import type {
   ToolExecution,
 } from '../../../loop/types';
 import {
+  buildResearchCaptureDecision,
   compileResearchLedgerProposals,
+  RESEARCH_CAPTURE_CLASSES,
   RESEARCH_LEDGER_EVENT_STATUSES,
   RESEARCH_LEDGER_EVENT_TYPES,
   ResearchLedgerRegistry,
@@ -30,6 +32,7 @@ const ACTIONS = [
   'load_event',
   'compile_proposals',
   'write_event',
+  'capture_event',
 ] as const;
 
 export const ResearchLedgerToolInputSchema = z.object({
@@ -50,7 +53,16 @@ export const ResearchLedgerToolInputSchema = z.object({
   open_questions: z.array(z.string()).optional().describe('Open questions for write_event.'),
   related_objects: z.array(z.string()).optional().describe('Related object ids for write_event.'),
   created_at: z.string().optional().describe('Optional ISO timestamp for write_event.'),
-  overwrite: z.boolean().optional().describe('Allow write_event to replace an existing event file/id.'),
+  overwrite: z
+    .boolean()
+    .optional()
+    .describe('Allow write_event or capture_event to replace an existing event file/id.'),
+  capture_class: z
+    .enum(RESEARCH_CAPTURE_CLASSES)
+    .optional()
+    .describe('Controlled capture class for capture_event.'),
+  title: z.string().optional().describe('Short title for capture_event.'),
+  artifact_refs: z.array(z.string()).optional().describe('Artifact refs for capture_event.'),
 });
 
 export type ResearchLedgerToolInput = z.Infer<typeof ResearchLedgerToolInputSchema>;
@@ -74,7 +86,8 @@ export class ResearchLedgerTool implements BuiltinTool<ResearchLedgerToolInput> 
   resolveExecution(args: ResearchLedgerToolInput): ToolExecution {
     return {
       accesses:
-        args.action === 'write_event' && this.manager !== undefined
+        (args.action === 'write_event' || args.action === 'capture_event') &&
+        this.manager !== undefined
           ? ToolAccesses.writeTree(this.manager.defaultWriteRoot().path)
           : ToolAccesses.none(),
       description: `Research ledger: ${args.action}`,
@@ -108,6 +121,8 @@ export class ResearchLedgerTool implements BuiltinTool<ResearchLedgerToolInput> 
           return this.compileProposals(args, ctx);
         case 'write_event':
           return await this.writeEvent(args, ctx);
+        case 'capture_event':
+          return await this.captureEvent(args, ctx);
       }
     } catch (error) {
       return {
@@ -213,6 +228,54 @@ export class ResearchLedgerTool implements BuiltinTool<ResearchLedgerToolInput> 
     );
     return ok(renderWriteResult(result));
   }
+
+  private async captureEvent(
+    args: ResearchLedgerToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult('ResearchLedger capture_event requires a session research ledger manager.');
+    }
+    if (args.capture_class === undefined) {
+      return errorResult('ResearchLedger capture_event requires capture_class.');
+    }
+    if (args.topic === undefined || args.topic.length === 0) {
+      return errorResult('ResearchLedger capture_event requires topic.');
+    }
+    if (args.domain === undefined || args.domain.length === 0) {
+      return errorResult('ResearchLedger capture_event requires domain.');
+    }
+    if (args.title === undefined || args.title.length === 0) {
+      return errorResult('ResearchLedger capture_event requires title.');
+    }
+    const decision = buildResearchCaptureDecision({
+      captureClass: args.capture_class,
+      topic: args.topic,
+      domain: args.domain,
+      title: args.title,
+      eventId: args.id,
+      body: args.body,
+      sourceRefs: args.source_refs,
+      artifactRefs: args.artifact_refs,
+      dependsOn: args.depends_on,
+      candidateCapsuleKind: args.candidate_capsule_kind as PhysicsCapsuleKind | undefined,
+      openQuestions: args.open_questions,
+      relatedObjects: args.related_objects,
+      createdAt: args.created_at,
+    });
+    if (!decision.capture || decision.writeInput === undefined) {
+      return {
+        isError: true,
+        output: renderCaptureDiagnostics(decision.diagnostics),
+      };
+    }
+    const result = await this.manager.writeEvent(decision.writeInput, {
+      source: 'model-tool',
+      toolCallId: ctx.toolCallId,
+      overwrite: args.overwrite,
+    });
+    return ok(renderWriteResult(result));
+  }
 }
 
 function ok(output: string): ExecutableToolResult {
@@ -294,6 +357,20 @@ function renderWriteResult(result: {
     `  <path>${escapeXml(result.path)}</path>`,
     renderEventSummary(result.event, '  '),
     '</research_ledger_write>',
+    '',
+  ].join('\n');
+}
+
+function renderCaptureDiagnostics(
+  diagnostics: readonly { readonly severity: string; readonly code: string; readonly message: string }[],
+): string {
+  return [
+    '<research_ledger_capture rejected="true">',
+    ...diagnostics.map(
+      (diagnostic) =>
+        `  <diagnostic severity="${escapeXml(diagnostic.severity)}" code="${escapeXml(diagnostic.code)}">${escapeXml(diagnostic.message)}</diagnostic>`,
+    ),
+    '</research_ledger_capture>',
     '',
   ].join('\n');
 }

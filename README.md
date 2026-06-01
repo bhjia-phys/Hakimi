@@ -175,7 +175,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - Windows baseline failures in the broader `agent-core` suite have been resolved; see [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md).
 - The 0.0.2 foundation is implemented: `research-ledger` types/parser/scanner/registry/compiler, session scanning, append-only records, `ResearchLedger` tool, ActionAlgebra types, default research actions, scheduler, `ResearchAction` tool, raw-tool escape records, and harness candidate conversion. See [AITP Agent 0.0.2 Audit](docs/internal/aitp-agent-0.0.2-audit.md).
 - 0.0.3 has started with the thin primitive tool lifecycle spine: real loop-level tool calls now emit `tool_lifecycle.started` and `tool_lifecycle.completed` records with status, bounded summaries, timing, cwd, and future WorkFrame/ResearchAction attribution slots. See [AITP Agent 0.0.3 Audit](docs/internal/aitp-agent-0.0.3-audit.md).
-- 0.0.4 has started with schema-checked `ResearchLedger.write_event`: compact source-backed events can be written to deterministic `.aitp/research-ledger/<topic>/events/*.md` paths, registered immediately, and audited through `research_ledger.event_written`. See [AITP Agent 0.0.4 Audit](docs/internal/aitp-agent-0.0.4-audit.md).
+- 0.0.4 has started with schema-checked `ResearchLedger.write_event` and controlled `capture_event`: compact source-backed events can be written to deterministic `.aitp/research-ledger/<topic>/events/*.md` paths, registered immediately, audited through `research_ledger.event_written`, and filtered through source/git-diff/benchmark/failure capture policy. See [AITP Agent 0.0.4 Audit](docs/internal/aitp-agent-0.0.4-audit.md).
 - The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md): action/workframe attribution, diff/artifact capture, capture policy, WorkFrames/action traces, LibRPA micro slice, capsule boundaries, physics lenses, final gate, harness/eval, and FQHE/CS vertical slice.
 
 ## Development
@@ -221,9 +221,9 @@ pnpm exec oxlint packages/agent-core/src/agent/tool-lifecycle/index.ts packages/
 Focused verification for the 0.0.4 research ledger writer work is:
 
 ```sh
-pnpm vitest run packages/agent-core/test/research-ledger/writer.test.ts packages/agent-core/test/tools/research-ledger-tool.test.ts
+pnpm vitest run packages/agent-core/test/research-ledger/writer.test.ts packages/agent-core/test/research-ledger/capture-policy.test.ts packages/agent-core/test/tools/research-ledger-tool.test.ts packages/agent-core/test/research-ledger
 pnpm --filter @moonshot-ai/agent-core typecheck
-pnpm exec oxlint packages/agent-core/src/research-ledger/writer.ts packages/agent-core/src/research-ledger/index.ts packages/agent-core/src/research-ledger/registry.ts packages/agent-core/src/agent/research-ledger/index.ts packages/agent-core/src/tools/builtin/collaboration/research-ledger-tool.ts packages/agent-core/test/research-ledger/writer.test.ts packages/agent-core/test/tools/research-ledger-tool.test.ts
+pnpm exec oxlint packages/agent-core/src/research-ledger/writer.ts packages/agent-core/src/research-ledger/capture-policy.ts packages/agent-core/src/research-ledger/index.ts packages/agent-core/src/research-ledger/registry.ts packages/agent-core/src/agent/research-ledger/index.ts packages/agent-core/src/tools/builtin/collaboration/research-ledger-tool.ts packages/agent-core/test/research-ledger/writer.test.ts packages/agent-core/test/research-ledger/capture-policy.test.ts packages/agent-core/test/tools/research-ledger-tool.test.ts
 ```
 
 Repository workflow note:
