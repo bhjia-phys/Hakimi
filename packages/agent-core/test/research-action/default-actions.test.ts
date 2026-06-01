@@ -14,9 +14,13 @@ describe('default research actions', () => {
 
     expect(registry.listActions().map((action) => action.id)).toEqual([
       'benchmark.run_minimal_case',
+      'benchmark.run_minimal_librpa_case',
+      'code.capture_git_diff_observation',
       'code.check_intermediate_observable',
+      'code.inspect_call_sites',
       'code.inspect_git_history',
       'code.map_formula_to_code',
+      'code.map_formula_to_code_region',
       'derive.compare_with_known_result',
       'derive.derive_step',
       'derive.propose_route',
@@ -70,6 +74,7 @@ describe('default research actions', () => {
       'benchmark.run_minimal_case',
       'memory.promote_capsule',
       'harness.build_eval_from_failure',
+      'benchmark.run_minimal_librpa_case',
     ]);
   });
 });

@@ -6,3 +6,4 @@ export * from './obligation';
 export * from './default-actions';
 export * from './scheduler';
 export * from './harness';
+export * from './librpa-head-wing';
