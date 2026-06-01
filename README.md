@@ -1,12 +1,12 @@
 # AITP Agent
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-pre--0.0.1-orange)](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-0.0.2--planning-orange)](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md)
 
 [Chinese](README.zh-CN.md) | [Upstream Kimi Code docs](https://moonshotai.github.io/kimi-code/en/)
 
 AITP Agent is a research-agent runtime project for theoretical physics. It starts from the Kimi Code CLI codebase and aims to make physics memory, knowledge compilation, research actions, validation, benchmark evidence, replay, and failure feedback first-class parts of the agent runtime.
 
-This repository is currently an early-stage fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The default product behavior still follows Kimi Code unless an AITP experimental flag explicitly enables a new runtime feature. The first implementation target is tracked in [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md).
+This repository is currently an early-stage fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The default product behavior still follows Kimi Code unless an AITP experimental flag explicitly enables a new runtime feature. The completed first slice is tracked in [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md); the next slice is tracked in [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md).
 
 ## Why This Exists
 
@@ -21,7 +21,7 @@ The goal is not to wrap a coding agent with a research notebook or a large promp
 
 ## Architecture Direction
 
-AITP Agent is planned around four runtime layers.
+AITP Agent is planned around five runtime layers.
 
 ### Skills
 
@@ -30,6 +30,10 @@ Procedural memory: how the agent should work. Examples include formula-to-code d
 ### Physics Memory Capsules
 
 Semantic memory: what is known, with scope, assumptions, provenance, dependency edges, reliability state, and expansion handles into the underlying graph. Capsules are intentionally coarser than graph atoms and are meant to be progressively disclosed.
+
+### Research Ledger
+
+Source-backed research events: what actually happened in a session before it is trusted as reusable physics memory. The ledger records papers, web excerpts, derivation scratch, equations, code observations, git diffs, benchmark observations, failures, tool runs, and user decisions in a deterministic, compile-ready layout.
 
 ### Compiler
 
@@ -51,6 +55,10 @@ Research actions are fine-grained, auditable work units over the physics graph a
 - `harness.build_eval_from_failure`
 
 The action layer is intended to cover graph queries, derivation checks, code mapping, numerical validation, failure feedback, and harness evolution.
+
+### WorkFrames, Obligations, And Harness
+
+`WorkFrame` is the active research problem state: domain, topic, goal, active objects, assumptions, conventions, context pack, and trust state. Research actions create obligations such as source support, dimensional consistency, convention consistency, known-limit checks, formula-code mapping, and benchmark validation. Blocking obligations should prevent validated promotion and can become harness candidates when they fail or remain inconclusive.
 
 ## Relationship To Other Agent Runtimes
 
@@ -81,24 +89,26 @@ Build the first runtime-native memory path inside `packages/agent-core`:
 
 The 0.0.1 schema should already reserve fields for graph references, expansion handles, required checks, and action affordances so the later research-action layer has a stable target.
 
-### 0.0.2: Physics Graph Query And Research Action Registry
+### 0.0.2: Research Ledger And ActionAlgebra
 
-- introduce universal graph queries such as lookup, expand, dependency tracing, contradiction lookup, benchmark lookup, and failure-mode lookup;
-- add `ResearchActionRegistry`;
-- add direct, deferred, and hidden action exposure levels;
-- implement the first graph, derivation-check, code-mapping, and benchmark actions.
+- add a `research-ledger` subsystem that scans `.aitp/research-ledger` and stores source-backed research events separately from trusted physics memory;
+- add compile proposals from ledger events into candidate capsules, graph refs, obligations, and harness candidates;
+- extend `ResearchActionRegistry` into an ActionAlgebra with phases, preconditions, effects, generated obligations, validators, and primitive tool attribution;
+- add `WorkFrame`, `ResearchObligation`, and `ValidationScheduler` foundations;
+- expose `ResearchLedger` and `ResearchAction` model tools behind experimental flags;
+- coordinate Kimi primitive tools, Codex-style lifecycle ideas, and ForgeCode-style harness boundaries without replacing Kimi's tool manager.
 
-### 0.0.3: Runtime Controller And Action Traces
+### 0.0.3: Runtime Controller And Tool Exposure Policy
 
-- connect research actions to the Kimi tool loop through hooks;
-- add action source tracking: model, controller, hidden check, subagent, or replay;
-- record structured `ResearchActionRecord` entries;
-- trigger hidden checks for high-risk physics claims.
+- connect semantic research actions more deeply to Kimi's tool loop and permission system;
+- implement WorkFrame-driven tool exposure so theory, LibRPA feature work, literature learning, and benchmark work see different action surfaces;
+- attribute primitive tool calls to semantic research actions where possible;
+- trigger hidden checks for high-risk physics claims and formula-code mappings.
 
 ### 0.0.4: Harness And Eval Feedback
 
 - convert failed or inconclusive research-action traces into benchmark candidates;
-- add eval fixtures for physics memory, graph query, action selection, and validation outcomes;
+- add eval fixtures for physics memory, research ledger, graph query, action selection, and validation outcomes;
 - borrow ForgeCode-style repeatable eval organization where useful.
 
 ### 0.0.5: LibRPA End-To-End Slice
@@ -121,6 +131,7 @@ formula capsule
 - The AITP Agent 0.0.1 physics-memory vertical slice is implemented behind `KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY=1`.
 - `packages/agent-core` now includes physics-memory types, parser, scanner, registry, compiler, session scanning, append-only records, a model-invocable `PhysicsMemory` builtin tool, LibRPA fixture capsules, and a foundational `ResearchActionRegistry`.
 - Windows baseline failures in the broader `agent-core` suite have been resolved; see [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md).
+- 0.0.2 planning is now captured in [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md).
 
 ## Development
 
@@ -142,6 +153,14 @@ Focused verification for the planned 0.0.1 work will be:
 
 ```sh
 pnpm vitest run packages/agent-core/test/physics-memory packages/agent-core/test/tools/physics-memory-tool.test.ts
+pnpm --filter @moonshot-ai/agent-core test
+pnpm --filter @moonshot-ai/agent-core typecheck
+```
+
+Focused verification for the planned 0.0.2 work will be:
+
+```sh
+pnpm vitest run packages/agent-core/test/research-ledger packages/agent-core/test/research-action packages/agent-core/test/tools/research-ledger-tool.test.ts packages/agent-core/test/tools/research-action-tool.test.ts
 pnpm --filter @moonshot-ai/agent-core test
 pnpm --filter @moonshot-ai/agent-core typecheck
 ```
