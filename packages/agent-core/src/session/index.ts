@@ -35,6 +35,7 @@ import {
   type SessionMcpConfig,
 } from '../mcp';
 import { PhysicsMemoryRegistry, resolvePhysicsMemoryRoots } from '../physics-memory';
+import { ResearchLedgerRegistry, resolveResearchLedgerRoots } from '../research-ledger';
 import type { EnabledPluginSessionStart, PluginCommandDef } from '../plugin';
 import {
   DEFAULT_AGENT_PROFILES,
@@ -76,6 +77,7 @@ export interface SessionOptions {
   readonly permissionRules?: readonly PermissionRule[];
   readonly skills?: SessionSkillConfig;
   readonly physicsMemory?: SessionPhysicsMemoryConfig;
+  readonly researchLedger?: SessionResearchLedgerConfig;
   readonly mcpConfig?: SessionMcpConfig;
   readonly telemetry?: TelemetryClient | undefined;
   readonly pluginSessionStarts?: readonly EnabledPluginSessionStart[];
@@ -105,6 +107,12 @@ export interface SessionSkillConfig {
 }
 
 export interface SessionPhysicsMemoryConfig {
+  readonly userHomeDir?: string;
+  readonly explicitDirs?: readonly string[];
+  readonly extraDirs?: readonly string[];
+}
+
+export interface SessionResearchLedgerConfig {
   readonly userHomeDir?: string;
   readonly explicitDirs?: readonly string[];
   readonly extraDirs?: readonly string[];
@@ -183,6 +191,7 @@ export class Session {
   readonly telemetry: TelemetryClient;
   readonly skills: SessionSkillRegistry;
   readonly physicsMemory: PhysicsMemoryRegistry | null;
+  readonly researchLedger: ResearchLedgerRegistry | null;
   readonly agents: Map<string, AgentEntry> = new Map();
   readonly mcp: McpConnectionManager;
   readonly log: Logger;
@@ -198,6 +207,7 @@ export class Session {
   private agentIdCounter = 0;
   private readonly skillsReady: Promise<void>;
   private readonly physicsMemoryReady: Promise<void>;
+  private readonly researchLedgerReady: Promise<void>;
   metadata: SessionMeta = {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -247,6 +257,13 @@ export class Session {
           },
         })
       : null;
+    this.researchLedger = this.experimentalFlags.enabled('research-ledger')
+      ? new ResearchLedgerRegistry({
+          onWarning: (message, cause) => {
+            this.log.warn('research ledger load warning', { message, cause });
+          },
+        })
+      : null;
     this.mcp = new McpConnectionManager({
       oauthService: new McpOAuthService({ kimiHomeDir: options.kimiHomeDir }),
       log: this.log,
@@ -267,6 +284,13 @@ export class Session {
     this.physicsMemoryReady = this.loadPhysicsMemory()
       .catch((error: unknown) => {
         this.log.error('physics memory load failed', error);
+      })
+      .then(() => {
+        this.refreshAgentBuiltinTools();
+      });
+    this.researchLedgerReady = this.loadResearchLedger()
+      .catch((error: unknown) => {
+        this.log.error('research ledger load failed', error);
       })
       .then(() => {
         this.refreshAgentBuiltinTools();
@@ -375,6 +399,7 @@ export class Session {
   async resume(): Promise<{ warning?: string }> {
     await this.skillsReady;
     await this.physicsMemoryReady;
+    await this.researchLedgerReady;
     this.log.info('session resume', { app_version: this.options.appVersion });
     const { agents, additionalDirs = [] } = await this.readMetadata();
     const cwd = this.toolKaos.getcwd();
@@ -655,6 +680,7 @@ export class Session {
   ): Promise<{ readonly id: string; readonly agent: Agent }> {
     await this.skillsReady;
     await this.physicsMemoryReady;
+    await this.researchLedgerReady;
     const type = config.type ?? 'main';
     const id = type === 'main' ? 'main' : this.nextGeneratedAgentId();
     const homedir = config.homedir ?? join(this.options.homedir, 'agents', id);
@@ -664,6 +690,7 @@ export class Session {
       await this.bootstrapAgentProfile(agent, options.profile);
     }
     agent.physicsMemory?.recordRootsLoaded('session-start');
+    agent.researchLedger?.recordRootsLoaded('session-start');
 
     this.agents.set(id, agent);
     if (options.persistMetadata !== false) {
@@ -903,6 +930,22 @@ export class Session {
     await this.physicsMemory.loadRoots(roots);
   }
 
+  private async loadResearchLedger(): Promise<void> {
+    if (this.researchLedger === null) return;
+    const roots = await resolveResearchLedgerRoots({
+      paths: {
+        userHomeDir:
+          this.options.researchLedger?.userHomeDir ??
+          this.options.skills?.userHomeDir ??
+          homedir(),
+        workDir: this.options.kaos.getcwd(),
+      },
+      explicitDirs: this.options.researchLedger?.explicitDirs,
+      extraDirs: this.options.researchLedger?.extraDirs,
+    });
+    await this.researchLedger.loadRoots(roots);
+  }
+
   private async loadMcpServers(): Promise<void> {
     const servers = this.options.mcpConfig?.servers;
     if (servers === undefined || Object.keys(servers).length === 0) return;
@@ -983,6 +1026,7 @@ export class Session {
       mediaOriginalsDir: sessionMediaOriginalsDir(this.options.homedir),
       skills: this.skills,
       physicsMemory: this.physicsMemory ?? undefined,
+      researchLedger: this.researchLedger ?? undefined,
       rpc: proxyWithExtraPayload(this.rpc, { agentId: id }),
       modelProvider: this.options.providerManager,
       hookEngine: config.hookEngine ?? this.hookEngine,

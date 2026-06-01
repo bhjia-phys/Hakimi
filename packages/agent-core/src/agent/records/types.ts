@@ -17,6 +17,13 @@ import type {
   PhysicsMemoryRoot,
 } from '../../physics-memory';
 import type { PhysicsMemoryRecordSource } from '../physics-memory';
+import type {
+  ResearchLedgerEventStatus,
+  ResearchLedgerEventType,
+  ResearchLedgerRoot,
+  ResearchTopicId,
+} from '../../research-ledger';
+import type { ResearchLedgerRecordSource } from '../research-ledger';
 
 /** One entry of a tools table as sent in a request's top-level `tools[]`. */
 export interface LlmRequestToolSchema {
@@ -233,6 +240,53 @@ export interface AgentRecordEvents {
       severity: 'info' | 'warning' | 'error';
       code: string;
       capsuleId?: string | undefined;
+    }[];
+    toolCallId?: string | undefined;
+  };
+
+  'research_ledger.roots_loaded': {
+    roots: readonly ResearchLedgerRoot[];
+    source: ResearchLedgerRecordSource;
+    eventCount: number;
+    topics: readonly ResearchTopicId[];
+    domains: readonly PhysicsDomainId[];
+    diagnostics: readonly {
+      severity: 'info' | 'warning' | 'error';
+      code: string;
+      eventId?: string | undefined;
+      path?: string | undefined;
+      rootPath?: string | undefined;
+    }[];
+  };
+  'research_ledger.event_loaded': {
+    source: ResearchLedgerRecordSource;
+    eventId: string;
+    topic: ResearchTopicId;
+    domain: PhysicsDomainId;
+    eventType: ResearchLedgerEventType;
+    toolCallId?: string | undefined;
+  };
+  'research_ledger.event_written': {
+    source: ResearchLedgerRecordSource;
+    eventId: string;
+    topic: ResearchTopicId;
+    domain: PhysicsDomainId;
+    eventType: ResearchLedgerEventType;
+    status: ResearchLedgerEventStatus;
+    path?: string | undefined;
+    toolCallId?: string | undefined;
+  };
+  'research_ledger.proposals_compiled': {
+    source: ResearchLedgerRecordSource;
+    topic?: ResearchTopicId | undefined;
+    domain?: PhysicsDomainId | undefined;
+    proposalIds: readonly string[];
+    eventIds: readonly string[];
+    diagnostics: readonly {
+      severity: 'info' | 'warning' | 'error';
+      code: string;
+      eventId?: string | undefined;
+      proposalId?: string | undefined;
     }[];
     toolCallId?: string | undefined;
   };

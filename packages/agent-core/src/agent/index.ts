@@ -16,6 +16,7 @@ import type { McpConnectionManager } from '../mcp';
 import { FlagResolver, type ExperimentalFlagResolver } from '../flags';
 import { ImageLimits } from '../tools/support/image-limits';
 import type { PhysicsMemoryRegistry } from '../physics-memory';
+import type { ResearchLedgerRegistry } from '../research-ledger';
 import {
   prepareSystemPromptContext,
   type PreparedSystemPromptContext,
@@ -41,6 +42,7 @@ import { InjectionManager } from './injection/manager';
 import { PermissionManager, type PermissionManagerOptions } from './permission';
 import { PhysicsMemoryManager } from './physics-memory';
 import { PlanMode } from './plan';
+import { ResearchLedgerManager } from './research-ledger';
 import {
   AgentRecords,
   BlobStore,
@@ -98,6 +100,7 @@ export interface AgentOptions {
   readonly subagentHost?: SessionSubagentHost | undefined;
   readonly skills?: SkillRegistry;
   readonly physicsMemory?: PhysicsMemoryRegistry;
+  readonly researchLedger?: ResearchLedgerRegistry;
   readonly mcp?: McpConnectionManager;
   readonly hookEngine?: HookEngine;
   readonly permission?: PermissionManagerOptions | undefined;
@@ -154,6 +157,7 @@ export class Agent {
   readonly usage: UsageRecorder;
   readonly skills: SkillManager | null;
   readonly physicsMemory: PhysicsMemoryManager | null;
+  readonly researchLedger: ResearchLedgerManager | null;
   readonly tools: ToolManager;
   readonly background: BackgroundManager;
   readonly cron: CronManager | null;
@@ -237,6 +241,10 @@ export class Agent {
       options.physicsMemory === undefined
         ? null
         : new PhysicsMemoryManager(this, options.physicsMemory);
+    this.researchLedger =
+      options.researchLedger === undefined
+        ? null
+        : new ResearchLedgerManager(this, options.researchLedger);
     this.tools = new ToolManager(this);
     this.background = new BackgroundManager(
       this,
