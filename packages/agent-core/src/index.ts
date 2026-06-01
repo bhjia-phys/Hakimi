@@ -7,6 +7,7 @@ export * from './physics-memory';
 export * from './physics-direction';
 export * from './research-action';
 export * from './research-block';
+export * from './research-harness';
 export * from './research-ledger';
 export * from './research-policy';
 export * from './session/export';

@@ -181,7 +181,8 @@ formula capsule
 - 0.0.7 已经开始实现 capsule boundary compiler：局部自洽的 `ResearchBlock` 可以编译成未提升的 `PhysicsCapsule` candidate，并保留 assumptions、conventions、source refs、open questions 和 required checks。详见 [AITP Agent 0.0.7 Audit](docs/internal/aitp-agent-0.0.7-audit.md)。
 - 0.0.8 已经开始实现 PhysicsDirectionEngine 和带 applicability check 的 physics lenses：FQHE/CS 的 charge-flux quantization、LibRPA head-wing 的 formula-code mapping 现在可以被推荐、拒绝并审计，输出 caveats、guiding questions、required checks 和 suggested ResearchAction ids。详见 [AITP Agent 0.0.8 Audit](docs/internal/aitp-agent-0.0.8-audit.md)。
 - 0.0.9 已经开始实现 EscalationPolicy 和 Final Gate：简单物理问题保持轻量，代码、benchmark、高风险理论 claim 和 promotion 会升级到必要的 runtime controls；当 blocking obligations 仍然打开时，validated final claim 会被降级或阻断。详见 [AITP Agent 0.0.9 Audit](docs/internal/aitp-agent-0.0.9-audit.md)。
-- 剩余阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)：obligation generation、dynamic tool exposure、real diff/artifact capture、harness/eval 和 FQHE/CS vertical slice。
+- 0.1 已经开始实现 Harness 和 Eval Runner：failed/inconclusive action traces 可以转成确定性的 eval cases；eval run 可以检查 action sequence、action outcomes、evidence refs 和 required checks。详见 [AITP Agent 0.1 Audit](docs/internal/aitp-agent-0.1-audit.md)。
+- 剩余阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)：obligation generation、dynamic tool exposure、real diff/artifact capture 和 FQHE/CS vertical slice。
 
 ## 本地开发
 
@@ -269,6 +270,14 @@ pnpm exec oxlint packages/agent-core/src/physics-direction packages/agent-core/s
 pnpm vitest run packages/agent-core/test/research-policy packages/agent-core/test/physics-direction/lens.test.ts packages/agent-core/test/research-action/obligation.test.ts
 pnpm --filter @moonshot-ai/agent-core typecheck
 pnpm exec oxlint packages/agent-core/src/research-policy packages/agent-core/src/index.ts packages/agent-core/test/research-policy
+```
+
+0.1 harness 和 eval runner 的聚焦验证命令：
+
+```sh
+pnpm vitest run packages/agent-core/test/research-harness/runner.test.ts packages/agent-core/test/research-action/harness.test.ts
+pnpm --filter @moonshot-ai/agent-core typecheck
+pnpm exec oxlint packages/agent-core/src/research-harness packages/agent-core/src/index.ts packages/agent-core/test/research-harness/runner.test.ts
 ```
 
 仓库工作规则：
