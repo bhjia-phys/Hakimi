@@ -1,6 +1,6 @@
 # AITP Agent
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-0.0.2--planning-orange)](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-0.0.2--foundation-green)](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md)
 
 [Chinese](README.zh-CN.md) | [Upstream Kimi Code docs](https://moonshotai.github.io/kimi-code/en/)
 
@@ -131,7 +131,7 @@ formula capsule
 - The AITP Agent 0.0.1 physics-memory vertical slice is implemented behind `KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY=1`.
 - `packages/agent-core` now includes physics-memory types, parser, scanner, registry, compiler, session scanning, append-only records, a model-invocable `PhysicsMemory` builtin tool, LibRPA fixture capsules, and a foundational `ResearchActionRegistry`.
 - Windows baseline failures in the broader `agent-core` suite have been resolved; see [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md).
-- 0.0.2 planning is now captured in [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md).
+- The 0.0.2 foundation is implemented: `research-ledger` types/parser/scanner/registry/compiler, session scanning, append-only records, `ResearchLedger` tool, ActionAlgebra types, default research actions, scheduler, `ResearchAction` tool, raw-tool escape records, and harness candidate conversion. See [AITP Agent 0.0.2 Audit](docs/internal/aitp-agent-0.0.2-audit.md).
 
 ## Development
 
