@@ -137,6 +137,7 @@ export interface ResearchActionRecord {
   readonly output: unknown;
   readonly graphRefs: readonly GraphRef[];
   readonly capsuleRefs: readonly PhysicsCapsuleId[];
+  readonly ledgerEventIds: readonly string[];
   readonly evidenceRefs: readonly string[];
   readonly outcome: ResearchActionOutcome;
   readonly nextSuggestedActions: readonly string[];

@@ -294,12 +294,12 @@ Turn WorkFrame from a passive type into an active session context and connect Re
   - `switch_work_frame`;
   - `close_work_frame`;
   - `list_work_frames`;
-- [ ] Add model-visible ResearchAction call actions:
+- [x] Add model-visible ResearchAction call actions:
   - `start_action_call`;
   - `finish_action_call`.
-- [ ] Let `record_action_result` accept `ledger_event_ids`.
+- [x] Let `record_action_result` accept `ledger_event_ids`.
 - [x] Let primitive tool lifecycle envelopes reference the active WorkFrame.
-- [ ] Let primitive tool lifecycle envelopes reference the active `ResearchActionCallId`.
+- [x] Let primitive tool lifecycle envelopes reference the active `ResearchActionCallId`.
 - [ ] Generate obligations from action definitions when an action call completes.
 - [ ] Keep multiple WorkFrames isolated unless a bridge is explicit.
 

@@ -51,6 +51,7 @@ function actionRecord(outcome: ResearchActionRecord['outcome']): ResearchActionR
       },
     ],
     capsuleRefs: ['formula.librpa.head-wing'],
+    ledgerEventIds: ['event.librpa.mapping-failure'],
     evidenceRefs: ['ledger:event.librpa.mapping-failure'],
     outcome,
     nextSuggestedActions: ['benchmark.run_minimal_case'],

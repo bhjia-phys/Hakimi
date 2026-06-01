@@ -57,6 +57,7 @@ describe('ResearchActionTool', () => {
       call_id: 'research_action_call_1',
       outcome: 'pass',
       evidence_refs: ['ledger:event.fqhe.convention-check'],
+      ledger_event_ids: ['event.fqhe.convention-check'],
       generated_obligation_ids: ['obl.known-limit'],
       primitive_tool_call_ids: ['tool_call_primitive_1'],
       next_suggested_actions: ['validate.check_known_limit'],
@@ -70,11 +71,68 @@ describe('ResearchActionTool', () => {
         actionId: 'validate.check_convention',
         callId: 'research_action_call_1',
         outcome: 'pass',
+        ledgerEventIds: ['event.fqhe.convention-check'],
         evidenceRefs: ['ledger:event.fqhe.convention-check'],
         generatedObligationIds: ['obl.known-limit'],
         primitiveToolCallIds: ['tool_call_primitive_1'],
         nextSuggestedActions: ['validate.check_known_limit'],
         toolCallId: 'call_research_action',
+      }),
+    );
+  });
+
+  it('starts and finishes ResearchAction calls with WorkFrame and ledger attribution', async () => {
+    const records: AgentRecord[] = [];
+    const agent = makeAgent(records);
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    await execute(tool, {
+      action: 'open_work_frame',
+      frame_id: 'frame.librpa',
+      domain: 'librpa',
+      topic: 'head-wing',
+      goal: 'Check head-wing code impact.',
+    });
+    const started = await execute(tool, {
+      action: 'start_action_call',
+      action_id: 'code.map_formula_to_code_region',
+      call_id: 'call.map-head-wing',
+      action_input: { formula_id: 'formula.head-wing' },
+    });
+    const finished = await execute(tool, {
+      action: 'finish_action_call',
+      action_id: 'code.map_formula_to_code_region',
+      call_id: 'call.map-head-wing',
+      outcome: 'inconclusive',
+      ledger_event_ids: ['event.librpa.mapping-note'],
+      evidence_refs: ['ledger:event.librpa.mapping-note'],
+      primitive_tool_call_ids: ['tool_call_read_head_wing'],
+      next_suggested_actions: ['benchmark.run_smoke_case'],
+      action_output: { status: 'needs_benchmark' },
+    });
+
+    expect(started.output).toContain('work_frame_id="frame.librpa"');
+    expect(finished.output).toContain('research_action_call_finished');
+    expect(agent.researchAction.activeActionCall).toBeUndefined();
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.call_started',
+        actionId: 'code.map_formula_to_code_region',
+        callId: 'call.map-head-wing',
+        workFrameId: 'frame.librpa',
+        input: { formula_id: 'formula.head-wing' },
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.call_finished',
+        actionId: 'code.map_formula_to_code_region',
+        callId: 'call.map-head-wing',
+        outcome: 'inconclusive',
+        workFrameId: 'frame.librpa',
+        ledgerEventIds: ['event.librpa.mapping-note'],
+        evidenceRefs: ['ledger:event.librpa.mapping-note'],
+        primitiveToolCallIds: ['tool_call_read_head_wing'],
       }),
     );
   });

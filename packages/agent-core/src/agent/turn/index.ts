@@ -1113,6 +1113,7 @@ export class TurnFlow {
         cwd: this.agent.config.cwd,
         description: event.description,
         workFrameId: this.agent.workFrames.active?.id,
+        actionCallId: this.agent.researchAction.activeActionCall?.callId,
         startedAt,
       });
       return;
