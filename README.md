@@ -1,12 +1,12 @@
 # AITP Agent
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-0.0.2--foundation-green)](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-runtime--roadmap-blue)](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)
 
 [Chinese](README.zh-CN.md) | [Upstream Kimi Code docs](https://moonshotai.github.io/kimi-code/en/)
 
 AITP Agent is a research-agent runtime project for theoretical physics. It starts from the Kimi Code CLI codebase and aims to make physics memory, knowledge compilation, research actions, validation, benchmark evidence, replay, and failure feedback first-class parts of the agent runtime.
 
-This repository is currently an early-stage fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The default product behavior still follows Kimi Code unless an AITP experimental flag explicitly enables a new runtime feature. The completed first slice is tracked in [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md); the next slice is tracked in [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md).
+This repository is currently an early-stage fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The default product behavior still follows Kimi Code unless an AITP experimental flag explicitly enables a new runtime feature. The completed first slices are tracked in [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md) and [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md). The cross-slice runtime roadmap is tracked in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md).
 
 ## Why This Exists
 
@@ -98,22 +98,36 @@ The 0.0.1 schema should already reserve fields for graph references, expansion h
 - expose `ResearchLedger` and `ResearchAction` model tools behind experimental flags;
 - coordinate Kimi primitive tools, Codex-style lifecycle ideas, and ForgeCode-style harness boundaries without replacing Kimi's tool manager.
 
-### 0.0.3: Runtime Controller And Tool Exposure Policy
+### 0.0.3: Thin Base Runtime Spine
 
-- connect semantic research actions more deeply to Kimi's tool loop and permission system;
-- implement WorkFrame-driven tool exposure so theory, LibRPA feature work, literature learning, and benchmark work see different action surfaces;
-- attribute primitive tool calls to semantic research actions where possible;
-- trigger hidden checks for high-risk physics claims and formula-code mappings.
+Add the smallest Codex-inspired reliability layer needed for AITP capture:
 
-### 0.0.4: Harness And Eval Feedback
+- primitive tool lifecycle envelopes;
+- action/workframe attribution for tool calls;
+- result status and artifact refs;
+- diff/output capture boundaries;
+- interruption/background awareness where needed.
 
-- convert failed or inconclusive research-action traces into benchmark candidates;
-- add eval fixtures for physics memory, research ledger, graph query, action selection, and validation outcomes;
-- borrow ForgeCode-style repeatable eval organization where useful.
+This slice should not port Codex or rewrite Kimi's tool manager.
 
-### 0.0.5: LibRPA End-To-End Slice
+### 0.0.4: LedgerWriter And Controlled Capture
 
-Close a real computational-physics loop:
+- add schema-checked `ResearchLedger.write_event`;
+- write deterministic `.aitp/research-ledger/<topic>/events/*.md` files;
+- capture only high-value source, git diff, benchmark, and failure observations at first;
+- keep long outputs as artifact refs instead of ledger noise.
+
+### 0.0.5: WorkFrame And ResearchAction Call Trace
+
+- make WorkFrame an active session context;
+- support opening, switching, listing, and closing WorkFrames;
+- connect ResearchAction calls to primitive tool calls and ledger events;
+- generate obligations from action effects;
+- preserve domain isolation across simultaneous research frames.
+
+### 0.0.6: LibRPA Micro Vertical Slice
+
+Prove the runtime spine on a narrow computational-physics workflow:
 
 ```text
 formula capsule
@@ -125,6 +139,34 @@ formula capsule
 -> harness regression case
 ```
 
+### 0.0.7: Capsule Boundary Compiler
+
+- compile locally self-consistent derivation/code blocks into candidate capsules;
+- keep micro reasoning lightweight;
+- use capsule boundaries only when local blocks connect to memory, graph, final answers, or other blocks.
+
+### 0.0.8: PhysicsDirectionEngine And Lenses
+
+- add applicability-gated physics lenses rather than keyword triggers;
+- start with `topological-order/fqhe-cs` and `librpa/head-wing` domain packs;
+- include a charge-flux quantization lens that distinguishes external electromagnetic flux, emergent Chern-Simons flux, and quasiparticle AB flux periods.
+
+### 0.0.9: EscalationPolicy And Final Gate
+
+- keep simple questions light;
+- escalate code edits, benchmark work, promotion, and high-risk theory claims;
+- prevent final answers from claiming validated status while blocking obligations remain open.
+
+### 0.1: Harness And Eval Runner
+
+- convert failed or inconclusive action traces into reviewable harness candidates;
+- promote confirmed candidates into deterministic eval cases;
+- add end-to-end evals for FQHE/CS reasoning and LibRPA head-wing workflows.
+
+### 0.2: FQHE/CS Theory Vertical Slice
+
+Close the first formal-theory loop with capsules, derivation blocks, physics lenses, convention checks, and final-answer status around Laughlin wavefunctions, flux insertion, charge-flux quantization, Chern-Simons effective theory, and K-matrix response.
+
 ## Current Status
 
 - Upstream parity with `MoonshotAI/kimi-code:main` was checked on 2026-06-01; the fork was identical at commit `933cf67`.
@@ -132,6 +174,7 @@ formula capsule
 - `packages/agent-core` now includes physics-memory types, parser, scanner, registry, compiler, session scanning, append-only records, a model-invocable `PhysicsMemory` builtin tool, LibRPA fixture capsules, and a foundational `ResearchActionRegistry`.
 - Windows baseline failures in the broader `agent-core` suite have been resolved; see [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md).
 - The 0.0.2 foundation is implemented: `research-ledger` types/parser/scanner/registry/compiler, session scanning, append-only records, `ResearchLedger` tool, ActionAlgebra types, default research actions, scheduler, `ResearchAction` tool, raw-tool escape records, and harness candidate conversion. See [AITP Agent 0.0.2 Audit](docs/internal/aitp-agent-0.0.2-audit.md).
+- The next implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md): thin base runtime spine, controlled ledger capture, WorkFrames/action traces, LibRPA micro slice, capsule boundaries, physics lenses, final gate, harness/eval, and FQHE/CS vertical slice.
 
 ## Development
 
