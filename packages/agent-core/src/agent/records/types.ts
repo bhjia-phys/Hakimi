@@ -19,7 +19,7 @@ import type {
   PhysicsMemoryRoot,
 } from '../../physics-memory';
 import type { PhysicsMemoryRecordSource } from '../physics-memory';
-import type { ResearchActionOutcome, ResearchActionSource } from '../../research-action';
+import type { ResearchActionOutcome, ResearchActionSource, WorkFrame } from '../../research-action';
 import type {
   ResearchLedgerEventStatus,
   ResearchLedgerEventType,
@@ -32,6 +32,7 @@ import type {
   PrimitiveToolLifecycleStatus,
   PrimitiveToolOutputKind,
 } from '../tool-lifecycle';
+import type { WorkFrameRecordSource } from '../workframe';
 
 /** One entry of a tools table as sent in a request's top-level `tools[]`. */
 export interface LlmRequestToolSchema {
@@ -250,6 +251,23 @@ export interface AgentRecordEvents {
     workFrameId?: string | undefined;
     actionCallId?: string | undefined;
     artifactRefs: readonly string[];
+  };
+
+  'workframe.opened': {
+    source: WorkFrameRecordSource;
+    frame: WorkFrame;
+    toolCallId?: string | undefined;
+  };
+  'workframe.switched': {
+    source: WorkFrameRecordSource;
+    frameId: string;
+    toolCallId?: string | undefined;
+  };
+  'workframe.closed': {
+    source: WorkFrameRecordSource;
+    frameId: string;
+    nextActiveFrameId?: string | undefined;
+    toolCallId?: string | undefined;
   };
 
   'physics_memory.roots_loaded': {

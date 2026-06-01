@@ -1,8 +1,10 @@
 import type { Agent } from '..';
+import type { OpenWorkFrameInput, WorkFrameRecordOptions } from '../workframe';
 import type {
   ResearchActionOutcome,
   ResearchActionRecord,
   ResearchActionSource,
+  WorkFrame,
 } from '../../research-action';
 
 export interface ResearchActionRecordOptions {
@@ -12,6 +14,26 @@ export interface ResearchActionRecordOptions {
 
 export class ResearchActionManager {
   constructor(private readonly agent: Agent) {}
+
+  openWorkFrame(input: OpenWorkFrameInput, options: WorkFrameRecordOptions): WorkFrame {
+    return this.agent.workFrames.open(input, options);
+  }
+
+  switchWorkFrame(id: string, options: WorkFrameRecordOptions): WorkFrame {
+    return this.agent.workFrames.switch(id, options);
+  }
+
+  closeWorkFrame(id: string, options: WorkFrameRecordOptions): void {
+    this.agent.workFrames.close(id, options);
+  }
+
+  listWorkFrames(): readonly WorkFrame[] {
+    return this.agent.workFrames.list();
+  }
+
+  activeWorkFrame(): WorkFrame | undefined {
+    return this.agent.workFrames.active;
+  }
 
   recordActionResult(
     input: Omit<ResearchActionRecord, 'source'> & {

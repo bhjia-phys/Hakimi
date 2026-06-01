@@ -79,6 +79,69 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('opens, lists, switches, and closes WorkFrames through the session manager', async () => {
+    const records: AgentRecord[] = [];
+    const agent = makeAgent(records);
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const openedFqhe = await execute(tool, {
+      action: 'open_work_frame',
+      frame_id: 'frame.fqhe',
+      domain: 'topological-order',
+      topic: 'fqhe-cs',
+      goal: 'Relate Laughlin wavefunction and CS response.',
+      active_object_ids: ['formula:ab-phase'],
+      source_refs: ['ledger:event.fqhe.source'],
+    });
+    await execute(tool, {
+      action: 'open_work_frame',
+      frame_id: 'frame.librpa',
+      domain: 'librpa',
+      topic: 'head-wing',
+      goal: 'Check head-wing code impact.',
+    });
+    const switched = await execute(tool, {
+      action: 'switch_work_frame',
+      frame_id: 'frame.fqhe',
+    });
+    const listed = await execute(tool, { action: 'list_work_frames' });
+    const closed = await execute(tool, {
+      action: 'close_work_frame',
+      frame_id: 'frame.librpa',
+    });
+
+    expect(openedFqhe.output).toContain('active="true"');
+    expect(switched.output).toContain('frame.fqhe');
+    expect(listed.output).toContain('active_id="frame.fqhe"');
+    expect(listed.output).toContain('frame.librpa');
+    expect(closed.output).toContain('work_frame_closed');
+    expect(agent.workFrames.active?.id).toBe('frame.fqhe');
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'workframe.opened',
+        source: 'model-tool',
+        toolCallId: 'call_research_action',
+        frame: expect.objectContaining({
+          id: 'frame.fqhe',
+          activeObjectIds: ['formula:ab-phase'],
+          sourceRefs: ['ledger:event.fqhe.source'],
+        }),
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'workframe.switched',
+        frameId: 'frame.fqhe',
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'workframe.closed',
+        frameId: 'frame.librpa',
+      }),
+    );
+  });
+
   it('returns a tool error when record_action_result is missing required ids', async () => {
     const tool = new ResearchActionTool();
 
