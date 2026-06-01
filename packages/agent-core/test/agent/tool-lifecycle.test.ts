@@ -13,6 +13,15 @@ describe('primitive tool lifecycle records', () => {
     };
     const ctx = testAgent({ kaos: createCommandKaos('lifecycle-result') });
     ctx.configure({ tools: ['Bash'] });
+    ctx.agent.workFrames.open(
+      {
+        id: 'frame.librpa',
+        domain: 'librpa',
+        topic: 'head-wing',
+        goal: 'Trace primitive tool attribution.',
+      },
+      { source: 'controller' },
+    );
 
     ctx.mockNextResponse({ type: 'text', text: 'I will run Bash.' }, bashCall);
     await ctx.rpc.prompt({
@@ -35,6 +44,7 @@ describe('primitive tool lifecycle records', () => {
       cwd: process.cwd(),
       argsSummary: '{"command":"printf lifecycle-result","timeout":60}',
       description: 'Running: printf lifecycle-result',
+      workFrameId: 'frame.librpa',
       startedAt: expect.any(Number),
       time: expect.any(Number),
     });
@@ -50,6 +60,7 @@ describe('primitive tool lifecycle records', () => {
       outputKind: 'text',
       outputSummary: 'lifecycle-result',
       durationMs: expect.any(Number),
+      workFrameId: 'frame.librpa',
       completedAt: expect.any(Number),
       artifactRefs: [],
       time: expect.any(Number),

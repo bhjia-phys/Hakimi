@@ -63,6 +63,7 @@ import { KosongLLM } from './turn/kosong-llm';
 import { UsageRecorder } from './usage';
 import { LlmRequestLogger, splitGenerateOptions } from './llm-request-logger';
 import { LlmRequestRecorder } from './llm-request-recorder';
+import { WorkFrameManager } from './workframe';
 import { resolveCompletionBudget } from '../utils/completion-budget';
 import type { Kaos } from '@moonshot-ai/kaos';
 import type { ToolServices } from '../tools/support/services';
@@ -157,6 +158,7 @@ export class Agent {
   readonly planMode: PlanMode;
   readonly swarmMode: SwarmMode;
   readonly usage: UsageRecorder;
+  readonly workFrames: WorkFrameManager;
   readonly skills: SkillManager | null;
   readonly physicsMemory: PhysicsMemoryManager | null;
   readonly researchLedger: ResearchLedgerManager | null;
@@ -240,6 +242,7 @@ export class Agent {
     this.planMode = new PlanMode(this);
     this.swarmMode = new SwarmMode(this);
     this.usage = new UsageRecorder(this);
+    this.workFrames = new WorkFrameManager(this);
     this.skills = options.skills ? new SkillManager(this, options.skills) : null;
     this.physicsMemory =
       options.physicsMemory === undefined

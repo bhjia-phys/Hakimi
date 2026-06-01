@@ -148,6 +148,16 @@ function restoreAgentRecord(agent: Agent, input: AgentRecord): void {
       return;
     case 'tool_lifecycle.started':
     case 'tool_lifecycle.completed':
+      return;
+    case 'workframe.opened':
+      agent.workFrames.restoreOpened(input.frame);
+      return;
+    case 'workframe.switched':
+      agent.workFrames.restoreSwitched(input.frameId);
+      return;
+    case 'workframe.closed':
+      agent.workFrames.restoreClosed(input.frameId, input.nextActiveFrameId);
+      return;
     case 'physics_memory.roots_loaded':
     case 'physics_memory.capsule_loaded':
     case 'physics_memory.context_compiled':

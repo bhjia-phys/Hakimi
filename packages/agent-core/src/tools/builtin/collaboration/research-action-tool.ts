@@ -19,12 +19,21 @@ import {
   type ResearchActionOutcome,
   type ResearchActionSource,
   type ResearchObligation,
+  type WorkFrame,
 } from '../../../research-action';
 import { PHYSICS_CAPSULE_KINDS, type GraphRef, type PhysicsCapsuleKind } from '../../../physics-memory';
 import { toInputJsonSchema } from '../../support/input-schema';
 import DESCRIPTION from './research-action-tool.md';
 
-const ACTIONS = ['list_actions', 'recommend_next_actions', 'record_action_result'] as const;
+const ACTIONS = [
+  'list_actions',
+  'recommend_next_actions',
+  'record_action_result',
+  'open_work_frame',
+  'switch_work_frame',
+  'close_work_frame',
+  'list_work_frames',
+] as const;
 const EXPOSURES = ['direct', 'deferred', 'direct-model-only', 'hidden'] as const;
 const CATEGORIES = ['graph', 'derivation', 'physics', 'code', 'benchmark', 'memory', 'harness'] as const;
 const OUTCOMES = ['pass', 'fail', 'blocked', 'inconclusive'] as const;
@@ -65,6 +74,14 @@ export const ResearchActionToolInputSchema = z.object({
   category: z.enum(CATEGORIES).optional().describe('Optional action category filter.'),
   exposure: z.enum(EXPOSURES).optional().describe('Optional action exposure filter.'),
   domain: z.string().optional().describe('Optional action domain filter.'),
+  topic: z.string().optional().describe('Topic id for WorkFrame operations.'),
+  goal: z.string().optional().describe('Goal text for open_work_frame.'),
+  frame_id: z.string().optional().describe('WorkFrame id for WorkFrame operations.'),
+  context_pack_id: z.string().optional().describe('Optional context pack id for open_work_frame.'),
+  active_object_ids: z.array(z.string()).optional().describe('Active object ids for open_work_frame.'),
+  assumption_ids: z.array(z.string()).optional().describe('Assumption ids for open_work_frame.'),
+  convention_ids: z.array(z.string()).optional().describe('Convention ids for open_work_frame.'),
+  source_refs: z.array(z.string()).optional().describe('Source refs for open_work_frame.'),
   capsule_kind: z.enum(PHYSICS_CAPSULE_KINDS).optional().describe('Optional capsule kind filter.'),
   obligations: z
     .array(ObligationSchema)
@@ -128,6 +145,14 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return ok(this.recommendNextActions(args));
         case 'record_action_result':
           return this.recordActionResult(args, ctx);
+        case 'open_work_frame':
+          return this.openWorkFrame(args, ctx);
+        case 'switch_work_frame':
+          return this.switchWorkFrame(args, ctx);
+        case 'close_work_frame':
+          return this.closeWorkFrame(args, ctx);
+        case 'list_work_frames':
+          return this.listWorkFrames();
       }
     } catch (error) {
       return {
@@ -201,6 +226,87 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       `<research_action_recorded action_id="${escapeXml(record.actionId)}" call_id="${escapeXml(record.callId)}" outcome="${record.outcome}" />\n`,
     );
   }
+
+  private openWorkFrame(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction open_work_frame requires a session manager.');
+    }
+    if (args.frame_id === undefined || args.frame_id.length === 0) {
+      return errorResult('ResearchAction open_work_frame requires frame_id.');
+    }
+    if (args.domain === undefined || args.domain.length === 0) {
+      return errorResult('ResearchAction open_work_frame requires domain.');
+    }
+    if (args.topic === undefined || args.topic.length === 0) {
+      return errorResult('ResearchAction open_work_frame requires topic.');
+    }
+    if (args.goal === undefined || args.goal.length === 0) {
+      return errorResult('ResearchAction open_work_frame requires goal.');
+    }
+    const frame = this.manager.openWorkFrame(
+      {
+        id: args.frame_id,
+        domain: args.domain,
+        topic: args.topic,
+        goal: args.goal,
+        contextPackId: args.context_pack_id,
+        activeObjectIds: args.active_object_ids,
+        assumptionIds: args.assumption_ids,
+        conventionIds: args.convention_ids,
+        sourceRefs: args.source_refs,
+      },
+      {
+        source: 'model-tool',
+        toolCallId: ctx.toolCallId,
+      },
+    );
+    return ok(renderWorkFrame(frame, true));
+  }
+
+  private switchWorkFrame(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction switch_work_frame requires a session manager.');
+    }
+    if (args.frame_id === undefined || args.frame_id.length === 0) {
+      return errorResult('ResearchAction switch_work_frame requires frame_id.');
+    }
+    const frame = this.manager.switchWorkFrame(args.frame_id, {
+      source: 'model-tool',
+      toolCallId: ctx.toolCallId,
+    });
+    return ok(renderWorkFrame(frame, true));
+  }
+
+  private closeWorkFrame(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction close_work_frame requires a session manager.');
+    }
+    if (args.frame_id === undefined || args.frame_id.length === 0) {
+      return errorResult('ResearchAction close_work_frame requires frame_id.');
+    }
+    this.manager.closeWorkFrame(args.frame_id, {
+      source: 'model-tool',
+      toolCallId: ctx.toolCallId,
+    });
+    return ok(`<work_frame_closed id="${escapeXml(args.frame_id)}" />\n`);
+  }
+
+  private listWorkFrames(): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction list_work_frames requires a session manager.');
+    }
+    const active = this.manager.activeWorkFrame();
+    return ok(renderWorkFrameList(this.manager.listWorkFrames(), active?.id));
+  }
 }
 
 function renderActionList(actions: readonly ResearchActionDefinition[]): string {
@@ -219,6 +325,61 @@ function renderAction(action: ResearchActionDefinition, indent: string): string 
     `${indent}<action id="${escapeXml(algebra.id)}" category="${algebra.category}" exposure="${algebra.exposure}" phase="${algebra.phase}" primitive_tool_policy="${algebra.primitiveToolPolicy}">` +
     `${escapeXml(algebra.title)}</action>`
   );
+}
+
+function renderWorkFrameList(frames: readonly WorkFrame[], activeId?: string): string {
+  if (frames.length === 0) return '<work_frames />\n';
+  return [
+    `<work_frames${activeId === undefined ? '' : ` active_id="${escapeXml(activeId)}"`}>`,
+    ...frames.map((frame) => renderWorkFrame(frame, frame.id === activeId, '  ').trimEnd()),
+    '</work_frames>',
+    '',
+  ].join('\n');
+}
+
+function renderWorkFrame(
+  frame: {
+    readonly id: string;
+    readonly domain: string;
+    readonly topic: string;
+    readonly goal: string;
+    readonly trustState: string;
+    readonly contextPackId?: string | undefined;
+    readonly activeObjectIds: readonly string[];
+    readonly assumptionIds: readonly string[];
+    readonly conventionIds: readonly string[];
+    readonly sourceRefs: readonly string[];
+    readonly openObligationIds: readonly string[];
+  },
+  active: boolean,
+  indent = '',
+): string {
+  return [
+    `${indent}<work_frame id="${escapeXml(frame.id)}" domain="${escapeXml(frame.domain)}" topic="${escapeXml(frame.topic)}" trust_state="${escapeXml(frame.trustState)}" active="${String(active)}">`,
+    `${indent}  <goal>${escapeXml(frame.goal)}</goal>`,
+    `${indent}  <context_pack_id>${escapeXml(frame.contextPackId ?? '')}</context_pack_id>`,
+    renderStringList('active_objects', 'object', frame.activeObjectIds, `${indent}  `),
+    renderStringList('assumptions', 'assumption', frame.assumptionIds, `${indent}  `),
+    renderStringList('conventions', 'convention', frame.conventionIds, `${indent}  `),
+    renderStringList('source_refs', 'source_ref', frame.sourceRefs, `${indent}  `),
+    renderStringList('open_obligations', 'obligation', frame.openObligationIds, `${indent}  `),
+    `${indent}</work_frame>`,
+    '',
+  ].join('\n');
+}
+
+function renderStringList(
+  container: string,
+  itemTag: string,
+  values: readonly string[],
+  indent: string,
+): string {
+  if (values.length === 0) return `${indent}<${container} />`;
+  return [
+    `${indent}<${container}>`,
+    ...values.map((value) => `${indent}  <${itemTag}>${escapeXml(value)}</${itemTag}>`),
+    `${indent}</${container}>`,
+  ].join('\n');
 }
 
 function ok(output: string): ExecutableToolResult {
