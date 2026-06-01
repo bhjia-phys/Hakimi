@@ -153,6 +153,7 @@ function restoreAgentRecord(agent: Agent, input: AgentRecord): void {
     case 'research_ledger.event_loaded':
     case 'research_ledger.event_written':
     case 'research_ledger.proposals_compiled':
+    case 'research_action.result_recorded':
       return;
   }
 }

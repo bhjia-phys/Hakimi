@@ -823,6 +823,7 @@ export class ToolManager {
         flags.enabled('research-ledger') &&
           this.agent.researchLedger &&
           new b.ResearchLedgerTool(this.agent.researchLedger),
+        flags.enabled('research-action') && new b.ResearchActionTool(this.agent.researchAction),
         this.agent.subagentHost &&
           new b.AgentTool(
             this.agent.subagentHost,
