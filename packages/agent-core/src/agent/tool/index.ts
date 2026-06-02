@@ -23,6 +23,7 @@ import type {
   BuiltinTool,
   McpServerRegistrationResult,
   McpToolCollision,
+  RuntimeToolExposure,
   ToolInfo,
   UserToolRegistration,
 } from './types';
@@ -52,6 +53,7 @@ export class ToolManager {
   /** server name → list of qualified tool names registered for that server. */
   protected readonly mcpToolsByServer: Map<string, string[]> = new Map();
   protected enabledTools: Set<string> = new Set();
+  private runtimeExposure: RuntimeToolExposure | null = null;
   /** Glob patterns (e.g. `mcp__*`, `mcp__github__*`) gating which MCP tools the profile exposes. */
   private mcpAccessPatterns: string[] = [];
   /**
@@ -536,6 +538,22 @@ export class ToolManager {
     this.loopToolsOverride = source.loopTools;
   }
 
+  applyRuntimeToolExposure(
+    exposure: RuntimeToolExposure | null,
+    options: { readonly source: 'controller' | 'replay' },
+  ): void {
+    this.runtimeExposure = exposure === null ? null : { ...exposure };
+    this.agent.records.logRecord({
+      type: 'tools.runtime_exposure',
+      source: options.source,
+      exposure: this.runtimeExposure,
+    });
+  }
+
+  restoreRuntimeToolExposure(exposure: RuntimeToolExposure | null): void {
+    this.runtimeExposure = exposure === null ? null : { ...exposure };
+  }
+
   private isMcpToolEnabled(name: string): boolean {
     return this.mcpAccessPatterns.some((pattern) => picomatch.isMatch(name, pattern));
   }
@@ -643,6 +661,7 @@ export class ToolManager {
   }
 
   *toolInfos(): Iterable<ToolInfo> {
+    const activeToolNames = this.effectiveEnabledTools();
     for (const tool of this.builtinTools.values()) {
       yield {
         name: tool.name,
@@ -650,7 +669,7 @@ export class ToolManager {
         // select_tools is always registered but only offered while the
         // disclosure gate is open (see loopTools); report that live state.
         active:
-          this.enabledTools.has(tool.name) ||
+          activeToolNames.has(tool.name) ||
           (tool.name === b.SELECT_TOOLS_TOOL_NAME && this.agent.toolSelectEnabled),
         source: 'builtin',
       };
@@ -659,7 +678,7 @@ export class ToolManager {
       yield {
         name: tool.name,
         description: tool.description,
-        active: this.enabledTools.has(tool.name),
+        active: activeToolNames.has(tool.name),
         source: 'user',
       };
     }
@@ -750,10 +769,11 @@ export class ToolManager {
         this.agent.experimentalFlags.enabled('physics-memory') &&
           this.agent.physicsMemory &&
           new b.PhysicsMemoryTool(this.agent.physicsMemory),
-        flags.enabled('research-ledger') &&
+        this.agent.experimentalFlags.enabled('research-ledger') &&
           this.agent.researchLedger &&
           new b.ResearchLedgerTool(this.agent.researchLedger),
-        flags.enabled('research-action') && new b.ResearchActionTool(this.agent.researchAction),
+        this.agent.experimentalFlags.enabled('research-action') &&
+          new b.ResearchActionTool(this.agent.researchAction),
         this.agent.subagentHost &&
           new b.AgentTool(
             this.agent.subagentHost,
@@ -880,7 +900,7 @@ export class ToolManager {
         ? enabledMcpNames
         : enabledMcpNames.filter((name) => loadedSet.has(name));
     const selectToolsName = disclosure ? [b.SELECT_TOOLS_TOOL_NAME] : [];
-    return uniq([...this.enabledTools, ...selectToolsName, ...mcpNames])
+    return uniq([...this.effectiveEnabledTools(), ...selectToolsName, ...mcpNames])
       .toSorted((a, b) => a.localeCompare(b))
       // select_tools is exposed exclusively through the disclosure gate — a
       // profile or setActiveTools listing the name explicitly must not
@@ -898,5 +918,17 @@ export class ToolManager {
         return disclosure && this.mcpTools.has(name) ? { ...tool, deferred: true as const } : tool;
       })
       .filter((tool) => !!tool);
+  }
+
+  private effectiveEnabledTools(): Set<string> {
+    if (this.runtimeExposure === null) return new Set(this.enabledTools);
+    const effective = new Set(this.enabledTools);
+    for (const name of this.runtimeExposure.managedToolNames) {
+      effective.delete(name);
+    }
+    for (const name of this.runtimeExposure.activeToolNames) {
+      effective.add(name);
+    }
+    return effective;
   }
 }
