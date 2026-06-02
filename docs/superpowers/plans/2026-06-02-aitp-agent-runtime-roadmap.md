@@ -1,5 +1,7 @@
 # AITP Agent Runtime Roadmap Implementation Plan
 
+> Superseded as the primary forward roadmap by [AITP Agent Runtime Slices V2 Implementation Plan](2026-06-02-aitp-agent-runtime-slices-v2.md). This file remains useful as the original 0.0.3-0.2 runtime roadmap and historical execution record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn AITP Agent from a Kimi Code fork with physics-memory foundations into a theoretical-physics-native research runtime with reliable tool lifecycle, source-backed capture, WorkFrames, capsule boundaries, physics direction lenses, final gates, and self-improving harnesses.
