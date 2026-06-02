@@ -9,6 +9,7 @@ import type {
   ResearchActionOutcome,
   ResearchActionRecord,
   ResearchActionSource,
+  ResearchObligation,
   WorkFrame,
 } from '../../research-action';
 
@@ -45,6 +46,8 @@ export interface ActiveResearchActionCall {
 
 export class ResearchActionManager {
   private activeCall: ActiveResearchActionCall | undefined;
+  private readonly obligations = new Map<string, ResearchObligation>();
+  private recentEvidenceRefs: string[] = [];
 
   constructor(private readonly agent: Agent) {}
 
@@ -139,6 +142,7 @@ export class ResearchActionManager {
     if (this.activeCall?.callId === input.callId) {
       this.activeCall = undefined;
     }
+    this.pushEvidenceRefs(input.evidenceRefs ?? []);
   }
 
   restoreActionCallStarted(input: {
@@ -188,6 +192,7 @@ export class ResearchActionManager {
       nextSuggestedActions: input.nextSuggestedActions,
       ...(options.toolCallId === undefined ? {} : { toolCallId: options.toolCallId }),
     });
+    this.pushEvidenceRefs(input.evidenceRefs);
   }
 
   recordRawToolEscape(input: {
@@ -205,6 +210,35 @@ export class ResearchActionManager {
       followupActionId: input.followupActionId,
       evidenceRefs: input.evidenceRefs ?? [],
     });
+  }
+
+  registerObligations(obligations: readonly ResearchObligation[]): void {
+    for (const obligation of obligations) {
+      this.obligations.set(obligation.id, obligation);
+    }
+  }
+
+  listObligations(filter: {
+    readonly ids?: readonly string[] | undefined;
+    readonly domain?: string | undefined;
+    readonly topic?: string | undefined;
+    readonly status?: ResearchObligation['status'] | undefined;
+  } = {}): readonly ResearchObligation[] {
+    return [...this.obligations.values()]
+      .filter((obligation) => filter.ids === undefined || filter.ids.includes(obligation.id))
+      .filter((obligation) => filter.domain === undefined || obligation.domain === filter.domain)
+      .filter((obligation) => filter.topic === undefined || obligation.topic === filter.topic)
+      .filter((obligation) => filter.status === undefined || obligation.status === filter.status)
+      .toSorted((a, b) => a.id.localeCompare(b.id));
+  }
+
+  recentEvidence(limit = 20): readonly string[] {
+    return this.recentEvidenceRefs.slice(-Math.max(0, limit));
+  }
+
+  private pushEvidenceRefs(evidenceRefs: readonly string[]): void {
+    if (evidenceRefs.length === 0) return;
+    this.recentEvidenceRefs = [...this.recentEvidenceRefs, ...evidenceRefs].slice(-50);
   }
 }
 

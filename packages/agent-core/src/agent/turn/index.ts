@@ -35,6 +35,12 @@ import {
   type LoopTurnStopReason,
 } from '../../loop/index';
 import type { AgentEvent, TurnEndedEvent, TurnEndReason } from '../../rpc';
+import {
+  evaluateFinalGate,
+  renderFinalGateContinuation,
+  shouldApplyFinalGate,
+  type FinalAnswerClaimStatus,
+} from '../../research-policy';
 import type { TelemetryPropertyValue } from '../../telemetry';
 import { gateImageFormatParts } from '../../tools/support/image-compress';
 import { abortable, isUserCancellation, userCancellationReason } from '../../utils/abort';
@@ -755,6 +761,7 @@ export class TurnFlow {
 
   private async runStepLoop(turnId: number, signal: AbortSignal): Promise<LoopTurnStopReason> {
     let stopHookContinuationUsed = false;
+    let finalGateContinuationUsed = false;
     let goalOutcomeMessageContinuationUsed = false;
     let goalOutcomeToolResultPending = false;
     const deduper = new ToolCallDeduplicator({ telemetry: this.agent.telemetry });
@@ -906,7 +913,25 @@ export class TurnFlow {
                 }
               }
 
-              // 4. Otherwise stop. Goal continuation is no longer driven here:
+              // 4. Final Gate gets exactly one continuation before the
+              // ordinary stop boundary, so checked/validated claims can
+              // downgrade or add evidence without overclaiming.
+              if (!finalGateContinuationUsed) {
+                const continuation = this.applyFinalGateContinuation();
+                if (continuation !== undefined) {
+                  finalGateContinuationUsed = true;
+                  this.agent.context.appendUserMessage(
+                    [{ type: 'text', text: continuation }],
+                    {
+                      kind: 'system_trigger',
+                      name: 'final_gate',
+                    },
+                  );
+                  return { continue: true };
+                }
+              }
+
+              // 5. Otherwise stop. Goal continuation is no longer driven here:
               //    each goal turn is an ordinary turn, and the goal driver decides
               //    whether to run another after this one ends.
               return { continue: false };
@@ -1232,6 +1257,39 @@ export class TurnFlow {
     }
   }
 
+  private applyFinalGateContinuation(): string | undefined {
+    const workFrame = this.agent.workFrames.active;
+    const requestedStatus = requestedFinalStatus(workFrame);
+    const obligations =
+      workFrame === undefined
+        ? []
+        : this.agent.researchAction.listObligations({
+            ids: workFrame.openObligationIds,
+            domain: workFrame.domain,
+            topic: workFrame.topic,
+          });
+    const evidenceRefs = this.agent.researchAction.recentEvidence();
+    if (
+      !shouldApplyFinalGate({
+        requestedStatus,
+        hasWorkFrame: workFrame !== undefined,
+        obligationCount: obligations.length,
+        evidenceCount: evidenceRefs.length,
+      })
+    ) {
+      return undefined;
+    }
+
+    const decision = evaluateFinalGate({
+      requestedStatus,
+      obligations,
+      workFrame,
+      evidenceRefs,
+      sourceRefs: workFrame?.sourceRefs,
+    });
+    return decision.outcome === 'allow' ? undefined : renderFinalGateContinuation(decision);
+  }
+
   private shouldTrackApiError(turnId: number): boolean {
     const failure = this.stepFailureByTurn.get(turnId);
     return failure?.reason === 'error' && failure.activeStep !== undefined;
@@ -1451,6 +1509,21 @@ function telemetryInterruptReason(
   // Remaining values are `max_steps` | `error` | `filtered`, which match the
   // telemetry enum.
   return reason;
+}
+
+function requestedFinalStatus(workFrame: Agent['workFrames']['active']): FinalAnswerClaimStatus {
+  if (workFrame === undefined) return 'exploratory';
+  switch (workFrame.trustState) {
+    case 'validated':
+      return 'validated';
+    case 'checking':
+    case 'blocked':
+      return 'checked';
+    case 'deriving':
+      return 'provisional';
+    case 'exploratory':
+      return 'exploratory';
+  }
 }
 
 interface ApiErrorClassification {
