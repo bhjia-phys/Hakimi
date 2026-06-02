@@ -25,6 +25,7 @@ describe('default research actions', () => {
       'derive.propose_route',
       'derive.specialize_regime',
       'derive.transform_formula',
+      'formalization.build_blueprint',
       'graph.compile_edges',
       'graph.query_dependency_closure',
       'harness.build_eval_from_failure',
@@ -72,6 +73,7 @@ describe('default research actions', () => {
 
     expect(deferred).toEqual([
       'benchmark.run_minimal_case',
+      'formalization.build_blueprint',
       'memory.promote_capsule',
       'harness.build_eval_from_failure',
     ]);

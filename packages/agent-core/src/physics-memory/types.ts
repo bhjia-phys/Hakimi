@@ -10,6 +10,7 @@ export const PHYSICS_CAPSULE_KINDS = [
   'BenchmarkCase',
   'FailureMode',
   'WorkflowRecipe',
+  'Bridge',
 ] as const;
 
 export type PhysicsCapsuleKind = (typeof PHYSICS_CAPSULE_KINDS)[number];
@@ -70,6 +71,7 @@ export type ExpansionHandleKind =
   | 'benchmark'
   | 'failure'
   | 'workflow'
+  | 'bridge'
   | 'source';
 
 export interface ExpansionHandle {
@@ -113,6 +115,13 @@ export interface ScopeSpec {
   readonly excludes?: readonly string[];
 }
 
+export interface BridgeSpec {
+  readonly fromDomain: PhysicsDomainId;
+  readonly toDomain: PhysicsDomainId;
+  readonly capsuleRefs: readonly PhysicsCapsuleId[];
+  readonly reason?: string | undefined;
+}
+
 export interface PhysicsPromotionPacket {
   readonly id: string;
   readonly candidateIds: readonly string[];
@@ -153,6 +162,7 @@ export interface PhysicsCapsuleMetadata {
   readonly actionAffordances: readonly ActionAffordance[];
   readonly scope?: ScopeSpec;
   readonly allowCrossDomain: boolean;
+  readonly bridge?: BridgeSpec | undefined;
   readonly validationRefs?: readonly string[] | undefined;
   readonly failureModes?: readonly string[] | undefined;
   readonly promotionPacketId?: string | undefined;

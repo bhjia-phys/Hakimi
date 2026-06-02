@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { Agent, type AgentRecord } from '../../src/agent';
 import { InMemoryAgentRecordPersistence } from '../../src/agent/records';
+import {
+  PhysicsMemoryRegistry,
+  type PhysicsCapsule,
+  type PhysicsCapsuleKind,
+} from '../../src/physics-memory';
 import { ProviderManager } from '../../src/session/provider-manager';
 import { ResearchActionTool } from '../../src/tools/builtin/collaboration/research-action-tool';
 import { testKaos } from '../fixtures/test-kaos';
@@ -250,6 +255,97 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('runs a registered benchmark adapter and records the evidence as a research action', async () => {
+    const records: AgentRecord[] = [];
+    const agent = makeAgent(records);
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'run_benchmark_adapter',
+      adapter_id: 'adapter.librpa.head-wing-smoke',
+      benchmark_case_id: 'case.librpa.head-wing-smoke',
+      benchmark_payload: {
+        expected: { head: 1, wing: 0.25 },
+        observed: { head: 1, wing: 0.25 },
+        tolerance: 1e-6,
+      },
+      capsule_refs: ['formula.librpa.head-wing.update'],
+    });
+
+    expect(result.output).toContain('<benchmark_adapter_run');
+    expect(result.output).toContain('outcome="pass"');
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'benchmark.run_minimal_case',
+        outcome: 'pass',
+        capsuleRefs: ['formula.librpa.head-wing.update'],
+        evidenceRefs: expect.arrayContaining([
+          'benchmark:case.librpa.head-wing-smoke',
+          'adapter.librpa.head-wing-smoke',
+        ]),
+      }),
+    );
+  });
+
+  it('executes graph dependency queries through the active physics-memory registry', async () => {
+    const records: AgentRecord[] = [];
+    const registry = new PhysicsMemoryRegistry();
+    registry.register(capsule('definition.fqhe.laughlin', 'Definition'));
+    registry.register(capsule('formula.fqhe.kmatrix', 'Formula', ['definition.fqhe.laughlin']));
+    const agent = makeAgent(records, { physicsMemory: registry });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'query_physics_graph',
+      graph_query: 'dependency_closure',
+      start_ids: ['formula.fqhe.kmatrix'],
+      max_depth: 1,
+    });
+
+    expect(result.output).toContain('<physics_graph_query query="dependency_closure">');
+    expect(result.output).toContain('<node>definition.fqhe.laughlin</node>');
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'graph.query_dependency_closure',
+        outcome: 'pass',
+        graphRefs: expect.arrayContaining([
+          expect.objectContaining({ id: 'formula.fqhe.kmatrix' }),
+          expect.objectContaining({ id: 'definition.fqhe.laughlin' }),
+        ]),
+      }),
+    );
+  });
+
+  it('exports a formalization blueprint through ResearchAction and keeps readiness conservative', async () => {
+    const records: AgentRecord[] = [];
+    const registry = new PhysicsMemoryRegistry();
+    registry.register(capsule('definition.fqhe.laughlin', 'Definition'));
+    registry.register(capsule('formula.fqhe.kmatrix', 'Formula', ['definition.fqhe.laughlin']));
+    const agent = makeAgent(records, { physicsMemory: registry });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'build_formalization_plan',
+      formalization_target_ids: ['formula.fqhe.kmatrix'],
+      include_dependency_closure: true,
+    });
+
+    expect(result.output).toContain('<formalization_plan format="aitp-formalization-blueprint/v0">');
+    expect(result.output).toContain('readiness="formalization_ready"');
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'formalization.build_blueprint',
+        outcome: 'pass',
+        evidenceRefs: expect.arrayContaining([
+          expect.stringContaining('formalization:aitp-formalization-blueprint/v0'),
+        ]),
+      }),
+    );
+  });
+
   it('returns a tool error when record_action_result is missing required ids', async () => {
     const tool = new ResearchActionTool();
 
@@ -302,7 +398,10 @@ function execute(tool: ResearchActionTool, args: Parameters<typeof tool.resolveE
   });
 }
 
-function makeAgent(records?: AgentRecord[]): Agent {
+function makeAgent(
+  records?: AgentRecord[],
+  options: { readonly physicsMemory?: PhysicsMemoryRegistry | undefined } = {},
+): Agent {
   const agent = new Agent({
     kaos: testKaos,
     rpc: {
@@ -334,6 +433,7 @@ function makeAgent(records?: AgentRecord[]): Agent {
         },
       },
     }),
+    physicsMemory: options.physicsMemory,
   });
   agent.config.update({
     cwd: process.cwd(),
@@ -341,4 +441,32 @@ function makeAgent(records?: AgentRecord[]): Agent {
   });
   agent.tools.initializeBuiltinTools();
   return agent;
+}
+
+function capsule(
+  id: string,
+  kind: PhysicsCapsuleKind,
+  dependsOn: readonly string[] = [],
+): PhysicsCapsule {
+  return {
+    path: `/tmp/${id}.md`,
+    source: 'project',
+    body: `${kind} ${id}`,
+    metadata: {
+      id,
+      kind,
+      domain: 'topological-order/fqhe-cs',
+      title: id,
+      reliability: 'checked',
+      symbols: [],
+      assumes: [],
+      dependsOn,
+      sourceRefs: ['local:test'],
+      graphRefs: [],
+      expansionHandles: [],
+      requiredChecks: [],
+      actionAffordances: [],
+      allowCrossDomain: false,
+    },
+  };
 }

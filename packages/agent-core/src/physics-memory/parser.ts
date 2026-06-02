@@ -5,6 +5,7 @@ import {
   isPhysicsCapsuleKind,
   isReliabilityState,
   type ActionAffordance,
+  type BridgeSpec,
   type CheckContract,
   type ExpansionHandle,
   type GraphRef,
@@ -104,6 +105,7 @@ function parseMetadata(raw: Record<string, unknown>, filePath: string): PhysicsC
     actionAffordances: actionAffordances(raw['actionAffordances'], filePath),
     scope: scopeSpec(raw['scope']),
     allowCrossDomain: raw['allowCrossDomain'] === true,
+    bridge: bridgeSpec(raw['bridge'], filePath),
   };
 }
 
@@ -116,6 +118,9 @@ function normalizeKeys(raw: Record<string, unknown>): Record<string, unknown> {
     required_checks: 'requiredChecks',
     action_affordances: 'actionAffordances',
     allow_cross_domain: 'allowCrossDomain',
+    from_domain: 'fromDomain',
+    to_domain: 'toDomain',
+    capsule_refs: 'capsuleRefs',
   };
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
@@ -173,6 +178,22 @@ function scopeSpec(value: unknown): ScopeSpec | undefined {
     regimes: stringArray(value['regimes']),
     assumptions: stringArray(value['assumptions']),
     excludes: stringArray(value['excludes']),
+  };
+}
+
+function bridgeSpec(value: unknown, filePath: string): BridgeSpec | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw new PhysicsMemoryParseError(
+      `Frontmatter field "bridge" must be a mapping in ${filePath}`,
+    );
+  }
+  const raw = normalizeKeys(value);
+  return {
+    fromDomain: requiredString(raw, 'fromDomain', filePath),
+    toDomain: requiredString(raw, 'toDomain', filePath),
+    capsuleRefs: stringArray(raw['capsuleRefs']),
+    reason: optionalItemString(raw, 'reason'),
   };
 }
 

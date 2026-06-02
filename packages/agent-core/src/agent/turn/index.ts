@@ -1268,7 +1268,14 @@ export class TurnFlow {
             domain: workFrame.domain,
             topic: workFrame.topic,
           });
-    const evidenceRefs = this.agent.researchAction.recentEvidence();
+    const evidenceRefs =
+      workFrame === undefined
+        ? []
+        : this.agent.researchAction.recentEvidence(20, {
+            workFrameId: workFrame.id,
+            domain: workFrame.domain,
+            topic: workFrame.topic,
+          });
     if (
       !shouldApplyFinalGate({
         requestedStatus,
