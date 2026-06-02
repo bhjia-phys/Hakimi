@@ -3,6 +3,7 @@ import type {
   ExpansionHandle,
   PhysicsDomainId,
 } from '../physics-memory';
+import type { ResearchActionBinding } from '../research-action/types';
 
 export type PhysicsLensId = string;
 export type PhysicsLensObjectKind = string;
@@ -25,7 +26,8 @@ export interface PhysicsLens {
   readonly caveats: readonly string[];
   readonly guidingQuestions: readonly string[];
   readonly requiredChecks: readonly CheckContract[];
-  readonly suggestedActions: readonly string[];
+  readonly suggestedActionBindings: readonly ResearchActionBinding[];
+  readonly suggestedActions?: readonly string[] | undefined;
   readonly expansionHandles?: readonly ExpansionHandle[] | undefined;
 }
 
@@ -55,6 +57,7 @@ export interface PhysicsLensApplicabilityResult {
   readonly caveats: readonly string[];
   readonly guidingQuestions: readonly string[];
   readonly requiredChecks: readonly CheckContract[];
+  readonly suggestedActionBindings: readonly ResearchActionBinding[];
   readonly suggestedActions: readonly string[];
   readonly expansionHandles: readonly ExpansionHandle[];
 }

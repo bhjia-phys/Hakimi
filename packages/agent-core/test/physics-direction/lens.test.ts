@@ -30,7 +30,16 @@ describe('physics direction lenses', () => {
       'convention',
       'limiting_case',
     ]);
-    expect(chargeFlux?.suggestedActions).toContain('physics.check_flux_quantization_convention');
+    expect(chargeFlux?.suggestedActionBindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actionId: 'validate.check_convention',
+          checkId: 'check.charge-flux-quantization.convention',
+          priority: 'blocking',
+        }),
+      ]),
+    );
+    expect(chargeFlux?.suggestedActions).toContain('validate.check_convention');
   });
 
   it('rejects charge-flux quantization when the flux is only a momentum-space Berry flux', () => {
@@ -91,11 +100,28 @@ describe('physics direction lenses', () => {
       'code_mapping',
       'benchmark',
     ]);
+    expect(recommendations[0]?.suggestedActionBindings).toEqual([
+      expect.objectContaining({
+        actionId: 'code.inspect_call_sites',
+        domainId: 'librpa/head-wing',
+      }),
+      expect.objectContaining({
+        actionId: 'code.map_formula_to_code_region',
+        checkId: 'check.librpa-head-wing.code-mapping',
+      }),
+      expect.objectContaining({
+        actionId: 'code.capture_git_diff_observation',
+      }),
+      expect.objectContaining({
+        actionId: 'benchmark.run_minimal_case',
+        adapterId: 'adapter.librpa.head-wing-smoke',
+      }),
+    ]);
     expect(recommendations[0]?.suggestedActions).toEqual([
       'code.inspect_call_sites',
       'code.map_formula_to_code_region',
       'code.capture_git_diff_observation',
-      'benchmark.run_minimal_librpa_case',
+      'benchmark.run_minimal_case',
     ]);
   });
 });

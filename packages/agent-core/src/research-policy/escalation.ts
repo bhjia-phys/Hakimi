@@ -1,5 +1,5 @@
 import { recommendPhysicsLenses } from '../physics-direction';
-import { blockingOpenObligations } from '../research-action';
+import { blockingOpenObligations, type ResearchActionBinding } from '../research-action';
 import type {
   EscalationPolicyDecision,
   EscalationPolicyInput,
@@ -72,38 +72,69 @@ export function decideEscalationPolicy(
     reasons.push('Applicable physics lens found; expose caveats and suggested checks.');
   }
 
+  const recommendedActionBindings = recommendedBindings(
+    input,
+    lensCandidates.flatMap((candidate) => candidate.suggestedActionBindings),
+  );
   const tier = tierFromRank(tierRank);
   return {
     tier,
     requirements: requirementsForTier(tier),
     reasons: [...new Set(reasons)],
-    recommendedActionIds: recommendedActions(
-      input,
-      lensCandidates.flatMap((candidate) => candidate.suggestedActions),
-    ),
+    recommendedActionIds: [...new Set(recommendedActionBindings.map((binding) => binding.actionId))]
+      .toSorted(),
+    recommendedActionBindings,
     lensCandidates,
   };
 }
 
-function recommendedActions(
+function recommendedBindings(
   input: EscalationPolicyInput,
-  lensActionIds: readonly string[],
-): readonly string[] {
-  const actions = new Set<string>([
-    ...(input.requestedActionIds ?? []),
-    ...lensActionIds,
-  ]);
+  lensBindings: readonly ResearchActionBinding[],
+): readonly ResearchActionBinding[] {
+  const bindings = new Map<string, ResearchActionBinding>();
+  for (const binding of lensBindings) {
+    bindings.set(binding.id, binding);
+  }
+  for (const actionId of input.requestedActionIds ?? []) {
+    bindings.set(`binding.requested.${actionId}`, {
+      id: `binding.requested.${actionId}`,
+      actionId,
+      reason: 'Requested by caller.',
+      priority: 'normal',
+    });
+  }
   if (input.willEditFiles === true || input.prompt.toLowerCase().includes('head-wing')) {
-    actions.add('code.inspect_call_sites');
-    actions.add('code.map_formula_to_code_region');
+    bindings.set('binding.policy.inspect-call-sites', {
+      id: 'binding.policy.inspect-call-sites',
+      actionId: 'code.inspect_call_sites',
+      reason: 'Code edits should inspect downstream call sites.',
+      priority: 'high',
+    });
+    bindings.set('binding.policy.map-formula-code-region', {
+      id: 'binding.policy.map-formula-code-region',
+      actionId: 'code.map_formula_to_code_region',
+      reason: 'Code edits that affect formulas should preserve formula-code mapping.',
+      priority: 'high',
+    });
   }
   if (input.willRunBenchmark === true || input.prompt.toLowerCase().includes('benchmark')) {
-    actions.add('benchmark.run_minimal_librpa_case');
+    bindings.set('binding.policy.run-minimal-case', {
+      id: 'binding.policy.run-minimal-case',
+      actionId: 'benchmark.run_minimal_case',
+      reason: 'Benchmark wording requires a minimal benchmark action.',
+      priority: 'high',
+    });
   }
   if (input.willPromoteMemory === true || input.requestedStatus === 'validated') {
-    actions.add('memory.propose_capsule');
+    bindings.set('binding.policy.propose-capsule', {
+      id: 'binding.policy.propose-capsule',
+      actionId: 'memory.propose_capsule',
+      reason: 'Validated or promoted memory needs a capsule proposal.',
+      priority: 'blocking',
+    });
   }
-  return [...actions].toSorted();
+  return [...bindings.values()].toSorted((a, b) => a.actionId.localeCompare(b.actionId));
 }
 
 function requirementsForTier(tier: EscalationTier): RuntimeEscalationRequirements {

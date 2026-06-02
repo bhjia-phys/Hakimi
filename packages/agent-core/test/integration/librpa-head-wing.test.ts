@@ -12,7 +12,7 @@ import {
 import { buildResearchCaptureDecision } from '../../src/research-ledger';
 
 describe('LibRPA head-wing micro vertical slice', () => {
-  it('registers LibRPA-specific actions and schedules inspection before benchmark', () => {
+  it('binds universal code actions to the LibRPA workflow and schedules inspection before benchmark', () => {
     const registry = new ResearchActionRegistry();
     for (const action of DEFAULT_RESEARCH_ACTIONS) {
       registry.register(action);
@@ -25,7 +25,7 @@ describe('LibRPA head-wing micro vertical slice', () => {
         'code.inspect_call_sites',
         'code.map_formula_to_code_region',
         'code.capture_git_diff_observation',
-        'benchmark.run_minimal_librpa_case',
+        'benchmark.run_minimal_case',
       ]),
     );
 
@@ -34,14 +34,14 @@ describe('LibRPA head-wing micro vertical slice', () => {
       obligations: [
         obligation('obl.inspect', 'dependency_closure', 'blocking', 'code.inspect_call_sites'),
         obligation('obl.map', 'code_mapping', 'blocking', 'code.map_formula_to_code_region'),
-        obligation('obl.benchmark', 'benchmark', 'important', 'benchmark.run_minimal_librpa_case'),
+        obligation('obl.benchmark', 'benchmark', 'important', 'benchmark.run_minimal_case'),
       ],
     });
 
     expect(recommendations.map((item) => item.action.id)).toEqual([
       'code.inspect_call_sites',
       'code.map_formula_to_code_region',
-      'benchmark.run_minimal_librpa_case',
+      'benchmark.run_minimal_case',
     ]);
   });
 
@@ -73,8 +73,8 @@ describe('LibRPA head-wing micro vertical slice', () => {
 
     const harness = harnessCandidateFromActionRecord(actionRecord(benchmark.outcome));
     expect(harness).toMatchObject({
-      id: 'harness.candidate.benchmark.run_minimal_librpa_case.call.librpa-benchmark',
-      sourceActionId: 'benchmark.run_minimal_librpa_case',
+      id: 'harness.candidate.benchmark.run_minimal_case.call.librpa-benchmark',
+      sourceActionId: 'benchmark.run_minimal_case',
       outcome: 'fail',
       evidenceRefs: ['ledger:event.librpa-head-wing.failure'],
     });
@@ -102,7 +102,7 @@ function obligation(
 
 function actionRecord(outcome: ResearchActionRecord['outcome']): ResearchActionRecord {
   return {
-    actionId: 'benchmark.run_minimal_librpa_case',
+    actionId: 'benchmark.run_minimal_case',
     callId: 'call.librpa-benchmark',
     source: 'model',
     input: {},

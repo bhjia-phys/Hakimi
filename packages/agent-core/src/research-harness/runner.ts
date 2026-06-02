@@ -1,8 +1,10 @@
 import type {
   ResearchActionRecord,
+  ResearchEvalActionExpectation,
   ResearchEvalCase,
   ResearchEvalValidation,
 } from '../research-action';
+import { actionIdsFromExpectations } from '../research-action/action-binding';
 import type {
   PromoteHarnessCandidateInput,
   ResearchEvalCheckResult,
@@ -56,9 +58,10 @@ export function runResearchEvalCase(input: ResearchEvalRunInput): ResearchEvalRu
 }
 
 function evaluateActionSequence(
-  expectedActionSequence: readonly string[],
+  expectedActionExpectations: readonly ResearchEvalActionExpectation[],
   actionRecords: readonly ResearchActionRecord[],
 ): ResearchEvalSequenceResult {
+  const expectedActionSequence = actionIdsFromExpectations(expectedActionExpectations);
   const observedActionSequence = actionRecords.map((record) => record.actionId);
   if (expectedActionSequence.length === 0) {
     return {

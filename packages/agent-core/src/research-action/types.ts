@@ -6,6 +6,8 @@ import type {
   PhysicsDomainId,
 } from '../physics-memory';
 
+export type ResearchActionId = string;
+
 export type ResearchActionExposure = 'direct' | 'deferred' | 'direct-model-only' | 'hidden';
 
 export type ResearchActionSource = 'model' | 'controller' | 'hidden-check' | 'subagent' | 'replay';
@@ -104,11 +106,27 @@ export interface ObligationTemplate {
   readonly kind: CheckContract['kind'] | 'source_support' | 'dependency_closure' | 'human_decision';
   readonly severity: 'blocking' | 'important' | 'advisory';
   readonly reason: string;
-  readonly requiredActionId: string;
+  readonly requiredActionId: ResearchActionId;
+}
+
+export type ResearchActionBindingPriority = 'low' | 'normal' | 'high' | 'blocking';
+
+export interface ResearchActionBinding {
+  readonly id: string;
+  readonly actionId: ResearchActionId;
+  readonly domainId?: PhysicsDomainId | undefined;
+  readonly workflowId?: string | undefined;
+  readonly lensId?: string | undefined;
+  readonly checkId?: string | undefined;
+  readonly adapterId?: string | undefined;
+  readonly objectRefs?: readonly string[] | undefined;
+  readonly params?: Readonly<Record<string, unknown>> | undefined;
+  readonly reason?: string | undefined;
+  readonly priority?: ResearchActionBindingPriority | undefined;
 }
 
 export interface ResearchActionDefinition {
-  readonly id: string;
+  readonly id: ResearchActionId;
   readonly category: ResearchActionCategory;
   readonly exposure: ResearchActionExposure;
   readonly title: string;
@@ -125,12 +143,13 @@ export interface ResearchActionDefinition {
   readonly capsuleKinds?: readonly PhysicsCapsuleKind[];
   readonly triggerHints?: readonly string[];
   readonly suggestedNextActions?: readonly string[];
+  readonly suggestedNextActionBindings?: readonly ResearchActionBinding[];
   readonly inputSchema?: Record<string, unknown>;
   readonly outputSchema?: Record<string, unknown>;
 }
 
 export interface ResearchActionRecord {
-  readonly actionId: string;
+  readonly actionId: ResearchActionId;
   readonly callId: string;
   readonly source: ResearchActionSource;
   readonly input: unknown;
@@ -141,12 +160,13 @@ export interface ResearchActionRecord {
   readonly evidenceRefs: readonly string[];
   readonly outcome: ResearchActionOutcome;
   readonly nextSuggestedActions: readonly string[];
+  readonly nextSuggestedActionBindings?: readonly ResearchActionBinding[] | undefined;
 }
 
 export type ResearchEvalValidation =
   | {
       readonly type: 'action_outcome';
-      readonly actionId: string;
+      readonly actionId: ResearchActionId;
       readonly outcome: ResearchActionOutcome;
     }
   | {
@@ -158,13 +178,15 @@ export type ResearchEvalValidation =
       readonly pattern: string;
     };
 
+export type ResearchEvalActionExpectation = ResearchActionId | ResearchActionBinding;
+
 export interface ResearchEvalCase {
   readonly id: string;
   readonly title: string;
   readonly task: string;
   readonly domain?: PhysicsDomainId;
   readonly capsuleRefs: readonly PhysicsCapsuleId[];
-  readonly actionSequence: readonly string[];
+  readonly actionSequence: readonly ResearchEvalActionExpectation[];
   readonly validations: readonly ResearchEvalValidation[];
   readonly timeoutSeconds?: number;
 }

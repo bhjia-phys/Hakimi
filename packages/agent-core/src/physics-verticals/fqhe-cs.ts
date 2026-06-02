@@ -2,7 +2,7 @@ import type { PhysicsCapsule } from '../physics-memory';
 import { recommendPhysicsLenses, type PhysicsLensApplicabilityResult } from '../physics-direction';
 import type { ResearchBlock, ResearchBlockCompileDiagnostic } from '../research-block';
 import { compileResearchBlockToCandidateCapsule } from '../research-block';
-import type { ResearchEvalCase, ResearchObligation } from '../research-action';
+import type { ResearchActionBinding, ResearchEvalCase, ResearchObligation } from '../research-action';
 import { evaluateFinalGate, type FinalGateDecision } from '../research-policy';
 import type { ResearchEvalCheckResult } from '../research-harness';
 
@@ -31,6 +31,7 @@ export interface FqheChargeFluxConventionResult {
   readonly statement: string;
   readonly checkResult: ResearchEvalCheckResult;
   readonly obligation?: ResearchObligation | undefined;
+  readonly suggestedActionBindings: readonly ResearchActionBinding[];
   readonly suggestedActions: readonly string[];
 }
 
@@ -243,16 +244,43 @@ export function checkFqheChargeFluxConvention(
           severity: 'blocking',
           reason:
             'Charge-flux reasoning must distinguish external EM flux, emergent CS flux, quasiparticle AB period, and Berry flux.',
-          requiredActionId: 'physics.check_flux_quantization_convention',
+          requiredActionId: 'validate.check_convention',
           status: 'open',
         },
+    suggestedActionBindings: FQHE_CHARGE_FLUX_ACTION_BINDINGS,
     suggestedActions: [
       'physics.apply_direction_lens',
-      'physics.check_flux_quantization_convention',
       'validate.check_convention',
+      'derive.compare_with_known_result',
     ],
   };
 }
+
+export const FQHE_CHARGE_FLUX_ACTION_BINDINGS = [
+  {
+    id: 'binding.fqhe-cs.charge-flux-apply-lens',
+    actionId: 'physics.apply_direction_lens',
+    domainId: 'topological-order/fqhe-cs',
+    lensId: 'charge_flux_quantization',
+    priority: 'high',
+  },
+  {
+    id: 'binding.fqhe-cs.charge-flux-convention',
+    actionId: 'validate.check_convention',
+    domainId: 'topological-order/fqhe-cs',
+    lensId: 'charge_flux_quantization',
+    checkId: 'check.charge-flux-quantization.convention',
+    priority: 'blocking',
+    params: {
+      requiredDistinctions: [
+        'external_em_flux',
+        'emergent_cs_flux',
+        'quasiparticle_ab_flux_period',
+        'berry_curvature_flux',
+      ],
+    },
+  },
+] as const satisfies readonly ResearchActionBinding[];
 
 export function buildFqheCsChargeFluxEvalCase(): ResearchEvalCase {
   return {
@@ -266,11 +294,11 @@ export function buildFqheCsChargeFluxEvalCase(): ResearchEvalCase {
       'capsule.candidate.fqhe.cs.effective-action',
       'capsule.candidate.fqhe.kmatrix.response',
     ],
-    actionSequence: ['physics.apply_direction_lens', 'physics.check_flux_quantization_convention'],
+    actionSequence: FQHE_CHARGE_FLUX_ACTION_BINDINGS,
     validations: [
       {
         type: 'action_outcome',
-        actionId: 'physics.check_flux_quantization_convention',
+        actionId: 'validate.check_convention',
         outcome: 'pass',
       },
       {

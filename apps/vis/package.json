@@ -6,11 +6,11 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build:deps": "pnpm --filter @moonshot-ai/agent-core... build",
-    "predev": "pnpm run build:deps",
+    "build:deps": "corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core... build",
+    "predev": "corepack pnpm --config.engine-strict=false run build:deps",
     "dev": "node scripts/dev.mjs",
-    "build": "pnpm run build:deps && pnpm --filter @moonshot-ai/vis-server build && pnpm --filter @moonshot-ai/vis-web build && node scripts/copy-web-dist.mjs",
-    "prestart": "pnpm run build",
+    "build": "corepack pnpm --config.engine-strict=false run build:deps && corepack pnpm --config.engine-strict=false --filter @moonshot-ai/vis-server build && corepack pnpm --config.engine-strict=false --filter @moonshot-ai/vis-web build && node scripts/copy-web-dist.mjs",
+    "prestart": "corepack pnpm --config.engine-strict=false run build",
     "start": "node server/dist/server.mjs"
   },
   "devDependencies": {

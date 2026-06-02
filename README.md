@@ -6,7 +6,7 @@
 
 AITP Agent is a research-agent runtime project for theoretical physics. It starts from the Kimi Code CLI codebase and aims to make physics memory, knowledge compilation, research actions, validation, benchmark evidence, replay, and failure feedback first-class parts of the agent runtime.
 
-This repository is currently an early-stage fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The default product behavior still follows Kimi Code unless an AITP experimental flag explicitly enables a new runtime feature. The completed first slices are tracked in [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md) and [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md). The cross-slice runtime roadmap is tracked in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md).
+This repository is currently an early-stage fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The default product behavior still follows Kimi Code unless an AITP experimental flag explicitly enables a new runtime feature. The completed first slices are tracked in [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md) and [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md). The cross-slice runtime roadmap is tracked in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md), with the next implementation details in [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md).
 
 ## Why This Exists
 
@@ -46,15 +46,14 @@ Research actions are fine-grained, auditable work units over the physics graph a
 - `graph.expand_capsule`
 - `graph.trace_dependency_closure`
 - `derive.check_dimension_consistency`
-- `derive.check_convention_consistency`
-- `physics.check_flux_quantization_convention`
+- `validate.check_convention`
 - `code.map_formula_to_code_region`
 - `code.compare_git_diff_to_mapping`
-- `benchmark.run_smoke_case`
+- `benchmark.run_minimal_case`
 - `memory.propose_failure_mode`
 - `harness.build_eval_from_failure`
 
-The action layer is intended to cover graph queries, derivation checks, code mapping, numerical validation, failure feedback, and harness evolution.
+The universal action layer is intentionally domain-neutral. Domain-specific intent is attached through structured `ResearchActionBinding` records with `domainId`, `workflowId`, `lensId`, `checkId`, `adapterId`, and scoped params.
 
 ### WorkFrames, Obligations, And Harness
 
@@ -177,13 +176,15 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.0.3 has started with the thin primitive tool lifecycle spine: real loop-level tool calls now emit `tool_lifecycle.started` and `tool_lifecycle.completed` records with status, bounded summaries, timing, cwd, and future WorkFrame/ResearchAction attribution slots. See [AITP Agent 0.0.3 Audit](docs/internal/aitp-agent-0.0.3-audit.md).
 - 0.0.4 has started with schema-checked `ResearchLedger.write_event` and controlled `capture_event`: compact source-backed events can be written to deterministic `.aitp/research-ledger/<topic>/events/*.md` paths, registered immediately, audited through `research_ledger.event_written`, and filtered through source/git-diff/benchmark/failure capture policy. See [AITP Agent 0.0.4 Audit](docs/internal/aitp-agent-0.0.4-audit.md).
 - 0.0.5 has started with active WorkFrame runtime state and ResearchAction call trace: `ResearchAction` can open/switch/list/close WorkFrames, start/finish action calls, replay both, attach ledger event ids to action results, and primitive tool lifecycle records now carry active `workFrameId` and `actionCallId`. See [AITP Agent 0.0.5 Audit](docs/internal/aitp-agent-0.0.5-audit.md).
-- 0.0.6 has started with a LibRPA head-wing micro vertical slice: LibRPA-specific research actions, a CI-safe head-wing smoke benchmark stand-in, scheduler expectations, controlled failure capture, and harness candidate conversion. See [AITP Agent 0.0.6 Audit](docs/internal/aitp-agent-0.0.6-audit.md).
+- 0.0.6 has started with a LibRPA head-wing micro vertical slice: universal code/benchmark actions bound to LibRPA workflow intent, a CI-safe head-wing smoke benchmark stand-in, scheduler expectations, controlled failure capture, and harness candidate conversion. See [AITP Agent 0.0.6 Audit](docs/internal/aitp-agent-0.0.6-audit.md).
 - 0.0.7 has started with a capsule boundary compiler: locally self-contained `ResearchBlock` objects can compile into unpromoted `PhysicsCapsule` candidates with assumptions, conventions, source refs, open questions, and required checks preserved. See [AITP Agent 0.0.7 Audit](docs/internal/aitp-agent-0.0.7-audit.md).
-- 0.0.8 has started with PhysicsDirectionEngine and applicability-gated lenses: FQHE/CS charge-flux quantization and LibRPA head-wing formula-code mapping can now be recommended, rejected, and audited with caveats, guiding questions, required checks, and suggested ResearchAction ids. See [AITP Agent 0.0.8 Audit](docs/internal/aitp-agent-0.0.8-audit.md).
+- 0.0.8 has started with PhysicsDirectionEngine and applicability-gated lenses: FQHE/CS charge-flux quantization and LibRPA head-wing formula-code mapping can now be recommended, rejected, and audited with caveats, guiding questions, required checks, and structured ResearchAction bindings. See [AITP Agent 0.0.8 Audit](docs/internal/aitp-agent-0.0.8-audit.md).
 - 0.0.9 has started with EscalationPolicy and Final Gate: simple physics questions remain lightweight, code/benchmark/high-risk theory/promotion work escalates into required runtime controls, and validated final claims are downgraded or blocked while blocking obligations remain open. See [AITP Agent 0.0.9 Audit](docs/internal/aitp-agent-0.0.9-audit.md).
 - 0.1 has started with Harness and Eval Runner: failed/inconclusive action traces can become deterministic eval cases, and eval runs can check action sequence, action outcomes, evidence refs, and required checks. See [AITP Agent 0.1 Audit](docs/internal/aitp-agent-0.1-audit.md).
 - 0.2 has started with an executable FQHE/CS theory vertical slice: Laughlin wavefunction, flux insertion, Abelian CS action, and K-matrix response blocks compile into candidate capsules, pass through charge-flux lens/convention checks, produce an eval case, and reach the final gate. See [AITP Agent 0.2 Audit](docs/internal/aitp-agent-0.2-audit.md).
-- The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md): obligation generation, dynamic tool exposure, real diff/artifact capture, model-loop wiring, and broader domain memory.
+- 0.2.1 upstream sync guardrail has configured a local `upstream` remote for Kimi Code; fetch/merge is pending because GitHub HTTPS access failed in this environment. See [Upstream Sync 2026-06-02](docs/internal/upstream-sync-2026-06-02.md).
+- 0.2.2 has refactored research actions toward universal ids plus structured `ResearchActionBinding`: FQHE/CS charge-flux checks now bind `validate.check_convention` with a charge-flux `checkId`, and LibRPA head-wing benchmark work now binds `benchmark.run_minimal_case` with a LibRPA adapter id. See [AITP Agent 0.2.2 Audit](docs/internal/aitp-agent-0.2.2-audit.md).
+- The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md) and [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md): domain profiles, workflow recipes, dynamic context packs, real diff/artifact capture, model-loop wiring, and broader domain memory.
 
 ## Development
 

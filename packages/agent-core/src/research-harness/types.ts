@@ -2,6 +2,7 @@ import type { CheckContract } from '../physics-memory';
 import type {
   HarnessCandidate,
   ResearchActionRecord,
+  ResearchEvalActionExpectation,
   ResearchEvalCase,
   ResearchEvalValidation,
 } from '../research-action';
@@ -51,7 +52,7 @@ export interface PromoteHarnessCandidateInput {
   readonly title?: string | undefined;
   readonly task: string;
   readonly domain?: string | undefined;
-  readonly actionSequence?: readonly string[] | undefined;
+  readonly actionSequence?: readonly ResearchEvalActionExpectation[] | undefined;
   readonly additionalValidations?: readonly ResearchEvalValidation[] | undefined;
   readonly timeoutSeconds?: number | undefined;
 }
