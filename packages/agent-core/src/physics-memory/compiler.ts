@@ -6,14 +6,30 @@ import type {
   PhysicsContextPack,
   PhysicsDomainId,
   PhysicsMemoryDiagnostic,
+  PhysicsCapsuleKind,
   ReliabilityState,
 } from './types';
+import type { ResearchLedgerRegistry } from '../research-ledger';
+import { checkGraphCandidateContradictions } from './contradiction-checker';
+import { checkGraphCandidateDependencies } from './dependency-checker';
+import type {
+  PhysicsGraphCandidate,
+  PhysicsGraphCandidateKind,
+  PhysicsGraphCompileResult,
+} from './graph-types';
+import { checkGraphCandidateProvenance } from './provenance-checker';
 
 export interface CompilePhysicsContextOptions {
   readonly domain: PhysicsDomainId;
   readonly focus?: readonly PhysicsCapsuleId[];
   readonly reliabilityFloor?: ReliabilityState;
   readonly bridgePolicy?: BridgePolicy;
+}
+
+export interface CompilePhysicsGraphCandidatesOptions {
+  readonly ledger: ResearchLedgerRegistry;
+  readonly topic?: string | undefined;
+  readonly domain?: PhysicsDomainId | undefined;
 }
 
 const RELIABILITY_ORDER: Record<ReliabilityState, number> = {
@@ -92,6 +108,56 @@ export function compilePhysicsContext(
   };
 }
 
+export function compilePhysicsGraphCandidates(
+  registry: PhysicsMemoryRegistry,
+  options: CompilePhysicsGraphCandidatesOptions,
+): PhysicsGraphCompileResult {
+  const diagnostics: Array<PhysicsGraphCompileResult['diagnostics'][number]> = [];
+  const candidates: PhysicsGraphCandidate[] = [];
+
+  const events = options.ledger.listEvents({
+    ...(options.topic === undefined ? {} : { topic: options.topic }),
+    ...(options.domain === undefined ? {} : { domain: options.domain }),
+  });
+
+  for (const event of events) {
+    const candidateKind = candidateKindFromCapsuleKind(event.metadata.candidateCapsuleKind);
+    if (candidateKind === undefined) {
+      diagnostics.push({
+        severity: 'info',
+        code: 'skip-non-graph-event',
+        message: `Ledger event "${event.metadata.id}" does not map to a graph candidate kind.`,
+        eventId: event.metadata.id,
+      });
+      continue;
+    }
+
+    const candidate = candidateFromEvent(event.metadata.id, candidateKind, event.body, {
+      title: extractTitle(event.body, event.metadata.id),
+      domain: event.metadata.domain,
+      reliability: reliabilityFromLedgerStatus(event.metadata.status),
+      sourceRefs: event.metadata.sourceRefs,
+      relatedObjects: event.metadata.relatedObjects,
+      dependsOn: event.metadata.dependsOn,
+      assumptions: event.metadata.relatedObjects
+        .filter((objectId) => objectId.startsWith('assumption:'))
+        .map((objectId) => objectId),
+    });
+    candidates.push(candidate);
+    diagnostics.push(...checkGraphCandidateProvenance(candidate).map((item) => ({ ...item, eventId: event.metadata.id })));
+  }
+
+  diagnostics.push(...checkGraphCandidateDependencies(registry, candidates));
+  diagnostics.push(...checkGraphCandidateContradictions(candidates));
+
+  return {
+    topic: options.topic,
+    domain: options.domain,
+    candidates: candidates.toSorted((a, b) => a.id.localeCompare(b.id)),
+    diagnostics,
+  };
+}
+
 function includeCapsule(
   _registry: PhysicsMemoryRegistry,
   selected: Map<PhysicsCapsuleId, PhysicsCapsule>,
@@ -119,4 +185,87 @@ function includeCapsule(
 
 function passesReliability(value: ReliabilityState, floor: ReliabilityState): boolean {
   return RELIABILITY_ORDER[value] >= RELIABILITY_ORDER[floor];
+}
+
+function candidateKindFromCapsuleKind(
+  kind: PhysicsCapsuleKind | undefined,
+): PhysicsGraphCandidateKind | undefined {
+  switch (kind) {
+    case 'Definition':
+      return 'definition';
+    case 'Assumption':
+      return 'assumption';
+    case 'Formula':
+      return 'formula';
+    case 'DerivationStep':
+      return 'derivation_step';
+    case 'CodeMapping':
+      return 'code_mapping';
+    case 'BenchmarkCase':
+      return 'benchmark_case';
+    case 'FailureMode':
+      return 'failure_mode';
+    case 'WorkflowRecipe':
+      return 'workflow_recipe';
+    default:
+      return undefined;
+  }
+}
+
+function candidateFromEvent(
+  eventId: string,
+  kind: PhysicsGraphCandidateKind,
+  body: string,
+  input: {
+    readonly title: string;
+    readonly domain: PhysicsDomainId;
+    readonly reliability: ReliabilityState;
+    readonly sourceRefs: readonly string[];
+    readonly relatedObjects: readonly string[];
+    readonly dependsOn: readonly string[];
+    readonly assumptions: readonly string[];
+  },
+): PhysicsGraphCandidate {
+  return {
+    id: `graph.candidate.${eventId}`,
+    kind,
+    domain: input.domain,
+    title: input.title,
+    body,
+    reliability: input.reliability,
+    sourceEventIds: [eventId],
+    sourceRefs: input.sourceRefs,
+    relatedObjects: input.relatedObjects,
+    dependsOn: input.dependsOn,
+    assumptions: input.assumptions,
+    promotionState: 'candidate',
+  };
+}
+
+function reliabilityFromLedgerStatus(status: string): ReliabilityState {
+  switch (status) {
+    case 'captured':
+      return 'raw';
+    case 'parsed':
+      return 'parsed';
+    case 'linked':
+      return 'linked';
+    case 'compiled':
+      return 'checked';
+    case 'promoted':
+      return 'validated';
+    case 'rejected':
+      return 'rejected';
+    default:
+      return 'raw';
+  }
+}
+
+function extractTitle(body: string, fallback: string): string {
+  const firstLine = body
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (firstLine === undefined) return fallback;
+  return firstLine.replace(/^#+\s*/, '') || fallback;
 }
