@@ -4,6 +4,7 @@ import type {
   PhysicsCapsule,
   PhysicsContextPack,
   PhysicsMemoryRegistry,
+  PhysicsPromotionPacket,
 } from '../../physics-memory';
 
 export type PhysicsMemoryRecordSource = 'session-start' | 'model-tool' | 'controller' | 'replay';
@@ -66,6 +67,23 @@ export class PhysicsMemoryManager {
         code: diagnostic.code,
         capsuleId: diagnostic.capsuleId,
       })),
+      ...(options.toolCallId === undefined ? {} : { toolCallId: options.toolCallId }),
+    });
+  }
+
+  recordCapsulesPromoted(
+    packet: PhysicsPromotionPacket,
+    capsules: readonly PhysicsCapsule[],
+    options: PhysicsMemoryToolRecordOptions,
+  ): void {
+    this.agent.records.logRecord({
+      type: 'physics_memory.capsules_promoted',
+      source: options.source,
+      packetId: packet.id,
+      candidateIds: packet.candidateIds,
+      capsuleIds: capsules.map((capsule) => capsule.metadata.id),
+      targetReliability: packet.targetReliability,
+      requiredHumanCheckpoint: packet.requiredHumanCheckpoint,
       ...(options.toolCallId === undefined ? {} : { toolCallId: options.toolCallId }),
     });
   }

@@ -7,3 +7,4 @@ export * from './graph-types';
 export * from './dependency-checker';
 export * from './contradiction-checker';
 export * from './provenance-checker';
+export * from './promotion';

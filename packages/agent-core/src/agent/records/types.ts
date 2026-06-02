@@ -317,6 +317,15 @@ export interface AgentRecordEvents {
     }[];
     toolCallId?: string | undefined;
   };
+  'physics_memory.capsules_promoted': {
+    source: PhysicsMemoryRecordSource;
+    packetId: string;
+    candidateIds: readonly string[];
+    capsuleIds: readonly string[];
+    targetReliability: 'checked' | 'validated' | 'formalized';
+    requiredHumanCheckpoint: boolean;
+    toolCallId?: string | undefined;
+  };
 
   'research_ledger.roots_loaded': {
     roots: readonly ResearchLedgerRoot[];

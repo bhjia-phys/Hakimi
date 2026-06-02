@@ -113,6 +113,18 @@ export interface ScopeSpec {
   readonly excludes?: readonly string[];
 }
 
+export interface PhysicsPromotionPacket {
+  readonly id: string;
+  readonly candidateIds: readonly string[];
+  readonly sourceRefs: readonly string[];
+  readonly validationRefs: readonly string[];
+  readonly failureModes: readonly string[];
+  readonly scope?: ScopeSpec | undefined;
+  readonly targetReliability: Extract<ReliabilityState, 'checked' | 'validated' | 'formalized'>;
+  readonly requiredHumanCheckpoint: boolean;
+  readonly humanCheckpointLabel?: string | undefined;
+}
+
 export interface PhysicsGraphQuery {
   readonly domain?: PhysicsDomainId;
   readonly focusIds?: readonly string[];
@@ -141,6 +153,10 @@ export interface PhysicsCapsuleMetadata {
   readonly actionAffordances: readonly ActionAffordance[];
   readonly scope?: ScopeSpec;
   readonly allowCrossDomain: boolean;
+  readonly validationRefs?: readonly string[] | undefined;
+  readonly failureModes?: readonly string[] | undefined;
+  readonly promotionPacketId?: string | undefined;
+  readonly humanCheckpointLabel?: string | undefined;
 }
 
 export interface PhysicsCapsule {

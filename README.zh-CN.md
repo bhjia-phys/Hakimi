@@ -190,6 +190,7 @@ formula capsule
 - 0.2.7 已经开始动态工具暴露：当 research turn 已经拿到 bounded `ResearchContextPack` 之后，runtime 可以施加一个临时 managed-tool overlay，使 theory-oriented turn 保留语义研究工具，而 code-oriented turn 额外暴露 `Bash` / `Write` / `Edit`。详见 [AITP Agent 0.2.7 Audit](docs/internal/aitp-agent-0.2.7-audit.md)。
 - 0.2.8 已经开始受控自动捕获：`tool_lifecycle.completed` 现在可以结合 active `WorkFrame` 自动识别真实工具结果，把 git diff / benchmark / failure / source excerpt 压缩写入 `.aitp/research-ledger`，同时为低价值工具噪音留下明确的 skip reason 审计记录。详见 [AITP Agent 0.2.8 Audit](docs/internal/aitp-agent-0.2.8-audit.md)。
 - 0.2.9 已经开始 graph-aware memory compilation：research-ledger events 现在可以编译成 typed graph candidates，并附带 provenance check、dependency diagnostics、assumption trace 和 incompatible convention warning；这些输出仍然保持 candidate-level，不会静默变成 canonical memory。详见 [AITP Agent 0.2.9 Audit](docs/internal/aitp-agent-0.2.9-audit.md)。
+- 0.3.0 已经开始 promotion pipeline 和 trust-ladder gate：graph candidates 现在只能通过显式 `PhysicsPromotionPacket` 才能晋升，source refs、scope、validation refs 以及 formalized 所需的人类 checkpoint 都会被严格检查；晋升后的 capsule 会保留 trust metadata，而不是抹掉 promotion path。详见 [AITP Agent 0.3.0 Audit](docs/internal/aitp-agent-0.3.0-audit.md)。
 - 剩余阶段的执行顺序已经以 [AITP Agent Runtime Slices V2 Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md) 为主：controlled auto-capture 之后继续进入 memory compiler v2、promotion / trust gating、final-gate lifecycle integration、harness v2、bridge-gated domain isolation 和后续 graph/formalization lane。
 
 ## 本地开发
