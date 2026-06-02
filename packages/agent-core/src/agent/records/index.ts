@@ -170,6 +170,7 @@ function restoreAgentRecord(agent: Agent, input: AgentRecord): void {
     case 'research_ledger.roots_loaded':
     case 'research_ledger.event_loaded':
     case 'research_ledger.event_written':
+    case 'research_ledger.auto_capture_skipped':
     case 'research_ledger.proposals_compiled':
       return;
     case 'research_action.call_started':

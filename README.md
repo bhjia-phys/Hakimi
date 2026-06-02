@@ -1,6 +1,6 @@
 # AITP Agent
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-runtime--roadmap-blue)](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-runtime--roadmap-blue)](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md)
 
 [Chinese](README.zh-CN.md) | [Upstream Kimi Code docs](https://moonshotai.github.io/kimi-code/en/)
 
@@ -188,6 +188,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.2.5 has added the first WorkFrame ContextPack orchestrator: active WorkFrames can compile bounded `ResearchContextPack` summaries from DomainProfile, WorkflowRecipe, PhysicsMemory, ResearchLedger, and action bindings, then attach the pack id back to the WorkFrame for replay and audit. See [AITP Agent 0.2.5 Audit](docs/internal/aitp-agent-0.2.5-audit.md).
 - 0.2.6 has started closing the turn loop: prompt-sensitive WorkFrame reuse/switching now runs inside the injection cycle, bounded `ResearchContextPack` summaries can be recompiled for the inferred active frame, and a compact AITP research-context reminder can enter the model-facing context before a research step. See [AITP Agent 0.2.6 Audit](docs/internal/aitp-agent-0.2.6-audit.md).
 - 0.2.7 has started dynamic tool exposure: once a research turn has a bounded `ResearchContextPack`, the runtime can apply a temporary managed-tool overlay so theory-oriented turns keep semantic research tools visible while code-oriented turns can additionally expose `Bash` / `Write` / `Edit`. See [AITP Agent 0.2.7 Audit](docs/internal/aitp-agent-0.2.7-audit.md).
+- 0.2.8 has started controlled auto-capture from real work: `tool_lifecycle.completed` can now classify real tool outcomes against the active `WorkFrame`, write compact git-diff / benchmark / failure / source-excerpt evidence into `.aitp/research-ledger`, and record explicit skip reasons for low-value tool noise. See [AITP Agent 0.2.8 Audit](docs/internal/aitp-agent-0.2.8-audit.md).
 - The remaining implementation sequence is now re-baselined in [AITP Agent Runtime Slices V2 Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md): turn-loop context closure, dynamic tool exposure, controlled auto-capture from real work, memory compiler v2, promotion and trust gating, final-gate lifecycle integration, harness v2, stronger domain verticals, bridge-gated domain isolation, and a later graph/formalization lane.
 
 ## Development
@@ -260,6 +261,14 @@ Focused verification for the 0.0.7 capsule boundary compiler is:
 pnpm vitest run packages/agent-core/test/research-block/compiler.test.ts
 pnpm --filter @moonshot-ai/agent-core typecheck
 pnpm exec oxlint packages/agent-core/src/research-block packages/agent-core/src/index.ts packages/agent-core/test/research-block/compiler.test.ts
+```
+
+Focused verification for the 0.2.8 controlled auto-capture slice is:
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/research-ledger/auto-capture.test.ts packages/agent-core/test/agent/tool-lifecycle.test.ts packages/agent-core/test/research-ledger/capture-policy.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/agent/research-ledger/auto-capture.ts packages/agent-core/src/agent/research-ledger/index.ts packages/agent-core/src/agent/tool-lifecycle/index.ts packages/agent-core/src/agent/turn/index.ts packages/agent-core/src/agent/records/types.ts packages/agent-core/src/agent/records/index.ts packages/agent-core/test/research-ledger/auto-capture.test.ts
 ```
 
 Focused verification for the 0.0.8 physics direction engine is:

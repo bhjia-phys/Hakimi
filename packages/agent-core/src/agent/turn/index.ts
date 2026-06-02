@@ -1156,7 +1156,7 @@ export class TurnFlow {
         properties['error_type'] = errorType;
       }
       this.agent.telemetry.track('tool_call', properties);
-      this.agent.toolLifecycle.recordCompleted({
+      void this.agent.toolLifecycle.recordCompleted({
         source: 'loop',
         turnId,
         toolCallId: event.toolCallId,

@@ -2,6 +2,7 @@ import type { Agent } from '..';
 import type {
   CompileResearchLedgerOptions,
   ResearchLedgerCompileResult,
+  ResearchCaptureDiagnostic,
   ResearchLedgerEvent,
   ResearchLedgerRegistry,
   ResearchLedgerWriteInput,
@@ -19,6 +20,15 @@ export interface ResearchLedgerRecordOptions {
 
 export interface ResearchLedgerWriteOptions extends ResearchLedgerRecordOptions {
   readonly overwrite?: boolean | undefined;
+}
+
+export interface ResearchLedgerAutoCaptureSkippedInput extends ResearchLedgerRecordOptions {
+  readonly toolName: string;
+  readonly toolCallId: string;
+  readonly workFrameId?: string | undefined;
+  readonly actionCallId?: string | undefined;
+  readonly reason: string;
+  readonly diagnostics?: readonly ResearchCaptureDiagnostic[] | undefined;
 }
 
 export class ResearchLedgerManager {
@@ -100,6 +110,23 @@ export class ResearchLedgerManager {
       status: event.metadata.status,
       path,
       ...(options.toolCallId === undefined ? {} : { toolCallId: options.toolCallId }),
+    });
+  }
+
+  recordAutoCaptureSkipped(input: ResearchLedgerAutoCaptureSkippedInput): void {
+    this.agent.records.logRecord({
+      type: 'research_ledger.auto_capture_skipped',
+      source: input.source,
+      toolName: input.toolName,
+      toolCallId: input.toolCallId,
+      reason: input.reason,
+      diagnostics: (input.diagnostics ?? []).map((diagnostic) => ({
+        severity: diagnostic.severity,
+        code: diagnostic.code,
+        message: diagnostic.message,
+      })),
+      ...(input.workFrameId === undefined ? {} : { workFrameId: input.workFrameId }),
+      ...(input.actionCallId === undefined ? {} : { actionCallId: input.actionCallId }),
     });
   }
 

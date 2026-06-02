@@ -350,6 +350,19 @@ export interface AgentRecordEvents {
     path?: string | undefined;
     toolCallId?: string | undefined;
   };
+  'research_ledger.auto_capture_skipped': {
+    source: ResearchLedgerRecordSource;
+    toolName: string;
+    toolCallId: string;
+    workFrameId?: string | undefined;
+    actionCallId?: string | undefined;
+    reason: string;
+    diagnostics: readonly {
+      severity: 'info' | 'warning' | 'error';
+      code: string;
+      message: string;
+    }[];
+  };
   'research_ledger.proposals_compiled': {
     source: ResearchLedgerRecordSource;
     topic?: ResearchTopicId | undefined;
