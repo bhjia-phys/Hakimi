@@ -37,11 +37,42 @@ export const LIBRPA_HEAD_WING_LENSES = [
         description: 'Run or record a minimal head-wing smoke benchmark before validation.',
       },
     ],
-    suggestedActions: [
-      'code.inspect_call_sites',
-      'code.map_formula_to_code_region',
-      'code.capture_git_diff_observation',
-      'benchmark.run_minimal_librpa_case',
+    suggestedActionBindings: [
+      {
+        id: 'binding.librpa-head-wing.inspect-call-sites',
+        actionId: 'code.inspect_call_sites',
+        domainId: 'librpa/head-wing',
+        workflowId: 'workflow.librpa.head-wing.formula-code-mapping',
+        lensId: 'librpa_head_wing_formula_code_mapping',
+        priority: 'blocking',
+      },
+      {
+        id: 'binding.librpa-head-wing.map-formula-code-region',
+        actionId: 'code.map_formula_to_code_region',
+        domainId: 'librpa/head-wing',
+        workflowId: 'workflow.librpa.head-wing.formula-code-mapping',
+        lensId: 'librpa_head_wing_formula_code_mapping',
+        checkId: 'check.librpa-head-wing.code-mapping',
+        priority: 'blocking',
+      },
+      {
+        id: 'binding.librpa-head-wing.capture-git-diff',
+        actionId: 'code.capture_git_diff_observation',
+        domainId: 'librpa/head-wing',
+        workflowId: 'workflow.librpa.head-wing.formula-code-mapping',
+        lensId: 'librpa_head_wing_formula_code_mapping',
+        priority: 'high',
+      },
+      {
+        id: 'binding.librpa-head-wing.run-minimal-case',
+        actionId: 'benchmark.run_minimal_case',
+        domainId: 'librpa/head-wing',
+        workflowId: 'workflow.librpa.head-wing.formula-code-mapping',
+        lensId: 'librpa_head_wing_formula_code_mapping',
+        checkId: 'check.librpa-head-wing.benchmark',
+        adapterId: 'adapter.librpa.head-wing-smoke',
+        priority: 'blocking',
+      },
     ],
     expansionHandles: [
       {

@@ -107,7 +107,7 @@ describe('ResearchActionTool', () => {
       ledger_event_ids: ['event.librpa.mapping-note'],
       evidence_refs: ['ledger:event.librpa.mapping-note'],
       primitive_tool_call_ids: ['tool_call_read_head_wing'],
-      next_suggested_actions: ['benchmark.run_smoke_case'],
+      next_suggested_actions: ['benchmark.run_minimal_case'],
       action_output: { status: 'needs_benchmark' },
     });
 

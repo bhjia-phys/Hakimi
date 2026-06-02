@@ -14,7 +14,6 @@ describe('default research actions', () => {
 
     expect(registry.listActions().map((action) => action.id)).toEqual([
       'benchmark.run_minimal_case',
-      'benchmark.run_minimal_librpa_case',
       'code.capture_git_diff_observation',
       'code.check_intermediate_observable',
       'code.inspect_call_sites',
@@ -33,7 +32,6 @@ describe('default research actions', () => {
       'memory.propose_capsule',
       'memory.reject_or_downgrade',
       'physics.apply_direction_lens',
-      'physics.check_flux_quantization_convention',
       'scope.compile_context_pack',
       'scope.declare_convention_set',
       'scope.open_work_frame',
@@ -76,7 +74,29 @@ describe('default research actions', () => {
       'benchmark.run_minimal_case',
       'memory.promote_capsule',
       'harness.build_eval_from_failure',
-      'benchmark.run_minimal_librpa_case',
     ]);
+  });
+
+  it('keeps universal action ids free of domain-specific topic nouns', () => {
+    const forbiddenSegments = [
+      'librpa',
+      'fqhe',
+      'chern',
+      'cs',
+      'laughlin',
+      'head',
+      'wing',
+      'flux',
+      'quantization',
+    ];
+
+    for (const action of DEFAULT_RESEARCH_ACTIONS) {
+      const segments = action.id.split(/[._-]/);
+      for (const token of forbiddenSegments) {
+        expect(segments, `${action.id} should not contain domain segment ${token}`).not.toContain(
+          token,
+        );
+      }
+    }
   });
 });

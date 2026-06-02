@@ -1,5 +1,4 @@
 import type { ResearchActionDefinition } from './types';
-import { LIBRPA_HEAD_WING_ACTIONS } from './librpa-head-wing';
 
 export const DEFAULT_RESEARCH_ACTIONS = [
   action({
@@ -220,26 +219,6 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     ],
   }),
   action({
-    id: 'physics.check_flux_quantization_convention',
-    category: 'physics',
-    exposure: 'direct',
-    phase: 'validate',
-    title: 'Check flux quantization convention',
-    description:
-      'Check charge normalization and flux identity before using charge-flux quantization reasoning.',
-    inputKinds: ['Claim', 'Formula', 'ConventionSet'],
-    outputKinds: ['LedgerEvent'],
-    domains: ['topological-order', 'topological-order/fqhe-cs'],
-    triggerHints: [
-      'fractional charge',
-      'flux quantum',
-      'dirac quantization',
-      'AB phase',
-      'Chern-Simons flux',
-    ],
-    suggestedNextActions: ['validate.check_convention', 'derive.compare_with_known_result'],
-  }),
-  action({
     id: 'validate.check_dimension',
     category: 'physics',
     exposure: 'direct',
@@ -311,6 +290,20 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     primitiveToolPolicy: 'git-read',
   }),
   action({
+    id: 'code.inspect_call_sites',
+    category: 'code',
+    exposure: 'direct',
+    phase: 'code',
+    title: 'Inspect call sites',
+    description:
+      'Inspect call sites, downstream readers, and data-flow consumers before changing a code path.',
+    inputKinds: ['CodeRegion'],
+    outputKinds: ['LedgerEvent'],
+    primitiveToolPolicy: 'read-only',
+    triggerHints: ['call site', 'downstream reference', 'reader', 'consumer'],
+    suggestedNextActions: ['code.map_formula_to_code_region'],
+  }),
+  action({
     id: 'code.map_formula_to_code',
     category: 'code',
     exposure: 'direct',
@@ -330,6 +323,34 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     primitiveToolPolicy: 'read-only',
   }),
   action({
+    id: 'code.map_formula_to_code_region',
+    category: 'code',
+    exposure: 'direct',
+    phase: 'code',
+    title: 'Map formula to code region',
+    description:
+      'Map a formula term to a concrete code region, intermediate observable, and affected data flow.',
+    inputKinds: ['Formula', 'CodeRegion'],
+    outputKinds: ['CodeMapping'],
+    primitiveToolPolicy: 'read-only',
+    generatedObligations: [
+      {
+        kind: 'code_mapping',
+        severity: 'blocking',
+        reason: 'Formula-code mappings must be checked against call sites and observables.',
+        requiredActionId: 'code.check_intermediate_observable',
+      },
+      {
+        kind: 'benchmark',
+        severity: 'important',
+        reason: 'Formula-code mappings should run or record a minimal benchmark before validation.',
+        requiredActionId: 'benchmark.run_minimal_case',
+      },
+    ],
+    triggerHints: ['formula-code mapping', 'intermediate observable', 'data flow'],
+    suggestedNextActions: ['code.capture_git_diff_observation', 'benchmark.run_minimal_case'],
+  }),
+  action({
     id: 'code.check_intermediate_observable',
     category: 'code',
     exposure: 'direct',
@@ -339,6 +360,20 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     inputKinds: ['CodeMapping'],
     outputKinds: ['LedgerEvent'],
     primitiveToolPolicy: 'read-only',
+  }),
+  action({
+    id: 'code.capture_git_diff_observation',
+    category: 'code',
+    exposure: 'direct',
+    phase: 'code',
+    title: 'Capture git diff observation',
+    description:
+      'Capture a compact git diff observation as evidence for a code or formula-mapping change.',
+    inputKinds: ['CodeRegion', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    primitiveToolPolicy: 'git-read',
+    triggerHints: ['git diff', 'code observation', 'patch'],
+    suggestedNextActions: ['benchmark.run_minimal_case'],
   }),
   action({
     id: 'benchmark.run_minimal_case',
@@ -401,7 +436,6 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     inputKinds: ['FailureMode', 'LedgerEvent'],
     outputKinds: ['HarnessCandidate'],
   }),
-  ...LIBRPA_HEAD_WING_ACTIONS,
 ] as const satisfies readonly ResearchActionDefinition[];
 
 export function registerDefaultResearchActions(registry: {

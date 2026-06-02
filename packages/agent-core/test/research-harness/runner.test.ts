@@ -98,7 +98,7 @@ describe('research harness eval runner', () => {
 
     expect(result.outcome).toBe('fail');
     expect(result.sequence.reason).toBe(
-      'Missing expected action physics.check_flux_quantization_convention in order.',
+      'Missing expected action validate.check_convention in order.',
     );
   });
 
@@ -113,7 +113,7 @@ describe('research harness eval runner', () => {
         },
         {
           ...actionRecord('pass'),
-          actionId: 'physics.check_flux_quantization_convention',
+          actionId: 'validate.check_convention',
           evidenceRefs: ['ledger:event.fqhe.flux-convention'],
         },
       ],
@@ -139,11 +139,21 @@ function fqheChargeFluxEvalCase(): ResearchEvalCase {
     task: 'Explain inverse fractional charge and flux period without conflating flux identities.',
     domain: 'topological-order/fqhe-cs',
     capsuleRefs: ['capsule.candidate.fqhe.flux-insertion-charge'],
-    actionSequence: ['physics.apply_direction_lens', 'physics.check_flux_quantization_convention'],
+    actionSequence: [
+      'physics.apply_direction_lens',
+      {
+        id: 'binding.fqhe-cs.charge-flux-convention',
+        actionId: 'validate.check_convention',
+        domainId: 'topological-order/fqhe-cs',
+        lensId: 'charge_flux_quantization',
+        checkId: 'check.charge-flux-quantization.convention',
+        priority: 'blocking',
+      },
+    ],
     validations: [
       {
         type: 'action_outcome',
-        actionId: 'physics.check_flux_quantization_convention',
+        actionId: 'validate.check_convention',
         outcome: 'pass',
       },
       {

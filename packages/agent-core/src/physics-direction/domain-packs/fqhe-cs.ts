@@ -43,11 +43,40 @@ export const FQHE_CS_LENSES = [
           'Check the electron-charge limit and the Laughlin nu=1/m flux-insertion normalization.',
       },
     ],
-    suggestedActions: [
-      'physics.check_flux_quantization_convention',
-      'validate.check_convention',
-      'derive.compare_with_known_result',
-      'graph.query_dependency_closure',
+    suggestedActionBindings: [
+      {
+        id: 'binding.fqhe-cs.charge-flux-convention',
+        actionId: 'validate.check_convention',
+        domainId: 'topological-order/fqhe-cs',
+        lensId: 'charge_flux_quantization',
+        checkId: 'check.charge-flux-quantization.convention',
+        priority: 'blocking',
+        params: {
+          requiredDistinctions: [
+            'external_em_flux',
+            'emergent_cs_flux',
+            'quasiparticle_ab_flux_period',
+            'berry_curvature_flux',
+          ],
+        },
+        reason:
+          'Charge-flux reasoning must distinguish charge normalization and flux identity.',
+      },
+      {
+        id: 'binding.fqhe-cs.charge-flux-known-limit',
+        actionId: 'derive.compare_with_known_result',
+        domainId: 'topological-order/fqhe-cs',
+        lensId: 'charge_flux_quantization',
+        checkId: 'check.charge-flux-quantization.limiting-case',
+        priority: 'high',
+      },
+      {
+        id: 'binding.fqhe-cs.charge-flux-dependency-closure',
+        actionId: 'graph.query_dependency_closure',
+        domainId: 'topological-order/fqhe-cs',
+        lensId: 'charge_flux_quantization',
+        priority: 'normal',
+      },
     ],
     expansionHandles: [
       {

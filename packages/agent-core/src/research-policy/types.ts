@@ -1,6 +1,6 @@
 import type { PhysicsDomainId } from '../physics-memory';
 import type { PhysicsLensApplicabilityResult } from '../physics-direction';
-import type { ResearchObligation, WorkFrame } from '../research-action';
+import type { ResearchActionBinding, ResearchObligation, WorkFrame } from '../research-action';
 
 export type EscalationTier = 'tier0_light' | 'tier1_scoped' | 'tier2_verified' | 'tier3_promotion';
 export type RuntimeRequirementLevel = 'none' | 'recommended' | 'required';
@@ -35,6 +35,7 @@ export interface EscalationPolicyDecision {
   readonly requirements: RuntimeEscalationRequirements;
   readonly reasons: readonly string[];
   readonly recommendedActionIds: readonly string[];
+  readonly recommendedActionBindings: readonly ResearchActionBinding[];
   readonly lensCandidates: readonly PhysicsLensApplicabilityResult[];
 }
 

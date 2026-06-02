@@ -20,7 +20,15 @@ describe('research escalation policy', () => {
     expect(decision.lensCandidates.map((candidate) => candidate.lens.id)).toContain(
       'charge_flux_quantization',
     );
-    expect(decision.recommendedActionIds).toContain('physics.check_flux_quantization_convention');
+    expect(decision.recommendedActionIds).toContain('validate.check_convention');
+    expect(decision.recommendedActionBindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actionId: 'validate.check_convention',
+          checkId: 'check.charge-flux-quantization.convention',
+        }),
+      ]),
+    );
   });
 
   it('escalates LibRPA head-wing edits into verified workflow requirements', () => {
@@ -41,11 +49,19 @@ describe('research escalation policy', () => {
       finalGate: 'required',
     });
     expect(decision.recommendedActionIds).toEqual([
-      'benchmark.run_minimal_librpa_case',
+      'benchmark.run_minimal_case',
       'code.capture_git_diff_observation',
       'code.inspect_call_sites',
       'code.map_formula_to_code_region',
     ]);
+    expect(decision.recommendedActionBindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actionId: 'benchmark.run_minimal_case',
+          adapterId: 'adapter.librpa.head-wing-smoke',
+        }),
+      ]),
+    );
   });
 
   it('promotes validated memory requests into the promotion tier', () => {

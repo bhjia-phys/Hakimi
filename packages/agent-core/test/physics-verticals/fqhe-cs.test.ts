@@ -40,7 +40,7 @@ describe('FQHE/CS theory vertical slice', () => {
       evalCase: result.evalCase,
       actionRecords: [
         actionRecord('physics.apply_direction_lens', 'pass'),
-        actionRecord('physics.check_flux_quantization_convention', 'pass'),
+        actionRecord('validate.check_convention', 'pass'),
       ],
       checkResults: [result.conventionCheck.checkResult],
     });
@@ -74,7 +74,7 @@ describe('FQHE/CS theory vertical slice', () => {
     expect(check.obligation).toMatchObject({
       kind: 'convention_check',
       severity: 'blocking',
-      requiredActionId: 'physics.check_flux_quantization_convention',
+      requiredActionId: 'validate.check_convention',
       status: 'open',
     });
     expect(result.finalGate).toMatchObject({

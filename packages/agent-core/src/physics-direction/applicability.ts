@@ -83,7 +83,9 @@ export function checkPhysicsLensApplicability(
     caveats: lens.caveats,
     guidingQuestions: lens.guidingQuestions,
     requiredChecks: lens.requiredChecks,
-    suggestedActions: lens.suggestedActions,
+    suggestedActionBindings: lens.suggestedActionBindings,
+    suggestedActions:
+      lens.suggestedActions ?? lens.suggestedActionBindings.map((binding) => binding.actionId),
     expansionHandles: lens.expansionHandles ?? [],
   };
 }

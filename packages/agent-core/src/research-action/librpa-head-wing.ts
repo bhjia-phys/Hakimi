@@ -1,81 +1,38 @@
-import type { ResearchActionDefinition } from './types';
+import type { ResearchActionBinding } from './types';
 
-export const LIBRPA_HEAD_WING_ACTIONS = [
+export const LIBRPA_HEAD_WING_ACTION_BINDINGS = [
   {
-    id: 'code.inspect_call_sites',
-    category: 'code',
-    exposure: 'direct',
-    phase: 'code',
-    title: 'Inspect call sites',
-    description:
-      'Inspect all call sites and downstream readers before changing a LibRPA head-wing code path.',
-    inputKinds: ['CodeRegion'],
-    outputKinds: ['LedgerEvent'],
-    primitiveToolPolicy: 'read-only',
-    domains: ['librpa'],
-    triggerHints: ['head-wing', 'call site', 'downstream reference'],
-    suggestedNextActions: ['code.map_formula_to_code_region'],
+    id: 'binding.librpa-head-wing.inspect-call-sites',
+    actionId: 'code.inspect_call_sites',
+    domainId: 'librpa/head-wing',
+    workflowId: 'workflow.librpa.head-wing.formula-code-mapping',
+    priority: 'blocking',
   },
   {
-    id: 'code.map_formula_to_code_region',
-    category: 'code',
-    exposure: 'direct',
-    phase: 'code',
-    title: 'Map formula to code region',
-    description:
-      'Map a formula term to the concrete LibRPA code region, intermediate observable, and affected data flow.',
-    inputKinds: ['Formula', 'CodeRegion'],
-    outputKinds: ['CodeMapping'],
-    primitiveToolPolicy: 'read-only',
-    domains: ['librpa'],
-    generatedObligations: [
-      {
-        kind: 'code_mapping',
-        severity: 'blocking',
-        reason: 'LibRPA formula-code mappings must be checked against call sites and observables.',
-        requiredActionId: 'code.check_intermediate_observable',
-      },
-      {
-        kind: 'benchmark',
-        severity: 'important',
-        reason: 'LibRPA code mappings need a smoke benchmark before validation.',
-        requiredActionId: 'benchmark.run_minimal_librpa_case',
-      },
-    ],
-    triggerHints: ['formula-code mapping', 'head-wing', 'observable'],
-    suggestedNextActions: ['code.capture_git_diff_observation', 'benchmark.run_minimal_librpa_case'],
+    id: 'binding.librpa-head-wing.map-formula-code-region',
+    actionId: 'code.map_formula_to_code_region',
+    domainId: 'librpa/head-wing',
+    workflowId: 'workflow.librpa.head-wing.formula-code-mapping',
+    checkId: 'check.librpa-head-wing.code-mapping',
+    priority: 'blocking',
   },
   {
-    id: 'code.capture_git_diff_observation',
-    category: 'code',
-    exposure: 'direct',
-    phase: 'code',
-    title: 'Capture git diff observation',
-    description:
-      'Capture a compact, source-backed git diff observation for a LibRPA code change.',
-    inputKinds: ['CodeRegion', 'LedgerEvent'],
-    outputKinds: ['LedgerEvent'],
-    primitiveToolPolicy: 'git-read',
-    domains: ['librpa'],
-    triggerHints: ['git diff', 'head-wing', 'code observation'],
-    suggestedNextActions: ['benchmark.run_minimal_librpa_case'],
+    id: 'binding.librpa-head-wing.capture-git-diff',
+    actionId: 'code.capture_git_diff_observation',
+    domainId: 'librpa/head-wing',
+    workflowId: 'workflow.librpa.head-wing.formula-code-mapping',
+    priority: 'high',
   },
   {
-    id: 'benchmark.run_minimal_librpa_case',
-    category: 'benchmark',
-    exposure: 'deferred',
-    phase: 'benchmark',
-    title: 'Run minimal LibRPA case',
-    description:
-      'Run or simulate a minimal LibRPA head-wing smoke benchmark and capture the observable result.',
-    inputKinds: ['BenchmarkCase', 'CodeMapping'],
-    outputKinds: ['LedgerEvent'],
-    primitiveToolPolicy: 'benchmark-gated',
-    domains: ['librpa'],
-    triggerHints: ['smoke benchmark', 'head-wing', 'intermediate observable'],
-    suggestedNextActions: ['harness.build_eval_from_failure'],
+    id: 'binding.librpa-head-wing.run-minimal-case',
+    actionId: 'benchmark.run_minimal_case',
+    domainId: 'librpa/head-wing',
+    workflowId: 'workflow.librpa.head-wing.formula-code-mapping',
+    checkId: 'check.librpa-head-wing.benchmark',
+    adapterId: 'adapter.librpa.head-wing-smoke',
+    priority: 'blocking',
   },
-] as const satisfies readonly ResearchActionDefinition[];
+] as const satisfies readonly ResearchActionBinding[];
 
 export interface LibrpaHeadWingSmokeBenchmarkInput {
   readonly expected: Readonly<Record<string, number>>;
