@@ -25,6 +25,7 @@ import {
   type BackgroundConfig,
   type WorkspaceAdditionalDirsLoadResult,
 } from '../config';
+import { DomainProfileRegistry, resolveDomainProfileRoots } from '../domain-profile';
 import { makeErrorPayload } from '../errors';
 import {
   McpConnectionManager,
@@ -34,6 +35,7 @@ import {
 } from '../mcp';
 import { PhysicsMemoryRegistry, resolvePhysicsMemoryRoots } from '../physics-memory';
 import { ResearchLedgerRegistry, resolveResearchLedgerRoots } from '../research-ledger';
+import { WorkflowRecipeRegistry, resolveWorkflowRecipeRoots } from '../workflow-recipe';
 import type { EnabledPluginSessionStart, PluginCommandDef } from '../plugin';
 import {
   DEFAULT_AGENT_PROFILES,
@@ -74,8 +76,10 @@ export interface SessionOptions {
   readonly hooks?: readonly HookDef[];
   readonly permissionRules?: readonly PermissionRule[];
   readonly skills?: SessionSkillConfig;
+  readonly domainProfiles?: SessionDomainProfileConfig;
   readonly physicsMemory?: SessionPhysicsMemoryConfig;
   readonly researchLedger?: SessionResearchLedgerConfig;
+  readonly workflowRecipes?: SessionWorkflowRecipeConfig;
   readonly mcpConfig?: SessionMcpConfig;
   readonly telemetry?: TelemetryClient | undefined;
   readonly pluginSessionStarts?: readonly EnabledPluginSessionStart[];
@@ -110,7 +114,19 @@ export interface SessionPhysicsMemoryConfig {
   readonly extraDirs?: readonly string[];
 }
 
+export interface SessionDomainProfileConfig {
+  readonly userHomeDir?: string;
+  readonly explicitDirs?: readonly string[];
+  readonly extraDirs?: readonly string[];
+}
+
 export interface SessionResearchLedgerConfig {
+  readonly userHomeDir?: string;
+  readonly explicitDirs?: readonly string[];
+  readonly extraDirs?: readonly string[];
+}
+
+export interface SessionWorkflowRecipeConfig {
   readonly userHomeDir?: string;
   readonly explicitDirs?: readonly string[];
   readonly extraDirs?: readonly string[];
@@ -188,8 +204,10 @@ export class Session {
   readonly rpc: SDKSessionRPC;
   readonly telemetry: TelemetryClient;
   readonly skills: SessionSkillRegistry;
+  readonly domainProfiles: DomainProfileRegistry | null;
   readonly physicsMemory: PhysicsMemoryRegistry | null;
   readonly researchLedger: ResearchLedgerRegistry | null;
+  readonly workflowRecipes: WorkflowRecipeRegistry | null;
   readonly agents: Map<string, AgentEntry> = new Map();
   readonly mcp: McpConnectionManager;
   readonly log: Logger;
@@ -204,8 +222,10 @@ export class Session {
   private readonly pluginCommands: readonly PluginCommandDef[];
   private agentIdCounter = 0;
   private readonly skillsReady: Promise<void>;
+  private readonly domainProfilesReady: Promise<void>;
   private readonly physicsMemoryReady: Promise<void>;
   private readonly researchLedgerReady: Promise<void>;
+  private readonly workflowRecipesReady: Promise<void>;
   metadata: SessionMeta = {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -248,6 +268,13 @@ export class Session {
     this.skills = new SessionSkillRegistry({
       sessionId: options.id,
     });
+    this.domainProfiles = this.experimentalFlags.enabled('domain-profile')
+      ? new DomainProfileRegistry({
+          onWarning: (message, cause) => {
+            this.log.warn('domain profile load warning', { message, cause });
+          },
+        })
+      : null;
     this.physicsMemory = this.experimentalFlags.enabled('physics-memory')
       ? new PhysicsMemoryRegistry({
           onWarning: (message, cause) => {
@@ -259,6 +286,13 @@ export class Session {
       ? new ResearchLedgerRegistry({
           onWarning: (message, cause) => {
             this.log.warn('research ledger load warning', { message, cause });
+          },
+        })
+      : null;
+    this.workflowRecipes = this.experimentalFlags.enabled('workflow-recipe')
+      ? new WorkflowRecipeRegistry({
+          onWarning: (message, cause) => {
+            this.log.warn('workflow recipe load warning', { message, cause });
           },
         })
       : null;
@@ -277,6 +311,13 @@ export class Session {
       .then(() => {
         this.refreshAgentBuiltinTools();
       });
+    this.domainProfilesReady = this.loadDomainProfiles()
+      .catch((error: unknown) => {
+        this.log.error('domain profiles load failed', error);
+      })
+      .then(() => {
+        this.refreshAgentBuiltinTools();
+      });
     this.physicsMemoryReady = this.loadPhysicsMemory()
       .catch((error: unknown) => {
         this.log.error('physics memory load failed', error);
@@ -287,6 +328,13 @@ export class Session {
     this.researchLedgerReady = this.loadResearchLedger()
       .catch((error: unknown) => {
         this.log.error('research ledger load failed', error);
+      })
+      .then(() => {
+        this.refreshAgentBuiltinTools();
+      });
+    this.workflowRecipesReady = this.loadWorkflowRecipes()
+      .catch((error: unknown) => {
+        this.log.error('workflow recipes load failed', error);
       })
       .then(() => {
         this.refreshAgentBuiltinTools();
@@ -394,8 +442,10 @@ export class Session {
 
   async resume(): Promise<{ warning?: string }> {
     await this.skillsReady;
+    await this.domainProfilesReady;
     await this.physicsMemoryReady;
     await this.researchLedgerReady;
+    await this.workflowRecipesReady;
     this.log.info('session resume', { app_version: this.options.appVersion });
     const { agents, additionalDirs = [] } = await this.readMetadata();
     const cwd = this.toolKaos.getcwd();
@@ -675,8 +725,10 @@ export class Session {
     options: CreateAgentOptions = {},
   ): Promise<{ readonly id: string; readonly agent: Agent }> {
     await this.skillsReady;
+    await this.domainProfilesReady;
     await this.physicsMemoryReady;
     await this.researchLedgerReady;
+    await this.workflowRecipesReady;
     const type = config.type ?? 'main';
     const id = type === 'main' ? 'main' : this.nextGeneratedAgentId();
     const homedir = config.homedir ?? join(this.options.homedir, 'agents', id);
@@ -910,6 +962,22 @@ export class Session {
     registerBuiltinSkills(this.skills);
   }
 
+  private async loadDomainProfiles(): Promise<void> {
+    if (this.domainProfiles === null) return;
+    const roots = await resolveDomainProfileRoots({
+      paths: {
+        userHomeDir:
+          this.options.domainProfiles?.userHomeDir ??
+          this.options.skills?.userHomeDir ??
+          homedir(),
+        workDir: this.options.kaos.getcwd(),
+      },
+      explicitDirs: this.options.domainProfiles?.explicitDirs,
+      extraDirs: this.options.domainProfiles?.extraDirs,
+    });
+    await this.domainProfiles.loadRoots(roots);
+  }
+
   private async loadPhysicsMemory(): Promise<void> {
     if (this.physicsMemory === null) return;
     const roots = await resolvePhysicsMemoryRoots({
@@ -940,6 +1008,22 @@ export class Session {
       extraDirs: this.options.researchLedger?.extraDirs,
     });
     await this.researchLedger.loadRoots(roots);
+  }
+
+  private async loadWorkflowRecipes(): Promise<void> {
+    if (this.workflowRecipes === null) return;
+    const roots = await resolveWorkflowRecipeRoots({
+      paths: {
+        userHomeDir:
+          this.options.workflowRecipes?.userHomeDir ??
+          this.options.skills?.userHomeDir ??
+          homedir(),
+        workDir: this.options.kaos.getcwd(),
+      },
+      explicitDirs: this.options.workflowRecipes?.explicitDirs,
+      extraDirs: this.options.workflowRecipes?.extraDirs,
+    });
+    await this.workflowRecipes.loadRoots(roots);
   }
 
   private async loadMcpServers(): Promise<void> {
@@ -1021,8 +1105,10 @@ export class Session {
       // compression captions live with the session, not the agent.
       mediaOriginalsDir: sessionMediaOriginalsDir(this.options.homedir),
       skills: this.skills,
+      domainProfiles: this.domainProfiles ?? undefined,
       physicsMemory: this.physicsMemory ?? undefined,
       researchLedger: this.researchLedger ?? undefined,
+      workflowRecipes: this.workflowRecipes ?? undefined,
       rpc: proxyWithExtraPayload(this.rpc, { agentId: id }),
       modelProvider: this.options.providerManager,
       hookEngine: config.hookEngine ?? this.hookEngine,

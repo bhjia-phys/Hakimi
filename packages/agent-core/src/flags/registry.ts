@@ -54,6 +54,22 @@ export const FLAG_DEFINITIONS = [
     default: false,
     surface: 'core',
   },
+  {
+    id: 'domain-profile',
+    title: 'Domain profiles',
+    description: 'Load domain profiles for research context compilation.',
+    env: 'KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE',
+    default: false,
+    surface: 'core',
+  },
+  {
+    id: 'workflow-recipe',
+    title: 'Workflow recipes',
+    description: 'Load reusable research workflow recipes.',
+    env: 'KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE',
+    default: false,
+    surface: 'core',
+  },
 ] as const satisfies readonly FlagDefinitionInput[];
 
 /** Literal union of registered flag ids. */

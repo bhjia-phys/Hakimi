@@ -184,7 +184,8 @@ formula capsule
 - 0.2 已经开始实现可执行的 FQHE/CS theory vertical slice：Laughlin wavefunction、flux insertion、Abelian CS action 和 K-matrix response blocks 可以编译成 candidate capsules，经过 charge-flux lens/convention checks，生成 eval case，并进入 final gate。详见 [AITP Agent 0.2 Audit](docs/internal/aitp-agent-0.2-audit.md)。
 - 0.2.1 upstream sync guardrail 已经配置本地 Kimi Code `upstream` remote；由于当前环境 GitHub HTTPS 访问失败，fetch/merge 暂未执行。详见 [Upstream Sync 2026-06-02](docs/internal/upstream-sync-2026-06-02.md)。
 - 0.2.2 已经把 research actions 重构为 universal ids 加结构化 `ResearchActionBinding`：FQHE/CS charge-flux check 现在绑定到 `validate.check_convention` 和 charge-flux `checkId`；LibRPA head-wing benchmark 现在绑定到 `benchmark.run_minimal_case` 和 LibRPA adapter id。详见 [AITP Agent 0.2.2 Audit](docs/internal/aitp-agent-0.2.2-audit.md)。
-- 剩余阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md) 和 [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md)：domain profiles、workflow recipes、dynamic context packs、real diff/artifact capture、model-loop wiring 和更广的 domain memory。
+- 0.2.3 已经加入 file-backed `DomainProfile` 和 `WorkflowRecipe` registries，通过 `KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE` 和 `KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE` 开启，扫描 `.aitp/domain-profiles` 和 `.aitp/workflow-recipes` 并暴露为 `agent.domainProfiles` 和 `agent.workflowRecipes`。详见 [AITP Agent 0.2.3 Audit](docs/internal/aitp-agent-0.2.3-audit.md)。
+- 剩余阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md) 和 [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md)：dynamic context packs、real diff/artifact capture、model-loop wiring 和更广的 domain memory。
 
 ## 本地开发
 
