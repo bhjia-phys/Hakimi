@@ -1,4 +1,14 @@
 import type { ResearchActionBinding } from './types';
+export {
+  LIBRPA_HEAD_WING_SMOKE_ACTION_ID,
+  LIBRPA_HEAD_WING_SMOKE_ADAPTER_ID,
+  LIBRPA_HEAD_WING_SMOKE_BENCHMARK_ADAPTER,
+  LIBRPA_HEAD_WING_SMOKE_CHECK_ID,
+  LIBRPA_HEAD_WING_SMOKE_DOMAIN,
+  runLibrpaHeadWingSmokeBenchmark,
+  type LibrpaHeadWingSmokeBenchmarkInput,
+  type LibrpaHeadWingSmokeBenchmarkResult,
+} from '../benchmark-adapter';
 
 export const LIBRPA_HEAD_WING_ACTION_BINDINGS = [
   {
@@ -33,45 +43,3 @@ export const LIBRPA_HEAD_WING_ACTION_BINDINGS = [
     priority: 'blocking',
   },
 ] as const satisfies readonly ResearchActionBinding[];
-
-export interface LibrpaHeadWingSmokeBenchmarkInput {
-  readonly expected: Readonly<Record<string, number>>;
-  readonly observed: Readonly<Record<string, number>>;
-  readonly tolerance: number;
-}
-
-export interface LibrpaHeadWingSmokeBenchmarkResult {
-  readonly outcome: 'pass' | 'fail';
-  readonly maxAbsDiff: number;
-  readonly failingKeys: readonly string[];
-  readonly observation: string;
-}
-
-export function runLibrpaHeadWingSmokeBenchmark(
-  input: LibrpaHeadWingSmokeBenchmarkInput,
-): LibrpaHeadWingSmokeBenchmarkResult {
-  const keys = [...new Set([...Object.keys(input.expected), ...Object.keys(input.observed)])].toSorted();
-  let maxAbsDiff = 0;
-  const failingKeys: string[] = [];
-  for (const key of keys) {
-    const expected = input.expected[key] ?? 0;
-    const observed = input.observed[key] ?? 0;
-    const diff = Math.abs(observed - expected);
-    maxAbsDiff = Math.max(maxAbsDiff, diff);
-    if (diff > input.tolerance) failingKeys.push(key);
-  }
-  const outcome = failingKeys.length === 0 ? 'pass' : 'fail';
-  return {
-    outcome,
-    maxAbsDiff,
-    failingKeys,
-    observation:
-      outcome === 'pass'
-        ? `LibRPA head-wing smoke benchmark passed; max_abs_diff=${formatNumber(maxAbsDiff)}.`
-        : `LibRPA head-wing smoke benchmark failed for ${failingKeys.join(', ')}; max_abs_diff=${formatNumber(maxAbsDiff)}.`,
-  };
-}
-
-function formatNumber(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toExponential(6);
-}

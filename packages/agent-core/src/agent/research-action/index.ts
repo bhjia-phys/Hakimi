@@ -12,6 +12,20 @@ import type {
   ResearchObligation,
   WorkFrame,
 } from '../../research-action';
+import type {
+  BenchmarkAdapterId,
+  BenchmarkAdapterRunInput,
+  BenchmarkAdapterRunResult,
+} from '../../benchmark-adapter';
+import {
+  buildFormalizationPlan,
+  type FormalizationPlan,
+  type FormalizationPlanInput,
+} from '../../formalization';
+import {
+  buildPhysicsGraphFromMemory,
+  type PhysicsGraph,
+} from '../../physics-graph';
 
 export interface ResearchActionRecordOptions {
   readonly source: ResearchActionSource;
@@ -44,10 +58,17 @@ export interface ActiveResearchActionCall {
   readonly startedAt: number;
 }
 
+interface RecentEvidenceRef {
+  readonly ref: string;
+  readonly workFrameId?: string | undefined;
+  readonly domain?: string | undefined;
+  readonly topic?: string | undefined;
+}
+
 export class ResearchActionManager {
   private activeCall: ActiveResearchActionCall | undefined;
   private readonly obligations = new Map<string, ResearchObligation>();
-  private recentEvidenceRefs: string[] = [];
+  private recentEvidenceRefs: RecentEvidenceRef[] = [];
 
   constructor(private readonly agent: Agent) {}
 
@@ -88,6 +109,25 @@ export class ResearchActionManager {
 
   requireContextPack(id: string): ResearchContextPack {
     return this.agent.researchContext.requirePack(id);
+  }
+
+  runBenchmarkAdapter(
+    adapterId: BenchmarkAdapterId,
+    input: BenchmarkAdapterRunInput,
+  ): BenchmarkAdapterRunResult {
+    return this.agent.benchmarkAdapters.run(adapterId, input);
+  }
+
+  buildPhysicsGraph(): PhysicsGraph {
+    const registry = this.agent.physicsMemory?.registry;
+    if (registry === undefined) {
+      throw new Error('Physics graph queries require a PhysicsMemory registry.');
+    }
+    return buildPhysicsGraphFromMemory(registry);
+  }
+
+  buildFormalizationPlan(input: FormalizationPlanInput): FormalizationPlan {
+    return buildFormalizationPlan(this.buildPhysicsGraph(), input);
   }
 
   startActionCall(
@@ -142,7 +182,7 @@ export class ResearchActionManager {
     if (this.activeCall?.callId === input.callId) {
       this.activeCall = undefined;
     }
-    this.pushEvidenceRefs(input.evidenceRefs ?? []);
+    this.pushEvidenceRefs(input.evidenceRefs ?? [], this.evidenceScope(workFrameId));
   }
 
   restoreActionCallStarted(input: {
@@ -161,10 +201,22 @@ export class ResearchActionManager {
     };
   }
 
-  restoreActionCallFinished(input: { readonly callId: string }): void {
+  restoreActionCallFinished(input: {
+    readonly callId: string;
+    readonly workFrameId?: string | undefined;
+    readonly evidenceRefs?: readonly string[] | undefined;
+  }): void {
     if (this.activeCall?.callId === input.callId) {
       this.activeCall = undefined;
     }
+    this.pushEvidenceRefs(input.evidenceRefs ?? [], this.evidenceScope(input.workFrameId));
+  }
+
+  restoreActionResultRecorded(input: {
+    readonly workFrameId?: string | undefined;
+    readonly evidenceRefs: readonly string[];
+  }): void {
+    this.pushEvidenceRefs(input.evidenceRefs, this.evidenceScope(input.workFrameId));
   }
 
   recordActionResult(
@@ -192,7 +244,7 @@ export class ResearchActionManager {
       nextSuggestedActions: input.nextSuggestedActions,
       ...(options.toolCallId === undefined ? {} : { toolCallId: options.toolCallId }),
     });
-    this.pushEvidenceRefs(input.evidenceRefs);
+    this.pushEvidenceRefs(input.evidenceRefs, this.evidenceScope(this.agent.workFrames.active?.id));
   }
 
   recordRawToolEscape(input: {
@@ -232,13 +284,50 @@ export class ResearchActionManager {
       .toSorted((a, b) => a.id.localeCompare(b.id));
   }
 
-  recentEvidence(limit = 20): readonly string[] {
-    return this.recentEvidenceRefs.slice(-Math.max(0, limit));
+  recentEvidence(
+    limit = 20,
+    filter: {
+      readonly workFrameId?: string | undefined;
+      readonly domain?: string | undefined;
+      readonly topic?: string | undefined;
+    } = {},
+  ): readonly string[] {
+    return this.recentEvidenceRefs
+      .filter(
+        (item) => filter.workFrameId === undefined || item.workFrameId === filter.workFrameId,
+      )
+      .filter((item) => filter.domain === undefined || item.domain === filter.domain)
+      .filter((item) => filter.topic === undefined || item.topic === filter.topic)
+      .slice(-Math.max(0, limit))
+      .map((item) => item.ref);
   }
 
-  private pushEvidenceRefs(evidenceRefs: readonly string[]): void {
+  private pushEvidenceRefs(
+    evidenceRefs: readonly string[],
+    scope: Omit<RecentEvidenceRef, 'ref'>,
+  ): void {
     if (evidenceRefs.length === 0) return;
-    this.recentEvidenceRefs = [...this.recentEvidenceRefs, ...evidenceRefs].slice(-50);
+    this.recentEvidenceRefs = [
+      ...this.recentEvidenceRefs,
+      ...evidenceRefs.map((ref) => ({
+        ref,
+        ...scope,
+      })),
+    ].slice(-50);
+  }
+
+  private evidenceScope(
+    workFrameId: string | undefined,
+  ): Omit<RecentEvidenceRef, 'ref'> {
+    const frame =
+      workFrameId === undefined
+        ? this.agent.workFrames.active
+        : this.agent.workFrames.list().find((item) => item.id === workFrameId);
+    return {
+      ...(workFrameId === undefined ? {} : { workFrameId }),
+      ...(frame?.domain === undefined ? {} : { domain: frame.domain }),
+      ...(frame?.topic === undefined ? {} : { topic: frame.topic }),
+    };
   }
 }
 

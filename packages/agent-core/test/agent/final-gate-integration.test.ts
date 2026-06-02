@@ -73,6 +73,66 @@ describe('final gate lifecycle integration', () => {
       ),
     ).toBe(false);
   });
+
+  it('does not let evidence from another WorkFrame satisfy validated status', async () => {
+    const ctx = testAgent();
+    ctx.configure();
+    ctx.agent.workFrames.open(
+      {
+        id: 'frame.librpa',
+        domain: 'librpa/head-wing',
+        topic: 'librpa-head-wing',
+        goal: 'Map formula to code.',
+      },
+      { source: 'controller' },
+    );
+    ctx.agent.researchAction.recordActionResult(
+      {
+        actionId: 'validate.check_formula_code_mapping',
+        callId: 'call.old-evidence',
+        input: {},
+        output: {},
+        graphRefs: [],
+        capsuleRefs: [],
+        ledgerEventIds: ['event.librpa.mapping'],
+        evidenceRefs: ['ledger:event.librpa.mapping'],
+        outcome: 'pass',
+        nextSuggestedActions: [],
+      },
+      { source: 'controller' },
+    );
+    ctx.agent.workFrames.open(
+      {
+        id: 'frame.fqhe',
+        domain: 'topological-order',
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Finalize charge-flux convention claim.',
+        trustState: 'validated',
+      },
+      { source: 'controller' },
+    );
+
+    ctx.mockNextResponse({ type: 'text', text: 'Status: validated. Fully done.' });
+    ctx.mockNextResponse({
+      type: 'text',
+      text: 'Status: checked. Source support still needs explicit evidence.',
+    });
+
+    await ctx.rpc.prompt({ input: [{ type: 'text', text: 'Can we mark this validated?' }] });
+    await ctx.untilTurnEnd();
+
+    expect(ctx.llmCalls).toHaveLength(2);
+    expect(ctx.llmCalls[1]?.history).toContainEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: expect.stringContaining('validate.check_source_support'),
+        },
+      ],
+      toolCalls: [],
+    });
+  });
 });
 
 function blockingObligation(): ResearchObligation {

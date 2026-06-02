@@ -192,7 +192,14 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.2.9 has started graph-aware memory compilation: ledger events can now compile into typed graph candidates with provenance checks, dependency diagnostics, assumption traces, and contradiction warnings for incompatible conventions. These outputs remain candidate-level rather than silently becoming canonical memory. See [AITP Agent 0.2.9 Audit](docs/internal/aitp-agent-0.2.9-audit.md).
 - 0.3.0 has started the promotion pipeline and trust-ladder gate: graph candidates can now be promoted only through an explicit `PhysicsPromotionPacket` with source refs, scope, validation refs, and formalization checkpoint requirements enforced. Promoted capsules keep trust metadata instead of discarding the promotion path. See [AITP Agent 0.3.0 Audit](docs/internal/aitp-agent-0.3.0-audit.md).
 - 0.3.1 has started final-gate lifecycle integration: when a research turn tries to end while the active `WorkFrame` still fails the final gate, the runtime now injects one concise final-gate continuation message and forces one more model step so the answer can downgrade itself instead of quietly overclaiming completion. See [AITP Agent 0.3.1 Audit](docs/internal/aitp-agent-0.3.1-audit.md).
-- The remaining implementation sequence is now re-baselined in [AITP Agent Runtime Slices V2 Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md): turn-loop context closure, dynamic tool exposure, controlled auto-capture from real work, memory compiler v2, promotion and trust gating, final-gate lifecycle integration, harness v2, stronger domain verticals, bridge-gated domain isolation, and a later graph/formalization lane.
+- 0.4.0 has started Harness V2: file-backed research eval cases under `.aitp/evals` can now parse into `ResearchEvalCase`, load through `agent.researchHarness` behind `KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS=1`, check action bindings/evidence/final status/forbidden claims, and write failed or inconclusive harness candidates back as deterministic eval files. This slice also scopes final-gate evidence to the active WorkFrame so unrelated prior evidence cannot satisfy validated status. See [AITP Agent 0.4.0 Audit](docs/internal/aitp-agent-0.4.0-audit.md).
+- 0.5.0 has started the real LibRPA file-backed vertical: `adapter.librpa.head-wing-smoke` is now a first-class benchmark adapter contract, and the repo includes LibRPA `.aitp` domain profile, workflow recipe, physics-memory capsules, and eval fixtures that load through an isolated session and close the context/eval/final-gate loop. See [AITP Agent 0.5.0 Audit](docs/internal/aitp-agent-0.5.0-audit.md).
+- 0.6.0 has started the FQHE/CS V2 file-backed theory vertical: Laughlin wavefunction, flux insertion, Abelian CS response, K-matrix response, known-limit checks, and flux-identity failure modes now live in `.aitp` fixtures and pass isolated-session context/eval tests without LibRPA leakage. See [AITP Agent 0.6.0 Audit](docs/internal/aitp-agent-0.6.0-audit.md).
+- 0.7.0 has started bridge-gated multi-domain isolation: `Bridge` capsules can now explicitly authorize named cross-domain capsules, default FQHE/LibRPA context packs stay separate, and `bridgePolicy: deny` records cross-domain denial diagnostics. See [AITP Agent 0.7.0 Audit](docs/internal/aitp-agent-0.7.0-audit.md).
+- 0.8.0 has started the graph kernel and query semantics lane: `physics-graph` can build a graph from physics memory, expand neighborhoods and dependency closure, run bridge-policy-aware path search, and query contradiction edges. See [AITP Agent 0.8.0 Audit](docs/internal/aitp-agent-0.8.0-audit.md).
+- 0.9.0 has started the formalization bridge: `formalization` can identify definitions, assumptions, formulas, lemmas, and theorem-like graph nodes as conservative formalization contracts and export a blueprint-like dependency graph without claiming proof-assistant verification. See [AITP Agent 0.9.0 Audit](docs/internal/aitp-agent-0.9.0-audit.md).
+- 0.10.0 has started closing the executor gap: `ResearchAction` can now run registered in-process benchmark adapters, physics-graph queries, and formalization-blueprint exports directly through the model-facing tool while preserving primitive shell/git/web attribution boundaries. Harness eval writeback can also namespace candidate eval files by session id so parallel sessions do not collide on the same failure trace. See [AITP Agent 0.10.0 Audit](docs/internal/aitp-agent-0.10.0-audit.md).
+- The runtime roadmap through 0.10.0 is now implemented as a file-backed, graph-aware, bridge-gated, audited baseline with deterministic research executors for the graph, benchmark, and formalization lanes.
 
 ## Development
 
@@ -296,6 +303,62 @@ Focused verification for the 0.3.1 final-gate lifecycle slice is:
 corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/agent/final-gate-integration.test.ts packages/agent-core/test/research-policy/final-gate.test.ts
 corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
 corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/research-policy/final-gate.ts packages/agent-core/src/agent/research-action/index.ts packages/agent-core/src/agent/turn/index.ts packages/agent-core/test/agent/final-gate-integration.test.ts packages/agent-core/test/research-policy/final-gate.test.ts
+```
+
+Focused verification for the 0.4.0 file-backed harness eval slice is:
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/agent/final-gate-integration.test.ts packages/agent-core/test/research-harness/runner.test.ts packages/agent-core/test/research-harness/registry.test.ts packages/agent-core/test/research-harness/writer.test.ts packages/agent-core/test/session/research-harness.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/research-harness packages/agent-core/src/research-action/types.ts packages/agent-core/src/agent/research-action/index.ts packages/agent-core/src/agent/turn/index.ts packages/agent-core/src/agent/records/index.ts packages/agent-core/src/session/index.ts packages/agent-core/src/agent/index.ts packages/agent-core/src/flags/registry.ts packages/agent-core/test/agent/final-gate-integration.test.ts packages/agent-core/test/research-harness/registry.test.ts packages/agent-core/test/research-harness/writer.test.ts packages/agent-core/test/session/research-harness.test.ts
+```
+
+Focused verification for the 0.5.0 LibRPA file-backed vertical slice is:
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/integration/librpa-head-wing.test.ts packages/agent-core/test/physics-verticals/librpa.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/benchmark-adapter packages/agent-core/src/research-action/librpa-head-wing.ts packages/agent-core/src/index.ts packages/agent-core/test/physics-verticals/librpa.test.ts
+```
+
+Focused verification for the 0.6.0 FQHE/CS V2 file-backed vertical slice is:
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/physics-verticals/fqhe-cs.test.ts packages/agent-core/test/physics-verticals/fqhe-cs-v2.test.ts packages/agent-core/test/physics-direction/lens.test.ts packages/agent-core/test/research-harness/runner.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/test/physics-verticals/fqhe-cs-v2.test.ts
+```
+
+Focused verification for the 0.7.0 bridge-gated domain isolation slice is:
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/physics-memory/compiler.test.ts packages/agent-core/test/physics-memory/compiler-v2.test.ts packages/agent-core/test/physics-memory/domain-isolation.test.ts packages/agent-core/test/physics-verticals/librpa.test.ts packages/agent-core/test/physics-verticals/fqhe-cs-v2.test.ts packages/agent-core/test/research-context/compiler.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/physics-memory/bridge.ts packages/agent-core/src/physics-memory/compiler.ts packages/agent-core/src/physics-memory/parser.ts packages/agent-core/src/physics-memory/types.ts packages/agent-core/test/physics-memory/domain-isolation.test.ts
+```
+
+Focused verification for the 0.8.0 graph kernel and query semantics slice is:
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/physics-graph/query.test.ts packages/agent-core/test/physics-memory/domain-isolation.test.ts packages/agent-core/test/physics-memory/compiler.test.ts packages/agent-core/test/physics-memory/compiler-v2.test.ts packages/agent-core/test/physics-verticals/librpa.test.ts packages/agent-core/test/physics-verticals/fqhe-cs-v2.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/physics-graph packages/agent-core/src/physics-memory/bridge.ts packages/agent-core/src/physics-memory/compiler.ts packages/agent-core/src/physics-memory/parser.ts packages/agent-core/src/physics-memory/types.ts packages/agent-core/test/physics-graph/query.test.ts packages/agent-core/test/physics-memory/domain-isolation.test.ts
+```
+
+Focused verification for the 0.9.0 formalization bridge slice is:
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/formalization/contracts.test.ts packages/agent-core/test/physics-graph/query.test.ts packages/agent-core/test/physics-memory/domain-isolation.test.ts packages/agent-core/test/physics-memory/promotion.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/formalization packages/agent-core/src/physics-graph packages/agent-core/test/formalization/contracts.test.ts packages/agent-core/test/physics-graph/query.test.ts
+```
+
+Focused verification for the 0.10.0 action executor and session write-isolation slice is:
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/tools/research-action-tool.test.ts packages/agent-core/test/research-harness/writer.test.ts packages/agent-core/test/research-action/default-actions.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/agent/index.ts packages/agent-core/src/session/index.ts packages/agent-core/src/agent/research-action/index.ts packages/agent-core/src/tools/builtin/collaboration/research-action-tool.ts packages/agent-core/src/research-action/default-actions.ts packages/agent-core/src/research-harness/writer.ts packages/agent-core/test/tools/research-action-tool.test.ts packages/agent-core/test/research-harness/writer.test.ts packages/agent-core/test/research-action/default-actions.test.ts
 ```
 
 Focused verification for the 0.0.8 physics direction engine is:

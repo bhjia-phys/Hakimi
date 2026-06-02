@@ -3,6 +3,7 @@ export * from './parser';
 export * from './scanner';
 export * from './registry';
 export * from './compiler';
+export * from './bridge';
 export * from './graph-types';
 export * from './dependency-checker';
 export * from './contradiction-checker';

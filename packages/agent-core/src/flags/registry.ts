@@ -70,6 +70,22 @@ export const FLAG_DEFINITIONS = [
     default: false,
     surface: 'core',
   },
+  {
+    id: 'research-harness',
+    title: 'Research harness',
+    description: 'Load local research eval cases and benchmark adapters.',
+    env: 'KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS',
+    default: false,
+    surface: 'core',
+  },
+  {
+    id: 'micro-compaction',
+    title: 'Micro compaction',
+    description: 'Trim older large tool results from context while keeping recent conversation intact.',
+    env: 'KIMI_CODE_EXPERIMENTAL_MICRO_COMPACTION',
+    default: false,
+    surface: 'core',
+  },
 ] as const satisfies readonly FlagDefinitionInput[];
 
 /** Literal union of registered flag ids. */

@@ -107,6 +107,10 @@ function evaluateValidation(
       return evaluateEvidenceRef(validation.pattern, input);
     case 'required_check':
       return evaluateRequiredCheck(validation.check, input.checkResults ?? []);
+    case 'final_status':
+      return evaluateFinalStatus(validation.status, input.finalStatus);
+    case 'forbidden_claim':
+      return evaluateForbiddenClaim(validation.pattern, input.finalAnswerText ?? '');
   }
 }
 
@@ -160,5 +164,39 @@ function evaluateRequiredCheck(
       matched?.status === 'passed'
         ? `Required check ${check.id} passed.`
         : `Required check ${check.id} did not pass.`,
+  };
+}
+
+function evaluateFinalStatus(
+  expected: Extract<ResearchEvalValidation, { readonly type: 'final_status' }>['status'],
+  observed: ResearchEvalRunInput['finalStatus'],
+): ResearchEvalValidationResult {
+  return {
+    validation: {
+      type: 'final_status',
+      status: expected,
+    },
+    outcome: observed === expected ? 'pass' : 'fail',
+    reason:
+      observed === expected
+        ? `Observed final status ${expected}.`
+        : `Expected final status ${expected}, observed ${observed ?? 'missing'}.`,
+  };
+}
+
+function evaluateForbiddenClaim(
+  pattern: string,
+  finalAnswerText: string,
+): ResearchEvalValidationResult {
+  const matched = finalAnswerText.toLowerCase().includes(pattern.toLowerCase());
+  return {
+    validation: {
+      type: 'forbidden_claim',
+      pattern,
+    },
+    outcome: matched ? 'fail' : 'pass',
+    reason: matched
+      ? `Forbidden claim matched ${pattern}.`
+      : `Forbidden claim not present: ${pattern}.`,
   };
 }

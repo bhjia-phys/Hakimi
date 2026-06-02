@@ -10,6 +10,11 @@ import type {
   ReliabilityState,
 } from './types';
 import type { ResearchLedgerRegistry } from '../research-ledger';
+import {
+  bridgeAllowsCapsule,
+  collectBridgePermissions,
+  type BridgePermission,
+} from './bridge';
 import { checkGraphCandidateContradictions } from './contradiction-checker';
 import { checkGraphCandidateDependencies } from './dependency-checker';
 import type {
@@ -67,9 +72,24 @@ export function compilePhysicsContext(
           return capsule;
         }).filter((capsule): capsule is PhysicsCapsule => capsule !== undefined)
       : registry.listCapsules({ domain: options.domain });
+  const bridgePermissions = collectBridgePermissions({
+    registry,
+    bridgeCapsuleIds:
+      focus.length > 0 ? focus : seedCapsules.map((capsule) => capsule.metadata.id),
+    domain: options.domain,
+    diagnostics,
+  });
 
   for (const capsule of seedCapsules) {
-    includeCapsule(registry, selected, diagnostics, capsule, options.domain, bridgePolicy, reliabilityFloor);
+    includeCapsule(
+      selected,
+      diagnostics,
+      capsule,
+      options.domain,
+      bridgePolicy,
+      reliabilityFloor,
+      bridgePermissions,
+    );
     for (const dependencyId of capsule.metadata.dependsOn) {
       const dependency = registry.getCapsule(dependencyId);
       if (dependency === undefined) {
@@ -81,7 +101,15 @@ export function compilePhysicsContext(
         });
         continue;
       }
-      includeCapsule(registry, selected, diagnostics, dependency, options.domain, bridgePolicy, reliabilityFloor);
+      includeCapsule(
+        selected,
+        diagnostics,
+        dependency,
+        options.domain,
+        bridgePolicy,
+        reliabilityFloor,
+        bridgePermissions,
+      );
     }
   }
 
@@ -159,17 +187,36 @@ export function compilePhysicsGraphCandidates(
 }
 
 function includeCapsule(
-  _registry: PhysicsMemoryRegistry,
   selected: Map<PhysicsCapsuleId, PhysicsCapsule>,
   diagnostics: PhysicsMemoryDiagnostic[],
   capsule: PhysicsCapsule,
   domain: PhysicsDomainId,
   bridgePolicy: BridgePolicy,
   reliabilityFloor: ReliabilityState,
+  bridgePermissions: readonly BridgePermission[],
 ): void {
   if (!passesReliability(capsule.metadata.reliability, reliabilityFloor)) return;
   if (capsule.metadata.domain !== domain) {
-    const allowed = bridgePolicy === 'allow' || capsule.metadata.allowCrossDomain;
+    if (bridgePolicy === 'deny') {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'cross-domain-denied',
+        message:
+          `Capsule "${capsule.metadata.id}" belongs to domain "${capsule.metadata.domain}" ` +
+          `and bridge policy "deny" prevents inclusion in domain "${domain}".`,
+        capsuleId: capsule.metadata.id,
+      });
+      return;
+    }
+    const bridgePermission = bridgeAllowsCapsule({
+      permissions: bridgePermissions,
+      fromDomain: domain,
+      capsule,
+    });
+    const allowed =
+      bridgePolicy === 'allow' ||
+      capsule.metadata.allowCrossDomain ||
+      bridgePermission !== undefined;
     if (!allowed) {
       diagnostics.push({
         severity: 'warning',
@@ -178,6 +225,16 @@ function includeCapsule(
         capsuleId: capsule.metadata.id,
       });
       return;
+    }
+    if (bridgePermission !== undefined) {
+      diagnostics.push({
+        severity: 'info',
+        code: 'bridge-cross-domain-inclusion',
+        message:
+          `Bridge capsule "${bridgePermission.bridgeCapsuleId}" allows ` +
+          `"${capsule.metadata.id}" into domain "${domain}".`,
+        capsuleId: capsule.metadata.id,
+      });
     }
   }
   selected.set(capsule.metadata.id, capsule);
@@ -207,6 +264,8 @@ function candidateKindFromCapsuleKind(
       return 'failure_mode';
     case 'WorkflowRecipe':
       return 'workflow_recipe';
+    case 'Bridge':
+      return 'bridge';
     default:
       return undefined;
   }

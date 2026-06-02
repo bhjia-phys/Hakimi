@@ -181,6 +181,8 @@ function restoreAgentRecord(agent: Agent, input: AgentRecord): void {
       agent.researchAction.restoreActionCallFinished(input);
       return;
     case 'research_action.result_recorded':
+      agent.researchAction.restoreActionResultRecorded(input);
+      return;
     case 'research_action.raw_tool_escape':
       return;
     case 'research_context.context_compiled':

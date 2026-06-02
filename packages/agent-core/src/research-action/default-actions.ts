@@ -407,6 +407,17 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     outputKinds: ['CapsuleProposal'],
   }),
   action({
+    id: 'formalization.build_blueprint',
+    category: 'graph',
+    exposure: 'deferred',
+    phase: 'validate',
+    title: 'Build formalization blueprint',
+    description:
+      'Export formalization-ready definitions, assumptions, formulas, lemmas, and theorem-like claims as a dependency blueprint without claiming proof-assistant verification.',
+    inputKinds: ['Definition', 'Formula', 'Assumption', 'Claim'],
+    outputKinds: ['LedgerEvent'],
+  }),
+  action({
     id: 'memory.promote_capsule',
     category: 'memory',
     exposure: 'deferred',

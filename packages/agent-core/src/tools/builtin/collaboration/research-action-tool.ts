@@ -25,8 +25,19 @@ import {
   PHYSICS_CAPSULE_KINDS,
   RELIABILITY_STATES,
   type GraphRef,
-  type PhysicsCapsuleKind,
+  type PhysicsRelationType,
 } from '../../../physics-memory';
+import type { BenchmarkAdapterRunResult } from '../../../benchmark-adapter';
+import type { FormalizationPlan } from '../../../formalization';
+import {
+  findPhysicsGraphPath,
+  queryPhysicsGraphContradictions,
+  queryPhysicsGraphDependencyClosure,
+  queryPhysicsGraphNeighborhood,
+  type PhysicsGraphEdge,
+  type PhysicsGraphPathResult,
+  type PhysicsGraphQueryResult,
+} from '../../../physics-graph';
 import type { ResearchContextPack } from '../../../research-context';
 import { RESEARCH_LEDGER_EVENT_STATUSES } from '../../../research-ledger';
 import { toInputJsonSchema } from '../../support/input-schema';
@@ -45,12 +56,17 @@ const ACTIONS = [
   'compile_context_pack',
   'list_context_packs',
   'load_context_pack',
+  'run_benchmark_adapter',
+  'query_physics_graph',
+  'build_formalization_plan',
 ] as const;
 const EXPOSURES = ['direct', 'deferred', 'direct-model-only', 'hidden'] as const;
 const CATEGORIES = ['graph', 'derivation', 'physics', 'code', 'benchmark', 'memory', 'harness'] as const;
 const OUTCOMES = ['pass', 'fail', 'blocked', 'inconclusive'] as const;
 const SOURCES = ['model', 'controller', 'hidden-check', 'subagent', 'replay'] as const;
 const BRIDGE_POLICIES = ['deny', 'explicit-only', 'allow'] as const;
+const GRAPH_QUERIES = ['dependency_closure', 'neighborhood', 'path', 'contradictions'] as const;
+const GRAPH_DIRECTIONS = ['in', 'out', 'both'] as const;
 const OBLIGATION_KINDS = [
   'source_support',
   'dimension_check',
@@ -152,9 +168,37 @@ export const ResearchActionToolInputSchema = z.object({
     .describe('Follow-up action ids suggested by the action.'),
   action_input: z.unknown().optional().describe('Optional structured input for start_action_call.'),
   action_output: z.unknown().optional().describe('Optional structured output for finish_action_call.'),
+  adapter_id: z.string().optional().describe('Benchmark adapter id for run_benchmark_adapter.'),
+  benchmark_case_id: z.string().optional().describe('Optional case id for run_benchmark_adapter.'),
+  benchmark_payload: z.unknown().optional().describe('Structured benchmark payload.'),
+  graph_query: z.enum(GRAPH_QUERIES).optional().describe('Physics graph query to run.'),
+  start_ids: z.array(z.string()).optional().describe('Graph start node ids.'),
+  from_id: z.string().optional().describe('Source node id for graph path queries.'),
+  to_id: z.string().optional().describe('Target node id for graph path queries.'),
+  relation_types: z.array(z.string()).optional().describe('Optional physics relation filters.'),
+  direction: z.enum(GRAPH_DIRECTIONS).optional().describe('Graph traversal direction.'),
+  max_depth: z.number().int().positive().optional().describe('Maximum graph traversal depth.'),
+  formalization_target_ids: z
+    .array(z.string())
+    .optional()
+    .describe('Target graph node ids for build_formalization_plan.'),
+  include_dependency_closure: z
+    .boolean()
+    .optional()
+    .describe('Whether build_formalization_plan should include dependency closure.'),
 });
 
 export type ResearchActionToolInput = z.Infer<typeof ResearchActionToolInputSchema>;
+
+interface GraphSuccessOutput {
+  readonly isError?: false | undefined;
+  readonly outcome: ResearchActionOutcome;
+  readonly nodeIds: readonly string[];
+  readonly payload: unknown;
+  readonly text: string;
+}
+
+type ExecutableGraphOutput = GraphSuccessOutput | ExecutableToolResult;
 
 export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> {
   readonly name = 'ResearchAction' as const;
@@ -208,6 +252,12 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return this.listContextPacks();
         case 'load_context_pack':
           return this.loadContextPack(args);
+        case 'run_benchmark_adapter':
+          return this.runBenchmarkAdapter(args, ctx);
+        case 'query_physics_graph':
+          return this.queryPhysicsGraph(args, ctx);
+        case 'build_formalization_plan':
+          return this.buildFormalizationPlan(args, ctx);
       }
     } catch (error) {
       return {
@@ -223,7 +273,7 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
         category: args.category as ResearchActionCategory | undefined,
         exposure: args.exposure as ResearchActionExposure | undefined,
         domain: args.domain,
-        capsuleKind: args.capsule_kind as PhysicsCapsuleKind | undefined,
+        capsuleKind: args.capsule_kind,
       }),
     );
   }
@@ -487,6 +537,358 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     }
     return ok(renderContextPack(this.manager.requireContextPack(args.context_pack_id)));
   }
+
+  private runBenchmarkAdapter(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction run_benchmark_adapter requires a session manager.');
+    }
+    if (args.adapter_id === undefined || args.adapter_id.length === 0) {
+      return errorResult('ResearchAction run_benchmark_adapter requires adapter_id.');
+    }
+    const result = this.manager.runBenchmarkAdapter(args.adapter_id, {
+      caseId: args.benchmark_case_id,
+      payload: args.benchmark_payload,
+      sourceRefs: args.source_refs,
+    });
+    const actionId = args.action_id ?? result.actionId;
+    const callId = args.call_id ?? defaultCallId(actionId, ctx.toolCallId);
+    this.recordExecutedAction(args, ctx, {
+      actionId,
+      callId,
+      outcome: result.outcome,
+      input: {
+        adapterId: args.adapter_id,
+        caseId: result.caseId,
+        payload: args.benchmark_payload,
+      },
+      output: result,
+      evidenceRefs: result.evidenceRefs,
+      graphRefs: [],
+    });
+    return ok(renderBenchmarkAdapterRun(result));
+  }
+
+  private queryPhysicsGraph(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction query_physics_graph requires a session manager.');
+    }
+    const graph = this.manager.buildPhysicsGraph();
+    const query = args.graph_query ?? 'dependency_closure';
+    const relationTypes = args.relation_types as readonly PhysicsRelationType[] | undefined;
+    const output =
+      query === 'path'
+        ? this.queryPhysicsGraphPath(args, graph, relationTypes)
+        : this.queryPhysicsGraphSet(args, graph, query, relationTypes);
+    if (!isGraphSuccessOutput(output)) return output;
+
+    const actionId = args.action_id ?? defaultGraphActionId(query);
+    const callId = args.call_id ?? defaultCallId(actionId, ctx.toolCallId);
+    this.recordExecutedAction(args, ctx, {
+      actionId,
+      callId,
+      outcome: output.outcome,
+      input: {
+        query,
+        startIds: args.start_ids,
+        fromId: args.from_id,
+        toId: args.to_id,
+        relationTypes,
+        direction: args.direction,
+        maxDepth: args.max_depth,
+      },
+      output: output.payload,
+      evidenceRefs: [`graph:${query}:${callId}`],
+      graphRefs: graphRefsFromNodeIds(output.nodeIds),
+    });
+    return ok(output.text);
+  }
+
+  private queryPhysicsGraphPath(
+    args: ResearchActionToolInput,
+    graph: ReturnType<ResearchActionManager['buildPhysicsGraph']>,
+    relationTypes: readonly PhysicsRelationType[] | undefined,
+  ): ExecutableGraphOutput {
+    if (args.from_id === undefined || args.from_id.length === 0) {
+      return errorResult('ResearchAction query_physics_graph path requires from_id.');
+    }
+    if (args.to_id === undefined || args.to_id.length === 0) {
+      return errorResult('ResearchAction query_physics_graph path requires to_id.');
+    }
+    const result = findPhysicsGraphPath(graph, {
+      fromId: args.from_id,
+      toId: args.to_id,
+      direction: args.direction,
+      maxDepth: args.max_depth,
+      relationTypes,
+      bridgePolicy: args.bridge_policy,
+    });
+    return {
+      outcome: result.found ? 'pass' : 'blocked',
+      nodeIds: result.nodeIds,
+      payload: result,
+      text: renderGraphPathResult(result),
+    };
+  }
+
+  private queryPhysicsGraphSet(
+    args: ResearchActionToolInput,
+    graph: ReturnType<ResearchActionManager['buildPhysicsGraph']>,
+    query: Exclude<(typeof GRAPH_QUERIES)[number], 'path'>,
+    relationTypes: readonly PhysicsRelationType[] | undefined,
+  ): ExecutableGraphOutput {
+    if (query === 'contradictions') {
+      const edges = queryPhysicsGraphContradictions(graph, { domain: args.domain });
+      return {
+        outcome: 'pass',
+        nodeIds: nodeIdsFromEdges(edges),
+        payload: { edges },
+        text: renderGraphEdges('contradictions', edges),
+      };
+    }
+    const startIds = args.start_ids ?? args.capsule_refs;
+    if (startIds === undefined || startIds.length === 0) {
+      return errorResult(`ResearchAction query_physics_graph ${query} requires start_ids.`);
+    }
+    const result =
+      query === 'dependency_closure'
+        ? queryPhysicsGraphDependencyClosure(graph, {
+            startIds,
+            maxDepth: args.max_depth,
+            bridgePolicy: args.bridge_policy,
+          })
+        : queryPhysicsGraphNeighborhood(graph, {
+            startIds,
+            direction: args.direction,
+            maxDepth: args.max_depth,
+            relationTypes,
+            bridgePolicy: args.bridge_policy,
+          });
+    return {
+      outcome: result.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+        ? 'blocked'
+        : 'pass',
+      nodeIds: result.nodeIds,
+      payload: result,
+      text: renderGraphQueryResult(query, result),
+    };
+  }
+
+  private buildFormalizationPlan(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction build_formalization_plan requires a session manager.');
+    }
+    const targetIds = args.formalization_target_ids ?? args.start_ids ?? args.capsule_refs;
+    if (targetIds === undefined || targetIds.length === 0) {
+      return errorResult('ResearchAction build_formalization_plan requires formalization_target_ids.');
+    }
+    const plan = this.manager.buildFormalizationPlan({
+      targetIds,
+      includeDependencyClosure: args.include_dependency_closure,
+      maxDepth: args.max_depth,
+    });
+    const actionId = args.action_id ?? 'formalization.build_blueprint';
+    const callId = args.call_id ?? defaultCallId(actionId, ctx.toolCallId);
+    const hasError = plan.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+    this.recordExecutedAction(args, ctx, {
+      actionId,
+      callId,
+      outcome: hasError ? 'blocked' : 'pass',
+      input: {
+        targetIds,
+        includeDependencyClosure: args.include_dependency_closure,
+        maxDepth: args.max_depth,
+      },
+      output: plan,
+      evidenceRefs: [`formalization:${plan.blueprint.format}:${callId}`],
+      graphRefs: plan.contracts.map((contract) => ({
+        kind: 'ValidationContract',
+        id: contract.id,
+      })),
+    });
+    return ok(renderFormalizationPlan(plan));
+  }
+
+  private recordExecutedAction(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+    record: {
+      readonly actionId: string;
+      readonly callId: string;
+      readonly outcome: ResearchActionOutcome;
+      readonly input: unknown;
+      readonly output: unknown;
+      readonly evidenceRefs: readonly string[];
+      readonly graphRefs: readonly GraphRef[];
+    },
+  ): void {
+    this.manager?.recordActionResult(
+      {
+        actionId: record.actionId,
+        callId: record.callId,
+        input: record.input,
+        output: record.output,
+        graphRefs: record.graphRefs,
+        capsuleRefs: args.capsule_refs ?? [],
+        ledgerEventIds: args.ledger_event_ids ?? [],
+        evidenceRefs: record.evidenceRefs,
+        outcome: record.outcome,
+        generatedObligationIds: args.generated_obligation_ids ?? [],
+        primitiveToolCallIds: args.primitive_tool_call_ids ?? [],
+        nextSuggestedActions: args.next_suggested_actions ?? [],
+      },
+      {
+        source: (args.source ?? 'model') as ResearchActionSource,
+        toolCallId: ctx.toolCallId,
+      },
+    );
+  }
+}
+
+function isGraphSuccessOutput(output: ExecutableGraphOutput): output is GraphSuccessOutput {
+  return 'text' in output;
+}
+
+function defaultGraphActionId(query: (typeof GRAPH_QUERIES)[number]): string {
+  switch (query) {
+    case 'dependency_closure':
+      return 'graph.query_dependency_closure';
+    case 'neighborhood':
+    case 'path':
+    case 'contradictions':
+      return 'graph.compile_edges';
+  }
+}
+
+function defaultCallId(actionId: string, toolCallId: string): string {
+  return `call.${safeId(actionId)}.${safeId(toolCallId)}`;
+}
+
+function renderBenchmarkAdapterRun(result: BenchmarkAdapterRunResult): string {
+  return [
+    `<benchmark_adapter_run adapter_id="${escapeXml(result.adapterId)}" case_id="${escapeXml(result.caseId)}" domain="${escapeXml(result.domain)}" action_id="${escapeXml(result.actionId)}" outcome="${result.outcome}">`,
+    `  <observation>${escapeXml(result.observation)}</observation>`,
+    renderStringList('evidence_refs', 'evidence_ref', result.evidenceRefs, '  '),
+    renderStringList('artifact_refs', 'artifact_ref', result.artifactRefs, '  '),
+    '  <checks>',
+    ...result.checkResults.map(
+      (check) =>
+        `    <check id="${escapeXml(check.checkId)}" kind="${check.kind}" status="${check.status}" evidence_refs="${escapeXml(check.evidenceRefs.join(','))}" />`,
+    ),
+    '  </checks>',
+    '</benchmark_adapter_run>',
+    '',
+  ].join('\n');
+}
+
+function renderGraphQueryResult(
+  query: string,
+  result: PhysicsGraphQueryResult,
+): string {
+  return [
+    `<physics_graph_query query="${escapeXml(query)}">`,
+    renderStringList('nodes', 'node', result.nodeIds, '  '),
+    renderGraphEdgeList(result.edges, '  '),
+    renderGraphDiagnostics(result.diagnostics, '  '),
+    '</physics_graph_query>',
+    '',
+  ].join('\n');
+}
+
+function renderGraphPathResult(result: PhysicsGraphPathResult): string {
+  return [
+    `<physics_graph_path found="${String(result.found)}">`,
+    renderStringList('nodes', 'node', result.nodeIds, '  '),
+    renderGraphEdgeList(result.edges, '  '),
+    renderGraphDiagnostics(result.diagnostics, '  '),
+    '</physics_graph_path>',
+    '',
+  ].join('\n');
+}
+
+function renderGraphEdges(kind: string, edges: readonly PhysicsGraphEdge[]): string {
+  return [
+    `<physics_graph_edges kind="${escapeXml(kind)}">`,
+    renderGraphEdgeList(edges, '  '),
+    '</physics_graph_edges>',
+    '',
+  ].join('\n');
+}
+
+function renderGraphEdgeList(edges: readonly PhysicsGraphEdge[], indent: string): string {
+  if (edges.length === 0) return `${indent}<edges />`;
+  return [
+    `${indent}<edges>`,
+    ...edges.map(
+      (edge) =>
+        `${indent}  <edge from="${escapeXml(edge.sourceId)}" to="${escapeXml(edge.targetId)}" relation="${edge.relation}" />`,
+    ),
+    `${indent}</edges>`,
+  ].join('\n');
+}
+
+function renderGraphDiagnostics(
+  diagnostics: PhysicsGraphQueryResult['diagnostics'],
+  indent: string,
+): string {
+  if (diagnostics.length === 0) return `${indent}<diagnostics />`;
+  return [
+    `${indent}<diagnostics>`,
+    ...diagnostics.map(
+      (diagnostic) =>
+        `${indent}  <diagnostic severity="${diagnostic.severity}" code="${escapeXml(diagnostic.code)}"${diagnostic.nodeId === undefined ? '' : ` node_id="${escapeXml(diagnostic.nodeId)}"`}>${escapeXml(diagnostic.message)}</diagnostic>`,
+    ),
+    `${indent}</diagnostics>`,
+  ].join('\n');
+}
+
+function renderFormalizationPlan(plan: FormalizationPlan): string {
+  return [
+    `<formalization_plan format="${plan.blueprint.format}">`,
+    '  <contracts>',
+    ...plan.contracts.map(
+      (contract) =>
+        `    <contract id="${escapeXml(contract.id)}" graph_node_id="${escapeXml(contract.graphNodeId)}" kind="${contract.targetKind}" readiness="${contract.readiness}" human_checkpoint="${String(contract.requiredHumanCheckpoint)}">${escapeXml(contract.title)}</contract>`,
+    ),
+    '  </contracts>',
+    '  <blueprint_edges>',
+    ...plan.blueprint.edges.map(
+      (edge) =>
+        `    <edge from="${escapeXml(edge.from)}" to="${escapeXml(edge.to)}" relation="${edge.relation}" />`,
+    ),
+    '  </blueprint_edges>',
+    '  <diagnostics>',
+    ...plan.diagnostics.map(
+      (diagnostic) =>
+        `    <diagnostic severity="${diagnostic.severity}" code="${escapeXml(diagnostic.code)}"${diagnostic.nodeId === undefined ? '' : ` node_id="${escapeXml(diagnostic.nodeId)}"`}>${escapeXml(diagnostic.message)}</diagnostic>`,
+    ),
+    '  </diagnostics>',
+    '</formalization_plan>',
+    '',
+  ].join('\n');
+}
+
+function nodeIdsFromEdges(edges: readonly PhysicsGraphEdge[]): readonly string[] {
+  return [...new Set(edges.flatMap((edge) => [edge.sourceId, edge.targetId]))].toSorted();
+}
+
+function graphRefsFromNodeIds(nodeIds: readonly string[]): readonly GraphRef[] {
+  return nodeIds.map((id) => ({
+    kind: 'Concept',
+    id,
+  }));
+}
+
+function safeId(value: string): string {
+  return value.replaceAll(/[^A-Za-z0-9_.-]+/g, '-');
 }
 
 function renderActionList(actions: readonly ResearchActionDefinition[]): string {

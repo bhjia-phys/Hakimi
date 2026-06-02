@@ -20,6 +20,11 @@ import type { PhysicsMemoryRegistry } from '../physics-memory';
 import type { ResearchLedgerRegistry } from '../research-ledger';
 import type { WorkflowRecipeRegistry } from '../workflow-recipe';
 import {
+  createDefaultBenchmarkAdapterRegistry,
+  type BenchmarkAdapterRegistry,
+} from '../benchmark-adapter';
+import type { ResearchEvalCaseRegistry } from '../research-harness';
+import {
   prepareSystemPromptContext,
   type PreparedSystemPromptContext,
   type ResolvedAgentProfile,
@@ -108,6 +113,8 @@ export interface AgentOptions {
   readonly domainProfiles?: DomainProfileRegistry;
   readonly physicsMemory?: PhysicsMemoryRegistry;
   readonly researchLedger?: ResearchLedgerRegistry;
+  readonly benchmarkAdapters?: BenchmarkAdapterRegistry;
+  readonly researchHarness?: ResearchEvalCaseRegistry;
   readonly workflowRecipes?: WorkflowRecipeRegistry;
   readonly mcp?: McpConnectionManager;
   readonly hookEngine?: HookEngine;
@@ -168,6 +175,8 @@ export class Agent {
   readonly domainProfiles: DomainProfileRegistry | null;
   readonly physicsMemory: PhysicsMemoryManager | null;
   readonly researchLedger: ResearchLedgerManager | null;
+  readonly benchmarkAdapters: BenchmarkAdapterRegistry;
+  readonly researchHarness: ResearchEvalCaseRegistry | null;
   readonly workflowRecipes: WorkflowRecipeRegistry | null;
   readonly researchAction: ResearchActionManager;
   readonly researchContext: ResearchContextManager;
@@ -261,6 +270,9 @@ export class Agent {
       options.researchLedger === undefined
         ? null
         : new ResearchLedgerManager(this, options.researchLedger);
+    this.benchmarkAdapters =
+      options.benchmarkAdapters ?? createDefaultBenchmarkAdapterRegistry();
+    this.researchHarness = options.researchHarness ?? null;
     this.workflowRecipes = options.workflowRecipes ?? null;
     this.researchAction = new ResearchActionManager(this);
     this.researchContext = new ResearchContextManager(this);

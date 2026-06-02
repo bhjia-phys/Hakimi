@@ -176,9 +176,23 @@ export type ResearchEvalValidation =
   | {
       readonly type: 'evidence_ref';
       readonly pattern: string;
+    }
+  | {
+      readonly type: 'final_status';
+      readonly status: ResearchEvalFinalStatus;
+    }
+  | {
+      readonly type: 'forbidden_claim';
+      readonly pattern: string;
     };
 
 export type ResearchEvalActionExpectation = ResearchActionId | ResearchActionBinding;
+export type ResearchEvalFinalStatus =
+  | 'exploratory'
+  | 'provisional'
+  | 'checked'
+  | 'validated'
+  | 'blocked';
 
 export interface ResearchEvalCase {
   readonly id: string;
