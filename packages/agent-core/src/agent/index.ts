@@ -12,11 +12,13 @@ import type { EnabledPluginSessionStart, PluginCommandDef } from '#/plugin';
 import { expandCommandArguments } from '../plugin/commands';
 import type { PluginCommandOrigin } from './context';
 
+import type { DomainProfileRegistry } from '../domain-profile';
 import type { McpConnectionManager } from '../mcp';
 import { FlagResolver, type ExperimentalFlagResolver } from '../flags';
 import { ImageLimits } from '../tools/support/image-limits';
 import type { PhysicsMemoryRegistry } from '../physics-memory';
 import type { ResearchLedgerRegistry } from '../research-ledger';
+import type { WorkflowRecipeRegistry } from '../workflow-recipe';
 import {
   prepareSystemPromptContext,
   type PreparedSystemPromptContext,
@@ -102,8 +104,10 @@ export interface AgentOptions {
   readonly modelProvider?: ModelProvider | undefined;
   readonly subagentHost?: SessionSubagentHost | undefined;
   readonly skills?: SkillRegistry;
+  readonly domainProfiles?: DomainProfileRegistry;
   readonly physicsMemory?: PhysicsMemoryRegistry;
   readonly researchLedger?: ResearchLedgerRegistry;
+  readonly workflowRecipes?: WorkflowRecipeRegistry;
   readonly mcp?: McpConnectionManager;
   readonly hookEngine?: HookEngine;
   readonly permission?: PermissionManagerOptions | undefined;
@@ -160,8 +164,10 @@ export class Agent {
   readonly usage: UsageRecorder;
   readonly workFrames: WorkFrameManager;
   readonly skills: SkillManager | null;
+  readonly domainProfiles: DomainProfileRegistry | null;
   readonly physicsMemory: PhysicsMemoryManager | null;
   readonly researchLedger: ResearchLedgerManager | null;
+  readonly workflowRecipes: WorkflowRecipeRegistry | null;
   readonly researchAction: ResearchActionManager;
   readonly toolLifecycle: PrimitiveToolLifecycleManager;
   readonly tools: ToolManager;
@@ -244,6 +250,7 @@ export class Agent {
     this.usage = new UsageRecorder(this);
     this.workFrames = new WorkFrameManager(this);
     this.skills = options.skills ? new SkillManager(this, options.skills) : null;
+    this.domainProfiles = options.domainProfiles ?? null;
     this.physicsMemory =
       options.physicsMemory === undefined
         ? null
@@ -252,6 +259,7 @@ export class Agent {
       options.researchLedger === undefined
         ? null
         : new ResearchLedgerManager(this, options.researchLedger);
+    this.workflowRecipes = options.workflowRecipes ?? null;
     this.researchAction = new ResearchActionManager(this);
     this.toolLifecycle = new PrimitiveToolLifecycleManager(this);
     this.tools = new ToolManager(this);
