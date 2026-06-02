@@ -2,6 +2,7 @@ import type { ContentPart } from '@moonshot-ai/kosong';
 
 import type { Agent } from '..';
 import type { ExecutableToolResult } from '../../loop';
+import { buildToolLifecycleAutoCaptureResult } from '../research-ledger/auto-capture';
 
 const MAX_ARGS_SUMMARY_LENGTH = 2000;
 const MAX_OUTPUT_SUMMARY_LENGTH = 2000;
@@ -117,7 +118,7 @@ export class PrimitiveToolLifecycleManager {
     return started;
   }
 
-  recordCompleted(input: PrimitiveToolCompletedInput): PrimitiveToolLifecycleEnvelope {
+  async recordCompleted(input: PrimitiveToolCompletedInput): Promise<PrimitiveToolLifecycleEnvelope> {
     const started = this.started.get(input.toolCallId);
     this.started.delete(input.toolCallId);
     const completedAt = input.completedAt ?? Date.now();
@@ -163,6 +164,7 @@ export class PrimitiveToolLifecycleManager {
     });
     const envelope = { started, completed };
     this.pushRecent(envelope);
+    await this.autoCapture(envelope);
     return envelope;
   }
 
@@ -180,6 +182,50 @@ export class PrimitiveToolLifecycleManager {
     this.recent.push(envelope);
     if (this.recent.length > MAX_RECENT_ENVELOPES) {
       this.recent.splice(0, this.recent.length - MAX_RECENT_ENVELOPES);
+    }
+  }
+
+  private async autoCapture(envelope: PrimitiveToolLifecycleEnvelope): Promise<void> {
+    const manager = this.agent.researchLedger;
+    if (manager === null) return;
+
+    const workFrameId = envelope.completed.workFrameId;
+    const workFrame =
+      workFrameId === undefined
+        ? this.agent.workFrames.active
+        : this.agent.workFrames.list().find((frame) => frame.id === workFrameId);
+    const capture = buildToolLifecycleAutoCaptureResult({
+      envelope,
+      workFrame,
+    });
+    if (!capture.capture || capture.writeInput === undefined) {
+      manager.recordAutoCaptureSkipped({
+        source: 'controller',
+        toolName: envelope.completed.toolName,
+        toolCallId: envelope.completed.toolCallId,
+        workFrameId: envelope.completed.workFrameId,
+        actionCallId: envelope.completed.actionCallId,
+        reason: capture.skipReason ?? 'capture-disabled',
+        diagnostics: capture.diagnostics,
+      });
+      return;
+    }
+
+    try {
+      await manager.writeEvent(capture.writeInput, {
+        source: 'controller',
+        toolCallId: envelope.completed.toolCallId,
+      });
+    } catch (error) {
+      manager.recordAutoCaptureSkipped({
+        source: 'controller',
+        toolName: envelope.completed.toolName,
+        toolCallId: envelope.completed.toolCallId,
+        workFrameId: envelope.completed.workFrameId,
+        actionCallId: envelope.completed.actionCallId,
+        reason: error instanceof Error ? `write-failed:${error.message}` : 'write-failed',
+        diagnostics: capture.diagnostics,
+      });
     }
   }
 }
