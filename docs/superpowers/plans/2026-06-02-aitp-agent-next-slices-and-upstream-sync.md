@@ -1,5 +1,7 @@
 # AITP Agent Next Slices And Upstream Sync Implementation Plan
 
+> Superseded as the primary forward roadmap by [AITP Agent Runtime Slices V2 Implementation Plan](2026-06-02-aitp-agent-runtime-slices-v2.md). This file remains useful as the transitional 0.2.1-0.2.5 planning record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn the current proof-of-shape AITP runtime into a self-consistent theoretical-physics agent runtime whose universal actions, domain profiles, memory compilation, controlled capture, final gates, harnesses, and Kimi Code upstream updates can all be audited slice by slice.
