@@ -47,6 +47,35 @@ export function evaluateFinalGate(input: FinalGateInput): FinalGateDecision {
   };
 }
 
+export function shouldApplyFinalGate(input: {
+  readonly requestedStatus: FinalAnswerClaimStatus;
+  readonly hasWorkFrame: boolean;
+  readonly obligationCount: number;
+  readonly evidenceCount: number;
+}): boolean {
+  if (!input.hasWorkFrame) return false;
+  if (input.requestedStatus === 'validated') return true;
+  return input.obligationCount > 0 || input.evidenceCount > 0;
+}
+
+export function renderFinalGateContinuation(decision: FinalGateDecision): string {
+  const lines = [
+    `Before finishing, revise the answer with status="${decision.allowedStatus}".`,
+  ];
+  if (decision.outcome === 'block') {
+    lines.push('Do not claim completion; state that the task is blocked on missing checks.');
+  } else if (decision.outcome === 'downgrade') {
+    lines.push('Do not overclaim validation; briefly name the missing checks or evidence.');
+  }
+  if (decision.requiredActionIds.length > 0) {
+    lines.push(`Required actions: ${decision.requiredActionIds.join(', ')}.`);
+  }
+  if (decision.reasons.length > 0) {
+    lines.push(`Reasons: ${decision.reasons.join(' ')}`);
+  }
+  return lines.join(' ');
+}
+
 function hasEvidence(input: FinalGateInput): boolean {
   return (input.evidenceRefs?.length ?? 0) > 0 || (input.sourceRefs?.length ?? 0) > 0;
 }
