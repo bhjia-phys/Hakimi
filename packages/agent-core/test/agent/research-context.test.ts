@@ -60,6 +60,50 @@ describe('ResearchContextManager', () => {
       workFrameId: 'frame.fqhe',
     });
   });
+
+  it('injects a research context reminder and selects the matching WorkFrame for a prompt', async () => {
+    const agent = makeAgent();
+    agent.workFrames.open(
+      {
+        id: 'frame.fqhe',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Relate FQHE wavefunctions and CS theory.',
+        activeObjectIds: ['formula.fqhe.flux-quantization'],
+      },
+      { source: 'controller' },
+    );
+    agent.workFrames.open(
+      {
+        id: 'frame.librpa',
+        domain: 'librpa',
+        topic: 'head-wing',
+        goal: 'Check LibRPA head-wing code impact.',
+      },
+      { source: 'controller' },
+    );
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text: 'Please help me reason about the FQHE wavefunction and Chern-Simons theory link.',
+      },
+    ]);
+    await agent.injection.inject();
+
+    expect(agent.workFrames.active?.id).toBe('frame.fqhe');
+    expect(agent.workFrames.active?.contextPackId).toBeDefined();
+    const lastMessage = agent.context.history.at(-1);
+    expect(lastMessage?.origin).toEqual({
+      kind: 'injection',
+      variant: 'research_context',
+    });
+    expect(lastMessage?.content[0]).toMatchObject({
+      type: 'text',
+    });
+    expect((lastMessage?.content[0] as { text: string }).text).toContain('AITP research context is active.');
+    expect((lastMessage?.content[0] as { text: string }).text).toContain('frame.fqhe');
+  });
 });
 
 function makeAgent(records?: AgentRecord[]): Agent {

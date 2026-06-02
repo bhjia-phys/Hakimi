@@ -186,6 +186,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.2.2 has refactored research actions toward universal ids plus structured `ResearchActionBinding`: FQHE/CS charge-flux checks now bind `validate.check_convention` with a charge-flux `checkId`, and LibRPA head-wing benchmark work now binds `benchmark.run_minimal_case` with a LibRPA adapter id. See [AITP Agent 0.2.2 Audit](docs/internal/aitp-agent-0.2.2-audit.md).
 - 0.2.3 has added file-backed `DomainProfile` and `WorkflowRecipe` registries behind `KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE` and `KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE`, scanning `.aitp/domain-profiles` and `.aitp/workflow-recipes` into `agent.domainProfiles` and `agent.workflowRecipes`. See [AITP Agent 0.2.3 Audit](docs/internal/aitp-agent-0.2.3-audit.md).
 - 0.2.5 has added the first WorkFrame ContextPack orchestrator: active WorkFrames can compile bounded `ResearchContextPack` summaries from DomainProfile, WorkflowRecipe, PhysicsMemory, ResearchLedger, and action bindings, then attach the pack id back to the WorkFrame for replay and audit. See [AITP Agent 0.2.5 Audit](docs/internal/aitp-agent-0.2.5-audit.md).
+- 0.2.6 has started closing the turn loop: prompt-sensitive WorkFrame reuse/switching now runs inside the injection cycle, bounded `ResearchContextPack` summaries can be recompiled for the inferred active frame, and a compact AITP research-context reminder can enter the model-facing context before a research step. See [AITP Agent 0.2.6 Audit](docs/internal/aitp-agent-0.2.6-audit.md).
 - The remaining implementation sequence is now re-baselined in [AITP Agent Runtime Slices V2 Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md): turn-loop context closure, dynamic tool exposure, controlled auto-capture from real work, memory compiler v2, promotion and trust gating, final-gate lifecycle integration, harness v2, stronger domain verticals, bridge-gated domain isolation, and a later graph/formalization lane.
 
 ## Development
@@ -296,6 +297,13 @@ Focused verification for the 0.2.5 WorkFrame ContextPack orchestrator is:
 
 ```sh
 corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/research-context packages/agent-core/test/agent/research-context.test.ts packages/agent-core/test/tools/research-action-tool.test.ts packages/agent-core/test/agent/workframe.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+```
+
+Focused verification for the 0.2.6 turn-loop context closure pass is:
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/agent/research-context.test.ts packages/agent-core/test/agent/workframe.test.ts
 corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
 ```
 

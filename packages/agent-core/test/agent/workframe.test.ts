@@ -112,6 +112,46 @@ describe('WorkFrameManager', () => {
     }
     expect(restoredFinished.researchAction.activeActionCall).toBeUndefined();
   });
+
+  it('switches the active WorkFrame by prompt-sensitive context injection', async () => {
+    const agent = makeAgent();
+    agent.workFrames.open(
+      {
+        id: 'frame.fqhe',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Relate Laughlin wavefunction and CS response.',
+      },
+      { source: 'controller' },
+    );
+    agent.workFrames.open(
+      {
+        id: 'frame.librpa',
+        domain: 'librpa',
+        topic: 'head-wing',
+        goal: 'Check LibRPA head-wing code impact.',
+      },
+      { source: 'controller' },
+    );
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text: 'I need to inspect the Librpa head-wing change and its code impact.',
+      },
+    ]);
+    await agent.injection.inject();
+    expect(agent.workFrames.active?.id).toBe('frame.librpa');
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text: 'Now switch back to the FQHE Chern-Simons wavefunction question.',
+      },
+    ]);
+    await agent.injection.inject();
+    expect(agent.workFrames.active?.id).toBe('frame.fqhe');
+  });
 });
 
 function makeAgent(records?: AgentRecord[]): Agent {
