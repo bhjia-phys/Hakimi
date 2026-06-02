@@ -200,6 +200,56 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('compiles, lists, and loads ContextPacks through the session manager', async () => {
+    const records: AgentRecord[] = [];
+    const agent = makeAgent(records);
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    await execute(tool, {
+      action: 'open_work_frame',
+      frame_id: 'frame.fqhe',
+      domain: 'topological-order/fqhe-cs',
+      topic: 'fqhe-cs-effective-theory',
+      goal: 'Relate Laughlin wavefunction and CS response.',
+      active_object_ids: ['formula.fqhe.flux-quantization'],
+    });
+    const compiled = await execute(tool, {
+      action: 'compile_context_pack',
+      frame_id: 'frame.fqhe',
+      max_capsules: 4,
+      max_ledger_proposals: 4,
+      max_action_bindings: 4,
+    });
+    const contextPackId = agent.workFrames.active?.contextPackId;
+    const listed = await execute(tool, { action: 'list_context_packs' });
+    const loaded = await execute(tool, {
+      action: 'load_context_pack',
+      context_pack_id: contextPackId,
+    });
+
+    expect(contextPackId).toMatch(/^context\.frame\.fqhe\.[a-f0-9]{12}$/);
+    expect(compiled.output).toContain('<context_pack');
+    expect(compiled.output).toContain('domain="topological-order/fqhe-cs"');
+    expect(listed.output).toContain(`id="${contextPackId}`);
+    expect(loaded.output).toContain(`id="${contextPackId}`);
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_context.context_compiled',
+        source: 'model-tool',
+        workFrameId: 'frame.fqhe',
+        contextPackId,
+        toolCallId: 'call_research_action',
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'workframe.context_attached',
+        frameId: 'frame.fqhe',
+        contextPackId,
+      }),
+    );
+  });
+
   it('returns a tool error when record_action_result is missing required ids', async () => {
     const tool = new ResearchActionTool();
 

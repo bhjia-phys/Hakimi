@@ -77,6 +77,27 @@ export class WorkFrameManager {
     });
   }
 
+  attachContextPack(
+    id: string,
+    contextPackId: string,
+    options: WorkFrameRecordOptions,
+  ): WorkFrame {
+    const frame = this.requireFrame(id);
+    const next: WorkFrame = {
+      ...frame,
+      contextPackId,
+    };
+    this.frames.set(id, next);
+    this.agent.records.logRecord({
+      type: 'workframe.context_attached',
+      source: options.source,
+      frameId: id,
+      contextPackId,
+      ...(options.toolCallId === undefined ? {} : { toolCallId: options.toolCallId }),
+    });
+    return next;
+  }
+
   list(): readonly WorkFrame[] {
     return [...this.frames.values()].map((frame) => ({ ...frame }));
   }
@@ -102,5 +123,14 @@ export class WorkFrameManager {
       nextActiveFrameId !== undefined && this.frames.has(nextActiveFrameId)
         ? nextActiveFrameId
         : this.frames.keys().next().value;
+  }
+
+  restoreContextAttached(frameId: string, contextPackId: string): void {
+    const frame = this.frames.get(frameId);
+    if (frame === undefined) return;
+    this.frames.set(frameId, {
+      ...frame,
+      contextPackId,
+    });
   }
 }

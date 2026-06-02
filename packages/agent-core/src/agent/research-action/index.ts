@@ -1,4 +1,9 @@
 import type { Agent } from '..';
+import type {
+  CompileResearchContextForWorkFrameInput,
+  ResearchContextRecordOptions,
+} from '../research-context';
+import type { ResearchContextPack } from '../../research-context';
 import type { OpenWorkFrameInput, WorkFrameRecordOptions } from '../workframe';
 import type {
   ResearchActionOutcome,
@@ -65,6 +70,21 @@ export class ResearchActionManager {
 
   activeWorkFrame(): WorkFrame | undefined {
     return this.agent.workFrames.active;
+  }
+
+  compileContextPack(
+    input: CompileResearchContextForWorkFrameInput,
+    options: ResearchContextRecordOptions,
+  ): ResearchContextPack {
+    return this.agent.researchContext.compileForWorkFrame(input, options);
+  }
+
+  listContextPacks(): readonly ResearchContextPack[] {
+    return this.agent.researchContext.listPacks();
+  }
+
+  requireContextPack(id: string): ResearchContextPack {
+    return this.agent.researchContext.requirePack(id);
   }
 
   startActionCall(
