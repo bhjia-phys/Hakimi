@@ -21,7 +21,14 @@ import {
   type ResearchObligation,
   type WorkFrame,
 } from '../../../research-action';
-import { PHYSICS_CAPSULE_KINDS, type GraphRef, type PhysicsCapsuleKind } from '../../../physics-memory';
+import {
+  PHYSICS_CAPSULE_KINDS,
+  RELIABILITY_STATES,
+  type GraphRef,
+  type PhysicsCapsuleKind,
+} from '../../../physics-memory';
+import type { ResearchContextPack } from '../../../research-context';
+import { RESEARCH_LEDGER_EVENT_STATUSES } from '../../../research-ledger';
 import { toInputJsonSchema } from '../../support/input-schema';
 import DESCRIPTION from './research-action-tool.md';
 
@@ -35,11 +42,15 @@ const ACTIONS = [
   'list_work_frames',
   'start_action_call',
   'finish_action_call',
+  'compile_context_pack',
+  'list_context_packs',
+  'load_context_pack',
 ] as const;
 const EXPOSURES = ['direct', 'deferred', 'direct-model-only', 'hidden'] as const;
 const CATEGORIES = ['graph', 'derivation', 'physics', 'code', 'benchmark', 'memory', 'harness'] as const;
 const OUTCOMES = ['pass', 'fail', 'blocked', 'inconclusive'] as const;
 const SOURCES = ['model', 'controller', 'hidden-check', 'subagent', 'replay'] as const;
+const BRIDGE_POLICIES = ['deny', 'explicit-only', 'allow'] as const;
 const OBLIGATION_KINDS = [
   'source_support',
   'dimension_check',
@@ -80,6 +91,35 @@ export const ResearchActionToolInputSchema = z.object({
   goal: z.string().optional().describe('Goal text for open_work_frame.'),
   frame_id: z.string().optional().describe('WorkFrame id for WorkFrame operations.'),
   context_pack_id: z.string().optional().describe('Optional context pack id for open_work_frame.'),
+  attach_context_pack: z
+    .boolean()
+    .optional()
+    .describe('Whether compile_context_pack should attach the pack to the WorkFrame.'),
+  reliability_floor: z
+    .enum(RELIABILITY_STATES)
+    .optional()
+    .describe('Minimum physics memory reliability for compile_context_pack.'),
+  bridge_policy: z
+    .enum(BRIDGE_POLICIES)
+    .optional()
+    .describe('Cross-domain bridge policy for compile_context_pack.'),
+  include_ledger_statuses: z
+    .array(z.enum(RESEARCH_LEDGER_EVENT_STATUSES))
+    .optional()
+    .describe('Research ledger statuses included in compile_context_pack.'),
+  max_capsules: z.number().int().positive().optional().describe('Maximum capsule summaries.'),
+  max_ledger_proposals: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Maximum ledger proposal summaries.'),
+  max_action_bindings: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Maximum action binding summaries.'),
   active_object_ids: z.array(z.string()).optional().describe('Active object ids for open_work_frame.'),
   assumption_ids: z.array(z.string()).optional().describe('Assumption ids for open_work_frame.'),
   convention_ids: z.array(z.string()).optional().describe('Convention ids for open_work_frame.'),
@@ -162,6 +202,12 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return this.startActionCall(args, ctx);
         case 'finish_action_call':
           return this.finishActionCall(args, ctx);
+        case 'compile_context_pack':
+          return this.compileContextPack(args, ctx);
+        case 'list_context_packs':
+          return this.listContextPacks();
+        case 'load_context_pack':
+          return this.loadContextPack(args);
       }
     } catch (error) {
       return {
@@ -384,6 +430,63 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     const active = this.manager.activeWorkFrame();
     return ok(renderWorkFrameList(this.manager.listWorkFrames(), active?.id));
   }
+
+  private compileContextPack(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction compile_context_pack requires a session manager.');
+    }
+    const pack = this.manager.compileContextPack(
+      {
+        workFrameId: args.frame_id,
+        attachToWorkFrame: args.attach_context_pack,
+        reliabilityFloor: args.reliability_floor,
+        bridgePolicy: args.bridge_policy,
+        includeLedgerStatuses: args.include_ledger_statuses,
+        limits: {
+          maxCapsules: args.max_capsules,
+          maxLedgerProposals: args.max_ledger_proposals,
+          maxActionBindings: args.max_action_bindings,
+        },
+      },
+      {
+        source: 'model-tool',
+        toolCallId: ctx.toolCallId,
+      },
+    );
+    return ok(renderContextPack(pack));
+  }
+
+  private listContextPacks(): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction list_context_packs requires a session manager.');
+    }
+    const packs = this.manager.listContextPacks();
+    if (packs.length === 0) return ok('<context_packs />\n');
+    return ok(
+      [
+        '<context_packs>',
+        ...packs.map(
+          (pack) =>
+            `  <context_pack id="${escapeXml(pack.id)}" work_frame_id="${escapeXml(pack.workFrameId)}" domain="${escapeXml(pack.domain)}" topic="${escapeXml(pack.topic)}" capsule_count="${String(pack.physics.capsules.length)}" proposal_count="${String(pack.ledger.proposals.length)}" action_binding_count="${String(pack.actionBindings.length)}" />`,
+        ),
+        '</context_packs>',
+        '',
+      ].join('\n'),
+    );
+  }
+
+  private loadContextPack(args: ResearchActionToolInput): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction load_context_pack requires a session manager.');
+    }
+    if (args.context_pack_id === undefined || args.context_pack_id.length === 0) {
+      return errorResult('ResearchAction load_context_pack requires context_pack_id.');
+    }
+    return ok(renderContextPack(this.manager.requireContextPack(args.context_pack_id)));
+  }
 }
 
 function renderActionList(actions: readonly ResearchActionDefinition[]): string {
@@ -441,6 +544,53 @@ function renderWorkFrame(
     renderStringList('source_refs', 'source_ref', frame.sourceRefs, `${indent}  `),
     renderStringList('open_obligations', 'obligation', frame.openObligationIds, `${indent}  `),
     `${indent}</work_frame>`,
+    '',
+  ].join('\n');
+}
+
+function renderContextPack(pack: ResearchContextPack): string {
+  return [
+    `<context_pack id="${escapeXml(pack.id)}" work_frame_id="${escapeXml(pack.workFrameId)}" domain="${escapeXml(pack.domain)}" topic="${escapeXml(pack.topic)}">`,
+    `  <goal>${escapeXml(pack.goal)}</goal>`,
+    renderStringList('source_refs', 'source_ref', pack.sourceRefs, '  '),
+    renderStringList('focus_objects', 'object', pack.focusObjectIds, '  '),
+    '  <profiles>',
+    ...pack.profiles.map(
+      (profile) =>
+        `    <profile id="${escapeXml(profile.id)}" status="${profile.status}" lenses="${escapeXml(profile.lenses.join(','))}" workflows="${escapeXml(profile.workflows.join(','))}">${escapeXml(profile.title)}</profile>`,
+    ),
+    '  </profiles>',
+    '  <workflows>',
+    ...pack.workflows.map(
+      (workflow) =>
+        `    <workflow id="${escapeXml(workflow.id)}" status="${workflow.status}" required_tools="${escapeXml(workflow.requiredTools.join(','))}" action_bindings="${escapeXml(workflow.actionBindingIds.join(','))}">${escapeXml(workflow.title)}</workflow>`,
+    ),
+    '  </workflows>',
+    `  <physics requested_focus="${escapeXml(pack.physics.requestedFocus.join(','))}" included_focus="${escapeXml(pack.physics.includedFocus.join(','))}">`,
+    ...pack.physics.capsules.map(
+      (capsule) =>
+        `    <capsule id="${escapeXml(capsule.id)}" kind="${capsule.kind}" reliability="${capsule.reliability}" checks="${escapeXml(capsule.requiredChecks.map((check) => check.id).join(','))}" actions="${escapeXml(capsule.actionAffordances.map((affordance) => affordance.actionId).join(','))}">${escapeXml(capsule.title)}</capsule>`,
+    ),
+    '  </physics>',
+    `  <ledger statuses="${escapeXml(pack.ledger.includeStatuses.join(','))}">`,
+    ...pack.ledger.proposals.map(
+      (proposal) =>
+        `    <proposal id="${escapeXml(proposal.id)}" kind="${escapeXml(proposal.kind)}" event_ids="${escapeXml(proposal.eventIds.join(','))}" confidence="${proposal.confidence}" />`,
+    ),
+    '  </ledger>',
+    '  <action_bindings>',
+    ...pack.actionBindings.map(
+      (binding) =>
+        `    <binding id="${escapeXml(binding.id)}" action_id="${escapeXml(binding.actionId)}"${binding.priority === undefined ? '' : ` priority="${binding.priority}"`}${binding.checkId === undefined ? '' : ` check_id="${escapeXml(binding.checkId)}"`}${binding.lensId === undefined ? '' : ` lens_id="${escapeXml(binding.lensId)}"`}${binding.adapterId === undefined ? '' : ` adapter_id="${escapeXml(binding.adapterId)}"`} />`,
+    ),
+    '  </action_bindings>',
+    '  <diagnostics>',
+    ...pack.diagnostics.map(
+      (diagnostic) =>
+        `    <diagnostic severity="${diagnostic.severity}" source="${diagnostic.source}" code="${escapeXml(diagnostic.code)}"${diagnostic.refId === undefined ? '' : ` ref_id="${escapeXml(diagnostic.refId)}"`}>${escapeXml(diagnostic.message)}</diagnostic>`,
+    ),
+    '  </diagnostics>',
+    '</context_pack>',
     '',
   ].join('\n');
 }

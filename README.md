@@ -185,7 +185,8 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.2.1 upstream sync guardrail has configured a local `upstream` remote for Kimi Code; fetch/merge is pending because GitHub HTTPS access failed in this environment. See [Upstream Sync 2026-06-02](docs/internal/upstream-sync-2026-06-02.md).
 - 0.2.2 has refactored research actions toward universal ids plus structured `ResearchActionBinding`: FQHE/CS charge-flux checks now bind `validate.check_convention` with a charge-flux `checkId`, and LibRPA head-wing benchmark work now binds `benchmark.run_minimal_case` with a LibRPA adapter id. See [AITP Agent 0.2.2 Audit](docs/internal/aitp-agent-0.2.2-audit.md).
 - 0.2.3 has added file-backed `DomainProfile` and `WorkflowRecipe` registries behind `KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE` and `KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE`, scanning `.aitp/domain-profiles` and `.aitp/workflow-recipes` into `agent.domainProfiles` and `agent.workflowRecipes`. See [AITP Agent 0.2.3 Audit](docs/internal/aitp-agent-0.2.3-audit.md).
-- The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md) and [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md): dynamic context packs, real diff/artifact capture, model-loop wiring, and broader domain memory.
+- 0.2.5 has added the first WorkFrame ContextPack orchestrator: active WorkFrames can compile bounded `ResearchContextPack` summaries from DomainProfile, WorkflowRecipe, PhysicsMemory, ResearchLedger, and action bindings, then attach the pack id back to the WorkFrame for replay and audit. See [AITP Agent 0.2.5 Audit](docs/internal/aitp-agent-0.2.5-audit.md).
+- The remaining implementation sequence is defined in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md) and [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md): automatic context-pack injection, dynamic tool exposure, real diff/artifact capture, final-gate wiring, and broader domain memory.
 
 ## Development
 
@@ -289,6 +290,13 @@ Focused verification for the 0.2 FQHE/CS vertical slice is:
 pnpm vitest run packages/agent-core/test/physics-verticals/fqhe-cs.test.ts packages/agent-core/test/physics-direction/lens.test.ts packages/agent-core/test/research-harness/runner.test.ts
 pnpm --filter @moonshot-ai/agent-core typecheck
 pnpm exec oxlint packages/agent-core/src/physics-verticals packages/agent-core/src/index.ts packages/agent-core/test/physics-verticals/fqhe-cs.test.ts
+```
+
+Focused verification for the 0.2.5 WorkFrame ContextPack orchestrator is:
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/research-context packages/agent-core/test/agent/research-context.test.ts packages/agent-core/test/tools/research-action-tool.test.ts packages/agent-core/test/agent/workframe.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
 ```
 
 Repository workflow note:

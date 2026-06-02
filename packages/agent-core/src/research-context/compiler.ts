@@ -1,0 +1,429 @@
+import { createHash } from 'node:crypto';
+
+import type { DomainProfileRegistry } from '../domain-profile';
+import {
+  compilePhysicsContext,
+  type ActionAffordance,
+  type PhysicsCapsule,
+  type PhysicsMemoryRegistry,
+} from '../physics-memory';
+import type { ResearchActionBinding } from '../research-action';
+import {
+  compileResearchLedgerProposals,
+  type ResearchLedgerEventStatus,
+  type ResearchLedgerRegistry,
+} from '../research-ledger';
+import type { WorkflowRecipe, WorkflowRecipeRegistry } from '../workflow-recipe';
+import type {
+  CompileResearchContextPackOptions,
+  ResearchContextCapsuleSummary,
+  ResearchContextLedgerProposalSummary,
+  ResearchContextPack,
+  ResearchContextPackDiagnostic,
+  ResearchContextProfileSummary,
+  ResearchContextWorkflowSummary,
+} from './types';
+
+export interface CompileResearchContextPackInput extends CompileResearchContextPackOptions {
+  readonly domainProfiles?: DomainProfileRegistry | null | undefined;
+  readonly workflowRecipes?: WorkflowRecipeRegistry | null | undefined;
+  readonly physicsMemory?: PhysicsMemoryRegistry | null | undefined;
+  readonly researchLedger?: ResearchLedgerRegistry | null | undefined;
+}
+
+const DEFAULT_LEDGER_STATUSES: readonly ResearchLedgerEventStatus[] = [
+  'captured',
+  'parsed',
+  'linked',
+  'compiled',
+  'promoted',
+];
+
+const DEFAULT_MAX_CAPSULES = 12;
+const DEFAULT_MAX_LEDGER_PROPOSALS = 12;
+const DEFAULT_MAX_ACTION_BINDINGS = 24;
+
+export function compileResearchContextPack(
+  input: CompileResearchContextPackInput,
+): ResearchContextPack {
+  const frame = input.workFrame;
+  const diagnostics: ResearchContextPackDiagnostic[] = [];
+  const profiles = collectProfiles(input, diagnostics);
+  const workflows = collectWorkflows(input, profiles, diagnostics);
+  const requestedFocus = unique([
+    ...frame.activeObjectIds,
+    ...frame.assumptionIds,
+    ...frame.conventionIds,
+    ...profiles.flatMap((profile) => profile.capsuleRefs),
+    ...profiles.flatMap((profile) => profile.bridgeCapsules),
+    ...workflows.flatMap((workflow) => workflow.metadata.requiredCapsules),
+  ]);
+  const physics = collectPhysics(input, requestedFocus, diagnostics);
+  const ledger = collectLedger(input, diagnostics);
+  const actionBindings = bounded(
+    uniqueBindings([
+      ...workflows.flatMap((workflow) => workflow.metadata.actionBindings),
+      ...physics.capsules.flatMap((capsule) => bindingsFromAffordances(capsule)),
+    ]),
+    input.limits?.maxActionBindings ?? DEFAULT_MAX_ACTION_BINDINGS,
+    (remaining) =>
+      diagnostics.push({
+        severity: 'info',
+        code: 'action-bindings-truncated',
+        message: `${remaining} action bindings were omitted from the context pack.`,
+        source: 'workframe',
+        refId: frame.id,
+      }),
+  );
+  const sourceRefs = unique([
+    ...frame.sourceRefs,
+    ...profiles.flatMap((profile) => profile.sourceRefs),
+    ...workflows.flatMap((workflow) => workflow.metadata.sourceRefs),
+    ...physics.capsules.flatMap((capsule) => capsule.sourceRefs),
+    ...ledger.proposals.flatMap((proposal) => proposal.sourceRefs),
+  ]);
+  const id = contextPackId({
+    workFrameId: frame.id,
+    domain: frame.domain,
+    topic: frame.topic,
+    requestedFocus,
+    profileIds: profiles.map((profile) => profile.id),
+    workflowIds: workflows.map((workflow) => workflow.metadata.id),
+    capsuleIds: physics.capsules.map((capsule) => capsule.id),
+    proposalIds: ledger.proposals.map((proposal) => proposal.id),
+  });
+
+  return {
+    id,
+    workFrameId: frame.id,
+    domain: frame.domain,
+    topic: frame.topic,
+    goal: frame.goal,
+    focusObjectIds: frame.activeObjectIds,
+    assumptionIds: frame.assumptionIds,
+    conventionIds: frame.conventionIds,
+    sourceRefs,
+    profiles,
+    workflows: workflows.map(workflowSummary),
+    physics,
+    ledger,
+    actionBindings,
+    diagnostics,
+    compiledAt: input.now?.() ?? Date.now(),
+  };
+}
+
+function collectProfiles(
+  input: CompileResearchContextPackInput,
+  diagnostics: ResearchContextPackDiagnostic[],
+): readonly ResearchContextProfileSummary[] {
+  if (input.domainProfiles === null || input.domainProfiles === undefined) {
+    diagnostics.push({
+      severity: 'info',
+      code: 'domain-profile-registry-disabled',
+      message: 'DomainProfile registry is not available for this session.',
+      source: 'domain-profile',
+    });
+    return [];
+  }
+  for (const diagnostic of input.domainProfiles.getDiagnostics()) {
+    diagnostics.push({
+      severity: diagnostic.severity,
+      code: diagnostic.code,
+      message: diagnostic.message,
+      source: 'domain-profile',
+      refId: diagnostic.profileId,
+    });
+  }
+  return input.domainProfiles
+    .listProfiles({ domain: input.workFrame.domain })
+    .map((profile) => ({
+      id: profile.metadata.id,
+      title: profile.metadata.title,
+      status: profile.metadata.status,
+      sourceRefs: profile.metadata.sourceRefs,
+      conventions: profile.metadata.conventions,
+      lenses: profile.metadata.lenses,
+      workflows: profile.metadata.workflows,
+      capsuleRefs: profile.metadata.capsuleRefs,
+      bridgeCapsules: profile.metadata.bridgeCapsules,
+      contextTags: profile.metadata.contextTags,
+    }));
+}
+
+function collectWorkflows(
+  input: CompileResearchContextPackInput,
+  profiles: readonly ResearchContextProfileSummary[],
+  diagnostics: ResearchContextPackDiagnostic[],
+): readonly WorkflowRecipe[] {
+  if (input.workflowRecipes === null || input.workflowRecipes === undefined) {
+    diagnostics.push({
+      severity: 'info',
+      code: 'workflow-recipe-registry-disabled',
+      message: 'WorkflowRecipe registry is not available for this session.',
+      source: 'workflow-recipe',
+    });
+    return [];
+  }
+  for (const diagnostic of input.workflowRecipes.getDiagnostics()) {
+    diagnostics.push({
+      severity: diagnostic.severity,
+      code: diagnostic.code,
+      message: diagnostic.message,
+      source: 'workflow-recipe',
+      refId: diagnostic.recipeId,
+    });
+  }
+  const profileWorkflowIds = unique(profiles.flatMap((profile) => profile.workflows));
+  if (profileWorkflowIds.length === 0) {
+    return input.workflowRecipes.listRecipes({ domain: input.workFrame.domain });
+  }
+
+  const byId = new Map<string, WorkflowRecipe>();
+  for (const workflowId of profileWorkflowIds) {
+    const workflow = input.workflowRecipes.getRecipe(workflowId);
+    if (workflow === undefined) {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'missing-profile-workflow',
+        message: `Domain profile references missing workflow recipe "${workflowId}".`,
+        source: 'workflow-recipe',
+        refId: workflowId,
+      });
+      continue;
+    }
+    if (workflow.metadata.domain !== input.workFrame.domain) {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'cross-domain-profile-workflow',
+        message: `Workflow recipe "${workflowId}" belongs to domain "${workflow.metadata.domain}", not "${input.workFrame.domain}".`,
+        source: 'workflow-recipe',
+        refId: workflowId,
+      });
+      continue;
+    }
+    byId.set(workflow.metadata.id, workflow);
+  }
+  return [...byId.values()].toSorted((a, b) => a.metadata.id.localeCompare(b.metadata.id));
+}
+
+function collectPhysics(
+  input: CompileResearchContextPackInput,
+  requestedFocus: readonly string[],
+  diagnostics: ResearchContextPackDiagnostic[],
+): ResearchContextPack['physics'] {
+  if (input.physicsMemory === null || input.physicsMemory === undefined) {
+    diagnostics.push({
+      severity: 'info',
+      code: 'physics-memory-registry-disabled',
+      message: 'PhysicsMemory registry is not available for this session.',
+      source: 'physics-memory',
+    });
+    return { requestedFocus, includedFocus: [], capsules: [] };
+  }
+  const knownFocus = requestedFocus.filter((id) => input.physicsMemory?.getCapsule(id) !== undefined);
+  for (const focusId of requestedFocus) {
+    if (input.physicsMemory.getCapsule(focusId) !== undefined) continue;
+    diagnostics.push({
+      severity: 'info',
+      code: 'unresolved-focus-ref',
+      message: `Focus ref "${focusId}" is not a registered physics capsule id.`,
+      source: 'physics-memory',
+      refId: focusId,
+    });
+  }
+  const physicsPack = compilePhysicsContext(input.physicsMemory, {
+    domain: input.workFrame.domain,
+    focus: knownFocus.length === 0 ? undefined : knownFocus,
+    reliabilityFloor: input.reliabilityFloor,
+    bridgePolicy: input.bridgePolicy,
+  });
+  for (const diagnostic of physicsPack.diagnostics) {
+    diagnostics.push({
+      severity: diagnostic.severity,
+      code: diagnostic.code,
+      message: diagnostic.message,
+      source: 'physics-memory',
+      refId: diagnostic.capsuleId,
+    });
+  }
+  const capsules = bounded(
+    physicsPack.capsules.map(capsuleSummary),
+    input.limits?.maxCapsules ?? DEFAULT_MAX_CAPSULES,
+    (remaining) =>
+      diagnostics.push({
+        severity: 'info',
+        code: 'physics-capsules-truncated',
+        message: `${remaining} physics capsules were omitted from the context pack.`,
+        source: 'physics-memory',
+        refId: input.workFrame.id,
+      }),
+  );
+  return {
+    requestedFocus,
+    includedFocus: knownFocus,
+    capsules,
+  };
+}
+
+function collectLedger(
+  input: CompileResearchContextPackInput,
+  diagnostics: ResearchContextPackDiagnostic[],
+): ResearchContextPack['ledger'] {
+  const includeStatuses = input.includeLedgerStatuses ?? DEFAULT_LEDGER_STATUSES;
+  if (input.researchLedger === null || input.researchLedger === undefined) {
+    diagnostics.push({
+      severity: 'info',
+      code: 'research-ledger-registry-disabled',
+      message: 'ResearchLedger registry is not available for this session.',
+      source: 'research-ledger',
+    });
+    return { includeStatuses, proposals: [] };
+  }
+  const result = compileResearchLedgerProposals(input.researchLedger, {
+    topic: input.workFrame.topic,
+    domain: input.workFrame.domain,
+    includeStatuses,
+  });
+  for (const diagnostic of result.diagnostics) {
+    diagnostics.push({
+      severity: diagnostic.severity,
+      code: diagnostic.code,
+      message: diagnostic.message,
+      source: 'research-ledger',
+      refId: diagnostic.eventId ?? diagnostic.proposalId,
+    });
+  }
+  return {
+    includeStatuses,
+    proposals: bounded(
+      result.proposals.map((proposal): ResearchContextLedgerProposalSummary => ({
+        id: proposal.id,
+        kind: proposal.kind,
+        eventIds: proposal.eventIds,
+        targetCapsuleKind: proposal.targetCapsuleKind,
+        targetCapsuleId: proposal.targetCapsuleId,
+        sourceRefs: proposal.sourceRefs,
+        openQuestions: proposal.openQuestions,
+        confidence: proposal.confidence,
+      })),
+      input.limits?.maxLedgerProposals ?? DEFAULT_MAX_LEDGER_PROPOSALS,
+      (remaining) =>
+        diagnostics.push({
+          severity: 'info',
+          code: 'ledger-proposals-truncated',
+          message: `${remaining} ledger proposals were omitted from the context pack.`,
+          source: 'research-ledger',
+          refId: input.workFrame.id,
+        }),
+    ),
+  };
+}
+
+function workflowSummary(workflow: WorkflowRecipe): ResearchContextWorkflowSummary {
+  return {
+    id: workflow.metadata.id,
+    title: workflow.metadata.title,
+    status: workflow.metadata.status,
+    sourceRefs: workflow.metadata.sourceRefs,
+    actionBindingIds: workflow.metadata.actionBindings.map((binding) => binding.id),
+    requiredCapsules: workflow.metadata.requiredCapsules,
+    requiredTools: workflow.metadata.requiredTools,
+    failureModes: workflow.metadata.failureModes,
+  };
+}
+
+function capsuleSummary(capsule: PhysicsCapsule): ResearchContextCapsuleSummary {
+  return {
+    id: capsule.metadata.id,
+    kind: capsule.metadata.kind,
+    title: capsule.metadata.title,
+    reliability: capsule.metadata.reliability,
+    symbols: capsule.metadata.symbols,
+    assumes: capsule.metadata.assumes,
+    dependsOn: capsule.metadata.dependsOn,
+    sourceRefs: capsule.metadata.sourceRefs,
+    graphRefs: capsule.metadata.graphRefs,
+    expansionHandles: capsule.metadata.expansionHandles,
+    requiredChecks: capsule.metadata.requiredChecks,
+    actionAffordances: capsule.metadata.actionAffordances,
+  };
+}
+
+function bindingsFromAffordances(
+  capsule: ResearchContextCapsuleSummary,
+): readonly ResearchActionBinding[] {
+  return capsule.actionAffordances.map((affordance) => ({
+    id: `binding.${capsule.id}.${affordance.actionId}`,
+    actionId: affordance.actionId,
+    objectRefs: [capsule.id],
+    reason: affordance.reason,
+    priority: bindingPriority(affordance),
+  }));
+}
+
+function bindingPriority(affordance: ActionAffordance): ResearchActionBinding['priority'] {
+  switch (affordance.intent) {
+    case 'required':
+      return 'blocking';
+    case 'recommended':
+      return 'normal';
+    case 'allowed':
+      return 'low';
+  }
+}
+
+function uniqueBindings(
+  bindings: readonly ResearchActionBinding[],
+): readonly ResearchActionBinding[] {
+  const byId = new Map<string, ResearchActionBinding>();
+  for (const binding of bindings) {
+    const key = [
+      binding.id,
+      binding.actionId,
+      binding.domainId ?? '',
+      binding.workflowId ?? '',
+      binding.lensId ?? '',
+      binding.checkId ?? '',
+      binding.adapterId ?? '',
+      (binding.objectRefs ?? []).join(','),
+    ].join('|');
+    if (!byId.has(key)) byId.set(key, binding);
+  }
+  return [...byId.values()].toSorted((a, b) => a.id.localeCompare(b.id));
+}
+
+function bounded<T>(
+  items: readonly T[],
+  max: number,
+  onTruncated: (remaining: number) => void,
+): readonly T[] {
+  if (items.length <= max) return items;
+  onTruncated(items.length - max);
+  return items.slice(0, max);
+}
+
+function unique(values: readonly string[]): readonly string[] {
+  return [...new Set(values.filter((value) => value.length > 0))].toSorted();
+}
+
+function contextPackId(input: {
+  readonly workFrameId: string;
+  readonly domain: string;
+  readonly topic: string;
+  readonly requestedFocus: readonly string[];
+  readonly profileIds: readonly string[];
+  readonly workflowIds: readonly string[];
+  readonly capsuleIds: readonly string[];
+  readonly proposalIds: readonly string[];
+}): string {
+  const hash = createHash('sha256')
+    .update(JSON.stringify(input))
+    .digest('hex')
+    .slice(0, 12);
+  return `context.${safeId(input.workFrameId)}.${hash}`;
+}
+
+function safeId(input: string): string {
+  return input.replaceAll(/[^a-zA-Z0-9_.-]/g, '-');
+}

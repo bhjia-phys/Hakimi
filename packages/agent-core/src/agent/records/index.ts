@@ -155,6 +155,9 @@ function restoreAgentRecord(agent: Agent, input: AgentRecord): void {
     case 'workframe.closed':
       agent.workFrames.restoreClosed(input.frameId, input.nextActiveFrameId);
       return;
+    case 'workframe.context_attached':
+      agent.workFrames.restoreContextAttached(input.frameId, input.contextPackId);
+      return;
     case 'physics_memory.roots_loaded':
     case 'physics_memory.capsule_loaded':
     case 'physics_memory.context_compiled':
@@ -171,6 +174,9 @@ function restoreAgentRecord(agent: Agent, input: AgentRecord): void {
       return;
     case 'research_action.result_recorded':
     case 'research_action.raw_tool_escape':
+      return;
+    case 'research_context.context_compiled':
+      agent.researchContext.restorePack(input.pack);
       return;
   }
 }

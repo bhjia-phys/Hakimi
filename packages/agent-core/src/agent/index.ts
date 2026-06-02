@@ -46,6 +46,7 @@ import { PhysicsMemoryManager } from './physics-memory';
 import { PlanMode } from './plan';
 import { ResearchLedgerManager } from './research-ledger';
 import { ResearchActionManager } from './research-action';
+import { ResearchContextManager } from './research-context';
 import {
   AgentRecords,
   BlobStore,
@@ -163,6 +164,7 @@ export class Agent {
   readonly researchLedger: ResearchLedgerManager | null;
   readonly workflowRecipes: WorkflowRecipeRegistry | null;
   readonly researchAction: ResearchActionManager;
+  readonly researchContext: ResearchContextManager;
   readonly toolLifecycle: PrimitiveToolLifecycleManager;
   readonly tools: ToolManager;
   readonly background: BackgroundManager;
@@ -255,6 +257,7 @@ export class Agent {
         : new ResearchLedgerManager(this, options.researchLedger);
     this.workflowRecipes = options.workflowRecipes ?? null;
     this.researchAction = new ResearchActionManager(this);
+    this.researchContext = new ResearchContextManager(this);
     this.toolLifecycle = new PrimitiveToolLifecycleManager(this);
     this.tools = new ToolManager(this);
     this.background = new BackgroundManager(
