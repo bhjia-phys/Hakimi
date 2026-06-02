@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { Agent } from '../../src/agent';
-import { PhysicsMemoryRegistry, type PhysicsCapsule } from '../../src/physics-memory';
+import {
+  PhysicsMemoryRegistry,
+  type PhysicsCapsule,
+  type PhysicsGraphCandidate,
+} from '../../src/physics-memory';
 import { ProviderManager } from '../../src/session/provider-manager';
 import { PhysicsMemoryTool } from '../../src/tools/builtin/collaboration/physics-memory-tool';
 import { testKaos } from '../fixtures/test-kaos';
@@ -81,6 +85,47 @@ describe('PhysicsMemoryTool', () => {
 
     expect(result).toMatchObject({ isError: true });
     expect(result.output).toContain('missing-focus-capsule');
+  });
+
+  it('promotes candidate graph objects through a strict packet gate', async () => {
+    const registry = new PhysicsMemoryRegistry();
+    const tool = new PhysicsMemoryTool(registry);
+
+    const result = await execute(tool, {
+      action: 'promote_candidate',
+      candidates: [candidate('graph.candidate.event.fqhe.derived-step')],
+      packet_id: 'promotion.fqhe.derived-step',
+      source_refs: ['paper:zhang-hansson-kivelson-1989'],
+      validation_refs: ['ledger:event.fqhe.dimension-check'],
+      failure_modes: ['failure:convention-mismatch'],
+      scope_regimes: ['nu=1/3'],
+      scope_assumptions: ['gapped-adiabatic'],
+      target_reliability: 'validated',
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.output).toContain('ok="true"');
+    expect(registry.requireCapsule('capsule.promoted.event.fqhe.derived-step').metadata).toMatchObject({
+      reliability: 'validated',
+      promotionPacketId: 'promotion.fqhe.derived-step',
+    });
+  });
+
+  it('rejects promotion when packet requirements are missing', async () => {
+    const registry = new PhysicsMemoryRegistry();
+    const tool = new PhysicsMemoryTool(registry);
+
+    const result = await execute(tool, {
+      action: 'promote_candidate',
+      candidates: [candidate('graph.candidate.event.fqhe.bad-step')],
+      packet_id: 'promotion.fqhe.bad-step',
+      source_refs: ['paper:laughlin-1983'],
+      target_reliability: 'validated',
+    });
+
+    expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('missing-scope');
+    expect(result.output).toContain('missing-validation-refs');
   });
 });
 
@@ -192,5 +237,22 @@ function capsule(
       actionAffordances: overrides.actionAffordances ?? [],
       allowCrossDomain: false,
     },
+  };
+}
+
+function candidate(id: string): PhysicsGraphCandidate {
+  return {
+    id,
+    kind: 'derivation_step',
+    domain: 'fqhe',
+    title: id,
+    body: 'Candidate body',
+    reliability: 'checked',
+    sourceEventIds: ['event.fqhe.derived-step'],
+    sourceRefs: ['ledger:event.fqhe.derived-step'],
+    relatedObjects: ['assumption:gapped-adiabatic'],
+    dependsOn: ['formula.flux_quantization'],
+    assumptions: ['assumption:gapped-adiabatic'],
+    promotionState: 'candidate',
   };
 }

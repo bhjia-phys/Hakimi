@@ -13,17 +13,27 @@ import {
   PHYSICS_CAPSULE_KINDS,
   PhysicsMemoryRegistry,
   RELIABILITY_STATES,
+  promotePhysicsCandidates,
   type BridgePolicy,
+  type PhysicsGraphCandidate,
   type PhysicsCapsule,
   type PhysicsCapsuleKind,
   type PhysicsContextPack,
+  type PhysicsPromotionPacket,
   type ReliabilityState,
 } from '../../../physics-memory';
 import { toInputJsonSchema } from '../../support/input-schema';
 import DESCRIPTION from './physics-memory-tool.md';
 
-const ACTIONS = ['list_domains', 'list_capsules', 'load_capsule', 'compile_context'] as const;
+const ACTIONS = [
+  'list_domains',
+  'list_capsules',
+  'load_capsule',
+  'compile_context',
+  'promote_candidate',
+] as const;
 const BRIDGE_POLICIES = ['deny', 'explicit-only', 'allow'] as const;
+const PROMOTION_TARGETS = ['checked', 'validated', 'formalized'] as const;
 
 export const PhysicsMemoryToolInputSchema = z.object({
   action: z.enum(ACTIONS).describe('The physics-memory operation to perform.'),
@@ -43,6 +53,30 @@ export const PhysicsMemoryToolInputSchema = z.object({
     .boolean()
     .optional()
     .describe('Whether load_capsule or compile_context should include capsule body text.'),
+  candidates: z
+    .array(z.unknown())
+    .optional()
+    .describe('Candidate graph objects for promotion.'),
+  packet_id: z.string().optional().describe('Promotion packet id for promote_candidate.'),
+  candidate_ids: z.array(z.string()).optional().describe('Candidate ids to promote.'),
+  source_refs: z.array(z.string()).optional().describe('Promotion source refs.'),
+  validation_refs: z.array(z.string()).optional().describe('Promotion validation refs.'),
+  failure_modes: z.array(z.string()).optional().describe('Known failure modes for promotion.'),
+  scope_regimes: z.array(z.string()).optional().describe('Scope regimes for promotion.'),
+  scope_assumptions: z.array(z.string()).optional().describe('Scope assumptions for promotion.'),
+  scope_excludes: z.array(z.string()).optional().describe('Scope exclusions for promotion.'),
+  target_reliability: z
+    .enum(PROMOTION_TARGETS)
+    .optional()
+    .describe('Target reliability for promotion.'),
+  required_human_checkpoint: z
+    .boolean()
+    .optional()
+    .describe('Whether promotion requires human checkpoint.'),
+  human_checkpoint_label: z
+    .string()
+    .optional()
+    .describe('Human checkpoint label required for formalized promotion.'),
 });
 
 export type PhysicsMemoryToolInput = z.Infer<typeof PhysicsMemoryToolInputSchema>;
@@ -93,6 +127,8 @@ export class PhysicsMemoryTool implements BuiltinTool<PhysicsMemoryToolInput> {
           return this.loadCapsule(args, ctx);
         case 'compile_context':
           return this.compileContext(args, ctx);
+        case 'promote_candidate':
+          return this.promoteCandidate(args, ctx);
       }
     } catch (error) {
       return {
@@ -141,6 +177,57 @@ export class PhysicsMemoryTool implements BuiltinTool<PhysicsMemoryToolInput> {
       output: renderContextPack(pack, args.include_body ?? true),
     };
   }
+
+  private promoteCandidate(
+    args: PhysicsMemoryToolInput,
+    ctx: ExecutableToolContext,
+  ): ExecutableToolResult {
+    const candidates = parseCandidates(args.candidates);
+    if (candidates.length === 0) {
+      return errorResult('PhysicsMemory promote_candidate requires at least one candidate.');
+    }
+    if (args.packet_id === undefined || args.packet_id.length === 0) {
+      return errorResult('PhysicsMemory promote_candidate requires packet_id.');
+    }
+    if (args.target_reliability === undefined) {
+      return errorResult('PhysicsMemory promote_candidate requires target_reliability.');
+    }
+    const packet: PhysicsPromotionPacket = {
+      id: args.packet_id,
+      candidateIds: args.candidate_ids ?? candidates.map((candidate) => candidate.id),
+      sourceRefs: args.source_refs ?? [],
+      validationRefs: args.validation_refs ?? [],
+      failureModes: args.failure_modes ?? [],
+      scope:
+        args.scope_regimes === undefined &&
+        args.scope_assumptions === undefined &&
+        args.scope_excludes === undefined
+          ? undefined
+          : {
+              regimes: args.scope_regimes,
+              assumptions: args.scope_assumptions,
+              excludes: args.scope_excludes,
+            },
+      targetReliability: args.target_reliability,
+      requiredHumanCheckpoint: args.required_human_checkpoint ?? false,
+      humanCheckpointLabel: args.human_checkpoint_label,
+    };
+    const result = promotePhysicsCandidates(candidates, packet);
+    if (!result.ok) {
+      return {
+        isError: true,
+        output: renderPromotionResult(result),
+      };
+    }
+    for (const capsule of result.capsules) {
+      this.registry.register(capsule, { replace: true });
+    }
+    this.manager?.recordCapsulesPromoted(packet, result.capsules, {
+      source: 'model-tool',
+      toolCallId: ctx.toolCallId,
+    });
+    return ok(renderPromotionResult(result));
+  }
 }
 
 function ok(output: string): ExecutableToolResult {
@@ -169,6 +256,25 @@ function renderCapsuleList(capsules: readonly PhysicsCapsule[]): string {
     '</physics_memory_capsules>',
     '',
   ].join('\n');
+}
+
+function renderPromotionResult(input: ReturnType<typeof promotePhysicsCandidates>): string {
+  const lines = [
+    `<physics_promotion ok="${input.ok ? 'true' : 'false'}">`,
+    '  <diagnostics>',
+    ...input.diagnostics.map(
+      (diagnostic) =>
+        `    <diagnostic severity="${diagnostic.severity}" code="${escapeXml(diagnostic.code)}">` +
+        `${escapeXml(diagnostic.message)}</diagnostic>`,
+    ),
+    '  </diagnostics>',
+    '  <capsules>',
+    ...input.capsules.map((capsule) => renderCapsuleSummary(capsule, '    ')),
+    '  </capsules>',
+    '</physics_promotion>',
+    '',
+  ];
+  return lines.join('\n');
 }
 
 function renderContextPack(pack: PhysicsContextPack, includeBody: boolean): string {
@@ -307,4 +413,26 @@ function escapeXml(input: string): string {
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
+}
+
+function parseCandidates(values: readonly unknown[] | undefined): readonly PhysicsGraphCandidate[] {
+  if (values === undefined) return [];
+  return values.filter((value): value is PhysicsGraphCandidate => {
+    if (typeof value !== 'object' || value === null) return false;
+    const candidate = value as Partial<PhysicsGraphCandidate>;
+    return (
+      typeof candidate.id === 'string' &&
+      typeof candidate.kind === 'string' &&
+      typeof candidate.domain === 'string' &&
+      typeof candidate.title === 'string' &&
+      typeof candidate.body === 'string' &&
+      typeof candidate.reliability === 'string' &&
+      Array.isArray(candidate.sourceEventIds) &&
+      Array.isArray(candidate.sourceRefs) &&
+      Array.isArray(candidate.relatedObjects) &&
+      Array.isArray(candidate.dependsOn) &&
+      Array.isArray(candidate.assumptions) &&
+      candidate.promotionState === 'candidate'
+    );
+  });
 }
