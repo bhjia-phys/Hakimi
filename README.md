@@ -187,6 +187,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.2.3 has added file-backed `DomainProfile` and `WorkflowRecipe` registries behind `KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE` and `KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE`, scanning `.aitp/domain-profiles` and `.aitp/workflow-recipes` into `agent.domainProfiles` and `agent.workflowRecipes`. See [AITP Agent 0.2.3 Audit](docs/internal/aitp-agent-0.2.3-audit.md).
 - 0.2.5 has added the first WorkFrame ContextPack orchestrator: active WorkFrames can compile bounded `ResearchContextPack` summaries from DomainProfile, WorkflowRecipe, PhysicsMemory, ResearchLedger, and action bindings, then attach the pack id back to the WorkFrame for replay and audit. See [AITP Agent 0.2.5 Audit](docs/internal/aitp-agent-0.2.5-audit.md).
 - 0.2.6 has started closing the turn loop: prompt-sensitive WorkFrame reuse/switching now runs inside the injection cycle, bounded `ResearchContextPack` summaries can be recompiled for the inferred active frame, and a compact AITP research-context reminder can enter the model-facing context before a research step. See [AITP Agent 0.2.6 Audit](docs/internal/aitp-agent-0.2.6-audit.md).
+- 0.2.7 has started dynamic tool exposure: once a research turn has a bounded `ResearchContextPack`, the runtime can apply a temporary managed-tool overlay so theory-oriented turns keep semantic research tools visible while code-oriented turns can additionally expose `Bash` / `Write` / `Edit`. See [AITP Agent 0.2.7 Audit](docs/internal/aitp-agent-0.2.7-audit.md).
 - The remaining implementation sequence is now re-baselined in [AITP Agent Runtime Slices V2 Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md): turn-loop context closure, dynamic tool exposure, controlled auto-capture from real work, memory compiler v2, promotion and trust gating, final-gate lifecycle integration, harness v2, stronger domain verticals, bridge-gated domain isolation, and a later graph/formalization lane.
 
 ## Development
@@ -304,6 +305,13 @@ Focused verification for the 0.2.6 turn-loop context closure pass is:
 
 ```sh
 corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/agent/research-context.test.ts packages/agent-core/test/agent/workframe.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+```
+
+Focused verification for the 0.2.7 dynamic tool exposure pass is:
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/agent/tool-exposure.test.ts packages/agent-core/test/agent/research-context.test.ts packages/agent-core/test/agent/workframe.test.ts
 corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
 ```
 

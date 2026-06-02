@@ -123,6 +123,9 @@ function restoreAgentRecord(agent: Agent, input: AgentRecord): void {
       // would throw and wedge the whole resume.
       if (Array.isArray(input.names)) agent.tools.setActiveTools(input.names);
       return;
+    case 'tools.runtime_exposure':
+      agent.tools.restoreRuntimeToolExposure(input.exposure);
+      return;
     case 'tools.update_store':
       agent.tools.updateStore(input.key, input.value);
       return;

@@ -8,7 +8,11 @@ import type { CompactionBeginData, CompactionResult } from '../compaction';
 import type { AgentConfigUpdateData } from '../config';
 import type { ContextMessage, PromptOrigin } from '../context';
 import type { PermissionApprovalResultRecord, PermissionMode } from '../permission';
-import type { McpToolCollision, UserToolRegistration } from '../tool';
+import type {
+  McpToolCollision,
+  RuntimeToolExposure,
+  UserToolRegistration,
+} from '../tool';
 import type { UsageRecordScope } from '../usage';
 import type { SwarmModeTrigger } from '../swarm';
 import type {
@@ -104,6 +108,10 @@ export interface AgentRecordEvents {
   };
   'tools.set_active_tools': {
     names: readonly string[];
+  };
+  'tools.runtime_exposure': {
+    source: 'controller' | 'replay';
+    exposure: RuntimeToolExposure | null;
   };
 
   'usage.record': {

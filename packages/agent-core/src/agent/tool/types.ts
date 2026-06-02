@@ -31,3 +31,11 @@ export interface McpServerRegistrationResult {
   readonly registered: readonly string[];
   readonly collisions: readonly McpToolCollision[];
 }
+
+export interface RuntimeToolExposure {
+  readonly managedToolNames: readonly string[];
+  readonly activeToolNames: readonly string[];
+  readonly workFrameId: string;
+  readonly contextPackId: string;
+  readonly reason: string;
+}

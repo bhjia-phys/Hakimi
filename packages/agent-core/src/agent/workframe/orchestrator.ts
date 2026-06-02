@@ -3,6 +3,7 @@ import type { PromptOrigin } from '../context';
 import type { ResearchContextPack } from '../../research-context';
 import { renderResearchContextPackReminder } from './context-pack';
 import type { WorkFrame } from '../../research-action';
+import { buildRuntimeToolExposurePlan } from '../tool-exposure';
 
 export interface PreparedResearchTurnContext {
   readonly frame: WorkFrame;
@@ -23,6 +24,9 @@ export class WorkFrameOrchestrator {
       { workFrameId: frame.id },
       { source: 'controller' },
     );
+    this.agent.tools.applyRuntimeToolExposure(buildRuntimeToolExposurePlan(pack), {
+      source: 'controller',
+    });
     return {
       frame: this.agent.workFrames.requireFrame(frame.id),
       pack,

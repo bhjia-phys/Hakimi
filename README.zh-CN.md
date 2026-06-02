@@ -187,6 +187,7 @@ formula capsule
 - 0.2.3 已经加入 file-backed `DomainProfile` 和 `WorkflowRecipe` registries，通过 `KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE` 和 `KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE` 开启，扫描 `.aitp/domain-profiles` 和 `.aitp/workflow-recipes` 并暴露为 `agent.domainProfiles` 和 `agent.workflowRecipes`。详见 [AITP Agent 0.2.3 Audit](docs/internal/aitp-agent-0.2.3-audit.md)。
 - 0.2.5 已经加入第一版 WorkFrame ContextPack orchestrator：active WorkFrame 可以从 DomainProfile、WorkflowRecipe、PhysicsMemory、ResearchLedger 和 action bindings 编译 bounded `ResearchContextPack` summary，并把 pack id 绑定回 WorkFrame 用于 replay 和审计。详见 [AITP Agent 0.2.5 Audit](docs/internal/aitp-agent-0.2.5-audit.md)。
 - 0.2.6 已经开始闭合 turn loop：prompt-sensitive 的 WorkFrame 复用/切换现在会在 injection cycle 里发生，系统会为推断出的 active WorkFrame 重新编译 bounded `ResearchContextPack`，并在 research step 之前把一个紧凑的 AITP research-context reminder 注入到 model-facing context。详见 [AITP Agent 0.2.6 Audit](docs/internal/aitp-agent-0.2.6-audit.md)。
+- 0.2.7 已经开始动态工具暴露：当 research turn 已经拿到 bounded `ResearchContextPack` 之后，runtime 可以施加一个临时 managed-tool overlay，使 theory-oriented turn 保留语义研究工具，而 code-oriented turn 额外暴露 `Bash` / `Write` / `Edit`。详见 [AITP Agent 0.2.7 Audit](docs/internal/aitp-agent-0.2.7-audit.md)。
 - 剩余阶段的执行顺序已经写入 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md) 和 [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md)：automatic context-pack injection、dynamic tool exposure、real diff/artifact capture、final-gate wiring 和更广的 domain memory。
 
 ## 本地开发
@@ -304,6 +305,13 @@ corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core type
 
 ```sh
 corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/agent/research-context.test.ts packages/agent-core/test/agent/workframe.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+```
+
+0.2.7 dynamic tool exposure 第一阶段的聚焦验证命令：
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/agent/tool-exposure.test.ts packages/agent-core/test/agent/research-context.test.ts packages/agent-core/test/agent/workframe.test.ts
 corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
 ```
 
