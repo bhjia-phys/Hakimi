@@ -1,19 +1,22 @@
 {
-  "name": "@moonshot-ai/kimi-code",
-  "version": "0.34.0",
-  "description": "The Starting Point for Next-Gen Agents",
+  "name": "@bhjia-phys/hakimi",
+  "version": "0.21.0",
+  "description": "Truth-seeking physics research agent",
   "license": "MIT",
-  "author": "Moonshot AI",
-  "homepage": "https://github.com/MoonshotAI/kimi-code/tree/main/apps/kimi-code#readme",
+  "author": "bhjia-phys",
+  "homepage": "https://github.com/bhjia-phys/Hakimi/tree/main/apps/kimi-code#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MoonshotAI/kimi-code.git",
+    "url": "git+https://github.com/bhjia-phys/Hakimi.git",
     "directory": "apps/kimi-code"
   },
   "bugs": {
-    "url": "https://github.com/MoonshotAI/kimi-code/issues"
+    "url": "https://github.com/bhjia-phys/Hakimi/issues"
   },
   "keywords": [
+    "hakimi",
+    "physics",
+    "research-agent",
     "kimi",
     "kimi-code",
     "cli",
@@ -23,6 +26,7 @@
     "tui"
   ],
   "bin": {
+    "hakimi": "dist/main.mjs",
     "kimi": "dist/main.mjs"
   },
   "files": [

@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from '#/constant/app';
+
 import {
   StartPermissionPromptComponent,
   type StartPermissionOption,
@@ -16,19 +18,19 @@ export const GOAL_START_MANUAL_OPTIONS: readonly StartPermissionOption[] = [
     value: 'auto',
     label: 'Switch to Auto and start',
     description:
-      'Best if you want Kimi Code to keep working while you are away. Tools are approved automatically, and questions are skipped.',
+      `Best if you want ${PRODUCT_NAME} to keep working while you are away. Tools are approved automatically, and questions are skipped.`,
   },
   {
     value: 'yolo',
     label: 'Switch to YOLO and start',
     description:
-      'Tools and plan changes are approved automatically. Kimi Code may still ask you questions.',
+      `Tools and plan changes are approved automatically. ${PRODUCT_NAME} may still ask you questions.`,
   },
   {
     value: 'manual',
     label: 'Start in Manual',
     description:
-      'Keep approvals on. Kimi Code will ask before risky actions, so the goal may stop and wait for you.',
+      `Keep approvals on. ${PRODUCT_NAME} will ask before risky actions, so the goal may stop and wait for you.`,
   },
   {
     value: 'cancel',
@@ -42,13 +44,13 @@ export const GOAL_START_YOLO_OPTIONS: readonly StartPermissionOption[] = [
     value: 'auto',
     label: 'Switch to Auto and start',
     description:
-      'Best if you want Kimi Code to keep working while you are away. Tools are approved automatically, and questions are skipped.',
+      `Best if you want ${PRODUCT_NAME} to keep working while you are away. Tools are approved automatically, and questions are skipped.`,
   },
   {
     value: 'yolo',
     label: 'Keep YOLO and start',
     description:
-      'Tools and plan changes stay approved automatically. Kimi Code may still ask you questions.',
+      `Tools and plan changes stay approved automatically. ${PRODUCT_NAME} may still ask you questions.`,
   },
   {
     value: 'cancel',
@@ -66,7 +68,7 @@ const MANUAL_OPTIONS = GOAL_START_MANUAL_OPTIONS;
 const YOLO_OPTIONS = GOAL_START_YOLO_OPTIONS;
 
 const MANUAL_NOTICE_LINES = [
-  'Manual mode asks you before Kimi Code runs commands, edits files, or takes other risky actions.',
+  `Manual mode asks you before ${PRODUCT_NAME} runs commands, edits files, or takes other risky actions.`,
   'Manual mode is not suitable for unattended goal work.',
   'You can go back without losing your command.',
 ] as const;

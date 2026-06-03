@@ -2,7 +2,7 @@
  * Client-owned preferences.
  *
  * Agent/runtime settings live in core's `config.toml`; this file owns
- * kimi-code client preferences such as terminal UI and update behavior.
+ * Hakimi client preferences such as terminal UI and update behavior.
  */
 
 import { existsSync } from 'node:fs';
@@ -235,7 +235,7 @@ export function renderTuiConfig(config: TuiConfig): string {
 # command = "~/.kimi-code/statusline.sh"
 `;
   return `# ~/.kimi-code/tui.toml
-# Client preferences for kimi-code.
+# Client preferences for Hakimi.
 # Agent/runtime settings stay in ~/.kimi-code/config.toml.
 
 theme = "${escapeTomlBasicString(config.theme)}" # "auto" | "dark" | "light" | custom theme name

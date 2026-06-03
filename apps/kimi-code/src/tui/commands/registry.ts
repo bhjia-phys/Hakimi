@@ -4,6 +4,8 @@ import { basename, dirname, join, relative, resolve } from 'pathe';
 
 import type { AutocompleteItem } from '@moonshot-ai/pi-tui';
 
+import { PRODUCT_NAME } from '#/constant/app';
+
 import { completeLeadingArg, type ArgCompletionSpec } from './complete-args';
 import type { KimiSlashCommand, SlashCommandAvailability } from './types';
 
@@ -343,7 +345,7 @@ export const BUILTIN_SLASH_COMMANDS = [
   {
     name: 'feedback',
     aliases: ['bug'],
-    description: 'Send feedback to make Kimi Code better',
+    description: `Send feedback to make ${PRODUCT_NAME} better`,
     priority: 60,
     availability: 'always',
   },

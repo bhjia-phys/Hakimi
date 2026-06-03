@@ -421,7 +421,7 @@ describe('kimi export', () => {
       homeDir: '/tmp/kimi-export-home',
       deviceId: 'device-1',
       enabled: true,
-      appName: 'kimi-code-cli',
+      appName: 'hakimi-cli',
       version: expect.any(String),
       uiMode: 'shell',
       model: 'k2',

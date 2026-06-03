@@ -288,15 +288,15 @@ export function getNativeCacheBase(options: NativeAssetOptions = {}): string {
   const cacheDirEnv = optionalEnvValue(env, 'KIMI_CODE_CACHE_DIR');
   if (cacheDirEnv !== null) return cacheDirEnv;
 
-  if (platform === 'darwin') return joinPosix(home, 'Library', 'Caches', 'kimi-code');
+  if (platform === 'darwin') return joinPosix(home, 'Library', 'Caches', 'hakimi');
   if (platform === 'win32') {
     const localAppData = optionalEnvValue(env, 'LOCALAPPDATA');
     return localAppData !== null
-      ? pathWin32.join(localAppData, 'kimi-code')
-      : pathWin32.join(home, 'AppData', 'Local', 'kimi-code', 'Cache');
+      ? pathWin32.join(localAppData, 'hakimi')
+      : pathWin32.join(home, 'AppData', 'Local', 'hakimi', 'Cache');
   }
 
-  return joinPosix(optionalEnvValue(env, 'XDG_CACHE_HOME') ?? joinPosix(home, '.cache'), 'kimi-code');
+  return joinPosix(optionalEnvValue(env, 'XDG_CACHE_HOME') ?? joinPosix(home, '.cache'), 'hakimi');
 }
 
 export function getNativeAssetCacheRoot(
@@ -351,7 +351,7 @@ function ensureFile(path: string, bytes: Buffer, expectedSha256: string, mode?: 
 }
 
 function ensureEntryFile(cacheRoot: string): void {
-  const entryPath = join(cacheRoot, 'node_modules', '.kimi-native-entry.cjs');
+  const entryPath = join(cacheRoot, 'node_modules', '.hakimi-native-entry.cjs');
   ensureFile(
     entryPath,
     Buffer.from('module.exports = require;\n'),

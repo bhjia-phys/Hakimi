@@ -89,7 +89,7 @@ export async function runShell(
     ? createKimiHarnessV2(harnessOptions)
     : createKimiHarness(harnessOptions);
   startupTrace('harness:created');
-  log.info('kimi-code starting', {
+  log.info('hakimi starting', {
     version,
     uiMode: CLI_UI_MODE,
     nodeVersion: process.version,
