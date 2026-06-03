@@ -1,0 +1,72 @@
+<svg width="1120" height="360" viewBox="0 0 1120 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Hakimi research loop</title>
+  <desc id="desc">A research task opens a WorkFrame, compiles context, selects ResearchActions, uses native tools, captures evidence, writes ledger events, compiles graph candidates, checks the final gate, and answers with caveats.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#62D9FF"/>
+    </marker>
+    <style>
+      .bg{fill:#071018}
+      .node{fill:#101B2A;stroke:#315B72;stroke-width:1.4}
+      .key{fill:#10283A;stroke:#62D9FF;stroke-width:2}
+      .text{font-family:Inter,Segoe UI,Arial,sans-serif;font-size:16px;fill:#E9F6FF}
+      .small{font-family:Inter,Segoe UI,Arial,sans-serif;font-size:13px;fill:#A9C7D6}
+      .accent{font-family:Inter,Segoe UI,Arial,sans-serif;font-size:16px;font-weight:700;fill:#7EE7FF}
+      .line{stroke:#62D9FF;stroke-width:2;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" width="1120" height="360" rx="22"/>
+  <text x="48" y="54" class="accent">Research Loop</text>
+  <text x="48" y="82" class="small">Each topic carries scoped context, evidence, obligations, and final-gate status.</text>
+
+  <rect x="44" y="130" width="142" height="68" rx="12" class="node"/>
+  <text x="77" y="158" class="text">Question</text>
+  <text x="67" y="181" class="small">research task</text>
+
+  <rect x="230" y="130" width="142" height="68" rx="12" class="key"/>
+  <text x="258" y="158" class="text">WorkFrame</text>
+  <text x="260" y="181" class="small">topic scope</text>
+
+  <rect x="416" y="130" width="142" height="68" rx="12" class="node"/>
+  <text x="448" y="158" class="text">Context</text>
+  <text x="438" y="181" class="small">bounded pack</text>
+
+  <rect x="602" y="130" width="142" height="68" rx="12" class="key"/>
+  <text x="629" y="158" class="text">Actions</text>
+  <text x="621" y="181" class="small">semantic plan</text>
+
+  <rect x="788" y="130" width="142" height="68" rx="12" class="node"/>
+  <text x="824" y="158" class="text">Tools</text>
+  <text x="812" y="181" class="small">native Kimi</text>
+
+  <rect x="974" y="130" width="102" height="68" rx="12" class="node"/>
+  <text x="995" y="158" class="text">Evidence</text>
+  <text x="997" y="181" class="small">artifacts</text>
+
+  <rect x="230" y="252" width="142" height="68" rx="12" class="node"/>
+  <text x="262" y="280" class="text">Ledger</text>
+  <text x="259" y="303" class="small">durable events</text>
+
+  <rect x="416" y="252" width="142" height="68" rx="12" class="node"/>
+  <text x="459" y="280" class="text">Graph</text>
+  <text x="438" y="303" class="small">candidates</text>
+
+  <rect x="602" y="252" width="142" height="68" rx="12" class="key"/>
+  <text x="635" y="280" class="text">Final gate</text>
+  <text x="630" y="303" class="small">status check</text>
+
+  <rect x="788" y="252" width="142" height="68" rx="12" class="node"/>
+  <text x="835" y="280" class="text">Answer</text>
+  <text x="810" y="303" class="small">scope + caveats</text>
+
+  <path d="M 186 164 L 230 164" class="line"/>
+  <path d="M 372 164 L 416 164" class="line"/>
+  <path d="M 558 164 L 602 164" class="line"/>
+  <path d="M 744 164 L 788 164" class="line"/>
+  <path d="M 930 164 L 974 164" class="line"/>
+  <path d="M 1025 198 C 990 252 446 224 372 286" class="line"/>
+  <path d="M 372 286 L 416 286" class="line"/>
+  <path d="M 558 286 L 602 286" class="line"/>
+  <path d="M 744 286 L 788 286" class="line"/>
+  <path d="M 859 252 C 840 220 726 204 686 198" class="line"/>
+</svg>
