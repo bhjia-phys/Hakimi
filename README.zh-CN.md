@@ -1,81 +1,103 @@
 # Hakimi
 
+<p align="center">
+  <img src="docs/assets/hakimi-pixel-ship.svg" width="720" alt="Hakimi pixel cat-ear exploration spacecraft" />
+</p>
+
+<p align="center">
+  <strong>Physics agent for exploring the truth of the world.</strong><br />
+  <span>Hakimi 是一个原生融入 Kimi Code runtime 的理论物理科研 agent。</span>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> |
+  <a href="https://github.com/bhjia-phys/Hakimi">Repository</a> |
+  <a href="https://moonshotai.github.io/kimi-code/zh/">上游 Kimi Code 文档</a>
+</p>
+
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-runtime--roadmap-blue)](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md)
 
-[English](README.md) | [上游 Kimi Code 文档](https://moonshotai.github.io/kimi-code/zh/)
+## 理念
 
-仓库：[bhjia-phys/Hakimi](https://github.com/bhjia-phys/Hakimi)
+Hakimi 这个名字故意保留一点童真。它不是冷冰冰的“真理机器”，也不是把提示词堆得很高的外壳，而是一艘带着猫耳舷翼的小型探索飞船：轻快、好奇、愿意进入未知，但每一步都要带着证据返回。
 
-Hakimi 是一个面向理论物理科研的 truth-seeking physics research agent。它以 Kimi Code CLI 代码库为基线，目标是在 agent 底层运行时中原生嵌入理论物理记忆、知识编译、科研动作、验证、benchmark 证据、replay 和失败回灌。
+严肃的部分是它要服务理论物理科研。真实科研对话经常同时触碰论文、推导、代码、benchmark、失败记录、约定选择和长期记忆。Hakimi 的目标不是临时答一句，而是让一个课题在多轮会话中保持自洽：知道自己引用了什么、假设了什么、验证了什么、还有什么不能声称已经完成。
 
-当前仓库是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 runtime-native fork。终端产品名是 Hakimi，npm 包名是 `@bhjia-phys/hakimi`，主命令是 `hakimi`，同时保留 `kimi` 作为兼容 alias。SDK/OAuth import 和 `.kimi-code` 数据目录暂时保持上游兼容；当 AITP 实验 flag 明确开启时，新的 runtime feature 会在原生 turn loop、tool exposure、records/replay 和 `packages/agent-core` 中生效。已完成的第一批切片见 [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md) 和 [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md)。跨 slice 的 runtime 路线图见 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)，后续实现细节见 [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md)。
+## 为什么存在
 
-## 项目目标
+Hakimi 不是在 coding agent 外面套一个研究记录本。它是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 runtime-native fork：终端循环、工具系统、sessions、skills、MCP、subagents、records/replay、permissions、OAuth 路径和包结构在需要兼容的地方继续继承 Kimi Code；理论物理科研系统则通过 `.aitp` 文件、`packages/agent-core`、turn-loop context injection、tool exposure、records、replay 和 model-facing research tools 进入原生 runtime。
 
-AITP Agent 不应该是在 coding agent 外面套一个研究记录本，也不应该依赖一段越来越大的提示词。它的目标是把理论物理科研需要的结构直接放进 agent runtime：
+这意味着一个科研动作可以搜索文献、读取代码、准备 patch、提交或归一化外部任务回执、捕获证据，并回到正确的 WorkFrame，而不是把不同课题混在一个长 prompt 里。Hakimi 想做的是：让每条研究线索都记得自己知道什么、证据在哪里、哪些约定成立、哪些结论还不能升级为可信记忆。
 
-- 在会话中渐进式加载和当前课题相关的物理记忆；
-- 把论文、笔记、推导、代码映射、benchmark 输出和失败经验编译成 typed graph objects；
-- 用小而准的 context pack 给模型提供输入，而不是把整个知识库塞进 prompt；
-- 不同研究方向默认隔离，只有显式 bridge 才允许跨域上下文进入；
-- 提供细粒度科研动作，例如约定检查、量纲检查、公式到代码映射、smoke benchmark、失败分析；
-- 记录 action trace，让 harness 和科研工作流可以从失败中自我改进。
+## 原生融合结构
 
-## 架构方向
+```mermaid
+flowchart LR
+  user[Researcher] --> tui[Hakimi CLI / TUI]
+  tui --> loop[Kimi Code native turn loop]
+  loop --> tools[Native tools: Read / Edit / Bash / Web / MCP]
+  loop --> aitp[AITP research runtime]
+  aitp --> frames[WorkFrames]
+  aitp --> packs[Domain packs]
+  aitp --> ledger[Research ledger]
+  aitp --> graph[Physics graph]
+  aitp --> actions[ResearchAction]
+  aitp --> harness[Harness and final gate]
+  tools --> evidence[Tool results and artifacts]
+  evidence --> ledger
+  ledger --> graph
+  graph --> packs
+  frames --> actions
+  actions --> tools
+  harness --> loop
+```
 
-AITP Agent 规划为五个运行时层。
+## 科研循环
 
-### Skills
+```mermaid
+flowchart TD
+  question[Question or research task] --> frame[Open or reuse a WorkFrame]
+  frame --> context[Compile a bounded ResearchContextPack]
+  context --> plan[Choose semantic ResearchActions]
+  plan --> native[Use native Kimi tools when needed]
+  native --> capture[Capture source, code, benchmark, job, or failure evidence]
+  capture --> ledger[Write durable ledger events]
+  ledger --> graph[Compile graph candidates and obligations]
+  graph --> gate[Final gate: validated / partial / blocked]
+  gate --> answer[Answer with scope, caveats, and evidence]
+```
 
-Skills 是程序性记忆，回答“agent 应该怎么工作”。例如公式到代码 debug、先推导再检查量纲、从失败构造 benchmark、LibRPA 运行准备等。
+## 现在已经能做什么
 
-### Physics Memory Capsules
+- `hakimi` 是主 CLI 命令，`kimi` 作为兼容 alias 保留。
+- TUI welcome screen 已经使用 Hakimi 像素探索飞船和 physics research 文案。
+- WorkFrame 能按 domain、topic、assumptions、conventions、context pack 和 trust state 隔离当前科研问题。
+- Domain packs、workflow recipes、physics memory、evals、action bindings 和 tool inventory 可以从 file-backed `.aitp` fixtures 加载。
+- ResearchAction 可以执行 in-process graph query、benchmark adapter、formalization blueprint export 和 external job receipt normalization。
+- 文献搜索、局部代码 patch 准备、外部 benchmark workflow 通过 Kimi 原生工具编排，而不是塞进 `ResearchAction` 内部直接执行。
+- 证据可以写入 research ledger，只在匹配 WorkFrame scope 时重新读取，并被编译成 graph candidates，再经过 harness/final-gate 检查。
 
-Physics memory capsules 是语义记忆，回答“知道什么、在哪些假设和范围内成立、证据是什么、依赖什么”。Capsule 比知识图谱原子更粗，是可以直接暴露给模型或科研动作的编译单元，并且应该能进一步展开到图谱内部的定义、公式、推导步、代码映射、benchmark 和失败模式。
+## 架构层
 
-### Research Ledger
+Hakimi 围绕五个科研 runtime 层组织。
 
-Research ledger 是 source-backed 的科研事件层，记录会话中真实发生过什么，但这些内容还没有被信任为可复用 physics memory。它应该保存论文、网页摘录、推导草稿、公式候选、代码观察、git diff、benchmark 观察、失败、tool run 和用户决策，并采用确定性的可编译目录结构。
+| 层 | 作用 |
+| --- | --- |
+| Skills | 程序性记忆：agent 应该怎么工作，例如推导检查、公式到代码 debug、LibRPA 运行准备。 |
+| Physics memory capsules | 语义记忆：带 scope、assumptions、provenance、dependency edges、reliability state 和 expansion handles 的物理 claim。 |
+| Research ledger | 真实会话中发生过的 source-backed events，在被信任为可复用 memory 之前先进入 ledger。 |
+| Compiler and graph | 不是摘要器，而是保留依赖、矛盾标记、验证状态和失败条件的知识编译器。 |
+| Research actions | 可审计科研动作，例如约定检查、graph expansion、公式到代码映射、benchmark 验证和 harness 生成。 |
 
-### Compiler
+`WorkFrame` 是把这些层连接起来的现场科研状态：它跟踪 active domain、topic、goal、assumptions、conventions、context pack、evidence、obligations 和 final-gate status。Blocking obligations 未关闭时，结论不能被当成 validated memory。
 
-Compiler 不是摘要器，而是知识编译器。它把 raw sources、topic notes、derivations、code traces、benchmark outputs 和 failures 编译成 typed graph objects、capsule proposals 和 context packs，同时保留依赖、scope、矛盾标记、验证状态和失败条件。
+## 与上游的关系
 
-### Research Actions
+Hakimi 刻意保持贴近上游 Kimi Code。SDK/OAuth imports 和 `.kimi-code` 数据目录目前继续兼容；用户看到的产品名是 `Hakimi`，npm 包名是 `@bhjia-phys/hakimi`，主命令是 `hakimi`。这是一个原生 fork，不是外部 wrapper。
 
-Research actions 是作用在物理图谱、research ledger 和本地工具环境上的细粒度科研动作。它们比“调用某个 MCP”更底层、更可审计；又比原始 shell 命令更接近科研语义。例如：
+Codex 和 ForgeCode 是参考而不是依赖：Codex 提供 tool exposure、结构化 tool output、action trace 等工程启发；ForgeCode 提供 harness 和可复现 eval workflow 的设计参考。
 
-- `graph.expand_capsule`
-- `graph.trace_dependency_closure`
-- `derive.check_dimension_consistency`
-- `validate.check_convention`
-- `code.map_formula_to_code_region`
-- `code.compare_git_diff_to_mapping`
-- `benchmark.run_minimal_case`
-- `memory.propose_failure_mode`
-- `harness.build_eval_from_failure`
-
-Universal action layer 必须保持 domain-neutral。具体课题意图通过结构化 `ResearchActionBinding` 附着到通用 action 上，包括 `domainId`、`workflowId`、`lensId`、`checkId`、`adapterId` 和局部参数。
-
-### WorkFrames、Obligations 和 Harness
-
-`WorkFrame` 是当前科研问题的运行时状态：domain、topic、goal、active objects、assumptions、conventions、context pack 和 trust state。Research actions 会产生 obligations，例如 source support、量纲一致性、约定一致性、已知极限检查、公式到代码映射和 benchmark 验证。Blocking obligations 应该阻止内容被提升为 validated memory；失败或 inconclusive 的 action trace 可以变成 harness candidate。
-
-## 与其他 agent runtime 的关系
-
-### Kimi Code
-
-Kimi Code 是主基座。它已经有 TypeScript monorepo、终端 agent runtime、model/tool loop、skills、MCP、subagents、sessions、records/replay、compaction、permissions 和 lifecycle hooks。AITP Agent 应该在这个 runtime 里扩展，而不是作为外部插件或 prompt wrapper。
-
-### Codex
-
-Codex 是工具工程参考。最值得迁移的不是整体架构，而是 tool exposure 分层、稳定的 pre/post tool-use payload、结构化 tool output、tool-call source tracking、deferred tool discovery，以及适合 harness 分析的 action trace。
-
-### ForgeCode
-
-ForgeCode 是 harness 和 eval 参考。它值得借鉴的部分包括明确的 agent definitions、tool boundaries、benchmark cases 和可复现 eval 工作流。
-
-## 版本规划
+## 路线图
 
 ### 0.0.1: Physics Memory Vertical Slice
 
