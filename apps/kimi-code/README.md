@@ -25,7 +25,7 @@ hakimi --version
 hakimi
 ```
 
-The package also keeps a `kimi` executable alias for compatibility with older scripts.
+This package intentionally installs only the `hakimi` executable. It does not install a `kimi` alias, so a separate Kimi Code installation can keep owning the `kimi` command.
 
 ## Login
 

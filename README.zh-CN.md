@@ -43,7 +43,7 @@ Hakimi 不是在 coding agent 外面套一个研究记录本。它是 [MoonshotA
 
 ## 现在已经能做什么
 
-- `hakimi` 是主 CLI 命令，`kimi` 作为兼容 alias 保留。
+- `hakimi` 是这个包唯一安装的 CLI 命令，因此不会覆盖单独安装的 Kimi Code `kimi` 命令。
 - TUI welcome screen 已经使用 Hakimi 像素探索飞船和 physics research 文案。
 - WorkFrame 能按 domain、topic、assumptions、conventions、context pack 和 trust state 隔离当前科研问题。
 - Domain packs、workflow recipes、physics memory、evals、action bindings 和 tool inventory 可以从 file-backed `.aitp` fixtures 加载。
@@ -224,7 +224,6 @@ hakimi
 $prefix = "$PWD\.sisyphus\drafts\_scratch\hakimi-install-prefix"
 npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
 & "$prefix\node_modules\.bin\hakimi.cmd" --version
-& "$prefix\node_modules\.bin\kimi.cmd" --version
 ```
 
 按需在科研终端中启用 AITP runtime features：

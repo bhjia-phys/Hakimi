@@ -15,7 +15,7 @@ Preferred channel:
 
 ## What to Include
 
-- Affected version (output of `hakimi --version`, or `kimi --version` for the compatibility alias)
+- Affected version (output of `hakimi --version`)
 - Reproduction steps
 - Impact assessment
 - Any suggested mitigation

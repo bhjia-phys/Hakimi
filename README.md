@@ -43,7 +43,7 @@ That means a research action can search literature, inspect code, prepare patche
 
 ## What Works Today
 
-- `hakimi` is the primary CLI command, with `kimi` kept as a compatibility alias.
+- `hakimi` is the only CLI command installed by this package, so it does not overwrite a separate Kimi Code `kimi` command.
 - The TUI welcome screen uses the Hakimi pixel spacecraft identity and physics research copy.
 - WorkFrames keep active research topics scoped by domain, topic, assumptions, conventions, context pack, and trust state.
 - Domain packs, workflow recipes, physics memory, evals, action bindings, and tool inventories can be loaded from file-backed `.aitp` fixtures.
@@ -230,7 +230,6 @@ For an isolated install check without touching the global npm prefix:
 $prefix = "$PWD\.sisyphus\drafts\_scratch\hakimi-install-prefix"
 npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
 & "$prefix\node_modules\.bin\hakimi.cmd" --version
-& "$prefix\node_modules\.bin\kimi.cmd" --version
 ```
 
 Enable the AITP runtime features in a research terminal as needed:
