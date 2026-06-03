@@ -328,8 +328,9 @@ function toKosongProviderConfig(
         // Session affinity: route every request of this session through the
         // same provider-side prompt cache (the OpenAI analog of Anthropic
         // `metadata.user_id` above). Undefined values are stripped at
-        // generate time, matching the `kimi` branch below.
-        generationKwargs: { prompt_cache_key: promptCacheKey },
+        // generate time, matching the `kimi` branch below. Provider-level
+        // generation_kwargs (e.g. DeepSeek tuning) override on key collision.
+        generationKwargs: { prompt_cache_key: promptCacheKey, ...provider.generationKwargs },
         ...defaultHeadersField({
           ...envCustomHeaders,
           ...kimiUserAgentHeader(kimiRequestHeaders),
@@ -372,7 +373,8 @@ function toKosongProviderConfig(
         offEffort,
         // Session affinity: same `prompt_cache_key` intent as the `openai`
         // branch; the Responses API accepts it as a top-level request field.
-        generationKwargs: { prompt_cache_key: promptCacheKey },
+        // Provider-level generation_kwargs override on key collision.
+        generationKwargs: { prompt_cache_key: promptCacheKey, ...provider.generationKwargs },
         ...defaultHeadersField({
           ...envCustomHeaders,
           ...kimiUserAgentHeader(kimiRequestHeaders),
@@ -434,6 +436,14 @@ function kimiUserAgentHeader(
 ): Record<string, string> {
   const userAgent = kimiRequestHeaders?.['User-Agent'];
   return userAgent === undefined ? {} : { 'User-Agent': userAgent };
+}
+
+function providerForCapabilityProbe(provider: KosongProviderConfig): KosongProviderConfig {
+  const apiKey = provider.apiKey && provider.apiKey.length > 0 ? provider.apiKey : 'capability-probe';
+  if (provider.type === 'vertexai') {
+    return { ...provider, vertexai: false, project: undefined, location: undefined, apiKey };
+  }
+  return { ...provider, apiKey };
 }
 
 function providerApiKey(provider: ProviderConfig): string | undefined {

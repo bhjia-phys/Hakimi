@@ -25,7 +25,7 @@ The serious part is the mission. Hakimi is built for theoretical physics work wh
 
 ## Why This Exists
 
-Hakimi is not a notebook bolted onto a coding agent. It is a runtime-native fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code): the terminal loop, tools, sessions, skills, MCP, subagents, records/replay, permissions, OAuth path, and package shape remain Kimi Code-compatible where compatibility matters. The theoretical-physics system is inserted into the runtime itself through `.hakimi` research files, legacy `.aitp` compatibility files, `packages/agent-core`, turn-loop context injection, tool exposure, records, replay, and model-facing research tools.
+Hakimi is not a notebook bolted onto a coding agent. It is a runtime-native fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code): the terminal loop, tools, sessions, skills, MCP, subagents, records/replay, permissions, OAuth path, and package shape remain Kimi Code-compatible where compatibility matters. The theoretical-physics system is inserted into the runtime itself through `.aitp` files, `packages/agent-core`, turn-loop context injection, tool exposure, records, replay, and model-facing research tools.
 
 That means a research action can search literature, inspect code, prepare patches, submit or normalize external job receipts, capture evidence, and return to the correct WorkFrame without mixing unrelated topics. The goal is simple to say and hard to do: each research thread should remember what it knows, what it assumes, what evidence supports it, what remains unverified, and which tools produced the trail.
 
@@ -46,12 +46,10 @@ That means a research action can search literature, inspect code, prepare patche
 - `hakimi` is the only CLI command installed by this package, so it does not overwrite a separate Kimi Code `kimi` command.
 - The TUI welcome screen uses the Hakimi pixel spacecraft identity and physics research copy.
 - WorkFrames keep active research topics scoped by domain, topic, assumptions, conventions, context pack, and trust state.
-- Domain packs, workflow recipes, physics memory, evals, action bindings, and tool inventories can be loaded from file-backed `.hakimi` fixtures, with legacy `.aitp` fixtures still scanned for compatibility.
-- New topics do not require hand-written packs up front: Hakimi now registers a built-in generic theoretical-physics profile, workflow recipes, process-memory capsules, and a smoke eval by default, then falls back to that scaffold when a WorkFrame has no dedicated pack.
+- Domain packs, workflow recipes, physics memory, evals, action bindings, and tool inventories can be loaded from file-backed `.aitp` fixtures.
 - Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
 - Literature search, code patch preparation, and external benchmark workflows are orchestrated through native Kimi tools rather than being executed inside `ResearchAction` itself.
 - Evidence can be written to the research ledger, reread only inside matching WorkFrame scope, compiled into graph candidates, and checked by harness/final-gate logic.
-- Full context compaction is now research-aware: when WorkFrames are open, Hakimi injects and stores a runtime-generated `Hakimi Research State` block with the initial research question, domain/topic, ContextPack/domain pack, physics memory ids, evidence refs, action attempts/outcomes, raw primitive-tool escapes, open obligations, and next steps. Separate WorkFrames stay separated in the compacted summary.
 
 ## Architecture Layers
 
@@ -67,11 +65,9 @@ Hakimi is organized around five research-runtime layers.
 
 `WorkFrame` is the live research problem state tying these layers together. It tracks the active domain, topic, goal, assumptions, conventions, context pack, evidence, obligations, and final-gate status. Blocking obligations prevent a result from being treated as validated memory.
 
-This matters most when the conversation is compacted. Ordinary chat history can be shortened, but the runtime state for each open WorkFrame is rendered into the compaction request and then appended deterministically to the stored compaction summary. For real research topics, open a WorkFrame early; that makes the initial question, physics memory, current derivation/code progress, failed attempts, and next obligations recoverable after automatic compaction and session replay.
-
 ## Relationship To Upstream
 
-Hakimi remains close to upstream Kimi Code on purpose. The SDK/OAuth imports stay compatible where useful, while Hakimi uses its own `.hakimi` user/project config roots by default so model, MCP, session, and runtime state do not collide with a separate Kimi Code install. The user-facing product is `Hakimi`, the npm package is `@bhjia-phys/hakimi`, and the primary executable is `hakimi`. Hakimi releases use an independent semver line, currently `0.13.0`, instead of mirroring upstream Kimi Code tags. This is a native fork, not an external wrapper.
+Hakimi remains close to upstream Kimi Code on purpose. The SDK/OAuth imports and `.kimi-code` data directory stay compatible for now, while the user-facing product is `Hakimi`, the npm package is `@bhjia-phys/hakimi`, and the primary executable is `hakimi`. This is a native fork, not an external wrapper.
 
 Codex and ForgeCode are references rather than dependencies: Codex informs tool exposure, structured tool outputs, and action traces; ForgeCode informs harness and repeatable eval workflows.
 
@@ -171,8 +167,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 ## Current Status
 
 - Upstream parity with `MoonshotAI/kimi-code:main` was refreshed on 2026-06-03 and merged through commit `6a22523` (`fix: simplify goal budget schema and fix output caps (#365)`), preserving the AITP runtime integrations.
-- `hakimi --version` now follows Hakimi's own CLI/package release line. The current local package version is `0.13.0`; upstream Kimi Code release numbers are treated as sync points, not Hakimi release numbers.
-- The AITP Agent 0.0.1 physics-memory vertical slice is implemented and now starts enabled in Hakimi unless `KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY=0` is set.
+- The AITP Agent 0.0.1 physics-memory vertical slice is implemented behind `KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY=1`.
 - `packages/agent-core` now includes physics-memory types, parser, scanner, registry, compiler, session scanning, append-only records, a model-invocable `PhysicsMemory` builtin tool, LibRPA fixture capsules, and a foundational `ResearchActionRegistry`.
 - Windows baseline failures in the broader `agent-core` suite have been resolved; see [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md).
 - The 0.0.2 foundation is implemented: `research-ledger` types/parser/scanner/registry/compiler, session scanning, append-only records, `ResearchLedger` tool, ActionAlgebra types, default research actions, scheduler, `ResearchAction` tool, raw-tool escape records, and harness candidate conversion. See [AITP Agent 0.0.2 Audit](docs/internal/aitp-agent-0.0.2-audit.md).
@@ -195,7 +190,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.2.9 has started graph-aware memory compilation: ledger events can now compile into typed graph candidates with provenance checks, dependency diagnostics, assumption traces, and contradiction warnings for incompatible conventions. These outputs remain candidate-level rather than silently becoming canonical memory. See [AITP Agent 0.2.9 Audit](docs/internal/aitp-agent-0.2.9-audit.md).
 - 0.3.0 has started the promotion pipeline and trust-ladder gate: graph candidates can now be promoted only through an explicit `PhysicsPromotionPacket` with source refs, scope, validation refs, and formalization checkpoint requirements enforced. Promoted capsules keep trust metadata instead of discarding the promotion path. See [AITP Agent 0.3.0 Audit](docs/internal/aitp-agent-0.3.0-audit.md).
 - 0.3.1 has started final-gate lifecycle integration: when a research turn tries to end while the active `WorkFrame` still fails the final gate, the runtime now injects one concise final-gate continuation message and forces one more model step so the answer can downgrade itself instead of quietly overclaiming completion. See [AITP Agent 0.3.1 Audit](docs/internal/aitp-agent-0.3.1-audit.md).
-- 0.4.0 has started Harness V2: file-backed research eval cases under `.aitp/evals` can now parse into `ResearchEvalCase`, load through `agent.researchHarness` by default in Hakimi, check action bindings/evidence/final status/forbidden claims, and write failed or inconclusive harness candidates back as deterministic eval files. This slice also scopes final-gate evidence to the active WorkFrame so unrelated prior evidence cannot satisfy validated status. See [AITP Agent 0.4.0 Audit](docs/internal/aitp-agent-0.4.0-audit.md).
+- 0.4.0 has started Harness V2: file-backed research eval cases under `.aitp/evals` can now parse into `ResearchEvalCase`, load through `agent.researchHarness` behind `KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS=1`, check action bindings/evidence/final status/forbidden claims, and write failed or inconclusive harness candidates back as deterministic eval files. This slice also scopes final-gate evidence to the active WorkFrame so unrelated prior evidence cannot satisfy validated status. See [AITP Agent 0.4.0 Audit](docs/internal/aitp-agent-0.4.0-audit.md).
 - 0.5.0 has started the real LibRPA file-backed vertical: `adapter.librpa.head-wing-smoke` is now a first-class benchmark adapter contract, and the repo includes LibRPA `.aitp` domain profile, workflow recipe, physics-memory capsules, and eval fixtures that load through an isolated session and close the context/eval/final-gate loop. See [AITP Agent 0.5.0 Audit](docs/internal/aitp-agent-0.5.0-audit.md).
 - 0.6.0 has started the FQHE/CS V2 file-backed theory vertical: Laughlin wavefunction, flux insertion, Abelian CS response, K-matrix response, known-limit checks, and flux-identity failure modes now live in `.aitp` fixtures and pass isolated-session context/eval tests without LibRPA leakage. See [AITP Agent 0.6.0 Audit](docs/internal/aitp-agent-0.6.0-audit.md).
 - 0.7.0 has started bridge-gated multi-domain isolation: `Bridge` capsules can now explicitly authorize named cross-domain capsules, default FQHE/LibRPA context packs stay separate, and `bridgePolicy: deny` records cross-domain denial diagnostics. See [AITP Agent 0.7.0 Audit](docs/internal/aitp-agent-0.7.0-audit.md).
@@ -209,8 +204,6 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.12.0 has added a file-backed `DomainPackManifest` runtime summary: `ResearchContextPack` now carries the profile/workflow/memory/eval/action/tool inventory for its domain, context reminders and `ResearchAction` rendering expose that manifest, and runtime tool exposure no longer opens code tools just because the domain is LibRPA. Code-capable tools now come from file-backed workflow `required_tools`, DomainPack action ids, or universal action primitive plans. FQHE/CS and LibRPA fixture tests assert that evals, capsules, and tool exposure remain isolated unless an explicit bridge capsule is present. See [AITP Agent 0.12.0 Audit](docs/internal/aitp-agent-0.12.0-audit.md).
 - 0.12.1 has tightened the native research runtime: `ResearchAction.inspect_domain_pack` can inspect the active or explicit ContextPack's DomainPack manifest, raw primitive tools used inside an active WorkFrame without an active `ResearchAction` call now emit `research_action.raw_tool_escape` with `workFrameId` and a suggested follow-up action, and older hardcoded vertical exports are marked compatibility-only in favor of file-backed `.aitp` domain packs.
 - The runtime roadmap through 0.12.1 is now implemented as a file-backed, graph-aware, bridge-gated, audited baseline with deterministic research executors for the graph, benchmark, formalization, and external-job receipt lanes plus native-tool orchestration for literature, code, and external benchmark workflows. Topic packs now have manifest-level profile/workflow/memory/eval/action/tool summaries, primitive tool call attribution, durable ledger evidence references, scoped evidence reread from the semantic action layer, conservative native scheduler receipt inference, and WorkFrame-scoped recovery records for raw primitive tool escapes.
-- 0.12.2 makes the Hakimi research runtime default-on: `physics-memory`, `research-ledger`, `research-action`, `domain-profile`, `workflow-recipe`, `research-harness`, and `/goal` now start enabled unless explicitly set to `0`. Empty/new theoretical-physics topics get a built-in `theoretical-physics/general` process scaffold with literature search, source capture, derivation, validation, memory/eval, code-mapping, patch, benchmark, and external-job action bindings. Dedicated `.aitp` packs still take priority when present.
-- 0.12.3 makes full context compaction research-aware: `FullCompaction` now renders a runtime `Hakimi Research State` snapshot from open WorkFrames, attached ContextPacks, scoped evidence refs, open obligations, recent ResearchAction traces, raw primitive-tool escapes, and recent primitive tool lifecycle records. The same snapshot is appended to the stored compaction summary, so automatic compaction preserves the research question and current progress even if the model's free-form summary omits it.
 
 ## Development
 
@@ -226,7 +219,7 @@ corepack pnpm --config.engine-strict=false install
 corepack pnpm --config.engine-strict=false build
 New-Item -ItemType Directory -Force dist-pack
 corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ..\..\dist-pack
-npm install -g .\dist-pack\bhjia-phys-hakimi-0.13.0.tgz
+npm install -g .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
 hakimi --version
 hakimi
 ```
@@ -235,7 +228,7 @@ For an isolated install check without touching the global npm prefix:
 
 ```powershell
 $prefix = "$PWD\.sisyphus\drafts\_scratch\hakimi-install-prefix"
-npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.13.0.tgz
+npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
 & "$prefix\node_modules\.bin\hakimi.cmd" --version
 ```
 
@@ -244,12 +237,13 @@ npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.13.0.tgz
 If the managed Kimi-for-coding endpoint is unavailable for your account, configure DeepSeek as the native default model:
 
 ```powershell
+$env:DEEPSEEK_API_KEY = "sk-..."
 hakimi provider deepseek
 hakimi provider list
 hakimi
 ```
 
-`hakimi provider deepseek` prompts for your DeepSeek API key when no key is supplied, then writes a normal OpenAI-compatible provider into `~/.hakimi/config.toml`; it does not create a proxy wrapper. For automation you can still pass `--api-key sk-...` or set `DEEPSEEK_API_KEY`. The default model is `deepseek-v4-pro` at `https://api.deepseek.com`, with `deepseek-v4-flash` available via:
+`hakimi provider deepseek` writes a normal OpenAI-compatible provider into `~/.kimi-code/config.toml`; it does not create a proxy wrapper. The default model is `deepseek-v4-pro` at `https://api.deepseek.com`, with `deepseek-v4-flash` available via:
 
 ```powershell
 hakimi provider deepseek --api-key sk-... --model-id deepseek-v4-flash
@@ -257,31 +251,15 @@ hakimi provider deepseek --api-key sk-... --model-id deepseek-v4-flash
 
 Pass `--no-thinking` if you want the imported DeepSeek alias to start in non-thinking mode, or `--no-default` if you only want to add the provider without switching the active default model.
 
-When DeepSeek is the active chat model, `WebSearch` no longer depends on a
-Kimi OAuth token. Hakimi still prefers the configured Moonshot/Kimi search
-service when it is authenticated, but falls back to a no-auth local web search
-provider when that service is unavailable.
-
-Hakimi's research runtime starts enabled by default. You do not need to create
-domain packs, memory capsules, workflow recipes, or evals before starting a new
-topic: open a WorkFrame for the topic and `compile_context_pack`, and Hakimi
-will use the built-in `theoretical-physics/general` scaffold until a dedicated
-pack exists. New project packs and research-ledger writes use `.hakimi/`
-directories such as `.hakimi/research-ledger`, `.hakimi/physics-memory`,
-`.hakimi/domain-profiles`, `.hakimi/workflow-recipes`, and `.hakimi/evals`.
-Legacy `.aitp/` packs are still scanned read-only for compatibility and can
-override the generic fallback for their domain.
-
-Explicitly disable individual research features only for debugging or upstream
-compatibility checks:
+Enable the AITP runtime features in a research terminal as needed:
 
 ```powershell
-$env:KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY = "0"
-$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER = "0"
-$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION = "0"
-$env:KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE = "0"
-$env:KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE = "0"
-$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS = "0"
+$env:KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY = "1"
+$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER = "1"
+$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION = "1"
+$env:KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE = "1"
+$env:KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE = "1"
+$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS = "1"
 hakimi
 ```
 

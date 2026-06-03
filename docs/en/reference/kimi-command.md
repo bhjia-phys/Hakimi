@@ -341,6 +341,26 @@ kimi provider list
 kimi provider list --json | jq '.providers | keys'
 ```
 
+#### `kimi provider deepseek`
+
+Configure DeepSeek as a native OpenAI-compatible provider. In the Hakimi package this command is exposed as `hakimi provider deepseek`; it writes a `[providers.deepseek]` entry and a DeepSeek model alias into `~/.kimi-code/config.toml`, then makes that alias the default model unless `--no-default` is passed.
+
+| Option | Description |
+| --- | --- |
+| `--api-key <key>` | DeepSeek API key. Falls back to the `DEEPSEEK_API_KEY` environment variable when omitted. Required. |
+| `--model-id <model>` | DeepSeek model id. Defaults to `deepseek-v4-pro`; use `deepseek-v4-flash` for the flash model. |
+| `--alias <alias>` | Model alias to write. Defaults to `deepseek/<model>`. |
+| `--base-url <url>` | Override the DeepSeek base URL. Defaults to `https://api.deepseek.com`. |
+| `--context-size <tokens>` | Model context window. Defaults to `1000000`. |
+| `--max-output-size <tokens>` | Model output ceiling. Defaults to `384000`. |
+| `--no-default` | Add the provider without changing `default_model`. |
+| `--no-thinking` | Write the model alias with thinking disabled by default. |
+
+```sh
+DEEPSEEK_API_KEY=sk-... hakimi provider deepseek
+hakimi provider deepseek --api-key sk-... --model-id deepseek-v4-flash --no-thinking
+```
+
 #### `kimi provider catalog list [providerId]`
 
 Browse the public [models.dev](https://models.dev/) model catalog without modifying any configuration. Without an argument, lists all providers along with their protocol type and model count; with a `providerId`, lists all models under that provider along with their context window and capabilities. If the catalog URL cannot be reached, a built-in snapshot of the catalog is used instead.
