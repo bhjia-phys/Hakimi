@@ -446,6 +446,9 @@ export interface AgentRecordEvents {
     capsuleIds: readonly string[];
     ledgerProposalIds: readonly string[];
     actionBindingIds: readonly string[];
+    domainPackId?: string | undefined;
+    evalCaseIds?: readonly string[] | undefined;
+    requiredToolNames?: readonly string[] | undefined;
     diagnostics: readonly {
       severity: 'info' | 'warning' | 'error';
       code: string;

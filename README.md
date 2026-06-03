@@ -203,7 +203,8 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.11.1 has added the first external job submission adapter contract: `adapter.external.job-submission` normalizes scheduler/MCP/HPC/manual job receipts into `BenchmarkAdapterRunResult` for `benchmark.submit_external_job` without executing the scheduler inside `ResearchAction`. Primitive plans now include an adapter-normalization step after native submission and before ledger/action recording. See [AITP Agent 0.11.1 Audit](docs/internal/aitp-agent-0.11.1-audit.md).
 - 0.11.2 has added WorkFrame-scoped evidence inspection to `ResearchAction`: the model can list recent evidence refs for the active or explicit frame and load a `ledger:event...` body only when its ledger metadata matches the frame's domain/topic scope. Loading an event records `research_ledger.event_loaded`, and cross-topic/domain loads fail before rendering the body. See [AITP Agent 0.11.2 Audit](docs/internal/aitp-agent-0.11.2-audit.md).
 - 0.11.3 has made the external-job receipt lane more native-tool friendly: `adapter.external.job-submission` can now infer job ids from common scheduler outputs such as SLURM, LSF, SGE, and PBS/qsub receipts while refusing arbitrary shell output. This lets native Bash/MCP/remote-runner submissions feed the adapter with `schedulerOutput` alone when the receipt format is clear. See [AITP Agent 0.11.3 Audit](docs/internal/aitp-agent-0.11.3-audit.md).
-- The runtime roadmap through 0.11.3 is now implemented as a file-backed, graph-aware, bridge-gated, audited baseline with deterministic research executors for the graph, benchmark, formalization, and external-job receipt lanes plus native-tool orchestration for literature, code, and external benchmark workflows. These native workflows now have primitive tool call attribution, durable ledger evidence references, scoped evidence reread from the semantic action layer, and conservative native scheduler receipt inference.
+- 0.12.0 has added a file-backed `DomainPackManifest` runtime summary: `ResearchContextPack` now carries the profile/workflow/memory/eval/action/tool inventory for its domain, context reminders and `ResearchAction` rendering expose that manifest, and runtime tool exposure no longer opens code tools just because the domain is LibRPA. Code-capable tools now come from file-backed workflow `required_tools`, DomainPack action ids, or universal action primitive plans. FQHE/CS and LibRPA fixture tests assert that evals, capsules, and tool exposure remain isolated unless an explicit bridge capsule is present. See [AITP Agent 0.12.0 Audit](docs/internal/aitp-agent-0.12.0-audit.md).
+- The runtime roadmap through 0.12.0 is now implemented as a file-backed, graph-aware, bridge-gated, audited baseline with deterministic research executors for the graph, benchmark, formalization, and external-job receipt lanes plus native-tool orchestration for literature, code, and external benchmark workflows. Topic packs now have manifest-level profile/workflow/memory/eval/action/tool summaries, primitive tool call attribution, durable ledger evidence references, scoped evidence reread from the semantic action layer, and conservative native scheduler receipt inference.
 
 ## Development
 
@@ -449,6 +450,14 @@ Focused verification for the 0.2.7 dynamic tool exposure pass is:
 ```sh
 corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/agent/tool-exposure.test.ts packages/agent-core/test/agent/research-context.test.ts packages/agent-core/test/agent/workframe.test.ts
 corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+```
+
+Focused verification for the 0.12.0 file-backed DomainPack runtime is:
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/domain-pack/compiler.test.ts packages/agent-core/test/research-context/compiler.test.ts packages/agent-core/test/agent/tool-exposure.test.ts packages/agent-core/test/physics-verticals/librpa.test.ts packages/agent-core/test/physics-verticals/fqhe-cs-v2.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/domain-pack packages/agent-core/src/research-context/compiler.ts packages/agent-core/src/research-context/types.ts packages/agent-core/src/agent/research-context/index.ts packages/agent-core/src/agent/tool-exposure/index.ts packages/agent-core/src/agent/workframe/context-pack.ts packages/agent-core/src/tools/builtin/collaboration/research-action-tool.ts packages/agent-core/test/domain-pack/compiler.test.ts packages/agent-core/test/research-context/compiler.test.ts packages/agent-core/test/agent/tool-exposure.test.ts packages/agent-core/test/physics-verticals/librpa.test.ts packages/agent-core/test/physics-verticals/fqhe-cs-v2.test.ts
 ```
 
 Repository workflow note:

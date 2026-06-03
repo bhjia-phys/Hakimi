@@ -76,6 +76,7 @@ describe('FQHE/CS file-backed theory vertical V2', () => {
         workflowRecipes: agent.workflowRecipes,
         physicsMemory: agent.physicsMemory?.registry,
         researchLedger: agent.researchLedger?.registry,
+        researchHarness: agent.researchHarness,
         now: () => 456,
       });
       const exposure = buildRuntimeToolExposurePlan(pack);
@@ -98,6 +99,26 @@ describe('FQHE/CS file-backed theory vertical V2', () => {
         'formula.fqhe-cs.kmatrix-response',
       ]);
       expect(pack.physics.capsules.some((capsule) => capsule.id.includes('librpa'))).toBe(false);
+      expect(pack.domainPack).toMatchObject({
+        domain: FQHE_DOMAIN,
+        profileIds: ['domain.fqhe-cs'],
+        workflowIds: ['workflow.fqhe-cs.charge-flux-convention'],
+        evalCaseIds: ['eval.fqhe-cs.charge-flux-v2'],
+        requiredTools: ['PhysicsMemory', 'ResearchAction'],
+      });
+      expect(pack.domainPack?.bridgeCapsuleIds).toEqual([
+        'bridge.fqhe-cs-to-librpa.response-notation',
+      ]);
+      expect(pack.domainPack?.capsuleIds).not.toEqual(
+        expect.arrayContaining([
+          'formula.librpa.head-wing.update',
+          'codemapping.librpa.head-wing.formula-code-region',
+          'benchmark.librpa.head-wing.smoke',
+        ]),
+      );
+      expect(pack.domainPack?.evalCaseIds.some((evalCaseId) => evalCaseId.includes('librpa'))).toBe(
+        false,
+      );
       expect(pack.actionBindings.map((binding) => binding.id)).toEqual(
         expect.arrayContaining([
           'binding.fqhe-cs.charge-flux-apply-lens',

@@ -1178,6 +1178,7 @@ function renderContextPack(pack: ResearchContextPack): string {
   return [
     `<context_pack id="${escapeXml(pack.id)}" work_frame_id="${escapeXml(pack.workFrameId)}" domain="${escapeXml(pack.domain)}" topic="${escapeXml(pack.topic)}">`,
     `  <goal>${escapeXml(pack.goal)}</goal>`,
+    renderDomainPackManifest(pack),
     renderStringList('source_refs', 'source_ref', pack.sourceRefs, '  '),
     renderStringList('focus_objects', 'object', pack.focusObjectIds, '  '),
     '  <profiles>',
@@ -1219,6 +1220,33 @@ function renderContextPack(pack: ResearchContextPack): string {
     '</context_pack>',
     '',
   ].join('\n');
+}
+
+function renderDomainPackManifest(pack: ResearchContextPack): string {
+  const manifest = pack.domainPack;
+  if (manifest === undefined) return '  <domain_pack />';
+  return [
+    `  <domain_pack id="${escapeXml(manifest.id)}" domain="${escapeXml(manifest.domain)}">`,
+    renderBoundedStringList('profiles', 'profile', manifest.profileIds, '    '),
+    renderBoundedStringList('workflows', 'workflow', manifest.workflowIds, '    '),
+    renderBoundedStringList('capsules', 'capsule', manifest.capsuleIds, '    '),
+    renderBoundedStringList('eval_cases', 'eval_case', manifest.evalCaseIds, '    '),
+    renderBoundedStringList('actions', 'action', manifest.actionIds, '    '),
+    renderBoundedStringList('required_tools', 'tool', manifest.requiredTools, '    '),
+    '  </domain_pack>',
+  ].join('\n');
+}
+
+function renderBoundedStringList(
+  container: string,
+  itemTag: string,
+  values: readonly string[],
+  indent: string,
+): string {
+  const max = 16;
+  const boundedValues =
+    values.length <= max ? values : [...values.slice(0, max), `...(+${String(values.length - max)} more)`];
+  return renderStringList(container, itemTag, boundedValues, indent);
 }
 
 function renderStringList(

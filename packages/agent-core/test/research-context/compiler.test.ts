@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   DomainProfileRegistry,
   PhysicsMemoryRegistry,
+  ResearchEvalCaseRegistry,
   ResearchLedgerRegistry,
   WorkflowRecipeRegistry,
   compileResearchContextPack,
   createWorkFrame,
   type DomainProfile,
+  type FileBackedResearchEvalCase,
   type PhysicsCapsule,
   type ResearchLedgerEvent,
   type WorkflowRecipe,
@@ -21,12 +23,14 @@ describe('compileResearchContextPack', () => {
     const workflowRecipes = new WorkflowRecipeRegistry();
     const physicsMemory = new PhysicsMemoryRegistry();
     const researchLedger = new ResearchLedgerRegistry();
+    const researchHarness = new ResearchEvalCaseRegistry();
 
     domainProfiles.register(profile());
     workflowRecipes.register(recipe());
     physicsMemory.register(formulaCapsule());
     physicsMemory.register(benchmarkCapsule());
     researchLedger.register(ledgerEvent());
+    researchHarness.register(evalFile());
 
     const pack = compileResearchContextPack({
       workFrame: createWorkFrame({
@@ -41,6 +45,7 @@ describe('compileResearchContextPack', () => {
       workflowRecipes,
       physicsMemory,
       researchLedger,
+      researchHarness,
       now: () => 123,
     });
 
@@ -58,6 +63,13 @@ describe('compileResearchContextPack', () => {
       'binding.formula.fqhe.flux-quantization.validate.check_convention',
       'binding.fqhe.convention',
     ]);
+    expect(pack.domainPack).toMatchObject({
+      domain: DOMAIN,
+      profileIds: ['domain.fqhe-cs'],
+      workflowIds: ['workflow.fqhe-cs.charge-flux'],
+      evalCaseIds: ['eval.fqhe.charge-flux'],
+      requiredTools: ['PhysicsMemory', 'ResearchLedger'],
+    });
     expect(pack.sourceRefs).toEqual([
       'ledger:event.fqhe.flux-source',
       'local:profile',
@@ -137,6 +149,24 @@ function recipe(): WorkflowRecipe {
     path: 'workflow.md',
     body: 'Workflow body.',
     source: 'project',
+  };
+}
+
+function evalFile(): FileBackedResearchEvalCase {
+  return {
+    path: 'eval.md',
+    source: 'project',
+    body: 'Eval body.',
+    sourceRefs: ['local:eval'],
+    evalCase: {
+      id: 'eval.fqhe.charge-flux',
+      title: 'FQHE charge-flux eval',
+      task: 'Explain charge-flux convention.',
+      domain: DOMAIN,
+      capsuleRefs: ['formula.fqhe.flux-quantization'],
+      actionSequence: [],
+      validations: [],
+    },
   };
 }
 

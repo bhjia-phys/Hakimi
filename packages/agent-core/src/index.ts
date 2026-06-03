@@ -4,6 +4,7 @@ export * from './rpc';
 export * from './config';
 export * from './flags';
 export * from './benchmark-adapter';
+export * from './domain-pack';
 export * from './domain-profile';
 export * from './formalization';
 export * from './physics-memory';

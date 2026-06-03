@@ -25,6 +25,15 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
   if (pack.workflows.length > 0) {
     lines.push(`Workflow recipes: ${bounded(pack.workflows.map((workflow) => workflow.id)).join(', ')}`);
   }
+  if (pack.domainPack !== undefined) {
+    lines.push(`Domain pack: ${pack.domainPack.id}`);
+    if (pack.domainPack.evalCaseIds.length > 0) {
+      lines.push(`Eval cases: ${bounded(pack.domainPack.evalCaseIds).join(', ')}`);
+    }
+    if (pack.domainPack.requiredTools.length > 0) {
+      lines.push(`Required tools: ${bounded(pack.domainPack.requiredTools).join(', ')}`);
+    }
+  }
   if (pack.physics.capsules.length > 0) {
     lines.push(
       `Physics capsules: ${bounded(pack.physics.capsules.map((capsule) => `${capsule.id} [${capsule.reliability}]`)).join(', ')}`,

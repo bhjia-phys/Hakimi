@@ -45,6 +45,22 @@ describe('Runtime tool exposure', () => {
     expect(info.get('Read')?.active).toBe(true);
   });
 
+  it('does not expose code-capable tools from a domain name alone', () => {
+    const plan = buildRuntimeToolExposurePlan(
+      makePack({
+        domain: 'librpa',
+      }),
+    );
+
+    expect(plan.activeToolNames).toEqual(
+      expect.arrayContaining(['PhysicsMemory', 'ResearchLedger', 'ResearchAction']),
+    );
+    expect(plan.activeToolNames).not.toContain('Bash');
+    expect(plan.activeToolNames).not.toContain('Write');
+    expect(plan.activeToolNames).not.toContain('Edit');
+    expect(plan.reason).toContain('theory-oriented');
+  });
+
   it('exposes code-capable tools for code-oriented research packs', () => {
     const agent = makeAgent();
     agent.tools.setActiveTools([
@@ -120,6 +136,34 @@ describe('Runtime tool exposure', () => {
       expect.arrayContaining(['Read', 'Grep', 'Edit', 'Write', 'Bash']),
     );
     expect(patchPlan.reason).toContain('code/benchmark-oriented');
+  });
+
+  it('adds primitive plan tools from domain pack action ids', () => {
+    const plan = buildRuntimeToolExposurePlan(
+      makePack({
+        actionBindings: [],
+        domainPack: {
+          id: 'domain-pack.librpa-head-wing.test',
+          domain: 'librpa/head-wing',
+          profileIds: ['domain.librpa-head-wing'],
+          workflowIds: ['workflow.librpa.patch'],
+          capsuleIds: [],
+          bridgeCapsuleIds: [],
+          evalCaseIds: ['eval.librpa.head-wing'],
+          actionBindingIds: ['binding.librpa.patch'],
+          actionIds: ['code.prepare_patch'],
+          requiredTools: [],
+          contextTags: ['librpa'],
+          diagnostics: [],
+          compiledAt: 1,
+        },
+      }),
+    );
+
+    expect(plan.activeToolNames).toEqual(
+      expect.arrayContaining(['Read', 'Grep', 'Edit', 'Write', 'Bash']),
+    );
+    expect(plan.reason).toContain('code/benchmark-oriented');
   });
 
   it('freezes turn base tools while allowing runtime exposure to update the step list', () => {

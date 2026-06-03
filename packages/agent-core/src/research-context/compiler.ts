@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import { compileDomainPackManifest } from '../domain-pack';
 import type { DomainProfileRegistry } from '../domain-profile';
 import {
   compilePhysicsContext,
@@ -13,6 +14,7 @@ import {
   type ResearchLedgerEventStatus,
   type ResearchLedgerRegistry,
 } from '../research-ledger';
+import type { ResearchEvalCaseRegistry } from '../research-harness';
 import type { WorkflowRecipe, WorkflowRecipeRegistry } from '../workflow-recipe';
 import type {
   CompileResearchContextPackOptions,
@@ -29,6 +31,7 @@ export interface CompileResearchContextPackInput extends CompileResearchContextP
   readonly workflowRecipes?: WorkflowRecipeRegistry | null | undefined;
   readonly physicsMemory?: PhysicsMemoryRegistry | null | undefined;
   readonly researchLedger?: ResearchLedgerRegistry | null | undefined;
+  readonly researchHarness?: ResearchEvalCaseRegistry | null | undefined;
 }
 
 const DEFAULT_LEDGER_STATUSES: readonly ResearchLedgerEventStatus[] = [
@@ -48,6 +51,14 @@ export function compileResearchContextPack(
 ): ResearchContextPack {
   const frame = input.workFrame;
   const diagnostics: ResearchContextPackDiagnostic[] = [];
+  const domainPack = compileDomainPackManifest({
+    domain: frame.domain,
+    domainProfiles: input.domainProfiles,
+    workflowRecipes: input.workflowRecipes,
+    physicsMemory: input.physicsMemory,
+    researchHarness: input.researchHarness,
+    now: input.now,
+  });
   const profiles = collectProfiles(input, diagnostics);
   const workflows = collectWorkflows(input, profiles, diagnostics);
   const requestedFocus = unique([
@@ -108,6 +119,7 @@ export function compileResearchContextPack(
     physics,
     ledger,
     actionBindings,
+    domainPack,
     diagnostics,
     compiledAt: input.now?.() ?? Date.now(),
   };

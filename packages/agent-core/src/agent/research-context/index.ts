@@ -40,6 +40,7 @@ export class ResearchContextManager {
       workflowRecipes: this.agent.workflowRecipes,
       physicsMemory: this.agent.physicsMemory?.registry,
       researchLedger: this.agent.researchLedger?.registry,
+      researchHarness: this.agent.researchHarness,
       reliabilityFloor: input.reliabilityFloor,
       bridgePolicy: input.bridgePolicy,
       includeLedgerStatuses: input.includeLedgerStatuses,
@@ -91,6 +92,9 @@ export class ResearchContextManager {
       capsuleIds: pack.physics.capsules.map((capsule) => capsule.id),
       ledgerProposalIds: pack.ledger.proposals.map((proposal) => proposal.id),
       actionBindingIds: pack.actionBindings.map((binding) => binding.id),
+      domainPackId: pack.domainPack?.id,
+      evalCaseIds: pack.domainPack?.evalCaseIds ?? [],
+      requiredToolNames: pack.domainPack?.requiredTools ?? [],
       diagnostics: pack.diagnostics.map((diagnostic) => ({
         severity: diagnostic.severity,
         code: diagnostic.code,
