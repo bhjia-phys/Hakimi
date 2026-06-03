@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Currently, Kimi Code only provides security support for the latest released version.
+Hakimi provides security support for the latest released version.
 
 ## Reporting a Vulnerability
 
@@ -10,16 +10,12 @@ We take security seriously. **Please do not open a public issue for security vul
 
 Preferred channel:
 
-- GitHub Security Advisories — https://github.com/MoonshotAI/kimi-code/security/advisories/new
+- GitHub Security Advisories — https://github.com/bhjia-phys/Hakimi/security/advisories/new
   (private disclosure, tracked with the codebase)
-
-Alternative channel:
-
-- Email: code@moonshot.ai (please include "[security]" in the subject)
 
 ## What to Include
 
-- Affected version (output of `kimi --version`)
+- Affected version (output of `hakimi --version`, or `kimi --version` for the compatibility alias)
 - Reproduction steps
 - Impact assessment
 - Any suggested mitigation

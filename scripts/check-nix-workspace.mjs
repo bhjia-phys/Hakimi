@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Recursively resolve workspace dependencies starting from apps/kimi-code
+ * Recursively resolve workspace dependencies starting from the Hakimi CLI package
  * and verify they are all present in flake.nix workspaceNames/workspacePaths.
  *
  * Exit code 0 if everything is in sync, 1 otherwise.
@@ -11,7 +11,11 @@ import { resolve, join } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const FLAKE_NIX = join(ROOT, "flake.nix");
-const START_PKG = "@moonshot-ai/kimi-code";
+const START_PKG = "@bhjia-phys/hakimi";
+
+function toPosixPath(value) {
+  return value.replaceAll("\\", "/");
+}
 
 /**
  * Parse pnpm-workspace.yaml to get workspace directory globs.
@@ -19,7 +23,7 @@ const START_PKG = "@moonshot-ai/kimi-code";
 function getWorkspaceGlobs() {
   const yamlPath = join(ROOT, "pnpm-workspace.yaml");
   const content = readFileSync(yamlPath, "utf8");
-  const lines = content.split("\n");
+  const lines = content.split(/\r?\n/);
   const globs = [];
   let inPackages = false;
   for (const line of lines) {
@@ -30,7 +34,7 @@ function getWorkspaceGlobs() {
     if (inPackages) {
       const match = line.match(/^\s+-\s+(.+)$/);
       if (match) {
-        globs.push(match[1]);
+        globs.push(match[1].trim());
       } else if (line.trim() !== "" && !line.startsWith(" ")) {
         break;
       }
@@ -51,7 +55,7 @@ function expandGlobsSafe(globs) {
       if (!existsSync(basePath)) continue;
       for (const entry of readdirSync(basePath, { withFileTypes: true })) {
         if (entry.isDirectory()) {
-          dirs.push(join(base, entry.name));
+          dirs.push(toPosixPath(join(base, entry.name)));
         }
       }
     } else {
@@ -190,8 +194,9 @@ function main() {
     missingNames.unshift(START_PKG);
   }
   const startDir = workspaceMap.get(START_PKG);
-  if (startDir && !flakePathSet.has(`./${startDir}`)) {
-    missingPaths.unshift({ name: START_PKG, path: `./${startDir}` });
+  const startPath = startDir ? toPosixPath(startDir) : undefined;
+  if (startPath && !flakePathSet.has(`./${startPath}`)) {
+    missingPaths.unshift({ name: START_PKG, path: `./${startPath}` });
   }
 
   const ok = missingNames.length === 0 && missingPaths.length === 0;

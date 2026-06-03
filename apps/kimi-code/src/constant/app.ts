@@ -1,11 +1,11 @@
 import { ErrorCodes } from '@moonshot-ai/kimi-code-sdk';
 
-export const PRODUCT_NAME = 'Kimi Code';
-export const CLI_COMMAND_NAME = 'kimi';
-export const PROCESS_NAME = 'kimi-code';
+export const PRODUCT_NAME = 'Hakimi';
+export const CLI_COMMAND_NAME = 'hakimi';
+export const PROCESS_NAME = 'hakimi';
 
 // Used in telemetry app names and HTTP User-Agent headers.
-export const CLI_USER_AGENT_PRODUCT = 'kimi-code-cli';
+export const CLI_USER_AGENT_PRODUCT = 'hakimi-cli';
 export const CLI_UI_MODE = 'shell';
 // Telemetry ui_mode for the `kimi web` host. Same product
 // as the CLI (CLI_USER_AGENT_PRODUCT); the surface is distinguished by ui_mode.
@@ -35,7 +35,7 @@ export const HEADLESS_FORCE_EXIT_GRACE_MS = 2000;
 export const HEADLESS_STDIO_DRAIN_TIMEOUT_MS = 10000;
 
 // Published npm package name; this can differ from the executable command.
-export const NPM_PACKAGE_NAME = '@moonshot-ai/kimi-code';
+export const NPM_PACKAGE_NAME = '@bhjia-phys/hakimi';
 
 // App-owned data paths. SDK/core runtime config is intentionally not routed here.
 export const KIMI_CODE_HOME_ENV = 'KIMI_CODE_HOME';
@@ -60,17 +60,18 @@ export const DEFAULT_OAUTH_PROVIDER_NAME = 'managed:kimi-code';
 // auto-propagates instead of silently breaking the startup recovery path.
 export const OAUTH_LOGIN_REQUIRED_CODE = ErrorCodes.AUTH_LOGIN_REQUIRED;
 
-export const FEEDBACK_ISSUE_URL = 'https://github.com/MoonshotAI/kimi-code/issues';
+export const FEEDBACK_ISSUE_URL = 'https://github.com/bhjia-phys/Hakimi/issues';
 
 // Sent in the feedback `version` field so the backend can distinguish this
 // TypeScript client from clients that send a bare version.
-export const FEEDBACK_VERSION_PREFIX = 'kimi-code-';
+export const FEEDBACK_VERSION_PREFIX = 'hakimi-';
 
 // Telemetry event name; keep stable for dashboard queries.
 export const FEEDBACK_TELEMETRY_EVENT = 'feedback_submitted';
 
-// CDN source of truth: all version checks and native install scripts pull from here.
-export const KIMI_CODE_CDN_BASE = 'https://code.kimi.com/kimi-code';
+// Release source of truth: version checks and native install scripts pull from here.
+// The constant name remains for compatibility with the upstream updater module.
+export const KIMI_CODE_CDN_BASE = 'https://github.com/bhjia-phys/Hakimi/releases/latest/download';
 export const KIMI_CODE_CDN_LATEST_URL = `${KIMI_CODE_CDN_BASE}/latest`;
 // Rollout manifest consumed by update checks; the plain-text `/latest` above
 // stays unchanged forever — already-shipped clients hard-fail on non-semver

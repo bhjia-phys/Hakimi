@@ -1,12 +1,14 @@
-# AITP Agent
+# Hakimi
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-runtime--roadmap-blue)](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md)
 
 [Chinese](README.zh-CN.md) | [Upstream Kimi Code docs](https://moonshotai.github.io/kimi-code/en/)
 
-AITP Agent is a research-agent runtime project for theoretical physics. It starts from the Kimi Code CLI codebase and aims to make physics memory, knowledge compilation, research actions, validation, benchmark evidence, replay, and failure feedback first-class parts of the agent runtime.
+Repository: [bhjia-phys/Hakimi](https://github.com/bhjia-phys/Hakimi)
 
-This repository is a runtime-native fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The default terminal product behavior still follows Kimi Code, while AITP experimental flags and `.aitp` project files activate the theoretical-physics research runtime inside `packages/agent-core`, the turn loop, tool exposure, records/replay, and the packaged `kimi` CLI. The completed first slices are tracked in [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md) and [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md). The original cross-slice roadmap is preserved in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md) and [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md), while the current execution baseline is tracked in [AITP Agent Runtime Slices V2 Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md).
+Hakimi is a truth-seeking physics research agent for theoretical physics. It starts from the Kimi Code CLI codebase and makes physics memory, knowledge compilation, research actions, validation, benchmark evidence, replay, and failure feedback first-class parts of the agent runtime.
+
+This repository is a runtime-native fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The terminal product is branded as Hakimi, ships as `@bhjia-phys/hakimi`, and exposes `hakimi` as the primary command while keeping `kimi` as a compatibility alias. The SDK/OAuth imports and `.kimi-code` data directory remain intentionally compatible with the upstream runtime, while `.aitp` project files activate the theoretical-physics research runtime inside `packages/agent-core`, the turn loop, tool exposure, records/replay, and the packaged CLI. The completed first slices are tracked in [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md) and [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md). The original cross-slice roadmap is preserved in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md) and [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md), while the current execution baseline is tracked in [AITP Agent Runtime Slices V2 Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md).
 
 ## Why This Exists
 
@@ -221,15 +223,17 @@ corepack pnpm --config.engine-strict=false install
 corepack pnpm --config.engine-strict=false build
 New-Item -ItemType Directory -Force dist-pack
 corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ..\..\dist-pack
-npm install -g .\dist-pack\moonshot-ai-kimi-code-0.8.0.tgz
-kimi --version
+npm install -g .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
+hakimi --version
+hakimi
 ```
 
 For an isolated install check without touching the global npm prefix:
 
 ```powershell
-$prefix = "$PWD\.sisyphus\drafts\_scratch\kimi-install-prefix"
-npm install --prefix $prefix .\dist-pack\moonshot-ai-kimi-code-0.8.0.tgz
+$prefix = "$PWD\.sisyphus\drafts\_scratch\hakimi-install-prefix"
+npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
+& "$prefix\node_modules\.bin\hakimi.cmd" --version
 & "$prefix\node_modules\.bin\kimi.cmd" --version
 ```
 
@@ -242,7 +246,7 @@ $env:KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION = "1"
 $env:KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE = "1"
 $env:KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE = "1"
 $env:KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS = "1"
-kimi
+hakimi
 ```
 
 ```sh

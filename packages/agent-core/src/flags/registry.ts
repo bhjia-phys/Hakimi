@@ -50,6 +50,8 @@ export const FLAG_DEFINITIONS = [
   },
   {
     id: 'research-action',
+    title: 'Research actions',
+    description: 'Expose native research-action orchestration tools.',
     env: 'KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION',
     default: false,
     surface: 'core',

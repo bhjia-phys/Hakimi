@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Postinstall hook for @moonshot-ai/kimi-code.
+ * Postinstall hook for @bhjia-phys/hakimi.
  *
- * Goal: when this package is installed globally, ensure typing `kimi`
+ * Goal: when this package is installed globally, ensure typing `hakimi`
  * invokes the new TypeScript CLI. The npm `package.json` bin field
  * installs a fresh `kimi` shim into the global bin dir; this script
  * removes any pre-existing `kimi` shim left behind by the previous
@@ -43,7 +43,7 @@
  *
  * ## Workflow
  *
- * What runs when a user types `npm install -g @moonshot-ai/kimi-code`
+ * What runs when a user types `npm install -g @bhjia-phys/hakimi`
  * (or the yarn / pnpm equivalent):
  *
  *   1. The manager extracts the package and runs lifecycle scripts.
@@ -265,5 +265,5 @@ async function main() {
 
 main().catch((err) => {
   const message = err instanceof Error ? err.message : String(err);
-  notify(`[kimi-code] postinstall warning: ${message}`);
+  notify(`[hakimi] postinstall warning: ${message}`);
 });

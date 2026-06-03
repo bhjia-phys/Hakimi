@@ -1,5 +1,5 @@
 /**
- * Kimi Code version helpers.
+ * Hakimi version helpers.
  *
  * `getVersion` reads the host CLI's `package.json#version`.
  */

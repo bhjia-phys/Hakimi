@@ -1,12 +1,14 @@
 import { spawn } from 'node:child_process';
 
+import { PRODUCT_NAME } from '#/constant/app';
+
 const TMUX_QUERY_TIMEOUT_MS = 2000;
 
 export const TMUX_EXTENDED_KEYS_OFF_WARNING =
   'tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.';
 
 export const TMUX_EXTENDED_KEYS_FORMAT_XTERM_WARNING =
-  'tmux extended-keys-format is xterm. Kimi Code works best with csi-u. Add `set -g extended-keys-format csi-u` to ~/.tmux.conf and restart tmux.';
+  `tmux extended-keys-format is xterm. ${PRODUCT_NAME} works best with csi-u. Add \`set -g extended-keys-format csi-u\` to ~/.tmux.conf and restart tmux.`;
 
 export type TmuxOptionReader = (option: string) => Promise<string | undefined>;
 

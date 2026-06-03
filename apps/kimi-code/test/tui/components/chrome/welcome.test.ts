@@ -4,10 +4,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { WelcomeComponent } from '#/tui/components/chrome/welcome';
 import { setRainbowDance, type RainbowDanceController } from '#/tui/easter-eggs/dance';
-import { darkColors } from '#/tui/theme/colors';
 import type { AppState } from '#/tui/types';
 
 const TRUECOLOR_PATTERN = /\u001B\[38;2;(\d+);(\d+);(\d+)m/g;
+const ANSI_PATTERN = /\u001B\[[0-9;]*m/g;
 
 const appState: AppState = {
   version: '1.2.3',
@@ -45,9 +45,12 @@ function truecolorCodes(text: string): Set<string> {
   return codes;
 }
 
-/** The two header rows (logo + title) of the rendered welcome box. */
 function headerOf(lines: string[]): string {
-  return [lines[3], lines[4]].join('\n');
+  return lines.slice(3, 18).join('\n');
+}
+
+function plain(text: string): string {
+  return text.replace(ANSI_PATTERN, '');
 }
 
 function setDanceView(colored: boolean, phase: number): void {
@@ -73,24 +76,32 @@ describe('WelcomeComponent', () => {
     setRainbowDance(undefined);
   });
 
-  it('renders the banner in a single brand color by default', () => {
-    const codes = truecolorCodes(headerOf(new WelcomeComponent(appState).render(80)));
+  it('renders the Hakimi physics research banner', () => {
+    const text = plain(new WelcomeComponent(appState).render(96).join('\n'));
 
-    // No rainbow by default — just the brand primary (plus the dim tagline).
-    expect(codes.size).toBeLessThanOrEqual(2);
+    expect(text).toContain('Hakimi');
+    expect(text).toContain('truth-seeking physics research agent');
+    expect(text).toContain('Welcome, researcher.');
+    expect(text).toContain('Ready to explore the frontiers of physics knowledge.');
+  });
+
+  it('renders the pixel ship with multiple colors by default', () => {
+    const codes = truecolorCodes(headerOf(new WelcomeComponent(appState).render(96)));
+
+    expect(codes.size).toBeGreaterThanOrEqual(6);
   });
 
   it('paints the banner in rainbow while colored', () => {
     setDanceView(true, 0);
-    const codes = truecolorCodes(headerOf(new WelcomeComponent(appState).render(80)));
+    const codes = truecolorCodes(headerOf(new WelcomeComponent(appState).render(96)));
 
     expect(codes.size).toBeGreaterThanOrEqual(5);
   });
 
   it('renders exactly the default banner when not colored', () => {
-    const base = headerOf(new WelcomeComponent(appState).render(80));
+    const base = headerOf(new WelcomeComponent(appState).render(96));
     setDanceView(false, 5);
-    const off = headerOf(new WelcomeComponent(appState).render(80));
+    const off = headerOf(new WelcomeComponent(appState).render(96));
 
     expect(off).toBe(base);
   });

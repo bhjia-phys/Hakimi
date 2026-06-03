@@ -345,16 +345,16 @@ describe('runUpdatePreflight', () => {
     await expect(runUpdatePreflight('0.4.0', options)).resolves.toBe('exit');
     expect(mocks.promptForInstallChoice).toHaveBeenCalledWith(
       expect.objectContaining({
-        installCommand: 'npm install -g @moonshot-ai/kimi-code@0.5.0',
+        installCommand: 'npm install -g @bhjia-phys/hakimi@0.5.0',
         installSource: 'npm-global',
       }),
     );
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/^npm(\.cmd)?$/),
-      ['install', '-g', '@moonshot-ai/kimi-code@0.5.0'],
+      ['install', '-g', '@bhjia-phys/hakimi@0.5.0'],
       { stdio: 'inherit' },
     );
-    expect(stdout.join('')).toContain('Updated @moonshot-ai/kimi-code to 0.5.0');
+    expect(stdout.join('')).toContain('Updated @bhjia-phys/hakimi to 0.5.0');
   });
 
   it('refreshes a stale cached target before showing the foreground install prompt', async () => {
@@ -419,7 +419,7 @@ describe('runUpdatePreflight', () => {
     await runUpdatePreflight('0.4.0', options);
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/^pnpm(\.cmd)?$/),
-      ['add', '-g', '@moonshot-ai/kimi-code@0.5.0'],
+      ['add', '-g', '@bhjia-phys/hakimi@0.5.0'],
       { stdio: 'inherit' },
     );
   });
@@ -457,7 +457,7 @@ describe('runUpdatePreflight', () => {
     await runUpdatePreflight('0.4.0', options);
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/^yarn(\.cmd)?$/),
-      ['global', 'add', '@moonshot-ai/kimi-code@0.5.0'],
+      ['global', 'add', '@bhjia-phys/hakimi@0.5.0'],
       { stdio: 'inherit' },
     );
   });
@@ -473,7 +473,7 @@ describe('runUpdatePreflight', () => {
     await runUpdatePreflight('0.4.0', options);
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/^bun(\.exe)?$/),
-      ['add', '-g', '@moonshot-ai/kimi-code@0.5.0'],
+      ['add', '-g', '@bhjia-phys/hakimi@0.5.0'],
       { stdio: 'inherit' },
     );
   });
@@ -509,7 +509,7 @@ describe('runUpdatePreflight', () => {
       // pipefail must come before the pipeline so a failed `curl` is not masked
       // by the trailing `bash` exiting 0 (see "surfaces a failed curl" below).
       expect(script).toContain('set -o pipefail');
-      expect(script).toContain('curl -fsSL https://code.kimi.com/kimi-code/install.sh');
+      expect(script).toContain('curl -fsSL https://github.com/bhjia-phys/Hakimi/releases/latest/download/install.sh');
       expect(script).toContain('| bash');
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
@@ -525,7 +525,7 @@ describe('runUpdatePreflight', () => {
     try {
       const { stdout, options } = captureOutput();
       await expect(runUpdatePreflight('0.4.0', options)).resolves.toBe('continue');
-      expect(stdout.join('')).toContain('irm https://code.kimi.com/kimi-code/install.ps1 | iex');
+      expect(stdout.join('')).toContain('irm https://github.com/bhjia-phys/Hakimi/releases/latest/download/install.ps1 | iex');
       expect(promptForInstallChoice).not.toHaveBeenCalled();
       expect(mocks.spawn).not.toHaveBeenCalled();
     } finally {
@@ -539,7 +539,7 @@ describe('runUpdatePreflight', () => {
     mocks.detectInstallSource.mockResolvedValue('unsupported');
     const { stdout, options } = captureOutput();
     await expect(runUpdatePreflight('0.4.0', options)).resolves.toBe('continue');
-    expect(stdout.join('')).toContain('npm install -g @moonshot-ai/kimi-code@0.5.0');
+    expect(stdout.join('')).toContain('npm install -g @bhjia-phys/hakimi@0.5.0');
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
@@ -565,7 +565,7 @@ describe('runUpdatePreflight', () => {
     await expect(runUpdatePreflight('0.4.0', options)).resolves.toBe('continue');
     expect(stderr.join('')).toContain('warning: failed to install');
     // A failed install must never print the "Updated …" success line.
-    expect(stdout.join('')).not.toContain('Updated @moonshot-ai/kimi-code');
+    expect(stdout.join('')).not.toContain('Updated @bhjia-phys/hakimi');
   });
 
   it('starts an automatic update in the background by default', async () => {
@@ -580,7 +580,7 @@ describe('runUpdatePreflight', () => {
     expect(promptForInstallChoice).not.toHaveBeenCalled();
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/^npm(\.cmd)?$/),
-      ['install', '-g', '@moonshot-ai/kimi-code@0.5.0'],
+      ['install', '-g', '@bhjia-phys/hakimi@0.5.0'],
       { detached: true, stdio: 'ignore' },
     );
     expect(writeUpdateInstallState).toHaveBeenCalledWith(expect.objectContaining({
@@ -673,7 +673,7 @@ describe('runUpdatePreflight', () => {
     expect(promptForInstallChoice).not.toHaveBeenCalled();
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/^npm(\.cmd)?$/),
-      ['install', '-g', '@moonshot-ai/kimi-code@0.5.0'],
+      ['install', '-g', '@bhjia-phys/hakimi@0.5.0'],
       { detached: true, stdio: 'ignore' },
     );
   });
@@ -820,9 +820,9 @@ describe('runUpdatePreflight', () => {
     await expect(runUpdatePreflight('0.5.0', { ...options, track, logger })).resolves.toBe('continue');
 
     const rendered = stdout.join('');
-    expect(rendered).toContain('Kimi Code updated to v0.5.0');
+    expect(rendered).toContain('Hakimi updated to v0.5.0');
     expect(rendered).toContain(
-      'https://moonshotai.github.io/kimi-code/en/release-notes/changelog.html',
+      'https://github.com/bhjia-phys/Hakimi/blob/main/apps/kimi-code/CHANGELOG.md',
     );
     expect(track).toHaveBeenCalledWith('update_success_notice_shown', expect.objectContaining({
       version: '0.5.0',
@@ -855,7 +855,7 @@ describe('runUpdatePreflight', () => {
 
     await expect(runUpdatePreflight('0.5.0', options)).resolves.toBe('continue');
 
-    expect(stdout.join('')).toContain('Kimi Code updated to v0.5.0');
+    expect(stdout.join('')).toContain('Hakimi updated to v0.5.0');
     expect(writeUpdateInstallState).toHaveBeenCalledWith(expect.objectContaining({
       active: null,
       lastFailure: null,
