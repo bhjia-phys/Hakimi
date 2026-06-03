@@ -195,7 +195,8 @@ formula capsule
 - 0.4.0 到 0.10.0 已经补齐 Harness V2、LibRPA/FQHE file-backed verticals、bridge-gated domain isolation、physics graph kernel、formalization bridge，以及图查询、benchmark adapter 和 formalization blueprint 的 in-process `ResearchAction` executor lane。
 - 0.11.0 已经开始 primitive tool plan templates 和 live native-tool orchestration：每个默认 `ResearchAction` 都可以渲染可审计的原生工具计划；文献搜索、局部代码 patch 准备、外部 benchmark job 提交都有一等语义 action。Runtime tool exposure 会读取 action bindings，通过 turn-scoped Kimi tool builder 激活模板所需的 Kimi 原生工具，并且 replay 后保持 topic-scoped overlay 和 evidence attribution 不串会话；`ResearchAction` 本身仍然不直接执行 shell、git、web、MCP 或 HPC。整轮测试现在已经覆盖 source search、code patch、external job submission，并通过原生 `WebSearch`/`FetchURL`、`Read`/`Edit`、`Bash` 和 `ResearchLedger.capture_event` 的 call attribution 回填到 `ResearchAction.finish_action_call`，同时写入 durable source/code/job ledger event、发出 `research_ledger.event_written`，并把 `ledger:event...` id 放进 `evidence_refs`。详见 [AITP Agent 0.11.0 Audit](docs/internal/aitp-agent-0.11.0-audit.md)。
 - 0.11.1 已经加入第一版 external job submission adapter contract：`adapter.external.job-submission` 可以把 scheduler/MCP/HPC/manual job receipt 归一化成 `benchmark.submit_external_job` 的 `BenchmarkAdapterRunResult`，但不在 `ResearchAction` 内执行调度器。Primitive plan 现在会在原生提交之后、ledger/action 记录之前加入 adapter normalization 步骤。详见 [AITP Agent 0.11.1 Audit](docs/internal/aitp-agent-0.11.1-audit.md)。
-- 截至 0.11.1，当前 baseline 已经是 file-backed、graph-aware、bridge-gated、带审计和恢复测试的科研 runtime；literature、code、external benchmark workflow 都已经能通过 Kimi 原生工具执行，回填 primitive call ids，并留下 durable ledger evidence refs。外部 job 提交也有了稳定的 receipt contract。
+- 0.11.2 已经把 WorkFrame-scoped evidence inspection 加入 `ResearchAction`：模型可以列出 active 或显式 WorkFrame 最近动作产生的 evidence refs，并且只能在 ledger metadata 匹配当前 frame 的 domain/topic 时加载 `ledger:event...` 正文。加载会写入 `research_ledger.event_loaded`；跨课题/跨 domain 加载会在渲染正文前失败。详见 [AITP Agent 0.11.2 Audit](docs/internal/aitp-agent-0.11.2-audit.md)。
+- 截至 0.11.2，当前 baseline 已经是 file-backed、graph-aware、bridge-gated、带审计和恢复测试的科研 runtime；literature、code、external benchmark workflow 都已经能通过 Kimi 原生工具执行，回填 primitive call ids，并留下 durable ledger evidence refs。外部 job 提交有稳定 receipt contract，语义 action 层也能按 WorkFrame scope 重新读取证据。
 
 ## 本地开发
 
@@ -337,6 +338,14 @@ corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/l
 corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/benchmark-adapter/external-job-submission.test.ts packages/agent-core/test/research-action/primitive-plan.test.ts packages/agent-core/test/tools/research-action-tool.test.ts
 corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
 corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/benchmark-adapter/external-job-submission.ts packages/agent-core/src/benchmark-adapter/default-adapters.ts packages/agent-core/src/benchmark-adapter/index.ts packages/agent-core/src/research-action/primitive-plan.ts packages/agent-core/test/benchmark-adapter/external-job-submission.test.ts packages/agent-core/test/research-action/primitive-plan.test.ts packages/agent-core/test/tools/research-action-tool.test.ts
+```
+
+0.11.2 WorkFrame-scoped evidence inspection slice 的聚焦验证命令：
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/tools/research-action-tool.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/agent/research-action/index.ts packages/agent-core/src/tools/builtin/collaboration/research-action-tool.ts packages/agent-core/src/tools/builtin/collaboration/research-action-tool.md packages/agent-core/test/tools/research-action-tool.test.ts
 ```
 
 仓库工作规则：
