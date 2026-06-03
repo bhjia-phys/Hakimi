@@ -163,6 +163,7 @@ describe('LibRPA file-backed vertical slice', () => {
         workflowRecipes: agent.workflowRecipes,
         physicsMemory: agent.physicsMemory?.registry,
         researchLedger: agent.researchLedger?.registry,
+        researchHarness: agent.researchHarness,
         now: () => 123,
       });
       const exposure = buildRuntimeToolExposurePlan(pack);
@@ -177,6 +178,19 @@ describe('LibRPA file-backed vertical slice', () => {
         'formula.librpa.head-wing.update',
       ]);
       expect(pack.physics.capsules.some((capsule) => capsule.id.includes('fqhe'))).toBe(false);
+      expect(pack.domainPack).toMatchObject({
+        domain: LIBRPA_DOMAIN,
+        profileIds: ['domain.librpa.head-wing'],
+        workflowIds: ['workflow.librpa.head-wing.formula-code-mapping'],
+        evalCaseIds: ['eval.librpa.head-wing.minimal'],
+        requiredTools: ['Bash', 'Edit'],
+      });
+      expect(pack.domainPack?.capsuleIds.some((capsuleId) => capsuleId.includes('fqhe'))).toBe(
+        false,
+      );
+      expect(pack.domainPack?.evalCaseIds.some((evalCaseId) => evalCaseId.includes('fqhe'))).toBe(
+        false,
+      );
       expect(pack.actionBindings.map((binding) => binding.id)).toEqual(
         expect.arrayContaining([
           'binding.librpa-head-wing.inspect-call-sites',

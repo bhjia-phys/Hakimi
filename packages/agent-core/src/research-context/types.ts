@@ -1,4 +1,5 @@
 import type { DomainProfileId } from '../domain-profile';
+import type { DomainPackManifest } from '../domain-pack';
 import type {
   ActionAffordance,
   BridgePolicy,
@@ -109,6 +110,7 @@ export interface ResearchContextPack {
   readonly physics: ResearchContextPhysicsSection;
   readonly ledger: ResearchContextLedgerSection;
   readonly actionBindings: readonly ResearchActionBinding[];
+  readonly domainPack?: DomainPackManifest | undefined;
   readonly diagnostics: readonly ResearchContextPackDiagnostic[];
   readonly compiledAt: number;
 }

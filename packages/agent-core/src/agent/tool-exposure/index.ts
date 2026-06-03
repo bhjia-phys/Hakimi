@@ -49,14 +49,20 @@ const DEFAULT_ACTION_BY_ID = new Map(DEFAULT_RESEARCH_ACTIONS.map((action) => [a
 export function buildRuntimeToolExposurePlan(
   pack: ResearchContextPack,
 ): RuntimeToolExposurePlan {
-  const workflowTools = new Set<string>(pack.workflows.flatMap((workflow) => workflow.requiredTools));
+  const actionIds = unique([
+    ...pack.actionBindings.map((binding) => binding.actionId),
+    ...(pack.domainPack?.actionIds ?? []),
+  ]);
+  const workflowTools = new Set<string>([
+    ...pack.workflows.flatMap((workflow) => workflow.requiredTools),
+    ...(pack.domainPack?.requiredTools ?? []),
+  ]);
   const primitiveTools = new Set<string>(
-    pack.actionBindings.flatMap((binding) => primitiveToolsForActionId(binding.actionId)),
+    actionIds.flatMap((actionId) => primitiveToolsForActionId(actionId)),
   );
   const hasCodeIntent =
-    pack.domain === 'librpa' ||
-    pack.actionBindings.some((binding) =>
-      binding.actionId.startsWith('code.') || binding.actionId.startsWith('benchmark.'),
+    actionIds.some(
+      (actionId) => actionId.startsWith('code.') || actionId.startsWith('benchmark.'),
     ) ||
     [...workflowTools, ...primitiveTools].some(
       (tool) => tool === 'Bash' || tool === 'Write' || tool === 'Edit',
@@ -82,6 +88,10 @@ export function buildRuntimeToolExposurePlan(
 function primitiveToolsForActionId(actionId: string): readonly string[] {
   const action = DEFAULT_ACTION_BY_ID.get(actionId);
   return action === undefined ? [] : primitiveToolNamesForAction(action);
+}
+
+function unique(values: readonly string[]): readonly string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
 }
 
 function uniqueNonEmpty(value: string, index: number, array: readonly string[]): boolean {

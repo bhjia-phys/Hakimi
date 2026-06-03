@@ -197,7 +197,8 @@ formula capsule
 - 0.11.1 已经加入第一版 external job submission adapter contract：`adapter.external.job-submission` 可以把 scheduler/MCP/HPC/manual job receipt 归一化成 `benchmark.submit_external_job` 的 `BenchmarkAdapterRunResult`，但不在 `ResearchAction` 内执行调度器。Primitive plan 现在会在原生提交之后、ledger/action 记录之前加入 adapter normalization 步骤。详见 [AITP Agent 0.11.1 Audit](docs/internal/aitp-agent-0.11.1-audit.md)。
 - 0.11.2 已经把 WorkFrame-scoped evidence inspection 加入 `ResearchAction`：模型可以列出 active 或显式 WorkFrame 最近动作产生的 evidence refs，并且只能在 ledger metadata 匹配当前 frame 的 domain/topic 时加载 `ledger:event...` 正文。加载会写入 `research_ledger.event_loaded`；跨课题/跨 domain 加载会在渲染正文前失败。详见 [AITP Agent 0.11.2 Audit](docs/internal/aitp-agent-0.11.2-audit.md)。
 - 0.11.3 已经让 external-job receipt lane 更适合原生工具输出：`adapter.external.job-submission` 现在可以从 SLURM、LSF、SGE、PBS/qsub 等常见 scheduler output 中保守解析 job id，同时拒绝任意 shell 输出。这样 Bash/MCP/remote-runner 只要返回清晰调度器回执，就能用 `schedulerOutput` 喂给 adapter。详见 [AITP Agent 0.11.3 Audit](docs/internal/aitp-agent-0.11.3-audit.md)。
-- 截至 0.11.3，当前 baseline 已经是 file-backed、graph-aware、bridge-gated、带审计和恢复测试的科研 runtime；literature、code、external benchmark workflow 都已经能通过 Kimi 原生工具执行，回填 primitive call ids，并留下 durable ledger evidence refs。外部 job 提交有稳定 receipt contract，语义 action 层能按 WorkFrame scope 重新读取证据，并且能保守归一化原生 scheduler 回执。
+- 0.12.0 已经加入 file-backed `DomainPackManifest` runtime summary：`ResearchContextPack` 现在会携带当前 domain 的 profile/workflow/memory/eval/action/tool inventory，context reminder 和 `ResearchAction` 渲染都会暴露这个 manifest；runtime tool exposure 不再因为 domain 是 LibRPA 就自动打开代码工具。代码工具现在只来自 file-backed workflow `required_tools`、DomainPack action ids 或 universal action primitive plan。FQHE/CS 与 LibRPA fixture 测试会断言 eval、capsule 和 tool exposure 互相隔离，除非存在显式 bridge capsule。详见 [AITP Agent 0.12.0 Audit](docs/internal/aitp-agent-0.12.0-audit.md)。
+- 截至 0.12.0，当前 baseline 已经是 file-backed、graph-aware、bridge-gated、带审计和恢复测试的科研 runtime；literature、code、external benchmark workflow 都已经能通过 Kimi 原生工具执行，回填 primitive call ids，并留下 durable ledger evidence refs。topic pack 现在有 manifest 级别的 profile/workflow/memory/eval/action/tool summary，外部 job 提交有稳定 receipt contract，语义 action 层能按 WorkFrame scope 重新读取证据，并且能保守归一化原生 scheduler 回执。
 
 ## 本地开发
 
@@ -355,6 +356,14 @@ corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/a
 corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/benchmark-adapter/external-job-submission.test.ts packages/agent-core/test/tools/research-action-tool.test.ts
 corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
 corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/benchmark-adapter/external-job-submission.ts packages/agent-core/test/benchmark-adapter/external-job-submission.test.ts packages/agent-core/test/tools/research-action-tool.test.ts
+```
+
+0.12.0 file-backed DomainPack runtime 的聚焦验证命令：
+
+```sh
+corepack pnpm --config.engine-strict=false vitest run packages/agent-core/test/domain-pack/compiler.test.ts packages/agent-core/test/research-context/compiler.test.ts packages/agent-core/test/agent/tool-exposure.test.ts packages/agent-core/test/physics-verticals/librpa.test.ts packages/agent-core/test/physics-verticals/fqhe-cs-v2.test.ts
+corepack pnpm --config.engine-strict=false --filter @moonshot-ai/agent-core typecheck
+corepack pnpm --config.engine-strict=false exec oxlint packages/agent-core/src/domain-pack packages/agent-core/src/research-context/compiler.ts packages/agent-core/src/research-context/types.ts packages/agent-core/src/agent/research-context/index.ts packages/agent-core/src/agent/tool-exposure/index.ts packages/agent-core/src/agent/workframe/context-pack.ts packages/agent-core/src/tools/builtin/collaboration/research-action-tool.ts packages/agent-core/test/domain-pack/compiler.test.ts packages/agent-core/test/research-context/compiler.test.ts packages/agent-core/test/agent/tool-exposure.test.ts packages/agent-core/test/physics-verticals/librpa.test.ts packages/agent-core/test/physics-verticals/fqhe-cs-v2.test.ts
 ```
 
 仓库工作规则：
