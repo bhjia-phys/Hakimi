@@ -1,7 +1,7 @@
 # Hakimi
 
 <p align="center">
-  <img src="docs/assets/hakimi-pixel-ship.svg" width="720" alt="Hakimi pixel cat-ear exploration spacecraft" />
+  <img src="docs/assets/hakimi-terminal-welcome.png" width="760" alt="Hakimi terminal welcome screen with a pixel cat-ear exploration spacecraft" />
 </p>
 
 <p align="center">
@@ -33,20 +33,20 @@ Hakimi 不是在 coding agent 外面套一个研究记录本。它是 [MoonshotA
 
 ```mermaid
 flowchart LR
-  user[Researcher] --> tui[Hakimi CLI / TUI]
-  tui --> loop[Kimi Code native turn loop]
-  loop --> tools[Native tools: Read / Edit / Bash / Web / MCP]
-  loop --> aitp[AITP research runtime]
+  user["Researcher"] --> tui["Hakimi CLI / TUI"]
+  tui --> loop["Kimi Code native turn loop"]
+  loop --> tools["Native tools: Read / Edit / Bash / Web / MCP"]
+  loop --> aitp["AITP research runtime"]
   aitp --> frames[WorkFrames]
-  aitp --> packs[Domain packs]
-  aitp --> ledger[Research ledger]
-  aitp --> graph[Physics graph]
+  aitp --> packs["Domain packs"]
+  aitp --> ledger["Research ledger"]
+  aitp --> pgraph["Physics graph"]
   aitp --> actions[ResearchAction]
-  aitp --> harness[Harness and final gate]
-  tools --> evidence[Tool results and artifacts]
+  aitp --> harness["Harness and final gate"]
+  tools --> evidence["Tool results and artifacts"]
   evidence --> ledger
-  ledger --> graph
-  graph --> packs
+  ledger --> pgraph
+  pgraph --> packs
   frames --> actions
   actions --> tools
   harness --> loop
@@ -56,15 +56,15 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  question[Question or research task] --> frame[Open or reuse a WorkFrame]
-  frame --> context[Compile a bounded ResearchContextPack]
-  context --> plan[Choose semantic ResearchActions]
-  plan --> native[Use native Kimi tools when needed]
-  native --> capture[Capture source, code, benchmark, job, or failure evidence]
-  capture --> ledger[Write durable ledger events]
-  ledger --> graph[Compile graph candidates and obligations]
-  graph --> gate[Final gate: validated / partial / blocked]
-  gate --> answer[Answer with scope, caveats, and evidence]
+  question["Question or research task"] --> frame["Open or reuse a WorkFrame"]
+  frame --> context["Compile a bounded ResearchContextPack"]
+  context --> plan["Choose semantic ResearchActions"]
+  plan --> native["Use native Kimi tools when needed"]
+  native --> capture["Capture source, code, benchmark, job, or failure evidence"]
+  capture --> ledger["Write durable ledger events"]
+  ledger --> pgraph["Compile graph candidates and obligations"]
+  pgraph --> gate["Final gate: validated / partial / blocked"]
+  gate --> answer["Answer with scope, caveats, and evidence"]
 ```
 
 ## 现在已经能做什么
