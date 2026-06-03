@@ -7,6 +7,10 @@ import {
   type PhysicsCapsule,
   type PhysicsCapsuleKind,
 } from '../../src/physics-memory';
+import {
+  ResearchLedgerRegistry,
+  type ResearchLedgerEvent,
+} from '../../src/research-ledger';
 import { ProviderManager } from '../../src/session/provider-manager';
 import { ResearchActionTool } from '../../src/tools/builtin/collaboration/research-action-tool';
 import { testKaos } from '../fixtures/test-kaos';
@@ -164,6 +168,109 @@ describe('ResearchActionTool', () => {
         primitiveToolCallIds: ['tool_call_read_head_wing'],
       }),
     );
+  });
+
+  it('lists and loads evidence refs through the active WorkFrame scope', async () => {
+    const records: AgentRecord[] = [];
+    const ledger = new ResearchLedgerRegistry();
+    ledger.register(
+      ledgerEvent({
+        id: 'event.fqhe.source',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-cs',
+        body: 'FQHE source body',
+      }),
+    );
+    ledger.register(
+      ledgerEvent({
+        id: 'event.librpa.patch',
+        domain: 'librpa',
+        topic: 'head-wing',
+        body: 'LibRPA patch body',
+      }),
+    );
+    const agent = makeAgent(records, { researchLedger: ledger });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    await execute(tool, {
+      action: 'open_work_frame',
+      frame_id: 'frame.fqhe',
+      domain: 'topological-order/fqhe-cs',
+      topic: 'fqhe-cs',
+      goal: 'Read FQHE source evidence.',
+    });
+    await execute(tool, {
+      action: 'record_action_result',
+      action_id: 'source.search_literature',
+      call_id: 'call.fqhe-source',
+      outcome: 'pass',
+      evidence_refs: ['ledger:event.fqhe.source'],
+    });
+    await execute(tool, {
+      action: 'open_work_frame',
+      frame_id: 'frame.librpa',
+      domain: 'librpa',
+      topic: 'head-wing',
+      goal: 'Inspect LibRPA patch evidence.',
+    });
+    await execute(tool, {
+      action: 'record_action_result',
+      action_id: 'code.prepare_patch',
+      call_id: 'call.librpa-patch',
+      outcome: 'pass',
+      evidence_refs: ['ledger:event.librpa.patch'],
+    });
+    await execute(tool, {
+      action: 'switch_work_frame',
+      frame_id: 'frame.fqhe',
+    });
+
+    const listed = await execute(tool, { action: 'list_evidence_refs' });
+    const loaded = await execute(tool, {
+      action: 'load_evidence_ref',
+      evidence_ref: 'ledger:event.fqhe.source',
+    });
+    const leaked = await execute(tool, {
+      action: 'load_evidence_ref',
+      evidence_ref: 'ledger:event.librpa.patch',
+    });
+
+    expect(listed.output).toContain('scope="work_frame"');
+    expect(listed.output).toContain('work_frame_id="frame.fqhe"');
+    expect(listed.output).toContain('ledger:event.fqhe.source');
+    expect(listed.output).not.toContain('ledger:event.librpa.patch');
+    expect(loaded.output).toContain('<research_ledger_event id="event.fqhe.source"');
+    expect(loaded.output).toContain('FQHE source body');
+    expect(leaked).toMatchObject({ isError: true });
+    expect(leaked.output).toContain('outside the requested domain');
+    expect(leaked.output).not.toContain('LibRPA patch body');
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_ledger.event_loaded',
+        source: 'model-tool',
+        eventId: 'event.fqhe.source',
+        toolCallId: 'call_research_action',
+      }),
+    );
+    expect(records).not.toContainEqual(
+      expect.objectContaining({
+        type: 'research_ledger.event_loaded',
+        eventId: 'event.librpa.patch',
+      }),
+    );
+  });
+
+  it('requires a WorkFrame or complete domain/topic scope for evidence access', async () => {
+    const agent = makeAgent([], { researchLedger: new ResearchLedgerRegistry() });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'list_evidence_refs',
+      domain: 'librpa',
+    });
+
+    expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('requires both domain and topic');
   });
 
   it('opens, lists, switches, and closes WorkFrames through the session manager', async () => {
@@ -470,7 +577,10 @@ function execute(tool: ResearchActionTool, args: Parameters<typeof tool.resolveE
 
 function makeAgent(
   records?: AgentRecord[],
-  options: { readonly physicsMemory?: PhysicsMemoryRegistry | undefined } = {},
+  options: {
+    readonly physicsMemory?: PhysicsMemoryRegistry | undefined;
+    readonly researchLedger?: ResearchLedgerRegistry | undefined;
+  } = {},
 ): Agent {
   const agent = new Agent({
     kaos: testKaos,
@@ -504,6 +614,7 @@ function makeAgent(
       },
     }),
     physicsMemory: options.physicsMemory,
+    researchLedger: options.researchLedger,
   });
   agent.config.update({
     cwd: process.cwd(),
@@ -511,6 +622,33 @@ function makeAgent(
   });
   agent.tools.initializeBuiltinTools();
   return agent;
+}
+
+function ledgerEvent(input: {
+  readonly id: string;
+  readonly domain: string;
+  readonly topic: string;
+  readonly body: string;
+}): ResearchLedgerEvent {
+  return {
+    path: `/tmp/${input.id}.md`,
+    body: input.body,
+    root: {
+      path: '/tmp/research-ledger',
+      source: 'project',
+    },
+    metadata: {
+      id: input.id,
+      type: 'source_excerpt',
+      domain: input.domain,
+      topic: input.topic,
+      status: 'captured',
+      sourceRefs: ['local:test'],
+      dependsOn: [],
+      openQuestions: [],
+      relatedObjects: [],
+    },
+  };
 }
 
 function capsule(

@@ -3,6 +3,7 @@ import type {
   CompileResearchContextForWorkFrameInput,
   ResearchContextRecordOptions,
 } from '../research-context';
+import type { ResearchLedgerRecordOptions } from '../research-ledger';
 import type { ResearchContextPack } from '../../research-context';
 import type { OpenWorkFrameInput, WorkFrameRecordOptions } from '../workframe';
 import type {
@@ -12,6 +13,7 @@ import type {
   ResearchObligation,
   WorkFrame,
 } from '../../research-action';
+import type { ResearchLedgerEvent } from '../../research-ledger';
 import type {
   BenchmarkAdapterId,
   BenchmarkAdapterRunInput,
@@ -63,6 +65,18 @@ interface RecentEvidenceRef {
   readonly workFrameId?: string | undefined;
   readonly domain?: string | undefined;
   readonly topic?: string | undefined;
+}
+
+export interface ResearchEvidenceFilter {
+  readonly workFrameId?: string | undefined;
+  readonly domain?: string | undefined;
+  readonly topic?: string | undefined;
+}
+
+export interface LoadedResearchEvidenceRef {
+  readonly ref: string;
+  readonly kind: 'ledger_event';
+  readonly event: ResearchLedgerEvent;
 }
 
 export class ResearchActionManager {
@@ -286,11 +300,7 @@ export class ResearchActionManager {
 
   recentEvidence(
     limit = 20,
-    filter: {
-      readonly workFrameId?: string | undefined;
-      readonly domain?: string | undefined;
-      readonly topic?: string | undefined;
-    } = {},
+    filter: ResearchEvidenceFilter = {},
   ): readonly string[] {
     return this.recentEvidenceRefs
       .filter(
@@ -300,6 +310,38 @@ export class ResearchActionManager {
       .filter((item) => filter.topic === undefined || item.topic === filter.topic)
       .slice(-Math.max(0, limit))
       .map((item) => item.ref);
+  }
+
+  loadEvidenceRef(
+    ref: string,
+    filter: ResearchEvidenceFilter,
+    options: ResearchLedgerRecordOptions,
+  ): LoadedResearchEvidenceRef {
+    const eventId = parseLedgerEvidenceRef(ref);
+    if (eventId === undefined) {
+      throw new Error(`Unsupported research evidence ref "${ref}". Only ledger:<event-id> is supported.`);
+    }
+    const ledger = this.agent.researchLedger;
+    if (ledger === null) {
+      throw new Error('Research evidence loading requires a ResearchLedger registry.');
+    }
+    const event = ledger.registry.requireEvent(eventId);
+    if (filter.domain !== undefined && event.metadata.domain !== filter.domain) {
+      throw new Error(
+        `Research evidence ref "${ref}" is outside the requested domain "${filter.domain}".`,
+      );
+    }
+    if (filter.topic !== undefined && event.metadata.topic !== filter.topic) {
+      throw new Error(
+        `Research evidence ref "${ref}" is outside the requested topic "${filter.topic}".`,
+      );
+    }
+    ledger.recordEventLoaded(event, options);
+    return {
+      ref,
+      kind: 'ledger_event',
+      event,
+    };
   }
 
   private pushEvidenceRefs(
@@ -332,3 +374,7 @@ export class ResearchActionManager {
 }
 
 export type { ResearchActionOutcome };
+
+function parseLedgerEvidenceRef(ref: string): string | undefined {
+  return ref.startsWith('ledger:') ? ref.slice('ledger:'.length) : undefined;
+}

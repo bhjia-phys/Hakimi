@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-import type { ResearchActionManager } from '../../../agent/research-action';
+import type {
+  LoadedResearchEvidenceRef,
+  ResearchActionManager,
+  ResearchEvidenceFilter,
+} from '../../../agent/research-action';
 import type { BuiltinTool } from '../../../agent/tool';
 import { ToolAccesses } from '../../../loop/tool-access';
 import type {
@@ -43,7 +47,10 @@ import {
   type PhysicsGraphQueryResult,
 } from '../../../physics-graph';
 import type { ResearchContextPack } from '../../../research-context';
-import { RESEARCH_LEDGER_EVENT_STATUSES } from '../../../research-ledger';
+import {
+  RESEARCH_LEDGER_EVENT_STATUSES,
+  type ResearchLedgerEvent,
+} from '../../../research-ledger';
 import { toInputJsonSchema } from '../../support/input-schema';
 import DESCRIPTION from './research-action-tool.md';
 
@@ -61,6 +68,8 @@ const ACTIONS = [
   'compile_context_pack',
   'list_context_packs',
   'load_context_pack',
+  'list_evidence_refs',
+  'load_evidence_ref',
   'run_benchmark_adapter',
   'query_physics_graph',
   'build_formalization_plan',
@@ -112,6 +121,14 @@ export const ResearchActionToolInputSchema = z.object({
   goal: z.string().optional().describe('Goal text for open_work_frame.'),
   frame_id: z.string().optional().describe('WorkFrame id for WorkFrame operations.'),
   context_pack_id: z.string().optional().describe('Optional context pack id for open_work_frame.'),
+  evidence_ref: z
+    .string()
+    .optional()
+    .describe('Evidence ref for load_evidence_ref, for example ledger:event.id.'),
+  include_body: z
+    .boolean()
+    .optional()
+    .describe('Whether load_evidence_ref should include the ledger event body.'),
   attach_context_pack: z
     .boolean()
     .optional()
@@ -208,6 +225,11 @@ interface GraphSuccessOutput {
 
 type ExecutableGraphOutput = GraphSuccessOutput | ExecutableToolResult;
 
+interface EvidenceScope {
+  readonly source: 'work_frame' | 'explicit';
+  readonly filter: ResearchEvidenceFilter;
+}
+
 export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> {
   readonly name = 'ResearchAction' as const;
   readonly description: string = DESCRIPTION;
@@ -265,6 +287,10 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return this.listContextPacks();
         case 'load_context_pack':
           return this.loadContextPack(args);
+        case 'list_evidence_refs':
+          return this.listEvidenceRefs(args);
+        case 'load_evidence_ref':
+          return this.loadEvidenceRef(args, ctx);
         case 'run_benchmark_adapter':
           return this.runBenchmarkAdapter(args, ctx);
         case 'query_physics_graph':
@@ -564,6 +590,80 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     return ok(renderContextPack(this.manager.requireContextPack(args.context_pack_id)));
   }
 
+  private listEvidenceRefs(args: ResearchActionToolInput): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction list_evidence_refs requires a session manager.');
+    }
+    const scope = this.resolveEvidenceScope(args, this.manager);
+    return ok(renderEvidenceRefs(this.manager.recentEvidence(args.limit ?? 20, scope.filter), scope));
+  }
+
+  private loadEvidenceRef(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction load_evidence_ref requires a session manager.');
+    }
+    if (!hasText(args.evidence_ref)) {
+      return errorResult('ResearchAction load_evidence_ref requires evidence_ref.');
+    }
+    const scope = this.resolveEvidenceScope(args, this.manager);
+    const loaded = this.manager.loadEvidenceRef(args.evidence_ref, scope.filter, {
+      source: 'model-tool',
+      toolCallId: ctx.toolCallId,
+    });
+    return ok(renderLoadedEvidenceRef(loaded, args.include_body ?? true, scope));
+  }
+
+  private resolveEvidenceScope(
+    args: ResearchActionToolInput,
+    manager: ResearchActionManager,
+  ): EvidenceScope {
+    if (hasText(args.frame_id)) {
+      const frame = manager.listWorkFrames().find((candidate) => candidate.id === args.frame_id);
+      if (frame === undefined) {
+        throw new Error(`ResearchAction evidence access unknown frame_id: ${args.frame_id}`);
+      }
+      return {
+        source: 'work_frame',
+        filter: {
+          workFrameId: frame.id,
+          domain: frame.domain,
+          topic: frame.topic,
+        },
+      };
+    }
+    const active = manager.activeWorkFrame();
+    if (active !== undefined) {
+      return {
+        source: 'work_frame',
+        filter: {
+          workFrameId: active.id,
+          domain: active.domain,
+          topic: active.topic,
+        },
+      };
+    }
+    if (hasText(args.domain) && hasText(args.topic)) {
+      return {
+        source: 'explicit',
+        filter: {
+          domain: args.domain,
+          topic: args.topic,
+        },
+      };
+    }
+    if (hasText(args.domain) || hasText(args.topic)) {
+      throw new Error(
+        'ResearchAction evidence access requires both domain and topic when no WorkFrame is active.',
+      );
+    }
+    throw new Error(
+      'ResearchAction evidence access requires an active WorkFrame, explicit frame_id, or explicit domain and topic.',
+    );
+  }
+
   private runBenchmarkAdapter(
     args: ResearchActionToolInput,
     ctx: ExecutableToolContext,
@@ -815,6 +915,73 @@ function renderBenchmarkAdapterRun(result: BenchmarkAdapterRunResult): string {
   ].join('\n');
 }
 
+function renderEvidenceRefs(refs: readonly string[], scope: EvidenceScope): string {
+  const attrs = renderEvidenceScopeAttrs(scope);
+  if (refs.length === 0) return `<research_evidence_refs${attrs} />\n`;
+  return [
+    `<research_evidence_refs${attrs}>`,
+    ...refs.map(
+      (ref) =>
+        `  <evidence_ref kind="${escapeXml(evidenceRefKind(ref))}">${escapeXml(ref)}</evidence_ref>`,
+    ),
+    '</research_evidence_refs>',
+    '',
+  ].join('\n');
+}
+
+function renderLoadedEvidenceRef(
+  loaded: LoadedResearchEvidenceRef,
+  includeBody: boolean,
+  scope: EvidenceScope,
+): string {
+  return [
+    `<research_evidence_ref ref="${escapeXml(loaded.ref)}" kind="${loaded.kind}"${renderEvidenceScopeAttrs(scope)}>`,
+    renderResearchLedgerEvent(loaded.event, includeBody, '  '),
+    '</research_evidence_ref>',
+    '',
+  ].join('\n');
+}
+
+function renderResearchLedgerEvent(
+  event: ResearchLedgerEvent,
+  includeBody: boolean,
+  indent = '',
+): string {
+  const metadata = event.metadata;
+  const lines = [
+    `${indent}<research_ledger_event id="${escapeXml(metadata.id)}" type="${metadata.type}" topic="${escapeXml(metadata.topic)}" domain="${escapeXml(metadata.domain)}" status="${metadata.status}">`,
+    `${indent}  <path>${escapeXml(event.path)}</path>`,
+    renderStringList('source_refs', 'source_ref', metadata.sourceRefs, `${indent}  `),
+    renderStringList('depends_on', 'event', metadata.dependsOn, `${indent}  `),
+    `${indent}  <candidate_capsule_kind>${escapeXml(metadata.candidateCapsuleKind ?? '')}</candidate_capsule_kind>`,
+    renderStringList('open_questions', 'question', metadata.openQuestions, `${indent}  `),
+    renderStringList('related_objects', 'object', metadata.relatedObjects, `${indent}  `),
+  ];
+  if (includeBody) {
+    lines.push(`${indent}  <body>${escapeXml(event.body)}</body>`);
+  }
+  lines.push(`${indent}</research_ledger_event>`);
+  return lines.join('\n');
+}
+
+function renderEvidenceScopeAttrs(scope: EvidenceScope): string {
+  const attrs = [
+    `scope="${scope.source}"`,
+    scope.filter.workFrameId === undefined
+      ? undefined
+      : `work_frame_id="${escapeXml(scope.filter.workFrameId)}"`,
+    scope.filter.domain === undefined
+      ? undefined
+      : `domain="${escapeXml(scope.filter.domain)}"`,
+    scope.filter.topic === undefined ? undefined : `topic="${escapeXml(scope.filter.topic)}"`,
+  ].filter((attr): attr is string => attr !== undefined);
+  return ` ${attrs.join(' ')}`;
+}
+
+function evidenceRefKind(ref: string): string {
+  return ref.startsWith('ledger:') ? 'ledger_event' : 'external_ref';
+}
+
 function renderGraphQueryResult(
   query: string,
   result: PhysicsGraphQueryResult,
@@ -915,6 +1082,10 @@ function graphRefsFromNodeIds(nodeIds: readonly string[]): readonly GraphRef[] {
 
 function safeId(value: string): string {
   return value.replaceAll(/[^A-Za-z0-9_.-]+/g, '-');
+}
+
+function hasText(value: string | undefined): value is string {
+  return value !== undefined && value.length > 0;
 }
 
 function renderActionList(actions: readonly ResearchActionDefinition[]): string {
