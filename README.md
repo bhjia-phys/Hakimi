@@ -1,7 +1,7 @@
 # Hakimi
 
 <p align="center">
-  <img src="docs/assets/hakimi-terminal-welcome.png" width="760" alt="Hakimi terminal welcome screen with a pixel cat-ear exploration spacecraft" />
+  <img src="docs/assets/hakimi-terminal-welcome.png" width="920" alt="Hakimi terminal welcome screen with a pixel cat-ear exploration spacecraft" />
 </p>
 
 <p align="center">
