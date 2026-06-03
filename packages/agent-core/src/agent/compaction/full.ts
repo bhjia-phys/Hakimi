@@ -53,6 +53,10 @@ import {
   type CompactionStrategy,
 } from './strategy';
 import { buildCompactionSummaryText, isRealUserInput } from './handoff';
+import {
+  mergeResearchCompactionSnapshot,
+  renderResearchCompactionSnapshot,
+} from './research-snapshot';
 
 export const MAX_COMPACTION_RETRY_ATTEMPTS = 5;
 
@@ -380,10 +384,15 @@ export class FullCompaction {
     }
   }
 
-  private buildInstruction(customInstruction: string | undefined): string {
-    return renderPrompt(compactionInstructionTemplate, {
+  private buildInstruction(
+    customInstruction: string | undefined,
+    researchSnapshot: string,
+  ): string {
+    const base = renderPrompt(compactionInstructionTemplate, {
       customInstruction: customInstruction?.trim() ?? '',
     }).trimEnd();
+    if (researchSnapshot.trim().length === 0) return base;
+    return `${base}\n\n${renderResearchCompactionInstruction(researchSnapshot)}`;
   }
 
   private postProcessSummary(summary: string): string {
@@ -432,7 +441,8 @@ export class FullCompaction {
         }),
         capability,
       });
-      const instruction = this.buildInstruction(data.instruction);
+      const researchSnapshot = renderResearchCompactionSnapshot(this.agent);
+      const instruction = this.buildInstruction(data.instruction, researchSnapshot);
 
       const delays = retryBackoffDelays(MAX_COMPACTION_RETRY_ATTEMPTS);
       let usage: TokenUsage | null = null;
@@ -601,7 +611,9 @@ export class FullCompaction {
         return undefined;
       }
 
-      const rawSummary = this.postProcessSummary(summary ?? '');
+      const rawSummary = this.postProcessSummary(
+        mergeResearchCompactionSnapshot(summary ?? '', researchSnapshot),
+      );
       const contextSummary = buildCompactionSummaryText(rawSummary);
       const result = this.agent.context.applyCompaction({
         summary: rawSummary,
@@ -791,3 +803,16 @@ function extractCompactionSummary(response: GenerateResult): string {
   }
   return summary;
 }
+
+const renderResearchCompactionInstruction = (researchSnapshot: string): string =>
+  [
+    '<!-- Runtime Research State -->',
+    '',
+    'The following Hakimi research state was generated from the native runtime, not inferred from the conversation. Treat it as authoritative when summarizing active research topics. Preserve its meaning in the compacted summary, including each WorkFrame\'s research question, domain/topic, active physics memory, ContextPack/domain pack ids, evidence refs, action attempts and outcomes, primitive tool attribution, failed or raw tool escapes, open obligations, and next suggested actions. Keep WorkFrames separate; never merge evidence or progress across unrelated topics.',
+    '',
+    researchSnapshot.trim(),
+    '',
+    '<!-- Additional Research Output Requirement -->',
+    '',
+    'Also include a "## Hakimi Research State" section for each active/open WorkFrame: research question, domain/topic, context pack/domain pack, physics memory ids, ledger/evidence refs, action trace, primitive tool attribution, open obligations, and next steps.',
+  ].join('\n');

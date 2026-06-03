@@ -51,6 +51,7 @@ That means a research action can search literature, inspect code, prepare patche
 - Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
 - Literature search, code patch preparation, and external benchmark workflows are orchestrated through native Kimi tools rather than being executed inside `ResearchAction` itself.
 - Evidence can be written to the research ledger, reread only inside matching WorkFrame scope, compiled into graph candidates, and checked by harness/final-gate logic.
+- Full context compaction is now research-aware: when WorkFrames are open, Hakimi injects and stores a runtime-generated `Hakimi Research State` block with the initial research question, domain/topic, ContextPack/domain pack, physics memory ids, evidence refs, action attempts/outcomes, raw primitive-tool escapes, open obligations, and next steps. Separate WorkFrames stay separated in the compacted summary.
 
 ## Architecture Layers
 
@@ -65,6 +66,8 @@ Hakimi is organized around five research-runtime layers.
 | Research actions | Auditable work units such as convention checks, graph expansion, formula-code mapping, benchmark validation, and harness generation. |
 
 `WorkFrame` is the live research problem state tying these layers together. It tracks the active domain, topic, goal, assumptions, conventions, context pack, evidence, obligations, and final-gate status. Blocking obligations prevent a result from being treated as validated memory.
+
+This matters most when the conversation is compacted. Ordinary chat history can be shortened, but the runtime state for each open WorkFrame is rendered into the compaction request and then appended deterministically to the stored compaction summary. For real research topics, open a WorkFrame early; that makes the initial question, physics memory, current derivation/code progress, failed attempts, and next obligations recoverable after automatic compaction and session replay.
 
 ## Relationship To Upstream
 
@@ -206,6 +209,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.12.1 has tightened the native research runtime: `ResearchAction.inspect_domain_pack` can inspect the active or explicit ContextPack's DomainPack manifest, raw primitive tools used inside an active WorkFrame without an active `ResearchAction` call now emit `research_action.raw_tool_escape` with `workFrameId` and a suggested follow-up action, and older hardcoded vertical exports are marked compatibility-only in favor of file-backed `.aitp` domain packs.
 - The runtime roadmap through 0.12.1 is now implemented as a file-backed, graph-aware, bridge-gated, audited baseline with deterministic research executors for the graph, benchmark, formalization, and external-job receipt lanes plus native-tool orchestration for literature, code, and external benchmark workflows. Topic packs now have manifest-level profile/workflow/memory/eval/action/tool summaries, primitive tool call attribution, durable ledger evidence references, scoped evidence reread from the semantic action layer, conservative native scheduler receipt inference, and WorkFrame-scoped recovery records for raw primitive tool escapes.
 - 0.12.2 makes the Hakimi research runtime default-on: `physics-memory`, `research-ledger`, `research-action`, `domain-profile`, `workflow-recipe`, `research-harness`, and `/goal` now start enabled unless explicitly set to `0`. Empty/new theoretical-physics topics get a built-in `theoretical-physics/general` process scaffold with literature search, source capture, derivation, validation, memory/eval, code-mapping, patch, benchmark, and external-job action bindings. Dedicated `.aitp` packs still take priority when present.
+- 0.12.3 makes full context compaction research-aware: `FullCompaction` now renders a runtime `Hakimi Research State` snapshot from open WorkFrames, attached ContextPacks, scoped evidence refs, open obligations, recent ResearchAction traces, raw primitive-tool escapes, and recent primitive tool lifecycle records. The same snapshot is appended to the stored compaction summary, so automatic compaction preserves the research question and current progress even if the model's free-form summary omits it.
 
 ## Development
 

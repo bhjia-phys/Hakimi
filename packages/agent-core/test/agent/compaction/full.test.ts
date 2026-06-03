@@ -2420,6 +2420,208 @@ describe('FullCompaction', () => {
     await ctx.expectResumeMatches();
   });
 
+  it('appends the todo list to the compaction summary', async () => {
+    const ctx = testAgent();
+    ctx.configure({
+      provider: CATALOGUED_PROVIDER,
+      modelCapabilities: CATALOGUED_MODEL_CAPABILITIES,
+    });
+    ctx.appendExchange(1, 'old user one', 'old assistant one', 20);
+    ctx.appendExchange(2, 'recent user two', 'recent assistant two', 80);
+
+    ctx.agent.tools.updateStore('todo', [
+      { title: 'Fix the auth bug', status: 'in_progress' },
+      { title: 'Add tests', status: 'pending' },
+    ]);
+
+    const compacted = new Promise<void>((resolve) => {
+      ctx.emitter.once('context.apply_compaction', () => {
+        resolve();
+      });
+    });
+
+    ctx.mockNextResponse({ type: 'text', text: 'Compacted summary.' });
+    await ctx.rpc.beginCompaction({});
+    await compacted;
+
+    const history = ctx.compactHistory();
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      role: 'assistant',
+      text: 'Compacted summary.\n\n## TODO List\n  [in_progress] Fix the auth bug\n  [pending] Add tests',
+    });
+    await ctx.expectResumeMatches();
+  });
+
+  it('anchors Hakimi research state in the compaction prompt and stored summary', async () => {
+    const ctx = testAgent();
+    ctx.configure({
+      provider: CATALOGUED_PROVIDER,
+      modelCapabilities: CATALOGUED_MODEL_CAPABILITIES,
+    });
+    ctx.appendExchange(1, 'old user one', 'old assistant one', 20);
+    ctx.appendExchange(2, 'recent user two', 'recent assistant two', 80);
+    ctx.agent.workFrames.open(
+      {
+        id: 'frame.fqhe',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Relate Laughlin flux insertion to Abelian Chern-Simons response.',
+        activeObjectIds: ['formula.fqhe.flux-quantization'],
+        assumptionIds: ['assumption.fqhe.clean-gap'],
+        conventionIds: ['convention.fqhe.charge-flux'],
+        sourceRefs: ['paper:laughlin-1983'],
+        openObligationIds: ['obl.dimension'],
+        trustState: 'checking',
+      },
+      { source: 'controller' },
+    );
+    const pack = ctx.agent.researchContext.compileForWorkFrame(
+      { workFrameId: 'frame.fqhe' },
+      { source: 'controller' },
+    );
+    ctx.agent.researchAction.registerObligations([
+      {
+        id: 'obl.dimension',
+        kind: 'dimension_check',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-cs-effective-theory',
+        targetObjectId: 'formula.fqhe.flux-quantization',
+        severity: 'blocking',
+        reason: 'Check unit consistency before claiming validated status.',
+        requiredActionId: 'validate.check_dimension',
+        status: 'open',
+      },
+    ]);
+    ctx.agent.researchAction.startActionCall(
+      {
+        actionId: 'source.search_literature',
+        callId: 'call.source-search',
+        input: { query: 'Laughlin flux insertion Chern-Simons response' },
+      },
+      { source: 'controller' },
+    );
+    ctx.agent.researchAction.finishActionCall(
+      {
+        actionId: 'source.search_literature',
+        callId: 'call.source-search',
+        outcome: 'pass',
+        output: { result: 'Found source support for flux insertion.' },
+        ledgerEventIds: ['event.fqhe.source'],
+        evidenceRefs: ['ledger:event.fqhe.source'],
+        generatedObligationIds: ['obl.dimension'],
+        primitiveToolCallIds: ['tool.web.fqhe'],
+        nextSuggestedActions: ['derive.expand_step'],
+      },
+      { source: 'controller' },
+    );
+    ctx.agent.researchAction.recordRawToolEscape({
+      reason: 'Native tool used before semantic action wrapper.',
+      primitiveToolName: 'Bash',
+      primitiveToolCallId: 'tool.raw.bash',
+      workFrameId: 'frame.fqhe',
+      followupActionId: 'code.prepare_patch',
+      evidenceRefs: ['ledger:event.fqhe.raw'],
+    });
+    const compacted = ctx.once('context.apply_compaction');
+
+    ctx.mockNextResponse({ type: 'text', text: 'Compacted summary without research details.' });
+    await ctx.rpc.beginCompaction({});
+    await compacted;
+
+    const prompt = ctx.llmCalls[0]?.history.at(-1)?.content
+      .map((part) => (part.type === 'text' ? part.text : ''))
+      .join('');
+    expect(prompt).toContain('## Hakimi Research State');
+    expect(prompt).toContain('frame.fqhe');
+    expect(prompt).toContain('Relate Laughlin flux insertion to Abelian Chern-Simons response.');
+    expect(prompt).toContain(pack.id);
+    expect(prompt).toContain('ledger:event.fqhe.source');
+    expect(prompt).toContain('raw_tool=Bash');
+    expect(prompt).toContain('obl.dimension');
+
+    const [summary] = ctx.compactHistory();
+    expect(summary?.text).toContain('Compacted summary without research details.');
+    expect(summary?.text).toContain('## Hakimi Research State');
+    expect(summary?.text).toContain('### WorkFrame frame.fqhe (active)');
+    expect(summary?.text).toContain('Context pack:');
+    expect(summary?.text).toContain(pack.id);
+    expect(summary?.text).toContain('Recent evidence refs: ledger:event.fqhe.source, ledger:event.fqhe.raw');
+    expect(summary?.text).toContain(
+      'obl.dimension (dimension_check, blocking, action=validate.check_dimension)',
+    );
+    expect(summary?.text).toContain(
+      'call_finished action=source.search_literature call=call.source-search outcome=pass',
+    );
+    expect(summary?.text).toContain('primitive_tools=tool.web.fqhe');
+    expect(summary?.text).toContain('raw_tool_escape raw_tool=Bash');
+    await ctx.expectResumeMatches();
+  });
+
+  it('keeps compacted Hakimi research snapshots scoped per WorkFrame', async () => {
+    const ctx = testAgent();
+    ctx.configure({
+      provider: CATALOGUED_PROVIDER,
+      modelCapabilities: CATALOGUED_MODEL_CAPABILITIES,
+    });
+    ctx.appendExchange(1, 'old user one', 'old assistant one', 20);
+    ctx.appendExchange(2, 'recent user two', 'recent assistant two', 80);
+    ctx.agent.workFrames.open(
+      {
+        id: 'frame.fqhe',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Trace FQHE response derivation.',
+      },
+      { source: 'controller' },
+    );
+    ctx.agent.researchAction.finishActionCall(
+      {
+        actionId: 'derive.expand_step',
+        callId: 'call.fqhe',
+        outcome: 'pass',
+        evidenceRefs: ['ledger:event.fqhe.derivation'],
+        nextSuggestedActions: ['validate.check_convention'],
+      },
+      { source: 'controller' },
+    );
+    ctx.agent.workFrames.open(
+      {
+        id: 'frame.librpa',
+        domain: 'librpa',
+        topic: 'head-wing',
+        goal: 'Check LibRPA head-wing code impact.',
+      },
+      { source: 'controller' },
+    );
+    ctx.agent.researchAction.finishActionCall(
+      {
+        actionId: 'code.map_formula_to_code_region',
+        callId: 'call.librpa',
+        outcome: 'blocked',
+        evidenceRefs: ['ledger:event.librpa.code'],
+        primitiveToolCallIds: ['tool.read.librpa'],
+        nextSuggestedActions: ['code.prepare_patch'],
+      },
+      { source: 'controller' },
+    );
+    const compacted = ctx.once('context.apply_compaction');
+
+    ctx.mockNextResponse({ type: 'text', text: 'Cross-topic summary.' });
+    await ctx.rpc.beginCompaction({});
+    await compacted;
+
+    const text = ctx.compactHistory()[0]?.text ?? '';
+    expect(text).toContain('### WorkFrame frame.librpa (active)');
+    expect(text).toContain('### WorkFrame frame.fqhe');
+    const fqheBlock = workFrameSnapshotBlock(text, 'frame.fqhe');
+    const librpaBlock = workFrameSnapshotBlock(text, 'frame.librpa');
+    expect(fqheBlock).toContain('ledger:event.fqhe.derivation');
+    expect(fqheBlock).not.toContain('ledger:event.librpa.code');
+    expect(librpaBlock).toContain('ledger:event.librpa.code');
+    expect(librpaBlock).not.toContain('ledger:event.fqhe.derivation');
+    await ctx.expectResumeMatches();
+  });
 });
 
 afterEach(() => {
@@ -2631,4 +2833,11 @@ function inputHistorySnapshot(history: readonly Message[]): string[] {
 
 function normalizeInputText(text: string): string {
   return text.includes('first-person handoff note') ? '<compaction-instruction>' : text;
+}
+
+function workFrameSnapshotBlock(text: string, frameId: string): string {
+  const start = text.indexOf(`### WorkFrame ${frameId}`);
+  if (start === -1) return '';
+  const next = text.indexOf('\n### WorkFrame ', start + 1);
+  return next === -1 ? text.slice(start) : text.slice(start, next);
 }
