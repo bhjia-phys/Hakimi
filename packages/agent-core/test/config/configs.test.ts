@@ -334,6 +334,49 @@ removed_flag = true
     expect(parseConfigString(text, configPath).experimental).toEqual(config.experimental);
   });
 
+  it('round-trips provider generation kwargs for OpenAI-compatible services', async () => {
+    const dir = makeTempDir();
+    const configPath = join(dir, 'deepseek.toml');
+    const toml = `
+[providers.deepseek]
+type = "openai"
+base_url = "https://api.deepseek.com"
+api_key = "sk-test"
+
+[providers.deepseek.generation_kwargs.extra_body.thinking]
+type = "enabled"
+
+[models."deepseek/deepseek-v4-pro"]
+provider = "deepseek"
+model = "deepseek-v4-pro"
+max_context_size = 1000000
+max_output_size = 384000
+capabilities = ["thinking", "tool_use"]
+`;
+    const config = parseConfigString(toml, configPath);
+    expect(config.providers['deepseek']).toMatchObject({
+      type: 'openai',
+      baseUrl: 'https://api.deepseek.com',
+      generationKwargs: {
+        extra_body: {
+          thinking: { type: 'enabled' },
+        },
+      },
+    });
+
+    await writeConfigFile(configPath, config);
+    const text = await readFile(configPath, 'utf-8');
+    expect(text).toContain('[providers.deepseek.generation_kwargs.extra_body.thinking]');
+    expect(text).toContain('type = "enabled"');
+
+    const roundTripped = parseConfigString(text, configPath);
+    expect(roundTripped.providers['deepseek']?.generationKwargs).toEqual({
+      extra_body: {
+        thinking: { type: 'enabled' },
+      },
+    });
+  });
+
   it('loads defaults for absent files and writes typed fields without dropping raw sections', async () => {
     const dir = makeTempDir();
     const configPath = join(dir, 'config.toml');

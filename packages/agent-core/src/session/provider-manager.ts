@@ -302,6 +302,7 @@ function toKosongProviderConfig(
         baseUrl: providerValue(provider.baseUrl, provider.env, 'OPENAI_BASE_URL'),
         apiKey: providerApiKey(provider),
         reasoningKey,
+        ...generationKwargsField(provider.generationKwargs),
         ...defaultHeadersField({
           ...envCustomHeaders,
           ...kimiUserAgentHeader(kimiRequestHeaders),
@@ -339,6 +340,7 @@ function toKosongProviderConfig(
         model,
         baseUrl: providerValue(provider.baseUrl, provider.env, 'OPENAI_BASE_URL'),
         apiKey: providerApiKey(provider),
+        ...generationKwargsField(provider.generationKwargs),
         ...defaultHeadersField({
           ...envCustomHeaders,
           ...kimiUserAgentHeader(kimiRequestHeaders),
@@ -399,6 +401,21 @@ function kimiUserAgentHeader(
 ): Record<string, string> {
   const userAgent = kimiRequestHeaders?.['User-Agent'];
   return userAgent === undefined ? {} : { 'User-Agent': userAgent };
+}
+
+function generationKwargsField(
+  generationKwargs: Record<string, unknown> | undefined,
+): { generationKwargs?: Record<string, unknown> } {
+  if (generationKwargs === undefined || Object.keys(generationKwargs).length === 0) return {};
+  return { generationKwargs: structuredClone(generationKwargs) };
+}
+
+function providerForCapabilityProbe(provider: KosongProviderConfig): KosongProviderConfig {
+  const apiKey = provider.apiKey && provider.apiKey.length > 0 ? provider.apiKey : 'capability-probe';
+  if (provider.type === 'vertexai') {
+    return { ...provider, vertexai: false, project: undefined, location: undefined, apiKey };
+  }
+  return { ...provider, apiKey };
 }
 
 function providerApiKey(provider: ProviderConfig): string | undefined {

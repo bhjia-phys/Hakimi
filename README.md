@@ -232,6 +232,25 @@ npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
 & "$prefix\node_modules\.bin\hakimi.cmd" --version
 ```
 
+## DeepSeek Quick Setup
+
+If the managed Kimi-for-coding endpoint is unavailable for your account, configure DeepSeek as the native default model:
+
+```powershell
+$env:DEEPSEEK_API_KEY = "sk-..."
+hakimi provider deepseek
+hakimi provider list
+hakimi
+```
+
+`hakimi provider deepseek` writes a normal OpenAI-compatible provider into `~/.kimi-code/config.toml`; it does not create a proxy wrapper. The default model is `deepseek-v4-pro` at `https://api.deepseek.com`, with `deepseek-v4-flash` available via:
+
+```powershell
+hakimi provider deepseek --api-key sk-... --model-id deepseek-v4-flash
+```
+
+Pass `--no-thinking` if you want the imported DeepSeek alias to start in non-thinking mode, or `--no-default` if you only want to add the provider without switching the active default model.
+
 Enable the AITP runtime features in a research terminal as needed:
 
 ```powershell

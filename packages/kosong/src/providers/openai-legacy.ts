@@ -94,6 +94,7 @@ export interface OpenAILegacyOptions {
   model: string;
   stream?: boolean | undefined;
   maxTokens?: number | undefined;
+  generationKwargs?: OpenAILegacyGenerationKwargs | undefined;
   reasoningKey?: string | undefined;
   httpClient?: unknown;
   defaultHeaders?: Record<string, string>;
@@ -110,6 +111,7 @@ export interface OpenAILegacyGenerationKwargs {
   presence_penalty?: number | undefined;
   frequency_penalty?: number | undefined;
   stop?: string | string[] | undefined;
+  extra_body?: Record<string, unknown> | undefined;
   [key: string]: unknown;
 }
 interface OpenAIMessage {
@@ -125,6 +127,11 @@ interface OpenAIToolCallOut {
   type: string;
   id: string;
   function: { name: string; arguments: string | null };
+}
+
+interface OpenAICompatibleExtraBody {
+  thinking?: Record<string, unknown> | undefined;
+  [key: string]: unknown;
 }
 
 function usesMaxCompletionTokens(model: string): boolean {
@@ -153,6 +160,22 @@ function normalizeGenerationKwargs(
     delete kwargs.max_tokens;
   }
   return kwargs;
+}
+
+function isDeepSeekModel(model: string): boolean {
+  return model.trim().toLowerCase().startsWith('deepseek-');
+}
+
+function reasoningEffortForModel(model: string, effort: ThinkingEffort): string | undefined {
+  if (!isDeepSeekModel(model)) {
+    return effort === 'off' || effort === 'on' ? undefined : effort;
+  }
+  if (effort === 'off') return undefined;
+  return effort === 'xhigh' || effort === 'max' ? 'max' : 'high';
+}
+
+function defaultReasoningEffortForModel(model: string): string {
+  return isDeepSeekModel(model) ? 'high' : 'medium';
 }
 
 function convertMessage(
@@ -506,8 +529,12 @@ export class OpenAILegacyChatProvider implements ChatProvider {
         ? normalizedReasoningKey
         : undefined;
     this._thinkingEffort = undefined;
-    this._generationKwargs =
-      options.maxTokens !== undefined ? completionTokenKwargs(this._model, options.maxTokens) : {};
+    this._generationKwargs = {
+      ...options.generationKwargs,
+      ...(options.maxTokens !== undefined
+        ? completionTokenKwargs(this._model, options.maxTokens)
+        : {}),
+    };
     this._toolMessageConversion = options.toolMessageConversion ?? null;
     this._httpClient = options.httpClient;
     this._clientFactory = options.clientFactory;
@@ -554,12 +581,11 @@ export class OpenAILegacyChatProvider implements ChatProvider {
       this._generationKwargs,
     );
 
-    // Determine reasoning_effort. 'off' and 'on' have no wire encoding on
-    // chat-completions APIs, so they send no reasoning_effort field; only a
-    // concrete effort (low/medium/high/...) is passed through verbatim.
+    // Determine reasoning_effort. DeepSeek accepts the documented high/max
+    // values; other compatible endpoints receive concrete efforts verbatim.
     const effort = this._thinkingEffort;
     let reasoningEffort: string | undefined =
-      effort === undefined || effort === 'off' || effort === 'on' ? undefined : effort;
+      effort === undefined ? undefined : reasoningEffortForModel(this._model, effort);
 
     // Auto-enable reasoning_effort when the history contains ThinkPart but reasoning
     // was not explicitly configured. This prevents server validation errors from APIs
@@ -579,15 +605,17 @@ export class OpenAILegacyChatProvider implements ChatProvider {
         message.content.some((part) => part.type === 'think'),
       );
       if (hasThinkPart) {
-        reasoningEffort = 'medium';
+        reasoningEffort = defaultReasoningEffortForModel(this._model);
       }
     }
 
+    const { extra_body: extraBody, ...requestKwargs } = kwargs;
+
     // Remove undefined values from kwargs
-    for (const key of Object.keys(kwargs)) {
-      if (kwargs[key] === undefined) {
+    for (const key of Object.keys(requestKwargs)) {
+      if (requestKwargs[key] === undefined) {
         // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-        delete kwargs[key];
+        delete requestKwargs[key];
       }
     }
 
@@ -596,7 +624,8 @@ export class OpenAILegacyChatProvider implements ChatProvider {
       model: this._model,
       messages,
       stream: this._stream,
-      ...kwargs,
+      ...requestKwargs,
+      ...(extraBody as Record<string, unknown> | undefined),
     };
     if (options?.responseFormat !== undefined) {
       createParams['response_format'] = responseFormatToOpenAI(options.responseFormat);
@@ -633,6 +662,19 @@ export class OpenAILegacyChatProvider implements ChatProvider {
     // request so an explicit 'off' stays distinguishable from "never
     // configured" (which the history-based auto-enable relies on).
     clone._thinkingEffort = effort;
+    const extraBody = clone._generationKwargs.extra_body as OpenAICompatibleExtraBody | undefined;
+    if (extraBody?.thinking !== undefined) {
+      clone._generationKwargs = {
+        ...clone._generationKwargs,
+        extra_body: {
+          ...extraBody,
+          thinking: {
+            ...extraBody.thinking,
+            type: effort === 'off' ? 'disabled' : 'enabled',
+          },
+        },
+      };
+    }
     return clone;
   }
 

@@ -638,6 +638,102 @@ describe('OpenAILegacyChatProvider', () => {
       });
     });
 
+    it('applies constructor generation kwargs and expands extra_body fields', async () => {
+      const provider = new OpenAILegacyChatProvider({
+        model: 'deepseek-v4-pro',
+        apiKey: 'test-key',
+        stream: false,
+        generationKwargs: {
+          reasoning_effort: 'high',
+          extra_body: {
+            thinking: { type: 'enabled' },
+          },
+        },
+      });
+      const history: Message[] = [
+        { role: 'user', content: [{ type: 'text', text: 'Hi' }], toolCalls: [] },
+      ];
+      const body = await captureRequestBody(provider, '', [], history);
+
+      expect(body['reasoning_effort']).toBe('high');
+      expect(body['thinking']).toEqual({ type: 'enabled' });
+      expect(body['extra_body']).toBeUndefined();
+    });
+
+    it('lets withThinking update a configured compatible thinking toggle', async () => {
+      const original = new OpenAILegacyChatProvider({
+        model: 'deepseek-v4-pro',
+        apiKey: 'test-key',
+        stream: false,
+        generationKwargs: {
+          extra_body: {
+            thinking: { type: 'enabled', keep: 'server-default' },
+          },
+        },
+      });
+      const provider = original.withThinking('off');
+      const history: Message[] = [
+        { role: 'user', content: [{ type: 'text', text: 'Hi' }], toolCalls: [] },
+      ];
+      const body = await captureRequestBody(provider, '', [], history);
+
+      expect(provider).not.toBe(original);
+      expect(body['reasoning_effort']).toBeUndefined();
+      expect(body['thinking']).toEqual({ type: 'disabled', keep: 'server-default' });
+    });
+
+    it('maps DeepSeek thinking effort to the official high/max values', async () => {
+      const original = new OpenAILegacyChatProvider({
+        model: 'deepseek-v4-pro',
+        apiKey: 'test-key',
+        stream: false,
+        generationKwargs: {
+          extra_body: {
+            thinking: { type: 'enabled' },
+          },
+        },
+      });
+      const history: Message[] = [
+        { role: 'user', content: [{ type: 'text', text: 'Hi' }], toolCalls: [] },
+      ];
+
+      const mediumBody = await captureRequestBody(original.withThinking('medium'), '', [], history);
+      const maxBody = await captureRequestBody(original.withThinking('max'), '', [], history);
+
+      expect(mediumBody['reasoning_effort']).toBe('high');
+      expect(mediumBody['thinking']).toEqual({ type: 'enabled' });
+      expect(maxBody['reasoning_effort']).toBe('max');
+      expect(maxBody['thinking']).toEqual({ type: 'enabled' });
+    });
+
+    it('auto-injects DeepSeek-compatible reasoning effort when prior thinking is present', async () => {
+      const provider = new OpenAILegacyChatProvider({
+        model: 'deepseek-v4-pro',
+        apiKey: 'test-key',
+        stream: false,
+        generationKwargs: {
+          extra_body: {
+            thinking: { type: 'enabled' },
+          },
+        },
+      });
+      const history: Message[] = [
+        {
+          role: 'assistant',
+          content: [{ type: 'think', think: 'Plan with a tool.' }],
+          toolCalls: [],
+        },
+        { role: 'user', content: [{ type: 'text', text: 'Continue.' }], toolCalls: [] },
+      ];
+      const body = await captureRequestBody(provider, '', [], history);
+
+      expect(body['reasoning_effort']).toBe('high');
+      expect(body['messages']).toContainEqual({
+        role: 'assistant',
+        reasoning_content: 'Plan with a tool.',
+      });
+    });
+
     it('withMaxCompletionTokens sets max_tokens on the cloned provider', async () => {
       const original = createProvider();
       const provider = original.withMaxCompletionTokens(1024);

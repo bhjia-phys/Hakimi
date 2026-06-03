@@ -11,6 +11,7 @@ import type { KimiConfig } from '@moonshot-ai/kimi-code-sdk';
 import {
   handleCatalogAdd,
   handleCatalogList,
+  handleDeepSeekAdd,
   handleProviderAdd,
   handleProviderList,
   handleProviderRemove,
@@ -517,6 +518,167 @@ describe('kimi provider list', () => {
   });
 });
 
+describe('kimi provider deepseek', () => {
+  it('configures DeepSeek V4 Pro as the default OpenAI-compatible provider', async () => {
+    const { harness, current, setConfigCalls } = makeHarness({
+      providers: {
+        other: { type: 'kimi', apiKey: 'sk-other' },
+      },
+      models: {
+        'other/main': {
+          provider: 'other',
+          model: 'main',
+          maxContextSize: 1024,
+          capabilities: [],
+        },
+      },
+      defaultModel: 'other/main',
+      thinking: { enabled: false },
+    } as unknown as KimiConfig);
+    const { deps, stdout, stderr, exitCodes } = makeDeps(harness);
+
+    await tryRun(() => handleDeepSeekAdd(deps, { apiKey: 'sk-deepseek' }));
+
+    expect(exitCodes).toEqual([]);
+    expect(stderr.join('')).toBe('');
+    const finalConfig = current();
+    expect(finalConfig.providers['other']).toBeDefined();
+    expect(finalConfig.providers['deepseek']).toMatchObject({
+      type: 'openai',
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: 'sk-deepseek',
+      generationKwargs: {
+        extra_body: {
+          thinking: { type: 'enabled' },
+        },
+      },
+      source: {
+        kind: 'deepseek',
+        model: 'deepseek-v4-pro',
+      },
+    });
+    expect(finalConfig.models?.['other/main']).toBeDefined();
+    expect(finalConfig.models?.['deepseek/deepseek-v4-pro']).toMatchObject({
+      provider: 'deepseek',
+      model: 'deepseek-v4-pro',
+      maxContextSize: 1_000_000,
+      maxOutputSize: 384_000,
+      capabilities: ['thinking', 'tool_use'],
+      displayName: 'DeepSeek V4 Pro',
+    });
+    expect(finalConfig.defaultModel).toBe('deepseek/deepseek-v4-pro');
+    expect(finalConfig.thinking).toEqual({ enabled: true });
+    expect(setConfigCalls).toHaveLength(1);
+    expect(stdout.join('')).toContain('Configured DeepSeek (deepseek-v4-pro)');
+  });
+
+  it('supports env api keys, custom model metadata, and --no-default', async () => {
+    const { harness, current } = makeHarness({
+      providers: {
+        other: { type: 'kimi', apiKey: 'sk-other' },
+      },
+      models: {
+        'other/main': {
+          provider: 'other',
+          model: 'main',
+          maxContextSize: 1024,
+          capabilities: [],
+        },
+      },
+      defaultModel: 'other/main',
+      thinking: { enabled: false },
+    } as unknown as KimiConfig);
+    const { deps, exitCodes } = makeDeps(harness, {
+      env: { DEEPSEEK_API_KEY: 'sk-env-deepseek' },
+    });
+
+    await tryRun(() =>
+      handleDeepSeekAdd(deps, {
+        model: 'deepseek-v4-flash',
+        alias: 'deepseek/flash',
+        contextSize: '262144',
+        maxOutputSize: '64000',
+        default: false,
+        thinking: false,
+      }),
+    );
+
+    expect(exitCodes).toEqual([]);
+    const finalConfig = current();
+    expect(finalConfig.providers['deepseek']).toMatchObject({
+      apiKey: 'sk-env-deepseek',
+      generationKwargs: {
+        extra_body: {
+          thinking: { type: 'disabled' },
+        },
+      },
+    });
+    expect(finalConfig.models?.['deepseek/flash']).toMatchObject({
+      model: 'deepseek-v4-flash',
+      maxContextSize: 262144,
+      maxOutputSize: 64000,
+      displayName: 'DeepSeek V4 Flash',
+    });
+    expect(finalConfig.defaultModel).toBe('other/main');
+    expect(finalConfig.thinking).toEqual({ enabled: false });
+  });
+
+  it('replaces stale DeepSeek aliases before importing the new one', async () => {
+    const initial: KimiConfig = {
+      providers: {
+        deepseek: {
+          type: 'openai',
+          baseUrl: 'https://old.deepseek.example',
+          apiKey: 'old',
+        },
+      },
+      models: {
+        'deepseek/old': {
+          provider: 'deepseek',
+          model: 'old',
+          maxContextSize: 1024,
+          capabilities: [],
+        },
+      },
+      defaultModel: 'deepseek/old',
+    } as unknown as KimiConfig;
+    const { harness, current, removeCalls } = makeHarness(initial);
+    const { deps, exitCodes } = makeDeps(harness);
+
+    await tryRun(() =>
+      handleDeepSeekAdd(deps, { apiKey: 'sk-new', model: 'deepseek-v4-flash' }),
+    );
+
+    expect(exitCodes).toEqual([]);
+    expect(removeCalls).toEqual(['deepseek']);
+    expect(current().models?.['deepseek/old']).toBeUndefined();
+    expect(current().models?.['deepseek/deepseek-v4-flash']).toBeDefined();
+    expect(current().defaultModel).toBe('deepseek/deepseek-v4-flash');
+  });
+
+  it('exits 1 when the api key is missing', async () => {
+    const { harness } = makeHarness({ providers: {} } as KimiConfig);
+    const { deps, stderr, exitCodes } = makeDeps(harness);
+
+    await tryRun(() => handleDeepSeekAdd(deps, {}));
+
+    expect(exitCodes).toEqual([1]);
+    expect(stderr.join('')).toContain('Missing DeepSeek API key');
+  });
+
+  it('exits 1 when numeric options are invalid', async () => {
+    const { harness } = makeHarness({ providers: {} } as KimiConfig);
+    const { deps, stderr, exitCodes } = makeDeps(harness);
+
+    await tryRun(() =>
+      handleDeepSeekAdd(deps, { apiKey: 'sk-deepseek', contextSize: '0' }),
+    );
+
+    expect(exitCodes).toEqual([1]);
+    expect(stderr.join('')).toContain('--context-size must be a positive integer');
+  });
+});
+
 describe('registerProviderCommand', () => {
   it('describes the user-facing subcommand and routes flags through commander', async () => {
     const fetchMock = mockRegistryFetch();
@@ -569,6 +731,39 @@ describe('registerProviderCommand', () => {
     expect(exitCodes).toEqual([1]);
     expect(stderr.join('')).toContain('Cannot change settings');
     expect(stderr.join('')).not.toContain('    at '); // no stack trace dump
+  });
+
+  it('routes the DeepSeek quick setup command through commander', async () => {
+    const { harness, current } = makeHarness({ providers: {} } as KimiConfig);
+    const { deps, exitCodes, stdout } = makeDeps(harness);
+
+    const program = new Command('hakimi');
+    registerProviderCommand(program, deps);
+
+    await tryRun(() =>
+      program.parseAsync(
+        [
+          'node',
+          'hakimi',
+          'provider',
+          'deepseek',
+          '--api-key',
+          'sk-cli-deepseek',
+          '--model-id',
+          'deepseek-v4-flash',
+          '--no-thinking',
+        ],
+        { from: 'node' },
+      ),
+    );
+
+    expect(exitCodes).toEqual([]);
+    expect(current().providers['deepseek']).toMatchObject({
+      apiKey: 'sk-cli-deepseek',
+    });
+    expect(current().models?.['deepseek/deepseek-v4-flash']).toBeDefined();
+    expect(current().thinking).toEqual({ enabled: false });
+    expect(stdout.join('')).toContain('Configured DeepSeek (deepseek-v4-flash)');
   });
 });
 

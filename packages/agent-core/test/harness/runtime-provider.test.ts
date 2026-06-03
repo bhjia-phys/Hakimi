@@ -548,6 +548,45 @@ describe('resolveRuntimeProvider Kimi request headers', () => {
     expect('X-Msh-Platform' in headers!).toBe(false);
     expect('generationKwargs' in resolved.provider).toBe(false);
   });
+
+  it('passes provider generationKwargs through to OpenAI-compatible providers', () => {
+    const resolved = resolveRuntimeProvider({
+      config: {
+        defaultModel: 'deepseek/pro',
+        providers: {
+          deepseek: {
+            type: 'openai',
+            apiKey: 'sk-deepseek',
+            baseUrl: 'https://api.deepseek.com',
+            generationKwargs: {
+              extra_body: {
+                thinking: { type: 'enabled' },
+              },
+            },
+          },
+        },
+        models: {
+          'deepseek/pro': {
+            provider: 'deepseek',
+            model: 'deepseek-v4-pro',
+            maxContextSize: 1_000_000,
+            capabilities: ['thinking', 'tool_use'],
+          },
+        },
+      },
+      model: 'deepseek/pro',
+    });
+
+    expect(resolved.provider).toMatchObject({
+      type: 'openai',
+      model: 'deepseek-v4-pro',
+      generationKwargs: {
+        extra_body: {
+          thinking: { type: 'enabled' },
+        },
+      },
+    });
+  });
 });
 
 describe('resolveRuntimeProvider customHeaders propagation', () => {

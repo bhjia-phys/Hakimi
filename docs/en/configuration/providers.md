@@ -93,6 +93,36 @@ base_url = "https://api.openai.com/v1"
 api_key = "sk-xxxxx"
 ```
 
+### DeepSeek
+
+DeepSeek uses the same `openai` provider path. For Hakimi, the non-interactive setup command writes this config for you:
+
+```sh
+DEEPSEEK_API_KEY=sk-... hakimi provider deepseek
+```
+
+As of 2026-06-04, DeepSeek's official OpenAI-format base URL is `https://api.deepseek.com`, and the active model ids are `deepseek-v4-pro` and `deepseek-v4-flash`; the older `deepseek-chat` and `deepseek-reasoner` names are scheduled for deprecation on 2026-07-24. The shortcut defaults to `deepseek-v4-pro`, declares the documented 1M context and 384K output ceiling, and marks the alias thinking/tool-call capable. When Hakimi forwards thinking-effort controls through the OpenAI-compatible provider, DeepSeek models are mapped to the documented `high` / `max` values.
+
+Equivalent manual config:
+
+```toml
+[providers.deepseek]
+type = "openai"
+base_url = "https://api.deepseek.com"
+api_key = "sk-xxxxx"
+
+[providers.deepseek.generation_kwargs.extra_body.thinking]
+type = "enabled"
+
+[models."deepseek/deepseek-v4-pro"]
+provider = "deepseek"
+model = "deepseek-v4-pro"
+max_context_size = 1000000
+max_output_size = 384000
+capabilities = ["thinking", "tool_use"]
+display_name = "DeepSeek V4 Pro"
+```
+
 ## `openai_responses`
 
 Corresponds to OpenAI's newer Responses API, always operating in streaming mode. Configuration is the same as `openai`.
