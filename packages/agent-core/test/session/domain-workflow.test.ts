@@ -26,6 +26,80 @@ afterEach(async () => {
 });
 
 describe('Session domain profiles and workflow recipes', () => {
+  it('starts new topics with a built-in theoretical physics research pack by default', async () => {
+    const workDir = await makeTempDir('kimi-domain-workflow-default-work-');
+    const sessionDir = await makeTempDir('kimi-domain-workflow-default-session-');
+    await mkdir(join(workDir, '.git'));
+
+    const session = new Session({
+      id: 'test-domain-workflow-default',
+      kaos: testKaos.withCwd(workDir),
+      homedir: sessionDir,
+      rpc: createSessionRpc(),
+      skills: { explicitDirs: [join(workDir, 'missing-skills')] },
+      providerManager: testProviderManager(),
+    });
+
+    const { agent } = await session.createAgent({
+      type: 'main',
+      persistence: new InMemoryAgentRecordPersistence([]),
+    });
+    agent.config.update({
+      cwd: workDir,
+      modelAlias: MOCK_PROVIDER.model,
+    });
+    agent.workFrames.open(
+      {
+        id: 'frame.quantum-gravity-code',
+        domain: 'quantum-gravity/spinfoam',
+        topic: 'spinfoam-amplitude-code-check',
+        goal: 'Search literature, inspect code mapping, prepare patch, and submit a benchmark job if needed.',
+      },
+      { source: 'controller' },
+    );
+
+    const pack = agent.researchContext.compileForWorkFrame(
+      { workFrameId: 'frame.quantum-gravity-code' },
+      { source: 'controller' },
+    );
+
+    expect(agent.domainProfiles?.listDomains()).toContain('theoretical-physics/general');
+    expect(pack.profiles.map((profile) => profile.id)).toEqual([
+      'domain.theoretical-physics.generic',
+    ]);
+    expect(pack.workflows.map((workflow) => workflow.id)).toEqual([
+      'workflow.theoretical-physics.computational-research',
+      'workflow.theoretical-physics.general-research',
+    ]);
+    expect(pack.physics.capsules.map((capsule) => capsule.id)).toEqual([
+      'failure.theoretical-physics.unsourced-or-unscoped-overclaim',
+      'workflow.theoretical-physics.formula-validation-contract',
+      'workflow.theoretical-physics.scope-evidence-validation-ladder',
+    ]);
+    expect(pack.actionBindings.map((binding) => binding.actionId)).toEqual(
+      expect.arrayContaining([
+        'source.search_literature',
+        'source.capture_source_excerpt',
+        'validate.check_source_support',
+        'code.prepare_patch',
+        'benchmark.submit_external_job',
+      ]),
+    );
+    expect(pack.domainPack).toMatchObject({
+      domain: 'quantum-gravity/spinfoam',
+      profileIds: ['domain.theoretical-physics.generic'],
+      evalCaseIds: ['eval.theoretical-physics.evidence-loop'],
+    });
+    expect(pack.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'generic-theoretical-physics-profile-fallback',
+          source: 'domain-profile',
+        }),
+      ]),
+    );
+  });
+
   it('loads project .aitp/domain-profiles and .aitp/workflow-recipes when flags are enabled', async () => {
     const oldDomainFlag = process.env['KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE'];
     const oldWorkflowFlag = process.env['KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE'];
@@ -61,11 +135,15 @@ describe('Session domain profiles and workflow recipes', () => {
         modelAlias: MOCK_PROVIDER.model,
       });
 
-      expect(agent.domainProfiles?.listDomains()).toEqual(['topological-order/fqhe-cs']);
+      expect(agent.domainProfiles?.listDomains()).toEqual(
+        expect.arrayContaining(['topological-order/fqhe-cs']),
+      );
       expect(agent.domainProfiles?.requireProfile('domain.fqhe-cs').metadata.lenses).toEqual([
         'charge_flux_quantization',
       ]);
-      expect(agent.workflowRecipes?.listDomains()).toEqual(['topological-order/fqhe-cs']);
+      expect(agent.workflowRecipes?.listDomains()).toEqual(
+        expect.arrayContaining(['topological-order/fqhe-cs']),
+      );
       expect(
         agent.workflowRecipes?.requireRecipe('workflow.fqhe-cs.charge-flux').metadata
           .actionBindings,
@@ -84,8 +162,8 @@ describe('Session domain profiles and workflow recipes', () => {
   it('keeps sessions unchanged when flags are disabled', async () => {
     const oldDomainFlag = process.env['KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE'];
     const oldWorkflowFlag = process.env['KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE'];
-    delete process.env['KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE'];
-    delete process.env['KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE'];
+    process.env['KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE'] = '0';
+    process.env['KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE'] = '0';
     try {
       const workDir = await makeTempDir('kimi-domain-workflow-off-work-');
       const sessionDir = await makeTempDir('kimi-domain-workflow-off-session-');

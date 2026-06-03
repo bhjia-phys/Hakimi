@@ -50,7 +50,7 @@
 | `/plan clear` | — | 清除当前 plan 方案 | 否 |
 | `/swarm on\|off` | — | 开启或关闭 swarm mode，但不发送提示词。 | 是 |
 | `/swarm <task>` | — | 先开启 swarm mode，再把 `<task>` 作为普通提示词发送。如果该轮次正常完成，swarm mode 会自动关闭。若当前是 `manual` 权限模式，启动前会提示是否切换到 `auto` 或 `yolo`。 | 否 |
-| `/goal [...]` | — | 开始或管理目标模式 | 见下文 |
+| `/goal [status\|pause\|resume\|cancel\|replace <objective>\|<objective>]` | — | 开始或管理一个自主 goal。在 Hakimi 中默认可用；如需单次启动隐藏它，可设 `KIMI_CODE_EXPERIMENTAL_GOAL_COMMAND=0`。 | 见下文 |
 
 ::: warning 注意
 `/yolo` 会跳过普通工具调用的审批确认，使用前请确保了解可能的风险。Plan 模式的退出审批不会被 `/yolo` 跳过；Plan 模式下的 `Bash` 也按 `/yolo` 的普通放行规则处理。
@@ -58,7 +58,13 @@
 
 ## 目标模式
 
-`/goal` 用于开始或管理目标模式：Kimi Code 会在自动续跑的轮次中持续朝一个持久目标工作。使用指导和示例见[使用目标模式](../guides/goals.md)。
+`/goal` 用于开始或管理目标模式：Hakimi 会在自动续跑的轮次中持续朝一个持久目标工作。它默认可用；如需单次启动隐藏它：
+
+```sh
+KIMI_CODE_EXPERIMENTAL_GOAL_COMMAND=0 hakimi
+```
+
+使用指导和示例见[使用目标模式](../guides/goals.md)。在命令后写目标即可开始一个 goal：
 
 ```sh
 /goal 更新 checkout 文档，运行 docs build，如果 20 轮后仍被阻塞就停止
@@ -89,10 +95,10 @@
 在非交互式 prompt 模式中，只有创建形式会启动目标模式：
 
 ```sh
-kimi -p "/goal 修复 checkout 测试失败"
+hakimi -p "/goal 修复 checkout 测试失败"
 ```
 
-Prompt 模式在目标完成时以退出码 `0` 退出，在目标阻塞时以 `3` 退出，在目标暂停时以 `6` 退出。其它 `/goal` 子命令，包括 `next`，都是 TUI 控制命令，不由 `kimi -p` 处理。
+Prompt 模式在目标完成时以退出码 `0` 退出，在目标阻塞时以 `3` 退出，在目标暂停时以 `6` 退出。其它 `/goal` 子命令，包括 `next`，都是 TUI 控制命令，不由 `hakimi -p` 处理。
 
 ## 信息与状态
 

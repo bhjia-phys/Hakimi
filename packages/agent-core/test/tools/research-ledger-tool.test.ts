@@ -170,14 +170,14 @@ describe('ResearchLedgerTool', () => {
 });
 
 describe('ToolManager ResearchLedger registration', () => {
-  it('keeps ResearchLedger hidden unless the feature flag and registry are both present', () => {
+  it('exposes ResearchLedger by default when a registry is present and hides it on explicit opt-out', () => {
     const oldFlag = process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER'];
     try {
-      delete process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER'];
+      process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER'] = '0';
       const hidden = makeAgent(new ResearchLedgerRegistry());
       expect(hidden.tools.data().find((tool) => tool.name === 'ResearchLedger')).toBeUndefined();
 
-      process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER'] = '1';
+      delete process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER'];
       const missingRegistry = makeAgent();
       expect(missingRegistry.tools.data().find((tool) => tool.name === 'ResearchLedger')).toBeUndefined();
 

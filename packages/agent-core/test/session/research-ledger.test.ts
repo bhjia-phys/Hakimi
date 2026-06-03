@@ -87,7 +87,7 @@ describe('Session research ledger', () => {
 
   it('keeps existing sessions without research ledger unchanged when the flag is disabled', async () => {
     const oldFlag = process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER'];
-    delete process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER'];
+    process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER'] = '0';
     try {
       const workDir = await makeTempDir('kimi-research-ledger-off-work-');
       const sessionDir = await makeTempDir('kimi-research-ledger-off-session-');

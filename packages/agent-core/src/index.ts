@@ -14,6 +14,7 @@ export * from './physics-verticals';
 export * from './research-action';
 export * from './research-block';
 export * from './research-context';
+export * from './research-defaults';
 export * from './research-harness';
 export * from './research-ledger';
 export * from './research-policy';

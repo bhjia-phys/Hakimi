@@ -130,14 +130,14 @@ describe('PhysicsMemoryTool', () => {
 });
 
 describe('ToolManager PhysicsMemory registration', () => {
-  it('keeps PhysicsMemory hidden unless the feature flag and registry are both present', () => {
+  it('exposes PhysicsMemory by default when a registry is present and hides it on explicit opt-out', () => {
     const oldFlag = process.env['KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY'];
     try {
-      delete process.env['KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY'];
+      process.env['KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY'] = '0';
       const hidden = makeAgent(new PhysicsMemoryRegistry());
       expect(hidden.tools.data().find((tool) => tool.name === 'PhysicsMemory')).toBeUndefined();
 
-      process.env['KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY'] = '1';
+      delete process.env['KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY'];
       const missingRegistry = makeAgent();
       expect(missingRegistry.tools.data().find((tool) => tool.name === 'PhysicsMemory')).toBeUndefined();
 

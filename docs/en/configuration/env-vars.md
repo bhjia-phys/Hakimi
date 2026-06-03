@@ -149,7 +149,30 @@ Switches that control the behavior of subsystems such as telemetry, background t
 | `KIMI_CODE_NO_AUTO_UPDATE` | Fully disable the update preflight — no check, background install, or prompt. Legacy alias `KIMI_CLI_NO_AUTO_UPDATE` is also honored | Truthy: `1`/`true`/`yes`/`on` |
 | `KIMI_DISABLE_CRON` | Disable the scheduled-task tool (`CronCreate` rejects new schedules; existing tasks do not fire) | `1` to disable |
 
-## Diagnostic logs
+`KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT` has higher priority than `config.toml`. For example, running `KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT=0 hakimi -p "..."` temporarily requests stopping background tasks before this process exits, even if the config file sets `keep_alive_on_exit = true`.
+
+## Experimental feature flags
+
+Experimental features are gated behind `KIMI_CODE_EXPERIMENTAL_*` environment variables. In Hakimi, the core AITP research runtime flags are on by default; set an individual flag to a falsy value (`0`, `false`, `no`, `off`) to opt out for one launch. Each flag also accepts truthy values (`1`, `true`, `yes`, `on`); the master switch `KIMI_CODE_EXPERIMENTAL_FLAG` forces every experimental feature on. These flags are not read from `config.toml`.
+
+| Environment variable | Purpose | Default |
+| --- | --- | --- |
+| `KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY` | Enable physics memory capsules, context compilation, and the `PhysicsMemory` tool. | `true` (on) |
+| `KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER` | Enable source-backed research ledger scanning, writing, capture, and scoped evidence reread. | `true` (on) |
+| `KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION` | Enable WorkFrames, semantic research actions, primitive-tool attribution, graph/formalization/benchmark executors, and the `ResearchAction` tool. | `true` (on) |
+| `KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE` | Enable domain profile registries and the built-in generic theoretical-physics fallback profile. | `true` (on) |
+| `KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE` | Enable workflow recipe registries and built-in theoretical-physics workflow scaffolds. | `true` (on) |
+| `KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS` | Enable research eval case registries and harness candidate/eval loading. | `true` (on) |
+| `KIMI_CODE_EXPERIMENTAL_GOAL_COMMAND` | Enable the `/goal` command and autonomous goal mode. Hakimi works toward a stated objective across automatic continuation turns until the goal completes, pauses, or becomes blocked. | `true` (on) |
+| `KIMI_CODE_EXPERIMENTAL_TOOL_SELECT` | Enable progressive MCP tool disclosure for models that support dynamically loaded tools. | `false` (off) |
+| `KIMI_CODE_EXPERIMENTAL_MICRO_COMPACTION` | Enable the experimental micro-compaction path. | `false` (off) |
+
+```sh
+# Disable one Hakimi research lane for a single launch
+KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS=0 hakimi
+```
+
+## Diagnostic logging
 
 These variables control log level and file rotation, read once at process startup:
 

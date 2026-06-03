@@ -545,14 +545,14 @@ describe('ResearchActionTool', () => {
 });
 
 describe('ToolManager ResearchAction registration', () => {
-  it('keeps ResearchAction hidden unless the feature flag is enabled', () => {
+  it('exposes ResearchAction by default and hides it on explicit opt-out', () => {
     const oldFlag = process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION'];
     try {
-      delete process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION'];
+      process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION'] = '0';
       const hidden = makeAgent();
       expect(hidden.tools.data().find((tool) => tool.name === 'ResearchAction')).toBeUndefined();
 
-      process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION'] = '1';
+      delete process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION'];
       const visible = makeAgent();
       visible.tools.setActiveTools(['ResearchAction']);
       expect(visible.tools.data().find((tool) => tool.name === 'ResearchAction')).toMatchObject({

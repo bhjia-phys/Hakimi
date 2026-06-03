@@ -45,22 +45,26 @@ describe('FQHE/CS file-backed theory vertical V2', () => {
     try {
       const { agent } = await createIsolatedAgent();
 
-      expect(agent.domainProfiles?.listDomains()).toEqual([
+      expect(agent.domainProfiles?.listDomains()).toEqual(expect.arrayContaining([
         'librpa/head-wing',
         FQHE_DOMAIN,
-      ]);
-      expect(agent.workflowRecipes?.listDomains()).toEqual([
+        'theoretical-physics/general',
+      ]));
+      expect(agent.workflowRecipes?.listDomains()).toEqual(expect.arrayContaining([
         'librpa/head-wing',
         FQHE_DOMAIN,
-      ]);
-      expect(agent.physicsMemory?.registry.listDomains()).toEqual([
+        'theoretical-physics/general',
+      ]));
+      expect(agent.physicsMemory?.registry.listDomains()).toEqual(expect.arrayContaining([
         'librpa/head-wing',
         FQHE_DOMAIN,
-      ]);
-      expect(agent.researchHarness?.listDomains()).toEqual([
+        'theoretical-physics/general',
+      ]));
+      expect(agent.researchHarness?.listDomains()).toEqual(expect.arrayContaining([
         'librpa/head-wing',
         FQHE_DOMAIN,
-      ]);
+        'theoretical-physics/general',
+      ]));
 
       const frame = createWorkFrame({
         id: 'frame.fqhe-cs.v2',

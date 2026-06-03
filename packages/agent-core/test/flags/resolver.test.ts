@@ -201,4 +201,22 @@ describe('FLAG_DEFINITIONS invariants', () => {
       seenId.add(def.id);
     }
   });
+
+  it('keeps Hakimi research runtime flags on by default while allowing per-flag opt-out', () => {
+    const defs: readonly FlagDefinitionInput[] = FLAG_DEFINITIONS;
+    const defaultOn = new Set([
+      'physics-memory',
+      'research-ledger',
+      'research-action',
+      'domain-profile',
+      'workflow-recipe',
+      'research-harness',
+      'goal-command',
+    ]);
+    for (const def of defs) {
+      if (!defaultOn.has(def.id)) continue;
+      expect(def.default).toBe(true);
+      expect(new FlagResolver({ [def.env]: '0' }).enabled(def.id as FlagId)).toBe(false);
+    }
+  });
 });
