@@ -265,6 +265,7 @@ export class ResearchActionManager {
     readonly reason: string;
     readonly primitiveToolName: string;
     readonly primitiveToolCallId?: string | undefined;
+    readonly workFrameId?: string | undefined;
     readonly followupActionId?: string | undefined;
     readonly evidenceRefs?: readonly string[] | undefined;
   }): void {
@@ -273,6 +274,7 @@ export class ResearchActionManager {
       reason: input.reason,
       primitiveToolName: input.primitiveToolName,
       primitiveToolCallId: input.primitiveToolCallId,
+      ...(input.workFrameId === undefined ? {} : { workFrameId: input.workFrameId }),
       followupActionId: input.followupActionId,
       evidenceRefs: input.evidenceRefs ?? [],
     });

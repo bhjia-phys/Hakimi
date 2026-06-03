@@ -6,7 +6,7 @@
 
 AITP Agent is a research-agent runtime project for theoretical physics. It starts from the Kimi Code CLI codebase and aims to make physics memory, knowledge compilation, research actions, validation, benchmark evidence, replay, and failure feedback first-class parts of the agent runtime.
 
-This repository is currently an early-stage fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The default product behavior still follows Kimi Code unless an AITP experimental flag explicitly enables a new runtime feature. The completed first slices are tracked in [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md) and [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md). The original cross-slice roadmap is preserved in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md) and [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md), while the current post-0.2.5 execution baseline is now tracked in [AITP Agent Runtime Slices V2 Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md).
+This repository is a runtime-native fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The default terminal product behavior still follows Kimi Code, while AITP experimental flags and `.aitp` project files activate the theoretical-physics research runtime inside `packages/agent-core`, the turn loop, tool exposure, records/replay, and the packaged `kimi` CLI. The completed first slices are tracked in [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md) and [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md). The original cross-slice roadmap is preserved in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md) and [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md), while the current execution baseline is tracked in [AITP Agent Runtime Slices V2 Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md).
 
 ## Why This Exists
 
@@ -168,7 +168,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 
 ## Current Status
 
-- Upstream parity with `MoonshotAI/kimi-code:main` was checked on 2026-06-01; the fork was identical at commit `933cf67`.
+- Upstream parity with `MoonshotAI/kimi-code:main` was refreshed on 2026-06-03 and merged through commit `6a22523` (`fix: simplify goal budget schema and fix output caps (#365)`), preserving the AITP runtime integrations.
 - The AITP Agent 0.0.1 physics-memory vertical slice is implemented behind `KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY=1`.
 - `packages/agent-core` now includes physics-memory types, parser, scanner, registry, compiler, session scanning, append-only records, a model-invocable `PhysicsMemory` builtin tool, LibRPA fixture capsules, and a foundational `ResearchActionRegistry`.
 - Windows baseline failures in the broader `agent-core` suite have been resolved; see [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md).
@@ -204,7 +204,8 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.11.2 has added WorkFrame-scoped evidence inspection to `ResearchAction`: the model can list recent evidence refs for the active or explicit frame and load a `ledger:event...` body only when its ledger metadata matches the frame's domain/topic scope. Loading an event records `research_ledger.event_loaded`, and cross-topic/domain loads fail before rendering the body. See [AITP Agent 0.11.2 Audit](docs/internal/aitp-agent-0.11.2-audit.md).
 - 0.11.3 has made the external-job receipt lane more native-tool friendly: `adapter.external.job-submission` can now infer job ids from common scheduler outputs such as SLURM, LSF, SGE, and PBS/qsub receipts while refusing arbitrary shell output. This lets native Bash/MCP/remote-runner submissions feed the adapter with `schedulerOutput` alone when the receipt format is clear. See [AITP Agent 0.11.3 Audit](docs/internal/aitp-agent-0.11.3-audit.md).
 - 0.12.0 has added a file-backed `DomainPackManifest` runtime summary: `ResearchContextPack` now carries the profile/workflow/memory/eval/action/tool inventory for its domain, context reminders and `ResearchAction` rendering expose that manifest, and runtime tool exposure no longer opens code tools just because the domain is LibRPA. Code-capable tools now come from file-backed workflow `required_tools`, DomainPack action ids, or universal action primitive plans. FQHE/CS and LibRPA fixture tests assert that evals, capsules, and tool exposure remain isolated unless an explicit bridge capsule is present. See [AITP Agent 0.12.0 Audit](docs/internal/aitp-agent-0.12.0-audit.md).
-- The runtime roadmap through 0.12.0 is now implemented as a file-backed, graph-aware, bridge-gated, audited baseline with deterministic research executors for the graph, benchmark, formalization, and external-job receipt lanes plus native-tool orchestration for literature, code, and external benchmark workflows. Topic packs now have manifest-level profile/workflow/memory/eval/action/tool summaries, primitive tool call attribution, durable ledger evidence references, scoped evidence reread from the semantic action layer, and conservative native scheduler receipt inference.
+- 0.12.1 has tightened the native research runtime: `ResearchAction.inspect_domain_pack` can inspect the active or explicit ContextPack's DomainPack manifest, raw primitive tools used inside an active WorkFrame without an active `ResearchAction` call now emit `research_action.raw_tool_escape` with `workFrameId` and a suggested follow-up action, and older hardcoded vertical exports are marked compatibility-only in favor of file-backed `.aitp` domain packs.
+- The runtime roadmap through 0.12.1 is now implemented as a file-backed, graph-aware, bridge-gated, audited baseline with deterministic research executors for the graph, benchmark, formalization, and external-job receipt lanes plus native-tool orchestration for literature, code, and external benchmark workflows. Topic packs now have manifest-level profile/workflow/memory/eval/action/tool summaries, primitive tool call attribution, durable ledger evidence references, scoped evidence reread from the semantic action layer, conservative native scheduler receipt inference, and WorkFrame-scoped recovery records for raw primitive tool escapes.
 
 ## Development
 
@@ -212,6 +213,37 @@ Requirements are inherited from Kimi Code:
 
 - Node.js `>=24.15.0`
 - pnpm `10.33.0`
+
+Build a local installable CLI package from this fork:
+
+```powershell
+corepack pnpm --config.engine-strict=false install
+corepack pnpm --config.engine-strict=false build
+New-Item -ItemType Directory -Force dist-pack
+corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ..\..\dist-pack
+npm install -g .\dist-pack\moonshot-ai-kimi-code-0.8.0.tgz
+kimi --version
+```
+
+For an isolated install check without touching the global npm prefix:
+
+```powershell
+$prefix = "$PWD\.sisyphus\drafts\_scratch\kimi-install-prefix"
+npm install --prefix $prefix .\dist-pack\moonshot-ai-kimi-code-0.8.0.tgz
+& "$prefix\node_modules\.bin\kimi.cmd" --version
+```
+
+Enable the AITP runtime features in a research terminal as needed:
+
+```powershell
+$env:KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY = "1"
+$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER = "1"
+$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION = "1"
+$env:KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE = "1"
+$env:KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE = "1"
+$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS = "1"
+kimi
+```
 
 ```sh
 pnpm install

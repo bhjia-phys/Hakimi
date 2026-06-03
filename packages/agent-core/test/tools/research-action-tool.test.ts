@@ -362,12 +362,19 @@ describe('ResearchActionTool', () => {
       action: 'load_context_pack',
       context_pack_id: contextPackId,
     });
+    const inspected = await execute(tool, {
+      action: 'inspect_domain_pack',
+      context_pack_id: contextPackId,
+    });
 
     expect(contextPackId).toMatch(/^context\.frame\.fqhe\.[a-f0-9]{12}$/);
     expect(compiled.output).toContain('<context_pack');
     expect(compiled.output).toContain('domain="topological-order/fqhe-cs"');
     expect(listed.output).toContain(`id="${contextPackId}`);
     expect(loaded.output).toContain(`id="${contextPackId}`);
+    expect(inspected.output).toContain('<domain_pack_inspection');
+    expect(inspected.output).toContain('domain="topological-order/fqhe-cs"');
+    expect(inspected.output).toContain('domain-profile-registry-disabled');
     expect(records).toContainEqual(
       expect.objectContaining({
         type: 'research_context.context_compiled',

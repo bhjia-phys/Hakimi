@@ -247,6 +247,77 @@ describe('ResearchAction native-tool orchestration', () => {
     await ctx.expectResumeMatches();
   });
 
+  it('records raw primitive tool escapes in active WorkFrames without active action calls', async () => {
+    const project = await createLedgerRegistry();
+    const targetPath = `${project.cwd}/raw-source.md`;
+    const researchKaos = createResearchKaos({
+      cwd: project.cwd,
+      files: {
+        [targetPath]: 'A direct native Read ran before a semantic ResearchAction call.\n',
+      },
+      stdoutForCommand: () => '',
+    });
+    const ctx = testAgent({
+      kaos: researchKaos.kaos,
+    });
+    ctx.configure();
+    ctx.agent.config.update({ cwd: project.cwd });
+    await ctx.rpc.setPermission({ mode: 'yolo' });
+    ctx.agent.workFrames.open(
+      {
+        id: 'frame.raw',
+        domain: 'librpa',
+        topic: 'head-wing-raw-read',
+        goal: 'Keep direct native file inspection scoped to this research topic.',
+      },
+      { source: 'controller' },
+    );
+
+    ctx.mockNextResponse(
+      { type: 'text', text: 'I will read directly before opening a semantic action.' },
+      {
+        type: 'function',
+        id: 'call_raw_read',
+        name: 'Read',
+        arguments: JSON.stringify({
+          path: 'raw-source.md',
+        }),
+      },
+    );
+    ctx.mockNextResponse({
+      type: 'text',
+      text: 'The direct file inspection completed and should be reconciled.',
+    });
+
+    await ctx.rpc.prompt({
+      input: [{ type: 'text', text: 'Read directly from the active research project.' }],
+    });
+    await ctx.untilTurnEnd();
+
+    expect(wireEventArgs(ctx.allEvents, 'tool_lifecycle.completed')).toContainEqual(
+      expect.objectContaining({
+        toolName: 'Read',
+        toolCallId: 'call_raw_read',
+        status: 'passed',
+        workFrameId: 'frame.raw',
+      }),
+    );
+    expect(wireEventArgs(ctx.allEvents, 'research_action.raw_tool_escape')).toContainEqual(
+      expect.objectContaining({
+        primitiveToolName: 'Read',
+        primitiveToolCallId: 'call_raw_read',
+        workFrameId: 'frame.raw',
+        followupActionId: 'code.inspect_call_sites',
+      }),
+    );
+    expect(wireEventArgs(ctx.allEvents, 'research_action.raw_tool_escape')).toContainEqual(
+      expect.objectContaining({
+        reason: expect.stringContaining('without an active ResearchAction call'),
+      }),
+    );
+    await ctx.expectResumeMatches();
+  });
+
   it('runs a code-patch action through native file tools without source-tool leakage', async () => {
     vi.stubEnv('KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION', '1');
     vi.stubEnv('KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER', '1');

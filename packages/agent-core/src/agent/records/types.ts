@@ -430,6 +430,7 @@ export interface AgentRecordEvents {
     reason: string;
     primitiveToolName: string;
     primitiveToolCallId?: string | undefined;
+    workFrameId?: string | undefined;
     followupActionId?: string | undefined;
     evidenceRefs: readonly string[];
   };
