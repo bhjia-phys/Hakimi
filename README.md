@@ -1,81 +1,103 @@
 # Hakimi
 
+<p align="center">
+  <img src="docs/assets/hakimi-pixel-ship.svg" width="720" alt="Hakimi pixel cat-ear exploration spacecraft" />
+</p>
+
+<p align="center">
+  <strong>Physics agent for exploring the truth of the world.</strong><br />
+  <span>Hakimi is a truth-seeking physics research agent built inside the native Kimi Code runtime.</span>
+</p>
+
+<p align="center">
+  <a href="README.zh-CN.md">Chinese</a> |
+  <a href="https://github.com/bhjia-phys/Hakimi">Repository</a> |
+  <a href="https://moonshotai.github.io/kimi-code/en/">Upstream Kimi Code docs</a>
+</p>
+
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-runtime--roadmap-blue)](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md)
 
-[Chinese](README.zh-CN.md) | [Upstream Kimi Code docs](https://moonshotai.github.io/kimi-code/en/)
+## The Idea
 
-Repository: [bhjia-phys/Hakimi](https://github.com/bhjia-phys/Hakimi)
+Hakimi is intentionally a little playful. The name carries the lightness of "Hakimi" and the curiosity of a small exploration spacecraft with cat-ear fins: not a cold oracle, not a giant black box, but a companion for entering unknown physics problems with care, memory, and evidence.
 
-Hakimi is a truth-seeking physics research agent for theoretical physics. It starts from the Kimi Code CLI codebase and makes physics memory, knowledge compilation, research actions, validation, benchmark evidence, replay, and failure feedback first-class parts of the agent runtime.
-
-This repository is a runtime-native fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The terminal product is branded as Hakimi, ships as `@bhjia-phys/hakimi`, and exposes `hakimi` as the primary command while keeping `kimi` as a compatibility alias. The SDK/OAuth imports and `.kimi-code` data directory remain intentionally compatible with the upstream runtime, while `.aitp` project files activate the theoretical-physics research runtime inside `packages/agent-core`, the turn loop, tool exposure, records/replay, and the packaged CLI. The completed first slices are tracked in [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md) and [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md). The original cross-slice roadmap is preserved in [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md) and [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md), while the current execution baseline is tracked in [AITP Agent Runtime Slices V2 Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md).
+The serious part is the mission. Hakimi is built for theoretical physics work where a conversation can touch papers, derivations, code, benchmarks, failed runs, conventions, and long-lived research memory. The agent should not merely answer from a prompt. It should help keep the research state coherent.
 
 ## Why This Exists
 
-The goal is not to wrap a coding agent with a research notebook or a large prompt. AITP Agent should be able to participate in theoretical-physics research as a runtime-native system:
+Hakimi is not a notebook bolted onto a coding agent. It is a runtime-native fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code): the terminal loop, tools, sessions, skills, MCP, subagents, records/replay, permissions, OAuth path, and package shape remain Kimi Code-compatible where compatibility matters. The theoretical-physics system is inserted into the runtime itself through `.aitp` files, `packages/agent-core`, turn-loop context injection, tool exposure, records, replay, and model-facing research tools.
 
-- load domain-scoped physics memory progressively during a session;
-- compile notes, papers, derivations, code mappings, benchmarks, and failures into typed graph objects;
-- expose compact context packs instead of dumping the whole knowledge base into the prompt;
-- keep research domains isolated unless an explicit bridge allows cross-domain context;
-- run fine-grained research actions such as convention checks, dimensional checks, formula-to-code mapping, benchmark execution, and failure analysis;
-- record action traces so the harness and the research workflow can improve from mistakes.
+That means a research action can search literature, inspect code, prepare patches, submit or normalize external job receipts, capture evidence, and return to the correct WorkFrame without mixing unrelated topics. The goal is simple to say and hard to do: each research thread should remember what it knows, what it assumes, what evidence supports it, what remains unverified, and which tools produced the trail.
 
-## Architecture Direction
+## Native Runtime Fusion
 
-AITP Agent is planned around five runtime layers.
+```mermaid
+flowchart LR
+  user[Researcher] --> tui[Hakimi CLI / TUI]
+  tui --> loop[Kimi Code native turn loop]
+  loop --> tools[Native tools: Read / Edit / Bash / Web / MCP]
+  loop --> aitp[AITP research runtime]
+  aitp --> frames[WorkFrames]
+  aitp --> packs[Domain packs]
+  aitp --> ledger[Research ledger]
+  aitp --> graph[Physics graph]
+  aitp --> actions[ResearchAction]
+  aitp --> harness[Harness and final gate]
+  tools --> evidence[Tool results and artifacts]
+  evidence --> ledger
+  ledger --> graph
+  graph --> packs
+  frames --> actions
+  actions --> tools
+  harness --> loop
+```
 
-### Skills
+## Research Loop
 
-Procedural memory: how the agent should work. Examples include formula-to-code debugging, derive-then-check workflows, benchmark-from-failure workflows, and LibRPA run preparation.
+```mermaid
+flowchart TD
+  question[Question or research task] --> frame[Open or reuse a WorkFrame]
+  frame --> context[Compile a bounded ResearchContextPack]
+  context --> plan[Choose semantic ResearchActions]
+  plan --> native[Use native Kimi tools when needed]
+  native --> capture[Capture source, code, benchmark, job, or failure evidence]
+  capture --> ledger[Write durable ledger events]
+  ledger --> graph[Compile graph candidates and obligations]
+  graph --> gate[Final gate: validated / partial / blocked]
+  gate --> answer[Answer with scope, caveats, and evidence]
+```
 
-### Physics Memory Capsules
+## What Works Today
 
-Semantic memory: what is known, with scope, assumptions, provenance, dependency edges, reliability state, and expansion handles into the underlying graph. Capsules are intentionally coarser than graph atoms and are meant to be progressively disclosed.
+- `hakimi` is the primary CLI command, with `kimi` kept as a compatibility alias.
+- The TUI welcome screen uses the Hakimi pixel spacecraft identity and physics research copy.
+- WorkFrames keep active research topics scoped by domain, topic, assumptions, conventions, context pack, and trust state.
+- Domain packs, workflow recipes, physics memory, evals, action bindings, and tool inventories can be loaded from file-backed `.aitp` fixtures.
+- Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
+- Literature search, code patch preparation, and external benchmark workflows are orchestrated through native Kimi tools rather than being executed inside `ResearchAction` itself.
+- Evidence can be written to the research ledger, reread only inside matching WorkFrame scope, compiled into graph candidates, and checked by harness/final-gate logic.
 
-### Research Ledger
+## Architecture Layers
 
-Source-backed research events: what actually happened in a session before it is trusted as reusable physics memory. The ledger records papers, web excerpts, derivation scratch, equations, code observations, git diffs, benchmark observations, failures, tool runs, and user decisions in a deterministic, compile-ready layout.
+Hakimi is organized around five research-runtime layers.
 
-### Compiler
+| Layer | Role |
+| --- | --- |
+| Skills | Procedural memory: how the agent should work, such as derivation checks, formula-to-code debugging, and LibRPA run preparation. |
+| Physics memory capsules | Semantic memory: claims with scope, assumptions, provenance, dependency edges, reliability state, and expansion handles. |
+| Research ledger | Source-backed events from real sessions before they are trusted as reusable memory. |
+| Compiler and graph | A knowledge compiler that preserves dependencies, contradiction markers, validation status, and failure conditions. |
+| Research actions | Auditable work units such as convention checks, graph expansion, formula-code mapping, benchmark validation, and harness generation. |
 
-The compiler turns raw sources, topic notes, derivations, code traces, benchmark outputs, and failures into typed graph objects and context packs. Compilation is not summarization: it preserves dependencies, scope, contradiction markers, validation status, and failure conditions.
+`WorkFrame` is the live research problem state tying these layers together. It tracks the active domain, topic, goal, assumptions, conventions, context pack, evidence, obligations, and final-gate status. Blocking obligations prevent a result from being treated as validated memory.
 
-### Research Actions
+## Relationship To Upstream
 
-Research actions are fine-grained, auditable work units over the physics graph and the local tool environment. They are lower-level than "use an MCP server" and higher-level than raw shell commands. Examples:
+Hakimi remains close to upstream Kimi Code on purpose. The SDK/OAuth imports and `.kimi-code` data directory stay compatible for now, while the user-facing product is `Hakimi`, the npm package is `@bhjia-phys/hakimi`, and the primary executable is `hakimi`. This is a native fork, not an external wrapper.
 
-- `graph.expand_capsule`
-- `graph.trace_dependency_closure`
-- `derive.check_dimension_consistency`
-- `validate.check_convention`
-- `code.map_formula_to_code_region`
-- `code.compare_git_diff_to_mapping`
-- `benchmark.run_minimal_case`
-- `memory.propose_failure_mode`
-- `harness.build_eval_from_failure`
+Codex and ForgeCode are references rather than dependencies: Codex informs tool exposure, structured tool outputs, and action traces; ForgeCode informs harness and repeatable eval workflows.
 
-The universal action layer is intentionally domain-neutral. Domain-specific intent is attached through structured `ResearchActionBinding` records with `domainId`, `workflowId`, `lensId`, `checkId`, `adapterId`, and scoped params.
-
-### WorkFrames, Obligations, And Harness
-
-`WorkFrame` is the active research problem state: domain, topic, goal, active objects, assumptions, conventions, context pack, and trust state. Research actions create obligations such as source support, dimensional consistency, convention consistency, known-limit checks, formula-code mapping, and benchmark validation. Blocking obligations should prevent validated promotion and can become harness candidates when they fail or remain inconclusive.
-
-## Relationship To Other Agent Runtimes
-
-### Kimi Code
-
-Kimi Code is the implementation baseline. It already provides the TypeScript monorepo, terminal agent runtime, model/tool loop, skills, MCP, subagents, sessions, records/replay, compaction, permissions, and lifecycle hooks. AITP Agent should extend this runtime rather than sit outside it.
-
-### Codex
-
-Codex is a reference for tool engineering. The most relevant ideas to migrate are explicit tool exposure levels, stable pre/post tool-use payloads, structured tool outputs, tool-call source tracking, deferred tool discovery, and action traces suitable for harness analysis.
-
-### ForgeCode
-
-ForgeCode is a reference for harness and evaluation design: explicit agent definitions, tool boundaries, benchmark cases, and repeatable eval-style workflows.
-
-## Version Plan
+## Roadmap
 
 ### 0.0.1: Physics Memory Vertical Slice
 
