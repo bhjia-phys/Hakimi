@@ -1,0 +1,64 @@
+<svg width="1120" height="430" viewBox="0 0 1120 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Hakimi native runtime fusion</title>
+  <desc id="desc">Researcher enters Hakimi CLI, the Kimi Code native turn loop coordinates native tools and the AITP research runtime, while evidence flows into the research ledger and physics graph.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#62D9FF"/>
+    </marker>
+    <style>
+      .bg{fill:#071018}
+      .panel{fill:#0D1724;stroke:#1B5B78;stroke-width:1.5}
+      .core{fill:#10283A;stroke:#62D9FF;stroke-width:2}
+      .sub{fill:#101B2A;stroke:#2B506A;stroke-width:1.2}
+      .text{font-family:Inter,Segoe UI,Arial,sans-serif;font-size:18px;fill:#E9F6FF}
+      .small{font-family:Inter,Segoe UI,Arial,sans-serif;font-size:14px;fill:#A9C7D6}
+      .accent{font-family:Inter,Segoe UI,Arial,sans-serif;font-size:16px;font-weight:700;fill:#7EE7FF}
+      .line{stroke:#62D9FF;stroke-width:2;fill:none;marker-end:url(#arrow)}
+      .soft{stroke:#315B72;stroke-width:1.6;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" width="1120" height="430" rx="22"/>
+  <text x="48" y="54" class="accent">Native Runtime Fusion</text>
+  <text x="48" y="82" class="small">AITP is fused into the Kimi Code turn loop instead of wrapped around it.</text>
+
+  <rect x="48" y="136" width="150" height="72" rx="12" class="panel"/>
+  <text x="82" y="178" class="text">Researcher</text>
+
+  <rect x="258" y="136" width="168" height="72" rx="12" class="panel"/>
+  <text x="293" y="166" class="text">Hakimi CLI</text>
+  <text x="304" y="190" class="small">terminal / TUI</text>
+
+  <rect x="486" y="126" width="198" height="92" rx="14" class="core"/>
+  <text x="520" y="166" class="text">Kimi Code</text>
+  <text x="522" y="192" class="small">native turn loop</text>
+
+  <rect x="754" y="76" width="296" height="132" rx="16" class="panel"/>
+  <text x="786" y="116" class="text">Native tools</text>
+  <text x="786" y="146" class="small">Read / Edit / Bash</text>
+  <text x="786" y="170" class="small">Web / MCP / sessions</text>
+
+  <rect x="754" y="248" width="296" height="132" rx="16" class="core"/>
+  <text x="786" y="288" class="text">AITP research runtime</text>
+  <text x="786" y="318" class="small">WorkFrames, packs, actions</text>
+  <text x="786" y="342" class="small">ledger, graph, final gate</text>
+
+  <rect x="58" y="286" width="144" height="58" rx="10" class="sub"/>
+  <text x="91" y="321" class="small">WorkFrames</text>
+  <rect x="232" y="286" width="144" height="58" rx="10" class="sub"/>
+  <text x="268" y="321" class="small">Domain packs</text>
+  <rect x="406" y="286" width="144" height="58" rx="10" class="sub"/>
+  <text x="438" y="321" class="small">ResearchAction</text>
+  <rect x="580" y="286" width="144" height="58" rx="10" class="sub"/>
+  <text x="619" y="321" class="small">Final gate</text>
+
+  <path d="M 198 172 L 258 172" class="line"/>
+  <path d="M 426 172 L 486 172" class="line"/>
+  <path d="M 684 162 C 716 138 724 126 754 126" class="line"/>
+  <path d="M 684 184 C 716 228 724 286 754 314" class="line"/>
+  <path d="M 902 208 L 902 248" class="line"/>
+  <path d="M 754 336 C 696 368 628 374 530 346" class="soft"/>
+  <path d="M 478 286 C 540 254 650 252 754 298" class="soft"/>
+  <path d="M 130 286 C 266 242 522 236 784 276" class="soft"/>
+  <path d="M 304 286 C 438 248 614 246 782 290" class="soft"/>
+  <path d="M 652 286 C 698 268 722 262 754 262" class="soft"/>
+</svg>

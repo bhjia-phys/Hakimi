@@ -31,41 +31,15 @@ Hakimi 不是在 coding agent 外面套一个研究记录本。它是 [MoonshotA
 
 ## 原生融合结构
 
-```mermaid
-flowchart LR
-  user["Researcher"] --> tui["Hakimi CLI / TUI"]
-  tui --> loop["Kimi Code native turn loop"]
-  loop --> tools["Native tools: Read / Edit / Bash / Web / MCP"]
-  loop --> aitp["AITP research runtime"]
-  aitp --> frames[WorkFrames]
-  aitp --> packs["Domain packs"]
-  aitp --> ledger["Research ledger"]
-  aitp --> pgraph["Physics graph"]
-  aitp --> actions[ResearchAction]
-  aitp --> harness["Harness and final gate"]
-  tools --> evidence["Tool results and artifacts"]
-  evidence --> ledger
-  ledger --> pgraph
-  pgraph --> packs
-  frames --> actions
-  actions --> tools
-  harness --> loop
-```
+<p align="center">
+  <img src="docs/assets/hakimi-native-runtime-fusion.svg" width="860" alt="Hakimi native runtime fusion diagram" />
+</p>
 
 ## 科研循环
 
-```mermaid
-flowchart TD
-  question["Question or research task"] --> frame["Open or reuse a WorkFrame"]
-  frame --> context["Compile a bounded ResearchContextPack"]
-  context --> plan["Choose semantic ResearchActions"]
-  plan --> native["Use native Kimi tools when needed"]
-  native --> capture["Capture source, code, benchmark, job, or failure evidence"]
-  capture --> ledger["Write durable ledger events"]
-  ledger --> pgraph["Compile graph candidates and obligations"]
-  pgraph --> gate["Final gate: validated / partial / blocked"]
-  gate --> answer["Answer with scope, caveats, and evidence"]
-```
+<p align="center">
+  <img src="docs/assets/hakimi-research-loop.svg" width="860" alt="Hakimi research loop diagram" />
+</p>
 
 ## 现在已经能做什么
 
