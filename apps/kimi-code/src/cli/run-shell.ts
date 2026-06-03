@@ -77,7 +77,7 @@ export async function runShell(
     },
     sessionStartedProperties: { yolo: opts.yolo, auto: opts.auto, plan: opts.plan, afk: false },
   });
-  log.info('kimi-code starting', {
+  log.info('hakimi starting', {
     version,
     uiMode: CLI_UI_MODE,
     nodeVersion: process.version,

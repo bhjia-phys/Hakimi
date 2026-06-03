@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 import { appRoot } from './paths.mjs';
 
-const packageName = '@moonshot-ai/kimi-code';
+const packageName = '@bhjia-phys/hakimi';
 const packageJson = JSON.parse(
   await readFile(resolve(appRoot, 'package.json'), 'utf-8'),
 );

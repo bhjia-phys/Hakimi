@@ -3,7 +3,7 @@ import { OPEN_PLATFORMS } from '@moonshot-ai/kimi-code-oauth';
 import { ChoicePickerComponent, type ChoiceOption } from './choice-picker';
 
 const PLATFORM_OPTIONS: readonly ChoiceOption[] = [
-  { value: 'kimi-code', label: 'Kimi Code (OAuth)' },
+  { value: 'kimi-code', label: 'Kimi Platform (OAuth)' },
   ...OPEN_PLATFORMS.map((platform) => ({ value: platform.id, label: platform.name })),
 ];
 

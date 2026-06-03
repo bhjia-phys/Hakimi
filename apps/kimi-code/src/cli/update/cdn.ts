@@ -46,7 +46,7 @@ async function fetchWithTimeout(fetchImpl: typeof fetch, input: string): Promise
 }
 
 /**
- * Fetch the latest published Kimi Code version from the CDN.
+ * Fetch the latest published Hakimi version from the release channel.
  *
  * **Throws** on any failure (network error, non-2xx, empty body, non-semver
  * text). Callers must catch — `refreshUpdateCache` deliberately lets the

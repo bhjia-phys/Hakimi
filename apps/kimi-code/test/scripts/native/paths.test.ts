@@ -43,13 +43,13 @@ describe('targetTriple', () => {
 });
 
 describe('executableName', () => {
-  it('returns kimi.exe on win32', () => {
-    expect(executableName('win32')).toBe('kimi.exe');
+  it('returns hakimi.exe on win32', () => {
+    expect(executableName('win32')).toBe('hakimi.exe');
   });
 
-  it('returns kimi on other platforms', () => {
-    expect(executableName('darwin')).toBe('kimi');
-    expect(executableName('linux')).toBe('kimi');
+  it('returns hakimi on other platforms', () => {
+    expect(executableName('darwin')).toBe('hakimi');
+    expect(executableName('linux')).toBe('hakimi');
   });
 });
 
@@ -64,16 +64,16 @@ describe('path helpers', () => {
 
   it('returns absolute bin path with executable name', () => {
     expect(nativeBinPath('darwin-arm64', 'darwin')).toBe(
-      p('dist-native/bin/darwin-arm64/kimi'),
+      p('dist-native/bin/darwin-arm64/hakimi'),
     );
     expect(nativeBinPath('win32-x64', 'win32')).toBe(
-      p('dist-native/bin/win32-x64/kimi.exe'),
+      p('dist-native/bin/win32-x64/hakimi.exe'),
     );
   });
 
   it('returns intermediate artifact paths', () => {
     expect(nativeJsBundlePath()).toBe(p('dist-native/intermediates/main.cjs'));
-    expect(nativeBlobPath()).toBe(p('dist-native/intermediates/kimi.blob'));
+    expect(nativeBlobPath()).toBe(p('dist-native/intermediates/hakimi.blob'));
     expect(nativeSeaConfigPath()).toBe(
       p('dist-native/intermediates/sea-config.json'),
     );

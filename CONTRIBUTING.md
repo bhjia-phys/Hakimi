@@ -1,10 +1,10 @@
-# Contributing to kimi-code
+# Contributing to Hakimi
 
 Thanks for taking the time to contribute! This project moves quickly, and thoughtful contributions from the community are what keep it sharp. The guide below walks you through how we work so your PR has the best chance of landing smoothly.
 
 ## Before You Start
 
-Kimi Code already has opinions on CLI/TUI behavior, agent workflows, and public APIs. If your change shifts that direction, open an issue first so we can align before you invest time in a PR.
+Hakimi is a runtime-native theoretical-physics research fork of Kimi Code. It keeps the upstream CLI/TUI runtime shape where compatibility matters, while adding AITP research memory, WorkFrames, research actions, evidence capture, and domain isolation inside the runtime. If your change shifts CLI/TUI behavior, agent workflows, public APIs, or the AITP research contract, open an issue first so we can align before you invest time in a PR.
 
 We hold AI-assisted contributions to the same standard as hand-written ones. **You should understand what you submit** — what changed, how it behaves at the edges, and why it fits this codebase. If you cannot explain that, the PR is not ready for review.
 
@@ -29,7 +29,7 @@ This is a pnpm monorepo. The most relevant entry points are:
 
 - `apps/kimi-code` — CLI / TUI
 - `apps/vis` — session replay & debugging visualizer
-- `packages/node-sdk` — public TypeScript SDK (`@moonshot-ai/kimi-code-sdk`)
+- `packages/node-sdk` — upstream-compatible public TypeScript SDK (`@moonshot-ai/kimi-code-sdk`)
 - `packages/agent-core`, `kosong`, `kaos`, `oauth`, `telemetry` — internal engine packages
 - `docs/` — VitePress bilingual docs site
 
@@ -40,8 +40,8 @@ For the full project map, see [AGENTS.md](AGENTS.md).
 Prerequisites: Node.js >= 24.15.0, pnpm 10.33.0, Git.
 
 ```sh
-git clone https://github.com/MoonshotAI/kimi-code.git
-cd kimi-code
+git clone https://github.com/bhjia-phys/Hakimi.git
+cd Hakimi
 pnpm install
 ```
 

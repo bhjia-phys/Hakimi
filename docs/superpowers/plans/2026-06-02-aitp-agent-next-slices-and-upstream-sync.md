@@ -108,8 +108,8 @@ git -C F:\AI_Workspace\repos\aitp-agent remote -v
 Expected:
 
 ```text
-origin   https://github.com/bhjia-phys/aitp-agent (fetch)
-origin   https://github.com/bhjia-phys/aitp-agent (push)
+origin   https://github.com/bhjia-phys/Hakimi (fetch)
+origin   https://github.com/bhjia-phys/Hakimi (push)
 upstream https://github.com/MoonshotAI/kimi-code (fetch)
 upstream https://github.com/MoonshotAI/kimi-code (push)
 ```

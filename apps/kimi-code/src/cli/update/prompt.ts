@@ -14,7 +14,7 @@ import {
 
 import { type InstallSource, type UpdateTarget } from './types';
 
-export const CHANGELOG_URL = 'https://moonshotai.github.io/kimi-code/en/release-notes/changelog.html';
+export const CHANGELOG_URL = 'https://github.com/bhjia-phys/Hakimi/blob/main/apps/kimi-code/CHANGELOG.md';
 
 export type InstallPromptChoiceValue = 'install' | 'skip';
 
@@ -70,7 +70,7 @@ function renderInstallPrompt(
   const command = chalk.hex(UPDATE_PROMPT_PRIMARY)(options.installCommand);
   const changelogText = chalk.hex(UPDATE_PROMPT_PRIMARY).underline(`View changelog: ${CHANGELOG_URL}`);
   const lines = [
-    chalk.hex(UPDATE_PROMPT_PRIMARY).bold('Kimi Code Update Available'),
+    chalk.hex(UPDATE_PROMPT_PRIMARY).bold(`${PRODUCT_NAME} Update Available`),
     chalk.hex(UPDATE_PROMPT_MUTED)(`${PRODUCT_NAME} has a newer release ready.`),
     `]8;;${CHANGELOG_URL}\\${changelogText}]8;;\\`,
     '',

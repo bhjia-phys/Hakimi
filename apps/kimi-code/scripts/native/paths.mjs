@@ -7,7 +7,7 @@ export function targetTriple({ platform = process.platform, arch = process.arch,
 }
 
 export function executableName(platform = process.platform) {
-  return platform === 'win32' ? 'kimi.exe' : 'kimi';
+  return platform === 'win32' ? 'hakimi.exe' : 'hakimi';
 }
 
 export function nativeDistRoot() {
@@ -31,7 +31,7 @@ export function nativeJsBundlePath() {
 }
 
 export function nativeBlobPath() {
-  return resolve(nativeIntermediatesDir(), 'kimi.blob');
+  return resolve(nativeIntermediatesDir(), 'hakimi.blob');
 }
 
 export function nativeSeaConfigPath() {

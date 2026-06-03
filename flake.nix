@@ -1,5 +1,5 @@
 {
-  description = "Kimi Code CLI";
+  description = "Hakimi CLI";
 
   inputs = {
     # Pinned to the 25.11 release channel because nixpkgs-unstable currently
@@ -42,7 +42,7 @@
           node
         else
           throw ''
-            Kimi Code requires Node.js >= ${minNodeVersion},
+            Hakimi requires Node.js >= ${minNodeVersion},
             but nixpkgs only offers ${node.version}.
             Pin a newer nixpkgs revision or update minNodeVersion in flake.nix.
           '';
@@ -103,7 +103,7 @@
         "@moonshot-ai/protocol"
         "@moonshot-ai/kimi-telemetry"
         "@moonshot-ai/transcript"
-        "@moonshot-ai/kimi-code"
+        "@bhjia-phys/hakimi"
         "kimi-code"
         "@moonshot-ai/kimi-inspect"
         "@moonshot-ai/kimi-web"
@@ -130,10 +130,10 @@
             else if pkgs.stdenv.hostPlatform.isDarwin then
               "darwin-x64"
             else
-              throw "Unsupported Kimi Code native target for ${pkgs.stdenv.hostPlatform.system}";
+              throw "Unsupported Hakimi native target for ${pkgs.stdenv.hostPlatform.system}";
 
-          kimi-code = pkgs.stdenv.mkDerivation (finalAttrs: {
-            pname = "kimi-code";
+          hakimi = pkgs.stdenv.mkDerivation (finalAttrs: {
+            pname = "hakimi";
             version = appPackageJson.version;
 
             src = lib.fileset.toSource {
@@ -203,7 +203,7 @@
               # before producing the native executable.
               pnpm --filter=@moonshot-ai/kimi-web run build
               node apps/kimi-code/scripts/copy-web-assets.mjs
-              pnpm --filter=@moonshot-ai/kimi-code run build:native:sea
+              pnpm --filter=@bhjia-phys/hakimi run build:native:sea
               runHook postBuild
             '';
 
@@ -211,8 +211,9 @@
               runHook preInstall
 
               install -Dm755 \
-                "apps/kimi-code/dist-native/bin/${nativeTarget}/kimi" \
-                "$out/bin/kimi"
+                "apps/kimi-code/dist-native/bin/${nativeTarget}/hakimi" \
+                "$out/bin/hakimi"
+              ln -s "$out/bin/hakimi" "$out/bin/kimi"
 
               runHook postInstall
             '';
@@ -222,26 +223,28 @@
             '';
 
             meta = {
-              description = "Kimi Code CLI";
-              homepage = "https://github.com/MoonshotAI/kimi-code";
+              description = "Truth-seeking physics research agent";
+              homepage = "https://github.com/bhjia-phys/Hakimi";
               license = lib.licenses.mit;
-              mainProgram = "kimi";
+              mainProgram = "hakimi";
               platforms = systems;
             };
           });
         in
         {
-          inherit kimi-code;
-          default = kimi-code;
+          inherit hakimi;
+          kimi-code = hakimi;
+          default = hakimi;
         }
       );
 
       apps = forAllSystems (pkgs: {
-        kimi-code = {
+        hakimi = {
           type = "app";
-          program = "${self.packages.${pkgs.system}.kimi-code}/bin/kimi";
+          program = "${self.packages.${pkgs.system}.hakimi}/bin/hakimi";
         };
-        default = self.apps.${pkgs.system}.kimi-code;
+        kimi-code = self.apps.${pkgs.system}.hakimi;
+        default = self.apps.${pkgs.system}.hakimi;
       });
 
       devShells = forAllSystems (pkgs: {

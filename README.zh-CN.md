@@ -1,12 +1,14 @@
-# AITP Agent
+# Hakimi
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Status](https://img.shields.io/badge/status-runtime--roadmap-blue)](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-slices-v2.md)
 
 [English](README.md) | [上游 Kimi Code 文档](https://moonshotai.github.io/kimi-code/zh/)
 
-AITP Agent 是一个面向理论物理科研的 agent runtime 项目。它以 Kimi Code CLI 代码库为基线，目标是在 agent 底层运行时中原生嵌入理论物理记忆、知识编译、科研动作、验证、benchmark 证据、replay 和失败回灌。
+仓库：[bhjia-phys/Hakimi](https://github.com/bhjia-phys/Hakimi)
 
-当前仓库仍处在早期阶段，是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 fork。默认产品行为仍继承 Kimi Code；只有当 AITP 实验 flag 明确开启时，新的 runtime feature 才会生效。已完成的第一批切片见 [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md) 和 [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md)。跨 slice 的 runtime 路线图见 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)，后续实现细节见 [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md)。
+Hakimi 是一个面向理论物理科研的 truth-seeking physics research agent。它以 Kimi Code CLI 代码库为基线，目标是在 agent 底层运行时中原生嵌入理论物理记忆、知识编译、科研动作、验证、benchmark 证据、replay 和失败回灌。
+
+当前仓库是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 runtime-native fork。终端产品名是 Hakimi，npm 包名是 `@bhjia-phys/hakimi`，主命令是 `hakimi`，同时保留 `kimi` 作为兼容 alias。SDK/OAuth import 和 `.kimi-code` 数据目录暂时保持上游兼容；当 AITP 实验 flag 明确开启时，新的 runtime feature 会在原生 turn loop、tool exposure、records/replay 和 `packages/agent-core` 中生效。已完成的第一批切片见 [AITP Agent 0.0.1 Implementation Plan](docs/superpowers/plans/2026-05-30-aitp-agent-0.0.1.md) 和 [AITP Agent 0.0.2 Research Ledger And ActionAlgebra Implementation Plan](docs/superpowers/plans/2026-06-01-aitp-agent-0.0.2-research-ledger-actionalgebra.md)。跨 slice 的 runtime 路线图见 [AITP Agent Runtime Roadmap Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-runtime-roadmap.md)，后续实现细节见 [AITP Agent Next Slices And Upstream Sync Implementation Plan](docs/superpowers/plans/2026-06-02-aitp-agent-next-slices-and-upstream-sync.md)。
 
 ## 项目目标
 
@@ -168,7 +170,7 @@ formula capsule
 
 ## 当前状态
 
-- 2026-06-01 检查过 `MoonshotAI/kimi-code:main` 上游状态；本 fork 当时与上游在 commit `933cf67` 处一致。
+- 2026-06-03 已刷新并合并 `MoonshotAI/kimi-code:main` 到 commit `6a22523`（`fix: simplify goal budget schema and fix output caps (#365)`），同时保留 AITP runtime 集成。
 - AITP Agent 0.0.1 的 physics-memory vertical slice 已经实现，并通过 `KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY=1` 默认关闭式启用。
 - `packages/agent-core` 现在包含 physics-memory types、parser、scanner、registry、compiler、session scanning、append-only records、模型可调用的 `PhysicsMemory` builtin tool、LibRPA fixture capsules，以及基础版 `ResearchActionRegistry`。
 - Windows 环境中 broader `agent-core` suite 的基线失败已经修复；详见 [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md)。
@@ -198,14 +200,48 @@ formula capsule
 - 0.11.2 已经把 WorkFrame-scoped evidence inspection 加入 `ResearchAction`：模型可以列出 active 或显式 WorkFrame 最近动作产生的 evidence refs，并且只能在 ledger metadata 匹配当前 frame 的 domain/topic 时加载 `ledger:event...` 正文。加载会写入 `research_ledger.event_loaded`；跨课题/跨 domain 加载会在渲染正文前失败。详见 [AITP Agent 0.11.2 Audit](docs/internal/aitp-agent-0.11.2-audit.md)。
 - 0.11.3 已经让 external-job receipt lane 更适合原生工具输出：`adapter.external.job-submission` 现在可以从 SLURM、LSF、SGE、PBS/qsub 等常见 scheduler output 中保守解析 job id，同时拒绝任意 shell 输出。这样 Bash/MCP/remote-runner 只要返回清晰调度器回执，就能用 `schedulerOutput` 喂给 adapter。详见 [AITP Agent 0.11.3 Audit](docs/internal/aitp-agent-0.11.3-audit.md)。
 - 0.12.0 已经加入 file-backed `DomainPackManifest` runtime summary：`ResearchContextPack` 现在会携带当前 domain 的 profile/workflow/memory/eval/action/tool inventory，context reminder 和 `ResearchAction` 渲染都会暴露这个 manifest；runtime tool exposure 不再因为 domain 是 LibRPA 就自动打开代码工具。代码工具现在只来自 file-backed workflow `required_tools`、DomainPack action ids 或 universal action primitive plan。FQHE/CS 与 LibRPA fixture 测试会断言 eval、capsule 和 tool exposure 互相隔离，除非存在显式 bridge capsule。详见 [AITP Agent 0.12.0 Audit](docs/internal/aitp-agent-0.12.0-audit.md)。
-- 截至 0.12.0，当前 baseline 已经是 file-backed、graph-aware、bridge-gated、带审计和恢复测试的科研 runtime；literature、code、external benchmark workflow 都已经能通过 Kimi 原生工具执行，回填 primitive call ids，并留下 durable ledger evidence refs。topic pack 现在有 manifest 级别的 profile/workflow/memory/eval/action/tool summary，外部 job 提交有稳定 receipt contract，语义 action 层能按 WorkFrame scope 重新读取证据，并且能保守归一化原生 scheduler 回执。
+- 0.12.1 已经收紧原生科研 runtime：`ResearchAction.inspect_domain_pack` 可以检查 active 或显式 ContextPack 的 DomainPack manifest；active WorkFrame 中未挂接 active `ResearchAction` call 的原生工具使用现在会写入带 `workFrameId` 和建议 follow-up action 的 `research_action.raw_tool_escape`；旧的硬编码 vertical exports 也被标记为 compatibility-only，推荐使用 file-backed `.aitp` domain packs。
+- 截至 0.12.1，当前 baseline 已经是 file-backed、graph-aware、bridge-gated、带审计和恢复测试的科研 runtime；graph、benchmark、formalization、external-job receipt lane 都有确定性 research executor，literature、code、external benchmark workflow 能通过 Kimi 原生工具执行并留下 durable ledger evidence refs。topic pack 现在有 manifest 级别的 profile/workflow/memory/eval/action/tool summary、primitive tool call attribution、WorkFrame-scoped evidence reread、保守的原生 scheduler 回执归一化，以及 raw primitive tool escape 的恢复记录。
 
 ## 本地开发
 
-环境要求继承自 Kimi Code：
+环境要求继承自上游 Kimi Code runtime：
 
 - Node.js `>=24.15.0`
 - pnpm `10.33.0`
+
+从本 fork 构建一个本地可安装的 CLI 包：
+
+```powershell
+corepack pnpm --config.engine-strict=false install
+corepack pnpm --config.engine-strict=false build
+New-Item -ItemType Directory -Force dist-pack
+corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ..\..\dist-pack
+npm install -g .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
+hakimi --version
+hakimi
+```
+
+如果不想影响全局 npm prefix，可以做隔离安装检查：
+
+```powershell
+$prefix = "$PWD\.sisyphus\drafts\_scratch\hakimi-install-prefix"
+npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
+& "$prefix\node_modules\.bin\hakimi.cmd" --version
+& "$prefix\node_modules\.bin\kimi.cmd" --version
+```
+
+按需在科研终端中启用 AITP runtime features：
+
+```powershell
+$env:KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY = "1"
+$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER = "1"
+$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION = "1"
+$env:KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE = "1"
+$env:KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE = "1"
+$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS = "1"
+hakimi
+```
 
 ```sh
 pnpm install
