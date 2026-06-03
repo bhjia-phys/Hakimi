@@ -93,13 +93,15 @@ describe('Session physics memory', () => {
       expect(result.isError).toBeUndefined();
       expect(loaded.isError).toBeUndefined();
       expect(result.output).toContain('formula.fqhe.flux_quantization');
-      expect(agent.physicsMemory?.registry.listDomains()).toEqual(['fqhe']);
+      expect(agent.physicsMemory?.registry.listDomains()).toEqual(
+        expect.arrayContaining(['fqhe', 'theoretical-physics/general']),
+      );
       const rootsLoaded = records.find((record) => record.type === 'physics_memory.roots_loaded');
       expect(rootsLoaded).toMatchObject({
         type: 'physics_memory.roots_loaded',
         source: 'session-start',
-        capsuleCount: 1,
-        domains: ['fqhe'],
+        capsuleCount: 4,
+        domains: ['fqhe', 'theoretical-physics/general'],
         diagnostics: [],
       });
       expect(rootsLoaded).toMatchObject({
@@ -141,7 +143,7 @@ describe('Session physics memory', () => {
 
   it('keeps existing sessions without physics memory unchanged when the flag is disabled', async () => {
     const oldFlag = process.env['KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY'];
-    delete process.env['KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY'];
+    process.env['KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY'] = '0';
     try {
       const workDir = await makeTempDir('kimi-physics-memory-off-work-');
       const sessionDir = await makeTempDir('kimi-physics-memory-off-session-');

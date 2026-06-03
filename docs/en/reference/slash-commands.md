@@ -50,8 +50,8 @@ Some commands are only available in the idle state. Executing these commands whi
 | `/plan [on\|off]` | — | Toggle Plan mode. Without arguments, flips the current state; explicitly passing `on`/`off` forces the setting. Simply toggling does not create an empty plan file | Yes |
 | `/plan clear` | — | Clear the current plan | No |
 | `/swarm on\|off` | — | Turn swarm mode on or off without sending a prompt. | Yes |
-| `/swarm <task>` | — | Turn swarm mode on, then send `<task>` as a normal prompt. If the turn completes normally, swarm mode turns off automatically. In `manual` permission mode, Kimi Code asks whether to switch to `auto` or `yolo` before starting. | No |
-| `/goal [...]` | — | Start or manage an autonomous goal | See below |
+| `/swarm <task>` | — | Turn swarm mode on, then send `<task>` as a normal prompt. If the turn completes normally, swarm mode turns off automatically. In `manual` permission mode, Hakimi asks whether to switch to `auto` or `yolo` before starting. | No |
+| `/goal [status\|pause\|resume\|cancel\|replace <objective>\|<objective>]` | — | Start or manage an autonomous goal. In Hakimi it is enabled by default; set `KIMI_CODE_EXPERIMENTAL_GOAL_COMMAND=0` to hide it for one launch. | See below |
 
 ::: warning
 `/yolo` skips approval for regular tool calls. Please make sure you understand the potential risks before enabling it. Plan mode exit approval is not bypassed by `/yolo`; `Bash` inside Plan mode is still subject to the regular `/yolo` allow rules.
@@ -59,7 +59,13 @@ Some commands are only available in the idle state. Executing these commands whi
 
 ## Autonomous Goal
 
-`/goal` starts or manages goal mode: a persistent objective that Kimi Code works toward across automatically continuing turns. For usage guidance and examples, see [Goals](../guides/goals.md).
+`/goal` starts or manages goal mode: a persistent objective that Hakimi works toward across automatically continuing turns. It is available by default. To hide it for one launch:
+
+```sh
+KIMI_CODE_EXPERIMENTAL_GOAL_COMMAND=0 hakimi
+```
+
+For usage guidance and examples, see [Goals](../guides/goals.md). To start a goal directly:
 
 ```sh
 /goal Update the checkout docs, run docs build, and stop if still blocked after 20 turns
@@ -90,10 +96,10 @@ If an upcoming goal needs to start with `manage`, put `--` after `next`:
 In non-interactive prompt mode, only the create forms start goal mode:
 
 ```sh
-kimi -p "/goal Fix the failing checkout test"
+hakimi -p "/goal Fix the failing checkout test"
 ```
 
-Prompt mode exits with code `0` when the goal completes, `3` when it blocks, and `6` when it pauses. Other `/goal` subcommands, including `next`, are TUI controls and are not handled by `kimi -p`.
+Prompt mode exits with code `0` when the goal completes, `3` when it blocks, and `6` when it pauses. Other `/goal` subcommands, including `next`, are TUI controls and are not handled by `hakimi -p`.
 
 ## Information & Status
 
@@ -105,7 +111,7 @@ Prompt mode exits with code `0` when the goal completes, `3` when it blocks, and
 | `/status` | — | Show the current session runtime state: version, model, working directory, permission mode, etc. | Yes |
 | `/mcp` | — | List MCP servers and their connection status in the current session | Yes |
 | `/plugins` | — | Open the interactive plugin manager | Yes |
-| `/version` | — | Display the Kimi Code CLI version number | Yes |
+| `/version` | — | Display the Hakimi version number | Yes |
 | `/feedback` | — | Submit feedback with optional diagnostic logs and codebase context | Yes |
 
 ## Exit

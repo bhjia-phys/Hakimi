@@ -132,22 +132,26 @@ describe('LibRPA file-backed vertical slice', () => {
         modelAlias: MOCK_PROVIDER.model,
       });
 
-      expect(agent.domainProfiles?.listDomains()).toEqual([
+      expect(agent.domainProfiles?.listDomains()).toEqual(expect.arrayContaining([
         LIBRPA_DOMAIN,
         'topological-order/fqhe-cs',
-      ]);
-      expect(agent.workflowRecipes?.listDomains()).toEqual([
+        'theoretical-physics/general',
+      ]));
+      expect(agent.workflowRecipes?.listDomains()).toEqual(expect.arrayContaining([
         LIBRPA_DOMAIN,
         'topological-order/fqhe-cs',
-      ]);
-      expect(agent.physicsMemory?.registry.listDomains()).toEqual([
+        'theoretical-physics/general',
+      ]));
+      expect(agent.physicsMemory?.registry.listDomains()).toEqual(expect.arrayContaining([
         LIBRPA_DOMAIN,
         'topological-order/fqhe-cs',
-      ]);
-      expect(agent.researchHarness?.listDomains()).toEqual([
+        'theoretical-physics/general',
+      ]));
+      expect(agent.researchHarness?.listDomains()).toEqual(expect.arrayContaining([
         LIBRPA_DOMAIN,
         'topological-order/fqhe-cs',
-      ]);
+        'theoretical-physics/general',
+      ]));
 
       const frame = createWorkFrame({
         id: 'frame.librpa.head-wing',

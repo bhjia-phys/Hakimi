@@ -55,7 +55,9 @@ describe('Session research harness evals', () => {
         modelAlias: MOCK_PROVIDER.model,
       });
 
-      expect(agent.researchHarness?.listDomains()).toEqual(['topological-order/fqhe-cs']);
+      expect(agent.researchHarness?.listDomains()).toEqual(
+        expect.arrayContaining(['topological-order/fqhe-cs', 'theoretical-physics/general']),
+      );
       expect(agent.researchHarness?.requireEvalCase('eval.fqhe.charge-flux').source).toBe(
         'project',
       );
@@ -66,7 +68,7 @@ describe('Session research harness evals', () => {
 
   it('keeps sessions unchanged when the research harness flag is disabled', async () => {
     const oldFlag = process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS'];
-    delete process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS'];
+    process.env['KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS'] = '0';
     try {
       const workDir = await makeTempDir('kimi-research-harness-off-work-');
       const sessionDir = await makeTempDir('kimi-research-harness-off-session-');

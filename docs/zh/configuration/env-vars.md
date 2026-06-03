@@ -137,6 +137,29 @@ kimi
 | `KIMI_CODE_NO_AUTO_UPDATE` | 完全禁用更新预检——不检查、不后台安装、不提示。同时兼容旧名 `KIMI_CLI_NO_AUTO_UPDATE` | 真值：`1`/`true`/`yes`/`on` |
 | `KIMI_DISABLE_CRON` | 禁用定时任务工具（`CronCreate` 拒绝新计划，已有任务不触发） | `1` 表示禁用 |
 
+`KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT` 的优先级高于 `config.toml`。例如临时运行 `KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT=0 hakimi -p "..."` 时，即使配置文件里写了 `keep_alive_on_exit = true`，本次进程退出前也会请求停止后台任务。
+
+## 实验功能 flag
+
+实验功能通过 `KIMI_CODE_EXPERIMENTAL_*` 环境变量控制。在 Hakimi 中，核心 AITP 科研 runtime 默认开启；如果只想在某次启动里关闭某项能力，可以把对应 flag 设为假值（`0`、`false`、`no`、`off`）。每个 flag 也接受真值（`1`、`true`、`yes`、`on`）；主开关 `KIMI_CODE_EXPERIMENTAL_FLAG` 会强制启用所有实验功能。这些 flag 不会从 `config.toml` 读取。
+
+| 环境变量 | 用途 | 默认值 |
+| --- | --- | --- |
+| `KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY` | 启用 physics memory capsules、context compilation 和 `PhysicsMemory` 工具。 | `true`（开启） |
+| `KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER` | 启用 source-backed research ledger 扫描、写入、捕获和 scoped evidence reread。 | `true`（开启） |
+| `KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION` | 启用 WorkFrame、semantic research actions、primitive-tool attribution、graph/formalization/benchmark executors 和 `ResearchAction` 工具。 | `true`（开启） |
+| `KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE` | 启用 domain profile registries 和内建通用理论物理 fallback profile。 | `true`（开启） |
+| `KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE` | 启用 workflow recipe registries 和内建理论物理 workflow scaffold。 | `true`（开启） |
+| `KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS` | 启用 research eval case registries 和 harness candidate/eval 加载。 | `true`（开启） |
+| `KIMI_CODE_EXPERIMENTAL_GOAL_COMMAND` | 启用 `/goal` 命令和自主 goal 模式。Hakimi 会围绕指定目标自动续跑，直到目标完成、暂停或进入 blocked 状态。 | `true`（开启） |
+| `KIMI_CODE_EXPERIMENTAL_TOOL_SELECT` | 为支持动态加载工具的模型启用渐进式 MCP 工具披露。 | `false`（关闭） |
+| `KIMI_CODE_EXPERIMENTAL_MICRO_COMPACTION` | 启用实验性的 micro-compaction 路径。 | `false`（关闭） |
+
+```sh
+# 单次启动时关闭某条 Hakimi 科研能力
+KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS=0 hakimi
+```
+
 ## 诊断日志
 
 这组变量控制日志级别和文件滚动，进程启动时读取一次：

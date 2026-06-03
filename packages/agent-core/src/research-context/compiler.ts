@@ -15,6 +15,16 @@ import {
   type ResearchLedgerRegistry,
 } from '../research-ledger';
 import type { ResearchEvalCaseRegistry } from '../research-harness';
+import {
+  GENERIC_THEORETICAL_PHYSICS_COMPUTATIONAL_WORKFLOW_ID,
+  GENERIC_THEORETICAL_PHYSICS_DOMAIN,
+  GENERIC_THEORETICAL_PHYSICS_PROFILE_ID,
+  hasComputationalResearchIntent,
+  isGenericTheoreticalPhysicsCapsuleId,
+  isGenericTheoreticalPhysicsProfileId,
+  isGenericTheoreticalPhysicsWorkflowId,
+  shouldUseGenericTheoreticalPhysicsFallback,
+} from '../research-defaults/theoretical-physics';
 import type { WorkflowRecipe, WorkflowRecipeRegistry } from '../workflow-recipe';
 import type {
   CompileResearchContextPackOptions,
@@ -44,7 +54,7 @@ const DEFAULT_LEDGER_STATUSES: readonly ResearchLedgerEventStatus[] = [
 
 const DEFAULT_MAX_CAPSULES = 12;
 const DEFAULT_MAX_LEDGER_PROPOSALS = 12;
-const DEFAULT_MAX_ACTION_BINDINGS = 24;
+const DEFAULT_MAX_ACTION_BINDINGS = 40;
 
 export function compileResearchContextPack(
   input: CompileResearchContextPackInput,
@@ -57,6 +67,7 @@ export function compileResearchContextPack(
     workflowRecipes: input.workflowRecipes,
     physicsMemory: input.physicsMemory,
     researchHarness: input.researchHarness,
+    workFrame: frame,
     now: input.now,
   });
   const profiles = collectProfiles(input, diagnostics);
@@ -147,9 +158,29 @@ function collectProfiles(
       refId: diagnostic.profileId,
     });
   }
-  return input.domainProfiles
-    .listProfiles({ domain: input.workFrame.domain })
-    .map((profile) => ({
+  const exactProfiles = input.domainProfiles.listProfiles({ domain: input.workFrame.domain });
+  let selectedProfiles = exactProfiles;
+  if (
+    shouldUseGenericTheoreticalPhysicsFallback({
+      domain: input.workFrame.domain,
+      exactCount: exactProfiles.length,
+    })
+  ) {
+    const fallback = input.domainProfiles.getProfile(GENERIC_THEORETICAL_PHYSICS_PROFILE_ID);
+    if (fallback !== undefined) {
+      selectedProfiles = [fallback];
+      diagnostics.push({
+        severity: 'info',
+        code: 'generic-theoretical-physics-profile-fallback',
+        message:
+          `No domain profile is registered for "${input.workFrame.domain}"; using the built-in ` +
+          `${GENERIC_THEORETICAL_PHYSICS_DOMAIN} research profile as a process scaffold.`,
+        source: 'domain-profile',
+        refId: fallback.metadata.id,
+      });
+    }
+  }
+  return selectedProfiles.map((profile) => ({
       id: profile.metadata.id,
       title: profile.metadata.title,
       status: profile.metadata.status,
@@ -192,6 +223,9 @@ function collectWorkflows(
   }
 
   const byId = new Map<string, WorkflowRecipe>();
+  const usingGenericFallback = profiles.some((profile) =>
+    isGenericTheoreticalPhysicsProfileId(profile.id),
+  );
   for (const workflowId of profileWorkflowIds) {
     const workflow = input.workflowRecipes.getRecipe(workflowId);
     if (workflow === undefined) {
@@ -204,7 +238,10 @@ function collectWorkflows(
       });
       continue;
     }
-    if (workflow.metadata.domain !== input.workFrame.domain) {
+    if (
+      workflow.metadata.domain !== input.workFrame.domain &&
+      !isGenericTheoreticalPhysicsWorkflowId(workflow.metadata.id)
+    ) {
       diagnostics.push({
         severity: 'warning',
         code: 'cross-domain-profile-workflow',
@@ -215,6 +252,12 @@ function collectWorkflows(
       continue;
     }
     byId.set(workflow.metadata.id, workflow);
+  }
+  if (usingGenericFallback && hasComputationalResearchIntent(input.workFrame)) {
+    const computational = input.workflowRecipes.getRecipe(
+      GENERIC_THEORETICAL_PHYSICS_COMPUTATIONAL_WORKFLOW_ID,
+    );
+    if (computational !== undefined) byId.set(computational.metadata.id, computational);
   }
   return [...byId.values()].toSorted((a, b) => a.metadata.id.localeCompare(b.metadata.id));
 }
@@ -244,13 +287,37 @@ function collectPhysics(
       refId: focusId,
     });
   }
-  const physicsPack = compilePhysicsContext(input.physicsMemory, {
-    domain: input.workFrame.domain,
-    focus: knownFocus.length === 0 ? undefined : knownFocus,
-    reliabilityFloor: input.reliabilityFloor,
-    bridgePolicy: input.bridgePolicy,
-  });
-  for (const diagnostic of physicsPack.diagnostics) {
+  const genericFocus = knownFocus.filter((id) => isGenericTheoreticalPhysicsCapsuleId(id));
+  const localFocus = knownFocus.filter((id) => !isGenericTheoreticalPhysicsCapsuleId(id));
+  const physicsPacks =
+    genericFocus.length === 0
+      ? [
+          compilePhysicsContext(input.physicsMemory, {
+            domain: input.workFrame.domain,
+            focus: knownFocus.length === 0 ? undefined : knownFocus,
+            reliabilityFloor: input.reliabilityFloor,
+            bridgePolicy: input.bridgePolicy,
+          }),
+        ]
+      : [
+          ...(localFocus.length === 0
+            ? []
+            : [
+                compilePhysicsContext(input.physicsMemory, {
+                  domain: input.workFrame.domain,
+                  focus: localFocus,
+                  reliabilityFloor: input.reliabilityFloor,
+                  bridgePolicy: input.bridgePolicy,
+                }),
+              ]),
+          compilePhysicsContext(input.physicsMemory, {
+            domain: GENERIC_THEORETICAL_PHYSICS_DOMAIN,
+            focus: genericFocus,
+            reliabilityFloor: input.reliabilityFloor,
+            bridgePolicy: input.bridgePolicy,
+          }),
+        ];
+  for (const diagnostic of physicsPacks.flatMap((pack) => pack.diagnostics)) {
     diagnostics.push({
       severity: diagnostic.severity,
       code: diagnostic.code,
@@ -260,7 +327,7 @@ function collectPhysics(
     });
   }
   const capsules = bounded(
-    physicsPack.capsules.map(capsuleSummary),
+    uniqueCapsules(physicsPacks.flatMap((pack) => pack.capsules)).map(capsuleSummary),
     input.limits?.maxCapsules ?? DEFAULT_MAX_CAPSULES,
     (remaining) =>
       diagnostics.push({
@@ -403,6 +470,14 @@ function uniqueBindings(
     if (!byId.has(key)) byId.set(key, binding);
   }
   return [...byId.values()].toSorted((a, b) => a.id.localeCompare(b.id));
+}
+
+function uniqueCapsules(capsules: readonly PhysicsCapsule[]): readonly PhysicsCapsule[] {
+  const byId = new Map<string, PhysicsCapsule>();
+  for (const capsule of capsules) {
+    if (!byId.has(capsule.metadata.id)) byId.set(capsule.metadata.id, capsule);
+  }
+  return [...byId.values()].toSorted((a, b) => a.metadata.id.localeCompare(b.metadata.id));
 }
 
 function bounded<T>(

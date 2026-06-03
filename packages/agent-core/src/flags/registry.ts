@@ -37,7 +37,7 @@ export const FLAG_DEFINITIONS = [
     title: 'Physics memory',
     description: 'Load theoretical-physics memory capsules into Hakimi sessions.',
     env: 'KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY',
-    default: false,
+    default: true,
     surface: 'core',
   },
   {
@@ -45,7 +45,7 @@ export const FLAG_DEFINITIONS = [
     title: 'Research ledger',
     description: 'Expose append-only research progress and proposal tools.',
     env: 'KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER',
-    default: false,
+    default: true,
     surface: 'core',
   },
   {
@@ -53,7 +53,7 @@ export const FLAG_DEFINITIONS = [
     title: 'Research actions',
     description: 'Expose native research-action orchestration tools.',
     env: 'KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION',
-    default: false,
+    default: true,
     surface: 'core',
   },
   {
@@ -61,7 +61,7 @@ export const FLAG_DEFINITIONS = [
     title: 'Domain profiles',
     description: 'Load domain profiles for research context compilation.',
     env: 'KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE',
-    default: false,
+    default: true,
     surface: 'core',
   },
   {
@@ -69,7 +69,7 @@ export const FLAG_DEFINITIONS = [
     title: 'Workflow recipes',
     description: 'Load reusable research workflow recipes.',
     env: 'KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE',
-    default: false,
+    default: true,
     surface: 'core',
   },
   {
@@ -77,8 +77,16 @@ export const FLAG_DEFINITIONS = [
     title: 'Research harness',
     description: 'Load local research eval cases and benchmark adapters.',
     env: 'KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS',
-    default: false,
+    default: true,
     surface: 'core',
+  },
+  {
+    id: 'goal-command',
+    title: 'Goal command',
+    description: 'Enable autonomous goal-mode slash commands and tools.',
+    env: 'KIMI_CODE_EXPERIMENTAL_GOAL_COMMAND',
+    default: true,
+    surface: 'both',
   },
   {
     id: 'micro-compaction',

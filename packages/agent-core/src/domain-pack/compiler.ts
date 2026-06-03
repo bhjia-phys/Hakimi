@@ -3,6 +3,18 @@ import { createHash } from 'node:crypto';
 import type { DomainProfile, DomainProfileRegistry } from '../domain-profile';
 import type { PhysicsCapsule, PhysicsDomainId, PhysicsMemoryRegistry } from '../physics-memory';
 import type { ResearchEvalCaseRegistry } from '../research-harness';
+import type { WorkFrame } from '../research-action';
+import {
+  GENERIC_THEORETICAL_PHYSICS_COMPUTATIONAL_WORKFLOW_ID,
+  GENERIC_THEORETICAL_PHYSICS_DOMAIN,
+  GENERIC_THEORETICAL_PHYSICS_EVAL_ID,
+  GENERIC_THEORETICAL_PHYSICS_PROFILE_ID,
+  hasComputationalResearchIntent,
+  isGenericTheoreticalPhysicsCapsuleId,
+  isGenericTheoreticalPhysicsProfileId,
+  isGenericTheoreticalPhysicsWorkflowId,
+  shouldUseGenericTheoreticalPhysicsFallback,
+} from '../research-defaults/theoretical-physics';
 import type { WorkflowRecipe, WorkflowRecipeRegistry } from '../workflow-recipe';
 import type { DomainPackManifest, DomainPackManifestDiagnostic } from './types';
 
@@ -12,6 +24,7 @@ export interface CompileDomainPackManifestInput {
   readonly workflowRecipes?: WorkflowRecipeRegistry | null | undefined;
   readonly physicsMemory?: PhysicsMemoryRegistry | null | undefined;
   readonly researchHarness?: ResearchEvalCaseRegistry | null | undefined;
+  readonly workFrame?: Pick<WorkFrame, 'topic' | 'goal'> | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -22,7 +35,7 @@ export function compileDomainPackManifest(
   const profiles = collectProfiles(input, diagnostics);
   const workflows = collectWorkflows(input, profiles, diagnostics);
   const capsules = collectCapsules(input, profiles, diagnostics);
-  const evalCaseIds = collectEvalCaseIds(input, diagnostics);
+  const evalCaseIds = collectEvalCaseIds(input, profiles, diagnostics);
   const profileIds = profiles.map((profile) => profile.metadata.id);
   const workflowIds = workflows.map((workflow) => workflow.metadata.id);
   const capsuleIds = capsules.map((capsule) => capsule.metadata.id);
@@ -105,7 +118,27 @@ function collectProfiles(
       rootPath: diagnostic.rootPath,
     });
   }
-  return input.domainProfiles.listProfiles({ domain: input.domain });
+  const exactProfiles = input.domainProfiles.listProfiles({ domain: input.domain });
+  if (
+    !shouldUseGenericTheoreticalPhysicsFallback({
+      domain: input.domain,
+      exactCount: exactProfiles.length,
+    })
+  ) {
+    return exactProfiles;
+  }
+  const fallback = input.domainProfiles.getProfile(GENERIC_THEORETICAL_PHYSICS_PROFILE_ID);
+  if (fallback === undefined) return exactProfiles;
+  diagnostics.push({
+    severity: 'info',
+    code: 'generic-theoretical-physics-profile-fallback',
+    message:
+      `No domain profile is registered for "${input.domain}"; using the built-in ` +
+      `${GENERIC_THEORETICAL_PHYSICS_DOMAIN} research profile as a process scaffold.`,
+    source: 'domain-profile',
+    refId: fallback.metadata.id,
+  });
+  return [fallback];
 }
 
 function collectWorkflows(
@@ -141,6 +174,9 @@ function collectWorkflows(
   }
 
   const byId = new Map<string, WorkflowRecipe>();
+  const usingGenericFallback = profiles.some((profile) =>
+    isGenericTheoreticalPhysicsProfileId(profile.metadata.id),
+  );
   for (const workflowId of profileWorkflowIds) {
     const workflow = input.workflowRecipes.getRecipe(workflowId);
     if (workflow === undefined) {
@@ -153,7 +189,10 @@ function collectWorkflows(
       });
       continue;
     }
-    if (workflow.metadata.domain !== input.domain) {
+    if (
+      workflow.metadata.domain !== input.domain &&
+      !isGenericTheoreticalPhysicsWorkflowId(workflow.metadata.id)
+    ) {
       diagnostics.push({
         severity: 'warning',
         code: 'cross-domain-profile-workflow',
@@ -164,6 +203,12 @@ function collectWorkflows(
       continue;
     }
     byId.set(workflow.metadata.id, workflow);
+  }
+  if (usingGenericFallback && input.workFrame !== undefined && hasComputationalResearchIntent(input.workFrame)) {
+    const computational = input.workflowRecipes.getRecipe(
+      GENERIC_THEORETICAL_PHYSICS_COMPUTATIONAL_WORKFLOW_ID,
+    );
+    if (computational !== undefined) byId.set(computational.metadata.id, computational);
   }
   return [...byId.values()].toSorted((a, b) => a.metadata.id.localeCompare(b.metadata.id));
 }
@@ -210,7 +255,10 @@ function collectCapsules(
       });
       continue;
     }
-    if (capsule.metadata.domain !== input.domain) {
+    if (
+      capsule.metadata.domain !== input.domain &&
+      !isGenericTheoreticalPhysicsCapsuleId(capsule.metadata.id)
+    ) {
       diagnostics.push({
         severity: 'warning',
         code: 'cross-domain-profile-capsule',
@@ -220,11 +268,22 @@ function collectCapsules(
       });
     }
   }
-  return input.physicsMemory.listCapsules({ domain: input.domain });
+  const exactCapsules = input.physicsMemory.listCapsules({ domain: input.domain });
+  const usingGenericFallback = profiles.some((profile) =>
+    isGenericTheoreticalPhysicsProfileId(profile.metadata.id),
+  );
+  if (!usingGenericFallback) {
+    return exactCapsules;
+  }
+  return uniqueCapsules([
+    ...exactCapsules,
+    ...input.physicsMemory.listCapsules({ domain: GENERIC_THEORETICAL_PHYSICS_DOMAIN }),
+  ]);
 }
 
 function collectEvalCaseIds(
   input: CompileDomainPackManifestInput,
+  profiles: readonly DomainProfile[],
   diagnostics: DomainPackManifestDiagnostic[],
 ): readonly string[] {
   if (input.researchHarness === null || input.researchHarness === undefined) {
@@ -247,8 +306,16 @@ function collectEvalCaseIds(
       rootPath: diagnostic.rootPath,
     });
   }
-  return input.researchHarness
+  const exactEvalCaseIds = input.researchHarness
     .listEvalCases({ domain: input.domain })
+    .map((evalCase) => evalCase.evalCase.id);
+  if (exactEvalCaseIds.length > 0) return exactEvalCaseIds;
+  if (!profiles.some((profile) => isGenericTheoreticalPhysicsProfileId(profile.metadata.id))) {
+    return [];
+  }
+  return input.researchHarness
+    .listEvalCases({ domain: GENERIC_THEORETICAL_PHYSICS_DOMAIN })
+    .filter((evalCase) => evalCase.evalCase.id === GENERIC_THEORETICAL_PHYSICS_EVAL_ID)
     .map((evalCase) => evalCase.evalCase.id);
 }
 
@@ -271,6 +338,14 @@ function manifestId(input: {
 
 function unique(values: readonly string[]): readonly string[] {
   return [...new Set(values.filter((value) => value.length > 0))].toSorted();
+}
+
+function uniqueCapsules(capsules: readonly PhysicsCapsule[]): readonly PhysicsCapsule[] {
+  const byId = new Map<string, PhysicsCapsule>();
+  for (const capsule of capsules) {
+    if (!byId.has(capsule.metadata.id)) byId.set(capsule.metadata.id, capsule);
+  }
+  return [...byId.values()].toSorted((a, b) => a.metadata.id.localeCompare(b.metadata.id));
 }
 
 function safeId(input: string): string {
