@@ -2,7 +2,9 @@ node_modules/
 dist/
 dist-web/
 dist-single/
+dist-pack/
 dist-native/
+.sisyphus/
 .tmp-api-extractor/
 .contract-types-tmp/
 .local/

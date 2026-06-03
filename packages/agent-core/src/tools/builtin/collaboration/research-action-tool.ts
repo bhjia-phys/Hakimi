@@ -36,6 +36,7 @@ import {
   type PhysicsRelationType,
 } from '../../../physics-memory';
 import type { BenchmarkAdapterRunResult } from '../../../benchmark-adapter';
+import type { DomainPackManifestDiagnostic } from '../../../domain-pack';
 import type { FormalizationPlan } from '../../../formalization';
 import {
   findPhysicsGraphPath,
@@ -68,6 +69,7 @@ const ACTIONS = [
   'compile_context_pack',
   'list_context_packs',
   'load_context_pack',
+  'inspect_domain_pack',
   'list_evidence_refs',
   'load_evidence_ref',
   'run_benchmark_adapter',
@@ -287,6 +289,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return this.listContextPacks();
         case 'load_context_pack':
           return this.loadContextPack(args);
+        case 'inspect_domain_pack':
+          return this.inspectDomainPack(args);
         case 'list_evidence_refs':
           return this.listEvidenceRefs(args);
         case 'load_evidence_ref':
@@ -588,6 +592,19 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       return errorResult('ResearchAction load_context_pack requires context_pack_id.');
     }
     return ok(renderContextPack(this.manager.requireContextPack(args.context_pack_id)));
+  }
+
+  private inspectDomainPack(args: ResearchActionToolInput): ExecutableToolResult {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction inspect_domain_pack requires a session manager.');
+    }
+    const contextPackId = args.context_pack_id ?? this.manager.activeWorkFrame()?.contextPackId;
+    if (contextPackId === undefined || contextPackId.length === 0) {
+      return errorResult(
+        'ResearchAction inspect_domain_pack requires context_pack_id or an active WorkFrame with an attached ContextPack.',
+      );
+    }
+    return ok(renderDomainPackInspection(this.manager.requireContextPack(contextPackId)));
   }
 
   private listEvidenceRefs(args: ResearchActionToolInput): ExecutableToolResult {
@@ -1234,6 +1251,42 @@ function renderDomainPackManifest(pack: ResearchContextPack): string {
     renderBoundedStringList('actions', 'action', manifest.actionIds, '    '),
     renderBoundedStringList('required_tools', 'tool', manifest.requiredTools, '    '),
     '  </domain_pack>',
+  ].join('\n');
+}
+
+function renderDomainPackInspection(pack: ResearchContextPack): string {
+  const manifest = pack.domainPack;
+  if (manifest === undefined) {
+    return `<domain_pack_inspection context_pack_id="${escapeXml(pack.id)}" status="missing_manifest" />\n`;
+  }
+  return [
+    `<domain_pack_inspection context_pack_id="${escapeXml(pack.id)}" manifest_id="${escapeXml(manifest.id)}" domain="${escapeXml(manifest.domain)}">`,
+    renderBoundedStringList('profiles', 'profile', manifest.profileIds, '  '),
+    renderBoundedStringList('workflows', 'workflow', manifest.workflowIds, '  '),
+    renderBoundedStringList('capsules', 'capsule', manifest.capsuleIds, '  '),
+    renderBoundedStringList('bridge_capsules', 'capsule', manifest.bridgeCapsuleIds, '  '),
+    renderBoundedStringList('eval_cases', 'eval_case', manifest.evalCaseIds, '  '),
+    renderBoundedStringList('action_bindings', 'binding', manifest.actionBindingIds, '  '),
+    renderBoundedStringList('actions', 'action', manifest.actionIds, '  '),
+    renderBoundedStringList('required_tools', 'tool', manifest.requiredTools, '  '),
+    renderBoundedStringList('context_tags', 'tag', manifest.contextTags, '  '),
+    renderDomainPackDiagnostics(manifest.diagnostics),
+    '</domain_pack_inspection>',
+    '',
+  ].join('\n');
+}
+
+function renderDomainPackDiagnostics(
+  diagnostics: readonly DomainPackManifestDiagnostic[],
+): string {
+  if (diagnostics.length === 0) return '  <diagnostics />';
+  return [
+    '  <diagnostics>',
+    ...diagnostics.map(
+      (diagnostic) =>
+        `    <diagnostic severity="${diagnostic.severity}" source="${diagnostic.source}" code="${escapeXml(diagnostic.code)}"${diagnostic.refId === undefined ? '' : ` ref_id="${escapeXml(diagnostic.refId)}"`}${diagnostic.path === undefined ? '' : ` path="${escapeXml(diagnostic.path)}"`}${diagnostic.rootPath === undefined ? '' : ` root_path="${escapeXml(diagnostic.rootPath)}"`}>${escapeXml(diagnostic.message)}</diagnostic>`,
+    ),
+    '  </diagnostics>',
   ].join('\n');
 }
 

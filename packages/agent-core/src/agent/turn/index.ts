@@ -1164,6 +1164,7 @@ export class TurnFlow {
         properties['error_type'] = errorType;
       }
       this.agent.telemetry.track('tool_call', properties);
+      this.recordRawResearchToolEscape(started.name, event.toolCallId);
       void this.agent.toolLifecycle.recordCompleted({
         source: 'loop',
         turnId,
@@ -1172,6 +1173,20 @@ export class TurnFlow {
         result: event.result,
       });
     }
+  }
+
+  private recordRawResearchToolEscape(toolName: string, toolCallId: string): void {
+    const frame = this.agent.workFrames.active;
+    if (frame === undefined) return;
+    if (this.agent.researchAction.activeActionCall !== undefined) return;
+    if (!isResearchPrimitiveTool(toolName)) return;
+    this.agent.researchAction.recordRawToolEscape({
+      reason: `Primitive tool "${toolName}" ran in active WorkFrame "${frame.id}" without an active ResearchAction call. Call ResearchAction.plan_primitive_tools/start_action_call before native tools and finish_action_call with primitive_tool_call_ids.`,
+      primitiveToolName: toolName,
+      primitiveToolCallId: toolCallId,
+      workFrameId: frame.id,
+      followupActionId: followupActionForPrimitiveTool(toolName),
+    });
   }
 
   private trackDuplicateToolCall(
@@ -1597,6 +1612,31 @@ function isApiEmptyResponseError(error: unknown, summary: KimiErrorPayload): boo
 function currentTurnInputTokens(usage: TokenUsage | undefined): number | undefined {
   if (usage === undefined) return undefined;
   return inputTotal(usage);
+}
+
+const RESEARCH_PRIMITIVE_TOOL_NAMES = new Set([
+  'Read',
+  'Grep',
+  'Glob',
+  'WebSearch',
+  'FetchURL',
+  'Bash',
+  'Write',
+  'Edit',
+]);
+
+function isResearchPrimitiveTool(toolName: string): boolean {
+  return RESEARCH_PRIMITIVE_TOOL_NAMES.has(toolName) || toolName.startsWith('mcp__');
+}
+
+function followupActionForPrimitiveTool(toolName: string): string | undefined {
+  if (toolName === 'WebSearch' || toolName === 'FetchURL') return 'source.search_literature';
+  if (toolName === 'Read' || toolName === 'Grep' || toolName === 'Glob') {
+    return 'code.inspect_call_sites';
+  }
+  if (toolName === 'Edit' || toolName === 'Write') return 'code.prepare_patch';
+  if (toolName === 'Bash' || toolName.startsWith('mcp__')) return 'benchmark.submit_external_job';
+  return undefined;
 }
 
 type ToolTelemetryResult = Extract<LoopEvent, { type: 'tool.result' }>['result'];

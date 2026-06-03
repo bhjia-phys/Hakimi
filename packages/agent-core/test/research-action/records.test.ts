@@ -20,6 +20,7 @@ describe('research action records', () => {
       reason: 'No semantic action exists yet for this narrow inspection.',
       primitiveToolName: 'Bash',
       primitiveToolCallId: 'tool_call_git_diff',
+      workFrameId: 'frame.patch',
       followupActionId: 'code.inspect_git_history',
       evidenceRefs: ['git:diff:head-wing'],
     });
@@ -30,6 +31,7 @@ describe('research action records', () => {
         reason: 'No semantic action exists yet for this narrow inspection.',
         primitiveToolName: 'Bash',
         primitiveToolCallId: 'tool_call_git_diff',
+        workFrameId: 'frame.patch',
         followupActionId: 'code.inspect_git_history',
         evidenceRefs: ['git:diff:head-wing'],
       }),
