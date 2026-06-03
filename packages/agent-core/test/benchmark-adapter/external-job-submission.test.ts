@@ -4,6 +4,7 @@ import {
   EXTERNAL_JOB_SUBMISSION_ACTION_ID,
   EXTERNAL_JOB_SUBMISSION_ADAPTER,
   EXTERNAL_JOB_SUBMISSION_ADAPTER_ID,
+  inferExternalJobSchedulerReceipt,
 } from '../../src/benchmark-adapter';
 
 describe('external job submission benchmark adapter', () => {
@@ -64,6 +65,62 @@ describe('external job submission benchmark adapter', () => {
     expect(result.outcome).toBe('inconclusive');
     expect(result.observation).toContain('prepared but not dispatched');
     expect(result.checkResults[0]?.status).toBe('missing');
+  });
+
+  it('infers common native scheduler receipt job ids conservatively', () => {
+    expect(
+      inferExternalJobSchedulerReceipt({
+        backend: { kind: 'scheduler', name: 'slurm' },
+        schedulerOutput: 'Submitted batch job 4242',
+      }),
+    ).toEqual({
+      jobId: '4242',
+      source: 'scheduler_output',
+    });
+    expect(
+      inferExternalJobSchedulerReceipt({
+        backend: { kind: 'scheduler', name: 'lsf' },
+        schedulerOutput: 'Job <8675309> is submitted to queue <normal>.',
+      }),
+    ).toMatchObject({ jobId: '8675309' });
+    expect(
+      inferExternalJobSchedulerReceipt({
+        backend: { kind: 'scheduler', name: 'pbs' },
+        schedulerOutput: '12345.server',
+      }),
+    ).toMatchObject({ jobId: '12345.server' });
+    expect(
+      inferExternalJobSchedulerReceipt({
+        backend: { kind: 'scheduler', name: 'unknown' },
+        schedulerOutput: 'command finished successfully',
+      }),
+    ).toEqual({});
+  });
+
+  it('normalizes a scheduler output receipt even when the native tool did not provide jobId separately', () => {
+    const result = EXTERNAL_JOB_SUBMISSION_ADAPTER.run({
+      caseId: 'case.external.submit',
+      payload: {
+        backend: {
+          kind: 'scheduler',
+          name: 'slurm',
+          command: 'sbatch job.sh',
+        },
+        jobScript: 'job.sh',
+        schedulerOutput: 'Submitted batch job 4242',
+      },
+    });
+
+    expect(result.outcome).toBe('pass');
+    expect(result.output).toMatchObject({
+      jobId: '4242',
+      inferredJobIdFromSchedulerOutput: true,
+      status: 'submitted',
+    });
+    expect(result.evidenceRefs).toEqual(
+      expect.arrayContaining(['job:4242', 'external-job-receipt:scheduler_output']),
+    );
+    expect(result.checkResults[0]?.status).toBe('passed');
   });
 
   it('blocks invalid payloads instead of inventing a submission result', () => {
