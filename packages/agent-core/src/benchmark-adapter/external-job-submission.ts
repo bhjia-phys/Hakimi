@@ -32,6 +32,11 @@ export interface ExternalJobSubmissionPayload {
   readonly evidenceRefs?: readonly string[] | undefined;
 }
 
+export interface ExternalJobSchedulerReceiptInference {
+  readonly jobId?: string | undefined;
+  readonly source?: 'scheduler_output' | undefined;
+}
+
 export const EXTERNAL_JOB_SUBMISSION_ADAPTER: BenchmarkAdapter = {
   id: EXTERNAL_JOB_SUBMISSION_ADAPTER_ID,
   title: 'External job submission receipt contract',
@@ -57,34 +62,55 @@ export const EXTERNAL_JOB_SUBMISSION_ADAPTER: BenchmarkAdapter = {
       });
     }
 
-    const normalized = normalizeExternalJobSubmission(parsed);
+    const receipt = inferExternalJobSchedulerReceipt(parsed);
+    const payload = {
+      ...parsed,
+      jobId: parsed.jobId ?? receipt.jobId,
+    };
+    const normalized = normalizeExternalJobSubmission(payload);
     const evidenceRefs = [
       ...baseEvidenceRefs,
-      `external-job-backend:${parsed.backend.kind}`,
-      ...(parsed.backend.name === undefined ? [] : [`external-job-backend:${parsed.backend.name}`]),
-      ...(parsed.jobId === undefined ? [] : [`job:${parsed.jobId}`]),
-      ...(parsed.jobScript === undefined ? [] : [`job-script:${parsed.jobScript}`]),
-      ...(parsed.evidenceRefs ?? []),
+      `external-job-backend:${payload.backend.kind}`,
+      ...(payload.backend.name === undefined ? [] : [`external-job-backend:${payload.backend.name}`]),
+      ...(payload.jobId === undefined ? [] : [`job:${payload.jobId}`]),
+      ...(payload.jobScript === undefined ? [] : [`job-script:${payload.jobScript}`]),
+      ...(receipt.source === undefined ? [] : [`external-job-receipt:${receipt.source}`]),
+      ...(payload.evidenceRefs ?? []),
     ];
-    const artifactRefs = parsed.artifactRefs ?? [];
+    const artifactRefs = payload.artifactRefs ?? [];
 
     return result({
       caseId,
       outcome: normalized.outcome,
       observation: normalized.observation,
       output: {
-        backend: parsed.backend,
-        jobScript: parsed.jobScript,
-        jobId: parsed.jobId,
-        schedulerOutput: parsed.schedulerOutput,
+        backend: payload.backend,
+        jobScript: payload.jobScript,
+        jobId: payload.jobId,
+        schedulerOutput: payload.schedulerOutput,
         status: normalized.status,
-        dryRun: parsed.dryRun === true,
+        dryRun: payload.dryRun === true,
+        inferredJobIdFromSchedulerOutput: receipt.source === 'scheduler_output',
       },
       evidenceRefs,
       artifactRefs,
     });
   },
 };
+
+export function inferExternalJobSchedulerReceipt(
+  input: Pick<ExternalJobSubmissionPayload, 'backend' | 'jobId' | 'schedulerOutput'>,
+): ExternalJobSchedulerReceiptInference {
+  if (hasText(input.jobId)) return {};
+  if (!hasText(input.schedulerOutput)) return {};
+  const jobId = inferJobIdFromSchedulerOutput(input.schedulerOutput, input.backend);
+  return jobId === undefined
+    ? {}
+    : {
+        jobId,
+        source: 'scheduler_output',
+      };
+}
 
 function normalizeExternalJobSubmission(input: ExternalJobSubmissionPayload): {
   readonly outcome: BenchmarkAdapterOutcome;
@@ -182,6 +208,38 @@ function parseBackend(value: unknown): ExternalJobBackendDescriptor | undefined 
     command: optionalString(value['command']),
     endpoint: optionalString(value['endpoint']),
   };
+}
+
+function inferJobIdFromSchedulerOutput(
+  schedulerOutput: string,
+  backend: ExternalJobBackendDescriptor,
+): string | undefined {
+  const text = schedulerOutput.trim();
+  const patterns = [
+    /Submitted\s+batch\s+job\s+([A-Za-z0-9_.:-]+)/iu,
+    /Job\s+<([A-Za-z0-9_.:-]+)>\s+is\s+submitted/iu,
+    /Your\s+job\s+([A-Za-z0-9_.:-]+)(?:\s|\()/iu,
+  ];
+  for (const pattern of patterns) {
+    const matched = pattern.exec(text);
+    const jobId = normalizeJobIdCandidate(matched?.[1]);
+    if (jobId !== undefined) return jobId;
+  }
+  if (isQsubLikeBackend(backend)) {
+    return normalizeJobIdCandidate(text);
+  }
+  return undefined;
+}
+
+function isQsubLikeBackend(backend: ExternalJobBackendDescriptor): boolean {
+  const values = [backend.name, backend.command].filter(hasText).join(' ').toLowerCase();
+  return /\b(?:pbs|torque|qsub)\b/u.test(values);
+}
+
+function normalizeJobIdCandidate(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim().replace(/[,.]$/u, '');
+  return /^[A-Za-z0-9_.:-]+$/u.test(trimmed) ? trimmed : undefined;
 }
 
 function checkStatus(outcome: BenchmarkAdapterOutcome): ResearchEvalCheckResult['status'] {
