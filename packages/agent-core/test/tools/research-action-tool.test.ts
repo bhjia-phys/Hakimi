@@ -312,6 +312,52 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('normalizes external job submissions through the default adapter contract', async () => {
+    const records: AgentRecord[] = [];
+    const agent = makeAgent(records);
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'run_benchmark_adapter',
+      action_id: 'benchmark.submit_external_job',
+      call_id: 'call.external-submit-adapter',
+      adapter_id: 'adapter.external.job-submission',
+      benchmark_case_id: 'case.external.submit',
+      benchmark_payload: {
+        backend: {
+          kind: 'scheduler',
+          name: 'slurm',
+          command: 'sbatch job.sh',
+        },
+        jobScript: 'job.sh',
+        jobId: '4242',
+        schedulerOutput: 'Submitted batch job 4242',
+        artifactRefs: ['artifact:slurm-4242.out'],
+        evidenceRefs: ['ledger:event.head-wing-submit'],
+      },
+      source_refs: ['tool:Bash', 'job:4242'],
+    });
+
+    expect(result.output).toContain('adapter_id="adapter.external.job-submission"');
+    expect(result.output).toContain('action_id="benchmark.submit_external_job"');
+    expect(result.output).toContain('outcome="pass"');
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'benchmark.submit_external_job',
+        callId: 'call.external-submit-adapter',
+        outcome: 'pass',
+        evidenceRefs: expect.arrayContaining([
+          'adapter.external.job-submission',
+          'external-job-backend:scheduler',
+          'external-job-backend:slurm',
+          'job:4242',
+          'ledger:event.head-wing-submit',
+        ]),
+      }),
+    );
+  });
+
   it('executes graph dependency queries through the active physics-memory registry', async () => {
     const records: AgentRecord[] = [];
     const registry = new PhysicsMemoryRegistry();

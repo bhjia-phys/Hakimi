@@ -649,15 +649,33 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
         approval: 'external',
       }),
       step({
+        id: 'normalize-submission',
+        kind: 'record',
+        title: 'Normalize submission receipt',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Run adapter.external.job-submission through ResearchAction.run_benchmark_adapter to validate the native scheduler/MCP/HPC receipt without executing the job.',
+        expectedEvidence: ['adapter_id', 'job_id', 'artifact_refs'],
+      }),
+      step({
         id: 'record-submission',
         kind: 'record',
         title: 'Record job submission',
         toolNames: ['ResearchLedger', 'ResearchAction'],
         purpose: 'Record job id, artifacts to watch, and primitive submission tool call id.',
-        expectedEvidence: ['ledger_event_id', 'job_id', 'primitive_tool_call_ids'],
+        expectedEvidence: [
+          'ledger_event_id',
+          'job_id',
+          'external_submission_adapter_result',
+          'primitive_tool_call_ids',
+        ],
       }),
     ],
-    recording: recording('benchmark.submit_external_job', ['job_id', 'ledger_event_id'], true),
+    recording: recording(
+      'benchmark.submit_external_job',
+      ['job_id', 'ledger_event_id', 'adapter.external.job-submission'],
+      true,
+    ),
     followupActionIds: ['benchmark.run_minimal_case'],
   }),
   plan({

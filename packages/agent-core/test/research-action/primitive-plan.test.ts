@@ -52,14 +52,22 @@ describe('research primitive plan templates', () => {
   it('plans external job submission without letting ResearchAction execute the job', () => {
     const plan = planFor('benchmark.submit_external_job');
     const submitStep = plan.steps.find((step) => step.id === 'submit-job');
+    const normalizeStep = plan.steps.find((step) => step.id === 'normalize-submission');
 
     expect(plan.primitiveToolPolicy).toBe('benchmark-gated');
-    expect(plan.toolNames).toEqual(expect.arrayContaining(['Bash', 'ResearchLedger']));
+    expect(plan.toolNames).toEqual(
+      expect.arrayContaining(['Bash', 'ResearchAction', 'ResearchLedger']),
+    );
     expect(submitStep).toMatchObject({
       kind: 'submit',
       approval: 'external',
     });
+    expect(normalizeStep).toMatchObject({
+      kind: 'record',
+      toolNames: ['ResearchAction'],
+    });
     expect(plan.recording.evidenceRefs).toContain('job_id');
+    expect(plan.recording.evidenceRefs).toContain('adapter.external.job-submission');
   });
 
   it('falls back from primitiveToolPolicy for custom actions', () => {
