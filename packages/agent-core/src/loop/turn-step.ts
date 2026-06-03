@@ -33,6 +33,7 @@ import type {
   LoopHooks,
   LoopMessageBuilder,
   LoopStepStopReason,
+  LoopToolBuilder,
   RecordStepUsageResult,
 } from './types';
 
@@ -65,7 +66,7 @@ export interface ExecuteLoopStepDeps {
    * table and the request messages reflect the same state — `beforeStep` can
    * run compaction, which discards loaded dynamic tool schemas.
    */
-  readonly buildTools?: (() => readonly ExecutableTool[]) | undefined;
+  readonly buildTools?: LoopToolBuilder | undefined;
   /** See RunTurnInput.describeMissingTool. */
   readonly describeMissingTool?: ((name: string) => string | undefined) | undefined;
   readonly hooks?: LoopHooks | undefined;
@@ -133,7 +134,8 @@ export async function executeLoopStep(deps: ExecuteLoopStepDeps): Promise<{
   // the messages built below (beforeStep can run compaction, which discards
   // loaded dynamic tool schemas from the context and the ledger — a table
   // captured earlier would still dispatch a tool the model no longer has).
-  const stepTools = buildTools !== undefined ? buildTools() : tools;
+  const stepTools = buildTools === undefined ? tools : await buildTools();
+  signal.throwIfAborted();
   const messages = await buildMessages();
   signal.throwIfAborted();
 

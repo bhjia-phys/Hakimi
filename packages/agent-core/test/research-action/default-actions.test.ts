@@ -14,12 +14,14 @@ describe('default research actions', () => {
 
     expect(registry.listActions().map((action) => action.id)).toEqual([
       'benchmark.run_minimal_case',
+      'benchmark.submit_external_job',
       'code.capture_git_diff_observation',
       'code.check_intermediate_observable',
       'code.inspect_call_sites',
       'code.inspect_git_history',
       'code.map_formula_to_code',
       'code.map_formula_to_code_region',
+      'code.prepare_patch',
       'derive.compare_with_known_result',
       'derive.derive_step',
       'derive.propose_route',
@@ -40,6 +42,7 @@ describe('default research actions', () => {
       'source.extract_assumption',
       'source.extract_definition',
       'source.extract_formula',
+      'source.search_literature',
       'validate.check_convention',
       'validate.check_dependency_closure',
       'validate.check_dimension',
@@ -72,6 +75,7 @@ describe('default research actions', () => {
     );
 
     expect(deferred).toEqual([
+      'benchmark.submit_external_job',
       'benchmark.run_minimal_case',
       'formalization.build_blueprint',
       'memory.promote_capsule',

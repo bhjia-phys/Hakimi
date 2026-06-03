@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { Agent } from '../../src/agent';
+import { Agent, type AgentRecord } from '../../src/agent';
 import { buildRuntimeToolExposurePlan } from '../../src/agent/tool-exposure';
 import type { ResearchContextPack } from '../../src/research-context';
 import { InMemoryAgentRecordPersistence } from '../../src/agent/records';
@@ -88,6 +88,286 @@ describe('Runtime tool exposure', () => {
     expect(info.get('Write')?.active).toBe(true);
     expect(info.get('Edit')?.active).toBe(true);
   });
+
+  it('adds primitive plan tools from action bindings to runtime exposure', () => {
+    const literaturePlan = buildRuntimeToolExposurePlan(
+      makePack({
+        actionBindings: [
+          {
+            id: 'binding.source.search',
+            actionId: 'source.search_literature',
+          },
+        ],
+      }),
+    );
+    const patchPlan = buildRuntimeToolExposurePlan(
+      makePack({
+        actionBindings: [
+          {
+            id: 'binding.code.patch',
+            actionId: 'code.prepare_patch',
+          },
+        ],
+      }),
+    );
+
+    expect(literaturePlan.activeToolNames).toEqual(
+      expect.arrayContaining(['WebSearch', 'FetchURL', 'ResearchLedger', 'ResearchAction']),
+    );
+    expect(literaturePlan.activeToolNames).not.toContain('Bash');
+    expect(literaturePlan.activeToolNames).not.toContain('Edit');
+    expect(patchPlan.activeToolNames).toEqual(
+      expect.arrayContaining(['Read', 'Grep', 'Edit', 'Write', 'Bash']),
+    );
+    expect(patchPlan.reason).toContain('code/benchmark-oriented');
+  });
+
+  it('freezes turn base tools while allowing runtime exposure to update the step list', () => {
+    const agent = makeAgent({ webTools: true });
+    agent.tools.setActiveTools([
+      'Read',
+      'Bash',
+      'WebSearch',
+      'FetchURL',
+      'ResearchAction',
+    ]);
+    const buildTurnTools = agent.tools.createTurnLoopToolBuilder();
+
+    agent.tools.setActiveTools([]);
+    expect(buildTurnTools().map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(['Bash', 'Read']),
+    );
+
+    agent.tools.applyRuntimeToolExposure(
+      buildRuntimeToolExposurePlan(
+        makePack({
+          actionBindings: [
+            {
+              id: 'binding.source.search',
+              actionId: 'source.search_literature',
+            },
+          ],
+        }),
+      ),
+      { source: 'controller' },
+    );
+    const literatureNames = buildTurnTools().map((tool) => tool.name);
+    expect(literatureNames).toEqual(
+      expect.arrayContaining(['ResearchAction', 'WebSearch', 'FetchURL']),
+    );
+    expect(literatureNames).not.toContain('Bash');
+
+    agent.tools.applyRuntimeToolExposure(null, { source: 'controller' });
+    expect(buildTurnTools().map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(['Bash', 'Read']),
+    );
+  });
+
+  it('replaces primitive tool exposure when switching between topic packs', () => {
+    const agent = makeAgent({ webTools: true });
+    agent.tools.setActiveTools([
+      'Read',
+      'Grep',
+      'Glob',
+      'WebSearch',
+      'FetchURL',
+      'Bash',
+      'Edit',
+      'Write',
+      'PhysicsMemory',
+      'ResearchLedger',
+      'ResearchAction',
+    ]);
+
+    const literatureExposure = buildRuntimeToolExposurePlan(
+      makePack({
+        id: 'context.literature',
+        workFrameId: 'frame.literature',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        actionBindings: [
+          {
+            id: 'binding.source.search',
+            actionId: 'source.search_literature',
+          },
+        ],
+      }),
+    );
+    const patchExposure = buildRuntimeToolExposurePlan(
+      makePack({
+        id: 'context.patch',
+        workFrameId: 'frame.patch',
+        domain: 'librpa',
+        topic: 'head-wing-patch',
+        actionBindings: [
+          {
+            id: 'binding.code.patch',
+            actionId: 'code.prepare_patch',
+          },
+        ],
+      }),
+    );
+
+    agent.tools.applyRuntimeToolExposure(literatureExposure, { source: 'controller' });
+    expect(infoMap(agent).get('WebSearch')?.active).toBe(true);
+    expect(infoMap(agent).get('FetchURL')?.active).toBe(true);
+    expect(infoMap(agent).get('Bash')?.active).toBe(false);
+    expect(infoMap(agent).get('Edit')?.active).toBe(false);
+    expect(infoMap(agent).get('Write')?.active).toBe(false);
+
+    agent.tools.applyRuntimeToolExposure(patchExposure, { source: 'controller' });
+    expect(infoMap(agent).get('WebSearch')?.active).toBe(false);
+    expect(infoMap(agent).get('FetchURL')?.active).toBe(false);
+    expect(infoMap(agent).get('Bash')?.active).toBe(true);
+    expect(infoMap(agent).get('Edit')?.active).toBe(true);
+    expect(infoMap(agent).get('Write')?.active).toBe(true);
+
+    agent.tools.applyRuntimeToolExposure(literatureExposure, { source: 'controller' });
+    expect(infoMap(agent).get('WebSearch')?.active).toBe(true);
+    expect(infoMap(agent).get('FetchURL')?.active).toBe(true);
+    expect(infoMap(agent).get('Bash')?.active).toBe(false);
+    expect(infoMap(agent).get('Edit')?.active).toBe(false);
+    expect(infoMap(agent).get('Write')?.active).toBe(false);
+  });
+
+  it('keeps primitive runtime exposure isolated between agent sessions', () => {
+    const literatureAgent = makeAgent();
+    const patchAgent = makeAgent();
+    const baselineTools = [
+      'Read',
+      'Grep',
+      'Glob',
+      'Bash',
+      'Edit',
+      'Write',
+      'PhysicsMemory',
+      'ResearchLedger',
+      'ResearchAction',
+    ];
+    literatureAgent.tools.setActiveTools(baselineTools);
+    patchAgent.tools.setActiveTools(baselineTools);
+
+    literatureAgent.tools.applyRuntimeToolExposure(
+      buildRuntimeToolExposurePlan(
+        makePack({
+          id: 'context.literature',
+          workFrameId: 'frame.literature',
+          domain: 'topological-order/fqhe-cs',
+          topic: 'fqhe-literature',
+          actionBindings: [
+            {
+              id: 'binding.source.search',
+              actionId: 'source.search_literature',
+            },
+          ],
+        }),
+      ),
+      { source: 'controller' },
+    );
+    patchAgent.tools.applyRuntimeToolExposure(
+      buildRuntimeToolExposurePlan(
+        makePack({
+          id: 'context.patch',
+          workFrameId: 'frame.patch',
+          domain: 'librpa',
+          topic: 'head-wing-patch',
+          actionBindings: [
+            {
+              id: 'binding.code.patch',
+              actionId: 'code.prepare_patch',
+            },
+          ],
+        }),
+      ),
+      { source: 'controller' },
+    );
+
+    expect(infoMap(literatureAgent).get('Bash')?.active).toBe(false);
+    expect(infoMap(literatureAgent).get('Edit')?.active).toBe(false);
+    expect(infoMap(patchAgent).get('Bash')?.active).toBe(true);
+    expect(infoMap(patchAgent).get('Edit')?.active).toBe(true);
+    expect(infoMap(literatureAgent).get('ResearchAction')?.active).toBe(true);
+    expect(infoMap(patchAgent).get('ResearchAction')?.active).toBe(true);
+  });
+
+  it('replays primitive runtime exposure without leaking between persisted sessions', async () => {
+    const baselineTools = [
+      'Read',
+      'Grep',
+      'Glob',
+      'WebSearch',
+      'FetchURL',
+      'Bash',
+      'Edit',
+      'Write',
+      'PhysicsMemory',
+      'ResearchLedger',
+      'ResearchAction',
+    ];
+    const literatureRecords: AgentRecord[] = [];
+    const patchRecords: AgentRecord[] = [];
+    const literatureAgent = makeAgent({ webTools: true, records: literatureRecords });
+    const patchAgent = makeAgent({ webTools: true, records: patchRecords });
+    literatureAgent.tools.setActiveTools(baselineTools);
+    patchAgent.tools.setActiveTools(baselineTools);
+
+    literatureAgent.tools.applyRuntimeToolExposure(
+      buildRuntimeToolExposurePlan(
+        makePack({
+          id: 'context.literature',
+          workFrameId: 'frame.literature',
+          domain: 'topological-order/fqhe-cs',
+          topic: 'fqhe-literature',
+          actionBindings: [
+            {
+              id: 'binding.source.search',
+              actionId: 'source.search_literature',
+            },
+          ],
+        }),
+      ),
+      { source: 'controller' },
+    );
+    patchAgent.tools.applyRuntimeToolExposure(
+      buildRuntimeToolExposurePlan(
+        makePack({
+          id: 'context.patch',
+          workFrameId: 'frame.patch',
+          domain: 'librpa',
+          topic: 'head-wing-patch',
+          actionBindings: [
+            {
+              id: 'binding.code.patch',
+              actionId: 'code.prepare_patch',
+            },
+          ],
+        }),
+      ),
+      { source: 'controller' },
+    );
+
+    const restoredLiteratureAgent = makeAgent({
+      webTools: true,
+      configure: false,
+      persistence: new InMemoryAgentRecordPersistence(literatureRecords),
+    });
+    const restoredPatchAgent = makeAgent({
+      webTools: true,
+      configure: false,
+      persistence: new InMemoryAgentRecordPersistence(patchRecords),
+    });
+    await restoredLiteratureAgent.records.replay();
+    await restoredPatchAgent.records.replay();
+
+    expect(infoMap(restoredLiteratureAgent).get('WebSearch')?.active).toBe(true);
+    expect(infoMap(restoredLiteratureAgent).get('FetchURL')?.active).toBe(true);
+    expect(infoMap(restoredLiteratureAgent).get('Bash')?.active).toBe(false);
+    expect(infoMap(restoredLiteratureAgent).get('Edit')?.active).toBe(false);
+    expect(infoMap(restoredPatchAgent).get('WebSearch')?.active).toBe(false);
+    expect(infoMap(restoredPatchAgent).get('FetchURL')?.active).toBe(false);
+    expect(infoMap(restoredPatchAgent).get('Bash')?.active).toBe(true);
+    expect(infoMap(restoredPatchAgent).get('Edit')?.active).toBe(true);
+  });
 });
 
 function makePack(overrides: Partial<ResearchContextPack>): ResearchContextPack {
@@ -123,7 +403,14 @@ function infoMap(agent: Agent) {
   return new Map(agent.tools.data().map((tool) => [tool.name, tool]));
 }
 
-function makeAgent(): Agent {
+function makeAgent(
+  options: {
+    readonly webTools?: boolean;
+    readonly records?: AgentRecord[];
+    readonly persistence?: InMemoryAgentRecordPersistence;
+    readonly configure?: boolean;
+  } = {},
+): Agent {
   vi.stubEnv('KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY', '1');
   vi.stubEnv('KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER', '1');
   vi.stubEnv('KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION', '1');
@@ -135,7 +422,11 @@ function makeAgent(): Agent {
       requestQuestion: vi.fn(),
       toolCall: vi.fn(),
     },
-    persistence: new InMemoryAgentRecordPersistence([]),
+    persistence:
+      options.persistence ??
+      new InMemoryAgentRecordPersistence([], {
+        onRecord: (record) => options.records?.push(record),
+      }),
     modelProvider: new ProviderManager({
       config: {
         providers: {
@@ -153,12 +444,25 @@ function makeAgent(): Agent {
         },
       },
     }),
+    toolServices:
+      options.webTools === true
+        ? {
+            webSearcher: {
+              search: async () => [],
+            },
+            urlFetcher: {
+              fetch: async () => ({ content: 'ok', kind: 'passthrough' }),
+            },
+          }
+        : undefined,
     physicsMemory: new PhysicsMemoryRegistry(),
     researchLedger: new ResearchLedgerRegistry(),
   });
-  agent.config.update({
-    cwd: process.cwd(),
-    modelAlias: MOCK_PROVIDER.model,
-  });
+  if (options.configure !== false) {
+    agent.config.update({
+      cwd: process.cwd(),
+      modelAlias: MOCK_PROVIDER.model,
+    });
+  }
   return agent;
 }

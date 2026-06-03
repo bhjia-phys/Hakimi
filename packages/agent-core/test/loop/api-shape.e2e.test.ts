@@ -33,6 +33,7 @@ import type {
   LoopInterruptReason,
   LoopLiveEventEmitter,
   LoopMessageBuilder,
+  LoopToolBuilder,
   LoopEventDispatcher,
   LoopAfterStepContext,
   LoopStepHookContext,
@@ -81,6 +82,7 @@ function _typeOnlyChecks(): void {
     signal: _signal,
     llm: _llm,
     buildMessages: _buildMessages,
+    buildTools: () => [],
     dispatchEvent: _dispatchEvent,
     tools: [],
     hooks: _hooks,
@@ -195,6 +197,8 @@ function _typeOnlyChecks(): void {
   // Messages are built directly; system prompt belongs to LLM.
   const buildMessages: LoopMessageBuilder = () => [];
   void buildMessages;
+  const buildTools: LoopToolBuilder = () => [];
+  void buildTools;
 
   // @ts-expect-error — old prompt object wrapper is no longer accepted.
   const _badMessages: LoopMessageBuilder = { buildMessages };
@@ -567,6 +571,7 @@ function _typeOnlyChecks(): void {
     | LoopLiveEventEmitter
     | LoopInterruptReason
     | LoopMessageBuilder
+    | LoopToolBuilder
     | LoopEventDispatcher
     | LoopAfterStepContext
     | LoopStepHookContext

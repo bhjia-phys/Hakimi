@@ -111,6 +111,34 @@ describe('runTurn — beforeStep hook', () => {
       },
     ]);
   });
+
+  it('builds visible tools after beforeStep mutates host state', async () => {
+    const echo = new EchoTool();
+    let exposeTools = false;
+    const hooks: LoopHooks = {
+      beforeStep: async () => {
+        exposeTools = true;
+      },
+    };
+    const { llm, context } = await runTurn({
+      hooks,
+      buildTools: () => (exposeTools ? [echo] : []),
+      responses: [
+        makeToolUseResponse([makeToolCall('echo', { text: 'late tool' }, 'tc-1')]),
+        makeEndTurnResponse('done'),
+      ],
+    });
+
+    expect(llm.calls[0]?.tools.map((tool) => tool.name)).toEqual(['echo']);
+    expect(echo.calls).toEqual([
+      {
+        id: 'tc-1',
+        args: { text: 'late tool' },
+        turnId: 'turn-1',
+      },
+    ]);
+    expect(context.toolResults()[0]?.result.output).toBe('late tool');
+  });
 });
 
 describe('runTurn — afterStep hook', () => {

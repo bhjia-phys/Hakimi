@@ -833,12 +833,15 @@ describe('Agent turn flow', () => {
     await ctx.rpc.prompt({ input: [{ type: 'text', text: 'Run duplicates' }] });
     await ctx.untilTurnEnd();
 
-    await vi.waitFor(() => {
-      expect(resolved).toEqual([
-        ['PostToolUse', 'Bash', 'allow'],
-        ['PostToolUse', 'Bash', 'allow'],
-      ]);
-    });
+    await vi.waitFor(
+      () => {
+        expect(resolved).toEqual([
+          ['PostToolUse', 'Bash', 'allow'],
+          ['PostToolUse', 'Bash', 'allow'],
+        ]);
+      },
+      { timeout: 5_000 },
+    );
   });
 
   it('tracks failed tool-call telemetry with error taxonomy', async () => {

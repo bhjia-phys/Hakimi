@@ -103,6 +103,8 @@ export interface TestAgentOptions {
   readonly providerManagerOverrides?: Omit<ConstructorParameters<typeof ProviderManager>[0], 'config'>;
   readonly sessionId?: string;
   readonly subagentHost?: AgentOptions['subagentHost'];
+  readonly workflowRecipes?: AgentOptions['workflowRecipes'];
+  readonly researchLedger?: AgentOptions['researchLedger'];
   readonly onEvent?: ((event: AgentRecord) => AgentRecord | undefined) | undefined;
   readonly persistence?: AgentRecordPersistence | undefined;
   readonly homedir?: AgentOptions['homedir'];
@@ -191,6 +193,8 @@ export class AgentTestContext {
       microCompaction: options.microCompaction,
       modelProvider: providerManager,
       subagentHost: options.subagentHost,
+      workflowRecipes: options.workflowRecipes,
+      researchLedger: options.researchLedger,
       type: options.type,
       permission: options.permission,
       hookEngine: options.hookEngine,
@@ -745,6 +749,8 @@ export class AgentTestContext {
       providerManager: this.options.providerManager,
       initialConfig: this.kimiConfig,
       providerManagerOverrides: this.options.providerManagerOverrides,
+      workflowRecipes: this.options.workflowRecipes,
+      researchLedger: this.options.researchLedger,
       generate: failOnResumeGenerate,
       compactionStrategy: this.options.compactionStrategy,
       microCompaction: this.options.microCompaction,

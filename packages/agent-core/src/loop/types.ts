@@ -19,6 +19,7 @@ import type { LLM } from './llm';
 export type { ToolCall };
 
 export type LoopMessageBuilder = () => Message[] | Promise<Message[]>;
+export type LoopToolBuilder = () => readonly ExecutableTool[] | Promise<readonly ExecutableTool[]>;
 
 /**
  * Stop reason for one completed model step.

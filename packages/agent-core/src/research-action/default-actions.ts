@@ -58,6 +58,19 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     ],
   }),
   action({
+    id: 'source.search_literature',
+    category: 'memory',
+    exposure: 'direct',
+    phase: 'source',
+    title: 'Search literature',
+    description:
+      'Search for paper, documentation, or primary-source candidates and record the search trail without promoting claims.',
+    outputKinds: ['SourceExcerpt', 'LedgerEvent'],
+    primitiveToolPolicy: 'read-only',
+    triggerHints: ['literature search', 'paper', 'arxiv', 'source candidate', 'related work'],
+    suggestedNextActions: ['source.capture_source_excerpt'],
+  }),
+  action({
     id: 'source.capture_source_excerpt',
     category: 'memory',
     exposure: 'direct',
@@ -362,6 +375,28 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     primitiveToolPolicy: 'read-only',
   }),
   action({
+    id: 'code.prepare_patch',
+    category: 'code',
+    exposure: 'direct',
+    phase: 'code',
+    title: 'Prepare patch',
+    description:
+      'Apply a scoped code or test patch after call-site inspection and formula-code mapping evidence exists.',
+    inputKinds: ['CodeMapping', 'CodeRegion'],
+    outputKinds: ['CodeRegion', 'LedgerEvent'],
+    primitiveToolPolicy: 'write-gated',
+    generatedObligations: [
+      {
+        kind: 'benchmark',
+        severity: 'blocking',
+        reason: 'Code patches that affect formula mappings require a minimal benchmark or explicit blocked record.',
+        requiredActionId: 'benchmark.run_minimal_case',
+      },
+    ],
+    triggerHints: ['patch', 'edit code', 'implementation change', 'fix code'],
+    suggestedNextActions: ['code.capture_git_diff_observation', 'benchmark.run_minimal_case'],
+  }),
+  action({
     id: 'code.capture_git_diff_observation',
     category: 'code',
     exposure: 'direct',
@@ -373,6 +408,20 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     outputKinds: ['LedgerEvent'],
     primitiveToolPolicy: 'git-read',
     triggerHints: ['git diff', 'code observation', 'patch'],
+    suggestedNextActions: ['benchmark.run_minimal_case'],
+  }),
+  action({
+    id: 'benchmark.submit_external_job',
+    category: 'benchmark',
+    exposure: 'deferred',
+    phase: 'benchmark',
+    title: 'Submit external benchmark job',
+    description:
+      'Prepare or submit a queued, HPC, or external benchmark job through primitive execution tools while keeping the semantic action auditable.',
+    inputKinds: ['BenchmarkCase', 'CodeMapping'],
+    outputKinds: ['BenchmarkCase', 'LedgerEvent'],
+    primitiveToolPolicy: 'benchmark-gated',
+    triggerHints: ['hpc', 'scheduler', 'queue', 'sbatch', 'submit job', 'cluster run'],
     suggestedNextActions: ['benchmark.run_minimal_case'],
   }),
   action({
