@@ -796,6 +796,7 @@ export class TurnFlow {
       mediaStripSnapshot ??= captureMediaStripSnapshot(messages);
       return stripMediaPartsBySnapshot(messages, mediaStripSnapshot);
     };
+    const buildTurnTools = this.agent.tools.createTurnLoopToolBuilder();
     while (true) {
       signal.throwIfAborted();
       const model = this.agent.config.model;
@@ -813,9 +814,9 @@ export class TurnFlow {
           buildMessagesMediaDegraded: () => this.agent.context.mediaDegradedMessages,
           buildMessagesMediaStripped,
           dispatchEvent: this.buildDispatchEvent(turnId),
-          // Re-read per step (not snapshotted per turn) so a select_tools load
-          // is dispatchable on the very next step of the same turn.
-          buildTools: () => this.agent.tools.loopTools,
+          // The registered base table is snapshotted for the turn, while
+          // loaded schemas and runtime exposure remain fresh per step.
+          buildTools: buildTurnTools,
           describeMissingTool: (name) => this.agent.tools.missingToolMessage(name),
           log: this.agent.log,
           maxSteps: maxStepsPerTurn,

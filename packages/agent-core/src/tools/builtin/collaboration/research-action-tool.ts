@@ -11,13 +11,17 @@ import type {
 import {
   DEFAULT_RESEARCH_ACTIONS,
   ResearchActionRegistry,
+  ResearchPrimitivePlanRegistry,
   asActionAlgebraDefinition,
+  buildPrimitivePlanForAction,
   recommendResearchActions,
+  registerDefaultResearchPrimitivePlanTemplates,
   type ResearchActionCategory,
   type ResearchActionDefinition,
   type ResearchActionExposure,
   type ResearchActionOutcome,
   type ResearchActionSource,
+  type ResearchPrimitivePlanTemplate,
   type ResearchObligation,
   type WorkFrame,
 } from '../../../research-action';
@@ -45,6 +49,7 @@ import DESCRIPTION from './research-action-tool.md';
 
 const ACTIONS = [
   'list_actions',
+  'plan_primitive_tools',
   'recommend_next_actions',
   'record_action_result',
   'open_work_frame',
@@ -146,7 +151,10 @@ export const ResearchActionToolInputSchema = z.object({
     .optional()
     .describe('Open and closed obligations for recommend_next_actions.'),
   limit: z.number().int().positive().optional().describe('Maximum recommendations to return.'),
-  action_id: z.string().optional().describe('Action id for record_action_result.'),
+  action_id: z
+    .string()
+    .optional()
+    .describe('Action id for plan_primitive_tools, record_action_result, or executor attribution.'),
   call_id: z.string().optional().describe('Semantic action call id for record_action_result.'),
   source: z.enum(SOURCES).optional().describe('Action source for record_action_result.'),
   outcome: z.enum(OUTCOMES).optional().describe('Action outcome for record_action_result.'),
@@ -205,12 +213,15 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
   readonly description: string = DESCRIPTION;
   readonly parameters: Record<string, unknown> = toInputJsonSchema(ResearchActionToolInputSchema);
   private readonly registry: ResearchActionRegistry;
+  private readonly primitivePlanRegistry: ResearchPrimitivePlanRegistry;
 
   constructor(private readonly manager?: ResearchActionManager) {
     this.registry = new ResearchActionRegistry();
     for (const action of DEFAULT_RESEARCH_ACTIONS) {
       this.registry.register(action);
     }
+    this.primitivePlanRegistry = new ResearchPrimitivePlanRegistry();
+    registerDefaultResearchPrimitivePlanTemplates(this.primitivePlanRegistry);
   }
 
   resolveExecution(args: ResearchActionToolInput): ToolExecution {
@@ -230,6 +241,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       switch (args.action) {
         case 'list_actions':
           return ok(this.listActions(args));
+        case 'plan_primitive_tools':
+          return this.planPrimitiveTools(args);
         case 'recommend_next_actions':
           return ok(this.recommendNextActions(args));
         case 'record_action_result':
@@ -278,6 +291,17 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     );
   }
 
+  private planPrimitiveTools(args: ResearchActionToolInput): ExecutableToolResult {
+    if (args.action_id === undefined || args.action_id.length === 0) {
+      return errorResult('ResearchAction plan_primitive_tools requires action_id.');
+    }
+    const action = this.registry.getAction(args.action_id);
+    if (action === undefined) {
+      return errorResult(`ResearchAction plan_primitive_tools unknown action_id: ${args.action_id}`);
+    }
+    return ok(renderPrimitivePlan(buildPrimitivePlanForAction(action, this.primitivePlanRegistry)));
+  }
+
   private recommendNextActions(args: ResearchActionToolInput): string {
     const recommendations = recommendResearchActions({
       actions: this.registry.listActions(),
@@ -288,8 +312,10 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     return [
       '<research_action_recommendations>',
       ...recommendations.map(
-        (item) =>
-          `  <recommendation action_id="${escapeXml(item.action.id)}" score="${String(item.score)}" obligation_ids="${escapeXml(item.obligationIds.join(','))}">${escapeXml(item.reasons.join(' | '))}</recommendation>`,
+        (item) => {
+          const plan = buildPrimitivePlanForAction(item.action, this.primitivePlanRegistry);
+          return `  <recommendation action_id="${escapeXml(item.action.id)}" score="${String(item.score)}" obligation_ids="${escapeXml(item.obligationIds.join(','))}" primitive_tools="${escapeXml(plan.toolNames.join(','))}">${escapeXml(item.reasons.join(' | '))}</recommendation>`;
+        },
       ),
       '</research_action_recommendations>',
       '',
@@ -907,6 +933,33 @@ function renderAction(action: ResearchActionDefinition, indent: string): string 
     `${indent}<action id="${escapeXml(algebra.id)}" category="${algebra.category}" exposure="${algebra.exposure}" phase="${algebra.phase}" primitive_tool_policy="${algebra.primitiveToolPolicy}">` +
     `${escapeXml(algebra.title)}</action>`
   );
+}
+
+function renderPrimitivePlan(plan: ResearchPrimitivePlanTemplate): string {
+  return [
+    `<primitive_tool_plan id="${escapeXml(plan.id)}" action_id="${escapeXml(plan.actionId)}" primitive_tool_policy="${escapeXml(plan.primitiveToolPolicy)}">`,
+    `  <title>${escapeXml(plan.title)}</title>`,
+    `  <intent>${escapeXml(plan.intent)}</intent>`,
+    renderStringList('tools', 'tool', plan.toolNames, '  '),
+    '  <steps>',
+    ...plan.steps.map((step) =>
+      [
+        `    <step id="${escapeXml(step.id)}" kind="${step.kind}" approval="${step.approval}" tools="${escapeXml(step.toolNames.join(','))}">`,
+        `      <title>${escapeXml(step.title)}</title>`,
+        `      <purpose>${escapeXml(step.purpose)}</purpose>`,
+        renderStringList('expected_evidence', 'evidence', step.expectedEvidence, '      '),
+        '    </step>',
+      ].join('\n'),
+    ),
+    '  </steps>',
+    `  <recording action_id="${escapeXml(plan.recording.actionId)}" primitive_tool_call_ids_required="${String(plan.recording.primitiveToolCallIdsRequired)}">`,
+    `    <expected_outcome>${escapeXml(plan.recording.expectedOutcome)}</expected_outcome>`,
+    renderStringList('evidence_refs', 'evidence_ref', plan.recording.evidenceRefs, '    '),
+    '  </recording>',
+    renderStringList('followup_actions', 'action', plan.followupActionIds, '  '),
+    '</primitive_tool_plan>',
+    '',
+  ].join('\n');
 }
 
 function renderWorkFrameList(frames: readonly WorkFrame[], activeId?: string): string {

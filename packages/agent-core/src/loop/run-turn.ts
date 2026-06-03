@@ -24,6 +24,7 @@ import type {
   ExecutableTool,
   LoopHooks,
   LoopMessageBuilder,
+  LoopToolBuilder,
   RecordStepUsageResult,
   LoopTerminalStepStopReason,
   LoopTurnStopReason,
@@ -68,7 +69,7 @@ export interface RunTurnInput {
    * visibility stays fresh. `tools` remains as the
    * static per-turn snapshot for hosts without dynamic tool tables.
    */
-  readonly buildTools?: (() => readonly ExecutableTool[]) | undefined;
+  readonly buildTools?: LoopToolBuilder | undefined;
   /**
    * Optional wording override for a tool call whose name resolves to no
    * executable tool. Lets the host distinguish "loaded but its server is

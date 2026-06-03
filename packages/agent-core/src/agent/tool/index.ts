@@ -46,6 +46,16 @@ interface PendingMcpDiscovery {
   readonly collisions: readonly McpToolCollision[];
 }
 
+interface LoopToolState {
+  readonly enabledTools: ReadonlySet<string>;
+  readonly deferredUserTools: ReadonlySet<string>;
+  readonly mcpAccessPatterns: readonly string[];
+  readonly builtinTools: ReadonlyMap<string, BuiltinTool>;
+  readonly userTools: ReadonlyMap<string, ExecutableTool>;
+  readonly mcpTools: ReadonlyMap<string, McpToolEntry>;
+  readonly runtimeExposure: RuntimeToolExposure | null;
+}
+
 export class ToolManager {
   protected builtinTools: Map<string, BuiltinTool> = new Map();
   protected readonly userTools: Map<string, ExecutableTool> = new Map();
@@ -565,7 +575,7 @@ export class ToolManager {
   }
 
   private isMcpToolEnabled(name: string): boolean {
-    return this.mcpAccessPatterns.some((pattern) => picomatch.isMatch(name, pattern));
+    return isMcpToolEnabledByPatterns(name, this.mcpAccessPatterns);
   }
 
   /**
@@ -731,7 +741,7 @@ export class ToolManager {
   }
 
   *toolInfos(): Iterable<ToolInfo> {
-    const activeToolNames = this.effectiveEnabledTools();
+    const activeToolNames = this.effectiveEnabledTools(this.enabledTools, this.runtimeExposure);
     for (const tool of this.builtinTools.values()) {
       yield {
         name: tool.name,
@@ -948,6 +958,42 @@ export class ToolManager {
 
   get loopTools(): readonly ExecutableTool[] {
     if (this.loopToolsOverride !== undefined) return this.loopToolsOverride;
+    this.ensureBuiltinToolsInitialized();
+    return this.buildLoopTools({
+      enabledTools: this.enabledTools,
+      mcpAccessPatterns: this.mcpAccessPatterns,
+      builtinTools: this.builtinTools,
+      userTools: this.userTools,
+      mcpTools: this.mcpTools,
+      runtimeExposure: this.runtimeExposure,
+    });
+  }
+
+  createTurnLoopToolBuilder(): () => readonly ExecutableTool[] {
+    if (this.loopToolsOverride !== undefined) {
+      const tools = [...this.loopToolsOverride];
+      return () => tools;
+    }
+    this.ensureBuiltinToolsInitialized();
+    const state = {
+      enabledTools: new Set(this.enabledTools),
+      deferredUserTools: new Set(this.deferredUserTools),
+      mcpAccessPatterns: [...this.mcpAccessPatterns],
+      builtinTools: new Map(this.builtinTools),
+      userTools: new Map(this.userTools),
+      mcpTools: new Map(this.mcpTools),
+    };
+    return () =>
+      this.buildLoopTools({
+        ...state,
+        // Runtime exposure is intentionally evaluated per step. The turn
+        // freezes the registered tool table, not which managed tools are
+        // currently visible within that table.
+        runtimeExposure: this.runtimeExposure,
+      });
+  }
+
+  private ensureBuiltinToolsInitialized(): void {
     // Self-heal an empty builtin table. The constructor and every config-
     // mutation checkpoint gate initializeBuiltinTools() on hasProvider, but a
     // provider that becomes resolvable asynchronously (OAuth / managed
@@ -965,9 +1011,12 @@ export class ToolManager {
         });
       }
     }
+  }
+
+  private buildLoopTools(state: LoopToolState): readonly ExecutableTool[] {
     const disclosure = this.progressiveDisclosure;
-    const enabledMcpNames = [...this.mcpTools.keys()].filter((name) =>
-      this.isMcpToolEnabled(name),
+    const enabledMcpNames = [...state.mcpTools.keys()].filter((name) =>
+      isMcpToolEnabledByPatterns(name, state.mcpAccessPatterns),
     );
     // Progressive disclosure splits "the model can see this tool" from "the
     // core can execute it": the top-level request view stays the immutable
@@ -976,12 +1025,14 @@ export class ToolManager {
     // top-level tools[] by kosong generate(). With disclosure off this is the
     // inline behavior, byte for byte.
     const loadedSet = disclosure ? this.loadedDynamicToolNames() : undefined;
-    const effectiveEnabledNames = [...this.effectiveEnabledTools()];
+    const effectiveEnabledNames = [
+      ...this.effectiveEnabledTools(state.enabledTools, state.runtimeExposure),
+    ];
     const enabledNames =
       loadedSet === undefined
         ? effectiveEnabledNames
         : effectiveEnabledNames.filter(
-            (name) => !this.deferredUserTools.has(name) || loadedSet.has(name),
+            (name) => !state.deferredUserTools.has(name) || loadedSet.has(name),
           );
     const mcpNames =
       loadedSet === undefined
@@ -997,12 +1048,12 @@ export class ToolManager {
       .filter((name) => disclosure || name !== b.SELECT_TOOLS_TOOL_NAME)
       .map((name) => {
         const tool =
-          this.userTools.get(name) ??
-          this.mcpTools.get(name)?.tool ??
-          this.builtinTools.get(name);
+          state.userTools.get(name) ??
+          state.mcpTools.get(name)?.tool ??
+          state.builtinTools.get(name);
         if (tool === undefined) return undefined;
         const deferred =
-          disclosure && (this.mcpTools.has(name) || this.deferredUserTools.has(name));
+          disclosure && (state.mcpTools.has(name) || state.deferredUserTools.has(name));
         // Dynamic entries are plain object literals, so the spread keeps the
         // execution closure intact while adding the wire-strip marker.
         return deferred ? { ...tool, deferred: true as const } : tool;
@@ -1010,15 +1061,22 @@ export class ToolManager {
       .filter((tool) => !!tool);
   }
 
-  private effectiveEnabledTools(): Set<string> {
-    if (this.runtimeExposure === null) return new Set(this.enabledTools);
-    const effective = new Set(this.enabledTools);
-    for (const name of this.runtimeExposure.managedToolNames) {
+  private effectiveEnabledTools(
+    enabledTools: ReadonlySet<string>,
+    runtimeExposure: RuntimeToolExposure | null,
+  ): Set<string> {
+    if (runtimeExposure === null) return new Set(enabledTools);
+    const effective = new Set(enabledTools);
+    for (const name of runtimeExposure.managedToolNames) {
       effective.delete(name);
     }
-    for (const name of this.runtimeExposure.activeToolNames) {
+    for (const name of runtimeExposure.activeToolNames) {
       effective.add(name);
     }
     return effective;
   }
+}
+
+function isMcpToolEnabledByPatterns(name: string, patterns: readonly string[]): boolean {
+  return patterns.some((pattern) => picomatch.isMatch(name, pattern));
 }

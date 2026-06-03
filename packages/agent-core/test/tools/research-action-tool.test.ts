@@ -49,6 +49,30 @@ describe('ResearchActionTool', () => {
     expect(actions.output).toContain('primitive_tool_policy="none"');
     expect(recommendations.output).toContain('action_id="validate.check_convention"');
     expect(recommendations.output).toContain('obl.convention');
+    expect(recommendations.output).toContain('primitive_tools="PhysicsMemory,ResearchLedger,ResearchAction"');
+  });
+
+  it('renders primitive tool plans for native research workflows', async () => {
+    const tool = new ResearchActionTool();
+
+    const literature = await execute(tool, {
+      action: 'plan_primitive_tools',
+      action_id: 'source.search_literature',
+    });
+    const patch = await execute(tool, {
+      action: 'plan_primitive_tools',
+      action_id: 'code.prepare_patch',
+    });
+
+    expect(literature.output).toContain('<primitive_tool_plan');
+    expect(literature.output).toContain('action_id="source.search_literature"');
+    expect(literature.output).toContain('<tool>WebSearch</tool>');
+    expect(literature.output).toContain('<tool>FetchURL</tool>');
+    expect(literature.output).toContain('primitive_tool_call_ids_required="true"');
+    expect(patch.output).toContain('primitive_tool_policy="write-gated"');
+    expect(patch.output).toContain('approval="write"');
+    expect(patch.output).toContain('<tool>Edit</tool>');
+    expect(patch.output).toContain('<tool>Write</tool>');
   });
 
   it('records model-reported action results through AgentRecords', async () => {

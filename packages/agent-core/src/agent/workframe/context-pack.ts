@@ -1,6 +1,8 @@
 import type { ResearchContextPack } from '../../research-context';
+import { DEFAULT_RESEARCH_ACTIONS, primitiveToolNamesForAction } from '../../research-action';
 
 const MAX_ITEMS = 6;
+const DEFAULT_ACTION_BY_ID = new Map(DEFAULT_RESEARCH_ACTIONS.map((action) => [action.id, action]));
 
 export function renderResearchContextPackReminder(pack: ResearchContextPack): string {
   const lines: string[] = [
@@ -35,7 +37,10 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
   }
   if (pack.actionBindings.length > 0) {
     lines.push(
-      `Action bindings: ${bounded(pack.actionBindings.map((binding) => binding.actionId)).join(', ')}`,
+      `Action bindings: ${bounded(pack.actionBindings.map((binding) => renderActionBinding(binding.actionId))).join(', ')}`,
+    );
+    lines.push(
+      'For bound actions, call ResearchAction.plan_primitive_tools before native tools and record primitive_tool_call_ids back through the ResearchAction result.',
     );
   }
   if (pack.diagnostics.length > 0) {
@@ -48,6 +53,14 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
     'Keep simple answers light. Use this context for research turns, cross-block links, code-impact checks, and evidence-backed reasoning.',
   );
   return lines.join('\n');
+}
+
+function renderActionBinding(actionId: string): string {
+  const action = DEFAULT_ACTION_BY_ID.get(actionId);
+  if (action === undefined) return actionId;
+  const tools = primitiveToolNamesForAction(action);
+  if (tools.length === 0) return actionId;
+  return `${actionId} [tools: ${bounded(tools).join(', ')}]`;
 }
 
 function bounded(values: readonly string[]): readonly string[] {

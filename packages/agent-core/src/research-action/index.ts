@@ -5,6 +5,7 @@ export * from './actionalgebra';
 export * from './workframe';
 export * from './obligation';
 export * from './default-actions';
+export * from './primitive-plan';
 export * from './scheduler';
 export * from './harness';
 export * from './librpa-head-wing';
