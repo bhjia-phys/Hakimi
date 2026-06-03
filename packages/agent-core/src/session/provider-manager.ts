@@ -316,9 +316,12 @@ function toKosongProviderConfig(
         offEffort,
         // Session affinity: route every request of this session through the
         // same provider-side prompt cache (the OpenAI analog of Anthropic
-        // `metadata.user_id` above). Undefined values are stripped at
-        // generate time, matching the `kimi` branch below.
-        generationKwargs: { prompt_cache_key: promptCacheKey },
+        // `metadata.user_id` above). Explicit provider kwargs win so custom
+        // OpenAI-compatible endpoints can override this default.
+        generationKwargs: {
+          prompt_cache_key: promptCacheKey,
+          ...provider.generationKwargs,
+        },
         ...defaultHeadersField({
           ...envCustomHeaders,
           ...kimiUserAgentHeader(kimiRequestHeaders),
@@ -360,8 +363,11 @@ function toKosongProviderConfig(
         apiKey: providerApiKey(provider),
         offEffort,
         // Session affinity: same `prompt_cache_key` intent as the `openai`
-        // branch; the Responses API accepts it as a top-level request field.
-        generationKwargs: { prompt_cache_key: promptCacheKey },
+        // branch; explicit provider kwargs may override the default.
+        generationKwargs: {
+          prompt_cache_key: promptCacheKey,
+          ...provider.generationKwargs,
+        },
         ...defaultHeadersField({
           ...envCustomHeaders,
           ...kimiUserAgentHeader(kimiRequestHeaders),
@@ -423,6 +429,21 @@ function kimiUserAgentHeader(
 ): Record<string, string> {
   const userAgent = kimiRequestHeaders?.['User-Agent'];
   return userAgent === undefined ? {} : { 'User-Agent': userAgent };
+}
+
+function generationKwargsField(
+  generationKwargs: Record<string, unknown> | undefined,
+): { generationKwargs?: Record<string, unknown> } {
+  if (generationKwargs === undefined || Object.keys(generationKwargs).length === 0) return {};
+  return { generationKwargs: structuredClone(generationKwargs) };
+}
+
+function providerForCapabilityProbe(provider: KosongProviderConfig): KosongProviderConfig {
+  const apiKey = provider.apiKey && provider.apiKey.length > 0 ? provider.apiKey : 'capability-probe';
+  if (provider.type === 'vertexai') {
+    return { ...provider, vertexai: false, project: undefined, location: undefined, apiKey };
+  }
+  return { ...provider, apiKey };
 }
 
 function providerApiKey(provider: ProviderConfig): string | undefined {

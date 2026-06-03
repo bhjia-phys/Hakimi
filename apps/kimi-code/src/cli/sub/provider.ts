@@ -69,6 +69,23 @@ interface CatalogAddOptions {
   readonly baseUrl?: string;
 }
 
+interface DeepSeekOptions {
+  readonly apiKey?: string;
+  readonly model?: string;
+  readonly alias?: string;
+  readonly baseUrl?: string;
+  readonly contextSize?: string | number;
+  readonly maxOutputSize?: string | number;
+  readonly default?: boolean;
+  readonly thinking?: boolean;
+}
+
+const DEEPSEEK_PROVIDER_ID = 'deepseek';
+const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
+const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro';
+const DEEPSEEK_DEFAULT_CONTEXT_SIZE = 1_000_000;
+const DEEPSEEK_DEFAULT_MAX_OUTPUT_SIZE = 384_000;
+
 export async function handleProviderAdd(
   deps: ProviderDeps,
   url: string,
@@ -200,6 +217,100 @@ export async function handleProviderList(
   }
   if (config.defaultModel !== undefined) {
     deps.stdout.write(`\nDefault model: ${config.defaultModel}\n`);
+  }
+}
+
+export async function handleDeepSeekAdd(
+  deps: ProviderDeps,
+  opts: DeepSeekOptions,
+): Promise<void> {
+  const apiKey = resolveDeepSeekApiKey(opts.apiKey, deps.env);
+  if (apiKey === undefined) {
+    deps.stderr.write(
+      'Missing DeepSeek API key. Pass --api-key <key> or set DEEPSEEK_API_KEY.\n',
+    );
+    deps.exit(1);
+  }
+
+  const model = nonEmptyString(opts.model) ?? DEEPSEEK_DEFAULT_MODEL;
+  const alias = nonEmptyString(opts.alias) ?? `${DEEPSEEK_PROVIDER_ID}/${model}`;
+  const baseUrl = nonEmptyString(opts.baseUrl) ?? DEEPSEEK_BASE_URL;
+  const maxContextSize = parsePositiveIntegerOption(
+    opts.contextSize,
+    'context-size',
+    DEEPSEEK_DEFAULT_CONTEXT_SIZE,
+    deps,
+  );
+  const maxOutputSize = parsePositiveIntegerOption(
+    opts.maxOutputSize,
+    'max-output-size',
+    DEEPSEEK_DEFAULT_MAX_OUTPUT_SIZE,
+    deps,
+  );
+  const makeDefault = opts.default !== false;
+  const thinkingCapable = isDeepSeekThinkingCapable(model);
+  const defaultThinking = thinkingCapable && opts.thinking !== false;
+
+  const harness = deps.getHarness();
+  await harness.ensureConfigFile();
+
+  let config = await harness.getConfig();
+  if (config.providers[DEEPSEEK_PROVIDER_ID] !== undefined) {
+    config = await harness.removeProvider(DEEPSEEK_PROVIDER_ID);
+  }
+
+  const provider: KimiConfig['providers'][string] = {
+    type: 'openai',
+    baseUrl,
+    apiKey,
+    source: {
+      kind: 'deepseek',
+      url: 'https://api-docs.deepseek.com/quick_start/pricing',
+      model,
+    },
+  };
+  if (thinkingCapable) {
+    provider.generationKwargs = {
+      extra_body: {
+        thinking: { type: defaultThinking ? 'enabled' : 'disabled' },
+      },
+    };
+  }
+
+  const models = { ...(config.models ?? {}) };
+  models[alias] = {
+    provider: DEEPSEEK_PROVIDER_ID,
+    model,
+    maxContextSize,
+    maxOutputSize,
+    capabilities: thinkingCapable ? ['thinking', 'tool_use'] : ['tool_use'],
+    displayName: deepSeekDisplayName(model),
+  };
+
+  const nextConfig: Partial<KimiConfig> = {
+    providers: {
+      ...config.providers,
+      [DEEPSEEK_PROVIDER_ID]: provider,
+    },
+    models,
+  };
+  if (makeDefault) {
+    nextConfig.defaultModel = alias;
+    nextConfig.thinking = { enabled: defaultThinking };
+  } else {
+    nextConfig.defaultModel = config.defaultModel;
+    nextConfig.thinking = config.thinking;
+  }
+
+  await harness.setConfig(nextConfig);
+
+  deps.stdout.write(
+    `Configured DeepSeek (${model}) as ${alias} using ${baseUrl}.\n`,
+  );
+  if (makeDefault) {
+    deps.stdout.write(
+      `Default model set to ${alias}${defaultThinking ? ' with thinking enabled' : ''}.\n`,
+    );
   }
 }
 
@@ -486,6 +597,52 @@ export function registerProviderCommand(parent: Command, deps?: Partial<Provider
       await runAction(resolved, () => handleProviderList(resolved, { json: options.json === true }));
     });
 
+  provider
+    .command('deepseek')
+    .description('Configure DeepSeek through the native OpenAI-compatible provider.')
+    .option('--api-key <key>', 'DeepSeek API key. Falls back to DEEPSEEK_API_KEY.')
+    .option('--model-id <model>', `DeepSeek model id. Defaults to ${DEEPSEEK_DEFAULT_MODEL}.`)
+    .option('--alias <alias>', 'Model alias to write. Defaults to deepseek/<model>.')
+    .option('--base-url <url>', `Override DeepSeek base URL. Defaults to ${DEEPSEEK_BASE_URL}.`)
+    .option(
+      '--context-size <tokens>',
+      `Model context window. Defaults to ${String(DEEPSEEK_DEFAULT_CONTEXT_SIZE)}.`,
+    )
+    .option(
+      '--max-output-size <tokens>',
+      `Model output ceiling. Defaults to ${String(DEEPSEEK_DEFAULT_MAX_OUTPUT_SIZE)}.`,
+    )
+    .option('--no-default', 'Do not make this DeepSeek alias the default model.')
+    .option('--no-thinking', 'Disable thinking by default for the imported DeepSeek alias.')
+    .action(
+      async (
+        options: {
+          apiKey?: string;
+          modelId?: string;
+          alias?: string;
+          baseUrl?: string;
+          contextSize?: string;
+          maxOutputSize?: string;
+          default?: boolean;
+          thinking?: boolean;
+        },
+      ) => {
+        const resolved = resolveDeps(deps);
+        await handleDeepSeekAdd(resolved, {
+          ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
+          ...(options.modelId === undefined ? {} : { model: options.modelId }),
+          ...(options.alias === undefined ? {} : { alias: options.alias }),
+          ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
+          ...(options.contextSize === undefined ? {} : { contextSize: options.contextSize }),
+          ...(options.maxOutputSize === undefined
+            ? {}
+            : { maxOutputSize: options.maxOutputSize }),
+          ...(options.default === undefined ? {} : { default: options.default }),
+          ...(options.thinking === undefined ? {} : { thinking: options.thinking }),
+        });
+      },
+    );
+
   const catalog = provider
     .command('catalog')
     .description('Discover and import providers from the public models.dev catalog.');
@@ -564,6 +721,44 @@ function resolveApiKey(flag: string | undefined, env: NodeJS.ProcessEnv): string
   return undefined;
 }
 
+function resolveDeepSeekApiKey(flag: string | undefined, env: NodeJS.ProcessEnv): string | undefined {
+  const fromFlag = nonEmptyString(flag);
+  if (fromFlag !== undefined) return fromFlag;
+  return nonEmptyString(env['DEEPSEEK_API_KEY']);
+}
+
+function nonEmptyString(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
+}
+
+function parsePositiveIntegerOption(
+  raw: string | number | undefined,
+  name: string,
+  fallback: number,
+  deps: ProviderDeps,
+): number {
+  if (raw === undefined) return fallback;
+  const text = String(raw).trim();
+  if (!/^\d+$/.test(text) || Number(text) <= 0) {
+    deps.stderr.write(`--${name} must be a positive integer.\n`);
+    deps.exit(1);
+  }
+  return Number(text);
+}
+
+function isDeepSeekThinkingCapable(model: string): boolean {
+  return model.trim().toLowerCase() !== 'deepseek-chat';
+}
+
+function deepSeekDisplayName(model: string): string {
+  if (model === 'deepseek-v4-pro') return 'DeepSeek V4 Pro';
+  if (model === 'deepseek-v4-flash') return 'DeepSeek V4 Flash';
+  if (model === 'deepseek-reasoner') return 'DeepSeek Reasoner';
+  if (model === 'deepseek-chat') return 'DeepSeek Chat';
+  return `DeepSeek ${model}`;
+}
+
 function asManaged(config: KimiConfig): ManagedKimiConfigShape {
   return config as unknown as ManagedKimiConfigShape;
 }
@@ -571,6 +766,9 @@ function asManaged(config: KimiConfig): ManagedKimiConfigShape {
 function providerSourceLabel(provider: KimiConfig['providers'][string]): string {
   const source = provider.source;
   if (source !== undefined) {
+    if (source['kind'] === 'deepseek') {
+      return 'deepseek';
+    }
     if (source['kind'] === 'apiJson' && typeof source['url'] === 'string') {
       return `apiJson(${source['url']})`;
     }

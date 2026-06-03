@@ -31,6 +31,19 @@ This package intentionally installs only the `hakimi` executable. It does not in
 
 On first launch, run `/login`. Choose Kimi Platform OAuth or a compatible API-key provider. Hakimi keeps the upstream `.kimi-code` config/data directory intentionally, so existing model/provider/session configuration can continue to work.
 
+## DeepSeek
+
+If your Kimi OAuth model is unavailable, configure DeepSeek without leaving the native runtime:
+
+```powershell
+$env:DEEPSEEK_API_KEY = "sk-..."
+hakimi provider deepseek
+hakimi provider list
+hakimi
+```
+
+The command writes an OpenAI-compatible `deepseek` provider and `deepseek/deepseek-v4-pro` model alias into `~/.kimi-code/config.toml`, then makes it the default. Use `--model-id deepseek-v4-flash`, `--no-thinking`, or `--no-default` when you need a different setup.
+
 ## Research Runtime
 
 Enable the experimental AITP lanes when you want the physics research runtime:
