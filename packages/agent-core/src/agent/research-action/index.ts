@@ -67,6 +67,33 @@ interface RecentEvidenceRef {
   readonly topic?: string | undefined;
 }
 
+export type ResearchActionTraceKind =
+  | 'call_started'
+  | 'call_finished'
+  | 'result_recorded'
+  | 'raw_tool_escape';
+
+export interface ResearchActionTraceItem {
+  readonly kind: ResearchActionTraceKind;
+  readonly actionId?: string | undefined;
+  readonly callId?: string | undefined;
+  readonly outcome?: ResearchActionOutcome | undefined;
+  readonly workFrameId?: string | undefined;
+  readonly domain?: string | undefined;
+  readonly topic?: string | undefined;
+  readonly inputSummary?: string | undefined;
+  readonly outputSummary?: string | undefined;
+  readonly ledgerEventIds: readonly string[];
+  readonly evidenceRefs: readonly string[];
+  readonly generatedObligationIds: readonly string[];
+  readonly primitiveToolCallIds: readonly string[];
+  readonly nextSuggestedActions: readonly string[];
+  readonly rawToolName?: string | undefined;
+  readonly rawToolReason?: string | undefined;
+  readonly followupActionId?: string | undefined;
+  readonly recordedAt: number;
+}
+
 export interface ResearchEvidenceFilter {
   readonly workFrameId?: string | undefined;
   readonly domain?: string | undefined;
@@ -79,10 +106,14 @@ export interface LoadedResearchEvidenceRef {
   readonly event: ResearchLedgerEvent;
 }
 
+const MAX_RECENT_ACTION_TRACE_ITEMS = 100;
+const MAX_TRACE_SUMMARY_LENGTH = 800;
+
 export class ResearchActionManager {
   private activeCall: ActiveResearchActionCall | undefined;
   private readonly obligations = new Map<string, ResearchObligation>();
   private recentEvidenceRefs: RecentEvidenceRef[] = [];
+  private recentTrace: ResearchActionTraceItem[] = [];
 
   constructor(private readonly agent: Agent) {}
 
@@ -156,6 +187,19 @@ export class ResearchActionManager {
       startedAt: Date.now(),
     };
     this.activeCall = started;
+    this.pushTrace({
+      kind: 'call_started',
+      actionId: started.actionId,
+      callId: started.callId,
+      ...(started.workFrameId === undefined ? {} : this.traceScope(started.workFrameId)),
+      ...(started.input === undefined ? {} : { inputSummary: summarizeTraceValue(started.input) }),
+      ledgerEventIds: [],
+      evidenceRefs: [],
+      generatedObligationIds: [],
+      primitiveToolCallIds: [],
+      nextSuggestedActions: [],
+      recordedAt: started.startedAt,
+    });
     this.agent.records.logRecord({
       type: 'research_action.call_started',
       source: options.source,
@@ -197,6 +241,20 @@ export class ResearchActionManager {
       this.activeCall = undefined;
     }
     this.pushEvidenceRefs(input.evidenceRefs ?? [], this.evidenceScope(workFrameId));
+    this.pushTrace({
+      kind: 'call_finished',
+      actionId: input.actionId,
+      callId: input.callId,
+      outcome: input.outcome,
+      ...(workFrameId === undefined ? {} : this.traceScope(workFrameId)),
+      ...(input.output === undefined ? {} : { outputSummary: summarizeTraceValue(input.output) }),
+      ledgerEventIds: input.ledgerEventIds ?? [],
+      evidenceRefs: input.evidenceRefs ?? [],
+      generatedObligationIds: input.generatedObligationIds ?? [],
+      primitiveToolCallIds: input.primitiveToolCallIds ?? [],
+      nextSuggestedActions: input.nextSuggestedActions ?? [],
+      recordedAt: Date.now(),
+    });
   }
 
   restoreActionCallStarted(input: {
@@ -213,24 +271,79 @@ export class ResearchActionManager {
       input: input.input,
       startedAt: input.startedAt,
     };
+    this.pushTrace({
+      kind: 'call_started',
+      actionId: input.actionId,
+      callId: input.callId,
+      ...(input.workFrameId === undefined ? {} : this.traceScope(input.workFrameId)),
+      ...(input.input === undefined ? {} : { inputSummary: summarizeTraceValue(input.input) }),
+      ledgerEventIds: [],
+      evidenceRefs: [],
+      generatedObligationIds: [],
+      primitiveToolCallIds: [],
+      nextSuggestedActions: [],
+      recordedAt: input.startedAt,
+    });
   }
 
   restoreActionCallFinished(input: {
+    readonly actionId?: string | undefined;
     readonly callId: string;
+    readonly outcome?: ResearchActionOutcome | undefined;
     readonly workFrameId?: string | undefined;
+    readonly output?: unknown;
+    readonly ledgerEventIds?: readonly string[] | undefined;
     readonly evidenceRefs?: readonly string[] | undefined;
+    readonly generatedObligationIds?: readonly string[] | undefined;
+    readonly primitiveToolCallIds?: readonly string[] | undefined;
+    readonly nextSuggestedActions?: readonly string[] | undefined;
+    readonly finishedAt?: number | undefined;
   }): void {
     if (this.activeCall?.callId === input.callId) {
       this.activeCall = undefined;
     }
     this.pushEvidenceRefs(input.evidenceRefs ?? [], this.evidenceScope(input.workFrameId));
+    this.pushTrace({
+      kind: 'call_finished',
+      ...(input.actionId === undefined ? {} : { actionId: input.actionId }),
+      callId: input.callId,
+      ...(input.outcome === undefined ? {} : { outcome: input.outcome }),
+      ...(input.workFrameId === undefined ? {} : this.traceScope(input.workFrameId)),
+      ...(input.output === undefined ? {} : { outputSummary: summarizeTraceValue(input.output) }),
+      ledgerEventIds: input.ledgerEventIds ?? [],
+      evidenceRefs: input.evidenceRefs ?? [],
+      generatedObligationIds: input.generatedObligationIds ?? [],
+      primitiveToolCallIds: input.primitiveToolCallIds ?? [],
+      nextSuggestedActions: input.nextSuggestedActions ?? [],
+      recordedAt: input.finishedAt ?? this.agent.records.restoring?.time ?? Date.now(),
+    });
   }
 
   restoreActionResultRecorded(input: {
+    readonly actionId?: string | undefined;
+    readonly callId?: string | undefined;
+    readonly outcome?: ResearchActionOutcome | undefined;
     readonly workFrameId?: string | undefined;
+    readonly ledgerEventIds?: readonly string[] | undefined;
     readonly evidenceRefs: readonly string[];
+    readonly generatedObligationIds?: readonly string[] | undefined;
+    readonly primitiveToolCallIds?: readonly string[] | undefined;
+    readonly nextSuggestedActions?: readonly string[] | undefined;
   }): void {
     this.pushEvidenceRefs(input.evidenceRefs, this.evidenceScope(input.workFrameId));
+    this.pushTrace({
+      kind: 'result_recorded',
+      ...(input.actionId === undefined ? {} : { actionId: input.actionId }),
+      ...(input.callId === undefined ? {} : { callId: input.callId }),
+      ...(input.outcome === undefined ? {} : { outcome: input.outcome }),
+      ...(input.workFrameId === undefined ? {} : this.traceScope(input.workFrameId)),
+      ledgerEventIds: input.ledgerEventIds ?? [],
+      evidenceRefs: input.evidenceRefs,
+      generatedObligationIds: input.generatedObligationIds ?? [],
+      primitiveToolCallIds: input.primitiveToolCallIds ?? [],
+      nextSuggestedActions: input.nextSuggestedActions ?? [],
+      recordedAt: this.agent.records.restoring?.time ?? Date.now(),
+    });
   }
 
   recordActionResult(
@@ -259,6 +372,23 @@ export class ResearchActionManager {
       ...(options.toolCallId === undefined ? {} : { toolCallId: options.toolCallId }),
     });
     this.pushEvidenceRefs(input.evidenceRefs, this.evidenceScope(this.agent.workFrames.active?.id));
+    this.pushTrace({
+      kind: 'result_recorded',
+      actionId: input.actionId,
+      callId: input.callId,
+      outcome: input.outcome,
+      ...(this.agent.workFrames.active?.id === undefined
+        ? {}
+        : this.traceScope(this.agent.workFrames.active.id)),
+      inputSummary: summarizeTraceValue(input.input),
+      outputSummary: summarizeTraceValue(input.output),
+      ledgerEventIds: input.ledgerEventIds,
+      evidenceRefs: input.evidenceRefs,
+      generatedObligationIds: input.generatedObligationIds ?? [],
+      primitiveToolCallIds: input.primitiveToolCallIds ?? [],
+      nextSuggestedActions: input.nextSuggestedActions,
+      recordedAt: Date.now(),
+    });
   }
 
   recordRawToolEscape(input: {
@@ -277,6 +407,46 @@ export class ResearchActionManager {
       ...(input.workFrameId === undefined ? {} : { workFrameId: input.workFrameId }),
       followupActionId: input.followupActionId,
       evidenceRefs: input.evidenceRefs ?? [],
+    });
+    this.pushEvidenceRefs(input.evidenceRefs ?? [], this.evidenceScope(input.workFrameId));
+    this.pushTrace({
+      kind: 'raw_tool_escape',
+      ...(input.workFrameId === undefined ? {} : this.traceScope(input.workFrameId)),
+      evidenceRefs: input.evidenceRefs ?? [],
+      ledgerEventIds: [],
+      generatedObligationIds: [],
+      primitiveToolCallIds: input.primitiveToolCallId === undefined ? [] : [input.primitiveToolCallId],
+      nextSuggestedActions:
+        input.followupActionId === undefined ? [] : [input.followupActionId],
+      rawToolName: input.primitiveToolName,
+      rawToolReason: input.reason,
+      ...(input.followupActionId === undefined ? {} : { followupActionId: input.followupActionId }),
+      recordedAt: Date.now(),
+    });
+  }
+
+  restoreRawToolEscape(input: {
+    readonly reason: string;
+    readonly primitiveToolName: string;
+    readonly primitiveToolCallId?: string | undefined;
+    readonly workFrameId?: string | undefined;
+    readonly followupActionId?: string | undefined;
+    readonly evidenceRefs?: readonly string[] | undefined;
+  }): void {
+    this.pushEvidenceRefs(input.evidenceRefs ?? [], this.evidenceScope(input.workFrameId));
+    this.pushTrace({
+      kind: 'raw_tool_escape',
+      ...(input.workFrameId === undefined ? {} : this.traceScope(input.workFrameId)),
+      evidenceRefs: input.evidenceRefs ?? [],
+      ledgerEventIds: [],
+      generatedObligationIds: [],
+      primitiveToolCallIds: input.primitiveToolCallId === undefined ? [] : [input.primitiveToolCallId],
+      nextSuggestedActions:
+        input.followupActionId === undefined ? [] : [input.followupActionId],
+      rawToolName: input.primitiveToolName,
+      rawToolReason: input.reason,
+      ...(input.followupActionId === undefined ? {} : { followupActionId: input.followupActionId }),
+      recordedAt: this.agent.records.restoring?.time ?? Date.now(),
     });
   }
 
@@ -312,6 +482,25 @@ export class ResearchActionManager {
       .filter((item) => filter.topic === undefined || item.topic === filter.topic)
       .slice(-Math.max(0, limit))
       .map((item) => item.ref);
+  }
+
+  listRecentTrace(
+    limit = 20,
+    filter: ResearchEvidenceFilter = {},
+  ): readonly ResearchActionTraceItem[] {
+    return this.recentTrace
+      .filter((item) => filter.workFrameId === undefined || item.workFrameId === filter.workFrameId)
+      .filter((item) => filter.domain === undefined || item.domain === filter.domain)
+      .filter((item) => filter.topic === undefined || item.topic === filter.topic)
+      .slice(-Math.max(0, limit))
+      .map((item) => ({
+        ...item,
+        ledgerEventIds: [...item.ledgerEventIds],
+        evidenceRefs: [...item.evidenceRefs],
+        generatedObligationIds: [...item.generatedObligationIds],
+        primitiveToolCallIds: [...item.primitiveToolCallIds],
+        nextSuggestedActions: [...item.nextSuggestedActions],
+      }));
   }
 
   loadEvidenceRef(
@@ -360,6 +549,10 @@ export class ResearchActionManager {
     ].slice(-50);
   }
 
+  private pushTrace(item: ResearchActionTraceItem): void {
+    this.recentTrace = [...this.recentTrace, item].slice(-MAX_RECENT_ACTION_TRACE_ITEMS);
+  }
+
   private evidenceScope(
     workFrameId: string | undefined,
   ): Omit<RecentEvidenceRef, 'ref'> {
@@ -373,10 +566,36 @@ export class ResearchActionManager {
       ...(frame?.topic === undefined ? {} : { topic: frame.topic }),
     };
   }
+
+  private traceScope(
+    workFrameId: string,
+  ): Pick<ResearchActionTraceItem, 'workFrameId' | 'domain' | 'topic'> {
+    const scope = this.evidenceScope(workFrameId);
+    return {
+      workFrameId,
+      ...(scope.domain === undefined ? {} : { domain: scope.domain }),
+      ...(scope.topic === undefined ? {} : { topic: scope.topic }),
+    };
+  }
 }
 
 export type { ResearchActionOutcome };
 
 function parseLedgerEvidenceRef(ref: string): string | undefined {
   return ref.startsWith('ledger:') ? ref.slice('ledger:'.length) : undefined;
+}
+
+function summarizeTraceValue(value: unknown): string {
+  if (typeof value === 'string') return truncate(value, MAX_TRACE_SUMMARY_LENGTH);
+  try {
+    const encoded = JSON.stringify(value);
+    return truncate(encoded ?? String(value), MAX_TRACE_SUMMARY_LENGTH);
+  } catch {
+    return truncate(String(value), MAX_TRACE_SUMMARY_LENGTH);
+  }
+}
+
+function truncate(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 15)}...[truncated]`;
 }
