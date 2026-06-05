@@ -6,6 +6,7 @@ import {
   ResearchEvalCaseRegistry,
   ResearchLedgerRegistry,
   WorkflowRecipeRegistry,
+  compileAitpProcessGraphSlice,
   compileResearchContextPack,
   createWorkFrame,
   type DomainProfile,
@@ -98,6 +99,35 @@ describe('compileResearchContextPack', () => {
       'physics-memory-registry-disabled',
       'research-ledger-registry-disabled',
     ]);
+  });
+
+  it('compiles AITP process graph slices into native context bindings', () => {
+    const pack = compileResearchContextPack({
+      workFrame: createWorkFrame({
+        id: 'frame.aitp',
+        domain: DOMAIN,
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Backtrace a provisional relation before promoting it.',
+      }),
+      aitp: compileAitpProcessGraphSlice(aitpSlicePayload(), {
+        prompt: 'Brainstorm the relation path and follow the source dependency.',
+      }),
+      now: () => 123,
+    });
+
+    expect(pack.aitp).toMatchObject({
+      truthSource: 'typed_records',
+      orientationOnly: true,
+      openObligationIds: ['obligation-source'],
+    });
+    expect(pack.actionBindings.map((item) => item.actionId)).toEqual(
+      expect.arrayContaining([
+        'aitp.create_open_obligation',
+        'physics.brainstorm_relation_path',
+        'trace.follow_source_dependency',
+      ]),
+    );
+    expect(pack.diagnostics.map((item) => item.source)).toContain('aitp');
   });
 });
 
@@ -247,5 +277,61 @@ function ledgerEvent(): ResearchLedgerEvent {
     path: 'event.md',
     body: 'Flux insertion source excerpt.',
     root: { path: '.aitp/research-ledger', source: 'project' },
+  };
+}
+
+function aitpSlicePayload() {
+  return {
+    ok: true,
+    kind: 'process_graph_slice',
+    truth_source: 'typed_records',
+    orientation_only: true,
+    nodes: [
+      {
+        id: 'claim:claim-fqhe',
+        type: 'claim',
+        record: {
+          statement: 'Sector counting identifies the edge CFT.',
+          status: 'hypothesis',
+        },
+      },
+    ],
+    edges: [],
+    open_obligations: [
+      {
+        obligation_id: 'obligation-source',
+        claim_id: 'claim-fqhe',
+        status: 'open',
+        obligation_type: 'source_support',
+        statement: 'Locate the source supporting the counting-CFT relation.',
+        next_action: 'open source dependency backtrace',
+      },
+    ],
+    source_backtrace: [
+      {
+        claim_id: 'claim-fqhe',
+        missing_components: ['reference_location'],
+        complete: false,
+      },
+    ],
+    relation_neighborhood: [
+      {
+        relation_id: 'relation-counting-cft',
+        status: 'hypothesis',
+        relation_type: 'diagnoses',
+        subject_id: 'object-counting',
+        object_id: 'object-cft',
+      },
+    ],
+    exploratory_records: [],
+    trust_boundary_reasons: ['this API cannot update claim trust'],
+    recommended_moments: [
+      {
+        moment: 'brainstorm_relation_path',
+        reason: 'object relation is still a hypothesis',
+        target_type: 'object_relation',
+        target_id: 'relation-counting-cft',
+      },
+    ],
   };
 }

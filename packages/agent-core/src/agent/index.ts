@@ -13,6 +13,7 @@ import { expandCommandArguments } from '../plugin/commands';
 import type { PluginCommandOrigin } from './context';
 
 import type { DomainProfileRegistry } from '../domain-profile';
+import type { AitpProcessGraphSliceProvider } from '../aitp';
 import type { McpConnectionManager } from '../mcp';
 import { FlagResolver, type ExperimentalFlagResolver } from '../flags';
 import { ImageLimits } from '../tools/support/image-limits';
@@ -110,6 +111,7 @@ export interface AgentOptions {
   readonly benchmarkAdapters?: BenchmarkAdapterRegistry;
   readonly researchHarness?: ResearchEvalCaseRegistry;
   readonly workflowRecipes?: WorkflowRecipeRegistry;
+  readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
   readonly mcp?: McpConnectionManager;
   readonly hookEngine?: HookEngine;
   readonly permission?: PermissionManagerOptions | undefined;
@@ -145,6 +147,7 @@ export class Agent {
   readonly subagentHost?: SessionSubagentHost;
   readonly mcp?: McpConnectionManager;
   readonly hooks?: HookEngine;
+  readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider;
   readonly log: Logger;
   readonly telemetry: TelemetryClient;
   readonly experimentalFlags: ExperimentalFlagResolver;
@@ -219,6 +222,7 @@ export class Agent {
     this.subagentHost = options.subagentHost;
     this.mcp = options.mcp;
     this.hooks = options.hookEngine;
+    this.aitpProcessGraphProvider = options.aitpProcessGraphProvider;
     this.log = options.log ?? log;
     this.telemetry = options.telemetry ?? noopTelemetryClient;
     this.experimentalFlags = options.experimentalFlags ?? new FlagResolver();

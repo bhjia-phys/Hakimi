@@ -44,6 +44,21 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
       `Ledger proposals: ${bounded(pack.ledger.proposals.map((proposal) => `${proposal.id} [${proposal.confidence}]`)).join(', ')}`,
     );
   }
+  if (pack.aitp !== undefined) {
+    lines.push(`AITP process graph: truth_source=${pack.aitp.truthSource}`);
+    if (pack.aitp.orientationOnly) {
+      lines.push('AITP slice is orientation-only; use it to choose local actions, not as promoted truth.');
+    }
+    for (const line of bounded(pack.aitp.contextLines)) {
+      lines.push(`AITP: ${line}`);
+    }
+    if (pack.aitp.trustBoundaryReasons.length > 0) {
+      lines.push(`AITP trust boundary: ${bounded(pack.aitp.trustBoundaryReasons).join('; ')}`);
+    }
+    if (pack.aitp.openObligationIds.length > 0) {
+      lines.push(`AITP open obligations: ${bounded(pack.aitp.openObligationIds).join(', ')}`);
+    }
+  }
   if (pack.actionBindings.length > 0) {
     lines.push(
       `Action bindings: ${bounded(pack.actionBindings.map((binding) => renderActionBinding(binding.actionId))).join(', ')}`,

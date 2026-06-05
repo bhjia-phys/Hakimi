@@ -146,3 +146,23 @@ export interface CompiledAitpProcessGraphSlice {
   readonly trust: AitpTrustSummary;
   readonly diagnostics: readonly string[];
 }
+
+export const AITP_EXPLORATION_TYPES = [
+  'source_asset',
+  'question_decomposition',
+  'relation_path_brainstorm',
+  'backtrace_step',
+  'steering_checkpoint',
+] as const;
+
+export type AitpExplorationType = (typeof AITP_EXPLORATION_TYPES)[number];
+
+export const AITP_EXPLORATION_STATUSES = [
+  'open',
+  'active',
+  'resolved',
+  'deferred',
+  'superseded',
+] as const;
+
+export type AitpExplorationStatus = (typeof AITP_EXPLORATION_STATUSES)[number];
