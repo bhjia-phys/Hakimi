@@ -1,4 +1,5 @@
 export * from './agent';
+export * from './aitp';
 export * from './session';
 export * from './rpc';
 export * from './config';

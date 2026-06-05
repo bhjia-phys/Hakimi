@@ -13,6 +13,9 @@ describe('default research actions', () => {
     registerDefaultResearchActions(registry);
 
     expect(registry.listActions().map((action) => action.id)).toEqual([
+      'aitp.create_open_obligation',
+      'aitp.record_derivation_checkpoint',
+      'aitp.record_research_state',
       'benchmark.run_minimal_case',
       'benchmark.submit_external_job',
       'code.capture_git_diff_observation',
@@ -27,6 +30,7 @@ describe('default research actions', () => {
       'derive.propose_route',
       'derive.specialize_regime',
       'derive.transform_formula',
+      'direction.brainstorm',
       'formalization.build_blueprint',
       'graph.compile_edges',
       'graph.query_dependency_closure',
@@ -35,6 +39,7 @@ describe('default research actions', () => {
       'memory.propose_capsule',
       'memory.reject_or_downgrade',
       'physics.apply_direction_lens',
+      'physics.brainstorm_relation_path',
       'scope.compile_context_pack',
       'scope.declare_convention_set',
       'scope.open_work_frame',
@@ -43,6 +48,10 @@ describe('default research actions', () => {
       'source.extract_definition',
       'source.extract_formula',
       'source.search_literature',
+      'trace.audit_original_question_drift',
+      'trace.follow_source_dependency',
+      'trace.open_backtrace',
+      'trace.reconstruct_definition',
       'validate.check_convention',
       'validate.check_dependency_closure',
       'validate.check_dimension',
