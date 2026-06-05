@@ -70,7 +70,7 @@ export async function handleForkCommand(host: SlashCommandHost, args: string): P
   try {
     await host.switchToSession(
       forked,
-      `Session forked (${forked.id}). To return to the original session: kimi -r ${session.id}`,
+      `Session forked (${forked.id}). To return to the original session: hakimi --session ${session.id}`,
     );
   } catch (error) {
     const msg = formatErrorMessage(error);

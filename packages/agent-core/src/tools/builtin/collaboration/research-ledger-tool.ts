@@ -15,6 +15,7 @@ import {
   RESEARCH_LEDGER_EVENT_STATUSES,
   RESEARCH_LEDGER_EVENT_TYPES,
   ResearchLedgerRegistry,
+  stablePathSlug,
   type CompileProposal,
   type ResearchLedgerCompileDiagnostic,
   type ResearchLedgerCompileResult,
@@ -41,10 +42,20 @@ export const ResearchLedgerToolInputSchema = z.object({
   domain: z.string().optional().describe('Domain id for scoped listing or proposal compilation.'),
   type: z.enum(RESEARCH_LEDGER_EVENT_TYPES).optional().describe('Optional event type filter.'),
   status: z.enum(RESEARCH_LEDGER_EVENT_STATUSES).optional().describe('Optional event status filter.'),
-  id: z.string().optional().describe('Event id for load_event.'),
+  id: z
+    .string()
+    .optional()
+    .describe(
+      'Event id for load_event, write_event, or capture_event. For write_event this may be omitted; Hakimi will generate event.<topic>.<type>.<tool_call_id>.',
+    ),
   include_body: z.boolean().optional().describe('Whether load_event should include event body.'),
   body: z.string().optional().describe('Markdown body for write_event.'),
-  source_refs: z.array(z.string()).optional().describe('Source refs for write_event.'),
+  source_refs: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Source refs for write_event. Use real retrieved provenance such as url:, doi:, arxiv:, paper:, file:, or ledger:. Do not use source_excerpt with only builtin:/model: refs.',
+    ),
   depends_on: z.array(z.string()).optional().describe('Dependency event ids for write_event.'),
   candidate_capsule_kind: z
     .enum(PHYSICS_CAPSULE_KINDS)
@@ -179,7 +190,7 @@ export class ResearchLedgerTool implements BuiltinTool<ResearchLedgerToolInput> 
     if (this.manager === undefined) {
       return errorResult('ResearchLedger write_event requires a session research ledger manager.');
     }
-    const id = args.id;
+    const id = args.id ?? defaultWriteEventId(args, ctx);
     const topic = args.topic;
     const domain = args.domain;
     const type = args.type;
@@ -202,6 +213,8 @@ export class ResearchLedgerTool implements BuiltinTool<ResearchLedgerToolInput> 
     if (args.source_refs === undefined || args.source_refs.length === 0) {
       return errorResult('ResearchLedger write_event requires at least one source_refs entry.');
     }
+    const provenanceError = validateWriteEventProvenance(type, args.source_refs);
+    if (provenanceError !== undefined) return provenanceError;
     const result = await this.manager.writeEvent(
       {
         metadata: {
@@ -276,6 +289,36 @@ export class ResearchLedgerTool implements BuiltinTool<ResearchLedgerToolInput> 
     });
     return ok(renderWriteResult(result));
   }
+}
+
+function defaultWriteEventId(
+  args: ResearchLedgerToolInput,
+  ctx: ExecutableToolContext,
+): string | undefined {
+  if (args.topic === undefined || args.topic.length === 0) return undefined;
+  if (args.type === undefined || args.type.length === 0) return undefined;
+  return `event.${stablePathSlug(args.topic, 'topic')}.${args.type}.${stablePathSlug(ctx.toolCallId, 'tool call id')}`;
+}
+
+function validateWriteEventProvenance(
+  type: ResearchLedgerEventType,
+  sourceRefs: readonly string[],
+): ExecutableToolResult | undefined {
+  if (type !== 'source_excerpt') return undefined;
+  if (!sourceRefs.every(isInternalKnowledgeRef)) return undefined;
+  return errorResult(
+    'ResearchLedger write_event type=source_excerpt requires at least one retrieved source ref such as url:, doi:, arxiv:, paper:, file:, or ledger:. For built-in/model knowledge, use type=derivation_scratch, assumption_candidate, equation_candidate, or decision_note and mark source_refs with builtin:/model: provenance.',
+  );
+}
+
+function isInternalKnowledgeRef(ref: string): boolean {
+  const lower = ref.trim().toLowerCase();
+  return (
+    lower.startsWith('builtin:') ||
+    lower.startsWith('model:') ||
+    lower.startsWith('internal:') ||
+    lower.startsWith('memory:')
+  );
 }
 
 function ok(output: string): ExecutableToolResult {

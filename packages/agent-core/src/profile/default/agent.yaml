@@ -21,6 +21,9 @@ tools:
   - ReadMediaFile
   - TodoList
   - Skill
+  - PhysicsMemory
+  - ResearchLedger
+  - ResearchAction
   - WebSearch
   - Agent
   - AgentSwarm

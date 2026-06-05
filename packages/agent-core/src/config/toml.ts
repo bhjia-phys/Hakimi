@@ -44,8 +44,8 @@ function camelToSnake(str: string): string {
 /*  Read / parse                                                       */
 /* ------------------------------------------------------------------ */
 
-const DEFAULT_CONFIG_FILE_TEXT = `# ~/.kimi-code/config.toml
-# Runtime settings for Kimi Code.
+const DEFAULT_CONFIG_FILE_TEXT = `# ~/.hakimi/config.toml
+# Runtime settings for Hakimi.
 # This file starts empty so built-in defaults can apply.
 # Login will populate managed Kimi provider and model entries.
 `;

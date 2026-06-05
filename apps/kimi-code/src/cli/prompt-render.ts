@@ -383,7 +383,7 @@ export function writeExperimentalVersion(
     stdout.write(`${JSON.stringify(message)}\n`);
     return;
   }
-  stderr.write(`kimi version ${version}\n`);
+  stderr.write(`hakimi version ${version}\n`);
 }
 
 export function writeResumeHint(
@@ -392,7 +392,7 @@ export function writeResumeHint(
   stdout: PromptOutput,
   stderr: PromptOutput,
 ): void {
-  const command = `kimi -r ${sessionId}`;
+  const command = `hakimi --session ${sessionId}`;
   const content = `To resume this session: ${command}`;
   if (outputFormat === 'stream-json') {
     const message: PromptJsonResumeMetaMessage = {

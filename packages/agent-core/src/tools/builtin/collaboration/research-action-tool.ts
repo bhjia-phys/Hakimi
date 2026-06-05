@@ -174,7 +174,12 @@ export const ResearchActionToolInputSchema = z.object({
     .string()
     .optional()
     .describe('Action id for plan_primitive_tools, record_action_result, or executor attribution.'),
-  call_id: z.string().optional().describe('Semantic action call id for record_action_result.'),
+  call_id: z
+    .string()
+    .optional()
+    .describe(
+      'Semantic action call id for start_action_call, finish_action_call, or record_action_result. If omitted, Hakimi infers one from the active action call or current tool call.',
+    ),
   source: z.enum(SOURCES).optional().describe('Action source for record_action_result.'),
   outcome: z.enum(OUTCOMES).optional().describe('Action outcome for record_action_result.'),
   graph_refs: z.array(GraphRefSchema).optional().describe('Graph refs touched by the action.'),
@@ -359,16 +364,14 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     if (args.action_id === undefined || args.action_id.length === 0) {
       return errorResult('ResearchAction record_action_result requires an action_id.');
     }
-    if (args.call_id === undefined || args.call_id.length === 0) {
-      return errorResult('ResearchAction record_action_result requires a call_id.');
-    }
     if (args.outcome === undefined) {
       return errorResult('ResearchAction record_action_result requires an outcome.');
     }
+    const resolvedCallId = this.resolveCallId(args, ctx);
     const source = (args.source ?? 'model') as ResearchActionSource;
     const record = {
       actionId: args.action_id,
-      callId: args.call_id,
+      callId: resolvedCallId.callId,
       input: {},
       output: {},
       graphRefs: (args.graph_refs ?? []) as GraphRef[],
@@ -385,7 +388,7 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       toolCallId: ctx.toolCallId,
     });
     return ok(
-      `<research_action_recorded action_id="${escapeXml(record.actionId)}" call_id="${escapeXml(record.callId)}" outcome="${record.outcome}" />\n`,
+      `<research_action_recorded action_id="${escapeXml(record.actionId)}" call_id="${escapeXml(record.callId)}" call_id_source="${resolvedCallId.source}" outcome="${record.outcome}" />\n`,
     );
   }
 
@@ -399,13 +402,11 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     if (args.action_id === undefined || args.action_id.length === 0) {
       return errorResult('ResearchAction start_action_call requires action_id.');
     }
-    if (args.call_id === undefined || args.call_id.length === 0) {
-      return errorResult('ResearchAction start_action_call requires call_id.');
-    }
+    const resolvedCallId = this.resolveCallId(args, ctx);
     const started = this.manager.startActionCall(
       {
         actionId: args.action_id,
-        callId: args.call_id,
+        callId: resolvedCallId.callId,
         input: args.action_input,
       },
       {
@@ -414,7 +415,7 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       },
     );
     return ok(
-      `<research_action_call_started action_id="${escapeXml(started.actionId)}" call_id="${escapeXml(started.callId)}"${started.workFrameId === undefined ? '' : ` work_frame_id="${escapeXml(started.workFrameId)}"`} />\n`,
+      `<research_action_call_started action_id="${escapeXml(started.actionId)}" call_id="${escapeXml(started.callId)}" call_id_source="${resolvedCallId.source}"${started.workFrameId === undefined ? '' : ` work_frame_id="${escapeXml(started.workFrameId)}"`} />\n`,
     );
   }
 
@@ -428,16 +429,14 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     if (args.action_id === undefined || args.action_id.length === 0) {
       return errorResult('ResearchAction finish_action_call requires action_id.');
     }
-    if (args.call_id === undefined || args.call_id.length === 0) {
-      return errorResult('ResearchAction finish_action_call requires call_id.');
-    }
     if (args.outcome === undefined) {
       return errorResult('ResearchAction finish_action_call requires outcome.');
     }
+    const resolvedCallId = this.resolveCallId(args, ctx);
     this.manager.finishActionCall(
       {
         actionId: args.action_id,
-        callId: args.call_id,
+        callId: resolvedCallId.callId,
         outcome: args.outcome,
         output: args.action_output,
         ledgerEventIds: args.ledger_event_ids,
@@ -452,8 +451,25 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       },
     );
     return ok(
-      `<research_action_call_finished action_id="${escapeXml(args.action_id)}" call_id="${escapeXml(args.call_id)}" outcome="${args.outcome}" />\n`,
+      `<research_action_call_finished action_id="${escapeXml(args.action_id)}" call_id="${escapeXml(resolvedCallId.callId)}" call_id_source="${resolvedCallId.source}" outcome="${args.outcome}" />\n`,
     );
+  }
+
+  private resolveCallId(
+    args: ResearchActionToolInput & { readonly action_id?: string | undefined },
+    ctx: ExecutableToolContext,
+  ): { readonly callId: string; readonly source: 'provided' | 'active' | 'generated' } {
+    if (args.call_id !== undefined && args.call_id.trim().length > 0) {
+      return { callId: args.call_id, source: 'provided' };
+    }
+    const active = this.manager?.activeActionCall;
+    if (active !== undefined && active.actionId === args.action_id) {
+      return { callId: active.callId, source: 'active' };
+    }
+    return {
+      callId: defaultCallId(args.action_id ?? 'research-action', ctx.toolCallId),
+      source: 'generated',
+    };
   }
 
   private openWorkFrame(
@@ -1124,11 +1140,24 @@ function renderAction(action: ResearchActionDefinition, indent: string): string 
 }
 
 function renderPrimitivePlan(plan: ResearchPrimitivePlanTemplate): string {
+  const fallbackLines = plan.toolNames.includes('WebSearch')
+    ? [
+        '  <fallbacks>',
+        '    <fallback tool="WebSearch">If WebSearch is unavailable or unauthenticated, use FetchURL for known URLs or Read for local sources. Do not invent source evidence; finish the action as blocked or inconclusive when no reliable source can be retrieved.</fallback>',
+        '  </fallbacks>',
+      ]
+    : [];
   return [
     `<primitive_tool_plan id="${escapeXml(plan.id)}" action_id="${escapeXml(plan.actionId)}" primitive_tool_policy="${escapeXml(plan.primitiveToolPolicy)}">`,
     `  <title>${escapeXml(plan.title)}</title>`,
     `  <intent>${escapeXml(plan.intent)}</intent>`,
+    '  <required_sequence>',
+    `    <call tool="ResearchAction" action="start_action_call" action_id="${escapeXml(plan.actionId)}" when="before_primitive_tools" />`,
+    '    <call tool="native_tools" when="execute_primitive_plan_steps" />',
+    `    <call tool="ResearchAction" action="finish_action_call" action_id="${escapeXml(plan.actionId)}" when="after_primitive_tools" required_outcome="pass|fail|blocked|inconclusive" />`,
+    '  </required_sequence>',
     renderStringList('tools', 'tool', plan.toolNames, '  '),
+    ...fallbackLines,
     '  <steps>',
     ...plan.steps.map((step) =>
       [

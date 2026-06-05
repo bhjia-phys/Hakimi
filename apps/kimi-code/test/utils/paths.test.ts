@@ -16,6 +16,7 @@ import {
 const originalEnv = { ...process.env };
 
 beforeEach(() => {
+  delete process.env['HAKIMI_HOME'];
   delete process.env['KIMI_CODE_HOME'];
 });
 
@@ -24,8 +25,13 @@ afterEach(() => {
 });
 
 describe('getDataDir', () => {
-  it('returns ~/.kimi-code when KIMI_CODE_HOME is not set', () => {
-    expect(getDataDir()).toBe(join(homedir(), '.kimi-code'));
+  it('returns ~/.hakimi when no home env var is set', () => {
+    expect(getDataDir()).toBe(join(homedir(), '.hakimi'));
+  });
+
+  it('returns HAKIMI_HOME when set', () => {
+    process.env['HAKIMI_HOME'] = '/tmp/hakimi-test-data';
+    expect(getDataDir()).toBe('/tmp/hakimi-test-data');
   });
 
   it('returns KIMI_CODE_HOME when set', () => {
@@ -37,11 +43,17 @@ describe('getDataDir', () => {
     process.env['KIMI_CODE_HOME'] = 'relative/path';
     expect(getDataDir()).toBe('relative/path');
   });
+
+  it('prefers HAKIMI_HOME over KIMI_CODE_HOME', () => {
+    process.env['HAKIMI_HOME'] = '/hakimi';
+    process.env['KIMI_CODE_HOME'] = '/kimi-code';
+    expect(getDataDir()).toBe('/hakimi');
+  });
 });
 
 describe('getLogDir', () => {
   it('returns <dataDir>/logs', () => {
-    expect(getLogDir()).toBe(join(homedir(), '.kimi-code', 'logs'));
+    expect(getLogDir()).toBe(join(homedir(), '.hakimi', 'logs'));
   });
 
   it('respects KIMI_CODE_HOME', () => {
@@ -63,7 +75,7 @@ describe('getBinDir', () => {
 
 describe('getUpdateStateFile', () => {
   it('returns <dataDir>/updates/latest.json', () => {
-    expect(getUpdateStateFile()).toBe(join(homedir(), '.kimi-code', 'updates', 'latest.json'));
+    expect(getUpdateStateFile()).toBe(join(homedir(), '.hakimi', 'updates', 'latest.json'));
   });
 
   it('respects KIMI_CODE_HOME', () => {
@@ -75,7 +87,7 @@ describe('getUpdateStateFile', () => {
 describe('getUpdateInstallStateFile', () => {
   it('returns <dataDir>/updates/install.json', () => {
     expect(getUpdateInstallStateFile()).toBe(
-      join(homedir(), '.kimi-code', 'updates', 'install.json'),
+      join(homedir(), '.hakimi', 'updates', 'install.json'),
     );
   });
 
@@ -90,7 +102,7 @@ describe('getInputHistoryFile', () => {
     const workDir = '/home/user/project';
     const hash = createHash('md5').update(workDir, 'utf-8').digest('hex');
     expect(getInputHistoryFile(workDir)).toBe(
-      join(homedir(), '.kimi-code', 'user-history', `${hash}.jsonl`),
+      join(homedir(), '.hakimi', 'user-history', `${hash}.jsonl`),
     );
   });
 

@@ -87,9 +87,10 @@ export class ResearchLedgerManager {
   }
 
   defaultWriteRoot() {
+    const path = join(this.agent.config.cwd, '.hakimi/research-ledger');
     return (
-      this.registry.getRoots().find((root) => root.source === 'project') ?? {
-        path: join(this.agent.config.cwd, '.aitp/research-ledger'),
+      this.registry.getRoots().find((root) => root.source === 'project' && root.path === path) ?? {
+        path,
         source: 'project' as const,
       }
     );

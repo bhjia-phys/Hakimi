@@ -25,7 +25,7 @@ The serious part is the mission. Hakimi is built for theoretical physics work wh
 
 ## Why This Exists
 
-Hakimi is not a notebook bolted onto a coding agent. It is a runtime-native fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code): the terminal loop, tools, sessions, skills, MCP, subagents, records/replay, permissions, OAuth path, and package shape remain Kimi Code-compatible where compatibility matters. The theoretical-physics system is inserted into the runtime itself through `.aitp` files, `packages/agent-core`, turn-loop context injection, tool exposure, records, replay, and model-facing research tools.
+Hakimi is not a notebook bolted onto a coding agent. It is a runtime-native fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code): the terminal loop, tools, sessions, skills, MCP, subagents, records/replay, permissions, OAuth path, and package shape remain Kimi Code-compatible where compatibility matters. The theoretical-physics system is inserted into the runtime itself through `.hakimi` research files, legacy `.aitp` compatibility files, `packages/agent-core`, turn-loop context injection, tool exposure, records, replay, and model-facing research tools.
 
 That means a research action can search literature, inspect code, prepare patches, submit or normalize external job receipts, capture evidence, and return to the correct WorkFrame without mixing unrelated topics. The goal is simple to say and hard to do: each research thread should remember what it knows, what it assumes, what evidence supports it, what remains unverified, and which tools produced the trail.
 
@@ -46,8 +46,8 @@ That means a research action can search literature, inspect code, prepare patche
 - `hakimi` is the only CLI command installed by this package, so it does not overwrite a separate Kimi Code `kimi` command.
 - The TUI welcome screen uses the Hakimi pixel spacecraft identity and physics research copy.
 - WorkFrames keep active research topics scoped by domain, topic, assumptions, conventions, context pack, and trust state.
-- Domain packs, workflow recipes, physics memory, evals, action bindings, and tool inventories can be loaded from file-backed `.aitp` fixtures.
-- New topics do not require hand-written `.aitp` packs up front: Hakimi now registers a built-in generic theoretical-physics profile, workflow recipes, process-memory capsules, and a smoke eval by default, then falls back to that scaffold when a WorkFrame has no dedicated pack.
+- Domain packs, workflow recipes, physics memory, evals, action bindings, and tool inventories can be loaded from file-backed `.hakimi` fixtures, with legacy `.aitp` fixtures still scanned for compatibility.
+- New topics do not require hand-written packs up front: Hakimi now registers a built-in generic theoretical-physics profile, workflow recipes, process-memory capsules, and a smoke eval by default, then falls back to that scaffold when a WorkFrame has no dedicated pack.
 - Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
 - Literature search, code patch preparation, and external benchmark workflows are orchestrated through native Kimi tools rather than being executed inside `ResearchAction` itself.
 - Evidence can be written to the research ledger, reread only inside matching WorkFrame scope, compiled into graph candidates, and checked by harness/final-gate logic.
@@ -71,7 +71,7 @@ This matters most when the conversation is compacted. Ordinary chat history can 
 
 ## Relationship To Upstream
 
-Hakimi remains close to upstream Kimi Code on purpose. The SDK/OAuth imports and `.kimi-code` data directory stay compatible for now, while the user-facing product is `Hakimi`, the npm package is `@bhjia-phys/hakimi`, and the primary executable is `hakimi`. This is a native fork, not an external wrapper.
+Hakimi remains close to upstream Kimi Code on purpose. The SDK/OAuth imports stay compatible where useful, while Hakimi uses its own `.hakimi` user/project config roots by default so model, MCP, session, and runtime state do not collide with a separate Kimi Code install. The user-facing product is `Hakimi`, the npm package is `@bhjia-phys/hakimi`, and the primary executable is `hakimi`. Hakimi releases use an independent semver line, currently `0.13.0`, instead of mirroring upstream Kimi Code tags. This is a native fork, not an external wrapper.
 
 Codex and ForgeCode are references rather than dependencies: Codex informs tool exposure, structured tool outputs, and action traces; ForgeCode informs harness and repeatable eval workflows.
 
@@ -171,6 +171,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 ## Current Status
 
 - Upstream parity with `MoonshotAI/kimi-code:main` was refreshed on 2026-06-03 and merged through commit `6a22523` (`fix: simplify goal budget schema and fix output caps (#365)`), preserving the AITP runtime integrations.
+- `hakimi --version` now follows Hakimi's own CLI/package release line. The current local package version is `0.13.0`; upstream Kimi Code release numbers are treated as sync points, not Hakimi release numbers.
 - The AITP Agent 0.0.1 physics-memory vertical slice is implemented and now starts enabled in Hakimi unless `KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY=0` is set.
 - `packages/agent-core` now includes physics-memory types, parser, scanner, registry, compiler, session scanning, append-only records, a model-invocable `PhysicsMemory` builtin tool, LibRPA fixture capsules, and a foundational `ResearchActionRegistry`.
 - Windows baseline failures in the broader `agent-core` suite have been resolved; see [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md).
@@ -225,7 +226,7 @@ corepack pnpm --config.engine-strict=false install
 corepack pnpm --config.engine-strict=false build
 New-Item -ItemType Directory -Force dist-pack
 corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ..\..\dist-pack
-npm install -g .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
+npm install -g .\dist-pack\bhjia-phys-hakimi-0.13.0.tgz
 hakimi --version
 hakimi
 ```
@@ -234,7 +235,7 @@ For an isolated install check without touching the global npm prefix:
 
 ```powershell
 $prefix = "$PWD\.sisyphus\drafts\_scratch\hakimi-install-prefix"
-npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
+npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.13.0.tgz
 & "$prefix\node_modules\.bin\hakimi.cmd" --version
 ```
 
@@ -243,13 +244,12 @@ npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
 If the managed Kimi-for-coding endpoint is unavailable for your account, configure DeepSeek as the native default model:
 
 ```powershell
-$env:DEEPSEEK_API_KEY = "sk-..."
 hakimi provider deepseek
 hakimi provider list
 hakimi
 ```
 
-`hakimi provider deepseek` writes a normal OpenAI-compatible provider into `~/.kimi-code/config.toml`; it does not create a proxy wrapper. The default model is `deepseek-v4-pro` at `https://api.deepseek.com`, with `deepseek-v4-flash` available via:
+`hakimi provider deepseek` prompts for your DeepSeek API key when no key is supplied, then writes a normal OpenAI-compatible provider into `~/.hakimi/config.toml`; it does not create a proxy wrapper. For automation you can still pass `--api-key sk-...` or set `DEEPSEEK_API_KEY`. The default model is `deepseek-v4-pro` at `https://api.deepseek.com`, with `deepseek-v4-flash` available via:
 
 ```powershell
 hakimi provider deepseek --api-key sk-... --model-id deepseek-v4-flash
@@ -257,12 +257,20 @@ hakimi provider deepseek --api-key sk-... --model-id deepseek-v4-flash
 
 Pass `--no-thinking` if you want the imported DeepSeek alias to start in non-thinking mode, or `--no-default` if you only want to add the provider without switching the active default model.
 
+When DeepSeek is the active chat model, `WebSearch` no longer depends on a
+Kimi OAuth token. Hakimi still prefers the configured Moonshot/Kimi search
+service when it is authenticated, but falls back to a no-auth local web search
+provider when that service is unavailable.
+
 Hakimi's research runtime starts enabled by default. You do not need to create
 domain packs, memory capsules, workflow recipes, or evals before starting a new
 topic: open a WorkFrame for the topic and `compile_context_pack`, and Hakimi
 will use the built-in `theoretical-physics/general` scaffold until a dedicated
-`.aitp` pack exists. Dedicated project/user `.aitp` packs override the generic
-fallback for their domain.
+pack exists. New project packs and research-ledger writes use `.hakimi/`
+directories such as `.hakimi/research-ledger`, `.hakimi/physics-memory`,
+`.hakimi/domain-profiles`, `.hakimi/workflow-recipes`, and `.hakimi/evals`.
+Legacy `.aitp/` packs are still scanned read-only for compatibility and can
+override the generic fallback for their domain.
 
 Explicitly disable individual research features only for debugging or upstream
 compatibility checks:

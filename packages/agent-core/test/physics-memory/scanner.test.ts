@@ -39,6 +39,28 @@ describe('physics memory scanner', () => {
 
     expect(roots.map((root) => root.source)).toEqual(['project', 'user']);
   });
+
+  it('prefers Hakimi memory roots while keeping legacy .aitp roots readable', async () => {
+    const project = await makeTempDir();
+    const user = await makeTempDir();
+    await mkdir(join(project, '.git'));
+    await mkdir(join(project, '.hakimi', 'physics-memory'), { recursive: true });
+    await mkdir(join(project, '.aitp', 'physics-memory'), { recursive: true });
+    await mkdir(join(user, 'physics-memory'), { recursive: true });
+    await mkdir(join(user, '.aitp', 'physics-memory'), { recursive: true });
+
+    const roots = await resolvePhysicsMemoryRoots({
+      paths: { workDir: join(project, 'subdir'), userHomeDir: user },
+    });
+
+    expect(roots.map((root) => root.path.replaceAll('\\', '/'))).toEqual([
+      expect.stringContaining('/.hakimi/physics-memory'),
+      expect.stringContaining('/.aitp/physics-memory'),
+      expect.stringMatching(/\/physics-memory$/),
+      expect.stringContaining('/.aitp/physics-memory'),
+    ]);
+    expect(roots.map((root) => root.source)).toEqual(['project', 'project', 'user', 'user']);
+  });
 });
 
 async function makeTempDir(): Promise<string> {

@@ -761,7 +761,7 @@ describe('Session MCP startup', () => {
       ).resolves.toContain('session-token');
       await expect(
         readFile(
-          join(processHome, '.kimi-code', 'credentials', 'mcp', `${provider.storeKey}-tokens.json`),
+          join(processHome, '.hakimi', 'credentials', 'mcp', `${provider.storeKey}-tokens.json`),
           'utf-8',
         ),
       ).rejects.toMatchObject({ code: 'ENOENT' });

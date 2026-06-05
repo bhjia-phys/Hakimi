@@ -1,4 +1,4 @@
-Query, write, and compile source-backed research ledger events for AITP Agent.
+Query, write, and compile source-backed research ledger events for Hakimi.
 
 Use this tool when a physics task needs prior session evidence, derivation notes, source excerpts, code observations, git-diff observations, benchmark observations, failures, or user decisions that have not yet been promoted into physics memory.
 
