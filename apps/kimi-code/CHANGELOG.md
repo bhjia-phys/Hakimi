@@ -1,4 +1,18 @@
-# @moonshot-ai/kimi-code
+# @bhjia-phys/hakimi
+
+## 0.13.0
+
+### Minor Changes
+
+- Start Hakimi's independent CLI/package release line. `hakimi --version` now reports Hakimi semver instead of mirroring upstream Kimi Code release numbers.
+- Keep Hakimi runtime state under `.hakimi` by default, including provider, MCP, session, update, and project research artifacts, while retaining legacy `.aitp` project-pack read compatibility.
+- Make the physics research runtime default-on for Hakimi sessions, including `ResearchAction`, `ResearchLedger`, `PhysicsMemory`, `/goal`, the built-in `theoretical-physics/general` scaffold, ContextPack/DomainPack summaries, and native-tool primitive plans.
+- Add the `hakimi provider deepseek` setup path so DeepSeek can be configured as a normal OpenAI-compatible provider in `~/.hakimi/config.toml` without requiring shell environment variables.
+
+### Patch Changes
+
+- Tighten `ResearchAction` plans so semantic actions explicitly show the expected `start_action_call -> native tools -> finish_action_call` sequence, with WebSearch fallback instructions when Moonshot Search is unavailable.
+- Let `ResearchAction` infer active call ids for lifecycle calls, and harden `ResearchLedger.write_event` with generated ids plus stricter source-excerpt validation.
 
 ## 0.29.1
 

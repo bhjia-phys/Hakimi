@@ -54,6 +54,14 @@ describe('default agent profiles', () => {
     }
   });
 
+  it('lists research orchestration tools on the default agent profile', () => {
+    const agentTools = DEFAULT_AGENT_PROFILES['agent']?.tools ?? [];
+
+    expect(agentTools).toEqual(
+      expect.arrayContaining(['PhysicsMemory', 'ResearchLedger', 'ResearchAction']),
+    );
+  });
+
   it('fails loudly when an embedded system prompt source is missing', () => {
     expect(() =>
       loadAgentProfilesFromSources(['profile/default/agent.yaml'], {

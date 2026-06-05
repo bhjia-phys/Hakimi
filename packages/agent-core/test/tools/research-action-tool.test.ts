@@ -73,6 +73,9 @@ describe('ResearchActionTool', () => {
     expect(literature.output).toContain('<tool>WebSearch</tool>');
     expect(literature.output).toContain('<tool>FetchURL</tool>');
     expect(literature.output).toContain('primitive_tool_call_ids_required="true"');
+    expect(literature.output).toContain('action="start_action_call"');
+    expect(literature.output).toContain('action="finish_action_call"');
+    expect(literature.output).toContain('If WebSearch is unavailable');
     expect(patch.output).toContain('primitive_tool_policy="write-gated"');
     expect(patch.output).toContain('approval="write"');
     expect(patch.output).toContain('<tool>Edit</tool>');
@@ -110,6 +113,47 @@ describe('ResearchActionTool', () => {
         primitiveToolCallIds: ['tool_call_primitive_1'],
         nextSuggestedActions: ['validate.check_known_limit'],
         toolCallId: 'call_research_action',
+      }),
+    );
+  });
+
+  it('infers call ids for model-facing action lifecycle calls', async () => {
+    const records: AgentRecord[] = [];
+    const agent = makeAgent(records);
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const started = await execute(tool, {
+      action: 'start_action_call',
+      action_id: 'source.search_literature',
+    });
+    const recorded = await execute(tool, {
+      action: 'record_action_result',
+      action_id: 'source.search_literature',
+      outcome: 'blocked',
+      primitive_tool_call_ids: ['tool_call_search_failed'],
+    });
+    const finished = await execute(tool, {
+      action: 'finish_action_call',
+      action_id: 'source.search_literature',
+      outcome: 'blocked',
+      primitive_tool_call_ids: ['tool_call_search_failed'],
+    });
+
+    expect(started.output).toContain('call_id_source="generated"');
+    expect(recorded.output).toContain('call_id_source="active"');
+    expect(finished.output).toContain('call_id_source="active"');
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        callId: expect.stringMatching(/^call\.source.search_literature\./),
+        outcome: 'blocked',
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.call_finished',
+        callId: expect.stringMatching(/^call\.source.search_literature\./),
+        outcome: 'blocked',
       }),
     );
   });

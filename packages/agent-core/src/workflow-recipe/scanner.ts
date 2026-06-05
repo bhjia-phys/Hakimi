@@ -4,8 +4,8 @@ import { dirname, isAbsolute, join, resolve } from 'pathe';
 import { parseWorkflowRecipeFromFile } from './parser';
 import type { WorkflowRecipe, WorkflowRecipeRoot } from './types';
 
-const PROJECT_WORKFLOW_RECIPE_DIRS = ['.aitp/workflow-recipes'] as const;
-const USER_WORKFLOW_RECIPE_DIRS = ['.aitp/workflow-recipes'] as const;
+const PROJECT_WORKFLOW_RECIPE_DIRS = ['.hakimi/workflow-recipes', '.aitp/workflow-recipes'] as const;
+const USER_WORKFLOW_RECIPE_DIRS = ['workflow-recipes', '.aitp/workflow-recipes'] as const;
 const MAX_SCAN_DEPTH = 12;
 
 export interface WorkflowRecipePathContext {

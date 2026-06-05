@@ -17,6 +17,19 @@ import type { AppState } from '#/tui/types';
 const HAKIMI_TAGLINE = 'truth-seeking physics research agent';
 const HAKIMI_READY_LINE = 'Ready to explore the frontiers of physics knowledge.';
 
+const HAKIMI_LOGO_COLORS = {
+  B: '#1F8DFF',
+  C: '#28D7FF',
+  D: '#2759C7',
+  E: '#F6F2E3',
+  G: '#FFD45C',
+  O: '#FF9D2E',
+  S: '#9AA7B6',
+  W: '#DDE7F3',
+} as const;
+
+type HakimiLogoColorKey = keyof typeof HAKIMI_LOGO_COLORS;
+
 const HAKIMI_PIXEL_LOGO = [
   '............................................',
   '....................E.......................',
@@ -44,19 +57,6 @@ const HAKIMI_PIXEL_LOGO = [
   '.B..........................................',
 ] as const;
 
-const PIXEL_COLORS = {
-  B: '#1F8DFF',
-  C: '#28D7FF',
-  D: '#2759C7',
-  E: '#F6F2E3',
-  G: '#FFD45C',
-  O: '#FF9D2E',
-  S: '#9AA7B6',
-  W: '#DDE7F3',
-} as const;
-
-type PixelColorKey = keyof typeof PIXEL_COLORS;
-
 function padAnsi(text: string, width: number): string {
   return text + ' '.repeat(Math.max(0, width - visibleWidth(text)));
 }
@@ -66,7 +66,7 @@ function renderHakimiPixelLogo(): string[] {
     Array.from(row)
       .map((pixel) => {
         if (pixel === '.') return ' ';
-        return chalk.hex(PIXEL_COLORS[pixel as PixelColorKey])('█');
+        return chalk.hex(HAKIMI_LOGO_COLORS[pixel as HakimiLogoColorKey])('█');
       })
       .join(''),
   );
@@ -100,10 +100,10 @@ function renderHakimiHeader(colors: ColorPalette, innerWidth: number): string[] 
   const logo = renderHakimiPixelLogo();
   const logoWidth = Math.max(...logo.map((row) => visibleWidth(row)));
   const gap = '  ';
-  const textMinWidth = visibleWidth(HAKIMI_TAGLINE);
+  const textFullWidth = Math.max(...textLines.map((line) => visibleWidth(line)));
 
-  if (innerWidth < logoWidth + gap.length + textMinWidth) {
-    return textLines;
+  if (innerWidth < logoWidth + gap.length + textFullWidth) {
+    return [...logo, '', ...textLines];
   }
 
   const rowCount = Math.max(logo.length, textLines.length);

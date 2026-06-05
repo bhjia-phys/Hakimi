@@ -104,6 +104,7 @@ describe('ResearchLedgerTool', () => {
     expect(result.output).toContain('created="true"');
     const event = manager.registry.requireEvent('event.librpa.head-wing.diff');
     expect(event.body).toContain('deterministic head-wing diff');
+    expect(event.path.replaceAll('\\', '/')).toContain('/.hakimi/research-ledger/');
     expect(await readFile(event.path, 'utf8')).toContain('git_diff_observation');
     expect(records).toContainEqual(
       expect.objectContaining({
@@ -123,6 +124,44 @@ describe('ResearchLedgerTool', () => {
       id: 'event.librpa.head-wing.diff',
     });
     expect(loaded.output).toContain('Captured a deterministic head-wing diff observation.');
+  });
+
+  it('generates write_event ids and rejects source excerpts without retrieved provenance', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'aitp-ledger-tool-'));
+    onTestFinishedRm(cwd);
+    const agent = makeAgent(new ResearchLedgerRegistry(), { cwd });
+    const manager = agent.researchLedger;
+    if (manager === null) throw new Error('Expected research ledger manager');
+    const tool = new ResearchLedgerTool(manager);
+
+    const generated = await execute(tool, {
+      action: 'write_event',
+      type: 'derivation_scratch',
+      topic: 'laughlin-flux',
+      domain: 'theoretical-physics/general',
+      source_refs: ['builtin:laughlin-flux-insertion'],
+      body: 'Model-side derivation scratch; not a retrieved source excerpt.',
+    });
+
+    expect(generated.isError).toBeUndefined();
+    expect(generated.output).toContain('event.laughlin-flux.derivation_scratch.call_research_ledger');
+    const event = manager.registry.requireEvent(
+      'event.laughlin-flux.derivation_scratch.call_research_ledger',
+    );
+    expect(event.path.replaceAll('\\', '/')).toContain('/.hakimi/research-ledger/');
+
+    const rejected = await execute(tool, {
+      action: 'write_event',
+      type: 'source_excerpt',
+      topic: 'laughlin-flux',
+      domain: 'theoretical-physics/general',
+      source_refs: ['builtin:laughlin-flux-insertion'],
+      body: 'This is not actually a retrieved excerpt.',
+    });
+
+    expect(rejected).toMatchObject({ isError: true });
+    expect(rejected.output).toContain('type=source_excerpt requires at least one retrieved source ref');
+    expect(rejected.output).toContain('use type=derivation_scratch');
   });
 
   it('captures controlled observations through the capture policy', async () => {

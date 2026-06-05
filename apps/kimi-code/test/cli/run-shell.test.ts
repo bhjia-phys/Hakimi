@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => {
     readonly fallback: TuiConfigFallback;
 
     constructor(fallback: TuiConfigFallback) {
-      super('Invalid TUI config in ~/.kimi-code/tui.toml; using defaults.');
+      super('Invalid TUI config in ~/.hakimi/tui.toml; using defaults.');
       this.fallback = fallback;
     }
   }
@@ -483,7 +483,7 @@ describe('runShell', () => {
     expect(mocks.detectTerminalTheme).toHaveBeenCalledOnce();
     const [, , startupInput] = mocks.kimiTuiConstructor.mock.calls[0]!;
     expect(startupInput).toMatchObject({
-      startupNotice: 'Invalid TUI config in ~/.kimi-code/tui.toml; using defaults.',
+      startupNotice: 'Invalid TUI config in ~/.hakimi/tui.toml; using defaults.',
       tuiConfig: {
         theme: 'auto',
         editorCommand: 'vim',
@@ -706,7 +706,7 @@ describe('runShell', () => {
       expect(mocks.harnessTrack).not.toHaveBeenCalledWith('exit', expect.anything());
       expect(mocks.shutdownTelemetry).toHaveBeenCalledOnce();
       expect(stdout.text()).toBe(' Bye!\n');
-      expect(stderr.text()).toContain(' To resume this session: kimi -r ses-1');
+      expect(stderr.text()).toContain(' To resume this session: hakimi --session ses-1');
     } finally {
       exitSpy.mockRestore();
       stdout.restore();
@@ -753,7 +753,7 @@ describe('runShell', () => {
         ExitCalled,
       );
 
-      expect(stderr.text()).toContain(' To resume this session: kimi -r ses-1');
+      expect(stderr.text()).toContain(' To resume this session: hakimi --session ses-1');
       expect(stderr.text()).toContain('open ');
       expect(stderr.text()).toContain(openedUrl);
     } finally {
@@ -771,10 +771,10 @@ describe('runShell', () => {
     });
     mocks.detectPendingMigration.mockResolvedValue({ totalSessions: 1 });
     mocks.harnessGetConfig.mockRejectedValue(
-      new Error('Invalid configuration in ~/.kimi-code/config.toml'),
+      new Error('Invalid configuration in ~/.hakimi/config.toml'),
     );
 
-    // A broken config.toml must fail loudly — `kimi migrate` must not swallow
+    // A broken config.toml must fail loudly 閳?`kimi migrate` must not swallow
     // it and proceed, or the user never learns their config is broken.
     await expect(
       runShell(

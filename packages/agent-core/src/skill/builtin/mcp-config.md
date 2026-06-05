@@ -40,27 +40,27 @@ tools exist and the user didn't name one, ask which.
 Config lives in three files; on key collision, later entries in this
 precedence order override earlier ones.
 
-The kimi-code runtime resolves the user-global directory as `KIMI_CODE_HOME`
-first, falling back to `~/.kimi-code`. Before touching the user-global file,
+The Hakimi runtime resolves the user-global directory as `HAKIMI_HOME` first,
+then `KIMI_CODE_HOME` for compatibility, falling back to `~/.hakimi`. Before touching the user-global file,
 resolve the actual directory with Bash so you don't read or write the wrong
-one. Check whether `KIMI_CODE_HOME` is set and fall back to `~/.kimi-code`
-when it is empty:
+one. Check both environment variables and fall back to `~/.hakimi` when they
+are empty:
 
 ```bash
+echo "$HAKIMI_HOME"
 echo "$KIMI_CODE_HOME"
-echo "$HOME/.kimi-code"
+echo "$HOME/.hakimi"
 ```
 
-Use the first line when it is non-empty; otherwise use the second line. In the
-rest of this skill, `<KIMI_CODE_HOME>` means that resolved data root —
-**never assume `~/.kimi-code`**.
+Use the first non-empty line. In the rest of this skill, `<HAKIMI_HOME>` means
+that resolved data root — **never assume `~/.hakimi`**.
 
-- User-global: `<KIMI_CODE_HOME>/mcp.json`. Use for servers you want
+- User-global: `<HAKIMI_HOME>/mcp.json`. Use for servers you want
   everywhere.
 - Project-root: `<project root>/.mcp.json`, where project root is found
   by walking up from `<cwd>` to the nearest `.git`. Use for
   Claude-compatible, repo-shared, or cross-agent servers.
-- Project-local: `<cwd>/.kimi-code/mcp.json`. Use for Kimi-specific
+- Project-local: `<cwd>/.hakimi/mcp.json`. Use for Hakimi-specific
   overrides in the current working directory.
 
 Mention once that project-root and project-local stdio entries spawn
@@ -102,7 +102,7 @@ For changes, the flow is:
 1. **Pick a scope.** Infer it from the user's words when you can
    (global / everywhere / all projects → user-global; root / repo /
    shared / cross-agent / Claude / `.mcp.json` → project-root; cwd /
-   current directory / Kimi-specific / `.kimi-code` → project-local). When
+   current directory / Hakimi-specific / `.hakimi` → project-local). When
    the request is genuinely scope-less, use one `AskUserQuestion` to ask
    user-global vs project-root vs project-local, defaulting to
    user-global. Use plain text for every other question — `AskUserQuestion`
@@ -120,7 +120,7 @@ For changes, the flow is:
 3. **Write and tell them how to reload MCP servers.** Preserve unrelated
    entries and the `mcpServers` wrapper. MCP servers load at session
    start, so tell the user to start a new session (for example `/new`) or
-   restart `kimi-code` for the change to take effect.
+   restart `hakimi` for the change to take effect.
 
 ## Secrets
 

@@ -172,7 +172,7 @@ function makeFakeHarness() {
   const agent = fakeScope('main', agentServices);
 
   const sessionServices = new Map<unknown, unknown>([
-    // drain enumerates agents; empty → no background work to wait on.
+    // drain enumerates agents; empty 閳?no background work to wait on.
     [IAgentLifecycleService, { list: vi.fn(() => []) }],
     // No scheduled cron tasks → no future fire time to wait on.
     [ISessionCronService, { getNextFireTime: vi.fn(() => null) }],
@@ -262,7 +262,7 @@ describe('runV2Print', () => {
       },
     });
     // Version banner is first, then the rendered assistant output.
-    expect(stderr.write).toHaveBeenNthCalledWith(1, 'kimi version 1.2.3-test\n');
+    expect(stderr.write).toHaveBeenNthCalledWith(1, 'hakimi version 1.2.3-test\n');
     expect(stdout.text()).toContain('hello world');
     expect(app.dispose).toHaveBeenCalled();
   });

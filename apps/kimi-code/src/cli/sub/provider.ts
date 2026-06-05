@@ -35,6 +35,7 @@ import {
 import type { Command } from 'commander';
 
 import { createKimiCodeHostIdentity, createKimiCodeUserAgent } from '#/cli/version';
+import { getDataDir } from '#/utils/paths';
 
 interface WritableLike {
   write(chunk: string): boolean;
@@ -45,6 +46,7 @@ export interface ProviderDeps {
   readonly stdout: WritableLike;
   readonly stderr: WritableLike;
   readonly env: NodeJS.ProcessEnv;
+  readonly readSecret?: (prompt: string) => Promise<string | undefined>;
   readonly exit: (code: number) => never;
 }
 
@@ -224,10 +226,10 @@ export async function handleDeepSeekAdd(
   deps: ProviderDeps,
   opts: DeepSeekOptions,
 ): Promise<void> {
-  const apiKey = resolveDeepSeekApiKey(opts.apiKey, deps.env);
+  const apiKey = await resolveDeepSeekApiKey(opts.apiKey, deps);
   if (apiKey === undefined) {
     deps.stderr.write(
-      'Missing DeepSeek API key. Pass --api-key <key> or set DEEPSEEK_API_KEY.\n',
+      'Missing DeepSeek API key. Pass --api-key <key>, set DEEPSEEK_API_KEY, or run this command in an interactive terminal.\n',
     );
     deps.exit(1);
   }
@@ -704,12 +706,13 @@ function resolveDeps(overrides: Partial<ProviderDeps> = {}): ProviderDeps {
     getHarness:
       overrides.getHarness ??
       (() => {
-        harness ??= createKimiHarness({ identity });
+        harness ??= createKimiHarness({ homeDir: getDataDir(), identity });
         return harness;
       }),
     stdout: overrides.stdout ?? process.stdout,
     stderr: overrides.stderr ?? process.stderr,
     env: overrides.env ?? process.env,
+    readSecret: overrides.readSecret ?? promptForSecret,
     exit: overrides.exit ?? ((code: number) => process.exit(code)),
   };
 }
@@ -721,10 +724,16 @@ function resolveApiKey(flag: string | undefined, env: NodeJS.ProcessEnv): string
   return undefined;
 }
 
-function resolveDeepSeekApiKey(flag: string | undefined, env: NodeJS.ProcessEnv): string | undefined {
+async function resolveDeepSeekApiKey(
+  flag: string | undefined,
+  deps: ProviderDeps,
+): Promise<string | undefined> {
   const fromFlag = nonEmptyString(flag);
   if (fromFlag !== undefined) return fromFlag;
-  return nonEmptyString(env['DEEPSEEK_API_KEY']);
+  const fromEnv = nonEmptyString(deps.env['DEEPSEEK_API_KEY']);
+  if (fromEnv !== undefined) return fromEnv;
+  if (deps.readSecret === undefined) return undefined;
+  return nonEmptyString(await deps.readSecret('DeepSeek API key: '));
 }
 
 function nonEmptyString(value: string | undefined): string | undefined {
@@ -757,6 +766,59 @@ function deepSeekDisplayName(model: string): string {
   if (model === 'deepseek-reasoner') return 'DeepSeek Reasoner';
   if (model === 'deepseek-chat') return 'DeepSeek Chat';
   return `DeepSeek ${model}`;
+}
+
+async function promptForSecret(prompt: string): Promise<string | undefined> {
+  const stdin = process.stdin;
+  const stderr = process.stderr;
+  if (!stdin.isTTY || !stderr.isTTY || typeof stdin.setRawMode !== 'function') {
+    return undefined;
+  }
+
+  return await new Promise<string | undefined>((resolve) => {
+    let value = '';
+    let done = false;
+    const wasRaw = stdin.isRaw;
+
+    const finish = (result: string | undefined): void => {
+      if (done) return;
+      done = true;
+      stdin.off('data', onData);
+      stdin.setRawMode(wasRaw);
+      stderr.write('\n');
+      resolve(result);
+    };
+
+    const onData = (chunk: Buffer | string): void => {
+      for (const char of String(chunk)) {
+        if (char === '\u0003') {
+          finish(undefined);
+          return;
+        }
+        if (char === '\r' || char === '\n') {
+          finish(value);
+          return;
+        }
+        if (char === '\u007f' || char === '\b') {
+          if (value.length > 0) {
+            value = value.slice(0, -1);
+            stderr.write('\b \b');
+          }
+          continue;
+        }
+        if (char >= ' ') {
+          value += char;
+          stderr.write('*');
+        }
+      }
+    };
+
+    stderr.write(prompt);
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    stdin.on('data', onData);
+  });
 }
 
 function asManaged(config: KimiConfig): ManagedKimiConfigShape {

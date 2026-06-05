@@ -11,6 +11,7 @@ import {
   WebSearchTool,
   type WebSearchProvider,
 } from '../../src/tools/builtin/web/web-search';
+import { LocalWebSearchProvider } from '../../src/tools/providers/local-web-search';
 import { MoonshotWebSearchProvider } from '../../src/tools/providers/moonshot-web-search';
 import { toolContentString } from './fixtures/fake-kaos';
 import { executeTool } from './fixtures/execute-tool';
@@ -226,6 +227,8 @@ describe('WebSearchTool', () => {
     expect(content).toContain('Search failed (authentication):');
     // The original error text is preserved alongside the prefix.
     expect(content).toContain('HTTP 401');
+    expect(content).toContain('falls back to a no-auth local web search provider');
+    expect(content).toContain('record the research action as blocked or inconclusive');
   });
 
   it('classifies timeout failures', async () => {
@@ -372,5 +375,112 @@ describe('MoonshotWebSearchProvider', () => {
     expect(fetchImpl.mock.calls[0]?.[1]?.headers).toMatchObject({
       Authorization: 'Bearer fresh-token',
     });
+  });
+
+  it('falls back to local search when Moonshot auth is unavailable', async () => {
+    const getAccessToken = vi.fn().mockRejectedValue(new Error('No token for "kimi-code".'));
+    const fallback: WebSearchProvider = {
+      search: vi.fn().mockResolvedValue([
+        {
+          title: 'Fallback result',
+          url: 'https://example.com/fallback',
+          snippet: 'Local fallback snippet',
+        },
+      ]),
+    };
+    const provider = new MoonshotWebSearchProvider({
+      tokenProvider: { getAccessToken },
+      baseUrl: 'https://search.example/v1',
+      localFallback: fallback,
+    });
+
+    await expect(provider.search('query', { limit: 3 })).resolves.toEqual([
+      {
+        title: 'Fallback result',
+        url: 'https://example.com/fallback',
+        snippet: 'Local fallback snippet',
+      },
+    ]);
+
+    expect(getAccessToken).toHaveBeenCalledTimes(1);
+    expect(fallback.search).toHaveBeenCalledWith('query', { limit: 3 });
+  });
+});
+
+describe('LocalWebSearchProvider', () => {
+  it('parses DuckDuckGo HTML results without an API token', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        `
+          <html>
+            <body>
+              <div class="result">
+                <h2>
+                  <a class="result__a" href="/l/?uddg=https%3A%2F%2Fexample.com%2Fpaper">
+                    Quantum gravity algebra
+                  </a>
+                </h2>
+                <a class="result__snippet">Observer role and von Neumann algebra.</a>
+              </div>
+            </body>
+          </html>
+        `,
+        { status: 200, headers: { 'content-type': 'text/html' } },
+      ),
+    );
+    const provider = new LocalWebSearchProvider({
+      fetchImpl,
+      searchUrl: 'https://search.local/html/',
+    });
+
+    await expect(provider.search('quantum gravity algebra', { limit: 5 })).resolves.toEqual([
+      {
+        title: 'Quantum gravity algebra',
+        url: 'https://example.com/paper',
+        snippet: 'Observer role and von Neumann algebra.',
+      },
+    ]);
+
+    const requested = fetchImpl.mock.calls[0]?.[0];
+    expect(String(requested)).toContain('https://search.local/html/');
+    expect(String(requested)).toContain('q=quantum+gravity+algebra');
+  });
+
+  it('falls back to Bing HTML results when the first local search endpoint fails', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new Error('connect timeout'))
+      .mockResolvedValueOnce(
+        new Response(
+          `
+            <html>
+              <body>
+                <ol>
+                  <li class="b_algo">
+                    <h2><a href="https://example.org/bing-result">Bing fallback title</a></h2>
+                    <div class="b_caption"><p>Bing fallback snippet.</p></div>
+                  </li>
+                </ol>
+              </body>
+            </html>
+          `,
+          { status: 200, headers: { 'content-type': 'text/html' } },
+        ),
+      );
+    const provider = new LocalWebSearchProvider({
+      fetchImpl,
+      searchUrls: ['https://duck.local/html/', 'https://bing.local/search'],
+    });
+
+    await expect(provider.search('fallback query', { limit: 2 })).resolves.toEqual([
+      {
+        title: 'Bing fallback title',
+        url: 'https://example.org/bing-result',
+        snippet: 'Bing fallback snippet.',
+      },
+    ]);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(String(fetchImpl.mock.calls[1]?.[0])).toContain('https://bing.local/search');
   });
 });

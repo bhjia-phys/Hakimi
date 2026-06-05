@@ -4,8 +4,8 @@ import { dirname, isAbsolute, join, resolve } from 'pathe';
 import { parseDomainProfileFromFile } from './parser';
 import type { DomainProfile, DomainProfileRoot } from './types';
 
-const PROJECT_DOMAIN_PROFILE_DIRS = ['.aitp/domain-profiles'] as const;
-const USER_DOMAIN_PROFILE_DIRS = ['.aitp/domain-profiles'] as const;
+const PROJECT_DOMAIN_PROFILE_DIRS = ['.hakimi/domain-profiles', '.aitp/domain-profiles'] as const;
+const USER_DOMAIN_PROFILE_DIRS = ['domain-profiles', '.aitp/domain-profiles'] as const;
 const MAX_SCAN_DEPTH = 12;
 
 export interface DomainProfilePathContext {

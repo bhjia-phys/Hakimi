@@ -63,6 +63,28 @@ describe('research ledger scanner', () => {
 
     expect(roots.map((root) => root.source)).toEqual(['project', 'user']);
   });
+
+  it('prefers Hakimi ledger roots while keeping legacy .aitp roots readable', async () => {
+    const project = await makeTempDir();
+    const user = await makeTempDir();
+    await mkdir(join(project, '.git'));
+    await mkdir(join(project, '.hakimi', 'research-ledger'), { recursive: true });
+    await mkdir(join(project, '.aitp', 'research-ledger'), { recursive: true });
+    await mkdir(join(user, 'research-ledger'), { recursive: true });
+    await mkdir(join(user, '.aitp', 'research-ledger'), { recursive: true });
+
+    const roots = await resolveResearchLedgerRoots({
+      paths: { workDir: join(project, 'subdir'), userHomeDir: user },
+    });
+
+    expect(roots.map((root) => root.path.replaceAll('\\', '/'))).toEqual([
+      expect.stringContaining('/.hakimi/research-ledger'),
+      expect.stringContaining('/.aitp/research-ledger'),
+      expect.stringMatching(/\/research-ledger$/),
+      expect.stringContaining('/.aitp/research-ledger'),
+    ]);
+    expect(roots.map((root) => root.source)).toEqual(['project', 'project', 'user', 'user']);
+  });
 });
 
 async function makeTempDir(): Promise<string> {

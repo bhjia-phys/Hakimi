@@ -623,6 +623,26 @@ describe('kimi provider deepseek', () => {
     expect(finalConfig.thinking).toEqual({ enabled: false });
   });
 
+  it('prompts for the api key when flag and env are missing', async () => {
+    const { harness, current } = makeHarness({ providers: {} } as KimiConfig);
+    const prompts: string[] = [];
+    const { deps, exitCodes } = makeDeps(harness, {
+      readSecret: async (prompt) => {
+        prompts.push(prompt);
+        return ' sk-prompt-deepseek ';
+      },
+    });
+
+    await tryRun(() => handleDeepSeekAdd(deps, {}));
+
+    expect(exitCodes).toEqual([]);
+    expect(prompts).toEqual(['DeepSeek API key: ']);
+    expect(current().providers['deepseek']).toMatchObject({
+      apiKey: 'sk-prompt-deepseek',
+    });
+    expect(current().defaultModel).toBe('deepseek/deepseek-v4-pro');
+  });
+
   it('replaces stale DeepSeek aliases before importing the new one', async () => {
     const initial: KimiConfig = {
       providers: {

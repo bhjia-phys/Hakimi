@@ -1,3 +1,3 @@
-Inspect and record AITP research actions.
+Inspect and record Hakimi research actions.
 
 Use this tool to list available semantic research actions, render the primitive tool plan for an action, ask the scheduler which action should handle open obligations next, open/switch/list/close active WorkFrames, compile/load bounded ContextPacks for a WorkFrame, inspect the attached DomainPack manifest, list/load WorkFrame-scoped evidence refs, run deterministic in-process research executors, or record the outcome of a semantic research action. This tool can execute only built-in graph queries, formalization-blueprint export, registered benchmark adapters, and scoped ResearchLedger evidence inspection. It does not execute shell, git, web, MCP, or HPC work by itself. Primitive tool execution should remain attributed separately and then recorded back through the action result.

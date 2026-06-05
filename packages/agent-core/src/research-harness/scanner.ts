@@ -7,8 +7,8 @@ import type {
   ResearchEvalCaseRoot,
 } from './types';
 
-const PROJECT_RESEARCH_EVAL_DIRS = ['.aitp/evals'] as const;
-const USER_RESEARCH_EVAL_DIRS = ['.aitp/evals'] as const;
+const PROJECT_RESEARCH_EVAL_DIRS = ['.hakimi/evals', '.aitp/evals'] as const;
+const USER_RESEARCH_EVAL_DIRS = ['evals', '.aitp/evals'] as const;
 const MAX_SCAN_DEPTH = 12;
 
 export interface ResearchEvalCasePathContext {

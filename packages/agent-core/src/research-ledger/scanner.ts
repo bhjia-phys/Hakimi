@@ -4,8 +4,8 @@ import { dirname, isAbsolute, join, resolve } from 'pathe';
 import { parseResearchLedgerEventFromFile } from './parser';
 import type { ResearchLedgerEvent, ResearchLedgerRoot } from './types';
 
-const PROJECT_LEDGER_DIRS = ['.aitp/research-ledger'] as const;
-const USER_LEDGER_DIRS = ['.aitp/research-ledger'] as const;
+const PROJECT_LEDGER_DIRS = ['.hakimi/research-ledger', '.aitp/research-ledger'] as const;
+const USER_LEDGER_DIRS = ['research-ledger', '.aitp/research-ledger'] as const;
 const MAX_SCAN_DEPTH = 12;
 
 export interface ResearchLedgerPathContext {

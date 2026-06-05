@@ -4,8 +4,8 @@ import { dirname, isAbsolute, join, resolve } from 'pathe';
 import { parsePhysicsCapsuleFromFile } from './parser';
 import type { PhysicsCapsule, PhysicsMemoryRoot } from './types';
 
-const PROJECT_MEMORY_DIRS = ['.aitp/physics-memory'] as const;
-const USER_MEMORY_DIRS = ['.aitp/physics-memory'] as const;
+const PROJECT_MEMORY_DIRS = ['.hakimi/physics-memory', '.aitp/physics-memory'] as const;
+const USER_MEMORY_DIRS = ['physics-memory', '.aitp/physics-memory'] as const;
 const MAX_SCAN_DEPTH = 12;
 
 export interface PhysicsMemoryPathContext {
