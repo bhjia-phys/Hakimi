@@ -48,6 +48,7 @@ That means a research action can search literature, inspect code, prepare patche
 - WorkFrames keep active research topics scoped by domain, topic, assumptions, conventions, context pack, and trust state.
 - Domain packs, workflow recipes, physics memory, evals, action bindings, and tool inventories can be loaded from file-backed `.hakimi` fixtures, with legacy `.aitp` fixtures still scanned for compatibility.
 - New topics do not require hand-written packs up front: Hakimi now registers a built-in generic theoretical-physics profile, workflow recipes, process-memory capsules, and a smoke eval by default, then falls back to that scaffold when a WorkFrame has no dedicated pack.
+- AITP v5 `process_graph_slice` payloads can be parsed and locally compiled into research-context reminders, open-obligation summaries, trust-boundary warnings, and recommended `ResearchAction` ids without copying the AITP graph into Hakimi as truth.
 - Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
 - Literature search, code patch preparation, and external benchmark workflows are orchestrated through native Kimi tools rather than being executed inside `ResearchAction` itself.
 - Evidence can be written to the research ledger, reread only inside matching WorkFrame scope, compiled into graph candidates, and checked by harness/final-gate logic.
@@ -55,7 +56,7 @@ That means a research action can search literature, inspect code, prepare patche
 
 ## Architecture Layers
 
-Hakimi is organized around five research-runtime layers.
+Hakimi is organized around six research-runtime layers.
 
 | Layer | Role |
 | --- | --- |
@@ -64,10 +65,25 @@ Hakimi is organized around five research-runtime layers.
 | Research ledger | Source-backed events from real sessions before they are trusted as reusable memory. |
 | Compiler and graph | A knowledge compiler that preserves dependencies, contradiction markers, validation status, and failure conditions. |
 | Research actions | Auditable work units such as convention checks, graph expansion, formula-code mapping, benchmark validation, and harness generation. |
+| AITP native adapter | A boundary layer that consumes AITP typed process graph slices as canonical local research-process context, then compiles them into Hakimi turn-local reminders and action recommendations. |
 
 `WorkFrame` is the live research problem state tying these layers together. It tracks the active domain, topic, goal, assumptions, conventions, context pack, evidence, obligations, and final-gate status. Blocking obligations prevent a result from being treated as validated memory.
 
 This matters most when the conversation is compacted. Ordinary chat history can be shortened, but the runtime state for each open WorkFrame is rendered into the compaction request and then appended deterministically to the stored compaction summary. For real research topics, open a WorkFrame early; that makes the initial question, physics memory, current derivation/code progress, failed attempts, and next obligations recoverable after automatic compaction and session replay.
+
+## AITP Boundary
+
+The long-term architecture treats `.aitp` as the host-agnostic canonical typed
+research graph and source-asset store. Hakimi should be its most native reader,
+not a second authority that reimplements the same research ledger schema.
+
+The first adapter slice is intentionally read-only: Hakimi accepts an AITP
+`process_graph_slice`, normalizes current v5 field names, preserves the
+orientation-only boundary, and recommends moments such as relation-path
+brainstorming, definition/source backtrace, original-question drift audit,
+research-state recording, derivation checkpoints, and open-obligation creation.
+Durable record creation still needs to go through AITP MCP/CLI tools in a later
+runtime integration slice.
 
 ## Relationship To Upstream
 
@@ -271,6 +287,13 @@ directories such as `.hakimi/research-ledger`, `.hakimi/physics-memory`,
 `.hakimi/domain-profiles`, `.hakimi/workflow-recipes`, and `.hakimi/evals`.
 Legacy `.aitp/` packs are still scanned read-only for compatibility and can
 override the generic fallback for their domain.
+
+When an AITP v5 process graph slice is supplied, Hakimi treats it differently
+from legacy pack compatibility: the slice is a canonical AITP-derived
+orientation view, so Hakimi compiles it into the current WorkFrame/context and
+recommended actions instead of saving it as Hakimi-owned truth. The follow-up
+runtime work is to call AITP MCP/CLI at the right moments and write durable
+research-process records back through AITP.
 
 Explicitly disable individual research features only for debugging or upstream
 compatibility checks:
