@@ -320,6 +320,18 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     triggerHints: ['record state', 'research state', 'snapshot'],
   }),
   action({
+    id: 'aitp.record_exploratory_record',
+    category: 'memory',
+    exposure: 'direct',
+    phase: 'explore',
+    title: 'Record AITP exploratory record',
+    description:
+      'Ask AITP to record a source asset, question decomposition, relation-path brainstorm, backtrace step, or steering checkpoint without promoting it as evidence.',
+    inputKinds: ['Claim', 'Definition', 'SourceExcerpt', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    triggerHints: ['record exploration', 'brainstorm record', 'backtrace record', 'steering checkpoint'],
+  }),
+  action({
     id: 'aitp.record_derivation_checkpoint',
     category: 'derivation',
     exposure: 'direct',

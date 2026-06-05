@@ -1,4 +1,5 @@
 import type {
+  AitpExploratoryRecordItem,
   AitpObligationSeverity,
   AitpOpenObligation,
   AitpProcessGraphEdge,
@@ -35,6 +36,7 @@ export function parseAitpProcessGraphSlice(input: unknown): AitpProcessGraphSlic
     relationNeighborhood: objectArray(input['relation_neighborhood']).map(
       parseRelationNeighborhoodItem,
     ),
+    exploratoryRecords: objectArray(input['exploratory_records']).map(parseExploratoryRecordItem),
     trustBoundaryReasons: stringArray(input['trust_boundary_reasons']),
     recommendedMoments: momentArray(input['recommended_moments']),
     truthSource: stringValue(input['truth_source']) ?? 'aitp',
@@ -131,6 +133,44 @@ function parseRelationNeighborhoodItem(
     status: stringValue(raw['status']),
     reason: stringValue(raw['reason']),
     sourceRefs: stringArray(raw['source_refs']),
+  };
+}
+
+function parseExploratoryRecordItem(
+  raw: Record<string, unknown>,
+  index: number,
+): AitpExploratoryRecordItem {
+  const id = stringValue(raw['id']) ?? stringValue(raw['record_id']);
+  return {
+    id: id ?? `aitp.exploration.${String(index + 1)}`,
+    explorationType:
+      stringValue(raw['explorationType']) ??
+      stringValue(raw['exploration_type']) ??
+      stringValue(raw['type']) ??
+      'exploratory_record',
+    title: stringValue(raw['title']),
+    focalQuestion: stringValue(raw['focalQuestion']) ?? stringValue(raw['focal_question']),
+    originalQuestion: stringValue(raw['originalQuestion']) ?? stringValue(raw['original_question']),
+    localQuestion: stringValue(raw['localQuestion']) ?? stringValue(raw['local_question']),
+    status: stringValue(raw['status']),
+    objectIds: stringArray(raw['objectIds']).length > 0
+      ? stringArray(raw['objectIds'])
+      : stringArray(raw['object_ids']),
+    relationIds: stringArray(raw['relationIds']).length > 0
+      ? stringArray(raw['relationIds'])
+      : stringArray(raw['relation_ids']),
+    sourceRefs: stringArray(raw['sourceRefs']).length > 0
+      ? stringArray(raw['sourceRefs'])
+      : stringArray(raw['source_refs']),
+    candidatePaths: stringArray(raw['candidatePaths']).length > 0
+      ? stringArray(raw['candidatePaths'])
+      : stringArray(raw['candidate_paths']),
+    unresolvedPoints: stringArray(raw['unresolvedPoints']).length > 0
+      ? stringArray(raw['unresolvedPoints'])
+      : stringArray(raw['unresolved_points']),
+    nextActions: stringArray(raw['nextActions']).length > 0
+      ? stringArray(raw['nextActions'])
+      : stringArray(raw['next_actions']),
   };
 }
 

@@ -7,6 +7,7 @@ export const KNOWN_AITP_RESEARCH_MOMENTS = [
   'trace.reconstruct_definition',
   'trace.follow_source_dependency',
   'trace.audit_original_question_drift',
+  'aitp.record_exploratory_record',
   'aitp.record_research_state',
   'aitp.record_derivation_checkpoint',
   'aitp.create_open_obligation',
@@ -70,6 +71,22 @@ export interface AitpRelationNeighborhoodItem {
   readonly sourceRefs: readonly string[];
 }
 
+export interface AitpExploratoryRecordItem {
+  readonly id: string;
+  readonly explorationType: string;
+  readonly title?: string | undefined;
+  readonly focalQuestion?: string | undefined;
+  readonly originalQuestion?: string | undefined;
+  readonly localQuestion?: string | undefined;
+  readonly status?: string | undefined;
+  readonly objectIds: readonly string[];
+  readonly relationIds: readonly string[];
+  readonly sourceRefs: readonly string[];
+  readonly candidatePaths: readonly string[];
+  readonly unresolvedPoints: readonly string[];
+  readonly nextActions: readonly string[];
+}
+
 export interface AitpRecommendedMoment {
   readonly id: AitpResearchMomentId;
   readonly priority: ResearchActionBindingPriority;
@@ -84,6 +101,7 @@ export interface AitpProcessGraphSlice {
   readonly openObligations: readonly AitpOpenObligation[];
   readonly sourceBacktrace: readonly AitpSourceBacktraceItem[];
   readonly relationNeighborhood: readonly AitpRelationNeighborhoodItem[];
+  readonly exploratoryRecords: readonly AitpExploratoryRecordItem[];
   readonly trustBoundaryReasons: readonly string[];
   readonly recommendedMoments: readonly AitpRecommendedMoment[];
   readonly truthSource: string;
@@ -100,7 +118,7 @@ export interface DetectedResearchMoment {
   readonly actionId: string;
   readonly priority: ResearchActionBindingPriority;
   readonly reason: string;
-  readonly source: 'aitp' | 'keyword' | 'obligation' | 'relation' | 'source-backtrace';
+  readonly source: 'aitp' | 'keyword' | 'obligation' | 'relation' | 'source-backtrace' | 'exploration';
   readonly targetRefs: readonly string[];
 }
 
