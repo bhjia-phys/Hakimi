@@ -28,6 +28,7 @@ import {
 import type { WorkflowRecipe, WorkflowRecipeRegistry } from '../workflow-recipe';
 import type {
   CompileResearchContextPackOptions,
+  ResearchContextAitpSection,
   ResearchContextCapsuleSummary,
   ResearchContextLedgerProposalSummary,
   ResearchContextPack,
@@ -82,10 +83,12 @@ export function compileResearchContextPack(
   ]);
   const physics = collectPhysics(input, requestedFocus, diagnostics);
   const ledger = collectLedger(input, diagnostics);
+  const aitp = collectAitp(input, diagnostics);
   const actionBindings = bounded(
     uniqueBindings([
       ...workflows.flatMap((workflow) => workflow.metadata.actionBindings),
       ...physics.capsules.flatMap((capsule) => bindingsFromAffordances(capsule)),
+      ...(aitp?.compiled.actionRecommendations ?? []),
     ]),
     input.limits?.maxActionBindings ?? DEFAULT_MAX_ACTION_BINDINGS,
     (remaining) =>
@@ -113,6 +116,7 @@ export function compileResearchContextPack(
     workflowIds: workflows.map((workflow) => workflow.metadata.id),
     capsuleIds: physics.capsules.map((capsule) => capsule.id),
     proposalIds: ledger.proposals.map((proposal) => proposal.id),
+    aitpDigest: aitp === undefined ? undefined : contextDigest(aitp.contextLines),
   });
 
   return {
@@ -129,10 +133,41 @@ export function compileResearchContextPack(
     workflows: workflows.map(workflowSummary),
     physics,
     ledger,
+    ...(aitp === undefined ? {} : { aitp }),
     actionBindings,
     domainPack,
     diagnostics,
     compiledAt: input.now?.() ?? Date.now(),
+  };
+}
+
+function collectAitp(
+  input: CompileResearchContextPackInput,
+  diagnostics: ResearchContextPackDiagnostic[],
+): ResearchContextAitpSection | undefined {
+  if (input.aitp === null || input.aitp === undefined) return undefined;
+  for (const code of input.aitp.diagnostics) {
+    diagnostics.push({
+      severity: code === 'orientation-only' ? 'info' : 'warning',
+      code: `aitp:${code}`,
+      message: `AITP process graph diagnostic: ${code}`,
+      source: 'aitp',
+      refId: input.workFrame.id,
+    });
+  }
+  return {
+    truthSource: input.aitp.trust.truthSource,
+    orientationOnly: input.aitp.trust.orientationOnly,
+    reminders: input.aitp.reminders,
+    contextLines: input.aitp.contextLines,
+    trustBoundaryReasons: input.aitp.trust.trustBoundaryReasons,
+    openObligationIds: [
+      ...input.aitp.obligations.blocking,
+      ...input.aitp.obligations.recommended,
+      ...input.aitp.obligations.advisory,
+    ].map((item) => item.id),
+    suggestedActionIds: input.aitp.actionRecommendations.map((binding) => binding.actionId),
+    compiled: input.aitp,
   };
 }
 
@@ -503,12 +538,17 @@ function contextPackId(input: {
   readonly workflowIds: readonly string[];
   readonly capsuleIds: readonly string[];
   readonly proposalIds: readonly string[];
+  readonly aitpDigest?: string | undefined;
 }): string {
   const hash = createHash('sha256')
     .update(JSON.stringify(input))
     .digest('hex')
     .slice(0, 12);
   return `context.${safeId(input.workFrameId)}.${hash}`;
+}
+
+function contextDigest(values: readonly string[]): string {
+  return createHash('sha256').update(JSON.stringify(values)).digest('hex').slice(0, 12);
 }
 
 function safeId(input: string): string {

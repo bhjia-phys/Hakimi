@@ -1,5 +1,6 @@
 import type { Agent } from '..';
 import type { PromptOrigin } from '../context';
+import type { CompiledAitpProcessGraphSlice } from '../../aitp';
 import type { ResearchContextPack } from '../../research-context';
 import { renderResearchContextPackReminder } from './context-pack';
 import type { WorkFrame } from '../../research-action';
@@ -14,14 +15,15 @@ export interface PreparedResearchTurnContext {
 export class WorkFrameOrchestrator {
   constructor(private readonly agent: Agent) {}
 
-  prepareTurnContext(input: readonly { readonly type?: string; readonly text?: string }[]): PreparedResearchTurnContext | undefined {
+  async prepareTurnContext(input: readonly { readonly type?: string; readonly text?: string }[]): Promise<PreparedResearchTurnContext | undefined> {
     const frame = this.inferFrame(input);
     if (frame === undefined) return undefined;
     if (this.agent.workFrames.active?.id !== frame.id) {
       this.agent.workFrames.switch(frame.id, { source: 'controller' });
     }
+    const aitp = await this.readAitpProcessGraphSlice(frame, input);
     const pack = this.agent.researchContext.compileForWorkFrame(
-      { workFrameId: frame.id },
+      { workFrameId: frame.id, aitp },
       { source: 'controller' },
     );
     this.agent.tools.applyRuntimeToolExposure(buildRuntimeToolExposurePlan(pack), {
@@ -32,6 +34,23 @@ export class WorkFrameOrchestrator {
       pack,
       reminder: renderResearchContextPackReminder(pack),
     };
+  }
+
+  private async readAitpProcessGraphSlice(
+    frame: WorkFrame,
+    prompt: readonly { readonly type?: string; readonly text?: string }[],
+  ): Promise<CompiledAitpProcessGraphSlice | undefined> {
+    const provider = this.agent.aitpProcessGraphProvider;
+    if (provider === undefined) return undefined;
+    try {
+      return (await provider.getProcessGraphSlice({ workFrame: frame, prompt })) ?? undefined;
+    } catch (error) {
+      this.agent.log.warn('AITP process graph provider failed; continuing without AITP slice', {
+        workFrameId: frame.id,
+        error,
+      });
+      return undefined;
+    }
   }
 
   shouldInjectContext(lastInjectionIndex: number | null): boolean {

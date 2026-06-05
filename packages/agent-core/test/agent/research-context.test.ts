@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { Agent, type AgentRecord } from '../../src/agent';
 import { InMemoryAgentRecordPersistence } from '../../src/agent/records';
 import { ProviderManager } from '../../src/session/provider-manager';
-import { WorkflowRecipeRegistry, type WorkflowRecipe } from '../../src';
+import {
+  WorkflowRecipeRegistry,
+  compileAitpProcessGraphSlice,
+  type AitpProcessGraphSliceProvider,
+  type WorkflowRecipe,
+} from '../../src';
 import { testKaos } from '../fixtures/test-kaos';
 
 const MOCK_PROVIDER = {
@@ -172,11 +177,87 @@ describe('ResearchContextManager', () => {
       'source:paper.fqhe.flux-insertion',
     ]);
   });
+
+  it('passes AITP compiled slices through ResearchContextManager', () => {
+    const agent = makeAgent();
+    agent.workFrames.open(
+      {
+        id: 'frame.aitp',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Trace a literature dependency without losing the original question.',
+      },
+      { source: 'controller' },
+    );
+
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        aitp: compileAitpProcessGraphSlice(aitpSlicePayload(), {
+          prompt: 'Follow the source dependency and audit original question drift.',
+        }),
+      },
+      { source: 'controller' },
+    );
+
+    expect(pack.aitp?.contextLines.join('\n')).toContain('Source gaps: claim-fqhe');
+    expect(pack.actionBindings.map((item) => item.actionId)).toEqual(
+      expect.arrayContaining([
+        'trace.audit_original_question_drift',
+        'trace.follow_source_dependency',
+      ]),
+    );
+  });
+
+  it('fetches AITP process graph slices before research context injection', async () => {
+    const calls: string[] = [];
+    const aitpProcessGraphProvider: AitpProcessGraphSliceProvider = {
+      async getProcessGraphSlice(input) {
+        calls.push(input.workFrame.id);
+        return compileAitpProcessGraphSlice(aitpSlicePayload(), {
+          activeContext: input.prompt.map((part) => part.text ?? ''),
+        });
+      },
+    };
+    const agent = makeAgent(undefined, { aitpProcessGraphProvider });
+    agent.workFrames.open(
+      {
+        id: 'frame.aitp',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Trace a literature dependency without losing the original question.',
+        sourceRefs: ['aitp:session:session-fqhe', 'aitp:claim:claim-fqhe'],
+      },
+      { source: 'controller' },
+    );
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text: 'Follow the source dependency and keep the original counting question in scope.',
+      },
+    ]);
+    await agent.injection.inject();
+
+    expect(calls).toEqual(['frame.aitp']);
+    const lastMessage = agent.context.history.at(-1);
+    const reminder = (lastMessage?.content[0] as { text: string }).text;
+    expect(reminder).toContain('AITP process graph: truth_source=typed_records');
+    expect(reminder).toContain('AITP open obligations');
+    expect(agent.researchContext.listPacks().at(-1)?.aitp?.suggestedActionIds).toEqual(
+      expect.arrayContaining([
+        'trace.audit_original_question_drift',
+        'trace.follow_source_dependency',
+      ]),
+    );
+  });
 });
 
 function makeAgent(
   records?: AgentRecord[],
-  options: { readonly workflowRecipes?: WorkflowRecipeRegistry | undefined } = {},
+  options: {
+    readonly workflowRecipes?: WorkflowRecipeRegistry | undefined;
+    readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
+  } = {},
 ): Agent {
   const agent = new Agent({
     kaos: testKaos,
@@ -210,6 +291,7 @@ function makeAgent(
       },
     }),
     workflowRecipes: options.workflowRecipes,
+    aitpProcessGraphProvider: options.aitpProcessGraphProvider,
   });
   agent.config.update({
     cwd: process.cwd(),
@@ -243,5 +325,63 @@ function sourceSearchWorkflow(): WorkflowRecipe {
     path: 'workflow.md',
     body: 'Search source literature and record primitive tool call ids.',
     source: 'project',
+  };
+}
+
+function aitpSlicePayload() {
+  return {
+    ok: true,
+    kind: 'process_graph_slice',
+    truth_source: 'typed_records',
+    orientation_only: true,
+    nodes: [
+      {
+        id: 'claim:claim-fqhe',
+        type: 'claim',
+        record: {
+          statement: 'Sector counting identifies the edge CFT.',
+          status: 'hypothesis',
+        },
+      },
+    ],
+    edges: [],
+    open_obligations: [
+      {
+        obligation_id: 'obligation-source',
+        claim_id: 'claim-fqhe',
+        status: 'open',
+        obligation_type: 'source_support',
+        statement: 'Find the source supporting the sector-counting relation.',
+        next_action: 'follow source dependency',
+      },
+    ],
+    source_backtrace: [
+      {
+        claim_id: 'claim-fqhe',
+        missing_components: ['reference_location'],
+        complete: false,
+      },
+    ],
+    relation_neighborhood: [],
+    exploratory_records: [
+      {
+        record_id: 'exploration-drift',
+        exploration_type: 'backtrace_step',
+        focal_question: 'Does this dependency still answer the original counting question?',
+        original_question: 'Does sector counting identify the edge CFT?',
+        local_question: 'Follow one source dependency.',
+        status: 'open',
+        unresolved_points: ['dependency may be only historical context'],
+      },
+    ],
+    trust_boundary_reasons: ['this API cannot update claim trust'],
+    recommended_moments: [
+      {
+        moment: 'audit_original_question_drift',
+        reason: 'backtrace is branching away from the original question',
+        target_type: 'claim',
+        target_id: 'claim-fqhe',
+      },
+    ],
   };
 }

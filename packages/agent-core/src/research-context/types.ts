@@ -1,5 +1,6 @@
 import type { DomainProfileId } from '../domain-profile';
 import type { DomainPackManifest } from '../domain-pack';
+import type { CompiledAitpProcessGraphSlice } from '../aitp';
 import type {
   ActionAffordance,
   BridgePolicy,
@@ -20,6 +21,7 @@ export type ResearchContextPackId = string;
 export type ResearchContextRecordSource = 'model-tool' | 'controller' | 'replay';
 
 export type ResearchContextDiagnosticSource =
+  | 'aitp'
   | 'workframe'
   | 'domain-profile'
   | 'workflow-recipe'
@@ -95,6 +97,17 @@ export interface ResearchContextLedgerSection {
   readonly proposals: readonly ResearchContextLedgerProposalSummary[];
 }
 
+export interface ResearchContextAitpSection {
+  readonly truthSource: string;
+  readonly orientationOnly: boolean;
+  readonly reminders: readonly string[];
+  readonly contextLines: readonly string[];
+  readonly trustBoundaryReasons: readonly string[];
+  readonly openObligationIds: readonly string[];
+  readonly suggestedActionIds: readonly string[];
+  readonly compiled: CompiledAitpProcessGraphSlice;
+}
+
 export interface ResearchContextPack {
   readonly id: ResearchContextPackId;
   readonly workFrameId: string;
@@ -109,6 +122,7 @@ export interface ResearchContextPack {
   readonly workflows: readonly ResearchContextWorkflowSummary[];
   readonly physics: ResearchContextPhysicsSection;
   readonly ledger: ResearchContextLedgerSection;
+  readonly aitp?: ResearchContextAitpSection | undefined;
   readonly actionBindings: readonly ResearchActionBinding[];
   readonly domainPack?: DomainPackManifest | undefined;
   readonly diagnostics: readonly ResearchContextPackDiagnostic[];
@@ -126,6 +140,7 @@ export interface CompileResearchContextPackOptions {
   readonly reliabilityFloor?: ReliabilityState | undefined;
   readonly bridgePolicy?: BridgePolicy | undefined;
   readonly includeLedgerStatuses?: readonly ResearchLedgerEventStatus[] | undefined;
+  readonly aitp?: CompiledAitpProcessGraphSlice | null | undefined;
   readonly limits?: CompileResearchContextPackLimits | undefined;
   readonly now?: (() => number) | undefined;
 }

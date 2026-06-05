@@ -44,7 +44,9 @@ export class ResearchContextManager {
       reliabilityFloor: input.reliabilityFloor,
       bridgePolicy: input.bridgePolicy,
       includeLedgerStatuses: input.includeLedgerStatuses,
+      aitp: input.aitp,
       limits: input.limits,
+      now: input.now,
     });
     this.packs.set(pack.id, pack);
     this.recordContextCompiled(pack, options);

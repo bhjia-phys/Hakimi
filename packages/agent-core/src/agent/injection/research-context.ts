@@ -12,11 +12,11 @@ export class ResearchContextInjector extends DynamicInjector {
     this.orchestrator = new WorkFrameOrchestrator(agent);
   }
 
-  protected override getInjection(): string | undefined {
+  protected override async getInjection(): Promise<string | undefined> {
     if (!this.orchestrator.shouldInjectContext(this.injectedAt)) return undefined;
     const latestPrompt = latestUserPrompt(this.agent.context.history);
     if (latestPrompt === undefined) return undefined;
-    const prepared = this.orchestrator.prepareTurnContext(latestPrompt);
+    const prepared = await this.orchestrator.prepareTurnContext(latestPrompt);
     return prepared?.reminder;
   }
 }

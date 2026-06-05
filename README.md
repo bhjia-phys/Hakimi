@@ -50,6 +50,7 @@ That means a research action can search literature, inspect code, prepare patche
 - New topics do not require hand-written packs up front: Hakimi now registers a built-in generic theoretical-physics profile, workflow recipes, process-memory capsules, and a smoke eval by default, then falls back to that scaffold when a WorkFrame has no dedicated pack.
 - AITP v5 `process_graph_slice` payloads can be parsed and locally compiled into research-context reminders, open-obligation summaries, trust-boundary warnings, and recommended `ResearchAction` ids without copying the AITP graph into Hakimi as truth.
 - AITP `exploratory_records` inside a process graph slice now compile into first-class moments for question decomposition, relation-path brainstorming, source/backtrace continuity, original-question drift audit, and `aitp.record_exploratory_record`.
+- Hakimi now has a narrow AITP CLI bridge for `aitp-v5 graph slice` and `aitp-v5 exploration record`, plus a controller-side process graph provider that can fetch an AITP slice before research-context injection when a WorkFrame carries explicit `aitp:session:<id>` scope. The bridge executes only a configured AITP command with structured args and keeps `.aitp` as the canonical record store.
 - Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
 - Literature search, code patch preparation, and external benchmark workflows are orchestrated through native Kimi tools rather than being executed inside `ResearchAction` itself.
 - Evidence can be written to the research ledger, reread only inside matching WorkFrame scope, compiled into graph candidates, and checked by harness/final-gate logic.
@@ -78,15 +79,21 @@ The long-term architecture treats `.aitp` as the host-agnostic canonical typed
 research graph and source-asset store. Hakimi should be its most native reader,
 not a second authority that reimplements the same research ledger schema.
 
-The first adapter slice is intentionally read-only: Hakimi accepts an AITP
-`process_graph_slice`, normalizes current v5 field names, preserves the
-orientation-only boundary, and recommends moments such as relation-path
-brainstorming, definition/source backtrace, original-question drift audit,
-research-state recording, derivation checkpoints, and open-obligation creation.
-The second adapter slice also understands AITP exploratory records and exposes a
-dedicated `aitp.record_exploratory_record` action. AITP now has the matching
-MCP/CLI write surface; the remaining Hakimi runtime work is to call that surface
-automatically at the right turn-loop moments instead of only recommending it.
+The first adapter slices are now implemented at the library/context/runtime
+boundary:
+Hakimi accepts an AITP `process_graph_slice`, normalizes current v5 field names,
+preserves the orientation-only boundary, and compiles it into ContextPack lines,
+diagnostics, and native `ResearchActionBinding` recommendations. Hakimi also has
+a narrow CLI bridge and optional WorkFrame-scoped provider for `aitp-v5 graph
+slice`, plus a write bridge for `aitp-v5 exploration record`. The default scope
+resolver only reads AITP when the WorkFrame explicitly carries refs such as
+`aitp:session:<id>` and `aitp:claim:<id>`, so Hakimi does not guess which local
+graph belongs to a research turn.
+
+The remaining runtime work is policy, not schema: the turn loop can now fetch a
+slice through a provider, but it still needs richer moment policy for when a
+brainstorming or backtrace step has become formed enough to record, and when a
+trust boundary requires stricter validation or a human checkpoint.
 
 ## Relationship To Upstream
 
@@ -230,6 +237,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - The runtime roadmap through 0.12.1 is now implemented as a file-backed, graph-aware, bridge-gated, audited baseline with deterministic research executors for the graph, benchmark, formalization, and external-job receipt lanes plus native-tool orchestration for literature, code, and external benchmark workflows. Topic packs now have manifest-level profile/workflow/memory/eval/action/tool summaries, primitive tool call attribution, durable ledger evidence references, scoped evidence reread from the semantic action layer, conservative native scheduler receipt inference, and WorkFrame-scoped recovery records for raw primitive tool escapes.
 - 0.12.2 makes the Hakimi research runtime default-on: `physics-memory`, `research-ledger`, `research-action`, `domain-profile`, `workflow-recipe`, `research-harness`, and `/goal` now start enabled unless explicitly set to `0`. Empty/new theoretical-physics topics get a built-in `theoretical-physics/general` process scaffold with literature search, source capture, derivation, validation, memory/eval, code-mapping, patch, benchmark, and external-job action bindings. Dedicated `.aitp` packs still take priority when present.
 - 0.12.3 makes full context compaction research-aware: `FullCompaction` now renders a runtime `Hakimi Research State` snapshot from open WorkFrames, attached ContextPacks, scoped evidence refs, open obligations, recent ResearchAction traces, raw primitive-tool escapes, and recent primitive tool lifecycle records. The same snapshot is appended to the stored compaction summary, so automatic compaction preserves the research question and current progress even if the model's free-form summary omits it.
+- Post-0.13.0 development has started the AITP-native bridge layer: `packages/agent-core/src/aitp/cli-bridge.ts` can read AITP process graph slices, write AITP exploratory records, and provide a WorkFrame-scoped slice provider. Compiled slices now flow into `ResearchContextPack`, research-context injection, and runtime action bindings, so WorkFrame reminders can carry AITP obligations, source gaps, relation-path brainstorms, and original-question drift checks in the same model turn.
 
 ## Development
 
