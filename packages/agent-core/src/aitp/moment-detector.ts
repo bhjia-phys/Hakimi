@@ -124,6 +124,93 @@ export function detectResearchMoments(
     });
   }
 
+  for (const record of slice.exploratoryRecords) {
+    const targetRefs = [`exploratory_record:${record.id}`];
+    const textForRecord = lowerJoin([
+      record.explorationType,
+      record.title,
+      record.focalQuestion,
+      record.originalQuestion,
+      record.localQuestion,
+      record.status,
+      ...record.candidatePaths,
+      ...record.unresolvedPoints,
+      ...record.nextActions,
+    ]);
+    if (isOpenExploration(record.status)) {
+      addMoment(moments, {
+        id: 'aitp.record_exploratory_record',
+        actionId: 'aitp.record_exploratory_record',
+        priority: 'high',
+        reason: `AITP exploratory record ${record.id} is active in the local research graph.`,
+        source: 'exploration',
+        targetRefs,
+      });
+    }
+    if (record.explorationType === 'question_decomposition' && isOpenExploration(record.status)) {
+      addMoment(moments, {
+        id: 'direction.brainstorm',
+        actionId: 'direction.brainstorm',
+        priority: 'high',
+        reason: `Question decomposition ${record.id} should steer the next local analysis.`,
+        source: 'exploration',
+        targetRefs,
+      });
+    }
+    if (record.explorationType === 'relation_path_brainstorm' || hasAny(textForRecord, ['relation path'])) {
+      addMoment(moments, {
+        id: 'physics.brainstorm_relation_path',
+        actionId: 'physics.brainstorm_relation_path',
+        priority: 'high',
+        reason: `Exploratory record ${record.id} keeps a relation path provisional.`,
+        source: 'exploration',
+        targetRefs,
+      });
+    }
+    if (
+      record.explorationType === 'source_asset' ||
+      record.explorationType === 'backtrace_step' ||
+      hasAny(textForRecord, ['source dependency', 'source gap', 'backtrace'])
+    ) {
+      addMoment(moments, {
+        id: 'trace.open_backtrace',
+        actionId: 'trace.open_backtrace',
+        priority: 'high',
+        reason: `Exploratory record ${record.id} needs source/backtrace continuity.`,
+        source: 'exploration',
+        targetRefs,
+      });
+      addMoment(moments, {
+        id: 'trace.follow_source_dependency',
+        actionId: 'trace.follow_source_dependency',
+        priority: 'high',
+        reason: `Exploratory record ${record.id} points at source dependency work.`,
+        source: 'exploration',
+        targetRefs,
+      });
+    }
+    if (record.originalQuestion !== undefined && record.localQuestion !== undefined) {
+      addMoment(moments, {
+        id: 'trace.audit_original_question_drift',
+        actionId: 'trace.audit_original_question_drift',
+        priority: 'high',
+        reason: `Exploratory record ${record.id} has a local question tied to an original question.`,
+        source: 'exploration',
+        targetRefs,
+      });
+    }
+    if (record.unresolvedPoints.length > 0) {
+      addMoment(moments, {
+        id: 'aitp.create_open_obligation',
+        actionId: 'aitp.create_open_obligation',
+        priority: 'high',
+        reason: `Exploratory record ${record.id} has unresolved points that may need typed obligations.`,
+        source: 'exploration',
+        targetRefs,
+      });
+    }
+  }
+
   if (hasAny(text, ['brainstorm', 'direction', 'route', 'approach', 'explore'])) {
     addKeywordMoment(moments, 'direction.brainstorm', 'Prompt asks for direction exploration.');
   }
@@ -165,6 +252,13 @@ export function detectResearchMoments(
       'Prompt or context asks to record research state.',
     );
   }
+  if (hasAny(text, ['record exploration', 'exploratory record', 'brainstorm record', 'backtrace record'])) {
+    addKeywordMoment(
+      moments,
+      'aitp.record_exploratory_record',
+      'Prompt or context asks to record exploratory research state.',
+    );
+  }
   if (hasAny(text, ['derivation checkpoint', 'checkpoint', 'derivation', 'derive', 'equation'])) {
     addKeywordMoment(
       moments,
@@ -197,6 +291,8 @@ export function actionIdForMoment(id: AitpResearchMomentId): string {
       return 'aitp.create_open_obligation';
     case 'audit_original_question_drift':
       return 'trace.audit_original_question_drift';
+    case 'record_exploratory_record':
+      return 'aitp.record_exploratory_record';
     default:
       return id;
   }
@@ -243,6 +339,17 @@ function detectorText(slice: AitpProcessGraphSlice, input: ResearchMomentDetecto
     ...slice.openObligations.flatMap((item) => [item.kind, item.reason, item.status]),
     ...slice.sourceBacktrace.flatMap((item) => [item.status, item.reason, item.gap]),
     ...slice.relationNeighborhood.flatMap((item) => [item.relation, item.status, item.reason]),
+    ...slice.exploratoryRecords.flatMap((item) => [
+      item.explorationType,
+      item.title,
+      item.focalQuestion,
+      item.originalQuestion,
+      item.localQuestion,
+      item.status,
+      ...item.candidatePaths,
+      ...item.unresolvedPoints,
+      ...item.nextActions,
+    ]),
   ]);
 }
 
@@ -293,6 +400,10 @@ function priorityForSeverity(severity: string): ResearchActionBindingPriority {
 function maxPriority(values: readonly ResearchActionBindingPriority[]): ResearchActionBindingPriority {
   return values.reduce<ResearchActionBindingPriority>((best, value) =>
     priorityRank(value) > priorityRank(best) ? value : best, 'low');
+}
+
+function isOpenExploration(status: string | undefined): boolean {
+  return status === undefined || status === 'open' || status === 'active' || status === 'deferred';
 }
 
 function priorityRank(priority: ResearchActionBindingPriority): number {

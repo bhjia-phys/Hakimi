@@ -15,6 +15,7 @@ describe('default research actions', () => {
     expect(registry.listActions().map((action) => action.id)).toEqual([
       'aitp.create_open_obligation',
       'aitp.record_derivation_checkpoint',
+      'aitp.record_exploratory_record',
       'aitp.record_research_state',
       'benchmark.run_minimal_case',
       'benchmark.submit_external_job',

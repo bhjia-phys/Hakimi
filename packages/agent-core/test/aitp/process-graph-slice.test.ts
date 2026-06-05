@@ -72,12 +72,15 @@ describe('AITP process graph slice adapter', () => {
     expect(actionIds).toEqual(
       expect.arrayContaining([
         'aitp.create_open_obligation',
+        'aitp.record_exploratory_record',
         'physics.brainstorm_relation_path',
         'trace.audit_original_question_drift',
         'trace.follow_source_dependency',
         'trace.open_backtrace',
       ]),
     );
+    expect(compiled.contextLines.join('\n')).toContain('Exploration records: exploratory-question');
+    expect(compiled.contextLines.join('\n')).toContain('Exploration unresolved points: finite-size aliasing');
     expect(compiled.actionRecommendations.some((binding) =>
       (binding.objectRefs ?? []).includes('claim:claim-fqhe'),
     )).toBe(true);
@@ -225,6 +228,23 @@ function currentAitpSlicePayload() {
         subject_name: 'counting sequence',
         object_name: 'edge CFT',
         failure_modes: ['wrong momentum sector'],
+      },
+    ],
+    exploratory_records: [
+      {
+        record_id: 'exploratory-question',
+        exploration_type: 'question_decomposition',
+        title: 'Decompose counting to CFT question',
+        focal_question: 'Which local definitions connect counting to the edge CFT?',
+        original_question: 'Does sector counting identify the edge CFT?',
+        local_question: 'Trace sector matching definitions.',
+        status: 'open',
+        object_ids: ['object-counting', 'object-cft'],
+        relation_ids: ['relation-counting-cft'],
+        source_refs: ['paper:edge-counting'],
+        candidate_paths: ['counting sequence -> sector matching -> edge CFT'],
+        unresolved_points: ['finite-size aliasing'],
+        next_actions: ['open source backtrace'],
       },
     ],
     trust_boundary_reasons: ['this API cannot update claim trust'],

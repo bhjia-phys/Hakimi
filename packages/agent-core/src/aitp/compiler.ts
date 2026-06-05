@@ -97,6 +97,21 @@ function buildContextLines(
     );
   }
 
+  const openExploration = slice.exploratoryRecords.filter((item) =>
+    item.status === undefined || ['open', 'active', 'deferred'].includes(item.status),
+  );
+  if (openExploration.length > 0) {
+    lines.push(
+      `Exploration records: ${bounded(openExploration.map(renderExploration), maxItems).join('; ')}`,
+    );
+  }
+  const unresolvedExploration = slice.exploratoryRecords.filter((item) => item.unresolvedPoints.length > 0);
+  if (unresolvedExploration.length > 0) {
+    lines.push(
+      `Exploration unresolved points: ${bounded(unresolvedExploration.flatMap((item) => item.unresolvedPoints), maxItems).join('; ')}`,
+    );
+  }
+
   if (moments.length > 0) {
     lines.push(
       `Suggested moments: ${bounded(moments.map((moment) => moment.actionId), maxItems).join(', ')}`,
@@ -171,6 +186,11 @@ function buildDiagnostics(slice: AitpProcessGraphSlice): readonly string[] {
 function renderObligation(obligation: AitpOpenObligation): string {
   const target = obligation.targetNodeId === undefined ? '' : ` -> ${obligation.targetNodeId}`;
   return `${obligation.id} [${obligation.kind}]${target}: ${obligation.reason}`;
+}
+
+function renderExploration(item: { readonly id: string; readonly explorationType: string; readonly focalQuestion?: string | undefined; readonly localQuestion?: string | undefined }): string {
+  const question = item.localQuestion ?? item.focalQuestion ?? '';
+  return question.length === 0 ? `${item.id} [${item.explorationType}]` : `${item.id} [${item.explorationType}]: ${question}`;
 }
 
 function hasExplicitTrustFlag(flags: readonly string[]): boolean {

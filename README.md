@@ -49,6 +49,7 @@ That means a research action can search literature, inspect code, prepare patche
 - Domain packs, workflow recipes, physics memory, evals, action bindings, and tool inventories can be loaded from file-backed `.hakimi` fixtures, with legacy `.aitp` fixtures still scanned for compatibility.
 - New topics do not require hand-written packs up front: Hakimi now registers a built-in generic theoretical-physics profile, workflow recipes, process-memory capsules, and a smoke eval by default, then falls back to that scaffold when a WorkFrame has no dedicated pack.
 - AITP v5 `process_graph_slice` payloads can be parsed and locally compiled into research-context reminders, open-obligation summaries, trust-boundary warnings, and recommended `ResearchAction` ids without copying the AITP graph into Hakimi as truth.
+- AITP `exploratory_records` inside a process graph slice now compile into first-class moments for question decomposition, relation-path brainstorming, source/backtrace continuity, original-question drift audit, and `aitp.record_exploratory_record`.
 - Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
 - Literature search, code patch preparation, and external benchmark workflows are orchestrated through native Kimi tools rather than being executed inside `ResearchAction` itself.
 - Evidence can be written to the research ledger, reread only inside matching WorkFrame scope, compiled into graph candidates, and checked by harness/final-gate logic.
@@ -82,8 +83,10 @@ The first adapter slice is intentionally read-only: Hakimi accepts an AITP
 orientation-only boundary, and recommends moments such as relation-path
 brainstorming, definition/source backtrace, original-question drift audit,
 research-state recording, derivation checkpoints, and open-obligation creation.
-Durable record creation still needs to go through AITP MCP/CLI tools in a later
-runtime integration slice.
+The second adapter slice also understands AITP exploratory records and exposes a
+dedicated `aitp.record_exploratory_record` action. AITP now has the matching
+MCP/CLI write surface; the remaining Hakimi runtime work is to call that surface
+automatically at the right turn-loop moments instead of only recommending it.
 
 ## Relationship To Upstream
 
@@ -293,7 +296,8 @@ from legacy pack compatibility: the slice is a canonical AITP-derived
 orientation view, so Hakimi compiles it into the current WorkFrame/context and
 recommended actions instead of saving it as Hakimi-owned truth. The follow-up
 runtime work is to call AITP MCP/CLI at the right moments and write durable
-research-process records back through AITP.
+research-process records back through AITP, especially for exploratory records
+created during brainstorming, source backtrace, and steering checkpoints.
 
 Explicitly disable individual research features only for debugging or upstream
 compatibility checks:
