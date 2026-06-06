@@ -7,6 +7,8 @@ import {
   buildAitpProcessGraphSliceArgs,
   buildAitpProofObligationCreateArgs,
   buildAitpSourceAssetRegisterArgs,
+  buildAitpValidationContractCreateArgs,
+  buildAitpValidationResultRecordArgs,
   createAitpCliBridge,
   createAitpCliProcessGraphSliceProvider,
   resolveAitpScopeFromWorkFrame,
@@ -332,6 +334,147 @@ describe('AITP CLI bridge', () => {
     ]);
   });
 
+  it('creates validation contracts through AITP validation records', async () => {
+    const calls: { args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push({ args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            kind: 'validation_contract',
+            contract_id: 'validation-contract-sector-match',
+            topic_id: 'fqhe',
+            claim_id: 'claim-edge-counting',
+            status: 'open',
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const result = await bridge.createValidationContract({
+      topicId: 'fqhe',
+      claimId: 'claim-edge-counting',
+      requiredChecks: ['dimension check', 'known limit check'],
+      failureModes: ['wrong momentum sector'],
+      requiredEvidenceOutputs: ['derivation transcript'],
+      toolRecipeIds: ['recipe-sector-validation'],
+      executorIds: ['manual-derivation-review'],
+      validatorRole: 'adversarial_reviewer',
+    });
+
+    expect(result).toMatchObject({
+      kind: 'validation_contract',
+      contractId: 'validation-contract-sector-match',
+      status: 'open',
+    });
+    expect(calls[0]?.args).toEqual([
+      '--base',
+      'F:/project',
+      'validation',
+      'contract',
+      'create',
+      '--topic',
+      'fqhe',
+      '--claim',
+      'claim-edge-counting',
+      '--required-check',
+      'dimension check',
+      '--required-check',
+      'known limit check',
+      '--failure-mode',
+      'wrong momentum sector',
+      '--required-output',
+      'derivation transcript',
+      '--recipe-id',
+      'recipe-sector-validation',
+      '--executor-id',
+      'manual-derivation-review',
+      '--validator-role',
+      'adversarial_reviewer',
+    ]);
+  });
+
+  it('records validation results through AITP validation records', async () => {
+    const calls: { args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push({ args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            kind: 'validation_result',
+            result_id: 'validation-result-sector-match',
+            topic_id: 'fqhe',
+            claim_id: 'claim-edge-counting',
+            contract_id: 'validation-contract-sector-match',
+            tool_run_id: 'tool-run-derivation-review',
+            status: 'partial',
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const result = await bridge.recordValidationResult({
+      topicId: 'fqhe',
+      claimId: 'claim-edge-counting',
+      contractId: 'validation-contract-sector-match',
+      toolRunId: 'tool-run-derivation-review',
+      status: 'partial',
+      checkedOutputs: ['derivation transcript'],
+      coveredFailureModes: ['wrong momentum sector'],
+      evidenceRefs: ['evidence-sector-derivation'],
+      artifactIds: ['artifact-derivation-log'],
+      summary: 'Known-limit check passed; one source support check remains open.',
+    });
+
+    expect(result).toMatchObject({
+      kind: 'validation_result',
+      resultId: 'validation-result-sector-match',
+      contractId: 'validation-contract-sector-match',
+      status: 'partial',
+    });
+    expect(calls[0]?.args).toEqual([
+      '--base',
+      'F:/project',
+      'validation',
+      'result',
+      'record',
+      '--topic',
+      'fqhe',
+      '--claim',
+      'claim-edge-counting',
+      '--contract',
+      'validation-contract-sector-match',
+      '--tool-run',
+      'tool-run-derivation-review',
+      '--status',
+      'partial',
+      '--summary',
+      'Known-limit check passed; one source support check remains open.',
+      '--checked-output',
+      'derivation transcript',
+      '--covered-failure-mode',
+      'wrong momentum sector',
+      '--evidence-ref',
+      'evidence-sector-derivation',
+      '--artifact-id',
+      'artifact-derivation-log',
+    ]);
+  });
+
   it('keeps source asset and checkpoint args validated before running AITP', () => {
     expect(() =>
       buildAitpSourceAssetRegisterArgs({
@@ -363,6 +506,27 @@ describe('AITP CLI bridge', () => {
         status: 'open',
         maturityLevel: 'theorem-candidate',
         nextAction: 'derive sector-matching constraints',
+      }),
+    ).toThrow(AitpCliBridgeError);
+    expect(() =>
+      buildAitpValidationContractCreateArgs({
+        basePath: 'F:/project',
+        topicId: 'fqhe',
+        claimId: 'claim-edge-counting',
+        requiredChecks: [],
+        failureModes: ['wrong momentum sector'],
+        requiredEvidenceOutputs: ['derivation transcript'],
+      }),
+    ).toThrow(AitpCliBridgeError);
+    expect(() =>
+      buildAitpValidationResultRecordArgs({
+        basePath: 'F:/project',
+        topicId: 'fqhe',
+        claimId: 'claim-edge-counting',
+        contractId: 'validation-contract-sector-match',
+        toolRunId: 'tool-run-derivation-review',
+        status: 'partial',
+        summary: '',
       }),
     ).toThrow(AitpCliBridgeError);
   });
