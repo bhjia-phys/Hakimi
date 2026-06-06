@@ -35,6 +35,14 @@ import {
   type GraphRef,
   type PhysicsRelationType,
 } from '../../../physics-memory';
+import {
+  AITP_WRITE_BRIDGE_OPERATIONS,
+  actionIdForAitpWriteBridgeOperation,
+  coerceAitpWriteBridgeInput,
+  evidenceRefsForAitpWriteBridgeResult,
+  type AitpWriteBridgeExecutionResult,
+  type AitpWriteBridgeOperation,
+} from '../../../aitp';
 import type { BenchmarkAdapterRunResult } from '../../../benchmark-adapter';
 import type { DomainPackManifestDiagnostic } from '../../../domain-pack';
 import type { FormalizationPlan } from '../../../formalization';
@@ -75,6 +83,7 @@ const ACTIONS = [
   'run_benchmark_adapter',
   'query_physics_graph',
   'build_formalization_plan',
+  'execute_aitp_write_bridge',
 ] as const;
 const EXPOSURES = ['direct', 'deferred', 'direct-model-only', 'hidden'] as const;
 const CATEGORIES = ['graph', 'derivation', 'physics', 'code', 'benchmark', 'memory', 'harness'] as const;
@@ -218,6 +227,14 @@ export const ResearchActionToolInputSchema = z.object({
     .boolean()
     .optional()
     .describe('Whether build_formalization_plan should include dependency closure.'),
+  aitp_operation: z
+    .enum(AITP_WRITE_BRIDGE_OPERATIONS)
+    .optional()
+    .describe('AITP write bridge operation for execute_aitp_write_bridge.'),
+  aitp_payload: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe('Structured payload for execute_aitp_write_bridge.'),
 });
 
 export type ResearchActionToolInput = z.Infer<typeof ResearchActionToolInputSchema>;
@@ -306,6 +323,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return this.queryPhysicsGraph(args, ctx);
         case 'build_formalization_plan':
           return this.buildFormalizationPlan(args, ctx);
+        case 'execute_aitp_write_bridge':
+          return await this.executeAitpWriteBridge(args, ctx);
       }
     } catch (error) {
       return {
@@ -470,6 +489,37 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       callId: defaultCallId(args.action_id ?? 'research-action', ctx.toolCallId),
       source: 'generated',
     };
+  }
+
+  private async executeAitpWriteBridge(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction execute_aitp_write_bridge requires a session manager.');
+    }
+    if (args.aitp_operation === undefined) {
+      return errorResult('ResearchAction execute_aitp_write_bridge requires aitp_operation.');
+    }
+    if (args.aitp_payload === undefined) {
+      return errorResult('ResearchAction execute_aitp_write_bridge requires aitp_payload.');
+    }
+    const operation = args.aitp_operation as AitpWriteBridgeOperation;
+    const actionId = args.action_id ?? actionIdForAitpWriteBridgeOperation(operation);
+    const resolvedCallId = this.resolveCallId({ ...args, action_id: actionId }, ctx);
+    const input = coerceAitpWriteBridgeInput(operation, args.aitp_payload, ctx.signal);
+    const result = await this.manager.executeAitpWriteBridge(
+      {
+        ...input,
+        actionId,
+        callId: resolvedCallId.callId,
+      },
+      {
+        source: (args.source ?? 'model') as ResearchActionSource,
+        toolCallId: ctx.toolCallId,
+      },
+    );
+    return ok(renderAitpWriteBridgeExecution(operation, actionId, resolvedCallId.callId, result));
   }
 
   private openWorkFrame(
@@ -1100,6 +1150,32 @@ function renderFormalizationPlan(plan: FormalizationPlan): string {
     '</formalization_plan>',
     '',
   ].join('\n');
+}
+
+function renderAitpWriteBridgeExecution(
+  operation: AitpWriteBridgeOperation,
+  actionId: string,
+  callId: string,
+  result: AitpWriteBridgeExecutionResult,
+): string {
+  return [
+    `<aitp_write_bridge operation="${operation}" action_id="${escapeXml(actionId)}" call_id="${escapeXml(callId)}" kind="${result.kind}" ok="${String(result.ok)}">`,
+    `  <record_id>${escapeXml(aitpWriteBridgeRecordId(result))}</record_id>`,
+    renderStringList('evidence_refs', 'evidence_ref', evidenceRefsForAitpWriteBridgeResult(result), '  '),
+    '</aitp_write_bridge>',
+    '',
+  ].join('\n');
+}
+
+function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string {
+  switch (result.kind) {
+    case 'exploratory_record':
+      return result.recordId;
+    case 'proof_obligation':
+      return result.obligationId;
+    case 'human_checkpoint':
+      return result.checkpointId;
+  }
 }
 
 function nodeIdsFromEdges(edges: readonly PhysicsGraphEdge[]): readonly string[] {

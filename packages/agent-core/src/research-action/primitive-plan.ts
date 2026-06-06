@@ -332,11 +332,60 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['graph.query_dependency_closure'],
   }),
   plan({
+    actionId: 'aitp.record_exploratory_record',
+    title: 'Record AITP exploratory process record',
+    intent:
+      'Persist a formed brainstorming, question-decomposition, source-asset, backtrace, or steering record through AITP without promoting it as evidence.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'execute-aitp-exploration-write',
+        kind: 'record',
+        title: 'Write exploratory record through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with recordExploratoryRecord using the current ContextPack writeBridge payload.',
+        expectedEvidence: ['aitp:exploratory_record:<id>', 'write_bridge_operation'],
+      }),
+    ],
+    recording: recording('aitp.record_exploratory_record', ['aitp:exploratory_record:<id>']),
+    followupActionIds: ['scope.compile_context_pack'],
+  }),
+  plan({
+    actionId: 'aitp.create_open_obligation',
+    title: 'Create AITP open obligation',
+    intent:
+      'Persist a formed gap as an AITP proof obligation before treating the gap as resolved or relying on the claim.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'execute-aitp-obligation-write',
+        kind: 'record',
+        title: 'Write proof obligation through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with createProofObligation using the current ContextPack writeBridge payload.',
+        expectedEvidence: ['aitp:proof_obligation:<id>', 'generated_obligation_id'],
+      }),
+    ],
+    recording: recording('aitp.create_open_obligation', ['aitp:proof_obligation:<id>']),
+    followupActionIds: ['scope.compile_context_pack'],
+  }),
+  plan({
     actionId: 'aitp.request_human_checkpoint',
     title: 'Request trust-boundary checkpoint',
     intent: 'Pause at an AITP trust boundary and collect an explicit human decision before treating trust as updated.',
     primitiveToolPolicy: 'none',
     steps: [
+      step({
+        id: 'execute-aitp-checkpoint-request',
+        kind: 'record',
+        title: 'Create checkpoint request through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with requestHumanCheckpoint before asking the human to decide.',
+        expectedEvidence: ['aitp:human_checkpoint:<id>', 'trust_boundary_reason'],
+      }),
       step({
         id: 'ask-human-checkpoint',
         kind: 'capture',
@@ -351,11 +400,16 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
         kind: 'record',
         title: 'Record checkpoint result',
         toolNames: ['ResearchAction', 'ResearchLedger'],
-        purpose: 'Record the human checkpoint outcome without claiming that Hakimi updated AITP trust.',
-        expectedEvidence: ['ledger_event_id', 'human_checkpoint_decision'],
+        purpose:
+          'Record the human checkpoint outcome as semantic action evidence without claiming that Hakimi updated AITP trust.',
+        expectedEvidence: ['ledger_event_id', 'human_checkpoint_decision', 'aitp:human_checkpoint:<id>'],
       }),
     ],
-    recording: recording('aitp.request_human_checkpoint', ['human_checkpoint_decision', 'ledger_event_id']),
+    recording: recording('aitp.request_human_checkpoint', [
+      'aitp:human_checkpoint:<id>',
+      'human_checkpoint_decision',
+      'ledger_event_id',
+    ]),
     followupActionIds: ['aitp.record_research_state'],
   }),
   plan({

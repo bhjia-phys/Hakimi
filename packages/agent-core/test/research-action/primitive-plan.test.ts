@@ -70,18 +70,37 @@ describe('research primitive plan templates', () => {
     expect(plan.recording.evidenceRefs).toContain('adapter.external.job-submission');
   });
 
-  it('plans AITP trust-boundary checkpoints through a human question and action record', () => {
+  it('plans AITP write-bridge records through explicit ResearchAction calls', () => {
+    const exploration = planFor('aitp.record_exploratory_record');
+    const obligation = planFor('aitp.create_open_obligation');
+
+    expect(exploration.steps.map((step) => step.id)).toEqual([
+      'execute-aitp-exploration-write',
+    ]);
+    expect(obligation.steps.map((step) => step.id)).toEqual([
+      'execute-aitp-obligation-write',
+    ]);
+    expect(exploration.recording.evidenceRefs).toContain('aitp:exploratory_record:<id>');
+    expect(obligation.recording.evidenceRefs).toContain('aitp:proof_obligation:<id>');
+  });
+
+  it('plans AITP trust-boundary checkpoints through AITP request plus human question', () => {
     const plan = planFor('aitp.request_human_checkpoint');
 
     expect(plan.toolNames).toEqual(
       expect.arrayContaining(['AskUserQuestion', 'ResearchAction', 'ResearchLedger']),
     );
     expect(plan.steps.map((step) => step.id)).toEqual([
+      'execute-aitp-checkpoint-request',
       'ask-human-checkpoint',
       'record-checkpoint',
     ]);
     expect(plan.recording.evidenceRefs).toEqual(
-      expect.arrayContaining(['human_checkpoint_decision', 'ledger_event_id']),
+      expect.arrayContaining([
+        'aitp:human_checkpoint:<id>',
+        'human_checkpoint_decision',
+        'ledger_event_id',
+      ]),
     );
     expect(plan.followupActionIds).toContain('aitp.record_research_state');
   });

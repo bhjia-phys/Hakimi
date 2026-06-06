@@ -28,6 +28,12 @@ import {
   buildPhysicsGraphFromMemory,
   type PhysicsGraph,
 } from '../../physics-graph';
+import {
+  evidenceRefsForAitpWriteBridgeResult,
+  generatedObligationIdsForAitpWriteBridgeResult,
+  type AitpWriteBridgeExecutionInput,
+  type AitpWriteBridgeExecutionResult,
+} from '../../aitp';
 
 export interface ResearchActionRecordOptions {
   readonly source: ResearchActionSource;
@@ -51,6 +57,11 @@ export interface FinishResearchActionCallInput {
   readonly primitiveToolCallIds?: readonly string[] | undefined;
   readonly nextSuggestedActions?: readonly string[] | undefined;
 }
+
+export type ExecuteAitpWriteBridgeInput = AitpWriteBridgeExecutionInput & {
+  readonly actionId: string;
+  readonly callId: string;
+};
 
 export interface ActiveResearchActionCall {
   readonly actionId: string;
@@ -173,6 +184,37 @@ export class ResearchActionManager {
 
   buildFormalizationPlan(input: FormalizationPlanInput): FormalizationPlan {
     return buildFormalizationPlan(this.buildPhysicsGraph(), input);
+  }
+
+  async executeAitpWriteBridge(
+    input: ExecuteAitpWriteBridgeInput,
+    options: ResearchActionRecordOptions,
+  ): Promise<AitpWriteBridgeExecutionResult> {
+    if (this.agent.aitpWriteBridge === undefined) {
+      throw new Error('AITP write bridge is not configured for this session.');
+    }
+    const result = await this.agent.aitpWriteBridge.executeWrite(input);
+    this.recordActionResult(
+      {
+        actionId: input.actionId,
+        callId: input.callId,
+        input: {
+          operation: input.operation,
+          payload: input.payload,
+        },
+        output: result,
+        graphRefs: [],
+        capsuleRefs: [],
+        ledgerEventIds: [],
+        evidenceRefs: evidenceRefsForAitpWriteBridgeResult(result),
+        outcome: result.ok ? 'pass' : 'fail',
+        generatedObligationIds: generatedObligationIdsForAitpWriteBridgeResult(result),
+        primitiveToolCallIds: [],
+        nextSuggestedActions: [],
+      },
+      options,
+    );
+    return result;
   }
 
   startActionCall(
