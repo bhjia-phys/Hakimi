@@ -243,6 +243,9 @@ describe('ResearchContextManager', () => {
     const reminder = (lastMessage?.content[0] as { text: string }).text;
     expect(reminder).toContain('AITP process graph: truth_source=typed_records');
     expect(reminder).toContain('AITP open obligations');
+    expect(reminder).toContain('Theory reasoning for');
+    expect(reminder).toContain('source_dependency_backtrace');
+    expect(reminder).toContain('original_question_continuity_guard');
     expect(agent.researchContext.listPacks().at(-1)?.aitp?.suggestedActionIds).toEqual(
       expect.arrayContaining([
         'trace.audit_original_question_drift',
@@ -371,6 +374,10 @@ function aitpSlicePayload() {
         original_question: 'Does sector counting identify the edge CFT?',
         local_question: 'Follow one source dependency.',
         status: 'open',
+        reasoning_moves: ['source dependency backtrace', 'original-question continuity check'],
+        backtrace_targets: ['claim:claim-fqhe'],
+        source_dependency_questions: ['Which paper defines the sector-counting relation?'],
+        original_question_guard: ['Keep source lookup tied to sector-counting identification.'],
         unresolved_points: ['dependency may be only historical context'],
       },
     ],
