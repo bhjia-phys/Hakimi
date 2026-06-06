@@ -164,6 +164,33 @@ export interface CreateAitpProofObligationInput {
   readonly signal?: AbortSignal | undefined;
 }
 
+export interface CreateAitpValidationContractInput {
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly requiredChecks: readonly string[];
+  readonly failureModes: readonly string[];
+  readonly requiredEvidenceOutputs: readonly string[];
+  readonly toolRecipeIds?: readonly string[] | undefined;
+  readonly executorIds?: readonly string[] | undefined;
+  readonly validatorRole?: string | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface RecordAitpValidationResultInput {
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly contractId: string;
+  readonly toolRunId: string;
+  readonly status: string;
+  readonly summary: string;
+  readonly checkedOutputs?: readonly string[] | undefined;
+  readonly coveredFailureModes?: readonly string[] | undefined;
+  readonly failureModesObserved?: readonly string[] | undefined;
+  readonly evidenceRefs?: readonly string[] | undefined;
+  readonly artifactIds?: readonly string[] | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface AitpExploratoryRecordWriteResult {
   readonly ok: boolean;
   readonly kind: 'exploratory_record';
@@ -204,6 +231,28 @@ export interface AitpProofObligationWriteResult {
   readonly claimId: string;
   readonly status: string;
   readonly canUpdateClaimTrust: boolean;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpValidationContractWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'validation_contract';
+  readonly contractId: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly status: string;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpValidationResultWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'validation_result';
+  readonly resultId: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly contractId: string;
+  readonly toolRunId: string;
+  readonly status: string;
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -291,6 +340,28 @@ export class AitpCliBridge {
     });
     const payload = await this.runJson(args, input.signal);
     return parseProofObligationWriteResult(payload);
+  }
+
+  async createValidationContract(
+    input: CreateAitpValidationContractInput,
+  ): Promise<AitpValidationContractWriteResult> {
+    const args = buildAitpValidationContractCreateArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseValidationContractWriteResult(payload);
+  }
+
+  async recordValidationResult(
+    input: RecordAitpValidationResultInput,
+  ): Promise<AitpValidationResultWriteResult> {
+    const args = buildAitpValidationResultRecordArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseValidationResultWriteResult(payload);
   }
 
   private async runJson(args: readonly string[], signal?: AbortSignal): Promise<unknown> {
@@ -537,6 +608,72 @@ export function buildAitpProofObligationCreateArgs(
   return args;
 }
 
+export function buildAitpValidationContractCreateArgs(
+  input: CreateAitpValidationContractInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.claimId, 'claimId');
+  requireNonEmptyList(input.requiredChecks, 'requiredChecks');
+  requireNonEmptyList(input.failureModes, 'failureModes');
+  requireNonEmptyList(input.requiredEvidenceOutputs, 'requiredEvidenceOutputs');
+  const args = [
+    '--base',
+    input.basePath,
+    'validation',
+    'contract',
+    'create',
+    '--topic',
+    input.topicId.trim(),
+    '--claim',
+    input.claimId.trim(),
+  ];
+  pushRepeated(args, '--required-check', input.requiredChecks);
+  pushRepeated(args, '--failure-mode', input.failureModes);
+  pushRepeated(args, '--required-output', input.requiredEvidenceOutputs);
+  pushRepeated(args, '--recipe-id', input.toolRecipeIds);
+  pushRepeated(args, '--executor-id', input.executorIds);
+  pushOptional(args, '--validator-role', input.validatorRole);
+  return args;
+}
+
+export function buildAitpValidationResultRecordArgs(
+  input: RecordAitpValidationResultInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.claimId, 'claimId');
+  requireNonEmpty(input.contractId, 'contractId');
+  requireNonEmpty(input.toolRunId, 'toolRunId');
+  requireNonEmpty(input.status, 'status');
+  requireNonEmpty(input.summary, 'summary');
+  const args = [
+    '--base',
+    input.basePath,
+    'validation',
+    'result',
+    'record',
+    '--topic',
+    input.topicId.trim(),
+    '--claim',
+    input.claimId.trim(),
+    '--contract',
+    input.contractId.trim(),
+    '--tool-run',
+    input.toolRunId.trim(),
+    '--status',
+    input.status.trim(),
+    '--summary',
+    input.summary.trim(),
+  ];
+  pushRepeated(args, '--checked-output', input.checkedOutputs);
+  pushRepeated(args, '--covered-failure-mode', input.coveredFailureModes);
+  pushRepeated(args, '--failure-mode', input.failureModesObserved);
+  pushRepeated(args, '--evidence-ref', input.evidenceRefs);
+  pushRepeated(args, '--artifact-id', input.artifactIds);
+  return args;
+}
+
 class SpawnAitpCommandRunner implements AitpCommandRunner {
   async run(
     command: string,
@@ -690,6 +827,44 @@ function parseProofObligationWriteResult(payload: unknown): AitpProofObligationW
   };
 }
 
+function parseValidationContractWriteResult(payload: unknown): AitpValidationContractWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError('AITP validation contract payload must be an object.');
+  }
+  if (payload['kind'] !== 'validation_contract') {
+    throw new AitpCliBridgeError('AITP validation contract payload has the wrong kind.');
+  }
+  return {
+    ok: payload['ok'] === true,
+    kind: 'validation_contract',
+    contractId: requiredPayloadString(payload, 'contract_id'),
+    topicId: requiredPayloadString(payload, 'topic_id'),
+    claimId: requiredPayloadString(payload, 'claim_id'),
+    status: requiredPayloadString(payload, 'status'),
+    raw: payload,
+  };
+}
+
+function parseValidationResultWriteResult(payload: unknown): AitpValidationResultWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError('AITP validation result payload must be an object.');
+  }
+  if (payload['kind'] !== 'validation_result') {
+    throw new AitpCliBridgeError('AITP validation result payload has the wrong kind.');
+  }
+  return {
+    ok: payload['ok'] === true,
+    kind: 'validation_result',
+    resultId: requiredPayloadString(payload, 'result_id'),
+    topicId: requiredPayloadString(payload, 'topic_id'),
+    claimId: requiredPayloadString(payload, 'claim_id'),
+    contractId: requiredPayloadString(payload, 'contract_id'),
+    toolRunId: requiredPayloadString(payload, 'tool_run_id'),
+    status: requiredPayloadString(payload, 'status'),
+    raw: payload,
+  };
+}
+
 function parseJsonOutput(
   stdout: string,
   details: Pick<AitpCliBridgeError['details'], 'command' | 'args' | 'stderr'>,
@@ -746,6 +921,11 @@ function requireNonEmpty(value: string, label: string): void {
   if (value.trim().length === 0) {
     throw new AitpCliBridgeError(`AITP ${label} is required.`);
   }
+}
+
+function requireNonEmptyList(values: readonly string[], label: string): void {
+  if (values.some((value) => value.trim().length > 0)) return;
+  throw new AitpCliBridgeError(`AITP ${label} must contain at least one value.`);
 }
 
 function requireAllowed<T extends readonly string[]>(
