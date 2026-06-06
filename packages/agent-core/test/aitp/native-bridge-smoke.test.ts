@@ -132,6 +132,21 @@ describe('AITP native bridge smoke', () => {
       trustBoundary: 'policy_prerequisite:recording',
       writeBridge: {
         operation: 'recordEvidence',
+        payloadDraft: {
+          topicId: 'qg-algebra-mipt',
+          claimId: 'claim-mipt-observer-algebra',
+          evidenceType: 'proof_obligation_resolution',
+          status: 'supports',
+          summary: '<source-grounded evidence summary>',
+          sourceRefs: ['source_asset:asset-algebra-paper'],
+        },
+        payloadHint: {
+          entrypoint: 'aitp_v5_record_evidence',
+          recordAction: 'record_evidence',
+          orientationOnly: true,
+          summaryInputsTrusted: false,
+          canUpdateClaimTrust: false,
+        },
       },
       callObligation: {
         actionKind: 'record_evidence_or_validation',
@@ -429,6 +444,27 @@ function qgMiptSlicePayload() {
             'aitp_v5_record_evidence',
             'aitp_v5_record_validation_result',
             'aitp_v5_preflight_trust_update',
+          ],
+          payload_hints: [
+            {
+              entrypoint: 'aitp_v5_record_evidence',
+              record_action: 'record_evidence',
+              action_kind: 'record_evidence_or_validation',
+              target_type: 'proof_obligation',
+              target_id: 'obl-source-chain',
+              required_fields: ['topic_id', 'claim_id', 'evidence_type', 'status', 'summary'],
+              draft: {
+                topic_id: 'qg-algebra-mipt',
+                claim_id: 'claim-mipt-observer-algebra',
+                evidence_type: 'proof_obligation_resolution',
+                status: 'supports',
+                summary: '<source-grounded evidence summary>',
+                source_refs: ['source_asset:asset-algebra-paper'],
+              },
+              orientation_only: true,
+              summary_inputs_trusted: false,
+              can_update_claim_trust: false,
+            },
           ],
           required_before_trust_change: [
             'record typed evidence or validation for the open obligation',

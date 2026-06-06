@@ -94,9 +94,12 @@ recommendations, explicit write-bridge hints for durable AITP records, and
 structured `callObligations` derived from AITP `moment_policy.decisions`.
 Those obligations distinguish current-turn required calls from calls that must
 happen before any trust-changing step, while keeping the canonical policy and
-entrypoint names in AITP. AITP owns source asset identity, hashes, version anchors, and
-raw asset provenance; Hakimi only compiles the currently relevant source asset
-ids into a bounded WorkFrame prompt. Hakimi sessions now create a narrow
+entrypoint names in AITP. When AITP provides orientation-only `payload_hints`,
+Hakimi projects them into `writeBridge.payloadDraft` so the model sees the local
+fields needed for the next typed write without turning that draft into Hakimi
+truth. AITP owns source asset identity, hashes, version anchors, and raw asset
+provenance; Hakimi only compiles the currently relevant source asset ids into a
+bounded WorkFrame prompt. Hakimi sessions now create a narrow
 dynamic CLI bridge by default: the process-graph provider calls
 `aitp-v5 graph slice` with `--base` resolved from the current Agent cwd, and the
 write bridge covers exploratory records, source asset registration, human

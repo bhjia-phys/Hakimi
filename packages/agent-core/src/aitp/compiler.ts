@@ -5,6 +5,7 @@ import type {
   AitpMomentPolicyDecision,
   AitpObligationSummary,
   AitpOpenObligation,
+  AitpPayloadHint,
   AitpProcessGraphSlice,
   AitpTrustSummary,
   CompiledAitpProcessGraphSlice,
@@ -222,7 +223,7 @@ function actionBindingForMoment(
       timing: moment.timing,
       trustBoundary: moment.trustBoundary,
       callObligation: obligation,
-      writeBridge: writeBridgeForMoment(moment),
+      writeBridge: writeBridgeForMoment(moment, obligation),
     },
     reason: moment.reason,
     priority: moment.priority,
@@ -255,6 +256,7 @@ function callObligationForDecision(
     recordEntrypoints: decision.recordEntrypoints,
     explorationEntrypoints: decision.explorationEntrypoints,
     entrypoints: decision.entrypoints,
+    payloadHints: decision.payloadHints,
     requiredBeforeTrustChange: decision.requiredBeforeTrustChange,
     trustBoundary: decision.trustBoundary,
   };
@@ -272,45 +274,48 @@ function callObligationForMoment(
   return callObligations.find((item) => item.actionId === moment.actionId);
 }
 
-function writeBridgeForMoment(moment: DetectedResearchMoment): Readonly<Record<string, unknown>> | undefined {
+function writeBridgeForMoment(
+  moment: DetectedResearchMoment,
+  obligation: AitpCallObligation | undefined,
+): Readonly<Record<string, unknown>> | undefined {
   switch (moment.actionId) {
     case 'aitp.record_exploratory_record':
-      return {
+      return withPayloadDraft({
         operation: 'recordExploratoryRecord',
         cli: 'aitp-v5 exploration record',
         requiredFields: ['topicId', 'explorationType', 'title', 'focalQuestion', 'summary'],
         targetRefs: moment.targetRefs,
-      };
+      }, obligation);
     case 'aitp.register_source_asset':
-      return {
+      return withPayloadDraft({
         operation: 'registerSourceAsset',
         cli: 'aitp-v5 asset register',
         requiredFields: ['topicId', 'assetType', 'uri', 'title'],
         targetRefs: moment.targetRefs,
-      };
+      }, obligation);
     case 'aitp.record_evidence':
-      return {
+      return withPayloadDraft({
         operation: 'recordEvidence',
         cli: 'aitp-v5 evidence record',
         requiredFields: ['topicId', 'claimId', 'evidenceType', 'status', 'summary'],
         targetRefs: moment.targetRefs,
-      };
+      }, obligation);
     case 'aitp.record_tool_run':
-      return {
+      return withPayloadDraft({
         operation: 'recordToolRun',
         cli: 'aitp-v5 tool run record',
         requiredFields: ['recipeId', 'toolFamily', 'toolName', 'topicId', 'claimId'],
         targetRefs: moment.targetRefs,
-      };
+      }, obligation);
     case 'aitp.record_reference_location':
-      return {
+      return withPayloadDraft({
         operation: 'recordReferenceLocation',
         cli: 'aitp-v5 reference location record',
         requiredFields: ['topicId', 'connectorId', 'locationType', 'uri', 'label'],
         targetRefs: moment.targetRefs,
-      };
+      }, obligation);
     case 'aitp.create_open_obligation':
-      return {
+      return withPayloadDraft({
         operation: 'createProofObligation',
         cli: 'aitp-v5 research-state create-proof-obligation',
         requiredFields: [
@@ -323,31 +328,97 @@ function writeBridgeForMoment(moment: DetectedResearchMoment): Readonly<Record<s
           'nextAction',
         ],
         targetRefs: moment.targetRefs,
-      };
+      }, obligation);
     case 'aitp.create_validation_contract':
-      return {
+      return withPayloadDraft({
         operation: 'createValidationContract',
         cli: 'aitp-v5 validation contract create',
         requiredFields: ['topicId', 'claimId', 'requiredChecks', 'failureModes', 'requiredEvidenceOutputs'],
         targetRefs: moment.targetRefs,
-      };
+      }, obligation);
     case 'aitp.record_validation_result':
-      return {
+      return withPayloadDraft({
         operation: 'recordValidationResult',
         cli: 'aitp-v5 validation result record',
         requiredFields: ['topicId', 'claimId', 'contractId', 'toolRunId', 'status', 'summary'],
         targetRefs: moment.targetRefs,
-      };
+      }, obligation);
     case 'aitp.request_human_checkpoint':
-      return {
+      return withPayloadDraft({
         operation: 'requestHumanCheckpoint',
         cli: 'aitp-v5 checkpoint request',
         requiredFields: ['topicId', 'claimId', 'reason', 'requestedBy', 'options'],
         targetRefs: moment.targetRefs,
-      };
+      }, obligation);
     default:
       return undefined;
   }
+}
+
+function withPayloadDraft(
+  bridge: Readonly<Record<string, unknown>> & { readonly operation: string },
+  obligation: AitpCallObligation | undefined,
+): Readonly<Record<string, unknown>> {
+  const hint = payloadHintForOperation(bridge.operation, obligation?.payloadHints ?? []);
+  if (hint === undefined) return bridge;
+  return {
+    ...bridge,
+    payloadDraft: camelizeDraft(hint.draft),
+    payloadHint: {
+      entrypoint: hint.entrypoint,
+      recordAction: hint.recordAction,
+      requiredFields: hint.requiredFields,
+      orientationOnly: hint.orientationOnly,
+      summaryInputsTrusted: hint.summaryInputsTrusted,
+      canUpdateClaimTrust: hint.canUpdateClaimTrust,
+    },
+  };
+}
+
+function payloadHintForOperation(
+  operation: string,
+  hints: readonly AitpPayloadHint[],
+): AitpPayloadHint | undefined {
+  const action = recordActionForOperation(operation);
+  if (action === undefined) return undefined;
+  return hints.find((hint) => hint.recordAction === action);
+}
+
+function recordActionForOperation(operation: string): string | undefined {
+  switch (operation) {
+    case 'recordExploratoryRecord':
+      return 'record_exploratory_record';
+    case 'registerSourceAsset':
+      return 'register_source_asset';
+    case 'recordEvidence':
+      return 'record_evidence';
+    case 'recordToolRun':
+      return 'record_tool_run';
+    case 'recordReferenceLocation':
+      return 'record_reference_location';
+    case 'createProofObligation':
+      return 'create_proof_obligation';
+    case 'createValidationContract':
+      return 'create_validation_contract';
+    case 'recordValidationResult':
+      return 'record_validation_result';
+    case 'requestHumanCheckpoint':
+      return 'request_human_checkpoint';
+    default:
+      return undefined;
+  }
+}
+
+function camelizeDraft(value: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    result[camelizeKey(key)] = item;
+  }
+  return result;
+}
+
+function camelizeKey(value: string): string {
+  return value.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase());
 }
 
 function buildDiagnostics(slice: AitpProcessGraphSlice): readonly string[] {
