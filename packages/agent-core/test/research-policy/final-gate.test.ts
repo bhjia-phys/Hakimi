@@ -15,6 +15,7 @@ describe('research final gate', () => {
       allowedStatus: 'provisional',
       reasons: ['Open blocking obligations prevent validated final claims.'],
       openBlockingObligationIds: ['obl.flux-convention'],
+      openAitpCallObligationIds: [],
       requiredActionIds: ['validate.check_convention'],
     });
   });
@@ -44,6 +45,7 @@ describe('research final gate', () => {
       allowedStatus: 'validated',
       reasons: [],
       openBlockingObligationIds: [],
+      openAitpCallObligationIds: [],
       requiredActionIds: [],
     });
   });
@@ -58,6 +60,64 @@ describe('research final gate', () => {
     expect(decision.outcome).toBe('downgrade');
     expect(decision.allowedStatus).toBe('checked');
     expect(decision.requiredActionIds).toEqual(['validate.check_source_support']);
+  });
+
+  it('downgrades when AITP required-now call obligations are still open', () => {
+    const decision = evaluateFinalGate({
+      requestedStatus: 'checked',
+      obligations: [],
+      workFrame: workFrame('checking'),
+      aitpCallObligations: [
+        {
+          id: 'aitp.policy.1.aitp-record-validation-result',
+          actionId: 'aitp.record_validation_result',
+          reason: 'open proof obligation requires typed evidence or validation',
+          requiredNow: true,
+          trustBoundary: true,
+          satisfied: false,
+          blockerRecorded: false,
+        },
+      ],
+    });
+
+    expect(decision).toMatchObject({
+      outcome: 'downgrade',
+      allowedStatus: 'exploratory',
+      reasons: expect.arrayContaining(['AITP required-now call obligations are still open.']),
+      openAitpCallObligationIds: ['aitp.policy.1.aitp-record-validation-result'],
+      requiredActionIds: ['aitp.record_validation_result'],
+    });
+  });
+
+  it('allows AITP call obligations that were satisfied or explicitly blocked', () => {
+    const decision = evaluateFinalGate({
+      requestedStatus: 'checked',
+      obligations: [],
+      workFrame: workFrame('checking'),
+      aitpCallObligations: [
+        {
+          id: 'aitp.policy.1.aitp-record-validation-result',
+          actionId: 'aitp.record_validation_result',
+          reason: 'validation was recorded',
+          requiredNow: true,
+          trustBoundary: true,
+          satisfied: true,
+          blockerRecorded: false,
+        },
+        {
+          id: 'aitp.policy.2.trace-open-backtrace',
+          actionId: 'trace.open_backtrace',
+          reason: 'source was unavailable',
+          requiredNow: true,
+          trustBoundary: true,
+          satisfied: false,
+          blockerRecorded: true,
+        },
+      ],
+    });
+
+    expect(decision.outcome).toBe('allow');
+    expect(decision.openAitpCallObligationIds).toEqual([]);
   });
 });
 

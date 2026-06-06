@@ -40,6 +40,7 @@ import {
   renderFinalGateContinuation,
   shouldApplyFinalGate,
   type FinalAnswerClaimStatus,
+  type FinalGateAitpCallObligation,
 } from '../../research-policy';
 import type { TelemetryPropertyValue } from '../../telemetry';
 import { gateImageFormatParts } from '../../tools/support/image-compress';
@@ -1311,12 +1312,14 @@ export class TurnFlow {
             domain: workFrame.domain,
             topic: workFrame.topic,
           });
+    const aitpCallObligations = this.finalGateAitpCallObligations(workFrame);
     if (
       !shouldApplyFinalGate({
         requestedStatus,
         hasWorkFrame: workFrame !== undefined,
         obligationCount: obligations.length,
         evidenceCount: evidenceRefs.length,
+        aitpCallObligationCount: aitpCallObligations.length,
       })
     ) {
       return undefined;
@@ -1325,11 +1328,38 @@ export class TurnFlow {
     const decision = evaluateFinalGate({
       requestedStatus,
       obligations,
+      aitpCallObligations,
       workFrame,
       evidenceRefs,
       sourceRefs: workFrame?.sourceRefs,
     });
     return decision.outcome === 'allow' ? undefined : renderFinalGateContinuation(decision);
+  }
+
+  private finalGateAitpCallObligations(
+    workFrame: Agent['workFrames']['active'],
+  ): readonly FinalGateAitpCallObligation[] {
+    if (workFrame?.contextPackId === undefined) return [];
+    const pack = this.agent.researchContext.getPack(workFrame.contextPackId);
+    const obligations = pack?.aitp?.compiled.callObligations ?? [];
+    if (obligations.length === 0) return [];
+    const trace = this.agent.researchAction.listRecentTrace(100, {
+      workFrameId: workFrame.id,
+      domain: workFrame.domain,
+      topic: workFrame.topic,
+    });
+    return obligations.map((obligation) => {
+      const related = trace.filter((item) => item.actionId === obligation.actionId);
+      return {
+        id: obligation.id,
+        actionId: obligation.actionId,
+        reason: obligation.reason,
+        requiredNow: obligation.requiredNow,
+        trustBoundary: obligation.trustBoundary,
+        satisfied: related.some((item) => item.outcome === 'pass'),
+        blockerRecorded: related.some((item) => item.outcome === 'blocked'),
+      };
+    });
   }
 
   private shouldTrackApiError(turnId: number): boolean {

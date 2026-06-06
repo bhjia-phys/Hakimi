@@ -18,9 +18,29 @@ export function evaluateFinalGate(input: FinalGateInput): FinalGateDecision {
   for (const obligation of openBlocking) {
     requiredActionIds.add(obligation.requiredActionId);
   }
+  const openAitpCalls = (input.aitpCallObligations ?? []).filter(
+    (obligation) => !obligation.satisfied && !obligation.blockerRecorded,
+  );
+  const requiredNowAitpCalls = openAitpCalls.filter((obligation) => obligation.requiredNow);
+  const trustBoundaryAitpCalls = openAitpCalls.filter((obligation) => obligation.trustBoundary);
+  for (const obligation of openAitpCalls) {
+    requiredActionIds.add(obligation.actionId);
+  }
 
   if (openBlocking.length > 0) {
     reasons.push('Open blocking obligations prevent validated final claims.');
+    allowedStatus = minStatus(allowedStatus, 'provisional');
+    outcome = input.mustBeValidated === true ? 'block' : 'downgrade';
+  }
+
+  if (requiredNowAitpCalls.length > 0 && STATUS_RANK[input.requestedStatus] >= 1) {
+    reasons.push('AITP required-now call obligations are still open.');
+    allowedStatus = minStatus(allowedStatus, 'exploratory');
+    outcome = input.mustBeValidated === true ? 'block' : 'downgrade';
+  }
+
+  if (trustBoundaryAitpCalls.length > 0 && STATUS_RANK[input.requestedStatus] >= 2) {
+    reasons.push('AITP trust-boundary prerequisites are still open.');
     allowedStatus = minStatus(allowedStatus, 'provisional');
     outcome = input.mustBeValidated === true ? 'block' : 'downgrade';
   }
@@ -43,6 +63,7 @@ export function evaluateFinalGate(input: FinalGateInput): FinalGateDecision {
     allowedStatus,
     reasons,
     openBlockingObligationIds: openBlocking.map((obligation) => obligation.id).toSorted(),
+    openAitpCallObligationIds: openAitpCalls.map((obligation) => obligation.id).toSorted(),
     requiredActionIds: [...requiredActionIds].toSorted(),
   };
 }
@@ -52,10 +73,15 @@ export function shouldApplyFinalGate(input: {
   readonly hasWorkFrame: boolean;
   readonly obligationCount: number;
   readonly evidenceCount: number;
+  readonly aitpCallObligationCount?: number | undefined;
 }): boolean {
   if (!input.hasWorkFrame) return false;
   if (input.requestedStatus === 'validated') return true;
-  return input.obligationCount > 0 || input.evidenceCount > 0;
+  return (
+    input.obligationCount > 0 ||
+    input.evidenceCount > 0 ||
+    (input.aitpCallObligationCount ?? 0) > 0
+  );
 }
 
 export function renderFinalGateContinuation(decision: FinalGateDecision): string {
@@ -69,6 +95,9 @@ export function renderFinalGateContinuation(decision: FinalGateDecision): string
   }
   if (decision.requiredActionIds.length > 0) {
     lines.push(`Required actions: ${decision.requiredActionIds.join(', ')}.`);
+  }
+  if (decision.openAitpCallObligationIds.length > 0) {
+    lines.push(`Open AITP call obligations: ${decision.openAitpCallObligationIds.join(', ')}.`);
   }
   if (decision.reasons.length > 0) {
     lines.push(`Reasons: ${decision.reasons.join(' ')}`);

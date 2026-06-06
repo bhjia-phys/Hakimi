@@ -52,6 +52,7 @@ That means a research action can search literature, inspect code, prepare patche
 - AITP `exploratory_records` inside a process graph slice now compile into first-class moments for question decomposition, relation-path brainstorming, source/backtrace continuity, original-question drift audit, and `aitp.record_exploratory_record`.
 - AITP `source_asset` nodes and `source_asset_ids` now compile into source-backtrace reminders, so raw papers, lectures, notes, code snapshots, datasets, and generated artifacts stay canonical in `.aitp` while Hakimi keeps only bounded WorkFrame context.
 - AITP `moment_policy.decisions` now compile into first-class Hakimi `callObligations`: required-now decisions become blocking action bindings, trust-changing prerequisites are surfaced in ContextPacks, and AITP `entrypoints` stay visible so the model knows which typed AITP write/preflight surface is expected.
+- Hakimi's final gate now reads active ContextPack AITP `callObligations`: unchecked required-now calls or trust-boundary prerequisites force a final-gate continuation and status downgrade unless the corresponding `ResearchAction` was recorded as passed or explicitly blocked.
 - AITP write moments now carry explicit bridge metadata inside `ResearchActionBinding.params`, so ContextPacks can show whether the next durable write should use `recordExploratoryRecord`, `createProofObligation`, `requestHumanCheckpoint`, or another constrained AITP bridge operation.
 - Hakimi sessions now auto-configure a narrow AITP CLI bridge for `aitp-v5 graph slice`, `aitp-v5 exploration record`, `aitp-v5 asset register`, `aitp-v5 checkpoint request`, `aitp-v5 research-state create-proof-obligation`, and AITP validation contract/result records. The bridge resolves `--base` from the current Agent cwd at call time, fetches an AITP slice before research-context injection only when a WorkFrame carries explicit `aitp:session:<id>` scope, executes only a configured AITP command with structured args, and keeps `.aitp` as the canonical record store.
 - `ResearchAction.execute_aitp_write_bridge` can now execute a configured AITP write bridge for exploratory records, source asset registration, proof obligations, validation contracts, validation results, and human-checkpoint requests. Successful writes are recorded as scoped `research_action.result_recorded` events with AITP evidence refs instead of becoming hidden side effects.
@@ -130,11 +131,11 @@ read a `process_graph_slice`, write a proof obligation and human checkpoint,
 and verify the resulting `.aitp` records. It is skipped in normal unit runs so
 Hakimi does not require Python/AITP dependencies just to typecheck.
 
-The remaining runtime work is enforcement depth, not schema ownership: the turn
-loop can fetch a scoped slice and expose AITP policy obligations, but later
-slices still need MCP-first execution, richer evidence-record write bridges,
-and stricter final-gate checks that verify required AITP calls were either
-completed or explicitly blocked before trust-sensitive answers.
+The remaining runtime work is execution depth, not schema ownership: the turn
+loop can fetch a scoped slice, preserve cached AITP context when no fresh slice
+is available, expose AITP policy obligations, and run a soft final-gate check
+over whether required AITP calls passed or were explicitly blocked. Later
+slices still need MCP-first execution and richer evidence-record write bridges.
 
 ## Relationship To Upstream
 
@@ -347,7 +348,9 @@ orientation view, so Hakimi compiles it into the current WorkFrame/context and
 recommended actions instead of saving it as Hakimi-owned truth. If the slice
 contains `moment_policy.decisions`, Hakimi compiles them into
 `callObligations`, `AITP required calls now`, and `AITP calls before trust
-change` reminders. Source asset records remain AITP-owned: Hakimi may mention
+change` reminders. At the final gate, open required calls downgrade the answer
+instead of letting a checked or validated claim silently cross the AITP policy
+boundary. Source asset records remain AITP-owned: Hakimi may mention
 `source_asset:<id>` in a ContextPack, but it should not recreate the raw asset
 store inside `.hakimi`.
 
