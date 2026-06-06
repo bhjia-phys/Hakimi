@@ -482,6 +482,11 @@ describe('ResearchActionTool', () => {
     expect(loaded.output).toContain('<source_stack_reconstruction_gaps>');
     expect(loaded.output).toContain('<source_stack_next_actions>');
     expect(loaded.output).toContain('<action>record_evidence_for_required_outputs:claim-route</action>');
+    expect(loaded.output).toContain('<source_reconstruction_review>');
+    expect(loaded.output).toContain('<source_reconstruction_review_open>');
+    expect(loaded.output).toContain('<source_reconstruction_review_packets>');
+    expect(loaded.output).toContain('<source_reconstruction_review_next_actions>');
+    expect(loaded.output).toContain('<action>source_reconstruction_review:claim-route</action>');
     expect(loaded.output).toContain('aitp.record_route_choice');
     expect(loaded.output).toContain('aitp.record_failed_route_lesson');
     expect(loaded.output).toContain('aitp.checkpoint_before_route_switch');
@@ -1243,6 +1248,38 @@ function routeStateSlicePayload() {
         'complete_source_reconstruction:claim-route',
         'review_source_reconstruction:claim-route',
       ],
+      truth_source: 'typed_records',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
+    source_reconstruction_review: {
+      kind: 'source_reconstruction_review_manifest',
+      claim_count: 1,
+      review_progress: {
+        passed: 0,
+        needs_revision: 0,
+        inconclusive: 0,
+        pending: 1,
+      },
+      items: [
+        {
+          topic_id: 'route-state',
+          claim_id: 'claim-route',
+          claim_statement: 'Route claim requires source reconstruction review.',
+          source_reconstruction_status: 'incomplete',
+          missing_components: ['reconstruction_path'],
+          review_status: 'pending',
+          review_result_ids: [],
+          latest_review_result: {},
+          reviewed_components: [],
+          remaining_actions: [],
+          review_packet_cli: 'aitp-v5 source reconstruction-review --claim claim-route',
+          result_cli: 'aitp-v5 source reconstruction-review-result --claim claim-route <args>',
+          next_actions: ['source_reconstruction_review', 'complete_source_reconstruction'],
+          can_update_claim_trust: false,
+        },
+      ],
+      next_actions: ['source_reconstruction_review:claim-route'],
       truth_source: 'typed_records',
       orientation_only: true,
       can_update_claim_trust: false,

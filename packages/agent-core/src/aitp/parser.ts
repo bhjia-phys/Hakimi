@@ -15,6 +15,8 @@ import type {
   AitpResearchMomentId,
   AitpRouteState,
   AitpRouteStateItem,
+  AitpSourceReconstructionReview,
+  AitpSourceReconstructionReviewItem,
   AitpSourceAssetIndexItem,
   AitpSourceBacktraceItem,
   AitpSourceStackCoverage,
@@ -48,6 +50,9 @@ export function parseAitpProcessGraphSlice(input: unknown): AitpProcessGraphSlic
     ),
     sourceStackCoverage: parseSourceStackCoverage(
       valueFor(input, 'source_stack_coverage', 'sourceStackCoverage'),
+    ),
+    sourceReconstructionReview: parseSourceReconstructionReview(
+      valueFor(input, 'source_reconstruction_review', 'sourceReconstructionReview'),
     ),
     relationNeighborhood: objectArray(input['relation_neighborhood']).map(
       parseRelationNeighborhoodItem,
@@ -296,6 +301,60 @@ function parseSourceStackCoverageItem(
     coverageStatus:
       stringValue(valueFor(raw, 'coverage_status', 'coverageStatus')) ??
       (claimId.length === 0 ? 'unknown' : 'evidence_gap'),
+    nextActions: stringArray(valueFor(raw, 'next_actions', 'nextActions')),
+    canUpdateClaimTrust:
+      booleanValue(valueFor(raw, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,
+  };
+}
+
+function parseSourceReconstructionReview(value: unknown): AitpSourceReconstructionReview {
+  if (!isRecord(value)) return emptySourceReconstructionReview();
+  return {
+    kind: stringValue(value['kind']) ?? 'source_reconstruction_review_manifest',
+    claimCount: numberValue(valueFor(value, 'claim_count', 'claimCount')) ?? 0,
+    reviewProgress: recordValue(valueFor(value, 'review_progress', 'reviewProgress')),
+    items: objectArray(value['items']).map(parseSourceReconstructionReviewItem),
+    nextActions: stringArray(valueFor(value, 'next_actions', 'nextActions')),
+    truthSource: stringValue(valueFor(value, 'truth_source', 'truthSource')) ?? 'typed_records',
+    orientationOnly: booleanValue(valueFor(value, 'orientation_only', 'orientationOnly')) ?? true,
+    canUpdateClaimTrust:
+      booleanValue(valueFor(value, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,
+  };
+}
+
+function emptySourceReconstructionReview(): AitpSourceReconstructionReview {
+  return {
+    kind: 'source_reconstruction_review_manifest',
+    claimCount: 0,
+    reviewProgress: {},
+    items: [],
+    nextActions: [],
+    truthSource: 'typed_records',
+    orientationOnly: true,
+    canUpdateClaimTrust: false,
+  };
+}
+
+function parseSourceReconstructionReviewItem(
+  raw: Record<string, unknown>,
+): AitpSourceReconstructionReviewItem {
+  return {
+    topicId: stringValue(valueFor(raw, 'topic_id', 'topicId')) ?? '',
+    claimId: stringValue(valueFor(raw, 'claim_id', 'claimId')) ?? '',
+    claimStatement: stringValue(valueFor(raw, 'claim_statement', 'claimStatement')) ?? '',
+    sourceReconstructionStatus:
+      stringValue(
+        valueFor(raw, 'source_reconstruction_status', 'sourceReconstructionStatus'),
+      ) ?? 'unknown',
+    missingComponents: stringArray(valueFor(raw, 'missing_components', 'missingComponents')),
+    reviewStatus: stringValue(valueFor(raw, 'review_status', 'reviewStatus')) ?? 'pending',
+    reviewResultIds: stringArray(valueFor(raw, 'review_result_ids', 'reviewResultIds')),
+    latestReviewResult: recordValue(valueFor(raw, 'latest_review_result', 'latestReviewResult')),
+    reviewedComponents: stringArray(valueFor(raw, 'reviewed_components', 'reviewedComponents')),
+    remainingActions: stringArray(valueFor(raw, 'remaining_actions', 'remainingActions')),
+    reviewPacketCli:
+      stringValue(valueFor(raw, 'review_packet_cli', 'reviewPacketCli')) ?? '',
+    resultCli: stringValue(valueFor(raw, 'result_cli', 'resultCli')) ?? '',
     nextActions: stringArray(valueFor(raw, 'next_actions', 'nextActions')),
     canUpdateClaimTrust:
       booleanValue(valueFor(raw, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,

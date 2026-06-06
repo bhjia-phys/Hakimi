@@ -101,6 +101,21 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
     if (pack.aitp.sourceStackCoverageNextActions.length > 0) {
       lines.push(`AITP source stack next actions: ${bounded(pack.aitp.sourceStackCoverageNextActions).join(', ')}`);
     }
+    if (pack.aitp.sourceReconstructionReviewClaimIds.length > 0) {
+      lines.push(`AITP source reconstruction review: ${bounded(pack.aitp.sourceReconstructionReviewClaimIds).join(', ')}`);
+    }
+    if (pack.aitp.sourceReconstructionReviewOpenClaimIds.length > 0) {
+      lines.push(`AITP source reconstruction review open: ${bounded(pack.aitp.sourceReconstructionReviewOpenClaimIds).join(', ')}`);
+    }
+    if (pack.aitp.sourceReconstructionReviewNeedsRevisionClaimIds.length > 0) {
+      lines.push(`AITP source reconstruction review needs revision: ${bounded(pack.aitp.sourceReconstructionReviewNeedsRevisionClaimIds).join(', ')}`);
+    }
+    if (pack.aitp.sourceReconstructionReviewInconclusiveClaimIds.length > 0) {
+      lines.push(`AITP source reconstruction review inconclusive: ${bounded(pack.aitp.sourceReconstructionReviewInconclusiveClaimIds).join(', ')}`);
+    }
+    if (pack.aitp.sourceReconstructionReviewNextActions.length > 0) {
+      lines.push(`AITP source reconstruction review next actions: ${bounded(pack.aitp.sourceReconstructionReviewNextActions).join(', ')}`);
+    }
     if (pack.aitp.trustBoundaryReasons.length > 0) {
       lines.push(`AITP trust boundary: ${bounded(pack.aitp.trustBoundaryReasons).join('; ')}`);
     }

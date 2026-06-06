@@ -1413,6 +1413,42 @@ function renderAitpSection(pack: ResearchContextPack): string {
       aitp.sourceStackCoverageNextActions,
       '    ',
     ),
+    renderBoundedStringList(
+      'source_reconstruction_review',
+      'claim',
+      aitp.sourceReconstructionReviewClaimIds,
+      '    ',
+    ),
+    renderBoundedStringList(
+      'source_reconstruction_review_open',
+      'claim',
+      aitp.sourceReconstructionReviewOpenClaimIds,
+      '    ',
+    ),
+    renderBoundedStringList(
+      'source_reconstruction_review_needs_revision',
+      'claim',
+      aitp.sourceReconstructionReviewNeedsRevisionClaimIds,
+      '    ',
+    ),
+    renderBoundedStringList(
+      'source_reconstruction_review_inconclusive',
+      'claim',
+      aitp.sourceReconstructionReviewInconclusiveClaimIds,
+      '    ',
+    ),
+    renderBoundedStringList(
+      'source_reconstruction_review_packets',
+      'claim',
+      aitp.sourceReconstructionReviewPacketClaimIds,
+      '    ',
+    ),
+    renderBoundedStringList(
+      'source_reconstruction_review_next_actions',
+      'action',
+      aitp.sourceReconstructionReviewNextActions,
+      '    ',
+    ),
     renderBoundedStringList('open_obligations', 'obligation', aitp.openObligationIds, '    '),
     renderBoundedStringList('required_calls', 'call', aitp.requiredCallIds, '    '),
     renderBoundedStringList(
