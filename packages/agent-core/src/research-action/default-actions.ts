@@ -332,6 +332,18 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     triggerHints: ['record exploration', 'brainstorm record', 'backtrace record', 'steering checkpoint'],
   }),
   action({
+    id: 'aitp.register_source_asset',
+    category: 'memory',
+    exposure: 'direct',
+    phase: 'source',
+    title: 'Register AITP source asset',
+    description:
+      'Ask AITP to register a canonical source asset identity for a paper, lecture, note, code snapshot, dataset, or generated artifact without treating it as claim evidence.',
+    inputKinds: ['SourceExcerpt', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    triggerHints: ['source asset', 'register source', 'raw paper', 'lecture', 'code snapshot'],
+  }),
+  action({
     id: 'aitp.record_derivation_checkpoint',
     category: 'derivation',
     exposure: 'direct',
@@ -353,6 +365,30 @@ export const DEFAULT_RESEARCH_ACTIONS = [
       'Ask AITP to create or preserve an open obligation instead of treating the gap as resolved in Hakimi.',
     outputKinds: ['LedgerEvent'],
     triggerHints: ['open obligation', 'open question', 'gap'],
+  }),
+  action({
+    id: 'aitp.create_validation_contract',
+    category: 'harness',
+    exposure: 'direct',
+    phase: 'validate',
+    title: 'Create AITP validation contract',
+    description:
+      'Ask AITP to create a typed validation contract before relying on a claim, derivation, numerical result, or source-supported transition.',
+    inputKinds: ['Claim', 'DerivationStep', 'Formula', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    triggerHints: ['validation contract', 'required checks', 'failure modes', 'validation plan'],
+  }),
+  action({
+    id: 'aitp.record_validation_result',
+    category: 'harness',
+    exposure: 'direct',
+    phase: 'validate',
+    title: 'Record AITP validation result',
+    description:
+      'Ask AITP to record a typed validation result linked to a contract and tool run instead of letting the model summarize validation informally.',
+    inputKinds: ['Claim', 'DerivationStep', 'Formula', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    triggerHints: ['validation result', 'checked outputs', 'tool run', 'record validation'],
   }),
   action({
     id: 'aitp.request_human_checkpoint',

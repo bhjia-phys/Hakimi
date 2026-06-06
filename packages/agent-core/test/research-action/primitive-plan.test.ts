@@ -72,16 +72,31 @@ describe('research primitive plan templates', () => {
 
   it('plans AITP write-bridge records through explicit ResearchAction calls', () => {
     const exploration = planFor('aitp.record_exploratory_record');
+    const sourceAsset = planFor('aitp.register_source_asset');
     const obligation = planFor('aitp.create_open_obligation');
+    const validationContract = planFor('aitp.create_validation_contract');
+    const validationResult = planFor('aitp.record_validation_result');
 
     expect(exploration.steps.map((step) => step.id)).toEqual([
       'execute-aitp-exploration-write',
     ]);
+    expect(sourceAsset.steps.map((step) => step.id)).toEqual([
+      'execute-aitp-source-asset-write',
+    ]);
     expect(obligation.steps.map((step) => step.id)).toEqual([
       'execute-aitp-obligation-write',
     ]);
+    expect(validationContract.steps.map((step) => step.id)).toEqual([
+      'execute-aitp-validation-contract-write',
+    ]);
+    expect(validationResult.steps.map((step) => step.id)).toEqual([
+      'execute-aitp-validation-result-write',
+    ]);
     expect(exploration.recording.evidenceRefs).toContain('aitp:exploratory_record:<id>');
+    expect(sourceAsset.recording.evidenceRefs).toContain('aitp:source_asset:<id>');
     expect(obligation.recording.evidenceRefs).toContain('aitp:proof_obligation:<id>');
+    expect(validationContract.recording.evidenceRefs).toContain('aitp:validation_contract:<id>');
+    expect(validationResult.recording.evidenceRefs).toContain('aitp:validation_result:<id>');
   });
 
   it('plans AITP trust-boundary checkpoints through AITP request plus human question', () => {

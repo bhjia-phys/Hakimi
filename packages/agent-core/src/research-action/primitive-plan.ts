@@ -352,6 +352,26 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['scope.compile_context_pack'],
   }),
   plan({
+    actionId: 'aitp.register_source_asset',
+    title: 'Register AITP source asset',
+    intent:
+      'Persist canonical identity, version anchors, hashes, and provenance links for raw source material through AITP.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'execute-aitp-source-asset-write',
+        kind: 'record',
+        title: 'Write source asset through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with registerSourceAsset after the source identity is formed.',
+        expectedEvidence: ['aitp:source_asset:<id>', 'source_asset_identity'],
+      }),
+    ],
+    recording: recording('aitp.register_source_asset', ['aitp:source_asset:<id>']),
+    followupActionIds: ['trace.follow_source_dependency', 'scope.compile_context_pack'],
+  }),
+  plan({
     actionId: 'aitp.create_open_obligation',
     title: 'Create AITP open obligation',
     intent:
@@ -369,6 +389,46 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
       }),
     ],
     recording: recording('aitp.create_open_obligation', ['aitp:proof_obligation:<id>']),
+    followupActionIds: ['scope.compile_context_pack'],
+  }),
+  plan({
+    actionId: 'aitp.create_validation_contract',
+    title: 'Create AITP validation contract',
+    intent:
+      'Persist required checks, failure modes, and required evidence outputs before relying on a risky claim or derivation.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'execute-aitp-validation-contract-write',
+        kind: 'record',
+        title: 'Write validation contract through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with createValidationContract before treating later checks as trust-relevant.',
+        expectedEvidence: ['aitp:validation_contract:<id>', 'required_checks'],
+      }),
+    ],
+    recording: recording('aitp.create_validation_contract', ['aitp:validation_contract:<id>']),
+    followupActionIds: ['scope.compile_context_pack'],
+  }),
+  plan({
+    actionId: 'aitp.record_validation_result',
+    title: 'Record AITP validation result',
+    intent:
+      'Persist the checked outputs, covered failure modes, tool run, and validation status through AITP.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'execute-aitp-validation-result-write',
+        kind: 'record',
+        title: 'Write validation result through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with recordValidationResult after the primitive validation evidence exists.',
+        expectedEvidence: ['aitp:validation_result:<id>', 'tool_run_id', 'checked_outputs'],
+      }),
+    ],
+    recording: recording('aitp.record_validation_result', ['aitp:validation_result:<id>']),
     followupActionIds: ['scope.compile_context_pack'],
   }),
   plan({
