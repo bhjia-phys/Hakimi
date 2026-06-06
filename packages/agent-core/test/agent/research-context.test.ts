@@ -200,6 +200,8 @@ describe('ResearchContextManager', () => {
     );
 
     expect(pack.aitp?.contextLines.join('\n')).toContain('Source gaps: claim-fqhe');
+    expect(pack.aitp?.sourceAssetIds).toEqual(['source-asset-edge-counting']);
+    expect(pack.aitp?.sourceAssetMissingHashIds).toEqual(['source-asset-edge-counting']);
     expect(pack.actionBindings.map((item) => item.actionId)).toEqual(
       expect.arrayContaining([
         'trace.audit_original_question_drift',
@@ -248,6 +250,8 @@ describe('ResearchContextManager', () => {
     expect(reminder).toContain('AITP pivot-required routes: route-source-first');
     expect(reminder).toContain('AITP provenance gaps: gap-code-state');
     expect(reminder).toContain('AITP code provenance gaps: gap-code-state');
+    expect(reminder).toContain('AITP source assets: source-asset-edge-counting');
+    expect(reminder).toContain('AITP source assets missing hashes: source-asset-edge-counting');
     expect(reminder).toContain('Theory reasoning for');
     expect(reminder).toContain('source_dependency_backtrace');
     expect(reminder).toContain('original_question_continuity_guard');
@@ -438,6 +442,21 @@ function aitpSlicePayload() {
         required_before_trust_change: false,
         strict_boundary: 'before_using_as_evidence_validation_benchmark_memory_or_checked_conclusion',
         blocking_when_used_as: ['benchmark_basis'],
+        orientation_only: true,
+        can_update_claim_trust: false,
+      },
+    ],
+    source_asset_index: [
+      {
+        asset_id: 'source-asset-edge-counting',
+        topic_id: 'fqhe-literature',
+        claim_id: 'claim-fqhe',
+        asset_type: 'paper',
+        uri: 'arxiv:2601.00001',
+        title: 'Edge counting source asset',
+        source_kind: 'literature',
+        hash_status: 'missing',
+        target_refs: ['source_asset:source-asset-edge-counting'],
         orientation_only: true,
         can_update_claim_trust: false,
       },

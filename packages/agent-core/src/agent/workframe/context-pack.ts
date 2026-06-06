@@ -77,6 +77,15 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
     if (pack.aitp.artifactProvenanceGapIds.length > 0) {
       lines.push(`AITP artifact provenance gaps: ${bounded(pack.aitp.artifactProvenanceGapIds).join(', ')}`);
     }
+    if (pack.aitp.sourceAssetIds.length > 0) {
+      lines.push(`AITP source assets: ${bounded(pack.aitp.sourceAssetIds).join(', ')}`);
+    }
+    if (pack.aitp.sourceAssetMissingHashIds.length > 0) {
+      lines.push(`AITP source assets missing hashes: ${bounded(pack.aitp.sourceAssetMissingHashIds).join(', ')}`);
+    }
+    if (pack.aitp.sourceAssetDuplicateHashIds.length > 0) {
+      lines.push(`AITP source assets with duplicate hashes: ${bounded(pack.aitp.sourceAssetDuplicateHashIds).join(', ')}`);
+    }
     if (pack.aitp.trustBoundaryReasons.length > 0) {
       lines.push(`AITP trust boundary: ${bounded(pack.aitp.trustBoundaryReasons).join('; ')}`);
     }

@@ -170,6 +170,9 @@ function collectAitp(
     toolProvenanceGapIds: input.aitp.provenance.tool.map((item) => item.id),
     validationProvenanceGapIds: input.aitp.provenance.validation.map((item) => item.id),
     artifactProvenanceGapIds: input.aitp.provenance.artifact.map((item) => item.id),
+    sourceAssetIds: input.aitp.sourceAssets.all.map((item) => item.id),
+    sourceAssetMissingHashIds: input.aitp.sourceAssets.missingHash.map((item) => item.id),
+    sourceAssetDuplicateHashIds: input.aitp.sourceAssets.duplicateHash.map((item) => item.id),
     trustBoundaryReasons: input.aitp.trust.trustBoundaryReasons,
     openObligationIds: [
       ...input.aitp.obligations.blocking,

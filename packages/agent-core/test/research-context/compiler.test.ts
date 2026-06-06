@@ -124,6 +124,9 @@ describe('compileResearchContextPack', () => {
       pivotRequiredRouteIds: ['route-source-first'],
       provenanceGapIds: ['gap-code-state'],
       codeProvenanceGapIds: ['gap-code-state'],
+      sourceAssetIds: ['source-asset-edge-counting'],
+      sourceAssetMissingHashIds: ['source-asset-edge-counting'],
+      sourceAssetDuplicateHashIds: [],
       openObligationIds: ['obligation-source'],
       requiredCallIds: expect.arrayContaining([
         expect.stringContaining('aitp-record-evidence'),
@@ -135,6 +138,9 @@ describe('compileResearchContextPack', () => {
         expect.stringContaining('aitp-record-reference-location'),
       ]),
     });
+    expect(pack.aitp?.contextLines.join('\n')).toContain(
+      'Source asset index: source_asset:source-asset-edge-counting [paper/missing]',
+    );
     expect(pack.actionBindings.map((item) => item.actionId)).toEqual(
       expect.arrayContaining([
         'aitp.create_open_obligation',
@@ -397,6 +403,31 @@ function aitpSlicePayload() {
         required_before_trust_change: false,
         strict_boundary: 'before_using_as_evidence_validation_benchmark_memory_or_checked_conclusion',
         blocking_when_used_as: ['benchmark_basis'],
+        orientation_only: true,
+        can_update_claim_trust: false,
+      },
+    ],
+    source_asset_index: [
+      {
+        asset_id: 'source-asset-edge-counting',
+        topic_id: 'fqhe-cs-effective-theory',
+        claim_id: 'claim-fqhe',
+        asset_type: 'paper',
+        uri: 'arxiv:2601.00001',
+        title: 'Edge counting source asset',
+        source_kind: 'literature',
+        hash_status: 'missing',
+        reference_location_ids: ['ref-edge-counting'],
+        reference_locations: [
+          {
+            reference_location_id: 'ref-edge-counting',
+            uri: 'arxiv:2601.00001#sec2',
+            label: 'Section 2',
+            location_type: 'paper_section',
+            status: 'located',
+          },
+        ],
+        target_refs: ['source_asset:source-asset-edge-counting'],
         orientation_only: true,
         can_update_claim_trust: false,
       },

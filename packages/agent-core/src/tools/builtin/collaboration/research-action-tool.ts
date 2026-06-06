@@ -1370,6 +1370,19 @@ function renderAitpSection(pack: ResearchContextPack): string {
     renderBoundedStringList('blocked_routes', 'route', aitp.blockedRouteIds, '    '),
     renderBoundedStringList('abandoned_routes', 'route', aitp.abandonedRouteIds, '    '),
     renderBoundedStringList('pivot_required_routes', 'route', aitp.pivotRequiredRouteIds, '    '),
+    renderBoundedStringList('source_assets', 'source_asset', aitp.sourceAssetIds, '    '),
+    renderBoundedStringList(
+      'source_assets_missing_hashes',
+      'source_asset',
+      aitp.sourceAssetMissingHashIds,
+      '    ',
+    ),
+    renderBoundedStringList(
+      'source_assets_duplicate_hashes',
+      'source_asset',
+      aitp.sourceAssetDuplicateHashIds,
+      '    ',
+    ),
     renderBoundedStringList('open_obligations', 'obligation', aitp.openObligationIds, '    '),
     renderBoundedStringList('required_calls', 'call', aitp.requiredCallIds, '    '),
     renderBoundedStringList(
