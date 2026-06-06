@@ -53,6 +53,7 @@ That means a research action can search literature, inspect code, prepare patche
 - AITP `source_asset` nodes and `source_asset_ids` now compile into source-backtrace reminders, so raw papers, lectures, notes, code snapshots, datasets, and generated artifacts stay canonical in `.aitp` while Hakimi keeps only bounded WorkFrame context.
 - AITP `moment_policy.decisions` now compile into first-class Hakimi `callObligations`: required-now decisions become blocking action bindings, trust-changing prerequisites are surfaced in ContextPacks, and AITP `entrypoints` stay visible so the model knows which typed AITP write/preflight surface is expected.
 - AITP lifecycle trigger fields such as `lifecycle_phases`, `trigger_conditions`, `recording_threshold`, `trust_boundary_inputs`, and `recommended_host_behavior` are preserved as orientation-only policy projections on action params and call obligations, so the model and final gate can see why a ResearchAction belongs in pre-turn, pre-action, or pre-final flow without creating a Hakimi record.
+- AITP theory-reasoning handles from exploratory records and `payload_hints[].draft`, including relation-path questions, backtrace targets, definition/derivation/source dependency questions, and original-question guards, compile into `params.theoryReasoning` and a compact ContextPack line. Hakimi uses them to constrain local physics brainstorming/backtrace prompts, not as canonical memory.
 - Hakimi's final gate now reads active ContextPack AITP `callObligations`: unchecked required-now calls or trust-boundary prerequisites force a final-gate continuation and status downgrade unless the corresponding `ResearchAction` was recorded as passed or explicitly blocked.
 - AITP write moments now carry explicit bridge metadata inside `ResearchActionBinding.params`, so ContextPacks can show whether the next durable write should use `recordEvidence`, `recordReferenceLocation`, `recordToolRun`, `recordExploratoryRecord`, `createProofObligation`, `requestHumanCheckpoint`, or another constrained AITP bridge operation.
 - Hakimi sessions now auto-configure a narrow AITP CLI bridge for `aitp-v5 graph slice`, `aitp-v5 evidence record`, `aitp-v5 tool run record`, `aitp-v5 reference location record`, `aitp-v5 exploration record`, `aitp-v5 asset register`, `aitp-v5 checkpoint request`, `aitp-v5 research-state create-proof-obligation`, and AITP validation contract/result records. The bridge resolves `--base` from the current Agent cwd at call time, fetches an AITP slice before research-context injection only when a WorkFrame carries explicit `aitp:session:<id>` scope, executes only a configured AITP command with structured args, and keeps `.aitp` as the canonical record store.
@@ -101,7 +102,10 @@ fields needed for the next typed write without turning that draft into Hakimi
 truth. Lifecycle trigger fields from AITP policy are projected the same way:
 they annotate `ResearchActionBinding.params` and `callObligations` with
 pre-turn/pre-action/pre-final timing reasons, but they remain policy guidance
-from AITP and do not cause Hakimi to record anything automatically. AITP owns source asset identity, hashes, version anchors, and raw asset
+from AITP and do not cause Hakimi to record anything automatically. Theory
+reasoning fields are also projected as `params.theoryReasoning`: they preserve
+local questions, relation paths, backtrace targets, and original-question guards
+for the current WorkFrame prompt without becoming Hakimi canonical memory. AITP owns source asset identity, hashes, version anchors, and raw asset
 provenance; Hakimi only compiles the currently relevant source asset ids into a
 bounded WorkFrame prompt. Hakimi sessions now create a narrow
 dynamic CLI bridge by default: the process-graph provider calls

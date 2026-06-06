@@ -69,6 +69,12 @@ export interface AitpSourceBacktraceItem {
   readonly status?: string | undefined;
   readonly reason?: string | undefined;
   readonly gap?: string | undefined;
+  readonly reasoningMoves: readonly string[];
+  readonly backtraceTargets: readonly string[];
+  readonly definitionBoundaryQuestions: readonly string[];
+  readonly derivationBacktraceQuestions: readonly string[];
+  readonly sourceDependencyQuestions: readonly string[];
+  readonly originalQuestionGuard: readonly string[];
 }
 
 export interface AitpRelationNeighborhoodItem {
@@ -79,6 +85,11 @@ export interface AitpRelationNeighborhoodItem {
   readonly status?: string | undefined;
   readonly reason?: string | undefined;
   readonly sourceRefs: readonly string[];
+  readonly reasoningMoves: readonly string[];
+  readonly candidatePaths: readonly string[];
+  readonly relationPathQuestions: readonly string[];
+  readonly definitionBoundaryQuestions: readonly string[];
+  readonly originalQuestionGuard: readonly string[];
 }
 
 export interface AitpExploratoryRecordItem {
@@ -93,6 +104,13 @@ export interface AitpExploratoryRecordItem {
   readonly relationIds: readonly string[];
   readonly sourceRefs: readonly string[];
   readonly candidatePaths: readonly string[];
+  readonly reasoningMoves: readonly string[];
+  readonly backtraceTargets: readonly string[];
+  readonly relationPathQuestions: readonly string[];
+  readonly definitionBoundaryQuestions: readonly string[];
+  readonly derivationBacktraceQuestions: readonly string[];
+  readonly sourceDependencyQuestions: readonly string[];
+  readonly originalQuestionGuard: readonly string[];
   readonly unresolvedPoints: readonly string[];
   readonly nextActions: readonly string[];
 }
@@ -235,6 +253,20 @@ export interface AitpCallObligation {
   readonly requiredBeforeTrustChange: readonly string[];
   readonly trustBoundary: boolean;
   readonly lifecycleTrigger: AitpLifecycleTriggerInfo;
+}
+
+export interface AitpTheoryReasoningProjection {
+  readonly moves: readonly string[];
+  readonly prompts: readonly string[];
+  readonly whyQuestions?: readonly string[];
+  readonly relationTargets?: readonly string[];
+  readonly relationPathQuestions?: unknown;
+  readonly backtraceTargets?: unknown;
+  readonly definitionBoundaryQuestions?: unknown;
+  readonly derivationBacktraceQuestions?: readonly string[];
+  readonly sourceDependencyQuestions?: unknown;
+  readonly originalQuestionGuard?: unknown;
+  readonly reasoningMoves?: unknown;
 }
 
 export interface AitpObligationSummary {
