@@ -599,6 +599,13 @@ function writeBridgeForMoment(
         requiredFields: ['worktreePath', 'repoId', 'topicId', 'claimId'],
         targetRefs: moment.targetRefs,
       }, obligation);
+    case 'aitp.attach_artifact':
+      return withPayloadDraft({
+        operation: 'attachArtifact',
+        cli: 'aitp-v5 research-state attach-artifact',
+        requiredFields: ['topicId', 'claimId', 'artifactType', 'uri', 'summary'],
+        targetRefs: moment.targetRefs,
+      }, obligation);
     case 'aitp.record_reference_location':
       return withPayloadDraft({
         operation: 'recordReferenceLocation',
@@ -705,6 +712,8 @@ function recordActionForOperation(operation: string): string | undefined {
       return 'record_tool_run';
     case 'captureCodeStateAuto':
       return 'capture_code_state_auto';
+    case 'attachArtifact':
+      return 'attach_artifact';
     case 'recordReferenceLocation':
       return 'record_reference_location';
     case 'createProofObligation':

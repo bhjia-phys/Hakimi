@@ -260,7 +260,17 @@ describe('AITP process graph slice adapter', () => {
         provenanceGap: expect.objectContaining({ id: 'gap-code-state' }),
       },
     });
-    expect(actionById.get('aitp.attach_artifact')?.params?.['writeBridge']).toBeUndefined();
+    expect(actionById.get('aitp.attach_artifact')).toMatchObject({
+      priority: 'high',
+      params: {
+        provenanceGap: expect.objectContaining({ id: 'gap-benchmark-artifact' }),
+        writeBridge: {
+          operation: 'attachArtifact',
+          cli: 'aitp-v5 research-state attach-artifact',
+          requiredFields: ['topicId', 'claimId', 'artifactType', 'uri', 'summary'],
+        },
+      },
+    });
     expect(compiled.actionRecommendations.map((binding) => binding.priority)).not.toContain('blocking');
     expect(compiled.callObligations).toEqual([]);
     expect(compiled.reminders.join('\n')).toContain(

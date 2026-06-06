@@ -57,8 +57,8 @@ That means a research action can search literature, inspect code, prepare patche
 - AITP `route_state` now compiles into native route summaries, WorkFrame reminders, ContextPack XML `<live_routes>`, `<blocked_routes>`, `<abandoned_routes>`, and `<pivot_required_routes>`, plus `aitp.record_route_choice`, `aitp.record_failed_route_lesson`, and `aitp.checkpoint_before_route_switch` recommendations. Hakimi treats ordinary route notes as process-continuity guidance; they only become final-gate blockers when AITP explicitly marks `final_gate_required` or `required_before_trust_change`.
 - AITP `provenance_gaps[]` now compile into provenance summaries, WorkFrame reminder lines, ContextPack provenance fields, and capture-oriented `ResearchAction` bindings such as `aitp.register_source_asset`, `aitp.capture_code_state_auto`, `aitp.record_tool_run`, `aitp.attach_artifact`, and `code.capture_git_diff_observation`. Ordinary source/code/tool/artifact gaps are reuse-before-trust guidance, not final-gate blockers, unless AITP explicitly marks them as required before a trust change.
 - Hakimi's final gate now reads active ContextPack AITP `callObligations`: unchecked required-now calls or trust-boundary prerequisites force a final-gate continuation and status downgrade unless the corresponding `ResearchAction` was recorded as passed or explicitly blocked.
-- AITP write moments now carry explicit bridge metadata inside `ResearchActionBinding.params`, so ContextPacks can show whether the next durable write should use `recordEvidence`, `recordReferenceLocation`, `recordToolRun`, `recordExploratoryRecord`, `captureCodeStateAuto`, `createProofObligation`, `requestHumanCheckpoint`, or another constrained AITP bridge operation.
-- Hakimi sessions now auto-configure a narrow AITP CLI bridge for `aitp-v5 graph slice`, `aitp-v5 evidence record`, `aitp-v5 tool run record`, `aitp-v5 reference location record`, `aitp-v5 exploration record`, `aitp-v5 route record`, `aitp-v5 asset register`, `aitp-v5 code state auto`, `aitp-v5 checkpoint request`, `aitp-v5 research-state create-proof-obligation`, and AITP validation contract/result records. The bridge resolves `--base` from the current Agent cwd at call time, fetches an AITP slice before research-context injection only when a WorkFrame carries explicit `aitp:session:<id>` scope, executes only a configured AITP command with structured args, and keeps `.aitp` as the canonical record store.
+- AITP write moments now carry explicit bridge metadata inside `ResearchActionBinding.params`, so ContextPacks can show whether the next durable write should use `recordEvidence`, `recordReferenceLocation`, `recordToolRun`, `recordExploratoryRecord`, `captureCodeStateAuto`, `attachArtifact`, `createProofObligation`, `requestHumanCheckpoint`, or another constrained AITP bridge operation.
+- Hakimi sessions now auto-configure a narrow AITP CLI bridge for `aitp-v5 graph slice`, `aitp-v5 evidence record`, `aitp-v5 tool run record`, `aitp-v5 reference location record`, `aitp-v5 exploration record`, `aitp-v5 route record`, `aitp-v5 asset register`, `aitp-v5 code state auto`, `aitp-v5 research-state attach-artifact`, `aitp-v5 checkpoint request`, `aitp-v5 research-state create-proof-obligation`, and AITP validation contract/result records. The bridge resolves `--base` from the current Agent cwd at call time, fetches an AITP slice before research-context injection only when a WorkFrame carries explicit `aitp:session:<id>` scope, executes only a configured AITP command with structured args, and keeps `.aitp` as the canonical record store.
 - `ResearchAction.execute_aitp_write_bridge` can now execute a configured AITP write bridge for evidence records, tool-run provenance, reference locations, exploratory records, source asset registration, auto-captured git code state, proof obligations, validation contracts, validation results, and human-checkpoint requests. Successful writes are recorded as scoped `research_action.result_recorded` events with AITP evidence refs instead of becoming hidden side effects.
 - A native bridge smoke now verifies the QG/MIPT-shaped loop from fake AITP `process_graph_slice` to Hakimi `ContextPack` action bindings, `writeBridge` metadata, and constrained AITP CLI write-back for proof obligations, source-reconstruction evidence, and human checkpoints. This proves the local runtime contract without requiring Python/AITP dependencies during Hakimi unit tests.
 - Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
@@ -122,17 +122,22 @@ prerequisite explicitly. AITP `provenance_gaps[]` are projected through the
 same boundary as source/code/tool/artifact capture hints: Hakimi summarizes the
 gap ids, renders source/code/artifact reminders, and recommends capture actions
 such as `aitp.register_source_asset`, `aitp.capture_code_state_auto`,
-`aitp.record_tool_run`, and `aitp.attach_artifact`. These gaps are not Hakimi
-truth and do not block the final gate by default; they become strict only when
-AITP marks a final/trust prerequisite explicitly. AITP owns source asset
+`aitp.record_tool_run`, and `aitp.attach_artifact`. `aitp.attach_artifact`
+now carries an `attachArtifact` write bridge for
+`aitp-v5 research-state attach-artifact`, so benchmark logs, validation outputs,
+patches, plots, JSON results, and generated files can be attached by reference
+before reuse. These gaps are not Hakimi truth and do not block the final gate by
+default; they become strict only when AITP marks a final/trust prerequisite
+explicitly. AITP owns source asset
 identity, hashes, version anchors, and raw asset provenance; Hakimi only
 compiles the currently relevant source asset ids into a bounded WorkFrame
 prompt. Hakimi sessions now create a narrow
 dynamic CLI bridge by default: the process-graph provider calls
 `aitp-v5 graph slice` with `--base` resolved from the current Agent cwd, and the
-write bridge covers exploratory records, source asset registration, human
-checkpoint requests, proof-obligation creation, evidence records, tool-run
-provenance, reference locations, auto-captured code state, and validation contract/result
+write bridge covers exploratory records, source asset registration, artifact
+attachment, human checkpoint requests, proof-obligation creation, evidence
+records, tool-run provenance, reference locations, auto-captured code state,
+and validation contract/result
 records. SDK callers can still provide explicit bridges or disable automatic
 AITP bridge wiring for isolated tests and non-AITP deployments.
 Ordinary `record_evidence_or_validation` policy decisions prefer
@@ -148,7 +153,7 @@ For the current AITP CLI write surface, the model-facing `ResearchAction` tool
 now has an `execute_aitp_write_bridge` action. It accepts only a configured
 bridge plus structured payloads for `recordExploratoryRecord`,
 `registerSourceAsset`, `recordEvidence`, `recordToolRun`,
-`recordReferenceLocation`, `captureCodeStateAuto`, `createProofObligation`, `createValidationContract`,
+`recordReferenceLocation`, `captureCodeStateAuto`, `attachArtifact`, `createProofObligation`, `createValidationContract`,
 `recordValidationResult`, and `requestHumanCheckpoint`, then records the result
 as a normal WorkFrame-scoped research action. If no AITP write bridge is
 configured, it fails closed.
@@ -320,7 +325,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - Post-0.13.0 development has started the AITP-native bridge layer: `packages/agent-core/src/aitp/cli-bridge.ts` can read AITP process graph slices, write AITP exploratory records, and provide a WorkFrame-scoped slice provider. Compiled slices now flow into `ResearchContextPack`, research-context injection, and runtime action bindings, so WorkFrame reminders can carry AITP obligations, source gaps, relation-path brainstorms, and original-question drift checks in the same model turn.
 - The AITP-native bridge now has a focused fake-runner smoke for the core contract: graph slice consumption, moment-policy/action-binding compilation, `writeBridge` hints, proof-obligation write-back, evidence write-back, and human-checkpoint write-back. `ResearchAction.execute_aitp_write_bridge` also gives configured sessions a model-facing execution path for evidence, tool-run, reference-location, exploratory-record, source-asset, proof-obligation, validation-contract, validation-result, and human-checkpoint writes. An opt-in real AITP CLI smoke (`HAKIMI_AITP_REAL_CLI_SMOKE=1`) now exercises a real topic store when AITP Python dependencies are installed; MCP-first execution and richer automatic payload drafting remain the next integration lane.
 - The AITP route-state projection now consumes the current v5 route contract (`routes` plus `*_route_ids`) instead of inventing a Hakimi-only `pivot` status. Route refs are normalized to `research_route:<id>`, pivot-required routes appear in ContextPack XML as `<pivot_required_routes>`, and ordinary route moments stay non-blocking unless the AITP moment policy declares an explicit final/trust prerequisite.
-- The AITP provenance-gap projection now consumes `provenance_gaps[]` as source/code/tool/validation/artifact capture guidance, renders gap ids into WorkFrame reminders and ContextPack fields, recommends capture actions, and exposes a `captureCodeStateAuto` write bridge for `aitp-v5 code state auto`. Provenance gaps stay non-blocking unless AITP marks them as required before trust can change.
+- The AITP provenance-gap projection now consumes `provenance_gaps[]` as source/code/tool/validation/artifact capture guidance, renders gap ids into WorkFrame reminders and ContextPack fields, recommends capture actions, and exposes `captureCodeStateAuto` plus `attachArtifact` write bridges for `aitp-v5 code state auto` and `aitp-v5 research-state attach-artifact`. Provenance gaps stay non-blocking unless AITP marks them as required before trust can change.
 
 ## Development
 
