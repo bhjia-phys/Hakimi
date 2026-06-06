@@ -1383,6 +1383,36 @@ function renderAitpSection(pack: ResearchContextPack): string {
       aitp.sourceAssetDuplicateHashIds,
       '    ',
     ),
+    renderBoundedStringList(
+      'source_stack_coverage',
+      'claim',
+      aitp.sourceStackCoverageClaimIds,
+      '    ',
+    ),
+    renderBoundedStringList(
+      'source_stack_evidence_gaps',
+      'claim',
+      aitp.sourceStackEvidenceGapClaimIds,
+      '    ',
+    ),
+    renderBoundedStringList(
+      'source_stack_reconstruction_gaps',
+      'claim',
+      aitp.sourceStackReconstructionGapClaimIds,
+      '    ',
+    ),
+    renderBoundedStringList(
+      'source_stack_review_gaps',
+      'claim',
+      aitp.sourceStackReviewGapClaimIds,
+      '    ',
+    ),
+    renderBoundedStringList(
+      'source_stack_next_actions',
+      'action',
+      aitp.sourceStackCoverageNextActions,
+      '    ',
+    ),
     renderBoundedStringList('open_obligations', 'obligation', aitp.openObligationIds, '    '),
     renderBoundedStringList('required_calls', 'call', aitp.requiredCallIds, '    '),
     renderBoundedStringList(

@@ -173,6 +173,13 @@ function collectAitp(
     sourceAssetIds: input.aitp.sourceAssets.all.map((item) => item.id),
     sourceAssetMissingHashIds: input.aitp.sourceAssets.missingHash.map((item) => item.id),
     sourceAssetDuplicateHashIds: input.aitp.sourceAssets.duplicateHash.map((item) => item.id),
+    sourceStackCoverageClaimIds: input.aitp.sourceStackCoverage.all.map((item) => item.claimId),
+    sourceStackEvidenceGapClaimIds:
+      input.aitp.sourceStackCoverage.missingRequiredOutputClaimIds,
+    sourceStackReconstructionGapClaimIds:
+      input.aitp.sourceStackCoverage.missingSourceComponentClaimIds,
+    sourceStackReviewGapClaimIds: input.aitp.sourceStackCoverage.reviewGapClaimIds,
+    sourceStackCoverageNextActions: input.aitp.sourceStackCoverage.nextActions,
     trustBoundaryReasons: input.aitp.trust.trustBoundaryReasons,
     openObligationIds: [
       ...input.aitp.obligations.blocking,

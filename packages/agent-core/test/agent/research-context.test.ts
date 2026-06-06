@@ -202,6 +202,9 @@ describe('ResearchContextManager', () => {
     expect(pack.aitp?.contextLines.join('\n')).toContain('Source gaps: claim-fqhe');
     expect(pack.aitp?.sourceAssetIds).toEqual(['source-asset-edge-counting']);
     expect(pack.aitp?.sourceAssetMissingHashIds).toEqual(['source-asset-edge-counting']);
+    expect(pack.aitp?.sourceStackCoverageClaimIds).toEqual(['claim-fqhe']);
+    expect(pack.aitp?.sourceStackEvidenceGapClaimIds).toEqual(['claim-fqhe']);
+    expect(pack.aitp?.sourceStackReconstructionGapClaimIds).toEqual(['claim-fqhe']);
     expect(pack.actionBindings.map((item) => item.actionId)).toEqual(
       expect.arrayContaining([
         'trace.audit_original_question_drift',
@@ -252,6 +255,10 @@ describe('ResearchContextManager', () => {
     expect(reminder).toContain('AITP code provenance gaps: gap-code-state');
     expect(reminder).toContain('AITP source assets: source-asset-edge-counting');
     expect(reminder).toContain('AITP source assets missing hashes: source-asset-edge-counting');
+    expect(reminder).toContain('AITP source stack coverage: claim-fqhe');
+    expect(reminder).toContain('AITP source stack evidence gaps: claim-fqhe');
+    expect(reminder).toContain('AITP source stack reconstruction gaps: claim-fqhe');
+    expect(reminder).toContain('AITP source stack next actions: record_evidence_for_required_outputs:claim-fqhe');
     expect(reminder).toContain('Theory reasoning for');
     expect(reminder).toContain('source_dependency_backtrace');
     expect(reminder).toContain('original_question_continuity_guard');
@@ -461,6 +468,60 @@ function aitpSlicePayload() {
         can_update_claim_trust: false,
       },
     ],
+    source_stack_coverage: {
+      kind: 'source_stack_coverage_manifest',
+      claim_count: 1,
+      coverage_status_counts: {
+        complete: 0,
+        evidence_gap: 1,
+        reconstruction_gap: 0,
+        review_gap: 0,
+      },
+      missing_required_output_counts: {
+        scoped_claim: 1,
+        evidence_or_provenance: 1,
+      },
+      source_component_gap_counts: {
+        reconstruction_path: 1,
+      },
+      source_review_status_counts: {
+        pending: 1,
+      },
+      items: [
+        {
+          topic_id: 'fqhe-literature',
+          claim_id: 'claim-fqhe',
+          claim_statement: 'Sector counting identifies the edge CFT.',
+          risk_level: 'guided',
+          required_outputs: ['scoped_claim', 'evidence_or_provenance'],
+          satisfied_required_outputs: [],
+          missing_required_outputs: ['scoped_claim', 'evidence_or_provenance'],
+          evidence_ids_by_output: {
+            scoped_claim: [],
+            evidence_or_provenance: [],
+          },
+          source_reconstruction_complete: false,
+          missing_source_components: ['reconstruction_path'],
+          source_reconstruction_review_status: 'pending',
+          latest_source_review_result_id: '',
+          coverage_status: 'evidence_gap',
+          next_actions: [
+            'record_evidence_for_required_outputs:claim-fqhe',
+            'complete_source_reconstruction:claim-fqhe',
+            'review_source_reconstruction:claim-fqhe',
+          ],
+          can_update_claim_trust: false,
+        },
+      ],
+      next_actions: [
+        'record_evidence_for_required_outputs:claim-fqhe',
+        'complete_source_reconstruction:claim-fqhe',
+        'review_source_reconstruction:claim-fqhe',
+      ],
+      truth_source: 'typed_records',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
     trust_boundary_reasons: ['this API cannot update claim trust'],
     recommended_moments: [
       {

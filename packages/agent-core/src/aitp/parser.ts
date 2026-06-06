@@ -17,6 +17,8 @@ import type {
   AitpRouteStateItem,
   AitpSourceAssetIndexItem,
   AitpSourceBacktraceItem,
+  AitpSourceStackCoverage,
+  AitpSourceStackCoverageItem,
 } from './types';
 import type { ResearchActionBindingPriority } from '../research-action';
 
@@ -43,6 +45,9 @@ export function parseAitpProcessGraphSlice(input: unknown): AitpProcessGraphSlic
     sourceBacktrace: objectArray(input['source_backtrace']).map(parseSourceBacktraceItem),
     sourceAssetIndex: objectArray(valueFor(input, 'source_asset_index', 'sourceAssetIndex')).map(
       parseSourceAssetIndexItem,
+    ),
+    sourceStackCoverage: parseSourceStackCoverage(
+      valueFor(input, 'source_stack_coverage', 'sourceStackCoverage'),
     ),
     relationNeighborhood: objectArray(input['relation_neighborhood']).map(
       parseRelationNeighborhoodItem,
@@ -210,6 +215,90 @@ function parseSourceAssetReferenceLocation(
     connectorId: stringValue(valueFor(raw, 'connector_id', 'connectorId')),
     locationType: stringValue(valueFor(raw, 'location_type', 'locationType')),
     status: stringValue(raw['status']),
+  };
+}
+
+function parseSourceStackCoverage(value: unknown): AitpSourceStackCoverage {
+  if (!isRecord(value)) return emptySourceStackCoverage();
+  return {
+    kind: stringValue(value['kind']) ?? 'source_stack_coverage_manifest',
+    claimCount: numberValue(valueFor(value, 'claim_count', 'claimCount')) ?? 0,
+    coverageStatusCounts: recordValue(
+      valueFor(value, 'coverage_status_counts', 'coverageStatusCounts'),
+    ),
+    missingRequiredOutputCounts: recordValue(
+      valueFor(value, 'missing_required_output_counts', 'missingRequiredOutputCounts'),
+    ),
+    sourceComponentGapCounts: recordValue(
+      valueFor(value, 'source_component_gap_counts', 'sourceComponentGapCounts'),
+    ),
+    sourceReviewStatusCounts: recordValue(
+      valueFor(value, 'source_review_status_counts', 'sourceReviewStatusCounts'),
+    ),
+    items: objectArray(value['items']).map(parseSourceStackCoverageItem),
+    nextActions: stringArray(valueFor(value, 'next_actions', 'nextActions')),
+    truthSource: stringValue(valueFor(value, 'truth_source', 'truthSource')) ?? 'typed_records',
+    orientationOnly: booleanValue(valueFor(value, 'orientation_only', 'orientationOnly')) ?? true,
+    canUpdateClaimTrust:
+      booleanValue(valueFor(value, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,
+  };
+}
+
+function emptySourceStackCoverage(): AitpSourceStackCoverage {
+  return {
+    kind: 'source_stack_coverage_manifest',
+    claimCount: 0,
+    coverageStatusCounts: {},
+    missingRequiredOutputCounts: {},
+    sourceComponentGapCounts: {},
+    sourceReviewStatusCounts: {},
+    items: [],
+    nextActions: [],
+    truthSource: 'typed_records',
+    orientationOnly: true,
+    canUpdateClaimTrust: false,
+  };
+}
+
+function parseSourceStackCoverageItem(
+  raw: Record<string, unknown>,
+): AitpSourceStackCoverageItem {
+  const claimId = stringValue(valueFor(raw, 'claim_id', 'claimId')) ?? '';
+  return {
+    topicId: stringValue(valueFor(raw, 'topic_id', 'topicId')) ?? '',
+    claimId,
+    claimStatement: stringValue(valueFor(raw, 'claim_statement', 'claimStatement')) ?? '',
+    riskLevel: stringValue(valueFor(raw, 'risk_level', 'riskLevel')) ?? 'unknown',
+    requiredOutputs: stringArray(valueFor(raw, 'required_outputs', 'requiredOutputs')),
+    satisfiedRequiredOutputs: stringArray(
+      valueFor(raw, 'satisfied_required_outputs', 'satisfiedRequiredOutputs'),
+    ),
+    missingRequiredOutputs: stringArray(
+      valueFor(raw, 'missing_required_outputs', 'missingRequiredOutputs'),
+    ),
+    evidenceIdsByOutput: recordValue(
+      valueFor(raw, 'evidence_ids_by_output', 'evidenceIdsByOutput'),
+    ),
+    sourceReconstructionComplete:
+      booleanValue(valueFor(raw, 'source_reconstruction_complete', 'sourceReconstructionComplete')) ??
+      false,
+    missingSourceComponents: stringArray(
+      valueFor(raw, 'missing_source_components', 'missingSourceComponents'),
+    ),
+    sourceReconstructionReviewStatus:
+      stringValue(
+        valueFor(raw, 'source_reconstruction_review_status', 'sourceReconstructionReviewStatus'),
+      ) ?? 'pending',
+    latestSourceReviewResultId:
+      stringValue(
+        valueFor(raw, 'latest_source_review_result_id', 'latestSourceReviewResultId'),
+      ) ?? '',
+    coverageStatus:
+      stringValue(valueFor(raw, 'coverage_status', 'coverageStatus')) ??
+      (claimId.length === 0 ? 'unknown' : 'evidence_gap'),
+    nextActions: stringArray(valueFor(raw, 'next_actions', 'nextActions')),
+    canUpdateClaimTrust:
+      booleanValue(valueFor(raw, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,
   };
 }
 
@@ -713,6 +802,10 @@ function stringValue(value: unknown): string | undefined {
 
 function booleanValue(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function stringArray(value: unknown): readonly string[] {

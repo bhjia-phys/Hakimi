@@ -476,6 +476,12 @@ describe('ResearchActionTool', () => {
     expect(loaded.output).toContain('<source_asset>source-asset-route-paper</source_asset>');
     expect(loaded.output).toContain('<source_assets_missing_hashes>');
     expect(loaded.output).toContain('<source_asset>source-asset-route-paper</source_asset>');
+    expect(loaded.output).toContain('<source_stack_coverage>');
+    expect(loaded.output).toContain('<claim>claim-route</claim>');
+    expect(loaded.output).toContain('<source_stack_evidence_gaps>');
+    expect(loaded.output).toContain('<source_stack_reconstruction_gaps>');
+    expect(loaded.output).toContain('<source_stack_next_actions>');
+    expect(loaded.output).toContain('<action>record_evidence_for_required_outputs:claim-route</action>');
     expect(loaded.output).toContain('aitp.record_route_choice');
     expect(loaded.output).toContain('aitp.record_failed_route_lesson');
     expect(loaded.output).toContain('aitp.checkpoint_before_route_switch');
@@ -1187,6 +1193,60 @@ function routeStateSlicePayload() {
         can_update_claim_trust: false,
       },
     ],
+    source_stack_coverage: {
+      kind: 'source_stack_coverage_manifest',
+      claim_count: 1,
+      coverage_status_counts: {
+        complete: 0,
+        evidence_gap: 1,
+        reconstruction_gap: 0,
+        review_gap: 0,
+      },
+      missing_required_output_counts: {
+        scoped_claim: 1,
+        evidence_or_provenance: 1,
+      },
+      source_component_gap_counts: {
+        reconstruction_path: 1,
+      },
+      source_review_status_counts: {
+        pending: 1,
+      },
+      items: [
+        {
+          topic_id: 'route-state',
+          claim_id: 'claim-route',
+          claim_statement: 'Route claim requires source stack coverage.',
+          risk_level: 'guided',
+          required_outputs: ['scoped_claim', 'evidence_or_provenance'],
+          satisfied_required_outputs: [],
+          missing_required_outputs: ['scoped_claim', 'evidence_or_provenance'],
+          evidence_ids_by_output: {
+            scoped_claim: [],
+            evidence_or_provenance: [],
+          },
+          source_reconstruction_complete: false,
+          missing_source_components: ['reconstruction_path'],
+          source_reconstruction_review_status: 'pending',
+          latest_source_review_result_id: '',
+          coverage_status: 'evidence_gap',
+          next_actions: [
+            'record_evidence_for_required_outputs:claim-route',
+            'complete_source_reconstruction:claim-route',
+            'review_source_reconstruction:claim-route',
+          ],
+          can_update_claim_trust: false,
+        },
+      ],
+      next_actions: [
+        'record_evidence_for_required_outputs:claim-route',
+        'complete_source_reconstruction:claim-route',
+        'review_source_reconstruction:claim-route',
+      ],
+      truth_source: 'typed_records',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
     trust_boundary_reasons: [],
     recommended_moments: [],
     moment_policy: {

@@ -86,6 +86,21 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
     if (pack.aitp.sourceAssetDuplicateHashIds.length > 0) {
       lines.push(`AITP source assets with duplicate hashes: ${bounded(pack.aitp.sourceAssetDuplicateHashIds).join(', ')}`);
     }
+    if (pack.aitp.sourceStackCoverageClaimIds.length > 0) {
+      lines.push(`AITP source stack coverage: ${bounded(pack.aitp.sourceStackCoverageClaimIds).join(', ')}`);
+    }
+    if (pack.aitp.sourceStackEvidenceGapClaimIds.length > 0) {
+      lines.push(`AITP source stack evidence gaps: ${bounded(pack.aitp.sourceStackEvidenceGapClaimIds).join(', ')}`);
+    }
+    if (pack.aitp.sourceStackReconstructionGapClaimIds.length > 0) {
+      lines.push(`AITP source stack reconstruction gaps: ${bounded(pack.aitp.sourceStackReconstructionGapClaimIds).join(', ')}`);
+    }
+    if (pack.aitp.sourceStackReviewGapClaimIds.length > 0) {
+      lines.push(`AITP source stack review gaps: ${bounded(pack.aitp.sourceStackReviewGapClaimIds).join(', ')}`);
+    }
+    if (pack.aitp.sourceStackCoverageNextActions.length > 0) {
+      lines.push(`AITP source stack next actions: ${bounded(pack.aitp.sourceStackCoverageNextActions).join(', ')}`);
+    }
     if (pack.aitp.trustBoundaryReasons.length > 0) {
       lines.push(`AITP trust boundary: ${bounded(pack.aitp.trustBoundaryReasons).join('; ')}`);
     }
