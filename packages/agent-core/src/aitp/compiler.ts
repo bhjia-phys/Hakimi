@@ -281,6 +281,34 @@ function writeBridgeForMoment(moment: DetectedResearchMoment): Readonly<Record<s
         requiredFields: ['topicId', 'explorationType', 'title', 'focalQuestion', 'summary'],
         targetRefs: moment.targetRefs,
       };
+    case 'aitp.register_source_asset':
+      return {
+        operation: 'registerSourceAsset',
+        cli: 'aitp-v5 asset register',
+        requiredFields: ['topicId', 'assetType', 'uri', 'title'],
+        targetRefs: moment.targetRefs,
+      };
+    case 'aitp.record_evidence':
+      return {
+        operation: 'recordEvidence',
+        cli: 'aitp-v5 evidence record',
+        requiredFields: ['topicId', 'claimId', 'evidenceType', 'status', 'summary'],
+        targetRefs: moment.targetRefs,
+      };
+    case 'aitp.record_tool_run':
+      return {
+        operation: 'recordToolRun',
+        cli: 'aitp-v5 tool run record',
+        requiredFields: ['recipeId', 'toolFamily', 'toolName', 'topicId', 'claimId'],
+        targetRefs: moment.targetRefs,
+      };
+    case 'aitp.record_reference_location':
+      return {
+        operation: 'recordReferenceLocation',
+        cli: 'aitp-v5 reference location record',
+        requiredFields: ['topicId', 'connectorId', 'locationType', 'uri', 'label'],
+        targetRefs: moment.targetRefs,
+      };
     case 'aitp.create_open_obligation':
       return {
         operation: 'createProofObligation',

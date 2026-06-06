@@ -22,7 +22,7 @@ describe('AITP process graph slice adapter', () => {
     expect(actionIds).toEqual(
       expect.arrayContaining([
         'aitp.create_open_obligation',
-        'aitp.record_validation_result',
+        'aitp.record_evidence',
         'aitp.record_derivation_checkpoint',
         'physics.brainstorm_relation_path',
         'trace.follow_source_dependency',
@@ -35,9 +35,9 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.contextLines.join('\n')).toContain(
       'aitp.record_derivation_checkpoint@after_local_conclusion priority=high boundary=derivation_checkpoint',
     );
-    expect(compiled.contextLines.join('\n')).toContain('AITP required calls now: aitp.record_validation_result');
+    expect(compiled.contextLines.join('\n')).toContain('AITP required calls now: aitp.record_evidence');
     expect(compiled.callObligations.find((item) =>
-      item.actionId === 'aitp.record_validation_result',
+      item.actionId === 'aitp.record_evidence',
     )).toMatchObject({
       requiredNow: true,
       decisionType: 'recording',
@@ -89,7 +89,8 @@ describe('AITP process graph slice adapter', () => {
       expect.arrayContaining([
         'aitp.create_open_obligation',
         'aitp.record_exploratory_record',
-        'aitp.record_validation_result',
+        'aitp.record_evidence',
+        'aitp.record_reference_location',
         'aitp.request_human_checkpoint',
         'physics.brainstorm_relation_path',
         'trace.audit_original_question_drift',
@@ -101,41 +102,55 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.contextLines.join('\n')).toContain('Exploration unresolved points: finite-size aliasing');
     expect(compiled.contextLines.join('\n')).toContain('Source assets: source_asset:source-asset-edge-counting');
     expect(compiled.contextLines.join('\n')).toContain(
-      'trace.open_backtrace@required_now priority=blocking boundary=policy_prerequisite:backtrace',
+      'aitp.record_reference_location@required_now priority=blocking boundary=policy_prerequisite:backtrace',
+    );
+    expect(compiled.contextLines.join('\n')).toContain(
+      'trace.open_backtrace@before_using_as_support priority=high boundary=source_support',
     );
     expect(compiled.contextLines.join('\n')).toContain('AITP required calls now:');
     expect(compiled.contextLines.join('\n')).toContain('AITP trust prerequisites:');
     expect(compiled.callObligations.map((item) => item.actionId)).toEqual(
       expect.arrayContaining([
-        'aitp.record_validation_result',
-        'trace.open_backtrace',
+        'aitp.record_evidence',
+        'aitp.record_reference_location',
         'physics.brainstorm_relation_path',
         'aitp.request_human_checkpoint',
       ]),
     );
     expect(compiled.actionRecommendations.find((binding) =>
-      binding.actionId === 'aitp.record_validation_result',
+      binding.actionId === 'aitp.record_evidence',
     )?.params).toMatchObject({
       callObligation: {
         requiredNow: true,
         decisionType: 'recording',
-        entrypoints: expect.arrayContaining(['aitp_v5_record_validation_result']),
+        entrypoints: expect.arrayContaining(['aitp_v5_record_evidence']),
       },
       writeBridge: {
-        operation: 'recordValidationResult',
+        operation: 'recordEvidence',
+      },
+    });
+    expect(compiled.actionRecommendations.find((binding) =>
+      binding.actionId === 'aitp.record_reference_location',
+    )?.params).toMatchObject({
+      callObligation: {
+        requiredNow: true,
+        decisionType: 'backtrace',
+        entrypoints: expect.arrayContaining(['aitp_v5_record_reference_location']),
+      },
+      writeBridge: {
+        operation: 'recordReferenceLocation',
+        cli: 'aitp-v5 reference location record',
       },
     });
     expect(compiled.actionRecommendations.find((binding) =>
       binding.actionId === 'trace.open_backtrace',
     )?.params).toMatchObject({
-      timing: 'required_now',
-      trustBoundary: 'policy_prerequisite:backtrace',
-      callObligation: {
-        requiredNow: true,
-        decisionType: 'backtrace',
-        missingComponents: expect.arrayContaining(['reference_location', 'evidence']),
-      },
+      timing: 'before_using_as_support',
+      trustBoundary: 'source_support',
     });
+    expect(compiled.actionRecommendations.find((binding) =>
+      binding.actionId === 'trace.open_backtrace',
+    )?.params?.['callObligation']).toBeUndefined();
     expect(compiled.actionRecommendations.find((binding) =>
       binding.actionId === 'aitp.create_open_obligation',
     )?.params).toMatchObject({

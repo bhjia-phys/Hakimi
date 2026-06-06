@@ -93,6 +93,66 @@ describe('AITP write bridge executor', () => {
     });
   });
 
+  it('coerces AITP evidence, tool-run, and reference-location payloads', () => {
+    const evidence = coerceAitpWriteBridgeInput('recordEvidence', {
+      topic_id: 'qg-algebra-mipt',
+      claim_id: 'claim-mipt-observer-algebra',
+      evidence_type: 'source_reconstruction',
+      status: 'supports',
+      summary: 'Definition source chain reconstructed.',
+      supports_outputs: ['source chain transcript'],
+      source_refs: ['reference_location:split-paper'],
+      tool_run_ids: ['tool-run-source-audit'],
+    });
+    const toolRun = coerceAitpWriteBridgeInput('recordToolRun', {
+      recipe_id: 'recipe-source-audit',
+      tool_family: 'literature',
+      tool_name: 'source-audit',
+      topic_id: 'qg-algebra-mipt',
+      claim_id: 'claim-mipt-observer-algebra',
+      inputs: { source: 'split paper' },
+      outputs: { closed: true },
+      evidence_status: 'supports',
+      source_refs: ['reference_location:split-paper'],
+    });
+    const reference = coerceAitpWriteBridgeInput('recordReferenceLocation', {
+      topic_id: 'qg-algebra-mipt',
+      claim_id: 'claim-mipt-observer-algebra',
+      connector: 'local_pdf',
+      type: 'paper_pdf',
+      uri: 'file:///papers/split.pdf',
+      label: 'Split property paper',
+      source_ref: 'paper:split',
+      linked_records: { claim_id: 'claim-mipt-observer-algebra' },
+    });
+
+    expect(evidence).toMatchObject({
+      operation: 'recordEvidence',
+      payload: {
+        evidenceType: 'source_reconstruction',
+        supportsOutputs: ['source chain transcript'],
+        toolRunIds: ['tool-run-source-audit'],
+      },
+    });
+    expect(toolRun).toMatchObject({
+      operation: 'recordToolRun',
+      payload: {
+        recipeId: 'recipe-source-audit',
+        inputs: { source: 'split paper' },
+        outputs: { closed: true },
+        evidenceStatus: 'supports',
+      },
+    });
+    expect(reference).toMatchObject({
+      operation: 'recordReferenceLocation',
+      payload: {
+        connectorId: 'local_pdf',
+        locationType: 'paper_pdf',
+        linkedRecords: { claim_id: 'claim-mipt-observer-algebra' },
+      },
+    });
+  });
+
   it('delegates supported writes to the configured CLI bridge target', async () => {
     const calls: string[] = [];
     const target: AitpWriteBridgeCliTarget = {
@@ -119,6 +179,51 @@ describe('AITP write bridge executor', () => {
           assetType: 'paper',
           orientationOnly: true,
           canUpdateClaimTrust: false,
+          raw: {},
+        };
+      },
+      async recordEvidence() {
+        calls.push('recordEvidence');
+        return {
+          ok: true,
+          kind: 'evidence',
+          evidenceId: 'evidence-qg',
+          topicId: 'qg',
+          claimId: 'claim-qg',
+          evidenceType: 'source_reconstruction',
+          status: 'supports',
+          raw: {},
+        };
+      },
+      async recordToolRun() {
+        calls.push('recordToolRun');
+        return {
+          ok: true,
+          kind: 'tool_run',
+          runId: 'tool-run-qg',
+          recipeId: 'recipe-qg',
+          toolFamily: 'literature',
+          toolName: 'source-audit',
+          topicId: 'qg',
+          claimId: 'claim-qg',
+          evidenceStatus: 'supports',
+          raw: {},
+        };
+      },
+      async recordReferenceLocation() {
+        calls.push('recordReferenceLocation');
+        return {
+          ok: true,
+          kind: 'reference_location',
+          locationId: 'reference-location-qg',
+          topicId: 'qg',
+          claimId: 'claim-qg',
+          connectorId: 'local_pdf',
+          locationType: 'paper_pdf',
+          uri: 'file:///papers/qg.pdf',
+          label: 'QG source',
+          status: 'located',
+          orientationOnly: true,
           raw: {},
         };
       },
@@ -196,6 +301,51 @@ describe('AITP write bridge executor', () => {
       'aitp:human_checkpoint:checkpoint-qg',
     ]);
     expect(generatedObligationIdsForAitpWriteBridgeResult(result)).toEqual([]);
+  });
+
+  it('returns evidence refs for new AITP record surfaces', () => {
+    expect(
+      evidenceRefsForAitpWriteBridgeResult({
+        ok: true,
+        kind: 'evidence',
+        evidenceId: 'evidence-qg',
+        topicId: 'qg',
+        claimId: 'claim-qg',
+        evidenceType: 'source_reconstruction',
+        status: 'supports',
+        raw: {},
+      }),
+    ).toEqual(['aitp:evidence:evidence-qg']);
+    expect(
+      evidenceRefsForAitpWriteBridgeResult({
+        ok: true,
+        kind: 'tool_run',
+        runId: 'tool-run-qg',
+        recipeId: 'recipe-qg',
+        toolFamily: 'literature',
+        toolName: 'source-audit',
+        topicId: 'qg',
+        claimId: 'claim-qg',
+        evidenceStatus: 'supports',
+        raw: {},
+      }),
+    ).toEqual(['aitp:tool_run:tool-run-qg']);
+    expect(
+      evidenceRefsForAitpWriteBridgeResult({
+        ok: true,
+        kind: 'reference_location',
+        locationId: 'reference-location-qg',
+        topicId: 'qg',
+        claimId: 'claim-qg',
+        connectorId: 'local_pdf',
+        locationType: 'paper_pdf',
+        uri: 'file:///papers/qg.pdf',
+        label: 'QG source',
+        status: 'located',
+        orientationOnly: true,
+        raw: {},
+      }),
+    ).toEqual(['aitp:reference_location:reference-location-qg']);
   });
 
   it('rejects incomplete payloads before reaching AITP', () => {

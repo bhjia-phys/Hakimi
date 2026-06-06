@@ -73,6 +73,9 @@ describe('research primitive plan templates', () => {
   it('plans AITP write-bridge records through explicit ResearchAction calls', () => {
     const exploration = planFor('aitp.record_exploratory_record');
     const sourceAsset = planFor('aitp.register_source_asset');
+    const referenceLocation = planFor('aitp.record_reference_location');
+    const evidence = planFor('aitp.record_evidence');
+    const toolRun = planFor('aitp.record_tool_run');
     const obligation = planFor('aitp.create_open_obligation');
     const validationContract = planFor('aitp.create_validation_contract');
     const validationResult = planFor('aitp.record_validation_result');
@@ -82,6 +85,15 @@ describe('research primitive plan templates', () => {
     ]);
     expect(sourceAsset.steps.map((step) => step.id)).toEqual([
       'execute-aitp-source-asset-write',
+    ]);
+    expect(referenceLocation.steps.map((step) => step.id)).toEqual([
+      'execute-aitp-reference-location-write',
+    ]);
+    expect(evidence.steps.map((step) => step.id)).toEqual([
+      'execute-aitp-evidence-write',
+    ]);
+    expect(toolRun.steps.map((step) => step.id)).toEqual([
+      'execute-aitp-tool-run-write',
     ]);
     expect(obligation.steps.map((step) => step.id)).toEqual([
       'execute-aitp-obligation-write',
@@ -94,6 +106,9 @@ describe('research primitive plan templates', () => {
     ]);
     expect(exploration.recording.evidenceRefs).toContain('aitp:exploratory_record:<id>');
     expect(sourceAsset.recording.evidenceRefs).toContain('aitp:source_asset:<id>');
+    expect(referenceLocation.recording.evidenceRefs).toContain('aitp:reference_location:<id>');
+    expect(evidence.recording.evidenceRefs).toContain('aitp:evidence:<id>');
+    expect(toolRun.recording.evidenceRefs).toContain('aitp:tool_run:<id>');
     expect(obligation.recording.evidenceRefs).toContain('aitp:proof_obligation:<id>');
     expect(validationContract.recording.evidenceRefs).toContain('aitp:validation_contract:<id>');
     expect(validationResult.recording.evidenceRefs).toContain('aitp:validation_result:<id>');

@@ -36,6 +36,21 @@ describe('AITP native bridge smoke', () => {
             stderr: '',
           };
         }
+        if (args.includes('evidence') && args.includes('record')) {
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              ok: true,
+              kind: 'evidence',
+              evidence_id: 'evidence-algebra-source-chain',
+              topic_id: 'qg-algebra-mipt',
+              claim_id: 'claim-mipt-observer-algebra',
+              evidence_type: 'source_reconstruction',
+              status: 'supports',
+            }),
+            stderr: '',
+          };
+        }
         if (args.includes('checkpoint') && args.includes('request')) {
           return {
             exitCode: 0,
@@ -111,12 +126,12 @@ describe('AITP native bridge smoke', () => {
       timing: 'after_brainstorm_before_derivation',
       trustBoundary: 'source_support',
     });
-    const validationBinding = requiredBinding(pack.actionBindings, 'aitp.record_validation_result');
-    expect(validationBinding.params).toMatchObject({
+    const evidenceBinding = requiredBinding(pack.actionBindings, 'aitp.record_evidence');
+    expect(evidenceBinding.params).toMatchObject({
       timing: 'required_now',
       trustBoundary: 'policy_prerequisite:recording',
       writeBridge: {
-        operation: 'recordValidationResult',
+        operation: 'recordEvidence',
       },
       callObligation: {
         actionKind: 'record_evidence_or_validation',
@@ -133,7 +148,7 @@ describe('AITP native bridge smoke', () => {
     expect(pack.aitp?.contextLines.join('\n')).toContain('AITP required calls now:');
     expect(pack.aitp?.requiredCallIds).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('aitp-record-validation-result'),
+        expect.stringContaining('aitp-record-evidence'),
         expect.stringContaining('aitp-request-human-checkpoint'),
       ]),
     );
@@ -158,6 +173,15 @@ describe('AITP native bridge smoke', () => {
       failureModes: ['analogy mistaken for derivation'],
       sourceRefs: ['source_asset:asset-algebra-paper'],
     });
+    const evidence = await bridge.recordEvidence({
+      topicId: 'qg-algebra-mipt',
+      claimId: 'claim-mipt-observer-algebra',
+      evidenceType: 'source_reconstruction',
+      status: 'supports',
+      summary: 'Source backtrace keeps the algebraic split analogy explicit and bounded.',
+      supportsOutputs: ['source reconstruction'],
+      sourceRefs: ['reference_location:algebra-paper-section'],
+    });
     const checkpoint = await bridge.requestHumanCheckpoint({
       topicId: 'qg-algebra-mipt',
       claimId: 'claim-mipt-observer-algebra',
@@ -170,6 +194,12 @@ describe('AITP native bridge smoke', () => {
       kind: 'proof_obligation',
       obligationId: 'proof-obligation-algebra-source-chain',
       canUpdateClaimTrust: false,
+    });
+    expect(evidence).toMatchObject({
+      kind: 'evidence',
+      evidenceId: 'evidence-algebra-source-chain',
+      evidenceType: 'source_reconstruction',
+      status: 'supports',
     });
     expect(checkpoint).toMatchObject({
       kind: 'human_checkpoint',
@@ -224,6 +254,29 @@ describe('AITP native bridge smoke', () => {
           'analogy mistaken for derivation',
           '--source-ref',
           'source_asset:asset-algebra-paper',
+        ],
+      },
+      {
+        command: 'aitp-v5',
+        args: [
+          '--base',
+          'F:/project',
+          'evidence',
+          'record',
+          '--topic',
+          'qg-algebra-mipt',
+          '--claim',
+          'claim-mipt-observer-algebra',
+          '--type',
+          'source_reconstruction',
+          '--status',
+          'supports',
+          '--summary',
+          'Source backtrace keeps the algebraic split analogy explicit and bounded.',
+          '--supports-output',
+          'source reconstruction',
+          '--source-ref',
+          'reference_location:algebra-paper-section',
         ],
       },
       {

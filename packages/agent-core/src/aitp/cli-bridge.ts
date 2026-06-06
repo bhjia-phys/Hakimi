@@ -138,6 +138,52 @@ export interface RegisterAitpSourceAssetInput {
   readonly signal?: AbortSignal | undefined;
 }
 
+export interface RecordAitpEvidenceInput {
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly evidenceType: string;
+  readonly status: string;
+  readonly summary: string;
+  readonly supportsOutputs?: readonly string[] | undefined;
+  readonly sourceRefs?: readonly string[] | undefined;
+  readonly toolRunIds?: readonly string[] | undefined;
+  readonly validationResultIds?: readonly string[] | undefined;
+  readonly artifactIds?: readonly string[] | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface RecordAitpToolRunInput {
+  readonly recipeId: string;
+  readonly toolFamily: string;
+  readonly toolName: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly inputs?: Readonly<Record<string, unknown>> | undefined;
+  readonly outputs?: Readonly<Record<string, unknown>> | undefined;
+  readonly environment?: Readonly<Record<string, unknown>> | undefined;
+  readonly evidenceStatus?: string | undefined;
+  readonly codeStateIds?: readonly string[] | undefined;
+  readonly artifactIds?: readonly string[] | undefined;
+  readonly sourceRefs?: readonly string[] | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface RecordAitpReferenceLocationInput {
+  readonly topicId: string;
+  readonly connectorId: string;
+  readonly locationType: string;
+  readonly uri: string;
+  readonly label: string;
+  readonly claimId?: string | undefined;
+  readonly sourceRef?: string | undefined;
+  readonly externalId?: string | undefined;
+  readonly status?: string | undefined;
+  readonly summary?: string | undefined;
+  readonly metadata?: Readonly<Record<string, unknown>> | undefined;
+  readonly linkedRecords?: Readonly<Record<string, unknown>> | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface RequestAitpHumanCheckpointInput {
   readonly topicId: string;
   readonly claimId: string;
@@ -210,6 +256,45 @@ export interface AitpSourceAssetWriteResult {
   readonly assetType: AitpSourceAssetType;
   readonly orientationOnly: boolean;
   readonly canUpdateClaimTrust: boolean;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpEvidenceWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'evidence';
+  readonly evidenceId: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly evidenceType: string;
+  readonly status: string;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpToolRunWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'tool_run';
+  readonly runId: string;
+  readonly recipeId: string;
+  readonly toolFamily: string;
+  readonly toolName: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly evidenceStatus: string;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpReferenceLocationWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'reference_location';
+  readonly locationId: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly connectorId: string;
+  readonly locationType: string;
+  readonly uri: string;
+  readonly label: string;
+  readonly status: string;
+  readonly orientationOnly: boolean;
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -318,6 +403,39 @@ export class AitpCliBridge {
     });
     const payload = await this.runJson(args, input.signal);
     return parseSourceAssetWriteResult(payload);
+  }
+
+  async recordEvidence(
+    input: RecordAitpEvidenceInput,
+  ): Promise<AitpEvidenceWriteResult> {
+    const args = buildAitpEvidenceRecordArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseEvidenceWriteResult(payload);
+  }
+
+  async recordToolRun(
+    input: RecordAitpToolRunInput,
+  ): Promise<AitpToolRunWriteResult> {
+    const args = buildAitpToolRunRecordArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseToolRunWriteResult(payload);
+  }
+
+  async recordReferenceLocation(
+    input: RecordAitpReferenceLocationInput,
+  ): Promise<AitpReferenceLocationWriteResult> {
+    const args = buildAitpReferenceLocationRecordArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseReferenceLocationWriteResult(payload);
   }
 
   async requestHumanCheckpoint(
@@ -529,6 +647,117 @@ export function buildAitpSourceAssetRegisterArgs(
   if (input.versionAnchor !== undefined) {
     args.push('--version-anchor-json', JSON.stringify(input.versionAnchor));
   }
+  if (input.metadata !== undefined) {
+    args.push('--metadata-json', JSON.stringify(input.metadata));
+  }
+  if (input.linkedRecords !== undefined) {
+    args.push('--linked-records-json', JSON.stringify(input.linkedRecords));
+  }
+  return args;
+}
+
+export function buildAitpEvidenceRecordArgs(
+  input: RecordAitpEvidenceInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.claimId, 'claimId');
+  requireNonEmpty(input.evidenceType, 'evidenceType');
+  requireNonEmpty(input.status, 'status');
+  requireNonEmpty(input.summary, 'summary');
+  const args = [
+    '--base',
+    input.basePath,
+    'evidence',
+    'record',
+    '--topic',
+    input.topicId.trim(),
+    '--claim',
+    input.claimId.trim(),
+    '--type',
+    input.evidenceType.trim(),
+    '--status',
+    input.status.trim(),
+    '--summary',
+    input.summary.trim(),
+  ];
+  pushRepeated(args, '--supports-output', input.supportsOutputs);
+  pushRepeated(args, '--source-ref', input.sourceRefs);
+  pushRepeated(args, '--tool-run-id', input.toolRunIds);
+  pushRepeated(args, '--validation-result-id', input.validationResultIds);
+  pushRepeated(args, '--artifact-id', input.artifactIds);
+  return args;
+}
+
+export function buildAitpToolRunRecordArgs(
+  input: RecordAitpToolRunInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.recipeId, 'recipeId');
+  requireNonEmpty(input.toolFamily, 'toolFamily');
+  requireNonEmpty(input.toolName, 'toolName');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.claimId, 'claimId');
+  const args = [
+    '--base',
+    input.basePath,
+    'tool',
+    'run',
+    'record',
+    '--recipe',
+    input.recipeId.trim(),
+    '--family',
+    input.toolFamily.trim(),
+    '--name',
+    input.toolName.trim(),
+    '--topic',
+    input.topicId.trim(),
+    '--claim',
+    input.claimId.trim(),
+  ];
+  if (input.inputs !== undefined) args.push('--inputs-json', JSON.stringify(input.inputs));
+  if (input.outputs !== undefined) args.push('--outputs-json', JSON.stringify(input.outputs));
+  if (input.environment !== undefined) {
+    args.push('--environment-json', JSON.stringify(input.environment));
+  }
+  pushOptional(args, '--evidence-status', input.evidenceStatus);
+  pushRepeated(args, '--code-state-id', input.codeStateIds);
+  pushRepeated(args, '--artifact-id', input.artifactIds);
+  pushRepeated(args, '--source-ref', input.sourceRefs);
+  return args;
+}
+
+export function buildAitpReferenceLocationRecordArgs(
+  input: RecordAitpReferenceLocationInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.connectorId, 'connectorId');
+  requireNonEmpty(input.locationType, 'locationType');
+  requireNonEmpty(input.uri, 'uri');
+  requireNonEmpty(input.label, 'label');
+  const args = [
+    '--base',
+    input.basePath,
+    'reference',
+    'location',
+    'record',
+    '--topic',
+    input.topicId.trim(),
+    '--connector',
+    input.connectorId.trim(),
+    '--type',
+    input.locationType.trim(),
+    '--uri',
+    input.uri.trim(),
+    '--label',
+    input.label.trim(),
+  ];
+  pushOptional(args, '--claim', input.claimId);
+  pushOptional(args, '--source-ref', input.sourceRef);
+  pushOptional(args, '--external-id', input.externalId);
+  pushOptional(args, '--status', input.status);
+  pushOptional(args, '--summary', input.summary);
   if (input.metadata !== undefined) {
     args.push('--metadata-json', JSON.stringify(input.metadata));
   }
@@ -786,6 +1015,69 @@ function parseSourceAssetWriteResult(payload: unknown): AitpSourceAssetWriteResu
     assetType,
     orientationOnly: payload['orientation_only'] === true,
     canUpdateClaimTrust: payload['can_update_claim_trust'] === true,
+    raw: payload,
+  };
+}
+
+function parseEvidenceWriteResult(payload: unknown): AitpEvidenceWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError('AITP evidence payload must be an object.');
+  }
+  if (payload['kind'] !== 'evidence') {
+    throw new AitpCliBridgeError('AITP evidence payload has the wrong kind.');
+  }
+  return {
+    ok: payload['ok'] === true,
+    kind: 'evidence',
+    evidenceId: requiredPayloadString(payload, 'evidence_id'),
+    topicId: requiredPayloadString(payload, 'topic_id'),
+    claimId: requiredPayloadString(payload, 'claim_id'),
+    evidenceType: requiredPayloadString(payload, 'evidence_type'),
+    status: requiredPayloadString(payload, 'status'),
+    raw: payload,
+  };
+}
+
+function parseToolRunWriteResult(payload: unknown): AitpToolRunWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError('AITP tool run payload must be an object.');
+  }
+  if (payload['kind'] !== 'tool_run') {
+    throw new AitpCliBridgeError('AITP tool run payload has the wrong kind.');
+  }
+  return {
+    ok: payload['ok'] === true,
+    kind: 'tool_run',
+    runId: requiredPayloadString(payload, 'run_id'),
+    recipeId: requiredPayloadString(payload, 'recipe_id'),
+    toolFamily: requiredPayloadString(payload, 'tool_family'),
+    toolName: requiredPayloadString(payload, 'tool_name'),
+    topicId: requiredPayloadString(payload, 'topic_id'),
+    claimId: requiredPayloadString(payload, 'claim_id'),
+    evidenceStatus: requiredPayloadString(payload, 'evidence_status'),
+    raw: payload,
+  };
+}
+
+function parseReferenceLocationWriteResult(payload: unknown): AitpReferenceLocationWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError('AITP reference location payload must be an object.');
+  }
+  if (payload['kind'] !== 'reference_location') {
+    throw new AitpCliBridgeError('AITP reference location payload has the wrong kind.');
+  }
+  return {
+    ok: payload['ok'] === true,
+    kind: 'reference_location',
+    locationId: requiredPayloadString(payload, 'location_id'),
+    topicId: requiredPayloadString(payload, 'topic_id'),
+    claimId: stringValue(payload['claim_id']) ?? '',
+    connectorId: requiredPayloadString(payload, 'connector_id'),
+    locationType: requiredPayloadString(payload, 'location_type'),
+    uri: requiredPayloadString(payload, 'uri'),
+    label: requiredPayloadString(payload, 'label'),
+    status: requiredPayloadString(payload, 'status'),
+    orientationOnly: payload['orientation_only'] === true,
     raw: payload,
   };
 }

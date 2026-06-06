@@ -120,18 +120,20 @@ describe('compileResearchContextPack', () => {
       orientationOnly: true,
       openObligationIds: ['obligation-source'],
       requiredCallIds: expect.arrayContaining([
-        expect.stringContaining('aitp-record-validation-result'),
-        expect.stringContaining('trace-open-backtrace'),
+        expect.stringContaining('aitp-record-evidence'),
+        expect.stringContaining('aitp-record-reference-location'),
         expect.stringContaining('aitp-request-human-checkpoint'),
       ]),
       trustPrerequisiteCallIds: expect.arrayContaining([
-        expect.stringContaining('aitp-record-validation-result'),
+        expect.stringContaining('aitp-record-evidence'),
+        expect.stringContaining('aitp-record-reference-location'),
       ]),
     });
     expect(pack.actionBindings.map((item) => item.actionId)).toEqual(
       expect.arrayContaining([
         'aitp.create_open_obligation',
-        'aitp.record_validation_result',
+        'aitp.record_evidence',
+        'aitp.record_reference_location',
         'aitp.request_human_checkpoint',
         'physics.brainstorm_relation_path',
         'trace.follow_source_dependency',

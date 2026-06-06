@@ -464,10 +464,22 @@ export function actionIdForMoment(id: AitpResearchMomentId): string {
 
 export function actionIdForPolicyDecision(decision: AitpMomentPolicyDecision): string {
   if (decision.actionKind === 'record_evidence_or_validation') {
+    if (decision.entrypoints.includes('aitp_v5_record_evidence')) {
+      return 'aitp.record_evidence';
+    }
+    if (decision.entrypoints.includes('aitp_v5_record_tool_run')) {
+      return 'aitp.record_tool_run';
+    }
     if (decision.entrypoints.includes('aitp_v5_record_validation_result')) {
       return 'aitp.record_validation_result';
     }
     return 'aitp.create_open_obligation';
+  }
+  if (decision.entrypoints.includes('aitp_v5_record_reference_location')) {
+    return 'aitp.record_reference_location';
+  }
+  if (decision.entrypoints.includes('aitp_v5_record_tool_run')) {
+    return 'aitp.record_tool_run';
   }
   return actionIdForMoment(decision.moment);
 }

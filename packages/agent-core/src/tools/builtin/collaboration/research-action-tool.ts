@@ -1173,6 +1173,12 @@ function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string
       return result.recordId;
     case 'source_asset':
       return result.assetId;
+    case 'evidence':
+      return result.evidenceId;
+    case 'tool_run':
+      return result.runId;
+    case 'reference_location':
+      return result.locationId;
     case 'proof_obligation':
       return result.obligationId;
     case 'validation_contract':

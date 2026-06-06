@@ -469,6 +469,48 @@ describe('ResearchActionTool', () => {
             raw: {},
           };
         }
+        if (input.operation === 'recordEvidence') {
+          return {
+            ok: true,
+            kind: 'evidence',
+            evidenceId: 'evidence-source-audit',
+            topicId: 'qg-algebra-mipt',
+            claimId: 'claim-mipt-observer-algebra',
+            evidenceType: 'source_reconstruction',
+            status: 'supports',
+            raw: {},
+          };
+        }
+        if (input.operation === 'recordToolRun') {
+          return {
+            ok: true,
+            kind: 'tool_run',
+            runId: 'tool-run-source-audit',
+            recipeId: 'recipe-source-audit',
+            toolFamily: 'source_audit',
+            toolName: 'definition_backtrace',
+            topicId: 'qg-algebra-mipt',
+            claimId: 'claim-mipt-observer-algebra',
+            evidenceStatus: 'captured',
+            raw: {},
+          };
+        }
+        if (input.operation === 'recordReferenceLocation') {
+          return {
+            ok: true,
+            kind: 'reference_location',
+            locationId: 'reference-location-algebra-paper',
+            topicId: 'qg-algebra-mipt',
+            claimId: 'claim-mipt-observer-algebra',
+            connectorId: 'arxiv',
+            locationType: 'paper_section',
+            uri: 'arxiv:2601.00001#sec-2',
+            label: 'Algebraic observer source section',
+            status: 'located',
+            orientationOnly: true,
+            raw: {},
+          };
+        }
         return {
           ok: true,
           kind: 'proof_obligation',
@@ -517,6 +559,46 @@ describe('ResearchActionTool', () => {
         version_anchor: { arxiv_version: 'v1' },
       },
     });
+    const evidence = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'recordEvidence',
+      aitp_payload: {
+        topic_id: 'qg-algebra-mipt',
+        claim_id: 'claim-mipt-observer-algebra',
+        evidence_type: 'source_reconstruction',
+        status: 'supports',
+        summary: 'Source reconstruction evidence for the algebraic split path.',
+        supports_outputs: ['definition path'],
+        source_refs: ['reference_location:reference-location-algebra-paper'],
+      },
+    });
+    const toolRun = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'recordToolRun',
+      aitp_payload: {
+        recipe_id: 'recipe-source-audit',
+        tool_family: 'source_audit',
+        tool_name: 'definition_backtrace',
+        topic_id: 'qg-algebra-mipt',
+        claim_id: 'claim-mipt-observer-algebra',
+        inputs: { target: 'split property' },
+        outputs: { located: true },
+        evidence_status: 'captured',
+      },
+    });
+    const referenceLocation = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'recordReferenceLocation',
+      aitp_payload: {
+        topic_id: 'qg-algebra-mipt',
+        claim_id: 'claim-mipt-observer-algebra',
+        connector_id: 'arxiv',
+        location_type: 'paper_section',
+        uri: 'arxiv:2601.00001#sec-2',
+        label: 'Algebraic observer source section',
+        status: 'located',
+      },
+    });
     const validation = await execute(tool, {
       action: 'execute_aitp_write_bridge',
       aitp_operation: 'recordValidationResult',
@@ -536,9 +618,17 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('aitp:proof_obligation:proof-obligation-algebra-source-chain');
     expect(sourceAsset.output).toContain('operation="registerSourceAsset"');
     expect(sourceAsset.output).toContain('aitp:source_asset:source-asset-algebra-paper');
+    expect(evidence.output).toContain('operation="recordEvidence"');
+    expect(evidence.output).toContain('aitp:evidence:evidence-source-audit');
+    expect(toolRun.output).toContain('operation="recordToolRun"');
+    expect(toolRun.output).toContain('aitp:tool_run:tool-run-source-audit');
+    expect(referenceLocation.output).toContain('operation="recordReferenceLocation"');
+    expect(referenceLocation.output).toContain(
+      'aitp:reference_location:reference-location-algebra-paper',
+    );
     expect(validation.output).toContain('operation="recordValidationResult"');
     expect(validation.output).toContain('aitp:validation_result:validation-result-source-audit');
-    expect(bridgeCalls).toHaveLength(3);
+    expect(bridgeCalls).toHaveLength(6);
     expect(bridgeCalls[0]).toMatchObject({
       operation: 'createProofObligation',
       payload: {
@@ -555,6 +645,30 @@ describe('ResearchActionTool', () => {
       },
     });
     expect(bridgeCalls[2]).toMatchObject({
+      operation: 'recordEvidence',
+      payload: {
+        evidenceType: 'source_reconstruction',
+        supportsOutputs: ['definition path'],
+        sourceRefs: ['reference_location:reference-location-algebra-paper'],
+      },
+    });
+    expect(bridgeCalls[3]).toMatchObject({
+      operation: 'recordToolRun',
+      payload: {
+        recipeId: 'recipe-source-audit',
+        inputs: { target: 'split property' },
+        outputs: { located: true },
+      },
+    });
+    expect(bridgeCalls[4]).toMatchObject({
+      operation: 'recordReferenceLocation',
+      payload: {
+        connectorId: 'arxiv',
+        locationType: 'paper_section',
+        status: 'located',
+      },
+    });
+    expect(bridgeCalls[5]).toMatchObject({
       operation: 'recordValidationResult',
       payload: {
         contractId: 'validation-contract-source-audit',
@@ -578,6 +692,33 @@ describe('ResearchActionTool', () => {
         outcome: 'pass',
         workFrameId: 'frame.qg-mipt',
         evidenceRefs: ['aitp:source_asset:source-asset-algebra-paper'],
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.record_evidence',
+        outcome: 'pass',
+        workFrameId: 'frame.qg-mipt',
+        evidenceRefs: ['aitp:evidence:evidence-source-audit'],
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.record_tool_run',
+        outcome: 'pass',
+        workFrameId: 'frame.qg-mipt',
+        evidenceRefs: ['aitp:tool_run:tool-run-source-audit'],
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.record_reference_location',
+        outcome: 'pass',
+        workFrameId: 'frame.qg-mipt',
+        evidenceRefs: ['aitp:reference_location:reference-location-algebra-paper'],
       }),
     );
     expect(records).toContainEqual(
