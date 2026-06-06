@@ -9,6 +9,22 @@ import type {
 import { AITP_EXPLORATION_STATUSES, AITP_EXPLORATION_TYPES } from './types';
 import type { WorkFrame } from '../research-action';
 
+export const AITP_SOURCE_ASSET_TYPES = [
+  'paper',
+  'lecture',
+  'note',
+  'book',
+  'code_repo',
+  'code_snapshot',
+  'dataset',
+  'generated_artifact',
+  'web_page',
+  'correspondence',
+  'other',
+] as const;
+
+export type AitpSourceAssetType = (typeof AITP_SOURCE_ASSET_TYPES)[number];
+
 export interface AitpCommandResult {
   readonly exitCode: number;
   readonly stdout: string;
@@ -99,6 +115,38 @@ export interface RecordAitpExploratoryRecordInput {
   readonly signal?: AbortSignal | undefined;
 }
 
+export interface RegisterAitpSourceAssetInput {
+  readonly topicId: string;
+  readonly assetType: AitpSourceAssetType;
+  readonly uri: string;
+  readonly title: string;
+  readonly claimId?: string | undefined;
+  readonly label?: string | undefined;
+  readonly contentHash?: string | undefined;
+  readonly hashAlgorithm?: string | undefined;
+  readonly versionAnchor?: Readonly<Record<string, unknown>> | undefined;
+  readonly acquiredAt?: string | undefined;
+  readonly sourceKind?: string | undefined;
+  readonly summary?: string | undefined;
+  readonly sourceRefs?: readonly string[] | undefined;
+  readonly artifactIds?: readonly string[] | undefined;
+  readonly codeStateIds?: readonly string[] | undefined;
+  readonly referenceLocationIds?: readonly string[] | undefined;
+  readonly derivedFrom?: readonly string[] | undefined;
+  readonly metadata?: Readonly<Record<string, unknown>> | undefined;
+  readonly linkedRecords?: Readonly<Record<string, unknown>> | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface RequestAitpHumanCheckpointInput {
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly reason: string;
+  readonly requestedBy: string;
+  readonly options: readonly string[];
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface AitpExploratoryRecordWriteResult {
   readonly ok: boolean;
   readonly kind: 'exploratory_record';
@@ -107,6 +155,27 @@ export interface AitpExploratoryRecordWriteResult {
   readonly explorationType: AitpExplorationType;
   readonly orientationOnly: boolean;
   readonly canUpdateClaimTrust: boolean;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpSourceAssetWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'source_asset';
+  readonly assetId: string;
+  readonly topicId: string;
+  readonly assetType: AitpSourceAssetType;
+  readonly orientationOnly: boolean;
+  readonly canUpdateClaimTrust: boolean;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpHumanCheckpointWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'human_checkpoint';
+  readonly checkpointId: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly status: string;
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -161,6 +230,28 @@ export class AitpCliBridge {
     });
     const payload = await this.runJson(args, input.signal);
     return parseExploratoryRecordWriteResult(payload);
+  }
+
+  async registerSourceAsset(
+    input: RegisterAitpSourceAssetInput,
+  ): Promise<AitpSourceAssetWriteResult> {
+    const args = buildAitpSourceAssetRegisterArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseSourceAssetWriteResult(payload);
+  }
+
+  async requestHumanCheckpoint(
+    input: RequestAitpHumanCheckpointInput,
+  ): Promise<AitpHumanCheckpointWriteResult> {
+    const args = buildAitpHumanCheckpointRequestArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseHumanCheckpointWriteResult(payload);
   }
 
   private async runJson(args: readonly string[], signal?: AbortSignal): Promise<unknown> {
@@ -289,6 +380,84 @@ export function buildAitpExploratoryRecordArgs(
   return args;
 }
 
+export function buildAitpSourceAssetRegisterArgs(
+  input: RegisterAitpSourceAssetInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireAllowed(input.assetType, AITP_SOURCE_ASSET_TYPES, 'assetType');
+  requireNonEmpty(input.uri, 'uri');
+  requireNonEmpty(input.title, 'title');
+
+  const args = [
+    '--base',
+    input.basePath,
+    'asset',
+    'register',
+    '--topic',
+    input.topicId.trim(),
+    '--type',
+    input.assetType,
+    '--uri',
+    input.uri.trim(),
+    '--title',
+    input.title.trim(),
+  ];
+
+  pushOptional(args, '--claim', input.claimId);
+  pushOptional(args, '--label', input.label);
+  pushOptional(args, '--content-hash', input.contentHash);
+  pushOptional(args, '--hash-algorithm', input.hashAlgorithm);
+  pushOptional(args, '--acquired-at', input.acquiredAt);
+  pushOptional(args, '--source-kind', input.sourceKind);
+  pushOptional(args, '--summary', input.summary);
+  pushRepeated(args, '--source-ref', input.sourceRefs);
+  pushRepeated(args, '--artifact-id', input.artifactIds);
+  pushRepeated(args, '--code-state-id', input.codeStateIds);
+  pushRepeated(args, '--reference-location-id', input.referenceLocationIds);
+  pushRepeated(args, '--derived-from', input.derivedFrom);
+  if (input.versionAnchor !== undefined) {
+    args.push('--version-anchor-json', JSON.stringify(input.versionAnchor));
+  }
+  if (input.metadata !== undefined) {
+    args.push('--metadata-json', JSON.stringify(input.metadata));
+  }
+  if (input.linkedRecords !== undefined) {
+    args.push('--linked-records-json', JSON.stringify(input.linkedRecords));
+  }
+  return args;
+}
+
+export function buildAitpHumanCheckpointRequestArgs(
+  input: RequestAitpHumanCheckpointInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.claimId, 'claimId');
+  requireNonEmpty(input.reason, 'reason');
+  requireNonEmpty(input.requestedBy, 'requestedBy');
+  const options = input.options.map((option) => option.trim()).filter((option) => option.length > 0);
+  if (options.length === 0) {
+    throw new AitpCliBridgeError('AITP checkpoint options are required.');
+  }
+  const args = [
+    '--base',
+    input.basePath,
+    'checkpoint',
+    'request',
+    '--topic',
+    input.topicId.trim(),
+    '--claim',
+    input.claimId.trim(),
+    '--reason',
+    input.reason.trim(),
+    '--requested-by',
+    input.requestedBy.trim(),
+  ];
+  pushRepeated(args, '--option', options);
+  return args;
+}
+
 class SpawnAitpCommandRunner implements AitpCommandRunner {
   async run(
     command: string,
@@ -380,6 +549,45 @@ function parseExploratoryRecordWriteResult(payload: unknown): AitpExploratoryRec
     explorationType,
     orientationOnly: payload['orientation_only'] === true,
     canUpdateClaimTrust: payload['can_update_claim_trust'] === true,
+    raw: payload,
+  };
+}
+
+function parseSourceAssetWriteResult(payload: unknown): AitpSourceAssetWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError('AITP source asset payload must be an object.');
+  }
+  if (payload['kind'] !== 'source_asset') {
+    throw new AitpCliBridgeError('AITP source asset payload has the wrong kind.');
+  }
+  const assetType = stringValue(payload['asset_type']);
+  requireAllowed(assetType, AITP_SOURCE_ASSET_TYPES, 'asset_type');
+  return {
+    ok: payload['ok'] === true,
+    kind: 'source_asset',
+    assetId: requiredPayloadString(payload, 'asset_id'),
+    topicId: requiredPayloadString(payload, 'topic_id'),
+    assetType,
+    orientationOnly: payload['orientation_only'] === true,
+    canUpdateClaimTrust: payload['can_update_claim_trust'] === true,
+    raw: payload,
+  };
+}
+
+function parseHumanCheckpointWriteResult(payload: unknown): AitpHumanCheckpointWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError('AITP human checkpoint payload must be an object.');
+  }
+  if (payload['kind'] !== 'human_checkpoint') {
+    throw new AitpCliBridgeError('AITP human checkpoint payload has the wrong kind.');
+  }
+  return {
+    ok: payload['ok'] === true,
+    kind: 'human_checkpoint',
+    checkpointId: requiredPayloadString(payload, 'checkpoint_id'),
+    topicId: requiredPayloadString(payload, 'topic_id'),
+    claimId: requiredPayloadString(payload, 'claim_id'),
+    status: requiredPayloadString(payload, 'status'),
     raw: payload,
   };
 }
