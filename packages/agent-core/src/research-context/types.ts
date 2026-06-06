@@ -112,6 +112,9 @@ export interface ResearchContextAitpSection {
   readonly toolProvenanceGapIds: readonly string[];
   readonly validationProvenanceGapIds: readonly string[];
   readonly artifactProvenanceGapIds: readonly string[];
+  readonly sourceAssetIds: readonly string[];
+  readonly sourceAssetMissingHashIds: readonly string[];
+  readonly sourceAssetDuplicateHashIds: readonly string[];
   readonly trustBoundaryReasons: readonly string[];
   readonly openObligationIds: readonly string[];
   readonly requiredCallIds: readonly string[];

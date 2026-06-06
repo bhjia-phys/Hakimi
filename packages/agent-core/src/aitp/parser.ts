@@ -15,6 +15,7 @@ import type {
   AitpResearchMomentId,
   AitpRouteState,
   AitpRouteStateItem,
+  AitpSourceAssetIndexItem,
   AitpSourceBacktraceItem,
 } from './types';
 import type { ResearchActionBindingPriority } from '../research-action';
@@ -40,6 +41,9 @@ export function parseAitpProcessGraphSlice(input: unknown): AitpProcessGraphSlic
     edges: objectArray(input['edges']).map(parseEdge),
     openObligations: objectArray(input['open_obligations']).map(parseOpenObligation),
     sourceBacktrace: objectArray(input['source_backtrace']).map(parseSourceBacktraceItem),
+    sourceAssetIndex: objectArray(valueFor(input, 'source_asset_index', 'sourceAssetIndex')).map(
+      parseSourceAssetIndexItem,
+    ),
     relationNeighborhood: objectArray(input['relation_neighborhood']).map(
       parseRelationNeighborhoodItem,
     ),
@@ -142,6 +146,70 @@ function parseSourceBacktraceItem(
       valueFor(raw, 'source_dependency_questions', 'sourceDependencyQuestions'),
     ),
     originalQuestionGuard: stringArray(valueFor(raw, 'original_question_guard', 'originalQuestionGuard')),
+  };
+}
+
+function parseSourceAssetIndexItem(
+  raw: Record<string, unknown>,
+  index: number,
+): AitpSourceAssetIndexItem {
+  const id =
+    stringValue(valueFor(raw, 'asset_id', 'assetId')) ??
+    stringValue(raw['id']) ??
+    `aitp.source_asset.${String(index + 1)}`;
+  return {
+    id,
+    topicId: stringValue(valueFor(raw, 'topic_id', 'topicId')),
+    claimId: stringValue(valueFor(raw, 'claim_id', 'claimId')),
+    assetType: stringValue(valueFor(raw, 'asset_type', 'assetType')) ?? 'other',
+    uri: stringValue(raw['uri']) ?? '',
+    title: stringValue(raw['title']) ?? id,
+    label: stringValue(raw['label']),
+    summary: stringValue(raw['summary']),
+    sourceKind: stringValue(valueFor(raw, 'source_kind', 'sourceKind')),
+    contentHash: stringValue(valueFor(raw, 'content_hash', 'contentHash')),
+    hashAlgorithm: stringValue(valueFor(raw, 'hash_algorithm', 'hashAlgorithm')),
+    hashStatus: stringValue(valueFor(raw, 'hash_status', 'hashStatus')) ?? 'unknown',
+    versionAnchor: recordValue(valueFor(raw, 'version_anchor', 'versionAnchor')),
+    acquiredAt: stringValue(valueFor(raw, 'acquired_at', 'acquiredAt')),
+    sourceRefs: stringArray(valueFor(raw, 'source_refs', 'sourceRefs')),
+    artifactIds: stringArray(valueFor(raw, 'artifact_ids', 'artifactIds')),
+    codeStateIds: stringArray(valueFor(raw, 'code_state_ids', 'codeStateIds')),
+    referenceLocationIds: stringArray(
+      valueFor(raw, 'reference_location_ids', 'referenceLocationIds'),
+    ),
+    referenceLocations: objectArray(
+      valueFor(raw, 'reference_locations', 'referenceLocations'),
+    ).map(parseSourceAssetReferenceLocation),
+    derivedFrom: stringArray(valueFor(raw, 'derived_from', 'derivedFrom')),
+    linkedRecords: recordValue(valueFor(raw, 'linked_records', 'linkedRecords')),
+    duplicateHashDiagnostics: recordValue(
+      valueFor(raw, 'duplicate_hash_diagnostics', 'duplicateHashDiagnostics'),
+    ),
+    provenanceGapIds: stringArray(valueFor(raw, 'provenance_gap_ids', 'provenanceGapIds')),
+    provenanceGapTypes: stringArray(
+      valueFor(raw, 'provenance_gap_types', 'provenanceGapTypes'),
+    ),
+    targetRefs: stringArray(valueFor(raw, 'target_refs', 'targetRefs')),
+    orientationOnly: booleanValue(valueFor(raw, 'orientation_only', 'orientationOnly')) ?? true,
+    canUpdateClaimTrust:
+      booleanValue(valueFor(raw, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,
+  };
+}
+
+function parseSourceAssetReferenceLocation(
+  raw: Record<string, unknown>,
+): AitpSourceAssetIndexItem['referenceLocations'][number] {
+  return {
+    id:
+      stringValue(valueFor(raw, 'reference_location_id', 'referenceLocationId')) ??
+      stringValue(raw['id']) ??
+      '',
+    uri: stringValue(raw['uri']),
+    label: stringValue(raw['label']),
+    connectorId: stringValue(valueFor(raw, 'connector_id', 'connectorId')),
+    locationType: stringValue(valueFor(raw, 'location_type', 'locationType')),
+    status: stringValue(raw['status']),
   };
 }
 
@@ -663,6 +731,10 @@ function stringList(value: unknown): readonly string[] {
 function objectArray(value: unknown): readonly Record<string, unknown>[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isRecord);
+}
+
+function recordValue(value: unknown): Readonly<Record<string, unknown>> {
+  return isRecord(value) ? value : {};
 }
 
 function valueFor(

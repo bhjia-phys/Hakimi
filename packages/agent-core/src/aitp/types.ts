@@ -82,6 +82,43 @@ export interface AitpSourceBacktraceItem {
   readonly originalQuestionGuard: readonly string[];
 }
 
+export interface AitpSourceAssetIndexItem {
+  readonly id: string;
+  readonly topicId?: string | undefined;
+  readonly claimId?: string | undefined;
+  readonly assetType: string;
+  readonly uri: string;
+  readonly title: string;
+  readonly label?: string | undefined;
+  readonly summary?: string | undefined;
+  readonly sourceKind?: string | undefined;
+  readonly contentHash?: string | undefined;
+  readonly hashAlgorithm?: string | undefined;
+  readonly hashStatus: string;
+  readonly versionAnchor: Readonly<Record<string, unknown>>;
+  readonly acquiredAt?: string | undefined;
+  readonly sourceRefs: readonly string[];
+  readonly artifactIds: readonly string[];
+  readonly codeStateIds: readonly string[];
+  readonly referenceLocationIds: readonly string[];
+  readonly referenceLocations: readonly {
+    readonly id: string;
+    readonly uri?: string | undefined;
+    readonly label?: string | undefined;
+    readonly connectorId?: string | undefined;
+    readonly locationType?: string | undefined;
+    readonly status?: string | undefined;
+  }[];
+  readonly derivedFrom: readonly string[];
+  readonly linkedRecords: Readonly<Record<string, unknown>>;
+  readonly duplicateHashDiagnostics: Readonly<Record<string, unknown>>;
+  readonly provenanceGapIds: readonly string[];
+  readonly provenanceGapTypes: readonly string[];
+  readonly targetRefs: readonly string[];
+  readonly orientationOnly: boolean;
+  readonly canUpdateClaimTrust: boolean;
+}
+
 export interface AitpRelationNeighborhoodItem {
   readonly id: string;
   readonly source?: string | undefined;
@@ -270,6 +307,7 @@ export interface AitpProcessGraphSlice {
   readonly edges: readonly AitpProcessGraphEdge[];
   readonly openObligations: readonly AitpOpenObligation[];
   readonly sourceBacktrace: readonly AitpSourceBacktraceItem[];
+  readonly sourceAssetIndex: readonly AitpSourceAssetIndexItem[];
   readonly relationNeighborhood: readonly AitpRelationNeighborhoodItem[];
   readonly exploratoryRecords: readonly AitpExploratoryRecordItem[];
   readonly routeState: AitpRouteState;
@@ -369,6 +407,14 @@ export interface AitpProvenanceGapSummary {
   readonly lines: readonly string[];
 }
 
+export interface AitpSourceAssetSummary {
+  readonly all: readonly AitpSourceAssetIndexItem[];
+  readonly missingHash: readonly AitpSourceAssetIndexItem[];
+  readonly duplicateHash: readonly AitpSourceAssetIndexItem[];
+  readonly withReferences: readonly AitpSourceAssetIndexItem[];
+  readonly lines: readonly string[];
+}
+
 export interface AitpTrustSummary {
   readonly truthSource: string;
   readonly orientationOnly: boolean;
@@ -384,6 +430,7 @@ export interface CompiledAitpProcessGraphSlice {
   readonly callObligations: readonly AitpCallObligation[];
   readonly obligations: AitpObligationSummary;
   readonly routes: AitpRouteSummary;
+  readonly sourceAssets: AitpSourceAssetSummary;
   readonly provenance: AitpProvenanceGapSummary;
   readonly suggestedNextMoments: readonly DetectedResearchMoment[];
   readonly trust: AitpTrustSummary;

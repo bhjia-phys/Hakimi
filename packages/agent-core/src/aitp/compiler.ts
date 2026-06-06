@@ -12,6 +12,8 @@ import type {
   AitpRouteState,
   AitpRouteStateItem,
   AitpRouteSummary,
+  AitpSourceAssetIndexItem,
+  AitpSourceAssetSummary,
   AitpTheoryReasoningProjection,
   AitpTrustSummary,
   CompiledAitpProcessGraphSlice,
@@ -48,6 +50,7 @@ export function compileAitpProcessGraphSlice(
   const obligations = summarizeObligations(slice.openObligations, maxItems);
   const routes = summarizeRoutes(slice.routeState, maxItems);
   const provenance = summarizeProvenanceGaps(slice.provenanceGaps, maxItems);
+  const sourceAssets = summarizeSourceAssets(slice.sourceAssetIndex, maxItems);
   const trust = summarizeTrust(slice);
   const suggestedNextMoments = detectResearchMoments(slice, options);
   const callObligations = buildCallObligations(slice);
@@ -60,6 +63,7 @@ export function compileAitpProcessGraphSlice(
     obligations,
     routes,
     provenance,
+    sourceAssets,
     suggestedNextMoments,
     callObligations,
     theoryReasoning,
@@ -67,12 +71,21 @@ export function compileAitpProcessGraphSlice(
   );
 
   return {
-    reminders: buildReminderLines(slice, contextLines, trust, callObligations, provenance, maxItems),
+    reminders: buildReminderLines(
+      slice,
+      contextLines,
+      trust,
+      callObligations,
+      provenance,
+      sourceAssets,
+      maxItems,
+    ),
     contextLines,
     actionRecommendations,
     callObligations,
     obligations,
     routes,
+    sourceAssets,
     provenance,
     suggestedNextMoments,
     trust,
@@ -107,6 +120,7 @@ function buildContextLines(
   obligations: AitpObligationSummary,
   routes: AitpRouteSummary,
   provenance: AitpProvenanceGapSummary,
+  sourceAssets: AitpSourceAssetSummary,
   moments: readonly DetectedResearchMoment[],
   callObligations: readonly AitpCallObligation[],
   theoryReasoning: AitpTheoryReasoningProjection | undefined,
@@ -121,6 +135,7 @@ function buildContextLines(
   lines.push(...obligations.lines);
   lines.push(...routes.lines);
   lines.push(...provenance.lines);
+  lines.push(...sourceAssets.lines);
 
   const sourceGaps = slice.sourceBacktrace.filter((item) =>
     lowerJoin([item.status, item.reason, item.gap]).match(/gap|missing|unresolved|open|no source/) !==
@@ -211,6 +226,7 @@ function buildReminderLines(
   trust: AitpTrustSummary,
   callObligations: readonly AitpCallObligation[],
   provenance: AitpProvenanceGapSummary,
+  sourceAssets: AitpSourceAssetSummary,
   maxItems: number,
 ): readonly string[] {
   const lines = [
@@ -242,6 +258,11 @@ function buildReminderLines(
   if (provenance.all.length > 0) {
     lines.push(
       'Capture source, code, tool-run, and artifact provenance before reusing those refs as evidence, validation inputs, benchmark bases, memory inputs, or checked conclusions.',
+    );
+  }
+  if (sourceAssets.missingHash.length > 0 || sourceAssets.duplicateHash.length > 0) {
+    lines.push(
+      'Use AITP source asset index hash status before reusing raw papers, lectures, code snapshots, datasets, or generated artifacts.',
     );
   }
   return lines;
@@ -320,6 +341,38 @@ export function summarizeProvenanceGaps(
     lines.push(`Artifact provenance gaps: ${bounded(artifact.map((item) => item.id), maxItems).join(', ')}`);
   }
   return { all: gaps, source, code, tool, validation, artifact, lines };
+}
+
+export function summarizeSourceAssets(
+  sourceAssets: readonly AitpSourceAssetIndexItem[],
+  maxItems = MAX_CONTEXT_ITEMS,
+): AitpSourceAssetSummary {
+  const missingHash = sourceAssets.filter((item) =>
+    item.contentHash === undefined || item.contentHash.length === 0 || item.hashStatus === 'missing',
+  );
+  const duplicateHash = sourceAssets.filter((item) =>
+    item.hashStatus === 'duplicate' || item.duplicateHashDiagnostics['duplicate_hash'] === true,
+  );
+  const withReferences = sourceAssets.filter((item) =>
+    item.referenceLocationIds.length > 0 || item.referenceLocations.length > 0,
+  );
+  const lines: string[] = [];
+  if (sourceAssets.length > 0) {
+    lines.push(
+      `Source asset index: ${bounded(sourceAssets.map(renderSourceAssetIndexItem), maxItems).join('; ')}`,
+    );
+  }
+  if (missingHash.length > 0) {
+    lines.push(
+      `Source assets missing hashes: ${bounded(missingHash.map((item) => item.id), maxItems).join(', ')}`,
+    );
+  }
+  if (duplicateHash.length > 0) {
+    lines.push(
+      `Source assets with duplicate hashes: ${bounded(duplicateHash.map((item) => item.id), maxItems).join(', ')}`,
+    );
+  }
+  return { all: sourceAssets, missingHash, duplicateHash, withReferences, lines };
 }
 
 function gapMatches(gap: AitpProvenanceGap, needles: readonly string[]): boolean {
@@ -966,6 +1019,7 @@ function buildDiagnostics(slice: AitpProcessGraphSlice): readonly string[] {
   if (slice.orientationOnly) diagnostics.push('orientation-only');
   if (slice.trustBoundaryReasons.length > 0) diagnostics.push('trust-boundary-present');
   if (slice.provenanceGaps.length > 0) diagnostics.push('provenance-gaps-present');
+  if (slice.sourceAssetIndex.length > 0) diagnostics.push('source-asset-index-present');
   return diagnostics;
 }
 
@@ -1022,6 +1076,16 @@ function renderSourceAsset(item: { readonly id: string; readonly title?: string 
   const type = item.assetType === undefined ? '' : ` [${item.assetType}]`;
   const uri = item.uri === undefined ? '' : ` -> ${item.uri}`;
   return `${item.id}${type}: ${title}${uri}`;
+}
+
+function renderSourceAssetIndexItem(item: AitpSourceAssetIndexItem): string {
+  const title = item.title.length === 0 ? item.label ?? item.id : item.title;
+  const hash = item.contentHash === undefined ? item.hashStatus : `${item.hashStatus}:${item.contentHash}`;
+  const refs = item.referenceLocationIds.length === 0
+    ? ''
+    : ` refs=${item.referenceLocationIds.join('|')}`;
+  const gaps = item.provenanceGapIds.length === 0 ? '' : ` gaps=${item.provenanceGapIds.join('|')}`;
+  return `source_asset:${item.id} [${item.assetType}/${hash}]: ${title} -> ${item.uri}${refs}${gaps}`;
 }
 
 function renderMomentPolicy(moment: DetectedResearchMoment): string {
@@ -1118,10 +1182,13 @@ function withSliceDefaults(slice: AitpProcessGraphSlice): AitpProcessGraphSlice 
     'routeState' in slice && slice.routeState !== undefined ? slice.routeState : emptyRouteState();
   const provenanceGaps =
     (slice as { readonly provenanceGaps?: readonly AitpProvenanceGap[] }).provenanceGaps ?? [];
+  const sourceAssetIndex =
+    (slice as { readonly sourceAssetIndex?: readonly AitpSourceAssetIndexItem[] }).sourceAssetIndex ?? [];
   return {
     ...slice,
     routeState,
     provenanceGaps,
+    sourceAssetIndex,
   };
 }
 

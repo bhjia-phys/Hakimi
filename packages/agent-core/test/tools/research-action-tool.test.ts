@@ -472,6 +472,10 @@ describe('ResearchActionTool', () => {
     expect(loaded.output).toContain('<route>route-blocked</route>');
     expect(loaded.output).toContain('<pivot_required_routes>');
     expect(loaded.output).toContain('<route>route-live</route>');
+    expect(loaded.output).toContain('<source_assets>');
+    expect(loaded.output).toContain('<source_asset>source-asset-route-paper</source_asset>');
+    expect(loaded.output).toContain('<source_assets_missing_hashes>');
+    expect(loaded.output).toContain('<source_asset>source-asset-route-paper</source_asset>');
     expect(loaded.output).toContain('aitp.record_route_choice');
     expect(loaded.output).toContain('aitp.record_failed_route_lesson');
     expect(loaded.output).toContain('aitp.checkpoint_before_route_switch');
@@ -1169,6 +1173,20 @@ function routeStateSlicePayload() {
       abandoned_route_ids: [],
       pivot_required_route_ids: ['route-live'],
     },
+    source_asset_index: [
+      {
+        asset_id: 'source-asset-route-paper',
+        topic_id: 'route-state',
+        claim_id: 'claim-route',
+        asset_type: 'paper',
+        uri: 'arxiv:2601.00001',
+        title: 'Route paper',
+        hash_status: 'missing',
+        target_refs: ['source_asset:source-asset-route-paper'],
+        orientation_only: true,
+        can_update_claim_trust: false,
+      },
+    ],
     trust_boundary_reasons: [],
     recommended_moments: [],
     moment_policy: {

@@ -214,10 +214,32 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.provenance.artifact.map((item) => item.id)).toEqual([
       'gap-benchmark-artifact',
     ]);
+    expect(compiled.sourceAssets.all.map((item) => item.id)).toEqual([
+      'source-asset-edge-counting',
+      'source-asset-edge-counting-copy',
+    ]);
+    expect(compiled.sourceAssets.missingHash.map((item) => item.id)).toEqual([
+      'source-asset-edge-counting',
+    ]);
+    expect(compiled.sourceAssets.duplicateHash.map((item) => item.id)).toEqual([
+      'source-asset-edge-counting-copy',
+    ]);
+    expect(compiled.sourceAssets.withReferences.map((item) => item.id)).toEqual([
+      'source-asset-edge-counting',
+    ]);
     expect(compiled.contextLines.join('\n')).toContain(
       'Provenance gaps: gap-reference-location [reference_location_missing/source]',
     );
     expect(compiled.contextLines.join('\n')).toContain('Code provenance gaps: gap-code-state');
+    expect(compiled.contextLines.join('\n')).toContain(
+      'Source asset index: source_asset:source-asset-edge-counting [paper/missing]',
+    );
+    expect(compiled.contextLines.join('\n')).toContain(
+      'Source assets missing hashes: source-asset-edge-counting',
+    );
+    expect(compiled.contextLines.join('\n')).toContain(
+      'Source assets with duplicate hashes: source-asset-edge-counting-copy',
+    );
     expect(compiled.actionRecommendations.map((binding) => binding.actionId)).toEqual(
       expect.arrayContaining([
         'aitp.record_reference_location',
@@ -276,6 +298,10 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.reminders.join('\n')).toContain(
       'Capture source, code, tool-run, and artifact provenance before reusing',
     );
+    expect(compiled.reminders.join('\n')).toContain(
+      'Use AITP source asset index hash status before reusing raw papers',
+    );
+    expect(compiled.diagnostics).toContain('source-asset-index-present');
   });
 
   it('accepts current AITP v5 snake-case process graph slices', () => {
@@ -900,6 +926,52 @@ function provenanceGapSlicePayload() {
         required_before_trust_change: false,
         strict_boundary: 'before_using_as_evidence_validation_benchmark_memory_or_checked_conclusion',
         blocking_when_used_as: ['benchmark_basis'],
+        orientation_only: true,
+        can_update_claim_trust: false,
+      },
+    ],
+    source_asset_index: [
+      {
+        asset_id: 'source-asset-edge-counting',
+        topic_id: 'fqhe',
+        claim_id: 'claim-fqhe',
+        asset_type: 'paper',
+        uri: 'arxiv:2601.00001',
+        title: 'Edge counting source asset',
+        source_kind: 'literature',
+        hash_status: 'missing',
+        reference_location_ids: ['ref-edge-counting'],
+        reference_locations: [
+          {
+            reference_location_id: 'ref-edge-counting',
+            uri: 'arxiv:2601.00001#sec2',
+            label: 'Section 2',
+            location_type: 'paper_section',
+            status: 'located',
+          },
+        ],
+        provenance_gap_ids: ['gap-source-hash'],
+        provenance_gap_types: ['source_asset_hash_missing'],
+        target_refs: ['source_asset:source-asset-edge-counting'],
+        orientation_only: true,
+        can_update_claim_trust: false,
+      },
+      {
+        asset_id: 'source-asset-edge-counting-copy',
+        topic_id: 'fqhe',
+        claim_id: 'claim-fqhe',
+        asset_type: 'paper',
+        uri: 'file:edge-counting-copy.pdf',
+        title: 'Edge counting duplicate',
+        source_kind: 'literature',
+        content_hash: 'sha256:abc123',
+        hash_algorithm: 'sha256',
+        hash_status: 'duplicate',
+        duplicate_hash_diagnostics: {
+          duplicate_hash: true,
+          duplicate_of_asset_ids: ['source-asset-edge-counting'],
+        },
+        target_refs: ['source_asset:source-asset-edge-counting-copy'],
         orientation_only: true,
         can_update_claim_trust: false,
       },
