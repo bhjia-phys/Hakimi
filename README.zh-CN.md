@@ -1,5 +1,11 @@
 # Hakimi
 
+AITP bridge update: `ResearchAction.execute_aitp_write_bridge` can now call
+`recordSourceReconstructionReviewResult` / `aitp-v5 source
+reconstruction-review-result` when `source_reconstruction_review.next_actions`
+asks for `aitp.record_source_reconstruction_review_result`. The result remains
+canonical AITP review evidence, not Hakimi claim-trust authority.
+
 <p align="center">
   <img src="docs/assets/hakimi-terminal-welcome.png" width="920" alt="Hakimi terminal welcome screen with a pixel cat-ear exploration spacecraft" />
 </p>

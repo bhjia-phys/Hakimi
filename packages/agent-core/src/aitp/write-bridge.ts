@@ -6,6 +6,7 @@ import type {
   AitpCodeStateWriteResult,
   AitpProofObligationWriteResult,
   AitpReferenceLocationWriteResult,
+  AitpSourceReconstructionReviewResultWriteResult,
   AitpSourceAssetWriteResult,
   AitpToolRunWriteResult,
   AitpValidationContractWriteResult,
@@ -18,6 +19,7 @@ import type {
   RecordAitpValidationResultInput,
   RecordAitpExploratoryRecordInput,
   RecordAitpReferenceLocationInput,
+  RecordAitpSourceReconstructionReviewResultInput,
   RecordAitpToolRunInput,
   RegisterAitpSourceAssetInput,
   RequestAitpHumanCheckpointInput,
@@ -36,6 +38,7 @@ export const AITP_WRITE_BRIDGE_OPERATIONS = [
   'createProofObligation',
   'createValidationContract',
   'recordValidationResult',
+  'recordSourceReconstructionReviewResult',
   'requestHumanCheckpoint',
 ] as const;
 
@@ -83,6 +86,10 @@ export type AitpWriteBridgeExecutionInput =
       readonly payload: RecordAitpValidationResultInput;
     }
   | {
+      readonly operation: 'recordSourceReconstructionReviewResult';
+      readonly payload: RecordAitpSourceReconstructionReviewResultInput;
+    }
+  | {
       readonly operation: 'requestHumanCheckpoint';
       readonly payload: RequestAitpHumanCheckpointInput;
     };
@@ -98,6 +105,7 @@ export type AitpWriteBridgeExecutionResult =
   | AitpProofObligationWriteResult
   | AitpValidationContractWriteResult
   | AitpValidationResultWriteResult
+  | AitpSourceReconstructionReviewResultWriteResult
   | AitpHumanCheckpointWriteResult;
 
 export interface AitpWriteBridgeExecutor {
@@ -131,6 +139,9 @@ export interface AitpWriteBridgeCliTarget {
   recordValidationResult(
     input: RecordAitpValidationResultInput,
   ): Promise<AitpValidationResultWriteResult>;
+  recordSourceReconstructionReviewResult(
+    input: RecordAitpSourceReconstructionReviewResultInput,
+  ): Promise<AitpSourceReconstructionReviewResultWriteResult>;
   requestHumanCheckpoint(
     input: RequestAitpHumanCheckpointInput,
   ): Promise<AitpHumanCheckpointWriteResult>;
@@ -163,6 +174,8 @@ export class AitpCliWriteBridgeExecutor implements AitpWriteBridgeExecutor {
         return this.bridge.createValidationContract(input.payload);
       case 'recordValidationResult':
         return this.bridge.recordValidationResult(input.payload);
+      case 'recordSourceReconstructionReviewResult':
+        return this.bridge.recordSourceReconstructionReviewResult(input.payload);
       case 'requestHumanCheckpoint':
         return this.bridge.requestHumanCheckpoint(input.payload);
     }
@@ -412,6 +425,58 @@ export function coerceAitpWriteBridgeInput(
           signal,
         },
       };
+    case 'recordSourceReconstructionReviewResult': {
+      const basisRefs = optionalStringArray(record, 'basisRefs', 'basis_refs');
+      const evidenceRefs = optionalStringArray(record, 'evidenceRefs', 'evidence_refs');
+      const validationResultIds = optionalStringArray(
+        record,
+        'validationResultIds',
+        'validation_result_ids',
+      );
+      const referenceLocationIds = optionalStringArray(
+        record,
+        'referenceLocationIds',
+        'reference_location_ids',
+      );
+      const objectIds = optionalStringArray(record, 'objectIds', 'object_ids');
+      const relationIds = optionalStringArray(record, 'relationIds', 'relation_ids');
+      if (
+        !hasAnyStringArray([
+          basisRefs,
+          evidenceRefs,
+          validationResultIds,
+          referenceLocationIds,
+          objectIds,
+          relationIds,
+        ])
+      ) {
+        throw new AitpWriteBridgePayloadError(
+          'aitp_payload must include at least one source reconstruction review basis.',
+        );
+      }
+      return {
+        operation,
+        payload: {
+          claimId: requiredString(record, 'claimId', 'claim_id'),
+          status: requiredString(record, 'status'),
+          reviewedComponents: requiredStringArray(
+            record,
+            'reviewedComponents',
+            'reviewed_components',
+          ),
+          summary: requiredString(record, 'summary'),
+          basisRefs,
+          evidenceRefs,
+          validationResultIds,
+          referenceLocationIds,
+          objectIds,
+          relationIds,
+          remainingActions: optionalStringArray(record, 'remainingActions', 'remaining_actions'),
+          reviewerRole: optionalString(record, 'reviewerRole', 'reviewer_role'),
+          signal,
+        },
+      };
+    }
     case 'requestHumanCheckpoint':
       return {
         operation,
@@ -451,6 +516,8 @@ export function actionIdForAitpWriteBridgeOperation(
       return 'aitp.create_validation_contract';
     case 'recordValidationResult':
       return 'aitp.record_validation_result';
+    case 'recordSourceReconstructionReviewResult':
+      return 'aitp.record_source_reconstruction_review_result';
     case 'requestHumanCheckpoint':
       return 'aitp.request_human_checkpoint';
   }
@@ -480,6 +547,8 @@ export function evidenceRefsForAitpWriteBridgeResult(
       return [`aitp:validation_contract:${result.contractId}`];
     case 'validation_result':
       return [`aitp:validation_result:${result.resultId}`];
+    case 'source_reconstruction_review_result':
+      return [`aitp:source_reconstruction_review_result:${result.resultId}`];
     case 'human_checkpoint':
       return [`aitp:human_checkpoint:${result.checkpointId}`];
   }
@@ -572,4 +641,8 @@ function optionalRecord(
     }
   }
   return undefined;
+}
+
+function hasAnyStringArray(values: readonly (readonly string[] | undefined)[]): boolean {
+  return values.some((items) => items !== undefined && items.length > 0);
 }

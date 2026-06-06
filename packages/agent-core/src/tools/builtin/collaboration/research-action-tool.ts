@@ -1191,6 +1191,8 @@ function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string
       return result.contractId;
     case 'validation_result':
       return result.resultId;
+    case 'source_reconstruction_review_result':
+      return result.resultId;
     case 'human_checkpoint':
       return result.checkpointId;
   }

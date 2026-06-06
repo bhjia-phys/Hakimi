@@ -81,6 +81,7 @@ describe('research primitive plan templates', () => {
     const obligation = planFor('aitp.create_open_obligation');
     const validationContract = planFor('aitp.create_validation_contract');
     const validationResult = planFor('aitp.record_validation_result');
+    const sourceReviewResult = planFor('aitp.record_source_reconstruction_review_result');
 
     expect(exploration.steps.map((step) => step.id)).toEqual([
       'execute-aitp-exploration-write',
@@ -113,6 +114,9 @@ describe('research primitive plan templates', () => {
     expect(validationResult.steps.map((step) => step.id)).toEqual([
       'execute-aitp-validation-result-write',
     ]);
+    expect(sourceReviewResult.steps.map((step) => step.id)).toEqual([
+      'execute-aitp-source-reconstruction-review-result-write',
+    ]);
     expect(exploration.recording.evidenceRefs).toContain('aitp:exploratory_record:<id>');
     expect(artifact.recording.evidenceRefs).toContain('aitp:artifact:<id>');
     expect(codeState.recording.evidenceRefs).toContain('aitp:code_state:<id>');
@@ -124,6 +128,9 @@ describe('research primitive plan templates', () => {
     expect(obligation.recording.evidenceRefs).toContain('aitp:proof_obligation:<id>');
     expect(validationContract.recording.evidenceRefs).toContain('aitp:validation_contract:<id>');
     expect(validationResult.recording.evidenceRefs).toContain('aitp:validation_result:<id>');
+    expect(sourceReviewResult.recording.evidenceRefs).toContain(
+      'aitp:source_reconstruction_review_result:<id>',
+    );
   });
 
   it('plans AITP route moments as non-write-bridge process records', () => {

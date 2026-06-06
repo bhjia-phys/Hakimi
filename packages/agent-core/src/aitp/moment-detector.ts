@@ -101,6 +101,20 @@ export function detectResearchMoments(
     });
   }
 
+  const reviewResultTargets = sourceReconstructionReviewResultTargets(slice);
+  if (reviewResultTargets.length > 0) {
+    addMoment(moments, {
+      id: 'aitp.record_source_reconstruction_review_result',
+      actionId: 'aitp.record_source_reconstruction_review_result',
+      priority: 'high',
+      reason:
+        'AITP source reconstruction review worklist asks for typed review result records.',
+      source: 'aitp',
+      targetRefs: reviewResultTargets,
+      lifecycleTrigger: emptyLifecycleTrigger(),
+    });
+  }
+
   for (const obligation of slice.openObligations) {
     const obligationText = lowerJoin([obligation.kind, obligation.reason, obligation.status]);
     const targetRefs = [obligation.targetNodeId, obligation.id].filter(isString);
@@ -487,6 +501,24 @@ export function detectResearchMoments(
       'high',
     );
   }
+  if (hasAny(text, [
+    'source reconstruction review result',
+    'record source reconstruction review',
+    'reviewed component',
+    'reviewed components',
+    'review result',
+    '\u6e90\u91cd\u6784\u5ba1\u67e5',
+    '\u6e90\u91cd\u6784\u5ba1\u6838',
+    '\u5ba1\u67e5\u7ed3\u679c',
+    '\u5ba1\u6838\u7ed3\u679c',
+  ])) {
+    addKeywordMoment(
+      moments,
+      'aitp.record_source_reconstruction_review_result',
+      'Prompt or context asks to record a source reconstruction review result.',
+      'high',
+    );
+  }
 
   return [...moments.values()].toSorted((left, right) => {
     const byPriority = priorityRank(right.priority) - priorityRank(left.priority);
@@ -521,6 +553,8 @@ export function actionIdForMoment(id: AitpResearchMomentId): string {
     case 'human_checkpoint':
     case 'request_human_checkpoint':
       return 'aitp.request_human_checkpoint';
+    case 'record_source_reconstruction_review_result':
+      return 'aitp.record_source_reconstruction_review_result';
     default:
       return id;
   }
@@ -537,7 +571,13 @@ export function actionIdForPolicyDecision(decision: AitpMomentPolicyDecision): s
     if (decision.entrypoints.includes('aitp_v5_record_validation_result')) {
       return 'aitp.record_validation_result';
     }
+    if (decision.entrypoints.includes('aitp_v5_record_source_reconstruction_review_result')) {
+      return 'aitp.record_source_reconstruction_review_result';
+    }
     return 'aitp.create_open_obligation';
+  }
+  if (decision.entrypoints.includes('aitp_v5_record_source_reconstruction_review_result')) {
+    return 'aitp.record_source_reconstruction_review_result';
   }
   if (decision.entrypoints.includes('aitp_v5_record_reference_location')) {
     return 'aitp.record_reference_location';
@@ -701,6 +741,9 @@ function provenanceGapActionIds(gap: AitpProvenanceGap): readonly string[] {
   if (hasAny(text, ['tool_run', 'benchmark'])) inferred.push('aitp.record_tool_run');
   if (hasAny(text, ['validation_contract'])) inferred.push('aitp.create_validation_contract');
   if (hasAny(text, ['validation_result'])) inferred.push('aitp.record_validation_result');
+  if (hasAny(text, ['source_reconstruction_review_result', 'source reconstruction review result'])) {
+    inferred.push('aitp.record_source_reconstruction_review_result');
+  }
   if (hasAny(text, ['artifact'])) inferred.push('aitp.attach_artifact');
   return unique([...fromHints, ...inferred]);
 }
@@ -724,6 +767,8 @@ function normalizeProvenanceActionId(value: string): readonly string[] {
       return ['aitp.create_validation_contract'];
     case 'aitp_v5_record_validation_result':
       return ['aitp.record_validation_result'];
+    case 'aitp_v5_record_source_reconstruction_review_result':
+      return ['aitp.record_source_reconstruction_review_result'];
     case 'aitp_v5_attach_artifact':
       return ['aitp.attach_artifact'];
     default:
@@ -781,6 +826,22 @@ function isRouteActionId(actionId: string): boolean {
     actionId === 'aitp.record_failed_route_lesson' ||
     actionId === 'aitp.checkpoint_before_route_switch'
   );
+}
+
+function sourceReconstructionReviewResultTargets(
+  slice: AitpProcessGraphSlice,
+): readonly string[] {
+  const manifestAsksForResult = slice.sourceReconstructionReview.nextActions.includes(
+    'record_source_reconstruction_review_result',
+  );
+  const claimIds = slice.sourceReconstructionReview.items
+    .filter(
+      (item) =>
+        item.nextActions.includes('record_source_reconstruction_review_result') ||
+        (manifestAsksForResult && item.reviewStatus !== 'passed'),
+    )
+    .map((item) => item.claimId);
+  return unique(claimIds.map((claimId) => `claim:${claimId}`));
 }
 
 function addKeywordMoment(

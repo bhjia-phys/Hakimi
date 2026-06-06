@@ -523,6 +523,18 @@ describe('ResearchActionTool', () => {
             raw: {},
           };
         }
+        if (input.operation === 'recordSourceReconstructionReviewResult') {
+          return {
+            ok: true,
+            kind: 'source_reconstruction_review_result',
+            resultId: 'source-review-result-algebra',
+            topicId: 'qg-algebra-mipt',
+            claimId: 'claim-mipt-observer-algebra',
+            status: 'needs_revision',
+            canUpdateClaimTrust: false,
+            raw: {},
+          };
+        }
         if (input.operation === 'recordEvidence') {
           return {
             ok: true,
@@ -722,6 +734,18 @@ describe('ResearchActionTool', () => {
         checked_outputs: ['source chain transcript'],
       },
     });
+    const reviewResult = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'recordSourceReconstructionReviewResult',
+      aitp_payload: {
+        claim_id: 'claim-mipt-observer-algebra',
+        status: 'needs_revision',
+        reviewed_components: ['definitions', 'source_locations'],
+        basis_refs: ['source_asset:source-asset-algebra-paper'],
+        reference_location_ids: ['reference-location-algebra-paper'],
+        summary: 'Definitions and source locations reviewed; theorem dependency needs revision.',
+      },
+    });
 
     expect(result.output).toContain('<aitp_write_bridge');
     expect(result.output).toContain('operation="createProofObligation"');
@@ -742,7 +766,11 @@ describe('ResearchActionTool', () => {
     );
     expect(validation.output).toContain('operation="recordValidationResult"');
     expect(validation.output).toContain('aitp:validation_result:validation-result-source-audit');
-    expect(bridgeCalls).toHaveLength(8);
+    expect(reviewResult.output).toContain('operation="recordSourceReconstructionReviewResult"');
+    expect(reviewResult.output).toContain(
+      'aitp:source_reconstruction_review_result:source-review-result-algebra',
+    );
+    expect(bridgeCalls).toHaveLength(9);
     expect(bridgeCalls[0]).toMatchObject({
       operation: 'createProofObligation',
       payload: {
@@ -805,6 +833,15 @@ describe('ResearchActionTool', () => {
       payload: {
         contractId: 'validation-contract-source-audit',
         checkedOutputs: ['source chain transcript'],
+      },
+    });
+    expect(bridgeCalls[8]).toMatchObject({
+      operation: 'recordSourceReconstructionReviewResult',
+      payload: {
+        claimId: 'claim-mipt-observer-algebra',
+        reviewedComponents: ['definitions', 'source_locations'],
+        basisRefs: ['source_asset:source-asset-algebra-paper'],
+        referenceLocationIds: ['reference-location-algebra-paper'],
       },
     });
     expect(records).toContainEqual(
@@ -878,6 +915,17 @@ describe('ResearchActionTool', () => {
         outcome: 'pass',
         workFrameId: 'frame.qg-mipt',
         evidenceRefs: ['aitp:validation_result:validation-result-source-audit'],
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.record_source_reconstruction_review_result',
+        outcome: 'pass',
+        workFrameId: 'frame.qg-mipt',
+        evidenceRefs: [
+          'aitp:source_reconstruction_review_result:source-review-result-algebra',
+        ],
       }),
     );
   });

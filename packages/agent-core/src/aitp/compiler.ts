@@ -719,6 +719,8 @@ function actionIdForEntrypoint(entrypoint: string): string | undefined {
       return 'aitp.create_validation_contract';
     case 'aitp_v5_record_validation_result':
       return 'aitp.record_validation_result';
+    case 'aitp_v5_record_source_reconstruction_review_result':
+      return 'aitp.record_source_reconstruction_review_result';
     case 'aitp_v5_attach_artifact':
       return 'aitp.attach_artifact';
     default:
@@ -841,6 +843,19 @@ function writeBridgeForMoment(
         requiredFields: ['topicId', 'claimId', 'contractId', 'toolRunId', 'status', 'summary'],
         targetRefs: moment.targetRefs,
       }, obligation);
+    case 'aitp.record_source_reconstruction_review_result':
+      return withPayloadDraft({
+        operation: 'recordSourceReconstructionReviewResult',
+        cli: 'aitp-v5 source reconstruction-review-result',
+        requiredFields: [
+          'claimId',
+          'status',
+          'reviewedComponents',
+          'summary',
+          'one of basisRefs/evidenceRefs/validationResultIds/referenceLocationIds/objectIds/relationIds',
+        ],
+        targetRefs: moment.targetRefs,
+      }, obligation);
     case 'aitp.request_human_checkpoint':
       return withPayloadDraft({
         operation: 'requestHumanCheckpoint',
@@ -921,6 +936,8 @@ function recordActionForOperation(operation: string): string | undefined {
       return 'create_validation_contract';
     case 'recordValidationResult':
       return 'record_validation_result';
+    case 'recordSourceReconstructionReviewResult':
+      return 'record_source_reconstruction_review_result';
     case 'requestHumanCheckpoint':
       return 'request_human_checkpoint';
     default:

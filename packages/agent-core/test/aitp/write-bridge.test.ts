@@ -66,6 +66,16 @@ describe('AITP write bridge executor', () => {
       covered_failure_modes: ['analogy mistaken for derivation'],
       evidence_refs: ['evidence-source-chain'],
     });
+    const reviewResult = coerceAitpWriteBridgeInput('recordSourceReconstructionReviewResult', {
+      claim_id: 'claim-mipt-observer-algebra',
+      status: 'needs_revision',
+      reviewed_components: ['definitions', 'source_locations'],
+      basis_refs: ['source_asset:asset-algebra-paper'],
+      reference_location_ids: ['reference-location-algebra-paper'],
+      remaining_actions: ['trace theorem dependency'],
+      reviewer_role: 'adversarial_reviewer',
+      summary: 'Definitions reviewed; theorem dependency needs revision.',
+    });
 
     expect(sourceAsset).toMatchObject({
       operation: 'registerSourceAsset',
@@ -89,6 +99,18 @@ describe('AITP write bridge executor', () => {
         contractId: 'validation-contract-qg',
         toolRunId: 'tool-run-source-audit',
         checkedOutputs: ['source chain transcript'],
+      },
+    });
+    expect(reviewResult).toMatchObject({
+      operation: 'recordSourceReconstructionReviewResult',
+      payload: {
+        claimId: 'claim-mipt-observer-algebra',
+        status: 'needs_revision',
+        reviewedComponents: ['definitions', 'source_locations'],
+        basisRefs: ['source_asset:asset-algebra-paper'],
+        referenceLocationIds: ['reference-location-algebra-paper'],
+        remainingActions: ['trace theorem dependency'],
+        reviewerRole: 'adversarial_reviewer',
       },
     });
   });
@@ -344,6 +366,19 @@ describe('AITP write bridge executor', () => {
           raw: {},
         };
       },
+      async recordSourceReconstructionReviewResult() {
+        calls.push('recordSourceReconstructionReviewResult');
+        return {
+          ok: true,
+          kind: 'source_reconstruction_review_result',
+          resultId: 'source-review-result-qg',
+          topicId: 'qg',
+          claimId: 'claim-qg',
+          status: 'inconclusive',
+          canUpdateClaimTrust: false,
+          raw: {},
+        };
+      },
       async requestHumanCheckpoint() {
         calls.push('requestHumanCheckpoint');
         return {
@@ -370,17 +405,17 @@ describe('AITP write bridge executor', () => {
       },
     });
     const result = await executor.executeWrite({
-      operation: 'requestHumanCheckpoint',
+      operation: 'recordSourceReconstructionReviewResult',
       payload: {
-        topicId: 'qg',
         claimId: 'claim-qg',
-        reason: 'Trust boundary.',
-        requestedBy: 'hakimi',
-        options: ['keep provisional'],
+        status: 'inconclusive',
+        reviewedComponents: ['definitions'],
+        basisRefs: ['source_asset:asset-qg'],
+        summary: 'Definitions reviewed; source location remains open.',
       },
     });
 
-    expect(calls).toEqual(['attachArtifact', 'requestHumanCheckpoint']);
+    expect(calls).toEqual(['attachArtifact', 'recordSourceReconstructionReviewResult']);
     expect(artifact).toMatchObject({
       kind: 'artifact',
       artifactId: 'artifact-qg-log',
@@ -390,11 +425,11 @@ describe('AITP write bridge executor', () => {
       'aitp:artifact:artifact-qg-log',
     ]);
     expect(result).toMatchObject({
-      kind: 'human_checkpoint',
-      checkpointId: 'checkpoint-qg',
+      kind: 'source_reconstruction_review_result',
+      resultId: 'source-review-result-qg',
     });
     expect(evidenceRefsForAitpWriteBridgeResult(result)).toEqual([
-      'aitp:human_checkpoint:checkpoint-qg',
+      'aitp:source_reconstruction_review_result:source-review-result-qg',
     ]);
     expect(generatedObligationIdsForAitpWriteBridgeResult(result)).toEqual([]);
   });
@@ -474,6 +509,18 @@ describe('AITP write bridge executor', () => {
         raw: {},
       }),
     ).toEqual(['aitp:reference_location:reference-location-qg']);
+    expect(
+      evidenceRefsForAitpWriteBridgeResult({
+        ok: true,
+        kind: 'source_reconstruction_review_result',
+        resultId: 'source-review-result-qg',
+        topicId: 'qg',
+        claimId: 'claim-qg',
+        status: 'inconclusive',
+        canUpdateClaimTrust: false,
+        raw: {},
+      }),
+    ).toEqual(['aitp:source_reconstruction_review_result:source-review-result-qg']);
   });
 
   it('rejects incomplete payloads before reaching AITP', () => {
@@ -484,6 +531,14 @@ describe('AITP write bridge executor', () => {
         reason: 'Trust boundary.',
         requestedBy: 'hakimi',
         options: [],
+      }),
+    ).toThrow(AitpWriteBridgePayloadError);
+    expect(() =>
+      coerceAitpWriteBridgeInput('recordSourceReconstructionReviewResult', {
+        claimId: 'claim-qg',
+        status: 'inconclusive',
+        reviewedComponents: ['definitions'],
+        summary: 'Missing basis.',
       }),
     ).toThrow(AitpWriteBridgePayloadError);
   });

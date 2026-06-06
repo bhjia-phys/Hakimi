@@ -22,6 +22,7 @@ export const KNOWN_AITP_RESEARCH_MOMENTS = [
   'aitp.create_open_obligation',
   'aitp.create_validation_contract',
   'aitp.record_validation_result',
+  'aitp.record_source_reconstruction_review_result',
   'aitp.request_human_checkpoint',
 ] as const;
 

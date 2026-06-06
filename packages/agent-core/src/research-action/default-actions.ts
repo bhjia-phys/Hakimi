@@ -496,6 +496,22 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     triggerHints: ['validation result', 'checked outputs', 'tool run', 'record validation'],
   }),
   action({
+    id: 'aitp.record_source_reconstruction_review_result',
+    category: 'memory',
+    exposure: 'direct',
+    phase: 'validate',
+    title: 'Record AITP source reconstruction review result',
+    description:
+      'Ask AITP to record the typed review outcome for source reconstruction components without changing claim trust.',
+    inputKinds: ['Claim', 'SourceExcerpt', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    triggerHints: [
+      'source reconstruction review result',
+      'reviewed components',
+      'record source reconstruction review',
+    ],
+  }),
+  action({
     id: 'aitp.request_human_checkpoint',
     category: 'graph',
     exposure: 'direct',

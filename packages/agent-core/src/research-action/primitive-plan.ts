@@ -576,6 +576,32 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['scope.compile_context_pack'],
   }),
   plan({
+    actionId: 'aitp.record_source_reconstruction_review_result',
+    title: 'Record source reconstruction review result',
+    intent:
+      'Persist the reviewed source reconstruction components, basis refs, and review status through AITP.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'execute-aitp-source-reconstruction-review-result-write',
+        kind: 'record',
+        title: 'Write source reconstruction review result through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with recordSourceReconstructionReviewResult after the review basis exists.',
+        expectedEvidence: [
+          'aitp:source_reconstruction_review_result:<id>',
+          'reviewed_components',
+          'basis_refs',
+        ],
+      }),
+    ],
+    recording: recording('aitp.record_source_reconstruction_review_result', [
+      'aitp:source_reconstruction_review_result:<id>',
+    ]),
+    followupActionIds: ['scope.compile_context_pack'],
+  }),
+  plan({
     actionId: 'aitp.request_human_checkpoint',
     title: 'Request trust-boundary checkpoint',
     intent: 'Pause at an AITP trust boundary and collect an explicit human decision before treating trust as updated.',
