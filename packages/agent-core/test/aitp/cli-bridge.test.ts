@@ -5,6 +5,7 @@ import {
   buildAitpExploratoryRecordArgs,
   buildAitpHumanCheckpointRequestArgs,
   buildAitpProcessGraphSliceArgs,
+  buildAitpProofObligationCreateArgs,
   buildAitpSourceAssetRegisterArgs,
   createAitpCliBridge,
   createAitpCliProcessGraphSliceProvider,
@@ -256,6 +257,81 @@ describe('AITP CLI bridge', () => {
     ]);
   });
 
+  it('creates proof obligations through AITP research-state records', async () => {
+    const calls: { args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push({ args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            kind: 'proof_obligation',
+            obligation_id: 'proof-obligation-sector-match',
+            topic_id: 'fqhe',
+            claim_id: 'claim-edge-counting',
+            status: 'open',
+            can_update_claim_trust: false,
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const result = await bridge.createProofObligation({
+      topicId: 'fqhe',
+      claimId: 'claim-edge-counting',
+      statement: 'Derive that finite-size sector matching is not aliasing.',
+      obligationType: 'proof_gap',
+      status: 'open',
+      maturityLevel: 'theorem-candidate',
+      nextAction: 'derive sector-matching constraints',
+      requiredEvidence: ['analytic derivation'],
+      proofStrategy: ['trace momentum-sector decomposition'],
+      failureModes: ['wrong momentum sector'],
+      sourceRefs: ['source_asset:edge-counting-paper'],
+    });
+
+    expect(result).toMatchObject({
+      kind: 'proof_obligation',
+      obligationId: 'proof-obligation-sector-match',
+      status: 'open',
+      canUpdateClaimTrust: false,
+    });
+    expect(calls[0]?.args).toEqual([
+      '--base',
+      'F:/project',
+      'research-state',
+      'create-proof-obligation',
+      '--topic',
+      'fqhe',
+      '--claim',
+      'claim-edge-counting',
+      '--statement',
+      'Derive that finite-size sector matching is not aliasing.',
+      '--type',
+      'proof_gap',
+      '--status',
+      'open',
+      '--maturity-level',
+      'theorem-candidate',
+      '--next-action',
+      'derive sector-matching constraints',
+      '--required-evidence',
+      'analytic derivation',
+      '--proof-strategy',
+      'trace momentum-sector decomposition',
+      '--failure-mode',
+      'wrong momentum sector',
+      '--source-ref',
+      'source_asset:edge-counting-paper',
+    ]);
+  });
+
   it('keeps source asset and checkpoint args validated before running AITP', () => {
     expect(() =>
       buildAitpSourceAssetRegisterArgs({
@@ -275,6 +351,18 @@ describe('AITP CLI bridge', () => {
         reason: 'No options.',
         requestedBy: 'hakimi',
         options: [],
+      }),
+    ).toThrow(AitpCliBridgeError);
+    expect(() =>
+      buildAitpProofObligationCreateArgs({
+        basePath: 'F:/project',
+        topicId: 'fqhe',
+        claimId: 'claim-edge-counting',
+        statement: '',
+        obligationType: 'proof_gap',
+        status: 'open',
+        maturityLevel: 'theorem-candidate',
+        nextAction: 'derive sector-matching constraints',
       }),
     ).toThrow(AitpCliBridgeError);
   });
