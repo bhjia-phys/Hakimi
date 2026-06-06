@@ -749,10 +749,20 @@ describe('ResearchActionTool', () => {
 
     expect(result.output).toContain('<aitp_write_bridge');
     expect(result.output).toContain('operation="createProofObligation"');
+    expect(result.output).toContain('mcp_tool="aitp_v5_create_proof_obligation"');
+    expect(result.output).toContain(
+      'cli_fallback="aitp-v5 research-state create-proof-obligation &lt;args&gt;"',
+    );
     expect(result.output).toContain('aitp:proof_obligation:proof-obligation-algebra-source-chain');
     expect(sourceAsset.output).toContain('operation="registerSourceAsset"');
     expect(sourceAsset.output).toContain('aitp:source_asset:source-asset-algebra-paper');
     expect(evidence.output).toContain('operation="recordEvidence"');
+    expect(evidence.output).toContain('entrypoint_key="record_evidence"');
+    expect(evidence.output).toContain('mcp_tool="aitp_v5_record_evidence"');
+    expect(evidence.output).toContain('preferred_transport="mcp"');
+    expect(evidence.output).toContain('fallback_transport="cli"');
+    expect(evidence.output).toContain('state_effect="typed_record_write"');
+    expect(evidence.output).toContain('claim_trust_mutation="none"');
     expect(evidence.output).toContain('aitp:evidence:evidence-source-audit');
     expect(toolRun.output).toContain('operation="recordToolRun"');
     expect(toolRun.output).toContain('aitp:tool_run:tool-run-source-audit');
