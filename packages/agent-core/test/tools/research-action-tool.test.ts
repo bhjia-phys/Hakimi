@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { Agent, type AgentRecord } from '../../src/agent';
 import { InMemoryAgentRecordPersistence } from '../../src/agent/records';
-import type { AitpWriteBridgeExecutor } from '../../src/aitp';
+import {
+  compileAitpProcessGraphSlice,
+  type AitpWriteBridgeExecutor,
+} from '../../src/aitp';
 import {
   PhysicsMemoryRegistry,
   type PhysicsCapsule,
@@ -436,6 +439,42 @@ describe('ResearchActionTool', () => {
         contextPackId,
       }),
     );
+  });
+
+  it('renders AITP route_state in loaded ContextPack XML', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    agent.workFrames.open(
+      {
+        id: 'frame.route',
+        domain: 'theoretical-physics/qg-algebra',
+        topic: 'route-state',
+        goal: 'Carry AITP route_state through context XML.',
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        aitp: compileAitpProcessGraphSlice(routeStateSlicePayload()),
+      },
+      { source: 'controller' },
+    );
+
+    const loaded = await execute(tool, {
+      action: 'load_context_pack',
+      context_pack_id: pack.id,
+    });
+
+    expect(loaded.output).toContain('<live_routes>');
+    expect(loaded.output).toContain('<route>route-live</route>');
+    expect(loaded.output).toContain('<blocked_routes>');
+    expect(loaded.output).toContain('<route>route-blocked</route>');
+    expect(loaded.output).toContain('<pivot_required_routes>');
+    expect(loaded.output).toContain('<route>route-live</route>');
+    expect(loaded.output).toContain('aitp.record_route_choice');
+    expect(loaded.output).toContain('aitp.record_failed_route_lesson');
+    expect(loaded.output).toContain('aitp.checkpoint_before_route_switch');
   });
 
   it('executes configured AITP write-bridge operations as research action results', async () => {
@@ -989,6 +1028,59 @@ function makeAgent(
   });
   agent.tools.initializeBuiltinTools();
   return agent;
+}
+
+function routeStateSlicePayload() {
+  return {
+    kind: 'process_graph_slice',
+    truth_source: 'typed_records',
+    orientation_only: true,
+    nodes: [],
+    edges: [],
+    open_obligations: [],
+    source_backtrace: [],
+    relation_neighborhood: [],
+    exploratory_records: [],
+    route_state: {
+      active_route_id: 'route-live',
+      routes: [
+        {
+          route_id: 'route-live',
+          topic_id: 'route-state',
+          claim_id: 'claim-route',
+          title: 'Live route',
+          route_type: 'source_backtrace',
+          status: 'live',
+          active: true,
+          rationale: 'Backtrace first.',
+          parent_route_ids: ['route-blocked'],
+          pivot_reason: 'blocked route needs source backtrace',
+        },
+        {
+          route_id: 'route-blocked',
+          topic_id: 'route-state',
+          claim_id: 'claim-route',
+          title: 'Blocked route',
+          route_type: 'derivation',
+          status: 'blocked',
+          rationale: 'Try direct derivation.',
+          failure_modes: ['missing source'],
+          lesson: 'Backtrace first.',
+        },
+      ],
+      live_route_ids: ['route-live'],
+      blocked_route_ids: ['route-blocked'],
+      abandoned_route_ids: [],
+      pivot_required_route_ids: ['route-live'],
+    },
+    trust_boundary_reasons: [],
+    recommended_moments: [],
+    moment_policy: {
+      kind: 'host_agnostic_moment_policy',
+      decisions: [],
+      recommended_moments: [],
+    },
+  };
 }
 
 function ledgerEvent(input: {

@@ -332,6 +332,36 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['graph.query_dependency_closure'],
   }),
   plan({
+    actionId: 'aitp.record_route_choice',
+    title: 'Record AITP route choice',
+    intent:
+      'Preserve the live route choice from route_state as process context without promoting it as evidence.',
+    primitiveToolPolicy: 'none',
+    steps: routeStateSteps('route choice'),
+    recording: recording('aitp.record_route_choice', ['route_id', 'ledger_event_id']),
+    followupActionIds: ['aitp.record_research_state'],
+  }),
+  plan({
+    actionId: 'aitp.record_failed_route_lesson',
+    title: 'Record failed route lesson',
+    intent:
+      'Preserve why a blocked or abandoned route failed so the local process can avoid repeating it.',
+    primitiveToolPolicy: 'none',
+    steps: routeStateSteps('failed route lesson'),
+    recording: recording('aitp.record_failed_route_lesson', ['route_id', 'lesson', 'ledger_event_id']),
+    followupActionIds: ['aitp.record_research_state'],
+  }),
+  plan({
+    actionId: 'aitp.checkpoint_before_route_switch',
+    title: 'Checkpoint before route switch',
+    intent:
+      'Checkpoint the current route state before pivoting or abandoning the live route.',
+    primitiveToolPolicy: 'none',
+    steps: routeStateSteps('route switch checkpoint'),
+    recording: recording('aitp.checkpoint_before_route_switch', ['from_route_id', 'to_route_id', 'ledger_event_id']),
+    followupActionIds: ['aitp.record_route_choice', 'aitp.record_research_state'],
+  }),
+  plan({
     actionId: 'aitp.record_exploratory_record',
     title: 'Record AITP exploratory process record',
     intent:
@@ -1118,6 +1148,28 @@ function theorySteps(objectName: string): readonly ResearchPrimitivePlanStep[] {
       toolNames: ['ResearchLedger', 'ResearchAction'],
       purpose: `Record the provisional ${objectName} with obligations instead of promoting it immediately.`,
       expectedEvidence: ['ledger_event_id', 'generated_obligation_ids'],
+    }),
+  ];
+}
+
+function routeStateSteps(recordName: string): readonly ResearchPrimitivePlanStep[] {
+  return [
+    step({
+      id: 'inspect-route-state',
+      kind: 'inspect',
+      title: 'Inspect route state',
+      toolNames: ['ResearchAction', 'ResearchLedger'],
+      purpose: `Read the active ContextPack route_state projection before recording the ${recordName}.`,
+      expectedEvidence: ['route_id', 'route_status', 'context_pack_id'],
+    }),
+    step({
+      id: 'record-route-state-action',
+      kind: 'record',
+      title: `Record ${recordName}`,
+      toolNames: ['ResearchLedger', 'ResearchAction'],
+      purpose:
+        'Record pass, blocked, or inconclusive with route refs; do not treat ordinary route moments as final-gate blockers.',
+      expectedEvidence: ['ledger_event_id', 'route_refs'],
     }),
   ];
 }

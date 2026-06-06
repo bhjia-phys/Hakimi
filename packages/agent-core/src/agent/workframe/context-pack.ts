@@ -56,6 +56,18 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
     for (const line of bounded(pack.aitp.contextLines)) {
       lines.push(`AITP: ${line}`);
     }
+    if (pack.aitp.liveRouteIds.length > 0) {
+      lines.push(`AITP live routes: ${bounded(pack.aitp.liveRouteIds).join(', ')}`);
+    }
+    if (pack.aitp.blockedRouteIds.length > 0) {
+      lines.push(`AITP blocked routes: ${bounded(pack.aitp.blockedRouteIds).join(', ')}`);
+    }
+    if (pack.aitp.abandonedRouteIds.length > 0) {
+      lines.push(`AITP abandoned routes: ${bounded(pack.aitp.abandonedRouteIds).join(', ')}`);
+    }
+    if (pack.aitp.pivotRequiredRouteIds.length > 0) {
+      lines.push(`AITP pivot-required routes: ${bounded(pack.aitp.pivotRequiredRouteIds).join(', ')}`);
+    }
     if (pack.aitp.trustBoundaryReasons.length > 0) {
       lines.push(`AITP trust boundary: ${bounded(pack.aitp.trustBoundaryReasons).join('; ')}`);
     }

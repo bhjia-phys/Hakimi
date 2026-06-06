@@ -243,6 +243,9 @@ describe('ResearchContextManager', () => {
     const reminder = (lastMessage?.content[0] as { text: string }).text;
     expect(reminder).toContain('AITP process graph: truth_source=typed_records');
     expect(reminder).toContain('AITP open obligations');
+    expect(reminder).toContain('AITP live routes: route-source-first');
+    expect(reminder).toContain('AITP blocked routes: route-direct-proof');
+    expect(reminder).toContain('AITP pivot-required routes: route-source-first');
     expect(reminder).toContain('Theory reasoning for');
     expect(reminder).toContain('source_dependency_backtrace');
     expect(reminder).toContain('original_question_continuity_guard');
@@ -381,6 +384,38 @@ function aitpSlicePayload() {
         unresolved_points: ['dependency may be only historical context'],
       },
     ],
+    route_state: {
+      active_route_id: 'route-source-first',
+      routes: [
+        {
+          route_id: 'route-source-first',
+          topic_id: 'fqhe-literature',
+          claim_id: 'claim-fqhe',
+          title: 'Source-first route',
+          route_type: 'source_backtrace',
+          status: 'live',
+          active: true,
+          rationale: 'Follow source dependency before direct proof.',
+          parent_route_ids: ['route-direct-proof'],
+          pivot_reason: 'direct proof is missing a reference location',
+        },
+        {
+          route_id: 'route-direct-proof',
+          topic_id: 'fqhe-literature',
+          claim_id: 'claim-fqhe',
+          title: 'Direct proof route',
+          route_type: 'derivation',
+          status: 'blocked',
+          rationale: 'Try direct proof from the current relation.',
+          failure_modes: ['missing reference location'],
+          lesson: 'Keep source dependency explicit before direct proof.',
+        },
+      ],
+      live_route_ids: ['route-source-first'],
+      blocked_route_ids: ['route-direct-proof'],
+      abandoned_route_ids: [],
+      pivot_required_route_ids: ['route-source-first'],
+    },
     trust_boundary_reasons: ['this API cannot update claim trust'],
     recommended_moments: [
       {

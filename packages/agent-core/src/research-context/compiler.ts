@@ -160,6 +160,10 @@ function collectAitp(
     orientationOnly: input.aitp.trust.orientationOnly,
     reminders: input.aitp.reminders,
     contextLines: input.aitp.contextLines,
+    liveRouteIds: input.aitp.routes.live.map((item) => item.id),
+    blockedRouteIds: input.aitp.routes.blocked.map((item) => item.id),
+    abandonedRouteIds: input.aitp.routes.abandoned.map((item) => item.id),
+    pivotRequiredRouteIds: input.aitp.routes.pivotRequired.map((item) => item.id),
     trustBoundaryReasons: input.aitp.trust.trustBoundaryReasons,
     openObligationIds: [
       ...input.aitp.obligations.blocking,

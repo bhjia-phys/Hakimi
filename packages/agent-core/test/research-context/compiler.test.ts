@@ -118,6 +118,10 @@ describe('compileResearchContextPack', () => {
     expect(pack.aitp).toMatchObject({
       truthSource: 'typed_records',
       orientationOnly: true,
+      liveRouteIds: ['route-source-first'],
+      blockedRouteIds: ['route-direct-proof'],
+      abandonedRouteIds: [],
+      pivotRequiredRouteIds: ['route-source-first'],
       openObligationIds: ['obligation-source'],
       requiredCallIds: expect.arrayContaining([
         expect.stringContaining('aitp-record-evidence'),
@@ -132,8 +136,11 @@ describe('compileResearchContextPack', () => {
     expect(pack.actionBindings.map((item) => item.actionId)).toEqual(
       expect.arrayContaining([
         'aitp.create_open_obligation',
+        'aitp.checkpoint_before_route_switch',
         'aitp.record_evidence',
+        'aitp.record_failed_route_lesson',
         'aitp.record_reference_location',
+        'aitp.record_route_choice',
         'aitp.request_human_checkpoint',
         'physics.brainstorm_relation_path',
         'trace.follow_source_dependency',
@@ -336,6 +343,38 @@ function aitpSlicePayload() {
       },
     ],
     exploratory_records: [],
+    route_state: {
+      active_route_id: 'route-source-first',
+      routes: [
+        {
+          route_id: 'route-source-first',
+          topic_id: 'fqhe-cs-effective-theory',
+          claim_id: 'claim-fqhe',
+          title: 'Source-first route',
+          route_type: 'source_backtrace',
+          status: 'live',
+          active: true,
+          rationale: 'Locate source support before direct proof.',
+          parent_route_ids: ['route-direct-proof'],
+          pivot_reason: 'direct proof lacks a source location',
+        },
+        {
+          route_id: 'route-direct-proof',
+          topic_id: 'fqhe-cs-effective-theory',
+          claim_id: 'claim-fqhe',
+          title: 'Direct proof route',
+          route_type: 'derivation',
+          status: 'blocked',
+          rationale: 'Try direct proof from the provisional relation.',
+          failure_modes: ['missing source location'],
+          lesson: 'Do not use direct proof until source location exists.',
+        },
+      ],
+      live_route_ids: ['route-source-first'],
+      blocked_route_ids: ['route-direct-proof'],
+      abandoned_route_ids: [],
+      pivot_required_route_ids: ['route-source-first'],
+    },
     trust_boundary_reasons: ['this API cannot update claim trust'],
     moment_policy: {
       ok: true,

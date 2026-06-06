@@ -1342,7 +1342,7 @@ export class TurnFlow {
   ): readonly FinalGateAitpCallObligation[] {
     if (workFrame?.contextPackId === undefined) return [];
     const pack = this.agent.researchContext.getPack(workFrame.contextPackId);
-    const obligations = pack?.aitp?.compiled.callObligations ?? [];
+    const obligations = (pack?.aitp?.compiled.callObligations ?? []).filter(isFinalGateAitpCall);
     if (obligations.length === 0) return [];
     const trace = this.agent.researchAction.listRecentTrace(100, {
       workFrameId: workFrame.id,
@@ -1360,6 +1360,7 @@ export class TurnFlow {
         reason: obligation.reason,
         requiredNow: obligation.requiredNow,
         trustBoundary: obligation.trustBoundary,
+        finalGateRequired: obligation.finalGateRequired,
         lifecycleTrigger: obligation.lifecycleTrigger,
         satisfied: related.some((item) => item.outcome === 'pass'),
         blockerRecorded: related.some((item) => item.outcome === 'blocked'),
@@ -1418,6 +1419,17 @@ function isTerminalUpdateGoalResult(
   if (!isPlainRecord(args)) return false;
   const status = args['status'];
   return status === 'complete' || status === 'blocked';
+}
+
+function isFinalGateAitpCall(obligation: AitpCallObligation): boolean {
+  return (
+    obligation.requiredNow ||
+    obligation.trustBoundary ||
+    obligation.finalGateRequired ||
+    obligation.requiredBeforeTrustChange.length > 0 ||
+    obligation.lifecycleTrigger.trustBoundaryInputs.finalGateRequired ||
+    obligation.lifecycleTrigger.trustBoundaryInputs.requiredBeforeTrustChange.length > 0
+  );
 }
 
 function aitpCallObligationAcceptedActionIds(

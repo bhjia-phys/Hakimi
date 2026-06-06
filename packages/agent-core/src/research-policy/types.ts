@@ -59,6 +59,7 @@ export interface FinalGateAitpCallObligation {
   readonly reason: string;
   readonly requiredNow: boolean;
   readonly trustBoundary: boolean;
+  readonly finalGateRequired?: boolean | undefined;
   readonly lifecycleTrigger?: AitpLifecycleTriggerInfo | undefined;
   readonly satisfied: boolean;
   readonly blockerRecorded: boolean;

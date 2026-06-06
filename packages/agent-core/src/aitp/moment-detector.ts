@@ -4,6 +4,7 @@ import type {
   AitpProcessGraphSlice,
   AitpRelationNeighborhoodItem,
   AitpResearchMomentId,
+  AitpRouteStateItem,
   DetectedResearchMoment,
   ResearchMomentDetectorInput,
 } from './types';
@@ -40,10 +41,11 @@ export function detectResearchMoments(
   }
 
   for (const moment of slice.recommendedMoments) {
+    const actionId = actionIdForMoment(moment.id);
     addMoment(moments, {
       id: moment.id,
-      actionId: actionIdForMoment(moment.id),
-      priority: moment.priority,
+      actionId,
+      priority: priorityForRecommendedMoment(actionId, moment.priority, moment.lifecycleTrigger),
       reason: moment.reason,
       source: 'aitp',
       targetRefs: moment.targetRefs,
@@ -51,6 +53,23 @@ export function detectResearchMoments(
       trustBoundary: moment.trustBoundary,
       lifecycleTrigger: moment.lifecycleTrigger,
     });
+  }
+
+  for (const route of slice.routeState.routes) {
+    for (const momentId of routeMomentIds(route)) {
+      const actionId = actionIdForMoment(momentId);
+      addMoment(moments, {
+        id: momentId,
+        actionId,
+        priority: routeMomentPriority(route, actionId),
+        reason: routeMomentReason(route, actionId),
+        source: 'route-state',
+        targetRefs: route.targetRefs,
+        timing: route.finalGateRequired ? 'before_final' : undefined,
+        trustBoundary: routeTrustBoundary(route),
+        lifecycleTrigger: lifecycleTriggerForRoute(route),
+      });
+    }
   }
 
   if (slice.openObligations.length > 0) {
@@ -471,6 +490,13 @@ export function actionIdForMoment(id: AitpResearchMomentId): string {
       return 'trace.audit_original_question_drift';
     case 'record_exploratory_record':
       return 'aitp.record_exploratory_record';
+    case 'record_route_choice':
+      return 'aitp.record_route_choice';
+    case 'record_failed_route_lesson':
+      return 'aitp.record_failed_route_lesson';
+    case 'checkpoint_before_route_switch':
+    case 'route_switch_checkpoint':
+      return 'aitp.checkpoint_before_route_switch';
     case 'trust_boundary_before_claim_update':
       return 'aitp.request_human_checkpoint';
     case 'human_checkpoint':
@@ -506,6 +532,11 @@ export function actionIdForPolicyDecision(decision: AitpMomentPolicyDecision): s
 function priorityForPolicyDecision(
   decision: AitpMomentPolicyDecision,
 ): ResearchActionBindingPriority {
+  const actionId = actionIdForPolicyDecision(decision);
+  if (isRouteActionId(actionId) && !routePolicyRequiresFinalGate(decision)) {
+    if (decision.requiredNow || decision.trustBoundary) return 'high';
+    return 'normal';
+  }
   if (decision.requiredNow) return 'blocking';
   if (decision.trustBoundary) return 'high';
   if (decision.decisionType === 'brainstorming' || decision.decisionType === 'backtrace') {
@@ -515,6 +546,12 @@ function priorityForPolicyDecision(
 }
 
 function timingForPolicyDecision(decision: AitpMomentPolicyDecision): string | undefined {
+  if (
+    isRouteActionId(actionIdForPolicyDecision(decision)) &&
+    !routePolicyRequiresFinalGate(decision)
+  ) {
+    return decision.requiredNow ? 'recommended_now' : undefined;
+  }
   if (decision.requiredNow) return 'required_now';
   if (decision.requiredBeforeTrustChange.length > 0) return 'before_trust_update';
   return undefined;
@@ -524,6 +561,105 @@ function trustBoundaryForPolicyDecision(decision: AitpMomentPolicyDecision): str
   return decision.decisionType === 'trust_boundary'
     ? 'trust_boundary'
     : `policy_prerequisite:${decision.decisionType}`;
+}
+
+function routePolicyRequiresFinalGate(decision: AitpMomentPolicyDecision): boolean {
+  return (
+    decision.requiredBeforeTrustChange.length > 0 ||
+    decision.lifecycleTrigger.trustBoundaryInputs.requiredBeforeTrustChange.length > 0 ||
+    decision.lifecycleTrigger.trustBoundaryInputs.finalGateRequired
+  );
+}
+
+function priorityForRecommendedMoment(
+  actionId: string,
+  priority: ResearchActionBindingPriority,
+  trigger: DetectedResearchMoment['lifecycleTrigger'],
+): ResearchActionBindingPriority {
+  if (!isRouteActionId(actionId)) return priority;
+  if (routeTriggerRequiresFinalGate(trigger)) return priority;
+  return priority === 'blocking' ? 'high' : priority;
+}
+
+function routeMomentIds(route: AitpRouteStateItem): readonly AitpResearchMomentId[] {
+  const ids: AitpResearchMomentId[] = route.suggestedMomentIds.filter((id) =>
+    isRouteActionId(actionIdForMoment(id)),
+  );
+  switch (route.status) {
+    case 'live':
+    case 'selected':
+      ids.push('aitp.record_route_choice');
+      break;
+    case 'blocked':
+    case 'abandoned':
+    case 'superseded':
+      ids.push('aitp.record_failed_route_lesson');
+      break;
+    default:
+      break;
+  }
+  if (route.pivotRequired) ids.push('aitp.checkpoint_before_route_switch');
+  return unique(ids);
+}
+
+function routeMomentPriority(
+  route: AitpRouteStateItem,
+  actionId: string,
+): ResearchActionBindingPriority {
+  if (route.finalGateRequired || route.requiredBeforeTrustChange.length > 0) return 'blocking';
+  if (actionId === 'aitp.checkpoint_before_route_switch' || route.status === 'blocked') return 'high';
+  return 'normal';
+}
+
+function routeMomentReason(route: AitpRouteStateItem, actionId: string): string {
+  const label = route.title ?? route.summary ?? route.id;
+  if (actionId === 'aitp.record_route_choice') {
+    return `AITP route_state marks ${label} as a live or selected route; preserve the route choice.`;
+  }
+  if (actionId === 'aitp.record_failed_route_lesson') {
+    return `AITP route_state marks ${label} as ${route.status}; preserve the failed-route lesson.`;
+  }
+  return `AITP route_state marks ${label} as pivot-required route state; checkpoint before route switching.`;
+}
+
+function routeTrustBoundary(route: AitpRouteStateItem): string | undefined {
+  if (route.requiredBeforeTrustChange.length > 0) return 'route_before_trust_change';
+  if (route.finalGateRequired) return 'route_final_gate';
+  return undefined;
+}
+
+function lifecycleTriggerForRoute(route: AitpRouteStateItem): DetectedResearchMoment['lifecycleTrigger'] {
+  return {
+    lifecyclePhases: route.finalGateRequired ? ['pre_final'] : [],
+    triggerConditions: route.requiredBeforeTrustChange,
+    recordingThreshold: route.finalGateRequired ? 'before final answer relies on route switch or route status' : undefined,
+    trustBoundaryInputs: {
+      targetRefs: route.targetRefs,
+      claimId: undefined,
+      entrypoints: [],
+      requiredBeforeTrustChange: route.requiredBeforeTrustChange,
+      requiresPreflight: false,
+      finalGateRequired: route.finalGateRequired,
+    },
+    recommendedHostBehavior: route.finalGateRequired || route.requiredBeforeTrustChange.length > 0
+      ? ['surface route moment before final answer']
+      : ['surface route moment as a non-blocking recommendation'],
+  };
+}
+
+function routeTriggerRequiresFinalGate(trigger: DetectedResearchMoment['lifecycleTrigger']): boolean {
+  return (
+    trigger.trustBoundaryInputs.finalGateRequired ||
+    trigger.trustBoundaryInputs.requiredBeforeTrustChange.length > 0
+  );
+}
+
+function isRouteActionId(actionId: string): boolean {
+  return (
+    actionId === 'aitp.record_route_choice' ||
+    actionId === 'aitp.record_failed_route_lesson' ||
+    actionId === 'aitp.checkpoint_before_route_switch'
+  );
 }
 
 function addKeywordMoment(

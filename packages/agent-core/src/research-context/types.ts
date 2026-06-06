@@ -102,6 +102,10 @@ export interface ResearchContextAitpSection {
   readonly orientationOnly: boolean;
   readonly reminders: readonly string[];
   readonly contextLines: readonly string[];
+  readonly liveRouteIds: readonly string[];
+  readonly blockedRouteIds: readonly string[];
+  readonly abandonedRouteIds: readonly string[];
+  readonly pivotRequiredRouteIds: readonly string[];
   readonly trustBoundaryReasons: readonly string[];
   readonly openObligationIds: readonly string[];
   readonly requiredCallIds: readonly string[];
