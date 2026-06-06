@@ -126,6 +126,13 @@ function buildContextLines(
     lines.push(
       `Suggested moments: ${bounded(moments.map((moment) => moment.actionId), maxItems).join(', ')}`,
     );
+    const policyMoments = moments.filter((moment) =>
+      moment.timing !== undefined || moment.trustBoundary !== undefined);
+    if (policyMoments.length > 0) {
+      lines.push(
+        `Moment policy: ${bounded(policyMoments.map(renderMomentPolicy), maxItems).join('; ')}`,
+      );
+    }
   }
   return lines;
 }
@@ -179,6 +186,8 @@ function actionBindingForMoment(
       truthSource: slice.truthSource,
       orientationOnly: slice.orientationOnly,
       source: moment.source,
+      timing: moment.timing,
+      trustBoundary: moment.trustBoundary,
     },
     reason: moment.reason,
     priority: moment.priority,
@@ -208,6 +217,12 @@ function renderSourceAsset(item: { readonly id: string; readonly title?: string 
   const type = item.assetType === undefined ? '' : ` [${item.assetType}]`;
   const uri = item.uri === undefined ? '' : ` -> ${item.uri}`;
   return `${item.id}${type}: ${title}${uri}`;
+}
+
+function renderMomentPolicy(moment: DetectedResearchMoment): string {
+  const timing = moment.timing === undefined ? 'when-needed' : moment.timing;
+  const boundary = moment.trustBoundary === undefined ? '' : ` boundary=${moment.trustBoundary}`;
+  return `${moment.actionId}@${timing} priority=${moment.priority}${boundary}`;
 }
 
 function hasExplicitTrustFlag(flags: readonly string[]): boolean {

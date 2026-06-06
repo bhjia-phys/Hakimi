@@ -355,6 +355,18 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     triggerHints: ['open obligation', 'open question', 'gap'],
   }),
   action({
+    id: 'aitp.request_human_checkpoint',
+    category: 'graph',
+    exposure: 'direct',
+    phase: 'validate',
+    title: 'Request AITP human checkpoint',
+    description:
+      'Ask for a human checkpoint at an AITP trust boundary before treating trust, source support, or claim status as updated.',
+    outputKinds: ['LedgerEvent'],
+    triggerHints: ['trust boundary', 'human checkpoint', 'human review', 'manual checkpoint'],
+    suggestedNextActions: ['aitp.record_research_state'],
+  }),
+  action({
     id: 'validate.check_dimension',
     category: 'physics',
     exposure: 'direct',

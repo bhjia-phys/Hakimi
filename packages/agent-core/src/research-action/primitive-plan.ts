@@ -332,6 +332,33 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['graph.query_dependency_closure'],
   }),
   plan({
+    actionId: 'aitp.request_human_checkpoint',
+    title: 'Request trust-boundary checkpoint',
+    intent: 'Pause at an AITP trust boundary and collect an explicit human decision before treating trust as updated.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'ask-human-checkpoint',
+        kind: 'capture',
+        title: 'Ask for checkpoint decision',
+        toolNames: ['AskUserQuestion'],
+        purpose:
+          'Ask whether the trust-boundary transition is approved, blocked, or should stay provisional.',
+        expectedEvidence: ['human_checkpoint_decision', 'trust_boundary_reason'],
+      }),
+      step({
+        id: 'record-checkpoint',
+        kind: 'record',
+        title: 'Record checkpoint result',
+        toolNames: ['ResearchAction', 'ResearchLedger'],
+        purpose: 'Record the human checkpoint outcome without claiming that Hakimi updated AITP trust.',
+        expectedEvidence: ['ledger_event_id', 'human_checkpoint_decision'],
+      }),
+    ],
+    recording: recording('aitp.request_human_checkpoint', ['human_checkpoint_decision', 'ledger_event_id']),
+    followupActionIds: ['aitp.record_research_state'],
+  }),
+  plan({
     actionId: 'validate.check_dimension',
     title: 'Check dimensions',
     intent: 'Validate dimensional consistency of a formula or derivation step.',

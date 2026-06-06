@@ -31,6 +31,9 @@ describe('AITP process graph slice adapter', () => {
     );
     expect(compiled.contextLines.join('\n')).toContain('Relation hypotheses: rel.hypothesis');
     expect(compiled.contextLines.join('\n')).toContain('Source gaps: bt.missing-paper');
+    expect(compiled.contextLines.join('\n')).toContain(
+      'Moment policy: aitp.record_derivation_checkpoint@after_local_conclusion priority=high boundary=derivation_checkpoint',
+    );
     expect(compiled.actionRecommendations[0]?.adapterId).toBe('aitp.native.process-graph-slice');
   });
 
@@ -73,6 +76,7 @@ describe('AITP process graph slice adapter', () => {
       expect.arrayContaining([
         'aitp.create_open_obligation',
         'aitp.record_exploratory_record',
+        'aitp.request_human_checkpoint',
         'physics.brainstorm_relation_path',
         'trace.audit_original_question_drift',
         'trace.follow_source_dependency',
@@ -82,9 +86,41 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.contextLines.join('\n')).toContain('Exploration records: exploratory-question');
     expect(compiled.contextLines.join('\n')).toContain('Exploration unresolved points: finite-size aliasing');
     expect(compiled.contextLines.join('\n')).toContain('Source assets: source_asset:source-asset-edge-counting');
+    expect(compiled.contextLines.join('\n')).toContain(
+      'trace.open_backtrace@before_using_as_support priority=high boundary=source_support',
+    );
+    expect(compiled.actionRecommendations.find((binding) =>
+      binding.actionId === 'trace.open_backtrace',
+    )?.params).toMatchObject({
+      timing: 'before_using_as_support',
+      trustBoundary: 'source_support',
+    });
     expect(compiled.actionRecommendations.some((binding) =>
       (binding.objectRefs ?? []).includes('claim:claim-fqhe'),
     )).toBe(true);
+  });
+
+  it('detects trust-boundary and Chinese prompt moments without AITP schema changes', () => {
+    const compiled = compileAitpProcessGraphSlice(currentAitpSlicePayload(), {
+      prompt:
+        '\u9700\u8981\u8bb0\u5f55\u72b6\u6001\uff0c\u5934\u8111\u98ce\u66b4\u5173\u7cfb\u8def\u5f84\uff0c\u6253\u5f00\u6e90\u56de\u6eaf\uff0c\u5e76\u505a\u4eba\u5de5\u68c0\u67e5\u70b9\u3002',
+    });
+    const byActionId = new Map(
+      compiled.suggestedNextMoments.map((moment) => [moment.actionId, moment]),
+    );
+
+    expect(byActionId.get('aitp.request_human_checkpoint')).toMatchObject({
+      priority: 'high',
+    });
+    expect(compiled.actionRecommendations.map((binding) => binding.actionId)).toEqual(
+      expect.arrayContaining([
+        'aitp.record_research_state',
+        'aitp.request_human_checkpoint',
+        'direction.brainstorm',
+        'physics.brainstorm_relation_path',
+        'trace.open_backtrace',
+      ]),
+    );
   });
 });
 
@@ -156,6 +192,8 @@ function fakeSlicePayload() {
         priority: 'high',
         reason: 'The derivation has reached a reusable checkpoint.',
         target_refs: ['formula.response'],
+        timing: 'after_local_conclusion',
+        trust_boundary: 'derivation_checkpoint',
       },
     ],
     truth_source: '.aitp/process_graph',
@@ -273,6 +311,9 @@ function currentAitpSlicePayload() {
         reason: 'missing source reconstruction components',
         target_type: 'claim',
         target_id: 'claim-fqhe',
+        priority: 'high',
+        timing: 'before_using_as_support',
+        trust_boundary: 'source_support',
         missing_components: ['reference_location', 'evidence'],
       },
       {
@@ -280,6 +321,9 @@ function currentAitpSlicePayload() {
         reason: 'object relation is still a hypothesis',
         target_type: 'object_relation',
         target_id: 'relation-counting-cft',
+        priority: 'high',
+        timing: 'before_using_relation_as_claim',
+        trust_boundary: 'hypothesis_relation',
       },
     ],
   };
