@@ -1333,6 +1333,7 @@ function renderContextPack(pack: ResearchContextPack): string {
         `    <proposal id="${escapeXml(proposal.id)}" kind="${escapeXml(proposal.kind)}" event_ids="${escapeXml(proposal.eventIds.join(','))}" confidence="${proposal.confidence}" />`,
     ),
     '  </ledger>',
+    renderAitpSection(pack),
     '  <action_bindings>',
     ...pack.actionBindings.map(renderActionBindingXml),
     '  </action_bindings>',
@@ -1344,6 +1345,25 @@ function renderContextPack(pack: ResearchContextPack): string {
     '  </diagnostics>',
     '</context_pack>',
     '',
+  ].join('\n');
+}
+
+function renderAitpSection(pack: ResearchContextPack): string {
+  const aitp = pack.aitp;
+  if (aitp === undefined) return '  <aitp />';
+  return [
+    `  <aitp truth_source="${escapeXml(aitp.truthSource)}" orientation_only="${String(aitp.orientationOnly)}">`,
+    renderBoundedStringList('context_lines', 'line', aitp.contextLines, '    '),
+    renderBoundedStringList('open_obligations', 'obligation', aitp.openObligationIds, '    '),
+    renderBoundedStringList('required_calls', 'call', aitp.requiredCallIds, '    '),
+    renderBoundedStringList(
+      'trust_prerequisite_calls',
+      'call',
+      aitp.trustPrerequisiteCallIds,
+      '    ',
+    ),
+    renderBoundedStringList('trust_boundary_reasons', 'reason', aitp.trustBoundaryReasons, '    '),
+    '  </aitp>',
   ].join('\n');
 }
 

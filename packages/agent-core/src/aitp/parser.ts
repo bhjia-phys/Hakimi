@@ -1,5 +1,7 @@
 import type {
   AitpExploratoryRecordItem,
+  AitpMomentPolicy,
+  AitpMomentPolicyDecision,
   AitpObligationSeverity,
   AitpOpenObligation,
   AitpProcessGraphEdge,
@@ -39,6 +41,7 @@ export function parseAitpProcessGraphSlice(input: unknown): AitpProcessGraphSlic
     exploratoryRecords: objectArray(input['exploratory_records']).map(parseExploratoryRecordItem),
     trustBoundaryReasons: stringArray(input['trust_boundary_reasons']),
     recommendedMoments: momentArray(input['recommended_moments']),
+    momentPolicy: parseMomentPolicy(input['moment_policy']),
     truthSource: stringValue(input['truth_source']) ?? 'aitp',
     orientationOnly: booleanValue(input['orientation_only']) ?? false,
   };
@@ -212,6 +215,63 @@ function momentArray(value: unknown): readonly AitpRecommendedMoment[] {
   return moments;
 }
 
+function parseMomentPolicy(value: unknown): AitpMomentPolicy {
+  if (!isRecord(value)) {
+    return {
+      kind: 'host_agnostic_moment_policy',
+      decisions: [],
+      recommendedMoments: [],
+      trustBoundaryReasons: [],
+      truthSource: 'aitp',
+      orientationOnly: true,
+      canUpdateClaimTrust: false,
+    };
+  }
+  return {
+    kind: stringValue(value['kind']) ?? 'host_agnostic_moment_policy',
+    decisions: objectArray(value['decisions']).map(parseMomentPolicyDecision),
+    recommendedMoments: momentArray(value['recommended_moments']),
+    trustBoundaryReasons: stringArray(value['trust_boundary_reasons']),
+    truthSource: stringValue(value['truth_source']) ?? 'aitp',
+    orientationOnly: booleanValue(value['orientation_only']) ?? true,
+    canUpdateClaimTrust: booleanValue(value['can_update_claim_trust']) ?? false,
+  };
+}
+
+function parseMomentPolicyDecision(
+  raw: Record<string, unknown>,
+  index: number,
+): AitpMomentPolicyDecision {
+  const moment = stringValue(raw['moment']) ?? `aitp.policy.${String(index + 1)}`;
+  const targetType = stringValue(raw['target_type']) ?? 'unknown';
+  const targetId = stringValue(raw['target_id']) ?? `target-${String(index + 1)}`;
+  const recordEntrypoints = stringArray(raw['record_entrypoints']);
+  const explorationEntrypoints = stringArray(raw['exploration_entrypoints']);
+  const explicitEntrypoints = stringArray(raw['entrypoints']);
+  return {
+    moment: moment as AitpResearchMomentId,
+    decisionType: stringValue(raw['decision_type']) ?? 'recording',
+    actionKind: stringValue(raw['action_kind']) ?? moment,
+    requiredNow: booleanValue(raw['required_now']) ?? false,
+    reason: stringValue(raw['reason']) ?? `AITP moment policy decision ${String(index + 1)}.`,
+    targetType,
+    targetId,
+    targetRefs: stringArray(raw['target_refs']).length > 0
+      ? stringArray(raw['target_refs'])
+      : [nodeRef(targetType, targetId)],
+    missingComponents: stringArray(raw['missing_components']),
+    recordEntrypoints,
+    explorationEntrypoints,
+    entrypoints: explicitEntrypoints.length > 0
+      ? explicitEntrypoints
+      : unique([...recordEntrypoints, ...explorationEntrypoints]),
+    requiredBeforeTrustChange: stringArray(raw['required_before_trust_change']),
+    trustBoundary: booleanValue(raw['trust_boundary']) ?? false,
+    orientationOnly: booleanValue(raw['orientation_only']) ?? true,
+    canUpdateClaimTrust: booleanValue(raw['can_update_claim_trust']) ?? false,
+  };
+}
+
 function targetRefsFromMoment(item: Record<string, unknown>): readonly string[] {
   const targetType = stringValue(item['target_type']);
   const targetId = stringValue(item['target_id']);
@@ -264,4 +324,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function nodeRef(type: string, id: string): string {
   return `${type}:${id}`;
+}
+
+function unique(values: readonly string[]): readonly string[] {
+  return values.filter((value, index, array) => array.indexOf(value) === index);
 }

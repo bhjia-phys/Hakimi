@@ -58,6 +58,14 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
     if (pack.aitp.openObligationIds.length > 0) {
       lines.push(`AITP open obligations: ${bounded(pack.aitp.openObligationIds).join(', ')}`);
     }
+    if (pack.aitp.requiredCallIds.length > 0) {
+      lines.push(`AITP required calls now: ${bounded(pack.aitp.requiredCallIds).join(', ')}`);
+    }
+    if (pack.aitp.trustPrerequisiteCallIds.length > 0) {
+      lines.push(
+        `AITP calls before trust change: ${bounded(pack.aitp.trustPrerequisiteCallIds).join(', ')}`,
+      );
+    }
   }
   if (pack.actionBindings.length > 0) {
     lines.push(

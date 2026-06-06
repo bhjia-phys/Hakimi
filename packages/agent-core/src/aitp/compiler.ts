@@ -1,6 +1,8 @@
-import { detectResearchMoments } from './moment-detector';
+import { actionIdForPolicyDecision, detectResearchMoments } from './moment-detector';
 import { parseAitpProcessGraphSlice } from './parser';
 import type {
+  AitpCallObligation,
+  AitpMomentPolicyDecision,
   AitpObligationSummary,
   AitpOpenObligation,
   AitpProcessGraphSlice,
@@ -27,15 +29,23 @@ export function compileAitpProcessGraphSlice(
   const obligations = summarizeObligations(slice.openObligations, maxItems);
   const trust = summarizeTrust(slice);
   const suggestedNextMoments = detectResearchMoments(slice, options);
+  const callObligations = buildCallObligations(slice);
   const actionRecommendations = suggestedNextMoments.map((moment) =>
-    actionBindingForMoment(moment, slice),
+    actionBindingForMoment(moment, slice, callObligations),
   );
-  const contextLines = buildContextLines(slice, obligations, suggestedNextMoments, maxItems);
+  const contextLines = buildContextLines(
+    slice,
+    obligations,
+    suggestedNextMoments,
+    callObligations,
+    maxItems,
+  );
 
   return {
-    reminders: buildReminderLines(slice, contextLines, trust, maxItems),
+    reminders: buildReminderLines(slice, contextLines, trust, callObligations, maxItems),
     contextLines,
     actionRecommendations,
+    callObligations,
     obligations,
     suggestedNextMoments,
     trust,
@@ -69,6 +79,7 @@ function buildContextLines(
   slice: AitpProcessGraphSlice,
   obligations: AitpObligationSummary,
   moments: readonly DetectedResearchMoment[],
+  callObligations: readonly AitpCallObligation[],
   maxItems: number,
 ): readonly string[] {
   const lines: string[] = [
@@ -134,6 +145,20 @@ function buildContextLines(
       );
     }
   }
+  const requiredNow = callObligations.filter((item) => item.requiredNow);
+  if (requiredNow.length > 0) {
+    lines.push(
+      `AITP required calls now: ${bounded(requiredNow.map(renderCallObligation), maxItems).join('; ')}`,
+    );
+  }
+  const trustPrerequisites = callObligations.filter(
+    (item) => item.requiredBeforeTrustChange.length > 0,
+  );
+  if (trustPrerequisites.length > 0) {
+    lines.push(
+      `AITP trust prerequisites: ${bounded(trustPrerequisites.map(renderTrustPrerequisite), maxItems).join('; ')}`,
+    );
+  }
   return lines;
 }
 
@@ -141,6 +166,7 @@ function buildReminderLines(
   slice: AitpProcessGraphSlice,
   contextLines: readonly string[],
   trust: AitpTrustSummary,
+  callObligations: readonly AitpCallObligation[],
   maxItems: number,
 ): readonly string[] {
   const lines = [
@@ -159,6 +185,11 @@ function buildReminderLines(
   if (slice.openObligations.length > 0) {
     lines.push('Keep open obligations visible until AITP records a resolution.');
   }
+  if (callObligations.some((item) => item.requiredNow)) {
+    lines.push(
+      'Treat AITP required-now call obligations as current-turn ResearchAction bindings, then record outcomes or blockers.',
+    );
+  }
   return lines;
 }
 
@@ -175,7 +206,9 @@ function summarizeTrust(slice: AitpProcessGraphSlice): AitpTrustSummary {
 function actionBindingForMoment(
   moment: DetectedResearchMoment,
   slice: AitpProcessGraphSlice,
+  callObligations: readonly AitpCallObligation[],
 ): ResearchActionBinding {
+  const obligation = callObligationForMoment(moment, callObligations);
   return {
     id: `binding.${AITP_ADAPTER_ID}.${slug(moment.actionId)}.${slug(moment.source)}`,
     actionId: moment.actionId,
@@ -188,11 +221,55 @@ function actionBindingForMoment(
       source: moment.source,
       timing: moment.timing,
       trustBoundary: moment.trustBoundary,
+      callObligation: obligation,
       writeBridge: writeBridgeForMoment(moment),
     },
     reason: moment.reason,
     priority: moment.priority,
   };
+}
+
+function buildCallObligations(slice: AitpProcessGraphSlice): readonly AitpCallObligation[] {
+  return slice.momentPolicy.decisions.map((decision, index) =>
+    callObligationForDecision(decision, index),
+  );
+}
+
+function callObligationForDecision(
+  decision: AitpMomentPolicyDecision,
+  index: number,
+): AitpCallObligation {
+  const actionId = actionIdForPolicyDecision(decision);
+  return {
+    id: `aitp.policy.${String(index + 1)}.${slug(actionId)}.${slug(decision.targetType)}.${slug(decision.targetId)}`,
+    actionId,
+    momentId: decision.moment,
+    requiredNow: decision.requiredNow,
+    decisionType: decision.decisionType,
+    actionKind: decision.actionKind,
+    reason: decision.reason,
+    targetType: decision.targetType,
+    targetId: decision.targetId,
+    targetRefs: decision.targetRefs,
+    missingComponents: decision.missingComponents,
+    recordEntrypoints: decision.recordEntrypoints,
+    explorationEntrypoints: decision.explorationEntrypoints,
+    entrypoints: decision.entrypoints,
+    requiredBeforeTrustChange: decision.requiredBeforeTrustChange,
+    trustBoundary: decision.trustBoundary,
+  };
+}
+
+function callObligationForMoment(
+  moment: DetectedResearchMoment,
+  callObligations: readonly AitpCallObligation[],
+): AitpCallObligation | undefined {
+  const exact = callObligations.find((item) =>
+    item.actionId === moment.actionId &&
+    item.targetRefs.some((ref) => moment.targetRefs.includes(ref)),
+  );
+  if (exact !== undefined) return exact;
+  return callObligations.find((item) => item.actionId === moment.actionId);
 }
 
 function writeBridgeForMoment(moment: DetectedResearchMoment): Readonly<Record<string, unknown>> | undefined {
@@ -217,6 +294,20 @@ function writeBridgeForMoment(moment: DetectedResearchMoment): Readonly<Record<s
           'maturityLevel',
           'nextAction',
         ],
+        targetRefs: moment.targetRefs,
+      };
+    case 'aitp.create_validation_contract':
+      return {
+        operation: 'createValidationContract',
+        cli: 'aitp-v5 validation contract create',
+        requiredFields: ['topicId', 'claimId', 'requiredChecks', 'failureModes', 'requiredEvidenceOutputs'],
+        targetRefs: moment.targetRefs,
+      };
+    case 'aitp.record_validation_result':
+      return {
+        operation: 'recordValidationResult',
+        cli: 'aitp-v5 validation result record',
+        requiredFields: ['topicId', 'claimId', 'contractId', 'toolRunId', 'status', 'summary'],
         targetRefs: moment.targetRefs,
       };
     case 'aitp.request_human_checkpoint':
@@ -260,6 +351,17 @@ function renderMomentPolicy(moment: DetectedResearchMoment): string {
   const timing = moment.timing === undefined ? 'when-needed' : moment.timing;
   const boundary = moment.trustBoundary === undefined ? '' : ` boundary=${moment.trustBoundary}`;
   return `${moment.actionId}@${timing} priority=${moment.priority}${boundary}`;
+}
+
+function renderCallObligation(obligation: AitpCallObligation): string {
+  const target = obligation.targetRefs.length === 0 ? obligation.targetId : obligation.targetRefs.join(',');
+  const entrypoints =
+    obligation.entrypoints.length === 0 ? '' : ` entrypoints=${obligation.entrypoints.join(',')}`;
+  return `${obligation.actionId} -> ${target} [${obligation.decisionType}/${obligation.actionKind}]${entrypoints}`;
+}
+
+function renderTrustPrerequisite(obligation: AitpCallObligation): string {
+  return `${obligation.actionId} before trust change: ${obligation.requiredBeforeTrustChange.join(', ')}`;
 }
 
 function hasExplicitTrustFlag(flags: readonly string[]): boolean {
