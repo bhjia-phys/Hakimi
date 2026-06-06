@@ -246,12 +246,16 @@ describe('ResearchContextManager', () => {
     expect(reminder).toContain('AITP live routes: route-source-first');
     expect(reminder).toContain('AITP blocked routes: route-direct-proof');
     expect(reminder).toContain('AITP pivot-required routes: route-source-first');
+    expect(reminder).toContain('AITP provenance gaps: gap-code-state');
+    expect(reminder).toContain('AITP code provenance gaps: gap-code-state');
     expect(reminder).toContain('Theory reasoning for');
     expect(reminder).toContain('source_dependency_backtrace');
     expect(reminder).toContain('original_question_continuity_guard');
     expect(agent.researchContext.listPacks().at(-1)?.aitp?.suggestedActionIds).toEqual(
       expect.arrayContaining([
         'trace.audit_original_question_drift',
+        'aitp.capture_code_state_auto',
+        'code.capture_git_diff_observation',
         'trace.follow_source_dependency',
       ]),
     );
@@ -416,6 +420,28 @@ function aitpSlicePayload() {
       abandoned_route_ids: [],
       pivot_required_route_ids: ['route-source-first'],
     },
+    provenance_gaps: [
+      {
+        gap_id: 'gap-code-state',
+        gap_type: 'code_state_missing',
+        provenance_kind: 'code',
+        reason: 'code-dependent route has no git code state',
+        topic_id: 'fqhe-literature',
+        claim_id: 'claim-fqhe',
+        target_type: 'claim',
+        target_id: 'claim-fqhe',
+        target_refs: ['claim:claim-fqhe'],
+        recommended_actions: ['aitp.capture_code_state_auto'],
+        recommended_entrypoints: ['aitp_v5_capture_code_state_auto'],
+        severity: 'recommended',
+        required_now: false,
+        required_before_trust_change: false,
+        strict_boundary: 'before_using_as_evidence_validation_benchmark_memory_or_checked_conclusion',
+        blocking_when_used_as: ['benchmark_basis'],
+        orientation_only: true,
+        can_update_claim_trust: false,
+      },
+    ],
     trust_boundary_reasons: ['this API cannot update claim trust'],
     recommended_moments: [
       {

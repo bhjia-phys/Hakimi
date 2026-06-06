@@ -197,6 +197,77 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.contextLines.join('\n')).not.toContain('AITP required calls now: aitp.record_route_choice');
   });
 
+  it('projects AITP provenance gaps into non-blocking source, code, tool, and artifact actions', () => {
+    const compiled = compileAitpProcessGraphSlice(provenanceGapSlicePayload());
+    const actionById = new Map(
+      compiled.actionRecommendations.map((binding) => [binding.actionId, binding]),
+    );
+
+    expect(compiled.provenance.all.map((item) => item.id)).toEqual([
+      'gap-reference-location',
+      'gap-source-hash',
+      'gap-code-state',
+      'gap-tool-run',
+      'gap-benchmark-artifact',
+    ]);
+    expect(compiled.provenance.code.map((item) => item.id)).toEqual(['gap-code-state']);
+    expect(compiled.provenance.artifact.map((item) => item.id)).toEqual([
+      'gap-benchmark-artifact',
+    ]);
+    expect(compiled.contextLines.join('\n')).toContain(
+      'Provenance gaps: gap-reference-location [reference_location_missing/source]',
+    );
+    expect(compiled.contextLines.join('\n')).toContain('Code provenance gaps: gap-code-state');
+    expect(compiled.actionRecommendations.map((binding) => binding.actionId)).toEqual(
+      expect.arrayContaining([
+        'aitp.record_reference_location',
+        'aitp.register_source_asset',
+        'aitp.capture_code_state_auto',
+        'code.capture_git_diff_observation',
+        'aitp.record_tool_run',
+        'aitp.attach_artifact',
+      ]),
+    );
+    expect(actionById.get('aitp.capture_code_state_auto')).toMatchObject({
+      priority: 'high',
+      params: {
+        provenanceGap: {
+          id: 'gap-code-state',
+          gapType: 'code_state_missing',
+          requiredNow: false,
+          requiredBeforeTrustChange: false,
+          strictBoundary: 'before_using_as_evidence_validation_benchmark_memory_or_checked_conclusion',
+        },
+        provenanceGaps: expect.arrayContaining([
+          expect.objectContaining({ id: 'gap-code-state' }),
+        ]),
+        lifecycleTrigger: {
+          trustBoundaryInputs: {
+            finalGateRequired: false,
+            requiredBeforeTrustChange: [],
+            entrypoints: expect.arrayContaining(['aitp_v5_capture_code_state_auto']),
+          },
+        },
+        writeBridge: {
+          operation: 'captureCodeStateAuto',
+          cli: 'aitp-v5 code state auto',
+        },
+      },
+    });
+    expect(actionById.get('code.capture_git_diff_observation')).toMatchObject({
+      priority: 'high',
+      params: {
+        provenanceGap: expect.objectContaining({ id: 'gap-code-state' }),
+      },
+    });
+    expect(actionById.get('aitp.attach_artifact')?.params?.['writeBridge']).toBeUndefined();
+    expect(compiled.actionRecommendations.map((binding) => binding.priority)).not.toContain('blocking');
+    expect(compiled.callObligations).toEqual([]);
+    expect(compiled.reminders.join('\n')).toContain(
+      'Capture source, code, tool-run, and artifact provenance before reusing',
+    );
+  });
+
   it('accepts current AITP v5 snake-case process graph slices', () => {
     const compiled = compileAitpProcessGraphSlice(currentAitpSlicePayload(), {
       prompt: 'Audit original question drift while following this backtrace.',
@@ -702,6 +773,136 @@ function routePolicySlicePayload() {
       ],
       recommended_moments: [],
     },
+  };
+}
+
+function provenanceGapSlicePayload() {
+  return {
+    kind: 'process_graph_slice',
+    nodes: [],
+    edges: [],
+    open_obligations: [],
+    source_backtrace: [],
+    relation_neighborhood: [],
+    exploratory_records: [],
+    route_state: {
+      routes: [],
+      live_route_ids: [],
+      blocked_route_ids: [],
+      abandoned_route_ids: [],
+      pivot_required_route_ids: [],
+    },
+    provenance_gaps: [
+      {
+        gap_id: 'gap-reference-location',
+        gap_type: 'reference_location_missing',
+        provenance_kind: 'source',
+        reason: 'claim cites a source without a precise reference location',
+        topic_id: 'fqhe',
+        claim_id: 'claim-fqhe',
+        target_type: 'claim',
+        target_id: 'claim-fqhe',
+        target_refs: ['claim:claim-fqhe'],
+        recommended_actions: ['aitp.record_reference_location'],
+        recommended_entrypoints: ['aitp_v5_record_reference_location'],
+        severity: 'recommended',
+        required_now: false,
+        required_before_trust_change: false,
+        strict_boundary: 'before_using_as_evidence_validation_benchmark_memory_or_checked_conclusion',
+        blocking_when_used_as: ['evidence_basis', 'checked_conclusion'],
+        orientation_only: true,
+        can_update_claim_trust: false,
+      },
+      {
+        gap_id: 'gap-source-hash',
+        gap_type: 'source_asset_hash_missing',
+        provenance_kind: 'source',
+        reason: 'source asset lacks a content hash',
+        topic_id: 'fqhe',
+        claim_id: 'claim-fqhe',
+        target_type: 'source_asset',
+        target_id: 'source-asset-edge-counting',
+        target_refs: ['source_asset:source-asset-edge-counting'],
+        recommended_actions: ['aitp.register_source_asset'],
+        recommended_entrypoints: ['aitp_v5_register_source_asset'],
+        severity: 'recommended',
+        required_now: false,
+        required_before_trust_change: false,
+        strict_boundary: 'before_using_as_evidence_validation_benchmark_memory_or_checked_conclusion',
+        blocking_when_used_as: ['evidence_basis', 'memory_input'],
+        orientation_only: true,
+        can_update_claim_trust: false,
+      },
+      {
+        gap_id: 'gap-code-state',
+        gap_type: 'code_state_missing',
+        provenance_kind: 'code',
+        reason: 'code-dependent claim has no git code state',
+        topic_id: 'gw',
+        claim_id: 'claim-gw',
+        target_type: 'claim',
+        target_id: 'claim-gw',
+        target_refs: ['claim:claim-gw'],
+        recommended_actions: ['aitp.capture_code_state_auto', 'aitp.record_code_state'],
+        recommended_entrypoints: ['aitp_v5_capture_code_state_auto'],
+        severity: 'recommended',
+        required_now: false,
+        required_before_trust_change: false,
+        strict_boundary: 'before_using_as_evidence_validation_benchmark_memory_or_checked_conclusion',
+        blocking_when_used_as: ['benchmark_basis', 'checked_conclusion'],
+        orientation_only: true,
+        can_update_claim_trust: false,
+      },
+      {
+        gap_id: 'gap-tool-run',
+        gap_type: 'tool_run_missing',
+        provenance_kind: 'tool',
+        reason: 'validation output has no tool-run record',
+        topic_id: 'gw',
+        claim_id: 'claim-gw',
+        target_type: 'validation_result',
+        target_id: 'validation-result-gw',
+        target_refs: ['validation_result:validation-result-gw'],
+        recommended_actions: ['aitp.record_tool_run'],
+        recommended_entrypoints: ['aitp_v5_record_tool_run'],
+        severity: 'recommended',
+        required_now: false,
+        required_before_trust_change: false,
+        strict_boundary: 'before_using_as_evidence_validation_benchmark_memory_or_checked_conclusion',
+        blocking_when_used_as: ['validation_input'],
+        orientation_only: true,
+        can_update_claim_trust: false,
+      },
+      {
+        gap_id: 'gap-benchmark-artifact',
+        gap_type: 'benchmark_artifact_missing',
+        provenance_kind: 'artifact',
+        reason: 'benchmark run has no artifact reference',
+        topic_id: 'gw',
+        claim_id: 'claim-gw',
+        target_type: 'tool_run',
+        target_id: 'tool-run-gw',
+        target_refs: ['tool_run:tool-run-gw'],
+        recommended_actions: ['aitp.attach_artifact'],
+        recommended_entrypoints: ['aitp_v5_attach_artifact'],
+        severity: 'recommended',
+        required_now: false,
+        required_before_trust_change: false,
+        strict_boundary: 'before_using_as_evidence_validation_benchmark_memory_or_checked_conclusion',
+        blocking_when_used_as: ['benchmark_basis'],
+        orientation_only: true,
+        can_update_claim_trust: false,
+      },
+    ],
+    trust_boundary_reasons: [],
+    recommended_moments: [],
+    moment_policy: {
+      kind: 'host_agnostic_moment_policy',
+      decisions: [],
+      recommended_moments: [],
+    },
+    truth_source: 'typed_records',
+    orientation_only: true,
   };
 }
 

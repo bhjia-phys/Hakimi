@@ -51,6 +51,8 @@ Hakimi 不是在 coding agent 外面套一个研究记录本。它是 [MoonshotA
 - ResearchAction 可以执行 in-process graph query、benchmark adapter、formalization blueprint export 和 external job receipt normalization。
 - 文献搜索、局部代码 patch 准备、外部 benchmark workflow 通过 Kimi 原生工具编排，而不是塞进 `ResearchAction` 内部直接执行。
 - 证据可以写入 research ledger，只在匹配 WorkFrame scope 时重新读取，并被编译成 graph candidates，再经过 harness/final-gate 检查。
+- AITP v5 `process_graph_slice` 可以作为 canonical `.aitp` 派生视图进入当前 WorkFrame：Hakimi 只把它编译成 reminder、ContextPack、ResearchAction 绑定和 final-gate 前置条件，不会把 AITP graph 复制成 `.hakimi` 真相。
+- AITP `provenance_gaps[]` 现在会投影成 source/code/tool/artifact provenance 摘要、ContextPack 字段和捕获类动作，例如 `aitp.register_source_asset`、`aitp.capture_code_state_auto`、`aitp.record_tool_run`、`aitp.attach_artifact` 和 `code.capture_git_diff_observation`。普通 provenance gap 只是“复用为证据/验证/benchmark/memory/checked conclusion 前要补”的科研提示；只有 AITP 明确给出 trust/final 前置条件时，Hakimi final gate 才把它当阻塞条件。
 
 ## 架构层
 
@@ -205,6 +207,7 @@ formula capsule
 - AITP policy 里的 lifecycle trigger 字段（例如 `lifecycle_phases`、`trigger_conditions`、`recording_threshold`、`trust_boundary_inputs` 和 `recommended_host_behavior`）也会被投影到 action params / `callObligations`。它们只说明某个 ResearchAction 为什么应出现在 pre-turn、pre-action 或 pre-final 流程里，让模型和 final gate 看见策略原因；Hakimi 不会因此自动写记录，也不会把这些提示提升成 canonical truth。
 - AITP exploratory record 和 `payload_hints[].draft` 中的理论物理 reasoning 字段（例如 relation-path questions、backtrace targets、definition/derivation/source dependency questions、original-question guard）会被编译成 `params.theoryReasoning`，并显式渲染到 WorkFrame reminder 与 ContextPack XML 的 `<theory_reasoning>` 绑定里。这用于约束当前 WorkFrame 里的物理头脑风暴/回溯 prompt，不会成为 `.hakimi` 的 canonical memory。
 - AITP `route_state` 现在也作为一等投影进入 Hakimi：Hakimi 读取当前 v5 的 `routes`、`active_route_id`、`live_route_ids`、`blocked_route_ids`、`abandoned_route_ids` 和 `pivot_required_route_ids`，统一把 route ref 规范成 `research_route:<id>`，并在 WorkFrame reminder / ContextPack XML 里渲染 `<live_routes>`、`<blocked_routes>`、`<abandoned_routes>` 和 `<pivot_required_routes>`。普通 route choice、failed route lesson、route switch checkpoint 只是科研过程连续性提示；只有 AITP 明确给出 `final_gate_required` 或 `required_before_trust_change` 时，Hakimi final gate 才会把它们当成阻塞前置条件。
+- AITP `provenance_gaps[]` 现在也作为一等投影进入 Hakimi：Hakimi 按 source/code/tool/validation/artifact 分类汇总 gap ids，渲染到 WorkFrame reminder 和 ContextPack provenance 字段，并推荐 `aitp.register_source_asset`、`aitp.capture_code_state_auto`、`aitp.record_tool_run`、`aitp.attach_artifact`、`code.capture_git_diff_observation` 等动作。`captureCodeStateAuto` write bridge 会调用 AITP `aitp-v5 code state auto` 捕获 git HEAD、dirty diff hash 和可选 patch artifact；这些 gap 默认不阻塞 final gate，除非 AITP 明确标记为 trust/final 前置条件。
 
 ## 本地开发
 

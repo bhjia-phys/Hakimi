@@ -7,6 +7,8 @@ import type {
   AitpOpenObligation,
   AitpPayloadHint,
   AitpProcessGraphSlice,
+  AitpProvenanceGap,
+  AitpProvenanceGapSummary,
   AitpRouteState,
   AitpRouteStateItem,
   AitpRouteSummary,
@@ -39,12 +41,13 @@ export function compileAitpProcessGraphSlice(
   input: AitpProcessGraphSlice | unknown,
   options: CompileAitpProcessGraphSliceOptions = {},
 ): CompiledAitpProcessGraphSlice {
-  const slice = withRouteState(
+  const slice = withSliceDefaults(
     isAitpProcessGraphSlice(input) ? input : parseAitpProcessGraphSlice(input),
   );
   const maxItems = options.maxContextItems ?? MAX_CONTEXT_ITEMS;
   const obligations = summarizeObligations(slice.openObligations, maxItems);
   const routes = summarizeRoutes(slice.routeState, maxItems);
+  const provenance = summarizeProvenanceGaps(slice.provenanceGaps, maxItems);
   const trust = summarizeTrust(slice);
   const suggestedNextMoments = detectResearchMoments(slice, options);
   const callObligations = buildCallObligations(slice);
@@ -56,6 +59,7 @@ export function compileAitpProcessGraphSlice(
     slice,
     obligations,
     routes,
+    provenance,
     suggestedNextMoments,
     callObligations,
     theoryReasoning,
@@ -63,12 +67,13 @@ export function compileAitpProcessGraphSlice(
   );
 
   return {
-    reminders: buildReminderLines(slice, contextLines, trust, callObligations, maxItems),
+    reminders: buildReminderLines(slice, contextLines, trust, callObligations, provenance, maxItems),
     contextLines,
     actionRecommendations,
     callObligations,
     obligations,
     routes,
+    provenance,
     suggestedNextMoments,
     trust,
     diagnostics: buildDiagnostics(slice),
@@ -101,6 +106,7 @@ function buildContextLines(
   slice: AitpProcessGraphSlice,
   obligations: AitpObligationSummary,
   routes: AitpRouteSummary,
+  provenance: AitpProvenanceGapSummary,
   moments: readonly DetectedResearchMoment[],
   callObligations: readonly AitpCallObligation[],
   theoryReasoning: AitpTheoryReasoningProjection | undefined,
@@ -114,6 +120,7 @@ function buildContextLines(
   }
   lines.push(...obligations.lines);
   lines.push(...routes.lines);
+  lines.push(...provenance.lines);
 
   const sourceGaps = slice.sourceBacktrace.filter((item) =>
     lowerJoin([item.status, item.reason, item.gap]).match(/gap|missing|unresolved|open|no source/) !==
@@ -203,6 +210,7 @@ function buildReminderLines(
   contextLines: readonly string[],
   trust: AitpTrustSummary,
   callObligations: readonly AitpCallObligation[],
+  provenance: AitpProvenanceGapSummary,
   maxItems: number,
 ): readonly string[] {
   const lines = [
@@ -229,6 +237,11 @@ function buildReminderLines(
   if (callObligations.some((item) => hasLifecycleTrigger(item.lifecycleTrigger))) {
     lines.push(
       'Use AITP lifecycle trigger info as orientation-only policy context for when a ResearchAction should run.',
+    );
+  }
+  if (provenance.all.length > 0) {
+    lines.push(
+      'Capture source, code, tool-run, and artifact provenance before reusing those refs as evidence, validation inputs, benchmark bases, memory inputs, or checked conclusions.',
     );
   }
   return lines;
@@ -277,6 +290,54 @@ export function summarizeRoutes(
   return { live, blocked, abandoned, pivotRequired, lines };
 }
 
+export function summarizeProvenanceGaps(
+  gaps: readonly AitpProvenanceGap[],
+  maxItems = MAX_CONTEXT_ITEMS,
+): AitpProvenanceGapSummary {
+  const source = gaps.filter((item) =>
+    gapMatches(item, ['source', 'reference_location', 'source_asset', 'hash']),
+  );
+  const code = gaps.filter((item) =>
+    gapMatches(item, ['code', 'code_state', 'git', 'diff', 'patch', 'repo']),
+  );
+  const tool = gaps.filter((item) =>
+    gapMatches(item, ['tool', 'tool_run', 'benchmark']),
+  );
+  const validation = gaps.filter((item) =>
+    gapMatches(item, ['validation', 'contract', 'result']),
+  );
+  const artifact = gaps.filter((item) =>
+    gapMatches(item, ['artifact', 'benchmark_artifact']),
+  );
+  const lines: string[] = [];
+  if (gaps.length > 0) {
+    lines.push(`Provenance gaps: ${bounded(gaps.map(renderProvenanceGap), maxItems).join('; ')}`);
+  }
+  if (code.length > 0) {
+    lines.push(`Code provenance gaps: ${bounded(code.map((item) => item.id), maxItems).join(', ')}`);
+  }
+  if (artifact.length > 0) {
+    lines.push(`Artifact provenance gaps: ${bounded(artifact.map((item) => item.id), maxItems).join(', ')}`);
+  }
+  return { all: gaps, source, code, tool, validation, artifact, lines };
+}
+
+function gapMatches(gap: AitpProvenanceGap, needles: readonly string[]): boolean {
+  return hasAny(lowerJoin([
+    gap.id,
+    gap.gapType,
+    gap.provenanceKind,
+    gap.reason,
+    gap.targetType,
+    gap.targetId,
+    gap.strictBoundary,
+    ...gap.targetRefs,
+    ...gap.recommendedActions,
+    ...gap.recommendedEntrypoints,
+    ...gap.blockingWhenUsedAs,
+  ]), needles);
+}
+
 function summarizeTrust(slice: AitpProcessGraphSlice): AitpTrustSummary {
   return {
     truthSource: slice.truthSource,
@@ -295,6 +356,7 @@ function actionBindingForMoment(
 ): ResearchActionBinding {
   const obligation = callObligationForMoment(moment, callObligations);
   const relevantTheoryReasoning = theoryReasoningForMoment(moment, theoryReasoning);
+  const relevantProvenanceGaps = provenanceGapsForMoment(moment, slice);
   return {
     id: `binding.${AITP_ADAPTER_ID}.${slug(moment.actionId)}.${slug(moment.source)}`,
     actionId: moment.actionId,
@@ -310,6 +372,8 @@ function actionBindingForMoment(
       lifecycleTrigger: lifecycleTriggerForMoment(moment, obligation),
       callObligation: obligation,
       routeState: routeStateForMoment(moment, slice),
+      provenanceGap: provenanceGapPayload(relevantProvenanceGaps[0]),
+      provenanceGaps: relevantProvenanceGaps.map(provenanceGapPayload),
       writeBridge: writeBridgeForMoment(moment, obligation),
       theoryReasoning: relevantTheoryReasoning,
     },
@@ -401,6 +465,100 @@ function routeStateForMoment(
   };
 }
 
+function provenanceGapsForMoment(
+  moment: DetectedResearchMoment,
+  slice: AitpProcessGraphSlice,
+): readonly AitpProvenanceGap[] {
+  return slice.provenanceGaps.filter((gap) => {
+    const actionIds = provenanceActionIdsForGap(gap);
+    return (
+      actionIds.includes(moment.actionId) ||
+      gap.targetRefs.some((ref) => moment.targetRefs.includes(ref)) ||
+      moment.targetRefs.some((ref) => gap.targetRefs.includes(ref))
+    );
+  });
+}
+
+function provenanceActionIdsForGap(gap: AitpProvenanceGap): readonly string[] {
+  const actionIds = [
+    ...gap.recommendedActions,
+    ...gap.recommendedEntrypoints.map(actionIdForEntrypoint),
+  ].filter(isNonEmptyString);
+  const text = lowerJoin([
+    gap.gapType,
+    gap.provenanceKind,
+    gap.reason,
+    ...gap.blockingWhenUsedAs,
+  ]);
+  if (hasAny(text, ['reference_location'])) actionIds.push('aitp.record_reference_location');
+  if (hasAny(text, ['source_asset', 'source hash', 'duplicate_hash'])) {
+    actionIds.push('aitp.register_source_asset');
+  }
+  if (hasAny(text, ['code_state', 'git', 'diff', 'patch', 'repo'])) {
+    actionIds.push('aitp.capture_code_state_auto', 'code.capture_git_diff_observation');
+  }
+  if (hasAny(text, ['tool_run', 'benchmark'])) actionIds.push('aitp.record_tool_run');
+  if (hasAny(text, ['validation_contract'])) actionIds.push('aitp.create_validation_contract');
+  if (hasAny(text, ['validation_result'])) actionIds.push('aitp.record_validation_result');
+  if (hasAny(text, ['artifact'])) actionIds.push('aitp.attach_artifact');
+  return unique(actionIds.map(normalizeProvenanceActionId));
+}
+
+function actionIdForEntrypoint(entrypoint: string): string | undefined {
+  switch (entrypoint) {
+    case 'aitp_v5_record_reference_location':
+      return 'aitp.record_reference_location';
+    case 'aitp_v5_register_source_asset':
+      return 'aitp.register_source_asset';
+    case 'aitp_v5_capture_code_state_auto':
+    case 'aitp_v5_record_code_state':
+      return 'aitp.capture_code_state_auto';
+    case 'aitp_v5_record_tool_run':
+      return 'aitp.record_tool_run';
+    case 'aitp_v5_create_validation_contract':
+    case 'aitp_v5_validation_contract_create':
+      return 'aitp.create_validation_contract';
+    case 'aitp_v5_record_validation_result':
+      return 'aitp.record_validation_result';
+    case 'aitp_v5_attach_artifact':
+      return 'aitp.attach_artifact';
+    default:
+      return undefined;
+  }
+}
+
+function normalizeProvenanceActionId(actionId: string): string {
+  if (actionId === 'aitp.record_code_state') return 'aitp.capture_code_state_auto';
+  if (actionId === 'aitp.review_source_asset_duplicate') return 'aitp.register_source_asset';
+  return actionId;
+}
+
+function provenanceGapPayload(
+  gap: AitpProvenanceGap | undefined,
+): Readonly<Record<string, unknown>> | undefined {
+  if (gap === undefined) return undefined;
+  return {
+    id: gap.id,
+    gapType: gap.gapType,
+    provenanceKind: gap.provenanceKind,
+    reason: gap.reason,
+    topicId: gap.topicId,
+    claimId: gap.claimId,
+    targetType: gap.targetType,
+    targetId: gap.targetId,
+    targetRefs: gap.targetRefs,
+    recommendedActions: gap.recommendedActions,
+    recommendedEntrypoints: gap.recommendedEntrypoints,
+    severity: gap.severity,
+    requiredNow: gap.requiredNow,
+    requiredBeforeTrustChange: gap.requiredBeforeTrustChange,
+    strictBoundary: gap.strictBoundary,
+    blockingWhenUsedAs: gap.blockingWhenUsedAs,
+    orientationOnly: gap.orientationOnly,
+    canUpdateClaimTrust: gap.canUpdateClaimTrust,
+  };
+}
+
 function writeBridgeForMoment(
   moment: DetectedResearchMoment,
   obligation: AitpCallObligation | undefined,
@@ -432,6 +590,13 @@ function writeBridgeForMoment(
         operation: 'recordToolRun',
         cli: 'aitp-v5 tool run record',
         requiredFields: ['recipeId', 'toolFamily', 'toolName', 'topicId', 'claimId'],
+        targetRefs: moment.targetRefs,
+      }, obligation);
+    case 'aitp.capture_code_state_auto':
+      return withPayloadDraft({
+        operation: 'captureCodeStateAuto',
+        cli: 'aitp-v5 code state auto',
+        requiredFields: ['worktreePath', 'repoId', 'topicId', 'claimId'],
         targetRefs: moment.targetRefs,
       }, obligation);
     case 'aitp.record_reference_location':
@@ -538,6 +703,8 @@ function recordActionForOperation(operation: string): string | undefined {
       return 'record_evidence';
     case 'recordToolRun':
       return 'record_tool_run';
+    case 'captureCodeStateAuto':
+      return 'capture_code_state_auto';
     case 'recordReferenceLocation':
       return 'record_reference_location';
     case 'createProofObligation':
@@ -598,6 +765,7 @@ function buildTheoryReasoning(
     slice.sourceBacktrace.some((item) =>
       lowerJoin([item.status, item.reason, item.gap]).match(/gap|missing|unresolved|open|no source/) !== null,
     ) ||
+    slice.provenanceGaps.length > 0 ||
     callObligations.some((item) => lowerJoin([item.momentId, item.decisionType, item.actionKind, item.reason]).match(/backtrace|source|reference|citation|provenance/) !== null)
   ) {
     moves.add('source_dependency_backtrace');
@@ -788,6 +956,7 @@ function buildDiagnostics(slice: AitpProcessGraphSlice): readonly string[] {
   if (slice.truthSource.length === 0) diagnostics.push('missing-truth-source');
   if (slice.orientationOnly) diagnostics.push('orientation-only');
   if (slice.trustBoundaryReasons.length > 0) diagnostics.push('trust-boundary-present');
+  if (slice.provenanceGaps.length > 0) diagnostics.push('provenance-gaps-present');
   return diagnostics;
 }
 
@@ -820,6 +989,18 @@ function renderRouteGate(route: AitpRouteStateItem): string {
       ? 'final_gate_required=true'
       : route.requiredBeforeTrustChange.join(', ');
   return `${route.id} [${route.status}]: ${requirements}`;
+}
+
+function renderProvenanceGap(gap: AitpProvenanceGap): string {
+  const target = gap.targetRefs.length === 0 ? `${gap.targetType}:${gap.targetId}` : gap.targetRefs.join(',');
+  const actions = provenanceActionIdsForGap(gap);
+  const actionText = actions.length === 0 ? '' : ` actions=${actions.join(',')}`;
+  const boundary = gap.strictBoundary === undefined ? '' : ` before=${gap.strictBoundary}`;
+  const required =
+    gap.requiredNow || gap.requiredBeforeTrustChange
+      ? ` required=${gap.requiredNow ? 'now' : 'before_trust_change'}`
+      : '';
+  return `${gap.id} [${gap.gapType}/${gap.provenanceKind}] -> ${target}${actionText}${boundary}${required}: ${gap.reason}`;
 }
 
 function renderExploration(item: { readonly id: string; readonly explorationType: string; readonly focalQuestion?: string | undefined; readonly localQuestion?: string | undefined }): string {
@@ -923,11 +1104,15 @@ function isAitpProcessGraphSlice(value: unknown): value is AitpProcessGraphSlice
   );
 }
 
-function withRouteState(slice: AitpProcessGraphSlice): AitpProcessGraphSlice {
-  if ('routeState' in slice && slice.routeState !== undefined) return slice;
+function withSliceDefaults(slice: AitpProcessGraphSlice): AitpProcessGraphSlice {
+  const routeState =
+    'routeState' in slice && slice.routeState !== undefined ? slice.routeState : emptyRouteState();
+  const provenanceGaps =
+    (slice as { readonly provenanceGaps?: readonly AitpProvenanceGap[] }).provenanceGaps ?? [];
   return {
     ...slice,
-    routeState: emptyRouteState(),
+    routeState,
+    provenanceGaps,
   };
 }
 

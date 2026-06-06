@@ -534,6 +534,23 @@ describe('ResearchActionTool', () => {
             raw: {},
           };
         }
+        if (input.operation === 'captureCodeStateAuto') {
+          return {
+            ok: true,
+            kind: 'code_state',
+            codeStateId: 'code-state-librpa',
+            repoId: 'librpa',
+            upstreamRemote: 'origin',
+            upstreamBranch: 'main',
+            upstreamCommit: 'abc123',
+            localBranch: 'feature/provenance',
+            worktreePath: 'F:/repo/librpa',
+            dirty: true,
+            patchId: 'artifact-git_patch-librpa',
+            diffHash: 'd'.repeat(64),
+            raw: {},
+          };
+        }
         if (input.operation === 'recordReferenceLocation') {
           return {
             ok: true,
@@ -625,6 +642,18 @@ describe('ResearchActionTool', () => {
         evidence_status: 'captured',
       },
     });
+    const codeState = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'captureCodeStateAuto',
+      aitp_payload: {
+        worktree_path: 'F:/repo/librpa',
+        repo_id: 'librpa',
+        topic_id: 'qg-algebra-mipt',
+        claim_id: 'claim-mipt-observer-algebra',
+        build_config: { cmake: 'release' },
+        write_patch_artifact: true,
+      },
+    });
     const referenceLocation = await execute(tool, {
       action: 'execute_aitp_write_bridge',
       aitp_operation: 'recordReferenceLocation',
@@ -661,13 +690,15 @@ describe('ResearchActionTool', () => {
     expect(evidence.output).toContain('aitp:evidence:evidence-source-audit');
     expect(toolRun.output).toContain('operation="recordToolRun"');
     expect(toolRun.output).toContain('aitp:tool_run:tool-run-source-audit');
+    expect(codeState.output).toContain('operation="captureCodeStateAuto"');
+    expect(codeState.output).toContain('aitp:code_state:code-state-librpa');
     expect(referenceLocation.output).toContain('operation="recordReferenceLocation"');
     expect(referenceLocation.output).toContain(
       'aitp:reference_location:reference-location-algebra-paper',
     );
     expect(validation.output).toContain('operation="recordValidationResult"');
     expect(validation.output).toContain('aitp:validation_result:validation-result-source-audit');
-    expect(bridgeCalls).toHaveLength(6);
+    expect(bridgeCalls).toHaveLength(7);
     expect(bridgeCalls[0]).toMatchObject({
       operation: 'createProofObligation',
       payload: {
@@ -700,6 +731,15 @@ describe('ResearchActionTool', () => {
       },
     });
     expect(bridgeCalls[4]).toMatchObject({
+      operation: 'captureCodeStateAuto',
+      payload: {
+        worktreePath: 'F:/repo/librpa',
+        repoId: 'librpa',
+        buildConfig: { cmake: 'release' },
+        writePatchArtifact: true,
+      },
+    });
+    expect(bridgeCalls[5]).toMatchObject({
       operation: 'recordReferenceLocation',
       payload: {
         connectorId: 'arxiv',
@@ -707,7 +747,7 @@ describe('ResearchActionTool', () => {
         status: 'located',
       },
     });
-    expect(bridgeCalls[5]).toMatchObject({
+    expect(bridgeCalls[6]).toMatchObject({
       operation: 'recordValidationResult',
       payload: {
         contractId: 'validation-contract-source-audit',
@@ -749,6 +789,15 @@ describe('ResearchActionTool', () => {
         outcome: 'pass',
         workFrameId: 'frame.qg-mipt',
         evidenceRefs: ['aitp:tool_run:tool-run-source-audit'],
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.capture_code_state_auto',
+        outcome: 'pass',
+        workFrameId: 'frame.qg-mipt',
+        evidenceRefs: ['aitp:code_state:code-state-librpa'],
       }),
     );
     expect(records).toContainEqual(
