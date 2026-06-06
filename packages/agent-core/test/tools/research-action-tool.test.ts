@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { Agent, type AgentRecord } from '../../src/agent';
 import { InMemoryAgentRecordPersistence } from '../../src/agent/records';
+import type { AitpWriteBridgeExecutor } from '../../src/aitp';
 import {
   PhysicsMemoryRegistry,
   type PhysicsCapsule,
@@ -437,6 +438,92 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('executes configured AITP write-bridge operations as research action results', async () => {
+    const records: AgentRecord[] = [];
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const aitpWriteBridge: AitpWriteBridgeExecutor = {
+      async executeWrite(input) {
+        bridgeCalls.push(input);
+        return {
+          ok: true,
+          kind: 'proof_obligation',
+          obligationId: 'proof-obligation-algebra-source-chain',
+          topicId: 'qg-algebra-mipt',
+          claimId: 'claim-mipt-observer-algebra',
+          status: 'open',
+          canUpdateClaimTrust: false,
+          raw: {},
+        };
+      },
+    };
+    const agent = makeAgent(records, { aitpWriteBridge });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    await execute(tool, {
+      action: 'open_work_frame',
+      frame_id: 'frame.qg-mipt',
+      domain: 'theoretical-physics/qg-algebra',
+      topic: 'qg-algebra-mipt',
+      goal: 'Trace observer algebra source support.',
+    });
+    const result = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'createProofObligation',
+      aitp_payload: {
+        topic_id: 'qg-algebra-mipt',
+        claim_id: 'claim-mipt-observer-algebra',
+        statement: 'Backtrace algebraic split source support.',
+        obligation_type: 'source_support',
+        status: 'open',
+        maturity_level: 'hypothesis',
+        next_action: 'follow source dependency',
+        required_evidence: ['source reconstruction'],
+      },
+    });
+
+    expect(result.output).toContain('<aitp_write_bridge');
+    expect(result.output).toContain('operation="createProofObligation"');
+    expect(result.output).toContain('aitp:proof_obligation:proof-obligation-algebra-source-chain');
+    expect(bridgeCalls).toHaveLength(1);
+    expect(bridgeCalls[0]).toMatchObject({
+      operation: 'createProofObligation',
+      payload: {
+        topicId: 'qg-algebra-mipt',
+        claimId: 'claim-mipt-observer-algebra',
+        requiredEvidence: ['source reconstruction'],
+      },
+    });
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.create_open_obligation',
+        outcome: 'pass',
+        workFrameId: 'frame.qg-mipt',
+        evidenceRefs: ['aitp:proof_obligation:proof-obligation-algebra-source-chain'],
+        generatedObligationIds: ['proof-obligation-algebra-source-chain'],
+      }),
+    );
+  });
+
+  it('fails AITP write-bridge execution when no bridge is configured', async () => {
+    const tool = new ResearchActionTool(makeAgent().researchAction);
+
+    const result = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'requestHumanCheckpoint',
+      aitp_payload: {
+        topicId: 'qg',
+        claimId: 'claim-qg',
+        reason: 'Trust boundary.',
+        requestedBy: 'hakimi',
+        options: ['keep provisional'],
+      },
+    });
+
+    expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('AITP write bridge is not configured');
+  });
+
   it('runs a registered benchmark adapter and records the evidence as a research action', async () => {
     const records: AgentRecord[] = [];
     const agent = makeAgent(records);
@@ -631,6 +718,7 @@ function makeAgent(
   options: {
     readonly physicsMemory?: PhysicsMemoryRegistry | undefined;
     readonly researchLedger?: ResearchLedgerRegistry | undefined;
+    readonly aitpWriteBridge?: AitpWriteBridgeExecutor | undefined;
   } = {},
 ): Agent {
   const agent = new Agent({
@@ -666,6 +754,7 @@ function makeAgent(
     }),
     physicsMemory: options.physicsMemory,
     researchLedger: options.researchLedger,
+    aitpWriteBridge: options.aitpWriteBridge,
   });
   agent.config.update({
     cwd: process.cwd(),

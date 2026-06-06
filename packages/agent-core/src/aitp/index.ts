@@ -3,3 +3,4 @@ export * from './parser';
 export * from './moment-detector';
 export * from './compiler';
 export * from './cli-bridge';
+export * from './write-bridge';

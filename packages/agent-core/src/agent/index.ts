@@ -13,7 +13,7 @@ import { expandCommandArguments } from '../plugin/commands';
 import type { PluginCommandOrigin } from './context';
 
 import type { DomainProfileRegistry } from '../domain-profile';
-import type { AitpProcessGraphSliceProvider } from '../aitp';
+import type { AitpProcessGraphSliceProvider, AitpWriteBridgeExecutor } from '../aitp';
 import type { McpConnectionManager } from '../mcp';
 import { FlagResolver, type ExperimentalFlagResolver } from '../flags';
 import { ImageLimits } from '../tools/support/image-limits';
@@ -118,6 +118,7 @@ export interface AgentOptions {
   readonly researchHarness?: ResearchEvalCaseRegistry;
   readonly workflowRecipes?: WorkflowRecipeRegistry;
   readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
+  readonly aitpWriteBridge?: AitpWriteBridgeExecutor | undefined;
   readonly mcp?: McpConnectionManager;
   readonly hookEngine?: HookEngine;
   readonly permission?: PermissionManagerOptions | undefined;
@@ -154,6 +155,7 @@ export class Agent {
   readonly mcp?: McpConnectionManager;
   readonly hooks?: HookEngine;
   readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider;
+  readonly aitpWriteBridge?: AitpWriteBridgeExecutor;
   readonly log: Logger;
   readonly telemetry: TelemetryClient;
   readonly experimentalFlags: ExperimentalFlagResolver;
@@ -229,6 +231,7 @@ export class Agent {
     this.mcp = options.mcp;
     this.hooks = options.hookEngine;
     this.aitpProcessGraphProvider = options.aitpProcessGraphProvider;
+    this.aitpWriteBridge = options.aitpWriteBridge;
     this.log = options.log ?? log;
     this.telemetry = options.telemetry ?? noopTelemetryClient;
     this.experimentalFlags = options.experimentalFlags ?? new FlagResolver();
