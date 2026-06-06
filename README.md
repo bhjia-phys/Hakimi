@@ -54,7 +54,7 @@ That means a research action can search literature, inspect code, prepare patche
 - AITP moment-policy metadata now flows into Hakimi action bindings: timing and trust-boundary hints tell the model when to brainstorm before using a relation, backtrace before using a source as support, record a formed checkpoint, or request a human checkpoint before trust changes.
 - AITP write moments now carry explicit bridge metadata inside `ResearchActionBinding.params`, so ContextPacks can show whether the next durable write should use `recordExploratoryRecord`, `createProofObligation`, `requestHumanCheckpoint`, or another constrained AITP bridge operation.
 - Hakimi now has a narrow AITP CLI bridge for `aitp-v5 graph slice`, `aitp-v5 exploration record`, `aitp-v5 asset register`, `aitp-v5 checkpoint request`, `aitp-v5 research-state create-proof-obligation`, and AITP validation contract/result records, plus a controller-side process graph provider that can fetch an AITP slice before research-context injection when a WorkFrame carries explicit `aitp:session:<id>` scope. The bridge executes only a configured AITP command with structured args and keeps `.aitp` as the canonical record store.
-- `ResearchAction.execute_aitp_write_bridge` can now execute a configured AITP write bridge for the first moment-derived writes: exploratory records, proof obligations, and human-checkpoint requests. Successful writes are recorded as scoped `research_action.result_recorded` events with AITP evidence refs instead of becoming hidden side effects.
+- `ResearchAction.execute_aitp_write_bridge` can now execute a configured AITP write bridge for exploratory records, source asset registration, proof obligations, validation contracts, validation results, and human-checkpoint requests. Successful writes are recorded as scoped `research_action.result_recorded` events with AITP evidence refs instead of becoming hidden side effects.
 - A native bridge smoke now verifies the QG/MIPT-shaped loop from fake AITP `process_graph_slice` to Hakimi `ContextPack` action bindings, `writeBridge` metadata, and constrained AITP CLI write-back for proof obligations and human checkpoints. This proves the local runtime contract without requiring Python/AITP dependencies during Hakimi unit tests.
 - Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
 - Literature search, code patch preparation, and external benchmark workflows are orchestrated through native Kimi tools rather than being executed inside `ResearchAction` itself.
@@ -101,10 +101,11 @@ let Hakimi update claim trust without AITP preflight and the required gates. The
 explicitly carries refs such as `aitp:session:<id>` and `aitp:claim:<id>`, so
 Hakimi does not guess which local graph belongs to a research turn.
 
-For the first moment-derived write operations, the model-facing
-`ResearchAction` tool now has an `execute_aitp_write_bridge` action. It accepts
-only a configured bridge plus structured payloads for `recordExploratoryRecord`,
-`createProofObligation`, and `requestHumanCheckpoint`, then records the result
+For the current AITP CLI write surface, the model-facing `ResearchAction` tool
+now has an `execute_aitp_write_bridge` action. It accepts only a configured
+bridge plus structured payloads for `recordExploratoryRecord`,
+`registerSourceAsset`, `createProofObligation`, `createValidationContract`,
+`recordValidationResult`, and `requestHumanCheckpoint`, then records the result
 as a normal WorkFrame-scoped research action. If no AITP write bridge is
 configured, it fails closed.
 
@@ -264,7 +265,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.12.2 makes the Hakimi research runtime default-on: `physics-memory`, `research-ledger`, `research-action`, `domain-profile`, `workflow-recipe`, `research-harness`, and `/goal` now start enabled unless explicitly set to `0`. Empty/new theoretical-physics topics get a built-in `theoretical-physics/general` process scaffold with literature search, source capture, derivation, validation, memory/eval, code-mapping, patch, benchmark, and external-job action bindings. Dedicated `.aitp` packs still take priority when present.
 - 0.12.3 makes full context compaction research-aware: `FullCompaction` now renders a runtime `Hakimi Research State` snapshot from open WorkFrames, attached ContextPacks, scoped evidence refs, open obligations, recent ResearchAction traces, raw primitive-tool escapes, and recent primitive tool lifecycle records. The same snapshot is appended to the stored compaction summary, so automatic compaction preserves the research question and current progress even if the model's free-form summary omits it.
 - Post-0.13.0 development has started the AITP-native bridge layer: `packages/agent-core/src/aitp/cli-bridge.ts` can read AITP process graph slices, write AITP exploratory records, and provide a WorkFrame-scoped slice provider. Compiled slices now flow into `ResearchContextPack`, research-context injection, and runtime action bindings, so WorkFrame reminders can carry AITP obligations, source gaps, relation-path brainstorms, and original-question drift checks in the same model turn.
-- The AITP-native bridge now has a focused fake-runner smoke for the core contract: graph slice consumption, moment-policy/action-binding compilation, `writeBridge` hints, proof-obligation write-back, and human-checkpoint write-back. `ResearchAction.execute_aitp_write_bridge` also gives configured sessions a model-facing execution path for exploratory-record, proof-obligation, and human-checkpoint writes. Real CLI/MCP integration still needs a separate environment with AITP Python dependencies installed.
+- The AITP-native bridge now has a focused fake-runner smoke for the core contract: graph slice consumption, moment-policy/action-binding compilation, `writeBridge` hints, proof-obligation write-back, and human-checkpoint write-back. `ResearchAction.execute_aitp_write_bridge` also gives configured sessions a model-facing execution path for exploratory-record, source-asset, proof-obligation, validation-contract, validation-result, and human-checkpoint writes. Real CLI/MCP integration still needs a separate environment with AITP Python dependencies installed.
 
 ## Development
 

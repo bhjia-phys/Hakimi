@@ -1171,8 +1171,14 @@ function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string
   switch (result.kind) {
     case 'exploratory_record':
       return result.recordId;
+    case 'source_asset':
+      return result.assetId;
     case 'proof_obligation':
       return result.obligationId;
+    case 'validation_contract':
+      return result.contractId;
+    case 'validation_result':
+      return result.resultId;
     case 'human_checkpoint':
       return result.checkpointId;
   }

@@ -2,15 +2,25 @@ import type {
   AitpExploratoryRecordWriteResult,
   AitpHumanCheckpointWriteResult,
   AitpProofObligationWriteResult,
+  AitpSourceAssetWriteResult,
+  AitpValidationContractWriteResult,
+  AitpValidationResultWriteResult,
+  CreateAitpValidationContractInput,
   CreateAitpProofObligationInput,
+  RecordAitpValidationResultInput,
   RecordAitpExploratoryRecordInput,
+  RegisterAitpSourceAssetInput,
   RequestAitpHumanCheckpointInput,
 } from './cli-bridge';
+import type { AitpSourceAssetType } from './cli-bridge';
 import type { AitpExplorationStatus, AitpExplorationType } from './types';
 
 export const AITP_WRITE_BRIDGE_OPERATIONS = [
   'recordExploratoryRecord',
+  'registerSourceAsset',
   'createProofObligation',
+  'createValidationContract',
+  'recordValidationResult',
   'requestHumanCheckpoint',
 ] as const;
 
@@ -22,8 +32,20 @@ export type AitpWriteBridgeExecutionInput =
       readonly payload: RecordAitpExploratoryRecordInput;
     }
   | {
+      readonly operation: 'registerSourceAsset';
+      readonly payload: RegisterAitpSourceAssetInput;
+    }
+  | {
       readonly operation: 'createProofObligation';
       readonly payload: CreateAitpProofObligationInput;
+    }
+  | {
+      readonly operation: 'createValidationContract';
+      readonly payload: CreateAitpValidationContractInput;
+    }
+  | {
+      readonly operation: 'recordValidationResult';
+      readonly payload: RecordAitpValidationResultInput;
     }
   | {
       readonly operation: 'requestHumanCheckpoint';
@@ -32,7 +54,10 @@ export type AitpWriteBridgeExecutionInput =
 
 export type AitpWriteBridgeExecutionResult =
   | AitpExploratoryRecordWriteResult
+  | AitpSourceAssetWriteResult
   | AitpProofObligationWriteResult
+  | AitpValidationContractWriteResult
+  | AitpValidationResultWriteResult
   | AitpHumanCheckpointWriteResult;
 
 export interface AitpWriteBridgeExecutor {
@@ -45,9 +70,18 @@ export interface AitpWriteBridgeCliTarget {
   recordExploratoryRecord(
     input: RecordAitpExploratoryRecordInput,
   ): Promise<AitpExploratoryRecordWriteResult>;
+  registerSourceAsset(
+    input: RegisterAitpSourceAssetInput,
+  ): Promise<AitpSourceAssetWriteResult>;
   createProofObligation(
     input: CreateAitpProofObligationInput,
   ): Promise<AitpProofObligationWriteResult>;
+  createValidationContract(
+    input: CreateAitpValidationContractInput,
+  ): Promise<AitpValidationContractWriteResult>;
+  recordValidationResult(
+    input: RecordAitpValidationResultInput,
+  ): Promise<AitpValidationResultWriteResult>;
   requestHumanCheckpoint(
     input: RequestAitpHumanCheckpointInput,
   ): Promise<AitpHumanCheckpointWriteResult>;
@@ -62,8 +96,14 @@ export class AitpCliWriteBridgeExecutor implements AitpWriteBridgeExecutor {
     switch (input.operation) {
       case 'recordExploratoryRecord':
         return this.bridge.recordExploratoryRecord(input.payload);
+      case 'registerSourceAsset':
+        return this.bridge.registerSourceAsset(input.payload);
       case 'createProofObligation':
         return this.bridge.createProofObligation(input.payload);
+      case 'createValidationContract':
+        return this.bridge.createValidationContract(input.payload);
+      case 'recordValidationResult':
+        return this.bridge.recordValidationResult(input.payload);
       case 'requestHumanCheckpoint':
         return this.bridge.requestHumanCheckpoint(input.payload);
     }
@@ -115,6 +155,36 @@ export function coerceAitpWriteBridgeInput(
           signal,
         },
       };
+    case 'registerSourceAsset':
+      return {
+        operation,
+        payload: {
+          topicId: requiredString(record, 'topicId', 'topic_id'),
+          assetType: requiredString(record, 'assetType', 'asset_type', 'type') as AitpSourceAssetType,
+          uri: requiredString(record, 'uri'),
+          title: requiredString(record, 'title'),
+          claimId: optionalString(record, 'claimId', 'claim_id'),
+          label: optionalString(record, 'label'),
+          contentHash: optionalString(record, 'contentHash', 'content_hash'),
+          hashAlgorithm: optionalString(record, 'hashAlgorithm', 'hash_algorithm'),
+          versionAnchor: optionalRecord(record, 'versionAnchor', 'version_anchor'),
+          acquiredAt: optionalString(record, 'acquiredAt', 'acquired_at'),
+          sourceKind: optionalString(record, 'sourceKind', 'source_kind'),
+          summary: optionalString(record, 'summary'),
+          sourceRefs: optionalStringArray(record, 'sourceRefs', 'source_refs'),
+          artifactIds: optionalStringArray(record, 'artifactIds', 'artifact_ids'),
+          codeStateIds: optionalStringArray(record, 'codeStateIds', 'code_state_ids'),
+          referenceLocationIds: optionalStringArray(
+            record,
+            'referenceLocationIds',
+            'reference_location_ids',
+          ),
+          derivedFrom: optionalStringArray(record, 'derivedFrom', 'derived_from'),
+          metadata: optionalRecord(record, 'metadata'),
+          linkedRecords: optionalRecord(record, 'linkedRecords', 'linked_records'),
+          signal,
+        },
+      };
     case 'createProofObligation':
       return {
         operation,
@@ -130,6 +200,53 @@ export function coerceAitpWriteBridgeInput(
           proofStrategy: optionalStringArray(record, 'proofStrategy', 'proof_strategy'),
           failureModes: optionalStringArray(record, 'failureModes', 'failure_modes'),
           sourceRefs: optionalStringArray(record, 'sourceRefs', 'source_refs'),
+          evidenceRefs: optionalStringArray(record, 'evidenceRefs', 'evidence_refs'),
+          artifactIds: optionalStringArray(record, 'artifactIds', 'artifact_ids'),
+          signal,
+        },
+      };
+    case 'createValidationContract':
+      return {
+        operation,
+        payload: {
+          topicId: requiredString(record, 'topicId', 'topic_id'),
+          claimId: requiredString(record, 'claimId', 'claim_id'),
+          requiredChecks: requiredStringArray(record, 'requiredChecks', 'required_checks'),
+          failureModes: requiredStringArray(record, 'failureModes', 'failure_modes'),
+          requiredEvidenceOutputs: requiredStringArray(
+            record,
+            'requiredEvidenceOutputs',
+            'required_evidence_outputs',
+            'required_outputs',
+          ),
+          toolRecipeIds: optionalStringArray(record, 'toolRecipeIds', 'tool_recipe_ids'),
+          executorIds: optionalStringArray(record, 'executorIds', 'executor_ids'),
+          validatorRole: optionalString(record, 'validatorRole', 'validator_role'),
+          signal,
+        },
+      };
+    case 'recordValidationResult':
+      return {
+        operation,
+        payload: {
+          topicId: requiredString(record, 'topicId', 'topic_id'),
+          claimId: requiredString(record, 'claimId', 'claim_id'),
+          contractId: requiredString(record, 'contractId', 'contract_id', 'contract'),
+          toolRunId: requiredString(record, 'toolRunId', 'tool_run_id', 'tool_run'),
+          status: requiredString(record, 'status'),
+          summary: requiredString(record, 'summary'),
+          checkedOutputs: optionalStringArray(record, 'checkedOutputs', 'checked_outputs'),
+          coveredFailureModes: optionalStringArray(
+            record,
+            'coveredFailureModes',
+            'covered_failure_modes',
+          ),
+          failureModesObserved: optionalStringArray(
+            record,
+            'failureModesObserved',
+            'failure_modes_observed',
+            'failure_modes',
+          ),
           evidenceRefs: optionalStringArray(record, 'evidenceRefs', 'evidence_refs'),
           artifactIds: optionalStringArray(record, 'artifactIds', 'artifact_ids'),
           signal,
@@ -156,8 +273,14 @@ export function actionIdForAitpWriteBridgeOperation(
   switch (operation) {
     case 'recordExploratoryRecord':
       return 'aitp.record_exploratory_record';
+    case 'registerSourceAsset':
+      return 'aitp.register_source_asset';
     case 'createProofObligation':
       return 'aitp.create_open_obligation';
+    case 'createValidationContract':
+      return 'aitp.create_validation_contract';
+    case 'recordValidationResult':
+      return 'aitp.record_validation_result';
     case 'requestHumanCheckpoint':
       return 'aitp.request_human_checkpoint';
   }
@@ -169,8 +292,14 @@ export function evidenceRefsForAitpWriteBridgeResult(
   switch (result.kind) {
     case 'exploratory_record':
       return [`aitp:exploratory_record:${result.recordId}`];
+    case 'source_asset':
+      return [`aitp:source_asset:${result.assetId}`];
     case 'proof_obligation':
       return [`aitp:proof_obligation:${result.obligationId}`];
+    case 'validation_contract':
+      return [`aitp:validation_contract:${result.contractId}`];
+    case 'validation_result':
+      return [`aitp:validation_result:${result.resultId}`];
     case 'human_checkpoint':
       return [`aitp:human_checkpoint:${result.checkpointId}`];
   }
@@ -243,10 +372,13 @@ function optionalStringArray(
 
 function optionalRecord(
   record: Readonly<Record<string, unknown>>,
-  key: string,
+  ...keys: readonly string[]
 ): Readonly<Record<string, unknown>> | undefined {
-  const value = record[key];
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Readonly<Record<string, unknown>>)
-    : undefined;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      return value as Readonly<Record<string, unknown>>;
+    }
+  }
+  return undefined;
 }
