@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { compileAitpProcessGraphSlice } from '../../src/aitp';
 import type { ResearchObligation } from '../../src/research-action';
 import { testAgent } from './harness/agent';
 
@@ -133,6 +134,106 @@ describe('final gate lifecycle integration', () => {
       toolCalls: [],
     });
   });
+
+  it('continues the turn when AITP required call obligations are still open', async () => {
+    const ctx = testAgent();
+    ctx.configure();
+    ctx.agent.workFrames.open(
+      {
+        id: 'frame.aitp',
+        domain: 'theoretical-physics/qg-algebra',
+        topic: 'qg-algebra-mipt',
+        goal: 'Do not cross the AITP policy boundary silently.',
+        trustState: 'checking',
+      },
+      { source: 'controller' },
+    );
+    ctx.agent.researchContext.compileForWorkFrame(
+      {
+        aitp: compileAitpProcessGraphSlice(aitpRequiredCallSlicePayload()),
+      },
+      { source: 'controller' },
+    );
+
+    ctx.mockNextResponse({ type: 'text', text: 'Status: checked. The claim is ready.' });
+    ctx.mockNextResponse({
+      type: 'text',
+      text: 'Status: exploratory. The AITP validation result still has to be recorded.',
+    });
+
+    await ctx.rpc.prompt({ input: [{ type: 'text', text: 'Can we finish this checked?' }] });
+    await ctx.untilTurnEnd();
+
+    expect(ctx.llmCalls).toHaveLength(2);
+    expect(ctx.llmCalls[1]?.history).toContainEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: expect.stringContaining('aitp.record_validation_result'),
+        },
+      ],
+      toolCalls: [],
+    });
+    expect(ctx.llmCalls[1]?.history).toContainEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: expect.stringContaining('Open AITP call obligations'),
+        },
+      ],
+      toolCalls: [],
+    });
+  });
+
+  it('allows final gate completion after the AITP required call is recorded', async () => {
+    const ctx = testAgent();
+    ctx.configure();
+    ctx.agent.workFrames.open(
+      {
+        id: 'frame.aitp',
+        domain: 'theoretical-physics/qg-algebra',
+        topic: 'qg-algebra-mipt',
+        goal: 'Respect AITP policy obligations.',
+        trustState: 'checking',
+      },
+      { source: 'controller' },
+    );
+    ctx.agent.researchContext.compileForWorkFrame(
+      {
+        aitp: compileAitpProcessGraphSlice(aitpRequiredCallSlicePayload()),
+      },
+      { source: 'controller' },
+    );
+    ctx.agent.researchAction.recordActionResult(
+      {
+        actionId: 'aitp.record_validation_result',
+        callId: 'call.aitp-validation-result',
+        input: {},
+        output: {},
+        graphRefs: [],
+        capsuleRefs: [],
+        ledgerEventIds: [],
+        evidenceRefs: ['aitp:validation_result:validation-result-source-audit'],
+        outcome: 'pass',
+        nextSuggestedActions: [],
+      },
+      { source: 'controller' },
+    );
+
+    ctx.mockNextResponse({ type: 'text', text: 'Status: checked. The AITP call is recorded.' });
+
+    await ctx.rpc.prompt({ input: [{ type: 'text', text: 'Can we finish this checked?' }] });
+    await ctx.untilTurnEnd();
+
+    expect(ctx.llmCalls).toHaveLength(1);
+    expect(
+      ctx.agent.context.data().history.some(
+        (message) => message.origin?.kind === 'system_trigger' && message.origin.name === 'final_gate',
+      ),
+    ).toBe(false);
+  });
 });
 
 function blockingObligation(): ResearchObligation {
@@ -146,5 +247,60 @@ function blockingObligation(): ResearchObligation {
     reason: 'Flux convention must be checked.',
     requiredActionId: 'validate.check_convention',
     status: 'open',
+  };
+}
+
+function aitpRequiredCallSlicePayload() {
+  return {
+    ok: true,
+    kind: 'process_graph_slice',
+    truth_source: 'typed_records',
+    orientation_only: true,
+    nodes: [],
+    edges: [],
+    open_obligations: [],
+    source_backtrace: [],
+    relation_neighborhood: [],
+    exploratory_records: [],
+    trust_boundary_reasons: [],
+    recommended_moments: [],
+    moment_policy: {
+      ok: true,
+      kind: 'host_agnostic_moment_policy',
+      decisions: [
+        {
+          moment: 'record_or_validate_open_obligation',
+          decision_type: 'recording',
+          action_kind: 'record_evidence_or_validation',
+          required_now: true,
+          reason: 'open proof obligation requires typed evidence or validation',
+          target_type: 'proof_obligation',
+          target_id: 'obligation-source',
+          record_entrypoints: [
+            'aitp_v5_record_evidence',
+            'aitp_v5_record_validation_result',
+          ],
+          exploration_entrypoints: [],
+          entrypoints: [
+            'aitp_v5_record_evidence',
+            'aitp_v5_record_validation_result',
+            'aitp_v5_preflight_trust_update',
+          ],
+          required_before_trust_change: [
+            'record typed evidence or validation for the open obligation',
+            'run aitp_v5_preflight_trust_update',
+          ],
+          missing_components: [],
+          trust_boundary: true,
+          orientation_only: true,
+          can_update_claim_trust: false,
+        },
+      ],
+      recommended_moments: [],
+      trust_boundary_reasons: [],
+      truth_source: 'typed_records',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
   };
 }

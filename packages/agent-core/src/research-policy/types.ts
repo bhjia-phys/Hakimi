@@ -45,10 +45,21 @@ export type FinalGateOutcome = 'allow' | 'downgrade' | 'block';
 export interface FinalGateInput {
   readonly requestedStatus: FinalAnswerClaimStatus;
   readonly obligations: readonly ResearchObligation[];
+  readonly aitpCallObligations?: readonly FinalGateAitpCallObligation[] | undefined;
   readonly workFrame?: WorkFrame | undefined;
   readonly evidenceRefs?: readonly string[] | undefined;
   readonly sourceRefs?: readonly string[] | undefined;
   readonly mustBeValidated?: boolean | undefined;
+}
+
+export interface FinalGateAitpCallObligation {
+  readonly id: string;
+  readonly actionId: string;
+  readonly reason: string;
+  readonly requiredNow: boolean;
+  readonly trustBoundary: boolean;
+  readonly satisfied: boolean;
+  readonly blockerRecorded: boolean;
 }
 
 export interface FinalGateDecision {
@@ -56,5 +67,6 @@ export interface FinalGateDecision {
   readonly allowedStatus: FinalAnswerClaimStatus;
   readonly reasons: readonly string[];
   readonly openBlockingObligationIds: readonly string[];
+  readonly openAitpCallObligationIds: readonly string[];
   readonly requiredActionIds: readonly string[];
 }

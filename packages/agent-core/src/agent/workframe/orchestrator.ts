@@ -21,7 +21,8 @@ export class WorkFrameOrchestrator {
     if (this.agent.workFrames.active?.id !== frame.id) {
       this.agent.workFrames.switch(frame.id, { source: 'controller' });
     }
-    const aitp = await this.readAitpProcessGraphSlice(frame, input);
+    const aitp =
+      (await this.readAitpProcessGraphSlice(frame, input)) ?? this.cachedAitpContext(frame);
     const pack = this.agent.researchContext.compileForWorkFrame(
       { workFrameId: frame.id, aitp },
       { source: 'controller' },
@@ -51,6 +52,11 @@ export class WorkFrameOrchestrator {
       });
       return undefined;
     }
+  }
+
+  private cachedAitpContext(frame: WorkFrame): CompiledAitpProcessGraphSlice | undefined {
+    if (frame.contextPackId === undefined) return undefined;
+    return this.agent.researchContext.getPack(frame.contextPackId)?.aitp?.compiled;
   }
 
   shouldInjectContext(lastInjectionIndex: number | null): boolean {
