@@ -95,6 +95,24 @@ describe('AITP process graph slice adapter', () => {
       timing: 'before_using_as_support',
       trustBoundary: 'source_support',
     });
+    expect(compiled.actionRecommendations.find((binding) =>
+      binding.actionId === 'aitp.create_open_obligation',
+    )?.params).toMatchObject({
+      writeBridge: {
+        operation: 'createProofObligation',
+        cli: 'aitp-v5 research-state create-proof-obligation',
+        requiredFields: expect.arrayContaining(['topicId', 'claimId', 'statement']),
+      },
+    });
+    expect(compiled.actionRecommendations.find((binding) =>
+      binding.actionId === 'aitp.request_human_checkpoint',
+    )?.params).toMatchObject({
+      writeBridge: {
+        operation: 'requestHumanCheckpoint',
+        cli: 'aitp-v5 checkpoint request',
+        requiredFields: expect.arrayContaining(['topicId', 'claimId', 'reason', 'options']),
+      },
+    });
     expect(compiled.actionRecommendations.some((binding) =>
       (binding.objectRefs ?? []).includes('claim:claim-fqhe'),
     )).toBe(true);
