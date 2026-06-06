@@ -152,6 +152,14 @@ function buildContextLines(
       `AITP required calls now: ${bounded(requiredNow.map(renderCallObligation), maxItems).join('; ')}`,
     );
   }
+  const lifecycleTriggers = callObligations.filter((item) =>
+    hasLifecycleTrigger(item.lifecycleTrigger),
+  );
+  if (lifecycleTriggers.length > 0) {
+    lines.push(
+      `AITP lifecycle triggers: ${bounded(lifecycleTriggers.map(renderLifecycleTrigger), maxItems).join('; ')}`,
+    );
+  }
   const trustPrerequisites = callObligations.filter(
     (item) => item.requiredBeforeTrustChange.length > 0,
   );
@@ -191,6 +199,11 @@ function buildReminderLines(
       'Treat AITP required-now call obligations as current-turn ResearchAction bindings, then record outcomes or blockers.',
     );
   }
+  if (callObligations.some((item) => hasLifecycleTrigger(item.lifecycleTrigger))) {
+    lines.push(
+      'Use AITP lifecycle trigger info as orientation-only policy context for when a ResearchAction should run.',
+    );
+  }
   return lines;
 }
 
@@ -222,6 +235,7 @@ function actionBindingForMoment(
       source: moment.source,
       timing: moment.timing,
       trustBoundary: moment.trustBoundary,
+      lifecycleTrigger: lifecycleTriggerForMoment(moment, obligation),
       callObligation: obligation,
       writeBridge: writeBridgeForMoment(moment, obligation),
     },
@@ -259,6 +273,7 @@ function callObligationForDecision(
     payloadHints: decision.payloadHints,
     requiredBeforeTrustChange: decision.requiredBeforeTrustChange,
     trustBoundary: decision.trustBoundary,
+    lifecycleTrigger: decision.lifecycleTrigger,
   };
 }
 
@@ -371,6 +386,7 @@ function withPayloadDraft(
       orientationOnly: hint.orientationOnly,
       summaryInputsTrusted: hint.summaryInputsTrusted,
       canUpdateClaimTrust: hint.canUpdateClaimTrust,
+      lifecycleTrigger: hint.lifecycleTrigger,
     },
   };
 }
@@ -459,8 +475,62 @@ function renderCallObligation(obligation: AitpCallObligation): string {
   return `${obligation.actionId} -> ${target} [${obligation.decisionType}/${obligation.actionKind}]${entrypoints}`;
 }
 
+function renderLifecycleTrigger(obligation: AitpCallObligation): string {
+  const trigger = obligation.lifecycleTrigger;
+  const phases =
+    trigger.lifecyclePhases.length === 0 ? 'phase=unspecified' : `phase=${trigger.lifecyclePhases.join(',')}`;
+  const conditions =
+    trigger.triggerConditions.length === 0 ? '' : ` when=${trigger.triggerConditions.join('|')}`;
+  const threshold =
+    trigger.recordingThreshold === undefined ? '' : ` threshold=${trigger.recordingThreshold}`;
+  const boundary = renderTrustBoundaryInputs(trigger.trustBoundaryInputs);
+  const host =
+    trigger.recommendedHostBehavior.length === 0
+      ? ''
+      : ` host=${trigger.recommendedHostBehavior.join('|')}`;
+  return `${obligation.actionId}@${phases}${conditions}${threshold}${boundary}${host}`;
+}
+
+function renderTrustBoundaryInputs(
+  inputs: DetectedResearchMoment['lifecycleTrigger']['trustBoundaryInputs'],
+): string {
+  const parts: string[] = [];
+  if (inputs.targetRefs.length > 0) parts.push(`targets=${inputs.targetRefs.join(',')}`);
+  if (inputs.claimId !== undefined && inputs.claimId.length > 0) parts.push(`claim=${inputs.claimId}`);
+  if (inputs.entrypoints.length > 0) parts.push(`entrypoints=${inputs.entrypoints.join(',')}`);
+  if (inputs.requiresPreflight) parts.push('requires_preflight=true');
+  if (inputs.finalGateRequired) parts.push('final_gate_required=true');
+  return parts.length === 0 ? '' : ` trust_inputs=${parts.join('|')}`;
+}
+
 function renderTrustPrerequisite(obligation: AitpCallObligation): string {
   return `${obligation.actionId} before trust change: ${obligation.requiredBeforeTrustChange.join(', ')}`;
+}
+
+function lifecycleTriggerForMoment(
+  moment: DetectedResearchMoment,
+  obligation: AitpCallObligation | undefined,
+): DetectedResearchMoment['lifecycleTrigger'] {
+  if (obligation !== undefined && hasLifecycleTrigger(obligation.lifecycleTrigger)) {
+    return obligation.lifecycleTrigger;
+  }
+  return moment.lifecycleTrigger;
+}
+
+function hasLifecycleTrigger(
+  trigger: DetectedResearchMoment['lifecycleTrigger'],
+): boolean {
+  return (
+    trigger.lifecyclePhases.length > 0 ||
+    trigger.triggerConditions.length > 0 ||
+    trigger.recordingThreshold !== undefined ||
+    trigger.trustBoundaryInputs.targetRefs.length > 0 ||
+    trigger.trustBoundaryInputs.entrypoints.length > 0 ||
+    trigger.trustBoundaryInputs.requiredBeforeTrustChange.length > 0 ||
+    trigger.trustBoundaryInputs.requiresPreflight ||
+    trigger.trustBoundaryInputs.finalGateRequired ||
+    trigger.recommendedHostBehavior.length > 0
+  );
 }
 
 function hasExplicitTrustFlag(flags: readonly string[]): boolean {

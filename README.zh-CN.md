@@ -202,6 +202,7 @@ formula capsule
 - 0.12.2 把 Hakimi 科研 runtime 改成默认开启：`physics-memory`、`research-ledger`、`research-action`、`domain-profile`、`workflow-recipe`、`research-harness` 和 `/goal` 在未显式设为 `0` 时都会启用。空白理论物理课题会自动获得通用流程底座，包含文献搜索、source capture、推导、验证、memory/eval、代码映射、patch、benchmark 和外部任务提交 action bindings；如果项目存在专用 `.aitp` pack，专用 pack 优先。
 - post-0.13.0 的 AITP 原生桥接已经扩展到更完整的科研过程记录：Hakimi 可以从 AITP `process_graph_slice` 编译 `moment_policy.decisions`，把 required-now / trust-boundary 决策转成 `ResearchAction` 绑定，并通过 `execute_aitp_write_bridge` 写回 AITP 的 evidence、tool run、reference location、exploratory record、source asset、proof obligation、validation contract/result 和 human checkpoint。普通 `record_evidence_or_validation` 决策默认优先写 `recordEvidence`；如果已经存在严格 validation result，final gate 也会把它视为同一条 AITP 义务的等价满足。
 - 当 AITP policy 提供 orientation-only 的 `payload_hints` 时，Hakimi 会把它们投影成 `writeBridge.payloadDraft`，让模型知道下一次 typed write 的局部字段；这些 draft 只是执行提示，不会变成 `.hakimi` 的 canonical truth。
+- AITP policy 里的 lifecycle trigger 字段（例如 `lifecycle_phases`、`trigger_conditions`、`recording_threshold`、`trust_boundary_inputs` 和 `recommended_host_behavior`）也会被投影到 action params / `callObligations`。它们只说明某个 ResearchAction 为什么应出现在 pre-turn、pre-action 或 pre-final 流程里，让模型和 final gate 看见策略原因；Hakimi 不会因此自动写记录，也不会把这些提示提升成 canonical truth。
 
 ## 本地开发
 

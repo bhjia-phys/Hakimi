@@ -1360,6 +1360,7 @@ export class TurnFlow {
         reason: obligation.reason,
         requiredNow: obligation.requiredNow,
         trustBoundary: obligation.trustBoundary,
+        lifecycleTrigger: obligation.lifecycleTrigger,
         satisfied: related.some((item) => item.outcome === 'pass'),
         blockerRecorded: related.some((item) => item.outcome === 'blocked'),
       };

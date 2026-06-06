@@ -36,6 +36,9 @@ describe('AITP process graph slice adapter', () => {
       'aitp.record_derivation_checkpoint@after_local_conclusion priority=high boundary=derivation_checkpoint',
     );
     expect(compiled.contextLines.join('\n')).toContain('AITP required calls now: aitp.record_evidence');
+    expect(compiled.contextLines.join('\n')).toContain(
+      'AITP lifecycle triggers: aitp.record_evidence@phase=pre_final',
+    );
     expect(compiled.callObligations.find((item) =>
       item.actionId === 'aitp.record_evidence',
     )).toMatchObject({
@@ -46,6 +49,35 @@ describe('AITP process graph slice adapter', () => {
         'aitp_v5_record_validation_result',
         'aitp_v5_preflight_trust_update',
       ]),
+      lifecycleTrigger: {
+        lifecyclePhases: ['pre_final'],
+        triggerConditions: ['open proof obligation will be cited as resolved'],
+        recordingThreshold: 'before final response upgrades the obligation status',
+        trustBoundaryInputs: {
+          targetRefs: ['proof_obligation:obl.source-support'],
+          entrypoints: expect.arrayContaining(['aitp_v5_record_evidence']),
+          requiresPreflight: true,
+          finalGateRequired: true,
+        },
+        recommendedHostBehavior: ['surface as a blocking action before final answer'],
+      },
+    });
+    expect(compiled.actionRecommendations.find((binding) =>
+      binding.actionId === 'aitp.record_evidence',
+    )?.params).toMatchObject({
+      lifecycleTrigger: {
+        lifecyclePhases: ['pre_final'],
+        triggerConditions: ['open proof obligation will be cited as resolved'],
+      },
+    });
+    expect(compiled.actionRecommendations.find((binding) =>
+      binding.actionId === 'aitp.record_derivation_checkpoint',
+    )?.params).toMatchObject({
+      lifecycleTrigger: {
+        lifecyclePhases: ['pre_action'],
+        triggerConditions: ['derivation reaches reusable checkpoint'],
+        recommendedHostBehavior: ['offer checkpoint recording without auto-writing'],
+      },
     });
     expect(compiled.actionRecommendations[0]?.adapterId).toBe('aitp.native.process-graph-slice');
   });
@@ -108,6 +140,7 @@ describe('AITP process graph slice adapter', () => {
       'trace.open_backtrace@before_using_as_support priority=high boundary=source_support',
     );
     expect(compiled.contextLines.join('\n')).toContain('AITP required calls now:');
+    expect(compiled.contextLines.join('\n')).toContain('AITP lifecycle triggers:');
     expect(compiled.contextLines.join('\n')).toContain('AITP trust prerequisites:');
     expect(compiled.callObligations.map((item) => item.actionId)).toEqual(
       expect.arrayContaining([
@@ -135,6 +168,25 @@ describe('AITP process graph slice adapter', () => {
         requiredNow: true,
         decisionType: 'recording',
         entrypoints: expect.arrayContaining(['aitp_v5_record_evidence']),
+        lifecycleTrigger: {
+          lifecyclePhases: ['pre_final'],
+          triggerConditions: ['open proof obligation must be recorded before checked final status'],
+          recordingThreshold: 'before final answer treats source support as checked',
+          trustBoundaryInputs: {
+            targetRefs: ['proof_obligation:obligation-finite-size'],
+            claimId: 'claim-fqhe',
+            entrypoints: expect.arrayContaining(['aitp_v5_record_evidence']),
+            requiresPreflight: true,
+            finalGateRequired: true,
+          },
+          recommendedHostBehavior: [
+            'surface evidence or validation write as a blocking ResearchAction',
+          ],
+        },
+      },
+      lifecycleTrigger: {
+        lifecyclePhases: ['pre_final'],
+        triggerConditions: ['open proof obligation must be recorded before checked final status'],
       },
       writeBridge: {
         operation: 'recordEvidence',
@@ -152,6 +204,10 @@ describe('AITP process graph slice adapter', () => {
           orientationOnly: true,
           summaryInputsTrusted: false,
           canUpdateClaimTrust: false,
+          lifecycleTrigger: {
+            lifecyclePhases: ['pre_final'],
+            triggerConditions: ['draft evidence would satisfy open obligation'],
+          },
         },
       },
     });
@@ -162,6 +218,14 @@ describe('AITP process graph slice adapter', () => {
         requiredNow: true,
         decisionType: 'backtrace',
         entrypoints: expect.arrayContaining(['aitp_v5_record_reference_location']),
+        lifecycleTrigger: {
+          lifecyclePhases: ['pre_action'],
+          triggerConditions: ['source backtrace has missing reference location'],
+        },
+      },
+      lifecycleTrigger: {
+        lifecyclePhases: ['pre_action'],
+        triggerConditions: ['source backtrace has missing reference location'],
       },
       writeBridge: {
         operation: 'recordReferenceLocation',
@@ -308,6 +372,9 @@ function fakeSlicePayload() {
         target_refs: ['formula.response'],
         timing: 'after_local_conclusion',
         trust_boundary: 'derivation_checkpoint',
+        lifecyclePhases: ['pre_action'],
+        triggerConditions: ['derivation reaches reusable checkpoint'],
+        recommendedHostBehavior: ['offer checkpoint recording without auto-writing'],
       },
     ],
     moment_policy: {
@@ -377,6 +444,25 @@ function fakeSlicePayload() {
             'record typed evidence or validation for the open obligation',
             'run aitp_v5_preflight_trust_update',
           ],
+          lifecycle_phases: ['pre_final'],
+          trigger_conditions: ['open proof obligation will be cited as resolved'],
+          recording_threshold: 'before final response upgrades the obligation status',
+          trust_boundary_inputs: {
+            target_refs: ['proof_obligation:obl.source-support'],
+            claim_id: '',
+            entrypoints: [
+              'aitp_v5_record_evidence',
+              'aitp_v5_record_validation_result',
+              'aitp_v5_preflight_trust_update',
+            ],
+            required_before_trust_change: [
+              'record typed evidence or validation for the open obligation',
+              'run aitp_v5_preflight_trust_update',
+            ],
+            requires_preflight: true,
+            final_gate_required: true,
+          },
+          recommended_host_behavior: ['surface as a blocking action before final answer'],
           missing_components: [],
           trust_boundary: true,
           orientation_only: true,
@@ -541,6 +627,8 @@ function currentAitpSlicePayload() {
               orientation_only: true,
               summary_inputs_trusted: false,
               can_update_claim_trust: false,
+              lifecycle_phases: ['pre_final'],
+              trigger_conditions: ['draft evidence would satisfy open obligation'],
             },
             {
               entrypoint: 'aitp_v5_record_validation_result',
@@ -566,6 +654,29 @@ function currentAitpSlicePayload() {
           required_before_trust_change: [
             'record typed evidence or validation for the open obligation',
             'run aitp_v5_preflight_trust_update',
+          ],
+          lifecycle_phases: ['pre_final'],
+          trigger_conditions: [
+            'open proof obligation must be recorded before checked final status',
+          ],
+          recording_threshold: 'before final answer treats source support as checked',
+          trust_boundary_inputs: {
+            target_refs: ['proof_obligation:obligation-finite-size'],
+            claim_id: 'claim-fqhe',
+            entrypoints: [
+              'aitp_v5_record_evidence',
+              'aitp_v5_record_validation_result',
+              'aitp_v5_preflight_trust_update',
+            ],
+            required_before_trust_change: [
+              'record typed evidence or validation for the open obligation',
+              'run aitp_v5_preflight_trust_update',
+            ],
+            requires_preflight: true,
+            final_gate_required: true,
+          },
+          recommended_host_behavior: [
+            'surface evidence or validation write as a blocking ResearchAction',
           ],
           trust_boundary: true,
           summary_inputs_trusted: false,
@@ -614,12 +725,37 @@ function currentAitpSlicePayload() {
               orientation_only: true,
               summary_inputs_trusted: false,
               can_update_claim_trust: false,
+              lifecycle_phases: ['pre_final'],
+              trigger_conditions: ['draft reference location would close source provenance gap'],
             },
           ],
           required_before_trust_change: [
             'backtrace missing source components to typed records',
             'record evidence only after source and provenance are explicit',
             'run aitp_v5_preflight_trust_update',
+          ],
+          lifecyclePhases: ['pre_action'],
+          triggerConditions: ['source backtrace has missing reference location'],
+          recordingThreshold: 'before treating source support as available',
+          trustBoundaryInputs: {
+            targetRefs: ['claim:claim-fqhe'],
+            claimId: 'claim-fqhe',
+            entrypoints: [
+              'aitp_v5_record_exploratory_record',
+              'aitp_v5_record_reference_location',
+              'aitp_v5_register_source_asset',
+              'aitp_v5_preflight_trust_update',
+            ],
+            requiredBeforeTrustChange: [
+              'backtrace missing source components to typed records',
+              'record evidence only after source and provenance are explicit',
+              'run aitp_v5_preflight_trust_update',
+            ],
+            requiresPreflight: true,
+            finalGateRequired: true,
+          },
+          recommendedHostBehavior: [
+            'surface reference-location write before source-dependent reasoning',
           ],
           trust_boundary: true,
           summary_inputs_trusted: false,

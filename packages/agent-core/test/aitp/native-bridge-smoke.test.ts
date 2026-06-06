@@ -150,6 +150,14 @@ describe('AITP native bridge smoke', () => {
       },
       callObligation: {
         actionKind: 'record_evidence_or_validation',
+        lifecycleTrigger: {
+          lifecyclePhases: ['pre_final'],
+          triggerConditions: ['source-support proof obligation must be recorded'],
+        },
+      },
+      lifecycleTrigger: {
+        lifecyclePhases: ['pre_final'],
+        triggerConditions: ['source-support proof obligation must be recorded'],
       },
     });
 
@@ -161,6 +169,7 @@ describe('AITP native bridge smoke', () => {
     });
     expect(pack.aitp?.contextLines.join('\n')).toContain('Moment policy:');
     expect(pack.aitp?.contextLines.join('\n')).toContain('AITP required calls now:');
+    expect(pack.aitp?.contextLines.join('\n')).toContain('AITP lifecycle triggers:');
     expect(pack.aitp?.requiredCallIds).toEqual(
       expect.arrayContaining([
         expect.stringContaining('aitp-record-evidence'),
@@ -464,12 +473,33 @@ function qgMiptSlicePayload() {
               orientation_only: true,
               summary_inputs_trusted: false,
               can_update_claim_trust: false,
+              lifecycle_phases: ['pre_final'],
+              trigger_conditions: ['draft evidence would resolve source-support gap'],
             },
           ],
           required_before_trust_change: [
             'record typed evidence or validation for the open obligation',
             'run aitp_v5_preflight_trust_update',
           ],
+          lifecycle_phases: ['pre_final'],
+          trigger_conditions: ['source-support proof obligation must be recorded'],
+          recording_threshold: 'before final answer treats observer analogy as checked',
+          trust_boundary_inputs: {
+            target_refs: ['proof_obligation:obl-source-chain'],
+            claim_id: 'claim-mipt-observer-algebra',
+            entrypoints: [
+              'aitp_v5_record_evidence',
+              'aitp_v5_record_validation_result',
+              'aitp_v5_preflight_trust_update',
+            ],
+            required_before_trust_change: [
+              'record typed evidence or validation for the open obligation',
+              'run aitp_v5_preflight_trust_update',
+            ],
+            requires_preflight: true,
+            final_gate_required: true,
+          },
+          recommended_host_behavior: ['surface evidence write before final response'],
           trust_boundary: true,
           orientation_only: true,
           can_update_claim_trust: false,
@@ -490,6 +520,21 @@ function qgMiptSlicePayload() {
             'resolve required recording/backtrace/brainstorm policy decisions',
             'run aitp_v5_preflight_trust_update',
           ],
+          lifecyclePhases: ['pre_final'],
+          triggerConditions: ['claim trust update would be implied'],
+          recordingThreshold: 'before checked or validated final status',
+          trustBoundaryInputs: {
+            targetRefs: ['claim:claim-mipt-observer-algebra'],
+            claimId: 'claim-mipt-observer-algebra',
+            entrypoints: ['aitp_v5_preflight_trust_update'],
+            requiredBeforeTrustChange: [
+              'resolve required recording/backtrace/brainstorm policy decisions',
+              'run aitp_v5_preflight_trust_update',
+            ],
+            requiresPreflight: true,
+            finalGateRequired: true,
+          },
+          recommendedHostBehavior: ['request human checkpoint before trust update'],
           trust_boundary: true,
           orientation_only: true,
           can_update_claim_trust: false,
