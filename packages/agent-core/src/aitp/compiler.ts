@@ -188,10 +188,47 @@ function actionBindingForMoment(
       source: moment.source,
       timing: moment.timing,
       trustBoundary: moment.trustBoundary,
+      writeBridge: writeBridgeForMoment(moment),
     },
     reason: moment.reason,
     priority: moment.priority,
   };
+}
+
+function writeBridgeForMoment(moment: DetectedResearchMoment): Readonly<Record<string, unknown>> | undefined {
+  switch (moment.actionId) {
+    case 'aitp.record_exploratory_record':
+      return {
+        operation: 'recordExploratoryRecord',
+        cli: 'aitp-v5 exploration record',
+        requiredFields: ['topicId', 'explorationType', 'title', 'focalQuestion', 'summary'],
+        targetRefs: moment.targetRefs,
+      };
+    case 'aitp.create_open_obligation':
+      return {
+        operation: 'createProofObligation',
+        cli: 'aitp-v5 research-state create-proof-obligation',
+        requiredFields: [
+          'topicId',
+          'claimId',
+          'statement',
+          'obligationType',
+          'status',
+          'maturityLevel',
+          'nextAction',
+        ],
+        targetRefs: moment.targetRefs,
+      };
+    case 'aitp.request_human_checkpoint':
+      return {
+        operation: 'requestHumanCheckpoint',
+        cli: 'aitp-v5 checkpoint request',
+        requiredFields: ['topicId', 'claimId', 'reason', 'requestedBy', 'options'],
+        targetRefs: moment.targetRefs,
+      };
+    default:
+      return undefined;
+  }
 }
 
 function buildDiagnostics(slice: AitpProcessGraphSlice): readonly string[] {

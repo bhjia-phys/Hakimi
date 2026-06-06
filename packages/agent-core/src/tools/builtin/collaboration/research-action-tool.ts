@@ -1252,10 +1252,7 @@ function renderContextPack(pack: ResearchContextPack): string {
     ),
     '  </ledger>',
     '  <action_bindings>',
-    ...pack.actionBindings.map(
-      (binding) =>
-        `    <binding id="${escapeXml(binding.id)}" action_id="${escapeXml(binding.actionId)}"${binding.priority === undefined ? '' : ` priority="${binding.priority}"`}${binding.checkId === undefined ? '' : ` check_id="${escapeXml(binding.checkId)}"`}${binding.lensId === undefined ? '' : ` lens_id="${escapeXml(binding.lensId)}"`}${binding.adapterId === undefined ? '' : ` adapter_id="${escapeXml(binding.adapterId)}"`} />`,
-    ),
+    ...pack.actionBindings.map(renderActionBindingXml),
     '  </action_bindings>',
     '  <diagnostics>',
     ...pack.diagnostics.map(
@@ -1265,6 +1262,22 @@ function renderContextPack(pack: ResearchContextPack): string {
     '  </diagnostics>',
     '</context_pack>',
     '',
+  ].join('\n');
+}
+
+function renderActionBindingXml(binding: ResearchContextPack['actionBindings'][number]): string {
+  const attrs = `id="${escapeXml(binding.id)}" action_id="${escapeXml(binding.actionId)}"` +
+    `${binding.priority === undefined ? '' : ` priority="${binding.priority}"`}` +
+    `${binding.checkId === undefined ? '' : ` check_id="${escapeXml(binding.checkId)}"`}` +
+    `${binding.lensId === undefined ? '' : ` lens_id="${escapeXml(binding.lensId)}"`}` +
+    `${binding.adapterId === undefined ? '' : ` adapter_id="${escapeXml(binding.adapterId)}"`}`;
+  if (binding.params === undefined) {
+    return `    <binding ${attrs} />`;
+  }
+  return [
+    `    <binding ${attrs}>`,
+    `      <params>${escapeXml(JSON.stringify(binding.params))}</params>`,
+    '    </binding>',
   ].join('\n');
 }
 
