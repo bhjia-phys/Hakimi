@@ -119,6 +119,38 @@ export interface AitpSourceAssetIndexItem {
   readonly canUpdateClaimTrust: boolean;
 }
 
+export interface AitpSourceStackCoverageItem {
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly claimStatement: string;
+  readonly riskLevel: string;
+  readonly requiredOutputs: readonly string[];
+  readonly satisfiedRequiredOutputs: readonly string[];
+  readonly missingRequiredOutputs: readonly string[];
+  readonly evidenceIdsByOutput: Readonly<Record<string, unknown>>;
+  readonly sourceReconstructionComplete: boolean;
+  readonly missingSourceComponents: readonly string[];
+  readonly sourceReconstructionReviewStatus: string;
+  readonly latestSourceReviewResultId: string;
+  readonly coverageStatus: string;
+  readonly nextActions: readonly string[];
+  readonly canUpdateClaimTrust: boolean;
+}
+
+export interface AitpSourceStackCoverage {
+  readonly kind: string;
+  readonly claimCount: number;
+  readonly coverageStatusCounts: Readonly<Record<string, unknown>>;
+  readonly missingRequiredOutputCounts: Readonly<Record<string, unknown>>;
+  readonly sourceComponentGapCounts: Readonly<Record<string, unknown>>;
+  readonly sourceReviewStatusCounts: Readonly<Record<string, unknown>>;
+  readonly items: readonly AitpSourceStackCoverageItem[];
+  readonly nextActions: readonly string[];
+  readonly truthSource: string;
+  readonly orientationOnly: boolean;
+  readonly canUpdateClaimTrust: boolean;
+}
+
 export interface AitpRelationNeighborhoodItem {
   readonly id: string;
   readonly source?: string | undefined;
@@ -308,6 +340,7 @@ export interface AitpProcessGraphSlice {
   readonly openObligations: readonly AitpOpenObligation[];
   readonly sourceBacktrace: readonly AitpSourceBacktraceItem[];
   readonly sourceAssetIndex: readonly AitpSourceAssetIndexItem[];
+  readonly sourceStackCoverage: AitpSourceStackCoverage;
   readonly relationNeighborhood: readonly AitpRelationNeighborhoodItem[];
   readonly exploratoryRecords: readonly AitpExploratoryRecordItem[];
   readonly routeState: AitpRouteState;
@@ -415,6 +448,19 @@ export interface AitpSourceAssetSummary {
   readonly lines: readonly string[];
 }
 
+export interface AitpSourceStackCoverageSummary {
+  readonly all: readonly AitpSourceStackCoverageItem[];
+  readonly evidenceGaps: readonly AitpSourceStackCoverageItem[];
+  readonly reconstructionGaps: readonly AitpSourceStackCoverageItem[];
+  readonly reviewGaps: readonly AitpSourceStackCoverageItem[];
+  readonly complete: readonly AitpSourceStackCoverageItem[];
+  readonly missingRequiredOutputClaimIds: readonly string[];
+  readonly missingSourceComponentClaimIds: readonly string[];
+  readonly reviewGapClaimIds: readonly string[];
+  readonly nextActions: readonly string[];
+  readonly lines: readonly string[];
+}
+
 export interface AitpTrustSummary {
   readonly truthSource: string;
   readonly orientationOnly: boolean;
@@ -431,6 +477,7 @@ export interface CompiledAitpProcessGraphSlice {
   readonly obligations: AitpObligationSummary;
   readonly routes: AitpRouteSummary;
   readonly sourceAssets: AitpSourceAssetSummary;
+  readonly sourceStackCoverage: AitpSourceStackCoverageSummary;
   readonly provenance: AitpProvenanceGapSummary;
   readonly suggestedNextMoments: readonly DetectedResearchMoment[];
   readonly trust: AitpTrustSummary;

@@ -227,6 +227,21 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.sourceAssets.withReferences.map((item) => item.id)).toEqual([
       'source-asset-edge-counting',
     ]);
+    expect(compiled.sourceStackCoverage.all.map((item) => item.claimId)).toEqual([
+      'claim-fqhe',
+    ]);
+    expect(compiled.sourceStackCoverage.evidenceGaps.map((item) => item.claimId)).toEqual([
+      'claim-fqhe',
+    ]);
+    expect(compiled.sourceStackCoverage.reconstructionGaps.map((item) => item.claimId)).toEqual([
+      'claim-fqhe',
+    ]);
+    expect(compiled.sourceStackCoverage.reviewGaps).toEqual([]);
+    expect(compiled.sourceStackCoverage.nextActions).toEqual([
+      'record_evidence_for_required_outputs:claim-fqhe',
+      'complete_source_reconstruction:claim-fqhe',
+      'review_source_reconstruction:claim-fqhe',
+    ]);
     expect(compiled.contextLines.join('\n')).toContain(
       'Provenance gaps: gap-reference-location [reference_location_missing/source]',
     );
@@ -239,6 +254,18 @@ describe('AITP process graph slice adapter', () => {
     );
     expect(compiled.contextLines.join('\n')).toContain(
       'Source assets with duplicate hashes: source-asset-edge-counting-copy',
+    );
+    expect(compiled.contextLines.join('\n')).toContain(
+      'Source stack coverage: claim-fqhe [evidence_gap/guided]',
+    );
+    expect(compiled.contextLines.join('\n')).toContain(
+      'Source stack evidence gaps: claim-fqhe',
+    );
+    expect(compiled.contextLines.join('\n')).toContain(
+      'Source stack reconstruction gaps: claim-fqhe',
+    );
+    expect(compiled.contextLines.join('\n')).toContain(
+      'Source stack next actions: record_evidence_for_required_outputs:claim-fqhe',
     );
     expect(compiled.actionRecommendations.map((binding) => binding.actionId)).toEqual(
       expect.arrayContaining([
@@ -301,7 +328,12 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.reminders.join('\n')).toContain(
       'Use AITP source asset index hash status before reusing raw papers',
     );
+    expect(compiled.reminders.join('\n')).toContain(
+      'Use AITP source stack coverage before treating source reconstruction',
+    );
     expect(compiled.diagnostics).toContain('source-asset-index-present');
+    expect(compiled.diagnostics).toContain('source-stack-coverage-present');
+    expect(compiled.diagnostics).toContain('source-stack-coverage-gaps-present');
   });
 
   it('accepts current AITP v5 snake-case process graph slices', () => {
@@ -976,6 +1008,60 @@ function provenanceGapSlicePayload() {
         can_update_claim_trust: false,
       },
     ],
+    source_stack_coverage: {
+      kind: 'source_stack_coverage_manifest',
+      claim_count: 1,
+      coverage_status_counts: {
+        complete: 0,
+        evidence_gap: 1,
+        reconstruction_gap: 0,
+        review_gap: 0,
+      },
+      missing_required_output_counts: {
+        scoped_claim: 1,
+        evidence_or_provenance: 1,
+      },
+      source_component_gap_counts: {
+        reconstruction_path: 1,
+      },
+      source_review_status_counts: {
+        pending: 1,
+      },
+      items: [
+        {
+          topic_id: 'fqhe',
+          claim_id: 'claim-fqhe',
+          claim_statement: 'Sector counting identifies the edge CFT.',
+          risk_level: 'guided',
+          required_outputs: ['scoped_claim', 'evidence_or_provenance'],
+          satisfied_required_outputs: [],
+          missing_required_outputs: ['scoped_claim', 'evidence_or_provenance'],
+          evidence_ids_by_output: {
+            scoped_claim: [],
+            evidence_or_provenance: [],
+          },
+          source_reconstruction_complete: false,
+          missing_source_components: ['reconstruction_path'],
+          source_reconstruction_review_status: 'pending',
+          latest_source_review_result_id: '',
+          coverage_status: 'evidence_gap',
+          next_actions: [
+            'record_evidence_for_required_outputs:claim-fqhe',
+            'complete_source_reconstruction:claim-fqhe',
+            'review_source_reconstruction:claim-fqhe',
+          ],
+          can_update_claim_trust: false,
+        },
+      ],
+      next_actions: [
+        'record_evidence_for_required_outputs:claim-fqhe',
+        'complete_source_reconstruction:claim-fqhe',
+        'review_source_reconstruction:claim-fqhe',
+      ],
+      truth_source: 'typed_records',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
     trust_boundary_reasons: [],
     recommended_moments: [],
     moment_policy: {
