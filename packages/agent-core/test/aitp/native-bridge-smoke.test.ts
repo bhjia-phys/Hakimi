@@ -101,6 +101,7 @@ describe('AITP native bridge smoke', () => {
       aitp,
       now: () => 777,
     });
+    const renderedActionParams = JSON.stringify(pack.actionBindings.map((binding) => binding.params));
 
     const obligationBinding = requiredBinding(pack.actionBindings, 'aitp.create_open_obligation');
     expect(obligationBinding.objectRefs).toEqual(
@@ -170,6 +171,9 @@ describe('AITP native bridge smoke', () => {
     expect(pack.aitp?.contextLines.join('\n')).toContain('Moment policy:');
     expect(pack.aitp?.contextLines.join('\n')).toContain('AITP required calls now:');
     expect(pack.aitp?.contextLines.join('\n')).toContain('AITP lifecycle triggers:');
+    expect(pack.aitp?.contextLines.join('\n')).toContain('Theory reasoning:');
+    expect(renderedActionParams).toContain('source_dependency_backtrace');
+    expect(renderedActionParams).toContain('definitionBoundaryQuestions');
     expect(pack.aitp?.requiredCallIds).toEqual(
       expect.arrayContaining([
         expect.stringContaining('aitp-record-evidence'),
@@ -469,6 +473,23 @@ function qgMiptSlicePayload() {
                 status: 'supports',
                 summary: '<source-grounded evidence summary>',
                 source_refs: ['source_asset:asset-algebra-paper'],
+                reasoning_moves: [
+                  'source dependency backtrace',
+                  'bidirectional definition backtrace',
+                ],
+                backtrace_targets: [
+                  'claim:claim-mipt-observer-algebra',
+                  'source_asset:asset-algebra-paper',
+                ],
+                definition_boundary_questions: [
+                  'Which algebraic split definition is being imported into the MIPT analogy?',
+                ],
+                source_dependency_questions: [
+                  'Which source chain fixes the observer-role algebra convention?',
+                ],
+                original_question_guard: [
+                  'Keep the source backtrace tied to whether the observer analogy is justified.',
+                ],
               },
               orientation_only: true,
               summary_inputs_trusted: false,

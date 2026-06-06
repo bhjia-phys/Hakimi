@@ -1,5 +1,9 @@
 import type { ResearchContextPack } from '../../research-context';
 import { DEFAULT_RESEARCH_ACTIONS, primitiveToolNamesForAction } from '../../research-action';
+import {
+  renderTheoryReasoningSummary,
+  theoryReasoningProjectionFromParams,
+} from '../../aitp';
 
 const MAX_ITEMS = 6;
 const DEFAULT_ACTION_BY_ID = new Map(DEFAULT_RESEARCH_ACTIONS.map((action) => [action.id, action]));
@@ -71,6 +75,22 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
     lines.push(
       `Action bindings: ${bounded(pack.actionBindings.map((binding) => renderActionBinding(binding.actionId))).join(', ')}`,
     );
+    const theoryBindings = pack.actionBindings
+      .map((binding) => ({
+        actionId: binding.actionId,
+        theoryReasoning: theoryReasoningProjectionFromParams(binding.params),
+      }))
+      .filter((item): item is { actionId: string; theoryReasoning: NonNullable<typeof item.theoryReasoning> } =>
+        item.theoryReasoning !== undefined,
+      );
+    for (const item of boundedItems(theoryBindings)) {
+      lines.push(
+        `Theory reasoning for ${item.actionId}: ${renderTheoryReasoningSummary(item.theoryReasoning)}`,
+      );
+    }
+    if (theoryBindings.length > MAX_ITEMS) {
+      lines.push(`Theory reasoning omitted: ${String(theoryBindings.length - MAX_ITEMS)} more binding(s).`);
+    }
     lines.push(
       'For bound actions, call ResearchAction.plan_primitive_tools before native tools and record primitive_tool_call_ids back through the ResearchAction result.',
     );
@@ -98,4 +118,9 @@ function renderActionBinding(actionId: string): string {
 function bounded(values: readonly string[]): readonly string[] {
   if (values.length <= MAX_ITEMS) return values;
   return [...values.slice(0, MAX_ITEMS), `...(+${String(values.length - MAX_ITEMS)} more)`];
+}
+
+function boundedItems<T>(values: readonly T[]): readonly T[] {
+  if (values.length <= MAX_ITEMS) return values;
+  return values.slice(0, MAX_ITEMS);
 }

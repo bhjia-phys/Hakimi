@@ -40,6 +40,8 @@ import {
   actionIdForAitpWriteBridgeOperation,
   coerceAitpWriteBridgeInput,
   evidenceRefsForAitpWriteBridgeResult,
+  renderTheoryReasoningSummary,
+  theoryReasoningProjectionFromParams,
   type AitpWriteBridgeExecutionResult,
   type AitpWriteBridgeOperation,
 } from '../../../aitp';
@@ -1382,9 +1384,15 @@ function renderActionBindingXml(binding: ResearchContextPack['actionBindings'][n
   if (binding.params === undefined) {
     return `    <binding ${attrs} />`;
   }
+  const theoryReasoning = theoryReasoningProjectionFromParams(binding.params);
   return [
     `    <binding ${attrs}>`,
     `      <params>${escapeXml(JSON.stringify(binding.params))}</params>`,
+    ...(theoryReasoning === undefined
+      ? []
+      : [
+          `      <theory_reasoning>${escapeXml(renderTheoryReasoningSummary(theoryReasoning, 12))}</theory_reasoning>`,
+        ]),
     '    </binding>',
   ].join('\n');
 }
