@@ -13,6 +13,7 @@ import {
   buildAitpSourceAssetRegisterArgs,
   buildAitpSourceReconstructionReviewResultRecordArgs,
   buildAitpToolRunRecordArgs,
+  buildAitpTrustPreflightArgs,
   buildAitpValidationContractCreateArgs,
   buildAitpValidationResultRecordArgs,
   createAitpCliBridge,
@@ -649,6 +650,113 @@ describe('AITP CLI bridge', () => {
       'approve validation path',
       '--option',
       'keep provisional',
+    ]);
+  });
+
+  it('runs AITP trust preflight through a constrained non-mutating command', async () => {
+    const calls: { args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push({ args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            kind: 'trust_update_preflight',
+            request_id: 'trust-request-qg',
+            action: 'change_claim_confidence',
+            session_id: 'session-qg',
+            topic_id: 'qg',
+            claim_id: 'claim-mipt',
+            requested_state: 'supported',
+            allowed: false,
+            mutation_allowed_after_preflight: false,
+            required_actions: ['record typed evidence'],
+            evidence_refs: ['evidence-source-chain'],
+            code_state_ids: ['code-state-qg'],
+            preflight_token: 'trust-preflight-token-qg',
+            can_update_kernel_state: false,
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+    expect(
+      buildAitpTrustPreflightArgs({
+        basePath: 'F:/project',
+        action: 'change_claim_confidence',
+        sessionId: 'session-qg',
+        topicId: 'qg',
+        claimId: 'claim-mipt',
+      }),
+    ).toEqual([
+      '--base',
+      'F:/project',
+      'trust',
+      'preflight',
+      'change_claim_confidence',
+      '--session',
+      'session-qg',
+      '--topic',
+      'qg',
+      '--claim',
+      'claim-mipt',
+    ]);
+
+    const result = await bridge.preflightTrustUpdate({
+      action: 'change_claim_confidence',
+      sessionId: 'session-qg',
+      topicId: 'qg',
+      claimId: 'claim-mipt',
+      requestedState: 'supported',
+      sourceKind: 'proof_obligation_record',
+      sourceRef: 'proof_obligation:obl-source',
+      evidenceRefs: ['evidence-source-chain'],
+      codeStateIds: ['code-state-qg'],
+      rationale: 'Trust-sensitive final answer would treat source support as checked.',
+      requestId: 'trust-request-qg',
+    });
+
+    expect(result).toMatchObject({
+      kind: 'trust_update_preflight',
+      requestId: 'trust-request-qg',
+      action: 'change_claim_confidence',
+      allowed: false,
+      mutationAllowedAfterPreflight: false,
+      requiredActions: ['record typed evidence'],
+      preflightToken: 'trust-preflight-token-qg',
+      canUpdateKernelState: false,
+    });
+    expect(calls[0]?.args).toEqual([
+      '--base',
+      'F:/project',
+      'trust',
+      'preflight',
+      'change_claim_confidence',
+      '--session',
+      'session-qg',
+      '--topic',
+      'qg',
+      '--claim',
+      'claim-mipt',
+      '--requested-state',
+      'supported',
+      '--source-kind',
+      'proof_obligation_record',
+      '--source-ref',
+      'proof_obligation:obl-source',
+      '--evidence-ref',
+      'evidence-source-chain',
+      '--code-state-id',
+      'code-state-qg',
+      '--rationale',
+      'Trust-sensitive final answer would treat source support as checked.',
+      '--request-id',
+      'trust-request-qg',
     ]);
   });
 

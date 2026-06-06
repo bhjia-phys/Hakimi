@@ -218,6 +218,21 @@ export interface RequestAitpHumanCheckpointInput {
   readonly signal?: AbortSignal | undefined;
 }
 
+export interface PreflightAitpTrustUpdateInput {
+  readonly action: string;
+  readonly sessionId: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly requestedState?: string | undefined;
+  readonly sourceKind?: string | undefined;
+  readonly sourceRef?: string | undefined;
+  readonly evidenceRefs?: readonly string[] | undefined;
+  readonly codeStateIds?: readonly string[] | undefined;
+  readonly rationale?: string | undefined;
+  readonly requestId?: string | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface CreateAitpProofObligationInput {
   readonly topicId: string;
   readonly claimId: string;
@@ -376,6 +391,25 @@ export interface AitpHumanCheckpointWriteResult {
   readonly topicId: string;
   readonly claimId: string;
   readonly status: string;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpTrustPreflightWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'trust_update_preflight';
+  readonly requestId: string;
+  readonly action: string;
+  readonly sessionId: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly requestedState: string;
+  readonly allowed: boolean;
+  readonly mutationAllowedAfterPreflight: boolean;
+  readonly requiredActions: readonly string[];
+  readonly evidenceRefs: readonly string[];
+  readonly codeStateIds: readonly string[];
+  readonly preflightToken: string;
+  readonly canUpdateKernelState: boolean;
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -549,6 +583,17 @@ export class AitpCliBridge {
     });
     const payload = await this.runJson(args, input.signal);
     return parseHumanCheckpointWriteResult(payload);
+  }
+
+  async preflightTrustUpdate(
+    input: PreflightAitpTrustUpdateInput,
+  ): Promise<AitpTrustPreflightWriteResult> {
+    const args = buildAitpTrustPreflightArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseTrustPreflightWriteResult(payload);
   }
 
   async createProofObligation(
@@ -976,6 +1021,37 @@ export function buildAitpHumanCheckpointRequestArgs(
   return args;
 }
 
+export function buildAitpTrustPreflightArgs(
+  input: PreflightAitpTrustUpdateInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.action, 'action');
+  requireNonEmpty(input.sessionId, 'sessionId');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.claimId, 'claimId');
+  const args = [
+    '--base',
+    input.basePath,
+    'trust',
+    'preflight',
+    input.action.trim(),
+    '--session',
+    input.sessionId.trim(),
+    '--topic',
+    input.topicId.trim(),
+    '--claim',
+    input.claimId.trim(),
+  ];
+  pushOptional(args, '--requested-state', input.requestedState);
+  pushOptional(args, '--source-kind', input.sourceKind);
+  pushOptional(args, '--source-ref', input.sourceRef);
+  pushRepeated(args, '--evidence-ref', input.evidenceRefs);
+  pushRepeated(args, '--code-state-id', input.codeStateIds);
+  pushOptional(args, '--rationale', input.rationale);
+  pushOptional(args, '--request-id', input.requestId);
+  return args;
+}
+
 export function buildAitpProofObligationCreateArgs(
   input: CreateAitpProofObligationInput & { readonly basePath: string },
 ): readonly string[] {
@@ -1370,6 +1446,33 @@ function parseHumanCheckpointWriteResult(payload: unknown): AitpHumanCheckpointW
   };
 }
 
+function parseTrustPreflightWriteResult(payload: unknown): AitpTrustPreflightWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError('AITP trust preflight payload must be an object.');
+  }
+  if (payload['kind'] !== 'trust_update_preflight') {
+    throw new AitpCliBridgeError('AITP trust preflight payload has the wrong kind.');
+  }
+  return {
+    ok: payload['ok'] === true,
+    kind: 'trust_update_preflight',
+    requestId: requiredPayloadString(payload, 'request_id'),
+    action: requiredPayloadString(payload, 'action'),
+    sessionId: requiredPayloadString(payload, 'session_id'),
+    topicId: requiredPayloadString(payload, 'topic_id'),
+    claimId: requiredPayloadString(payload, 'claim_id'),
+    requestedState: stringValue(payload['requested_state']) ?? '',
+    allowed: payload['allowed'] === true,
+    mutationAllowedAfterPreflight: payload['mutation_allowed_after_preflight'] === true,
+    requiredActions: stringArrayValue(payload['required_actions']),
+    evidenceRefs: stringArrayValue(payload['evidence_refs']),
+    codeStateIds: stringArrayValue(payload['code_state_ids']),
+    preflightToken: requiredPayloadString(payload, 'preflight_token'),
+    canUpdateKernelState: payload['can_update_kernel_state'] === true,
+    raw: payload,
+  };
+}
+
 function parseProofObligationWriteResult(payload: unknown): AitpProofObligationWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP proof obligation payload must be an object.');
@@ -1538,6 +1641,14 @@ function requiredPayloadString(payload: Record<string, unknown>, key: string): s
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function stringArrayValue(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

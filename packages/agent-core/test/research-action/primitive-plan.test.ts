@@ -178,6 +178,24 @@ describe('research primitive plan templates', () => {
     expect(plan.followupActionIds).toContain('aitp.record_research_state');
   });
 
+  it('plans AITP trust preflight as a non-mutating bridge check', () => {
+    const plan = planFor('aitp.run_trust_preflight');
+
+    expect(plan.toolNames).toEqual(expect.arrayContaining(['ResearchAction', 'ResearchLedger']));
+    expect(plan.steps.map((step) => step.id)).toEqual([
+      'execute-aitp-trust-preflight',
+      'keep-trust-state-external',
+    ]);
+    expect(plan.recording.evidenceRefs).toEqual(
+      expect.arrayContaining([
+        'aitp:trust_preflight:<token>',
+        'preflight_allowed',
+        'required_actions',
+      ]),
+    );
+    expect(plan.followupActionIds).toContain('aitp.request_human_checkpoint');
+  });
+
   it('falls back from primitiveToolPolicy for custom actions', () => {
     const action: ResearchActionDefinition = {
       id: 'custom.inspect_code',

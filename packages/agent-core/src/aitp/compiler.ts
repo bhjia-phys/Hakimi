@@ -734,6 +734,8 @@ function actionIdForEntrypoint(entrypoint: string): string | undefined {
       return 'aitp.record_source_reconstruction_review_result';
     case 'aitp_v5_attach_artifact':
       return 'aitp.attach_artifact';
+    case 'aitp_v5_preflight_trust_update':
+      return 'aitp.run_trust_preflight';
     default:
       return undefined;
   }
@@ -888,6 +890,15 @@ function writeBridgeForMoment(
         requiredFields: ['topicId', 'claimId', 'reason', 'requestedBy', 'options'],
         targetRefs: moment.targetRefs,
       }, hints);
+    case 'aitp.run_trust_preflight':
+      return withPayloadDraft({
+        operation: 'preflightTrustUpdate',
+        cli: 'aitp-v5 trust preflight',
+        requiredFields: ['action', 'sessionId', 'topicId', 'claimId'],
+        targetRefs: moment.targetRefs,
+        canUpdateClaimTrust: false,
+        canUpdateKernelState: false,
+      }, hints);
     default:
       return undefined;
   }
@@ -965,6 +976,8 @@ function recordActionForOperation(operation: string): string | undefined {
       return 'record_source_reconstruction_review_result';
     case 'requestHumanCheckpoint':
       return 'request_human_checkpoint';
+    case 'preflightTrustUpdate':
+      return 'preflight_trust_update';
     default:
       return undefined;
   }

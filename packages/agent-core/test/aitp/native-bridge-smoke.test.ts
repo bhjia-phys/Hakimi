@@ -65,6 +65,29 @@ describe('AITP native bridge smoke', () => {
             stderr: '',
           };
         }
+        if (args.includes('trust') && args.includes('preflight')) {
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              ok: true,
+              kind: 'trust_update_preflight',
+              request_id: 'trust-request-qg-boundary',
+              action: 'change_claim_confidence',
+              session_id: 'session-qg-mipt',
+              topic_id: 'qg-algebra-mipt',
+              claim_id: 'claim-mipt-observer-algebra',
+              requested_state: 'supported',
+              allowed: false,
+              mutation_allowed_after_preflight: false,
+              required_actions: ['resolve required recording/backtrace/brainstorm policy decisions'],
+              evidence_refs: ['evidence-algebra-source-chain'],
+              code_state_ids: [],
+              preflight_token: 'trust-preflight-qg-boundary',
+              can_update_kernel_state: false,
+            }),
+            stderr: '',
+          };
+        }
         return {
           exitCode: 1,
           stdout: '',
@@ -168,6 +191,14 @@ describe('AITP native bridge smoke', () => {
       cli: 'aitp-v5 checkpoint request',
       requiredFields: ['topicId', 'claimId', 'reason', 'requestedBy', 'options'],
     });
+    const preflightBinding = requiredBinding(pack.actionBindings, 'aitp.run_trust_preflight');
+    expect(preflightBinding.params?.['writeBridge']).toMatchObject({
+      operation: 'preflightTrustUpdate',
+      cli: 'aitp-v5 trust preflight',
+      requiredFields: ['action', 'sessionId', 'topicId', 'claimId'],
+      canUpdateClaimTrust: false,
+      canUpdateKernelState: false,
+    });
     expect(pack.aitp?.contextLines.join('\n')).toContain('Moment policy:');
     expect(pack.aitp?.contextLines.join('\n')).toContain('AITP required calls now:');
     expect(pack.aitp?.contextLines.join('\n')).toContain('AITP lifecycle triggers:');
@@ -177,7 +208,7 @@ describe('AITP native bridge smoke', () => {
     expect(pack.aitp?.requiredCallIds).toEqual(
       expect.arrayContaining([
         expect.stringContaining('aitp-record-evidence'),
-        expect.stringContaining('aitp-request-human-checkpoint'),
+        expect.stringContaining('aitp-run-trust-preflight'),
       ]),
     );
     expect(pack.aitp?.trustBoundaryReasons).toEqual([
@@ -217,6 +248,18 @@ describe('AITP native bridge smoke', () => {
       requestedBy: 'hakimi',
       options: ['keep exploratory', 'approve source-supported transition'],
     });
+    const preflight = await bridge.preflightTrustUpdate({
+      action: 'change_claim_confidence',
+      sessionId: 'session-qg-mipt',
+      topicId: 'qg-algebra-mipt',
+      claimId: 'claim-mipt-observer-algebra',
+      requestedState: 'supported',
+      sourceKind: 'typed_record',
+      sourceRef: 'claim:claim-mipt-observer-algebra',
+      evidenceRefs: ['evidence-algebra-source-chain'],
+      rationale: 'Check AITP policy before any claim-trust update.',
+      requestId: 'trust-request-qg-boundary',
+    });
 
     expect(proof).toMatchObject({
       kind: 'proof_obligation',
@@ -233,6 +276,13 @@ describe('AITP native bridge smoke', () => {
       kind: 'human_checkpoint',
       checkpointId: 'checkpoint-qg-trust-boundary',
       status: 'requested',
+    });
+    expect(preflight).toMatchObject({
+      kind: 'trust_update_preflight',
+      requestId: 'trust-request-qg-boundary',
+      preflightToken: 'trust-preflight-qg-boundary',
+      mutationAllowedAfterPreflight: false,
+      canUpdateKernelState: false,
     });
     expect(calls).toEqual([
       {
@@ -326,6 +376,34 @@ describe('AITP native bridge smoke', () => {
           'keep exploratory',
           '--option',
           'approve source-supported transition',
+        ],
+      },
+      {
+        command: 'aitp-v5',
+        args: [
+          '--base',
+          'F:/project',
+          'trust',
+          'preflight',
+          'change_claim_confidence',
+          '--session',
+          'session-qg-mipt',
+          '--topic',
+          'qg-algebra-mipt',
+          '--claim',
+          'claim-mipt-observer-algebra',
+          '--requested-state',
+          'supported',
+          '--source-kind',
+          'typed_record',
+          '--source-ref',
+          'claim:claim-mipt-observer-algebra',
+          '--evidence-ref',
+          'evidence-algebra-source-chain',
+          '--rationale',
+          'Check AITP policy before any claim-trust update.',
+          '--request-id',
+          'trust-request-qg-boundary',
         ],
       },
     ]);

@@ -462,6 +462,7 @@ describe('AITP process graph slice adapter', () => {
         'aitp.record_evidence',
         'aitp.record_reference_location',
         'aitp.request_human_checkpoint',
+        'aitp.run_trust_preflight',
         'physics.brainstorm_relation_path',
         'trace.audit_original_question_drift',
         'trace.follow_source_dependency',
@@ -487,8 +488,7 @@ describe('AITP process graph slice adapter', () => {
       expect.arrayContaining([
         'aitp.record_evidence',
         'aitp.record_reference_location',
-        'physics.brainstorm_relation_path',
-        'aitp.request_human_checkpoint',
+        'aitp.run_trust_preflight',
       ]),
     );
     expect(compiled.callObligations.find((item) =>
@@ -630,6 +630,40 @@ describe('AITP process graph slice adapter', () => {
         requiredFields: expect.arrayContaining(['topicId', 'claimId', 'reason', 'options']),
       },
     });
+    expect(compiled.actionRecommendations.find((binding) =>
+      binding.actionId === 'aitp.run_trust_preflight',
+    )?.params).toMatchObject({
+      callObligation: {
+        entrypoints: ['aitp_v5_preflight_trust_update'],
+        lifecycleTrigger: {
+          trustBoundaryInputs: {
+            requiresPreflight: true,
+            finalGateRequired: true,
+          },
+        },
+      },
+      writeBridge: {
+        operation: 'preflightTrustUpdate',
+        cli: 'aitp-v5 trust preflight',
+        canUpdateClaimTrust: false,
+        canUpdateKernelState: false,
+        payloadDraft: {
+          action: 'change_claim_confidence',
+          sessionId: 'session-fqhe',
+          topicId: 'fqhe',
+          claimId: 'claim-fqhe',
+          requestedState: '<requested claim confidence state>',
+          sourceKind: 'typed_record',
+          sourceRef: 'claim:claim-fqhe',
+        },
+        payloadHint: {
+          entrypoint: 'aitp_v5_preflight_trust_update',
+          recordAction: 'preflight_trust_update',
+          orientationOnly: true,
+          canUpdateClaimTrust: false,
+        },
+      },
+    });
     expect(compiled.actionRecommendations.some((binding) =>
       (binding.objectRefs ?? []).includes('claim:claim-fqhe'),
     )).toBe(true);
@@ -644,13 +678,17 @@ describe('AITP process graph slice adapter', () => {
       compiled.suggestedNextMoments.map((moment) => [moment.actionId, moment]),
     );
 
-    expect(byActionId.get('aitp.request_human_checkpoint')).toMatchObject({
+    expect(byActionId.get('aitp.run_trust_preflight')).toMatchObject({
       priority: 'blocking',
+    });
+    expect(byActionId.get('aitp.request_human_checkpoint')).toMatchObject({
+      priority: 'high',
     });
     expect(compiled.actionRecommendations.map((binding) => binding.actionId)).toEqual(
       expect.arrayContaining([
         'aitp.record_research_state',
         'aitp.request_human_checkpoint',
+        'aitp.run_trust_preflight',
         'direction.brainstorm',
         'physics.brainstorm_relation_path',
         'trace.open_backtrace',
@@ -1654,10 +1692,49 @@ function currentAitpSlicePayload() {
           record_entrypoints: [],
           exploration_entrypoints: [],
           entrypoints: ['aitp_v5_preflight_trust_update'],
+          payload_hints: [
+            {
+              entrypoint: 'aitp_v5_preflight_trust_update',
+              record_action: 'preflight_trust_update',
+              action_kind: 'block_trust_change_until_policy_prerequisites_are_met',
+              target_type: 'claim',
+              target_id: 'claim-fqhe',
+              required_fields: ['action', 'session_id', 'topic_id', 'claim_id'],
+              draft: {
+                action: 'change_claim_confidence',
+                session_id: 'session-fqhe',
+                topic_id: 'fqhe',
+                claim_id: 'claim-fqhe',
+                requested_state: '<requested claim confidence state>',
+                source_kind: 'typed_record',
+                source_ref: 'claim:claim-fqhe',
+                rationale:
+                  'Run AITP trust preflight before treating claim:claim-fqhe as a trust-sensitive final conclusion.',
+              },
+              orientation_only: true,
+              summary_inputs_trusted: false,
+              can_update_claim_trust: false,
+            },
+          ],
           required_before_trust_change: [
             'resolve required recording/backtrace/brainstorm policy decisions',
             'run aitp_v5_preflight_trust_update',
           ],
+          lifecycle_phases: ['pre_action', 'pre_final'],
+          trigger_conditions: ['before any claim-trust update'],
+          recording_threshold: 'blocking_before_claim_trust_update',
+          trust_boundary_inputs: {
+            target_refs: ['claim:claim-fqhe'],
+            claim_id: 'claim-fqhe',
+            entrypoints: ['aitp_v5_preflight_trust_update'],
+            required_before_trust_change: [
+              'resolve required recording/backtrace/brainstorm policy decisions',
+              'run aitp_v5_preflight_trust_update',
+            ],
+            requires_preflight: true,
+            final_gate_required: true,
+          },
+          recommended_host_behavior: ['run aitp_v5_preflight_trust_update before trust mutation'],
           trust_boundary: true,
           summary_inputs_trusted: false,
           orientation_only: true,
