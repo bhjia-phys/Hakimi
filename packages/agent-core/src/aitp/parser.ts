@@ -187,6 +187,8 @@ function momentArray(value: unknown): readonly AitpRecommendedMoment[] {
         priority: 'normal',
         reason: 'Recommended by AITP process graph slice.',
         targetRefs: [],
+        timing: undefined,
+        trustBoundary: undefined,
       });
       continue;
     }
@@ -200,6 +202,11 @@ function momentArray(value: unknown): readonly AitpRecommendedMoment[] {
       targetRefs: stringArray(item['target_refs']).length > 0
         ? stringArray(item['target_refs'])
         : targetRefsFromMoment(item),
+      timing: stringValue(item['timing']) ?? stringValue(item['call_timing']),
+      trustBoundary:
+        stringValue(item['trust_boundary']) ??
+        stringValue(item['trustBoundary']) ??
+        stringValue(item['boundary']),
     });
   }
   return moments;

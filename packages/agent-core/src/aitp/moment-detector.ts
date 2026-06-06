@@ -32,6 +32,8 @@ export function detectResearchMoments(
       reason: moment.reason,
       source: 'aitp',
       targetRefs: moment.targetRefs,
+      timing: moment.timing,
+      trustBoundary: moment.trustBoundary,
     });
   }
 
@@ -124,6 +126,32 @@ export function detectResearchMoments(
     });
   }
 
+  if (slice.trustBoundaryReasons.length > 0) {
+    const targetRefs = slice.trustBoundaryReasons.map((_, index) =>
+      `trust_boundary:${String(index + 1)}`,
+    );
+    addMoment(moments, {
+      id: 'aitp.request_human_checkpoint',
+      actionId: 'aitp.request_human_checkpoint',
+      priority: 'high',
+      reason: 'AITP slice declares a trust boundary; require a human checkpoint before treating trust as updated.',
+      source: 'trust-boundary',
+      targetRefs,
+      timing: 'before_trust_update',
+      trustBoundary: 'human_checkpoint',
+    });
+    addMoment(moments, {
+      id: 'aitp.record_research_state',
+      actionId: 'aitp.record_research_state',
+      priority: 'normal',
+      reason: 'Record the current AITP-facing state at the trust boundary.',
+      source: 'trust-boundary',
+      targetRefs,
+      timing: 'at_trust_boundary',
+      trustBoundary: 'trust_boundary',
+    });
+  }
+
   for (const record of slice.exploratoryRecords) {
     const targetRefs = [`exploratory_record:${record.id}`];
     const textForRecord = lowerJoin([
@@ -210,28 +238,67 @@ export function detectResearchMoments(
       });
     }
   }
-
-  if (hasAny(text, ['brainstorm', 'direction', 'route', 'approach', 'explore'])) {
+  if (hasAny(text, [
+    'brainstorm',
+    'direction',
+    'route',
+    'approach',
+    'explore',
+    '\u5934\u8111\u98ce\u66b4',
+    '\u8111\u66b4',
+    '\u65b9\u5411',
+    '\u601d\u8def',
+    '\u63a2\u7d22',
+  ])) {
     addKeywordMoment(moments, 'direction.brainstorm', 'Prompt asks for direction exploration.');
   }
-  if (hasAny(text, ['relation path', 'relation', 'bridge', 'connect', 'link'])) {
+  if (hasAny(text, [
+    'relation path',
+    'relation',
+    'bridge',
+    'connect',
+    'link',
+    '\u5173\u7cfb\u8def\u5f84',
+    '\u5173\u8054\u8def\u5f84',
+    '\u6865\u63a5',
+    '\u8fde\u63a5',
+  ])) {
     addKeywordMoment(
       moments,
       'physics.brainstorm_relation_path',
       'Prompt or context asks about a physics relation path.',
     );
   }
-  if (hasAny(text, ['backtrace', 'trace', 'provenance'])) {
+  if (hasAny(text, [
+    'backtrace',
+    'trace',
+    'provenance',
+    'source backtrace',
+    '\u6e90\u56de\u6eaf',
+    '\u56de\u6eaf',
+    '\u6eaf\u6e90',
+    '\u6765\u6e90',
+  ])) {
     addKeywordMoment(moments, 'trace.open_backtrace', 'Prompt or context asks for traceability.');
   }
-  if (hasAny(text, ['definition', 'define', 'reconstruct'])) {
+  if (hasAny(text, ['definition', 'define', 'reconstruct', '\u5b9a\u4e49', '\u6982\u5ff5', '\u91cd\u6784'])) {
     addKeywordMoment(
       moments,
       'trace.reconstruct_definition',
       'Prompt or context asks about a definition boundary.',
     );
   }
-  if (hasAny(text, ['source dependency', 'source gap', 'citation gap', 'citation', 'dependency'])) {
+  if (hasAny(text, [
+    'source dependency',
+    'source gap',
+    'citation gap',
+    'citation',
+    'dependency',
+    '\u6765\u6e90\u4f9d\u8d56',
+    '\u5f15\u7528\u7f3a\u53e3',
+    '\u6765\u6e90\u7f3a\u53e3',
+    '\u4f9d\u8d56',
+  ])) {
     addKeywordMoment(
       moments,
       'trace.follow_source_dependency',
@@ -245,32 +312,110 @@ export function detectResearchMoments(
       'Prompt or context suggests the backtrace may be drifting from the original question.',
     );
   }
-  if (hasAny(text, ['record state', 'research state', 'save state', 'snapshot'])) {
+  if (hasAny(text, [
+    'record state',
+    'research state',
+    'save state',
+    'snapshot',
+    'log state',
+    'capture state',
+    '\u8bb0\u5f55\u72b6\u6001',
+    '\u4fdd\u5b58\u72b6\u6001',
+    '\u7814\u7a76\u72b6\u6001',
+    '\u5feb\u7167',
+  ])) {
     addKeywordMoment(
       moments,
       'aitp.record_research_state',
       'Prompt or context asks to record research state.',
     );
   }
-  if (hasAny(text, ['record exploration', 'exploratory record', 'brainstorm record', 'backtrace record'])) {
+  if (hasAny(text, [
+    'record exploration',
+    'exploratory record',
+    'brainstorm record',
+    'backtrace record',
+    'steering checkpoint',
+    '\u8bb0\u5f55\u63a2\u7d22',
+    '\u63a2\u7d22\u8bb0\u5f55',
+    '\u8111\u66b4\u8bb0\u5f55',
+    '\u56de\u6eaf\u8bb0\u5f55',
+    '\u8f6c\u5411\u68c0\u67e5\u70b9',
+  ])) {
     addKeywordMoment(
       moments,
       'aitp.record_exploratory_record',
       'Prompt or context asks to record exploratory research state.',
     );
   }
-  if (hasAny(text, ['derivation checkpoint', 'checkpoint', 'derivation', 'derive', 'equation'])) {
+  if (hasAny(text, [
+    'derivation checkpoint',
+    'checkpoint',
+    'derivation',
+    'derive',
+    'equation',
+    '\u63a8\u5bfc\u68c0\u67e5\u70b9',
+    '\u63a8\u5bfc',
+    '\u65b9\u7a0b',
+  ])) {
     addKeywordMoment(
       moments,
       'aitp.record_derivation_checkpoint',
       'Prompt or context mentions a derivation checkpoint.',
     );
   }
-  if (hasAny(text, ['open obligation', 'obligation', 'open question', 'todo', 'gap'])) {
+  if (hasAny(text, [
+    'open obligation',
+    'obligation',
+    'open question',
+    'todo',
+    'gap',
+    '\u5f00\u653e\u4e49\u52a1',
+    '\u5f85\u529e',
+    '\u7f3a\u53e3',
+  ])) {
     addKeywordMoment(
       moments,
       'aitp.create_open_obligation',
       'Prompt or context asks to preserve an open obligation.',
+    );
+  }
+  if (hasAny(text, [
+    '\u539f\u59cb\u95ee\u9898',
+    '\u539f\u95ee\u9898',
+    '\u504f\u79bb\u95ee\u9898',
+    '\u8dd1\u504f',
+  ])) {
+    addKeywordMoment(
+      moments,
+      'trace.audit_original_question_drift',
+      'Prompt or context suggests the backtrace may be drifting from the original question.',
+    );
+  }
+  if (hasAny(text, [
+    'trust boundary',
+    'trust-boundary',
+    'human checkpoint',
+    'human review',
+    'human approval',
+    'human decision',
+    'manual checkpoint',
+    'human-in-the-loop',
+    'cannot update claim trust',
+    'update claim trust',
+    '\u4fe1\u4efb\u8fb9\u754c',
+    '\u4eba\u5de5\u68c0\u67e5\u70b9',
+    '\u4eba\u7c7b\u68c0\u67e5\u70b9',
+    '\u4eba\u5de5\u5ba1\u6838',
+    '\u4eba\u5de5\u786e\u8ba4',
+    '\u4eba\u7c7b\u786e\u8ba4',
+    '\u4fe1\u4efb\u66f4\u65b0',
+  ])) {
+    addKeywordMoment(
+      moments,
+      'aitp.request_human_checkpoint',
+      'Prompt or context asks for a trust-boundary human checkpoint.',
+      'high',
     );
   }
 
@@ -293,6 +438,9 @@ export function actionIdForMoment(id: AitpResearchMomentId): string {
       return 'trace.audit_original_question_drift';
     case 'record_exploratory_record':
       return 'aitp.record_exploratory_record';
+    case 'human_checkpoint':
+    case 'request_human_checkpoint':
+      return 'aitp.request_human_checkpoint';
     default:
       return id;
   }
@@ -302,11 +450,12 @@ function addKeywordMoment(
   moments: Map<string, DetectedResearchMoment>,
   id: AitpResearchMomentId,
   reason: string,
+  priority: ResearchActionBindingPriority = 'normal',
 ): void {
   addMoment(moments, {
     id,
     actionId: actionIdForMoment(id),
-    priority: 'normal',
+    priority,
     reason,
     source: 'keyword',
     targetRefs: [],
@@ -326,6 +475,8 @@ function addMoment(
     moments.set(moment.actionId, {
       ...existing,
       targetRefs: unique([...existing.targetRefs, ...moment.targetRefs]),
+      timing: existing.timing ?? moment.timing,
+      trustBoundary: existing.trustBoundary ?? moment.trustBoundary,
     });
   }
 }

@@ -70,6 +70,22 @@ describe('research primitive plan templates', () => {
     expect(plan.recording.evidenceRefs).toContain('adapter.external.job-submission');
   });
 
+  it('plans AITP trust-boundary checkpoints through a human question and action record', () => {
+    const plan = planFor('aitp.request_human_checkpoint');
+
+    expect(plan.toolNames).toEqual(
+      expect.arrayContaining(['AskUserQuestion', 'ResearchAction', 'ResearchLedger']),
+    );
+    expect(plan.steps.map((step) => step.id)).toEqual([
+      'ask-human-checkpoint',
+      'record-checkpoint',
+    ]);
+    expect(plan.recording.evidenceRefs).toEqual(
+      expect.arrayContaining(['human_checkpoint_decision', 'ledger_event_id']),
+    );
+    expect(plan.followupActionIds).toContain('aitp.record_research_state');
+  });
+
   it('falls back from primitiveToolPolicy for custom actions', () => {
     const action: ResearchActionDefinition = {
       id: 'custom.inspect_code',

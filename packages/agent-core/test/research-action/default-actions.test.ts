@@ -17,6 +17,7 @@ describe('default research actions', () => {
       'aitp.record_derivation_checkpoint',
       'aitp.record_exploratory_record',
       'aitp.record_research_state',
+      'aitp.request_human_checkpoint',
       'benchmark.run_minimal_case',
       'benchmark.submit_external_job',
       'code.capture_git_diff_observation',

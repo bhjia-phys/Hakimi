@@ -11,6 +11,7 @@ export const KNOWN_AITP_RESEARCH_MOMENTS = [
   'aitp.record_research_state',
   'aitp.record_derivation_checkpoint',
   'aitp.create_open_obligation',
+  'aitp.request_human_checkpoint',
 ] as const;
 
 export type KnownAitpResearchMomentId = (typeof KNOWN_AITP_RESEARCH_MOMENTS)[number];
@@ -95,6 +96,8 @@ export interface AitpRecommendedMoment {
   readonly priority: ResearchActionBindingPriority;
   readonly reason: string;
   readonly targetRefs: readonly string[];
+  readonly timing?: string | undefined;
+  readonly trustBoundary?: string | undefined;
 }
 
 export interface AitpProcessGraphSlice {
@@ -121,8 +124,17 @@ export interface DetectedResearchMoment {
   readonly actionId: string;
   readonly priority: ResearchActionBindingPriority;
   readonly reason: string;
-  readonly source: 'aitp' | 'keyword' | 'obligation' | 'relation' | 'source-backtrace' | 'exploration';
+  readonly source:
+    | 'aitp'
+    | 'keyword'
+    | 'obligation'
+    | 'relation'
+    | 'source-backtrace'
+    | 'exploration'
+    | 'trust-boundary';
   readonly targetRefs: readonly string[];
+  readonly timing?: string | undefined;
+  readonly trustBoundary?: string | undefined;
 }
 
 export interface AitpObligationSummary {
