@@ -86,6 +86,16 @@ function buildContextLines(
   if (sourceGaps.length > 0) {
     lines.push(`Source gaps: ${bounded(sourceGaps.map((item) => item.id), maxItems).join(', ')}`);
   }
+  const sourceAssetNodes = slice.nodes.filter((item) => item.kind === 'source_asset');
+  const backtraceAssetIds = unique(slice.sourceBacktrace.flatMap((item) => item.sourceAssetIds));
+  if (sourceAssetNodes.length > 0 || backtraceAssetIds.length > 0) {
+    lines.push(
+      `Source assets: ${bounded([
+        ...sourceAssetNodes.map(renderSourceAsset),
+        ...backtraceAssetIds.map((id) => `source_asset:${id}`),
+      ], maxItems).join('; ')}`,
+    );
+  }
 
   const relationHypotheses = slice.relationNeighborhood.filter((item) =>
     lowerJoin([item.status, item.reason, item.relation]).match(/hypothesis|provisional|candidate/) !==
@@ -193,6 +203,13 @@ function renderExploration(item: { readonly id: string; readonly explorationType
   return question.length === 0 ? `${item.id} [${item.explorationType}]` : `${item.id} [${item.explorationType}]: ${question}`;
 }
 
+function renderSourceAsset(item: { readonly id: string; readonly title?: string | undefined; readonly label?: string | undefined; readonly uri?: string | undefined; readonly assetType?: string | undefined }): string {
+  const title = item.title ?? item.label ?? item.id;
+  const type = item.assetType === undefined ? '' : ` [${item.assetType}]`;
+  const uri = item.uri === undefined ? '' : ` -> ${item.uri}`;
+  return `${item.id}${type}: ${title}${uri}`;
+}
+
 function hasExplicitTrustFlag(flags: readonly string[]): boolean {
   return flags.some((flag) => {
     const lower = flag.toLowerCase();
@@ -214,6 +231,10 @@ function isAitpProcessGraphSlice(value: unknown): value is AitpProcessGraphSlice
 function bounded(values: readonly string[], maxItems: number): readonly string[] {
   if (values.length <= maxItems) return values;
   return [...values.slice(0, maxItems), `...(+${String(values.length - maxItems)} more)`];
+}
+
+function unique(values: readonly string[]): readonly string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
 }
 
 function slug(value: string): string {

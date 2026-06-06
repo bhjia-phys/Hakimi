@@ -81,6 +81,7 @@ describe('AITP process graph slice adapter', () => {
     );
     expect(compiled.contextLines.join('\n')).toContain('Exploration records: exploratory-question');
     expect(compiled.contextLines.join('\n')).toContain('Exploration unresolved points: finite-size aliasing');
+    expect(compiled.contextLines.join('\n')).toContain('Source assets: source_asset:source-asset-edge-counting');
     expect(compiled.actionRecommendations.some((binding) =>
       (binding.objectRefs ?? []).includes('claim:claim-fqhe'),
     )).toBe(true);
@@ -184,6 +185,23 @@ function currentAitpSlicePayload() {
           confidence_state: 'hypothesis',
         },
       },
+      {
+        id: 'source_asset:source-asset-edge-counting',
+        type: 'source_asset',
+        record_id: 'source-asset-edge-counting',
+        label: 'Edge counting source asset',
+        record: {
+          asset_id: 'source-asset-edge-counting',
+          topic_id: 'fqhe',
+          claim_id: 'claim-fqhe',
+          asset_type: 'paper',
+          uri: 'arxiv:2601.00001',
+          title: 'Edge counting source asset',
+          source_kind: 'literature',
+          orientation_only: true,
+          can_update_claim_trust: false,
+        },
+      },
     ],
     edges: [
       {
@@ -210,6 +228,7 @@ function currentAitpSlicePayload() {
         statement: 'Sector counting identifies the edge CFT.',
         reference_location_ids: [],
         evidence_ids: [],
+        source_asset_ids: ['source-asset-edge-counting'],
         proof_obligation_ids: ['obligation-finite-size'],
         object_relation_ids: ['relation-counting-cft'],
         physics_object_ids: ['object-counting', 'object-cft'],
