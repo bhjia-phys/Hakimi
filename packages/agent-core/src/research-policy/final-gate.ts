@@ -27,7 +27,9 @@ export function evaluateFinalGate(input: FinalGateInput): FinalGateDecision {
     (obligation) => !obligation.satisfied && !obligation.blockerRecorded,
   );
   const requiredNowAitpCalls = openAitpCalls.filter((obligation) => obligation.requiredNow);
-  const trustBoundaryAitpCalls = openAitpCalls.filter((obligation) => obligation.trustBoundary);
+  const trustBoundaryAitpCalls = openAitpCalls.filter(
+    (obligation) => obligation.trustBoundary || obligation.finalGateRequired === true,
+  );
   for (const obligation of openAitpCalls) {
     requiredActionIds.add(obligation.actionId);
   }

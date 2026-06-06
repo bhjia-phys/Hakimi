@@ -13,6 +13,9 @@ export const KNOWN_AITP_RESEARCH_MOMENTS = [
   'aitp.record_tool_run',
   'aitp.record_reference_location',
   'aitp.record_research_state',
+  'aitp.record_route_choice',
+  'aitp.record_failed_route_lesson',
+  'aitp.checkpoint_before_route_switch',
   'aitp.record_derivation_checkpoint',
   'aitp.create_open_obligation',
   'aitp.create_validation_contract',
@@ -115,6 +118,49 @@ export interface AitpExploratoryRecordItem {
   readonly nextActions: readonly string[];
 }
 
+export type AitpRouteStatus =
+  | 'live'
+  | 'blocked'
+  | 'abandoned'
+  | 'selected'
+  | 'superseded'
+  | (string & {});
+
+export interface AitpRouteStateItem {
+  readonly id: string;
+  readonly status: AitpRouteStatus;
+  readonly active: boolean;
+  readonly pivotRequired: boolean;
+  readonly routeType?: string | undefined;
+  readonly title?: string | undefined;
+  readonly summary?: string | undefined;
+  readonly reason?: string | undefined;
+  readonly question?: string | undefined;
+  readonly hypothesis?: string | undefined;
+  readonly nextAction?: string | undefined;
+  readonly lesson?: string | undefined;
+  readonly pivotFromRouteId?: string | undefined;
+  readonly pivotToRouteId?: string | undefined;
+  readonly parentRouteIds: readonly string[];
+  readonly checkpointIds: readonly string[];
+  readonly exploratoryRecordIds: readonly string[];
+  readonly targetRefs: readonly string[];
+  readonly sourceRefs: readonly string[];
+  readonly blockers: readonly string[];
+  readonly suggestedMomentIds: readonly AitpResearchMomentId[];
+  readonly requiredBeforeTrustChange: readonly string[];
+  readonly finalGateRequired: boolean;
+}
+
+export interface AitpRouteState {
+  readonly activeRouteId?: string | undefined;
+  readonly routes: readonly AitpRouteStateItem[];
+  readonly liveRoutes: readonly AitpRouteStateItem[];
+  readonly blockedRoutes: readonly AitpRouteStateItem[];
+  readonly abandonedRoutes: readonly AitpRouteStateItem[];
+  readonly pivotRequiredRoutes: readonly AitpRouteStateItem[];
+}
+
 export interface AitpRecommendedMoment {
   readonly id: AitpResearchMomentId;
   readonly priority: ResearchActionBindingPriority;
@@ -129,6 +175,7 @@ export type AitpMomentPolicyDecisionType =
   | 'recording'
   | 'brainstorming'
   | 'backtrace'
+  | 'route'
   | 'trust_boundary'
   | (string & {});
 
@@ -202,6 +249,7 @@ export interface AitpProcessGraphSlice {
   readonly sourceBacktrace: readonly AitpSourceBacktraceItem[];
   readonly relationNeighborhood: readonly AitpRelationNeighborhoodItem[];
   readonly exploratoryRecords: readonly AitpExploratoryRecordItem[];
+  readonly routeState: AitpRouteState;
   readonly trustBoundaryReasons: readonly string[];
   readonly recommendedMoments: readonly AitpRecommendedMoment[];
   readonly momentPolicy: AitpMomentPolicy;
@@ -227,6 +275,7 @@ export interface DetectedResearchMoment {
     | 'relation'
     | 'source-backtrace'
     | 'exploration'
+    | 'route-state'
     | 'trust-boundary';
   readonly targetRefs: readonly string[];
   readonly timing?: string | undefined;
@@ -251,6 +300,7 @@ export interface AitpCallObligation {
   readonly entrypoints: readonly string[];
   readonly payloadHints: readonly AitpPayloadHint[];
   readonly requiredBeforeTrustChange: readonly string[];
+  readonly finalGateRequired: boolean;
   readonly trustBoundary: boolean;
   readonly lifecycleTrigger: AitpLifecycleTriggerInfo;
 }
@@ -276,6 +326,14 @@ export interface AitpObligationSummary {
   readonly lines: readonly string[];
 }
 
+export interface AitpRouteSummary {
+  readonly live: readonly AitpRouteStateItem[];
+  readonly blocked: readonly AitpRouteStateItem[];
+  readonly abandoned: readonly AitpRouteStateItem[];
+  readonly pivotRequired: readonly AitpRouteStateItem[];
+  readonly lines: readonly string[];
+}
+
 export interface AitpTrustSummary {
   readonly truthSource: string;
   readonly orientationOnly: boolean;
@@ -290,6 +348,7 @@ export interface CompiledAitpProcessGraphSlice {
   readonly actionRecommendations: readonly ResearchActionBinding[];
   readonly callObligations: readonly AitpCallObligation[];
   readonly obligations: AitpObligationSummary;
+  readonly routes: AitpRouteSummary;
   readonly suggestedNextMoments: readonly DetectedResearchMoment[];
   readonly trust: AitpTrustSummary;
   readonly diagnostics: readonly string[];

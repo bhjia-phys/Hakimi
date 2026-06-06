@@ -1362,6 +1362,10 @@ function renderAitpSection(pack: ResearchContextPack): string {
   return [
     `  <aitp truth_source="${escapeXml(aitp.truthSource)}" orientation_only="${String(aitp.orientationOnly)}">`,
     renderBoundedStringList('context_lines', 'line', aitp.contextLines, '    '),
+    renderBoundedStringList('live_routes', 'route', aitp.liveRouteIds, '    '),
+    renderBoundedStringList('blocked_routes', 'route', aitp.blockedRouteIds, '    '),
+    renderBoundedStringList('abandoned_routes', 'route', aitp.abandonedRouteIds, '    '),
+    renderBoundedStringList('pivot_required_routes', 'route', aitp.pivotRequiredRouteIds, '    '),
     renderBoundedStringList('open_obligations', 'obligation', aitp.openObligationIds, '    '),
     renderBoundedStringList('required_calls', 'call', aitp.requiredCallIds, '    '),
     renderBoundedStringList(

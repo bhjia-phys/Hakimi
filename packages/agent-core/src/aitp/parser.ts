@@ -12,6 +12,8 @@ import type {
   AitpRecommendedMoment,
   AitpRelationNeighborhoodItem,
   AitpResearchMomentId,
+  AitpRouteState,
+  AitpRouteStateItem,
   AitpSourceBacktraceItem,
 } from './types';
 import type { ResearchActionBindingPriority } from '../research-action';
@@ -41,6 +43,7 @@ export function parseAitpProcessGraphSlice(input: unknown): AitpProcessGraphSlic
       parseRelationNeighborhoodItem,
     ),
     exploratoryRecords: objectArray(input['exploratory_records']).map(parseExploratoryRecordItem),
+    routeState: parseRouteState(valueFor(input, 'route_state', 'routeState')),
     trustBoundaryReasons: stringArray(input['trust_boundary_reasons']),
     recommendedMoments: momentArray(input['recommended_moments']),
     momentPolicy: parseMomentPolicy(input['moment_policy']),
@@ -218,6 +221,176 @@ function parseExploratoryRecordItem(
   };
 }
 
+function parseRouteState(value: unknown): AitpRouteState {
+  if (!isRecord(value)) {
+    return {
+      activeRouteId: undefined,
+      routes: [],
+      liveRoutes: [],
+      blockedRoutes: [],
+      abandonedRoutes: [],
+      pivotRequiredRoutes: [],
+    };
+  }
+  const activeRouteId = stringValue(valueFor(value, 'active_route_id', 'activeRouteId'));
+  const liveRouteIds = stringArray(valueFor(value, 'live_route_ids', 'liveRouteIds'));
+  const blockedRouteIds = stringArray(valueFor(value, 'blocked_route_ids', 'blockedRouteIds'));
+  const abandonedRouteIds = stringArray(valueFor(value, 'abandoned_route_ids', 'abandonedRouteIds'));
+  const pivotRequiredRouteIds = unique([
+    ...stringArray(valueFor(value, 'pivot_required_route_ids', 'pivotRequiredRouteIds')),
+    ...stringArray(valueFor(value, 'pivot_route_ids', 'pivotRouteIds')),
+  ]);
+  const grouped = [
+    ...objectArray(value['live_routes']).map((item, index) =>
+      parseRouteStateItem(item, index, { statusHint: 'live', activeRouteId, pivotRequiredRouteIds }),
+    ),
+    ...objectArray(value['blocked_routes']).map((item, index) =>
+      parseRouteStateItem(item, index, { statusHint: 'blocked', activeRouteId, pivotRequiredRouteIds }),
+    ),
+    ...objectArray(value['abandoned_routes']).map((item, index) =>
+      parseRouteStateItem(item, index, { statusHint: 'abandoned', activeRouteId, pivotRequiredRouteIds }),
+    ),
+    ...objectArray(value['pivot_routes']).map((item, index) =>
+      parseRouteStateItem(item, index, { statusHint: 'superseded', activeRouteId, pivotRequiredRouteIds, pivotRequiredHint: true }),
+    ),
+  ];
+  const explicit = objectArray(value['routes']).map((item, index) =>
+    parseRouteStateItem(item, index, { activeRouteId, pivotRequiredRouteIds }),
+  );
+  const routes = uniqueRoutes([...explicit, ...grouped]);
+  return {
+    activeRouteId,
+    routes,
+    liveRoutes: routes.filter((item) =>
+      liveRouteIds.length > 0
+        ? liveRouteIds.includes(item.id)
+        : item.status === 'live' || item.status === 'selected',
+    ),
+    blockedRoutes: routes.filter((item) =>
+      blockedRouteIds.length > 0
+        ? blockedRouteIds.includes(item.id)
+        : item.status === 'blocked',
+    ),
+    abandonedRoutes: routes.filter((item) =>
+      abandonedRouteIds.length > 0
+        ? abandonedRouteIds.includes(item.id)
+        : item.status === 'abandoned',
+    ),
+    pivotRequiredRoutes: routes.filter((item) => item.pivotRequired),
+  };
+}
+
+function parseRouteStateItem(
+  raw: Record<string, unknown>,
+  index: number,
+  options: {
+    readonly statusHint?: string | undefined;
+    readonly activeRouteId?: string | undefined;
+    readonly pivotRequiredRouteIds?: readonly string[] | undefined;
+    readonly pivotRequiredHint?: boolean | undefined;
+  } = {},
+): AitpRouteStateItem {
+  const id =
+    stringValue(valueFor(raw, 'route_id', 'routeId')) ??
+    stringValue(raw['id']) ??
+    `aitp.route.${String(index + 1)}`;
+  const checkpointIds = stringArray(valueFor(raw, 'checkpoint_ids', 'checkpointIds'));
+  const parentRouteIds = stringArray(valueFor(raw, 'parent_route_ids', 'parentRouteIds'));
+  const pivotReason = stringValue(valueFor(raw, 'pivot_reason', 'pivotReason'));
+  const active =
+    booleanValue(raw['active']) ??
+    (options.activeRouteId !== undefined && options.activeRouteId === id);
+  const explicitPivotRequired = booleanValue(valueFor(raw, 'pivot_required', 'pivotRequired'));
+  const pivotRequired = explicitPivotRequired ?? (
+    options.pivotRequiredHint === true ||
+    (options.pivotRequiredRouteIds ?? []).includes(id) ||
+    parentRouteIds.length > 0 ||
+    checkpointIds.length > 0 ||
+    pivotReason !== undefined
+  );
+  return {
+    id,
+    status: stringValue(raw['status']) ?? options.statusHint ?? 'live',
+    active,
+    pivotRequired,
+    routeType: stringValue(valueFor(raw, 'route_type', 'routeType')),
+    title: stringValue(raw['title']) ?? stringValue(raw['label']) ?? stringValue(raw['name']),
+    summary:
+      stringValue(raw['summary']) ??
+      stringValue(raw['description']) ??
+      stringValue(raw['rationale']),
+    reason:
+      stringValue(raw['reason']) ??
+      stringValue(valueFor(raw, 'decision_rationale', 'decisionRationale')) ??
+      stringValue(raw['blocked_reason']) ??
+      stringValue(raw['abandoned_reason']) ??
+      pivotReason,
+    question:
+      stringValue(valueFor(raw, 'current_question', 'currentQuestion')) ??
+      stringValue(valueFor(raw, 'question', 'routeQuestion')),
+    hypothesis: stringValue(raw['hypothesis']),
+    nextAction: stringValue(valueFor(raw, 'next_action', 'nextAction')),
+    lesson:
+      stringValue(raw['lesson']) ??
+      stringValue(valueFor(raw, 'failed_route_lesson', 'failedRouteLesson')) ??
+      stringValue(valueFor(raw, 'failure_lesson', 'failureLesson')) ??
+      stringValue(valueFor(raw, 'decision_rationale', 'decisionRationale')),
+    pivotFromRouteId:
+      stringValue(valueFor(raw, 'pivot_from_route_id', 'pivotFromRouteId')) ??
+      stringValue(valueFor(raw, 'from_route_id', 'fromRouteId')),
+    pivotToRouteId:
+      stringValue(valueFor(raw, 'pivot_to_route_id', 'pivotToRouteId')) ??
+      stringValue(valueFor(raw, 'to_route_id', 'toRouteId')),
+    parentRouteIds,
+    checkpointIds,
+    exploratoryRecordIds: stringArray(
+      valueFor(raw, 'exploratory_record_ids', 'exploratoryRecordIds'),
+    ),
+    targetRefs: routeTargetRefs(raw, id),
+    sourceRefs: stringArray(raw['source_refs']).length > 0
+      ? stringArray(raw['source_refs'])
+      : stringArray(raw['sourceRefs']),
+    blockers: stringArray(raw['blockers']).length > 0
+      ? stringArray(raw['blockers'])
+      : stringArray(valueFor(raw, 'blocking_reasons', 'blockingReasons')).length > 0
+        ? stringArray(valueFor(raw, 'blocking_reasons', 'blockingReasons'))
+        : stringArray(valueFor(raw, 'failure_modes', 'failureModes')),
+    suggestedMomentIds: stringArray(valueFor(raw, 'suggested_moments', 'suggestedMoments')).map(
+      (moment) => moment as AitpResearchMomentId,
+    ),
+    requiredBeforeTrustChange: stringArray(
+      valueFor(raw, 'required_before_trust_change', 'requiredBeforeTrustChange'),
+    ),
+    finalGateRequired: booleanValue(valueFor(raw, 'final_gate_required', 'finalGateRequired')) ?? false,
+  };
+}
+
+function routeTargetRefs(raw: Record<string, unknown>, routeId: string): readonly string[] {
+  const explicit = stringArray(valueFor(raw, 'target_refs', 'targetRefs'));
+  const refs = [
+    ...explicit,
+    nodeRef('research_route', routeId),
+    stringValue(valueFor(raw, 'claim_id', 'claimId')) === undefined
+      ? undefined
+      : nodeRef('claim', stringValue(valueFor(raw, 'claim_id', 'claimId'))!),
+    stringValue(valueFor(raw, 'topic_id', 'topicId')) === undefined
+      ? undefined
+      : nodeRef('topic', stringValue(valueFor(raw, 'topic_id', 'topicId'))!),
+    stringValue(valueFor(raw, 'session_id', 'sessionId')) === undefined
+      ? undefined
+      : nodeRef('session', stringValue(valueFor(raw, 'session_id', 'sessionId'))!),
+  ];
+  return unique(refs.filter((ref): ref is string => ref !== undefined));
+}
+
+function uniqueRoutes(routes: readonly AitpRouteStateItem[]): readonly AitpRouteStateItem[] {
+  const byKey = new Map<string, AitpRouteStateItem>();
+  for (const route of routes) {
+    if (!byKey.has(route.id)) byKey.set(route.id, route);
+  }
+  return [...byKey.values()];
+}
+
 function momentArray(value: unknown): readonly AitpRecommendedMoment[] {
   if (!Array.isArray(value)) return [];
   const moments: AitpRecommendedMoment[] = [];
@@ -243,8 +416,13 @@ function momentArray(value: unknown): readonly AitpRecommendedMoment[] {
       reason: stringValue(item['reason']) ?? `Recommended by AITP moment ${String(index + 1)}.`,
       targetRefs: stringArray(item['target_refs']).length > 0
         ? stringArray(item['target_refs'])
-        : targetRefsFromMoment(item),
-      timing: stringValue(item['timing']) ?? stringValue(item['call_timing']),
+        : stringArray(item['targetRefs']).length > 0
+          ? stringArray(item['targetRefs'])
+          : targetRefsFromMoment(item),
+      timing:
+        stringValue(item['timing']) ??
+        stringValue(item['call_timing']) ??
+        stringValue(item['callTiming']),
       trustBoundary:
         stringValue(item['trust_boundary']) ??
         stringValue(item['trustBoundary']) ??

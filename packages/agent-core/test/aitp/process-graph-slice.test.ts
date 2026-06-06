@@ -106,6 +106,97 @@ describe('AITP process graph slice adapter', () => {
     );
   });
 
+  it('projects route_state into context and non-blocking route recommendations', () => {
+    const compiled = compileAitpProcessGraphSlice(routeStateSlicePayload());
+    const actionById = new Map(
+      compiled.actionRecommendations.map((binding) => [binding.actionId, binding]),
+    );
+
+    expect(compiled.routes.live.map((item) => item.id)).toEqual(['route-live']);
+    expect(compiled.routes.blocked.map((item) => item.id)).toEqual(['route-blocked']);
+    expect(compiled.routes.abandoned.map((item) => item.id)).toEqual(['route-abandoned']);
+    expect(compiled.routes.pivotRequired.map((item) => item.id)).toEqual(['route-live']);
+    expect(compiled.contextLines.join('\n')).toContain('Active route: research_route:route-live');
+    expect(compiled.contextLines.join('\n')).toContain('Live routes: route-live [live]');
+    expect(compiled.contextLines.join('\n')).toContain('Blocked routes: route-blocked [blocked]');
+    expect(compiled.contextLines.join('\n')).toContain('Abandoned routes: route-abandoned [abandoned]');
+    expect(compiled.contextLines.join('\n')).toContain('Pivot-required routes: route-live [live]');
+    expect(actionById.get('aitp.record_route_choice')).toMatchObject({
+      priority: 'normal',
+      params: {
+        routeState: {
+          routes: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'route-live',
+              status: 'live',
+              active: true,
+              pivotRequired: true,
+            }),
+          ]),
+        },
+      },
+    });
+    expect(actionById.get('aitp.record_failed_route_lesson')).toMatchObject({
+      priority: 'high',
+      params: {
+        routeState: {
+          routes: expect.arrayContaining([
+            expect.objectContaining({ id: 'route-blocked', status: 'blocked' }),
+          ]),
+        },
+      },
+    });
+    expect(actionById.get('aitp.checkpoint_before_route_switch')).toMatchObject({
+      priority: 'high',
+      params: {
+        routeState: {
+          routes: expect.arrayContaining([
+            expect.objectContaining({ id: 'route-live', status: 'live', pivotRequired: true }),
+          ]),
+        },
+      },
+    });
+    expect(compiled.callObligations).toEqual([]);
+    expect(compiled.actionRecommendations.map((binding) => binding.priority)).not.toContain('blocking');
+  });
+
+  it('keeps route moment policy non-blocking unless AITP marks trust/final prerequisites', () => {
+    const compiled = compileAitpProcessGraphSlice(routePolicySlicePayload());
+    const ordinary = compiled.callObligations.find((item) =>
+      item.actionId === 'aitp.record_route_choice',
+    );
+    const finalGate = compiled.callObligations.find((item) =>
+      item.actionId === 'aitp.checkpoint_before_route_switch',
+    );
+
+    expect(ordinary).toMatchObject({
+      requiredNow: false,
+      trustBoundary: false,
+      finalGateRequired: false,
+    });
+    expect(finalGate).toMatchObject({
+      requiredNow: true,
+      trustBoundary: true,
+      finalGateRequired: true,
+      requiredBeforeTrustChange: ['checkpoint pivot route before changing claim trust'],
+    });
+    expect(
+      compiled.actionRecommendations.find((binding) =>
+        binding.actionId === 'aitp.record_route_choice',
+      )?.priority,
+    ).toBe('high');
+    expect(
+      compiled.actionRecommendations.find((binding) =>
+        binding.actionId === 'aitp.checkpoint_before_route_switch',
+      )?.priority,
+    ).toBe('blocking');
+    expect(compiled.contextLines.join('\n')).toContain(
+      'AITP trust prerequisites: aitp.checkpoint_before_route_switch before trust change',
+    );
+    expect(compiled.contextLines.join('\n')).toContain('AITP required calls now: aitp.checkpoint_before_route_switch');
+    expect(compiled.contextLines.join('\n')).not.toContain('AITP required calls now: aitp.record_route_choice');
+  });
+
   it('accepts current AITP v5 snake-case process graph slices', () => {
     const compiled = compileAitpProcessGraphSlice(currentAitpSlicePayload(), {
       prompt: 'Audit original question drift while following this backtrace.',
@@ -496,6 +587,121 @@ function fakeSlicePayload() {
     },
     truth_source: '.aitp/process_graph',
     orientation_only: true,
+  };
+}
+
+function routeStateSlicePayload() {
+  return {
+    kind: 'process_graph_slice',
+    nodes: [],
+    edges: [],
+    open_obligations: [],
+    source_backtrace: [],
+    relation_neighborhood: [],
+    exploratory_records: [],
+    route_state: {
+      active_route_id: 'route-live',
+      routes: [
+        {
+          route_id: 'route-live',
+          topic_id: 'qg-route',
+          claim_id: 'claim-route',
+          session_id: 'session-route',
+          title: 'Use source-first derivation',
+          route_type: 'source_backtrace',
+          status: 'live',
+          active: true,
+          rationale: 'Follow sources before algebra.',
+          current_question: 'Which source fixes the lemma?',
+          summary: 'Follow sources before algebra.',
+          next_action: 'record why this route is live',
+          parent_route_ids: ['route-blocked'],
+          pivot_reason: 'direct proof is blocked by a missing lemma',
+        },
+        {
+          route_id: 'route-blocked',
+          topic_id: 'qg-route',
+          claim_id: 'claim-route',
+          title: 'Direct proof route',
+          route_type: 'derivation',
+          status: 'blocked',
+          rationale: 'Try direct proof before source reconstruction.',
+          reason: 'missing lemma',
+          failure_modes: ['lemma not located'],
+          lesson: 'Need the source lemma before retrying.',
+        },
+        {
+          route_id: 'route-abandoned',
+          topic_id: 'qg-route',
+          claim_id: 'claim-route',
+          title: 'Numerical shortcut',
+          route_type: 'benchmark_validation',
+          status: 'abandoned',
+          rationale: 'Use numerical analogy as a shortcut.',
+          lesson: 'Only provides analogy, not derivation.',
+        },
+      ],
+      live_route_ids: ['route-live'],
+      blocked_route_ids: ['route-blocked'],
+      abandoned_route_ids: ['route-abandoned'],
+      pivot_required_route_ids: ['route-live'],
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
+    trust_boundary_reasons: [],
+    recommended_moments: [],
+    moment_policy: {
+      kind: 'host_agnostic_moment_policy',
+      decisions: [],
+      recommended_moments: [],
+    },
+    truth_source: 'typed_records',
+    orientation_only: true,
+  };
+}
+
+function routePolicySlicePayload() {
+  return {
+    ...routeStateSlicePayload(),
+    moment_policy: {
+      kind: 'host_agnostic_moment_policy',
+      decisions: [
+        {
+          moment: 'record_route_choice',
+          decision_type: 'recording',
+          action_kind: 'record_route_choice',
+          required_now: true,
+          reason: 'live route should be recorded as route process context',
+          target_type: 'research_route',
+          target_id: 'route-live',
+          target_refs: ['research_route:route-live'],
+          trust_boundary: true,
+        },
+        {
+          moment: 'checkpoint_before_route_switch',
+          decision_type: 'recording',
+          action_kind: 'checkpoint_before_route_switch',
+          required_now: true,
+          reason: 'route pivot affects claim trust',
+          target_type: 'research_route',
+          target_id: 'route-live',
+          target_refs: ['research_route:route-live'],
+          required_before_trust_change: [
+            'checkpoint pivot route before changing claim trust',
+          ],
+          trust_boundary: true,
+          lifecycle_phases: ['pre_final'],
+          trust_boundary_inputs: {
+            target_refs: ['research_route:route-live'],
+            required_before_trust_change: [
+              'checkpoint pivot route before changing claim trust',
+            ],
+            final_gate_required: true,
+          },
+        },
+      ],
+      recommended_moments: [],
+    },
   };
 }
 

@@ -7,6 +7,9 @@ import type {
   AitpOpenObligation,
   AitpPayloadHint,
   AitpProcessGraphSlice,
+  AitpRouteState,
+  AitpRouteStateItem,
+  AitpRouteSummary,
   AitpTheoryReasoningProjection,
   AitpTrustSummary,
   CompiledAitpProcessGraphSlice,
@@ -36,9 +39,12 @@ export function compileAitpProcessGraphSlice(
   input: AitpProcessGraphSlice | unknown,
   options: CompileAitpProcessGraphSliceOptions = {},
 ): CompiledAitpProcessGraphSlice {
-  const slice = isAitpProcessGraphSlice(input) ? input : parseAitpProcessGraphSlice(input);
+  const slice = withRouteState(
+    isAitpProcessGraphSlice(input) ? input : parseAitpProcessGraphSlice(input),
+  );
   const maxItems = options.maxContextItems ?? MAX_CONTEXT_ITEMS;
   const obligations = summarizeObligations(slice.openObligations, maxItems);
+  const routes = summarizeRoutes(slice.routeState, maxItems);
   const trust = summarizeTrust(slice);
   const suggestedNextMoments = detectResearchMoments(slice, options);
   const callObligations = buildCallObligations(slice);
@@ -49,6 +55,7 @@ export function compileAitpProcessGraphSlice(
   const contextLines = buildContextLines(
     slice,
     obligations,
+    routes,
     suggestedNextMoments,
     callObligations,
     theoryReasoning,
@@ -61,6 +68,7 @@ export function compileAitpProcessGraphSlice(
     actionRecommendations,
     callObligations,
     obligations,
+    routes,
     suggestedNextMoments,
     trust,
     diagnostics: buildDiagnostics(slice),
@@ -92,6 +100,7 @@ export function summarizeObligations(
 function buildContextLines(
   slice: AitpProcessGraphSlice,
   obligations: AitpObligationSummary,
+  routes: AitpRouteSummary,
   moments: readonly DetectedResearchMoment[],
   callObligations: readonly AitpCallObligation[],
   theoryReasoning: AitpTheoryReasoningProjection | undefined,
@@ -104,6 +113,7 @@ function buildContextLines(
     lines.push('Orientation only: use the slice for local guidance, not as promoted research truth.');
   }
   lines.push(...obligations.lines);
+  lines.push(...routes.lines);
 
   const sourceGaps = slice.sourceBacktrace.filter((item) =>
     lowerJoin([item.status, item.reason, item.gap]).match(/gap|missing|unresolved|open|no source/) !==
@@ -224,6 +234,49 @@ function buildReminderLines(
   return lines;
 }
 
+export function summarizeRoutes(
+  routeState: AitpRouteState,
+  maxItems = MAX_CONTEXT_ITEMS,
+): AitpRouteSummary {
+  const live = routeState.liveRoutes.length > 0
+    ? routeState.liveRoutes
+    : routeState.routes.filter((item) => item.status === 'live');
+  const blocked = routeState.blockedRoutes.length > 0
+    ? routeState.blockedRoutes
+    : routeState.routes.filter((item) => item.status === 'blocked');
+  const abandoned = routeState.abandonedRoutes.length > 0
+    ? routeState.abandonedRoutes
+    : routeState.routes.filter((item) => item.status === 'abandoned');
+  const pivotRequired = routeState.pivotRequiredRoutes.length > 0
+    ? routeState.pivotRequiredRoutes
+    : routeState.routes.filter((item) => item.pivotRequired);
+  const lines: string[] = [];
+  if (routeState.activeRouteId !== undefined && routeState.activeRouteId.length > 0) {
+    lines.push(`Active route: research_route:${routeState.activeRouteId}`);
+  }
+  if (live.length > 0) {
+    lines.push(`Live routes: ${bounded(live.map(renderRoute), maxItems).join('; ')}`);
+  }
+  if (blocked.length > 0) {
+    lines.push(`Blocked routes: ${bounded(blocked.map(renderRoute), maxItems).join('; ')}`);
+  }
+  if (abandoned.length > 0) {
+    lines.push(`Abandoned routes: ${bounded(abandoned.map(renderRoute), maxItems).join('; ')}`);
+  }
+  if (pivotRequired.length > 0) {
+    lines.push(`Pivot-required routes: ${bounded(pivotRequired.map(renderRoute), maxItems).join('; ')}`);
+  }
+  const finalGateRoutes = routeState.routes.filter(
+    (item) => item.finalGateRequired || item.requiredBeforeTrustChange.length > 0,
+  );
+  if (finalGateRoutes.length > 0) {
+    lines.push(
+      `Route final-gate prerequisites: ${bounded(finalGateRoutes.map(renderRouteGate), maxItems).join('; ')}`,
+    );
+  }
+  return { live, blocked, abandoned, pivotRequired, lines };
+}
+
 function summarizeTrust(slice: AitpProcessGraphSlice): AitpTrustSummary {
   return {
     truthSource: slice.truthSource,
@@ -256,6 +309,7 @@ function actionBindingForMoment(
       trustBoundary: moment.trustBoundary,
       lifecycleTrigger: lifecycleTriggerForMoment(moment, obligation),
       callObligation: obligation,
+      routeState: routeStateForMoment(moment, slice),
       writeBridge: writeBridgeForMoment(moment, obligation),
       theoryReasoning: relevantTheoryReasoning,
     },
@@ -275,11 +329,13 @@ function callObligationForDecision(
   index: number,
 ): AitpCallObligation {
   const actionId = actionIdForPolicyDecision(decision);
+  const finalGateRequired = finalGateRequiredForDecision(decision);
+  const routeMoment = isRouteActionId(actionId);
   return {
     id: `aitp.policy.${String(index + 1)}.${slug(actionId)}.${slug(decision.targetType)}.${slug(decision.targetId)}`,
     actionId,
     momentId: decision.moment,
-    requiredNow: decision.requiredNow,
+    requiredNow: routeMoment ? decision.requiredNow && finalGateRequired : decision.requiredNow,
     decisionType: decision.decisionType,
     actionKind: decision.actionKind,
     reason: decision.reason,
@@ -292,7 +348,8 @@ function callObligationForDecision(
     entrypoints: decision.entrypoints,
     payloadHints: decision.payloadHints,
     requiredBeforeTrustChange: decision.requiredBeforeTrustChange,
-    trustBoundary: decision.trustBoundary,
+    finalGateRequired,
+    trustBoundary: routeMoment ? finalGateRequired : decision.trustBoundary,
     lifecycleTrigger: decision.lifecycleTrigger,
   };
 }
@@ -307,6 +364,41 @@ function callObligationForMoment(
   );
   if (exact !== undefined) return exact;
   return callObligations.find((item) => item.actionId === moment.actionId);
+}
+
+function routeStateForMoment(
+  moment: DetectedResearchMoment,
+  slice: AitpProcessGraphSlice,
+): Readonly<Record<string, unknown>> | undefined {
+  if (!isRouteActionId(moment.actionId)) return undefined;
+  const routes = slice.routeState.routes.filter((route) =>
+    route.targetRefs.length === 0 ||
+    route.targetRefs.some((ref) => moment.targetRefs.includes(ref)),
+  );
+  if (routes.length === 0) return undefined;
+  return {
+    routes: routes.map((route) => ({
+      id: route.id,
+      status: route.status,
+      active: route.active,
+      pivotRequired: route.pivotRequired,
+      routeType: route.routeType,
+      title: route.title,
+      summary: route.summary,
+      reason: route.reason,
+      question: route.question,
+      nextAction: route.nextAction,
+      lesson: route.lesson,
+      parentRouteIds: route.parentRouteIds,
+      checkpointIds: route.checkpointIds,
+      exploratoryRecordIds: route.exploratoryRecordIds,
+      blockers: route.blockers,
+      targetRefs: route.targetRefs,
+      sourceRefs: route.sourceRefs,
+      requiredBeforeTrustChange: route.requiredBeforeTrustChange,
+      finalGateRequired: route.finalGateRequired,
+    })),
+  };
 }
 
 function writeBridgeForMoment(
@@ -388,6 +480,22 @@ function writeBridgeForMoment(
     default:
       return undefined;
   }
+}
+
+function finalGateRequiredForDecision(decision: AitpMomentPolicyDecision): boolean {
+  return (
+    decision.requiredBeforeTrustChange.length > 0 ||
+    decision.lifecycleTrigger.trustBoundaryInputs.requiredBeforeTrustChange.length > 0 ||
+    decision.lifecycleTrigger.trustBoundaryInputs.finalGateRequired
+  );
+}
+
+function isRouteActionId(actionId: string): boolean {
+  return (
+    actionId === 'aitp.record_route_choice' ||
+    actionId === 'aitp.record_failed_route_lesson' ||
+    actionId === 'aitp.checkpoint_before_route_switch'
+  );
 }
 
 function withPayloadDraft(
@@ -688,6 +796,32 @@ function renderObligation(obligation: AitpOpenObligation): string {
   return `${obligation.id} [${obligation.kind}]${target}: ${obligation.reason}`;
 }
 
+function renderRoute(route: AitpRouteStateItem): string {
+  const label = route.title ?? route.summary ?? route.question ?? route.hypothesis ?? route.id;
+  const routeType = route.routeType === undefined ? '' : ` type=${route.routeType}`;
+  const active = route.active ? ' active=true' : '';
+  const pivotRequired = route.pivotRequired ? ' pivot_required=true' : '';
+  const reason = route.reason === undefined ? '' : ` reason=${route.reason}`;
+  const blockers = route.blockers.length === 0 ? '' : ` blockers=${route.blockers.join('|')}`;
+  const lesson = route.lesson === undefined ? '' : ` lesson=${route.lesson}`;
+  const next = route.nextAction === undefined ? '' : ` next=${route.nextAction}`;
+  const parents = route.parentRouteIds.length === 0 ? '' : ` parents=${route.parentRouteIds.join('|')}`;
+  const checkpoints = route.checkpointIds.length === 0 ? '' : ` checkpoints=${route.checkpointIds.join('|')}`;
+  const pivot =
+    route.pivotFromRouteId === undefined && route.pivotToRouteId === undefined
+      ? ''
+      : ` pivot=${route.pivotFromRouteId ?? '?'}->${route.pivotToRouteId ?? '?'}`;
+  return `${route.id} [${route.status}]: ${label}${routeType}${active}${pivotRequired}${reason}${blockers}${lesson}${next}${parents}${checkpoints}${pivot}`;
+}
+
+function renderRouteGate(route: AitpRouteStateItem): string {
+  const requirements =
+    route.requiredBeforeTrustChange.length === 0
+      ? 'final_gate_required=true'
+      : route.requiredBeforeTrustChange.join(', ');
+  return `${route.id} [${route.status}]: ${requirements}`;
+}
+
 function renderExploration(item: { readonly id: string; readonly explorationType: string; readonly focalQuestion?: string | undefined; readonly localQuestion?: string | undefined }): string {
   const question = item.localQuestion ?? item.focalQuestion ?? '';
   return question.length === 0 ? `${item.id} [${item.explorationType}]` : `${item.id} [${item.explorationType}]: ${question}`;
@@ -787,6 +921,25 @@ function isAitpProcessGraphSlice(value: unknown): value is AitpProcessGraphSlice
     (value as { readonly kind?: unknown }).kind === 'process_graph_slice' &&
     'openObligations' in value
   );
+}
+
+function withRouteState(slice: AitpProcessGraphSlice): AitpProcessGraphSlice {
+  if ('routeState' in slice && slice.routeState !== undefined) return slice;
+  return {
+    ...slice,
+    routeState: emptyRouteState(),
+  };
+}
+
+function emptyRouteState(): AitpRouteState {
+  return {
+    activeRouteId: undefined,
+    routes: [],
+    liveRoutes: [],
+    blockedRoutes: [],
+    abandonedRoutes: [],
+    pivotRequiredRoutes: [],
+  };
 }
 
 function bounded<T>(values: readonly T[], maxItems: number): readonly T[] {

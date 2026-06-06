@@ -187,6 +187,39 @@ describe('final gate lifecycle integration', () => {
     });
   });
 
+  it('does not treat ordinary route moments as final-gate blockers', async () => {
+    const ctx = testAgent();
+    ctx.configure();
+    ctx.agent.workFrames.open(
+      {
+        id: 'frame.route',
+        domain: 'theoretical-physics/qg-algebra',
+        topic: 'qg-route-state',
+        goal: 'Use route_state without making ordinary route notes final-gate blockers.',
+        trustState: 'checking',
+      },
+      { source: 'controller' },
+    );
+    ctx.agent.researchContext.compileForWorkFrame(
+      {
+        aitp: compileAitpProcessGraphSlice(aitpOrdinaryRouteSlicePayload()),
+      },
+      { source: 'controller' },
+    );
+
+    ctx.mockNextResponse({ type: 'text', text: 'Status: checked. Route note remains recommended.' });
+
+    await ctx.rpc.prompt({ input: [{ type: 'text', text: 'Can we finish this checked?' }] });
+    await ctx.untilTurnEnd();
+
+    expect(ctx.llmCalls).toHaveLength(1);
+    expect(
+      ctx.agent.context.data().history.some(
+        (message) => message.origin?.kind === 'system_trigger' && message.origin.name === 'final_gate',
+      ),
+    ).toBe(false);
+  });
+
   it('allows final gate completion after the AITP required call is recorded', async () => {
     const ctx = testAgent();
     ctx.configure();
@@ -247,6 +280,54 @@ function blockingObligation(): ResearchObligation {
     reason: 'Flux convention must be checked.',
     requiredActionId: 'validate.check_convention',
     status: 'open',
+  };
+}
+
+function aitpOrdinaryRouteSlicePayload() {
+  return {
+    ok: true,
+    kind: 'process_graph_slice',
+    truth_source: 'typed_records',
+    orientation_only: true,
+    nodes: [],
+    edges: [],
+    open_obligations: [],
+    source_backtrace: [],
+    relation_neighborhood: [],
+    exploratory_records: [],
+    route_state: {
+      live_routes: [
+        {
+          route_id: 'route-live',
+          title: 'Live route',
+          target_refs: ['claim:claim-route'],
+        },
+      ],
+    },
+    trust_boundary_reasons: [],
+    recommended_moments: [],
+    moment_policy: {
+      ok: true,
+      kind: 'host_agnostic_moment_policy',
+      decisions: [
+        {
+          moment: 'record_route_choice',
+          decision_type: 'recording',
+          action_kind: 'record_route_choice',
+          required_now: true,
+          reason: 'ordinary live route note should be recorded',
+          target_type: 'research_route',
+          target_id: 'route-live',
+          target_refs: ['research_route:route-live'],
+          trust_boundary: true,
+        },
+      ],
+      recommended_moments: [],
+      trust_boundary_reasons: [],
+      truth_source: 'typed_records',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
   };
 }
 

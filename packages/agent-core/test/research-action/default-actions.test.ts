@@ -13,13 +13,16 @@ describe('default research actions', () => {
     registerDefaultResearchActions(registry);
 
     expect(registry.listActions().map((action) => action.id)).toEqual([
+      'aitp.checkpoint_before_route_switch',
       'aitp.create_open_obligation',
       'aitp.create_validation_contract',
       'aitp.record_derivation_checkpoint',
       'aitp.record_evidence',
       'aitp.record_exploratory_record',
+      'aitp.record_failed_route_lesson',
       'aitp.record_reference_location',
       'aitp.record_research_state',
+      'aitp.record_route_choice',
       'aitp.record_tool_run',
       'aitp.record_validation_result',
       'aitp.register_source_asset',

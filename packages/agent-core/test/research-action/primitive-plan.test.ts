@@ -114,6 +114,30 @@ describe('research primitive plan templates', () => {
     expect(validationResult.recording.evidenceRefs).toContain('aitp:validation_result:<id>');
   });
 
+  it('plans AITP route moments as non-write-bridge process records', () => {
+    const choice = planFor('aitp.record_route_choice');
+    const failed = planFor('aitp.record_failed_route_lesson');
+    const switchCheckpoint = planFor('aitp.checkpoint_before_route_switch');
+
+    expect(choice.steps.map((step) => step.id)).toEqual([
+      'inspect-route-state',
+      'record-route-state-action',
+    ]);
+    expect(failed.steps.map((step) => step.id)).toEqual([
+      'inspect-route-state',
+      'record-route-state-action',
+    ]);
+    expect(switchCheckpoint.steps.map((step) => step.id)).toEqual([
+      'inspect-route-state',
+      'record-route-state-action',
+    ]);
+    expect(choice.recording.evidenceRefs).toEqual(
+      expect.arrayContaining(['route_id', 'ledger_event_id']),
+    );
+    expect(failed.recording.evidenceRefs).toContain('lesson');
+    expect(switchCheckpoint.recording.evidenceRefs).toContain('from_route_id');
+  });
+
   it('plans AITP trust-boundary checkpoints through AITP request plus human question', () => {
     const plan = planFor('aitp.request_human_checkpoint');
 
