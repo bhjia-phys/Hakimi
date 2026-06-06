@@ -273,6 +273,7 @@ export interface AitpProvenanceGap {
   readonly targetRefs: readonly string[];
   readonly recommendedActions: readonly string[];
   readonly recommendedEntrypoints: readonly string[];
+  readonly payloadHints: readonly AitpPayloadHint[];
   readonly severity: string;
   readonly requiredNow: boolean;
   readonly requiredBeforeTrustChange: boolean;
