@@ -47,6 +47,177 @@ export const AITP_WRITE_BRIDGE_OPERATIONS = [
 
 export type AitpWriteBridgeOperation = (typeof AITP_WRITE_BRIDGE_OPERATIONS)[number];
 
+export type AitpRuntimeBridgeOperation =
+  | 'readProcessGraphSlice'
+  | 'readMomentPolicy'
+  | AitpWriteBridgeOperation;
+
+export interface AitpRuntimeBridgeTarget {
+  readonly operation: AitpRuntimeBridgeOperation;
+  readonly entrypointKey: string;
+  readonly mcpTool: string;
+  readonly cliFallback: string;
+  readonly surface: string;
+  readonly preferredTransport: 'mcp';
+  readonly fallbackTransport: 'cli';
+  readonly executionRole: 'read' | 'write' | 'preflight';
+  readonly stateEffect: 'read_only' | 'typed_record_write' | 'preflight_only';
+  readonly canonicalStore: '.aitp';
+  readonly claimTrustMutation: 'none';
+  readonly summaryInputsTrusted: false;
+  readonly canUpdateClaimTrust: false;
+}
+
+export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
+  bridgeTarget(
+    'readProcessGraphSlice',
+    'process_graph_slice',
+    'aitp_v5_get_process_graph_slice',
+    'aitp-v5 graph slice <session-id>',
+    'process_graph_slice',
+    'read',
+    'read_only',
+  ),
+  bridgeTarget(
+    'readMomentPolicy',
+    'host_agnostic_moment_policy',
+    'aitp_v5_get_host_agnostic_moment_policy',
+    'aitp-v5 graph moment-policy <session-id>',
+    'host_agnostic_moment_policy',
+    'read',
+    'read_only',
+  ),
+  bridgeTarget(
+    'recordExploratoryRecord',
+    'record_exploratory_record',
+    'aitp_v5_record_exploratory_record',
+    'aitp-v5 exploration record <args>',
+    'exploratory_record',
+  ),
+  bridgeTarget(
+    'registerSourceAsset',
+    'register_source_asset',
+    'aitp_v5_register_source_asset',
+    'aitp-v5 asset register <args>',
+    'source_asset_record',
+  ),
+  bridgeTarget(
+    'recordEvidence',
+    'record_evidence',
+    'aitp_v5_record_evidence',
+    'aitp-v5 evidence record <args>',
+    'evidence_record',
+  ),
+  bridgeTarget(
+    'recordToolRun',
+    'record_tool_run',
+    'aitp_v5_record_tool_run',
+    'aitp-v5 tool run record <args>',
+    'tool_run_record',
+  ),
+  bridgeTarget(
+    'captureCodeStateAuto',
+    'capture_code_state_auto',
+    'aitp_v5_capture_code_state_auto',
+    'aitp-v5 code state auto <args>',
+    'code_state_record',
+  ),
+  bridgeTarget(
+    'attachArtifact',
+    'attach_artifact',
+    'aitp_v5_attach_artifact',
+    'aitp-v5 research-state attach-artifact <args>',
+    'artifact_record',
+  ),
+  bridgeTarget(
+    'recordReferenceLocation',
+    'record_reference_location',
+    'aitp_v5_record_reference_location',
+    'aitp-v5 reference location record <args>',
+    'reference_location_record',
+  ),
+  bridgeTarget(
+    'createProofObligation',
+    'create_proof_obligation',
+    'aitp_v5_create_proof_obligation',
+    'aitp-v5 research-state create-proof-obligation <args>',
+    'proof_obligation_record',
+  ),
+  bridgeTarget(
+    'createValidationContract',
+    'create_validation_contract',
+    'aitp_v5_create_validation_contract',
+    'aitp-v5 validation contract create <args>',
+    'validation_contract_record',
+  ),
+  bridgeTarget(
+    'recordValidationResult',
+    'record_validation_result',
+    'aitp_v5_record_validation_result',
+    'aitp-v5 validation result record <args>',
+    'validation_result_record',
+  ),
+  bridgeTarget(
+    'recordSourceReconstructionReviewResult',
+    'record_source_reconstruction_review_result',
+    'aitp_v5_record_source_reconstruction_review_result',
+    'aitp-v5 source reconstruction-review-result <args>',
+    'source_reconstruction_review_result_record',
+  ),
+  bridgeTarget(
+    'requestHumanCheckpoint',
+    'request_human_checkpoint',
+    'aitp_v5_request_human_checkpoint',
+    'aitp-v5 checkpoint request <args>',
+    'human_checkpoint_record',
+  ),
+  bridgeTarget(
+    'preflightTrustUpdate',
+    'trust_preflight',
+    'aitp_v5_preflight_trust_update',
+    'aitp-v5 trust preflight <args>',
+    'trust_update_preflight',
+    'preflight',
+    'preflight_only',
+  ),
+];
+
+export function aitpRuntimeBridgeTargetForOperation(
+  operation: AitpRuntimeBridgeOperation,
+): AitpRuntimeBridgeTarget {
+  const target = AITP_RUNTIME_BRIDGE_TARGETS.find((item) => item.operation === operation);
+  if (target === undefined) {
+    throw new AitpWriteBridgePayloadError(`Unsupported AITP bridge operation: ${operation}`);
+  }
+  return target;
+}
+
+function bridgeTarget(
+  operation: AitpRuntimeBridgeOperation,
+  entrypointKey: string,
+  mcpTool: string,
+  cliFallback: string,
+  surface: string,
+  executionRole: 'read' | 'write' | 'preflight' = 'write',
+  stateEffect: 'read_only' | 'typed_record_write' | 'preflight_only' = 'typed_record_write',
+): AitpRuntimeBridgeTarget {
+  return {
+    operation,
+    entrypointKey,
+    mcpTool,
+    cliFallback,
+    surface,
+    preferredTransport: 'mcp',
+    fallbackTransport: 'cli',
+    executionRole,
+    stateEffect,
+    canonicalStore: '.aitp',
+    claimTrustMutation: 'none',
+    summaryInputsTrusted: false,
+    canUpdateClaimTrust: false,
+  };
+}
+
 export type AitpWriteBridgeExecutionInput =
   | {
       readonly operation: 'recordExploratoryRecord';

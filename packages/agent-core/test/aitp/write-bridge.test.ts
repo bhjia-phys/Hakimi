@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AITP_RUNTIME_BRIDGE_TARGETS,
   AitpWriteBridgePayloadError,
+  aitpRuntimeBridgeTargetForOperation,
   coerceAitpWriteBridgeInput,
   createAitpCliWriteBridgeExecutor,
   evidenceRefsForAitpWriteBridgeResult,
@@ -10,6 +12,45 @@ import {
 } from '../../src';
 
 describe('AITP write bridge executor', () => {
+  it('projects AITP runtime bridge targets as MCP-first with CLI fallback', () => {
+    const byOperation = new Map(
+      AITP_RUNTIME_BRIDGE_TARGETS.map((target) => [target.operation, target]),
+    );
+
+    expect(byOperation.get('readProcessGraphSlice')).toMatchObject({
+      entrypointKey: 'process_graph_slice',
+      mcpTool: 'aitp_v5_get_process_graph_slice',
+      cliFallback: 'aitp-v5 graph slice <session-id>',
+      surface: 'process_graph_slice',
+      preferredTransport: 'mcp',
+      fallbackTransport: 'cli',
+      executionRole: 'read',
+      stateEffect: 'read_only',
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+    });
+    expect(aitpRuntimeBridgeTargetForOperation('recordEvidence')).toMatchObject({
+      operation: 'recordEvidence',
+      entrypointKey: 'record_evidence',
+      mcpTool: 'aitp_v5_record_evidence',
+      cliFallback: 'aitp-v5 evidence record <args>',
+      surface: 'evidence_record',
+      executionRole: 'write',
+      stateEffect: 'typed_record_write',
+      canonicalStore: '.aitp',
+    });
+    expect(aitpRuntimeBridgeTargetForOperation('preflightTrustUpdate')).toMatchObject({
+      operation: 'preflightTrustUpdate',
+      entrypointKey: 'trust_preflight',
+      mcpTool: 'aitp_v5_preflight_trust_update',
+      cliFallback: 'aitp-v5 trust preflight <args>',
+      stateEffect: 'preflight_only',
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+    });
+    expect([...byOperation.keys()]).not.toContain('trustApply');
+  });
+
   it('coerces model-facing payloads into narrow AITP proof-obligation writes', () => {
     const input = coerceAitpWriteBridgeInput('createProofObligation', {
       topic_id: 'qg-algebra-mipt',

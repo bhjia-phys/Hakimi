@@ -1,5 +1,9 @@
 import { actionIdForPolicyDecision, detectResearchMoments } from './moment-detector';
 import { parseAitpProcessGraphSlice } from './parser';
+import {
+  aitpRuntimeBridgeTargetForOperation,
+  type AitpWriteBridgeOperation,
+} from './write-bridge';
 import type {
   AitpCallObligation,
   AitpMomentPolicyDecision,
@@ -794,56 +798,56 @@ function writeBridgeForMoment(
   switch (moment.actionId) {
     case 'aitp.record_exploratory_record':
       return withPayloadDraft({
-        operation: 'recordExploratoryRecord',
+        ...writeBridgeTarget('recordExploratoryRecord'),
         cli: 'aitp-v5 exploration record',
         requiredFields: ['topicId', 'explorationType', 'title', 'focalQuestion', 'summary'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.register_source_asset':
       return withPayloadDraft({
-        operation: 'registerSourceAsset',
+        ...writeBridgeTarget('registerSourceAsset'),
         cli: 'aitp-v5 asset register',
         requiredFields: ['topicId', 'assetType', 'uri', 'title'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.record_evidence':
       return withPayloadDraft({
-        operation: 'recordEvidence',
+        ...writeBridgeTarget('recordEvidence'),
         cli: 'aitp-v5 evidence record',
         requiredFields: ['topicId', 'claimId', 'evidenceType', 'status', 'summary'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.record_tool_run':
       return withPayloadDraft({
-        operation: 'recordToolRun',
+        ...writeBridgeTarget('recordToolRun'),
         cli: 'aitp-v5 tool run record',
         requiredFields: ['recipeId', 'toolFamily', 'toolName', 'topicId', 'claimId'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.capture_code_state_auto':
       return withPayloadDraft({
-        operation: 'captureCodeStateAuto',
+        ...writeBridgeTarget('captureCodeStateAuto'),
         cli: 'aitp-v5 code state auto',
         requiredFields: ['worktreePath', 'repoId', 'topicId', 'claimId'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.attach_artifact':
       return withPayloadDraft({
-        operation: 'attachArtifact',
+        ...writeBridgeTarget('attachArtifact'),
         cli: 'aitp-v5 research-state attach-artifact',
         requiredFields: ['topicId', 'claimId', 'artifactType', 'uri', 'summary'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.record_reference_location':
       return withPayloadDraft({
-        operation: 'recordReferenceLocation',
+        ...writeBridgeTarget('recordReferenceLocation'),
         cli: 'aitp-v5 reference location record',
         requiredFields: ['topicId', 'connectorId', 'locationType', 'uri', 'label'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.create_open_obligation':
       return withPayloadDraft({
-        operation: 'createProofObligation',
+        ...writeBridgeTarget('createProofObligation'),
         cli: 'aitp-v5 research-state create-proof-obligation',
         requiredFields: [
           'topicId',
@@ -858,21 +862,21 @@ function writeBridgeForMoment(
       }, hints);
     case 'aitp.create_validation_contract':
       return withPayloadDraft({
-        operation: 'createValidationContract',
+        ...writeBridgeTarget('createValidationContract'),
         cli: 'aitp-v5 validation contract create',
         requiredFields: ['topicId', 'claimId', 'requiredChecks', 'failureModes', 'requiredEvidenceOutputs'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.record_validation_result':
       return withPayloadDraft({
-        operation: 'recordValidationResult',
+        ...writeBridgeTarget('recordValidationResult'),
         cli: 'aitp-v5 validation result record',
         requiredFields: ['topicId', 'claimId', 'contractId', 'toolRunId', 'status', 'summary'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.record_source_reconstruction_review_result':
       return withPayloadDraft({
-        operation: 'recordSourceReconstructionReviewResult',
+        ...writeBridgeTarget('recordSourceReconstructionReviewResult'),
         cli: 'aitp-v5 source reconstruction-review-result',
         requiredFields: [
           'claimId',
@@ -885,14 +889,14 @@ function writeBridgeForMoment(
       }, hints);
     case 'aitp.request_human_checkpoint':
       return withPayloadDraft({
-        operation: 'requestHumanCheckpoint',
+        ...writeBridgeTarget('requestHumanCheckpoint'),
         cli: 'aitp-v5 checkpoint request',
         requiredFields: ['topicId', 'claimId', 'reason', 'requestedBy', 'options'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.run_trust_preflight':
       return withPayloadDraft({
-        operation: 'preflightTrustUpdate',
+        ...writeBridgeTarget('preflightTrustUpdate'),
         cli: 'aitp-v5 trust preflight',
         requiredFields: ['action', 'sessionId', 'topicId', 'claimId'],
         targetRefs: moment.targetRefs,
@@ -902,6 +906,27 @@ function writeBridgeForMoment(
     default:
       return undefined;
   }
+}
+
+function writeBridgeTarget(
+  operation: AitpWriteBridgeOperation,
+): Readonly<Record<string, unknown>> & { readonly operation: AitpWriteBridgeOperation } {
+  const target = aitpRuntimeBridgeTargetForOperation(operation);
+  return {
+    operation,
+    entrypointKey: target.entrypointKey,
+    mcpTool: target.mcpTool,
+    cliFallback: target.cliFallback,
+    surface: target.surface,
+    preferredTransport: target.preferredTransport,
+    fallbackTransport: target.fallbackTransport,
+    executionRole: target.executionRole,
+    stateEffect: target.stateEffect,
+    canonicalStore: target.canonicalStore,
+    claimTrustMutation: target.claimTrustMutation,
+    summaryInputsTrusted: target.summaryInputsTrusted,
+    canUpdateClaimTrust: target.canUpdateClaimTrust,
+  };
 }
 
 function finalGateRequiredForDecision(decision: AitpMomentPolicyDecision): boolean {
