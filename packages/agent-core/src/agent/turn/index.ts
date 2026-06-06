@@ -24,6 +24,7 @@ import {
   toKimiErrorPayload,
 } from '#/errors';
 import { isAbortError, isMaxStepsExceededError } from '../../loop/errors';
+import type { AitpCallObligation } from '../../aitp';
 import {
   createLoopEventDispatcher,
   runTurn,
@@ -1349,7 +1350,10 @@ export class TurnFlow {
       topic: workFrame.topic,
     });
     return obligations.map((obligation) => {
-      const related = trace.filter((item) => item.actionId === obligation.actionId);
+      const acceptedActionIds = aitpCallObligationAcceptedActionIds(obligation);
+      const related = trace.filter(
+        (item) => item.actionId !== undefined && acceptedActionIds.includes(item.actionId),
+      );
       return {
         id: obligation.id,
         actionId: obligation.actionId,
@@ -1413,6 +1417,20 @@ function isTerminalUpdateGoalResult(
   if (!isPlainRecord(args)) return false;
   const status = args['status'];
   return status === 'complete' || status === 'blocked';
+}
+
+function aitpCallObligationAcceptedActionIds(
+  obligation: AitpCallObligation,
+): readonly string[] {
+  if (obligation.actionKind !== 'record_evidence_or_validation') return [obligation.actionId];
+  const accepted = new Set<string>([obligation.actionId]);
+  if (obligation.entrypoints.includes('aitp_v5_record_evidence')) {
+    accepted.add('aitp.record_evidence');
+  }
+  if (obligation.entrypoints.includes('aitp_v5_record_validation_result')) {
+    accepted.add('aitp.record_validation_result');
+  }
+  return [...accepted];
 }
 
 function mapLoopEvent(event: LoopEvent, turnId: number): AgentEvent | undefined {

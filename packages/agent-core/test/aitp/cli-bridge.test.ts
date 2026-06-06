@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AitpCliBridgeError,
+  buildAitpEvidenceRecordArgs,
   buildAitpExploratoryRecordArgs,
   buildAitpHumanCheckpointRequestArgs,
   buildAitpProcessGraphSliceArgs,
   buildAitpProofObligationCreateArgs,
+  buildAitpReferenceLocationRecordArgs,
   buildAitpSourceAssetRegisterArgs,
+  buildAitpToolRunRecordArgs,
   buildAitpValidationContractCreateArgs,
   buildAitpValidationResultRecordArgs,
   createAitpCliBridge,
@@ -200,6 +203,207 @@ describe('AITP CLI bridge', () => {
         '{"claim_id":"claim-mipt"}',
       ]),
     );
+  });
+
+  it('records evidence, tool runs, and reference locations through canonical AITP records', async () => {
+    const calls: { args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push({ args });
+        if (args.includes('evidence')) {
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              ok: true,
+              kind: 'evidence',
+              evidence_id: 'evidence-source-chain',
+              topic_id: 'qg',
+              claim_id: 'claim-mipt',
+              evidence_type: 'source_reconstruction',
+              status: 'supports',
+              summary: 'Definition source chain reconstructed.',
+              supports_outputs: ['source_chain'],
+              source_refs: ['reference_location:split-paper'],
+              tool_run_ids: ['tool-run-source-audit'],
+              validation_result_ids: [],
+              artifact_ids: [],
+            }),
+            stderr: '',
+          };
+        }
+        if (args.includes('tool')) {
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              ok: true,
+              kind: 'tool_run',
+              run_id: 'tool-run-source-audit',
+              recipe_id: 'recipe-source-audit',
+              tool_family: 'literature',
+              tool_name: 'source-audit',
+              topic_id: 'qg',
+              claim_id: 'claim-mipt',
+              evidence_status: 'supports',
+              inputs: { source: 'split paper' },
+              outputs: { closed: true },
+              environment: {},
+              code_state_ids: [],
+              artifact_ids: [],
+              source_refs: ['reference_location:split-paper'],
+            }),
+            stderr: '',
+          };
+        }
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            kind: 'reference_location',
+            location_id: 'reference-location-split-paper',
+            topic_id: 'qg',
+            claim_id: 'claim-mipt',
+            connector_id: 'local_pdf',
+            location_type: 'paper_pdf',
+            uri: 'file:///papers/split.pdf',
+            label: 'Split property paper',
+            source_ref: 'paper:split',
+            external_id: '',
+            status: 'located',
+            summary: 'Definition source pointer.',
+            metadata: {},
+            linked_records: {},
+            orientation_only: true,
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const evidence = await bridge.recordEvidence({
+      topicId: 'qg',
+      claimId: 'claim-mipt',
+      evidenceType: 'source_reconstruction',
+      status: 'supports',
+      summary: 'Definition source chain reconstructed.',
+      supportsOutputs: ['source_chain'],
+      sourceRefs: ['reference_location:split-paper'],
+      toolRunIds: ['tool-run-source-audit'],
+    });
+    const toolRun = await bridge.recordToolRun({
+      recipeId: 'recipe-source-audit',
+      toolFamily: 'literature',
+      toolName: 'source-audit',
+      topicId: 'qg',
+      claimId: 'claim-mipt',
+      inputs: { source: 'split paper' },
+      outputs: { closed: true },
+      evidenceStatus: 'supports',
+      sourceRefs: ['reference_location:split-paper'],
+    });
+    const reference = await bridge.recordReferenceLocation({
+      topicId: 'qg',
+      claimId: 'claim-mipt',
+      connectorId: 'local_pdf',
+      locationType: 'paper_pdf',
+      uri: 'file:///papers/split.pdf',
+      label: 'Split property paper',
+      sourceRef: 'paper:split',
+      summary: 'Definition source pointer.',
+    });
+
+    expect(evidence).toMatchObject({
+      kind: 'evidence',
+      evidenceId: 'evidence-source-chain',
+      evidenceType: 'source_reconstruction',
+      status: 'supports',
+    });
+    expect(toolRun).toMatchObject({
+      kind: 'tool_run',
+      runId: 'tool-run-source-audit',
+      recipeId: 'recipe-source-audit',
+      evidenceStatus: 'supports',
+    });
+    expect(reference).toMatchObject({
+      kind: 'reference_location',
+      locationId: 'reference-location-split-paper',
+      orientationOnly: true,
+    });
+    expect(calls.map((call) => call.args)).toEqual([
+      [
+        '--base',
+        'F:/project',
+        'evidence',
+        'record',
+        '--topic',
+        'qg',
+        '--claim',
+        'claim-mipt',
+        '--type',
+        'source_reconstruction',
+        '--status',
+        'supports',
+        '--summary',
+        'Definition source chain reconstructed.',
+        '--supports-output',
+        'source_chain',
+        '--source-ref',
+        'reference_location:split-paper',
+        '--tool-run-id',
+        'tool-run-source-audit',
+      ],
+      [
+        '--base',
+        'F:/project',
+        'tool',
+        'run',
+        'record',
+        '--recipe',
+        'recipe-source-audit',
+        '--family',
+        'literature',
+        '--name',
+        'source-audit',
+        '--topic',
+        'qg',
+        '--claim',
+        'claim-mipt',
+        '--inputs-json',
+        '{"source":"split paper"}',
+        '--outputs-json',
+        '{"closed":true}',
+        '--evidence-status',
+        'supports',
+        '--source-ref',
+        'reference_location:split-paper',
+      ],
+      [
+        '--base',
+        'F:/project',
+        'reference',
+        'location',
+        'record',
+        '--topic',
+        'qg',
+        '--connector',
+        'local_pdf',
+        '--type',
+        'paper_pdf',
+        '--uri',
+        'file:///papers/split.pdf',
+        '--label',
+        'Split property paper',
+        '--claim',
+        'claim-mipt',
+        '--source-ref',
+        'paper:split',
+        '--summary',
+        'Definition source pointer.',
+      ],
+    ]);
   });
 
   it('requests AITP human checkpoints through a constrained command', async () => {
@@ -494,6 +698,36 @@ describe('AITP CLI bridge', () => {
         reason: 'No options.',
         requestedBy: 'hakimi',
         options: [],
+      }),
+    ).toThrow(AitpCliBridgeError);
+    expect(() =>
+      buildAitpEvidenceRecordArgs({
+        basePath: 'F:/project',
+        topicId: 'qg',
+        claimId: 'claim-mipt',
+        evidenceType: 'source_reconstruction',
+        status: 'supports',
+        summary: '',
+      }),
+    ).toThrow(AitpCliBridgeError);
+    expect(() =>
+      buildAitpToolRunRecordArgs({
+        basePath: 'F:/project',
+        recipeId: '',
+        toolFamily: 'literature',
+        toolName: 'source-audit',
+        topicId: 'qg',
+        claimId: 'claim-mipt',
+      }),
+    ).toThrow(AitpCliBridgeError);
+    expect(() =>
+      buildAitpReferenceLocationRecordArgs({
+        basePath: 'F:/project',
+        topicId: 'qg',
+        connectorId: 'local_pdf',
+        locationType: 'paper_pdf',
+        uri: '',
+        label: 'Split paper',
       }),
     ).toThrow(AitpCliBridgeError);
     expect(() =>

@@ -158,7 +158,7 @@ describe('final gate lifecycle integration', () => {
     ctx.mockNextResponse({ type: 'text', text: 'Status: checked. The claim is ready.' });
     ctx.mockNextResponse({
       type: 'text',
-      text: 'Status: exploratory. The AITP validation result still has to be recorded.',
+      text: 'Status: exploratory. The AITP evidence record still has to be written.',
     });
 
     await ctx.rpc.prompt({ input: [{ type: 'text', text: 'Can we finish this checked?' }] });
@@ -170,7 +170,7 @@ describe('final gate lifecycle integration', () => {
       content: [
         {
           type: 'text',
-          text: expect.stringContaining('aitp.record_validation_result'),
+          text: expect.stringContaining('aitp.record_evidence'),
         },
       ],
       toolCalls: [],

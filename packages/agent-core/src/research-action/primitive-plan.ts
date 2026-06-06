@@ -372,6 +372,66 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['trace.follow_source_dependency', 'scope.compile_context_pack'],
   }),
   plan({
+    actionId: 'aitp.record_reference_location',
+    title: 'Record AITP reference location',
+    intent:
+      'Persist an orientation-only source pointer through AITP before using a paper, note, citation target, or local file as evidence.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'execute-aitp-reference-location-write',
+        kind: 'record',
+        title: 'Write reference location through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with recordReferenceLocation once the source location is precise.',
+        expectedEvidence: ['aitp:reference_location:<id>', 'source_location'],
+      }),
+    ],
+    recording: recording('aitp.record_reference_location', ['aitp:reference_location:<id>']),
+    followupActionIds: ['trace.follow_source_dependency', 'aitp.record_evidence'],
+  }),
+  plan({
+    actionId: 'aitp.record_evidence',
+    title: 'Record AITP evidence',
+    intent:
+      'Persist formed, claim-local evidence through AITP after source, tool, or artifact links are explicit.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'execute-aitp-evidence-write',
+        kind: 'record',
+        title: 'Write evidence through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with recordEvidence using typed refs instead of a prose-only summary.',
+        expectedEvidence: ['aitp:evidence:<id>', 'claim_id', 'supports_outputs'],
+      }),
+    ],
+    recording: recording('aitp.record_evidence', ['aitp:evidence:<id>']),
+    followupActionIds: ['scope.compile_context_pack'],
+  }),
+  plan({
+    actionId: 'aitp.record_tool_run',
+    title: 'Record AITP tool run',
+    intent:
+      'Persist computation, benchmark, source-audit, or validation-tool provenance through AITP before evidence or validation result records cite it.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'execute-aitp-tool-run-write',
+        kind: 'record',
+        title: 'Write tool run through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with recordToolRun after the primitive tool execution or manual audit result is formed.',
+        expectedEvidence: ['aitp:tool_run:<id>', 'recipe_id', 'inputs', 'outputs'],
+      }),
+    ],
+    recording: recording('aitp.record_tool_run', ['aitp:tool_run:<id>']),
+    followupActionIds: ['aitp.record_evidence', 'aitp.record_validation_result'],
+  }),
+  plan({
     actionId: 'aitp.create_open_obligation',
     title: 'Create AITP open obligation',
     intent:
