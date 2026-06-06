@@ -9,12 +9,14 @@ import type {
   AitpSourceReconstructionReviewResultWriteResult,
   AitpSourceAssetWriteResult,
   AitpToolRunWriteResult,
+  AitpTrustPreflightWriteResult,
   AitpValidationContractWriteResult,
   AitpValidationResultWriteResult,
   AttachAitpArtifactInput,
   CaptureAitpCodeStateAutoInput,
   CreateAitpValidationContractInput,
   CreateAitpProofObligationInput,
+  PreflightAitpTrustUpdateInput,
   RecordAitpEvidenceInput,
   RecordAitpValidationResultInput,
   RecordAitpExploratoryRecordInput,
@@ -40,6 +42,7 @@ export const AITP_WRITE_BRIDGE_OPERATIONS = [
   'recordValidationResult',
   'recordSourceReconstructionReviewResult',
   'requestHumanCheckpoint',
+  'preflightTrustUpdate',
 ] as const;
 
 export type AitpWriteBridgeOperation = (typeof AITP_WRITE_BRIDGE_OPERATIONS)[number];
@@ -92,6 +95,10 @@ export type AitpWriteBridgeExecutionInput =
   | {
       readonly operation: 'requestHumanCheckpoint';
       readonly payload: RequestAitpHumanCheckpointInput;
+    }
+  | {
+      readonly operation: 'preflightTrustUpdate';
+      readonly payload: PreflightAitpTrustUpdateInput;
     };
 
 export type AitpWriteBridgeExecutionResult =
@@ -106,7 +113,8 @@ export type AitpWriteBridgeExecutionResult =
   | AitpValidationContractWriteResult
   | AitpValidationResultWriteResult
   | AitpSourceReconstructionReviewResultWriteResult
-  | AitpHumanCheckpointWriteResult;
+  | AitpHumanCheckpointWriteResult
+  | AitpTrustPreflightWriteResult;
 
 export interface AitpWriteBridgeExecutor {
   executeWrite(
@@ -145,6 +153,9 @@ export interface AitpWriteBridgeCliTarget {
   requestHumanCheckpoint(
     input: RequestAitpHumanCheckpointInput,
   ): Promise<AitpHumanCheckpointWriteResult>;
+  preflightTrustUpdate(
+    input: PreflightAitpTrustUpdateInput,
+  ): Promise<AitpTrustPreflightWriteResult>;
 }
 
 export class AitpCliWriteBridgeExecutor implements AitpWriteBridgeExecutor {
@@ -178,6 +189,8 @@ export class AitpCliWriteBridgeExecutor implements AitpWriteBridgeExecutor {
         return this.bridge.recordSourceReconstructionReviewResult(input.payload);
       case 'requestHumanCheckpoint':
         return this.bridge.requestHumanCheckpoint(input.payload);
+      case 'preflightTrustUpdate':
+        return this.bridge.preflightTrustUpdate(input.payload);
     }
   }
 }
@@ -489,6 +502,24 @@ export function coerceAitpWriteBridgeInput(
           signal,
         },
       };
+    case 'preflightTrustUpdate':
+      return {
+        operation,
+        payload: {
+          action: requiredString(record, 'action'),
+          sessionId: requiredString(record, 'sessionId', 'session_id'),
+          topicId: requiredString(record, 'topicId', 'topic_id'),
+          claimId: requiredString(record, 'claimId', 'claim_id'),
+          requestedState: optionalString(record, 'requestedState', 'requested_state'),
+          sourceKind: optionalString(record, 'sourceKind', 'source_kind'),
+          sourceRef: optionalString(record, 'sourceRef', 'source_ref'),
+          evidenceRefs: optionalStringArray(record, 'evidenceRefs', 'evidence_refs'),
+          codeStateIds: optionalStringArray(record, 'codeStateIds', 'code_state_ids'),
+          rationale: optionalString(record, 'rationale'),
+          requestId: optionalString(record, 'requestId', 'request_id'),
+          signal,
+        },
+      };
   }
 }
 
@@ -520,6 +551,8 @@ export function actionIdForAitpWriteBridgeOperation(
       return 'aitp.record_source_reconstruction_review_result';
     case 'requestHumanCheckpoint':
       return 'aitp.request_human_checkpoint';
+    case 'preflightTrustUpdate':
+      return 'aitp.run_trust_preflight';
   }
 }
 
@@ -551,6 +584,8 @@ export function evidenceRefsForAitpWriteBridgeResult(
       return [`aitp:source_reconstruction_review_result:${result.resultId}`];
     case 'human_checkpoint':
       return [`aitp:human_checkpoint:${result.checkpointId}`];
+    case 'trust_update_preflight':
+      return [`aitp:trust_preflight:${result.preflightToken}`];
   }
 }
 

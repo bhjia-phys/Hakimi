@@ -144,7 +144,7 @@ describe('compileResearchContextPack', () => {
       requiredCallIds: expect.arrayContaining([
         expect.stringContaining('aitp-record-evidence'),
         expect.stringContaining('aitp-record-reference-location'),
-        expect.stringContaining('aitp-request-human-checkpoint'),
+        expect.stringContaining('aitp-run-trust-preflight'),
       ]),
       trustPrerequisiteCallIds: expect.arrayContaining([
         expect.stringContaining('aitp-record-evidence'),
@@ -170,6 +170,7 @@ describe('compileResearchContextPack', () => {
         'aitp.record_reference_location',
         'aitp.record_route_choice',
         'aitp.request_human_checkpoint',
+        'aitp.run_trust_preflight',
         'code.capture_git_diff_observation',
         'physics.brainstorm_relation_path',
         'trace.follow_source_dependency',

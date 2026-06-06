@@ -24,6 +24,7 @@ export const KNOWN_AITP_RESEARCH_MOMENTS = [
   'aitp.record_validation_result',
   'aitp.record_source_reconstruction_review_result',
   'aitp.request_human_checkpoint',
+  'aitp.run_trust_preflight',
 ] as const;
 
 export type KnownAitpResearchMomentId = (typeof KNOWN_AITP_RESEARCH_MOMENTS)[number];

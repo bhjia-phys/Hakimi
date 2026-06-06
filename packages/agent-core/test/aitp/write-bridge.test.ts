@@ -217,6 +217,27 @@ describe('AITP write bridge executor', () => {
         linkedRecords: { claim_id: 'claim-mipt-observer-algebra' },
       },
     });
+    const preflight = coerceAitpWriteBridgeInput('preflightTrustUpdate', {
+      action: 'change_claim_confidence',
+      session_id: 'session-qg',
+      topic_id: 'qg-algebra-mipt',
+      claim_id: 'claim-mipt-observer-algebra',
+      requested_state: 'supported',
+      source_kind: 'proof_obligation_record',
+      source_ref: 'proof_obligation:obl-source',
+      evidence_refs: ['evidence-source-chain'],
+      code_state_ids: ['code-state-qg'],
+      rationale: 'Trust-sensitive final answer would treat source support as checked.',
+    });
+    expect(preflight).toMatchObject({
+      operation: 'preflightTrustUpdate',
+      payload: {
+        action: 'change_claim_confidence',
+        sessionId: 'session-qg',
+        requestedState: 'supported',
+        sourceRef: 'proof_obligation:obl-source',
+      },
+    });
   });
 
   it('delegates supported writes to the configured CLI bridge target', async () => {
@@ -391,6 +412,27 @@ describe('AITP write bridge executor', () => {
           raw: {},
         };
       },
+      async preflightTrustUpdate() {
+        calls.push('preflightTrustUpdate');
+        return {
+          ok: true,
+          kind: 'trust_update_preflight',
+          requestId: 'trust-request-qg',
+          action: 'change_claim_confidence',
+          sessionId: 'session-qg',
+          topicId: 'qg',
+          claimId: 'claim-qg',
+          requestedState: 'supported',
+          allowed: false,
+          mutationAllowedAfterPreflight: false,
+          requiredActions: ['record typed evidence'],
+          evidenceRefs: ['evidence-qg'],
+          codeStateIds: [],
+          preflightToken: 'trust-preflight-token-qg',
+          canUpdateKernelState: false,
+          raw: {},
+        };
+      },
     };
     const executor = createAitpCliWriteBridgeExecutor(target);
 
@@ -414,8 +456,22 @@ describe('AITP write bridge executor', () => {
         summary: 'Definitions reviewed; source location remains open.',
       },
     });
+    const preflight = await executor.executeWrite({
+      operation: 'preflightTrustUpdate',
+      payload: {
+        action: 'change_claim_confidence',
+        sessionId: 'session-qg',
+        topicId: 'qg',
+        claimId: 'claim-qg',
+        requestedState: 'supported',
+      },
+    });
 
-    expect(calls).toEqual(['attachArtifact', 'recordSourceReconstructionReviewResult']);
+    expect(calls).toEqual([
+      'attachArtifact',
+      'recordSourceReconstructionReviewResult',
+      'preflightTrustUpdate',
+    ]);
     expect(artifact).toMatchObject({
       kind: 'artifact',
       artifactId: 'artifact-qg-log',
@@ -430,6 +486,14 @@ describe('AITP write bridge executor', () => {
     });
     expect(evidenceRefsForAitpWriteBridgeResult(result)).toEqual([
       'aitp:source_reconstruction_review_result:source-review-result-qg',
+    ]);
+    expect(preflight).toMatchObject({
+      kind: 'trust_update_preflight',
+      preflightToken: 'trust-preflight-token-qg',
+      canUpdateKernelState: false,
+    });
+    expect(evidenceRefsForAitpWriteBridgeResult(preflight)).toEqual([
+      'aitp:trust_preflight:trust-preflight-token-qg',
     ]);
     expect(generatedObligationIdsForAitpWriteBridgeResult(result)).toEqual([]);
   });

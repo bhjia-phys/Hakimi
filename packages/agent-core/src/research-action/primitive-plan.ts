@@ -643,6 +643,42 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['aitp.record_research_state'],
   }),
   plan({
+    actionId: 'aitp.run_trust_preflight',
+    title: 'Run AITP trust preflight',
+    intent: 'Ask AITP for a non-mutating policy decision before any claim-trust change or trust-sensitive final conclusion.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'execute-aitp-trust-preflight',
+        kind: 'record',
+        title: 'Run trust preflight through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with preflightTrustUpdate and keep the returned token as AITP policy evidence only.',
+        expectedEvidence: [
+          'aitp:trust_preflight:<token>',
+          'preflight_allowed',
+          'required_actions',
+        ],
+      }),
+      step({
+        id: 'keep-trust-state-external',
+        kind: 'inspect',
+        title: 'Preserve trust boundary',
+        toolNames: ['ResearchAction', 'ResearchLedger'],
+        purpose:
+          'Record whether the preflight allowed mutation without claiming that Hakimi applied the trust update.',
+        expectedEvidence: ['trust_boundary_reason', 'aitp_preflight_token'],
+      }),
+    ],
+    recording: recording('aitp.run_trust_preflight', [
+      'aitp:trust_preflight:<token>',
+      'preflight_allowed',
+      'required_actions',
+    ]),
+    followupActionIds: ['aitp.request_human_checkpoint'],
+  }),
+  plan({
     actionId: 'validate.check_dimension',
     title: 'Check dimensions',
     intent: 'Validate dimensional consistency of a formula or derivation step.',

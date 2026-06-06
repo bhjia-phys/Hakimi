@@ -60,9 +60,9 @@ That means a research action can search literature, inspect code, prepare patche
 - AITP `source_stack_coverage` now compiles into native `sourceStackCoverage` summaries, WorkFrame reminders, and ContextPack XML fields for covered claim ids, evidence-output gaps, reconstruction gaps, review gaps, and AITP next actions. Hakimi uses it as source-stack readiness guidance and leaves final-gate blocking to explicit AITP trust/final prerequisites.
 - AITP `source_reconstruction_review` now compiles into native source reconstruction review summaries, WorkFrame reminders, and ContextPack XML fields for review claim ids, open review claim ids, needs-revision/inconclusive claim ids, review-packet claim ids, and AITP next actions. Hakimi uses it as review worklist guidance, not as claim-trust authority.
 - Hakimi's final gate now reads active ContextPack AITP `callObligations`: unchecked required-now calls or trust-boundary prerequisites force a final-gate continuation and status downgrade unless the corresponding `ResearchAction` was recorded as passed or explicitly blocked.
-- AITP write moments now carry explicit bridge metadata inside `ResearchActionBinding.params`, so ContextPacks can show whether the next durable write should use `recordEvidence`, `recordReferenceLocation`, `recordToolRun`, `recordExploratoryRecord`, `captureCodeStateAuto`, `attachArtifact`, `createProofObligation`, `requestHumanCheckpoint`, or another constrained AITP bridge operation.
-- Hakimi sessions now auto-configure a narrow AITP CLI bridge for `aitp-v5 graph slice`, `aitp-v5 evidence record`, `aitp-v5 tool run record`, `aitp-v5 reference location record`, `aitp-v5 exploration record`, `aitp-v5 route record`, `aitp-v5 asset register`, `aitp-v5 code state auto`, `aitp-v5 research-state attach-artifact`, `aitp-v5 checkpoint request`, `aitp-v5 research-state create-proof-obligation`, and AITP validation contract/result records. The bridge resolves `--base` from the current Agent cwd at call time, fetches an AITP slice before research-context injection only when a WorkFrame carries explicit `aitp:session:<id>` scope, executes only a configured AITP command with structured args, and keeps `.aitp` as the canonical record store.
-- `ResearchAction.execute_aitp_write_bridge` can now execute a configured AITP write bridge for evidence records, tool-run provenance, reference locations, exploratory records, source asset registration, auto-captured git code state, proof obligations, validation contracts, validation results, and human-checkpoint requests. Successful writes are recorded as scoped `research_action.result_recorded` events with AITP evidence refs instead of becoming hidden side effects.
+- AITP write moments now carry explicit bridge metadata inside `ResearchActionBinding.params`, so ContextPacks can show whether the next durable write or preflight should use `recordEvidence`, `recordReferenceLocation`, `recordToolRun`, `recordExploratoryRecord`, `captureCodeStateAuto`, `attachArtifact`, `createProofObligation`, `requestHumanCheckpoint`, `preflightTrustUpdate`, or another constrained AITP bridge operation.
+- Hakimi sessions now auto-configure a narrow AITP CLI bridge for `aitp-v5 graph slice`, `aitp-v5 evidence record`, `aitp-v5 tool run record`, `aitp-v5 reference location record`, `aitp-v5 exploration record`, `aitp-v5 route record`, `aitp-v5 asset register`, `aitp-v5 code state auto`, `aitp-v5 research-state attach-artifact`, `aitp-v5 checkpoint request`, `aitp-v5 trust preflight`, `aitp-v5 source reconstruction-review-result`, `aitp-v5 research-state create-proof-obligation`, and AITP validation contract/result records. The bridge resolves `--base` from the current Agent cwd at call time, fetches an AITP slice before research-context injection only when a WorkFrame carries explicit `aitp:session:<id>` scope, executes only a configured AITP command with structured args, and keeps `.aitp` as the canonical record store.
+- `ResearchAction.execute_aitp_write_bridge` can now execute a configured AITP write bridge for evidence records, tool-run provenance, reference locations, exploratory records, source asset registration, auto-captured git code state, proof obligations, validation contracts, validation results, source-reconstruction review results, human-checkpoint requests, and non-mutating trust preflight. Successful writes or preflights are recorded as scoped `research_action.result_recorded` events with AITP evidence refs instead of becoming hidden side effects.
 - A native bridge smoke now verifies the QG/MIPT-shaped loop from fake AITP `process_graph_slice` to Hakimi `ContextPack` action bindings, `writeBridge` metadata, and constrained AITP CLI write-back for proof obligations, source-reconstruction evidence, and human checkpoints. This proves the local runtime contract without requiring Python/AITP dependencies during Hakimi unit tests.
 - Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
 - Literature search, code patch preparation, and external benchmark workflows are orchestrated through native Kimi tools rather than being executed inside `ResearchAction` itself.
@@ -153,15 +153,20 @@ explicit final/trust prerequisite. AITP `source_reconstruction_review` is
 projected as the adjacent review worklist: Hakimi parses pending,
 needs-revision, inconclusive, and passed review state, surfaces review-packet
 claim ids plus AITP next actions, and keeps review guidance separate from
-claim-trust authority. Hakimi sessions now create a narrow
+claim-trust authority. AITP trust-boundary policy decisions are also projected
+as `aitp.run_trust_preflight` action bindings with a `preflightTrustUpdate`
+write bridge for `aitp-v5 trust preflight`. The returned
+`aitp:trust_preflight:<token>` ref is WorkFrame-scoped policy evidence only:
+it can satisfy the preflight call obligation, but it is not `trust apply` and
+does not mutate claim trust. Hakimi sessions now create a narrow
 dynamic CLI bridge by default: the process-graph provider calls
 `aitp-v5 graph slice` with `--base` resolved from the current Agent cwd, and the
 write bridge covers exploratory records, source asset registration, artifact
 attachment, human checkpoint requests, proof-obligation creation, evidence
 records, tool-run provenance, reference locations, auto-captured code state,
-validation contract/result records, and source reconstruction review result
-records. SDK callers can still provide explicit bridges or disable automatic
-AITP bridge wiring for isolated tests and non-AITP deployments.
+validation contract/result records, source reconstruction review result records,
+and trust preflight. SDK callers can still provide explicit bridges or disable
+automatic AITP bridge wiring for isolated tests and non-AITP deployments.
 Ordinary `record_evidence_or_validation` policy decisions prefer
 `recordEvidence`, while strict validation remains available through
 `recordValidationResult` once a validation contract and tool run exist. Either
@@ -176,11 +181,14 @@ now has an `execute_aitp_write_bridge` action. It accepts only a configured
 bridge plus structured payloads for `recordExploratoryRecord`,
 `registerSourceAsset`, `recordEvidence`, `recordToolRun`,
 `recordReferenceLocation`, `captureCodeStateAuto`, `attachArtifact`, `createProofObligation`, `createValidationContract`,
-`recordValidationResult`, `recordSourceReconstructionReviewResult`, and
+`recordValidationResult`, `recordSourceReconstructionReviewResult`,
+`preflightTrustUpdate`, and
 `requestHumanCheckpoint`, then records the result as a normal WorkFrame-scoped
 research action. Source reconstruction review result writes preserve AITP's
-review basis contract and still cannot update claim trust. If no AITP write
-bridge is configured, it fails closed.
+review basis contract and still cannot update claim trust. Trust preflight
+records the AITP preflight token and required-actions result without applying
+the proposed trust change. If no AITP write bridge is configured, it fails
+closed.
 
 The dynamic session bridge is covered by fake-runner unit tests that prove
 default Agent wiring, explicit override precedence, the disable switch, and
@@ -200,9 +208,10 @@ Hakimi does not require Python/AITP dependencies just to typecheck.
 The remaining runtime work is execution depth, not schema ownership: the turn
 loop can fetch a scoped slice, preserve cached AITP context when no fresh slice
 is available, expose AITP policy obligations, execute the current typed
-record-write bridge, and run a soft final-gate check over whether required AITP
-calls passed, were equivalently satisfied, or were explicitly blocked. Later
-slices still need MCP-first execution and richer automatic payload drafting.
+record-write/preflight bridge, and run a soft final-gate check over whether
+required AITP calls passed, were equivalently satisfied, or were explicitly
+blocked. Later slices still need MCP-first execution, richer automatic payload
+drafting, and any host-facing `trust apply` path remains AITP-owned future work.
 
 ## Relationship To Upstream
 
@@ -351,6 +360,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - The AITP route-state projection now consumes the current v5 route contract (`routes` plus `*_route_ids`) instead of inventing a Hakimi-only `pivot` status. Route refs are normalized to `research_route:<id>`, pivot-required routes appear in ContextPack XML as `<pivot_required_routes>`, and ordinary route moments stay non-blocking unless the AITP moment policy declares an explicit final/trust prerequisite.
 - The AITP provenance-gap projection now consumes `provenance_gaps[]` as source/code/tool/validation/artifact capture guidance, renders gap ids into WorkFrame reminders and ContextPack fields, recommends capture actions, and exposes AITP-owned gap `payload_hints[]` as `writeBridge.payloadDraft` values for `captureCodeStateAuto`, `recordToolRun`, `createValidationContract`, `recordValidationResult`, `attachArtifact`, source-asset registration, and reference-location repair. Provenance gaps stay non-blocking unless AITP marks them as required before trust can change.
 - The AITP source reconstruction review loop now closes through the same write bridge: `source_reconstruction_review.next_actions` can recommend `aitp.record_source_reconstruction_review_result`, and `ResearchAction.execute_aitp_write_bridge` can call `recordSourceReconstructionReviewResult` against `aitp-v5 source reconstruction-review-result` with reviewed components plus typed basis refs. The result is evidence for the WorkFrame, not Hakimi-owned trust authority.
+- The first strict AITP trust preflight bridge is now executable: `aitp_v5_preflight_trust_update` policy hints compile to `aitp.run_trust_preflight`, `preflightTrustUpdate`, and `aitp-v5 trust preflight`. Hakimi records `aitp:trust_preflight:<token>` as policy evidence only; `trust apply` and claim-trust mutation remain AITP-owned future boundaries for hosts.
 
 ## Development
 

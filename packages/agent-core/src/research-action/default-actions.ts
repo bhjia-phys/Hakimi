@@ -524,6 +524,18 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     suggestedNextActions: ['aitp.record_research_state'],
   }),
   action({
+    id: 'aitp.run_trust_preflight',
+    category: 'graph',
+    exposure: 'direct',
+    phase: 'validate',
+    title: 'Run AITP trust preflight',
+    description:
+      'Ask AITP to evaluate whether a proposed claim-trust change is allowed before any host treats trust as updated.',
+    outputKinds: ['LedgerEvent'],
+    triggerHints: ['trust preflight', 'claim trust', 'preflight trust update'],
+    suggestedNextActions: ['aitp.request_human_checkpoint'],
+  }),
+  action({
     id: 'validate.check_dimension',
     category: 'physics',
     exposure: 'direct',

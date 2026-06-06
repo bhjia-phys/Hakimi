@@ -549,7 +549,7 @@ export function actionIdForMoment(id: AitpResearchMomentId): string {
     case 'route_switch_checkpoint':
       return 'aitp.checkpoint_before_route_switch';
     case 'trust_boundary_before_claim_update':
-      return 'aitp.request_human_checkpoint';
+      return 'aitp.run_trust_preflight';
     case 'human_checkpoint':
     case 'request_human_checkpoint':
       return 'aitp.request_human_checkpoint';
@@ -590,6 +590,9 @@ export function actionIdForPolicyDecision(decision: AitpMomentPolicyDecision): s
     decision.entrypoints.includes('aitp_v5_record_code_state')
   ) {
     return 'aitp.capture_code_state_auto';
+  }
+  if (decision.entrypoints.includes('aitp_v5_preflight_trust_update')) {
+    return 'aitp.run_trust_preflight';
   }
   return actionIdForMoment(decision.moment);
 }

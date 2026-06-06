@@ -1195,6 +1195,8 @@ function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string
       return result.resultId;
     case 'human_checkpoint':
       return result.checkpointId;
+    case 'trust_update_preflight':
+      return result.preflightToken;
   }
 }
 
