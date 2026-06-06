@@ -52,6 +52,8 @@ function parseNode(raw: Record<string, unknown>, index: number): AitpProcessGrap
     title: stringValue(raw['title']),
     label: stringValue(raw['label']),
     summary: stringValue(raw['summary']) ?? stringValue(record['summary']) ?? stringValue(record['statement']),
+    uri: stringValue(raw['uri']) ?? stringValue(record['uri']),
+    assetType: stringValue(raw['asset_type']) ?? stringValue(raw['assetType']) ?? stringValue(record['asset_type']) ?? stringValue(record['assetType']),
     status: stringValue(raw['status']) ?? stringValue(record['status']),
     truthStatus: stringValue(raw['truth_status']) ?? stringValue(record['truth_status']),
     trustFlags: stringArray(raw['trust_flags']).length > 0
@@ -112,6 +114,7 @@ function parseSourceBacktraceItem(
     id: stringValue(raw['id']) ?? claimId ?? `aitp.backtrace.${String(index + 1)}`,
     targetNodeId: stringValue(raw['target_node_id']) ?? (claimId === undefined ? undefined : nodeRef('claim', claimId)),
     sourceRef: stringValue(raw['source_ref']),
+    sourceAssetIds: stringArray(raw['source_asset_ids']),
     status: stringValue(raw['status']) ?? (complete ? 'complete' : missing.length > 0 ? 'missing' : undefined),
     reason: stringValue(raw['reason']) ?? stringValue(raw['statement']),
     gap: stringValue(raw['gap']) ?? (missing.length > 0 ? missing.join(', ') : undefined),

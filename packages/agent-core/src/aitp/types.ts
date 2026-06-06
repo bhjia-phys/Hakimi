@@ -22,6 +22,8 @@ export interface AitpProcessGraphNode {
   readonly title?: string | undefined;
   readonly label?: string | undefined;
   readonly summary?: string | undefined;
+  readonly uri?: string | undefined;
+  readonly assetType?: string | undefined;
   readonly status?: string | undefined;
   readonly truthStatus?: string | undefined;
   readonly trustFlags: readonly string[];
@@ -56,6 +58,7 @@ export interface AitpSourceBacktraceItem {
   readonly id: string;
   readonly targetNodeId?: string | undefined;
   readonly sourceRef?: string | undefined;
+  readonly sourceAssetIds: readonly string[];
   readonly status?: string | undefined;
   readonly reason?: string | undefined;
   readonly gap?: string | undefined;

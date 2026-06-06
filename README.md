@@ -50,6 +50,7 @@ That means a research action can search literature, inspect code, prepare patche
 - New topics do not require hand-written packs up front: Hakimi now registers a built-in generic theoretical-physics profile, workflow recipes, process-memory capsules, and a smoke eval by default, then falls back to that scaffold when a WorkFrame has no dedicated pack.
 - AITP v5 `process_graph_slice` payloads can be parsed and locally compiled into research-context reminders, open-obligation summaries, trust-boundary warnings, and recommended `ResearchAction` ids without copying the AITP graph into Hakimi as truth.
 - AITP `exploratory_records` inside a process graph slice now compile into first-class moments for question decomposition, relation-path brainstorming, source/backtrace continuity, original-question drift audit, and `aitp.record_exploratory_record`.
+- AITP `source_asset` nodes and `source_asset_ids` now compile into source-backtrace reminders, so raw papers, lectures, notes, code snapshots, datasets, and generated artifacts stay canonical in `.aitp` while Hakimi keeps only bounded WorkFrame context.
 - Hakimi now has a narrow AITP CLI bridge for `aitp-v5 graph slice` and `aitp-v5 exploration record`, plus a controller-side process graph provider that can fetch an AITP slice before research-context injection when a WorkFrame carries explicit `aitp:session:<id>` scope. The bridge executes only a configured AITP command with structured args and keeps `.aitp` as the canonical record store.
 - Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
 - Literature search, code patch preparation, and external benchmark workflows are orchestrated through native Kimi tools rather than being executed inside `ResearchAction` itself.
@@ -83,12 +84,15 @@ The first adapter slices are now implemented at the library/context/runtime
 boundary:
 Hakimi accepts an AITP `process_graph_slice`, normalizes current v5 field names,
 preserves the orientation-only boundary, and compiles it into ContextPack lines,
-diagnostics, and native `ResearchActionBinding` recommendations. Hakimi also has
-a narrow CLI bridge and optional WorkFrame-scoped provider for `aitp-v5 graph
-slice`, plus a write bridge for `aitp-v5 exploration record`. The default scope
-resolver only reads AITP when the WorkFrame explicitly carries refs such as
-`aitp:session:<id>` and `aitp:claim:<id>`, so Hakimi does not guess which local
-graph belongs to a research turn.
+diagnostics, source-asset reminders, and native `ResearchActionBinding`
+recommendations. AITP owns source asset identity, hashes, version anchors, and
+raw asset provenance; Hakimi only compiles the currently relevant source asset
+ids into a bounded WorkFrame prompt. Hakimi also has a narrow CLI bridge and
+optional WorkFrame-scoped provider for `aitp-v5 graph slice`, plus a write
+bridge for `aitp-v5 exploration record`. The default scope resolver only reads
+AITP when the WorkFrame explicitly carries refs such as `aitp:session:<id>` and
+`aitp:claim:<id>`, so Hakimi does not guess which local graph belongs to a
+research turn.
 
 The remaining runtime work is policy, not schema: the turn loop can now fetch a
 slice through a provider, but it still needs richer moment policy for when a
@@ -305,7 +309,9 @@ orientation view, so Hakimi compiles it into the current WorkFrame/context and
 recommended actions instead of saving it as Hakimi-owned truth. The follow-up
 runtime work is to call AITP MCP/CLI at the right moments and write durable
 research-process records back through AITP, especially for exploratory records
-created during brainstorming, source backtrace, and steering checkpoints.
+created during brainstorming, source backtrace, and steering checkpoints. Source
+asset records remain AITP-owned: Hakimi may mention `source_asset:<id>` in a
+ContextPack, but it should not recreate the raw asset store inside `.hakimi`.
 
 Explicitly disable individual research features only for debugging or upstream
 compatibility checks:
