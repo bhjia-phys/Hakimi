@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { evaluateFinalGate, type ResearchObligation, type WorkFrame } from '../../src';
+import {
+  evaluateFinalGate,
+  renderFinalGateContinuation,
+  type ResearchObligation,
+  type WorkFrame,
+} from '../../src';
 
 describe('research final gate', () => {
   it('downgrades validated final status when blocking obligations remain open', () => {
@@ -16,6 +21,7 @@ describe('research final gate', () => {
       reasons: ['Open blocking obligations prevent validated final claims.'],
       openBlockingObligationIds: ['obl.flux-convention'],
       openAitpCallObligationIds: [],
+      aitpLifecycleTriggerLines: [],
       requiredActionIds: ['validate.check_convention'],
     });
   });
@@ -46,6 +52,7 @@ describe('research final gate', () => {
       reasons: [],
       openBlockingObligationIds: [],
       openAitpCallObligationIds: [],
+      aitpLifecycleTriggerLines: [],
       requiredActionIds: [],
     });
   });
@@ -118,6 +125,48 @@ describe('research final gate', () => {
 
     expect(decision.outcome).toBe('allow');
     expect(decision.openAitpCallObligationIds).toEqual([]);
+  });
+
+  it('renders lifecycle trigger context for open AITP call obligations', () => {
+    const decision = evaluateFinalGate({
+      requestedStatus: 'checked',
+      obligations: [],
+      workFrame: workFrame('checking'),
+      aitpCallObligations: [
+        {
+          id: 'aitp.policy.1.aitp-record-evidence',
+          actionId: 'aitp.record_evidence',
+          reason: 'pre-final evidence should be typed before answering',
+          requiredNow: true,
+          trustBoundary: true,
+          lifecycleTrigger: {
+            lifecyclePhases: ['pre_final'],
+            triggerConditions: ['claim will be summarized as checked'],
+            recordingThreshold: 'before final answer cites the claim as supported',
+            trustBoundaryInputs: {
+              targetRefs: ['claim:claim-fqhe'],
+              claimId: 'claim-fqhe',
+              entrypoints: ['aitp_v5_record_evidence', 'aitp_v5_preflight_trust_update'],
+              requiredBeforeTrustChange: ['record typed evidence before final answer'],
+              requiresPreflight: true,
+              finalGateRequired: true,
+            },
+            recommendedHostBehavior: [
+              'surface as blocking ResearchAction before final response',
+            ],
+          },
+          satisfied: false,
+          blockerRecorded: false,
+        },
+      ],
+    });
+
+    expect(decision.aitpLifecycleTriggerLines).toEqual([
+      'aitp.record_evidence@phase=pre_final when=claim will be summarized as checked threshold=before final answer cites the claim as supported trust_inputs=targets=claim:claim-fqhe|claim=claim-fqhe|entrypoints=aitp_v5_record_evidence,aitp_v5_preflight_trust_update|requires_preflight=true|final_gate_required=true host=surface as blocking ResearchAction before final response',
+    ]);
+    expect(renderFinalGateContinuation(decision)).toContain(
+      'AITP lifecycle triggers: aitp.record_evidence@phase=pre_final',
+    );
   });
 });
 

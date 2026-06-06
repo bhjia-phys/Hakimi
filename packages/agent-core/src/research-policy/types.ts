@@ -1,5 +1,6 @@
 import type { PhysicsDomainId } from '../physics-memory';
 import type { PhysicsLensApplicabilityResult } from '../physics-direction';
+import type { AitpLifecycleTriggerInfo } from '../aitp/types';
 import type { ResearchActionBinding, ResearchObligation, WorkFrame } from '../research-action';
 
 export type EscalationTier = 'tier0_light' | 'tier1_scoped' | 'tier2_verified' | 'tier3_promotion';
@@ -58,6 +59,7 @@ export interface FinalGateAitpCallObligation {
   readonly reason: string;
   readonly requiredNow: boolean;
   readonly trustBoundary: boolean;
+  readonly lifecycleTrigger?: AitpLifecycleTriggerInfo | undefined;
   readonly satisfied: boolean;
   readonly blockerRecorded: boolean;
 }
@@ -68,5 +70,6 @@ export interface FinalGateDecision {
   readonly reasons: readonly string[];
   readonly openBlockingObligationIds: readonly string[];
   readonly openAitpCallObligationIds: readonly string[];
+  readonly aitpLifecycleTriggerLines: readonly string[];
   readonly requiredActionIds: readonly string[];
 }

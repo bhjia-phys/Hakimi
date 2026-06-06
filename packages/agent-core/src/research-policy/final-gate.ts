@@ -1,5 +1,10 @@
 import { blockingOpenObligations } from '../research-action';
-import type { FinalAnswerClaimStatus, FinalGateDecision, FinalGateInput } from './types';
+import type {
+  FinalAnswerClaimStatus,
+  FinalGateAitpCallObligation,
+  FinalGateDecision,
+  FinalGateInput,
+} from './types';
 
 const STATUS_RANK: Record<FinalAnswerClaimStatus, number> = {
   exploratory: 0,
@@ -64,6 +69,9 @@ export function evaluateFinalGate(input: FinalGateInput): FinalGateDecision {
     reasons,
     openBlockingObligationIds: openBlocking.map((obligation) => obligation.id).toSorted(),
     openAitpCallObligationIds: openAitpCalls.map((obligation) => obligation.id).toSorted(),
+    aitpLifecycleTriggerLines: openAitpCalls
+      .map(renderAitpLifecycleTriggerLine)
+      .filter((line): line is string => line !== undefined),
     requiredActionIds: [...requiredActionIds].toSorted(),
   };
 }
@@ -99,10 +107,61 @@ export function renderFinalGateContinuation(decision: FinalGateDecision): string
   if (decision.openAitpCallObligationIds.length > 0) {
     lines.push(`Open AITP call obligations: ${decision.openAitpCallObligationIds.join(', ')}.`);
   }
+  if (decision.aitpLifecycleTriggerLines.length > 0) {
+    lines.push(`AITP lifecycle triggers: ${decision.aitpLifecycleTriggerLines.join('; ')}.`);
+  }
   if (decision.reasons.length > 0) {
     lines.push(`Reasons: ${decision.reasons.join(' ')}`);
   }
   return lines.join(' ');
+}
+
+function renderAitpLifecycleTriggerLine(
+  obligation: FinalGateAitpCallObligation,
+): string | undefined {
+  const trigger = obligation.lifecycleTrigger;
+  if (trigger === undefined || !hasLifecycleTrigger(trigger)) return undefined;
+  const phases =
+    trigger.lifecyclePhases.length === 0 ? 'phase=unspecified' : `phase=${trigger.lifecyclePhases.join(',')}`;
+  const conditions =
+    trigger.triggerConditions.length === 0 ? '' : ` when=${trigger.triggerConditions.join('|')}`;
+  const threshold =
+    trigger.recordingThreshold === undefined ? '' : ` threshold=${trigger.recordingThreshold}`;
+  const boundary = renderTrustBoundaryInputs(trigger.trustBoundaryInputs);
+  const host =
+    trigger.recommendedHostBehavior.length === 0
+      ? ''
+      : ` host=${trigger.recommendedHostBehavior.join('|')}`;
+  return `${obligation.actionId}@${phases}${conditions}${threshold}${boundary}${host}`;
+}
+
+function renderTrustBoundaryInputs(
+  inputs: NonNullable<FinalGateAitpCallObligation['lifecycleTrigger']>['trustBoundaryInputs'],
+): string {
+  const parts: string[] = [];
+  if (inputs.targetRefs.length > 0) parts.push(`targets=${inputs.targetRefs.join(',')}`);
+  if (inputs.claimId !== undefined && inputs.claimId.length > 0) parts.push(`claim=${inputs.claimId}`);
+  if (inputs.entrypoints.length > 0) parts.push(`entrypoints=${inputs.entrypoints.join(',')}`);
+  if (inputs.requiresPreflight) parts.push('requires_preflight=true');
+  if (inputs.finalGateRequired) parts.push('final_gate_required=true');
+  return parts.length === 0 ? '' : ` trust_inputs=${parts.join('|')}`;
+}
+
+function hasLifecycleTrigger(
+  trigger: FinalGateAitpCallObligation['lifecycleTrigger'],
+): boolean {
+  return (
+    trigger !== undefined &&
+    (trigger.lifecyclePhases.length > 0 ||
+      trigger.triggerConditions.length > 0 ||
+      trigger.recordingThreshold !== undefined ||
+      trigger.trustBoundaryInputs.targetRefs.length > 0 ||
+      trigger.trustBoundaryInputs.entrypoints.length > 0 ||
+      trigger.trustBoundaryInputs.requiredBeforeTrustChange.length > 0 ||
+      trigger.trustBoundaryInputs.requiresPreflight ||
+      trigger.trustBoundaryInputs.finalGateRequired ||
+      trigger.recommendedHostBehavior.length > 0)
+  );
 }
 
 function hasEvidence(input: FinalGateInput): boolean {

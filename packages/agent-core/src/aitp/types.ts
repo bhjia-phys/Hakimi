@@ -104,6 +104,7 @@ export interface AitpRecommendedMoment {
   readonly targetRefs: readonly string[];
   readonly timing?: string | undefined;
   readonly trustBoundary?: string | undefined;
+  readonly lifecycleTrigger: AitpLifecycleTriggerInfo;
 }
 
 export type AitpMomentPolicyDecisionType =
@@ -131,6 +132,7 @@ export interface AitpMomentPolicyDecision {
   readonly trustBoundary: boolean;
   readonly orientationOnly: boolean;
   readonly canUpdateClaimTrust: boolean;
+  readonly lifecycleTrigger: AitpLifecycleTriggerInfo;
 }
 
 export interface AitpPayloadHint {
@@ -144,6 +146,24 @@ export interface AitpPayloadHint {
   readonly orientationOnly: boolean;
   readonly summaryInputsTrusted: boolean;
   readonly canUpdateClaimTrust: boolean;
+  readonly lifecycleTrigger: AitpLifecycleTriggerInfo;
+}
+
+export interface AitpLifecycleTriggerInfo {
+  readonly lifecyclePhases: readonly string[];
+  readonly triggerConditions: readonly string[];
+  readonly recordingThreshold?: string | undefined;
+  readonly trustBoundaryInputs: AitpTrustBoundaryInputs;
+  readonly recommendedHostBehavior: readonly string[];
+}
+
+export interface AitpTrustBoundaryInputs {
+  readonly targetRefs: readonly string[];
+  readonly claimId?: string | undefined;
+  readonly entrypoints: readonly string[];
+  readonly requiredBeforeTrustChange: readonly string[];
+  readonly requiresPreflight: boolean;
+  readonly finalGateRequired: boolean;
 }
 
 export interface AitpMomentPolicy {
@@ -193,6 +213,7 @@ export interface DetectedResearchMoment {
   readonly targetRefs: readonly string[];
   readonly timing?: string | undefined;
   readonly trustBoundary?: string | undefined;
+  readonly lifecycleTrigger: AitpLifecycleTriggerInfo;
 }
 
 export interface AitpCallObligation {
@@ -213,6 +234,7 @@ export interface AitpCallObligation {
   readonly payloadHints: readonly AitpPayloadHint[];
   readonly requiredBeforeTrustChange: readonly string[];
   readonly trustBoundary: boolean;
+  readonly lifecycleTrigger: AitpLifecycleTriggerInfo;
 }
 
 export interface AitpObligationSummary {

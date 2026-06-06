@@ -35,6 +35,7 @@ export function detectResearchMoments(
       targetRefs: decision.targetRefs,
       timing: timingForPolicyDecision(decision),
       trustBoundary: decision.trustBoundary ? trustBoundaryForPolicyDecision(decision) : undefined,
+      lifecycleTrigger: decision.lifecycleTrigger,
     });
   }
 
@@ -48,6 +49,7 @@ export function detectResearchMoments(
       targetRefs: moment.targetRefs,
       timing: moment.timing,
       trustBoundary: moment.trustBoundary,
+      lifecycleTrigger: moment.lifecycleTrigger,
     });
   }
 
@@ -59,6 +61,7 @@ export function detectResearchMoments(
       reason: 'AITP slice contains open obligations that should stay explicit.',
       source: 'obligation',
       targetRefs: slice.openObligations.map((item) => item.id),
+      lifecycleTrigger: emptyLifecycleTrigger(),
     });
   }
 
@@ -75,6 +78,7 @@ export function detectResearchMoments(
         reason: `AITP obligation ${obligation.id} suggests ${id}.`,
         source: 'obligation',
         targetRefs,
+        lifecycleTrigger: emptyLifecycleTrigger(),
       });
     }
 
@@ -86,6 +90,7 @@ export function detectResearchMoments(
         reason: `Open obligation ${obligation.id} needs source backtrace.`,
         source: 'obligation',
         targetRefs,
+        lifecycleTrigger: emptyLifecycleTrigger(),
       });
     }
     if (hasAny(obligationText, ['source', 'dependency', 'citation', 'gap'])) {
@@ -96,6 +101,7 @@ export function detectResearchMoments(
         reason: `Open obligation ${obligation.id} points at a source dependency gap.`,
         source: 'obligation',
         targetRefs,
+        lifecycleTrigger: emptyLifecycleTrigger(),
       });
     }
     if (hasAny(obligationText, ['definition', 'define', 'reconstruct'])) {
@@ -106,6 +112,7 @@ export function detectResearchMoments(
         reason: `Open obligation ${obligation.id} needs a definition reconstructed.`,
         source: 'obligation',
         targetRefs,
+        lifecycleTrigger: emptyLifecycleTrigger(),
       });
     }
   }
@@ -118,6 +125,7 @@ export function detectResearchMoments(
       reason: 'AITP relation neighborhood contains a hypothesis or provisional relation path.',
       source: 'relation',
       targetRefs: relationTargetRefs(slice),
+      lifecycleTrigger: emptyLifecycleTrigger(),
     });
   }
 
@@ -129,6 +137,7 @@ export function detectResearchMoments(
       reason: 'AITP source backtrace has an unresolved source gap.',
       source: 'source-backtrace',
       targetRefs: slice.sourceBacktrace.map((item) => item.id),
+      lifecycleTrigger: emptyLifecycleTrigger(),
     });
     addMoment(moments, {
       id: 'trace.open_backtrace',
@@ -137,6 +146,7 @@ export function detectResearchMoments(
       reason: 'Open a backtrace before treating the gap as resolved.',
       source: 'source-backtrace',
       targetRefs: slice.sourceBacktrace.map((item) => item.id),
+      lifecycleTrigger: emptyLifecycleTrigger(),
     });
   }
 
@@ -153,6 +163,7 @@ export function detectResearchMoments(
       targetRefs,
       timing: 'before_trust_update',
       trustBoundary: 'human_checkpoint',
+      lifecycleTrigger: emptyLifecycleTrigger(),
     });
     addMoment(moments, {
       id: 'aitp.record_research_state',
@@ -163,6 +174,7 @@ export function detectResearchMoments(
       targetRefs,
       timing: 'at_trust_boundary',
       trustBoundary: 'trust_boundary',
+      lifecycleTrigger: emptyLifecycleTrigger(),
     });
   }
 
@@ -187,6 +199,7 @@ export function detectResearchMoments(
         reason: `AITP exploratory record ${record.id} is active in the local research graph.`,
         source: 'exploration',
         targetRefs,
+        lifecycleTrigger: emptyLifecycleTrigger(),
       });
     }
     if (record.explorationType === 'question_decomposition' && isOpenExploration(record.status)) {
@@ -197,6 +210,7 @@ export function detectResearchMoments(
         reason: `Question decomposition ${record.id} should steer the next local analysis.`,
         source: 'exploration',
         targetRefs,
+        lifecycleTrigger: emptyLifecycleTrigger(),
       });
     }
     if (record.explorationType === 'relation_path_brainstorm' || hasAny(textForRecord, ['relation path'])) {
@@ -207,6 +221,7 @@ export function detectResearchMoments(
         reason: `Exploratory record ${record.id} keeps a relation path provisional.`,
         source: 'exploration',
         targetRefs,
+        lifecycleTrigger: emptyLifecycleTrigger(),
       });
     }
     if (
@@ -221,6 +236,7 @@ export function detectResearchMoments(
         reason: `Exploratory record ${record.id} needs source/backtrace continuity.`,
         source: 'exploration',
         targetRefs,
+        lifecycleTrigger: emptyLifecycleTrigger(),
       });
       addMoment(moments, {
         id: 'trace.follow_source_dependency',
@@ -229,6 +245,7 @@ export function detectResearchMoments(
         reason: `Exploratory record ${record.id} points at source dependency work.`,
         source: 'exploration',
         targetRefs,
+        lifecycleTrigger: emptyLifecycleTrigger(),
       });
     }
     if (record.originalQuestion !== undefined && record.localQuestion !== undefined) {
@@ -239,6 +256,7 @@ export function detectResearchMoments(
         reason: `Exploratory record ${record.id} has a local question tied to an original question.`,
         source: 'exploration',
         targetRefs,
+        lifecycleTrigger: emptyLifecycleTrigger(),
       });
     }
     if (record.unresolvedPoints.length > 0) {
@@ -249,6 +267,7 @@ export function detectResearchMoments(
         reason: `Exploratory record ${record.id} has unresolved points that may need typed obligations.`,
         source: 'exploration',
         targetRefs,
+        lifecycleTrigger: emptyLifecycleTrigger(),
       });
     }
   }
@@ -520,6 +539,7 @@ function addKeywordMoment(
     reason,
     source: 'keyword',
     targetRefs: [],
+    lifecycleTrigger: emptyLifecycleTrigger(),
   });
 }
 
@@ -538,6 +558,9 @@ function addMoment(
       targetRefs: unique([...existing.targetRefs, ...moment.targetRefs]),
       timing: existing.timing ?? moment.timing,
       trustBoundary: existing.trustBoundary ?? moment.trustBoundary,
+      lifecycleTrigger: hasLifecycleTrigger(existing.lifecycleTrigger)
+        ? existing.lifecycleTrigger
+        : moment.lifecycleTrigger,
     });
   }
 }
@@ -561,6 +584,18 @@ function detectorText(slice: AitpProcessGraphSlice, input: ResearchMomentDetecto
       ...item.missingComponents,
       ...item.entrypoints,
       ...item.requiredBeforeTrustChange,
+      ...item.lifecycleTrigger.lifecyclePhases,
+      ...item.lifecycleTrigger.triggerConditions,
+      item.lifecycleTrigger.recordingThreshold,
+      ...lifecycleTrustBoundaryText(item.lifecycleTrigger),
+      ...item.lifecycleTrigger.recommendedHostBehavior,
+    ]),
+    ...slice.recommendedMoments.flatMap((item) => [
+      ...item.lifecycleTrigger.lifecyclePhases,
+      ...item.lifecycleTrigger.triggerConditions,
+      item.lifecycleTrigger.recordingThreshold,
+      ...lifecycleTrustBoundaryText(item.lifecycleTrigger),
+      ...item.lifecycleTrigger.recommendedHostBehavior,
     ]),
     ...slice.exploratoryRecords.flatMap((item) => [
       item.explorationType,
@@ -652,6 +687,50 @@ function hasAny(text: string, needles: readonly string[]): boolean {
 
 function isString(value: string | undefined): value is string {
   return value !== undefined && value.length > 0;
+}
+
+function emptyLifecycleTrigger() {
+  return {
+    lifecyclePhases: [],
+    triggerConditions: [],
+    recordingThreshold: undefined,
+    trustBoundaryInputs: {
+      targetRefs: [],
+      claimId: undefined,
+      entrypoints: [],
+      requiredBeforeTrustChange: [],
+      requiresPreflight: false,
+      finalGateRequired: false,
+    },
+    recommendedHostBehavior: [],
+  };
+}
+
+function hasLifecycleTrigger(trigger: DetectedResearchMoment['lifecycleTrigger']): boolean {
+  return (
+    trigger.lifecyclePhases.length > 0 ||
+    trigger.triggerConditions.length > 0 ||
+    trigger.recordingThreshold !== undefined ||
+    trigger.trustBoundaryInputs.targetRefs.length > 0 ||
+    trigger.trustBoundaryInputs.entrypoints.length > 0 ||
+    trigger.trustBoundaryInputs.requiredBeforeTrustChange.length > 0 ||
+    trigger.trustBoundaryInputs.requiresPreflight ||
+    trigger.trustBoundaryInputs.finalGateRequired ||
+    trigger.recommendedHostBehavior.length > 0
+  );
+}
+
+function lifecycleTrustBoundaryText(
+  trigger: DetectedResearchMoment['lifecycleTrigger'],
+): readonly string[] {
+  return [
+    ...trigger.trustBoundaryInputs.targetRefs,
+    trigger.trustBoundaryInputs.claimId,
+    ...trigger.trustBoundaryInputs.entrypoints,
+    ...trigger.trustBoundaryInputs.requiredBeforeTrustChange,
+    trigger.trustBoundaryInputs.requiresPreflight ? 'requires_preflight' : undefined,
+    trigger.trustBoundaryInputs.finalGateRequired ? 'final_gate_required' : undefined,
+  ].filter(isString);
 }
 
 function unique(values: readonly string[]): readonly string[] {

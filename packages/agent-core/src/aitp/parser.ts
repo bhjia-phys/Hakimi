@@ -1,5 +1,6 @@
 import type {
   AitpExploratoryRecordItem,
+  AitpLifecycleTriggerInfo,
   AitpMomentPolicy,
   AitpMomentPolicyDecision,
   AitpObligationSeverity,
@@ -193,6 +194,7 @@ function momentArray(value: unknown): readonly AitpRecommendedMoment[] {
         targetRefs: [],
         timing: undefined,
         trustBoundary: undefined,
+        lifecycleTrigger: emptyLifecycleTrigger(),
       });
       continue;
     }
@@ -211,6 +213,7 @@ function momentArray(value: unknown): readonly AitpRecommendedMoment[] {
         stringValue(item['trust_boundary']) ??
         stringValue(item['trustBoundary']) ??
         stringValue(item['boundary']),
+      lifecycleTrigger: parseLifecycleTrigger(item),
     });
   }
   return moments;
@@ -271,6 +274,7 @@ function parseMomentPolicyDecision(
     trustBoundary: booleanValue(raw['trust_boundary']) ?? false,
     orientationOnly: booleanValue(raw['orientation_only']) ?? true,
     canUpdateClaimTrust: booleanValue(raw['can_update_claim_trust']) ?? false,
+    lifecycleTrigger: parseLifecycleTrigger(raw),
   };
 }
 
@@ -288,6 +292,66 @@ function parsePayloadHint(raw: Record<string, unknown>): AitpPayloadHint {
     orientationOnly: booleanValue(raw['orientation_only']) ?? true,
     summaryInputsTrusted: booleanValue(raw['summary_inputs_trusted']) ?? false,
     canUpdateClaimTrust: booleanValue(raw['can_update_claim_trust']) ?? false,
+    lifecycleTrigger: parseLifecycleTrigger(raw),
+  };
+}
+
+function parseLifecycleTrigger(raw: Record<string, unknown>): AitpLifecycleTriggerInfo {
+  return {
+    lifecyclePhases: stringArray(valueFor(raw, 'lifecycle_phases', 'lifecyclePhases')),
+    triggerConditions: stringArray(valueFor(raw, 'trigger_conditions', 'triggerConditions')),
+    recordingThreshold: stringValue(valueFor(raw, 'recording_threshold', 'recordingThreshold')),
+    trustBoundaryInputs: parseTrustBoundaryInputs(
+      valueFor(raw, 'trust_boundary_inputs', 'trustBoundaryInputs'),
+    ),
+    recommendedHostBehavior: stringList(
+      valueFor(raw, 'recommended_host_behavior', 'recommendedHostBehavior'),
+    ),
+  };
+}
+
+function emptyLifecycleTrigger(): AitpLifecycleTriggerInfo {
+  return {
+    lifecyclePhases: [],
+    triggerConditions: [],
+    recordingThreshold: undefined,
+    trustBoundaryInputs: emptyTrustBoundaryInputs(),
+    recommendedHostBehavior: [],
+  };
+}
+
+function parseTrustBoundaryInputs(value: unknown): AitpLifecycleTriggerInfo['trustBoundaryInputs'] {
+  if (isRecord(value)) {
+    return {
+      targetRefs: stringArray(valueFor(value, 'target_refs', 'targetRefs')),
+      claimId: stringValue(valueFor(value, 'claim_id', 'claimId')),
+      entrypoints: stringArray(value['entrypoints']),
+      requiredBeforeTrustChange: stringArray(
+        valueFor(value, 'required_before_trust_change', 'requiredBeforeTrustChange'),
+      ),
+      requiresPreflight: booleanValue(
+        valueFor(value, 'requires_preflight', 'requiresPreflight'),
+      ) ?? false,
+      finalGateRequired: booleanValue(
+        valueFor(value, 'final_gate_required', 'finalGateRequired'),
+      ) ?? false,
+    };
+  }
+  const targetRefs = stringArray(value);
+  return {
+    ...emptyTrustBoundaryInputs(),
+    targetRefs,
+  };
+}
+
+function emptyTrustBoundaryInputs(): AitpLifecycleTriggerInfo['trustBoundaryInputs'] {
+  return {
+    targetRefs: [],
+    claimId: undefined,
+    entrypoints: [],
+    requiredBeforeTrustChange: [],
+    requiresPreflight: false,
+    finalGateRequired: false,
   };
 }
 
@@ -332,9 +396,23 @@ function stringArray(value: unknown): readonly string[] {
     .map((item) => item.trim());
 }
 
+function stringList(value: unknown): readonly string[] {
+  const single = stringValue(value);
+  if (single !== undefined) return [single];
+  return stringArray(value);
+}
+
 function objectArray(value: unknown): readonly Record<string, unknown>[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isRecord);
+}
+
+function valueFor(
+  raw: Record<string, unknown>,
+  snakeKey: string,
+  camelKey: string,
+): unknown {
+  return raw[snakeKey] ?? raw[camelKey];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
