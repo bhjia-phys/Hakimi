@@ -53,7 +53,7 @@ That means a research action can search literature, inspect code, prepare patche
 - AITP `source_asset` nodes and `source_asset_ids` now compile into source-backtrace reminders, so raw papers, lectures, notes, code snapshots, datasets, and generated artifacts stay canonical in `.aitp` while Hakimi keeps only bounded WorkFrame context.
 - AITP moment-policy metadata now flows into Hakimi action bindings: timing and trust-boundary hints tell the model when to brainstorm before using a relation, backtrace before using a source as support, record a formed checkpoint, or request a human checkpoint before trust changes.
 - AITP write moments now carry explicit bridge metadata inside `ResearchActionBinding.params`, so ContextPacks can show whether the next durable write should use `recordExploratoryRecord`, `createProofObligation`, `requestHumanCheckpoint`, or another constrained AITP bridge operation.
-- Hakimi now has a narrow AITP CLI bridge for `aitp-v5 graph slice`, `aitp-v5 exploration record`, `aitp-v5 asset register`, `aitp-v5 checkpoint request`, `aitp-v5 research-state create-proof-obligation`, and AITP validation contract/result records, plus a controller-side process graph provider that can fetch an AITP slice before research-context injection when a WorkFrame carries explicit `aitp:session:<id>` scope. The bridge executes only a configured AITP command with structured args and keeps `.aitp` as the canonical record store.
+- Hakimi sessions now auto-configure a narrow AITP CLI bridge for `aitp-v5 graph slice`, `aitp-v5 exploration record`, `aitp-v5 asset register`, `aitp-v5 checkpoint request`, `aitp-v5 research-state create-proof-obligation`, and AITP validation contract/result records. The bridge resolves `--base` from the current Agent cwd at call time, fetches an AITP slice before research-context injection only when a WorkFrame carries explicit `aitp:session:<id>` scope, executes only a configured AITP command with structured args, and keeps `.aitp` as the canonical record store.
 - `ResearchAction.execute_aitp_write_bridge` can now execute a configured AITP write bridge for exploratory records, source asset registration, proof obligations, validation contracts, validation results, and human-checkpoint requests. Successful writes are recorded as scoped `research_action.result_recorded` events with AITP evidence refs instead of becoming hidden side effects.
 - A native bridge smoke now verifies the QG/MIPT-shaped loop from fake AITP `process_graph_slice` to Hakimi `ContextPack` action bindings, `writeBridge` metadata, and constrained AITP CLI write-back for proof obligations and human checkpoints. This proves the local runtime contract without requiring Python/AITP dependencies during Hakimi unit tests.
 - Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
@@ -92,10 +92,13 @@ diagnostics, source-asset reminders, moment-policy timing/trust-boundary hints,
 native `ResearchActionBinding` recommendations, and explicit write-bridge hints
 for durable AITP records. AITP owns source asset identity, hashes, version anchors, and
 raw asset provenance; Hakimi only compiles the currently relevant source asset
-ids into a bounded WorkFrame prompt. Hakimi also has a narrow CLI bridge and
-optional WorkFrame-scoped provider for `aitp-v5 graph slice`, plus write
-bridges for exploratory records, source asset registration, human checkpoint
-requests, proof-obligation creation, and validation contract/result records.
+ids into a bounded WorkFrame prompt. Hakimi sessions now create a narrow
+dynamic CLI bridge by default: the process-graph provider calls
+`aitp-v5 graph slice` with `--base` resolved from the current Agent cwd, and the
+write bridge covers exploratory records, source asset registration, human
+checkpoint requests, proof-obligation creation, and validation contract/result
+records. SDK callers can still provide explicit bridges or disable automatic
+AITP bridge wiring for isolated tests and non-AITP deployments.
 These validation writes add typed validation material to AITP; they still do not
 let Hakimi update claim trust without AITP preflight and the required gates. The default scope resolver only reads AITP when the WorkFrame
 explicitly carries refs such as `aitp:session:<id>` and `aitp:claim:<id>`, so
@@ -109,7 +112,9 @@ bridge plus structured payloads for `recordExploratoryRecord`,
 as a normal WorkFrame-scoped research action. If no AITP write bridge is
 configured, it fails closed.
 
-The compatibility smoke in
+The dynamic session bridge is covered by fake-runner unit tests that prove
+default Agent wiring, explicit override precedence, the disable switch, and
+call-time cwd/base-path resolution. The compatibility smoke in
 `packages/agent-core/test/aitp/native-bridge-smoke.test.ts` is intentionally
 fake-runner based: it proves Hakimi keeps the AITP boundary executable from
 slice consumption through action binding and typed write-back args, but it does
@@ -117,10 +122,11 @@ not claim that the local AITP Python CLI, filesystem records, or MCP server were
 available in the test environment. Full real-AITP smoke remains a separate
 integration lane.
 
-The remaining runtime work is policy, not schema: the turn loop can now fetch a
-slice through a provider, but it still needs richer moment policy for when a
-brainstorming or backtrace step has become formed enough to record, and when a
-trust boundary requires stricter validation or a human checkpoint.
+The remaining runtime work is policy, not schema: the turn loop now has the
+default session bridge needed to fetch a scoped slice, but it still needs richer
+moment policy for when a brainstorming or backtrace step has become formed
+enough to record, and when a trust boundary requires stricter validation or a
+human checkpoint.
 
 ## Relationship To Upstream
 
