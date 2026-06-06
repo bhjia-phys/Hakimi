@@ -134,6 +134,12 @@ describe('compileResearchContextPack', () => {
       sourceStackCoverageNextActions: expect.arrayContaining([
         'record_evidence_for_required_outputs:claim-fqhe',
       ]),
+      sourceReconstructionReviewClaimIds: ['claim-fqhe'],
+      sourceReconstructionReviewOpenClaimIds: ['claim-fqhe'],
+      sourceReconstructionReviewNeedsRevisionClaimIds: [],
+      sourceReconstructionReviewInconclusiveClaimIds: [],
+      sourceReconstructionReviewPacketClaimIds: ['claim-fqhe'],
+      sourceReconstructionReviewNextActions: ['source_reconstruction_review:claim-fqhe'],
       openObligationIds: ['obligation-source'],
       requiredCallIds: expect.arrayContaining([
         expect.stringContaining('aitp-record-evidence'),
@@ -150,6 +156,9 @@ describe('compileResearchContextPack', () => {
     );
     expect(pack.aitp?.contextLines.join('\n')).toContain(
       'Source stack coverage: claim-fqhe [evidence_gap/guided]',
+    );
+    expect(pack.aitp?.contextLines.join('\n')).toContain(
+      'Source reconstruction review: claim-fqhe [pending/incomplete]',
     );
     expect(pack.actionBindings.map((item) => item.actionId)).toEqual(
       expect.arrayContaining([
@@ -492,6 +501,38 @@ function aitpSlicePayload() {
         'complete_source_reconstruction:claim-fqhe',
         'review_source_reconstruction:claim-fqhe',
       ],
+      truth_source: 'typed_records',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
+    source_reconstruction_review: {
+      kind: 'source_reconstruction_review_manifest',
+      claim_count: 1,
+      review_progress: {
+        passed: 0,
+        needs_revision: 0,
+        inconclusive: 0,
+        pending: 1,
+      },
+      items: [
+        {
+          topic_id: 'fqhe-cs-effective-theory',
+          claim_id: 'claim-fqhe',
+          claim_statement: 'Sector counting identifies the edge CFT.',
+          source_reconstruction_status: 'incomplete',
+          missing_components: ['reconstruction_path'],
+          review_status: 'pending',
+          review_result_ids: [],
+          latest_review_result: {},
+          reviewed_components: [],
+          remaining_actions: [],
+          review_packet_cli: 'aitp-v5 source reconstruction-review --claim claim-fqhe',
+          result_cli: 'aitp-v5 source reconstruction-review-result --claim claim-fqhe <args>',
+          next_actions: ['source_reconstruction_review', 'complete_source_reconstruction'],
+          can_update_claim_trust: false,
+        },
+      ],
+      next_actions: ['source_reconstruction_review:claim-fqhe'],
       truth_source: 'typed_records',
       orientation_only: true,
       can_update_claim_trust: false,

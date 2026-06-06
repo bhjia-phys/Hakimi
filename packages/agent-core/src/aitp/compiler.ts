@@ -12,6 +12,9 @@ import type {
   AitpRouteState,
   AitpRouteStateItem,
   AitpRouteSummary,
+  AitpSourceReconstructionReview,
+  AitpSourceReconstructionReviewItem,
+  AitpSourceReconstructionReviewSummary,
   AitpSourceStackCoverage,
   AitpSourceStackCoverageItem,
   AitpSourceStackCoverageSummary,
@@ -55,6 +58,10 @@ export function compileAitpProcessGraphSlice(
   const provenance = summarizeProvenanceGaps(slice.provenanceGaps, maxItems);
   const sourceAssets = summarizeSourceAssets(slice.sourceAssetIndex, maxItems);
   const sourceStackCoverage = summarizeSourceStackCoverage(slice.sourceStackCoverage, maxItems);
+  const sourceReconstructionReview = summarizeSourceReconstructionReview(
+    slice.sourceReconstructionReview,
+    maxItems,
+  );
   const trust = summarizeTrust(slice);
   const suggestedNextMoments = detectResearchMoments(slice, options);
   const callObligations = buildCallObligations(slice);
@@ -69,6 +76,7 @@ export function compileAitpProcessGraphSlice(
     provenance,
     sourceAssets,
     sourceStackCoverage,
+    sourceReconstructionReview,
     suggestedNextMoments,
     callObligations,
     theoryReasoning,
@@ -84,6 +92,7 @@ export function compileAitpProcessGraphSlice(
       provenance,
       sourceAssets,
       sourceStackCoverage,
+      sourceReconstructionReview,
       maxItems,
     ),
     contextLines,
@@ -93,6 +102,7 @@ export function compileAitpProcessGraphSlice(
     routes,
     sourceAssets,
     sourceStackCoverage,
+    sourceReconstructionReview,
     provenance,
     suggestedNextMoments,
     trust,
@@ -129,6 +139,7 @@ function buildContextLines(
   provenance: AitpProvenanceGapSummary,
   sourceAssets: AitpSourceAssetSummary,
   sourceStackCoverage: AitpSourceStackCoverageSummary,
+  sourceReconstructionReview: AitpSourceReconstructionReviewSummary,
   moments: readonly DetectedResearchMoment[],
   callObligations: readonly AitpCallObligation[],
   theoryReasoning: AitpTheoryReasoningProjection | undefined,
@@ -145,6 +156,7 @@ function buildContextLines(
   lines.push(...provenance.lines);
   lines.push(...sourceAssets.lines);
   lines.push(...sourceStackCoverage.lines);
+  lines.push(...sourceReconstructionReview.lines);
 
   const sourceGaps = slice.sourceBacktrace.filter((item) =>
     lowerJoin([item.status, item.reason, item.gap]).match(/gap|missing|unresolved|open|no source/) !==
@@ -237,6 +249,7 @@ function buildReminderLines(
   provenance: AitpProvenanceGapSummary,
   sourceAssets: AitpSourceAssetSummary,
   sourceStackCoverage: AitpSourceStackCoverageSummary,
+  sourceReconstructionReview: AitpSourceReconstructionReviewSummary,
   maxItems: number,
 ): readonly string[] {
   const lines = [
@@ -282,6 +295,11 @@ function buildReminderLines(
   ) {
     lines.push(
       'Use AITP source stack coverage before treating source reconstruction, evidence outputs, or review status as complete.',
+    );
+  }
+  if (sourceReconstructionReview.openReviewClaimIds.length > 0) {
+    lines.push(
+      'Use AITP source reconstruction review status and review packets before treating source reconstruction as reviewed.',
     );
   }
   return lines;
@@ -442,6 +460,62 @@ export function summarizeSourceStackCoverage(
     missingRequiredOutputClaimIds,
     missingSourceComponentClaimIds,
     reviewGapClaimIds,
+    nextActions,
+    lines,
+  };
+}
+
+export function summarizeSourceReconstructionReview(
+  review: AitpSourceReconstructionReview,
+  maxItems = MAX_CONTEXT_ITEMS,
+): AitpSourceReconstructionReviewSummary {
+  const all = review.items;
+  const pending = all.filter((item) => item.reviewStatus === 'pending');
+  const needsRevision = all.filter((item) => item.reviewStatus === 'needs_revision');
+  const inconclusive = all.filter((item) => item.reviewStatus === 'inconclusive');
+  const passed = all.filter((item) => item.reviewStatus === 'passed');
+  const open = [...pending, ...needsRevision, ...inconclusive];
+  const openReviewClaimIds = unique(open.map((item) => item.claimId));
+  const needsRevisionClaimIds = unique(needsRevision.map((item) => item.claimId));
+  const inconclusiveClaimIds = unique(inconclusive.map((item) => item.claimId));
+  const reviewPacketClaimIds = unique(
+    open.filter((item) => item.reviewPacketCli.length > 0).map((item) => item.claimId),
+  );
+  const nextActions = unique(review.nextActions);
+  const lines: string[] = [];
+  if (all.length > 0) {
+    lines.push(
+      `Source reconstruction review: ${bounded(all.map(renderSourceReconstructionReviewItem), maxItems).join('; ')}`,
+    );
+  }
+  if (openReviewClaimIds.length > 0) {
+    lines.push(
+      `Source reconstruction review open: ${bounded(openReviewClaimIds, maxItems).join(', ')}`,
+    );
+  }
+  if (needsRevisionClaimIds.length > 0) {
+    lines.push(
+      `Source reconstruction review needs revision: ${bounded(needsRevisionClaimIds, maxItems).join(', ')}`,
+    );
+  }
+  if (inconclusiveClaimIds.length > 0) {
+    lines.push(
+      `Source reconstruction review inconclusive: ${bounded(inconclusiveClaimIds, maxItems).join(', ')}`,
+    );
+  }
+  if (nextActions.length > 0) {
+    lines.push(`Source reconstruction review next actions: ${bounded(nextActions, maxItems).join(', ')}`);
+  }
+  return {
+    all,
+    pending,
+    needsRevision,
+    inconclusive,
+    passed,
+    openReviewClaimIds,
+    needsRevisionClaimIds,
+    inconclusiveClaimIds,
+    reviewPacketClaimIds,
     nextActions,
     lines,
   };
@@ -1098,6 +1172,12 @@ function buildDiagnostics(slice: AitpProcessGraphSlice): readonly string[] {
   if (slice.sourceStackCoverage.items.some((item) => item.coverageStatus !== 'complete')) {
     diagnostics.push('source-stack-coverage-gaps-present');
   }
+  if (slice.sourceReconstructionReview.items.length > 0) {
+    diagnostics.push('source-reconstruction-review-present');
+  }
+  if (slice.sourceReconstructionReview.items.some((item) => item.reviewStatus !== 'passed')) {
+    diagnostics.push('source-reconstruction-review-open');
+  }
   return diagnostics;
 }
 
@@ -1178,6 +1258,17 @@ function renderSourceStackCoverageItem(item: AitpSourceStackCoverageItem): strin
     ` missing_outputs=${missingOutputs}` +
     ` missing_components=${missingComponents}` +
     ` review=${item.sourceReconstructionReviewStatus}`
+  );
+}
+
+function renderSourceReconstructionReviewItem(item: AitpSourceReconstructionReviewItem): string {
+  const missing = item.missingComponents.length === 0 ? 'none' : item.missingComponents.join('|');
+  const remaining = item.remainingActions.length === 0 ? 'none' : item.remainingActions.join('|');
+  return (
+    `${item.claimId} [${item.reviewStatus}/${item.sourceReconstructionStatus}]` +
+    ` missing=${missing}` +
+    ` reviewed=${item.reviewedComponents.length === 0 ? 'none' : item.reviewedComponents.join('|')}` +
+    ` remaining=${remaining}`
   );
 }
 
@@ -1280,12 +1371,16 @@ function withSliceDefaults(slice: AitpProcessGraphSlice): AitpProcessGraphSlice 
   const sourceStackCoverage =
     (slice as { readonly sourceStackCoverage?: AitpSourceStackCoverage }).sourceStackCoverage ??
     emptySourceStackCoverage();
+  const sourceReconstructionReview =
+    (slice as { readonly sourceReconstructionReview?: AitpSourceReconstructionReview })
+      .sourceReconstructionReview ?? emptySourceReconstructionReview();
   return {
     ...slice,
     routeState,
     provenanceGaps,
     sourceAssetIndex,
     sourceStackCoverage,
+    sourceReconstructionReview,
   };
 }
 
@@ -1308,6 +1403,19 @@ function emptySourceStackCoverage(): AitpSourceStackCoverage {
     missingRequiredOutputCounts: {},
     sourceComponentGapCounts: {},
     sourceReviewStatusCounts: {},
+    items: [],
+    nextActions: [],
+    truthSource: 'typed_records',
+    orientationOnly: true,
+    canUpdateClaimTrust: false,
+  };
+}
+
+function emptySourceReconstructionReview(): AitpSourceReconstructionReview {
+  return {
+    kind: 'source_reconstruction_review_manifest',
+    claimCount: 0,
+    reviewProgress: {},
     items: [],
     nextActions: [],
     truthSource: 'typed_records',

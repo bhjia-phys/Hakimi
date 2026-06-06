@@ -58,6 +58,7 @@ That means a research action can search literature, inspect code, prepare patche
 - AITP `provenance_gaps[]` now compile into provenance summaries, WorkFrame reminder lines, ContextPack provenance fields, and capture-oriented `ResearchAction` bindings such as `aitp.register_source_asset`, `aitp.capture_code_state_auto`, `aitp.record_tool_run`, `aitp.attach_artifact`, and `code.capture_git_diff_observation`. Ordinary source/code/tool/artifact gaps are reuse-before-trust guidance, not final-gate blockers, unless AITP explicitly marks them as required before a trust change.
 - AITP `source_asset_index[]` now compiles into native `sourceAssets` summaries, WorkFrame reminders, and ContextPack XML fields for all indexed source asset ids, missing hashes, and duplicate hashes. Hakimi reads the index to decide what source/code/artifact provenance needs attention, but it does not create a `.hakimi` source asset store.
 - AITP `source_stack_coverage` now compiles into native `sourceStackCoverage` summaries, WorkFrame reminders, and ContextPack XML fields for covered claim ids, evidence-output gaps, reconstruction gaps, review gaps, and AITP next actions. Hakimi uses it as source-stack readiness guidance and leaves final-gate blocking to explicit AITP trust/final prerequisites.
+- AITP `source_reconstruction_review` now compiles into native source reconstruction review summaries, WorkFrame reminders, and ContextPack XML fields for review claim ids, open review claim ids, needs-revision/inconclusive claim ids, review-packet claim ids, and AITP next actions. Hakimi uses it as review worklist guidance, not as claim-trust authority.
 - Hakimi's final gate now reads active ContextPack AITP `callObligations`: unchecked required-now calls or trust-boundary prerequisites force a final-gate continuation and status downgrade unless the corresponding `ResearchAction` was recorded as passed or explicitly blocked.
 - AITP write moments now carry explicit bridge metadata inside `ResearchActionBinding.params`, so ContextPacks can show whether the next durable write should use `recordEvidence`, `recordReferenceLocation`, `recordToolRun`, `recordExploratoryRecord`, `captureCodeStateAuto`, `attachArtifact`, `createProofObligation`, `requestHumanCheckpoint`, or another constrained AITP bridge operation.
 - Hakimi sessions now auto-configure a narrow AITP CLI bridge for `aitp-v5 graph slice`, `aitp-v5 evidence record`, `aitp-v5 tool run record`, `aitp-v5 reference location record`, `aitp-v5 exploration record`, `aitp-v5 route record`, `aitp-v5 asset register`, `aitp-v5 code state auto`, `aitp-v5 research-state attach-artifact`, `aitp-v5 checkpoint request`, `aitp-v5 research-state create-proof-obligation`, and AITP validation contract/result records. The bridge resolves `--base` from the current Agent cwd at call time, fetches an AITP slice before research-context injection only when a WorkFrame carries explicit `aitp:session:<id>` scope, executes only a configured AITP command with structured args, and keeps `.aitp` as the canonical record store.
@@ -141,7 +142,11 @@ coverage manifest, summarizes claim ids with missing required outputs,
 incomplete source reconstruction, or review gaps, renders AITP next actions in
 WorkFrame reminders and ContextPack XML, and keeps it orientation-only. Coverage
 gaps do not become Hakimi final-gate blockers unless AITP also marks an
-explicit final/trust prerequisite. Hakimi sessions now create a narrow
+explicit final/trust prerequisite. AITP `source_reconstruction_review` is
+projected as the adjacent review worklist: Hakimi parses pending,
+needs-revision, inconclusive, and passed review state, surfaces review-packet
+claim ids plus AITP next actions, and keeps review guidance separate from
+claim-trust authority. Hakimi sessions now create a narrow
 dynamic CLI bridge by default: the process-graph provider calls
 `aitp-v5 graph slice` with `--base` resolved from the current Agent cwd, and the
 write bridge covers exploratory records, source asset registration, artifact

@@ -180,6 +180,18 @@ function collectAitp(
       input.aitp.sourceStackCoverage.missingSourceComponentClaimIds,
     sourceStackReviewGapClaimIds: input.aitp.sourceStackCoverage.reviewGapClaimIds,
     sourceStackCoverageNextActions: input.aitp.sourceStackCoverage.nextActions,
+    sourceReconstructionReviewClaimIds:
+      input.aitp.sourceReconstructionReview.all.map((item) => item.claimId),
+    sourceReconstructionReviewOpenClaimIds:
+      input.aitp.sourceReconstructionReview.openReviewClaimIds,
+    sourceReconstructionReviewNeedsRevisionClaimIds:
+      input.aitp.sourceReconstructionReview.needsRevisionClaimIds,
+    sourceReconstructionReviewInconclusiveClaimIds:
+      input.aitp.sourceReconstructionReview.inconclusiveClaimIds,
+    sourceReconstructionReviewPacketClaimIds:
+      input.aitp.sourceReconstructionReview.reviewPacketClaimIds,
+    sourceReconstructionReviewNextActions:
+      input.aitp.sourceReconstructionReview.nextActions,
     trustBoundaryReasons: input.aitp.trust.trustBoundaryReasons,
     openObligationIds: [
       ...input.aitp.obligations.blocking,
