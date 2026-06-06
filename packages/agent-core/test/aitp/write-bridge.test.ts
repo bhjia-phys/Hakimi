@@ -127,6 +127,15 @@ describe('AITP write bridge executor', () => {
       known_divergence: 'local validation patch',
       write_patch_artifact: true,
     });
+    const artifact = coerceAitpWriteBridgeInput('attachArtifact', {
+      topic_id: 'qg-algebra-mipt',
+      claim_id: 'claim-mipt-observer-algebra',
+      artifact_type: 'benchmark_log',
+      artifact_uri: 'runs/qg/benchmark.log',
+      artifact_summary: 'Benchmark log for the source reconstruction check.',
+      size_bytes: '2048',
+      metadata: { role: 'benchmark_output' },
+    });
     const reference = coerceAitpWriteBridgeInput('recordReferenceLocation', {
       topic_id: 'qg-algebra-mipt',
       claim_id: 'claim-mipt-observer-algebra',
@@ -164,6 +173,18 @@ describe('AITP write bridge executor', () => {
         runtimeEnvironment: { os: 'windows' },
         linkedRecords: { claim_id: 'claim-gw' },
         writePatchArtifact: true,
+      },
+    });
+    expect(artifact).toMatchObject({
+      operation: 'attachArtifact',
+      payload: {
+        topicId: 'qg-algebra-mipt',
+        claimId: 'claim-mipt-observer-algebra',
+        artifactType: 'benchmark_log',
+        uri: 'runs/qg/benchmark.log',
+        summary: 'Benchmark log for the source reconstruction check.',
+        sizeBytes: '2048',
+        metadata: { role: 'benchmark_output' },
       },
     });
     expect(reference).toMatchObject({
@@ -251,6 +272,22 @@ describe('AITP write bridge executor', () => {
           raw: {},
         };
       },
+      async attachArtifact() {
+        calls.push('attachArtifact');
+        return {
+          ok: true,
+          kind: 'artifact',
+          artifactId: 'artifact-qg-log',
+          topicId: 'qg',
+          claimId: 'claim-qg',
+          artifactType: 'benchmark_log',
+          uri: 'runs/qg/benchmark.log',
+          summary: 'Benchmark log.',
+          sizeBytes: 2048,
+          canUpdateClaimTrust: false,
+          raw: {},
+        };
+      },
       async recordReferenceLocation() {
         calls.push('recordReferenceLocation');
         return {
@@ -322,6 +359,16 @@ describe('AITP write bridge executor', () => {
     };
     const executor = createAitpCliWriteBridgeExecutor(target);
 
+    const artifact = await executor.executeWrite({
+      operation: 'attachArtifact',
+      payload: {
+        topicId: 'qg',
+        claimId: 'claim-qg',
+        artifactType: 'benchmark_log',
+        uri: 'runs/qg/benchmark.log',
+        summary: 'Benchmark log.',
+      },
+    });
     const result = await executor.executeWrite({
       operation: 'requestHumanCheckpoint',
       payload: {
@@ -333,7 +380,15 @@ describe('AITP write bridge executor', () => {
       },
     });
 
-    expect(calls).toEqual(['requestHumanCheckpoint']);
+    expect(calls).toEqual(['attachArtifact', 'requestHumanCheckpoint']);
+    expect(artifact).toMatchObject({
+      kind: 'artifact',
+      artifactId: 'artifact-qg-log',
+      canUpdateClaimTrust: false,
+    });
+    expect(evidenceRefsForAitpWriteBridgeResult(artifact)).toEqual([
+      'aitp:artifact:artifact-qg-log',
+    ]);
     expect(result).toMatchObject({
       kind: 'human_checkpoint',
       checkpointId: 'checkpoint-qg',
@@ -388,6 +443,21 @@ describe('AITP write bridge executor', () => {
         raw: {},
       }),
     ).toEqual(['aitp:code_state:code-state-qg']);
+    expect(
+      evidenceRefsForAitpWriteBridgeResult({
+        ok: true,
+        kind: 'artifact',
+        artifactId: 'artifact-qg-log',
+        topicId: 'qg',
+        claimId: 'claim-qg',
+        artifactType: 'benchmark_log',
+        uri: 'runs/qg/benchmark.log',
+        summary: 'Benchmark log.',
+        sizeBytes: 2048,
+        canUpdateClaimTrust: false,
+        raw: {},
+      }),
+    ).toEqual(['aitp:artifact:artifact-qg-log']);
     expect(
       evidenceRefsForAitpWriteBridgeResult({
         ok: true,

@@ -182,6 +182,17 @@ export interface CaptureAitpCodeStateAutoInput {
   readonly signal?: AbortSignal | undefined;
 }
 
+export interface AttachAitpArtifactInput {
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly artifactType: string;
+  readonly uri: string;
+  readonly summary: string;
+  readonly sizeBytes?: number | string | undefined;
+  readonly metadata?: Readonly<Record<string, unknown>> | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface RecordAitpReferenceLocationInput {
   readonly topicId: string;
   readonly connectorId: string;
@@ -310,6 +321,20 @@ export interface AitpCodeStateWriteResult {
   readonly dirty: boolean;
   readonly patchId: string;
   readonly diffHash: string;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpArtifactWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'artifact';
+  readonly artifactId: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly artifactType: string;
+  readonly uri: string;
+  readonly summary: string;
+  readonly sizeBytes: number;
+  readonly canUpdateClaimTrust: boolean;
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -466,6 +491,15 @@ export class AitpCliBridge {
     });
     const payload = await this.runJson(args, input.signal);
     return parseCodeStateWriteResult(payload);
+  }
+
+  async attachArtifact(input: AttachAitpArtifactInput): Promise<AitpArtifactWriteResult> {
+    const args = buildAitpArtifactAttachArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseArtifactWriteResult(payload);
   }
 
   async recordReferenceLocation(
@@ -797,6 +831,40 @@ export function buildAitpCodeStateAutoArgs(
   }
   pushOptional(args, '--known-divergence', input.knownDivergence);
   if (input.writePatchArtifact === true) args.push('--write-patch-artifact');
+  return args;
+}
+
+export function buildAitpArtifactAttachArgs(
+  input: AttachAitpArtifactInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.claimId, 'claimId');
+  requireNonEmpty(input.artifactType, 'artifactType');
+  requireNonEmpty(input.uri, 'uri');
+  requireNonEmpty(input.summary, 'summary');
+  const args = [
+    '--base',
+    input.basePath,
+    'research-state',
+    'attach-artifact',
+    '--topic',
+    input.topicId.trim(),
+    '--claim',
+    input.claimId.trim(),
+    '--type',
+    input.artifactType.trim(),
+    '--uri',
+    input.uri.trim(),
+    '--summary',
+    input.summary.trim(),
+  ];
+  if (input.sizeBytes !== undefined) {
+    args.push('--size-bytes', String(input.sizeBytes));
+  }
+  if (input.metadata !== undefined) {
+    args.push('--metadata-json', JSON.stringify(input.metadata));
+  }
   return args;
 }
 
@@ -1152,6 +1220,30 @@ function parseCodeStateWriteResult(payload: unknown): AitpCodeStateWriteResult {
     dirty: payload['dirty'] === true,
     patchId: stringValue(payload['patch_id']) ?? '',
     diffHash: stringValue(payload['diff_hash']) ?? '',
+    raw: payload,
+  };
+}
+
+function parseArtifactWriteResult(payload: unknown): AitpArtifactWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError('AITP artifact payload must be an object.');
+  }
+  if (payload['kind'] !== 'artifact') {
+    throw new AitpCliBridgeError('AITP artifact payload has the wrong kind.');
+  }
+  const sizeBytes = Number(payload['size_bytes']);
+  const metadata = isRecord(payload['metadata']) ? payload['metadata'] : {};
+  return {
+    ok: payload['ok'] === true,
+    kind: 'artifact',
+    artifactId: requiredPayloadString(payload, 'artifact_id'),
+    topicId: requiredPayloadString(payload, 'topic_id'),
+    claimId: requiredPayloadString(payload, 'claim_id'),
+    artifactType: requiredPayloadString(payload, 'artifact_type'),
+    uri: requiredPayloadString(payload, 'uri'),
+    summary: requiredPayloadString(payload, 'summary'),
+    sizeBytes: Number.isFinite(sizeBytes) ? sizeBytes : 0,
+    canUpdateClaimTrust: metadata['can_update_claim_trust'] === true,
     raw: payload,
   };
 }
