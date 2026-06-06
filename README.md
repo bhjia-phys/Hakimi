@@ -51,7 +51,7 @@ That means a research action can search literature, inspect code, prepare patche
 - AITP v5 `process_graph_slice` payloads can be parsed and locally compiled into research-context reminders, open-obligation summaries, trust-boundary warnings, and recommended `ResearchAction` ids without copying the AITP graph into Hakimi as truth.
 - AITP `exploratory_records` inside a process graph slice now compile into first-class moments for question decomposition, relation-path brainstorming, source/backtrace continuity, original-question drift audit, and `aitp.record_exploratory_record`.
 - AITP `source_asset` nodes and `source_asset_ids` now compile into source-backtrace reminders, so raw papers, lectures, notes, code snapshots, datasets, and generated artifacts stay canonical in `.aitp` while Hakimi keeps only bounded WorkFrame context.
-- AITP moment-policy metadata now flows into Hakimi action bindings: timing and trust-boundary hints tell the model when to brainstorm before using a relation, backtrace before using a source as support, record a formed checkpoint, or request a human checkpoint before trust changes.
+- AITP `moment_policy.decisions` now compile into first-class Hakimi `callObligations`: required-now decisions become blocking action bindings, trust-changing prerequisites are surfaced in ContextPacks, and AITP `entrypoints` stay visible so the model knows which typed AITP write/preflight surface is expected.
 - AITP write moments now carry explicit bridge metadata inside `ResearchActionBinding.params`, so ContextPacks can show whether the next durable write should use `recordExploratoryRecord`, `createProofObligation`, `requestHumanCheckpoint`, or another constrained AITP bridge operation.
 - Hakimi sessions now auto-configure a narrow AITP CLI bridge for `aitp-v5 graph slice`, `aitp-v5 exploration record`, `aitp-v5 asset register`, `aitp-v5 checkpoint request`, `aitp-v5 research-state create-proof-obligation`, and AITP validation contract/result records. The bridge resolves `--base` from the current Agent cwd at call time, fetches an AITP slice before research-context injection only when a WorkFrame carries explicit `aitp:session:<id>` scope, executes only a configured AITP command with structured args, and keeps `.aitp` as the canonical record store.
 - `ResearchAction.execute_aitp_write_bridge` can now execute a configured AITP write bridge for exploratory records, source asset registration, proof obligations, validation contracts, validation results, and human-checkpoint requests. Successful writes are recorded as scoped `research_action.result_recorded` events with AITP evidence refs instead of becoming hidden side effects.
@@ -88,9 +88,12 @@ The first adapter slices are now implemented at the library/context/runtime
 boundary:
 Hakimi accepts an AITP `process_graph_slice`, normalizes current v5 field names,
 preserves the orientation-only boundary, and compiles it into ContextPack lines,
-diagnostics, source-asset reminders, moment-policy timing/trust-boundary hints,
-native `ResearchActionBinding` recommendations, and explicit write-bridge hints
-for durable AITP records. AITP owns source asset identity, hashes, version anchors, and
+diagnostics, source-asset reminders, native `ResearchActionBinding`
+recommendations, explicit write-bridge hints for durable AITP records, and
+structured `callObligations` derived from AITP `moment_policy.decisions`.
+Those obligations distinguish current-turn required calls from calls that must
+happen before any trust-changing step, while keeping the canonical policy and
+entrypoint names in AITP. AITP owns source asset identity, hashes, version anchors, and
 raw asset provenance; Hakimi only compiles the currently relevant source asset
 ids into a bounded WorkFrame prompt. Hakimi sessions now create a narrow
 dynamic CLI bridge by default: the process-graph provider calls
@@ -127,11 +130,11 @@ read a `process_graph_slice`, write a proof obligation and human checkpoint,
 and verify the resulting `.aitp` records. It is skipped in normal unit runs so
 Hakimi does not require Python/AITP dependencies just to typecheck.
 
-The remaining runtime work is policy, not schema: the turn loop now has the
-default session bridge needed to fetch a scoped slice, but it still needs richer
-moment policy for when a brainstorming or backtrace step has become formed
-enough to record, and when a trust boundary requires stricter validation or a
-human checkpoint.
+The remaining runtime work is enforcement depth, not schema ownership: the turn
+loop can fetch a scoped slice and expose AITP policy obligations, but later
+slices still need MCP-first execution, richer evidence-record write bridges,
+and stricter final-gate checks that verify required AITP calls were either
+completed or explicitly blocked before trust-sensitive answers.
 
 ## Relationship To Upstream
 
@@ -341,12 +344,12 @@ override the generic fallback for their domain.
 When an AITP v5 process graph slice is supplied, Hakimi treats it differently
 from legacy pack compatibility: the slice is a canonical AITP-derived
 orientation view, so Hakimi compiles it into the current WorkFrame/context and
-recommended actions instead of saving it as Hakimi-owned truth. The follow-up
-runtime work is to call AITP MCP/CLI at the right moments and write durable
-research-process records back through AITP, especially for exploratory records
-created during brainstorming, source backtrace, and steering checkpoints. Source
-asset records remain AITP-owned: Hakimi may mention `source_asset:<id>` in a
-ContextPack, but it should not recreate the raw asset store inside `.hakimi`.
+recommended actions instead of saving it as Hakimi-owned truth. If the slice
+contains `moment_policy.decisions`, Hakimi compiles them into
+`callObligations`, `AITP required calls now`, and `AITP calls before trust
+change` reminders. Source asset records remain AITP-owned: Hakimi may mention
+`source_asset:<id>` in a ContextPack, but it should not recreate the raw asset
+store inside `.hakimi`.
 
 Explicitly disable individual research features only for debugging or upstream
 compatibility checks:

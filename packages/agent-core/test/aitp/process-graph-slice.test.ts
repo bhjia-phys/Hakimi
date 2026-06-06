@@ -22,6 +22,7 @@ describe('AITP process graph slice adapter', () => {
     expect(actionIds).toEqual(
       expect.arrayContaining([
         'aitp.create_open_obligation',
+        'aitp.record_validation_result',
         'aitp.record_derivation_checkpoint',
         'physics.brainstorm_relation_path',
         'trace.follow_source_dependency',
@@ -32,8 +33,20 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.contextLines.join('\n')).toContain('Relation hypotheses: rel.hypothesis');
     expect(compiled.contextLines.join('\n')).toContain('Source gaps: bt.missing-paper');
     expect(compiled.contextLines.join('\n')).toContain(
-      'Moment policy: aitp.record_derivation_checkpoint@after_local_conclusion priority=high boundary=derivation_checkpoint',
+      'aitp.record_derivation_checkpoint@after_local_conclusion priority=high boundary=derivation_checkpoint',
     );
+    expect(compiled.contextLines.join('\n')).toContain('AITP required calls now: aitp.record_validation_result');
+    expect(compiled.callObligations.find((item) =>
+      item.actionId === 'aitp.record_validation_result',
+    )).toMatchObject({
+      requiredNow: true,
+      decisionType: 'recording',
+      entrypoints: expect.arrayContaining([
+        'aitp_v5_record_evidence',
+        'aitp_v5_record_validation_result',
+        'aitp_v5_preflight_trust_update',
+      ]),
+    });
     expect(compiled.actionRecommendations[0]?.adapterId).toBe('aitp.native.process-graph-slice');
   });
 
@@ -76,6 +89,7 @@ describe('AITP process graph slice adapter', () => {
       expect.arrayContaining([
         'aitp.create_open_obligation',
         'aitp.record_exploratory_record',
+        'aitp.record_validation_result',
         'aitp.request_human_checkpoint',
         'physics.brainstorm_relation_path',
         'trace.audit_original_question_drift',
@@ -87,13 +101,40 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.contextLines.join('\n')).toContain('Exploration unresolved points: finite-size aliasing');
     expect(compiled.contextLines.join('\n')).toContain('Source assets: source_asset:source-asset-edge-counting');
     expect(compiled.contextLines.join('\n')).toContain(
-      'trace.open_backtrace@before_using_as_support priority=high boundary=source_support',
+      'trace.open_backtrace@required_now priority=blocking boundary=policy_prerequisite:backtrace',
     );
+    expect(compiled.contextLines.join('\n')).toContain('AITP required calls now:');
+    expect(compiled.contextLines.join('\n')).toContain('AITP trust prerequisites:');
+    expect(compiled.callObligations.map((item) => item.actionId)).toEqual(
+      expect.arrayContaining([
+        'aitp.record_validation_result',
+        'trace.open_backtrace',
+        'physics.brainstorm_relation_path',
+        'aitp.request_human_checkpoint',
+      ]),
+    );
+    expect(compiled.actionRecommendations.find((binding) =>
+      binding.actionId === 'aitp.record_validation_result',
+    )?.params).toMatchObject({
+      callObligation: {
+        requiredNow: true,
+        decisionType: 'recording',
+        entrypoints: expect.arrayContaining(['aitp_v5_record_validation_result']),
+      },
+      writeBridge: {
+        operation: 'recordValidationResult',
+      },
+    });
     expect(compiled.actionRecommendations.find((binding) =>
       binding.actionId === 'trace.open_backtrace',
     )?.params).toMatchObject({
-      timing: 'before_using_as_support',
-      trustBoundary: 'source_support',
+      timing: 'required_now',
+      trustBoundary: 'policy_prerequisite:backtrace',
+      callObligation: {
+        requiredNow: true,
+        decisionType: 'backtrace',
+        missingComponents: expect.arrayContaining(['reference_location', 'evidence']),
+      },
     });
     expect(compiled.actionRecommendations.find((binding) =>
       binding.actionId === 'aitp.create_open_obligation',
@@ -128,7 +169,7 @@ describe('AITP process graph slice adapter', () => {
     );
 
     expect(byActionId.get('aitp.request_human_checkpoint')).toMatchObject({
-      priority: 'high',
+      priority: 'blocking',
     });
     expect(compiled.actionRecommendations.map((binding) => binding.actionId)).toEqual(
       expect.arrayContaining([
@@ -214,6 +255,44 @@ function fakeSlicePayload() {
         trust_boundary: 'derivation_checkpoint',
       },
     ],
+    moment_policy: {
+      ok: true,
+      kind: 'host_agnostic_moment_policy',
+      decisions: [
+        {
+          moment: 'record_or_validate_open_obligation',
+          decision_type: 'recording',
+          action_kind: 'record_evidence_or_validation',
+          required_now: true,
+          reason: 'open proof obligation requires typed evidence or validation',
+          target_type: 'proof_obligation',
+          target_id: 'obl.source-support',
+          record_entrypoints: [
+            'aitp_v5_record_evidence',
+            'aitp_v5_record_validation_result',
+          ],
+          exploration_entrypoints: [],
+          entrypoints: [
+            'aitp_v5_record_evidence',
+            'aitp_v5_record_validation_result',
+            'aitp_v5_preflight_trust_update',
+          ],
+          required_before_trust_change: [
+            'record typed evidence or validation for the open obligation',
+            'run aitp_v5_preflight_trust_update',
+          ],
+          missing_components: [],
+          trust_boundary: true,
+          orientation_only: true,
+          can_update_claim_trust: false,
+        },
+      ],
+      recommended_moments: [],
+      trust_boundary_reasons: [],
+      truth_source: 'typed_records',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
     truth_source: '.aitp/process_graph',
     orientation_only: true,
   };
@@ -323,6 +402,126 @@ function currentAitpSlicePayload() {
       },
     ],
     trust_boundary_reasons: ['this API cannot update claim trust'],
+    moment_policy: {
+      ok: true,
+      kind: 'host_agnostic_moment_policy',
+      decisions: [
+        {
+          moment: 'record_or_validate_open_obligation',
+          decision_type: 'recording',
+          action_kind: 'record_evidence_or_validation',
+          required_now: true,
+          reason: 'open proof obligation requires typed evidence or validation',
+          target_type: 'proof_obligation',
+          target_id: 'obligation-finite-size',
+          target_refs: ['proof_obligation:obligation-finite-size'],
+          missing_components: [],
+          record_entrypoints: [
+            'aitp_v5_record_evidence',
+            'aitp_v5_record_validation_result',
+          ],
+          exploration_entrypoints: [],
+          entrypoints: [
+            'aitp_v5_record_evidence',
+            'aitp_v5_record_validation_result',
+            'aitp_v5_preflight_trust_update',
+          ],
+          required_before_trust_change: [
+            'record typed evidence or validation for the open obligation',
+            'run aitp_v5_preflight_trust_update',
+          ],
+          trust_boundary: true,
+          summary_inputs_trusted: false,
+          orientation_only: true,
+          can_update_kernel_state: false,
+          can_update_claim_trust: false,
+        },
+        {
+          moment: 'backtrace_source_reconstruction',
+          decision_type: 'backtrace',
+          action_kind: 'reconstruct_missing_source_components',
+          required_now: true,
+          reason: 'missing source reconstruction components',
+          target_type: 'claim',
+          target_id: 'claim-fqhe',
+          missing_components: ['reference_location', 'evidence'],
+          record_entrypoints: [
+            'aitp_v5_record_exploratory_record',
+            'aitp_v5_record_reference_location',
+            'aitp_v5_register_source_asset',
+          ],
+          exploration_entrypoints: ['aitp_v5_record_exploratory_record'],
+          entrypoints: [
+            'aitp_v5_record_exploratory_record',
+            'aitp_v5_record_reference_location',
+            'aitp_v5_register_source_asset',
+            'aitp_v5_preflight_trust_update',
+          ],
+          required_before_trust_change: [
+            'backtrace missing source components to typed records',
+            'record evidence only after source and provenance are explicit',
+            'run aitp_v5_preflight_trust_update',
+          ],
+          trust_boundary: true,
+          summary_inputs_trusted: false,
+          orientation_only: true,
+          can_update_kernel_state: false,
+          can_update_claim_trust: false,
+        },
+        {
+          moment: 'brainstorm_relation_path',
+          decision_type: 'brainstorming',
+          action_kind: 'brainstorm_relation_path_before_validation',
+          required_now: false,
+          reason: 'object relation is still a hypothesis',
+          target_type: 'object_relation',
+          target_id: 'relation-counting-cft',
+          missing_components: [],
+          record_entrypoints: [],
+          exploration_entrypoints: ['aitp_v5_record_exploratory_record'],
+          entrypoints: [
+            'aitp_v5_record_exploratory_record',
+            'aitp_v5_preflight_trust_update',
+          ],
+          required_before_trust_change: [
+            'convert relation-path brainstorm into typed evidence or validation',
+            'run aitp_v5_preflight_trust_update',
+          ],
+          trust_boundary: true,
+          summary_inputs_trusted: false,
+          orientation_only: true,
+          can_update_kernel_state: false,
+          can_update_claim_trust: false,
+        },
+        {
+          moment: 'trust_boundary_before_claim_update',
+          decision_type: 'trust_boundary',
+          action_kind: 'block_trust_change_until_policy_prerequisites_are_met',
+          required_now: true,
+          reason: 'recording, brainstorming, or backtrace prerequisites exist before any claim-trust update',
+          target_type: 'claim',
+          target_id: 'claim-fqhe',
+          missing_components: [],
+          record_entrypoints: [],
+          exploration_entrypoints: [],
+          entrypoints: ['aitp_v5_preflight_trust_update'],
+          required_before_trust_change: [
+            'resolve required recording/backtrace/brainstorm policy decisions',
+            'run aitp_v5_preflight_trust_update',
+          ],
+          trust_boundary: true,
+          summary_inputs_trusted: false,
+          orientation_only: true,
+          can_update_kernel_state: false,
+          can_update_claim_trust: false,
+        },
+      ],
+      recommended_moments: [],
+      trust_boundary_reasons: ['this API cannot update claim trust'],
+      truth_source: 'typed_records',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
     recommended_moments: [
       {
         moment: 'backtrace_source_reconstruction',

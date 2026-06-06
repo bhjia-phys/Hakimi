@@ -8,9 +8,12 @@ export const KNOWN_AITP_RESEARCH_MOMENTS = [
   'trace.follow_source_dependency',
   'trace.audit_original_question_drift',
   'aitp.record_exploratory_record',
+  'aitp.register_source_asset',
   'aitp.record_research_state',
   'aitp.record_derivation_checkpoint',
   'aitp.create_open_obligation',
+  'aitp.create_validation_contract',
+  'aitp.record_validation_result',
   'aitp.request_human_checkpoint',
 ] as const;
 
@@ -100,6 +103,42 @@ export interface AitpRecommendedMoment {
   readonly trustBoundary?: string | undefined;
 }
 
+export type AitpMomentPolicyDecisionType =
+  | 'recording'
+  | 'brainstorming'
+  | 'backtrace'
+  | 'trust_boundary'
+  | (string & {});
+
+export interface AitpMomentPolicyDecision {
+  readonly moment: AitpResearchMomentId;
+  readonly decisionType: AitpMomentPolicyDecisionType;
+  readonly actionKind: string;
+  readonly requiredNow: boolean;
+  readonly reason: string;
+  readonly targetType: string;
+  readonly targetId: string;
+  readonly targetRefs: readonly string[];
+  readonly missingComponents: readonly string[];
+  readonly recordEntrypoints: readonly string[];
+  readonly explorationEntrypoints: readonly string[];
+  readonly entrypoints: readonly string[];
+  readonly requiredBeforeTrustChange: readonly string[];
+  readonly trustBoundary: boolean;
+  readonly orientationOnly: boolean;
+  readonly canUpdateClaimTrust: boolean;
+}
+
+export interface AitpMomentPolicy {
+  readonly kind: string;
+  readonly decisions: readonly AitpMomentPolicyDecision[];
+  readonly recommendedMoments: readonly AitpRecommendedMoment[];
+  readonly trustBoundaryReasons: readonly string[];
+  readonly truthSource: string;
+  readonly orientationOnly: boolean;
+  readonly canUpdateClaimTrust: boolean;
+}
+
 export interface AitpProcessGraphSlice {
   readonly kind: 'process_graph_slice';
   readonly nodes: readonly AitpProcessGraphNode[];
@@ -110,6 +149,7 @@ export interface AitpProcessGraphSlice {
   readonly exploratoryRecords: readonly AitpExploratoryRecordItem[];
   readonly trustBoundaryReasons: readonly string[];
   readonly recommendedMoments: readonly AitpRecommendedMoment[];
+  readonly momentPolicy: AitpMomentPolicy;
   readonly truthSource: string;
   readonly orientationOnly: boolean;
 }
@@ -128,6 +168,7 @@ export interface DetectedResearchMoment {
     | 'aitp'
     | 'keyword'
     | 'obligation'
+    | 'moment-policy'
     | 'relation'
     | 'source-backtrace'
     | 'exploration'
@@ -135,6 +176,25 @@ export interface DetectedResearchMoment {
   readonly targetRefs: readonly string[];
   readonly timing?: string | undefined;
   readonly trustBoundary?: string | undefined;
+}
+
+export interface AitpCallObligation {
+  readonly id: string;
+  readonly actionId: string;
+  readonly momentId: AitpResearchMomentId;
+  readonly requiredNow: boolean;
+  readonly decisionType: AitpMomentPolicyDecisionType;
+  readonly actionKind: string;
+  readonly reason: string;
+  readonly targetType: string;
+  readonly targetId: string;
+  readonly targetRefs: readonly string[];
+  readonly missingComponents: readonly string[];
+  readonly recordEntrypoints: readonly string[];
+  readonly explorationEntrypoints: readonly string[];
+  readonly entrypoints: readonly string[];
+  readonly requiredBeforeTrustChange: readonly string[];
+  readonly trustBoundary: boolean;
 }
 
 export interface AitpObligationSummary {
@@ -156,6 +216,7 @@ export interface CompiledAitpProcessGraphSlice {
   readonly reminders: readonly string[];
   readonly contextLines: readonly string[];
   readonly actionRecommendations: readonly ResearchActionBinding[];
+  readonly callObligations: readonly AitpCallObligation[];
   readonly obligations: AitpObligationSummary;
   readonly suggestedNextMoments: readonly DetectedResearchMoment[];
   readonly trust: AitpTrustSummary;

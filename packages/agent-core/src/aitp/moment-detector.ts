@@ -1,4 +1,5 @@
 import type {
+  AitpMomentPolicyDecision,
   AitpProcessGraphEdge,
   AitpProcessGraphSlice,
   AitpRelationNeighborhoodItem,
@@ -23,6 +24,19 @@ export function detectResearchMoments(
 ): readonly DetectedResearchMoment[] {
   const moments = new Map<string, DetectedResearchMoment>();
   const text = detectorText(slice, input);
+
+  for (const decision of slice.momentPolicy.decisions) {
+    addMoment(moments, {
+      id: decision.moment,
+      actionId: actionIdForPolicyDecision(decision),
+      priority: priorityForPolicyDecision(decision),
+      reason: `AITP moment policy: ${decision.reason}`,
+      source: 'moment-policy',
+      targetRefs: decision.targetRefs,
+      timing: timingForPolicyDecision(decision),
+      trustBoundary: decision.trustBoundary ? trustBoundaryForPolicyDecision(decision) : undefined,
+    });
+  }
 
   for (const moment of slice.recommendedMoments) {
     addMoment(moments, {
@@ -438,12 +452,47 @@ export function actionIdForMoment(id: AitpResearchMomentId): string {
       return 'trace.audit_original_question_drift';
     case 'record_exploratory_record':
       return 'aitp.record_exploratory_record';
+    case 'trust_boundary_before_claim_update':
+      return 'aitp.request_human_checkpoint';
     case 'human_checkpoint':
     case 'request_human_checkpoint':
       return 'aitp.request_human_checkpoint';
     default:
       return id;
   }
+}
+
+export function actionIdForPolicyDecision(decision: AitpMomentPolicyDecision): string {
+  if (decision.actionKind === 'record_evidence_or_validation') {
+    if (decision.entrypoints.includes('aitp_v5_record_validation_result')) {
+      return 'aitp.record_validation_result';
+    }
+    return 'aitp.create_open_obligation';
+  }
+  return actionIdForMoment(decision.moment);
+}
+
+function priorityForPolicyDecision(
+  decision: AitpMomentPolicyDecision,
+): ResearchActionBindingPriority {
+  if (decision.requiredNow) return 'blocking';
+  if (decision.trustBoundary) return 'high';
+  if (decision.decisionType === 'brainstorming' || decision.decisionType === 'backtrace') {
+    return 'high';
+  }
+  return 'normal';
+}
+
+function timingForPolicyDecision(decision: AitpMomentPolicyDecision): string | undefined {
+  if (decision.requiredNow) return 'required_now';
+  if (decision.requiredBeforeTrustChange.length > 0) return 'before_trust_update';
+  return undefined;
+}
+
+function trustBoundaryForPolicyDecision(decision: AitpMomentPolicyDecision): string {
+  return decision.decisionType === 'trust_boundary'
+    ? 'trust_boundary'
+    : `policy_prerequisite:${decision.decisionType}`;
 }
 
 function addKeywordMoment(
@@ -490,6 +539,17 @@ function detectorText(slice: AitpProcessGraphSlice, input: ResearchMomentDetecto
     ...slice.openObligations.flatMap((item) => [item.kind, item.reason, item.status]),
     ...slice.sourceBacktrace.flatMap((item) => [item.status, item.reason, item.gap]),
     ...slice.relationNeighborhood.flatMap((item) => [item.relation, item.status, item.reason]),
+    ...slice.momentPolicy.decisions.flatMap((item) => [
+      item.moment,
+      item.decisionType,
+      item.actionKind,
+      item.reason,
+      item.targetType,
+      item.targetId,
+      ...item.missingComponents,
+      ...item.entrypoints,
+      ...item.requiredBeforeTrustChange,
+    ]),
     ...slice.exploratoryRecords.flatMap((item) => [
       item.explorationType,
       item.title,

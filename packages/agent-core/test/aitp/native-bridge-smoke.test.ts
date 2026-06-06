@@ -111,6 +111,17 @@ describe('AITP native bridge smoke', () => {
       timing: 'after_brainstorm_before_derivation',
       trustBoundary: 'source_support',
     });
+    const validationBinding = requiredBinding(pack.actionBindings, 'aitp.record_validation_result');
+    expect(validationBinding.params).toMatchObject({
+      timing: 'required_now',
+      trustBoundary: 'policy_prerequisite:recording',
+      writeBridge: {
+        operation: 'recordValidationResult',
+      },
+      callObligation: {
+        actionKind: 'record_evidence_or_validation',
+      },
+    });
 
     const checkpointBinding = requiredBinding(pack.actionBindings, 'aitp.request_human_checkpoint');
     expect(checkpointBinding.params?.['writeBridge']).toMatchObject({
@@ -119,6 +130,13 @@ describe('AITP native bridge smoke', () => {
       requiredFields: ['topicId', 'claimId', 'reason', 'requestedBy', 'options'],
     });
     expect(pack.aitp?.contextLines.join('\n')).toContain('Moment policy:');
+    expect(pack.aitp?.contextLines.join('\n')).toContain('AITP required calls now:');
+    expect(pack.aitp?.requiredCallIds).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('aitp-record-validation-result'),
+        expect.stringContaining('aitp-request-human-checkpoint'),
+      ]),
+    );
     expect(pack.aitp?.trustBoundaryReasons).toEqual([
       'Claim trust cannot be updated until source dependency and human decision are recorded.',
     ]);
@@ -332,6 +350,70 @@ function qgMiptSlicePayload() {
     trust_boundary_reasons: [
       'Claim trust cannot be updated until source dependency and human decision are recorded.',
     ],
+    moment_policy: {
+      ok: true,
+      kind: 'host_agnostic_moment_policy',
+      decisions: [
+        {
+          moment: 'record_or_validate_open_obligation',
+          decision_type: 'recording',
+          action_kind: 'record_evidence_or_validation',
+          required_now: true,
+          reason: 'open proof obligation requires typed evidence or validation',
+          target_type: 'proof_obligation',
+          target_id: 'obl-source-chain',
+          target_refs: [
+            'claim:claim-mipt-observer-algebra',
+            'obligation:obl-source-chain',
+          ],
+          missing_components: [],
+          record_entrypoints: [
+            'aitp_v5_record_evidence',
+            'aitp_v5_record_validation_result',
+          ],
+          exploration_entrypoints: [],
+          entrypoints: [
+            'aitp_v5_record_evidence',
+            'aitp_v5_record_validation_result',
+            'aitp_v5_preflight_trust_update',
+          ],
+          required_before_trust_change: [
+            'record typed evidence or validation for the open obligation',
+            'run aitp_v5_preflight_trust_update',
+          ],
+          trust_boundary: true,
+          orientation_only: true,
+          can_update_claim_trust: false,
+        },
+        {
+          moment: 'trust_boundary_before_claim_update',
+          decision_type: 'trust_boundary',
+          action_kind: 'block_trust_change_until_policy_prerequisites_are_met',
+          required_now: true,
+          reason: 'recording, brainstorming, or backtrace prerequisites exist before any claim-trust update',
+          target_type: 'claim',
+          target_id: 'claim-mipt-observer-algebra',
+          missing_components: [],
+          record_entrypoints: [],
+          exploration_entrypoints: [],
+          entrypoints: ['aitp_v5_preflight_trust_update'],
+          required_before_trust_change: [
+            'resolve required recording/backtrace/brainstorm policy decisions',
+            'run aitp_v5_preflight_trust_update',
+          ],
+          trust_boundary: true,
+          orientation_only: true,
+          can_update_claim_trust: false,
+        },
+      ],
+      recommended_moments: [],
+      trust_boundary_reasons: [
+        'Claim trust cannot be updated until source dependency and human decision are recorded.',
+      ],
+      truth_source: 'typed_records',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
     recommended_moments: [
       {
         moment: 'record_or_validate_open_obligation',

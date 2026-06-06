@@ -166,6 +166,12 @@ function collectAitp(
       ...input.aitp.obligations.recommended,
       ...input.aitp.obligations.advisory,
     ].map((item) => item.id),
+    requiredCallIds: input.aitp.callObligations
+      .filter((item) => item.requiredNow)
+      .map((item) => item.id),
+    trustPrerequisiteCallIds: input.aitp.callObligations
+      .filter((item) => item.requiredBeforeTrustChange.length > 0)
+      .map((item) => item.id),
     suggestedActionIds: input.aitp.actionRecommendations.map((binding) => binding.actionId),
     compiled: input.aitp,
   };

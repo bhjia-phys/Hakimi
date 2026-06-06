@@ -104,6 +104,8 @@ export interface ResearchContextAitpSection {
   readonly contextLines: readonly string[];
   readonly trustBoundaryReasons: readonly string[];
   readonly openObligationIds: readonly string[];
+  readonly requiredCallIds: readonly string[];
+  readonly trustPrerequisiteCallIds: readonly string[];
   readonly suggestedActionIds: readonly string[];
   readonly compiled: CompiledAitpProcessGraphSlice;
 }
