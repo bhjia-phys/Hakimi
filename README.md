@@ -52,7 +52,7 @@ That means a research action can search literature, inspect code, prepare patche
 - AITP `exploratory_records` inside a process graph slice now compile into first-class moments for question decomposition, relation-path brainstorming, source/backtrace continuity, original-question drift audit, and `aitp.record_exploratory_record`.
 - AITP `source_asset` nodes and `source_asset_ids` now compile into source-backtrace reminders, so raw papers, lectures, notes, code snapshots, datasets, and generated artifacts stay canonical in `.aitp` while Hakimi keeps only bounded WorkFrame context.
 - AITP moment-policy metadata now flows into Hakimi action bindings: timing and trust-boundary hints tell the model when to brainstorm before using a relation, backtrace before using a source as support, record a formed checkpoint, or request a human checkpoint before trust changes.
-- Hakimi now has a narrow AITP CLI bridge for `aitp-v5 graph slice` and `aitp-v5 exploration record`, plus a controller-side process graph provider that can fetch an AITP slice before research-context injection when a WorkFrame carries explicit `aitp:session:<id>` scope. The bridge executes only a configured AITP command with structured args and keeps `.aitp` as the canonical record store.
+- Hakimi now has a narrow AITP CLI bridge for `aitp-v5 graph slice`, `aitp-v5 exploration record`, `aitp-v5 asset register`, and `aitp-v5 checkpoint request`, plus a controller-side process graph provider that can fetch an AITP slice before research-context injection when a WorkFrame carries explicit `aitp:session:<id>` scope. The bridge executes only a configured AITP command with structured args and keeps `.aitp` as the canonical record store.
 - Research actions can run in-process graph queries, benchmark adapters, formalization blueprint exports, and external job receipt normalization.
 - Literature search, code patch preparation, and external benchmark workflows are orchestrated through native Kimi tools rather than being executed inside `ResearchAction` itself.
 - Evidence can be written to the research ledger, reread only inside matching WorkFrame scope, compiled into graph candidates, and checked by harness/final-gate logic.
@@ -89,11 +89,11 @@ diagnostics, source-asset reminders, moment-policy timing/trust-boundary hints,
 and native `ResearchActionBinding` recommendations. AITP owns source asset identity, hashes, version anchors, and
 raw asset provenance; Hakimi only compiles the currently relevant source asset
 ids into a bounded WorkFrame prompt. Hakimi also has a narrow CLI bridge and
-optional WorkFrame-scoped provider for `aitp-v5 graph slice`, plus a write
-bridge for `aitp-v5 exploration record`. The default scope resolver only reads
-AITP when the WorkFrame explicitly carries refs such as `aitp:session:<id>` and
-`aitp:claim:<id>`, so Hakimi does not guess which local graph belongs to a
-research turn.
+optional WorkFrame-scoped provider for `aitp-v5 graph slice`, plus write
+bridges for exploratory records, source asset registration, and human checkpoint
+requests. The default scope resolver only reads AITP when the WorkFrame
+explicitly carries refs such as `aitp:session:<id>` and `aitp:claim:<id>`, so
+Hakimi does not guess which local graph belongs to a research turn.
 
 The remaining runtime work is policy, not schema: the turn loop can now fetch a
 slice through a provider, but it still needs richer moment policy for when a

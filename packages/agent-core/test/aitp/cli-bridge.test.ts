@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   AitpCliBridgeError,
   buildAitpExploratoryRecordArgs,
+  buildAitpHumanCheckpointRequestArgs,
   buildAitpProcessGraphSliceArgs,
+  buildAitpSourceAssetRegisterArgs,
   createAitpCliBridge,
   createAitpCliProcessGraphSliceProvider,
   resolveAitpScopeFromWorkFrame,
@@ -130,6 +132,149 @@ describe('AITP CLI bridge', () => {
         title: 'Bad schema',
         focalQuestion: 'Can Hakimi invent a record type?',
         summary: 'No.',
+      }),
+    ).toThrow(AitpCliBridgeError);
+  });
+
+  it('registers source assets through AITP without creating a Hakimi asset store', async () => {
+    const calls: { args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push({ args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            kind: 'source_asset',
+            asset_id: 'source-asset-qg-paper',
+            topic_id: 'qg',
+            asset_type: 'paper',
+            uri: 'arxiv:2601.00001',
+            title: 'Algebraic observer source',
+            orientation_only: true,
+            can_update_claim_trust: false,
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const result = await bridge.registerSourceAsset({
+      topicId: 'qg',
+      claimId: 'claim-mipt',
+      assetType: 'paper',
+      uri: 'arxiv:2601.00001',
+      title: 'Algebraic observer source',
+      sourceKind: 'literature',
+      summary: 'Paper identity for source backtrace.',
+      versionAnchor: { arxiv_version: 'v1' },
+      sourceRefs: ['paper:observer-algebra'],
+      linkedRecords: { claim_id: 'claim-mipt' },
+    });
+
+    expect(result).toMatchObject({
+      kind: 'source_asset',
+      assetId: 'source-asset-qg-paper',
+      assetType: 'paper',
+      orientationOnly: true,
+      canUpdateClaimTrust: false,
+    });
+    expect(calls[0]?.args).toEqual(
+      expect.arrayContaining([
+        'asset',
+        'register',
+        '--type',
+        'paper',
+        '--uri',
+        'arxiv:2601.00001',
+        '--version-anchor-json',
+        '{"arxiv_version":"v1"}',
+        '--linked-records-json',
+        '{"claim_id":"claim-mipt"}',
+      ]),
+    );
+  });
+
+  it('requests AITP human checkpoints through a constrained command', async () => {
+    const calls: { args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push({ args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            kind: 'human_checkpoint',
+            checkpoint_id: 'checkpoint-trust-qg',
+            topic_id: 'qg',
+            claim_id: 'claim-mipt',
+            status: 'requested',
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const result = await bridge.requestHumanCheckpoint({
+      topicId: 'qg',
+      claimId: 'claim-mipt',
+      reason: 'Trust boundary before updating claim status.',
+      requestedBy: 'hakimi',
+      options: ['approve validation path', 'keep provisional'],
+    });
+
+    expect(result).toMatchObject({
+      kind: 'human_checkpoint',
+      checkpointId: 'checkpoint-trust-qg',
+      status: 'requested',
+    });
+    expect(calls[0]?.args).toEqual([
+      '--base',
+      'F:/project',
+      'checkpoint',
+      'request',
+      '--topic',
+      'qg',
+      '--claim',
+      'claim-mipt',
+      '--reason',
+      'Trust boundary before updating claim status.',
+      '--requested-by',
+      'hakimi',
+      '--option',
+      'approve validation path',
+      '--option',
+      'keep provisional',
+    ]);
+  });
+
+  it('keeps source asset and checkpoint args validated before running AITP', () => {
+    expect(() =>
+      buildAitpSourceAssetRegisterArgs({
+        basePath: 'F:/project',
+        topicId: 'qg',
+        // @ts-expect-error verifies runtime validation for external input.
+        assetType: 'private_asset',
+        uri: 'arxiv:2601.00001',
+        title: 'Bad asset',
+      }),
+    ).toThrow(AitpCliBridgeError);
+    expect(() =>
+      buildAitpHumanCheckpointRequestArgs({
+        basePath: 'F:/project',
+        topicId: 'qg',
+        claimId: 'claim-mipt',
+        reason: 'No options.',
+        requestedBy: 'hakimi',
+        options: [],
       }),
     ).toThrow(AitpCliBridgeError);
   });
