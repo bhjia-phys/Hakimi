@@ -573,7 +573,7 @@ function actionBindingForMoment(
       routeState: routeStateForMoment(moment, slice),
       provenanceGap: provenanceGapPayload(relevantProvenanceGaps[0]),
       provenanceGaps: relevantProvenanceGaps.map(provenanceGapPayload),
-      writeBridge: writeBridgeForMoment(moment, obligation),
+      writeBridge: writeBridgeForMoment(moment, obligation, relevantProvenanceGaps),
       theoryReasoning: relevantTheoryReasoning,
     },
     reason: moment.reason,
@@ -675,7 +675,18 @@ function provenanceGapsForMoment(
       gap.targetRefs.some((ref) => moment.targetRefs.includes(ref)) ||
       moment.targetRefs.some((ref) => gap.targetRefs.includes(ref))
     );
-  });
+  }).toSorted((left, right) =>
+    Number(explicitProvenanceActionIdsForGap(right).includes(moment.actionId)) -
+    Number(explicitProvenanceActionIdsForGap(left).includes(moment.actionId)),
+  );
+}
+
+function explicitProvenanceActionIdsForGap(gap: AitpProvenanceGap): readonly string[] {
+  const actionIds = [
+    ...gap.recommendedActions,
+    ...gap.recommendedEntrypoints.map(actionIdForEntrypoint),
+  ].filter(isNonEmptyString);
+  return unique(actionIds.map(normalizeProvenanceActionId));
 }
 
 function provenanceActionIdsForGap(gap: AitpProvenanceGap): readonly string[] {
@@ -750,6 +761,15 @@ function provenanceGapPayload(
     targetRefs: gap.targetRefs,
     recommendedActions: gap.recommendedActions,
     recommendedEntrypoints: gap.recommendedEntrypoints,
+    payloadHints: gap.payloadHints.map((hint) => ({
+      entrypoint: hint.entrypoint,
+      recordAction: hint.recordAction,
+      requiredFields: hint.requiredFields,
+      draft: camelizeDraft(hint.draft),
+      orientationOnly: hint.orientationOnly,
+      summaryInputsTrusted: hint.summaryInputsTrusted,
+      canUpdateClaimTrust: hint.canUpdateClaimTrust,
+    })),
     severity: gap.severity,
     requiredNow: gap.requiredNow,
     requiredBeforeTrustChange: gap.requiredBeforeTrustChange,
@@ -763,7 +783,12 @@ function provenanceGapPayload(
 function writeBridgeForMoment(
   moment: DetectedResearchMoment,
   obligation: AitpCallObligation | undefined,
+  provenanceGaps: readonly AitpProvenanceGap[] = [],
 ): Readonly<Record<string, unknown>> | undefined {
+  const hints = [
+    ...(obligation?.payloadHints ?? []),
+    ...provenanceGaps.flatMap((gap) => gap.payloadHints),
+  ];
   switch (moment.actionId) {
     case 'aitp.record_exploratory_record':
       return withPayloadDraft({
@@ -771,49 +796,49 @@ function writeBridgeForMoment(
         cli: 'aitp-v5 exploration record',
         requiredFields: ['topicId', 'explorationType', 'title', 'focalQuestion', 'summary'],
         targetRefs: moment.targetRefs,
-      }, obligation);
+      }, hints);
     case 'aitp.register_source_asset':
       return withPayloadDraft({
         operation: 'registerSourceAsset',
         cli: 'aitp-v5 asset register',
         requiredFields: ['topicId', 'assetType', 'uri', 'title'],
         targetRefs: moment.targetRefs,
-      }, obligation);
+      }, hints);
     case 'aitp.record_evidence':
       return withPayloadDraft({
         operation: 'recordEvidence',
         cli: 'aitp-v5 evidence record',
         requiredFields: ['topicId', 'claimId', 'evidenceType', 'status', 'summary'],
         targetRefs: moment.targetRefs,
-      }, obligation);
+      }, hints);
     case 'aitp.record_tool_run':
       return withPayloadDraft({
         operation: 'recordToolRun',
         cli: 'aitp-v5 tool run record',
         requiredFields: ['recipeId', 'toolFamily', 'toolName', 'topicId', 'claimId'],
         targetRefs: moment.targetRefs,
-      }, obligation);
+      }, hints);
     case 'aitp.capture_code_state_auto':
       return withPayloadDraft({
         operation: 'captureCodeStateAuto',
         cli: 'aitp-v5 code state auto',
         requiredFields: ['worktreePath', 'repoId', 'topicId', 'claimId'],
         targetRefs: moment.targetRefs,
-      }, obligation);
+      }, hints);
     case 'aitp.attach_artifact':
       return withPayloadDraft({
         operation: 'attachArtifact',
         cli: 'aitp-v5 research-state attach-artifact',
         requiredFields: ['topicId', 'claimId', 'artifactType', 'uri', 'summary'],
         targetRefs: moment.targetRefs,
-      }, obligation);
+      }, hints);
     case 'aitp.record_reference_location':
       return withPayloadDraft({
         operation: 'recordReferenceLocation',
         cli: 'aitp-v5 reference location record',
         requiredFields: ['topicId', 'connectorId', 'locationType', 'uri', 'label'],
         targetRefs: moment.targetRefs,
-      }, obligation);
+      }, hints);
     case 'aitp.create_open_obligation':
       return withPayloadDraft({
         operation: 'createProofObligation',
@@ -828,21 +853,21 @@ function writeBridgeForMoment(
           'nextAction',
         ],
         targetRefs: moment.targetRefs,
-      }, obligation);
+      }, hints);
     case 'aitp.create_validation_contract':
       return withPayloadDraft({
         operation: 'createValidationContract',
         cli: 'aitp-v5 validation contract create',
         requiredFields: ['topicId', 'claimId', 'requiredChecks', 'failureModes', 'requiredEvidenceOutputs'],
         targetRefs: moment.targetRefs,
-      }, obligation);
+      }, hints);
     case 'aitp.record_validation_result':
       return withPayloadDraft({
         operation: 'recordValidationResult',
         cli: 'aitp-v5 validation result record',
         requiredFields: ['topicId', 'claimId', 'contractId', 'toolRunId', 'status', 'summary'],
         targetRefs: moment.targetRefs,
-      }, obligation);
+      }, hints);
     case 'aitp.record_source_reconstruction_review_result':
       return withPayloadDraft({
         operation: 'recordSourceReconstructionReviewResult',
@@ -855,14 +880,14 @@ function writeBridgeForMoment(
           'one of basisRefs/evidenceRefs/validationResultIds/referenceLocationIds/objectIds/relationIds',
         ],
         targetRefs: moment.targetRefs,
-      }, obligation);
+      }, hints);
     case 'aitp.request_human_checkpoint':
       return withPayloadDraft({
         operation: 'requestHumanCheckpoint',
         cli: 'aitp-v5 checkpoint request',
         requiredFields: ['topicId', 'claimId', 'reason', 'requestedBy', 'options'],
         targetRefs: moment.targetRefs,
-      }, obligation);
+      }, hints);
     default:
       return undefined;
   }
@@ -886,9 +911,9 @@ function isRouteActionId(actionId: string): boolean {
 
 function withPayloadDraft(
   bridge: Readonly<Record<string, unknown>> & { readonly operation: string },
-  obligation: AitpCallObligation | undefined,
+  hints: readonly AitpPayloadHint[],
 ): Readonly<Record<string, unknown>> {
-  const hint = payloadHintForOperation(bridge.operation, obligation?.payloadHints ?? []);
+  const hint = payloadHintForOperation(bridge.operation, hints);
   if (hint === undefined) return bridge;
   return {
     ...bridge,

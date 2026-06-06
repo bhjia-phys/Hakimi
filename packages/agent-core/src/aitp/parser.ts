@@ -636,6 +636,9 @@ function parseProvenanceGap(raw: Record<string, unknown>, index: number): AitpPr
     recommendedEntrypoints: stringArray(
       valueFor(raw, 'recommended_entrypoints', 'recommendedEntrypoints'),
     ),
+    payloadHints: objectArray(valueFor(raw, 'payload_hints', 'payloadHints')).map(
+      parsePayloadHint,
+    ),
     severity: stringValue(raw['severity']) ?? 'recommended',
     requiredNow: booleanValue(valueFor(raw, 'required_now', 'requiredNow')) ?? false,
     requiredBeforeTrustChange:
