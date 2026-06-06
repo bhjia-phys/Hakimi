@@ -123,6 +123,18 @@ function parseSourceBacktraceItem(
     status: stringValue(raw['status']) ?? (complete ? 'complete' : missing.length > 0 ? 'missing' : undefined),
     reason: stringValue(raw['reason']) ?? stringValue(raw['statement']),
     gap: stringValue(raw['gap']) ?? (missing.length > 0 ? missing.join(', ') : undefined),
+    reasoningMoves: stringArray(valueFor(raw, 'reasoning_moves', 'reasoningMoves')),
+    backtraceTargets: stringArray(valueFor(raw, 'backtrace_targets', 'backtraceTargets')),
+    definitionBoundaryQuestions: stringArray(
+      valueFor(raw, 'definition_boundary_questions', 'definitionBoundaryQuestions'),
+    ),
+    derivationBacktraceQuestions: stringArray(
+      valueFor(raw, 'derivation_backtrace_questions', 'derivationBacktraceQuestions'),
+    ),
+    sourceDependencyQuestions: stringArray(
+      valueFor(raw, 'source_dependency_questions', 'sourceDependencyQuestions'),
+    ),
+    originalQuestionGuard: stringArray(valueFor(raw, 'original_question_guard', 'originalQuestionGuard')),
   };
 }
 
@@ -141,6 +153,15 @@ function parseRelationNeighborhoodItem(
     status: stringValue(raw['status']),
     reason: stringValue(raw['reason']),
     sourceRefs: stringArray(raw['source_refs']),
+    reasoningMoves: stringArray(valueFor(raw, 'reasoning_moves', 'reasoningMoves')),
+    candidatePaths: stringArray(valueFor(raw, 'candidate_paths', 'candidatePaths')),
+    relationPathQuestions: stringArray(
+      valueFor(raw, 'relation_path_questions', 'relationPathQuestions'),
+    ),
+    definitionBoundaryQuestions: stringArray(
+      valueFor(raw, 'definition_boundary_questions', 'definitionBoundaryQuestions'),
+    ),
+    originalQuestionGuard: stringArray(valueFor(raw, 'original_question_guard', 'originalQuestionGuard')),
   };
 }
 
@@ -173,6 +194,21 @@ function parseExploratoryRecordItem(
     candidatePaths: stringArray(raw['candidatePaths']).length > 0
       ? stringArray(raw['candidatePaths'])
       : stringArray(raw['candidate_paths']),
+    reasoningMoves: stringArray(valueFor(raw, 'reasoning_moves', 'reasoningMoves')),
+    backtraceTargets: stringArray(valueFor(raw, 'backtrace_targets', 'backtraceTargets')),
+    relationPathQuestions: stringArray(
+      valueFor(raw, 'relation_path_questions', 'relationPathQuestions'),
+    ),
+    definitionBoundaryQuestions: stringArray(
+      valueFor(raw, 'definition_boundary_questions', 'definitionBoundaryQuestions'),
+    ),
+    derivationBacktraceQuestions: stringArray(
+      valueFor(raw, 'derivation_backtrace_questions', 'derivationBacktraceQuestions'),
+    ),
+    sourceDependencyQuestions: stringArray(
+      valueFor(raw, 'source_dependency_questions', 'sourceDependencyQuestions'),
+    ),
+    originalQuestionGuard: stringArray(valueFor(raw, 'original_question_guard', 'originalQuestionGuard')),
     unresolvedPoints: stringArray(raw['unresolvedPoints']).length > 0
       ? stringArray(raw['unresolvedPoints'])
       : stringArray(raw['unresolved_points']),

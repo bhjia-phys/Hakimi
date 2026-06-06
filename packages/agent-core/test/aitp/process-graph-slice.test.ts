@@ -142,6 +142,9 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.contextLines.join('\n')).toContain('AITP required calls now:');
     expect(compiled.contextLines.join('\n')).toContain('AITP lifecycle triggers:');
     expect(compiled.contextLines.join('\n')).toContain('AITP trust prerequisites:');
+    expect(compiled.contextLines.join('\n')).toContain('Theory reasoning:');
+    expect(compiled.contextLines.join('\n')).toContain('relation_path_brainstorming');
+    expect(compiled.contextLines.join('\n')).toContain('original_question_continuity_guard');
     expect(compiled.callObligations.map((item) => item.actionId)).toEqual(
       expect.arrayContaining([
         'aitp.record_evidence',
@@ -187,6 +190,22 @@ describe('AITP process graph slice adapter', () => {
       lifecycleTrigger: {
         lifecyclePhases: ['pre_final'],
         triggerConditions: ['open proof obligation must be recorded before checked final status'],
+      },
+      theoryReasoning: {
+        moves: expect.arrayContaining([
+          'relation_path_brainstorming',
+          'source_dependency_backtrace',
+          'original_question_continuity_guard',
+        ]),
+        relationPathQuestions: expect.arrayContaining([
+          'Which intermediate definition connects counting to edge CFT labels?',
+        ]),
+        sourceDependencyQuestions: expect.arrayContaining([
+          'Which source introduces the matching convention?',
+        ]),
+        originalQuestionGuard: expect.arrayContaining([
+          'Keep sector matching tied to edge-CFT identification.',
+        ]),
       },
       writeBridge: {
         operation: 'recordEvidence',
@@ -579,6 +598,11 @@ function currentAitpSlicePayload() {
         relation_ids: ['relation-counting-cft'],
         source_refs: ['paper:edge-counting'],
         candidate_paths: ['counting sequence -> sector matching -> edge CFT'],
+        reasoning_moves: ['why-question decomposition'],
+        relation_path_questions: [
+          'Which intermediate definition connects counting to edge CFT labels?',
+        ],
+        original_question_guard: ['Keep sector matching tied to edge-CFT identification.'],
         unresolved_points: ['finite-size aliasing'],
         next_actions: ['open source backtrace'],
       },
@@ -721,6 +745,21 @@ function currentAitpSlicePayload() {
                 uri: '<source URI>',
                 label: '<source label>',
                 status: 'located',
+                reasoning_moves: [
+                  'source dependency backtrace',
+                  'bidirectional definition backtrace',
+                ],
+                backtrace_targets: ['claim:claim-fqhe', 'source:source-asset-edge-counting'],
+                definition_boundary_questions: [
+                  'Which definition boundary fixes sector matching?',
+                ],
+                derivation_backtrace_questions: [
+                  'Which derivation step assumes sector matching?',
+                ],
+                source_dependency_questions: [
+                  'Which source introduces the matching convention?',
+                ],
+                original_question_guard: ['Keep sector matching tied to edge-CFT identification.'],
               },
               orientation_only: true,
               summary_inputs_trusted: false,

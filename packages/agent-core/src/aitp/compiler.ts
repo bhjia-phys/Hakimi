@@ -7,6 +7,7 @@ import type {
   AitpOpenObligation,
   AitpPayloadHint,
   AitpProcessGraphSlice,
+  AitpTheoryReasoningProjection,
   AitpTrustSummary,
   CompiledAitpProcessGraphSlice,
   DetectedResearchMoment,
@@ -16,6 +17,16 @@ import type { ResearchActionBinding } from '../research-action';
 
 const MAX_CONTEXT_ITEMS = 6;
 const AITP_ADAPTER_ID = 'aitp.native.process-graph-slice';
+const THEORY_REASONING_DRAFT_KEYS = [
+  'reasoningMoves',
+  'whyQuestions',
+  'relationPathQuestions',
+  'backtraceTargets',
+  'definitionBoundaryQuestions',
+  'derivationBacktraceQuestions',
+  'sourceDependencyQuestions',
+  'originalQuestionGuard',
+] as const;
 
 export interface CompileAitpProcessGraphSliceOptions extends ResearchMomentDetectorInput {
   readonly maxContextItems?: number | undefined;
@@ -31,14 +42,16 @@ export function compileAitpProcessGraphSlice(
   const trust = summarizeTrust(slice);
   const suggestedNextMoments = detectResearchMoments(slice, options);
   const callObligations = buildCallObligations(slice);
+  const theoryReasoning = buildTheoryReasoning(slice, callObligations, maxItems);
   const actionRecommendations = suggestedNextMoments.map((moment) =>
-    actionBindingForMoment(moment, slice, callObligations),
+    actionBindingForMoment(moment, slice, callObligations, theoryReasoning),
   );
   const contextLines = buildContextLines(
     slice,
     obligations,
     suggestedNextMoments,
     callObligations,
+    theoryReasoning,
     maxItems,
   );
 
@@ -81,6 +94,7 @@ function buildContextLines(
   obligations: AitpObligationSummary,
   moments: readonly DetectedResearchMoment[],
   callObligations: readonly AitpCallObligation[],
+  theoryReasoning: AitpTheoryReasoningProjection | undefined,
   maxItems: number,
 ): readonly string[] {
   const lines: string[] = [
@@ -132,6 +146,9 @@ function buildContextLines(
     lines.push(
       `Exploration unresolved points: ${bounded(unresolvedExploration.flatMap((item) => item.unresolvedPoints), maxItems).join('; ')}`,
     );
+  }
+  if (theoryReasoning !== undefined) {
+    lines.push(renderTheoryReasoningLine(theoryReasoning, maxItems));
   }
 
   if (moments.length > 0) {
@@ -221,8 +238,10 @@ function actionBindingForMoment(
   moment: DetectedResearchMoment,
   slice: AitpProcessGraphSlice,
   callObligations: readonly AitpCallObligation[],
+  theoryReasoning: AitpTheoryReasoningProjection | undefined,
 ): ResearchActionBinding {
   const obligation = callObligationForMoment(moment, callObligations);
+  const relevantTheoryReasoning = theoryReasoningForMoment(moment, theoryReasoning);
   return {
     id: `binding.${AITP_ADAPTER_ID}.${slug(moment.actionId)}.${slug(moment.source)}`,
     actionId: moment.actionId,
@@ -238,6 +257,7 @@ function actionBindingForMoment(
       lifecycleTrigger: lifecycleTriggerForMoment(moment, obligation),
       callObligation: obligation,
       writeBridge: writeBridgeForMoment(moment, obligation),
+      theoryReasoning: relevantTheoryReasoning,
     },
     reason: moment.reason,
     priority: moment.priority,
@@ -425,12 +445,230 @@ function recordActionForOperation(operation: string): string | undefined {
   }
 }
 
+function buildTheoryReasoning(
+  slice: AitpProcessGraphSlice,
+  callObligations: readonly AitpCallObligation[],
+  maxItems: number,
+): AitpTheoryReasoningProjection | undefined {
+  const drafts = callObligations.flatMap((obligation) =>
+    obligation.payloadHints.map((hint) => camelizeDraft(hint.draft)),
+  );
+  const draftFields = theoryDraftFields(drafts);
+  const moves = new Set<string>([
+    ...stringsFromUnknown(draftFields['reasoningMoves']),
+    ...slice.exploratoryRecords.flatMap((item) => item.reasoningMoves),
+    ...slice.relationNeighborhood.flatMap((item) => item.reasoningMoves),
+    ...slice.sourceBacktrace.flatMap((item) => item.reasoningMoves),
+  ].map(normalizeReasoningMove));
+  const prompts = new Set<string>();
+
+  if (draftFields['whyQuestions'] !== undefined) moves.add('why_question_decomposition');
+  if (draftFields['relationPathQuestions'] !== undefined) moves.add('relation_path_brainstorming');
+  if (draftFields['backtraceTargets'] !== undefined) moves.add('source_dependency_backtrace');
+  if (draftFields['definitionBoundaryQuestions'] !== undefined) moves.add('bidirectional_definition_backtrace');
+  if (draftFields['derivationBacktraceQuestions'] !== undefined) {
+    moves.add('derivation_backtrace_to_assumption_or_convention_boundary');
+  }
+  if (draftFields['sourceDependencyQuestions'] !== undefined) moves.add('source_dependency_backtrace');
+  if (draftFields['originalQuestionGuard'] !== undefined) moves.add('original_question_continuity_guard');
+
+  if (slice.exploratoryRecords.some((item) => item.explorationType === 'question_decomposition')) {
+    moves.add('why_question_decomposition');
+    prompts.add('Decompose why this question matters into local subquestions before treating a route as an answer.');
+  }
+  if (
+    slice.exploratoryRecords.some((item) => item.explorationType === 'relation_path_brainstorm') ||
+    slice.relationNeighborhood.some((item) =>
+      lowerJoin([item.status, item.reason, item.relation]).match(/hypothesis|provisional|candidate/) !== null,
+    ) ||
+    callObligations.some((item) => lowerJoin([item.momentId, item.decisionType, item.actionKind]).includes('relation'))
+  ) {
+    moves.add('relation_path_brainstorming');
+    prompts.add('Brainstorm relation paths between physics objects before treating a relation as support.');
+  }
+  if (
+    slice.sourceBacktrace.some((item) =>
+      lowerJoin([item.status, item.reason, item.gap]).match(/gap|missing|unresolved|open|no source/) !== null,
+    ) ||
+    callObligations.some((item) => lowerJoin([item.momentId, item.decisionType, item.actionKind, item.reason]).match(/backtrace|source|reference|citation|provenance/) !== null)
+  ) {
+    moves.add('source_dependency_backtrace');
+    prompts.add('Backtrace source dependencies before using support, evidence, or validation writes.');
+  }
+  if (
+    slice.openObligations.some((item) => lowerJoin([item.kind, item.reason]).match(/definition|define|reconstruct/) !== null) ||
+    callObligations.some((item) => lowerJoin([item.momentId, item.actionKind, item.reason]).match(/definition|define|reconstruct/) !== null)
+  ) {
+    moves.add('bidirectional_definition_backtrace');
+    prompts.add('Backtrace definitions backward to sources/conventions and forward to derivation uses.');
+  }
+  if (
+    slice.openObligations.some((item) => lowerJoin([item.kind, item.reason]).match(/derivation|derive|equation|assumption|convention/) !== null) ||
+    slice.recommendedMoments.some((item) => lowerJoin([item.id, item.reason]).match(/derivation|derive|equation|assumption|convention/) !== null)
+  ) {
+    moves.add('derivation_backtrace_to_assumption_or_convention_boundary');
+    prompts.add('Trace derivation steps back to assumption and convention boundaries before upgrading status.');
+  }
+  if (slice.exploratoryRecords.some((item) => item.originalQuestion !== undefined && item.localQuestion !== undefined)) {
+    moves.add('original_question_continuity_guard');
+    prompts.add('Check that the local question still answers the original question before continuing.');
+  }
+
+  const projection = {
+    moves: bounded([...moves], maxItems),
+    prompts: bounded([...prompts], maxItems),
+    ...pruneEmpty({
+      whyQuestions: bounded(unique([
+        ...stringsFromUnknown(draftFields['whyQuestions']),
+        ...slice.exploratoryRecords.flatMap((item) => [
+          item.originalQuestion,
+          item.focalQuestion,
+          item.localQuestion,
+        ]),
+      ].filter(isNonEmptyString)), maxItems),
+      relationTargets: bounded(unique([
+        ...slice.relationNeighborhood.flatMap((item) => [item.id, item.source, item.target]),
+        ...callObligations
+          .filter((item) => lowerJoin([item.momentId, item.actionKind]).includes('relation'))
+          .flatMap((item) => item.targetRefs),
+      ].filter(isNonEmptyString)), maxItems),
+      relationPathQuestions: bounded(unique([
+        ...stringsFromUnknown(draftFields['relationPathQuestions']),
+        ...slice.exploratoryRecords.flatMap((item) => item.relationPathQuestions),
+        ...slice.relationNeighborhood.flatMap((item) => item.relationPathQuestions),
+      ]), maxItems),
+      backtraceTargets: bounded(unique([
+        ...stringsFromUnknown(draftFields['backtraceTargets']),
+        ...slice.exploratoryRecords.flatMap((item) => item.backtraceTargets),
+        ...slice.sourceBacktrace.flatMap((item) => item.backtraceTargets),
+        ...slice.sourceBacktrace.flatMap((item) => [item.id, item.targetNodeId, item.sourceRef]),
+        ...callObligations
+          .filter((item) => lowerJoin([item.momentId, item.decisionType, item.actionKind]).match(/backtrace|source/) !== null)
+          .flatMap((item) => item.targetRefs),
+      ].filter(isNonEmptyString)), maxItems),
+      definitionBoundaryQuestions: bounded(unique([
+        ...stringsFromUnknown(draftFields['definitionBoundaryQuestions']),
+        ...slice.exploratoryRecords.flatMap((item) => item.definitionBoundaryQuestions),
+        ...slice.relationNeighborhood.flatMap((item) => item.definitionBoundaryQuestions),
+        ...slice.sourceBacktrace.flatMap((item) => item.definitionBoundaryQuestions),
+      ]), maxItems),
+      derivationBacktraceQuestions: bounded(unique([
+        ...stringsFromUnknown(draftFields['derivationBacktraceQuestions']),
+        ...slice.exploratoryRecords.flatMap((item) => item.derivationBacktraceQuestions),
+        ...slice.sourceBacktrace.flatMap((item) => item.derivationBacktraceQuestions),
+      ]), maxItems),
+      sourceDependencyQuestions: bounded(unique([
+        ...stringsFromUnknown(draftFields['sourceDependencyQuestions']),
+        ...slice.exploratoryRecords.flatMap((item) => item.sourceDependencyQuestions),
+        ...slice.sourceBacktrace.flatMap((item) => item.sourceDependencyQuestions),
+      ]), maxItems),
+      originalQuestionGuard: bounded(unique([
+        ...stringsFromUnknown(draftFields['originalQuestionGuard']),
+        ...slice.exploratoryRecords.flatMap((item) => item.originalQuestionGuard),
+        ...slice.relationNeighborhood.flatMap((item) => item.originalQuestionGuard),
+        ...slice.sourceBacktrace.flatMap((item) => item.originalQuestionGuard),
+      ]), maxItems),
+      reasoningMoves: draftFields['reasoningMoves'],
+    }),
+  } as AitpTheoryReasoningProjection;
+
+  return projection.moves.length === 0 && projection.prompts.length === 0 ? undefined : projection;
+}
+
+function theoryReasoningForMoment(
+  _moment: DetectedResearchMoment,
+  theoryReasoning: AitpTheoryReasoningProjection | undefined,
+): AitpTheoryReasoningProjection | undefined {
+  return theoryReasoning;
+}
+
+function renderTheoryReasoningLine(
+  theoryReasoning: AitpTheoryReasoningProjection,
+  maxItems: number,
+): string {
+  const parts = [
+    `moves=${bounded(theoryReasoning.moves, maxItems).join(', ')}`,
+    theoryReasoning.prompts.length === 0
+      ? undefined
+      : `prompts=${bounded(theoryReasoning.prompts, maxItems).join(' | ')}`,
+    renderTheoryField('whyQuestions', theoryReasoning.whyQuestions, maxItems),
+    renderTheoryField('relationTargets', theoryReasoning.relationTargets, maxItems),
+    renderTheoryField('relationPathQuestions', theoryReasoning.relationPathQuestions, maxItems),
+    renderTheoryField('backtraceTargets', theoryReasoning.backtraceTargets, maxItems),
+    renderTheoryField('definitionBoundaryQuestions', theoryReasoning.definitionBoundaryQuestions, maxItems),
+    renderTheoryField('derivationBacktraceQuestions', theoryReasoning.derivationBacktraceQuestions, maxItems),
+    renderTheoryField('sourceDependencyQuestions', theoryReasoning.sourceDependencyQuestions, maxItems),
+    renderTheoryField('originalQuestionGuard', theoryReasoning.originalQuestionGuard, maxItems),
+  ].filter(isNonEmptyString);
+  return `Theory reasoning: ${parts.join('; ')}`;
+}
+
+function renderTheoryField(key: string, value: unknown, maxItems: number): string | undefined {
+  if (!hasTheoryValue(value)) return undefined;
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    return `${key}=${bounded(value, maxItems).join(' | ')}`;
+  }
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  if (text === undefined || text.length === 0) return undefined;
+  return `${key}=${text.length > 240 ? `${text.slice(0, 237)}...` : text}`;
+}
+
+function theoryDraftFields(
+  drafts: readonly Readonly<Record<string, unknown>>[],
+): Readonly<Record<string, unknown>> {
+  const result: Record<string, unknown> = {};
+  for (const key of THEORY_REASONING_DRAFT_KEYS) {
+    const values = drafts.map((draft) => draft[key]).filter(hasTheoryValue);
+    if (values.length === 1) result[key] = values[0];
+    if (values.length > 1) result[key] = values;
+  }
+  return result;
+}
+
+function stringsFromUnknown(value: unknown): readonly string[] {
+  if (typeof value === 'string') return value.trim().length === 0 ? [] : [value.trim()];
+  if (Array.isArray(value)) return value.flatMap(stringsFromUnknown);
+  return [];
+}
+
+function normalizeReasoningMove(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  if (normalized === 'relation_path_brainstorm') return 'relation_path_brainstorming';
+  if (normalized === 'why_question_decomposition') return normalized;
+  if (normalized === 'source_dependency_backtrace') return normalized;
+  if (normalized === 'bidirectional_definition_backtrace') return normalized;
+  if (normalized === 'derivation_backtrace') return 'derivation_backtrace_to_assumption_or_convention_boundary';
+  if (normalized === 'original_question_continuity_check') return 'original_question_continuity_guard';
+  return normalized;
+}
+
+function pruneEmpty(value: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (hasTheoryValue(item)) result[key] = item;
+  }
+  return result;
+}
+
+function hasTheoryValue(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.some(hasTheoryValue);
+  if (isRecord(value)) return Object.values(value).some(hasTheoryValue);
+  return true;
+}
 function camelizeDraft(value: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
   const result: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    result[camelizeKey(key)] = item;
+    result[camelizeKey(key)] = camelizeValue(item);
   }
   return result;
+}
+
+function camelizeValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(camelizeValue);
+  if (!isRecord(value)) return value;
+  return camelizeDraft(value);
 }
 
 function camelizeKey(value: string): string {
@@ -551,9 +789,9 @@ function isAitpProcessGraphSlice(value: unknown): value is AitpProcessGraphSlice
   );
 }
 
-function bounded(values: readonly string[], maxItems: number): readonly string[] {
+function bounded<T>(values: readonly T[], maxItems: number): readonly T[] {
   if (values.length <= maxItems) return values;
-  return [...values.slice(0, maxItems), `...(+${String(values.length - maxItems)} more)`];
+  return [...values.slice(0, maxItems), `...(+${String(values.length - maxItems)} more)` as T];
 }
 
 function unique(values: readonly string[]): readonly string[] {
@@ -566,4 +804,16 @@ function slug(value: string): string {
 
 function lowerJoin(values: readonly (string | undefined)[]): string {
   return values.filter((value): value is string => value !== undefined).join(' ').toLowerCase();
+}
+
+function hasAny(text: string, needles: readonly string[]): boolean {
+  return needles.some((needle) => text.includes(needle));
+}
+
+function isNonEmptyString(value: string | undefined): value is string {
+  return value !== undefined && value.length > 0;
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

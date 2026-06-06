@@ -589,6 +589,20 @@ function detectorText(slice: AitpProcessGraphSlice, input: ResearchMomentDetecto
       item.lifecycleTrigger.recordingThreshold,
       ...lifecycleTrustBoundaryText(item.lifecycleTrigger),
       ...item.lifecycleTrigger.recommendedHostBehavior,
+      ...item.payloadHints.flatMap((hint) => [
+        hint.entrypoint,
+        hint.recordAction,
+        hint.actionKind,
+        hint.targetType,
+        hint.targetId,
+        ...hint.requiredFields,
+        ...draftText(hint.draft),
+        ...hint.lifecycleTrigger.lifecyclePhases,
+        ...hint.lifecycleTrigger.triggerConditions,
+        hint.lifecycleTrigger.recordingThreshold,
+        ...lifecycleTrustBoundaryText(hint.lifecycleTrigger),
+        ...hint.lifecycleTrigger.recommendedHostBehavior,
+      ]),
     ]),
     ...slice.recommendedMoments.flatMap((item) => [
       ...item.lifecycleTrigger.lifecyclePhases,
@@ -731,6 +745,19 @@ function lifecycleTrustBoundaryText(
     trigger.trustBoundaryInputs.requiresPreflight ? 'requires_preflight' : undefined,
     trigger.trustBoundaryInputs.finalGateRequired ? 'final_gate_required' : undefined,
   ].filter(isString);
+}
+
+function draftText(value: unknown): readonly string[] {
+  if (typeof value === 'string' && value.trim().length > 0) return [value.trim()];
+  if (Array.isArray(value)) return value.flatMap(draftText);
+  if (isRecord(value)) {
+    return Object.entries(value).flatMap(([key, item]) => [key, ...draftText(item)]);
+  }
+  return [];
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function unique(values: readonly string[]): readonly string[] {
