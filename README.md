@@ -119,8 +119,13 @@ call-time cwd/base-path resolution. The compatibility smoke in
 fake-runner based: it proves Hakimi keeps the AITP boundary executable from
 slice consumption through action binding and typed write-back args, but it does
 not claim that the local AITP Python CLI, filesystem records, or MCP server were
-available in the test environment. Full real-AITP smoke remains a separate
-integration lane.
+available in the test environment. `packages/agent-core/test/aitp/real-cli-smoke.e2e.test.ts`
+is the opt-in real topic-store lane: set `HAKIMI_AITP_REAL_CLI_SMOKE=1`,
+`AITP_V5_REPO=/path/to/AITP-Research-Protocol`, and
+`AITP_V5_PYTHON=/path/to/python` to make Hakimi create a real AITP workspace,
+read a `process_graph_slice`, write a proof obligation and human checkpoint,
+and verify the resulting `.aitp` records. It is skipped in normal unit runs so
+Hakimi does not require Python/AITP dependencies just to typecheck.
 
 The remaining runtime work is policy, not schema: the turn loop now has the
 default session bridge needed to fetch a scoped slice, but it still needs richer
@@ -271,7 +276,7 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 - 0.12.2 makes the Hakimi research runtime default-on: `physics-memory`, `research-ledger`, `research-action`, `domain-profile`, `workflow-recipe`, `research-harness`, and `/goal` now start enabled unless explicitly set to `0`. Empty/new theoretical-physics topics get a built-in `theoretical-physics/general` process scaffold with literature search, source capture, derivation, validation, memory/eval, code-mapping, patch, benchmark, and external-job action bindings. Dedicated `.aitp` packs still take priority when present.
 - 0.12.3 makes full context compaction research-aware: `FullCompaction` now renders a runtime `Hakimi Research State` snapshot from open WorkFrames, attached ContextPacks, scoped evidence refs, open obligations, recent ResearchAction traces, raw primitive-tool escapes, and recent primitive tool lifecycle records. The same snapshot is appended to the stored compaction summary, so automatic compaction preserves the research question and current progress even if the model's free-form summary omits it.
 - Post-0.13.0 development has started the AITP-native bridge layer: `packages/agent-core/src/aitp/cli-bridge.ts` can read AITP process graph slices, write AITP exploratory records, and provide a WorkFrame-scoped slice provider. Compiled slices now flow into `ResearchContextPack`, research-context injection, and runtime action bindings, so WorkFrame reminders can carry AITP obligations, source gaps, relation-path brainstorms, and original-question drift checks in the same model turn.
-- The AITP-native bridge now has a focused fake-runner smoke for the core contract: graph slice consumption, moment-policy/action-binding compilation, `writeBridge` hints, proof-obligation write-back, and human-checkpoint write-back. `ResearchAction.execute_aitp_write_bridge` also gives configured sessions a model-facing execution path for exploratory-record, source-asset, proof-obligation, validation-contract, validation-result, and human-checkpoint writes. Real CLI/MCP integration still needs a separate environment with AITP Python dependencies installed.
+- The AITP-native bridge now has a focused fake-runner smoke for the core contract: graph slice consumption, moment-policy/action-binding compilation, `writeBridge` hints, proof-obligation write-back, and human-checkpoint write-back. `ResearchAction.execute_aitp_write_bridge` also gives configured sessions a model-facing execution path for exploratory-record, source-asset, proof-obligation, validation-contract, validation-result, and human-checkpoint writes. An opt-in real AITP CLI smoke (`HAKIMI_AITP_REAL_CLI_SMOKE=1`) now exercises a real topic store when AITP Python dependencies are installed; MCP-first execution and strict validation/checkpoint enforcement remain the next integration lane.
 
 ## Development
 
