@@ -117,6 +117,17 @@ describe('AITP process graph slice adapter', () => {
         'aitp.request_human_checkpoint',
       ]),
     );
+    expect(compiled.callObligations.find((item) =>
+      item.actionId === 'aitp.record_evidence',
+    )?.payloadHints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entrypoint: 'aitp_v5_record_evidence',
+          recordAction: 'record_evidence',
+          draft: expect.objectContaining({ topic_id: 'fqhe' }),
+        }),
+      ]),
+    );
     expect(compiled.actionRecommendations.find((binding) =>
       binding.actionId === 'aitp.record_evidence',
     )?.params).toMatchObject({
@@ -127,6 +138,21 @@ describe('AITP process graph slice adapter', () => {
       },
       writeBridge: {
         operation: 'recordEvidence',
+        payloadDraft: {
+          topicId: 'fqhe',
+          claimId: 'claim-fqhe',
+          evidenceType: 'proof_obligation_resolution',
+          status: 'supports',
+          summary: '<source-grounded evidence summary>',
+          supportsOutputs: ['analytic derivation'],
+        },
+        payloadHint: {
+          entrypoint: 'aitp_v5_record_evidence',
+          recordAction: 'record_evidence',
+          orientationOnly: true,
+          summaryInputsTrusted: false,
+          canUpdateClaimTrust: false,
+        },
       },
     });
     expect(compiled.actionRecommendations.find((binding) =>
@@ -140,6 +166,20 @@ describe('AITP process graph slice adapter', () => {
       writeBridge: {
         operation: 'recordReferenceLocation',
         cli: 'aitp-v5 reference location record',
+        payloadDraft: {
+          topicId: 'fqhe',
+          claimId: 'claim-fqhe',
+          connectorId: '<connector id>',
+          locationType: 'paper_section',
+          uri: '<source URI>',
+          label: '<source label>',
+          status: 'located',
+        },
+        payloadHint: {
+          entrypoint: 'aitp_v5_record_reference_location',
+          recordAction: 'record_reference_location',
+          orientationOnly: true,
+        },
       },
     });
     expect(compiled.actionRecommendations.find((binding) =>
@@ -292,6 +332,47 @@ function fakeSlicePayload() {
             'aitp_v5_record_validation_result',
             'aitp_v5_preflight_trust_update',
           ],
+          payload_hints: [
+            {
+              entrypoint: 'aitp_v5_record_evidence',
+              record_action: 'record_evidence',
+              action_kind: 'record_evidence_or_validation',
+              target_type: 'proof_obligation',
+              target_id: 'obligation-finite-size',
+              required_fields: ['topic_id', 'claim_id', 'evidence_type', 'status', 'summary'],
+              draft: {
+                topic_id: 'fqhe',
+                claim_id: 'claim-fqhe',
+                evidence_type: 'proof_obligation_resolution',
+                status: 'supports',
+                summary: '<source-grounded evidence summary>',
+                supports_outputs: ['analytic derivation'],
+              },
+              orientation_only: true,
+              summary_inputs_trusted: false,
+              can_update_claim_trust: false,
+            },
+            {
+              entrypoint: 'aitp_v5_record_validation_result',
+              record_action: 'record_validation_result',
+              action_kind: 'record_evidence_or_validation',
+              target_type: 'proof_obligation',
+              target_id: 'obligation-finite-size',
+              required_fields: ['topic_id', 'claim_id', 'contract_id', 'tool_run_id', 'status', 'summary'],
+              draft: {
+                topic_id: 'fqhe',
+                claim_id: 'claim-fqhe',
+                contract_id: '<validation contract id>',
+                tool_run_id: '<tool run id>',
+                status: 'partial',
+                summary: '<validation result summary>',
+                checked_outputs: ['analytic derivation'],
+              },
+              orientation_only: true,
+              summary_inputs_trusted: false,
+              can_update_claim_trust: false,
+            },
+          ],
           required_before_trust_change: [
             'record typed evidence or validation for the open obligation',
             'run aitp_v5_preflight_trust_update',
@@ -441,6 +522,47 @@ function currentAitpSlicePayload() {
             'aitp_v5_record_validation_result',
             'aitp_v5_preflight_trust_update',
           ],
+          payload_hints: [
+            {
+              entrypoint: 'aitp_v5_record_evidence',
+              record_action: 'record_evidence',
+              action_kind: 'record_evidence_or_validation',
+              target_type: 'proof_obligation',
+              target_id: 'obligation-finite-size',
+              required_fields: ['topic_id', 'claim_id', 'evidence_type', 'status', 'summary'],
+              draft: {
+                topic_id: 'fqhe',
+                claim_id: 'claim-fqhe',
+                evidence_type: 'proof_obligation_resolution',
+                status: 'supports',
+                summary: '<source-grounded evidence summary>',
+                supports_outputs: ['analytic derivation'],
+              },
+              orientation_only: true,
+              summary_inputs_trusted: false,
+              can_update_claim_trust: false,
+            },
+            {
+              entrypoint: 'aitp_v5_record_validation_result',
+              record_action: 'record_validation_result',
+              action_kind: 'record_evidence_or_validation',
+              target_type: 'proof_obligation',
+              target_id: 'obligation-finite-size',
+              required_fields: ['topic_id', 'claim_id', 'contract_id', 'tool_run_id', 'status', 'summary'],
+              draft: {
+                topic_id: 'fqhe',
+                claim_id: 'claim-fqhe',
+                contract_id: '<validation contract id>',
+                tool_run_id: '<tool run id>',
+                status: 'partial',
+                summary: '<validation result summary>',
+                checked_outputs: ['analytic derivation'],
+              },
+              orientation_only: true,
+              summary_inputs_trusted: false,
+              can_update_claim_trust: false,
+            },
+          ],
           required_before_trust_change: [
             'record typed evidence or validation for the open obligation',
             'run aitp_v5_preflight_trust_update',
@@ -471,6 +593,28 @@ function currentAitpSlicePayload() {
             'aitp_v5_record_reference_location',
             'aitp_v5_register_source_asset',
             'aitp_v5_preflight_trust_update',
+          ],
+          payload_hints: [
+            {
+              entrypoint: 'aitp_v5_record_reference_location',
+              record_action: 'record_reference_location',
+              action_kind: 'reconstruct_missing_source_components',
+              target_type: 'claim',
+              target_id: 'claim-fqhe',
+              required_fields: ['topic_id', 'connector_id', 'location_type', 'uri', 'label'],
+              draft: {
+                topic_id: 'fqhe',
+                claim_id: 'claim-fqhe',
+                connector_id: '<connector id>',
+                location_type: 'paper_section',
+                uri: '<source URI>',
+                label: '<source label>',
+                status: 'located',
+              },
+              orientation_only: true,
+              summary_inputs_trusted: false,
+              can_update_claim_trust: false,
+            },
           ],
           required_before_trust_change: [
             'backtrace missing source components to typed records',

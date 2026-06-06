@@ -4,6 +4,7 @@ import type {
   AitpMomentPolicyDecision,
   AitpObligationSeverity,
   AitpOpenObligation,
+  AitpPayloadHint,
   AitpProcessGraphEdge,
   AitpProcessGraphNode,
   AitpProcessGraphSlice,
@@ -265,9 +266,27 @@ function parseMomentPolicyDecision(
     entrypoints: explicitEntrypoints.length > 0
       ? explicitEntrypoints
       : unique([...recordEntrypoints, ...explorationEntrypoints]),
+    payloadHints: objectArray(raw['payload_hints']).map(parsePayloadHint),
     requiredBeforeTrustChange: stringArray(raw['required_before_trust_change']),
     trustBoundary: booleanValue(raw['trust_boundary']) ?? false,
     orientationOnly: booleanValue(raw['orientation_only']) ?? true,
+    canUpdateClaimTrust: booleanValue(raw['can_update_claim_trust']) ?? false,
+  };
+}
+
+function parsePayloadHint(raw: Record<string, unknown>): AitpPayloadHint {
+  return {
+    entrypoint: stringValue(raw['entrypoint']) ?? '',
+    recordAction: stringValue(raw['record_action']) ?? stringValue(raw['recordAction']) ?? '',
+    actionKind: stringValue(raw['action_kind']) ?? stringValue(raw['actionKind']) ?? '',
+    targetType: stringValue(raw['target_type']) ?? stringValue(raw['targetType']) ?? '',
+    targetId: stringValue(raw['target_id']) ?? stringValue(raw['targetId']) ?? '',
+    requiredFields: stringArray(raw['required_fields']).length > 0
+      ? stringArray(raw['required_fields'])
+      : stringArray(raw['requiredFields']),
+    draft: isRecord(raw['draft']) ? raw['draft'] : {},
+    orientationOnly: booleanValue(raw['orientation_only']) ?? true,
+    summaryInputsTrusted: booleanValue(raw['summary_inputs_trusted']) ?? false,
     canUpdateClaimTrust: booleanValue(raw['can_update_claim_trust']) ?? false,
   };
 }

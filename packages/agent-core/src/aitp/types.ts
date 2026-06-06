@@ -126,9 +126,23 @@ export interface AitpMomentPolicyDecision {
   readonly recordEntrypoints: readonly string[];
   readonly explorationEntrypoints: readonly string[];
   readonly entrypoints: readonly string[];
+  readonly payloadHints: readonly AitpPayloadHint[];
   readonly requiredBeforeTrustChange: readonly string[];
   readonly trustBoundary: boolean;
   readonly orientationOnly: boolean;
+  readonly canUpdateClaimTrust: boolean;
+}
+
+export interface AitpPayloadHint {
+  readonly entrypoint: string;
+  readonly recordAction: string;
+  readonly actionKind: string;
+  readonly targetType: string;
+  readonly targetId: string;
+  readonly requiredFields: readonly string[];
+  readonly draft: Readonly<Record<string, unknown>>;
+  readonly orientationOnly: boolean;
+  readonly summaryInputsTrusted: boolean;
   readonly canUpdateClaimTrust: boolean;
 }
 
@@ -196,6 +210,7 @@ export interface AitpCallObligation {
   readonly recordEntrypoints: readonly string[];
   readonly explorationEntrypoints: readonly string[];
   readonly entrypoints: readonly string[];
+  readonly payloadHints: readonly AitpPayloadHint[];
   readonly requiredBeforeTrustChange: readonly string[];
   readonly trustBoundary: boolean;
 }

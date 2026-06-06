@@ -201,6 +201,7 @@ formula capsule
 - 截至 0.12.1，当前 baseline 已经是 file-backed、graph-aware、bridge-gated、带审计和恢复测试的科研 runtime；graph、benchmark、formalization、external-job receipt lane 都有确定性 research executor，literature、code、external benchmark workflow 能通过 Kimi 原生工具执行并留下 durable ledger evidence refs。topic pack 现在有 manifest 级别的 profile/workflow/memory/eval/action/tool summary、primitive tool call attribution、WorkFrame-scoped evidence reread、保守的原生 scheduler 回执归一化，以及 raw primitive tool escape 的恢复记录。
 - 0.12.2 把 Hakimi 科研 runtime 改成默认开启：`physics-memory`、`research-ledger`、`research-action`、`domain-profile`、`workflow-recipe`、`research-harness` 和 `/goal` 在未显式设为 `0` 时都会启用。空白理论物理课题会自动获得通用流程底座，包含文献搜索、source capture、推导、验证、memory/eval、代码映射、patch、benchmark 和外部任务提交 action bindings；如果项目存在专用 `.aitp` pack，专用 pack 优先。
 - post-0.13.0 的 AITP 原生桥接已经扩展到更完整的科研过程记录：Hakimi 可以从 AITP `process_graph_slice` 编译 `moment_policy.decisions`，把 required-now / trust-boundary 决策转成 `ResearchAction` 绑定，并通过 `execute_aitp_write_bridge` 写回 AITP 的 evidence、tool run、reference location、exploratory record、source asset、proof obligation、validation contract/result 和 human checkpoint。普通 `record_evidence_or_validation` 决策默认优先写 `recordEvidence`；如果已经存在严格 validation result，final gate 也会把它视为同一条 AITP 义务的等价满足。
+- 当 AITP policy 提供 orientation-only 的 `payload_hints` 时，Hakimi 会把它们投影成 `writeBridge.payloadDraft`，让模型知道下一次 typed write 的局部字段；这些 draft 只是执行提示，不会变成 `.hakimi` 的 canonical truth。
 
 ## 本地开发
 
