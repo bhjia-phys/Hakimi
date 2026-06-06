@@ -9,6 +9,7 @@ import type {
   AitpProcessGraphEdge,
   AitpProcessGraphNode,
   AitpProcessGraphSlice,
+  AitpProvenanceGap,
   AitpRecommendedMoment,
   AitpRelationNeighborhoodItem,
   AitpResearchMomentId,
@@ -44,6 +45,9 @@ export function parseAitpProcessGraphSlice(input: unknown): AitpProcessGraphSlic
     ),
     exploratoryRecords: objectArray(input['exploratory_records']).map(parseExploratoryRecordItem),
     routeState: parseRouteState(valueFor(input, 'route_state', 'routeState')),
+    provenanceGaps: objectArray(valueFor(input, 'provenance_gaps', 'provenanceGaps')).map(
+      parseProvenanceGap,
+    ),
     trustBoundaryReasons: stringArray(input['trust_boundary_reasons']),
     recommendedMoments: momentArray(input['recommended_moments']),
     momentPolicy: parseMomentPolicy(input['moment_policy']),
@@ -389,6 +393,46 @@ function uniqueRoutes(routes: readonly AitpRouteStateItem[]): readonly AitpRoute
     if (!byKey.has(route.id)) byKey.set(route.id, route);
   }
   return [...byKey.values()];
+}
+
+function parseProvenanceGap(raw: Record<string, unknown>, index: number): AitpProvenanceGap {
+  const id =
+    stringValue(valueFor(raw, 'gap_id', 'gapId')) ??
+    stringValue(raw['id']) ??
+    `aitp.provenance_gap.${String(index + 1)}`;
+  const targetType = stringValue(valueFor(raw, 'target_type', 'targetType')) ?? 'unknown';
+  const targetId = stringValue(valueFor(raw, 'target_id', 'targetId')) ?? id;
+  const targetRefs = stringArray(valueFor(raw, 'target_refs', 'targetRefs'));
+  return {
+    id,
+    gapType: stringValue(valueFor(raw, 'gap_type', 'gapType')) ?? 'provenance_gap',
+    provenanceKind:
+      stringValue(valueFor(raw, 'provenance_kind', 'provenanceKind')) ?? 'unknown',
+    reason: stringValue(raw['reason']) ?? id,
+    topicId: stringValue(valueFor(raw, 'topic_id', 'topicId')),
+    claimId: stringValue(valueFor(raw, 'claim_id', 'claimId')),
+    targetType,
+    targetId,
+    targetRefs: targetRefs.length > 0 ? targetRefs : [nodeRef(targetType, targetId)],
+    recommendedActions: stringArray(
+      valueFor(raw, 'recommended_actions', 'recommendedActions'),
+    ),
+    recommendedEntrypoints: stringArray(
+      valueFor(raw, 'recommended_entrypoints', 'recommendedEntrypoints'),
+    ),
+    severity: stringValue(raw['severity']) ?? 'recommended',
+    requiredNow: booleanValue(valueFor(raw, 'required_now', 'requiredNow')) ?? false,
+    requiredBeforeTrustChange:
+      booleanValue(valueFor(raw, 'required_before_trust_change', 'requiredBeforeTrustChange')) ??
+      false,
+    strictBoundary: stringValue(valueFor(raw, 'strict_boundary', 'strictBoundary')),
+    blockingWhenUsedAs: stringArray(
+      valueFor(raw, 'blocking_when_used_as', 'blockingWhenUsedAs'),
+    ),
+    orientationOnly: booleanValue(valueFor(raw, 'orientation_only', 'orientationOnly')) ?? true,
+    canUpdateClaimTrust:
+      booleanValue(valueFor(raw, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,
+  };
 }
 
 function momentArray(value: unknown): readonly AitpRecommendedMoment[] {

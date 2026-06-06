@@ -68,6 +68,15 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
     if (pack.aitp.pivotRequiredRouteIds.length > 0) {
       lines.push(`AITP pivot-required routes: ${bounded(pack.aitp.pivotRequiredRouteIds).join(', ')}`);
     }
+    if (pack.aitp.provenanceGapIds.length > 0) {
+      lines.push(`AITP provenance gaps: ${bounded(pack.aitp.provenanceGapIds).join(', ')}`);
+    }
+    if (pack.aitp.codeProvenanceGapIds.length > 0) {
+      lines.push(`AITP code provenance gaps: ${bounded(pack.aitp.codeProvenanceGapIds).join(', ')}`);
+    }
+    if (pack.aitp.artifactProvenanceGapIds.length > 0) {
+      lines.push(`AITP artifact provenance gaps: ${bounded(pack.aitp.artifactProvenanceGapIds).join(', ')}`);
+    }
     if (pack.aitp.trustBoundaryReasons.length > 0) {
       lines.push(`AITP trust boundary: ${bounded(pack.aitp.trustBoundaryReasons).join('; ')}`);
     }

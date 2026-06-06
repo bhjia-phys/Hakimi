@@ -13,6 +13,8 @@ describe('default research actions', () => {
     registerDefaultResearchActions(registry);
 
     expect(registry.listActions().map((action) => action.id)).toEqual([
+      'aitp.attach_artifact',
+      'aitp.capture_code_state_auto',
       'aitp.checkpoint_before_route_switch',
       'aitp.create_open_obligation',
       'aitp.create_validation_contract',

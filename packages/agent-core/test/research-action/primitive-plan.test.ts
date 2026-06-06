@@ -72,6 +72,8 @@ describe('research primitive plan templates', () => {
 
   it('plans AITP write-bridge records through explicit ResearchAction calls', () => {
     const exploration = planFor('aitp.record_exploratory_record');
+    const artifact = planFor('aitp.attach_artifact');
+    const codeState = planFor('aitp.capture_code_state_auto');
     const sourceAsset = planFor('aitp.register_source_asset');
     const referenceLocation = planFor('aitp.record_reference_location');
     const evidence = planFor('aitp.record_evidence');
@@ -82,6 +84,13 @@ describe('research primitive plan templates', () => {
 
     expect(exploration.steps.map((step) => step.id)).toEqual([
       'execute-aitp-exploration-write',
+    ]);
+    expect(artifact.steps.map((step) => step.id)).toEqual([
+      'execute-aitp-artifact-attach',
+    ]);
+    expect(codeState.steps.map((step) => step.id)).toEqual([
+      'inspect-worktree-state',
+      'execute-aitp-code-state-auto',
     ]);
     expect(sourceAsset.steps.map((step) => step.id)).toEqual([
       'execute-aitp-source-asset-write',
@@ -105,6 +114,9 @@ describe('research primitive plan templates', () => {
       'execute-aitp-validation-result-write',
     ]);
     expect(exploration.recording.evidenceRefs).toContain('aitp:exploratory_record:<id>');
+    expect(artifact.recording.evidenceRefs).toContain('aitp:artifact:<id>');
+    expect(codeState.recording.evidenceRefs).toContain('aitp:code_state:<id>');
+    expect(codeState.recording.primitiveToolCallIdsRequired).toBe(true);
     expect(sourceAsset.recording.evidenceRefs).toContain('aitp:source_asset:<id>');
     expect(referenceLocation.recording.evidenceRefs).toContain('aitp:reference_location:<id>');
     expect(evidence.recording.evidenceRefs).toContain('aitp:evidence:<id>');

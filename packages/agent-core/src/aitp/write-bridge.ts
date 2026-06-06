@@ -2,12 +2,14 @@ import type {
   AitpEvidenceWriteResult,
   AitpExploratoryRecordWriteResult,
   AitpHumanCheckpointWriteResult,
+  AitpCodeStateWriteResult,
   AitpProofObligationWriteResult,
   AitpReferenceLocationWriteResult,
   AitpSourceAssetWriteResult,
   AitpToolRunWriteResult,
   AitpValidationContractWriteResult,
   AitpValidationResultWriteResult,
+  CaptureAitpCodeStateAutoInput,
   CreateAitpValidationContractInput,
   CreateAitpProofObligationInput,
   RecordAitpEvidenceInput,
@@ -26,6 +28,7 @@ export const AITP_WRITE_BRIDGE_OPERATIONS = [
   'registerSourceAsset',
   'recordEvidence',
   'recordToolRun',
+  'captureCodeStateAuto',
   'recordReferenceLocation',
   'createProofObligation',
   'createValidationContract',
@@ -53,6 +56,10 @@ export type AitpWriteBridgeExecutionInput =
       readonly payload: RecordAitpToolRunInput;
     }
   | {
+      readonly operation: 'captureCodeStateAuto';
+      readonly payload: CaptureAitpCodeStateAutoInput;
+    }
+  | {
       readonly operation: 'recordReferenceLocation';
       readonly payload: RecordAitpReferenceLocationInput;
     }
@@ -78,6 +85,7 @@ export type AitpWriteBridgeExecutionResult =
   | AitpSourceAssetWriteResult
   | AitpEvidenceWriteResult
   | AitpToolRunWriteResult
+  | AitpCodeStateWriteResult
   | AitpReferenceLocationWriteResult
   | AitpProofObligationWriteResult
   | AitpValidationContractWriteResult
@@ -99,6 +107,9 @@ export interface AitpWriteBridgeCliTarget {
   ): Promise<AitpSourceAssetWriteResult>;
   recordEvidence(input: RecordAitpEvidenceInput): Promise<AitpEvidenceWriteResult>;
   recordToolRun(input: RecordAitpToolRunInput): Promise<AitpToolRunWriteResult>;
+  captureCodeStateAuto(
+    input: CaptureAitpCodeStateAutoInput,
+  ): Promise<AitpCodeStateWriteResult>;
   recordReferenceLocation(
     input: RecordAitpReferenceLocationInput,
   ): Promise<AitpReferenceLocationWriteResult>;
@@ -131,6 +142,8 @@ export class AitpCliWriteBridgeExecutor implements AitpWriteBridgeExecutor {
         return this.bridge.recordEvidence(input.payload);
       case 'recordToolRun':
         return this.bridge.recordToolRun(input.payload);
+      case 'captureCodeStateAuto':
+        return this.bridge.captureCodeStateAuto(input.payload);
       case 'recordReferenceLocation':
         return this.bridge.recordReferenceLocation(input.payload);
       case 'createProofObligation':
@@ -266,6 +279,28 @@ export function coerceAitpWriteBridgeInput(
           signal,
         },
       };
+    case 'captureCodeStateAuto':
+      return {
+        operation,
+        payload: {
+          worktreePath: requiredString(record, 'worktreePath', 'worktree_path'),
+          repoId: optionalString(record, 'repoId', 'repo_id'),
+          topicId: optionalString(record, 'topicId', 'topic_id'),
+          claimId: optionalString(record, 'claimId', 'claim_id'),
+          sessionId: optionalString(record, 'sessionId', 'session_id'),
+          buildConfig: optionalRecord(record, 'buildConfig', 'build_config', 'build_config_json'),
+          runtimeEnvironment: optionalRecord(
+            record,
+            'runtimeEnvironment',
+            'runtime_environment',
+            'runtime_environment_json',
+          ),
+          linkedRecords: optionalRecord(record, 'linkedRecords', 'linked_records', 'linked_records_json'),
+          knownDivergence: optionalString(record, 'knownDivergence', 'known_divergence'),
+          writePatchArtifact: optionalBoolean(record, 'writePatchArtifact', 'write_patch_artifact'),
+          signal,
+        },
+      };
     case 'recordReferenceLocation':
       return {
         operation,
@@ -379,6 +414,8 @@ export function actionIdForAitpWriteBridgeOperation(
       return 'aitp.record_evidence';
     case 'recordToolRun':
       return 'aitp.record_tool_run';
+    case 'captureCodeStateAuto':
+      return 'aitp.capture_code_state_auto';
     case 'recordReferenceLocation':
       return 'aitp.record_reference_location';
     case 'createProofObligation':
@@ -404,6 +441,8 @@ export function evidenceRefsForAitpWriteBridgeResult(
       return [`aitp:evidence:${result.evidenceId}`];
     case 'tool_run':
       return [`aitp:tool_run:${result.runId}`];
+    case 'code_state':
+      return [`aitp:code_state:${result.codeStateId}`];
     case 'reference_location':
       return [`aitp:reference_location:${result.locationId}`];
     case 'proof_obligation':
@@ -453,6 +492,17 @@ function optionalString(
   for (const key of keys) {
     const value = record[key];
     if (typeof value === 'string' && value.trim().length > 0) return value.trim();
+  }
+  return undefined;
+}
+
+function optionalBoolean(
+  record: Readonly<Record<string, unknown>>,
+  ...keys: readonly string[]
+): boolean | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'boolean') return value;
   }
   return undefined;
 }

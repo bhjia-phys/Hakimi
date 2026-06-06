@@ -8,6 +8,8 @@ export const KNOWN_AITP_RESEARCH_MOMENTS = [
   'trace.follow_source_dependency',
   'trace.audit_original_question_drift',
   'aitp.record_exploratory_record',
+  'aitp.attach_artifact',
+  'aitp.capture_code_state_auto',
   'aitp.register_source_asset',
   'aitp.record_evidence',
   'aitp.record_tool_run',
@@ -161,6 +163,27 @@ export interface AitpRouteState {
   readonly pivotRequiredRoutes: readonly AitpRouteStateItem[];
 }
 
+export interface AitpProvenanceGap {
+  readonly id: string;
+  readonly gapType: string;
+  readonly provenanceKind: string;
+  readonly reason: string;
+  readonly topicId?: string | undefined;
+  readonly claimId?: string | undefined;
+  readonly targetType: string;
+  readonly targetId: string;
+  readonly targetRefs: readonly string[];
+  readonly recommendedActions: readonly string[];
+  readonly recommendedEntrypoints: readonly string[];
+  readonly severity: string;
+  readonly requiredNow: boolean;
+  readonly requiredBeforeTrustChange: boolean;
+  readonly strictBoundary?: string | undefined;
+  readonly blockingWhenUsedAs: readonly string[];
+  readonly orientationOnly: boolean;
+  readonly canUpdateClaimTrust: boolean;
+}
+
 export interface AitpRecommendedMoment {
   readonly id: AitpResearchMomentId;
   readonly priority: ResearchActionBindingPriority;
@@ -250,6 +273,7 @@ export interface AitpProcessGraphSlice {
   readonly relationNeighborhood: readonly AitpRelationNeighborhoodItem[];
   readonly exploratoryRecords: readonly AitpExploratoryRecordItem[];
   readonly routeState: AitpRouteState;
+  readonly provenanceGaps: readonly AitpProvenanceGap[];
   readonly trustBoundaryReasons: readonly string[];
   readonly recommendedMoments: readonly AitpRecommendedMoment[];
   readonly momentPolicy: AitpMomentPolicy;
@@ -275,6 +299,7 @@ export interface DetectedResearchMoment {
     | 'relation'
     | 'source-backtrace'
     | 'exploration'
+    | 'provenance-gap'
     | 'route-state'
     | 'trust-boundary';
   readonly targetRefs: readonly string[];
@@ -334,6 +359,16 @@ export interface AitpRouteSummary {
   readonly lines: readonly string[];
 }
 
+export interface AitpProvenanceGapSummary {
+  readonly all: readonly AitpProvenanceGap[];
+  readonly source: readonly AitpProvenanceGap[];
+  readonly code: readonly AitpProvenanceGap[];
+  readonly tool: readonly AitpProvenanceGap[];
+  readonly validation: readonly AitpProvenanceGap[];
+  readonly artifact: readonly AitpProvenanceGap[];
+  readonly lines: readonly string[];
+}
+
 export interface AitpTrustSummary {
   readonly truthSource: string;
   readonly orientationOnly: boolean;
@@ -349,6 +384,7 @@ export interface CompiledAitpProcessGraphSlice {
   readonly callObligations: readonly AitpCallObligation[];
   readonly obligations: AitpObligationSummary;
   readonly routes: AitpRouteSummary;
+  readonly provenance: AitpProvenanceGapSummary;
   readonly suggestedNextMoments: readonly DetectedResearchMoment[];
   readonly trust: AitpTrustSummary;
   readonly diagnostics: readonly string[];

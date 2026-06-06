@@ -164,6 +164,12 @@ function collectAitp(
     blockedRouteIds: input.aitp.routes.blocked.map((item) => item.id),
     abandonedRouteIds: input.aitp.routes.abandoned.map((item) => item.id),
     pivotRequiredRouteIds: input.aitp.routes.pivotRequired.map((item) => item.id),
+    provenanceGapIds: input.aitp.provenance.all.map((item) => item.id),
+    sourceProvenanceGapIds: input.aitp.provenance.source.map((item) => item.id),
+    codeProvenanceGapIds: input.aitp.provenance.code.map((item) => item.id),
+    toolProvenanceGapIds: input.aitp.provenance.tool.map((item) => item.id),
+    validationProvenanceGapIds: input.aitp.provenance.validation.map((item) => item.id),
+    artifactProvenanceGapIds: input.aitp.provenance.artifact.map((item) => item.id),
     trustBoundaryReasons: input.aitp.trust.trustBoundaryReasons,
     openObligationIds: [
       ...input.aitp.obligations.blocking,

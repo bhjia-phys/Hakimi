@@ -371,6 +371,33 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     triggerHints: ['record exploration', 'brainstorm record', 'backtrace record', 'steering checkpoint'],
   }),
   action({
+    id: 'aitp.attach_artifact',
+    category: 'memory',
+    exposure: 'direct',
+    phase: 'compile',
+    title: 'Attach AITP artifact',
+    description:
+      'Ask AITP to attach a benchmark, validation, patch, log, or generated artifact ref before it is reused as evidence or memory.',
+    inputKinds: ['Claim', 'BenchmarkCase', 'CodeRegion', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    triggerHints: ['artifact provenance', 'benchmark artifact', 'validation artifact', 'patch artifact'],
+    suggestedNextActions: ['aitp.record_tool_run', 'aitp.record_validation_result'],
+  }),
+  action({
+    id: 'aitp.capture_code_state_auto',
+    category: 'code',
+    exposure: 'direct',
+    phase: 'code',
+    title: 'Capture AITP code state automatically',
+    description:
+      'Ask AITP to capture git HEAD, branch, dirty status, diff hash, optional patch artifact, and linked topic or claim refs from a worktree.',
+    inputKinds: ['Claim', 'CodeRegion', 'CodeMapping', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    primitiveToolPolicy: 'git-read',
+    triggerHints: ['code state', 'git state', 'diff hash', 'patch provenance', 'repo provenance'],
+    suggestedNextActions: ['code.capture_git_diff_observation', 'aitp.record_tool_run'],
+  }),
+  action({
     id: 'aitp.register_source_asset',
     category: 'memory',
     exposure: 'direct',

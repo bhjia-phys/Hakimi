@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AitpCliBridgeError,
+  buildAitpCodeStateAutoArgs,
   buildAitpEvidenceRecordArgs,
   buildAitpExploratoryRecordArgs,
   buildAitpHumanCheckpointRequestArgs,
@@ -203,6 +204,99 @@ describe('AITP CLI bridge', () => {
         '{"claim_id":"claim-mipt"}',
       ]),
     );
+  });
+
+  it('captures git code state through the AITP auto code-state command', async () => {
+    const calls: { args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push({ args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            kind: 'code_state',
+            code_state_id: 'code-state-librpa-abc123',
+            repo_id: 'librpa',
+            upstream_remote: 'origin',
+            upstream_branch: 'main',
+            upstream_commit: 'abc123',
+            local_branch: 'feature/provenance',
+            worktree_path: 'F:/repo/librpa',
+            dirty: true,
+            patch_id: 'artifact-git_patch-abc123',
+            diff_hash: 'd'.repeat(64),
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const result = await bridge.captureCodeStateAuto({
+      worktreePath: 'F:/repo/librpa',
+      repoId: 'librpa',
+      topicId: 'gw',
+      claimId: 'claim-gw',
+      sessionId: 'session-gw',
+      buildConfig: { cmake: 'release' },
+      runtimeEnvironment: { os: 'windows' },
+      linkedRecords: { claim_id: 'claim-gw' },
+      knownDivergence: 'local validation patch',
+      writePatchArtifact: true,
+    });
+
+    expect(result).toMatchObject({
+      kind: 'code_state',
+      codeStateId: 'code-state-librpa-abc123',
+      repoId: 'librpa',
+      dirty: true,
+      patchId: 'artifact-git_patch-abc123',
+    });
+    expect(calls[0]?.args).toEqual([
+      '--base',
+      'F:/project',
+      'code',
+      'state',
+      'auto',
+      '--worktree-path',
+      'F:/repo/librpa',
+      '--repo-id',
+      'librpa',
+      '--topic',
+      'gw',
+      '--claim',
+      'claim-gw',
+      '--session',
+      'session-gw',
+      '--build-config-json',
+      '{"cmake":"release"}',
+      '--runtime-environment-json',
+      '{"os":"windows"}',
+      '--linked-records-json',
+      '{"claim_id":"claim-gw"}',
+      '--known-divergence',
+      'local validation patch',
+      '--write-patch-artifact',
+    ]);
+    expect(buildAitpCodeStateAutoArgs({
+      basePath: 'F:/project',
+      worktreePath: 'F:/repo/librpa',
+      repoId: 'librpa',
+    })).toEqual([
+      '--base',
+      'F:/project',
+      'code',
+      'state',
+      'auto',
+      '--worktree-path',
+      'F:/repo/librpa',
+      '--repo-id',
+      'librpa',
+    ]);
   });
 
   it('records evidence, tool runs, and reference locations through canonical AITP records', async () => {

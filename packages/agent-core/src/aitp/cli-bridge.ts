@@ -168,6 +168,20 @@ export interface RecordAitpToolRunInput {
   readonly signal?: AbortSignal | undefined;
 }
 
+export interface CaptureAitpCodeStateAutoInput {
+  readonly worktreePath: string;
+  readonly repoId?: string | undefined;
+  readonly topicId?: string | undefined;
+  readonly claimId?: string | undefined;
+  readonly sessionId?: string | undefined;
+  readonly buildConfig?: Readonly<Record<string, unknown>> | undefined;
+  readonly runtimeEnvironment?: Readonly<Record<string, unknown>> | undefined;
+  readonly linkedRecords?: Readonly<Record<string, unknown>> | undefined;
+  readonly knownDivergence?: string | undefined;
+  readonly writePatchArtifact?: boolean | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface RecordAitpReferenceLocationInput {
   readonly topicId: string;
   readonly connectorId: string;
@@ -280,6 +294,22 @@ export interface AitpToolRunWriteResult {
   readonly topicId: string;
   readonly claimId: string;
   readonly evidenceStatus: string;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpCodeStateWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'code_state';
+  readonly codeStateId: string;
+  readonly repoId: string;
+  readonly upstreamRemote: string;
+  readonly upstreamBranch: string;
+  readonly upstreamCommit: string;
+  readonly localBranch: string;
+  readonly worktreePath: string;
+  readonly dirty: boolean;
+  readonly patchId: string;
+  readonly diffHash: string;
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -425,6 +455,17 @@ export class AitpCliBridge {
     });
     const payload = await this.runJson(args, input.signal);
     return parseToolRunWriteResult(payload);
+  }
+
+  async captureCodeStateAuto(
+    input: CaptureAitpCodeStateAutoInput,
+  ): Promise<AitpCodeStateWriteResult> {
+    const args = buildAitpCodeStateAutoArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseCodeStateWriteResult(payload);
   }
 
   async recordReferenceLocation(
@@ -724,6 +765,38 @@ export function buildAitpToolRunRecordArgs(
   pushRepeated(args, '--code-state-id', input.codeStateIds);
   pushRepeated(args, '--artifact-id', input.artifactIds);
   pushRepeated(args, '--source-ref', input.sourceRefs);
+  return args;
+}
+
+export function buildAitpCodeStateAutoArgs(
+  input: CaptureAitpCodeStateAutoInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.worktreePath, 'worktreePath');
+  const args = [
+    '--base',
+    input.basePath,
+    'code',
+    'state',
+    'auto',
+    '--worktree-path',
+    input.worktreePath.trim(),
+  ];
+  pushOptional(args, '--repo-id', input.repoId);
+  pushOptional(args, '--topic', input.topicId);
+  pushOptional(args, '--claim', input.claimId);
+  pushOptional(args, '--session', input.sessionId);
+  if (input.buildConfig !== undefined) {
+    args.push('--build-config-json', JSON.stringify(input.buildConfig));
+  }
+  if (input.runtimeEnvironment !== undefined) {
+    args.push('--runtime-environment-json', JSON.stringify(input.runtimeEnvironment));
+  }
+  if (input.linkedRecords !== undefined) {
+    args.push('--linked-records-json', JSON.stringify(input.linkedRecords));
+  }
+  pushOptional(args, '--known-divergence', input.knownDivergence);
+  if (input.writePatchArtifact === true) args.push('--write-patch-artifact');
   return args;
 }
 
@@ -1055,6 +1128,30 @@ function parseToolRunWriteResult(payload: unknown): AitpToolRunWriteResult {
     topicId: requiredPayloadString(payload, 'topic_id'),
     claimId: requiredPayloadString(payload, 'claim_id'),
     evidenceStatus: requiredPayloadString(payload, 'evidence_status'),
+    raw: payload,
+  };
+}
+
+function parseCodeStateWriteResult(payload: unknown): AitpCodeStateWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError('AITP code state payload must be an object.');
+  }
+  if (payload['kind'] !== 'code_state') {
+    throw new AitpCliBridgeError('AITP code state payload has the wrong kind.');
+  }
+  return {
+    ok: payload['ok'] === true,
+    kind: 'code_state',
+    codeStateId: requiredPayloadString(payload, 'code_state_id'),
+    repoId: requiredPayloadString(payload, 'repo_id'),
+    upstreamRemote: requiredPayloadString(payload, 'upstream_remote'),
+    upstreamBranch: requiredPayloadString(payload, 'upstream_branch'),
+    upstreamCommit: requiredPayloadString(payload, 'upstream_commit'),
+    localBranch: requiredPayloadString(payload, 'local_branch'),
+    worktreePath: requiredPayloadString(payload, 'worktree_path'),
+    dirty: payload['dirty'] === true,
+    patchId: stringValue(payload['patch_id']) ?? '',
+    diffHash: stringValue(payload['diff_hash']) ?? '',
     raw: payload,
   };
 }

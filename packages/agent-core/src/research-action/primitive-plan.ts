@@ -382,6 +382,60 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['scope.compile_context_pack'],
   }),
   plan({
+    actionId: 'aitp.attach_artifact',
+    title: 'Attach AITP provenance artifact',
+    intent:
+      'Persist a patch, benchmark log, validation output, or generated artifact ref through AITP before it is reused as evidence or memory.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'execute-aitp-artifact-attach',
+        kind: 'record',
+        title: 'Attach artifact through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge or the AITP artifact entrypoint with an explicit artifact path, type, and linked topic or claim refs.',
+        expectedEvidence: ['aitp:artifact:<id>', 'artifact_path', 'artifact_hash_or_version'],
+      }),
+    ],
+    recording: recording('aitp.attach_artifact', ['aitp:artifact:<id>', 'artifact_hash_or_version']),
+    followupActionIds: ['aitp.record_tool_run', 'aitp.record_validation_result'],
+  }),
+  plan({
+    actionId: 'aitp.capture_code_state_auto',
+    title: 'Capture AITP code state automatically',
+    intent:
+      'Persist git HEAD, branch, dirty status, diff hash, optional patch artifact, and linked topic or claim refs as an AITP code state record.',
+    primitiveToolPolicy: 'git-read',
+    steps: [
+      step({
+        id: 'inspect-worktree-state',
+        kind: 'inspect',
+        title: 'Inspect worktree state',
+        toolNames: ['Bash'],
+        purpose:
+          'Run read-only git status/rev-parse/diff checks when needed to confirm the worktree that AITP will capture.',
+        expectedEvidence: ['git_head_commit', 'git_status', 'diff_hash'],
+        approval: 'read-only',
+      }),
+      step({
+        id: 'execute-aitp-code-state-auto',
+        kind: 'record',
+        title: 'Write code state through AITP',
+        toolNames: ['ResearchAction', 'Bash'],
+        purpose:
+          'Call AITP capture_code_state_auto through MCP or "aitp-v5 code state auto" with the worktree path, repo id, and linked topic or claim refs.',
+        expectedEvidence: ['aitp:code_state:<id>', 'git_head_commit', 'diff_hash'],
+      }),
+    ],
+    recording: recording(
+      'aitp.capture_code_state_auto',
+      ['aitp:code_state:<id>', 'git_head_commit', 'diff_hash'],
+      true,
+    ),
+    followupActionIds: ['code.capture_git_diff_observation', 'aitp.record_tool_run'],
+  }),
+  plan({
     actionId: 'aitp.register_source_asset',
     title: 'Register AITP source asset',
     intent:

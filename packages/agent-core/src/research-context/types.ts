@@ -106,6 +106,12 @@ export interface ResearchContextAitpSection {
   readonly blockedRouteIds: readonly string[];
   readonly abandonedRouteIds: readonly string[];
   readonly pivotRequiredRouteIds: readonly string[];
+  readonly provenanceGapIds: readonly string[];
+  readonly sourceProvenanceGapIds: readonly string[];
+  readonly codeProvenanceGapIds: readonly string[];
+  readonly toolProvenanceGapIds: readonly string[];
+  readonly validationProvenanceGapIds: readonly string[];
+  readonly artifactProvenanceGapIds: readonly string[];
   readonly trustBoundaryReasons: readonly string[];
   readonly openObligationIds: readonly string[];
   readonly requiredCallIds: readonly string[];

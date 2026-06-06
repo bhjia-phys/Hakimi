@@ -1179,6 +1179,8 @@ function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string
       return result.evidenceId;
     case 'tool_run':
       return result.runId;
+    case 'code_state':
+      return result.codeStateId;
     case 'reference_location':
       return result.locationId;
     case 'proof_obligation':

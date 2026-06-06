@@ -115,6 +115,18 @@ describe('AITP write bridge executor', () => {
       evidence_status: 'supports',
       source_refs: ['reference_location:split-paper'],
     });
+    const codeState = coerceAitpWriteBridgeInput('captureCodeStateAuto', {
+      worktree_path: 'F:/repo/librpa',
+      repo_id: 'librpa',
+      topic_id: 'gw',
+      claim_id: 'claim-gw',
+      session_id: 'session-gw',
+      build_config: { cmake: 'release' },
+      runtime_environment: { os: 'windows' },
+      linked_records: { claim_id: 'claim-gw' },
+      known_divergence: 'local validation patch',
+      write_patch_artifact: true,
+    });
     const reference = coerceAitpWriteBridgeInput('recordReferenceLocation', {
       topic_id: 'qg-algebra-mipt',
       claim_id: 'claim-mipt-observer-algebra',
@@ -141,6 +153,17 @@ describe('AITP write bridge executor', () => {
         inputs: { source: 'split paper' },
         outputs: { closed: true },
         evidenceStatus: 'supports',
+      },
+    });
+    expect(codeState).toMatchObject({
+      operation: 'captureCodeStateAuto',
+      payload: {
+        worktreePath: 'F:/repo/librpa',
+        repoId: 'librpa',
+        buildConfig: { cmake: 'release' },
+        runtimeEnvironment: { os: 'windows' },
+        linkedRecords: { claim_id: 'claim-gw' },
+        writePatchArtifact: true,
       },
     });
     expect(reference).toMatchObject({
@@ -207,6 +230,24 @@ describe('AITP write bridge executor', () => {
           topicId: 'qg',
           claimId: 'claim-qg',
           evidenceStatus: 'supports',
+          raw: {},
+        };
+      },
+      async captureCodeStateAuto() {
+        calls.push('captureCodeStateAuto');
+        return {
+          ok: true,
+          kind: 'code_state',
+          codeStateId: 'code-state-qg',
+          repoId: 'librpa',
+          upstreamRemote: 'origin',
+          upstreamBranch: 'main',
+          upstreamCommit: 'abc123',
+          localBranch: 'feature/provenance',
+          worktreePath: 'F:/repo/librpa',
+          dirty: true,
+          patchId: 'artifact-git_patch-qg',
+          diffHash: 'd'.repeat(64),
           raw: {},
         };
       },
@@ -330,6 +371,23 @@ describe('AITP write bridge executor', () => {
         raw: {},
       }),
     ).toEqual(['aitp:tool_run:tool-run-qg']);
+    expect(
+      evidenceRefsForAitpWriteBridgeResult({
+        ok: true,
+        kind: 'code_state',
+        codeStateId: 'code-state-qg',
+        repoId: 'librpa',
+        upstreamRemote: 'origin',
+        upstreamBranch: 'main',
+        upstreamCommit: 'abc123',
+        localBranch: 'feature/provenance',
+        worktreePath: 'F:/repo/librpa',
+        dirty: true,
+        patchId: 'artifact-git_patch-qg',
+        diffHash: 'd'.repeat(64),
+        raw: {},
+      }),
+    ).toEqual(['aitp:code_state:code-state-qg']);
     expect(
       evidenceRefsForAitpWriteBridgeResult({
         ok: true,
