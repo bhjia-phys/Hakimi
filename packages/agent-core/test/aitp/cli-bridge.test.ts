@@ -11,6 +11,7 @@ import {
   buildAitpProofObligationCreateArgs,
   buildAitpReferenceLocationRecordArgs,
   buildAitpSourceAssetRegisterArgs,
+  buildAitpSourceReconstructionReviewResultRecordArgs,
   buildAitpToolRunRecordArgs,
   buildAitpValidationContractCreateArgs,
   buildAitpValidationResultRecordArgs,
@@ -867,6 +868,87 @@ describe('AITP CLI bridge', () => {
     ]);
   });
 
+  it('records source reconstruction review results through AITP source records', async () => {
+    const calls: { args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push({ args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            kind: 'source_reconstruction_review_result',
+            result_id: 'source-review-result-sector-match',
+            topic_id: 'fqhe',
+            claim_id: 'claim-edge-counting',
+            status: 'inconclusive',
+            can_update_claim_trust: false,
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const result = await bridge.recordSourceReconstructionReviewResult({
+      claimId: 'claim-edge-counting',
+      status: 'inconclusive',
+      reviewedComponents: ['definitions', 'source_locations'],
+      basisRefs: ['source_asset:asset-edge-paper'],
+      evidenceRefs: ['evidence-source-audit'],
+      validationResultIds: ['validation-result-sector-match'],
+      referenceLocationIds: ['reference-location-edge-paper'],
+      objectIds: ['object-edge-counting'],
+      relationIds: ['relation-counting-cft'],
+      remainingActions: ['trace theorem dependency'],
+      reviewerRole: 'adversarial_reviewer',
+      summary: 'Definitions and source locations were reviewed; theorem dependency remains open.',
+    });
+
+    expect(result).toMatchObject({
+      kind: 'source_reconstruction_review_result',
+      resultId: 'source-review-result-sector-match',
+      claimId: 'claim-edge-counting',
+      status: 'inconclusive',
+      canUpdateClaimTrust: false,
+    });
+    expect(calls[0]?.args).toEqual([
+      '--base',
+      'F:/project',
+      'source',
+      'reconstruction-review-result',
+      '--claim',
+      'claim-edge-counting',
+      '--status',
+      'inconclusive',
+      '--reviewed-component',
+      'definitions',
+      '--reviewed-component',
+      'source_locations',
+      '--basis-ref',
+      'source_asset:asset-edge-paper',
+      '--evidence-ref',
+      'evidence-source-audit',
+      '--validation-result-id',
+      'validation-result-sector-match',
+      '--reference-location-id',
+      'reference-location-edge-paper',
+      '--object-id',
+      'object-edge-counting',
+      '--relation-id',
+      'relation-counting-cft',
+      '--remaining-action',
+      'trace theorem dependency',
+      '--reviewer-role',
+      'adversarial_reviewer',
+      '--summary',
+      'Definitions and source locations were reviewed; theorem dependency remains open.',
+    ]);
+  });
+
   it('keeps source asset and checkpoint args validated before running AITP', () => {
     expect(() =>
       buildAitpSourceAssetRegisterArgs({
@@ -949,6 +1031,15 @@ describe('AITP CLI bridge', () => {
         toolRunId: 'tool-run-derivation-review',
         status: 'partial',
         summary: '',
+      }),
+    ).toThrow(AitpCliBridgeError);
+    expect(() =>
+      buildAitpSourceReconstructionReviewResultRecordArgs({
+        basePath: 'F:/project',
+        claimId: 'claim-mipt',
+        status: 'inconclusive',
+        reviewedComponents: ['definitions'],
+        summary: 'Missing basis.',
       }),
     ).toThrow(AitpCliBridgeError);
   });

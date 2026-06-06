@@ -361,6 +361,45 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.diagnostics).toContain('source-reconstruction-review-open');
   });
 
+  it('projects source reconstruction review result work into an AITP write-bridge action', () => {
+    const payload = provenanceGapSlicePayload();
+    payload.source_reconstruction_review = {
+      ...payload.source_reconstruction_review,
+      items: payload.source_reconstruction_review.items.map((item) => ({
+        ...item,
+        review_status: 'inconclusive',
+        next_actions: ['record_source_reconstruction_review_result'],
+      })),
+      next_actions: ['record_source_reconstruction_review_result'],
+    };
+
+    const compiled = compileAitpProcessGraphSlice(payload);
+    const reviewResult = compiled.actionRecommendations.find(
+      (binding) => binding.actionId === 'aitp.record_source_reconstruction_review_result',
+    );
+
+    expect(compiled.sourceReconstructionReview.inconclusiveClaimIds).toEqual([
+      'claim-fqhe',
+    ]);
+    expect(reviewResult).toMatchObject({
+      priority: 'high',
+      objectRefs: ['claim:claim-fqhe'],
+      params: {
+        writeBridge: {
+          operation: 'recordSourceReconstructionReviewResult',
+          cli: 'aitp-v5 source reconstruction-review-result',
+          requiredFields: expect.arrayContaining([
+            'claimId',
+            'status',
+            'reviewedComponents',
+            'summary',
+          ]),
+          targetRefs: ['claim:claim-fqhe'],
+        },
+      },
+    });
+  });
+
   it('accepts current AITP v5 snake-case process graph slices', () => {
     const compiled = compileAitpProcessGraphSlice(currentAitpSlicePayload(), {
       prompt: 'Audit original question drift while following this backtrace.',

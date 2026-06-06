@@ -262,6 +262,22 @@ export interface RecordAitpValidationResultInput {
   readonly signal?: AbortSignal | undefined;
 }
 
+export interface RecordAitpSourceReconstructionReviewResultInput {
+  readonly claimId: string;
+  readonly status: string;
+  readonly reviewedComponents: readonly string[];
+  readonly summary: string;
+  readonly basisRefs?: readonly string[] | undefined;
+  readonly evidenceRefs?: readonly string[] | undefined;
+  readonly validationResultIds?: readonly string[] | undefined;
+  readonly referenceLocationIds?: readonly string[] | undefined;
+  readonly objectIds?: readonly string[] | undefined;
+  readonly relationIds?: readonly string[] | undefined;
+  readonly remainingActions?: readonly string[] | undefined;
+  readonly reviewerRole?: string | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface AitpExploratoryRecordWriteResult {
   readonly ok: boolean;
   readonly kind: 'exploratory_record';
@@ -393,6 +409,17 @@ export interface AitpValidationResultWriteResult {
   readonly contractId: string;
   readonly toolRunId: string;
   readonly status: string;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpSourceReconstructionReviewResultWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'source_reconstruction_review_result';
+  readonly resultId: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly status: string;
+  readonly canUpdateClaimTrust: boolean;
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -555,6 +582,17 @@ export class AitpCliBridge {
     });
     const payload = await this.runJson(args, input.signal);
     return parseValidationResultWriteResult(payload);
+  }
+
+  async recordSourceReconstructionReviewResult(
+    input: RecordAitpSourceReconstructionReviewResultInput,
+  ): Promise<AitpSourceReconstructionReviewResultWriteResult> {
+    const args = buildAitpSourceReconstructionReviewResultRecordArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseSourceReconstructionReviewResultWriteResult(payload);
   }
 
   private async runJson(args: readonly string[], signal?: AbortSignal): Promise<unknown> {
@@ -1044,6 +1082,49 @@ export function buildAitpValidationResultRecordArgs(
   return args;
 }
 
+export function buildAitpSourceReconstructionReviewResultRecordArgs(
+  input: RecordAitpSourceReconstructionReviewResultInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.claimId, 'claimId');
+  requireNonEmpty(input.status, 'status');
+  requireNonEmptyList(input.reviewedComponents, 'reviewedComponents');
+  requireNonEmpty(input.summary, 'summary');
+  const hasBasis =
+    hasNonEmpty(input.basisRefs) ||
+    hasNonEmpty(input.evidenceRefs) ||
+    hasNonEmpty(input.validationResultIds) ||
+    hasNonEmpty(input.referenceLocationIds) ||
+    hasNonEmpty(input.objectIds) ||
+    hasNonEmpty(input.relationIds);
+  if (!hasBasis) {
+    throw new AitpCliBridgeError(
+      'AITP source reconstruction review result must include at least one basis ref.',
+    );
+  }
+  const args = [
+    '--base',
+    input.basePath,
+    'source',
+    'reconstruction-review-result',
+    '--claim',
+    input.claimId.trim(),
+    '--status',
+    input.status.trim(),
+  ];
+  pushRepeated(args, '--reviewed-component', input.reviewedComponents);
+  pushRepeated(args, '--basis-ref', input.basisRefs);
+  pushRepeated(args, '--evidence-ref', input.evidenceRefs);
+  pushRepeated(args, '--validation-result-id', input.validationResultIds);
+  pushRepeated(args, '--reference-location-id', input.referenceLocationIds);
+  pushRepeated(args, '--object-id', input.objectIds);
+  pushRepeated(args, '--relation-id', input.relationIds);
+  pushRepeated(args, '--remaining-action', input.remainingActions);
+  pushOptional(args, '--reviewer-role', input.reviewerRole);
+  args.push('--summary', input.summary.trim());
+  return args;
+}
+
 class SpawnAitpCommandRunner implements AitpCommandRunner {
   async run(
     command: string,
@@ -1346,6 +1427,31 @@ function parseValidationResultWriteResult(payload: unknown): AitpValidationResul
   };
 }
 
+function parseSourceReconstructionReviewResultWriteResult(
+  payload: unknown,
+): AitpSourceReconstructionReviewResultWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError(
+      'AITP source reconstruction review result payload must be an object.',
+    );
+  }
+  if (payload['kind'] !== 'source_reconstruction_review_result') {
+    throw new AitpCliBridgeError(
+      'AITP source reconstruction review result payload has the wrong kind.',
+    );
+  }
+  return {
+    ok: payload['ok'] === true,
+    kind: 'source_reconstruction_review_result',
+    resultId: requiredPayloadString(payload, 'result_id'),
+    topicId: requiredPayloadString(payload, 'topic_id'),
+    claimId: requiredPayloadString(payload, 'claim_id'),
+    status: requiredPayloadString(payload, 'status'),
+    canUpdateClaimTrust: payload['can_update_claim_trust'] === true,
+    raw: payload,
+  };
+}
+
 function parseJsonOutput(
   stdout: string,
   details: Pick<AitpCliBridgeError['details'], 'command' | 'args' | 'stderr'>,
@@ -1407,6 +1513,10 @@ function requireNonEmpty(value: string, label: string): void {
 function requireNonEmptyList(values: readonly string[], label: string): void {
   if (values.some((value) => value.trim().length > 0)) return;
   throw new AitpCliBridgeError(`AITP ${label} must contain at least one value.`);
+}
+
+function hasNonEmpty(values: readonly string[] | undefined): boolean {
+  return values !== undefined && values.some((value) => value.trim().length > 0);
 }
 
 function requireAllowed<T extends readonly string[]>(
