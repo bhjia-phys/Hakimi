@@ -290,6 +290,7 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.actionRecommendations.map((binding) => binding.actionId)).toEqual(
       expect.arrayContaining([
         'aitp.record_reference_location',
+        'aitp.capture_source_asset_auto',
         'aitp.register_source_asset',
         'aitp.capture_code_state_auto',
         'code.capture_git_diff_observation',
@@ -297,6 +298,47 @@ describe('AITP process graph slice adapter', () => {
         'aitp.attach_artifact',
       ]),
     );
+    expect(actionById.get('aitp.capture_source_asset_auto')).toMatchObject({
+      priority: 'high',
+      params: {
+        provenanceGap: {
+          id: 'gap-source-hash',
+          gapType: 'source_asset_hash_missing',
+          requiredNow: false,
+          requiredBeforeTrustChange: false,
+          strictBoundary: 'before_using_as_evidence_validation_benchmark_memory_or_checked_conclusion',
+        },
+        lifecycleTrigger: {
+          trustBoundaryInputs: {
+            finalGateRequired: false,
+            requiredBeforeTrustChange: [],
+            entrypoints: expect.arrayContaining(['aitp_v5_capture_source_asset_auto']),
+          },
+        },
+        writeBridge: {
+          operation: 'captureSourceAssetAuto',
+          entrypointKey: 'capture_source_asset_auto',
+          mcpTool: 'aitp_v5_capture_source_asset_auto',
+          cliFallback: 'aitp-v5 asset capture-auto <args>',
+          surface: 'source_asset_record',
+          cli: 'aitp-v5 asset capture-auto',
+          payloadDraft: {
+            path: '<local source file path>',
+            topicId: 'fqhe',
+            claimId: 'claim-fqhe',
+            assetType: 'paper',
+            title: 'Edge counting source',
+            linkedRecords: { claimId: 'claim-fqhe' },
+          },
+          payloadHint: {
+            entrypoint: 'aitp_v5_capture_source_asset_auto',
+            recordAction: 'capture_source_asset_auto',
+            orientationOnly: true,
+            canUpdateClaimTrust: false,
+          },
+        },
+      },
+    });
     expect(actionById.get('aitp.capture_code_state_auto')).toMatchObject({
       priority: 'high',
       params: {
@@ -1053,8 +1095,46 @@ function provenanceGapSlicePayload() {
         target_type: 'source_asset',
         target_id: 'source-asset-edge-counting',
         target_refs: ['source_asset:source-asset-edge-counting'],
-        recommended_actions: ['aitp.register_source_asset'],
-        recommended_entrypoints: ['aitp_v5_register_source_asset'],
+        recommended_actions: ['aitp.capture_source_asset_auto', 'aitp.register_source_asset'],
+        recommended_entrypoints: [
+          'aitp_v5_capture_source_asset_auto',
+          'aitp_v5_register_source_asset',
+        ],
+        payload_hints: [
+          {
+            entrypoint: 'aitp_v5_capture_source_asset_auto',
+            record_action: 'capture_source_asset_auto',
+            action_kind: 'capture_provenance_gap',
+            target_type: 'source_asset',
+            target_id: 'source-asset-edge-counting',
+            required_fields: ['path', 'topic_id'],
+            draft: {
+              path: '<local source file path>',
+              topic_id: 'fqhe',
+              claim_id: 'claim-fqhe',
+              asset_type: 'paper',
+              title: 'Edge counting source',
+              source_kind: 'local_file_auto',
+              summary: 'source asset lacks a content hash',
+              linked_records: { claim_id: 'claim-fqhe' },
+            },
+            lifecycle_phases: ['pre_action'],
+            trigger_conditions: ['before using source asset as evidence'],
+            recording_threshold: 'recommended_before_provenance_dependent_reuse',
+            trust_boundary_inputs: {
+              target_refs: ['source_asset:source-asset-edge-counting'],
+              claim_id: 'claim-fqhe',
+              entrypoints: ['aitp_v5_capture_source_asset_auto'],
+              required_before_trust_change: [],
+              requires_preflight: false,
+              final_gate_required: false,
+            },
+            recommended_host_behavior: ['surface local source asset auto-capture hint'],
+            orientation_only: true,
+            summary_inputs_trusted: false,
+            can_update_claim_trust: false,
+          },
+        ],
         severity: 'recommended',
         required_now: false,
         required_before_trust_change: false,

@@ -436,6 +436,40 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['code.capture_git_diff_observation', 'aitp.record_tool_run'],
   }),
   plan({
+    actionId: 'aitp.capture_source_asset_auto',
+    title: 'Capture AITP source asset automatically',
+    intent:
+      'Persist canonical source identity, local file hash, size, mtime, inferred type, and linked topic or claim refs as an AITP source asset record.',
+    primitiveToolPolicy: 'read-only',
+    steps: [
+      step({
+        id: 'inspect-local-source-file',
+        kind: 'inspect',
+        title: 'Inspect local source file',
+        toolNames: ['Read'],
+        purpose:
+          'Confirm the local file path and human-readable source identity before asking AITP to capture bytes, hash, size, and version metadata.',
+        expectedEvidence: ['local_source_path', 'source_title'],
+        approval: 'read-only',
+      }),
+      step({
+        id: 'execute-aitp-source-asset-auto',
+        kind: 'record',
+        title: 'Write source asset through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with captureSourceAssetAuto so AITP, not Hakimi, computes and stores the canonical source asset metadata.',
+        expectedEvidence: ['aitp:source_asset:<id>', 'source_hash', 'source_asset_identity'],
+      }),
+    ],
+    recording: recording(
+      'aitp.capture_source_asset_auto',
+      ['aitp:source_asset:<id>', 'source_hash'],
+      true,
+    ),
+    followupActionIds: ['aitp.record_reference_location', 'trace.follow_source_dependency'],
+  }),
+  plan({
     actionId: 'aitp.register_source_asset',
     title: 'Register AITP source asset',
     intent:

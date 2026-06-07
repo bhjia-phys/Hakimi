@@ -12,6 +12,11 @@ Hakimi exposes `mcpTool`, `cliFallback`, surface, and
 `claimTrustMutation="none"` from AITP's runtime bridge target manifest in
 writeBridge params and ResearchAction results, while execution still uses the
 configured CLI fallback bridge until a later MCP transport runner slice.
+Hakimi now also projects AITP local source-asset auto-capture:
+`aitp_v5_capture_source_asset_auto` becomes `captureSourceAssetAuto`, so a
+local paper, lecture note, code snapshot, dataset, or generated file path can
+be sent to AITP for hash/version metadata capture without creating a Hakimi
+source store or claim-trust authority.
 
 <p align="center">
   <img src="docs/assets/hakimi-terminal-welcome.png" width="920" alt="Hakimi terminal welcome screen with a pixel cat-ear exploration spacecraft" />

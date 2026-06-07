@@ -582,6 +582,9 @@ export function actionIdForPolicyDecision(decision: AitpMomentPolicyDecision): s
   if (decision.entrypoints.includes('aitp_v5_record_reference_location')) {
     return 'aitp.record_reference_location';
   }
+  if (decision.entrypoints.includes('aitp_v5_capture_source_asset_auto')) {
+    return 'aitp.capture_source_asset_auto';
+  }
   if (decision.entrypoints.includes('aitp_v5_record_tool_run')) {
     return 'aitp.record_tool_run';
   }
@@ -735,7 +738,9 @@ function provenanceGapActionIds(gap: AitpProvenanceGap): readonly string[] {
     ...gap.blockingWhenUsedAs,
   ]);
   if (hasAny(text, ['reference_location'])) inferred.push('aitp.record_reference_location');
-  if (hasAny(text, ['source_asset', 'source hash', 'duplicate_hash'])) {
+  if (hasAny(text, ['source_asset', 'source hash'])) {
+    inferred.push('aitp.capture_source_asset_auto', 'aitp.register_source_asset');
+  } else if (hasAny(text, ['duplicate_hash'])) {
     inferred.push('aitp.register_source_asset');
   }
   if (hasAny(text, ['code_state', 'git diff', 'git_diff', 'patch', 'repo'])) {
@@ -755,6 +760,8 @@ function normalizeProvenanceActionId(value: string): readonly string[] {
   switch (value) {
     case 'aitp_v5_record_reference_location':
       return ['aitp.record_reference_location'];
+    case 'aitp_v5_capture_source_asset_auto':
+      return ['aitp.capture_source_asset_auto'];
     case 'aitp_v5_register_source_asset':
       return ['aitp.register_source_asset'];
     case 'aitp_v5_capture_code_state_auto':

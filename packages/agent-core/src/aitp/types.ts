@@ -9,6 +9,7 @@ export const KNOWN_AITP_RESEARCH_MOMENTS = [
   'trace.audit_original_question_drift',
   'aitp.record_exploratory_record',
   'aitp.attach_artifact',
+  'aitp.capture_source_asset_auto',
   'aitp.capture_code_state_auto',
   'aitp.register_source_asset',
   'aitp.record_evidence',

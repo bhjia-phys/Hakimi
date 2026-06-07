@@ -705,7 +705,9 @@ function provenanceActionIdsForGap(gap: AitpProvenanceGap): readonly string[] {
     ...gap.blockingWhenUsedAs,
   ]);
   if (hasAny(text, ['reference_location'])) actionIds.push('aitp.record_reference_location');
-  if (hasAny(text, ['source_asset', 'source hash', 'duplicate_hash'])) {
+  if (hasAny(text, ['source_asset', 'source hash'])) {
+    actionIds.push('aitp.capture_source_asset_auto', 'aitp.register_source_asset');
+  } else if (hasAny(text, ['duplicate_hash'])) {
     actionIds.push('aitp.register_source_asset');
   }
   if (hasAny(text, ['code_state', 'git', 'diff', 'patch', 'repo'])) {
@@ -722,6 +724,8 @@ function actionIdForEntrypoint(entrypoint: string): string | undefined {
   switch (entrypoint) {
     case 'aitp_v5_record_reference_location':
       return 'aitp.record_reference_location';
+    case 'aitp_v5_capture_source_asset_auto':
+      return 'aitp.capture_source_asset_auto';
     case 'aitp_v5_register_source_asset':
       return 'aitp.register_source_asset';
     case 'aitp_v5_capture_code_state_auto':
@@ -808,6 +812,13 @@ function writeBridgeForMoment(
         ...writeBridgeTarget('registerSourceAsset'),
         cli: 'aitp-v5 asset register',
         requiredFields: ['topicId', 'assetType', 'uri', 'title'],
+        targetRefs: moment.targetRefs,
+      }, hints);
+    case 'aitp.capture_source_asset_auto':
+      return withPayloadDraft({
+        ...writeBridgeTarget('captureSourceAssetAuto'),
+        cli: 'aitp-v5 asset capture-auto',
+        requiredFields: ['path', 'topicId'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.record_evidence':
@@ -981,6 +992,8 @@ function recordActionForOperation(operation: string): string | undefined {
       return 'record_exploratory_record';
     case 'registerSourceAsset':
       return 'register_source_asset';
+    case 'captureSourceAssetAuto':
+      return 'capture_source_asset_auto';
     case 'recordEvidence':
       return 'record_evidence';
     case 'recordToolRun':
