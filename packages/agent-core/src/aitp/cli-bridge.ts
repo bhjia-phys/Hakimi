@@ -138,6 +138,27 @@ export interface RegisterAitpSourceAssetInput {
   readonly signal?: AbortSignal | undefined;
 }
 
+export interface CaptureAitpSourceAssetAutoInput {
+  readonly path: string;
+  readonly topicId: string;
+  readonly claimId?: string | undefined;
+  readonly assetType?: AitpSourceAssetType | string | undefined;
+  readonly title?: string | undefined;
+  readonly label?: string | undefined;
+  readonly versionAnchor?: Readonly<Record<string, unknown>> | undefined;
+  readonly acquiredAt?: string | undefined;
+  readonly sourceKind?: string | undefined;
+  readonly summary?: string | undefined;
+  readonly sourceRefs?: readonly string[] | undefined;
+  readonly artifactIds?: readonly string[] | undefined;
+  readonly codeStateIds?: readonly string[] | undefined;
+  readonly referenceLocationIds?: readonly string[] | undefined;
+  readonly derivedFrom?: readonly string[] | undefined;
+  readonly metadata?: Readonly<Record<string, unknown>> | undefined;
+  readonly linkedRecords?: Readonly<Record<string, unknown>> | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface RecordAitpEvidenceInput {
   readonly topicId: string;
   readonly claimId: string;
@@ -521,6 +542,17 @@ export class AitpCliBridge {
     return parseSourceAssetWriteResult(payload);
   }
 
+  async captureSourceAssetAuto(
+    input: CaptureAitpSourceAssetAutoInput,
+  ): Promise<AitpSourceAssetWriteResult> {
+    const args = buildAitpSourceAssetAutoArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseSourceAssetWriteResult(payload);
+  }
+
   async recordEvidence(
     input: RecordAitpEvidenceInput,
   ): Promise<AitpEvidenceWriteResult> {
@@ -794,6 +826,47 @@ export function buildAitpSourceAssetRegisterArgs(
   pushOptional(args, '--label', input.label);
   pushOptional(args, '--content-hash', input.contentHash);
   pushOptional(args, '--hash-algorithm', input.hashAlgorithm);
+  pushOptional(args, '--acquired-at', input.acquiredAt);
+  pushOptional(args, '--source-kind', input.sourceKind);
+  pushOptional(args, '--summary', input.summary);
+  pushRepeated(args, '--source-ref', input.sourceRefs);
+  pushRepeated(args, '--artifact-id', input.artifactIds);
+  pushRepeated(args, '--code-state-id', input.codeStateIds);
+  pushRepeated(args, '--reference-location-id', input.referenceLocationIds);
+  pushRepeated(args, '--derived-from', input.derivedFrom);
+  if (input.versionAnchor !== undefined) {
+    args.push('--version-anchor-json', JSON.stringify(input.versionAnchor));
+  }
+  if (input.metadata !== undefined) {
+    args.push('--metadata-json', JSON.stringify(input.metadata));
+  }
+  if (input.linkedRecords !== undefined) {
+    args.push('--linked-records-json', JSON.stringify(input.linkedRecords));
+  }
+  return args;
+}
+
+export function buildAitpSourceAssetAutoArgs(
+  input: CaptureAitpSourceAssetAutoInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.path, 'path');
+  requireNonEmpty(input.topicId, 'topicId');
+  const args = [
+    '--base',
+    input.basePath,
+    'asset',
+    'capture-auto',
+    '--path',
+    input.path.trim(),
+    '--topic',
+    input.topicId.trim(),
+  ];
+
+  pushOptional(args, '--claim', input.claimId);
+  pushOptional(args, '--type', input.assetType);
+  pushOptional(args, '--title', input.title);
+  pushOptional(args, '--label', input.label);
   pushOptional(args, '--acquired-at', input.acquiredAt);
   pushOptional(args, '--source-kind', input.sourceKind);
   pushOptional(args, '--summary', input.summary);

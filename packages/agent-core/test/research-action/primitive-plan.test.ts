@@ -74,6 +74,7 @@ describe('research primitive plan templates', () => {
     const exploration = planFor('aitp.record_exploratory_record');
     const artifact = planFor('aitp.attach_artifact');
     const codeState = planFor('aitp.capture_code_state_auto');
+    const sourceAssetAuto = planFor('aitp.capture_source_asset_auto');
     const sourceAsset = planFor('aitp.register_source_asset');
     const referenceLocation = planFor('aitp.record_reference_location');
     const evidence = planFor('aitp.record_evidence');
@@ -92,6 +93,10 @@ describe('research primitive plan templates', () => {
     expect(codeState.steps.map((step) => step.id)).toEqual([
       'inspect-worktree-state',
       'execute-aitp-code-state-auto',
+    ]);
+    expect(sourceAssetAuto.steps.map((step) => step.id)).toEqual([
+      'inspect-local-source-file',
+      'execute-aitp-source-asset-auto',
     ]);
     expect(sourceAsset.steps.map((step) => step.id)).toEqual([
       'execute-aitp-source-asset-write',

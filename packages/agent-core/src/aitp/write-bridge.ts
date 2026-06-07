@@ -14,6 +14,7 @@ import type {
   AitpValidationResultWriteResult,
   AttachAitpArtifactInput,
   CaptureAitpCodeStateAutoInput,
+  CaptureAitpSourceAssetAutoInput,
   CreateAitpValidationContractInput,
   CreateAitpProofObligationInput,
   PreflightAitpTrustUpdateInput,
@@ -32,6 +33,7 @@ import type { AitpExplorationStatus, AitpExplorationType } from './types';
 export const AITP_WRITE_BRIDGE_OPERATIONS = [
   'recordExploratoryRecord',
   'registerSourceAsset',
+  'captureSourceAssetAuto',
   'recordEvidence',
   'recordToolRun',
   'captureCodeStateAuto',
@@ -99,6 +101,13 @@ export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
     'register_source_asset',
     'aitp_v5_register_source_asset',
     'aitp-v5 asset register <args>',
+    'source_asset_record',
+  ),
+  bridgeTarget(
+    'captureSourceAssetAuto',
+    'capture_source_asset_auto',
+    'aitp_v5_capture_source_asset_auto',
+    'aitp-v5 asset capture-auto <args>',
     'source_asset_record',
   ),
   bridgeTarget(
@@ -228,6 +237,10 @@ export type AitpWriteBridgeExecutionInput =
       readonly payload: RegisterAitpSourceAssetInput;
     }
   | {
+      readonly operation: 'captureSourceAssetAuto';
+      readonly payload: CaptureAitpSourceAssetAutoInput;
+    }
+  | {
       readonly operation: 'recordEvidence';
       readonly payload: RecordAitpEvidenceInput;
     }
@@ -300,6 +313,9 @@ export interface AitpWriteBridgeCliTarget {
   registerSourceAsset(
     input: RegisterAitpSourceAssetInput,
   ): Promise<AitpSourceAssetWriteResult>;
+  captureSourceAssetAuto(
+    input: CaptureAitpSourceAssetAutoInput,
+  ): Promise<AitpSourceAssetWriteResult>;
   recordEvidence(input: RecordAitpEvidenceInput): Promise<AitpEvidenceWriteResult>;
   recordToolRun(input: RecordAitpToolRunInput): Promise<AitpToolRunWriteResult>;
   captureCodeStateAuto(
@@ -340,6 +356,8 @@ export class AitpCliWriteBridgeExecutor implements AitpWriteBridgeExecutor {
         return this.bridge.recordExploratoryRecord(input.payload);
       case 'registerSourceAsset':
         return this.bridge.registerSourceAsset(input.payload);
+      case 'captureSourceAssetAuto':
+        return this.bridge.captureSourceAssetAuto(input.payload);
       case 'recordEvidence':
         return this.bridge.recordEvidence(input.payload);
       case 'recordToolRun':
@@ -423,6 +441,34 @@ export function coerceAitpWriteBridgeInput(
           label: optionalString(record, 'label'),
           contentHash: optionalString(record, 'contentHash', 'content_hash'),
           hashAlgorithm: optionalString(record, 'hashAlgorithm', 'hash_algorithm'),
+          versionAnchor: optionalRecord(record, 'versionAnchor', 'version_anchor'),
+          acquiredAt: optionalString(record, 'acquiredAt', 'acquired_at'),
+          sourceKind: optionalString(record, 'sourceKind', 'source_kind'),
+          summary: optionalString(record, 'summary'),
+          sourceRefs: optionalStringArray(record, 'sourceRefs', 'source_refs'),
+          artifactIds: optionalStringArray(record, 'artifactIds', 'artifact_ids'),
+          codeStateIds: optionalStringArray(record, 'codeStateIds', 'code_state_ids'),
+          referenceLocationIds: optionalStringArray(
+            record,
+            'referenceLocationIds',
+            'reference_location_ids',
+          ),
+          derivedFrom: optionalStringArray(record, 'derivedFrom', 'derived_from'),
+          metadata: optionalRecord(record, 'metadata'),
+          linkedRecords: optionalRecord(record, 'linkedRecords', 'linked_records'),
+          signal,
+        },
+      };
+    case 'captureSourceAssetAuto':
+      return {
+        operation,
+        payload: {
+          path: requiredString(record, 'path'),
+          topicId: requiredString(record, 'topicId', 'topic_id'),
+          claimId: optionalString(record, 'claimId', 'claim_id'),
+          assetType: optionalString(record, 'assetType', 'asset_type', 'type'),
+          title: optionalString(record, 'title'),
+          label: optionalString(record, 'label'),
           versionAnchor: optionalRecord(record, 'versionAnchor', 'version_anchor'),
           acquiredAt: optionalString(record, 'acquiredAt', 'acquired_at'),
           sourceKind: optionalString(record, 'sourceKind', 'source_kind'),
@@ -702,6 +748,8 @@ export function actionIdForAitpWriteBridgeOperation(
       return 'aitp.record_exploratory_record';
     case 'registerSourceAsset':
       return 'aitp.register_source_asset';
+    case 'captureSourceAssetAuto':
+      return 'aitp.capture_source_asset_auto';
     case 'recordEvidence':
       return 'aitp.record_evidence';
     case 'recordToolRun':

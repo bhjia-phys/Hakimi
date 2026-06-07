@@ -39,6 +39,16 @@ describe('AITP write bridge executor', () => {
       stateEffect: 'typed_record_write',
       canonicalStore: '.aitp',
     });
+    expect(aitpRuntimeBridgeTargetForOperation('captureSourceAssetAuto')).toMatchObject({
+      operation: 'captureSourceAssetAuto',
+      entrypointKey: 'capture_source_asset_auto',
+      mcpTool: 'aitp_v5_capture_source_asset_auto',
+      cliFallback: 'aitp-v5 asset capture-auto <args>',
+      surface: 'source_asset_record',
+      executionRole: 'write',
+      stateEffect: 'typed_record_write',
+      claimTrustMutation: 'none',
+    });
     expect(aitpRuntimeBridgeTargetForOperation('preflightTrustUpdate')).toMatchObject({
       operation: 'preflightTrustUpdate',
       entrypointKey: 'trust_preflight',
@@ -88,6 +98,16 @@ describe('AITP write bridge executor', () => {
       source_refs: ['paper:observer-algebra'],
       linked_records: { claim_id: 'claim-mipt-observer-algebra' },
     });
+    const sourceAssetAuto = coerceAitpWriteBridgeInput('captureSourceAssetAuto', {
+      path: 'F:/sources/operator-algebra-notes.md',
+      topic_id: 'qg-algebra-mipt',
+      claim_id: 'claim-mipt-observer-algebra',
+      asset_type: 'note',
+      title: 'Operator algebra notes',
+      source_kind: 'local_file_auto',
+      source_refs: ['local:notes'],
+      linked_records: { claim_id: 'claim-mipt-observer-algebra' },
+    });
     const contract = coerceAitpWriteBridgeInput('createValidationContract', {
       topic_id: 'qg-algebra-mipt',
       claim_id: 'claim-mipt-observer-algebra',
@@ -124,6 +144,18 @@ describe('AITP write bridge executor', () => {
         topicId: 'qg-algebra-mipt',
         assetType: 'paper',
         versionAnchor: { arxiv_version: 'v1' },
+        linkedRecords: { claim_id: 'claim-mipt-observer-algebra' },
+      },
+    });
+    expect(sourceAssetAuto).toMatchObject({
+      operation: 'captureSourceAssetAuto',
+      payload: {
+        path: 'F:/sources/operator-algebra-notes.md',
+        topicId: 'qg-algebra-mipt',
+        claimId: 'claim-mipt-observer-algebra',
+        assetType: 'note',
+        title: 'Operator algebra notes',
+        sourceRefs: ['local:notes'],
         linkedRecords: { claim_id: 'claim-mipt-observer-algebra' },
       },
     });
@@ -310,6 +342,19 @@ describe('AITP write bridge executor', () => {
           raw: {},
         };
       },
+      async captureSourceAssetAuto() {
+        calls.push('captureSourceAssetAuto');
+        return {
+          ok: true,
+          kind: 'source_asset',
+          assetId: 'source-asset-qg-auto',
+          topicId: 'qg',
+          assetType: 'note',
+          orientationOnly: true,
+          canUpdateClaimTrust: false,
+          raw: {},
+        };
+      },
       async recordEvidence() {
         calls.push('recordEvidence');
         return {
@@ -477,6 +522,14 @@ describe('AITP write bridge executor', () => {
     };
     const executor = createAitpCliWriteBridgeExecutor(target);
 
+    const autoSource = await executor.executeWrite({
+      operation: 'captureSourceAssetAuto',
+      payload: {
+        path: 'F:/sources/operator-algebra-notes.md',
+        topicId: 'qg',
+        claimId: 'claim-qg',
+      },
+    });
     const artifact = await executor.executeWrite({
       operation: 'attachArtifact',
       payload: {
@@ -509,9 +562,18 @@ describe('AITP write bridge executor', () => {
     });
 
     expect(calls).toEqual([
+      'captureSourceAssetAuto',
       'attachArtifact',
       'recordSourceReconstructionReviewResult',
       'preflightTrustUpdate',
+    ]);
+    expect(autoSource).toMatchObject({
+      kind: 'source_asset',
+      assetId: 'source-asset-qg-auto',
+      assetType: 'note',
+    });
+    expect(evidenceRefsForAitpWriteBridgeResult(autoSource)).toEqual([
+      'aitp:source_asset:source-asset-qg-auto',
     ]);
     expect(artifact).toMatchObject({
       kind: 'artifact',

@@ -10,6 +10,7 @@ import {
   buildAitpProcessGraphSliceArgs,
   buildAitpProofObligationCreateArgs,
   buildAitpReferenceLocationRecordArgs,
+  buildAitpSourceAssetAutoArgs,
   buildAitpSourceAssetRegisterArgs,
   buildAitpSourceReconstructionReviewResultRecordArgs,
   buildAitpToolRunRecordArgs,
@@ -203,6 +204,78 @@ describe('AITP CLI bridge', () => {
         'arxiv:2601.00001',
         '--version-anchor-json',
         '{"arxiv_version":"v1"}',
+        '--linked-records-json',
+        '{"claim_id":"claim-mipt"}',
+      ]),
+    );
+  });
+
+  it('auto-captures local source assets through AITP without hand-filled hashes', async () => {
+    const calls: { args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push({ args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            kind: 'source_asset',
+            asset_id: 'source-asset-qg-notes',
+            topic_id: 'qg',
+            asset_type: 'note',
+            uri: 'file://F:/sources/operator-algebra-notes.md',
+            title: 'Operator algebra notes',
+            orientation_only: true,
+            can_update_claim_trust: false,
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const result = await bridge.captureSourceAssetAuto({
+      path: 'F:/sources/operator-algebra-notes.md',
+      topicId: 'qg',
+      claimId: 'claim-mipt',
+      assetType: 'note',
+      title: 'Operator algebra notes',
+      sourceKind: 'local_file_auto',
+      summary: 'Local source identity for source backtrace.',
+      sourceRefs: ['local:operator-notes'],
+      linkedRecords: { claim_id: 'claim-mipt' },
+    });
+
+    expect(result).toMatchObject({
+      kind: 'source_asset',
+      assetId: 'source-asset-qg-notes',
+      assetType: 'note',
+      orientationOnly: true,
+      canUpdateClaimTrust: false,
+    });
+    expect(calls[0]?.args).toEqual(
+      buildAitpSourceAssetAutoArgs({
+        basePath: 'F:/project',
+        path: 'F:/sources/operator-algebra-notes.md',
+        topicId: 'qg',
+        claimId: 'claim-mipt',
+        assetType: 'note',
+        title: 'Operator algebra notes',
+        sourceKind: 'local_file_auto',
+        summary: 'Local source identity for source backtrace.',
+        sourceRefs: ['local:operator-notes'],
+        linkedRecords: { claim_id: 'claim-mipt' },
+      }),
+    );
+    expect(calls[0]?.args).toEqual(
+      expect.arrayContaining([
+        'asset',
+        'capture-auto',
+        '--path',
+        'F:/sources/operator-algebra-notes.md',
         '--linked-records-json',
         '{"claim_id":"claim-mipt"}',
       ]),

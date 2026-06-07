@@ -398,6 +398,20 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     suggestedNextActions: ['code.capture_git_diff_observation', 'aitp.record_tool_run'],
   }),
   action({
+    id: 'aitp.capture_source_asset_auto',
+    category: 'memory',
+    exposure: 'direct',
+    phase: 'source',
+    title: 'Capture AITP source asset automatically',
+    description:
+      'Ask AITP to inspect a local paper, lecture, note, code snapshot, dataset, or generated file and record its canonical source asset identity with hash/version metadata.',
+    inputKinds: ['SourceExcerpt', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    primitiveToolPolicy: 'read-only',
+    triggerHints: ['source asset auto', 'local source file', 'source hash', 'file provenance'],
+    suggestedNextActions: ['aitp.record_reference_location', 'trace.follow_source_dependency'],
+  }),
+  action({
     id: 'aitp.register_source_asset',
     category: 'memory',
     exposure: 'direct',
