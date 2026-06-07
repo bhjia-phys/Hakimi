@@ -11,6 +11,7 @@ export const KNOWN_AITP_RESEARCH_MOMENTS = [
   'aitp.attach_artifact',
   'aitp.capture_source_asset_auto',
   'aitp.capture_code_state_auto',
+  'aitp.capture_tool_run_auto',
   'aitp.register_source_asset',
   'aitp.record_evidence',
   'aitp.record_tool_run',

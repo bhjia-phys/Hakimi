@@ -16,6 +16,7 @@ describe('default research actions', () => {
       'aitp.attach_artifact',
       'aitp.capture_code_state_auto',
       'aitp.capture_source_asset_auto',
+      'aitp.capture_tool_run_auto',
       'aitp.checkpoint_before_route_switch',
       'aitp.create_open_obligation',
       'aitp.create_validation_contract',

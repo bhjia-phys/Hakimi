@@ -189,6 +189,12 @@ export interface RecordAitpToolRunInput {
   readonly signal?: AbortSignal | undefined;
 }
 
+export interface CaptureAitpToolRunAutoInput extends RecordAitpToolRunInput {
+  readonly path: string;
+  readonly summary?: string | undefined;
+  readonly maxPreviewChars?: number | undefined;
+}
+
 export interface CaptureAitpCodeStateAutoInput {
   readonly worktreePath: string;
   readonly repoId?: string | undefined;
@@ -568,6 +574,17 @@ export class AitpCliBridge {
     input: RecordAitpToolRunInput,
   ): Promise<AitpToolRunWriteResult> {
     const args = buildAitpToolRunRecordArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseToolRunWriteResult(payload);
+  }
+
+  async captureToolRunAuto(
+    input: CaptureAitpToolRunAutoInput,
+  ): Promise<AitpToolRunWriteResult> {
+    const args = buildAitpToolRunAutoArgs({
       basePath: this.options.basePath,
       ...input,
     });
@@ -955,6 +972,54 @@ export function buildAitpToolRunRecordArgs(
   pushRepeated(args, '--code-state-id', input.codeStateIds);
   pushRepeated(args, '--artifact-id', input.artifactIds);
   pushRepeated(args, '--source-ref', input.sourceRefs);
+  return args;
+}
+
+export function buildAitpToolRunAutoArgs(
+  input: CaptureAitpToolRunAutoInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.path, 'path');
+  requireNonEmpty(input.recipeId, 'recipeId');
+  requireNonEmpty(input.toolFamily, 'toolFamily');
+  requireNonEmpty(input.toolName, 'toolName');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.claimId, 'claimId');
+  const args = [
+    '--base',
+    input.basePath,
+    'tool',
+    'run',
+    'capture-auto',
+    '--path',
+    input.path.trim(),
+    '--recipe',
+    input.recipeId.trim(),
+    '--family',
+    input.toolFamily.trim(),
+    '--name',
+    input.toolName.trim(),
+    '--topic',
+    input.topicId.trim(),
+    '--claim',
+    input.claimId.trim(),
+  ];
+  if (input.inputs !== undefined) args.push('--inputs-json', JSON.stringify(input.inputs));
+  if (input.outputs !== undefined) args.push('--outputs-json', JSON.stringify(input.outputs));
+  if (input.environment !== undefined) {
+    args.push('--environment-json', JSON.stringify(input.environment));
+  }
+  pushOptional(args, '--evidence-status', input.evidenceStatus);
+  pushRepeated(args, '--code-state-id', input.codeStateIds);
+  pushRepeated(args, '--artifact-id', input.artifactIds);
+  pushRepeated(args, '--source-ref', input.sourceRefs);
+  pushOptional(args, '--summary', input.summary);
+  if (input.maxPreviewChars !== undefined) {
+    if (!Number.isInteger(input.maxPreviewChars) || input.maxPreviewChars < 0) {
+      throw new AitpCliBridgeError('AITP tool-run auto preview length must be a non-negative integer.');
+    }
+    args.push('--max-preview-chars', String(input.maxPreviewChars));
+  }
   return args;
 }
 

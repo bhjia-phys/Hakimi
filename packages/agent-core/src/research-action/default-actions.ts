@@ -412,6 +412,20 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     suggestedNextActions: ['aitp.record_reference_location', 'trace.follow_source_dependency'],
   }),
   action({
+    id: 'aitp.capture_tool_run_auto',
+    category: 'benchmark',
+    exposure: 'direct',
+    phase: 'validate',
+    title: 'Capture AITP tool run automatically',
+    description:
+      'Ask AITP to inspect a local tool transcript or result file and record its canonical tool-run provenance with hash, size, mtime, and bounded preview metadata.',
+    inputKinds: ['BenchmarkCase', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    primitiveToolPolicy: 'read-only',
+    triggerHints: ['tool run auto', 'tool transcript', 'benchmark transcript', 'result file provenance'],
+    suggestedNextActions: ['aitp.attach_artifact', 'aitp.record_validation_result'],
+  }),
+  action({
     id: 'aitp.register_source_asset',
     category: 'memory',
     exposure: 'direct',

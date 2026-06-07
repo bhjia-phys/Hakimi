@@ -49,6 +49,16 @@ describe('AITP write bridge executor', () => {
       stateEffect: 'typed_record_write',
       claimTrustMutation: 'none',
     });
+    expect(aitpRuntimeBridgeTargetForOperation('captureToolRunAuto')).toMatchObject({
+      operation: 'captureToolRunAuto',
+      entrypointKey: 'capture_tool_run_auto',
+      mcpTool: 'aitp_v5_capture_tool_run_auto',
+      cliFallback: 'aitp-v5 tool run capture-auto <args>',
+      surface: 'tool_run_record',
+      executionRole: 'write',
+      stateEffect: 'typed_record_write',
+      claimTrustMutation: 'none',
+    });
     expect(aitpRuntimeBridgeTargetForOperation('preflightTrustUpdate')).toMatchObject({
       operation: 'preflightTrustUpdate',
       entrypointKey: 'trust_preflight',
@@ -108,6 +118,17 @@ describe('AITP write bridge executor', () => {
       source_refs: ['local:notes'],
       linked_records: { claim_id: 'claim-mipt-observer-algebra' },
     });
+    const toolRunAuto = coerceAitpWriteBridgeInput('captureToolRunAuto', {
+      path: 'F:/runs/source-audit/transcript.txt',
+      recipe_id: 'recipe-source-audit',
+      tool_family: 'literature',
+      tool_name: 'source-audit',
+      topic_id: 'qg-algebra-mipt',
+      claim_id: 'claim-mipt-observer-algebra',
+      inputs: { source: 'operator algebra notes' },
+      summary: 'Local source-audit transcript.',
+      max_preview_chars: 800,
+    });
     const contract = coerceAitpWriteBridgeInput('createValidationContract', {
       topic_id: 'qg-algebra-mipt',
       claim_id: 'claim-mipt-observer-algebra',
@@ -157,6 +178,20 @@ describe('AITP write bridge executor', () => {
         title: 'Operator algebra notes',
         sourceRefs: ['local:notes'],
         linkedRecords: { claim_id: 'claim-mipt-observer-algebra' },
+      },
+    });
+    expect(toolRunAuto).toMatchObject({
+      operation: 'captureToolRunAuto',
+      payload: {
+        path: 'F:/runs/source-audit/transcript.txt',
+        recipeId: 'recipe-source-audit',
+        toolFamily: 'literature',
+        toolName: 'source-audit',
+        topicId: 'qg-algebra-mipt',
+        claimId: 'claim-mipt-observer-algebra',
+        inputs: { source: 'operator algebra notes' },
+        summary: 'Local source-audit transcript.',
+        maxPreviewChars: 800,
       },
     });
     expect(contract).toMatchObject({
@@ -383,6 +418,21 @@ describe('AITP write bridge executor', () => {
           raw: {},
         };
       },
+      async captureToolRunAuto() {
+        calls.push('captureToolRunAuto');
+        return {
+          ok: true,
+          kind: 'tool_run',
+          runId: 'tool-run-qg-auto',
+          recipeId: 'recipe-qg',
+          toolFamily: 'literature',
+          toolName: 'source-audit',
+          topicId: 'qg',
+          claimId: 'claim-qg',
+          evidenceStatus: 'unreviewed',
+          raw: {},
+        };
+      },
       async captureCodeStateAuto() {
         calls.push('captureCodeStateAuto');
         return {
@@ -540,6 +590,17 @@ describe('AITP write bridge executor', () => {
         summary: 'Benchmark log.',
       },
     });
+    const toolRunAuto = await executor.executeWrite({
+      operation: 'captureToolRunAuto',
+      payload: {
+        path: 'F:/runs/source-audit/transcript.txt',
+        recipeId: 'recipe-qg',
+        toolFamily: 'literature',
+        toolName: 'source-audit',
+        topicId: 'qg',
+        claimId: 'claim-qg',
+      },
+    });
     const result = await executor.executeWrite({
       operation: 'recordSourceReconstructionReviewResult',
       payload: {
@@ -564,6 +625,7 @@ describe('AITP write bridge executor', () => {
     expect(calls).toEqual([
       'captureSourceAssetAuto',
       'attachArtifact',
+      'captureToolRunAuto',
       'recordSourceReconstructionReviewResult',
       'preflightTrustUpdate',
     ]);
@@ -582,6 +644,14 @@ describe('AITP write bridge executor', () => {
     });
     expect(evidenceRefsForAitpWriteBridgeResult(artifact)).toEqual([
       'aitp:artifact:artifact-qg-log',
+    ]);
+    expect(toolRunAuto).toMatchObject({
+      kind: 'tool_run',
+      runId: 'tool-run-qg-auto',
+      evidenceStatus: 'unreviewed',
+    });
+    expect(evidenceRefsForAitpWriteBridgeResult(toolRunAuto)).toEqual([
+      'aitp:tool_run:tool-run-qg-auto',
     ]);
     expect(result).toMatchObject({
       kind: 'source_reconstruction_review_result',

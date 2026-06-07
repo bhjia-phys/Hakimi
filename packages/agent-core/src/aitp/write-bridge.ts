@@ -15,6 +15,7 @@ import type {
   AttachAitpArtifactInput,
   CaptureAitpCodeStateAutoInput,
   CaptureAitpSourceAssetAutoInput,
+  CaptureAitpToolRunAutoInput,
   CreateAitpValidationContractInput,
   CreateAitpProofObligationInput,
   PreflightAitpTrustUpdateInput,
@@ -36,6 +37,7 @@ export const AITP_WRITE_BRIDGE_OPERATIONS = [
   'captureSourceAssetAuto',
   'recordEvidence',
   'recordToolRun',
+  'captureToolRunAuto',
   'captureCodeStateAuto',
   'attachArtifact',
   'recordReferenceLocation',
@@ -122,6 +124,13 @@ export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
     'record_tool_run',
     'aitp_v5_record_tool_run',
     'aitp-v5 tool run record <args>',
+    'tool_run_record',
+  ),
+  bridgeTarget(
+    'captureToolRunAuto',
+    'capture_tool_run_auto',
+    'aitp_v5_capture_tool_run_auto',
+    'aitp-v5 tool run capture-auto <args>',
     'tool_run_record',
   ),
   bridgeTarget(
@@ -249,6 +258,10 @@ export type AitpWriteBridgeExecutionInput =
       readonly payload: RecordAitpToolRunInput;
     }
   | {
+      readonly operation: 'captureToolRunAuto';
+      readonly payload: CaptureAitpToolRunAutoInput;
+    }
+  | {
       readonly operation: 'captureCodeStateAuto';
       readonly payload: CaptureAitpCodeStateAutoInput;
     }
@@ -318,6 +331,7 @@ export interface AitpWriteBridgeCliTarget {
   ): Promise<AitpSourceAssetWriteResult>;
   recordEvidence(input: RecordAitpEvidenceInput): Promise<AitpEvidenceWriteResult>;
   recordToolRun(input: RecordAitpToolRunInput): Promise<AitpToolRunWriteResult>;
+  captureToolRunAuto(input: CaptureAitpToolRunAutoInput): Promise<AitpToolRunWriteResult>;
   captureCodeStateAuto(
     input: CaptureAitpCodeStateAutoInput,
   ): Promise<AitpCodeStateWriteResult>;
@@ -362,6 +376,8 @@ export class AitpCliWriteBridgeExecutor implements AitpWriteBridgeExecutor {
         return this.bridge.recordEvidence(input.payload);
       case 'recordToolRun':
         return this.bridge.recordToolRun(input.payload);
+      case 'captureToolRunAuto':
+        return this.bridge.captureToolRunAuto(input.payload);
       case 'captureCodeStateAuto':
         return this.bridge.captureCodeStateAuto(input.payload);
       case 'attachArtifact':
@@ -530,6 +546,28 @@ export function coerceAitpWriteBridgeInput(
           codeStateIds: optionalStringArray(record, 'codeStateIds', 'code_state_ids'),
           artifactIds: optionalStringArray(record, 'artifactIds', 'artifact_ids'),
           sourceRefs: optionalStringArray(record, 'sourceRefs', 'source_refs'),
+          signal,
+        },
+      };
+    case 'captureToolRunAuto':
+      return {
+        operation,
+        payload: {
+          path: requiredString(record, 'path'),
+          recipeId: requiredString(record, 'recipeId', 'recipe_id', 'recipe'),
+          toolFamily: requiredString(record, 'toolFamily', 'tool_family', 'family'),
+          toolName: requiredString(record, 'toolName', 'tool_name', 'name'),
+          topicId: requiredString(record, 'topicId', 'topic_id'),
+          claimId: requiredString(record, 'claimId', 'claim_id'),
+          inputs: optionalRecord(record, 'inputs', 'inputs_json'),
+          outputs: optionalRecord(record, 'outputs', 'outputs_json'),
+          environment: optionalRecord(record, 'environment', 'environment_json'),
+          evidenceStatus: optionalString(record, 'evidenceStatus', 'evidence_status'),
+          codeStateIds: optionalStringArray(record, 'codeStateIds', 'code_state_ids'),
+          artifactIds: optionalStringArray(record, 'artifactIds', 'artifact_ids'),
+          sourceRefs: optionalStringArray(record, 'sourceRefs', 'source_refs'),
+          summary: optionalString(record, 'summary'),
+          maxPreviewChars: optionalNumber(record, 'maxPreviewChars', 'max_preview_chars'),
           signal,
         },
       };
@@ -754,6 +792,8 @@ export function actionIdForAitpWriteBridgeOperation(
       return 'aitp.record_evidence';
     case 'recordToolRun':
       return 'aitp.record_tool_run';
+    case 'captureToolRunAuto':
+      return 'aitp.capture_tool_run_auto';
     case 'captureCodeStateAuto':
       return 'aitp.capture_code_state_auto';
     case 'attachArtifact':
@@ -855,6 +895,17 @@ function optionalBoolean(
   for (const key of keys) {
     const value = record[key];
     if (typeof value === 'boolean') return value;
+  }
+  return undefined;
+}
+
+function optionalNumber(
+  record: Readonly<Record<string, unknown>>,
+  ...keys: readonly string[]
+): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
   }
   return undefined;
 }

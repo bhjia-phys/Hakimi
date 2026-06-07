@@ -13,6 +13,7 @@ import {
   buildAitpSourceAssetAutoArgs,
   buildAitpSourceAssetRegisterArgs,
   buildAitpSourceReconstructionReviewResultRecordArgs,
+  buildAitpToolRunAutoArgs,
   buildAitpToolRunRecordArgs,
   buildAitpTrustPreflightArgs,
   buildAitpValidationContractCreateArgs,
@@ -278,6 +279,82 @@ describe('AITP CLI bridge', () => {
         'F:/sources/operator-algebra-notes.md',
         '--linked-records-json',
         '{"claim_id":"claim-mipt"}',
+      ]),
+    );
+  });
+
+  it('auto-captures local tool-run transcripts through AITP without hand-filled hashes', async () => {
+    const calls: { args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push({ args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            kind: 'tool_run',
+            run_id: 'tool-run-librpa-si-gw',
+            recipe_id: 'recipe-librpa-si-gw',
+            tool_family: 'code',
+            tool_name: 'pytest',
+            topic_id: 'gw',
+            claim_id: 'claim-gw',
+            evidence_status: 'unreviewed',
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const result = await bridge.captureToolRunAuto({
+      path: 'F:/runs/si-gw/transcript.txt',
+      recipeId: 'recipe-librpa-si-gw',
+      toolFamily: 'code',
+      toolName: 'pytest',
+      topicId: 'gw',
+      claimId: 'claim-gw',
+      inputs: { test: 'tests/test_si_gw.py' },
+      summary: 'Local benchmark transcript.',
+      maxPreviewChars: 800,
+    });
+
+    expect(result).toMatchObject({
+      kind: 'tool_run',
+      runId: 'tool-run-librpa-si-gw',
+      recipeId: 'recipe-librpa-si-gw',
+      toolFamily: 'code',
+      toolName: 'pytest',
+      evidenceStatus: 'unreviewed',
+    });
+    expect(calls[0]?.args).toEqual(
+      buildAitpToolRunAutoArgs({
+        basePath: 'F:/project',
+        path: 'F:/runs/si-gw/transcript.txt',
+        recipeId: 'recipe-librpa-si-gw',
+        toolFamily: 'code',
+        toolName: 'pytest',
+        topicId: 'gw',
+        claimId: 'claim-gw',
+        inputs: { test: 'tests/test_si_gw.py' },
+        summary: 'Local benchmark transcript.',
+        maxPreviewChars: 800,
+      }),
+    );
+    expect(calls[0]?.args).toEqual(
+      expect.arrayContaining([
+        'tool',
+        'run',
+        'capture-auto',
+        '--path',
+        'F:/runs/si-gw/transcript.txt',
+        '--inputs-json',
+        '{"test":"tests/test_si_gw.py"}',
+        '--max-preview-chars',
+        '800',
       ]),
     );
   });

@@ -561,6 +561,20 @@ describe('ResearchActionTool', () => {
             raw: {},
           };
         }
+        if (input.operation === 'captureToolRunAuto') {
+          return {
+            ok: true,
+            kind: 'tool_run',
+            runId: 'tool-run-source-audit-auto',
+            recipeId: 'recipe-source-audit',
+            toolFamily: 'source_audit',
+            toolName: 'definition_backtrace',
+            topicId: 'qg-algebra-mipt',
+            claimId: 'claim-mipt-observer-algebra',
+            evidenceStatus: 'unreviewed',
+            raw: {},
+          };
+        }
         if (input.operation === 'captureCodeStateAuto') {
           return {
             ok: true,
@@ -684,6 +698,20 @@ describe('ResearchActionTool', () => {
         evidence_status: 'captured',
       },
     });
+    const toolRunAuto = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'captureToolRunAuto',
+      aitp_payload: {
+        path: 'F:/runs/source-audit/transcript.txt',
+        recipe_id: 'recipe-source-audit',
+        tool_family: 'source_audit',
+        tool_name: 'definition_backtrace',
+        topic_id: 'qg-algebra-mipt',
+        claim_id: 'claim-mipt-observer-algebra',
+        inputs: { target: 'split property' },
+        summary: 'Source audit transcript.',
+      },
+    });
     const codeState = await execute(tool, {
       action: 'execute_aitp_write_bridge',
       aitp_operation: 'captureCodeStateAuto',
@@ -766,6 +794,9 @@ describe('ResearchActionTool', () => {
     expect(evidence.output).toContain('aitp:evidence:evidence-source-audit');
     expect(toolRun.output).toContain('operation="recordToolRun"');
     expect(toolRun.output).toContain('aitp:tool_run:tool-run-source-audit');
+    expect(toolRunAuto.output).toContain('operation="captureToolRunAuto"');
+    expect(toolRunAuto.output).toContain('mcp_tool="aitp_v5_capture_tool_run_auto"');
+    expect(toolRunAuto.output).toContain('aitp:tool_run:tool-run-source-audit-auto');
     expect(codeState.output).toContain('operation="captureCodeStateAuto"');
     expect(codeState.output).toContain('aitp:code_state:code-state-librpa');
     expect(artifact.output).toContain('operation="attachArtifact"');
@@ -780,7 +811,7 @@ describe('ResearchActionTool', () => {
     expect(reviewResult.output).toContain(
       'aitp:source_reconstruction_review_result:source-review-result-algebra',
     );
-    expect(bridgeCalls).toHaveLength(9);
+    expect(bridgeCalls).toHaveLength(10);
     expect(bridgeCalls[0]).toMatchObject({
       operation: 'createProofObligation',
       payload: {
@@ -813,6 +844,15 @@ describe('ResearchActionTool', () => {
       },
     });
     expect(bridgeCalls[4]).toMatchObject({
+      operation: 'captureToolRunAuto',
+      payload: {
+        path: 'F:/runs/source-audit/transcript.txt',
+        recipeId: 'recipe-source-audit',
+        inputs: { target: 'split property' },
+        summary: 'Source audit transcript.',
+      },
+    });
+    expect(bridgeCalls[5]).toMatchObject({
       operation: 'captureCodeStateAuto',
       payload: {
         worktreePath: 'F:/repo/librpa',
@@ -821,7 +861,7 @@ describe('ResearchActionTool', () => {
         writePatchArtifact: true,
       },
     });
-    expect(bridgeCalls[5]).toMatchObject({
+    expect(bridgeCalls[6]).toMatchObject({
       operation: 'attachArtifact',
       payload: {
         artifactType: 'benchmark_log',
@@ -830,7 +870,7 @@ describe('ResearchActionTool', () => {
         sizeBytes: '2048',
       },
     });
-    expect(bridgeCalls[6]).toMatchObject({
+    expect(bridgeCalls[7]).toMatchObject({
       operation: 'recordReferenceLocation',
       payload: {
         connectorId: 'arxiv',
@@ -838,14 +878,14 @@ describe('ResearchActionTool', () => {
         status: 'located',
       },
     });
-    expect(bridgeCalls[7]).toMatchObject({
+    expect(bridgeCalls[8]).toMatchObject({
       operation: 'recordValidationResult',
       payload: {
         contractId: 'validation-contract-source-audit',
         checkedOutputs: ['source chain transcript'],
       },
     });
-    expect(bridgeCalls[8]).toMatchObject({
+    expect(bridgeCalls[9]).toMatchObject({
       operation: 'recordSourceReconstructionReviewResult',
       payload: {
         claimId: 'claim-mipt-observer-algebra',
@@ -889,6 +929,15 @@ describe('ResearchActionTool', () => {
         outcome: 'pass',
         workFrameId: 'frame.qg-mipt',
         evidenceRefs: ['aitp:tool_run:tool-run-source-audit'],
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.capture_tool_run_auto',
+        outcome: 'pass',
+        workFrameId: 'frame.qg-mipt',
+        evidenceRefs: ['aitp:tool_run:tool-run-source-audit-auto'],
       }),
     );
     expect(records).toContainEqual(
