@@ -27,8 +27,9 @@ import {
 } from '../config';
 import {
   createDynamicAitpCliProcessGraphSliceProvider,
-  createDynamicAitpCliWriteBridgeExecutor,
+  createDynamicAitpMcpFirstWriteBridgeExecutor,
   type AitpCommandRunner,
+  type AitpMcpWriteBridgeTransport,
   type AitpProcessGraphSliceProvider,
   type AitpWriteBridgeExecutor,
 } from '../aitp';
@@ -161,6 +162,8 @@ export interface SessionAitpBridgeConfig {
   readonly command?: string | undefined;
   readonly timeoutMs?: number | undefined;
   readonly graphSliceLimit?: number | undefined;
+  readonly mcpServerName?: string | undefined;
+  readonly fallbackOnMcpError?: boolean | undefined;
   readonly runner?: AitpCommandRunner | undefined;
 }
 
@@ -1234,7 +1237,26 @@ export class Session {
         ...bridgeOptions,
         limit: config?.graphSliceLimit,
       }),
-      writeBridge: createDynamicAitpCliWriteBridgeExecutor(bridgeOptions),
+      writeBridge: createDynamicAitpMcpFirstWriteBridgeExecutor({
+        ...bridgeOptions,
+        mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
+        fallbackOnMcpError: config?.fallbackOnMcpError,
+      }),
+    };
+  }
+
+  private createAitpMcpTransport(serverName: string): AitpMcpWriteBridgeTransport {
+    return {
+      callTool: async ({ toolName, args, signal }) => {
+        const resolved = this.mcp.resolved(serverName);
+        if (resolved === undefined) {
+          throw new Error(`AITP MCP server "${serverName}" is not connected.`);
+        }
+        if (!resolved.enabledNames.has(toolName)) {
+          throw new Error(`AITP MCP server "${serverName}" does not expose tool "${toolName}".`);
+        }
+        return resolved.client.callTool(toolName, { ...args }, signal);
+      },
     };
   }
 

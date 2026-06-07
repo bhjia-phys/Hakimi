@@ -1465,7 +1465,7 @@ class SpawnAitpCommandRunner implements AitpCommandRunner {
   }
 }
 
-function parseExploratoryRecordWriteResult(payload: unknown): AitpExploratoryRecordWriteResult {
+export function parseExploratoryRecordWriteResult(payload: unknown): AitpExploratoryRecordWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP exploratory record payload must be an object.');
   }
@@ -1486,7 +1486,7 @@ function parseExploratoryRecordWriteResult(payload: unknown): AitpExploratoryRec
   };
 }
 
-function parseSourceAssetWriteResult(payload: unknown): AitpSourceAssetWriteResult {
+export function parseSourceAssetWriteResult(payload: unknown): AitpSourceAssetWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP source asset payload must be an object.');
   }
@@ -1507,7 +1507,7 @@ function parseSourceAssetWriteResult(payload: unknown): AitpSourceAssetWriteResu
   };
 }
 
-function parseEvidenceWriteResult(payload: unknown): AitpEvidenceWriteResult {
+export function parseEvidenceWriteResult(payload: unknown): AitpEvidenceWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP evidence payload must be an object.');
   }
@@ -1526,7 +1526,7 @@ function parseEvidenceWriteResult(payload: unknown): AitpEvidenceWriteResult {
   };
 }
 
-function parseToolRunWriteResult(payload: unknown): AitpToolRunWriteResult {
+export function parseToolRunWriteResult(payload: unknown): AitpToolRunWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP tool run payload must be an object.');
   }
@@ -1547,7 +1547,7 @@ function parseToolRunWriteResult(payload: unknown): AitpToolRunWriteResult {
   };
 }
 
-function parseCodeStateWriteResult(payload: unknown): AitpCodeStateWriteResult {
+export function parseCodeStateWriteResult(payload: unknown): AitpCodeStateWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP code state payload must be an object.');
   }
@@ -1571,7 +1571,7 @@ function parseCodeStateWriteResult(payload: unknown): AitpCodeStateWriteResult {
   };
 }
 
-function parseArtifactWriteResult(payload: unknown): AitpArtifactWriteResult {
+export function parseArtifactWriteResult(payload: unknown): AitpArtifactWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP artifact payload must be an object.');
   }
@@ -1595,7 +1595,7 @@ function parseArtifactWriteResult(payload: unknown): AitpArtifactWriteResult {
   };
 }
 
-function parseReferenceLocationWriteResult(payload: unknown): AitpReferenceLocationWriteResult {
+export function parseReferenceLocationWriteResult(payload: unknown): AitpReferenceLocationWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP reference location payload must be an object.');
   }
@@ -1618,7 +1618,7 @@ function parseReferenceLocationWriteResult(payload: unknown): AitpReferenceLocat
   };
 }
 
-function parseHumanCheckpointWriteResult(payload: unknown): AitpHumanCheckpointWriteResult {
+export function parseHumanCheckpointWriteResult(payload: unknown): AitpHumanCheckpointWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP human checkpoint payload must be an object.');
   }
@@ -1636,7 +1636,7 @@ function parseHumanCheckpointWriteResult(payload: unknown): AitpHumanCheckpointW
   };
 }
 
-function parseTrustPreflightWriteResult(payload: unknown): AitpTrustPreflightWriteResult {
+export function parseTrustPreflightWriteResult(payload: unknown): AitpTrustPreflightWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP trust preflight payload must be an object.');
   }
@@ -1663,7 +1663,7 @@ function parseTrustPreflightWriteResult(payload: unknown): AitpTrustPreflightWri
   };
 }
 
-function parseProofObligationWriteResult(payload: unknown): AitpProofObligationWriteResult {
+export function parseProofObligationWriteResult(payload: unknown): AitpProofObligationWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP proof obligation payload must be an object.');
   }
@@ -1682,7 +1682,7 @@ function parseProofObligationWriteResult(payload: unknown): AitpProofObligationW
   };
 }
 
-function parseValidationContractWriteResult(payload: unknown): AitpValidationContractWriteResult {
+export function parseValidationContractWriteResult(payload: unknown): AitpValidationContractWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP validation contract payload must be an object.');
   }
@@ -1700,7 +1700,7 @@ function parseValidationContractWriteResult(payload: unknown): AitpValidationCon
   };
 }
 
-function parseValidationResultWriteResult(payload: unknown): AitpValidationResultWriteResult {
+export function parseValidationResultWriteResult(payload: unknown): AitpValidationResultWriteResult {
   if (!isRecord(payload)) {
     throw new AitpCliBridgeError('AITP validation result payload must be an object.');
   }
@@ -1720,7 +1720,7 @@ function parseValidationResultWriteResult(payload: unknown): AitpValidationResul
   };
 }
 
-function parseSourceReconstructionReviewResultWriteResult(
+export function parseSourceReconstructionReviewResultWriteResult(
   payload: unknown,
 ): AitpSourceReconstructionReviewResultWriteResult {
   if (!isRecord(payload)) {

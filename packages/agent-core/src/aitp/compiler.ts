@@ -951,6 +951,7 @@ function writeBridgeTarget(
     surface: target.surface,
     preferredTransport: target.preferredTransport,
     fallbackTransport: target.fallbackTransport,
+    mcpInvocation: target.mcpInvocation,
     executionRole: target.executionRole,
     stateEffect: target.stateEffect,
     canonicalStore: target.canonicalStore,

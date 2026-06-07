@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   AITP_RUNTIME_BRIDGE_TARGETS,
@@ -6,8 +6,10 @@ import {
   aitpRuntimeBridgeTargetForOperation,
   coerceAitpWriteBridgeInput,
   createAitpCliWriteBridgeExecutor,
+  createAitpMcpFirstWriteBridgeExecutor,
   evidenceRefsForAitpWriteBridgeResult,
   generatedObligationIdsForAitpWriteBridgeResult,
+  mcpArgsForAitpWriteBridgeInput,
   type AitpWriteBridgeCliTarget,
 } from '../../src';
 
@@ -24,6 +26,15 @@ describe('AITP write bridge executor', () => {
       surface: 'process_graph_slice',
       preferredTransport: 'mcp',
       fallbackTransport: 'cli',
+      mcpInvocation: {
+        tool: 'aitp_v5_get_process_graph_slice',
+        argumentStyle: 'json_object',
+        baseArgument: 'base',
+        payloadKeyCase: 'snake_case',
+        resultSurface: 'process_graph_slice',
+        resultContentType: 'json_object',
+        fallbackPolicy: 'use_cli_when_mcp_transport_unavailable_or_call_fails',
+      },
       executionRole: 'read',
       stateEffect: 'read_only',
       claimTrustMutation: 'none',
@@ -38,6 +49,15 @@ describe('AITP write bridge executor', () => {
       executionRole: 'write',
       stateEffect: 'typed_record_write',
       canonicalStore: '.aitp',
+      mcpInvocation: {
+        tool: 'aitp_v5_record_evidence',
+        argumentStyle: 'json_object',
+        baseArgument: 'base',
+        payloadKeyCase: 'snake_case',
+        resultSurface: 'evidence_record',
+        resultContentType: 'json_object',
+        fallbackPolicy: 'use_cli_when_mcp_transport_unavailable_or_call_fails',
+      },
     });
     expect(aitpRuntimeBridgeTargetForOperation('captureSourceAssetAuto')).toMatchObject({
       operation: 'captureSourceAssetAuto',
@@ -79,6 +99,185 @@ describe('AITP write bridge executor', () => {
       canUpdateClaimTrust: false,
     });
     expect([...byOperation.keys()]).not.toContain('trustApply');
+  });
+
+  it('builds MCP write args with the AITP base argument and snake_case payload keys', () => {
+    const input = coerceAitpWriteBridgeInput('recordEvidence', {
+      topic_id: 'qg',
+      claim_id: 'claim-qg',
+      evidence_type: 'source_reconstruction',
+      status: 'supports',
+      summary: 'Source chain reconstructed.',
+      supports_outputs: ['definition path'],
+      validation_result_ids: ['validation-result-qg'],
+    });
+
+    expect(mcpArgsForAitpWriteBridgeInput(input, 'F:/aitp-workspace')).toEqual({
+      base: 'F:/aitp-workspace',
+      topic_id: 'qg',
+      claim_id: 'claim-qg',
+      evidence_type: 'source_reconstruction',
+      status: 'supports',
+      summary: 'Source chain reconstructed.',
+      supports_outputs: ['definition path'],
+      validation_result_ids: ['validation-result-qg'],
+    });
+  });
+
+  it('prefers MCP for write execution and parses MCP text JSON results', async () => {
+    const fallback = {
+      executeWrite: vi.fn(),
+    };
+    const calls: Array<{ readonly toolName: string; readonly args: Readonly<Record<string, unknown>> }> = [];
+    const executor = createAitpMcpFirstWriteBridgeExecutor({
+      basePath: () => 'F:/aitp-workspace',
+      fallback,
+      transport: {
+        async callTool(input) {
+          calls.push({ toolName: input.toolName, args: input.args });
+          return {
+            isError: false,
+            content: [
+              { type: 'text', text: 'AITP write completed.' },
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  ok: true,
+                  kind: 'evidence',
+                  evidence_id: 'evidence-qg',
+                  topic_id: 'qg',
+                  claim_id: 'claim-qg',
+                  evidence_type: 'source_reconstruction',
+                  status: 'supports',
+                }),
+              },
+            ],
+          };
+        },
+      },
+    });
+
+    const result = await executor.executeWrite({
+      operation: 'recordEvidence',
+      payload: {
+        topicId: 'qg',
+        claimId: 'claim-qg',
+        evidenceType: 'source_reconstruction',
+        status: 'supports',
+        summary: 'Source chain reconstructed.',
+        supportsOutputs: ['definition path'],
+      },
+    });
+
+    expect(result).toMatchObject({
+      kind: 'evidence',
+      evidenceId: 'evidence-qg',
+      topicId: 'qg',
+      claimId: 'claim-qg',
+    });
+    expect(calls).toEqual([
+      {
+        toolName: 'aitp_v5_record_evidence',
+        args: {
+          base: 'F:/aitp-workspace',
+          topic_id: 'qg',
+          claim_id: 'claim-qg',
+          evidence_type: 'source_reconstruction',
+          status: 'supports',
+          summary: 'Source chain reconstructed.',
+          supports_outputs: ['definition path'],
+        },
+      },
+    ]);
+    expect(fallback.executeWrite).not.toHaveBeenCalled();
+  });
+
+  it('falls back to CLI writes when MCP execution fails', async () => {
+    const fallback = {
+      executeWrite: vi.fn(async () => ({
+        ok: true,
+        kind: 'human_checkpoint' as const,
+        checkpointId: 'checkpoint-cli',
+        topicId: 'qg',
+        claimId: 'claim-qg',
+        status: 'requested',
+        raw: {},
+      })),
+    };
+    const executor = createAitpMcpFirstWriteBridgeExecutor({
+      basePath: () => 'F:/aitp-workspace',
+      fallback,
+      transport: {
+        async callTool() {
+          throw new Error('MCP unavailable');
+        },
+      },
+    });
+
+    await expect(
+      executor.executeWrite({
+        operation: 'requestHumanCheckpoint',
+        payload: {
+          topicId: 'qg',
+          claimId: 'claim-qg',
+          reason: 'Trust boundary.',
+          requestedBy: 'hakimi',
+          options: ['keep provisional'],
+        },
+      }),
+    ).resolves.toMatchObject({
+      kind: 'human_checkpoint',
+      checkpointId: 'checkpoint-cli',
+    });
+    expect(fallback.executeWrite).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to CLI writes when MCP returns an error envelope', async () => {
+    const fallback = {
+      executeWrite: vi.fn(async () => ({
+        ok: true,
+        kind: 'evidence' as const,
+        evidenceId: 'evidence-cli',
+        topicId: 'qg',
+        claimId: 'claim-qg',
+        evidenceType: 'source_reconstruction',
+        status: 'supports',
+        raw: {},
+      })),
+    };
+    const executor = createAitpMcpFirstWriteBridgeExecutor({
+      basePath: () => 'F:/aitp-workspace',
+      fallback,
+      transport: {
+        async callTool() {
+          return {
+            isError: true,
+            structuredContent: {
+              ok: true,
+              kind: 'evidence',
+              evidence_id: 'evidence-should-not-parse',
+            },
+          };
+        },
+      },
+    });
+
+    await expect(
+      executor.executeWrite({
+        operation: 'recordEvidence',
+        payload: {
+          topicId: 'qg',
+          claimId: 'claim-qg',
+          evidenceType: 'source_reconstruction',
+          status: 'supports',
+          summary: 'Source chain reconstructed.',
+        },
+      }),
+    ).resolves.toMatchObject({
+      kind: 'evidence',
+      evidenceId: 'evidence-cli',
+    });
+    expect(fallback.executeWrite).toHaveBeenCalledTimes(1);
   });
 
   it('coerces model-facing payloads into narrow AITP proof-obligation writes', () => {

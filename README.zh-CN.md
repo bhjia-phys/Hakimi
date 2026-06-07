@@ -7,11 +7,12 @@ asks for `aitp.record_source_reconstruction_review_result`. The result remains
 canonical AITP review evidence, not Hakimi claim-trust authority.
 Hakimi can also execute AITP `trust preflight` as `preflightTrustUpdate`,
 record `aitp:trust_preflight:<token>`, and still does not apply trust updates.
-AITP bridge targets are now MCP-first at the contract/projection layer:
-Hakimi exposes `mcpTool`, `cliFallback`, surface, and
-`claimTrustMutation="none"` from AITP's runtime bridge target manifest in
-writeBridge params and ResearchAction results, while execution still uses the
-configured CLI fallback bridge until a later MCP transport runner slice.
+AITP bridge targets are now MCP-first at the contract/projection/execution
+layer for writes and trust preflight: Hakimi exposes `mcpTool`, `cliFallback`,
+surface, MCP invocation args, and `claimTrustMutation="none"` from AITP's
+runtime bridge target manifest in writeBridge params and ResearchAction
+results, calls the connected AITP MCP tool first, and falls back to the CLI
+bridge when MCP is unavailable or fails.
 Hakimi now also projects AITP local source-asset auto-capture:
 `aitp_v5_capture_source_asset_auto` becomes `captureSourceAssetAuto`, so a
 local paper, lecture note, code snapshot, dataset, or generated file path can

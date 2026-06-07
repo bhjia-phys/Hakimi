@@ -10,6 +10,8 @@ import {
 } from './cli-bridge';
 import {
   createAitpCliWriteBridgeExecutor,
+  createAitpMcpFirstWriteBridgeExecutor,
+  type AitpMcpWriteBridgeTransport,
   type AitpWriteBridgeExecutor,
 } from './write-bridge';
 import type { WorkFrame } from '../research-action';
@@ -24,6 +26,11 @@ export interface DynamicAitpCliBridgeOptions {
   readonly resolveScope?:
     | ((workFrame: WorkFrame) => AitpWorkFrameScope | null | undefined)
     | undefined;
+}
+
+export interface DynamicAitpMcpFirstBridgeOptions extends DynamicAitpCliBridgeOptions {
+  readonly mcpTransport?: AitpMcpWriteBridgeTransport | undefined;
+  readonly fallbackOnMcpError?: boolean | undefined;
 }
 
 export function createDynamicAitpCliProcessGraphSliceProvider(
@@ -55,6 +62,18 @@ export function createDynamicAitpCliWriteBridgeExecutor(
       ).executeWrite(input);
     },
   };
+}
+
+export function createDynamicAitpMcpFirstWriteBridgeExecutor(
+  options: DynamicAitpMcpFirstBridgeOptions,
+): AitpWriteBridgeExecutor {
+  const fallback = createDynamicAitpCliWriteBridgeExecutor(options);
+  return createAitpMcpFirstWriteBridgeExecutor({
+    basePath: options.basePath,
+    transport: options.mcpTransport,
+    fallback,
+    fallbackOnMcpError: options.fallbackOnMcpError,
+  });
 }
 
 function createDynamicAitpCliBridge(options: DynamicAitpCliBridgeOptions): AitpCliBridge {
