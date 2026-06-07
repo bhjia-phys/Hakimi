@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createDynamicAitpCliProcessGraphSliceProvider,
   createDynamicAitpCliWriteBridgeExecutor,
+  createDynamicAitpMcpFirstWriteBridgeExecutor,
   type AitpCommandRunner,
 } from '../../src/aitp';
 import type { WorkFrame } from '../../src/research-action';
@@ -89,6 +90,58 @@ describe('AITP dynamic session bridge', () => {
       'hakimi',
       '--option',
       'keep provisional',
+    ]);
+  });
+
+  it('uses the latest base path for MCP-first write-bridge calls', async () => {
+    const calls: Array<{ readonly toolName: string; readonly args: Readonly<Record<string, unknown>> }> = [];
+    let basePath = 'F:/project-a';
+    const writeBridge = createDynamicAitpMcpFirstWriteBridgeExecutor({
+      basePath: () => basePath,
+      runner: recordingRunner([]),
+      mcpTransport: {
+        async callTool(input) {
+          calls.push({ toolName: input.toolName, args: input.args });
+          return {
+            ok: true,
+            kind: 'human_checkpoint',
+            checkpoint_id: 'checkpoint-qg-mcp',
+            topic_id: 'qg',
+            claim_id: 'claim-mipt',
+            status: 'requested',
+          };
+        },
+      },
+    });
+
+    basePath = 'F:/project-b';
+    const result = await writeBridge.executeWrite({
+      operation: 'requestHumanCheckpoint',
+      payload: {
+        topicId: 'qg',
+        claimId: 'claim-mipt',
+        reason: 'Trust boundary before using the traced source as support.',
+        requestedBy: 'hakimi',
+        options: ['keep provisional'],
+      },
+    });
+
+    expect(result).toMatchObject({
+      kind: 'human_checkpoint',
+      checkpointId: 'checkpoint-qg-mcp',
+    });
+    expect(calls).toEqual([
+      {
+        toolName: 'aitp_v5_request_human_checkpoint',
+        args: {
+          base: 'F:/project-b',
+          topic_id: 'qg',
+          claim_id: 'claim-mipt',
+          reason: 'Trust boundary before using the traced source as support.',
+          requested_by: 'hakimi',
+          options: ['keep provisional'],
+        },
+      },
     ]);
   });
 });

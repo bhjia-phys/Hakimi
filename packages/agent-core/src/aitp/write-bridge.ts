@@ -1,3 +1,18 @@
+import {
+  parseArtifactWriteResult,
+  parseCodeStateWriteResult,
+  parseEvidenceWriteResult,
+  parseExploratoryRecordWriteResult,
+  parseHumanCheckpointWriteResult,
+  parseProofObligationWriteResult,
+  parseReferenceLocationWriteResult,
+  parseSourceAssetWriteResult,
+  parseSourceReconstructionReviewResultWriteResult,
+  parseToolRunWriteResult,
+  parseTrustPreflightWriteResult,
+  parseValidationContractWriteResult,
+  parseValidationResultWriteResult,
+} from './cli-bridge';
 import type {
   AitpArtifactWriteResult,
   AitpEvidenceWriteResult,
@@ -66,12 +81,23 @@ export interface AitpRuntimeBridgeTarget {
   readonly surface: string;
   readonly preferredTransport: 'mcp';
   readonly fallbackTransport: 'cli';
+  readonly mcpInvocation: AitpMcpInvocationContract;
   readonly executionRole: 'read' | 'write' | 'preflight';
   readonly stateEffect: 'read_only' | 'typed_record_write' | 'preflight_only';
   readonly canonicalStore: '.aitp';
   readonly claimTrustMutation: 'none';
   readonly summaryInputsTrusted: false;
   readonly canUpdateClaimTrust: false;
+}
+
+export interface AitpMcpInvocationContract {
+  readonly tool: string;
+  readonly argumentStyle: 'json_object';
+  readonly baseArgument: 'base';
+  readonly payloadKeyCase: 'snake_case';
+  readonly resultSurface: string;
+  readonly resultContentType: 'json_object';
+  readonly fallbackPolicy: 'use_cli_when_mcp_transport_unavailable_or_call_fails';
 }
 
 export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
@@ -236,6 +262,15 @@ function bridgeTarget(
     surface,
     preferredTransport: 'mcp',
     fallbackTransport: 'cli',
+    mcpInvocation: {
+      tool: mcpTool,
+      argumentStyle: 'json_object',
+      baseArgument: 'base',
+      payloadKeyCase: 'snake_case',
+      resultSurface: surface,
+      resultContentType: 'json_object',
+      fallbackPolicy: 'use_cli_when_mcp_transport_unavailable_or_call_fails',
+    },
     executionRole,
     stateEffect,
     canonicalStore: '.aitp',
@@ -332,6 +367,21 @@ export interface AitpWriteBridgeExecutor {
   ): Promise<AitpWriteBridgeExecutionResult>;
 }
 
+export interface AitpMcpWriteBridgeTransport {
+  callTool(input: {
+    readonly toolName: string;
+    readonly args: Readonly<Record<string, unknown>>;
+    readonly signal?: AbortSignal | undefined;
+  }): Promise<unknown>;
+}
+
+export interface AitpMcpFirstWriteBridgeExecutorOptions {
+  readonly basePath: () => string;
+  readonly transport?: AitpMcpWriteBridgeTransport | undefined;
+  readonly fallback: AitpWriteBridgeExecutor;
+  readonly fallbackOnMcpError?: boolean | undefined;
+}
+
 export interface AitpWriteBridgeCliTarget {
   recordExploratoryRecord(
     input: RecordAitpExploratoryRecordInput,
@@ -420,6 +470,109 @@ export function createAitpCliWriteBridgeExecutor(
   bridge: AitpWriteBridgeCliTarget,
 ): AitpWriteBridgeExecutor {
   return new AitpCliWriteBridgeExecutor(bridge);
+}
+
+export class AitpMcpFirstWriteBridgeExecutor implements AitpWriteBridgeExecutor {
+  private readonly fallbackOnMcpError: boolean;
+
+  constructor(private readonly options: AitpMcpFirstWriteBridgeExecutorOptions) {
+    this.fallbackOnMcpError = options.fallbackOnMcpError ?? true;
+  }
+
+  async executeWrite(
+    input: AitpWriteBridgeExecutionInput,
+  ): Promise<AitpWriteBridgeExecutionResult> {
+    const transport = this.options.transport;
+    if (transport === undefined) {
+      return this.options.fallback.executeWrite(input);
+    }
+    const target = aitpRuntimeBridgeTargetForOperation(input.operation);
+    try {
+      const payload = await transport.callTool({
+        toolName: target.mcpInvocation.tool,
+        args: mcpArgsForAitpWriteBridgeInput(input, this.options.basePath()),
+        signal: input.payload.signal,
+      });
+      return parseAitpWriteBridgeResultForOperation(input.operation, payload);
+    } catch (error) {
+      if (!this.fallbackOnMcpError) throw error;
+      return this.options.fallback.executeWrite(input);
+    }
+  }
+}
+
+export function createAitpMcpFirstWriteBridgeExecutor(
+  options: AitpMcpFirstWriteBridgeExecutorOptions,
+): AitpWriteBridgeExecutor {
+  return new AitpMcpFirstWriteBridgeExecutor(options);
+}
+
+export function mcpArgsForAitpWriteBridgeInput(
+  input: AitpWriteBridgeExecutionInput,
+  basePath: string,
+): Readonly<Record<string, unknown>> {
+  return {
+    base: basePath,
+    ...toSnakeCaseJsonObject(input.payload),
+  };
+}
+
+export function parseAitpWriteBridgeResultForOperation(
+  operation: AitpWriteBridgeOperation,
+  payload: unknown,
+): AitpWriteBridgeExecutionResult {
+  const normalizedPayload = normalizeAitpWriteBridgePayload(payload);
+  switch (operation) {
+    case 'recordExploratoryRecord':
+      return parseExploratoryRecordWriteResult(normalizedPayload);
+    case 'registerSourceAsset':
+    case 'captureSourceAssetAuto':
+      return parseSourceAssetWriteResult(normalizedPayload);
+    case 'recordEvidence':
+      return parseEvidenceWriteResult(normalizedPayload);
+    case 'recordToolRun':
+    case 'captureToolRunAuto':
+      return parseToolRunWriteResult(normalizedPayload);
+    case 'captureCodeStateAuto':
+      return parseCodeStateWriteResult(normalizedPayload);
+    case 'attachArtifact':
+    case 'attachArtifactAuto':
+      return parseArtifactWriteResult(normalizedPayload);
+    case 'recordReferenceLocation':
+      return parseReferenceLocationWriteResult(normalizedPayload);
+    case 'createProofObligation':
+      return parseProofObligationWriteResult(normalizedPayload);
+    case 'createValidationContract':
+      return parseValidationContractWriteResult(normalizedPayload);
+    case 'recordValidationResult':
+      return parseValidationResultWriteResult(normalizedPayload);
+    case 'recordSourceReconstructionReviewResult':
+      return parseSourceReconstructionReviewResultWriteResult(normalizedPayload);
+    case 'requestHumanCheckpoint':
+      return parseHumanCheckpointWriteResult(normalizedPayload);
+    case 'preflightTrustUpdate':
+      return parseTrustPreflightWriteResult(normalizedPayload);
+  }
+}
+
+export function normalizeAitpWriteBridgePayload(payload: unknown): unknown {
+  if (!isRecordValue(payload)) return payload;
+  if (payload['isError'] === true) {
+    throw new AitpWriteBridgePayloadError('AITP MCP tool returned an error result.');
+  }
+  const structuredContent = payload['structuredContent'];
+  if (isRecordValue(structuredContent)) return structuredContent;
+  const content = payload['content'];
+  if (!Array.isArray(content)) return payload;
+  for (const block of content) {
+    if (!isRecordValue(block) || block['type'] !== 'text' || typeof block['text'] !== 'string') {
+      continue;
+    }
+    try {
+      return parseMcpJsonText(block['text']);
+    } catch {}
+  }
+  throw new AitpWriteBridgePayloadError('AITP MCP tool result did not include JSON text content.');
 }
 
 export function coerceAitpWriteBridgeInput(
@@ -981,4 +1134,39 @@ function optionalRecord(
 
 function hasAnyStringArray(values: readonly (readonly string[] | undefined)[]): boolean {
   return values.some((items) => items !== undefined && items.length > 0);
+}
+
+function toSnakeCaseJsonObject(value: object): Readonly<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (key === 'signal' || item === undefined) continue;
+    out[camelToSnake(key)] = item;
+  }
+  return out;
+}
+
+function camelToSnake(value: string): string {
+  return value.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`);
+}
+
+function parseMcpJsonText(text: string): unknown {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    throw new AitpWriteBridgePayloadError('AITP MCP tool returned empty text content.');
+  }
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {}
+  for (const line of trimmed.split(/\r?\n/g).toReversed()) {
+    const candidate = line.trim();
+    if (!candidate.startsWith('{') && !candidate.startsWith('[')) continue;
+    try {
+      return JSON.parse(candidate) as unknown;
+    } catch {}
+  }
+  throw new AitpWriteBridgePayloadError('AITP MCP tool text content was not valid JSON.');
+}
+
+function isRecordValue(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -1164,7 +1164,7 @@ function renderAitpWriteBridgeExecution(
   const target = aitpRuntimeBridgeTargetForOperation(operation);
   return [
     `<aitp_write_bridge operation="${operation}" action_id="${escapeXml(actionId)}" call_id="${escapeXml(callId)}" kind="${result.kind}" ok="${String(result.ok)}">`,
-    `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
+    `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" mcp_argument_style="${target.mcpInvocation.argumentStyle}" mcp_base_argument="${target.mcpInvocation.baseArgument}" mcp_payload_key_case="${target.mcpInvocation.payloadKeyCase}" mcp_result_content_type="${target.mcpInvocation.resultContentType}" fallback_policy="${target.mcpInvocation.fallbackPolicy}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
     `  <record_id>${escapeXml(aitpWriteBridgeRecordId(result))}</record_id>`,
     renderStringList('evidence_refs', 'evidence_ref', evidenceRefsForAitpWriteBridgeResult(result), '  '),
     '</aitp_write_bridge>',
