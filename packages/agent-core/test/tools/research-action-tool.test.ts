@@ -607,6 +607,21 @@ describe('ResearchActionTool', () => {
             raw: {},
           };
         }
+        if (input.operation === 'attachArtifactAuto') {
+          return {
+            ok: true,
+            kind: 'artifact',
+            artifactId: 'artifact-source-audit-log-auto',
+            topicId: 'qg-algebra-mipt',
+            claimId: 'claim-mipt-observer-algebra',
+            artifactType: 'benchmark_log',
+            uri: 'file:///F:/runs/qg/source-audit.log',
+            summary: 'Source audit log.',
+            sizeBytes: 2048,
+            canUpdateClaimTrust: false,
+            raw: {},
+          };
+        }
         if (input.operation === 'recordReferenceLocation') {
           return {
             ok: true,
@@ -736,6 +751,17 @@ describe('ResearchActionTool', () => {
         size_bytes: '2048',
       },
     });
+    const artifactAuto = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'attachArtifactAuto',
+      aitp_payload: {
+        path: 'F:/runs/qg/source-audit.log',
+        topic_id: 'qg-algebra-mipt',
+        claim_id: 'claim-mipt-observer-algebra',
+        artifact_type: 'benchmark_log',
+        artifact_summary: 'Source audit log.',
+      },
+    });
     const referenceLocation = await execute(tool, {
       action: 'execute_aitp_write_bridge',
       aitp_operation: 'recordReferenceLocation',
@@ -801,6 +827,9 @@ describe('ResearchActionTool', () => {
     expect(codeState.output).toContain('aitp:code_state:code-state-librpa');
     expect(artifact.output).toContain('operation="attachArtifact"');
     expect(artifact.output).toContain('aitp:artifact:artifact-source-audit-log');
+    expect(artifactAuto.output).toContain('operation="attachArtifactAuto"');
+    expect(artifactAuto.output).toContain('mcp_tool="aitp_v5_attach_artifact_auto"');
+    expect(artifactAuto.output).toContain('aitp:artifact:artifact-source-audit-log-auto');
     expect(referenceLocation.output).toContain('operation="recordReferenceLocation"');
     expect(referenceLocation.output).toContain(
       'aitp:reference_location:reference-location-algebra-paper',
@@ -811,7 +840,7 @@ describe('ResearchActionTool', () => {
     expect(reviewResult.output).toContain(
       'aitp:source_reconstruction_review_result:source-review-result-algebra',
     );
-    expect(bridgeCalls).toHaveLength(10);
+    expect(bridgeCalls).toHaveLength(11);
     expect(bridgeCalls[0]).toMatchObject({
       operation: 'createProofObligation',
       payload: {
@@ -871,6 +900,14 @@ describe('ResearchActionTool', () => {
       },
     });
     expect(bridgeCalls[7]).toMatchObject({
+      operation: 'attachArtifactAuto',
+      payload: {
+        path: 'F:/runs/qg/source-audit.log',
+        artifactType: 'benchmark_log',
+        summary: 'Source audit log.',
+      },
+    });
+    expect(bridgeCalls[8]).toMatchObject({
       operation: 'recordReferenceLocation',
       payload: {
         connectorId: 'arxiv',
@@ -878,14 +915,14 @@ describe('ResearchActionTool', () => {
         status: 'located',
       },
     });
-    expect(bridgeCalls[8]).toMatchObject({
+    expect(bridgeCalls[9]).toMatchObject({
       operation: 'recordValidationResult',
       payload: {
         contractId: 'validation-contract-source-audit',
         checkedOutputs: ['source chain transcript'],
       },
     });
-    expect(bridgeCalls[9]).toMatchObject({
+    expect(bridgeCalls[10]).toMatchObject({
       operation: 'recordSourceReconstructionReviewResult',
       payload: {
         claimId: 'claim-mipt-observer-algebra',
@@ -956,6 +993,15 @@ describe('ResearchActionTool', () => {
         outcome: 'pass',
         workFrameId: 'frame.qg-mipt',
         evidenceRefs: ['aitp:artifact:artifact-source-audit-log'],
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.attach_artifact_auto',
+        outcome: 'pass',
+        workFrameId: 'frame.qg-mipt',
+        evidenceRefs: ['aitp:artifact:artifact-source-audit-log-auto'],
       }),
     );
     expect(records).toContainEqual(

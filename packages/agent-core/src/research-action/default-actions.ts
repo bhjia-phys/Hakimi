@@ -384,6 +384,20 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     suggestedNextActions: ['aitp.record_tool_run', 'aitp.record_validation_result'],
   }),
   action({
+    id: 'aitp.attach_artifact_auto',
+    category: 'memory',
+    exposure: 'direct',
+    phase: 'compile',
+    title: 'Attach AITP artifact automatically',
+    description:
+      'Ask AITP to inspect a local benchmark, validation, patch, log, or generated artifact file and record its hash, size, mtime, MIME-like metadata, and linked topic or claim refs.',
+    inputKinds: ['Claim', 'BenchmarkCase', 'CodeRegion', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    primitiveToolPolicy: 'read-only',
+    triggerHints: ['artifact auto', 'local artifact file', 'artifact hash', 'benchmark artifact'],
+    suggestedNextActions: ['aitp.attach_artifact', 'aitp.record_tool_run', 'aitp.record_validation_result'],
+  }),
+  action({
     id: 'aitp.capture_code_state_auto',
     category: 'code',
     exposure: 'direct',

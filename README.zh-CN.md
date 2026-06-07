@@ -22,6 +22,12 @@ Hakimi now also projects AITP local tool-run transcript/result auto-capture:
 transcript, benchmark log, or result file path can be sent to AITP for
 hash/size/mtime and bounded-preview capture without turning the run into
 evidence, validation, or Hakimi-owned trust authority.
+Hakimi now also projects AITP local artifact auto-attach:
+`aitp_v5_attach_artifact_auto` becomes `attachArtifactAuto`, so a local
+benchmark log, validation output, patch, plot, JSON result, or generated file
+path can be sent to AITP for hash/size/mtime/MIME-ish artifact metadata capture
+without turning the artifact into evidence, validation, or Hakimi-owned trust
+authority.
 
 <p align="center">
   <img src="docs/assets/hakimi-terminal-welcome.png" width="920" alt="Hakimi terminal welcome screen with a pixel cat-ear exploration spacecraft" />

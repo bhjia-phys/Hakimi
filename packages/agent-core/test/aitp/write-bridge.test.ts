@@ -59,6 +59,16 @@ describe('AITP write bridge executor', () => {
       stateEffect: 'typed_record_write',
       claimTrustMutation: 'none',
     });
+    expect(aitpRuntimeBridgeTargetForOperation('attachArtifactAuto')).toMatchObject({
+      operation: 'attachArtifactAuto',
+      entrypointKey: 'attach_artifact_auto',
+      mcpTool: 'aitp_v5_attach_artifact_auto',
+      cliFallback: 'aitp-v5 research-state attach-artifact-auto <args>',
+      surface: 'artifact_record',
+      executionRole: 'write',
+      stateEffect: 'typed_record_write',
+      claimTrustMutation: 'none',
+    });
     expect(aitpRuntimeBridgeTargetForOperation('preflightTrustUpdate')).toMatchObject({
       operation: 'preflightTrustUpdate',
       entrypointKey: 'trust_preflight',
@@ -266,6 +276,14 @@ describe('AITP write bridge executor', () => {
       size_bytes: '2048',
       metadata: { role: 'benchmark_output' },
     });
+    const artifactAuto = coerceAitpWriteBridgeInput('attachArtifactAuto', {
+      path: 'F:/runs/qg/source-audit.log',
+      topic_id: 'qg-algebra-mipt',
+      claim_id: 'claim-mipt-observer-algebra',
+      artifact_type: 'benchmark_log',
+      artifact_summary: 'Source audit log.',
+      metadata: { role: 'benchmark_output' },
+    });
     const reference = coerceAitpWriteBridgeInput('recordReferenceLocation', {
       topic_id: 'qg-algebra-mipt',
       claim_id: 'claim-mipt-observer-algebra',
@@ -314,6 +332,17 @@ describe('AITP write bridge executor', () => {
         uri: 'runs/qg/benchmark.log',
         summary: 'Benchmark log for the source reconstruction check.',
         sizeBytes: '2048',
+        metadata: { role: 'benchmark_output' },
+      },
+    });
+    expect(artifactAuto).toMatchObject({
+      operation: 'attachArtifactAuto',
+      payload: {
+        path: 'F:/runs/qg/source-audit.log',
+        topicId: 'qg-algebra-mipt',
+        claimId: 'claim-mipt-observer-algebra',
+        artifactType: 'benchmark_log',
+        summary: 'Source audit log.',
         metadata: { role: 'benchmark_output' },
       },
     });
@@ -467,6 +496,22 @@ describe('AITP write bridge executor', () => {
           raw: {},
         };
       },
+      async attachArtifactAuto() {
+        calls.push('attachArtifactAuto');
+        return {
+          ok: true,
+          kind: 'artifact',
+          artifactId: 'artifact-qg-log-auto',
+          topicId: 'qg',
+          claimId: 'claim-qg',
+          artifactType: 'benchmark_log',
+          uri: 'file:///F:/runs/qg/benchmark.log',
+          summary: 'Benchmark log.',
+          sizeBytes: 2048,
+          canUpdateClaimTrust: false,
+          raw: {},
+        };
+      },
       async recordReferenceLocation() {
         calls.push('recordReferenceLocation');
         return {
@@ -601,6 +646,16 @@ describe('AITP write bridge executor', () => {
         claimId: 'claim-qg',
       },
     });
+    const artifactAuto = await executor.executeWrite({
+      operation: 'attachArtifactAuto',
+      payload: {
+        path: 'F:/runs/qg/benchmark.log',
+        topicId: 'qg',
+        claimId: 'claim-qg',
+        artifactType: 'benchmark_log',
+        summary: 'Benchmark log.',
+      },
+    });
     const result = await executor.executeWrite({
       operation: 'recordSourceReconstructionReviewResult',
       payload: {
@@ -626,6 +681,7 @@ describe('AITP write bridge executor', () => {
       'captureSourceAssetAuto',
       'attachArtifact',
       'captureToolRunAuto',
+      'attachArtifactAuto',
       'recordSourceReconstructionReviewResult',
       'preflightTrustUpdate',
     ]);
@@ -652,6 +708,14 @@ describe('AITP write bridge executor', () => {
     });
     expect(evidenceRefsForAitpWriteBridgeResult(toolRunAuto)).toEqual([
       'aitp:tool_run:tool-run-qg-auto',
+    ]);
+    expect(artifactAuto).toMatchObject({
+      kind: 'artifact',
+      artifactId: 'artifact-qg-log-auto',
+      canUpdateClaimTrust: false,
+    });
+    expect(evidenceRefsForAitpWriteBridgeResult(artifactAuto)).toEqual([
+      'aitp:artifact:artifact-qg-log-auto',
     ]);
     expect(result).toMatchObject({
       kind: 'source_reconstruction_review_result',
