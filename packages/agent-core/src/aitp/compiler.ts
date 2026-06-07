@@ -713,7 +713,9 @@ function provenanceActionIdsForGap(gap: AitpProvenanceGap): readonly string[] {
   if (hasAny(text, ['code_state', 'git', 'diff', 'patch', 'repo'])) {
     actionIds.push('aitp.capture_code_state_auto', 'code.capture_git_diff_observation');
   }
-  if (hasAny(text, ['tool_run', 'benchmark'])) actionIds.push('aitp.record_tool_run');
+  if (hasAny(text, ['tool_run', 'benchmark'])) {
+    actionIds.push('aitp.capture_tool_run_auto', 'aitp.record_tool_run');
+  }
   if (hasAny(text, ['validation_contract'])) actionIds.push('aitp.create_validation_contract');
   if (hasAny(text, ['validation_result'])) actionIds.push('aitp.record_validation_result');
   if (hasAny(text, ['artifact'])) actionIds.push('aitp.attach_artifact');
@@ -733,6 +735,8 @@ function actionIdForEntrypoint(entrypoint: string): string | undefined {
       return 'aitp.capture_code_state_auto';
     case 'aitp_v5_record_tool_run':
       return 'aitp.record_tool_run';
+    case 'aitp_v5_capture_tool_run_auto':
+      return 'aitp.capture_tool_run_auto';
     case 'aitp_v5_create_validation_contract':
     case 'aitp_v5_validation_contract_create':
       return 'aitp.create_validation_contract';
@@ -833,6 +837,13 @@ function writeBridgeForMoment(
         ...writeBridgeTarget('recordToolRun'),
         cli: 'aitp-v5 tool run record',
         requiredFields: ['recipeId', 'toolFamily', 'toolName', 'topicId', 'claimId'],
+        targetRefs: moment.targetRefs,
+      }, hints);
+    case 'aitp.capture_tool_run_auto':
+      return withPayloadDraft({
+        ...writeBridgeTarget('captureToolRunAuto'),
+        cli: 'aitp-v5 tool run capture-auto',
+        requiredFields: ['path', 'recipeId', 'toolFamily', 'toolName', 'topicId', 'claimId'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.capture_code_state_auto':
@@ -994,6 +1005,8 @@ function recordActionForOperation(operation: string): string | undefined {
       return 'register_source_asset';
     case 'captureSourceAssetAuto':
       return 'capture_source_asset_auto';
+    case 'captureToolRunAuto':
+      return 'capture_tool_run_auto';
     case 'recordEvidence':
       return 'record_evidence';
     case 'recordToolRun':

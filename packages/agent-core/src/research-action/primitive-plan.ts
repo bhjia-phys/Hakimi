@@ -470,6 +470,40 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['aitp.record_reference_location', 'trace.follow_source_dependency'],
   }),
   plan({
+    actionId: 'aitp.capture_tool_run_auto',
+    title: 'Capture AITP tool run automatically',
+    intent:
+      'Persist local tool transcript/result hash, size, mtime, bounded preview, and linked topic or claim refs as an AITP tool-run provenance record.',
+    primitiveToolPolicy: 'read-only',
+    steps: [
+      step({
+        id: 'inspect-local-tool-transcript',
+        kind: 'inspect',
+        title: 'Inspect local tool transcript',
+        toolNames: ['Read'],
+        purpose:
+          'Confirm the local transcript or result file path and the intended tool recipe before asking AITP to capture provenance metadata.',
+        expectedEvidence: ['local_tool_transcript_path', 'tool_recipe_id'],
+        approval: 'read-only',
+      }),
+      step({
+        id: 'execute-aitp-tool-run-auto',
+        kind: 'record',
+        title: 'Write tool run through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with captureToolRunAuto so AITP computes and stores the transcript/result hash and bounded preview metadata.',
+        expectedEvidence: ['aitp:tool_run:<id>', 'transcript_hash', 'tool_run_provenance'],
+      }),
+    ],
+    recording: recording(
+      'aitp.capture_tool_run_auto',
+      ['aitp:tool_run:<id>', 'transcript_hash'],
+      true,
+    ),
+    followupActionIds: ['aitp.attach_artifact', 'aitp.record_validation_result'],
+  }),
+  plan({
     actionId: 'aitp.register_source_asset',
     title: 'Register AITP source asset',
     intent:

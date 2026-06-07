@@ -294,6 +294,7 @@ describe('AITP process graph slice adapter', () => {
         'aitp.register_source_asset',
         'aitp.capture_code_state_auto',
         'code.capture_git_diff_observation',
+        'aitp.capture_tool_run_auto',
         'aitp.record_tool_run',
         'aitp.attach_artifact',
       ]),
@@ -385,13 +386,17 @@ describe('AITP process graph slice adapter', () => {
         provenanceGap: expect.objectContaining({ id: 'gap-code-state' }),
       },
     });
-    expect(actionById.get('aitp.record_tool_run')).toMatchObject({
+    expect(actionById.get('aitp.capture_tool_run_auto')).toMatchObject({
       priority: 'high',
       params: {
         provenanceGap: expect.objectContaining({ id: 'gap-tool-run' }),
         writeBridge: {
-          operation: 'recordToolRun',
+          operation: 'captureToolRunAuto',
+          entrypointKey: 'capture_tool_run_auto',
+          mcpTool: 'aitp_v5_capture_tool_run_auto',
+          cliFallback: 'aitp-v5 tool run capture-auto <args>',
           payloadDraft: {
+            path: '<local tool transcript or result file path>',
             recipeId: 'recipe-gw-benchmark',
             toolFamily: 'benchmark',
             toolName: 'gw-reference-check',
@@ -401,9 +406,18 @@ describe('AITP process graph slice adapter', () => {
             sourceRefs: ['validation_result:validation-result-gw'],
           },
           payloadHint: {
-            entrypoint: 'aitp_v5_record_tool_run',
-            recordAction: 'record_tool_run',
+            entrypoint: 'aitp_v5_capture_tool_run_auto',
+            recordAction: 'capture_tool_run_auto',
           },
+        },
+      },
+    });
+    expect(actionById.get('aitp.record_tool_run')).toMatchObject({
+      priority: 'high',
+      params: {
+        provenanceGap: expect.objectContaining({ id: 'gap-tool-run' }),
+        writeBridge: {
+          operation: 'recordToolRun',
         },
       },
     });
@@ -1206,9 +1220,50 @@ function provenanceGapSlicePayload() {
         target_type: 'validation_result',
         target_id: 'validation-result-gw',
         target_refs: ['validation_result:validation-result-gw'],
-        recommended_actions: ['aitp.record_tool_run'],
-        recommended_entrypoints: ['aitp_v5_record_tool_run'],
+        recommended_actions: ['aitp.capture_tool_run_auto', 'aitp.record_tool_run'],
+        recommended_entrypoints: ['aitp_v5_capture_tool_run_auto', 'aitp_v5_record_tool_run'],
         payload_hints: [
+          {
+            entrypoint: 'aitp_v5_capture_tool_run_auto',
+            record_action: 'capture_tool_run_auto',
+            action_kind: 'capture_provenance_gap',
+            target_type: 'validation_result',
+            target_id: 'validation-result-gw',
+            required_fields: [
+              'path',
+              'recipe_id',
+              'tool_family',
+              'tool_name',
+              'topic_id',
+              'claim_id',
+            ],
+            draft: {
+              path: '<local tool transcript or result file path>',
+              recipe_id: 'recipe-gw-benchmark',
+              tool_family: 'benchmark',
+              tool_name: 'gw-reference-check',
+              topic_id: 'gw',
+              claim_id: 'claim-gw',
+              evidence_status: 'unreviewed',
+              source_refs: ['validation_result:validation-result-gw'],
+              summary: 'validation output has no tool-run record',
+            },
+            lifecycle_phases: ['pre_action'],
+            trigger_conditions: ['before reusing validation output'],
+            recording_threshold: 'recommended_before_provenance_dependent_reuse',
+            trust_boundary_inputs: {
+              target_refs: ['validation_result:validation-result-gw'],
+              claim_id: 'claim-gw',
+              entrypoints: ['aitp_v5_capture_tool_run_auto'],
+              required_before_trust_change: [],
+              requires_preflight: false,
+              final_gate_required: false,
+            },
+            recommended_host_behavior: ['surface local tool-run auto-capture hint'],
+            orientation_only: true,
+            summary_inputs_trusted: false,
+            can_update_claim_trust: false,
+          },
           {
             entrypoint: 'aitp_v5_record_tool_run',
             record_action: 'record_tool_run',

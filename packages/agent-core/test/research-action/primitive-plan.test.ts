@@ -78,6 +78,7 @@ describe('research primitive plan templates', () => {
     const sourceAsset = planFor('aitp.register_source_asset');
     const referenceLocation = planFor('aitp.record_reference_location');
     const evidence = planFor('aitp.record_evidence');
+    const toolRunAuto = planFor('aitp.capture_tool_run_auto');
     const toolRun = planFor('aitp.record_tool_run');
     const obligation = planFor('aitp.create_open_obligation');
     const validationContract = planFor('aitp.create_validation_contract');
@@ -107,6 +108,10 @@ describe('research primitive plan templates', () => {
     expect(evidence.steps.map((step) => step.id)).toEqual([
       'execute-aitp-evidence-write',
     ]);
+    expect(toolRunAuto.steps.map((step) => step.id)).toEqual([
+      'inspect-local-tool-transcript',
+      'execute-aitp-tool-run-auto',
+    ]);
     expect(toolRun.steps.map((step) => step.id)).toEqual([
       'execute-aitp-tool-run-write',
     ]);
@@ -129,6 +134,8 @@ describe('research primitive plan templates', () => {
     expect(sourceAsset.recording.evidenceRefs).toContain('aitp:source_asset:<id>');
     expect(referenceLocation.recording.evidenceRefs).toContain('aitp:reference_location:<id>');
     expect(evidence.recording.evidenceRefs).toContain('aitp:evidence:<id>');
+    expect(toolRunAuto.recording.evidenceRefs).toContain('aitp:tool_run:<id>');
+    expect(toolRunAuto.recording.primitiveToolCallIdsRequired).toBe(true);
     expect(toolRun.recording.evidenceRefs).toContain('aitp:tool_run:<id>');
     expect(obligation.recording.evidenceRefs).toContain('aitp:proof_obligation:<id>');
     expect(validationContract.recording.evidenceRefs).toContain('aitp:validation_contract:<id>');

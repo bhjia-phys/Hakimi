@@ -746,7 +746,9 @@ function provenanceGapActionIds(gap: AitpProvenanceGap): readonly string[] {
   if (hasAny(text, ['code_state', 'git diff', 'git_diff', 'patch', 'repo'])) {
     inferred.push('aitp.capture_code_state_auto', 'code.capture_git_diff_observation');
   }
-  if (hasAny(text, ['tool_run', 'benchmark'])) inferred.push('aitp.record_tool_run');
+  if (hasAny(text, ['tool_run', 'benchmark'])) {
+    inferred.push('aitp.capture_tool_run_auto', 'aitp.record_tool_run');
+  }
   if (hasAny(text, ['validation_contract'])) inferred.push('aitp.create_validation_contract');
   if (hasAny(text, ['validation_result'])) inferred.push('aitp.record_validation_result');
   if (hasAny(text, ['source_reconstruction_review_result', 'source reconstruction review result'])) {
@@ -772,6 +774,8 @@ function normalizeProvenanceActionId(value: string): readonly string[] {
       return ['aitp.register_source_asset'];
     case 'aitp_v5_record_tool_run':
       return ['aitp.record_tool_run'];
+    case 'aitp_v5_capture_tool_run_auto':
+      return ['aitp.capture_tool_run_auto'];
     case 'aitp_v5_create_validation_contract':
     case 'aitp_v5_validation_contract_create':
       return ['aitp.create_validation_contract'];

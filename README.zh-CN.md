@@ -17,6 +17,11 @@ Hakimi now also projects AITP local source-asset auto-capture:
 local paper, lecture note, code snapshot, dataset, or generated file path can
 be sent to AITP for hash/version metadata capture without creating a Hakimi
 source store or claim-trust authority.
+Hakimi now also projects AITP local tool-run transcript/result auto-capture:
+`aitp_v5_capture_tool_run_auto` becomes `captureToolRunAuto`, so a local tool
+transcript, benchmark log, or result file path can be sent to AITP for
+hash/size/mtime and bounded-preview capture without turning the run into
+evidence, validation, or Hakimi-owned trust authority.
 
 <p align="center">
   <img src="docs/assets/hakimi-terminal-welcome.png" width="920" alt="Hakimi terminal welcome screen with a pixel cat-ear exploration spacecraft" />
