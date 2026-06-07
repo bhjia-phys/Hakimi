@@ -296,6 +296,7 @@ describe('AITP process graph slice adapter', () => {
         'code.capture_git_diff_observation',
         'aitp.capture_tool_run_auto',
         'aitp.record_tool_run',
+        'aitp.attach_artifact_auto',
         'aitp.attach_artifact',
       ]),
     );
@@ -418,6 +419,34 @@ describe('AITP process graph slice adapter', () => {
         provenanceGap: expect.objectContaining({ id: 'gap-tool-run' }),
         writeBridge: {
           operation: 'recordToolRun',
+        },
+      },
+    });
+    expect(actionById.get('aitp.attach_artifact_auto')).toMatchObject({
+      priority: 'high',
+      params: {
+        provenanceGap: expect.objectContaining({ id: 'gap-benchmark-artifact' }),
+        writeBridge: {
+          operation: 'attachArtifactAuto',
+          entrypointKey: 'attach_artifact_auto',
+          mcpTool: 'aitp_v5_attach_artifact_auto',
+          cliFallback: 'aitp-v5 research-state attach-artifact-auto <args>',
+          cli: 'aitp-v5 research-state attach-artifact-auto',
+          requiredFields: ['path', 'topicId', 'claimId', 'artifactType', 'summary'],
+          payloadDraft: {
+            path: '<local artifact file path>',
+            topicId: 'gw',
+            claimId: 'claim-gw',
+            artifactType: 'benchmark_log',
+            summary: 'benchmark run has no artifact reference',
+            metadata: { targetType: 'tool_run', targetId: 'tool-run-gw' },
+          },
+          payloadHint: {
+            entrypoint: 'aitp_v5_attach_artifact_auto',
+            recordAction: 'attach_artifact_auto',
+            orientationOnly: true,
+            canUpdateClaimTrust: false,
+          },
         },
       },
     });
@@ -1315,9 +1344,40 @@ function provenanceGapSlicePayload() {
         target_type: 'tool_run',
         target_id: 'tool-run-gw',
         target_refs: ['tool_run:tool-run-gw'],
-        recommended_actions: ['aitp.attach_artifact'],
-        recommended_entrypoints: ['aitp_v5_attach_artifact'],
+        recommended_actions: ['aitp.attach_artifact_auto', 'aitp.attach_artifact'],
+        recommended_entrypoints: ['aitp_v5_attach_artifact_auto', 'aitp_v5_attach_artifact'],
         payload_hints: [
+          {
+            entrypoint: 'aitp_v5_attach_artifact_auto',
+            record_action: 'attach_artifact_auto',
+            action_kind: 'capture_provenance_gap',
+            target_type: 'tool_run',
+            target_id: 'tool-run-gw',
+            required_fields: ['path', 'topic_id', 'claim_id', 'artifact_type', 'summary'],
+            draft: {
+              path: '<local artifact file path>',
+              topic_id: 'gw',
+              claim_id: 'claim-gw',
+              artifact_type: 'benchmark_log',
+              summary: 'benchmark run has no artifact reference',
+              metadata: { target_type: 'tool_run', target_id: 'tool-run-gw' },
+            },
+            lifecycle_phases: ['pre_action'],
+            trigger_conditions: ['before reusing benchmark run'],
+            recording_threshold: 'recommended_before_provenance_dependent_reuse',
+            trust_boundary_inputs: {
+              target_refs: ['tool_run:tool-run-gw'],
+              claim_id: 'claim-gw',
+              entrypoints: ['aitp_v5_attach_artifact_auto'],
+              required_before_trust_change: [],
+              requires_preflight: false,
+              final_gate_required: false,
+            },
+            recommended_host_behavior: ['surface local artifact auto-attach hint'],
+            orientation_only: true,
+            summary_inputs_trusted: false,
+            can_update_claim_trust: false,
+          },
           {
             entrypoint: 'aitp_v5_attach_artifact',
             record_action: 'attach_artifact',

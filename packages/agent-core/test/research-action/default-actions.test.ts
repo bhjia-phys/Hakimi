@@ -14,6 +14,7 @@ describe('default research actions', () => {
 
     expect(registry.listActions().map((action) => action.id)).toEqual([
       'aitp.attach_artifact',
+      'aitp.attach_artifact_auto',
       'aitp.capture_code_state_auto',
       'aitp.capture_source_asset_auto',
       'aitp.capture_tool_run_auto',

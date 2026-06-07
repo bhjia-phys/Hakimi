@@ -402,6 +402,40 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['aitp.record_tool_run', 'aitp.record_validation_result'],
   }),
   plan({
+    actionId: 'aitp.attach_artifact_auto',
+    title: 'Attach AITP artifact automatically',
+    intent:
+      'Persist local artifact hash, size, mtime, MIME-like file metadata, and linked topic or claim refs as an AITP artifact provenance record.',
+    primitiveToolPolicy: 'read-only',
+    steps: [
+      step({
+        id: 'inspect-local-artifact-file',
+        kind: 'inspect',
+        title: 'Inspect local artifact file',
+        toolNames: ['Read'],
+        purpose:
+          'Confirm the local artifact file path, artifact type, and linked research target before asking AITP to capture provenance metadata.',
+        expectedEvidence: ['local_artifact_path', 'artifact_type'],
+        approval: 'read-only',
+      }),
+      step({
+        id: 'execute-aitp-artifact-auto',
+        kind: 'record',
+        title: 'Attach artifact through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.execute_aitp_write_bridge with attachArtifactAuto so AITP computes and stores artifact hash, size, mtime, and MIME-like metadata.',
+        expectedEvidence: ['aitp:artifact:<id>', 'artifact_hash', 'artifact_provenance'],
+      }),
+    ],
+    recording: recording(
+      'aitp.attach_artifact_auto',
+      ['aitp:artifact:<id>', 'artifact_hash'],
+      true,
+    ),
+    followupActionIds: ['aitp.attach_artifact', 'aitp.record_tool_run', 'aitp.record_validation_result'],
+  }),
+  plan({
     actionId: 'aitp.capture_code_state_auto',
     title: 'Capture AITP code state automatically',
     intent:

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AitpCliBridgeError,
   buildAitpArtifactAttachArgs,
+  buildAitpArtifactAttachAutoArgs,
   buildAitpCodeStateAutoArgs,
   buildAitpEvidenceRecordArgs,
   buildAitpExploratoryRecordArgs,
@@ -542,6 +543,86 @@ describe('AITP CLI bridge', () => {
       'results/check.json',
       '--summary',
       'Finite-size result file.',
+    ]);
+  });
+
+  it('auto-attaches local artifacts through AITP without hand-filled hashes', async () => {
+    const calls: { args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push({ args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            kind: 'artifact',
+            artifact_id: 'artifact-benchmark-log-auto',
+            topic_id: 'qg',
+            claim_id: 'claim-mipt',
+            artifact_type: 'benchmark_log',
+            uri: 'file:///F:/runs/qg/benchmark.log',
+            summary: 'Benchmark log for the source reconstruction check.',
+            size_bytes: 2048,
+            metadata: {
+              can_update_claim_trust: false,
+              capture_tool: 'aitp_v5_attach_artifact_auto',
+              sha256: 'a'.repeat(64),
+            },
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const result = await bridge.attachArtifactAuto({
+      path: 'F:/runs/qg/benchmark.log',
+      topicId: 'qg',
+      claimId: 'claim-mipt',
+      artifactType: 'benchmark_log',
+      summary: 'Benchmark log for the source reconstruction check.',
+      metadata: { role: 'benchmark_output' },
+    });
+
+    expect(result).toMatchObject({
+      kind: 'artifact',
+      artifactId: 'artifact-benchmark-log-auto',
+      artifactType: 'benchmark_log',
+      uri: 'file:///F:/runs/qg/benchmark.log',
+      sizeBytes: 2048,
+      canUpdateClaimTrust: false,
+    });
+    expect(calls[0]?.args).toEqual(
+      buildAitpArtifactAttachAutoArgs({
+        basePath: 'F:/project',
+        path: 'F:/runs/qg/benchmark.log',
+        topicId: 'qg',
+        claimId: 'claim-mipt',
+        artifactType: 'benchmark_log',
+        summary: 'Benchmark log for the source reconstruction check.',
+        metadata: { role: 'benchmark_output' },
+      }),
+    );
+    expect(calls[0]?.args).toEqual([
+      '--base',
+      'F:/project',
+      'research-state',
+      'attach-artifact-auto',
+      '--path',
+      'F:/runs/qg/benchmark.log',
+      '--topic',
+      'qg',
+      '--claim',
+      'claim-mipt',
+      '--type',
+      'benchmark_log',
+      '--summary',
+      'Benchmark log for the source reconstruction check.',
+      '--metadata-json',
+      '{"role":"benchmark_output"}',
     ]);
   });
 

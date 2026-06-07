@@ -13,6 +13,7 @@ import type {
   AitpValidationContractWriteResult,
   AitpValidationResultWriteResult,
   AttachAitpArtifactInput,
+  AttachAitpArtifactAutoInput,
   CaptureAitpCodeStateAutoInput,
   CaptureAitpSourceAssetAutoInput,
   CaptureAitpToolRunAutoInput,
@@ -40,6 +41,7 @@ export const AITP_WRITE_BRIDGE_OPERATIONS = [
   'captureToolRunAuto',
   'captureCodeStateAuto',
   'attachArtifact',
+  'attachArtifactAuto',
   'recordReferenceLocation',
   'createProofObligation',
   'createValidationContract',
@@ -145,6 +147,13 @@ export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
     'attach_artifact',
     'aitp_v5_attach_artifact',
     'aitp-v5 research-state attach-artifact <args>',
+    'artifact_record',
+  ),
+  bridgeTarget(
+    'attachArtifactAuto',
+    'attach_artifact_auto',
+    'aitp_v5_attach_artifact_auto',
+    'aitp-v5 research-state attach-artifact-auto <args>',
     'artifact_record',
   ),
   bridgeTarget(
@@ -270,6 +279,10 @@ export type AitpWriteBridgeExecutionInput =
       readonly payload: AttachAitpArtifactInput;
     }
   | {
+      readonly operation: 'attachArtifactAuto';
+      readonly payload: AttachAitpArtifactAutoInput;
+    }
+  | {
       readonly operation: 'recordReferenceLocation';
       readonly payload: RecordAitpReferenceLocationInput;
     }
@@ -336,6 +349,7 @@ export interface AitpWriteBridgeCliTarget {
     input: CaptureAitpCodeStateAutoInput,
   ): Promise<AitpCodeStateWriteResult>;
   attachArtifact(input: AttachAitpArtifactInput): Promise<AitpArtifactWriteResult>;
+  attachArtifactAuto(input: AttachAitpArtifactAutoInput): Promise<AitpArtifactWriteResult>;
   recordReferenceLocation(
     input: RecordAitpReferenceLocationInput,
   ): Promise<AitpReferenceLocationWriteResult>;
@@ -382,6 +396,8 @@ export class AitpCliWriteBridgeExecutor implements AitpWriteBridgeExecutor {
         return this.bridge.captureCodeStateAuto(input.payload);
       case 'attachArtifact':
         return this.bridge.attachArtifact(input.payload);
+      case 'attachArtifactAuto':
+        return this.bridge.attachArtifactAuto(input.payload);
       case 'recordReferenceLocation':
         return this.bridge.recordReferenceLocation(input.payload);
       case 'createProofObligation':
@@ -607,6 +623,19 @@ export function coerceAitpWriteBridgeInput(
           signal,
         },
       };
+    case 'attachArtifactAuto':
+      return {
+        operation,
+        payload: {
+          path: requiredString(record, 'path'),
+          topicId: requiredString(record, 'topicId', 'topic_id'),
+          claimId: requiredString(record, 'claimId', 'claim_id'),
+          artifactType: requiredString(record, 'artifactType', 'artifact_type', 'type'),
+          summary: requiredString(record, 'summary', 'artifactSummary', 'artifact_summary'),
+          metadata: optionalRecord(record, 'metadata', 'metadata_json'),
+          signal,
+        },
+      };
     case 'recordReferenceLocation':
       return {
         operation,
@@ -798,6 +827,8 @@ export function actionIdForAitpWriteBridgeOperation(
       return 'aitp.capture_code_state_auto';
     case 'attachArtifact':
       return 'aitp.attach_artifact';
+    case 'attachArtifactAuto':
+      return 'aitp.attach_artifact_auto';
     case 'recordReferenceLocation':
       return 'aitp.record_reference_location';
     case 'createProofObligation':

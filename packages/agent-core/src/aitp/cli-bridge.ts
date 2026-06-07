@@ -220,6 +220,16 @@ export interface AttachAitpArtifactInput {
   readonly signal?: AbortSignal | undefined;
 }
 
+export interface AttachAitpArtifactAutoInput {
+  readonly path: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly artifactType: string;
+  readonly summary: string;
+  readonly metadata?: Readonly<Record<string, unknown>> | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface RecordAitpReferenceLocationInput {
   readonly topicId: string;
   readonly connectorId: string;
@@ -605,6 +615,17 @@ export class AitpCliBridge {
 
   async attachArtifact(input: AttachAitpArtifactInput): Promise<AitpArtifactWriteResult> {
     const args = buildAitpArtifactAttachArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseArtifactWriteResult(payload);
+  }
+
+  async attachArtifactAuto(
+    input: AttachAitpArtifactAutoInput,
+  ): Promise<AitpArtifactWriteResult> {
+    const args = buildAitpArtifactAttachAutoArgs({
       basePath: this.options.basePath,
       ...input,
     });
@@ -1083,6 +1104,37 @@ export function buildAitpArtifactAttachArgs(
   if (input.sizeBytes !== undefined) {
     args.push('--size-bytes', String(input.sizeBytes));
   }
+  if (input.metadata !== undefined) {
+    args.push('--metadata-json', JSON.stringify(input.metadata));
+  }
+  return args;
+}
+
+export function buildAitpArtifactAttachAutoArgs(
+  input: AttachAitpArtifactAutoInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.path, 'path');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.claimId, 'claimId');
+  requireNonEmpty(input.artifactType, 'artifactType');
+  requireNonEmpty(input.summary, 'summary');
+  const args = [
+    '--base',
+    input.basePath,
+    'research-state',
+    'attach-artifact-auto',
+    '--path',
+    input.path.trim(),
+    '--topic',
+    input.topicId.trim(),
+    '--claim',
+    input.claimId.trim(),
+    '--type',
+    input.artifactType.trim(),
+    '--summary',
+    input.summary.trim(),
+  ];
   if (input.metadata !== undefined) {
     args.push('--metadata-json', JSON.stringify(input.metadata));
   }

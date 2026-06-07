@@ -754,7 +754,7 @@ function provenanceGapActionIds(gap: AitpProvenanceGap): readonly string[] {
   if (hasAny(text, ['source_reconstruction_review_result', 'source reconstruction review result'])) {
     inferred.push('aitp.record_source_reconstruction_review_result');
   }
-  if (hasAny(text, ['artifact'])) inferred.push('aitp.attach_artifact');
+  if (hasAny(text, ['artifact'])) inferred.push('aitp.attach_artifact_auto', 'aitp.attach_artifact');
   return unique([...fromHints, ...inferred]);
 }
 
@@ -783,6 +783,8 @@ function normalizeProvenanceActionId(value: string): readonly string[] {
       return ['aitp.record_validation_result'];
     case 'aitp_v5_record_source_reconstruction_review_result':
       return ['aitp.record_source_reconstruction_review_result'];
+    case 'aitp_v5_attach_artifact_auto':
+      return ['aitp.attach_artifact_auto'];
     case 'aitp_v5_attach_artifact':
       return ['aitp.attach_artifact'];
     default:

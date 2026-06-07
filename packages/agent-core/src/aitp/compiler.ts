@@ -718,7 +718,7 @@ function provenanceActionIdsForGap(gap: AitpProvenanceGap): readonly string[] {
   }
   if (hasAny(text, ['validation_contract'])) actionIds.push('aitp.create_validation_contract');
   if (hasAny(text, ['validation_result'])) actionIds.push('aitp.record_validation_result');
-  if (hasAny(text, ['artifact'])) actionIds.push('aitp.attach_artifact');
+  if (hasAny(text, ['artifact'])) actionIds.push('aitp.attach_artifact_auto', 'aitp.attach_artifact');
   return unique(actionIds.map(normalizeProvenanceActionId));
 }
 
@@ -744,6 +744,8 @@ function actionIdForEntrypoint(entrypoint: string): string | undefined {
       return 'aitp.record_validation_result';
     case 'aitp_v5_record_source_reconstruction_review_result':
       return 'aitp.record_source_reconstruction_review_result';
+    case 'aitp_v5_attach_artifact_auto':
+      return 'aitp.attach_artifact_auto';
     case 'aitp_v5_attach_artifact':
       return 'aitp.attach_artifact';
     case 'aitp_v5_preflight_trust_update':
@@ -851,6 +853,13 @@ function writeBridgeForMoment(
         ...writeBridgeTarget('captureCodeStateAuto'),
         cli: 'aitp-v5 code state auto',
         requiredFields: ['worktreePath', 'repoId', 'topicId', 'claimId'],
+        targetRefs: moment.targetRefs,
+      }, hints);
+    case 'aitp.attach_artifact_auto':
+      return withPayloadDraft({
+        ...writeBridgeTarget('attachArtifactAuto'),
+        cli: 'aitp-v5 research-state attach-artifact-auto',
+        requiredFields: ['path', 'topicId', 'claimId', 'artifactType', 'summary'],
         targetRefs: moment.targetRefs,
       }, hints);
     case 'aitp.attach_artifact':
@@ -1013,6 +1022,8 @@ function recordActionForOperation(operation: string): string | undefined {
       return 'record_tool_run';
     case 'captureCodeStateAuto':
       return 'capture_code_state_auto';
+    case 'attachArtifactAuto':
+      return 'attach_artifact_auto';
     case 'attachArtifact':
       return 'attach_artifact';
     case 'recordReferenceLocation':
