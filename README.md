@@ -286,8 +286,11 @@ trust preflight.
 The same hints are also collected into a compact
 `missing_ref_repair_checklist` under `payload_ref_readiness`, so the model does
 not have to recover the next step from each per-ref attribute. The checklist is
-read-only, has `executes_write_now="false"`, and still requires a separate
-explicit `execute_aitp_write_bridge` call.
+read-only, has `executes_write_now="false"`, and now names the exact
+`next_research_action="execute_aitp_write_bridge"` /
+`next_aitp_operation` for each repair item while marking
+`selected_write_call_unchanged="true"`. It still requires a separate explicit
+bridge call and does not alter the currently selected curated RAG write draft.
 The returned XML also includes a host-side `confirmation_preflight` summary
 that classifies remaining diagnostics as hard-blocking, confirmation-required,
 or advisory. It now mirrors the repair checklist at summary level with

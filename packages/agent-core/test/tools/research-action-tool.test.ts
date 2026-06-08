@@ -1725,11 +1725,12 @@ describe('ResearchActionTool', () => {
       '<ref status="concrete" aitp_record_confirmed="false" lookup_status="not_found" ref_kind="reference_location" record_id="loc-reviewed" surface="reference_location_record" read_surface_effect="record_existence_check_only" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" suggested_next_operation="recordReferenceLocation" suggested_next_entrypoint="record_reference_location" suggested_next_surface="reference_location_record" suggested_next_reason="record a normal AITP reference location before using this ref as source context">reference_location:loc-reviewed</ref>',
     );
     expect(result.output).toContain(
-      '<missing_ref_repair_checklist item_count="1" source="aitp_record_ref_lookup" read_only="true" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" requires_explicit_execute_call="true">',
+      '<missing_ref_repair_checklist item_count="1" source="aitp_record_ref_lookup" read_only="true" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" requires_explicit_execute_call="true" repair_action_hint_only="true" selected_write_call_unchanged="true">',
     );
     expect(result.output).toContain(
-      '<repair_item ref="reference_location:loc-reviewed" ref_kind="reference_location" record_id="loc-reviewed" suggested_next_operation="recordReferenceLocation" suggested_next_entrypoint="record_reference_location" suggested_next_surface="reference_location_record" next_step="record a normal AITP reference location before using this ref as source context" />',
+      '<repair_item ref="reference_location:loc-reviewed" ref_kind="reference_location" record_id="loc-reviewed" suggested_next_operation="recordReferenceLocation" suggested_next_entrypoint="record_reference_location" suggested_next_surface="reference_location_record" next_research_action="execute_aitp_write_bridge" next_aitp_operation="recordReferenceLocation" next_operation_source="aitp_record_ref_lookup" repair_action_hint_only="true" selected_write_call_unchanged="true" next_step="record a normal AITP reference location before using this ref as source context" />',
     );
+    expect(result.output).toContain('aitp_operation="recordEvidence"');
     expect(result.output).toContain('records_validation_result="false"');
     expect(result.output).toContain('claim_trust_mutation="none"');
   });
