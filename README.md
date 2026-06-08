@@ -254,6 +254,12 @@ reviewed payload. Hakimi renders `original_payload_json`,
 `reviewed_overrides_json`, and `reviewed_payload_json` plus override
 diagnostics, but the overrides only affect the returned draft and still require
 a separate explicit `execute_aitp_write_bridge` call.
+The returned XML also includes a host-side `confirmation_preflight` summary
+that classifies remaining diagnostics as hard-blocking, confirmation-required,
+or advisory. This is not an AITP trust preflight and it does not validate the
+chunk; it only tells the model/user whether a reviewed call draft still has
+blocking placeholders or can proceed to a separate explicit AITP write/preflight
+call after confirmation.
 
 The WorkFrame orchestrator now also calls that provider automatically for
 RAG-helpful turns. It detects prompts asking for conceptual scaffolding,

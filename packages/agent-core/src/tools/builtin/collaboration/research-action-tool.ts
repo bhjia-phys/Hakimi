@@ -372,6 +372,15 @@ interface CuratedRagPromotionWriteBridgeCallDiagnostic {
   readonly message: string;
 }
 
+interface CuratedRagPromotionWriteBridgeConfirmationSummary {
+  readonly status: 'blocked' | 'needs_explicit_confirmation' | 'ready_for_explicit_execute';
+  readonly hardBlockingDiagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[];
+  readonly confirmationRequiredDiagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[];
+  readonly advisoryDiagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[];
+  readonly executeCallAllowedAfterExplicitConfirmation: boolean;
+  readonly nextStep: string;
+}
+
 export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> {
   readonly name = 'ResearchAction' as const;
   readonly description: string = DESCRIPTION;
@@ -1914,19 +1923,99 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     aitp_payload: callDraft.payload,
   };
   const overrideCount = Object.keys(callDraft.reviewedOverrides).length;
+  const confirmation = curatedRagPromotionWriteBridgeConfirmationSummary(callDraft);
   return [
-    `<aitp_curated_rag_write_bridge_call_draft chunk_id="${escapeXml(sourceDraft.chunkId)}" document_id="${escapeXml(sourceDraft.documentId)}" stage="${escapeXml(callDraft.stage)}" draft_operation="${escapeXml(callDraft.draftOperation)}" next_research_action="execute_aitp_write_bridge" aitp_operation="${callDraft.aitpOperation}" action_id="${escapeXml(callDraft.actionId)}" payload_source="${callDraft.payloadSource}" reviewed_override_count="${String(overrideCount)}" original_unresolved_placeholder_count="${String(callDraft.originalUnresolvedPlaceholderCount)}" unresolved_placeholder_count="${String(callDraft.unresolvedPlaceholderCount)}" executes_write_now="false" selected_write_executed="false" reviewed_overrides_executed="false" records_validation_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true"${bindingId === undefined ? '' : ` action_binding_id="${escapeXml(bindingId)}"`}>`,
+    `<aitp_curated_rag_write_bridge_call_draft chunk_id="${escapeXml(sourceDraft.chunkId)}" document_id="${escapeXml(sourceDraft.documentId)}" stage="${escapeXml(callDraft.stage)}" draft_operation="${escapeXml(callDraft.draftOperation)}" next_research_action="execute_aitp_write_bridge" aitp_operation="${callDraft.aitpOperation}" action_id="${escapeXml(callDraft.actionId)}" payload_source="${callDraft.payloadSource}" reviewed_override_count="${String(overrideCount)}" original_unresolved_placeholder_count="${String(callDraft.originalUnresolvedPlaceholderCount)}" unresolved_placeholder_count="${String(callDraft.unresolvedPlaceholderCount)}" confirmation_status="${confirmation.status}" execute_call_allowed_after_explicit_confirmation="${String(confirmation.executeCallAllowedAfterExplicitConfirmation)}" executes_write_now="false" selected_write_executed="false" reviewed_overrides_executed="false" records_validation_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true"${bindingId === undefined ? '' : ` action_binding_id="${escapeXml(bindingId)}"`}>`,
     `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
     `  <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
     `  <original_payload_json>${escapeXml(JSON.stringify(callDraft.originalPayload))}</original_payload_json>`,
     `  <reviewed_overrides_json>${escapeXml(JSON.stringify(callDraft.reviewedOverrides))}</reviewed_overrides_json>`,
     `  <reviewed_payload_json>${escapeXml(JSON.stringify(callDraft.payload))}</reviewed_payload_json>`,
     renderStringList('required_existing_records', 'record', callDraft.requiredExistingRecords, '  '),
+    renderAitpCuratedRagWriteBridgeConfirmationSummary(confirmation, '  '),
     renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(callDraft.overrideDiagnostics, '  '),
     renderAitpCuratedRagWriteBridgeCallDiagnostics(callDraft.diagnostics, '  '),
     '  <promotion_boundary draft_is_evidence="false" draft_records_validation_result="false" draft_satisfies_final_gate="false" draft_can_update_claim_trust="false" requires_user_or_model_decision_before_write="true" />',
     '</aitp_curated_rag_write_bridge_call_draft>',
     '',
+  ].join('\n');
+}
+
+function curatedRagPromotionWriteBridgeConfirmationSummary(
+  callDraft: CuratedRagPromotionWriteBridgeCallDraft,
+): CuratedRagPromotionWriteBridgeConfirmationSummary {
+  const allDiagnostics = [...callDraft.diagnostics, ...callDraft.overrideDiagnostics];
+  const hardBlockingDiagnostics = allDiagnostics.filter((diagnostic) =>
+    HARD_BLOCKING_PROMOTION_CONFIRMATION_CODES.has(diagnostic.code),
+  );
+  const confirmationRequiredDiagnostics = allDiagnostics.filter((diagnostic) =>
+    CONFIRMATION_REQUIRED_PROMOTION_CONFIRMATION_CODES.has(diagnostic.code),
+  );
+  const advisoryDiagnostics = allDiagnostics.filter(
+    (diagnostic) =>
+      !HARD_BLOCKING_PROMOTION_CONFIRMATION_CODES.has(diagnostic.code) &&
+      !CONFIRMATION_REQUIRED_PROMOTION_CONFIRMATION_CODES.has(diagnostic.code),
+  );
+  const status =
+    hardBlockingDiagnostics.length > 0
+      ? 'blocked'
+      : confirmationRequiredDiagnostics.length > 0
+        ? 'needs_explicit_confirmation'
+        : 'ready_for_explicit_execute';
+  return {
+    status,
+    hardBlockingDiagnostics,
+    confirmationRequiredDiagnostics,
+    advisoryDiagnostics,
+    executeCallAllowedAfterExplicitConfirmation: hardBlockingDiagnostics.length === 0,
+    nextStep:
+      status === 'blocked'
+        ? 'Resolve hard-blocking diagnostics before preparing an execute_aitp_write_bridge call.'
+        : status === 'needs_explicit_confirmation'
+          ? 'Review required existing records and source/claim scope, then make a separate explicit execute_aitp_write_bridge call if appropriate.'
+          : 'Make a separate explicit execute_aitp_write_bridge call only after final human/model confirmation.',
+  };
+}
+
+const HARD_BLOCKING_PROMOTION_CONFIRMATION_CODES = new Set([
+  'missing_required_field',
+  'missing_draft_context',
+  'placeholder_value',
+  'reviewed_override_introduces_placeholder',
+]);
+
+const CONFIRMATION_REQUIRED_PROMOTION_CONFIRMATION_CODES = new Set([
+  'requires_existing_record',
+  'manual_review_required',
+  'reviewed_override_adds_field',
+  'reviewed_override_applied',
+  'reviewed_override_resolves_placeholder',
+  'reviewed_overrides_not_executed',
+]);
+
+function renderAitpCuratedRagWriteBridgeConfirmationSummary(
+  summary: CuratedRagPromotionWriteBridgeConfirmationSummary,
+  indent: string,
+): string {
+  return [
+    `${indent}<confirmation_preflight status="${summary.status}" hard_blocking_count="${String(summary.hardBlockingDiagnostics.length)}" confirmation_required_count="${String(summary.confirmationRequiredDiagnostics.length)}" advisory_count="${String(summary.advisoryDiagnostics.length)}" execute_call_allowed_after_explicit_confirmation="${String(summary.executeCallAllowedAfterExplicitConfirmation)}" executes_write_now="false">`,
+    `${indent}  <next_step>${escapeXml(summary.nextStep)}</next_step>`,
+    renderAitpCuratedRagWriteBridgeCallDiagnostics(
+      summary.hardBlockingDiagnostics,
+      `${indent}  `,
+      'hard_blocking_diagnostics',
+    ),
+    renderAitpCuratedRagWriteBridgeCallDiagnostics(
+      summary.confirmationRequiredDiagnostics,
+      `${indent}  `,
+      'confirmation_required_diagnostics',
+    ),
+    renderAitpCuratedRagWriteBridgeCallDiagnostics(
+      summary.advisoryDiagnostics,
+      `${indent}  `,
+      'advisory_diagnostics',
+    ),
+    `${indent}</confirmation_preflight>`,
   ].join('\n');
 }
 
@@ -1948,15 +2037,16 @@ function renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(
 function renderAitpCuratedRagWriteBridgeCallDiagnostics(
   diagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[],
   indent: string,
+  container = 'diagnostics',
 ): string {
-  if (diagnostics.length === 0) return `${indent}<diagnostics />`;
+  if (diagnostics.length === 0) return `${indent}<${container} />`;
   return [
-    `${indent}<diagnostics diagnostic_count="${String(diagnostics.length)}">`,
+    `${indent}<${container} diagnostic_count="${String(diagnostics.length)}">`,
     ...diagnostics.map(
       (diagnostic) =>
         `${indent}  <diagnostic code="${escapeXml(diagnostic.code)}"${diagnostic.field === undefined ? '' : ` field="${escapeXml(diagnostic.field)}"`}>${escapeXml(diagnostic.message)}</diagnostic>`,
     ),
-    `${indent}</diagnostics>`,
+    `${indent}</${container}>`,
   ].join('\n');
 }
 
