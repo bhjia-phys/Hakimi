@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  AITP_CURATED_RAG_CATALOG_VERSION,
   AITP_RUNTIME_BRIDGE_TARGETS,
   AitpWriteBridgePayloadError,
   buildPrimitiveToolLifecycleAitpToolRunPayload,
@@ -12,6 +13,7 @@ import {
   generatedObligationIdsForAitpWriteBridgeResult,
   mcpArgsForAitpWriteBridgeInput,
   PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE,
+  type AitpCuratedRagIngestResult,
   type AitpWriteBridgeCliTarget,
 } from '../../src';
 
@@ -135,6 +137,17 @@ describe('AITP write bridge executor', () => {
       stateEffect: 'typed_record_write',
       claimTrustMutation: 'none',
     });
+    expect(aitpRuntimeBridgeTargetForOperation('ingestCuratedRagCorpus')).toMatchObject({
+      operation: 'ingestCuratedRagCorpus',
+      entrypointKey: 'ingest_curated_rag_corpus',
+      mcpTool: 'aitp_v5_ingest_curated_rag_corpus',
+      cliFallback: 'aitp-v5 curated-rag ingest <args>',
+      surface: 'curated_rag_ingest_result',
+      executionRole: 'write',
+      stateEffect: 'curated_rag_manifest_write',
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+    });
     expect(aitpRuntimeBridgeTargetForOperation('preflightTrustUpdate')).toMatchObject({
       operation: 'preflightTrustUpdate',
       entrypointKey: 'trust_preflight',
@@ -167,6 +180,53 @@ describe('AITP write bridge executor', () => {
       summary: 'Source chain reconstructed.',
       supports_outputs: ['definition path'],
       validation_result_ids: ['validation-result-qg'],
+    });
+  });
+
+  it('coerces curated RAG ingestion payloads into heuristic manifest writes', () => {
+    const input = coerceAitpWriteBridgeInput('ingestCuratedRagCorpus', {
+      path: 'F:/sources/lecture-notes.md',
+      corpus_id: 'physics-foundations',
+      tag: 'operator-algebra',
+      domain_hints: ['theoretical-physics'],
+      topicHints: ['qg-algebra'],
+      language: 'en',
+      priority: 'high',
+      chunk_token_limit: 180,
+      titlePrefix: 'Curated',
+      asset_type: 'lecture',
+      rebuild_index: false,
+    });
+
+    expect(input).toMatchObject({
+      operation: 'ingestCuratedRagCorpus',
+      payload: {
+        paths: ['F:/sources/lecture-notes.md'],
+        corpusId: 'physics-foundations',
+        tags: ['operator-algebra'],
+        domainHints: ['theoretical-physics'],
+        topicHints: ['qg-algebra'],
+        language: 'en',
+        priority: 'high',
+        chunkTokenLimit: 180,
+        titlePrefix: 'Curated',
+        assetType: 'lecture',
+        rebuildIndex: false,
+      },
+    });
+    expect(mcpArgsForAitpWriteBridgeInput(input, 'F:/aitp-workspace')).toEqual({
+      base: 'F:/aitp-workspace',
+      paths: ['F:/sources/lecture-notes.md'],
+      corpus_id: 'physics-foundations',
+      tags: ['operator-algebra'],
+      domain_hints: ['theoretical-physics'],
+      topic_hints: ['qg-algebra'],
+      language: 'en',
+      priority: 'high',
+      chunk_token_limit: 180,
+      title_prefix: 'Curated',
+      asset_type: 'lecture',
+      rebuild_index: false,
     });
   });
 
@@ -730,6 +790,10 @@ describe('AITP write bridge executor', () => {
   it('delegates supported writes to the configured CLI bridge target', async () => {
     const calls: string[] = [];
     const target: AitpWriteBridgeCliTarget = {
+      async ingestCuratedRagCorpus() {
+        calls.push('ingestCuratedRagCorpus');
+        return fakeCuratedRagIngestResult();
+      },
       async recordExploratoryRecord() {
         calls.push('recordExploratoryRecord');
         return {
@@ -967,6 +1031,14 @@ describe('AITP write bridge executor', () => {
     };
     const executor = createAitpCliWriteBridgeExecutor(target);
 
+    const ingest = await executor.executeWrite({
+      operation: 'ingestCuratedRagCorpus',
+      payload: {
+        paths: ['F:/sources/lecture-notes.md'],
+        corpusId: 'physics-foundations',
+        tags: ['operator-algebra'],
+      },
+    });
     const autoSource = await executor.executeWrite({
       operation: 'captureSourceAssetAuto',
       payload: {
@@ -1028,12 +1100,25 @@ describe('AITP write bridge executor', () => {
     });
 
     expect(calls).toEqual([
+      'ingestCuratedRagCorpus',
       'captureSourceAssetAuto',
       'attachArtifact',
       'captureToolRunAuto',
       'attachArtifactAuto',
       'recordSourceReconstructionReviewResult',
       'preflightTrustUpdate',
+    ]);
+    expect(ingest).toMatchObject({
+      kind: 'curated_rag_ingest_result',
+      corpusId: 'physics-foundations',
+      stateEffect: 'curated_rag_manifest_write',
+      retrievalRole: 'heuristic_context',
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+    });
+    expect(evidenceRefsForAitpWriteBridgeResult(ingest)).toEqual([
+      'aitp:curated_rag_corpus:physics-foundations',
+      'aitp:curated_rag_document:doc-lecture-notes',
     ]);
     expect(autoSource).toMatchObject({
       kind: 'source_asset',
@@ -1086,6 +1171,14 @@ describe('AITP write bridge executor', () => {
   });
 
   it('returns evidence refs for new AITP record surfaces', () => {
+    expect(
+      evidenceRefsForAitpWriteBridgeResult({
+        ...fakeCuratedRagIngestResult(),
+      }),
+    ).toEqual([
+      'aitp:curated_rag_corpus:physics-foundations',
+      'aitp:curated_rag_document:doc-lecture-notes',
+    ]);
     expect(
       evidenceRefsForAitpWriteBridgeResult({
         ok: true,
@@ -1194,3 +1287,47 @@ describe('AITP write bridge executor', () => {
     ).toThrow(AitpWriteBridgePayloadError);
   });
 });
+
+function fakeCuratedRagIngestResult(): AitpCuratedRagIngestResult {
+  return {
+    ok: true,
+    kind: 'curated_rag_ingest_result',
+    catalogVersion: AITP_CURATED_RAG_CATALOG_VERSION,
+    stateEffect: 'curated_rag_manifest_write',
+    truthSource: 'curated_rag_ingestion',
+    corpusId: 'physics-foundations',
+    manifestPath: 'F:/project/.aitp/curated_rag/corpus.json',
+    indexPath: 'F:/project/.aitp/curated_rag/indexes/lexical_index.json',
+    manifestHash: 'c'.repeat(64),
+    indexStatus: 'rebuilt',
+    documentCount: 1,
+    chunkCount: 1,
+    documentIds: ['doc-lecture-notes'],
+    chunkIds: ['chunk-lecture-notes-0001'],
+    sourcePaths: ['F:/sources/lecture-notes.md'],
+    rebuildIndex: true,
+    retrievalRole: 'heuristic_context',
+    orientationOnly: true,
+    summaryInputsTrusted: false,
+    canUpdateClaimTrust: false,
+    recordsValidationResult: false,
+    claimTrustMutation: 'none',
+    requiresPromotionForClaimSupport: true,
+    forbiddenUses: [
+      'evidence_support',
+      'validation_result',
+      'claim_trust_update',
+      'trust_apply',
+      'final_gate_satisfaction',
+    ],
+    promotionRequiredBeforeClaimSupport: true,
+    promotionPath: [
+      'source_asset',
+      'reference_location',
+      'evidence',
+      'validation',
+      'trust_preflight',
+    ],
+    raw: {},
+  };
+}

@@ -8,3 +8,4 @@ export * from './write-bridge';
 export * from './session-bridge';
 export * from './runtime-payload-profiles';
 export * from './curated-rag';
+export * from './curated-rag-ingest';

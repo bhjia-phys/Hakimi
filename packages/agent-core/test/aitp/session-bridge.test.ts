@@ -154,6 +154,83 @@ describe('AITP dynamic session bridge', () => {
     ]);
   });
 
+  it('uses AITP-owned curated RAG ingestion through dynamic write bridges', async () => {
+    const cliCalls: string[][] = [];
+    const writeBridge = createDynamicAitpCliWriteBridgeExecutor({
+      basePath: () => 'F:/project',
+      runner: recordingRunner(cliCalls),
+    });
+    const cliResult = await writeBridge.executeWrite({
+      operation: 'ingestCuratedRagCorpus',
+      payload: {
+        paths: ['notes/dmft.md'],
+        corpusId: 'aitp.curated.dmft.v1',
+        tags: ['dmft'],
+        topicHints: ['gw-dmft'],
+        chunkTokenLimit: 180,
+      },
+    });
+
+    expect(cliResult).toMatchObject({
+      kind: 'curated_rag_ingest_result',
+      stateEffect: 'curated_rag_manifest_write',
+      canUpdateClaimTrust: false,
+    });
+    expect(cliCalls[0]).toEqual([
+      'aitp-v5',
+      '--base',
+      'F:/project',
+      'curated-rag',
+      'ingest',
+      '--path',
+      'notes/dmft.md',
+      '--corpus-id',
+      'aitp.curated.dmft.v1',
+      '--tag',
+      'dmft',
+      '--topic-hint',
+      'gw-dmft',
+      '--chunk-token-limit',
+      '180',
+    ]);
+
+    const mcpCalls: Array<{ readonly toolName: string; readonly args: Readonly<Record<string, unknown>> }> = [];
+    const mcpBridge = createDynamicAitpMcpFirstWriteBridgeExecutor({
+      basePath: () => 'F:/project',
+      runner: recordingRunner([]),
+      mcpTransport: {
+        async callTool(input) {
+          mcpCalls.push({ toolName: input.toolName, args: input.args });
+          return fakeCuratedRagIngestResult();
+        },
+      },
+    });
+
+    const mcpResult = await mcpBridge.executeWrite({
+      operation: 'ingestCuratedRagCorpus',
+      payload: {
+        paths: ['notes/dmft.md'],
+        corpusId: 'aitp.curated.dmft.v1',
+        tags: ['dmft'],
+        rebuildIndex: true,
+      },
+    });
+
+    expect(mcpResult.kind).toBe('curated_rag_ingest_result');
+    expect(mcpCalls).toEqual([
+      {
+        toolName: 'aitp_v5_ingest_curated_rag_corpus',
+        args: {
+          base: 'F:/project',
+          paths: ['notes/dmft.md'],
+          corpus_id: 'aitp.curated.dmft.v1',
+          tags: ['dmft'],
+          rebuild_index: true,
+        },
+      },
+    ]);
+  });
+
   it('uses MCP-first transport for process graph reads', async () => {
     const cliCalls: string[][] = [];
     const mcpCalls: Array<{ readonly toolName: string; readonly args: Readonly<Record<string, unknown>> }> = [];
@@ -467,6 +544,13 @@ function recordingRunner(calls: string[][]): AitpCommandRunner {
             ok: true,
             curated_rag_search_result: fakeCuratedRagSearchResult(String(args[queryIndex] ?? ''), 2),
           }),
+          stderr: '',
+        };
+      }
+      if (args.includes('curated-rag') && args.includes('ingest')) {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify(fakeCuratedRagIngestResult()),
           stderr: '',
         };
       }
@@ -822,5 +906,48 @@ function fakeCuratedRagSearchResult(query: string, limit = 5): any {
     requires_promotion_for_claim_support: true,
     result_count: results.length,
     results,
+  };
+}
+
+function fakeCuratedRagIngestResult(): any {
+  return {
+    ok: true,
+    kind: 'curated_rag_ingest_result',
+    catalog_version: AITP_CURATED_RAG_CATALOG_VERSION,
+    state_effect: 'curated_rag_manifest_write',
+    truth_source: 'curated_rag_ingestion',
+    corpus_id: 'aitp.curated.dmft.v1',
+    manifest_path: 'F:/project/.aitp/curated_rag/corpus.json',
+    index_path: 'F:/project/.aitp/curated_rag/indexes/lexical_index.json',
+    manifest_hash: 'sha256:curated-dmft',
+    index_status: 'fresh',
+    document_count: 1,
+    chunk_count: 2,
+    document_ids: ['curated_rag_doc:dmft'],
+    chunk_ids: ['curated_rag_chunk:dmft:0001', 'curated_rag_chunk:dmft:0002'],
+    source_paths: ['F:/project/notes/dmft.md'],
+    rebuild_index: true,
+    retrieval_role: 'heuristic_context',
+    orientation_only: true,
+    summary_inputs_trusted: false,
+    can_update_claim_trust: false,
+    records_validation_result: false,
+    claim_trust_mutation: 'none',
+    requires_promotion_for_claim_support: true,
+    forbidden_uses: [
+      'evidence_support',
+      'validation_result',
+      'claim_trust_update',
+      'trust_apply',
+      'final_gate_satisfaction',
+    ],
+    promotion_required_before_claim_support: true,
+    promotion_path: [
+      'source_asset',
+      'reference_location',
+      'evidence',
+      'validation',
+      'trust_preflight',
+    ],
   };
 }

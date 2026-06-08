@@ -1699,6 +1699,7 @@ function renderAitpWriteBridgeExecution(
     `<aitp_write_bridge operation="${operation}" action_id="${escapeXml(actionId)}" call_id="${escapeXml(callId)}" kind="${result.kind}" ok="${String(result.ok)}">`,
     `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" mcp_argument_style="${target.mcpInvocation.argumentStyle}" mcp_base_argument="${target.mcpInvocation.baseArgument}" mcp_payload_key_case="${target.mcpInvocation.payloadKeyCase}" mcp_result_content_type="${target.mcpInvocation.resultContentType}" fallback_policy="${target.mcpInvocation.fallbackPolicy}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
     `  <record_id>${escapeXml(aitpWriteBridgeRecordId(result))}</record_id>`,
+    renderAitpWriteBridgeResultDetails(result),
     renderStringList('evidence_refs', 'evidence_ref', evidenceRefsForAitpWriteBridgeResult(result), '  '),
     '</aitp_write_bridge>',
     '',
@@ -1707,6 +1708,8 @@ function renderAitpWriteBridgeExecution(
 
 function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string {
   switch (result.kind) {
+    case 'curated_rag_ingest_result':
+      return result.corpusId;
     case 'exploratory_record':
       return result.recordId;
     case 'source_asset':
@@ -1734,6 +1737,14 @@ function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string
     case 'trust_update_preflight':
       return result.preflightToken;
   }
+}
+
+function renderAitpWriteBridgeResultDetails(result: AitpWriteBridgeExecutionResult): string {
+  if (result.kind !== 'curated_rag_ingest_result') return '';
+  return [
+    `  <curated_rag_ingest corpus_id="${escapeXml(result.corpusId)}" manifest_path="${escapeXml(result.manifestPath)}" index_path="${escapeXml(result.indexPath)}" manifest_hash="${escapeXml(result.manifestHash)}" index_status="${escapeXml(result.indexStatus)}" document_count="${String(result.documentCount)}" chunk_count="${String(result.chunkCount)}" retrieval_role="${result.retrievalRole}" records_validation_result="false" claim_trust_mutation="${result.claimTrustMutation}" requires_promotion_for_claim_support="true" />`,
+    '  <promotion_boundary>Curated RAG ingestion only writes the AITP-owned heuristic corpus manifest/index; retrieved chunks must be promoted through source_asset, reference_location, evidence, validation, and trust preflight before claim support.</promotion_boundary>',
+  ].join('\n');
 }
 
 function nodeIdsFromEdges(edges: readonly PhysicsGraphEdge[]): readonly string[] {

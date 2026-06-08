@@ -34,6 +34,7 @@ import type {
   CaptureAitpToolRunAutoInput,
   CreateAitpValidationContractInput,
   CreateAitpProofObligationInput,
+  IngestAitpCuratedRagCorpusInput,
   PreflightAitpTrustUpdateInput,
   RecordAitpEvidenceInput,
   RecordAitpValidationResultInput,
@@ -44,10 +45,15 @@ import type {
   RegisterAitpSourceAssetInput,
   RequestAitpHumanCheckpointInput,
 } from './cli-bridge';
+import {
+  parseAitpCuratedRagIngestResult,
+  type AitpCuratedRagIngestResult,
+} from './curated-rag-ingest';
 import type { AitpSourceAssetType } from './cli-bridge';
 import type { AitpExplorationStatus, AitpExplorationType } from './types';
 
 export const AITP_WRITE_BRIDGE_OPERATIONS = [
+  'ingestCuratedRagCorpus',
   'recordExploratoryRecord',
   'registerSourceAsset',
   'captureSourceAssetAuto',
@@ -87,7 +93,11 @@ export interface AitpRuntimeBridgeTarget {
   readonly mcpInvocation: AitpMcpInvocationContract;
   readonly mcpArguments?: AitpMcpArgumentContract | undefined;
   readonly executionRole: 'read' | 'write' | 'preflight';
-  readonly stateEffect: 'read_only' | 'typed_record_write' | 'preflight_only';
+  readonly stateEffect:
+    | 'read_only'
+    | 'curated_rag_manifest_write'
+    | 'typed_record_write'
+    | 'preflight_only';
   readonly canonicalStore: '.aitp';
   readonly claimTrustMutation: 'none';
   readonly summaryInputsTrusted: false;
@@ -183,6 +193,15 @@ export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
     'curated_rag_search_result',
     'read',
     'read_only',
+  ),
+  bridgeTarget(
+    'ingestCuratedRagCorpus',
+    'ingest_curated_rag_corpus',
+    'aitp_v5_ingest_curated_rag_corpus',
+    'aitp-v5 curated-rag ingest <args>',
+    'curated_rag_ingest_result',
+    'write',
+    'curated_rag_manifest_write',
   ),
   bridgeTarget(
     'recordExploratoryRecord',
@@ -317,7 +336,11 @@ function bridgeTarget(
   cliFallback: string,
   surface: string,
   executionRole: 'read' | 'write' | 'preflight' = 'write',
-  stateEffect: 'read_only' | 'typed_record_write' | 'preflight_only' = 'typed_record_write',
+  stateEffect:
+    | 'read_only'
+    | 'curated_rag_manifest_write'
+    | 'typed_record_write'
+    | 'preflight_only' = 'typed_record_write',
 ): AitpRuntimeBridgeTarget {
   const target: AitpRuntimeBridgeTarget = {
     operation,
@@ -357,6 +380,10 @@ function bridgeTarget(
 }
 
 export type AitpWriteBridgeExecutionInput =
+  | {
+      readonly operation: 'ingestCuratedRagCorpus';
+      readonly payload: IngestAitpCuratedRagCorpusInput;
+    }
   | {
       readonly operation: 'recordExploratoryRecord';
       readonly payload: RecordAitpExploratoryRecordInput;
@@ -423,6 +450,7 @@ export type AitpWriteBridgeExecutionInput =
     };
 
 export type AitpWriteBridgeExecutionResult =
+  | AitpCuratedRagIngestResult
   | AitpExploratoryRecordWriteResult
   | AitpSourceAssetWriteResult
   | AitpEvidenceWriteResult
@@ -459,6 +487,9 @@ export interface AitpMcpFirstWriteBridgeExecutorOptions {
 }
 
 export interface AitpWriteBridgeCliTarget {
+  ingestCuratedRagCorpus(
+    input: IngestAitpCuratedRagCorpusInput,
+  ): Promise<AitpCuratedRagIngestResult>;
   recordExploratoryRecord(
     input: RecordAitpExploratoryRecordInput,
   ): Promise<AitpExploratoryRecordWriteResult>;
@@ -506,6 +537,8 @@ export class AitpCliWriteBridgeExecutor implements AitpWriteBridgeExecutor {
     input: AitpWriteBridgeExecutionInput,
   ): Promise<AitpWriteBridgeExecutionResult> {
     switch (input.operation) {
+      case 'ingestCuratedRagCorpus':
+        return this.bridge.ingestCuratedRagCorpus(input.payload);
       case 'recordExploratoryRecord':
         return this.bridge.recordExploratoryRecord(input.payload);
       case 'registerSourceAsset':
@@ -599,6 +632,8 @@ export function parseAitpWriteBridgeResultForOperation(
 ): AitpWriteBridgeExecutionResult {
   const normalizedPayload = normalizeAitpWriteBridgePayload(payload);
   switch (operation) {
+    case 'ingestCuratedRagCorpus':
+      return parseAitpCuratedRagIngestResult(normalizedPayload);
     case 'recordExploratoryRecord':
       return parseExploratoryRecordWriteResult(normalizedPayload);
     case 'registerSourceAsset':
@@ -658,6 +693,24 @@ export function coerceAitpWriteBridgeInput(
 ): AitpWriteBridgeExecutionInput {
   const record = requireRecord(payload, 'aitp_payload');
   switch (operation) {
+    case 'ingestCuratedRagCorpus':
+      return {
+        operation,
+        payload: {
+          paths: requiredStringArray(record, 'paths', 'path'),
+          corpusId: optionalString(record, 'corpusId', 'corpus_id'),
+          tags: optionalStringArray(record, 'tags', 'tag'),
+          domainHints: optionalStringArray(record, 'domainHints', 'domain_hints'),
+          topicHints: optionalStringArray(record, 'topicHints', 'topic_hints'),
+          language: optionalString(record, 'language'),
+          priority: optionalString(record, 'priority'),
+          chunkTokenLimit: optionalNumber(record, 'chunkTokenLimit', 'chunk_token_limit'),
+          titlePrefix: optionalString(record, 'titlePrefix', 'title_prefix'),
+          assetType: optionalString(record, 'assetType', 'asset_type'),
+          rebuildIndex: optionalBoolean(record, 'rebuildIndex', 'rebuild_index'),
+          signal,
+        },
+      };
     case 'recordExploratoryRecord':
       return {
         operation,
@@ -1040,6 +1093,8 @@ export function actionIdForAitpWriteBridgeOperation(
   operation: AitpWriteBridgeOperation,
 ): string {
   switch (operation) {
+    case 'ingestCuratedRagCorpus':
+      return 'aitp.ingest_curated_rag_corpus';
     case 'recordExploratoryRecord':
       return 'aitp.record_exploratory_record';
     case 'registerSourceAsset':
@@ -1079,6 +1134,11 @@ export function evidenceRefsForAitpWriteBridgeResult(
   result: AitpWriteBridgeExecutionResult,
 ): readonly string[] {
   switch (result.kind) {
+    case 'curated_rag_ingest_result':
+      return [
+        `aitp:curated_rag_corpus:${result.corpusId}`,
+        ...result.documentIds.map((id) => `aitp:curated_rag_document:${id}`),
+      ];
     case 'exploratory_record':
       return [`aitp:exploratory_record:${result.recordId}`];
     case 'source_asset':
@@ -1185,6 +1245,11 @@ function optionalStringArray(
 ): readonly string[] | undefined {
   for (const key of keys) {
     const value = record[key];
+    if (typeof value === 'string') {
+      const item = value.trim();
+      if (item.length > 0) return [item];
+      continue;
+    }
     if (!Array.isArray(value)) continue;
     const items = value
       .filter((item): item is string => typeof item === 'string')

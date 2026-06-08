@@ -554,6 +554,49 @@ describe('ResearchActionTool', () => {
             raw: {},
           };
         }
+        if (input.operation === 'ingestCuratedRagCorpus') {
+          return {
+            ok: true,
+            kind: 'curated_rag_ingest_result',
+            catalogVersion: 'aitp.v5.curated_rag_corpus.v1',
+            stateEffect: 'curated_rag_manifest_write',
+            truthSource: 'curated_rag_ingestion',
+            corpusId: 'aitp.curated.qg_background.v1',
+            manifestPath: 'F:/project/.aitp/curated_rag/corpus.json',
+            indexPath: 'F:/project/.aitp/curated_rag/indexes/lexical_index.json',
+            manifestHash: 'sha256:qg-background',
+            indexStatus: 'fresh',
+            documentCount: 1,
+            chunkCount: 2,
+            documentIds: ['curated_rag_doc:qg_notes'],
+            chunkIds: ['curated_rag_chunk:qg_notes:0001', 'curated_rag_chunk:qg_notes:0002'],
+            sourcePaths: ['F:/project/notes/qg.md'],
+            rebuildIndex: true,
+            retrievalRole: 'heuristic_context',
+            orientationOnly: true,
+            summaryInputsTrusted: false,
+            canUpdateClaimTrust: false,
+            recordsValidationResult: false,
+            claimTrustMutation: 'none',
+            requiresPromotionForClaimSupport: true,
+            forbiddenUses: [
+              'evidence_support',
+              'validation_result',
+              'claim_trust_update',
+              'trust_apply',
+              'final_gate_satisfaction',
+            ],
+            promotionRequiredBeforeClaimSupport: true,
+            promotionPath: [
+              'source_asset',
+              'reference_location',
+              'evidence',
+              'validation',
+              'trust_preflight',
+            ],
+            raw: {},
+          };
+        }
         if (input.operation === 'recordToolRun') {
           return {
             ok: true,
@@ -693,6 +736,17 @@ describe('ResearchActionTool', () => {
         version_anchor: { arxiv_version: 'v1' },
       },
     });
+    const curatedRagIngest = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'ingestCuratedRagCorpus',
+      aitp_payload: {
+        paths: ['F:/project/notes/qg.md'],
+        corpus_id: 'aitp.curated.qg_background.v1',
+        tags: ['qg', 'orientation'],
+        topic_hints: ['qg-algebra-mipt'],
+        chunk_token_limit: 160,
+      },
+    });
     const evidence = await execute(tool, {
       action: 'execute_aitp_write_bridge',
       aitp_operation: 'recordEvidence',
@@ -817,6 +871,14 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('aitp:proof_obligation:proof-obligation-algebra-source-chain');
     expect(sourceAsset.output).toContain('operation="registerSourceAsset"');
     expect(sourceAsset.output).toContain('aitp:source_asset:source-asset-algebra-paper');
+    expect(curatedRagIngest.output).toContain('operation="ingestCuratedRagCorpus"');
+    expect(curatedRagIngest.output).toContain('state_effect="curated_rag_manifest_write"');
+    expect(curatedRagIngest.output).toContain('mcp_tool="aitp_v5_ingest_curated_rag_corpus"');
+    expect(curatedRagIngest.output).toContain('manifest_path="F:/project/.aitp/curated_rag/corpus.json"');
+    expect(curatedRagIngest.output).toContain('retrieval_role="heuristic_context"');
+    expect(curatedRagIngest.output).toContain('claim_trust_mutation="none"');
+    expect(curatedRagIngest.output).toContain('must be promoted through source_asset');
+    expect(curatedRagIngest.output).toContain('aitp:curated_rag_corpus:aitp.curated.qg_background.v1');
     expect(evidence.output).toContain('operation="recordEvidence"');
     expect(evidence.output).toContain('entrypoint_key="record_evidence"');
     expect(evidence.output).toContain('mcp_tool="aitp_v5_record_evidence"');
@@ -847,7 +909,7 @@ describe('ResearchActionTool', () => {
     expect(reviewResult.output).toContain(
       'aitp:source_reconstruction_review_result:source-review-result-algebra',
     );
-    expect(bridgeCalls).toHaveLength(11);
+    expect(bridgeCalls).toHaveLength(12);
     expect(bridgeCalls[0]).toMatchObject({
       operation: 'createProofObligation',
       payload: {
@@ -864,6 +926,16 @@ describe('ResearchActionTool', () => {
       },
     });
     expect(bridgeCalls[2]).toMatchObject({
+      operation: 'ingestCuratedRagCorpus',
+      payload: {
+        paths: ['F:/project/notes/qg.md'],
+        corpusId: 'aitp.curated.qg_background.v1',
+        tags: ['qg', 'orientation'],
+        topicHints: ['qg-algebra-mipt'],
+        chunkTokenLimit: 160,
+      },
+    });
+    expect(bridgeCalls[3]).toMatchObject({
       operation: 'recordEvidence',
       payload: {
         evidenceType: 'source_reconstruction',
@@ -871,7 +943,7 @@ describe('ResearchActionTool', () => {
         sourceRefs: ['reference_location:reference-location-algebra-paper'],
       },
     });
-    expect(bridgeCalls[3]).toMatchObject({
+    expect(bridgeCalls[4]).toMatchObject({
       operation: 'recordToolRun',
       payload: {
         recipeId: 'recipe-source-audit',
@@ -879,7 +951,7 @@ describe('ResearchActionTool', () => {
         outputs: { located: true },
       },
     });
-    expect(bridgeCalls[4]).toMatchObject({
+    expect(bridgeCalls[5]).toMatchObject({
       operation: 'captureToolRunAuto',
       payload: {
         path: 'F:/runs/source-audit/transcript.txt',
@@ -888,7 +960,7 @@ describe('ResearchActionTool', () => {
         summary: 'Source audit transcript.',
       },
     });
-    expect(bridgeCalls[5]).toMatchObject({
+    expect(bridgeCalls[6]).toMatchObject({
       operation: 'captureCodeStateAuto',
       payload: {
         worktreePath: 'F:/repo/librpa',
@@ -897,7 +969,7 @@ describe('ResearchActionTool', () => {
         writePatchArtifact: true,
       },
     });
-    expect(bridgeCalls[6]).toMatchObject({
+    expect(bridgeCalls[7]).toMatchObject({
       operation: 'attachArtifact',
       payload: {
         artifactType: 'benchmark_log',
@@ -906,7 +978,7 @@ describe('ResearchActionTool', () => {
         sizeBytes: '2048',
       },
     });
-    expect(bridgeCalls[7]).toMatchObject({
+    expect(bridgeCalls[8]).toMatchObject({
       operation: 'attachArtifactAuto',
       payload: {
         path: 'F:/runs/qg/source-audit.log',
@@ -914,7 +986,7 @@ describe('ResearchActionTool', () => {
         summary: 'Source audit log.',
       },
     });
-    expect(bridgeCalls[8]).toMatchObject({
+    expect(bridgeCalls[9]).toMatchObject({
       operation: 'recordReferenceLocation',
       payload: {
         connectorId: 'arxiv',
@@ -922,14 +994,14 @@ describe('ResearchActionTool', () => {
         status: 'located',
       },
     });
-    expect(bridgeCalls[9]).toMatchObject({
+    expect(bridgeCalls[10]).toMatchObject({
       operation: 'recordValidationResult',
       payload: {
         contractId: 'validation-contract-source-audit',
         checkedOutputs: ['source chain transcript'],
       },
     });
-    expect(bridgeCalls[10]).toMatchObject({
+    expect(bridgeCalls[11]).toMatchObject({
       operation: 'recordSourceReconstructionReviewResult',
       payload: {
         claimId: 'claim-mipt-observer-algebra',

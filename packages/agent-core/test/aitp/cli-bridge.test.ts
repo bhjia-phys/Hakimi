@@ -11,6 +11,7 @@ import {
   buildAitpArtifactAttachAutoArgs,
   buildAitpCodeStateAutoArgs,
   buildAitpCuratedRagCorpusArgs,
+  buildAitpCuratedRagIngestArgs,
   buildAitpCuratedRagSearchArgs,
   buildAitpEvidenceRecordArgs,
   buildAitpExploratoryRecordArgs,
@@ -30,6 +31,7 @@ import {
   createAitpCliBridge,
   createAitpCliProcessGraphSliceProvider,
   parseAitpCuratedRagCorpus,
+  parseAitpCuratedRagIngestResult,
   parseAitpCuratedRagSearchResult,
   parseAitpRuntimePayloadProfilesCatalog,
   resolveAitpScopeFromWorkFrame,
@@ -302,6 +304,121 @@ describe('AITP CLI bridge', () => {
       parseAitpCuratedRagSearchResult({
         ...fakeCuratedRagSearchResult('source backtrace', 1),
         can_update_claim_trust: true,
+      }),
+    ).toThrow(AitpCuratedRagParseError);
+  });
+
+  it('ingests curated RAG files through an AITP-owned manifest write bridge', async () => {
+    const calls: { command: string; args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(command, args) {
+        calls.push({ command, args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify(fakeCuratedRagIngestResult()),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const result = await bridge.ingestCuratedRagCorpus({
+      paths: ['notes/dmft.md'],
+      corpusId: 'aitp.curated.dmft.v1',
+      tags: ['dmft'],
+      domainHints: ['theoretical-physics/condensed-matter'],
+      topicHints: ['gw-dmft'],
+      language: 'en',
+      priority: 'high',
+      chunkTokenLimit: 180,
+      titlePrefix: 'Curated',
+      assetType: 'note',
+      rebuildIndex: false,
+    });
+
+    expect(calls).toEqual([
+      {
+        command: 'aitp-v5',
+        args: [
+          '--base',
+          'F:/project',
+          'curated-rag',
+          'ingest',
+          '--path',
+          'notes/dmft.md',
+          '--corpus-id',
+          'aitp.curated.dmft.v1',
+          '--tag',
+          'dmft',
+          '--domain-hint',
+          'theoretical-physics/condensed-matter',
+          '--topic-hint',
+          'gw-dmft',
+          '--language',
+          'en',
+          '--priority',
+          'high',
+          '--chunk-token-limit',
+          '180',
+          '--title-prefix',
+          'Curated',
+          '--asset-type',
+          'note',
+          '--no-rebuild-index',
+        ],
+      },
+    ]);
+    expect(
+      buildAitpCuratedRagIngestArgs({
+        basePath: 'F:/project',
+        paths: ['notes/dmft.md'],
+        tags: ['dmft'],
+        chunkTokenLimit: 180,
+      }),
+    ).toEqual([
+      '--base',
+      'F:/project',
+      'curated-rag',
+      'ingest',
+      '--path',
+      'notes/dmft.md',
+      '--tag',
+      'dmft',
+      '--chunk-token-limit',
+      '180',
+    ]);
+    expect(result.kind).toBe('curated_rag_ingest_result');
+    expect(result.stateEffect).toBe('curated_rag_manifest_write');
+    expect(result.retrievalRole).toBe('heuristic_context');
+    expect(result.recordsValidationResult).toBe(false);
+    expect(result.claimTrustMutation).toBe('none');
+    expect(result.requiresPromotionForClaimSupport).toBe(true);
+    expect(result.forbiddenUses).toContain('final_gate_satisfaction');
+    expect(result.promotionPath).toEqual([
+      'source_asset',
+      'reference_location',
+      'evidence',
+      'validation',
+      'trust_preflight',
+    ]);
+  });
+
+  it('rejects curated RAG ingestion payloads that would become claim support', () => {
+    const result = fakeCuratedRagIngestResult();
+
+    expect(() =>
+      parseAitpCuratedRagIngestResult({
+        ...result,
+        claim_trust_mutation: 'trust_apply',
+      }),
+    ).toThrow(AitpCuratedRagParseError);
+    expect(() =>
+      parseAitpCuratedRagIngestResult({
+        ...result,
+        promotion_path: ['source_asset', 'evidence'],
       }),
     ).toThrow(AitpCuratedRagParseError);
   });
@@ -2063,5 +2180,48 @@ function fakeCuratedRagSearchResult(query: string, limit = 5): any {
     requires_promotion_for_claim_support: true,
     result_count: results.length,
     results,
+  };
+}
+
+function fakeCuratedRagIngestResult(): any {
+  return {
+    ok: true,
+    kind: 'curated_rag_ingest_result',
+    catalog_version: AITP_CURATED_RAG_CATALOG_VERSION,
+    state_effect: 'curated_rag_manifest_write',
+    truth_source: 'curated_rag_ingestion',
+    corpus_id: 'aitp.curated.dmft.v1',
+    manifest_path: 'F:/project/.aitp/curated_rag/corpus.json',
+    index_path: 'F:/project/.aitp/curated_rag/indexes/lexical_index.json',
+    manifest_hash: 'sha256:curated-dmft',
+    index_status: 'fresh',
+    document_count: 1,
+    chunk_count: 2,
+    document_ids: ['curated_rag_doc:dmft'],
+    chunk_ids: ['curated_rag_chunk:dmft:0001', 'curated_rag_chunk:dmft:0002'],
+    source_paths: ['F:/project/notes/dmft.md'],
+    rebuild_index: true,
+    retrieval_role: 'heuristic_context',
+    orientation_only: true,
+    summary_inputs_trusted: false,
+    can_update_claim_trust: false,
+    records_validation_result: false,
+    claim_trust_mutation: 'none',
+    requires_promotion_for_claim_support: true,
+    forbidden_uses: [
+      'evidence_support',
+      'validation_result',
+      'claim_trust_update',
+      'trust_apply',
+      'final_gate_satisfaction',
+    ],
+    promotion_required_before_claim_support: true,
+    promotion_path: [
+      'source_asset',
+      'reference_location',
+      'evidence',
+      'validation',
+      'trust_preflight',
+    ],
   };
 }
