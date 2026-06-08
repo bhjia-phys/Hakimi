@@ -92,6 +92,9 @@ failure code maps to one `next_step` and carries
 `retry_requires_explicit_execute_call=true` plus read-only/no-evidence/no-trust
 flags, so the model can inspect the taxonomy without relying only on prose and
 without gaining a new write or mutation path.
+For narrower retrieval, `ResearchAction.inspect_handoff_guard_remediation_taxonomy`
+returns just that taxonomy section with the same read-only/no-evidence/no-trust
+flags and no action-list registry payload.
 When a turn asks whether a retrieved curated RAG chunk should become source or
 claim support, Hakimi now derives read-only
 `ResearchAction.draft_aitp_curated_rag_promotion` bindings directly from
