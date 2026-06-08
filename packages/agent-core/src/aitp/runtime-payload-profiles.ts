@@ -3,6 +3,18 @@ import type { WorkFrame } from '../research-action';
 
 export const AITP_RUNTIME_PAYLOAD_PROFILE_CATALOG_VERSION =
   'aitp.v5.runtime_payload_profiles.v1';
+const AITP_RUNTIME_PAYLOAD_ALLOWED_HOST_USES = [
+  'payload_construction',
+  'capture_policy_diagnostics',
+  'bridge_readiness_diagnostics',
+] as const;
+const AITP_RUNTIME_PAYLOAD_FORBIDDEN_HOST_USES = [
+  'evidence_support',
+  'validation_result',
+  'claim_trust_update',
+  'trust_apply',
+  'bulk_auto_capture',
+] as const;
 
 export type AitpRuntimePayloadCaptureMode = 'controlled_auto' | 'explicit_request';
 export type AitpRuntimePayloadTargetOperation = 'recordToolRun';
@@ -14,9 +26,21 @@ export interface AitpRuntimePayloadProfilesCatalog {
   readonly truthSource: 'runtime_payload_profile_catalog';
   readonly summaryInputsTrusted: false;
   readonly canUpdateClaimTrust: false;
+  readonly hostUsagePolicy: AitpRuntimePayloadHostUsagePolicy;
   readonly profileCount: number;
   readonly profileIndex: readonly string[];
   readonly profiles: readonly AitpRuntimePayloadProfile[];
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpRuntimePayloadHostUsagePolicy {
+  readonly readSurfaceEffect: 'metadata_only';
+  readonly allowedUses: readonly string[];
+  readonly forbiddenUses: readonly string[];
+  readonly recordsValidationResult: false;
+  readonly claimTrustMutation: AitpRuntimePayloadClaimTrustMutation;
+  readonly summaryInputsTrusted: false;
+  readonly canUpdateClaimTrust: false;
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -97,6 +121,9 @@ export function parseAitpRuntimePayloadProfilesCatalog(
       'AITP runtime payload profiles must remain no-trust read metadata.',
     );
   }
+  const hostUsagePolicy = parseHostUsagePolicy(
+    requiredRecord(payload['host_usage_policy'], 'runtime_payload_profiles.host_usage_policy'),
+  );
 
   const profiles = requiredRecordArray(payload['profiles'], 'runtime_payload_profiles.profiles')
     .map(parseRuntimePayloadProfile);
@@ -121,6 +148,7 @@ export function parseAitpRuntimePayloadProfilesCatalog(
     truthSource: 'runtime_payload_profile_catalog',
     summaryInputsTrusted: false,
     canUpdateClaimTrust: false,
+    hostUsagePolicy,
     profileCount: profiles.length,
     profileIndex,
     profiles,
@@ -279,6 +307,49 @@ function parseRuntimePayloadProfile(
       requiredRecord(raw['result_semantics'], 'result_semantics'),
     ),
     strictBoundary: requiredString(raw, 'strict_boundary'),
+    raw,
+  };
+}
+
+function parseHostUsagePolicy(
+  raw: Readonly<Record<string, unknown>>,
+): AitpRuntimePayloadHostUsagePolicy {
+  if (
+    raw['read_surface_effect'] !== 'metadata_only' ||
+    raw['records_validation_result'] !== false ||
+    raw['claim_trust_mutation'] !== 'none' ||
+    raw['summary_inputs_trusted'] !== false ||
+    raw['can_update_claim_trust'] !== false
+  ) {
+    throw new AitpRuntimePayloadProfilesParseError(
+      'AITP runtime payload host usage policy must remain metadata-only and no-trust.',
+    );
+  }
+  const allowedUses = requiredStringArray(raw['allowed_uses'], 'host_usage_policy.allowed_uses');
+  const forbiddenUses = requiredStringArray(
+    raw['forbidden_uses'],
+    'host_usage_policy.forbidden_uses',
+  );
+  if (!sameStrings(allowedUses, AITP_RUNTIME_PAYLOAD_ALLOWED_HOST_USES)) {
+    throw new AitpRuntimePayloadProfilesParseError(
+      'AITP runtime payload host usage policy must allow only metadata-only host uses.',
+    );
+  }
+  for (const forbidden of AITP_RUNTIME_PAYLOAD_FORBIDDEN_HOST_USES) {
+    if (!forbiddenUses.includes(forbidden)) {
+      throw new AitpRuntimePayloadProfilesParseError(
+        `AITP runtime payload host usage policy must forbid ${forbidden}.`,
+      );
+    }
+  }
+  return {
+    readSurfaceEffect: 'metadata_only',
+    allowedUses,
+    forbiddenUses,
+    recordsValidationResult: false,
+    claimTrustMutation: 'none',
+    summaryInputsTrusted: false,
+    canUpdateClaimTrust: false,
     raw,
   };
 }

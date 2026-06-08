@@ -20,6 +20,7 @@ import type {
   BenchmarkAdapterRunInput,
   BenchmarkAdapterRunResult,
 } from '../../benchmark-adapter';
+import type { AitpRuntimePayloadProfilesCatalog } from '../../aitp';
 import {
   buildFormalizationPlan,
   type FormalizationPlan,
@@ -185,6 +186,19 @@ export class ResearchActionManager {
 
   hasAitpWriteBridge(): boolean {
     return this.agent.aitpWriteBridge !== undefined;
+  }
+
+  hasAitpRuntimePayloadProfilesProvider(): boolean {
+    return this.agent.aitpRuntimePayloadProfilesProvider !== undefined;
+  }
+
+  async readAitpRuntimePayloadProfiles(
+    signal?: AbortSignal | undefined,
+  ): Promise<AitpRuntimePayloadProfilesCatalog> {
+    if (this.agent.aitpRuntimePayloadProfilesProvider === undefined) {
+      throw new Error('AITP runtime payload profiles provider is not configured for this session.');
+    }
+    return this.agent.aitpRuntimePayloadProfilesProvider.getRuntimePayloadProfiles({ signal });
   }
 
   buildPhysicsGraph(): PhysicsGraph {

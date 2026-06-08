@@ -39,14 +39,18 @@ and scoped topic/claim are present, `run_benchmark_adapter` writes
 `recordToolRun` provenance and merges `aitp:tool_run:<id>` into the benchmark
 action trace. It never writes a validation result or mutates claim trust, and
 missing bridge/scope is rendered as a skipped capture.
-Hakimi now also mirrors the read-only AITP `readRuntimePayloadProfiles` bridge
-target for `runtime_payload_profiles` / `aitp_v5_get_runtime_payload_profiles`
-/ `aitp-v5 adapter payload-profiles`. This is host payload-profile metadata
-only: it is not evidence, not validation, and not claim-trust authority.
-Hakimi now also parses that catalog as a typed AITP-owned read surface and can
-read it through `aitp_v5_get_runtime_payload_profiles` with CLI fallback to
-`aitp-v5 adapter payload-profiles`; `catalog_version`, `profile_index`,
-`capture_policy`, and no-trust result semantics are checked before use.
+Hakimi 现在也镜像只读 AITP `readRuntimePayloadProfiles` bridge target，对应
+`runtime_payload_profiles` / `aitp_v5_get_runtime_payload_profiles` /
+`aitp-v5 adapter payload-profiles`。这只是 host payload-profile metadata：
+不是 evidence，不是 validation，也不是 claim-trust authority。Hakimi 会把
+这份 catalog 解析成 typed AITP-owned read surface，并通过
+`aitp_v5_get_runtime_payload_profiles` 读取，MCP 不可用时回退到
+`aitp-v5 adapter payload-profiles`；`catalog_version`、`profile_index`、
+`capture_policy`、`host_usage_policy` 和 no-trust result semantics 都会在使用前检查。
+`ResearchAction.inspect_aitp_runtime_payload_profiles` 会把 catalog version、
+profile index、allowed/forbidden host uses、capture modes 和 no-trust flags
+暴露给模型做 payload construction / bridge diagnostics；它不会写 AITP 记录，
+不会记录 Hakimi evidence，也不会创建 validation result 或改变 claim trust。
 
 <p align="center">
   <img src="docs/assets/hakimi-terminal-welcome.png" width="920" alt="Hakimi terminal welcome screen with a pixel cat-ear exploration spacecraft" />
@@ -104,6 +108,7 @@ Hakimi 不是在 coding agent 外面套一个研究记录本。它是 [MoonshotA
 - AITP `source_asset_index[]` 现在会投影成 Hakimi 原生 `sourceAssets` 摘要、WorkFrame reminder 和 ContextPack XML 字段，包含当前索引到的 source asset ids、缺失 hash 的 asset ids、重复 hash 的 asset ids。论文、讲义、代码快照、数据集和生成 artifact 的身份、hash、version anchor、reference location 和 duplicate diagnostics 仍然属于 `.aitp`；Hakimi 只读取这份索引来提醒补 provenance，不创建 `.hakimi` source store，也不更新 claim trust。
 - AITP `source_stack_coverage` 现在会投影成 Hakimi 原生 `sourceStackCoverage` 摘要、WorkFrame reminder 和 ContextPack XML 字段，包含当前 claim ids、required-output gaps、source reconstruction gaps、review gaps 和 AITP next actions。它只是 source-stack readiness 提示；除非 AITP 另行明确标记 `final_gate_required` 或 `required_before_trust_change`，否则不会成为 Hakimi final gate 阻塞条件。
 - AITP `source_reconstruction_review` 现在会投影成 Hakimi 原生 source reconstruction review 摘要、WorkFrame reminder 和 ContextPack XML 字段，包含 review claim ids、open review claim ids、needs-revision/inconclusive claim ids、review-packet claim ids 和 AITP next actions。它只是 review worklist 提示，不会成为 claim-trust authority。
+- `ResearchAction.inspect_aitp_runtime_payload_profiles` 现在会读取 AITP-owned `runtime_payload_profiles` catalog，并把 `host_usage_policy`、allowed/forbidden uses、profile index、capture modes 和 no-trust flags 作为模型可见的只读诊断输出。这个动作只能辅助 payload construction、capture-policy diagnostics 和 bridge-readiness diagnostics；它不会写 AITP、不会记录 Hakimi evidence、不会创建 validation result、也不会改变 claim trust。
 - `ResearchAction.run_benchmark_adapter` 现在会按 AITP `benchmark_adapter_run_to_tool_run` profile 做一条自动 provenance capture：如果当前 session 有 AITP write bridge 且 WorkFrame/action 参数能给出 topic 与 claim，benchmark adapter 结果会通过 `recordToolRun` 写成 `aitp:tool_run:<id>`，并并入同一个 benchmark action 的 evidence refs。`ResearchAction.capture_primitive_tool_run` 现在按 AITP `primitive_tool_lifecycle_to_tool_run` profile 提供显式 primitive tool capture：模型或 host 必须点名一个最近的 `primitive_tool_call_id`，Hakimi 才会从 lifecycle envelope 构造 `recordToolRun` payload 并写入 AITP。这不是全量自动写入；这个路径不会调用 `recordValidationResult`，不会更新 claim trust；缺 bridge、缺 AITP scope 或找不到 tool call 时只保留 skipped/failed 状态。
 
 ## 架构层
@@ -261,7 +266,7 @@ formula capsule
 - AITP exploratory record 和 `payload_hints[].draft` 中的理论物理 reasoning 字段（例如 relation-path questions、backtrace targets、definition/derivation/source dependency questions、original-question guard）会被编译成 `params.theoryReasoning`，并显式渲染到 WorkFrame reminder 与 ContextPack XML 的 `<theory_reasoning>` 绑定里。这用于约束当前 WorkFrame 里的物理头脑风暴/回溯 prompt，不会成为 `.hakimi` 的 canonical memory。
 - AITP `route_state` 现在也作为一等投影进入 Hakimi：Hakimi 读取当前 v5 的 `routes`、`active_route_id`、`live_route_ids`、`blocked_route_ids`、`abandoned_route_ids` 和 `pivot_required_route_ids`，统一把 route ref 规范成 `research_route:<id>`，并在 WorkFrame reminder / ContextPack XML 里渲染 `<live_routes>`、`<blocked_routes>`、`<abandoned_routes>` 和 `<pivot_required_routes>`。普通 route choice、failed route lesson、route switch checkpoint 只是科研过程连续性提示；只有 AITP 明确给出 `final_gate_required` 或 `required_before_trust_change` 时，Hakimi final gate 才会把它们当成阻塞前置条件。
 - AITP `provenance_gaps[]` 现在也作为一等投影进入 Hakimi：Hakimi 按 source/code/tool/validation/artifact 分类汇总 gap ids，渲染到 WorkFrame reminder 和 ContextPack provenance 字段，并推荐 `aitp.register_source_asset`、`aitp.capture_code_state_auto`、`aitp.record_tool_run`、`aitp.attach_artifact`、`code.capture_git_diff_observation` 等动作。`captureCodeStateAuto` write bridge 会调用 AITP `aitp-v5 code state auto` 捕获 git HEAD、dirty diff hash 和可选 patch artifact；`attachArtifact` write bridge 会调用 `aitp-v5 research-state attach-artifact` 把 benchmark log、validation output、patch、plot、JSON result 或 generated file 作为 AITP artifact record 按引用挂回 canonical store。`source_asset_index[]` 也沿着同一边界投影：Hakimi 渲染 indexed asset、missing hash 和 duplicate hash 提醒，但 source identity、hash/version、reference location、duplicate diagnostics 和 raw provenance 仍由 AITP 拥有。`source_stack_coverage` 现在也沿着同一边界投影：Hakimi 渲染 covered claim ids、evidence-output gaps、reconstruction gaps、review gaps 和 AITP next actions，但 coverage gaps 默认不阻塞 final gate，除非 AITP 明确标记为 trust/final 前置条件。`source_reconstruction_review` 则作为相邻 review worklist 投影：Hakimi 渲染 pending / needs-revision / inconclusive claim ids、review packet claim ids 和 AITP next actions，但 review 提醒不会更新 claim trust。这些 gap、index、coverage 和 review 提醒都不会创建 `.hakimi` canonical source/trust store。
-- AITP runtime payload profile 现在也进入 Hakimi 的执行边界：AITP `capture_policy` 把 benchmark adapter 标成 controlled-auto，把 primitive tool lifecycle 标成 explicit-request。`run_benchmark_adapter` 在已有 AITP bridge 与 topic/claim scope 时会把 adapter outcome 写成 AITP `tool_run_record` provenance；没有 bridge 或 scope 时保留原本 benchmark action trace，并把 AITP capture 标为 skipped。`ResearchAction.capture_primitive_tool_run` 则只按显式 `primitive_tool_call_id` 捕获一条最近的 primitive tool lifecycle completion。两条路径都不会把 pass 解释成 validation result，也不会改变 claim trust。
+- AITP runtime payload profile 现在也进入 Hakimi 的执行与诊断边界：AITP `host_usage_policy` 规定这个 catalog 只能用于 payload construction、capture-policy diagnostics 和 bridge-readiness diagnostics，并明确禁止 evidence support、validation result、claim-trust update、`trust_apply` 和 bulk auto-capture。`ResearchAction.inspect_aitp_runtime_payload_profiles` 会把这份只读 policy/profile catalog 渲染给模型；`capture_policy` 仍把 benchmark adapter 标成 controlled-auto，把 primitive tool lifecycle 标成 explicit-request。`run_benchmark_adapter` 在已有 AITP bridge 与 topic/claim scope 时会把 adapter outcome 写成 AITP `tool_run_record` provenance；没有 bridge 或 scope 时保留原本 benchmark action trace，并把 AITP capture 标为 skipped。`ResearchAction.capture_primitive_tool_run` 则只按显式 `primitive_tool_call_id` 捕获一条最近的 primitive tool lifecycle completion。所有这些路径都不会把 pass 解释成 validation result，也不会改变 claim trust。
 
 ## 本地开发
 
