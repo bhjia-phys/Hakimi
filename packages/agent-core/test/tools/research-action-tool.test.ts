@@ -1540,12 +1540,15 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('canonical_ref_prefix="evidence:"');
     expect(result.output).toContain('existing_record_required_count="2"');
     expect(result.output).toContain('placeholder_ref_count="2"');
+    expect(result.output).toContain('confirmation_source="syntax_only"');
+    expect(result.output).toContain('aitp_lookup_performed="false"');
+    expect(result.output).toContain('requires_aitp_lookup_before_execution="true"');
     expect(result.output).toContain('<record>source_asset_record</record>');
     expect(result.output).toContain('<record>reference_location_record</record>');
     expect(result.output).toContain('<field>source_refs</field>');
     expect(result.output).toContain('<payload_ref_readiness');
-    expect(result.output).toContain('<ref status="placeholder">&lt;source_asset_id&gt;</ref>');
-    expect(result.output).toContain('<ref status="placeholder">&lt;reference_location_id&gt;</ref>');
+    expect(result.output).toContain('<ref status="placeholder" aitp_record_confirmed="false">&lt;source_asset_id&gt;</ref>');
+    expect(result.output).toContain('<ref status="placeholder" aitp_record_confirmed="false">&lt;reference_location_id&gt;</ref>');
     expect(result.output).toContain('<confirmation_preflight status="blocked"');
     expect(result.output).toContain('<hard_blocking_diagnostics');
     expect(result.output).toMatch(
@@ -1627,8 +1630,11 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('future_record_kind="evidence_record"');
     expect(result.output).toContain('placeholder_ref_count="0"');
     expect(result.output).toContain('concrete_ref_count="4"');
-    expect(result.output).toContain('<ref status="concrete">source_asset:asset-reviewed</ref>');
-    expect(result.output).toContain('<ref status="concrete">reference_location:loc-reviewed</ref>');
+    expect(result.output).toContain('confirmation_source="syntax_only"');
+    expect(result.output).toContain('aitp_lookup_performed="false"');
+    expect(result.output).toContain('requires_aitp_lookup_before_execution="true"');
+    expect(result.output).toContain('<ref status="concrete" aitp_record_confirmed="false">source_asset:asset-reviewed</ref>');
+    expect(result.output).toContain('<ref status="concrete" aitp_record_confirmed="false">reference_location:loc-reviewed</ref>');
     expect(result.output).toContain('<confirmation_preflight status="needs_explicit_confirmation"');
     expect(result.output).toContain('hard_blocking_count="0"');
     expect(result.output).toContain('<hard_blocking_diagnostics />');

@@ -1876,15 +1876,15 @@ function refsFromPayloadIdentityValue(value: unknown): readonly string[] {
 
 function renderPayloadRefReadiness(refs: readonly string[], indent: string): string {
   if (refs.length === 0) {
-    return `${indent}<payload_ref_readiness placeholder_ref_count="0" concrete_ref_count="0" />`;
+    return `${indent}<payload_ref_readiness placeholder_ref_count="0" concrete_ref_count="0" confirmation_source="syntax_only" aitp_lookup_performed="false" requires_aitp_lookup_before_execution="true" />`;
   }
   const placeholderCount = refs.filter(isPlaceholderRef).length;
   const concreteCount = refs.length - placeholderCount;
   return [
-    `${indent}<payload_ref_readiness placeholder_ref_count="${String(placeholderCount)}" concrete_ref_count="${String(concreteCount)}">`,
+    `${indent}<payload_ref_readiness placeholder_ref_count="${String(placeholderCount)}" concrete_ref_count="${String(concreteCount)}" confirmation_source="syntax_only" aitp_lookup_performed="false" requires_aitp_lookup_before_execution="true">`,
     ...refs.map(
       (ref) =>
-        `${indent}  <ref status="${isPlaceholderRef(ref) ? 'placeholder' : 'concrete'}">${escapeXml(ref)}</ref>`,
+        `${indent}  <ref status="${isPlaceholderRef(ref) ? 'placeholder' : 'concrete'}" aitp_record_confirmed="false">${escapeXml(ref)}</ref>`,
     ),
     `${indent}</payload_ref_readiness>`,
   ].join('\n');
