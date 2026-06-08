@@ -1317,6 +1317,116 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('drafts AITP curated RAG promotion from a ContextPack action binding', async () => {
+    const records: AgentRecord[] = [];
+    const calls: string[] = [];
+    const agent = makeAgent(records, {
+      aitpCuratedRagProvider: {
+        async getCuratedRagCorpus() {
+          throw new Error('not used');
+        },
+        async searchCuratedRagCorpus() {
+          throw new Error('not used');
+        },
+        async draftCuratedRagPromotion(input) {
+          calls.push(`draft:${input.chunkId}:${input.topicId ?? ''}:${input.claimId ?? ''}`);
+          return parseAitpCuratedRagPromotionDraft(
+            fakeCuratedRagPromotionDraft(input.chunkId, {
+              topicId: input.topicId,
+              claimId: input.claimId,
+              connectorId: input.connectorId,
+            }),
+          );
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+    agent.workFrames.open(
+      {
+        id: 'frame.rag-promotion',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Review whether a retrieved chunk should support claim-fqhe.',
+        sourceRefs: ['aitp:claim:claim-fqhe'],
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        curatedRag: typedCuratedRagSearchResult('claim support for FQHE'),
+        curatedRagReasonIds: ['source_backtrace_suggestions'],
+      },
+      { source: 'controller' },
+    );
+    const bindingId = pack.curatedRag?.promotionDraftBindingIds[0];
+
+    const drafted = await execute(tool, {
+      action: 'draft_aitp_curated_rag_promotion',
+      context_pack_id: pack.id,
+      action_binding_id: bindingId,
+    });
+
+    expect(calls).toEqual([
+      'draft:curated_rag_chunk:source_backtrace_orientation:0001:fqhe-literature:claim-fqhe',
+    ]);
+    expect(drafted.output).toContain('<aitp_curated_rag_promotion_draft');
+    expect(drafted.output).toContain(`action_binding_id="${bindingId}"`);
+    expect(drafted.output).toContain('<promotion_decision_tree');
+    expect(drafted.output).toContain('selected_write_executed="false"');
+    expect(drafted.output).toContain('requires_explicit_next_write_choice="true"');
+    expect(drafted.output).toContain('next_research_action="execute_aitp_write_bridge" aitp_operation="registerSourceAsset"');
+    expect(drafted.output).toContain('aitp_operation="recordReferenceLocation"');
+    expect(drafted.output).toContain('aitp_operation="recordEvidence"');
+    expect(drafted.output).toContain('aitp_operation="createValidationContract"');
+    expect(drafted.output).toContain('aitp_operation="preflightTrustUpdate"');
+    expect(drafted.output).toContain('Only execute this as a separate explicit AITP write/preflight bridge call');
+    expect(records).not.toContainEqual(
+      expect.objectContaining({ type: 'research_action.result_recorded' }),
+    );
+  });
+
+  it('rejects non-promotion action bindings for curated RAG promotion drafts', async () => {
+    const agent = makeAgent(undefined, {
+      aitpCuratedRagProvider: {
+        async getCuratedRagCorpus() {
+          throw new Error('not used');
+        },
+        async searchCuratedRagCorpus() {
+          throw new Error('not used');
+        },
+        async draftCuratedRagPromotion() {
+          throw new Error('should not draft');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+    agent.workFrames.open(
+      {
+        id: 'frame.wrong-binding',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Render a wrong binding.',
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        curatedRag: typedCuratedRagSearchResult('conceptual background'),
+        curatedRagReasonIds: ['conceptual_scaffolding'],
+      },
+      { source: 'controller' },
+    );
+
+    const result = await execute(tool, {
+      action: 'draft_aitp_curated_rag_promotion',
+      context_pack_id: pack.id,
+      action_binding_id: 'missing-binding',
+    });
+
+    expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('does not contain action binding "missing-binding"');
+  });
+
   it('runs a registered benchmark adapter and records the evidence as a research action', async () => {
     const records: AgentRecord[] = [];
     const agent = makeAgent(records);

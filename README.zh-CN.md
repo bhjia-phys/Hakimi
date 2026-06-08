@@ -25,6 +25,13 @@ topic/claim context, forbidden uses, and draft-only `registerSourceAsset`,
 `draft_creates_records=false`, every operation has
 `creates_record_now=false`, and Hakimi still does not treat RAG as evidence,
 validation, final-gate satisfaction, or claim-trust authority.
+Hakimi can now call this read-only action directly from a ContextPack
+`action_binding_id`, so the model does not need to copy chunk/topic/claim
+fields by hand. The returned XML also includes a `promotion_decision_tree`
+that maps each draft-only stage to the separate
+`ResearchAction.execute_aitp_write_bridge` operation that could be chosen next;
+it marks `selected_write_executed=false` and still requires an explicit later
+write or preflight choice.
 When a turn asks whether a retrieved curated RAG chunk should become source or
 claim support, Hakimi now derives read-only
 `ResearchAction.draft_aitp_curated_rag_promotion` bindings directly from
