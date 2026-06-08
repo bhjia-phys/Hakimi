@@ -293,6 +293,9 @@ The remediation mapping is now centralized as a typed guard taxonomy in
 ResearchAction rather than scattered string conditionals, so future
 handoff-like guards can reuse the same failure-code to repair-step pattern
 without expanding the AITP write surface.
+The same taxonomy is now named in the model-facing ResearchAction tool
+description, so retrying a failed guarded handoff can use the advertised repair
+steps while still requiring a separate explicit execute call.
 
 The WorkFrame orchestrator now also calls that provider automatically for
 RAG-helpful turns. It detects prompts asking for conceptual scaffolding,

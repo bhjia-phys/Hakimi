@@ -36,6 +36,19 @@ const MOCK_PROVIDER = {
 } as const;
 
 describe('ResearchActionTool', () => {
+  it('documents guarded AITP handoff remediation steps in the tool description', () => {
+    const tool = new ResearchActionTool();
+
+    expect(tool.description).toContain('handoff_guard_failure');
+    expect(tool.description).toContain('remediation_summary');
+    expect(tool.description).toContain('copy_missing_handoff_field_from_draft');
+    expect(tool.description).toContain('align_explicit_execute_args_with_handoff_tool_call');
+    expect(tool.description).toContain('redraft_handoff_or_restore_hash_input');
+    expect(tool.description).toContain('redraft_or_resolve_blocking_diagnostics');
+    expect(tool.description).toContain('repair hints only');
+    expect(tool.description).toContain('never mutate the handoff');
+  });
+
   it('lists default actions and recommends next actions from obligations', async () => {
     const tool = new ResearchActionTool();
 
