@@ -1775,13 +1775,26 @@ describe('ResearchActionTool', () => {
     expect(calls).toEqual([]);
   });
 
-  it('drafts missing reference-location repair write-bridge calls without execution', async () => {
+  it('drafts guardable missing reference-location repair write-bridge calls without immediate execution', async () => {
     const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
     const agent = makeAgent(undefined, {
       aitpWriteBridge: {
         async executeWrite(input) {
           bridgeCalls.push(input);
-          throw new Error('repair draft must not execute write bridge');
+          return {
+            ok: true,
+            kind: 'reference_location',
+            locationId: 'loc-reviewed',
+            topicId: 'fqhe-literature',
+            claimId: 'claim-fqhe',
+            connectorId: 'curated-rag',
+            locationType: 'curated_rag_chunk',
+            uri: 'aitp-curated-rag://curated_rag_chunk/source_backtrace_orientation/0001',
+            label: 'Reviewed curated RAG chunk source backtrace orientation 0001',
+            status: 'located',
+            orientationOnly: false,
+            raw: {},
+          };
         },
       },
     });
@@ -1815,6 +1828,8 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('selected_write_call_unchanged="true"');
     expect(result.output).toContain('reviewed_payload_executed="false"');
     expect(result.output).toContain('executes_write_now="false"');
+    expect(result.output).toContain('handoff_id="record-ref-repair-handoff.reference_location-loc-reviewed.recordReferenceLocation.');
+    expect(result.output).toContain('diagnostic_hash="sha256:');
     expect(result.output).toContain('records_validation_result="false"');
     expect(result.output).toContain('source_support_result="false"');
     expect(result.output).toContain('claim_trust_mutation="none"');
@@ -1824,9 +1839,36 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('&quot;aitp_operation&quot;:&quot;recordReferenceLocation&quot;');
     expect(result.output).toContain('&quot;connectorId&quot;:&quot;curated-rag&quot;');
     expect(result.output).toContain('&quot;sourceRef&quot;:&quot;source_asset:asset-reviewed&quot;');
+    expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
+    expect(result.output).toContain('confirmation_status="ready_for_explicit_execute"');
+    expect(result.output).toContain('<hash_input_json>');
+    expect(result.output).toContain('repair_draft_only');
     expect(result.output).toContain('<repair_boundary');
     expect(result.output).toContain('requires_separate_explicit_execute_call="true"');
     expect(bridgeCalls).toEqual([]);
+
+    const handoff = extractCuratedRagHandoff(result.output);
+    const executed = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'recordReferenceLocation',
+      aitp_payload: toolCallPayload(handoff),
+      aitp_handoff: handoff.guard,
+    });
+
+    expect(executed.output).toContain('<handoff_execution_precheck');
+    expect(executed.output).toContain('kind="record_ref_repair_write_bridge_handoff"');
+    expect(executed.output).toContain('status="passed"');
+    expect(executed.output).toContain('selected_aitp_operation="recordReferenceLocation"');
+    expect(executed.output).toContain('bridge_called="true"');
+    expect(executed.output).toContain('<aitp_write_bridge operation="recordReferenceLocation"');
+    expect(bridgeCalls).toHaveLength(1);
+    expect(bridgeCalls[0]).toMatchObject({
+      operation: 'recordReferenceLocation',
+      payload: expect.objectContaining({
+        connectorId: 'curated-rag',
+        sourceRef: 'source_asset:asset-reviewed',
+      }),
+    });
   });
 
   it('executes curated RAG write-bridge handoffs only after guard verification passes', async () => {

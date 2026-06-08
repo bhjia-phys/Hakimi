@@ -106,6 +106,11 @@ The same result now includes an explicit
 copied into the separate `ResearchAction.execute_aitp_write_bridge` step, but
 it is still `handoff_executed=false` / `executes_write_now=false`; it does not
 record evidence, validation, final-gate satisfaction, or claim-trust mutation.
+Repair-call handoff 会以独立的
+`record_ref_repair_write_bridge_handoff` guard kind 检查，和 curated RAG
+promotion handoff 分开；显式执行时它只能证明 reviewed repair payload、tool
+call 和 hash 匹配，真正写入仍走普通 AITP `recordReferenceLocation` bridge
+路径。
 When that separate execute action is invoked, the caller may pass the handoff
 as `aitp_handoff` alongside the explicit top-level `aitp_operation` and
 `aitp_payload`. Hakimi re-checks that the handoff is not blocked, the embedded
