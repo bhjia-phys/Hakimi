@@ -148,6 +148,9 @@ first copy/run the read-only `inspect_aitp_write_bridge_handoff_readiness` call
 from the nested readiness JSON, then make a separate explicit
 `execute_aitp_write_bridge` call only after readiness passes. The checklist
 sets `execute_call_authorized=false` and never calls the bridge itself.
+Each checklist has a stable `checklist_id` derived from the draft family and
+handoff id, so follow-up tool output can refer to the host navigation item
+without inventing an AITP record id.
 When a handoff is supplied, `execute_aitp_write_bridge` now emits a compact
 `handoff_execution_precheck` before the guard/result details. Passed prechecks
 show `bridge_call_allowed=true` and `bridge_called=true` after the guard has
