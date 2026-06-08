@@ -1575,6 +1575,11 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('root_pointer="readiness_call_pointer"');
     expect(result.output).toContain('nested_call="execute_aitp_write_bridge_handoff.readiness_call_json"');
     expect(result.output).toContain('inspection_only="true"');
+    const pointerIndex = String(result.output).indexOf('<readiness_call_pointer');
+    const summaryIndex = String(result.output).indexOf('<readiness_inspection_summary');
+    const handoffIndex = String(result.output).indexOf('<execute_aitp_write_bridge_handoff');
+    expect(pointerIndex).toBeLessThan(summaryIndex);
+    expect(summaryIndex).toBeLessThan(handoffIndex);
     expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
     expect(result.output).toContain('confirmation_status="blocked"');
     expect(result.output).toContain('hash_algorithm="sha256"');
@@ -1870,6 +1875,11 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('root_pointer="readiness_call_pointer"');
     expect(result.output).toContain('nested_call="execute_aitp_write_bridge_handoff.readiness_call_json"');
     expect(result.output).toContain('inspection_only="true"');
+    const pointerIndex = String(result.output).indexOf('<readiness_call_pointer');
+    const summaryIndex = String(result.output).indexOf('<readiness_inspection_summary');
+    const handoffIndex = String(result.output).indexOf('<execute_aitp_write_bridge_handoff');
+    expect(pointerIndex).toBeLessThan(summaryIndex);
+    expect(summaryIndex).toBeLessThan(handoffIndex);
     expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
     expect(result.output).toContain('confirmation_status="ready_for_explicit_execute"');
     expect(result.output).toContain('<hash_input_json>');
