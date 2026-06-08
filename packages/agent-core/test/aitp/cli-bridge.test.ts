@@ -229,15 +229,44 @@ describe('AITP CLI bridge', () => {
     expect(calls).toEqual([
       {
         command: 'aitp-v5',
-        args: ['adapter', 'curated-rag-corpus'],
+        args: ['--base', 'F:/project', 'adapter', 'curated-rag-corpus'],
       },
       {
         command: 'aitp-v5',
-        args: ['adapter', 'curated-rag-search', 'source backtrace', '--limit', '1'],
+        args: [
+          '--base',
+          'F:/project',
+          'adapter',
+          'curated-rag-search',
+          'source backtrace',
+          '--limit',
+          '1',
+        ],
       },
     ]);
     expect(buildAitpCuratedRagCorpusArgs()).toEqual(['adapter', 'curated-rag-corpus']);
+    expect(buildAitpCuratedRagCorpusArgs({ basePath: 'F:/project' })).toEqual([
+      '--base',
+      'F:/project',
+      'adapter',
+      'curated-rag-corpus',
+    ]);
     expect(buildAitpCuratedRagSearchArgs({ query: 'source backtrace', limit: 1 })).toEqual([
+      'adapter',
+      'curated-rag-search',
+      'source backtrace',
+      '--limit',
+      '1',
+    ]);
+    expect(
+      buildAitpCuratedRagSearchArgs({
+        basePath: 'F:/project',
+        query: 'source backtrace',
+        limit: 1,
+      }),
+    ).toEqual([
+      '--base',
+      'F:/project',
       'adapter',
       'curated-rag-search',
       'source backtrace',
@@ -275,6 +304,52 @@ describe('AITP CLI bridge', () => {
         can_update_claim_trust: true,
       }),
     ).toThrow(AitpCuratedRagParseError);
+  });
+
+  it('accepts file-backed curated RAG index metadata without relaxing trust boundaries', () => {
+    const fileBackedCorpus = {
+      ...fakeCuratedRagCorpus(),
+      corpus_id: 'aitp.curated.user_background.v1',
+      index_policy: {
+        ...fakeCuratedRagCorpus().index_policy,
+        active_index_mode: 'lexical_file_backed',
+        supported_index_modes: ['lexical_file_backed'],
+        index_source: 'file_backed_corpus_manifest',
+        index_path: 'F:/project/.aitp/curated_rag/indexes/lexical_index.json',
+        manifest_hash: 'sha256:file-backed',
+        index_status: 'stale',
+        stale_index_diagnostics: [
+          {
+            code: 'curated_rag_index_stale',
+            message: 'lexical index manifest_hash does not match',
+          },
+        ],
+      },
+    };
+    const fileBackedSearch = {
+      ...fakeCuratedRagSearchResult('source backtrace', 1),
+      index_mode: 'lexical_file_backed',
+      index_status: 'stale',
+      stale_index_diagnostics: [
+        {
+          code: 'curated_rag_index_stale',
+          message: 'lexical index manifest_hash does not match',
+        },
+      ],
+    };
+
+    const parsedCorpus = parseAitpCuratedRagCorpus(fileBackedCorpus);
+    const parsedSearch = parseAitpCuratedRagSearchResult(fileBackedSearch);
+
+    expect(parsedCorpus.indexPolicy.activeIndexMode).toBe('lexical_file_backed');
+    expect(parsedCorpus.indexPolicy.indexStatus).toBe('stale');
+    expect(parsedCorpus.indexPolicy.staleIndexDiagnostics[0]?.['code']).toBe(
+      'curated_rag_index_stale',
+    );
+    expect(parsedCorpus.retrievalPolicy.forbiddenUses).toContain('final_gate_satisfaction');
+    expect(parsedSearch.indexMode).toBe('lexical_file_backed');
+    expect(parsedSearch.indexStatus).toBe('stale');
+    expect(parsedSearch.canUpdateClaimTrust).toBe(false);
   });
 
   it('rejects runtime payload catalogs that would turn provenance into trust', () => {

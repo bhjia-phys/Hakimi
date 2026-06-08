@@ -216,11 +216,12 @@ function recordingRunner(calls: string[][]): AitpCommandRunner {
         };
       }
       if (args.includes('curated-rag-search')) {
+        const queryIndex = args.indexOf('curated-rag-search') + 1;
         return {
           exitCode: 0,
           stdout: JSON.stringify({
             ok: true,
-            curated_rag_search_result: fakeCuratedRagSearchResult(String(args[2] ?? ''), 1),
+            curated_rag_search_result: fakeCuratedRagSearchResult(String(args[queryIndex] ?? ''), 1),
           }),
           stderr: '',
         };
