@@ -1871,6 +1871,91 @@ describe('ResearchActionTool', () => {
     });
   });
 
+  it('drafts guardable missing source-asset repair write-bridge calls without immediate execution', async () => {
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(undefined, {
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          return {
+            ok: true,
+            kind: 'source_asset',
+            assetId: 'asset-reviewed',
+            topicId: 'fqhe-literature',
+            assetType: 'paper',
+            uri: 'arxiv:2601.00001',
+            title: 'Reviewed anyon source',
+            orientationOnly: false,
+            canUpdateClaimTrust: false,
+            raw: {},
+          };
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'draft_aitp_record_ref_repair_write_bridge_call',
+      repair_ref: 'source_asset:asset-reviewed',
+      repair_operation: 'registerSourceAsset',
+      repair_reason: 'register or auto-capture a normal AITP source asset before using this ref as source context',
+      aitp_payload: {
+        topic_id: 'fqhe-literature',
+        claim_id: 'claim-fqhe',
+        asset_type: 'paper',
+        uri: 'arxiv:2601.00001',
+        title: 'Reviewed anyon source',
+        version_anchor: { arxiv_version: 'v1' },
+        source_refs: ['curated_rag_chunk:source_backtrace_orientation:0001'],
+        linked_records: { claim_id: 'claim-fqhe' },
+      },
+    });
+
+    expect(result.output).toContain('<aitp_record_ref_repair_write_bridge_call_draft');
+    expect(result.output).toContain('repair_ref="source_asset:asset-reviewed"');
+    expect(result.output).toContain('repair_operation="registerSourceAsset"');
+    expect(result.output).toContain('aitp_operation="registerSourceAsset"');
+    expect(result.output).toContain('handoff_id="record-ref-repair-handoff.source_asset-asset-reviewed.registerSourceAsset.');
+    expect(result.output).toContain('diagnostic_hash="sha256:');
+    expect(result.output).toContain('reviewed_payload_executed="false"');
+    expect(result.output).toContain('executes_write_now="false"');
+    expect(result.output).toContain('records_validation_result="false"');
+    expect(result.output).toContain('source_support_result="false"');
+    expect(result.output).toContain('claim_trust_mutation="none"');
+    expect(result.output).toContain('&quot;aitp_operation&quot;:&quot;registerSourceAsset&quot;');
+    expect(result.output).toContain('&quot;assetType&quot;:&quot;paper&quot;');
+    expect(result.output).toContain('&quot;sourceRefs&quot;:[&quot;curated_rag_chunk:source_backtrace_orientation:0001&quot;]');
+    expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
+    expect(result.output).toContain('confirmation_status="ready_for_explicit_execute"');
+    expect(result.output).toContain('repair_draft_only');
+    expect(bridgeCalls).toEqual([]);
+
+    const handoff = extractCuratedRagHandoff(result.output);
+    const executed = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'registerSourceAsset',
+      aitp_payload: toolCallPayload(handoff),
+      aitp_handoff: handoff.guard,
+    });
+
+    expect(executed.output).toContain('<handoff_execution_precheck');
+    expect(executed.output).toContain('kind="record_ref_repair_write_bridge_handoff"');
+    expect(executed.output).toContain('status="passed"');
+    expect(executed.output).toContain('selected_aitp_operation="registerSourceAsset"');
+    expect(executed.output).toContain('bridge_called="true"');
+    expect(executed.output).toContain('<aitp_write_bridge operation="registerSourceAsset"');
+    expect(bridgeCalls).toHaveLength(1);
+    expect(bridgeCalls[0]).toMatchObject({
+      operation: 'registerSourceAsset',
+      payload: expect.objectContaining({
+        assetType: 'paper',
+        uri: 'arxiv:2601.00001',
+        title: 'Reviewed anyon source',
+        sourceRefs: ['curated_rag_chunk:source_backtrace_orientation:0001'],
+      }),
+    });
+  });
+
   it('executes curated RAG write-bridge handoffs only after guard verification passes', async () => {
     const records: AgentRecord[] = [];
     const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];

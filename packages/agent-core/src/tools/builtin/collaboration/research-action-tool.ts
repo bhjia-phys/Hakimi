@@ -141,6 +141,10 @@ const PROMOTION_DRAFT_WRITE_OPERATIONS = [
   'createValidationContract',
   'preflightTrustUpdate',
 ] as const;
+const RECORD_REF_REPAIR_WRITE_OPERATIONS = [
+  'registerSourceAsset',
+  'recordReferenceLocation',
+] as const;
 
 const GraphRefSchema = z.object({
   kind: z.string(),
@@ -335,9 +339,9 @@ export const ResearchActionToolInputSchema = z.object({
     .optional()
     .describe('Missing AITP record ref being repaired by draft_aitp_record_ref_repair_write_bridge_call.'),
   repair_operation: z
-    .enum(['recordReferenceLocation'])
+    .enum(RECORD_REF_REPAIR_WRITE_OPERATIONS)
     .optional()
-    .describe('AITP repair operation for draft_aitp_record_ref_repair_write_bridge_call. Currently supports recordReferenceLocation.'),
+    .describe('AITP repair operation for draft_aitp_record_ref_repair_write_bridge_call. Supports registerSourceAsset and recordReferenceLocation.'),
   repair_reason: z
     .string()
     .optional()
@@ -900,9 +904,6 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     }
     if (args.aitp_payload === undefined) {
       return errorResult('ResearchAction draft_aitp_record_ref_repair_write_bridge_call requires aitp_payload.');
-    }
-    if (args.repair_operation !== 'recordReferenceLocation') {
-      return errorResult(`Unsupported repair operation: ${args.repair_operation}.`);
     }
     let input: ReturnType<typeof coerceAitpWriteBridgeInput>;
     try {
@@ -2355,7 +2356,7 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
 
 function renderAitpRecordRefRepairWriteBridgeCallDraft(input: {
   readonly repairRef: string;
-  readonly repairOperation: 'recordReferenceLocation';
+  readonly repairOperation: (typeof RECORD_REF_REPAIR_WRITE_OPERATIONS)[number];
   readonly repairReason?: string | undefined;
   readonly payload: unknown;
 }): string {
