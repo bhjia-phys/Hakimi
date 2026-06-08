@@ -147,6 +147,10 @@ export const ResearchActionToolInputSchema = z.object({
   goal: z.string().optional().describe('Goal text for open_work_frame.'),
   frame_id: z.string().optional().describe('WorkFrame id for WorkFrame operations.'),
   context_pack_id: z.string().optional().describe('Optional context pack id for open_work_frame.'),
+  action_binding_id: z
+    .string()
+    .optional()
+    .describe('Optional ContextPack action binding id for executing a bound read-only action.'),
   evidence_ref: z
     .string()
     .optional()
@@ -301,6 +305,14 @@ type ExecutableGraphOutput = GraphSuccessOutput | ExecutableToolResult;
 interface EvidenceScope {
   readonly source: 'work_frame' | 'explicit';
   readonly filter: ResearchEvidenceFilter;
+}
+
+interface CuratedRagPromotionDraftBindingInput {
+  readonly ragChunkId: string;
+  readonly aitpTopicId?: string | undefined;
+  readonly aitpClaimId?: string | undefined;
+  readonly aitpConnectorId?: string | undefined;
+  readonly aitpPromotionIntent?: string | undefined;
 }
 
 export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> {
@@ -640,18 +652,69 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     if (!this.manager.hasAitpCuratedRagProvider()) {
       return errorResult('AITP curated RAG provider is not configured');
     }
-    if (args.rag_chunk_id === undefined || args.rag_chunk_id.trim().length === 0) {
+    const boundInput = this.resolveCuratedRagPromotionDraftBinding(args);
+    if (boundInput.isError) return errorResult(boundInput.message);
+    const ragChunkId = firstText(args.rag_chunk_id, boundInput.input?.ragChunkId);
+    if (ragChunkId === undefined) {
       return errorResult('ResearchAction draft_aitp_curated_rag_promotion requires rag_chunk_id.');
     }
     const draft = await this.manager.draftAitpCuratedRagPromotion({
-      chunkId: args.rag_chunk_id,
-      topicId: args.aitp_topic_id ?? args.topic,
-      claimId: args.aitp_claim_id,
-      connectorId: args.aitp_connector_id,
-      promotionIntent: args.aitp_promotion_intent,
+      chunkId: ragChunkId,
+      topicId: firstText(args.aitp_topic_id, args.topic, boundInput.input?.aitpTopicId),
+      claimId: firstText(args.aitp_claim_id, boundInput.input?.aitpClaimId),
+      connectorId: firstText(args.aitp_connector_id, boundInput.input?.aitpConnectorId),
+      promotionIntent: firstText(args.aitp_promotion_intent, boundInput.input?.aitpPromotionIntent),
       signal: ctx.signal,
     });
-    return ok(renderAitpCuratedRagPromotionDraft(draft));
+    return ok(renderAitpCuratedRagPromotionDraft(draft, boundInput.bindingId));
+  }
+
+  private resolveCuratedRagPromotionDraftBinding(args: ResearchActionToolInput):
+    | {
+        readonly isError: false;
+        readonly bindingId?: string | undefined;
+        readonly input?: CuratedRagPromotionDraftBindingInput | undefined;
+      }
+    | { readonly isError: true; readonly message: string } {
+    if (this.manager === undefined) {
+      return { isError: false };
+    }
+    if (args.action_binding_id === undefined || args.action_binding_id.trim().length === 0) {
+      return { isError: false };
+    }
+    const bindingId = args.action_binding_id.trim();
+    const contextPackId = args.context_pack_id ?? this.manager.activeWorkFrame()?.contextPackId;
+    if (contextPackId === undefined || contextPackId.length === 0) {
+      return {
+        isError: true,
+        message:
+          'ResearchAction draft_aitp_curated_rag_promotion with action_binding_id requires context_pack_id or an active WorkFrame with an attached ContextPack.',
+      };
+    }
+    const binding = this.manager
+      .requireContextPack(contextPackId)
+      .actionBindings.find((item) => item.id === bindingId);
+    if (binding === undefined) {
+      return {
+        isError: true,
+        message: `ContextPack "${contextPackId}" does not contain action binding "${bindingId}".`,
+      };
+    }
+    if (binding.actionId !== 'draft_aitp_curated_rag_promotion') {
+      return {
+        isError: true,
+        message:
+          `Action binding "${bindingId}" is for "${binding.actionId}", not draft_aitp_curated_rag_promotion.`,
+      };
+    }
+    const input = curatedRagPromotionDraftBindingInput(binding.params);
+    if (input === undefined) {
+      return {
+        isError: true,
+        message: `Action binding "${bindingId}" does not contain a usable curated RAG promotion draft input.`,
+      };
+    }
+    return { isError: false, bindingId, input };
   }
 
   private openWorkFrame(
@@ -1469,10 +1532,13 @@ function renderAitpCuratedRagSearchResult(searchResult: AitpCuratedRagSearchResu
   ].join('\n');
 }
 
-function renderAitpCuratedRagPromotionDraft(draft: AitpCuratedRagPromotionDraft): string {
+function renderAitpCuratedRagPromotionDraft(
+  draft: AitpCuratedRagPromotionDraft,
+  bindingId?: string | undefined,
+): string {
   const target = aitpRuntimeBridgeTargetForOperation('draftCuratedRagPromotion');
   return [
-    `<aitp_curated_rag_promotion_draft catalog_version="${escapeXml(draft.catalogVersion)}" corpus_id="${escapeXml(draft.corpusId)}" chunk_id="${escapeXml(draft.chunkId)}" document_id="${escapeXml(draft.documentId)}" topic_id="${escapeXml(draft.topicId)}" claim_id="${escapeXml(draft.claimId)}" connector_id="${escapeXml(draft.connectorId)}" promotion_intent="${escapeXml(draft.promotionIntent)}" state_effect="${draft.stateEffect}" draft_role="${draft.draftRole}" retrieval_role="${draft.retrievalRole}" read_surface_effect="${draft.readSurfaceEffect}" draft_creates_records="false" records_validation_result="false" claim_trust_mutation="${draft.claimTrustMutation}" can_update_claim_trust="false" requires_promotion_for_claim_support="true">`,
+    `<aitp_curated_rag_promotion_draft catalog_version="${escapeXml(draft.catalogVersion)}" corpus_id="${escapeXml(draft.corpusId)}" chunk_id="${escapeXml(draft.chunkId)}" document_id="${escapeXml(draft.documentId)}" topic_id="${escapeXml(draft.topicId)}" claim_id="${escapeXml(draft.claimId)}" connector_id="${escapeXml(draft.connectorId)}" promotion_intent="${escapeXml(draft.promotionIntent)}" state_effect="${draft.stateEffect}" draft_role="${draft.draftRole}" retrieval_role="${draft.retrievalRole}" read_surface_effect="${draft.readSurfaceEffect}" draft_creates_records="false" records_validation_result="false" claim_trust_mutation="${draft.claimTrustMutation}" can_update_claim_trust="false" requires_promotion_for_claim_support="true"${bindingId === undefined ? '' : ` action_binding_id="${escapeXml(bindingId)}"`}>`,
     `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" state_effect="${target.stateEffect}" />`,
     `  <chunk id="${escapeXml(draft.chunk.chunkId)}" document_id="${escapeXml(draft.chunk.documentId)}" content_hash="${escapeXml(draft.chunk.contentHash)}" retrieval_role="${draft.chunk.retrievalRole}" orientation_only="true" can_update_claim_trust="false"><summary>${escapeXml(draft.chunk.summary)}</summary><text>${escapeXml(draft.chunk.text)}</text></chunk>`,
     `  <document id="${escapeXml(draft.document.documentId)}" title="${escapeXml(draft.document.title)}" asset_type="${escapeXml(draft.document.assetType)}" source_uri="${escapeXml(draft.document.sourceUri)}" content_hash="${escapeXml(draft.document.contentHash)}" trust_status="${draft.document.trustStatus}" orientation_only="true" can_update_claim_trust="false" />`,
@@ -1485,9 +1551,37 @@ function renderAitpCuratedRagPromotionDraft(draft: AitpCuratedRagPromotionDraft)
         `    <operation stage="${escapeXml(operation.stage)}" operation="${escapeXml(operation.operation)}" mcp_tool="${escapeXml(operation.mcpTool)}" surface="${escapeXml(operation.surface)}" draft_only="true" creates_record_now="false" claim_support_created="false" cli_template="${escapeXml(operation.cliTemplate)}"${operation.requiresExistingRecords.length === 0 ? '' : ` requires_existing_records="${escapeXml(operation.requiresExistingRecords.join(','))}"`} />`,
     ),
     '  </draft_operations>',
+    renderCuratedRagPromotionDecisionTree(draft),
     '  <promotion_boundary retrieval_is_claim_support="false" draft_is_evidence="false" draft_records_validation_result="false" draft_satisfies_final_gate="false" draft_can_update_claim_trust="false" requires_user_or_model_decision_before_write="true" />',
     '</aitp_curated_rag_promotion_draft>',
     '',
+  ].join('\n');
+}
+
+function renderCuratedRagPromotionDecisionTree(draft: AitpCuratedRagPromotionDraft): string {
+  const operations = draft.draftOperations
+    .map((operation) => {
+      const writeOperation = writeBridgeOperationForPromotionDraft(operation.operation);
+      const target =
+        writeOperation === undefined ? undefined : aitpRuntimeBridgeTargetForOperation(writeOperation);
+      const payload = operation.payloadDraft ?? operation.payloadTemplate;
+      return [
+        `    <option stage="${escapeXml(operation.stage)}" draft_operation="${escapeXml(operation.operation)}" draft_only="true" creates_record_now="false" claim_support_created="false"${writeOperation === undefined ? '' : ` next_research_action="execute_aitp_write_bridge" aitp_operation="${writeOperation}" mcp_tool="${escapeXml(target?.mcpTool ?? '')}" surface="${escapeXml(target?.surface ?? '')}" state_effect="${escapeXml(target?.stateEffect ?? '')}"`}>`,
+        `      <decision>Only execute this as a separate explicit AITP write/preflight bridge call after reviewing required context and replacing placeholders.</decision>`,
+        renderStringList(
+          'requires_existing_records',
+          'record',
+          operation.requiresExistingRecords,
+          '      ',
+        ),
+        `      <payload>${escapeXml(JSON.stringify(payload ?? {}))}</payload>`,
+        '    </option>',
+      ].join('\n');
+    });
+  return [
+    '  <promotion_decision_tree selected_write_executed="false" requires_explicit_next_write_choice="true">',
+    ...operations,
+    '  </promotion_decision_tree>',
   ].join('\n');
 }
 
@@ -1583,9 +1677,65 @@ function normalizeArtifactIds(refs: readonly string[]): readonly string[] {
 }
 
 function optionalRecordValue(record: unknown, key: string): string | undefined {
-  if (typeof record !== 'object' || record === null || Array.isArray(record)) return undefined;
-  const value = (record as Readonly<Record<string, unknown>>)[key];
+  if (!isRecord(record)) return undefined;
+  const value = record[key];
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function curatedRagPromotionDraftBindingInput(
+  params: Readonly<Record<string, unknown>> | undefined,
+): CuratedRagPromotionDraftBindingInput | undefined {
+  if (!isRecord(params)) return undefined;
+  const allowedNextToolCall = isRecord(params['allowedNextToolCall'])
+    ? params['allowedNextToolCall']
+    : undefined;
+  const ragChunkId = firstText(
+    optionalRecordValue(params, 'ragChunkId'),
+    optionalRecordValue(allowedNextToolCall, 'rag_chunk_id'),
+  );
+  if (ragChunkId === undefined) return undefined;
+  return {
+    ragChunkId,
+    aitpTopicId: firstText(
+      optionalRecordValue(params, 'aitpTopicId'),
+      optionalRecordValue(allowedNextToolCall, 'aitp_topic_id'),
+    ),
+    aitpClaimId: firstText(
+      optionalRecordValue(params, 'aitpClaimId'),
+      optionalRecordValue(allowedNextToolCall, 'aitp_claim_id'),
+    ),
+    aitpConnectorId: firstText(
+      optionalRecordValue(params, 'aitpConnectorId'),
+      optionalRecordValue(allowedNextToolCall, 'aitp_connector_id'),
+    ),
+    aitpPromotionIntent: firstText(
+      optionalRecordValue(params, 'aitpPromotionIntent'),
+      optionalRecordValue(allowedNextToolCall, 'aitp_promotion_intent'),
+    ),
+  };
+}
+
+function writeBridgeOperationForPromotionDraft(
+  draftOperation: string,
+): AitpWriteBridgeOperation | undefined {
+  switch (draftOperation) {
+    case 'registerSourceAsset':
+      return 'registerSourceAsset';
+    case 'recordReferenceLocation':
+      return 'recordReferenceLocation';
+    case 'recordEvidence':
+      return 'recordEvidence';
+    case 'createValidationContract':
+      return 'createValidationContract';
+    case 'preflightTrustUpdate':
+      return 'preflightTrustUpdate';
+    default:
+      return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function firstClaimRef(refs: readonly string[] | undefined): string | undefined {

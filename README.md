@@ -234,7 +234,13 @@ forbidden uses, and draft-only operations for `registerSourceAsset`,
 `recordReferenceLocation`, `recordEvidence`, `createValidationContract`, and
 `preflightTrustUpdate`. Hakimi renders this as a construction sheet only:
 `draft_creates_records="false"` and every operation has
-`creates_record_now="false"`.
+`creates_record_now="false"`. The action can now be called by
+`action_binding_id` from a loaded ContextPack, so the model does not have to
+copy chunk/topic/claim fields out of XML by hand. Its output also includes a
+`promotion_decision_tree` that maps each draft-only stage to the existing
+`execute_aitp_write_bridge` operation that would be used next, while marking
+`selected_write_executed="false"` and requiring a separate explicit write or
+preflight choice.
 
 The WorkFrame orchestrator now also calls that provider automatically for
 RAG-helpful turns. It detects prompts asking for conceptual scaffolding,
