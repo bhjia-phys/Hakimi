@@ -1575,11 +1575,24 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('root_pointer="readiness_call_pointer"');
     expect(result.output).toContain('nested_call="execute_aitp_write_bridge_handoff.readiness_call_json"');
     expect(result.output).toContain('inspection_only="true"');
+    expect(result.output).toContain('<readiness_inspection_checklist');
+    expect(result.output).toContain('draft_family="curated_rag_write_call_draft" item_count="2"');
+    expect(result.output).toContain('execute_call_authorized="false"');
+    expect(result.output).toContain(
+      '<inspection_item order="1" action="inspect_aitp_write_bridge_handoff_readiness"',
+    );
+    expect(result.output).toContain('copy_call_from="execute_aitp_write_bridge_handoff.readiness_call_json"');
+    expect(result.output).toContain(
+      '<inspection_item order="2" action="execute_aitp_write_bridge" source="tool_call_json" allowed_only_after_readiness_passes="true"',
+    );
+    expect(result.output).toContain('checklist_authorizes_execution="false"');
     const pointerIndex = String(result.output).indexOf('<readiness_call_pointer');
     const summaryIndex = String(result.output).indexOf('<readiness_inspection_summary');
+    const checklistIndex = String(result.output).indexOf('<readiness_inspection_checklist');
     const handoffIndex = String(result.output).indexOf('<execute_aitp_write_bridge_handoff');
     expect(pointerIndex).toBeLessThan(summaryIndex);
-    expect(summaryIndex).toBeLessThan(handoffIndex);
+    expect(summaryIndex).toBeLessThan(checklistIndex);
+    expect(checklistIndex).toBeLessThan(handoffIndex);
     expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
     expect(result.output).toContain('confirmation_status="blocked"');
     expect(result.output).toContain('hash_algorithm="sha256"');
@@ -1875,11 +1888,22 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('root_pointer="readiness_call_pointer"');
     expect(result.output).toContain('nested_call="execute_aitp_write_bridge_handoff.readiness_call_json"');
     expect(result.output).toContain('inspection_only="true"');
+    expect(result.output).toContain('<readiness_inspection_checklist');
+    expect(result.output).toContain('draft_family="record_ref_repair_write_call_draft" item_count="2"');
+    expect(result.output).toContain('execute_call_authorized="false"');
+    expect(result.output).toContain(
+      '<inspection_item order="1" action="inspect_aitp_write_bridge_handoff_readiness"',
+    );
+    expect(result.output).toContain(
+      '<inspection_item order="2" action="execute_aitp_write_bridge" source="tool_call_json" allowed_only_after_readiness_passes="true"',
+    );
     const pointerIndex = String(result.output).indexOf('<readiness_call_pointer');
     const summaryIndex = String(result.output).indexOf('<readiness_inspection_summary');
+    const checklistIndex = String(result.output).indexOf('<readiness_inspection_checklist');
     const handoffIndex = String(result.output).indexOf('<execute_aitp_write_bridge_handoff');
     expect(pointerIndex).toBeLessThan(summaryIndex);
-    expect(summaryIndex).toBeLessThan(handoffIndex);
+    expect(summaryIndex).toBeLessThan(checklistIndex);
+    expect(checklistIndex).toBeLessThan(handoffIndex);
     expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
     expect(result.output).toContain('confirmation_status="ready_for_explicit_execute"');
     expect(result.output).toContain('<hash_input_json>');

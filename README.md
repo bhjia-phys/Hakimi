@@ -355,6 +355,11 @@ bridge execution.
 The pointer and summary are emitted through shared guarded-draft rendering
 helpers, keeping curated RAG and repair draft XML aligned without changing the
 handoff hash, readiness-call JSON, or AITP write contract.
+Both draft families also include a two-item `readiness_inspection_checklist`:
+first copy/run the read-only `inspect_aitp_write_bridge_handoff_readiness` call
+from the nested readiness JSON, then make a separate explicit
+`execute_aitp_write_bridge` call only after readiness passes. The checklist
+sets `execute_call_authorized="false"` and never calls the bridge itself.
 When a handoff is supplied, `execute_aitp_write_bridge` now emits a compact
 `handoff_execution_precheck` before the guard/result details. Passed prechecks
 show `bridge_call_allowed="true"` and `bridge_called="true"` after the guard
