@@ -19,6 +19,7 @@ import {
   buildAitpHumanCheckpointRequestArgs,
   buildAitpProcessGraphSliceArgs,
   buildAitpProofObligationCreateArgs,
+  buildAitpRecordRefLookupArgs,
   buildAitpReferenceLocationRecordArgs,
   buildAitpRuntimePayloadProfilesArgs,
   buildAitpSourceAssetAutoArgs,
@@ -229,6 +230,17 @@ describe('AITP CLI bridge', () => {
             stderr: '',
           };
         }
+        if (args.includes('record-ref-lookup')) {
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify(
+              fakeRecordRefLookup(['source_asset:asset-reviewed', 'reference_location:loc-reviewed'], {
+                foundRefs: ['source_asset:asset-reviewed'],
+              }),
+            ),
+            stderr: '',
+          };
+        }
         return {
           exitCode: 0,
           stdout: JSON.stringify({
@@ -246,6 +258,9 @@ describe('AITP CLI bridge', () => {
 
     const corpus = await bridge.readCuratedRagCorpus();
     const search = await bridge.searchCuratedRagCorpus({ query: 'source backtrace', limit: 1 });
+    const lookup = await bridge.lookupRecordRefs({
+      refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+    });
     const draft = await bridge.draftCuratedRagPromotion({
       chunkId: 'curated_rag_chunk:source_backtrace_orientation:0001',
       topicId: 'qg',
@@ -268,6 +283,17 @@ describe('AITP CLI bridge', () => {
           'source backtrace',
           '--limit',
           '1',
+        ],
+      },
+      {
+        command: 'aitp-v5',
+        args: [
+          '--base',
+          'F:/project',
+          'adapter',
+          'record-ref-lookup',
+          'source_asset:asset-reviewed',
+          'reference_location:loc-reviewed',
         ],
       },
       {
@@ -300,6 +326,19 @@ describe('AITP CLI bridge', () => {
       'source backtrace',
       '--limit',
       '1',
+    ]);
+    expect(
+      buildAitpRecordRefLookupArgs({
+        basePath: 'F:/project',
+        refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+      }),
+    ).toEqual([
+      '--base',
+      'F:/project',
+      'adapter',
+      'record-ref-lookup',
+      'source_asset:asset-reviewed',
+      'reference_location:loc-reviewed',
     ]);
     expect(
       buildAitpCuratedRagSearchArgs({
@@ -349,6 +388,11 @@ describe('AITP CLI bridge', () => {
     expect(search.claimTrustMutation).toBe('none');
     expect(search.requiresPromotionForClaimSupport).toBe(true);
     expect(search.results[0]?.retrievalRole).toBe('heuristic_context');
+    expect(lookup.kind).toBe('record_ref_lookup');
+    expect(lookup.lookupScope).toBe('typed_record_existence_only');
+    expect(lookup.readSurfaceEffect).toBe('record_existence_check_only');
+    expect(lookup.claimTrustMutation).toBe('none');
+    expect(lookup.refs[0]?.recordConfirmed).toBe(true);
     expect(draft.kind).toBe('curated_rag_promotion_draft');
     expect(draft.stateEffect).toBe('read_only');
     expect(draft.draftCreatesRecords).toBe(false);
@@ -2245,6 +2289,63 @@ function fakeCuratedRagCorpus(): any {
     chunk_index: chunks.map((chunk) => chunk.chunk_id),
     documents,
     chunks,
+  };
+}
+
+function fakeRecordRefLookup(
+  refs: readonly string[],
+  options: { readonly foundRefs?: readonly string[] } = {},
+): any {
+  const foundRefs = new Set(options.foundRefs ?? []);
+  const items = refs.map((ref) => fakeRecordRefLookupItem(ref, foundRefs.has(ref)));
+  return {
+    ok: true,
+    record_ref_lookup: {
+      kind: 'record_ref_lookup',
+      lookup_scope: 'typed_record_existence_only',
+      lookup_count: items.length,
+      found_count: items.filter((item) => item.status === 'found').length,
+      missing_count: items.filter((item) => item.status === 'not_found').length,
+      unsupported_count: 0,
+      malformed_count: 0,
+      refs: items,
+      supported_ref_kinds: ['reference_location', 'source_asset'],
+      read_surface_effect: 'record_existence_check_only',
+      records_validation_result: false,
+      source_support_result: false,
+      evidence_created: false,
+      validation_created: false,
+      claim_trust_mutation: 'none',
+      can_update_claim_trust: false,
+      summary_inputs_trusted: false,
+      orientation_only: true,
+    },
+  };
+}
+
+function fakeRecordRefLookupItem(ref: string, found: boolean): any {
+  const [refKind = '', recordId = ''] = ref.split(':');
+  return {
+    ref,
+    ref_kind: refKind,
+    record_id: recordId,
+    id_field: refKind === 'source_asset' ? 'asset_id' : 'location_id',
+    surface: refKind === 'source_asset' ? 'source_asset_record' : 'reference_location_record',
+    record_role: 'orientation_only_record',
+    store_scope: `registry/${refKind}s`,
+    status: found ? 'found' : 'not_found',
+    record_confirmed: found,
+    topic_id: found ? 'qg' : '',
+    claim_id: found ? 'claim-mipt' : '',
+    record_kind: found ? refKind : '',
+    orientation_only_record: found,
+    can_update_record_claim_trust: false,
+    read_surface_effect: 'record_existence_check_only',
+    records_validation_result: false,
+    source_support_result: false,
+    claim_trust_mutation: 'none',
+    can_update_claim_trust: false,
+    diagnostic: found ? 'record exists in typed store' : '',
   };
 }
 

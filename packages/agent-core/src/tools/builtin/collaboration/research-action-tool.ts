@@ -52,6 +52,8 @@ import {
   type AitpCuratedRagPromotionDraft,
   type AitpCuratedRagPromotionDraftOperation,
   type AitpCuratedRagSearchResult,
+  type AitpRecordRefLookup,
+  type AitpRecordRefLookupItem,
   type AitpRuntimePayloadProfilesCatalog,
   type AitpWriteBridgeExecutionResult,
   type AitpWriteBridgeOperation,
@@ -374,7 +376,22 @@ interface CuratedRagPromotionWriteBridgeCallDraft {
   readonly overrideDiagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[];
   readonly originalUnresolvedPlaceholderCount: number;
   readonly unresolvedPlaceholderCount: number;
+  readonly recordRefLookup?: CuratedRagPayloadRefLookup | undefined;
 }
+
+type CuratedRagPayloadRefLookup =
+  | {
+      readonly status: 'not_requested';
+      readonly reason: string;
+    }
+  | {
+      readonly status: 'performed';
+      readonly lookup: AitpRecordRefLookup;
+    }
+  | {
+      readonly status: 'failed';
+      readonly reason: string;
+    };
 
 interface CuratedRagPromotionWriteBridgeCallDiagnostic {
   readonly code: string;
@@ -841,9 +858,38 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       args.promotion_reviewed_overrides,
     );
     if (callDraft.isError) return errorResult(callDraft.message);
+    const lookup = await this.lookupCuratedRagCallDraftRefs(callDraft.draft, ctx.signal);
     return ok(
-      renderAitpCuratedRagWriteBridgeCallDraft(draft, callDraft.draft, boundInput.bindingId),
+      renderAitpCuratedRagWriteBridgeCallDraft(
+        draft,
+        { ...callDraft.draft, recordRefLookup: lookup },
+        boundInput.bindingId,
+      ),
     );
+  }
+
+  private async lookupCuratedRagCallDraftRefs(
+    callDraft: CuratedRagPromotionWriteBridgeCallDraft,
+    signal?: AbortSignal | undefined,
+  ): Promise<CuratedRagPayloadRefLookup> {
+    const refs = concreteLookupRefs(curatedRagPayloadIdentity(callDraft.payload).refs);
+    if (refs.length === 0) {
+      return { status: 'not_requested', reason: 'no_concrete_record_refs' };
+    }
+    if (this.manager === undefined || !this.manager.hasAitpRecordRefLookupProvider()) {
+      return { status: 'not_requested', reason: 'aitp_record_ref_lookup_provider_unavailable' };
+    }
+    try {
+      return {
+        status: 'performed',
+        lookup: await this.manager.lookupAitpRecordRefs(refs, signal),
+      };
+    } catch (error) {
+      return {
+        status: 'failed',
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   private resolveCuratedRagPromotionDraftBinding(args: ResearchActionToolInput):
@@ -1776,6 +1822,7 @@ function renderCuratedRagCanonicalIdentityAlignment(
         draft,
         operation,
         callDraft !== undefined ? callDraft.payload : (operation.payloadDraft ?? operation.payloadTemplate ?? {}),
+        callDraft?.recordRefLookup,
       ),
     ),
     '  </canonical_identity_alignment>',
@@ -1786,6 +1833,7 @@ function renderCuratedRagCanonicalIdentityOperation(
   draft: AitpCuratedRagPromotionDraft,
   operation: AitpCuratedRagPromotionDraftOperation,
   payload: Readonly<Record<string, unknown>>,
+  lookup?: CuratedRagPayloadRefLookup | undefined,
 ): string {
   const futureRecordKind = futureRecordKindForPromotionOperation(operation.operation);
   const canonicalPrefix = canonicalRefPrefixForFutureRecordKind(futureRecordKind);
@@ -1795,7 +1843,7 @@ function renderCuratedRagCanonicalIdentityOperation(
     `      <source_chunk document_id="${escapeXml(draft.documentId)}" chunk_id="${escapeXml(draft.chunkId)}" content_hash="${escapeXml(draft.chunk.contentHash)}" source_uri="${escapeXml(draft.document.sourceUri)}" orientation_only="true" />`,
     renderStringList('requires_existing_records', 'record', operation.requiresExistingRecords, '      '),
     renderStringList('payload_identity_fields', 'field', payloadIdentity.fields, '      '),
-    renderPayloadRefReadiness(payloadIdentity.refs, '      '),
+    renderPayloadRefReadiness(payloadIdentity.refs, '      ', lookup),
     '    </record_alignment>',
   ].join('\n');
 }
@@ -1874,20 +1922,84 @@ function refsFromPayloadIdentityValue(value: unknown): readonly string[] {
   return Object.values(value).flatMap(refsFromPayloadIdentityValue);
 }
 
-function renderPayloadRefReadiness(refs: readonly string[], indent: string): string {
+function renderPayloadRefReadiness(
+  refs: readonly string[],
+  indent: string,
+  lookup?: CuratedRagPayloadRefLookup | undefined,
+): string {
   if (refs.length === 0) {
     return `${indent}<payload_ref_readiness placeholder_ref_count="0" concrete_ref_count="0" confirmation_source="syntax_only" aitp_lookup_performed="false" requires_aitp_lookup_before_execution="true" />`;
   }
   const placeholderCount = refs.filter(isPlaceholderRef).length;
   const concreteCount = refs.length - placeholderCount;
+  if (lookup?.status === 'performed') {
+    const byRef = new Map(lookup.lookup.refs.map((item) => [item.ref, item]));
+    const confirmedCount = refs.filter((ref) => byRef.get(ref)?.recordConfirmed === true).length;
+    return [
+      `${indent}<payload_ref_readiness placeholder_ref_count="${String(placeholderCount)}" concrete_ref_count="${String(concreteCount)}" confirmation_source="aitp_record_ref_lookup" aitp_lookup_performed="true" lookup_scope="${escapeXml(lookup.lookup.lookupScope)}" lookup_count="${String(lookup.lookup.lookupCount)}" found_count="${String(lookup.lookup.foundCount)}" missing_count="${String(lookup.lookup.missingCount)}" unsupported_count="${String(lookup.lookup.unsupportedCount)}" malformed_count="${String(lookup.lookup.malformedCount)}" confirmed_ref_count="${String(confirmedCount)}" read_surface_effect="${escapeXml(lookup.lookup.readSurfaceEffect)}" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_aitp_lookup_before_execution="false">`,
+      ...refs.map((ref) => renderPayloadRefReadinessItem(ref, byRef.get(ref), indent)),
+      `${indent}</payload_ref_readiness>`,
+    ].join('\n');
+  }
+  if (lookup?.status === 'failed') {
+    return [
+      `${indent}<payload_ref_readiness placeholder_ref_count="${String(placeholderCount)}" concrete_ref_count="${String(concreteCount)}" confirmation_source="aitp_record_ref_lookup_failed" aitp_lookup_performed="false" lookup_error="${escapeXml(lookup.reason)}" requires_aitp_lookup_before_execution="true">`,
+      ...refs.map(
+        (ref) =>
+          `${indent}  <ref status="${isPlaceholderRef(ref) ? 'placeholder' : 'concrete'}" aitp_record_confirmed="false">${escapeXml(ref)}</ref>`,
+      ),
+      `${indent}</payload_ref_readiness>`,
+    ].join('\n');
+  }
+  const reason = lookup?.status === 'not_requested' ? lookup.reason : 'aitp_record_ref_lookup_provider_unavailable';
   return [
-    `${indent}<payload_ref_readiness placeholder_ref_count="${String(placeholderCount)}" concrete_ref_count="${String(concreteCount)}" confirmation_source="syntax_only" aitp_lookup_performed="false" requires_aitp_lookup_before_execution="true">`,
+    `${indent}<payload_ref_readiness placeholder_ref_count="${String(placeholderCount)}" concrete_ref_count="${String(concreteCount)}" confirmation_source="syntax_only" aitp_lookup_performed="false" lookup_not_requested_reason="${escapeXml(reason)}" requires_aitp_lookup_before_execution="true">`,
     ...refs.map(
       (ref) =>
         `${indent}  <ref status="${isPlaceholderRef(ref) ? 'placeholder' : 'concrete'}" aitp_record_confirmed="false">${escapeXml(ref)}</ref>`,
     ),
     `${indent}</payload_ref_readiness>`,
   ].join('\n');
+}
+
+function renderPayloadRefReadinessItem(
+  ref: string,
+  lookup: AitpRecordRefLookupItem | undefined,
+  indent: string,
+): string {
+  if (isPlaceholderRef(ref)) {
+    return `${indent}  <ref status="placeholder" aitp_record_confirmed="false">${escapeXml(ref)}</ref>`;
+  }
+  if (lookup === undefined) {
+    return `${indent}  <ref status="concrete" aitp_record_confirmed="false" lookup_status="not_requested">${escapeXml(ref)}</ref>`;
+  }
+  return `${indent}  <ref status="concrete" aitp_record_confirmed="${String(lookup.recordConfirmed)}" lookup_status="${lookup.status}" ref_kind="${escapeXml(lookup.refKind)}" record_id="${escapeXml(lookup.recordId)}" surface="${escapeXml(lookup.surface)}" read_surface_effect="${escapeXml(lookup.readSurfaceEffect)}" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">${escapeXml(ref)}</ref>`;
+}
+
+function concreteLookupRefs(refs: readonly string[]): readonly string[] {
+  return uniqueStrings(
+    refs.filter((ref) => !isPlaceholderRef(ref) && looksLikeAitpRecordRef(ref)),
+  );
+}
+
+function looksLikeAitpRecordRef(ref: string): boolean {
+  const parts = ref.trim().split(':');
+  const kind = parts[0] === 'aitp' ? parts[1] : parts[0];
+  return (
+    parts.length >= 2 &&
+    kind !== undefined &&
+    [
+      'artifact',
+      'claim',
+      'code_state',
+      'evidence',
+      'reference_location',
+      'source_asset',
+      'tool_run',
+      'validation_contract',
+      'validation_result',
+    ].includes(kind)
+  );
 }
 
 function isPlaceholderRef(ref: string): boolean {

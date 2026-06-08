@@ -59,6 +59,14 @@ Concrete refs in this section are still `confirmation_source=syntax_only` with
 `aitp_record_confirmed=false` and `aitp_lookup_performed=false`; canonical
 existence/source-support checks still belong to later AITP-owned lookup, write,
 validation, or trust-preflight surfaces.
+When the AITP record-ref lookup provider is configured, Hakimi can call
+`lookupRecordRefs` / `aitp_v5_lookup_record_refs` /
+`aitp-v5 adapter record-ref-lookup <refs...>` before rendering a reviewed
+curated RAG write-bridge call draft. The XML then reports
+`confirmation_source=aitp_record_ref_lookup`, per-ref `lookup_status`, and
+`aitp_record_confirmed=true` only for refs found in the AITP typed store.
+That confirmation is existence-only: it is not source support, evidence,
+validation, final-gate satisfaction, or claim-trust authority.
 The returned XML also includes a host-side `confirmation_preflight` summary
 that classifies remaining diagnostics as hard-blocking, confirmation-required,
 or advisory. This is not an AITP trust preflight and it does not validate the
@@ -221,6 +229,7 @@ Hakimi 不是在 coding agent 外面套一个研究记录本。它是 [MoonshotA
 - AITP `source_reconstruction_review` 现在会投影成 Hakimi 原生 source reconstruction review 摘要、WorkFrame reminder 和 ContextPack XML 字段，包含 review claim ids、open review claim ids、needs-revision/inconclusive claim ids、review-packet claim ids 和 AITP next actions。它只是 review worklist 提示，不会成为 claim-trust authority。
 - `ResearchAction.inspect_aitp_runtime_payload_profiles` 现在会读取 AITP-owned `runtime_payload_profiles` catalog，并把 `host_usage_policy`、allowed/forbidden uses、profile index、capture modes 和 no-trust flags 作为模型可见的只读诊断输出。这个动作只能辅助 payload construction、capture-policy diagnostics 和 bridge-readiness diagnostics；它不会写 AITP、不会记录 Hakimi evidence、不会创建 validation result、也不会改变 claim trust。
 - `ResearchAction.inspect_aitp_curated_rag_corpus` 和 `ResearchAction.search_aitp_curated_rag_corpus` 现在会读取 AITP-owned curated heuristic RAG surface：前者展示 corpus、document/chunk ids、index policy、allowed/forbidden uses 和 no-trust flags，后者用 `rag_query` / `rag_limit` 调用 `aitp_v5_search_curated_rag_corpus`，MCP 不可用时回退到 `aitp-v5 --base <cwd> adapter curated-rag-search`。Hakimi 会把当前 Agent cwd 作为 AITP `base` 传给 MCP/CLI provider，所以如果 workspace 存在 `.aitp/curated_rag/corpus.json`，AITP 会读取真实 file-backed corpus 并返回 `lexical_file_backed` index/stale diagnostics；否则继续使用默认 fixture。检索结果只作为 `heuristic_context` / orientation-only 背景启发，可用于概念脚手架、文献方向、推导方法选择和 source backtrace 建议；它不是 evidence、validation、final-gate satisfaction 或 claim-trust authority。若某段内容变成 claim-relevant，必须先走 AITP `source_asset`、`reference_location`、evidence、validation 和 trust preflight 的正常提升路径。
+- Hakimi 现在也会通过 AITP-owned `record_ref_lookup` 检查 reviewed curated RAG payload 里的 `source_asset:<id>`、`reference_location:<id>` 等 ref 是否存在于 AITP typed store：优先调用 `aitp_v5_lookup_record_refs`，MCP 不可用时回退到 `aitp-v5 --base <cwd> adapter record-ref-lookup <refs...>`。`payload_ref_readiness` 中的 found 只表示 typed-store existence；它不是 source support、evidence、validation、final-gate satisfaction，也不会改变 claim trust。
 - Hakimi 现在也会自动识别适合 curated RAG 的回合：概念解释、文献/讲义背景、推导脚手架、方法选择和 source backtrace 提示会在 WorkFrame context 准备阶段触发一次小上限的 AITP `searchCuratedRagCorpus`。命中的 chunk 会进入 `ResearchContextPack.curatedRag`、WorkFrame reminder、compaction snapshot 和 ContextPack XML，并明确标注 `heuristic_context` / `orientation_only`、chunk/document/hash ids 与 promotion boundary。普通实现或操作提示不会触发 RAG；自动 RAG 也不会记录 Hakimi evidence、不会满足 final gate、不会改变 claim trust。
 - `ResearchAction.run_benchmark_adapter` 现在会按 AITP `benchmark_adapter_run_to_tool_run` profile 做一条自动 provenance capture：如果当前 session 有 AITP write bridge 且 WorkFrame/action 参数能给出 topic 与 claim，benchmark adapter 结果会通过 `recordToolRun` 写成 `aitp:tool_run:<id>`，并并入同一个 benchmark action 的 evidence refs。`ResearchAction.capture_primitive_tool_run` 现在按 AITP `primitive_tool_lifecycle_to_tool_run` profile 提供显式 primitive tool capture：模型或 host 必须点名一个最近的 `primitive_tool_call_id`，Hakimi 才会从 lifecycle envelope 构造 `recordToolRun` payload 并写入 AITP。这不是全量自动写入；这个路径不会调用 `recordValidationResult`，不会更新 claim trust；缺 bridge、缺 AITP scope 或找不到 tool call 时只保留 skipped/failed 状态。
 

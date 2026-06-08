@@ -28,12 +28,14 @@ import {
 import {
   createDynamicAitpMcpFirstCuratedRagProvider,
   createDynamicAitpMcpFirstProcessGraphSliceProvider,
+  createDynamicAitpMcpFirstRecordRefLookupProvider,
   createDynamicAitpMcpFirstRuntimePayloadProfilesProvider,
   createDynamicAitpMcpFirstWriteBridgeExecutor,
   type AitpCuratedRagProvider,
   type AitpCommandRunner,
   type AitpMcpWriteBridgeTransport,
   type AitpProcessGraphSliceProvider,
+  type AitpRecordRefLookupProvider,
   type AitpRuntimePayloadProfilesProvider,
   type AitpWriteBridgeExecutor,
 } from '../aitp';
@@ -103,6 +105,7 @@ export interface SessionOptions {
   readonly aitp?: SessionAitpBridgeConfig;
   readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
+  readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider | undefined;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
   readonly aitpWriteBridge?: AitpWriteBridgeExecutor | undefined;
   readonly mcpConfig?: SessionMcpConfig;
@@ -1203,6 +1206,10 @@ export class Session {
         config.aitpRuntimePayloadProfilesProvider ??
         this.options.aitpRuntimePayloadProfilesProvider ??
         aitpBridges?.runtimePayloadProfilesProvider,
+      aitpRecordRefLookupProvider:
+        config.aitpRecordRefLookupProvider ??
+        this.options.aitpRecordRefLookupProvider ??
+        aitpBridges?.recordRefLookupProvider,
       aitpCuratedRagProvider:
         config.aitpCuratedRagProvider ??
         this.options.aitpCuratedRagProvider ??
@@ -1236,6 +1243,7 @@ export class Session {
     | {
         readonly processGraphProvider: AitpProcessGraphSliceProvider;
         readonly runtimePayloadProfilesProvider: AitpRuntimePayloadProfilesProvider;
+        readonly recordRefLookupProvider: AitpRecordRefLookupProvider;
         readonly curatedRagProvider: AitpCuratedRagProvider;
         readonly writeBridge: AitpWriteBridgeExecutor;
       }
@@ -1256,6 +1264,11 @@ export class Session {
         fallbackOnMcpError: config?.fallbackOnMcpError,
       }),
       runtimePayloadProfilesProvider: createDynamicAitpMcpFirstRuntimePayloadProfilesProvider({
+        ...bridgeOptions,
+        mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
+        fallbackOnMcpError: config?.fallbackOnMcpError,
+      }),
+      recordRefLookupProvider: createDynamicAitpMcpFirstRecordRefLookupProvider({
         ...bridgeOptions,
         mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
         fallbackOnMcpError: config?.fallbackOnMcpError,

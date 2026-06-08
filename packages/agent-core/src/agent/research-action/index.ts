@@ -24,6 +24,7 @@ import type {
   AitpCuratedRagCorpus,
   AitpCuratedRagPromotionDraft,
   AitpCuratedRagSearchResult,
+  AitpRecordRefLookup,
   AitpRuntimePayloadProfilesCatalog,
 } from '../../aitp';
 import {
@@ -197,6 +198,10 @@ export class ResearchActionManager {
     return this.agent.aitpRuntimePayloadProfilesProvider !== undefined;
   }
 
+  hasAitpRecordRefLookupProvider(): boolean {
+    return this.agent.aitpRecordRefLookupProvider !== undefined;
+  }
+
   hasAitpCuratedRagProvider(): boolean {
     return this.agent.aitpCuratedRagProvider !== undefined;
   }
@@ -208,6 +213,16 @@ export class ResearchActionManager {
       throw new Error('AITP runtime payload profiles provider is not configured for this session.');
     }
     return this.agent.aitpRuntimePayloadProfilesProvider.getRuntimePayloadProfiles({ signal });
+  }
+
+  async lookupAitpRecordRefs(
+    refs: readonly string[],
+    signal?: AbortSignal | undefined,
+  ): Promise<AitpRecordRefLookup> {
+    if (this.agent.aitpRecordRefLookupProvider === undefined) {
+      throw new Error('AITP record-ref lookup provider is not configured for this session.');
+    }
+    return this.agent.aitpRecordRefLookupProvider.lookupRecordRefs({ refs, signal });
   }
 
   async readAitpCuratedRagCorpus(

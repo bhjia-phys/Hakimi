@@ -78,6 +78,7 @@ export type AitpRuntimeBridgeOperation =
   | 'readProcessGraphSlice'
   | 'readMomentPolicy'
   | 'readRuntimePayloadProfiles'
+  | 'lookupRecordRefs'
   | 'readCuratedRagCorpus'
   | 'searchCuratedRagCorpus'
   | 'draftCuratedRagPromotion'
@@ -137,6 +138,11 @@ const AITP_READ_TARGET_MCP_ARGUMENTS = {
     optional: [],
     source: 'aitp_v5_get_runtime_payload_profiles',
   },
+  record_ref_lookup: {
+    required: ['base', 'refs'],
+    optional: [],
+    source: 'aitp_v5_lookup_record_refs',
+  },
   curated_rag_corpus: {
     required: [],
     optional: ['base'],
@@ -179,6 +185,15 @@ export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
     'aitp_v5_get_runtime_payload_profiles',
     'aitp-v5 adapter payload-profiles',
     'runtime_payload_profiles',
+    'read',
+    'read_only',
+  ),
+  bridgeTarget(
+    'lookupRecordRefs',
+    'record_ref_lookup',
+    'aitp_v5_lookup_record_refs',
+    'aitp-v5 adapter record-ref-lookup <args>',
+    'record_ref_lookup',
     'read',
     'read_only',
   ),
