@@ -425,8 +425,11 @@ interface AitpHandoffGuard {
   readonly confirmationId: string;
   readonly diagnosticHash: string;
   readonly confirmationStatus: string;
+  readonly selectedAitpOperation: string;
   readonly missingRefRepairHintCount: number;
   readonly missingRefRepairChecklistPresent: boolean;
+  readonly repairHintOperations: readonly string[];
+  readonly selectedWriteDiffersFromRepairHints: boolean;
 }
 
 interface AitpHandoffGuardFailure {
@@ -2343,6 +2346,15 @@ function missingRefRepairHintCount(lookup: CuratedRagPayloadRefLookup | undefine
   return lookup.lookup.refs.filter(isMissingRefRepairItem).length;
 }
 
+function missingRefRepairHintOperations(lookup: CuratedRagPayloadRefLookup | undefined): readonly string[] {
+  if (lookup?.status !== 'performed') return [];
+  return uniqueStrings(
+    lookup.lookup.refs
+      .filter(isMissingRefRepairItem)
+      .map((item) => item.suggestedNextOperation),
+  );
+}
+
 function curatedRagPromotionWriteBridgeHandoffArtifact(
   sourceDraft: AitpCuratedRagPromotionDraft,
   callDraft: CuratedRagPromotionWriteBridgeCallDraft,
@@ -2359,6 +2371,9 @@ function curatedRagPromotionWriteBridgeHandoffArtifact(
     field: diagnostic.field,
     message: diagnostic.message,
   }));
+  const repairHintOperations = missingRefRepairHintOperations(callDraft.recordRefLookup);
+  const selectedWriteDiffersFromRepairHints =
+    repairHintOperations.length > 0 && !repairHintOperations.includes(callDraft.aitpOperation);
   const hashInput = {
     kind: 'aitp_curated_rag_write_bridge_call_handoff',
     chunkId: sourceDraft.chunkId,
@@ -2369,6 +2384,8 @@ function curatedRagPromotionWriteBridgeHandoffArtifact(
     confirmationStatus: confirmation.status,
     missingRefRepairHintCount: confirmation.missingRefRepairHintCount,
     missingRefRepairChecklistPresent: confirmation.missingRefRepairHintCount > 0,
+    repairHintOperations,
+    selectedWriteDiffersFromRepairHints,
     executeCallAllowedAfterExplicitConfirmation: confirmation.executeCallAllowedAfterExplicitConfirmation,
     toolCall,
     requiredExistingRecords: callDraft.requiredExistingRecords,
@@ -2414,6 +2431,8 @@ function curatedRagPromotionWriteBridgeHandoffArtifact(
       handoffExecuted: false,
       missingRefRepairHintCount: confirmation.missingRefRepairHintCount,
       missingRefRepairChecklistPresent: confirmation.missingRefRepairHintCount > 0,
+      repairHintOperations,
+      selectedWriteDiffersFromRepairHints,
       executesWriteNow: false,
       recordsEvidenceNow: false,
       recordsValidationResultNow: false,
@@ -2600,6 +2619,7 @@ function verifyAitpWriteBridgeHandoff(
     });
   }
   const missingRefRepairHintCount = nonNegativeIntegerRecordValue(hashInput, 'missingRefRepairHintCount');
+  const repairHintOperations = stringArrayRecordValue(hashInput, 'repairHintOperations');
   return {
     isError: false,
     guard: {
@@ -2608,8 +2628,12 @@ function verifyAitpWriteBridgeHandoff(
       confirmationId,
       diagnosticHash,
       confirmationStatus,
+      selectedAitpOperation: operation,
       missingRefRepairHintCount,
       missingRefRepairChecklistPresent: missingRefRepairHintCount > 0,
+      repairHintOperations,
+      selectedWriteDiffersFromRepairHints:
+        repairHintOperations.length > 0 && !repairHintOperations.includes(operation),
     },
   };
 }
@@ -2850,6 +2874,12 @@ function nonNegativeIntegerRecordValue(record: Readonly<Record<string, unknown>>
   const value = record[key];
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return 0;
   return value;
+}
+
+function stringArrayRecordValue(record: Readonly<Record<string, unknown>>, key: string): readonly string[] {
+  const value = record[key];
+  if (!Array.isArray(value)) return [];
+  return uniqueStrings(value.filter((item): item is string => typeof item === 'string' && item.length > 0));
 }
 
 function curatedRagPromotionDraftBindingInput(
@@ -3106,7 +3136,7 @@ function renderAitpHandoffExecutionPrecheck(
 ): string {
   if (precheck.status === 'passed') {
     if (precheck.guard === undefined) return '';
-    return `  <handoff_execution_precheck kind="${precheck.guard.kind}" status="passed" handoff_id="${escapeXml(precheck.guard.handoffId)}" confirmation_id="${escapeXml(precheck.guard.confirmationId)}" confirmation_status="${escapeXml(precheck.guard.confirmationStatus)}" missing_ref_repair_hint_count="${String(precheck.guard.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(precheck.guard.missingRefRepairChecklistPresent)}" bridge_call_allowed="true" bridge_called="true" retry_requires_explicit_execute_call="false" handoff_mutated_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />`;
+    return `  <handoff_execution_precheck kind="${precheck.guard.kind}" status="passed" handoff_id="${escapeXml(precheck.guard.handoffId)}" confirmation_id="${escapeXml(precheck.guard.confirmationId)}" confirmation_status="${escapeXml(precheck.guard.confirmationStatus)}" selected_aitp_operation="${escapeXml(precheck.guard.selectedAitpOperation)}" missing_ref_repair_hint_count="${String(precheck.guard.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(precheck.guard.missingRefRepairChecklistPresent)}" repair_hint_operation_count="${String(precheck.guard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(precheck.guard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(precheck.guard.selectedWriteDiffersFromRepairHints)}" bridge_call_allowed="true" bridge_called="true" retry_requires_explicit_execute_call="false" handoff_mutated_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />`;
   }
   const { failure } = precheck;
   return `<handoff_execution_precheck kind="curated_rag_write_bridge_handoff" status="failed" code="${escapeXml(failure.code)}"${failure.field === undefined ? '' : ` field="${escapeXml(failure.field)}"`}${failure.path === undefined ? '' : ` path="${escapeXml(failure.path)}"`} next_step="${escapeXml(failure.remediation.nextStep)}" repair_target="${escapeXml(failure.remediation.repairTarget)}" bridge_call_allowed="false" bridge_called="false" retry_requires_explicit_execute_call="true" executes_write_now="false" records_evidence_now="false" handoff_mutated_now="false" claim_trust_mutation="none" />`;
@@ -3114,7 +3144,7 @@ function renderAitpHandoffExecutionPrecheck(
 
 function renderAitpHandoffGuard(handoffGuard: AitpHandoffGuard | undefined): string {
   if (handoffGuard === undefined) return '';
-  return `  <handoff_guard kind="${handoffGuard.kind}" handoff_id="${escapeXml(handoffGuard.handoffId)}" confirmation_id="${escapeXml(handoffGuard.confirmationId)}" confirmation_status="${escapeXml(handoffGuard.confirmationStatus)}" diagnostic_hash="${escapeXml(handoffGuard.diagnosticHash)}" missing_ref_repair_hint_count="${String(handoffGuard.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(handoffGuard.missingRefRepairChecklistPresent)}" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" status="passed" />`;
+  return `  <handoff_guard kind="${handoffGuard.kind}" handoff_id="${escapeXml(handoffGuard.handoffId)}" confirmation_id="${escapeXml(handoffGuard.confirmationId)}" confirmation_status="${escapeXml(handoffGuard.confirmationStatus)}" diagnostic_hash="${escapeXml(handoffGuard.diagnosticHash)}" selected_aitp_operation="${escapeXml(handoffGuard.selectedAitpOperation)}" missing_ref_repair_hint_count="${String(handoffGuard.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(handoffGuard.missingRefRepairChecklistPresent)}" repair_hint_operation_count="${String(handoffGuard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(handoffGuard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(handoffGuard.selectedWriteDiffersFromRepairHints)}" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" status="passed" />`;
 }
 
 function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string {

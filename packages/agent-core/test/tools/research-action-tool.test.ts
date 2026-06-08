@@ -1833,8 +1833,12 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('<aitp_write_bridge operation="recordEvidence"');
     expect(result.output).toContain('<handoff_execution_precheck');
     expect(result.output).toContain('status="passed"');
+    expect(result.output).toContain('selected_aitp_operation="recordEvidence"');
     expect(result.output).toContain('missing_ref_repair_hint_count="1"');
     expect(result.output).toContain('missing_ref_repair_checklist_present="true"');
+    expect(result.output).toContain('repair_hint_operation_count="1"');
+    expect(result.output).toContain('repair_hint_operations="recordReferenceLocation"');
+    expect(result.output).toContain('selected_write_differs_from_repair_hints="true"');
     expect(result.output).toContain('bridge_call_allowed="true"');
     expect(result.output).toContain('bridge_called="true"');
     expect(result.output).toContain('retry_requires_explicit_execute_call="false"');
@@ -1849,6 +1853,8 @@ describe('ResearchActionTool', () => {
     expect(handoff.hashInput).toMatchObject({
       missingRefRepairHintCount: 1,
       missingRefRepairChecklistPresent: true,
+      repairHintOperations: ['recordReferenceLocation'],
+      selectedWriteDiffersFromRepairHints: true,
     });
     expect(bridgeCalls).toHaveLength(1);
     expect(bridgeCalls[0]).toMatchObject({
