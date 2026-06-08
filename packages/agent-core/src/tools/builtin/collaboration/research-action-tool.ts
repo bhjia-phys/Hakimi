@@ -1791,11 +1791,11 @@ function renderCuratedRagCanonicalIdentityOperation(
   const canonicalPrefix = canonicalRefPrefixForFutureRecordKind(futureRecordKind);
   const payloadIdentity = curatedRagPayloadIdentity(payload);
   return [
-    `    <record_alignment stage="${escapeXml(operation.stage)}" operation="${escapeXml(operation.operation)}" future_record_kind="${escapeXml(futureRecordKind)}" canonical_ref_prefix="${escapeXml(canonicalPrefix)}" id_source="aitp_write_result_after_explicit_execute" draft_only="true" creates_record_now="false" existing_record_required_count="${String(operation.requiresExistingRecords.length)}">`,
+    `    <record_alignment stage="${escapeXml(operation.stage)}" operation="${escapeXml(operation.operation)}" future_record_kind="${escapeXml(futureRecordKind)}" canonical_ref_prefix="${escapeXml(canonicalPrefix)}" id_source="aitp_write_result_after_explicit_execute" draft_only="true" creates_record_now="false" existing_record_required_count="${String(operation.requiresExistingRecords.length)}" placeholder_ref_count="${String(payloadIdentity.placeholderCount)}" concrete_ref_count="${String(payloadIdentity.concreteCount)}">`,
     `      <source_chunk document_id="${escapeXml(draft.documentId)}" chunk_id="${escapeXml(draft.chunkId)}" content_hash="${escapeXml(draft.chunk.contentHash)}" source_uri="${escapeXml(draft.document.sourceUri)}" orientation_only="true" />`,
     renderStringList('requires_existing_records', 'record', operation.requiresExistingRecords, '      '),
     renderStringList('payload_identity_fields', 'field', payloadIdentity.fields, '      '),
-    renderStringList('payload_identity_refs', 'ref', payloadIdentity.refs, '      '),
+    renderPayloadRefReadiness(payloadIdentity.refs, '      '),
     '    </record_alignment>',
   ].join('\n');
 }
@@ -1836,7 +1836,12 @@ function canonicalRefPrefixForFutureRecordKind(kind: string): string {
 
 function curatedRagPayloadIdentity(
   payload: Readonly<Record<string, unknown>>,
-): { readonly fields: readonly string[]; readonly refs: readonly string[] } {
+): {
+  readonly fields: readonly string[];
+  readonly refs: readonly string[];
+  readonly placeholderCount: number;
+  readonly concreteCount: number;
+} {
   const identityFields = [
     'topic_id',
     'claim_id',
@@ -1854,7 +1859,12 @@ function curatedRagPayloadIdentity(
   const refs = uniqueStrings(
     fields.flatMap((field) => refsFromPayloadIdentityValue(payload[field])),
   );
-  return { fields, refs };
+  return {
+    fields,
+    refs,
+    placeholderCount: refs.filter(isPlaceholderRef).length,
+    concreteCount: refs.filter((ref) => !isPlaceholderRef(ref)).length,
+  };
 }
 
 function refsFromPayloadIdentityValue(value: unknown): readonly string[] {
@@ -1862,6 +1872,27 @@ function refsFromPayloadIdentityValue(value: unknown): readonly string[] {
   if (Array.isArray(value)) return value.flatMap(refsFromPayloadIdentityValue);
   if (!isRecord(value)) return [];
   return Object.values(value).flatMap(refsFromPayloadIdentityValue);
+}
+
+function renderPayloadRefReadiness(refs: readonly string[], indent: string): string {
+  if (refs.length === 0) {
+    return `${indent}<payload_ref_readiness placeholder_ref_count="0" concrete_ref_count="0" />`;
+  }
+  const placeholderCount = refs.filter(isPlaceholderRef).length;
+  const concreteCount = refs.length - placeholderCount;
+  return [
+    `${indent}<payload_ref_readiness placeholder_ref_count="${String(placeholderCount)}" concrete_ref_count="${String(concreteCount)}">`,
+    ...refs.map(
+      (ref) =>
+        `${indent}  <ref status="${isPlaceholderRef(ref) ? 'placeholder' : 'concrete'}">${escapeXml(ref)}</ref>`,
+    ),
+    `${indent}</payload_ref_readiness>`,
+  ].join('\n');
+}
+
+function isPlaceholderRef(ref: string): boolean {
+  const trimmed = ref.trim();
+  return trimmed.startsWith('<') && trimmed.endsWith('>');
 }
 
 function curatedRagPromotionWriteBridgeCallSelector(args: ResearchActionToolInput):

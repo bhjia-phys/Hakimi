@@ -51,6 +51,10 @@ selected stage, to the future AITP record kind and canonical ref prefix that
 would only be produced by a later explicit bridge result, while carrying source
 chunk/document/hash identity and existing-record requirements. It remains
 `draft_creates_records=false` / `creates_record_now=false`.
+Within each alignment, `payload_ref_readiness` separates placeholder refs such
+as `<source_asset_id>` from concrete refs such as `source_asset:...` and
+`reference_location:...`, so a reviewed payload can show whether source/ref
+slots are ready before the explicit write call.
 The returned XML also includes a host-side `confirmation_preflight` summary
 that classifies remaining diagnostics as hard-blocking, confirmation-required,
 or advisory. This is not an AITP trust preflight and it does not validate the
