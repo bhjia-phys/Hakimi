@@ -30,6 +30,7 @@ import type {
   CompileResearchContextPackOptions,
   ResearchContextAitpSection,
   ResearchContextCapsuleSummary,
+  ResearchContextCuratedRagSection,
   ResearchContextLedgerProposalSummary,
   ResearchContextPack,
   ResearchContextPackDiagnostic,
@@ -56,6 +57,7 @@ const DEFAULT_LEDGER_STATUSES: readonly ResearchLedgerEventStatus[] = [
 const DEFAULT_MAX_CAPSULES = 12;
 const DEFAULT_MAX_LEDGER_PROPOSALS = 12;
 const DEFAULT_MAX_ACTION_BINDINGS = 40;
+const DEFAULT_MAX_CURATED_RAG_RESULTS = 3;
 
 export function compileResearchContextPack(
   input: CompileResearchContextPackInput,
@@ -84,6 +86,7 @@ export function compileResearchContextPack(
   const physics = collectPhysics(input, requestedFocus, diagnostics);
   const ledger = collectLedger(input, diagnostics);
   const aitp = collectAitp(input, diagnostics);
+  const curatedRag = collectCuratedRag(input, diagnostics);
   const actionBindings = bounded(
     uniqueBindings([
       ...workflows.flatMap((workflow) => workflow.metadata.actionBindings),
@@ -117,6 +120,13 @@ export function compileResearchContextPack(
     capsuleIds: physics.capsules.map((capsule) => capsule.id),
     proposalIds: ledger.proposals.map((proposal) => proposal.id),
     aitpDigest: aitp === undefined ? undefined : contextDigest(aitp.contextLines),
+    curatedRagDigest:
+      curatedRag === undefined
+        ? undefined
+        : contextDigest([
+            curatedRag.query,
+            ...curatedRag.results.map((item) => `${item.chunkId}:${item.contentHash}`),
+          ]),
   });
 
   return {
@@ -134,10 +144,70 @@ export function compileResearchContextPack(
     physics,
     ledger,
     ...(aitp === undefined ? {} : { aitp }),
+    ...(curatedRag === undefined ? {} : { curatedRag }),
     actionBindings,
     domainPack,
     diagnostics,
     compiledAt: input.now?.() ?? Date.now(),
+  };
+}
+
+function collectCuratedRag(
+  input: CompileResearchContextPackInput,
+  diagnostics: ResearchContextPackDiagnostic[],
+): ResearchContextCuratedRagSection | undefined {
+  if (input.curatedRag === null || input.curatedRag === undefined) return undefined;
+  diagnostics.push({
+    severity: 'info',
+    code: 'aitp:curated-rag-heuristic-context',
+    message:
+      'AITP curated RAG results are heuristic context only and require normal source/evidence promotion before claim support.',
+    source: 'aitp',
+    refId: input.workFrame.id,
+  });
+  if (input.curatedRag.staleIndexDiagnostics.length > 0) {
+    diagnostics.push({
+      severity: 'warning',
+      code: 'aitp:curated-rag-stale-index-diagnostic',
+      message: 'AITP curated RAG returned stale-index diagnostics.',
+      source: 'aitp',
+      refId: input.workFrame.id,
+    });
+  }
+  const results = bounded(
+    input.curatedRag.results.map((item) => ({
+      chunkId: item.chunkId,
+      documentId: item.documentId,
+      score: item.score,
+      summary: item.summary,
+      text: item.text,
+      contentHash: item.contentHash,
+      tags: item.tags,
+    })),
+    input.limits?.maxCuratedRagResults ?? DEFAULT_MAX_CURATED_RAG_RESULTS,
+    (remaining) =>
+      diagnostics.push({
+        severity: 'info',
+        code: 'curated-rag-results-truncated',
+        message: `${remaining} curated RAG result(s) were omitted from the context pack.`,
+        source: 'aitp',
+        refId: input.workFrame.id,
+      }),
+  );
+  return {
+    query: input.curatedRag.query,
+    reasonIds: unique(input.curatedRagReasonIds ?? []),
+    indexMode: input.curatedRag.indexMode,
+    resultRole: 'heuristic_context',
+    readSurfaceEffect: 'orientation_only',
+    resultCount: results.length,
+    recordsValidationResult: false,
+    claimTrustMutation: 'none',
+    canUpdateClaimTrust: false,
+    requiresPromotionForClaimSupport: true,
+    indexStatus: input.curatedRag.indexStatus,
+    staleIndexDiagnostics: input.curatedRag.staleIndexDiagnostics,
+    results,
   };
 }
 
@@ -577,6 +647,7 @@ function contextPackId(input: {
   readonly capsuleIds: readonly string[];
   readonly proposalIds: readonly string[];
   readonly aitpDigest?: string | undefined;
+  readonly curatedRagDigest?: string | undefined;
 }): string {
   const hash = createHash('sha256')
     .update(JSON.stringify(input))

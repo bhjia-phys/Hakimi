@@ -1,6 +1,11 @@
 import type { Agent } from '..';
 import type { PromptOrigin } from '../context';
-import type { CompiledAitpProcessGraphSlice } from '../../aitp';
+import {
+  detectAitpCuratedRagMoment,
+  type AitpCuratedRagMoment,
+  type CompiledAitpProcessGraphSlice,
+} from '../../aitp';
+import type { AitpCuratedRagSearchResult } from '../../aitp/curated-rag';
 import type { ResearchContextPack } from '../../research-context';
 import { renderResearchContextPackReminder } from './context-pack';
 import type { WorkFrame } from '../../research-action';
@@ -11,6 +16,8 @@ export interface PreparedResearchTurnContext {
   readonly pack: ResearchContextPack;
   readonly reminder: string;
 }
+
+const CURATED_RAG_CONTEXT_LIMIT = 3;
 
 export class WorkFrameOrchestrator {
   constructor(private readonly agent: Agent) {}
@@ -23,8 +30,15 @@ export class WorkFrameOrchestrator {
     }
     const aitp =
       (await this.readAitpProcessGraphSlice(frame, input)) ?? this.cachedAitpContext(frame);
+    const curatedRagMoment = detectAitpCuratedRagMoment({ prompt: input, workFrame: frame, aitp });
+    const curatedRag = await this.searchCuratedRag(curatedRagMoment);
     const pack = this.agent.researchContext.compileForWorkFrame(
-      { workFrameId: frame.id, aitp },
+      {
+        workFrameId: frame.id,
+        aitp,
+        curatedRag,
+        curatedRagReasonIds: curatedRagMoment?.reasons,
+      },
       { source: 'controller' },
     );
     this.agent.tools.applyRuntimeToolExposure(buildRuntimeToolExposurePlan(pack), {
@@ -35,6 +49,25 @@ export class WorkFrameOrchestrator {
       pack,
       reminder: renderResearchContextPackReminder(pack),
     };
+  }
+
+  private async searchCuratedRag(
+    moment: AitpCuratedRagMoment | undefined,
+  ): Promise<AitpCuratedRagSearchResult | undefined> {
+    if (moment === undefined) return undefined;
+    const provider = this.agent.aitpCuratedRagProvider;
+    if (provider === undefined) return undefined;
+    try {
+      return await provider.searchCuratedRagCorpus({
+        query: moment.query,
+        limit: CURATED_RAG_CONTEXT_LIMIT,
+      });
+    } catch (error) {
+      this.agent.log.warn('AITP curated RAG provider failed; continuing without RAG context', {
+        error,
+      });
+      return undefined;
+    }
   }
 
   private async readAitpProcessGraphSlice(
