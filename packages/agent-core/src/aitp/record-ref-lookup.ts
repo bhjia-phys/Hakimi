@@ -46,6 +46,10 @@ export interface AitpRecordRefLookupItem {
   readonly sourceSupportResult: false;
   readonly claimTrustMutation: 'none';
   readonly canUpdateClaimTrust: false;
+  readonly suggestedNextOperation: string;
+  readonly suggestedNextEntrypoint: string;
+  readonly suggestedNextSurface: string;
+  readonly suggestedNextReason: string;
   readonly diagnostic: string;
   readonly raw: Readonly<Record<string, unknown>>;
 }
@@ -174,6 +178,10 @@ function parseLookupItem(raw: Readonly<Record<string, unknown>>): AitpRecordRefL
     sourceSupportResult: false,
     claimTrustMutation: 'none',
     canUpdateClaimTrust: false,
+    suggestedNextOperation: stringValue(raw['suggested_next_operation']) ?? '',
+    suggestedNextEntrypoint: stringValue(raw['suggested_next_entrypoint']) ?? '',
+    suggestedNextSurface: stringValue(raw['suggested_next_surface']) ?? '',
+    suggestedNextReason: stringValue(raw['suggested_next_reason']) ?? '',
     diagnostic: stringValue(raw['diagnostic']) ?? '',
     raw,
   };
