@@ -2477,13 +2477,17 @@ function renderReadinessInspectionSummary(draftFamily: string, indent: string): 
 }
 
 function renderReadinessInspectionChecklist(draftFamily: string, handoffId: string, indent: string): string {
-  const checklistId = `readiness-checklist.${safeId(draftFamily)}.${safeId(handoffId)}`;
+  const checklistId = readinessChecklistId(draftFamily, handoffId);
   return [
     `${indent}<readiness_inspection_checklist checklist_id="${escapeXml(checklistId)}" draft_family="${draftFamily}" id_source="handoff_id+draft_family" item_count="2" read_only="true" bridge_called="false" executes_write_now="false" execute_call_authorized="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">`,
     `${indent}  <inspection_item order="1" action="inspect_aitp_write_bridge_handoff_readiness" source="readiness_call_pointer+execute_aitp_write_bridge_handoff.readiness_call_json" required_before_explicit_execute="true" copy_call_from="execute_aitp_write_bridge_handoff.readiness_call_json" read_only="true" bridge_called="false" executes_write_now="false" />`,
     `${indent}  <inspection_item order="2" action="execute_aitp_write_bridge" source="tool_call_json" allowed_only_after_readiness_passes="true" executes_write_now="false" checklist_authorizes_execution="false" requires_explicit_execute_call="true" />`,
     `${indent}</readiness_inspection_checklist>`,
   ].join('\n');
+}
+
+function readinessChecklistId(draftFamily: string, handoffId: string): string {
+  return `readiness-checklist.${safeId(draftFamily)}.${safeId(handoffId)}`;
 }
 
 function curatedRagPromotionWriteBridgeConfirmationSummary(
@@ -3365,6 +3369,7 @@ function renderAitpWriteBridgeHandoffReadiness(
     const { failure } = readiness;
     return [
       `<aitp_write_bridge_handoff_readiness kind="curated_rag_write_bridge_handoff" status="failed" code="${escapeXml(failure.code)}"${failure.field === undefined ? '' : ` field="${escapeXml(failure.field)}"`}${failure.path === undefined ? '' : ` path="${escapeXml(failure.path)}"`} next_step="${escapeXml(failure.remediation.nextStep)}" repair_target="${escapeXml(failure.remediation.repairTarget)}" bridge_call_allowed="false" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" handoff_mutated_now="false" retry_requires_explicit_execute_call="true">`,
+      renderReadinessChecklistResult({ status: 'failed' }, '  '),
       `  <message>Handoff readiness guard failed with code ${escapeXml(failure.code)}.</message>`,
       '</aitp_write_bridge_handoff_readiness>',
       '',
@@ -3376,10 +3381,30 @@ function renderAitpWriteBridgeHandoffReadiness(
   }
   return [
     `<aitp_write_bridge_handoff_readiness kind="${guard.kind}" status="passed" handoff_id="${escapeXml(guard.handoffId)}" confirmation_id="${escapeXml(guard.confirmationId)}" confirmation_status="${escapeXml(guard.confirmationStatus)}" diagnostic_hash="${escapeXml(guard.diagnosticHash)}" selected_aitp_operation="${escapeXml(guard.selectedAitpOperation)}" missing_ref_repair_hint_count="${String(guard.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(guard.missingRefRepairChecklistPresent)}" repair_hint_operation_count="${String(guard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(guard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(guard.selectedWriteDiffersFromRepairHints)}" bridge_call_allowed="true" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" handoff_mutated_now="false" requires_explicit_execute_call="true">`,
+    renderReadinessChecklistResult({ status: 'passed', guard }, '  '),
     '  <next_step>Call ResearchAction.execute_aitp_write_bridge with the same aitp_operation, aitp_payload, and aitp_handoff when explicit execution is intended.</next_step>',
     '</aitp_write_bridge_handoff_readiness>',
     '',
   ].join('\n');
+}
+
+function renderReadinessChecklistResult(
+  input:
+    | { readonly status: 'passed'; readonly guard: AitpHandoffGuard }
+    | { readonly status: 'failed' },
+  indent: string,
+): string {
+  if (input.status === 'failed') {
+    return `${indent}<readiness_checklist_result checklist_id_available="false" item_order="1" item_action="inspect_aitp_write_bridge_handoff_readiness" item_status="failed" source="execute_aitp_write_bridge_handoff.readiness_call_json" read_only="true" bridge_called="false" executes_write_now="false" checklist_mutated_now="false" />`;
+  }
+  const draftFamily = readinessDraftFamily(input.guard.kind);
+  return `${indent}<readiness_checklist_result checklist_id="${escapeXml(readinessChecklistId(draftFamily, input.guard.handoffId))}" draft_family="${draftFamily}" item_order="1" item_action="inspect_aitp_write_bridge_handoff_readiness" item_status="satisfied" source="execute_aitp_write_bridge_handoff.readiness_call_json" next_item_order="2" next_item_action="execute_aitp_write_bridge" read_only="true" bridge_called="false" executes_write_now="false" checklist_mutated_now="false" />`;
+}
+
+function readinessDraftFamily(kind: AitpHandoffGuard['kind']): string {
+  return kind === 'record_ref_repair_write_bridge_handoff'
+    ? 'record_ref_repair_write_call_draft'
+    : 'curated_rag_write_call_draft';
 }
 
 function renderAitpHandoffGuard(handoffGuard: AitpHandoffGuard | undefined): string {
