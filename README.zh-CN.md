@@ -73,6 +73,10 @@ also renders the AITP-owned `suggested_next_operation`,
 `suggested_next_reason`. These fields only point to the normal AITP write path;
 they do not execute that write and do not replace source review, validation, or
 trust preflight.
+Hakimi also groups these hints into a compact
+`missing_ref_repair_checklist` under `payload_ref_readiness`; the checklist is
+read-only, marks `executes_write_now=false`, and still requires a separate
+explicit `execute_aitp_write_bridge` call.
 The returned XML also includes a host-side `confirmation_preflight` summary
 that classifies remaining diagnostics as hard-blocking, confirmation-required,
 or advisory. This is not an AITP trust preflight and it does not validate the
@@ -237,6 +241,7 @@ Hakimi 不是在 coding agent 外面套一个研究记录本。它是 [MoonshotA
 - `ResearchAction.inspect_aitp_curated_rag_corpus` 和 `ResearchAction.search_aitp_curated_rag_corpus` 现在会读取 AITP-owned curated heuristic RAG surface：前者展示 corpus、document/chunk ids、index policy、allowed/forbidden uses 和 no-trust flags，后者用 `rag_query` / `rag_limit` 调用 `aitp_v5_search_curated_rag_corpus`，MCP 不可用时回退到 `aitp-v5 --base <cwd> adapter curated-rag-search`。Hakimi 会把当前 Agent cwd 作为 AITP `base` 传给 MCP/CLI provider，所以如果 workspace 存在 `.aitp/curated_rag/corpus.json`，AITP 会读取真实 file-backed corpus 并返回 `lexical_file_backed` index/stale diagnostics；否则继续使用默认 fixture。检索结果只作为 `heuristic_context` / orientation-only 背景启发，可用于概念脚手架、文献方向、推导方法选择和 source backtrace 建议；它不是 evidence、validation、final-gate satisfaction 或 claim-trust authority。若某段内容变成 claim-relevant，必须先走 AITP `source_asset`、`reference_location`、evidence、validation 和 trust preflight 的正常提升路径。
 - Hakimi 现在也会通过 AITP-owned `record_ref_lookup` 检查 reviewed curated RAG payload 里的 `source_asset:<id>`、`reference_location:<id>` 等 ref 是否存在于 AITP typed store：优先调用 `aitp_v5_lookup_record_refs`，MCP 不可用时回退到 `aitp-v5 --base <cwd> adapter record-ref-lookup <refs...>`。`payload_ref_readiness` 中的 found 只表示 typed-store existence；它不是 source support、evidence、validation、final-gate satisfaction，也不会改变 claim trust。
 - 如果 AITP 对 missing `source_asset` / `reference_location` ref 返回 `suggested_next_operation`、`suggested_next_entrypoint`、`suggested_next_surface` 和 `suggested_next_reason`，Hakimi 只把这些字段渲染成下一步修复提示：它们指向普通 AITP 写入路径，但不会自动写记录，也不会替代 source review、validation 或 trust preflight。
+- Hakimi 还会把这些修复提示汇总成 `payload_ref_readiness` 里的 `missing_ref_repair_checklist`，方便模型直接看到下一步；这个 checklist 是只读的，`executes_write_now=false`，仍然要求之后显式调用 `execute_aitp_write_bridge`。
 - Hakimi 现在也会自动识别适合 curated RAG 的回合：概念解释、文献/讲义背景、推导脚手架、方法选择和 source backtrace 提示会在 WorkFrame context 准备阶段触发一次小上限的 AITP `searchCuratedRagCorpus`。命中的 chunk 会进入 `ResearchContextPack.curatedRag`、WorkFrame reminder、compaction snapshot 和 ContextPack XML，并明确标注 `heuristic_context` / `orientation_only`、chunk/document/hash ids 与 promotion boundary。普通实现或操作提示不会触发 RAG；自动 RAG 也不会记录 Hakimi evidence、不会满足 final gate、不会改变 claim trust。
 - `ResearchAction.run_benchmark_adapter` 现在会按 AITP `benchmark_adapter_run_to_tool_run` profile 做一条自动 provenance capture：如果当前 session 有 AITP write bridge 且 WorkFrame/action 参数能给出 topic 与 claim，benchmark adapter 结果会通过 `recordToolRun` 写成 `aitp:tool_run:<id>`，并并入同一个 benchmark action 的 evidence refs。`ResearchAction.capture_primitive_tool_run` 现在按 AITP `primitive_tool_lifecycle_to_tool_run` profile 提供显式 primitive tool capture：模型或 host 必须点名一个最近的 `primitive_tool_call_id`，Hakimi 才会从 lifecycle envelope 构造 `recordToolRun` payload 并写入 AITP。这不是全量自动写入；这个路径不会调用 `recordValidationResult`，不会更新 claim trust；缺 bridge、缺 AITP scope 或找不到 tool call 时只保留 skipped/failed 状态。
 

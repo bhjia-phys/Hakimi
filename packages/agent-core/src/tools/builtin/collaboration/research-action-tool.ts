@@ -1935,9 +1935,14 @@ function renderPayloadRefReadiness(
   if (lookup?.status === 'performed') {
     const byRef = new Map(lookup.lookup.refs.map((item) => [item.ref, item]));
     const confirmedCount = refs.filter((ref) => byRef.get(ref)?.recordConfirmed === true).length;
+    const repairChecklist = renderMissingRefRepairChecklist(
+      refs.map((ref) => byRef.get(ref)).filter(isMissingRefRepairItem),
+      indent,
+    );
     return [
       `${indent}<payload_ref_readiness placeholder_ref_count="${String(placeholderCount)}" concrete_ref_count="${String(concreteCount)}" confirmation_source="aitp_record_ref_lookup" aitp_lookup_performed="true" lookup_scope="${escapeXml(lookup.lookup.lookupScope)}" lookup_count="${String(lookup.lookup.lookupCount)}" found_count="${String(lookup.lookup.foundCount)}" missing_count="${String(lookup.lookup.missingCount)}" unsupported_count="${String(lookup.lookup.unsupportedCount)}" malformed_count="${String(lookup.lookup.malformedCount)}" confirmed_ref_count="${String(confirmedCount)}" read_surface_effect="${escapeXml(lookup.lookup.readSurfaceEffect)}" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_aitp_lookup_before_execution="false">`,
       ...refs.map((ref) => renderPayloadRefReadinessItem(ref, byRef.get(ref), indent)),
+      ...(repairChecklist === undefined ? [] : [repairChecklist]),
       `${indent}</payload_ref_readiness>`,
     ].join('\n');
   }
@@ -1978,6 +1983,27 @@ function renderPayloadRefReadinessItem(
       ? ''
       : ` suggested_next_operation="${escapeXml(lookup.suggestedNextOperation)}" suggested_next_entrypoint="${escapeXml(lookup.suggestedNextEntrypoint)}" suggested_next_surface="${escapeXml(lookup.suggestedNextSurface)}" suggested_next_reason="${escapeXml(lookup.suggestedNextReason)}"`;
   return `${indent}  <ref status="concrete" aitp_record_confirmed="${String(lookup.recordConfirmed)}" lookup_status="${lookup.status}" ref_kind="${escapeXml(lookup.refKind)}" record_id="${escapeXml(lookup.recordId)}" surface="${escapeXml(lookup.surface)}" read_surface_effect="${escapeXml(lookup.readSurfaceEffect)}" records_validation_result="false" source_support_result="false" claim_trust_mutation="none"${suggestedNext}>${escapeXml(ref)}</ref>`;
+}
+
+function isMissingRefRepairItem(
+  item: AitpRecordRefLookupItem | undefined,
+): item is AitpRecordRefLookupItem {
+  return item?.status === 'not_found' && item.suggestedNextOperation.length > 0;
+}
+
+function renderMissingRefRepairChecklist(
+  items: readonly AitpRecordRefLookupItem[],
+  indent: string,
+): string | undefined {
+  if (items.length === 0) return undefined;
+  return [
+    `${indent}  <missing_ref_repair_checklist item_count="${String(items.length)}" source="aitp_record_ref_lookup" read_only="true" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" requires_explicit_execute_call="true">`,
+    ...items.map(
+      (item) =>
+        `${indent}    <repair_item ref="${escapeXml(item.ref)}" ref_kind="${escapeXml(item.refKind)}" record_id="${escapeXml(item.recordId)}" suggested_next_operation="${escapeXml(item.suggestedNextOperation)}" suggested_next_entrypoint="${escapeXml(item.suggestedNextEntrypoint)}" suggested_next_surface="${escapeXml(item.suggestedNextSurface)}" next_step="${escapeXml(item.suggestedNextReason)}" />`,
+    ),
+    `${indent}  </missing_ref_repair_checklist>`,
+  ].join('\n');
 }
 
 function concreteLookupRefs(refs: readonly string[]): readonly string[] {

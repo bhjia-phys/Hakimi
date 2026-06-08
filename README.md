@@ -283,6 +283,11 @@ If AITP returns missing-ref repair guidance, Hakimi renders the AITP-owned
 attributes tell the model which ordinary AITP write path to consider next, but
 they are not execution and they do not replace source review, validation, or
 trust preflight.
+The same hints are also collected into a compact
+`missing_ref_repair_checklist` under `payload_ref_readiness`, so the model does
+not have to recover the next step from each per-ref attribute. The checklist is
+read-only, has `executes_write_now="false"`, and still requires a separate
+explicit `execute_aitp_write_bridge` call.
 The returned XML also includes a host-side `confirmation_preflight` summary
 that classifies remaining diagnostics as hard-blocking, confirmation-required,
 or advisory. This is not an AITP trust preflight and it does not validate the
