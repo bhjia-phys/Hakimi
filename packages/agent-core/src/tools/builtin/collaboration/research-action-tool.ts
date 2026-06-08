@@ -2447,6 +2447,7 @@ function renderAitpRecordRefRepairWriteBridgeCallDraft(input: {
     `  <repair_reason>${escapeXml(input.repairReason ?? '')}</repair_reason>`,
     `  <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
     `  <reviewed_payload_json>${escapeXml(JSON.stringify(input.payload))}</reviewed_payload_json>`,
+    `  <readiness_call_pointer action="inspect_aitp_write_bridge_handoff_readiness" handoff_id="${escapeXml(handoffId)}" confirmation_id="${escapeXml(confirmationId)}" diagnostic_hash="${escapeXml(diagnosticHash)}" source="execute_aitp_write_bridge_handoff.readiness_call_json" read_only="true" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" requires_explicit_execute_call="true" />`,
     `  <execute_aitp_write_bridge_handoff handoff_id="${escapeXml(handoffId)}" confirmation_id="${escapeXml(confirmationId)}" confirmation_status="ready_for_explicit_execute" diagnostic_hash="${escapeXml(diagnosticHash)}" hash_algorithm="sha256" handoff_executed="false" executes_write_now="false" non_execution_provenance="repair_draft_only" requires_explicit_execute_call="true">`,
     `    <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
     `    <hash_input_json>${escapeXml(stableJson(hashInput))}</hash_input_json>`,

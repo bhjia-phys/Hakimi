@@ -130,6 +130,10 @@ Guarded handoff artifacts now also include `readiness_call_json`, a prefilled
 operation, payload, and handoff. This is only a copyable read-only check; the
 separate `execute_aitp_write_bridge` call is still required for any AITP write
 or preflight.
+Record-ref repair drafts also expose a root-level `readiness_call_pointer`
+with the readiness action, handoff id, confirmation id, and diagnostic hash, so
+the model can see the available pre-execute check without scanning the nested
+handoff artifact. The pointer is read-only and keeps `bridge_called=false`.
 When a handoff is supplied, `execute_aitp_write_bridge` now emits a compact
 `handoff_execution_precheck` before the guard/result details. Passed prechecks
 show `bridge_call_allowed=true` and `bridge_called=true` after the guard has
