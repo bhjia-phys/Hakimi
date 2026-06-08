@@ -2162,47 +2162,110 @@ function verifyAitpWriteBridgeHandoff(
   const confirmationStatus = stringRecordValue(handoff, 'confirmation_status', 'confirmationStatus');
   const toolCall = recordRecordValue(handoff, 'tool_call_json', 'toolCallJson', 'tool_call', 'toolCall');
   const hashInput = recordRecordValue(handoff, 'hash_input_json', 'hashInputJson', 'hash_input', 'hashInput');
-  if (!hasText(handoffId)) return handoffGuardError('requires handoff_id.');
-  if (!hasText(confirmationId)) return handoffGuardError('requires confirmation_id.');
-  if (!hasText(diagnosticHash)) return handoffGuardError('requires diagnostic_hash.');
-  if (!diagnosticHash.startsWith('sha256:')) {
-    return handoffGuardError('requires diagnostic_hash to use sha256:<digest>.');
+  if (!hasText(handoffId)) {
+    return handoffGuardError('missing_handoff_id', 'requires handoff_id.', {
+      field: 'handoff_id',
+      path: 'aitp_handoff.handoff_id',
+    });
   }
-  if (!hasText(confirmationStatus)) return handoffGuardError('requires confirmation_status.');
+  if (!hasText(confirmationId)) {
+    return handoffGuardError('missing_confirmation_id', 'requires confirmation_id.', {
+      field: 'confirmation_id',
+      path: 'aitp_handoff.confirmation_id',
+    });
+  }
+  if (!hasText(diagnosticHash)) {
+    return handoffGuardError('missing_diagnostic_hash', 'requires diagnostic_hash.', {
+      field: 'diagnostic_hash',
+      path: 'aitp_handoff.diagnostic_hash',
+    });
+  }
+  if (!diagnosticHash.startsWith('sha256:')) {
+    return handoffGuardError('invalid_diagnostic_hash_algorithm', 'requires diagnostic_hash to use sha256:<digest>.', {
+      field: 'diagnostic_hash',
+      path: 'aitp_handoff.diagnostic_hash',
+    });
+  }
+  if (!hasText(confirmationStatus)) {
+    return handoffGuardError('missing_confirmation_status', 'requires confirmation_status.', {
+      field: 'confirmation_status',
+      path: 'aitp_handoff.confirmation_status',
+    });
+  }
   if (confirmationStatus === 'blocked') {
-    return handoffGuardError('refuses blocked handoff; resolve diagnostics before execution.');
+    return handoffGuardError('blocked_handoff', 'refuses blocked handoff; resolve diagnostics before execution.', {
+      field: 'confirmation_status',
+      path: 'aitp_handoff.confirmation_status',
+    });
   }
   if (confirmationStatus !== 'needs_explicit_confirmation' && confirmationStatus !== 'ready_for_explicit_execute') {
-    return handoffGuardError(`has unsupported confirmation_status="${confirmationStatus}".`);
+    return handoffGuardError('unsupported_confirmation_status', `has unsupported confirmation_status="${confirmationStatus}".`, {
+      field: 'confirmation_status',
+      path: 'aitp_handoff.confirmation_status',
+    });
   }
-  if (toolCall === undefined) return handoffGuardError('requires tool_call_json/toolCall object.');
-  if (hashInput === undefined) return handoffGuardError('requires hash_input_json/hashInput object.');
+  if (toolCall === undefined) {
+    return handoffGuardError('missing_tool_call_json', 'requires tool_call_json/toolCall object.', {
+      field: 'tool_call_json',
+      path: 'aitp_handoff.tool_call_json',
+    });
+  }
+  if (hashInput === undefined) {
+    return handoffGuardError('missing_hash_input_json', 'requires hash_input_json/hashInput object.', {
+      field: 'hash_input_json',
+      path: 'aitp_handoff.hash_input_json',
+    });
+  }
   if (stringRecordValue(toolCall, 'action') !== 'execute_aitp_write_bridge') {
-    return handoffGuardError('tool_call_json.action must be execute_aitp_write_bridge.');
+    return handoffGuardError('tool_call_action_mismatch', 'tool_call_json.action must be execute_aitp_write_bridge.', {
+      field: 'tool_call_json',
+      path: 'aitp_handoff.tool_call_json.action',
+    });
   }
   if (stringRecordValue(toolCall, 'aitp_operation', 'aitpOperation') !== operation) {
-    return handoffGuardError('tool_call_json.aitp_operation does not match explicit aitp_operation.');
+    return handoffGuardError('tool_call_operation_mismatch', 'tool_call_json.aitp_operation does not match explicit aitp_operation.', {
+      field: 'aitp_operation',
+      path: 'aitp_handoff.tool_call_json.aitp_operation',
+    });
   }
   const handoffPayload = recordRecordValue(toolCall, 'aitp_payload', 'aitpPayload');
   if (handoffPayload === undefined) {
-    return handoffGuardError('tool_call_json requires aitp_payload.');
+    return handoffGuardError('missing_tool_call_payload', 'tool_call_json requires aitp_payload.', {
+      field: 'aitp_payload',
+      path: 'aitp_handoff.tool_call_json.aitp_payload',
+    });
   }
   if (stableJson(handoffPayload) !== stableJson(payload)) {
-    return handoffGuardError('tool_call_json.aitp_payload does not match explicit aitp_payload.');
+    return handoffGuardError('tool_call_payload_mismatch', 'tool_call_json.aitp_payload does not match explicit aitp_payload.', {
+      field: 'aitp_payload',
+      path: 'aitp_handoff.tool_call_json.aitp_payload',
+    });
   }
   const expectedHash = `sha256:${shortSha256(stableJson(hashInput), 16)}`;
   if (diagnosticHash !== expectedHash) {
-    return handoffGuardError('diagnostic_hash does not match hash_input_json.');
+    return handoffGuardError('diagnostic_hash_mismatch', 'diagnostic_hash does not match hash_input_json.', {
+      field: 'diagnostic_hash',
+      path: 'aitp_handoff.diagnostic_hash',
+    });
   }
   if (stringRecordValue(hashInput, 'aitpOperation') !== operation) {
-    return handoffGuardError('hash_input_json.aitpOperation does not match explicit aitp_operation.');
+    return handoffGuardError('hash_input_operation_mismatch', 'hash_input_json.aitpOperation does not match explicit aitp_operation.', {
+      field: 'aitpOperation',
+      path: 'aitp_handoff.hash_input_json.aitpOperation',
+    });
   }
   if (stringRecordValue(hashInput, 'confirmationStatus') !== confirmationStatus) {
-    return handoffGuardError('hash_input_json.confirmationStatus does not match confirmation_status.');
+    return handoffGuardError('hash_input_confirmation_status_mismatch', 'hash_input_json.confirmationStatus does not match confirmation_status.', {
+      field: 'confirmationStatus',
+      path: 'aitp_handoff.hash_input_json.confirmationStatus',
+    });
   }
   const hashToolCall = recordRecordValue(hashInput, 'toolCall');
   if (hashToolCall === undefined || stableJson(hashToolCall) !== stableJson(toolCall)) {
-    return handoffGuardError('hash_input_json.toolCall does not match tool_call_json.');
+    return handoffGuardError('hash_input_tool_call_mismatch', 'hash_input_json.toolCall does not match tool_call_json.', {
+      field: 'toolCall',
+      path: 'aitp_handoff.hash_input_json.toolCall',
+    });
   }
   return {
     isError: false,
@@ -2216,10 +2279,18 @@ function verifyAitpWriteBridgeHandoff(
   };
 }
 
-function handoffGuardError(reason: string): { readonly isError: true; readonly message: string } {
+function handoffGuardError(
+  code: string,
+  reason: string,
+  location: { readonly field?: string | undefined; readonly path?: string | undefined } = {},
+): { readonly isError: true; readonly message: string } {
   return {
     isError: true,
-    message: `ResearchAction execute_aitp_write_bridge handoff guard failed: ${reason}`,
+    message: [
+      `<handoff_guard_failure status="failed" code="${escapeXml(code)}"${location.field === undefined ? '' : ` field="${escapeXml(location.field)}"`}${location.path === undefined ? '' : ` path="${escapeXml(location.path)}"`} executes_write_now="false" bridge_called="false">`,
+      `  <message>ResearchAction execute_aitp_write_bridge handoff guard failed: ${escapeXml(reason)}</message>`,
+      '</handoff_guard_failure>',
+    ].join('\n'),
   };
 }
 
