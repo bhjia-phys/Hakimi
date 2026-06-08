@@ -1554,6 +1554,9 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('<confirmation_preflight status="blocked"');
     expect(result.output).toContain('missing_ref_repair_hint_count="0"');
     expect(result.output).toContain('missing_ref_repair_checklist_present="false"');
+    expect(result.output).toContain('repair_hint_operation_count="0"');
+    expect(result.output).toContain('repair_hint_operations=""');
+    expect(result.output).toContain('selected_write_differs_from_repair_hints="false"');
     expect(result.output).toContain('<hard_blocking_diagnostics');
     expect(result.output).toMatch(
       /handoff_id="curated-rag-write-handoff\.curated_rag_chunk-source_backtrace_orientation-0001\.evidence\.recordEvidence\.[0-9a-f]{16}"/,
@@ -1642,6 +1645,9 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('<confirmation_preflight status="needs_explicit_confirmation"');
     expect(result.output).toContain('missing_ref_repair_hint_count="0"');
     expect(result.output).toContain('missing_ref_repair_checklist_present="false"');
+    expect(result.output).toContain('repair_hint_operation_count="0"');
+    expect(result.output).toContain('repair_hint_operations=""');
+    expect(result.output).toContain('selected_write_differs_from_repair_hints="false"');
     expect(result.output).toContain('hard_blocking_count="0"');
     expect(result.output).toContain('<hard_blocking_diagnostics />');
     expect(result.output).toContain('<confirmation_required_diagnostics');
@@ -1718,6 +1724,12 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('requires_aitp_lookup_before_execution="false"');
     expect(result.output).toContain('missing_ref_repair_hint_count="1"');
     expect(result.output).toContain('missing_ref_repair_checklist_present="true"');
+    expect(result.output).toContain('repair_hint_operation_count="1"');
+    expect(result.output).toContain('repair_hint_operations="recordReferenceLocation"');
+    expect(result.output).toContain('repair_hint_summary_source="missing_ref_repair_checklist"');
+    expect(result.output).toContain('selected_write_differs_from_repair_hints="true"');
+    expect(result.output).toContain('repair_action_hint_only="true"');
+    expect(result.output).toContain('selected_write_call_unchanged="true"');
     expect(result.output).toContain(
       '<ref status="concrete" aitp_record_confirmed="true" lookup_status="found" ref_kind="source_asset" record_id="asset-reviewed" surface="source_asset_record" read_surface_effect="record_existence_check_only" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">source_asset:asset-reviewed</ref>',
     );
