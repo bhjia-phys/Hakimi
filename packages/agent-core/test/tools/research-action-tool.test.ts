@@ -49,6 +49,39 @@ describe('ResearchActionTool', () => {
     expect(tool.description).toContain('never mutate the handoff');
   });
 
+  it('lists handoff guard remediation taxonomy as read-only machine-readable metadata', async () => {
+    const tool = new ResearchActionTool();
+
+    const actions = await execute(tool, {
+      action: 'list_actions',
+    });
+
+    expect(actions.output).toContain('<handoff_guard_remediation_taxonomy');
+    expect(actions.output).toContain('kind="curated_rag_write_bridge_handoff"');
+    expect(actions.output).toContain('read_only="true"');
+    expect(actions.output).toContain('executes_write_now="false"');
+    expect(actions.output).toContain('mutates_handoff_now="false"');
+    expect(actions.output).toContain('records_evidence="false"');
+    expect(actions.output).toContain('validates_claim="false"');
+    expect(actions.output).toContain('claim_trust_mutation="none"');
+    expect(actions.output).toContain(
+      '<failure code="missing_handoff_id" next_step="copy_missing_handoff_field_from_draft" retry_requires_explicit_execute_call="true" />',
+    );
+    expect(actions.output).toContain(
+      '<failure code="tool_call_payload_mismatch" next_step="align_explicit_execute_args_with_handoff_tool_call" retry_requires_explicit_execute_call="true" />',
+    );
+    expect(actions.output).toContain(
+      '<failure code="diagnostic_hash_mismatch" next_step="redraft_handoff_or_restore_hash_input" retry_requires_explicit_execute_call="true" />',
+    );
+    expect(actions.output).toContain(
+      '<failure code="blocked_handoff" next_step="redraft_or_resolve_blocking_diagnostics" retry_requires_explicit_execute_call="true" />',
+    );
+    expect(actions.output).toContain(
+      '<failure code="unsupported_confirmation_status" next_step="inspect_handoff_guard_failure" retry_requires_explicit_execute_call="true" />',
+    );
+    expect(actions.output).not.toContain('trustApply');
+  });
+
   it('lists default actions and recommends next actions from obligations', async () => {
     const tool = new ResearchActionTool();
 

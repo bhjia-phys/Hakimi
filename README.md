@@ -296,6 +296,12 @@ without expanding the AITP write surface.
 The same taxonomy is now named in the model-facing ResearchAction tool
 description, so retrying a failed guarded handoff can use the advertised repair
 steps while still requiring a separate explicit execute call.
+`ResearchAction.list_actions` now also includes a machine-readable
+`handoff_guard_remediation_taxonomy` section generated from that same lookup
+table. Each failure code maps to one `next_step` and carries
+`retry_requires_explicit_execute_call="true"` plus read-only/no-evidence/no-trust
+flags, so models can inspect the taxonomy without relying on prose and without
+gaining a new write or mutation path.
 
 The WorkFrame orchestrator now also calls that provider automatically for
 RAG-helpful turns. It detects prompts asking for conceptual scaffolding,
