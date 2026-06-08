@@ -275,6 +275,11 @@ embedded tool call matches the explicit operation/payload, and the diagnostic
 hash matches `hash_input_json` before it calls the normal AITP write bridge.
 Tampered or blocked handoffs fail before bridge execution; direct explicit
 write-bridge calls without a handoff still use the ordinary typed path.
+The guard coverage now also pins fail-closed behavior for missing
+`tool_call_json`, missing `hash_input_json`, payload tampering, diagnostic-hash
+tampering, and hash-input/tool-call mismatch. The AITP write-bridge executor
+operation list is kept explicit and still excludes `trustApply`, so the
+handoff lane cannot silently widen the canonical write surface.
 
 The WorkFrame orchestrator now also calls that provider automatically for
 RAG-helpful turns. It detects prompts asking for conceptual scaffolding,

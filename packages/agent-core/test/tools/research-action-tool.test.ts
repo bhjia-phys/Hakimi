@@ -1775,6 +1775,93 @@ describe('ResearchActionTool', () => {
     expect(bridgeCalls).toEqual([]);
   });
 
+  it.each([
+    {
+      name: 'missing tool_call_json',
+      mutate(handoff: ReturnType<typeof extractCuratedRagHandoff>) {
+        const { tool_call_json: _toolCallJson, ...guard } = handoff.guard;
+        return guard;
+      },
+      expected: 'requires tool_call_json/toolCall object',
+    },
+    {
+      name: 'missing hash_input_json',
+      mutate(handoff: ReturnType<typeof extractCuratedRagHandoff>) {
+        const { hash_input_json: _hashInputJson, ...guard } = handoff.guard;
+        return guard;
+      },
+      expected: 'requires hash_input_json/hashInput object',
+    },
+    {
+      name: 'tampered payload',
+      mutate(handoff: ReturnType<typeof extractCuratedRagHandoff>) {
+        return {
+          ...handoff.guard,
+          tool_call_json: {
+            ...handoff.toolCall,
+            aitp_payload: {
+              ...toolCallPayload(handoff),
+              summary: 'Tampered summary that no longer matches the explicit payload.',
+            },
+          },
+        };
+      },
+      expected: 'tool_call_json.aitp_payload does not match explicit aitp_payload',
+    },
+    {
+      name: 'tampered diagnostic hash',
+      mutate(handoff: ReturnType<typeof extractCuratedRagHandoff>) {
+        return {
+          ...handoff.guard,
+          diagnostic_hash: 'sha256:0000000000000000',
+        };
+      },
+      expected: 'diagnostic_hash does not match hash_input_json',
+    },
+    {
+      name: 'tampered hash input tool call',
+      mutate(handoff: ReturnType<typeof extractCuratedRagHandoff>) {
+        return {
+          ...handoff.guard,
+          hash_input_json: {
+            ...handoff.hashInput,
+            toolCall: {
+              ...handoff.toolCall,
+              aitp_operation: 'registerSourceAsset',
+            },
+          },
+        };
+      },
+      expected: 'diagnostic_hash does not match hash_input_json',
+    },
+  ])('rejects curated RAG handoff guard case: $name', async ({ mutate, expected }) => {
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(undefined, {
+      aitpCuratedRagProvider: curatedRagPromotionDraftProvider(),
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          throw new Error('invalid handoff must fail before bridge execution');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+    const draft = await reviewedCuratedRagWriteBridgeCallDraft(tool);
+    const handoff = extractCuratedRagHandoff(draft.output);
+
+    const result = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'recordEvidence',
+      aitp_payload: toolCallPayload(handoff),
+      aitp_handoff: mutate(handoff),
+    });
+
+    expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('handoff guard failed');
+    expect(result.output).toContain(expected);
+    expect(bridgeCalls).toEqual([]);
+  });
+
   it('rejects non-promotion action bindings for curated RAG promotion drafts', async () => {
     const agent = makeAgent(undefined, {
       aitpCuratedRagProvider: {
@@ -2236,6 +2323,40 @@ function execute(tool: ResearchActionTool, args: Parameters<typeof tool.resolveE
     toolCallId: 'call_research_action',
     args,
     signal,
+  });
+}
+
+function curatedRagPromotionDraftProvider(): AitpCuratedRagProvider {
+  return {
+    async getCuratedRagCorpus() {
+      throw new Error('not used');
+    },
+    async searchCuratedRagCorpus() {
+      throw new Error('not used');
+    },
+    async draftCuratedRagPromotion(input) {
+      return parseAitpCuratedRagPromotionDraft(
+        fakeCuratedRagPromotionDraft(input.chunkId, {
+          topicId: input.topicId,
+          claimId: input.claimId,
+          connectorId: input.connectorId,
+        }),
+      );
+    },
+  };
+}
+
+function reviewedCuratedRagWriteBridgeCallDraft(tool: ResearchActionTool) {
+  return execute(tool, {
+    action: 'draft_aitp_curated_rag_write_bridge_call',
+    rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+    aitp_topic_id: 'fqhe-literature',
+    aitp_claim_id: 'claim-fqhe',
+    promotion_draft_operation: 'recordEvidence',
+    promotion_reviewed_overrides: {
+      source_refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+      summary: 'Reviewed source passage supports only the scoped claim fragment.',
+    },
   });
 }
 
