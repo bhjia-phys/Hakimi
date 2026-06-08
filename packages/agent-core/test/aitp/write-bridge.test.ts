@@ -39,6 +39,24 @@ describe('AITP write bridge executor', () => {
       stateEffect: 'read_only',
       claimTrustMutation: 'none',
       canUpdateClaimTrust: false,
+      mcpArguments: {
+        required: ['base', 'session_id'],
+        optional: ['claim_id', 'limit'],
+        source: 'aitp_v5_get_process_graph_slice',
+      },
+    });
+    expect(byOperation.get('readMomentPolicy')).toMatchObject({
+      entrypointKey: 'host_agnostic_moment_policy',
+      mcpTool: 'aitp_v5_get_host_agnostic_moment_policy',
+      cliFallback: 'aitp-v5 graph moment-policy <session-id>',
+      surface: 'host_agnostic_moment_policy',
+      executionRole: 'read',
+      stateEffect: 'read_only',
+      mcpArguments: {
+        required: ['base', 'session_id'],
+        optional: ['claim_id', 'limit'],
+        source: 'aitp_v5_get_host_agnostic_moment_policy',
+      },
     });
     expect(byOperation.get('readRuntimePayloadProfiles')).toMatchObject({
       entrypointKey: 'runtime_payload_profiles',
@@ -60,6 +78,11 @@ describe('AITP write bridge executor', () => {
       stateEffect: 'read_only',
       claimTrustMutation: 'none',
       canUpdateClaimTrust: false,
+      mcpArguments: {
+        required: [],
+        optional: [],
+        source: 'aitp_v5_get_runtime_payload_profiles',
+      },
     });
     expect(aitpRuntimeBridgeTargetForOperation('recordEvidence')).toMatchObject({
       operation: 'recordEvidence',
