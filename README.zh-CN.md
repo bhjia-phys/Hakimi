@@ -25,6 +25,15 @@ topic/claim context, forbidden uses, and draft-only `registerSourceAsset`,
 `draft_creates_records=false`, every operation has
 `creates_record_now=false`, and Hakimi still does not treat RAG as evidence,
 validation, final-gate satisfaction, or claim-trust authority.
+When a turn asks whether a retrieved curated RAG chunk should become source or
+claim support, Hakimi now derives read-only
+`ResearchAction.draft_aitp_curated_rag_promotion` bindings directly from
+`ResearchContextPack.curatedRag.results`. The binding carries the
+chunk/document/hash ids and active AITP topic/claim scope into the WorkFrame
+reminder and ContextPack XML, but it still requires an explicit model/user
+choice before the draft action is called. Any later AITP source, evidence,
+validation, or trust-preflight write remains a separate explicit bridge
+operation.
 AITP process-graph reads are now MCP-first too: Hakimi calls
 `aitp_v5_get_process_graph_slice` with `base`, `session_id`, optional
 `claim_id`, and optional `limit`, then falls back to `aitp-v5 graph slice`

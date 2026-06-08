@@ -178,6 +178,88 @@ describe('compileResearchContextPack', () => {
     );
     expect(pack.diagnostics.map((item) => item.source)).toContain('aitp');
   });
+
+  it('suggests curated RAG promotion draft bindings only for claim-support review context', () => {
+    const pack = compileResearchContextPack({
+      workFrame: createWorkFrame({
+        id: 'frame.rag-promotion',
+        domain: DOMAIN,
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Decide whether a retrieved source passage should support claim-fqhe.',
+        sourceRefs: ['aitp:claim:claim-fqhe'],
+      }),
+      curatedRag: curatedRagSearchPayload(),
+      curatedRagReasonIds: ['source_backtrace_suggestions'],
+      now: () => 123,
+    });
+
+    expect(pack.sourceRefs).toEqual(['aitp:claim:claim-fqhe']);
+    expect(pack.curatedRag).toMatchObject({
+      resultRole: 'heuristic_context',
+      readSurfaceEffect: 'orientation_only',
+      recordsValidationResult: false,
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+      requiresPromotionForClaimSupport: true,
+      promotionDraftSuggested: true,
+      promotionDraftBindingIds: [
+        'binding.aitp.curated-rag-promotion-draft.chunk.fqhe.source',
+      ],
+    });
+    expect(pack.curatedRag?.results[0]).toMatchObject({
+      chunkId: 'chunk.fqhe.source',
+      promotionDraftBindingId: 'binding.aitp.curated-rag-promotion-draft.chunk.fqhe.source',
+    });
+    expect(pack.actionBindings).toContainEqual(
+      expect.objectContaining({
+        id: 'binding.aitp.curated-rag-promotion-draft.chunk.fqhe.source',
+        actionId: 'draft_aitp_curated_rag_promotion',
+        adapterId: 'aitp.curated-rag.promotion-draft',
+        objectRefs: [
+          'aitp:curated_rag_chunk:chunk.fqhe.source',
+          'aitp:curated_rag_document:doc.fqhe.lecture',
+        ],
+        params: expect.objectContaining({
+          toolAction: 'ResearchAction.draft_aitp_curated_rag_promotion',
+          ragChunkId: 'chunk.fqhe.source',
+          ragDocumentId: 'doc.fqhe.lecture',
+          ragContentHash: 'sha256:chunk-fqhe-source',
+          aitpTopicId: 'fqhe-cs-effective-theory',
+          aitpClaimId: 'claim-fqhe',
+          aitpPromotionIntent: 'claim_support_review',
+          retrievalRole: 'heuristic_context',
+          readSurfaceEffect: 'orientation_only',
+          draftCreatesRecords: false,
+          recordsValidationResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+          requiresPromotionForClaimSupport: true,
+          requiresUserOrModelDecisionBeforeWrite: true,
+        }),
+      }),
+    );
+  });
+
+  it('does not suggest curated RAG promotion drafts for conceptual background only', () => {
+    const pack = compileResearchContextPack({
+      workFrame: createWorkFrame({
+        id: 'frame.rag-background',
+        domain: DOMAIN,
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Explain the background intuition.',
+      }),
+      curatedRag: curatedRagSearchPayload(),
+      curatedRagReasonIds: ['conceptual_scaffolding'],
+      now: () => 123,
+    });
+
+    expect(pack.curatedRag?.promotionDraftSuggested).toBe(false);
+    expect(pack.curatedRag?.promotionDraftBindingIds).toEqual([]);
+    expect(pack.curatedRag?.results[0]?.promotionDraftBindingId).toBeUndefined();
+    expect(pack.actionBindings.map((item) => item.actionId)).not.toContain(
+      'draft_aitp_curated_rag_promotion',
+    );
+  });
 });
 
 function profile(): DomainProfile {
@@ -632,5 +714,40 @@ function aitpSlicePayload() {
         target_id: 'relation-counting-cft',
       },
     ],
+  };
+}
+
+function curatedRagSearchPayload() {
+  return {
+    kind: 'curated_rag_search_result' as const,
+    catalogVersion: 'aitp.v5.curated_rag_corpus.v1',
+    query: 'source support for FQHE',
+    indexMode: 'lexical_file_backed' as const,
+    resultRole: 'heuristic_context' as const,
+    summaryInputsTrusted: false as const,
+    canUpdateClaimTrust: false as const,
+    recordsValidationResult: false as const,
+    claimTrustMutation: 'none' as const,
+    requiresPromotionForClaimSupport: true as const,
+    indexStatus: 'fresh',
+    staleIndexDiagnostics: [],
+    resultCount: 1,
+    results: [
+      {
+        chunkId: 'chunk.fqhe.source',
+        documentId: 'doc.fqhe.lecture',
+        score: 2.5,
+        retrievalRole: 'heuristic_context' as const,
+        orientationOnly: true as const,
+        canUpdateClaimTrust: false as const,
+        summary: 'Source-support orientation for FQHE literature.',
+        text: 'Use this as a source-backtrace hint, not as claim evidence.',
+        anchor: { section: 'source support' },
+        tags: ['fqhe', 'source-support'],
+        contentHash: 'sha256:chunk-fqhe-source',
+        raw: {},
+      },
+    ],
+    raw: {},
   };
 }
