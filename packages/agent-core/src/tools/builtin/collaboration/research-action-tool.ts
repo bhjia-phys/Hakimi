@@ -46,6 +46,8 @@ import {
   PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE,
   renderTheoryReasoningSummary,
   theoryReasoningProjectionFromParams,
+  type AitpCuratedRagCorpus,
+  type AitpCuratedRagSearchResult,
   type AitpRuntimePayloadProfilesCatalog,
   type AitpWriteBridgeExecutionResult,
   type AitpWriteBridgeOperation,
@@ -92,6 +94,8 @@ const ACTIONS = [
   'build_formalization_plan',
   'execute_aitp_write_bridge',
   'inspect_aitp_runtime_payload_profiles',
+  'inspect_aitp_curated_rag_corpus',
+  'search_aitp_curated_rag_corpus',
   'capture_primitive_tool_run',
 ] as const;
 const EXPOSURES = ['direct', 'deferred', 'direct-model-only', 'hidden'] as const;
@@ -248,6 +252,16 @@ export const ResearchActionToolInputSchema = z.object({
     .record(z.string(), z.unknown())
     .optional()
     .describe('Structured payload for execute_aitp_write_bridge.'),
+  rag_query: z
+    .string()
+    .optional()
+    .describe('Search query for AITP curated heuristic RAG lookup.'),
+  rag_limit: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Maximum AITP curated heuristic RAG search results.'),
 });
 
 export type ResearchActionToolInput = z.Infer<typeof ResearchActionToolInputSchema>;
@@ -340,6 +354,10 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return await this.executeAitpWriteBridge(args, ctx);
         case 'inspect_aitp_runtime_payload_profiles':
           return await this.inspectAitpRuntimePayloadProfiles(ctx);
+        case 'inspect_aitp_curated_rag_corpus':
+          return await this.inspectAitpCuratedRagCorpus(ctx);
+        case 'search_aitp_curated_rag_corpus':
+          return await this.searchAitpCuratedRagCorpus(args, ctx);
         case 'capture_primitive_tool_run':
           return await this.capturePrimitiveToolRun(args, ctx);
       }
@@ -552,6 +570,40 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     }
     const catalog = await this.manager.readAitpRuntimePayloadProfiles(ctx.signal);
     return ok(renderAitpRuntimePayloadProfiles(catalog));
+  }
+
+  private async inspectAitpCuratedRagCorpus(
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction inspect_aitp_curated_rag_corpus requires a session manager.');
+    }
+    if (!this.manager.hasAitpCuratedRagProvider()) {
+      return errorResult('AITP curated RAG provider is not configured');
+    }
+    const corpus = await this.manager.readAitpCuratedRagCorpus(ctx.signal);
+    return ok(renderAitpCuratedRagCorpus(corpus));
+  }
+
+  private async searchAitpCuratedRagCorpus(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction search_aitp_curated_rag_corpus requires a session manager.');
+    }
+    if (!this.manager.hasAitpCuratedRagProvider()) {
+      return errorResult('AITP curated RAG provider is not configured');
+    }
+    if (args.rag_query === undefined || args.rag_query.trim().length === 0) {
+      return errorResult('ResearchAction search_aitp_curated_rag_corpus requires rag_query.');
+    }
+    const searchResult = await this.manager.searchAitpCuratedRagCorpus(
+      args.rag_query,
+      args.rag_limit,
+      ctx.signal,
+    );
+    return ok(renderAitpCuratedRagSearchResult(searchResult));
   }
 
   private openWorkFrame(
@@ -1319,6 +1371,52 @@ function renderAitpRuntimePayloadProfiles(
     `  <profile_binding action="run_benchmark_adapter" profile_id="${escapeXml(benchmarkProfile?.profileId ?? '')}" capture_mode="${escapeXml(benchmarkProfile?.capturePolicy.captureMode ?? '')}" />`,
     `  <profile_binding action="capture_primitive_tool_run" profile_id="${escapeXml(primitiveProfile?.profileId ?? '')}" capture_mode="${escapeXml(primitiveProfile?.capturePolicy.captureMode ?? '')}" requires_tool_call_id="${String(primitiveProfile?.capturePolicy.requiresToolCallId ?? false)}" />`,
     '</aitp_runtime_payload_profiles>',
+    '',
+  ].join('\n');
+}
+
+function renderAitpCuratedRagCorpus(corpus: AitpCuratedRagCorpus): string {
+  const target = aitpRuntimeBridgeTargetForOperation('readCuratedRagCorpus');
+  return [
+    `<aitp_curated_rag_corpus catalog_version="${escapeXml(corpus.catalogVersion)}" corpus_id="${escapeXml(corpus.corpusId)}" result_role="${corpus.retrievalPolicy.resultRole}" read_surface_effect="${corpus.retrievalPolicy.readSurfaceEffect}" document_count="${String(corpus.documentCount)}" chunk_count="${String(corpus.chunkCount)}" records_validation_result="false" claim_trust_mutation="${corpus.retrievalPolicy.claimTrustMutation}" can_update_claim_trust="false" requires_promotion_for_claim_support="true">`,
+    `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" state_effect="${target.stateEffect}" />`,
+    renderStringList('allowed_uses', 'use', corpus.retrievalPolicy.allowedUses, '  '),
+    renderStringList('forbidden_uses', 'use', corpus.retrievalPolicy.forbiddenUses, '  '),
+    `  <index_policy active_index_mode="${corpus.indexPolicy.activeIndexMode}" embedding_index_required="false" index_is_derived="true" derived_from="${escapeXml(corpus.indexPolicy.derivedFrom)}" stale_index_behavior="${escapeXml(corpus.indexPolicy.staleIndexBehavior)}" />`,
+    renderStringList('document_index', 'document_id', corpus.documentIndex, '  '),
+    renderStringList('chunk_index', 'chunk_id', corpus.chunkIndex, '  '),
+    '  <documents>',
+    ...corpus.documents.map(
+      (document) =>
+        `    <document id="${escapeXml(document.documentId)}" title="${escapeXml(document.title)}" asset_type="${escapeXml(document.assetType)}" source_uri="${escapeXml(document.sourceUri)}" trust_status="${document.trustStatus}" orientation_only="true" can_update_claim_trust="false" />`,
+    ),
+    '  </documents>',
+    '  <chunks>',
+    ...corpus.chunks.map(
+      (chunk) =>
+        `    <chunk id="${escapeXml(chunk.chunkId)}" document_id="${escapeXml(chunk.documentId)}" retrieval_role="${chunk.retrievalRole}" orientation_only="true" can_update_claim_trust="false" token_estimate="${String(chunk.tokenEstimate)}">` +
+        `<summary>${escapeXml(chunk.summary)}</summary></chunk>`,
+    ),
+    '  </chunks>',
+    '</aitp_curated_rag_corpus>',
+    '',
+  ].join('\n');
+}
+
+function renderAitpCuratedRagSearchResult(searchResult: AitpCuratedRagSearchResult): string {
+  const target = aitpRuntimeBridgeTargetForOperation('searchCuratedRagCorpus');
+  return [
+    `<aitp_curated_rag_search_result catalog_version="${escapeXml(searchResult.catalogVersion)}" query="${escapeXml(searchResult.query)}" index_mode="${searchResult.indexMode}" result_role="${searchResult.resultRole}" result_count="${String(searchResult.resultCount)}" records_validation_result="false" claim_trust_mutation="${searchResult.claimTrustMutation}" can_update_claim_trust="false" requires_promotion_for_claim_support="true">`,
+    `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" state_effect="${target.stateEffect}" />`,
+    '  <results>',
+    ...searchResult.results.map(
+      (item) =>
+        `    <result chunk_id="${escapeXml(item.chunkId)}" document_id="${escapeXml(item.documentId)}" score="${String(item.score)}" retrieval_role="${item.retrievalRole}" orientation_only="true" can_update_claim_trust="false" content_hash="${escapeXml(item.contentHash)}">` +
+        `<summary>${escapeXml(item.summary)}</summary><text>${escapeXml(item.text)}</text></result>`,
+    ),
+    '  </results>',
+    '  <promotion_boundary>Curated RAG is heuristic_context only; promote source passages through AITP source_asset, reference_location, evidence, validation, and trust preflight records before using them as claim support.</promotion_boundary>',
+    '</aitp_curated_rag_search_result>',
     '',
   ].join('\n');
 }

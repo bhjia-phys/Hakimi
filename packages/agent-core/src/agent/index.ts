@@ -14,6 +14,7 @@ import type { PluginCommandOrigin } from './context';
 
 import type { DomainProfileRegistry } from '../domain-profile';
 import type {
+  AitpCuratedRagProvider,
   AitpProcessGraphSliceProvider,
   AitpRuntimePayloadProfilesProvider,
   AitpWriteBridgeExecutor,
@@ -123,6 +124,7 @@ export interface AgentOptions {
   readonly workflowRecipes?: WorkflowRecipeRegistry;
   readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
+  readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
   readonly aitpWriteBridge?: AitpWriteBridgeExecutor | undefined;
   readonly mcp?: McpConnectionManager;
   readonly hookEngine?: HookEngine;
@@ -161,6 +163,7 @@ export class Agent {
   readonly hooks?: HookEngine;
   readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider;
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider;
+  readonly aitpCuratedRagProvider?: AitpCuratedRagProvider;
   readonly aitpWriteBridge?: AitpWriteBridgeExecutor;
   readonly log: Logger;
   readonly telemetry: TelemetryClient;
@@ -238,6 +241,7 @@ export class Agent {
     this.hooks = options.hookEngine;
     this.aitpProcessGraphProvider = options.aitpProcessGraphProvider;
     this.aitpRuntimePayloadProfilesProvider = options.aitpRuntimePayloadProfilesProvider;
+    this.aitpCuratedRagProvider = options.aitpCuratedRagProvider;
     this.aitpWriteBridge = options.aitpWriteBridge;
     this.log = options.log ?? log;
     this.telemetry = options.telemetry ?? noopTelemetryClient;

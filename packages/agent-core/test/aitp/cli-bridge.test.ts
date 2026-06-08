@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AITP_CURATED_RAG_CATALOG_VERSION,
   AITP_RUNTIME_PAYLOAD_PROFILE_CATALOG_VERSION,
   AitpCliBridgeError,
+  AitpCuratedRagParseError,
   AitpRuntimePayloadProfilesParseError,
   aitpRuntimePayloadProfileById,
   buildAitpArtifactAttachArgs,
   buildAitpArtifactAttachAutoArgs,
   buildAitpCodeStateAutoArgs,
+  buildAitpCuratedRagCorpusArgs,
+  buildAitpCuratedRagSearchArgs,
   buildAitpEvidenceRecordArgs,
   buildAitpExploratoryRecordArgs,
   buildAitpHumanCheckpointRequestArgs,
@@ -25,6 +29,8 @@ import {
   buildAitpValidationResultRecordArgs,
   createAitpCliBridge,
   createAitpCliProcessGraphSliceProvider,
+  parseAitpCuratedRagCorpus,
+  parseAitpCuratedRagSearchResult,
   parseAitpRuntimePayloadProfilesCatalog,
   resolveAitpScopeFromWorkFrame,
   type AitpCommandRunner,
@@ -185,6 +191,90 @@ describe('AITP CLI bridge', () => {
     expect(primitive?.capturePolicy.captureMode).toBe('explicit_request');
     expect(primitive?.capturePolicy.recordsValidationResult).toBe(false);
     expect(primitive?.resultSemantics.claimTrustMutation).toBe('none');
+  });
+
+  it('reads curated RAG corpus and search results as heuristic context only', async () => {
+    const calls: { command: string; args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(command, args) {
+        calls.push({ command, args });
+        if (args.includes('curated-rag-search')) {
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              ok: true,
+              curated_rag_search_result: fakeCuratedRagSearchResult('source backtrace', 1),
+            }),
+            stderr: '',
+          };
+        }
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            curated_rag_corpus: fakeCuratedRagCorpus(),
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const corpus = await bridge.readCuratedRagCorpus();
+    const search = await bridge.searchCuratedRagCorpus({ query: 'source backtrace', limit: 1 });
+
+    expect(calls).toEqual([
+      {
+        command: 'aitp-v5',
+        args: ['adapter', 'curated-rag-corpus'],
+      },
+      {
+        command: 'aitp-v5',
+        args: ['adapter', 'curated-rag-search', 'source backtrace', '--limit', '1'],
+      },
+    ]);
+    expect(buildAitpCuratedRagCorpusArgs()).toEqual(['adapter', 'curated-rag-corpus']);
+    expect(buildAitpCuratedRagSearchArgs({ query: 'source backtrace', limit: 1 })).toEqual([
+      'adapter',
+      'curated-rag-search',
+      'source backtrace',
+      '--limit',
+      '1',
+    ]);
+    expect(corpus.catalogVersion).toBe(AITP_CURATED_RAG_CATALOG_VERSION);
+    expect(corpus.retrievalPolicy.resultRole).toBe('heuristic_context');
+    expect(corpus.retrievalPolicy.readSurfaceEffect).toBe('orientation_only');
+    expect(corpus.retrievalPolicy.forbiddenUses).toContain('final_gate_satisfaction');
+    expect(corpus.retrievalPolicy.requiresPromotionForClaimSupport).toBe(true);
+    expect(search.resultRole).toBe('heuristic_context');
+    expect(search.claimTrustMutation).toBe('none');
+    expect(search.requiresPromotionForClaimSupport).toBe(true);
+    expect(search.results[0]?.retrievalRole).toBe('heuristic_context');
+  });
+
+  it('rejects curated RAG payloads that would become evidence or trust authority', () => {
+    const corpus = fakeCuratedRagCorpus();
+
+    expect(() =>
+      parseAitpCuratedRagCorpus({
+        ...corpus,
+        retrieval_policy: {
+          ...corpus.retrieval_policy,
+          forbidden_uses: corpus.retrieval_policy.forbidden_uses.filter(
+            (use: string) => use !== 'final_gate_satisfaction',
+          ),
+        },
+      }),
+    ).toThrow(AitpCuratedRagParseError);
+    expect(() =>
+      parseAitpCuratedRagSearchResult({
+        ...fakeCuratedRagSearchResult('source backtrace', 1),
+        can_update_claim_trust: true,
+      }),
+    ).toThrow(AitpCuratedRagParseError);
   });
 
   it('rejects runtime payload catalogs that would turn provenance into trust', () => {
@@ -1755,5 +1845,148 @@ function fakeRuntimePayloadProfilesCatalog(): any {
     profile_count: profiles.length,
     profile_index: profiles.map((profile) => profile.profile_id),
     profiles,
+  };
+}
+
+function fakeCuratedRagCorpus(): any {
+  const documents = [
+    {
+      document_id: 'curated_rag_doc:theory_methods_orientation',
+      title: 'Theory methods orientation shelf',
+      asset_type: 'note',
+      source_uri: 'aitp://curated-rag/theory-methods-orientation',
+      version_anchor: { catalog_version: AITP_CURATED_RAG_CATALOG_VERSION, revision: 'v1' },
+      content_hash: 'sha256:curated-rag-theory-methods-orientation-v1',
+      tags: ['theoretical-physics', 'methods', 'orientation'],
+      domain_hints: ['theoretical-physics/general'],
+      topic_hints: ['method-selection', 'derivation-scaffolding'],
+      language: 'en',
+      priority: 'high',
+      intended_use: 'background_rag',
+      trust_status: 'heuristic_context',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
+    {
+      document_id: 'curated_rag_doc:source_backtrace_orientation',
+      title: 'Source backtrace orientation shelf',
+      asset_type: 'lecture',
+      source_uri: 'aitp://curated-rag/source-backtrace-orientation',
+      version_anchor: { catalog_version: AITP_CURATED_RAG_CATALOG_VERSION, revision: 'v1' },
+      content_hash: 'sha256:curated-rag-source-backtrace-orientation-v1',
+      tags: ['source-reconstruction', 'literature', 'orientation'],
+      domain_hints: ['theoretical-physics/general'],
+      topic_hints: ['source-backtrace', 'literature-orientation'],
+      language: 'en',
+      priority: 'medium',
+      intended_use: 'background_rag',
+      trust_status: 'heuristic_context',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
+  ];
+  const chunks = [
+    {
+      chunk_id: 'curated_rag_chunk:theory_methods_orientation:0001',
+      document_id: 'curated_rag_doc:theory_methods_orientation',
+      anchor: { section: 'method-selection', ordinal: 1 },
+      text: 'When a theory problem feels underdetermined, first separate definitions, assumptions, calculational handles, and validation targets.',
+      summary: 'Use method selection to separate definitions, assumptions, handles, and validation.',
+      tags: ['method-selection', 'problem-framing'],
+      token_estimate: 32,
+      content_hash: 'sha256:curated-rag-chunk-theory-methods-0001',
+      retrieval_role: 'heuristic_context',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
+    {
+      chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      document_id: 'curated_rag_doc:source_backtrace_orientation',
+      anchor: { section: 'source-backtrace', ordinal: 1 },
+      text: 'Retrieved passages can suggest where to look next, but claim support needs explicit reference locations and evidence records.',
+      summary: 'Retrieved passages suggest source reconstruction, not claim support.',
+      tags: ['source-backtrace', 'trust-boundary'],
+      token_estimate: 38,
+      content_hash: 'sha256:curated-rag-chunk-source-backtrace-0001',
+      retrieval_role: 'heuristic_context',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
+  ];
+  return {
+    kind: 'curated_rag_corpus',
+    catalog_version: AITP_CURATED_RAG_CATALOG_VERSION,
+    truth_source: 'curated_rag_corpus_catalog',
+    summary_inputs_trusted: false,
+    can_update_claim_trust: false,
+    retrieval_policy: {
+      result_role: 'heuristic_context',
+      read_surface_effect: 'orientation_only',
+      allowed_uses: [
+        'conceptual_scaffolding',
+        'literature_orientation',
+        'derivation_scaffolding',
+        'method_selection',
+        'source_backtrace_suggestions',
+      ],
+      forbidden_uses: [
+        'evidence_support',
+        'validation_result',
+        'claim_trust_update',
+        'trust_apply',
+        'final_gate_satisfaction',
+      ],
+      records_validation_result: false,
+      claim_trust_mutation: 'none',
+      summary_inputs_trusted: false,
+      can_update_claim_trust: false,
+      requires_promotion_for_claim_support: true,
+    },
+    index_policy: {
+      active_index_mode: 'lexical_fixture',
+      supported_index_modes: ['lexical_fixture'],
+      embedding_index_required: false,
+      index_is_derived: true,
+      derived_from: 'curated_rag_chunk_manifest',
+      stale_index_behavior: 'return_diagnostic_not_trust',
+    },
+    corpus_id: 'aitp.curated.heuristic_background.v1',
+    document_count: documents.length,
+    chunk_count: chunks.length,
+    document_index: documents.map((document) => document.document_id),
+    chunk_index: chunks.map((chunk) => chunk.chunk_id),
+    documents,
+    chunks,
+  };
+}
+
+function fakeCuratedRagSearchResult(query: string, limit = 5): any {
+  const corpus = fakeCuratedRagCorpus();
+  const results = corpus.chunks.slice(0, limit).map((chunk: any, index: number) => ({
+    chunk_id: chunk.chunk_id,
+    document_id: chunk.document_id,
+    score: index + 1,
+    retrieval_role: 'heuristic_context',
+    orientation_only: true,
+    can_update_claim_trust: false,
+    summary: chunk.summary,
+    text: chunk.text,
+    anchor: chunk.anchor,
+    tags: chunk.tags,
+    content_hash: chunk.content_hash,
+  }));
+  return {
+    kind: 'curated_rag_search_result',
+    catalog_version: AITP_CURATED_RAG_CATALOG_VERSION,
+    query,
+    index_mode: 'lexical_fixture',
+    result_role: 'heuristic_context',
+    summary_inputs_trusted: false,
+    can_update_claim_trust: false,
+    records_validation_result: false,
+    claim_trust_mutation: 'none',
+    requires_promotion_for_claim_support: true,
+    result_count: results.length,
+    results,
   };
 }

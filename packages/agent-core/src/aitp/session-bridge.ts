@@ -4,12 +4,14 @@ import {
   type AitpCliBridge,
   type AitpCliBridgeOptions,
   type AitpCommandRunner,
+  type AitpCuratedRagProvider,
   type AitpProcessGraphPromptPart,
   type AitpProcessGraphSliceProvider,
   type AitpRuntimePayloadProfilesProvider,
   type AitpWorkFrameScope,
 } from './cli-bridge';
 import { compileAitpProcessGraphSlice } from './compiler';
+import { parseAitpCuratedRagCorpus, parseAitpCuratedRagSearchResult } from './curated-rag';
 import { parseAitpRuntimePayloadProfilesCatalog } from './runtime-payload-profiles';
 import type { CompiledAitpProcessGraphSlice } from './types';
 import {
@@ -132,6 +134,65 @@ export function createDynamicAitpMcpFirstRuntimePayloadProfilesProvider(
       } catch (error) {
         if (options.fallbackOnMcpError === false) throw error;
         return fallback.getRuntimePayloadProfiles(input);
+      }
+    },
+  };
+}
+
+export function createDynamicAitpCliCuratedRagProvider(
+  options: DynamicAitpCliBridgeOptions,
+): AitpCuratedRagProvider {
+  return {
+    getCuratedRagCorpus(input = {}) {
+      return createDynamicAitpCliBridge(options).readCuratedRagCorpus(input);
+    },
+    searchCuratedRagCorpus(input) {
+      return createDynamicAitpCliBridge(options).searchCuratedRagCorpus(input);
+    },
+  };
+}
+
+export function createDynamicAitpMcpFirstCuratedRagProvider(
+  options: DynamicAitpMcpFirstBridgeOptions,
+): AitpCuratedRagProvider {
+  const fallback = createDynamicAitpCliCuratedRagProvider(options);
+  return {
+    async getCuratedRagCorpus(input = {}) {
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.getCuratedRagCorpus(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('readCuratedRagCorpus');
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args: {},
+          signal: input.signal,
+        });
+        return parseAitpCuratedRagCorpus(normalizeAitpWriteBridgePayload(rawPayload));
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.getCuratedRagCorpus(input);
+      }
+    },
+    async searchCuratedRagCorpus(input) {
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.searchCuratedRagCorpus(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('searchCuratedRagCorpus');
+        const args: Record<string, unknown> = { query: input.query };
+        if (input.limit !== undefined) args['limit'] = input.limit;
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args,
+          signal: input.signal,
+        });
+        return parseAitpCuratedRagSearchResult(normalizeAitpWriteBridgePayload(rawPayload));
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.searchCuratedRagCorpus(input);
       }
     },
   };
