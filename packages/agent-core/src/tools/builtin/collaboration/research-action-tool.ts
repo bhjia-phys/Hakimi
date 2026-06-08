@@ -2374,6 +2374,7 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     renderStringList('required_existing_records', 'record', callDraft.requiredExistingRecords, '  '),
     renderCuratedRagCanonicalIdentityAlignment(sourceDraft, callDraft),
     renderAitpCuratedRagWriteBridgeConfirmationSummary(confirmation, '  '),
+    `  <readiness_call_pointer action="inspect_aitp_write_bridge_handoff_readiness" handoff_id="${escapeXml(handoffArtifact.handoffId)}" confirmation_id="${escapeXml(handoffArtifact.confirmationId)}" diagnostic_hash="${escapeXml(handoffArtifact.diagnosticHash)}" source="execute_aitp_write_bridge_handoff.readiness_call_json" read_only="true" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" requires_explicit_execute_call="true" />`,
     renderAitpCuratedRagWriteBridgeHandoffArtifact(handoffArtifact, '  '),
     renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(callDraft.overrideDiagnostics, '  '),
     renderAitpCuratedRagWriteBridgeCallDiagnostics(callDraft.diagnostics, '  '),
