@@ -55,6 +55,10 @@ Within each alignment, `payload_ref_readiness` separates placeholder refs such
 as `<source_asset_id>` from concrete refs such as `source_asset:...` and
 `reference_location:...`, so a reviewed payload can show whether source/ref
 slots are ready before the explicit write call.
+Concrete refs in this section are still `confirmation_source=syntax_only` with
+`aitp_record_confirmed=false` and `aitp_lookup_performed=false`; canonical
+existence/source-support checks still belong to later AITP-owned lookup, write,
+validation, or trust-preflight surfaces.
 The returned XML also includes a host-side `confirmation_preflight` summary
 that classifies remaining diagnostics as hard-blocking, confirmation-required,
 or advisory. This is not an AITP trust preflight and it does not validate the
