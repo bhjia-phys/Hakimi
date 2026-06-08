@@ -347,6 +347,11 @@ root-level `readiness_call_pointer` with the readiness action, handoff id,
 confirmation id, and diagnostic hash, so the model can see the available
 pre-execute check without scanning the nested handoff artifact. The pointer is
 read-only and keeps `bridge_called="false"`.
+Both draft families now also render a compact `readiness_inspection_summary`
+that names the root pointer and nested `readiness_call_json` as inspection-only
+material. It repeats the no-write, no-validation, no-source-support, and
+no-trust flags so the model does not confuse the inspection affordance with
+bridge execution.
 When a handoff is supplied, `execute_aitp_write_bridge` now emits a compact
 `handoff_execution_precheck` before the guard/result details. Passed prechecks
 show `bridge_call_allowed="true"` and `bridge_called="true"` after the guard
