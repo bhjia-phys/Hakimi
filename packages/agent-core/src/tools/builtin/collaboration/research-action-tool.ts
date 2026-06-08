@@ -97,6 +97,7 @@ const ACTIONS = [
   'query_physics_graph',
   'build_formalization_plan',
   'execute_aitp_write_bridge',
+  'inspect_handoff_guard_remediation_taxonomy',
   'inspect_aitp_runtime_payload_profiles',
   'inspect_aitp_curated_rag_corpus',
   'search_aitp_curated_rag_corpus',
@@ -504,6 +505,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return this.buildFormalizationPlan(args, ctx);
         case 'execute_aitp_write_bridge':
           return await this.executeAitpWriteBridge(args, ctx);
+        case 'inspect_handoff_guard_remediation_taxonomy':
+          return ok(`${renderHandoffGuardRemediationTaxonomy('')}\n`);
         case 'inspect_aitp_runtime_payload_profiles':
           return await this.inspectAitpRuntimePayloadProfiles(ctx);
         case 'inspect_aitp_curated_rag_corpus':

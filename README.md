@@ -302,6 +302,9 @@ table. Each failure code maps to one `next_step` and carries
 `retry_requires_explicit_execute_call="true"` plus read-only/no-evidence/no-trust
 flags, so models can inspect the taxonomy without relying on prose and without
 gaining a new write or mutation path.
+For narrower retrieval, `ResearchAction.inspect_handoff_guard_remediation_taxonomy`
+returns just that taxonomy section, with the same read-only/no-evidence/no-trust
+flags and no action-list registry payload.
 
 The WorkFrame orchestrator now also calls that provider automatically for
 RAG-helpful turns. It detects prompts asking for conceptual scaffolding,

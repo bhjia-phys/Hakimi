@@ -45,8 +45,34 @@ describe('ResearchActionTool', () => {
     expect(tool.description).toContain('align_explicit_execute_args_with_handoff_tool_call');
     expect(tool.description).toContain('redraft_handoff_or_restore_hash_input');
     expect(tool.description).toContain('redraft_or_resolve_blocking_diagnostics');
+    expect(tool.description).toContain('inspect_handoff_guard_remediation_taxonomy');
     expect(tool.description).toContain('repair hints only');
     expect(tool.description).toContain('never mutate the handoff');
+  });
+
+  it('inspects handoff guard remediation taxonomy without listing all actions', async () => {
+    const tool = new ResearchActionTool();
+
+    const taxonomy = await execute(tool, {
+      action: 'inspect_handoff_guard_remediation_taxonomy',
+    });
+
+    expect(taxonomy.output).toContain('<handoff_guard_remediation_taxonomy');
+    expect(taxonomy.output).toContain('kind="curated_rag_write_bridge_handoff"');
+    expect(taxonomy.output).toContain('read_only="true"');
+    expect(taxonomy.output).toContain('executes_write_now="false"');
+    expect(taxonomy.output).toContain('mutates_handoff_now="false"');
+    expect(taxonomy.output).toContain('records_evidence="false"');
+    expect(taxonomy.output).toContain('validates_claim="false"');
+    expect(taxonomy.output).toContain('claim_trust_mutation="none"');
+    expect(taxonomy.output).toContain(
+      '<failure code="missing_hash_input_json" next_step="copy_missing_handoff_field_from_draft" retry_requires_explicit_execute_call="true" />',
+    );
+    expect(taxonomy.output).toContain(
+      '<failure code="hash_input_tool_call_mismatch" next_step="redraft_handoff_or_restore_hash_input" retry_requires_explicit_execute_call="true" />',
+    );
+    expect(taxonomy.output).not.toContain('<action id=');
+    expect(taxonomy.output).not.toContain('trustApply');
   });
 
   it('lists handoff guard remediation taxonomy as read-only machine-readable metadata', async () => {
