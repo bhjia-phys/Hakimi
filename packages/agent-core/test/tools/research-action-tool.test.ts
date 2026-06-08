@@ -1576,7 +1576,12 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('nested_call="execute_aitp_write_bridge_handoff.readiness_call_json"');
     expect(result.output).toContain('inspection_only="true"');
     expect(result.output).toContain('<readiness_inspection_checklist');
-    expect(result.output).toContain('draft_family="curated_rag_write_call_draft" item_count="2"');
+    expect(result.output).toContain(
+      'checklist_id="readiness-checklist.curated_rag_write_call_draft.curated-rag-write-handoff.',
+    );
+    expect(result.output).toContain('draft_family="curated_rag_write_call_draft"');
+    expect(result.output).toContain('id_source="handoff_id+draft_family"');
+    expect(result.output).toContain('item_count="2"');
     expect(result.output).toContain('execute_call_authorized="false"');
     expect(result.output).toContain(
       '<inspection_item order="1" action="inspect_aitp_write_bridge_handoff_readiness"',
@@ -1889,7 +1894,12 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('nested_call="execute_aitp_write_bridge_handoff.readiness_call_json"');
     expect(result.output).toContain('inspection_only="true"');
     expect(result.output).toContain('<readiness_inspection_checklist');
-    expect(result.output).toContain('draft_family="record_ref_repair_write_call_draft" item_count="2"');
+    expect(result.output).toContain(
+      'checklist_id="readiness-checklist.record_ref_repair_write_call_draft.record-ref-repair-handoff.',
+    );
+    expect(result.output).toContain('draft_family="record_ref_repair_write_call_draft"');
+    expect(result.output).toContain('id_source="handoff_id+draft_family"');
+    expect(result.output).toContain('item_count="2"');
     expect(result.output).toContain('execute_call_authorized="false"');
     expect(result.output).toContain(
       '<inspection_item order="1" action="inspect_aitp_write_bridge_handoff_readiness"',

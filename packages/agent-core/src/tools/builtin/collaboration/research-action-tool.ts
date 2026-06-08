@@ -2376,7 +2376,7 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     renderAitpCuratedRagWriteBridgeConfirmationSummary(confirmation, '  '),
     renderReadinessCallPointer(handoffArtifact, '  '),
     renderReadinessInspectionSummary('curated_rag_write_call_draft', '  '),
-    renderReadinessInspectionChecklist('curated_rag_write_call_draft', '  '),
+    renderReadinessInspectionChecklist('curated_rag_write_call_draft', handoffArtifact.handoffId, '  '),
     renderAitpCuratedRagWriteBridgeHandoffArtifact(handoffArtifact, '  '),
     renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(callDraft.overrideDiagnostics, '  '),
     renderAitpCuratedRagWriteBridgeCallDiagnostics(callDraft.diagnostics, '  '),
@@ -2452,7 +2452,7 @@ function renderAitpRecordRefRepairWriteBridgeCallDraft(input: {
     `  <reviewed_payload_json>${escapeXml(JSON.stringify(input.payload))}</reviewed_payload_json>`,
     renderReadinessCallPointer({ handoffId, confirmationId, diagnosticHash }, '  '),
     renderReadinessInspectionSummary('record_ref_repair_write_call_draft', '  '),
-    renderReadinessInspectionChecklist('record_ref_repair_write_call_draft', '  '),
+    renderReadinessInspectionChecklist('record_ref_repair_write_call_draft', handoffId, '  '),
     `  <execute_aitp_write_bridge_handoff handoff_id="${escapeXml(handoffId)}" confirmation_id="${escapeXml(confirmationId)}" confirmation_status="ready_for_explicit_execute" diagnostic_hash="${escapeXml(diagnosticHash)}" hash_algorithm="sha256" handoff_executed="false" executes_write_now="false" non_execution_provenance="repair_draft_only" requires_explicit_execute_call="true">`,
     `    <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
     `    <hash_input_json>${escapeXml(stableJson(hashInput))}</hash_input_json>`,
@@ -2476,9 +2476,10 @@ function renderReadinessInspectionSummary(draftFamily: string, indent: string): 
   return `${indent}<readiness_inspection_summary draft_family="${draftFamily}" root_pointer="readiness_call_pointer" nested_call="execute_aitp_write_bridge_handoff.readiness_call_json" inspection_action="inspect_aitp_write_bridge_handoff_readiness" inspection_only="true" read_only="true" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" requires_explicit_execute_call="true" />`;
 }
 
-function renderReadinessInspectionChecklist(draftFamily: string, indent: string): string {
+function renderReadinessInspectionChecklist(draftFamily: string, handoffId: string, indent: string): string {
+  const checklistId = `readiness-checklist.${safeId(draftFamily)}.${safeId(handoffId)}`;
   return [
-    `${indent}<readiness_inspection_checklist draft_family="${draftFamily}" item_count="2" read_only="true" bridge_called="false" executes_write_now="false" execute_call_authorized="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">`,
+    `${indent}<readiness_inspection_checklist checklist_id="${escapeXml(checklistId)}" draft_family="${draftFamily}" id_source="handoff_id+draft_family" item_count="2" read_only="true" bridge_called="false" executes_write_now="false" execute_call_authorized="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">`,
     `${indent}  <inspection_item order="1" action="inspect_aitp_write_bridge_handoff_readiness" source="readiness_call_pointer+execute_aitp_write_bridge_handoff.readiness_call_json" required_before_explicit_execute="true" copy_call_from="execute_aitp_write_bridge_handoff.readiness_call_json" read_only="true" bridge_called="false" executes_write_now="false" />`,
     `${indent}  <inspection_item order="2" action="execute_aitp_write_bridge" source="tool_call_json" allowed_only_after_readiness_passes="true" executes_write_now="false" checklist_authorizes_execution="false" requires_explicit_execute_call="true" />`,
     `${indent}</readiness_inspection_checklist>`,
