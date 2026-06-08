@@ -12,6 +12,7 @@ import {
   buildAitpCodeStateAutoArgs,
   buildAitpCuratedRagCorpusArgs,
   buildAitpCuratedRagIngestArgs,
+  buildAitpCuratedRagPromotionDraftArgs,
   buildAitpCuratedRagSearchArgs,
   buildAitpEvidenceRecordArgs,
   buildAitpExploratoryRecordArgs,
@@ -32,6 +33,7 @@ import {
   createAitpCliProcessGraphSliceProvider,
   parseAitpCuratedRagCorpus,
   parseAitpCuratedRagIngestResult,
+  parseAitpCuratedRagPromotionDraft,
   parseAitpCuratedRagSearchResult,
   parseAitpRuntimePayloadProfilesCatalog,
   resolveAitpScopeFromWorkFrame,
@@ -195,7 +197,7 @@ describe('AITP CLI bridge', () => {
     expect(primitive?.resultSemantics.claimTrustMutation).toBe('none');
   });
 
-  it('reads curated RAG corpus and search results as heuristic context only', async () => {
+  it('reads curated RAG corpus, search results, and promotion drafts as heuristic context only', async () => {
     const calls: { command: string; args: readonly string[] }[] = [];
     const runner: AitpCommandRunner = {
       async run(command, args) {
@@ -206,6 +208,23 @@ describe('AITP CLI bridge', () => {
             stdout: JSON.stringify({
               ok: true,
               curated_rag_search_result: fakeCuratedRagSearchResult('source backtrace', 1),
+            }),
+            stderr: '',
+          };
+        }
+        if (args.includes('curated-rag-promotion-draft')) {
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              ok: true,
+              curated_rag_promotion_draft: fakeCuratedRagPromotionDraft(
+                'curated_rag_chunk:source_backtrace_orientation:0001',
+                {
+                  topicId: 'qg',
+                  claimId: 'claim-mipt',
+                  connectorId: 'local_pdf',
+                },
+              ),
             }),
             stderr: '',
           };
@@ -227,6 +246,12 @@ describe('AITP CLI bridge', () => {
 
     const corpus = await bridge.readCuratedRagCorpus();
     const search = await bridge.searchCuratedRagCorpus({ query: 'source backtrace', limit: 1 });
+    const draft = await bridge.draftCuratedRagPromotion({
+      chunkId: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      topicId: 'qg',
+      claimId: 'claim-mipt',
+      connectorId: 'local_pdf',
+    });
 
     expect(calls).toEqual([
       {
@@ -243,6 +268,22 @@ describe('AITP CLI bridge', () => {
           'source backtrace',
           '--limit',
           '1',
+        ],
+      },
+      {
+        command: 'aitp-v5',
+        args: [
+          '--base',
+          'F:/project',
+          'adapter',
+          'curated-rag-promotion-draft',
+          'curated_rag_chunk:source_backtrace_orientation:0001',
+          '--topic',
+          'qg',
+          '--claim',
+          'claim-mipt',
+          '--connector',
+          'local_pdf',
         ],
       },
     ]);
@@ -275,6 +316,30 @@ describe('AITP CLI bridge', () => {
       '--limit',
       '1',
     ]);
+    expect(
+      buildAitpCuratedRagPromotionDraftArgs({
+        basePath: 'F:/project',
+        chunkId: 'curated_rag_chunk:source_backtrace_orientation:0001',
+        topicId: 'qg',
+        claimId: 'claim-mipt',
+        connectorId: 'local_pdf',
+        promotionIntent: 'claim_support_review',
+      }),
+    ).toEqual([
+      '--base',
+      'F:/project',
+      'adapter',
+      'curated-rag-promotion-draft',
+      'curated_rag_chunk:source_backtrace_orientation:0001',
+      '--topic',
+      'qg',
+      '--claim',
+      'claim-mipt',
+      '--connector',
+      'local_pdf',
+      '--intent',
+      'claim_support_review',
+    ]);
     expect(corpus.catalogVersion).toBe(AITP_CURATED_RAG_CATALOG_VERSION);
     expect(corpus.retrievalPolicy.resultRole).toBe('heuristic_context');
     expect(corpus.retrievalPolicy.readSurfaceEffect).toBe('orientation_only');
@@ -284,6 +349,18 @@ describe('AITP CLI bridge', () => {
     expect(search.claimTrustMutation).toBe('none');
     expect(search.requiresPromotionForClaimSupport).toBe(true);
     expect(search.results[0]?.retrievalRole).toBe('heuristic_context');
+    expect(draft.kind).toBe('curated_rag_promotion_draft');
+    expect(draft.stateEffect).toBe('read_only');
+    expect(draft.draftCreatesRecords).toBe(false);
+    expect(draft.draftOperations.map((operation) => operation.stage)).toEqual([
+      'source_asset',
+      'reference_location',
+      'evidence',
+      'validation',
+      'trust_preflight',
+    ]);
+    expect(draft.draftOperations.every((operation) => operation.createsRecordNow === false)).toBe(true);
+    expect(draft.promotionBoundary.draftCanUpdateClaimTrust).toBe(false);
   });
 
   it('rejects curated RAG payloads that would become evidence or trust authority', () => {
@@ -304,6 +381,25 @@ describe('AITP CLI bridge', () => {
       parseAitpCuratedRagSearchResult({
         ...fakeCuratedRagSearchResult('source backtrace', 1),
         can_update_claim_trust: true,
+      }),
+    ).toThrow(AitpCuratedRagParseError);
+    expect(() =>
+      parseAitpCuratedRagPromotionDraft({
+        ...fakeCuratedRagPromotionDraft('curated_rag_chunk:source_backtrace_orientation:0001'),
+        draft_creates_records: true,
+      }),
+    ).toThrow(AitpCuratedRagParseError);
+    const draft = fakeCuratedRagPromotionDraft('curated_rag_chunk:source_backtrace_orientation:0001');
+    expect(() =>
+      parseAitpCuratedRagPromotionDraft({
+        ...draft,
+        draft_operations: [
+          {
+            ...draft.draft_operations[0],
+            creates_record_now: true,
+          },
+          ...draft.draft_operations.slice(1),
+        ],
       }),
     ).toThrow(AitpCuratedRagParseError);
   });
@@ -2180,6 +2276,173 @@ function fakeCuratedRagSearchResult(query: string, limit = 5): any {
     requires_promotion_for_claim_support: true,
     result_count: results.length,
     results,
+  };
+}
+
+function fakeCuratedRagPromotionDraft(
+  chunkId: string,
+  options: {
+    readonly topicId?: string | undefined;
+    readonly claimId?: string | undefined;
+    readonly connectorId?: string | undefined;
+  } = {},
+): any {
+  const corpus = fakeCuratedRagCorpus();
+  const chunk = corpus.chunks.find((item: any) => item.chunk_id === chunkId) ?? corpus.chunks[0];
+  const document =
+    corpus.documents.find((item: any) => item.document_id === chunk.document_id) ?? corpus.documents[0];
+  const topicId = options.topicId ?? '';
+  const claimId = options.claimId ?? '';
+  const connectorId = options.connectorId ?? 'curated_rag';
+  return {
+    kind: 'curated_rag_promotion_draft',
+    catalog_version: AITP_CURATED_RAG_CATALOG_VERSION,
+    truth_source: 'curated_rag_chunk_manifest',
+    state_effect: 'read_only',
+    draft_role: 'promotion_planning',
+    retrieval_role: 'heuristic_context',
+    read_surface_effect: 'orientation_only',
+    summary_inputs_trusted: false,
+    can_update_claim_trust: false,
+    records_validation_result: false,
+    claim_trust_mutation: 'none',
+    requires_promotion_for_claim_support: true,
+    promotion_required_before_claim_support: true,
+    draft_creates_records: false,
+    corpus_id: corpus.corpus_id,
+    chunk_id: chunk.chunk_id,
+    document_id: document.document_id,
+    topic_id: topicId,
+    claim_id: claimId,
+    connector_id: connectorId,
+    promotion_intent: 'claim_support_review',
+    required_context_before_write: [topicId.length === 0 ? 'topic_id' : '', claimId.length === 0 ? 'claim_id' : ''].filter(Boolean),
+    index_mode: 'lexical_fixture',
+    stale_index_diagnostics: [],
+    chunk: {
+      chunk_id: chunk.chunk_id,
+      document_id: chunk.document_id,
+      anchor: chunk.anchor,
+      summary: chunk.summary,
+      text: chunk.text,
+      tags: chunk.tags,
+      content_hash: chunk.content_hash,
+      retrieval_role: 'heuristic_context',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
+    document: {
+      document_id: document.document_id,
+      title: document.title,
+      asset_type: document.asset_type,
+      source_uri: document.source_uri,
+      version_anchor: document.version_anchor,
+      content_hash: document.content_hash,
+      tags: document.tags,
+      domain_hints: document.domain_hints,
+      topic_hints: document.topic_hints,
+      language: document.language,
+      priority: document.priority,
+      trust_status: 'heuristic_context',
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
+    draft_operations: [
+      {
+        stage: 'source_asset',
+        operation: 'registerSourceAsset',
+        mcp_tool: 'aitp_v5_register_source_asset',
+        cli_template: 'aitp-v5 asset register <args>',
+        surface: 'source_asset_record',
+        draft_only: true,
+        creates_record_now: false,
+        claim_support_created: false,
+        payload_draft: {
+          topic_id: topicId,
+          claim_id: claimId,
+          asset_type: document.asset_type,
+          uri: document.source_uri,
+          title: document.title,
+          content_hash: document.content_hash,
+          derived_from: [document.document_id, chunk.chunk_id],
+        },
+      },
+      {
+        stage: 'reference_location',
+        operation: 'recordReferenceLocation',
+        mcp_tool: 'aitp_v5_record_reference_location',
+        cli_template: 'aitp-v5 reference location record <args>',
+        surface: 'reference_location_record',
+        draft_only: true,
+        creates_record_now: false,
+        claim_support_created: false,
+        payload_draft: {
+          topic_id: topicId,
+          claim_id: claimId,
+          connector_id: connectorId,
+          uri: document.source_uri,
+          source_ref: chunk.chunk_id,
+        },
+      },
+      {
+        stage: 'evidence',
+        operation: 'recordEvidence',
+        mcp_tool: 'aitp_v5_record_evidence',
+        cli_template: 'aitp-v5 evidence record <args>',
+        surface: 'evidence_record',
+        draft_only: true,
+        creates_record_now: false,
+        claim_support_created: false,
+        requires_existing_records: ['source_asset_record', 'reference_location_record'],
+        payload_template: { topic_id: topicId, claim_id: claimId },
+      },
+      {
+        stage: 'validation',
+        operation: 'createValidationContract',
+        mcp_tool: 'aitp_v5_create_validation_contract',
+        cli_template: 'aitp-v5 validation contract create <args>',
+        surface: 'validation_contract_record',
+        draft_only: true,
+        creates_record_now: false,
+        claim_support_created: false,
+        requires_existing_records: ['evidence_record'],
+        payload_template: { topic_id: topicId, claim_id: claimId },
+      },
+      {
+        stage: 'trust_preflight',
+        operation: 'preflightTrustUpdate',
+        mcp_tool: 'aitp_v5_preflight_trust_update',
+        cli_template: 'aitp-v5 trust preflight <args>',
+        surface: 'trust_update_preflight',
+        draft_only: true,
+        creates_record_now: false,
+        claim_support_created: false,
+        requires_existing_records: ['evidence_record', 'validation_result_record'],
+        payload_template: { topic_id: topicId, claim_id: claimId },
+      },
+    ],
+    promotion_path: [
+      'source_asset',
+      'reference_location',
+      'evidence',
+      'validation',
+      'trust_preflight',
+    ],
+    forbidden_uses: [
+      'evidence_support',
+      'validation_result',
+      'claim_trust_update',
+      'trust_apply',
+      'final_gate_satisfaction',
+    ],
+    promotion_boundary: {
+      retrieval_is_claim_support: false,
+      draft_is_evidence: false,
+      draft_records_validation_result: false,
+      draft_satisfies_final_gate: false,
+      draft_can_update_claim_trust: false,
+      requires_user_or_model_decision_before_write: true,
+    },
   };
 }
 

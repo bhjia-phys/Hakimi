@@ -47,6 +47,7 @@ import {
   renderTheoryReasoningSummary,
   theoryReasoningProjectionFromParams,
   type AitpCuratedRagCorpus,
+  type AitpCuratedRagPromotionDraft,
   type AitpCuratedRagSearchResult,
   type AitpRuntimePayloadProfilesCatalog,
   type AitpWriteBridgeExecutionResult,
@@ -96,6 +97,7 @@ const ACTIONS = [
   'inspect_aitp_runtime_payload_profiles',
   'inspect_aitp_curated_rag_corpus',
   'search_aitp_curated_rag_corpus',
+  'draft_aitp_curated_rag_promotion',
   'capture_primitive_tool_run',
 ] as const;
 const EXPOSURES = ['direct', 'deferred', 'direct-model-only', 'hidden'] as const;
@@ -262,6 +264,26 @@ export const ResearchActionToolInputSchema = z.object({
     .positive()
     .optional()
     .describe('Maximum AITP curated heuristic RAG search results.'),
+  rag_chunk_id: z
+    .string()
+    .optional()
+    .describe('Curated RAG chunk id for AITP promotion draft planning.'),
+  aitp_topic_id: z
+    .string()
+    .optional()
+    .describe('Optional AITP topic id for read-only promotion draft planning.'),
+  aitp_claim_id: z
+    .string()
+    .optional()
+    .describe('Optional AITP claim id for read-only promotion draft planning.'),
+  aitp_connector_id: z
+    .string()
+    .optional()
+    .describe('Optional AITP connector id for read-only promotion draft planning.'),
+  aitp_promotion_intent: z
+    .string()
+    .optional()
+    .describe('Optional intent label for read-only curated RAG promotion draft planning.'),
 });
 
 export type ResearchActionToolInput = z.Infer<typeof ResearchActionToolInputSchema>;
@@ -358,6 +380,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return await this.inspectAitpCuratedRagCorpus(ctx);
         case 'search_aitp_curated_rag_corpus':
           return await this.searchAitpCuratedRagCorpus(args, ctx);
+        case 'draft_aitp_curated_rag_promotion':
+          return await this.draftAitpCuratedRagPromotion(args, ctx);
         case 'capture_primitive_tool_run':
           return await this.capturePrimitiveToolRun(args, ctx);
       }
@@ -604,6 +628,30 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       ctx.signal,
     );
     return ok(renderAitpCuratedRagSearchResult(searchResult));
+  }
+
+  private async draftAitpCuratedRagPromotion(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction draft_aitp_curated_rag_promotion requires a session manager.');
+    }
+    if (!this.manager.hasAitpCuratedRagProvider()) {
+      return errorResult('AITP curated RAG provider is not configured');
+    }
+    if (args.rag_chunk_id === undefined || args.rag_chunk_id.trim().length === 0) {
+      return errorResult('ResearchAction draft_aitp_curated_rag_promotion requires rag_chunk_id.');
+    }
+    const draft = await this.manager.draftAitpCuratedRagPromotion({
+      chunkId: args.rag_chunk_id,
+      topicId: args.aitp_topic_id ?? args.topic,
+      claimId: args.aitp_claim_id,
+      connectorId: args.aitp_connector_id,
+      promotionIntent: args.aitp_promotion_intent,
+      signal: ctx.signal,
+    });
+    return ok(renderAitpCuratedRagPromotionDraft(draft));
   }
 
   private openWorkFrame(
@@ -1417,6 +1465,28 @@ function renderAitpCuratedRagSearchResult(searchResult: AitpCuratedRagSearchResu
     '  </results>',
     '  <promotion_boundary>Curated RAG is heuristic_context only; promote source passages through AITP source_asset, reference_location, evidence, validation, and trust preflight records before using them as claim support.</promotion_boundary>',
     '</aitp_curated_rag_search_result>',
+    '',
+  ].join('\n');
+}
+
+function renderAitpCuratedRagPromotionDraft(draft: AitpCuratedRagPromotionDraft): string {
+  const target = aitpRuntimeBridgeTargetForOperation('draftCuratedRagPromotion');
+  return [
+    `<aitp_curated_rag_promotion_draft catalog_version="${escapeXml(draft.catalogVersion)}" corpus_id="${escapeXml(draft.corpusId)}" chunk_id="${escapeXml(draft.chunkId)}" document_id="${escapeXml(draft.documentId)}" topic_id="${escapeXml(draft.topicId)}" claim_id="${escapeXml(draft.claimId)}" connector_id="${escapeXml(draft.connectorId)}" promotion_intent="${escapeXml(draft.promotionIntent)}" state_effect="${draft.stateEffect}" draft_role="${draft.draftRole}" retrieval_role="${draft.retrievalRole}" read_surface_effect="${draft.readSurfaceEffect}" draft_creates_records="false" records_validation_result="false" claim_trust_mutation="${draft.claimTrustMutation}" can_update_claim_trust="false" requires_promotion_for_claim_support="true">`,
+    `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" state_effect="${target.stateEffect}" />`,
+    `  <chunk id="${escapeXml(draft.chunk.chunkId)}" document_id="${escapeXml(draft.chunk.documentId)}" content_hash="${escapeXml(draft.chunk.contentHash)}" retrieval_role="${draft.chunk.retrievalRole}" orientation_only="true" can_update_claim_trust="false"><summary>${escapeXml(draft.chunk.summary)}</summary><text>${escapeXml(draft.chunk.text)}</text></chunk>`,
+    `  <document id="${escapeXml(draft.document.documentId)}" title="${escapeXml(draft.document.title)}" asset_type="${escapeXml(draft.document.assetType)}" source_uri="${escapeXml(draft.document.sourceUri)}" content_hash="${escapeXml(draft.document.contentHash)}" trust_status="${draft.document.trustStatus}" orientation_only="true" can_update_claim_trust="false" />`,
+    renderStringList('required_context_before_write', 'field', draft.requiredContextBeforeWrite, '  '),
+    renderStringList('promotion_path', 'stage', draft.promotionPath, '  '),
+    renderStringList('forbidden_uses', 'use', draft.forbiddenUses, '  '),
+    '  <draft_operations>',
+    ...draft.draftOperations.map(
+      (operation) =>
+        `    <operation stage="${escapeXml(operation.stage)}" operation="${escapeXml(operation.operation)}" mcp_tool="${escapeXml(operation.mcpTool)}" surface="${escapeXml(operation.surface)}" draft_only="true" creates_record_now="false" claim_support_created="false" cli_template="${escapeXml(operation.cliTemplate)}"${operation.requiresExistingRecords.length === 0 ? '' : ` requires_existing_records="${escapeXml(operation.requiresExistingRecords.join(','))}"`} />`,
+    ),
+    '  </draft_operations>',
+    '  <promotion_boundary retrieval_is_claim_support="false" draft_is_evidence="false" draft_records_validation_result="false" draft_satisfies_final_gate="false" draft_can_update_claim_trust="false" requires_user_or_model_decision_before_write="true" />',
+    '</aitp_curated_rag_promotion_draft>',
     '',
   ].join('\n');
 }

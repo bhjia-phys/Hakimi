@@ -3,8 +3,10 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { compileAitpProcessGraphSlice, type CompileAitpProcessGraphSliceOptions } from './compiler';
 import {
   parseAitpCuratedRagCorpus,
+  parseAitpCuratedRagPromotionDraft,
   parseAitpCuratedRagSearchResult,
   type AitpCuratedRagCorpus,
+  type AitpCuratedRagPromotionDraft,
   type AitpCuratedRagSearchResult,
 } from './curated-rag';
 import {
@@ -105,9 +107,21 @@ export interface AitpCuratedRagSearchInput {
   readonly signal?: AbortSignal | undefined;
 }
 
+export interface AitpCuratedRagPromotionDraftInput {
+  readonly chunkId: string;
+  readonly topicId?: string | undefined;
+  readonly claimId?: string | undefined;
+  readonly connectorId?: string | undefined;
+  readonly promotionIntent?: string | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface AitpCuratedRagProvider {
   getCuratedRagCorpus(input?: AitpCuratedRagProviderInput): Promise<AitpCuratedRagCorpus>;
   searchCuratedRagCorpus(input: AitpCuratedRagSearchInput): Promise<AitpCuratedRagSearchResult>;
+  draftCuratedRagPromotion?(
+    input: AitpCuratedRagPromotionDraftInput,
+  ): Promise<AitpCuratedRagPromotionDraft>;
 }
 
 export interface AitpWorkFrameScope {
@@ -140,6 +154,15 @@ export interface ReadAitpCuratedRagCorpusInput {
 export interface SearchAitpCuratedRagCorpusInput {
   readonly query: string;
   readonly limit?: number | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface DraftAitpCuratedRagPromotionInput {
+  readonly chunkId: string;
+  readonly topicId?: string | undefined;
+  readonly claimId?: string | undefined;
+  readonly connectorId?: string | undefined;
+  readonly promotionIntent?: string | undefined;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -635,6 +658,19 @@ export class AitpCliBridge {
     return parseAitpCuratedRagSearchResult(payload);
   }
 
+  async draftCuratedRagPromotion(
+    input: DraftAitpCuratedRagPromotionInput,
+  ): Promise<AitpCuratedRagPromotionDraft> {
+    const payload = await this.runJson(
+      buildAitpCuratedRagPromotionDraftArgs({
+        basePath: this.options.basePath,
+        ...input,
+      }),
+      input.signal,
+    );
+    return parseAitpCuratedRagPromotionDraft(payload);
+  }
+
   async ingestCuratedRagCorpus(
     input: IngestAitpCuratedRagCorpusInput,
   ): Promise<AitpCuratedRagIngestResult> {
@@ -919,6 +955,27 @@ export function buildAitpCuratedRagSearchArgs(input: {
     }
     args.push('--limit', String(input.limit));
   }
+  return args;
+}
+
+export function buildAitpCuratedRagPromotionDraftArgs(input: {
+  readonly basePath?: string | undefined;
+  readonly chunkId: string;
+  readonly topicId?: string | undefined;
+  readonly claimId?: string | undefined;
+  readonly connectorId?: string | undefined;
+  readonly promotionIntent?: string | undefined;
+}): readonly string[] {
+  requireNonEmpty(input.chunkId, 'chunkId');
+  const args = buildAdapterReadArgs(
+    input.basePath,
+    'curated-rag-promotion-draft',
+    input.chunkId.trim(),
+  );
+  pushOptional(args, '--topic', input.topicId);
+  pushOptional(args, '--claim', input.claimId);
+  pushOptional(args, '--connector', input.connectorId);
+  pushOptional(args, '--intent', input.promotionIntent);
   return args;
 }
 

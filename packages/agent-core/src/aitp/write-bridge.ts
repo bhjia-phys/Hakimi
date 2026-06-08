@@ -80,6 +80,7 @@ export type AitpRuntimeBridgeOperation =
   | 'readRuntimePayloadProfiles'
   | 'readCuratedRagCorpus'
   | 'searchCuratedRagCorpus'
+  | 'draftCuratedRagPromotion'
   | AitpWriteBridgeOperation;
 
 export interface AitpRuntimeBridgeTarget {
@@ -146,6 +147,11 @@ const AITP_READ_TARGET_MCP_ARGUMENTS = {
     optional: ['base', 'limit'],
     source: 'aitp_v5_search_curated_rag_corpus',
   },
+  curated_rag_promotion_draft: {
+    required: ['chunk_id'],
+    optional: ['base', 'topic_id', 'claim_id', 'connector_id', 'promotion_intent'],
+    source: 'aitp_v5_draft_curated_rag_promotion',
+  },
 } as const satisfies Record<string, AitpMcpArgumentContract>;
 
 export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
@@ -191,6 +197,15 @@ export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
     'aitp_v5_search_curated_rag_corpus',
     'aitp-v5 adapter curated-rag-search <query> <args>',
     'curated_rag_search_result',
+    'read',
+    'read_only',
+  ),
+  bridgeTarget(
+    'draftCuratedRagPromotion',
+    'curated_rag_promotion_draft',
+    'aitp_v5_draft_curated_rag_promotion',
+    'aitp-v5 adapter curated-rag-promotion-draft <chunk-id> <args>',
+    'curated_rag_promotion_draft',
     'read',
     'read_only',
   ),
