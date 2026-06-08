@@ -125,6 +125,11 @@ guard as a read-only pre-execute check and returns
 operation, and explicit payload match before the separate write action, but it
 records no evidence, source support, validation, final-gate state, or
 claim-trust mutation.
+Guarded handoff artifacts now also include `readiness_call_json`, a prefilled
+`ResearchAction.inspect_aitp_write_bridge_handoff_readiness` call for the same
+operation, payload, and handoff. This is only a copyable read-only check; the
+separate `execute_aitp_write_bridge` call is still required for any AITP write
+or preflight.
 When a handoff is supplied, `execute_aitp_write_bridge` now emits a compact
 `handoff_execution_precheck` before the guard/result details. Passed prechecks
 show `bridge_call_allowed=true` and `bridge_called=true` after the guard has

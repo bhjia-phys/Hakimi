@@ -36,6 +36,7 @@ const MOCK_PROVIDER = {
   apiKey: 'test-key',
   model: 'mock-model',
 } as const;
+type ResearchActionToolArgs = Parameters<ResearchActionTool['resolveExecution']>[0];
 
 describe('ResearchActionTool', () => {
   it('documents guarded AITP handoff remediation steps in the tool description', () => {
@@ -1569,6 +1570,8 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('handoff_executed="false"');
     expect(result.output).toContain('non_execution_provenance="draft_only"');
     expect(result.output).toContain('<non_execution_provenance_json>');
+    expect(result.output).toContain('<readiness_call_json>');
+    expect(result.output).toContain('&quot;action&quot;:&quot;inspect_aitp_write_bridge_handoff_readiness&quot;');
     expect(result.output).toContain('&quot;requiresExplicitExecuteCall&quot;:true');
     expect(result.output).toContain('&quot;action&quot;:&quot;execute_aitp_write_bridge&quot;');
     expect(result.output).toContain('&quot;aitp_operation&quot;:&quot;recordEvidence&quot;');
@@ -1842,6 +1845,8 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
     expect(result.output).toContain('confirmation_status="ready_for_explicit_execute"');
     expect(result.output).toContain('<hash_input_json>');
+    expect(result.output).toContain('<readiness_call_json>');
+    expect(result.output).toContain('&quot;action&quot;:&quot;inspect_aitp_write_bridge_handoff_readiness&quot;');
     expect(result.output).toContain('repair_draft_only');
     expect(result.output).toContain('<repair_boundary');
     expect(result.output).toContain('requires_separate_explicit_execute_call="true"');
@@ -1927,6 +1932,8 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('&quot;sourceRefs&quot;:[&quot;curated_rag_chunk:source_backtrace_orientation:0001&quot;]');
     expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
     expect(result.output).toContain('confirmation_status="ready_for_explicit_execute"');
+    expect(result.output).toContain('<readiness_call_json>');
+    expect(result.output).toContain('&quot;action&quot;:&quot;inspect_aitp_write_bridge_handoff_readiness&quot;');
     expect(result.output).toContain('repair_draft_only');
     expect(bridgeCalls).toEqual([]);
 
@@ -1982,12 +1989,7 @@ describe('ResearchActionTool', () => {
     });
     const handoff = extractCuratedRagHandoff(draft.output);
 
-    const readiness = await execute(tool, {
-      action: 'inspect_aitp_write_bridge_handoff_readiness',
-      aitp_operation: 'registerSourceAsset',
-      aitp_payload: toolCallPayload(handoff),
-      aitp_handoff: handoff.guard,
-    });
+    const readiness = await execute(tool, handoff.readinessCall);
 
     expect(readiness.output).toContain('<aitp_write_bridge_handoff_readiness');
     expect(readiness.output).toContain('kind="record_ref_repair_write_bridge_handoff"');
@@ -2109,6 +2111,17 @@ describe('ResearchActionTool', () => {
       },
     });
     const handoff = extractCuratedRagHandoff(draft.output);
+
+    const readiness = await execute(tool, handoff.readinessCall);
+
+    expect(readiness.output).toContain('<aitp_write_bridge_handoff_readiness');
+    expect(readiness.output).toContain('kind="curated_rag_write_bridge_handoff"');
+    expect(readiness.output).toContain('status="passed"');
+    expect(readiness.output).toContain('selected_aitp_operation="recordEvidence"');
+    expect(readiness.output).toContain('bridge_call_allowed="true"');
+    expect(readiness.output).toContain('bridge_called="false"');
+    expect(readiness.output).toContain('executes_write_now="false"');
+    expect(bridgeCalls).toEqual([]);
 
     const result = await execute(tool, {
       action: 'execute_aitp_write_bridge',
@@ -2887,7 +2900,7 @@ describe('ToolManager ResearchAction registration', () => {
   });
 });
 
-function execute(tool: ResearchActionTool, args: Parameters<typeof tool.resolveExecution>[0]) {
+function execute(tool: ResearchActionTool, args: ResearchActionToolArgs) {
   return executeTool(tool, {
     turnId: '0',
     toolCallId: 'call_research_action',
@@ -2934,6 +2947,7 @@ function extractCuratedRagHandoff(output: unknown): {
   readonly guard: Record<string, unknown>;
   readonly toolCall: Record<string, unknown>;
   readonly hashInput: Record<string, unknown>;
+  readonly readinessCall: ResearchActionToolArgs;
 } {
   expect(typeof output).toBe('string');
   const text = typeof output === 'string' ? output : '';
@@ -2947,6 +2961,7 @@ function extractCuratedRagHandoff(output: unknown): {
   const diagnosticHash = xmlAttr(attrs, 'diagnostic_hash');
   const toolCall = JSON.parse(xmlElementText(text, 'tool_call_json')) as Record<string, unknown>;
   const hashInput = JSON.parse(xmlElementText(text, 'hash_input_json')) as Record<string, unknown>;
+  const readinessCall = JSON.parse(xmlElementText(text, 'readiness_call_json')) as ResearchActionToolArgs;
   return {
     guard: {
       handoff_id: handoffId,
@@ -2958,6 +2973,7 @@ function extractCuratedRagHandoff(output: unknown): {
     },
     toolCall,
     hashInput,
+    readinessCall,
   };
 }
 
