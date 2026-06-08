@@ -1717,6 +1717,13 @@ describe('ResearchActionTool', () => {
     });
 
     expect(result.output).toContain('<aitp_write_bridge operation="recordEvidence"');
+    expect(result.output).toContain('<handoff_execution_precheck');
+    expect(result.output).toContain('status="passed"');
+    expect(result.output).toContain('bridge_call_allowed="true"');
+    expect(result.output).toContain('bridge_called="true"');
+    expect(result.output).toContain('retry_requires_explicit_execute_call="false"');
+    expect(result.output).toContain('handoff_mutated_now="false"');
+    expect(result.output).toContain('claim_trust_mutation="none"');
     expect(result.output).toContain('<handoff_guard');
     expect(result.output).toContain('status="passed"');
     expect(result.output).toContain(`handoff_id="${String(handoff.guard['handoff_id'])}"`);
@@ -1782,6 +1789,13 @@ describe('ResearchActionTool', () => {
     });
 
     expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('<handoff_execution_precheck');
+    expect(result.output).toContain('status="failed"');
+    expect(result.output).toContain('code="blocked_handoff"');
+    expect(result.output).toContain('bridge_call_allowed="false"');
+    expect(result.output).toContain('bridge_called="false"');
+    expect(result.output).toContain('retry_requires_explicit_execute_call="true"');
+    expect(result.output).toContain('handoff_mutated_now="false"');
     expect(result.output).toContain('<handoff_guard_failure');
     expect(result.output).toContain('code="blocked_handoff"');
     expect(result.output).toContain('field="confirmation_status"');
@@ -1982,6 +1996,13 @@ describe('ResearchActionTool', () => {
     });
 
     expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('<handoff_execution_precheck');
+    expect(result.output).toContain(`code="${code}"`);
+    expect(result.output).toContain(`path="${path}"`);
+    expect(result.output).toContain(`next_step="${nextStep}"`);
+    expect(result.output).toContain('bridge_call_allowed="false"');
+    expect(result.output).toContain('bridge_called="false"');
+    expect(result.output).toContain('handoff_mutated_now="false"');
     expect(result.output).toContain('<handoff_guard_failure');
     expect(result.output).toContain(`code="${code}"`);
     expect(result.output).toContain(`path="${path}"`);

@@ -275,6 +275,12 @@ embedded tool call matches the explicit operation/payload, and the diagnostic
 hash matches `hash_input_json` before it calls the normal AITP write bridge.
 Tampered or blocked handoffs fail before bridge execution; direct explicit
 write-bridge calls without a handoff still use the ordinary typed path.
+When a handoff is supplied, `execute_aitp_write_bridge` now emits a compact
+`handoff_execution_precheck` before the guard/result details. Passed prechecks
+show `bridge_call_allowed="true"` and `bridge_called="true"` after the guard
+has matched; failed prechecks show the guard `code`, `path`, `next_step`,
+`bridge_called="false"`, and `handoff_mutated_now="false"` before the existing
+failure XML.
 The guard coverage now also pins fail-closed behavior for missing
 `tool_call_json`, missing `hash_input_json`, payload tampering, diagnostic-hash
 tampering, and hash-input/tool-call mismatch. The AITP write-bridge executor
