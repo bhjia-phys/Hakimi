@@ -1564,6 +1564,12 @@ describe('ResearchActionTool', () => {
     );
     expect(result.output).toMatch(/confirmation_id="curated-rag-confirmation\.[^"]+\.[0-9a-f]{16}"/);
     expect(result.output).toMatch(/diagnostic_hash="sha256:[0-9a-f]{16}"/);
+    expect(result.output).toContain('<readiness_call_pointer');
+    expect(result.output).toContain('action="inspect_aitp_write_bridge_handoff_readiness"');
+    expect(result.output).toContain('source="execute_aitp_write_bridge_handoff.readiness_call_json"');
+    expect(result.output).toContain('read_only="true"');
+    expect(result.output).toContain('bridge_called="false"');
+    expect(result.output).toContain('source_support_result="false"');
     expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
     expect(result.output).toContain('confirmation_status="blocked"');
     expect(result.output).toContain('hash_algorithm="sha256"');
@@ -1658,6 +1664,10 @@ describe('ResearchActionTool', () => {
       /handoff_id="curated-rag-write-handoff\.curated_rag_chunk-source_backtrace_orientation-0001\.evidence\.recordEvidence\.[0-9a-f]{16}"/,
     );
     expect(result.output).toMatch(/diagnostic_hash="sha256:[0-9a-f]{16}"/);
+    expect(result.output).toContain('<readiness_call_pointer');
+    expect(result.output).toContain('action="inspect_aitp_write_bridge_handoff_readiness"');
+    expect(result.output).toContain('source="execute_aitp_write_bridge_handoff.readiness_call_json"');
+    expect(result.output).toContain('bridge_called="false"');
     expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
     expect(result.output).toContain('confirmation_status="needs_explicit_confirmation"');
     expect(result.output).toContain('handoff_executed="false"');
