@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   AITP_RUNTIME_BRIDGE_TARGETS,
   AitpWriteBridgePayloadError,
+  buildPrimitiveToolLifecycleAitpToolRunPayload,
   aitpRuntimeBridgeTargetForOperation,
   coerceAitpWriteBridgeInput,
   createAitpCliWriteBridgeExecutor,
@@ -10,6 +11,7 @@ import {
   evidenceRefsForAitpWriteBridgeResult,
   generatedObligationIdsForAitpWriteBridgeResult,
   mcpArgsForAitpWriteBridgeInput,
+  PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE,
   type AitpWriteBridgeCliTarget,
 } from '../../src';
 
@@ -166,6 +168,111 @@ describe('AITP write bridge executor', () => {
       supports_outputs: ['definition path'],
       validation_result_ids: ['validation-result-qg'],
     });
+  });
+
+  it('builds AITP tool-run payloads from primitive tool lifecycle envelopes', () => {
+    const payload = buildPrimitiveToolLifecycleAitpToolRunPayload(
+      {
+        started: {
+          source: 'loop',
+          turnId: 7,
+          step: 2,
+          stepUuid: 'step-read',
+          toolCallId: 'call_read_mapping',
+          toolName: 'Read',
+          cwd: 'F:/project',
+          argsSummary: '{"path":"src/kernel.ts"}',
+          workFrameId: 'frame-gw',
+          actionCallId: 'call-action',
+          startedAt: 100,
+        },
+        completed: {
+          source: 'loop',
+          turnId: 7,
+          step: 2,
+          stepUuid: 'step-read',
+          toolCallId: 'call_read_mapping',
+          toolName: 'Read',
+          cwd: 'F:/project',
+          status: 'passed',
+          isError: false,
+          outputKind: 'text',
+          outputSummary: 'kernel.ts contains the head-wing update.',
+          durationMs: 25,
+          completedAt: 125,
+          workFrameId: 'frame-gw',
+          actionCallId: 'call-action',
+          artifactRefs: ['aitp:artifact:artifact-read-log', 'local:ignored'],
+        },
+      },
+      {
+        id: 'frame-gw',
+        domain: 'librpa',
+        topic: 'gw',
+        goal: 'Inspect GW code path.',
+        activeObjectIds: [],
+        assumptionIds: [],
+        conventionIds: [],
+        openObligationIds: [],
+        sourceRefs: ['aitp:claim:claim-gw', 'source_asset:paper-gw'],
+        trustState: 'exploratory',
+      },
+    );
+
+    expect(payload).toMatchObject({
+      recipeId: 'primitive_tool:Read:call_read_mapping',
+      toolFamily: 'primitive_tool',
+      toolName: 'Read',
+      topicId: 'gw',
+      claimId: 'claim-gw',
+      inputs: {
+        argsSummary: '{"path":"src/kernel.ts"}',
+        cwd: 'F:/project',
+      },
+      outputs: {
+        toolCallId: 'call_read_mapping',
+        toolName: 'Read',
+        status: 'passed',
+        outputSummary: 'kernel.ts contains the head-wing update.',
+        durationMs: 25,
+        workFrameId: 'frame-gw',
+        actionCallId: 'call-action',
+      },
+      environment: {
+        captureTool: 'hakimi.primitive_tool_lifecycle',
+        payloadProfile: PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE,
+        summaryInputsTrusted: false,
+        canUpdateClaimTrust: false,
+      },
+      evidenceStatus: 'unreviewed',
+      artifactIds: ['artifact-read-log'],
+      sourceRefs: [
+        'aitp:claim:claim-gw',
+        'source_asset:paper-gw',
+        'tool:Read',
+        'tool_call:call_read_mapping',
+      ],
+    });
+  });
+
+  it('does not build primitive tool payloads without AITP topic and claim scope', () => {
+    const payload = buildPrimitiveToolLifecycleAitpToolRunPayload({
+      started: undefined,
+      completed: {
+        source: 'loop',
+        turnId: 1,
+        toolCallId: 'call_ls',
+        toolName: 'LS',
+        status: 'passed',
+        isError: false,
+        outputKind: 'empty',
+        outputSummary: '',
+        completedAt: 10,
+        artifactRefs: [],
+      },
+    });
+
+    expect(payload).toBeUndefined();
   });
 
   it('prefers MCP for write execution and parses MCP text JSON results', async () => {
