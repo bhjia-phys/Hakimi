@@ -538,6 +538,39 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['aitp.attach_artifact', 'aitp.record_validation_result'],
   }),
   plan({
+    actionId: 'aitp.capture_primitive_tool_run',
+    title: 'Capture primitive tool run in AITP',
+    intent:
+      'Persist one recent Hakimi primitive tool lifecycle completion as AITP tool-run provenance only when an explicit tool_call_id and scoped topic or claim are available.',
+    primitiveToolPolicy: 'none',
+    steps: [
+      step({
+        id: 'select-primitive-tool-call',
+        kind: 'inspect',
+        title: 'Select primitive tool call',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Choose a recent primitive tool_call_id that should be retained as provenance for the active WorkFrame.',
+        expectedEvidence: ['primitive_tool_call_id', 'tool_name', 'work_frame_id'],
+      }),
+      step({
+        id: 'execute-aitp-primitive-tool-capture',
+        kind: 'record',
+        title: 'Write primitive tool run through AITP',
+        toolNames: ['ResearchAction'],
+        purpose:
+          'Call ResearchAction.capture_primitive_tool_run so Hakimi builds the AITP recordToolRun payload from the stored lifecycle envelope and writes it through the configured bridge.',
+        expectedEvidence: ['aitp:tool_run:<id>', 'primitive_tool_call_id', 'tool_run_provenance'],
+      }),
+    ],
+    recording: recording(
+      'aitp.capture_primitive_tool_run',
+      ['aitp:tool_run:<id>', 'primitive_tool_call_id'],
+      true,
+    ),
+    followupActionIds: ['aitp.record_evidence', 'aitp.record_validation_result'],
+  }),
+  plan({
     actionId: 'aitp.register_source_asset',
     title: 'Register AITP source asset',
     intent:

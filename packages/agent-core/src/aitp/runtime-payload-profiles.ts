@@ -16,7 +16,12 @@ export function buildPrimitiveToolLifecycleAitpToolRunPayload(
   options: PrimitiveToolLifecycleAitpToolRunPayloadOptions = {},
 ): Readonly<Record<string, unknown>> | undefined {
   const topicId = firstText(options.topicId, workFrame?.topic);
-  const claimId = firstText(options.claimId, firstClaimRef(options.sourceRefs), firstClaimRef(workFrame?.sourceRefs));
+  const claimId = firstText(
+    options.claimId,
+    firstClaimRef(options.sourceRefs),
+    firstClaimRef(workFrame?.sourceRefs),
+    firstClaimRef(workFrame?.activeObjectIds),
+  );
   if (!hasText(topicId) || !hasText(claimId)) return undefined;
 
   const completed = envelope.completed;
@@ -24,6 +29,7 @@ export function buildPrimitiveToolLifecycleAitpToolRunPayload(
   const sourceRefs = uniqueStrings([
     ...(options.sourceRefs ?? []),
     ...(workFrame?.sourceRefs ?? []),
+    ...(workFrame?.activeObjectIds ?? []),
     `tool:${completed.toolName}`,
     `tool_call:${completed.toolCallId}`,
   ]);
