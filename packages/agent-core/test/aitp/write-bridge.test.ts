@@ -40,6 +40,27 @@ describe('AITP write bridge executor', () => {
       claimTrustMutation: 'none',
       canUpdateClaimTrust: false,
     });
+    expect(byOperation.get('readRuntimePayloadProfiles')).toMatchObject({
+      entrypointKey: 'runtime_payload_profiles',
+      mcpTool: 'aitp_v5_get_runtime_payload_profiles',
+      cliFallback: 'aitp-v5 adapter payload-profiles',
+      surface: 'runtime_payload_profiles',
+      preferredTransport: 'mcp',
+      fallbackTransport: 'cli',
+      mcpInvocation: {
+        tool: 'aitp_v5_get_runtime_payload_profiles',
+        argumentStyle: 'json_object',
+        baseArgument: 'base',
+        payloadKeyCase: 'snake_case',
+        resultSurface: 'runtime_payload_profiles',
+        resultContentType: 'json_object',
+        fallbackPolicy: 'use_cli_when_mcp_transport_unavailable_or_call_fails',
+      },
+      executionRole: 'read',
+      stateEffect: 'read_only',
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+    });
     expect(aitpRuntimeBridgeTargetForOperation('recordEvidence')).toMatchObject({
       operation: 'recordEvidence',
       entrypointKey: 'record_evidence',

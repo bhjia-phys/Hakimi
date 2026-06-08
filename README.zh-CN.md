@@ -35,6 +35,10 @@ and scoped topic/claim are present, `run_benchmark_adapter` writes
 `recordToolRun` provenance and merges `aitp:tool_run:<id>` into the benchmark
 action trace. It never writes a validation result or mutates claim trust, and
 missing bridge/scope is rendered as a skipped capture.
+Hakimi now also mirrors the read-only AITP `readRuntimePayloadProfiles` bridge
+target for `runtime_payload_profiles` / `aitp_v5_get_runtime_payload_profiles`
+/ `aitp-v5 adapter payload-profiles`. This is host payload-profile metadata
+only: it is not evidence, not validation, and not claim-trust authority.
 
 <p align="center">
   <img src="docs/assets/hakimi-terminal-welcome.png" width="920" alt="Hakimi terminal welcome screen with a pixel cat-ear exploration spacecraft" />

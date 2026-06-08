@@ -71,6 +71,7 @@ export type AitpWriteBridgeOperation = (typeof AITP_WRITE_BRIDGE_OPERATIONS)[num
 export type AitpRuntimeBridgeOperation =
   | 'readProcessGraphSlice'
   | 'readMomentPolicy'
+  | 'readRuntimePayloadProfiles'
   | AitpWriteBridgeOperation;
 
 export interface AitpRuntimeBridgeTarget {
@@ -116,6 +117,15 @@ export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
     'aitp_v5_get_host_agnostic_moment_policy',
     'aitp-v5 graph moment-policy <session-id>',
     'host_agnostic_moment_policy',
+    'read',
+    'read_only',
+  ),
+  bridgeTarget(
+    'readRuntimePayloadProfiles',
+    'runtime_payload_profiles',
+    'aitp_v5_get_runtime_payload_profiles',
+    'aitp-v5 adapter payload-profiles',
+    'runtime_payload_profiles',
     'read',
     'read_only',
   ),
