@@ -318,6 +318,10 @@ call draft easy to hand to `ResearchAction.execute_aitp_write_bridge`, but the
 artifact itself is still `handoff_executed="false"` and
 `executes_write_now="false"`; it records no evidence, validation result, final
 gate satisfaction, or claim-trust mutation.
+Repair-call handoffs are checked as
+`record_ref_repair_write_bridge_handoff`, separate from curated RAG promotion
+handoffs, so explicit execution can prove the reviewed repair payload and hash
+match while still using the normal AITP `recordReferenceLocation` bridge path.
 When that separate execute action is invoked, the caller may pass the handoff
 as `aitp_handoff` alongside the explicit top-level `aitp_operation` and
 `aitp_payload`. Hakimi then re-checks that the handoff is not blocked, the

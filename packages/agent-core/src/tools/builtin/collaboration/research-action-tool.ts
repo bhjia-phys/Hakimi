@@ -433,7 +433,7 @@ interface CuratedRagPromotionWriteBridgeHandoffArtifact {
 }
 
 interface AitpHandoffGuard {
-  readonly kind: 'curated_rag_write_bridge_handoff';
+  readonly kind: 'curated_rag_write_bridge_handoff' | 'record_ref_repair_write_bridge_handoff';
   readonly handoffId: string;
   readonly confirmationId: string;
   readonly diagnosticHash: string;
@@ -2365,12 +2365,55 @@ function renderAitpRecordRefRepairWriteBridgeCallDraft(input: {
     aitp_operation: input.repairOperation,
     aitp_payload: input.payload,
   };
+  const hashInput = {
+    kind: 'aitp_record_ref_repair_write_bridge_call_handoff',
+    repairRef: input.repairRef,
+    repairOperation: input.repairOperation,
+    aitpOperation: input.repairOperation,
+    confirmationStatus: 'ready_for_explicit_execute',
+    repairReason: input.repairReason ?? '',
+    toolCall,
+  };
+  const hash = shortSha256(stableJson(hashInput), 16);
+  const handoffId = [
+    'record-ref-repair-handoff',
+    safeId(input.repairRef),
+    safeId(input.repairOperation),
+    hash,
+  ].join('.');
+  const confirmationId = [
+    'record-ref-repair-confirmation',
+    safeId(input.repairRef),
+    safeId(input.repairOperation),
+    hash,
+  ].join('.');
+  const diagnosticHash = `sha256:${hash}`;
+  const nonExecutionProvenance = {
+    source: 'ResearchAction.draft_aitp_record_ref_repair_write_bridge_call',
+    repairRef: input.repairRef,
+    repairOperation: input.repairOperation,
+    repairReason: input.repairReason ?? '',
+    reviewedPayloadExecuted: false,
+    handoffExecuted: false,
+    executesWriteNow: false,
+    recordsValidationResultNow: false,
+    sourceSupportResultNow: false,
+    claimTrustMutation: 'none',
+    requiresExplicitExecuteCall: true,
+    confirmationId,
+    diagnosticHash,
+  };
   return [
-    `<aitp_record_ref_repair_write_bridge_call_draft repair_ref="${escapeXml(input.repairRef)}" repair_operation="${input.repairOperation}" next_research_action="execute_aitp_write_bridge" aitp_operation="${input.repairOperation}" repair_operation_source="aitp_record_ref_lookup" payload_source="reviewed_repair_payload" repair_action_hint_only="true" selected_write_call_unchanged="true" reviewed_payload_executed="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true">`,
+    `<aitp_record_ref_repair_write_bridge_call_draft repair_ref="${escapeXml(input.repairRef)}" repair_operation="${input.repairOperation}" next_research_action="execute_aitp_write_bridge" aitp_operation="${input.repairOperation}" repair_operation_source="aitp_record_ref_lookup" payload_source="reviewed_repair_payload" repair_action_hint_only="true" selected_write_call_unchanged="true" handoff_id="${escapeXml(handoffId)}" diagnostic_hash="${escapeXml(diagnosticHash)}" reviewed_payload_executed="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true">`,
     `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
     `  <repair_reason>${escapeXml(input.repairReason ?? '')}</repair_reason>`,
     `  <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
     `  <reviewed_payload_json>${escapeXml(JSON.stringify(input.payload))}</reviewed_payload_json>`,
+    `  <execute_aitp_write_bridge_handoff handoff_id="${escapeXml(handoffId)}" confirmation_id="${escapeXml(confirmationId)}" confirmation_status="ready_for_explicit_execute" diagnostic_hash="${escapeXml(diagnosticHash)}" hash_algorithm="sha256" handoff_executed="false" executes_write_now="false" non_execution_provenance="repair_draft_only" requires_explicit_execute_call="true">`,
+    `    <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
+    `    <hash_input_json>${escapeXml(stableJson(hashInput))}</hash_input_json>`,
+    `    <non_execution_provenance_json>${escapeXml(JSON.stringify(nonExecutionProvenance))}</non_execution_provenance_json>`,
+    '  </execute_aitp_write_bridge_handoff>',
     '  <repair_boundary draft_executes_write_now="false" draft_records_validation_result="false" draft_source_support_result="false" draft_can_update_claim_trust="false" requires_separate_explicit_execute_call="true" />',
     '</aitp_record_ref_repair_write_bridge_call_draft>',
     '',
@@ -2693,10 +2736,14 @@ function verifyAitpWriteBridgeHandoff(
   }
   const missingRefRepairHintCount = nonNegativeIntegerRecordValue(hashInput, 'missingRefRepairHintCount');
   const repairHintOperations = stringArrayRecordValue(hashInput, 'repairHintOperations');
+  const hashInputKind = stringRecordValue(hashInput, 'kind');
   return {
     isError: false,
     guard: {
-      kind: 'curated_rag_write_bridge_handoff',
+      kind:
+        hashInputKind === 'aitp_record_ref_repair_write_bridge_call_handoff'
+          ? 'record_ref_repair_write_bridge_handoff'
+          : 'curated_rag_write_bridge_handoff',
       handoffId,
       confirmationId,
       diagnosticHash,
