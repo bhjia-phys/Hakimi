@@ -1842,6 +1842,10 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('&quot;aitp_operation&quot;:&quot;recordReferenceLocation&quot;');
     expect(result.output).toContain('&quot;connectorId&quot;:&quot;curated-rag&quot;');
     expect(result.output).toContain('&quot;sourceRef&quot;:&quot;source_asset:asset-reviewed&quot;');
+    expect(result.output).toContain('<readiness_call_pointer');
+    expect(result.output).toContain('action="inspect_aitp_write_bridge_handoff_readiness"');
+    expect(result.output).toContain('source="execute_aitp_write_bridge_handoff.readiness_call_json"');
+    expect(result.output).toContain('bridge_called="false"');
     expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
     expect(result.output).toContain('confirmation_status="ready_for_explicit_execute"');
     expect(result.output).toContain('<hash_input_json>');
@@ -1930,6 +1934,10 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('&quot;aitp_operation&quot;:&quot;registerSourceAsset&quot;');
     expect(result.output).toContain('&quot;assetType&quot;:&quot;paper&quot;');
     expect(result.output).toContain('&quot;sourceRefs&quot;:[&quot;curated_rag_chunk:source_backtrace_orientation:0001&quot;]');
+    expect(result.output).toContain('<readiness_call_pointer');
+    expect(result.output).toContain('action="inspect_aitp_write_bridge_handoff_readiness"');
+    expect(result.output).toContain('source="execute_aitp_write_bridge_handoff.readiness_call_json"');
+    expect(result.output).toContain('bridge_called="false"');
     expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
     expect(result.output).toContain('confirmation_status="ready_for_explicit_execute"');
     expect(result.output).toContain('<readiness_call_json>');
