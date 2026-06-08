@@ -427,12 +427,18 @@ interface CuratedRagPromotionWriteBridgeConfirmationSummary {
   readonly nextStep: string;
 }
 
+interface AitpWriteBridgeToolCallDraft {
+  readonly action: 'execute_aitp_write_bridge';
+  readonly aitp_operation: AitpWriteBridgeOperation;
+  readonly aitp_payload: unknown;
+}
+
 interface CuratedRagPromotionWriteBridgeHandoffArtifact {
   readonly handoffId: string;
   readonly confirmationId: string;
   readonly diagnosticHash: string;
   readonly confirmationStatus: CuratedRagPromotionWriteBridgeConfirmationSummary['status'];
-  readonly toolCall: Readonly<Record<string, unknown>>;
+  readonly toolCall: AitpWriteBridgeToolCallDraft;
   readonly hashInput: Readonly<Record<string, unknown>>;
   readonly nonExecutionProvenance: Readonly<Record<string, unknown>>;
 }
@@ -2341,7 +2347,7 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
   bindingId?: string | undefined,
 ): string {
   const target = aitpRuntimeBridgeTargetForOperation(callDraft.aitpOperation);
-  const toolCall = {
+  const toolCall: AitpWriteBridgeToolCallDraft = {
     action: 'execute_aitp_write_bridge',
     aitp_operation: callDraft.aitpOperation,
     aitp_payload: callDraft.payload,
@@ -2384,7 +2390,7 @@ function renderAitpRecordRefRepairWriteBridgeCallDraft(input: {
   readonly payload: unknown;
 }): string {
   const target = aitpRuntimeBridgeTargetForOperation(input.repairOperation);
-  const toolCall = {
+  const toolCall: AitpWriteBridgeToolCallDraft = {
     action: 'execute_aitp_write_bridge',
     aitp_operation: input.repairOperation,
     aitp_payload: input.payload,
@@ -2427,6 +2433,14 @@ function renderAitpRecordRefRepairWriteBridgeCallDraft(input: {
     confirmationId,
     diagnosticHash,
   };
+  const readinessCall = handoffReadinessToolCall(input.repairOperation, input.payload, {
+    handoffId,
+    confirmationId,
+    confirmationStatus: 'ready_for_explicit_execute',
+    diagnosticHash,
+    toolCall,
+    hashInput,
+  });
   return [
     `<aitp_record_ref_repair_write_bridge_call_draft repair_ref="${escapeXml(input.repairRef)}" repair_operation="${input.repairOperation}" next_research_action="execute_aitp_write_bridge" aitp_operation="${input.repairOperation}" repair_operation_source="aitp_record_ref_lookup" payload_source="reviewed_repair_payload" repair_action_hint_only="true" selected_write_call_unchanged="true" handoff_id="${escapeXml(handoffId)}" diagnostic_hash="${escapeXml(diagnosticHash)}" reviewed_payload_executed="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true">`,
     `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
@@ -2437,6 +2451,7 @@ function renderAitpRecordRefRepairWriteBridgeCallDraft(input: {
     `    <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
     `    <hash_input_json>${escapeXml(stableJson(hashInput))}</hash_input_json>`,
     `    <non_execution_provenance_json>${escapeXml(JSON.stringify(nonExecutionProvenance))}</non_execution_provenance_json>`,
+    `    <readiness_call_json>${escapeXml(JSON.stringify(readinessCall))}</readiness_call_json>`,
     '  </execute_aitp_write_bridge_handoff>',
     '  <repair_boundary draft_executes_write_now="false" draft_records_validation_result="false" draft_source_support_result="false" draft_can_update_claim_trust="false" requires_separate_explicit_execute_call="true" />',
     '</aitp_record_ref_repair_write_bridge_call_draft>',
@@ -2499,7 +2514,7 @@ function curatedRagPromotionWriteBridgeHandoffArtifact(
   sourceDraft: AitpCuratedRagPromotionDraft,
   callDraft: CuratedRagPromotionWriteBridgeCallDraft,
   confirmation: CuratedRagPromotionWriteBridgeConfirmationSummary,
-  toolCall: Readonly<Record<string, unknown>>,
+  toolCall: AitpWriteBridgeToolCallDraft,
   bindingId?: string | undefined,
 ): CuratedRagPromotionWriteBridgeHandoffArtifact {
   const diagnostics = [
@@ -2635,8 +2650,36 @@ function renderAitpCuratedRagWriteBridgeHandoffArtifact(
     `${indent}  <tool_call_json>${escapeXml(JSON.stringify(artifact.toolCall))}</tool_call_json>`,
     `${indent}  <hash_input_json>${escapeXml(stableJson(artifact.hashInput))}</hash_input_json>`,
     `${indent}  <non_execution_provenance_json>${escapeXml(JSON.stringify(artifact.nonExecutionProvenance))}</non_execution_provenance_json>`,
+    `${indent}  <readiness_call_json>${escapeXml(JSON.stringify(handoffReadinessToolCall(artifact.toolCall.aitp_operation, artifact.toolCall.aitp_payload, artifact)))}</readiness_call_json>`,
     `${indent}</execute_aitp_write_bridge_handoff>`,
   ].join('\n');
+}
+
+function handoffReadinessToolCall(
+  operation: AitpWriteBridgeOperation,
+  payload: unknown,
+  artifact: {
+    readonly handoffId: string;
+    readonly confirmationId: string;
+    readonly confirmationStatus: string;
+    readonly diagnosticHash: string;
+    readonly toolCall: AitpWriteBridgeToolCallDraft;
+    readonly hashInput: unknown;
+  },
+): Readonly<Record<string, unknown>> {
+  return {
+    action: 'inspect_aitp_write_bridge_handoff_readiness',
+    aitp_operation: operation,
+    aitp_payload: payload,
+    aitp_handoff: {
+      handoff_id: artifact.handoffId,
+      confirmation_id: artifact.confirmationId,
+      confirmation_status: artifact.confirmationStatus,
+      diagnostic_hash: artifact.diagnosticHash,
+      tool_call_json: artifact.toolCall,
+      hash_input_json: artifact.hashInput,
+    },
+  };
 }
 
 function verifyAitpWriteBridgeHandoff(
