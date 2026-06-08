@@ -1,6 +1,7 @@
 import type { DomainProfileId } from '../domain-profile';
 import type { DomainPackManifest } from '../domain-pack';
 import type { CompiledAitpProcessGraphSlice } from '../aitp';
+import type { AitpCuratedRagIndexMode, AitpCuratedRagSearchResult } from '../aitp/curated-rag';
 import type {
   ActionAffordance,
   BridgePolicy,
@@ -134,6 +135,32 @@ export interface ResearchContextAitpSection {
   readonly compiled: CompiledAitpProcessGraphSlice;
 }
 
+export interface ResearchContextCuratedRagChunkSummary {
+  readonly chunkId: string;
+  readonly documentId: string;
+  readonly score: number;
+  readonly summary: string;
+  readonly text: string;
+  readonly contentHash: string;
+  readonly tags: readonly string[];
+}
+
+export interface ResearchContextCuratedRagSection {
+  readonly query: string;
+  readonly reasonIds: readonly string[];
+  readonly indexMode: AitpCuratedRagIndexMode;
+  readonly resultRole: 'heuristic_context';
+  readonly readSurfaceEffect: 'orientation_only';
+  readonly resultCount: number;
+  readonly recordsValidationResult: false;
+  readonly claimTrustMutation: 'none';
+  readonly canUpdateClaimTrust: false;
+  readonly requiresPromotionForClaimSupport: true;
+  readonly indexStatus?: string | undefined;
+  readonly staleIndexDiagnostics: readonly Readonly<Record<string, unknown>>[];
+  readonly results: readonly ResearchContextCuratedRagChunkSummary[];
+}
+
 export interface ResearchContextPack {
   readonly id: ResearchContextPackId;
   readonly workFrameId: string;
@@ -149,6 +176,7 @@ export interface ResearchContextPack {
   readonly physics: ResearchContextPhysicsSection;
   readonly ledger: ResearchContextLedgerSection;
   readonly aitp?: ResearchContextAitpSection | undefined;
+  readonly curatedRag?: ResearchContextCuratedRagSection | undefined;
   readonly actionBindings: readonly ResearchActionBinding[];
   readonly domainPack?: DomainPackManifest | undefined;
   readonly diagnostics: readonly ResearchContextPackDiagnostic[];
@@ -159,6 +187,7 @@ export interface CompileResearchContextPackLimits {
   readonly maxCapsules?: number | undefined;
   readonly maxLedgerProposals?: number | undefined;
   readonly maxActionBindings?: number | undefined;
+  readonly maxCuratedRagResults?: number | undefined;
 }
 
 export interface CompileResearchContextPackOptions {
@@ -167,6 +196,8 @@ export interface CompileResearchContextPackOptions {
   readonly bridgePolicy?: BridgePolicy | undefined;
   readonly includeLedgerStatuses?: readonly ResearchLedgerEventStatus[] | undefined;
   readonly aitp?: CompiledAitpProcessGraphSlice | null | undefined;
+  readonly curatedRag?: AitpCuratedRagSearchResult | null | undefined;
+  readonly curatedRagReasonIds?: readonly string[] | undefined;
   readonly limits?: CompileResearchContextPackLimits | undefined;
   readonly now?: (() => number) | undefined;
 }

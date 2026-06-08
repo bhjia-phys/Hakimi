@@ -6,6 +6,8 @@ import { ProviderManager } from '../../src/session/provider-manager';
 import {
   WorkflowRecipeRegistry,
   compileAitpProcessGraphSlice,
+  type AitpCuratedRagProvider,
+  type AitpCuratedRagSearchResult,
   type AitpProcessGraphSliceProvider,
   type WorkflowRecipe,
 } from '../../src';
@@ -277,6 +279,89 @@ describe('ResearchContextManager', () => {
       ]),
     );
   });
+
+  it('automatically injects AITP curated RAG for background-oriented prompts', async () => {
+    const searchCuratedRagCorpus = vi.fn(async (input: { query: string; limit?: number }) =>
+      fakeCuratedRagSearchResult(input.query),
+    );
+    const aitpCuratedRagProvider: AitpCuratedRagProvider = {
+      async getCuratedRagCorpus() {
+        throw new Error('not used');
+      },
+      searchCuratedRagCorpus,
+    };
+    const agent = makeAgent(undefined, { aitpCuratedRagProvider });
+    agent.workFrames.open(
+      {
+        id: 'frame.rag',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Use curated background to explain FQHE source backtrace without treating it as evidence.',
+      },
+      { source: 'controller' },
+    );
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text: 'Explain from scratch the source backtrace idea for FQHE literature.',
+      },
+    ]);
+    await agent.injection.inject();
+
+    expect(searchCuratedRagCorpus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limit: 3,
+        query: expect.stringContaining('Explain from scratch'),
+      }),
+    );
+    const pack = agent.researchContext.listPacks().at(-1);
+    expect(pack?.curatedRag).toMatchObject({
+      resultRole: 'heuristic_context',
+      readSurfaceEffect: 'orientation_only',
+      recordsValidationResult: false,
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+      requiresPromotionForClaimSupport: true,
+      reasonIds: expect.arrayContaining([
+        'conceptual_scaffolding',
+        'literature_orientation',
+        'source_backtrace_suggestions',
+      ]),
+    });
+    expect(pack?.curatedRag?.results.map((item) => item.chunkId)).toEqual(['chunk.fqhe.source']);
+    const lastMessage = agent.context.history.at(-1);
+    const reminder = (lastMessage?.content[0] as { text: string }).text;
+    expect(reminder).toContain('AITP curated RAG');
+    expect(reminder).toContain('chunk.fqhe.source');
+    expect(reminder).toContain('heuristic_context only');
+    expect(reminder).toContain('promote via AITP source_asset');
+  });
+
+  it('does not call AITP curated RAG provider for ordinary action prompts', async () => {
+    const aitpCuratedRagProvider: AitpCuratedRagProvider = {
+      async getCuratedRagCorpus() {
+        throw new Error('not used');
+      },
+      searchCuratedRagCorpus: vi.fn(),
+    };
+    const agent = makeAgent(undefined, { aitpCuratedRagProvider });
+    agent.workFrames.open(
+      {
+        id: 'frame.plain',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-implementation',
+        goal: 'Make a small runtime change.',
+      },
+      { source: 'controller' },
+    );
+
+    agent.context.appendUserMessage([{ type: 'text', text: 'Continue the implementation.' }]);
+    await agent.injection.inject();
+
+    expect(aitpCuratedRagProvider.searchCuratedRagCorpus).not.toHaveBeenCalled();
+    expect(agent.researchContext.listPacks().at(-1)?.curatedRag).toBeUndefined();
+  });
 });
 
 function makeAgent(
@@ -284,6 +369,7 @@ function makeAgent(
   options: {
     readonly workflowRecipes?: WorkflowRecipeRegistry | undefined;
     readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
+    readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
   } = {},
 ): Agent {
   const agent = new Agent({
@@ -319,12 +405,48 @@ function makeAgent(
     }),
     workflowRecipes: options.workflowRecipes,
     aitpProcessGraphProvider: options.aitpProcessGraphProvider,
+    aitpCuratedRagProvider: options.aitpCuratedRagProvider,
   });
   agent.config.update({
     cwd: process.cwd(),
     modelAlias: MOCK_PROVIDER.model,
   });
   return agent;
+}
+
+function fakeCuratedRagSearchResult(query: string): AitpCuratedRagSearchResult {
+  return {
+    kind: 'curated_rag_search_result',
+    catalogVersion: 'aitp.v5.curated_rag_corpus.v1',
+    query,
+    indexMode: 'lexical_file_backed',
+    resultRole: 'heuristic_context',
+    summaryInputsTrusted: false,
+    canUpdateClaimTrust: false,
+    recordsValidationResult: false,
+    claimTrustMutation: 'none',
+    requiresPromotionForClaimSupport: true,
+    indexStatus: 'fresh',
+    staleIndexDiagnostics: [],
+    resultCount: 1,
+    results: [
+      {
+        chunkId: 'chunk.fqhe.source',
+        documentId: 'doc.fqhe.lecture',
+        score: 2.5,
+        retrievalRole: 'heuristic_context',
+        orientationOnly: true,
+        canUpdateClaimTrust: false,
+        summary: 'Background orientation for source backtrace in FQHE literature.',
+        text: 'Use this as a conceptual hint, not as claim evidence.',
+        anchor: { section: 'source backtrace' },
+        tags: ['fqhe', 'source-backtrace'],
+        contentHash: 'sha256:chunk-fqhe-source',
+        raw: {},
+      },
+    ],
+    raw: {},
+  };
 }
 
 function sourceSearchWorkflow(): WorkflowRecipe {

@@ -131,6 +131,22 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
       );
     }
   }
+  if (pack.curatedRag !== undefined) {
+    lines.push(
+      `AITP curated RAG: query="${pack.curatedRag.query}" result_role=${pack.curatedRag.resultRole} read_surface_effect=${pack.curatedRag.readSurfaceEffect} index_mode=${pack.curatedRag.indexMode}`,
+    );
+    if (pack.curatedRag.reasonIds.length > 0) {
+      lines.push(`AITP curated RAG reasons: ${bounded(pack.curatedRag.reasonIds).join(', ')}`);
+    }
+    for (const item of boundedItems(pack.curatedRag.results)) {
+      lines.push(
+        `AITP curated RAG chunk: ${item.chunkId} document=${item.documentId} score=${String(item.score)} summary=${item.summary}`,
+      );
+    }
+    lines.push(
+      'AITP curated RAG is heuristic_context only; promote via AITP source_asset, reference_location, evidence, validation, and trust preflight before claim support.',
+    );
+  }
   if (pack.actionBindings.length > 0) {
     lines.push(
       `Action bindings: ${bounded(pack.actionBindings.map((binding) => renderActionBinding(binding.actionId))).join(', ')}`,

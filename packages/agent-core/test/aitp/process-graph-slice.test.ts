@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ResearchMomentDetector,
   compileAitpProcessGraphSlice,
+  detectAitpCuratedRagMoment,
   parseAitpProcessGraphSlice,
 } from '../../src/aitp';
 
@@ -195,6 +196,61 @@ describe('AITP process graph slice adapter', () => {
     );
     expect(compiled.contextLines.join('\n')).toContain('AITP required calls now: aitp.checkpoint_before_route_switch');
     expect(compiled.contextLines.join('\n')).not.toContain('AITP required calls now: aitp.record_route_choice');
+  });
+
+  it('detects curated RAG moments for conceptual and source-oriented prompts', () => {
+    const moment = detectAitpCuratedRagMoment({
+      prompt: [
+        {
+          type: 'text',
+          text: '请从头解释这个文献来源回溯思路，并给一点 lecture 背景。',
+        },
+      ],
+      workFrame: {
+        id: 'frame.rag',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-source-backtrace',
+        goal: 'Orient source dependency work before claim support.',
+        trustState: 'exploratory',
+        activeObjectIds: [],
+        assumptionIds: [],
+        conventionIds: [],
+        sourceRefs: [],
+        openObligationIds: [],
+      },
+    });
+
+    expect(moment).toMatchObject({
+      resultRole: 'heuristic_context',
+      readSurfaceEffect: 'orientation_only',
+      reasons: expect.arrayContaining([
+        'conceptual_scaffolding',
+        'literature_orientation',
+        'source_backtrace_suggestions',
+      ]),
+    });
+    expect(moment?.query).toContain('fqhe-source-backtrace');
+    expect(moment?.query).toContain('rag_use:');
+  });
+
+  it('does not detect curated RAG moments for plain implementation prompts', () => {
+    const moment = detectAitpCuratedRagMoment({
+      prompt: [{ type: 'text', text: 'Continue the runtime implementation.' }],
+      workFrame: {
+        id: 'frame.runtime',
+        domain: 'agent-runtime',
+        topic: 'bridge-wiring',
+        goal: 'Implement a narrow bridge change.',
+        trustState: 'exploratory',
+        activeObjectIds: [],
+        assumptionIds: [],
+        conventionIds: [],
+        sourceRefs: [],
+        openObligationIds: [],
+      },
+    });
+
+    expect(moment).toBeUndefined();
   });
 
   it('projects AITP provenance gaps into non-blocking source, code, tool, and artifact actions', () => {
