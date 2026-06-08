@@ -1460,6 +1460,70 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('compares reviewed overrides against the original curated RAG write-bridge call draft', async () => {
+    const records: AgentRecord[] = [];
+    const calls: string[] = [];
+    const agent = makeAgent(records, {
+      aitpCuratedRagProvider: {
+        async getCuratedRagCorpus() {
+          throw new Error('not used');
+        },
+        async searchCuratedRagCorpus() {
+          throw new Error('not used');
+        },
+        async draftCuratedRagPromotion(input) {
+          calls.push(`draft:${input.chunkId}:${input.topicId ?? ''}:${input.claimId ?? ''}`);
+          return parseAitpCuratedRagPromotionDraft(
+            fakeCuratedRagPromotionDraft(input.chunkId, {
+              topicId: input.topicId,
+              claimId: input.claimId,
+              connectorId: input.connectorId,
+            }),
+          );
+        },
+      },
+      aitpWriteBridge: {
+        async executeWrite() {
+          throw new Error('write bridge must not be called by draft action');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'draft_aitp_curated_rag_write_bridge_call',
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      aitp_topic_id: 'fqhe-literature',
+      aitp_claim_id: 'claim-fqhe',
+      promotion_draft_operation: 'recordEvidence',
+      promotion_reviewed_overrides: {
+        source_refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+        summary: 'Reviewed source passage supports only the scoped claim fragment.',
+      },
+    });
+
+    expect(calls).toEqual([
+      'draft:curated_rag_chunk:source_backtrace_orientation:0001:fqhe-literature:claim-fqhe',
+    ]);
+    expect(result.output).toContain('reviewed_override_count="2"');
+    expect(result.output).toContain('original_unresolved_placeholder_count="2"');
+    expect(result.output).toContain('unresolved_placeholder_count="0"');
+    expect(result.output).toContain('reviewed_overrides_executed="false"');
+    expect(result.output).toContain('<original_payload_json>');
+    expect(result.output).toContain('&quot;source_refs&quot;:[&quot;&lt;source_asset_id&gt;&quot;,&quot;&lt;reference_location_id&gt;&quot;]');
+    expect(result.output).toContain('<reviewed_overrides_json>');
+    expect(result.output).toContain('source_asset:asset-reviewed');
+    expect(result.output).toContain('<reviewed_payload_json>');
+    expect(result.output).toContain('Reviewed source passage supports only the scoped claim fragment.');
+    expect(result.output).toContain('code="reviewed_override_applied" field="source_refs"');
+    expect(result.output).toContain('code="reviewed_override_resolves_placeholder" field="source_refs[0]"');
+    expect(result.output).toContain('code="reviewed_overrides_not_executed"');
+    expect(result.output).not.toContain('code="placeholder_value" field="source_refs[0]"');
+    expect(records).not.toContainEqual(
+      expect.objectContaining({ type: 'research_action.result_recorded' }),
+    );
+  });
+
   it('fails closed when a curated RAG write-bridge call draft has no selected option', async () => {
     const calls: string[] = [];
     const agent = makeAgent(undefined, {
