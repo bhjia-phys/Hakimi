@@ -70,6 +70,10 @@ The guard coverage now also pins fail-closed behavior for missing
 tampering, and hash-input/tool-call mismatch. The AITP write-bridge executor
 operation list is kept explicit and still excludes `trustApply`, so this
 handoff lane cannot silently widen the canonical write surface.
+Guard failures now render a structured `handoff_guard_failure` XML element with
+stable `code`, `field`, and `path` attributes plus `bridge_called=false`, so
+the model can repair the handoff without treating the failed check as a write
+attempt.
 When a turn asks whether a retrieved curated RAG chunk should become source or
 claim support, Hakimi now derives read-only
 `ResearchAction.draft_aitp_curated_rag_promotion` bindings directly from

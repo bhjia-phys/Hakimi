@@ -1710,6 +1710,11 @@ describe('ResearchActionTool', () => {
     });
 
     expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('<handoff_guard_failure');
+    expect(result.output).toContain('code="blocked_handoff"');
+    expect(result.output).toContain('field="confirmation_status"');
+    expect(result.output).toContain('path="aitp_handoff.confirmation_status"');
+    expect(result.output).toContain('bridge_called="false"');
     expect(result.output).toContain('handoff guard failed');
     expect(result.output).toContain('refuses blocked handoff');
     expect(bridgeCalls).toEqual([]);
@@ -1771,6 +1776,9 @@ describe('ResearchActionTool', () => {
     });
 
     expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('<handoff_guard_failure');
+    expect(result.output).toContain('code="tool_call_operation_mismatch"');
+    expect(result.output).toContain('path="aitp_handoff.tool_call_json.aitp_operation"');
     expect(result.output).toContain('tool_call_json.aitp_operation does not match');
     expect(bridgeCalls).toEqual([]);
   });
@@ -1778,6 +1786,8 @@ describe('ResearchActionTool', () => {
   it.each([
     {
       name: 'missing tool_call_json',
+      code: 'missing_tool_call_json',
+      path: 'aitp_handoff.tool_call_json',
       mutate(handoff: ReturnType<typeof extractCuratedRagHandoff>) {
         const { tool_call_json: _toolCallJson, ...guard } = handoff.guard;
         return guard;
@@ -1786,6 +1796,8 @@ describe('ResearchActionTool', () => {
     },
     {
       name: 'missing hash_input_json',
+      code: 'missing_hash_input_json',
+      path: 'aitp_handoff.hash_input_json',
       mutate(handoff: ReturnType<typeof extractCuratedRagHandoff>) {
         const { hash_input_json: _hashInputJson, ...guard } = handoff.guard;
         return guard;
@@ -1794,6 +1806,8 @@ describe('ResearchActionTool', () => {
     },
     {
       name: 'tampered payload',
+      code: 'tool_call_payload_mismatch',
+      path: 'aitp_handoff.tool_call_json.aitp_payload',
       mutate(handoff: ReturnType<typeof extractCuratedRagHandoff>) {
         return {
           ...handoff.guard,
@@ -1810,6 +1824,8 @@ describe('ResearchActionTool', () => {
     },
     {
       name: 'tampered diagnostic hash',
+      code: 'diagnostic_hash_mismatch',
+      path: 'aitp_handoff.diagnostic_hash',
       mutate(handoff: ReturnType<typeof extractCuratedRagHandoff>) {
         return {
           ...handoff.guard,
@@ -1820,6 +1836,8 @@ describe('ResearchActionTool', () => {
     },
     {
       name: 'tampered hash input tool call',
+      code: 'diagnostic_hash_mismatch',
+      path: 'aitp_handoff.diagnostic_hash',
       mutate(handoff: ReturnType<typeof extractCuratedRagHandoff>) {
         return {
           ...handoff.guard,
@@ -1834,7 +1852,7 @@ describe('ResearchActionTool', () => {
       },
       expected: 'diagnostic_hash does not match hash_input_json',
     },
-  ])('rejects curated RAG handoff guard case: $name', async ({ mutate, expected }) => {
+  ])('rejects curated RAG handoff guard case: $name', async ({ mutate, expected, code, path }) => {
     const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
     const agent = makeAgent(undefined, {
       aitpCuratedRagProvider: curatedRagPromotionDraftProvider(),
@@ -1857,6 +1875,10 @@ describe('ResearchActionTool', () => {
     });
 
     expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('<handoff_guard_failure');
+    expect(result.output).toContain(`code="${code}"`);
+    expect(result.output).toContain(`path="${path}"`);
+    expect(result.output).toContain('bridge_called="false"');
     expect(result.output).toContain('handoff guard failed');
     expect(result.output).toContain(expected);
     expect(bridgeCalls).toEqual([]);
