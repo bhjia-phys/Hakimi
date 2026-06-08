@@ -407,6 +407,32 @@ interface AitpHandoffGuard {
   readonly confirmationStatus: string;
 }
 
+type HandoffGuardFailureCode =
+  | 'blocked_handoff'
+  | 'diagnostic_hash_mismatch'
+  | 'hash_input_confirmation_status_mismatch'
+  | 'hash_input_operation_mismatch'
+  | 'hash_input_tool_call_mismatch'
+  | 'invalid_diagnostic_hash_algorithm'
+  | 'missing_confirmation_id'
+  | 'missing_confirmation_status'
+  | 'missing_diagnostic_hash'
+  | 'missing_handoff_id'
+  | 'missing_hash_input_json'
+  | 'missing_tool_call_json'
+  | 'missing_tool_call_payload'
+  | 'tool_call_action_mismatch'
+  | 'tool_call_operation_mismatch'
+  | 'tool_call_payload_mismatch'
+  | 'unsupported_confirmation_status';
+
+type HandoffGuardRemediationStep =
+  | 'align_explicit_execute_args_with_handoff_tool_call'
+  | 'copy_missing_handoff_field_from_draft'
+  | 'inspect_handoff_guard_failure'
+  | 'redraft_handoff_or_restore_hash_input'
+  | 'redraft_or_resolve_blocking_diagnostics';
+
 export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> {
   readonly name = 'ResearchAction' as const;
   readonly description: string = DESCRIPTION;
@@ -2279,8 +2305,28 @@ function verifyAitpWriteBridgeHandoff(
   };
 }
 
+const HANDOFF_GUARD_REMEDIATION_BY_CODE: Readonly<Record<HandoffGuardFailureCode, HandoffGuardRemediationStep>> = {
+  blocked_handoff: 'redraft_or_resolve_blocking_diagnostics',
+  diagnostic_hash_mismatch: 'redraft_handoff_or_restore_hash_input',
+  hash_input_confirmation_status_mismatch: 'redraft_handoff_or_restore_hash_input',
+  hash_input_operation_mismatch: 'redraft_handoff_or_restore_hash_input',
+  hash_input_tool_call_mismatch: 'redraft_handoff_or_restore_hash_input',
+  invalid_diagnostic_hash_algorithm: 'redraft_handoff_or_restore_hash_input',
+  missing_confirmation_id: 'copy_missing_handoff_field_from_draft',
+  missing_confirmation_status: 'copy_missing_handoff_field_from_draft',
+  missing_diagnostic_hash: 'copy_missing_handoff_field_from_draft',
+  missing_handoff_id: 'copy_missing_handoff_field_from_draft',
+  missing_hash_input_json: 'copy_missing_handoff_field_from_draft',
+  missing_tool_call_json: 'copy_missing_handoff_field_from_draft',
+  missing_tool_call_payload: 'align_explicit_execute_args_with_handoff_tool_call',
+  tool_call_action_mismatch: 'align_explicit_execute_args_with_handoff_tool_call',
+  tool_call_operation_mismatch: 'align_explicit_execute_args_with_handoff_tool_call',
+  tool_call_payload_mismatch: 'align_explicit_execute_args_with_handoff_tool_call',
+  unsupported_confirmation_status: 'inspect_handoff_guard_failure',
+};
+
 function handoffGuardError(
-  code: string,
+  code: HandoffGuardFailureCode,
   reason: string,
   location: { readonly field?: string | undefined; readonly path?: string | undefined } = {},
 ): { readonly isError: true; readonly message: string } {
@@ -2297,48 +2343,34 @@ function handoffGuardError(
 }
 
 function handoffGuardRemediation(
-  code: string,
+  code: HandoffGuardFailureCode,
   location: { readonly field?: string | undefined; readonly path?: string | undefined },
-): { readonly nextStep: string; readonly repairTarget: string } {
-  switch (code) {
-    case 'blocked_handoff':
-      return {
-        nextStep: 'redraft_or_resolve_blocking_diagnostics',
-        repairTarget: location.path ?? 'aitp_handoff.confirmation_status',
-      };
-    case 'missing_tool_call_json':
-    case 'missing_hash_input_json':
-    case 'missing_handoff_id':
-    case 'missing_confirmation_id':
-    case 'missing_diagnostic_hash':
-    case 'missing_confirmation_status':
-      return {
-        nextStep: 'copy_missing_handoff_field_from_draft',
-        repairTarget: location.path ?? `aitp_handoff.${location.field ?? 'field'}`,
-      };
-    case 'tool_call_payload_mismatch':
-    case 'tool_call_operation_mismatch':
-    case 'tool_call_action_mismatch':
-    case 'missing_tool_call_payload':
-      return {
-        nextStep: 'align_explicit_execute_args_with_handoff_tool_call',
-        repairTarget: location.path ?? 'aitp_handoff.tool_call_json',
-      };
-    case 'diagnostic_hash_mismatch':
-    case 'invalid_diagnostic_hash_algorithm':
-    case 'hash_input_operation_mismatch':
-    case 'hash_input_confirmation_status_mismatch':
-    case 'hash_input_tool_call_mismatch':
-      return {
-        nextStep: 'redraft_handoff_or_restore_hash_input',
-        repairTarget: location.path ?? 'aitp_handoff.hash_input_json',
-      };
-    default:
-      return {
-        nextStep: 'inspect_handoff_guard_failure',
-        repairTarget: location.path ?? location.field ?? 'aitp_handoff',
-      };
+): { readonly nextStep: HandoffGuardRemediationStep; readonly repairTarget: string } {
+  return {
+    nextStep: HANDOFF_GUARD_REMEDIATION_BY_CODE[code],
+    repairTarget: handoffGuardRepairTarget(code, location),
+  };
+}
+
+function handoffGuardRepairTarget(
+  code: HandoffGuardFailureCode,
+  location: { readonly field?: string | undefined; readonly path?: string | undefined },
+): string {
+  if (location.path !== undefined) return location.path;
+  const nextStep = HANDOFF_GUARD_REMEDIATION_BY_CODE[code];
+  if (nextStep === 'copy_missing_handoff_field_from_draft') {
+    return `aitp_handoff.${location.field ?? 'field'}`;
   }
+  if (nextStep === 'align_explicit_execute_args_with_handoff_tool_call') {
+    return 'aitp_handoff.tool_call_json';
+  }
+  if (nextStep === 'redraft_handoff_or_restore_hash_input') {
+    return 'aitp_handoff.hash_input_json';
+  }
+  if (nextStep === 'redraft_or_resolve_blocking_diagnostics') {
+    return 'aitp_handoff.confirmation_status';
+  }
+  return location.field ?? 'aitp_handoff';
 }
 
 function renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(
