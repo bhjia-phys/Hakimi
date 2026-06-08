@@ -1447,8 +1447,12 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain(`action_binding_id="${bindingId}"`);
     expect(result.output).toContain('stage="evidence"');
     expect(result.output).toContain('aitp_operation="recordEvidence"');
+    expect(result.output).toContain('confirmation_status="blocked"');
+    expect(result.output).toContain('execute_call_allowed_after_explicit_confirmation="false"');
     expect(result.output).toContain('executes_write_now="false"');
     expect(result.output).toContain('selected_write_executed="false"');
+    expect(result.output).toContain('<confirmation_preflight status="blocked"');
+    expect(result.output).toContain('<hard_blocking_diagnostics');
     expect(result.output).toContain('&quot;action&quot;:&quot;execute_aitp_write_bridge&quot;');
     expect(result.output).toContain('&quot;aitp_operation&quot;:&quot;recordEvidence&quot;');
     expect(result.output).toContain('&quot;source_refs&quot;:[&quot;&lt;source_asset_id&gt;&quot;,&quot;&lt;reference_location_id&gt;&quot;]');
@@ -1508,7 +1512,13 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('reviewed_override_count="2"');
     expect(result.output).toContain('original_unresolved_placeholder_count="2"');
     expect(result.output).toContain('unresolved_placeholder_count="0"');
+    expect(result.output).toContain('confirmation_status="needs_explicit_confirmation"');
+    expect(result.output).toContain('execute_call_allowed_after_explicit_confirmation="true"');
     expect(result.output).toContain('reviewed_overrides_executed="false"');
+    expect(result.output).toContain('<confirmation_preflight status="needs_explicit_confirmation"');
+    expect(result.output).toContain('hard_blocking_count="0"');
+    expect(result.output).toContain('<hard_blocking_diagnostics />');
+    expect(result.output).toContain('<confirmation_required_diagnostics');
     expect(result.output).toContain('<original_payload_json>');
     expect(result.output).toContain('&quot;source_refs&quot;:[&quot;&lt;source_asset_id&gt;&quot;,&quot;&lt;reference_location_id&gt;&quot;]');
     expect(result.output).toContain('<reviewed_overrides_json>');

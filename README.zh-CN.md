@@ -45,6 +45,12 @@ payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,
 and `reviewed_payload_json` plus override diagnostics, but the overrides only
 affect the returned draft and still require a separate explicit
 `execute_aitp_write_bridge` call.
+The returned XML also includes a host-side `confirmation_preflight` summary
+that classifies remaining diagnostics as hard-blocking, confirmation-required,
+or advisory. This is not an AITP trust preflight and it does not validate the
+chunk; it only tells the model/user whether a reviewed call draft still has
+blocking placeholders or can proceed to a separate explicit AITP write/preflight
+call after confirmation.
 When a turn asks whether a retrieved curated RAG chunk should become source or
 claim support, Hakimi now derives read-only
 `ResearchAction.draft_aitp_curated_rag_promotion` bindings directly from
