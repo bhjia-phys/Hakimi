@@ -9,8 +9,10 @@ import {
   parseAitpCuratedRagCorpus,
   parseAitpCuratedRagPromotionDraft,
   parseAitpCuratedRagSearchResult,
+  parseAitpRecordRefLookup,
   parseAitpRuntimePayloadProfilesCatalog,
   type AitpCuratedRagProvider,
+  type AitpRecordRefLookupProvider,
   type AitpRuntimePayloadProfilesProvider,
   type AitpWriteBridgeExecutor,
 } from '../../src/aitp';
@@ -1666,6 +1668,60 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('renders AITP-owned record-ref lookup confirmation for reviewed curated RAG refs', async () => {
+    const mutableLookupCalls: string[][] = [];
+    const agent = makeAgent(undefined, {
+      aitpCuratedRagProvider: curatedRagPromotionDraftProvider(),
+      aitpRecordRefLookupProvider: {
+        async lookupRecordRefs(input) {
+          mutableLookupCalls.push([...input.refs]);
+          return parseAitpRecordRefLookup(
+            fakeRecordRefLookup(input.refs, {
+              foundRefs: ['source_asset:asset-reviewed'],
+            }),
+          );
+        },
+      },
+      aitpWriteBridge: {
+        async executeWrite() {
+          throw new Error('write bridge must not be called by draft action');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'draft_aitp_curated_rag_write_bridge_call',
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      aitp_topic_id: 'fqhe-literature',
+      aitp_claim_id: 'claim-fqhe',
+      promotion_draft_operation: 'recordEvidence',
+      promotion_reviewed_overrides: {
+        source_refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+        summary: 'Reviewed source passage supports only the scoped claim fragment.',
+      },
+    });
+
+    expect(mutableLookupCalls).toEqual([
+      ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+    ]);
+    expect(result.output).toContain('confirmation_source="aitp_record_ref_lookup"');
+    expect(result.output).toContain('aitp_lookup_performed="true"');
+    expect(result.output).toContain('lookup_scope="typed_record_existence_only"');
+    expect(result.output).toContain('found_count="1"');
+    expect(result.output).toContain('missing_count="1"');
+    expect(result.output).toContain('confirmed_ref_count="1"');
+    expect(result.output).toContain('requires_aitp_lookup_before_execution="false"');
+    expect(result.output).toContain(
+      '<ref status="concrete" aitp_record_confirmed="true" lookup_status="found" ref_kind="source_asset" record_id="asset-reviewed" surface="source_asset_record" read_surface_effect="record_existence_check_only" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">source_asset:asset-reviewed</ref>',
+    );
+    expect(result.output).toContain(
+      '<ref status="concrete" aitp_record_confirmed="false" lookup_status="not_found" ref_kind="reference_location" record_id="loc-reviewed" surface="reference_location_record" read_surface_effect="record_existence_check_only" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">reference_location:loc-reviewed</ref>',
+    );
+    expect(result.output).toContain('records_validation_result="false"');
+    expect(result.output).toContain('claim_trust_mutation="none"');
+  });
+
   it('fails closed when a curated RAG write-bridge call draft has no selected option', async () => {
     const calls: string[] = [];
     const agent = makeAgent(undefined, {
@@ -2619,6 +2675,7 @@ function makeAgent(
     readonly physicsMemory?: PhysicsMemoryRegistry | undefined;
     readonly researchLedger?: ResearchLedgerRegistry | undefined;
     readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
+    readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider | undefined;
     readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
     readonly aitpWriteBridge?: AitpWriteBridgeExecutor | undefined;
   } = {},
@@ -2657,6 +2714,7 @@ function makeAgent(
     physicsMemory: options.physicsMemory,
     researchLedger: options.researchLedger,
     aitpRuntimePayloadProfilesProvider: options.aitpRuntimePayloadProfilesProvider,
+    aitpRecordRefLookupProvider: options.aitpRecordRefLookupProvider,
     aitpCuratedRagProvider: options.aitpCuratedRagProvider,
     aitpWriteBridge: options.aitpWriteBridge,
   });
@@ -2921,6 +2979,69 @@ function fakeCuratedRagCorpus(): any {
     chunk_index: chunks.map((chunk) => chunk.chunk_id),
     documents,
     chunks,
+  };
+}
+
+function fakeRecordRefLookup(
+  refs: readonly string[],
+  options: { readonly foundRefs?: readonly string[] } = {},
+): any {
+  const foundRefs = new Set(options.foundRefs ?? []);
+  const items = refs.map((ref) => fakeRecordRefLookupItem(ref, foundRefs.has(ref)));
+  return {
+    ok: true,
+    record_ref_lookup: {
+      kind: 'record_ref_lookup',
+      lookup_scope: 'typed_record_existence_only',
+      lookup_count: items.length,
+      found_count: items.filter((item) => item.status === 'found').length,
+      missing_count: items.filter((item) => item.status === 'not_found').length,
+      unsupported_count: items.filter((item) => item.status === 'unsupported_kind').length,
+      malformed_count: items.filter((item) => item.status === 'malformed_ref').length,
+      refs: items,
+      supported_ref_kinds: ['evidence', 'reference_location', 'source_asset'],
+      read_surface_effect: 'record_existence_check_only',
+      records_validation_result: false,
+      source_support_result: false,
+      evidence_created: false,
+      validation_created: false,
+      claim_trust_mutation: 'none',
+      can_update_claim_trust: false,
+      summary_inputs_trusted: false,
+      orientation_only: true,
+    },
+  };
+}
+
+function fakeRecordRefLookupItem(ref: string, found: boolean): any {
+  const [refKind = '', recordId = ''] = ref.split(':');
+  const surface =
+    refKind === 'source_asset'
+      ? 'source_asset_record'
+      : refKind === 'reference_location'
+        ? 'reference_location_record'
+        : `${refKind}_record`;
+  return {
+    ref,
+    ref_kind: refKind,
+    record_id: recordId,
+    id_field: refKind === 'source_asset' ? 'asset_id' : 'location_id',
+    surface,
+    record_role: 'orientation_only_record',
+    store_scope: `registry/${refKind}s`,
+    status: found ? 'found' : 'not_found',
+    record_confirmed: found,
+    topic_id: found ? 'fqhe-literature' : '',
+    claim_id: found ? 'claim-fqhe' : '',
+    record_kind: found ? refKind : '',
+    orientation_only_record: found,
+    can_update_record_claim_trust: false,
+    read_surface_effect: 'record_existence_check_only',
+    records_validation_result: false,
+    source_support_result: false,
+    claim_trust_mutation: 'none',
+    can_update_claim_trust: false,
+    diagnostic: found ? 'record exists in typed store' : '',
   };
 }
 

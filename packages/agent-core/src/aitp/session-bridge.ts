@@ -7,6 +7,7 @@ import {
   type AitpCuratedRagProvider,
   type AitpProcessGraphPromptPart,
   type AitpProcessGraphSliceProvider,
+  type AitpRecordRefLookupProvider,
   type AitpRuntimePayloadProfilesProvider,
   type AitpWorkFrameScope,
 } from './cli-bridge';
@@ -16,6 +17,7 @@ import {
   parseAitpCuratedRagPromotionDraft,
   parseAitpCuratedRagSearchResult,
 } from './curated-rag';
+import { parseAitpRecordRefLookup } from './record-ref-lookup';
 import { parseAitpRuntimePayloadProfilesCatalog } from './runtime-payload-profiles';
 import type { CompiledAitpProcessGraphSlice } from './types';
 import {
@@ -138,6 +140,45 @@ export function createDynamicAitpMcpFirstRuntimePayloadProfilesProvider(
       } catch (error) {
         if (options.fallbackOnMcpError === false) throw error;
         return fallback.getRuntimePayloadProfiles(input);
+      }
+    },
+  };
+}
+
+export function createDynamicAitpCliRecordRefLookupProvider(
+  options: DynamicAitpCliBridgeOptions,
+): AitpRecordRefLookupProvider {
+  return {
+    lookupRecordRefs(input) {
+      return createDynamicAitpCliBridge(options).lookupRecordRefs(input);
+    },
+  };
+}
+
+export function createDynamicAitpMcpFirstRecordRefLookupProvider(
+  options: DynamicAitpMcpFirstBridgeOptions,
+): AitpRecordRefLookupProvider {
+  const fallback = createDynamicAitpCliRecordRefLookupProvider(options);
+  return {
+    async lookupRecordRefs(input) {
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.lookupRecordRefs(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('lookupRecordRefs');
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args: {
+            base: options.basePath(),
+            refs: [...input.refs],
+          },
+          signal: input.signal,
+        });
+        return parseAitpRecordRefLookup(normalizeAitpWriteBridgePayload(rawPayload));
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.lookupRecordRefs(input);
       }
     },
   };

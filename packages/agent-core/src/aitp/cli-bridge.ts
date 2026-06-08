@@ -17,6 +17,10 @@ import {
   parseAitpRuntimePayloadProfilesCatalog,
   type AitpRuntimePayloadProfilesCatalog,
 } from './runtime-payload-profiles';
+import {
+  parseAitpRecordRefLookup,
+  type AitpRecordRefLookup,
+} from './record-ref-lookup';
 import type {
   AitpExplorationStatus,
   AitpExplorationType,
@@ -97,6 +101,15 @@ export interface AitpRuntimePayloadProfilesProvider {
   ): Promise<AitpRuntimePayloadProfilesCatalog>;
 }
 
+export interface AitpRecordRefLookupProviderInput {
+  readonly refs: readonly string[];
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface AitpRecordRefLookupProvider {
+  lookupRecordRefs(input: AitpRecordRefLookupProviderInput): Promise<AitpRecordRefLookup>;
+}
+
 export interface AitpCuratedRagProviderInput {
   readonly signal?: AbortSignal | undefined;
 }
@@ -144,6 +157,11 @@ export interface ReadAitpProcessGraphSliceInput extends CompileAitpProcessGraphS
 }
 
 export interface ReadAitpRuntimePayloadProfilesInput {
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface LookupAitpRecordRefsInput {
+  readonly refs: readonly string[];
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -634,6 +652,14 @@ export class AitpCliBridge {
     return parseAitpRuntimePayloadProfilesCatalog(payload);
   }
 
+  async lookupRecordRefs(input: LookupAitpRecordRefsInput): Promise<AitpRecordRefLookup> {
+    const payload = await this.runJson(
+      buildAitpRecordRefLookupArgs({ basePath: this.options.basePath, refs: input.refs }),
+      input.signal,
+    );
+    return parseAitpRecordRefLookup(payload);
+  }
+
   async readCuratedRagCorpus(
     input: ReadAitpCuratedRagCorpusInput = {},
   ): Promise<AitpCuratedRagCorpus> {
@@ -934,6 +960,18 @@ export function buildAitpProcessGraphSliceArgs(input: {
 
 export function buildAitpRuntimePayloadProfilesArgs(): readonly string[] {
   return ['adapter', 'payload-profiles'];
+}
+
+export function buildAitpRecordRefLookupArgs(input: {
+  readonly basePath?: string | undefined;
+  readonly refs: readonly string[];
+}): readonly string[] {
+  requireNonEmptyList(input.refs, 'refs');
+  return buildAdapterReadArgs(
+    input.basePath,
+    'record-ref-lookup',
+    ...input.refs.map((ref) => ref.trim()),
+  );
 }
 
 export function buildAitpCuratedRagCorpusArgs(input?: {

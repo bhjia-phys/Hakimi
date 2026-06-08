@@ -6,10 +6,12 @@ import {
   aitpRuntimePayloadProfileById,
   createDynamicAitpCliCuratedRagProvider,
   createDynamicAitpCliProcessGraphSliceProvider,
+  createDynamicAitpCliRecordRefLookupProvider,
   createDynamicAitpCliRuntimePayloadProfilesProvider,
   createDynamicAitpCliWriteBridgeExecutor,
   createDynamicAitpMcpFirstCuratedRagProvider,
   createDynamicAitpMcpFirstProcessGraphSliceProvider,
+  createDynamicAitpMcpFirstRecordRefLookupProvider,
   createDynamicAitpMcpFirstRuntimePayloadProfilesProvider,
   createDynamicAitpMcpFirstWriteBridgeExecutor,
   mcpArgsForAitpProcessGraphSliceRead,
@@ -389,6 +391,66 @@ describe('AITP dynamic session bridge', () => {
     expect(cliCalls[0]).toEqual(['aitp-v5', 'adapter', 'payload-profiles']);
   });
 
+  it('looks up AITP record refs through dynamic CLI fallback', async () => {
+    const calls: string[][] = [];
+    const provider = createDynamicAitpCliRecordRefLookupProvider({
+      basePath: () => 'F:/project',
+      runner: recordingRunner(calls),
+    });
+
+    const lookup = await provider.lookupRecordRefs({
+      refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+    });
+
+    expect(calls[0]).toEqual([
+      'aitp-v5',
+      '--base',
+      'F:/project',
+      'adapter',
+      'record-ref-lookup',
+      'source_asset:asset-reviewed',
+      'reference_location:loc-reviewed',
+    ]);
+    expect(lookup.kind).toBe('record_ref_lookup');
+    expect(lookup.lookupScope).toBe('typed_record_existence_only');
+    expect(lookup.claimTrustMutation).toBe('none');
+    expect(lookup.refs[0]?.recordConfirmed).toBe(true);
+  });
+
+  it('uses MCP-first transport for AITP record-ref lookup reads', async () => {
+    const cliCalls: string[][] = [];
+    const mcpCalls: Array<{ readonly toolName: string; readonly args: Readonly<Record<string, unknown>> }> = [];
+    const provider = createDynamicAitpMcpFirstRecordRefLookupProvider({
+      basePath: () => 'F:/project',
+      runner: recordingRunner(cliCalls),
+      mcpTransport: {
+        async callTool(input) {
+          mcpCalls.push({ toolName: input.toolName, args: input.args });
+          return fakeRecordRefLookup(['source_asset:asset-reviewed'], {
+            foundRefs: ['source_asset:asset-reviewed'],
+          });
+        },
+      },
+    });
+
+    const lookup = await provider.lookupRecordRefs({
+      refs: ['source_asset:asset-reviewed'],
+    });
+
+    expect(cliCalls).toEqual([]);
+    expect(mcpCalls).toEqual([
+      {
+        toolName: 'aitp_v5_lookup_record_refs',
+        args: {
+          base: 'F:/project',
+          refs: ['source_asset:asset-reviewed'],
+        },
+      },
+    ]);
+    expect(lookup.foundCount).toBe(1);
+    expect(lookup.recordsValidationResult).toBe(false);
+  });
+
   it('reads curated RAG through dynamic CLI fallback', async () => {
     const calls: string[][] = [];
     const provider = createDynamicAitpCliCuratedRagProvider({
@@ -587,6 +649,18 @@ function recordingRunner(calls: string[][]): AitpCommandRunner {
             ok: true,
             runtime_payload_profiles: fakeRuntimePayloadProfilesCatalog(),
           }),
+          stderr: '',
+        };
+      }
+      if (args.includes('record-ref-lookup')) {
+        const start = args.indexOf('record-ref-lookup') + 1;
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify(
+            fakeRecordRefLookup(args.slice(start), {
+              foundRefs: ['source_asset:asset-reviewed'],
+            }),
+          ),
           stderr: '',
         };
       }
@@ -964,6 +1038,63 @@ function fakeCuratedRagCorpus(): any {
     chunk_index: chunks.map((chunk) => chunk.chunk_id),
     documents,
     chunks,
+  };
+}
+
+function fakeRecordRefLookup(
+  refs: readonly string[],
+  options: { readonly foundRefs?: readonly string[] } = {},
+): any {
+  const foundRefs = new Set(options.foundRefs ?? []);
+  const items = refs.map((ref) => fakeRecordRefLookupItem(ref, foundRefs.has(ref)));
+  return {
+    ok: true,
+    record_ref_lookup: {
+      kind: 'record_ref_lookup',
+      lookup_scope: 'typed_record_existence_only',
+      lookup_count: items.length,
+      found_count: items.filter((item) => item.status === 'found').length,
+      missing_count: items.filter((item) => item.status === 'not_found').length,
+      unsupported_count: 0,
+      malformed_count: 0,
+      refs: items,
+      supported_ref_kinds: ['reference_location', 'source_asset'],
+      read_surface_effect: 'record_existence_check_only',
+      records_validation_result: false,
+      source_support_result: false,
+      evidence_created: false,
+      validation_created: false,
+      claim_trust_mutation: 'none',
+      can_update_claim_trust: false,
+      summary_inputs_trusted: false,
+      orientation_only: true,
+    },
+  };
+}
+
+function fakeRecordRefLookupItem(ref: string, found: boolean): any {
+  const [refKind = '', recordId = ''] = ref.split(':');
+  return {
+    ref,
+    ref_kind: refKind,
+    record_id: recordId,
+    id_field: refKind === 'source_asset' ? 'asset_id' : 'location_id',
+    surface: refKind === 'source_asset' ? 'source_asset_record' : 'reference_location_record',
+    record_role: 'orientation_only_record',
+    store_scope: `registry/${refKind}s`,
+    status: found ? 'found' : 'not_found',
+    record_confirmed: found,
+    topic_id: found ? 'qg' : '',
+    claim_id: found ? 'claim-mipt' : '',
+    record_kind: found ? refKind : '',
+    orientation_only_record: found,
+    can_update_record_claim_trust: false,
+    read_surface_effect: 'record_existence_check_only',
+    records_validation_result: false,
+    source_support_result: false,
+    claim_trust_mutation: 'none',
+    can_update_claim_trust: false,
+    diagnostic: found ? 'record exists in typed store' : '',
   };
 }
 
