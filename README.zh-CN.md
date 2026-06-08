@@ -51,6 +51,13 @@ or advisory. This is not an AITP trust preflight and it does not validate the
 chunk; it only tells the model/user whether a reviewed call draft still has
 blocking placeholders or can proceed to a separate explicit AITP write/preflight
 call after confirmation.
+The same result now includes an explicit
+`execute_aitp_write_bridge_handoff` artifact with deterministic `handoff_id`,
+`confirmation_id`, a short `sha256` diagnostic hash, the exact
+`tool_call_json`, and `non_execution_provenance_json`. This handoff can be
+copied into the separate `ResearchAction.execute_aitp_write_bridge` step, but
+it is still `handoff_executed=false` / `executes_write_now=false`; it does not
+record evidence, validation, final-gate satisfaction, or claim-trust mutation.
 When a turn asks whether a retrieved curated RAG chunk should become source or
 claim support, Hakimi now derives read-only
 `ResearchAction.draft_aitp_curated_rag_promotion` bindings directly from

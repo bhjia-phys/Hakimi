@@ -260,6 +260,14 @@ or advisory. This is not an AITP trust preflight and it does not validate the
 chunk; it only tells the model/user whether a reviewed call draft still has
 blocking placeholders or can proceed to a separate explicit AITP write/preflight
 call after confirmation.
+The same result now includes an explicit
+`execute_aitp_write_bridge_handoff` artifact with a deterministic
+`handoff_id`, `confirmation_id`, short `sha256` diagnostic hash, the exact
+`tool_call_json`, and `non_execution_provenance_json`. This makes the reviewed
+call draft easy to hand to `ResearchAction.execute_aitp_write_bridge`, but the
+artifact itself is still `handoff_executed="false"` and
+`executes_write_now="false"`; it records no evidence, validation result, final
+gate satisfaction, or claim-trust mutation.
 
 The WorkFrame orchestrator now also calls that provider automatically for
 RAG-helpful turns. It detects prompts asking for conceptual scaffolding,

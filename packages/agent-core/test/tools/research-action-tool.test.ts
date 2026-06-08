@@ -1453,6 +1453,18 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('selected_write_executed="false"');
     expect(result.output).toContain('<confirmation_preflight status="blocked"');
     expect(result.output).toContain('<hard_blocking_diagnostics');
+    expect(result.output).toMatch(
+      /handoff_id="curated-rag-write-handoff\.curated_rag_chunk-source_backtrace_orientation-0001\.evidence\.recordEvidence\.[0-9a-f]{16}"/,
+    );
+    expect(result.output).toMatch(/confirmation_id="curated-rag-confirmation\.[^"]+\.[0-9a-f]{16}"/);
+    expect(result.output).toMatch(/diagnostic_hash="sha256:[0-9a-f]{16}"/);
+    expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
+    expect(result.output).toContain('confirmation_status="blocked"');
+    expect(result.output).toContain('hash_algorithm="sha256"');
+    expect(result.output).toContain('handoff_executed="false"');
+    expect(result.output).toContain('non_execution_provenance="draft_only"');
+    expect(result.output).toContain('<non_execution_provenance_json>');
+    expect(result.output).toContain('&quot;requiresExplicitExecuteCall&quot;:true');
     expect(result.output).toContain('&quot;action&quot;:&quot;execute_aitp_write_bridge&quot;');
     expect(result.output).toContain('&quot;aitp_operation&quot;:&quot;recordEvidence&quot;');
     expect(result.output).toContain('&quot;source_refs&quot;:[&quot;&lt;source_asset_id&gt;&quot;,&quot;&lt;reference_location_id&gt;&quot;]');
@@ -1519,6 +1531,18 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('hard_blocking_count="0"');
     expect(result.output).toContain('<hard_blocking_diagnostics />');
     expect(result.output).toContain('<confirmation_required_diagnostics');
+    expect(result.output).toMatch(
+      /handoff_id="curated-rag-write-handoff\.curated_rag_chunk-source_backtrace_orientation-0001\.evidence\.recordEvidence\.[0-9a-f]{16}"/,
+    );
+    expect(result.output).toMatch(/diagnostic_hash="sha256:[0-9a-f]{16}"/);
+    expect(result.output).toContain('<execute_aitp_write_bridge_handoff');
+    expect(result.output).toContain('confirmation_status="needs_explicit_confirmation"');
+    expect(result.output).toContain('handoff_executed="false"');
+    expect(result.output).toContain('requires_explicit_execute_call="true"');
+    expect(result.output).toContain('<tool_call_json>');
+    expect(result.output).toContain('<non_execution_provenance_json>');
+    expect(result.output).toContain('&quot;reviewedOverrideCount&quot;:2');
+    expect(result.output).toContain('&quot;handoffExecuted&quot;:false');
     expect(result.output).toContain('<original_payload_json>');
     expect(result.output).toContain('&quot;source_refs&quot;:[&quot;&lt;source_asset_id&gt;&quot;,&quot;&lt;reference_location_id&gt;&quot;]');
     expect(result.output).toContain('<reviewed_overrides_json>');
