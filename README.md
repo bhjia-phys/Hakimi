@@ -291,6 +291,11 @@ read-only, has `executes_write_now="false"`, and now names the exact
 `next_aitp_operation` for each repair item while marking
 `selected_write_call_unchanged="true"`. It still requires a separate explicit
 bridge call and does not alter the currently selected curated RAG write draft.
+The draft root also summarizes those repair paths with
+`repair_hint_operation_count`, `repair_hint_operations`, and
+`repair_hint_summary_source="missing_ref_repair_checklist"`, so the model can
+see the repair route without scanning every item while the checklist remains
+the detailed source.
 The returned XML also includes a host-side `confirmation_preflight` summary
 that classifies remaining diagnostics as hard-blocking, confirmation-required,
 or advisory. It now mirrors the repair checklist at summary level with
