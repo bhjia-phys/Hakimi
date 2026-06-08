@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   AITP_CURATED_RAG_CATALOG_VERSION,
   AITP_RUNTIME_BRIDGE_TARGETS,
+  AITP_WRITE_BRIDGE_OPERATIONS,
   AitpWriteBridgePayloadError,
   buildPrimitiveToolLifecycleAitpToolRunPayload,
   aitpRuntimeBridgeTargetForOperation,
@@ -18,6 +19,29 @@ import {
 } from '../../src';
 
 describe('AITP write bridge executor', () => {
+  it('keeps the executor operation surface narrow and excludes trustApply', () => {
+    expect(AITP_WRITE_BRIDGE_OPERATIONS).toEqual([
+      'ingestCuratedRagCorpus',
+      'recordExploratoryRecord',
+      'registerSourceAsset',
+      'captureSourceAssetAuto',
+      'recordEvidence',
+      'recordToolRun',
+      'captureToolRunAuto',
+      'captureCodeStateAuto',
+      'attachArtifact',
+      'attachArtifactAuto',
+      'recordReferenceLocation',
+      'createProofObligation',
+      'createValidationContract',
+      'recordValidationResult',
+      'recordSourceReconstructionReviewResult',
+      'requestHumanCheckpoint',
+      'preflightTrustUpdate',
+    ]);
+    expect(AITP_WRITE_BRIDGE_OPERATIONS).not.toContain('trustApply');
+  });
+
   it('projects AITP runtime bridge targets as MCP-first with CLI fallback', () => {
     const byOperation = new Map(
       AITP_RUNTIME_BRIDGE_TARGETS.map((target) => [target.operation, target]),
