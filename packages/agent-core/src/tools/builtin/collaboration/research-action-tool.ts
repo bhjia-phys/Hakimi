@@ -2374,7 +2374,7 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     renderStringList('required_existing_records', 'record', callDraft.requiredExistingRecords, '  '),
     renderCuratedRagCanonicalIdentityAlignment(sourceDraft, callDraft),
     renderAitpCuratedRagWriteBridgeConfirmationSummary(confirmation, '  '),
-    `  <readiness_call_pointer action="inspect_aitp_write_bridge_handoff_readiness" handoff_id="${escapeXml(handoffArtifact.handoffId)}" confirmation_id="${escapeXml(handoffArtifact.confirmationId)}" diagnostic_hash="${escapeXml(handoffArtifact.diagnosticHash)}" source="execute_aitp_write_bridge_handoff.readiness_call_json" read_only="true" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" requires_explicit_execute_call="true" />`,
+    renderReadinessCallPointer(handoffArtifact, '  '),
     renderReadinessInspectionSummary('curated_rag_write_call_draft', '  '),
     renderAitpCuratedRagWriteBridgeHandoffArtifact(handoffArtifact, '  '),
     renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(callDraft.overrideDiagnostics, '  '),
@@ -2449,7 +2449,7 @@ function renderAitpRecordRefRepairWriteBridgeCallDraft(input: {
     `  <repair_reason>${escapeXml(input.repairReason ?? '')}</repair_reason>`,
     `  <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
     `  <reviewed_payload_json>${escapeXml(JSON.stringify(input.payload))}</reviewed_payload_json>`,
-    `  <readiness_call_pointer action="inspect_aitp_write_bridge_handoff_readiness" handoff_id="${escapeXml(handoffId)}" confirmation_id="${escapeXml(confirmationId)}" diagnostic_hash="${escapeXml(diagnosticHash)}" source="execute_aitp_write_bridge_handoff.readiness_call_json" read_only="true" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" requires_explicit_execute_call="true" />`,
+    renderReadinessCallPointer({ handoffId, confirmationId, diagnosticHash }, '  '),
     renderReadinessInspectionSummary('record_ref_repair_write_call_draft', '  '),
     `  <execute_aitp_write_bridge_handoff handoff_id="${escapeXml(handoffId)}" confirmation_id="${escapeXml(confirmationId)}" confirmation_status="ready_for_explicit_execute" diagnostic_hash="${escapeXml(diagnosticHash)}" hash_algorithm="sha256" handoff_executed="false" executes_write_now="false" non_execution_provenance="repair_draft_only" requires_explicit_execute_call="true">`,
     `    <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
@@ -2461,6 +2461,13 @@ function renderAitpRecordRefRepairWriteBridgeCallDraft(input: {
     '</aitp_record_ref_repair_write_bridge_call_draft>',
     '',
   ].join('\n');
+}
+
+function renderReadinessCallPointer(
+  input: { readonly handoffId: string; readonly confirmationId: string; readonly diagnosticHash: string },
+  indent: string,
+): string {
+  return `${indent}<readiness_call_pointer action="inspect_aitp_write_bridge_handoff_readiness" handoff_id="${escapeXml(input.handoffId)}" confirmation_id="${escapeXml(input.confirmationId)}" diagnostic_hash="${escapeXml(input.diagnosticHash)}" source="execute_aitp_write_bridge_handoff.readiness_call_json" read_only="true" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" requires_explicit_execute_call="true" />`;
 }
 
 function renderReadinessInspectionSummary(draftFamily: string, indent: string): string {
