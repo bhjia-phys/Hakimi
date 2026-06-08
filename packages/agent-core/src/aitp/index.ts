@@ -7,3 +7,4 @@ export * from './cli-bridge';
 export * from './write-bridge';
 export * from './session-bridge';
 export * from './runtime-payload-profiles';
+export * from './curated-rag';

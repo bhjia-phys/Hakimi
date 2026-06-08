@@ -2,6 +2,12 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
 import { compileAitpProcessGraphSlice, type CompileAitpProcessGraphSliceOptions } from './compiler';
 import {
+  parseAitpCuratedRagCorpus,
+  parseAitpCuratedRagSearchResult,
+  type AitpCuratedRagCorpus,
+  type AitpCuratedRagSearchResult,
+} from './curated-rag';
+import {
   parseAitpRuntimePayloadProfilesCatalog,
   type AitpRuntimePayloadProfilesCatalog,
 } from './runtime-payload-profiles';
@@ -85,6 +91,21 @@ export interface AitpRuntimePayloadProfilesProvider {
   ): Promise<AitpRuntimePayloadProfilesCatalog>;
 }
 
+export interface AitpCuratedRagProviderInput {
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface AitpCuratedRagSearchInput {
+  readonly query: string;
+  readonly limit?: number | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface AitpCuratedRagProvider {
+  getCuratedRagCorpus(input?: AitpCuratedRagProviderInput): Promise<AitpCuratedRagCorpus>;
+  searchCuratedRagCorpus(input: AitpCuratedRagSearchInput): Promise<AitpCuratedRagSearchResult>;
+}
+
 export interface AitpWorkFrameScope {
   readonly sessionId: string;
   readonly claimId?: string | undefined;
@@ -105,6 +126,16 @@ export interface ReadAitpProcessGraphSliceInput extends CompileAitpProcessGraphS
 }
 
 export interface ReadAitpRuntimePayloadProfilesInput {
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface ReadAitpCuratedRagCorpusInput {
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface SearchAitpCuratedRagCorpusInput {
+  readonly query: string;
+  readonly limit?: number | undefined;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -561,6 +592,20 @@ export class AitpCliBridge {
     return parseAitpRuntimePayloadProfilesCatalog(payload);
   }
 
+  async readCuratedRagCorpus(
+    input: ReadAitpCuratedRagCorpusInput = {},
+  ): Promise<AitpCuratedRagCorpus> {
+    const payload = await this.runJson(buildAitpCuratedRagCorpusArgs(), input.signal);
+    return parseAitpCuratedRagCorpus(payload);
+  }
+
+  async searchCuratedRagCorpus(
+    input: SearchAitpCuratedRagCorpusInput,
+  ): Promise<AitpCuratedRagSearchResult> {
+    const payload = await this.runJson(buildAitpCuratedRagSearchArgs(input), input.signal);
+    return parseAitpCuratedRagSearchResult(payload);
+  }
+
   async recordExploratoryRecord(
     input: RecordAitpExploratoryRecordInput,
   ): Promise<AitpExploratoryRecordWriteResult> {
@@ -813,6 +858,25 @@ export function buildAitpProcessGraphSliceArgs(input: {
 
 export function buildAitpRuntimePayloadProfilesArgs(): readonly string[] {
   return ['adapter', 'payload-profiles'];
+}
+
+export function buildAitpCuratedRagCorpusArgs(): readonly string[] {
+  return ['adapter', 'curated-rag-corpus'];
+}
+
+export function buildAitpCuratedRagSearchArgs(input: {
+  readonly query: string;
+  readonly limit?: number | undefined;
+}): readonly string[] {
+  requireNonEmpty(input.query, 'query');
+  const args = ['adapter', 'curated-rag-search', input.query.trim()];
+  if (input.limit !== undefined) {
+    if (!Number.isInteger(input.limit) || input.limit <= 0) {
+      throw new AitpCliBridgeError('AITP curated RAG search limit must be a positive integer.');
+    }
+    args.push('--limit', String(input.limit));
+  }
+  return args;
 }
 
 export function buildAitpExploratoryRecordArgs(

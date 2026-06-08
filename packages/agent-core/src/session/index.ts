@@ -26,9 +26,11 @@ import {
   type WorkspaceAdditionalDirsLoadResult,
 } from '../config';
 import {
+  createDynamicAitpMcpFirstCuratedRagProvider,
   createDynamicAitpMcpFirstProcessGraphSliceProvider,
   createDynamicAitpMcpFirstRuntimePayloadProfilesProvider,
   createDynamicAitpMcpFirstWriteBridgeExecutor,
+  type AitpCuratedRagProvider,
   type AitpCommandRunner,
   type AitpMcpWriteBridgeTransport,
   type AitpProcessGraphSliceProvider,
@@ -101,6 +103,7 @@ export interface SessionOptions {
   readonly aitp?: SessionAitpBridgeConfig;
   readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
+  readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
   readonly aitpWriteBridge?: AitpWriteBridgeExecutor | undefined;
   readonly mcpConfig?: SessionMcpConfig;
   readonly telemetry?: TelemetryClient | undefined;
@@ -1200,6 +1203,10 @@ export class Session {
         config.aitpRuntimePayloadProfilesProvider ??
         this.options.aitpRuntimePayloadProfilesProvider ??
         aitpBridges?.runtimePayloadProfilesProvider,
+      aitpCuratedRagProvider:
+        config.aitpCuratedRagProvider ??
+        this.options.aitpCuratedRagProvider ??
+        aitpBridges?.curatedRagProvider,
       aitpWriteBridge:
         config.aitpWriteBridge ?? this.options.aitpWriteBridge ?? aitpBridges?.writeBridge,
       rpc: proxyWithExtraPayload(this.rpc, { agentId: id }),
@@ -1229,6 +1236,7 @@ export class Session {
     | {
         readonly processGraphProvider: AitpProcessGraphSliceProvider;
         readonly runtimePayloadProfilesProvider: AitpRuntimePayloadProfilesProvider;
+        readonly curatedRagProvider: AitpCuratedRagProvider;
         readonly writeBridge: AitpWriteBridgeExecutor;
       }
     | undefined {
@@ -1248,6 +1256,11 @@ export class Session {
         fallbackOnMcpError: config?.fallbackOnMcpError,
       }),
       runtimePayloadProfilesProvider: createDynamicAitpMcpFirstRuntimePayloadProfilesProvider({
+        ...bridgeOptions,
+        mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
+        fallbackOnMcpError: config?.fallbackOnMcpError,
+      }),
+      curatedRagProvider: createDynamicAitpMcpFirstCuratedRagProvider({
         ...bridgeOptions,
         mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
         fallbackOnMcpError: config?.fallbackOnMcpError,

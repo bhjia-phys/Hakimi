@@ -20,7 +20,11 @@ import type {
   BenchmarkAdapterRunInput,
   BenchmarkAdapterRunResult,
 } from '../../benchmark-adapter';
-import type { AitpRuntimePayloadProfilesCatalog } from '../../aitp';
+import type {
+  AitpCuratedRagCorpus,
+  AitpCuratedRagSearchResult,
+  AitpRuntimePayloadProfilesCatalog,
+} from '../../aitp';
 import {
   buildFormalizationPlan,
   type FormalizationPlan,
@@ -192,6 +196,10 @@ export class ResearchActionManager {
     return this.agent.aitpRuntimePayloadProfilesProvider !== undefined;
   }
 
+  hasAitpCuratedRagProvider(): boolean {
+    return this.agent.aitpCuratedRagProvider !== undefined;
+  }
+
   async readAitpRuntimePayloadProfiles(
     signal?: AbortSignal | undefined,
   ): Promise<AitpRuntimePayloadProfilesCatalog> {
@@ -199,6 +207,26 @@ export class ResearchActionManager {
       throw new Error('AITP runtime payload profiles provider is not configured for this session.');
     }
     return this.agent.aitpRuntimePayloadProfilesProvider.getRuntimePayloadProfiles({ signal });
+  }
+
+  async readAitpCuratedRagCorpus(
+    signal?: AbortSignal | undefined,
+  ): Promise<AitpCuratedRagCorpus> {
+    if (this.agent.aitpCuratedRagProvider === undefined) {
+      throw new Error('AITP curated RAG provider is not configured for this session.');
+    }
+    return this.agent.aitpCuratedRagProvider.getCuratedRagCorpus({ signal });
+  }
+
+  async searchAitpCuratedRagCorpus(
+    query: string,
+    limit?: number | undefined,
+    signal?: AbortSignal | undefined,
+  ): Promise<AitpCuratedRagSearchResult> {
+    if (this.agent.aitpCuratedRagProvider === undefined) {
+      throw new Error('AITP curated RAG provider is not configured for this session.');
+    }
+    return this.agent.aitpCuratedRagProvider.searchCuratedRagCorpus({ query, limit, signal });
   }
 
   buildPhysicsGraph(): PhysicsGraph {
