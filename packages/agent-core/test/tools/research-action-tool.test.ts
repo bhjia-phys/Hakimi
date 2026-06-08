@@ -1716,7 +1716,7 @@ describe('ResearchActionTool', () => {
       '<ref status="concrete" aitp_record_confirmed="true" lookup_status="found" ref_kind="source_asset" record_id="asset-reviewed" surface="source_asset_record" read_surface_effect="record_existence_check_only" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">source_asset:asset-reviewed</ref>',
     );
     expect(result.output).toContain(
-      '<ref status="concrete" aitp_record_confirmed="false" lookup_status="not_found" ref_kind="reference_location" record_id="loc-reviewed" surface="reference_location_record" read_surface_effect="record_existence_check_only" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">reference_location:loc-reviewed</ref>',
+      '<ref status="concrete" aitp_record_confirmed="false" lookup_status="not_found" ref_kind="reference_location" record_id="loc-reviewed" surface="reference_location_record" read_surface_effect="record_existence_check_only" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" suggested_next_operation="recordReferenceLocation" suggested_next_entrypoint="record_reference_location" suggested_next_surface="reference_location_record" suggested_next_reason="record a normal AITP reference location before using this ref as source context">reference_location:loc-reviewed</ref>',
     );
     expect(result.output).toContain('records_validation_result="false"');
     expect(result.output).toContain('claim_trust_mutation="none"');
@@ -3041,8 +3041,40 @@ function fakeRecordRefLookupItem(ref: string, found: boolean): any {
     source_support_result: false,
     claim_trust_mutation: 'none',
     can_update_claim_trust: false,
+    suggested_next_operation: found ? '' : suggestedNextOperationForRefKind(refKind),
+    suggested_next_entrypoint: found ? '' : suggestedNextEntrypointForRefKind(refKind),
+    suggested_next_surface: found ? '' : suggestedNextSurfaceForRefKind(refKind),
+    suggested_next_reason: found ? '' : suggestedNextReasonForRefKind(refKind),
     diagnostic: found ? 'record exists in typed store' : '',
   };
+}
+
+function suggestedNextOperationForRefKind(refKind: string): string {
+  if (refKind === 'source_asset') return 'registerSourceAsset';
+  if (refKind === 'reference_location') return 'recordReferenceLocation';
+  return '';
+}
+
+function suggestedNextEntrypointForRefKind(refKind: string): string {
+  if (refKind === 'source_asset') return 'register_source_asset';
+  if (refKind === 'reference_location') return 'record_reference_location';
+  return '';
+}
+
+function suggestedNextSurfaceForRefKind(refKind: string): string {
+  if (refKind === 'source_asset') return 'source_asset_record';
+  if (refKind === 'reference_location') return 'reference_location_record';
+  return '';
+}
+
+function suggestedNextReasonForRefKind(refKind: string): string {
+  if (refKind === 'source_asset') {
+    return 'register or auto-capture a normal AITP source asset before using this ref as source context';
+  }
+  if (refKind === 'reference_location') {
+    return 'record a normal AITP reference location before using this ref as source context';
+  }
+  return '';
 }
 
 function fakeCuratedRagSearchResult(query: string, limit = 5): any {

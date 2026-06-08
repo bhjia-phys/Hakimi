@@ -277,6 +277,12 @@ typed-store existence: Hakimi keeps `records_validation_result="false"`,
 `source_support_result="false"`, `claim_trust_mutation="none"`, and
 `can_update_claim_trust="false"`, and missing refs remain confirmation
 requirements before a separate explicit AITP write/preflight call.
+If AITP returns missing-ref repair guidance, Hakimi renders the AITP-owned
+`suggested_next_operation`, `suggested_next_entrypoint`,
+`suggested_next_surface`, and `suggested_next_reason` on that ref. These
+attributes tell the model which ordinary AITP write path to consider next, but
+they are not execution and they do not replace source review, validation, or
+trust preflight.
 The returned XML also includes a host-side `confirmation_preflight` summary
 that classifies remaining diagnostics as hard-blocking, confirmation-required,
 or advisory. This is not an AITP trust preflight and it does not validate the

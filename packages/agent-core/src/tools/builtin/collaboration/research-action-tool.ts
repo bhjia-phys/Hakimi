@@ -1973,7 +1973,11 @@ function renderPayloadRefReadinessItem(
   if (lookup === undefined) {
     return `${indent}  <ref status="concrete" aitp_record_confirmed="false" lookup_status="not_requested">${escapeXml(ref)}</ref>`;
   }
-  return `${indent}  <ref status="concrete" aitp_record_confirmed="${String(lookup.recordConfirmed)}" lookup_status="${lookup.status}" ref_kind="${escapeXml(lookup.refKind)}" record_id="${escapeXml(lookup.recordId)}" surface="${escapeXml(lookup.surface)}" read_surface_effect="${escapeXml(lookup.readSurfaceEffect)}" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">${escapeXml(ref)}</ref>`;
+  const suggestedNext =
+    lookup.suggestedNextOperation.length === 0
+      ? ''
+      : ` suggested_next_operation="${escapeXml(lookup.suggestedNextOperation)}" suggested_next_entrypoint="${escapeXml(lookup.suggestedNextEntrypoint)}" suggested_next_surface="${escapeXml(lookup.suggestedNextSurface)}" suggested_next_reason="${escapeXml(lookup.suggestedNextReason)}"`;
+  return `${indent}  <ref status="concrete" aitp_record_confirmed="${String(lookup.recordConfirmed)}" lookup_status="${lookup.status}" ref_kind="${escapeXml(lookup.refKind)}" record_id="${escapeXml(lookup.recordId)}" surface="${escapeXml(lookup.surface)}" read_surface_effect="${escapeXml(lookup.readSurfaceEffect)}" records_validation_result="false" source_support_result="false" claim_trust_mutation="none"${suggestedNext}>${escapeXml(ref)}</ref>`;
 }
 
 function concreteLookupRefs(refs: readonly string[]): readonly string[] {
