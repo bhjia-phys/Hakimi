@@ -1,6 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
 import { compileAitpProcessGraphSlice, type CompileAitpProcessGraphSliceOptions } from './compiler';
+import {
+  parseAitpRuntimePayloadProfilesCatalog,
+  type AitpRuntimePayloadProfilesCatalog,
+} from './runtime-payload-profiles';
 import type {
   AitpExplorationStatus,
   AitpExplorationType,
@@ -71,6 +75,16 @@ export interface AitpProcessGraphSliceProvider {
   ): Promise<CompiledAitpProcessGraphSlice | null | undefined>;
 }
 
+export interface AitpRuntimePayloadProfilesProviderInput {
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface AitpRuntimePayloadProfilesProvider {
+  getRuntimePayloadProfiles(
+    input?: AitpRuntimePayloadProfilesProviderInput,
+  ): Promise<AitpRuntimePayloadProfilesCatalog>;
+}
+
 export interface AitpWorkFrameScope {
   readonly sessionId: string;
   readonly claimId?: string | undefined;
@@ -87,6 +101,10 @@ export interface ReadAitpProcessGraphSliceInput extends CompileAitpProcessGraphS
   readonly sessionId: string;
   readonly claimId?: string | undefined;
   readonly limit?: number | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface ReadAitpRuntimePayloadProfilesInput {
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -536,6 +554,13 @@ export class AitpCliBridge {
     });
   }
 
+  async readRuntimePayloadProfiles(
+    input: ReadAitpRuntimePayloadProfilesInput = {},
+  ): Promise<AitpRuntimePayloadProfilesCatalog> {
+    const payload = await this.runJson(buildAitpRuntimePayloadProfilesArgs(), input.signal);
+    return parseAitpRuntimePayloadProfilesCatalog(payload);
+  }
+
   async recordExploratoryRecord(
     input: RecordAitpExploratoryRecordInput,
   ): Promise<AitpExploratoryRecordWriteResult> {
@@ -784,6 +809,10 @@ export function buildAitpProcessGraphSliceArgs(input: {
     args.push('--claim', input.claimId.trim());
   }
   return args;
+}
+
+export function buildAitpRuntimePayloadProfilesArgs(): readonly string[] {
+  return ['adapter', 'payload-profiles'];
 }
 
 export function buildAitpExploratoryRecordArgs(

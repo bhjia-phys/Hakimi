@@ -43,6 +43,10 @@ Hakimi now also mirrors the read-only AITP `readRuntimePayloadProfiles` bridge
 target for `runtime_payload_profiles` / `aitp_v5_get_runtime_payload_profiles`
 / `aitp-v5 adapter payload-profiles`. This is host payload-profile metadata
 only: it is not evidence, not validation, and not claim-trust authority.
+Hakimi now also parses that catalog as a typed AITP-owned read surface and can
+read it through `aitp_v5_get_runtime_payload_profiles` with CLI fallback to
+`aitp-v5 adapter payload-profiles`; `catalog_version`, `profile_index`,
+`capture_policy`, and no-trust result semantics are checked before use.
 
 <p align="center">
   <img src="docs/assets/hakimi-terminal-welcome.png" width="920" alt="Hakimi terminal welcome screen with a pixel cat-ear exploration spacecraft" />
