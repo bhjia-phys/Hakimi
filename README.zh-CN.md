@@ -79,10 +79,13 @@ read-only, marks `executes_write_now=false`, and still requires a separate
 explicit `execute_aitp_write_bridge` call.
 The returned XML also includes a host-side `confirmation_preflight` summary
 that classifies remaining diagnostics as hard-blocking, confirmation-required,
-or advisory. This is not an AITP trust preflight and it does not validate the
-chunk; it only tells the model/user whether a reviewed call draft still has
-blocking placeholders or can proceed to a separate explicit AITP write/preflight
-call after confirmation.
+or advisory. It now mirrors the repair checklist at summary level with
+`missing_ref_repair_hint_count` and
+`missing_ref_repair_checklist_present`, so the high-level preflight and the
+detailed checklist stay aligned. This is not an AITP trust preflight and it
+does not validate the chunk; it only tells the model/user whether a reviewed
+call draft still has blocking placeholders or can proceed to a separate
+explicit AITP write/preflight call after confirmation.
 The same result now includes an explicit
 `execute_aitp_write_bridge_handoff` artifact with deterministic `handoff_id`,
 `confirmation_id`, a short `sha256` diagnostic hash, the exact
