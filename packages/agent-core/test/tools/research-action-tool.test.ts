@@ -1177,6 +1177,149 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('explicitly captures primitive tool lifecycle runs as AITP tool_run provenance', async () => {
+    const records: AgentRecord[] = [];
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const aitpWriteBridge: AitpWriteBridgeExecutor = {
+      async executeWrite(input) {
+        bridgeCalls.push(input);
+        return {
+          ok: true,
+          kind: 'tool_run',
+          runId: 'tool-run-primitive-read',
+          recipeId: 'primitive_tool:Read:call_read_mapping',
+          toolFamily: 'primitive_tool',
+          toolName: 'Read',
+          topicId: 'librpa-gw',
+          claimId: 'claim-gw',
+          evidenceStatus: 'unreviewed',
+          raw: {},
+        };
+      },
+    };
+    const agent = makeAgent(records, { aitpWriteBridge });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    await execute(tool, {
+      action: 'open_work_frame',
+      frame_id: 'frame.librpa-gw',
+      domain: 'librpa',
+      topic: 'librpa-gw',
+      goal: 'Capture primitive tool provenance for the GW claim.',
+      active_object_ids: ['aitp:claim:claim-gw'],
+      source_refs: ['source_asset:librpa-paper'],
+    });
+    await recordPrimitiveLifecycle(agent, {
+      toolCallId: 'call_read_mapping',
+      toolName: 'Read',
+      outputSummary: 'Read src/gw/head-wing.ts and found the update.',
+    });
+
+    const result = await execute(tool, {
+      action: 'capture_primitive_tool_run',
+      primitive_tool_call_id: 'call_read_mapping',
+      source_refs: ['tool:Read'],
+    });
+
+    expect(result.output).toContain('<aitp_primitive_tool_run_capture status="recorded"');
+    expect(result.output).toContain('aitp:tool_run:tool-run-primitive-read');
+    expect(bridgeCalls).toHaveLength(1);
+    expect(bridgeCalls[0]).toMatchObject({
+      operation: 'recordToolRun',
+      actionId: 'aitp.record_tool_run',
+      callId: 'call.aitp.capture_primitive_tool_run.call_research_action.aitp-tool-run',
+      payload: {
+        topicId: 'librpa-gw',
+        claimId: 'claim-gw',
+        recipeId: 'primitive_tool:Read:call_read_mapping',
+        toolFamily: 'primitive_tool',
+        toolName: 'Read',
+        inputs: {
+          argsSummary: '{"path":"src/gw/head-wing.ts"}',
+          cwd: process.cwd(),
+          sourceRefs: [
+            'tool:Read',
+            'source_asset:librpa-paper',
+            'aitp:claim:claim-gw',
+            'tool_call:call_read_mapping',
+          ],
+        },
+        outputs: {
+          toolCallId: 'call_read_mapping',
+          status: 'passed',
+          outputSummary: 'Read src/gw/head-wing.ts and found the update.',
+        },
+        environment: {
+          captureTool: 'hakimi.primitive_tool_lifecycle',
+          payloadProfile: 'primitive_tool_lifecycle_to_tool_run',
+          summaryInputsTrusted: false,
+          canUpdateClaimTrust: false,
+        },
+        evidenceStatus: 'unreviewed',
+        sourceRefs: [
+          'tool:Read',
+          'source_asset:librpa-paper',
+          'aitp:claim:claim-gw',
+          'tool_call:call_read_mapping',
+        ],
+      },
+    });
+    expect(bridgeCalls.some((call) => call.operation === 'recordValidationResult')).toBe(false);
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.record_tool_run',
+        outcome: 'pass',
+        evidenceRefs: ['aitp:tool_run:tool-run-primitive-read'],
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.capture_primitive_tool_run',
+        outcome: 'pass',
+        primitiveToolCallIds: ['call_read_mapping'],
+        evidenceRefs: ['aitp:tool_run:tool-run-primitive-read'],
+      }),
+    );
+  });
+
+  it('skips primitive tool AITP capture when no bridge is configured', async () => {
+    const records: AgentRecord[] = [];
+    const agent = makeAgent(records);
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    await recordPrimitiveLifecycle(agent, {
+      toolCallId: 'call_read_mapping',
+      toolName: 'Read',
+      outputSummary: 'Read output.',
+    });
+    const result = await execute(tool, {
+      action: 'capture_primitive_tool_run',
+      primitive_tool_call_id: 'call_read_mapping',
+      topic: 'librpa-gw',
+      aitp_payload: { claimId: 'claim-gw' },
+    });
+
+    expect(result.output).toContain('<aitp_primitive_tool_run_capture status="skipped"');
+    expect(result.output).toContain('AITP write bridge is not configured');
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.capture_primitive_tool_run',
+        outcome: 'blocked',
+        primitiveToolCallIds: ['call_read_mapping'],
+        evidenceRefs: [],
+      }),
+    );
+    expect(records).not.toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.record_tool_run',
+      }),
+    );
+  });
+
   it('normalizes external job submissions through the default adapter contract', async () => {
     const records: AgentRecord[] = [];
     const agent = makeAgent(records);
@@ -1382,6 +1525,35 @@ function makeAgent(
   });
   agent.tools.initializeBuiltinTools();
   return agent;
+}
+
+async function recordPrimitiveLifecycle(
+  agent: Agent,
+  input: {
+    readonly toolCallId: string;
+    readonly toolName: string;
+    readonly outputSummary: string;
+  },
+): Promise<void> {
+  agent.toolLifecycle.recordStarted({
+    source: 'loop',
+    turnId: 7,
+    step: 2,
+    stepUuid: 'step-read',
+    toolCallId: input.toolCallId,
+    toolName: input.toolName,
+    args: { path: 'src/gw/head-wing.ts' },
+    cwd: process.cwd(),
+  });
+  await agent.toolLifecycle.recordCompleted({
+    source: 'loop',
+    turnId: 7,
+    toolCallId: input.toolCallId,
+    toolName: input.toolName,
+    result: {
+      output: input.outputSummary,
+    },
+  });
 }
 
 function routeStateSlicePayload() {

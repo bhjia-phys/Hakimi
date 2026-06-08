@@ -440,6 +440,20 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     suggestedNextActions: ['aitp.attach_artifact', 'aitp.record_validation_result'],
   }),
   action({
+    id: 'aitp.capture_primitive_tool_run',
+    category: 'memory',
+    exposure: 'direct',
+    phase: 'compile',
+    title: 'Capture primitive tool run in AITP',
+    description:
+      'Ask Hakimi to turn one recent primitive tool lifecycle completion into an AITP tool-run provenance record by explicit tool_call_id.',
+    inputKinds: ['Claim', 'CodeRegion', 'BenchmarkCase', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    primitiveToolPolicy: 'none',
+    triggerHints: ['primitive tool provenance', 'tool call id', 'capture native tool run'],
+    suggestedNextActions: ['aitp.record_evidence', 'aitp.record_validation_result'],
+  }),
+  action({
     id: 'aitp.register_source_asset',
     category: 'memory',
     exposure: 'direct',

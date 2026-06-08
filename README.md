@@ -63,7 +63,7 @@ That means a research action can search literature, inspect code, prepare patche
 - AITP write moments now carry explicit bridge metadata inside `ResearchActionBinding.params`, so ContextPacks can show whether the next durable write or preflight should use `recordEvidence`, `recordReferenceLocation`, `recordToolRun`, `recordExploratoryRecord`, `captureSourceAssetAuto`, `captureToolRunAuto`, `captureCodeStateAuto`, `attachArtifactAuto`, `attachArtifact`, `createProofObligation`, `requestHumanCheckpoint`, `preflightTrustUpdate`, or another constrained AITP bridge operation.
 - AITP write/preflight moments now also carry MCP-first runtime target metadata derived from AITP's `runtime_bridge_target_manifest`: `entrypointKey`, `mcpTool`, `cliFallback`, public surface, preferred/fallback transport, MCP invocation contract, and state-effect fields are visible in ContextPack action params without creating a Hakimi-owned entrypoint catalog. Configured AITP process-graph reads, writes, and preflight calls now prefer the connected AITP MCP tool and fall back to the CLI bridge when MCP is unavailable, disabled, or fails.
 - The same runtime target table now includes the read-only `readRuntimePayloadProfiles` target for `runtime_payload_profiles` / `aitp_v5_get_runtime_payload_profiles` / `aitp-v5 adapter payload-profiles`. Hakimi treats it as AITP-owned profile metadata for host payload construction, not as validation, evidence, or claim-trust authority.
-- `ResearchAction.run_benchmark_adapter` now follows AITP's `benchmark_adapter_run_to_tool_run` runtime payload profile: when a configured AITP write bridge and scoped topic/claim are present, the benchmark adapter outcome is also recorded through `recordToolRun` as `aitp:tool_run:<id>` provenance and merged into the same benchmark action evidence refs. Hakimi also has a typed `primitive_tool_lifecycle_to_tool_run` payload builder for turning primitive tool lifecycle completions into the same AITP `tool_run_record` provenance shape. These captures/builders never call `recordValidationResult`, never update claim trust, and report skipped/failed capture instead of inventing provenance when bridge or AITP scope is missing.
+- `ResearchAction.run_benchmark_adapter` now follows AITP's `benchmark_adapter_run_to_tool_run` runtime payload profile: when a configured AITP write bridge and scoped topic/claim are present, the benchmark adapter outcome is also recorded through `recordToolRun` as `aitp:tool_run:<id>` provenance and merged into the same benchmark action evidence refs. `ResearchAction.capture_primitive_tool_run` now follows AITP's `primitive_tool_lifecycle_to_tool_run` profile for explicit one-call primitive tool capture by `primitive_tool_call_id`. These captures/builders never call `recordValidationResult`, never update claim trust, and report skipped/failed capture instead of inventing provenance when bridge or AITP scope is missing.
 - Hakimi sessions now auto-configure a narrow MCP-first AITP bridge for `aitp_v5_get_process_graph_slice`, `aitp-v5 graph slice`, `aitp-v5 evidence record`, `aitp-v5 tool run record`, `aitp-v5 tool run capture-auto`, `aitp-v5 reference location record`, `aitp-v5 exploration record`, `aitp-v5 route record`, `aitp-v5 asset register`, `aitp-v5 asset capture-auto`, `aitp-v5 code state auto`, `aitp-v5 research-state attach-artifact`, `aitp-v5 research-state attach-artifact-auto`, `aitp-v5 checkpoint request`, `aitp-v5 trust preflight`, `aitp-v5 source reconstruction-review-result`, `aitp-v5 research-state create-proof-obligation`, and AITP validation contract/result records. The bridge resolves `base` / `--base` from the current Agent cwd at call time, fetches an AITP slice before research-context injection only when a WorkFrame carries explicit `aitp:session:<id>` scope, executes only a configured AITP command or MCP tool with structured args, and keeps `.aitp` as the canonical record store.
 - `ResearchAction.execute_aitp_write_bridge` can now execute a configured AITP write bridge for evidence records, tool-run provenance, local tool-run transcript/result auto-capture, reference locations, exploratory records, source asset registration, local source asset auto-capture, auto-captured git code state, local artifact auto-attach, proof obligations, validation contracts, validation results, source-reconstruction review results, human-checkpoint requests, and non-mutating trust preflight. Successful writes or preflights are recorded as scoped `research_action.result_recorded` events with AITP evidence refs, and the model-facing XML result includes the canonical AITP runtime target instead of becoming a hidden side effect.
 - A native bridge smoke now verifies the QG/MIPT-shaped loop from fake AITP `process_graph_slice` to Hakimi `ContextPack` action bindings, `writeBridge` metadata, and constrained AITP CLI write-back for proof obligations, source-reconstruction evidence, and human checkpoints. This proves the local runtime contract without requiring Python/AITP dependencies during Hakimi unit tests.
@@ -185,11 +185,16 @@ params and `ResearchAction.execute_aitp_write_bridge` results so the model can
 see the MCP-first target. Hakimi also mirrors AITP's read-only
 `readRuntimePayloadProfiles` bridge target for the `runtime_payload_profiles`
 catalog, so hosts can discover profile metadata through the same target table
-without treating it as evidence, validation, or trust authority. Hakimi
-uses AITP's `primitive_tool_lifecycle_to_tool_run` profile as a typed payload
-builder for primitive tool lifecycle completions, but it does not auto-write
-every native tool call into AITP; hosts still need scoped topic/claim context
-and an explicit bridge call before AITP stores a `tool_run_record`. Hakimi
+without treating it as evidence, validation, or trust authority. The catalog
+now carries AITP-owned `capture_policy` metadata: benchmark adapter runs are
+controlled-auto inside `run_benchmark_adapter`, while primitive tool lifecycle
+capture is explicit-request only. Hakimi therefore exposes
+`ResearchAction.capture_primitive_tool_run` for a single recent
+`primitive_tool_call_id`, builds the `primitive_tool_lifecycle_to_tool_run`
+payload from the stored lifecycle envelope, and writes `recordToolRun` only
+when a configured bridge plus scoped topic/claim are present. It does not
+auto-write every native tool call into AITP, and it reports skipped/failed
+capture instead of inventing provenance. Hakimi
 sessions now create a narrow dynamic bridge by default: the process-graph
 provider calls `aitp_v5_get_process_graph_slice` through the configured AITP
 MCP server first, then falls back to `aitp-v5 graph slice` with `--base`
@@ -210,6 +215,11 @@ claim. The returned `aitp:tool_run:<id>` ref is merged into the benchmark action
 trace. If the bridge, topic, or claim is absent, the benchmark action remains
 recorded locally and the XML marks the AITP capture as skipped; Hakimi does not
 create a validation result or mutate claim trust from the adapter outcome.
+For primitive tools, the corresponding path is deliberately explicit rather
+than automatic: `ResearchAction.capture_primitive_tool_run` records one recent
+lifecycle completion by `primitive_tool_call_id`, stores the resulting
+`aitp:tool_run:<id>` as WorkFrame evidence when AITP accepts it, and leaves
+missing bridge/scope as a skipped capture.
 Ordinary `record_evidence_or_validation` policy decisions prefer
 `recordEvidence`, while strict validation remains available through
 `recordValidationResult` once a validation contract and tool run exist. Either

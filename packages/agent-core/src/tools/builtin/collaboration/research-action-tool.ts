@@ -39,8 +39,10 @@ import {
   AITP_WRITE_BRIDGE_OPERATIONS,
   actionIdForAitpWriteBridgeOperation,
   aitpRuntimeBridgeTargetForOperation,
+  buildPrimitiveToolLifecycleAitpToolRunPayload,
   coerceAitpWriteBridgeInput,
   evidenceRefsForAitpWriteBridgeResult,
+  PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE,
   renderTheoryReasoningSummary,
   theoryReasoningProjectionFromParams,
   type AitpWriteBridgeExecutionResult,
@@ -87,6 +89,7 @@ const ACTIONS = [
   'query_physics_graph',
   'build_formalization_plan',
   'execute_aitp_write_bridge',
+  'capture_primitive_tool_run',
 ] as const;
 const EXPOSURES = ['direct', 'deferred', 'direct-model-only', 'hidden'] as const;
 const CATEGORIES = ['graph', 'derivation', 'physics', 'code', 'benchmark', 'memory', 'harness'] as const;
@@ -206,6 +209,10 @@ export const ResearchActionToolInputSchema = z.object({
     .array(z.string())
     .optional()
     .describe('Primitive tool call ids attributed to the action.'),
+  primitive_tool_call_id: z
+    .string()
+    .optional()
+    .describe('Single primitive tool call id for capture_primitive_tool_run.'),
   next_suggested_actions: z
     .array(z.string())
     .optional()
@@ -328,6 +335,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return this.buildFormalizationPlan(args, ctx);
         case 'execute_aitp_write_bridge':
           return await this.executeAitpWriteBridge(args, ctx);
+        case 'capture_primitive_tool_run':
+          return await this.capturePrimitiveToolRun(args, ctx);
       }
     } catch (error) {
       return {
@@ -851,6 +860,107 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     }
   }
 
+  private async capturePrimitiveToolRun(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction capture_primitive_tool_run requires a session manager.');
+    }
+    const toolCallId = firstText(args.primitive_tool_call_id, args.primitive_tool_call_ids?.[0]);
+    if (!hasText(toolCallId)) {
+      return errorResult('ResearchAction capture_primitive_tool_run requires primitive_tool_call_id.');
+    }
+    const actionId = args.action_id ?? 'aitp.capture_primitive_tool_run';
+    const resolvedCallId = this.resolveCallId({ ...args, action_id: actionId }, ctx);
+    const capture = await this.capturePrimitiveToolLifecycleAsAitpToolRun(
+      toolCallId,
+      args,
+      resolvedCallId.callId,
+      ctx,
+    );
+    this.recordExecutedAction(args, ctx, {
+      actionId,
+      callId: resolvedCallId.callId,
+      outcome: outcomeForPrimitiveToolAitpCapture(capture),
+      input: {
+        toolCallId,
+        sourceRefs: args.source_refs ?? [],
+        profileId: PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE,
+      },
+      output: capture,
+      evidenceRefs: evidenceRefsForPrimitiveToolAitpCapture(capture),
+      graphRefs: [],
+    });
+    return ok(renderPrimitiveToolAitpCapture(toolCallId, capture));
+  }
+
+  private async capturePrimitiveToolLifecycleAsAitpToolRun(
+    toolCallId: string,
+    args: ResearchActionToolInput,
+    callId: string,
+    ctx: ExecutableToolContext,
+  ): Promise<PrimitiveToolAitpToolRunCapture> {
+    if (this.manager === undefined) return { status: 'skipped', reason: 'session manager unavailable' };
+    if (!this.manager.hasAitpWriteBridge()) {
+      return { status: 'skipped', reason: 'AITP write bridge is not configured' };
+    }
+    const envelope = this.manager.findPrimitiveToolLifecycleEnvelope(toolCallId);
+    if (envelope === undefined) {
+      return { status: 'skipped', reason: `primitive tool call not found: ${toolCallId}` };
+    }
+    const payload = buildPrimitiveToolLifecycleAitpToolRunPayload(
+      envelope,
+      this.manager.activeWorkFrame(),
+      {
+        topicId: firstText(
+          optionalRecordValue(args.aitp_payload, 'topicId'),
+          optionalRecordValue(args.aitp_payload, 'topic_id'),
+          args.topic,
+        ),
+        claimId: firstText(
+          optionalRecordValue(args.aitp_payload, 'claimId'),
+          optionalRecordValue(args.aitp_payload, 'claim_id'),
+        ),
+        sourceRefs: args.source_refs,
+      },
+    );
+    if (payload === undefined) {
+      return {
+        status: 'skipped',
+        reason: 'topic_id and claim_id are required to record primitive tool provenance in AITP',
+      };
+    }
+    try {
+      const input = coerceAitpWriteBridgeInput('recordToolRun', payload, ctx.signal);
+      const writeResult = await this.manager.executeAitpWriteBridge(
+        {
+          ...input,
+          actionId: 'aitp.record_tool_run',
+          callId: `${callId}.aitp-tool-run`,
+        },
+        {
+          source: (args.source ?? 'model') as ResearchActionSource,
+          toolCallId: ctx.toolCallId,
+        },
+      );
+      return {
+        status: 'recorded',
+        profileId: PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE,
+        operation: 'recordToolRun',
+        result: writeResult,
+        evidenceRefs: evidenceRefsForAitpWriteBridgeResult(writeResult),
+      };
+    } catch (error) {
+      return {
+        status: 'failed',
+        profileId: PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE,
+        operation: 'recordToolRun',
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   private queryPhysicsGraph(
     args: ResearchActionToolInput,
     ctx: ExecutableToolContext,
@@ -1022,7 +1132,10 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
         evidenceRefs: record.evidenceRefs,
         outcome: record.outcome,
         generatedObligationIds: args.generated_obligation_ids ?? [],
-        primitiveToolCallIds: args.primitive_tool_call_ids ?? [],
+        primitiveToolCallIds: uniqueStrings([
+          ...(args.primitive_tool_call_ids ?? []),
+          ...(args.primitive_tool_call_id === undefined ? [] : [args.primitive_tool_call_id]),
+        ]),
         nextSuggestedActions: args.next_suggested_actions ?? [],
       },
       {
@@ -1071,6 +1184,25 @@ type BenchmarkAitpToolRunCapture =
       readonly reason: string;
     };
 
+type PrimitiveToolAitpToolRunCapture =
+  | {
+      readonly status: 'recorded';
+      readonly profileId: typeof PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE;
+      readonly operation: 'recordToolRun';
+      readonly result: AitpWriteBridgeExecutionResult;
+      readonly evidenceRefs: readonly string[];
+    }
+  | {
+      readonly status: 'skipped';
+      readonly reason: string;
+    }
+  | {
+      readonly status: 'failed';
+      readonly profileId: typeof PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE;
+      readonly operation: 'recordToolRun';
+      readonly reason: string;
+    };
+
 function renderBenchmarkAdapterRun(
   result: BenchmarkAdapterRunResult,
   aitpCapture?: BenchmarkAitpToolRunCapture,
@@ -1115,6 +1247,39 @@ function evidenceRefsForBenchmarkAitpCapture(
   capture: BenchmarkAitpToolRunCapture,
 ): readonly string[] {
   return capture.status === 'recorded' ? capture.evidenceRefs : [];
+}
+
+function renderPrimitiveToolAitpCapture(
+  toolCallId: string,
+  capture: PrimitiveToolAitpToolRunCapture,
+): string {
+  if (capture.status === 'skipped') {
+    return `<aitp_primitive_tool_run_capture status="skipped" tool_call_id="${escapeXml(toolCallId)}" reason="${escapeXml(capture.reason)}" />\n`;
+  }
+  if (capture.status === 'failed') {
+    return `<aitp_primitive_tool_run_capture status="failed" tool_call_id="${escapeXml(toolCallId)}" profile_id="${capture.profileId}" operation="${capture.operation}" reason="${escapeXml(capture.reason)}" />\n`;
+  }
+  return [
+    `<aitp_primitive_tool_run_capture status="recorded" tool_call_id="${escapeXml(toolCallId)}" profile_id="${capture.profileId}" operation="${capture.operation}">`,
+    `  <record_id>${escapeXml(aitpWriteBridgeRecordId(capture.result))}</record_id>`,
+    renderStringList('evidence_refs', 'evidence_ref', capture.evidenceRefs, '  '),
+    '</aitp_primitive_tool_run_capture>',
+    '',
+  ].join('\n');
+}
+
+function evidenceRefsForPrimitiveToolAitpCapture(
+  capture: PrimitiveToolAitpToolRunCapture,
+): readonly string[] {
+  return capture.status === 'recorded' ? capture.evidenceRefs : [];
+}
+
+function outcomeForPrimitiveToolAitpCapture(
+  capture: PrimitiveToolAitpToolRunCapture,
+): ResearchActionOutcome {
+  if (capture.status === 'recorded') return 'pass';
+  if (capture.status === 'failed') return 'fail';
+  return 'blocked';
 }
 
 function buildBenchmarkAdapterAitpToolRunPayload(

@@ -3,6 +3,7 @@ import type {
   CompileResearchContextForWorkFrameInput,
   ResearchContextRecordOptions,
 } from '../research-context';
+import type { PrimitiveToolLifecycleEnvelope } from '../tool-lifecycle';
 import type { ResearchLedgerRecordOptions } from '../research-ledger';
 import type { ResearchContextPack } from '../../research-context';
 import type { OpenWorkFrameInput, WorkFrameRecordOptions } from '../workframe';
@@ -172,6 +173,14 @@ export class ResearchActionManager {
     input: BenchmarkAdapterRunInput,
   ): BenchmarkAdapterRunResult {
     return this.agent.benchmarkAdapters.run(adapterId, input);
+  }
+
+  findPrimitiveToolLifecycleEnvelope(
+    toolCallId: string,
+  ): PrimitiveToolLifecycleEnvelope | undefined {
+    return this.agent.toolLifecycle
+      .listRecent(200)
+      .find((envelope) => envelope.completed.toolCallId === toolCallId);
   }
 
   hasAitpWriteBridge(): boolean {
