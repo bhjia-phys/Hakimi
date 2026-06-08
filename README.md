@@ -241,6 +241,13 @@ copy chunk/topic/claim fields out of XML by hand. Its output also includes a
 `execute_aitp_write_bridge` operation that would be used next, while marking
 `selected_write_executed="false"` and requiring a separate explicit write or
 preflight choice.
+`ResearchAction.draft_aitp_curated_rag_write_bridge_call` can then select one
+stage or operation from that tree and return a prefilled
+`execute_aitp_write_bridge` tool-call JSON draft with placeholder diagnostics.
+It still executes no write, records no evidence, and marks
+`executes_write_now="false"` / `selected_write_executed="false"` so real source
+review, missing typed refs, and AITP `session_id` or record ids must be resolved
+before the normal write/preflight action is called.
 
 The WorkFrame orchestrator now also calls that provider automatically for
 RAG-helpful turns. It detects prompts asking for conceptual scaffolding,

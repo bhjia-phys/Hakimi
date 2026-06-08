@@ -48,6 +48,7 @@ import {
   theoryReasoningProjectionFromParams,
   type AitpCuratedRagCorpus,
   type AitpCuratedRagPromotionDraft,
+  type AitpCuratedRagPromotionDraftOperation,
   type AitpCuratedRagSearchResult,
   type AitpRuntimePayloadProfilesCatalog,
   type AitpWriteBridgeExecutionResult,
@@ -98,6 +99,7 @@ const ACTIONS = [
   'inspect_aitp_curated_rag_corpus',
   'search_aitp_curated_rag_corpus',
   'draft_aitp_curated_rag_promotion',
+  'draft_aitp_curated_rag_write_bridge_call',
   'capture_primitive_tool_run',
 ] as const;
 const EXPOSURES = ['direct', 'deferred', 'direct-model-only', 'hidden'] as const;
@@ -119,6 +121,20 @@ const OBLIGATION_KINDS = [
   'human_decision',
 ] as const;
 const OBLIGATION_SEVERITIES = ['blocking', 'important', 'advisory'] as const;
+const PROMOTION_DRAFT_STAGES = [
+  'source_asset',
+  'reference_location',
+  'evidence',
+  'validation',
+  'trust_preflight',
+] as const;
+const PROMOTION_DRAFT_WRITE_OPERATIONS = [
+  'registerSourceAsset',
+  'recordReferenceLocation',
+  'recordEvidence',
+  'createValidationContract',
+  'preflightTrustUpdate',
+] as const;
 
 const GraphRefSchema = z.object({
   kind: z.string(),
@@ -288,6 +304,14 @@ export const ResearchActionToolInputSchema = z.object({
     .string()
     .optional()
     .describe('Optional intent label for read-only curated RAG promotion draft planning.'),
+  promotion_draft_stage: z
+    .enum(PROMOTION_DRAFT_STAGES)
+    .optional()
+    .describe('Selected curated RAG promotion draft stage for prefilled write-bridge call drafting.'),
+  promotion_draft_operation: z
+    .enum(PROMOTION_DRAFT_WRITE_OPERATIONS)
+    .optional()
+    .describe('Selected curated RAG promotion draft operation for prefilled write-bridge call drafting.'),
 });
 
 export type ResearchActionToolInput = z.Infer<typeof ResearchActionToolInputSchema>;
@@ -313,6 +337,29 @@ interface CuratedRagPromotionDraftBindingInput {
   readonly aitpClaimId?: string | undefined;
   readonly aitpConnectorId?: string | undefined;
   readonly aitpPromotionIntent?: string | undefined;
+}
+
+interface CuratedRagPromotionWriteBridgeCallSelector {
+  readonly stage?: string | undefined;
+  readonly operation?: string | undefined;
+}
+
+interface CuratedRagPromotionWriteBridgeCallDraft {
+  readonly stage: string;
+  readonly draftOperation: string;
+  readonly aitpOperation: AitpWriteBridgeOperation;
+  readonly actionId: string;
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly payloadSource: 'payload_draft' | 'payload_template' | 'empty_payload';
+  readonly requiredExistingRecords: readonly string[];
+  readonly diagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[];
+  readonly unresolvedPlaceholderCount: number;
+}
+
+interface CuratedRagPromotionWriteBridgeCallDiagnostic {
+  readonly code: string;
+  readonly field?: string | undefined;
+  readonly message: string;
 }
 
 export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> {
@@ -394,6 +441,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return await this.searchAitpCuratedRagCorpus(args, ctx);
         case 'draft_aitp_curated_rag_promotion':
           return await this.draftAitpCuratedRagPromotion(args, ctx);
+        case 'draft_aitp_curated_rag_write_bridge_call':
+          return await this.draftAitpCuratedRagWriteBridgeCall(args, ctx);
         case 'capture_primitive_tool_run':
           return await this.capturePrimitiveToolRun(args, ctx);
       }
@@ -667,6 +716,39 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       signal: ctx.signal,
     });
     return ok(renderAitpCuratedRagPromotionDraft(draft, boundInput.bindingId));
+  }
+
+  private async draftAitpCuratedRagWriteBridgeCall(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction draft_aitp_curated_rag_write_bridge_call requires a session manager.');
+    }
+    if (!this.manager.hasAitpCuratedRagProvider()) {
+      return errorResult('AITP curated RAG provider is not configured');
+    }
+    const selector = curatedRagPromotionWriteBridgeCallSelector(args);
+    if (selector.isError) return errorResult(selector.message);
+    const boundInput = this.resolveCuratedRagPromotionDraftBinding(args);
+    if (boundInput.isError) return errorResult(boundInput.message);
+    const ragChunkId = firstText(args.rag_chunk_id, boundInput.input?.ragChunkId);
+    if (ragChunkId === undefined) {
+      return errorResult('ResearchAction draft_aitp_curated_rag_write_bridge_call requires rag_chunk_id.');
+    }
+    const draft = await this.manager.draftAitpCuratedRagPromotion({
+      chunkId: ragChunkId,
+      topicId: firstText(args.aitp_topic_id, args.topic, boundInput.input?.aitpTopicId),
+      claimId: firstText(args.aitp_claim_id, boundInput.input?.aitpClaimId),
+      connectorId: firstText(args.aitp_connector_id, boundInput.input?.aitpConnectorId),
+      promotionIntent: firstText(args.aitp_promotion_intent, boundInput.input?.aitpPromotionIntent),
+      signal: ctx.signal,
+    });
+    const callDraft = curatedRagPromotionWriteBridgeCallDraft(draft, selector.selector);
+    if (callDraft.isError) return errorResult(callDraft.message);
+    return ok(
+      renderAitpCuratedRagWriteBridgeCallDraft(draft, callDraft.draft, boundInput.bindingId),
+    );
   }
 
   private resolveCuratedRagPromotionDraftBinding(args: ResearchActionToolInput):
@@ -1582,6 +1664,198 @@ function renderCuratedRagPromotionDecisionTree(draft: AitpCuratedRagPromotionDra
     '  <promotion_decision_tree selected_write_executed="false" requires_explicit_next_write_choice="true">',
     ...operations,
     '  </promotion_decision_tree>',
+  ].join('\n');
+}
+
+function curatedRagPromotionWriteBridgeCallSelector(args: ResearchActionToolInput):
+  | {
+      readonly isError: false;
+      readonly selector: CuratedRagPromotionWriteBridgeCallSelector;
+    }
+  | { readonly isError: true; readonly message: string } {
+  const stage = args.promotion_draft_stage;
+  const operation = args.promotion_draft_operation;
+  if (stage === undefined && operation === undefined) {
+    return {
+      isError: true,
+      message:
+        'ResearchAction draft_aitp_curated_rag_write_bridge_call requires promotion_draft_stage or promotion_draft_operation.',
+    };
+  }
+  return { isError: false, selector: { stage, operation } };
+}
+
+function curatedRagPromotionWriteBridgeCallDraft(
+  draft: AitpCuratedRagPromotionDraft,
+  selector: CuratedRagPromotionWriteBridgeCallSelector,
+):
+  | {
+      readonly isError: false;
+      readonly draft: CuratedRagPromotionWriteBridgeCallDraft;
+    }
+  | { readonly isError: true; readonly message: string } {
+  const selected = draft.draftOperations.find(
+    (operation) =>
+      (selector.stage === undefined || operation.stage === selector.stage) &&
+      (selector.operation === undefined || operation.operation === selector.operation),
+  );
+  if (selected === undefined) {
+    return {
+      isError: true,
+      message:
+        `Curated RAG promotion draft does not contain a selected operation for stage="${selector.stage ?? ''}" operation="${selector.operation ?? ''}".`,
+    };
+  }
+  const aitpOperation = writeBridgeOperationForPromotionDraft(selected.operation);
+  if (aitpOperation === undefined) {
+    return {
+      isError: true,
+      message: `Curated RAG promotion draft operation "${selected.operation}" cannot be mapped to execute_aitp_write_bridge.`,
+    };
+  }
+  const payloadSource =
+    selected.payloadDraft !== undefined
+      ? 'payload_draft'
+      : selected.payloadTemplate !== undefined
+        ? 'payload_template'
+        : 'empty_payload';
+  const payload = selected.payloadDraft ?? selected.payloadTemplate ?? {};
+  const diagnostics = curatedRagPromotionWriteBridgeCallDiagnostics(draft, selected, aitpOperation, payload);
+  return {
+    isError: false,
+    draft: {
+      stage: selected.stage,
+      draftOperation: selected.operation,
+      aitpOperation,
+      actionId: actionIdForAitpWriteBridgeOperation(aitpOperation),
+      payload,
+      payloadSource,
+      requiredExistingRecords: selected.requiresExistingRecords,
+      diagnostics,
+      unresolvedPlaceholderCount: diagnostics.filter((item) => item.code === 'placeholder_value').length,
+    },
+  };
+}
+
+function curatedRagPromotionWriteBridgeCallDiagnostics(
+  draft: AitpCuratedRagPromotionDraft,
+  operation: AitpCuratedRagPromotionDraftOperation,
+  aitpOperation: AitpWriteBridgeOperation,
+  payload: Readonly<Record<string, unknown>>,
+): readonly CuratedRagPromotionWriteBridgeCallDiagnostic[] {
+  const diagnostics: CuratedRagPromotionWriteBridgeCallDiagnostic[] = [];
+  for (const field of requiredFieldsForPromotionWriteOperation(aitpOperation)) {
+    if (fieldIsEmpty(payload, field)) {
+      diagnostics.push({
+        code: 'missing_required_field',
+        field,
+        message: `AITP ${aitpOperation} requires ${field} before this draft can be executed.`,
+      });
+    }
+  }
+  for (const field of draft.requiredContextBeforeWrite) {
+    diagnostics.push({
+      code: 'missing_draft_context',
+      field,
+      message: `The AITP promotion draft reports missing ${field}; resolve it before any write/preflight call.`,
+    });
+  }
+  for (const field of placeholderFieldPaths(payload)) {
+    diagnostics.push({
+      code: 'placeholder_value',
+      field,
+      message: `Replace placeholder ${field} with a real AITP record id or reviewed value before execution.`,
+    });
+  }
+  for (const record of operation.requiresExistingRecords) {
+    diagnostics.push({
+      code: 'requires_existing_record',
+      field: record,
+      message: `This option depends on an existing ${record}; create or identify that AITP record first.`,
+    });
+  }
+  diagnostics.push({
+    code: 'manual_review_required',
+    message:
+      'Review the source passage, claim scope, and AITP record refs before calling execute_aitp_write_bridge.',
+  });
+  return diagnostics;
+}
+
+function requiredFieldsForPromotionWriteOperation(operation: AitpWriteBridgeOperation): readonly string[] {
+  switch (operation) {
+    case 'registerSourceAsset':
+      return ['topic_id', 'asset_type', 'uri', 'title'];
+    case 'recordReferenceLocation':
+      return ['topic_id', 'connector_id', 'location_type', 'uri', 'label'];
+    case 'recordEvidence':
+      return ['topic_id', 'claim_id', 'evidence_type', 'status', 'summary'];
+    case 'createValidationContract':
+      return ['topic_id', 'claim_id', 'required_checks', 'failure_modes', 'required_evidence_outputs'];
+    case 'preflightTrustUpdate':
+      return ['action', 'session_id', 'topic_id', 'claim_id'];
+    default:
+      return [];
+  }
+}
+
+function fieldIsEmpty(record: Readonly<Record<string, unknown>>, field: string): boolean {
+  const value = record[field];
+  if (typeof value === 'string') return value.trim().length === 0;
+  if (Array.isArray(value)) return value.length === 0;
+  return value === undefined || value === null;
+}
+
+function placeholderFieldPaths(value: unknown, path = ''): readonly string[] {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.startsWith('<') && trimmed.endsWith('>') ? [path] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => placeholderFieldPaths(item, `${path}[${String(index)}]`));
+  }
+  if (!isRecord(value)) return [];
+  return Object.entries(value).flatMap(([key, item]) =>
+    placeholderFieldPaths(item, path.length === 0 ? key : `${path}.${key}`),
+  );
+}
+
+function renderAitpCuratedRagWriteBridgeCallDraft(
+  sourceDraft: AitpCuratedRagPromotionDraft,
+  callDraft: CuratedRagPromotionWriteBridgeCallDraft,
+  bindingId?: string | undefined,
+): string {
+  const target = aitpRuntimeBridgeTargetForOperation(callDraft.aitpOperation);
+  const toolCall = {
+    action: 'execute_aitp_write_bridge',
+    aitp_operation: callDraft.aitpOperation,
+    aitp_payload: callDraft.payload,
+  };
+  return [
+    `<aitp_curated_rag_write_bridge_call_draft chunk_id="${escapeXml(sourceDraft.chunkId)}" document_id="${escapeXml(sourceDraft.documentId)}" stage="${escapeXml(callDraft.stage)}" draft_operation="${escapeXml(callDraft.draftOperation)}" next_research_action="execute_aitp_write_bridge" aitp_operation="${callDraft.aitpOperation}" action_id="${escapeXml(callDraft.actionId)}" payload_source="${callDraft.payloadSource}" unresolved_placeholder_count="${String(callDraft.unresolvedPlaceholderCount)}" executes_write_now="false" selected_write_executed="false" records_validation_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true"${bindingId === undefined ? '' : ` action_binding_id="${escapeXml(bindingId)}"`}>`,
+    `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
+    `  <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
+    `  <payload_json>${escapeXml(JSON.stringify(callDraft.payload))}</payload_json>`,
+    renderStringList('required_existing_records', 'record', callDraft.requiredExistingRecords, '  '),
+    renderAitpCuratedRagWriteBridgeCallDiagnostics(callDraft.diagnostics, '  '),
+    '  <promotion_boundary draft_is_evidence="false" draft_records_validation_result="false" draft_satisfies_final_gate="false" draft_can_update_claim_trust="false" requires_user_or_model_decision_before_write="true" />',
+    '</aitp_curated_rag_write_bridge_call_draft>',
+    '',
+  ].join('\n');
+}
+
+function renderAitpCuratedRagWriteBridgeCallDiagnostics(
+  diagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[],
+  indent: string,
+): string {
+  if (diagnostics.length === 0) return `${indent}<diagnostics />`;
+  return [
+    `${indent}<diagnostics diagnostic_count="${String(diagnostics.length)}">`,
+    ...diagnostics.map(
+      (diagnostic) =>
+        `${indent}  <diagnostic code="${escapeXml(diagnostic.code)}"${diagnostic.field === undefined ? '' : ` field="${escapeXml(diagnostic.field)}"`}>${escapeXml(diagnostic.message)}</diagnostic>`,
+    ),
+    `${indent}</diagnostics>`,
   ].join('\n');
 }
 
