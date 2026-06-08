@@ -174,6 +174,10 @@ export class ResearchActionManager {
     return this.agent.benchmarkAdapters.run(adapterId, input);
   }
 
+  hasAitpWriteBridge(): boolean {
+    return this.agent.aitpWriteBridge !== undefined;
+  }
+
   buildPhysicsGraph(): PhysicsGraph {
     const registry = this.agent.physicsMemory?.registry;
     if (registry === undefined) {

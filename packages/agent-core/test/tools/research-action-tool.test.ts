@@ -1073,6 +1073,8 @@ describe('ResearchActionTool', () => {
 
     expect(result.output).toContain('<benchmark_adapter_run');
     expect(result.output).toContain('outcome="pass"');
+    expect(result.output).toContain('<aitp_tool_run_capture status="skipped"');
+    expect(result.output).toContain('AITP write bridge is not configured');
     expect(records).toContainEqual(
       expect.objectContaining({
         type: 'research_action.result_recorded',
@@ -1082,6 +1084,94 @@ describe('ResearchActionTool', () => {
         evidenceRefs: expect.arrayContaining([
           'benchmark:case.librpa.head-wing-smoke',
           'adapter.librpa.head-wing-smoke',
+        ]),
+      }),
+    );
+  });
+
+  it('records benchmark adapter runs as AITP tool_run provenance when the bridge is configured', async () => {
+    const records: AgentRecord[] = [];
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const aitpWriteBridge: AitpWriteBridgeExecutor = {
+      async executeWrite(input) {
+        bridgeCalls.push(input);
+        return {
+          ok: true,
+          kind: 'tool_run',
+          runId: 'tool-run-benchmark',
+          recipeId: 'benchmark_adapter:adapter.librpa.head-wing-smoke:case.librpa.head-wing-smoke',
+          toolFamily: 'benchmark_adapter',
+          toolName: 'adapter.librpa.head-wing-smoke',
+          topicId: 'librpa-gw',
+          claimId: 'claim-gw',
+          evidenceStatus: 'unreviewed',
+          raw: {},
+        };
+      },
+    };
+    const agent = makeAgent(records, { aitpWriteBridge });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    await execute(tool, {
+      action: 'open_work_frame',
+      frame_id: 'frame.librpa-gw',
+      domain: 'librpa',
+      topic: 'librpa-gw',
+      goal: 'Capture benchmark provenance for the GW claim.',
+      active_object_ids: ['aitp:claim:claim-gw'],
+    });
+    const result = await execute(tool, {
+      action: 'run_benchmark_adapter',
+      adapter_id: 'adapter.librpa.head-wing-smoke',
+      benchmark_case_id: 'case.librpa.head-wing-smoke',
+      benchmark_payload: {
+        expected: { head: 1, wing: 0.25 },
+        observed: { head: 1, wing: 0.25 },
+        tolerance: 1e-6,
+      },
+      source_refs: ['tool:vitest'],
+    });
+
+    expect(result.output).toContain('<aitp_tool_run_capture status="recorded"');
+    expect(result.output).toContain('aitp:tool_run:tool-run-benchmark');
+    expect(bridgeCalls).toHaveLength(1);
+    expect(bridgeCalls[0]).toMatchObject({
+      operation: 'recordToolRun',
+      actionId: 'aitp.record_tool_run',
+      callId: 'call.benchmark.run_minimal_case.call_research_action.aitp-tool-run',
+      payload: {
+        topicId: 'librpa-gw',
+        claimId: 'claim-gw',
+        recipeId: 'benchmark_adapter:adapter.librpa.head-wing-smoke:case.librpa.head-wing-smoke',
+        toolFamily: 'benchmark_adapter',
+        toolName: 'adapter.librpa.head-wing-smoke',
+        outputs: {
+          outcome: 'pass',
+        },
+        environment: {
+          payloadProfile: 'benchmark_adapter_run_to_tool_run',
+          canUpdateClaimTrust: false,
+        },
+      },
+    });
+    expect(bridgeCalls.some((call) => call.operation === 'recordValidationResult')).toBe(false);
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.record_tool_run',
+        outcome: 'pass',
+        evidenceRefs: ['aitp:tool_run:tool-run-benchmark'],
+      }),
+    );
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'benchmark.run_minimal_case',
+        outcome: 'pass',
+        evidenceRefs: expect.arrayContaining([
+          'benchmark:case.librpa.head-wing-smoke',
+          'adapter.librpa.head-wing-smoke',
+          'aitp:tool_run:tool-run-benchmark',
         ]),
       }),
     );
