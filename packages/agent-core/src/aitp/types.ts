@@ -334,10 +334,21 @@ export interface AitpPayloadHint {
   readonly targetId: string;
   readonly requiredFields: readonly string[];
   readonly draft: Readonly<Record<string, unknown>>;
+  readonly draftSchema: AitpPayloadDraftSchema;
   readonly orientationOnly: boolean;
   readonly summaryInputsTrusted: boolean;
   readonly canUpdateClaimTrust: boolean;
   readonly lifecycleTrigger: AitpLifecycleTriggerInfo;
+}
+
+export interface AitpPayloadDraftSchema {
+  readonly requiredFields: readonly string[];
+  readonly placeholderFields: readonly string[];
+  readonly placeholderValues: Readonly<Record<string, string>>;
+  readonly hostMustResolve: readonly string[];
+  readonly fieldCase: string;
+  readonly summaryInputsTrusted: boolean;
+  readonly canUpdateClaimTrust: boolean;
 }
 
 export interface AitpLifecycleTriggerInfo {

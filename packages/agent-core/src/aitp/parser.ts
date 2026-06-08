@@ -4,6 +4,7 @@ import type {
   AitpMomentPolicy,
   AitpMomentPolicyDecision,
   AitpObligationSeverity,
+  AitpPayloadDraftSchema,
   AitpOpenObligation,
   AitpPayloadHint,
   AitpProcessGraphEdge,
@@ -756,20 +757,40 @@ function parseMomentPolicyDecision(
 }
 
 function parsePayloadHint(raw: Record<string, unknown>): AitpPayloadHint {
+  const requiredFields = stringArray(raw['required_fields']).length > 0
+    ? stringArray(raw['required_fields'])
+    : stringArray(raw['requiredFields']);
   return {
     entrypoint: stringValue(raw['entrypoint']) ?? '',
     recordAction: stringValue(raw['record_action']) ?? stringValue(raw['recordAction']) ?? '',
     actionKind: stringValue(raw['action_kind']) ?? stringValue(raw['actionKind']) ?? '',
     targetType: stringValue(raw['target_type']) ?? stringValue(raw['targetType']) ?? '',
     targetId: stringValue(raw['target_id']) ?? stringValue(raw['targetId']) ?? '',
-    requiredFields: stringArray(raw['required_fields']).length > 0
-      ? stringArray(raw['required_fields'])
-      : stringArray(raw['requiredFields']),
+    requiredFields,
     draft: isRecord(raw['draft']) ? raw['draft'] : {},
+    draftSchema: parsePayloadDraftSchema(valueFor(raw, 'draft_schema', 'draftSchema'), requiredFields),
     orientationOnly: booleanValue(raw['orientation_only']) ?? true,
     summaryInputsTrusted: booleanValue(raw['summary_inputs_trusted']) ?? false,
     canUpdateClaimTrust: booleanValue(raw['can_update_claim_trust']) ?? false,
     lifecycleTrigger: parseLifecycleTrigger(raw),
+  };
+}
+
+function parsePayloadDraftSchema(
+  raw: unknown,
+  fallbackRequiredFields: readonly string[],
+): AitpPayloadDraftSchema {
+  const schema = recordValue(raw);
+  return {
+    requiredFields: stringArray(valueFor(schema, 'required_fields', 'requiredFields')).length > 0
+      ? stringArray(valueFor(schema, 'required_fields', 'requiredFields'))
+      : fallbackRequiredFields,
+    placeholderFields: stringArray(valueFor(schema, 'placeholder_fields', 'placeholderFields')),
+    placeholderValues: stringRecord(valueFor(schema, 'placeholder_values', 'placeholderValues')),
+    hostMustResolve: stringArray(valueFor(schema, 'host_must_resolve', 'hostMustResolve')),
+    fieldCase: stringValue(valueFor(schema, 'field_case', 'fieldCase')) ?? 'snake_case',
+    summaryInputsTrusted: booleanValue(valueFor(schema, 'summary_inputs_trusted', 'summaryInputsTrusted')) ?? false,
+    canUpdateClaimTrust: booleanValue(valueFor(schema, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,
   };
 }
 
@@ -890,6 +911,16 @@ function objectArray(value: unknown): readonly Record<string, unknown>[] {
 
 function recordValue(value: unknown): Readonly<Record<string, unknown>> {
   return isRecord(value) ? value : {};
+}
+
+function stringRecord(value: unknown): Readonly<Record<string, string>> {
+  if (!isRecord(value)) return {};
+  const result: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value)) {
+    const stringItem = stringValue(item);
+    if (stringItem !== undefined) result[key] = stringItem;
+  }
+  return result;
 }
 
 function valueFor(

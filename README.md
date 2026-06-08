@@ -55,7 +55,7 @@ That means a research action can search literature, inspect code, prepare patche
 - AITP lifecycle trigger fields such as `lifecycle_phases`, `trigger_conditions`, `recording_threshold`, `trust_boundary_inputs`, and `recommended_host_behavior` are preserved as orientation-only policy projections on action params and call obligations, so the model and final gate can see why a ResearchAction belongs in pre-turn, pre-action, or pre-final flow without creating a Hakimi record.
 - AITP theory-reasoning handles from exploratory records and `payload_hints[].draft`, including relation-path questions, backtrace targets, definition/derivation/source dependency questions, and original-question guards, compile into `params.theoryReasoning`, explicit WorkFrame reminder lines, and ContextPack XML `<theory_reasoning>` bindings. Hakimi uses them to constrain local physics brainstorming/backtrace prompts, not as canonical memory.
 - AITP `route_state` now compiles into native route summaries, WorkFrame reminders, ContextPack XML `<live_routes>`, `<blocked_routes>`, `<abandoned_routes>`, and `<pivot_required_routes>`, plus `aitp.record_route_choice`, `aitp.record_failed_route_lesson`, and `aitp.checkpoint_before_route_switch` recommendations. Hakimi treats ordinary route notes as process-continuity guidance; they only become final-gate blockers when AITP explicitly marks `final_gate_required` or `required_before_trust_change`.
-- AITP `provenance_gaps[]` now compile into provenance summaries, WorkFrame reminder lines, ContextPack provenance fields, and capture-oriented `ResearchAction` bindings such as `aitp.capture_source_asset_auto`, `aitp.register_source_asset`, `aitp.capture_code_state_auto`, `aitp.capture_tool_run_auto`, `aitp.record_tool_run`, `aitp.create_validation_contract`, `aitp.record_validation_result`, `aitp.attach_artifact_auto`, `aitp.attach_artifact`, and `code.capture_git_diff_observation`. Gap-level AITP `payload_hints[]` become `writeBridge.payloadDraft` values for those local writes, including local source-asset auto-capture, code-state, local tool-run transcript/result auto-capture, local artifact auto-attach, manual tool-run, validation, source-asset, reference-location, and artifact payloads. Ordinary source/code/tool/artifact gaps are reuse-before-trust guidance, not final-gate blockers, unless AITP explicitly marks them as required before a trust change.
+- AITP `provenance_gaps[]` now compile into provenance summaries, WorkFrame reminder lines, ContextPack provenance fields, and capture-oriented `ResearchAction` bindings such as `aitp.capture_source_asset_auto`, `aitp.register_source_asset`, `aitp.capture_code_state_auto`, `aitp.capture_tool_run_auto`, `aitp.record_tool_run`, `aitp.create_validation_contract`, `aitp.record_validation_result`, `aitp.attach_artifact_auto`, `aitp.attach_artifact`, and `code.capture_git_diff_observation`. Gap-level AITP `payload_hints[]` become `writeBridge.payloadDraft` and `writeBridge.payloadDraftSchema` values for those local writes, including local source-asset auto-capture, code-state, local tool-run transcript/result auto-capture, local artifact auto-attach, manual tool-run, validation, source-asset, reference-location, and artifact payloads. The schema tells the model/host which placeholder fields still require real local provenance before execution. Ordinary source/code/tool/artifact gaps are reuse-before-trust guidance, not final-gate blockers, unless AITP explicitly marks them as required before a trust change.
 - AITP `source_asset_index[]` now compiles into native `sourceAssets` summaries, WorkFrame reminders, and ContextPack XML fields for all indexed source asset ids, missing hashes, and duplicate hashes. Hakimi reads the index to decide what source/code/artifact provenance needs attention, but it does not create a `.hakimi` source asset store.
 - AITP `source_stack_coverage` now compiles into native `sourceStackCoverage` summaries, WorkFrame reminders, and ContextPack XML fields for covered claim ids, evidence-output gaps, reconstruction gaps, review gaps, and AITP next actions. Hakimi uses it as source-stack readiness guidance and leaves final-gate blocking to explicit AITP trust/final prerequisites.
 - AITP `source_reconstruction_review` now compiles into native source reconstruction review summaries, WorkFrame reminders, and ContextPack XML fields for review claim ids, open review claim ids, needs-revision/inconclusive claim ids, review-packet claim ids, and AITP next actions. Hakimi uses it as review worklist guidance, not as claim-trust authority.
@@ -105,9 +105,11 @@ structured `callObligations` derived from AITP `moment_policy.decisions`.
 Those obligations distinguish current-turn required calls from calls that must
 happen before any trust-changing step, while keeping the canonical policy and
 entrypoint names in AITP. When AITP provides orientation-only `payload_hints`,
-Hakimi projects them into `writeBridge.payloadDraft` so the model sees the local
-fields needed for the next typed write without turning that draft into Hakimi
-truth. Lifecycle trigger fields from AITP policy are projected the same way:
+Hakimi projects them into `writeBridge.payloadDraft` and
+`writeBridge.payloadDraftSchema` so the model sees the local fields needed for
+the next typed write plus the placeholder fields the host must resolve without
+turning that draft into Hakimi truth. Lifecycle trigger fields from AITP policy
+are projected the same way:
 they annotate `ResearchActionBinding.params` and `callObligations` with
 pre-turn/pre-action/pre-final timing reasons, but they remain policy guidance
 from AITP and do not cause Hakimi to record anything automatically. Theory
@@ -133,12 +135,13 @@ such as `aitp.capture_source_asset_auto`, `aitp.register_source_asset`,
 `aitp.record_validation_result`, `aitp.attach_artifact_auto`, and
 `aitp.attach_artifact`. When a gap carries
 AITP-owned `payload_hints[]`, Hakimi projects the matching hint into
-`writeBridge.payloadDraft` for `captureSourceAssetAuto`, `captureToolRunAuto`,
-`captureCodeStateAuto`, `attachArtifactAuto`, `recordToolRun`,
-`createValidationContract`, `recordValidationResult`, `attachArtifact`,
-`registerSourceAsset`, or `recordReferenceLocation`. Those drafts are execution
-orientation for the model and still require real local provenance before the
-AITP bridge is called. `aitp.attach_artifact_auto` now carries an
+`writeBridge.payloadDraft` and `writeBridge.payloadDraftSchema` for
+`captureSourceAssetAuto`, `captureToolRunAuto`, `captureCodeStateAuto`,
+`attachArtifactAuto`, `recordToolRun`, `createValidationContract`,
+`recordValidationResult`, `attachArtifact`, `registerSourceAsset`, or
+`recordReferenceLocation`. Those drafts and schemas are execution orientation
+for the model and still require real local provenance before the AITP bridge is
+called. `aitp.attach_artifact_auto` now carries an
 `attachArtifactAuto` write bridge for
 `aitp-v5 research-state attach-artifact-auto`, so benchmark logs, validation
 outputs, patches, plots, JSON results, or generated files can be sent to AITP
