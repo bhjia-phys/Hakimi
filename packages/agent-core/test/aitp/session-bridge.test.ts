@@ -325,9 +325,17 @@ describe('AITP dynamic session bridge', () => {
       limit: 1,
     });
 
-    expect(calls[0]).toEqual(['aitp-v5', 'adapter', 'curated-rag-corpus']);
+    expect(calls[0]).toEqual([
+      'aitp-v5',
+      '--base',
+      'F:/project',
+      'adapter',
+      'curated-rag-corpus',
+    ]);
     expect(calls[1]).toEqual([
       'aitp-v5',
+      '--base',
+      'F:/project',
       'adapter',
       'curated-rag-search',
       'source backtrace',
@@ -374,11 +382,11 @@ describe('AITP dynamic session bridge', () => {
     expect(mcpCalls).toEqual([
       {
         toolName: 'aitp_v5_get_curated_rag_corpus',
-        args: {},
+        args: { base: 'F:/project' },
       },
       {
         toolName: 'aitp_v5_search_curated_rag_corpus',
-        args: { query: 'source backtrace', limit: 1 },
+        args: { base: 'F:/project', query: 'source backtrace', limit: 1 },
       },
     ]);
     expect(corpus.retrievalPolicy.readSurfaceEffect).toBe('orientation_only');
@@ -402,9 +410,17 @@ describe('AITP dynamic session bridge', () => {
 
     expect(corpus.chunkCount).toBe(2);
     expect(search.resultCount).toBe(2);
-    expect(cliCalls[0]).toEqual(['aitp-v5', 'adapter', 'curated-rag-corpus']);
+    expect(cliCalls[0]).toEqual([
+      'aitp-v5',
+      '--base',
+      'F:/project',
+      'adapter',
+      'curated-rag-corpus',
+    ]);
     expect(cliCalls[1]).toEqual([
       'aitp-v5',
+      '--base',
+      'F:/project',
       'adapter',
       'curated-rag-search',
       'source backtrace',
@@ -444,11 +460,12 @@ function recordingRunner(calls: string[][]): AitpCommandRunner {
         };
       }
       if (args.includes('curated-rag-search')) {
+        const queryIndex = args.indexOf('curated-rag-search') + 1;
         return {
           exitCode: 0,
           stdout: JSON.stringify({
             ok: true,
-            curated_rag_search_result: fakeCuratedRagSearchResult(String(args[2] ?? ''), 2),
+            curated_rag_search_result: fakeCuratedRagSearchResult(String(args[queryIndex] ?? ''), 2),
           }),
           stderr: '',
         };

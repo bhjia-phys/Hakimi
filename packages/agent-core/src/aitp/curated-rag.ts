@@ -47,14 +47,21 @@ export interface AitpCuratedRagRetrievalPolicy {
 }
 
 export interface AitpCuratedRagIndexPolicy {
-  readonly activeIndexMode: 'lexical_fixture';
+  readonly activeIndexMode: AitpCuratedRagIndexMode;
   readonly supportedIndexModes: readonly string[];
   readonly embeddingIndexRequired: false;
   readonly indexIsDerived: true;
   readonly derivedFrom: string;
   readonly staleIndexBehavior: string;
+  readonly indexSource?: string | undefined;
+  readonly indexPath?: string | undefined;
+  readonly manifestHash?: string | undefined;
+  readonly indexStatus?: string | undefined;
+  readonly staleIndexDiagnostics: readonly Readonly<Record<string, unknown>>[];
   readonly raw: Readonly<Record<string, unknown>>;
 }
+
+export type AitpCuratedRagIndexMode = 'lexical_fixture' | 'lexical_file_backed';
 
 export interface AitpCuratedRagDocument {
   readonly documentId: string;
@@ -94,13 +101,15 @@ export interface AitpCuratedRagSearchResult {
   readonly kind: 'curated_rag_search_result';
   readonly catalogVersion: string;
   readonly query: string;
-  readonly indexMode: 'lexical_fixture';
+  readonly indexMode: AitpCuratedRagIndexMode;
   readonly resultRole: 'heuristic_context';
   readonly summaryInputsTrusted: false;
   readonly canUpdateClaimTrust: false;
   readonly recordsValidationResult: false;
   readonly claimTrustMutation: 'none';
   readonly requiresPromotionForClaimSupport: true;
+  readonly indexStatus?: string | undefined;
+  readonly staleIndexDiagnostics: readonly Readonly<Record<string, unknown>>[];
   readonly resultCount: number;
   readonly results: readonly AitpCuratedRagSearchResultItem[];
   readonly raw: Readonly<Record<string, unknown>>;
@@ -198,13 +207,18 @@ export function parseAitpCuratedRagSearchResult(input: unknown): AitpCuratedRagS
     kind: 'curated_rag_search_result',
     catalogVersion: AITP_CURATED_RAG_CATALOG_VERSION,
     query: requiredString(payload, 'query'),
-    indexMode: 'lexical_fixture',
+    indexMode: parseIndexMode(payload['index_mode']),
     resultRole: 'heuristic_context',
     summaryInputsTrusted: false,
     canUpdateClaimTrust: false,
     recordsValidationResult: false,
     claimTrustMutation: 'none',
     requiresPromotionForClaimSupport: true,
+    indexStatus: optionalString(payload['index_status']),
+    staleIndexDiagnostics: optionalRecordArray(
+      payload['stale_index_diagnostics'],
+      'curated_rag_search_result.stale_index_diagnostics',
+    ),
     resultCount: results.length,
     results,
     raw: payload,
@@ -257,8 +271,8 @@ function parseRetrievalPolicy(raw: Readonly<Record<string, unknown>>): AitpCurat
 }
 
 function parseIndexPolicy(raw: Readonly<Record<string, unknown>>): AitpCuratedRagIndexPolicy {
+  const activeIndexMode = parseIndexMode(raw['active_index_mode']);
   if (
-    raw['active_index_mode'] !== 'lexical_fixture' ||
     raw['embedding_index_required'] !== false ||
     raw['index_is_derived'] !== true ||
     raw['derived_from'] !== 'curated_rag_chunk_manifest' ||
@@ -268,16 +282,30 @@ function parseIndexPolicy(raw: Readonly<Record<string, unknown>>): AitpCuratedRa
       'AITP curated RAG index policy must remain derived lexical fixture metadata.',
     );
   }
+  const supportedIndexModes = requiredStringArray(
+    raw['supported_index_modes'],
+    'index_policy.supported_index_modes',
+  );
+  if (!sameStrings(supportedIndexModes, [activeIndexMode])) {
+    throw new AitpCuratedRagParseError(
+      'AITP curated RAG index policy supported modes must match the active mode.',
+    );
+  }
   return {
-    activeIndexMode: 'lexical_fixture',
-    supportedIndexModes: requiredStringArray(
-      raw['supported_index_modes'],
-      'index_policy.supported_index_modes',
-    ),
+    activeIndexMode,
+    supportedIndexModes,
     embeddingIndexRequired: false,
     indexIsDerived: true,
     derivedFrom: 'curated_rag_chunk_manifest',
     staleIndexBehavior: 'return_diagnostic_not_trust',
+    indexSource: optionalString(raw['index_source']),
+    indexPath: optionalString(raw['index_path']),
+    manifestHash: optionalString(raw['manifest_hash']),
+    indexStatus: optionalString(raw['index_status']),
+    staleIndexDiagnostics: optionalRecordArray(
+      raw['stale_index_diagnostics'],
+      'index_policy.stale_index_diagnostics',
+    ),
     raw,
   };
 }
@@ -387,7 +415,7 @@ function assertCommonNoTrust(raw: Readonly<Record<string, unknown>>, label: stri
 
 function assertSearchNoTrust(raw: Readonly<Record<string, unknown>>): void {
   if (
-    raw['index_mode'] !== 'lexical_fixture' ||
+    !isCuratedRagIndexMode(raw['index_mode']) ||
     raw['result_role'] !== 'heuristic_context' ||
     raw['records_validation_result'] !== false ||
     raw['claim_trust_mutation'] !== 'none' ||
@@ -409,6 +437,15 @@ function requiredRecordArray(value: unknown, label: string): readonly Readonly<R
   throw new AitpCuratedRagParseError(`${label} must be an object array.`);
 }
 
+function optionalRecordArray(
+  value: unknown,
+  label: string,
+): readonly Readonly<Record<string, unknown>>[] {
+  if (value === undefined) return [];
+  if (Array.isArray(value) && value.every(isRecord)) return value;
+  throw new AitpCuratedRagParseError(`${label} must be an object array when present.`);
+}
+
 function requiredString(raw: Readonly<Record<string, unknown>>, key: string): string {
   const value = raw[key];
   if (typeof value === 'string' && value.trim().length > 0) return value.trim();
@@ -428,12 +465,25 @@ function requiredStringArray(value: unknown, label: string): readonly string[] {
   return strings;
 }
 
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
 function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function parseIndexMode(value: unknown): AitpCuratedRagIndexMode {
+  if (isCuratedRagIndexMode(value)) return value;
+  throw new AitpCuratedRagParseError('AITP curated RAG index mode is unsupported.');
+}
+
+function isCuratedRagIndexMode(value: unknown): value is AitpCuratedRagIndexMode {
+  return value === 'lexical_fixture' || value === 'lexical_file_backed';
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

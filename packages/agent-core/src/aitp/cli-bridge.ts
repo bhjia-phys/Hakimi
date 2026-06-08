@@ -595,14 +595,24 @@ export class AitpCliBridge {
   async readCuratedRagCorpus(
     input: ReadAitpCuratedRagCorpusInput = {},
   ): Promise<AitpCuratedRagCorpus> {
-    const payload = await this.runJson(buildAitpCuratedRagCorpusArgs(), input.signal);
+    const payload = await this.runJson(
+      buildAitpCuratedRagCorpusArgs({ basePath: this.options.basePath }),
+      input.signal,
+    );
     return parseAitpCuratedRagCorpus(payload);
   }
 
   async searchCuratedRagCorpus(
     input: SearchAitpCuratedRagCorpusInput,
   ): Promise<AitpCuratedRagSearchResult> {
-    const payload = await this.runJson(buildAitpCuratedRagSearchArgs(input), input.signal);
+    const payload = await this.runJson(
+      buildAitpCuratedRagSearchArgs({
+        basePath: this.options.basePath,
+        query: input.query,
+        limit: input.limit,
+      }),
+      input.signal,
+    );
     return parseAitpCuratedRagSearchResult(payload);
   }
 
@@ -860,16 +870,19 @@ export function buildAitpRuntimePayloadProfilesArgs(): readonly string[] {
   return ['adapter', 'payload-profiles'];
 }
 
-export function buildAitpCuratedRagCorpusArgs(): readonly string[] {
-  return ['adapter', 'curated-rag-corpus'];
+export function buildAitpCuratedRagCorpusArgs(input?: {
+  readonly basePath?: string | undefined;
+}): readonly string[] {
+  return buildAdapterReadArgs(input?.basePath, 'curated-rag-corpus');
 }
 
 export function buildAitpCuratedRagSearchArgs(input: {
+  readonly basePath?: string | undefined;
   readonly query: string;
   readonly limit?: number | undefined;
 }): readonly string[] {
   requireNonEmpty(input.query, 'query');
-  const args = ['adapter', 'curated-rag-search', input.query.trim()];
+  const args = buildAdapterReadArgs(input.basePath, 'curated-rag-search', input.query.trim());
   if (input.limit !== undefined) {
     if (!Number.isInteger(input.limit) || input.limit <= 0) {
       throw new AitpCliBridgeError('AITP curated RAG search limit must be a positive integer.');
@@ -877,6 +890,19 @@ export function buildAitpCuratedRagSearchArgs(input: {
     args.push('--limit', String(input.limit));
   }
   return args;
+}
+
+function buildAdapterReadArgs(
+  basePath: string | undefined,
+  command: string,
+  ...args: string[]
+): string[] {
+  const result: string[] = [];
+  if (basePath !== undefined && basePath.trim().length > 0) {
+    result.push('--base', basePath.trim());
+  }
+  result.push('adapter', command, ...args);
+  return result;
 }
 
 export function buildAitpExploratoryRecordArgs(

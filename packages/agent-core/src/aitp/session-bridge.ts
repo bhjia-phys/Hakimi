@@ -166,7 +166,7 @@ export function createDynamicAitpMcpFirstCuratedRagProvider(
         const target = aitpRuntimeBridgeTargetForOperation('readCuratedRagCorpus');
         const rawPayload = await transport.callTool({
           toolName: target.mcpInvocation.tool,
-          args: {},
+          args: { base: options.basePath() },
           signal: input.signal,
         });
         return parseAitpCuratedRagCorpus(normalizeAitpWriteBridgePayload(rawPayload));
@@ -182,7 +182,10 @@ export function createDynamicAitpMcpFirstCuratedRagProvider(
       }
       try {
         const target = aitpRuntimeBridgeTargetForOperation('searchCuratedRagCorpus');
-        const args: Record<string, unknown> = { query: input.query };
+        const args: Record<string, unknown> = {
+          base: options.basePath(),
+          query: input.query,
+        };
         if (input.limit !== undefined) args['limit'] = input.limit;
         const rawPayload = await transport.callTool({
           toolName: target.mcpInvocation.tool,
