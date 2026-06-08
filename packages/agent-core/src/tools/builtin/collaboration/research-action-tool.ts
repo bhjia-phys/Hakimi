@@ -39,12 +39,14 @@ import {
   AITP_WRITE_BRIDGE_OPERATIONS,
   actionIdForAitpWriteBridgeOperation,
   aitpRuntimeBridgeTargetForOperation,
+  aitpRuntimePayloadProfileById,
   buildPrimitiveToolLifecycleAitpToolRunPayload,
   coerceAitpWriteBridgeInput,
   evidenceRefsForAitpWriteBridgeResult,
   PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE,
   renderTheoryReasoningSummary,
   theoryReasoningProjectionFromParams,
+  type AitpRuntimePayloadProfilesCatalog,
   type AitpWriteBridgeExecutionResult,
   type AitpWriteBridgeOperation,
 } from '../../../aitp';
@@ -89,6 +91,7 @@ const ACTIONS = [
   'query_physics_graph',
   'build_formalization_plan',
   'execute_aitp_write_bridge',
+  'inspect_aitp_runtime_payload_profiles',
   'capture_primitive_tool_run',
 ] as const;
 const EXPOSURES = ['direct', 'deferred', 'direct-model-only', 'hidden'] as const;
@@ -335,6 +338,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return this.buildFormalizationPlan(args, ctx);
         case 'execute_aitp_write_bridge':
           return await this.executeAitpWriteBridge(args, ctx);
+        case 'inspect_aitp_runtime_payload_profiles':
+          return await this.inspectAitpRuntimePayloadProfiles(ctx);
         case 'capture_primitive_tool_run':
           return await this.capturePrimitiveToolRun(args, ctx);
       }
@@ -532,6 +537,21 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       },
     );
     return ok(renderAitpWriteBridgeExecution(operation, actionId, resolvedCallId.callId, result));
+  }
+
+  private async inspectAitpRuntimePayloadProfiles(
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult(
+        'ResearchAction inspect_aitp_runtime_payload_profiles requires a session manager.',
+      );
+    }
+    if (!this.manager.hasAitpRuntimePayloadProfilesProvider()) {
+      return errorResult('AITP runtime payload profiles provider is not configured');
+    }
+    const catalog = await this.manager.readAitpRuntimePayloadProfiles(ctx.signal);
+    return ok(renderAitpRuntimePayloadProfiles(catalog));
   }
 
   private openWorkFrame(
@@ -1272,6 +1292,35 @@ function evidenceRefsForPrimitiveToolAitpCapture(
   capture: PrimitiveToolAitpToolRunCapture,
 ): readonly string[] {
   return capture.status === 'recorded' ? capture.evidenceRefs : [];
+}
+
+function renderAitpRuntimePayloadProfiles(
+  catalog: AitpRuntimePayloadProfilesCatalog,
+): string {
+  const benchmarkProfile = aitpRuntimePayloadProfileById(
+    catalog,
+    'benchmark_adapter_run_to_tool_run',
+  );
+  const primitiveProfile = aitpRuntimePayloadProfileById(
+    catalog,
+    PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE,
+  );
+  return [
+    `<aitp_runtime_payload_profiles catalog_version="${escapeXml(catalog.catalogVersion)}" profile_count="${String(catalog.profileCount)}" read_surface_effect="${catalog.hostUsagePolicy.readSurfaceEffect}" records_validation_result="false" claim_trust_mutation="${catalog.hostUsagePolicy.claimTrustMutation}" can_update_claim_trust="false">`,
+    renderStringList('profile_index', 'profile_id', catalog.profileIndex, '  '),
+    renderStringList('allowed_uses', 'use', catalog.hostUsagePolicy.allowedUses, '  '),
+    renderStringList('forbidden_uses', 'use', catalog.hostUsagePolicy.forbiddenUses, '  '),
+    '  <profiles>',
+    ...catalog.profiles.map(
+      (profile) =>
+        `    <profile id="${escapeXml(profile.profileId)}" host_event="${escapeXml(profile.hostEvent)}" target_operation="${profile.targetOperation}" capture_mode="${profile.capturePolicy.captureMode}" host_trigger="${escapeXml(profile.capturePolicy.hostTrigger)}" requires_tool_call_id="${String(profile.capturePolicy.requiresToolCallId)}" records_validation_result="false" claim_trust_mutation="${profile.capturePolicy.claimTrustMutation}" />`,
+    ),
+    '  </profiles>',
+    `  <profile_binding action="run_benchmark_adapter" profile_id="${escapeXml(benchmarkProfile?.profileId ?? '')}" capture_mode="${escapeXml(benchmarkProfile?.capturePolicy.captureMode ?? '')}" />`,
+    `  <profile_binding action="capture_primitive_tool_run" profile_id="${escapeXml(primitiveProfile?.profileId ?? '')}" capture_mode="${escapeXml(primitiveProfile?.capturePolicy.captureMode ?? '')}" requires_tool_call_id="${String(primitiveProfile?.capturePolicy.requiresToolCallId ?? false)}" />`,
+    '</aitp_runtime_payload_profiles>',
+    '',
+  ].join('\n');
 }
 
 function outcomeForPrimitiveToolAitpCapture(

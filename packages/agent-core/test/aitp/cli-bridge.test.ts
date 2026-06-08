@@ -180,6 +180,8 @@ describe('AITP CLI bridge', () => {
     ]);
     expect(catalog.summaryInputsTrusted).toBe(false);
     expect(catalog.canUpdateClaimTrust).toBe(false);
+    expect(catalog.hostUsagePolicy.readSurfaceEffect).toBe('metadata_only');
+    expect(catalog.hostUsagePolicy.forbiddenUses).toContain('trust_apply');
     expect(primitive?.capturePolicy.captureMode).toBe('explicit_request');
     expect(primitive?.capturePolicy.recordsValidationResult).toBe(false);
     expect(primitive?.resultSemantics.claimTrustMutation).toBe('none');
@@ -205,6 +207,31 @@ describe('AITP CLI bridge', () => {
     expect(() => parseAitpRuntimePayloadProfilesCatalog(tampered)).toThrow(
       AitpRuntimePayloadProfilesParseError,
     );
+  });
+
+  it('rejects runtime payload host usage policies that expand metadata-only use', () => {
+    const catalog = fakeRuntimePayloadProfilesCatalog();
+
+    expect(() =>
+      parseAitpRuntimePayloadProfilesCatalog({
+        ...catalog,
+        host_usage_policy: {
+          ...catalog.host_usage_policy,
+          allowed_uses: [...catalog.host_usage_policy.allowed_uses, 'validation_diagnostics'],
+        },
+      }),
+    ).toThrow(AitpRuntimePayloadProfilesParseError);
+    expect(() =>
+      parseAitpRuntimePayloadProfilesCatalog({
+        ...catalog,
+        host_usage_policy: {
+          ...catalog.host_usage_policy,
+          forbidden_uses: catalog.host_usage_policy.forbidden_uses.filter(
+            (use: string) => use !== 'bulk_auto_capture',
+          ),
+        },
+      }),
+    ).toThrow(AitpRuntimePayloadProfilesParseError);
   });
 
   it('rejects unsupported exploratory record types before running AITP', () => {
@@ -1706,6 +1733,25 @@ function fakeRuntimePayloadProfilesCatalog(): any {
     truth_source: 'runtime_payload_profile_catalog',
     summary_inputs_trusted: false,
     can_update_claim_trust: false,
+    host_usage_policy: {
+      read_surface_effect: 'metadata_only',
+      allowed_uses: [
+        'payload_construction',
+        'capture_policy_diagnostics',
+        'bridge_readiness_diagnostics',
+      ],
+      forbidden_uses: [
+        'evidence_support',
+        'validation_result',
+        'claim_trust_update',
+        'trust_apply',
+        'bulk_auto_capture',
+      ],
+      records_validation_result: false,
+      claim_trust_mutation: 'none',
+      summary_inputs_trusted: false,
+      can_update_claim_trust: false,
+    },
     profile_count: profiles.length,
     profile_index: profiles.map((profile) => profile.profile_id),
     profiles,
