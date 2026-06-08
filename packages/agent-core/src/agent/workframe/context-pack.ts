@@ -143,6 +143,14 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
         `AITP curated RAG chunk: ${item.chunkId} document=${item.documentId} score=${String(item.score)} summary=${item.summary}`,
       );
     }
+    if (pack.curatedRag.promotionDraftBindingIds.length > 0) {
+      lines.push(
+        `AITP curated RAG promotion draft actions: ${bounded(pack.curatedRag.promotionDraftBindingIds).join(', ')}`,
+      );
+      lines.push(
+        'Use ResearchAction.draft_aitp_curated_rag_promotion only if a retrieved chunk should be reviewed for claim support; the draft is read-only and still requires an explicit later write choice.',
+      );
+    }
     lines.push(
       'AITP curated RAG is heuristic_context only; promote via AITP source_asset, reference_location, evidence, validation, and trust preflight before claim support.',
     );

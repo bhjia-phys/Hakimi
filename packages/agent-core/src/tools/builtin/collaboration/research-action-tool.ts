@@ -1986,15 +1986,21 @@ function renderCuratedRagSection(pack: ResearchContextPack): string {
   const curatedRag = pack.curatedRag;
   if (curatedRag === undefined) return '  <aitp_curated_rag />';
   return [
-    `  <aitp_curated_rag query="${escapeXml(curatedRag.query)}" index_mode="${curatedRag.indexMode}" result_role="${curatedRag.resultRole}" read_surface_effect="${curatedRag.readSurfaceEffect}" result_count="${String(curatedRag.resultCount)}" records_validation_result="false" claim_trust_mutation="${curatedRag.claimTrustMutation}" can_update_claim_trust="false" requires_promotion_for_claim_support="true">`,
+    `  <aitp_curated_rag query="${escapeXml(curatedRag.query)}" index_mode="${curatedRag.indexMode}" result_role="${curatedRag.resultRole}" read_surface_effect="${curatedRag.readSurfaceEffect}" result_count="${String(curatedRag.resultCount)}" records_validation_result="false" claim_trust_mutation="${curatedRag.claimTrustMutation}" can_update_claim_trust="false" requires_promotion_for_claim_support="true" promotion_draft_suggested="${String(curatedRag.promotionDraftSuggested)}">`,
     renderBoundedStringList('reasons', 'reason', curatedRag.reasonIds, '    '),
     '    <results>',
     ...curatedRag.results.map(
       (item) =>
-        `      <result chunk_id="${escapeXml(item.chunkId)}" document_id="${escapeXml(item.documentId)}" score="${String(item.score)}" content_hash="${escapeXml(item.contentHash)}">` +
+        `      <result chunk_id="${escapeXml(item.chunkId)}" document_id="${escapeXml(item.documentId)}" score="${String(item.score)}" content_hash="${escapeXml(item.contentHash)}"${item.promotionDraftBindingId === undefined ? '' : ` promotion_draft_binding_id="${escapeXml(item.promotionDraftBindingId)}"`}>` +
         `<summary>${escapeXml(item.summary)}</summary><text>${escapeXml(item.text)}</text></result>`,
     ),
     '    </results>',
+    renderBoundedStringList(
+      'promotion_draft_bindings',
+      'binding',
+      curatedRag.promotionDraftBindingIds,
+      '    ',
+    ),
     '    <promotion_boundary>Curated RAG is heuristic_context only; promote source passages through AITP source_asset, reference_location, evidence, validation, and trust preflight records before using them as claim support.</promotion_boundary>',
     '  </aitp_curated_rag>',
   ].join('\n');

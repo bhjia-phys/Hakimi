@@ -143,6 +143,7 @@ export interface ResearchContextCuratedRagChunkSummary {
   readonly text: string;
   readonly contentHash: string;
   readonly tags: readonly string[];
+  readonly promotionDraftBindingId?: string | undefined;
 }
 
 export interface ResearchContextCuratedRagSection {
@@ -156,6 +157,8 @@ export interface ResearchContextCuratedRagSection {
   readonly claimTrustMutation: 'none';
   readonly canUpdateClaimTrust: false;
   readonly requiresPromotionForClaimSupport: true;
+  readonly promotionDraftSuggested: boolean;
+  readonly promotionDraftBindingIds: readonly string[];
   readonly indexStatus?: string | undefined;
   readonly staleIndexDiagnostics: readonly Readonly<Record<string, unknown>>[];
   readonly results: readonly ResearchContextCuratedRagChunkSummary[];

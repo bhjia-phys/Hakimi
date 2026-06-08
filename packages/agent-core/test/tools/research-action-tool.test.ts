@@ -500,6 +500,46 @@ describe('ResearchActionTool', () => {
     expect(loaded.output).toContain('aitp.checkpoint_before_route_switch');
   });
 
+  it('renders curated RAG promotion draft suggestions in loaded ContextPack XML', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    agent.workFrames.open(
+      {
+        id: 'frame.rag-promotion',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Review whether a retrieved chunk should support claim-fqhe.',
+        sourceRefs: ['aitp:claim:claim-fqhe'],
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        curatedRag: typedCuratedRagSearchResult('claim support for FQHE'),
+        curatedRagReasonIds: ['source_backtrace_suggestions'],
+      },
+      { source: 'controller' },
+    );
+
+    const loaded = await execute(tool, {
+      action: 'load_context_pack',
+      context_pack_id: pack.id,
+    });
+
+    expect(loaded.output).toContain('<aitp_curated_rag');
+    expect(loaded.output).toContain('promotion_draft_suggested="true"');
+    expect(loaded.output).toContain('<promotion_draft_bindings>');
+    expect(loaded.output).toContain(
+      '<binding>binding.aitp.curated-rag-promotion-draft.curated_rag_chunk-source_backtrace_orientation-0001</binding>',
+    );
+    expect(loaded.output).toContain('action_id="draft_aitp_curated_rag_promotion"');
+    expect(loaded.output).toContain('&quot;ragChunkId&quot;:&quot;curated_rag_chunk:source_backtrace_orientation:0001&quot;');
+    expect(loaded.output).toContain('&quot;draftCreatesRecords&quot;:false');
+    expect(loaded.output).toContain('&quot;canUpdateClaimTrust&quot;:false');
+    expect(loaded.output).toContain('&quot;requiresUserOrModelDecisionBeforeWrite&quot;:true');
+  });
+
   it('executes configured AITP write-bridge operations as research action results', async () => {
     const records: AgentRecord[] = [];
     const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
@@ -2055,6 +2095,40 @@ function fakeCuratedRagSearchResult(query: string, limit = 5): any {
     requires_promotion_for_claim_support: true,
     result_count: results.length,
     results,
+  };
+}
+
+function typedCuratedRagSearchResult(query: string): any {
+  return {
+    kind: 'curated_rag_search_result',
+    catalogVersion: AITP_CURATED_RAG_CATALOG_VERSION,
+    query,
+    indexMode: 'lexical_fixture',
+    resultRole: 'heuristic_context',
+    summaryInputsTrusted: false,
+    canUpdateClaimTrust: false,
+    recordsValidationResult: false,
+    claimTrustMutation: 'none',
+    requiresPromotionForClaimSupport: true,
+    staleIndexDiagnostics: [],
+    resultCount: 1,
+    results: [
+      {
+        chunkId: 'curated_rag_chunk:source_backtrace_orientation:0001',
+        documentId: 'curated_rag_doc:source_backtrace_orientation',
+        score: 2,
+        retrievalRole: 'heuristic_context',
+        orientationOnly: true,
+        canUpdateClaimTrust: false,
+        summary: 'Retrieved passages suggest source reconstruction, not claim support.',
+        text: 'Retrieved passages can suggest where to look next, but claim support needs explicit reference locations and evidence records.',
+        anchor: { section: '1' },
+        tags: ['source-backtrace'],
+        contentHash: 'sha256:chunk-source-backtrace',
+        raw: {},
+      },
+    ],
+    raw: {},
   };
 }
 

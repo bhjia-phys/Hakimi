@@ -30,6 +30,7 @@ import type {
   CompileResearchContextPackOptions,
   ResearchContextAitpSection,
   ResearchContextCapsuleSummary,
+  ResearchContextCuratedRagChunkSummary,
   ResearchContextCuratedRagSection,
   ResearchContextLedgerProposalSummary,
   ResearchContextPack,
@@ -87,11 +88,13 @@ export function compileResearchContextPack(
   const ledger = collectLedger(input, diagnostics);
   const aitp = collectAitp(input, diagnostics);
   const curatedRag = collectCuratedRag(input, diagnostics);
+  const curatedRagActionBindings = curatedRagPromotionDraftBindings(input, curatedRag);
   const actionBindings = bounded(
     uniqueBindings([
       ...workflows.flatMap((workflow) => workflow.metadata.actionBindings),
       ...physics.capsules.flatMap((capsule) => bindingsFromAffordances(capsule)),
       ...(aitp?.compiled.actionRecommendations ?? []),
+      ...curatedRagActionBindings,
     ]),
     input.limits?.maxActionBindings ?? DEFAULT_MAX_ACTION_BINDINGS,
     (remaining) =>
@@ -174,16 +177,11 @@ function collectCuratedRag(
       refId: input.workFrame.id,
     });
   }
+  const promotionDraftSuggested = shouldSuggestCuratedRagPromotionDraft(input);
   const results = bounded(
-    input.curatedRag.results.map((item) => ({
-      chunkId: item.chunkId,
-      documentId: item.documentId,
-      score: item.score,
-      summary: item.summary,
-      text: item.text,
-      contentHash: item.contentHash,
-      tags: item.tags,
-    })),
+    input.curatedRag.results.map((item) =>
+      curatedRagChunkSummary(item, promotionDraftSuggested),
+    ),
     input.limits?.maxCuratedRagResults ?? DEFAULT_MAX_CURATED_RAG_RESULTS,
     (remaining) =>
       diagnostics.push({
@@ -205,10 +203,144 @@ function collectCuratedRag(
     claimTrustMutation: 'none',
     canUpdateClaimTrust: false,
     requiresPromotionForClaimSupport: true,
+    promotionDraftSuggested,
+    promotionDraftBindingIds: promotionDraftSuggested
+      ? results.map((item) => item.promotionDraftBindingId).filter(isString)
+      : [],
     indexStatus: input.curatedRag.indexStatus,
     staleIndexDiagnostics: input.curatedRag.staleIndexDiagnostics,
     results,
   };
+}
+
+function curatedRagChunkSummary(
+  item: {
+    readonly chunkId: string;
+    readonly documentId: string;
+    readonly score: number;
+    readonly summary: string;
+    readonly text: string;
+    readonly contentHash: string;
+    readonly tags: readonly string[];
+  },
+  promotionDraftSuggested: boolean,
+): ResearchContextCuratedRagChunkSummary {
+  return {
+    chunkId: item.chunkId,
+    documentId: item.documentId,
+    score: item.score,
+    summary: item.summary,
+    text: item.text,
+    contentHash: item.contentHash,
+    tags: item.tags,
+    promotionDraftBindingId: promotionDraftSuggested
+      ? curatedRagPromotionDraftBindingId(item.chunkId)
+      : undefined,
+  };
+}
+
+function curatedRagPromotionDraftBindings(
+  input: CompileResearchContextPackInput,
+  curatedRag: ResearchContextCuratedRagSection | undefined,
+): readonly ResearchActionBinding[] {
+  if (curatedRag === undefined || !curatedRag.promotionDraftSuggested) return [];
+  const scope = inferAitpClaimScope(input);
+  return curatedRag.results.map((item) => ({
+    id: curatedRagPromotionDraftBindingId(item.chunkId),
+    actionId: 'draft_aitp_curated_rag_promotion',
+    adapterId: 'aitp.curated-rag.promotion-draft',
+    domainId: input.workFrame.domain,
+    objectRefs: [`aitp:curated_rag_chunk:${item.chunkId}`, `aitp:curated_rag_document:${item.documentId}`],
+    priority: 'normal',
+    reason:
+      'Retrieved AITP curated RAG chunk may be claim-relevant; ask AITP for a read-only promotion draft before any source/evidence write.',
+    params: {
+      toolAction: 'ResearchAction.draft_aitp_curated_rag_promotion',
+      ragChunkId: item.chunkId,
+      ragDocumentId: item.documentId,
+      ragContentHash: item.contentHash,
+      aitpTopicId: scope.topicId,
+      aitpClaimId: scope.claimId,
+      aitpConnectorId: scope.connectorId,
+      aitpPromotionIntent: 'claim_support_review',
+      retrievalRole: 'heuristic_context',
+      readSurfaceEffect: 'orientation_only',
+      draftCreatesRecords: false,
+      recordsValidationResult: false,
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+      requiresPromotionForClaimSupport: true,
+      requiresUserOrModelDecisionBeforeWrite: true,
+      forbiddenUses: [
+        'evidence_support',
+        'validation_result',
+        'claim_trust_update',
+        'trust_apply',
+        'final_gate_satisfaction',
+      ],
+      allowedNextToolCall: {
+        action: 'draft_aitp_curated_rag_promotion',
+        rag_chunk_id: item.chunkId,
+        aitp_topic_id: scope.topicId,
+        aitp_claim_id: scope.claimId,
+        aitp_connector_id: scope.connectorId,
+        aitp_promotion_intent: 'claim_support_review',
+      },
+    },
+  }));
+}
+
+function shouldSuggestCuratedRagPromotionDraft(input: CompileResearchContextPackInput): boolean {
+  if (input.curatedRag === null || input.curatedRag === undefined) return false;
+  const reasons = new Set(input.curatedRagReasonIds ?? []);
+  if (reasons.has('source_backtrace_suggestions')) return true;
+  const promptableRefs = [
+    input.workFrame.goal,
+    ...input.workFrame.sourceRefs,
+    ...input.workFrame.activeObjectIds,
+    ...(input.aitp?.contextLines ?? []),
+  ].join(' ').toLowerCase();
+  return (
+    promptableRefs.includes('claim support') ||
+    promptableRefs.includes('source support') ||
+    promptableRefs.includes('evidence') ||
+    promptableRefs.includes('source stack') ||
+    promptableRefs.includes('reference location') ||
+    promptableRefs.includes('source reconstruction')
+  );
+}
+
+function curatedRagPromotionDraftBindingId(chunkId: string): string {
+  return `binding.aitp.curated-rag-promotion-draft.${safeId(chunkId)}`;
+}
+
+function inferAitpClaimScope(input: CompileResearchContextPackInput): {
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly connectorId: string;
+} {
+  const topicId = input.workFrame.topic;
+  const claimId =
+    firstClaimId(input.workFrame.sourceRefs) ??
+    firstClaimId(input.workFrame.activeObjectIds) ??
+    input.aitp?.sourceStackCoverage.all[0]?.claimId ??
+    input.aitp?.sourceReconstructionReview.all[0]?.claimId ??
+    '';
+  return {
+    topicId,
+    claimId,
+    connectorId: claimId.length > 0 ? `curated-rag:${claimId}` : 'curated-rag:<claim-id>',
+  };
+}
+
+function firstClaimId(values: readonly string[]): string | undefined {
+  for (const value of values) {
+    const normalized = value.trim();
+    if (normalized.startsWith('aitp:claim:')) return normalized.slice('aitp:claim:'.length);
+    if (normalized.startsWith('claim:')) return normalized.slice('claim:'.length);
+    if (normalized.startsWith('claim-')) return normalized;
+  }
+  return undefined;
 }
 
 function collectAitp(
@@ -635,6 +767,10 @@ function bounded<T>(
 
 function unique(values: readonly string[]): readonly string[] {
   return [...new Set(values.filter((value) => value.length > 0))].toSorted();
+}
+
+function isString(value: string | undefined): value is string {
+  return value !== undefined;
 }
 
 function contextPackId(input: {

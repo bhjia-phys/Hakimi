@@ -338,6 +338,74 @@ describe('ResearchContextManager', () => {
     expect(reminder).toContain('promote via AITP source_asset');
   });
 
+  it('suggests curated RAG promotion draft actions for claim-support review turns', async () => {
+    const searchCuratedRagCorpus = vi.fn(async (input: { query: string; limit?: number }) =>
+      fakeCuratedRagSearchResult(input.query),
+    );
+    const aitpCuratedRagProvider: AitpCuratedRagProvider = {
+      async getCuratedRagCorpus() {
+        throw new Error('not used');
+      },
+      searchCuratedRagCorpus,
+    };
+    const agent = makeAgent(undefined, { aitpCuratedRagProvider });
+    agent.workFrames.open(
+      {
+        id: 'frame.rag-promotion',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Review whether curated source context should support claim-fqhe.',
+        sourceRefs: ['aitp:claim:claim-fqhe'],
+      },
+      { source: 'controller' },
+    );
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text: 'Should this retrieved source chunk become claim support for claim-fqhe?',
+      },
+    ]);
+    await agent.injection.inject();
+
+    expect(searchCuratedRagCorpus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limit: 3,
+        query: expect.stringContaining('claim support'),
+      }),
+    );
+    const pack = agent.researchContext.listPacks().at(-1);
+    expect(pack?.curatedRag).toMatchObject({
+      resultRole: 'heuristic_context',
+      readSurfaceEffect: 'orientation_only',
+      promotionDraftSuggested: true,
+      promotionDraftBindingIds: [
+        'binding.aitp.curated-rag-promotion-draft.chunk.fqhe.source',
+      ],
+    });
+    expect(pack?.actionBindings).toContainEqual(
+      expect.objectContaining({
+        actionId: 'draft_aitp_curated_rag_promotion',
+        params: expect.objectContaining({
+          ragChunkId: 'chunk.fqhe.source',
+          aitpTopicId: 'fqhe-literature',
+          aitpClaimId: 'claim-fqhe',
+          draftCreatesRecords: false,
+          recordsValidationResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+          requiresUserOrModelDecisionBeforeWrite: true,
+        }),
+      }),
+    );
+    expect(pack?.sourceRefs).toEqual(['aitp:claim:claim-fqhe']);
+    const lastMessage = agent.context.history.at(-1);
+    const reminder = (lastMessage?.content[0] as { text: string }).text;
+    expect(reminder).toContain('AITP curated RAG promotion draft actions');
+    expect(reminder).toContain('ResearchAction.draft_aitp_curated_rag_promotion');
+    expect(reminder).toContain('explicit later write choice');
+  });
+
   it('does not call AITP curated RAG provider for ordinary action prompts', async () => {
     const aitpCuratedRagProvider: AitpCuratedRagProvider = {
       async getCuratedRagCorpus() {
