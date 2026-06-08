@@ -408,6 +408,16 @@ interface AitpHandoffGuard {
   readonly confirmationStatus: string;
 }
 
+interface AitpHandoffGuardFailure {
+  readonly code: HandoffGuardFailureCode;
+  readonly field?: string | undefined;
+  readonly path?: string | undefined;
+  readonly remediation: {
+    readonly nextStep: HandoffGuardRemediationStep;
+    readonly repairTarget: string;
+  };
+}
+
 type HandoffGuardFailureCode =
   | 'blocked_handoff'
   | 'diagnostic_hash_mismatch'
@@ -701,7 +711,9 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     const operation = args.aitp_operation as AitpWriteBridgeOperation;
     const handoffGuard = verifyAitpWriteBridgeHandoff(args.aitp_handoff, operation, args.aitp_payload);
     if (handoffGuard.isError) {
-      return errorResult(handoffGuard.message);
+      return errorResult(
+        `${renderAitpHandoffExecutionPrecheck({ status: 'failed', failure: handoffGuard.failure })}\n${handoffGuard.message}`,
+      );
     }
     const actionId = args.action_id ?? actionIdForAitpWriteBridgeOperation(operation);
     const resolvedCallId = this.resolveCallId({ ...args, action_id: actionId }, ctx);
@@ -2183,7 +2195,7 @@ function verifyAitpWriteBridgeHandoff(
   payload: Readonly<Record<string, unknown>>,
 ):
   | { readonly isError: false; readonly guard?: AitpHandoffGuard | undefined }
-  | { readonly isError: true; readonly message: string } {
+  | { readonly isError: true; readonly message: string; readonly failure: AitpHandoffGuardFailure } {
   if (handoff === undefined) return { isError: false };
   const handoffId = stringRecordValue(handoff, 'handoff_id', 'handoffId');
   const confirmationId = stringRecordValue(handoff, 'confirmation_id', 'confirmationId');
@@ -2332,10 +2344,16 @@ function handoffGuardError(
   code: HandoffGuardFailureCode,
   reason: string,
   location: { readonly field?: string | undefined; readonly path?: string | undefined } = {},
-): { readonly isError: true; readonly message: string } {
+): { readonly isError: true; readonly message: string; readonly failure: AitpHandoffGuardFailure } {
   const remediation = handoffGuardRemediation(code, location);
   return {
     isError: true,
+    failure: {
+      code,
+      field: location.field,
+      path: location.path,
+      remediation,
+    },
     message: [
       `<handoff_guard_failure status="failed" code="${escapeXml(code)}"${location.field === undefined ? '' : ` field="${escapeXml(location.field)}"`}${location.path === undefined ? '' : ` path="${escapeXml(location.path)}"`} executes_write_now="false" bridge_called="false">`,
       `  <message>ResearchAction execute_aitp_write_bridge handoff guard failed: ${escapeXml(reason)}</message>`,
@@ -2771,6 +2789,7 @@ function renderAitpWriteBridgeExecution(
   return [
     `<aitp_write_bridge operation="${operation}" action_id="${escapeXml(actionId)}" call_id="${escapeXml(callId)}" kind="${result.kind}" ok="${String(result.ok)}">`,
     `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" mcp_argument_style="${target.mcpInvocation.argumentStyle}" mcp_base_argument="${target.mcpInvocation.baseArgument}" mcp_payload_key_case="${target.mcpInvocation.payloadKeyCase}" mcp_result_content_type="${target.mcpInvocation.resultContentType}" fallback_policy="${target.mcpInvocation.fallbackPolicy}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
+    renderAitpHandoffExecutionPrecheck({ status: 'passed', guard: handoffGuard }),
     renderAitpHandoffGuard(handoffGuard),
     `  <record_id>${escapeXml(aitpWriteBridgeRecordId(result))}</record_id>`,
     renderAitpWriteBridgeResultDetails(result),
@@ -2778,6 +2797,19 @@ function renderAitpWriteBridgeExecution(
     '</aitp_write_bridge>',
     '',
   ].join('\n');
+}
+
+function renderAitpHandoffExecutionPrecheck(
+  precheck:
+    | { readonly status: 'passed'; readonly guard?: AitpHandoffGuard | undefined }
+    | { readonly status: 'failed'; readonly failure: AitpHandoffGuardFailure },
+): string {
+  if (precheck.status === 'passed') {
+    if (precheck.guard === undefined) return '';
+    return `  <handoff_execution_precheck kind="${precheck.guard.kind}" status="passed" handoff_id="${escapeXml(precheck.guard.handoffId)}" confirmation_id="${escapeXml(precheck.guard.confirmationId)}" confirmation_status="${escapeXml(precheck.guard.confirmationStatus)}" bridge_call_allowed="true" bridge_called="true" retry_requires_explicit_execute_call="false" handoff_mutated_now="false" claim_trust_mutation="none" />`;
+  }
+  const { failure } = precheck;
+  return `<handoff_execution_precheck kind="curated_rag_write_bridge_handoff" status="failed" code="${escapeXml(failure.code)}"${failure.field === undefined ? '' : ` field="${escapeXml(failure.field)}"`}${failure.path === undefined ? '' : ` path="${escapeXml(failure.path)}"`} next_step="${escapeXml(failure.remediation.nextStep)}" repair_target="${escapeXml(failure.remediation.repairTarget)}" bridge_call_allowed="false" bridge_called="false" retry_requires_explicit_execute_call="true" executes_write_now="false" records_evidence_now="false" handoff_mutated_now="false" claim_trust_mutation="none" />`;
 }
 
 function renderAitpHandoffGuard(handoffGuard: AitpHandoffGuard | undefined): string {
