@@ -58,6 +58,13 @@ The same result now includes an explicit
 copied into the separate `ResearchAction.execute_aitp_write_bridge` step, but
 it is still `handoff_executed=false` / `executes_write_now=false`; it does not
 record evidence, validation, final-gate satisfaction, or claim-trust mutation.
+When that separate execute action is invoked, the caller may pass the handoff
+as `aitp_handoff` alongside the explicit top-level `aitp_operation` and
+`aitp_payload`. Hakimi re-checks that the handoff is not blocked, the embedded
+tool call matches the explicit operation/payload, and the diagnostic hash
+matches `hash_input_json` before it calls the normal AITP write bridge.
+Tampered or blocked handoffs fail before bridge execution; direct explicit
+write-bridge calls without a handoff still use the ordinary typed path.
 When a turn asks whether a retrieved curated RAG chunk should become source or
 claim support, Hakimi now derives read-only
 `ResearchAction.draft_aitp_curated_rag_promotion` bindings directly from

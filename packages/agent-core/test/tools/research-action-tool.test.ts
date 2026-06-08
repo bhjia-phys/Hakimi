@@ -1586,6 +1586,195 @@ describe('ResearchActionTool', () => {
     expect(calls).toEqual([]);
   });
 
+  it('executes curated RAG write-bridge handoffs only after guard verification passes', async () => {
+    const records: AgentRecord[] = [];
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(records, {
+      aitpCuratedRagProvider: {
+        async getCuratedRagCorpus() {
+          throw new Error('not used');
+        },
+        async searchCuratedRagCorpus() {
+          throw new Error('not used');
+        },
+        async draftCuratedRagPromotion(input) {
+          return parseAitpCuratedRagPromotionDraft(
+            fakeCuratedRagPromotionDraft(input.chunkId, {
+              topicId: input.topicId,
+              claimId: input.claimId,
+              connectorId: input.connectorId,
+            }),
+          );
+        },
+      },
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          return {
+            ok: true,
+            kind: 'evidence',
+            evidenceId: 'evidence-reviewed-curated-rag',
+            topicId: 'fqhe-literature',
+            claimId: 'claim-fqhe',
+            evidenceType: 'source_text_review',
+            status: 'unreviewed',
+            raw: {},
+          };
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+    const draft = await execute(tool, {
+      action: 'draft_aitp_curated_rag_write_bridge_call',
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      aitp_topic_id: 'fqhe-literature',
+      aitp_claim_id: 'claim-fqhe',
+      promotion_draft_operation: 'recordEvidence',
+      promotion_reviewed_overrides: {
+        source_refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+        summary: 'Reviewed source passage supports only the scoped claim fragment.',
+      },
+    });
+    const handoff = extractCuratedRagHandoff(draft.output);
+
+    const result = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'recordEvidence',
+      aitp_payload: toolCallPayload(handoff),
+      aitp_handoff: handoff.guard,
+    });
+
+    expect(result.output).toContain('<aitp_write_bridge operation="recordEvidence"');
+    expect(result.output).toContain('<handoff_guard');
+    expect(result.output).toContain('status="passed"');
+    expect(result.output).toContain(`handoff_id="${String(handoff.guard['handoff_id'])}"`);
+    expect(result.output).toContain('confirmation_status="needs_explicit_confirmation"');
+    expect(bridgeCalls).toHaveLength(1);
+    expect(bridgeCalls[0]).toMatchObject({
+      operation: 'recordEvidence',
+      payload: expect.objectContaining({
+        sourceRefs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+      }),
+    });
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.result_recorded',
+        actionId: 'aitp.record_evidence',
+        evidenceRefs: expect.arrayContaining(['aitp:evidence:evidence-reviewed-curated-rag']),
+      }),
+    );
+  });
+
+  it('rejects blocked curated RAG handoffs before calling the write bridge', async () => {
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(undefined, {
+      aitpCuratedRagProvider: {
+        async getCuratedRagCorpus() {
+          throw new Error('not used');
+        },
+        async searchCuratedRagCorpus() {
+          throw new Error('not used');
+        },
+        async draftCuratedRagPromotion(input) {
+          return parseAitpCuratedRagPromotionDraft(
+            fakeCuratedRagPromotionDraft(input.chunkId, {
+              topicId: input.topicId,
+              claimId: input.claimId,
+              connectorId: input.connectorId,
+            }),
+          );
+        },
+      },
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          throw new Error('blocked handoff must fail before bridge execution');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+    const draft = await execute(tool, {
+      action: 'draft_aitp_curated_rag_write_bridge_call',
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      aitp_topic_id: 'fqhe-literature',
+      aitp_claim_id: 'claim-fqhe',
+      promotion_draft_stage: 'evidence',
+    });
+    const handoff = extractCuratedRagHandoff(draft.output);
+
+    const result = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'recordEvidence',
+      aitp_payload: toolCallPayload(handoff),
+      aitp_handoff: handoff.guard,
+    });
+
+    expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('handoff guard failed');
+    expect(result.output).toContain('refuses blocked handoff');
+    expect(bridgeCalls).toEqual([]);
+  });
+
+  it('rejects tampered curated RAG handoffs before calling the write bridge', async () => {
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(undefined, {
+      aitpCuratedRagProvider: {
+        async getCuratedRagCorpus() {
+          throw new Error('not used');
+        },
+        async searchCuratedRagCorpus() {
+          throw new Error('not used');
+        },
+        async draftCuratedRagPromotion(input) {
+          return parseAitpCuratedRagPromotionDraft(
+            fakeCuratedRagPromotionDraft(input.chunkId, {
+              topicId: input.topicId,
+              claimId: input.claimId,
+              connectorId: input.connectorId,
+            }),
+          );
+        },
+      },
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          throw new Error('tampered handoff must fail before bridge execution');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+    const draft = await execute(tool, {
+      action: 'draft_aitp_curated_rag_write_bridge_call',
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      aitp_topic_id: 'fqhe-literature',
+      aitp_claim_id: 'claim-fqhe',
+      promotion_draft_operation: 'recordEvidence',
+      promotion_reviewed_overrides: {
+        source_refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+        summary: 'Reviewed source passage supports only the scoped claim fragment.',
+      },
+    });
+    const handoff = extractCuratedRagHandoff(draft.output);
+    const tamperedToolCall = {
+      ...handoff.toolCall,
+      aitp_operation: 'registerSourceAsset',
+    };
+
+    const result = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'recordEvidence',
+      aitp_payload: toolCallPayload(handoff),
+      aitp_handoff: {
+        ...handoff.guard,
+        tool_call_json: tamperedToolCall,
+      },
+    });
+
+    expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('tool_call_json.aitp_operation does not match');
+    expect(bridgeCalls).toEqual([]);
+  });
+
   it('rejects non-promotion action bindings for curated RAG promotion drafts', async () => {
     const agent = makeAgent(undefined, {
       aitpCuratedRagProvider: {
@@ -2048,6 +2237,68 @@ function execute(tool: ResearchActionTool, args: Parameters<typeof tool.resolveE
     args,
     signal,
   });
+}
+
+function extractCuratedRagHandoff(output: unknown): {
+  readonly guard: Record<string, unknown>;
+  readonly toolCall: Record<string, unknown>;
+  readonly hashInput: Record<string, unknown>;
+} {
+  expect(typeof output).toBe('string');
+  const text = typeof output === 'string' ? output : '';
+  const openTag = text.match(/<execute_aitp_write_bridge_handoff ([^>]*)>/);
+  expect(openTag).not.toBeNull();
+  const attrs = openTag?.[1] ?? '';
+  expect(attrs.length).toBeGreaterThan(0);
+  const handoffId = xmlAttr(attrs, 'handoff_id');
+  const confirmationId = xmlAttr(attrs, 'confirmation_id');
+  const confirmationStatus = xmlAttr(attrs, 'confirmation_status');
+  const diagnosticHash = xmlAttr(attrs, 'diagnostic_hash');
+  const toolCall = JSON.parse(xmlElementText(text, 'tool_call_json')) as Record<string, unknown>;
+  const hashInput = JSON.parse(xmlElementText(text, 'hash_input_json')) as Record<string, unknown>;
+  return {
+    guard: {
+      handoff_id: handoffId,
+      confirmation_id: confirmationId,
+      confirmation_status: confirmationStatus,
+      diagnostic_hash: diagnosticHash,
+      tool_call_json: toolCall,
+      hash_input_json: hashInput,
+    },
+    toolCall,
+    hashInput,
+  };
+}
+
+function xmlAttr(attrs: string, name: string): string {
+  const match = attrs.match(new RegExp(`${name}="([^"]*)"`));
+  expect(match).not.toBeNull();
+  const value = match?.[1];
+  expect(value).toBeDefined();
+  return unescapeXml(value ?? '');
+}
+
+function xmlElementText(output: string, tag: string): string {
+  const match = output.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`));
+  expect(match).not.toBeNull();
+  const value = match?.[1];
+  expect(value).toBeDefined();
+  return unescapeXml(value ?? '');
+}
+
+function toolCallPayload(handoff: { readonly toolCall: Record<string, unknown> }): Record<string, unknown> {
+  const payload = handoff.toolCall['aitp_payload'];
+  expect(payload).toEqual(expect.any(Object));
+  return payload as Record<string, unknown>;
+}
+
+function unescapeXml(value: string): string {
+  return value
+    .replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'")
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&amp;', '&');
 }
 
 function makeAgent(
