@@ -276,6 +276,12 @@ export const ResearchActionToolInputSchema = z.object({
     .record(z.string(), z.unknown())
     .optional()
     .describe('Structured payload for execute_aitp_write_bridge.'),
+  aitp_handoff: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      'Optional curated RAG handoff artifact for execute_aitp_write_bridge. When provided, Hakimi verifies the handoff status, hash, and embedded tool call before executing.',
+    ),
   rag_query: z
     .string()
     .optional()
@@ -389,7 +395,16 @@ interface CuratedRagPromotionWriteBridgeHandoffArtifact {
   readonly diagnosticHash: string;
   readonly confirmationStatus: CuratedRagPromotionWriteBridgeConfirmationSummary['status'];
   readonly toolCall: Readonly<Record<string, unknown>>;
+  readonly hashInput: Readonly<Record<string, unknown>>;
   readonly nonExecutionProvenance: Readonly<Record<string, unknown>>;
+}
+
+interface AitpHandoffGuard {
+  readonly kind: 'curated_rag_write_bridge_handoff';
+  readonly handoffId: string;
+  readonly confirmationId: string;
+  readonly diagnosticHash: string;
+  readonly confirmationStatus: string;
 }
 
 export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> {
@@ -655,6 +670,10 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       return errorResult('ResearchAction execute_aitp_write_bridge requires aitp_payload.');
     }
     const operation = args.aitp_operation as AitpWriteBridgeOperation;
+    const handoffGuard = verifyAitpWriteBridgeHandoff(args.aitp_handoff, operation, args.aitp_payload);
+    if (handoffGuard.isError) {
+      return errorResult(handoffGuard.message);
+    }
     const actionId = args.action_id ?? actionIdForAitpWriteBridgeOperation(operation);
     const resolvedCallId = this.resolveCallId({ ...args, action_id: actionId }, ctx);
     const input = coerceAitpWriteBridgeInput(operation, args.aitp_payload, ctx.signal);
@@ -669,7 +688,7 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
         toolCallId: ctx.toolCallId,
       },
     );
-    return ok(renderAitpWriteBridgeExecution(operation, actionId, resolvedCallId.callId, result));
+    return ok(renderAitpWriteBridgeExecution(operation, actionId, resolvedCallId.callId, result, handoffGuard.guard));
   }
 
   private async inspectAitpRuntimePayloadProfiles(
@@ -2045,6 +2064,7 @@ function curatedRagPromotionWriteBridgeHandoffArtifact(
     diagnosticHash: `sha256:${hash}`,
     confirmationStatus: confirmation.status,
     toolCall,
+    hashInput,
     nonExecutionProvenance: {
       source: 'ResearchAction.draft_aitp_curated_rag_write_bridge_call',
       sourceDraftKind: sourceDraft.kind,
@@ -2122,9 +2142,85 @@ function renderAitpCuratedRagWriteBridgeHandoffArtifact(
   return [
     `${indent}<execute_aitp_write_bridge_handoff handoff_id="${escapeXml(artifact.handoffId)}" confirmation_id="${escapeXml(artifact.confirmationId)}" confirmation_status="${artifact.confirmationStatus}" diagnostic_hash="${escapeXml(artifact.diagnosticHash)}" hash_algorithm="sha256" handoff_executed="false" executes_write_now="false" non_execution_provenance="draft_only" requires_explicit_execute_call="true">`,
     `${indent}  <tool_call_json>${escapeXml(JSON.stringify(artifact.toolCall))}</tool_call_json>`,
+    `${indent}  <hash_input_json>${escapeXml(stableJson(artifact.hashInput))}</hash_input_json>`,
     `${indent}  <non_execution_provenance_json>${escapeXml(JSON.stringify(artifact.nonExecutionProvenance))}</non_execution_provenance_json>`,
     `${indent}</execute_aitp_write_bridge_handoff>`,
   ].join('\n');
+}
+
+function verifyAitpWriteBridgeHandoff(
+  handoff: Readonly<Record<string, unknown>> | undefined,
+  operation: AitpWriteBridgeOperation,
+  payload: Readonly<Record<string, unknown>>,
+):
+  | { readonly isError: false; readonly guard?: AitpHandoffGuard | undefined }
+  | { readonly isError: true; readonly message: string } {
+  if (handoff === undefined) return { isError: false };
+  const handoffId = stringRecordValue(handoff, 'handoff_id', 'handoffId');
+  const confirmationId = stringRecordValue(handoff, 'confirmation_id', 'confirmationId');
+  const diagnosticHash = stringRecordValue(handoff, 'diagnostic_hash', 'diagnosticHash');
+  const confirmationStatus = stringRecordValue(handoff, 'confirmation_status', 'confirmationStatus');
+  const toolCall = recordRecordValue(handoff, 'tool_call_json', 'toolCallJson', 'tool_call', 'toolCall');
+  const hashInput = recordRecordValue(handoff, 'hash_input_json', 'hashInputJson', 'hash_input', 'hashInput');
+  if (!hasText(handoffId)) return handoffGuardError('requires handoff_id.');
+  if (!hasText(confirmationId)) return handoffGuardError('requires confirmation_id.');
+  if (!hasText(diagnosticHash)) return handoffGuardError('requires diagnostic_hash.');
+  if (!diagnosticHash.startsWith('sha256:')) {
+    return handoffGuardError('requires diagnostic_hash to use sha256:<digest>.');
+  }
+  if (!hasText(confirmationStatus)) return handoffGuardError('requires confirmation_status.');
+  if (confirmationStatus === 'blocked') {
+    return handoffGuardError('refuses blocked handoff; resolve diagnostics before execution.');
+  }
+  if (confirmationStatus !== 'needs_explicit_confirmation' && confirmationStatus !== 'ready_for_explicit_execute') {
+    return handoffGuardError(`has unsupported confirmation_status="${confirmationStatus}".`);
+  }
+  if (toolCall === undefined) return handoffGuardError('requires tool_call_json/toolCall object.');
+  if (hashInput === undefined) return handoffGuardError('requires hash_input_json/hashInput object.');
+  if (stringRecordValue(toolCall, 'action') !== 'execute_aitp_write_bridge') {
+    return handoffGuardError('tool_call_json.action must be execute_aitp_write_bridge.');
+  }
+  if (stringRecordValue(toolCall, 'aitp_operation', 'aitpOperation') !== operation) {
+    return handoffGuardError('tool_call_json.aitp_operation does not match explicit aitp_operation.');
+  }
+  const handoffPayload = recordRecordValue(toolCall, 'aitp_payload', 'aitpPayload');
+  if (handoffPayload === undefined) {
+    return handoffGuardError('tool_call_json requires aitp_payload.');
+  }
+  if (stableJson(handoffPayload) !== stableJson(payload)) {
+    return handoffGuardError('tool_call_json.aitp_payload does not match explicit aitp_payload.');
+  }
+  const expectedHash = `sha256:${shortSha256(stableJson(hashInput), 16)}`;
+  if (diagnosticHash !== expectedHash) {
+    return handoffGuardError('diagnostic_hash does not match hash_input_json.');
+  }
+  if (stringRecordValue(hashInput, 'aitpOperation') !== operation) {
+    return handoffGuardError('hash_input_json.aitpOperation does not match explicit aitp_operation.');
+  }
+  if (stringRecordValue(hashInput, 'confirmationStatus') !== confirmationStatus) {
+    return handoffGuardError('hash_input_json.confirmationStatus does not match confirmation_status.');
+  }
+  const hashToolCall = recordRecordValue(hashInput, 'toolCall');
+  if (hashToolCall === undefined || stableJson(hashToolCall) !== stableJson(toolCall)) {
+    return handoffGuardError('hash_input_json.toolCall does not match tool_call_json.');
+  }
+  return {
+    isError: false,
+    guard: {
+      kind: 'curated_rag_write_bridge_handoff',
+      handoffId,
+      confirmationId,
+      diagnosticHash,
+      confirmationStatus,
+    },
+  };
+}
+
+function handoffGuardError(reason: string): { readonly isError: true; readonly message: string } {
+  return {
+    isError: true,
+    message: `ResearchAction execute_aitp_write_bridge handoff guard failed: ${reason}`,
+  };
 }
 
 function renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(
@@ -2253,6 +2349,36 @@ function optionalRecordValue(record: unknown, key: string): string | undefined {
   if (!isRecord(record)) return undefined;
   const value = record[key];
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function stringRecordValue(
+  record: Readonly<Record<string, unknown>>,
+  ...keys: readonly string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return undefined;
+}
+
+function recordRecordValue(
+  record: Readonly<Record<string, unknown>>,
+  ...keys: readonly string[]
+): Readonly<Record<string, unknown>> | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (isRecord(value)) return value;
+    if (typeof value === 'string') {
+      try {
+        const parsed: unknown = JSON.parse(value);
+        if (isRecord(parsed)) return parsed;
+      } catch {
+        // Try the next accepted key spelling.
+      }
+    }
+  }
+  return undefined;
 }
 
 function curatedRagPromotionDraftBindingInput(
@@ -2486,17 +2612,24 @@ function renderAitpWriteBridgeExecution(
   actionId: string,
   callId: string,
   result: AitpWriteBridgeExecutionResult,
+  handoffGuard?: AitpHandoffGuard | undefined,
 ): string {
   const target = aitpRuntimeBridgeTargetForOperation(operation);
   return [
     `<aitp_write_bridge operation="${operation}" action_id="${escapeXml(actionId)}" call_id="${escapeXml(callId)}" kind="${result.kind}" ok="${String(result.ok)}">`,
     `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" mcp_argument_style="${target.mcpInvocation.argumentStyle}" mcp_base_argument="${target.mcpInvocation.baseArgument}" mcp_payload_key_case="${target.mcpInvocation.payloadKeyCase}" mcp_result_content_type="${target.mcpInvocation.resultContentType}" fallback_policy="${target.mcpInvocation.fallbackPolicy}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
+    renderAitpHandoffGuard(handoffGuard),
     `  <record_id>${escapeXml(aitpWriteBridgeRecordId(result))}</record_id>`,
     renderAitpWriteBridgeResultDetails(result),
     renderStringList('evidence_refs', 'evidence_ref', evidenceRefsForAitpWriteBridgeResult(result), '  '),
     '</aitp_write_bridge>',
     '',
   ].join('\n');
+}
+
+function renderAitpHandoffGuard(handoffGuard: AitpHandoffGuard | undefined): string {
+  if (handoffGuard === undefined) return '';
+  return `  <handoff_guard kind="${handoffGuard.kind}" handoff_id="${escapeXml(handoffGuard.handoffId)}" confirmation_id="${escapeXml(handoffGuard.confirmationId)}" confirmation_status="${escapeXml(handoffGuard.confirmationStatus)}" diagnostic_hash="${escapeXml(handoffGuard.diagnosticHash)}" status="passed" />`;
 }
 
 function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string {
