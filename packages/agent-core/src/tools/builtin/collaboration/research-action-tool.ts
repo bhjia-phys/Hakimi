@@ -312,6 +312,12 @@ export const ResearchActionToolInputSchema = z.object({
     .enum(PROMOTION_DRAFT_WRITE_OPERATIONS)
     .optional()
     .describe('Selected curated RAG promotion draft operation for prefilled write-bridge call drafting.'),
+  promotion_reviewed_overrides: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      'Reviewed top-level payload field overrides for draft_aitp_curated_rag_write_bridge_call. These only update the returned call draft; they do not execute an AITP write.',
+    ),
 });
 
 export type ResearchActionToolInput = z.Infer<typeof ResearchActionToolInputSchema>;
@@ -349,10 +355,14 @@ interface CuratedRagPromotionWriteBridgeCallDraft {
   readonly draftOperation: string;
   readonly aitpOperation: AitpWriteBridgeOperation;
   readonly actionId: string;
+  readonly originalPayload: Readonly<Record<string, unknown>>;
   readonly payload: Readonly<Record<string, unknown>>;
   readonly payloadSource: 'payload_draft' | 'payload_template' | 'empty_payload';
+  readonly reviewedOverrides: Readonly<Record<string, unknown>>;
   readonly requiredExistingRecords: readonly string[];
   readonly diagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[];
+  readonly overrideDiagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[];
+  readonly originalUnresolvedPlaceholderCount: number;
   readonly unresolvedPlaceholderCount: number;
 }
 
@@ -744,7 +754,11 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       promotionIntent: firstText(args.aitp_promotion_intent, boundInput.input?.aitpPromotionIntent),
       signal: ctx.signal,
     });
-    const callDraft = curatedRagPromotionWriteBridgeCallDraft(draft, selector.selector);
+    const callDraft = curatedRagPromotionWriteBridgeCallDraft(
+      draft,
+      selector.selector,
+      args.promotion_reviewed_overrides,
+    );
     if (callDraft.isError) return errorResult(callDraft.message);
     return ok(
       renderAitpCuratedRagWriteBridgeCallDraft(draft, callDraft.draft, boundInput.bindingId),
@@ -1688,6 +1702,7 @@ function curatedRagPromotionWriteBridgeCallSelector(args: ResearchActionToolInpu
 function curatedRagPromotionWriteBridgeCallDraft(
   draft: AitpCuratedRagPromotionDraft,
   selector: CuratedRagPromotionWriteBridgeCallSelector,
+  reviewedOverrides: Readonly<Record<string, unknown>> | undefined,
 ):
   | {
       readonly isError: false;
@@ -1719,8 +1734,21 @@ function curatedRagPromotionWriteBridgeCallDraft(
       : selected.payloadTemplate !== undefined
         ? 'payload_template'
         : 'empty_payload';
-  const payload = selected.payloadDraft ?? selected.payloadTemplate ?? {};
+  const originalPayload = selected.payloadDraft ?? selected.payloadTemplate ?? {};
+  const overrides = reviewedOverrides ?? {};
+  const payload = { ...originalPayload, ...overrides };
   const diagnostics = curatedRagPromotionWriteBridgeCallDiagnostics(draft, selected, aitpOperation, payload);
+  const originalDiagnostics = curatedRagPromotionWriteBridgeCallDiagnostics(
+    draft,
+    selected,
+    aitpOperation,
+    originalPayload,
+  );
+  const overrideDiagnostics = curatedRagPromotionWriteBridgeCallOverrideDiagnostics(
+    originalPayload,
+    payload,
+    overrides,
+  );
   return {
     isError: false,
     draft: {
@@ -1728,10 +1756,14 @@ function curatedRagPromotionWriteBridgeCallDraft(
       draftOperation: selected.operation,
       aitpOperation,
       actionId: actionIdForAitpWriteBridgeOperation(aitpOperation),
+      originalPayload,
       payload,
       payloadSource,
+      reviewedOverrides: overrides,
       requiredExistingRecords: selected.requiresExistingRecords,
       diagnostics,
+      overrideDiagnostics,
+      originalUnresolvedPlaceholderCount: originalDiagnostics.filter((item) => item.code === 'placeholder_value').length,
       unresolvedPlaceholderCount: diagnostics.filter((item) => item.code === 'placeholder_value').length,
     },
   };
@@ -1779,6 +1811,56 @@ function curatedRagPromotionWriteBridgeCallDiagnostics(
     message:
       'Review the source passage, claim scope, and AITP record refs before calling execute_aitp_write_bridge.',
   });
+  return diagnostics;
+}
+
+function curatedRagPromotionWriteBridgeCallOverrideDiagnostics(
+  originalPayload: Readonly<Record<string, unknown>>,
+  reviewedPayload: Readonly<Record<string, unknown>>,
+  overrides: Readonly<Record<string, unknown>>,
+): readonly CuratedRagPromotionWriteBridgeCallDiagnostic[] {
+  const diagnostics: CuratedRagPromotionWriteBridgeCallDiagnostic[] = [];
+  for (const key of Object.keys(overrides)) {
+    if (!(key in originalPayload)) {
+      diagnostics.push({
+        code: 'reviewed_override_adds_field',
+        field: key,
+        message:
+          `Reviewed override adds ${key}; confirm this field is accepted by the selected AITP write/preflight target before execution.`,
+      });
+      continue;
+    }
+    diagnostics.push({
+      code: 'reviewed_override_applied',
+      field: key,
+      message: `Reviewed override replaces AITP draft payload field ${key} in the returned call draft only.`,
+    });
+  }
+  for (const field of placeholderFieldPaths(originalPayload)) {
+    if (!placeholderFieldPaths(reviewedPayload).includes(field)) {
+      diagnostics.push({
+        code: 'reviewed_override_resolves_placeholder',
+        field,
+        message: `Reviewed override resolves placeholder ${field} in the returned call draft.`,
+      });
+    }
+  }
+  for (const field of placeholderFieldPaths(reviewedPayload)) {
+    if (!placeholderFieldPaths(originalPayload).includes(field)) {
+      diagnostics.push({
+        code: 'reviewed_override_introduces_placeholder',
+        field,
+        message: `Reviewed override still contains placeholder ${field}; replace it before execution.`,
+      });
+    }
+  }
+  if (Object.keys(overrides).length > 0) {
+    diagnostics.push({
+      code: 'reviewed_overrides_not_executed',
+      message:
+        'Reviewed overrides only change this returned call draft; execute_aitp_write_bridge still requires a separate explicit call.',
+    });
+  }
   return diagnostics;
 }
 
@@ -1831,16 +1913,35 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     aitp_operation: callDraft.aitpOperation,
     aitp_payload: callDraft.payload,
   };
+  const overrideCount = Object.keys(callDraft.reviewedOverrides).length;
   return [
-    `<aitp_curated_rag_write_bridge_call_draft chunk_id="${escapeXml(sourceDraft.chunkId)}" document_id="${escapeXml(sourceDraft.documentId)}" stage="${escapeXml(callDraft.stage)}" draft_operation="${escapeXml(callDraft.draftOperation)}" next_research_action="execute_aitp_write_bridge" aitp_operation="${callDraft.aitpOperation}" action_id="${escapeXml(callDraft.actionId)}" payload_source="${callDraft.payloadSource}" unresolved_placeholder_count="${String(callDraft.unresolvedPlaceholderCount)}" executes_write_now="false" selected_write_executed="false" records_validation_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true"${bindingId === undefined ? '' : ` action_binding_id="${escapeXml(bindingId)}"`}>`,
+    `<aitp_curated_rag_write_bridge_call_draft chunk_id="${escapeXml(sourceDraft.chunkId)}" document_id="${escapeXml(sourceDraft.documentId)}" stage="${escapeXml(callDraft.stage)}" draft_operation="${escapeXml(callDraft.draftOperation)}" next_research_action="execute_aitp_write_bridge" aitp_operation="${callDraft.aitpOperation}" action_id="${escapeXml(callDraft.actionId)}" payload_source="${callDraft.payloadSource}" reviewed_override_count="${String(overrideCount)}" original_unresolved_placeholder_count="${String(callDraft.originalUnresolvedPlaceholderCount)}" unresolved_placeholder_count="${String(callDraft.unresolvedPlaceholderCount)}" executes_write_now="false" selected_write_executed="false" reviewed_overrides_executed="false" records_validation_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true"${bindingId === undefined ? '' : ` action_binding_id="${escapeXml(bindingId)}"`}>`,
     `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
     `  <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
-    `  <payload_json>${escapeXml(JSON.stringify(callDraft.payload))}</payload_json>`,
+    `  <original_payload_json>${escapeXml(JSON.stringify(callDraft.originalPayload))}</original_payload_json>`,
+    `  <reviewed_overrides_json>${escapeXml(JSON.stringify(callDraft.reviewedOverrides))}</reviewed_overrides_json>`,
+    `  <reviewed_payload_json>${escapeXml(JSON.stringify(callDraft.payload))}</reviewed_payload_json>`,
     renderStringList('required_existing_records', 'record', callDraft.requiredExistingRecords, '  '),
+    renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(callDraft.overrideDiagnostics, '  '),
     renderAitpCuratedRagWriteBridgeCallDiagnostics(callDraft.diagnostics, '  '),
     '  <promotion_boundary draft_is_evidence="false" draft_records_validation_result="false" draft_satisfies_final_gate="false" draft_can_update_claim_trust="false" requires_user_or_model_decision_before_write="true" />',
     '</aitp_curated_rag_write_bridge_call_draft>',
     '',
+  ].join('\n');
+}
+
+function renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(
+  diagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[],
+  indent: string,
+): string {
+  if (diagnostics.length === 0) return `${indent}<reviewed_override_diagnostics />`;
+  return [
+    `${indent}<reviewed_override_diagnostics diagnostic_count="${String(diagnostics.length)}">`,
+    ...diagnostics.map(
+      (diagnostic) =>
+        `${indent}  <diagnostic code="${escapeXml(diagnostic.code)}"${diagnostic.field === undefined ? '' : ` field="${escapeXml(diagnostic.field)}"`}>${escapeXml(diagnostic.message)}</diagnostic>`,
+    ),
+    `${indent}</reviewed_override_diagnostics>`,
   ].join('\n');
 }
 

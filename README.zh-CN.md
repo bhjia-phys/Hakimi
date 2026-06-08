@@ -39,6 +39,12 @@ This still executes no write, records no evidence, and marks
 `executes_write_now=false` / `selected_write_executed=false`; real source
 review, missing typed refs, and any AITP `session_id` or record ids must be
 resolved before the normal write/preflight action is called.
+The same draft action can accept `promotion_reviewed_overrides` to compare
+AITP's original `payload_draft` / `payload_template` with a proposed reviewed
+payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,
+and `reviewed_payload_json` plus override diagnostics, but the overrides only
+affect the returned draft and still require a separate explicit
+`execute_aitp_write_bridge` call.
 When a turn asks whether a retrieved curated RAG chunk should become source or
 claim support, Hakimi now derives read-only
 `ResearchAction.draft_aitp_curated_rag_promotion` bindings directly from
