@@ -2862,12 +2862,26 @@ function hasText(value: string | undefined): value is string {
 }
 
 function renderActionList(actions: readonly ResearchActionDefinition[]): string {
-  if (actions.length === 0) return '<research_actions />\n';
   return [
-    '<research_actions>',
+    `<research_actions action_count="${String(actions.length)}">`,
     ...actions.map((action) => renderAction(action, '  ')),
+    renderHandoffGuardRemediationTaxonomy('  '),
     '</research_actions>',
     '',
+  ].join('\n');
+}
+
+function renderHandoffGuardRemediationTaxonomy(indent: string): string {
+  const entries = Object.entries(HANDOFF_GUARD_REMEDIATION_BY_CODE) as ReadonlyArray<
+    readonly [HandoffGuardFailureCode, HandoffGuardRemediationStep]
+  >;
+  return [
+    `${indent}<handoff_guard_remediation_taxonomy kind="curated_rag_write_bridge_handoff" failure_count="${String(entries.length)}" read_only="true" executes_write_now="false" mutates_handoff_now="false" records_evidence="false" validates_claim="false" claim_trust_mutation="none">`,
+    ...entries.map(
+      ([code, nextStep]) =>
+        `${indent}  <failure code="${escapeXml(code)}" next_step="${escapeXml(nextStep)}" retry_requires_explicit_execute_call="true" />`,
+    ),
+    `${indent}</handoff_guard_remediation_taxonomy>`,
   ].join('\n');
 }
 

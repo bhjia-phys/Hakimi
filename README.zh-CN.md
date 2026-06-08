@@ -86,6 +86,12 @@ without expanding the AITP write surface.
 The same taxonomy is now named in the model-facing ResearchAction tool
 description, so retrying a failed guarded handoff can use the advertised repair
 steps while still requiring a separate explicit execute call.
+`ResearchAction.list_actions` now also renders a machine-readable
+`handoff_guard_remediation_taxonomy` section from the same lookup table. Each
+failure code maps to one `next_step` and carries
+`retry_requires_explicit_execute_call=true` plus read-only/no-evidence/no-trust
+flags, so the model can inspect the taxonomy without relying only on prose and
+without gaining a new write or mutation path.
 When a turn asks whether a retrieved curated RAG chunk should become source or
 claim support, Hakimi now derives read-only
 `ResearchAction.draft_aitp_curated_rag_promotion` bindings directly from
