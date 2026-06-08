@@ -8,6 +8,10 @@ import {
   type AitpCuratedRagSearchResult,
 } from './curated-rag';
 import {
+  parseAitpCuratedRagIngestResult,
+  type AitpCuratedRagIngestResult,
+} from './curated-rag-ingest';
+import {
   parseAitpRuntimePayloadProfilesCatalog,
   type AitpRuntimePayloadProfilesCatalog,
 } from './runtime-payload-profiles';
@@ -136,6 +140,21 @@ export interface ReadAitpCuratedRagCorpusInput {
 export interface SearchAitpCuratedRagCorpusInput {
   readonly query: string;
   readonly limit?: number | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface IngestAitpCuratedRagCorpusInput {
+  readonly paths: readonly string[];
+  readonly corpusId?: string | undefined;
+  readonly tags?: readonly string[] | undefined;
+  readonly domainHints?: readonly string[] | undefined;
+  readonly topicHints?: readonly string[] | undefined;
+  readonly language?: string | undefined;
+  readonly priority?: string | undefined;
+  readonly chunkTokenLimit?: number | undefined;
+  readonly titlePrefix?: string | undefined;
+  readonly assetType?: string | undefined;
+  readonly rebuildIndex?: boolean | undefined;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -616,6 +635,17 @@ export class AitpCliBridge {
     return parseAitpCuratedRagSearchResult(payload);
   }
 
+  async ingestCuratedRagCorpus(
+    input: IngestAitpCuratedRagCorpusInput,
+  ): Promise<AitpCuratedRagIngestResult> {
+    const args = buildAitpCuratedRagIngestArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseAitpCuratedRagIngestResult(payload);
+  }
+
   async recordExploratoryRecord(
     input: RecordAitpExploratoryRecordInput,
   ): Promise<AitpExploratoryRecordWriteResult> {
@@ -889,6 +919,31 @@ export function buildAitpCuratedRagSearchArgs(input: {
     }
     args.push('--limit', String(input.limit));
   }
+  return args;
+}
+
+export function buildAitpCuratedRagIngestArgs(
+  input: IngestAitpCuratedRagCorpusInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmptyList(input.paths, 'paths');
+  const args = ['--base', input.basePath, 'curated-rag', 'ingest'];
+  pushRepeated(args, '--path', input.paths);
+  pushOptional(args, '--corpus-id', input.corpusId);
+  pushRepeated(args, '--tag', input.tags);
+  pushRepeated(args, '--domain-hint', input.domainHints);
+  pushRepeated(args, '--topic-hint', input.topicHints);
+  pushOptional(args, '--language', input.language);
+  pushOptional(args, '--priority', input.priority);
+  if (input.chunkTokenLimit !== undefined) {
+    if (!Number.isInteger(input.chunkTokenLimit) || input.chunkTokenLimit <= 0) {
+      throw new AitpCliBridgeError('AITP curated RAG chunkTokenLimit must be a positive integer.');
+    }
+    args.push('--chunk-token-limit', String(input.chunkTokenLimit));
+  }
+  pushOptional(args, '--title-prefix', input.titlePrefix);
+  pushOptional(args, '--asset-type', input.assetType);
+  if (input.rebuildIndex === false) args.push('--no-rebuild-index');
   return args;
 }
 
