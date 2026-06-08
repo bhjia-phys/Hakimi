@@ -99,6 +99,7 @@ const ACTIONS = [
   'query_physics_graph',
   'build_formalization_plan',
   'execute_aitp_write_bridge',
+  'inspect_aitp_write_bridge_handoff_readiness',
   'inspect_handoff_guard_remediation_taxonomy',
   'inspect_aitp_runtime_payload_profiles',
   'inspect_aitp_curated_rag_corpus',
@@ -288,7 +289,7 @@ export const ResearchActionToolInputSchema = z.object({
     .record(z.string(), z.unknown())
     .optional()
     .describe(
-      'Optional curated RAG handoff artifact for execute_aitp_write_bridge. When provided, Hakimi verifies the handoff status, hash, and embedded tool call before executing.',
+      'Optional curated RAG or record-ref repair handoff artifact for execute_aitp_write_bridge or inspect_aitp_write_bridge_handoff_readiness. When provided, Hakimi verifies the handoff status, hash, and embedded tool call before execution.',
     ),
   rag_query: z
     .string()
@@ -556,6 +557,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return this.buildFormalizationPlan(args, ctx);
         case 'execute_aitp_write_bridge':
           return await this.executeAitpWriteBridge(args, ctx);
+        case 'inspect_aitp_write_bridge_handoff_readiness':
+          return this.inspectAitpWriteBridgeHandoffReadiness(args);
         case 'inspect_handoff_guard_remediation_taxonomy':
           return ok(`${renderHandoffGuardRemediationTaxonomy('')}\n`);
         case 'inspect_aitp_runtime_payload_profiles':
@@ -773,6 +776,26 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       },
     );
     return ok(renderAitpWriteBridgeExecution(operation, actionId, resolvedCallId.callId, result, handoffGuard.guard));
+  }
+
+  private inspectAitpWriteBridgeHandoffReadiness(
+    args: ResearchActionToolInput,
+  ): ExecutableToolResult {
+    if (args.aitp_operation === undefined) {
+      return errorResult('ResearchAction inspect_aitp_write_bridge_handoff_readiness requires aitp_operation.');
+    }
+    if (args.aitp_payload === undefined) {
+      return errorResult('ResearchAction inspect_aitp_write_bridge_handoff_readiness requires aitp_payload.');
+    }
+    if (args.aitp_handoff === undefined) {
+      return errorResult('ResearchAction inspect_aitp_write_bridge_handoff_readiness requires aitp_handoff.');
+    }
+    const operation = args.aitp_operation as AitpWriteBridgeOperation;
+    const handoffGuard = verifyAitpWriteBridgeHandoff(args.aitp_handoff, operation, args.aitp_payload);
+    if (handoffGuard.isError) {
+      return ok(renderAitpWriteBridgeHandoffReadiness({ status: 'failed', failure: handoffGuard.failure }));
+    }
+    return ok(renderAitpWriteBridgeHandoffReadiness({ status: 'passed', guard: handoffGuard.guard }));
   }
 
   private async inspectAitpRuntimePayloadProfiles(
@@ -3261,6 +3284,32 @@ function renderAitpHandoffExecutionPrecheck(
   }
   const { failure } = precheck;
   return `<handoff_execution_precheck kind="curated_rag_write_bridge_handoff" status="failed" code="${escapeXml(failure.code)}"${failure.field === undefined ? '' : ` field="${escapeXml(failure.field)}"`}${failure.path === undefined ? '' : ` path="${escapeXml(failure.path)}"`} next_step="${escapeXml(failure.remediation.nextStep)}" repair_target="${escapeXml(failure.remediation.repairTarget)}" bridge_call_allowed="false" bridge_called="false" retry_requires_explicit_execute_call="true" executes_write_now="false" records_evidence_now="false" handoff_mutated_now="false" claim_trust_mutation="none" />`;
+}
+
+function renderAitpWriteBridgeHandoffReadiness(
+  readiness:
+    | { readonly status: 'passed'; readonly guard?: AitpHandoffGuard | undefined }
+    | { readonly status: 'failed'; readonly failure: AitpHandoffGuardFailure },
+): string {
+  if (readiness.status === 'failed') {
+    const { failure } = readiness;
+    return [
+      `<aitp_write_bridge_handoff_readiness kind="curated_rag_write_bridge_handoff" status="failed" code="${escapeXml(failure.code)}"${failure.field === undefined ? '' : ` field="${escapeXml(failure.field)}"`}${failure.path === undefined ? '' : ` path="${escapeXml(failure.path)}"`} next_step="${escapeXml(failure.remediation.nextStep)}" repair_target="${escapeXml(failure.remediation.repairTarget)}" bridge_call_allowed="false" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" handoff_mutated_now="false" retry_requires_explicit_execute_call="true">`,
+      `  <message>Handoff readiness guard failed with code ${escapeXml(failure.code)}.</message>`,
+      '</aitp_write_bridge_handoff_readiness>',
+      '',
+    ].join('\n');
+  }
+  const guard = readiness.guard;
+  if (guard === undefined) {
+    return '<aitp_write_bridge_handoff_readiness status="not_requested" bridge_call_allowed="false" bridge_called="false" executes_write_now="false" requires_handoff="true" />\n';
+  }
+  return [
+    `<aitp_write_bridge_handoff_readiness kind="${guard.kind}" status="passed" handoff_id="${escapeXml(guard.handoffId)}" confirmation_id="${escapeXml(guard.confirmationId)}" confirmation_status="${escapeXml(guard.confirmationStatus)}" diagnostic_hash="${escapeXml(guard.diagnosticHash)}" selected_aitp_operation="${escapeXml(guard.selectedAitpOperation)}" missing_ref_repair_hint_count="${String(guard.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(guard.missingRefRepairChecklistPresent)}" repair_hint_operation_count="${String(guard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(guard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(guard.selectedWriteDiffersFromRepairHints)}" bridge_call_allowed="true" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" handoff_mutated_now="false" requires_explicit_execute_call="true">`,
+    '  <next_step>Call ResearchAction.execute_aitp_write_bridge with the same aitp_operation, aitp_payload, and aitp_handoff when explicit execution is intended.</next_step>',
+    '</aitp_write_bridge_handoff_readiness>',
+    '',
+  ].join('\n');
 }
 
 function renderAitpHandoffGuard(handoffGuard: AitpHandoffGuard | undefined): string {

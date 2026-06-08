@@ -1956,6 +1956,100 @@ describe('ResearchActionTool', () => {
     });
   });
 
+  it('inspects guarded repair handoff readiness without calling the write bridge', async () => {
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(undefined, {
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          throw new Error('readiness inspection must not call bridge');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+    const draft = await execute(tool, {
+      action: 'draft_aitp_record_ref_repair_write_bridge_call',
+      repair_ref: 'source_asset:asset-reviewed',
+      repair_operation: 'registerSourceAsset',
+      repair_reason: 'register or auto-capture a normal AITP source asset before using this ref as source context',
+      aitp_payload: {
+        topic_id: 'fqhe-literature',
+        claim_id: 'claim-fqhe',
+        asset_type: 'paper',
+        uri: 'arxiv:2601.00001',
+        title: 'Reviewed anyon source',
+      },
+    });
+    const handoff = extractCuratedRagHandoff(draft.output);
+
+    const readiness = await execute(tool, {
+      action: 'inspect_aitp_write_bridge_handoff_readiness',
+      aitp_operation: 'registerSourceAsset',
+      aitp_payload: toolCallPayload(handoff),
+      aitp_handoff: handoff.guard,
+    });
+
+    expect(readiness.output).toContain('<aitp_write_bridge_handoff_readiness');
+    expect(readiness.output).toContain('kind="record_ref_repair_write_bridge_handoff"');
+    expect(readiness.output).toContain('status="passed"');
+    expect(readiness.output).toContain('selected_aitp_operation="registerSourceAsset"');
+    expect(readiness.output).toContain('bridge_call_allowed="true"');
+    expect(readiness.output).toContain('bridge_called="false"');
+    expect(readiness.output).toContain('executes_write_now="false"');
+    expect(readiness.output).toContain('requires_explicit_execute_call="true"');
+    expect(readiness.output).toContain('records_validation_result="false"');
+    expect(readiness.output).toContain('source_support_result="false"');
+    expect(readiness.output).toContain('claim_trust_mutation="none"');
+    expect(readiness.output).toContain('Call ResearchAction.execute_aitp_write_bridge');
+    expect(bridgeCalls).toEqual([]);
+  });
+
+  it('reports handoff readiness failures without calling the write bridge', async () => {
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(undefined, {
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          throw new Error('failed readiness inspection must not call bridge');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+    const draft = await execute(tool, {
+      action: 'draft_aitp_record_ref_repair_write_bridge_call',
+      repair_ref: 'source_asset:asset-reviewed',
+      repair_operation: 'registerSourceAsset',
+      aitp_payload: {
+        topic_id: 'fqhe-literature',
+        asset_type: 'paper',
+        uri: 'arxiv:2601.00001',
+        title: 'Reviewed anyon source',
+      },
+    });
+    const handoff = extractCuratedRagHandoff(draft.output);
+
+    const readiness = await execute(tool, {
+      action: 'inspect_aitp_write_bridge_handoff_readiness',
+      aitp_operation: 'registerSourceAsset',
+      aitp_payload: {
+        ...toolCallPayload(handoff),
+        title: 'Tampered source title',
+      },
+      aitp_handoff: handoff.guard,
+    });
+
+    expect(readiness.isError).not.toBe(true);
+    expect(readiness.output).toContain('<aitp_write_bridge_handoff_readiness');
+    expect(readiness.output).toContain('status="failed"');
+    expect(readiness.output).toContain('code="tool_call_payload_mismatch"');
+    expect(readiness.output).toContain('bridge_call_allowed="false"');
+    expect(readiness.output).toContain('bridge_called="false"');
+    expect(readiness.output).toContain('executes_write_now="false"');
+    expect(readiness.output).toContain('retry_requires_explicit_execute_call="true"');
+    expect(readiness.output).toContain('repair_target="aitp_handoff.tool_call_json.aitp_payload"');
+    expect(bridgeCalls).toEqual([]);
+  });
+
   it('executes curated RAG write-bridge handoffs only after guard verification passes', async () => {
     const records: AgentRecord[] = [];
     const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];

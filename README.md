@@ -330,6 +330,13 @@ embedded tool call matches the explicit operation/payload, and the diagnostic
 hash matches `hash_input_json` before it calls the normal AITP write bridge.
 Tampered or blocked handoffs fail before bridge execution; direct explicit
 write-bridge calls without a handoff still use the ordinary typed path.
+`ResearchAction.inspect_aitp_write_bridge_handoff_readiness` runs that same
+guard as a read-only pre-execute check and returns
+`aitp_write_bridge_handoff_readiness` with `bridge_called="false"` and
+`executes_write_now="false"`. It lets the model/user confirm that the handoff,
+explicit operation, and explicit payload match before attempting the separate
+write action, but it records no evidence, source support, validation, final-gate
+state, or claim-trust mutation.
 When a handoff is supplied, `execute_aitp_write_bridge` now emits a compact
 `handoff_execution_precheck` before the guard/result details. Passed prechecks
 show `bridge_call_allowed="true"` and `bridge_called="true"` after the guard
