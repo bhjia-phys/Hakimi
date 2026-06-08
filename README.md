@@ -363,6 +363,10 @@ sets `execute_call_authorized="false"` and never calls the bridge itself.
 Each checklist has a stable `checklist_id` derived from the draft family and
 handoff id, so follow-up tool output can refer to the host navigation item
 without inventing an AITP record id.
+`inspect_aitp_write_bridge_handoff_readiness` echoes a
+`readiness_checklist_result`: passed inspections satisfy checklist item 1 and
+point to the explicit execute item next, while failed inspections mark item 1
+failed without mutating the draft, checklist, handoff, or AITP state.
 When a handoff is supplied, `execute_aitp_write_bridge` now emits a compact
 `handoff_execution_precheck` before the guard/result details. Passed prechecks
 show `bridge_call_allowed="true"` and `bridge_called="true"` after the guard

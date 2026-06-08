@@ -2081,6 +2081,15 @@ describe('ResearchActionTool', () => {
     expect(readiness.output).toContain('records_validation_result="false"');
     expect(readiness.output).toContain('source_support_result="false"');
     expect(readiness.output).toContain('claim_trust_mutation="none"');
+    expect(readiness.output).toContain('<readiness_checklist_result');
+    expect(readiness.output).toContain(
+      'checklist_id="readiness-checklist.record_ref_repair_write_call_draft.record-ref-repair-handoff.',
+    );
+    expect(readiness.output).toContain('item_order="1"');
+    expect(readiness.output).toContain('item_action="inspect_aitp_write_bridge_handoff_readiness"');
+    expect(readiness.output).toContain('item_status="satisfied"');
+    expect(readiness.output).toContain('next_item_action="execute_aitp_write_bridge"');
+    expect(readiness.output).toContain('checklist_mutated_now="false"');
     expect(readiness.output).toContain('Call ResearchAction.execute_aitp_write_bridge');
     expect(bridgeCalls).toEqual([]);
   });
@@ -2128,6 +2137,12 @@ describe('ResearchActionTool', () => {
     expect(readiness.output).toContain('executes_write_now="false"');
     expect(readiness.output).toContain('retry_requires_explicit_execute_call="true"');
     expect(readiness.output).toContain('repair_target="aitp_handoff.tool_call_json.aitp_payload"');
+    expect(readiness.output).toContain('<readiness_checklist_result');
+    expect(readiness.output).toContain('checklist_id_available="false"');
+    expect(readiness.output).toContain('item_order="1"');
+    expect(readiness.output).toContain('item_action="inspect_aitp_write_bridge_handoff_readiness"');
+    expect(readiness.output).toContain('item_status="failed"');
+    expect(readiness.output).toContain('checklist_mutated_now="false"');
     expect(bridgeCalls).toEqual([]);
   });
 
