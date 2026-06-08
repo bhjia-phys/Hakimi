@@ -1843,6 +1843,32 @@ describe('ResearchActionTool', () => {
       expected: 'diagnostic_hash does not match hash_input_json',
     },
     {
+      name: 'invalid diagnostic hash algorithm',
+      code: 'invalid_diagnostic_hash_algorithm',
+      path: 'aitp_handoff.diagnostic_hash',
+      nextStep: 'redraft_handoff_or_restore_hash_input',
+      mutate(handoff: ReturnType<typeof extractCuratedRagHandoff>) {
+        return {
+          ...handoff.guard,
+          diagnostic_hash: 'md5:not-allowed',
+        };
+      },
+      expected: 'requires diagnostic_hash to use sha256:&lt;digest&gt;',
+    },
+    {
+      name: 'unsupported confirmation status',
+      code: 'unsupported_confirmation_status',
+      path: 'aitp_handoff.confirmation_status',
+      nextStep: 'inspect_handoff_guard_failure',
+      mutate(handoff: ReturnType<typeof extractCuratedRagHandoff>) {
+        return {
+          ...handoff.guard,
+          confirmation_status: 'auto_execute',
+        };
+      },
+      expected: 'has unsupported confirmation_status=&quot;auto_execute&quot;',
+    },
+    {
       name: 'tampered hash input tool call',
       code: 'diagnostic_hash_mismatch',
       path: 'aitp_handoff.diagnostic_hash',

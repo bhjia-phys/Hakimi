@@ -79,6 +79,10 @@ and `repair_target`, for example to copy a missing handoff field, align
 explicit execute args with the handoff tool call, or redraft/restore hash
 input. The summary is advisory only: it requires a fresh explicit execute call
 and marks `mutates_handoff_now=false`.
+The remediation mapping is now centralized as a typed guard taxonomy in
+ResearchAction rather than scattered string conditionals, so future
+handoff-like guards can reuse the same failure-code to repair-step pattern
+without expanding the AITP write surface.
 When a turn asks whether a retrieved curated RAG chunk should become source or
 claim support, Hakimi now derives read-only
 `ResearchAction.draft_aitp_curated_rag_promotion` bindings directly from
