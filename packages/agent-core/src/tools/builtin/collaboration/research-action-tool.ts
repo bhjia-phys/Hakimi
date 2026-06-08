@@ -2284,14 +2284,61 @@ function handoffGuardError(
   reason: string,
   location: { readonly field?: string | undefined; readonly path?: string | undefined } = {},
 ): { readonly isError: true; readonly message: string } {
+  const remediation = handoffGuardRemediation(code, location);
   return {
     isError: true,
     message: [
       `<handoff_guard_failure status="failed" code="${escapeXml(code)}"${location.field === undefined ? '' : ` field="${escapeXml(location.field)}"`}${location.path === undefined ? '' : ` path="${escapeXml(location.path)}"`} executes_write_now="false" bridge_called="false">`,
       `  <message>ResearchAction execute_aitp_write_bridge handoff guard failed: ${escapeXml(reason)}</message>`,
+      `  <remediation_summary next_step="${escapeXml(remediation.nextStep)}" repair_target="${escapeXml(remediation.repairTarget)}" retry_requires_explicit_execute_call="true" mutates_handoff_now="false" />`,
       '</handoff_guard_failure>',
     ].join('\n'),
   };
+}
+
+function handoffGuardRemediation(
+  code: string,
+  location: { readonly field?: string | undefined; readonly path?: string | undefined },
+): { readonly nextStep: string; readonly repairTarget: string } {
+  switch (code) {
+    case 'blocked_handoff':
+      return {
+        nextStep: 'redraft_or_resolve_blocking_diagnostics',
+        repairTarget: location.path ?? 'aitp_handoff.confirmation_status',
+      };
+    case 'missing_tool_call_json':
+    case 'missing_hash_input_json':
+    case 'missing_handoff_id':
+    case 'missing_confirmation_id':
+    case 'missing_diagnostic_hash':
+    case 'missing_confirmation_status':
+      return {
+        nextStep: 'copy_missing_handoff_field_from_draft',
+        repairTarget: location.path ?? `aitp_handoff.${location.field ?? 'field'}`,
+      };
+    case 'tool_call_payload_mismatch':
+    case 'tool_call_operation_mismatch':
+    case 'tool_call_action_mismatch':
+    case 'missing_tool_call_payload':
+      return {
+        nextStep: 'align_explicit_execute_args_with_handoff_tool_call',
+        repairTarget: location.path ?? 'aitp_handoff.tool_call_json',
+      };
+    case 'diagnostic_hash_mismatch':
+    case 'invalid_diagnostic_hash_algorithm':
+    case 'hash_input_operation_mismatch':
+    case 'hash_input_confirmation_status_mismatch':
+    case 'hash_input_tool_call_mismatch':
+      return {
+        nextStep: 'redraft_handoff_or_restore_hash_input',
+        repairTarget: location.path ?? 'aitp_handoff.hash_input_json',
+      };
+    default:
+      return {
+        nextStep: 'inspect_handoff_guard_failure',
+        repairTarget: location.path ?? location.field ?? 'aitp_handoff',
+      };
+  }
 }
 
 function renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(

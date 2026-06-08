@@ -284,6 +284,11 @@ Guard failures now render a structured `handoff_guard_failure` XML element with
 stable `code`, `field`, and `path` attributes plus `bridge_called="false"`, so
 the model can repair the handoff without mistaking the failed check for a write
 attempt.
+Those failures also include a `remediation_summary` with a stable `next_step`
+and `repair_target`, for example to copy a missing handoff field, align
+explicit execute args with the handoff tool call, or redraft/restore hash
+input. The summary is advisory only: it requires a fresh explicit execute call
+and marks `mutates_handoff_now="false"`.
 
 The WorkFrame orchestrator now also calls that provider automatically for
 RAG-helpful turns. It detects prompts asking for conceptual scaffolding,
