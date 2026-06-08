@@ -404,6 +404,7 @@ interface CuratedRagPromotionWriteBridgeConfirmationSummary {
   readonly hardBlockingDiagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[];
   readonly confirmationRequiredDiagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[];
   readonly advisoryDiagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[];
+  readonly missingRefRepairHintCount: number;
   readonly executeCallAllowedAfterExplicitConfirmation: boolean;
   readonly nextStep: string;
 }
@@ -2324,6 +2325,7 @@ function curatedRagPromotionWriteBridgeConfirmationSummary(
     hardBlockingDiagnostics,
     confirmationRequiredDiagnostics,
     advisoryDiagnostics,
+    missingRefRepairHintCount: missingRefRepairHintCount(callDraft.recordRefLookup),
     executeCallAllowedAfterExplicitConfirmation: hardBlockingDiagnostics.length === 0,
     nextStep:
       status === 'blocked'
@@ -2332,6 +2334,11 @@ function curatedRagPromotionWriteBridgeConfirmationSummary(
           ? 'Review required existing records and source/claim scope, then make a separate explicit execute_aitp_write_bridge call if appropriate.'
           : 'Make a separate explicit execute_aitp_write_bridge call only after final human/model confirmation.',
   };
+}
+
+function missingRefRepairHintCount(lookup: CuratedRagPayloadRefLookup | undefined): number {
+  if (lookup?.status !== 'performed') return 0;
+  return lookup.lookup.refs.filter(isMissingRefRepairItem).length;
 }
 
 function curatedRagPromotionWriteBridgeHandoffArtifact(
@@ -2433,7 +2440,7 @@ function renderAitpCuratedRagWriteBridgeConfirmationSummary(
   indent: string,
 ): string {
   return [
-    `${indent}<confirmation_preflight status="${summary.status}" hard_blocking_count="${String(summary.hardBlockingDiagnostics.length)}" confirmation_required_count="${String(summary.confirmationRequiredDiagnostics.length)}" advisory_count="${String(summary.advisoryDiagnostics.length)}" execute_call_allowed_after_explicit_confirmation="${String(summary.executeCallAllowedAfterExplicitConfirmation)}" executes_write_now="false">`,
+    `${indent}<confirmation_preflight status="${summary.status}" hard_blocking_count="${String(summary.hardBlockingDiagnostics.length)}" confirmation_required_count="${String(summary.confirmationRequiredDiagnostics.length)}" advisory_count="${String(summary.advisoryDiagnostics.length)}" missing_ref_repair_hint_count="${String(summary.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(summary.missingRefRepairHintCount > 0)}" execute_call_allowed_after_explicit_confirmation="${String(summary.executeCallAllowedAfterExplicitConfirmation)}" executes_write_now="false">`,
     `${indent}  <next_step>${escapeXml(summary.nextStep)}</next_step>`,
     renderAitpCuratedRagWriteBridgeCallDiagnostics(
       summary.hardBlockingDiagnostics,
