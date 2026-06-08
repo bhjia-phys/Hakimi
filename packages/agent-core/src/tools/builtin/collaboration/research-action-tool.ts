@@ -364,6 +364,7 @@ interface CuratedRagPromotionWriteBridgeCallDraft {
   readonly draftOperation: string;
   readonly aitpOperation: AitpWriteBridgeOperation;
   readonly actionId: string;
+  readonly selectedOperation: AitpCuratedRagPromotionDraftOperation;
   readonly originalPayload: Readonly<Record<string, unknown>>;
   readonly payload: Readonly<Record<string, unknown>>;
   readonly payloadSource: 'payload_draft' | 'payload_template' | 'empty_payload';
@@ -1727,6 +1728,7 @@ function renderAitpCuratedRagPromotionDraft(
         `    <operation stage="${escapeXml(operation.stage)}" operation="${escapeXml(operation.operation)}" mcp_tool="${escapeXml(operation.mcpTool)}" surface="${escapeXml(operation.surface)}" draft_only="true" creates_record_now="false" claim_support_created="false" cli_template="${escapeXml(operation.cliTemplate)}"${operation.requiresExistingRecords.length === 0 ? '' : ` requires_existing_records="${escapeXml(operation.requiresExistingRecords.join(','))}"`} />`,
     ),
     '  </draft_operations>',
+    renderCuratedRagCanonicalIdentityAlignment(draft),
     renderCuratedRagPromotionDecisionTree(draft),
     '  <promotion_boundary retrieval_is_claim_support="false" draft_is_evidence="false" draft_records_validation_result="false" draft_satisfies_final_gate="false" draft_can_update_claim_trust="false" requires_user_or_model_decision_before_write="true" />',
     '</aitp_curated_rag_promotion_draft>',
@@ -1759,6 +1761,107 @@ function renderCuratedRagPromotionDecisionTree(draft: AitpCuratedRagPromotionDra
     ...operations,
     '  </promotion_decision_tree>',
   ].join('\n');
+}
+
+function renderCuratedRagCanonicalIdentityAlignment(
+  draft: AitpCuratedRagPromotionDraft,
+  callDraft?: CuratedRagPromotionWriteBridgeCallDraft | undefined,
+): string {
+  const operations =
+    callDraft === undefined ? draft.draftOperations : [callDraft.selectedOperation];
+  return [
+    `  <canonical_identity_alignment chunk_id="${escapeXml(draft.chunkId)}" document_id="${escapeXml(draft.documentId)}" content_hash="${escapeXml(draft.chunk.contentHash)}" alignment_role="${callDraft === undefined ? 'promotion_draft' : 'selected_write_bridge_call'}" draft_creates_records="false" executes_write_now="false" claim_support_created="false">`,
+    ...operations.map((operation) =>
+      renderCuratedRagCanonicalIdentityOperation(
+        draft,
+        operation,
+        callDraft !== undefined ? callDraft.payload : (operation.payloadDraft ?? operation.payloadTemplate ?? {}),
+      ),
+    ),
+    '  </canonical_identity_alignment>',
+  ].join('\n');
+}
+
+function renderCuratedRagCanonicalIdentityOperation(
+  draft: AitpCuratedRagPromotionDraft,
+  operation: AitpCuratedRagPromotionDraftOperation,
+  payload: Readonly<Record<string, unknown>>,
+): string {
+  const futureRecordKind = futureRecordKindForPromotionOperation(operation.operation);
+  const canonicalPrefix = canonicalRefPrefixForFutureRecordKind(futureRecordKind);
+  const payloadIdentity = curatedRagPayloadIdentity(payload);
+  return [
+    `    <record_alignment stage="${escapeXml(operation.stage)}" operation="${escapeXml(operation.operation)}" future_record_kind="${escapeXml(futureRecordKind)}" canonical_ref_prefix="${escapeXml(canonicalPrefix)}" id_source="aitp_write_result_after_explicit_execute" draft_only="true" creates_record_now="false" existing_record_required_count="${String(operation.requiresExistingRecords.length)}">`,
+    `      <source_chunk document_id="${escapeXml(draft.documentId)}" chunk_id="${escapeXml(draft.chunkId)}" content_hash="${escapeXml(draft.chunk.contentHash)}" source_uri="${escapeXml(draft.document.sourceUri)}" orientation_only="true" />`,
+    renderStringList('requires_existing_records', 'record', operation.requiresExistingRecords, '      '),
+    renderStringList('payload_identity_fields', 'field', payloadIdentity.fields, '      '),
+    renderStringList('payload_identity_refs', 'ref', payloadIdentity.refs, '      '),
+    '    </record_alignment>',
+  ].join('\n');
+}
+
+function futureRecordKindForPromotionOperation(operation: string): string {
+  switch (operation) {
+    case 'registerSourceAsset':
+      return 'source_asset_record';
+    case 'recordReferenceLocation':
+      return 'reference_location_record';
+    case 'recordEvidence':
+      return 'evidence_record';
+    case 'createValidationContract':
+      return 'validation_contract_record';
+    case 'preflightTrustUpdate':
+      return 'trust_update_preflight';
+    default:
+      return 'aitp_record';
+  }
+}
+
+function canonicalRefPrefixForFutureRecordKind(kind: string): string {
+  switch (kind) {
+    case 'source_asset_record':
+      return 'source_asset:';
+    case 'reference_location_record':
+      return 'reference_location:';
+    case 'evidence_record':
+      return 'evidence:';
+    case 'validation_contract_record':
+      return 'validation_contract:';
+    case 'trust_update_preflight':
+      return 'trust_preflight:';
+    default:
+      return 'aitp:';
+  }
+}
+
+function curatedRagPayloadIdentity(
+  payload: Readonly<Record<string, unknown>>,
+): { readonly fields: readonly string[]; readonly refs: readonly string[] } {
+  const identityFields = [
+    'topic_id',
+    'claim_id',
+    'connector_id',
+    'asset_type',
+    'uri',
+    'title',
+    'source_ref',
+    'source_refs',
+    'derived_from',
+    'reference_location_ids',
+    'evidence_refs',
+  ];
+  const fields = uniqueStrings(identityFields.filter((field) => payload[field] !== undefined));
+  const refs = uniqueStrings(
+    fields.flatMap((field) => refsFromPayloadIdentityValue(payload[field])),
+  );
+  return { fields, refs };
+}
+
+function refsFromPayloadIdentityValue(value: unknown): readonly string[] {
+  if (typeof value === 'string') return value.length > 0 ? [value] : [];
+  if (Array.isArray(value)) return value.flatMap(refsFromPayloadIdentityValue);
+  if (!isRecord(value)) return [];
+  return Object.values(value).flatMap(refsFromPayloadIdentityValue);
 }
 
 function curatedRagPromotionWriteBridgeCallSelector(args: ResearchActionToolInput):
@@ -1836,6 +1939,7 @@ function curatedRagPromotionWriteBridgeCallDraft(
       draftOperation: selected.operation,
       aitpOperation,
       actionId: actionIdForAitpWriteBridgeOperation(aitpOperation),
+      selectedOperation: selected,
       originalPayload,
       payload,
       payloadSource,
@@ -2010,6 +2114,7 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     `  <reviewed_overrides_json>${escapeXml(JSON.stringify(callDraft.reviewedOverrides))}</reviewed_overrides_json>`,
     `  <reviewed_payload_json>${escapeXml(JSON.stringify(callDraft.payload))}</reviewed_payload_json>`,
     renderStringList('required_existing_records', 'record', callDraft.requiredExistingRecords, '  '),
+    renderCuratedRagCanonicalIdentityAlignment(sourceDraft, callDraft),
     renderAitpCuratedRagWriteBridgeConfirmationSummary(confirmation, '  '),
     renderAitpCuratedRagWriteBridgeHandoffArtifact(handoffArtifact, '  '),
     renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(callDraft.overrideDiagnostics, '  '),

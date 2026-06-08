@@ -45,6 +45,12 @@ payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,
 and `reviewed_payload_json` plus override diagnostics, but the overrides only
 affect the returned draft and still require a separate explicit
 `execute_aitp_write_bridge` call.
+Promotion and write-bridge call drafts now also render
+`canonical_identity_alignment`. This section maps each draft stage, or the
+selected stage, to the future AITP record kind and canonical ref prefix that
+would only be produced by a later explicit bridge result, while carrying source
+chunk/document/hash identity and existing-record requirements. It remains
+`draft_creates_records=false` / `creates_record_now=false`.
 The returned XML also includes a host-side `confirmation_preflight` summary
 that classifies remaining diagnostics as hard-blocking, confirmation-required,
 or advisory. This is not an AITP trust preflight and it does not validate the
