@@ -2000,10 +2000,10 @@ function renderMissingRefRepairChecklist(
 ): string | undefined {
   if (items.length === 0) return undefined;
   return [
-    `${indent}  <missing_ref_repair_checklist item_count="${String(items.length)}" source="aitp_record_ref_lookup" read_only="true" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" requires_explicit_execute_call="true">`,
+    `${indent}  <missing_ref_repair_checklist item_count="${String(items.length)}" source="aitp_record_ref_lookup" read_only="true" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" requires_explicit_execute_call="true" repair_action_hint_only="true" selected_write_call_unchanged="true">`,
     ...items.map(
       (item) =>
-        `${indent}    <repair_item ref="${escapeXml(item.ref)}" ref_kind="${escapeXml(item.refKind)}" record_id="${escapeXml(item.recordId)}" suggested_next_operation="${escapeXml(item.suggestedNextOperation)}" suggested_next_entrypoint="${escapeXml(item.suggestedNextEntrypoint)}" suggested_next_surface="${escapeXml(item.suggestedNextSurface)}" next_step="${escapeXml(item.suggestedNextReason)}" />`,
+        `${indent}    <repair_item ref="${escapeXml(item.ref)}" ref_kind="${escapeXml(item.refKind)}" record_id="${escapeXml(item.recordId)}" suggested_next_operation="${escapeXml(item.suggestedNextOperation)}" suggested_next_entrypoint="${escapeXml(item.suggestedNextEntrypoint)}" suggested_next_surface="${escapeXml(item.suggestedNextSurface)}" next_research_action="execute_aitp_write_bridge" next_aitp_operation="${escapeXml(item.suggestedNextOperation)}" next_operation_source="aitp_record_ref_lookup" repair_action_hint_only="true" selected_write_call_unchanged="true" next_step="${escapeXml(item.suggestedNextReason)}" />`,
     ),
     `${indent}  </missing_ref_repair_checklist>`,
   ].join('\n');
