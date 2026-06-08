@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AITP_RUNTIME_PAYLOAD_PROFILE_CATALOG_VERSION,
   AitpCliBridgeError,
+  AitpRuntimePayloadProfilesParseError,
+  aitpRuntimePayloadProfileById,
   buildAitpArtifactAttachArgs,
   buildAitpArtifactAttachAutoArgs,
   buildAitpCodeStateAutoArgs,
@@ -11,6 +14,7 @@ import {
   buildAitpProcessGraphSliceArgs,
   buildAitpProofObligationCreateArgs,
   buildAitpReferenceLocationRecordArgs,
+  buildAitpRuntimePayloadProfilesArgs,
   buildAitpSourceAssetAutoArgs,
   buildAitpSourceAssetRegisterArgs,
   buildAitpSourceReconstructionReviewResultRecordArgs,
@@ -21,6 +25,7 @@ import {
   buildAitpValidationResultRecordArgs,
   createAitpCliBridge,
   createAitpCliProcessGraphSliceProvider,
+  parseAitpRuntimePayloadProfilesCatalog,
   resolveAitpScopeFromWorkFrame,
   type AitpCommandRunner,
 } from '../../src/aitp';
@@ -132,6 +137,73 @@ describe('AITP CLI bridge', () => {
         '--metadata-json',
         '{"surface":"hakimi"}',
       ]),
+    );
+  });
+
+  it('reads runtime payload profile catalogs through the read-only adapter command', async () => {
+    const calls: { command: string; args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(command, args) {
+        calls.push({ command, args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            runtime_payload_profiles: fakeRuntimePayloadProfilesCatalog(),
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      runner,
+    });
+
+    const catalog = await bridge.readRuntimePayloadProfiles();
+    const primitive = aitpRuntimePayloadProfileById(
+      catalog,
+      'primitive_tool_lifecycle_to_tool_run',
+    );
+
+    expect(calls).toEqual([
+      {
+        command: 'aitp-v5',
+        args: ['adapter', 'payload-profiles'],
+      },
+    ]);
+    expect(buildAitpRuntimePayloadProfilesArgs()).toEqual(['adapter', 'payload-profiles']);
+    expect(catalog.catalogVersion).toBe(AITP_RUNTIME_PAYLOAD_PROFILE_CATALOG_VERSION);
+    expect(catalog.profileIndex).toEqual([
+      'benchmark_adapter_run_to_tool_run',
+      'primitive_tool_lifecycle_to_tool_run',
+    ]);
+    expect(catalog.summaryInputsTrusted).toBe(false);
+    expect(catalog.canUpdateClaimTrust).toBe(false);
+    expect(primitive?.capturePolicy.captureMode).toBe('explicit_request');
+    expect(primitive?.capturePolicy.recordsValidationResult).toBe(false);
+    expect(primitive?.resultSemantics.claimTrustMutation).toBe('none');
+  });
+
+  it('rejects runtime payload catalogs that would turn provenance into trust', () => {
+    const catalog = fakeRuntimePayloadProfilesCatalog();
+    const primitive = catalog.profiles[1]!;
+    const tampered = {
+      ...catalog,
+      profiles: [
+        catalog.profiles[0],
+        {
+          ...primitive,
+          result_semantics: {
+            ...primitive.result_semantics,
+            can_update_claim_trust: true,
+          },
+        },
+      ],
+    };
+
+    expect(() => parseAitpRuntimePayloadProfilesCatalog(tampered)).toThrow(
+      AitpRuntimePayloadProfilesParseError,
     );
   });
 
@@ -1507,5 +1579,135 @@ function fakeSlicePayload() {
         reason: 'relation is still only a hypothesis',
       },
     ],
+  };
+}
+
+function fakeRuntimePayloadProfilesCatalog(): any {
+  const profiles = [
+    {
+      profile_id: 'benchmark_adapter_run_to_tool_run',
+      host_event: 'benchmark_adapter_run',
+      target_operation: 'recordToolRun',
+      target_entrypoint: 'aitp_v5_record_tool_run',
+      target_record_action: 'record_tool_run',
+      target_surface: 'tool_run_record',
+      required_host_fields: [
+        'adapter_id',
+        'case_id',
+        'action_id',
+        'outcome',
+        'observation',
+        'output',
+        'topic_id',
+        'claim_id',
+      ],
+      optional_host_fields: [
+        'benchmark_payload',
+        'check_results',
+        'evidence_refs',
+        'artifact_refs',
+        'source_refs',
+        'primitive_tool_call_ids',
+      ],
+      payload_key_case: 'camel_or_snake',
+      capture_policy: {
+        capture_mode: 'controlled_auto',
+        host_trigger: 'ResearchAction.run_benchmark_adapter',
+        requires_configured_bridge: true,
+        requires_scoped_topic_and_claim: true,
+        requires_tool_call_id: false,
+        capture_granularity: 'one_tool_run_per_adapter_run',
+        missing_scope_behavior: 'skip_with_reason',
+        bulk_auto_capture: false,
+        records_validation_result: false,
+        claim_trust_mutation: 'none',
+        summary_inputs_trusted: false,
+        can_update_claim_trust: false,
+      },
+      payload_template: {
+        recipe_id: 'benchmark_adapter:<adapter_id>:<case_id>',
+        tool_family: 'benchmark_adapter',
+        tool_name: '<adapter_id>',
+        evidence_status: 'unreviewed',
+      },
+      result_semantics: {
+        record_kind: 'tool_run',
+        evidence_ref_prefix: 'aitp:tool_run',
+        records_validation_result: false,
+        claim_trust_mutation: 'none',
+        can_update_claim_trust: false,
+        summary_inputs_trusted: false,
+      },
+      strict_boundary:
+        'benchmark adapter outcome is tool-run provenance only; validation remains explicit',
+    },
+    {
+      profile_id: 'primitive_tool_lifecycle_to_tool_run',
+      host_event: 'primitive_tool_lifecycle_completed',
+      target_operation: 'recordToolRun',
+      target_entrypoint: 'aitp_v5_record_tool_run',
+      target_record_action: 'record_tool_run',
+      target_surface: 'tool_run_record',
+      required_host_fields: [
+        'tool_call_id',
+        'tool_name',
+        'status',
+        'output_summary',
+        'topic_id',
+        'claim_id',
+      ],
+      optional_host_fields: [
+        'args_summary',
+        'cwd',
+        'turn_id',
+        'step_uuid',
+        'duration_ms',
+        'artifact_refs',
+        'source_refs',
+        'workframe_id',
+        'action_call_id',
+      ],
+      payload_key_case: 'camel_or_snake',
+      capture_policy: {
+        capture_mode: 'explicit_request',
+        host_trigger: 'ResearchAction.capture_primitive_tool_run',
+        requires_configured_bridge: true,
+        requires_scoped_topic_and_claim: true,
+        requires_tool_call_id: true,
+        capture_granularity: 'one_tool_run_per_explicit_tool_call_id',
+        missing_scope_behavior: 'skip_with_reason',
+        bulk_auto_capture: false,
+        records_validation_result: false,
+        claim_trust_mutation: 'none',
+        summary_inputs_trusted: false,
+        can_update_claim_trust: false,
+      },
+      payload_template: {
+        recipe_id: 'primitive_tool:<tool_name>:<tool_call_id>',
+        tool_family: 'primitive_tool',
+        tool_name: '<tool_name>',
+        evidence_status: 'unreviewed',
+      },
+      result_semantics: {
+        record_kind: 'tool_run',
+        evidence_ref_prefix: 'aitp:tool_run',
+        records_validation_result: false,
+        claim_trust_mutation: 'none',
+        can_update_claim_trust: false,
+        summary_inputs_trusted: false,
+      },
+      strict_boundary:
+        'primitive tool lifecycle output is tool-run provenance only; trust remains explicit',
+    },
+  ];
+  return {
+    kind: 'runtime_payload_profiles',
+    catalog_version: AITP_RUNTIME_PAYLOAD_PROFILE_CATALOG_VERSION,
+    truth_source: 'runtime_payload_profile_catalog',
+    summary_inputs_trusted: false,
+    can_update_claim_trust: false,
+    profile_count: profiles.length,
+    profile_index: profiles.map((profile) => profile.profile_id),
+    profiles,
   };
 }

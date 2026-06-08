@@ -6,9 +6,11 @@ import {
   type AitpCommandRunner,
   type AitpProcessGraphPromptPart,
   type AitpProcessGraphSliceProvider,
+  type AitpRuntimePayloadProfilesProvider,
   type AitpWorkFrameScope,
 } from './cli-bridge';
 import { compileAitpProcessGraphSlice } from './compiler';
+import { parseAitpRuntimePayloadProfilesCatalog } from './runtime-payload-profiles';
 import type { CompiledAitpProcessGraphSlice } from './types';
 import {
   createAitpCliWriteBridgeExecutor,
@@ -95,6 +97,42 @@ export function createDynamicAitpCliWriteBridgeExecutor(
       return createAitpCliWriteBridgeExecutor(
         createDynamicAitpCliBridge(options),
       ).executeWrite(input);
+    },
+  };
+}
+
+export function createDynamicAitpCliRuntimePayloadProfilesProvider(
+  options: DynamicAitpCliBridgeOptions,
+): AitpRuntimePayloadProfilesProvider {
+  return {
+    getRuntimePayloadProfiles(input = {}) {
+      return createDynamicAitpCliBridge(options).readRuntimePayloadProfiles(input);
+    },
+  };
+}
+
+export function createDynamicAitpMcpFirstRuntimePayloadProfilesProvider(
+  options: DynamicAitpMcpFirstBridgeOptions,
+): AitpRuntimePayloadProfilesProvider {
+  const fallback = createDynamicAitpCliRuntimePayloadProfilesProvider(options);
+  return {
+    async getRuntimePayloadProfiles(input = {}) {
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.getRuntimePayloadProfiles(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('readRuntimePayloadProfiles');
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args: {},
+          signal: input.signal,
+        });
+        return parseAitpRuntimePayloadProfilesCatalog(normalizeAitpWriteBridgePayload(rawPayload));
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.getRuntimePayloadProfiles(input);
+      }
     },
   };
 }
