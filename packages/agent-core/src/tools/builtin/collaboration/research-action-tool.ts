@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { z } from 'zod';
 
 import type {
@@ -379,6 +381,15 @@ interface CuratedRagPromotionWriteBridgeConfirmationSummary {
   readonly advisoryDiagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[];
   readonly executeCallAllowedAfterExplicitConfirmation: boolean;
   readonly nextStep: string;
+}
+
+interface CuratedRagPromotionWriteBridgeHandoffArtifact {
+  readonly handoffId: string;
+  readonly confirmationId: string;
+  readonly diagnosticHash: string;
+  readonly confirmationStatus: CuratedRagPromotionWriteBridgeConfirmationSummary['status'];
+  readonly toolCall: Readonly<Record<string, unknown>>;
+  readonly nonExecutionProvenance: Readonly<Record<string, unknown>>;
 }
 
 export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> {
@@ -1924,8 +1935,15 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
   };
   const overrideCount = Object.keys(callDraft.reviewedOverrides).length;
   const confirmation = curatedRagPromotionWriteBridgeConfirmationSummary(callDraft);
+  const handoffArtifact = curatedRagPromotionWriteBridgeHandoffArtifact(
+    sourceDraft,
+    callDraft,
+    confirmation,
+    toolCall,
+    bindingId,
+  );
   return [
-    `<aitp_curated_rag_write_bridge_call_draft chunk_id="${escapeXml(sourceDraft.chunkId)}" document_id="${escapeXml(sourceDraft.documentId)}" stage="${escapeXml(callDraft.stage)}" draft_operation="${escapeXml(callDraft.draftOperation)}" next_research_action="execute_aitp_write_bridge" aitp_operation="${callDraft.aitpOperation}" action_id="${escapeXml(callDraft.actionId)}" payload_source="${callDraft.payloadSource}" reviewed_override_count="${String(overrideCount)}" original_unresolved_placeholder_count="${String(callDraft.originalUnresolvedPlaceholderCount)}" unresolved_placeholder_count="${String(callDraft.unresolvedPlaceholderCount)}" confirmation_status="${confirmation.status}" execute_call_allowed_after_explicit_confirmation="${String(confirmation.executeCallAllowedAfterExplicitConfirmation)}" executes_write_now="false" selected_write_executed="false" reviewed_overrides_executed="false" records_validation_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true"${bindingId === undefined ? '' : ` action_binding_id="${escapeXml(bindingId)}"`}>`,
+    `<aitp_curated_rag_write_bridge_call_draft chunk_id="${escapeXml(sourceDraft.chunkId)}" document_id="${escapeXml(sourceDraft.documentId)}" stage="${escapeXml(callDraft.stage)}" draft_operation="${escapeXml(callDraft.draftOperation)}" next_research_action="execute_aitp_write_bridge" aitp_operation="${callDraft.aitpOperation}" action_id="${escapeXml(callDraft.actionId)}" payload_source="${callDraft.payloadSource}" reviewed_override_count="${String(overrideCount)}" original_unresolved_placeholder_count="${String(callDraft.originalUnresolvedPlaceholderCount)}" unresolved_placeholder_count="${String(callDraft.unresolvedPlaceholderCount)}" confirmation_status="${confirmation.status}" handoff_id="${escapeXml(handoffArtifact.handoffId)}" diagnostic_hash="${escapeXml(handoffArtifact.diagnosticHash)}" execute_call_allowed_after_explicit_confirmation="${String(confirmation.executeCallAllowedAfterExplicitConfirmation)}" executes_write_now="false" selected_write_executed="false" reviewed_overrides_executed="false" records_validation_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true"${bindingId === undefined ? '' : ` action_binding_id="${escapeXml(bindingId)}"`}>`,
     `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
     `  <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
     `  <original_payload_json>${escapeXml(JSON.stringify(callDraft.originalPayload))}</original_payload_json>`,
@@ -1933,6 +1951,7 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     `  <reviewed_payload_json>${escapeXml(JSON.stringify(callDraft.payload))}</reviewed_payload_json>`,
     renderStringList('required_existing_records', 'record', callDraft.requiredExistingRecords, '  '),
     renderAitpCuratedRagWriteBridgeConfirmationSummary(confirmation, '  '),
+    renderAitpCuratedRagWriteBridgeHandoffArtifact(handoffArtifact, '  '),
     renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(callDraft.overrideDiagnostics, '  '),
     renderAitpCuratedRagWriteBridgeCallDiagnostics(callDraft.diagnostics, '  '),
     '  <promotion_boundary draft_is_evidence="false" draft_records_validation_result="false" draft_satisfies_final_gate="false" draft_can_update_claim_trust="false" requires_user_or_model_decision_before_write="true" />',
@@ -1977,6 +1996,83 @@ function curatedRagPromotionWriteBridgeConfirmationSummary(
   };
 }
 
+function curatedRagPromotionWriteBridgeHandoffArtifact(
+  sourceDraft: AitpCuratedRagPromotionDraft,
+  callDraft: CuratedRagPromotionWriteBridgeCallDraft,
+  confirmation: CuratedRagPromotionWriteBridgeConfirmationSummary,
+  toolCall: Readonly<Record<string, unknown>>,
+  bindingId?: string | undefined,
+): CuratedRagPromotionWriteBridgeHandoffArtifact {
+  const diagnostics = [
+    ...confirmation.hardBlockingDiagnostics,
+    ...confirmation.confirmationRequiredDiagnostics,
+    ...confirmation.advisoryDiagnostics,
+  ].map((diagnostic) => ({
+    code: diagnostic.code,
+    field: diagnostic.field,
+    message: diagnostic.message,
+  }));
+  const hashInput = {
+    kind: 'aitp_curated_rag_write_bridge_call_handoff',
+    chunkId: sourceDraft.chunkId,
+    documentId: sourceDraft.documentId,
+    stage: callDraft.stage,
+    draftOperation: callDraft.draftOperation,
+    aitpOperation: callDraft.aitpOperation,
+    confirmationStatus: confirmation.status,
+    executeCallAllowedAfterExplicitConfirmation: confirmation.executeCallAllowedAfterExplicitConfirmation,
+    toolCall,
+    requiredExistingRecords: callDraft.requiredExistingRecords,
+    diagnostics,
+  };
+  const hash = shortSha256(stableJson(hashInput), 16);
+  const confirmationId = [
+    'curated-rag-confirmation',
+    safeId(sourceDraft.chunkId),
+    safeId(callDraft.stage),
+    safeId(callDraft.aitpOperation),
+    hash,
+  ].join('.');
+  return {
+    handoffId: [
+      'curated-rag-write-handoff',
+      safeId(sourceDraft.chunkId),
+      safeId(callDraft.stage),
+      safeId(callDraft.aitpOperation),
+      hash,
+    ].join('.'),
+    confirmationId,
+    diagnosticHash: `sha256:${hash}`,
+    confirmationStatus: confirmation.status,
+    toolCall,
+    nonExecutionProvenance: {
+      source: 'ResearchAction.draft_aitp_curated_rag_write_bridge_call',
+      sourceDraftKind: sourceDraft.kind,
+      sourceDraftCreatesRecords: false,
+      chunkId: sourceDraft.chunkId,
+      documentId: sourceDraft.documentId,
+      stage: callDraft.stage,
+      draftOperation: callDraft.draftOperation,
+      aitpOperation: callDraft.aitpOperation,
+      bindingId,
+      payloadSource: callDraft.payloadSource,
+      reviewedOverrideCount: Object.keys(callDraft.reviewedOverrides).length,
+      originalUnresolvedPlaceholderCount: callDraft.originalUnresolvedPlaceholderCount,
+      unresolvedPlaceholderCount: callDraft.unresolvedPlaceholderCount,
+      selectedWriteExecuted: false,
+      reviewedOverridesExecuted: false,
+      handoffExecuted: false,
+      executesWriteNow: false,
+      recordsEvidenceNow: false,
+      recordsValidationResultNow: false,
+      claimTrustMutation: 'none',
+      requiresExplicitExecuteCall: true,
+      confirmationId,
+      diagnosticHash: `sha256:${hash}`,
+    },
+  };
+}
+
 const HARD_BLOCKING_PROMOTION_CONFIRMATION_CODES = new Set([
   'missing_required_field',
   'missing_draft_context',
@@ -2016,6 +2112,18 @@ function renderAitpCuratedRagWriteBridgeConfirmationSummary(
       'advisory_diagnostics',
     ),
     `${indent}</confirmation_preflight>`,
+  ].join('\n');
+}
+
+function renderAitpCuratedRagWriteBridgeHandoffArtifact(
+  artifact: CuratedRagPromotionWriteBridgeHandoffArtifact,
+  indent: string,
+): string {
+  return [
+    `${indent}<execute_aitp_write_bridge_handoff handoff_id="${escapeXml(artifact.handoffId)}" confirmation_id="${escapeXml(artifact.confirmationId)}" confirmation_status="${artifact.confirmationStatus}" diagnostic_hash="${escapeXml(artifact.diagnosticHash)}" hash_algorithm="sha256" handoff_executed="false" executes_write_now="false" non_execution_provenance="draft_only" requires_explicit_execute_call="true">`,
+    `${indent}  <tool_call_json>${escapeXml(JSON.stringify(artifact.toolCall))}</tool_call_json>`,
+    `${indent}  <non_execution_provenance_json>${escapeXml(JSON.stringify(artifact.nonExecutionProvenance))}</non_execution_provenance_json>`,
+    `${indent}</execute_aitp_write_bridge_handoff>`,
   ].join('\n');
 }
 
@@ -2445,6 +2553,25 @@ function graphRefsFromNodeIds(nodeIds: readonly string[]): readonly GraphRef[] {
 
 function safeId(value: string): string {
   return value.replaceAll(/[^A-Za-z0-9_.-]+/g, '-');
+}
+
+function shortSha256(value: string, length: number): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, length);
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(stableJsonValue(value));
+}
+
+function stableJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableJsonValue);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .filter((key) => value[key] !== undefined)
+      .sort()
+      .map((key) => [key, stableJsonValue(value[key])]),
+  );
 }
 
 function hasText(value: string | undefined): value is string {
