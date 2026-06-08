@@ -296,6 +296,11 @@ The draft root also summarizes those repair paths with
 `repair_hint_summary_source="missing_ref_repair_checklist"`, so the model can
 see the repair route without scanning every item while the checklist remains
 the detailed source.
+`ResearchAction.draft_aitp_record_ref_repair_write_bridge_call` can now turn a
+reviewed `recordReferenceLocation` repair payload into a model-facing
+`execute_aitp_write_bridge` call draft. This is still only a draft:
+`reviewed_payload_executed="false"` / `executes_write_now="false"`, and the
+normal explicit bridge call is required before AITP records anything.
 The returned XML also includes a host-side `confirmation_preflight` summary
 that classifies remaining diagnostics as hard-blocking, confirmation-required,
 or advisory. It now mirrors the repair checklist at summary level with

@@ -1775,6 +1775,60 @@ describe('ResearchActionTool', () => {
     expect(calls).toEqual([]);
   });
 
+  it('drafts missing reference-location repair write-bridge calls without execution', async () => {
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(undefined, {
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          throw new Error('repair draft must not execute write bridge');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'draft_aitp_record_ref_repair_write_bridge_call',
+      repair_ref: 'reference_location:loc-reviewed',
+      repair_operation: 'recordReferenceLocation',
+      repair_reason: 'record a normal AITP reference location before using this ref as source context',
+      aitp_payload: {
+        topic_id: 'fqhe-literature',
+        claim_id: 'claim-fqhe',
+        connector_id: 'curated-rag',
+        location_type: 'curated_rag_chunk',
+        uri: 'aitp-curated-rag://curated_rag_chunk/source_backtrace_orientation/0001',
+        label: 'Reviewed curated RAG chunk source backtrace orientation 0001',
+        source_ref: 'source_asset:asset-reviewed',
+        status: 'located',
+        summary: 'Reviewed reference location for source backtrace orientation chunk.',
+      },
+    });
+
+    expect(result.output).toContain('<aitp_record_ref_repair_write_bridge_call_draft');
+    expect(result.output).toContain('repair_ref="reference_location:loc-reviewed"');
+    expect(result.output).toContain('repair_operation="recordReferenceLocation"');
+    expect(result.output).toContain('next_research_action="execute_aitp_write_bridge"');
+    expect(result.output).toContain('aitp_operation="recordReferenceLocation"');
+    expect(result.output).toContain('repair_operation_source="aitp_record_ref_lookup"');
+    expect(result.output).toContain('repair_action_hint_only="true"');
+    expect(result.output).toContain('selected_write_call_unchanged="true"');
+    expect(result.output).toContain('reviewed_payload_executed="false"');
+    expect(result.output).toContain('executes_write_now="false"');
+    expect(result.output).toContain('records_validation_result="false"');
+    expect(result.output).toContain('source_support_result="false"');
+    expect(result.output).toContain('claim_trust_mutation="none"');
+    expect(result.output).toContain('requires_explicit_execute_call="true"');
+    expect(result.output).toContain('<tool_call_json>');
+    expect(result.output).toContain('&quot;action&quot;:&quot;execute_aitp_write_bridge&quot;');
+    expect(result.output).toContain('&quot;aitp_operation&quot;:&quot;recordReferenceLocation&quot;');
+    expect(result.output).toContain('&quot;connectorId&quot;:&quot;curated-rag&quot;');
+    expect(result.output).toContain('&quot;sourceRef&quot;:&quot;source_asset:asset-reviewed&quot;');
+    expect(result.output).toContain('<repair_boundary');
+    expect(result.output).toContain('requires_separate_explicit_execute_call="true"');
+    expect(bridgeCalls).toEqual([]);
+  });
+
   it('executes curated RAG write-bridge handoffs only after guard verification passes', async () => {
     const records: AgentRecord[] = [];
     const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];

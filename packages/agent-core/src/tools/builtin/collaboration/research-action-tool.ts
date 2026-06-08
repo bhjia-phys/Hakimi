@@ -105,6 +105,7 @@ const ACTIONS = [
   'search_aitp_curated_rag_corpus',
   'draft_aitp_curated_rag_promotion',
   'draft_aitp_curated_rag_write_bridge_call',
+  'draft_aitp_record_ref_repair_write_bridge_call',
   'capture_primitive_tool_run',
 ] as const;
 const EXPOSURES = ['direct', 'deferred', 'direct-model-only', 'hidden'] as const;
@@ -329,6 +330,18 @@ export const ResearchActionToolInputSchema = z.object({
     .describe(
       'Reviewed top-level payload field overrides for draft_aitp_curated_rag_write_bridge_call. These only update the returned call draft; they do not execute an AITP write.',
     ),
+  repair_ref: z
+    .string()
+    .optional()
+    .describe('Missing AITP record ref being repaired by draft_aitp_record_ref_repair_write_bridge_call.'),
+  repair_operation: z
+    .enum(['recordReferenceLocation'])
+    .optional()
+    .describe('AITP repair operation for draft_aitp_record_ref_repair_write_bridge_call. Currently supports recordReferenceLocation.'),
+  repair_reason: z
+    .string()
+    .optional()
+    .describe('Optional AITP lookup repair reason copied from suggested_next_reason.'),
 });
 
 export type ResearchActionToolInput = z.Infer<typeof ResearchActionToolInputSchema>;
@@ -551,6 +564,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return await this.draftAitpCuratedRagPromotion(args, ctx);
         case 'draft_aitp_curated_rag_write_bridge_call':
           return await this.draftAitpCuratedRagWriteBridgeCall(args, ctx);
+        case 'draft_aitp_record_ref_repair_write_bridge_call':
+          return this.draftAitpRecordRefRepairWriteBridgeCall(args);
         case 'capture_primitive_tool_run':
           return await this.capturePrimitiveToolRun(args, ctx);
       }
@@ -871,6 +886,37 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
         { ...callDraft.draft, recordRefLookup: lookup },
         boundInput.bindingId,
       ),
+    );
+  }
+
+  private draftAitpRecordRefRepairWriteBridgeCall(
+    args: ResearchActionToolInput,
+  ): ExecutableToolResult {
+    if (args.repair_operation === undefined) {
+      return errorResult('ResearchAction draft_aitp_record_ref_repair_write_bridge_call requires repair_operation.');
+    }
+    if (args.repair_ref === undefined || args.repair_ref.trim().length === 0) {
+      return errorResult('ResearchAction draft_aitp_record_ref_repair_write_bridge_call requires repair_ref.');
+    }
+    if (args.aitp_payload === undefined) {
+      return errorResult('ResearchAction draft_aitp_record_ref_repair_write_bridge_call requires aitp_payload.');
+    }
+    if (args.repair_operation !== 'recordReferenceLocation') {
+      return errorResult(`Unsupported repair operation: ${args.repair_operation}.`);
+    }
+    let input: ReturnType<typeof coerceAitpWriteBridgeInput>;
+    try {
+      input = coerceAitpWriteBridgeInput(args.repair_operation, args.aitp_payload);
+    } catch (error) {
+      return errorResult(error instanceof Error ? error.message : String(error));
+    }
+    return ok(
+      renderAitpRecordRefRepairWriteBridgeCallDraft({
+        repairRef: args.repair_ref,
+        repairOperation: args.repair_operation,
+        repairReason: args.repair_reason,
+        payload: input.payload,
+      }),
     );
   }
 
@@ -2303,6 +2349,30 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     renderAitpCuratedRagWriteBridgeCallDiagnostics(callDraft.diagnostics, '  '),
     '  <promotion_boundary draft_is_evidence="false" draft_records_validation_result="false" draft_satisfies_final_gate="false" draft_can_update_claim_trust="false" requires_user_or_model_decision_before_write="true" />',
     '</aitp_curated_rag_write_bridge_call_draft>',
+    '',
+  ].join('\n');
+}
+
+function renderAitpRecordRefRepairWriteBridgeCallDraft(input: {
+  readonly repairRef: string;
+  readonly repairOperation: 'recordReferenceLocation';
+  readonly repairReason?: string | undefined;
+  readonly payload: unknown;
+}): string {
+  const target = aitpRuntimeBridgeTargetForOperation(input.repairOperation);
+  const toolCall = {
+    action: 'execute_aitp_write_bridge',
+    aitp_operation: input.repairOperation,
+    aitp_payload: input.payload,
+  };
+  return [
+    `<aitp_record_ref_repair_write_bridge_call_draft repair_ref="${escapeXml(input.repairRef)}" repair_operation="${input.repairOperation}" next_research_action="execute_aitp_write_bridge" aitp_operation="${input.repairOperation}" repair_operation_source="aitp_record_ref_lookup" payload_source="reviewed_repair_payload" repair_action_hint_only="true" selected_write_call_unchanged="true" reviewed_payload_executed="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true">`,
+    `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
+    `  <repair_reason>${escapeXml(input.repairReason ?? '')}</repair_reason>`,
+    `  <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
+    `  <reviewed_payload_json>${escapeXml(JSON.stringify(input.payload))}</reviewed_payload_json>`,
+    '  <repair_boundary draft_executes_write_now="false" draft_records_validation_result="false" draft_source_support_result="false" draft_can_update_claim_trust="false" requires_separate_explicit_execute_call="true" />',
+    '</aitp_record_ref_repair_write_bridge_call_draft>',
     '',
   ].join('\n');
 }
