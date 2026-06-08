@@ -1452,6 +1452,16 @@ describe('ResearchActionTool', () => {
     expect(drafted.output).toContain('aitp_operation="createValidationContract"');
     expect(drafted.output).toContain('aitp_operation="preflightTrustUpdate"');
     expect(drafted.output).toContain('Only execute this as a separate explicit AITP write/preflight bridge call');
+    expect(drafted.output).toContain('<canonical_identity_alignment');
+    expect(drafted.output).toContain('alignment_role="promotion_draft"');
+    expect(drafted.output).toContain('draft_creates_records="false"');
+    expect(drafted.output).toContain('future_record_kind="source_asset_record"');
+    expect(drafted.output).toContain('canonical_ref_prefix="source_asset:"');
+    expect(drafted.output).toContain('future_record_kind="reference_location_record"');
+    expect(drafted.output).toContain('canonical_ref_prefix="reference_location:"');
+    expect(drafted.output).toContain('future_record_kind="evidence_record"');
+    expect(drafted.output).toContain('canonical_ref_prefix="evidence:"');
+    expect(drafted.output).toContain('id_source="aitp_write_result_after_explicit_execute"');
     expect(records).not.toContainEqual(
       expect.objectContaining({ type: 'research_action.result_recorded' }),
     );
@@ -1523,6 +1533,17 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('execute_call_allowed_after_explicit_confirmation="false"');
     expect(result.output).toContain('executes_write_now="false"');
     expect(result.output).toContain('selected_write_executed="false"');
+    expect(result.output).toContain('<canonical_identity_alignment');
+    expect(result.output).toContain('alignment_role="selected_write_bridge_call"');
+    expect(result.output).toContain('draft_creates_records="false"');
+    expect(result.output).toContain('future_record_kind="evidence_record"');
+    expect(result.output).toContain('canonical_ref_prefix="evidence:"');
+    expect(result.output).toContain('existing_record_required_count="2"');
+    expect(result.output).toContain('<record>source_asset_record</record>');
+    expect(result.output).toContain('<record>reference_location_record</record>');
+    expect(result.output).toContain('<field>source_refs</field>');
+    expect(result.output).toContain('<ref>&lt;source_asset_id&gt;</ref>');
+    expect(result.output).toContain('<ref>&lt;reference_location_id&gt;</ref>');
     expect(result.output).toContain('<confirmation_preflight status="blocked"');
     expect(result.output).toContain('<hard_blocking_diagnostics');
     expect(result.output).toMatch(
@@ -1599,6 +1620,11 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('confirmation_status="needs_explicit_confirmation"');
     expect(result.output).toContain('execute_call_allowed_after_explicit_confirmation="true"');
     expect(result.output).toContain('reviewed_overrides_executed="false"');
+    expect(result.output).toContain('<canonical_identity_alignment');
+    expect(result.output).toContain('alignment_role="selected_write_bridge_call"');
+    expect(result.output).toContain('future_record_kind="evidence_record"');
+    expect(result.output).toContain('<ref>source_asset:asset-reviewed</ref>');
+    expect(result.output).toContain('<ref>reference_location:loc-reviewed</ref>');
     expect(result.output).toContain('<confirmation_preflight status="needs_explicit_confirmation"');
     expect(result.output).toContain('hard_blocking_count="0"');
     expect(result.output).toContain('<hard_blocking_diagnostics />');
