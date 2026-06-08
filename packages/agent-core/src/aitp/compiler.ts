@@ -782,6 +782,7 @@ function provenanceGapPayload(
       recordAction: hint.recordAction,
       requiredFields: hint.requiredFields,
       draft: camelizeDraft(hint.draft),
+      draftSchema: camelizeDraftSchema(hint.draftSchema),
       orientationOnly: hint.orientationOnly,
       summaryInputsTrusted: hint.summaryInputsTrusted,
       canUpdateClaimTrust: hint.canUpdateClaimTrust,
@@ -986,6 +987,7 @@ function withPayloadDraft(
   return {
     ...bridge,
     payloadDraft: camelizeDraft(hint.draft),
+    payloadDraftSchema: camelizeDraftSchema(hint.draftSchema),
     payloadHint: {
       entrypoint: hint.entrypoint,
       recordAction: hint.recordAction,
@@ -1271,6 +1273,32 @@ function camelizeValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(camelizeValue);
   if (!isRecord(value)) return value;
   return camelizeDraft(value);
+}
+
+function camelizeDraftSchema(
+  schema: AitpPayloadHint['draftSchema'],
+): Readonly<Record<string, unknown>> {
+  const placeholderValues: Record<string, string> = {};
+  for (const [key, value] of Object.entries(schema.placeholderValues)) {
+    placeholderValues[camelizeFieldPath(key)] = value;
+  }
+  return {
+    requiredFields: schema.requiredFields.map(camelizeFieldPath),
+    placeholderFields: schema.placeholderFields.map(camelizeFieldPath),
+    placeholderValues,
+    hostMustResolve: schema.hostMustResolve.map(camelizeFieldPath),
+    fieldCase: 'camelCase',
+    sourceFieldCase: schema.fieldCase,
+    summaryInputsTrusted: schema.summaryInputsTrusted,
+    canUpdateClaimTrust: schema.canUpdateClaimTrust,
+  };
+}
+
+function camelizeFieldPath(value: string): string {
+  return value
+    .split('.')
+    .map((segment) => segment.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase()))
+    .join('.');
 }
 
 function camelizeKey(value: string): string {

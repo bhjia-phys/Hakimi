@@ -164,6 +164,16 @@ describe('AITP native bridge smoke', () => {
           summary: '<source-grounded evidence summary>',
           sourceRefs: ['source_asset:asset-algebra-paper'],
         },
+        payloadDraftSchema: {
+          requiredFields: ['topicId', 'claimId', 'evidenceType', 'status', 'summary'],
+          placeholderFields: ['summary'],
+          placeholderValues: { summary: '<source-grounded evidence summary>' },
+          hostMustResolve: ['summary'],
+          fieldCase: 'camelCase',
+          sourceFieldCase: 'snake_case',
+          summaryInputsTrusted: false,
+          canUpdateClaimTrust: false,
+        },
         payloadHint: {
           entrypoint: 'aitp_v5_record_evidence',
           recordAction: 'record_evidence',
@@ -568,6 +578,15 @@ function qgMiptSlicePayload() {
                 original_question_guard: [
                   'Keep the source backtrace tied to whether the observer analogy is justified.',
                 ],
+              },
+              draft_schema: {
+                required_fields: ['topic_id', 'claim_id', 'evidence_type', 'status', 'summary'],
+                placeholder_fields: ['summary'],
+                placeholder_values: { summary: '<source-grounded evidence summary>' },
+                host_must_resolve: ['summary'],
+                field_case: 'snake_case',
+                summary_inputs_trusted: false,
+                can_update_claim_trust: false,
               },
               orientation_only: true,
               summary_inputs_trusted: false,
