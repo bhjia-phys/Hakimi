@@ -1783,6 +1783,15 @@ describe('ResearchActionTool', () => {
           );
         },
       },
+      aitpRecordRefLookupProvider: {
+        async lookupRecordRefs(input) {
+          return parseAitpRecordRefLookup(
+            fakeRecordRefLookup(input.refs, {
+              foundRefs: ['source_asset:asset-reviewed'],
+            }),
+          );
+        },
+      },
       aitpWriteBridge: {
         async executeWrite(input) {
           bridgeCalls.push(input);
@@ -1823,15 +1832,23 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('<aitp_write_bridge operation="recordEvidence"');
     expect(result.output).toContain('<handoff_execution_precheck');
     expect(result.output).toContain('status="passed"');
+    expect(result.output).toContain('missing_ref_repair_hint_count="1"');
+    expect(result.output).toContain('missing_ref_repair_checklist_present="true"');
     expect(result.output).toContain('bridge_call_allowed="true"');
     expect(result.output).toContain('bridge_called="true"');
     expect(result.output).toContain('retry_requires_explicit_execute_call="false"');
     expect(result.output).toContain('handoff_mutated_now="false"');
+    expect(result.output).toContain('records_validation_result="false"');
+    expect(result.output).toContain('source_support_result="false"');
     expect(result.output).toContain('claim_trust_mutation="none"');
     expect(result.output).toContain('<handoff_guard');
     expect(result.output).toContain('status="passed"');
     expect(result.output).toContain(`handoff_id="${String(handoff.guard['handoff_id'])}"`);
     expect(result.output).toContain('confirmation_status="needs_explicit_confirmation"');
+    expect(handoff.hashInput).toMatchObject({
+      missingRefRepairHintCount: 1,
+      missingRefRepairChecklistPresent: true,
+    });
     expect(bridgeCalls).toHaveLength(1);
     expect(bridgeCalls[0]).toMatchObject({
       operation: 'recordEvidence',

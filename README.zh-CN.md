@@ -103,9 +103,12 @@ write-bridge calls without a handoff still use the ordinary typed path.
 When a handoff is supplied, `execute_aitp_write_bridge` now emits a compact
 `handoff_execution_precheck` before the guard/result details. Passed prechecks
 show `bridge_call_allowed=true` and `bridge_called=true` after the guard has
-matched; failed prechecks show the guard `code`, `path`, `next_step`,
-`bridge_called=false`, and `handoff_mutated_now=false` before the existing
-failure XML.
+matched, and echo the guard-verified `missing_ref_repair_hint_count` /
+`missing_ref_repair_checklist_present` from the handoff hash input. Failed
+prechecks show the guard `code`, `path`, `next_step`, `bridge_called=false`,
+and `handoff_mutated_now=false` before the existing failure XML. These echoes
+are host consistency metadata only; they do not repair missing refs, validate
+source support, or create trust-preflight evidence.
 The guard coverage now also pins fail-closed behavior for missing
 `tool_call_json`, missing `hash_input_json`, payload tampering, diagnostic-hash
 tampering, and hash-input/tool-call mismatch. The AITP write-bridge executor
