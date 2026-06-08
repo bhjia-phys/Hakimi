@@ -32,6 +32,13 @@ that maps each draft-only stage to the separate
 `ResearchAction.execute_aitp_write_bridge` operation that could be chosen next;
 it marks `selected_write_executed=false` and still requires an explicit later
 write or preflight choice.
+Hakimi can now use `ResearchAction.draft_aitp_curated_rag_write_bridge_call`
+to select one stage or operation from that tree and return a prefilled
+`execute_aitp_write_bridge` tool-call JSON draft with placeholder diagnostics.
+This still executes no write, records no evidence, and marks
+`executes_write_now=false` / `selected_write_executed=false`; real source
+review, missing typed refs, and any AITP `session_id` or record ids must be
+resolved before the normal write/preflight action is called.
 When a turn asks whether a retrieved curated RAG chunk should become source or
 claim support, Hakimi now derives read-only
 `ResearchAction.draft_aitp_curated_rag_promotion` bindings directly from
