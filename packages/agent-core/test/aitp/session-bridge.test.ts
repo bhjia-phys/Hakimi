@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   createDynamicAitpCliProcessGraphSliceProvider,
   createDynamicAitpCliWriteBridgeExecutor,
+  createDynamicAitpMcpFirstProcessGraphSliceProvider,
   createDynamicAitpMcpFirstWriteBridgeExecutor,
+  mcpArgsForAitpProcessGraphSliceRead,
   type AitpCommandRunner,
 } from '../../src/aitp';
 import type { WorkFrame } from '../../src/research-action';
@@ -143,6 +145,95 @@ describe('AITP dynamic session bridge', () => {
         },
       },
     ]);
+  });
+
+  it('uses MCP-first transport for process graph reads', async () => {
+    const cliCalls: string[][] = [];
+    const mcpCalls: Array<{ readonly toolName: string; readonly args: Readonly<Record<string, unknown>> }> = [];
+    let basePath = 'F:/project-a';
+    const provider = createDynamicAitpMcpFirstProcessGraphSliceProvider({
+      basePath: () => basePath,
+      runner: recordingRunner(cliCalls),
+      limit: 7,
+      mcpTransport: {
+        async callTool(input) {
+          mcpCalls.push({ toolName: input.toolName, args: input.args });
+          return fakeSlicePayload();
+        },
+      },
+    });
+
+    basePath = 'F:/project-b';
+    const compiled = await provider.getProcessGraphSlice({
+      workFrame: workFrame({
+        sourceRefs: ['aitp:session:session-qg', 'aitp:claim:claim-mipt'],
+      }),
+      prompt: [{ type: 'text', text: 'Trace source dependency.' }],
+    });
+
+    expect(compiled?.contextLines.join('\n')).toContain('Source gaps: claim-mipt');
+    expect(cliCalls).toEqual([]);
+    expect(mcpCalls).toEqual([
+      {
+        toolName: 'aitp_v5_get_process_graph_slice',
+        args: {
+          base: 'F:/project-b',
+          session_id: 'session-qg',
+          claim_id: 'claim-mipt',
+          limit: 7,
+        },
+      },
+    ]);
+  });
+
+  it('falls back to CLI process graph reads when MCP fails', async () => {
+    const cliCalls: string[][] = [];
+    const provider = createDynamicAitpMcpFirstProcessGraphSliceProvider({
+      basePath: () => 'F:/project-cli',
+      runner: recordingRunner(cliCalls),
+      limit: 3,
+      mcpTransport: {
+        async callTool() {
+          throw new Error('MCP unavailable');
+        },
+      },
+    });
+
+    const compiled = await provider.getProcessGraphSlice({
+      workFrame: workFrame({
+        sourceRefs: ['aitp:session:session-qg', 'aitp:claim:claim-mipt'],
+      }),
+      prompt: [{ type: 'text', text: 'Trace source dependency.' }],
+    });
+
+    expect(compiled?.contextLines.join('\n')).toContain('Source gaps: claim-mipt');
+    expect(cliCalls[0]).toEqual([
+      'aitp-v5',
+      '--base',
+      'F:/project-cli',
+      'graph',
+      'slice',
+      'session-qg',
+      '--limit',
+      '3',
+      '--claim',
+      'claim-mipt',
+    ]);
+  });
+
+  it('builds process graph read MCP args from AITP scope', () => {
+    expect(
+      mcpArgsForAitpProcessGraphSliceRead(
+        'F:/project',
+        { sessionId: 'session-qg', claimId: 'claim-mipt' },
+        11,
+      ),
+    ).toEqual({
+      base: 'F:/project',
+      session_id: 'session-qg',
+      claim_id: 'claim-mipt',
+      limit: 11,
+    });
   });
 });
 

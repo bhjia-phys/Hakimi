@@ -13,6 +13,10 @@ surface, MCP invocation args, and `claimTrustMutation="none"` from AITP's
 runtime bridge target manifest in writeBridge params and ResearchAction
 results, calls the connected AITP MCP tool first, and falls back to the CLI
 bridge when MCP is unavailable or fails.
+AITP process-graph reads are now MCP-first too: Hakimi calls
+`aitp_v5_get_process_graph_slice` with `base`, `session_id`, optional
+`claim_id`, and optional `limit`, then falls back to `aitp-v5 graph slice`
+when the AITP MCP server is unavailable or does not expose the tool.
 Hakimi now also projects AITP local source-asset auto-capture:
 `aitp_v5_capture_source_asset_auto` becomes `captureSourceAssetAuto`, so a
 local paper, lecture note, code snapshot, dataset, or generated file path can

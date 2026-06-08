@@ -83,6 +83,7 @@ export interface AitpRuntimeBridgeTarget {
   readonly preferredTransport: 'mcp';
   readonly fallbackTransport: 'cli';
   readonly mcpInvocation: AitpMcpInvocationContract;
+  readonly mcpArguments?: AitpMcpArgumentContract | undefined;
   readonly executionRole: 'read' | 'write' | 'preflight';
   readonly stateEffect: 'read_only' | 'typed_record_write' | 'preflight_only';
   readonly canonicalStore: '.aitp';
@@ -100,6 +101,30 @@ export interface AitpMcpInvocationContract {
   readonly resultContentType: 'json_object';
   readonly fallbackPolicy: 'use_cli_when_mcp_transport_unavailable_or_call_fails';
 }
+
+export interface AitpMcpArgumentContract {
+  readonly required: readonly string[];
+  readonly optional: readonly string[];
+  readonly source: string;
+}
+
+const AITP_READ_TARGET_MCP_ARGUMENTS = {
+  process_graph_slice: {
+    required: ['base', 'session_id'],
+    optional: ['claim_id', 'limit'],
+    source: 'aitp_v5_get_process_graph_slice',
+  },
+  host_agnostic_moment_policy: {
+    required: ['base', 'session_id'],
+    optional: ['claim_id', 'limit'],
+    source: 'aitp_v5_get_host_agnostic_moment_policy',
+  },
+  runtime_payload_profiles: {
+    required: [],
+    optional: [],
+    source: 'aitp_v5_get_runtime_payload_profiles',
+  },
+} as const satisfies Record<string, AitpMcpArgumentContract>;
 
 export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
   bridgeTarget(
@@ -264,7 +289,7 @@ function bridgeTarget(
   executionRole: 'read' | 'write' | 'preflight' = 'write',
   stateEffect: 'read_only' | 'typed_record_write' | 'preflight_only' = 'typed_record_write',
 ): AitpRuntimeBridgeTarget {
-  return {
+  const target: AitpRuntimeBridgeTarget = {
     operation,
     entrypointKey,
     mcpTool,
@@ -288,6 +313,17 @@ function bridgeTarget(
     summaryInputsTrusted: false,
     canUpdateClaimTrust: false,
   };
+  if (executionRole === 'read') {
+    const mcpArguments = (
+      AITP_READ_TARGET_MCP_ARGUMENTS as Readonly<
+        Record<string, AitpMcpArgumentContract | undefined>
+      >
+    )[entrypointKey];
+    if (mcpArguments !== undefined) {
+      return { ...target, mcpArguments };
+    }
+  }
+  return target;
 }
 
 export type AitpWriteBridgeExecutionInput =
