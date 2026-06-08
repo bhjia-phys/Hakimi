@@ -46,7 +46,7 @@ import {
   type AitpWriteBridgeExecutionResult,
   type AitpWriteBridgeOperation,
 } from '../../../aitp';
-import type { BenchmarkAdapterRunResult } from '../../../benchmark-adapter';
+import type { BenchmarkAdapterOutcome, BenchmarkAdapterRunResult } from '../../../benchmark-adapter';
 import type { DomainPackManifestDiagnostic } from '../../../domain-pack';
 import type { FormalizationPlan } from '../../../formalization';
 import {
@@ -321,7 +321,7 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
         case 'load_evidence_ref':
           return this.loadEvidenceRef(args, ctx);
         case 'run_benchmark_adapter':
-          return this.runBenchmarkAdapter(args, ctx);
+          return await this.runBenchmarkAdapter(args, ctx);
         case 'query_physics_graph':
           return this.queryPhysicsGraph(args, ctx);
         case 'build_formalization_plan':
@@ -750,10 +750,10 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     );
   }
 
-  private runBenchmarkAdapter(
+  private async runBenchmarkAdapter(
     args: ResearchActionToolInput,
     ctx: ExecutableToolContext,
-  ): ExecutableToolResult {
+  ): Promise<ExecutableToolResult> {
     if (this.manager === undefined) {
       return errorResult('ResearchAction run_benchmark_adapter requires a session manager.');
     }
@@ -767,6 +767,17 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     });
     const actionId = args.action_id ?? result.actionId;
     const callId = args.call_id ?? defaultCallId(actionId, ctx.toolCallId);
+    const aitpCapture = await this.captureBenchmarkAdapterRunAsAitpToolRun(
+      result,
+      args,
+      actionId,
+      callId,
+      ctx,
+    );
+    const evidenceRefs = uniqueStrings([
+      ...result.evidenceRefs,
+      ...evidenceRefsForBenchmarkAitpCapture(aitpCapture),
+    ]);
     this.recordExecutedAction(args, ctx, {
       actionId,
       callId,
@@ -776,11 +787,68 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
         caseId: result.caseId,
         payload: args.benchmark_payload,
       },
-      output: result,
-      evidenceRefs: result.evidenceRefs,
+      output: {
+        ...result,
+        aitpToolRunCapture: aitpCapture,
+      },
+      evidenceRefs,
       graphRefs: [],
     });
-    return ok(renderBenchmarkAdapterRun(result));
+    return ok(renderBenchmarkAdapterRun(result, aitpCapture));
+  }
+
+  private async captureBenchmarkAdapterRunAsAitpToolRun(
+    result: BenchmarkAdapterRunResult,
+    args: ResearchActionToolInput,
+    actionId: string,
+    callId: string,
+    ctx: ExecutableToolContext,
+  ): Promise<BenchmarkAitpToolRunCapture> {
+    if (this.manager === undefined) return { status: 'skipped', reason: 'session manager unavailable' };
+    if (!this.manager.hasAitpWriteBridge()) {
+      return { status: 'skipped', reason: 'AITP write bridge is not configured' };
+    }
+    const payload = buildBenchmarkAdapterAitpToolRunPayload(
+      result,
+      args,
+      actionId,
+      callId,
+      this.manager.activeWorkFrame(),
+    );
+    if (payload === undefined) {
+      return {
+        status: 'skipped',
+        reason: 'topic_id and claim_id are required to record benchmark adapter provenance in AITP',
+      };
+    }
+    try {
+      const input = coerceAitpWriteBridgeInput('recordToolRun', payload, ctx.signal);
+      const writeResult = await this.manager.executeAitpWriteBridge(
+        {
+          ...input,
+          actionId: 'aitp.record_tool_run',
+          callId: `${callId}.aitp-tool-run`,
+        },
+        {
+          source: (args.source ?? 'model') as ResearchActionSource,
+          toolCallId: ctx.toolCallId,
+        },
+      );
+      return {
+        status: 'recorded',
+        profileId: 'benchmark_adapter_run_to_tool_run',
+        operation: 'recordToolRun',
+        result: writeResult,
+        evidenceRefs: evidenceRefsForAitpWriteBridgeResult(writeResult),
+      };
+    } catch (error) {
+      return {
+        status: 'failed',
+        profileId: 'benchmark_adapter_run_to_tool_run',
+        operation: 'recordToolRun',
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   private queryPhysicsGraph(
@@ -984,7 +1052,29 @@ function defaultCallId(actionId: string, toolCallId: string): string {
   return `call.${safeId(actionId)}.${safeId(toolCallId)}`;
 }
 
-function renderBenchmarkAdapterRun(result: BenchmarkAdapterRunResult): string {
+type BenchmarkAitpToolRunCapture =
+  | {
+      readonly status: 'recorded';
+      readonly profileId: 'benchmark_adapter_run_to_tool_run';
+      readonly operation: 'recordToolRun';
+      readonly result: AitpWriteBridgeExecutionResult;
+      readonly evidenceRefs: readonly string[];
+    }
+  | {
+      readonly status: 'skipped';
+      readonly reason: string;
+    }
+  | {
+      readonly status: 'failed';
+      readonly profileId: 'benchmark_adapter_run_to_tool_run';
+      readonly operation: 'recordToolRun';
+      readonly reason: string;
+    };
+
+function renderBenchmarkAdapterRun(
+  result: BenchmarkAdapterRunResult,
+  aitpCapture?: BenchmarkAitpToolRunCapture,
+): string {
   return [
     `<benchmark_adapter_run adapter_id="${escapeXml(result.adapterId)}" case_id="${escapeXml(result.caseId)}" domain="${escapeXml(result.domain)}" action_id="${escapeXml(result.actionId)}" outcome="${result.outcome}">`,
     `  <observation>${escapeXml(result.observation)}</observation>`,
@@ -996,9 +1086,140 @@ function renderBenchmarkAdapterRun(result: BenchmarkAdapterRunResult): string {
         `    <check id="${escapeXml(check.checkId)}" kind="${check.kind}" status="${check.status}" evidence_refs="${escapeXml(check.evidenceRefs.join(','))}" />`,
     ),
     '  </checks>',
+    renderBenchmarkAitpToolRunCapture(aitpCapture, '  '),
     '</benchmark_adapter_run>',
     '',
   ].join('\n');
+}
+
+function renderBenchmarkAitpToolRunCapture(
+  capture: BenchmarkAitpToolRunCapture | undefined,
+  indent: string,
+): string {
+  if (capture === undefined) return `${indent}<aitp_tool_run_capture status="skipped" reason="not evaluated" />`;
+  if (capture.status === 'skipped') {
+    return `${indent}<aitp_tool_run_capture status="skipped" reason="${escapeXml(capture.reason)}" />`;
+  }
+  if (capture.status === 'failed') {
+    return `${indent}<aitp_tool_run_capture status="failed" profile_id="${capture.profileId}" operation="${capture.operation}" reason="${escapeXml(capture.reason)}" />`;
+  }
+  return [
+    `${indent}<aitp_tool_run_capture status="recorded" profile_id="${capture.profileId}" operation="${capture.operation}">`,
+    `${indent}  <record_id>${escapeXml(aitpWriteBridgeRecordId(capture.result))}</record_id>`,
+    renderStringList('evidence_refs', 'evidence_ref', capture.evidenceRefs, `${indent}  `),
+    `${indent}</aitp_tool_run_capture>`,
+  ].join('\n');
+}
+
+function evidenceRefsForBenchmarkAitpCapture(
+  capture: BenchmarkAitpToolRunCapture,
+): readonly string[] {
+  return capture.status === 'recorded' ? capture.evidenceRefs : [];
+}
+
+function buildBenchmarkAdapterAitpToolRunPayload(
+  result: BenchmarkAdapterRunResult,
+  args: ResearchActionToolInput,
+  actionId: string,
+  callId: string,
+  activeWorkFrame?: WorkFrame | undefined,
+): Readonly<Record<string, unknown>> | undefined {
+  const topicId = firstText(
+    optionalRecordValue(args.aitp_payload, 'topicId'),
+    optionalRecordValue(args.aitp_payload, 'topic_id'),
+    args.topic,
+    activeWorkFrame?.topic,
+  );
+  const claimId = firstText(
+    optionalRecordValue(args.aitp_payload, 'claimId'),
+    optionalRecordValue(args.aitp_payload, 'claim_id'),
+    firstClaimRef(args.source_refs),
+    firstClaimRef(args.capsule_refs),
+    firstClaimRef(activeWorkFrame?.sourceRefs),
+    firstClaimRef(activeWorkFrame?.activeObjectIds),
+  );
+  if (!hasText(topicId) || !hasText(claimId)) return undefined;
+  const sourceRefs = uniqueStrings([
+    ...(args.source_refs ?? []),
+    ...result.evidenceRefs,
+  ]);
+  return {
+    recipeId: `benchmark_adapter:${result.adapterId}:${result.caseId}`,
+    toolFamily: 'benchmark_adapter',
+    toolName: result.adapterId,
+    topicId,
+    claimId,
+    inputs: {
+      benchmarkPayload: args.benchmark_payload,
+      caseId: result.caseId,
+      sourceRefs: args.source_refs ?? [],
+    },
+    outputs: {
+      adapterId: result.adapterId,
+      caseId: result.caseId,
+      actionId,
+      callId,
+      outcome: result.outcome,
+      observation: result.observation,
+      output: result.output,
+      evidenceRefs: result.evidenceRefs,
+      artifactRefs: result.artifactRefs,
+      checkResults: result.checkResults,
+    },
+    environment: {
+      captureTool: 'hakimi.run_benchmark_adapter',
+      payloadProfile: 'benchmark_adapter_run_to_tool_run',
+      benchmarkDomain: result.domain,
+      summaryInputsTrusted: false,
+      canUpdateClaimTrust: false,
+    },
+    evidenceStatus: evidenceStatusForBenchmarkOutcome(result.outcome),
+    artifactIds: normalizeArtifactIds(result.artifactRefs),
+    sourceRefs,
+  };
+}
+
+function evidenceStatusForBenchmarkOutcome(outcome: BenchmarkAdapterOutcome): string {
+  switch (outcome) {
+    case 'pass':
+      return 'unreviewed';
+    case 'fail':
+      return 'contradicts';
+    case 'blocked':
+    case 'inconclusive':
+      return 'inconclusive';
+  }
+}
+
+function normalizeArtifactIds(refs: readonly string[]): readonly string[] {
+  return refs
+    .map((ref) => ref.trim())
+    .filter((ref) => ref.length > 0)
+    .map((ref) => (ref.startsWith('aitp:artifact:') ? ref.slice('aitp:artifact:'.length) : ref))
+    .map((ref) => (ref.startsWith('artifact:') ? ref.slice('artifact:'.length) : ref))
+    .filter((ref) => ref.length > 0);
+}
+
+function optionalRecordValue(record: unknown, key: string): string | undefined {
+  if (typeof record !== 'object' || record === null || Array.isArray(record)) return undefined;
+  const value = (record as Readonly<Record<string, unknown>>)[key];
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function firstClaimRef(refs: readonly string[] | undefined): string | undefined {
+  for (const ref of refs ?? []) {
+    if (ref.startsWith('aitp:claim:')) return ref.slice('aitp:claim:'.length);
+    if (ref.startsWith('claim:')) return ref.slice('claim:'.length);
+  }
+  return undefined;
+}
+
+function firstText(...values: readonly (string | undefined)[]): string | undefined {
+  return values.find(hasText);
+}
+
+function uniqueStrings(values: readonly string[]): readonly string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
 }
 
 function renderEvidenceRefs(refs: readonly string[], scope: EvidenceScope): string {
