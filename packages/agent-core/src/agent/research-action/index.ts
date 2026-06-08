@@ -22,6 +22,7 @@ import type {
 } from '../../benchmark-adapter';
 import type {
   AitpCuratedRagCorpus,
+  AitpCuratedRagPromotionDraft,
   AitpCuratedRagSearchResult,
   AitpRuntimePayloadProfilesCatalog,
 } from '../../aitp';
@@ -227,6 +228,25 @@ export class ResearchActionManager {
       throw new Error('AITP curated RAG provider is not configured for this session.');
     }
     return this.agent.aitpCuratedRagProvider.searchCuratedRagCorpus({ query, limit, signal });
+  }
+
+  async draftAitpCuratedRagPromotion(
+    input: {
+      readonly chunkId: string;
+      readonly topicId?: string | undefined;
+      readonly claimId?: string | undefined;
+      readonly connectorId?: string | undefined;
+      readonly promotionIntent?: string | undefined;
+      readonly signal?: AbortSignal | undefined;
+    },
+  ): Promise<AitpCuratedRagPromotionDraft> {
+    if (this.agent.aitpCuratedRagProvider === undefined) {
+      throw new Error('AITP curated RAG provider is not configured for this session.');
+    }
+    if (this.agent.aitpCuratedRagProvider.draftCuratedRagPromotion === undefined) {
+      throw new Error('AITP curated RAG provider does not support promotion drafts.');
+    }
+    return this.agent.aitpCuratedRagProvider.draftCuratedRagPromotion(input);
   }
 
   buildPhysicsGraph(): PhysicsGraph {

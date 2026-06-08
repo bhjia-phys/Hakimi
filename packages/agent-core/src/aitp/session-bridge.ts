@@ -11,7 +11,11 @@ import {
   type AitpWorkFrameScope,
 } from './cli-bridge';
 import { compileAitpProcessGraphSlice } from './compiler';
-import { parseAitpCuratedRagCorpus, parseAitpCuratedRagSearchResult } from './curated-rag';
+import {
+  parseAitpCuratedRagCorpus,
+  parseAitpCuratedRagPromotionDraft,
+  parseAitpCuratedRagSearchResult,
+} from './curated-rag';
 import { parseAitpRuntimePayloadProfilesCatalog } from './runtime-payload-profiles';
 import type { CompiledAitpProcessGraphSlice } from './types';
 import {
@@ -149,6 +153,9 @@ export function createDynamicAitpCliCuratedRagProvider(
     searchCuratedRagCorpus(input) {
       return createDynamicAitpCliBridge(options).searchCuratedRagCorpus(input);
     },
+    draftCuratedRagPromotion(input) {
+      return createDynamicAitpCliBridge(options).draftCuratedRagPromotion(input);
+    },
   };
 }
 
@@ -196,6 +203,32 @@ export function createDynamicAitpMcpFirstCuratedRagProvider(
       } catch (error) {
         if (options.fallbackOnMcpError === false) throw error;
         return fallback.searchCuratedRagCorpus(input);
+      }
+    },
+    async draftCuratedRagPromotion(input) {
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.draftCuratedRagPromotion!(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('draftCuratedRagPromotion');
+        const args: Record<string, unknown> = {
+          base: options.basePath(),
+          chunk_id: input.chunkId,
+        };
+        if (input.topicId !== undefined) args['topic_id'] = input.topicId;
+        if (input.claimId !== undefined) args['claim_id'] = input.claimId;
+        if (input.connectorId !== undefined) args['connector_id'] = input.connectorId;
+        if (input.promotionIntent !== undefined) args['promotion_intent'] = input.promotionIntent;
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args,
+          signal: input.signal,
+        });
+        return parseAitpCuratedRagPromotionDraft(normalizeAitpWriteBridgePayload(rawPayload));
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.draftCuratedRagPromotion!(input);
       }
     },
   };

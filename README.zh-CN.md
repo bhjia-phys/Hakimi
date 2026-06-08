@@ -13,6 +13,18 @@ surface, MCP invocation args, and `claimTrustMutation="none"` from AITP's
 runtime bridge target manifest in writeBridge params and ResearchAction
 results, calls the connected AITP MCP tool first, and falls back to the CLI
 bridge when MCP is unavailable or fails.
+AITP curated RAG promotion drafts are now exposed as a read-only bridge target:
+Hakimi can call `draftCuratedRagPromotion` /
+`aitp_v5_draft_curated_rag_promotion` /
+`aitp-v5 adapter curated-rag-promotion-draft <chunk-id>` through
+`ResearchAction.draft_aitp_curated_rag_promotion`. The result is a controlled
+construction sheet with chunk/document ids, hashes, anchors, missing
+topic/claim context, forbidden uses, and draft-only `registerSourceAsset`,
+`recordReferenceLocation`, `recordEvidence`, `createValidationContract`, and
+`preflightTrustUpdate` operations. It is read-only:
+`draft_creates_records=false`, every operation has
+`creates_record_now=false`, and Hakimi still does not treat RAG as evidence,
+validation, final-gate satisfaction, or claim-trust authority.
 AITP process-graph reads are now MCP-first too: Hakimi calls
 `aitp_v5_get_process_graph_slice` with `base`, `session_id`, optional
 `claim_id`, and optional `limit`, then falls back to `aitp-v5 graph slice`

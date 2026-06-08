@@ -148,6 +148,22 @@ describe('AITP write bridge executor', () => {
       claimTrustMutation: 'none',
       canUpdateClaimTrust: false,
     });
+    expect(aitpRuntimeBridgeTargetForOperation('draftCuratedRagPromotion')).toMatchObject({
+      operation: 'draftCuratedRagPromotion',
+      entrypointKey: 'curated_rag_promotion_draft',
+      mcpTool: 'aitp_v5_draft_curated_rag_promotion',
+      cliFallback: 'aitp-v5 adapter curated-rag-promotion-draft <chunk-id> <args>',
+      surface: 'curated_rag_promotion_draft',
+      executionRole: 'read',
+      stateEffect: 'read_only',
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+      mcpArguments: {
+        required: ['chunk_id'],
+        optional: ['base', 'topic_id', 'claim_id', 'connector_id', 'promotion_intent'],
+        source: 'aitp_v5_draft_curated_rag_promotion',
+      },
+    });
     expect(aitpRuntimeBridgeTargetForOperation('preflightTrustUpdate')).toMatchObject({
       operation: 'preflightTrustUpdate',
       entrypointKey: 'trust_preflight',
