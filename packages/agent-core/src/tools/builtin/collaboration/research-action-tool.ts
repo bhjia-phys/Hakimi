@@ -2147,10 +2147,8 @@ function concreteLookupRefs(refs: readonly string[]): readonly string[] {
 }
 
 function looksLikeAitpRecordRef(ref: string): boolean {
-  const parts = ref.trim().split(':');
-  const kind = parts[0] === 'aitp' ? parts[1] : parts[0];
+  const kind = aitpRecordRefKind(ref);
   return (
-    parts.length >= 2 &&
     kind !== undefined &&
     [
       'artifact',
@@ -2164,6 +2162,12 @@ function looksLikeAitpRecordRef(ref: string): boolean {
       'validation_result',
     ].includes(kind)
   );
+}
+
+function aitpRecordRefKind(ref: string): string | undefined {
+  const parts = ref.trim().split(':');
+  if (parts.length < 2) return undefined;
+  return parts[0] === 'aitp' ? parts[1] : parts[0];
 }
 
 function isPlaceholderRef(ref: string): boolean {
@@ -2290,6 +2294,15 @@ function curatedRagPromotionWriteBridgeCallDiagnostics(
       message: `Replace placeholder ${field} with a real AITP record id or reviewed value before execution.`,
     });
   }
+  const payloadRefs = curatedRagPayloadIdentity(payload).refs;
+  for (const missing of missingSequencePriorRefs(draft, operation.stage, payloadRefs)) {
+    diagnostics.push({
+      code: 'missing_sequence_prior_ref',
+      field: missing.refKind,
+      message:
+        `AITP promotion_write_sequence requires a ${missing.refKind} ref matching ${missing.pattern} before executing ${aitpOperation}.`,
+    });
+  }
   for (const record of operation.requiresExistingRecords) {
     diagnostics.push({
       code: 'requires_existing_record',
@@ -2303,6 +2316,27 @@ function curatedRagPromotionWriteBridgeCallDiagnostics(
       'Review the source passage, claim scope, and AITP record refs before calling execute_aitp_write_bridge.',
   });
   return diagnostics;
+}
+
+function missingSequencePriorRefs(
+  draft: AitpCuratedRagPromotionDraft,
+  selectedStage: string,
+  payloadRefs: readonly string[],
+): readonly { readonly refKind: string; readonly pattern: string }[] {
+  const step = draft.promotionWriteSequence.find((item) => item.stage === selectedStage);
+  if (step === undefined || step.requiresPriorRefs.length === 0) return [];
+  return step.requiresPriorRefs
+    .map((pattern) => ({ refKind: refKindFromSequencePattern(pattern), pattern }))
+    .filter((item) => item.refKind.length > 0)
+    .filter((item) => !payloadRefs.some((ref) => refMatchesSequencePriorKind(ref, item.refKind)));
+}
+
+function refKindFromSequencePattern(pattern: string): string {
+  return aitpRecordRefKind(pattern) ?? '';
+}
+
+function refMatchesSequencePriorKind(ref: string, refKind: string): boolean {
+  return aitpRecordRefKind(ref) === refKind;
 }
 
 function curatedRagPromotionWriteBridgeCallOverrideDiagnostics(
@@ -2687,6 +2721,7 @@ const HARD_BLOCKING_PROMOTION_CONFIRMATION_CODES = new Set([
   'missing_required_field',
   'missing_draft_context',
   'placeholder_value',
+  'missing_sequence_prior_ref',
   'reviewed_override_introduces_placeholder',
 ]);
 

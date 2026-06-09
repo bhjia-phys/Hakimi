@@ -57,6 +57,11 @@ resolved before the normal write/preflight action is called.
 被选中的 write-call draft 会回显同一个 `promotion_write_sequence` 并标出
 selected step，让后续显式 `execute_aitp_write_bridge` 可以按 AITP sequence
 检查，而不是让 Hakimi 建第二套 source/reference/evidence store。
+如果 selected step 按 sequence 需要 prior refs，Hakimi 现在会检查 reviewed
+payload 里是否有对应 concrete refs；比如 evidence draft 只有
+`source_asset:...` 而没有 `reference_location:...` 时，会产生 hard-blocking
+`missing_sequence_prior_ref` diagnostic。这只是 readiness enforcement，不会
+确认 source support，也不会绕过显式 AITP bridge write。
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` with a proposed reviewed
 payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,
