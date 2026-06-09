@@ -9,6 +9,7 @@ import {
   type PhysicsMemoryRegistry,
 } from '../physics-memory';
 import type { ResearchActionBinding } from '../research-action';
+import type { AitpLiteratureSourceReviewHandoff } from '../aitp/literature-source-review-handoff';
 import {
   compileResearchLedgerProposals,
   type ResearchLedgerEventStatus,
@@ -35,6 +36,7 @@ import type {
   ResearchContextCuratedRagChunkSummary,
   ResearchContextCuratedRagSection,
   ResearchContextLedgerProposalSummary,
+  ResearchContextLiteratureSourceReviewHandoffSection,
   ResearchContextPack,
   ResearchContextPackDiagnostic,
   ResearchContextProfileSummary,
@@ -97,6 +99,10 @@ export function compileResearchContextPack(
     diagnostics,
   );
   const sourceContextReviewOutcome = collectSourceContextReviewOutcome(input, diagnostics);
+  const literatureSourceReviewHandoff = collectLiteratureSourceReviewHandoff(
+    input,
+    diagnostics,
+  );
   const curatedRagActionBindings = curatedRagPromotionDraftBindings(input, curatedRag);
   const curatedRagRepairActionBindings = curatedRagCarriedRefRepairBindings(
     input,
@@ -108,6 +114,8 @@ export function compileResearchContextPack(
   );
   const sourceContextReviewOutcomeActionBindings =
     sourceContextReviewOutcomeBindings(input, sourceContextReviewOutcome);
+  const literatureSourceReviewHandoffActionBindings =
+    literatureSourceReviewHandoffBindings(input, literatureSourceReviewHandoff);
   const actionBindings = bounded(
     uniqueBindings([
       ...workflows.flatMap((workflow) => workflow.metadata.actionBindings),
@@ -117,6 +125,7 @@ export function compileResearchContextPack(
       ...curatedRagRepairActionBindings,
       ...curatedRagRepairResultActionBindings,
       ...sourceContextReviewOutcomeActionBindings,
+      ...literatureSourceReviewHandoffActionBindings,
     ]),
     input.limits?.maxActionBindings ?? DEFAULT_MAX_ACTION_BINDINGS,
     (remaining) =>
@@ -179,6 +188,16 @@ export function compileResearchContextPack(
             sourceContextReviewOutcome.reviewedCanonicalRef,
             sourceContextReviewOutcome.nextActionId,
           ]),
+    literatureSourceReviewHandoffDigest:
+      literatureSourceReviewHandoff === undefined
+        ? undefined
+        : contextDigest([
+            literatureSourceReviewHandoff.sessionId,
+            literatureSourceReviewHandoff.topicId,
+            literatureSourceReviewHandoff.claimId,
+            literatureSourceReviewHandoff.literatureUri,
+            literatureSourceReviewHandoff.referenceLocationId,
+          ]),
   });
 
   return {
@@ -202,6 +221,9 @@ export function compileResearchContextPack(
       ? {}
       : { curatedRagCarriedRefRepairResult }),
     ...(sourceContextReviewOutcome === undefined ? {} : { sourceContextReviewOutcome }),
+    ...(literatureSourceReviewHandoff === undefined
+      ? {}
+      : { literatureSourceReviewHandoff }),
     actionBindings,
     domainPack,
     diagnostics,
@@ -296,6 +318,198 @@ function sourceContextReviewOutcomeBindings(
       },
     },
   ];
+}
+
+function collectLiteratureSourceReviewHandoff(
+  input: CompileResearchContextPackInput,
+  diagnostics: ResearchContextPackDiagnostic[],
+): ResearchContextLiteratureSourceReviewHandoffSection | undefined {
+  const handoff = input.literatureSourceReviewHandoff;
+  if (handoff === null || handoff === undefined) return undefined;
+  if (!isValidLiteratureSourceReviewHandoffForContext(handoff)) {
+    diagnostics.push({
+      severity: 'warning',
+      code: 'aitp:literature-source-review-handoff-rejected',
+      message:
+        'AITP literature source review handoff was omitted because no-trust/no-write flags did not match the ContextPack boundary.',
+      source: 'aitp',
+      refId: input.workFrame.id,
+    });
+    return undefined;
+  }
+  const referenceCandidate = recordValue(
+    handoff.literatureIntakeSuggestion['reference_candidate'],
+  );
+  const section: ResearchContextLiteratureSourceReviewHandoffSection = {
+    source: 'aitp.literature_source_review_handoff',
+    sessionId: handoff.sessionId,
+    topicId: handoff.topicId,
+    claimId: handoff.claimId,
+    truthSource: handoff.truthSource,
+    readSurfaceEffect: 'handoff_context_only',
+    literatureLabel: stringValue(referenceCandidate['label']),
+    literatureUri: stringValue(referenceCandidate['uri']),
+    literatureExternalId: stringValue(referenceCandidate['external_id']),
+    referenceLocationId: stringValue(referenceCandidate['location_id']),
+    recommendedAction: stringValue(handoff.literatureIntakeSuggestion['recommended_action']),
+    recordRefLookupCount: numberValue(handoff.recordRefLookup['lookup_count']),
+    recordRefFoundCount: numberValue(handoff.recordRefLookup['found_count']),
+    recordRefMissingCount: numberValue(handoff.recordRefLookup['missing_count']),
+    sourceStackCoverageStatus: stringValue(
+      handoff.sourceStackCoverageItem['coverage_status'],
+    ),
+    sourceStackCoverageMissingCount: numberValue(
+      handoff.sourceStackCoverageItem['missing_count'],
+    ),
+    sourceReconstructionReviewStatus: stringValue(
+      handoff.sourceReconstructionReviewPacket['review_status'],
+    ),
+    recommendedNextEntrypoints: unique(
+      handoff.recommendedNextEntrypoints.map((item) => item.entrypoint),
+    ),
+    forbiddenUses: handoff.handoffPolicy.forbiddenUses,
+    allowedNextToolCall: {
+      action: 'plan_primitive_tools',
+      actionId: 'source.review_context',
+      requiresExplicitNextAction: true,
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+    },
+    bindingId: literatureSourceReviewHandoffBindingId(
+      handoff.sessionId,
+      handoff.claimId,
+      stringValue(referenceCandidate['location_id']),
+    ),
+    raw: handoff,
+    readOnly: true,
+    requiresExplicitNextAction: true,
+    bridgeCalled: false,
+    executesWriteNow: false,
+    mutatesNextPayloadNow: false,
+    infersPayloadValues: false,
+    recordsValidationResult: false,
+    sourceSupportResult: false,
+    evidenceCreated: false,
+    validationCreated: false,
+    writeExecuted: false,
+    claimTrustMutation: 'none',
+    canUpdateClaimTrust: false,
+  };
+  diagnostics.push({
+    severity: 'info',
+    code: 'aitp:literature-source-review-handoff',
+    message:
+      'AITP literature source review handoff is available as read-only source-review context; canonical effects require explicit later AITP entrypoints.',
+    source: 'aitp',
+    refId: handoff.claimId || handoff.sessionId,
+  });
+  return section;
+}
+
+function literatureSourceReviewHandoffBindings(
+  input: CompileResearchContextPackInput,
+  section: ResearchContextLiteratureSourceReviewHandoffSection | undefined,
+): readonly ResearchActionBinding[] {
+  if (section === undefined) return [];
+  return [
+    {
+      id: section.bindingId,
+      actionId: 'source.review_context',
+      adapterId: 'aitp.literature.source-review-handoff',
+      domainId: input.workFrame.domain,
+      objectRefs: unique([
+        `literature_session:${section.sessionId}`,
+        `aitp:topic:${section.topicId}`,
+        section.claimId.length > 0 ? `aitp:claim:${section.claimId}` : '',
+        section.referenceLocationId.length > 0
+          ? `reference_location:${section.referenceLocationId}`
+          : '',
+        section.literatureUri.length > 0 ? `literature_uri:${section.literatureUri}` : '',
+      ]),
+      priority: 'high',
+      reason:
+        'AITP literature/source review handoff is ready for explicit source.review_context planning; this binding is read-only and grants no evidence, validation, write, final-gate, or trust authority.',
+      params: {
+        toolAction: 'ResearchAction.plan_primitive_tools',
+        actionId: 'source.review_context',
+        continuationSource: 'literature_source_review_handoff',
+        sessionId: section.sessionId,
+        topicId: section.topicId,
+        claimId: section.claimId,
+        literatureLabel: section.literatureLabel,
+        literatureUri: section.literatureUri,
+        literatureExternalId: section.literatureExternalId,
+        referenceLocationId: section.referenceLocationId,
+        recommendedAction: section.recommendedAction,
+        recordRefLookupCount: section.recordRefLookupCount,
+        recordRefFoundCount: section.recordRefFoundCount,
+        recordRefMissingCount: section.recordRefMissingCount,
+        sourceStackCoverageStatus: section.sourceStackCoverageStatus,
+        sourceStackCoverageMissingCount: section.sourceStackCoverageMissingCount,
+        sourceReconstructionReviewStatus: section.sourceReconstructionReviewStatus,
+        recommendedNextEntrypoints: section.recommendedNextEntrypoints,
+        requiresExplicitNextAction: true,
+        bridgeCalled: false,
+        executesWriteNow: false,
+        mutatesNextPayloadNow: false,
+        infersPayloadValues: false,
+        recordsValidationResult: false,
+        sourceSupportResult: false,
+        evidenceCreated: false,
+        validationCreated: false,
+        writeExecuted: false,
+        claimTrustMutation: 'none',
+        canUpdateClaimTrust: false,
+        recordsTrustState: false,
+        allowedNextToolCall: {
+          action: 'plan_primitive_tools',
+          action_id: 'source.review_context',
+          literature_source_review_handoff_binding_id: section.bindingId,
+          literature_session_id: section.sessionId,
+          literature_uri: section.literatureUri,
+          reference_location_id: section.referenceLocationId,
+          requires_explicit_next_action: true,
+          records_validation_result: false,
+          source_support_result: false,
+          claim_trust_mutation: 'none',
+        },
+        forbiddenUses: section.forbiddenUses,
+      },
+    },
+  ];
+}
+
+function isValidLiteratureSourceReviewHandoffForContext(
+  handoff: AitpLiteratureSourceReviewHandoff,
+): boolean {
+  return (
+    handoff.kind === 'literature_source_review_handoff' &&
+    handoff.readOnly === true &&
+    handoff.requiresExplicitNextAction === true &&
+    handoff.allowedNextToolCall.action === 'plan_primitive_tools' &&
+    handoff.allowedNextToolCall.actionId === 'source.review_context' &&
+    handoff.bridgeCalled === false &&
+    handoff.executesWriteNow === false &&
+    handoff.mutatesNextPayloadNow === false &&
+    handoff.infersPayloadValues === false &&
+    handoff.recordsValidationResult === false &&
+    handoff.sourceSupportResult === false &&
+    handoff.evidenceCreated === false &&
+    handoff.validationCreated === false &&
+    handoff.writeExecuted === false &&
+    handoff.claimTrustMutation === 'none' &&
+    handoff.canUpdateClaimTrust === false &&
+    [
+      'evidence_support',
+      'source_support_result',
+      'validation_result',
+      'write_execution',
+      'final_gate_satisfaction',
+      'claim_trust_update',
+      'trust_apply',
+    ].every((item) => handoff.handoffPolicy.forbiddenUses.includes(item))
+  );
 }
 
 function collectCuratedRagCarriedRefRepair(
@@ -769,6 +983,17 @@ function sourceContextReviewOutcomeBindingId(callId: string, nextActionId: strin
   return `binding.aitp.source-context-review-outcome.${safeId(callId)}.${safeId(nextActionId)}`;
 }
 
+function literatureSourceReviewHandoffBindingId(
+  sessionId: string,
+  claimId: string,
+  referenceLocationId: string,
+): string {
+  return `binding.aitp.literature-source-review-handoff.${safeId(sessionId)}.${contextDigest([
+    claimId,
+    referenceLocationId,
+  ])}`;
+}
+
 function inferAitpClaimScope(input: CompileResearchContextPackInput): {
   readonly topicId: string;
   readonly claimId: string;
@@ -1232,6 +1457,19 @@ function isString(value: string | undefined): value is string {
   return value !== undefined;
 }
 
+function recordValue(value: unknown): Readonly<Record<string, unknown>> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Readonly<Record<string, unknown>>;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
 function contextPackId(input: {
   readonly workFrameId: string;
   readonly domain: string;
@@ -1246,6 +1484,7 @@ function contextPackId(input: {
   readonly curatedRagCarriedRefRepairDigest?: string | undefined;
   readonly curatedRagCarriedRefRepairResultDigest?: string | undefined;
   readonly sourceContextReviewOutcomeDigest?: string | undefined;
+  readonly literatureSourceReviewHandoffDigest?: string | undefined;
 }): string {
   const hash = createHash('sha256')
     .update(JSON.stringify(input))

@@ -9,6 +9,7 @@ import {
   compileAitpProcessGraphSlice,
   compileResearchContextPack,
   createWorkFrame,
+  parseAitpLiteratureSourceReviewHandoff,
   type DomainProfile,
   type FileBackedResearchEvalCase,
   type PhysicsCapsule,
@@ -680,6 +681,136 @@ describe('compileResearchContextPack', () => {
       ],
     });
   });
+
+  it('adds literature source review handoff context bindings without support or trust', () => {
+    const handoff = parseAitpLiteratureSourceReviewHandoff(fakeLiteratureSourceReviewHandoff());
+    const pack = compileResearchContextPack({
+      workFrame: createWorkFrame({
+        id: 'frame.literature-handoff',
+        domain: DOMAIN,
+        topic: 'fqhe-literature',
+        goal: 'Review a literature source handoff.',
+      }),
+      literatureSourceReviewHandoff: handoff,
+      now: () => 123,
+    });
+
+    expect(pack.literatureSourceReviewHandoff).toMatchObject({
+      source: 'aitp.literature_source_review_handoff',
+      sessionId: 'session-qg',
+      topicId: 'qg',
+      claimId: 'claim-mipt',
+      literatureLabel: 'Observer algebra source',
+      literatureUri: 'https://arxiv.org/abs/2601.00001',
+      referenceLocationId: 'reference-location-observer-algebra',
+      recordRefLookupCount: 1,
+      recordRefFoundCount: 1,
+      recordRefMissingCount: 0,
+      sourceStackCoverageStatus: 'incomplete',
+      sourceReconstructionReviewStatus: 'needs_review',
+      readOnly: true,
+      bridgeCalled: false,
+      executesWriteNow: false,
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+    });
+    expect(pack.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'aitp:literature-source-review-handoff',
+        source: 'aitp',
+        refId: 'claim-mipt',
+      }),
+    );
+    expect(pack.actionBindings).toContainEqual(
+      expect.objectContaining({
+        id: pack.literatureSourceReviewHandoff?.bindingId,
+        actionId: 'source.review_context',
+        adapterId: 'aitp.literature.source-review-handoff',
+        priority: 'high',
+        objectRefs: expect.arrayContaining([
+          'literature_session:session-qg',
+          'aitp:topic:qg',
+          'aitp:claim:claim-mipt',
+          'reference_location:reference-location-observer-algebra',
+        ]),
+        params: expect.objectContaining({
+          toolAction: 'ResearchAction.plan_primitive_tools',
+          actionId: 'source.review_context',
+          continuationSource: 'literature_source_review_handoff',
+          sessionId: 'session-qg',
+          topicId: 'qg',
+          claimId: 'claim-mipt',
+          literatureLabel: 'Observer algebra source',
+          referenceLocationId: 'reference-location-observer-algebra',
+          requiresExplicitNextAction: true,
+          bridgeCalled: false,
+          executesWriteNow: false,
+          mutatesNextPayloadNow: false,
+          infersPayloadValues: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          evidenceCreated: false,
+          validationCreated: false,
+          writeExecuted: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+          recordsTrustState: false,
+          allowedNextToolCall: {
+            action: 'plan_primitive_tools',
+            action_id: 'source.review_context',
+            literature_source_review_handoff_binding_id:
+              pack.literatureSourceReviewHandoff?.bindingId,
+            literature_session_id: 'session-qg',
+            literature_uri: 'https://arxiv.org/abs/2601.00001',
+            reference_location_id: 'reference-location-observer-algebra',
+            requires_explicit_next_action: true,
+            records_validation_result: false,
+            source_support_result: false,
+            claim_trust_mutation: 'none',
+          },
+          forbiddenUses: [
+            'evidence_support',
+            'source_support_result',
+            'validation_result',
+            'write_execution',
+            'final_gate_satisfaction',
+            'claim_trust_update',
+            'trust_apply',
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('rejects literature source review handoff bindings when boundary flags drift', () => {
+    const handoff = {
+      ...parseAitpLiteratureSourceReviewHandoff(fakeLiteratureSourceReviewHandoff()),
+      recordsValidationResult: true,
+    } as any;
+    const pack = compileResearchContextPack({
+      workFrame: createWorkFrame({
+        id: 'frame.literature-handoff-rejected',
+        domain: DOMAIN,
+        topic: 'fqhe-literature',
+        goal: 'Reject an unsafe literature source handoff.',
+      }),
+      literatureSourceReviewHandoff: handoff,
+      now: () => 123,
+    });
+
+    expect(pack.literatureSourceReviewHandoff).toBeUndefined();
+    expect(pack.actionBindings.map((item) => item.adapterId)).not.toContain(
+      'aitp.literature.source-review-handoff',
+    );
+    expect(pack.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'aitp:literature-source-review-handoff-rejected',
+        source: 'aitp',
+      }),
+    );
+  });
 });
 
 function carriedRefRepairResultSummary() {
@@ -710,6 +841,175 @@ function carriedRefRepairResultSummary() {
     canUpdateClaimTrust: false,
     requiresExplicitNextDraft: true,
   } as const;
+}
+
+function fakeLiteratureSourceReviewHandoff(): any {
+  return {
+    ok: true,
+    kind: 'literature_source_review_handoff',
+    session_id: 'session-qg',
+    topic_id: 'qg',
+    claim_id: 'claim-mipt',
+    literature_intake_suggestion: {
+      ok: true,
+      kind: 'literature_intake_suggestion',
+      session_id: 'session-qg',
+      topic_id: 'qg',
+      active_claim: 'claim-mipt',
+      recommended_action: 'record_reference_plus_evidence_candidate',
+      reference_candidate: {
+        location_id: 'reference-location-observer-algebra',
+        topic_id: 'qg',
+        claim_id: 'claim-mipt',
+        connector_id: 'literature_search',
+        location_type: 'paper',
+        uri: 'https://arxiv.org/abs/2601.00001',
+        label: 'Observer algebra source',
+        external_id: 'arXiv:2601.00001',
+        status: 'candidate',
+        summary: 'Close prior art for source reconstruction.',
+        metadata: { detected_relevance: 'explicit claim scope relevance' },
+        linked_records: { claim_id: 'claim-mipt' },
+        orientation_only: true,
+      },
+      guarded_next_steps: [],
+      mcp_templates: {},
+      cli_templates: [],
+      risk_notes: ['not_a_supports_claim_by_default'],
+      forbidden_without_preflight: ['aitp_v5_preflight_trust_update'],
+      trust_update_forbidden: true,
+      summary_inputs_trusted: false,
+      orientation_only: true,
+      can_update_kernel_state: false,
+      can_update_claim_trust: false,
+      truth_source: 'session_binding_and_agent_supplied_literature_metadata',
+    },
+    record_ref_lookup: {
+      kind: 'record_ref_lookup',
+      lookup_scope: 'typed_record_existence_only',
+      lookup_count: 1,
+      found_count: 1,
+      missing_count: 0,
+      unsupported_count: 0,
+      malformed_count: 0,
+      refs: [
+        {
+          ref: 'source_asset:asset-reviewed',
+          ref_kind: 'source_asset',
+          record_id: 'asset-reviewed',
+          id_field: 'asset_id',
+          surface: 'source_asset_record',
+          record_role: 'orientation_only_record',
+          store_scope: 'registry/source_assets',
+          status: 'found',
+          record_confirmed: true,
+          topic_id: 'qg',
+          claim_id: 'claim-mipt',
+          record_kind: 'source_asset',
+          orientation_only_record: true,
+          can_update_record_claim_trust: false,
+          read_surface_effect: 'record_existence_check_only',
+          records_validation_result: false,
+          source_support_result: false,
+          claim_trust_mutation: 'none',
+          can_update_claim_trust: false,
+          suggested_next_operation: '',
+          suggested_next_entrypoint: '',
+          suggested_next_surface: '',
+          suggested_next_reason: '',
+          diagnostic: 'record exists in typed store',
+        },
+      ],
+      supported_ref_kinds: ['source_asset'],
+      read_surface_effect: 'record_existence_check_only',
+      records_validation_result: false,
+      source_support_result: false,
+      evidence_created: false,
+      validation_created: false,
+      claim_trust_mutation: 'none',
+      can_update_claim_trust: false,
+      summary_inputs_trusted: false,
+      orientation_only: true,
+    },
+    source_stack_coverage_item: {
+      claim_id: 'claim-mipt',
+      coverage_status: 'incomplete',
+      missing_count: 1,
+    },
+    source_reconstruction_review_packet: {
+      kind: 'source_reconstruction_review_packet',
+      claim_id: 'claim-mipt',
+      review_status: 'needs_review',
+    },
+    recommended_next_entrypoints: [
+      {
+        entrypoint: 'record_reference_location',
+        surface: 'reference_location_record',
+        reason: 'record the literature location before using it as source context',
+      },
+      {
+        entrypoint: 'record_source_reconstruction_review_result',
+        surface: 'source_reconstruction_review_result_record',
+        reason: 'review source reconstruction gaps before trust-sensitive use',
+      },
+    ],
+    handoff_policy: {
+      source: 'composed_read_only_aitp_surfaces',
+      host_may_use_for: [
+        'literature_orientation',
+        'source_context_review',
+        'record_ref_existence_check',
+        'source_stack_gap_review',
+        'next_action_selection',
+      ],
+      requires_explicit_next_entrypoint: true,
+      allowed_next_entrypoints: [
+        'record_reference_location',
+        'register_source_asset',
+        'record_evidence',
+        'create_validation_contract',
+        'record_validation_result',
+        'record_source_reconstruction_review_result',
+        'preflight_trust_update',
+      ],
+      forbidden_uses: [
+        'evidence_support',
+        'source_support_result',
+        'validation_result',
+        'write_execution',
+        'final_gate_satisfaction',
+        'claim_trust_update',
+        'trust_apply',
+      ],
+    },
+    allowed_next_tool_call: {
+      action: 'plan_primitive_tools',
+      action_id: 'source.review_context',
+      requires_explicit_next_action: true,
+      records_validation_result: false,
+      source_support_result: false,
+      claim_trust_mutation: 'none',
+    },
+    read_surface_effect: 'handoff_context_only',
+    read_only: true,
+    requires_explicit_next_action: true,
+    bridge_called: false,
+    executes_write_now: false,
+    mutates_next_payload_now: false,
+    infers_payload_values: false,
+    summary_inputs_trusted: false,
+    orientation_only: true,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+    records_validation_result: false,
+    source_support_result: false,
+    evidence_created: false,
+    validation_created: false,
+    write_executed: false,
+    trust_update_forbidden: true,
+    claim_trust_mutation: 'none',
+    truth_source: 'composed_typed_records_and_agent_supplied_literature_metadata',
+  };
 }
 
 function profile(): DomainProfile {

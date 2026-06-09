@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { Agent, type AgentRecord } from '../../src/agent';
 import { InMemoryAgentRecordPersistence } from '../../src/agent/records';
+import { renderResearchContextPackReminder } from '../../src/agent/workframe/context-pack';
 import { ProviderManager } from '../../src/session/provider-manager';
 import {
   WorkflowRecipeRegistry,
   compileAitpProcessGraphSlice,
+  parseAitpLiteratureSourceReviewHandoff,
   type AitpCuratedRagProvider,
   type AitpCuratedRagSearchResult,
   type AitpProcessGraphSliceProvider,
@@ -676,6 +678,59 @@ describe('ResearchContextManager', () => {
     expect(reminder).toContain('runtime routing only');
     expect(reminder).toContain('do not record validation results, prove source support');
   });
+
+  it('renders literature source review handoff reminders from explicit context options', async () => {
+    const agent = makeAgent();
+    agent.workFrames.open(
+      {
+        id: 'frame.literature-handoff-reminder',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'qg',
+        goal: 'Use literature handoff context for source review.',
+      },
+      { source: 'controller' },
+    );
+
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        literatureSourceReviewHandoff: parseAitpLiteratureSourceReviewHandoff(
+          fakeLiteratureSourceReviewHandoff(),
+        ),
+      },
+      { source: 'controller' },
+    );
+
+    expect(pack.literatureSourceReviewHandoff).toMatchObject({
+      sessionId: 'session-qg',
+      claimId: 'claim-mipt',
+      literatureLabel: 'Observer algebra source',
+      readOnly: true,
+      bridgeCalled: false,
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+    });
+    expect(pack.actionBindings).toContainEqual(
+      expect.objectContaining({
+        actionId: 'source.review_context',
+        adapterId: 'aitp.literature.source-review-handoff',
+        params: expect.objectContaining({
+          continuationSource: 'literature_source_review_handoff',
+          executesWriteNow: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+        }),
+      }),
+    );
+    const reminder = renderResearchContextPackReminder(pack);
+    expect(reminder).toContain('AITP literature source review handoff');
+    expect(reminder).toContain('Observer algebra source');
+    expect(reminder).toContain('source.review_context');
+    expect(reminder).toContain('binding.aitp.literature-source-review-handoff');
+    expect(reminder).toContain('read-only context');
+    expect(reminder).toContain('do not prove source support, record validation, execute writes');
+  });
 });
 
 function makeAgent(
@@ -726,6 +781,170 @@ function makeAgent(
     modelAlias: MOCK_PROVIDER.model,
   });
   return agent;
+}
+
+function fakeLiteratureSourceReviewHandoff(): any {
+  return {
+    ok: true,
+    kind: 'literature_source_review_handoff',
+    session_id: 'session-qg',
+    topic_id: 'qg',
+    claim_id: 'claim-mipt',
+    literature_intake_suggestion: {
+      ok: true,
+      kind: 'literature_intake_suggestion',
+      session_id: 'session-qg',
+      topic_id: 'qg',
+      active_claim: 'claim-mipt',
+      recommended_action: 'record_reference_plus_evidence_candidate',
+      reference_candidate: {
+        location_id: 'reference-location-observer-algebra',
+        topic_id: 'qg',
+        claim_id: 'claim-mipt',
+        connector_id: 'literature_search',
+        location_type: 'paper',
+        uri: 'https://arxiv.org/abs/2601.00001',
+        label: 'Observer algebra source',
+        external_id: 'arXiv:2601.00001',
+        status: 'candidate',
+        summary: 'Close prior art for source reconstruction.',
+        metadata: { detected_relevance: 'explicit claim scope relevance' },
+        linked_records: { claim_id: 'claim-mipt' },
+        orientation_only: true,
+      },
+      guarded_next_steps: [],
+      mcp_templates: {},
+      cli_templates: [],
+      risk_notes: ['not_a_supports_claim_by_default'],
+      forbidden_without_preflight: ['aitp_v5_preflight_trust_update'],
+      trust_update_forbidden: true,
+      summary_inputs_trusted: false,
+      orientation_only: true,
+      can_update_kernel_state: false,
+      can_update_claim_trust: false,
+      truth_source: 'session_binding_and_agent_supplied_literature_metadata',
+    },
+    record_ref_lookup: {
+      kind: 'record_ref_lookup',
+      lookup_scope: 'typed_record_existence_only',
+      lookup_count: 1,
+      found_count: 1,
+      missing_count: 0,
+      unsupported_count: 0,
+      malformed_count: 0,
+      refs: [
+        {
+          ref: 'source_asset:asset-reviewed',
+          ref_kind: 'source_asset',
+          record_id: 'asset-reviewed',
+          id_field: 'asset_id',
+          surface: 'source_asset_record',
+          record_role: 'orientation_only_record',
+          store_scope: 'registry/source_assets',
+          status: 'found',
+          record_confirmed: true,
+          topic_id: 'qg',
+          claim_id: 'claim-mipt',
+          record_kind: 'source_asset',
+          orientation_only_record: true,
+          can_update_record_claim_trust: false,
+          read_surface_effect: 'record_existence_check_only',
+          records_validation_result: false,
+          source_support_result: false,
+          claim_trust_mutation: 'none',
+          can_update_claim_trust: false,
+          suggested_next_operation: '',
+          suggested_next_entrypoint: '',
+          suggested_next_surface: '',
+          suggested_next_reason: '',
+          diagnostic: 'record exists in typed store',
+        },
+      ],
+      supported_ref_kinds: ['source_asset'],
+      read_surface_effect: 'record_existence_check_only',
+      records_validation_result: false,
+      source_support_result: false,
+      evidence_created: false,
+      validation_created: false,
+      claim_trust_mutation: 'none',
+      can_update_claim_trust: false,
+      summary_inputs_trusted: false,
+      orientation_only: true,
+    },
+    source_stack_coverage_item: {
+      claim_id: 'claim-mipt',
+      coverage_status: 'incomplete',
+      missing_count: 1,
+    },
+    source_reconstruction_review_packet: {
+      kind: 'source_reconstruction_review_packet',
+      claim_id: 'claim-mipt',
+      review_status: 'needs_review',
+    },
+    recommended_next_entrypoints: [
+      {
+        entrypoint: 'record_reference_location',
+        surface: 'reference_location_record',
+        reason: 'record the literature location before using it as source context',
+      },
+    ],
+    handoff_policy: {
+      source: 'composed_read_only_aitp_surfaces',
+      host_may_use_for: [
+        'literature_orientation',
+        'source_context_review',
+        'record_ref_existence_check',
+        'source_stack_gap_review',
+        'next_action_selection',
+      ],
+      requires_explicit_next_entrypoint: true,
+      allowed_next_entrypoints: [
+        'record_reference_location',
+        'register_source_asset',
+        'record_evidence',
+        'create_validation_contract',
+        'record_validation_result',
+        'record_source_reconstruction_review_result',
+        'preflight_trust_update',
+      ],
+      forbidden_uses: [
+        'evidence_support',
+        'source_support_result',
+        'validation_result',
+        'write_execution',
+        'final_gate_satisfaction',
+        'claim_trust_update',
+        'trust_apply',
+      ],
+    },
+    allowed_next_tool_call: {
+      action: 'plan_primitive_tools',
+      action_id: 'source.review_context',
+      requires_explicit_next_action: true,
+      records_validation_result: false,
+      source_support_result: false,
+      claim_trust_mutation: 'none',
+    },
+    read_surface_effect: 'handoff_context_only',
+    read_only: true,
+    requires_explicit_next_action: true,
+    bridge_called: false,
+    executes_write_now: false,
+    mutates_next_payload_now: false,
+    infers_payload_values: false,
+    summary_inputs_trusted: false,
+    orientation_only: true,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+    records_validation_result: false,
+    source_support_result: false,
+    evidence_created: false,
+    validation_created: false,
+    write_executed: false,
+    trust_update_forbidden: true,
+    claim_trust_mutation: 'none',
+    truth_source: 'composed_typed_records_and_agent_supplied_literature_metadata',
+  };
 }
 
 function fakeCuratedRagSearchResult(query: string): AitpCuratedRagSearchResult {

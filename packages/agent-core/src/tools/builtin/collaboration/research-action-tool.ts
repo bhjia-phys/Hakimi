@@ -4311,6 +4311,7 @@ type SourceContextReviewHandoffReadiness =
       readonly bindingId: string;
       readonly contextPackId: string;
       readonly actionId: string;
+      readonly sourceKind: 'source_context_review_outcome' | 'literature_source_review_handoff';
       readonly sourceReviewCallId: string;
       readonly sourceReviewOutcome: string;
       readonly sourceReviewDecision: SourceReviewContextDecision;
@@ -4319,6 +4320,9 @@ type SourceContextReviewHandoffReadiness =
       readonly claimScope: string;
       readonly chunkScope: string;
       readonly rationale: string;
+      readonly literatureSessionId: string;
+      readonly literatureUri: string;
+      readonly referenceLocationId: string;
       readonly allowedNextToolCallAction: string;
       readonly allowedNextToolCallActionId: string;
     }
@@ -4345,7 +4349,7 @@ function renderSourceContextReviewHandoffReadiness(
     ].join('\n');
   }
   return [
-    `<source_context_review_handoff_readiness status="passed" context_pack_id="${escapeXml(readiness.contextPackId)}" binding_id="${escapeXml(readiness.bindingId)}" action_id="${escapeXml(readiness.actionId)}" source_review_call_id="${escapeXml(readiness.sourceReviewCallId)}" source_review_outcome="${escapeXml(readiness.sourceReviewOutcome)}" decision="${readiness.sourceReviewDecision}" reviewed_canonical_ref="${escapeXml(readiness.reviewedCanonicalRef)}" reviewed_evidence_ref="${escapeXml(readiness.reviewedEvidenceRef)}" claim_scope="${escapeXml(readiness.claimScope)}" chunk_scope="${escapeXml(readiness.chunkScope)}" next_action_id="${escapeXml(readiness.actionId)}" allowed_next_tool_call_action="${escapeXml(readiness.allowedNextToolCallAction)}" allowed_next_tool_call_action_id="${escapeXml(readiness.allowedNextToolCallActionId)}" read_only="true" requires_explicit_next_action="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" next_action_allowed="true">`,
+    `<source_context_review_handoff_readiness status="passed" context_pack_id="${escapeXml(readiness.contextPackId)}" binding_id="${escapeXml(readiness.bindingId)}" action_id="${escapeXml(readiness.actionId)}" source_kind="${readiness.sourceKind}" source_review_call_id="${escapeXml(readiness.sourceReviewCallId)}" source_review_outcome="${escapeXml(readiness.sourceReviewOutcome)}" decision="${readiness.sourceReviewDecision}" reviewed_canonical_ref="${escapeXml(readiness.reviewedCanonicalRef)}" reviewed_evidence_ref="${escapeXml(readiness.reviewedEvidenceRef)}" claim_scope="${escapeXml(readiness.claimScope)}" chunk_scope="${escapeXml(readiness.chunkScope)}" literature_session_id="${escapeXml(readiness.literatureSessionId)}" literature_uri="${escapeXml(readiness.literatureUri)}" reference_location_id="${escapeXml(readiness.referenceLocationId)}" next_action_id="${escapeXml(readiness.actionId)}" allowed_next_tool_call_action="${escapeXml(readiness.allowedNextToolCallAction)}" allowed_next_tool_call_action_id="${escapeXml(readiness.allowedNextToolCallActionId)}" read_only="true" requires_explicit_next_action="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" next_action_allowed="true">`,
     `  <rationale>${escapeXml(readiness.rationale)}</rationale>`,
     '  <handoff_boundary host_routing_only="true" canonical_effect_requires_explicit_aitp_entrypoint="true" evidence_support="false" validation_result="false" final_gate_satisfaction="false" trust_apply="false" />',
     '</source_context_review_handoff_readiness>',
@@ -4365,8 +4369,14 @@ function sourceContextReviewHandoffReadiness(
     code,
     message,
   });
+  if (binding.adapterId === 'aitp.literature.source-review-handoff') {
+    return literatureSourceReviewHandoffReadiness(binding, contextPackId, fail);
+  }
   if (binding.adapterId !== 'aitp.curated-rag.source-context-review-outcome') {
-    return fail('wrong_adapter', 'Binding is not a source-context review outcome binding.');
+    return fail(
+      'wrong_adapter',
+      'Binding is not a source-context review outcome or literature source review handoff binding.',
+    );
   }
   const params = binding.params;
   if (params === undefined) {
@@ -4435,6 +4445,7 @@ function sourceContextReviewHandoffReadiness(
     bindingId: binding.id,
     contextPackId,
     actionId: binding.actionId,
+    sourceKind: 'source_context_review_outcome',
     sourceReviewCallId: required.sourceReviewCallId,
     sourceReviewOutcome: required.sourceReviewOutcome,
     sourceReviewDecision: decision,
@@ -4443,8 +4454,108 @@ function sourceContextReviewHandoffReadiness(
     claimScope: required.claimScope,
     chunkScope: required.chunkScope,
     rationale: required.rationale,
+    literatureSessionId: '',
+    literatureUri: '',
+    referenceLocationId: '',
     allowedNextToolCallAction: 'plan_primitive_tools',
     allowedNextToolCallActionId: expectedActionId,
+  };
+}
+
+function literatureSourceReviewHandoffReadiness(
+  binding: ResearchActionBinding,
+  contextPackId: string,
+  fail: (code: string, message: string) => SourceContextReviewHandoffReadiness,
+): SourceContextReviewHandoffReadiness {
+  const params = binding.params;
+  if (params === undefined) {
+    return fail('missing_params', 'Binding does not contain literature source review handoff params.');
+  }
+  if (binding.actionId !== 'source.review_context') {
+    return fail('next_action_mismatch', 'Literature handoff binding must target source.review_context.');
+  }
+  if (
+    params['continuationSource'] !== 'literature_source_review_handoff' ||
+    params['requiresExplicitNextAction'] !== true ||
+    params['bridgeCalled'] !== false ||
+    params['executesWriteNow'] !== false ||
+    params['mutatesNextPayloadNow'] !== false ||
+    params['infersPayloadValues'] !== false ||
+    params['recordsValidationResult'] !== false ||
+    params['sourceSupportResult'] !== false ||
+    params['evidenceCreated'] !== false ||
+    params['validationCreated'] !== false ||
+    params['writeExecuted'] !== false ||
+    params['claimTrustMutation'] !== 'none' ||
+    params['canUpdateClaimTrust'] !== false ||
+    params['recordsTrustState'] !== false
+  ) {
+    return fail('boundary_flags_mismatch', 'Literature handoff binding does not preserve the required no-trust/no-write boundary flags.');
+  }
+  const allowedNextToolCall = params['allowedNextToolCall'];
+  if (!isRecord(allowedNextToolCall)) {
+    return fail('missing_allowed_next_tool_call', 'Literature handoff binding does not contain an allowedNextToolCall object.');
+  }
+  if (
+    allowedNextToolCall['action'] !== 'plan_primitive_tools' ||
+    allowedNextToolCall['action_id'] !== 'source.review_context' ||
+    allowedNextToolCall['requires_explicit_next_action'] !== true ||
+    allowedNextToolCall['records_validation_result'] !== false ||
+    allowedNextToolCall['source_support_result'] !== false ||
+    allowedNextToolCall['claim_trust_mutation'] !== 'none'
+  ) {
+    return fail('allowed_next_tool_call_mismatch', 'Literature handoff allowed next call must be bounded source.review_context planning.');
+  }
+  const forbiddenUses = params['forbiddenUses'];
+  if (
+    !Array.isArray(forbiddenUses) ||
+    ![
+      'evidence_support',
+      'source_support_result',
+      'validation_result',
+      'write_execution',
+      'final_gate_satisfaction',
+      'claim_trust_update',
+      'trust_apply',
+    ].every((item) => forbiddenUses.includes(item))
+  ) {
+    return fail('forbidden_uses_mismatch', 'Literature handoff binding is missing required forbidden uses.');
+  }
+  const sessionId = stringValue(params['sessionId']);
+  const topicId = stringValue(params['topicId']);
+  const claimId = stringValue(params['claimId']) ?? '';
+  const literatureUri = stringValue(params['literatureUri']);
+  const referenceLocationId = stringValue(params['referenceLocationId']);
+  const literatureLabel = stringValue(params['literatureLabel']);
+  if (
+    sessionId === undefined ||
+    topicId === undefined ||
+    literatureUri === undefined ||
+    referenceLocationId === undefined ||
+    literatureLabel === undefined
+  ) {
+    return fail('missing_required_params', 'Literature handoff binding is missing required source-review metadata.');
+  }
+  return {
+    status: 'passed',
+    bindingId: binding.id,
+    contextPackId,
+    actionId: binding.actionId,
+    sourceKind: 'literature_source_review_handoff',
+    sourceReviewCallId: '',
+    sourceReviewOutcome: 'not_started',
+    sourceReviewDecision: 'extract',
+    reviewedCanonicalRef:
+      referenceLocationId.length > 0 ? `reference_location:${referenceLocationId}` : '',
+    reviewedEvidenceRef: '',
+    claimScope: claimId.length > 0 ? `claim:${claimId}` : '',
+    chunkScope: '',
+    rationale: `Review literature handoff for ${literatureLabel}; choose the next explicit AITP entrypoint after source.review_context.`,
+    literatureSessionId: sessionId,
+    literatureUri,
+    referenceLocationId,
+    allowedNextToolCallAction: 'plan_primitive_tools',
+    allowedNextToolCallActionId: 'source.review_context',
   };
 }
 
@@ -4782,6 +4893,7 @@ function renderContextPack(pack: ResearchContextPack): string {
     renderCuratedRagSection(pack),
     renderCuratedRagCarriedRefRepairSection(pack),
     renderCuratedRagCarriedRefRepairResultSection(pack),
+    renderLiteratureSourceReviewHandoffContextSection(pack),
     renderSourceContextReviewOutcomeSection(pack),
     '  <action_bindings>',
     ...pack.actionBindings.map(renderActionBindingXml),
@@ -4802,6 +4914,27 @@ function renderSourceContextReviewOutcomeSection(pack: ResearchContextPack): str
   if (outcome === undefined) return '  <source_context_review_outcome />';
   return [
     `  <source_context_review_outcome source="${outcome.source}" action_id="${outcome.actionId}" call_id="${escapeXml(outcome.callId)}" outcome="${outcome.outcome}" decision="${outcome.decision}" reviewed_canonical_ref="${escapeXml(outcome.reviewedCanonicalRef)}" reviewed_evidence_ref="${escapeXml(outcome.reviewedEvidenceRef)}" claim_scope="${escapeXml(outcome.claimScope)}" chunk_scope="${escapeXml(outcome.chunkScope)}" rationale="${escapeXml(outcome.rationale)}" next_action_id="${escapeXml(outcome.nextActionId)}" requires_explicit_next_action="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" />`,
+  ].join('\n');
+}
+
+function renderLiteratureSourceReviewHandoffContextSection(pack: ResearchContextPack): string {
+  const handoff = pack.literatureSourceReviewHandoff;
+  if (handoff === undefined) return '  <aitp_literature_source_review_handoff_context />';
+  return [
+    `  <aitp_literature_source_review_handoff_context source="${handoff.source}" session_id="${escapeXml(handoff.sessionId)}" topic_id="${escapeXml(handoff.topicId)}" claim_id="${escapeXml(handoff.claimId)}" truth_source="${escapeXml(handoff.truthSource)}" read_surface_effect="${handoff.readSurfaceEffect}" binding_id="${escapeXml(handoff.bindingId)}" read_only="true" requires_explicit_next_action="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" records_validation_result="false" source_support_result="false" evidence_created="false" validation_created="false" write_executed="false" claim_trust_mutation="none" can_update_claim_trust="false">`,
+    `    <literature_intake label="${escapeXml(handoff.literatureLabel)}" uri="${escapeXml(handoff.literatureUri)}" external_id="${escapeXml(handoff.literatureExternalId)}" reference_location_id="${escapeXml(handoff.referenceLocationId)}" recommended_action="${escapeXml(handoff.recommendedAction)}" />`,
+    `    <record_ref_lookup lookup_count="${String(handoff.recordRefLookupCount)}" found_count="${String(handoff.recordRefFoundCount)}" missing_count="${String(handoff.recordRefMissingCount)}" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />`,
+    `    <source_stack_coverage status="${escapeXml(handoff.sourceStackCoverageStatus)}" missing_count="${String(handoff.sourceStackCoverageMissingCount)}" />`,
+    `    <source_reconstruction_review_packet status="${escapeXml(handoff.sourceReconstructionReviewStatus)}" />`,
+    `    <allowed_next_tool_call action="${handoff.allowedNextToolCall.action}" action_id="${handoff.allowedNextToolCall.actionId}" requires_explicit_next_action="true" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />`,
+    renderBoundedStringList(
+      'recommended_next_entrypoints',
+      'entrypoint',
+      handoff.recommendedNextEntrypoints,
+      '    ',
+    ),
+    renderBoundedStringList('forbidden_uses', 'use', handoff.forbiddenUses, '    '),
+    '  </aitp_literature_source_review_handoff_context>',
   ].join('\n');
 }
 
