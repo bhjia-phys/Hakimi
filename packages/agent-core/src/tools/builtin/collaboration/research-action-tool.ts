@@ -452,6 +452,10 @@ interface AitpHandoffGuard {
   readonly diagnosticHash: string;
   readonly confirmationStatus: string;
   readonly selectedAitpOperation: string;
+  readonly chunkId?: string | undefined;
+  readonly documentId?: string | undefined;
+  readonly stage?: string | undefined;
+  readonly draftOperation?: string | undefined;
   readonly missingRefRepairHintCount: number;
   readonly missingRefRepairChecklistPresent: boolean;
   readonly repairHintOperations: readonly string[];
@@ -2935,6 +2939,10 @@ function verifyAitpWriteBridgeHandoff(
       diagnosticHash,
       confirmationStatus,
       selectedAitpOperation: operation,
+      chunkId: stringRecordValue(hashInput, 'chunkId'),
+      documentId: stringRecordValue(hashInput, 'documentId'),
+      stage: stringRecordValue(hashInput, 'stage'),
+      draftOperation: stringRecordValue(hashInput, 'draftOperation'),
       missingRefRepairHintCount,
       missingRefRepairChecklistPresent: missingRefRepairHintCount > 0,
       repairHintOperations,
@@ -3428,6 +3436,7 @@ function renderAitpWriteBridgeExecution(
     renderAitpHandoffExecutionPrecheck({ status: 'passed', guard: handoffGuard }),
     renderAitpHandoffGuard(handoffGuard),
     `  <record_id>${escapeXml(aitpWriteBridgeRecordId(result))}</record_id>`,
+    renderAitpCuratedRagCarriedRefHandoff(result, handoffGuard, '  '),
     renderAitpWriteBridgeResultDetails(result),
     renderStringList('evidence_refs', 'evidence_ref', evidenceRefsForAitpWriteBridgeResult(result), '  '),
     '</aitp_write_bridge>',
@@ -3520,6 +3529,62 @@ function renderAitpHandoffGuard(handoffGuard: AitpHandoffGuard | undefined): str
   if (handoffGuard === undefined) return '';
   const draftFamily = readinessDraftFamily(handoffGuard.kind);
   return `  <handoff_guard kind="${handoffGuard.kind}" handoff_id="${escapeXml(handoffGuard.handoffId)}" confirmation_id="${escapeXml(handoffGuard.confirmationId)}" confirmation_status="${escapeXml(handoffGuard.confirmationStatus)}" diagnostic_hash="${escapeXml(handoffGuard.diagnosticHash)}" selected_aitp_operation="${escapeXml(handoffGuard.selectedAitpOperation)}" missing_ref_repair_hint_count="${String(handoffGuard.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(handoffGuard.missingRefRepairChecklistPresent)}" repair_hint_operation_count="${String(handoffGuard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(handoffGuard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(handoffGuard.selectedWriteDiffersFromRepairHints)}" readiness_checklist_id="${escapeXml(readinessChecklistId(draftFamily, handoffGuard.handoffId))}" readiness_checklist_item_order="2" readiness_checklist_item_action="execute_aitp_write_bridge" readiness_checklist_item_status="followed" readiness_checklist_reference_source="handoff_execution_precheck" checklist_authorizes_execution="false" checklist_mutated_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" status="passed" />`;
+}
+
+function renderAitpCuratedRagCarriedRefHandoff(
+  result: AitpWriteBridgeExecutionResult,
+  handoffGuard: AitpHandoffGuard | undefined,
+  indent: string,
+): string {
+  if (handoffGuard?.kind !== 'curated_rag_write_bridge_handoff') return '';
+  const carriedRef = curatedRagPromotionCarriedRef(result);
+  if (carriedRef === undefined) return '';
+  const nextStages = nextCuratedRagPromotionStagesForCarriedRef(carriedRef.refKind);
+  if (nextStages.length === 0) return '';
+  return [
+    `${indent}<aitp_curated_rag_carried_ref_handoff source="execute_aitp_write_bridge_result" handoff_id="${escapeXml(handoffGuard.handoffId)}"${handoffGuard.chunkId === undefined ? '' : ` chunk_id="${escapeXml(handoffGuard.chunkId)}"`}${handoffGuard.stage === undefined ? '' : ` completed_stage="${escapeXml(handoffGuard.stage)}"`} completed_operation="${escapeXml(handoffGuard.selectedAitpOperation)}" canonical_ref="${escapeXml(carriedRef.canonicalRef)}" evidence_ref="${escapeXml(carriedRef.evidenceRef)}" ref_kind="${escapeXml(carriedRef.refKind)}" record_id="${escapeXml(carriedRef.recordId)}" feeds_next_stages="${escapeXml(nextStages.join(','))}" next_research_action="draft_aitp_curated_rag_write_bridge_call" carry_into="promotion_reviewed_overrides" carried_ref_executed_source="true" next_payload_mutated_now="false" next_write_executed_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_reviewed_payload="true" requires_explicit_execute_call="true">`,
+    `${indent}  <next_step>Use this ref as a reviewed override for a later AITP promotion sequence draft when the source text and claim scope have been reviewed.</next_step>`,
+    `${indent}</aitp_curated_rag_carried_ref_handoff>`,
+  ].join('\n');
+}
+
+function curatedRagPromotionCarriedRef(
+  result: AitpWriteBridgeExecutionResult,
+): { readonly canonicalRef: string; readonly evidenceRef: string; readonly refKind: string; readonly recordId: string } | undefined {
+  const evidenceRef = evidenceRefsForAitpWriteBridgeResult(result)[0];
+  if (evidenceRef === undefined) return undefined;
+  const recordId = aitpWriteBridgeRecordId(result);
+  const refKind = aitpRecordRefKind(evidenceRef);
+  if (refKind === undefined || !PROMOTION_SEQUENCE_CARRIED_REF_KINDS.has(refKind)) return undefined;
+  return {
+    canonicalRef: `${refKind}:${recordId}`,
+    evidenceRef,
+    refKind,
+    recordId,
+  };
+}
+
+const PROMOTION_SEQUENCE_CARRIED_REF_KINDS = new Set([
+  'source_asset',
+  'reference_location',
+  'evidence',
+  'validation_result',
+  'trust_preflight',
+]);
+
+function nextCuratedRagPromotionStagesForCarriedRef(refKind: string): readonly string[] {
+  switch (refKind) {
+    case 'source_asset':
+      return ['reference_location', 'evidence'];
+    case 'reference_location':
+      return ['evidence'];
+    case 'evidence':
+      return ['validation', 'trust_preflight'];
+    case 'validation_result':
+      return ['trust_preflight'];
+    default:
+      return [];
+  }
 }
 
 function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string {

@@ -62,6 +62,13 @@ payload 里是否有对应 concrete refs；比如 evidence draft 只有
 `source_asset:...` 而没有 `reference_location:...` 时，会产生 hard-blocking
 `missing_sequence_prior_ref` diagnostic。这只是 readiness enforcement，不会
 确认 source support，也不会绕过显式 AITP bridge write。
+在 guarded curated RAG write 被显式执行之后，如果 AITP 返回的 typed result
+可以喂给后续 `promotion_write_sequence` step，Hakimi 会渲染
+`aitp_curated_rag_carried_ref_handoff`。这里会同时显示给后续 reviewed payload
+使用的 `canonical_ref`，例如 `source_asset:<id>`，以及 ledger/evidence 用的
+`evidence_ref`，例如 `aitp:source_asset:<id>`，避免模型把 ref dialect 复制错。
+这只是执行成功后的 handoff guidance：不会修改下一步 payload，不会自动运行下一步
+draft/write，不会验证 source support、满足 final gate 或改变 claim trust。
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` with a proposed reviewed
 payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,

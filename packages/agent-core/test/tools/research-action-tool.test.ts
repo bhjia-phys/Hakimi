@@ -2376,6 +2376,23 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('readiness_checklist_item_status="followed"');
     expect(result.output).toContain('readiness_checklist_reference_source="handoff_execution_precheck"');
     expect(result.output).toContain('confirmation_status="needs_explicit_confirmation"');
+    expect(result.output).toContain('<aitp_curated_rag_carried_ref_handoff');
+    expect(result.output).toContain('source="execute_aitp_write_bridge_result"');
+    expect(result.output).toContain(`handoff_id="${String(handoff.guard['handoff_id'])}"`);
+    expect(result.output).toContain('chunk_id="curated_rag_chunk:source_backtrace_orientation:0001"');
+    expect(result.output).toContain('completed_stage="evidence"');
+    expect(result.output).toContain('completed_operation="recordEvidence"');
+    expect(result.output).toContain('canonical_ref="evidence:evidence-reviewed-curated-rag"');
+    expect(result.output).toContain('evidence_ref="aitp:evidence:evidence-reviewed-curated-rag"');
+    expect(result.output).toContain('ref_kind="evidence"');
+    expect(result.output).toContain('record_id="evidence-reviewed-curated-rag"');
+    expect(result.output).toContain('feeds_next_stages="validation,trust_preflight"');
+    expect(result.output).toContain('next_research_action="draft_aitp_curated_rag_write_bridge_call"');
+    expect(result.output).toContain('carry_into="promotion_reviewed_overrides"');
+    expect(result.output).toContain('next_payload_mutated_now="false"');
+    expect(result.output).toContain('next_write_executed_now="false"');
+    expect(result.output).toContain('requires_reviewed_payload="true"');
+    expect(result.output).toContain('requires_explicit_execute_call="true"');
     expect(handoff.hashInput).toMatchObject({
       missingRefRepairHintCount: 1,
       missingRefRepairChecklistPresent: true,
@@ -2396,6 +2413,71 @@ describe('ResearchActionTool', () => {
         evidenceRefs: expect.arrayContaining(['aitp:evidence:evidence-reviewed-curated-rag']),
       }),
     );
+  });
+
+  it('renders carried source refs after explicit curated RAG source writes', async () => {
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(undefined, {
+      aitpCuratedRagProvider: curatedRagPromotionDraftProvider(),
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          return {
+            ok: true,
+            kind: 'source_asset',
+            assetId: 'asset-reviewed-curated-rag',
+            topicId: 'fqhe-literature',
+            assetType: 'paper',
+            orientationOnly: true,
+            canUpdateClaimTrust: false,
+            raw: {},
+          };
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const draft = await execute(tool, {
+      action: 'draft_aitp_curated_rag_write_bridge_call',
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      aitp_topic_id: 'fqhe-literature',
+      aitp_claim_id: 'claim-fqhe',
+      promotion_draft_operation: 'registerSourceAsset',
+      promotion_reviewed_overrides: {
+        title: 'Reviewed source title',
+      },
+    });
+
+    expect(draft.output).not.toContain('<aitp_curated_rag_carried_ref_handoff');
+    const handoff = extractCuratedRagHandoff(draft.output);
+
+    const result = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'registerSourceAsset',
+      aitp_payload: toolCallPayload(handoff),
+      aitp_handoff: handoff.guard,
+    });
+
+    expect(result.output).toContain('<aitp_write_bridge operation="registerSourceAsset"');
+    expect(result.output).toContain('<record_id>asset-reviewed-curated-rag</record_id>');
+    expect(result.output).toContain('<evidence_ref>aitp:source_asset:asset-reviewed-curated-rag</evidence_ref>');
+    expect(result.output).toContain('<aitp_curated_rag_carried_ref_handoff');
+    expect(result.output).toContain('source="execute_aitp_write_bridge_result"');
+    expect(result.output).toContain('completed_stage="source_asset"');
+    expect(result.output).toContain('completed_operation="registerSourceAsset"');
+    expect(result.output).toContain('canonical_ref="source_asset:asset-reviewed-curated-rag"');
+    expect(result.output).toContain('evidence_ref="aitp:source_asset:asset-reviewed-curated-rag"');
+    expect(result.output).toContain('ref_kind="source_asset"');
+    expect(result.output).toContain('feeds_next_stages="reference_location,evidence"');
+    expect(result.output).toContain('carry_into="promotion_reviewed_overrides"');
+    expect(result.output).toContain('next_payload_mutated_now="false"');
+    expect(result.output).toContain('next_write_executed_now="false"');
+    expect(result.output).toContain('records_validation_result="false"');
+    expect(result.output).toContain('source_support_result="false"');
+    expect(result.output).toContain('claim_trust_mutation="none"');
+    expect(result.output).toContain('requires_reviewed_payload="true"');
+    expect(result.output).toContain('requires_explicit_execute_call="true"');
+    expect(bridgeCalls).toHaveLength(1);
   });
 
   it('rejects blocked curated RAG handoffs before calling the write bridge', async () => {
