@@ -1950,6 +1950,13 @@ describe('ResearchActionTool', () => {
     expect(executed.output).toContain('executes_write_now="false"');
     expect(executed.output).toContain('checklist_authorizes_execution="false"');
     expect(executed.output).toContain('checklist_mutated_now="false"');
+    expect(executed.output).toContain(
+      'readiness_checklist_id="readiness-checklist.record_ref_repair_write_call_draft.record-ref-repair-handoff.',
+    );
+    expect(executed.output).toContain('readiness_checklist_item_order="2"');
+    expect(executed.output).toContain('readiness_checklist_item_action="execute_aitp_write_bridge"');
+    expect(executed.output).toContain('readiness_checklist_item_status="followed"');
+    expect(executed.output).toContain('readiness_checklist_reference_source="handoff_execution_precheck"');
     expect(executed.output).toContain('<aitp_write_bridge operation="recordReferenceLocation"');
     expect(bridgeCalls).toHaveLength(1);
     expect(bridgeCalls[0]).toMatchObject({
@@ -2054,6 +2061,13 @@ describe('ResearchActionTool', () => {
     expect(executed.output).toContain('executes_write_now="false"');
     expect(executed.output).toContain('checklist_authorizes_execution="false"');
     expect(executed.output).toContain('checklist_mutated_now="false"');
+    expect(executed.output).toContain(
+      'readiness_checklist_id="readiness-checklist.record_ref_repair_write_call_draft.record-ref-repair-handoff.',
+    );
+    expect(executed.output).toContain('readiness_checklist_item_order="2"');
+    expect(executed.output).toContain('readiness_checklist_item_action="execute_aitp_write_bridge"');
+    expect(executed.output).toContain('readiness_checklist_item_status="followed"');
+    expect(executed.output).toContain('readiness_checklist_reference_source="handoff_execution_precheck"');
     expect(executed.output).toContain('<aitp_write_bridge operation="registerSourceAsset"');
     expect(bridgeCalls).toHaveLength(1);
     expect(bridgeCalls[0]).toMatchObject({
@@ -2281,6 +2295,13 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('<handoff_guard');
     expect(result.output).toContain('status="passed"');
     expect(result.output).toContain(`handoff_id="${String(handoff.guard['handoff_id'])}"`);
+    expect(result.output).toContain(
+      'readiness_checklist_id="readiness-checklist.curated_rag_write_call_draft.curated-rag-write-handoff.',
+    );
+    expect(result.output).toContain('readiness_checklist_item_order="2"');
+    expect(result.output).toContain('readiness_checklist_item_action="execute_aitp_write_bridge"');
+    expect(result.output).toContain('readiness_checklist_item_status="followed"');
+    expect(result.output).toContain('readiness_checklist_reference_source="handoff_execution_precheck"');
     expect(result.output).toContain('confirmation_status="needs_explicit_confirmation"');
     expect(handoff.hashInput).toMatchObject({
       missingRefRepairHintCount: 1,
