@@ -956,11 +956,13 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       promotionIntent: firstText(args.aitp_promotion_intent, boundInput.input?.aitpPromotionIntent),
       signal: ctx.signal,
     });
+    const carriedRefs = promotionCarriedRefsFromInput(args);
+    if (carriedRefs.isError) return errorResult(carriedRefs.message);
     const callDraft = curatedRagPromotionWriteBridgeCallDraft(
       draft,
       selector.selector,
       args.promotion_reviewed_overrides,
-      promotionCarriedRefsFromInput(args),
+      carriedRefs.refs,
     );
     if (callDraft.isError) return errorResult(callDraft.message);
     const lookup = await this.lookupCuratedRagCallDraftRefs(callDraft.draft, ctx.signal);
@@ -2223,13 +2225,65 @@ function curatedRagPromotionWriteBridgeCallSelector(args: ResearchActionToolInpu
   return { isError: false, selector: { stage, operation } };
 }
 
-function promotionCarriedRefsFromInput(args: ResearchActionToolInput): readonly string[] {
+function promotionCarriedRefsFromInput(args: ResearchActionToolInput):
+  | { readonly isError: false; readonly refs: readonly string[] }
+  | { readonly isError: true; readonly message: string } {
   const refs = args.promotion_carried_refs ?? [];
-  const handoffRefs = (args.promotion_carried_ref_handoffs ?? []).flatMap((handoff) => {
+  const handoffRefs: string[] = [];
+  for (const [index, handoff] of (args.promotion_carried_ref_handoffs ?? []).entries()) {
     const canonicalRef = stringRecordValue(handoff, 'canonical_ref', 'canonicalRef');
-    return canonicalRef === undefined ? [] : [canonicalRef];
-  });
-  return uniqueStrings([...refs, ...handoffRefs].map((ref) => ref.trim()).filter((ref) => ref.length > 0));
+    if (canonicalRef === undefined || canonicalRef.trim().length === 0) {
+      return {
+        isError: true,
+        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call requires promotion_carried_ref_handoffs[${String(index)}].canonical_ref.`,
+      };
+    }
+    const evidenceRef = stringRecordValue(handoff, 'evidence_ref', 'evidenceRef');
+    if (evidenceRef === undefined || evidenceRef.trim().length === 0) {
+      return {
+        isError: true,
+        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call requires promotion_carried_ref_handoffs[${String(index)}].evidence_ref.`,
+      };
+    }
+    const refKind = stringRecordValue(handoff, 'ref_kind', 'refKind');
+    const canonicalKind = aitpRecordRefKind(canonicalRef);
+    if (refKind === undefined || refKind.trim().length === 0) {
+      return {
+        isError: true,
+        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call requires promotion_carried_ref_handoffs[${String(index)}].ref_kind.`,
+      };
+    }
+    if (canonicalKind === undefined || canonicalRef.trim().startsWith('aitp:') || canonicalKind !== refKind) {
+      return {
+        isError: true,
+        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call received malformed promotion_carried_ref_handoffs[${String(index)}]: canonical_ref must use the next-payload ref dialect and match ref_kind.`,
+      };
+    }
+    if (aitpRecordRefKind(evidenceRef) !== refKind) {
+      return {
+        isError: true,
+        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call received malformed promotion_carried_ref_handoffs[${String(index)}]: evidence_ref must match ref_kind.`,
+      };
+    }
+    const recordId = stringRecordValue(handoff, 'record_id', 'recordId');
+    if (recordId === undefined || recordId.trim().length === 0) {
+      return {
+        isError: true,
+        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call requires promotion_carried_ref_handoffs[${String(index)}].record_id.`,
+      };
+    }
+    if (canonicalRef.trim().split(':').at(-1) !== recordId) {
+      return {
+        isError: true,
+        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call received malformed promotion_carried_ref_handoffs[${String(index)}]: canonical_ref record id must match record_id.`,
+      };
+    }
+    handoffRefs.push(canonicalRef);
+  }
+  return {
+    isError: false,
+    refs: uniqueStrings([...refs, ...handoffRefs].map((ref) => ref.trim()).filter((ref) => ref.length > 0)),
+  };
 }
 
 function curatedRagPromotionWriteBridgeCallDraft(

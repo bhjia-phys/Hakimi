@@ -81,6 +81,10 @@ selected draft payload 只有在调用方显式提供 `promotion_reviewed_overri
 `draft_aitp_curated_rag_write_bridge_call`，并携带这些 reviewed overrides。
 这个 pointer 标记 `bridge_called=false`，只帮助模型复制下一次 draft call；
 它不会调用 `execute_aitp_write_bridge`，也不会授权 validation/trust 变化。
+结构化的 `promotion_carried_ref_handoffs` 现在会 fail closed：如果缺少
+required fields，或 `canonical_ref`、`evidence_ref`、`ref_kind`、`record_id`
+彼此不一致，就不会静默生成 suggestion/pointer。直接的
+`promotion_carried_refs` 仍可作为显式 model/user canonical-ref input 使用。
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` with a proposed reviewed
 payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,
