@@ -172,6 +172,12 @@ id. These echoes are host consistency metadata only; they help distinguish
 "repair this missing ref first" from the selected write call, but they do not
 repair missing refs, validate source support, or create trust-preflight
 evidence.
+The final passed `handoff_guard` now repeats that same host checklist trail with
+`readiness_checklist_id`, item 2/action/status, and
+`readiness_checklist_reference_source="handoff_execution_precheck"`. This is a
+cross-reference between the readiness result, execution precheck, and final
+guard result; it does not authorize execution, mutate a checklist, or add a new
+AITP identity.
 The guard coverage now also pins fail-closed behavior for missing
 `tool_call_json`, missing `hash_input_json`, payload tampering, diagnostic-hash
 tampering, and hash-input/tool-call mismatch. The AITP write-bridge executor
