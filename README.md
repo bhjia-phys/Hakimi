@@ -274,6 +274,15 @@ the reviewed payload for matching concrete refs and emits a hard-blocking
 contains a `source_asset:...` ref but no `reference_location:...` ref. This is
 readiness enforcement only; it still cannot confirm source support or write
 AITP records without the separate explicit bridge call.
+After a guarded curated RAG write is explicitly executed, the returned AITP
+typed result now renders an `aitp_curated_rag_carried_ref_handoff` when its
+record id can feed a later `promotion_write_sequence` step. The handoff shows
+both the next-payload `canonical_ref` form, such as `source_asset:<id>`, and
+the ledger/evidence `evidence_ref` form, such as `aitp:source_asset:<id>`, so
+the model does not copy the wrong ref dialect into reviewed overrides. This is
+post-execution handoff guidance only: it does not mutate the next payload, run
+the next draft/write action, validate source support, satisfy final gates, or
+change claim trust.
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` against a proposed
 reviewed payload. Hakimi renders `original_payload_json`,
