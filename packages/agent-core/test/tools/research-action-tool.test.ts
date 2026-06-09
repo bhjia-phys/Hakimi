@@ -200,6 +200,125 @@ describe('ResearchActionTool', () => {
     expect(patch.output).toContain('<tool>Write</tool>');
   });
 
+  it('renders bound primitive plan context for source context review outcome bindings', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    agent.workFrames.open(
+      {
+        id: 'frame.source-review-bound-plan',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Plan the routed source review action.',
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        sourceContextReviewOutcome: {
+          source: 'ResearchAction.finish_action_call',
+          actionId: 'source.review_context',
+          callId: 'call.source-review',
+          outcome: 'inconclusive',
+          decision: 'validate_check_source_support',
+          reviewedCanonicalRef: 'evidence:evidence-reviewed-curated-rag',
+          reviewedEvidenceRef: 'aitp:evidence:evidence-reviewed-curated-rag',
+          claimScope: 'claim:claim-fqhe',
+          chunkScope: 'chunk:chunk-fqhe-flux',
+          rationale: 'Needs source-support validation.',
+          nextActionId: 'validate.check_source_support',
+          requiresExplicitNextAction: true,
+          bridgeCalled: false,
+          executesWriteNow: false,
+          mutatesNextPayloadNow: false,
+          infersPayloadValues: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+        },
+      },
+      { source: 'controller' },
+    );
+    const binding = pack.actionBindings.find(
+      (item) => item.adapterId === 'aitp.curated-rag.source-context-review-outcome',
+    );
+
+    const plan = await execute(tool, {
+      action: 'plan_primitive_tools',
+      action_id: 'validate.check_source_support',
+      context_pack_id: pack.id,
+      action_binding_id: binding?.id,
+    });
+
+    expect(plan.output).toContain('<primitive_tool_plan');
+    expect(plan.output).toContain('action_id="validate.check_source_support"');
+    expect(plan.output).toContain('<source_context_review_handoff_readiness');
+    expect(plan.output).toContain('status="passed"');
+    expect(plan.output).toContain('decision="validate_check_source_support"');
+    expect(plan.output).toContain('allowed_next_tool_call_action_id="validate.check_source_support"');
+    expect(plan.output).toContain('read_only="true"');
+    expect(plan.output).toContain('executes_write_now="false"');
+    expect(plan.output).toContain('records_validation_result="false"');
+    expect(plan.output).toContain('source_support_result="false"');
+    expect(plan.output).toContain('claim_trust_mutation="none"');
+  });
+
+  it('fails bound primitive planning when the action id does not match the source review binding', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    agent.workFrames.open(
+      {
+        id: 'frame.source-review-bound-plan-mismatch',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Reject mismatched routed source review action.',
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        sourceContextReviewOutcome: {
+          source: 'ResearchAction.finish_action_call',
+          actionId: 'source.review_context',
+          callId: 'call.source-review',
+          outcome: 'inconclusive',
+          decision: 'validate_check_source_support',
+          reviewedCanonicalRef: 'evidence:evidence-reviewed-curated-rag',
+          reviewedEvidenceRef: 'aitp:evidence:evidence-reviewed-curated-rag',
+          claimScope: 'claim:claim-fqhe',
+          chunkScope: 'chunk:chunk-fqhe-flux',
+          rationale: 'Needs source-support validation.',
+          nextActionId: 'validate.check_source_support',
+          requiresExplicitNextAction: true,
+          bridgeCalled: false,
+          executesWriteNow: false,
+          mutatesNextPayloadNow: false,
+          infersPayloadValues: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+        },
+      },
+      { source: 'controller' },
+    );
+    const binding = pack.actionBindings.find(
+      (item) => item.adapterId === 'aitp.curated-rag.source-context-review-outcome',
+    );
+
+    const plan = await execute(tool, {
+      action: 'plan_primitive_tools',
+      action_id: 'source.capture_source_excerpt',
+      context_pack_id: pack.id,
+      action_binding_id: binding?.id,
+    });
+
+    expect(plan.isError).toBe(true);
+    expect(plan.output).toContain('not source.capture_source_excerpt');
+  });
+
   it('records model-reported action results through AgentRecords', async () => {
     const records: AgentRecord[] = [];
     const agent = makeAgent(records);
@@ -916,6 +1035,139 @@ describe('ResearchActionTool', () => {
     expect(loaded.output).toContain('&quot;recordsValidationResult&quot;:false');
     expect(loaded.output).toContain('&quot;sourceSupportResult&quot;:false');
     expect(loaded.output).toContain('&quot;claimTrustMutation&quot;:&quot;none&quot;');
+  });
+
+  it('inspects source context review outcome handoff readiness without executing the next action', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    agent.workFrames.open(
+      {
+        id: 'frame.source-review-handoff',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Inspect source review handoff readiness.',
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        sourceContextReviewOutcome: {
+          source: 'ResearchAction.finish_action_call',
+          actionId: 'source.review_context',
+          callId: 'call.source-review',
+          outcome: 'inconclusive',
+          decision: 'validate_check_source_support',
+          reviewedCanonicalRef: 'evidence:evidence-reviewed-curated-rag',
+          reviewedEvidenceRef: 'aitp:evidence:evidence-reviewed-curated-rag',
+          claimScope: 'claim:claim-fqhe',
+          chunkScope: 'chunk:chunk-fqhe-flux',
+          rationale: 'Needs source-support validation.',
+          nextActionId: 'validate.check_source_support',
+          requiresExplicitNextAction: true,
+          bridgeCalled: false,
+          executesWriteNow: false,
+          mutatesNextPayloadNow: false,
+          infersPayloadValues: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+        },
+      },
+      { source: 'controller' },
+    );
+    const binding = pack.actionBindings.find(
+      (item) => item.adapterId === 'aitp.curated-rag.source-context-review-outcome',
+    );
+
+    const inspected = await execute(tool, {
+      action: 'inspect_source_context_review_handoff',
+      context_pack_id: pack.id,
+      action_binding_id: binding?.id,
+    });
+
+    expect(inspected.output).toContain('<source_context_review_handoff_readiness');
+    expect(inspected.output).toContain('status="passed"');
+    expect(inspected.output).toContain(`binding_id="${binding?.id}"`);
+    expect(inspected.output).toContain('decision="validate_check_source_support"');
+    expect(inspected.output).toContain('next_action_id="validate.check_source_support"');
+    expect(inspected.output).toContain('allowed_next_tool_call_action="plan_primitive_tools"');
+    expect(inspected.output).toContain('read_only="true"');
+    expect(inspected.output).toContain('bridge_called="false"');
+    expect(inspected.output).toContain('executes_write_now="false"');
+    expect(inspected.output).toContain('mutates_next_payload_now="false"');
+    expect(inspected.output).toContain('records_validation_result="false"');
+    expect(inspected.output).toContain('source_support_result="false"');
+    expect(inspected.output).toContain('claim_trust_mutation="none"');
+    expect(inspected.output).toContain('next_action_allowed="true"');
+    expect(inspected.output).toContain('canonical_effect_requires_explicit_aitp_entrypoint="true"');
+  });
+
+  it('fails source context review handoff inspection for non-review bindings', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    agent.workFrames.open(
+      {
+        id: 'frame.source-review-handoff-fail',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Reject wrong source review handoff binding.',
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        curatedRagCarriedRefRepairResult: {
+          source: 'execute_aitp_write_bridge_result',
+          handoffId: 'curated-rag-write-handoff.chunk.evidence.hash',
+          confirmationId: 'curated-rag-confirmation.chunk.evidence.hash',
+          completedStage: 'evidence',
+          completedOperation: 'recordEvidence',
+          resultKind: 'evidence',
+          recordId: 'evidence-reviewed-curated-rag',
+          canonicalRef: 'evidence:evidence-reviewed-curated-rag',
+          evidenceRef: 'aitp:evidence:evidence-reviewed-curated-rag',
+          refKind: 'evidence',
+          repairHintOperations: ['recordReferenceLocation'],
+          selectedWriteDiffersFromRepairHints: true,
+          readinessChecklistId:
+            'readiness-checklist.curated_rag_write_call_draft.curated-rag-write-handoff.chunk.evidence.hash',
+          reviewedOverridesRequired: true,
+          readinessInspectionRequired: true,
+          explicitExecutePrecheckPassed: true,
+          bridgeCalled: true,
+          resultWrittenByAitp: true,
+          nextPayloadMutatedNow: false,
+          nextWriteExecutedNow: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+          requiresExplicitNextDraft: true,
+        },
+      },
+      { source: 'controller' },
+    );
+    const wrongBinding = pack.actionBindings.find(
+      (item) => item.adapterId === 'aitp.curated-rag.carried-ref-repair-result-continuation',
+    );
+
+    const inspected = await execute(tool, {
+      action: 'inspect_source_context_review_handoff',
+      context_pack_id: pack.id,
+      action_binding_id: wrongBinding?.id,
+    });
+
+    expect(inspected.output).toContain('<source_context_review_handoff_readiness');
+    expect(inspected.output).toContain('status="failed"');
+    expect(inspected.output).toContain('code="wrong_adapter"');
+    expect(inspected.output).toContain('next_action_allowed="false"');
+    expect(inspected.output).toContain('executes_write_now="false"');
+    expect(inspected.output).toContain('records_validation_result="false"');
+    expect(inspected.output).toContain('source_support_result="false"');
+    expect(inspected.output).toContain('claim_trust_mutation="none"');
   });
 
   it('executes configured AITP write-bridge operations as research action results', async () => {
