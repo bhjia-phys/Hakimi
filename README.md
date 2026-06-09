@@ -252,14 +252,22 @@ copy chunk/topic/claim fields out of XML by hand. Its output also includes a
 `promotion_decision_tree` that maps each draft-only stage to the existing
 `execute_aitp_write_bridge` operation that would be used next, while marking
 `selected_write_executed="false"` and requiring a separate explicit write or
-preflight choice.
+preflight choice. Hakimi also renders AITP's `promotion_write_sequence` from
+the draft: each ordered step names its future output ref pattern, required
+prior refs, and later stages that consume the produced ref, while still marking
+`requires_explicit_execute_call="true"` and `executes_write_now="false"`.
+That sequence is AITP-owned promotion policy; Hakimi uses it for model-visible
+ordering and carry-forward guidance, not as an auto-runner or trust authority.
 `ResearchAction.draft_aitp_curated_rag_write_bridge_call` can then select one
 stage or operation from that tree and return a prefilled
 `execute_aitp_write_bridge` tool-call JSON draft with placeholder diagnostics.
 It still executes no write, records no evidence, and marks
 `executes_write_now="false"` / `selected_write_executed="false"` so real source
 review, missing typed refs, and AITP `session_id` or record ids must be resolved
-before the normal write/preflight action is called.
+before the normal write/preflight action is called. The selected call draft
+echoes the same `promotion_write_sequence` and marks the selected step, so the
+later explicit `execute_aitp_write_bridge` call can be checked against the
+AITP sequence without making Hakimi a second source/ref/evidence store.
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` against a proposed
 reviewed payload. Hakimi renders `original_payload_json`,

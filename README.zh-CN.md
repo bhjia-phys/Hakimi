@@ -42,6 +42,11 @@ that maps each draft-only stage to the separate
 `ResearchAction.execute_aitp_write_bridge` operation that could be chosen next;
 it marks `selected_write_executed=false` and still requires an explicit later
 write or preflight choice.
+Hakimi 现在也会渲染 AITP draft 内的 `promotion_write_sequence`：每个 step
+给出顺序、未来 output ref pattern、必须已经存在的 prior refs，以及后续哪些
+stage 会消费这些 refs。它仍标记 `requires_explicit_execute_call=true` 和
+`executes_write_now=false`，所以只是 AITP-owned promotion policy，不是自动
+runner，也不是 evidence、validation、final gate 或 trust authority。
 Hakimi can now use `ResearchAction.draft_aitp_curated_rag_write_bridge_call`
 to select one stage or operation from that tree and return a prefilled
 `execute_aitp_write_bridge` tool-call JSON draft with placeholder diagnostics.
@@ -49,6 +54,9 @@ This still executes no write, records no evidence, and marks
 `executes_write_now=false` / `selected_write_executed=false`; real source
 review, missing typed refs, and any AITP `session_id` or record ids must be
 resolved before the normal write/preflight action is called.
+被选中的 write-call draft 会回显同一个 `promotion_write_sequence` 并标出
+selected step，让后续显式 `execute_aitp_write_bridge` 可以按 AITP sequence
+检查，而不是让 Hakimi 建第二套 source/reference/evidence store。
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` with a proposed reviewed
 payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,

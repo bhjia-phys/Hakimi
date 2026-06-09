@@ -447,6 +447,21 @@ describe('AITP CLI bridge', () => {
       'validation',
       'trust_preflight',
     ]);
+    expect(draft.promotionWriteSequence.map((step) => step.stage)).toEqual(draft.promotionPath);
+    expect(draft.promotionWriteSequence.map((step) => step.order)).toEqual([1, 2, 3, 4, 5]);
+    expect(draft.promotionWriteSequence[0]).toMatchObject({
+      operation: 'registerSourceAsset',
+      outputRef: 'source_asset:<asset_id>',
+      requiresPriorRefs: [],
+      requiresExplicitExecuteCall: true,
+      executesWriteNow: false,
+      recordsValidationResult: false,
+      claimTrustMutation: 'none',
+    });
+    expect(draft.promotionWriteSequence[2]?.requiresPriorRefs).toEqual([
+      'source_asset:<asset_id>',
+      'reference_location:<location_id>',
+    ]);
     expect(draft.draftOperations.every((operation) => operation.createsRecordNow === false)).toBe(true);
     expect(draft.promotionBoundary.draftCanUpdateClaimTrust).toBe(false);
   });
@@ -2623,6 +2638,7 @@ function fakeCuratedRagPromotionDraft(
         payload_template: { topic_id: topicId, claim_id: claimId },
       },
     ],
+    promotion_write_sequence: fakePromotionWriteSequence(),
     promotion_path: [
       'source_asset',
       'reference_location',
@@ -2645,6 +2661,40 @@ function fakeCuratedRagPromotionDraft(
       draft_can_update_claim_trust: false,
       requires_user_or_model_decision_before_write: true,
     },
+  };
+}
+
+function fakePromotionWriteSequence(): any[] {
+  return [
+    fakePromotionWriteStep(1, 'source_asset', 'registerSourceAsset', 'source_asset_record', 'source_asset:<asset_id>', [], ['reference_location', 'evidence']),
+    fakePromotionWriteStep(2, 'reference_location', 'recordReferenceLocation', 'reference_location_record', 'reference_location:<location_id>', ['source_asset:<asset_id>'], ['evidence']),
+    fakePromotionWriteStep(3, 'evidence', 'recordEvidence', 'evidence_record', 'evidence:<evidence_id>', ['source_asset:<asset_id>', 'reference_location:<location_id>'], ['validation', 'trust_preflight']),
+    fakePromotionWriteStep(4, 'validation', 'createValidationContract', 'validation_contract_record', 'validation_contract:<contract_id>', ['evidence:<evidence_id>'], ['trust_preflight']),
+    fakePromotionWriteStep(5, 'trust_preflight', 'preflightTrustUpdate', 'trust_update_preflight', 'trust_preflight:<preflight_token>', ['evidence:<evidence_id>', 'validation_result:<result_id>'], []),
+  ];
+}
+
+function fakePromotionWriteStep(
+  order: number,
+  stage: string,
+  operation: string,
+  surface: string,
+  outputRef: string,
+  requiresPriorRefs: readonly string[],
+  feedsNextStages: readonly string[],
+): Record<string, unknown> {
+  return {
+    order,
+    stage,
+    operation,
+    surface,
+    output_ref: outputRef,
+    requires_prior_refs: requiresPriorRefs,
+    feeds_next_stages: feedsNextStages,
+    requires_explicit_execute_call: true,
+    executes_write_now: false,
+    records_validation_result: false,
+    claim_trust_mutation: 'none',
   };
 }
 

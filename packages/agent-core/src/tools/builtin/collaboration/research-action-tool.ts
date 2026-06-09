@@ -1893,6 +1893,7 @@ function renderAitpCuratedRagPromotionDraft(
         `    <operation stage="${escapeXml(operation.stage)}" operation="${escapeXml(operation.operation)}" mcp_tool="${escapeXml(operation.mcpTool)}" surface="${escapeXml(operation.surface)}" draft_only="true" creates_record_now="false" claim_support_created="false" cli_template="${escapeXml(operation.cliTemplate)}"${operation.requiresExistingRecords.length === 0 ? '' : ` requires_existing_records="${escapeXml(operation.requiresExistingRecords.join(','))}"`} />`,
     ),
     '  </draft_operations>',
+    renderCuratedRagPromotionWriteSequence(draft),
     renderCuratedRagCanonicalIdentityAlignment(draft),
     renderCuratedRagPromotionDecisionTree(draft),
     '  <promotion_boundary retrieval_is_claim_support="false" draft_is_evidence="false" draft_records_validation_result="false" draft_satisfies_final_gate="false" draft_can_update_claim_trust="false" requires_user_or_model_decision_before_write="true" />',
@@ -1925,6 +1926,20 @@ function renderCuratedRagPromotionDecisionTree(draft: AitpCuratedRagPromotionDra
     '  <promotion_decision_tree selected_write_executed="false" requires_explicit_next_write_choice="true">',
     ...operations,
     '  </promotion_decision_tree>',
+  ].join('\n');
+}
+
+function renderCuratedRagPromotionWriteSequence(
+  draft: AitpCuratedRagPromotionDraft,
+  selectedStage?: string | undefined,
+): string {
+  return [
+    `  <promotion_write_sequence source="aitp_curated_rag_promotion_draft" step_count="${String(draft.promotionWriteSequence.length)}" read_only="true" executes_write_now="false" records_validation_result="false" claim_trust_mutation="none" requires_explicit_execute_call="true">`,
+    ...draft.promotionWriteSequence.map((step) => {
+      const selected = selectedStage === undefined ? '' : ` selected="${String(step.stage === selectedStage)}"`;
+      return `    <step order="${String(step.order)}" stage="${escapeXml(step.stage)}" operation="${escapeXml(step.operation)}" surface="${escapeXml(step.surface)}" output_ref="${escapeXml(step.outputRef)}" requires_prior_refs="${escapeXml(step.requiresPriorRefs.join(','))}" feeds_next_stages="${escapeXml(step.feedsNextStages.join(','))}" requires_explicit_execute_call="true" executes_write_now="false" records_validation_result="false" claim_trust_mutation="none"${selected} />`;
+    }),
+    '  </promotion_write_sequence>',
   ].join('\n');
 }
 
@@ -2409,6 +2424,7 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     `  <reviewed_overrides_json>${escapeXml(JSON.stringify(callDraft.reviewedOverrides))}</reviewed_overrides_json>`,
     `  <reviewed_payload_json>${escapeXml(JSON.stringify(callDraft.payload))}</reviewed_payload_json>`,
     renderStringList('required_existing_records', 'record', callDraft.requiredExistingRecords, '  '),
+    renderCuratedRagPromotionWriteSequence(sourceDraft, callDraft.stage),
     renderCuratedRagCanonicalIdentityAlignment(sourceDraft, callDraft),
     renderAitpCuratedRagWriteBridgeConfirmationSummary(confirmation, '  '),
     renderReadinessCallPointer(handoffArtifact, '  '),

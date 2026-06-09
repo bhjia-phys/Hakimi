@@ -1475,6 +1475,11 @@ describe('ResearchActionTool', () => {
     expect(drafted.output).toContain('<promotion_decision_tree');
     expect(drafted.output).toContain('selected_write_executed="false"');
     expect(drafted.output).toContain('requires_explicit_next_write_choice="true"');
+    expect(drafted.output).toContain('<promotion_write_sequence');
+    expect(drafted.output).toContain('source="aitp_curated_rag_promotion_draft"');
+    expect(drafted.output).toContain('step_count="5"');
+    expect(drafted.output).toContain('output_ref="source_asset:&lt;asset_id&gt;"');
+    expect(drafted.output).toContain('requires_prior_refs="source_asset:&lt;asset_id&gt;,reference_location:&lt;location_id&gt;"');
     expect(drafted.output).toContain('next_research_action="execute_aitp_write_bridge" aitp_operation="registerSourceAsset"');
     expect(drafted.output).toContain('aitp_operation="recordReferenceLocation"');
     expect(drafted.output).toContain('aitp_operation="recordEvidence"');
@@ -1562,6 +1567,12 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('execute_call_allowed_after_explicit_confirmation="false"');
     expect(result.output).toContain('executes_write_now="false"');
     expect(result.output).toContain('selected_write_executed="false"');
+    expect(result.output).toContain('<promotion_write_sequence');
+    expect(result.output).toContain('requires_explicit_execute_call="true"');
+    expect(result.output).toContain('stage="evidence" operation="recordEvidence"');
+    expect(result.output).toContain('selected="true"');
+    expect(result.output).toContain('output_ref="evidence:&lt;evidence_id&gt;"');
+    expect(result.output).toContain('requires_prior_refs="source_asset:&lt;asset_id&gt;,reference_location:&lt;location_id&gt;"');
     expect(result.output).toContain('<canonical_identity_alignment');
     expect(result.output).toContain('alignment_role="selected_write_bridge_call"');
     expect(result.output).toContain('draft_creates_records="false"');
@@ -3937,6 +3948,7 @@ function fakeCuratedRagPromotionDraft(
         },
       ),
     ],
+    promotion_write_sequence: fakePromotionWriteSequence(),
     promotion_path: [
       'source_asset',
       'reference_location',
@@ -3959,6 +3971,40 @@ function fakeCuratedRagPromotionDraft(
       draft_can_update_claim_trust: false,
       requires_user_or_model_decision_before_write: true,
     },
+  };
+}
+
+function fakePromotionWriteSequence(): any[] {
+  return [
+    fakePromotionWriteStep(1, 'source_asset', 'registerSourceAsset', 'source_asset_record', 'source_asset:<asset_id>', [], ['reference_location', 'evidence']),
+    fakePromotionWriteStep(2, 'reference_location', 'recordReferenceLocation', 'reference_location_record', 'reference_location:<location_id>', ['source_asset:<asset_id>'], ['evidence']),
+    fakePromotionWriteStep(3, 'evidence', 'recordEvidence', 'evidence_record', 'evidence:<evidence_id>', ['source_asset:<asset_id>', 'reference_location:<location_id>'], ['validation', 'trust_preflight']),
+    fakePromotionWriteStep(4, 'validation', 'createValidationContract', 'validation_contract_record', 'validation_contract:<contract_id>', ['evidence:<evidence_id>'], ['trust_preflight']),
+    fakePromotionWriteStep(5, 'trust_preflight', 'preflightTrustUpdate', 'trust_update_preflight', 'trust_preflight:<preflight_token>', ['evidence:<evidence_id>', 'validation_result:<result_id>'], []),
+  ];
+}
+
+function fakePromotionWriteStep(
+  order: number,
+  stage: string,
+  operation: string,
+  surface: string,
+  outputRef: string,
+  requiresPriorRefs: readonly string[],
+  feedsNextStages: readonly string[],
+): Record<string, unknown> {
+  return {
+    order,
+    stage,
+    operation,
+    surface,
+    output_ref: outputRef,
+    requires_prior_refs: requiresPriorRefs,
+    feeds_next_stages: feedsNextStages,
+    requires_explicit_execute_call: true,
+    executes_write_now: false,
+    records_validation_result: false,
+    claim_trust_mutation: 'none',
   };
 }
 
