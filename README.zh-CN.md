@@ -85,6 +85,11 @@ selected draft payload 只有在调用方显式提供 `promotion_reviewed_overri
 required fields，或 `canonical_ref`、`evidence_ref`、`ref_kind`、`record_id`
 彼此不一致，就不会静默生成 suggestion/pointer。直接的
 `promotion_carried_refs` 仍可作为显式 model/user canonical-ref input 使用。
+这些失败现在会渲染 compact `carried_ref_handoff_failure` diagnostic，包含稳定的
+`code`、`field`、`path` 和 `remediation_summary`。它只指出需要修哪个 handoff
+field，并保持 `suggestion_rendered=false`、`next_call_pointer_rendered=false`
+和 `bridge_called=false`；它不是 validation、source support、final gate 或
+claim-trust authority。
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` with a proposed reviewed
 payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,

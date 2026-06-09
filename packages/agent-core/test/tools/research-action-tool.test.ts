@@ -1896,6 +1896,8 @@ describe('ResearchActionTool', () => {
     const cases: readonly {
       readonly handoff: Record<string, string>;
       readonly expected: string;
+      readonly code: string;
+      readonly path: string;
     }[] = [
       {
         handoff: {
@@ -1903,7 +1905,9 @@ describe('ResearchActionTool', () => {
           ref_kind: 'source_asset',
           record_id: 'asset-reviewed',
         },
-        expected: 'requires promotion_carried_ref_handoffs[0].canonical_ref',
+        expected: 'requires canonical_ref',
+        code: 'missing_canonical_ref',
+        path: 'promotion_carried_ref_handoffs[0].canonical_ref',
       },
       {
         handoff: {
@@ -1911,7 +1915,9 @@ describe('ResearchActionTool', () => {
           ref_kind: 'source_asset',
           record_id: 'asset-reviewed',
         },
-        expected: 'requires promotion_carried_ref_handoffs[0].evidence_ref',
+        expected: 'requires evidence_ref',
+        code: 'missing_evidence_ref',
+        path: 'promotion_carried_ref_handoffs[0].evidence_ref',
       },
       {
         handoff: {
@@ -1919,7 +1925,9 @@ describe('ResearchActionTool', () => {
           evidence_ref: 'aitp:source_asset:asset-reviewed',
           record_id: 'asset-reviewed',
         },
-        expected: 'requires promotion_carried_ref_handoffs[0].ref_kind',
+        expected: 'requires ref_kind',
+        code: 'missing_ref_kind',
+        path: 'promotion_carried_ref_handoffs[0].ref_kind',
       },
       {
         handoff: {
@@ -1929,6 +1937,8 @@ describe('ResearchActionTool', () => {
           record_id: 'asset-reviewed',
         },
         expected: 'canonical_ref must use the next-payload ref dialect',
+        code: 'canonical_ref_dialect_or_kind_mismatch',
+        path: 'promotion_carried_ref_handoffs[0].canonical_ref',
       },
       {
         handoff: {
@@ -1938,6 +1948,8 @@ describe('ResearchActionTool', () => {
           record_id: 'asset-reviewed',
         },
         expected: 'canonical_ref must use the next-payload ref dialect and match ref_kind',
+        code: 'canonical_ref_dialect_or_kind_mismatch',
+        path: 'promotion_carried_ref_handoffs[0].canonical_ref',
       },
       {
         handoff: {
@@ -1947,6 +1959,8 @@ describe('ResearchActionTool', () => {
           record_id: 'asset-reviewed',
         },
         expected: 'evidence_ref must match ref_kind',
+        code: 'evidence_ref_kind_mismatch',
+        path: 'promotion_carried_ref_handoffs[0].evidence_ref',
       },
       {
         handoff: {
@@ -1954,7 +1968,9 @@ describe('ResearchActionTool', () => {
           evidence_ref: 'aitp:source_asset:asset-reviewed',
           ref_kind: 'source_asset',
         },
-        expected: 'requires promotion_carried_ref_handoffs[0].record_id',
+        expected: 'requires record_id',
+        code: 'missing_record_id',
+        path: 'promotion_carried_ref_handoffs[0].record_id',
       },
       {
         handoff: {
@@ -1964,6 +1980,8 @@ describe('ResearchActionTool', () => {
           record_id: 'asset-reviewed',
         },
         expected: 'canonical_ref record id must match record_id',
+        code: 'canonical_ref_record_id_mismatch',
+        path: 'promotion_carried_ref_handoffs[0].canonical_ref',
       },
       {
         handoff: {
@@ -1973,6 +1991,8 @@ describe('ResearchActionTool', () => {
           record_id: 'asset-reviewed',
         },
         expected: 'evidence_ref record id must match record_id',
+        code: 'evidence_ref_record_id_mismatch',
+        path: 'promotion_carried_ref_handoffs[0].evidence_ref',
       },
     ];
 
@@ -1987,7 +2007,15 @@ describe('ResearchActionTool', () => {
       });
 
       expect(result).toMatchObject({ isError: true });
+      expect(result.output).toContain('<carried_ref_handoff_failure');
+      expect(result.output).toContain(`code="${malformed.code}"`);
+      expect(result.output).toContain(`path="${malformed.path}"`);
+      expect(result.output).toContain('<remediation_summary');
       expect(result.output).toContain(malformed.expected);
+      expect(result.output).toContain('suggestion_rendered="false"');
+      expect(result.output).toContain('next_call_pointer_rendered="false"');
+      expect(result.output).toContain('bridge_called="false"');
+      expect(result.output).toContain('executes_write_now="false"');
       expect(result.output).not.toContain('<promotion_carried_ref_suggestions');
       expect(result.output).not.toContain('<carried_ref_next_call_pointer');
     }

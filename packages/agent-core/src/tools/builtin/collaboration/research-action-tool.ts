@@ -523,6 +523,22 @@ type HandoffGuardRemediationStep =
   | 'redraft_handoff_or_restore_hash_input'
   | 'redraft_or_resolve_blocking_diagnostics';
 
+type CarriedRefHandoffFailureCode =
+  | 'canonical_ref_dialect_or_kind_mismatch'
+  | 'canonical_ref_record_id_mismatch'
+  | 'evidence_ref_kind_mismatch'
+  | 'evidence_ref_record_id_mismatch'
+  | 'missing_canonical_ref'
+  | 'missing_evidence_ref'
+  | 'missing_record_id'
+  | 'missing_ref_kind';
+
+type CarriedRefHandoffRemediationStep =
+  | 'copy_required_handoff_field_from_execute_result'
+  | 'copy_record_id_from_canonical_ref'
+  | 'use_evidence_ref_for_same_record'
+  | 'use_next_payload_canonical_ref';
+
 export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> {
   readonly name = 'ResearchAction' as const;
   readonly description: string = DESCRIPTION;
@@ -2239,62 +2255,92 @@ function promotionCarriedRefsFromInput(args: ResearchActionToolInput):
   for (const [index, handoff] of (args.promotion_carried_ref_handoffs ?? []).entries()) {
     const canonicalRef = stringRecordValue(handoff, 'canonical_ref', 'canonicalRef');
     if (canonicalRef === undefined || canonicalRef.trim().length === 0) {
-      return {
-        isError: true,
-        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call requires promotion_carried_ref_handoffs[${String(index)}].canonical_ref.`,
-      };
+      return carriedRefHandoffError(index, 'missing_canonical_ref', 'requires canonical_ref.', 'canonical_ref');
     }
     const evidenceRef = stringRecordValue(handoff, 'evidence_ref', 'evidenceRef');
     if (evidenceRef === undefined || evidenceRef.trim().length === 0) {
-      return {
-        isError: true,
-        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call requires promotion_carried_ref_handoffs[${String(index)}].evidence_ref.`,
-      };
+      return carriedRefHandoffError(index, 'missing_evidence_ref', 'requires evidence_ref.', 'evidence_ref');
     }
     const refKind = stringRecordValue(handoff, 'ref_kind', 'refKind');
     const canonicalKind = aitpRecordRefKind(canonicalRef);
     if (refKind === undefined || refKind.trim().length === 0) {
-      return {
-        isError: true,
-        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call requires promotion_carried_ref_handoffs[${String(index)}].ref_kind.`,
-      };
+      return carriedRefHandoffError(index, 'missing_ref_kind', 'requires ref_kind.', 'ref_kind');
     }
     if (canonicalKind === undefined || canonicalRef.trim().startsWith('aitp:') || canonicalKind !== refKind) {
-      return {
-        isError: true,
-        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call received malformed promotion_carried_ref_handoffs[${String(index)}]: canonical_ref must use the next-payload ref dialect and match ref_kind.`,
-      };
+      return carriedRefHandoffError(
+        index,
+        'canonical_ref_dialect_or_kind_mismatch',
+        'canonical_ref must use the next-payload ref dialect and match ref_kind.',
+        'canonical_ref',
+      );
     }
     if (aitpRecordRefKind(evidenceRef) !== refKind) {
-      return {
-        isError: true,
-        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call received malformed promotion_carried_ref_handoffs[${String(index)}]: evidence_ref must match ref_kind.`,
-      };
+      return carriedRefHandoffError(
+        index,
+        'evidence_ref_kind_mismatch',
+        'evidence_ref must match ref_kind.',
+        'evidence_ref',
+      );
     }
     const recordId = stringRecordValue(handoff, 'record_id', 'recordId');
     if (recordId === undefined || recordId.trim().length === 0) {
-      return {
-        isError: true,
-        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call requires promotion_carried_ref_handoffs[${String(index)}].record_id.`,
-      };
+      return carriedRefHandoffError(index, 'missing_record_id', 'requires record_id.', 'record_id');
     }
     if (aitpRecordRefId(canonicalRef) !== recordId) {
-      return {
-        isError: true,
-        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call received malformed promotion_carried_ref_handoffs[${String(index)}]: canonical_ref record id must match record_id.`,
-      };
+      return carriedRefHandoffError(
+        index,
+        'canonical_ref_record_id_mismatch',
+        'canonical_ref record id must match record_id.',
+        'canonical_ref',
+      );
     }
     if (aitpRecordRefId(evidenceRef) !== recordId) {
-      return {
-        isError: true,
-        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call received malformed promotion_carried_ref_handoffs[${String(index)}]: evidence_ref record id must match record_id.`,
-      };
+      return carriedRefHandoffError(
+        index,
+        'evidence_ref_record_id_mismatch',
+        'evidence_ref record id must match record_id.',
+        'evidence_ref',
+      );
     }
     handoffRefs.push(canonicalRef);
   }
   return {
     isError: false,
     refs: uniqueStrings([...refs, ...handoffRefs].map((ref) => ref.trim()).filter((ref) => ref.length > 0)),
+  };
+}
+
+const CARRIED_REF_HANDOFF_REMEDIATION_BY_CODE: Record<
+  CarriedRefHandoffFailureCode,
+  CarriedRefHandoffRemediationStep
+> = {
+  canonical_ref_dialect_or_kind_mismatch: 'use_next_payload_canonical_ref',
+  canonical_ref_record_id_mismatch: 'copy_record_id_from_canonical_ref',
+  evidence_ref_kind_mismatch: 'use_evidence_ref_for_same_record',
+  evidence_ref_record_id_mismatch: 'use_evidence_ref_for_same_record',
+  missing_canonical_ref: 'copy_required_handoff_field_from_execute_result',
+  missing_evidence_ref: 'copy_required_handoff_field_from_execute_result',
+  missing_record_id: 'copy_required_handoff_field_from_execute_result',
+  missing_ref_kind: 'copy_required_handoff_field_from_execute_result',
+};
+
+function carriedRefHandoffError(
+  index: number,
+  code: CarriedRefHandoffFailureCode,
+  reason: string,
+  field: string,
+): { readonly isError: true; readonly message: string } {
+  const path = `promotion_carried_ref_handoffs[${String(index)}].${field}`;
+  const nextStep = CARRIED_REF_HANDOFF_REMEDIATION_BY_CODE[code];
+  const repairTarget = `promotion_carried_ref_handoffs[${String(index)}]`;
+  return {
+    isError: true,
+    message: [
+      `<carried_ref_handoff_failure status="failed" code="${escapeXml(code)}" field="${escapeXml(field)}" path="${escapeXml(path)}" index="${String(index)}" suggestion_rendered="false" next_call_pointer_rendered="false" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">`,
+      `  <message>ResearchAction draft_aitp_curated_rag_write_bridge_call received malformed promotion_carried_ref_handoffs[${String(index)}]: ${escapeXml(reason)}</message>`,
+      `  <remediation_summary next_step="${escapeXml(nextStep)}" repair_target="${escapeXml(repairTarget)}" retry_requires_fresh_draft_action="true" mutates_handoff_now="false" />`,
+      '</carried_ref_handoff_failure>',
+    ].join('\n'),
   };
 }
 

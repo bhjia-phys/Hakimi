@@ -300,6 +300,12 @@ fields are missing or when `canonical_ref`, `evidence_ref`, `ref_kind`, and
 `record_id` disagree, so malformed handoff objects cannot silently produce a
 suggestion or pointer. Direct `promotion_carried_refs` remain available as
 explicit model/user canonical-ref input.
+Those failures now render a compact `carried_ref_handoff_failure` diagnostic
+with stable `code`, `field`, `path`, and `remediation_summary` attributes. The
+diagnostic points to the handoff field to repair, but it keeps
+`suggestion_rendered="false"`, `next_call_pointer_rendered="false"`, and
+`bridge_called="false"`; it is not validation, source support, final-gate
+satisfaction, or claim-trust authority.
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` against a proposed
 reviewed payload. Hakimi renders `original_payload_json`,
