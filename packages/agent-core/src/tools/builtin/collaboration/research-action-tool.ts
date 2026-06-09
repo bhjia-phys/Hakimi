@@ -4251,6 +4251,7 @@ function renderContextPack(pack: ResearchContextPack): string {
     renderAitpSection(pack),
     renderCuratedRagSection(pack),
     renderCuratedRagCarriedRefRepairSection(pack),
+    renderCuratedRagCarriedRefRepairResultSection(pack),
     '  <action_bindings>',
     ...pack.actionBindings.map(renderActionBindingXml),
     '  </action_bindings>',
@@ -4273,6 +4274,16 @@ function renderCuratedRagCarriedRefRepairSection(pack: ResearchContextPack): str
     renderBoundedStringList('trigger_terms', 'term', repair.triggerTerms, '    '),
     renderBoundedStringList('safe_sequence', 'step', repair.safeSequence, '    '),
     '  </curated_rag_carried_ref_repair_sequence>',
+  ].join('\n');
+}
+
+function renderCuratedRagCarriedRefRepairResultSection(pack: ResearchContextPack): string {
+  const result = pack.curatedRagCarriedRefRepairResult;
+  if (result === undefined) return '  <curated_rag_carried_ref_repair_result />';
+  return [
+    `  <curated_rag_carried_ref_repair_result source="${result.source}" handoff_id="${escapeXml(result.handoffId)}" confirmation_id="${escapeXml(result.confirmationId)}" completed_stage="${escapeXml(result.completedStage)}" completed_operation="${escapeXml(result.completedOperation)}" result_kind="${result.resultKind}" record_id="${escapeXml(result.recordId)}" canonical_ref="${escapeXml(result.canonicalRef)}" evidence_ref="${escapeXml(result.evidenceRef)}" ref_kind="${result.refKind}" readiness_checklist_id="${escapeXml(result.readinessChecklistId)}" selected_write_differs_from_repair_hints="${String(result.selectedWriteDiffersFromRepairHints)}" reviewed_overrides_required="true" readiness_inspection_required="true" explicit_execute_precheck_passed="true" bridge_called="true" result_written_by_aitp="true" next_payload_mutated_now="false" next_write_executed_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_next_draft="true">`,
+    renderBoundedStringList('repair_hint_operations', 'operation', result.repairHintOperations, '    '),
+    '  </curated_rag_carried_ref_repair_result>',
   ].join('\n');
 }
 

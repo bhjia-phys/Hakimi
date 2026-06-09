@@ -6,7 +6,10 @@ import {
   type CompiledAitpProcessGraphSlice,
 } from '../../aitp';
 import type { AitpCuratedRagSearchResult } from '../../aitp/curated-rag';
-import type { ResearchContextPack } from '../../research-context';
+import type {
+  ResearchContextCuratedRagCarriedRefRepairResultSummary,
+  ResearchContextPack,
+} from '../../research-context';
 import { renderResearchContextPackReminder } from './context-pack';
 import type { WorkFrame } from '../../research-action';
 import { buildRuntimeToolExposurePlan } from '../tool-exposure';
@@ -33,6 +36,7 @@ export class WorkFrameOrchestrator {
     const curatedRagMoment = detectAitpCuratedRagMoment({ prompt: input, workFrame: frame, aitp });
     const curatedRag = await this.searchCuratedRag(curatedRagMoment);
     const carriedRefRepair = detectCuratedRagCarriedRefRepair(input);
+    const carriedRefRepairResult = detectCuratedRagCarriedRefRepairResult(input);
     const pack = this.agent.researchContext.compileForWorkFrame(
       {
         workFrameId: frame.id,
@@ -43,6 +47,7 @@ export class WorkFrameOrchestrator {
         curatedRagCarriedRefRepairTriggerTerms: carriedRefRepair.triggerTerms,
         curatedRagCarriedRefRepairFailureCode: carriedRefRepair.failureCode,
         curatedRagCarriedRefRepairFailurePath: carriedRefRepair.failurePath,
+        curatedRagCarriedRefRepairResult: carriedRefRepairResult,
       },
       { source: 'controller' },
     );
@@ -190,6 +195,103 @@ function extractCarriedRefHandoffFailure(
   if (code === undefined || path === undefined) return undefined;
   if (!/^promotion_carried_ref_handoffs\[\d+\]\.[A-Za-z0-9_]+$/.test(path)) return undefined;
   return { code, path };
+}
+
+function detectCuratedRagCarriedRefRepairResult(
+  input: readonly { readonly type?: string; readonly text?: string }[],
+): ResearchContextCuratedRagCarriedRefRepairResultSummary | undefined {
+  const prompt = promptText(input);
+  if (!prompt.toLowerCase().includes('carried_ref_repair_result_summary')) return undefined;
+  const attrs = extractTagAttrs(prompt, 'carried_ref_repair_result_summary');
+  if (attrs === undefined) return undefined;
+  const refKind = repairResultRefKind(attrs.get('ref_kind'));
+  const resultKind = repairResultRefKind(attrs.get('result_kind'));
+  const required = {
+    handoffId: attrs.get('handoff_id'),
+    confirmationId: attrs.get('confirmation_id'),
+    completedStage: attrs.get('completed_stage'),
+    completedOperation: attrs.get('completed_operation'),
+    recordId: attrs.get('record_id'),
+    canonicalRef: attrs.get('canonical_ref'),
+    evidenceRef: attrs.get('evidence_ref'),
+    readinessChecklistId: attrs.get('readiness_checklist_id'),
+  };
+  if (
+    refKind === undefined ||
+    resultKind === undefined ||
+    required.handoffId === undefined ||
+    required.confirmationId === undefined ||
+    required.completedStage === undefined ||
+    required.completedOperation === undefined ||
+    required.recordId === undefined ||
+    required.canonicalRef === undefined ||
+    required.evidenceRef === undefined ||
+    required.readinessChecklistId === undefined
+  ) {
+    return undefined;
+  }
+  if (
+    attrs.get('source') !== 'execute_aitp_write_bridge_result' ||
+    attrs.get('reviewed_overrides_required') !== 'true' ||
+    attrs.get('readiness_inspection_required') !== 'true' ||
+    attrs.get('explicit_execute_precheck_passed') !== 'true' ||
+    attrs.get('bridge_called') !== 'true' ||
+    attrs.get('result_written_by_aitp') !== 'true'
+  ) {
+    return undefined;
+  }
+  return {
+    source: 'execute_aitp_write_bridge_result',
+    handoffId: required.handoffId,
+    confirmationId: required.confirmationId,
+    completedStage: required.completedStage,
+    completedOperation: required.completedOperation,
+    resultKind,
+    recordId: required.recordId,
+    canonicalRef: required.canonicalRef,
+    evidenceRef: required.evidenceRef,
+    refKind,
+    repairHintOperations: commaList(attrs.get('repair_hint_operations')),
+    selectedWriteDiffersFromRepairHints:
+      attrs.get('selected_write_differs_from_repair_hints') === 'true',
+    readinessChecklistId: required.readinessChecklistId,
+    reviewedOverridesRequired: true,
+    readinessInspectionRequired: true,
+    explicitExecutePrecheckPassed: true,
+    bridgeCalled: true,
+    resultWrittenByAitp: true,
+    nextPayloadMutatedNow: false,
+    nextWriteExecutedNow: false,
+    recordsValidationResult: false,
+    sourceSupportResult: false,
+    claimTrustMutation: 'none',
+    canUpdateClaimTrust: false,
+    requiresExplicitNextDraft: true,
+  };
+}
+
+function extractTagAttrs(prompt: string, tagName: string): Map<string, string> | undefined {
+  const match = new RegExp(`<${tagName}\\s+([^>]*)>`, 'i').exec(prompt);
+  if (match?.[1] === undefined) return undefined;
+  const attrs = new Map<string, string>();
+  for (const attr of match[1].matchAll(/([A-Za-z_][A-Za-z0-9_-]*)="([^"]*)"/g)) {
+    if (attr[1] !== undefined && attr[2] !== undefined) attrs.set(attr[1], attr[2]);
+  }
+  return attrs;
+}
+
+function repairResultRefKind(
+  value: string | undefined,
+): ResearchContextCuratedRagCarriedRefRepairResultSummary['refKind'] | undefined {
+  if (value === 'source_asset' || value === 'reference_location' || value === 'evidence') {
+    return value;
+  }
+  return undefined;
+}
+
+function commaList(value: string | undefined): readonly string[] {
+  if (value === undefined || value.length === 0) return [];
+  return value.split(',').map((item) => item.trim()).filter((item) => item.length > 0);
 }
 
 function extractPromptField(prompt: string, field: string): string | undefined {

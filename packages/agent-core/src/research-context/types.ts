@@ -181,6 +181,39 @@ export interface ResearchContextCuratedRagCarriedRefRepairSection {
   readonly executesWriteNow: false;
 }
 
+export type ResearchContextCuratedRagCarriedRefRepairResultRefKind =
+  | 'source_asset'
+  | 'reference_location'
+  | 'evidence';
+
+export interface ResearchContextCuratedRagCarriedRefRepairResultSummary {
+  readonly source: 'execute_aitp_write_bridge_result';
+  readonly handoffId: string;
+  readonly confirmationId: string;
+  readonly completedStage: string;
+  readonly completedOperation: string;
+  readonly resultKind: ResearchContextCuratedRagCarriedRefRepairResultRefKind;
+  readonly recordId: string;
+  readonly canonicalRef: string;
+  readonly evidenceRef: string;
+  readonly refKind: ResearchContextCuratedRagCarriedRefRepairResultRefKind;
+  readonly repairHintOperations: readonly string[];
+  readonly selectedWriteDiffersFromRepairHints: boolean;
+  readonly readinessChecklistId: string;
+  readonly reviewedOverridesRequired: true;
+  readonly readinessInspectionRequired: true;
+  readonly explicitExecutePrecheckPassed: true;
+  readonly bridgeCalled: true;
+  readonly resultWrittenByAitp: true;
+  readonly nextPayloadMutatedNow: false;
+  readonly nextWriteExecutedNow: false;
+  readonly recordsValidationResult: false;
+  readonly sourceSupportResult: false;
+  readonly claimTrustMutation: 'none';
+  readonly canUpdateClaimTrust: false;
+  readonly requiresExplicitNextDraft: true;
+}
+
 export interface ResearchContextPack {
   readonly id: ResearchContextPackId;
   readonly workFrameId: string;
@@ -198,6 +231,9 @@ export interface ResearchContextPack {
   readonly aitp?: ResearchContextAitpSection | undefined;
   readonly curatedRag?: ResearchContextCuratedRagSection | undefined;
   readonly curatedRagCarriedRefRepair?: ResearchContextCuratedRagCarriedRefRepairSection | undefined;
+  readonly curatedRagCarriedRefRepairResult?:
+    | ResearchContextCuratedRagCarriedRefRepairResultSummary
+    | undefined;
   readonly actionBindings: readonly ResearchActionBinding[];
   readonly domainPack?: DomainPackManifest | undefined;
   readonly diagnostics: readonly ResearchContextPackDiagnostic[];
@@ -223,6 +259,9 @@ export interface CompileResearchContextPackOptions {
   readonly curatedRagCarriedRefRepairTriggerTerms?: readonly string[] | undefined;
   readonly curatedRagCarriedRefRepairFailureCode?: string | undefined;
   readonly curatedRagCarriedRefRepairFailurePath?: string | undefined;
+  readonly curatedRagCarriedRefRepairResult?:
+    | ResearchContextCuratedRagCarriedRefRepairResultSummary
+    | undefined;
   readonly limits?: CompileResearchContextPackLimits | undefined;
   readonly now?: (() => number) | undefined;
 }
