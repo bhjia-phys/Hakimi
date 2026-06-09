@@ -69,6 +69,13 @@ payload 里是否有对应 concrete refs；比如 evidence draft 只有
 `evidence_ref`，例如 `aitp:source_asset:<id>`，避免模型把 ref dialect 复制错。
 这只是执行成功后的 handoff guidance：不会修改下一步 payload，不会自动运行下一步
 draft/write，不会验证 source support、满足 final gate 或改变 claim trust。
+新的 write-call draft 可以接收 `promotion_carried_refs` 或
+`promotion_carried_ref_handoffs`，并在 payload JSON 旁边渲染
+`promotion_carried_ref_suggestions`。它只给出可复制的
+`suggested_reviewed_overrides_json`，同时保持 `applied_to_payload=false`；
+selected draft payload 只有在调用方显式提供 `promotion_reviewed_overrides`
+时才会变化，之后仍然要走 readiness inspection 和单独的
+`execute_aitp_write_bridge`。
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` with a proposed reviewed
 payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,

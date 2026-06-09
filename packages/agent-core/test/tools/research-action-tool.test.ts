@@ -1796,6 +1796,116 @@ describe('ResearchActionTool', () => {
     expect(result.output).not.toContain('code="missing_sequence_prior_ref" field="source_asset"');
   });
 
+  it('renders carried refs as reviewed override suggestions without mutating the draft payload', async () => {
+    const records: AgentRecord[] = [];
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(records, {
+      aitpCuratedRagProvider: curatedRagPromotionDraftProvider(),
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          throw new Error('write bridge must not be called by draft action');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'draft_aitp_curated_rag_write_bridge_call',
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      aitp_topic_id: 'fqhe-literature',
+      aitp_claim_id: 'claim-fqhe',
+      promotion_draft_operation: 'recordEvidence',
+      promotion_carried_ref_handoffs: [
+        {
+          canonical_ref: 'source_asset:asset-reviewed',
+          evidence_ref: 'aitp:source_asset:asset-reviewed',
+          ref_kind: 'source_asset',
+          record_id: 'asset-reviewed',
+          completed_stage: 'source_asset',
+        },
+        {
+          canonical_ref: 'reference_location:loc-reviewed',
+          evidence_ref: 'aitp:reference_location:loc-reviewed',
+          ref_kind: 'reference_location',
+          record_id: 'loc-reviewed',
+          completed_stage: 'reference_location',
+        },
+      ],
+    });
+
+    expect(result.output).toContain('reviewed_override_count="0"');
+    expect(result.output).toContain('confirmation_status="blocked"');
+    expect(result.output).toContain('<promotion_carried_ref_suggestions');
+    expect(result.output).toContain('carried_ref_count="2"');
+    expect(result.output).toContain('used_ref_count="2"');
+    expect(result.output).toContain('unused_ref_count="0"');
+    expect(result.output).toContain('target_field="source_refs"');
+    expect(result.output).toContain('applied_to_payload="false"');
+    expect(result.output).toContain('applied_by_reviewed_override="false"');
+    expect(result.output).toContain('carry_into="promotion_reviewed_overrides"');
+    expect(result.output).toContain('requires_reviewed_override="true"');
+    expect(result.output).toContain('executes_write_now="false"');
+    expect(result.output).toContain('next_write_executed_now="false"');
+    expect(result.output).toContain('records_validation_result="false"');
+    expect(result.output).toContain('source_support_result="false"');
+    expect(result.output).toContain('claim_trust_mutation="none"');
+    expect(result.output).toContain('can_update_claim_trust="false"');
+    expect(result.output).toContain('requires_explicit_execute_call="true"');
+    expect(result.output).toContain('<ref>source_asset:asset-reviewed</ref>');
+    expect(result.output).toContain('<ref>reference_location:loc-reviewed</ref>');
+    expect(result.output).toContain(
+      '<suggested_reviewed_overrides_json>{&quot;source_refs&quot;:[&quot;source_asset:asset-reviewed&quot;,&quot;reference_location:loc-reviewed&quot;]}</suggested_reviewed_overrides_json>',
+    );
+    expect(result.output).toContain('<reviewed_payload_json>');
+    expect(result.output).toContain('&quot;source_refs&quot;:[&quot;&lt;source_asset_id&gt;&quot;,&quot;&lt;reference_location_id&gt;&quot;]');
+    expect(result.output).toContain('code="placeholder_value" field="source_refs[0]"');
+    expect(result.output).toContain('bridge_called="false"');
+    expect(bridgeCalls).toEqual([]);
+    expect(records).not.toContainEqual(
+      expect.objectContaining({ type: 'research_action.result_recorded' }),
+    );
+  });
+
+  it('marks carried ref suggestions applied only when explicit reviewed overrides carry them', async () => {
+    const agent = makeAgent(undefined, {
+      aitpCuratedRagProvider: curatedRagPromotionDraftProvider(),
+      aitpWriteBridge: {
+        async executeWrite() {
+          throw new Error('write bridge must not be called by draft action');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'draft_aitp_curated_rag_write_bridge_call',
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      aitp_topic_id: 'fqhe-literature',
+      aitp_claim_id: 'claim-fqhe',
+      promotion_draft_operation: 'recordEvidence',
+      promotion_carried_refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+      promotion_reviewed_overrides: {
+        source_refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+        summary: 'Reviewed source passage supports only the scoped claim fragment.',
+      },
+    });
+
+    expect(result.output).toContain('reviewed_override_count="2"');
+    expect(result.output).toContain('confirmation_status="needs_explicit_confirmation"');
+    expect(result.output).toContain('<promotion_carried_ref_suggestions');
+    expect(result.output).toContain('applied_to_payload="false"');
+    expect(result.output).toContain('applied_by_reviewed_override="true"');
+    expect(result.output).toContain('target_field="source_refs"');
+    expect(result.output).toContain(
+      '<suggested_reviewed_overrides_json>{&quot;source_refs&quot;:[&quot;source_asset:asset-reviewed&quot;,&quot;reference_location:loc-reviewed&quot;]}</suggested_reviewed_overrides_json>',
+    );
+    expect(result.output).toContain('code="reviewed_override_applied" field="source_refs"');
+    expect(result.output).toContain('code="reviewed_overrides_not_executed"');
+    expect(result.output).not.toContain('code="missing_sequence_prior_ref"');
+    expect(result.output).toContain('bridge_called="false"');
+  });
+
   it('renders AITP-owned record-ref lookup confirmation for reviewed curated RAG refs', async () => {
     const mutableLookupCalls: string[][] = [];
     const agent = makeAgent(undefined, {
