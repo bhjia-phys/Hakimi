@@ -2022,6 +2022,14 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('copy_reviewed_overrides_from="suggested_reviewed_overrides_json"');
     expect(result.output).toContain('requires_fresh_draft_action="true"');
     expect(result.output).toContain('requires_readiness_inspection="true"');
+    expect(result.output).toContain('<carried_ref_repair_readiness_echo');
+    expect(result.output).toContain('source="promotion_carried_ref_suggestions"');
+    expect(result.output).toContain('review_status="needs_reviewed_overrides"');
+    expect(result.output).toContain('readiness_status="needs_reviewed_overrides"');
+    expect(result.output).toContain('reviewed_override_applied="false"');
+    expect(result.output).toContain('read_only="true"');
+    expect(result.output).toContain('bridge_called="false"');
+    expect(result.output).toContain('checklist_authorizes_execution="false"');
     expect(result.output).toContain('<draft_call_json>');
     expect(result.output).toContain('&quot;action&quot;:&quot;draft_aitp_curated_rag_write_bridge_call&quot;');
     expect(result.output).toContain('&quot;promotion_reviewed_overrides&quot;:{&quot;source_refs&quot;:[&quot;source_asset:asset-reviewed&quot;,&quot;reference_location:loc-reviewed&quot;]}');
@@ -2206,6 +2214,15 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('<promotion_carried_ref_suggestions');
     expect(result.output).toContain('applied_to_payload="false"');
     expect(result.output).toContain('applied_by_reviewed_override="true"');
+    expect(result.output).toContain('<carried_ref_repair_readiness_echo');
+    expect(result.output).toContain('source="promotion_carried_ref_suggestions"');
+    expect(result.output).toContain('review_status="reviewed_overrides_applied"');
+    expect(result.output).toContain('readiness_status="ready_for_readiness_inspection"');
+    expect(result.output).toContain('reviewed_override_applied="true"');
+    expect(result.output).toContain('readiness_checklist_id="readiness-checklist.curated_rag_write_call_draft.curated-rag-write-handoff.');
+    expect(result.output).toContain('next_readiness_action="inspect_aitp_write_bridge_handoff_readiness"');
+    expect(result.output).toContain('next_execute_action="execute_aitp_write_bridge"');
+    expect(result.output).toContain('checklist_authorizes_execution="false"');
     expect(result.output).toContain('target_field="source_refs"');
     expect(result.output).toContain(
       '<suggested_reviewed_overrides_json>{&quot;source_refs&quot;:[&quot;source_asset:asset-reviewed&quot;,&quot;reference_location:loc-reviewed&quot;]}</suggested_reviewed_overrides_json>',
@@ -2747,6 +2764,12 @@ describe('ResearchActionTool', () => {
     expect(readiness.output).toContain('bridge_call_allowed="true"');
     expect(readiness.output).toContain('bridge_called="false"');
     expect(readiness.output).toContain('executes_write_now="false"');
+    expect(readiness.output).toContain('<carried_ref_repair_readiness_echo');
+    expect(readiness.output).toContain('source="aitp_write_bridge_handoff_readiness"');
+    expect(readiness.output).toContain('review_status="reviewed_overrides_applied"');
+    expect(readiness.output).toContain('readiness_status="readiness_inspection_passed"');
+    expect(readiness.output).toContain('next_execute_action="execute_aitp_write_bridge"');
+    expect(readiness.output).toContain('checklist_authorizes_execution="false"');
     expect(bridgeCalls).toEqual([]);
 
     const result = await execute(tool, {
@@ -2772,6 +2795,12 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('records_validation_result="false"');
     expect(result.output).toContain('source_support_result="false"');
     expect(result.output).toContain('claim_trust_mutation="none"');
+    expect(result.output).toContain('<carried_ref_repair_readiness_echo');
+    expect(result.output).toContain('source="handoff_execution_precheck"');
+    expect(result.output).toContain('review_status="reviewed_overrides_applied"');
+    expect(result.output).toContain('readiness_status="explicit_execute_precheck_passed"');
+    expect(result.output).toContain('explicit_execute_call_observed="true"');
+    expect(result.output).toContain('checklist_authorizes_execution="false"');
     expect(result.output).toContain('<readiness_checklist_result');
     expect(result.output).toContain(
       'checklist_id="readiness-checklist.curated_rag_write_call_draft.curated-rag-write-handoff.',

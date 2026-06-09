@@ -116,6 +116,13 @@ payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,
 and `reviewed_payload_json` plus override diagnostics, but the overrides only
 affect the returned draft and still require a separate explicit
 `execute_aitp_write_bridge` call.
+For carried-ref repair drafts, Hakimi now also renders
+`carried_ref_repair_readiness_echo` at draft, readiness-inspection, and
+explicit-execute-precheck boundaries. The echo distinguishes
+`needs_reviewed_overrides`, `ready_for_readiness_inspection`,
+`readiness_inspection_passed`, and `explicit_execute_precheck_passed` while
+keeping `checklist_authorizes_execution=false` and the usual no-write,
+no-validation, no-source-support, no-trust flags.
 Promotion and write-bridge call drafts now also render
 `canonical_identity_alignment`. This section maps each draft stage, or the
 selected stage, to the future AITP record kind and canonical ref prefix that
