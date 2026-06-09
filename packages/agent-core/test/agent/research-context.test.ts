@@ -406,6 +406,48 @@ describe('ResearchContextManager', () => {
     expect(reminder).toContain('explicit later write choice');
   });
 
+  it('injects carried-ref repair sequence reminders for malformed handoff repair turns', async () => {
+    const agent = makeAgent();
+    agent.workFrames.open(
+      {
+        id: 'frame.carried-ref-repair',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Repair curated RAG carried-ref promotion handoff inputs.',
+      },
+      { source: 'controller' },
+    );
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text: 'Fix malformed promotion_carried_ref_handoffs after a carried_ref_handoff_failure mismatch.',
+      },
+    ]);
+    await agent.injection.inject();
+
+    const pack = agent.researchContext.listPacks().at(-1);
+    expect(pack?.curatedRagCarriedRefRepair).toMatchObject({
+      active: true,
+      taxonomyAction: 'ResearchAction.list_actions',
+      draftAction: 'ResearchAction.draft_aitp_curated_rag_write_bridge_call',
+      readinessAction: 'ResearchAction.inspect_aitp_write_bridge_handoff_readiness',
+      executeAction: 'ResearchAction.execute_aitp_write_bridge',
+      executesWriteNow: false,
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+    });
+    const lastMessage = agent.context.history.at(-1);
+    const reminder = (lastMessage?.content[0] as { text: string }).text;
+    expect(reminder).toContain('AITP curated RAG carried-ref repair');
+    expect(reminder).toContain('ResearchAction.list_actions');
+    expect(reminder).toContain('ResearchAction.draft_aitp_curated_rag_write_bridge_call');
+    expect(reminder).toContain('ResearchAction.inspect_aitp_write_bridge_handoff_readiness');
+    expect(reminder).toContain('separate explicit call');
+    expect(reminder).toContain('do not render suggestions, mutate payloads, call bridges, validate');
+  });
+
   it('does not call AITP curated RAG provider for ordinary action prompts', async () => {
     const aitpCuratedRagProvider: AitpCuratedRagProvider = {
       async getCuratedRagCorpus() {

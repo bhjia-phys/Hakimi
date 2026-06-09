@@ -47,6 +47,8 @@ export class ResearchContextManager {
       aitp: input.aitp,
       curatedRag: input.curatedRag,
       curatedRagReasonIds: input.curatedRagReasonIds,
+      curatedRagCarriedRefRepairActive: input.curatedRagCarriedRefRepairActive,
+      curatedRagCarriedRefRepairTriggerTerms: input.curatedRagCarriedRefRepairTriggerTerms,
       limits: input.limits,
       now: input.now,
     });

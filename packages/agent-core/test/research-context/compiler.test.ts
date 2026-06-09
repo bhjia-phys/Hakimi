@@ -260,6 +260,49 @@ describe('compileResearchContextPack', () => {
       'draft_aitp_curated_rag_promotion',
     );
   });
+
+  it('adds carried-ref repair sequence reminders without granting write or trust authority', () => {
+    const pack = compileResearchContextPack({
+      workFrame: createWorkFrame({
+        id: 'frame.rag-carried-ref-repair',
+        domain: DOMAIN,
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Repair malformed carried-ref handoff input for claim-fqhe.',
+      }),
+      curatedRagCarriedRefRepairActive: true,
+      curatedRagCarriedRefRepairTriggerTerms: [
+        'promotion_carried_ref_handoffs',
+        'malformed',
+      ],
+      now: () => 123,
+    });
+
+    expect(pack.curatedRagCarriedRefRepair).toMatchObject({
+      active: true,
+      source: 'turn_text',
+      taxonomyAction: 'ResearchAction.list_actions',
+      draftAction: 'ResearchAction.draft_aitp_curated_rag_write_bridge_call',
+      readinessAction: 'ResearchAction.inspect_aitp_write_bridge_handoff_readiness',
+      executeAction: 'ResearchAction.execute_aitp_write_bridge',
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+      executesWriteNow: false,
+    });
+    expect(pack.curatedRagCarriedRefRepair?.safeSequence).toEqual([
+      'inspect taxonomy metadata',
+      'prepare fresh draft action',
+      'apply explicit reviewed overrides',
+      'inspect readiness',
+      'execute only with explicit execute_aitp_write_bridge call',
+    ]);
+    expect(pack.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'aitp:curated-rag-carried-ref-repair-sequence',
+        source: 'aitp',
+      }),
+    );
+  });
 });
 
 function profile(): DomainProfile {

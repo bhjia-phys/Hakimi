@@ -4120,6 +4120,7 @@ function renderContextPack(pack: ResearchContextPack): string {
     '  </ledger>',
     renderAitpSection(pack),
     renderCuratedRagSection(pack),
+    renderCuratedRagCarriedRefRepairSection(pack),
     '  <action_bindings>',
     ...pack.actionBindings.map(renderActionBindingXml),
     '  </action_bindings>',
@@ -4131,6 +4132,17 @@ function renderContextPack(pack: ResearchContextPack): string {
     '  </diagnostics>',
     '</context_pack>',
     '',
+  ].join('\n');
+}
+
+function renderCuratedRagCarriedRefRepairSection(pack: ResearchContextPack): string {
+  const repair = pack.curatedRagCarriedRefRepair;
+  if (repair === undefined) return '  <curated_rag_carried_ref_repair_sequence />';
+  return [
+    `  <curated_rag_carried_ref_repair_sequence source="${repair.source}" active="${String(repair.active)}" taxonomy_action="${repair.taxonomyAction}" draft_action="${repair.draftAction}" readiness_action="${repair.readinessAction}" execute_action="${repair.executeAction}" executes_write_now="${String(repair.executesWriteNow)}" records_validation_result="${String(repair.recordsValidationResult)}" source_support_result="${String(repair.sourceSupportResult)}" claim_trust_mutation="${repair.claimTrustMutation}">`,
+    renderBoundedStringList('trigger_terms', 'term', repair.triggerTerms, '    '),
+    renderBoundedStringList('safe_sequence', 'step', repair.safeSequence, '    '),
+    '  </curated_rag_carried_ref_repair_sequence>',
   ].join('\n');
 }
 

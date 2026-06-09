@@ -105,6 +105,7 @@ function renderContextPackLines(pack: ResearchContextPack | undefined): string[]
     `- Physics memory: ${renderList(pack.physics.capsules.map((capsule) => `${capsule.id} (${capsule.kind}, ${capsule.reliability})`))}`,
     `- Ledger proposals: ${renderList(pack.ledger.proposals.map((proposal) => `${proposal.id} [${proposal.confidence}]`))}`,
     `- AITP curated RAG: ${pack.curatedRag === undefined ? 'none' : `${renderList(pack.curatedRag.results.map((item) => `${item.chunkId} (${item.documentId})`))}; heuristic_context only, promote before claim support`}`,
+    `- AITP carried-ref repair: ${pack.curatedRagCarriedRefRepair === undefined ? 'none' : 'taxonomy -> fresh draft -> reviewed overrides -> readiness -> explicit execute only'}`,
     `- Action bindings: ${renderList(pack.actionBindings.map((binding) => renderActionBinding(binding)))}`,
     `- Eval cases: ${renderList(pack.domainPack?.evalCaseIds ?? [])}`,
     `- Required tools: ${renderList(pack.domainPack?.requiredTools ?? [])}`,

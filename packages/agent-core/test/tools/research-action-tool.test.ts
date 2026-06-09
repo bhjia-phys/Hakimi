@@ -646,6 +646,48 @@ describe('ResearchActionTool', () => {
     expect(loaded.output).toContain('&quot;requiresUserOrModelDecisionBeforeWrite&quot;:true');
   });
 
+  it('renders carried-ref repair sequence reminders in loaded ContextPack XML', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    agent.workFrames.open(
+      {
+        id: 'frame.carried-ref-repair',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Repair curated RAG carried-ref promotion handoff inputs.',
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        curatedRagCarriedRefRepairActive: true,
+        curatedRagCarriedRefRepairTriggerTerms: [
+          'promotion_carried_ref_handoffs',
+          'mismatch',
+        ],
+      },
+      { source: 'controller' },
+    );
+
+    const loaded = await execute(tool, {
+      action: 'load_context_pack',
+      context_pack_id: pack.id,
+    });
+
+    expect(loaded.output).toContain('<curated_rag_carried_ref_repair_sequence');
+    expect(loaded.output).toContain('taxonomy_action="ResearchAction.list_actions"');
+    expect(loaded.output).toContain('draft_action="ResearchAction.draft_aitp_curated_rag_write_bridge_call"');
+    expect(loaded.output).toContain('readiness_action="ResearchAction.inspect_aitp_write_bridge_handoff_readiness"');
+    expect(loaded.output).toContain('execute_action="ResearchAction.execute_aitp_write_bridge"');
+    expect(loaded.output).toContain('executes_write_now="false"');
+    expect(loaded.output).toContain('records_validation_result="false"');
+    expect(loaded.output).toContain('source_support_result="false"');
+    expect(loaded.output).toContain('claim_trust_mutation="none"');
+    expect(loaded.output).toContain('<step>inspect taxonomy metadata</step>');
+    expect(loaded.output).toContain('<step>execute only with explicit execute_aitp_write_bridge call</step>');
+  });
+
   it('executes configured AITP write-bridge operations as research action results', async () => {
     const records: AgentRecord[] = [];
     const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
