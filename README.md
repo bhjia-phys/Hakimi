@@ -238,6 +238,9 @@ npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
 
 Hakimi can use the managed Kimi for Coding model through the inherited Kimi
 Coding OAuth flow while keeping Hakimi's own config and data under `.hakimi`.
+Requests to the Kimi Coding API use a Kimi-Code-compatible coding-agent
+transport identity with a Hakimi provenance suffix; the user-facing command,
+package, sessions, and config remain Hakimi-owned.
 Use either the non-interactive terminal entry point:
 
 ```powershell

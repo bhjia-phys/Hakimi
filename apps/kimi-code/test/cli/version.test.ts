@@ -21,6 +21,6 @@ describe('cli version helpers', () => {
   });
 
   it('builds the product user-agent for ad-hoc fetches', () => {
-    expect(createKimiCodeUserAgent('1.2.3')).toBe('hakimi-cli/1.2.3');
+    expect(createKimiCodeUserAgent('1.2.3')).toBe('kimi-code-cli/1.2.3 (hakimi)');
   });
 });

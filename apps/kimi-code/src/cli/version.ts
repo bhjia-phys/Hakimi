@@ -9,7 +9,10 @@ import { dirname, resolve } from 'node:path';
 
 import { createKimiUserAgent, KIMI_CODE_PLATFORM, type KimiHostIdentity } from '@moonshot-ai/kimi-code-oauth';
 
-import { CLI_USER_AGENT_PRODUCT } from '#/constant/app';
+import {
+  KIMI_CODING_AGENT_USER_AGENT_PRODUCT,
+  KIMI_CODING_AGENT_USER_AGENT_SUFFIX,
+} from '#/constant/app';
 
 import { KIMI_BUILD_INFO } from './build-info';
 
@@ -49,9 +52,10 @@ export function getVersion(): string {
 
 export function createKimiCodeHostIdentity(version = getVersion()): KimiHostIdentity {
   return {
-    productName: CLI_USER_AGENT_PRODUCT,
+    productName: KIMI_CODING_AGENT_USER_AGENT_PRODUCT,
     version,
     platform: KIMI_CODE_PLATFORM,
+    userAgentSuffix: KIMI_CODING_AGENT_USER_AGENT_SUFFIX,
   };
 }
 
