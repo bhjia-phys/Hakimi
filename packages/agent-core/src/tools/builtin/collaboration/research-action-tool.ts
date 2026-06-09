@@ -2770,12 +2770,33 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     renderReadinessCallPointer(handoffArtifact, '  '),
     renderReadinessInspectionSummary('curated_rag_write_call_draft', '  '),
     renderReadinessInspectionChecklist('curated_rag_write_call_draft', handoffArtifact.handoffId, '  '),
+    renderCarriedRefRepairReadinessEcho(callDraft, handoffArtifact, '  '),
     renderAitpCuratedRagWriteBridgeHandoffArtifact(handoffArtifact, '  '),
     renderAitpCuratedRagWriteBridgeCallOverrideDiagnostics(callDraft.overrideDiagnostics, '  '),
     renderAitpCuratedRagWriteBridgeCallDiagnostics(callDraft.diagnostics, '  '),
     '  <promotion_boundary draft_is_evidence="false" draft_records_validation_result="false" draft_satisfies_final_gate="false" draft_can_update_claim_trust="false" requires_user_or_model_decision_before_write="true" />',
     '</aitp_curated_rag_write_bridge_call_draft>',
     '',
+  ].join('\n');
+}
+
+function renderCarriedRefRepairReadinessEcho(
+  callDraft: CuratedRagPromotionWriteBridgeCallDraft,
+  handoffArtifact: CuratedRagPromotionWriteBridgeHandoffArtifact,
+  indent: string,
+): string {
+  const suggestion = callDraft.carriedRefSuggestion;
+  if (suggestion === undefined) return '';
+  const reviewedOverrideApplied = suggestion.appliedByReviewedOverride;
+  const reviewStatus = reviewedOverrideApplied ? 'reviewed_overrides_applied' : 'needs_reviewed_overrides';
+  const readinessStatus =
+    reviewedOverrideApplied && callDraft.unresolvedPlaceholderCount === 0
+      ? 'ready_for_readiness_inspection'
+      : 'needs_reviewed_overrides';
+  return [
+    `${indent}<carried_ref_repair_readiness_echo source="promotion_carried_ref_suggestions" review_status="${reviewStatus}" readiness_status="${readinessStatus}" carried_ref_count="${String(suggestion.refs.length)}" used_ref_count="${String(suggestion.usedRefs.length)}" unused_ref_count="${String(suggestion.unusedRefs.length)}" target_field="${escapeXml(suggestion.targetField)}" reviewed_override_applied="${String(reviewedOverrideApplied)}" unresolved_placeholder_count="${String(callDraft.unresolvedPlaceholderCount)}" handoff_id="${escapeXml(handoffArtifact.handoffId)}" readiness_checklist_id="${escapeXml(readinessChecklistId('curated_rag_write_call_draft', handoffArtifact.handoffId))}" next_readiness_action="inspect_aitp_write_bridge_handoff_readiness" next_execute_action="execute_aitp_write_bridge" read_only="true" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" checklist_authorizes_execution="false" requires_explicit_execute_call="true">`,
+    renderStringList('used_refs', 'ref', suggestion.usedRefs, `${indent}  `),
+    `${indent}</carried_ref_repair_readiness_echo>`,
   ].join('\n');
 }
 
@@ -3801,6 +3822,7 @@ function renderAitpHandoffExecutionPrecheck(
     return [
       `  <handoff_execution_precheck kind="${precheck.guard.kind}" status="passed" handoff_id="${escapeXml(precheck.guard.handoffId)}" confirmation_id="${escapeXml(precheck.guard.confirmationId)}" confirmation_status="${escapeXml(precheck.guard.confirmationStatus)}" selected_aitp_operation="${escapeXml(precheck.guard.selectedAitpOperation)}" missing_ref_repair_hint_count="${String(precheck.guard.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(precheck.guard.missingRefRepairChecklistPresent)}" repair_hint_operation_count="${String(precheck.guard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(precheck.guard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(precheck.guard.selectedWriteDiffersFromRepairHints)}" bridge_call_allowed="true" bridge_called="true" retry_requires_explicit_execute_call="false" handoff_mutated_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">`,
       renderExecutionPrecheckChecklistResult({ status: 'passed', guard: precheck.guard }, '    '),
+      renderCarriedRefRepairExecutionEcho(precheck.guard, '    '),
       '  </handoff_execution_precheck>',
     ].join('\n');
   }
@@ -3847,6 +3869,7 @@ function renderAitpWriteBridgeHandoffReadiness(
   return [
     `<aitp_write_bridge_handoff_readiness kind="${guard.kind}" status="passed" handoff_id="${escapeXml(guard.handoffId)}" confirmation_id="${escapeXml(guard.confirmationId)}" confirmation_status="${escapeXml(guard.confirmationStatus)}" diagnostic_hash="${escapeXml(guard.diagnosticHash)}" selected_aitp_operation="${escapeXml(guard.selectedAitpOperation)}" missing_ref_repair_hint_count="${String(guard.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(guard.missingRefRepairChecklistPresent)}" repair_hint_operation_count="${String(guard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(guard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(guard.selectedWriteDiffersFromRepairHints)}" bridge_call_allowed="true" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" handoff_mutated_now="false" requires_explicit_execute_call="true">`,
     renderReadinessChecklistResult({ status: 'passed', guard }, '  '),
+    renderCarriedRefRepairInspectionEcho(guard, '  '),
     '  <next_step>Call ResearchAction.execute_aitp_write_bridge with the same aitp_operation, aitp_payload, and aitp_handoff when explicit execution is intended.</next_step>',
     '</aitp_write_bridge_handoff_readiness>',
     '',
@@ -3864,6 +3887,30 @@ function renderReadinessChecklistResult(
   }
   const draftFamily = readinessDraftFamily(input.guard.kind);
   return `${indent}<readiness_checklist_result checklist_id="${escapeXml(readinessChecklistId(draftFamily, input.guard.handoffId))}" draft_family="${draftFamily}" item_order="1" item_action="inspect_aitp_write_bridge_handoff_readiness" item_status="satisfied" source="execute_aitp_write_bridge_handoff.readiness_call_json" next_item_order="2" next_item_action="execute_aitp_write_bridge" read_only="true" bridge_called="false" executes_write_now="false" checklist_mutated_now="false" />`;
+}
+
+function renderCarriedRefRepairInspectionEcho(
+  guard: AitpHandoffGuard,
+  indent: string,
+): string {
+  if (!shouldRenderCarriedRefRepairEcho(guard)) return '';
+  return `${indent}<carried_ref_repair_readiness_echo source="aitp_write_bridge_handoff_readiness" review_status="reviewed_overrides_applied" readiness_status="readiness_inspection_passed" handoff_id="${escapeXml(guard.handoffId)}" readiness_checklist_id="${escapeXml(readinessChecklistId('curated_rag_write_call_draft', guard.handoffId))}" selected_aitp_operation="${escapeXml(guard.selectedAitpOperation)}" repair_hint_operation_count="${String(guard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(guard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(guard.selectedWriteDiffersFromRepairHints)}" next_execute_action="execute_aitp_write_bridge" read_only="true" bridge_called="false" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" checklist_authorizes_execution="false" requires_explicit_execute_call="true" />`;
+}
+
+function renderCarriedRefRepairExecutionEcho(
+  guard: AitpHandoffGuard,
+  indent: string,
+): string {
+  if (!shouldRenderCarriedRefRepairEcho(guard)) return '';
+  return `${indent}<carried_ref_repair_readiness_echo source="handoff_execution_precheck" review_status="reviewed_overrides_applied" readiness_status="explicit_execute_precheck_passed" handoff_id="${escapeXml(guard.handoffId)}" readiness_checklist_id="${escapeXml(readinessChecklistId('curated_rag_write_call_draft', guard.handoffId))}" selected_aitp_operation="${escapeXml(guard.selectedAitpOperation)}" repair_hint_operation_count="${String(guard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(guard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(guard.selectedWriteDiffersFromRepairHints)}" bridge_called="true" explicit_execute_call_observed="true" executes_write_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" checklist_authorizes_execution="false" requires_explicit_execute_call="false" />`;
+}
+
+function shouldRenderCarriedRefRepairEcho(guard: AitpHandoffGuard): boolean {
+  return (
+    guard.kind === 'curated_rag_write_bridge_handoff' &&
+    guard.missingRefRepairChecklistPresent &&
+    guard.repairHintOperations.length > 0
+  );
 }
 
 function readinessDraftFamily(kind: AitpHandoffGuard['kind']): string {
