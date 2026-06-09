@@ -131,7 +131,7 @@ async function handleOpenPlatformLogin(
       error.status === 401
     ) {
       host.showStatus(
-        'Hint: If your API key was obtained from Kimi Platform, please select "Kimi Platform" instead.',
+        'Hint: If your account is for Kimi for Coding, choose "Kimi for Coding (OAuth)" instead of an API-key platform.',
       );
     }
     return;

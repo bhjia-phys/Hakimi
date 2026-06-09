@@ -13,7 +13,7 @@ corepack pnpm --config.engine-strict=false install
 corepack pnpm --config.engine-strict=false build
 New-Item -ItemType Directory -Force dist-pack
 corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ..\..\dist-pack
-npm install -g .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
+npm install -g .\dist-pack\bhjia-phys-hakimi-0.13.0.tgz
 ```
 
 > On Windows, install [Git for Windows](https://gitforwindows.org/) before first launch because Hakimi uses the bundled Git Bash as its shell environment. If Git Bash is installed in a custom location, set `KIMI_SHELL_PATH` to the absolute path of `bash.exe`.
@@ -27,36 +27,61 @@ hakimi
 
 This package intentionally installs only the `hakimi` executable. It does not install a `kimi` alias, so a separate Kimi Code installation can keep owning the `kimi` command.
 
+Hakimi uses its own release version line. The current CLI package version is `0.13.0`, and it is not meant to match upstream Kimi Code release tags.
+
 ## Login
 
-On first launch, run `/login`. Choose Kimi Platform OAuth or a compatible API-key provider. Hakimi keeps the upstream `.kimi-code` config/data directory intentionally, so existing model/provider/session configuration can continue to work.
+For the managed Kimi for Coding model, use either terminal entry point:
+
+```powershell
+hakimi login
+hakimi
+```
+
+or start the TUI and run `/login`. Choose `Kimi for Coding (OAuth)`, complete
+the browser device-code flow, then return to Hakimi. A
+successful login provisions `~/.hakimi/config.toml` with provider
+`managed:kimi-code`, model alias `kimi-code/kimi-for-coding`, and matching Kimi
+search/fetch service credentials.
+
+Quick checks:
+
+```powershell
+hakimi provider list
+hakimi doctor config ~/.hakimi/config.toml
+hakimi --model kimi-code/kimi-for-coding --prompt "Reply with OK"
+```
+
+Hakimi uses its own `.hakimi` config/data directory by default, so
+model/provider/session/MCP configuration stays separate from a Kimi Code
+install. The `kimi` command is never required for Hakimi; use `hakimi login` or
+the in-app `/login`.
 
 ## DeepSeek
 
 If your Kimi OAuth model is unavailable, configure DeepSeek without leaving the native runtime:
 
 ```powershell
-$env:DEEPSEEK_API_KEY = "sk-..."
 hakimi provider deepseek
 hakimi provider list
 hakimi
 ```
 
-The command writes an OpenAI-compatible `deepseek` provider and `deepseek/deepseek-v4-pro` model alias into `~/.kimi-code/config.toml`, then makes it the default. Use `--model-id deepseek-v4-flash`, `--no-thinking`, or `--no-default` when you need a different setup.
+The command prompts for your DeepSeek API key, writes an OpenAI-compatible `deepseek` provider and `deepseek/deepseek-v4-pro` model alias into `~/.hakimi/config.toml`, then makes it the default. Use `--api-key`, `DEEPSEEK_API_KEY`, `--model-id deepseek-v4-flash`, `--no-thinking`, or `--no-default` when you need a different setup.
+
+When DeepSeek is active, `WebSearch` still works without Kimi OAuth: Hakimi
+prefers the configured Moonshot/Kimi search service when authenticated, then
+falls back to a no-auth local web search provider.
 
 ## Research Runtime
 
-Enable the experimental AITP lanes when you want the physics research runtime:
+The physics research runtime is enabled by default. Start a WorkFrame and
+compile a ContextPack to use the built-in `theoretical-physics/general`
+scaffold for new topics.
 
-```powershell
-$env:KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY = "1"
-$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_LEDGER = "1"
-$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_ACTION = "1"
-$env:KIMI_CODE_EXPERIMENTAL_DOMAIN_PROFILE = "1"
-$env:KIMI_CODE_EXPERIMENTAL_WORKFLOW_RECIPE = "1"
-$env:KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS = "1"
-hakimi
-```
+New project research artifacts are written under `.hakimi/`, for example
+`.hakimi/research-ledger`. Legacy `.aitp/` packs are still read for
+compatibility.
 
 ## Source
 

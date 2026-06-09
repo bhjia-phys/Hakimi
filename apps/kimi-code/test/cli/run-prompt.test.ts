@@ -1165,7 +1165,7 @@ describe('runPrompt', () => {
         stderr: { write: vi.fn(() => true) },
       }),
     ).rejects.toThrow(
-      'No model configured. Run `kimi` and use /login to sign in, then retry; or set default_model in config.toml.',
+      'No model configured. Run `hakimi login` for Kimi for Coding, or start `hakimi` and use /login; then retry, or set default_model in ~/.hakimi/config.toml.',
     );
 
     expect(mocks.harnessClose).toHaveBeenCalled();
