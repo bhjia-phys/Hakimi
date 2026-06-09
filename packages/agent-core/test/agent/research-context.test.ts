@@ -10,6 +10,7 @@ import {
   parseAitpLiteratureSourceReviewHandoff,
   type AitpCuratedRagProvider,
   type AitpCuratedRagSearchResult,
+  type AitpLiteratureSourceReviewHandoffProvider,
   type AitpProcessGraphSliceProvider,
   type WorkflowRecipe,
 } from '../../src';
@@ -731,6 +732,147 @@ describe('ResearchContextManager', () => {
     expect(reminder).toContain('read-only context');
     expect(reminder).toContain('do not prove source support, record validation, execute writes');
   });
+
+  it('requests literature source review handoff context from explicit AITP request cues', async () => {
+    const getLiteratureSourceReviewHandoff = vi.fn(async () =>
+      parseAitpLiteratureSourceReviewHandoff(fakeLiteratureSourceReviewHandoff()),
+    );
+    const aitpLiteratureSourceReviewHandoffProvider: AitpLiteratureSourceReviewHandoffProvider = {
+      getLiteratureSourceReviewHandoff,
+    };
+    const agent = makeAgent(undefined, { aitpLiteratureSourceReviewHandoffProvider });
+    agent.workFrames.open(
+      {
+        id: 'frame.literature-handoff-request',
+        domain: 'quantum-gravity/source-review',
+        topic: 'qg',
+        goal: 'Review source context for observer algebra literature.',
+      },
+      { source: 'controller' },
+    );
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text:
+          'Prepare bounded review context for <aitp_literature_source_review_request session_id="session-qg" uri="https://arxiv.org/abs/2601.00001" label="Observer algebra source" external_id="arXiv:2601.00001" short_summary="Close prior art for source reconstruction." detected_relevance="explicit claim scope relevance" claim_id="claim-mipt" scoped_output="source_chain" reviewed_refs="source_asset:asset-reviewed,reference_location:loc-reviewed" read_surface_effect="handoff_context_only" read_only="true" requires_explicit_next_action="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" summary_inputs_trusted="false" orientation_only="true" can_update_kernel_state="false" records_validation_result="false" source_support_result="false" evidence_created="false" validation_created="false" write_executed="false" trust_update_forbidden="true" claim_trust_mutation="none" can_update_claim_trust="false">.',
+      },
+    ]);
+    await agent.injection.inject();
+
+    expect(getLiteratureSourceReviewHandoff).toHaveBeenCalledWith({
+      sessionId: 'session-qg',
+      uri: 'https://arxiv.org/abs/2601.00001',
+      label: 'Observer algebra source',
+      externalId: 'arXiv:2601.00001',
+      shortSummary: 'Close prior art for source reconstruction.',
+      detectedRelevance: 'explicit claim scope relevance',
+      optionalClaimId: 'claim-mipt',
+      scopedOutput: 'source_chain',
+      reviewedRefs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+    });
+    const pack = agent.researchContext.listPacks().at(-1);
+    expect(pack?.literatureSourceReviewHandoff).toMatchObject({
+      sessionId: 'session-qg',
+      literatureLabel: 'Observer algebra source',
+      bridgeCalled: false,
+      executesWriteNow: false,
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+    });
+    expect(pack?.actionBindings).toContainEqual(
+      expect.objectContaining({
+        actionId: 'source.review_context',
+        adapterId: 'aitp.literature.source-review-handoff',
+      }),
+    );
+    const injected = agent.context.history.at(-1);
+    const reminder = (injected?.content[0] as { text: string }).text;
+    expect(reminder).toContain('AITP literature source review handoff');
+    expect(reminder).toContain('Observer algebra source');
+    expect(reminder).toContain('read-only context');
+  });
+
+  it('does not request literature handoff context for ordinary literature prompts', async () => {
+    const aitpLiteratureSourceReviewHandoffProvider: AitpLiteratureSourceReviewHandoffProvider = {
+      getLiteratureSourceReviewHandoff: vi.fn(),
+    };
+    const agent = makeAgent(undefined, { aitpLiteratureSourceReviewHandoffProvider });
+    agent.workFrames.open(
+      {
+        id: 'frame.literature-ordinary',
+        domain: 'quantum-gravity/source-review',
+        topic: 'qg',
+        goal: 'Discuss observer algebra literature.',
+      },
+      { source: 'controller' },
+    );
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text: 'Review the literature around observer algebras, but do not use an AITP handoff cue.',
+      },
+    ]);
+    await agent.injection.inject();
+
+    expect(
+      aitpLiteratureSourceReviewHandoffProvider.getLiteratureSourceReviewHandoff,
+    ).not.toHaveBeenCalled();
+    expect(agent.researchContext.listPacks().at(-1)?.literatureSourceReviewHandoff).toBeUndefined();
+  });
+
+  it('fails closed on incomplete or unsafe literature handoff request cues', async () => {
+    const aitpLiteratureSourceReviewHandoffProvider: AitpLiteratureSourceReviewHandoffProvider = {
+      getLiteratureSourceReviewHandoff: vi.fn(),
+    };
+    const missingRequired = makeAgent(undefined, { aitpLiteratureSourceReviewHandoffProvider });
+    missingRequired.workFrames.open(
+      {
+        id: 'frame.literature-missing-request',
+        domain: 'quantum-gravity/source-review',
+        topic: 'qg',
+        goal: 'Review source context for observer algebra literature.',
+      },
+      { source: 'controller' },
+    );
+    missingRequired.context.appendUserMessage([
+      {
+        type: 'text',
+        text:
+          'Prepare <aitp_literature_source_review_request session_id="session-qg" uri="https://arxiv.org/abs/2601.00001" label="Observer algebra source" short_summary="Close prior art." read_surface_effect="handoff_context_only" read_only="true" requires_explicit_next_action="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" summary_inputs_trusted="false" orientation_only="true" can_update_kernel_state="false" records_validation_result="false" source_support_result="false" evidence_created="false" validation_created="false" write_executed="false" trust_update_forbidden="true" claim_trust_mutation="none" can_update_claim_trust="false">.',
+      },
+    ]);
+    await missingRequired.injection.inject();
+
+    const unsafeFlag = makeAgent(undefined, { aitpLiteratureSourceReviewHandoffProvider });
+    unsafeFlag.workFrames.open(
+      {
+        id: 'frame.literature-unsafe-request',
+        domain: 'quantum-gravity/source-review',
+        topic: 'qg',
+        goal: 'Review source context for observer algebra literature.',
+      },
+      { source: 'controller' },
+    );
+    unsafeFlag.context.appendUserMessage([
+      {
+        type: 'text',
+        text:
+          'Prepare <aitp_literature_source_review_request session_id="session-qg" uri="https://arxiv.org/abs/2601.00001" label="Observer algebra source" short_summary="Close prior art." detected_relevance="explicit claim scope relevance" read_surface_effect="handoff_context_only" read_only="true" requires_explicit_next_action="true" bridge_called="true" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" summary_inputs_trusted="false" orientation_only="true" can_update_kernel_state="false" records_validation_result="false" source_support_result="false" evidence_created="false" validation_created="false" write_executed="false" trust_update_forbidden="true" claim_trust_mutation="none" can_update_claim_trust="false">.',
+      },
+    ]);
+    await unsafeFlag.injection.inject();
+
+    expect(
+      aitpLiteratureSourceReviewHandoffProvider.getLiteratureSourceReviewHandoff,
+    ).not.toHaveBeenCalled();
+    expect(
+      missingRequired.researchContext.listPacks().at(-1)?.literatureSourceReviewHandoff,
+    ).toBeUndefined();
+    expect(unsafeFlag.researchContext.listPacks().at(-1)?.literatureSourceReviewHandoff).toBeUndefined();
+  });
 });
 
 function makeAgent(
@@ -739,6 +881,9 @@ function makeAgent(
     readonly workflowRecipes?: WorkflowRecipeRegistry | undefined;
     readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
     readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
+    readonly aitpLiteratureSourceReviewHandoffProvider?:
+      | AitpLiteratureSourceReviewHandoffProvider
+      | undefined;
   } = {},
 ): Agent {
   const agent = new Agent({
@@ -775,6 +920,8 @@ function makeAgent(
     workflowRecipes: options.workflowRecipes,
     aitpProcessGraphProvider: options.aitpProcessGraphProvider,
     aitpCuratedRagProvider: options.aitpCuratedRagProvider,
+    aitpLiteratureSourceReviewHandoffProvider:
+      options.aitpLiteratureSourceReviewHandoffProvider,
   });
   agent.config.update({
     cwd: process.cwd(),

@@ -2,6 +2,8 @@ import type { Agent } from '..';
 import type { PromptOrigin } from '../context';
 import {
   detectAitpCuratedRagMoment,
+  type AitpLiteratureSourceReviewHandoff,
+  type AitpLiteratureSourceReviewHandoffInput,
   type AitpCuratedRagMoment,
   type CompiledAitpProcessGraphSlice,
 } from '../../aitp';
@@ -39,6 +41,10 @@ export class WorkFrameOrchestrator {
     const carriedRefRepair = detectCuratedRagCarriedRefRepair(input);
     const carriedRefRepairResult = detectCuratedRagCarriedRefRepairResult(input);
     const sourceContextReviewOutcome = detectSourceContextReviewOutcome(input);
+    const literatureSourceReviewRequest = detectLiteratureSourceReviewRequest(input);
+    const literatureSourceReviewHandoff = await this.readLiteratureSourceReviewHandoff(
+      literatureSourceReviewRequest,
+    );
     const pack = this.agent.researchContext.compileForWorkFrame(
       {
         workFrameId: frame.id,
@@ -51,6 +57,7 @@ export class WorkFrameOrchestrator {
         curatedRagCarriedRefRepairFailurePath: carriedRefRepair.failurePath,
         curatedRagCarriedRefRepairResult: carriedRefRepairResult,
         sourceContextReviewOutcome,
+        literatureSourceReviewHandoff,
       },
       { source: 'controller' },
     );
@@ -96,6 +103,23 @@ export class WorkFrameOrchestrator {
         workFrameId: frame.id,
         error,
       });
+      return undefined;
+    }
+  }
+
+  private async readLiteratureSourceReviewHandoff(
+    request: AitpLiteratureSourceReviewHandoffInput | undefined,
+  ): Promise<AitpLiteratureSourceReviewHandoff | undefined> {
+    if (request === undefined) return undefined;
+    const provider = this.agent.aitpLiteratureSourceReviewHandoffProvider;
+    if (provider === undefined) return undefined;
+    try {
+      return await provider.getLiteratureSourceReviewHandoff(request);
+    } catch (error) {
+      this.agent.log.warn(
+        'AITP literature source review handoff provider failed; continuing without handoff context',
+        { error },
+      );
       return undefined;
     }
   }
@@ -206,6 +230,66 @@ function detectSourceContextReviewOutcome(
     sourceSupportResult: false,
     claimTrustMutation: 'none',
     canUpdateClaimTrust: false,
+  };
+}
+
+function detectLiteratureSourceReviewRequest(
+  input: readonly { readonly type?: string; readonly text?: string }[],
+): AitpLiteratureSourceReviewHandoffInput | undefined {
+  const prompt = promptText(input);
+  if (!prompt.toLowerCase().includes('aitp_literature_source_review_request')) {
+    return undefined;
+  }
+  const attrs = extractTagAttrs(prompt, 'aitp_literature_source_review_request');
+  if (attrs === undefined) return undefined;
+  const required = {
+    sessionId: attrs.get('session_id'),
+    uri: attrs.get('uri'),
+    label: attrs.get('label'),
+    shortSummary: attrs.get('short_summary') ?? attrs.get('summary'),
+    detectedRelevance: attrs.get('detected_relevance'),
+  };
+  if (
+    required.sessionId === undefined ||
+    required.uri === undefined ||
+    required.label === undefined ||
+    required.shortSummary === undefined ||
+    required.detectedRelevance === undefined
+  ) {
+    return undefined;
+  }
+  if (
+    attrs.get('read_surface_effect') !== 'handoff_context_only' ||
+    attrs.get('read_only') !== 'true' ||
+    attrs.get('requires_explicit_next_action') !== 'true' ||
+    attrs.get('bridge_called') !== 'false' ||
+    attrs.get('executes_write_now') !== 'false' ||
+    attrs.get('mutates_next_payload_now') !== 'false' ||
+    attrs.get('infers_payload_values') !== 'false' ||
+    attrs.get('summary_inputs_trusted') !== 'false' ||
+    attrs.get('orientation_only') !== 'true' ||
+    attrs.get('can_update_kernel_state') !== 'false' ||
+    attrs.get('records_validation_result') !== 'false' ||
+    attrs.get('source_support_result') !== 'false' ||
+    attrs.get('evidence_created') !== 'false' ||
+    attrs.get('validation_created') !== 'false' ||
+    attrs.get('write_executed') !== 'false' ||
+    attrs.get('trust_update_forbidden') !== 'true' ||
+    attrs.get('claim_trust_mutation') !== 'none' ||
+    attrs.get('can_update_claim_trust') !== 'false'
+  ) {
+    return undefined;
+  }
+  return {
+    sessionId: required.sessionId,
+    uri: required.uri,
+    label: required.label,
+    externalId: attrs.get('external_id'),
+    shortSummary: required.shortSummary,
+    detectedRelevance: required.detectedRelevance,
+    optionalClaimId: attrs.get('optional_claim_id') ?? attrs.get('claim_id'),
+    scopedOutput: attrs.get('scoped_output'),
+    reviewedRefs: commaList(attrs.get('reviewed_refs')),
   };
 }
 
