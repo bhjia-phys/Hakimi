@@ -11,3 +11,4 @@ export * from './record-ref-lookup';
 export * from './curated-rag';
 export * from './curated-rag-ingest';
 export * from './curated-rag-moment';
+export * from './literature-source-review-handoff';

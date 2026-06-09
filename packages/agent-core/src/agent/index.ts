@@ -15,6 +15,7 @@ import type { PluginCommandOrigin } from './context';
 import type { DomainProfileRegistry } from '../domain-profile';
 import type {
   AitpCuratedRagProvider,
+  AitpLiteratureSourceReviewHandoffProvider,
   AitpProcessGraphSliceProvider,
   AitpRecordRefLookupProvider,
   AitpRuntimePayloadProfilesProvider,
@@ -121,6 +122,7 @@ export interface AgentOptions {
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
   readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider | undefined;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
+  readonly aitpLiteratureSourceReviewHandoffProvider?: AitpLiteratureSourceReviewHandoffProvider | undefined;
   readonly aitpWriteBridge?: AitpWriteBridgeExecutor | undefined;
   readonly mcp?: McpConnectionManager;
   readonly hookEngine?: HookEngine;
@@ -161,6 +163,7 @@ export class Agent {
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider;
   readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider;
+  readonly aitpLiteratureSourceReviewHandoffProvider?: AitpLiteratureSourceReviewHandoffProvider;
   readonly aitpWriteBridge?: AitpWriteBridgeExecutor;
   readonly log: Logger;
   readonly telemetry: TelemetryClient;
@@ -240,6 +243,8 @@ export class Agent {
     this.aitpRuntimePayloadProfilesProvider = options.aitpRuntimePayloadProfilesProvider;
     this.aitpRecordRefLookupProvider = options.aitpRecordRefLookupProvider;
     this.aitpCuratedRagProvider = options.aitpCuratedRagProvider;
+    this.aitpLiteratureSourceReviewHandoffProvider =
+      options.aitpLiteratureSourceReviewHandoffProvider;
     this.aitpWriteBridge = options.aitpWriteBridge;
     this.log = options.log ?? log;
     this.telemetry = options.telemetry ?? noopTelemetryClient;

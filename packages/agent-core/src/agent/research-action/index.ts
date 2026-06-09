@@ -26,6 +26,8 @@ import type {
   AitpCuratedRagChunkLookup,
   AitpCuratedRagPromotionDraft,
   AitpCuratedRagSearchResult,
+  AitpLiteratureSourceReviewHandoff,
+  AitpLiteratureSourceReviewHandoffInput,
   AitpRecordRefLookup,
   AitpRuntimePayloadProfilesCatalog,
 } from '../../aitp';
@@ -209,6 +211,10 @@ export class ResearchActionManager {
     return this.agent.aitpCuratedRagProvider !== undefined;
   }
 
+  hasAitpLiteratureSourceReviewHandoffProvider(): boolean {
+    return this.agent.aitpLiteratureSourceReviewHandoffProvider !== undefined;
+  }
+
   async readAitpRuntimePayloadProfiles(
     signal?: AbortSignal | undefined,
   ): Promise<AitpRuntimePayloadProfilesCatalog> {
@@ -278,6 +284,19 @@ export class ResearchActionManager {
       throw new Error('AITP curated RAG provider does not support promotion drafts.');
     }
     return this.agent.aitpCuratedRagProvider.draftCuratedRagPromotion(input);
+  }
+
+  async readAitpLiteratureSourceReviewHandoff(
+    input: AitpLiteratureSourceReviewHandoffInput,
+  ): Promise<AitpLiteratureSourceReviewHandoff> {
+    if (this.agent.aitpLiteratureSourceReviewHandoffProvider === undefined) {
+      throw new Error(
+        'AITP literature source review handoff provider is not configured for this session.',
+      );
+    }
+    return this.agent.aitpLiteratureSourceReviewHandoffProvider.getLiteratureSourceReviewHandoff(
+      input,
+    );
   }
 
   buildPhysicsGraph(): PhysicsGraph {

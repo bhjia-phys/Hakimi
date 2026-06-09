@@ -5,11 +5,13 @@ import {
   AITP_RUNTIME_PAYLOAD_PROFILE_CATALOG_VERSION,
   aitpRuntimePayloadProfileById,
   createDynamicAitpCliCuratedRagProvider,
+  createDynamicAitpCliLiteratureSourceReviewHandoffProvider,
   createDynamicAitpCliProcessGraphSliceProvider,
   createDynamicAitpCliRecordRefLookupProvider,
   createDynamicAitpCliRuntimePayloadProfilesProvider,
   createDynamicAitpCliWriteBridgeExecutor,
   createDynamicAitpMcpFirstCuratedRagProvider,
+  createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider,
   createDynamicAitpMcpFirstProcessGraphSliceProvider,
   createDynamicAitpMcpFirstRecordRefLookupProvider,
   createDynamicAitpMcpFirstRuntimePayloadProfilesProvider,
@@ -674,6 +676,96 @@ describe('AITP dynamic session bridge', () => {
     expect(chunk?.chunkId).toBe('curated_rag_chunk:source_backtrace_orientation:0001');
     expect(draft?.requiredContextBeforeWrite).toEqual(['topic_id', 'claim_id']);
   });
+
+  it('reads literature source review handoffs through CLI and MCP-first providers', async () => {
+    const cliCalls: string[][] = [];
+    const cliProvider = createDynamicAitpCliLiteratureSourceReviewHandoffProvider({
+      basePath: () => 'F:/project',
+      runner: recordingRunner(cliCalls),
+    });
+
+    const cliHandoff = await cliProvider.getLiteratureSourceReviewHandoff({
+      sessionId: 'session-qg',
+      uri: 'https://arxiv.org/abs/2601.00001',
+      label: 'Observer algebra source',
+      externalId: 'arXiv:2601.00001',
+      shortSummary: 'Close prior art for source reconstruction.',
+      detectedRelevance: 'explicit claim scope relevance',
+      optionalClaimId: 'claim-mipt',
+      scopedOutput: 'source_chain',
+      reviewedRefs: ['source_asset:asset-reviewed'],
+    });
+
+    expect(cliCalls[0]).toEqual([
+      'aitp-v5',
+      '--base',
+      'F:/project',
+      'literature',
+      'source-review-handoff',
+      '--session',
+      'session-qg',
+      '--uri',
+      'https://arxiv.org/abs/2601.00001',
+      '--label',
+      'Observer algebra source',
+      '--summary',
+      'Close prior art for source reconstruction.',
+      '--detected-relevance',
+      'explicit claim scope relevance',
+      '--external-id',
+      'arXiv:2601.00001',
+      '--claim',
+      'claim-mipt',
+      '--scoped-output',
+      'source_chain',
+      '--reviewed-ref',
+      'source_asset:asset-reviewed',
+    ]);
+    expect(cliHandoff.kind).toBe('literature_source_review_handoff');
+    expect(cliHandoff.allowedNextToolCall.actionId).toBe('source.review_context');
+
+    const mcpCalls: Array<{ readonly toolName: string; readonly args: Readonly<Record<string, unknown>> }> = [];
+    const mcpProvider = createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider({
+      basePath: () => 'F:/project',
+      runner: recordingRunner([]),
+      mcpTransport: {
+        async callTool(input) {
+          mcpCalls.push({ toolName: input.toolName, args: input.args });
+          return {
+            ok: true,
+            literature_source_review_handoff: fakeLiteratureSourceReviewHandoff(),
+          };
+        },
+      },
+    });
+
+    const mcpHandoff = await mcpProvider.getLiteratureSourceReviewHandoff({
+      sessionId: 'session-qg',
+      uri: 'https://arxiv.org/abs/2601.00001',
+      label: 'Observer algebra source',
+      shortSummary: 'Close prior art for source reconstruction.',
+      detectedRelevance: 'explicit claim scope relevance',
+      reviewedRefs: ['source_asset:asset-reviewed'],
+    });
+
+    expect(mcpCalls).toEqual([
+      {
+        toolName: 'aitp_v5_build_literature_source_review_handoff',
+        args: {
+          base: 'F:/project',
+          session_id: 'session-qg',
+          uri: 'https://arxiv.org/abs/2601.00001',
+          label: 'Observer algebra source',
+          short_summary: 'Close prior art for source reconstruction.',
+          detected_relevance: 'explicit claim scope relevance',
+          reviewed_refs: ['source_asset:asset-reviewed'],
+        },
+      },
+    ]);
+    expect(mcpHandoff.recordsValidationResult).toBe(false);
+    expect(mcpHandoff.sourceSupportResult).toBe(false);
+    expect(mcpHandoff.claimTrustMutation).toBe('none');
+  });
 });
 
 function recordingRunner(calls: string[][]): AitpCommandRunner {
@@ -755,6 +847,16 @@ function recordingRunner(calls: string[][]): AitpCommandRunner {
                 connectorId: argAfter(args, '--connector'),
               },
             ),
+          }),
+          stderr: '',
+        };
+      }
+      if (args.includes('source-review-handoff')) {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            literature_source_review_handoff: fakeLiteratureSourceReviewHandoff(),
           }),
           stderr: '',
         };
@@ -1151,6 +1253,114 @@ function fakeRecordRefLookupItem(ref: string, found: boolean): any {
     claim_trust_mutation: 'none',
     can_update_claim_trust: false,
     diagnostic: found ? 'record exists in typed store' : '',
+  };
+}
+
+function fakeLiteratureSourceReviewHandoff(): any {
+  return {
+    ok: true,
+    kind: 'literature_source_review_handoff',
+    session_id: 'session-qg',
+    topic_id: 'qg',
+    claim_id: 'claim-mipt',
+    literature_intake_suggestion: {
+      ok: true,
+      kind: 'literature_intake_suggestion',
+      session_id: 'session-qg',
+      topic_id: 'qg',
+      active_claim: 'claim-mipt',
+      recommended_action: 'record_reference_plus_evidence_candidate',
+      reference_candidate: {
+        location_id: 'reference-location-observer-algebra',
+        topic_id: 'qg',
+        claim_id: 'claim-mipt',
+        connector_id: 'literature_search',
+        location_type: 'paper',
+        uri: 'https://arxiv.org/abs/2601.00001',
+        label: 'Observer algebra source',
+        external_id: 'arXiv:2601.00001',
+        status: 'candidate',
+        summary: 'Close prior art for source reconstruction.',
+        metadata: { detected_relevance: 'explicit claim scope relevance' },
+        linked_records: { claim_id: 'claim-mipt' },
+        orientation_only: true,
+      },
+      guarded_next_steps: [],
+      mcp_templates: {},
+      cli_templates: [],
+      risk_notes: ['not_a_supports_claim_by_default'],
+      forbidden_without_preflight: ['aitp_v5_preflight_trust_update'],
+      trust_update_forbidden: true,
+      summary_inputs_trusted: false,
+      orientation_only: true,
+      can_update_kernel_state: false,
+      can_update_claim_trust: false,
+      truth_source: 'session_binding_and_agent_supplied_literature_metadata',
+    },
+    record_ref_lookup: fakeRecordRefLookup(['source_asset:asset-reviewed'], {
+      foundRefs: ['source_asset:asset-reviewed'],
+    }).record_ref_lookup,
+    source_stack_coverage_item: {
+      claim_id: 'claim-mipt',
+      coverage_status: 'incomplete',
+      missing_count: 1,
+    },
+    source_reconstruction_review_packet: {},
+    recommended_next_entrypoints: [
+      {
+        entrypoint: 'record_reference_location',
+        surface: 'reference_location_record',
+        reason: 'record the literature location before using it as source context',
+      },
+    ],
+    handoff_policy: {
+      source: 'composed_read_only_aitp_surfaces',
+      host_may_use_for: [
+        'literature_orientation',
+        'source_context_review',
+        'record_ref_existence_check',
+        'source_stack_gap_review',
+        'next_action_selection',
+      ],
+      requires_explicit_next_entrypoint: true,
+      allowed_next_entrypoints: ['record_reference_location', 'record_evidence'],
+      forbidden_uses: [
+        'evidence_support',
+        'source_support_result',
+        'validation_result',
+        'write_execution',
+        'final_gate_satisfaction',
+        'claim_trust_update',
+        'trust_apply',
+      ],
+    },
+    allowed_next_tool_call: {
+      action: 'plan_primitive_tools',
+      action_id: 'source.review_context',
+      requires_explicit_next_action: true,
+      records_validation_result: false,
+      source_support_result: false,
+      claim_trust_mutation: 'none',
+    },
+    read_surface_effect: 'handoff_context_only',
+    read_only: true,
+    requires_explicit_next_action: true,
+    bridge_called: false,
+    executes_write_now: false,
+    mutates_next_payload_now: false,
+    infers_payload_values: false,
+    summary_inputs_trusted: false,
+    orientation_only: true,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+    records_validation_result: false,
+    source_support_result: false,
+    evidence_created: false,
+    validation_created: false,
+    write_executed: false,
+    trust_update_forbidden: true,
+    claim_trust_mutation: 'none',
+    truth_source: 'composed_typed_records_and_agent_supplied_literature_metadata',
   };
 }
 

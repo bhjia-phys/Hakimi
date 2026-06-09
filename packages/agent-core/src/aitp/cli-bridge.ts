@@ -20,6 +20,12 @@ import {
   type AitpRuntimePayloadProfilesCatalog,
 } from './runtime-payload-profiles';
 import {
+  parseAitpLiteratureSourceReviewHandoff,
+  type AitpLiteratureSourceReviewHandoff,
+  type AitpLiteratureSourceReviewHandoffInput,
+  type AitpLiteratureSourceReviewHandoffProvider,
+} from './literature-source-review-handoff';
+import {
   parseAitpRecordRefLookup,
   type AitpRecordRefLookup,
 } from './record-ref-lookup';
@@ -198,6 +204,9 @@ export interface DraftAitpCuratedRagPromotionInput {
   readonly promotionIntent?: string | undefined;
   readonly signal?: AbortSignal | undefined;
 }
+
+export type ReadAitpLiteratureSourceReviewHandoffInput =
+  AitpLiteratureSourceReviewHandoffInput;
 
 export interface IngestAitpCuratedRagCorpusInput {
   readonly paths: readonly string[];
@@ -725,6 +734,19 @@ export class AitpCliBridge {
     return parseAitpCuratedRagPromotionDraft(payload);
   }
 
+  async readLiteratureSourceReviewHandoff(
+    input: ReadAitpLiteratureSourceReviewHandoffInput,
+  ): Promise<AitpLiteratureSourceReviewHandoff> {
+    const payload = await this.runJson(
+      buildAitpLiteratureSourceReviewHandoffArgs({
+        basePath: this.options.basePath,
+        ...input,
+      }),
+      input.signal,
+    );
+    return parseAitpLiteratureSourceReviewHandoff(payload);
+  }
+
   async ingestCuratedRagCorpus(
     input: IngestAitpCuratedRagCorpusInput,
   ): Promise<AitpCuratedRagIngestResult> {
@@ -1050,6 +1072,38 @@ export function buildAitpCuratedRagPromotionDraftArgs(input: {
   pushOptional(args, '--claim', input.claimId);
   pushOptional(args, '--connector', input.connectorId);
   pushOptional(args, '--intent', input.promotionIntent);
+  return args;
+}
+
+export function buildAitpLiteratureSourceReviewHandoffArgs(
+  input: ReadAitpLiteratureSourceReviewHandoffInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.sessionId, 'sessionId');
+  requireNonEmpty(input.uri, 'uri');
+  requireNonEmpty(input.label, 'label');
+  requireNonEmpty(input.shortSummary, 'shortSummary');
+  requireNonEmpty(input.detectedRelevance, 'detectedRelevance');
+  const args = [
+    '--base',
+    input.basePath,
+    'literature',
+    'source-review-handoff',
+    '--session',
+    input.sessionId.trim(),
+    '--uri',
+    input.uri.trim(),
+    '--label',
+    input.label.trim(),
+    '--summary',
+    input.shortSummary.trim(),
+    '--detected-relevance',
+    input.detectedRelevance.trim(),
+  ];
+  pushOptional(args, '--external-id', input.externalId);
+  pushOptional(args, '--claim', input.optionalClaimId);
+  pushOptional(args, '--scoped-output', input.scopedOutput);
+  pushRepeated(args, '--reviewed-ref', input.reviewedRefs);
   return args;
 }
 

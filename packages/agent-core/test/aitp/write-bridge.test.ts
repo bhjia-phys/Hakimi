@@ -204,6 +204,22 @@ describe('AITP write bridge executor', () => {
         source: 'aitp_v5_get_curated_rag_chunk',
       },
     });
+    expect(aitpRuntimeBridgeTargetForOperation('readLiteratureSourceReviewHandoff')).toMatchObject({
+      operation: 'readLiteratureSourceReviewHandoff',
+      entrypointKey: 'literature_source_review_handoff',
+      mcpTool: 'aitp_v5_build_literature_source_review_handoff',
+      cliFallback: 'aitp-v5 literature source-review-handoff <args>',
+      surface: 'literature_source_review_handoff',
+      executionRole: 'read',
+      stateEffect: 'read_only',
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+      mcpArguments: {
+        required: ['base', 'session_id', 'uri', 'label', 'short_summary', 'detected_relevance'],
+        optional: ['external_id', 'optional_claim_id', 'scoped_output', 'reviewed_refs'],
+        source: 'aitp_v5_build_literature_source_review_handoff',
+      },
+    });
     expect(aitpRuntimeBridgeTargetForOperation('preflightTrustUpdate')).toMatchObject({
       operation: 'preflightTrustUpdate',
       entrypointKey: 'trust_preflight',
