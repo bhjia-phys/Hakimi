@@ -44,6 +44,8 @@ describe('ResearchActionTool', () => {
     const tool = new ResearchActionTool();
 
     expect(tool.description).toContain('handoff_guard_failure');
+    expect(tool.description).toContain('carried_ref_handoff_failure');
+    expect(tool.description).toContain('carried_ref_handoff_diagnostic_taxonomy');
     expect(tool.description).toContain('remediation_summary');
     expect(tool.description).toContain('copy_missing_handoff_field_from_draft');
     expect(tool.description).toContain('align_explicit_execute_args_with_handoff_tool_call');
@@ -108,6 +110,34 @@ describe('ResearchActionTool', () => {
     );
     expect(actions.output).toContain(
       '<failure code="unsupported_confirmation_status" next_step="inspect_handoff_guard_failure" retry_requires_explicit_execute_call="true" />',
+    );
+    expect(actions.output).not.toContain('trustApply');
+  });
+
+  it('lists carried-ref handoff diagnostic taxonomy as read-only metadata', async () => {
+    const tool = new ResearchActionTool();
+
+    const actions = await execute(tool, {
+      action: 'list_actions',
+    });
+
+    expect(actions.output).toContain('<carried_ref_handoff_diagnostic_taxonomy');
+    expect(actions.output).toContain('kind="promotion_carried_ref_handoff"');
+    expect(actions.output).toContain('read_only="true"');
+    expect(actions.output).toContain('executes_write_now="false"');
+    expect(actions.output).toContain('renders_suggestion_now="false"');
+    expect(actions.output).toContain('renders_next_call_pointer_now="false"');
+    expect(actions.output).toContain('records_validation_result="false"');
+    expect(actions.output).toContain('source_support_result="false"');
+    expect(actions.output).toContain('claim_trust_mutation="none"');
+    expect(actions.output).toContain(
+      '<failure code="missing_canonical_ref" next_step="copy_required_handoff_field_from_execute_result" retry_requires_fresh_draft_action="true" />',
+    );
+    expect(actions.output).toContain(
+      '<failure code="canonical_ref_dialect_or_kind_mismatch" next_step="use_next_payload_canonical_ref" retry_requires_fresh_draft_action="true" />',
+    );
+    expect(actions.output).toContain(
+      '<failure code="evidence_ref_record_id_mismatch" next_step="use_evidence_ref_for_same_record" retry_requires_fresh_draft_action="true" />',
     );
     expect(actions.output).not.toContain('trustApply');
   });

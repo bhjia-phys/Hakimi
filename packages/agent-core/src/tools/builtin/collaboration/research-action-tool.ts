@@ -3964,6 +3964,7 @@ function renderActionList(actions: readonly ResearchActionDefinition[]): string 
     `<research_actions action_count="${String(actions.length)}">`,
     ...actions.map((action) => renderAction(action, '  ')),
     renderHandoffGuardRemediationTaxonomy('  '),
+    renderCarriedRefHandoffDiagnosticTaxonomy('  '),
     '</research_actions>',
     '',
   ].join('\n');
@@ -3980,6 +3981,20 @@ function renderHandoffGuardRemediationTaxonomy(indent: string): string {
         `${indent}  <failure code="${escapeXml(code)}" next_step="${escapeXml(nextStep)}" retry_requires_explicit_execute_call="true" />`,
     ),
     `${indent}</handoff_guard_remediation_taxonomy>`,
+  ].join('\n');
+}
+
+function renderCarriedRefHandoffDiagnosticTaxonomy(indent: string): string {
+  const entries = Object.entries(CARRIED_REF_HANDOFF_REMEDIATION_BY_CODE) as ReadonlyArray<
+    readonly [CarriedRefHandoffFailureCode, CarriedRefHandoffRemediationStep]
+  >;
+  return [
+    `${indent}<carried_ref_handoff_diagnostic_taxonomy kind="promotion_carried_ref_handoff" failure_count="${String(entries.length)}" read_only="true" executes_write_now="false" renders_suggestion_now="false" renders_next_call_pointer_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">`,
+    ...entries.map(
+      ([code, nextStep]) =>
+        `${indent}  <failure code="${escapeXml(code)}" next_step="${escapeXml(nextStep)}" retry_requires_fresh_draft_action="true" />`,
+    ),
+    `${indent}</carried_ref_handoff_diagnostic_taxonomy>`,
   ].join('\n');
 }
 

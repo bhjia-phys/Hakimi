@@ -90,6 +90,11 @@ required fields，或 `canonical_ref`、`evidence_ref`、`ref_kind`、`record_id
 field，并保持 `suggestion_rendered=false`、`next_call_pointer_rendered=false`
 和 `bridge_called=false`；它不是 validation、source support、final gate 或
 claim-trust authority。
+`ResearchAction.list_actions` 现在也会暴露 read-only
+`carried_ref_handoff_diagnostic_taxonomy` section，来自同一套 failure-code
+mapping。模型可以先查看 repair steps，而不用故意提交 malformed handoff；这份
+metadata 不会生成 suggestion、不会 draft next call、不会调用 bridge，也不会授权
+validation/trust 变化。
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` with a proposed reviewed
 payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,

@@ -306,6 +306,11 @@ diagnostic points to the handoff field to repair, but it keeps
 `suggestion_rendered="false"`, `next_call_pointer_rendered="false"`, and
 `bridge_called="false"`; it is not validation, source support, final-gate
 satisfaction, or claim-trust authority.
+`ResearchAction.list_actions` now also includes a read-only
+`carried_ref_handoff_diagnostic_taxonomy` section generated from the same
+failure-code mapping, so a model can inspect the repair steps without
+submitting malformed handoffs. This metadata does not render suggestions,
+draft next calls, call the bridge, or authorize validation/trust changes.
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` against a proposed
 reviewed payload. Hakimi renders `original_payload_json`,
