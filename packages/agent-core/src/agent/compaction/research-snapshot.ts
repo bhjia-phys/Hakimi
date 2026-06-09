@@ -138,6 +138,9 @@ function renderTraceLines(
         item.nextSuggestedActions.length === 0
           ? undefined
           : `next=${item.nextSuggestedActions.join(',')}`,
+        item.reviewDecision === undefined
+          ? undefined
+          : `review_decision=${item.reviewDecision} non_evidentiary=true records_validation_result=false source_support_result=false claim_trust_mutation=none`,
       ].filter((part): part is string => part !== undefined);
       const summaries = [
         item.inputSummary === undefined ? undefined : `input=${sanitize(item.inputSummary)}`,

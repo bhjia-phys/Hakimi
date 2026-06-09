@@ -28,6 +28,8 @@ import {
   type ResearchActionOutcome,
   type ResearchActionSource,
   type ResearchPrimitivePlanTemplate,
+  type SourceReviewContextDecision,
+  type SourceReviewContextOutput,
   type ResearchObligation,
   type WorkFrame,
 } from '../../../research-action';
@@ -757,23 +759,45 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       return errorResult('ResearchAction finish_action_call requires outcome.');
     }
     const resolvedCallId = this.resolveCallId(args, ctx);
+    const sourceReviewContextOutput =
+      args.action_id === 'source.review_context'
+        ? coerceSourceReviewContextOutput(args.action_output, args.next_suggested_actions)
+        : undefined;
+    if (sourceReviewContextOutput instanceof Error) {
+      return errorResult(sourceReviewContextOutput.message);
+    }
     this.manager.finishActionCall(
       {
         actionId: args.action_id,
         callId: resolvedCallId.callId,
         outcome: args.outcome,
-        output: args.action_output,
+        output: sourceReviewContextOutput ?? args.action_output,
         ledgerEventIds: args.ledger_event_ids,
         evidenceRefs: args.evidence_refs,
         generatedObligationIds: args.generated_obligation_ids,
         primitiveToolCallIds: args.primitive_tool_call_ids,
-        nextSuggestedActions: args.next_suggested_actions,
+        nextSuggestedActions:
+          sourceReviewContextOutput?.nextSuggestedActions ?? args.next_suggested_actions,
       },
       {
         source: 'model',
         toolCallId: ctx.toolCallId,
       },
     );
+    if (sourceReviewContextOutput !== undefined) {
+      return ok(
+        [
+          `<research_action_call_finished action_id="${escapeXml(args.action_id)}" call_id="${escapeXml(resolvedCallId.callId)}" call_id_source="${resolvedCallId.source}" outcome="${args.outcome}">`,
+          renderSourceReviewContextOutcomeXml(
+            sourceReviewContextOutput,
+            resolvedCallId.callId,
+            args.outcome,
+          ),
+          '</research_action_call_finished>',
+          '',
+        ].join('\n'),
+      );
+    }
     return ok(
       `<research_action_call_finished action_id="${escapeXml(args.action_id)}" call_id="${escapeXml(resolvedCallId.callId)}" call_id_source="${resolvedCallId.source}" outcome="${args.outcome}" />\n`,
     );
@@ -1774,6 +1798,121 @@ function defaultGraphActionId(query: (typeof GRAPH_QUERIES)[number]): string {
 
 function defaultCallId(actionId: string, toolCallId: string): string {
   return `call.${safeId(actionId)}.${safeId(toolCallId)}`;
+}
+
+function coerceSourceReviewContextOutput(
+  value: unknown,
+  nextSuggestedActions: readonly string[] | undefined,
+): SourceReviewContextOutput | Error {
+  if (!isRecord(value)) {
+    return new Error('ResearchAction finish_action_call source.review_context requires structured action_output.');
+  }
+  if (value['kind'] !== 'source_review_context') {
+    return new Error('ResearchAction finish_action_call source.review_context requires action_output.kind="source_review_context".');
+  }
+  const decision = sourceReviewContextDecision(value['decision']);
+  if (decision === undefined) {
+    return new Error('ResearchAction finish_action_call source.review_context requires a valid routing decision.');
+  }
+  const rationale = stringValue(value['rationale']);
+  const reviewedRefs = stringArray(value['reviewedRefs']);
+  if (rationale === undefined || reviewedRefs.length === 0) {
+    return new Error('ResearchAction finish_action_call source.review_context requires rationale and reviewedRefs.');
+  }
+  const boundary = isRecord(value['nonEvidentiaryBoundary'])
+    ? value['nonEvidentiaryBoundary']
+    : undefined;
+  if (
+    boundary?.['recordsValidationResult'] !== false ||
+    boundary['sourceSupportResult'] !== false ||
+    boundary['claimTrustMutation'] !== 'none' ||
+    boundary['canUpdateClaimTrust'] !== false
+  ) {
+    return new Error('ResearchAction finish_action_call source.review_context requires non-evidentiary boundary flags.');
+  }
+  const expectedNextAction = nextActionIdForSourceReviewDecision(decision);
+  const outputNextActions = stringArray(value['nextSuggestedActions']);
+  const normalizedNextActions = uniqueStrings([
+    ...outputNextActions,
+    ...(nextSuggestedActions ?? []),
+  ]);
+  if (!normalizedNextActions.includes(expectedNextAction)) {
+    return new Error(`ResearchAction finish_action_call source.review_context decision "${decision}" requires next action "${expectedNextAction}".`);
+  }
+  return {
+    kind: 'source_review_context',
+    decision,
+    rationale,
+    reviewedRefs,
+    candidateReviewedOverrideRefs: stringArray(value['candidateReviewedOverrideRefs']),
+    nextSuggestedActions: normalizedNextActions,
+    nonEvidentiaryBoundary: {
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+    },
+  };
+}
+
+function renderSourceReviewContextOutcomeXml(
+  output: SourceReviewContextOutput,
+  callId: string,
+  outcome: ResearchActionOutcome,
+): string {
+  const reviewedCanonicalRef = output.reviewedRefs[0] ?? '';
+  const reviewedEvidenceRef = output.reviewedRefs[1] ?? reviewedCanonicalRef;
+  const nextActionId = nextActionIdForSourceReviewDecision(output.decision);
+  return [
+    `  <source_context_review_outcome source="ResearchAction.finish_action_call" action_id="source.review_context" call_id="${escapeXml(callId)}" outcome="${outcome}" decision="${output.decision}" reviewed_canonical_ref="${escapeXml(reviewedCanonicalRef)}" reviewed_evidence_ref="${escapeXml(reviewedEvidenceRef)}" claim_scope="${escapeXml(scopeValue(output.reviewedRefs, 'claim'))}" chunk_scope="${escapeXml(scopeValue(output.reviewedRefs, 'chunk'))}" rationale="${escapeXml(output.rationale)}" next_action_id="${escapeXml(nextActionId)}" requires_explicit_next_action="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false">`,
+    renderBoundedStringList('reviewed_refs', 'ref', output.reviewedRefs, '    '),
+    renderBoundedStringList(
+      'candidate_reviewed_override_refs',
+      'ref',
+      output.candidateReviewedOverrideRefs ?? [],
+      '    ',
+    ),
+    renderBoundedStringList('next_suggested_actions', 'action', output.nextSuggestedActions, '    '),
+    '  </source_context_review_outcome>',
+  ].join('\n');
+}
+
+function sourceReviewContextDecision(value: unknown): SourceReviewContextDecision | undefined {
+  if (
+    value === 'extract' ||
+    value === 'validate_check_source_support' ||
+    value === 'fresh_aitp_draft' ||
+    value === 'blocker'
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function stringArray(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  return uniqueStrings(value.filter((item): item is string => typeof item === 'string' && item.length > 0));
+}
+
+function nextActionIdForSourceReviewDecision(decision: SourceReviewContextDecision): string {
+  switch (decision) {
+    case 'extract':
+      return 'source.capture_source_excerpt';
+    case 'validate_check_source_support':
+      return 'validate.check_source_support';
+    case 'fresh_aitp_draft':
+      return 'draft_aitp_curated_rag_write_bridge_call';
+    case 'blocker':
+      return 'aitp.create_open_obligation';
+  }
+}
+
+function scopeValue(refs: readonly string[], prefix: string): string {
+  return refs.find((ref) => ref.startsWith(`${prefix}:`)) ?? '';
 }
 
 type BenchmarkAitpToolRunCapture =
@@ -4252,6 +4391,7 @@ function renderContextPack(pack: ResearchContextPack): string {
     renderCuratedRagSection(pack),
     renderCuratedRagCarriedRefRepairSection(pack),
     renderCuratedRagCarriedRefRepairResultSection(pack),
+    renderSourceContextReviewOutcomeSection(pack),
     '  <action_bindings>',
     ...pack.actionBindings.map(renderActionBindingXml),
     '  </action_bindings>',
@@ -4263,6 +4403,14 @@ function renderContextPack(pack: ResearchContextPack): string {
     '  </diagnostics>',
     '</context_pack>',
     '',
+  ].join('\n');
+}
+
+function renderSourceContextReviewOutcomeSection(pack: ResearchContextPack): string {
+  const outcome = pack.sourceContextReviewOutcome;
+  if (outcome === undefined) return '  <source_context_review_outcome />';
+  return [
+    `  <source_context_review_outcome source="${outcome.source}" action_id="${outcome.actionId}" call_id="${escapeXml(outcome.callId)}" outcome="${outcome.outcome}" decision="${outcome.decision}" reviewed_canonical_ref="${escapeXml(outcome.reviewedCanonicalRef)}" reviewed_evidence_ref="${escapeXml(outcome.reviewedEvidenceRef)}" claim_scope="${escapeXml(outcome.claimScope)}" chunk_scope="${escapeXml(outcome.chunkScope)}" rationale="${escapeXml(outcome.rationale)}" next_action_id="${escapeXml(outcome.nextActionId)}" requires_explicit_next_action="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" />`,
   ].join('\n');
 }
 
