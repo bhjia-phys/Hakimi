@@ -19,6 +19,10 @@ import {
   parseAitpCuratedRagSearchResult,
 } from './curated-rag';
 import {
+  parseAitpLiteratureComparisonDraft,
+  type AitpLiteratureComparisonDraftProvider,
+} from './literature-comparison-draft';
+import {
   parseAitpLiteratureSourceReviewHandoff,
   type AitpLiteratureSourceReviewHandoffProvider,
 } from './literature-source-review-handoff';
@@ -218,6 +222,16 @@ export function createDynamicAitpCliLiteratureSourceReviewHandoffProvider(
   };
 }
 
+export function createDynamicAitpCliLiteratureComparisonDraftProvider(
+  options: DynamicAitpCliBridgeOptions,
+): AitpLiteratureComparisonDraftProvider {
+  return {
+    getLiteratureComparisonDraft(input) {
+      return createDynamicAitpCliBridge(options).readLiteratureComparisonDraft(input);
+    },
+  };
+}
+
 export function createDynamicAitpMcpFirstCuratedRagProvider(
   options: DynamicAitpMcpFirstBridgeOptions,
 ): AitpCuratedRagProvider {
@@ -349,6 +363,43 @@ export function createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider(
       } catch (error) {
         if (options.fallbackOnMcpError === false) throw error;
         return fallback.getLiteratureSourceReviewHandoff(input);
+      }
+    },
+  };
+}
+
+export function createDynamicAitpMcpFirstLiteratureComparisonDraftProvider(
+  options: DynamicAitpMcpFirstBridgeOptions,
+): AitpLiteratureComparisonDraftProvider {
+  const fallback = createDynamicAitpCliLiteratureComparisonDraftProvider(options);
+  return {
+    async getLiteratureComparisonDraft(input) {
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.getLiteratureComparisonDraft(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('readLiteratureComparisonDraft');
+        const args: Record<string, unknown> = {
+          base: options.basePath(),
+          session_id: input.sessionId,
+          comparison_question: input.comparisonQuestion,
+          source_refs: [...input.sourceRefs],
+        };
+        if (input.dimensions !== undefined) args['dimensions'] = [...input.dimensions];
+        if (input.optionalClaimId !== undefined) args['optional_claim_id'] = input.optionalClaimId;
+        if (input.rationale !== undefined) args['rationale'] = input.rationale;
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args,
+          signal: input.signal,
+        });
+        return parseAitpLiteratureComparisonDraft(
+          normalizeAitpWriteBridgePayload(rawPayload),
+        );
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.getLiteratureComparisonDraft(input);
       }
     },
   };

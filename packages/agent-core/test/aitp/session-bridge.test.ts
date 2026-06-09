@@ -5,12 +5,14 @@ import {
   AITP_RUNTIME_PAYLOAD_PROFILE_CATALOG_VERSION,
   aitpRuntimePayloadProfileById,
   createDynamicAitpCliCuratedRagProvider,
+  createDynamicAitpCliLiteratureComparisonDraftProvider,
   createDynamicAitpCliLiteratureSourceReviewHandoffProvider,
   createDynamicAitpCliProcessGraphSliceProvider,
   createDynamicAitpCliRecordRefLookupProvider,
   createDynamicAitpCliRuntimePayloadProfilesProvider,
   createDynamicAitpCliWriteBridgeExecutor,
   createDynamicAitpMcpFirstCuratedRagProvider,
+  createDynamicAitpMcpFirstLiteratureComparisonDraftProvider,
   createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider,
   createDynamicAitpMcpFirstProcessGraphSliceProvider,
   createDynamicAitpMcpFirstRecordRefLookupProvider,
@@ -766,6 +768,92 @@ describe('AITP dynamic session bridge', () => {
     expect(mcpHandoff.sourceSupportResult).toBe(false);
     expect(mcpHandoff.claimTrustMutation).toBe('none');
   });
+
+  it('reads literature comparison drafts through CLI and MCP-first providers', async () => {
+    const cliCalls: string[][] = [];
+    const cliProvider = createDynamicAitpCliLiteratureComparisonDraftProvider({
+      basePath: () => 'F:/project',
+      runner: recordingRunner(cliCalls),
+    });
+
+    const cliDraft = await cliProvider.getLiteratureComparisonDraft({
+      sessionId: 'session-qg',
+      comparisonQuestion: 'How do these sources compare on observer algebras?',
+      sourceRefs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+      dimensions: ['research_question', 'evidence_basis'],
+      optionalClaimId: 'claim-mipt',
+      rationale: 'Need bounded prior-art comparison.',
+    });
+
+    expect(cliCalls[0]).toEqual([
+      'aitp-v5',
+      '--base',
+      'F:/project',
+      'literature',
+      'comparison-draft',
+      '--session',
+      'session-qg',
+      '--question',
+      'How do these sources compare on observer algebras?',
+      '--source-ref',
+      'source_asset:asset-reviewed',
+      '--source-ref',
+      'reference_location:loc-reviewed',
+      '--dimension',
+      'research_question',
+      '--dimension',
+      'evidence_basis',
+      '--claim',
+      'claim-mipt',
+      '--rationale',
+      'Need bounded prior-art comparison.',
+    ]);
+    expect(cliDraft.kind).toBe('literature_comparison_draft');
+    expect(cliDraft.allowedNextToolCall.actionId).toBe('source.compare_literature');
+
+    const mcpCalls: Array<{ readonly toolName: string; readonly args: Readonly<Record<string, unknown>> }> = [];
+    const mcpProvider = createDynamicAitpMcpFirstLiteratureComparisonDraftProvider({
+      basePath: () => 'F:/project',
+      runner: recordingRunner([]),
+      mcpTransport: {
+        async callTool(input) {
+          mcpCalls.push({ toolName: input.toolName, args: input.args });
+          return {
+            ok: true,
+            literature_comparison_draft: fakeLiteratureComparisonDraft(),
+          };
+        },
+      },
+    });
+
+    const mcpDraft = await mcpProvider.getLiteratureComparisonDraft({
+      sessionId: 'session-qg',
+      comparisonQuestion: 'How do these sources compare on observer algebras?',
+      sourceRefs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+      dimensions: ['research_question', 'evidence_basis'],
+      optionalClaimId: 'claim-mipt',
+      rationale: 'Need bounded prior-art comparison.',
+    });
+
+    expect(mcpCalls).toEqual([
+      {
+        toolName: 'aitp_v5_build_literature_comparison_draft',
+        args: {
+          base: 'F:/project',
+          session_id: 'session-qg',
+          comparison_question: 'How do these sources compare on observer algebras?',
+          source_refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+          dimensions: ['research_question', 'evidence_basis'],
+          optional_claim_id: 'claim-mipt',
+          rationale: 'Need bounded prior-art comparison.',
+        },
+      },
+    ]);
+    expect(mcpDraft.draftCreatesRecords).toBe(false);
+    expect(mcpDraft.recordsValidationResult).toBe(false);
+    expect(mcpDraft.sourceSupportResult).toBe(false);
+    expect(mcpDraft.claimTrustMutation).toBe('none');
+  });
 });
 
 function recordingRunner(calls: string[][]): AitpCommandRunner {
@@ -857,6 +945,16 @@ function recordingRunner(calls: string[][]): AitpCommandRunner {
           stdout: JSON.stringify({
             ok: true,
             literature_source_review_handoff: fakeLiteratureSourceReviewHandoff(),
+          }),
+          stderr: '',
+        };
+      }
+      if (args.includes('comparison-draft')) {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            literature_comparison_draft: fakeLiteratureComparisonDraft(),
           }),
           stderr: '',
         };
@@ -1361,6 +1459,129 @@ function fakeLiteratureSourceReviewHandoff(): any {
     trust_update_forbidden: true,
     claim_trust_mutation: 'none',
     truth_source: 'composed_typed_records_and_agent_supplied_literature_metadata',
+  };
+}
+
+function fakeLiteratureComparisonDraft(): any {
+  return {
+    ok: true,
+    kind: 'literature_comparison_draft',
+    session_id: 'session-qg',
+    topic_id: 'qg',
+    claim_id: 'claim-mipt',
+    comparison_question: 'How do these sources compare on observer algebras?',
+    rationale: 'Need bounded prior-art comparison.',
+    source_refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+    source_ref_count: 2,
+    comparison_dimensions: [
+      fakeLiteratureComparisonDimension('research_question'),
+      fakeLiteratureComparisonDimension('evidence_basis'),
+    ],
+    comparison_dimension_count: 2,
+    record_ref_lookup: fakeRecordRefLookup(
+      ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+      { foundRefs: ['source_asset:asset-reviewed'] },
+    ).record_ref_lookup,
+    draft_record_intent: {
+      kind: 'literature_comparison_record_candidate',
+      target_surface: 'future_literature_comparison_record',
+      target_entrypoint: 'record_literature_comparison',
+      status: 'draft_only',
+      requires_explicit_write_surface: true,
+      requires_source_review: true,
+      requires_evidence_or_reference_records: true,
+      requires_trust_preflight_before_claim_trust: true,
+      creates_record_now: false,
+      records_validation_result: false,
+      source_support_result: false,
+      claim_trust_mutation: 'none',
+      can_update_claim_trust: false,
+    },
+    suggested_sections: [
+      { section: 'agreements', description: 'claim-aligned similarities to check against sources' },
+      { section: 'disagreements', description: 'scope, method, or conclusion conflicts to inspect' },
+    ],
+    recommended_next_entrypoints: [
+      {
+        entrypoint: 'record_reference_location',
+        surface: 'reference_location_record',
+        reason: 'ensure every compared source has a canonical reference location',
+      },
+      {
+        entrypoint: 'record_evidence',
+        surface: 'evidence_record',
+        reason: 'only after source review, record evidence for scoped outputs if warranted',
+      },
+    ],
+    draft_policy: {
+      source: 'session_binding_agent_supplied_sources_and_dimensions',
+      host_may_use_for: [
+        'literature_comparison_planning',
+        'source_set_review',
+        'dimension_selection',
+      ],
+      requires_explicit_next_entrypoint: true,
+      allowed_next_entrypoints: [
+        'record_reference_location',
+        'register_source_asset',
+        'record_source_reconstruction_review_result',
+        'record_evidence',
+        'create_validation_contract',
+        'record_validation_result',
+        'preflight_trust_update',
+      ],
+      forbidden_uses: [
+        'literature_comparison_record',
+        'evidence_support',
+        'source_support_result',
+        'validation_result',
+        'write_execution',
+        'final_gate_satisfaction',
+        'claim_trust_update',
+        'trust_apply',
+      ],
+    },
+    allowed_next_tool_call: {
+      action: 'plan_primitive_tools',
+      action_id: 'source.compare_literature',
+      requires_explicit_next_action: true,
+      records_validation_result: false,
+      source_support_result: false,
+      claim_trust_mutation: 'none',
+    },
+    read_surface_effect: 'comparison_draft_only',
+    read_only: true,
+    draft_creates_records: false,
+    requires_explicit_next_action: true,
+    bridge_called: false,
+    executes_write_now: false,
+    mutates_next_payload_now: false,
+    infers_payload_values: false,
+    summary_inputs_trusted: false,
+    orientation_only: true,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+    records_validation_result: false,
+    source_support_result: false,
+    evidence_created: false,
+    validation_created: false,
+    write_executed: false,
+    trust_update_forbidden: true,
+    claim_trust_mutation: 'none',
+    truth_source: 'session_binding_agent_supplied_sources_and_dimensions',
+  };
+}
+
+function fakeLiteratureComparisonDimension(dimension: string): any {
+  return {
+    dimension,
+    status: 'draft_placeholder',
+    requires_source_review: true,
+    summary_inputs_trusted: false,
+    creates_record_now: false,
+    records_validation_result: false,
+    source_support_result: false,
+    claim_trust_mutation: 'none',
   };
 }
 

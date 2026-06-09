@@ -84,6 +84,7 @@ export type AitpRuntimeBridgeOperation =
   | 'readCuratedRagChunk'
   | 'draftCuratedRagPromotion'
   | 'readLiteratureSourceReviewHandoff'
+  | 'readLiteratureComparisonDraft'
   | AitpWriteBridgeOperation;
 
 export interface AitpRuntimeBridgeTarget {
@@ -170,6 +171,11 @@ const AITP_READ_TARGET_MCP_ARGUMENTS = {
     optional: ['external_id', 'optional_claim_id', 'scoped_output', 'reviewed_refs'],
     source: 'aitp_v5_build_literature_source_review_handoff',
   },
+  literature_comparison_draft: {
+    required: ['base', 'session_id', 'comparison_question', 'source_refs'],
+    optional: ['dimensions', 'optional_claim_id', 'rationale'],
+    source: 'aitp_v5_build_literature_comparison_draft',
+  },
 } as const satisfies Record<string, AitpMcpArgumentContract>;
 
 export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
@@ -251,6 +257,15 @@ export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
     'aitp_v5_build_literature_source_review_handoff',
     'aitp-v5 literature source-review-handoff <args>',
     'literature_source_review_handoff',
+    'read',
+    'read_only',
+  ),
+  bridgeTarget(
+    'readLiteratureComparisonDraft',
+    'literature_comparison_draft',
+    'aitp_v5_build_literature_comparison_draft',
+    'aitp-v5 literature comparison-draft <args>',
+    'literature_comparison_draft',
     'read',
     'read_only',
   ),

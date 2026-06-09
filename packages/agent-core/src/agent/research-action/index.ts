@@ -26,6 +26,8 @@ import type {
   AitpCuratedRagChunkLookup,
   AitpCuratedRagPromotionDraft,
   AitpCuratedRagSearchResult,
+  AitpLiteratureComparisonDraft,
+  AitpLiteratureComparisonDraftInput,
   AitpLiteratureSourceReviewHandoff,
   AitpLiteratureSourceReviewHandoffInput,
   AitpRecordRefLookup,
@@ -215,6 +217,10 @@ export class ResearchActionManager {
     return this.agent.aitpLiteratureSourceReviewHandoffProvider !== undefined;
   }
 
+  hasAitpLiteratureComparisonDraftProvider(): boolean {
+    return this.agent.aitpLiteratureComparisonDraftProvider !== undefined;
+  }
+
   async readAitpRuntimePayloadProfiles(
     signal?: AbortSignal | undefined,
   ): Promise<AitpRuntimePayloadProfilesCatalog> {
@@ -297,6 +303,17 @@ export class ResearchActionManager {
     return this.agent.aitpLiteratureSourceReviewHandoffProvider.getLiteratureSourceReviewHandoff(
       input,
     );
+  }
+
+  async readAitpLiteratureComparisonDraft(
+    input: AitpLiteratureComparisonDraftInput,
+  ): Promise<AitpLiteratureComparisonDraft> {
+    if (this.agent.aitpLiteratureComparisonDraftProvider === undefined) {
+      throw new Error(
+        'AITP literature comparison draft provider is not configured for this session.',
+      );
+    }
+    return this.agent.aitpLiteratureComparisonDraftProvider.getLiteratureComparisonDraft(input);
   }
 
   buildPhysicsGraph(): PhysicsGraph {

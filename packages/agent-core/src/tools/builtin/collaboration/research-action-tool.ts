@@ -56,6 +56,7 @@ import {
   type AitpCuratedRagPromotionDraft,
   type AitpCuratedRagPromotionDraftOperation,
   type AitpCuratedRagSearchResult,
+  type AitpLiteratureComparisonDraft,
   type AitpLiteratureSourceReviewHandoff,
   type AitpRecordRefLookup,
   type AitpRecordRefLookupItem,
@@ -113,6 +114,7 @@ const ACTIONS = [
   'inspect_aitp_curated_rag_chunk',
   'draft_aitp_curated_rag_promotion',
   'inspect_literature_source_review_handoff',
+  'inspect_literature_comparison_draft',
   'draft_aitp_curated_rag_write_bridge_call',
   'draft_aitp_record_ref_repair_write_bridge_call',
   'capture_primitive_tool_run',
@@ -355,6 +357,22 @@ export const ResearchActionToolInputSchema = z.object({
     .string()
     .optional()
     .describe('Detected claim or topic relevance for read-only AITP source review handoff inspection.'),
+  literature_comparison_question: z
+    .string()
+    .optional()
+    .describe('Comparison question for read-only AITP literature comparison draft inspection.'),
+  literature_source_refs: z
+    .array(z.string())
+    .optional()
+    .describe('AITP source refs for read-only literature comparison draft inspection.'),
+  literature_dimensions: z
+    .array(z.string())
+    .optional()
+    .describe('Optional comparison dimensions for read-only AITP literature comparison draft inspection.'),
+  literature_rationale: z
+    .string()
+    .optional()
+    .describe('Optional rationale for read-only AITP literature comparison draft inspection.'),
   literature_scoped_output: z
     .string()
     .optional()
@@ -668,6 +686,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return await this.draftAitpCuratedRagPromotion(args, ctx);
         case 'inspect_literature_source_review_handoff':
           return await this.inspectLiteratureSourceReviewHandoff(args, ctx);
+        case 'inspect_literature_comparison_draft':
+          return await this.inspectLiteratureComparisonDraft(args, ctx);
         case 'draft_aitp_curated_rag_write_bridge_call':
           return await this.draftAitpCuratedRagWriteBridgeCall(args, ctx);
         case 'draft_aitp_record_ref_repair_write_bridge_call':
@@ -1133,6 +1153,48 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       signal: ctx.signal,
     });
     return ok(renderAitpLiteratureSourceReviewHandoff(handoff));
+  }
+
+  private async inspectLiteratureComparisonDraft(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult(
+        'ResearchAction inspect_literature_comparison_draft requires a session manager.',
+      );
+    }
+    if (!this.manager.hasAitpLiteratureComparisonDraftProvider()) {
+      return errorResult('AITP literature comparison draft provider is not configured');
+    }
+    const sessionId = firstText(args.literature_session_id);
+    if (sessionId === undefined) {
+      return errorResult(
+        'ResearchAction inspect_literature_comparison_draft requires literature_session_id.',
+      );
+    }
+    const comparisonQuestion = firstText(args.literature_comparison_question);
+    if (comparisonQuestion === undefined) {
+      return errorResult(
+        'ResearchAction inspect_literature_comparison_draft requires literature_comparison_question.',
+      );
+    }
+    const sourceRefs = nonEmptyStrings(args.literature_source_refs ?? args.source_refs ?? []);
+    if (sourceRefs.length === 0) {
+      return errorResult(
+        'ResearchAction inspect_literature_comparison_draft requires literature_source_refs or source_refs.',
+      );
+    }
+    const draft = await this.manager.readAitpLiteratureComparisonDraft({
+      sessionId,
+      comparisonQuestion,
+      sourceRefs,
+      dimensions: nonEmptyStrings(args.literature_dimensions ?? []),
+      optionalClaimId: firstText(args.aitp_claim_id),
+      rationale: firstText(args.literature_rationale),
+      signal: ctx.signal,
+    });
+    return ok(renderAitpLiteratureComparisonDraft(draft));
   }
 
   private async draftAitpCuratedRagWriteBridgeCall(
@@ -2348,6 +2410,65 @@ function renderAitpLiteratureSourceReviewHandoff(
     '  <handoff_boundary host_routing_only="true" canonical_effect_requires_explicit_aitp_entrypoint="true" evidence_support="false" validation_result="false" write_execution="false" final_gate_satisfaction="false" trust_apply="false" />',
     '</aitp_literature_source_review_handoff>',
     '',
+  ].join('\n');
+}
+
+function renderAitpLiteratureComparisonDraft(
+  draft: AitpLiteratureComparisonDraft,
+): string {
+  const target = aitpRuntimeBridgeTargetForOperation('readLiteratureComparisonDraft');
+  return [
+    `<aitp_literature_comparison_draft session_id="${escapeXml(draft.sessionId)}" topic_id="${escapeXml(draft.topicId)}" claim_id="${escapeXml(draft.claimId)}" truth_source="${escapeXml(draft.truthSource)}" read_surface_effect="${draft.readSurfaceEffect}" read_only="true" draft_creates_records="false" requires_explicit_next_action="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" records_validation_result="false" source_support_result="false" evidence_created="false" validation_created="false" write_executed="false" claim_trust_mutation="none" can_update_claim_trust="false">`,
+    `  <runtime_target operation="readLiteratureComparisonDraft" entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" state_effect="${target.stateEffect}" />`,
+    `  <comparison_question>${escapeXml(draft.comparisonQuestion)}</comparison_question>`,
+    `  <rationale>${escapeXml(draft.rationale)}</rationale>`,
+    renderStringList('source_refs', 'source_ref', draft.sourceRefs, '  '),
+    '  <comparison_dimensions>',
+    ...draft.comparisonDimensions.map(
+      (dimension) =>
+        `    <dimension name="${escapeXml(dimension.dimension)}" status="${dimension.status}" requires_source_review="true" summary_inputs_trusted="false" creates_record_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />`,
+    ),
+    '  </comparison_dimensions>',
+    renderAitpLiteratureRecordRefLookupSummary(draft.recordRefLookup, '  '),
+    `  <draft_record_intent kind="${draft.draftRecordIntent.kind}" target_surface="${escapeXml(draft.draftRecordIntent.targetSurface)}" target_entrypoint="${escapeXml(draft.draftRecordIntent.targetEntrypoint)}" status="${draft.draftRecordIntent.status}" requires_explicit_write_surface="true" requires_source_review="true" requires_evidence_or_reference_records="true" requires_trust_preflight_before_claim_trust="true" creates_record_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" />`,
+    renderAitpLiteratureComparisonSuggestedSections(draft),
+    renderAitpLiteratureComparisonRecommendedEntrypoints(draft),
+    renderStringList('host_may_use_for', 'use', draft.draftPolicy.hostMayUseFor, '  '),
+    renderStringList('forbidden_uses', 'use', draft.draftPolicy.forbiddenUses, '  '),
+    `  <allowed_next_tool_call action="${draft.allowedNextToolCall.action}" action_id="${draft.allowedNextToolCall.actionId}" requires_explicit_next_action="true" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />`,
+    '  <comparison_boundary draft_is_evidence="false" comparison_record_created="false" validation_result="false" source_support_result="false" write_execution="false" final_gate_satisfaction="false" trust_apply="false" canonical_effect_requires_explicit_aitp_entrypoint="true" />',
+    '</aitp_literature_comparison_draft>',
+    '',
+  ].join('\n');
+}
+
+function renderAitpLiteratureComparisonSuggestedSections(
+  draft: AitpLiteratureComparisonDraft,
+): string {
+  if (draft.suggestedSections.length === 0) return '  <suggested_sections />';
+  return [
+    '  <suggested_sections>',
+    ...draft.suggestedSections.map(
+      (section) =>
+        `    <section name="${escapeXml(recordStringAttr(section, 'section'))}" description="${escapeXml(recordStringAttr(section, 'description'))}" draft_only="true" />`,
+    ),
+    '  </suggested_sections>',
+  ].join('\n');
+}
+
+function renderAitpLiteratureComparisonRecommendedEntrypoints(
+  draft: AitpLiteratureComparisonDraft,
+): string {
+  if (draft.recommendedNextEntrypoints.length === 0) {
+    return '  <recommended_next_entrypoints />';
+  }
+  return [
+    '  <recommended_next_entrypoints>',
+    ...draft.recommendedNextEntrypoints.map(
+      (entry) =>
+        `    <entrypoint name="${escapeXml(entry.entrypoint)}" surface="${escapeXml(entry.surface)}" reason="${escapeXml(entry.reason)}" />`,
+    ),
+    '  </recommended_next_entrypoints>',
   ].join('\n');
 }
 
@@ -4017,6 +4138,10 @@ function firstClaimRef(refs: readonly string[] | undefined): string | undefined 
 
 function firstText(...values: readonly (string | undefined)[]): string | undefined {
   return values.find(hasText);
+}
+
+function nonEmptyStrings(values: readonly string[]): readonly string[] {
+  return values.map((value) => value.trim()).filter((value) => value.length > 0);
 }
 
 function uniqueStrings(values: readonly string[]): readonly string[] {

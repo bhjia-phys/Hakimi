@@ -10,10 +10,12 @@ import {
   parseAitpCuratedRagChunk,
   parseAitpCuratedRagPromotionDraft,
   parseAitpCuratedRagSearchResult,
+  parseAitpLiteratureComparisonDraft,
   parseAitpLiteratureSourceReviewHandoff,
   parseAitpRecordRefLookup,
   parseAitpRuntimePayloadProfilesCatalog,
   type AitpCuratedRagProvider,
+  type AitpLiteratureComparisonDraftProvider,
   type AitpLiteratureSourceReviewHandoffProvider,
   type AitpRecordRefLookupProvider,
   type AitpRuntimePayloadProfilesProvider,
@@ -2054,6 +2056,76 @@ describe('ResearchActionTool', () => {
     expect(missingProvider.output).toContain(
       'AITP literature source review handoff provider is not configured',
     );
+  });
+
+  it('inspects AITP literature comparison drafts without recording evidence or writes', async () => {
+    const records: AgentRecord[] = [];
+    const calls: unknown[] = [];
+    const agent = makeAgent(records, {
+      aitpLiteratureComparisonDraftProvider: {
+        async getLiteratureComparisonDraft(input) {
+          calls.push(input);
+          return parseAitpLiteratureComparisonDraft(fakeLiteratureComparisonDraft());
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'inspect_literature_comparison_draft',
+      literature_session_id: 'session-qg',
+      literature_comparison_question: 'How do these sources compare on observer algebras?',
+      literature_source_refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+      literature_dimensions: ['research_question', 'evidence_basis'],
+      aitp_claim_id: 'claim-mipt',
+      literature_rationale: 'Need bounded prior-art comparison.',
+    });
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        sessionId: 'session-qg',
+        comparisonQuestion: 'How do these sources compare on observer algebras?',
+        sourceRefs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+        dimensions: ['research_question', 'evidence_basis'],
+        optionalClaimId: 'claim-mipt',
+        rationale: 'Need bounded prior-art comparison.',
+      }),
+    ]);
+    expect(result.output).toContain('<aitp_literature_comparison_draft');
+    expect(result.output).toContain('mcp_tool="aitp_v5_build_literature_comparison_draft"');
+    expect(result.output).toContain('read_surface_effect="comparison_draft_only"');
+    expect(result.output).toContain('draft_creates_records="false"');
+    expect(result.output).toContain('bridge_called="false"');
+    expect(result.output).toContain('executes_write_now="false"');
+    expect(result.output).toContain('records_validation_result="false"');
+    expect(result.output).toContain('source_support_result="false"');
+    expect(result.output).toContain('claim_trust_mutation="none"');
+    expect(result.output).toContain('action_id="source.compare_literature"');
+    expect(result.output).toContain('<use>literature_comparison_record</use>');
+    expect(result.output).toContain('comparison_record_created="false"');
+    expect(result.output).toContain('canonical_effect_requires_explicit_aitp_entrypoint="true"');
+    expect(records).not.toContainEqual(
+      expect.objectContaining({ type: 'research_action.result_recorded' }),
+    );
+
+    const missingProvider = await execute(new ResearchActionTool(makeAgent().researchAction), {
+      action: 'inspect_literature_comparison_draft',
+      literature_session_id: 'session-qg',
+      literature_comparison_question: 'How do these sources compare on observer algebras?',
+      literature_source_refs: ['source_asset:asset-reviewed'],
+    });
+    expect(missingProvider).toMatchObject({ isError: true });
+    expect(missingProvider.output).toContain(
+      'AITP literature comparison draft provider is not configured',
+    );
+
+    const missingSources = await execute(tool, {
+      action: 'inspect_literature_comparison_draft',
+      literature_session_id: 'session-qg',
+      literature_comparison_question: 'How do these sources compare on observer algebras?',
+    });
+    expect(missingSources).toMatchObject({ isError: true });
+    expect(missingSources.output).toContain('requires literature_source_refs or source_refs');
   });
 
   it('inspects and searches AITP curated RAG as heuristic context without recording evidence', async () => {
@@ -4455,6 +4527,7 @@ function makeAgent(
     readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
     readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider | undefined;
     readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
+    readonly aitpLiteratureComparisonDraftProvider?: AitpLiteratureComparisonDraftProvider | undefined;
     readonly aitpLiteratureSourceReviewHandoffProvider?: AitpLiteratureSourceReviewHandoffProvider | undefined;
     readonly aitpWriteBridge?: AitpWriteBridgeExecutor | undefined;
   } = {},
@@ -4495,6 +4568,8 @@ function makeAgent(
     aitpRuntimePayloadProfilesProvider: options.aitpRuntimePayloadProfilesProvider,
     aitpRecordRefLookupProvider: options.aitpRecordRefLookupProvider,
     aitpCuratedRagProvider: options.aitpCuratedRagProvider,
+    aitpLiteratureComparisonDraftProvider:
+      options.aitpLiteratureComparisonDraftProvider,
     aitpLiteratureSourceReviewHandoffProvider:
       options.aitpLiteratureSourceReviewHandoffProvider,
     aitpWriteBridge: options.aitpWriteBridge,
@@ -5113,6 +5188,130 @@ function typedCuratedRagSearchResult(query: string): any {
       },
     ],
     raw: {},
+  };
+}
+
+function fakeLiteratureComparisonDraft(): any {
+  return {
+    ok: true,
+    kind: 'literature_comparison_draft',
+    session_id: 'session-qg',
+    topic_id: 'qg',
+    claim_id: 'claim-mipt',
+    comparison_question: 'How do these sources compare on observer algebras?',
+    rationale: 'Need bounded prior-art comparison.',
+    source_refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+    source_ref_count: 2,
+    comparison_dimensions: [
+      fakeLiteratureComparisonDimension('research_question'),
+      fakeLiteratureComparisonDimension('evidence_basis'),
+    ],
+    comparison_dimension_count: 2,
+    record_ref_lookup: fakeRecordRefLookup(
+      ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+      { foundRefs: ['source_asset:asset-reviewed'] },
+    ).record_ref_lookup,
+    draft_record_intent: {
+      kind: 'literature_comparison_record_candidate',
+      target_surface: 'future_literature_comparison_record',
+      target_entrypoint: 'record_literature_comparison',
+      status: 'draft_only',
+      requires_explicit_write_surface: true,
+      requires_source_review: true,
+      requires_evidence_or_reference_records: true,
+      requires_trust_preflight_before_claim_trust: true,
+      creates_record_now: false,
+      records_validation_result: false,
+      source_support_result: false,
+      claim_trust_mutation: 'none',
+      can_update_claim_trust: false,
+    },
+    suggested_sections: [
+      { section: 'agreements', description: 'claim-aligned similarities to check against sources' },
+      { section: 'disagreements', description: 'scope, method, or conclusion conflicts to inspect' },
+      { section: 'missing_evidence', description: 'outputs, references, or validation still absent' },
+    ],
+    recommended_next_entrypoints: [
+      {
+        entrypoint: 'record_reference_location',
+        surface: 'reference_location_record',
+        reason: 'ensure every compared source has a canonical reference location',
+      },
+      {
+        entrypoint: 'record_evidence',
+        surface: 'evidence_record',
+        reason: 'only after source review, record evidence for scoped outputs if warranted',
+      },
+    ],
+    draft_policy: {
+      source: 'session_binding_agent_supplied_sources_and_dimensions',
+      host_may_use_for: [
+        'literature_comparison_planning',
+        'source_set_review',
+        'dimension_selection',
+      ],
+      requires_explicit_next_entrypoint: true,
+      allowed_next_entrypoints: [
+        'record_reference_location',
+        'register_source_asset',
+        'record_source_reconstruction_review_result',
+        'record_evidence',
+        'create_validation_contract',
+        'record_validation_result',
+        'preflight_trust_update',
+      ],
+      forbidden_uses: [
+        'literature_comparison_record',
+        'evidence_support',
+        'source_support_result',
+        'validation_result',
+        'write_execution',
+        'final_gate_satisfaction',
+        'claim_trust_update',
+        'trust_apply',
+      ],
+    },
+    allowed_next_tool_call: {
+      action: 'plan_primitive_tools',
+      action_id: 'source.compare_literature',
+      requires_explicit_next_action: true,
+      records_validation_result: false,
+      source_support_result: false,
+      claim_trust_mutation: 'none',
+    },
+    read_surface_effect: 'comparison_draft_only',
+    read_only: true,
+    draft_creates_records: false,
+    requires_explicit_next_action: true,
+    bridge_called: false,
+    executes_write_now: false,
+    mutates_next_payload_now: false,
+    infers_payload_values: false,
+    summary_inputs_trusted: false,
+    orientation_only: true,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+    records_validation_result: false,
+    source_support_result: false,
+    evidence_created: false,
+    validation_created: false,
+    write_executed: false,
+    trust_update_forbidden: true,
+    claim_trust_mutation: 'none',
+    truth_source: 'session_binding_agent_supplied_sources_and_dimensions',
+  };
+}
+
+function fakeLiteratureComparisonDimension(dimension: string): any {
+  return {
+    dimension,
+    status: 'draft_placeholder',
+    requires_source_review: true,
+    summary_inputs_trusted: false,
+    creates_record_now: false,
+    records_validation_result: false,
+    source_support_result: false,
+    claim_trust_mutation: 'none',
   };
 }
 
