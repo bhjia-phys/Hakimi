@@ -21,10 +21,10 @@ describe('cli version helpers', () => {
     expect(getVersion()).toBe(pkg.version);
   });
 
-  it('builds default headers with the hakimi-cli user-agent', () => {
+  it('builds Kimi Coding compatible default headers with Hakimi provenance', () => {
     const headers = buildKimiDefaultHeaders('1.2.3');
 
-    expect(headers['User-Agent']).toBe('hakimi-cli/1.2.3');
+    expect(headers['User-Agent']).toBe('kimi-code-cli/1.2.3 (hakimi)');
   });
 
   it('builds the product user-agent for ad-hoc fetches', () => {
