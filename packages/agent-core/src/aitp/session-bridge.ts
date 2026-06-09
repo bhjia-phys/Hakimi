@@ -13,6 +13,7 @@ import {
 } from './cli-bridge';
 import { compileAitpProcessGraphSlice } from './compiler';
 import {
+  parseAitpCuratedRagChunk,
   parseAitpCuratedRagCorpus,
   parseAitpCuratedRagPromotionDraft,
   parseAitpCuratedRagSearchResult,
@@ -194,6 +195,9 @@ export function createDynamicAitpCliCuratedRagProvider(
     searchCuratedRagCorpus(input) {
       return createDynamicAitpCliBridge(options).searchCuratedRagCorpus(input);
     },
+    getCuratedRagChunk(input) {
+      return createDynamicAitpCliBridge(options).readCuratedRagChunk(input);
+    },
     draftCuratedRagPromotion(input) {
       return createDynamicAitpCliBridge(options).draftCuratedRagPromotion(input);
     },
@@ -244,6 +248,27 @@ export function createDynamicAitpMcpFirstCuratedRagProvider(
       } catch (error) {
         if (options.fallbackOnMcpError === false) throw error;
         return fallback.searchCuratedRagCorpus(input);
+      }
+    },
+    async getCuratedRagChunk(input) {
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.getCuratedRagChunk!(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('readCuratedRagChunk');
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args: {
+            base: options.basePath(),
+            chunk_id: input.chunkId,
+          },
+          signal: input.signal,
+        });
+        return parseAitpCuratedRagChunk(normalizeAitpWriteBridgePayload(rawPayload));
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.getCuratedRagChunk!(input);
       }
     },
     async draftCuratedRagPromotion(input) {

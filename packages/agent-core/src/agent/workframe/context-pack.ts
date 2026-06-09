@@ -148,7 +148,7 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
         `AITP curated RAG promotion draft actions: ${bounded(pack.curatedRag.promotionDraftBindingIds).join(', ')}`,
       );
       lines.push(
-        'Use ResearchAction.draft_aitp_curated_rag_promotion only if a retrieved chunk should be reviewed for claim support; the draft is read-only and still requires an explicit later write choice.',
+        'Use ResearchAction.inspect_aitp_curated_rag_chunk to read canonical chunk identity, anchor, and hash before ResearchAction.draft_aitp_curated_rag_promotion; both are read-only and any later write still requires an explicit choice.',
       );
     }
     lines.push(

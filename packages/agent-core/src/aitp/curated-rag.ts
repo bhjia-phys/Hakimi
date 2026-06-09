@@ -130,6 +130,34 @@ export interface AitpCuratedRagSearchResultItem {
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
+export interface AitpCuratedRagChunkLookup {
+  readonly kind: 'curated_rag_chunk';
+  readonly catalogVersion: string;
+  readonly truthSource: 'curated_rag_chunk_manifest';
+  readonly stateEffect: 'read_only';
+  readonly retrievalRole: 'heuristic_context';
+  readonly readSurfaceEffect: 'orientation_only';
+  readonly summaryInputsTrusted: false;
+  readonly canUpdateClaimTrust: false;
+  readonly recordsValidationResult: false;
+  readonly claimTrustMutation: 'none';
+  readonly requiresPromotionForClaimSupport: true;
+  readonly promotionRequiredBeforeClaimSupport: true;
+  readonly lookupCreatesRecords: false;
+  readonly corpusId: string;
+  readonly chunkId: string;
+  readonly documentId: string;
+  readonly indexMode: AitpCuratedRagIndexMode;
+  readonly indexStatus?: string | undefined;
+  readonly staleIndexDiagnostics: readonly Readonly<Record<string, unknown>>[];
+  readonly chunk: AitpCuratedRagChunk;
+  readonly document: AitpCuratedRagDocument;
+  readonly promotionPath: readonly string[];
+  readonly forbiddenUses: readonly string[];
+  readonly promotionBoundary: AitpCuratedRagChunkLookupBoundary;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
 export interface AitpCuratedRagPromotionDraft {
   readonly kind: 'curated_rag_promotion_draft';
   readonly catalogVersion: string;
@@ -218,6 +246,16 @@ export interface AitpCuratedRagPromotionBoundary {
   readonly draftRecordsValidationResult: false;
   readonly draftSatisfiesFinalGate: false;
   readonly draftCanUpdateClaimTrust: false;
+  readonly requiresUserOrModelDecisionBeforeWrite: true;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpCuratedRagChunkLookupBoundary {
+  readonly retrievalIsClaimSupport: false;
+  readonly lookupIsEvidence: false;
+  readonly lookupRecordsValidationResult: false;
+  readonly lookupSatisfiesFinalGate: false;
+  readonly lookupCanUpdateClaimTrust: false;
   readonly requiresUserOrModelDecisionBeforeWrite: true;
   readonly raw: Readonly<Record<string, unknown>>;
 }
@@ -313,6 +351,74 @@ export function parseAitpCuratedRagSearchResult(input: unknown): AitpCuratedRagS
     ),
     resultCount: results.length,
     results,
+    raw: payload,
+  };
+}
+
+export function parseAitpCuratedRagChunk(input: unknown): AitpCuratedRagChunkLookup {
+  const payload = unwrapSurface(input, 'curated_rag_chunk');
+  if (payload['kind'] !== 'curated_rag_chunk') {
+    throw new AitpCuratedRagParseError('AITP curated RAG chunk lookup payload has the wrong kind.');
+  }
+  assertCommonNoTrust(payload, 'AITP curated RAG chunk lookup');
+  assertChunkLookupNoTrust(payload);
+  const chunk = parseChunk(requiredRecord(payload['chunk'], 'curated_rag_chunk.chunk'));
+  const document = parseDocument(requiredRecord(payload['document'], 'curated_rag_chunk.document'));
+  const chunkId = requiredString(payload, 'chunk_id');
+  const documentId = requiredString(payload, 'document_id');
+  if (chunk.chunkId !== chunkId || chunk.documentId !== documentId || document.documentId !== documentId) {
+    throw new AitpCuratedRagParseError(
+      'AITP curated RAG chunk lookup ids must match nested chunk and document ids.',
+    );
+  }
+  const promotionPath = requiredStringArray(
+    payload['promotion_path'],
+    'curated_rag_chunk.promotion_path',
+  );
+  if (!sameStrings(promotionPath, ['source_asset', 'reference_location', 'evidence', 'validation', 'trust_preflight'])) {
+    throw new AitpCuratedRagParseError('AITP curated RAG chunk promotion path is unsupported.');
+  }
+  const forbiddenUses = requiredStringArray(
+    payload['forbidden_uses'],
+    'curated_rag_chunk.forbidden_uses',
+  );
+  for (const forbidden of FORBIDDEN_HEURISTIC_USES) {
+    if (!forbiddenUses.includes(forbidden)) {
+      throw new AitpCuratedRagParseError(
+        `AITP curated RAG chunk lookup must forbid ${forbidden}.`,
+      );
+    }
+  }
+  return {
+    kind: 'curated_rag_chunk',
+    catalogVersion: AITP_CURATED_RAG_CATALOG_VERSION,
+    truthSource: 'curated_rag_chunk_manifest',
+    stateEffect: 'read_only',
+    retrievalRole: 'heuristic_context',
+    readSurfaceEffect: 'orientation_only',
+    summaryInputsTrusted: false,
+    canUpdateClaimTrust: false,
+    recordsValidationResult: false,
+    claimTrustMutation: 'none',
+    requiresPromotionForClaimSupport: true,
+    promotionRequiredBeforeClaimSupport: true,
+    lookupCreatesRecords: false,
+    corpusId: requiredString(payload, 'corpus_id'),
+    chunkId,
+    documentId,
+    indexMode: parseIndexMode(payload['index_mode']),
+    indexStatus: optionalString(payload['index_status']),
+    staleIndexDiagnostics: optionalRecordArray(
+      payload['stale_index_diagnostics'],
+      'curated_rag_chunk.stale_index_diagnostics',
+    ),
+    chunk,
+    document,
+    promotionPath,
+    forbiddenUses,
+    promotionBoundary: parseChunkLookupBoundary(
+      requiredRecord(payload['promotion_boundary'], 'curated_rag_chunk.promotion_boundary'),
+    ),
     raw: payload,
   };
 }
@@ -677,6 +783,30 @@ function parsePromotionBoundary(
   };
 }
 
+function parseChunkLookupBoundary(
+  raw: Readonly<Record<string, unknown>>,
+): AitpCuratedRagChunkLookupBoundary {
+  if (
+    raw['retrieval_is_claim_support'] !== false ||
+    raw['lookup_is_evidence'] !== false ||
+    raw['lookup_records_validation_result'] !== false ||
+    raw['lookup_satisfies_final_gate'] !== false ||
+    raw['lookup_can_update_claim_trust'] !== false ||
+    raw['requires_user_or_model_decision_before_write'] !== true
+  ) {
+    throw new AitpCuratedRagParseError('AITP curated RAG chunk lookup boundary must remain no-trust.');
+  }
+  return {
+    retrievalIsClaimSupport: false,
+    lookupIsEvidence: false,
+    lookupRecordsValidationResult: false,
+    lookupSatisfiesFinalGate: false,
+    lookupCanUpdateClaimTrust: false,
+    requiresUserOrModelDecisionBeforeWrite: true,
+    raw,
+  };
+}
+
 function unwrapSurface(input: unknown, key: string): Readonly<Record<string, unknown>> {
   if (!isRecord(input)) {
     throw new AitpCuratedRagParseError('AITP curated RAG payload must be an object.');
@@ -704,6 +834,25 @@ function assertSearchNoTrust(raw: Readonly<Record<string, unknown>>): void {
   ) {
     throw new AitpCuratedRagParseError(
       'AITP curated RAG search result must remain heuristic and no-trust.',
+    );
+  }
+}
+
+function assertChunkLookupNoTrust(raw: Readonly<Record<string, unknown>>): void {
+  if (
+    raw['truth_source'] !== 'curated_rag_chunk_manifest' ||
+    raw['state_effect'] !== 'read_only' ||
+    raw['retrieval_role'] !== 'heuristic_context' ||
+    raw['read_surface_effect'] !== 'orientation_only' ||
+    raw['records_validation_result'] !== false ||
+    raw['claim_trust_mutation'] !== 'none' ||
+    raw['requires_promotion_for_claim_support'] !== true ||
+    raw['promotion_required_before_claim_support'] !== true ||
+    raw['lookup_creates_records'] !== false ||
+    !isCuratedRagIndexMode(raw['index_mode'])
+  ) {
+    throw new AitpCuratedRagParseError(
+      'AITP curated RAG chunk lookup must remain read-only and no-trust.',
     );
   }
 }

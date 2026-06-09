@@ -22,6 +22,7 @@ import type {
 } from '../../benchmark-adapter';
 import type {
   AitpCuratedRagCorpus,
+  AitpCuratedRagChunkLookup,
   AitpCuratedRagPromotionDraft,
   AitpCuratedRagSearchResult,
   AitpRecordRefLookup,
@@ -243,6 +244,19 @@ export class ResearchActionManager {
       throw new Error('AITP curated RAG provider is not configured for this session.');
     }
     return this.agent.aitpCuratedRagProvider.searchCuratedRagCorpus({ query, limit, signal });
+  }
+
+  async readAitpCuratedRagChunk(
+    chunkId: string,
+    signal?: AbortSignal | undefined,
+  ): Promise<AitpCuratedRagChunkLookup> {
+    if (this.agent.aitpCuratedRagProvider === undefined) {
+      throw new Error('AITP curated RAG provider is not configured for this session.');
+    }
+    if (this.agent.aitpCuratedRagProvider.getCuratedRagChunk === undefined) {
+      throw new Error('AITP curated RAG provider does not support chunk lookup.');
+    }
+    return this.agent.aitpCuratedRagProvider.getCuratedRagChunk({ chunkId, signal });
   }
 
   async draftAitpCuratedRagPromotion(

@@ -7,6 +7,7 @@ import {
   AITP_RUNTIME_PAYLOAD_PROFILE_CATALOG_VERSION,
   compileAitpProcessGraphSlice,
   parseAitpCuratedRagCorpus,
+  parseAitpCuratedRagChunk,
   parseAitpCuratedRagPromotionDraft,
   parseAitpCuratedRagSearchResult,
   parseAitpRecordRefLookup,
@@ -1300,6 +1301,10 @@ describe('ResearchActionTool', () => {
       action: 'search_aitp_curated_rag_corpus',
       rag_query: 'source backtrace',
     });
+    const inspectedChunk = await execute(tool, {
+      action: 'inspect_aitp_curated_rag_chunk',
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+    });
     const drafted = await execute(tool, {
       action: 'draft_aitp_curated_rag_promotion',
       rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
@@ -1309,6 +1314,8 @@ describe('ResearchActionTool', () => {
     expect(inspected.output).toContain('AITP curated RAG provider is not configured');
     expect(searched).toMatchObject({ isError: true });
     expect(searched.output).toContain('AITP curated RAG provider is not configured');
+    expect(inspectedChunk).toMatchObject({ isError: true });
+    expect(inspectedChunk.output).toContain('AITP curated RAG provider is not configured');
     expect(drafted).toMatchObject({ isError: true });
     expect(drafted.output).toContain('AITP curated RAG provider is not configured');
   });
@@ -1325,6 +1332,10 @@ describe('ResearchActionTool', () => {
         async searchCuratedRagCorpus(input) {
           calls.push(`search:${input.query}:${String(input.limit ?? '')}`);
           return parseAitpCuratedRagSearchResult(fakeCuratedRagSearchResult(input.query, input.limit));
+        },
+        async getCuratedRagChunk(input) {
+          calls.push(`chunk:${input.chunkId}`);
+          return parseAitpCuratedRagChunk(fakeCuratedRagChunkLookup(input.chunkId));
         },
         async draftCuratedRagPromotion(input) {
           calls.push(`draft:${input.chunkId}:${input.topicId ?? ''}:${input.claimId ?? ''}`);
@@ -1348,6 +1359,10 @@ describe('ResearchActionTool', () => {
       rag_query: 'source backtrace',
       rag_limit: 1,
     });
+    const inspectedChunk = await execute(tool, {
+      action: 'inspect_aitp_curated_rag_chunk',
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+    });
     const drafted = await execute(tool, {
       action: 'draft_aitp_curated_rag_promotion',
       rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
@@ -1359,6 +1374,7 @@ describe('ResearchActionTool', () => {
     expect(calls).toEqual([
       'corpus',
       'search:source backtrace:1',
+      'chunk:curated_rag_chunk:source_backtrace_orientation:0001',
       'draft:curated_rag_chunk:source_backtrace_orientation:0001:qg-algebra-mipt:claim-mipt',
     ]);
     expect(inspected.output).toContain('<aitp_curated_rag_corpus');
@@ -1374,6 +1390,16 @@ describe('ResearchActionTool', () => {
     expect(searched.output).toContain('mcp_tool="aitp_v5_search_curated_rag_corpus"');
     expect(searched.output).toContain('Curated RAG is heuristic_context only');
     expect(searched.output).toContain('Retrieved passages suggest source reconstruction, not claim support.');
+    expect(inspectedChunk.output).toContain('<aitp_curated_rag_chunk');
+    expect(inspectedChunk.output).toContain('chunk_id="curated_rag_chunk:source_backtrace_orientation:0001"');
+    expect(inspectedChunk.output).toContain('document_id="curated_rag_doc:source_backtrace_orientation"');
+    expect(inspectedChunk.output).toContain('mcp_tool="aitp_v5_get_curated_rag_chunk"');
+    expect(inspectedChunk.output).toContain('surface="curated_rag_chunk"');
+    expect(inspectedChunk.output).toContain('lookup_creates_records="false"');
+    expect(inspectedChunk.output).toContain('records_validation_result="false"');
+    expect(inspectedChunk.output).toContain('lookup_can_update_claim_trust="false"');
+    expect(inspectedChunk.output).toContain('content_hash="sha256:curated-rag-chunk-source-backtrace-0001"');
+    expect(inspectedChunk.output).toContain('source_uri="aitp://curated-rag/source-backtrace-orientation"');
     expect(drafted.output).toContain('<aitp_curated_rag_promotion_draft');
     expect(drafted.output).toContain('chunk_id="curated_rag_chunk:source_backtrace_orientation:0001"');
     expect(drafted.output).toContain('topic_id="qg-algebra-mipt"');
@@ -3630,6 +3656,57 @@ function fakeCuratedRagSearchResult(query: string, limit = 5): any {
     requires_promotion_for_claim_support: true,
     result_count: results.length,
     results,
+  };
+}
+
+function fakeCuratedRagChunkLookup(chunkId: string): any {
+  const corpus = fakeCuratedRagCorpus();
+  const chunk = corpus.chunks.find((item: any) => item.chunk_id === chunkId) ?? corpus.chunks[0];
+  const document =
+    corpus.documents.find((item: any) => item.document_id === chunk.document_id) ?? corpus.documents[0];
+  return {
+    kind: 'curated_rag_chunk',
+    catalog_version: AITP_CURATED_RAG_CATALOG_VERSION,
+    truth_source: 'curated_rag_chunk_manifest',
+    state_effect: 'read_only',
+    retrieval_role: 'heuristic_context',
+    read_surface_effect: 'orientation_only',
+    summary_inputs_trusted: false,
+    can_update_claim_trust: false,
+    records_validation_result: false,
+    claim_trust_mutation: 'none',
+    requires_promotion_for_claim_support: true,
+    promotion_required_before_claim_support: true,
+    lookup_creates_records: false,
+    corpus_id: corpus.corpus_id,
+    chunk_id: chunk.chunk_id,
+    document_id: document.document_id,
+    index_mode: 'lexical_fixture',
+    stale_index_diagnostics: [],
+    chunk,
+    document,
+    promotion_path: [
+      'source_asset',
+      'reference_location',
+      'evidence',
+      'validation',
+      'trust_preflight',
+    ],
+    forbidden_uses: [
+      'evidence_support',
+      'validation_result',
+      'claim_trust_update',
+      'trust_apply',
+      'final_gate_satisfaction',
+    ],
+    promotion_boundary: {
+      retrieval_is_claim_support: false,
+      lookup_is_evidence: false,
+      lookup_records_validation_result: false,
+      lookup_satisfies_final_gate: false,
+      lookup_can_update_claim_trust: false,
+      requires_user_or_model_decision_before_write: true,
+    },
   };
 }
 

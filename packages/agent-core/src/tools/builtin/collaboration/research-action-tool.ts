@@ -49,6 +49,7 @@ import {
   renderTheoryReasoningSummary,
   theoryReasoningProjectionFromParams,
   type AitpCuratedRagCorpus,
+  type AitpCuratedRagChunkLookup,
   type AitpCuratedRagPromotionDraft,
   type AitpCuratedRagPromotionDraftOperation,
   type AitpCuratedRagSearchResult,
@@ -104,6 +105,7 @@ const ACTIONS = [
   'inspect_aitp_runtime_payload_profiles',
   'inspect_aitp_curated_rag_corpus',
   'search_aitp_curated_rag_corpus',
+  'inspect_aitp_curated_rag_chunk',
   'draft_aitp_curated_rag_promotion',
   'draft_aitp_curated_rag_write_bridge_call',
   'draft_aitp_record_ref_repair_write_bridge_call',
@@ -304,7 +306,7 @@ export const ResearchActionToolInputSchema = z.object({
   rag_chunk_id: z
     .string()
     .optional()
-    .describe('Curated RAG chunk id for AITP promotion draft planning.'),
+    .describe('Curated RAG chunk id for AITP chunk inspection or promotion draft planning.'),
   aitp_topic_id: z
     .string()
     .optional()
@@ -573,6 +575,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return await this.inspectAitpCuratedRagCorpus(ctx);
         case 'search_aitp_curated_rag_corpus':
           return await this.searchAitpCuratedRagCorpus(args, ctx);
+        case 'inspect_aitp_curated_rag_chunk':
+          return await this.inspectAitpCuratedRagChunk(args, ctx);
         case 'draft_aitp_curated_rag_promotion':
           return await this.draftAitpCuratedRagPromotion(args, ctx);
         case 'draft_aitp_curated_rag_write_bridge_call':
@@ -851,6 +855,23 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       ctx.signal,
     );
     return ok(renderAitpCuratedRagSearchResult(searchResult));
+  }
+
+  private async inspectAitpCuratedRagChunk(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction inspect_aitp_curated_rag_chunk requires a session manager.');
+    }
+    if (!this.manager.hasAitpCuratedRagProvider()) {
+      return errorResult('AITP curated RAG provider is not configured');
+    }
+    if (args.rag_chunk_id === undefined || args.rag_chunk_id.trim().length === 0) {
+      return errorResult('ResearchAction inspect_aitp_curated_rag_chunk requires rag_chunk_id.');
+    }
+    const chunk = await this.manager.readAitpCuratedRagChunk(args.rag_chunk_id, ctx.signal);
+    return ok(renderAitpCuratedRagChunk(chunk));
   }
 
   private async draftAitpCuratedRagPromotion(
@@ -1833,6 +1854,22 @@ function renderAitpCuratedRagSearchResult(searchResult: AitpCuratedRagSearchResu
     '  </results>',
     '  <promotion_boundary>Curated RAG is heuristic_context only; promote source passages through AITP source_asset, reference_location, evidence, validation, and trust preflight records before using them as claim support.</promotion_boundary>',
     '</aitp_curated_rag_search_result>',
+    '',
+  ].join('\n');
+}
+
+function renderAitpCuratedRagChunk(lookup: AitpCuratedRagChunkLookup): string {
+  const target = aitpRuntimeBridgeTargetForOperation('readCuratedRagChunk');
+  return [
+    `<aitp_curated_rag_chunk catalog_version="${escapeXml(lookup.catalogVersion)}" corpus_id="${escapeXml(lookup.corpusId)}" chunk_id="${escapeXml(lookup.chunkId)}" document_id="${escapeXml(lookup.documentId)}" index_mode="${lookup.indexMode}" state_effect="${lookup.stateEffect}" retrieval_role="${lookup.retrievalRole}" read_surface_effect="${lookup.readSurfaceEffect}" lookup_creates_records="false" records_validation_result="false" claim_trust_mutation="${lookup.claimTrustMutation}" can_update_claim_trust="false" requires_promotion_for_claim_support="true" promotion_required_before_claim_support="true">`,
+    `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" state_effect="${target.stateEffect}" />`,
+    `  <chunk id="${escapeXml(lookup.chunk.chunkId)}" document_id="${escapeXml(lookup.chunk.documentId)}" content_hash="${escapeXml(lookup.chunk.contentHash)}" retrieval_role="${lookup.chunk.retrievalRole}" orientation_only="true" can_update_claim_trust="false" token_estimate="${String(lookup.chunk.tokenEstimate)}" anchor="${escapeXml(JSON.stringify(lookup.chunk.anchor))}"><summary>${escapeXml(lookup.chunk.summary)}</summary><text>${escapeXml(lookup.chunk.text)}</text></chunk>`,
+    `  <document id="${escapeXml(lookup.document.documentId)}" title="${escapeXml(lookup.document.title)}" asset_type="${escapeXml(lookup.document.assetType)}" source_uri="${escapeXml(lookup.document.sourceUri)}" version_anchor="${escapeXml(JSON.stringify(lookup.document.versionAnchor))}" content_hash="${escapeXml(lookup.document.contentHash)}" intended_use="${escapeXml(lookup.document.intendedUse)}" trust_status="${lookup.document.trustStatus}" orientation_only="true" can_update_claim_trust="false" />`,
+    renderStringList('promotion_path', 'stage', lookup.promotionPath, '  '),
+    renderStringList('forbidden_uses', 'use', lookup.forbiddenUses, '  '),
+    '  <promotion_boundary retrieval_is_claim_support="false" lookup_is_evidence="false" lookup_records_validation_result="false" lookup_satisfies_final_gate="false" lookup_can_update_claim_trust="false" requires_user_or_model_decision_before_write="true" />',
+    '  <next_step>Use this identity, anchor, and hash for review; call ResearchAction.draft_aitp_curated_rag_promotion only if this chunk should enter the explicit promotion path.</next_step>',
+    '</aitp_curated_rag_chunk>',
     '',
   ].join('\n');
 }
