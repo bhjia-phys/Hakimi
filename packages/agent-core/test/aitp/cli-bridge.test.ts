@@ -11,6 +11,7 @@ import {
   buildAitpArtifactAttachAutoArgs,
   buildAitpCodeStateAutoArgs,
   buildAitpCuratedRagCorpusArgs,
+  buildAitpCuratedRagChunkArgs,
   buildAitpCuratedRagIngestArgs,
   buildAitpCuratedRagPromotionDraftArgs,
   buildAitpCuratedRagSearchArgs,
@@ -32,6 +33,7 @@ import {
   buildAitpValidationResultRecordArgs,
   createAitpCliBridge,
   createAitpCliProcessGraphSliceProvider,
+  parseAitpCuratedRagChunk,
   parseAitpCuratedRagCorpus,
   parseAitpCuratedRagIngestResult,
   parseAitpCuratedRagPromotionDraft,
@@ -230,6 +232,17 @@ describe('AITP CLI bridge', () => {
             stderr: '',
           };
         }
+        if (args.includes('curated-rag-chunk')) {
+          const chunkId = args[args.indexOf('curated-rag-chunk') + 1] ?? '';
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              ok: true,
+              curated_rag_chunk: fakeCuratedRagChunkLookup(chunkId),
+            }),
+            stderr: '',
+          };
+        }
         if (args.includes('record-ref-lookup')) {
           return {
             exitCode: 0,
@@ -258,6 +271,9 @@ describe('AITP CLI bridge', () => {
 
     const corpus = await bridge.readCuratedRagCorpus();
     const search = await bridge.searchCuratedRagCorpus({ query: 'source backtrace', limit: 1 });
+    const chunk = await bridge.readCuratedRagChunk({
+      chunkId: 'curated_rag_chunk:source_backtrace_orientation:0001',
+    });
     const lookup = await bridge.lookupRecordRefs({
       refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
     });
@@ -283,6 +299,16 @@ describe('AITP CLI bridge', () => {
           'source backtrace',
           '--limit',
           '1',
+        ],
+      },
+      {
+        command: 'aitp-v5',
+        args: [
+          '--base',
+          'F:/project',
+          'adapter',
+          'curated-rag-chunk',
+          'curated_rag_chunk:source_backtrace_orientation:0001',
         ],
       },
       {
@@ -356,6 +382,18 @@ describe('AITP CLI bridge', () => {
       '1',
     ]);
     expect(
+      buildAitpCuratedRagChunkArgs({
+        basePath: 'F:/project',
+        chunkId: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      }),
+    ).toEqual([
+      '--base',
+      'F:/project',
+      'adapter',
+      'curated-rag-chunk',
+      'curated_rag_chunk:source_backtrace_orientation:0001',
+    ]);
+    expect(
       buildAitpCuratedRagPromotionDraftArgs({
         basePath: 'F:/project',
         chunkId: 'curated_rag_chunk:source_backtrace_orientation:0001',
@@ -388,6 +426,12 @@ describe('AITP CLI bridge', () => {
     expect(search.claimTrustMutation).toBe('none');
     expect(search.requiresPromotionForClaimSupport).toBe(true);
     expect(search.results[0]?.retrievalRole).toBe('heuristic_context');
+    expect(chunk.kind).toBe('curated_rag_chunk');
+    expect(chunk.stateEffect).toBe('read_only');
+    expect(chunk.lookupCreatesRecords).toBe(false);
+    expect(chunk.chunkId).toBe('curated_rag_chunk:source_backtrace_orientation:0001');
+    expect(chunk.document.sourceUri).toBe('aitp://curated-rag/source-backtrace-orientation');
+    expect(chunk.promotionBoundary.lookupCanUpdateClaimTrust).toBe(false);
     expect(lookup.kind).toBe('record_ref_lookup');
     expect(lookup.lookupScope).toBe('typed_record_existence_only');
     expect(lookup.readSurfaceEffect).toBe('record_existence_check_only');
@@ -425,6 +469,12 @@ describe('AITP CLI bridge', () => {
       parseAitpCuratedRagSearchResult({
         ...fakeCuratedRagSearchResult('source backtrace', 1),
         can_update_claim_trust: true,
+      }),
+    ).toThrow(AitpCuratedRagParseError);
+    expect(() =>
+      parseAitpCuratedRagChunk({
+        ...fakeCuratedRagChunkLookup('curated_rag_chunk:source_backtrace_orientation:0001'),
+        lookup_creates_records: true,
       }),
     ).toThrow(AitpCuratedRagParseError);
     expect(() =>
@@ -2377,6 +2427,57 @@ function fakeCuratedRagSearchResult(query: string, limit = 5): any {
     requires_promotion_for_claim_support: true,
     result_count: results.length,
     results,
+  };
+}
+
+function fakeCuratedRagChunkLookup(chunkId: string): any {
+  const corpus = fakeCuratedRagCorpus();
+  const chunk = corpus.chunks.find((item: any) => item.chunk_id === chunkId) ?? corpus.chunks[0];
+  const document =
+    corpus.documents.find((item: any) => item.document_id === chunk.document_id) ?? corpus.documents[0];
+  return {
+    kind: 'curated_rag_chunk',
+    catalog_version: AITP_CURATED_RAG_CATALOG_VERSION,
+    truth_source: 'curated_rag_chunk_manifest',
+    state_effect: 'read_only',
+    retrieval_role: 'heuristic_context',
+    read_surface_effect: 'orientation_only',
+    summary_inputs_trusted: false,
+    can_update_claim_trust: false,
+    records_validation_result: false,
+    claim_trust_mutation: 'none',
+    requires_promotion_for_claim_support: true,
+    promotion_required_before_claim_support: true,
+    lookup_creates_records: false,
+    corpus_id: corpus.corpus_id,
+    chunk_id: chunk.chunk_id,
+    document_id: document.document_id,
+    index_mode: 'lexical_fixture',
+    stale_index_diagnostics: [],
+    chunk,
+    document,
+    promotion_path: [
+      'source_asset',
+      'reference_location',
+      'evidence',
+      'validation',
+      'trust_preflight',
+    ],
+    forbidden_uses: [
+      'evidence_support',
+      'validation_result',
+      'claim_trust_update',
+      'trust_apply',
+      'final_gate_satisfaction',
+    ],
+    promotion_boundary: {
+      retrieval_is_claim_support: false,
+      lookup_is_evidence: false,
+      lookup_records_validation_result: false,
+      lookup_satisfies_final_gate: false,
+      lookup_can_update_claim_trust: false,
+      requires_user_or_model_decision_before_write: true,
+    },
   };
 }
 
