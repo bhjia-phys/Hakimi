@@ -311,6 +311,13 @@ satisfaction, or claim-trust authority.
 failure-code mapping, so a model can inspect the repair steps without
 submitting malformed handoffs. This metadata does not render suggestions,
 draft next calls, call the bridge, or authorize validation/trust changes.
+When a turn is actively repairing curated RAG carried-ref handoffs, the
+ResearchContextPack now carries a `curated_rag_carried_ref_repair_sequence`
+reminder through runtime injection, XML rendering, and compaction snapshots. It
+points to taxonomy metadata, a fresh draft action, explicit reviewed overrides,
+readiness inspection, and a separate explicit execute call; it does not render
+suggestions, mutate payloads, call bridges, validate, satisfy final gates, or
+update claim trust.
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` against a proposed
 reviewed payload. Hakimi renders `original_payload_json`,

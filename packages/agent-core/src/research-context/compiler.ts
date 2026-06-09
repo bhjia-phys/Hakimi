@@ -30,6 +30,7 @@ import type {
   CompileResearchContextPackOptions,
   ResearchContextAitpSection,
   ResearchContextCapsuleSummary,
+  ResearchContextCuratedRagCarriedRefRepairSection,
   ResearchContextCuratedRagChunkSummary,
   ResearchContextCuratedRagSection,
   ResearchContextLedgerProposalSummary,
@@ -88,6 +89,7 @@ export function compileResearchContextPack(
   const ledger = collectLedger(input, diagnostics);
   const aitp = collectAitp(input, diagnostics);
   const curatedRag = collectCuratedRag(input, diagnostics);
+  const curatedRagCarriedRefRepair = collectCuratedRagCarriedRefRepair(input, diagnostics);
   const curatedRagActionBindings = curatedRagPromotionDraftBindings(input, curatedRag);
   const actionBindings = bounded(
     uniqueBindings([
@@ -130,6 +132,10 @@ export function compileResearchContextPack(
             curatedRag.query,
             ...curatedRag.results.map((item) => `${item.chunkId}:${item.contentHash}`),
           ]),
+    curatedRagCarriedRefRepairDigest:
+      curatedRagCarriedRefRepair === undefined
+        ? undefined
+        : contextDigest(curatedRagCarriedRefRepair.triggerTerms),
   });
 
   return {
@@ -148,10 +154,46 @@ export function compileResearchContextPack(
     ledger,
     ...(aitp === undefined ? {} : { aitp }),
     ...(curatedRag === undefined ? {} : { curatedRag }),
+    ...(curatedRagCarriedRefRepair === undefined ? {} : { curatedRagCarriedRefRepair }),
     actionBindings,
     domainPack,
     diagnostics,
     compiledAt: input.now?.() ?? Date.now(),
+  };
+}
+
+function collectCuratedRagCarriedRefRepair(
+  input: CompileResearchContextPackInput,
+  diagnostics: ResearchContextPackDiagnostic[],
+): ResearchContextCuratedRagCarriedRefRepairSection | undefined {
+  if (input.curatedRagCarriedRefRepairActive !== true) return undefined;
+  diagnostics.push({
+    severity: 'info',
+    code: 'aitp:curated-rag-carried-ref-repair-sequence',
+    message:
+      'Curated RAG carried-ref handoff repair is active; use taxonomy metadata, fresh draft review, readiness inspection, and explicit execute in order.',
+    source: 'aitp',
+    refId: input.workFrame.id,
+  });
+  return {
+    active: true,
+    source: 'turn_text',
+    triggerTerms: unique(input.curatedRagCarriedRefRepairTriggerTerms ?? []),
+    safeSequence: [
+      'inspect taxonomy metadata',
+      'prepare fresh draft action',
+      'apply explicit reviewed overrides',
+      'inspect readiness',
+      'execute only with explicit execute_aitp_write_bridge call',
+    ],
+    taxonomyAction: 'ResearchAction.list_actions',
+    draftAction: 'ResearchAction.draft_aitp_curated_rag_write_bridge_call',
+    readinessAction: 'ResearchAction.inspect_aitp_write_bridge_handoff_readiness',
+    executeAction: 'ResearchAction.execute_aitp_write_bridge',
+    recordsValidationResult: false,
+    sourceSupportResult: false,
+    claimTrustMutation: 'none',
+    executesWriteNow: false,
   };
 }
 
@@ -784,6 +826,7 @@ function contextPackId(input: {
   readonly proposalIds: readonly string[];
   readonly aitpDigest?: string | undefined;
   readonly curatedRagDigest?: string | undefined;
+  readonly curatedRagCarriedRefRepairDigest?: string | undefined;
 }): string {
   const hash = createHash('sha256')
     .update(JSON.stringify(input))

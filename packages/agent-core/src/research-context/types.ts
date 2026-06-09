@@ -164,6 +164,21 @@ export interface ResearchContextCuratedRagSection {
   readonly results: readonly ResearchContextCuratedRagChunkSummary[];
 }
 
+export interface ResearchContextCuratedRagCarriedRefRepairSection {
+  readonly active: true;
+  readonly source: 'turn_text';
+  readonly triggerTerms: readonly string[];
+  readonly safeSequence: readonly string[];
+  readonly taxonomyAction: 'ResearchAction.list_actions';
+  readonly draftAction: 'ResearchAction.draft_aitp_curated_rag_write_bridge_call';
+  readonly readinessAction: 'ResearchAction.inspect_aitp_write_bridge_handoff_readiness';
+  readonly executeAction: 'ResearchAction.execute_aitp_write_bridge';
+  readonly recordsValidationResult: false;
+  readonly sourceSupportResult: false;
+  readonly claimTrustMutation: 'none';
+  readonly executesWriteNow: false;
+}
+
 export interface ResearchContextPack {
   readonly id: ResearchContextPackId;
   readonly workFrameId: string;
@@ -180,6 +195,7 @@ export interface ResearchContextPack {
   readonly ledger: ResearchContextLedgerSection;
   readonly aitp?: ResearchContextAitpSection | undefined;
   readonly curatedRag?: ResearchContextCuratedRagSection | undefined;
+  readonly curatedRagCarriedRefRepair?: ResearchContextCuratedRagCarriedRefRepairSection | undefined;
   readonly actionBindings: readonly ResearchActionBinding[];
   readonly domainPack?: DomainPackManifest | undefined;
   readonly diagnostics: readonly ResearchContextPackDiagnostic[];
@@ -201,6 +217,8 @@ export interface CompileResearchContextPackOptions {
   readonly aitp?: CompiledAitpProcessGraphSlice | null | undefined;
   readonly curatedRag?: AitpCuratedRagSearchResult | null | undefined;
   readonly curatedRagReasonIds?: readonly string[] | undefined;
+  readonly curatedRagCarriedRefRepairActive?: boolean | undefined;
+  readonly curatedRagCarriedRefRepairTriggerTerms?: readonly string[] | undefined;
   readonly limits?: CompileResearchContextPackLimits | undefined;
   readonly now?: (() => number) | undefined;
 }

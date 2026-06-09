@@ -95,6 +95,13 @@ claim-trust authority。
 mapping。模型可以先查看 repair steps，而不用故意提交 malformed handoff；这份
 metadata 不会生成 suggestion、不会 draft next call、不会调用 bridge，也不会授权
 validation/trust 变化。
+When a turn is actively repairing curated RAG carried-ref handoffs, the
+ResearchContextPack now carries a `curated_rag_carried_ref_repair_sequence`
+reminder through runtime injection, XML rendering, and compaction snapshots.
+It points to taxonomy metadata, a fresh draft action, explicit reviewed
+overrides, readiness inspection, and a separate explicit execute call; it does
+not render suggestions, mutate payloads, call bridges, validate, satisfy final
+gates, or update claim trust.
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` with a proposed reviewed
 payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,

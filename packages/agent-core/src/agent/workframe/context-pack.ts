@@ -148,11 +148,19 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
         `AITP curated RAG promotion draft actions: ${bounded(pack.curatedRag.promotionDraftBindingIds).join(', ')}`,
       );
       lines.push(
-        'Use ResearchAction.inspect_aitp_curated_rag_chunk to read canonical chunk identity, anchor, and hash before ResearchAction.draft_aitp_curated_rag_promotion; both are read-only and any later write still requires an explicit choice.',
+        'Use ResearchAction.inspect_aitp_curated_rag_chunk to read canonical chunk identity, anchor, and hash before ResearchAction.draft_aitp_curated_rag_promotion; both are read-only and any later write still requires an explicit later write choice.',
       );
     }
     lines.push(
       'AITP curated RAG is heuristic_context only; promote via AITP source_asset, reference_location, evidence, validation, and trust preflight before claim support.',
+    );
+  }
+  if (pack.curatedRagCarriedRefRepair !== undefined) {
+    lines.push(
+      `AITP curated RAG carried-ref repair: inspect ${pack.curatedRagCarriedRefRepair.taxonomyAction} taxonomy metadata, then use ${pack.curatedRagCarriedRefRepair.draftAction} for a fresh draft with explicit reviewed overrides, ${pack.curatedRagCarriedRefRepair.readinessAction} before execution, and ${pack.curatedRagCarriedRefRepair.executeAction} only as a separate explicit call.`,
+    );
+    lines.push(
+      'Carried-ref repair reminders do not render suggestions, mutate payloads, call bridges, validate, satisfy final gates, or update claim trust.',
     );
   }
   if (pack.actionBindings.length > 0) {

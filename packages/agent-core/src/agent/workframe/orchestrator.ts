@@ -32,12 +32,15 @@ export class WorkFrameOrchestrator {
       (await this.readAitpProcessGraphSlice(frame, input)) ?? this.cachedAitpContext(frame);
     const curatedRagMoment = detectAitpCuratedRagMoment({ prompt: input, workFrame: frame, aitp });
     const curatedRag = await this.searchCuratedRag(curatedRagMoment);
+    const carriedRefRepair = detectCuratedRagCarriedRefRepair(input);
     const pack = this.agent.researchContext.compileForWorkFrame(
       {
         workFrameId: frame.id,
         aitp,
         curatedRag,
         curatedRagReasonIds: curatedRagMoment?.reasons,
+        curatedRagCarriedRefRepairActive: carriedRefRepair.active,
+        curatedRagCarriedRefRepairTriggerTerms: carriedRefRepair.triggerTerms,
       },
       { source: 'controller' },
     );
@@ -134,6 +137,27 @@ function normalizePrompt(input: readonly { readonly type?: string; readonly text
     .filter((part) => part.type === 'text' && typeof part.text === 'string')
     .map((part) => part.text!.toLowerCase())
     .join(' ');
+}
+
+function detectCuratedRagCarriedRefRepair(
+  input: readonly { readonly type?: string; readonly text?: string }[],
+): { readonly active: boolean; readonly triggerTerms: readonly string[] } {
+  const prompt = normalizePrompt(input);
+  if (prompt.length === 0) return { active: false, triggerTerms: [] };
+  const triggerTerms = [
+    'promotion_carried_ref_handoffs',
+    'carried_ref_handoff_failure',
+    'carried_ref_handoff_diagnostic_taxonomy',
+    'carried ref handoff',
+    'carried-ref handoff',
+  ].filter((term) => prompt.includes(term));
+  const repairTerms = ['repair', 'fix', 'malformed', 'failed', 'failure', 'mismatch'].filter((term) =>
+    prompt.includes(term),
+  );
+  if (triggerTerms.length === 0 || repairTerms.length === 0) {
+    return { active: false, triggerTerms: [] };
+  }
+  return { active: true, triggerTerms: [...triggerTerms, ...repairTerms] };
 }
 
 function scoreFrame(frame: WorkFrame, prompt: string, active: boolean): number {
