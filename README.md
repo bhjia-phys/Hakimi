@@ -283,6 +283,13 @@ the model does not copy the wrong ref dialect into reviewed overrides. This is
 post-execution handoff guidance only: it does not mutate the next payload, run
 the next draft/write action, validate source support, satisfy final gates, or
 change claim trust.
+Fresh write-call drafts can accept `promotion_carried_refs` or
+`promotion_carried_ref_handoffs` and render
+`promotion_carried_ref_suggestions` beside the payload JSON. The suggestion
+shows copyable `suggested_reviewed_overrides_json`, but it keeps
+`applied_to_payload="false"`; the selected draft payload changes only through
+an explicit `promotion_reviewed_overrides` input, and the normal readiness
+inspection plus separate `execute_aitp_write_bridge` call are still required.
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` against a proposed
 reviewed payload. Hakimi renders `original_payload_json`,

@@ -337,6 +337,18 @@ export const ResearchActionToolInputSchema = z.object({
     .describe(
       'Reviewed top-level payload field overrides for draft_aitp_curated_rag_write_bridge_call. These only update the returned call draft; they do not execute an AITP write.',
     ),
+  promotion_carried_refs: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Canonical refs from earlier explicit curated RAG promotion writes. These render copyable reviewed-override suggestions only; they do not modify the returned payload or execute AITP writes.',
+    ),
+  promotion_carried_ref_handoffs: z
+    .array(z.record(z.string(), z.unknown()))
+    .optional()
+    .describe(
+      'Carried-ref handoff objects from earlier explicit curated RAG promotion writes. These render copyable reviewed-override suggestions only; they do not modify the returned payload or execute AITP writes.',
+    ),
   repair_ref: z
     .string()
     .optional()
@@ -397,6 +409,7 @@ interface CuratedRagPromotionWriteBridgeCallDraft {
   readonly originalUnresolvedPlaceholderCount: number;
   readonly unresolvedPlaceholderCount: number;
   readonly recordRefLookup?: CuratedRagPayloadRefLookup | undefined;
+  readonly carriedRefSuggestion?: CuratedRagCarriedRefOverrideSuggestion | undefined;
 }
 
 type CuratedRagPayloadRefLookup =
@@ -417,6 +430,16 @@ interface CuratedRagPromotionWriteBridgeCallDiagnostic {
   readonly code: string;
   readonly field?: string | undefined;
   readonly message: string;
+}
+
+interface CuratedRagCarriedRefOverrideSuggestion {
+  readonly refs: readonly string[];
+  readonly usedRefs: readonly string[];
+  readonly unusedRefs: readonly string[];
+  readonly suggestedOverrides: Readonly<Record<string, unknown>>;
+  readonly targetField: string;
+  readonly reason: string;
+  readonly appliedByReviewedOverride: boolean;
 }
 
 interface CuratedRagPromotionWriteBridgeConfirmationSummary {
@@ -935,6 +958,7 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       draft,
       selector.selector,
       args.promotion_reviewed_overrides,
+      promotionCarriedRefsFromInput(args),
     );
     if (callDraft.isError) return errorResult(callDraft.message);
     const lookup = await this.lookupCuratedRagCallDraftRefs(callDraft.draft, ctx.signal);
@@ -2197,10 +2221,20 @@ function curatedRagPromotionWriteBridgeCallSelector(args: ResearchActionToolInpu
   return { isError: false, selector: { stage, operation } };
 }
 
+function promotionCarriedRefsFromInput(args: ResearchActionToolInput): readonly string[] {
+  const refs = args.promotion_carried_refs ?? [];
+  const handoffRefs = (args.promotion_carried_ref_handoffs ?? []).flatMap((handoff) => {
+    const canonicalRef = stringRecordValue(handoff, 'canonical_ref', 'canonicalRef');
+    return canonicalRef === undefined ? [] : [canonicalRef];
+  });
+  return uniqueStrings([...refs, ...handoffRefs].map((ref) => ref.trim()).filter((ref) => ref.length > 0));
+}
+
 function curatedRagPromotionWriteBridgeCallDraft(
   draft: AitpCuratedRagPromotionDraft,
   selector: CuratedRagPromotionWriteBridgeCallSelector,
   reviewedOverrides: Readonly<Record<string, unknown>> | undefined,
+  carriedRefs: readonly string[] | undefined,
 ):
   | {
       readonly isError: false;
@@ -2235,6 +2269,11 @@ function curatedRagPromotionWriteBridgeCallDraft(
   const originalPayload = selected.payloadDraft ?? selected.payloadTemplate ?? {};
   const overrides = reviewedOverrides ?? {};
   const payload = { ...originalPayload, ...overrides };
+  const carriedRefSuggestion = curatedRagCarriedRefOverrideSuggestion(
+    selected.stage,
+    payload,
+    carriedRefs ?? [],
+  );
   const diagnostics = curatedRagPromotionWriteBridgeCallDiagnostics(draft, selected, aitpOperation, payload);
   const originalDiagnostics = curatedRagPromotionWriteBridgeCallDiagnostics(
     draft,
@@ -2264,6 +2303,7 @@ function curatedRagPromotionWriteBridgeCallDraft(
       overrideDiagnostics,
       originalUnresolvedPlaceholderCount: originalDiagnostics.filter((item) => item.code === 'placeholder_value').length,
       unresolvedPlaceholderCount: diagnostics.filter((item) => item.code === 'placeholder_value').length,
+      carriedRefSuggestion,
     },
   };
 }
@@ -2343,6 +2383,73 @@ function refMatchesSequencePriorKind(ref: string, refKind: string): boolean {
   return aitpRecordRefKind(ref) === refKind;
 }
 
+function curatedRagCarriedRefOverrideSuggestion(
+  selectedStage: string,
+  payload: Readonly<Record<string, unknown>>,
+  carriedRefs: readonly string[],
+): CuratedRagCarriedRefOverrideSuggestion | undefined {
+  const refs = uniqueStrings(carriedRefs.map((ref) => ref.trim()).filter((ref) => ref.length > 0));
+  if (refs.length === 0) return undefined;
+  const target = carriedRefOverrideTargetForStage(selectedStage);
+  if (target === undefined) {
+    return {
+      refs,
+      usedRefs: [],
+      unusedRefs: refs,
+      suggestedOverrides: {},
+      targetField: '',
+      reason: `No carried-ref override target is defined for promotion stage ${selectedStage}.`,
+      appliedByReviewedOverride: false,
+    };
+  }
+  const usedRefs = refs.filter((ref) => target.refKinds.includes(aitpRecordRefKind(ref) ?? ''));
+  const unusedRefs = refs.filter((ref) => !usedRefs.includes(ref));
+  const existingValue = payload[target.field];
+  const existingRefs = target.mode === 'array'
+    ? concreteStringArrayValue(existingValue)
+    : typeof existingValue === 'string' && !isPlaceholderRef(existingValue)
+      ? [existingValue]
+      : [];
+  const appliedByReviewedOverride = usedRefs.length > 0 && usedRefs.every((ref) => existingRefs.includes(ref));
+  const suggestedValue = target.mode === 'array'
+    ? uniqueStrings([...existingRefs, ...usedRefs])
+    : usedRefs[0] ?? existingRefs[0] ?? '';
+  const suggestedOverrides =
+    usedRefs.length === 0 ? {} : { [target.field]: suggestedValue };
+  return {
+    refs,
+    usedRefs,
+    unusedRefs,
+    suggestedOverrides,
+    targetField: target.field,
+    reason: target.reason,
+    appliedByReviewedOverride,
+  };
+}
+
+function carriedRefOverrideTargetForStage(
+  selectedStage: string,
+): { readonly field: string; readonly refKinds: readonly string[]; readonly mode: 'array' | 'string'; readonly reason: string } | undefined {
+  switch (selectedStage) {
+    case 'reference_location':
+      return {
+        field: 'source_ref',
+        refKinds: ['source_asset'],
+        mode: 'string',
+        reason: 'Carry the explicit source_asset write result into the reviewed reference-location payload.',
+      };
+    case 'evidence':
+      return {
+        field: 'source_refs',
+        refKinds: ['source_asset', 'reference_location'],
+        mode: 'array',
+        reason: 'Carry explicit source_asset/reference_location write results into the reviewed evidence payload.',
+      };
+    default:
+      return undefined;
+  }
+}
+
 function curatedRagPromotionWriteBridgeCallOverrideDiagnostics(
   originalPayload: Readonly<Record<string, unknown>>,
   reviewedPayload: Readonly<Record<string, unknown>>,
@@ -2417,6 +2524,11 @@ function fieldIsEmpty(record: Readonly<Record<string, unknown>>, field: string):
   return value === undefined || value === null;
 }
 
+function concreteStringArrayValue(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && !isPlaceholderRef(item));
+}
+
 function placeholderFieldPaths(value: unknown, path = ''): readonly string[] {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -2461,6 +2573,7 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     `  <original_payload_json>${escapeXml(JSON.stringify(callDraft.originalPayload))}</original_payload_json>`,
     `  <reviewed_overrides_json>${escapeXml(JSON.stringify(callDraft.reviewedOverrides))}</reviewed_overrides_json>`,
     `  <reviewed_payload_json>${escapeXml(JSON.stringify(callDraft.payload))}</reviewed_payload_json>`,
+    renderAitpCuratedRagCarriedRefOverrideSuggestion(callDraft.carriedRefSuggestion, '  '),
     renderStringList('required_existing_records', 'record', callDraft.requiredExistingRecords, '  '),
     renderCuratedRagPromotionWriteSequence(sourceDraft, callDraft.stage),
     renderCuratedRagCanonicalIdentityAlignment(sourceDraft, callDraft),
@@ -2475,6 +2588,27 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     '</aitp_curated_rag_write_bridge_call_draft>',
     '',
   ].join('\n');
+}
+
+function renderAitpCuratedRagCarriedRefOverrideSuggestion(
+  suggestion: CuratedRagCarriedRefOverrideSuggestion | undefined,
+  indent: string,
+): string {
+  if (suggestion === undefined) return '';
+  const appliedByReviewedOverride = carriedRefSuggestionAppliedByPayload(suggestion);
+  return [
+    `${indent}<promotion_carried_ref_suggestions source="promotion_carried_refs" carried_ref_count="${String(suggestion.refs.length)}" used_ref_count="${String(suggestion.usedRefs.length)}" unused_ref_count="${String(suggestion.unusedRefs.length)}" target_field="${escapeXml(suggestion.targetField)}" applied_to_payload="false" applied_by_reviewed_override="${String(appliedByReviewedOverride)}" carry_into="promotion_reviewed_overrides" requires_reviewed_override="true" executes_write_now="false" next_write_executed_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true">`,
+    `${indent}  <reason>${escapeXml(suggestion.reason)}</reason>`,
+    renderStringList('carried_refs', 'ref', suggestion.refs, `${indent}  `),
+    renderStringList('used_refs', 'ref', suggestion.usedRefs, `${indent}  `),
+    renderStringList('unused_refs', 'ref', suggestion.unusedRefs, `${indent}  `),
+    `${indent}  <suggested_reviewed_overrides_json>${escapeXml(JSON.stringify(suggestion.suggestedOverrides))}</suggested_reviewed_overrides_json>`,
+    `${indent}</promotion_carried_ref_suggestions>`,
+  ].join('\n');
+}
+
+function carriedRefSuggestionAppliedByPayload(suggestion: CuratedRagCarriedRefOverrideSuggestion): boolean {
+  return suggestion.appliedByReviewedOverride;
 }
 
 function renderAitpRecordRefRepairWriteBridgeCallDraft(input: {
