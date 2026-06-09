@@ -18,6 +18,10 @@ import {
   parseAitpCuratedRagPromotionDraft,
   parseAitpCuratedRagSearchResult,
 } from './curated-rag';
+import {
+  parseAitpLiteratureSourceReviewHandoff,
+  type AitpLiteratureSourceReviewHandoffProvider,
+} from './literature-source-review-handoff';
 import { parseAitpRecordRefLookup } from './record-ref-lookup';
 import { parseAitpRuntimePayloadProfilesCatalog } from './runtime-payload-profiles';
 import type { CompiledAitpProcessGraphSlice } from './types';
@@ -204,6 +208,16 @@ export function createDynamicAitpCliCuratedRagProvider(
   };
 }
 
+export function createDynamicAitpCliLiteratureSourceReviewHandoffProvider(
+  options: DynamicAitpCliBridgeOptions,
+): AitpLiteratureSourceReviewHandoffProvider {
+  return {
+    getLiteratureSourceReviewHandoff(input) {
+      return createDynamicAitpCliBridge(options).readLiteratureSourceReviewHandoff(input);
+    },
+  };
+}
+
 export function createDynamicAitpMcpFirstCuratedRagProvider(
   options: DynamicAitpMcpFirstBridgeOptions,
 ): AitpCuratedRagProvider {
@@ -295,6 +309,46 @@ export function createDynamicAitpMcpFirstCuratedRagProvider(
       } catch (error) {
         if (options.fallbackOnMcpError === false) throw error;
         return fallback.draftCuratedRagPromotion!(input);
+      }
+    },
+  };
+}
+
+export function createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider(
+  options: DynamicAitpMcpFirstBridgeOptions,
+): AitpLiteratureSourceReviewHandoffProvider {
+  const fallback = createDynamicAitpCliLiteratureSourceReviewHandoffProvider(options);
+  return {
+    async getLiteratureSourceReviewHandoff(input) {
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.getLiteratureSourceReviewHandoff(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('readLiteratureSourceReviewHandoff');
+        const args: Record<string, unknown> = {
+          base: options.basePath(),
+          session_id: input.sessionId,
+          uri: input.uri,
+          label: input.label,
+          short_summary: input.shortSummary,
+          detected_relevance: input.detectedRelevance,
+        };
+        if (input.externalId !== undefined) args['external_id'] = input.externalId;
+        if (input.optionalClaimId !== undefined) args['optional_claim_id'] = input.optionalClaimId;
+        if (input.scopedOutput !== undefined) args['scoped_output'] = input.scopedOutput;
+        if (input.reviewedRefs !== undefined) args['reviewed_refs'] = [...input.reviewedRefs];
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args,
+          signal: input.signal,
+        });
+        return parseAitpLiteratureSourceReviewHandoff(
+          normalizeAitpWriteBridgePayload(rawPayload),
+        );
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.getLiteratureSourceReviewHandoff(input);
       }
     },
   };

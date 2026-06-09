@@ -56,6 +56,7 @@ import {
   type AitpCuratedRagPromotionDraft,
   type AitpCuratedRagPromotionDraftOperation,
   type AitpCuratedRagSearchResult,
+  type AitpLiteratureSourceReviewHandoff,
   type AitpRecordRefLookup,
   type AitpRecordRefLookupItem,
   type AitpRuntimePayloadProfilesCatalog,
@@ -111,6 +112,7 @@ const ACTIONS = [
   'search_aitp_curated_rag_corpus',
   'inspect_aitp_curated_rag_chunk',
   'draft_aitp_curated_rag_promotion',
+  'inspect_literature_source_review_handoff',
   'draft_aitp_curated_rag_write_bridge_call',
   'draft_aitp_record_ref_repair_write_bridge_call',
   'capture_primitive_tool_run',
@@ -329,6 +331,38 @@ export const ResearchActionToolInputSchema = z.object({
     .string()
     .optional()
     .describe('Optional intent label for read-only curated RAG promotion draft planning.'),
+  literature_session_id: z
+    .string()
+    .optional()
+    .describe('AITP session id for literature source review handoff inspection.'),
+  literature_uri: z
+    .string()
+    .optional()
+    .describe('Literature URI for AITP source review handoff inspection.'),
+  literature_label: z
+    .string()
+    .optional()
+    .describe('Human-readable literature label for AITP source review handoff inspection.'),
+  literature_external_id: z
+    .string()
+    .optional()
+    .describe('Optional external literature identifier, such as arXiv id or DOI.'),
+  literature_summary: z
+    .string()
+    .optional()
+    .describe('Short literature summary for read-only AITP source review handoff inspection.'),
+  literature_detected_relevance: z
+    .string()
+    .optional()
+    .describe('Detected claim or topic relevance for read-only AITP source review handoff inspection.'),
+  literature_scoped_output: z
+    .string()
+    .optional()
+    .describe('Optional scoped output affected by the literature item.'),
+  reviewed_refs: z
+    .array(z.string())
+    .optional()
+    .describe('Already reviewed AITP refs to check for existence in the literature source review handoff.'),
   promotion_draft_stage: z
     .enum(PROMOTION_DRAFT_STAGES)
     .optional()
@@ -632,6 +666,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return await this.inspectAitpCuratedRagChunk(args, ctx);
         case 'draft_aitp_curated_rag_promotion':
           return await this.draftAitpCuratedRagPromotion(args, ctx);
+        case 'inspect_literature_source_review_handoff':
+          return await this.inspectLiteratureSourceReviewHandoff(args, ctx);
         case 'draft_aitp_curated_rag_write_bridge_call':
           return await this.draftAitpCuratedRagWriteBridgeCall(args, ctx);
         case 'draft_aitp_record_ref_repair_write_bridge_call':
@@ -1040,6 +1076,63 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       signal: ctx.signal,
     });
     return ok(renderAitpCuratedRagPromotionDraft(draft, boundInput.bindingId));
+  }
+
+  private async inspectLiteratureSourceReviewHandoff(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult(
+        'ResearchAction inspect_literature_source_review_handoff requires a session manager.',
+      );
+    }
+    if (!this.manager.hasAitpLiteratureSourceReviewHandoffProvider()) {
+      return errorResult('AITP literature source review handoff provider is not configured');
+    }
+    const sessionId = firstText(args.literature_session_id);
+    if (sessionId === undefined) {
+      return errorResult(
+        'ResearchAction inspect_literature_source_review_handoff requires literature_session_id.',
+      );
+    }
+    const uri = firstText(args.literature_uri);
+    if (uri === undefined) {
+      return errorResult(
+        'ResearchAction inspect_literature_source_review_handoff requires literature_uri.',
+      );
+    }
+    const label = firstText(args.literature_label);
+    if (label === undefined) {
+      return errorResult(
+        'ResearchAction inspect_literature_source_review_handoff requires literature_label.',
+      );
+    }
+    const shortSummary = firstText(args.literature_summary);
+    if (shortSummary === undefined) {
+      return errorResult(
+        'ResearchAction inspect_literature_source_review_handoff requires literature_summary.',
+      );
+    }
+    const detectedRelevance = firstText(args.literature_detected_relevance);
+    if (detectedRelevance === undefined) {
+      return errorResult(
+        'ResearchAction inspect_literature_source_review_handoff requires literature_detected_relevance.',
+      );
+    }
+    const handoff = await this.manager.readAitpLiteratureSourceReviewHandoff({
+      sessionId,
+      uri,
+      label,
+      externalId: firstText(args.literature_external_id),
+      shortSummary,
+      detectedRelevance,
+      optionalClaimId: firstText(args.aitp_claim_id),
+      scopedOutput: firstText(args.literature_scoped_output),
+      reviewedRefs: args.reviewed_refs,
+      signal: ctx.signal,
+    });
+    return ok(renderAitpLiteratureSourceReviewHandoff(handoff));
   }
 
   private async draftAitpCuratedRagWriteBridgeCall(
@@ -1970,6 +2063,25 @@ function stringArray(value: unknown): readonly string[] {
   return uniqueStrings(value.filter((item): item is string => typeof item === 'string' && item.length > 0));
 }
 
+function recordStringAttr(record: Readonly<Record<string, unknown>>, key: string): string {
+  const value = record[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function recordNumberAttr(record: Readonly<Record<string, unknown>>, key: string): string {
+  const value = record[key];
+  return typeof value === 'number' ? String(value) : '';
+}
+
+function referenceCandidateField(
+  suggestion: Readonly<Record<string, unknown>>,
+  key: string,
+): string {
+  const candidate = suggestion['reference_candidate'];
+  if (!isRecord(candidate)) return '';
+  return recordStringAttr(candidate, key);
+}
+
 function nextActionIdForSourceReviewDecision(decision: SourceReviewContextDecision): string {
   switch (decision) {
     case 'extract':
@@ -2212,6 +2324,70 @@ function renderAitpCuratedRagPromotionDraft(
     '  <promotion_boundary retrieval_is_claim_support="false" draft_is_evidence="false" draft_records_validation_result="false" draft_satisfies_final_gate="false" draft_can_update_claim_trust="false" requires_user_or_model_decision_before_write="true" />',
     '</aitp_curated_rag_promotion_draft>',
     '',
+  ].join('\n');
+}
+
+function renderAitpLiteratureSourceReviewHandoff(
+  handoff: AitpLiteratureSourceReviewHandoff,
+): string {
+  const target = aitpRuntimeBridgeTargetForOperation('readLiteratureSourceReviewHandoff');
+  const suggestion = handoff.literatureIntakeSuggestion;
+  const lookup = handoff.recordRefLookup;
+  const coverage = handoff.sourceStackCoverageItem;
+  const reviewPacket = handoff.sourceReconstructionReviewPacket;
+  return [
+    `<aitp_literature_source_review_handoff session_id="${escapeXml(handoff.sessionId)}" topic_id="${escapeXml(handoff.topicId)}" claim_id="${escapeXml(handoff.claimId)}" truth_source="${escapeXml(handoff.truthSource)}" read_surface_effect="${handoff.readSurfaceEffect}" read_only="true" requires_explicit_next_action="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" records_validation_result="false" source_support_result="false" evidence_created="false" validation_created="false" write_executed="false" claim_trust_mutation="none" can_update_claim_trust="false">`,
+    `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" state_effect="${target.stateEffect}" />`,
+    `  <literature_intake recommended_action="${escapeXml(recordStringAttr(suggestion, 'recommended_action'))}" active_claim="${escapeXml(recordStringAttr(suggestion, 'active_claim'))}" reference_location_id="${escapeXml(referenceCandidateField(suggestion, 'location_id'))}" reference_uri="${escapeXml(referenceCandidateField(suggestion, 'uri'))}" reference_label="${escapeXml(referenceCandidateField(suggestion, 'label'))}" orientation_only="true" can_update_claim_trust="false" />`,
+    renderAitpLiteratureRecordRefLookupSummary(lookup, '  '),
+    renderAitpLiteratureCoverageSummary(coverage, '  '),
+    renderAitpLiteratureReviewPacketSummary(reviewPacket, '  '),
+    renderAitpLiteratureRecommendedEntrypoints(handoff),
+    renderStringList('forbidden_uses', 'use', handoff.handoffPolicy.forbiddenUses, '  '),
+    `  <allowed_next_tool_call action="${handoff.allowedNextToolCall.action}" action_id="${handoff.allowedNextToolCall.actionId}" requires_explicit_next_action="true" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />`,
+    '  <handoff_boundary host_routing_only="true" canonical_effect_requires_explicit_aitp_entrypoint="true" evidence_support="false" validation_result="false" write_execution="false" final_gate_satisfaction="false" trust_apply="false" />',
+    '</aitp_literature_source_review_handoff>',
+    '',
+  ].join('\n');
+}
+
+function renderAitpLiteratureRecordRefLookupSummary(
+  lookup: Readonly<Record<string, unknown>>,
+  indent: string,
+): string {
+  return `${indent}<record_ref_lookup lookup_scope="${escapeXml(recordStringAttr(lookup, 'lookup_scope'))}" lookup_count="${escapeXml(recordNumberAttr(lookup, 'lookup_count'))}" found_count="${escapeXml(recordNumberAttr(lookup, 'found_count'))}" missing_count="${escapeXml(recordNumberAttr(lookup, 'missing_count'))}" unsupported_count="${escapeXml(recordNumberAttr(lookup, 'unsupported_count'))}" malformed_count="${escapeXml(recordNumberAttr(lookup, 'malformed_count'))}" read_surface_effect="${escapeXml(recordStringAttr(lookup, 'read_surface_effect'))}" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" />`;
+}
+
+function renderAitpLiteratureCoverageSummary(
+  coverage: Readonly<Record<string, unknown>>,
+  indent: string,
+): string {
+  if (Object.keys(coverage).length === 0) {
+    return `${indent}<source_stack_coverage_item present="false" />`;
+  }
+  return `${indent}<source_stack_coverage_item present="true" claim_id="${escapeXml(recordStringAttr(coverage, 'claim_id'))}" coverage_status="${escapeXml(recordStringAttr(coverage, 'coverage_status'))}" missing_count="${escapeXml(recordNumberAttr(coverage, 'missing_count'))}" complete="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />`;
+}
+
+function renderAitpLiteratureReviewPacketSummary(
+  packet: Readonly<Record<string, unknown>>,
+  indent: string,
+): string {
+  if (Object.keys(packet).length === 0) {
+    return `${indent}<source_reconstruction_review_packet present="false" />`;
+  }
+  return `${indent}<source_reconstruction_review_packet present="true" kind="${escapeXml(recordStringAttr(packet, 'kind'))}" claim_id="${escapeXml(recordStringAttr(packet, 'claim_id'))}" review_status="${escapeXml(recordStringAttr(packet, 'review_status'))}" read_only="true" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />`;
+}
+
+function renderAitpLiteratureRecommendedEntrypoints(
+  handoff: AitpLiteratureSourceReviewHandoff,
+): string {
+  return [
+    `  <recommended_next_entrypoints count="${String(handoff.recommendedNextEntrypoints.length)}" requires_explicit_next_entrypoint="true" bridge_called="false" executes_write_now="false">`,
+    ...handoff.recommendedNextEntrypoints.map(
+      (entry) =>
+        `    <entrypoint name="${escapeXml(entry.entrypoint)}" surface="${escapeXml(entry.surface)}" reason="${escapeXml(entry.reason)}" />`,
+    ),
+    '  </recommended_next_entrypoints>',
   ].join('\n');
 }
 

@@ -83,6 +83,7 @@ export type AitpRuntimeBridgeOperation =
   | 'searchCuratedRagCorpus'
   | 'readCuratedRagChunk'
   | 'draftCuratedRagPromotion'
+  | 'readLiteratureSourceReviewHandoff'
   | AitpWriteBridgeOperation;
 
 export interface AitpRuntimeBridgeTarget {
@@ -164,6 +165,11 @@ const AITP_READ_TARGET_MCP_ARGUMENTS = {
     optional: ['base', 'topic_id', 'claim_id', 'connector_id', 'promotion_intent'],
     source: 'aitp_v5_draft_curated_rag_promotion',
   },
+  literature_source_review_handoff: {
+    required: ['base', 'session_id', 'uri', 'label', 'short_summary', 'detected_relevance'],
+    optional: ['external_id', 'optional_claim_id', 'scoped_output', 'reviewed_refs'],
+    source: 'aitp_v5_build_literature_source_review_handoff',
+  },
 } as const satisfies Record<string, AitpMcpArgumentContract>;
 
 export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
@@ -236,6 +242,15 @@ export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
     'aitp_v5_draft_curated_rag_promotion',
     'aitp-v5 adapter curated-rag-promotion-draft <chunk-id> <args>',
     'curated_rag_promotion_draft',
+    'read',
+    'read_only',
+  ),
+  bridgeTarget(
+    'readLiteratureSourceReviewHandoff',
+    'literature_source_review_handoff',
+    'aitp_v5_build_literature_source_review_handoff',
+    'aitp-v5 literature source-review-handoff <args>',
+    'literature_source_review_handoff',
     'read',
     'read_only',
   ),

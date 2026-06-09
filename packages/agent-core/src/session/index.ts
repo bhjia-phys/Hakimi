@@ -27,12 +27,14 @@ import {
 } from '../config';
 import {
   createDynamicAitpMcpFirstCuratedRagProvider,
+  createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider,
   createDynamicAitpMcpFirstProcessGraphSliceProvider,
   createDynamicAitpMcpFirstRecordRefLookupProvider,
   createDynamicAitpMcpFirstRuntimePayloadProfilesProvider,
   createDynamicAitpMcpFirstWriteBridgeExecutor,
   type AitpCuratedRagProvider,
   type AitpCommandRunner,
+  type AitpLiteratureSourceReviewHandoffProvider,
   type AitpMcpWriteBridgeTransport,
   type AitpProcessGraphSliceProvider,
   type AitpRecordRefLookupProvider,
@@ -109,6 +111,7 @@ export interface SessionOptions {
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
   readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider | undefined;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
+  readonly aitpLiteratureSourceReviewHandoffProvider?: AitpLiteratureSourceReviewHandoffProvider | undefined;
   readonly aitpWriteBridge?: AitpWriteBridgeExecutor | undefined;
   readonly mcpConfig?: SessionMcpConfig;
   readonly telemetry?: TelemetryClient | undefined;
@@ -1218,6 +1221,10 @@ export class Session {
         config.aitpCuratedRagProvider ??
         this.options.aitpCuratedRagProvider ??
         aitpBridges?.curatedRagProvider,
+      aitpLiteratureSourceReviewHandoffProvider:
+        config.aitpLiteratureSourceReviewHandoffProvider ??
+        this.options.aitpLiteratureSourceReviewHandoffProvider ??
+        aitpBridges?.literatureSourceReviewHandoffProvider,
       aitpWriteBridge:
         config.aitpWriteBridge ?? this.options.aitpWriteBridge ?? aitpBridges?.writeBridge,
       rpc: proxyWithExtraPayload(this.rpc, { agentId: id }),
@@ -1249,6 +1256,7 @@ export class Session {
         readonly runtimePayloadProfilesProvider: AitpRuntimePayloadProfilesProvider;
         readonly recordRefLookupProvider: AitpRecordRefLookupProvider;
         readonly curatedRagProvider: AitpCuratedRagProvider;
+        readonly literatureSourceReviewHandoffProvider: AitpLiteratureSourceReviewHandoffProvider;
         readonly writeBridge: AitpWriteBridgeExecutor;
       }
     | undefined {
@@ -1282,6 +1290,12 @@ export class Session {
         mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
         fallbackOnMcpError: config?.fallbackOnMcpError,
       }),
+      literatureSourceReviewHandoffProvider:
+        createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider({
+          ...bridgeOptions,
+          mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
+          fallbackOnMcpError: config?.fallbackOnMcpError,
+        }),
       writeBridge: createDynamicAitpMcpFirstWriteBridgeExecutor({
         ...bridgeOptions,
         mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
