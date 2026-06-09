@@ -268,6 +268,12 @@ before the normal write/preflight action is called. The selected call draft
 echoes the same `promotion_write_sequence` and marks the selected step, so the
 later explicit `execute_aitp_write_bridge` call can be checked against the
 AITP sequence without making Hakimi a second source/ref/evidence store.
+If the selected step requires prior refs from that sequence, Hakimi now checks
+the reviewed payload for matching concrete refs and emits a hard-blocking
+`missing_sequence_prior_ref` diagnostic when, for example, an evidence draft
+contains a `source_asset:...` ref but no `reference_location:...` ref. This is
+readiness enforcement only; it still cannot confirm source support or write
+AITP records without the separate explicit bridge call.
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` against a proposed
 reviewed payload. Hakimi renders `original_payload_json`,

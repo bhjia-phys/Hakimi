@@ -1754,10 +1754,46 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('code="reviewed_override_applied" field="source_refs"');
     expect(result.output).toContain('code="reviewed_override_resolves_placeholder" field="source_refs[0]"');
     expect(result.output).toContain('code="reviewed_overrides_not_executed"');
+    expect(result.output).not.toContain('code="missing_sequence_prior_ref"');
     expect(result.output).not.toContain('code="placeholder_value" field="source_refs[0]"');
     expect(records).not.toContainEqual(
       expect.objectContaining({ type: 'research_action.result_recorded' }),
     );
+  });
+
+  it('blocks curated RAG evidence call drafts that miss AITP sequence prior refs', async () => {
+    const agent = makeAgent(undefined, {
+      aitpCuratedRagProvider: curatedRagPromotionDraftProvider(),
+      aitpWriteBridge: {
+        async executeWrite() {
+          throw new Error('write bridge must not be called by draft action');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'draft_aitp_curated_rag_write_bridge_call',
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      aitp_topic_id: 'fqhe-literature',
+      aitp_claim_id: 'claim-fqhe',
+      promotion_draft_operation: 'recordEvidence',
+      promotion_reviewed_overrides: {
+        source_refs: ['source_asset:asset-reviewed'],
+        summary: 'Reviewed source passage supports only the scoped claim fragment.',
+      },
+    });
+
+    expect(result.output).toContain('confirmation_status="blocked"');
+    expect(result.output).toContain('execute_call_allowed_after_explicit_confirmation="false"');
+    expect(result.output).toContain('code="missing_sequence_prior_ref" field="reference_location"');
+    expect(result.output).toContain(
+      'AITP promotion_write_sequence requires a reference_location ref matching reference_location:&lt;location_id&gt; before executing recordEvidence.',
+    );
+    expect(result.output).toContain('<promotion_write_sequence');
+    expect(result.output).toContain('stage="evidence" operation="recordEvidence"');
+    expect(result.output).toContain('selected="true"');
+    expect(result.output).not.toContain('code="missing_sequence_prior_ref" field="source_asset"');
   });
 
   it('renders AITP-owned record-ref lookup confirmation for reviewed curated RAG refs', async () => {
