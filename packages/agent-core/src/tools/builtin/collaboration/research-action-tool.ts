@@ -433,6 +433,8 @@ interface CuratedRagPromotionWriteBridgeCallDiagnostic {
 }
 
 interface CuratedRagCarriedRefOverrideSuggestion {
+  readonly selectedStage: string;
+  readonly selectedOperation: string;
   readonly refs: readonly string[];
   readonly usedRefs: readonly string[];
   readonly unusedRefs: readonly string[];
@@ -2392,9 +2394,11 @@ function curatedRagCarriedRefOverrideSuggestion(
   if (refs.length === 0) return undefined;
   const target = carriedRefOverrideTargetForStage(selectedStage);
   if (target === undefined) {
-    return {
-      refs,
-      usedRefs: [],
+  return {
+    selectedStage,
+    selectedOperation: operationForPromotionStage(selectedStage) ?? '',
+    refs,
+    usedRefs: [],
       unusedRefs: refs,
       suggestedOverrides: {},
       targetField: '',
@@ -2417,6 +2421,8 @@ function curatedRagCarriedRefOverrideSuggestion(
   const suggestedOverrides =
     usedRefs.length === 0 ? {} : { [target.field]: suggestedValue };
   return {
+    selectedStage,
+    selectedOperation: operationForPromotionStage(selectedStage) ?? '',
     refs,
     usedRefs,
     unusedRefs,
@@ -2445,6 +2451,23 @@ function carriedRefOverrideTargetForStage(
         mode: 'array',
         reason: 'Carry explicit source_asset/reference_location write results into the reviewed evidence payload.',
       };
+    default:
+      return undefined;
+  }
+}
+
+function operationForPromotionStage(stage: string): string | undefined {
+  switch (stage) {
+    case 'source_asset':
+      return 'registerSourceAsset';
+    case 'reference_location':
+      return 'recordReferenceLocation';
+    case 'evidence':
+      return 'recordEvidence';
+    case 'validation':
+      return 'createValidationContract';
+    case 'trust_preflight':
+      return 'preflightTrustUpdate';
     default:
       return undefined;
   }
@@ -2573,7 +2596,7 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
     `  <original_payload_json>${escapeXml(JSON.stringify(callDraft.originalPayload))}</original_payload_json>`,
     `  <reviewed_overrides_json>${escapeXml(JSON.stringify(callDraft.reviewedOverrides))}</reviewed_overrides_json>`,
     `  <reviewed_payload_json>${escapeXml(JSON.stringify(callDraft.payload))}</reviewed_payload_json>`,
-    renderAitpCuratedRagCarriedRefOverrideSuggestion(callDraft.carriedRefSuggestion, '  '),
+    renderAitpCuratedRagCarriedRefOverrideSuggestion(callDraft.carriedRefSuggestion, sourceDraft, '  '),
     renderStringList('required_existing_records', 'record', callDraft.requiredExistingRecords, '  '),
     renderCuratedRagPromotionWriteSequence(sourceDraft, callDraft.stage),
     renderCuratedRagCanonicalIdentityAlignment(sourceDraft, callDraft),
@@ -2592,6 +2615,7 @@ function renderAitpCuratedRagWriteBridgeCallDraft(
 
 function renderAitpCuratedRagCarriedRefOverrideSuggestion(
   suggestion: CuratedRagCarriedRefOverrideSuggestion | undefined,
+  sourceDraft: AitpCuratedRagPromotionDraft,
   indent: string,
 ): string {
   if (suggestion === undefined) return '';
@@ -2603,7 +2627,30 @@ function renderAitpCuratedRagCarriedRefOverrideSuggestion(
     renderStringList('used_refs', 'ref', suggestion.usedRefs, `${indent}  `),
     renderStringList('unused_refs', 'ref', suggestion.unusedRefs, `${indent}  `),
     `${indent}  <suggested_reviewed_overrides_json>${escapeXml(JSON.stringify(suggestion.suggestedOverrides))}</suggested_reviewed_overrides_json>`,
+    renderCarriedRefNextCallPointer(suggestion, sourceDraft, `${indent}  `),
     `${indent}</promotion_carried_ref_suggestions>`,
+  ].join('\n');
+}
+
+function renderCarriedRefNextCallPointer(
+  suggestion: CuratedRagCarriedRefOverrideSuggestion,
+  sourceDraft: AitpCuratedRagPromotionDraft,
+  indent: string,
+): string {
+  if (suggestion.usedRefs.length === 0 || suggestion.selectedOperation.length === 0) return '';
+  const draftCall = {
+    action: 'draft_aitp_curated_rag_write_bridge_call',
+    rag_chunk_id: sourceDraft.chunkId,
+    aitp_topic_id: sourceDraft.topicId,
+    aitp_claim_id: sourceDraft.claimId,
+    promotion_draft_stage: suggestion.selectedStage,
+    promotion_draft_operation: suggestion.selectedOperation,
+    promotion_reviewed_overrides: suggestion.suggestedOverrides,
+  };
+  return [
+    `${indent}<carried_ref_next_call_pointer action="draft_aitp_curated_rag_write_bridge_call" rag_chunk_id="${escapeXml(sourceDraft.chunkId)}" topic_id="${escapeXml(sourceDraft.topicId)}" claim_id="${escapeXml(sourceDraft.claimId)}" promotion_draft_stage="${escapeXml(suggestion.selectedStage)}" promotion_draft_operation="${escapeXml(suggestion.selectedOperation)}" copy_reviewed_overrides_from="suggested_reviewed_overrides_json" applied_to_payload="false" executes_write_now="false" bridge_called="false" next_write_executed_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_fresh_draft_action="true" requires_reviewed_override="true" requires_readiness_inspection="true" requires_explicit_execute_call="true">`,
+    `${indent}  <draft_call_json>${escapeXml(JSON.stringify(draftCall))}</draft_call_json>`,
+    `${indent}</carried_ref_next_call_pointer>`,
   ].join('\n');
 }
 

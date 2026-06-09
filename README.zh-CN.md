@@ -76,6 +76,11 @@ draft/write，不会验证 source support、满足 final gate 或改变 claim tr
 selected draft payload 只有在调用方显式提供 `promotion_reviewed_overrides`
 时才会变化，之后仍然要走 readiness inspection 和单独的
 `execute_aitp_write_bridge`。
+同一个 suggestion 现在还会包含紧凑的 `carried_ref_next_call_pointer`，
+其中的 `draft_call_json` 只指向一次新的
+`draft_aitp_curated_rag_write_bridge_call`，并携带这些 reviewed overrides。
+这个 pointer 标记 `bridge_called=false`，只帮助模型复制下一次 draft call；
+它不会调用 `execute_aitp_write_bridge`，也不会授权 validation/trust 变化。
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` with a proposed reviewed
 payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,
