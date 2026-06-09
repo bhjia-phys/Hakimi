@@ -193,8 +193,9 @@ describe('runShell', () => {
     expect(mocks.kimiHarnessConstructor).toHaveBeenCalledWith(
       expect.objectContaining({
         identity: expect.objectContaining({
-          userAgentProduct: 'hakimi-cli',
+          userAgentProduct: 'kimi-code-cli',
           version: '1.2.3-test',
+          userAgentSuffix: 'hakimi',
         }),
         sessionStartedProperties: { yolo: true, auto: false, plan: true, afk: false },
       }),

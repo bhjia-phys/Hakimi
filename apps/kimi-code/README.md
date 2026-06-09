@@ -43,6 +43,9 @@ the browser device-code flow, then return to Hakimi. A
 successful login provisions `~/.hakimi/config.toml` with provider
 `managed:kimi-code`, model alias `kimi-code/kimi-for-coding`, and matching Kimi
 search/fetch service credentials.
+Requests to the Kimi Coding API use a Kimi-Code-compatible coding-agent
+transport identity with a Hakimi provenance suffix; the user-facing command,
+package, sessions, and config remain Hakimi-owned.
 
 Quick checks:
 

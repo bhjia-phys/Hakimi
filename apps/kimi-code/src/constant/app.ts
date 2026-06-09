@@ -6,6 +6,8 @@ export const PROCESS_NAME = 'hakimi';
 
 // Used in telemetry app names and HTTP User-Agent headers.
 export const CLI_USER_AGENT_PRODUCT = 'hakimi-cli';
+export const KIMI_CODING_AGENT_USER_AGENT_PRODUCT = 'kimi-code-cli';
+export const KIMI_CODING_AGENT_USER_AGENT_SUFFIX = 'hakimi';
 export const CLI_UI_MODE = 'shell';
 // Telemetry ui_mode for the `kimi web` host. Same product
 // as the CLI (CLI_USER_AGENT_PRODUCT); the surface is distinguished by ui_mode.
