@@ -187,6 +187,7 @@ export interface AitpCuratedRagPromotionDraft {
   readonly chunk: AitpCuratedRagPromotionChunk;
   readonly document: AitpCuratedRagPromotionDocument;
   readonly draftOperations: readonly AitpCuratedRagPromotionDraftOperation[];
+  readonly promotionWriteSequence: readonly AitpCuratedRagPromotionWriteStep[];
   readonly promotionPath: readonly string[];
   readonly forbiddenUses: readonly string[];
   readonly promotionBoundary: AitpCuratedRagPromotionBoundary;
@@ -237,6 +238,21 @@ export interface AitpCuratedRagPromotionDraftOperation {
   readonly payloadDraft?: Readonly<Record<string, unknown>> | undefined;
   readonly payloadTemplate?: Readonly<Record<string, unknown>> | undefined;
   readonly requiresExistingRecords: readonly string[];
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpCuratedRagPromotionWriteStep {
+  readonly order: number;
+  readonly stage: string;
+  readonly operation: string;
+  readonly surface: string;
+  readonly outputRef: string;
+  readonly requiresPriorRefs: readonly string[];
+  readonly feedsNextStages: readonly string[];
+  readonly requiresExplicitExecuteCall: true;
+  readonly executesWriteNow: false;
+  readonly recordsValidationResult: false;
+  readonly claimTrustMutation: 'none';
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
@@ -440,6 +456,10 @@ export function parseAitpCuratedRagPromotionDraft(input: unknown): AitpCuratedRa
     payload['draft_operations'],
     'curated_rag_promotion_draft.draft_operations',
   ).map(parsePromotionDraftOperation);
+  const promotionWriteSequence = requiredRecordArray(
+    payload['promotion_write_sequence'],
+    'curated_rag_promotion_draft.promotion_write_sequence',
+  ).map(parsePromotionWriteStep);
   const promotionPath = requiredStringArray(
     payload['promotion_path'],
     'curated_rag_promotion_draft.promotion_path',
@@ -449,6 +469,9 @@ export function parseAitpCuratedRagPromotionDraft(input: unknown): AitpCuratedRa
   }
   if (!sameStrings(draftOperations.map((item) => item.stage), promotionPath)) {
     throw new AitpCuratedRagParseError('AITP curated RAG draft operation stages must match the promotion path.');
+  }
+  if (!sameStrings(promotionWriteSequence.map((item) => item.stage), promotionPath)) {
+    throw new AitpCuratedRagParseError('AITP curated RAG promotion write sequence must match the promotion path.');
   }
   const forbiddenUses = requiredStringArray(
     payload['forbidden_uses'],
@@ -496,6 +519,7 @@ export function parseAitpCuratedRagPromotionDraft(input: unknown): AitpCuratedRa
     chunk,
     document,
     draftOperations,
+    promotionWriteSequence,
     promotionPath,
     forbiddenUses,
     promotionBoundary: parsePromotionBoundary(
@@ -759,6 +783,39 @@ function parsePromotionDraftOperation(
   };
 }
 
+function parsePromotionWriteStep(
+  raw: Readonly<Record<string, unknown>>,
+): AitpCuratedRagPromotionWriteStep {
+  if (
+    raw['requires_explicit_execute_call'] !== true ||
+    raw['executes_write_now'] !== false ||
+    raw['records_validation_result'] !== false ||
+    raw['claim_trust_mutation'] !== 'none'
+  ) {
+    throw new AitpCuratedRagParseError('AITP curated RAG promotion write sequence must remain explicit and no-trust.');
+  }
+  return {
+    order: requiredInteger(raw, 'order'),
+    stage: requiredString(raw, 'stage'),
+    operation: requiredString(raw, 'operation'),
+    surface: requiredString(raw, 'surface'),
+    outputRef: requiredString(raw, 'output_ref'),
+    requiresPriorRefs: requiredStringArray(
+      raw['requires_prior_refs'],
+      'promotion_write_sequence.requires_prior_refs',
+    ),
+    feedsNextStages: requiredStringArray(
+      raw['feeds_next_stages'],
+      'promotion_write_sequence.feeds_next_stages',
+    ),
+    requiresExplicitExecuteCall: true,
+    executesWriteNow: false,
+    recordsValidationResult: false,
+    claimTrustMutation: 'none',
+    raw,
+  };
+}
+
 function parsePromotionBoundary(
   raw: Readonly<Record<string, unknown>>,
 ): AitpCuratedRagPromotionBoundary {
@@ -899,6 +956,12 @@ function requiredString(raw: Readonly<Record<string, unknown>>, key: string): st
   const value = raw[key];
   if (typeof value === 'string' && value.trim().length > 0) return value.trim();
   throw new AitpCuratedRagParseError(`${key} must be a non-empty string.`);
+}
+
+function requiredInteger(raw: Readonly<Record<string, unknown>>, key: string): number {
+  const value = raw[key];
+  if (typeof value === 'number' && Number.isInteger(value)) return value;
+  throw new AitpCuratedRagParseError(`${key} must be an integer.`);
 }
 
 function requiredStringArray(value: unknown, label: string): readonly string[] {
