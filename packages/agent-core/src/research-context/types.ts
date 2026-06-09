@@ -13,7 +13,12 @@ import type {
   PhysicsDomainId,
   ReliabilityState,
 } from '../physics-memory';
-import type { ResearchActionBinding, WorkFrame } from '../research-action';
+import type {
+  ResearchActionBinding,
+  ResearchActionOutcome,
+  SourceReviewContextDecision,
+  WorkFrame,
+} from '../research-action';
 import type { ResearchLedgerEventStatus, ResearchTopicId } from '../research-ledger';
 import type { WorkflowRecipeId } from '../workflow-recipe';
 
@@ -214,6 +219,29 @@ export interface ResearchContextCuratedRagCarriedRefRepairResultSummary {
   readonly requiresExplicitNextDraft: true;
 }
 
+export interface ResearchContextSourceContextReviewOutcomeSummary {
+  readonly source: 'ResearchAction.finish_action_call';
+  readonly actionId: 'source.review_context';
+  readonly callId: string;
+  readonly outcome: ResearchActionOutcome;
+  readonly decision: SourceReviewContextDecision;
+  readonly reviewedCanonicalRef: string;
+  readonly reviewedEvidenceRef: string;
+  readonly claimScope: string;
+  readonly chunkScope: string;
+  readonly rationale: string;
+  readonly nextActionId: string;
+  readonly requiresExplicitNextAction: true;
+  readonly bridgeCalled: false;
+  readonly executesWriteNow: false;
+  readonly mutatesNextPayloadNow: false;
+  readonly infersPayloadValues: false;
+  readonly recordsValidationResult: false;
+  readonly sourceSupportResult: false;
+  readonly claimTrustMutation: 'none';
+  readonly canUpdateClaimTrust: false;
+}
+
 export interface ResearchContextPack {
   readonly id: ResearchContextPackId;
   readonly workFrameId: string;
@@ -233,6 +261,9 @@ export interface ResearchContextPack {
   readonly curatedRagCarriedRefRepair?: ResearchContextCuratedRagCarriedRefRepairSection | undefined;
   readonly curatedRagCarriedRefRepairResult?:
     | ResearchContextCuratedRagCarriedRefRepairResultSummary
+    | undefined;
+  readonly sourceContextReviewOutcome?:
+    | ResearchContextSourceContextReviewOutcomeSummary
     | undefined;
   readonly actionBindings: readonly ResearchActionBinding[];
   readonly domainPack?: DomainPackManifest | undefined;
@@ -261,6 +292,9 @@ export interface CompileResearchContextPackOptions {
   readonly curatedRagCarriedRefRepairFailurePath?: string | undefined;
   readonly curatedRagCarriedRefRepairResult?:
     | ResearchContextCuratedRagCarriedRefRepairResultSummary
+    | undefined;
+  readonly sourceContextReviewOutcome?:
+    | ResearchContextSourceContextReviewOutcomeSummary
     | undefined;
   readonly limits?: CompileResearchContextPackLimits | undefined;
   readonly now?: (() => number) | undefined;

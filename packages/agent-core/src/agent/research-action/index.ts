@@ -12,6 +12,7 @@ import type {
   ResearchActionRecord,
   ResearchActionSource,
   ResearchObligation,
+  SourceReviewContextDecision,
   WorkFrame,
 } from '../../research-action';
 import type { ResearchLedgerEvent } from '../../research-ledger';
@@ -103,6 +104,7 @@ export interface ResearchActionTraceItem {
   readonly topic?: string | undefined;
   readonly inputSummary?: string | undefined;
   readonly outputSummary?: string | undefined;
+  readonly reviewDecision?: SourceReviewContextDecision | undefined;
   readonly ledgerEventIds: readonly string[];
   readonly evidenceRefs: readonly string[];
   readonly generatedObligationIds: readonly string[];
@@ -394,6 +396,7 @@ export class ResearchActionManager {
       outcome: input.outcome,
       ...(workFrameId === undefined ? {} : this.traceScope(workFrameId)),
       ...(input.output === undefined ? {} : { outputSummary: summarizeTraceValue(input.output) }),
+      ...reviewDecisionTrace(input.output),
       ledgerEventIds: input.ledgerEventIds ?? [],
       evidenceRefs: input.evidenceRefs ?? [],
       generatedObligationIds: input.generatedObligationIds ?? [],
@@ -456,6 +459,7 @@ export class ResearchActionManager {
       ...(input.outcome === undefined ? {} : { outcome: input.outcome }),
       ...(input.workFrameId === undefined ? {} : this.traceScope(input.workFrameId)),
       ...(input.output === undefined ? {} : { outputSummary: summarizeTraceValue(input.output) }),
+      ...reviewDecisionTrace(input.output),
       ledgerEventIds: input.ledgerEventIds ?? [],
       evidenceRefs: input.evidenceRefs ?? [],
       generatedObligationIds: input.generatedObligationIds ?? [],
@@ -528,6 +532,7 @@ export class ResearchActionManager {
         : this.traceScope(this.agent.workFrames.active.id)),
       inputSummary: summarizeTraceValue(input.input),
       outputSummary: summarizeTraceValue(input.output),
+      ...reviewDecisionTrace(input.output),
       ledgerEventIds: input.ledgerEventIds,
       evidenceRefs: input.evidenceRefs,
       generatedObligationIds: input.generatedObligationIds ?? [],
@@ -739,6 +744,27 @@ function summarizeTraceValue(value: unknown): string {
   } catch {
     return truncate(String(value), MAX_TRACE_SUMMARY_LENGTH);
   }
+}
+
+function reviewDecisionTrace(
+  output: unknown,
+): Pick<ResearchActionTraceItem, 'reviewDecision'> | Record<string, never> {
+  if (!isRecord(output)) return {};
+  if (output['kind'] !== 'source_review_context') return {};
+  const decision = output['decision'];
+  if (
+    decision === 'extract' ||
+    decision === 'validate_check_source_support' ||
+    decision === 'fresh_aitp_draft' ||
+    decision === 'blocker'
+  ) {
+    return { reviewDecision: decision };
+  }
+  return {};
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function truncate(value: string, maxLength: number): string {

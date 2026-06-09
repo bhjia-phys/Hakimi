@@ -163,6 +163,27 @@ export interface ResearchActionRecord {
   readonly nextSuggestedActionBindings?: readonly ResearchActionBinding[] | undefined;
 }
 
+export type SourceReviewContextDecision =
+  | 'extract'
+  | 'validate_check_source_support'
+  | 'fresh_aitp_draft'
+  | 'blocker';
+
+export interface SourceReviewContextOutput {
+  readonly kind: 'source_review_context';
+  readonly decision: SourceReviewContextDecision;
+  readonly rationale: string;
+  readonly reviewedRefs: readonly string[];
+  readonly candidateReviewedOverrideRefs?: readonly string[] | undefined;
+  readonly nextSuggestedActions: readonly ResearchActionId[];
+  readonly nonEvidentiaryBoundary: {
+    readonly recordsValidationResult: false;
+    readonly sourceSupportResult: false;
+    readonly claimTrustMutation: 'none';
+    readonly canUpdateClaimTrust: false;
+  };
+}
+
 export type ResearchEvalValidation =
   | {
       readonly type: 'action_outcome';

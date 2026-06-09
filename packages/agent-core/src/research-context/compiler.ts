@@ -38,6 +38,7 @@ import type {
   ResearchContextPack,
   ResearchContextPackDiagnostic,
   ResearchContextProfileSummary,
+  ResearchContextSourceContextReviewOutcomeSummary,
   ResearchContextWorkflowSummary,
 } from './types';
 
@@ -95,6 +96,7 @@ export function compileResearchContextPack(
     input,
     diagnostics,
   );
+  const sourceContextReviewOutcome = collectSourceContextReviewOutcome(input, diagnostics);
   const curatedRagActionBindings = curatedRagPromotionDraftBindings(input, curatedRag);
   const curatedRagRepairActionBindings = curatedRagCarriedRefRepairBindings(
     input,
@@ -104,6 +106,8 @@ export function compileResearchContextPack(
     input,
     curatedRagCarriedRefRepairResult,
   );
+  const sourceContextReviewOutcomeActionBindings =
+    sourceContextReviewOutcomeBindings(input, sourceContextReviewOutcome);
   const actionBindings = bounded(
     uniqueBindings([
       ...workflows.flatMap((workflow) => workflow.metadata.actionBindings),
@@ -112,6 +116,7 @@ export function compileResearchContextPack(
       ...curatedRagActionBindings,
       ...curatedRagRepairActionBindings,
       ...curatedRagRepairResultActionBindings,
+      ...sourceContextReviewOutcomeActionBindings,
     ]),
     input.limits?.maxActionBindings ?? DEFAULT_MAX_ACTION_BINDINGS,
     (remaining) =>
@@ -165,6 +170,15 @@ export function compileResearchContextPack(
             curatedRagCarriedRefRepairResult.evidenceRef,
             curatedRagCarriedRefRepairResult.completedOperation,
           ]),
+    sourceContextReviewOutcomeDigest:
+      sourceContextReviewOutcome === undefined
+        ? undefined
+        : contextDigest([
+            sourceContextReviewOutcome.callId,
+            sourceContextReviewOutcome.decision,
+            sourceContextReviewOutcome.reviewedCanonicalRef,
+            sourceContextReviewOutcome.nextActionId,
+          ]),
   });
 
   return {
@@ -187,11 +201,101 @@ export function compileResearchContextPack(
     ...(curatedRagCarriedRefRepairResult === undefined
       ? {}
       : { curatedRagCarriedRefRepairResult }),
+    ...(sourceContextReviewOutcome === undefined ? {} : { sourceContextReviewOutcome }),
     actionBindings,
     domainPack,
     diagnostics,
     compiledAt: input.now?.() ?? Date.now(),
   };
+}
+
+function collectSourceContextReviewOutcome(
+  input: CompileResearchContextPackInput,
+  diagnostics: ResearchContextPackDiagnostic[],
+): ResearchContextSourceContextReviewOutcomeSummary | undefined {
+  const summary = input.sourceContextReviewOutcome;
+  if (summary === undefined) return undefined;
+  diagnostics.push({
+    severity: 'info',
+    code: 'aitp:source-context-review-outcome',
+    message:
+      'Source context review selected a next research action; the selection is runtime guidance only and does not prove source support or trust.',
+    source: 'aitp',
+    refId: summary.callId,
+  });
+  return summary;
+}
+
+function sourceContextReviewOutcomeBindings(
+  input: CompileResearchContextPackInput,
+  summary: ResearchContextSourceContextReviewOutcomeSummary | undefined,
+): readonly ResearchActionBinding[] {
+  if (summary === undefined) return [];
+  const bindingId = sourceContextReviewOutcomeBindingId(summary.callId, summary.nextActionId);
+  return [
+    {
+      id: bindingId,
+      actionId: summary.nextActionId,
+      adapterId: 'aitp.curated-rag.source-context-review-outcome',
+      domainId: input.workFrame.domain,
+      objectRefs: [
+        summary.reviewedCanonicalRef,
+        summary.reviewedEvidenceRef,
+        `source_context_review_call:${summary.callId}`,
+        `source_context_review_decision:${summary.decision}`,
+      ],
+      priority: summary.decision === 'blocker' ? 'blocking' : 'high',
+      reason:
+        'Source-context review selected the next runtime research action; execute it explicitly and keep validation, source support, and trust facts in AITP.',
+      params: {
+        toolAction: `ResearchAction.${summary.nextActionId}`,
+        actionId: summary.nextActionId,
+        sourceReviewCallId: summary.callId,
+        sourceReviewOutcome: summary.outcome,
+        sourceReviewDecision: summary.decision,
+        reviewedCanonicalRef: summary.reviewedCanonicalRef,
+        reviewedEvidenceRef: summary.reviewedEvidenceRef,
+        claimScope: summary.claimScope,
+        chunkScope: summary.chunkScope,
+        rationale: summary.rationale,
+        continuationSource: 'source_context_review_outcome',
+        requiresExplicitNextAction: true,
+        requiresExplicitAitpWriteOrValidationForCanonicalEffect: true,
+        bridgeCalled: false,
+        executesWriteNow: false,
+        mutatesNextPayloadNow: false,
+        infersPayloadValues: false,
+        recordsValidationResult: false,
+        sourceSupportResult: false,
+        claimTrustMutation: 'none',
+        canUpdateClaimTrust: false,
+        recordsTrustState: false,
+        allowedNextToolCall: {
+          action: 'plan_primitive_tools',
+          action_id: summary.nextActionId,
+          source_context_review_outcome_binding_id: bindingId,
+          reviewed_canonical_ref: summary.reviewedCanonicalRef,
+          reviewed_evidence_ref: summary.reviewedEvidenceRef,
+          requires_explicit_next_action: true,
+          records_validation_result: false,
+          source_support_result: false,
+          claim_trust_mutation: 'none',
+        },
+        forbiddenUses: [
+          'infer_chunk_id',
+          'infer_promotion_stage',
+          'mutate_payload_now',
+          'execute_write_now',
+          'evidence_support',
+          'validation_result',
+          'source_support_result',
+          'claim_trust_update',
+          'trust_apply',
+          'final_gate_satisfaction',
+        ],
+      },
+    },
+  ];
 }
 
 function collectCuratedRagCarriedRefRepair(
@@ -659,6 +763,10 @@ function curatedRagCarriedRefRepairResultReviewBindingId(
   canonicalRef: string,
 ): string {
   return `binding.aitp.curated-rag-carried-ref-repair-result-review.${safeId(handoffId)}.${contextDigest([canonicalRef])}`;
+}
+
+function sourceContextReviewOutcomeBindingId(callId: string, nextActionId: string): string {
+  return `binding.aitp.source-context-review-outcome.${safeId(callId)}.${safeId(nextActionId)}`;
 }
 
 function inferAitpClaimScope(input: CompileResearchContextPackInput): {
@@ -1137,6 +1245,7 @@ function contextPackId(input: {
   readonly curatedRagDigest?: string | undefined;
   readonly curatedRagCarriedRefRepairDigest?: string | undefined;
   readonly curatedRagCarriedRefRepairResultDigest?: string | undefined;
+  readonly sourceContextReviewOutcomeDigest?: string | undefined;
 }): string {
   const hash = createHash('sha256')
     .update(JSON.stringify(input))

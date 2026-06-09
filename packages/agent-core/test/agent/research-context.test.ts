@@ -621,6 +621,61 @@ describe('ResearchContextManager', () => {
     expect(aitpCuratedRagProvider.searchCuratedRagCorpus).not.toHaveBeenCalled();
     expect(agent.researchContext.listPacks().at(-1)?.curatedRag).toBeUndefined();
   });
+
+  it('injects source context review outcome routing from prior tool output', async () => {
+    const agent = makeAgent();
+    agent.workFrames.open(
+      {
+        id: 'frame.source-review-outcome',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Route a reviewed source context decision.',
+      },
+      { source: 'controller' },
+    );
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text:
+          'Continue after <source_context_review_outcome source="ResearchAction.finish_action_call" action_id="source.review_context" call_id="call.source-review" outcome="inconclusive" decision="validate_check_source_support" reviewed_canonical_ref="evidence:evidence-reviewed-curated-rag" reviewed_evidence_ref="aitp:evidence:evidence-reviewed-curated-rag" claim_scope="claim:claim-fqhe" chunk_scope="chunk:chunk-fqhe-flux" rationale="Needs explicit source-support validation." next_action_id="validate.check_source_support" requires_explicit_next_action="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false">.',
+      },
+    ]);
+    await agent.injection.inject();
+
+    const pack = agent.researchContext.listPacks().at(-1);
+    expect(pack?.sourceContextReviewOutcome).toMatchObject({
+      source: 'ResearchAction.finish_action_call',
+      actionId: 'source.review_context',
+      callId: 'call.source-review',
+      decision: 'validate_check_source_support',
+      nextActionId: 'validate.check_source_support',
+      bridgeCalled: false,
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+    });
+    expect(pack?.actionBindings).toContainEqual(
+      expect.objectContaining({
+        actionId: 'validate.check_source_support',
+        adapterId: 'aitp.curated-rag.source-context-review-outcome',
+        params: expect.objectContaining({
+          continuationSource: 'source_context_review_outcome',
+          requiresExplicitNextAction: true,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+        }),
+      }),
+    );
+    const lastMessage = agent.context.history.at(-1);
+    const reminder = (lastMessage?.content[0] as { text: string }).text;
+    expect(reminder).toContain('AITP source context review outcome');
+    expect(reminder).toContain('decision=validate_check_source_support');
+    expect(reminder).toContain('runtime routing only');
+    expect(reminder).toContain('do not record validation results, prove source support');
+  });
 });
 
 function makeAgent(

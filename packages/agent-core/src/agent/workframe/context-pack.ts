@@ -171,6 +171,14 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
       'Carried-ref repair result continuations do not infer chunk/stage, mutate payloads, execute another write, validate source support, satisfy final gates, or update claim trust.',
     );
   }
+  if (pack.sourceContextReviewOutcome !== undefined) {
+    lines.push(
+      `AITP source context review outcome: decision=${pack.sourceContextReviewOutcome.decision} next=${pack.sourceContextReviewOutcome.nextActionId}; this is runtime routing only and requires an explicit next ResearchAction.`,
+    );
+    lines.push(
+      'Source context review outcomes do not record validation results, prove source support, execute writes, satisfy final gates, or update claim trust.',
+    );
+  }
   if (pack.actionBindings.length > 0) {
     lines.push(
       `Action bindings: ${bounded(pack.actionBindings.map((binding) => renderActionBinding(binding.actionId))).join(', ')}`,

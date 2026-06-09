@@ -332,6 +332,75 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('renders source context review outcomes as non-evidentiary routing', async () => {
+    const records: AgentRecord[] = [];
+    const agent = makeAgent(records);
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    await execute(tool, {
+      action: 'open_work_frame',
+      frame_id: 'frame.source-review',
+      domain: 'topological-order/fqhe-cs',
+      topic: 'fqhe-literature',
+      goal: 'Review a carried ref before choosing the next action.',
+    });
+    const result = await execute(tool, {
+      action: 'finish_action_call',
+      action_id: 'source.review_context',
+      call_id: 'call.source-review',
+      outcome: 'inconclusive',
+      action_output: {
+        kind: 'source_review_context',
+        decision: 'fresh_aitp_draft',
+        rationale: 'The source looks relevant but the next support draft still needs explicit review.',
+        reviewedRefs: [
+          'evidence:evidence-reviewed-curated-rag',
+          'aitp:evidence:evidence-reviewed-curated-rag',
+          'claim:claim-fqhe',
+          'chunk:chunk-fqhe-flux',
+        ],
+        candidateReviewedOverrideRefs: ['evidence:evidence-reviewed-curated-rag'],
+        nextSuggestedActions: ['draft_aitp_curated_rag_write_bridge_call'],
+        nonEvidentiaryBoundary: {
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+        },
+      },
+    });
+
+    expect(result.output).toContain('<source_context_review_outcome');
+    expect(result.output).toContain('decision="fresh_aitp_draft"');
+    expect(result.output).toContain('next_action_id="draft_aitp_curated_rag_write_bridge_call"');
+    expect(result.output).toContain('bridge_called="false"');
+    expect(result.output).toContain('executes_write_now="false"');
+    expect(result.output).toContain('records_validation_result="false"');
+    expect(result.output).toContain('source_support_result="false"');
+    expect(result.output).toContain('claim_trust_mutation="none"');
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_action.call_finished',
+        actionId: 'source.review_context',
+        callId: 'call.source-review',
+        outcome: 'inconclusive',
+        workFrameId: 'frame.source-review',
+        evidenceRefs: [],
+        nextSuggestedActions: ['draft_aitp_curated_rag_write_bridge_call'],
+        output: expect.objectContaining({
+          kind: 'source_review_context',
+          decision: 'fresh_aitp_draft',
+          nonEvidentiaryBoundary: {
+            recordsValidationResult: false,
+            sourceSupportResult: false,
+            claimTrustMutation: 'none',
+            canUpdateClaimTrust: false,
+          },
+        }),
+      }),
+    );
+  });
+
   it('lists and loads evidence refs through the active WorkFrame scope', async () => {
     const records: AgentRecord[] = [];
     const ledger = new ResearchLedgerRegistry();
@@ -784,6 +853,66 @@ describe('ResearchActionTool', () => {
     expect(loaded.output).toContain('&quot;requiresExplicitPromotionStageOrOperationSelection&quot;:true');
     expect(loaded.output).toContain('&quot;mutatesNextPayloadNow&quot;:false');
     expect(loaded.output).toContain('&quot;executesWriteNow&quot;:false');
+    expect(loaded.output).toContain('&quot;recordsValidationResult&quot;:false');
+    expect(loaded.output).toContain('&quot;sourceSupportResult&quot;:false');
+    expect(loaded.output).toContain('&quot;claimTrustMutation&quot;:&quot;none&quot;');
+  });
+
+  it('renders source context review outcome routing in loaded ContextPack XML', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    agent.workFrames.open(
+      {
+        id: 'frame.source-review-context-pack',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Load source review routing context.',
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        sourceContextReviewOutcome: {
+          source: 'ResearchAction.finish_action_call',
+          actionId: 'source.review_context',
+          callId: 'call.source-review',
+          outcome: 'inconclusive',
+          decision: 'validate_check_source_support',
+          reviewedCanonicalRef: 'evidence:evidence-reviewed-curated-rag',
+          reviewedEvidenceRef: 'aitp:evidence:evidence-reviewed-curated-rag',
+          claimScope: 'claim:claim-fqhe',
+          chunkScope: 'chunk:chunk-fqhe-flux',
+          rationale: 'Needs source-support validation.',
+          nextActionId: 'validate.check_source_support',
+          requiresExplicitNextAction: true,
+          bridgeCalled: false,
+          executesWriteNow: false,
+          mutatesNextPayloadNow: false,
+          infersPayloadValues: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+        },
+      },
+      { source: 'controller' },
+    );
+
+    const loaded = await execute(tool, {
+      action: 'load_context_pack',
+      context_pack_id: pack.id,
+    });
+
+    expect(loaded.output).toContain('<source_context_review_outcome');
+    expect(loaded.output).toContain('decision="validate_check_source_support"');
+    expect(loaded.output).toContain('next_action_id="validate.check_source_support"');
+    expect(loaded.output).toContain('records_validation_result="false"');
+    expect(loaded.output).toContain('source_support_result="false"');
+    expect(loaded.output).toContain('claim_trust_mutation="none"');
+    expect(loaded.output).toContain('adapter_id="aitp.curated-rag.source-context-review-outcome"');
+    expect(loaded.output).toContain('&quot;continuationSource&quot;:&quot;source_context_review_outcome&quot;');
+    expect(loaded.output).toContain('&quot;requiresExplicitNextAction&quot;:true');
     expect(loaded.output).toContain('&quot;recordsValidationResult&quot;:false');
     expect(loaded.output).toContain('&quot;sourceSupportResult&quot;:false');
     expect(loaded.output).toContain('&quot;claimTrustMutation&quot;:&quot;none&quot;');

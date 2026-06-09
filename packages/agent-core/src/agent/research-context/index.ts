@@ -52,6 +52,7 @@ export class ResearchContextManager {
       curatedRagCarriedRefRepairFailureCode: input.curatedRagCarriedRefRepairFailureCode,
       curatedRagCarriedRefRepairFailurePath: input.curatedRagCarriedRefRepairFailurePath,
       curatedRagCarriedRefRepairResult: input.curatedRagCarriedRefRepairResult,
+      sourceContextReviewOutcome: input.sourceContextReviewOutcome,
       limits: input.limits,
       now: input.now,
     });

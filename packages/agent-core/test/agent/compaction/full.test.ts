@@ -2515,6 +2515,31 @@ describe('FullCompaction', () => {
       },
       { source: 'controller' },
     );
+    ctx.agent.researchAction.finishActionCall(
+      {
+        actionId: 'source.review_context',
+        callId: 'call.source-review',
+        outcome: 'inconclusive',
+        output: {
+          kind: 'source_review_context',
+          decision: 'validate_check_source_support',
+          rationale: 'The source context still needs explicit support validation.',
+          reviewedRefs: [
+            'evidence:evidence-reviewed-curated-rag',
+            'aitp:evidence:evidence-reviewed-curated-rag',
+          ],
+          nextSuggestedActions: ['validate.check_source_support'],
+          nonEvidentiaryBoundary: {
+            recordsValidationResult: false,
+            sourceSupportResult: false,
+            claimTrustMutation: 'none',
+            canUpdateClaimTrust: false,
+          },
+        },
+        nextSuggestedActions: ['validate.check_source_support'],
+      },
+      { source: 'controller' },
+    );
     ctx.agent.researchAction.recordRawToolEscape({
       reason: 'Native tool used before semantic action wrapper.',
       primitiveToolName: 'Bash',
@@ -2552,6 +2577,12 @@ describe('FullCompaction', () => {
     );
     expect(summary?.text).toContain(
       'call_finished action=source.search_literature call=call.source-search outcome=pass',
+    );
+    expect(summary?.text).toContain(
+      'call_finished action=source.review_context call=call.source-review outcome=inconclusive',
+    );
+    expect(summary?.text).toContain(
+      'review_decision=validate_check_source_support non_evidentiary=true records_validation_result=false source_support_result=false claim_trust_mutation=none',
     );
     expect(summary?.text).toContain('primitive_tools=tool.web.fqhe');
     expect(summary?.text).toContain('raw_tool_escape raw_tool=Bash');

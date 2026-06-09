@@ -9,6 +9,7 @@ import type { AitpCuratedRagSearchResult } from '../../aitp/curated-rag';
 import type {
   ResearchContextCuratedRagCarriedRefRepairResultSummary,
   ResearchContextPack,
+  ResearchContextSourceContextReviewOutcomeSummary,
 } from '../../research-context';
 import { renderResearchContextPackReminder } from './context-pack';
 import type { WorkFrame } from '../../research-action';
@@ -37,6 +38,7 @@ export class WorkFrameOrchestrator {
     const curatedRag = await this.searchCuratedRag(curatedRagMoment);
     const carriedRefRepair = detectCuratedRagCarriedRefRepair(input);
     const carriedRefRepairResult = detectCuratedRagCarriedRefRepairResult(input);
+    const sourceContextReviewOutcome = detectSourceContextReviewOutcome(input);
     const pack = this.agent.researchContext.compileForWorkFrame(
       {
         workFrameId: frame.id,
@@ -48,6 +50,7 @@ export class WorkFrameOrchestrator {
         curatedRagCarriedRefRepairFailureCode: carriedRefRepair.failureCode,
         curatedRagCarriedRefRepairFailurePath: carriedRefRepair.failurePath,
         curatedRagCarriedRefRepairResult: carriedRefRepairResult,
+        sourceContextReviewOutcome,
       },
       { source: 'controller' },
     );
@@ -133,6 +136,77 @@ export class WorkFrameOrchestrator {
     if (winner.score <= 0) return this.agent.workFrames.active ?? winner.frame;
     return winner.frame;
   }
+}
+
+function detectSourceContextReviewOutcome(
+  input: readonly { readonly type?: string; readonly text?: string }[],
+): ResearchContextSourceContextReviewOutcomeSummary | undefined {
+  const prompt = promptText(input);
+  if (!prompt.toLowerCase().includes('source_context_review_outcome')) return undefined;
+  const attrs = extractTagAttrs(prompt, 'source_context_review_outcome');
+  if (attrs === undefined) return undefined;
+  const decision = sourceContextReviewDecision(attrs.get('decision'));
+  const required = {
+    callId: attrs.get('call_id'),
+    outcome: attrs.get('outcome'),
+    reviewedCanonicalRef: attrs.get('reviewed_canonical_ref'),
+    reviewedEvidenceRef: attrs.get('reviewed_evidence_ref'),
+    claimScope: attrs.get('claim_scope'),
+    chunkScope: attrs.get('chunk_scope'),
+    rationale: attrs.get('rationale'),
+    nextActionId: attrs.get('next_action_id'),
+  };
+  if (
+    decision === undefined ||
+    required.callId === undefined ||
+    !isResearchActionOutcome(required.outcome) ||
+    required.reviewedCanonicalRef === undefined ||
+    required.reviewedEvidenceRef === undefined ||
+    required.claimScope === undefined ||
+    required.chunkScope === undefined ||
+    required.rationale === undefined ||
+    required.nextActionId === undefined
+  ) {
+    return undefined;
+  }
+  if (
+    attrs.get('source') !== 'ResearchAction.finish_action_call' ||
+    attrs.get('action_id') !== 'source.review_context' ||
+    attrs.get('requires_explicit_next_action') !== 'true' ||
+    attrs.get('bridge_called') !== 'false' ||
+    attrs.get('executes_write_now') !== 'false' ||
+    attrs.get('mutates_next_payload_now') !== 'false' ||
+    attrs.get('infers_payload_values') !== 'false' ||
+    attrs.get('records_validation_result') !== 'false' ||
+    attrs.get('source_support_result') !== 'false' ||
+    attrs.get('claim_trust_mutation') !== 'none' ||
+    attrs.get('can_update_claim_trust') !== 'false'
+  ) {
+    return undefined;
+  }
+  if (nextActionIdForSourceReviewDecision(decision) !== required.nextActionId) return undefined;
+  return {
+    source: 'ResearchAction.finish_action_call',
+    actionId: 'source.review_context',
+    callId: required.callId,
+    outcome: required.outcome,
+    decision,
+    reviewedCanonicalRef: required.reviewedCanonicalRef,
+    reviewedEvidenceRef: required.reviewedEvidenceRef,
+    claimScope: required.claimScope,
+    chunkScope: required.chunkScope,
+    rationale: required.rationale,
+    nextActionId: required.nextActionId,
+    requiresExplicitNextAction: true,
+    bridgeCalled: false,
+    executesWriteNow: false,
+    mutatesNextPayloadNow: false,
+    infersPayloadValues: false,
+    recordsValidationResult: false,
+    sourceSupportResult: false,
+    claimTrustMutation: 'none',
+    canUpdateClaimTrust: false,
+  };
 }
 
 export function isResearchContextInjectionOrigin(origin: PromptOrigin | undefined): boolean {
@@ -287,6 +361,41 @@ function repairResultRefKind(
     return value;
   }
   return undefined;
+}
+
+function sourceContextReviewDecision(
+  value: string | undefined,
+): ResearchContextSourceContextReviewOutcomeSummary['decision'] | undefined {
+  if (
+    value === 'extract' ||
+    value === 'validate_check_source_support' ||
+    value === 'fresh_aitp_draft' ||
+    value === 'blocker'
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function isResearchActionOutcome(
+  value: string | undefined,
+): value is ResearchContextSourceContextReviewOutcomeSummary['outcome'] {
+  return value === 'pass' || value === 'fail' || value === 'blocked' || value === 'inconclusive';
+}
+
+function nextActionIdForSourceReviewDecision(
+  decision: ResearchContextSourceContextReviewOutcomeSummary['decision'],
+): string {
+  switch (decision) {
+    case 'extract':
+      return 'source.capture_source_excerpt';
+    case 'validate_check_source_support':
+      return 'validate.check_source_support';
+    case 'fresh_aitp_draft':
+      return 'draft_aitp_curated_rag_write_bridge_call';
+    case 'blocker':
+      return 'aitp.create_open_obligation';
+  }
 }
 
 function commaList(value: string | undefined): readonly string[] {

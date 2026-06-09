@@ -576,6 +576,110 @@ describe('compileResearchContextPack', () => {
       ],
     });
   });
+
+  it('adds source-context review outcome routing bindings without granting support or trust', () => {
+    const pack = compileResearchContextPack({
+      workFrame: createWorkFrame({
+        id: 'frame.source-review-outcome',
+        domain: DOMAIN,
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Route a reviewed source context decision.',
+      }),
+      sourceContextReviewOutcome: {
+        source: 'ResearchAction.finish_action_call',
+        actionId: 'source.review_context',
+        callId: 'call.source-review',
+        outcome: 'inconclusive',
+        decision: 'validate_check_source_support',
+        reviewedCanonicalRef: 'evidence:evidence-reviewed-curated-rag',
+        reviewedEvidenceRef: 'aitp:evidence:evidence-reviewed-curated-rag',
+        claimScope: 'claim:claim-fqhe',
+        chunkScope: 'chunk:chunk-fqhe-flux',
+        rationale: 'The chunk appears relevant but still needs source-support validation.',
+        nextActionId: 'validate.check_source_support',
+        requiresExplicitNextAction: true,
+        bridgeCalled: false,
+        executesWriteNow: false,
+        mutatesNextPayloadNow: false,
+        infersPayloadValues: false,
+        recordsValidationResult: false,
+        sourceSupportResult: false,
+        claimTrustMutation: 'none',
+        canUpdateClaimTrust: false,
+      },
+      now: () => 123,
+    });
+
+    expect(pack.sourceContextReviewOutcome).toMatchObject({
+      decision: 'validate_check_source_support',
+      nextActionId: 'validate.check_source_support',
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+    });
+    expect(pack.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'aitp:source-context-review-outcome',
+        source: 'aitp',
+        refId: 'call.source-review',
+      }),
+    );
+    expect(pack.actionBindings).toContainEqual(
+      expect.objectContaining({
+        actionId: 'validate.check_source_support',
+        adapterId: 'aitp.curated-rag.source-context-review-outcome',
+        priority: 'high',
+        objectRefs: expect.arrayContaining([
+          'evidence:evidence-reviewed-curated-rag',
+          'aitp:evidence:evidence-reviewed-curated-rag',
+          'source_context_review_call:call.source-review',
+          'source_context_review_decision:validate_check_source_support',
+        ]),
+        params: expect.objectContaining({
+          continuationSource: 'source_context_review_outcome',
+          requiresExplicitNextAction: true,
+          requiresExplicitAitpWriteOrValidationForCanonicalEffect: true,
+          bridgeCalled: false,
+          executesWriteNow: false,
+          mutatesNextPayloadNow: false,
+          infersPayloadValues: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+          recordsTrustState: false,
+        }),
+      }),
+    );
+    const binding = pack.actionBindings.find(
+      (item) => item.adapterId === 'aitp.curated-rag.source-context-review-outcome',
+    );
+    expect(binding?.params).toMatchObject({
+      allowedNextToolCall: {
+        action: 'plan_primitive_tools',
+        action_id: 'validate.check_source_support',
+        reviewed_canonical_ref: 'evidence:evidence-reviewed-curated-rag',
+        reviewed_evidence_ref: 'aitp:evidence:evidence-reviewed-curated-rag',
+        requires_explicit_next_action: true,
+        records_validation_result: false,
+        source_support_result: false,
+        claim_trust_mutation: 'none',
+      },
+      forbiddenUses: [
+        'infer_chunk_id',
+        'infer_promotion_stage',
+        'mutate_payload_now',
+        'execute_write_now',
+        'evidence_support',
+        'validation_result',
+        'source_support_result',
+        'claim_trust_update',
+        'trust_apply',
+        'final_gate_satisfaction',
+      ],
+    });
+  });
 });
 
 function carriedRefRepairResultSummary() {
