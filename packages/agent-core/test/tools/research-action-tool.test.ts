@@ -1039,6 +1039,56 @@ describe('ResearchActionTool', () => {
     expect(loaded.output).toContain('&quot;claimTrustMutation&quot;:&quot;none&quot;');
   });
 
+  it('renders literature source review handoff context in loaded ContextPack XML', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    agent.workFrames.open(
+      {
+        id: 'frame.literature-handoff-context-pack',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'qg',
+        goal: 'Load literature source handoff context.',
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        literatureSourceReviewHandoff: parseAitpLiteratureSourceReviewHandoff(
+          fakeLiteratureSourceReviewHandoff(),
+        ),
+      },
+      { source: 'controller' },
+    );
+
+    const loaded = await execute(tool, {
+      action: 'load_context_pack',
+      context_pack_id: pack.id,
+    });
+
+    expect(loaded.output).toContain('<aitp_literature_source_review_handoff_context');
+    expect(loaded.output).toContain('source="aitp.literature_source_review_handoff"');
+    expect(loaded.output).toContain('session_id="session-qg"');
+    expect(loaded.output).toContain('claim_id="claim-mipt"');
+    expect(loaded.output).toContain('label="Observer algebra source"');
+    expect(loaded.output).toContain('reference_location_id="reference-location-observer-algebra"');
+    expect(loaded.output).toContain('<record_ref_lookup lookup_count="1" found_count="1" missing_count="0"');
+    expect(loaded.output).toContain('<source_stack_coverage status="incomplete" missing_count="1"');
+    expect(loaded.output).toContain('<source_reconstruction_review_packet status="needs_review"');
+    expect(loaded.output).toContain('<allowed_next_tool_call action="plan_primitive_tools" action_id="source.review_context"');
+    expect(loaded.output).toContain('<entrypoint>record_source_reconstruction_review_result</entrypoint>');
+    expect(loaded.output).toContain('<use>claim_trust_update</use>');
+    expect(loaded.output).toContain('bridge_called="false"');
+    expect(loaded.output).toContain('executes_write_now="false"');
+    expect(loaded.output).toContain('records_validation_result="false"');
+    expect(loaded.output).toContain('source_support_result="false"');
+    expect(loaded.output).toContain('claim_trust_mutation="none"');
+    expect(loaded.output).toContain('adapter_id="aitp.literature.source-review-handoff"');
+    expect(loaded.output).toContain('&quot;continuationSource&quot;:&quot;literature_source_review_handoff&quot;');
+    expect(loaded.output).toContain('&quot;toolAction&quot;:&quot;ResearchAction.plan_primitive_tools&quot;');
+    expect(loaded.output).toContain('&quot;writeExecuted&quot;:false');
+  });
+
   it('inspects source context review outcome handoff readiness without executing the next action', async () => {
     const agent = makeAgent();
     const tool = new ResearchActionTool(agent.researchAction);
@@ -1104,6 +1154,68 @@ describe('ResearchActionTool', () => {
     expect(inspected.output).toContain('claim_trust_mutation="none"');
     expect(inspected.output).toContain('next_action_allowed="true"');
     expect(inspected.output).toContain('canonical_effect_requires_explicit_aitp_entrypoint="true"');
+  });
+
+  it('plans source review from literature handoff bindings without source support or writes', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    agent.workFrames.open(
+      {
+        id: 'frame.literature-handoff-plan',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'qg',
+        goal: 'Plan source review from literature handoff.',
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        literatureSourceReviewHandoff: parseAitpLiteratureSourceReviewHandoff(
+          fakeLiteratureSourceReviewHandoff(),
+        ),
+      },
+      { source: 'controller' },
+    );
+    const binding = pack.actionBindings.find(
+      (item) => item.adapterId === 'aitp.literature.source-review-handoff',
+    );
+
+    const inspected = await execute(tool, {
+      action: 'inspect_source_context_review_handoff',
+      context_pack_id: pack.id,
+      action_binding_id: binding?.id,
+    });
+
+    expect(inspected.output).toContain('<source_context_review_handoff_readiness');
+    expect(inspected.output).toContain('status="passed"');
+    expect(inspected.output).toContain('source_kind="literature_source_review_handoff"');
+    expect(inspected.output).toContain('action_id="source.review_context"');
+    expect(inspected.output).toContain('literature_session_id="session-qg"');
+    expect(inspected.output).toContain('literature_uri="https://arxiv.org/abs/2601.00001"');
+    expect(inspected.output).toContain('reference_location_id="reference-location-observer-algebra"');
+    expect(inspected.output).toContain('reviewed_canonical_ref="reference_location:reference-location-observer-algebra"');
+    expect(inspected.output).toContain('allowed_next_tool_call_action="plan_primitive_tools"');
+    expect(inspected.output).toContain('allowed_next_tool_call_action_id="source.review_context"');
+    expect(inspected.output).toContain('bridge_called="false"');
+    expect(inspected.output).toContain('executes_write_now="false"');
+    expect(inspected.output).toContain('records_validation_result="false"');
+    expect(inspected.output).toContain('source_support_result="false"');
+    expect(inspected.output).toContain('claim_trust_mutation="none"');
+
+    const plan = await execute(tool, {
+      action: 'plan_primitive_tools',
+      action_id: 'source.review_context',
+      context_pack_id: pack.id,
+      action_binding_id: binding?.id,
+    });
+
+    expect(plan.output).toContain('<primitive_tool_plan');
+    expect(plan.output).toContain('action_id="source.review_context"');
+    expect(plan.output).toContain('<source_context_review_handoff_readiness');
+    expect(plan.output).toContain('source_kind="literature_source_review_handoff"');
+    expect(plan.output).toContain('next_action_allowed="true"');
+    expect(plan.output).toContain('canonical_effect_requires_explicit_aitp_entrypoint="true"');
   });
 
   it('fails source context review handoff inspection for non-review bindings', async () => {

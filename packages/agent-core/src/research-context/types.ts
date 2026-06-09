@@ -2,6 +2,7 @@ import type { DomainProfileId } from '../domain-profile';
 import type { DomainPackManifest } from '../domain-pack';
 import type { CompiledAitpProcessGraphSlice } from '../aitp';
 import type { AitpCuratedRagIndexMode, AitpCuratedRagSearchResult } from '../aitp/curated-rag';
+import type { AitpLiteratureSourceReviewHandoff } from '../aitp/literature-source-review-handoff';
 import type {
   ActionAffordance,
   BridgePolicy,
@@ -242,6 +243,51 @@ export interface ResearchContextSourceContextReviewOutcomeSummary {
   readonly canUpdateClaimTrust: false;
 }
 
+export interface ResearchContextLiteratureSourceReviewHandoffSection {
+  readonly source: 'aitp.literature_source_review_handoff';
+  readonly sessionId: string;
+  readonly topicId: string;
+  readonly claimId: string;
+  readonly truthSource: string;
+  readonly readSurfaceEffect: 'handoff_context_only';
+  readonly literatureLabel: string;
+  readonly literatureUri: string;
+  readonly literatureExternalId: string;
+  readonly referenceLocationId: string;
+  readonly recommendedAction: string;
+  readonly recordRefLookupCount: number;
+  readonly recordRefFoundCount: number;
+  readonly recordRefMissingCount: number;
+  readonly sourceStackCoverageStatus: string;
+  readonly sourceStackCoverageMissingCount: number;
+  readonly sourceReconstructionReviewStatus: string;
+  readonly recommendedNextEntrypoints: readonly string[];
+  readonly forbiddenUses: readonly string[];
+  readonly allowedNextToolCall: {
+    readonly action: 'plan_primitive_tools';
+    readonly actionId: 'source.review_context';
+    readonly requiresExplicitNextAction: true;
+    readonly recordsValidationResult: false;
+    readonly sourceSupportResult: false;
+    readonly claimTrustMutation: 'none';
+  };
+  readonly bindingId: string;
+  readonly raw: AitpLiteratureSourceReviewHandoff;
+  readonly readOnly: true;
+  readonly requiresExplicitNextAction: true;
+  readonly bridgeCalled: false;
+  readonly executesWriteNow: false;
+  readonly mutatesNextPayloadNow: false;
+  readonly infersPayloadValues: false;
+  readonly recordsValidationResult: false;
+  readonly sourceSupportResult: false;
+  readonly evidenceCreated: false;
+  readonly validationCreated: false;
+  readonly writeExecuted: false;
+  readonly claimTrustMutation: 'none';
+  readonly canUpdateClaimTrust: false;
+}
+
 export interface ResearchContextPack {
   readonly id: ResearchContextPackId;
   readonly workFrameId: string;
@@ -264,6 +310,9 @@ export interface ResearchContextPack {
     | undefined;
   readonly sourceContextReviewOutcome?:
     | ResearchContextSourceContextReviewOutcomeSummary
+    | undefined;
+  readonly literatureSourceReviewHandoff?:
+    | ResearchContextLiteratureSourceReviewHandoffSection
     | undefined;
   readonly actionBindings: readonly ResearchActionBinding[];
   readonly domainPack?: DomainPackManifest | undefined;
@@ -295,6 +344,10 @@ export interface CompileResearchContextPackOptions {
     | undefined;
   readonly sourceContextReviewOutcome?:
     | ResearchContextSourceContextReviewOutcomeSummary
+    | undefined;
+  readonly literatureSourceReviewHandoff?:
+    | AitpLiteratureSourceReviewHandoff
+    | null
     | undefined;
   readonly limits?: CompileResearchContextPackLimits | undefined;
   readonly now?: (() => number) | undefined;

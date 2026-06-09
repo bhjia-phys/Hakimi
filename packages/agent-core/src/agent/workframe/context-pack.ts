@@ -179,6 +179,24 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
       'Source context review outcomes do not record validation results, prove source support, execute writes, satisfy final gates, or update claim trust.',
     );
   }
+  if (pack.literatureSourceReviewHandoff !== undefined) {
+    lines.push(
+      `AITP literature source review handoff: ${pack.literatureSourceReviewHandoff.literatureLabel || '<unlabeled source>'} session=${pack.literatureSourceReviewHandoff.sessionId} claim=${pack.literatureSourceReviewHandoff.claimId || '<none>'}; plan ${pack.literatureSourceReviewHandoff.allowedNextToolCall.actionId} explicitly with binding ${pack.literatureSourceReviewHandoff.bindingId}.`,
+    );
+    if (pack.literatureSourceReviewHandoff.recordRefLookupCount > 0) {
+      lines.push(
+        `AITP literature reviewed refs: found=${String(pack.literatureSourceReviewHandoff.recordRefFoundCount)} missing=${String(pack.literatureSourceReviewHandoff.recordRefMissingCount)}.`,
+      );
+    }
+    if (pack.literatureSourceReviewHandoff.recommendedNextEntrypoints.length > 0) {
+      lines.push(
+        `AITP literature next entrypoints: ${bounded(pack.literatureSourceReviewHandoff.recommendedNextEntrypoints).join(', ')}`,
+      );
+    }
+    lines.push(
+      'Literature source review handoffs are read-only context; they do not prove source support, record validation, execute writes, satisfy final gates, or update claim trust.',
+    );
+  }
   if (pack.actionBindings.length > 0) {
     lines.push(
       `Action bindings: ${bounded(pack.actionBindings.map((binding) => renderActionBinding(binding.actionId))).join(', ')}`,
