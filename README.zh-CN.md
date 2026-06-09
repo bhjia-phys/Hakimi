@@ -160,12 +160,18 @@ When a handoff is supplied, `execute_aitp_write_bridge` now emits a compact
 show `bridge_call_allowed=true` and `bridge_called=true` after the guard has
 matched, and echo the guard-verified `missing_ref_repair_hint_count` /
 `missing_ref_repair_checklist_present`, `repair_hint_operations`, and
-`selected_write_differs_from_repair_hints` from the handoff hash input. Failed
-prechecks show the guard `code`, `path`, `next_step`, `bridge_called=false`,
-and `handoff_mutated_now=false` before the existing failure XML. These echoes
-are host consistency metadata only; they help distinguish "repair this missing
-ref first" from the selected write call, but they do not repair missing refs,
-validate source support, or create trust-preflight evidence.
+`selected_write_differs_from_repair_hints` from the handoff hash input. The
+passed precheck also nests a `readiness_checklist_result` for item 2,
+`execute_aitp_write_bridge`, with the stable checklist id and
+`explicit_execute_call_observed=true` while keeping
+`checklist_authorizes_execution=false` and `executes_write_now=false` on the
+echo itself. Failed prechecks show the guard `code`, `path`, `next_step`,
+`bridge_called=false`, and `handoff_mutated_now=false` before the existing
+failure XML, and report item 2 as not followed without inventing a checklist
+id. These echoes are host consistency metadata only; they help distinguish
+"repair this missing ref first" from the selected write call, but they do not
+repair missing refs, validate source support, or create trust-preflight
+evidence.
 The guard coverage now also pins fail-closed behavior for missing
 `tool_call_json`, missing `hash_input_json`, payload tampering, diagnostic-hash
 tampering, and hash-input/tool-call mismatch. The AITP write-bridge executor
