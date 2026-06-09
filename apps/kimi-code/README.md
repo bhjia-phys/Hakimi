@@ -31,7 +31,31 @@ Hakimi uses its own release version line. The current CLI package version is `0.
 
 ## Login
 
-On first launch, run `/login`. Choose Kimi Platform OAuth or a compatible API-key provider. Hakimi uses its own `.hakimi` config/data directory by default, so model/provider/session/MCP configuration stays separate from a Kimi Code install.
+For the managed Kimi for Coding model, use either terminal entry point:
+
+```powershell
+hakimi login
+hakimi
+```
+
+or start the TUI and run `/login`. Choose `Kimi for Coding (OAuth)`, complete
+the browser device-code flow, then return to Hakimi. A
+successful login provisions `~/.hakimi/config.toml` with provider
+`managed:kimi-code`, model alias `kimi-code/kimi-for-coding`, and matching Kimi
+search/fetch service credentials.
+
+Quick checks:
+
+```powershell
+hakimi provider list
+hakimi doctor config ~/.hakimi/config.toml
+hakimi --model kimi-code/kimi-for-coding --prompt "Reply with OK"
+```
+
+Hakimi uses its own `.hakimi` config/data directory by default, so
+model/provider/session/MCP configuration stays separate from a Kimi Code
+install. The `kimi` command is never required for Hakimi; use `hakimi login` or
+the in-app `/login`.
 
 ## DeepSeek
 

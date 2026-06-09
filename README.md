@@ -837,6 +837,41 @@ npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.13.0.tgz
 
 ## DeepSeek Quick Setup
 
+## Kimi For Coding Login
+
+Hakimi can use the managed Kimi for Coding model through the inherited Kimi
+Coding OAuth flow while keeping Hakimi's own config and data under `.hakimi`.
+Use either the non-interactive terminal entry point:
+
+```powershell
+hakimi login
+hakimi
+```
+
+or start the TUI and run `/login`. Choose `Kimi for Coding (OAuth)`, complete
+the browser device-code flow, then return to Hakimi. Successful login
+provisions `~/.hakimi/config.toml` with:
+
+- provider `managed:kimi-code`;
+- model alias `kimi-code/kimi-for-coding`;
+- default model `kimi-code/kimi-for-coding`;
+- Kimi search/fetch service OAuth credentials used by `WebSearch`/fetch tools.
+
+Useful checks:
+
+```powershell
+hakimi provider list
+hakimi doctor config ~/.hakimi/config.toml
+hakimi --model kimi-code/kimi-for-coding --prompt "Reply with OK"
+```
+
+If prompt mode says no model is configured, run `hakimi login` again or open
+`hakimi` and use `/login`. Do not run the upstream `kimi` command for Hakimi
+setup; Hakimi intentionally keeps its package, executable, sessions, and config
+separate.
+
+## DeepSeek Quick Setup
+
 If the managed Kimi-for-coding endpoint is unavailable for your account, configure DeepSeek as the native default model:
 
 ```powershell

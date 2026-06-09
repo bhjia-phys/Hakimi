@@ -1,8 +1,7 @@
 /**
- * Shared device-code login flow used by both `kimi login` (top-level
- * subcommand) and `kimi acp --login` (the first-class ACP terminal-auth
- * entry point). Exiting the process is part of the contract — callers
- * MUST treat the returned promise as `Promise<never>`.
+ * Shared Kimi-for-Coding device-code login flow used by both `hakimi login`
+ * and `hakimi acp --login`. Exiting the process is part of the contract:
+ * callers MUST treat the returned promise as `Promise<never>`.
  */
 
 import { createKimiHarness } from '@moonshot-ai/kimi-code-sdk';
@@ -31,7 +30,7 @@ export async function runLoginFlow(): Promise<never> {
         process.stderr.write(
           [
             '',
-            `Opening browser for Kimi device login: ${url}`,
+            `Opening browser for Hakimi Kimi-for-Coding login: ${url}`,
             `If the browser did not open, paste the URL above and enter code: ${data.userCode}`,
             data.expiresIn !== null && data.expiresIn !== undefined
               ? `Code expires in ${data.expiresIn}s.`
@@ -49,7 +48,9 @@ export async function runLoginFlow(): Promise<never> {
         }
       },
     });
-    process.stderr.write(`Logged in to ${result.providerName}.\n`);
+    process.stderr.write(
+      `Logged in to Kimi for Coding. Hakimi model config was provisioned via ${result.providerName}.\n`,
+    );
     process.exit(0);
   } catch (error) {
     if (controller.signal.aborted) {

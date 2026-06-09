@@ -1,5 +1,5 @@
 /**
- * `kimi acp`
+ * `hakimi acp`
  *
  * Verifies that the ACP sub-command is registered on the program and
  * that the action wires the harness into `@moonshot-ai/acp-adapter`'s
@@ -25,7 +25,7 @@ class ExitCalled extends Error {
   }
 }
 
-describe('kimi acp', () => {
+describe('hakimi acp', () => {
   let exitSpy: ReturnType<typeof vi.spyOn>;
   let stderrSpy: ReturnType<typeof vi.spyOn>;
 
@@ -43,7 +43,7 @@ describe('kimi acp', () => {
   });
 
   it('registers an `acp` subcommand on the program', () => {
-    const program = new Command('kimi');
+    const program = new Command('hakimi');
     registerAcpCommand(program);
 
     const acp = program.commands.find((c) => c.name() === 'acp');
@@ -52,10 +52,10 @@ describe('kimi acp', () => {
   });
 
   it('invokes runAcpServer with a constructed harness and exits 0 on success', async () => {
-    const program = new Command('kimi').exitOverride();
+    const program = new Command('hakimi').exitOverride();
     registerAcpCommand(program);
 
-    await expect(program.parseAsync(['node', 'kimi', 'acp'])).rejects.toThrow(ExitCalled);
+    await expect(program.parseAsync(['node', 'hakimi', 'acp'])).rejects.toThrow(ExitCalled);
 
     expect(runAcpServer).toHaveBeenCalledTimes(1);
     const harnessArg = vi.mocked(runAcpServer).mock.calls[0]?.[0];
@@ -63,7 +63,7 @@ describe('kimi acp', () => {
     const optsArg = vi.mocked(runAcpServer).mock.calls[0]?.[1];
     expect(optsArg).toEqual(
       expect.objectContaining({
-        agentInfo: { name: 'Kimi Code CLI', version: expect.any(String) },
+        agentInfo: { name: 'Hakimi', version: expect.any(String) },
       }),
     );
     expect(exitSpy).toHaveBeenCalledWith(0);
@@ -73,10 +73,10 @@ describe('kimi acp', () => {
     const previous = process.env['KIMI_CODE_HOME'];
     process.env['KIMI_CODE_HOME'] = '/tmp/kimi-debug';
     try {
-      const program = new Command('kimi').exitOverride();
+      const program = new Command('hakimi').exitOverride();
       registerAcpCommand(program);
 
-      await expect(program.parseAsync(['node', 'kimi', 'acp'])).rejects.toThrow(ExitCalled);
+      await expect(program.parseAsync(['node', 'hakimi', 'acp'])).rejects.toThrow(ExitCalled);
 
       const optsArg = vi.mocked(runAcpServer).mock.calls[0]?.[1];
       expect(optsArg).toEqual(
@@ -97,10 +97,10 @@ describe('kimi acp', () => {
     const previous = process.env['KIMI_CODE_HOME'];
     delete process.env['KIMI_CODE_HOME'];
     try {
-      const program = new Command('kimi').exitOverride();
+      const program = new Command('hakimi').exitOverride();
       registerAcpCommand(program);
 
-      await expect(program.parseAsync(['node', 'kimi', 'acp'])).rejects.toThrow(ExitCalled);
+      await expect(program.parseAsync(['node', 'hakimi', 'acp'])).rejects.toThrow(ExitCalled);
 
       const optsArg = vi.mocked(runAcpServer).mock.calls[0]?.[1] as {
         terminalAuthEnv?: unknown;
@@ -114,15 +114,15 @@ describe('kimi acp', () => {
   });
 
   it('forwards process.argv[1] as terminalAuthLegacyCommand', async () => {
-    const program = new Command('kimi').exitOverride();
+    const program = new Command('hakimi').exitOverride();
     registerAcpCommand(program);
 
-    await expect(program.parseAsync(['node', 'kimi', 'acp'])).rejects.toThrow(ExitCalled);
+    await expect(program.parseAsync(['node', 'hakimi', 'acp'])).rejects.toThrow(ExitCalled);
 
     const optsArg = vi.mocked(runAcpServer).mock.calls[0]?.[1] as {
       terminalAuthLegacyCommand?: string;
     };
-    // process.argv[1] points at the test runner entry — non-empty
+    // process.argv[1] points at the test runner entry: non-empty
     // absolute-ish path, exactly what we want forwarded.
     expect(typeof optsArg.terminalAuthLegacyCommand).toBe('string');
     expect((optsArg.terminalAuthLegacyCommand ?? '').length).toBeGreaterThan(0);
@@ -148,10 +148,10 @@ describe('kimi acp', () => {
     vi.resetModules();
     const { registerAcpCommand: freshRegister } = await import('#/cli/sub/acp');
     try {
-      const program = new Command('kimi').exitOverride();
+      const program = new Command('hakimi').exitOverride();
       freshRegister(program);
 
-      await expect(program.parseAsync(['node', 'kimi', 'acp', '--login'])).rejects.toThrow(
+      await expect(program.parseAsync(['node', 'hakimi', 'acp', '--login'])).rejects.toThrow(
         ExitCalled,
       );
 
