@@ -1893,27 +1893,104 @@ describe('ResearchActionTool', () => {
     });
     const tool = new ResearchActionTool(agent.researchAction);
 
-    const result = await execute(tool, {
-      action: 'draft_aitp_curated_rag_write_bridge_call',
-      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
-      aitp_topic_id: 'fqhe-literature',
-      aitp_claim_id: 'claim-fqhe',
-      promotion_draft_operation: 'recordEvidence',
-      promotion_carried_ref_handoffs: [
-        {
+    const cases: readonly {
+      readonly handoff: Record<string, string>;
+      readonly expected: string;
+    }[] = [
+      {
+        handoff: {
+          evidence_ref: 'aitp:source_asset:asset-reviewed',
+          ref_kind: 'source_asset',
+          record_id: 'asset-reviewed',
+        },
+        expected: 'requires promotion_carried_ref_handoffs[0].canonical_ref',
+      },
+      {
+        handoff: {
+          canonical_ref: 'source_asset:asset-reviewed',
+          ref_kind: 'source_asset',
+          record_id: 'asset-reviewed',
+        },
+        expected: 'requires promotion_carried_ref_handoffs[0].evidence_ref',
+      },
+      {
+        handoff: {
+          canonical_ref: 'source_asset:asset-reviewed',
+          evidence_ref: 'aitp:source_asset:asset-reviewed',
+          record_id: 'asset-reviewed',
+        },
+        expected: 'requires promotion_carried_ref_handoffs[0].ref_kind',
+      },
+      {
+        handoff: {
           canonical_ref: 'aitp:source_asset:asset-reviewed',
           evidence_ref: 'aitp:source_asset:asset-reviewed',
           ref_kind: 'source_asset',
           record_id: 'asset-reviewed',
         },
-      ],
-    });
+        expected: 'canonical_ref must use the next-payload ref dialect',
+      },
+      {
+        handoff: {
+          canonical_ref: 'source_asset:asset-reviewed',
+          evidence_ref: 'aitp:source_asset:asset-reviewed',
+          ref_kind: 'reference_location',
+          record_id: 'asset-reviewed',
+        },
+        expected: 'canonical_ref must use the next-payload ref dialect and match ref_kind',
+      },
+      {
+        handoff: {
+          canonical_ref: 'source_asset:asset-reviewed',
+          evidence_ref: 'aitp:reference_location:asset-reviewed',
+          ref_kind: 'source_asset',
+          record_id: 'asset-reviewed',
+        },
+        expected: 'evidence_ref must match ref_kind',
+      },
+      {
+        handoff: {
+          canonical_ref: 'source_asset:asset-reviewed',
+          evidence_ref: 'aitp:source_asset:asset-reviewed',
+          ref_kind: 'source_asset',
+        },
+        expected: 'requires promotion_carried_ref_handoffs[0].record_id',
+      },
+      {
+        handoff: {
+          canonical_ref: 'source_asset:other-asset',
+          evidence_ref: 'aitp:source_asset:asset-reviewed',
+          ref_kind: 'source_asset',
+          record_id: 'asset-reviewed',
+        },
+        expected: 'canonical_ref record id must match record_id',
+      },
+      {
+        handoff: {
+          canonical_ref: 'source_asset:asset-reviewed',
+          evidence_ref: 'aitp:source_asset:other-asset',
+          ref_kind: 'source_asset',
+          record_id: 'asset-reviewed',
+        },
+        expected: 'evidence_ref record id must match record_id',
+      },
+    ];
 
-    expect(result).toMatchObject({ isError: true });
-    expect(result.output).toContain('malformed promotion_carried_ref_handoffs[0]');
-    expect(result.output).toContain('canonical_ref must use the next-payload ref dialect');
-    expect(result.output).not.toContain('<promotion_carried_ref_suggestions');
-    expect(result.output).not.toContain('<carried_ref_next_call_pointer');
+    for (const malformed of cases) {
+      const result = await execute(tool, {
+        action: 'draft_aitp_curated_rag_write_bridge_call',
+        rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+        aitp_topic_id: 'fqhe-literature',
+        aitp_claim_id: 'claim-fqhe',
+        promotion_draft_operation: 'recordEvidence',
+        promotion_carried_ref_handoffs: [malformed.handoff],
+      });
+
+      expect(result).toMatchObject({ isError: true });
+      expect(result.output).toContain(malformed.expected);
+      expect(result.output).not.toContain('<promotion_carried_ref_suggestions');
+      expect(result.output).not.toContain('<carried_ref_next_call_pointer');
+    }
     expect(bridgeCalls).toEqual([]);
   });
 

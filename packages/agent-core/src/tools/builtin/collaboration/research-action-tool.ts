@@ -2202,6 +2202,12 @@ function aitpRecordRefKind(ref: string): string | undefined {
   return parts[0] === 'aitp' ? parts[1] : parts[0];
 }
 
+function aitpRecordRefId(ref: string): string | undefined {
+  const parts = ref.trim().split(':');
+  if (parts.length < 2) return undefined;
+  return parts.at(-1);
+}
+
 function isPlaceholderRef(ref: string): boolean {
   const trimmed = ref.trim();
   return trimmed.startsWith('<') && trimmed.endsWith('>');
@@ -2272,10 +2278,16 @@ function promotionCarriedRefsFromInput(args: ResearchActionToolInput):
         message: `ResearchAction draft_aitp_curated_rag_write_bridge_call requires promotion_carried_ref_handoffs[${String(index)}].record_id.`,
       };
     }
-    if (canonicalRef.trim().split(':').at(-1) !== recordId) {
+    if (aitpRecordRefId(canonicalRef) !== recordId) {
       return {
         isError: true,
         message: `ResearchAction draft_aitp_curated_rag_write_bridge_call received malformed promotion_carried_ref_handoffs[${String(index)}]: canonical_ref record id must match record_id.`,
+      };
+    }
+    if (aitpRecordRefId(evidenceRef) !== recordId) {
+      return {
+        isError: true,
+        message: `ResearchAction draft_aitp_curated_rag_write_bridge_call received malformed promotion_carried_ref_handoffs[${String(index)}]: evidence_ref record id must match record_id.`,
       };
     }
     handoffRefs.push(canonicalRef);
