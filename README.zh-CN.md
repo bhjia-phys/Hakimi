@@ -123,6 +123,14 @@ explicit-execute-precheck boundaries. The echo distinguishes
 `readiness_inspection_passed`, and `explicit_execute_precheck_passed` while
 keeping `checklist_authorizes_execution=false` and the usual no-write,
 no-validation, no-source-support, no-trust flags.
+After that explicit execute call succeeds for an AITP source asset, reference
+location, or evidence result prepared by a carried-ref repair path, Hakimi also
+renders `carried_ref_repair_result_summary`. The summary connects the returned
+AITP record id/canonical ref/evidence ref back to the handoff id, repair hint
+operations, readiness checklist, and selected operation that prepared it. This
+is only runtime audit context over an AITP-owned returned result: it does not
+mutate the next payload, execute another write, record validation/source
+support, satisfy a final gate, or update claim trust.
 Promotion and write-bridge call drafts now also render
 `canonical_identity_alignment`. This section maps each draft stage, or the
 selected stage, to the future AITP record kind and canonical ref prefix that

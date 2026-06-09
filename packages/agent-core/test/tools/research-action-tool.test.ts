@@ -2842,6 +2842,26 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('next_write_executed_now="false"');
     expect(result.output).toContain('requires_reviewed_payload="true"');
     expect(result.output).toContain('requires_explicit_execute_call="true"');
+    expect(result.output).toContain('<carried_ref_repair_result_summary');
+    expect(result.output).toContain('source="execute_aitp_write_bridge_result"');
+    expect(result.output).toContain(`handoff_id="${String(handoff.guard['handoff_id'])}"`);
+    expect(result.output).toContain('completed_stage="evidence"');
+    expect(result.output).toContain('completed_operation="recordEvidence"');
+    expect(result.output).toContain('result_kind="evidence"');
+    expect(result.output).toContain('record_id="evidence-reviewed-curated-rag"');
+    expect(result.output).toContain('canonical_ref="evidence:evidence-reviewed-curated-rag"');
+    expect(result.output).toContain('evidence_ref="aitp:evidence:evidence-reviewed-curated-rag"');
+    expect(result.output).toContain('ref_kind="evidence"');
+    expect(result.output).toContain('repair_hint_operations="recordReferenceLocation"');
+    expect(result.output).toContain('explicit_execute_precheck_passed="true"');
+    expect(result.output).toContain('bridge_called="true"');
+    expect(result.output).toContain('result_written_by_aitp="true"');
+    expect(result.output).toContain('next_payload_mutated_now="false"');
+    expect(result.output).toContain('next_write_executed_now="false"');
+    expect(result.output).toContain('records_validation_result="false"');
+    expect(result.output).toContain('source_support_result="false"');
+    expect(result.output).toContain('claim_trust_mutation="none"');
+    expect(result.output).toContain('requires_explicit_next_draft="true"');
     expect(handoff.hashInput).toMatchObject({
       missingRefRepairHintCount: 1,
       missingRefRepairChecklistPresent: true,
@@ -2926,6 +2946,7 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('claim_trust_mutation="none"');
     expect(result.output).toContain('requires_reviewed_payload="true"');
     expect(result.output).toContain('requires_explicit_execute_call="true"');
+    expect(result.output).not.toContain('<carried_ref_repair_result_summary');
     expect(bridgeCalls).toHaveLength(1);
   });
 

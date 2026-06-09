@@ -3805,12 +3805,41 @@ function renderAitpWriteBridgeExecution(
     renderAitpHandoffGuard(handoffGuard),
     `  <record_id>${escapeXml(aitpWriteBridgeRecordId(result))}</record_id>`,
     renderAitpCuratedRagCarriedRefHandoff(result, handoffGuard, '  '),
+    renderCarriedRefRepairResultSummary(result, handoffGuard, '  '),
     renderAitpWriteBridgeResultDetails(result),
     renderStringList('evidence_refs', 'evidence_ref', evidenceRefsForAitpWriteBridgeResult(result), '  '),
     '</aitp_write_bridge>',
     '',
   ].join('\n');
 }
+
+function renderCarriedRefRepairResultSummary(
+  result: AitpWriteBridgeExecutionResult,
+  handoffGuard: AitpHandoffGuard | undefined,
+  indent: string,
+): string {
+  if (handoffGuard === undefined || !shouldRenderCarriedRefRepairEcho(handoffGuard)) return '';
+  if (!result.ok) return '';
+  const evidenceRefs = evidenceRefsForAitpWriteBridgeResult(result);
+  const carriedRef = curatedRagPromotionCarriedRef(result);
+  if (
+    carriedRef === undefined ||
+    !CARRIED_REF_REPAIR_RESULT_SUMMARY_REF_KINDS.has(carriedRef.refKind)
+  ) {
+    return '';
+  }
+  return [
+    `${indent}<carried_ref_repair_result_summary source="execute_aitp_write_bridge_result" handoff_id="${escapeXml(handoffGuard.handoffId)}" confirmation_id="${escapeXml(handoffGuard.confirmationId)}" completed_stage="${escapeXml(handoffGuard.stage ?? '')}" completed_operation="${escapeXml(handoffGuard.selectedAitpOperation)}" result_kind="${escapeXml(result.kind)}" record_id="${escapeXml(carriedRef.recordId)}" canonical_ref="${escapeXml(carriedRef.canonicalRef)}" evidence_ref="${escapeXml(carriedRef.evidenceRef)}" ref_kind="${escapeXml(carriedRef.refKind)}" repair_hint_operation_count="${String(handoffGuard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(handoffGuard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(handoffGuard.selectedWriteDiffersFromRepairHints)}" readiness_checklist_id="${escapeXml(readinessChecklistId('curated_rag_write_call_draft', handoffGuard.handoffId))}" reviewed_overrides_required="true" readiness_inspection_required="true" explicit_execute_precheck_passed="true" bridge_called="true" result_written_by_aitp="true" next_payload_mutated_now="false" next_write_executed_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_next_draft="true">`,
+    renderStringList('evidence_refs', 'evidence_ref', evidenceRefs, `${indent}  `),
+    `${indent}</carried_ref_repair_result_summary>`,
+  ].join('\n');
+}
+
+const CARRIED_REF_REPAIR_RESULT_SUMMARY_REF_KINDS = new Set([
+  'source_asset',
+  'reference_location',
+  'evidence',
+]);
 
 function renderAitpHandoffExecutionPrecheck(
   precheck:
