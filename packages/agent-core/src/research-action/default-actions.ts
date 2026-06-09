@@ -81,6 +81,25 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     primitiveToolPolicy: 'read-only',
   }),
   action({
+    id: 'source.review_context',
+    category: 'memory',
+    exposure: 'direct',
+    phase: 'source',
+    title: 'Review source context',
+    description:
+      'Review source, chunk, claim, and scope context before choosing extraction, validation, or AITP write actions.',
+    inputKinds: ['SourceExcerpt', 'Claim', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    primitiveToolPolicy: 'read-only',
+    triggerHints: ['source context review', 'claim support review', 'chunk scope', 'source scope'],
+    suggestedNextActions: [
+      'source.extract_formula',
+      'source.extract_definition',
+      'source.extract_assumption',
+      'validate.check_source_support',
+    ],
+  }),
+  action({
     id: 'source.extract_formula',
     category: 'physics',
     exposure: 'direct',

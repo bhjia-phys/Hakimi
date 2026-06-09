@@ -34,6 +34,28 @@ describe('research primitive plan templates', () => {
     expect(plan.followupActionIds).toContain('source.capture_source_excerpt');
   });
 
+  it('plans source context review as read-only action selection', () => {
+    const plan = planFor('source.review_context');
+
+    expect(plan.primitiveToolPolicy).toBe('read-only');
+    expect(plan.toolNames).toEqual(
+      expect.arrayContaining(['ResearchAction', 'ResearchLedger', 'Read', 'FetchURL']),
+    );
+    expect(plan.steps.map((step) => step.id)).toEqual([
+      'inspect-source-context',
+      'record-review-direction',
+    ]);
+    expect(plan.recording.primitiveToolCallIdsRequired).toBe(true);
+    expect(plan.followupActionIds).toEqual(
+      expect.arrayContaining([
+        'source.extract_formula',
+        'source.extract_definition',
+        'source.extract_assumption',
+        'validate.check_source_support',
+      ]),
+    );
+  });
+
   it('plans scoped code patches through write-gated native edit tools', () => {
     const plan = planFor('code.prepare_patch');
     const editStep = plan.steps.find((step) => step.id === 'edit-patch');

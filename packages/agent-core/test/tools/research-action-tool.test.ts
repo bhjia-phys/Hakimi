@@ -770,6 +770,13 @@ describe('ResearchActionTool', () => {
     expect(loaded.output).toContain('source_support_result="false"');
     expect(loaded.output).toContain('claim_trust_mutation="none"');
     expect(loaded.output).toContain('requires_explicit_next_draft="true"');
+    expect(loaded.output).toContain(
+      'adapter_id="aitp.curated-rag.carried-ref-repair-result-source-context-review"',
+    );
+    expect(loaded.output).toContain('action_id="source.review_context"');
+    expect(loaded.output).toContain('&quot;toolAction&quot;:&quot;ResearchAction.plan_primitive_tools&quot;');
+    expect(loaded.output).toContain('&quot;reviewBeforeDraft&quot;:true');
+    expect(loaded.output).toContain('&quot;requiresFreshDraftActionAfterReview&quot;:true');
     expect(loaded.output).toContain('adapter_id="aitp.curated-rag.carried-ref-repair-result-continuation"');
     expect(loaded.output).toContain('&quot;continuationSource&quot;:&quot;carried_ref_repair_result_summary&quot;');
     expect(loaded.output).toContain('&quot;candidateReviewedOverrideRef&quot;:&quot;evidence:evidence-reviewed-curated-rag&quot;');
