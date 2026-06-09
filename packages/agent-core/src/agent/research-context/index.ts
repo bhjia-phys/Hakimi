@@ -49,6 +49,8 @@ export class ResearchContextManager {
       curatedRagReasonIds: input.curatedRagReasonIds,
       curatedRagCarriedRefRepairActive: input.curatedRagCarriedRefRepairActive,
       curatedRagCarriedRefRepairTriggerTerms: input.curatedRagCarriedRefRepairTriggerTerms,
+      curatedRagCarriedRefRepairFailureCode: input.curatedRagCarriedRefRepairFailureCode,
+      curatedRagCarriedRefRepairFailurePath: input.curatedRagCarriedRefRepairFailurePath,
       limits: input.limits,
       now: input.now,
     });

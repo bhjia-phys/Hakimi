@@ -91,12 +91,17 @@ export function compileResearchContextPack(
   const curatedRag = collectCuratedRag(input, diagnostics);
   const curatedRagCarriedRefRepair = collectCuratedRagCarriedRefRepair(input, diagnostics);
   const curatedRagActionBindings = curatedRagPromotionDraftBindings(input, curatedRag);
+  const curatedRagRepairActionBindings = curatedRagCarriedRefRepairBindings(
+    input,
+    curatedRagCarriedRefRepair,
+  );
   const actionBindings = bounded(
     uniqueBindings([
       ...workflows.flatMap((workflow) => workflow.metadata.actionBindings),
       ...physics.capsules.flatMap((capsule) => bindingsFromAffordances(capsule)),
       ...(aitp?.compiled.actionRecommendations ?? []),
       ...curatedRagActionBindings,
+      ...curatedRagRepairActionBindings,
     ]),
     input.limits?.maxActionBindings ?? DEFAULT_MAX_ACTION_BINDINGS,
     (remaining) =>
@@ -135,7 +140,11 @@ export function compileResearchContextPack(
     curatedRagCarriedRefRepairDigest:
       curatedRagCarriedRefRepair === undefined
         ? undefined
-        : contextDigest(curatedRagCarriedRefRepair.triggerTerms),
+        : contextDigest([
+            ...curatedRagCarriedRefRepair.triggerTerms,
+            curatedRagCarriedRefRepair.failureCode ?? '',
+            curatedRagCarriedRefRepair.failurePath ?? '',
+          ]),
   });
 
   return {
@@ -179,6 +188,12 @@ function collectCuratedRagCarriedRefRepair(
     active: true,
     source: 'turn_text',
     triggerTerms: unique(input.curatedRagCarriedRefRepairTriggerTerms ?? []),
+    ...(hasText(input.curatedRagCarriedRefRepairFailureCode)
+      ? { failureCode: input.curatedRagCarriedRefRepairFailureCode }
+      : {}),
+    ...(hasText(input.curatedRagCarriedRefRepairFailurePath)
+      ? { failurePath: input.curatedRagCarriedRefRepairFailurePath }
+      : {}),
     safeSequence: [
       'inspect taxonomy metadata',
       'prepare fresh draft action',
@@ -195,6 +210,75 @@ function collectCuratedRagCarriedRefRepair(
     claimTrustMutation: 'none',
     executesWriteNow: false,
   };
+}
+
+function curatedRagCarriedRefRepairBindings(
+  input: CompileResearchContextPackInput,
+  repair: ResearchContextCuratedRagCarriedRefRepairSection | undefined,
+): readonly ResearchActionBinding[] {
+  if (repair === undefined) return [];
+  if (!hasText(repair.failureCode) || !hasText(repair.failurePath)) return [];
+  const bindingId = curatedRagCarriedRefRepairBindingId(repair.failureCode, repair.failurePath);
+  return [
+    {
+      id: bindingId,
+      actionId: 'draft_aitp_curated_rag_write_bridge_call',
+      adapterId: 'aitp.curated-rag.carried-ref-repair-draft',
+      domainId: input.workFrame.domain,
+      objectRefs: [
+        `carried_ref_handoff_failure:${safeId(repair.failureCode)}`,
+        `carried_ref_handoff_path:${contextDigest([repair.failurePath])}`,
+      ],
+      priority: 'normal',
+      reason:
+        'Concrete carried-ref handoff failure can be repaired by drafting a fresh curated RAG write-bridge call with reviewed overrides; this binding does not execute a write.',
+      params: {
+        toolAction: 'ResearchAction.draft_aitp_curated_rag_write_bridge_call',
+        failureCode: repair.failureCode,
+        failurePath: repair.failurePath,
+        failureSource: 'carried_ref_handoff_failure',
+        taxonomyAction: repair.taxonomyAction,
+        draftAction: repair.draftAction,
+        readinessAction: repair.readinessAction,
+        executeAction: repair.executeAction,
+        requiresFreshDraftAction: true,
+        requiresExplicitChunkSelection: true,
+        requiresExplicitPromotionStageOrOperationSelection: true,
+        requiresReviewedOverrides: true,
+        requiresReadinessInspection: true,
+        requiresExplicitExecuteCall: true,
+        infersPayloadValues: false,
+        executesWriteNow: false,
+        bridgeCalled: false,
+        recordsValidationResult: false,
+        sourceSupportResult: false,
+        claimTrustMutation: 'none',
+        canUpdateClaimTrust: false,
+        recordsTrustState: false,
+        allowedNextToolCall: {
+          action: 'draft_aitp_curated_rag_write_bridge_call',
+          failure_code: repair.failureCode,
+          failure_path: repair.failurePath,
+          requires_fresh_draft_action: true,
+          requires_explicit_chunk_selection: true,
+          requires_explicit_promotion_stage_or_operation_selection: true,
+          requires_reviewed_overrides: true,
+          requires_readiness_inspection: true,
+          requires_explicit_execute_call: true,
+          infers_payload_values: false,
+        },
+        forbiddenUses: [
+          'execute_write_now',
+          'evidence_support',
+          'validation_result',
+          'source_support_result',
+          'claim_trust_update',
+          'trust_apply',
+          'final_gate_satisfaction',
+        ],
+      },
+    },
+  ];
 }
 
 function collectCuratedRag(
@@ -354,6 +438,10 @@ function shouldSuggestCuratedRagPromotionDraft(input: CompileResearchContextPack
 
 function curatedRagPromotionDraftBindingId(chunkId: string): string {
   return `binding.aitp.curated-rag-promotion-draft.${safeId(chunkId)}`;
+}
+
+function curatedRagCarriedRefRepairBindingId(failureCode: string, failurePath: string): string {
+  return `binding.aitp.curated-rag-carried-ref-repair.${safeId(failureCode)}.${contextDigest([failurePath])}`;
 }
 
 function inferAitpClaimScope(input: CompileResearchContextPackInput): {
@@ -809,6 +897,10 @@ function bounded<T>(
 
 function unique(values: readonly string[]): readonly string[] {
   return [...new Set(values.filter((value) => value.length > 0))].toSorted();
+}
+
+function hasText(value: string | undefined): value is string {
+  return value !== undefined && value.trim().length > 0;
 }
 
 function isString(value: string | undefined): value is string {
