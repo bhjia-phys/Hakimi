@@ -1937,6 +1937,19 @@ describe('ResearchActionTool', () => {
     expect(executed.output).toContain('status="passed"');
     expect(executed.output).toContain('selected_aitp_operation="recordReferenceLocation"');
     expect(executed.output).toContain('bridge_called="true"');
+    expect(executed.output).toContain('<readiness_checklist_result');
+    expect(executed.output).toContain(
+      'checklist_id="readiness-checklist.record_ref_repair_write_call_draft.record-ref-repair-handoff.',
+    );
+    expect(executed.output).toContain('item_order="2"');
+    expect(executed.output).toContain('item_action="execute_aitp_write_bridge"');
+    expect(executed.output).toContain('item_status="followed"');
+    expect(executed.output).toContain('previous_item_action="inspect_aitp_write_bridge_handoff_readiness"');
+    expect(executed.output).toContain('execution_precheck_status="passed"');
+    expect(executed.output).toContain('explicit_execute_call_observed="true"');
+    expect(executed.output).toContain('executes_write_now="false"');
+    expect(executed.output).toContain('checklist_authorizes_execution="false"');
+    expect(executed.output).toContain('checklist_mutated_now="false"');
     expect(executed.output).toContain('<aitp_write_bridge operation="recordReferenceLocation"');
     expect(bridgeCalls).toHaveLength(1);
     expect(bridgeCalls[0]).toMatchObject({
@@ -2029,6 +2042,18 @@ describe('ResearchActionTool', () => {
     expect(executed.output).toContain('status="passed"');
     expect(executed.output).toContain('selected_aitp_operation="registerSourceAsset"');
     expect(executed.output).toContain('bridge_called="true"');
+    expect(executed.output).toContain('<readiness_checklist_result');
+    expect(executed.output).toContain(
+      'checklist_id="readiness-checklist.record_ref_repair_write_call_draft.record-ref-repair-handoff.',
+    );
+    expect(executed.output).toContain('item_order="2"');
+    expect(executed.output).toContain('item_action="execute_aitp_write_bridge"');
+    expect(executed.output).toContain('item_status="followed"');
+    expect(executed.output).toContain('execution_precheck_status="passed"');
+    expect(executed.output).toContain('explicit_execute_call_observed="true"');
+    expect(executed.output).toContain('executes_write_now="false"');
+    expect(executed.output).toContain('checklist_authorizes_execution="false"');
+    expect(executed.output).toContain('checklist_mutated_now="false"');
     expect(executed.output).toContain('<aitp_write_bridge operation="registerSourceAsset"');
     expect(bridgeCalls).toHaveLength(1);
     expect(bridgeCalls[0]).toMatchObject({
@@ -2240,6 +2265,19 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('records_validation_result="false"');
     expect(result.output).toContain('source_support_result="false"');
     expect(result.output).toContain('claim_trust_mutation="none"');
+    expect(result.output).toContain('<readiness_checklist_result');
+    expect(result.output).toContain(
+      'checklist_id="readiness-checklist.curated_rag_write_call_draft.curated-rag-write-handoff.',
+    );
+    expect(result.output).toContain('item_order="2"');
+    expect(result.output).toContain('item_action="execute_aitp_write_bridge"');
+    expect(result.output).toContain('item_status="followed"');
+    expect(result.output).toContain('previous_item_action="inspect_aitp_write_bridge_handoff_readiness"');
+    expect(result.output).toContain('execution_precheck_status="passed"');
+    expect(result.output).toContain('explicit_execute_call_observed="true"');
+    expect(result.output).toContain('executes_write_now="false"');
+    expect(result.output).toContain('checklist_authorizes_execution="false"');
+    expect(result.output).toContain('checklist_mutated_now="false"');
     expect(result.output).toContain('<handoff_guard');
     expect(result.output).toContain('status="passed"');
     expect(result.output).toContain(`handoff_id="${String(handoff.guard['handoff_id'])}"`);
@@ -2318,6 +2356,14 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('bridge_called="false"');
     expect(result.output).toContain('retry_requires_explicit_execute_call="true"');
     expect(result.output).toContain('handoff_mutated_now="false"');
+    expect(result.output).toContain('<readiness_checklist_result');
+    expect(result.output).toContain('checklist_id_available="false"');
+    expect(result.output).toContain('item_order="2"');
+    expect(result.output).toContain('item_action="execute_aitp_write_bridge"');
+    expect(result.output).toContain('item_status="not_followed"');
+    expect(result.output).toContain('execution_precheck_status="failed"');
+    expect(result.output).toContain('checklist_authorizes_execution="false"');
+    expect(result.output).toContain('checklist_mutated_now="false"');
     expect(result.output).toContain('<handoff_guard_failure');
     expect(result.output).toContain('code="blocked_handoff"');
     expect(result.output).toContain('field="confirmation_status"');
@@ -2525,6 +2571,14 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('bridge_call_allowed="false"');
     expect(result.output).toContain('bridge_called="false"');
     expect(result.output).toContain('handoff_mutated_now="false"');
+    expect(result.output).toContain('<readiness_checklist_result');
+    expect(result.output).toContain('checklist_id_available="false"');
+    expect(result.output).toContain('item_order="2"');
+    expect(result.output).toContain('item_action="execute_aitp_write_bridge"');
+    expect(result.output).toContain('item_status="not_followed"');
+    expect(result.output).toContain('execution_precheck_status="failed"');
+    expect(result.output).toContain('checklist_authorizes_execution="false"');
+    expect(result.output).toContain('checklist_mutated_now="false"');
     expect(result.output).toContain('<handoff_guard_failure');
     expect(result.output).toContain(`code="${code}"`);
     expect(result.output).toContain(`path="${path}"`);

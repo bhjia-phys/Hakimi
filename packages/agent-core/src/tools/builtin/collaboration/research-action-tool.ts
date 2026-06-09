@@ -3354,10 +3354,31 @@ function renderAitpHandoffExecutionPrecheck(
 ): string {
   if (precheck.status === 'passed') {
     if (precheck.guard === undefined) return '';
-    return `  <handoff_execution_precheck kind="${precheck.guard.kind}" status="passed" handoff_id="${escapeXml(precheck.guard.handoffId)}" confirmation_id="${escapeXml(precheck.guard.confirmationId)}" confirmation_status="${escapeXml(precheck.guard.confirmationStatus)}" selected_aitp_operation="${escapeXml(precheck.guard.selectedAitpOperation)}" missing_ref_repair_hint_count="${String(precheck.guard.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(precheck.guard.missingRefRepairChecklistPresent)}" repair_hint_operation_count="${String(precheck.guard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(precheck.guard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(precheck.guard.selectedWriteDiffersFromRepairHints)}" bridge_call_allowed="true" bridge_called="true" retry_requires_explicit_execute_call="false" handoff_mutated_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />`;
+    return [
+      `  <handoff_execution_precheck kind="${precheck.guard.kind}" status="passed" handoff_id="${escapeXml(precheck.guard.handoffId)}" confirmation_id="${escapeXml(precheck.guard.confirmationId)}" confirmation_status="${escapeXml(precheck.guard.confirmationStatus)}" selected_aitp_operation="${escapeXml(precheck.guard.selectedAitpOperation)}" missing_ref_repair_hint_count="${String(precheck.guard.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(precheck.guard.missingRefRepairChecklistPresent)}" repair_hint_operation_count="${String(precheck.guard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(precheck.guard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(precheck.guard.selectedWriteDiffersFromRepairHints)}" bridge_call_allowed="true" bridge_called="true" retry_requires_explicit_execute_call="false" handoff_mutated_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">`,
+      renderExecutionPrecheckChecklistResult({ status: 'passed', guard: precheck.guard }, '    '),
+      '  </handoff_execution_precheck>',
+    ].join('\n');
   }
   const { failure } = precheck;
-  return `<handoff_execution_precheck kind="curated_rag_write_bridge_handoff" status="failed" code="${escapeXml(failure.code)}"${failure.field === undefined ? '' : ` field="${escapeXml(failure.field)}"`}${failure.path === undefined ? '' : ` path="${escapeXml(failure.path)}"`} next_step="${escapeXml(failure.remediation.nextStep)}" repair_target="${escapeXml(failure.remediation.repairTarget)}" bridge_call_allowed="false" bridge_called="false" retry_requires_explicit_execute_call="true" executes_write_now="false" records_evidence_now="false" handoff_mutated_now="false" claim_trust_mutation="none" />`;
+  return [
+    `<handoff_execution_precheck kind="curated_rag_write_bridge_handoff" status="failed" code="${escapeXml(failure.code)}"${failure.field === undefined ? '' : ` field="${escapeXml(failure.field)}"`}${failure.path === undefined ? '' : ` path="${escapeXml(failure.path)}"`} next_step="${escapeXml(failure.remediation.nextStep)}" repair_target="${escapeXml(failure.remediation.repairTarget)}" bridge_call_allowed="false" bridge_called="false" retry_requires_explicit_execute_call="true" executes_write_now="false" records_evidence_now="false" handoff_mutated_now="false" claim_trust_mutation="none">`,
+    renderExecutionPrecheckChecklistResult({ status: 'failed' }, '  '),
+    '</handoff_execution_precheck>',
+  ].join('\n');
+}
+
+function renderExecutionPrecheckChecklistResult(
+  input:
+    | { readonly status: 'passed'; readonly guard: AitpHandoffGuard }
+    | { readonly status: 'failed' },
+  indent: string,
+): string {
+  if (input.status === 'failed') {
+    return `${indent}<readiness_checklist_result checklist_id_available="false" item_order="2" item_action="execute_aitp_write_bridge" item_status="not_followed" source="handoff_execution_precheck" execution_precheck_status="failed" bridge_called="false" executes_write_now="false" checklist_authorizes_execution="false" checklist_mutated_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />`;
+  }
+  const draftFamily = readinessDraftFamily(input.guard.kind);
+  return `${indent}<readiness_checklist_result checklist_id="${escapeXml(readinessChecklistId(draftFamily, input.guard.handoffId))}" draft_family="${draftFamily}" item_order="2" item_action="execute_aitp_write_bridge" item_status="followed" source="tool_call_json" previous_item_order="1" previous_item_action="inspect_aitp_write_bridge_handoff_readiness" execution_precheck_status="passed" bridge_called="true" explicit_execute_call_observed="true" executes_write_now="false" checklist_authorizes_execution="false" checklist_mutated_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />`;
 }
 
 function renderAitpWriteBridgeHandoffReadiness(
