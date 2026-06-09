@@ -295,6 +295,11 @@ with a copyable `draft_call_json` for a fresh
 `draft_aitp_curated_rag_write_bridge_call` using those reviewed overrides. The
 pointer sets `bridge_called="false"` and points to drafting only; it never
 calls `execute_aitp_write_bridge` or authorizes trust/validation changes.
+Structured `promotion_carried_ref_handoffs` now fail closed when required
+fields are missing or when `canonical_ref`, `evidence_ref`, `ref_kind`, and
+`record_id` disagree, so malformed handoff objects cannot silently produce a
+suggestion or pointer. Direct `promotion_carried_refs` remain available as
+explicit model/user canonical-ref input.
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` against a proposed
 reviewed payload. Hakimi renders `original_payload_json`,

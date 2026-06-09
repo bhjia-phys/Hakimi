@@ -1880,6 +1880,43 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('fails closed for malformed carried-ref handoff objects', async () => {
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(undefined, {
+      aitpCuratedRagProvider: curatedRagPromotionDraftProvider(),
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          throw new Error('write bridge must not be called by draft action');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'draft_aitp_curated_rag_write_bridge_call',
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      aitp_topic_id: 'fqhe-literature',
+      aitp_claim_id: 'claim-fqhe',
+      promotion_draft_operation: 'recordEvidence',
+      promotion_carried_ref_handoffs: [
+        {
+          canonical_ref: 'aitp:source_asset:asset-reviewed',
+          evidence_ref: 'aitp:source_asset:asset-reviewed',
+          ref_kind: 'source_asset',
+          record_id: 'asset-reviewed',
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('malformed promotion_carried_ref_handoffs[0]');
+    expect(result.output).toContain('canonical_ref must use the next-payload ref dialect');
+    expect(result.output).not.toContain('<promotion_carried_ref_suggestions');
+    expect(result.output).not.toContain('<carried_ref_next_call_pointer');
+    expect(bridgeCalls).toEqual([]);
+  });
+
   it('marks carried ref suggestions applied only when explicit reviewed overrides carry them', async () => {
     const agent = makeAgent(undefined, {
       aitpCuratedRagProvider: curatedRagPromotionDraftProvider(),
