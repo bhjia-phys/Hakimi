@@ -63,6 +63,7 @@ describe('default research actions', () => {
       'scope.declare_convention_set',
       'scope.open_work_frame',
       'source.capture_source_excerpt',
+      'source.compare_literature',
       'source.extract_assumption',
       'source.extract_definition',
       'source.extract_formula',

@@ -27,6 +27,7 @@ import {
 } from '../config';
 import {
   createDynamicAitpMcpFirstCuratedRagProvider,
+  createDynamicAitpMcpFirstLiteratureComparisonDraftProvider,
   createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider,
   createDynamicAitpMcpFirstProcessGraphSliceProvider,
   createDynamicAitpMcpFirstRecordRefLookupProvider,
@@ -34,6 +35,7 @@ import {
   createDynamicAitpMcpFirstWriteBridgeExecutor,
   type AitpCuratedRagProvider,
   type AitpCommandRunner,
+  type AitpLiteratureComparisonDraftProvider,
   type AitpLiteratureSourceReviewHandoffProvider,
   type AitpMcpWriteBridgeTransport,
   type AitpProcessGraphSliceProvider,
@@ -109,6 +111,7 @@ export interface SessionOptions {
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
   readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider | undefined;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
+  readonly aitpLiteratureComparisonDraftProvider?: AitpLiteratureComparisonDraftProvider | undefined;
   readonly aitpLiteratureSourceReviewHandoffProvider?: AitpLiteratureSourceReviewHandoffProvider | undefined;
   readonly aitpWriteBridge?: AitpWriteBridgeExecutor | undefined;
   readonly mcpConfig?: SessionMcpConfig;
@@ -1217,6 +1220,10 @@ export class Session {
         config.aitpCuratedRagProvider ??
         this.options.aitpCuratedRagProvider ??
         aitpBridges?.curatedRagProvider,
+      aitpLiteratureComparisonDraftProvider:
+        config.aitpLiteratureComparisonDraftProvider ??
+        this.options.aitpLiteratureComparisonDraftProvider ??
+        aitpBridges?.literatureComparisonDraftProvider,
       aitpLiteratureSourceReviewHandoffProvider:
         config.aitpLiteratureSourceReviewHandoffProvider ??
         this.options.aitpLiteratureSourceReviewHandoffProvider ??
@@ -1252,6 +1259,7 @@ export class Session {
         readonly runtimePayloadProfilesProvider: AitpRuntimePayloadProfilesProvider;
         readonly recordRefLookupProvider: AitpRecordRefLookupProvider;
         readonly curatedRagProvider: AitpCuratedRagProvider;
+        readonly literatureComparisonDraftProvider: AitpLiteratureComparisonDraftProvider;
         readonly literatureSourceReviewHandoffProvider: AitpLiteratureSourceReviewHandoffProvider;
         readonly writeBridge: AitpWriteBridgeExecutor;
       }
@@ -1286,6 +1294,12 @@ export class Session {
         mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
         fallbackOnMcpError: config?.fallbackOnMcpError,
       }),
+      literatureComparisonDraftProvider:
+        createDynamicAitpMcpFirstLiteratureComparisonDraftProvider({
+          ...bridgeOptions,
+          mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
+          fallbackOnMcpError: config?.fallbackOnMcpError,
+        }),
       literatureSourceReviewHandoffProvider:
         createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider({
           ...bridgeOptions,

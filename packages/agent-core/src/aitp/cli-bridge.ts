@@ -20,10 +20,14 @@ import {
   type AitpRuntimePayloadProfilesCatalog,
 } from './runtime-payload-profiles';
 import {
+  parseAitpLiteratureComparisonDraft,
+  type AitpLiteratureComparisonDraft,
+  type AitpLiteratureComparisonDraftInput,
+} from './literature-comparison-draft';
+import {
   parseAitpLiteratureSourceReviewHandoff,
   type AitpLiteratureSourceReviewHandoff,
   type AitpLiteratureSourceReviewHandoffInput,
-  type AitpLiteratureSourceReviewHandoffProvider,
 } from './literature-source-review-handoff';
 import {
   parseAitpRecordRefLookup,
@@ -207,6 +211,9 @@ export interface DraftAitpCuratedRagPromotionInput {
 
 export type ReadAitpLiteratureSourceReviewHandoffInput =
   AitpLiteratureSourceReviewHandoffInput;
+
+export type ReadAitpLiteratureComparisonDraftInput =
+  AitpLiteratureComparisonDraftInput;
 
 export interface IngestAitpCuratedRagCorpusInput {
   readonly paths: readonly string[];
@@ -747,6 +754,19 @@ export class AitpCliBridge {
     return parseAitpLiteratureSourceReviewHandoff(payload);
   }
 
+  async readLiteratureComparisonDraft(
+    input: ReadAitpLiteratureComparisonDraftInput,
+  ): Promise<AitpLiteratureComparisonDraft> {
+    const payload = await this.runJson(
+      buildAitpLiteratureComparisonDraftArgs({
+        basePath: this.options.basePath,
+        ...input,
+      }),
+      input.signal,
+    );
+    return parseAitpLiteratureComparisonDraft(payload);
+  }
+
   async ingestCuratedRagCorpus(
     input: IngestAitpCuratedRagCorpusInput,
   ): Promise<AitpCuratedRagIngestResult> {
@@ -1104,6 +1124,30 @@ export function buildAitpLiteratureSourceReviewHandoffArgs(
   pushOptional(args, '--claim', input.optionalClaimId);
   pushOptional(args, '--scoped-output', input.scopedOutput);
   pushRepeated(args, '--reviewed-ref', input.reviewedRefs);
+  return args;
+}
+
+export function buildAitpLiteratureComparisonDraftArgs(
+  input: ReadAitpLiteratureComparisonDraftInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.sessionId, 'sessionId');
+  requireNonEmpty(input.comparisonQuestion, 'comparisonQuestion');
+  requireNonEmptyList(input.sourceRefs, 'sourceRefs');
+  const args = [
+    '--base',
+    input.basePath,
+    'literature',
+    'comparison-draft',
+    '--session',
+    input.sessionId.trim(),
+    '--question',
+    input.comparisonQuestion.trim(),
+  ];
+  pushRepeated(args, '--source-ref', input.sourceRefs);
+  pushRepeated(args, '--dimension', input.dimensions);
+  pushOptional(args, '--claim', input.optionalClaimId);
+  pushOptional(args, '--rationale', input.rationale);
   return args;
 }
 

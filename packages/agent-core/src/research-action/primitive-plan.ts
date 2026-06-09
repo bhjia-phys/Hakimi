@@ -281,6 +281,39 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     ],
   }),
   plan({
+    actionId: 'source.compare_literature',
+    title: 'Compare literature',
+    intent:
+      'Inspect a bounded source set along explicit dimensions, then draft agreements, disagreements, missing evidence, and open directions without recording evidence or trust.',
+    primitiveToolPolicy: 'read-only',
+    steps: [
+      step({
+        id: 'inspect-source-set',
+        kind: 'inspect',
+        title: 'Inspect source set',
+        toolNames: ['ResearchAction', 'ResearchLedger', 'Read', 'FetchURL'],
+        purpose:
+          'Read only the cited source refs, reference locations, and context needed for the comparison dimensions.',
+        expectedEvidence: ['source_refs', 'comparison_dimensions', 'claim_scope'],
+      }),
+      step({
+        id: 'draft-comparison',
+        kind: 'record',
+        title: 'Draft comparison direction',
+        toolNames: ['ResearchAction', 'ResearchLedger'],
+        purpose:
+          'Record the non-evidentiary comparison direction and choose the next explicit source review, evidence, validation, or blocker action.',
+        expectedEvidence: ['comparison_summary', 'missing_evidence', 'recommended_next_action'],
+      }),
+    ],
+    recording: recording('source.compare_literature', ['ledger_event_id', 'comparison_direction'], true),
+    followupActionIds: [
+      'source.review_context',
+      'source.capture_source_excerpt',
+      'validate.check_source_support',
+    ],
+  }),
+  plan({
     actionId: 'source.extract_formula',
     title: 'Extract formula candidate',
     intent: 'Turn a source-backed excerpt into a typed formula candidate with source-support obligations.',

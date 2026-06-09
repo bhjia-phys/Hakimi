@@ -220,6 +220,22 @@ describe('AITP write bridge executor', () => {
         source: 'aitp_v5_build_literature_source_review_handoff',
       },
     });
+    expect(aitpRuntimeBridgeTargetForOperation('readLiteratureComparisonDraft')).toMatchObject({
+      operation: 'readLiteratureComparisonDraft',
+      entrypointKey: 'literature_comparison_draft',
+      mcpTool: 'aitp_v5_build_literature_comparison_draft',
+      cliFallback: 'aitp-v5 literature comparison-draft <args>',
+      surface: 'literature_comparison_draft',
+      executionRole: 'read',
+      stateEffect: 'read_only',
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+      mcpArguments: {
+        required: ['base', 'session_id', 'comparison_question', 'source_refs'],
+        optional: ['dimensions', 'optional_claim_id', 'rationale'],
+        source: 'aitp_v5_build_literature_comparison_draft',
+      },
+    });
     expect(aitpRuntimeBridgeTargetForOperation('preflightTrustUpdate')).toMatchObject({
       operation: 'preflightTrustUpdate',
       entrypointKey: 'trust_preflight',

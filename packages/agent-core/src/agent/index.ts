@@ -15,6 +15,7 @@ import type { PluginCommandOrigin } from './context';
 import type { DomainProfileRegistry } from '../domain-profile';
 import type {
   AitpCuratedRagProvider,
+  AitpLiteratureComparisonDraftProvider,
   AitpLiteratureSourceReviewHandoffProvider,
   AitpProcessGraphSliceProvider,
   AitpRecordRefLookupProvider,
@@ -122,6 +123,7 @@ export interface AgentOptions {
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
   readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider | undefined;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
+  readonly aitpLiteratureComparisonDraftProvider?: AitpLiteratureComparisonDraftProvider | undefined;
   readonly aitpLiteratureSourceReviewHandoffProvider?: AitpLiteratureSourceReviewHandoffProvider | undefined;
   readonly aitpWriteBridge?: AitpWriteBridgeExecutor | undefined;
   readonly mcp?: McpConnectionManager;
@@ -163,6 +165,7 @@ export class Agent {
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider;
   readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider;
+  readonly aitpLiteratureComparisonDraftProvider?: AitpLiteratureComparisonDraftProvider;
   readonly aitpLiteratureSourceReviewHandoffProvider?: AitpLiteratureSourceReviewHandoffProvider;
   readonly aitpWriteBridge?: AitpWriteBridgeExecutor;
   readonly log: Logger;
@@ -243,6 +246,8 @@ export class Agent {
     this.aitpRuntimePayloadProfilesProvider = options.aitpRuntimePayloadProfilesProvider;
     this.aitpRecordRefLookupProvider = options.aitpRecordRefLookupProvider;
     this.aitpCuratedRagProvider = options.aitpCuratedRagProvider;
+    this.aitpLiteratureComparisonDraftProvider =
+      options.aitpLiteratureComparisonDraftProvider;
     this.aitpLiteratureSourceReviewHandoffProvider =
       options.aitpLiteratureSourceReviewHandoffProvider;
     this.aitpWriteBridge = options.aitpWriteBridge;

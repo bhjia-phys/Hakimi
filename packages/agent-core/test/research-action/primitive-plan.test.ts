@@ -56,6 +56,27 @@ describe('research primitive plan templates', () => {
     );
   });
 
+  it('plans literature comparison as read-only source-set inspection', () => {
+    const plan = planFor('source.compare_literature');
+
+    expect(plan.primitiveToolPolicy).toBe('read-only');
+    expect(plan.toolNames).toEqual(
+      expect.arrayContaining(['ResearchAction', 'ResearchLedger', 'Read', 'FetchURL']),
+    );
+    expect(plan.steps.map((step) => step.id)).toEqual([
+      'inspect-source-set',
+      'draft-comparison',
+    ]);
+    expect(plan.recording.primitiveToolCallIdsRequired).toBe(true);
+    expect(plan.followupActionIds).toEqual(
+      expect.arrayContaining([
+        'source.review_context',
+        'source.capture_source_excerpt',
+        'validate.check_source_support',
+      ]),
+    );
+  });
+
   it('plans scoped code patches through write-gated native edit tools', () => {
     const plan = planFor('code.prepare_patch');
     const editStep = plan.steps.find((step) => step.id === 'edit-patch');

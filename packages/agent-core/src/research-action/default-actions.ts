@@ -100,6 +100,30 @@ export const DEFAULT_RESEARCH_ACTIONS = [
     ],
   }),
   action({
+    id: 'source.compare_literature',
+    category: 'memory',
+    exposure: 'direct',
+    phase: 'source',
+    title: 'Compare literature',
+    description:
+      'Compare a bounded source set along explicit dimensions while keeping agreements, disagreements, and missing evidence draft-only.',
+    inputKinds: ['SourceExcerpt', 'Claim', 'LedgerEvent'],
+    outputKinds: ['LedgerEvent'],
+    primitiveToolPolicy: 'read-only',
+    triggerHints: [
+      'literature comparison',
+      'compare papers',
+      'source-set comparison',
+      'agreement disagreement',
+      'missing evidence',
+    ],
+    suggestedNextActions: [
+      'source.review_context',
+      'source.capture_source_excerpt',
+      'validate.check_source_support',
+    ],
+  }),
+  action({
     id: 'source.extract_formula',
     category: 'physics',
     exposure: 'direct',
