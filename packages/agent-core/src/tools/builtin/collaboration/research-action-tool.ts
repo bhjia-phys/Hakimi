@@ -22,6 +22,7 @@ import {
   buildPrimitivePlanForAction,
   recommendResearchActions,
   registerDefaultResearchPrimitivePlanTemplates,
+  type ResearchActionBinding,
   type ResearchActionCategory,
   type ResearchActionDefinition,
   type ResearchActionExposure,
@@ -103,6 +104,7 @@ const ACTIONS = [
   'build_formalization_plan',
   'execute_aitp_write_bridge',
   'inspect_aitp_write_bridge_handoff_readiness',
+  'inspect_source_context_review_handoff',
   'inspect_handoff_guard_remediation_taxonomy',
   'inspect_aitp_runtime_payload_profiles',
   'inspect_aitp_curated_rag_corpus',
@@ -181,7 +183,9 @@ export const ResearchActionToolInputSchema = z.object({
   action_binding_id: z
     .string()
     .optional()
-    .describe('Optional ContextPack action binding id for executing a bound read-only action.'),
+    .describe(
+      'Optional ContextPack action binding id for executing or inspecting a bound read-only action.',
+    ),
   evidence_ref: z
     .string()
     .optional()
@@ -614,6 +618,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return await this.executeAitpWriteBridge(args, ctx);
         case 'inspect_aitp_write_bridge_handoff_readiness':
           return this.inspectAitpWriteBridgeHandoffReadiness(args);
+        case 'inspect_source_context_review_handoff':
+          return this.inspectSourceContextReviewHandoff(args);
         case 'inspect_handoff_guard_remediation_taxonomy':
           return ok(`${renderHandoffGuardRemediationTaxonomy('')}\n`);
         case 'inspect_aitp_runtime_payload_profiles':
@@ -660,7 +666,21 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     if (action === undefined) {
       return errorResult(`ResearchAction plan_primitive_tools unknown action_id: ${args.action_id}`);
     }
-    return ok(renderPrimitivePlan(buildPrimitivePlanForAction(action, this.primitivePlanRegistry)));
+    const plan = renderPrimitivePlan(buildPrimitivePlanForAction(action, this.primitivePlanRegistry));
+    const binding = this.resolveSourceContextReviewOutcomeBinding(args);
+    if (binding.isError) return errorResult(binding.message);
+    if (binding.binding === undefined) return ok(plan);
+    if (binding.binding.actionId !== args.action_id) {
+      return errorResult(
+        `Action binding "${binding.binding.id}" is for "${binding.binding.actionId}", not ${args.action_id}.`,
+      );
+    }
+    const readiness = renderSourceContextReviewHandoffReadiness(
+      binding.binding,
+      binding.contextPackId,
+    );
+    if (readiness.includes('status="failed"')) return ok(readiness);
+    return ok(`${plan}${readiness}`);
   }
 
   private recommendNextActions(args: ResearchActionToolInput): string {
@@ -875,6 +895,58 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       return ok(renderAitpWriteBridgeHandoffReadiness({ status: 'failed', failure: handoffGuard.failure }));
     }
     return ok(renderAitpWriteBridgeHandoffReadiness({ status: 'passed', guard: handoffGuard.guard }));
+  }
+
+  private inspectSourceContextReviewHandoff(args: ResearchActionToolInput): ExecutableToolResult {
+    const binding = this.resolveSourceContextReviewOutcomeBinding(args);
+    if (binding.isError) return errorResult(binding.message);
+    if (binding.binding === undefined) {
+      return errorResult('ResearchAction inspect_source_context_review_handoff requires action_binding_id.');
+    }
+    return ok(renderSourceContextReviewHandoffReadiness(binding.binding, binding.contextPackId));
+  }
+
+  private resolveSourceContextReviewOutcomeBinding(args: ResearchActionToolInput):
+    | {
+        readonly isError: false;
+        readonly contextPackId: string;
+        readonly binding: ResearchActionBinding | undefined;
+      }
+    | { readonly isError: true; readonly message: string } {
+    if (this.manager === undefined) {
+      if (args.action_binding_id !== undefined && args.action_binding_id.trim().length > 0) {
+        return {
+          isError: true,
+          message:
+            'ResearchAction source context review handoff binding requires a session manager.',
+        };
+      }
+      return { isError: false, contextPackId: '', binding: undefined };
+    }
+    const contextPackId = args.context_pack_id ?? this.manager.activeWorkFrame()?.contextPackId;
+    if (contextPackId === undefined || contextPackId.length === 0) {
+      if (args.action_binding_id === undefined || args.action_binding_id.trim().length === 0) {
+        return { isError: false, contextPackId: '', binding: undefined };
+      }
+      return {
+        isError: true,
+        message:
+          'ResearchAction source context review handoff binding requires context_pack_id or an active WorkFrame with an attached ContextPack.',
+      };
+    }
+    if (args.action_binding_id === undefined || args.action_binding_id.trim().length === 0) {
+      return { isError: false, contextPackId, binding: undefined };
+    }
+    const bindingId = args.action_binding_id.trim();
+    const pack = this.manager.requireContextPack(contextPackId);
+    const binding = pack.actionBindings.find((item) => item.id === bindingId);
+    if (binding === undefined) {
+      return {
+        isError: true,
+        message: `ContextPack "${contextPackId}" does not contain action binding "${bindingId}".`,
+      };
+    }
+    return { isError: false, contextPackId, binding };
   }
 
   private async inspectAitpRuntimePayloadProfiles(
@@ -4055,6 +4127,149 @@ function renderReadinessChecklistResult(
   }
   const draftFamily = readinessDraftFamily(input.guard.kind);
   return `${indent}<readiness_checklist_result checklist_id="${escapeXml(readinessChecklistId(draftFamily, input.guard.handoffId))}" draft_family="${draftFamily}" item_order="1" item_action="inspect_aitp_write_bridge_handoff_readiness" item_status="satisfied" source="execute_aitp_write_bridge_handoff.readiness_call_json" next_item_order="2" next_item_action="execute_aitp_write_bridge" read_only="true" bridge_called="false" executes_write_now="false" checklist_mutated_now="false" />`;
+}
+
+type SourceContextReviewHandoffReadiness =
+  | {
+      readonly status: 'passed';
+      readonly bindingId: string;
+      readonly contextPackId: string;
+      readonly actionId: string;
+      readonly sourceReviewCallId: string;
+      readonly sourceReviewOutcome: string;
+      readonly sourceReviewDecision: SourceReviewContextDecision;
+      readonly reviewedCanonicalRef: string;
+      readonly reviewedEvidenceRef: string;
+      readonly claimScope: string;
+      readonly chunkScope: string;
+      readonly rationale: string;
+      readonly allowedNextToolCallAction: string;
+      readonly allowedNextToolCallActionId: string;
+    }
+  | {
+      readonly status: 'failed';
+      readonly bindingId: string;
+      readonly contextPackId: string;
+      readonly actionId: string;
+      readonly code: string;
+      readonly message: string;
+    };
+
+function renderSourceContextReviewHandoffReadiness(
+  binding: ResearchActionBinding,
+  contextPackId: string,
+): string {
+  const readiness = sourceContextReviewHandoffReadiness(binding, contextPackId);
+  if (readiness.status === 'failed') {
+    return [
+      `<source_context_review_handoff_readiness status="failed" code="${escapeXml(readiness.code)}" context_pack_id="${escapeXml(readiness.contextPackId)}" binding_id="${escapeXml(readiness.bindingId)}" action_id="${escapeXml(readiness.actionId)}" read_only="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" next_action_allowed="false">`,
+      `  <message>${escapeXml(readiness.message)}</message>`,
+      '</source_context_review_handoff_readiness>',
+      '',
+    ].join('\n');
+  }
+  return [
+    `<source_context_review_handoff_readiness status="passed" context_pack_id="${escapeXml(readiness.contextPackId)}" binding_id="${escapeXml(readiness.bindingId)}" action_id="${escapeXml(readiness.actionId)}" source_review_call_id="${escapeXml(readiness.sourceReviewCallId)}" source_review_outcome="${escapeXml(readiness.sourceReviewOutcome)}" decision="${readiness.sourceReviewDecision}" reviewed_canonical_ref="${escapeXml(readiness.reviewedCanonicalRef)}" reviewed_evidence_ref="${escapeXml(readiness.reviewedEvidenceRef)}" claim_scope="${escapeXml(readiness.claimScope)}" chunk_scope="${escapeXml(readiness.chunkScope)}" next_action_id="${escapeXml(readiness.actionId)}" allowed_next_tool_call_action="${escapeXml(readiness.allowedNextToolCallAction)}" allowed_next_tool_call_action_id="${escapeXml(readiness.allowedNextToolCallActionId)}" read_only="true" requires_explicit_next_action="true" bridge_called="false" executes_write_now="false" mutates_next_payload_now="false" infers_payload_values="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" next_action_allowed="true">`,
+    `  <rationale>${escapeXml(readiness.rationale)}</rationale>`,
+    '  <handoff_boundary host_routing_only="true" canonical_effect_requires_explicit_aitp_entrypoint="true" evidence_support="false" validation_result="false" final_gate_satisfaction="false" trust_apply="false" />',
+    '</source_context_review_handoff_readiness>',
+    '',
+  ].join('\n');
+}
+
+function sourceContextReviewHandoffReadiness(
+  binding: ResearchActionBinding,
+  contextPackId: string,
+): SourceContextReviewHandoffReadiness {
+  const fail = (code: string, message: string): SourceContextReviewHandoffReadiness => ({
+    status: 'failed',
+    bindingId: binding.id,
+    contextPackId,
+    actionId: binding.actionId,
+    code,
+    message,
+  });
+  if (binding.adapterId !== 'aitp.curated-rag.source-context-review-outcome') {
+    return fail('wrong_adapter', 'Binding is not a source-context review outcome binding.');
+  }
+  const params = binding.params;
+  if (params === undefined) {
+    return fail('missing_params', 'Binding does not contain source-context review routing params.');
+  }
+  const decision = sourceReviewContextDecision(params['sourceReviewDecision']);
+  if (decision === undefined) {
+    return fail('invalid_decision', 'Binding does not contain a valid source-review decision.');
+  }
+  const expectedActionId = nextActionIdForSourceReviewDecision(decision);
+  if (binding.actionId !== expectedActionId) {
+    return fail('next_action_mismatch', 'Binding action id does not match the source-review decision.');
+  }
+  if (
+    params['continuationSource'] !== 'source_context_review_outcome' ||
+    params['requiresExplicitNextAction'] !== true ||
+    params['requiresExplicitAitpWriteOrValidationForCanonicalEffect'] !== true ||
+    params['bridgeCalled'] !== false ||
+    params['executesWriteNow'] !== false ||
+    params['mutatesNextPayloadNow'] !== false ||
+    params['infersPayloadValues'] !== false ||
+    params['recordsValidationResult'] !== false ||
+    params['sourceSupportResult'] !== false ||
+    params['claimTrustMutation'] !== 'none' ||
+    params['canUpdateClaimTrust'] !== false ||
+    params['recordsTrustState'] !== false
+  ) {
+    return fail('boundary_flags_mismatch', 'Binding does not preserve the required no-trust/no-write boundary flags.');
+  }
+  const allowedNextToolCall = params['allowedNextToolCall'];
+  if (!isRecord(allowedNextToolCall)) {
+    return fail('missing_allowed_next_tool_call', 'Binding does not contain an allowedNextToolCall object.');
+  }
+  if (
+    allowedNextToolCall['action'] !== 'plan_primitive_tools' ||
+    allowedNextToolCall['action_id'] !== expectedActionId ||
+    allowedNextToolCall['requires_explicit_next_action'] !== true ||
+    allowedNextToolCall['records_validation_result'] !== false ||
+    allowedNextToolCall['source_support_result'] !== false ||
+    allowedNextToolCall['claim_trust_mutation'] !== 'none'
+  ) {
+    return fail('allowed_next_tool_call_mismatch', 'Allowed next tool call does not match the reviewed routing decision.');
+  }
+  const required = {
+    sourceReviewCallId: stringValue(params['sourceReviewCallId']),
+    sourceReviewOutcome: stringValue(params['sourceReviewOutcome']),
+    reviewedCanonicalRef: stringValue(params['reviewedCanonicalRef']),
+    reviewedEvidenceRef: stringValue(params['reviewedEvidenceRef']),
+    claimScope: stringValue(params['claimScope']),
+    chunkScope: stringValue(params['chunkScope']),
+    rationale: stringValue(params['rationale']),
+  };
+  if (
+    required.sourceReviewCallId === undefined ||
+    required.sourceReviewOutcome === undefined ||
+    required.reviewedCanonicalRef === undefined ||
+    required.reviewedEvidenceRef === undefined ||
+    required.claimScope === undefined ||
+    required.chunkScope === undefined ||
+    required.rationale === undefined
+  ) {
+    return fail('missing_required_params', 'Binding is missing required source-review handoff metadata.');
+  }
+  return {
+    status: 'passed',
+    bindingId: binding.id,
+    contextPackId,
+    actionId: binding.actionId,
+    sourceReviewCallId: required.sourceReviewCallId,
+    sourceReviewOutcome: required.sourceReviewOutcome,
+    sourceReviewDecision: decision,
+    reviewedCanonicalRef: required.reviewedCanonicalRef,
+    reviewedEvidenceRef: required.reviewedEvidenceRef,
+    claimScope: required.claimScope,
+    chunkScope: required.chunkScope,
+    rationale: required.rationale,
+    allowedNextToolCallAction: 'plan_primitive_tools',
+    allowedNextToolCallActionId: expectedActionId,
+  };
 }
 
 function renderCarriedRefRepairInspectionEcho(
