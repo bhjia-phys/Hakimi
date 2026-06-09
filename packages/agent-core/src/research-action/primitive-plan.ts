@@ -247,6 +247,40 @@ export const DEFAULT_RESEARCH_PRIMITIVE_PLAN_TEMPLATES = [
     followupActionIds: ['source.extract_formula', 'source.extract_definition', 'source.extract_assumption'],
   }),
   plan({
+    actionId: 'source.review_context',
+    title: 'Review source context',
+    intent:
+      'Inspect source refs, chunk identity, claim scope, and candidate support before choosing extraction, validation, or AITP write actions.',
+    primitiveToolPolicy: 'read-only',
+    steps: [
+      step({
+        id: 'inspect-source-context',
+        kind: 'inspect',
+        title: 'Inspect bounded source context',
+        toolNames: ['ResearchAction', 'ResearchLedger', 'Read', 'FetchURL'],
+        purpose:
+          'Read only the cited source/chunk/ledger context needed to decide whether it is relevant to the active claim.',
+        expectedEvidence: ['source_ref', 'chunk_or_location_ref', 'claim_scope'],
+      }),
+      step({
+        id: 'record-review-direction',
+        kind: 'record',
+        title: 'Record review direction',
+        toolNames: ['ResearchAction', 'ResearchLedger'],
+        purpose:
+          'Record whether the source context should lead to extraction, source-support validation, a fresh AITP draft, or a blocker.',
+        expectedEvidence: ['ledger_event_id', 'recommended_next_action', 'remaining_gap'],
+      }),
+    ],
+    recording: recording('source.review_context', ['ledger_event_id', 'review_direction'], true),
+    followupActionIds: [
+      'source.extract_formula',
+      'source.extract_definition',
+      'source.extract_assumption',
+      'validate.check_source_support',
+    ],
+  }),
+  plan({
     actionId: 'source.extract_formula',
     title: 'Extract formula candidate',
     intent: 'Turn a source-backed excerpt into a typed formula candidate with source-support obligations.',

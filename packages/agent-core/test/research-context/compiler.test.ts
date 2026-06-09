@@ -450,6 +450,44 @@ describe('compileResearchContextPack', () => {
     );
     expect(pack.actionBindings).toContainEqual(
       expect.objectContaining({
+        actionId: 'source.review_context',
+        adapterId: 'aitp.curated-rag.carried-ref-repair-result-source-context-review',
+        priority: 'high',
+        objectRefs: expect.arrayContaining([
+          'evidence:evidence-reviewed-curated-rag',
+          'aitp:evidence:evidence-reviewed-curated-rag',
+          'carried_ref_repair_handoff:curated-rag-write-handoff.chunk.evidence.hash',
+        ]),
+        params: expect.objectContaining({
+          toolAction: 'ResearchAction.plan_primitive_tools',
+          actionId: 'source.review_context',
+          continuationSource: 'carried_ref_repair_result_summary',
+          reviewBeforeDraft: true,
+          reviewPurpose:
+            'check source text, chunk scope, claim scope, and whether the carried ref is appropriate before drafting the next write-bridge call',
+          returnedResultOwnedByAitp: true,
+          candidateReviewedOverrideRef: 'evidence:evidence-reviewed-curated-rag',
+          candidateEvidenceRef: 'aitp:evidence:evidence-reviewed-curated-rag',
+          requiresFreshDraftActionAfterReview: true,
+          requiresExplicitChunkSelection: true,
+          requiresExplicitPromotionStageOrOperationSelection: true,
+          requiresReviewedOverrides: true,
+          requiresReadinessInspection: true,
+          requiresExplicitExecuteCall: true,
+          infersPayloadValues: false,
+          mutatesNextPayloadNow: false,
+          executesWriteNow: false,
+          bridgeCalled: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+          recordsTrustState: false,
+        }),
+      }),
+    );
+    expect(pack.actionBindings).toContainEqual(
+      expect.objectContaining({
         actionId: 'draft_aitp_curated_rag_write_bridge_call',
         adapterId: 'aitp.curated-rag.carried-ref-repair-result-continuation',
         objectRefs: expect.arrayContaining([
@@ -481,7 +519,37 @@ describe('compileResearchContextPack', () => {
         }),
       }),
     );
-    expect(pack.actionBindings[0]?.params).toMatchObject({
+    const reviewBinding = pack.actionBindings.find(
+      (item) =>
+        item.adapterId === 'aitp.curated-rag.carried-ref-repair-result-source-context-review',
+    );
+    expect(reviewBinding?.params).toMatchObject({
+      allowedNextToolCall: {
+        action: 'plan_primitive_tools',
+        action_id: 'source.review_context',
+        candidate_reviewed_override_ref: 'evidence:evidence-reviewed-curated-rag',
+        candidate_evidence_ref: 'aitp:evidence:evidence-reviewed-curated-rag',
+        review_before_draft: true,
+        requires_fresh_draft_action_after_review: true,
+        infers_payload_values: false,
+      },
+      forbiddenUses: [
+        'infer_chunk_id',
+        'infer_promotion_stage',
+        'mutate_payload_now',
+        'execute_write_now',
+        'evidence_support',
+        'validation_result',
+        'source_support_result',
+        'claim_trust_update',
+        'trust_apply',
+        'final_gate_satisfaction',
+      ],
+    });
+    const draftBinding = pack.actionBindings.find(
+      (item) => item.adapterId === 'aitp.curated-rag.carried-ref-repair-result-continuation',
+    );
+    expect(draftBinding?.params).toMatchObject({
       allowedNextToolCall: {
         action: 'draft_aitp_curated_rag_write_bridge_call',
         candidate_reviewed_override_ref: 'evidence:evidence-reviewed-curated-rag',

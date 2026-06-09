@@ -549,6 +549,25 @@ describe('ResearchContextManager', () => {
     });
     expect(pack?.actionBindings).toContainEqual(
       expect.objectContaining({
+        actionId: 'source.review_context',
+        adapterId: 'aitp.curated-rag.carried-ref-repair-result-source-context-review',
+        params: expect.objectContaining({
+          toolAction: 'ResearchAction.plan_primitive_tools',
+          actionId: 'source.review_context',
+          continuationSource: 'carried_ref_repair_result_summary',
+          reviewBeforeDraft: true,
+          requiresFreshDraftActionAfterReview: true,
+          infersPayloadValues: false,
+          mutatesNextPayloadNow: false,
+          executesWriteNow: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+        }),
+      }),
+    );
+    expect(pack?.actionBindings).toContainEqual(
+      expect.objectContaining({
         actionId: 'draft_aitp_curated_rag_write_bridge_call',
         adapterId: 'aitp.curated-rag.carried-ref-repair-result-continuation',
         params: expect.objectContaining({
@@ -573,6 +592,7 @@ describe('ResearchContextManager', () => {
     const reminder = (lastMessage?.content[0] as { text: string }).text;
     expect(reminder).toContain('AITP carried-ref repair result');
     expect(reminder).toContain('evidence:evidence-reviewed-curated-rag');
+    expect(reminder).toContain('first review source text, chunk scope, and claim scope');
     expect(reminder).toContain('fresh curated RAG write-bridge draft');
     expect(reminder).toContain('do not infer chunk/stage, mutate payloads, execute another write');
   });
