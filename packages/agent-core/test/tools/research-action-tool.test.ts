@@ -707,6 +707,81 @@ describe('ResearchActionTool', () => {
     expect(loaded.output).toContain('&quot;claimTrustMutation&quot;:&quot;none&quot;');
   });
 
+  it('renders carried-ref repair result continuation bindings in loaded ContextPack XML', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    agent.workFrames.open(
+      {
+        id: 'frame.carried-ref-repair-result',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Continue a repaired carried-ref promotion path.',
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        curatedRagCarriedRefRepairResult: {
+          source: 'execute_aitp_write_bridge_result',
+          handoffId: 'curated-rag-write-handoff.chunk.evidence.hash',
+          confirmationId: 'curated-rag-confirmation.chunk.evidence.hash',
+          completedStage: 'evidence',
+          completedOperation: 'recordEvidence',
+          resultKind: 'evidence',
+          recordId: 'evidence-reviewed-curated-rag',
+          canonicalRef: 'evidence:evidence-reviewed-curated-rag',
+          evidenceRef: 'aitp:evidence:evidence-reviewed-curated-rag',
+          refKind: 'evidence',
+          repairHintOperations: ['recordReferenceLocation'],
+          selectedWriteDiffersFromRepairHints: true,
+          readinessChecklistId:
+            'readiness-checklist.curated_rag_write_call_draft.curated-rag-write-handoff.chunk.evidence.hash',
+          reviewedOverridesRequired: true,
+          readinessInspectionRequired: true,
+          explicitExecutePrecheckPassed: true,
+          bridgeCalled: true,
+          resultWrittenByAitp: true,
+          nextPayloadMutatedNow: false,
+          nextWriteExecutedNow: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+          requiresExplicitNextDraft: true,
+        },
+      },
+      { source: 'controller' },
+    );
+
+    const loaded = await execute(tool, {
+      action: 'load_context_pack',
+      context_pack_id: pack.id,
+    });
+
+    expect(loaded.output).toContain('<curated_rag_carried_ref_repair_result');
+    expect(loaded.output).toContain('source="execute_aitp_write_bridge_result"');
+    expect(loaded.output).toContain('completed_operation="recordEvidence"');
+    expect(loaded.output).toContain('canonical_ref="evidence:evidence-reviewed-curated-rag"');
+    expect(loaded.output).toContain('evidence_ref="aitp:evidence:evidence-reviewed-curated-rag"');
+    expect(loaded.output).toContain('next_payload_mutated_now="false"');
+    expect(loaded.output).toContain('next_write_executed_now="false"');
+    expect(loaded.output).toContain('records_validation_result="false"');
+    expect(loaded.output).toContain('source_support_result="false"');
+    expect(loaded.output).toContain('claim_trust_mutation="none"');
+    expect(loaded.output).toContain('requires_explicit_next_draft="true"');
+    expect(loaded.output).toContain('adapter_id="aitp.curated-rag.carried-ref-repair-result-continuation"');
+    expect(loaded.output).toContain('&quot;continuationSource&quot;:&quot;carried_ref_repair_result_summary&quot;');
+    expect(loaded.output).toContain('&quot;candidateReviewedOverrideRef&quot;:&quot;evidence:evidence-reviewed-curated-rag&quot;');
+    expect(loaded.output).toContain('&quot;requiresExplicitChunkSelection&quot;:true');
+    expect(loaded.output).toContain('&quot;requiresExplicitPromotionStageOrOperationSelection&quot;:true');
+    expect(loaded.output).toContain('&quot;mutatesNextPayloadNow&quot;:false');
+    expect(loaded.output).toContain('&quot;executesWriteNow&quot;:false');
+    expect(loaded.output).toContain('&quot;recordsValidationResult&quot;:false');
+    expect(loaded.output).toContain('&quot;sourceSupportResult&quot;:false');
+    expect(loaded.output).toContain('&quot;claimTrustMutation&quot;:&quot;none&quot;');
+  });
+
   it('executes configured AITP write-bridge operations as research action results', async () => {
     const records: AgentRecord[] = [];
     const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];

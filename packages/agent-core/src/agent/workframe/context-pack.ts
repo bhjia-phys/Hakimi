@@ -163,6 +163,14 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
       'Carried-ref repair reminders do not render suggestions, mutate payloads, call bridges, validate, satisfy final gates, or update claim trust.',
     );
   }
+  if (pack.curatedRagCarriedRefRepairResult !== undefined) {
+    lines.push(
+      `AITP carried-ref repair result: ${pack.curatedRagCarriedRefRepairResult.canonicalRef} from ${pack.curatedRagCarriedRefRepairResult.completedOperation}; carry it only as explicit reviewed override input for a fresh curated RAG write-bridge draft.`,
+    );
+    lines.push(
+      'Carried-ref repair result continuations do not infer chunk/stage, mutate payloads, execute another write, validate source support, satisfy final gates, or update claim trust.',
+    );
+  }
   if (pack.actionBindings.length > 0) {
     lines.push(
       `Action bindings: ${bounded(pack.actionBindings.map((binding) => renderActionBinding(binding.actionId))).join(', ')}`,

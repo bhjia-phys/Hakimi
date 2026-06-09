@@ -406,7 +406,139 @@ describe('compileResearchContextPack', () => {
       'aitp.curated-rag.carried-ref-repair-draft',
     );
   });
+
+  it('adds carried-ref repair result continuation bindings without granting support or trust', () => {
+    const pack = compileResearchContextPack({
+      workFrame: createWorkFrame({
+        id: 'frame.rag-carried-ref-result',
+        domain: DOMAIN,
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Continue a repaired carried-ref promotion path for claim-fqhe.',
+      }),
+      curatedRagCarriedRefRepairResult: carriedRefRepairResultSummary(),
+      now: () => 123,
+    });
+
+    expect(pack.curatedRagCarriedRefRepairResult).toMatchObject({
+      source: 'execute_aitp_write_bridge_result',
+      handoffId: 'curated-rag-write-handoff.chunk.evidence.hash',
+      completedOperation: 'recordEvidence',
+      resultKind: 'evidence',
+      recordId: 'evidence-reviewed-curated-rag',
+      canonicalRef: 'evidence:evidence-reviewed-curated-rag',
+      evidenceRef: 'aitp:evidence:evidence-reviewed-curated-rag',
+      refKind: 'evidence',
+      reviewedOverridesRequired: true,
+      readinessInspectionRequired: true,
+      explicitExecutePrecheckPassed: true,
+      bridgeCalled: true,
+      resultWrittenByAitp: true,
+      nextPayloadMutatedNow: false,
+      nextWriteExecutedNow: false,
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+      requiresExplicitNextDraft: true,
+    });
+    expect(pack.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'aitp:curated-rag-carried-ref-repair-result-summary',
+        source: 'aitp',
+        refId: 'curated-rag-write-handoff.chunk.evidence.hash',
+      }),
+    );
+    expect(pack.actionBindings).toContainEqual(
+      expect.objectContaining({
+        actionId: 'draft_aitp_curated_rag_write_bridge_call',
+        adapterId: 'aitp.curated-rag.carried-ref-repair-result-continuation',
+        objectRefs: expect.arrayContaining([
+          'evidence:evidence-reviewed-curated-rag',
+          'aitp:evidence:evidence-reviewed-curated-rag',
+          'carried_ref_repair_handoff:curated-rag-write-handoff.chunk.evidence.hash',
+        ]),
+        params: expect.objectContaining({
+          toolAction: 'ResearchAction.draft_aitp_curated_rag_write_bridge_call',
+          continuationSource: 'carried_ref_repair_result_summary',
+          returnedResultOwnedByAitp: true,
+          candidateReviewedOverrideRef: 'evidence:evidence-reviewed-curated-rag',
+          candidateEvidenceRef: 'aitp:evidence:evidence-reviewed-curated-rag',
+          requiresFreshDraftAction: true,
+          requiresExplicitChunkSelection: true,
+          requiresExplicitPromotionStageOrOperationSelection: true,
+          requiresReviewedOverrides: true,
+          requiresReadinessInspection: true,
+          requiresExplicitExecuteCall: true,
+          infersPayloadValues: false,
+          mutatesNextPayloadNow: false,
+          executesWriteNow: false,
+          bridgeCalled: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+          recordsTrustState: false,
+        }),
+      }),
+    );
+    expect(pack.actionBindings[0]?.params).toMatchObject({
+      allowedNextToolCall: {
+        action: 'draft_aitp_curated_rag_write_bridge_call',
+        candidate_reviewed_override_ref: 'evidence:evidence-reviewed-curated-rag',
+        candidate_evidence_ref: 'aitp:evidence:evidence-reviewed-curated-rag',
+        requires_fresh_draft_action: true,
+        requires_explicit_chunk_selection: true,
+        requires_explicit_promotion_stage_or_operation_selection: true,
+        requires_reviewed_overrides: true,
+        requires_readiness_inspection: true,
+        requires_explicit_execute_call: true,
+        infers_payload_values: false,
+      },
+      forbiddenUses: [
+        'infer_chunk_id',
+        'infer_promotion_stage',
+        'mutate_payload_now',
+        'execute_write_now',
+        'evidence_support',
+        'validation_result',
+        'source_support_result',
+        'claim_trust_update',
+        'trust_apply',
+        'final_gate_satisfaction',
+      ],
+    });
+  });
 });
+
+function carriedRefRepairResultSummary() {
+  return {
+    source: 'execute_aitp_write_bridge_result',
+    handoffId: 'curated-rag-write-handoff.chunk.evidence.hash',
+    confirmationId: 'curated-rag-confirmation.chunk.evidence.hash',
+    completedStage: 'evidence',
+    completedOperation: 'recordEvidence',
+    resultKind: 'evidence',
+    recordId: 'evidence-reviewed-curated-rag',
+    canonicalRef: 'evidence:evidence-reviewed-curated-rag',
+    evidenceRef: 'aitp:evidence:evidence-reviewed-curated-rag',
+    refKind: 'evidence',
+    repairHintOperations: ['recordReferenceLocation'],
+    selectedWriteDiffersFromRepairHints: true,
+    readinessChecklistId: 'readiness-checklist.curated_rag_write_call_draft.curated-rag-write-handoff.chunk.evidence.hash',
+    reviewedOverridesRequired: true,
+    readinessInspectionRequired: true,
+    explicitExecutePrecheckPassed: true,
+    bridgeCalled: true,
+    resultWrittenByAitp: true,
+    nextPayloadMutatedNow: false,
+    nextWriteExecutedNow: false,
+    recordsValidationResult: false,
+    sourceSupportResult: false,
+    claimTrustMutation: 'none',
+    canUpdateClaimTrust: false,
+    requiresExplicitNextDraft: true,
+  } as const;
+}
 
 function profile(): DomainProfile {
   return {

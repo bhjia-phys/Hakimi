@@ -508,6 +508,75 @@ describe('ResearchContextManager', () => {
     );
   });
 
+  it('injects carried-ref repair result continuation bindings from prior tool output', async () => {
+    const agent = makeAgent();
+    agent.workFrames.open(
+      {
+        id: 'frame.carried-ref-repair-result',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Continue curated RAG promotion after a repaired carried-ref write result.',
+      },
+      { source: 'controller' },
+    );
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text:
+          'Continue after <carried_ref_repair_result_summary source="execute_aitp_write_bridge_result" handoff_id="curated-rag-write-handoff.chunk.evidence.hash" confirmation_id="curated-rag-confirmation.chunk.evidence.hash" completed_stage="evidence" completed_operation="recordEvidence" result_kind="evidence" record_id="evidence-reviewed-curated-rag" canonical_ref="evidence:evidence-reviewed-curated-rag" evidence_ref="aitp:evidence:evidence-reviewed-curated-rag" ref_kind="evidence" repair_hint_operations="recordReferenceLocation" selected_write_differs_from_repair_hints="true" readiness_checklist_id="readiness-checklist.curated_rag_write_call_draft.curated-rag-write-handoff.chunk.evidence.hash" reviewed_overrides_required="true" readiness_inspection_required="true" explicit_execute_precheck_passed="true" bridge_called="true" result_written_by_aitp="true" next_payload_mutated_now="false" next_write_executed_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_next_draft="true">.',
+      },
+    ]);
+    await agent.injection.inject();
+
+    const pack = agent.researchContext.listPacks().at(-1);
+    expect(pack?.curatedRagCarriedRefRepairResult).toMatchObject({
+      source: 'execute_aitp_write_bridge_result',
+      handoffId: 'curated-rag-write-handoff.chunk.evidence.hash',
+      completedOperation: 'recordEvidence',
+      canonicalRef: 'evidence:evidence-reviewed-curated-rag',
+      evidenceRef: 'aitp:evidence:evidence-reviewed-curated-rag',
+      refKind: 'evidence',
+      bridgeCalled: true,
+      resultWrittenByAitp: true,
+      nextPayloadMutatedNow: false,
+      nextWriteExecutedNow: false,
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+      requiresExplicitNextDraft: true,
+    });
+    expect(pack?.actionBindings).toContainEqual(
+      expect.objectContaining({
+        actionId: 'draft_aitp_curated_rag_write_bridge_call',
+        adapterId: 'aitp.curated-rag.carried-ref-repair-result-continuation',
+        params: expect.objectContaining({
+          continuationSource: 'carried_ref_repair_result_summary',
+          candidateReviewedOverrideRef: 'evidence:evidence-reviewed-curated-rag',
+          requiresFreshDraftAction: true,
+          requiresExplicitChunkSelection: true,
+          requiresExplicitPromotionStageOrOperationSelection: true,
+          requiresReviewedOverrides: true,
+          requiresReadinessInspection: true,
+          requiresExplicitExecuteCall: true,
+          infersPayloadValues: false,
+          mutatesNextPayloadNow: false,
+          executesWriteNow: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+        }),
+      }),
+    );
+    const lastMessage = agent.context.history.at(-1);
+    const reminder = (lastMessage?.content[0] as { text: string }).text;
+    expect(reminder).toContain('AITP carried-ref repair result');
+    expect(reminder).toContain('evidence:evidence-reviewed-curated-rag');
+    expect(reminder).toContain('fresh curated RAG write-bridge draft');
+    expect(reminder).toContain('do not infer chunk/stage, mutate payloads, execute another write');
+  });
+
   it('does not call AITP curated RAG provider for ordinary action prompts', async () => {
     const aitpCuratedRagProvider: AitpCuratedRagProvider = {
       async getCuratedRagCorpus() {

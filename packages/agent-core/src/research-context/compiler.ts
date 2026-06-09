@@ -31,6 +31,7 @@ import type {
   ResearchContextAitpSection,
   ResearchContextCapsuleSummary,
   ResearchContextCuratedRagCarriedRefRepairSection,
+  ResearchContextCuratedRagCarriedRefRepairResultSummary,
   ResearchContextCuratedRagChunkSummary,
   ResearchContextCuratedRagSection,
   ResearchContextLedgerProposalSummary,
@@ -90,10 +91,18 @@ export function compileResearchContextPack(
   const aitp = collectAitp(input, diagnostics);
   const curatedRag = collectCuratedRag(input, diagnostics);
   const curatedRagCarriedRefRepair = collectCuratedRagCarriedRefRepair(input, diagnostics);
+  const curatedRagCarriedRefRepairResult = collectCuratedRagCarriedRefRepairResult(
+    input,
+    diagnostics,
+  );
   const curatedRagActionBindings = curatedRagPromotionDraftBindings(input, curatedRag);
   const curatedRagRepairActionBindings = curatedRagCarriedRefRepairBindings(
     input,
     curatedRagCarriedRefRepair,
+  );
+  const curatedRagRepairResultActionBindings = curatedRagCarriedRefRepairResultBindings(
+    input,
+    curatedRagCarriedRefRepairResult,
   );
   const actionBindings = bounded(
     uniqueBindings([
@@ -102,6 +111,7 @@ export function compileResearchContextPack(
       ...(aitp?.compiled.actionRecommendations ?? []),
       ...curatedRagActionBindings,
       ...curatedRagRepairActionBindings,
+      ...curatedRagRepairResultActionBindings,
     ]),
     input.limits?.maxActionBindings ?? DEFAULT_MAX_ACTION_BINDINGS,
     (remaining) =>
@@ -145,6 +155,16 @@ export function compileResearchContextPack(
             curatedRagCarriedRefRepair.failureCode ?? '',
             curatedRagCarriedRefRepair.failurePath ?? '',
           ]),
+    curatedRagCarriedRefRepairResultDigest:
+      curatedRagCarriedRefRepairResult === undefined
+        ? undefined
+        : contextDigest([
+            curatedRagCarriedRefRepairResult.handoffId,
+            curatedRagCarriedRefRepairResult.confirmationId,
+            curatedRagCarriedRefRepairResult.canonicalRef,
+            curatedRagCarriedRefRepairResult.evidenceRef,
+            curatedRagCarriedRefRepairResult.completedOperation,
+          ]),
   });
 
   return {
@@ -164,6 +184,9 @@ export function compileResearchContextPack(
     ...(aitp === undefined ? {} : { aitp }),
     ...(curatedRag === undefined ? {} : { curatedRag }),
     ...(curatedRagCarriedRefRepair === undefined ? {} : { curatedRagCarriedRefRepair }),
+    ...(curatedRagCarriedRefRepairResult === undefined
+      ? {}
+      : { curatedRagCarriedRefRepairResult }),
     actionBindings,
     domainPack,
     diagnostics,
@@ -268,6 +291,110 @@ function curatedRagCarriedRefRepairBindings(
           infers_payload_values: false,
         },
         forbiddenUses: [
+          'execute_write_now',
+          'evidence_support',
+          'validation_result',
+          'source_support_result',
+          'claim_trust_update',
+          'trust_apply',
+          'final_gate_satisfaction',
+        ],
+      },
+    },
+  ];
+}
+
+function collectCuratedRagCarriedRefRepairResult(
+  input: CompileResearchContextPackInput,
+  diagnostics: ResearchContextPackDiagnostic[],
+): ResearchContextCuratedRagCarriedRefRepairResultSummary | undefined {
+  const summary = input.curatedRagCarriedRefRepairResult;
+  if (summary === undefined) return undefined;
+  diagnostics.push({
+    severity: 'info',
+    code: 'aitp:curated-rag-carried-ref-repair-result-summary',
+    message:
+      'Curated RAG carried-ref repair returned a successful AITP record; any continuation is a fresh draft with explicit reviewed overrides.',
+    source: 'aitp',
+    refId: summary.handoffId,
+  });
+  return summary;
+}
+
+function curatedRagCarriedRefRepairResultBindings(
+  input: CompileResearchContextPackInput,
+  summary: ResearchContextCuratedRagCarriedRefRepairResultSummary | undefined,
+): readonly ResearchActionBinding[] {
+  if (summary === undefined) return [];
+  const bindingId = curatedRagCarriedRefRepairResultBindingId(
+    summary.handoffId,
+    summary.canonicalRef,
+  );
+  return [
+    {
+      id: bindingId,
+      actionId: 'draft_aitp_curated_rag_write_bridge_call',
+      adapterId: 'aitp.curated-rag.carried-ref-repair-result-continuation',
+      domainId: input.workFrame.domain,
+      objectRefs: [
+        summary.canonicalRef,
+        summary.evidenceRef,
+        `aitp:${summary.refKind}:${summary.recordId}`,
+        `carried_ref_repair_handoff:${summary.handoffId}`,
+      ],
+      priority: 'normal',
+      reason:
+        'Successful carried-ref repair result can be carried into a later fresh curated RAG write-bridge draft as explicit reviewed override input; this binding does not infer chunk, stage, payload, validation, or trust.',
+      params: {
+        toolAction: 'ResearchAction.draft_aitp_curated_rag_write_bridge_call',
+        handoffId: summary.handoffId,
+        confirmationId: summary.confirmationId,
+        completedStage: summary.completedStage,
+        completedOperation: summary.completedOperation,
+        resultKind: summary.resultKind,
+        refKind: summary.refKind,
+        recordId: summary.recordId,
+        canonicalRef: summary.canonicalRef,
+        evidenceRef: summary.evidenceRef,
+        readinessChecklistId: summary.readinessChecklistId,
+        repairHintOperations: summary.repairHintOperations,
+        selectedWriteDiffersFromRepairHints: summary.selectedWriteDiffersFromRepairHints,
+        continuationSource: 'carried_ref_repair_result_summary',
+        returnedResultOwnedByAitp: true,
+        candidateReviewedOverrideRef: summary.canonicalRef,
+        candidateEvidenceRef: summary.evidenceRef,
+        requiresFreshDraftAction: true,
+        requiresExplicitChunkSelection: true,
+        requiresExplicitPromotionStageOrOperationSelection: true,
+        requiresReviewedOverrides: true,
+        requiresReadinessInspection: true,
+        requiresExplicitExecuteCall: true,
+        infersPayloadValues: false,
+        mutatesNextPayloadNow: false,
+        executesWriteNow: false,
+        bridgeCalled: false,
+        recordsValidationResult: false,
+        sourceSupportResult: false,
+        claimTrustMutation: 'none',
+        canUpdateClaimTrust: false,
+        recordsTrustState: false,
+        allowedNextToolCall: {
+          action: 'draft_aitp_curated_rag_write_bridge_call',
+          carried_ref_repair_result_binding_id: bindingId,
+          candidate_reviewed_override_ref: summary.canonicalRef,
+          candidate_evidence_ref: summary.evidenceRef,
+          requires_fresh_draft_action: true,
+          requires_explicit_chunk_selection: true,
+          requires_explicit_promotion_stage_or_operation_selection: true,
+          requires_reviewed_overrides: true,
+          requires_readiness_inspection: true,
+          requires_explicit_execute_call: true,
+          infers_payload_values: false,
+        },
+        forbiddenUses: [
+          'infer_chunk_id',
+          'infer_promotion_stage',
+          'mutate_payload_now',
           'execute_write_now',
           'evidence_support',
           'validation_result',
@@ -442,6 +569,10 @@ function curatedRagPromotionDraftBindingId(chunkId: string): string {
 
 function curatedRagCarriedRefRepairBindingId(failureCode: string, failurePath: string): string {
   return `binding.aitp.curated-rag-carried-ref-repair.${safeId(failureCode)}.${contextDigest([failurePath])}`;
+}
+
+function curatedRagCarriedRefRepairResultBindingId(handoffId: string, canonicalRef: string): string {
+  return `binding.aitp.curated-rag-carried-ref-repair-result.${safeId(handoffId)}.${contextDigest([canonicalRef])}`;
 }
 
 function inferAitpClaimScope(input: CompileResearchContextPackInput): {
@@ -919,6 +1050,7 @@ function contextPackId(input: {
   readonly aitpDigest?: string | undefined;
   readonly curatedRagDigest?: string | undefined;
   readonly curatedRagCarriedRefRepairDigest?: string | undefined;
+  readonly curatedRagCarriedRefRepairResultDigest?: string | undefined;
 }): string {
   const hash = createHash('sha256')
     .update(JSON.stringify(input))

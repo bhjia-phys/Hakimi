@@ -349,6 +349,15 @@ operations, readiness checklist, and selected operation that prepared it. This
 is only runtime audit context over an AITP-owned returned result: it does not
 mutate the next payload, execute another write, record validation/source
 support, satisfy a final gate, or update claim trust.
+On the following turn, Hakimi can compile that result summary into
+ResearchContextPack as `curated_rag_carried_ref_repair_result` and expose a
+bounded `draft_aitp_curated_rag_write_bridge_call` continuation binding. The
+binding carries the returned canonical ref/evidence ref only as candidate
+reviewed override input for a fresh draft; it still requires explicit chunk
+selection, explicit promotion stage or operation selection, reviewed overrides,
+readiness inspection, and a separate explicit execute call. It does not infer
+payload values, mutate the next payload, validate source support, satisfy final
+gates, or update claim trust.
 Promotion and write-bridge call drafts now also render
 `canonical_identity_alignment`. This section maps each draft stage, or the
 selected stage, to the future AITP record kind and canonical ref prefix that
