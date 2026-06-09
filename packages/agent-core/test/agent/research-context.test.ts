@@ -421,7 +421,7 @@ describe('ResearchContextManager', () => {
     agent.context.appendUserMessage([
       {
         type: 'text',
-        text: 'Fix malformed promotion_carried_ref_handoffs after a carried_ref_handoff_failure mismatch.',
+        text: 'Fix malformed promotion_carried_ref_handoffs after carried_ref_handoff_failure code="evidence_ref_record_id_mismatch" path="promotion_carried_ref_handoffs[0].evidence_ref" mismatch.',
       },
     ]);
     await agent.injection.inject();
@@ -437,7 +437,30 @@ describe('ResearchContextManager', () => {
       recordsValidationResult: false,
       sourceSupportResult: false,
       claimTrustMutation: 'none',
+      failureCode: 'evidence_ref_record_id_mismatch',
+      failurePath: 'promotion_carried_ref_handoffs[0].evidence_ref',
     });
+    expect(pack?.actionBindings).toContainEqual(
+      expect.objectContaining({
+        actionId: 'draft_aitp_curated_rag_write_bridge_call',
+        adapterId: 'aitp.curated-rag.carried-ref-repair-draft',
+        params: expect.objectContaining({
+          failureCode: 'evidence_ref_record_id_mismatch',
+          failurePath: 'promotion_carried_ref_handoffs[0].evidence_ref',
+          requiresFreshDraftAction: true,
+          requiresExplicitChunkSelection: true,
+          requiresExplicitPromotionStageOrOperationSelection: true,
+          requiresReviewedOverrides: true,
+          requiresReadinessInspection: true,
+          requiresExplicitExecuteCall: true,
+          infersPayloadValues: false,
+          executesWriteNow: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+        }),
+      }),
+    );
     const lastMessage = agent.context.history.at(-1);
     const reminder = (lastMessage?.content[0] as { text: string }).text;
     expect(reminder).toContain('AITP curated RAG carried-ref repair');
@@ -446,6 +469,43 @@ describe('ResearchContextManager', () => {
     expect(reminder).toContain('ResearchAction.inspect_aitp_write_bridge_handoff_readiness');
     expect(reminder).toContain('separate explicit call');
     expect(reminder).toContain('do not render suggestions, mutate payloads, call bridges, validate');
+    expect(reminder).toContain('Action bindings');
+    expect(reminder).toContain('draft_aitp_curated_rag_write_bridge_call');
+  });
+
+  it('does not bind carried-ref repair drafts without concrete failure code and path', async () => {
+    const agent = makeAgent();
+    agent.workFrames.open(
+      {
+        id: 'frame.carried-ref-repair-generic',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Repair curated RAG carried-ref promotion handoff inputs.',
+      },
+      { source: 'controller' },
+    );
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text: 'Fix malformed promotion_carried_ref_handoffs after a carried_ref_handoff_failure mismatch.',
+      },
+    ]);
+    await agent.injection.inject();
+
+    const pack = agent.researchContext.listPacks().at(-1);
+    expect(pack?.curatedRagCarriedRefRepair).toMatchObject({
+      active: true,
+      executesWriteNow: false,
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+    });
+    expect(pack?.curatedRagCarriedRefRepair?.failureCode).toBeUndefined();
+    expect(pack?.curatedRagCarriedRefRepair?.failurePath).toBeUndefined();
+    expect(pack?.actionBindings.map((item) => item.adapterId)).not.toContain(
+      'aitp.curated-rag.carried-ref-repair-draft',
+    );
   });
 
   it('does not call AITP curated RAG provider for ordinary action prompts', async () => {

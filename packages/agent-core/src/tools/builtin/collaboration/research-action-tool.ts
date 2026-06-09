@@ -958,7 +958,7 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     }
     const selector = curatedRagPromotionWriteBridgeCallSelector(args);
     if (selector.isError) return errorResult(selector.message);
-    const boundInput = this.resolveCuratedRagPromotionDraftBinding(args);
+    const boundInput = this.resolveCuratedRagWriteBridgeCallBinding(args);
     if (boundInput.isError) return errorResult(boundInput.message);
     const ragChunkId = firstText(args.rag_chunk_id, boundInput.input?.ragChunkId);
     if (ragChunkId === undefined) {
@@ -1086,6 +1086,60 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       return {
         isError: true,
         message: `Action binding "${bindingId}" does not contain a usable curated RAG promotion draft input.`,
+      };
+    }
+    return { isError: false, bindingId, input };
+  }
+
+  private resolveCuratedRagWriteBridgeCallBinding(args: ResearchActionToolInput):
+    | {
+        readonly isError: false;
+        readonly bindingId?: string | undefined;
+        readonly input?: CuratedRagPromotionDraftBindingInput | undefined;
+      }
+    | { readonly isError: true; readonly message: string } {
+    if (this.manager === undefined) {
+      return { isError: false };
+    }
+    if (args.action_binding_id === undefined || args.action_binding_id.trim().length === 0) {
+      return { isError: false };
+    }
+    const bindingId = args.action_binding_id.trim();
+    const contextPackId = args.context_pack_id ?? this.manager.activeWorkFrame()?.contextPackId;
+    if (contextPackId === undefined || contextPackId.length === 0) {
+      return {
+        isError: true,
+        message:
+          'ResearchAction draft_aitp_curated_rag_write_bridge_call with action_binding_id requires context_pack_id or an active WorkFrame with an attached ContextPack.',
+      };
+    }
+    const binding = this.manager
+      .requireContextPack(contextPackId)
+      .actionBindings.find((item) => item.id === bindingId);
+    if (binding === undefined) {
+      return {
+        isError: true,
+        message: `ContextPack "${contextPackId}" does not contain action binding "${bindingId}".`,
+      };
+    }
+    if (
+      binding.actionId !== 'draft_aitp_curated_rag_promotion' &&
+      binding.actionId !== 'draft_aitp_curated_rag_write_bridge_call'
+    ) {
+      return {
+        isError: true,
+        message:
+          `Action binding "${bindingId}" is for "${binding.actionId}", not draft_aitp_curated_rag_write_bridge_call.`,
+      };
+    }
+    if (binding.actionId === 'draft_aitp_curated_rag_write_bridge_call') {
+      return { isError: false, bindingId };
+    }
+    const input = curatedRagPromotionDraftBindingInput(binding.params);
+    if (input === undefined) {
+      return {
+        isError: true,
+        message: `Action binding "${bindingId}" does not contain a usable curated RAG write-bridge call input.`,
       };
     }
     return { isError: false, bindingId, input };
@@ -4139,7 +4193,7 @@ function renderCuratedRagCarriedRefRepairSection(pack: ResearchContextPack): str
   const repair = pack.curatedRagCarriedRefRepair;
   if (repair === undefined) return '  <curated_rag_carried_ref_repair_sequence />';
   return [
-    `  <curated_rag_carried_ref_repair_sequence source="${repair.source}" active="${String(repair.active)}" taxonomy_action="${repair.taxonomyAction}" draft_action="${repair.draftAction}" readiness_action="${repair.readinessAction}" execute_action="${repair.executeAction}" executes_write_now="${String(repair.executesWriteNow)}" records_validation_result="${String(repair.recordsValidationResult)}" source_support_result="${String(repair.sourceSupportResult)}" claim_trust_mutation="${repair.claimTrustMutation}">`,
+    `  <curated_rag_carried_ref_repair_sequence source="${repair.source}" active="${String(repair.active)}"${repair.failureCode === undefined ? '' : ` failure_code="${escapeXml(repair.failureCode)}"`}${repair.failurePath === undefined ? '' : ` failure_path="${escapeXml(repair.failurePath)}"`} taxonomy_action="${repair.taxonomyAction}" draft_action="${repair.draftAction}" readiness_action="${repair.readinessAction}" execute_action="${repair.executeAction}" executes_write_now="${String(repair.executesWriteNow)}" records_validation_result="${String(repair.recordsValidationResult)}" source_support_result="${String(repair.sourceSupportResult)}" claim_trust_mutation="${repair.claimTrustMutation}">`,
     renderBoundedStringList('trigger_terms', 'term', repair.triggerTerms, '    '),
     renderBoundedStringList('safe_sequence', 'step', repair.safeSequence, '    '),
     '  </curated_rag_carried_ref_repair_sequence>',

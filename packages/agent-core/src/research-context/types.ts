@@ -168,6 +168,8 @@ export interface ResearchContextCuratedRagCarriedRefRepairSection {
   readonly active: true;
   readonly source: 'turn_text';
   readonly triggerTerms: readonly string[];
+  readonly failureCode?: string | undefined;
+  readonly failurePath?: string | undefined;
   readonly safeSequence: readonly string[];
   readonly taxonomyAction: 'ResearchAction.list_actions';
   readonly draftAction: 'ResearchAction.draft_aitp_curated_rag_write_bridge_call';
@@ -219,6 +221,8 @@ export interface CompileResearchContextPackOptions {
   readonly curatedRagReasonIds?: readonly string[] | undefined;
   readonly curatedRagCarriedRefRepairActive?: boolean | undefined;
   readonly curatedRagCarriedRefRepairTriggerTerms?: readonly string[] | undefined;
+  readonly curatedRagCarriedRefRepairFailureCode?: string | undefined;
+  readonly curatedRagCarriedRefRepairFailurePath?: string | undefined;
   readonly limits?: CompileResearchContextPackLimits | undefined;
   readonly now?: (() => number) | undefined;
 }

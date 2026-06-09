@@ -303,6 +303,109 @@ describe('compileResearchContextPack', () => {
       }),
     );
   });
+
+  it('adds carried-ref repair action binding only for concrete failure code and path', () => {
+    const pack = compileResearchContextPack({
+      workFrame: createWorkFrame({
+        id: 'frame.rag-carried-ref-repair-binding',
+        domain: DOMAIN,
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Repair malformed carried-ref handoff input for claim-fqhe.',
+      }),
+      curatedRagCarriedRefRepairActive: true,
+      curatedRagCarriedRefRepairTriggerTerms: [
+        'carried_ref_handoff_failure',
+        'mismatch',
+      ],
+      curatedRagCarriedRefRepairFailureCode: 'evidence_ref_record_id_mismatch',
+      curatedRagCarriedRefRepairFailurePath: 'promotion_carried_ref_handoffs[0].evidence_ref',
+      now: () => 123,
+    });
+
+    expect(pack.curatedRagCarriedRefRepair).toMatchObject({
+      failureCode: 'evidence_ref_record_id_mismatch',
+      failurePath: 'promotion_carried_ref_handoffs[0].evidence_ref',
+      executesWriteNow: false,
+      recordsValidationResult: false,
+      sourceSupportResult: false,
+      claimTrustMutation: 'none',
+    });
+    expect(pack.actionBindings).toContainEqual(
+      expect.objectContaining({
+        actionId: 'draft_aitp_curated_rag_write_bridge_call',
+        adapterId: 'aitp.curated-rag.carried-ref-repair-draft',
+        priority: 'normal',
+        params: expect.objectContaining({
+          toolAction: 'ResearchAction.draft_aitp_curated_rag_write_bridge_call',
+          failureCode: 'evidence_ref_record_id_mismatch',
+          failurePath: 'promotion_carried_ref_handoffs[0].evidence_ref',
+          taxonomyAction: 'ResearchAction.list_actions',
+          requiresFreshDraftAction: true,
+          requiresExplicitChunkSelection: true,
+          requiresExplicitPromotionStageOrOperationSelection: true,
+          requiresReviewedOverrides: true,
+          requiresReadinessInspection: true,
+          requiresExplicitExecuteCall: true,
+          infersPayloadValues: false,
+          executesWriteNow: false,
+          bridgeCalled: false,
+          recordsValidationResult: false,
+          sourceSupportResult: false,
+          claimTrustMutation: 'none',
+          canUpdateClaimTrust: false,
+          recordsTrustState: false,
+        }),
+      }),
+    );
+    expect(pack.actionBindings[0]?.params).toMatchObject({
+      allowedNextToolCall: {
+        action: 'draft_aitp_curated_rag_write_bridge_call',
+        failure_code: 'evidence_ref_record_id_mismatch',
+        failure_path: 'promotion_carried_ref_handoffs[0].evidence_ref',
+        requires_fresh_draft_action: true,
+        requires_explicit_chunk_selection: true,
+        requires_explicit_promotion_stage_or_operation_selection: true,
+        requires_reviewed_overrides: true,
+        requires_readiness_inspection: true,
+        requires_explicit_execute_call: true,
+        infers_payload_values: false,
+      },
+      forbiddenUses: [
+        'execute_write_now',
+        'evidence_support',
+        'validation_result',
+        'source_support_result',
+        'claim_trust_update',
+        'trust_apply',
+        'final_gate_satisfaction',
+      ],
+    });
+  });
+
+  it('does not add carried-ref repair action binding without concrete failure metadata', () => {
+    const pack = compileResearchContextPack({
+      workFrame: createWorkFrame({
+        id: 'frame.rag-carried-ref-repair-generic',
+        domain: DOMAIN,
+        topic: 'fqhe-cs-effective-theory',
+        goal: 'Repair malformed carried-ref handoff input for claim-fqhe.',
+      }),
+      curatedRagCarriedRefRepairActive: true,
+      curatedRagCarriedRefRepairTriggerTerms: [
+        'promotion_carried_ref_handoffs',
+        'malformed',
+      ],
+      now: () => 123,
+    });
+
+    expect(pack.curatedRagCarriedRefRepair).toMatchObject({
+      active: true,
+      executesWriteNow: false,
+    });
+    expect(pack.actionBindings.map((item) => item.adapterId)).not.toContain(
+      'aitp.curated-rag.carried-ref-repair-draft',
+    );
+  });
 });
 
 function profile(): DomainProfile {

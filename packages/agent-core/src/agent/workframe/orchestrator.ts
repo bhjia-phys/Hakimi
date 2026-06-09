@@ -41,6 +41,8 @@ export class WorkFrameOrchestrator {
         curatedRagReasonIds: curatedRagMoment?.reasons,
         curatedRagCarriedRefRepairActive: carriedRefRepair.active,
         curatedRagCarriedRefRepairTriggerTerms: carriedRefRepair.triggerTerms,
+        curatedRagCarriedRefRepairFailureCode: carriedRefRepair.failureCode,
+        curatedRagCarriedRefRepairFailurePath: carriedRefRepair.failurePath,
       },
       { source: 'controller' },
     );
@@ -141,9 +143,15 @@ function normalizePrompt(input: readonly { readonly type?: string; readonly text
 
 function detectCuratedRagCarriedRefRepair(
   input: readonly { readonly type?: string; readonly text?: string }[],
-): { readonly active: boolean; readonly triggerTerms: readonly string[] } {
+): {
+  readonly active: boolean;
+  readonly triggerTerms: readonly string[];
+  readonly failureCode?: string | undefined;
+  readonly failurePath?: string | undefined;
+} {
   const prompt = normalizePrompt(input);
   if (prompt.length === 0) return { active: false, triggerTerms: [] };
+  const rawPrompt = promptText(input);
   const triggerTerms = [
     'promotion_carried_ref_handoffs',
     'carried_ref_handoff_failure',
@@ -157,7 +165,39 @@ function detectCuratedRagCarriedRefRepair(
   if (triggerTerms.length === 0 || repairTerms.length === 0) {
     return { active: false, triggerTerms: [] };
   }
-  return { active: true, triggerTerms: [...triggerTerms, ...repairTerms] };
+  const failure = extractCarriedRefHandoffFailure(rawPrompt);
+  return {
+    active: true,
+    triggerTerms: [...triggerTerms, ...repairTerms],
+    failureCode: failure?.code,
+    failurePath: failure?.path,
+  };
+}
+
+function promptText(input: readonly { readonly type?: string; readonly text?: string }[]): string {
+  return input
+    .filter((part) => part.type === 'text' && typeof part.text === 'string')
+    .map((part) => part.text!)
+    .join(' ');
+}
+
+function extractCarriedRefHandoffFailure(
+  prompt: string,
+): { readonly code: string; readonly path: string } | undefined {
+  if (!prompt.toLowerCase().includes('carried_ref_handoff_failure')) return undefined;
+  const code = extractPromptField(prompt, 'code');
+  const path = extractPromptField(prompt, 'path');
+  if (code === undefined || path === undefined) return undefined;
+  if (!/^promotion_carried_ref_handoffs\[\d+\]\.[A-Za-z0-9_]+$/.test(path)) return undefined;
+  return { code, path };
+}
+
+function extractPromptField(prompt: string, field: string): string | undefined {
+  const quoted = new RegExp(`\\b${field}\\s*=\\s*["']([^"']+)["']`, 'i').exec(prompt);
+  const value = quoted?.[1] ?? new RegExp(`\\b${field}\\s*=\\s*([^\\s>]+)`, 'i').exec(prompt)?.[1];
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function scoreFrame(frame: WorkFrame, prompt: string, active: boolean): number {

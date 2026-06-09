@@ -666,6 +666,8 @@ describe('ResearchActionTool', () => {
           'promotion_carried_ref_handoffs',
           'mismatch',
         ],
+        curatedRagCarriedRefRepairFailureCode: 'evidence_ref_record_id_mismatch',
+        curatedRagCarriedRefRepairFailurePath: 'promotion_carried_ref_handoffs[0].evidence_ref',
       },
       { source: 'controller' },
     );
@@ -676,6 +678,8 @@ describe('ResearchActionTool', () => {
     });
 
     expect(loaded.output).toContain('<curated_rag_carried_ref_repair_sequence');
+    expect(loaded.output).toContain('failure_code="evidence_ref_record_id_mismatch"');
+    expect(loaded.output).toContain('failure_path="promotion_carried_ref_handoffs[0].evidence_ref"');
     expect(loaded.output).toContain('taxonomy_action="ResearchAction.list_actions"');
     expect(loaded.output).toContain('draft_action="ResearchAction.draft_aitp_curated_rag_write_bridge_call"');
     expect(loaded.output).toContain('readiness_action="ResearchAction.inspect_aitp_write_bridge_handoff_readiness"');
@@ -686,6 +690,21 @@ describe('ResearchActionTool', () => {
     expect(loaded.output).toContain('claim_trust_mutation="none"');
     expect(loaded.output).toContain('<step>inspect taxonomy metadata</step>');
     expect(loaded.output).toContain('<step>execute only with explicit execute_aitp_write_bridge call</step>');
+    expect(loaded.output).toContain('action_id="draft_aitp_curated_rag_write_bridge_call"');
+    expect(loaded.output).toContain('adapter_id="aitp.curated-rag.carried-ref-repair-draft"');
+    expect(loaded.output).toContain('&quot;failureCode&quot;:&quot;evidence_ref_record_id_mismatch&quot;');
+    expect(loaded.output).toContain('&quot;failurePath&quot;:&quot;promotion_carried_ref_handoffs[0].evidence_ref&quot;');
+    expect(loaded.output).toContain('&quot;requiresFreshDraftAction&quot;:true');
+    expect(loaded.output).toContain('&quot;requiresExplicitChunkSelection&quot;:true');
+    expect(loaded.output).toContain('&quot;requiresExplicitPromotionStageOrOperationSelection&quot;:true');
+    expect(loaded.output).toContain('&quot;requiresReviewedOverrides&quot;:true');
+    expect(loaded.output).toContain('&quot;requiresReadinessInspection&quot;:true');
+    expect(loaded.output).toContain('&quot;requiresExplicitExecuteCall&quot;:true');
+    expect(loaded.output).toContain('&quot;infersPayloadValues&quot;:false');
+    expect(loaded.output).toContain('&quot;executesWriteNow&quot;:false');
+    expect(loaded.output).toContain('&quot;recordsValidationResult&quot;:false');
+    expect(loaded.output).toContain('&quot;sourceSupportResult&quot;:false');
+    expect(loaded.output).toContain('&quot;claimTrustMutation&quot;:&quot;none&quot;');
   });
 
   it('executes configured AITP write-bridge operations as research action results', async () => {
@@ -1722,6 +1741,70 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain('code="placeholder_value" field="source_refs[0]"');
     expect(result.output).toContain('code="requires_existing_record" field="source_asset_record"');
     expect(result.output).toContain('code="manual_review_required"');
+    expect(records).not.toContainEqual(
+      expect.objectContaining({ type: 'research_action.result_recorded' }),
+    );
+  });
+
+  it('accepts concrete carried-ref repair bindings for curated RAG write-call drafts', async () => {
+    const records: AgentRecord[] = [];
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(records, {
+      aitpCuratedRagProvider: curatedRagPromotionDraftProvider(),
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          throw new Error('write bridge must not be called by draft action');
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+    agent.workFrames.open(
+      {
+        id: 'frame.rag-carried-ref-repair-draft',
+        domain: 'topological-order/fqhe-cs',
+        topic: 'fqhe-literature',
+        goal: 'Repair a carried-ref handoff failure for claim-fqhe.',
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        curatedRagCarriedRefRepairActive: true,
+        curatedRagCarriedRefRepairTriggerTerms: [
+          'carried_ref_handoff_failure',
+          'mismatch',
+        ],
+        curatedRagCarriedRefRepairFailureCode: 'evidence_ref_record_id_mismatch',
+        curatedRagCarriedRefRepairFailurePath: 'promotion_carried_ref_handoffs[0].evidence_ref',
+      },
+      { source: 'controller' },
+    );
+    const bindingId = pack.actionBindings.find(
+      (binding) => binding.adapterId === 'aitp.curated-rag.carried-ref-repair-draft',
+    )?.id;
+
+    const result = await execute(tool, {
+      action: 'draft_aitp_curated_rag_write_bridge_call',
+      context_pack_id: pack.id,
+      action_binding_id: bindingId,
+      rag_chunk_id: 'curated_rag_chunk:source_backtrace_orientation:0001',
+      aitp_topic_id: 'fqhe-literature',
+      aitp_claim_id: 'claim-fqhe',
+      promotion_draft_stage: 'evidence',
+      promotion_reviewed_overrides: {
+        source_refs: ['source_asset:asset-reviewed', 'reference_location:loc-reviewed'],
+      },
+    });
+
+    expect(result.output).toContain('<aitp_curated_rag_write_bridge_call_draft');
+    expect(result.output).toContain(`action_binding_id="${bindingId}"`);
+    expect(result.output).toContain('stage="evidence"');
+    expect(result.output).toContain('aitp_operation="recordEvidence"');
+    expect(result.output).toContain('executes_write_now="false"');
+    expect(result.output).toContain('selected_write_executed="false"');
+    expect(result.output).toContain('requires_explicit_execute_call="true"');
+    expect(bridgeCalls).toEqual([]);
     expect(records).not.toContainEqual(
       expect.objectContaining({ type: 'research_action.result_recorded' }),
     );

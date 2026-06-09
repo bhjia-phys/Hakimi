@@ -318,6 +318,14 @@ points to taxonomy metadata, a fresh draft action, explicit reviewed overrides,
 readiness inspection, and a separate explicit execute call; it does not render
 suggestions, mutate payloads, call bridges, validate, satisfy final gates, or
 update claim trust.
+When that repair turn includes a concrete `carried_ref_handoff_failure`
+`code` and `path`, Hakimi also adds a small
+`draft_aitp_curated_rag_write_bridge_call` action binding with the failure
+metadata and no-write/no-validation/no-source-support/no-trust flags. The
+binding is only a model-facing repair affordance: it still requires an explicit
+chunk, promotion stage or operation, reviewed overrides, readiness inspection,
+and a separate `execute_aitp_write_bridge` call, and it does not infer payload
+values from the failure metadata.
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` against a proposed
 reviewed payload. Hakimi renders `original_payload_json`,

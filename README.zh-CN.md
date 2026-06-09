@@ -102,6 +102,14 @@ It points to taxonomy metadata, a fresh draft action, explicit reviewed
 overrides, readiness inspection, and a separate explicit execute call; it does
 not render suggestions, mutate payloads, call bridges, validate, satisfy final
 gates, or update claim trust.
+When the same turn includes a concrete `carried_ref_handoff_failure` `code`
+and `path`, Hakimi also compiles a small
+`draft_aitp_curated_rag_write_bridge_call` action binding. The binding carries
+the failure metadata and no-write/no-validation/no-source-support/no-trust
+flags, but still requires explicit chunk selection, promotion stage or
+operation selection, reviewed overrides, readiness inspection, and a separate
+`execute_aitp_write_bridge` call; it does not infer payload values from the
+failure metadata.
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` with a proposed reviewed
 payload. Hakimi renders `original_payload_json`, `reviewed_overrides_json`,
