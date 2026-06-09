@@ -290,6 +290,11 @@ shows copyable `suggested_reviewed_overrides_json`, but it keeps
 `applied_to_payload="false"`; the selected draft payload changes only through
 an explicit `promotion_reviewed_overrides` input, and the normal readiness
 inspection plus separate `execute_aitp_write_bridge` call are still required.
+The same suggestion now includes a compact `carried_ref_next_call_pointer`
+with a copyable `draft_call_json` for a fresh
+`draft_aitp_curated_rag_write_bridge_call` using those reviewed overrides. The
+pointer sets `bridge_called="false"` and points to drafting only; it never
+calls `execute_aitp_write_bridge` or authorizes trust/validation changes.
 The same draft action can accept `promotion_reviewed_overrides` to compare
 AITP's original `payload_draft` / `payload_template` against a proposed
 reviewed payload. Hakimi renders `original_payload_json`,

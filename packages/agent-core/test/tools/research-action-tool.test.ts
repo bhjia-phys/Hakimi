@@ -1857,6 +1857,19 @@ describe('ResearchActionTool', () => {
     expect(result.output).toContain(
       '<suggested_reviewed_overrides_json>{&quot;source_refs&quot;:[&quot;source_asset:asset-reviewed&quot;,&quot;reference_location:loc-reviewed&quot;]}</suggested_reviewed_overrides_json>',
     );
+    expect(result.output).toContain('<carried_ref_next_call_pointer');
+    expect(result.output).toContain('action="draft_aitp_curated_rag_write_bridge_call"');
+    expect(result.output).toContain('rag_chunk_id="curated_rag_chunk:source_backtrace_orientation:0001"');
+    expect(result.output).toContain('topic_id="fqhe-literature"');
+    expect(result.output).toContain('claim_id="claim-fqhe"');
+    expect(result.output).toContain('promotion_draft_stage="evidence"');
+    expect(result.output).toContain('promotion_draft_operation="recordEvidence"');
+    expect(result.output).toContain('copy_reviewed_overrides_from="suggested_reviewed_overrides_json"');
+    expect(result.output).toContain('requires_fresh_draft_action="true"');
+    expect(result.output).toContain('requires_readiness_inspection="true"');
+    expect(result.output).toContain('<draft_call_json>');
+    expect(result.output).toContain('&quot;action&quot;:&quot;draft_aitp_curated_rag_write_bridge_call&quot;');
+    expect(result.output).toContain('&quot;promotion_reviewed_overrides&quot;:{&quot;source_refs&quot;:[&quot;source_asset:asset-reviewed&quot;,&quot;reference_location:loc-reviewed&quot;]}');
     expect(result.output).toContain('<reviewed_payload_json>');
     expect(result.output).toContain('&quot;source_refs&quot;:[&quot;&lt;source_asset_id&gt;&quot;,&quot;&lt;reference_location_id&gt;&quot;]');
     expect(result.output).toContain('code="placeholder_value" field="source_refs[0]"');
