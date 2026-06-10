@@ -6,6 +6,8 @@ import {
   parseHumanCheckpointWriteResult,
   parseProofObligationWriteResult,
   parseReferenceLocationWriteResult,
+  parseResearchRunEventWriteResult,
+  parseResearchRunWriteResult,
   parseSourceAssetWriteResult,
   parseSourceReconstructionReviewResultWriteResult,
   parseToolRunWriteResult,
@@ -21,6 +23,13 @@ import type {
   AitpCodeStateWriteResult,
   AitpProofObligationWriteResult,
   AitpReferenceLocationWriteResult,
+  AitpResearchRunEventWriteResult,
+  AitpResearchRunEventStatus,
+  AitpResearchRunEventType,
+  AitpResearchRunPhase,
+  AitpResearchRunStatus,
+  AitpResearchRunTerminalAnswerState,
+  AitpResearchRunWriteResult,
   AitpSourceReconstructionReviewResultWriteResult,
   AitpSourceAssetWriteResult,
   AitpToolRunWriteResult,
@@ -40,10 +49,13 @@ import type {
   RecordAitpValidationResultInput,
   RecordAitpExploratoryRecordInput,
   RecordAitpReferenceLocationInput,
+  RecordAitpResearchRunEventInput,
   RecordAitpSourceReconstructionReviewResultInput,
   RecordAitpToolRunInput,
   RegisterAitpSourceAssetInput,
   RequestAitpHumanCheckpointInput,
+  StartAitpResearchRunInput,
+  UpdateAitpResearchRunInput,
 } from './cli-bridge';
 import {
   parseAitpCuratedRagIngestResult,
@@ -54,6 +66,9 @@ import type { AitpExplorationStatus, AitpExplorationType } from './types';
 
 export const AITP_WRITE_BRIDGE_OPERATIONS = [
   'ingestCuratedRagCorpus',
+  'startResearchRun',
+  'updateResearchRun',
+  'recordResearchRunEvent',
   'recordExploratoryRecord',
   'registerSourceAsset',
   'captureSourceAssetAuto',
@@ -279,6 +294,27 @@ export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
     'curated_rag_manifest_write',
   ),
   bridgeTarget(
+    'startResearchRun',
+    'start_research_run',
+    'aitp_v5_start_research_run',
+    'aitp-v5 run research start <args>',
+    'research_run_record',
+  ),
+  bridgeTarget(
+    'updateResearchRun',
+    'update_research_run',
+    'aitp_v5_update_research_run',
+    'aitp-v5 run research update <args>',
+    'research_run_record',
+  ),
+  bridgeTarget(
+    'recordResearchRunEvent',
+    'record_research_run_event',
+    'aitp_v5_record_research_run_event',
+    'aitp-v5 run event record <args>',
+    'research_run_event_record',
+  ),
+  bridgeTarget(
     'recordExploratoryRecord',
     'record_exploratory_record',
     'aitp_v5_record_exploratory_record',
@@ -460,6 +496,18 @@ export type AitpWriteBridgeExecutionInput =
       readonly payload: IngestAitpCuratedRagCorpusInput;
     }
   | {
+      readonly operation: 'startResearchRun';
+      readonly payload: StartAitpResearchRunInput;
+    }
+  | {
+      readonly operation: 'updateResearchRun';
+      readonly payload: UpdateAitpResearchRunInput;
+    }
+  | {
+      readonly operation: 'recordResearchRunEvent';
+      readonly payload: RecordAitpResearchRunEventInput;
+    }
+  | {
       readonly operation: 'recordExploratoryRecord';
       readonly payload: RecordAitpExploratoryRecordInput;
     }
@@ -526,6 +574,8 @@ export type AitpWriteBridgeExecutionInput =
 
 export type AitpWriteBridgeExecutionResult =
   | AitpCuratedRagIngestResult
+  | AitpResearchRunWriteResult
+  | AitpResearchRunEventWriteResult
   | AitpExploratoryRecordWriteResult
   | AitpSourceAssetWriteResult
   | AitpEvidenceWriteResult
@@ -565,6 +615,11 @@ export interface AitpWriteBridgeCliTarget {
   ingestCuratedRagCorpus(
     input: IngestAitpCuratedRagCorpusInput,
   ): Promise<AitpCuratedRagIngestResult>;
+  startResearchRun(input: StartAitpResearchRunInput): Promise<AitpResearchRunWriteResult>;
+  updateResearchRun(input: UpdateAitpResearchRunInput): Promise<AitpResearchRunWriteResult>;
+  recordResearchRunEvent(
+    input: RecordAitpResearchRunEventInput,
+  ): Promise<AitpResearchRunEventWriteResult>;
   recordExploratoryRecord(
     input: RecordAitpExploratoryRecordInput,
   ): Promise<AitpExploratoryRecordWriteResult>;
@@ -614,6 +669,12 @@ export class AitpCliWriteBridgeExecutor implements AitpWriteBridgeExecutor {
     switch (input.operation) {
       case 'ingestCuratedRagCorpus':
         return this.bridge.ingestCuratedRagCorpus(input.payload);
+      case 'startResearchRun':
+        return this.bridge.startResearchRun(input.payload);
+      case 'updateResearchRun':
+        return this.bridge.updateResearchRun(input.payload);
+      case 'recordResearchRunEvent':
+        return this.bridge.recordResearchRunEvent(input.payload);
       case 'recordExploratoryRecord':
         return this.bridge.recordExploratoryRecord(input.payload);
       case 'registerSourceAsset':
@@ -709,6 +770,11 @@ export function parseAitpWriteBridgeResultForOperation(
   switch (operation) {
     case 'ingestCuratedRagCorpus':
       return parseAitpCuratedRagIngestResult(normalizedPayload);
+    case 'startResearchRun':
+    case 'updateResearchRun':
+      return parseResearchRunWriteResult(normalizedPayload);
+    case 'recordResearchRunEvent':
+      return parseResearchRunEventWriteResult(normalizedPayload);
     case 'recordExploratoryRecord':
       return parseExploratoryRecordWriteResult(normalizedPayload);
     case 'registerSourceAsset':
@@ -783,6 +849,85 @@ export function coerceAitpWriteBridgeInput(
           titlePrefix: optionalString(record, 'titlePrefix', 'title_prefix'),
           assetType: optionalString(record, 'assetType', 'asset_type'),
           rebuildIndex: optionalBoolean(record, 'rebuildIndex', 'rebuild_index'),
+          signal,
+        },
+      };
+    case 'startResearchRun':
+      return {
+        operation,
+        payload: {
+          topicId: requiredString(record, 'topicId', 'topic_id'),
+          objective: requiredString(record, 'objective'),
+          researchQuestion: requiredString(record, 'researchQuestion', 'research_question', 'question'),
+          operator: requiredString(record, 'operator'),
+          title: optionalString(record, 'title'),
+          claimId: optionalString(record, 'claimId', 'claim_id'),
+          sessionId: optionalString(record, 'sessionId', 'session_id'),
+          hypothesis: optionalString(record, 'hypothesis'),
+          phase: optionalString(record, 'phase') as AitpResearchRunPhase | undefined,
+          metadata: optionalRecord(record, 'metadata', 'metadata_json'),
+          signal,
+        },
+      };
+    case 'updateResearchRun':
+      return {
+        operation,
+        payload: {
+          runId: requiredString(record, 'runId', 'run_id', 'run'),
+          topicId: requiredString(record, 'topicId', 'topic_id'),
+          operator: requiredString(record, 'operator'),
+          status: optionalString(record, 'status') as AitpResearchRunStatus | undefined,
+          phase: optionalString(record, 'phase') as AitpResearchRunPhase | undefined,
+          terminalAnswerState: optionalString(
+            record,
+            'terminalAnswerState',
+            'terminal_answer_state',
+          ) as AitpResearchRunTerminalAnswerState | undefined,
+          stopReason: optionalString(record, 'stopReason', 'stop_reason'),
+          aitpSliceRefs: optionalStringArray(record, 'aitpSliceRefs', 'aitp_slice_refs', 'aitp_slice_ref'),
+          actionRefs: optionalStringArray(record, 'actionRefs', 'action_refs', 'action_ref'),
+          evidenceRefs: optionalStringArray(record, 'evidenceRefs', 'evidence_refs', 'evidence_ref'),
+          validationRefs: optionalStringArray(
+            record,
+            'validationRefs',
+            'validation_refs',
+            'validation_ref',
+          ),
+          sourceRefs: optionalStringArray(record, 'sourceRefs', 'source_refs', 'source_ref'),
+          answerPacketRef: optionalString(record, 'answerPacketRef', 'answer_packet_ref'),
+          eventType: optionalString(record, 'eventType', 'event_type') as
+            | AitpResearchRunEventType
+            | undefined,
+          eventSummary: optionalString(record, 'eventSummary', 'event_summary'),
+          payload: optionalRecord(record, 'payload', 'payload_json'),
+          signal,
+        },
+      };
+    case 'recordResearchRunEvent':
+      return {
+        operation,
+        payload: {
+          runId: requiredString(record, 'runId', 'run_id', 'run'),
+          topicId: requiredString(record, 'topicId', 'topic_id'),
+          operator: requiredString(record, 'operator'),
+          eventType: requiredString(record, 'eventType', 'event_type', 'type') as AitpResearchRunEventType,
+          summary: requiredString(record, 'summary'),
+          status: optionalString(record, 'status') as AitpResearchRunEventStatus | undefined,
+          phase: optionalString(record, 'phase') as AitpResearchRunPhase | undefined,
+          claimId: optionalString(record, 'claimId', 'claim_id'),
+          sessionId: optionalString(record, 'sessionId', 'session_id'),
+          actionId: optionalString(record, 'actionId', 'action_id'),
+          actionRef: optionalString(record, 'actionRef', 'action_ref'),
+          sourceRefs: optionalStringArray(record, 'sourceRefs', 'source_refs', 'source_ref'),
+          evidenceRefs: optionalStringArray(record, 'evidenceRefs', 'evidence_refs', 'evidence_ref'),
+          validationRefs: optionalStringArray(
+            record,
+            'validationRefs',
+            'validation_refs',
+            'validation_ref',
+          ),
+          artifactRefs: optionalStringArray(record, 'artifactRefs', 'artifact_refs', 'artifact_ref'),
+          payload: optionalRecord(record, 'payload', 'payload_json'),
           signal,
         },
       };
@@ -1170,6 +1315,12 @@ export function actionIdForAitpWriteBridgeOperation(
   switch (operation) {
     case 'ingestCuratedRagCorpus':
       return 'aitp.ingest_curated_rag_corpus';
+    case 'startResearchRun':
+      return 'aitp.start_research_run';
+    case 'updateResearchRun':
+      return 'aitp.update_research_run';
+    case 'recordResearchRunEvent':
+      return 'aitp.record_research_run_event';
     case 'recordExploratoryRecord':
       return 'aitp.record_exploratory_record';
     case 'registerSourceAsset':
@@ -1214,6 +1365,10 @@ export function evidenceRefsForAitpWriteBridgeResult(
         `aitp:curated_rag_corpus:${result.corpusId}`,
         ...result.documentIds.map((id) => `aitp:curated_rag_document:${id}`),
       ];
+    case 'research_run':
+      return [`aitp:research_run:${result.runId}`];
+    case 'research_run_event':
+      return [`aitp:research_run_event:${result.eventId}`];
     case 'exploratory_record':
       return [`aitp:exploratory_record:${result.recordId}`];
     case 'source_asset':

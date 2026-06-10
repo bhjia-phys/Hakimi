@@ -81,16 +81,17 @@ That means a research action can search literature, inspect code, prepare patche
 - Literature search, code patch preparation, and external benchmark workflows are orchestrated through native Kimi tools rather than being executed inside `ResearchAction` itself.
 - Evidence can be written to the research ledger, reread only inside matching WorkFrame scope, compiled into graph candidates, and checked by harness/final-gate logic.
 - Full context compaction is now research-aware: when WorkFrames are open, Hakimi injects and stores a runtime-generated `Hakimi Research State` block with the initial research question, domain/topic, ContextPack/domain pack, physics memory ids, evidence refs, action attempts/outcomes, raw primitive-tool escapes, open obligations, and next steps. Separate WorkFrames stay separated in the compacted summary.
+- `/autoresearch` can start, inspect, pause, resume, stop, and replace an AITP-backed research run. Start first writes AITP `startResearchRun`, local state stores only the returned AITP run id and runtime snapshot, and lifecycle commands update the same AITP research-run/process ledger. Operator attribution is provenance metadata, not evidence, validation, final-gate satisfaction, or claim-trust authority.
 
-## Planned `/autoresearch` Runtime
+## `/autoresearch` Runtime
 
-Hakimi's next research-runtime control surface is `/autoresearch`: a bounded,
-user-started loop for a concrete scientific question. It should feel like
-`/goal` for research rather than like a silent background daemon. The user gives
-a research objective, topic idea, hypothesis, or question; Hakimi then keeps a
-run state, reads AITP slices, refreshes ContextPacks, chooses or proposes
-ResearchActions, performs source/provenance/validation audits, and works toward
-an audited answer packet.
+Hakimi's research-runtime control surface is `/autoresearch`: a bounded,
+user-started mode for a concrete scientific question. It feels like `/goal` for
+research rather than like a silent background daemon. The user gives an AITP
+topic plus a research question, objective, hypothesis, or operator; Hakimi then
+creates or updates a canonical AITP research-run/process record, keeps a small
+local runtime snapshot, injects the active question into visible turns, and
+works toward an audited answer packet.
 
 The important boundary is that `/autoresearch` automates the research process,
 not trust itself. AITP remains the canonical typed graph, source-asset store,
@@ -99,7 +100,7 @@ turns, inspect sources, compare literature, capture provenance, draft AITP
 write calls, and prepare a final answer, but writes and trust-changing steps
 must carry explicit permission state and AITP result refs.
 
-Planned first-class run state:
+First-class run state:
 
 - objective, research question, optional title/topic/hypothesis, success
   criteria, status, phase, budget, and stop reason;
@@ -115,12 +116,12 @@ Planned first-class run state:
   `answered_with_conditional_support`, `blocked_needs_human`,
   `negative_or_inconclusive`, or `draft_only`.
 
-The MVP should implement `start`, `status`, `pause`, and `stop` with persistent
-state and read-only AITP context refresh first. Later slices can let the active
-run continue across idle turns, select bounded ResearchActions, request AITP
-drafts, and enter `awaiting_approval` whenever a write, route pivot, validation
-record, checkpoint, benchmark submission, network/source acquisition, or trust
-boundary is reached.
+The current MVP implements `start`, `status`, `pause`, `resume`, `stop`, and
+`replace` with persistent local state and canonical AITP research-run/event
+writes. Later slices can let the active run continue across idle turns, select
+bounded ResearchActions, request AITP drafts, and enter `awaiting_approval`
+whenever a write, route pivot, validation record, checkpoint, benchmark
+submission, network/source acquisition, or trust boundary is reached.
 
 ## Architecture Layers
 

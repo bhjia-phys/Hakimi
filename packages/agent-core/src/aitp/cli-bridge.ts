@@ -57,6 +57,56 @@ export const AITP_SOURCE_ASSET_TYPES = [
 
 export type AitpSourceAssetType = (typeof AITP_SOURCE_ASSET_TYPES)[number];
 
+export const AITP_RESEARCH_RUN_STATUSES = [
+  'active',
+  'paused',
+  'stopped',
+  'complete',
+  'blocked',
+] as const;
+
+export const AITP_RESEARCH_RUN_PHASES = [
+  'planning',
+  'context_refresh',
+  'action_selection',
+  'source_review',
+  'validation',
+  'answer_drafting',
+  'awaiting_approval',
+  'blocked',
+  'complete',
+] as const;
+
+export const AITP_RESEARCH_RUN_TERMINAL_ANSWER_STATES = [
+  '',
+  'answered_with_validated_support',
+  'answered_with_conditional_support',
+  'blocked_needs_human',
+  'negative_or_inconclusive',
+  'draft_only',
+] as const;
+
+export const AITP_RESEARCH_RUN_EVENT_TYPES = [
+  'run_started',
+  'context_refreshed',
+  'action_selected',
+  'action_started',
+  'action_completed',
+  'operator_checkpoint',
+  'status_changed',
+  'answer_drafted',
+  'answer_finalized',
+  'blocked',
+  'run_stopped',
+] as const;
+
+export const AITP_RESEARCH_RUN_EVENT_STATUSES = [
+  'recorded',
+  'blocked',
+  'failed',
+  'superseded',
+] as const;
+
 export interface AitpCommandResult {
   readonly exitCode: number;
   readonly stdout: string;
@@ -214,6 +264,101 @@ export type ReadAitpLiteratureSourceReviewHandoffInput =
 
 export type ReadAitpLiteratureComparisonDraftInput =
   AitpLiteratureComparisonDraftInput;
+
+export type AitpResearchRunStatus =
+  | 'active'
+  | 'paused'
+  | 'stopped'
+  | 'complete'
+  | 'blocked';
+
+export type AitpResearchRunPhase =
+  | 'planning'
+  | 'context_refresh'
+  | 'action_selection'
+  | 'source_review'
+  | 'validation'
+  | 'answer_drafting'
+  | 'awaiting_approval'
+  | 'blocked'
+  | 'complete';
+
+export type AitpResearchRunTerminalAnswerState =
+  | ''
+  | 'answered_with_validated_support'
+  | 'answered_with_conditional_support'
+  | 'blocked_needs_human'
+  | 'negative_or_inconclusive'
+  | 'draft_only';
+
+export type AitpResearchRunEventType =
+  | 'run_started'
+  | 'context_refreshed'
+  | 'action_selected'
+  | 'action_started'
+  | 'action_completed'
+  | 'operator_checkpoint'
+  | 'status_changed'
+  | 'answer_drafted'
+  | 'answer_finalized'
+  | 'blocked'
+  | 'run_stopped';
+
+export type AitpResearchRunEventStatus = 'recorded' | 'blocked' | 'failed' | 'superseded';
+
+export interface StartAitpResearchRunInput {
+  readonly topicId: string;
+  readonly objective: string;
+  readonly researchQuestion: string;
+  readonly operator: string;
+  readonly title?: string | undefined;
+  readonly claimId?: string | undefined;
+  readonly sessionId?: string | undefined;
+  readonly hypothesis?: string | undefined;
+  readonly phase?: AitpResearchRunPhase | undefined;
+  readonly metadata?: Readonly<Record<string, unknown>> | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface UpdateAitpResearchRunInput {
+  readonly runId: string;
+  readonly topicId: string;
+  readonly operator: string;
+  readonly status?: AitpResearchRunStatus | undefined;
+  readonly phase?: AitpResearchRunPhase | undefined;
+  readonly terminalAnswerState?: AitpResearchRunTerminalAnswerState | undefined;
+  readonly stopReason?: string | undefined;
+  readonly aitpSliceRefs?: readonly string[] | undefined;
+  readonly actionRefs?: readonly string[] | undefined;
+  readonly evidenceRefs?: readonly string[] | undefined;
+  readonly validationRefs?: readonly string[] | undefined;
+  readonly sourceRefs?: readonly string[] | undefined;
+  readonly answerPacketRef?: string | undefined;
+  readonly eventType?: AitpResearchRunEventType | undefined;
+  readonly eventSummary?: string | undefined;
+  readonly payload?: Readonly<Record<string, unknown>> | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface RecordAitpResearchRunEventInput {
+  readonly runId: string;
+  readonly topicId: string;
+  readonly operator: string;
+  readonly eventType: AitpResearchRunEventType;
+  readonly summary: string;
+  readonly status?: AitpResearchRunEventStatus | undefined;
+  readonly phase?: AitpResearchRunPhase | undefined;
+  readonly claimId?: string | undefined;
+  readonly sessionId?: string | undefined;
+  readonly actionId?: string | undefined;
+  readonly actionRef?: string | undefined;
+  readonly sourceRefs?: readonly string[] | undefined;
+  readonly evidenceRefs?: readonly string[] | undefined;
+  readonly validationRefs?: readonly string[] | undefined;
+  readonly artifactRefs?: readonly string[] | undefined;
+  readonly payload?: Readonly<Record<string, unknown>> | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
 
 export interface IngestAitpCuratedRagCorpusInput {
   readonly paths: readonly string[];
@@ -634,6 +779,40 @@ export interface AitpSourceReconstructionReviewResultWriteResult {
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
+export interface AitpResearchRunWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'research_run';
+  readonly runId: string;
+  readonly topicId: string;
+  readonly objective: string;
+  readonly researchQuestion: string;
+  readonly operator: string;
+  readonly status: AitpResearchRunStatus;
+  readonly phase: AitpResearchRunPhase;
+  readonly terminalAnswerState: AitpResearchRunTerminalAnswerState;
+  readonly eventIds: readonly string[];
+  readonly orientationOnly: boolean;
+  readonly canUpdateKernelState: boolean;
+  readonly canUpdateClaimTrust: boolean;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpResearchRunEventWriteResult {
+  readonly ok: boolean;
+  readonly kind: 'research_run_event';
+  readonly eventId: string;
+  readonly runId: string;
+  readonly topicId: string;
+  readonly operator: string;
+  readonly eventType: AitpResearchRunEventType;
+  readonly status: AitpResearchRunEventStatus;
+  readonly phase: string;
+  readonly orientationOnly: boolean;
+  readonly canUpdateKernelState: boolean;
+  readonly canUpdateClaimTrust: boolean;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
 export class AitpCliBridgeError extends Error {
   constructor(
     message: string,
@@ -765,6 +944,39 @@ export class AitpCliBridge {
       input.signal,
     );
     return parseAitpLiteratureComparisonDraft(payload);
+  }
+
+  async startResearchRun(
+    input: StartAitpResearchRunInput,
+  ): Promise<AitpResearchRunWriteResult> {
+    const args = buildAitpResearchRunStartArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseResearchRunWriteResult(payload);
+  }
+
+  async updateResearchRun(
+    input: UpdateAitpResearchRunInput,
+  ): Promise<AitpResearchRunWriteResult> {
+    const args = buildAitpResearchRunUpdateArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseResearchRunWriteResult(payload);
+  }
+
+  async recordResearchRunEvent(
+    input: RecordAitpResearchRunEventInput,
+  ): Promise<AitpResearchRunEventWriteResult> {
+    const args = buildAitpResearchRunEventRecordArgs({
+      basePath: this.options.basePath,
+      ...input,
+    });
+    const payload = await this.runJson(args, input.signal);
+    return parseResearchRunEventWriteResult(payload);
   }
 
   async ingestCuratedRagCorpus(
@@ -1173,6 +1385,145 @@ export function buildAitpCuratedRagIngestArgs(
   pushOptional(args, '--title-prefix', input.titlePrefix);
   pushOptional(args, '--asset-type', input.assetType);
   if (input.rebuildIndex === false) args.push('--no-rebuild-index');
+  return args;
+}
+
+export function buildAitpResearchRunStartArgs(
+  input: StartAitpResearchRunInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.objective, 'objective');
+  requireNonEmpty(input.researchQuestion, 'researchQuestion');
+  requireNonEmpty(input.operator, 'operator');
+  if (input.phase !== undefined) {
+    requireAllowed(input.phase, AITP_RESEARCH_RUN_PHASES, 'phase');
+  }
+  const args = [
+    '--base',
+    input.basePath,
+    'run',
+    'research',
+    'start',
+    '--topic',
+    input.topicId.trim(),
+    '--objective',
+    input.objective.trim(),
+    '--question',
+    input.researchQuestion.trim(),
+    '--operator',
+    input.operator.trim(),
+  ];
+  pushOptional(args, '--title', input.title);
+  pushOptional(args, '--claim', input.claimId);
+  pushOptional(args, '--session', input.sessionId);
+  pushOptional(args, '--hypothesis', input.hypothesis);
+  pushOptional(args, '--phase', input.phase);
+  if (input.metadata !== undefined) {
+    args.push('--metadata-json', JSON.stringify(input.metadata));
+  }
+  return args;
+}
+
+export function buildAitpResearchRunUpdateArgs(
+  input: UpdateAitpResearchRunInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.runId, 'runId');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.operator, 'operator');
+  if (input.status !== undefined) {
+    requireAllowed(input.status, AITP_RESEARCH_RUN_STATUSES, 'status');
+  }
+  if (input.phase !== undefined) {
+    requireAllowed(input.phase, AITP_RESEARCH_RUN_PHASES, 'phase');
+  }
+  if (input.terminalAnswerState !== undefined) {
+    requireAllowed(
+      input.terminalAnswerState,
+      AITP_RESEARCH_RUN_TERMINAL_ANSWER_STATES,
+      'terminalAnswerState',
+    );
+  }
+  if (input.eventType !== undefined) {
+    requireAllowed(input.eventType, AITP_RESEARCH_RUN_EVENT_TYPES, 'eventType');
+  }
+  const args = [
+    '--base',
+    input.basePath,
+    'run',
+    'research',
+    'update',
+    '--run',
+    input.runId.trim(),
+    '--topic',
+    input.topicId.trim(),
+    '--operator',
+    input.operator.trim(),
+  ];
+  pushOptional(args, '--status', input.status);
+  pushOptional(args, '--phase', input.phase);
+  pushOptional(args, '--terminal-answer-state', input.terminalAnswerState);
+  pushOptional(args, '--stop-reason', input.stopReason);
+  pushRepeated(args, '--aitp-slice-ref', input.aitpSliceRefs);
+  pushRepeated(args, '--action-ref', input.actionRefs);
+  pushRepeated(args, '--evidence-ref', input.evidenceRefs);
+  pushRepeated(args, '--validation-ref', input.validationRefs);
+  pushRepeated(args, '--source-ref', input.sourceRefs);
+  pushOptional(args, '--answer-packet-ref', input.answerPacketRef);
+  pushOptional(args, '--event-type', input.eventType);
+  pushOptional(args, '--event-summary', input.eventSummary);
+  if (input.payload !== undefined) {
+    args.push('--payload-json', JSON.stringify(input.payload));
+  }
+  return args;
+}
+
+export function buildAitpResearchRunEventRecordArgs(
+  input: RecordAitpResearchRunEventInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.runId, 'runId');
+  requireNonEmpty(input.topicId, 'topicId');
+  requireNonEmpty(input.operator, 'operator');
+  requireNonEmpty(input.summary, 'summary');
+  requireAllowed(input.eventType, AITP_RESEARCH_RUN_EVENT_TYPES, 'eventType');
+  if (input.status !== undefined) {
+    requireAllowed(input.status, AITP_RESEARCH_RUN_EVENT_STATUSES, 'eventStatus');
+  }
+  if (input.phase !== undefined) {
+    requireAllowed(input.phase, AITP_RESEARCH_RUN_PHASES, 'phase');
+  }
+  const args = [
+    '--base',
+    input.basePath,
+    'run',
+    'event',
+    'record',
+    '--run',
+    input.runId.trim(),
+    '--topic',
+    input.topicId.trim(),
+    '--operator',
+    input.operator.trim(),
+    '--type',
+    input.eventType,
+    '--summary',
+    input.summary.trim(),
+  ];
+  pushOptional(args, '--status', input.status);
+  pushOptional(args, '--phase', input.phase);
+  pushOptional(args, '--claim', input.claimId);
+  pushOptional(args, '--session', input.sessionId);
+  pushOptional(args, '--action-id', input.actionId);
+  pushOptional(args, '--action-ref', input.actionRef);
+  pushRepeated(args, '--source-ref', input.sourceRefs);
+  pushRepeated(args, '--evidence-ref', input.evidenceRefs);
+  pushRepeated(args, '--validation-ref', input.validationRefs);
+  pushRepeated(args, '--artifact-ref', input.artifactRefs);
+  if (input.payload !== undefined) {
+    args.push('--payload-json', JSON.stringify(input.payload));
+  }
   return args;
 }
 
@@ -2143,6 +2494,76 @@ export function parseSourceReconstructionReviewResultWriteResult(
     topicId: requiredPayloadString(payload, 'topic_id'),
     claimId: requiredPayloadString(payload, 'claim_id'),
     status: requiredPayloadString(payload, 'status'),
+    canUpdateClaimTrust: payload['can_update_claim_trust'] === true,
+    raw: payload,
+  };
+}
+
+export function parseResearchRunWriteResult(payload: unknown): AitpResearchRunWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError('AITP research run payload must be an object.');
+  }
+  if (payload['kind'] !== 'research_run') {
+    throw new AitpCliBridgeError('AITP research run payload has the wrong kind.');
+  }
+  const status = requiredPayloadString(payload, 'status');
+  const phase = requiredPayloadString(payload, 'phase');
+  const terminalAnswerState = stringValue(payload['terminal_answer_state']) ?? '';
+  requireAllowed(status, AITP_RESEARCH_RUN_STATUSES, 'status');
+  requireAllowed(phase, AITP_RESEARCH_RUN_PHASES, 'phase');
+  requireAllowed(
+    terminalAnswerState,
+    AITP_RESEARCH_RUN_TERMINAL_ANSWER_STATES,
+    'terminal_answer_state',
+  );
+  return {
+    ok: payload['ok'] === true,
+    kind: 'research_run',
+    runId: requiredPayloadString(payload, 'run_id'),
+    topicId: requiredPayloadString(payload, 'topic_id'),
+    objective: requiredPayloadString(payload, 'objective'),
+    researchQuestion: requiredPayloadString(payload, 'research_question'),
+    operator: requiredPayloadString(payload, 'operator'),
+    status,
+    phase,
+    terminalAnswerState,
+    eventIds: stringArrayValue(payload['event_ids']),
+    orientationOnly: payload['orientation_only'] === true,
+    canUpdateKernelState: payload['can_update_kernel_state'] === true,
+    canUpdateClaimTrust: payload['can_update_claim_trust'] === true,
+    raw: payload,
+  };
+}
+
+export function parseResearchRunEventWriteResult(
+  payload: unknown,
+): AitpResearchRunEventWriteResult {
+  if (!isRecord(payload)) {
+    throw new AitpCliBridgeError('AITP research run event payload must be an object.');
+  }
+  if (payload['kind'] !== 'research_run_event') {
+    throw new AitpCliBridgeError('AITP research run event payload has the wrong kind.');
+  }
+  const eventType = requiredPayloadString(payload, 'event_type');
+  const status = requiredPayloadString(payload, 'status');
+  requireAllowed(eventType, AITP_RESEARCH_RUN_EVENT_TYPES, 'event_type');
+  requireAllowed(status, AITP_RESEARCH_RUN_EVENT_STATUSES, 'status');
+  const phase = stringValue(payload['phase']) ?? '';
+  if (phase.length > 0) {
+    requireAllowed(phase, AITP_RESEARCH_RUN_PHASES, 'phase');
+  }
+  return {
+    ok: payload['ok'] === true,
+    kind: 'research_run_event',
+    eventId: requiredPayloadString(payload, 'event_id'),
+    runId: requiredPayloadString(payload, 'run_id'),
+    topicId: requiredPayloadString(payload, 'topic_id'),
+    operator: requiredPayloadString(payload, 'operator'),
+    eventType,
+    status,
+    phase,
+    orientationOnly: payload['orientation_only'] === true,
+    canUpdateKernelState: payload['can_update_kernel_state'] === true,
     canUpdateClaimTrust: payload['can_update_claim_trust'] === true,
     raw: payload,
   };

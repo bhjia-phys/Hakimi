@@ -186,6 +186,15 @@ function restoreAgentRecord(agent: Agent, input: AgentRecord): void {
     case 'research_context.context_compiled':
       agent.researchContext.restorePack(input.pack);
       return;
+    case 'autoresearch.create':
+      agent.autoresearch.restoreCreate(input);
+      return;
+    case 'autoresearch.update':
+      agent.autoresearch.restoreUpdate(input);
+      return;
+    case 'autoresearch.clear':
+      agent.autoresearch.restoreClear(input);
+      return;
   }
 }
 

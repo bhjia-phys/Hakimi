@@ -23,6 +23,15 @@ const GOAL_NEXT_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
   { value: 'manage', description: 'Manage upcoming goals' },
 ];
 
+const AUTORESEARCH_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
+  { value: 'start', description: 'Start an AITP-backed research run' },
+  { value: 'status', description: 'Show the current autoresearch run' },
+  { value: 'pause', description: 'Pause the current autoresearch run' },
+  { value: 'resume', description: 'Resume the current autoresearch run' },
+  { value: 'stop', description: 'Stop the current autoresearch run' },
+  { value: 'replace', description: 'Replace the current autoresearch run' },
+];
+
 const SWARM_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
   { value: 'on', description: 'Turn swarm mode on' },
   { value: 'off', description: 'Turn swarm mode off' },
@@ -44,6 +53,11 @@ export function goalArgumentCompletions(argumentPrefix: string): AutocompleteIte
     );
   }
   return completeLeadingArg(GOAL_ARG_COMPLETIONS, argumentPrefix);
+}
+
+/** Argument autocompletion for the `/autoresearch` command. */
+export function autoresearchArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
+  return completeLeadingArg(AUTORESEARCH_ARG_COMPLETIONS, argumentPrefix);
 }
 
 /** Argument autocompletion for the `/swarm` command (subcommands). */
@@ -297,6 +311,19 @@ export const BUILTIN_SLASH_COMMANDS = [
       const trimmed = args.trim();
       if (trimmed === 'next' || trimmed.startsWith('next ')) return 'always';
       return trimmed === '' || trimmed === 'status' || trimmed === 'pause' || trimmed === 'cancel'
+        ? 'always'
+        : 'idle-only';
+    },
+  },
+  {
+    name: 'autoresearch',
+    aliases: ['research'],
+    description: 'Start or manage an AITP-backed research run',
+    priority: 80,
+    completeArgs: autoresearchArgumentCompletions,
+    availability: (args) => {
+      const trimmed = args.trim();
+      return trimmed === '' || trimmed === 'status' || trimmed.startsWith('pause')
         ? 'always'
         : 'idle-only';
     },

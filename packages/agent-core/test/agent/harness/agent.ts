@@ -105,6 +105,7 @@ export interface TestAgentOptions {
   readonly subagentHost?: AgentOptions['subagentHost'];
   readonly workflowRecipes?: AgentOptions['workflowRecipes'];
   readonly researchLedger?: AgentOptions['researchLedger'];
+  readonly aitpWriteBridge?: AgentOptions['aitpWriteBridge'];
   readonly onEvent?: ((event: AgentRecord) => AgentRecord | undefined) | undefined;
   readonly persistence?: AgentRecordPersistence | undefined;
   readonly homedir?: AgentOptions['homedir'];
@@ -195,6 +196,7 @@ export class AgentTestContext {
       subagentHost: options.subagentHost,
       workflowRecipes: options.workflowRecipes,
       researchLedger: options.researchLedger,
+      aitpWriteBridge: options.aitpWriteBridge,
       type: options.type,
       permission: options.permission,
       hookEngine: options.hookEngine,

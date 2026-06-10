@@ -21,6 +21,7 @@ import type {
 } from '../types';
 import { formatErrorMessage } from '../utils/event-payload';
 import { handleLoginCommand, handleLogoutCommand } from './auth';
+import { handleAutoresearchCommand } from './autoresearch';
 import { handleBtwCommand } from './btw';
 import { handleCopyCommand } from './copy';
 import {
@@ -63,6 +64,7 @@ import { handleWebCommand } from './web';
 
 export { handleLoginCommand, handleLogoutCommand } from './auth';
 export { handleBtwCommand } from './btw';
+export { handleAutoresearchCommand } from './autoresearch';
 export { handleCopyCommand } from './copy';
 export { handleAddDirCommand } from './add-dir';
 export {
@@ -348,6 +350,9 @@ async function handleBuiltInSlashCommand(
       return;
     case 'goal':
       await handleGoalCommand(host, args);
+      return;
+    case 'autoresearch':
+      await handleAutoresearchCommand(host, args);
       return;
     case 'init':
       await handleInitCommand(host);

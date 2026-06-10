@@ -76,6 +76,7 @@ import type {
   AddAdditionalDirResult,
   ArchiveSessionPayload,
   BeginGlobalMcpServerAuthResult,
+  AutoresearchLifecyclePayload,
   BeginCompactionPayload,
   CancelGlobalMcpServerAuthPayload,
   CancelPayload,
@@ -117,6 +118,7 @@ import type {
   PromptPayload,
   PutGlobalMcpServerPayload,
   RunShellCommandPayload,
+  RecordAutoresearchEventPayload,
   ReconnectMcpServerPayload,
   RegisterToolPayload,
   ReloadSessionPayload,
@@ -136,11 +138,13 @@ import type {
   SetThinkingPayload,
   SkillSummary,
   PluginCommandDef,
+  StartAutoresearchPayload,
   SteerPayload,
   StopBackgroundPayload,
   TestGlobalMcpServerPayload,
   UndoHistoryPayload,
   UnregisterToolPayload,
+  UpdateAutoresearchPayload,
   UpdateSessionMetadataPayload,
 } from './core-api';
 import type { ResumedAgentState, ResumeSessionResult } from './resumed';
@@ -1069,6 +1073,52 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
     ...payload
   }: SessionAgentPayload<EmptyPayload>): Promise<GetCronTasksResult> {
     return Promise.resolve(this.sessionApi(sessionId).getCronTasks(payload));
+  }
+
+  startAutoresearch({
+    sessionId,
+    ...payload
+  }: SessionAgentPayload<StartAutoresearchPayload>) {
+    return Promise.resolve(this.sessionApi(sessionId).startAutoresearch(payload));
+  }
+
+  getAutoresearch({ sessionId, ...payload }: SessionAgentPayload<EmptyPayload>) {
+    return Promise.resolve(this.sessionApi(sessionId).getAutoresearch(payload));
+  }
+
+  updateAutoresearch({
+    sessionId,
+    ...payload
+  }: SessionAgentPayload<UpdateAutoresearchPayload>) {
+    return Promise.resolve(this.sessionApi(sessionId).updateAutoresearch(payload));
+  }
+
+  recordAutoresearchEvent({
+    sessionId,
+    ...payload
+  }: SessionAgentPayload<RecordAutoresearchEventPayload>) {
+    return Promise.resolve(this.sessionApi(sessionId).recordAutoresearchEvent(payload));
+  }
+
+  pauseAutoresearch({
+    sessionId,
+    ...payload
+  }: SessionAgentPayload<AutoresearchLifecyclePayload>) {
+    return Promise.resolve(this.sessionApi(sessionId).pauseAutoresearch(payload));
+  }
+
+  resumeAutoresearch({
+    sessionId,
+    ...payload
+  }: SessionAgentPayload<AutoresearchLifecyclePayload>) {
+    return Promise.resolve(this.sessionApi(sessionId).resumeAutoresearch(payload));
+  }
+
+  stopAutoresearch({
+    sessionId,
+    ...payload
+  }: SessionAgentPayload<AutoresearchLifecyclePayload>) {
+    return Promise.resolve(this.sessionApi(sessionId).stopAutoresearch(payload));
   }
 
   async installPlugin(payload: InstallPluginPayload): Promise<PluginSummary> {
