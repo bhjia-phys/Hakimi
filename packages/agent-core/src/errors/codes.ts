@@ -42,6 +42,10 @@ export const ErrorCodes = {
   GOAL_METADATA_RESERVED: 'goal.metadata_reserved',
   GOAL_NOT_RESUMABLE: 'goal.not_resumable',
 
+  AUTORESEARCH_ALREADY_EXISTS: 'autoresearch.already_exists',
+  AUTORESEARCH_NOT_FOUND: 'autoresearch.not_found',
+  AUTORESEARCH_AITP_BRIDGE_REQUIRED: 'autoresearch.aitp_bridge_required',
+
   MODEL_NOT_CONFIGURED: 'model.not_configured',
   MODEL_CONFIG_INVALID: 'model.config_invalid',
   AUTH_LOGIN_REQUIRED: 'auth.login_required',
@@ -271,6 +275,25 @@ export const KIMI_ERROR_INFO = {
     retryable: false,
     public: true,
     action: 'Only paused goals can be resumed.',
+  },
+
+  'autoresearch.already_exists': {
+    title: 'Autoresearch run already exists',
+    retryable: false,
+    public: true,
+    action: 'Use `/autoresearch replace ...` to start a new AITP-backed run.',
+  },
+  'autoresearch.not_found': {
+    title: 'No autoresearch run found',
+    retryable: false,
+    public: true,
+    action: 'Start one with `/autoresearch start --topic <topic> --question <question>` first.',
+  },
+  'autoresearch.aitp_bridge_required': {
+    title: 'AITP bridge required',
+    retryable: false,
+    public: true,
+    action: 'Configure the AITP bridge before starting `/autoresearch`.',
   },
 
   'model.not_configured': {

@@ -6,6 +6,7 @@ import type {
   AddAdditionalDirPayload,
   AddAdditionalDirResult,
   AgentAPI,
+  AutoresearchLifecyclePayload,
   BeginCompactionPayload,
   CancelPayload,
   CancelPlanPayload,
@@ -21,6 +22,7 @@ import type {
   McpStartupMetrics,
   PromptPayload,
   RunShellCommandPayload,
+  RecordAutoresearchEventPayload,
   ReconnectMcpServerPayload,
   RenameSessionPayload,
   RegisterToolPayload,
@@ -31,10 +33,12 @@ import type {
   SetThinkingPayload,
   SkillSummary,
   PluginCommandDef,
+  StartAutoresearchPayload,
   SteerPayload,
   StopBackgroundPayload,
   UndoHistoryPayload,
   UnregisterToolPayload,
+  UpdateAutoresearchPayload,
   UpdateSessionMetadataPayload,
 } from '#/rpc';
 import type { PromisableMethods } from '#/utils/types';
@@ -272,6 +276,52 @@ export class SessionAPIImpl implements PromisableMethods<SessionAPI> {
 
   async getCronTasks({ agentId, ...payload }: AgentScopedPayload<EmptyPayload>) {
     return (await this.getAgent(agentId)).getCronTasks(payload);
+  }
+
+  async startAutoresearch({
+    agentId,
+    ...payload
+  }: AgentScopedPayload<StartAutoresearchPayload>) {
+    return (await this.getAgent(agentId)).startAutoresearch(payload);
+  }
+
+  async getAutoresearch({ agentId, ...payload }: AgentScopedPayload<EmptyPayload>) {
+    return (await this.getAgent(agentId)).getAutoresearch(payload);
+  }
+
+  async updateAutoresearch({
+    agentId,
+    ...payload
+  }: AgentScopedPayload<UpdateAutoresearchPayload>) {
+    return (await this.getAgent(agentId)).updateAutoresearch(payload);
+  }
+
+  async recordAutoresearchEvent({
+    agentId,
+    ...payload
+  }: AgentScopedPayload<RecordAutoresearchEventPayload>) {
+    return (await this.getAgent(agentId)).recordAutoresearchEvent(payload);
+  }
+
+  async pauseAutoresearch({
+    agentId,
+    ...payload
+  }: AgentScopedPayload<AutoresearchLifecyclePayload>) {
+    return (await this.getAgent(agentId)).pauseAutoresearch(payload);
+  }
+
+  async resumeAutoresearch({
+    agentId,
+    ...payload
+  }: AgentScopedPayload<AutoresearchLifecyclePayload>) {
+    return (await this.getAgent(agentId)).resumeAutoresearch(payload);
+  }
+
+  async stopAutoresearch({
+    agentId,
+    ...payload
+  }: AgentScopedPayload<AutoresearchLifecyclePayload>) {
+    return (await this.getAgent(agentId)).stopAutoresearch(payload);
   }
 
   async getBackgroundOutput({

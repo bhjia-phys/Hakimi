@@ -4780,6 +4780,10 @@ function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string
   switch (result.kind) {
     case 'curated_rag_ingest_result':
       return result.corpusId;
+    case 'research_run':
+      return result.runId;
+    case 'research_run_event':
+      return result.eventId;
     case 'exploratory_record':
       return result.recordId;
     case 'source_asset':
@@ -4810,6 +4814,18 @@ function aitpWriteBridgeRecordId(result: AitpWriteBridgeExecutionResult): string
 }
 
 function renderAitpWriteBridgeResultDetails(result: AitpWriteBridgeExecutionResult): string {
+  if (result.kind === 'research_run') {
+    return [
+      `  <research_run run_id="${escapeXml(result.runId)}" topic_id="${escapeXml(result.topicId)}" status="${escapeXml(result.status)}" phase="${escapeXml(result.phase)}" terminal_answer_state="${escapeXml(result.terminalAnswerState)}" orientation_only="${String(result.orientationOnly)}" can_update_kernel_state="${String(result.canUpdateKernelState)}" can_update_claim_trust="${String(result.canUpdateClaimTrust)}" />`,
+      '  <process_ledger_boundary>This AITP research run records process state and operator provenance only; it does not validate evidence, satisfy final gates, or promote claim trust.</process_ledger_boundary>',
+    ].join('\n');
+  }
+  if (result.kind === 'research_run_event') {
+    return [
+      `  <research_run_event event_id="${escapeXml(result.eventId)}" run_id="${escapeXml(result.runId)}" topic_id="${escapeXml(result.topicId)}" event_type="${escapeXml(result.eventType)}" status="${escapeXml(result.status)}" phase="${escapeXml(result.phase)}" orientation_only="${String(result.orientationOnly)}" can_update_kernel_state="${String(result.canUpdateKernelState)}" can_update_claim_trust="${String(result.canUpdateClaimTrust)}" />`,
+      '  <process_ledger_boundary>This AITP research run event is timeline provenance only; it is not evidence, validation, final-gate satisfaction, or trust promotion.</process_ledger_boundary>',
+    ].join('\n');
+  }
   if (result.kind !== 'curated_rag_ingest_result') return '';
   return [
     `  <curated_rag_ingest corpus_id="${escapeXml(result.corpusId)}" manifest_path="${escapeXml(result.manifestPath)}" index_path="${escapeXml(result.indexPath)}" manifest_hash="${escapeXml(result.manifestHash)}" index_status="${escapeXml(result.indexStatus)}" document_count="${String(result.documentCount)}" chunk_count="${String(result.chunkCount)}" retrieval_role="${result.retrievalRole}" records_validation_result="false" claim_trust_mutation="${result.claimTrustMutation}" requires_promotion_for_claim_support="true" />`,

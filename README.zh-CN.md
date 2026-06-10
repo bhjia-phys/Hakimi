@@ -1,5 +1,15 @@
 # Hakimi
 
+AITP `/autoresearch` update: Hakimi now provides an AITP-backed
+`/autoresearch` control surface. `/autoresearch start --topic <topic>
+--question <question> [--operator kimi|hakimi|human]` first writes AITP
+`startResearchRun`, then stores only a lightweight local runtime snapshot keyed
+by the returned AITP run id. `/autoresearch status` / `pause` / `resume` /
+`stop` / `replace` update the same canonical AITP research-run/process ledger
+through `updateResearchRun` or `recordResearchRunEvent`. `operator` is
+provenance metadata only; it does not create evidence, validation, final-gate
+satisfaction, or claim-trust authority.
+
 AITP bridge update: `ResearchAction.execute_aitp_write_bridge` can now call
 `recordSourceReconstructionReviewResult` / `aitp-v5 source
 reconstruction-review-result` when `source_reconstruction_review.next_actions`

@@ -22,6 +22,9 @@ describe('AITP write bridge executor', () => {
   it('keeps the executor operation surface narrow and excludes trustApply', () => {
     expect(AITP_WRITE_BRIDGE_OPERATIONS).toEqual([
       'ingestCuratedRagCorpus',
+      'startResearchRun',
+      'updateResearchRun',
+      'recordResearchRunEvent',
       'recordExploratoryRecord',
       'registerSourceAsset',
       'captureSourceAssetAuto',
@@ -315,6 +318,170 @@ describe('AITP write bridge executor', () => {
       title_prefix: 'Curated',
       asset_type: 'lecture',
       rebuild_index: false,
+    });
+  });
+
+  it('coerces research run ledger payloads into AITP process writes', () => {
+    const start = coerceAitpWriteBridgeInput('startResearchRun', {
+      topic_id: 'qg-algebra',
+      objective: 'Audit whether the observer algebra claim is source-supported.',
+      question: 'Does the cited construction justify the operator algebra step?',
+      operator: 'kimi',
+      title: 'Observer algebra source audit',
+      claim_id: 'claim-observer-algebra',
+      session_id: 'session-qg',
+      hypothesis: 'The construction only supports a conditional version.',
+      phase: 'planning',
+      metadata: { initiated_by: 'slash_autoresearch' },
+    });
+
+    expect(start).toMatchObject({
+      operation: 'startResearchRun',
+      payload: {
+        topicId: 'qg-algebra',
+        objective: 'Audit whether the observer algebra claim is source-supported.',
+        researchQuestion: 'Does the cited construction justify the operator algebra step?',
+        operator: 'kimi',
+        title: 'Observer algebra source audit',
+        claimId: 'claim-observer-algebra',
+        sessionId: 'session-qg',
+        hypothesis: 'The construction only supports a conditional version.',
+        phase: 'planning',
+        metadata: { initiated_by: 'slash_autoresearch' },
+      },
+    });
+    expect(mcpArgsForAitpWriteBridgeInput(start, 'F:/aitp-workspace')).toEqual({
+      base: 'F:/aitp-workspace',
+      topic_id: 'qg-algebra',
+      objective: 'Audit whether the observer algebra claim is source-supported.',
+      research_question: 'Does the cited construction justify the operator algebra step?',
+      operator: 'kimi',
+      title: 'Observer algebra source audit',
+      claim_id: 'claim-observer-algebra',
+      session_id: 'session-qg',
+      hypothesis: 'The construction only supports a conditional version.',
+      phase: 'planning',
+      metadata: { initiated_by: 'slash_autoresearch' },
+    });
+
+    const update = coerceAitpWriteBridgeInput('updateResearchRun', {
+      run: 'research-run-qg',
+      topic_id: 'qg-algebra',
+      operator: 'hakimi',
+      status: 'paused',
+      phase: 'awaiting_approval',
+      terminal_answer_state: 'draft_only',
+      stop_reason: 'Awaiting human source review.',
+      aitp_slice_ref: ['aitp:process_graph_slice:session-qg'],
+      action_ref: ['research_action:source.review_context:call-1'],
+      evidence_ref: ['aitp:evidence:evidence-qg'],
+      validation_ref: ['aitp:validation_result:validation-qg'],
+      source_ref: ['aitp:source_asset:source-qg'],
+      answer_packet_ref: 'artifact:answer-draft',
+      event_type: 'status_changed',
+      event_summary: 'Paused at human approval boundary.',
+      payload: { reason_code: 'human_review_required' },
+    });
+
+    expect(update).toMatchObject({
+      operation: 'updateResearchRun',
+      payload: {
+        runId: 'research-run-qg',
+        topicId: 'qg-algebra',
+        operator: 'hakimi',
+        status: 'paused',
+        phase: 'awaiting_approval',
+        terminalAnswerState: 'draft_only',
+        stopReason: 'Awaiting human source review.',
+        aitpSliceRefs: ['aitp:process_graph_slice:session-qg'],
+        actionRefs: ['research_action:source.review_context:call-1'],
+        evidenceRefs: ['aitp:evidence:evidence-qg'],
+        validationRefs: ['aitp:validation_result:validation-qg'],
+        sourceRefs: ['aitp:source_asset:source-qg'],
+        answerPacketRef: 'artifact:answer-draft',
+        eventType: 'status_changed',
+        eventSummary: 'Paused at human approval boundary.',
+        payload: { reason_code: 'human_review_required' },
+      },
+    });
+    expect(mcpArgsForAitpWriteBridgeInput(update, 'F:/aitp-workspace')).toEqual({
+      base: 'F:/aitp-workspace',
+      run_id: 'research-run-qg',
+      topic_id: 'qg-algebra',
+      operator: 'hakimi',
+      status: 'paused',
+      phase: 'awaiting_approval',
+      terminal_answer_state: 'draft_only',
+      stop_reason: 'Awaiting human source review.',
+      aitp_slice_refs: ['aitp:process_graph_slice:session-qg'],
+      action_refs: ['research_action:source.review_context:call-1'],
+      evidence_refs: ['aitp:evidence:evidence-qg'],
+      validation_refs: ['aitp:validation_result:validation-qg'],
+      source_refs: ['aitp:source_asset:source-qg'],
+      answer_packet_ref: 'artifact:answer-draft',
+      event_type: 'status_changed',
+      event_summary: 'Paused at human approval boundary.',
+      payload: { reason_code: 'human_review_required' },
+    });
+
+    const event = coerceAitpWriteBridgeInput('recordResearchRunEvent', {
+      run_id: 'research-run-qg',
+      topic_id: 'qg-algebra',
+      operator: 'human',
+      type: 'operator_checkpoint',
+      summary: 'Human reviewed the source boundary.',
+      status: 'recorded',
+      phase: 'source_review',
+      claim_id: 'claim-observer-algebra',
+      session_id: 'session-qg',
+      action_id: 'source.review_context',
+      action_ref: 'research_action:source.review_context:call-1',
+      source_ref: ['aitp:source_asset:source-qg'],
+      evidence_ref: ['aitp:evidence:evidence-qg'],
+      validation_ref: ['aitp:validation_result:validation-qg'],
+      artifact_ref: ['artifact:review-note'],
+      payload: { checkpoint: 'approved_to_continue' },
+    });
+
+    expect(event).toMatchObject({
+      operation: 'recordResearchRunEvent',
+      payload: {
+        runId: 'research-run-qg',
+        topicId: 'qg-algebra',
+        operator: 'human',
+        eventType: 'operator_checkpoint',
+        summary: 'Human reviewed the source boundary.',
+        status: 'recorded',
+        phase: 'source_review',
+        claimId: 'claim-observer-algebra',
+        sessionId: 'session-qg',
+        actionId: 'source.review_context',
+        actionRef: 'research_action:source.review_context:call-1',
+        sourceRefs: ['aitp:source_asset:source-qg'],
+        evidenceRefs: ['aitp:evidence:evidence-qg'],
+        validationRefs: ['aitp:validation_result:validation-qg'],
+        artifactRefs: ['artifact:review-note'],
+        payload: { checkpoint: 'approved_to_continue' },
+      },
+    });
+    expect(mcpArgsForAitpWriteBridgeInput(event, 'F:/aitp-workspace')).toEqual({
+      base: 'F:/aitp-workspace',
+      run_id: 'research-run-qg',
+      topic_id: 'qg-algebra',
+      operator: 'human',
+      event_type: 'operator_checkpoint',
+      summary: 'Human reviewed the source boundary.',
+      status: 'recorded',
+      phase: 'source_review',
+      claim_id: 'claim-observer-algebra',
+      session_id: 'session-qg',
+      action_id: 'source.review_context',
+      action_ref: 'research_action:source.review_context:call-1',
+      source_refs: ['aitp:source_asset:source-qg'],
+      evidence_refs: ['aitp:evidence:evidence-qg'],
+      validation_refs: ['aitp:validation_result:validation-qg'],
+      artifact_refs: ['artifact:review-note'],
+      payload: { checkpoint: 'approved_to_continue' },
     });
   });
 
@@ -882,6 +1049,23 @@ describe('AITP write bridge executor', () => {
         calls.push('ingestCuratedRagCorpus');
         return fakeCuratedRagIngestResult();
       },
+      async startResearchRun() {
+        calls.push('startResearchRun');
+        return fakeResearchRunWriteResult();
+      },
+      async updateResearchRun() {
+        calls.push('updateResearchRun');
+        return {
+          ...fakeResearchRunWriteResult(),
+          status: 'paused',
+          phase: 'awaiting_approval',
+          terminalAnswerState: 'draft_only',
+        };
+      },
+      async recordResearchRunEvent() {
+        calls.push('recordResearchRunEvent');
+        return fakeResearchRunEventWriteResult();
+      },
       async recordExploratoryRecord() {
         calls.push('recordExploratoryRecord');
         return {
@@ -1127,6 +1311,36 @@ describe('AITP write bridge executor', () => {
         tags: ['operator-algebra'],
       },
     });
+    const run = await executor.executeWrite({
+      operation: 'startResearchRun',
+      payload: {
+        topicId: 'qg',
+        objective: 'Audit source support.',
+        researchQuestion: 'Does the source establish the claim?',
+        operator: 'kimi',
+      },
+    });
+    const runUpdate = await executor.executeWrite({
+      operation: 'updateResearchRun',
+      payload: {
+        runId: 'research-run-qg',
+        topicId: 'qg',
+        operator: 'hakimi',
+        status: 'paused',
+        phase: 'awaiting_approval',
+        terminalAnswerState: 'draft_only',
+      },
+    });
+    const runEvent = await executor.executeWrite({
+      operation: 'recordResearchRunEvent',
+      payload: {
+        runId: 'research-run-qg',
+        topicId: 'qg',
+        operator: 'human',
+        eventType: 'operator_checkpoint',
+        summary: 'Human reviewed the source boundary.',
+      },
+    });
     const autoSource = await executor.executeWrite({
       operation: 'captureSourceAssetAuto',
       payload: {
@@ -1189,6 +1403,9 @@ describe('AITP write bridge executor', () => {
 
     expect(calls).toEqual([
       'ingestCuratedRagCorpus',
+      'startResearchRun',
+      'updateResearchRun',
+      'recordResearchRunEvent',
       'captureSourceAssetAuto',
       'attachArtifact',
       'captureToolRunAuto',
@@ -1207,6 +1424,31 @@ describe('AITP write bridge executor', () => {
     expect(evidenceRefsForAitpWriteBridgeResult(ingest)).toEqual([
       'aitp:curated_rag_corpus:physics-foundations',
       'aitp:curated_rag_document:doc-lecture-notes',
+    ]);
+    expect(run).toMatchObject({
+      kind: 'research_run',
+      runId: 'research-run-qg',
+      orientationOnly: true,
+      canUpdateKernelState: true,
+      canUpdateClaimTrust: false,
+    });
+    expect(evidenceRefsForAitpWriteBridgeResult(run)).toEqual([
+      'aitp:research_run:research-run-qg',
+    ]);
+    expect(runUpdate).toMatchObject({
+      kind: 'research_run',
+      runId: 'research-run-qg',
+      status: 'paused',
+      phase: 'awaiting_approval',
+      terminalAnswerState: 'draft_only',
+    });
+    expect(runEvent).toMatchObject({
+      kind: 'research_run_event',
+      eventId: 'research-run-event-qg',
+      runId: 'research-run-qg',
+    });
+    expect(evidenceRefsForAitpWriteBridgeResult(runEvent)).toEqual([
+      'aitp:research_run_event:research-run-event-qg',
     ]);
     expect(autoSource).toMatchObject({
       kind: 'source_asset',
@@ -1266,6 +1508,12 @@ describe('AITP write bridge executor', () => {
     ).toEqual([
       'aitp:curated_rag_corpus:physics-foundations',
       'aitp:curated_rag_document:doc-lecture-notes',
+    ]);
+    expect(evidenceRefsForAitpWriteBridgeResult(fakeResearchRunWriteResult())).toEqual([
+      'aitp:research_run:research-run-qg',
+    ]);
+    expect(evidenceRefsForAitpWriteBridgeResult(fakeResearchRunEventWriteResult())).toEqual([
+      'aitp:research_run_event:research-run-event-qg',
     ]);
     expect(
       evidenceRefsForAitpWriteBridgeResult({
@@ -1416,6 +1664,44 @@ function fakeCuratedRagIngestResult(): AitpCuratedRagIngestResult {
       'validation',
       'trust_preflight',
     ],
+    raw: {},
+  };
+}
+
+function fakeResearchRunWriteResult() {
+  return {
+    ok: true,
+    kind: 'research_run' as const,
+    runId: 'research-run-qg',
+    topicId: 'qg',
+    objective: 'Audit source support.',
+    researchQuestion: 'Does the source establish the claim?',
+    operator: 'kimi',
+    status: 'active' as const,
+    phase: 'planning' as const,
+    terminalAnswerState: '' as const,
+    eventIds: ['research-run-event-start'],
+    orientationOnly: true,
+    canUpdateKernelState: true,
+    canUpdateClaimTrust: false,
+    raw: {},
+  };
+}
+
+function fakeResearchRunEventWriteResult() {
+  return {
+    ok: true,
+    kind: 'research_run_event' as const,
+    eventId: 'research-run-event-qg',
+    runId: 'research-run-qg',
+    topicId: 'qg',
+    operator: 'human',
+    eventType: 'operator_checkpoint' as const,
+    status: 'recorded' as const,
+    phase: 'source_review',
+    orientationOnly: true,
+    canUpdateKernelState: true,
+    canUpdateClaimTrust: false,
     raw: {},
   };
 }

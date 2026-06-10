@@ -1,4 +1,5 @@
 import type {
+  AutoresearchSnapshot,
   GoalChange,
   GoalSnapshot,
   ModelAlias,
@@ -57,6 +58,8 @@ export interface AppState {
   sessionTitle: string | null;
   /** Current goal snapshot for the footer badge; null/undefined when no active goal. */
   goal?: GoalSnapshot | null;
+  /** Current AITP-backed autoresearch run, when one is active in the session. */
+  autoresearch?: AutoresearchSnapshot | null;
   mcpServersSummary: string | null;
   /** Optional banner shown below the welcome panel; null means no banner to render. */
   banner?: BannerState | null;

@@ -27,6 +27,9 @@ import type {
   AddAdditionalDirResult,
   BackgroundTaskInfo,
   ConfigDiagnostics,
+  AutoresearchLifecycleInput,
+  AutoresearchSnapshot,
+  AutoresearchToolResult,
   CreateSessionOptions,
   ExportSessionInput,
   ExportSessionResult,
@@ -46,6 +49,7 @@ import type {
   PermissionMode,
   PluginInfo,
   PluginSummary,
+  RecordAutoresearchEventInput,
   ReloadSummary,
   CompactOptions,
   SessionPlan,
@@ -58,7 +62,9 @@ import type {
   SessionSummary,
   SkillSummary,
   PluginCommandDef,
+  StartAutoresearchInput,
   Unsubscribe,
+  UpdateAutoresearchInput,
 } from '#/types';
 
 const MAIN_AGENT_ID = 'main';
@@ -709,6 +715,91 @@ export abstract class SDKRpcClientBase {
   async getCronTasks(input: SessionIdRpcInput): Promise<GetCronTasksResult> {
     const rpc = await this.getRpc();
     return rpc.getCronTasks({ sessionId: input.sessionId, agentId: this.interactiveAgentId });
+  }
+
+  async startAutoresearch(
+    input: SessionIdRpcInput & StartAutoresearchInput,
+  ): Promise<AutoresearchSnapshot> {
+    const rpc = await this.getRpc();
+    return rpc.startAutoresearch({
+      sessionId: input.sessionId,
+      agentId: this.interactiveAgentId,
+      topicId: input.topicId,
+      objective: input.objective,
+      researchQuestion: input.researchQuestion,
+      operator: input.operator,
+      title: input.title,
+      claimId: input.claimId,
+      aitpSessionId: input.aitpSessionId,
+      hypothesis: input.hypothesis,
+      phase: input.phase,
+      replace: input.replace,
+    });
+  }
+
+  async getAutoresearch(input: SessionIdRpcInput): Promise<AutoresearchToolResult> {
+    const rpc = await this.getRpc();
+    return rpc.getAutoresearch({ sessionId: input.sessionId, agentId: this.interactiveAgentId });
+  }
+
+  async updateAutoresearch(
+    input: SessionIdRpcInput & UpdateAutoresearchInput,
+  ): Promise<AutoresearchSnapshot> {
+    const rpc = await this.getRpc();
+    const { sessionId, ...payload } = input;
+    return rpc.updateAutoresearch({
+      sessionId,
+      agentId: this.interactiveAgentId,
+      ...payload,
+    });
+  }
+
+  async recordAutoresearchEvent(
+    input: SessionIdRpcInput & RecordAutoresearchEventInput,
+  ): Promise<AutoresearchSnapshot> {
+    const rpc = await this.getRpc();
+    const { sessionId, ...payload } = input;
+    return rpc.recordAutoresearchEvent({
+      sessionId,
+      agentId: this.interactiveAgentId,
+      ...payload,
+    });
+  }
+
+  async pauseAutoresearch(
+    input: SessionIdRpcInput & AutoresearchLifecycleInput,
+  ): Promise<AutoresearchSnapshot> {
+    const rpc = await this.getRpc();
+    return rpc.pauseAutoresearch({
+      sessionId: input.sessionId,
+      agentId: this.interactiveAgentId,
+      reason: input.reason,
+      operator: input.operator,
+    });
+  }
+
+  async resumeAutoresearch(
+    input: SessionIdRpcInput & AutoresearchLifecycleInput,
+  ): Promise<AutoresearchSnapshot> {
+    const rpc = await this.getRpc();
+    return rpc.resumeAutoresearch({
+      sessionId: input.sessionId,
+      agentId: this.interactiveAgentId,
+      reason: input.reason,
+      operator: input.operator,
+    });
+  }
+
+  async stopAutoresearch(
+    input: SessionIdRpcInput & AutoresearchLifecycleInput,
+  ): Promise<AutoresearchSnapshot> {
+    const rpc = await this.getRpc();
+    return rpc.stopAutoresearch({
+      sessionId: input.sessionId,
+      agentId: this.interactiveAgentId,
+      reason: input.reason,
+      operator: input.operator,
+    });
   }
 
   async listMcpServers(input: SessionIdRpcInput): Promise<readonly McpServerInfo[]> {

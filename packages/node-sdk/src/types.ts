@@ -1,4 +1,9 @@
 import type {
+  AutoresearchEventStatus,
+  AutoresearchEventType,
+  AutoresearchPhase,
+  AutoresearchStatus,
+  AutoresearchTerminalAnswerState,
   ExportSessionManifest,
   ResumeSessionResult,
   ShellEnvironment,
@@ -18,6 +23,13 @@ export type Unsubscribe = () => void;
 
 export type {
   AgentReplayRecord,
+  AutoresearchEventStatus,
+  AutoresearchEventType,
+  AutoresearchPhase,
+  AutoresearchSnapshot,
+  AutoresearchStatus,
+  AutoresearchTerminalAnswerState,
+  AutoresearchToolResult,
   AgentBackgroundTaskInfo,
   BackgroundConfig,
   BackgroundTaskInfo,
@@ -77,6 +89,57 @@ export type PermissionMode = 'yolo' | 'manual' | 'auto';
 export interface CreateGoalInput {
   readonly objective: string;
   readonly replace?: boolean;
+}
+
+export interface StartAutoresearchInput {
+  readonly topicId: string;
+  readonly objective: string;
+  readonly researchQuestion: string;
+  readonly operator?: string | undefined;
+  readonly title?: string | undefined;
+  readonly claimId?: string | undefined;
+  readonly aitpSessionId?: string | undefined;
+  readonly hypothesis?: string | undefined;
+  readonly phase?: AutoresearchPhase | undefined;
+  readonly replace?: boolean | undefined;
+}
+
+export interface UpdateAutoresearchInput {
+  readonly status?: AutoresearchStatus | undefined;
+  readonly phase?: AutoresearchPhase | undefined;
+  readonly terminalAnswerState?: AutoresearchTerminalAnswerState | undefined;
+  readonly stopReason?: string | undefined;
+  readonly operator?: string | undefined;
+  readonly aitpSliceRefs?: readonly string[] | undefined;
+  readonly actionRefs?: readonly string[] | undefined;
+  readonly evidenceRefs?: readonly string[] | undefined;
+  readonly validationRefs?: readonly string[] | undefined;
+  readonly sourceRefs?: readonly string[] | undefined;
+  readonly answerPacketRef?: string | undefined;
+  readonly eventType?: AutoresearchEventType | undefined;
+  readonly eventSummary?: string | undefined;
+  readonly payload?: Readonly<Record<string, unknown>> | undefined;
+}
+
+export interface RecordAutoresearchEventInput {
+  readonly eventType: AutoresearchEventType;
+  readonly summary: string;
+  readonly status?: AutoresearchEventStatus | undefined;
+  readonly phase?: AutoresearchPhase | undefined;
+  readonly operator?: string | undefined;
+  readonly claimId?: string | undefined;
+  readonly actionId?: string | undefined;
+  readonly actionRef?: string | undefined;
+  readonly sourceRefs?: readonly string[] | undefined;
+  readonly evidenceRefs?: readonly string[] | undefined;
+  readonly validationRefs?: readonly string[] | undefined;
+  readonly artifactRefs?: readonly string[] | undefined;
+  readonly payload?: Readonly<Record<string, unknown>> | undefined;
+}
+
+export interface AutoresearchLifecycleInput {
+  readonly reason?: string | undefined;
+  readonly operator?: string | undefined;
 }
 
 export type TextPromptPart = Extract<ContentPart, { type: 'text' }>;

@@ -3,6 +3,15 @@ import type { AgentContextData } from '#/agent/context';
 import type { BackgroundTaskInfo } from '#/agent/background';
 import type { CronTaskSnapshot } from '#/agent/cron';
 import type {
+  AutoresearchEventStatus,
+  AutoresearchEventType,
+  AutoresearchPhase,
+  AutoresearchSnapshot,
+  AutoresearchStatus,
+  AutoresearchTerminalAnswerState,
+  AutoresearchToolResult,
+} from '#/agent/autoresearch';
+import type {
   GoalBudgetLimits,
   GoalBudgetReport,
   GoalChange,
@@ -436,6 +445,69 @@ export interface CreateGoalPayload {
   readonly replace?: boolean;
 }
 
+// AITP-backed autoresearch control payloads. These are deterministic host/SDK
+// lifecycle calls; AITP remains the canonical research-run/process ledger.
+export type {
+  AutoresearchEventStatus,
+  AutoresearchEventType,
+  AutoresearchPhase,
+  AutoresearchSnapshot,
+  AutoresearchStatus,
+  AutoresearchTerminalAnswerState,
+  AutoresearchToolResult,
+};
+
+export interface StartAutoresearchPayload {
+  readonly topicId: string;
+  readonly objective: string;
+  readonly researchQuestion: string;
+  readonly operator?: string | undefined;
+  readonly title?: string | undefined;
+  readonly claimId?: string | undefined;
+  readonly aitpSessionId?: string | undefined;
+  readonly hypothesis?: string | undefined;
+  readonly phase?: AutoresearchPhase | undefined;
+  readonly replace?: boolean | undefined;
+}
+
+export interface UpdateAutoresearchPayload {
+  readonly status?: AutoresearchStatus | undefined;
+  readonly phase?: AutoresearchPhase | undefined;
+  readonly terminalAnswerState?: AutoresearchTerminalAnswerState | undefined;
+  readonly stopReason?: string | undefined;
+  readonly operator?: string | undefined;
+  readonly aitpSliceRefs?: readonly string[] | undefined;
+  readonly actionRefs?: readonly string[] | undefined;
+  readonly evidenceRefs?: readonly string[] | undefined;
+  readonly validationRefs?: readonly string[] | undefined;
+  readonly sourceRefs?: readonly string[] | undefined;
+  readonly answerPacketRef?: string | undefined;
+  readonly eventType?: AutoresearchEventType | undefined;
+  readonly eventSummary?: string | undefined;
+  readonly payload?: Readonly<Record<string, unknown>> | undefined;
+}
+
+export interface RecordAutoresearchEventPayload {
+  readonly eventType: AutoresearchEventType;
+  readonly summary: string;
+  readonly status?: AutoresearchEventStatus | undefined;
+  readonly phase?: AutoresearchPhase | undefined;
+  readonly operator?: string | undefined;
+  readonly claimId?: string | undefined;
+  readonly actionId?: string | undefined;
+  readonly actionRef?: string | undefined;
+  readonly sourceRefs?: readonly string[] | undefined;
+  readonly evidenceRefs?: readonly string[] | undefined;
+  readonly validationRefs?: readonly string[] | undefined;
+  readonly artifactRefs?: readonly string[] | undefined;
+  readonly payload?: Readonly<Record<string, unknown>> | undefined;
+}
+
+export interface AutoresearchLifecyclePayload {
+  readonly reason?: string | undefined;
+  readonly operator?: string | undefined;
+}
+
 export interface GetKimiConfigPayload {
   readonly reload?: boolean;
 }
@@ -490,6 +562,13 @@ export interface AgentAPI {
   resumeGoal: (payload: EmptyPayload) => GoalSnapshot;
   cancelGoal: (payload: EmptyPayload) => GoalSnapshot;
   getCronTasks: (payload: EmptyPayload) => GetCronTasksResult;
+  startAutoresearch: (payload: StartAutoresearchPayload) => AutoresearchSnapshot;
+  getAutoresearch: (payload: EmptyPayload) => AutoresearchToolResult;
+  updateAutoresearch: (payload: UpdateAutoresearchPayload) => AutoresearchSnapshot;
+  recordAutoresearchEvent: (payload: RecordAutoresearchEventPayload) => AutoresearchSnapshot;
+  pauseAutoresearch: (payload: AutoresearchLifecyclePayload) => AutoresearchSnapshot;
+  resumeAutoresearch: (payload: AutoresearchLifecyclePayload) => AutoresearchSnapshot;
+  stopAutoresearch: (payload: AutoresearchLifecyclePayload) => AutoresearchSnapshot;
   getBackgroundOutput: (payload: GetBackgroundOutputPayload) => string;
   getContext: (payload: EmptyPayload) => AgentContextData;
   getConfig: (payload: EmptyPayload) => AgentConfigData;

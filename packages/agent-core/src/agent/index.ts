@@ -43,6 +43,7 @@ import type { SessionSubagentHost } from '../session/subagent-host';
 import { noopTelemetryClient, type TelemetryClient } from '../telemetry';
 import type { PromisableMethods } from '../utils/types';
 import { BackgroundManager, BackgroundTaskPersistence } from './background';
+import { AutoresearchMode } from './autoresearch';
 import {
   FullCompaction,
   MicroCompaction,
@@ -95,6 +96,7 @@ export type {
   UserToolRegistration,
 } from './tool';
 export * from './goal';
+export * from './autoresearch';
 
 export type AgentType = 'main' | 'sub' | 'independent';
 
@@ -204,6 +206,7 @@ export class Agent {
   readonly researchAction: ResearchActionManager;
   readonly researchContext: ResearchContextManager;
   readonly toolLifecycle: PrimitiveToolLifecycleManager;
+  readonly autoresearch: AutoresearchMode;
   readonly tools: ToolManager;
   readonly background: BackgroundManager;
   readonly cron: CronManager | null;
@@ -309,6 +312,7 @@ export class Agent {
     this.researchAction = new ResearchActionManager(this);
     this.researchContext = new ResearchContextManager(this);
     this.toolLifecycle = new PrimitiveToolLifecycleManager(this);
+    this.autoresearch = new AutoresearchMode(this);
     this.tools = new ToolManager(this);
     this.background = new BackgroundManager(
       this,
@@ -738,6 +742,16 @@ export class Agent {
       // `cron` is null for subagents, which never schedule; report an empty
       // list rather than failing the RPC so callers can poll uniformly.
       getCronTasks: () => ({ tasks: this.cron?.listTaskSnapshots() ?? [] }),
+      startAutoresearch: (payload) => {
+        const { aitpSessionId, ...input } = payload;
+        return this.autoresearch.start({ ...input, sessionId: aitpSessionId });
+      },
+      getAutoresearch: () => this.autoresearch.getAutoresearch(),
+      updateAutoresearch: (payload) => this.autoresearch.update(payload),
+      recordAutoresearchEvent: (payload) => this.autoresearch.recordEvent(payload),
+      pauseAutoresearch: (payload) => this.autoresearch.pause(payload),
+      resumeAutoresearch: (payload) => this.autoresearch.resume(payload),
+      stopAutoresearch: (payload) => this.autoresearch.stop(payload),
       getBackgroundOutput: (payload) => this.background.readOutput(payload.taskId, payload.tail),
       getContext: () => this.context.data(),
       getConfig: () => this.config.data(),
