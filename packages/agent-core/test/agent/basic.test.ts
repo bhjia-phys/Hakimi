@@ -32,6 +32,7 @@ it('runs a text-only agent turn from prompt to completion', async () => {
     [emit] thinking.delta              { "turnId": 0, "delta": "<think-1>" }
     [emit] assistant.delta             { "turnId": 0, "delta": "<text-1>" }
     [wire] context.append_loop_event   { "event": { "type": "content.part", "uuid": "<uuid-2>", "turnId": "0", "step": 1, "stepUuid": "<uuid-1>", "part": { "type": "think", "think": "<think-1>" } }, "time": "<time>" }
+    [wire] reasoning.audit             { "turnId": "0", "step": 1, "stepUuid": "<uuid-1>", "partUuid": "<uuid-2>", "chars": 9, "cues": [], "redacted": true, "time": "<time>" }
     [wire] context.append_loop_event   { "event": { "type": "content.part", "uuid": "<uuid-3>", "turnId": "0", "step": 1, "stepUuid": "<uuid-1>", "part": { "type": "text", "text": "<text-1>" } }, "time": "<time>" }
     [wire] context.append_loop_event   { "event": { "type": "step.end", "uuid": "<uuid-1>", "turnId": "0", "step": 1, "usage": { "inputOther": 3, "output": 8, "inputCacheRead": 0, "inputCacheCreation": 0 }, "finishReason": "end_turn", "messageId": "mock-1" }, "time": "<time>" }
     [emit] turn.step.completed         { "turnId": 0, "step": 1, "stepId": "<uuid-1>", "usage": { "inputOther": 3, "output": 8, "inputCacheRead": 0, "inputCacheCreation": 0 }, "finishReason": "end_turn" }
@@ -45,6 +46,34 @@ it('runs a text-only agent turn from prompt to completion', async () => {
     messages:
       user: text "Hello"
   `);
+  await ctx.expectResumeMatches();
+});
+
+it('records redacted reasoning audit metadata for think parts', async () => {
+  const ctx = testAgent();
+  ctx.configure();
+
+  ctx.mockNextResponse(
+    {
+      type: 'think',
+      think: 'Need to open a WorkFrame, compile_context_pack, and record a Research Ledger event.',
+    },
+    { type: 'text', text: 'I will proceed.' },
+  );
+  await ctx.rpc.prompt({ input: [{ type: 'text', text: 'Start research workflow' }] });
+  await ctx.untilTurnEnd();
+
+  const audit = ctx.allEvents.find(
+    (event) => event.type === '[wire]' && event.event === 'reasoning.audit',
+  );
+  expect(audit?.args).toMatchObject({
+    turnId: '0',
+    step: 1,
+    chars: 83,
+    cues: expect.arrayContaining(['workframe', 'context_pack', 'research_ledger']),
+    redacted: true,
+  });
+  expect(JSON.stringify(audit?.args)).not.toContain('Need to open a WorkFrame');
   await ctx.expectResumeMatches();
 });
 

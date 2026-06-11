@@ -708,6 +708,18 @@ export class ContextMemory {
           );
         }
         openStep.content.push(event.part);
+        if (event.part.type === 'think') {
+          this.agent.records.logRecord({
+            type: 'reasoning.audit',
+            turnId: event.turnId,
+            step: event.step,
+            stepUuid: event.stepUuid,
+            partUuid: event.uuid,
+            chars: event.part.think.length,
+            cues: classifyReasoningAuditCues(event.part.think),
+            redacted: true,
+          });
+        }
         return;
       }
       case 'tool.call': {
@@ -835,4 +847,25 @@ function formatUndoUnavailableMessage(
   function formatPromptCount(count: number): string {
     return `${String(count)} ${count === 1 ? 'prompt' : 'prompts'}`;
   }
+}
+
+function classifyReasoningAuditCues(text: string): readonly string[] {
+  const lower = text.toLowerCase();
+  const cues: string[] = [];
+  const checks: Array<readonly [string, RegExp]> = [
+    ['workframe', /workframe|work frame|工作框架/i],
+    ['context_pack', /context\s*pack|compile_context_pack|上下文包/i],
+    ['research_action', /researchaction|research action|科研动作|动作/i],
+    ['research_ledger', /researchledger|research ledger|ledger|账本|记录/i],
+    ['aitp', /aitp/i],
+    ['search', /websearch|search|搜索|检索|文献/i],
+    ['source', /source|arxiv|paper|论文|来源|文献/i],
+    ['code', /code|python|script|simulation|代码|数值|模拟/i],
+    ['validation', /validate|verify|check|test|验证|检查|核对/i],
+    ['failure', /fail|failed|error|bug|missing|失败|错误|缺少|没有成功|返回空/i],
+  ];
+  for (const [cue, pattern] of checks) {
+    if (pattern.test(lower)) cues.push(cue);
+  }
+  return cues;
 }

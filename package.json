@@ -22,6 +22,7 @@
     "lint:fix": "pnpm run lint --fix",
     "lint:pkg": "pnpm --filter @bhjia-phys/hakimi exec publint && npm_config_cache=${TMPDIR:-/tmp}/kimi-code-npm-cache pnpm --filter @bhjia-phys/hakimi exec attw --pack . --profile node16",
     "sherif": "sherif",
+    "audit:hakimi-session": "node scripts/hakimi-real-session-audit.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
