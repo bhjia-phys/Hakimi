@@ -49,9 +49,14 @@ function parseCli(args) {
     command: undefined,
     options: {
       expectTools: [],
+      expectToolActions: [],
       expectVisibleTexts: [],
       expectReasoningCues: [],
       expectReasoningLedTools: [],
+      expectAitpWriteOperations: [],
+      expectAitpResearchRunTopics: [],
+      expectFreshAitpResearchRunTopics: [],
+      expectNoPostWorkframeMissingWorkframe: false,
     },
   };
   if (args.length > 0 && !args[0].startsWith('-')) {
@@ -102,6 +107,9 @@ function parseCli(args) {
       case '--expect-tool':
         result.options.expectTools.push(requireValue(args, ++i, arg));
         break;
+      case '--expect-tool-action':
+        result.options.expectToolActions.push(requireValue(args, ++i, arg));
+        break;
       case '--expect-visible-text':
         result.options.expectVisibleTexts.push(requireValue(args, ++i, arg));
         break;
@@ -117,6 +125,9 @@ function parseCli(args) {
       case '--expect-no-missing-workframe':
         result.options.expectNoMissingWorkframe = true;
         break;
+      case '--expect-no-post-workframe-missing-workframe':
+        result.options.expectNoPostWorkframeMissingWorkframe = true;
+        break;
       case '--expect-workframe-opened':
         result.options.expectWorkframeOpened = true;
         break;
@@ -131,6 +142,15 @@ function parseCli(args) {
         break;
       case '--expect-autoresearch-run':
         result.options.expectAutoresearchRun = true;
+        break;
+      case '--expect-aitp-write-operation':
+        result.options.expectAitpWriteOperations.push(requireValue(args, ++i, arg));
+        break;
+      case '--expect-aitp-research-run-topic':
+        result.options.expectAitpResearchRunTopics.push(requireValue(args, ++i, arg));
+        break;
+      case '--expect-fresh-aitp-research-run-topic':
+        result.options.expectFreshAitpResearchRunTopics.push(requireValue(args, ++i, arg));
         break;
       case '--fail-on-tool-error':
         result.options.failOnToolError = true;
@@ -185,17 +205,27 @@ Analyze options:
 
 Checks:
   --expect-tool <name>           Require at least one completed tool call
+  --expect-tool-action <tool/action>
+                                 Require at least one successful completed tool action
   --expect-visible-text <text>   Require visible assistant/tool output substring
   --expect-private-reasoning     Require at least one redacted reasoning/think part
   --expect-reasoning-cue <cue>   Require a redacted reasoning block with a behavior cue
   --expect-reasoning-led-tool <tool[/action]>
                                  Require a reasoning block followed by a tool call
   --expect-no-missing-workframe  Fail if auto-capture skipped missing WorkFrame
+  --expect-no-post-workframe-missing-workframe
+                                 Fail only if missing WorkFrame happened after open_work_frame
   --expect-workframe-opened      Require a successful ResearchAction open_work_frame
   --expect-context-pack          Require a successful context pack compile
   --expect-ledger-topic <topic>  Require .hakimi/research-ledger/<topic>
   --expect-aitp-topic <topic>    Require .aitp/topics/<topic>
   --expect-autoresearch-run      Require at least one AITP research_run record
+  --expect-aitp-write-operation <operation>
+                                 Require a successful execute_aitp_write_bridge operation
+  --expect-aitp-research-run-topic <topic>
+                                 Require an AITP research_run record for the topic
+  --expect-fresh-aitp-research-run-topic <topic>
+                                 Require a topic research_run modified during this harness run
   --fail-on-tool-error           Fail when any tool_lifecycle completed failed
 
 Output:
@@ -226,6 +256,8 @@ async function runAndAnalyze(options) {
   }
   const analysis = await analyzeFromBestEffortSession(home, workdir, before, run, options);
   analysis.run = runForReport(run);
+  analysis.expectations = evaluateExpectations(analysis, options);
+  analysis.ok = analysis.expectations.every((expectation) => expectation.pass);
   if (run.timedOut) {
     analysis.expectations.unshift(failExpectation('hakimi-timeout', `hakimi exceeded ${run.timeoutMs}ms`));
     analysis.ok = false;
@@ -394,6 +426,7 @@ function createEmptyAudit({ home, session, state, workdir }) {
       contextPackCompiled: false,
       researchActionResults: [],
       ledgerWrites: [],
+      aitpWriteBridgeCalls: [],
       autoresearchEvents: [],
     },
     failures: [],
@@ -401,6 +434,7 @@ function createEmptyAudit({ home, session, state, workdir }) {
       hakimiLedgerTopics: [],
       aitpTopics: [],
       aitpResearchRuns: [],
+      aitpResearchRunDetails: [],
     },
     expectations: [],
     _startedToolArgs: new Map(),
@@ -447,6 +481,15 @@ function scanWireEntry(audit, agentId, entry) {
     const toolName = stringOrUndefined(entry.toolName) ?? 'unknown';
     audit.autoCaptureSkipped[reason] ??= {};
     audit.autoCaptureSkipped[reason][toolName] = (audit.autoCaptureSkipped[reason][toolName] ?? 0) + 1;
+    pushTimeline(audit, {
+      kind: 'auto_capture_skipped',
+      agentId,
+      turnId: turnIdOrUndefined(entry.turnId),
+      step: Number.isFinite(entry.step) ? entry.step : undefined,
+      toolName,
+      toolCallId: stringOrUndefined(entry.toolCallId),
+      reason,
+    });
     if (reason === 'missing-workframe') {
       audit.failures.push({
         severity: 'warning',
@@ -535,6 +578,7 @@ function scanToolLifecycle(audit, agentId, entry) {
   }
   const args = parsedArgs ?? (toolCallId === undefined ? undefined : audit._startedToolArgs.get(toolCallId));
   const outputSummary = stringOrUndefined(entry.outputSummary);
+  const aitpBridge = extractAitpBridgeMetadata(args, outputSummary);
   const record = {
     agentId,
     toolName,
@@ -542,6 +586,9 @@ function scanToolLifecycle(audit, agentId, entry) {
     isError: entry.isError === true,
     toolCallId,
     action: typeof args?.action === 'string' ? args.action : undefined,
+    aitpOperation: aitpBridge.operation,
+    aitpTopic: aitpBridge.topicId,
+    aitpRunId: aitpBridge.runId,
     argsSummary: truncate(redactSecrets(entry.argsSummary ?? '')),
     outputSummary: truncate(redactSecrets(outputSummary ?? '')),
   };
@@ -555,6 +602,9 @@ function scanToolLifecycle(audit, agentId, entry) {
       toolName,
       toolCallId,
       action: record.action,
+      aitpOperation: record.aitpOperation,
+      aitpTopic: record.aitpTopic,
+      aitpRunId: record.aitpRunId,
       status: record.status,
       isError: record.isError,
       outputSummary: record.outputSummary,
@@ -595,6 +645,19 @@ function scanResearchActionCompletion(audit, args, outputSummary, entry) {
   if (action === 'record_action_result' && ok) {
     audit.research.researchActionResults.push({
       actionId: typeof args?.action_id === 'string' ? args.action_id : undefined,
+      output: truncate(redactSecrets(outputSummary ?? '')),
+    });
+  }
+  if (action === 'execute_aitp_write_bridge') {
+    const bridge = extractAitpBridgeMetadata(args, outputSummary);
+    audit.research.aitpWriteBridgeCalls.push({
+      operation: bridge.operation,
+      topicId: bridge.topicId,
+      runId: bridge.runId,
+      payloadFields: bridge.payloadFields,
+      status: stringOrUndefined(entry.status),
+      isError: entry.isError === true,
+      ok,
       output: truncate(redactSecrets(outputSummary ?? '')),
     });
   }
@@ -786,48 +849,50 @@ function findReasoningLedToolCalls(timeline) {
   for (let i = 0; i < timeline.length; i += 1) {
     const event = timeline[i];
     if (event?.kind !== 'reasoning') continue;
-    const next = findNextToolBeforeNextReasoning(timeline, i);
-    if (next === undefined) continue;
-    const resultEvent = next.toolCallId === undefined
-      ? undefined
-      : findNextTimelineEvent(timeline, i, (candidate) =>
-          (candidate.kind === 'tool_lifecycle_completed' || candidate.kind === 'tool_result') && candidate.toolCallId === next.toolCallId
-        );
-    result.push({
-      agentId: event.agentId,
-      turnId: event.turnId,
-      reasoningStep: event.step,
-      reasoningChars: event.chars,
-      reasoningCues: event.cues ?? [],
-      toolName: next.toolName,
-      action: next.action,
-      toolCallId: next.toolCallId,
-      visibleBridge: next.visibleBridge,
-      argsSummary: next.argsSummary,
-      resultError: resultEvent?.isError === true || resultEvent?.status === 'failed',
-      resultSummary: resultEvent?.outputSummary,
-    });
+    const nextTools = findToolsBeforeNextReasoning(timeline, i);
+    for (const next of nextTools) {
+      const resultEvent = next.toolCallId === undefined
+        ? undefined
+        : findNextTimelineEvent(timeline, next.timelineIndex, (candidate) =>
+            (candidate.kind === 'tool_lifecycle_completed' || candidate.kind === 'tool_result') && candidate.toolCallId === next.toolCallId
+          );
+      result.push({
+        agentId: event.agentId,
+        turnId: event.turnId,
+        reasoningStep: event.step,
+        reasoningChars: event.chars,
+        reasoningCues: event.cues ?? [],
+        toolName: next.toolName,
+        action: next.action,
+        toolCallId: next.toolCallId,
+        visibleBridge: next.visibleBridge,
+        argsSummary: next.argsSummary,
+        resultError: resultEvent?.isError === true || resultEvent?.status === 'failed',
+        resultSummary: resultEvent?.outputSummary,
+      });
+    }
   }
   return result;
 }
 
-function findNextToolBeforeNextReasoning(timeline, startIndex) {
+function findToolsBeforeNextReasoning(timeline, startIndex) {
   const origin = timeline[startIndex];
+  const result = [];
   let visibleBridge;
   for (let i = startIndex + 1; i < timeline.length; i += 1) {
     const candidate = timeline[i];
     if (candidate.agentId !== origin.agentId) continue;
     if (candidate.turnId !== origin.turnId) continue;
-    if (candidate.kind === 'reasoning') return undefined;
+    if (candidate.kind === 'reasoning') return result;
     if (candidate.kind === 'assistant_text') {
       visibleBridge ??= singleLine(candidate.text ?? '').slice(0, 240);
       continue;
     }
     if (candidate.kind === 'tool_call') {
-      return { ...candidate, visibleBridge };
+      result.push({ ...candidate, visibleBridge, timelineIndex: i });
     }
   }
-  return undefined;
+  return result;
 }
 
 function findNextTimelineEvent(timeline, startIndex, predicate) {
@@ -898,12 +963,27 @@ async function scanResearchFilesystem(workdir) {
     hakimiLedgerTopics: await listChildDirectories(hakimiLedgerRoot),
     aitpTopics: await listChildDirectories(aitpTopicsRoot),
     aitpResearchRuns: [],
+    aitpResearchRunDetails: [],
   };
-  result.aitpResearchRuns.push(...(await listMarkdownOrJsonFiles(aitpRegistryRunsRoot)));
+  const registryRuns = await scanAitpResearchRunFiles(aitpRegistryRunsRoot, {
+    sourceRoot: 'registry/research_runs',
+  });
+  result.aitpResearchRuns.push(...registryRuns.paths);
+  result.aitpResearchRunDetails.push(...registryRuns.details);
   for (const topic of result.aitpTopics) {
-    result.aitpResearchRuns.push(...(await listMarkdownOrJsonFiles(join(aitpTopicsRoot, topic, 'runtime', 'research_runs'))));
+    const topicRuns = await scanAitpResearchRunFiles(join(aitpTopicsRoot, topic, 'runtime', 'research_runs'), {
+      sourceRoot: `topics/${topic}/runtime/research_runs`,
+      topicId: topic,
+    });
+    result.aitpResearchRuns.push(...topicRuns.paths);
+    result.aitpResearchRunDetails.push(...topicRuns.details);
   }
   result.aitpResearchRuns = [...new Set(result.aitpResearchRuns)].sort();
+  result.aitpResearchRunDetails.sort((a, b) =>
+    String(a.topicId ?? '').localeCompare(String(b.topicId ?? '')) ||
+    String(a.runId ?? '').localeCompare(String(b.runId ?? '')) ||
+    a.path.localeCompare(b.path)
+  );
   return result;
 }
 
@@ -915,6 +995,16 @@ function evaluateExpectations(audit, options) {
       name: `tool:${toolName}`,
       pass: completed > 0,
       detail: completed > 0 ? `${completed} completed call(s)` : 'no completed call found',
+    });
+  }
+  for (const target of options.expectToolActions ?? []) {
+    const successful = audit.toolCalls.filter((call) => isSuccessfulToolCall(call) && matchesToolTarget(call, target));
+    expectations.push({
+      name: `tool-action:${target}`,
+      pass: successful.length > 0,
+      detail: successful.length > 0
+        ? `${successful.length} successful completed action(s)`
+        : `successful actions found: ${audit.toolCalls.filter(isSuccessfulToolCall).map(formatToolTarget).join(', ') || '(none)'}`,
     });
   }
   for (const expectedText of options.expectVisibleTexts ?? []) {
@@ -962,6 +1052,16 @@ function evaluateExpectations(audit, options) {
       detail: count === 0 ? 'no missing-workframe skips' : `${count} missing-workframe skip(s)`,
     });
   }
+  if (options.expectNoPostWorkframeMissingWorkframe) {
+    const skipped = findPostWorkframeMissingWorkframeSkips(audit);
+    expectations.push({
+      name: 'no-post-workframe-missing-workframe',
+      pass: skipped.length === 0,
+      detail: skipped.length === 0
+        ? 'no missing-workframe skips after successful open_work_frame'
+        : `${skipped.length} post-WorkFrame missing-workframe skip(s): ${skipped.map((item) => item.toolName ?? 'unknown').join(', ')}`,
+    });
+  }
   if (options.expectWorkframeOpened) {
     expectations.push({
       name: 'workframe-opened',
@@ -1001,6 +1101,45 @@ function evaluateExpectations(audit, options) {
         : `${audit.research.autoresearchEvents.length} autoresearch wire event(s)`,
     });
   }
+  for (const operation of options.expectAitpWriteOperations ?? []) {
+    const successful = audit.research.aitpWriteBridgeCalls.filter((call) => call.ok && call.operation === operation);
+    expectations.push({
+      name: `aitp-write-operation:${operation}`,
+      pass: successful.length > 0,
+      detail: successful.length > 0
+        ? `${successful.length} successful bridge call(s)`
+        : `bridge calls found: ${audit.research.aitpWriteBridgeCalls.map(formatAitpBridgeCall).join(', ') || '(none)'}`,
+    });
+  }
+  for (const topic of options.expectAitpResearchRunTopics ?? []) {
+    const matching = aitpResearchRunDetailsForTopic(audit, topic);
+    expectations.push({
+      name: `aitp-research-run-topic:${topic}`,
+      pass: matching.length > 0,
+      detail: matching.length > 0
+        ? `${matching.length} research_run record(s) for topic`
+        : `research_run topics found: ${formatTopicCounts(summarizeAitpResearchRunTopics(audit)) || '(none)'}`,
+    });
+  }
+  for (const topic of options.expectFreshAitpResearchRunTopics ?? []) {
+    const runWindow = parseRunWindow(audit.run);
+    if (runWindow === undefined) {
+      expectations.push({
+        name: `fresh-aitp-research-run-topic:${topic}`,
+        pass: false,
+        detail: 'freshness requires harness run startedAt/finishedAt metadata',
+      });
+      continue;
+    }
+    const matching = aitpResearchRunDetailsForTopic(audit, topic).filter((detail) => isFreshDetail(detail, runWindow));
+    expectations.push({
+      name: `fresh-aitp-research-run-topic:${topic}`,
+      pass: matching.length > 0,
+      detail: matching.length > 0
+        ? `${matching.length} fresh research_run record(s) for topic`
+        : `no topic research_run mtime in ${new Date(runWindow.startedMs).toISOString()}..${new Date(runWindow.finishedMs).toISOString()}`,
+    });
+  }
   if (options.failOnToolError) {
     const failed = audit.failures.filter((failure) => failure.kind === 'tool_failed');
     expectations.push({
@@ -1024,6 +1163,75 @@ function matchesToolTarget(call, target) {
 
 function formatToolTarget(call) {
   return `${call.toolName}${call.action ? `/${call.action}` : ''}`;
+}
+
+function isSuccessfulToolCall(call) {
+  return call.status === 'passed' && call.isError !== true;
+}
+
+function findPostWorkframeMissingWorkframeSkips(audit) {
+  const firstOpen = audit.timeline.find((event) =>
+    event.kind === 'tool_lifecycle_completed' &&
+    event.toolName === 'ResearchAction' &&
+    event.action === 'open_work_frame' &&
+    event.status === 'passed' &&
+    event.isError !== true
+  );
+  if (firstOpen === undefined) return [];
+  return audit.timeline.filter((event) =>
+    event.kind === 'auto_capture_skipped' &&
+    event.reason === 'missing-workframe' &&
+    event.sequence > firstOpen.sequence
+  );
+}
+
+function formatAitpBridgeCall(call) {
+  const target = `${call.operation ?? 'unknown'}${call.topicId ? `:${call.topicId}` : ''}`;
+  return `${target} status=${call.status ?? 'unknown'}${call.isError ? ' error=true' : ''}`;
+}
+
+function aitpResearchRunDetailsForTopic(audit, topic) {
+  return (audit.filesystem.aitpResearchRunDetails ?? [])
+    .filter(isAitpResearchRunDetail)
+    .filter((detail) => detail.topicId === topic);
+}
+
+function isAitpResearchRunDetail(detail) {
+  if (detail.kind === 'research_run') return true;
+  if (detail.runId === undefined || detail.eventId !== undefined) return false;
+  return !String(detail.path ?? '').toLowerCase().includes('research_run_events');
+}
+
+function summarizeAitpResearchRunTopics(audit) {
+  const counts = new Map();
+  for (const detail of audit.filesystem.aitpResearchRunDetails ?? []) {
+    if (!isAitpResearchRunDetail(detail)) continue;
+    const topic = detail.topicId ?? '(unknown)';
+    counts.set(topic, (counts.get(topic) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function formatTopicCounts(counts) {
+  return [...counts.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([topic, count]) => `${topic}=${count}`)
+    .join(', ');
+}
+
+function parseRunWindow(run) {
+  const startedMs = Date.parse(run?.startedAt ?? '');
+  const finishedMs = Date.parse(run?.finishedAt ?? '');
+  if (!Number.isFinite(startedMs) || !Number.isFinite(finishedMs)) return undefined;
+  const toleranceMs = 5000;
+  return {
+    startedMs: startedMs - toleranceMs,
+    finishedMs: finishedMs + toleranceMs,
+  };
+}
+
+function isFreshDetail(detail, runWindow) {
+  return Number.isFinite(detail.mtimeMs) && detail.mtimeMs >= runWindow.startedMs && detail.mtimeMs <= runWindow.finishedMs;
 }
 
 async function emitResult(result, options) {
@@ -1103,9 +1311,25 @@ function renderMarkdown(audit) {
   lines.push(`- ContextPack compiled: ${audit.research.contextPackCompiled ? 'yes' : 'no'}`);
   lines.push(`- ResearchAction recorded results: ${audit.research.researchActionResults.length}`);
   lines.push(`- ResearchLedger writes: ${audit.research.ledgerWrites.length}`);
+  const aitpBridgePassed = audit.research.aitpWriteBridgeCalls.filter((call) => call.ok).length;
+  const aitpBridgeFailed = audit.research.aitpWriteBridgeCalls.filter((call) => !call.ok).length;
+  lines.push(`- AITP write bridge calls: ${audit.research.aitpWriteBridgeCalls.length} (passed ${aitpBridgePassed}, failed ${aitpBridgeFailed})`);
   lines.push(`- Hakimi ledger topics: ${audit.filesystem.hakimiLedgerTopics.map((topic) => `\`${topic}\``).join(', ') || '(none)'}`);
   lines.push(`- AITP topics: ${audit.filesystem.aitpTopics.map((topic) => `\`${topic}\``).join(', ') || '(none)'}`);
   lines.push(`- AITP research run files: ${audit.filesystem.aitpResearchRuns.length}`);
+  lines.push(`- AITP research run topics: ${formatTopicCounts(summarizeAitpResearchRunTopics(audit)) || '(none)'}`);
+  lines.push('');
+
+  lines.push(`## AITP Write Bridge`);
+  if (audit.research.aitpWriteBridgeCalls.length === 0) {
+    lines.push('- No execute_aitp_write_bridge completions found.');
+  } else {
+    for (const call of audit.research.aitpWriteBridgeCalls.slice(-20)) {
+      lines.push(`- \`${call.operation ?? 'unknown'}\`${call.topicId ? ` topic=\`${call.topicId}\`` : ''}${call.runId ? ` run=\`${call.runId}\`` : ''} status=${call.status ?? 'unknown'}${call.isError ? ' error=true' : ''}`);
+      if (call.payloadFields?.length > 0) lines.push(`  payload fields: ${call.payloadFields.join(', ')}`);
+      if (call.output) lines.push(`  output: ${singleLine(call.output).slice(0, 320)}`);
+    }
+  }
   lines.push('');
 
   lines.push(`## Visible Transcript`);
@@ -1189,8 +1413,9 @@ function renderMarkdown(audit) {
   lines.push('');
 
   lines.push(`## Recent Tool Calls`);
-  for (const call of audit.toolCalls.filter((call) => call.status !== 'called' && call.status !== 'result').slice(-20)) {
-    lines.push(`- \`${call.toolName}\`${call.action ? `/${call.action}` : ''} status=${call.status ?? 'unknown'} id=${call.toolCallId ?? ''}`);
+  for (const call of audit.toolCalls.filter((call) => call.status !== undefined && call.status !== 'called' && call.status !== 'result').slice(-20)) {
+    const aitp = call.aitpOperation ? ` aitp=${call.aitpOperation}${call.aitpTopic ? `:${call.aitpTopic}` : ''}` : '';
+    lines.push(`- \`${call.toolName}\`${call.action ? `/${call.action}` : ''} status=${call.status ?? 'unknown'} id=${call.toolCallId ?? ''}${aitp}`);
     if (call.outputSummary) lines.push(`  output: ${call.outputSummary.replace(/\r?\n/g, ' ').slice(0, 240)}`);
   }
   return `${lines.join('\n')}\n`;
@@ -1406,6 +1631,91 @@ async function listMarkdownOrJsonFiles(path) {
   }
 }
 
+async function scanAitpResearchRunFiles(path, context = {}) {
+  const paths = await listMarkdownOrJsonFiles(path);
+  const details = [];
+  for (const filePath of paths) {
+    details.push(...(await readAitpResearchRunDetails(filePath, context)));
+  }
+  return { paths, details };
+}
+
+async function readAitpResearchRunDetails(path, context = {}) {
+  let fileStat;
+  let raw;
+  try {
+    fileStat = await stat(path);
+    raw = await readFile(path, 'utf8');
+  } catch {
+    return [];
+  }
+
+  const base = {
+    path,
+    sourceRoot: context.sourceRoot,
+    mtimeMs: fileStat.mtimeMs,
+    mtime: new Date(fileStat.mtimeMs).toISOString(),
+  };
+  const fallbackTopicId = context.topicId;
+  const lowerPath = path.toLowerCase();
+  if (lowerPath.endsWith('.jsonl')) {
+    const details = [];
+    let lineNumber = 0;
+    for (const line of raw.split(/\r?\n/)) {
+      lineNumber += 1;
+      if (line.trim() === '') continue;
+      try {
+        const record = JSON.parse(line);
+        details.push(detailFromAitpRecord(record, { ...base, lineNumber }, fallbackTopicId));
+      } catch {
+        // Ignore malformed JSONL rows; the file path still remains in aitpResearchRuns.
+      }
+    }
+    return details;
+  }
+  if (lowerPath.endsWith('.json')) {
+    const record = parseMaybeJson(raw);
+    return record === undefined ? [] : [detailFromAitpRecord(record, base, fallbackTopicId)];
+  }
+  if (lowerPath.endsWith('.md')) {
+    const record = parseMarkdownFrontMatterScalars(raw);
+    return [detailFromAitpRecord(record, base, fallbackTopicId)];
+  }
+  return [];
+}
+
+function detailFromAitpRecord(record, base, fallbackTopicId) {
+  const topicId = firstString(record?.topic_id, record?.topicId, fallbackTopicId);
+  const runId = firstString(record?.run_id, record?.runId);
+  const eventId = firstString(record?.event_id, record?.eventId);
+  const kind = firstString(record?.kind);
+  return {
+    ...base,
+    kind,
+    topicId,
+    runId,
+    eventId,
+  };
+}
+
+function parseMarkdownFrontMatterScalars(text) {
+  const clean = String(text ?? '').replace(/^\uFEFF/, '');
+  const match = clean.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (match === null) return {};
+  const result = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const lineMatch = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (lineMatch === null) continue;
+    const key = lineMatch[1];
+    let value = lineMatch[2].trim();
+    if ((value.startsWith("'") && value.endsWith("'")) || (value.startsWith('"') && value.endsWith('"'))) {
+      value = value.slice(1, -1);
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
 function parseResumeSessionId(output) {
   const match = output.match(/hakimi\s+--session\s+([A-Za-z0-9_.:-]+)/);
   return match?.[1];
@@ -1428,6 +1738,36 @@ function matchXmlAttr(text, attr) {
 function matchXmlTag(text, tag) {
   const pattern = new RegExp(`<${escapeRegExp(tag)}>([^<]+)</${escapeRegExp(tag)}>`);
   return text.match(pattern)?.[1];
+}
+
+function extractAitpBridgeMetadata(args, outputSummary) {
+  const payload = args?.aitp_payload && typeof args.aitp_payload === 'object' ? args.aitp_payload : undefined;
+  return {
+    operation: firstString(
+      args?.aitp_operation,
+      args?.aitpOperation,
+      matchXmlAttr(outputSummary ?? '', 'operation'),
+    ),
+    topicId: firstString(
+      payload?.topic_id,
+      payload?.topicId,
+      args?.topic_id,
+      args?.topicId,
+      matchXmlAttr(outputSummary ?? '', 'topic_id'),
+      matchXmlAttr(outputSummary ?? '', 'topicId'),
+      matchXmlTag(outputSummary ?? '', 'topic_id'),
+    ),
+    runId: firstString(
+      payload?.run_id,
+      payload?.runId,
+      args?.run_id,
+      args?.runId,
+      matchXmlAttr(outputSummary ?? '', 'run_id'),
+      matchXmlAttr(outputSummary ?? '', 'runId'),
+      matchXmlTag(outputSummary ?? '', 'run_id'),
+    ),
+    payloadFields: payload === undefined ? [] : Object.keys(payload).sort(),
+  };
 }
 
 function failExpectation(name, detail) {
@@ -1522,6 +1862,13 @@ function redactSecrets(text) {
 
 function stringOrUndefined(value) {
   return typeof value === 'string' ? value : undefined;
+}
+
+function firstString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value !== '') return value;
+  }
+  return undefined;
 }
 
 function turnIdOrUndefined(value) {
