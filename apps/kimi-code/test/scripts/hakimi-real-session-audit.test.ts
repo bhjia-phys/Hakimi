@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analyzeSession,
   classifyReasoningCues,
+  createHakimiAuditEnv,
   evaluateExpectations,
   parseCli,
   renderMarkdown,
@@ -151,5 +152,15 @@ describe('hakimi real session audit harness', () => {
     expect(classifyReasoningCues('compile_context_pack failed because WorkFrame is missing')).toEqual(
       expect.arrayContaining(['context_pack', 'workframe', 'failure']),
     );
+  });
+
+  it('enables reasoning audit only inside harness-run child environments', () => {
+    const env = createHakimiAuditEnv('/tmp/hakimi-home', {
+      HAKIMI_HOME: '/tmp/original-home',
+      KIMI_CODE_EXPERIMENTAL_REASONING_AUDIT: '0',
+    });
+
+    expect(env.HAKIMI_HOME).toBe('/tmp/hakimi-home');
+    expect(env.KIMI_CODE_EXPERIMENTAL_REASONING_AUDIT).toBe('1');
   });
 });

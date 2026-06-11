@@ -908,12 +908,14 @@ node scripts/hakimi-real-session-audit.mjs analyze `
 
 The report covers terminal stream previews, reconstructed visible transcript,
 tool lifecycle records, tool failures, auto-capture skips, WorkFrame/context
-state, Hakimi research-ledger topics, and AITP topic/run state. Private
-reasoning / `think` parts become redacted audit evidence: Hakimi writes
-`reasoning.audit` records with length and coarse behavior cues, and the harness
-can assert cues or reasoning-led tool calls without printing the underlying
-thinking text. Expectation failures return exit code `2`, and a timed-out real
-run returns `124`.
+state, Hakimi research-ledger topics, and AITP topic/run state. The harness
+`run` command enables `KIMI_CODE_EXPERIMENTAL_REASONING_AUDIT=1` only for its
+child Hakimi process, so ordinary sessions do not write `reasoning.audit`
+records. Under that development harness switch, private reasoning / `think`
+parts become redacted audit evidence with length and coarse behavior cues; the
+harness can assert cues or reasoning-led tool calls without printing the
+underlying thinking text. Expectation failures return exit code `2`, and a
+timed-out real run returns `124`.
 
 ## DeepSeek Quick Setup
 

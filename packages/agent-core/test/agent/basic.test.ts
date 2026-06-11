@@ -32,7 +32,6 @@ it('runs a text-only agent turn from prompt to completion', async () => {
     [emit] thinking.delta              { "turnId": 0, "delta": "<think-1>" }
     [emit] assistant.delta             { "turnId": 0, "delta": "<text-1>" }
     [wire] context.append_loop_event   { "event": { "type": "content.part", "uuid": "<uuid-2>", "turnId": "0", "step": 1, "stepUuid": "<uuid-1>", "part": { "type": "think", "think": "<think-1>" } }, "time": "<time>" }
-    [wire] reasoning.audit             { "turnId": "0", "step": 1, "stepUuid": "<uuid-1>", "partUuid": "<uuid-2>", "chars": 9, "cues": [], "redacted": true, "time": "<time>" }
     [wire] context.append_loop_event   { "event": { "type": "content.part", "uuid": "<uuid-3>", "turnId": "0", "step": 1, "stepUuid": "<uuid-1>", "part": { "type": "text", "text": "<text-1>" } }, "time": "<time>" }
     [wire] context.append_loop_event   { "event": { "type": "step.end", "uuid": "<uuid-1>", "turnId": "0", "step": 1, "usage": { "inputOther": 3, "output": 8, "inputCacheRead": 0, "inputCacheCreation": 0 }, "finishReason": "end_turn", "messageId": "mock-1" }, "time": "<time>" }
     [emit] turn.step.completed         { "turnId": 0, "step": 1, "stepId": "<uuid-1>", "usage": { "inputOther": 3, "output": 8, "inputCacheRead": 0, "inputCacheCreation": 0 }, "finishReason": "end_turn" }
@@ -40,6 +39,7 @@ it('runs a text-only agent turn from prompt to completion', async () => {
     [emit] agent.status.updated        { "model": "mock-model", "contextTokens": 11, "maxContextTokens": 1000000, "contextUsage": 0.000011, "planMode": false, "swarmMode": false, "permission": "manual", "usage": { "byModel": { "mock-model": { "inputOther": 3, "output": 8, "inputCacheRead": 0, "inputCacheCreation": 0 } }, "total": { "inputOther": 3, "output": 8, "inputCacheRead": 0, "inputCacheCreation": 0 }, "currentTurn": { "inputOther": 3, "output": 8, "inputCacheRead": 0, "inputCacheCreation": 0 } } }
     [emit] turn.ended                  { "turnId": 0, "reason": "completed" }
   `);
+  expect(ctx.allEvents.some((event) => event.type === '[wire]' && event.event === 'reasoning.audit')).toBe(false);
   expect(ctx.lastLlmInput()).toMatchInlineSnapshot(`
     system: <system-prompt>
     tools: []
@@ -49,8 +49,13 @@ it('runs a text-only agent turn from prompt to completion', async () => {
   await ctx.expectResumeMatches();
 });
 
-it('records redacted reasoning audit metadata for think parts', async () => {
-  const ctx = testAgent();
+it('records redacted reasoning audit metadata for think parts when enabled', async () => {
+  const ctx = testAgent({
+    experimentalFlags: new FlagResolver(
+      { KIMI_CODE_EXPERIMENTAL_REASONING_AUDIT: '1' },
+      FLAG_DEFINITIONS,
+    ),
+  });
   ctx.configure();
 
   ctx.mockNextResponse(

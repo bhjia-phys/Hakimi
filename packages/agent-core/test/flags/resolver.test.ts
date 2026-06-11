@@ -219,4 +219,14 @@ describe('FLAG_DEFINITIONS invariants', () => {
       expect(new FlagResolver({ [def.env]: '0' }).enabled(def.id as FlagId)).toBe(false);
     }
   });
+
+  it('keeps reasoning audit off unless explicitly enabled for development harnesses', () => {
+    expect(new FlagResolver({}, FLAG_DEFINITIONS).enabled('reasoning-audit')).toBe(false);
+    expect(
+      new FlagResolver(
+        { KIMI_CODE_EXPERIMENTAL_REASONING_AUDIT: '1' },
+        FLAG_DEFINITIONS,
+      ).enabled('reasoning-audit'),
+    ).toBe(true);
+  });
 });

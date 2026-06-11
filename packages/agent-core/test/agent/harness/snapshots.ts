@@ -328,7 +328,10 @@ function isVolatileDurationKey(key: string): boolean {
 }
 
 function isAuditOnlyWireEvent(event: EventSnapshotEntry): boolean {
-  return event.type === '[wire]' && event.event.startsWith('tool_lifecycle.');
+  return (
+    event.type === '[wire]' &&
+    (event.event.startsWith('tool_lifecycle.') || event.event === 'reasoning.audit')
+  );
 }
 
 function isPlanModeReminder(value: string): boolean {
