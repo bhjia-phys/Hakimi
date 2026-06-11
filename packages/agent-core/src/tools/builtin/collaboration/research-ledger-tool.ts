@@ -23,6 +23,7 @@ import {
   type ResearchLedgerEventStatus,
   type ResearchLedgerEventType,
 } from '../../../research-ledger';
+import { GENERIC_THEORETICAL_PHYSICS_DOMAIN } from '../../../research-defaults';
 import { PHYSICS_CAPSULE_KINDS, type PhysicsCapsuleKind } from '../../../physics-memory';
 import { toInputJsonSchema } from '../../support/input-schema';
 import DESCRIPTION from './research-ledger-tool.md';
@@ -39,7 +40,12 @@ const ACTIONS = [
 export const ResearchLedgerToolInputSchema = z.object({
   action: z.enum(ACTIONS).describe('The research-ledger operation to perform.'),
   topic: z.string().optional().describe('Topic id for scoped listing or proposal compilation.'),
-  domain: z.string().optional().describe('Domain id for scoped listing or proposal compilation.'),
+  domain: z
+    .string()
+    .optional()
+    .describe(
+      'Domain id for scoped listing or proposal compilation. For write_event/capture_event, defaults to theoretical-physics/general when omitted.',
+    ),
   type: z.enum(RESEARCH_LEDGER_EVENT_TYPES).optional().describe('Optional event type filter.'),
   status: z.enum(RESEARCH_LEDGER_EVENT_STATUSES).optional().describe('Optional event status filter.'),
   id: z
@@ -192,7 +198,7 @@ export class ResearchLedgerTool implements BuiltinTool<ResearchLedgerToolInput> 
     }
     const id = args.id ?? defaultWriteEventId(args, ctx);
     const topic = args.topic;
-    const domain = args.domain;
+    const domain = defaultEventDomain(args.domain);
     const type = args.type;
     const body = args.body;
     if (id === undefined || id.length === 0) {
@@ -200,9 +206,6 @@ export class ResearchLedgerTool implements BuiltinTool<ResearchLedgerToolInput> 
     }
     if (topic === undefined || topic.length === 0) {
       return errorResult('ResearchLedger write_event requires topic.');
-    }
-    if (domain === undefined || domain.length === 0) {
-      return errorResult('ResearchLedger write_event requires domain.');
     }
     if (type === undefined || type.length === 0) {
       return errorResult('ResearchLedger write_event requires type.');
@@ -255,16 +258,14 @@ export class ResearchLedgerTool implements BuiltinTool<ResearchLedgerToolInput> 
     if (args.topic === undefined || args.topic.length === 0) {
       return errorResult('ResearchLedger capture_event requires topic.');
     }
-    if (args.domain === undefined || args.domain.length === 0) {
-      return errorResult('ResearchLedger capture_event requires domain.');
-    }
+    const domain = defaultEventDomain(args.domain);
     if (args.title === undefined || args.title.length === 0) {
       return errorResult('ResearchLedger capture_event requires title.');
     }
     const decision = buildResearchCaptureDecision({
       captureClass: args.capture_class,
       topic: args.topic,
-      domain: args.domain,
+      domain,
       title: args.title,
       eventId: args.id,
       body: args.body,
@@ -298,6 +299,13 @@ function defaultWriteEventId(
   if (args.topic === undefined || args.topic.length === 0) return undefined;
   if (args.type === undefined || args.type.length === 0) return undefined;
   return `event.${stablePathSlug(args.topic, 'topic')}.${args.type}.${stablePathSlug(ctx.toolCallId, 'tool call id')}`;
+}
+
+function defaultEventDomain(domain: string | undefined): string {
+  if (domain === undefined || domain.length === 0) {
+    return GENERIC_THEORETICAL_PHYSICS_DOMAIN;
+  }
+  return domain;
 }
 
 function validateWriteEventProvenance(

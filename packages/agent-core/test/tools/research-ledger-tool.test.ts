@@ -164,6 +164,48 @@ describe('ResearchLedgerTool', () => {
     expect(rejected.output).toContain('use type=derivation_scratch');
   });
 
+  it('defaults write and capture events to the generic theoretical-physics domain', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'aitp-ledger-tool-'));
+    onTestFinishedRm(cwd);
+    const agent = makeAgent(new ResearchLedgerRegistry(), { cwd });
+    const manager = agent.researchLedger;
+    if (manager === null) throw new Error('Expected research ledger manager');
+    const tool = new ResearchLedgerTool(manager);
+
+    const written = await execute(tool, {
+      action: 'write_event',
+      type: 'derivation_scratch',
+      topic: 'random-open-boundary-ads-cavity',
+      source_refs: ['model:research-session'],
+      body: 'Draft derivation for a random open AdS boundary.',
+    });
+    const captured = await execute(tool, {
+      action: 'capture_event',
+      capture_class: 'benchmark_observation',
+      topic: 'random-open-boundary-ads-cavity',
+      title: 'Toy survival simulation',
+      body: 'A finite toy simulation produced an exploratory survival curve.',
+      source_refs: ['file:code/survival_simulation.py'],
+      artifact_refs: ['file:ensemble_survival.png'],
+    });
+
+    expect(written.isError).toBeUndefined();
+    expect(captured.isError).toBeUndefined();
+    expect(manager.registry.requireEvent(
+      'event.random-open-boundary-ads-cavity.derivation_scratch.call_research_ledger',
+    ).metadata.domain).toBe('theoretical-physics/general');
+    expect(manager.registry.listEvents({ topic: 'random-open-boundary-ads-cavity' })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            domain: 'theoretical-physics/general',
+            type: 'benchmark_observation',
+          }),
+        }),
+      ]),
+    );
+  });
+
   it('captures controlled observations through the capture policy', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'aitp-ledger-tool-'));
     onTestFinishedRm(cwd);
