@@ -34,6 +34,7 @@ import {
   type ResearchObligation,
   type WorkFrame,
 } from '../../../research-action';
+import { GENERIC_THEORETICAL_PHYSICS_DOMAIN } from '../../../research-defaults';
 import {
   PHYSICS_CAPSULE_KINDS,
   RELIABILITY_STATES,
@@ -179,10 +180,18 @@ export const ResearchActionToolInputSchema = z.object({
   action: z.enum(ACTIONS).describe('The research-action operation to perform.'),
   category: z.enum(CATEGORIES).optional().describe('Optional action category filter.'),
   exposure: z.enum(EXPOSURES).optional().describe('Optional action exposure filter.'),
-  domain: z.string().optional().describe('Optional action domain filter.'),
+  domain: z
+    .string()
+    .optional()
+    .describe(
+      'Optional action domain filter. For open_work_frame, defaults to theoretical-physics/general when omitted.',
+    ),
   topic: z.string().optional().describe('Topic id for WorkFrame operations.'),
   goal: z.string().optional().describe('Goal text for open_work_frame.'),
-  frame_id: z.string().optional().describe('WorkFrame id for WorkFrame operations.'),
+  frame_id: z
+    .string()
+    .optional()
+    .describe('WorkFrame id for WorkFrame operations. For open_work_frame, Hakimi can derive one from topic/goal when omitted.'),
   context_pack_id: z.string().optional().describe('Optional context pack id for open_work_frame.'),
   action_binding_id: z
     .string()
@@ -1403,22 +1412,24 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     if (this.manager === undefined) {
       return errorResult('ResearchAction open_work_frame requires a session manager.');
     }
-    if (args.frame_id === undefined || args.frame_id.length === 0) {
-      return errorResult('ResearchAction open_work_frame requires frame_id.');
-    }
-    if (args.domain === undefined || args.domain.length === 0) {
-      return errorResult('ResearchAction open_work_frame requires domain.');
-    }
     if (args.topic === undefined || args.topic.length === 0) {
       return errorResult('ResearchAction open_work_frame requires topic.');
     }
     if (args.goal === undefined || args.goal.length === 0) {
       return errorResult('ResearchAction open_work_frame requires goal.');
     }
+    const frameId =
+      args.frame_id === undefined || args.frame_id.length === 0
+        ? derivedWorkFrameId(args.topic, args.goal)
+        : args.frame_id;
+    const domain =
+      args.domain === undefined || args.domain.length === 0
+        ? GENERIC_THEORETICAL_PHYSICS_DOMAIN
+        : args.domain;
     const frame = this.manager.openWorkFrame(
       {
-        id: args.frame_id,
-        domain: args.domain,
+        id: frameId,
+        domain,
         topic: args.topic,
         goal: args.goal,
         contextPackId: args.context_pack_id,
@@ -5323,6 +5334,18 @@ function renderStringList(
     ...values.map((value) => `${indent}  <${itemTag}>${escapeXml(value)}</${itemTag}>`),
     `${indent}</${container}>`,
   ].join('\n');
+}
+
+function derivedWorkFrameId(topic: string, goal: string): string {
+  const slug = topic
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  const safeSlug = slug.length === 0 || slug === '.' || slug === '..' ? 'research' : slug;
+  const hash = createHash('sha256').update(`${topic}\n${goal}`).digest('hex').slice(0, 8);
+  return `frame.${safeSlug}.${hash}`;
 }
 
 function ok(output: string): ExecutableToolResult {

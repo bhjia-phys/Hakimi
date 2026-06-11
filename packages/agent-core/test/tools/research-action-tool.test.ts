@@ -690,6 +690,43 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('derives a WorkFrame id and default theory domain when opening from topic and goal only', async () => {
+    const records: AgentRecord[] = [];
+    const agent = makeAgent(records);
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const opened = await execute(tool, {
+      action: 'open_work_frame',
+      topic: 'random-open-boundary-ads-cavity',
+      goal: 'Study random open boundary effects on AdS cavity propagation.',
+    });
+    const compiled = await execute(tool, {
+      action: 'compile_context_pack',
+      attach_context_pack: true,
+    });
+    const listed = await execute(tool, { action: 'list_work_frames' });
+
+    expect(opened.isError).toBeUndefined();
+    expect(opened.output).toContain('id="frame.random-open-boundary-ads-cavity.');
+    expect(opened.output).toContain('domain="theoretical-physics/general"');
+    expect(compiled.isError).toBeUndefined();
+    expect(compiled.output).toContain('<context_pack');
+    expect(listed.output).toContain('active_id="frame.random-open-boundary-ads-cavity.');
+    expect(agent.workFrames.active).toMatchObject({
+      domain: 'theoretical-physics/general',
+      topic: 'random-open-boundary-ads-cavity',
+    });
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'workframe.opened',
+        frame: expect.objectContaining({
+          domain: 'theoretical-physics/general',
+          topic: 'random-open-boundary-ads-cavity',
+        }),
+      }),
+    );
+  });
+
   it('compiles, lists, and loads ContextPacks through the session manager', async () => {
     const records: AgentRecord[] = [];
     const agent = makeAgent(records);
