@@ -81,6 +81,14 @@ export const FLAG_DEFINITIONS = [
     surface: 'core',
   },
   {
+    id: 'reasoning-audit',
+    title: 'Reasoning audit',
+    description: 'Write redacted reasoning metadata for real-session development harnesses.',
+    env: 'KIMI_CODE_EXPERIMENTAL_REASONING_AUDIT',
+    default: false,
+    surface: 'core',
+  },
+  {
     id: 'goal-command',
     title: 'Goal command',
     description: 'Enable autonomous goal-mode slash commands and tools.',

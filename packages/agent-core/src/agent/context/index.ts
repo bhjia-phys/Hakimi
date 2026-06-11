@@ -715,7 +715,7 @@ export class ContextMemory {
           );
         }
         openStep.content.push(event.part);
-        if (event.part.type === 'think') {
+        if (event.part.type === 'think' && this.agent.experimentalFlags.enabled('reasoning-audit')) {
           this.agent.records.logRecord({
             type: 'reasoning.audit',
             turnId: event.turnId,

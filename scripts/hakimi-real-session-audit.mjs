@@ -162,8 +162,10 @@ Usage:
   node scripts/hakimi-real-session-audit.mjs analyze --session-dir <dir> [checks...]
 
 Important boundary:
-  The analyzer detects private reasoning via redacted reasoning.audit records,
-  falling back to raw think blocks for older sessions, but never prints their
+  The run command enables redacted reasoning.audit records only for its child
+  Hakimi process. Ordinary Hakimi sessions do not write those records unless
+  KIMI_CODE_EXPERIMENTAL_REASONING_AUDIT=1 is explicitly set. The analyzer
+  falls back to raw think blocks for older sessions, but never prints their
   text. It reports tool calls, lifecycle records, visible outputs, failures,
   auto-capture skips, Hakimi ledger topics, and AITP topic/run state.
 
@@ -268,7 +270,7 @@ async function runHakimiPrompt(input) {
   args.push('--prompt', input.prompt, '--output-format', 'stream-json');
   const spawnArgs = [...commandSpec.prefixArgs, ...args];
 
-  const env = { ...process.env, HAKIMI_HOME: input.home };
+  const env = createHakimiAuditEnv(input.home);
   const startedAt = new Date().toISOString();
   return new Promise((resolvePromise) => {
     const child = spawn(commandSpec.command, spawnArgs, {
@@ -1207,6 +1209,14 @@ function resolveHome(home) {
   return resolve(home ?? process.env.HAKIMI_HOME ?? join(homedir(), '.hakimi'));
 }
 
+function createHakimiAuditEnv(home, parentEnv = process.env) {
+  return {
+    ...parentEnv,
+    HAKIMI_HOME: home,
+    KIMI_CODE_EXPERIMENTAL_REASONING_AUDIT: '1',
+  };
+}
+
 function defaultHakimiBin() {
   return process.platform === 'win32' ? 'hakimi.cmd' : 'hakimi';
 }
@@ -1533,6 +1543,7 @@ export {
   analyzeOnly,
   analyzeSession,
   classifyReasoningCues,
+  createHakimiAuditEnv,
   evaluateExpectations,
   parseCli,
   parsePromptStreamJson,
