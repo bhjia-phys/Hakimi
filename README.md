@@ -876,6 +876,45 @@ npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.13.0.tgz
 & "$prefix\node_modules\.bin\hakimi.cmd" --version
 ```
 
+### Real Session Audit Harness
+
+Codex or a human reviewer can run a real headless Hakimi session and inspect
+the durable session wire with:
+
+```powershell
+node scripts/hakimi-real-session-audit.mjs run `
+  --workdir F:\AI_Workspace\test `
+  --prompt "Reply exactly OK." `
+  --out F:\AI_Workspace\test\hakimi-smoke-audit.md
+```
+
+The same harness can audit an existing session:
+
+```powershell
+node scripts/hakimi-real-session-audit.mjs analyze `
+  --session session_0e8297d9-11eb-4f34-88fe-766b64e9b176 `
+  --workdir F:\AI_Workspace\test `
+  --expect-tool ResearchAction `
+  --expect-tool ResearchLedger `
+  --expect-private-reasoning `
+  --expect-reasoning-cue workframe `
+  --expect-reasoning-led-tool ResearchAction/open_work_frame `
+  --expect-ledger-topic random-open-boundary-ads-cavity `
+  --expect-no-missing-workframe `
+  --expect-workframe-opened `
+  --expect-context-pack `
+  --fail-on-tool-error
+```
+
+The report covers terminal stream previews, reconstructed visible transcript,
+tool lifecycle records, tool failures, auto-capture skips, WorkFrame/context
+state, Hakimi research-ledger topics, and AITP topic/run state. Private
+reasoning / `think` parts become redacted audit evidence: Hakimi writes
+`reasoning.audit` records with length and coarse behavior cues, and the harness
+can assert cues or reasoning-led tool calls without printing the underlying
+thinking text. Expectation failures return exit code `2`, and a timed-out real
+run returns `124`.
+
 ## DeepSeek Quick Setup
 
 ## Kimi For Coding Login
