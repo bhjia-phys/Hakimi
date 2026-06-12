@@ -21,8 +21,8 @@ export type AitpCuratedRagMomentReason =
   | 'method_selection'
   | 'source_backtrace_suggestions';
 
-const MAX_QUERY_CHARS = 640;
-const DOMAIN_HINT_LIMIT = 14;
+const MAX_QUERY_CHARS = 900;
+const DOMAIN_HINT_LIMIT = 24;
 
 const REASON_KEYWORDS: readonly {
   readonly reason: AitpCuratedRagMomentReason;
@@ -221,13 +221,32 @@ function curatedRagDomainHints(
     );
   }
   if (hasAny(text, ['ads', 'anti de sitter', 'holography', 'holographic', 'bulk boundary'])) {
-    hints.push('ads-cft', 'holography', 'bulk-boundary', 'cutoff wall');
+    hints.push(
+      'ads-cft',
+      'holography',
+      'bulk-boundary',
+      'conformal boundary',
+      'finite cutoff wall',
+      'timelike geodesic reachability',
+      'wavepacket tail',
+      'kinetic distribution boundary sink',
+      'model layer separation',
+    );
   }
   if (hasAny(text, ['massive matter', 'matter', 'particle', 'field', 'wavepacket', 'wave packet'])) {
-    hints.push('massive matter', 'dynamical degree of freedom', 'field wavepacket', 'particle motion');
+    hints.push(
+      'massive matter',
+      'dynamical degree of freedom',
+      'field wavepacket',
+      'particle motion',
+    );
   }
   if (hasAny(text, ['boundary', 'wall', 'cutoff', 'source', 'sink', 'bath', 'detector', 'measurement'])) {
-    hints.push('boundary condition', 'source sink bath detector', 'reachability hitting condition');
+    hints.push(
+      'boundary condition',
+      'source sink bath detector',
+      'reachability hitting condition',
+    );
   }
   return uniqueStrings(hints).slice(0, DOMAIN_HINT_LIMIT);
 }

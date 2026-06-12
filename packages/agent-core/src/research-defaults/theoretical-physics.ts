@@ -498,6 +498,13 @@ export const BUILTIN_THEORETICAL_PHYSICS_CAPSULES = [
     path: `${BUILTIN_PATH_PREFIX}/capsule-boundary-sink-motion.md`,
     source: 'builtin',
     body: [
+      'Final framing requirement: include a short model-layer map for classical',
+      'particle/cutoff-wall motion, massive field wavepacket or KG boundary',
+      'condition, optional kinetic ensemble sink, and spectral diagnostics. For',
+      'AdS-like massive matter, explicitly check whether finite-energy timelike',
+      'motion reaches the conformal boundary or whether boundary loss must be',
+      'modeled by a finite cutoff wall, a field wavepacket tail/boundary',
+      'condition, or a kinetic distribution sink.',
       'When a physics question asks how matter moves under a boundary, wall, source,',
       'sink, bath, detector, or absorbing channel, first build a motion inventory.',
       'Name the moving object, the effective surface or support where interaction',

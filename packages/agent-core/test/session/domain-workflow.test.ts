@@ -6,6 +6,7 @@ import type { ProviderConfig } from '@moonshot-ai/kosong';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { InMemoryAgentRecordPersistence } from '../../src/agent/records';
+import { renderResearchContextPackReminder } from '../../src/agent/workframe/context-pack';
 import type { SDKSessionRPC } from '../../src/rpc';
 import { Session } from '../../src/session';
 import { ProviderManager } from '../../src/session/provider-manager';
@@ -123,7 +124,7 @@ describe('Session domain profiles and workflow recipes', () => {
     expect(pack.physics.capsules).toContainEqual(
       expect.objectContaining({
         id: 'workflow.theoretical-physics.boundary-sink-motion-inventory',
-        bodyPreview: expect.stringContaining('survival probability'),
+        bodyPreview: expect.stringContaining('short model-layer map'),
         requiredChecks: expect.arrayContaining([
           expect.objectContaining({
             id: 'check.theoretical-physics.model-layer-motion-map',
@@ -135,9 +136,34 @@ describe('Session domain profiles and workflow recipes', () => {
     expect(pack.physics.capsules).toContainEqual(
       expect.objectContaining({
         id: 'workflow.theoretical-physics.boundary-sink-motion-inventory',
-        bodyPreview: expect.stringContaining('layer-by-layer reachability verdict'),
+        actionAffordances: expect.arrayContaining([
+          expect.objectContaining({
+            actionId: 'source.extract_definition',
+            reason: expect.stringContaining('survival'),
+          }),
+        ]),
       }),
     );
+    expect(
+      pack.physics.capsules.find(
+        (capsule) => capsule.id === 'workflow.theoretical-physics.boundary-sink-motion-inventory',
+      )?.bodyPreview,
+    ).toContain('finite-energy timelike motion');
+    expect(
+      pack.physics.capsules.find(
+        (capsule) => capsule.id === 'workflow.theoretical-physics.boundary-sink-motion-inventory',
+      )?.bodyPreview,
+    ).toContain('short model-layer map');
+
+    const reminder = renderResearchContextPackReminder(pack);
+    expect(reminder).toContain('Physics capsule cue');
+    expect(reminder).toContain('Boundary/source-sink motion inventory');
+    expect(reminder).toContain('finite-energy timelike motion');
+    expect(reminder).toContain('Blocking physics checks');
+    expect(reminder).toContain('check.theoretical-physics.model-layer-motion-map');
+    expect(reminder).toContain('Final physics answer checklist');
+    expect(reminder).toContain('short model-layer map');
+    expect(reminder).toContain('spectral/normal-mode diagnostics as secondary');
     expect(pack.physics.capsules).toContainEqual(
       expect.objectContaining({
         id: 'workflow.theoretical-physics.lecture-guided-object-discovery',
