@@ -1,0 +1,3 @@
+请作为 Hakimi 的理论物理研究会话来处理这个回归题。题目：一个固定背景 AdS 反射腔中，边界探测器随机开启/关闭；关闭时边界是普通反射边界，开启时边界耦合到外部 measurement/bath 通道并吸收 AdS 子系统的能流。我的重点不是 normal mode，而是有质量的物质在这种边界条件下怎么动。
+
+请先打开 WorkFrame，编译 ContextPack，检查 AITP runtime payload profiles，然后草拟一个 startResearchRun 的 AITP write-bridge call；如果 draft 返回 `ready_execute_call_json` 且 readiness 通过，请直接照抄这段 JSON 调用 `execute_aitp_write_bridge`，不要手写或重写 payload；如果真实执行条件不满足，只草拟并说明 blocker。最后给出一套研究答案：必须区分有限能量 massive timelike particle 是否能到达 AdS conformal boundary、有限 cutoff wall/场波包/kinetic ensemble 三个建模层次，定义随机反射/吸收边界过程，并列出 survival probability、hitting-time distribution、particle number、energy flux 等观测量。normal modes/QNMs 只能作为辅助谱诊断。

@@ -49,6 +49,13 @@ import {
   buildPrimitiveToolLifecycleAitpToolRunPayload,
   coerceAitpWriteBridgeInput,
   evidenceRefsForAitpWriteBridgeResult,
+  AITP_EXPLORATION_STATUSES,
+  AITP_EXPLORATION_TYPES,
+  AITP_RESEARCH_RUN_EVENT_STATUSES,
+  AITP_RESEARCH_RUN_EVENT_TYPES,
+  AITP_RESEARCH_RUN_PHASES,
+  AITP_RESEARCH_RUN_STATUSES,
+  AITP_RESEARCH_RUN_TERMINAL_ANSWER_STATES,
   PRIMITIVE_TOOL_LIFECYCLE_TO_TOOL_RUN_PROFILE,
   renderTheoryReasoningSummary,
   theoryReasoningProjectionFromParams,
@@ -105,6 +112,7 @@ const ACTIONS = [
   'run_benchmark_adapter',
   'query_physics_graph',
   'build_formalization_plan',
+  'draft_aitp_write_bridge_call',
   'execute_aitp_write_bridge',
   'inspect_aitp_write_bridge_handoff_readiness',
   'inspect_source_context_review_handoff',
@@ -301,11 +309,11 @@ export const ResearchActionToolInputSchema = z.object({
   aitp_operation: z
     .enum(AITP_WRITE_BRIDGE_OPERATIONS)
     .optional()
-    .describe('AITP write bridge operation for execute_aitp_write_bridge.'),
+    .describe('AITP write bridge operation for draft_aitp_write_bridge_call or execute_aitp_write_bridge.'),
   aitp_payload: z
     .record(z.string(), z.unknown())
     .optional()
-    .describe('Structured payload for execute_aitp_write_bridge.'),
+    .describe('Structured payload for draft_aitp_write_bridge_call or execute_aitp_write_bridge.'),
   aitp_handoff: z
     .record(z.string(), z.unknown())
     .optional()
@@ -525,6 +533,7 @@ interface AitpWriteBridgeToolCallDraft {
   readonly action: 'execute_aitp_write_bridge';
   readonly aitp_operation: AitpWriteBridgeOperation;
   readonly aitp_payload: unknown;
+  readonly aitp_handoff?: Readonly<Record<string, unknown>> | undefined;
 }
 
 interface CuratedRagPromotionWriteBridgeHandoffArtifact {
@@ -538,7 +547,10 @@ interface CuratedRagPromotionWriteBridgeHandoffArtifact {
 }
 
 interface AitpHandoffGuard {
-  readonly kind: 'curated_rag_write_bridge_handoff' | 'record_ref_repair_write_bridge_handoff';
+  readonly kind:
+    | 'aitp_write_bridge_handoff'
+    | 'curated_rag_write_bridge_handoff'
+    | 'record_ref_repair_write_bridge_handoff';
   readonly handoffId: string;
   readonly confirmationId: string;
   readonly diagnosticHash: string;
@@ -675,6 +687,8 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return this.queryPhysicsGraph(args, ctx);
         case 'build_formalization_plan':
           return this.buildFormalizationPlan(args, ctx);
+        case 'draft_aitp_write_bridge_call':
+          return this.draftAitpWriteBridgeCall(args);
         case 'execute_aitp_write_bridge':
           return await this.executeAitpWriteBridge(args, ctx);
         case 'inspect_aitp_write_bridge_handoff_readiness':
@@ -940,6 +954,16 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       },
     );
     return ok(renderAitpWriteBridgeExecution(operation, actionId, resolvedCallId.callId, result, handoffGuard.guard));
+  }
+
+  private draftAitpWriteBridgeCall(args: ResearchActionToolInput): ExecutableToolResult {
+    if (args.aitp_operation === undefined) {
+      return errorResult('ResearchAction draft_aitp_write_bridge_call requires aitp_operation.');
+    }
+    const operation = args.aitp_operation as AitpWriteBridgeOperation;
+    const activeWorkFrame = this.manager?.activeWorkFrame();
+    const payload = draftAitpWriteBridgePayload(operation, args, activeWorkFrame);
+    return ok(renderAitpWriteBridgeCallDraft(operation, payload, activeWorkFrame));
   }
 
   private inspectAitpWriteBridgeHandoffReadiness(
@@ -3338,6 +3362,299 @@ function renderAitpCuratedRagCarriedRefOverrideSuggestion(
   ].join('\n');
 }
 
+interface GenericAitpWriteBridgePayloadDraft {
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly inferredFields: readonly string[];
+  readonly missingFields: readonly string[];
+  readonly diagnostics: readonly CuratedRagPromotionWriteBridgeCallDiagnostic[];
+}
+
+function draftAitpWriteBridgePayload(
+  operation: AitpWriteBridgeOperation,
+  args: ResearchActionToolInput,
+  activeWorkFrame?: WorkFrame | undefined,
+): GenericAitpWriteBridgePayloadDraft {
+  const payload: Record<string, unknown> = isRecord(args.aitp_payload) ? { ...args.aitp_payload } : {};
+  const inferredFields: string[] = [];
+  const infer = (key: string, value: string | undefined): void => {
+    if (fieldIsEmpty(payload, key) && hasText(value)) {
+      payload[key] = value;
+      inferredFields.push(key);
+    }
+  };
+  const topic = firstText(args.aitp_topic_id, args.topic, activeWorkFrame?.topic);
+  const goal = firstText(args.goal, activeWorkFrame?.goal);
+  const claimId = firstText(args.aitp_claim_id, firstClaimRef(args.source_refs), firstClaimRef(activeWorkFrame?.sourceRefs), firstClaimRef(activeWorkFrame?.activeObjectIds));
+  const sessionId = firstAitpSessionRef(args.source_refs) ?? firstAitpSessionRef(activeWorkFrame?.sourceRefs);
+
+  switch (operation) {
+    case 'startResearchRun':
+      infer('topicId', topic);
+      infer('objective', goal);
+      infer('researchQuestion', goal);
+      infer('operator', 'hakimi');
+      infer('phase', 'planning');
+      infer('claimId', claimId);
+      infer('sessionId', sessionId);
+      break;
+    case 'recordResearchRunEvent':
+      infer('topicId', topic);
+      infer('operator', 'hakimi');
+      infer('eventType', 'operator_checkpoint');
+      infer('summary', goal);
+      infer('claimId', claimId);
+      infer('sessionId', sessionId);
+      break;
+    case 'recordExploratoryRecord':
+      infer('topicId', topic);
+      infer('explorationType', 'question_decomposition');
+      infer('title', goal);
+      infer('focalQuestion', goal);
+      infer('summary', goal);
+      infer('claimId', claimId);
+      infer('sessionId', sessionId);
+      break;
+    default:
+      infer('topicId', topic);
+      infer('claimId', claimId);
+      infer('sessionId', sessionId);
+      break;
+  }
+
+  const missingFields = requiredFieldsForAitpWriteOperation(operation).filter((field) =>
+    fieldIsEmpty(payload, field),
+  );
+  const diagnostics: CuratedRagPromotionWriteBridgeCallDiagnostic[] = missingFields.map((field) => ({
+    code: 'missing_required_field',
+    field,
+    message: `AITP ${operation} payload requires ${field}.`,
+  }));
+  diagnostics.push(...invalidAllowedValueDiagnosticsForAitpWriteOperation(operation, payload));
+  try {
+    coerceAitpWriteBridgeInput(operation, payload);
+  } catch (error) {
+    diagnostics.push({
+      code: 'local_payload_validation_failed',
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return {
+    payload,
+    inferredFields,
+    missingFields,
+    diagnostics,
+  };
+}
+
+function renderAitpWriteBridgeCallDraft(
+  operation: AitpWriteBridgeOperation,
+  draft: GenericAitpWriteBridgePayloadDraft,
+  activeWorkFrame?: WorkFrame | undefined,
+): string {
+  const target = aitpRuntimeBridgeTargetForOperation(operation);
+  const status = draft.diagnostics.some((diagnostic) =>
+    diagnostic.code === 'missing_required_field' ||
+    diagnostic.code === 'invalid_allowed_value' ||
+    diagnostic.code === 'local_payload_validation_failed')
+    ? 'blocked'
+    : 'ready_for_explicit_execute';
+  const toolCall: AitpWriteBridgeToolCallDraft = {
+    action: 'execute_aitp_write_bridge',
+    aitp_operation: operation,
+    aitp_payload: draft.payload,
+  };
+  const hashInput = {
+    kind: 'aitp_write_bridge_call_handoff',
+    aitpOperation: operation,
+    confirmationStatus: status,
+    toolCall,
+    missingRefRepairHintCount: 0,
+    repairHintOperations: [],
+    inferredFields: draft.inferredFields,
+    missingFields: draft.missingFields,
+    diagnosticCodes: draft.diagnostics.map((diagnostic) => diagnostic.code),
+  };
+  const hash = shortSha256(stableJson(hashInput), 16);
+  const handoffId = [
+    'aitp-write-handoff',
+    safeId(operation),
+    hash,
+  ].join('.');
+  const confirmationId = [
+    'aitp-write-confirmation',
+    safeId(operation),
+    hash,
+  ].join('.');
+  const diagnosticHash = `sha256:${hash}`;
+  const handoffGuard = {
+    handoff_id: handoffId,
+    confirmation_id: confirmationId,
+    confirmation_status: status,
+    diagnostic_hash: diagnosticHash,
+    tool_call_json: toolCall,
+    hash_input_json: hashInput,
+  };
+  const executeToolCall: AitpWriteBridgeToolCallDraft = {
+    ...toolCall,
+    aitp_handoff: handoffGuard,
+  };
+  const handoffArtifact = {
+    handoffId,
+    confirmationId,
+    confirmationStatus: status,
+    diagnosticHash,
+    toolCall,
+    hashInput,
+  };
+  const nonExecutionProvenance = {
+    source: 'ResearchAction.draft_aitp_write_bridge_call',
+    aitpOperation: operation,
+    inferredFields: draft.inferredFields,
+    missingFields: draft.missingFields,
+    executesWriteNow: false,
+    bridgeCalled: false,
+    recordsValidationResultNow: false,
+    sourceSupportResultNow: false,
+    claimTrustMutation: 'none',
+    requiresExplicitExecuteCall: true,
+    workFrameId: activeWorkFrame?.id ?? '',
+    confirmationId,
+    diagnosticHash,
+  };
+  const readinessCall = handoffReadinessToolCall(operation, draft.payload, handoffArtifact);
+  return [
+    `<aitp_write_bridge_call_draft operation="${operation}" readiness_status="${status}" next_research_action="execute_aitp_write_bridge" action_id="${escapeXml(actionIdForAitpWriteBridgeOperation(operation))}" executes_write_now="false" bridge_called="false" selected_write_executed="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true" inferred_field_count="${String(draft.inferredFields.length)}" missing_required_field_count="${String(draft.missingFields.length)}" diagnostic_count="${String(draft.diagnostics.length)}" handoff_id="${escapeXml(handoffId)}" diagnostic_hash="${escapeXml(diagnosticHash)}">`,
+    `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
+    `  <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
+    `  <ready_execute_call_json>${escapeXml(JSON.stringify(executeToolCall))}</ready_execute_call_json>`,
+    `  <reviewed_payload_json>${escapeXml(JSON.stringify(draft.payload))}</reviewed_payload_json>`,
+    renderStringList('inferred_fields', 'field', draft.inferredFields, '  '),
+    renderStringList('missing_required_fields', 'field', draft.missingFields, '  '),
+    renderAllowedValuesForAitpWriteOperation(operation, '  '),
+    renderAitpCuratedRagWriteBridgeCallDiagnostics(draft.diagnostics, '  '),
+    renderReadinessCallPointer({ handoffId, confirmationId, diagnosticHash }, '  '),
+    renderReadinessInspectionSummary('aitp_write_call_draft', '  '),
+    renderReadinessInspectionChecklist('aitp_write_call_draft', handoffId, '  '),
+    `  <execute_aitp_write_bridge_handoff handoff_id="${escapeXml(handoffId)}" confirmation_id="${escapeXml(confirmationId)}" confirmation_status="${status}" diagnostic_hash="${escapeXml(diagnosticHash)}" hash_algorithm="sha256" handoff_executed="false" executes_write_now="false" non_execution_provenance="draft_only" requires_explicit_execute_call="true">`,
+    `    <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
+    `    <hash_input_json>${escapeXml(stableJson(hashInput))}</hash_input_json>`,
+    `    <non_execution_provenance_json>${escapeXml(JSON.stringify(nonExecutionProvenance))}</non_execution_provenance_json>`,
+    `    <readiness_call_json>${escapeXml(JSON.stringify(readinessCall))}</readiness_call_json>`,
+    '  </execute_aitp_write_bridge_handoff>',
+    '  <draft_boundary draft_executes_write_now="false" draft_records_validation_result="false" draft_source_support_result="false" draft_can_update_claim_trust="false" requires_separate_explicit_execute_call="true" />',
+    '</aitp_write_bridge_call_draft>',
+    '',
+  ].join('\n');
+}
+
+function requiredFieldsForAitpWriteOperation(operation: AitpWriteBridgeOperation): readonly string[] {
+  switch (operation) {
+    case 'ingestCuratedRagCorpus':
+      return ['paths'];
+    case 'startResearchRun':
+      return ['topicId', 'objective', 'researchQuestion', 'operator'];
+    case 'updateResearchRun':
+      return ['runId', 'topicId', 'operator'];
+    case 'recordResearchRunEvent':
+      return ['runId', 'topicId', 'operator', 'eventType', 'summary'];
+    case 'recordExploratoryRecord':
+      return ['topicId', 'explorationType', 'title', 'focalQuestion', 'summary'];
+    case 'registerSourceAsset':
+      return ['topicId', 'assetType', 'uri', 'title'];
+    case 'captureSourceAssetAuto':
+      return ['path', 'topicId'];
+    case 'recordEvidence':
+      return ['topicId', 'claimId', 'evidenceType', 'status', 'summary'];
+    case 'recordToolRun':
+      return ['recipeId', 'toolFamily', 'toolName', 'topicId', 'claimId'];
+    case 'captureToolRunAuto':
+      return ['path', 'recipeId', 'toolFamily', 'toolName', 'topicId', 'claimId'];
+    case 'captureCodeStateAuto':
+      return ['worktreePath'];
+    case 'attachArtifact':
+      return ['topicId', 'claimId', 'artifactType', 'uri', 'summary'];
+    case 'attachArtifactAuto':
+      return ['path', 'topicId', 'claimId', 'artifactType', 'summary'];
+    case 'recordReferenceLocation':
+      return ['topicId', 'connectorId', 'locationType', 'uri', 'label'];
+    case 'createProofObligation':
+      return ['topicId', 'claimId', 'statement', 'obligationType', 'status', 'maturityLevel', 'nextAction'];
+    case 'createValidationContract':
+      return ['topicId', 'claimId', 'requiredChecks', 'failureModes', 'requiredEvidenceOutputs'];
+    case 'recordValidationResult':
+      return ['topicId', 'claimId', 'contractId', 'toolRunId', 'status', 'summary'];
+    case 'recordSourceReconstructionReviewResult':
+      return ['claimId', 'status', 'reviewedComponents', 'summary'];
+    case 'requestHumanCheckpoint':
+      return ['topicId', 'claimId', 'reason', 'requestedBy', 'options'];
+    case 'preflightTrustUpdate':
+      return ['action', 'sessionId', 'topicId', 'claimId'];
+  }
+}
+
+function renderAllowedValuesForAitpWriteOperation(
+  operation: AitpWriteBridgeOperation,
+  indent: string,
+): string {
+  const entries = allowedValueEntriesForAitpWriteOperation(operation);
+  if (entries.length === 0) return `${indent}<allowed_values />`;
+  return [
+    `${indent}<allowed_values>`,
+    ...entries.map(([field, values]) =>
+      `${indent}  <field name="${escapeXml(field)}" values="${escapeXml(values.join(','))}" />`,
+    ),
+    `${indent}</allowed_values>`,
+  ].join('\n');
+}
+
+function allowedValueEntriesForAitpWriteOperation(
+  operation: AitpWriteBridgeOperation,
+): readonly (readonly [string, readonly string[]])[] {
+  const entries: Array<readonly [string, readonly string[]]> = [];
+  if (operation === 'startResearchRun' || operation === 'updateResearchRun' || operation === 'recordResearchRunEvent') {
+    entries.push(['phase', AITP_RESEARCH_RUN_PHASES]);
+  }
+  if (operation === 'updateResearchRun') {
+    entries.push(['status', AITP_RESEARCH_RUN_STATUSES]);
+    entries.push(['terminalAnswerState', AITP_RESEARCH_RUN_TERMINAL_ANSWER_STATES]);
+    entries.push(['eventType', AITP_RESEARCH_RUN_EVENT_TYPES]);
+  }
+  if (operation === 'recordResearchRunEvent') {
+    entries.push(['eventType', AITP_RESEARCH_RUN_EVENT_TYPES]);
+    entries.push(['status', AITP_RESEARCH_RUN_EVENT_STATUSES]);
+  }
+  if (operation === 'recordExploratoryRecord') {
+    entries.push(['explorationType', AITP_EXPLORATION_TYPES]);
+    entries.push(['status', AITP_EXPLORATION_STATUSES]);
+  }
+  return entries;
+}
+
+function invalidAllowedValueDiagnosticsForAitpWriteOperation(
+  operation: AitpWriteBridgeOperation,
+  payload: Readonly<Record<string, unknown>>,
+): readonly CuratedRagPromotionWriteBridgeCallDiagnostic[] {
+  return allowedValueEntriesForAitpWriteOperation(operation).flatMap(([field, allowedValues]) => {
+    const value = stringRecordValue(payload, field);
+    if (value === undefined || allowedValues.includes(value)) return [];
+    return [{
+      code: 'invalid_allowed_value',
+      field,
+      message:
+        `AITP ${operation} payload field ${field} must be one of ${allowedValues.join(', ')}; got ${value}.`,
+    }];
+  });
+}
+
+function firstAitpSessionRef(refs: readonly string[] | undefined): string | undefined {
+  for (const ref of refs ?? []) {
+    const normalized = ref.trim();
+    if (normalized.startsWith('aitp:session:')) return normalized.slice('aitp:session:'.length);
+    if (normalized.startsWith('session:')) return normalized.slice('session:'.length);
+  }
+  return undefined;
+}
+
 function renderCarriedRefNextCallPointer(
   suggestion: CuratedRagCarriedRefOverrideSuggestion,
   sourceDraft: AitpCuratedRagPromotionDraft,
@@ -3820,6 +4137,8 @@ function verifyAitpWriteBridgeHandoff(
       kind:
         hashInputKind === 'aitp_record_ref_repair_write_bridge_call_handoff'
           ? 'record_ref_repair_write_bridge_handoff'
+          : hashInputKind === 'aitp_write_bridge_call_handoff'
+            ? 'aitp_write_bridge_handoff'
           : 'curated_rag_write_bridge_handoff',
       handoffId,
       confirmationId,
@@ -4720,9 +5039,9 @@ function shouldRenderCarriedRefRepairEcho(guard: AitpHandoffGuard): boolean {
 }
 
 function readinessDraftFamily(kind: AitpHandoffGuard['kind']): string {
-  return kind === 'record_ref_repair_write_bridge_handoff'
-    ? 'record_ref_repair_write_call_draft'
-    : 'curated_rag_write_call_draft';
+  if (kind === 'record_ref_repair_write_bridge_handoff') return 'record_ref_repair_write_call_draft';
+  if (kind === 'aitp_write_bridge_handoff') return 'aitp_write_call_draft';
+  return 'curated_rag_write_call_draft';
 }
 
 function renderAitpHandoffGuard(handoffGuard: AitpHandoffGuard | undefined): string {

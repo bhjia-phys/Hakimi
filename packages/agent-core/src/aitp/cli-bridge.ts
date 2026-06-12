@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 
 import { compileAitpProcessGraphSlice, type CompileAitpProcessGraphSliceOptions } from './compiler';
 import {
@@ -107,11 +109,18 @@ export const AITP_RESEARCH_RUN_EVENT_STATUSES = [
   'superseded',
 ] as const;
 
+export const DEFAULT_AITP_COMMAND = 'aitp-v5';
+export const DEFAULT_AITP_UV_COMMAND = 'uv';
+
 export interface AitpCommandResult {
   readonly exitCode: number;
   readonly stdout: string;
   readonly stderr: string;
   readonly timedOut?: boolean | undefined;
+  readonly fallbackUsed?: boolean | undefined;
+  readonly resolvedCommand?: string | undefined;
+  readonly resolvedArgs?: readonly string[] | undefined;
+  readonly resolvedCwd?: string | undefined;
 }
 
 export interface AitpCommandRunner {
@@ -126,6 +135,16 @@ export interface AitpCommandRunnerOptions {
   readonly cwd?: string | undefined;
   readonly timeoutMs?: number | undefined;
   readonly signal?: AbortSignal | undefined;
+}
+
+export interface DefaultAitpCommandRunnerOptions {
+  readonly primaryRunner?: AitpCommandRunner | undefined;
+  readonly aitpRepoPath?: string | undefined;
+  readonly uvCommand?: string | undefined;
+  readonly pythonCommand?: string | undefined;
+  readonly env?: Readonly<Record<string, string | undefined>> | undefined;
+  readonly fileExists?: ((path: string) => boolean) | undefined;
+  readonly cwd?: (() => string) | undefined;
 }
 
 export interface AitpCliBridgeOptions {
@@ -834,8 +853,8 @@ export class AitpCliBridge {
 
   constructor(private readonly options: AitpCliBridgeOptions) {
     requireNonEmpty(options.basePath, 'basePath');
-    this.command = options.command ?? 'aitp-v5';
-    this.runner = options.runner ?? new SpawnAitpCommandRunner();
+    this.command = options.command ?? DEFAULT_AITP_COMMAND;
+    this.runner = options.runner ?? createDefaultAitpCommandRunner();
   }
 
   async readProcessGraphSlice(
@@ -1188,6 +1207,16 @@ export class AitpCliBridge {
 
 export function createAitpCliBridge(options: AitpCliBridgeOptions): AitpCliBridge {
   return new AitpCliBridge(options);
+}
+
+export function createSpawnAitpCommandRunner(): AitpCommandRunner {
+  return new SpawnAitpCommandRunner();
+}
+
+export function createDefaultAitpCommandRunner(
+  options: DefaultAitpCommandRunnerOptions = {},
+): AitpCommandRunner {
+  return new DefaultAitpCommandRunner(options);
 }
 
 export function createAitpCliProcessGraphSliceProvider(
@@ -2217,6 +2246,147 @@ class SpawnAitpCommandRunner implements AitpCommandRunner {
       });
     });
   }
+}
+
+class DefaultAitpCommandRunner implements AitpCommandRunner {
+  private readonly primaryRunner: AitpCommandRunner;
+  private readonly fileExists: (path: string) => boolean;
+  private readonly cwd: () => string;
+  private readonly uvCommand: string;
+  private readonly pythonCommand: string;
+
+  constructor(private readonly options: DefaultAitpCommandRunnerOptions) {
+    this.primaryRunner = options.primaryRunner ?? new SpawnAitpCommandRunner();
+    this.fileExists = options.fileExists ?? existsSync;
+    this.cwd = options.cwd ?? (() => process.cwd());
+    this.uvCommand = options.uvCommand ?? DEFAULT_AITP_UV_COMMAND;
+    this.pythonCommand = options.pythonCommand ?? 'python';
+  }
+
+  async run(
+    command: string,
+    args: readonly string[],
+    options: AitpCommandRunnerOptions,
+  ): Promise<AitpCommandResult> {
+    const primary = await this.primaryRunner.run(command, args, options);
+    if (!this.shouldTryBundledFallback(command, primary)) {
+      return primary;
+    }
+
+    const repoPath = this.resolveAitpRepoPath(options.cwd);
+    if (repoPath === undefined) {
+      return {
+        ...primary,
+        stderr: appendFallbackFailure(
+          primary.stderr,
+          'Default AITP fallback could not find a local AITP-Research-Protocol repo.',
+        ),
+      };
+    }
+
+    const fallbackArgs = [
+      'run',
+      '--with',
+      'pyyaml',
+      this.pythonCommand,
+      '-m',
+      'brain.v5.cli',
+      ...args,
+    ];
+    const fallback = await this.primaryRunner.run(this.uvCommand, fallbackArgs, {
+      ...options,
+      cwd: repoPath,
+    });
+    return {
+      ...fallback,
+      fallbackUsed: true,
+      resolvedCommand: this.uvCommand,
+      resolvedArgs: fallbackArgs,
+      resolvedCwd: repoPath,
+      stderr: appendFallbackContext(primary.stderr, fallback.stderr, repoPath),
+    };
+  }
+
+  private shouldTryBundledFallback(command: string, result: AitpCommandResult): boolean {
+    if (command !== DEFAULT_AITP_COMMAND) return false;
+    if (result.exitCode === 0) return false;
+    return looksLikeMissingCommand(result);
+  }
+
+  private resolveAitpRepoPath(cwd: string | undefined): string | undefined {
+    const explicit =
+      this.options.aitpRepoPath ??
+      this.options.env?.['HAKIMI_AITP_REPO'] ??
+      process.env['HAKIMI_AITP_REPO'];
+    if (explicit !== undefined && this.isAitpRepoPath(explicit)) {
+      return resolve(explicit);
+    }
+    for (const base of aitpRepoSearchStarts(cwd, this.cwd())) {
+      const found = findAitpRepoFrom(base, this.fileExists);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+
+  private isAitpRepoPath(path: string): boolean {
+    return this.fileExists(join(path, 'brain', 'v5', 'cli.py'));
+  }
+}
+
+function looksLikeMissingCommand(result: AitpCommandResult): boolean {
+  const text = `${result.stderr}\n${result.stdout}`.toLowerCase();
+  return (
+    result.exitCode === 127 ||
+    text.includes('enoent') ||
+    text.includes('not found') ||
+    text.includes('not recognized') ||
+    text.includes('command not found') ||
+    text.includes('cannot find the file')
+  );
+}
+
+function appendFallbackFailure(stderr: string, message: string): string {
+  return [stderr.trim(), message].filter((part) => part.length > 0).join('\n');
+}
+
+function appendFallbackContext(primaryStderr: string, fallbackStderr: string, repoPath: string): string {
+  const parts = [
+    primaryStderr.trim().length > 0 ? `primary aitp-v5 failed: ${primaryStderr.trim()}` : '',
+    `default AITP fallback repo: ${repoPath}`,
+    fallbackStderr.trim(),
+  ];
+  return parts.filter((part) => part.length > 0).join('\n');
+}
+
+function aitpRepoSearchStarts(...paths: readonly (string | undefined)[]): string[] {
+  const starts: string[] = [];
+  for (const path of paths) {
+    if (path === undefined || path.trim().length === 0) continue;
+    const resolved = resolve(path);
+    if (!starts.includes(resolved)) starts.push(resolved);
+  }
+  return starts;
+}
+
+function findAitpRepoFrom(start: string, fileExists: (path: string) => boolean): string | undefined {
+  let current = resolve(start);
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (isAitpRepoRoot(current, fileExists)) return current;
+    const directSibling = join(current, 'AITP-Research-Protocol');
+    if (isAitpRepoRoot(directSibling, fileExists)) return directSibling;
+    const reposSibling = join(current, 'repos', 'AITP-Research-Protocol');
+    if (isAitpRepoRoot(reposSibling, fileExists)) return reposSibling;
+    const siblingFromParent = join(dirname(current), 'AITP-Research-Protocol');
+    if (isAitpRepoRoot(siblingFromParent, fileExists)) return siblingFromParent;
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return undefined;
+}
+
+function isAitpRepoRoot(path: string, fileExists: (path: string) => boolean): boolean {
+  return fileExists(join(path, 'brain', 'v5', 'cli.py'));
 }
 
 export function parseExploratoryRecordWriteResult(payload: unknown): AitpExploratoryRecordWriteResult {

@@ -4,6 +4,7 @@
     "allowJs": true,
     "experimentalDecorators": true,
     "paths": {
+      "@moonshot-ai/agent-core": ["../../packages/agent-core/src/index.ts"],
       "@/*": ["./src/*"]
     }
   },

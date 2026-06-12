@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'tsdown';
 
@@ -26,6 +27,7 @@ export default defineConfig({
   plugins: [rawTextPlugin()],
   alias: {
     '@': resolve(appRoot, 'src'),
+    '@moonshot-ai/agent-core': fileURLToPath(new URL('../../packages/agent-core/src/index.ts', import.meta.url)),
   },
   define: {
     [BUILT_IN_CATALOG_DEFINE]: builtInCatalogDefine(),
