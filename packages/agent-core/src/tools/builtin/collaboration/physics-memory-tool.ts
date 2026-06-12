@@ -39,6 +39,12 @@ export const PhysicsMemoryToolInputSchema = z.object({
   action: z.enum(ACTIONS).describe('The physics-memory operation to perform.'),
   domain: z.string().optional().describe('Domain id for scoped listing or context compilation.'),
   kind: z.enum(PHYSICS_CAPSULE_KINDS).optional().describe('Optional capsule kind filter.'),
+  max_capsules: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Maximum capsule summaries for list_capsules.'),
   id: z.string().optional().describe('Capsule id for load_capsule.'),
   focus: z.array(z.string()).optional().describe('Focused capsule ids for compile_context.'),
   reliability_floor: z
@@ -120,7 +126,7 @@ export class PhysicsMemoryTool implements BuiltinTool<PhysicsMemoryToolInput> {
               this.registry.listCapsules({
                 domain: args.domain,
                 kind: args.kind as PhysicsCapsuleKind | undefined,
-              }),
+              }).slice(0, args.max_capsules),
             ),
           );
         case 'load_capsule':

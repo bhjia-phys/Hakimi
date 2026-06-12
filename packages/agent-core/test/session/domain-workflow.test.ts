@@ -103,10 +103,30 @@ describe('Session domain profiles and workflow recipes', () => {
         priority: 'blocking',
       }),
     );
+    expect(pack.actionBindings).toContainEqual(
+      expect.objectContaining({
+        actionId: 'validate.check_convention',
+        lensId: 'boundary_sink_motion_inventory',
+        checkId: 'check.theoretical-physics.model-layer-motion-map',
+        priority: 'blocking',
+      }),
+    );
     expect(pack.physics.capsules).toContainEqual(
       expect.objectContaining({
         id: 'workflow.theoretical-physics.boundary-sink-motion-inventory',
         bodyPreview: expect.stringContaining('survival probability'),
+        requiredChecks: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'check.theoretical-physics.model-layer-motion-map',
+            severity: 'blocking',
+          }),
+        ]),
+      }),
+    );
+    expect(pack.physics.capsules).toContainEqual(
+      expect.objectContaining({
+        id: 'workflow.theoretical-physics.boundary-sink-motion-inventory',
+        bodyPreview: expect.stringContaining('layer-by-layer reachability verdict'),
       }),
     );
     expect(pack.domainPack).toMatchObject({

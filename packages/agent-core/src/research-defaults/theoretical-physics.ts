@@ -126,6 +126,13 @@ export const BUILTIN_THEORETICAL_PHYSICS_WORKFLOW_RECIPES = [
           'blocking',
         ),
         lensBinding(
+          'map-boundary-motion-model-layers',
+          'validate.check_convention',
+          'boundary_sink_motion_inventory',
+          'check.theoretical-physics.model-layer-motion-map',
+          'blocking',
+        ),
+        lensBinding(
           'extract-motion-observables',
           'source.extract_definition',
           'boundary_sink_motion_inventory',
@@ -340,6 +347,13 @@ export const BUILTIN_THEORETICAL_PHYSICS_CAPSULES = [
           description:
             'Before assigning boundary loss, check whether the matter reaches the true boundary or instead couples through a finite wall, cutoff surface, detector support, wave tail, or ensemble sink.',
         },
+        {
+          id: 'check.theoretical-physics.model-layer-motion-map',
+          kind: 'assumption_scope',
+          severity: 'blocking',
+          description:
+            'Separate point-particle/geodesic, field/wavepacket, kinetic/ensemble, effective open-system, and spectral-diagnostic layers, then state the reachability verdict and primary observable for each active layer before treating boundary motion, loss, or observables as the same object across them.',
+        },
       ],
       actionAffordances: [
         {
@@ -353,6 +367,12 @@ export const BUILTIN_THEORETICAL_PHYSICS_CAPSULES = [
           intent: 'required',
           reason:
             'Reachability and known-limit checks prevent assuming boundary absorption where the moving object cannot hit the relevant surface.',
+        },
+        {
+          actionId: 'validate.check_convention',
+          intent: 'required',
+          reason:
+            'Model-layer conventions keep particle trajectories, field wavepackets, kinetic ensembles, open-system loss, and spectral diagnostics from being conflated.',
         },
         {
           actionId: 'source.extract_definition',
@@ -379,7 +399,10 @@ export const BUILTIN_THEORETICAL_PHYSICS_CAPSULES = [
       'sink, bath, detector, or absorbing channel, first build a motion inventory.',
       'Name the moving object, the effective surface or support where interaction',
       'occurs, whether the object can reach or overlap that surface in the chosen',
-      'model layer, and the primary observables. Prefer trajectory/reflection maps,',
+      'model layer, and the primary observables. In the final framing, give a',
+      'layer-by-layer reachability verdict for point-particle/geodesic, field',
+      'wavepacket, kinetic/ensemble, effective open-system, and spectral-diagnostic',
+      'layers when they are active. Prefer trajectory/reflection maps,',
       'survival probability, hitting-time distributions, particle number/current,',
       'energy flux, and absorption rates as primary outputs. Mark normal modes,',
       'QNM poles, spectra, and Green-function poles as auxiliary diagnostics unless',
