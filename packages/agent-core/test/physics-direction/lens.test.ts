@@ -168,6 +168,46 @@ describe('physics direction lenses', () => {
     );
   });
 
+  it('proposes lecture-guided object discovery for conceptual new theory topics', () => {
+    const recommendations = recommendPhysicsLenses(
+      {
+        domain: 'theoretical-physics/general',
+        topic: 'open-boundary massive matter motion',
+        prompt:
+          'Before deriving, use lecture background and review notes to understand the degrees of freedom, model layer, observables, and known limits for this new theory problem.',
+        contextTags: ['new_topic', 'lecture', 'conceptual_scaffolding'],
+      },
+      { lenses: THEORETICAL_PHYSICS_GENERAL_LENSES },
+    );
+
+    const lectureGuided = recommendations.find(
+      (candidate) => candidate.lens.id === 'lecture_guided_object_discovery',
+    );
+
+    expect(lectureGuided).toMatchObject({
+      status: 'applicable',
+      confidence: 'high',
+    });
+    expect(lectureGuided?.matchedContextTags).toEqual(
+      expect.arrayContaining(['lecture', 'conceptual_scaffolding']),
+    );
+    expect(lectureGuided?.guidingQuestions.join(' ')).toContain(
+      'open lecture or review shelf',
+    );
+    expect(lectureGuided?.requiredChecks.map((check) => check.id)).toContain(
+      'check.theoretical-physics.lecture-source-boundary',
+    );
+    expect(lectureGuided?.suggestedActionBindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actionId: 'source.search_literature',
+          lensId: 'lecture_guided_object_discovery',
+          checkId: 'check.theoretical-physics.lecture-source-boundary',
+        }),
+      ]),
+    );
+  });
+
   it('proposes the boundary/source-sink motion lens for massive boundary dynamics', () => {
     const recommendations = recommendPhysicsLenses(
       {
