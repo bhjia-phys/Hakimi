@@ -73,17 +73,41 @@ describe('Session domain profiles and workflow recipes', () => {
     ]);
     expect(pack.physics.capsules.map((capsule) => capsule.id)).toEqual([
       'failure.theoretical-physics.unsourced-or-unscoped-overclaim',
+      'workflow.theoretical-physics.boundary-sink-motion-inventory',
       'workflow.theoretical-physics.formula-validation-contract',
+      'workflow.theoretical-physics.research-object-discovery',
       'workflow.theoretical-physics.scope-evidence-validation-ladder',
     ]);
+    expect(pack.profiles[0]?.lenses).toContain('research_object_discovery');
+    expect(pack.profiles[0]?.lenses).toContain('boundary_sink_motion_inventory');
     expect(pack.actionBindings.map((binding) => binding.actionId)).toEqual(
       expect.arrayContaining([
+        'physics.apply_direction_lens',
         'source.search_literature',
         'source.capture_source_excerpt',
         'validate.check_source_support',
         'code.prepare_patch',
         'benchmark.submit_external_job',
       ]),
+    );
+    expect(pack.actionBindings).toContainEqual(
+      expect.objectContaining({
+        lensId: 'research_object_discovery',
+        checkId: 'check.theoretical-physics.research-object-inventory',
+      }),
+    );
+    expect(pack.actionBindings).toContainEqual(
+      expect.objectContaining({
+        lensId: 'boundary_sink_motion_inventory',
+        checkId: 'check.theoretical-physics.reachability-before-boundary-loss',
+        priority: 'blocking',
+      }),
+    );
+    expect(pack.physics.capsules).toContainEqual(
+      expect.objectContaining({
+        id: 'workflow.theoretical-physics.boundary-sink-motion-inventory',
+        bodyPreview: expect.stringContaining('survival probability'),
+      }),
     );
     expect(pack.domainPack).toMatchObject({
       domain: 'quantum-gravity/spinfoam',

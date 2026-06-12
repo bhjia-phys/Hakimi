@@ -1381,7 +1381,14 @@ function capsuleSummary(capsule: PhysicsCapsule): ResearchContextCapsuleSummary 
     expansionHandles: capsule.metadata.expansionHandles,
     requiredChecks: capsule.metadata.requiredChecks,
     actionAffordances: capsule.metadata.actionAffordances,
+    bodyPreview: compactPreview(capsule.body, 700),
   };
+}
+
+function compactPreview(value: string, maxLength: number): string | undefined {
+  const compact = value.replace(/\s+/gu, ' ').trim();
+  if (compact.length === 0) return undefined;
+  return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength)}...`;
 }
 
 function bindingsFromAffordances(

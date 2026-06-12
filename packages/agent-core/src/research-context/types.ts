@@ -80,6 +80,7 @@ export interface ResearchContextCapsuleSummary {
   readonly expansionHandles: readonly ExpansionHandle[];
   readonly requiredChecks: readonly CheckContract[];
   readonly actionAffordances: readonly ActionAffordance[];
+  readonly bodyPreview?: string | undefined;
 }
 
 export interface ResearchContextLedgerProposalSummary {

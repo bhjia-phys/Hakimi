@@ -8,6 +8,7 @@ import {
   classifyReasoningCues,
   createHakimiAuditEnv,
   evaluateExpectations,
+  inspectHiddenEvalInput,
   parseCli,
   renderMarkdown,
   scoreResearchEvalCase,
@@ -197,6 +198,8 @@ describe('hakimi real session audit harness', () => {
       'session_fixture',
       '--expect-tool-action',
       'ResearchAction/compile_context_pack',
+      '--expect-context-pack-text',
+      'binding.theoretical-physics.apply-object-discovery-lens',
       '--expect-reasoning-cue',
       'failure',
       '--expect-reasoning-led-tool',
@@ -213,6 +216,7 @@ describe('hakimi real session audit harness', () => {
     ]);
 
     expect(parsed.options.expectToolActions).toEqual(['ResearchAction/compile_context_pack']);
+    expect(parsed.options.expectContextPackTexts).toEqual(['binding.theoretical-physics.apply-object-discovery-lens']);
     expect(parsed.options.expectReasoningCues).toEqual(['failure']);
     expect(parsed.options.expectReasoningLedTools).toEqual(['ResearchAction/compile_context_pack']);
     expect(parsed.options.expectNoPostWorkframeMissingWorkframe).toBe(true);
@@ -223,6 +227,64 @@ describe('hakimi real session audit harness', () => {
     expect(classifyReasoningCues('compile_context_pack failed because WorkFrame is missing')).toEqual(
       expect.arrayContaining(['context_pack', 'workframe', 'failure']),
     );
+  });
+
+  it('checks ContextPack text from successful tool output before report truncation', async ({ task }) => {
+    const root = join(process.cwd(), '.vitest-tmp', task.id);
+    const home = join(root, 'home');
+    const workdir = join(root, 'workdir');
+    const sessionDir = join(home, 'sessions', 'wd_fixture', 'session_context_pack');
+    const agentDir = join(sessionDir, 'agents', 'main');
+    const marker = 'binding.theoretical-physics.apply-object-discovery-lens';
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(join(sessionDir, 'state.json'), JSON.stringify({ workDir: workdir, title: 'context pack fixture' }), 'utf8');
+    await writeFile(
+      join(agentDir, 'wire.jsonl'),
+      [
+        {
+          type: 'tool_lifecycle.completed',
+          turnId: 0,
+          step: 1,
+          toolCallId: 'tool_pack',
+          toolName: 'ResearchAction',
+          status: 'passed',
+          isError: false,
+          argsSummary: JSON.stringify({ action: 'compile_context_pack' }),
+          outputSummary: `<context_pack id="context.fixture">${'x'.repeat(1300)}...[truncated]`,
+        },
+        {
+          type: 'context.append_loop_event',
+          event: {
+            type: 'tool.result',
+            toolCallId: 'tool_pack',
+            result: {
+              output: `<context_pack id="context.fixture">${'x'.repeat(1400)}${marker}</context_pack>`,
+            },
+          },
+        },
+      ].map((entry) => JSON.stringify(entry)).join('\n'),
+      'utf8',
+    );
+
+    const audit: any = await analyzeSession({
+      home,
+      session: { sessionId: 'session_context_pack', sessionDir, workDir: workdir },
+      options: {
+        expectContextPack: true,
+        expectVisibleTexts: [marker],
+        expectContextPackTexts: [marker],
+      },
+    });
+
+    expect(audit.expectations).toContainEqual(expect.objectContaining({
+      name: `visible-text:${marker}`,
+      pass: false,
+    }));
+    expect(audit.expectations).toContainEqual(expect.objectContaining({
+      name: `context-pack-text:${marker}`,
+      pass: true,
+    }));
+    expect(renderMarkdown(audit)).not.toContain(`${'x'.repeat(1200)}${marker}`);
   });
 
   it('audits AITP bridge operations and topic-scoped research runs', async ({ task }) => {
@@ -474,6 +536,153 @@ describe('hakimi real session audit harness', () => {
     expect(result.forbiddenMatches).toEqual([]);
   });
 
+  it('scores AdS physics capability from the final answer, with tool artifacts reported separately', () => {
+    const audit: any = {
+      assistantTexts: ['The final answer only says random boundary reflecting absorbing.'],
+      research: {
+        aitpWriteBridgeCalls: [{ operation: 'startResearchRun', ok: true }],
+        aitpMcpCalls: [],
+      },
+      toolCalls: [
+        passedAction('open_work_frame'),
+        passedAction('compile_context_pack'),
+        passedAction('inspect_aitp_runtime_payload_profiles'),
+        passedAction('draft_aitp_write_bridge_call'),
+        {
+          toolName: 'mcp__aitp__aitp_v5_record_sensemaking_report',
+          status: 'passed',
+          isError: false,
+          argsSummary: [
+            'For finite energy massive timelike geodesic motion in global AdS, the particle does not reach the conformal boundary.',
+            'Use a finite cutoff wall, wavepacket tail, or kinetic distribution boundary sink.',
+            'Observables include survival probability, hitting-time distribution, particle number, energy flux.',
+            'Separate classical cutoff, Klein-Gordon wavepacket, kinetic ensemble; normal modes are auxiliary.',
+          ].join(' '),
+          outputSummary: '',
+        },
+      ],
+      run: { streamJsonMessages: [] },
+    };
+
+    const result = scoreResearchEvalCase(audit, {
+      id: 'eval.theoretical-physics.random-open-boundary-ads-massive-matter',
+      title: 'Random open AdS boundary massive-matter regression',
+      path: 'fixture',
+      forbiddenClaims: [],
+      rubricItems: undefined,
+    });
+
+    expect(result.scoringScope).toBe('final-answer');
+    expect(result.score).toBe(30);
+    expect(result.artifactScope.score).toBe(100);
+    expect(result.items).toContainEqual(expect.objectContaining({
+      id: 'massive-boundary-reachability',
+      awarded: 0,
+    }));
+  });
+
+  it('scores final answers from full assistant text instead of report previews', () => {
+    const fullAnswer = [
+      'Runtime status first.',
+      'x'.repeat(1500),
+      'For finite energy massive timelike geodesic motion in global AdS, the particle does not reach the conformal boundary.',
+      'Use a finite cutoff wall, massive KG wavepacket tail, or kinetic distribution boundary sink.',
+      'The boundary detector off state is reflecting, and the on state couples to a measurement bath and removes energy flux.',
+      'Observables include particle trajectory/reflection map, survival probability, hitting-time distribution, particle number, and energy flux.',
+      'Separate classical cutoff, massive Klein-Gordon wavepacket, and kinetic ensemble layers.',
+      'Normal modes are only auxiliary diagnostics.',
+    ].join(' ');
+    const audit: any = {
+      assistantTexts: [fullAnswer.slice(0, 1200)],
+      assistantTextsFull: [fullAnswer],
+      research: {
+        aitpWriteBridgeCalls: [{ operation: 'startResearchRun', ok: true }],
+        aitpMcpCalls: [],
+      },
+      toolCalls: [
+        passedAction('open_work_frame'),
+        passedAction('compile_context_pack'),
+        passedAction('inspect_aitp_runtime_payload_profiles'),
+        passedAction('draft_aitp_write_bridge_call'),
+      ],
+      run: { streamJsonMessages: [] },
+    };
+
+    const result = scoreResearchEvalCase(audit, {
+      id: 'eval.theoretical-physics.random-open-boundary-ads-massive-matter',
+      title: 'Random open AdS boundary massive-matter regression',
+      path: 'fixture',
+      forbiddenClaims: [],
+      rubricItems: undefined,
+    });
+
+    expect(result.score).toBe(100);
+  });
+
+  it('audits hidden eval inputs without echoing rubric marker text', () => {
+    const evalCase: any = {
+      id: 'eval.hidden.fixture',
+      path: join(process.cwd(), '.aitp', 'evals', 'hidden-case.md'),
+      sourceRefs: ['rubric:secret-rubric-2026'],
+      rubricRef: 'rubric:secret-rubric-2026',
+      rubricItems: [
+        { id: 'hidden-reachability-item', summary: 'Do not echo this summary' },
+      ],
+    };
+    const audit: any = {
+      ok: false,
+      session: { id: 'session_hidden_fixture', dir: 'session-dir' },
+      privateReasoning: { parts: 0, chars: 0 },
+      expectations: [],
+      evalCases: [],
+      assistantTexts: ['I saw hidden-reachability-item.'],
+      toolCalls: [
+        {
+          toolName: 'Read',
+          status: 'passed',
+          isError: false,
+          argsSummary: JSON.stringify({ path: evalCase.path }),
+          outputSummary: 'hidden file content',
+        },
+      ],
+      visibleTranscript: [],
+      toolSummary: {},
+      research: {
+        workFrameOpened: false,
+        workFrameIds: [],
+        contextPackCompiled: false,
+        researchActionResults: [],
+        ledgerWrites: [],
+        aitpWriteBridgeCalls: [],
+        aitpMcpCalls: [],
+        autoresearchEvents: [],
+      },
+      filesystem: { hakimiLedgerTopics: [], aitpTopics: [], aitpResearchRuns: [], aitpResearchRunDetails: [] },
+      reasoningBlocks: [],
+      reasoningBehavior: { turnCount: 0, turns: [], ledToolCalls: [], repeatedAfterReasoningFailures: [] },
+      autoCaptureSkipped: {},
+      failures: [],
+      run: { args: ['--prompt', '<prompt-redacted>'] },
+    };
+
+    audit.hiddenEvalInput = inspectHiddenEvalInput({
+      prompt: 'normal blind prompt',
+      evalCases: [evalCase],
+      run: { args: ['--prompt', 'normal blind prompt'] },
+      audit,
+    });
+
+    expect(audit.hiddenEvalInput.ok).toBe(false);
+    expect(audit.hiddenEvalInput.violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'session-read-eval-file', detail: 'hidden-case.md' }),
+      expect.objectContaining({ kind: 'visible-marker-leak', detail: 'hidden-marker-4' }),
+    ]));
+    const rendered = renderMarkdown(audit);
+    expect(rendered).toContain('hidden-marker-4');
+    expect(rendered).not.toContain('hidden-reachability-item');
+    expect(rendered).not.toContain('Do not echo this summary');
+  });
+
   it('flags forbidden claims in the AdS massive-matter regression', () => {
     const audit: any = {
       assistantTexts: ['The massive particle automatically hits the AdS conformal boundary.'],
@@ -492,6 +701,35 @@ describe('hakimi real session audit harness', () => {
     expect(result.forbiddenMatches).toEqual([
       { claim: 'massive particle automatically hits the AdS conformal boundary', matched: true },
     ]);
+  });
+
+  it('does not flag auxiliary normal modes when primary observables are motion observables', () => {
+    const audit: any = {
+      assistantTexts: [
+        '## Primary observables (not normal modes)\nThe primary observables are survival probability, hitting-time distribution, trajectory, particle number, and energy flux. Normal modes are auxiliary diagnostics only.',
+      ],
+      research: {
+        aitpWriteBridgeCalls: [{ operation: 'startResearchRun', ok: true }],
+        aitpMcpCalls: [],
+      },
+      toolCalls: [
+        passedAction('open_work_frame'),
+        passedAction('compile_context_pack'),
+        passedAction('inspect_aitp_runtime_payload_profiles'),
+        passedAction('draft_aitp_write_bridge_call'),
+      ],
+      run: { streamJsonMessages: [] },
+    };
+
+    const result = scoreResearchEvalCase(audit, {
+      id: 'eval.theoretical-physics.random-open-boundary-ads-massive-matter',
+      title: 'Random open AdS boundary massive-matter regression',
+      path: 'fixture',
+      forbiddenClaims: ['normal modes are the primary object of the massive-matter problem'],
+      rubricItems: undefined,
+    });
+
+    expect(result.forbiddenMatches).toEqual([]);
   });
 });
 

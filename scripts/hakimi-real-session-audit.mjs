@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -51,6 +51,7 @@ function parseCli(args) {
       expectTools: [],
       expectToolActions: [],
       expectVisibleTexts: [],
+      expectContextPackTexts: [],
       expectReasoningCues: [],
       expectReasoningLedTools: [],
       expectAitpWriteOperations: [],
@@ -120,6 +121,9 @@ function parseCli(args) {
         break;
       case '--expect-visible-text':
         result.options.expectVisibleTexts.push(requireValue(args, ++i, arg));
+        break;
+      case '--expect-context-pack-text':
+        result.options.expectContextPackTexts.push(requireValue(args, ++i, arg));
         break;
       case '--expect-private-reasoning':
         result.options.expectPrivateReasoning = true;
@@ -219,6 +223,8 @@ Checks:
   --expect-tool-action <tool/action>
                                  Require at least one successful completed tool action
   --expect-visible-text <text>   Require visible assistant/tool output substring
+  --expect-context-pack-text <text>
+                                 Require substring in successful ContextPack output
   --expect-private-reasoning     Require at least one redacted reasoning/think part
   --expect-reasoning-cue <cue>   Require a redacted reasoning block with a behavior cue
   --expect-reasoning-led-tool <tool[/action]>
@@ -272,6 +278,12 @@ async function runAndAnalyze(options) {
   }
   const analysis = await analyzeFromBestEffortSession(home, workdir, before, run, options);
   analysis.run = runForReport(run);
+  analysis.hiddenEvalInput = inspectHiddenEvalInput({
+    prompt,
+    evalCases: options.evalCases ?? [],
+    run,
+    audit: analysis,
+  });
   analysis.expectations = evaluateExpectations(analysis, options);
   analysis.ok = analysis.expectations.every((expectation) => expectation.pass);
   if (run.timedOut) {
@@ -289,7 +301,16 @@ async function analyzeOnly(options) {
   options = await hydrateEvalCaseOptions(options);
   const home = resolveHome(options.home);
   const session = await resolveSessionLocation({ home, workdir: options.workdir, sessionId: options.session, sessionDir: options.sessionDir });
-  return analyzeSession({ home, session, options });
+  const audit = await analyzeSession({ home, session, options });
+  audit.hiddenEvalInput = inspectHiddenEvalInput({
+    prompt: undefined,
+    evalCases: options.evalCases ?? [],
+    run: undefined,
+    audit,
+  });
+  audit.expectations = evaluateExpectations(audit, options);
+  audit.ok = audit.expectations.every((expectation) => expectation.pass);
+  return audit;
 }
 
 async function analyzeFromBestEffortSession(home, workdir, beforeIndex, run, options) {
@@ -398,6 +419,8 @@ async function analyzeSession({ home, session, options }) {
   audit.ok = audit.expectations.every((expectation) => expectation.pass);
   delete audit._startedToolArgs;
   delete audit._reasoningAuditPartUuids;
+  audit.assistantTextsFull = audit._assistantTextFull;
+  delete audit._assistantTextFull;
   delete audit._sequence;
   return audit;
 }
@@ -424,6 +447,7 @@ function createEmptyAudit({ home, session, state, workdir }) {
     },
     prompts: [],
     assistantTexts: [],
+    assistantTextsFull: [],
     visibleTranscript: [],
     reasoningBlocks: [],
     reasoningBehavior: {
@@ -441,6 +465,7 @@ function createEmptyAudit({ home, session, state, workdir }) {
       workFrameOpened: false,
       workFrameIds: [],
       contextPackCompiled: false,
+      contextPackOutputs: [],
       researchActionResults: [],
       ledgerWrites: [],
       aitpWriteBridgeCalls: [],
@@ -458,6 +483,7 @@ function createEmptyAudit({ home, session, state, workdir }) {
     expectations: [],
     _startedToolArgs: new Map(),
     _reasoningAuditPartUuids: new Set(),
+    _assistantTextFull: [],
     _sequence: 0,
   };
 }
@@ -525,6 +551,10 @@ function scanWireEntry(audit, agentId, entry) {
     scanReasoningAuditRecord(audit, agentId, entry);
   }
 
+  if (entry.type === 'research_context.context_compiled') {
+    scanContextCompiledRecord(audit, agentId, entry);
+  }
+
   if (entry.type === 'tool_lifecycle.started' || entry.type === 'tool_lifecycle.completed') {
     scanToolLifecycle(audit, agentId, entry);
   }
@@ -567,6 +597,45 @@ function scanReasoningAuditRecord(audit, agentId, entry) {
     cues,
     redacted: true,
     source: 'reasoning.audit',
+  });
+}
+
+function scanContextCompiledRecord(audit, agentId, entry) {
+  const packId = stringOrUndefined(entry.pack?.id);
+  const serialized = serializeContextPackRecord(entry);
+  if (serialized === undefined) return;
+  captureContextPackOutput(audit, {
+    agentId,
+    toolCallId: stringOrUndefined(entry.toolCallId),
+    packId,
+    source: stringOrUndefined(entry.source) ?? 'research_context.context_compiled',
+    output: serialized,
+  });
+}
+
+function serializeContextPackRecord(entry) {
+  if (typeof entry.rendered === 'string') return entry.rendered;
+  if (typeof entry.output === 'string') return entry.output;
+  if (entry.pack !== undefined) return JSON.stringify(entry.pack);
+  return undefined;
+}
+
+function captureContextPackOutput(audit, { agentId, toolCallId, packId, source, output }) {
+  const redacted = redactSecrets(String(output ?? ''));
+  if (redacted === '') return;
+  const duplicate = audit.research.contextPackOutputs.some(
+    (item) =>
+      (packId !== undefined && item.packId === packId && item.source === source) ||
+      (toolCallId !== undefined && item.toolCallId === toolCallId && item.source === source),
+  );
+  if (duplicate) return;
+  audit.research.contextPackOutputs.push({
+    agentId,
+    toolCallId,
+    packId,
+    source,
+    preview: truncate(redacted),
+    output: redacted,
   });
 }
 
@@ -663,6 +732,12 @@ function scanResearchActionCompletion(audit, args, outputSummary, entry) {
   }
   if (action === 'compile_context_pack' && ok && outputSummary?.includes('<context_pack')) {
     audit.research.contextPackCompiled = true;
+    captureContextPackOutput(audit, {
+      toolCallId: stringOrUndefined(entry.toolCallId),
+      packId: matchXmlAttr(outputSummary, 'id'),
+      source: 'tool_lifecycle.completed',
+      output: outputSummary,
+    });
   }
   if (action === 'record_action_result' && ok) {
     audit.research.researchActionResults.push({
@@ -751,8 +826,10 @@ function scanLoopEvent(audit, agentId, event) {
       return;
     }
     if (part?.type === 'text' && typeof part.text === 'string') {
-      const text = truncate(redactSecrets(part.text));
+      const fullText = redactSecrets(part.text);
+      const text = truncate(fullText);
       audit.assistantTexts.push(text);
+      audit._assistantTextFull.push(fullText);
       const item = {
         role: 'assistant',
         kind: 'text',
@@ -808,8 +885,19 @@ function scanLoopEvent(audit, agentId, event) {
     });
   }
   if (event.type === 'tool.result') {
-    const outputSummary = truncate(redactSecrets(JSON.stringify(event.result ?? {})));
     const toolCallId = stringOrUndefined(event.toolCallId);
+    const resultText = stringifyToolResult(event.result);
+    if (resultText.includes('<context_pack')) {
+      audit.research.contextPackCompiled = true;
+      captureContextPackOutput(audit, {
+        agentId,
+        toolCallId,
+        packId: matchXmlAttr(resultText, 'id'),
+        source: 'tool.result',
+        output: resultText,
+      });
+    }
+    const outputSummary = truncate(redactSecrets(resultText));
     const isError = event.result?.isError === true;
     audit.toolCalls.push({
       agentId,
@@ -1054,6 +1142,18 @@ function evaluateExpectations(audit, options) {
       detail: found ? 'substring found in visible assistant/tool output' : 'substring not found',
     });
   }
+  for (const expectedText of options.expectContextPackTexts ?? []) {
+    const haystack = contextPackTextHaystack(audit).toLowerCase();
+    const needle = expectedText.toLowerCase();
+    const found = needle.length > 0 && haystack.includes(needle);
+    expectations.push({
+      name: `context-pack-text:${expectedText}`,
+      pass: found,
+      detail: found
+        ? 'substring found in successful ContextPack output'
+        : 'substring not found in successful ContextPack output',
+    });
+  }
   if (options.expectPrivateReasoning) {
     expectations.push({
       name: 'private-reasoning-present',
@@ -1211,7 +1311,90 @@ function evaluateExpectations(audit, options) {
       detail: `score=${result.score}/${result.maxScore} threshold=${threshold}; forbidden=${result.forbiddenMatches.length}`,
     });
   }
+  if ((options.evalCases ?? []).length > 0 && audit.hiddenEvalInput !== undefined) {
+    expectations.push({
+      name: 'hidden-eval-input-not-exposed',
+      pass: audit.hiddenEvalInput.ok,
+      detail: audit.hiddenEvalInput.ok
+        ? 'eval case files/rubric terms were analyzer-only'
+        : audit.hiddenEvalInput.violations.map((item) => `${item.kind}:${item.evalId ?? item.detail ?? 'unknown'}`).join('; '),
+    });
+  }
   return expectations;
+}
+
+function inspectHiddenEvalInput({ prompt, evalCases, run, audit }) {
+  if (!Array.isArray(evalCases) || evalCases.length === 0) {
+    return undefined;
+  }
+  const violations = [];
+  const visible = [visibleTextHaystack(audit), contextPackTextHaystack(audit)].join('\n');
+  const promptText = String(prompt ?? '');
+  const childArgvText = childArgvWithoutPrompt(run?.args).join('\n');
+  const reportArgvText = audit.run?.args?.join('\n') ?? '';
+  const childReadText = audit.toolCalls
+    .filter((call) => call.toolName === 'Read')
+    .map((call) => `${call.argsSummary}\n${call.outputSummary}`)
+    .join('\n');
+  for (const evalCase of evalCases) {
+    const evalPath = stringOrUndefined(evalCase.path);
+    const evalBase = evalPath === undefined ? undefined : basename(evalPath);
+    const leakedMarkers = hiddenEvalMarkers(evalCase);
+    if (evalPath !== undefined && promptText.includes(evalPath)) {
+      violations.push({ kind: 'prompt-path-leak', evalId: evalCase.id, detail: evalBase ?? evalPath });
+    }
+    if (evalBase !== undefined && promptText.includes(evalBase)) {
+      violations.push({ kind: 'prompt-filename-leak', evalId: evalCase.id, detail: evalBase });
+    }
+    if (evalPath !== undefined && childArgvText.includes(evalPath)) {
+      violations.push({ kind: 'child-argv-path-leak', evalId: evalCase.id, detail: evalBase ?? evalPath });
+    }
+    if (evalBase !== undefined && childReadText.includes(evalBase)) {
+      violations.push({ kind: 'session-read-eval-file', evalId: evalCase.id, detail: evalBase });
+    }
+    for (const [index, marker] of leakedMarkers.entries()) {
+      if (marker.length < 6) continue;
+      if (promptText.includes(marker)) {
+        violations.push({ kind: 'prompt-marker-leak', evalId: evalCase.id, detail: `hidden-marker-${index + 1}` });
+      }
+      if (visible.includes(marker)) {
+        violations.push({ kind: 'visible-marker-leak', evalId: evalCase.id, detail: `hidden-marker-${index + 1}` });
+      }
+    }
+  }
+  return {
+    ok: violations.length === 0,
+    evalCaseCount: evalCases.length,
+    promptProvided: prompt !== undefined,
+    promptRedactedInReport: reportArgvText.includes('<prompt-redacted>'),
+    childArgvEvalPathCount: evalCases.filter((evalCase) => childArgvText.includes(evalCase.path ?? '\u0000')).length,
+    readEvalFileCount: violations.filter((item) => item.kind === 'session-read-eval-file').length,
+    markerLeakCount: violations.filter((item) => item.kind.endsWith('marker-leak')).length,
+    violations,
+  };
+}
+
+function hiddenEvalMarkers(evalCase) {
+  return [
+    evalCase.id,
+    evalCase.sourceRefs?.join(' '),
+    evalCase.rubricRef,
+    ...(evalCase.rubricItems ?? []).map((item) => item.id),
+  ].filter((value) => typeof value === 'string' && value.trim() !== '');
+}
+
+function childArgvWithoutPrompt(args) {
+  if (!Array.isArray(args)) return [];
+  const result = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+    result.push(value);
+    if (value === '--prompt') {
+      index += 1;
+      result.push('<prompt-redacted>');
+    }
+  }
+  return result;
 }
 
 function availableReasoningCues(audit) {
@@ -1308,6 +1491,9 @@ async function readResearchEvalCase(path) {
     title: stringOrUndefined(frontMatter.title) ?? resolved,
     task: stringOrUndefined(frontMatter.task) ?? '',
     path: resolved,
+    sourceRefs: parseYamlListBlock(text, 'source_refs'),
+    capsuleRefs: parseYamlListBlock(text, 'capsule_refs'),
+    rubricRef: parseYamlListBlock(text, 'source_refs').find((item) => item.startsWith('rubric:')),
     forbiddenClaims,
     rubricItems: rubricItemsForEvalCase(frontMatter, text),
   };
@@ -1443,22 +1629,35 @@ function keywordsFromRubricLine(line) {
 }
 
 function scoreResearchEvalCase(audit, evalCase) {
-  const haystack = normalizedEvalHaystack(audit);
+  const answerHaystack = normalizedEvalHaystack(audit, { scope: 'final-answer' });
+  const artifactHaystack = normalizedEvalHaystack(audit, { scope: 'all-artifacts' });
   const rubricItems = evalCase.rubricItems ?? rubricItemsForEvalCase({ id: evalCase.id }, '');
-  const items = rubricItems.map((item) => scoreRubricItem(item, audit, haystack));
+  const items = rubricItems.map((item) => scoreRubricItem(item, audit, answerHaystack));
   const score = items.reduce((sum, item) => sum + item.awarded, 0);
   const maxScore = items.reduce((sum, item) => sum + item.points, 0);
   const forbiddenMatches = (evalCase.forbiddenClaims ?? [])
-    .map((claim) => ({ claim, matched: forbiddenClaimMatched(claim, haystack) }))
+    .map((claim) => ({ claim, matched: forbiddenClaimMatched(claim, answerHaystack) }))
+    .filter((item) => item.matched);
+  const artifactItems = rubricItems.map((item) => scoreRubricItem(item, audit, artifactHaystack));
+  const artifactScore = artifactItems.reduce((sum, item) => sum + item.awarded, 0);
+  const artifactForbiddenMatches = (evalCase.forbiddenClaims ?? [])
+    .map((claim) => ({ claim, matched: forbiddenClaimMatched(claim, artifactHaystack) }))
     .filter((item) => item.matched);
   return {
     id: evalCase.id,
     title: evalCase.title,
     path: evalCase.path,
+    scoringScope: 'final-answer',
     score,
     maxScore,
     forbiddenMatches,
     items,
+    artifactScope: {
+      score: artifactScore,
+      maxScore,
+      forbiddenMatches: artifactForbiddenMatches,
+      items: artifactItems,
+    },
   };
 }
 
@@ -1520,9 +1719,12 @@ function scoreRubricItem(item, audit, haystack) {
   };
 }
 
-function normalizedEvalHaystack(audit) {
+function normalizedEvalHaystack(audit, { scope = 'final-answer' } = {}) {
+  if (scope === 'final-answer') {
+    return normalizeEvalText(assistantTextHaystack(audit));
+  }
   return normalizeEvalText([
-    ...audit.assistantTexts,
+    assistantTextHaystack(audit),
     ...audit.toolCalls.map((call) => call.argsSummary),
     ...audit.toolCalls.map((call) => call.outputSummary),
     ...(audit.research?.aitpMcpCalls ?? []).map((call) => call.output),
@@ -1538,16 +1740,19 @@ function phraseSetMatches(terms, haystack) {
 function forbiddenClaimMatched(claim, haystack) {
   const normalized = normalizeEvalText(claim);
   if (haystack.includes(normalized)) return true;
-  const signature = forbiddenClaimSignature(normalized);
-  return signature.length > 0 && phraseSetMatches(signature, haystack);
+  const signature = forbiddenClaimSignature(normalized, haystack);
+  return typeof signature === 'boolean'
+    ? signature
+    : signature.length > 0 && phraseSetMatches(signature, haystack);
 }
 
-function forbiddenClaimSignature(normalizedClaim) {
+function forbiddenClaimSignature(normalizedClaim, haystack) {
   if (normalizedClaim.includes('automatically hits')) {
     return ['automatically hits', 'boundary'];
   }
   if (normalizedClaim.includes('normal modes are the primary')) {
-    return ['normal modes', 'primary'];
+    return /\b(normal modes?|qnm|spectr(?:um|a|al))\b.{0,80}\b(primary|main|central|hero|dominant)\b(?!\s+observables?)/u.test(haystack) ||
+      /\b(primary|main|central|hero|dominant)\b\s+(object|target|topic|question|problem|description|framework|analysis)\b.{0,80}\b(normal modes?|qnm|spectr(?:um|a|al))\b/u.test(haystack);
   }
   if (normalizedClaim.includes('literal destruction')) {
     return ['literal destruction'];
@@ -1604,8 +1809,9 @@ function isFreshDetail(detail, runWindow) {
 }
 
 async function emitResult(result, options) {
-  const json = JSON.stringify(result, null, 2);
-  const markdown = renderMarkdown(result);
+  const printable = auditForReport(result);
+  const json = JSON.stringify(printable, null, 2);
+  const markdown = renderMarkdown(printable);
   const body = options.json ? json : markdown;
   if (options.out !== undefined) {
     const out = resolve(options.out);
@@ -1613,6 +1819,17 @@ async function emitResult(result, options) {
     await writeFile(out, out.endsWith('.json') ? json : body, 'utf8');
   }
   console.log(body);
+}
+
+function auditForReport(audit) {
+  return {
+    ...audit,
+    assistantTextsFull: undefined,
+    research: {
+      ...audit.research,
+      contextPackOutputs: (audit.research?.contextPackOutputs ?? []).map(({ output: _output, ...rest }) => rest),
+    },
+  };
 }
 
 function renderMarkdown(audit) {
@@ -1629,6 +1846,22 @@ function renderMarkdown(audit) {
   }
   lines.push(`- Private reasoning: ${audit.privateReasoning.parts} part(s), ${audit.privateReasoning.chars} char(s), redacted`);
   lines.push('');
+
+  if (audit.hiddenEvalInput !== undefined) {
+    lines.push(`## Hidden Eval Input`);
+    lines.push(`- Status: ${audit.hiddenEvalInput.ok ? 'PASS' : 'FAIL'}`);
+    lines.push(`- Eval cases: ${audit.hiddenEvalInput.evalCaseCount}`);
+    lines.push(`- Prompt redacted in report: ${audit.hiddenEvalInput.promptRedactedInReport ? 'yes' : 'no'}`);
+    lines.push(`- Child argv eval paths: ${audit.hiddenEvalInput.childArgvEvalPathCount}`);
+    lines.push(`- Session Read eval files: ${audit.hiddenEvalInput.readEvalFileCount}`);
+    lines.push(`- Hidden marker leaks: ${audit.hiddenEvalInput.markerLeakCount}`);
+    if (audit.hiddenEvalInput.violations.length > 0) {
+      for (const violation of audit.hiddenEvalInput.violations) {
+        lines.push(`  - ${violation.kind}${violation.evalId ? ` eval=${violation.evalId}` : ''}${violation.detail ? ` detail=${violation.detail}` : ''}`);
+      }
+    }
+    lines.push('');
+  }
 
   if (audit.run !== undefined) {
     lines.push(`## Terminal Stream Preview`);
@@ -1666,7 +1899,10 @@ function renderMarkdown(audit) {
   if (audit.evalCases.length > 0) {
     lines.push(`## Eval Cases`);
     for (const evalCase of audit.evalCases) {
-      lines.push(`- \`${evalCase.id}\`: ${evalCase.score}/${evalCase.maxScore} ${evalCase.title}`);
+      lines.push(`- \`${evalCase.id}\`: ${evalCase.score}/${evalCase.maxScore} ${evalCase.title} (scope=${evalCase.scoringScope ?? 'final-answer'})`);
+      if (evalCase.artifactScope !== undefined) {
+        lines.push(`  artifact-scope: ${evalCase.artifactScope.score}/${evalCase.artifactScope.maxScore}; forbidden=${evalCase.artifactScope.forbiddenMatches.length}`);
+      }
       if (evalCase.forbiddenMatches.length > 0) {
         lines.push(`  forbidden matches: ${evalCase.forbiddenMatches.map((item) => item.claim).join('; ')}`);
       }
@@ -2200,12 +2436,34 @@ function runForReport(run) {
   };
 }
 
+function stringifyToolResult(result) {
+  if (typeof result?.output === 'string') return result.output;
+  if (typeof result?.content === 'string') return result.content;
+  if (typeof result === 'string') return result;
+  return JSON.stringify(result ?? {});
+}
+
 function visibleTextHaystack(audit) {
   return [
-    ...audit.assistantTexts,
+    assistantTextHaystack(audit),
     ...audit.toolCalls.flatMap((call) => [call.argsSummary, call.outputSummary]),
     ...audit.visibleTranscript.flatMap((item) => [item.text, item.argsSummary, item.outputSummary]),
   ].filter((value) => typeof value === 'string').join('\n');
+}
+
+function assistantTextHaystack(audit) {
+  const full = audit.assistantTextsFull;
+  if (Array.isArray(full) && full.length > 0) {
+    return full.filter((value) => typeof value === 'string').join('\n');
+  }
+  return (audit.assistantTexts ?? []).filter((value) => typeof value === 'string').join('\n');
+}
+
+function contextPackTextHaystack(audit) {
+  return (audit.research?.contextPackOutputs ?? [])
+    .map((item) => item.output)
+    .filter((value) => typeof value === 'string')
+    .join('\n');
 }
 
 function parsePromptStreamJson(stdout) {
@@ -2301,6 +2559,7 @@ export {
   classifyReasoningCues,
   createHakimiAuditEnv,
   evaluateExpectations,
+  inspectHiddenEvalInput,
   parseCli,
   parsePromptStreamJson,
   renderMarkdown,
