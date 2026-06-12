@@ -455,6 +455,24 @@ describe('ResearchActionTool', () => {
     );
   });
 
+  it('accepts AITP-style base/workdir fields on ResearchAction calls without failing schema validation', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    const result = await execute(tool, {
+      action: 'open_work_frame',
+      base: 'F:/AI_Workspace/Theoretical-Physics',
+      workdir: 'F:/AI_Workspace/Theoretical-Physics',
+      frame_id: 'frame.ads-compatible',
+      domain: 'theoretical-physics/general',
+      topic: 'ads-compatible',
+      goal: 'Open a frame from an AITP-shaped payload.',
+    });
+
+    expect(result.output).toContain('work_frame id="frame.ads-compatible"');
+    expect(agent.workFrames.active?.id).toBe('frame.ads-compatible');
+  });
+
   it('renders source context review outcomes as non-evidentiary routing', async () => {
     const records: AgentRecord[] = [];
     const agent = makeAgent(records);
@@ -3553,6 +3571,61 @@ describe('ResearchActionTool', () => {
         phase: 'planning',
       },
     });
+  });
+
+  it('accepts generic AITP write handoffs when hash input can be reconstructed from tool_call_json', async () => {
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent(undefined, {
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          return {
+            ok: true,
+            kind: 'research_run',
+            runId: 'research-run-qg',
+            topicId: 'qg-algebra',
+            objective: 'Audit whether the observer algebra source chain is sufficient.',
+            researchQuestion: 'Audit whether the observer algebra source chain is sufficient.',
+            operator: 'hakimi',
+            status: 'active',
+            phase: 'planning',
+            terminalAnswerState: '',
+            eventIds: [],
+            orientationOnly: true,
+            canUpdateKernelState: true,
+            canUpdateClaimTrust: false,
+            raw: {},
+          };
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+    await execute(tool, {
+      action: 'open_work_frame',
+      frame_id: 'frame.qg.reconstruct',
+      domain: 'theoretical-physics/general',
+      topic: 'qg-algebra',
+      goal: 'Audit whether the observer algebra source chain is sufficient.',
+      source_refs: ['aitp:claim:claim-observer', 'aitp:session:session-qg'],
+    });
+    const draft = await execute(tool, {
+      action: 'draft_aitp_write_bridge_call',
+      aitp_operation: 'startResearchRun',
+    });
+    const handoff = extractCuratedRagHandoff(draft.output);
+    const { hash_input_json: _hashInputJson, ...summaryGuard } = handoff.guard;
+
+    const result = await execute(tool, {
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'startResearchRun',
+      aitp_payload: toolCallPayload(handoff),
+      aitp_handoff: summaryGuard,
+    });
+
+    expect(result.output).toContain('<handoff_execution_precheck');
+    expect(result.output).toContain('execution_precheck_status="passed"');
+    expect(result.output).toContain('<aitp_write_bridge operation="startResearchRun"');
+    expect(bridgeCalls).toHaveLength(1);
   });
 
   it('blocks generic AITP event drafts that still miss required fields', async () => {

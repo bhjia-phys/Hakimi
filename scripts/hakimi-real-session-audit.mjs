@@ -1790,8 +1790,11 @@ function positivePrimarySpectralClaim(haystack) {
 
 function negatesPrimarySpectralClaim(window) {
   return [
+    /\bwithout\s+(requiring|centering|making|treating)\b.{0,100}\b(normal modes?|qnm|spectr(?:um|a|al))\b.{0,100}\b(primary|main|central|organizing)\b/u,
     /\bnot\b.{0,40}\b(normal modes?|qnm|spectr(?:um|a|al))\b.{0,80}\b(primary|main|central|target|topic|question|problem)\b/u,
     /\b(normal modes?|qnm|spectr(?:um|a|al))\b.{0,80}\bnot\b.{0,40}\b(primary|main|central|target|topic|question|problem)\b/u,
+    /\b(no|not|without)\b.{0,80}\b(primary|main|central|organizing)\b.{0,80}\b(normal modes?|qnm|spectr(?:um|a|al))\b/u,
+    /\b(normal modes?|qnm|spectr(?:um|a|al))\b.{0,80}\b(diagnostic|secondary|auxiliary|transient basis)\b/u,
     /\bnot\s+as\s+a\s+spectral\b/u,
     /\bnot\s+as\s+a\s+(spectral\s+)?\b(primary|main|central)/u,
     /\bnot\s+(the\s+)?(primary|main|central)\b/u,

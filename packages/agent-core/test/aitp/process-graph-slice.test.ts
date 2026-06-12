@@ -267,7 +267,12 @@ describe('AITP process graph slice adapter', () => {
     expect(moment?.query).toContain('physics_hints:');
     expect(moment?.query).toContain('ads-cft');
     expect(moment?.query).toContain('massive matter');
-    expect(moment?.query).toContain('cutoff wall');
+    expect(moment?.query).toContain('finite cutoff wall');
+    expect(moment?.query).toContain('conformal boundary');
+    expect(moment?.query).toContain('timelike geodesic reachability');
+    expect(moment?.query).toContain('wavepacket tail');
+    expect(moment?.query).toContain('kinetic distribution boundary sink');
+    expect(moment?.query).toContain('model layer separation');
     expect(moment?.query).toContain('survival probability');
     expect(moment?.query).toContain('hitting time');
     expect(moment?.query).toContain('energy flux');

@@ -242,6 +242,12 @@ describe('physics direction lenses', () => {
       'point-particle/geodesic',
     );
     expect(boundaryMotion?.guidingQuestions.join(' ')).toContain(
+      'finite-energy timelike motion',
+    );
+    expect(boundaryMotion?.guidingQuestions.join(' ')).toContain(
+      'field tail',
+    );
+    expect(boundaryMotion?.guidingQuestions.join(' ')).toContain(
       'reachability verdict',
     );
     expect(boundaryMotion?.suggestedActionBindings).toEqual(

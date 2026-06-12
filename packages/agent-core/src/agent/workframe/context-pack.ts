@@ -6,6 +6,7 @@ import {
 } from '../../aitp';
 
 const MAX_ITEMS = 6;
+const MAX_CUE_CHARS = 520;
 const DEFAULT_ACTION_BY_ID = new Map(DEFAULT_RESEARCH_ACTIONS.map((action) => [action.id, action]));
 
 export function renderResearchContextPackReminder(pack: ResearchContextPack): string {
@@ -42,6 +43,21 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
     lines.push(
       `Physics capsules: ${bounded(pack.physics.capsules.map((capsule) => `${capsule.id} [${capsule.reliability}]`)).join(', ')}`,
     );
+    for (const capsule of boundedItems(pack.physics.capsules)) {
+      if (capsule.bodyPreview === undefined) continue;
+      lines.push(`Physics capsule cue: ${capsule.title}: ${compactCue(capsule.bodyPreview)}`);
+    }
+    const blockingChecks = pack.physics.capsules.flatMap((capsule) =>
+      capsule.requiredChecks
+        .filter((check) => check.severity === 'blocking')
+        .map((check) => `${check.id}: ${check.description ?? check.kind}`),
+    );
+    if (blockingChecks.length > 0) {
+      lines.push(`Blocking physics checks: ${bounded(blockingChecks).join(' | ')}`);
+      lines.push(
+        'Final physics answer checklist: explicitly include a short model-layer map, layer-by-layer reachability verdicts and primary observables, and label spectral/normal-mode diagnostics as secondary unless the user made them primary.',
+      );
+    }
   }
   if (pack.ledger.proposals.length > 0) {
     lines.push(
@@ -249,4 +265,10 @@ function bounded(values: readonly string[]): readonly string[] {
 function boundedItems<T>(values: readonly T[]): readonly T[] {
   if (values.length <= MAX_ITEMS) return values;
   return values.slice(0, MAX_ITEMS);
+}
+
+function compactCue(value: string): string {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  if (compact.length <= MAX_CUE_CHARS) return compact;
+  return `${compact.slice(0, MAX_CUE_CHARS - 3).trim()}...`;
 }

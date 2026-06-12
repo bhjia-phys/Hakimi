@@ -252,6 +252,7 @@ export const THEORETICAL_PHYSICS_GENERAL_LENSES = [
       'What is moving: a classical particle, field wavepacket, density matrix, kinetic distribution, fluid element, or defect?',
       'Where does it interact with the boundary/source/sink: true asymptotic boundary, finite wall, interface, detector support, wavefunction tail, or ensemble boundary condition?',
       'Can the moving object reach or hit that surface in the regime being modeled, and what known limit would make the naive boundary coupling vanish or become indirect?',
+      'If the system is AdS-like with massive matter, is the boundary the conformal boundary or a finite cutoff wall, and does finite-energy timelike motion reach it or only couple through a field tail, boundary condition, or ensemble sink?',
       'What are the primary motion observables: trajectory/reflection map, survival probability, hitting-time distribution, particle number, current, energy flux, or absorption rate?',
       'Which model layers must be separated before deriving: point-particle/geodesic, field wavepacket, kinetic/ensemble, effective open-system, and spectral diagnostics?',
       'What is the reachability verdict, primary observable, and failure mode in each active layer before writing the final framing?',

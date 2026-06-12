@@ -194,6 +194,18 @@ export const ResearchActionToolInputSchema = z.object({
     .describe(
       'Optional action domain filter. For open_work_frame, defaults to theoretical-physics/general when omitted.',
     ),
+  base: z
+    .string()
+    .optional()
+    .describe(
+      'Optional AITP workspace base path accepted for compatibility with AITP bridge payloads; ResearchAction ignores it.',
+    ),
+  workdir: z
+    .string()
+    .optional()
+    .describe(
+      'Optional workspace path accepted for compatibility with AITP bridge payloads; ResearchAction ignores it.',
+    ),
   topic: z.string().optional().describe('Topic id for WorkFrame operations.'),
   goal: z.string().optional().describe('Goal text for open_work_frame.'),
   frame_id: z
@@ -3470,9 +3482,6 @@ function renderAitpWriteBridgeCallDraft(
     toolCall,
     missingRefRepairHintCount: 0,
     repairHintOperations: [],
-    inferredFields: draft.inferredFields,
-    missingFields: draft.missingFields,
-    diagnosticCodes: draft.diagnostics.map((diagnostic) => diagnostic.code),
   };
   const hash = shortSha256(stableJson(hashInput), 16);
   const handoffId = [
@@ -4011,6 +4020,52 @@ function handoffReadinessToolCall(
   };
 }
 
+function canReconstructAitpHandoffHashInput(
+  handoffId: string,
+  handoff: Readonly<Record<string, unknown>>,
+): boolean {
+  const kind = stringRecordValue(handoff, 'kind');
+  return handoffId.startsWith('aitp-write-handoff.') && (kind === undefined || kind === 'aitp_write_bridge_handoff');
+}
+
+function reconstructAitpHandoffHashInput(input: {
+  readonly handoff: Readonly<Record<string, unknown>>;
+  readonly operation: AitpWriteBridgeOperation;
+  readonly confirmationStatus: string;
+  readonly toolCall: Readonly<Record<string, unknown>>;
+}): Readonly<Record<string, unknown>> {
+  return {
+    kind: inferredAitpHandoffHashInputKind(input.handoff),
+    aitpOperation: input.operation,
+    confirmationStatus: input.confirmationStatus,
+    toolCall: input.toolCall,
+    missingRefRepairHintCount: nonNegativeIntegerRecordValue(
+      input.handoff,
+      'missing_ref_repair_hint_count',
+      'missingRefRepairHintCount',
+    ) ?? 0,
+    repairHintOperations: stringArrayRecordValue(
+      input.handoff,
+      'repair_hint_operations',
+      'repairHintOperations',
+    ),
+  };
+}
+
+function inferredAitpHandoffHashInputKind(handoff: Readonly<Record<string, unknown>>): string {
+  const kind = stringRecordValue(handoff, 'kind');
+  if (kind === 'record_ref_repair_write_bridge_handoff') {
+    return 'aitp_record_ref_repair_write_bridge_call_handoff';
+  }
+  if (kind === 'aitp_write_bridge_handoff') {
+    return 'aitp_write_bridge_call_handoff';
+  }
+  if (kind === 'curated_rag_write_bridge_handoff') {
+    return 'curated_rag_write_bridge_call_handoff';
+  }
+  return 'aitp_write_bridge_call_handoff';
+}
+
 function verifyAitpWriteBridgeHandoff(
   handoff: Readonly<Record<string, unknown>> | undefined,
   operation: AitpWriteBridgeOperation,
@@ -4024,7 +4079,7 @@ function verifyAitpWriteBridgeHandoff(
   const diagnosticHash = stringRecordValue(handoff, 'diagnostic_hash', 'diagnosticHash');
   const confirmationStatus = stringRecordValue(handoff, 'confirmation_status', 'confirmationStatus');
   const toolCall = recordRecordValue(handoff, 'tool_call_json', 'toolCallJson', 'tool_call', 'toolCall');
-  const hashInput = recordRecordValue(handoff, 'hash_input_json', 'hashInputJson', 'hash_input', 'hashInput');
+  const providedHashInput = recordRecordValue(handoff, 'hash_input_json', 'hashInputJson', 'hash_input', 'hashInput');
   if (!hasText(handoffId)) {
     return handoffGuardError('missing_handoff_id', 'requires handoff_id.', {
       field: 'handoff_id',
@@ -4073,12 +4128,6 @@ function verifyAitpWriteBridgeHandoff(
       path: 'aitp_handoff.tool_call_json',
     });
   }
-  if (hashInput === undefined) {
-    return handoffGuardError('missing_hash_input_json', 'requires hash_input_json/hashInput object.', {
-      field: 'hash_input_json',
-      path: 'aitp_handoff.hash_input_json',
-    });
-  }
   if (stringRecordValue(toolCall, 'action') !== 'execute_aitp_write_bridge') {
     return handoffGuardError('tool_call_action_mismatch', 'tool_call_json.action must be execute_aitp_write_bridge.', {
       field: 'tool_call_json',
@@ -4104,6 +4153,18 @@ function verifyAitpWriteBridgeHandoff(
       path: 'aitp_handoff.tool_call_json.aitp_payload',
     });
   }
+  if (providedHashInput === undefined && !canReconstructAitpHandoffHashInput(handoffId, handoff)) {
+    return handoffGuardError('missing_hash_input_json', 'requires hash_input_json/hashInput object.', {
+      field: 'hash_input_json',
+      path: 'aitp_handoff.hash_input_json',
+    });
+  }
+  const hashInput = providedHashInput ?? reconstructAitpHandoffHashInput({
+    handoff,
+    operation,
+    confirmationStatus,
+    toolCall,
+  });
   const expectedHash = `sha256:${shortSha256(stableJson(hashInput), 16)}`;
   if (diagnosticHash !== expectedHash) {
     return handoffGuardError('diagnostic_hash_mismatch', 'diagnostic_hash does not match hash_input_json.', {
@@ -4392,15 +4453,34 @@ function recordRecordValue(
   return undefined;
 }
 
-function nonNegativeIntegerRecordValue(record: Readonly<Record<string, unknown>>, key: string): number {
-  const value = record[key];
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return 0;
-  return value;
+function nonNegativeIntegerRecordValue(
+  record: Readonly<Record<string, unknown>>,
+  ...keys: readonly string[]
+): number {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return value;
+  }
+  return 0;
 }
 
-function stringArrayRecordValue(record: Readonly<Record<string, unknown>>, key: string): readonly string[] {
-  const value = record[key];
-  if (!Array.isArray(value)) return [];
+function arrayRecordValue(
+  record: Readonly<Record<string, unknown>>,
+  ...keys: readonly string[]
+): readonly unknown[] {
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
+function stringArrayRecordValue(
+  record: Readonly<Record<string, unknown>>,
+  ...keys: readonly string[]
+): readonly string[] {
+  const value = arrayRecordValue(record, ...keys);
+  if (value.length === 0) return [];
   return uniqueStrings(value.filter((item): item is string => typeof item === 'string' && item.length > 0));
 }
 
@@ -5693,8 +5773,8 @@ function errorResult(output: string): ExecutableToolResult {
   return { isError: true, output };
 }
 
-function escapeXml(input: string): string {
-  return input
+function escapeXml(input: unknown): string {
+  return String(input ?? '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
