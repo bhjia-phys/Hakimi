@@ -22,6 +22,7 @@ export type AitpCuratedRagMomentReason =
   | 'source_backtrace_suggestions';
 
 const MAX_QUERY_CHARS = 640;
+const DOMAIN_HINT_LIMIT = 14;
 
 const REASON_KEYWORDS: readonly {
   readonly reason: AitpCuratedRagMomentReason;
@@ -178,14 +179,57 @@ function buildQuery(
   promptText: string,
   reasons: readonly AitpCuratedRagMomentReason[],
 ): string {
+  const domainHints = curatedRagDomainHints(input, promptText, reasons);
   const parts = [
     `prompt: ${promptText}`,
     `topic: ${input.workFrame.topic}`,
     `goal: ${input.workFrame.goal}`,
     reasons.length === 0 ? undefined : `rag_use: ${reasons.join(', ')}`,
+    domainHints.length === 0 ? undefined : `physics_hints: ${domainHints.join(', ')}`,
     firstNonEmpty(input.aitp?.contextLines),
   ].filter((part): part is string => part !== undefined && part.trim().length > 0);
   return compact(parts.join(' | '), MAX_QUERY_CHARS);
+}
+
+function curatedRagDomainHints(
+  input: AitpCuratedRagMomentInput,
+  promptText: string,
+  reasons: readonly AitpCuratedRagMomentReason[],
+): readonly string[] {
+  const text = normalize([
+    promptText,
+    input.workFrame.domain,
+    input.workFrame.topic,
+    input.workFrame.goal,
+    ...(input.workFrame.activeObjectIds ?? []),
+    ...(input.workFrame.assumptionIds ?? []),
+    ...(input.workFrame.conventionIds ?? []),
+  ].join(' '));
+  const hints: string[] = [];
+  if (hasAny(text, ['survival', 'hitting', 'hit time', 'first passage', 'energy flux', 'current', 'absorb'])) {
+    hints.push('survival probability', 'hitting time', 'energy flux', 'absorption rate');
+  }
+  if (hasAny(text, ['normal mode', 'normal-mode', 'spectrum', 'spectra', 'qnm', 'quasinormal'])) {
+    hints.push('spectral diagnostic auxiliary');
+  }
+  if (reasons.includes('conceptual_scaffolding') || reasons.includes('method_selection')) {
+    hints.push(
+      'physics-object-discovery',
+      'open lecture notes',
+      'domain intuition',
+      'definitions regimes observables known limits',
+    );
+  }
+  if (hasAny(text, ['ads', 'anti de sitter', 'holography', 'holographic', 'bulk boundary'])) {
+    hints.push('ads-cft', 'holography', 'bulk-boundary', 'cutoff wall');
+  }
+  if (hasAny(text, ['massive matter', 'matter', 'particle', 'field', 'wavepacket', 'wave packet'])) {
+    hints.push('massive matter', 'dynamical degree of freedom', 'field wavepacket', 'particle motion');
+  }
+  if (hasAny(text, ['boundary', 'wall', 'cutoff', 'source', 'sink', 'bath', 'detector', 'measurement'])) {
+    hints.push('boundary condition', 'source sink bath detector', 'reachability hitting condition');
+  }
+  return uniqueStrings(hints).slice(0, DOMAIN_HINT_LIMIT);
 }
 
 function promptTextForDetection(
@@ -219,5 +263,9 @@ function hasAny(text: string, needles: readonly string[]): boolean {
 function uniqueReasons(
   values: readonly AitpCuratedRagMomentReason[],
 ): readonly AitpCuratedRagMomentReason[] {
+  return values.filter((value, index, array) => array.indexOf(value) === index);
+}
+
+function uniqueStrings(values: readonly string[]): readonly string[] {
   return values.filter((value, index, array) => array.indexOf(value) === index);
 }

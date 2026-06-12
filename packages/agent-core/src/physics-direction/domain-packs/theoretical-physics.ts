@@ -2,6 +2,111 @@ import type { PhysicsLens } from '../types';
 
 export const THEORETICAL_PHYSICS_GENERAL_LENSES = [
   {
+    id: 'lecture_guided_object_discovery',
+    title: 'Lecture-guided object discovery lens',
+    domains: ['theoretical-physics', 'theoretical-physics/general'],
+    summary:
+      'Use curated open lecture and review orientation to improve physical object discovery while keeping retrieved chunks heuristic until AITP promotion.',
+    requiredObjectKinds: ['dynamical_degree', 'observable'],
+    requiredRelationKinds: ['model_layer'],
+    supportingContextTags: [
+      'theoretical_physics',
+      'new_topic',
+      'lecture',
+      'review',
+      'background',
+      'conceptual_scaffolding',
+      'method_selection',
+      'source_backtrace',
+    ],
+    caveats: [
+      'A curated lecture chunk is an orientation pointer, not evidence or validation.',
+      'Do not use lecture orientation as claim support unless the exact passage is promoted through AITP source, reference, evidence, validation, and trust-preflight records.',
+    ],
+    guidingQuestions: [
+      'Which open lecture or review shelf is most likely to clarify the relevant degrees of freedom, regimes, and observables?',
+      'What object inventory does the lecture orientation suggest: degrees of freedom, controls, boundary/source/sink terms, time scales, currents, and known limits?',
+      'Which retrieved chunks are only conceptual scaffolding, and which exact sources would need source-asset/reference/evidence promotion before claim support?',
+      'What is the danger of importing a familiar auxiliary diagnostic, such as a spectrum or normal mode, instead of the user-targeted physical object?',
+    ],
+    requiredChecks: [
+      {
+        id: 'check.theoretical-physics.lecture-guided-object-discovery',
+        kind: 'assumption_scope',
+        severity: 'warning',
+        description:
+          'Use lecture orientation to improve object discovery, but keep the retrieved chunks heuristic until promoted through AITP records.',
+      },
+      {
+        id: 'check.theoretical-physics.lecture-source-boundary',
+        kind: 'convention',
+        severity: 'blocking',
+        description:
+          'Do not treat curated lecture retrieval as evidence, validation, final-gate satisfaction, or claim-trust authority.',
+      },
+    ],
+    suggestedActionBindings: [
+      {
+        id: 'binding.theoretical-physics.apply-lecture-guided-object-discovery-lens',
+        actionId: 'physics.apply_direction_lens',
+        domainId: 'theoretical-physics/general',
+        workflowId: 'workflow.theoretical-physics.general-research',
+        lensId: 'lecture_guided_object_discovery',
+        checkId: 'check.theoretical-physics.lecture-guided-object-discovery',
+        priority: 'high',
+        reason:
+          'New theory topics benefit from curated lecture orientation before choosing objects and observables.',
+      },
+      {
+        id: 'binding.theoretical-physics.search-curated-lecture-orientation',
+        actionId: 'source.search_literature',
+        domainId: 'theoretical-physics/general',
+        workflowId: 'workflow.theoretical-physics.general-research',
+        lensId: 'lecture_guided_object_discovery',
+        checkId: 'check.theoretical-physics.lecture-source-boundary',
+        priority: 'high',
+        params: {
+          preferredSources: [
+            'curated_open_lecture_notes',
+            'review_style_sources',
+            'source_backtrace_candidates',
+          ],
+          forbiddenUses: [
+            'evidence_support',
+            'validation_result',
+            'claim_trust_update',
+          ],
+        },
+        reason:
+          'Use curated lecture orientation to find definitions and regimes, then promote exact sources only when claim support is needed.',
+      },
+      {
+        id: 'binding.theoretical-physics-check-lecture-source-boundary',
+        actionId: 'validate.check_convention',
+        domainId: 'theoretical-physics/general',
+        workflowId: 'workflow.theoretical-physics.general-research',
+        lensId: 'lecture_guided_object_discovery',
+        checkId: 'check.theoretical-physics.lecture-source-boundary',
+        priority: 'blocking',
+        reason:
+          'Curated RAG orientation must stay separate from evidence and trust changes.',
+      },
+    ],
+    suggestedActions: [
+      'physics.apply_direction_lens',
+      'source.search_literature',
+      'source.extract_definition',
+      'validate.check_convention',
+    ],
+    expansionHandles: [
+      {
+        kind: 'source',
+        ref: 'aitp:curated_rag_corpus:aitp.curated.heuristic_background.v1',
+        title: 'AITP curated lecture orientation shelf',
+      },
+    ],
+  },
+  {
     id: 'research_object_discovery',
     title: 'Research object discovery lens',
     domains: ['theoretical-physics', 'theoretical-physics/general'],

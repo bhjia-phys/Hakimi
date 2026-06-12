@@ -23,6 +23,8 @@ const BUILTIN_PATH_PREFIX = 'builtin:hakimi/theoretical-physics-defaults';
 const PROCESS_CAPSULE_IDS = {
   objectDiscovery:
     'workflow.theoretical-physics.research-object-discovery',
+  lectureGuidedObjectDiscovery:
+    'workflow.theoretical-physics.lecture-guided-object-discovery',
   boundarySinkMotion:
     'workflow.theoretical-physics.boundary-sink-motion-inventory',
   scopeEvidence:
@@ -49,6 +51,7 @@ export const BUILTIN_THEORETICAL_PHYSICS_DOMAIN_PROFILES = [
       ],
       lenses: [
         'research_object_discovery',
+        'lecture_guided_object_discovery',
         'boundary_sink_motion_inventory',
         'lens.evidence-before-validation',
         'lens.dimension-convention-dependency',
@@ -56,6 +59,7 @@ export const BUILTIN_THEORETICAL_PHYSICS_DOMAIN_PROFILES = [
       workflows: [GENERIC_THEORETICAL_PHYSICS_GENERAL_WORKFLOW_ID],
       capsuleRefs: [
         PROCESS_CAPSULE_IDS.objectDiscovery,
+        PROCESS_CAPSULE_IDS.lectureGuidedObjectDiscovery,
         PROCESS_CAPSULE_IDS.boundarySinkMotion,
         PROCESS_CAPSULE_IDS.scopeEvidence,
         PROCESS_CAPSULE_IDS.unsourcedOverclaim,
@@ -96,6 +100,20 @@ export const BUILTIN_THEORETICAL_PHYSICS_WORKFLOW_RECIPES = [
           'research_object_discovery',
           'check.theoretical-physics.research-object-inventory',
           'blocking',
+        ),
+        lensBinding(
+          'apply-lecture-guided-object-discovery-lens',
+          'physics.apply_direction_lens',
+          'lecture_guided_object_discovery',
+          'check.theoretical-physics.lecture-guided-object-discovery',
+          'high',
+        ),
+        lensBinding(
+          'search-curated-lecture-orientation',
+          'source.search_literature',
+          'lecture_guided_object_discovery',
+          'check.theoretical-physics.lecture-source-boundary',
+          'high',
         ),
         lensBinding(
           'extract-object-inventory',
@@ -164,6 +182,7 @@ export const BUILTIN_THEORETICAL_PHYSICS_WORKFLOW_RECIPES = [
       ],
       requiredCapsules: [
         PROCESS_CAPSULE_IDS.objectDiscovery,
+        PROCESS_CAPSULE_IDS.lectureGuidedObjectDiscovery,
         PROCESS_CAPSULE_IDS.boundarySinkMotion,
         PROCESS_CAPSULE_IDS.scopeEvidence,
         PROCESS_CAPSULE_IDS.unsourcedOverclaim,
@@ -306,6 +325,90 @@ export const BUILTIN_THEORETICAL_PHYSICS_CAPSULES = [
       'with a familiar object such as a spectrum, normal mode, code path, or formal',
       'operator until it has been marked as primary or secondary.',
     ].join('\n'),
+  },
+  {
+    metadata: {
+      id: PROCESS_CAPSULE_IDS.lectureGuidedObjectDiscovery,
+      kind: 'WorkflowRecipe',
+      domain: GENERIC_THEORETICAL_PHYSICS_DOMAIN,
+      title: 'Lecture-guided object discovery',
+      reliability: 'checked',
+      symbols: [],
+      assumes: [],
+      dependsOn: [PROCESS_CAPSULE_IDS.objectDiscovery],
+      sourceRefs: [BUILTIN_SOURCE_REF, 'aitp:curated_rag_corpus:aitp.curated.heuristic_background.v1'],
+      graphRefs: [
+        {
+          kind: 'WorkflowRecipe',
+          id: PROCESS_CAPSULE_IDS.lectureGuidedObjectDiscovery,
+          relation: 'defines',
+        },
+      ],
+      expansionHandles: [
+        {
+          kind: 'source',
+          ref: 'aitp:curated_rag_corpus:aitp.curated.heuristic_background.v1',
+          title: 'AITP curated lecture orientation shelf',
+        },
+      ],
+      requiredChecks: [
+        {
+          id: 'check.theoretical-physics.lecture-guided-object-discovery',
+          kind: 'assumption_scope',
+          severity: 'warning',
+          description:
+            'Use curated lecture orientation to improve object discovery, but keep retrieved chunks heuristic until promoted through AITP source/evidence/validation records.',
+        },
+        {
+          id: 'check.theoretical-physics.lecture-source-boundary',
+          kind: 'convention',
+          severity: 'blocking',
+          description:
+            'Do not cite or trust a curated lecture chunk as claim support without explicit source asset, reference location, evidence, validation, and trust-preflight records.',
+        },
+      ],
+      actionAffordances: [
+        {
+          actionId: 'physics.apply_direction_lens',
+          intent: 'recommended',
+          reason:
+            'Use lecture-guided object discovery when a new topic needs physical intuition before derivation.',
+        },
+        {
+          actionId: 'source.search_literature',
+          intent: 'recommended',
+          reason:
+            'Search AITP curated lecture orientation for definitions, regimes, observables, and known-limit hints.',
+        },
+        {
+          actionId: 'validate.check_convention',
+          intent: 'required',
+          reason:
+            'Keep retrieved lecture orientation separate from evidence and trust updates.',
+        },
+      ],
+      scope: {
+        regimes: ['new theoretical physics topic', 'conceptual scaffolding', 'method selection'],
+        assumptions: [
+          'curated RAG retrieval is heuristic context only',
+          'lecture notes improve object discovery but do not validate claims',
+        ],
+        excludes: ['using retrieved lecture chunks as direct evidence support'],
+      },
+      allowCrossDomain: true,
+    },
+    path: `${BUILTIN_PATH_PREFIX}/capsule-lecture-guided-object-discovery.md`,
+    source: 'builtin',
+    body: [
+      'For a new theoretical-physics topic, use high-quality open lecture or review',
+      'orientation to ask better object-discovery questions before deriving. The',
+      'orientation target is not a fact to copy; it should reveal which degrees of',
+      'freedom, controls, boundary/source/sink terms, observables, known limits, and',
+      'failure modes deserve inspection. Retrieved lecture chunks remain',
+      'heuristic_context only. If a chunk is needed for claim support, inspect the',
+      'exact chunk identity and promote the underlying source through AITP',
+      'source_asset, reference_location, evidence, validation, and trust preflight.',
+    ].join(' '),
   },
   {
     metadata: {

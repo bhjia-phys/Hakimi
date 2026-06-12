@@ -231,6 +231,47 @@ describe('AITP process graph slice adapter', () => {
     });
     expect(moment?.query).toContain('fqhe-source-backtrace');
     expect(moment?.query).toContain('rag_use:');
+    expect(moment?.query).toContain('physics_hints:');
+    expect(moment?.query).toContain('physics-object-discovery');
+    expect(moment?.query).toContain('open lecture notes');
+  });
+
+  it('adds physics-object hints to curated RAG queries for boundary massive matter topics', () => {
+    const moment = detectAitpCuratedRagMoment({
+      prompt: [
+        {
+          type: 'text',
+          text:
+            'Explain the right setup for massive matter in AdS with a cutoff wall, random detector bath, survival, hitting time, and energy flux.',
+        },
+      ],
+      workFrame: {
+        id: 'frame.ads-motion',
+        domain: 'theoretical-physics/general',
+        topic: 'ads-random-boundary-massive-matter',
+        goal: 'Find the key physical objects before using normal modes as diagnostics.',
+        trustState: 'exploratory',
+        activeObjectIds: [],
+        assumptionIds: [],
+        conventionIds: [],
+        sourceRefs: [],
+        openObligationIds: [],
+      },
+    });
+
+    expect(moment).toMatchObject({
+      resultRole: 'heuristic_context',
+      readSurfaceEffect: 'orientation_only',
+      reasons: expect.arrayContaining(['conceptual_scaffolding']),
+    });
+    expect(moment?.query).toContain('physics_hints:');
+    expect(moment?.query).toContain('ads-cft');
+    expect(moment?.query).toContain('massive matter');
+    expect(moment?.query).toContain('cutoff wall');
+    expect(moment?.query).toContain('survival probability');
+    expect(moment?.query).toContain('hitting time');
+    expect(moment?.query).toContain('energy flux');
+    expect(moment?.query).toContain('spectral diagnostic auxiliary');
   });
 
   it('does not detect curated RAG moments for plain implementation prompts', () => {

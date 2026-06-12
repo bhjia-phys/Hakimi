@@ -75,10 +75,12 @@ describe('Session domain profiles and workflow recipes', () => {
       'failure.theoretical-physics.unsourced-or-unscoped-overclaim',
       'workflow.theoretical-physics.boundary-sink-motion-inventory',
       'workflow.theoretical-physics.formula-validation-contract',
+      'workflow.theoretical-physics.lecture-guided-object-discovery',
       'workflow.theoretical-physics.research-object-discovery',
       'workflow.theoretical-physics.scope-evidence-validation-ladder',
     ]);
     expect(pack.profiles[0]?.lenses).toContain('research_object_discovery');
+    expect(pack.profiles[0]?.lenses).toContain('lecture_guided_object_discovery');
     expect(pack.profiles[0]?.lenses).toContain('boundary_sink_motion_inventory');
     expect(pack.actionBindings.map((binding) => binding.actionId)).toEqual(
       expect.arrayContaining([
@@ -94,6 +96,13 @@ describe('Session domain profiles and workflow recipes', () => {
       expect.objectContaining({
         lensId: 'research_object_discovery',
         checkId: 'check.theoretical-physics.research-object-inventory',
+      }),
+    );
+    expect(pack.actionBindings).toContainEqual(
+      expect.objectContaining({
+        lensId: 'lecture_guided_object_discovery',
+        checkId: 'check.theoretical-physics.lecture-source-boundary',
+        priority: 'high',
       }),
     );
     expect(pack.actionBindings).toContainEqual(
@@ -127,6 +136,18 @@ describe('Session domain profiles and workflow recipes', () => {
       expect.objectContaining({
         id: 'workflow.theoretical-physics.boundary-sink-motion-inventory',
         bodyPreview: expect.stringContaining('layer-by-layer reachability verdict'),
+      }),
+    );
+    expect(pack.physics.capsules).toContainEqual(
+      expect.objectContaining({
+        id: 'workflow.theoretical-physics.lecture-guided-object-discovery',
+        bodyPreview: expect.stringContaining('heuristic_context only'),
+        requiredChecks: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'check.theoretical-physics.lecture-source-boundary',
+            severity: 'blocking',
+          }),
+        ]),
       }),
     );
     expect(pack.domainPack).toMatchObject({

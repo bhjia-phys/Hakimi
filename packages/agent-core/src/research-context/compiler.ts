@@ -62,7 +62,7 @@ const DEFAULT_LEDGER_STATUSES: readonly ResearchLedgerEventStatus[] = [
 
 const DEFAULT_MAX_CAPSULES = 12;
 const DEFAULT_MAX_LEDGER_PROPOSALS = 12;
-const DEFAULT_MAX_ACTION_BINDINGS = 40;
+const DEFAULT_MAX_ACTION_BINDINGS = 48;
 const DEFAULT_MAX_CURATED_RAG_RESULTS = 3;
 
 export function compileResearchContextPack(
