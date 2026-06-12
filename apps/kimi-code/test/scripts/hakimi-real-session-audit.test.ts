@@ -10,6 +10,7 @@ import {
   evaluateExpectations,
   parseCli,
   renderMarkdown,
+  scoreResearchEvalCase,
 } from '../../../../scripts/hakimi-real-session-audit.mjs';
 
 describe('hakimi real session audit harness', () => {
@@ -203,6 +204,8 @@ describe('hakimi real session audit harness', () => {
       '--expect-no-post-workframe-missing-workframe',
       '--expect-aitp-write-operation',
       'startResearchRun',
+      '--expect-aitp-mcp-operation',
+      'startResearchRun',
       '--expect-aitp-research-run-topic',
       'fixture-topic',
       '--expect-fresh-aitp-research-run-topic',
@@ -214,6 +217,7 @@ describe('hakimi real session audit harness', () => {
     expect(parsed.options.expectReasoningLedTools).toEqual(['ResearchAction/compile_context_pack']);
     expect(parsed.options.expectNoPostWorkframeMissingWorkframe).toBe(true);
     expect(parsed.options.expectAitpWriteOperations).toEqual(['startResearchRun']);
+    expect(parsed.options.expectAitpMcpOperations).toEqual(['startResearchRun']);
     expect(parsed.options.expectAitpResearchRunTopics).toEqual(['fixture-topic']);
     expect(parsed.options.expectFreshAitpResearchRunTopics).toEqual(['fixture-topic']);
     expect(classifyReasoningCues('compile_context_pack failed because WorkFrame is missing')).toEqual(
@@ -295,6 +299,34 @@ describe('hakimi real session audit harness', () => {
           }),
           outputSummary: '<aitp_write operation="startResearchRun" topic_id="fixture-topic" run_id="research-run-fixture" />',
         },
+        {
+          type: 'tool_lifecycle.completed',
+          turnId: 0,
+          step: 4,
+          toolCallId: 'tool_start_output_xml',
+          toolName: 'ResearchAction',
+          status: 'passed',
+          isError: false,
+          argsSummary: '',
+          outputSummary: '<aitp_write_bridge operation="startResearchRun" kind="research_run" ok="true"><research_run run_id="research-run-output-xml" topic_id="fixture-topic" status="active" phase="planning" terminal_answer_state="" /></aitp_write_bridge>',
+        },
+        {
+          type: 'tool_lifecycle.completed',
+          turnId: 0,
+          step: 5,
+          toolCallId: 'tool_mcp_start',
+          toolName: 'mcp__aitp__aitp_v5_start_research_run',
+          status: 'passed',
+          isError: false,
+          argsSummary: JSON.stringify({
+            topic_id: 'fixture-topic',
+          }),
+          outputSummary: JSON.stringify({
+            ok: true,
+            topic_id: 'fixture-topic',
+            run_id: 'research-run-mcp-fixture',
+          }),
+        },
       ].map((entry) => JSON.stringify(entry)).join('\n'),
       'utf8',
     );
@@ -305,6 +337,7 @@ describe('hakimi real session audit harness', () => {
       options: {
         expectToolActions: ['ResearchAction/execute_aitp_write_bridge'],
         expectAitpWriteOperations: ['startResearchRun'],
+        expectAitpMcpOperations: ['startResearchRun'],
         expectAitpResearchRunTopics: ['fixture-topic'],
         expectNoPostWorkframeMissingWorkframe: true,
         expectWorkframeOpened: true,
@@ -315,7 +348,14 @@ describe('hakimi real session audit harness', () => {
     expect(audit.research.aitpWriteBridgeCalls).toMatchObject([
       { operation: 'recordResearchRunEvent', topicId: 'fixture-topic', ok: false },
       { operation: 'startResearchRun', topicId: 'fixture-topic', runId: 'research-run-fixture', ok: true },
+      { operation: 'startResearchRun', topicId: 'fixture-topic', runId: 'research-run-output-xml', ok: true },
     ]);
+    expect(audit.research.aitpMcpCalls).toContainEqual(expect.objectContaining({
+      operation: 'startResearchRun',
+      topicId: 'fixture-topic',
+      runId: 'research-run-mcp-fixture',
+      ok: true,
+    }));
     expect(audit.filesystem.aitpResearchRunDetails).toContainEqual(expect.objectContaining({
       kind: 'research_run',
       topicId: 'fixture-topic',
@@ -356,4 +396,111 @@ describe('hakimi real session audit harness', () => {
     expect(env.HAKIMI_HOME).toBe('/tmp/hakimi-home');
     expect(env.KIMI_CODE_EXPERIMENTAL_REASONING_AUDIT).toBe('1');
   });
+
+  it('scores the AdS massive-matter regression without exposing private reasoning', () => {
+    const audit: any = {
+      assistantTexts: [
+        [
+          'For finite energy massive timelike geodesic motion in global AdS, the particle does not reach the conformal boundary.',
+          'So absorption should be modeled with a finite cutoff wall, a massive KG wavepacket tail with an absorbing boundary condition, or a kinetic distribution with a boundary sink.',
+          'The random detector switching has off=reflecting and on=bath or measurement channel removing energy flux.',
+          'The main observables are trajectory reflection map, survival probability, hitting-time distribution, particle number, and energy flux.',
+          'Normal modes are only an auxiliary spectral diagnostic, not the main question.',
+        ].join(' '),
+      ],
+      research: {
+        aitpWriteBridgeCalls: [],
+        aitpMcpCalls: [],
+      },
+      toolCalls: [
+        passedAction('open_work_frame'),
+        passedAction('compile_context_pack'),
+        passedAction('inspect_aitp_runtime_payload_profiles'),
+        passedAction('draft_aitp_write_bridge_call'),
+      ],
+      run: { streamJsonMessages: [] },
+    };
+
+    const result = scoreResearchEvalCase(audit, {
+      id: 'eval.theoretical-physics.random-open-boundary-ads-massive-matter',
+      title: 'Random open AdS boundary massive-matter regression',
+      path: 'fixture',
+      forbiddenClaims: ['massive particle automatically hits the AdS conformal boundary'],
+      rubricItems: undefined,
+    });
+
+    expect(result.score).toBe(95);
+    expect(result.items).toContainEqual(expect.objectContaining({
+      id: 'hakimi-aitp-bridge-execute',
+      awarded: 0,
+      evidence: 'missing AITP write bridge operations: startResearchRun',
+    }));
+    expect(result.forbiddenMatches).toEqual([]);
+  });
+
+  it('scores full marks only when the AdS regression includes Hakimi AITP bridge execution', () => {
+    const audit: any = {
+      assistantTexts: [
+        [
+          'For finite energy massive timelike geodesic motion in global AdS, the particle does not reach the conformal boundary.',
+          'So absorption should be modeled with a finite cutoff wall, a massive KG wavepacket tail with an absorbing boundary condition, or a kinetic distribution with a boundary sink.',
+          'The random detector switching has off=reflecting and on=bath or measurement channel removing energy flux.',
+          'The main observables are trajectory reflection map, survival probability, hitting-time distribution, particle number, and energy flux.',
+          'Normal modes are only an auxiliary spectral diagnostic, not the main question.',
+        ].join(' '),
+      ],
+      research: {
+        aitpWriteBridgeCalls: [{ operation: 'startResearchRun', ok: true }],
+        aitpMcpCalls: [],
+      },
+      toolCalls: [
+        passedAction('open_work_frame'),
+        passedAction('compile_context_pack'),
+        passedAction('inspect_aitp_runtime_payload_profiles'),
+        passedAction('draft_aitp_write_bridge_call'),
+      ],
+      run: { streamJsonMessages: [] },
+    };
+
+    const result = scoreResearchEvalCase(audit, {
+      id: 'eval.theoretical-physics.random-open-boundary-ads-massive-matter',
+      title: 'Random open AdS boundary massive-matter regression',
+      path: 'fixture',
+      forbiddenClaims: ['massive particle automatically hits the AdS conformal boundary'],
+      rubricItems: undefined,
+    });
+
+    expect(result.score).toBe(100);
+    expect(result.forbiddenMatches).toEqual([]);
+  });
+
+  it('flags forbidden claims in the AdS massive-matter regression', () => {
+    const audit: any = {
+      assistantTexts: ['The massive particle automatically hits the AdS conformal boundary.'],
+      toolCalls: [],
+      run: { streamJsonMessages: [] },
+    };
+
+    const result = scoreResearchEvalCase(audit, {
+      id: 'eval.theoretical-physics.random-open-boundary-ads-massive-matter',
+      title: 'Random open AdS boundary massive-matter regression',
+      path: 'fixture',
+      forbiddenClaims: ['massive particle automatically hits the AdS conformal boundary'],
+      rubricItems: undefined,
+    });
+
+    expect(result.forbiddenMatches).toEqual([
+      { claim: 'massive particle automatically hits the AdS conformal boundary', matched: true },
+    ]);
+  });
 });
+
+function passedAction(action: string): any {
+  return {
+    toolName: 'ResearchAction',
+    action,
+    status: 'passed',
+    isError: false,
+    outputSummary: '',
+  };
+}

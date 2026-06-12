@@ -54,8 +54,10 @@ function parseCli(args) {
       expectReasoningCues: [],
       expectReasoningLedTools: [],
       expectAitpWriteOperations: [],
+      expectAitpMcpOperations: [],
       expectAitpResearchRunTopics: [],
       expectFreshAitpResearchRunTopics: [],
+      evalCasePaths: [],
       expectNoPostWorkframeMissingWorkframe: false,
     },
   };
@@ -104,6 +106,12 @@ function parseCli(args) {
       case '--json':
         result.options.json = true;
         break;
+      case '--eval-case':
+        result.options.evalCasePaths.push(requireValue(args, ++i, arg));
+        break;
+      case '--min-eval-score':
+        result.options.minEvalScore = Number(requireValue(args, ++i, arg));
+        break;
       case '--expect-tool':
         result.options.expectTools.push(requireValue(args, ++i, arg));
         break;
@@ -145,6 +153,9 @@ function parseCli(args) {
         break;
       case '--expect-aitp-write-operation':
         result.options.expectAitpWriteOperations.push(requireValue(args, ++i, arg));
+        break;
+      case '--expect-aitp-mcp-operation':
+        result.options.expectAitpMcpOperations.push(requireValue(args, ++i, arg));
         break;
       case '--expect-aitp-research-run-topic':
         result.options.expectAitpResearchRunTopics.push(requireValue(args, ++i, arg));
@@ -222,6 +233,8 @@ Checks:
   --expect-autoresearch-run      Require at least one AITP research_run record
   --expect-aitp-write-operation <operation>
                                  Require a successful execute_aitp_write_bridge operation
+  --expect-aitp-mcp-operation <operation>
+                                 Require a successful direct AITP MCP operation
   --expect-aitp-research-run-topic <topic>
                                  Require an AITP research_run record for the topic
   --expect-fresh-aitp-research-run-topic <topic>
@@ -231,10 +244,13 @@ Checks:
 Output:
   --out <file>                   Write report to file (.json for JSON, otherwise Markdown)
   --json                         Print JSON instead of Markdown
+  --eval-case <file>             Score visible answer/tool behavior against a file-backed research eval case
+  --min-eval-score <n>           Passing threshold for eval-case score, default: 80
 `);
 }
 
 async function runAndAnalyze(options) {
+  options = await hydrateEvalCaseOptions(options);
   const home = resolveHome(options.home);
   const workdir = resolveRequiredPath(options.workdir, '--workdir');
   const prompt = await resolvePrompt(options);
@@ -270,6 +286,7 @@ async function runAndAnalyze(options) {
 }
 
 async function analyzeOnly(options) {
+  options = await hydrateEvalCaseOptions(options);
   const home = resolveHome(options.home);
   const session = await resolveSessionLocation({ home, workdir: options.workdir, sessionId: options.session, sessionDir: options.sessionDir });
   return analyzeSession({ home, session, options });
@@ -427,6 +444,7 @@ function createEmptyAudit({ home, session, state, workdir }) {
       researchActionResults: [],
       ledgerWrites: [],
       aitpWriteBridgeCalls: [],
+      aitpMcpCalls: [],
       autoresearchEvents: [],
     },
     failures: [],
@@ -436,6 +454,7 @@ function createEmptyAudit({ home, session, state, workdir }) {
       aitpResearchRuns: [],
       aitpResearchRunDetails: [],
     },
+    evalCases: [],
     expectations: [],
     _startedToolArgs: new Map(),
     _reasoningAuditPartUuids: new Set(),
@@ -629,6 +648,9 @@ function scanToolLifecycle(audit, agentId, entry) {
   if (toolName === 'ResearchLedger' && entry.type === 'tool_lifecycle.completed') {
     scanResearchLedgerCompletion(audit, args, outputSummary, entry);
   }
+  if (entry.type === 'tool_lifecycle.completed' && toolName.startsWith('mcp__aitp__')) {
+    scanAitpMcpCompletion(audit, toolName, args, outputSummary, entry);
+  }
 }
 
 function scanResearchActionCompletion(audit, args, outputSummary, entry) {
@@ -648,7 +670,7 @@ function scanResearchActionCompletion(audit, args, outputSummary, entry) {
       output: truncate(redactSecrets(outputSummary ?? '')),
     });
   }
-  if (action === 'execute_aitp_write_bridge') {
+  if (action === 'execute_aitp_write_bridge' || outputSummary?.includes('<aitp_write_bridge ') === true) {
     const bridge = extractAitpBridgeMetadata(args, outputSummary);
     audit.research.aitpWriteBridgeCalls.push({
       operation: bridge.operation,
@@ -674,6 +696,21 @@ function scanResearchLedgerCompletion(audit, args, outputSummary, entry) {
       path: matchXmlTag(outputSummary ?? '', 'path'),
     });
   }
+}
+
+function scanAitpMcpCompletion(audit, toolName, args, outputSummary, entry) {
+  const operation = aitpMcpOperationName(toolName);
+  const ok = entry.status === 'passed' && entry.isError !== true;
+  audit.research.aitpMcpCalls.push({
+    toolName,
+    operation,
+    topicId: firstString(args?.topic_id, args?.topicId, matchJsonField(outputSummary ?? '', 'topic_id')),
+    runId: firstString(args?.run_id, args?.runId, matchJsonField(outputSummary ?? '', 'run_id')),
+    status: stringOrUndefined(entry.status),
+    isError: entry.isError === true,
+    ok,
+    output: truncate(redactSecrets(outputSummary ?? '')),
+  });
 }
 
 function scanLoopEvent(audit, agentId, event) {
@@ -1111,6 +1148,16 @@ function evaluateExpectations(audit, options) {
         : `bridge calls found: ${audit.research.aitpWriteBridgeCalls.map(formatAitpBridgeCall).join(', ') || '(none)'}`,
     });
   }
+  for (const operation of options.expectAitpMcpOperations ?? []) {
+    const successful = audit.research.aitpMcpCalls.filter((call) => call.ok && call.operation === operation);
+    expectations.push({
+      name: `aitp-mcp-operation:${operation}`,
+      pass: successful.length > 0,
+      detail: successful.length > 0
+        ? `${successful.length} successful direct AITP MCP call(s)`
+        : `AITP MCP calls found: ${audit.research.aitpMcpCalls.map(formatAitpMcpCall).join(', ') || '(none)'}`,
+    });
+  }
   for (const topic of options.expectAitpResearchRunTopics ?? []) {
     const matching = aitpResearchRunDetailsForTopic(audit, topic);
     expectations.push({
@@ -1146,6 +1193,22 @@ function evaluateExpectations(audit, options) {
       name: 'no-tool-errors',
       pass: failed.length === 0,
       detail: failed.length === 0 ? 'no failed tool lifecycle records' : `${failed.length} failed tool lifecycle record(s)`,
+    });
+  }
+  for (const evalCase of options.evalCases ?? []) {
+    const result = scoreResearchEvalCase(audit, evalCase);
+    audit.evalCases ??= [];
+    const existingIndex = audit.evalCases.findIndex((item) => item.id === result.id);
+    if (existingIndex >= 0) {
+      audit.evalCases[existingIndex] = result;
+    } else {
+      audit.evalCases.push(result);
+    }
+    const threshold = finitePositive(options.minEvalScore, evalCase.minScore ?? 80);
+    expectations.push({
+      name: `eval-case:${evalCase.id}`,
+      pass: result.score >= threshold && result.forbiddenMatches.length === 0,
+      detail: `score=${result.score}/${result.maxScore} threshold=${threshold}; forbidden=${result.forbiddenMatches.length}`,
     });
   }
   return expectations;
@@ -1190,6 +1253,11 @@ function formatAitpBridgeCall(call) {
   return `${target} status=${call.status ?? 'unknown'}${call.isError ? ' error=true' : ''}`;
 }
 
+function formatAitpMcpCall(call) {
+  const target = `${call.operation ?? call.toolName ?? 'unknown'}${call.topicId ? `:${call.topicId}` : ''}`;
+  return `${target} status=${call.status ?? 'unknown'}${call.isError ? ' error=true' : ''}`;
+}
+
 function aitpResearchRunDetailsForTopic(audit, topic) {
   return (audit.filesystem.aitpResearchRunDetails ?? [])
     .filter(isAitpResearchRunDetail)
@@ -1217,6 +1285,307 @@ function formatTopicCounts(counts) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([topic, count]) => `${topic}=${count}`)
     .join(', ');
+}
+
+async function hydrateEvalCaseOptions(options) {
+  if (!Array.isArray(options.evalCasePaths) || options.evalCasePaths.length === 0) {
+    return options;
+  }
+  const evalCases = [];
+  for (const evalPath of options.evalCasePaths) {
+    evalCases.push(await readResearchEvalCase(evalPath));
+  }
+  return { ...options, evalCases };
+}
+
+async function readResearchEvalCase(path) {
+  const resolved = resolve(path);
+  const text = await readFile(resolved, 'utf8');
+  const frontMatter = parseMarkdownFrontMatterScalars(text);
+  const forbiddenClaims = frontMatter.forbidden_claims_list ?? parseYamlListBlock(text, 'forbidden_claims');
+  return {
+    id: stringOrUndefined(frontMatter.id) ?? resolved,
+    title: stringOrUndefined(frontMatter.title) ?? resolved,
+    task: stringOrUndefined(frontMatter.task) ?? '',
+    path: resolved,
+    forbiddenClaims,
+    rubricItems: rubricItemsForEvalCase(frontMatter, text),
+  };
+}
+
+function rubricItemsForEvalCase(frontMatter, text) {
+  const id = stringOrUndefined(frontMatter.id) ?? '';
+  if (id.includes('random-open-boundary-ads-massive-matter')) {
+    return adsMassiveMatterRubricItems();
+  }
+  return parseNumericRubricItems(text);
+}
+
+function adsMassiveMatterRubricItems() {
+  return [
+    {
+      id: 'massive-boundary-reachability',
+      points: 25,
+      summary: 'Finite-energy massive timelike motion does not generically reach the AdS conformal boundary; absorption needs cutoff wall, field tail, or kinetic sink.',
+      anyOf: [
+        ['finite energy', 'massive', 'not reach', 'boundary'],
+        ['timelike', 'geodesic', 'does not reach', 'conformal boundary'],
+        ['massive particle', 'finite cutoff', 'absorbing'],
+        ['wavepacket', 'tail', 'boundary condition'],
+        ['kinetic', 'distribution', 'boundary sink'],
+        ['有限能量', 'massive timelike', '不能到达', '共形边界'],
+        ['有限能量', '有质量', '不能到达', '共形边界'],
+        ['不能到达共形边界', 'cutoff wall'],
+        ['cutoff wall', '定义边界过程'],
+      ],
+    },
+    {
+      id: 'stochastic-boundary-process',
+      points: 20,
+      summary: 'Defines detector off as reflecting and detector on as bath/measurement coupling that removes subsystem flux.',
+      anyOf: [
+        ['detector', 'off', 'reflecting', 'on', 'bath'],
+        ['random', 'boundary', 'reflecting', 'absorbing'],
+        ['stochastic', 'switching', 'reflecting', 'absorbing'],
+        ['measurement', 'bath', 'energy flux'],
+        ['external', 'channel', 'removes', 'flux'],
+        ['随机边界', 'telegraph'],
+        ['反射', '吸收', '边界过程'],
+        ['r a', 'telegraph'],
+        ['measurement', 'bath', '通道'],
+      ],
+    },
+    {
+      id: 'massive-matter-observables',
+      points: 20,
+      summary: 'Centers massive matter dynamics and observables such as survival, hitting time, particle number, and energy flux.',
+      anyOf: [
+        ['trajectory', 'survival probability', 'hitting'],
+        ['wavepacket', 'survival', 'energy flux'],
+        ['kinetic', 'particle number', 'flux'],
+        ['reflection map', 'survival', 'absorption'],
+        ['massive matter', 'observable', 'survival'],
+        ['survival probability', 'hitting-time distribution', 'particle number', 'energy flux'],
+        ['观测量', 'survival probability', 'particle number'],
+        ['核心观测量', 'energy flux'],
+      ],
+    },
+    {
+      id: 'model-layer-separation',
+      points: 15,
+      summary: 'Separates classical cutoff-wall model, massive KG wavepacket, and optional kinetic ensemble model.',
+      anyOf: [
+        ['classical', 'cutoff', 'klein-gordon', 'kinetic'],
+        ['particle', 'wavepacket', 'kinetic'],
+        ['model layer', 'classical', 'field'],
+        ['massive kg', 'absorbing boundary', 'ensemble'],
+        ['粒子', 'cutoff wall', '场波包', 'kinetic ensemble'],
+        ['三个建模层次', 'cutoff wall', 'kinetic ensemble'],
+        ['区分粒子', '场波包', 'kinetic ensemble'],
+      ],
+    },
+    {
+      id: 'normal-modes-secondary',
+      points: 10,
+      summary: 'Treats normal modes or QNMs as auxiliary diagnostics, not the main problem.',
+      anyOf: [
+        ['normal mode', 'auxiliary'],
+        ['normal modes', 'diagnostic'],
+        ['qnm', 'diagnostic'],
+        ['spectrum', 'secondary'],
+        ['not the main question', 'normal'],
+        ['normal modes', '辅助谱诊断'],
+        ['qnms', '辅助谱诊断'],
+      ],
+    },
+    {
+      id: 'hakimi-aitp-runtime-use',
+      points: 5,
+      summary: 'Uses Hakimi runtime correctly: WorkFrame, ContextPack, AITP profile check, and draft AITP write/run planning.',
+      toolActions: [
+        'ResearchAction/open_work_frame',
+        'ResearchAction/compile_context_pack',
+        'ResearchAction/inspect_aitp_runtime_payload_profiles',
+        'ResearchAction/draft_aitp_write_bridge_call',
+      ],
+    },
+    {
+      id: 'hakimi-aitp-bridge-execute',
+      points: 5,
+      summary: 'Executes the Hakimi AITP write bridge for startResearchRun, rather than relying only on direct MCP fallback calls.',
+      aitpWriteOperations: ['startResearchRun'],
+    },
+  ];
+}
+
+function parseNumericRubricItems(text) {
+  const items = [];
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.match(/^\s*-\s*(\d+)\s*pts?:\s*(.+)$/i);
+    if (match === null) continue;
+    items.push({
+      id: `rubric-${items.length + 1}`,
+      points: Number(match[1]),
+      summary: match[2].trim(),
+      anyOf: [keywordsFromRubricLine(match[2])],
+    });
+  }
+  return items;
+}
+
+function keywordsFromRubricLine(line) {
+  return line
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length >= 5)
+    .slice(0, 5);
+}
+
+function scoreResearchEvalCase(audit, evalCase) {
+  const haystack = normalizedEvalHaystack(audit);
+  const rubricItems = evalCase.rubricItems ?? rubricItemsForEvalCase({ id: evalCase.id }, '');
+  const items = rubricItems.map((item) => scoreRubricItem(item, audit, haystack));
+  const score = items.reduce((sum, item) => sum + item.awarded, 0);
+  const maxScore = items.reduce((sum, item) => sum + item.points, 0);
+  const forbiddenMatches = (evalCase.forbiddenClaims ?? [])
+    .map((claim) => ({ claim, matched: forbiddenClaimMatched(claim, haystack) }))
+    .filter((item) => item.matched);
+  return {
+    id: evalCase.id,
+    title: evalCase.title,
+    path: evalCase.path,
+    score,
+    maxScore,
+    forbiddenMatches,
+    items,
+  };
+}
+
+function scoreRubricItem(item, audit, haystack) {
+  const toolActions = item.toolActions ?? [];
+  if (toolActions.length > 0) {
+    const missing = toolActions.filter((target) =>
+      !audit.toolCalls.some((call) => isSuccessfulToolCall(call) && matchesToolTarget(call, target))
+    );
+    return {
+      id: item.id,
+      points: item.points,
+      awarded: missing.length === 0 ? item.points : 0,
+      summary: item.summary,
+      matched: missing.length === 0,
+      evidence: missing.length === 0 ? `tool actions: ${toolActions.join(', ')}` : `missing tool actions: ${missing.join(', ')}`,
+    };
+  }
+  const aitpWriteOperations = item.aitpWriteOperations ?? [];
+  if (aitpWriteOperations.length > 0) {
+    const missing = aitpWriteOperations.filter((operation) =>
+      !(audit.research?.aitpWriteBridgeCalls ?? []).some((call) => call.ok && call.operation === operation)
+    );
+    return {
+      id: item.id,
+      points: item.points,
+      awarded: missing.length === 0 ? item.points : 0,
+      summary: item.summary,
+      matched: missing.length === 0,
+      evidence: missing.length === 0
+        ? `AITP write bridge operations: ${aitpWriteOperations.join(', ')}`
+        : `missing AITP write bridge operations: ${missing.join(', ')}`,
+    };
+  }
+  const aitpMcpOperations = item.aitpMcpOperations ?? [];
+  if (aitpMcpOperations.length > 0) {
+    const missing = aitpMcpOperations.filter((operation) =>
+      !(audit.research?.aitpMcpCalls ?? []).some((call) => call.ok && call.operation === operation)
+    );
+    return {
+      id: item.id,
+      points: item.points,
+      awarded: missing.length === 0 ? item.points : 0,
+      summary: item.summary,
+      matched: missing.length === 0,
+      evidence: missing.length === 0
+        ? `direct AITP MCP operations: ${aitpMcpOperations.join(', ')}`
+        : `missing direct AITP MCP operations: ${missing.join(', ')}`,
+    };
+  }
+  const matched = (item.anyOf ?? []).find((terms) => phraseSetMatches(terms, haystack));
+  return {
+    id: item.id,
+    points: item.points,
+    awarded: matched === undefined ? 0 : item.points,
+    summary: item.summary,
+    matched: matched !== undefined,
+    evidence: matched === undefined ? 'no keyword set matched' : `matched: ${matched.join(' + ')}`,
+  };
+}
+
+function normalizedEvalHaystack(audit) {
+  return normalizeEvalText([
+    ...audit.assistantTexts,
+    ...audit.toolCalls.map((call) => call.argsSummary),
+    ...audit.toolCalls.map((call) => call.outputSummary),
+    ...(audit.research?.aitpMcpCalls ?? []).map((call) => call.output),
+    ...(audit.run?.streamJsonMessages ?? []).map((message) => message.content),
+    audit.run?.stdoutPreview,
+  ].filter((value) => typeof value === 'string').join('\n'));
+}
+
+function phraseSetMatches(terms, haystack) {
+  return terms.every((term) => haystack.includes(normalizeEvalText(term)));
+}
+
+function forbiddenClaimMatched(claim, haystack) {
+  const normalized = normalizeEvalText(claim);
+  if (haystack.includes(normalized)) return true;
+  const signature = forbiddenClaimSignature(normalized);
+  return signature.length > 0 && phraseSetMatches(signature, haystack);
+}
+
+function forbiddenClaimSignature(normalizedClaim) {
+  if (normalizedClaim.includes('automatically hits')) {
+    return ['automatically hits', 'boundary'];
+  }
+  if (normalizedClaim.includes('normal modes are the primary')) {
+    return ['normal modes', 'primary'];
+  }
+  if (normalizedClaim.includes('literal destruction')) {
+    return ['literal destruction'];
+  }
+  return [];
+}
+
+function normalizeEvalText(text) {
+  return String(text ?? '')
+    .toLowerCase()
+    .replace(/[-_]/g, ' ')
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseYamlListBlock(text, key) {
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
+  const result = [];
+  let inBlock = false;
+  const keyPattern = new RegExp(`^${escapeRegExp(key)}:\\s*$`);
+  for (const line of lines) {
+    if (!inBlock) {
+      if (keyPattern.test(line.trim())) inBlock = true;
+      continue;
+    }
+    if (/^\S/.test(line) && !line.trim().startsWith('- ')) break;
+    const match = line.match(/^\s*-\s*(.+)$/);
+    if (match !== null) result.push(unquoteScalar(match[1].trim()));
+  }
+  return result;
+}
+
+function unquoteScalar(value) {
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1);
+  }
+  return value;
 }
 
 function parseRunWindow(run) {
@@ -1294,6 +1663,20 @@ function renderMarkdown(audit) {
     lines.push('');
   }
 
+  if (audit.evalCases.length > 0) {
+    lines.push(`## Eval Cases`);
+    for (const evalCase of audit.evalCases) {
+      lines.push(`- \`${evalCase.id}\`: ${evalCase.score}/${evalCase.maxScore} ${evalCase.title}`);
+      if (evalCase.forbiddenMatches.length > 0) {
+        lines.push(`  forbidden matches: ${evalCase.forbiddenMatches.map((item) => item.claim).join('; ')}`);
+      }
+      for (const item of evalCase.items) {
+        lines.push(`  - ${item.matched ? 'PASS' : 'FAIL'} ${item.id}: ${item.awarded}/${item.points} ${item.evidence}`);
+      }
+    }
+    lines.push('');
+  }
+
   lines.push(`## Tool Summary`);
   const tools = Object.entries(audit.toolSummary).sort(([a], [b]) => a.localeCompare(b));
   if (tools.length === 0) {
@@ -1313,7 +1696,10 @@ function renderMarkdown(audit) {
   lines.push(`- ResearchLedger writes: ${audit.research.ledgerWrites.length}`);
   const aitpBridgePassed = audit.research.aitpWriteBridgeCalls.filter((call) => call.ok).length;
   const aitpBridgeFailed = audit.research.aitpWriteBridgeCalls.filter((call) => !call.ok).length;
+  const aitpMcpPassed = audit.research.aitpMcpCalls.filter((call) => call.ok).length;
+  const aitpMcpFailed = audit.research.aitpMcpCalls.filter((call) => !call.ok).length;
   lines.push(`- AITP write bridge calls: ${audit.research.aitpWriteBridgeCalls.length} (passed ${aitpBridgePassed}, failed ${aitpBridgeFailed})`);
+  lines.push(`- AITP MCP calls: ${audit.research.aitpMcpCalls.length} (passed ${aitpMcpPassed}, failed ${aitpMcpFailed})`);
   lines.push(`- Hakimi ledger topics: ${audit.filesystem.hakimiLedgerTopics.map((topic) => `\`${topic}\``).join(', ') || '(none)'}`);
   lines.push(`- AITP topics: ${audit.filesystem.aitpTopics.map((topic) => `\`${topic}\``).join(', ') || '(none)'}`);
   lines.push(`- AITP research run files: ${audit.filesystem.aitpResearchRuns.length}`);
@@ -1327,6 +1713,17 @@ function renderMarkdown(audit) {
     for (const call of audit.research.aitpWriteBridgeCalls.slice(-20)) {
       lines.push(`- \`${call.operation ?? 'unknown'}\`${call.topicId ? ` topic=\`${call.topicId}\`` : ''}${call.runId ? ` run=\`${call.runId}\`` : ''} status=${call.status ?? 'unknown'}${call.isError ? ' error=true' : ''}`);
       if (call.payloadFields?.length > 0) lines.push(`  payload fields: ${call.payloadFields.join(', ')}`);
+      if (call.output) lines.push(`  output: ${singleLine(call.output).slice(0, 320)}`);
+    }
+  }
+  lines.push('');
+
+  lines.push(`## AITP MCP`);
+  if (audit.research.aitpMcpCalls.length === 0) {
+    lines.push('- No direct AITP MCP completions found.');
+  } else {
+    for (const call of audit.research.aitpMcpCalls.slice(-20)) {
+      lines.push(`- \`${call.operation ?? call.toolName}\`${call.topicId ? ` topic=\`${call.topicId}\`` : ''}${call.runId ? ` run=\`${call.runId}\`` : ''} status=${call.status ?? 'unknown'}${call.isError ? ' error=true' : ''}`);
       if (call.output) lines.push(`  output: ${singleLine(call.output).slice(0, 320)}`);
     }
   }
@@ -1740,6 +2137,18 @@ function matchXmlTag(text, tag) {
   return text.match(pattern)?.[1];
 }
 
+function matchJsonField(text, field) {
+  const pattern = new RegExp(`"${escapeRegExp(field)}"\\s*:\\s*"([^"]+)"`);
+  return text.match(pattern)?.[1];
+}
+
+function aitpMcpOperationName(toolName) {
+  return toolName
+    .replace(/^mcp__aitp__aitp_v5_/, '')
+    .replace(/^mcp__aitp__/, '')
+    .replace(/_([a-z])/g, (_, char) => char.toUpperCase());
+}
+
 function extractAitpBridgeMetadata(args, outputSummary) {
   const payload = args?.aitp_payload && typeof args.aitp_payload === 'object' ? args.aitp_payload : undefined;
   return {
@@ -1896,4 +2305,5 @@ export {
   parsePromptStreamJson,
   renderMarkdown,
   runAndAnalyze,
+  scoreResearchEvalCase,
 };

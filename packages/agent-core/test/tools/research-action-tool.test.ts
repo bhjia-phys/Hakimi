@@ -3449,6 +3449,142 @@ describe('ResearchActionTool', () => {
     expect(bridgeCalls).toEqual([]);
   });
 
+  it('drafts executable generic AITP research-run write calls without executing immediately', async () => {
+    const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
+    const agent = makeAgent([], {
+      aitpWriteBridge: {
+        async executeWrite(input) {
+          bridgeCalls.push(input);
+          return {
+            ok: true,
+            kind: 'research_run',
+            runId: 'research-run-qg',
+            topicId: 'qg-algebra',
+            objective: 'Audit whether the observer algebra source chain is sufficient.',
+            researchQuestion: 'Audit whether the observer algebra source chain is sufficient.',
+            operator: 'hakimi',
+            status: 'active',
+            phase: 'planning',
+            terminalAnswerState: '',
+            eventIds: [],
+            orientationOnly: true,
+            canUpdateKernelState: true,
+            canUpdateClaimTrust: false,
+            raw: {},
+          };
+        },
+      },
+    });
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    await execute(tool, {
+      action: 'open_work_frame',
+      domain: 'theoretical-physics/qg-algebra',
+      topic: 'qg-algebra',
+      goal: 'Audit whether the observer algebra source chain is sufficient.',
+      source_refs: ['aitp:claim:claim-observer', 'aitp:session:session-qg'],
+    });
+    const draft = await execute(tool, {
+      action: 'draft_aitp_write_bridge_call',
+      aitp_operation: 'startResearchRun',
+    });
+
+    expect(bridgeCalls).toEqual([]);
+    expect(draft.output).toContain('<aitp_write_bridge_call_draft operation="startResearchRun"');
+    expect(draft.output).toContain('readiness_status="ready_for_explicit_execute"');
+    expect(draft.output).toContain('executes_write_now="false"');
+    expect(draft.output).toContain('requires_explicit_execute_call="true"');
+    expect(draft.output).toContain('<runtime_target entrypoint_key="start_research_run"');
+    expect(draft.output).toContain('&quot;topicId&quot;:&quot;qg-algebra&quot;');
+    expect(draft.output).toContain('&quot;objective&quot;:&quot;Audit whether the observer algebra source chain is sufficient.&quot;');
+    expect(draft.output).toContain('&quot;operator&quot;:&quot;hakimi&quot;');
+    expect(draft.output).toContain('&quot;phase&quot;:&quot;planning&quot;');
+    expect(draft.output).toContain('<ready_execute_call_json>');
+    expect(draft.output).toContain('<execute_aitp_write_bridge_handoff');
+    expect(draft.output).toContain('draft_family="aitp_write_call_draft"');
+
+    const handoff = extractCuratedRagHandoff(draft.output);
+    expect(handoff.readyExecuteCall).toMatchObject({
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'startResearchRun',
+      aitp_payload: {
+        topicId: 'qg-algebra',
+        objective: 'Audit whether the observer algebra source chain is sufficient.',
+        researchQuestion: 'Audit whether the observer algebra source chain is sufficient.',
+        operator: 'hakimi',
+        phase: 'planning',
+      },
+      aitp_handoff: {
+        handoff_id: handoff.guard['handoff_id'],
+        diagnostic_hash: handoff.guard['diagnostic_hash'],
+      },
+    });
+    expect(bridgeCalls).toEqual([]);
+
+    const executed = await execute(tool, handoff.readyExecuteCall);
+
+    expect(executed.output).toContain('<aitp_write_bridge operation="startResearchRun"');
+    expect(executed.output).toContain('<handoff_execution_precheck');
+    expect(executed.output).toContain('status="passed"');
+    expect(executed.output).toContain('bridge_called="true"');
+    expect(executed.output).toContain('<research_run run_id="research-run-qg"');
+    expect(bridgeCalls).toHaveLength(1);
+    expect(bridgeCalls[0]).toMatchObject({
+      operation: 'startResearchRun',
+      payload: {
+        topicId: 'qg-algebra',
+        phase: 'planning',
+      },
+    });
+  });
+
+  it('blocks generic AITP event drafts that still miss required fields', async () => {
+    const tool = new ResearchActionTool();
+
+    const draft = await execute(tool, {
+      action: 'draft_aitp_write_bridge_call',
+      aitp_operation: 'recordResearchRunEvent',
+      aitp_payload: {
+        topic_id: 'qg-algebra',
+        summary: 'Checkpoint without run id.',
+      },
+    });
+
+    expect(draft.output).toContain('<aitp_write_bridge_call_draft operation="recordResearchRunEvent"');
+    expect(draft.output).toContain('readiness_status="blocked"');
+    expect(draft.output).toContain('<field>runId</field>');
+    expect(draft.output).toContain('local_payload_validation_failed');
+    expect(draft.output).toContain('AITP recordResearchRunEvent payload requires runId.');
+    expect(draft.output).toContain('<allowed_values>');
+    expect(draft.output).toContain('name="eventType"');
+    expect(draft.output).toContain('confirmation_status="blocked"');
+  });
+
+  it('blocks generic AITP research-run drafts with invalid enum values before MCP execution', async () => {
+    const tool = new ResearchActionTool();
+
+    const draft = await execute(tool, {
+      action: 'draft_aitp_write_bridge_call',
+      aitp_operation: 'startResearchRun',
+      aitp_payload: {
+        topicId: 'ads-reflective-cavity-random-boundary',
+        objective: 'Analyze massive matter motion under a random open AdS boundary.',
+        researchQuestion: 'How does stochastic boundary absorption change massive matter motion?',
+        operator: 'hakimi',
+        phase: 'exploratory',
+      },
+    });
+
+    expect(draft.output).toContain('<aitp_write_bridge_call_draft operation="startResearchRun"');
+    expect(draft.output).toContain('readiness_status="blocked"');
+    expect(draft.output).toContain('invalid_allowed_value');
+    expect(draft.output).toContain('field="phase"');
+    expect(draft.output).toContain('got exploratory');
+    expect(draft.output).toContain('name="phase"');
+    expect(draft.output).toContain('planning');
+    expect(draft.output).toContain('confirmation_status="blocked"');
+  });
+
   it('executes curated RAG write-bridge handoffs only after guard verification passes', async () => {
     const records: AgentRecord[] = [];
     const bridgeCalls: Parameters<AitpWriteBridgeExecutor['executeWrite']>[0][] = [];
@@ -4496,6 +4632,7 @@ function extractCuratedRagHandoff(output: unknown): {
   readonly toolCall: Record<string, unknown>;
   readonly hashInput: Record<string, unknown>;
   readonly readinessCall: ResearchActionToolArgs;
+  readonly readyExecuteCall: ResearchActionToolArgs;
 } {
   expect(typeof output).toBe('string');
   const text = typeof output === 'string' ? output : '';
@@ -4510,18 +4647,23 @@ function extractCuratedRagHandoff(output: unknown): {
   const toolCall = JSON.parse(xmlElementText(text, 'tool_call_json')) as Record<string, unknown>;
   const hashInput = JSON.parse(xmlElementText(text, 'hash_input_json')) as Record<string, unknown>;
   const readinessCall = JSON.parse(xmlElementText(text, 'readiness_call_json')) as ResearchActionToolArgs;
+  const guard = {
+    handoff_id: handoffId,
+    confirmation_id: confirmationId,
+    confirmation_status: confirmationStatus,
+    diagnostic_hash: diagnosticHash,
+    tool_call_json: toolCall,
+    hash_input_json: hashInput,
+  };
+  const readyExecuteCall = optionalXmlElementText(text, 'ready_execute_call_json') === undefined
+    ? ({ ...toolCall, aitp_handoff: guard } as unknown as ResearchActionToolArgs)
+    : JSON.parse(optionalXmlElementText(text, 'ready_execute_call_json') ?? '{}') as ResearchActionToolArgs;
   return {
-    guard: {
-      handoff_id: handoffId,
-      confirmation_id: confirmationId,
-      confirmation_status: confirmationStatus,
-      diagnostic_hash: diagnosticHash,
-      tool_call_json: toolCall,
-      hash_input_json: hashInput,
-    },
+    guard,
     toolCall,
     hashInput,
     readinessCall,
+    readyExecuteCall,
   };
 }
 
@@ -4534,11 +4676,15 @@ function xmlAttr(attrs: string, name: string): string {
 }
 
 function xmlElementText(output: string, tag: string): string {
-  const match = output.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`));
-  expect(match).not.toBeNull();
-  const value = match?.[1];
+  const value = optionalXmlElementText(output, tag);
   expect(value).toBeDefined();
-  return unescapeXml(value ?? '');
+  return value ?? '';
+}
+
+function optionalXmlElementText(output: string, tag: string): string | undefined {
+  const match = output.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`));
+  const value = match?.[1];
+  return value === undefined ? undefined : unescapeXml(value);
 }
 
 function toolCallPayload(handoff: { readonly toolCall: Record<string, unknown> }): Record<string, unknown> {

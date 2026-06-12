@@ -7,6 +7,7 @@ export * from './cli-bridge';
 export * from './write-bridge';
 export * from './session-bridge';
 export * from './runtime-payload-profiles';
+export * from './runtime-doctor';
 export * from './record-ref-lookup';
 export * from './curated-rag';
 export * from './curated-rag-ingest';

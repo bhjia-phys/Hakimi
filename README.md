@@ -690,14 +690,24 @@ read a `process_graph_slice`, write a proof obligation and human checkpoint,
 and verify the resulting `.aitp` records. It is skipped in normal unit runs so
 Hakimi does not require Python/AITP dependencies just to typecheck.
 
+`hakimi aitp doctor` is the default integration health check for this bridge.
+It checks the selected AITP base path, the `.aitp` canonical store, and the
+`aitp-v5 adapter payload-profiles` CLI fallback. Use `--json` for harness or CI
+consumption. A ready report means Hakimi can read the AITP payload-profile
+catalog through the CLI fallback; a degraded or missing report is a real runtime
+blocker that should be surfaced before expecting fresh AITP writes.
+
 The remaining runtime work is execution depth, not schema ownership: the turn
 loop can fetch a scoped slice, preserve cached AITP context when no fresh slice
-is available, expose AITP policy obligations, execute typed
+is available, expose AITP policy obligations, draft typed write calls with
+`ResearchAction.draft_aitp_write_bridge_call`, execute typed
 record-write/preflight calls through MCP-first transport with CLI fallback, and
 run a soft final-gate check over whether required AITP calls passed, were
-equivalently satisfied, or were explicitly blocked. Later slices still need
-richer automatic payload drafting, and any
-host-facing `trust apply` path remains AITP-owned future work.
+equivalently satisfied, or were explicitly blocked. The draft action renders
+required fields, enum hints, a guarded handoff, and a separate readiness
+inspection call for writes such as `startResearchRun`,
+`recordResearchRunEvent`, and `recordExploratoryRecord`; it never writes by
+itself. Any host-facing `trust apply` path remains AITP-owned future work.
 
 ## Relationship To Upstream
 
@@ -899,6 +909,7 @@ node scripts/hakimi-real-session-audit.mjs analyze `
   --expect-private-reasoning `
   --expect-reasoning-cue workframe `
   --expect-reasoning-led-tool ResearchAction/open_work_frame `
+  --expect-reasoning-led-tool ResearchAction/draft_aitp_write_bridge_call `
   --expect-ledger-topic random-open-boundary-ads-cavity `
   --expect-no-missing-workframe `
   --expect-workframe-opened `
@@ -906,16 +917,44 @@ node scripts/hakimi-real-session-audit.mjs analyze `
   --fail-on-tool-error
 ```
 
+For the AdS random-boundary massive-matter regression, the file-backed eval case
+and fixed prompt live under `.aitp/evals/theoretical-physics/`:
+
+```powershell
+node scripts/hakimi-real-session-audit.mjs run `
+  --workdir F:\AI_Workspace\Theoretical-Physics `
+  --prompt-file .aitp\evals\theoretical-physics\random-open-boundary-ads-massive-matter.prompt.txt `
+  --out .aitp\evals\theoretical-physics\random-open-boundary-ads-massive-matter.real-session.md `
+  --eval-case .aitp\evals\theoretical-physics\random-open-boundary-ads-massive-matter.md `
+  --min-eval-score 80 `
+  --expect-private-reasoning `
+  --expect-workframe-opened `
+  --expect-context-pack `
+  --expect-tool-action ResearchAction/open_work_frame `
+  --expect-tool-action ResearchAction/compile_context_pack `
+  --expect-tool-action ResearchAction/inspect_aitp_runtime_payload_profiles `
+  --expect-tool-action ResearchAction/draft_aitp_write_bridge_call `
+  --expect-aitp-write-operation startResearchRun `
+  --expect-reasoning-led-tool ResearchAction/open_work_frame `
+  --expect-reasoning-led-tool ResearchAction/compile_context_pack
+```
+
 The report covers terminal stream previews, reconstructed visible transcript,
 tool lifecycle records, tool failures, auto-capture skips, WorkFrame/context
-state, Hakimi research-ledger topics, and AITP topic/run state. The harness
-`run` command enables `KIMI_CODE_EXPERIMENTAL_REASONING_AUDIT=1` only for its
-child Hakimi process, so ordinary sessions do not write `reasoning.audit`
-records. Under that development harness switch, private reasoning / `think`
-parts become redacted audit evidence with length and coarse behavior cues; the
-harness can assert cues or reasoning-led tool calls without printing the
-underlying thinking text. Expectation failures return exit code `2`, and a
-timed-out real run returns `124`.
+state, Hakimi research-ledger topics, AITP topic/run state, direct AITP MCP
+calls, and file-backed eval-case scores. `AITP write bridge` and `AITP MCP` are
+reported separately: bridge calls prove Hakimi's explicit projection path, while
+MCP calls remain visible as diagnostics when a model bypasses
+`execute_aitp_write_bridge`. The AdS regression now grades the bridge path, so a
+direct MCP write alone is not enough for full runtime credit.
+
+The harness `run` command enables `KIMI_CODE_EXPERIMENTAL_REASONING_AUDIT=1`
+only for its child Hakimi process, so ordinary sessions do not write
+`reasoning.audit` records. Under that development harness switch, private
+reasoning / `think` parts become redacted audit evidence with length and coarse
+behavior cues; the harness can assert cues or reasoning-led tool calls without
+printing the underlying thinking text. Expectation failures return exit code
+`2`, and a timed-out real run returns `124`.
 
 ## DeepSeek Quick Setup
 
