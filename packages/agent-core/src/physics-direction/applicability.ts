@@ -196,6 +196,58 @@ function inferObjects(text: string, output: Set<string>): void {
   if (matchesAny(text, ['code', 'implementation', 'file', 'call site', 'call-site'])) {
     output.add('code_region');
   }
+  if (
+    matchesAny(text, [
+      'degree of freedom',
+      'degrees of freedom',
+      'dynamical variable',
+      'particle',
+      'matter',
+      'field',
+      'wavepacket',
+      'wave packet',
+      'distribution',
+      'operator',
+      'motion',
+      'dynamics',
+      'move',
+      'moves',
+      'moving',
+      '有质量',
+      '物质',
+      '粒子',
+      '场',
+      '波包',
+      '怎么动',
+    ])
+  ) {
+    output.add('dynamical_degree');
+  }
+  if (
+    matchesAny(text, [
+      'observable',
+      'observables',
+      'measure',
+      'measurement',
+      'flux',
+      'survival',
+      'hitting time',
+      'trajectory',
+      'correlator',
+      'response',
+      'energy',
+      'probability',
+      'current',
+      'absorption rate',
+      '观测量',
+      '能流',
+      '存活',
+      '到达时间',
+      '轨迹',
+    ])
+  ) {
+    output.add('observable');
+  }
 }
 
 function inferRelations(text: string, output: Set<string>): void {
@@ -224,6 +276,101 @@ function inferRelations(text: string, output: Set<string>): void {
   if (matchesAny(text, ['observable', 'intermediate value', 'head-wing'])) {
     output.add('intermediate_observable');
   }
+  if (
+    matchesAny(text, [
+      'boundary',
+      'boundary condition',
+      'reflecting',
+      'absorbing',
+      'wall',
+      'cutoff',
+      'edge',
+      '边界',
+      '反射',
+      '吸收',
+    ])
+  ) {
+    output.add('boundary_condition');
+  }
+  if (
+    matchesAny(text, [
+      'source',
+      'sink',
+      'bath',
+      'measurement',
+      'open system',
+      'coupling',
+      'channel',
+      'absorb',
+      'absorbing',
+      '源',
+      '汇',
+      '浴',
+      '通道',
+      '耦合',
+    ])
+  ) {
+    output.add('source_or_sink');
+  }
+  if (
+    matchesAny(text, [
+      'scale',
+      'limit',
+      'regime',
+      'cutoff',
+      'reach',
+      'hitting',
+      'hit',
+      'arrival',
+      'turning point',
+      'mass',
+      'heavy',
+      'light',
+      'rate',
+      'separation',
+      '极限',
+      '尺度',
+      '质量',
+    ])
+  ) {
+    output.add('scale_separation');
+  }
+  if (
+    matchesAny(text, [
+      'reach',
+      'reaches',
+      'hitting',
+      'hit',
+      'arrival',
+      'turning point',
+      'cutoff',
+      'wall',
+      'support',
+      'overlap',
+      'tail',
+      'known limit',
+    ])
+  ) {
+    output.add('reachability_constraint');
+  }
+  if (
+    matchesAny(text, [
+      'model layer',
+      'classical',
+      'field theory',
+      'kinetic',
+      'ensemble',
+      'effective',
+      'toy model',
+      'numerical',
+      '建模',
+      '层次',
+      '经典',
+      '动理学',
+    ])
+  ) {
+    output.add('model_layer');
+  }
 }
 
 function inferContextTags(text: string, output: Set<string>): void {
@@ -250,6 +397,36 @@ function inferContextTags(text: string, output: Set<string>): void {
   }
   if (matchesAny(text, ['git diff', 'code change', 'implementation'])) {
     output.add('code_change');
+  }
+  if (matchesAny(text, ['theoretical physics', 'theory', '理论物理'])) {
+    output.add('theoretical_physics');
+  }
+  if (matchesAny(text, ['new topic', 'new problem', 'first-pass', 'from scratch', '全新', '新问题'])) {
+    output.add('new_topic');
+  }
+  if (matchesAny(text, ['boundary', 'wall', 'cutoff', '边界'])) {
+    output.add('boundary_condition');
+  }
+  if (matchesAny(text, ['open system', 'bath', 'measurement', 'absorbing', '开放系统', '测量', '浴'])) {
+    output.add('open_system');
+  }
+  if (matchesAny(text, ['massive matter', 'massive particle', 'massive field', '有质量的物质', '有质量'])) {
+    output.add('massive_matter');
+  }
+  if (matchesAny(text, ['observable', 'survival', 'hitting', 'flux', '观测量', '存活', '能流'])) {
+    output.add('observable');
+  }
+  if (matchesAny(text, ['matter moves', 'matter motion', 'particle motion', 'trajectory', 'wavepacket', 'how massive matter moves'])) {
+    output.add('matter_motion');
+  }
+  if (matchesAny(text, ['hitting time', 'hit time', 'first passage', 'arrival time', 'hitting-time'])) {
+    output.add('hitting_time');
+  }
+  if (matchesAny(text, ['survival probability', 'survival', 'not absorbed'])) {
+    output.add('survival_analysis');
+  }
+  if (matchesAny(text, ['energy flux', 'flux loss', 'absorbed energy'])) {
+    output.add('energy_flux');
   }
 }
 

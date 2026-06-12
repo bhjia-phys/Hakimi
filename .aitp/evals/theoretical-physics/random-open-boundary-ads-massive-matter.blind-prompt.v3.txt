@@ -1,0 +1,14 @@
+Act as a Hakimi theoretical-physics research session.
+
+Problem:
+A fixed-background AdS reflecting cavity has a boundary detector that randomly switches off and on. When the detector is off, the boundary behaves as an ordinary reflecting AdS boundary. When the detector is on, the boundary is coupled to an external measurement/bath channel that can absorb what leaves the AdS subsystem. I care about how massive matter moves under this randomly switched boundary condition. I do not want the normal-mode spectrum to become the main topic.
+
+Use the usual Hakimi/AITP research workflow for a new theoretical-physics topic:
+- Open a WorkFrame.
+- Compile a ContextPack.
+- Inspect AITP runtime payload profiles.
+- Draft a startResearchRun AITP write-bridge call.
+- If the draft returns ready_execute_call_json and readiness passes, execute that JSON through execute_aitp_write_bridge without rewriting the payload by hand. If execution is blocked, report the blocker separately.
+
+Final answer:
+Give a research-quality answer for this problem. Separate the physics answer from the runtime/AITP write status.

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   FQHE_CS_LENSES,
   LIBRPA_HEAD_WING_LENSES,
+  THEORETICAL_PHYSICS_GENERAL_LENSES,
   recommendPhysicsLenses,
 } from '../../src/physics-direction';
 
@@ -123,5 +124,85 @@ describe('physics direction lenses', () => {
       'code.capture_git_diff_observation',
       'benchmark.run_minimal_case',
     ]);
+  });
+
+  it('proposes the generic research object discovery lens for new theory problems', () => {
+    const recommendations = recommendPhysicsLenses(
+      {
+        domain: 'theoretical-physics/general',
+        topic: 'random-boundary massive matter motion',
+        prompt:
+          'A new theoretical physics problem asks how massive matter moves with boundary conditions, bath coupling, survival probability, hitting time, and energy flux observables.',
+        contextTags: ['new_topic'],
+      },
+      { lenses: THEORETICAL_PHYSICS_GENERAL_LENSES },
+    );
+
+    const objectDiscovery = recommendations.find(
+      (candidate) => candidate.lens.id === 'research_object_discovery',
+    );
+
+    expect(objectDiscovery).toMatchObject({
+      lens: { id: 'research_object_discovery' },
+      status: 'applicable',
+      confidence: 'high',
+    });
+    expect(objectDiscovery?.matchedObjectKinds).toEqual([
+      'dynamical_degree',
+      'observable',
+    ]);
+    expect(objectDiscovery?.matchedRelationKinds).toEqual(
+      expect.arrayContaining(['boundary_condition', 'source_or_sink']),
+    );
+    expect(objectDiscovery?.guidingQuestions.join(' ')).toContain(
+      'primary dynamical degrees of freedom',
+    );
+    expect(objectDiscovery?.suggestedActionBindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actionId: 'physics.apply_direction_lens',
+          lensId: 'research_object_discovery',
+          priority: 'blocking',
+        }),
+      ]),
+    );
+  });
+
+  it('proposes the boundary/source-sink motion lens for massive boundary dynamics', () => {
+    const recommendations = recommendPhysicsLenses(
+      {
+        domain: 'theoretical-physics/general',
+        topic: 'fixed AdS boundary detector massive matter motion',
+        prompt:
+          'A fixed-background AdS reflecting cavity has a boundary detector that randomly switches off and on. When on, the boundary couples to a measurement bath that can absorb what leaves the subsystem. I care about how massive matter moves, not the normal-mode spectrum.',
+        contextTags: ['new_topic'],
+      },
+      { lenses: THEORETICAL_PHYSICS_GENERAL_LENSES },
+    );
+
+    const boundaryMotion = recommendations.find(
+      (candidate) => candidate.lens.id === 'boundary_sink_motion_inventory',
+    );
+
+    expect(boundaryMotion).toMatchObject({
+      status: 'applicable',
+      confidence: 'high',
+    });
+    expect(boundaryMotion?.matchedRelationKinds).toEqual(
+      expect.arrayContaining(['boundary_condition', 'source_or_sink']),
+    );
+    expect(boundaryMotion?.guidingQuestions.join(' ')).toContain('Where does it interact');
+    expect(boundaryMotion?.requiredChecks.map((check) => check.id)).toContain(
+      'check.theoretical-physics.reachability-before-boundary-loss',
+    );
+    expect(boundaryMotion?.suggestedActionBindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          lensId: 'boundary_sink_motion_inventory',
+          checkId: 'check.theoretical-physics.reachability-before-boundary-loss',
+          priority: 'blocking',
+        }),
+      ]),
+    );
   });
 });

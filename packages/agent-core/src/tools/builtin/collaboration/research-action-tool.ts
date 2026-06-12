@@ -5349,10 +5349,7 @@ function renderContextPack(pack: ResearchContextPack): string {
     ),
     '  </workflows>',
     `  <physics requested_focus="${escapeXml(pack.physics.requestedFocus.join(','))}" included_focus="${escapeXml(pack.physics.includedFocus.join(','))}">`,
-    ...pack.physics.capsules.map(
-      (capsule) =>
-        `    <capsule id="${escapeXml(capsule.id)}" kind="${capsule.kind}" reliability="${capsule.reliability}" checks="${escapeXml(capsule.requiredChecks.map((check) => check.id).join(','))}" actions="${escapeXml(capsule.actionAffordances.map((affordance) => affordance.actionId).join(','))}">${escapeXml(capsule.title)}</capsule>`,
-    ),
+    ...pack.physics.capsules.flatMap(renderResearchContextCapsuleXml),
     '  </physics>',
     `  <ledger statuses="${escapeXml(pack.ledger.includeStatuses.join(','))}">`,
     ...pack.ledger.proposals.map(
@@ -5378,6 +5375,23 @@ function renderContextPack(pack: ResearchContextPack): string {
     '</context_pack>',
     '',
   ].join('\n');
+}
+
+function renderResearchContextCapsuleXml(capsule: ResearchContextPack['physics']['capsules'][number]): string[] {
+  return [
+    `    <capsule id="${escapeXml(capsule.id)}" kind="${capsule.kind}" reliability="${capsule.reliability}" checks="${escapeXml(capsule.requiredChecks.map((check) => check.id).join(','))}" actions="${escapeXml(capsule.actionAffordances.map((affordance) => affordance.actionId).join(','))}">`,
+    `      <title>${escapeXml(capsule.title)}</title>`,
+    capsule.bodyPreview === undefined
+      ? '      <body_preview />'
+      : `      <body_preview>${escapeXml(capsule.bodyPreview)}</body_preview>`,
+    '      <required_checks>',
+    ...capsule.requiredChecks.map(
+      (check) =>
+        `        <check id="${escapeXml(check.id)}" kind="${check.kind}" severity="${check.severity}">${escapeXml(check.description ?? '')}</check>`,
+    ),
+    '      </required_checks>',
+    '    </capsule>',
+  ];
 }
 
 function renderSourceContextReviewOutcomeSection(pack: ResearchContextPack): string {
