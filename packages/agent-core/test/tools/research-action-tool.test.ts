@@ -3499,11 +3499,30 @@ describe('ResearchActionTool', () => {
     expect(draft.output).toContain('&quot;objective&quot;:&quot;Audit whether the observer algebra source chain is sufficient.&quot;');
     expect(draft.output).toContain('&quot;operator&quot;:&quot;hakimi&quot;');
     expect(draft.output).toContain('&quot;phase&quot;:&quot;planning&quot;');
+    expect(draft.output).toContain('<minimal_execute_call_json copy_exactly="true" preferred_for_plain_start_run="true">');
+    expect(draft.output).toContain('<execute_guidance>For a ready startResearchRun draft');
     expect(draft.output).toContain('<ready_execute_call_json>');
     expect(draft.output).toContain('<execute_aitp_write_bridge_handoff');
     expect(draft.output).toContain('draft_family="aitp_write_call_draft"');
 
+    expect(typeof draft.output).toBe('string');
+    const draftOutput = draft.output as string;
     const handoff = extractCuratedRagHandoff(draft.output);
+    const minimalExecuteCall = JSON.parse(
+      xmlElementText(draftOutput, 'minimal_execute_call_json'),
+    ) as ResearchActionToolArgs;
+    expect(minimalExecuteCall).toMatchObject({
+      action: 'execute_aitp_write_bridge',
+      aitp_operation: 'startResearchRun',
+      aitp_payload: {
+        topicId: 'qg-algebra',
+        objective: 'Audit whether the observer algebra source chain is sufficient.',
+        researchQuestion: 'Audit whether the observer algebra source chain is sufficient.',
+        operator: 'hakimi',
+        phase: 'planning',
+      },
+    });
+    expect('aitp_handoff' in minimalExecuteCall).toBe(false);
     expect(handoff.readyExecuteCall).toMatchObject({
       action: 'execute_aitp_write_bridge',
       aitp_operation: 'startResearchRun',
@@ -3521,11 +3540,9 @@ describe('ResearchActionTool', () => {
     });
     expect(bridgeCalls).toEqual([]);
 
-    const executed = await execute(tool, handoff.readyExecuteCall);
+    const executed = await execute(tool, minimalExecuteCall);
 
     expect(executed.output).toContain('<aitp_write_bridge operation="startResearchRun"');
-    expect(executed.output).toContain('<handoff_execution_precheck');
-    expect(executed.output).toContain('status="passed"');
     expect(executed.output).toContain('bridge_called="true"');
     expect(executed.output).toContain('<research_run run_id="research-run-qg"');
     expect(bridgeCalls).toHaveLength(1);
@@ -4682,7 +4699,7 @@ function xmlElementText(output: string, tag: string): string {
 }
 
 function optionalXmlElementText(output: string, tag: string): string | undefined {
-  const match = output.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`));
+  const match = output.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`));
   const value = match?.[1];
   return value === undefined ? undefined : unescapeXml(value);
 }

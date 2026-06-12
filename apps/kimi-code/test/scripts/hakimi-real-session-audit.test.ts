@@ -536,6 +536,42 @@ describe('hakimi real session audit harness', () => {
     expect(result.forbiddenMatches).toEqual([]);
   });
 
+  it('scores natural AdS massive-matter wording without requiring rubric phrase leakage', () => {
+    const audit: any = {
+      assistantTexts: [
+        [
+          'Finite-energy massive timelike geodesics in global AdS do not reach the conformal boundary, so the sink needs a finite cutoff wall, an absorbing boundary for field tails, or an ensemble sink.',
+          'The detector off state is reflecting; the on state couples the boundary to a measurement bath and removes subsystem energy flux.',
+          'At the field level the primary quantities are survival probability, boundary current, energy flux, and absorption rate; at a finite wall the number of bounces before absorption has a geometric mean.',
+          'The model layer table separates the classical point particle, field wavepacket, and effective open-system descriptions.',
+          'The normal-mode spectrum is not the main story; modes are broadened diagnostics of the damping process.',
+        ].join(' '),
+      ],
+      research: {
+        aitpWriteBridgeCalls: [{ operation: 'startResearchRun', ok: true }],
+        aitpMcpCalls: [],
+      },
+      toolCalls: [
+        passedAction('open_work_frame'),
+        passedAction('compile_context_pack'),
+        passedAction('inspect_aitp_runtime_payload_profiles'),
+        passedAction('draft_aitp_write_bridge_call'),
+      ],
+      run: { streamJsonMessages: [] },
+    };
+
+    const result = scoreResearchEvalCase(audit, {
+      id: 'eval.theoretical-physics.random-open-boundary-ads-massive-matter',
+      title: 'Random open AdS boundary massive-matter regression',
+      path: 'fixture',
+      forbiddenClaims: ['normal modes are the primary object of the massive-matter problem'],
+      rubricItems: undefined,
+    });
+
+    expect(result.score).toBe(100);
+    expect(result.forbiddenMatches).toEqual([]);
+  });
+
   it('scores AdS physics capability from the final answer, with tool artifacts reported separately', () => {
     const audit: any = {
       assistantTexts: ['The final answer only says random boundary reflecting absorbing.'],
@@ -683,6 +719,46 @@ describe('hakimi real session audit harness', () => {
     expect(rendered).not.toContain('Do not echo this summary');
   });
 
+  it('reports prompt redaction as not applicable for analyze-only hidden eval audits', () => {
+    const audit: any = {
+      ok: true,
+      session: { id: 'session_analyze_fixture', dir: 'session-dir' },
+      privateReasoning: { parts: 0, chars: 0 },
+      expectations: [],
+      evalCases: [],
+      hiddenEvalInput: {
+        ok: true,
+        evalCaseCount: 1,
+        promptProvided: false,
+        promptRedactedInReport: undefined,
+        childArgvEvalPathCount: 0,
+        readEvalFileCount: 0,
+        markerLeakCount: 0,
+        violations: [],
+      },
+      visibleTranscript: [],
+      toolCalls: [],
+      toolSummary: {},
+      research: {
+        workFrameOpened: false,
+        workFrameIds: [],
+        contextPackCompiled: false,
+        researchActionResults: [],
+        ledgerWrites: [],
+        aitpWriteBridgeCalls: [],
+        aitpMcpCalls: [],
+        autoresearchEvents: [],
+      },
+      filesystem: { hakimiLedgerTopics: [], aitpTopics: [], aitpResearchRuns: [], aitpResearchRunDetails: [] },
+      reasoningBlocks: [],
+      reasoningBehavior: { turnCount: 0, turns: [], ledToolCalls: [], repeatedAfterReasoningFailures: [] },
+      autoCaptureSkipped: {},
+      failures: [],
+    };
+
+    expect(renderMarkdown(audit)).toContain('Prompt redacted in report: not applicable');
+  });
+
   it('flags forbidden claims in the AdS massive-matter regression', () => {
     const audit: any = {
       assistantTexts: ['The massive particle automatically hits the AdS conformal boundary.'],
@@ -706,7 +782,7 @@ describe('hakimi real session audit harness', () => {
   it('does not flag auxiliary normal modes when primary observables are motion observables', () => {
     const audit: any = {
       assistantTexts: [
-        '## Primary observables (not normal modes)\nThe primary observables are survival probability, hitting-time distribution, trajectory, particle number, and energy flux. Normal modes are auxiliary diagnostics only.',
+        'The problem is best addressed as an open quantum-system / stochastic boundary problem, not as a spectral normal-mode problem. The primary outputs are survival probability, hitting-time distribution, trajectory, particle number, and energy flux. Normal modes and QNM poles are auxiliary diagnostics only; they are not the target.',
       ],
       research: {
         aitpWriteBridgeCalls: [{ operation: 'startResearchRun', ok: true }],

@@ -3526,8 +3526,10 @@ function renderAitpWriteBridgeCallDraft(
     `<aitp_write_bridge_call_draft operation="${operation}" readiness_status="${status}" next_research_action="execute_aitp_write_bridge" action_id="${escapeXml(actionIdForAitpWriteBridgeOperation(operation))}" executes_write_now="false" bridge_called="false" selected_write_executed="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" can_update_claim_trust="false" requires_explicit_execute_call="true" inferred_field_count="${String(draft.inferredFields.length)}" missing_required_field_count="${String(draft.missingFields.length)}" diagnostic_count="${String(draft.diagnostics.length)}" handoff_id="${escapeXml(handoffId)}" diagnostic_hash="${escapeXml(diagnosticHash)}">`,
     `  <runtime_target entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" preferred_transport="${target.preferredTransport}" fallback_transport="${target.fallbackTransport}" state_effect="${target.stateEffect}" claim_trust_mutation="${target.claimTrustMutation}" />`,
     `  <tool_call_json>${escapeXml(JSON.stringify(toolCall))}</tool_call_json>`,
+    `  <minimal_execute_call_json copy_exactly="true" preferred_for_plain_start_run="true">${escapeXml(JSON.stringify(toolCall))}</minimal_execute_call_json>`,
     `  <ready_execute_call_json>${escapeXml(JSON.stringify(executeToolCall))}</ready_execute_call_json>`,
     `  <reviewed_payload_json>${escapeXml(JSON.stringify(draft.payload))}</reviewed_payload_json>`,
+    '  <execute_guidance>For a ready startResearchRun draft, call ResearchAction with minimal_execute_call_json exactly. Do not add draft diagnostics, inferred fields, missing fields, hashes, or partial handoff fields to the top-level tool args.</execute_guidance>',
     renderStringList('inferred_fields', 'field', draft.inferredFields, '  '),
     renderStringList('missing_required_fields', 'field', draft.missingFields, '  '),
     renderAllowedValuesForAitpWriteOperation(operation, '  '),
@@ -4689,7 +4691,9 @@ function renderAitpHandoffExecutionPrecheck(
     | { readonly status: 'failed'; readonly failure: AitpHandoffGuardFailure },
 ): string {
   if (precheck.status === 'passed') {
-    if (precheck.guard === undefined) return '';
+    if (precheck.guard === undefined) {
+      return '  <handoff_execution_precheck status="not_required" bridge_call_allowed="true" bridge_called="true" handoff_required="false" executes_write_now="true" records_validation_result="false" source_support_result="false" claim_trust_mutation="none" />';
+    }
     return [
       `  <handoff_execution_precheck kind="${precheck.guard.kind}" status="passed" handoff_id="${escapeXml(precheck.guard.handoffId)}" confirmation_id="${escapeXml(precheck.guard.confirmationId)}" confirmation_status="${escapeXml(precheck.guard.confirmationStatus)}" selected_aitp_operation="${escapeXml(precheck.guard.selectedAitpOperation)}" missing_ref_repair_hint_count="${String(precheck.guard.missingRefRepairHintCount)}" missing_ref_repair_checklist_present="${String(precheck.guard.missingRefRepairChecklistPresent)}" repair_hint_operation_count="${String(precheck.guard.repairHintOperations.length)}" repair_hint_operations="${escapeXml(precheck.guard.repairHintOperations.join(','))}" selected_write_differs_from_repair_hints="${String(precheck.guard.selectedWriteDiffersFromRepairHints)}" bridge_call_allowed="true" bridge_called="true" retry_requires_explicit_execute_call="false" handoff_mutated_now="false" records_validation_result="false" source_support_result="false" claim_trust_mutation="none">`,
       renderExecutionPrecheckChecklistResult({ status: 'passed', guard: precheck.guard }, '    '),

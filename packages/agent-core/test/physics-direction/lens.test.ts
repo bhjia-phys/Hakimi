@@ -195,11 +195,26 @@ describe('physics direction lenses', () => {
     expect(boundaryMotion?.requiredChecks.map((check) => check.id)).toContain(
       'check.theoretical-physics.reachability-before-boundary-loss',
     );
+    expect(boundaryMotion?.requiredChecks.map((check) => check.id)).toContain(
+      'check.theoretical-physics.model-layer-motion-map',
+    );
+    expect(boundaryMotion?.guidingQuestions.join(' ')).toContain(
+      'point-particle/geodesic',
+    );
+    expect(boundaryMotion?.guidingQuestions.join(' ')).toContain(
+      'reachability verdict',
+    );
     expect(boundaryMotion?.suggestedActionBindings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           lensId: 'boundary_sink_motion_inventory',
           checkId: 'check.theoretical-physics.reachability-before-boundary-loss',
+          priority: 'blocking',
+        }),
+        expect.objectContaining({
+          actionId: 'validate.check_convention',
+          lensId: 'boundary_sink_motion_inventory',
+          checkId: 'check.theoretical-physics.model-layer-motion-map',
           priority: 'blocking',
         }),
       ]),

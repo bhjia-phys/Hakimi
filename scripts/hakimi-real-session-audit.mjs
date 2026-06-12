@@ -1366,7 +1366,7 @@ function inspectHiddenEvalInput({ prompt, evalCases, run, audit }) {
     ok: violations.length === 0,
     evalCaseCount: evalCases.length,
     promptProvided: prompt !== undefined,
-    promptRedactedInReport: reportArgvText.includes('<prompt-redacted>'),
+    promptRedactedInReport: audit.run === undefined ? undefined : reportArgvText.includes('<prompt-redacted>'),
     childArgvEvalPathCount: evalCases.filter((evalCase) => childArgvText.includes(evalCase.path ?? '\u0000')).length,
     readEvalFileCount: violations.filter((item) => item.kind === 'session-read-eval-file').length,
     markerLeakCount: violations.filter((item) => item.kind.endsWith('marker-leak')).length,
@@ -1409,6 +1409,11 @@ function matchesToolTarget(call, target) {
 
 function formatToolTarget(call) {
   return `${call.toolName}${call.action ? `/${call.action}` : ''}`;
+}
+
+function formatPromptRedactionStatus(value) {
+  if (value === undefined) return 'not applicable';
+  return value ? 'yes' : 'no';
 }
 
 function isSuccessfulToolCall(call) {
@@ -1548,6 +1553,10 @@ function adsMassiveMatterRubricItems() {
       anyOf: [
         ['trajectory', 'survival probability', 'hitting'],
         ['wavepacket', 'survival', 'energy flux'],
+        ['field', 'survival probability', 'energy flux'],
+        ['survival probability', 'boundary current', 'energy flux'],
+        ['survival probability', 'absorbing boundary', 'field'],
+        ['bounces before absorption', 'wall', 'mean'],
         ['kinetic', 'particle number', 'flux'],
         ['reflection map', 'survival', 'absorption'],
         ['massive matter', 'observable', 'survival'],
@@ -1579,6 +1588,10 @@ function adsMassiveMatterRubricItems() {
         ['normal modes', 'diagnostic'],
         ['qnm', 'diagnostic'],
         ['spectrum', 'secondary'],
+        ['normal mode spectrum', 'not the main story'],
+        ['normal modes', 'not the main story'],
+        ['spectrum', 'not the main story'],
+        ['modes', 'broadened', 'not the main story'],
         ['not the main question', 'normal'],
         ['normal modes', '辅助谱诊断'],
         ['qnms', '辅助谱诊断'],
@@ -1751,13 +1764,43 @@ function forbiddenClaimSignature(normalizedClaim, haystack) {
     return ['automatically hits', 'boundary'];
   }
   if (normalizedClaim.includes('normal modes are the primary')) {
-    return /\b(normal modes?|qnm|spectr(?:um|a|al))\b.{0,80}\b(primary|main|central|hero|dominant)\b(?!\s+observables?)/u.test(haystack) ||
-      /\b(primary|main|central|hero|dominant)\b\s+(object|target|topic|question|problem|description|framework|analysis)\b.{0,80}\b(normal modes?|qnm|spectr(?:um|a|al))\b/u.test(haystack);
+    return positivePrimarySpectralClaim(haystack);
   }
   if (normalizedClaim.includes('literal destruction')) {
     return ['literal destruction'];
   }
   return [];
+}
+
+function positivePrimarySpectralClaim(haystack) {
+  const patterns = [
+    /\b(normal modes?|qnm|spectr(?:um|a|al))\b.{0,80}\b(primary|main|central|hero|dominant)\b(?!\s+observables?)/gu,
+    /\b(primary|main|central|hero|dominant)\b\s+(object|target|topic|question|problem|description|framework|analysis)\b.{0,80}\b(normal modes?|qnm|spectr(?:um|a|al))\b/gu,
+  ];
+  return patterns.some((pattern) => {
+    for (const match of haystack.matchAll(pattern)) {
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      const window = haystack.slice(Math.max(0, start - 80), Math.min(haystack.length, end + 80));
+      if (!negatesPrimarySpectralClaim(window)) return true;
+    }
+    return false;
+  });
+}
+
+function negatesPrimarySpectralClaim(window) {
+  return [
+    /\bnot\b.{0,40}\b(normal modes?|qnm|spectr(?:um|a|al))\b.{0,80}\b(primary|main|central|target|topic|question|problem)\b/u,
+    /\b(normal modes?|qnm|spectr(?:um|a|al))\b.{0,80}\bnot\b.{0,40}\b(primary|main|central|target|topic|question|problem)\b/u,
+    /\bnot\s+as\s+a\s+spectral\b/u,
+    /\bnot\s+as\s+a\s+(spectral\s+)?\b(primary|main|central)/u,
+    /\bnot\s+(the\s+)?(primary|main|central)\b/u,
+    /\bkept\s+in\s+the\s+background\b/u,
+    /\bauxiliary\s+(diagnostics?|tools?)\b/u,
+    /\bdiagnostics?\s+only\b/u,
+    /\bnot\s+the\s+target\b/u,
+    /\bnot\s+the\s+main\b/u,
+  ].some((pattern) => pattern.test(window));
 }
 
 function normalizeEvalText(text) {
@@ -1851,7 +1894,7 @@ function renderMarkdown(audit) {
     lines.push(`## Hidden Eval Input`);
     lines.push(`- Status: ${audit.hiddenEvalInput.ok ? 'PASS' : 'FAIL'}`);
     lines.push(`- Eval cases: ${audit.hiddenEvalInput.evalCaseCount}`);
-    lines.push(`- Prompt redacted in report: ${audit.hiddenEvalInput.promptRedactedInReport ? 'yes' : 'no'}`);
+    lines.push(`- Prompt redacted in report: ${formatPromptRedactionStatus(audit.hiddenEvalInput.promptRedactedInReport)}`);
     lines.push(`- Child argv eval paths: ${audit.hiddenEvalInput.childArgvEvalPathCount}`);
     lines.push(`- Session Read eval files: ${audit.hiddenEvalInput.readEvalFileCount}`);
     lines.push(`- Hidden marker leaks: ${audit.hiddenEvalInput.markerLeakCount}`);

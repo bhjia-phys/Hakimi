@@ -87,6 +87,23 @@ describe('PhysicsMemoryTool', () => {
     expect(result.output).toContain('missing-focus-capsule');
   });
 
+  it('accepts max_capsules when listing capsule summaries', async () => {
+    const registry = new PhysicsMemoryRegistry();
+    registry.register(capsule('formula.first', 'fqhe', 'Formula'));
+    registry.register(capsule('formula.second', 'fqhe', 'Formula'));
+    const tool = new PhysicsMemoryTool(registry);
+
+    const list = await execute(tool, {
+      action: 'list_capsules',
+      domain: 'fqhe',
+      max_capsules: 1,
+    });
+
+    expect(list.isError).toBeUndefined();
+    expect(list.output).toContain('formula.first');
+    expect(list.output).not.toContain('formula.second');
+  });
+
   it('promotes candidate graph objects through a strict packet gate', async () => {
     const registry = new PhysicsMemoryRegistry();
     const tool = new PhysicsMemoryTool(registry);

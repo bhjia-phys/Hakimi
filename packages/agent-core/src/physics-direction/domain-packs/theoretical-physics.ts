@@ -149,6 +149,7 @@ export const THEORETICAL_PHYSICS_GENERAL_LENSES = [
       'Can the moving object reach or hit that surface in the regime being modeled, and what known limit would make the naive boundary coupling vanish or become indirect?',
       'What are the primary motion observables: trajectory/reflection map, survival probability, hitting-time distribution, particle number, current, energy flux, or absorption rate?',
       'Which model layers must be separated before deriving: point-particle/geodesic, field wavepacket, kinetic/ensemble, effective open-system, and spectral diagnostics?',
+      'What is the reachability verdict, primary observable, and failure mode in each active layer before writing the final framing?',
     ],
     requiredChecks: [
       {
@@ -164,6 +165,13 @@ export const THEORETICAL_PHYSICS_GENERAL_LENSES = [
         severity: 'blocking',
         description:
           'Do not assign boundary loss to matter motion until the relevant boundary, cutoff, wall, detector support, wave tail, or ensemble sink is identified and reachable in the chosen model layer.',
+      },
+      {
+        id: 'check.theoretical-physics.model-layer-motion-map',
+        kind: 'assumption_scope',
+        severity: 'blocking',
+        description:
+          'Separate the point-particle, field/wavepacket, kinetic/ensemble, effective open-system, and spectral-diagnostic layers, and state the reachability verdict and primary observable for each active layer before treating a boundary sink as the same object across all layers.',
       },
     ],
     suggestedActionBindings: [
@@ -198,6 +206,26 @@ export const THEORETICAL_PHYSICS_GENERAL_LENSES = [
           'A boundary absorber only affects motion through the surface or support the matter can actually reach or overlap.',
       },
       {
+        id: 'binding.theoretical-physics.map-boundary-motion-model-layers',
+        actionId: 'validate.check_convention',
+        domainId: 'theoretical-physics/general',
+        workflowId: 'workflow.theoretical-physics.general-research',
+        lensId: 'boundary_sink_motion_inventory',
+        checkId: 'check.theoretical-physics.model-layer-motion-map',
+        priority: 'blocking',
+        params: {
+          requiredDistinctions: [
+            'point_particle_or_geodesic',
+            'field_wavepacket',
+            'kinetic_or_ensemble',
+            'effective_open_system',
+            'spectral_diagnostic',
+          ],
+        },
+        reason:
+          'Boundary-motion claims should say which layer is being modeled before importing intuition from another layer.',
+      },
+      {
         id: 'binding.theoretical-physics.extract-motion-observables',
         actionId: 'source.extract_definition',
         domainId: 'theoretical-physics/general',
@@ -222,8 +250,8 @@ export const THEORETICAL_PHYSICS_GENERAL_LENSES = [
     suggestedActions: [
       'physics.apply_direction_lens',
       'validate.check_known_limit',
-      'source.extract_definition',
       'validate.check_convention',
+      'source.extract_definition',
     ],
     expansionHandles: [
       {
