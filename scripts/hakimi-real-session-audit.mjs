@@ -1377,9 +1377,8 @@ function inspectHiddenEvalInput({ prompt, evalCases, run, audit }) {
 function hiddenEvalMarkers(evalCase) {
   return [
     evalCase.id,
-    evalCase.sourceRefs?.join(' '),
     evalCase.rubricRef,
-    ...(evalCase.rubricItems ?? []).map((item) => item.id),
+    ...(evalCase.sourceRefs ?? []).filter((item) => item.startsWith('rubric:')),
   ].filter((value) => typeof value === 'string' && value.trim() !== '');
 }
 
@@ -1509,6 +1508,9 @@ function rubricItemsForEvalCase(frontMatter, text) {
   if (id.includes('random-open-boundary-ads-massive-matter')) {
     return adsMassiveMatterRubricItems();
   }
+  if (id.includes('stochastic-leaky-wall-massive-impurity')) {
+    return leakyWallMassiveImpurityRubricItems();
+  }
   return parseNumericRubricItems(text);
 }
 
@@ -1612,6 +1614,83 @@ function adsMassiveMatterRubricItems() {
       id: 'hakimi-aitp-bridge-execute',
       points: 5,
       summary: 'Executes the Hakimi AITP write bridge for startResearchRun, rather than relying only on direct MCP fallback calls.',
+      aitpWriteOperations: ['startResearchRun'],
+    },
+  ];
+}
+
+function leakyWallMassiveImpurityRubricItems() {
+  return [
+    {
+      id: 'moving-object-and-surface',
+      points: 20,
+      summary: 'Identifies the moving massive impurity/excitation and the effective leaky wall or reservoir-coupled surface as distinct physical objects.',
+      anyOf: [
+        ['massive impurity', 'leaky wall', 'reservoir'],
+        ['moving object', 'effective', 'wall', 'reservoir'],
+        ['massive particle', 'absorbing wall', 'loss channel'],
+        ['dynamical degree', 'boundary', 'source', 'sink'],
+      ],
+    },
+    {
+      id: 'stochastic-wall-process',
+      points: 20,
+      summary: 'Defines the random boundary process: reflecting when closed/off and reservoir/loss-channel coupled when open/on.',
+      anyOf: [
+        ['random', 'reflecting', 'leaky', 'reservoir'],
+        ['telegraph', 'reflecting', 'absorbing'],
+        ['closed', 'reflecting', 'open', 'loss channel'],
+        ['wall', 'switches', 'reflecting', 'absorbing'],
+      ],
+    },
+    {
+      id: 'motion-observables',
+      points: 20,
+      summary: 'Centers motion observables such as survival probability, first-passage or hitting-time distribution, current, energy flux, and absorption rate.',
+      anyOf: [
+        ['survival probability', 'first-passage', 'energy flux'],
+        ['survival', 'hitting-time', 'current'],
+        ['particle current', 'absorbed energy flux'],
+        ['absorption rate', 'first passage', 'survival'],
+      ],
+    },
+    {
+      id: 'model-layer-map',
+      points: 15,
+      summary: 'Separates model layers: classical trajectory or stochastic billiard, wavepacket/Schrodinger or KG field, kinetic ensemble/master equation, and optional spectral diagnostics.',
+      anyOf: [
+        ['classical', 'wavepacket', 'kinetic'],
+        ['trajectory', 'field', 'master equation'],
+        ['billiard', 'wavepacket', 'ensemble'],
+        ['model layer', 'classical', 'open system'],
+      ],
+    },
+    {
+      id: 'spectra-secondary',
+      points: 10,
+      summary: 'Treats spectra, modes, or resonances as secondary diagnostics rather than the primary object.',
+      anyOf: [
+        ['spectrum', 'secondary'],
+        ['spectra', 'diagnostic'],
+        ['modes', 'auxiliary'],
+        ['resonances', 'not primary'],
+      ],
+    },
+    {
+      id: 'hakimi-runtime-use',
+      points: 10,
+      summary: 'Uses Hakimi runtime correctly: WorkFrame, ContextPack, AITP profile check, and draft AITP write/run planning.',
+      toolActions: [
+        'ResearchAction/open_work_frame',
+        'ResearchAction/compile_context_pack',
+        'ResearchAction/inspect_aitp_runtime_payload_profiles',
+        'ResearchAction/draft_aitp_write_bridge_call',
+      ],
+    },
+    {
+      id: 'hakimi-aitp-bridge-execute',
+      points: 5,
+      summary: 'Executes the Hakimi AITP write bridge for startResearchRun, or exposes a concrete bridge blocker separately from the physics answer.',
       aitpWriteOperations: ['startResearchRun'],
     },
   ];

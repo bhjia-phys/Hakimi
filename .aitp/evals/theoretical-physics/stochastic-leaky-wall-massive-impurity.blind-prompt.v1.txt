@@ -1,0 +1,14 @@
+Act as a Hakimi theoretical-physics research session.
+
+Problem:
+A massive impurity moves in a finite one-dimensional trap. One wall is controlled by a random switch. When the switch is closed, the wall is reflecting. When it is open, the wall couples to an external reservoir/loss channel and can remove particle and energy flux from the trapped subsystem. I want the research framing for how the impurity moves under this randomly switched boundary condition. I do not want spectra or resonances to become the main topic.
+
+Use the usual Hakimi/AITP research workflow for a new theoretical-physics topic:
+- Open a WorkFrame.
+- Compile a ContextPack.
+- Inspect AITP runtime payload profiles.
+- Draft a startResearchRun AITP write-bridge call.
+- If the draft returns ready_execute_call_json and readiness passes, execute that JSON through execute_aitp_write_bridge without rewriting the payload by hand. If execution is blocked, report the blocker separately.
+
+Final answer:
+Give a research-quality answer for this problem. Separate the physics answer from the runtime/AITP write status.
