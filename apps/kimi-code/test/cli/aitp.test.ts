@@ -5,10 +5,14 @@ import {
   type AitpCommandRunner,
 } from '@moonshot-ai/agent-core';
 import { Command } from 'commander';
+import { resolve } from 'node:path';
 
-import { handleAitpDoctor, registerAitpCommand } from '#/cli/sub/aitp';
+import { handleAitpDoctor, handleAitpInit, registerAitpCommand } from '#/cli/sub/aitp';
 
-function makeDeps(runner: AitpCommandRunner): {
+function makeDeps(
+  runner: AitpCommandRunner,
+  fileExists: (path: string) => boolean = (path) => path.endsWith('.aitp'),
+): {
   deps: Parameters<typeof handleAitpDoctor>[0];
   stdout: string[];
   stderr: string[];
@@ -27,13 +31,46 @@ function makeDeps(runner: AitpCommandRunner): {
         throw new Error(`exit ${String(code)}`);
       },
       runner,
-      fileExists: (path) => path.endsWith('.aitp'),
+      fileExists,
     },
     stdout,
     stderr,
     exitCodes,
   };
 }
+
+describe('hakimi aitp init', () => {
+  it('creates or opens the selected AITP workspace through the default runner', async () => {
+    const calls: string[][] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push([...args]);
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            workspace_root: `${resolve('F:/workspace')}/.aitp`,
+          }),
+          stderr: '',
+          fallbackUsed: true,
+          resolvedCommand: 'uv',
+          resolvedCwd: 'F:/AI_Workspace/repos/AITP-Research-Protocol',
+        };
+      },
+    };
+    const { deps, stdout, stderr } = makeDeps(runner);
+
+    const code = await handleAitpInit(deps, { json: true });
+
+    expect(code).toBe(0);
+    expect(stderr.join('')).toBe('');
+    expect(calls).toEqual([['init', resolve('F:/workspace')]]);
+    const parsed = JSON.parse(stdout.join(''));
+    expect(parsed.ok).toBe(true);
+    expect(parsed.workspaceRoot).toContain('.aitp');
+    expect(parsed.fallbackUsed).toBe(true);
+  });
+});
 
 describe('hakimi aitp doctor', () => {
   it('prints a ready status when the AITP runtime is discoverable', async () => {
@@ -80,6 +117,51 @@ describe('hakimi aitp doctor', () => {
     expect(err).toContain('Hakimi AITP doctor: missing');
     expect(err).toContain('payload-profiles');
     expect(err).toContain('aitp-v5 not found');
+  });
+
+  it('can initialize a fresh workspace before checking readiness', async () => {
+    let initialized = false;
+    const calls: string[][] = [];
+    const runner: AitpCommandRunner = {
+      async run(_command, args) {
+        calls.push([...args]);
+        if (args[0] === 'init') {
+          initialized = true;
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              ok: true,
+              workspace_root: `${resolve('F:/workspace')}/.aitp`,
+            }),
+            stderr: '',
+          };
+        }
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            runtime_payload_profiles: fakeRuntimePayloadProfilesCatalog(),
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const { deps, stdout, stderr } = makeDeps(
+      runner,
+      (path) => initialized && path.endsWith('.aitp'),
+    );
+
+    const code = await handleAitpDoctor(deps, { init: true, json: true });
+
+    expect(code).toBe(0);
+    expect(stderr.join('')).toBe('');
+    expect(calls).toEqual([
+      ['init', resolve('F:/workspace')],
+      ['adapter', 'payload-profiles'],
+    ]);
+    const parsed = JSON.parse(stdout.join(''));
+    expect(parsed.status).toBe('ready');
+    expect(parsed.initialization.ok).toBe(true);
   });
 
   it('registers the nested commander command', async () => {
