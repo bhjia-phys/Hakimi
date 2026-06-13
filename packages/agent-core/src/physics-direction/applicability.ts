@@ -297,10 +297,16 @@ function inferRelations(text: string, output: Set<string>): void {
       'source',
       'sink',
       'bath',
+      'reservoir',
       'measurement',
       'open system',
       'coupling',
       'channel',
+      'loss channel',
+      'leak',
+      'leaky',
+      'absorber',
+      'absorptive',
       'absorb',
       'absorbing',
       '源',
@@ -340,6 +346,8 @@ function inferRelations(text: string, output: Set<string>): void {
       'reach',
       'reaches',
       'hitting',
+      'first passage',
+      'first-passage',
       'hit',
       'arrival',
       'turning point',
@@ -427,6 +435,22 @@ function inferContextTags(text: string, output: Set<string>): void {
   }
   if (matchesAny(text, ['energy flux', 'flux loss', 'absorbed energy'])) {
     output.add('energy_flux');
+  }
+  if (matchesAny(text, ['reservoir', 'loss channel', 'leaky', 'absorber', 'absorptive'])) {
+    output.add('open_system');
+  }
+  if (matchesAny(text, ['massive impurity', 'massive excitation'])) {
+    output.add('massive_matter');
+  }
+  if (matchesAny(text, ['first passage', 'first-passage'])) {
+    output.add('observable');
+    output.add('hitting_time');
+  }
+  if (matchesAny(text, ['first-passage time'])) {
+    output.add('hitting_time');
+  }
+  if (matchesAny(text, ['impurity motion'])) {
+    output.add('matter_motion');
   }
 }
 

@@ -206,7 +206,21 @@ function curatedRagDomainHints(
     ...(input.workFrame.conventionIds ?? []),
   ].join(' '));
   const hints: string[] = [];
-  if (hasAny(text, ['survival', 'hitting', 'hit time', 'first passage', 'energy flux', 'current', 'absorb'])) {
+  if (
+    hasAny(text, [
+      'survival',
+      'hitting',
+      'hit time',
+      'first passage',
+      'first-passage',
+      'arrival time',
+      'energy flux',
+      'current',
+      'absorb',
+      'loss channel',
+      'leaky',
+    ])
+  ) {
     hints.push('survival probability', 'hitting time', 'energy flux', 'absorption rate');
   }
   if (hasAny(text, ['normal mode', 'normal-mode', 'spectrum', 'spectra', 'qnm', 'quasinormal'])) {
@@ -233,7 +247,18 @@ function curatedRagDomainHints(
       'model layer separation',
     );
   }
-  if (hasAny(text, ['massive matter', 'matter', 'particle', 'field', 'wavepacket', 'wave packet'])) {
+  if (
+    hasAny(text, [
+      'massive matter',
+      'massive impurity',
+      'massive excitation',
+      'matter',
+      'particle',
+      'field',
+      'wavepacket',
+      'wave packet',
+    ])
+  ) {
     hints.push(
       'massive matter',
       'dynamical degree of freedom',
@@ -241,7 +266,22 @@ function curatedRagDomainHints(
       'particle motion',
     );
   }
-  if (hasAny(text, ['boundary', 'wall', 'cutoff', 'source', 'sink', 'bath', 'detector', 'measurement'])) {
+  if (
+    hasAny(text, [
+      'boundary',
+      'wall',
+      'cutoff',
+      'source',
+      'sink',
+      'bath',
+      'reservoir',
+      'loss channel',
+      'leaky',
+      'absorber',
+      'detector',
+      'measurement',
+    ])
+  ) {
     hints.push(
       'boundary condition',
       'source sink bath detector',

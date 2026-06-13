@@ -266,4 +266,46 @@ describe('physics direction lenses', () => {
       ]),
     );
   });
+
+  it('generalizes the boundary/source-sink motion lens beyond AdS keywords', () => {
+    const recommendations = recommendPhysicsLenses(
+      {
+        domain: 'theoretical-physics/general',
+        topic: 'stochastic leaky wall massive impurity motion',
+        prompt:
+          'A new theory problem has a massive impurity moving in a finite trap. One wall randomly switches between reflecting and a leaky reservoir/loss channel. I want survival probability, first-passage time to the wall, particle current, and absorbed energy flux, not a spectrum-first answer.',
+        contextTags: ['new_topic'],
+      },
+      { lenses: THEORETICAL_PHYSICS_GENERAL_LENSES },
+    );
+
+    const boundaryMotion = recommendations.find(
+      (candidate) => candidate.lens.id === 'boundary_sink_motion_inventory',
+    );
+
+    expect(boundaryMotion).toMatchObject({
+      status: 'applicable',
+      confidence: 'high',
+    });
+    expect(boundaryMotion?.matchedContextTags).toEqual(
+      expect.arrayContaining([
+        'open_system',
+        'massive_matter',
+        'matter_motion',
+        'survival_analysis',
+        'hitting_time',
+        'energy_flux',
+      ]),
+    );
+    expect(boundaryMotion?.matchedRelationKinds).toEqual(
+      expect.arrayContaining([
+        'boundary_condition',
+        'source_or_sink',
+        'reachability_constraint',
+      ]),
+    );
+    expect(boundaryMotion?.guidingQuestions.join(' ')).toContain(
+      'true asymptotic boundary, finite wall',
+    );
+  });
 });

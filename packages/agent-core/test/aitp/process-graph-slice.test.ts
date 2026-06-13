@@ -279,6 +279,43 @@ describe('AITP process graph slice adapter', () => {
     expect(moment?.query).toContain('spectral diagnostic auxiliary');
   });
 
+  it('adds boundary-motion hints for non-AdS leaky reservoir topics', () => {
+    const moment = detectAitpCuratedRagMoment({
+      prompt: [
+        {
+          type: 'text',
+          text:
+            'Explain a new theory setup for a massive impurity in a finite trap with a randomly leaky wall/reservoir, survival probability, first-passage time, current, and absorbed energy flux.',
+        },
+      ],
+      workFrame: {
+        id: 'frame.leaky-wall',
+        domain: 'theoretical-physics/general',
+        topic: 'stochastic-leaky-wall-massive-impurity',
+        goal: 'Find the key motion objects before using spectra as diagnostics.',
+        trustState: 'exploratory',
+        activeObjectIds: [],
+        assumptionIds: [],
+        conventionIds: [],
+        sourceRefs: [],
+        openObligationIds: [],
+      },
+    });
+
+    expect(moment).toMatchObject({
+      resultRole: 'heuristic_context',
+      readSurfaceEffect: 'orientation_only',
+      reasons: expect.arrayContaining(['conceptual_scaffolding']),
+    });
+    expect(moment?.query).toContain('massive matter');
+    expect(moment?.query).toContain('boundary condition');
+    expect(moment?.query).toContain('source sink bath detector');
+    expect(moment?.query).toContain('reachability hitting condition');
+    expect(moment?.query).toContain('survival probability');
+    expect(moment?.query).toContain('hitting time');
+    expect(moment?.query).toContain('energy flux');
+  });
+
   it('does not detect curated RAG moments for plain implementation prompts', () => {
     const moment = detectAitpCuratedRagMoment({
       prompt: [{ type: 'text', text: 'Continue the runtime implementation.' }],
