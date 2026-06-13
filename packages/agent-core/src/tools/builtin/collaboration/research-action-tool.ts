@@ -5558,6 +5558,7 @@ function renderAitpSection(pack: ResearchContextPack): string {
   return [
     `  <aitp truth_source="${escapeXml(aitp.truthSource)}" orientation_only="${String(aitp.orientationOnly)}">`,
     renderBoundedStringList('context_lines', 'line', aitp.contextLines, '    '),
+    renderAitpClaimRelationMap(aitp.claimRelationMap, '    '),
     renderBoundedStringList('live_routes', 'route', aitp.liveRouteIds, '    '),
     renderBoundedStringList('blocked_routes', 'route', aitp.blockedRouteIds, '    '),
     renderBoundedStringList('abandoned_routes', 'route', aitp.abandonedRouteIds, '    '),
@@ -5651,6 +5652,22 @@ function renderAitpSection(pack: ResearchContextPack): string {
     ),
     renderBoundedStringList('trust_boundary_reasons', 'reason', aitp.trustBoundaryReasons, '    '),
     '  </aitp>',
+  ].join('\n');
+}
+
+function renderAitpClaimRelationMap(
+  relationMap: NonNullable<ResearchContextPack['aitp']>['claimRelationMap'],
+  indent: string,
+): string {
+  if (relationMap === undefined) return `${indent}<claim_relation_map />`;
+  return [
+    `${indent}<claim_relation_map claim_id="${escapeXml(relationMap.claimId)}" confidence_state="${escapeXml(relationMap.confidenceState)}" supported_count="${String(relationMap.supportedCount)}" limited_count="${String(relationMap.limitedCount)}" not_tested_count="${String(relationMap.notTestedCount)}" contradicted_count="${String(relationMap.contradictedCount)}" orientation_only="true" can_update_claim_trust="false" trust_update_allowed="false">`,
+    renderBoundedStringList('can_say', 'item', relationMap.canSay, `${indent}  `),
+    renderBoundedStringList('cannot_say', 'item', relationMap.cannotSay, `${indent}  `),
+    renderBoundedStringList('current_blockers', 'blocker', relationMap.currentBlockers, `${indent}  `),
+    renderBoundedStringList('next_valid_actions', 'action', relationMap.nextValidActions, `${indent}  `),
+    `${indent}  <boundary>Conclusion-boundary surface only; do not convert runtime/application failures into algorithm evidence or claim-trust updates.</boundary>`,
+    `${indent}</claim_relation_map>`,
   ].join('\n');
 }
 

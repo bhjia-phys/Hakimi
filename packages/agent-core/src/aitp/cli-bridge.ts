@@ -22,6 +22,11 @@ import {
   type AitpRuntimePayloadProfilesCatalog,
 } from './runtime-payload-profiles';
 import {
+  parseAitpClaimRelationMap,
+  type AitpClaimRelationMap,
+  type AitpClaimRelationMapProvider,
+} from './claim-relation-map';
+import {
   parseAitpLiteratureComparisonDraft,
   type AitpLiteratureComparisonDraft,
   type AitpLiteratureComparisonDraftInput,
@@ -238,10 +243,21 @@ export interface AitpCliProcessGraphSliceProviderOptions extends AitpCliBridgeOp
     | undefined;
 }
 
+export interface AitpCliClaimRelationMapProviderOptions extends AitpCliBridgeOptions {
+  readonly resolveScope?:
+    | ((workFrame: WorkFrame) => AitpWorkFrameScope | null | undefined)
+    | undefined;
+}
+
 export interface ReadAitpProcessGraphSliceInput extends CompileAitpProcessGraphSliceOptions {
   readonly sessionId: string;
   readonly claimId?: string | undefined;
   readonly limit?: number | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface ReadAitpClaimRelationMapInput {
+  readonly sessionId: string;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -874,6 +890,19 @@ export class AitpCliBridge {
     });
   }
 
+  async readClaimRelationMap(
+    input: ReadAitpClaimRelationMapInput,
+  ): Promise<AitpClaimRelationMap> {
+    const payload = await this.runJson(
+      buildAitpClaimRelationMapArgs({
+        basePath: this.options.basePath,
+        sessionId: input.sessionId,
+      }),
+      input.signal,
+    );
+    return parseAitpClaimRelationMap(payload);
+  }
+
   async readRuntimePayloadProfiles(
     input: ReadAitpRuntimePayloadProfilesInput = {},
   ): Promise<AitpRuntimePayloadProfilesCatalog> {
@@ -1239,6 +1268,23 @@ export function createAitpCliProcessGraphSliceProvider(
   };
 }
 
+export function createAitpCliClaimRelationMapProvider(
+  options: AitpCliClaimRelationMapProviderOptions,
+): AitpClaimRelationMapProvider {
+  const bridge = createAitpCliBridge(options);
+  const resolveScope = options.resolveScope ?? resolveAitpScopeFromWorkFrame;
+  return {
+    async getClaimRelationMap(input) {
+      const scope = resolveScope(input.workFrame);
+      if (scope === null || scope === undefined) return null;
+      return bridge.readClaimRelationMap({
+        sessionId: scope.sessionId,
+        signal: input.signal,
+      });
+    },
+  };
+}
+
 export function resolveAitpScopeFromWorkFrame(
   workFrame: WorkFrame,
 ): AitpWorkFrameScope | undefined {
@@ -1267,6 +1313,15 @@ export function buildAitpProcessGraphSliceArgs(input: {
     args.push('--claim', input.claimId.trim());
   }
   return args;
+}
+
+export function buildAitpClaimRelationMapArgs(input: {
+  readonly basePath: string;
+  readonly sessionId: string;
+}): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.sessionId, 'sessionId');
+  return ['--base', input.basePath, 'relation-map', input.sessionId];
 }
 
 export function buildAitpRuntimePayloadProfilesArgs(): readonly string[] {

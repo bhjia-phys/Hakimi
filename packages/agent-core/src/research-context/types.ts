@@ -1,6 +1,6 @@
 import type { DomainProfileId } from '../domain-profile';
 import type { DomainPackManifest } from '../domain-pack';
-import type { CompiledAitpProcessGraphSlice } from '../aitp';
+import type { AitpClaimRelationMap, CompiledAitpProcessGraphSlice } from '../aitp';
 import type { AitpCuratedRagIndexMode, AitpCuratedRagSearchResult } from '../aitp/curated-rag';
 import type { AitpLiteratureSourceReviewHandoff } from '../aitp/literature-source-review-handoff';
 import type {
@@ -105,6 +105,24 @@ export interface ResearchContextLedgerSection {
   readonly proposals: readonly ResearchContextLedgerProposalSummary[];
 }
 
+export interface ResearchContextAitpClaimRelationMapSection {
+  readonly claimId: string;
+  readonly claimStatement: string;
+  readonly confidenceState: string;
+  readonly supportedCount: number;
+  readonly limitedCount: number;
+  readonly contradictedCount: number;
+  readonly notTestedCount: number;
+  readonly canSay: readonly string[];
+  readonly cannotSay: readonly string[];
+  readonly currentBlockers: readonly string[];
+  readonly nextValidActions: readonly string[];
+  readonly orientationOnly: true;
+  readonly canUpdateClaimTrust: false;
+  readonly trustUpdateAllowed: false;
+  readonly raw: AitpClaimRelationMap;
+}
+
 export interface ResearchContextAitpSection {
   readonly truthSource: string;
   readonly orientationOnly: boolean;
@@ -140,6 +158,7 @@ export interface ResearchContextAitpSection {
   readonly trustPrerequisiteCallIds: readonly string[];
   readonly suggestedActionIds: readonly string[];
   readonly compiled: CompiledAitpProcessGraphSlice;
+  readonly claimRelationMap?: ResearchContextAitpClaimRelationMapSection | undefined;
 }
 
 export interface ResearchContextCuratedRagChunkSummary {
@@ -334,6 +353,7 @@ export interface CompileResearchContextPackOptions {
   readonly bridgePolicy?: BridgePolicy | undefined;
   readonly includeLedgerStatuses?: readonly ResearchLedgerEventStatus[] | undefined;
   readonly aitp?: CompiledAitpProcessGraphSlice | null | undefined;
+  readonly claimRelationMap?: AitpClaimRelationMap | null | undefined;
   readonly curatedRag?: AitpCuratedRagSearchResult | null | undefined;
   readonly curatedRagReasonIds?: readonly string[] | undefined;
   readonly curatedRagCarriedRefRepairActive?: boolean | undefined;

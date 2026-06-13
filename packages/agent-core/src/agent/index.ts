@@ -15,6 +15,7 @@ import type { PluginCommandOrigin } from './context';
 import type { DomainProfileRegistry } from '../domain-profile';
 import type {
   AitpCuratedRagProvider,
+  AitpClaimRelationMapProvider,
   AitpLiteratureComparisonDraftProvider,
   AitpLiteratureSourceReviewHandoffProvider,
   AitpProcessGraphSliceProvider,
@@ -128,6 +129,7 @@ export interface AgentOptions {
   readonly researchHarness?: ResearchEvalCaseRegistry;
   readonly workflowRecipes?: WorkflowRecipeRegistry;
   readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
+  readonly aitpClaimRelationMapProvider?: AitpClaimRelationMapProvider | undefined;
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
   readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider | undefined;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
@@ -170,6 +172,7 @@ export class Agent {
   readonly mcp?: McpConnectionManager;
   readonly hooks?: HookEngine;
   readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider;
+  readonly aitpClaimRelationMapProvider?: AitpClaimRelationMapProvider;
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider;
   readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider;
@@ -252,6 +255,7 @@ export class Agent {
     this.mcp = options.mcp;
     this.hooks = options.hookEngine;
     this.aitpProcessGraphProvider = options.aitpProcessGraphProvider;
+    this.aitpClaimRelationMapProvider = options.aitpClaimRelationMapProvider;
     this.aitpRuntimePayloadProfilesProvider = options.aitpRuntimePayloadProfilesProvider;
     this.aitpRecordRefLookupProvider = options.aitpRecordRefLookupProvider;
     this.aitpCuratedRagProvider = options.aitpCuratedRagProvider;

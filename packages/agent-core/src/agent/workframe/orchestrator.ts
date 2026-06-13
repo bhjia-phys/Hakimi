@@ -5,6 +5,7 @@ import {
   type AitpLiteratureSourceReviewHandoff,
   type AitpLiteratureSourceReviewHandoffInput,
   type AitpCuratedRagMoment,
+  type AitpClaimRelationMap,
   type CompiledAitpProcessGraphSlice,
 } from '../../aitp';
 import type { AitpCuratedRagSearchResult } from '../../aitp/curated-rag';
@@ -34,8 +35,13 @@ export class WorkFrameOrchestrator {
     if (this.agent.workFrames.active?.id !== frame.id) {
       this.agent.workFrames.switch(frame.id, { source: 'controller' });
     }
-    const aitp =
-      (await this.readAitpProcessGraphSlice(frame, input)) ?? this.cachedAitpContext(frame);
+    const [freshAitp, freshClaimRelationMap] = await Promise.all([
+      this.readAitpProcessGraphSlice(frame, input),
+      this.readAitpClaimRelationMap(frame),
+    ]);
+    const aitp = freshAitp ?? this.cachedAitpContext(frame);
+    const claimRelationMap =
+      freshClaimRelationMap ?? this.cachedAitpClaimRelationMap(frame);
     const curatedRagMoment = detectAitpCuratedRagMoment({ prompt: input, workFrame: frame, aitp });
     const curatedRag = await this.searchCuratedRag(curatedRagMoment);
     const carriedRefRepair = detectCuratedRagCarriedRefRepair(input);
@@ -49,6 +55,7 @@ export class WorkFrameOrchestrator {
       {
         workFrameId: frame.id,
         aitp,
+        claimRelationMap,
         curatedRag,
         curatedRagReasonIds: curatedRagMoment?.reasons,
         curatedRagCarriedRefRepairActive: carriedRefRepair.active,
@@ -107,6 +114,22 @@ export class WorkFrameOrchestrator {
     }
   }
 
+  private async readAitpClaimRelationMap(
+    frame: WorkFrame,
+  ): Promise<AitpClaimRelationMap | undefined> {
+    const provider = this.agent.aitpClaimRelationMapProvider;
+    if (provider === undefined) return undefined;
+    try {
+      return (await provider.getClaimRelationMap({ workFrame: frame })) ?? undefined;
+    } catch (error) {
+      this.agent.log.warn('AITP claim relation map provider failed; continuing without relation map', {
+        workFrameId: frame.id,
+        error,
+      });
+      return undefined;
+    }
+  }
+
   private async readLiteratureSourceReviewHandoff(
     request: AitpLiteratureSourceReviewHandoffInput | undefined,
   ): Promise<AitpLiteratureSourceReviewHandoff | undefined> {
@@ -127,6 +150,11 @@ export class WorkFrameOrchestrator {
   private cachedAitpContext(frame: WorkFrame): CompiledAitpProcessGraphSlice | undefined {
     if (frame.contextPackId === undefined) return undefined;
     return this.agent.researchContext.getPack(frame.contextPackId)?.aitp?.compiled;
+  }
+
+  private cachedAitpClaimRelationMap(frame: WorkFrame): AitpClaimRelationMap | undefined {
+    if (frame.contextPackId === undefined) return undefined;
+    return this.agent.researchContext.getPack(frame.contextPackId)?.aitp?.claimRelationMap?.raw;
   }
 
   shouldInjectContext(lastInjectionIndex: number | null): boolean {

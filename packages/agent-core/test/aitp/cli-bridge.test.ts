@@ -15,6 +15,7 @@ import {
   buildAitpCuratedRagIngestArgs,
   buildAitpCuratedRagPromotionDraftArgs,
   buildAitpCuratedRagSearchArgs,
+  buildAitpClaimRelationMapArgs,
   buildAitpLiteratureComparisonDraftArgs,
   buildAitpLiteratureSourceReviewHandoffArgs,
   buildAitpEvidenceRecordArgs,
@@ -40,6 +41,7 @@ import {
   parseAitpCuratedRagIngestResult,
   parseAitpCuratedRagPromotionDraft,
   parseAitpCuratedRagSearchResult,
+  parseAitpClaimRelationMap,
   parseAitpLiteratureComparisonDraft,
   parseAitpLiteratureSourceReviewHandoff,
   parseAitpRuntimePayloadProfilesCatalog,
@@ -96,6 +98,52 @@ describe('AITP CLI bridge', () => {
         'trace.follow_source_dependency',
       ]),
     );
+  });
+
+  it('reads claim relation maps through the read-only relation-map command', async () => {
+    const calls: { command: string; args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(command, args) {
+        calls.push({ command, args });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify(fakeClaimRelationMapPayload()),
+          stderr: '',
+        };
+      },
+    };
+    const bridge = createAitpCliBridge({
+      basePath: 'F:/project',
+      command: 'aitp-v5',
+      runner,
+    });
+
+    const relationMap = await bridge.readClaimRelationMap({
+      sessionId: 'qsgw-si-recovery',
+    });
+
+    expect(calls).toEqual([
+      {
+        command: 'aitp-v5',
+        args: ['--base', 'F:/project', 'relation-map', 'qsgw-si-recovery'],
+      },
+    ]);
+    expect(buildAitpClaimRelationMapArgs({
+      basePath: 'F:/project',
+      sessionId: 'qsgw-si-recovery',
+    })).toEqual(['--base', 'F:/project', 'relation-map', 'qsgw-si-recovery']);
+    expect(relationMap.notTestedBy.map((item) => item.recordId)).toContain('evidence-si-runtime');
+    expect(relationMap.cannotSay.join('\n')).toContain('runtime/application failures');
+    expect(relationMap.canUpdateClaimTrust).toBe(false);
+  });
+
+  it('rejects claim relation maps that can update trust', () => {
+    expect(() =>
+      parseAitpClaimRelationMap({
+        ...fakeClaimRelationMapPayload(),
+        can_update_claim_trust: true,
+      }),
+    ).toThrow('can_update_claim_trust');
   });
 
   it('records exploratory records through AITP without inventing a Hakimi schema', async () => {
@@ -2271,6 +2319,91 @@ function fakeSlicePayload() {
         reason: 'relation is still only a hypothesis',
       },
     ],
+  };
+}
+
+function fakeClaimRelationMapPayload() {
+  return {
+    kind: 'claim_relation_map',
+    topic_id: 'qsgw-ac-error-molecules',
+    session_id: 'qsgw-si-recovery',
+    claim_id: 'claim-ridge-pade-h2o',
+    claim_statement:
+      'H2O one-iteration LibRPA QSGW ridge-regularized Pade reduces AC error amplification versus Thiele.',
+    confidence_state: 'hypothesis',
+    evidence_profile: 'code_method',
+    latest_claim_status: {
+      claim_status: 'hypothesis_with_runtime_blocker',
+    },
+    supported_by: [
+      {
+        record_kind: 'evidence',
+        record_id: 'evidence-h2o-replay',
+        relation_to_claim: 'supports_claim',
+        status: 'supports',
+        summary: 'H2O dump and replay support reduced AC error amplification.',
+        reason: 'positive evidence',
+        source_refs: ['artifact:h2o-dump'],
+        evidence_refs: ['evidence-h2o-replay'],
+        tool_run_ids: ['tool-run-h2o-replay'],
+        artifact_ids: [],
+      },
+    ],
+    limited_by: [
+      {
+        record_kind: 'evidence',
+        record_id: 'evidence-h2o-gap-audit',
+        relation_to_claim: 'limits_claim',
+        status: 'mixed',
+        summary: 'Strong ridge parameters may alter the gap.',
+        reason: 'scope limitation',
+        source_refs: ['artifact:h2o-gap-audit'],
+        evidence_refs: ['evidence-h2o-gap-audit'],
+        tool_run_ids: [],
+        artifact_ids: [],
+      },
+    ],
+    contradicted_by: [],
+    not_tested_by: [
+      {
+        record_kind: 'evidence',
+        record_id: 'evidence-si-runtime',
+        relation_to_claim: 'does_not_test_algorithm',
+        status: 'negative',
+        summary:
+          'Si job 2023865 failed before analytic continuation due to ScaLAPACK Wc executable path.',
+        reason: 'runtime/application failure before AC',
+        source_refs: ['slurm:2023865'],
+        evidence_refs: ['evidence-si-runtime'],
+        tool_run_ids: ['tool-run-si-runtime'],
+        artifact_ids: [],
+      },
+    ],
+    object_relations: [],
+    current_conclusion: {
+      can_say: ['H2O evidence supports reduced AC amplification within the tested setup.'],
+      cannot_say: [
+        'runtime/application failures cannot support or refute the ridge algorithm.',
+        'cannot say ridge preserves the Si gap before a completed Si AC comparison.',
+      ],
+    },
+    current_blockers: ['ScaLAPACK Wc executable path'],
+    next_valid_actions: ['Reproduce Si thiele baseline with the same executable, then rerun ridge.'],
+    source_records: {
+      claims: ['claim-ridge-pade-h2o'],
+      evidence: ['evidence-h2o-replay', 'evidence-h2o-gap-audit', 'evidence-si-runtime'],
+      tool_runs: ['tool-run-h2o-replay', 'tool-run-si-runtime'],
+      claim_statuses: ['claim-status-si-runtime'],
+      proof_obligations: [],
+      object_relations: [],
+    },
+    derived_from: ['claim_status_records', 'evidence_records', 'tool_run_records'],
+    truth_source: false,
+    orientation_only: true,
+    summary_inputs_trusted: false,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+    trust_update_allowed: false,
   };
 }
 
