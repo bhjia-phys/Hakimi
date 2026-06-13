@@ -13,6 +13,10 @@ import {
 } from './cli-bridge';
 import { compileAitpProcessGraphSlice } from './compiler';
 import {
+  parseAitpClaimRelationMap,
+  type AitpClaimRelationMapProvider,
+} from './claim-relation-map';
+import {
   parseAitpCuratedRagChunk,
   parseAitpCuratedRagCorpus,
   parseAitpCuratedRagPromotionDraft,
@@ -101,6 +105,51 @@ export function createDynamicAitpMcpFirstProcessGraphSliceProvider(
       } catch (error) {
         if (options.fallbackOnMcpError === false) throw error;
         return fallback.getProcessGraphSlice(input);
+      }
+    },
+  };
+}
+
+export function createDynamicAitpCliClaimRelationMapProvider(
+  options: DynamicAitpCliBridgeOptions,
+): AitpClaimRelationMapProvider {
+  const resolveScope = options.resolveScope ?? resolveAitpScopeFromWorkFrame;
+  return {
+    async getClaimRelationMap(input) {
+      const scope = resolveScope(input.workFrame);
+      if (scope === null || scope === undefined) return null;
+      return createDynamicAitpCliBridge(options).readClaimRelationMap({
+        sessionId: scope.sessionId,
+        signal: input.signal,
+      });
+    },
+  };
+}
+
+export function createDynamicAitpMcpFirstClaimRelationMapProvider(
+  options: DynamicAitpMcpFirstBridgeOptions,
+): AitpClaimRelationMapProvider {
+  const fallback = createDynamicAitpCliClaimRelationMapProvider(options);
+  const resolveScope = options.resolveScope ?? resolveAitpScopeFromWorkFrame;
+  return {
+    async getClaimRelationMap(input) {
+      const scope = resolveScope(input.workFrame);
+      if (scope === null || scope === undefined) return null;
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.getClaimRelationMap(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('readClaimRelationMap');
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args: mcpArgsForAitpClaimRelationMapRead(options.basePath(), scope),
+          signal: input.signal,
+        });
+        return parseAitpClaimRelationMap(normalizeAitpWriteBridgePayload(rawPayload));
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.getClaimRelationMap(input);
       }
     },
   };
@@ -457,6 +506,16 @@ export function mcpArgsForAitpProcessGraphSliceRead(
     args['limit'] = limit;
   }
   return args;
+}
+
+export function mcpArgsForAitpClaimRelationMapRead(
+  basePath: string,
+  scope: AitpWorkFrameScope,
+): Readonly<Record<string, unknown>> {
+  return {
+    base: basePath,
+    session_id: scope.sessionId,
+  };
 }
 
 function dynamicBridgeOptions(options: DynamicAitpCliBridgeOptions): AitpCliBridgeOptions {

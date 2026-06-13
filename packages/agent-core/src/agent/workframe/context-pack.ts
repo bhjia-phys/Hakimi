@@ -69,6 +69,27 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
     if (pack.aitp.orientationOnly) {
       lines.push('AITP slice is orientation-only; use it to choose local actions, not as promoted truth.');
     }
+    if (pack.aitp.claimRelationMap !== undefined) {
+      const relationMap = pack.aitp.claimRelationMap;
+      lines.push(
+        `AITP relation map: claim=${relationMap.claimId || '<none>'} support=${String(relationMap.supportedCount)} limited=${String(relationMap.limitedCount)} not_tested=${String(relationMap.notTestedCount)} contradicted=${String(relationMap.contradictedCount)}`,
+      );
+      if (relationMap.canSay.length > 0) {
+        lines.push(`AITP relation map can say: ${bounded(relationMap.canSay).join(' | ')}`);
+      }
+      if (relationMap.cannotSay.length > 0) {
+        lines.push(`AITP relation map cannot say: ${bounded(relationMap.cannotSay).join(' | ')}`);
+      }
+      if (relationMap.currentBlockers.length > 0) {
+        lines.push(`AITP relation map blockers: ${bounded(relationMap.currentBlockers).join(' | ')}`);
+      }
+      if (relationMap.nextValidActions.length > 0) {
+        lines.push(`AITP relation map next valid actions: ${bounded(relationMap.nextValidActions).join(' | ')}`);
+      }
+      lines.push(
+        'AITP relation map is a conclusion-boundary surface only; do not treat application/runtime failures as algorithm evidence or trust updates.',
+      );
+    }
     for (const line of bounded(pack.aitp.contextLines)) {
       lines.push(`AITP: ${line}`);
     }

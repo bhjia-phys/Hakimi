@@ -91,6 +91,7 @@ export type AitpWriteBridgeOperation = (typeof AITP_WRITE_BRIDGE_OPERATIONS)[num
 
 export type AitpRuntimeBridgeOperation =
   | 'readProcessGraphSlice'
+  | 'readClaimRelationMap'
   | 'readMomentPolicy'
   | 'readRuntimePayloadProfiles'
   | 'lookupRecordRefs'
@@ -146,6 +147,11 @@ const AITP_READ_TARGET_MCP_ARGUMENTS = {
     optional: ['claim_id', 'limit'],
     source: 'aitp_v5_get_process_graph_slice',
   },
+  claim_relation_map: {
+    required: ['base', 'session_id'],
+    optional: [],
+    source: 'aitp_v5_get_claim_relation_map',
+  },
   host_agnostic_moment_policy: {
     required: ['base', 'session_id'],
     optional: ['claim_id', 'limit'],
@@ -200,6 +206,15 @@ export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
     'aitp_v5_get_process_graph_slice',
     'aitp-v5 graph slice <session-id>',
     'process_graph_slice',
+    'read',
+    'read_only',
+  ),
+  bridgeTarget(
+    'readClaimRelationMap',
+    'claim_relation_map',
+    'aitp_v5_get_claim_relation_map',
+    'aitp-v5 relation-map <session-id>',
+    'claim_relation_map',
     'read',
     'read_only',
   ),

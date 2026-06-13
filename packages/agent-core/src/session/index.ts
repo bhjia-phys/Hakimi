@@ -27,6 +27,7 @@ import {
 } from '../config';
 import {
   createDynamicAitpMcpFirstCuratedRagProvider,
+  createDynamicAitpMcpFirstClaimRelationMapProvider,
   createDynamicAitpMcpFirstLiteratureComparisonDraftProvider,
   createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider,
   createDynamicAitpMcpFirstProcessGraphSliceProvider,
@@ -34,6 +35,7 @@ import {
   createDynamicAitpMcpFirstRuntimePayloadProfilesProvider,
   createDynamicAitpMcpFirstWriteBridgeExecutor,
   type AitpCuratedRagProvider,
+  type AitpClaimRelationMapProvider,
   type AitpCommandRunner,
   type AitpLiteratureComparisonDraftProvider,
   type AitpLiteratureSourceReviewHandoffProvider,
@@ -108,6 +110,7 @@ export interface SessionOptions {
   readonly benchmarkAdapters?: BenchmarkAdapterRegistry;
   readonly aitp?: SessionAitpBridgeConfig;
   readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
+  readonly aitpClaimRelationMapProvider?: AitpClaimRelationMapProvider | undefined;
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
   readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider | undefined;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
@@ -1208,6 +1211,10 @@ export class Session {
         config.aitpProcessGraphProvider ??
         this.options.aitpProcessGraphProvider ??
         aitpBridges?.processGraphProvider,
+      aitpClaimRelationMapProvider:
+        config.aitpClaimRelationMapProvider ??
+        this.options.aitpClaimRelationMapProvider ??
+        aitpBridges?.claimRelationMapProvider,
       aitpRuntimePayloadProfilesProvider:
         config.aitpRuntimePayloadProfilesProvider ??
         this.options.aitpRuntimePayloadProfilesProvider ??
@@ -1256,6 +1263,7 @@ export class Session {
   private createAitpBridges(basePath: () => string):
     | {
         readonly processGraphProvider: AitpProcessGraphSliceProvider;
+        readonly claimRelationMapProvider: AitpClaimRelationMapProvider;
         readonly runtimePayloadProfilesProvider: AitpRuntimePayloadProfilesProvider;
         readonly recordRefLookupProvider: AitpRecordRefLookupProvider;
         readonly curatedRagProvider: AitpCuratedRagProvider;
@@ -1276,6 +1284,11 @@ export class Session {
       processGraphProvider: createDynamicAitpMcpFirstProcessGraphSliceProvider({
         ...bridgeOptions,
         limit: config?.graphSliceLimit,
+        mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
+        fallbackOnMcpError: config?.fallbackOnMcpError,
+      }),
+      claimRelationMapProvider: createDynamicAitpMcpFirstClaimRelationMapProvider({
+        ...bridgeOptions,
         mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
         fallbackOnMcpError: config?.fallbackOnMcpError,
       }),

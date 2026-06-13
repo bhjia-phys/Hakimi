@@ -4,6 +4,7 @@ import {
   AITP_CURATED_RAG_CATALOG_VERSION,
   AITP_RUNTIME_PAYLOAD_PROFILE_CATALOG_VERSION,
   aitpRuntimePayloadProfileById,
+  createDynamicAitpCliClaimRelationMapProvider,
   createDynamicAitpCliCuratedRagProvider,
   createDynamicAitpCliLiteratureComparisonDraftProvider,
   createDynamicAitpCliLiteratureSourceReviewHandoffProvider,
@@ -12,12 +13,14 @@ import {
   createDynamicAitpCliRuntimePayloadProfilesProvider,
   createDynamicAitpCliWriteBridgeExecutor,
   createDynamicAitpMcpFirstCuratedRagProvider,
+  createDynamicAitpMcpFirstClaimRelationMapProvider,
   createDynamicAitpMcpFirstLiteratureComparisonDraftProvider,
   createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider,
   createDynamicAitpMcpFirstProcessGraphSliceProvider,
   createDynamicAitpMcpFirstRecordRefLookupProvider,
   createDynamicAitpMcpFirstRuntimePayloadProfilesProvider,
   createDynamicAitpMcpFirstWriteBridgeExecutor,
+  mcpArgsForAitpClaimRelationMapRead,
   mcpArgsForAitpProcessGraphSliceRead,
   type AitpCommandRunner,
 } from '../../src/aitp';
@@ -38,6 +41,40 @@ describe('AITP dynamic session bridge', () => {
       }),
     ).resolves.toBeNull();
     expect(calls).toEqual([]);
+  });
+
+  it('reads claim relation maps with latest base path and explicit AITP scope', async () => {
+    const calls: string[][] = [];
+    let basePath = 'F:/project-a';
+    const provider = createDynamicAitpCliClaimRelationMapProvider({
+      basePath: () => basePath,
+      runner: recordingRunner(calls),
+    });
+
+    await expect(
+      provider.getClaimRelationMap({
+        workFrame: workFrame({ sourceRefs: [] }),
+      }),
+    ).resolves.toBeNull();
+
+    const relationMap = await provider.getClaimRelationMap({
+      workFrame: workFrame({
+        sourceRefs: ['aitp:session:qsgw-si-recovery', 'aitp:claim:claim-ridge-pade-h2o'],
+      }),
+    });
+    basePath = 'F:/project-b';
+    const relationMapAgain = await provider.getClaimRelationMap({
+      workFrame: workFrame({
+        sourceRefs: ['aitp:session:qsgw-si-recovery', 'aitp:claim:claim-ridge-pade-h2o'],
+      }),
+    });
+
+    expect(relationMap?.notTestedBy.map((item) => item.recordId)).toContain('evidence-si-runtime');
+    expect(relationMapAgain?.nextValidActions.join('\n')).toContain('thiele baseline');
+    expect(calls).toEqual([
+      ['aitp-v5', '--base', 'F:/project-a', 'relation-map', 'qsgw-si-recovery'],
+      ['aitp-v5', '--base', 'F:/project-b', 'relation-map', 'qsgw-si-recovery'],
+    ]);
   });
 
   it('uses the latest base path for graph reads and write-bridge calls', async () => {
@@ -274,6 +311,48 @@ describe('AITP dynamic session bridge', () => {
         },
       },
     ]);
+  });
+
+  it('uses MCP-first transport for claim relation map reads', async () => {
+    const cliCalls: string[][] = [];
+    const mcpCalls: Array<{ readonly toolName: string; readonly args: Readonly<Record<string, unknown>> }> = [];
+    const provider = createDynamicAitpMcpFirstClaimRelationMapProvider({
+      basePath: () => 'F:/project',
+      runner: recordingRunner(cliCalls),
+      mcpTransport: {
+        async callTool(input) {
+          mcpCalls.push({ toolName: input.toolName, args: input.args });
+          return fakeClaimRelationMapPayload();
+        },
+      },
+    });
+
+    const relationMap = await provider.getClaimRelationMap({
+      workFrame: workFrame({
+        sourceRefs: ['aitp:session:qsgw-si-recovery', 'aitp:claim:claim-ridge-pade-h2o'],
+      }),
+    });
+
+    expect(relationMap?.cannotSay.join('\n')).toContain('runtime/application failures');
+    expect(cliCalls).toEqual([]);
+    expect(mcpCalls).toEqual([
+      {
+        toolName: 'aitp_v5_get_claim_relation_map',
+        args: {
+          base: 'F:/project',
+          session_id: 'qsgw-si-recovery',
+        },
+      },
+    ]);
+    expect(
+      mcpArgsForAitpClaimRelationMapRead('F:/project', {
+        sessionId: 'qsgw-si-recovery',
+        claimId: 'claim-ridge-pade-h2o',
+      }),
+    ).toEqual({
+      base: 'F:/project',
+      session_id: 'qsgw-si-recovery',
+    });
   });
 
   it('falls back to CLI process graph reads when MCP fails', async () => {
@@ -867,6 +946,13 @@ function recordingRunner(calls: string[][]): AitpCommandRunner {
           stderr: '',
         };
       }
+      if (args.includes('relation-map')) {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify(fakeClaimRelationMapPayload()),
+          stderr: '',
+        };
+      }
       if (args.includes('payload-profiles')) {
         return {
           exitCode: 0,
@@ -1033,6 +1119,91 @@ function fakeSlicePayload() {
     exploratory_records: [],
     trust_boundary_reasons: ['source_support'],
     recommended_moments: [],
+  };
+}
+
+function fakeClaimRelationMapPayload() {
+  return {
+    kind: 'claim_relation_map',
+    topic_id: 'qsgw-ac-error-molecules',
+    session_id: 'qsgw-si-recovery',
+    claim_id: 'claim-ridge-pade-h2o',
+    claim_statement:
+      'H2O one-iteration LibRPA QSGW ridge-regularized Pade reduces AC error amplification versus Thiele.',
+    confidence_state: 'hypothesis',
+    evidence_profile: 'code_method',
+    latest_claim_status: {
+      claim_status: 'hypothesis_with_runtime_blocker',
+    },
+    supported_by: [
+      {
+        record_kind: 'evidence',
+        record_id: 'evidence-h2o-replay',
+        relation_to_claim: 'supports_claim',
+        status: 'supports',
+        summary: 'H2O dump and replay support reduced AC error amplification.',
+        reason: 'positive evidence',
+        source_refs: ['artifact:h2o-dump'],
+        evidence_refs: ['evidence-h2o-replay'],
+        tool_run_ids: ['tool-run-h2o-replay'],
+        artifact_ids: [],
+      },
+    ],
+    limited_by: [
+      {
+        record_kind: 'evidence',
+        record_id: 'evidence-h2o-gap-audit',
+        relation_to_claim: 'limits_claim',
+        status: 'mixed',
+        summary: 'Strong ridge parameters may alter the gap.',
+        reason: 'scope limitation',
+        source_refs: ['artifact:h2o-gap-audit'],
+        evidence_refs: ['evidence-h2o-gap-audit'],
+        tool_run_ids: [],
+        artifact_ids: [],
+      },
+    ],
+    contradicted_by: [],
+    not_tested_by: [
+      {
+        record_kind: 'evidence',
+        record_id: 'evidence-si-runtime',
+        relation_to_claim: 'does_not_test_algorithm',
+        status: 'negative',
+        summary:
+          'Si job 2023865 failed before analytic continuation due to ScaLAPACK Wc executable path.',
+        reason: 'runtime/application failure before AC',
+        source_refs: ['slurm:2023865'],
+        evidence_refs: ['evidence-si-runtime'],
+        tool_run_ids: ['tool-run-si-runtime'],
+        artifact_ids: [],
+      },
+    ],
+    object_relations: [],
+    current_conclusion: {
+      can_say: ['H2O evidence supports reduced AC amplification within the tested setup.'],
+      cannot_say: [
+        'runtime/application failures cannot support or refute the ridge algorithm.',
+        'cannot say ridge preserves the Si gap before a completed Si AC comparison.',
+      ],
+    },
+    current_blockers: ['ScaLAPACK Wc executable path'],
+    next_valid_actions: ['Reproduce Si thiele baseline with the same executable, then rerun ridge.'],
+    source_records: {
+      claims: ['claim-ridge-pade-h2o'],
+      evidence: ['evidence-h2o-replay', 'evidence-h2o-gap-audit', 'evidence-si-runtime'],
+      tool_runs: ['tool-run-h2o-replay', 'tool-run-si-runtime'],
+      claim_statuses: ['claim-status-si-runtime'],
+      proof_obligations: [],
+      object_relations: [],
+    },
+    derived_from: ['claim_status_records', 'evidence_records', 'tool_run_records'],
+    truth_source: false,
+    orientation_only: true,
+    summary_inputs_trusted: false,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+    trust_update_allowed: false,
   };
 }
 

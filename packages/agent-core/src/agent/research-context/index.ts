@@ -45,6 +45,7 @@ export class ResearchContextManager {
       bridgePolicy: input.bridgePolicy,
       includeLedgerStatuses: input.includeLedgerStatuses,
       aitp: input.aitp,
+      claimRelationMap: input.claimRelationMap,
       curatedRag: input.curatedRag,
       curatedRagReasonIds: input.curatedRagReasonIds,
       curatedRagCarriedRefRepairActive: input.curatedRagCarriedRefRepairActive,

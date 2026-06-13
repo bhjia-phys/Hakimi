@@ -1028,6 +1028,11 @@ function collectAitp(
   diagnostics: ResearchContextPackDiagnostic[],
 ): ResearchContextAitpSection | undefined {
   if (input.aitp === null || input.aitp === undefined) return undefined;
+  const claimRelationMap = collectAitpClaimRelationMap(input, diagnostics);
+  const contextLines = [
+    ...input.aitp.contextLines,
+    ...relationMapContextLines(claimRelationMap),
+  ];
   for (const code of input.aitp.diagnostics) {
     diagnostics.push({
       severity: code === 'orientation-only' ? 'info' : 'warning',
@@ -1041,7 +1046,7 @@ function collectAitp(
     truthSource: input.aitp.trust.truthSource,
     orientationOnly: input.aitp.trust.orientationOnly,
     reminders: input.aitp.reminders,
-    contextLines: input.aitp.contextLines,
+    contextLines,
     liveRouteIds: input.aitp.routes.live.map((item) => item.id),
     blockedRouteIds: input.aitp.routes.blocked.map((item) => item.id),
     abandonedRouteIds: input.aitp.routes.abandoned.map((item) => item.id),
@@ -1088,7 +1093,64 @@ function collectAitp(
       .map((item) => item.id),
     suggestedActionIds: input.aitp.actionRecommendations.map((binding) => binding.actionId),
     compiled: input.aitp,
+    ...(claimRelationMap === undefined ? {} : { claimRelationMap }),
   };
+}
+
+function collectAitpClaimRelationMap(
+  input: CompileResearchContextPackInput,
+  diagnostics: ResearchContextPackDiagnostic[],
+): ResearchContextAitpSection['claimRelationMap'] | undefined {
+  const relationMap = input.claimRelationMap;
+  if (relationMap === null || relationMap === undefined) return undefined;
+  diagnostics.push({
+    severity: 'info',
+    code: 'aitp:claim-relation-map',
+    message:
+      'AITP claim relation map is active as a read-only conclusion-boundary surface; it does not update claim trust.',
+    source: 'aitp',
+    refId: relationMap.claimId || input.workFrame.id,
+  });
+  return {
+    claimId: relationMap.claimId,
+    claimStatement: relationMap.claimStatement,
+    confidenceState: relationMap.confidenceState,
+    supportedCount: relationMap.supportedBy.length,
+    limitedCount: relationMap.limitedBy.length,
+    contradictedCount: relationMap.contradictedBy.length,
+    notTestedCount: relationMap.notTestedBy.length,
+    canSay: relationMap.canSay,
+    cannotSay: relationMap.cannotSay,
+    currentBlockers: relationMap.currentBlockers,
+    nextValidActions: relationMap.nextValidActions,
+    orientationOnly: true,
+    canUpdateClaimTrust: false,
+    trustUpdateAllowed: false,
+    raw: relationMap,
+  };
+}
+
+function relationMapContextLines(
+  relationMap: ResearchContextAitpSection['claimRelationMap'] | undefined,
+): readonly string[] {
+  if (relationMap === undefined) return [];
+  const lines = [
+    `AITP claim relation map: claim=${relationMap.claimId || '<none>'} confidence=${relationMap.confidenceState || '<unknown>'} supported=${String(relationMap.supportedCount)} limited=${String(relationMap.limitedCount)} not_tested=${String(relationMap.notTestedCount)} contradicted=${String(relationMap.contradictedCount)}.`,
+  ];
+  if (relationMap.canSay.length > 0) {
+    lines.push(`Relation map can say: ${relationMap.canSay.slice(0, 4).join('; ')}`);
+  }
+  if (relationMap.cannotSay.length > 0) {
+    lines.push(`Relation map cannot say: ${relationMap.cannotSay.slice(0, 4).join('; ')}`);
+  }
+  if (relationMap.currentBlockers.length > 0) {
+    lines.push(`Relation map current blockers: ${relationMap.currentBlockers.slice(0, 4).join('; ')}`);
+  }
+  if (relationMap.nextValidActions.length > 0) {
+    lines.push(`Relation map next valid actions: ${relationMap.nextValidActions.slice(0, 4).join('; ')}`);
+  }
+  lines.push('Relation map boundary: orientation-only; never treat non-testing failures as algorithm evidence or claim-trust updates.');
+  return lines;
 }
 
 function collectProfiles(

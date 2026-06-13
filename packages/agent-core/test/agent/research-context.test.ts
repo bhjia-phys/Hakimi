@@ -7,7 +7,9 @@ import { ProviderManager } from '../../src/session/provider-manager';
 import {
   WorkflowRecipeRegistry,
   compileAitpProcessGraphSlice,
+  parseAitpClaimRelationMap,
   parseAitpLiteratureSourceReviewHandoff,
+  type AitpClaimRelationMapProvider,
   type AitpCuratedRagProvider,
   type AitpCuratedRagSearchResult,
   type AitpLiteratureSourceReviewHandoffProvider,
@@ -200,11 +202,17 @@ describe('ResearchContextManager', () => {
         aitp: compileAitpProcessGraphSlice(aitpSlicePayload(), {
           prompt: 'Follow the source dependency and audit original question drift.',
         }),
+        claimRelationMap: parseAitpClaimRelationMap(aitpClaimRelationMapPayload()),
       },
       { source: 'controller' },
     );
 
     expect(pack.aitp?.contextLines.join('\n')).toContain('Source gaps: claim-fqhe');
+    expect(pack.aitp?.contextLines.join('\n')).toContain('AITP claim relation map');
+    expect(pack.aitp?.claimRelationMap?.notTestedCount).toBe(1);
+    expect(pack.aitp?.claimRelationMap?.cannotSay.join('\n')).toContain(
+      'runtime/application failures',
+    );
     expect(pack.aitp?.sourceAssetIds).toEqual(['source-asset-edge-counting']);
     expect(pack.aitp?.sourceAssetMissingHashIds).toEqual(['source-asset-edge-counting']);
     expect(pack.aitp?.sourceStackCoverageClaimIds).toEqual(['claim-fqhe']);
@@ -223,6 +231,7 @@ describe('ResearchContextManager', () => {
 
   it('fetches AITP process graph slices before research context injection', async () => {
     const calls: string[] = [];
+    const relationCalls: string[] = [];
     const aitpProcessGraphProvider: AitpProcessGraphSliceProvider = {
       async getProcessGraphSlice(input) {
         calls.push(input.workFrame.id);
@@ -231,7 +240,16 @@ describe('ResearchContextManager', () => {
         });
       },
     };
-    const agent = makeAgent(undefined, { aitpProcessGraphProvider });
+    const aitpClaimRelationMapProvider: AitpClaimRelationMapProvider = {
+      async getClaimRelationMap(input) {
+        relationCalls.push(input.workFrame.id);
+        return parseAitpClaimRelationMap(aitpClaimRelationMapPayload());
+      },
+    };
+    const agent = makeAgent(undefined, {
+      aitpProcessGraphProvider,
+      aitpClaimRelationMapProvider,
+    });
     agent.workFrames.open(
       {
         id: 'frame.aitp',
@@ -252,9 +270,15 @@ describe('ResearchContextManager', () => {
     await agent.injection.inject();
 
     expect(calls).toEqual(['frame.aitp']);
+    expect(relationCalls).toEqual(['frame.aitp']);
     const lastMessage = agent.context.history.at(-1);
     const reminder = (lastMessage?.content[0] as { text: string }).text;
     expect(reminder).toContain('AITP process graph: truth_source=typed_records');
+    expect(reminder).toContain('AITP relation map: claim=claim-ridge-pade-h2o');
+    expect(reminder).toContain('AITP relation map cannot say');
+    expect(reminder).toContain('runtime/application failures');
+    expect(reminder).toContain('AITP relation map next valid actions');
+    expect(reminder).toContain('thiele baseline');
     expect(reminder).toContain('AITP open obligations');
     expect(reminder).toContain('AITP live routes: route-source-first');
     expect(reminder).toContain('AITP blocked routes: route-direct-proof');
@@ -880,6 +904,7 @@ function makeAgent(
   options: {
     readonly workflowRecipes?: WorkflowRecipeRegistry | undefined;
     readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
+    readonly aitpClaimRelationMapProvider?: AitpClaimRelationMapProvider | undefined;
     readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
     readonly aitpLiteratureSourceReviewHandoffProvider?:
       | AitpLiteratureSourceReviewHandoffProvider
@@ -919,6 +944,7 @@ function makeAgent(
     }),
     workflowRecipes: options.workflowRecipes,
     aitpProcessGraphProvider: options.aitpProcessGraphProvider,
+    aitpClaimRelationMapProvider: options.aitpClaimRelationMapProvider,
     aitpCuratedRagProvider: options.aitpCuratedRagProvider,
     aitpLiteratureSourceReviewHandoffProvider:
       options.aitpLiteratureSourceReviewHandoffProvider,
@@ -1371,5 +1397,90 @@ function aitpSlicePayload() {
         target_id: 'claim-fqhe',
       },
     ],
+  };
+}
+
+function aitpClaimRelationMapPayload() {
+  return {
+    kind: 'claim_relation_map',
+    topic_id: 'qsgw-ac-error-molecules',
+    session_id: 'qsgw-si-recovery',
+    claim_id: 'claim-ridge-pade-h2o',
+    claim_statement:
+      'H2O one-iteration LibRPA QSGW ridge-regularized Pade reduces AC error amplification versus Thiele.',
+    confidence_state: 'hypothesis',
+    evidence_profile: 'code_method',
+    latest_claim_status: {
+      claim_status: 'hypothesis_with_runtime_blocker',
+    },
+    supported_by: [
+      {
+        record_kind: 'evidence',
+        record_id: 'evidence-h2o-replay',
+        relation_to_claim: 'supports_claim',
+        status: 'supports',
+        summary: 'H2O dump and one-iteration replay support AC error-amplification reduction.',
+        reason: 'positive H2O replay evidence',
+        source_refs: ['artifact:h2o-dump'],
+        evidence_refs: ['evidence-h2o-replay'],
+        tool_run_ids: ['tool-run-h2o-replay'],
+        artifact_ids: [],
+      },
+    ],
+    limited_by: [
+      {
+        record_kind: 'evidence',
+        record_id: 'evidence-h2o-gap-audit',
+        relation_to_claim: 'limits_claim',
+        status: 'mixed',
+        summary: 'Strong ridge parameters may alter the gap.',
+        reason: 'gap bias limitation',
+        source_refs: ['artifact:h2o-gap-audit'],
+        evidence_refs: ['evidence-h2o-gap-audit'],
+        tool_run_ids: [],
+        artifact_ids: [],
+      },
+    ],
+    contradicted_by: [],
+    not_tested_by: [
+      {
+        record_kind: 'evidence',
+        record_id: 'evidence-si-runtime',
+        relation_to_claim: 'does_not_test_algorithm',
+        status: 'negative',
+        summary:
+          'Si job 2023865 failed before analytic continuation because of ScaLAPACK Wc executable path.',
+        reason: 'runtime/application failure before AC',
+        source_refs: ['slurm:2023865'],
+        evidence_refs: ['evidence-si-runtime'],
+        tool_run_ids: ['tool-run-si-runtime'],
+        artifact_ids: [],
+      },
+    ],
+    object_relations: [],
+    current_conclusion: {
+      can_say: ['H2O evidence supports reduced AC amplification within the tested setup.'],
+      cannot_say: [
+        'runtime/application failures cannot support or refute the ridge algorithm.',
+        'cannot say ridge preserves the Si gap before a completed Si AC comparison.',
+      ],
+    },
+    current_blockers: ['ScaLAPACK Wc executable path'],
+    next_valid_actions: ['Reproduce Si thiele baseline with the same executable, then rerun ridge.'],
+    source_records: {
+      claims: ['claim-ridge-pade-h2o'],
+      evidence: ['evidence-h2o-replay', 'evidence-h2o-gap-audit', 'evidence-si-runtime'],
+      tool_runs: ['tool-run-h2o-replay', 'tool-run-si-runtime'],
+      claim_statuses: ['claim-status-si-runtime'],
+      proof_obligations: [],
+      object_relations: [],
+    },
+    derived_from: ['claim_status_records', 'evidence_records', 'tool_run_records'],
+    truth_source: false,
+    orientation_only: true,
+    summary_inputs_trusted: false,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+    trust_update_allowed: false,
   };
 }
