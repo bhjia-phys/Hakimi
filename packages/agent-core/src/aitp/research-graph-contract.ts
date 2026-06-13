@@ -29,7 +29,7 @@ export interface ResearchGraphBoundarySurface {
   readonly boundaryRules: readonly string[];
 }
 
-export const HAKIMI_AITP_RESEARCH_GRAPH_CONTRACT = [
+export const HAKIMI_AITP_RESEARCH_GRAPH_CONTRACT: readonly ResearchGraphBoundarySurface[] = [
   {
     id: 'aitp.typed-record-kernel',
     owner: 'aitp',
@@ -246,7 +246,7 @@ export const HAKIMI_AITP_RESEARCH_GRAPH_CONTRACT = [
       'Eval reports can diagnose tool use and answers but are not scientific evidence.',
     ],
   },
-] as const satisfies readonly ResearchGraphBoundarySurface[];
+] as const;
 
 export function getResearchGraphBoundarySurface(
   id: string,
