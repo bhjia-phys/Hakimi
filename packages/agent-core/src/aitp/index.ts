@@ -15,3 +15,4 @@ export * from './curated-rag-moment';
 export * from './claim-relation-map';
 export * from './literature-comparison-draft';
 export * from './literature-source-review-handoff';
+export * from './research-graph-contract';
