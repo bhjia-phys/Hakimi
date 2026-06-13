@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { delimiter, dirname, join, resolve } from 'node:path';
 
 import { compileAitpProcessGraphSlice, type CompileAitpProcessGraphSliceOptions } from './compiler';
 import {
@@ -2182,7 +2182,8 @@ class SpawnAitpCommandRunner implements AitpCommandRunner {
   ): Promise<AitpCommandResult> {
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(command, [...args], {
+      const target = resolveSpawnTarget(command, args);
+      child = spawn(target.command, target.args, {
         cwd: options.cwd,
         shell: false,
         stdio: 'pipe',
@@ -2246,6 +2247,88 @@ class SpawnAitpCommandRunner implements AitpCommandRunner {
       });
     });
   }
+}
+
+function resolveSpawnTarget(
+  command: string,
+  args: readonly string[],
+): { readonly command: string; readonly args: readonly string[] } {
+  if (process.platform !== 'win32') return { command, args: [...args] };
+  const resolvedCommand = resolveWindowsSpawnCommand(command);
+  const npmShimTarget = resolveNpmShimNodeTarget(resolvedCommand);
+  if (npmShimTarget !== undefined) {
+    return { command: process.execPath, args: [npmShimTarget, ...args] };
+  }
+  if (/\.ps1$/i.test(resolvedCommand)) {
+    return {
+      command: 'powershell.exe',
+      args: [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        resolvedCommand,
+        ...args,
+      ],
+    };
+  }
+  return { command: resolvedCommand, args: [...args] };
+}
+
+function resolveWindowsSpawnCommand(command: string): string {
+  if (command.includes('\\') || command.includes('/')) {
+    return resolveWindowsCommandPath(command) ?? command;
+  }
+  const pathValue = process.env['PATH'] ?? '';
+  for (const dir of pathValue.split(delimiter)) {
+    if (dir.trim().length === 0) continue;
+    const resolved = resolveWindowsCommandPath(join(dir, command));
+    if (resolved !== undefined) return resolved;
+  }
+  return command;
+}
+
+function resolveWindowsCommandPath(commandPath: string): string | undefined {
+  const extensions = windowsExecutableExtensions(commandPath);
+  for (const extension of extensions) {
+    const candidate = `${commandPath}${extension}`;
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+function resolveNpmShimNodeTarget(commandPath: string): string | undefined {
+  if (!/\.(cmd|ps1)$/i.test(commandPath)) return undefined;
+  let text: string;
+  try {
+    text = readFileSync(commandPath, 'utf8');
+  } catch {
+    return undefined;
+  }
+  const match =
+    /[%$](?:dp0|basedir)%?[\\/](node_modules[\\/][^"'\r\n]+?\.mjs)/i.exec(text) ??
+    /["']?\$basedir[\\/](node_modules[\\/][^"'\r\n]+?\.mjs)/i.exec(text);
+  const relativeTarget = match?.[1];
+  if (relativeTarget === undefined) return undefined;
+  const target = resolve(dirname(commandPath), relativeTarget.replaceAll('\\', '/'));
+  return existsSync(target) ? target : undefined;
+}
+
+function windowsExecutableExtensions(commandPath: string): readonly string[] {
+  if (/\.[^\\/]+$/.test(commandPath)) return [''];
+  const pathext = process.env['PATHEXT'] ?? '.COM;.EXE;.BAT;.CMD';
+  const extensions = [
+    '.COM',
+    '.EXE',
+    '.CMD',
+    '.PS1',
+    '.BAT',
+    ...pathext
+      .split(';')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0),
+  ];
+  return [...new Set(extensions.map((item) => item.toUpperCase()))];
 }
 
 class DefaultAitpCommandRunner implements AitpCommandRunner {
