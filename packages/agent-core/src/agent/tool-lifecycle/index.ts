@@ -126,6 +126,7 @@ export class PrimitiveToolLifecycleManager {
     const output = summarizeToolOutput(input.result);
     const inferredWorkFrameId = this.ensureAitpRecoveryWorkFrame({
       toolName: input.toolName ?? started?.toolName ?? '<unknown>',
+      argsSummary: started?.argsSummary,
       result: input.result,
       toolCallId: input.toolCallId,
     });
@@ -237,15 +238,17 @@ export class PrimitiveToolLifecycleManager {
 
   private ensureAitpRecoveryWorkFrame(input: {
     readonly toolName: string;
+    readonly argsSummary?: string | undefined;
     readonly result: ExecutableToolResult;
     readonly toolCallId: string;
   }): string | undefined {
     if (!isAitpRecoveryTool(input.toolName)) return undefined;
     const payload = parseJsonToolOutput(input.result);
-    if (payload === undefined) return undefined;
-    const scope = aitpRecoveryScope(payload);
+    const scope = payload === undefined
+      ? aitpRecoveryScopeFromArgs(input.toolName, input.argsSummary ?? '')
+      : (aitpRecoveryScope(payload) ?? aitpRecoveryScopeFromArgs(input.toolName, input.argsSummary ?? ''));
     if (scope === undefined) return undefined;
-    const relationMap = relationMapFromPayload(payload);
+    const relationMap = payload === undefined ? undefined : relationMapFromPayload(payload);
     const activeFrame = this.agent.workFrames.active;
     if (activeFrame !== undefined) {
       if (activeFrame.topic !== scope.topicId) return undefined;
@@ -396,6 +399,58 @@ function aitpRecoveryScope(payload: Readonly<Record<string, unknown>>): AitpReco
     };
   }
   return undefined;
+}
+
+function aitpRecoveryScopeFromArgs(toolName: string, argsSummary: string): AitpRecoveryScope | undefined {
+  if (!isAitpRecoveryTool(toolName) || argsSummary.trim().length === 0) return undefined;
+  const args = parseArgsSummary(argsSummary);
+  const topicId =
+    stringValue(args?.['topic']) ??
+    stringValue(args?.['topic_id']) ??
+    stringValue(args?.['topicId']) ??
+    singleStringArrayValue(args?.['topics']) ??
+    singleStringArrayValue(args?.['topic_ids']) ??
+    singleStringArrayValue(args?.['topicIds']) ??
+    regexCapture(argsSummary, /"topic"\s*:\s*"([^"]+)"/) ??
+    regexCapture(argsSummary, /"topic_id"\s*:\s*"([^"]+)"/) ??
+    regexCapture(argsSummary, /"topicId"\s*:\s*"([^"]+)"/) ??
+    '';
+  if (topicId === '') return undefined;
+  return {
+    topicId,
+    sessionId:
+      stringValue(args?.['session_id']) ??
+      stringValue(args?.['sessionId']) ??
+      regexCapture(argsSummary, /"session_id"\s*:\s*"([^"]+)"/) ??
+      regexCapture(argsSummary, /"sessionId"\s*:\s*"([^"]+)"/) ??
+      '',
+    claimId:
+      stringValue(args?.['active_claim']) ??
+      stringValue(args?.['active_claim_id']) ??
+      stringValue(args?.['activeClaim']) ??
+      stringValue(args?.['activeClaimId']) ??
+      '',
+    confidenceState: '',
+  };
+}
+
+function parseArgsSummary(argsSummary: string): Readonly<Record<string, unknown>> | undefined {
+  if (argsSummary.includes('[truncated]')) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(argsSummary);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function singleStringArrayValue(value: unknown): string | undefined {
+  if (!Array.isArray(value) || value.length !== 1) return undefined;
+  return stringValue(value[0]);
+}
+
+function regexCapture(value: string, pattern: RegExp): string | undefined {
+  return pattern.exec(value)?.[1];
 }
 
 function relationMapFromPayload(payload: Readonly<Record<string, unknown>>) {
