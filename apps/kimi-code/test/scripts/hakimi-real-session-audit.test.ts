@@ -200,6 +200,8 @@ describe('hakimi real session audit harness', () => {
       'ResearchAction/compile_context_pack',
       '--expect-context-pack-text',
       'binding.theoretical-physics.apply-object-discovery-lens',
+      '--expect-visible-regex',
+      'semantic[- ]?lossless',
       '--expect-reasoning-cue',
       'failure',
       '--expect-reasoning-led-tool',
@@ -217,6 +219,7 @@ describe('hakimi real session audit harness', () => {
 
     expect(parsed.options.expectToolActions).toEqual(['ResearchAction/compile_context_pack']);
     expect(parsed.options.expectContextPackTexts).toEqual(['binding.theoretical-physics.apply-object-discovery-lens']);
+    expect(parsed.options.expectVisibleRegexes).toEqual(['semantic[- ]?lossless']);
     expect(parsed.options.expectReasoningCues).toEqual(['failure']);
     expect(parsed.options.expectReasoningLedTools).toEqual(['ResearchAction/compile_context_pack']);
     expect(parsed.options.expectNoPostWorkframeMissingWorkframe).toBe(true);
@@ -227,6 +230,40 @@ describe('hakimi real session audit harness', () => {
     expect(classifyReasoningCues('compile_context_pack failed because WorkFrame is missing')).toEqual(
       expect.arrayContaining(['context_pack', 'workframe', 'failure']),
     );
+  });
+
+  it('checks visible regex expectations for flexible research-eval wording', () => {
+    const audit = {
+      assistantTexts: ['There is no semantically lossless migration yet, and no validated workflow exists.'],
+      assistantTextsFull: [],
+      toolCalls: [],
+      visibleTranscript: [],
+      reasoningBlocks: [],
+      reasoningBehavior: { ledToolCalls: [] },
+      privateReasoning: { parts: 0 },
+      toolSummary: {},
+      autoCaptureSkipped: {},
+      research: { workFrameOpened: false, contextPackCompiled: false, autoresearchEvents: [] },
+      filesystem: { hakimiLedgerTopics: [], aitpTopics: [], aitpResearchRuns: [] },
+      failures: [],
+    };
+
+    const expectations = evaluateExpectations(audit, {
+      expectVisibleRegexes: ['semantic(?:ally)?[- ]lossless', 'no\\s+validated\\s+workflow', 'cannot claim'],
+    });
+
+    expect(expectations).toContainEqual(expect.objectContaining({
+      name: 'visible-regex:semantic(?:ally)?[- ]lossless',
+      pass: true,
+    }));
+    expect(expectations).toContainEqual(expect.objectContaining({
+      name: 'visible-regex:no\\s+validated\\s+workflow',
+      pass: true,
+    }));
+    expect(expectations).toContainEqual(expect.objectContaining({
+      name: 'visible-regex:cannot claim',
+      pass: false,
+    }));
   });
 
   it('checks ContextPack text from successful tool output before report truncation', async ({ task }) => {

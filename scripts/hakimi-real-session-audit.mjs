@@ -51,6 +51,7 @@ function parseCli(args) {
       expectTools: [],
       expectToolActions: [],
       expectVisibleTexts: [],
+      expectVisibleRegexes: [],
       expectContextPackTexts: [],
       expectReasoningCues: [],
       expectReasoningLedTools: [],
@@ -122,6 +123,9 @@ function parseCli(args) {
         break;
       case '--expect-visible-text':
         result.options.expectVisibleTexts.push(requireValue(args, ++i, arg));
+        break;
+      case '--expect-visible-regex':
+        result.options.expectVisibleRegexes.push(requireValue(args, ++i, arg));
         break;
       case '--expect-context-pack-text':
         result.options.expectContextPackTexts.push(requireValue(args, ++i, arg));
@@ -227,6 +231,7 @@ Checks:
   --expect-tool-action <tool/action>
                                  Require at least one successful completed tool action
   --expect-visible-text <text>   Require visible assistant/tool output substring
+  --expect-visible-regex <regex> Require visible assistant/tool output regex, case-insensitive
   --expect-context-pack-text <text>
                                  Require substring in successful ContextPack output
   --expect-private-reasoning     Require at least one redacted reasoning/think part
@@ -1194,6 +1199,26 @@ function evaluateExpectations(audit, options) {
       detail: found ? 'substring found in visible assistant/tool output' : 'substring not found',
     });
   }
+  for (const pattern of options.expectVisibleRegexes ?? []) {
+    const haystack = visibleTextHaystack(audit);
+    let regex;
+    try {
+      regex = new RegExp(pattern, 'i');
+    } catch (error) {
+      expectations.push({
+        name: `visible-regex:${pattern}`,
+        pass: false,
+        detail: `invalid regex: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      continue;
+    }
+    const found = pattern.length > 0 && regex.test(haystack);
+    expectations.push({
+      name: `visible-regex:${pattern}`,
+      pass: found,
+      detail: found ? 'regex matched visible assistant/tool output' : 'regex did not match',
+    });
+  }
   for (const expectedText of options.expectContextPackTexts ?? []) {
     const haystack = contextPackTextHaystack(audit).toLowerCase();
     const needle = expectedText.toLowerCase();
@@ -1445,6 +1470,7 @@ function hiddenEvalMarkers(evalCase) {
     evalCase.id,
     evalCase.rubricRef,
     ...(evalCase.sourceRefs ?? []).filter((item) => item.startsWith('rubric:')),
+    ...(evalCase.rubricItems ?? []).map((item) => item?.id),
   ].filter((value) => typeof value === 'string' && value.trim() !== '');
 }
 
@@ -2043,6 +2069,30 @@ function auditForReport(audit) {
 }
 
 function renderMarkdown(audit) {
+  audit = {
+    ...audit,
+    research: {
+      workFrameOpened: false,
+      workFrameIds: [],
+      workFrameOpenEvents: [],
+      contextPackCompiled: false,
+      contextPackCompileEvents: [],
+      contextPackOutputs: [],
+      researchActionResults: [],
+      ledgerWrites: [],
+      aitpWriteBridgeCalls: [],
+      aitpMcpCalls: [],
+      autoresearchEvents: [],
+      ...(audit.research ?? {}),
+    },
+    filesystem: {
+      hakimiLedgerTopics: [],
+      aitpTopics: [],
+      aitpResearchRuns: [],
+      aitpResearchRunDetails: [],
+      ...(audit.filesystem ?? {}),
+    },
+  };
   const lines = [];
   lines.push(`# Hakimi Real Session Audit`);
   lines.push('');
