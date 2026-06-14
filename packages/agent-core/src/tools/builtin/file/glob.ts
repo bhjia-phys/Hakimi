@@ -161,12 +161,12 @@ export class GlobTool implements BuiltinTool<GlobInput> {
     // would exceed MAX_BRACE_EXPANSIONS we also return the original so
     // the caller sees an obvious zero-match outcome rather than a silent
     // partial walk.
-    // Hakimi keeps the glob-escape guard: patterns containing backslash
-    // escapes are not pre-normalized so `\{` / `\}` stay escaped during
-    // brace expansion; otherwise normalize before expansion (upstream fix).
-    const subPatterns = hasGlobEscape(args.pattern)
-      ? expandBraces(args.pattern)
-      : expandBraces(normalize(args.pattern));
+    // Hakimi normalizes *after* expansion (not before) so `..` segments
+    // inside brace alternatives do not collapse across the braces, and
+    // backslash-escaped glob metacharacters stay escaped.
+    const subPatterns = expandBraces(args.pattern).map((p) =>
+      hasGlobEscape(p) ? p : normalize(p),
+    );
 
     // Default true. When false, directories yielded by kaos are
     // filtered out using the same stat that fuels the mtime sort
