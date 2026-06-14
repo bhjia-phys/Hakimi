@@ -5746,6 +5746,10 @@ function renderAitpClaimRelationMap(
   if (relationMap === undefined) return `${indent}<claim_relation_map />`;
   return [
     `${indent}<claim_relation_map label="AITP relation map" claim_id="${escapeXml(relationMap.claimId)}" confidence_state="${escapeXml(relationMap.confidenceState)}" supported_count="${String(relationMap.supportedCount)}" limited_count="${String(relationMap.limitedCount)}" not_tested_count="${String(relationMap.notTestedCount)}" contradicted_count="${String(relationMap.contradictedCount)}" orientation_only="true" can_update_claim_trust="false" trust_update_allowed="false">`,
+    relationMap.claimStatement.trim().length === 0
+      ? `${indent}  <claim_statement />`
+      : `${indent}  <claim_statement trust_boundary="not_a_trust_promotion">${escapeXml(compactText(relationMap.claimStatement, 1_200))}</claim_statement>`,
+    `${indent}  <recovery_brief_requirement>Restate the active claim statement/content before listing support, limits, blockers, and next actions; do not replace it with only the claim id.</recovery_brief_requirement>`,
     renderBoundedStringList('can_say', 'item', relationMap.canSay, `${indent}  `),
     renderBoundedStringList('cannot_say', 'item', relationMap.cannotSay, `${indent}  `),
     renderBoundedStringList('current_blockers', 'blocker', relationMap.currentBlockers, `${indent}  `),

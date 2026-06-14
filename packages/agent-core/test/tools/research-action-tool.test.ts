@@ -895,6 +895,9 @@ describe('ResearchActionTool', () => {
     expect(relation.isError).toBeUndefined();
     expect(relation.output).toContain('<aitp_recovery_alias action="get_claim_relation_map"');
     expect(relation.output).toContain('claim_id="claim-qsgw"');
+    expect(relation.output).toContain('<claim_statement trust_boundary="not_a_trust_promotion">');
+    expect(relation.output).toContain('Scoped H2O ridge Padé diagnostics');
+    expect(relation.output).toContain('Restate the active claim statement/content');
     expect(relation.output).toContain(
       'base="F:/AI_Workspace/Theoretical-Physics/research/aitp-topics"',
     );
