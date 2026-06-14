@@ -106,6 +106,8 @@ const ACTIONS = [
   'compile_context_pack',
   'list_context_packs',
   'load_context_pack',
+  'get_claim_relation_map',
+  'get_process_graph_slice',
   'inspect_domain_pack',
   'list_evidence_refs',
   'load_evidence_ref',
@@ -207,6 +209,14 @@ export const ResearchActionToolInputSchema = z.object({
       'Optional workspace path accepted for compatibility with AITP bridge payloads; ResearchAction ignores it.',
     ),
   topic: z.string().optional().describe('Topic id for WorkFrame operations.'),
+  session_id: z
+    .string()
+    .optional()
+    .describe('Compatibility field for AITP read-only recovery aliases; ResearchAction reads the active ContextPack.'),
+  claim_id: z
+    .string()
+    .optional()
+    .describe('Compatibility field for AITP read-only recovery aliases; ResearchAction reads the active ContextPack.'),
   goal: z.string().optional().describe('Goal text for open_work_frame.'),
   frame_id: z
     .string()
@@ -687,6 +697,10 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return this.listContextPacks();
         case 'load_context_pack':
           return this.loadContextPack(args);
+        case 'get_claim_relation_map':
+          return this.getClaimRelationMapAlias(args);
+        case 'get_process_graph_slice':
+          return this.getProcessGraphSliceAlias(args);
         case 'inspect_domain_pack':
           return this.inspectDomainPack(args);
         case 'list_evidence_refs':
@@ -1579,6 +1593,53 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       return errorResult('ResearchAction load_context_pack requires context_pack_id.');
     }
     return ok(renderContextPack(this.manager.requireContextPack(args.context_pack_id)));
+  }
+
+  private getClaimRelationMapAlias(args: ResearchActionToolInput): ExecutableToolResult {
+    const pack = this.contextPackForAlias(args);
+    if (pack === undefined) {
+      return ok(
+        '<claim_relation_map status="unavailable" source="ResearchAction compatibility alias" read_only="true" next="use AITP MCP get_claim_relation_map with a topic token if a fresh surface is required" />\n',
+      );
+    }
+    return ok(
+      [
+        `<aitp_recovery_alias action="get_claim_relation_map" source="context_pack" context_pack_id="${escapeXml(pack.id)}" requested_session_id="${escapeXml(args.session_id ?? '')}" requested_claim_id="${escapeXml(args.claim_id ?? args.aitp_claim_id ?? '')}" read_only="true">`,
+        renderAitpClaimRelationMap(pack.aitp?.claimRelationMap, '  '),
+        '  <freshness>ContextPack snapshot. For a fresh backend read, call direct AITP MCP get_claim_relation_map with session_id topic:&lt;topic&gt; or the bare topic id.</freshness>',
+        '</aitp_recovery_alias>',
+        '',
+      ].join('\n'),
+    );
+  }
+
+  private getProcessGraphSliceAlias(args: ResearchActionToolInput): ExecutableToolResult {
+    const pack = this.contextPackForAlias(args);
+    if (pack === undefined) {
+      return ok(
+        '<process_graph_slice status="unavailable" source="ResearchAction compatibility alias" read_only="true" next="use AITP MCP get_process_graph_slice with a topic token if a fresh surface is required" />\n',
+      );
+    }
+    return ok(
+      [
+        `<aitp_recovery_alias action="get_process_graph_slice" source="context_pack" context_pack_id="${escapeXml(pack.id)}" requested_session_id="${escapeXml(args.session_id ?? '')}" requested_claim_id="${escapeXml(args.claim_id ?? args.aitp_claim_id ?? '')}" read_only="true">`,
+        renderAitpSection(pack),
+        '  <freshness>ContextPack snapshot. For a fresh backend read, call direct AITP MCP get_process_graph_slice with session_id topic:&lt;topic&gt; or the bare topic id.</freshness>',
+        '</aitp_recovery_alias>',
+        '',
+      ].join('\n'),
+    );
+  }
+
+  private contextPackForAlias(args: ResearchActionToolInput): ResearchContextPack | undefined {
+    if (this.manager === undefined) return undefined;
+    const contextPackId = args.context_pack_id ?? this.manager.activeWorkFrame()?.contextPackId;
+    if (contextPackId === undefined || contextPackId.length === 0) return undefined;
+    try {
+      return this.manager.requireContextPack(contextPackId);
+    } catch {
+      return undefined;
+    }
   }
 
   private inspectDomainPack(args: ResearchActionToolInput): ExecutableToolResult {
@@ -5538,7 +5599,7 @@ function renderCuratedRagSection(pack: ResearchContextPack): string {
     ...curatedRag.results.map(
       (item) =>
         `      <result chunk_id="${escapeXml(item.chunkId)}" document_id="${escapeXml(item.documentId)}" score="${String(item.score)}" content_hash="${escapeXml(item.contentHash)}"${item.promotionDraftBindingId === undefined ? '' : ` promotion_draft_binding_id="${escapeXml(item.promotionDraftBindingId)}"`}>` +
-        `<summary>${escapeXml(item.summary)}</summary><text>${escapeXml(item.text)}</text></result>`,
+        `<summary>${escapeXml(compactText(item.summary, 360))}</summary><text>${escapeXml(compactText(item.text, 900))}</text></result>`,
     ),
     '    </results>',
     renderBoundedStringList(
@@ -5661,7 +5722,7 @@ function renderAitpClaimRelationMap(
 ): string {
   if (relationMap === undefined) return `${indent}<claim_relation_map />`;
   return [
-    `${indent}<claim_relation_map claim_id="${escapeXml(relationMap.claimId)}" confidence_state="${escapeXml(relationMap.confidenceState)}" supported_count="${String(relationMap.supportedCount)}" limited_count="${String(relationMap.limitedCount)}" not_tested_count="${String(relationMap.notTestedCount)}" contradicted_count="${String(relationMap.contradictedCount)}" orientation_only="true" can_update_claim_trust="false" trust_update_allowed="false">`,
+    `${indent}<claim_relation_map label="AITP relation map" claim_id="${escapeXml(relationMap.claimId)}" confidence_state="${escapeXml(relationMap.confidenceState)}" supported_count="${String(relationMap.supportedCount)}" limited_count="${String(relationMap.limitedCount)}" not_tested_count="${String(relationMap.notTestedCount)}" contradicted_count="${String(relationMap.contradictedCount)}" orientation_only="true" can_update_claim_trust="false" trust_update_allowed="false">`,
     renderBoundedStringList('can_say', 'item', relationMap.canSay, `${indent}  `),
     renderBoundedStringList('cannot_say', 'item', relationMap.cannotSay, `${indent}  `),
     renderBoundedStringList('current_blockers', 'blocker', relationMap.currentBlockers, `${indent}  `),
@@ -5681,9 +5742,13 @@ function renderActionBindingXml(binding: ResearchContextPack['actionBindings'][n
     return `    <binding ${attrs} />`;
   }
   const theoryReasoning = theoryReasoningProjectionFromParams(binding.params);
+  const paramsJson = JSON.stringify(binding.params);
+  const renderedParams = paramsJson.length > 2_400
+    ? `<params truncated="true" original_chars="${String(paramsJson.length)}">${escapeXml(compactText(paramsJson, 2_400))}</params>`
+    : `<params>${escapeXml(paramsJson)}</params>`;
   return [
     `    <binding ${attrs}>`,
-    `      <params>${escapeXml(JSON.stringify(binding.params))}</params>`,
+    `      ${renderedParams}`,
     ...(theoryReasoning === undefined
       ? []
       : [
@@ -5754,6 +5819,12 @@ function renderBoundedStringList(
   const boundedValues =
     values.length <= max ? values : [...values.slice(0, max), `...(+${String(values.length - max)} more)`];
   return renderStringList(container, itemTag, boundedValues, indent);
+}
+
+function compactText(value: string, limit: number): string {
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 3)).trim()}...`;
 }
 
 function renderStringList(

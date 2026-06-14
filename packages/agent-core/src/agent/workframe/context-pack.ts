@@ -21,6 +21,14 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
   if (pack.focusObjectIds.length > 0) {
     lines.push(`Focus objects: ${bounded(pack.focusObjectIds).join(', ')}`);
   }
+  if (pack.aitp !== undefined) {
+    const topicToken = aitpTopicToken(pack.sourceRefs);
+    lines.push(
+      topicToken === undefined
+        ? 'AITP recovery discipline: answer from the ContextPack/typed AITP surfaces first; do not probe root .aitp, .aitp/.aitp, legacy L0-L4, or runtime files with Bash/Glob/Grep/Read to rediscover the active claim.'
+        : `AITP recovery discipline: answer from the ContextPack/typed AITP surfaces first; if refreshing, use ${topicToken}; do not probe root .aitp, .aitp/.aitp, legacy L0-L4, or runtime files with Bash/Glob/Grep/Read to rediscover the active claim.`,
+    );
+  }
   if (pack.conventionIds.length > 0) {
     lines.push(`Conventions: ${bounded(pack.conventionIds).join(', ')}`);
   }
@@ -73,6 +81,15 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
       const relationMap = pack.aitp.claimRelationMap;
       lines.push(
         `AITP relation map: claim=${relationMap.claimId || '<none>'} support=${String(relationMap.supportedCount)} limited=${String(relationMap.limitedCount)} not_tested=${String(relationMap.notTestedCount)} contradicted=${String(relationMap.contradictedCount)}`,
+      );
+      const topicToken = aitpTopicToken(pack.sourceRefs);
+      lines.push(
+        'AITP relation map is the current-state boundary for recovery; prefer it over root .aitp files, legacy L0-L4 notes, runtime topic_state.json, or local summaries when naming the active claim and conclusion.',
+      );
+      lines.push(
+        topicToken === undefined
+          ? 'When refreshing AITP recovery state, use the bound AITP session/topic refs and the canonical topics root containing the v5 .aitp store; never pass the .aitp directory itself as the base.'
+          : `When refreshing AITP recovery state, use topic token ${topicToken} (from ${topicToken.replace(/^topic:/, 'aitp:topic:')}) and the canonical topics root containing the v5 .aitp store; never pass the .aitp directory itself as the base.`,
       );
       if (relationMap.canSay.length > 0) {
         lines.push(`AITP relation map can say: ${bounded(relationMap.canSay).join(' | ')}`);
@@ -292,4 +309,13 @@ function compactCue(value: string): string {
   const compact = value.replace(/\s+/g, ' ').trim();
   if (compact.length <= MAX_CUE_CHARS) return compact;
   return `${compact.slice(0, MAX_CUE_CHARS - 3).trim()}...`;
+}
+
+function aitpTopicToken(sourceRefs: readonly string[]): string | undefined {
+  for (const ref of sourceRefs) {
+    if (!ref.startsWith('aitp:topic:')) continue;
+    const topicId = ref.slice('aitp:topic:'.length).trim();
+    if (topicId.length > 0) return `topic:${topicId}`;
+  }
+  return undefined;
 }

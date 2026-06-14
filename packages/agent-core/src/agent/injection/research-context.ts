@@ -12,6 +12,12 @@ export class ResearchContextInjector extends DynamicInjector {
     this.orchestrator = new WorkFrameOrchestrator(agent);
   }
 
+  async injectForPrompt(prompt: readonly ContentPart[]): Promise<void> {
+    if (!this.orchestrator.shouldInjectContext(this.injectedAt)) return;
+    const prepared = await this.orchestrator.prepareTurnContext(prompt);
+    if (prepared !== undefined) this.appendInjection(prepared.reminder);
+  }
+
   protected override async getInjection(): Promise<string | undefined> {
     if (!this.orchestrator.shouldInjectContext(this.injectedAt)) return undefined;
     const latestPrompt = latestUserPrompt(this.agent.context.history);

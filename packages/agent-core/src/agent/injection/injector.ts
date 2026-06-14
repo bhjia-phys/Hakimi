@@ -24,13 +24,15 @@ export abstract class DynamicInjector {
 
   async inject(): Promise<void> {
     const injection = await this.getInjection();
-    if (injection) {
-      this.injectedAt = this.agent.context.history.length;
-      this.agent.context.appendSystemReminder(injection, {
-        kind: 'injection',
-        variant: this.injectionVariant,
-      });
-    }
+    if (injection) this.appendInjection(injection);
+  }
+
+  protected appendInjection(injection: string): void {
+    this.injectedAt = this.agent.context.history.length;
+    this.agent.context.appendSystemReminder(injection, {
+      kind: 'injection',
+      variant: this.injectionVariant,
+    });
   }
 
   protected abstract readonly injectionVariant: string;

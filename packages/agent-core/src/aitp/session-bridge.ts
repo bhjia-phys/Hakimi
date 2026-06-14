@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 import {
   createAitpCliBridge,
   resolveAitpScopeFromWorkFrame,
@@ -94,7 +97,7 @@ export function createDynamicAitpMcpFirstProcessGraphSliceProvider(
       }
       try {
         const payload = await readProcessGraphSliceViaMcp({
-          basePath: options.basePath(),
+          basePath: dynamicBasePath(options),
           scope,
           limit: options.limit,
           activeContext: promptText(input.prompt),
@@ -143,7 +146,7 @@ export function createDynamicAitpMcpFirstClaimRelationMapProvider(
         const target = aitpRuntimeBridgeTargetForOperation('readClaimRelationMap');
         const rawPayload = await transport.callTool({
           toolName: target.mcpInvocation.tool,
-          args: mcpArgsForAitpClaimRelationMapRead(options.basePath(), scope),
+          args: mcpArgsForAitpClaimRelationMapRead(dynamicBasePath(options), scope),
           signal: input.signal,
         });
         return parseAitpClaimRelationMap(normalizeAitpWriteBridgePayload(rawPayload));
@@ -228,7 +231,7 @@ export function createDynamicAitpMcpFirstRecordRefLookupProvider(
         const rawPayload = await transport.callTool({
           toolName: target.mcpInvocation.tool,
           args: {
-            base: options.basePath(),
+            base: dynamicBasePath(options),
             refs: [...input.refs],
           },
           signal: input.signal,
@@ -295,7 +298,7 @@ export function createDynamicAitpMcpFirstCuratedRagProvider(
         const target = aitpRuntimeBridgeTargetForOperation('readCuratedRagCorpus');
         const rawPayload = await transport.callTool({
           toolName: target.mcpInvocation.tool,
-          args: { base: options.basePath() },
+          args: { base: dynamicBasePath(options) },
           signal: input.signal,
         });
         return parseAitpCuratedRagCorpus(normalizeAitpWriteBridgePayload(rawPayload));
@@ -312,7 +315,7 @@ export function createDynamicAitpMcpFirstCuratedRagProvider(
       try {
         const target = aitpRuntimeBridgeTargetForOperation('searchCuratedRagCorpus');
         const args: Record<string, unknown> = {
-          base: options.basePath(),
+          base: dynamicBasePath(options),
           query: input.query,
         };
         if (input.limit !== undefined) args['limit'] = input.limit;
@@ -337,7 +340,7 @@ export function createDynamicAitpMcpFirstCuratedRagProvider(
         const rawPayload = await transport.callTool({
           toolName: target.mcpInvocation.tool,
           args: {
-            base: options.basePath(),
+            base: dynamicBasePath(options),
             chunk_id: input.chunkId,
           },
           signal: input.signal,
@@ -356,7 +359,7 @@ export function createDynamicAitpMcpFirstCuratedRagProvider(
       try {
         const target = aitpRuntimeBridgeTargetForOperation('draftCuratedRagPromotion');
         const args: Record<string, unknown> = {
-          base: options.basePath(),
+          base: dynamicBasePath(options),
           chunk_id: input.chunkId,
         };
         if (input.topicId !== undefined) args['topic_id'] = input.topicId;
@@ -390,7 +393,7 @@ export function createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider(
       try {
         const target = aitpRuntimeBridgeTargetForOperation('readLiteratureSourceReviewHandoff');
         const args: Record<string, unknown> = {
-          base: options.basePath(),
+          base: dynamicBasePath(options),
           session_id: input.sessionId,
           uri: input.uri,
           label: input.label,
@@ -430,7 +433,7 @@ export function createDynamicAitpMcpFirstLiteratureComparisonDraftProvider(
       try {
         const target = aitpRuntimeBridgeTargetForOperation('readLiteratureComparisonDraft');
         const args: Record<string, unknown> = {
-          base: options.basePath(),
+          base: dynamicBasePath(options),
           session_id: input.sessionId,
           comparison_question: input.comparisonQuestion,
           source_refs: [...input.sourceRefs],
@@ -459,7 +462,7 @@ export function createDynamicAitpMcpFirstWriteBridgeExecutor(
 ): AitpWriteBridgeExecutor {
   const fallback = createDynamicAitpCliWriteBridgeExecutor(options);
   return createAitpMcpFirstWriteBridgeExecutor({
-    basePath: options.basePath,
+    basePath: () => dynamicBasePath(options),
     transport: options.mcpTransport,
     fallback,
     fallbackOnMcpError: options.fallbackOnMcpError,
@@ -468,6 +471,17 @@ export function createDynamicAitpMcpFirstWriteBridgeExecutor(
 
 function createDynamicAitpCliBridge(options: DynamicAitpCliBridgeOptions): AitpCliBridge {
   return createAitpCliBridge(dynamicBridgeOptions(options));
+}
+
+export function resolveAitpCanonicalBasePath(basePath: string): string {
+  for (const candidate of [
+    join(basePath, 'research', 'aitp-topics'),
+    join(basePath, 'aitp-topics'),
+    basePath,
+  ]) {
+    if (isAitpBasePath(candidate)) return candidate;
+  }
+  return basePath;
 }
 
 async function readProcessGraphSliceViaMcp(input: {
@@ -520,12 +534,20 @@ export function mcpArgsForAitpClaimRelationMapRead(
 
 function dynamicBridgeOptions(options: DynamicAitpCliBridgeOptions): AitpCliBridgeOptions {
   return {
-    basePath: options.basePath(),
+    basePath: dynamicBasePath(options),
     command: options.command,
     cwd: options.cwd,
     timeoutMs: options.timeoutMs,
     runner: options.runner,
   };
+}
+
+function dynamicBasePath(options: DynamicAitpCliBridgeOptions): string {
+  return resolveAitpCanonicalBasePath(options.basePath());
+}
+
+function isAitpBasePath(path: string): boolean {
+  return existsSync(join(path, '.aitp', 'registry')) || existsSync(join(path, '.aitp'));
 }
 
 function promptText(prompt: readonly AitpProcessGraphPromptPart[]): string {

@@ -1289,7 +1289,14 @@ export function resolveAitpScopeFromWorkFrame(
   workFrame: WorkFrame,
 ): AitpWorkFrameScope | undefined {
   const sessionId = refValue(workFrame.sourceRefs, 'aitp:session:');
-  if (sessionId === undefined) return undefined;
+  if (sessionId === undefined) {
+    const topicId = refValue(workFrame.sourceRefs, 'aitp:topic:');
+    if (topicId === undefined) return undefined;
+    return {
+      sessionId: `topic:${topicId}`,
+      claimId: refValue(workFrame.sourceRefs, 'aitp:claim:'),
+    };
+  }
   return {
     sessionId,
     claimId: refValue(workFrame.sourceRefs, 'aitp:claim:'),

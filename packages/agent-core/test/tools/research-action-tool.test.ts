@@ -6,6 +6,7 @@ import {
   AITP_CURATED_RAG_CATALOG_VERSION,
   AITP_RUNTIME_PAYLOAD_PROFILE_CATALOG_VERSION,
   compileAitpProcessGraphSlice,
+  parseAitpClaimRelationMap,
   parseAitpCuratedRagCorpus,
   parseAitpCuratedRagChunk,
   parseAitpCuratedRagPromotionDraft,
@@ -851,6 +852,49 @@ describe('ResearchActionTool', () => {
     expect(loaded.output).toContain('aitp.record_route_choice');
     expect(loaded.output).toContain('aitp.record_failed_route_lesson');
     expect(loaded.output).toContain('aitp.checkpoint_before_route_switch');
+  });
+
+  it('accepts AITP recovery alias actions against the active ContextPack', async () => {
+    const agent = makeAgent();
+    const tool = new ResearchActionTool(agent.researchAction);
+
+    agent.workFrames.open(
+      {
+        id: 'frame.aitp.qsgw',
+        domain: 'theoretical-physics/general',
+        topic: 'qsgw-ac-error-molecules',
+        goal: 'Restore qsgw current state.',
+        sourceRefs: ['aitp:topic:qsgw-ac-error-molecules'],
+      },
+      { source: 'controller' },
+    );
+    const pack = agent.researchContext.compileForWorkFrame(
+      {
+        aitp: compileAitpProcessGraphSlice(routeStateSlicePayload()),
+        claimRelationMap: parseAitpClaimRelationMap(qsgwRelationMapPayload()),
+      },
+      { source: 'controller' },
+    );
+
+    const relation = await execute(tool, {
+      action: 'get_claim_relation_map',
+      context_pack_id: pack.id,
+      session_id: 'qsgw-ac-error-molecules',
+    });
+    const graph = await execute(tool, {
+      action: 'get_process_graph_slice',
+      context_pack_id: pack.id,
+      session_id: 'qsgw-ac-error-molecules',
+      claim_id: 'claim-qsgw',
+      limit: 50,
+    });
+
+    expect(relation.isError).toBeUndefined();
+    expect(relation.output).toContain('<aitp_recovery_alias action="get_claim_relation_map"');
+    expect(relation.output).toContain('claim_id="claim-qsgw"');
+    expect(graph.isError).toBeUndefined();
+    expect(graph.output).toContain('<aitp_recovery_alias action="get_process_graph_slice"');
+    expect(graph.output).toContain('<aitp truth_source="typed_records"');
   });
 
   it('renders curated RAG promotion draft suggestions in loaded ContextPack XML', async () => {
@@ -5895,6 +5939,44 @@ async function recordPrimitiveLifecycle(
       output: input.outputSummary,
     },
   });
+}
+
+function qsgwRelationMapPayload(): any {
+  return {
+    kind: 'claim_relation_map',
+    topic_id: 'qsgw-ac-error-molecules',
+    session_id: 'codex-qsgw',
+    claim_id: 'claim-qsgw',
+    claim_statement: 'Scoped H2O ridge Padé diagnostics reduce AC amplification.',
+    confidence_state: 'hypothesis',
+    evidence_profile: 'code_method',
+    supported_by: [],
+    limited_by: [],
+    contradicted_by: [],
+    not_tested_by: [],
+    object_relations: [],
+    current_conclusion: {
+      can_say: ['active claim remains hypothesis'],
+      cannot_say: ['cannot update claim trust from this relation map alone'],
+    },
+    current_blockers: ['ScaLAPACK/runtime dependency failure'],
+    next_valid_actions: ['rerun same-executable Thiele baseline'],
+    source_records: {
+      claims: ['claim-qsgw'],
+      evidence: [],
+      tool_runs: [],
+      claim_statuses: [],
+      proof_obligations: [],
+      object_relations: [],
+    },
+    derived_from: ['claim_status_records'],
+    truth_source: false,
+    orientation_only: true,
+    summary_inputs_trusted: false,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+    trust_update_allowed: false,
+  };
 }
 
 function routeStateSlicePayload() {
