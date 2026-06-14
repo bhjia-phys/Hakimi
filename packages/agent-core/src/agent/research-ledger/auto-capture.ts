@@ -28,6 +28,9 @@ export function buildToolLifecycleAutoCaptureResult(input: {
   if (SKIP_TOOL_NAMES.has(completed.toolName)) {
     return skipped('semantic-tool');
   }
+  if (isAitpMcpTool(completed.toolName)) {
+    return skipped('aitp-canonical-context-surface');
+  }
   if (workFrame === undefined) {
     return skipped('missing-workframe');
   }
@@ -219,6 +222,10 @@ function extractRefs(text: string): readonly string[] {
 
 function hasSourceLikeReference(text: string): boolean {
   return extractRefs(text).length > 0;
+}
+
+function isAitpMcpTool(toolName: string): boolean {
+  return toolName.startsWith('mcp__aitp__');
 }
 
 function skipped(skipReason: string): ToolLifecycleAutoCaptureResult {
