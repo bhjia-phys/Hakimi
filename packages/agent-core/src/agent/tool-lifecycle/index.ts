@@ -2,6 +2,7 @@ import type { ContentPart } from '@moonshot-ai/kosong';
 
 import type { Agent } from '..';
 import type { ExecutableToolResult } from '../../loop';
+import { parseAitpClaimRelationMap } from '../../aitp';
 import { buildToolLifecycleAutoCaptureResult } from '../research-ledger/auto-capture';
 
 const MAX_ARGS_SUMMARY_LENGTH = 2000;
@@ -123,7 +124,12 @@ export class PrimitiveToolLifecycleManager {
     this.started.delete(input.toolCallId);
     const completedAt = input.completedAt ?? Date.now();
     const output = summarizeToolOutput(input.result);
-    const workFrameId = input.workFrameId ?? started?.workFrameId;
+    const inferredWorkFrameId = this.ensureAitpRecoveryWorkFrame({
+      toolName: input.toolName ?? started?.toolName ?? '<unknown>',
+      result: input.result,
+      toolCallId: input.toolCallId,
+    });
+    const workFrameId = input.workFrameId ?? started?.workFrameId ?? inferredWorkFrameId;
     const actionCallId = input.actionCallId ?? started?.actionCallId;
     const completed: PrimitiveToolCompletedEnvelope = {
       source: input.source,
@@ -228,6 +234,214 @@ export class PrimitiveToolLifecycleManager {
       });
     }
   }
+
+  private ensureAitpRecoveryWorkFrame(input: {
+    readonly toolName: string;
+    readonly result: ExecutableToolResult;
+    readonly toolCallId: string;
+  }): string | undefined {
+    if (!isAitpRecoveryTool(input.toolName)) return undefined;
+    const payload = parseJsonToolOutput(input.result);
+    if (payload === undefined) return undefined;
+    const scope = aitpRecoveryScope(payload);
+    if (scope === undefined) return undefined;
+    const relationMap = relationMapFromPayload(payload);
+    const activeFrame = this.agent.workFrames.active;
+    if (activeFrame !== undefined) {
+      if (activeFrame.topic !== scope.topicId) return undefined;
+      if (relationMap !== undefined) {
+        this.agent.researchContext.compileForWorkFrame(
+          {
+            workFrameId: activeFrame.id,
+            claimRelationMap: relationMap,
+          },
+          { source: 'controller', toolCallId: input.toolCallId },
+        );
+      }
+      return activeFrame.id;
+    }
+    const frame = this.agent.workFrames.open(
+      {
+        id: derivedAitpRecoveryFrameId(scope.topicId, scope.sessionId),
+        domain: 'theoretical-physics/general',
+        topic: scope.topicId,
+        goal: `Restore AITP session ${scope.sessionId || scope.topicId}.`,
+        activeObjectIds: scope.claimId === '' ? [] : [`claim:${scope.claimId}`],
+        sourceRefs: [
+          `aitp:topic:${scope.topicId}`,
+          ...(scope.sessionId === '' ? [] : [`aitp:session:${scope.sessionId}`]),
+          ...(scope.claimId === '' ? [] : [`aitp:claim:${scope.claimId}`, `claim:${scope.claimId}`]),
+        ],
+        trustState: trustStateFromConfidence(scope.confidenceState),
+      },
+      { source: 'controller', toolCallId: input.toolCallId },
+    );
+
+    this.agent.researchContext.compileForWorkFrame(
+      {
+        workFrameId: frame.id,
+        ...(relationMap === undefined ? {} : { claimRelationMap: relationMap }),
+      },
+      { source: 'controller', toolCallId: input.toolCallId },
+    );
+    return frame.id;
+  }
+}
+
+interface AitpRecoveryScope {
+  readonly topicId: string;
+  readonly sessionId: string;
+  readonly claimId: string;
+  readonly confidenceState: string;
+}
+
+function isAitpRecoveryTool(toolName: string): boolean {
+  return [
+    'aitp_v5_get_execution_brief',
+    'aitp_v5_get_claim_relation_map',
+    'aitp_v5_build_workspace_recovery_audit',
+    'aitp_v5_build_legacy_semantic_review_packet',
+  ].some((name) => toolName === name || toolName.endsWith(`__${name}`));
+}
+
+function parseJsonToolOutput(result: ExecutableToolResult): Readonly<Record<string, unknown>> | undefined {
+  const text = toolOutputText(result);
+  if (text.trim().length === 0) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function toolOutputText(result: ExecutableToolResult): string {
+  if (typeof result.output === 'string') return result.output;
+  return result.output
+    .map((part) => (typeof part === 'object' && part !== null && part.type === 'text' ? part.text : ''))
+    .filter((part) => part.length > 0)
+    .join('\n');
+}
+
+function aitpRecoveryScope(payload: Readonly<Record<string, unknown>>): AitpRecoveryScope | undefined {
+  if (stringValue(payload['kind']) === 'claim_relation_map') {
+    const topicId = stringValue(payload['topic_id']) ?? stringValue(payload['topicId']) ?? '';
+    if (topicId === '') return undefined;
+    return {
+      topicId,
+      sessionId: stringValue(payload['session_id']) ?? stringValue(payload['sessionId']) ?? '',
+      claimId: stringValue(payload['claim_id']) ?? stringValue(payload['claimId']) ?? '',
+      confidenceState: stringValue(payload['confidence_state']) ?? stringValue(payload['confidenceState']) ?? '',
+    };
+  }
+  if (stringValue(payload['kind']) === 'legacy_semantic_review_packet') {
+    const topicId = stringValue(payload['topic']) ?? stringValue(payload['topic_id']) ?? stringValue(payload['topicId']) ?? '';
+    if (topicId === '') return undefined;
+    const recoveryFocus = recordValue(payload['current_recovery_focus']) ?? recordValue(payload['currentRecoveryFocus']);
+    return {
+      topicId,
+      sessionId: stringValue(recoveryFocus?.['session_id']) ?? stringValue(recoveryFocus?.['sessionId']) ?? '',
+      claimId:
+        stringValue(recoveryFocus?.['active_claim_id']) ??
+        stringValue(recoveryFocus?.['activeClaimId']) ??
+        stringValue(payload['active_claim_id']) ??
+        stringValue(payload['activeClaimId']) ??
+        '',
+      confidenceState: '',
+    };
+  }
+  const session = recordValue(payload['session']);
+  const currentFocus = recordValue(payload['current_focus']) ?? recordValue(payload['currentFocus']);
+  if (session !== undefined) {
+    const sessionTopic = stringValue(session['topic_id']) ?? stringValue(session['topicId']) ?? '';
+    if (sessionTopic !== '') {
+      return {
+        topicId: sessionTopic,
+        sessionId: stringValue(session['session_id']) ?? stringValue(session['sessionId']) ?? '',
+        claimId: stringValue(session['active_claim']) ?? stringValue(session['activeClaim']) ?? '',
+        confidenceState: stringValue(currentFocus?.['confidence_state']) ?? stringValue(currentFocus?.['confidenceState']) ?? '',
+      };
+    }
+  }
+  const selectedTopic = recordValue(payload['selected_topic']) ?? recordValue(payload['selectedTopic']);
+  if (selectedTopic !== undefined) {
+    const topicId = stringValue(selectedTopic['topic_id']) ?? stringValue(selectedTopic['topicId']) ?? '';
+    if (topicId !== '') {
+      return {
+        topicId,
+        sessionId: stringValue(selectedTopic['session_id']) ?? stringValue(selectedTopic['sessionId']) ?? '',
+        claimId:
+          stringValue(selectedTopic['active_claim_id']) ??
+          stringValue(selectedTopic['activeClaimId']) ??
+          '',
+        confidenceState: '',
+      };
+    }
+  }
+  const rawRows = Array.isArray(payload['topic_rows'])
+    ? payload['topic_rows']
+    : Array.isArray(payload['topicRows'])
+      ? payload['topicRows']
+      : [];
+  const rows = rawRows.filter(isRecord);
+  if (rows.length === 1) {
+    const row = rows[0]!;
+    const topicId = stringValue(row['topic_id']) ?? stringValue(row['topicId']) ?? '';
+    if (topicId === '') return undefined;
+    return {
+      topicId,
+      sessionId: stringValue(row['session_id']) ?? stringValue(row['sessionId']) ?? '',
+      claimId: stringValue(row['active_claim_id']) ?? stringValue(row['activeClaimId']) ?? '',
+      confidenceState: '',
+    };
+  }
+  return undefined;
+}
+
+function relationMapFromPayload(payload: Readonly<Record<string, unknown>>) {
+  if (stringValue(payload['kind']) !== 'claim_relation_map') return undefined;
+  try {
+    return parseAitpClaimRelationMap(payload);
+  } catch {
+    return undefined;
+  }
+}
+
+function derivedAitpRecoveryFrameId(topicId: string, sessionId: string): string {
+  return `frame.aitp.${safeId(topicId)}.${shortHash(`${topicId}\n${sessionId}`)}`;
+}
+
+function trustStateFromConfidence(confidenceState: string) {
+  const normalized = confidenceState.toLowerCase();
+  if (normalized.includes('validated')) return 'validated' as const;
+  if (normalized.includes('blocked')) return 'blocked' as const;
+  if (normalized.includes('checking') || normalized.includes('audit')) return 'checking' as const;
+  if (normalized.includes('deriv')) return 'deriving' as const;
+  return 'exploratory' as const;
+}
+
+function safeId(value: string): string {
+  return value.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-').replaceAll(/^-|-$/g, '').slice(0, 48) || 'topic';
+}
+
+function shortHash(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function recordValue(value: unknown): Readonly<Record<string, unknown>> | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 function summarizeToolOutput(result: ExecutableToolResult): {

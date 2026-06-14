@@ -231,9 +231,9 @@ Checks:
                                  Require a reasoning block followed by a tool call
   --expect-no-missing-workframe  Fail if auto-capture skipped missing WorkFrame
   --expect-no-post-workframe-missing-workframe
-                                 Fail only if missing WorkFrame happened after open_work_frame
-  --expect-workframe-opened      Require a successful ResearchAction open_work_frame
-  --expect-context-pack          Require a successful context pack compile
+                                 Fail only if missing WorkFrame happened after WorkFrame open
+  --expect-workframe-opened      Require a successful WorkFrame open, model-tool or controller
+  --expect-context-pack          Require a successful ContextPack compile, model-tool or controller
   --expect-ledger-topic <topic>  Require .hakimi/research-ledger/<topic>
   --expect-aitp-topic <topic>    Require .aitp/topics/<topic>
   --expect-autoresearch-run      Require at least one AITP research_run record
@@ -464,7 +464,9 @@ function createEmptyAudit({ home, session, state, workdir }) {
     research: {
       workFrameOpened: false,
       workFrameIds: [],
+      workFrameOpenEvents: [],
       contextPackCompiled: false,
+      contextPackCompileEvents: [],
       contextPackOutputs: [],
       researchActionResults: [],
       ledgerWrites: [],
@@ -551,6 +553,10 @@ function scanWireEntry(audit, agentId, entry) {
     scanReasoningAuditRecord(audit, agentId, entry);
   }
 
+  if (entry.type === 'workframe.opened') {
+    scanWorkFrameOpenedRecord(audit, agentId, entry);
+  }
+
   if (entry.type === 'research_context.context_compiled') {
     scanContextCompiledRecord(audit, agentId, entry);
   }
@@ -604,12 +610,51 @@ function scanContextCompiledRecord(audit, agentId, entry) {
   const packId = stringOrUndefined(entry.pack?.id);
   const serialized = serializeContextPackRecord(entry);
   if (serialized === undefined) return;
+  const source = stringOrUndefined(entry.source) ?? 'research_context.context_compiled';
+  const toolCallId = stringOrUndefined(entry.toolCallId);
+  audit.research.contextPackCompiled = true;
+  audit.research.contextPackCompileEvents.push({
+    agentId,
+    toolCallId,
+    packId,
+    source,
+  });
+  pushTimeline(audit, {
+    kind: 'context_pack_compiled',
+    agentId,
+    toolCallId,
+    packId,
+    source,
+  });
   captureContextPackOutput(audit, {
     agentId,
-    toolCallId: stringOrUndefined(entry.toolCallId),
+    toolCallId,
     packId,
-    source: stringOrUndefined(entry.source) ?? 'research_context.context_compiled',
+    source,
     output: serialized,
+  });
+}
+
+function scanWorkFrameOpenedRecord(audit, agentId, entry) {
+  const frameId = stringOrUndefined(entry.frame?.id) ?? stringOrUndefined(entry.frameId);
+  const source = stringOrUndefined(entry.source) ?? 'workframe.opened';
+  const toolCallId = stringOrUndefined(entry.toolCallId);
+  audit.research.workFrameOpened = true;
+  if (frameId !== undefined && !audit.research.workFrameIds.includes(frameId)) {
+    audit.research.workFrameIds.push(frameId);
+  }
+  audit.research.workFrameOpenEvents.push({
+    agentId,
+    frameId,
+    toolCallId,
+    source,
+  });
+  pushTimeline(audit, {
+    kind: 'workframe_opened',
+    agentId,
+    frameId,
+    toolCallId,
+    source,
   });
 }
 
@@ -1195,7 +1240,7 @@ function evaluateExpectations(audit, options) {
       name: 'no-post-workframe-missing-workframe',
       pass: skipped.length === 0,
       detail: skipped.length === 0
-        ? 'no missing-workframe skips after successful open_work_frame'
+        ? 'no missing-workframe skips after successful WorkFrame open'
         : `${skipped.length} post-WorkFrame missing-workframe skip(s): ${skipped.map((item) => item.toolName ?? 'unknown').join(', ')}`,
     });
   }
@@ -1203,14 +1248,18 @@ function evaluateExpectations(audit, options) {
     expectations.push({
       name: 'workframe-opened',
       pass: audit.research.workFrameOpened,
-      detail: audit.research.workFrameOpened ? audit.research.workFrameIds.join(', ') : 'no successful open_work_frame lifecycle result',
+      detail: audit.research.workFrameOpened
+        ? audit.research.workFrameOpenEvents.map(formatWorkFrameOpenEvent).join('; ')
+        : 'no WorkFrame open record found',
     });
   }
   if (options.expectContextPack) {
     expectations.push({
       name: 'context-pack',
       pass: audit.research.contextPackCompiled,
-      detail: audit.research.contextPackCompiled ? 'context pack compiled' : 'no successful compile_context_pack result',
+      detail: audit.research.contextPackCompiled
+        ? audit.research.contextPackCompileEvents.map(formatContextPackCompileEvent).join('; ')
+        : 'no ContextPack compile record found',
     });
   }
   if (options.expectLedgerTopic !== undefined) {
@@ -1415,12 +1464,25 @@ function formatPromptRedactionStatus(value) {
   return value ? 'yes' : 'no';
 }
 
+function formatWorkFrameOpenEvent(event) {
+  const id = event.frameId ?? '<unknown-frame>';
+  const source = event.source ?? '<unknown-source>';
+  return `${id} source=${source}`;
+}
+
+function formatContextPackCompileEvent(event) {
+  const id = event.packId ?? '<unknown-pack>';
+  const source = event.source ?? '<unknown-source>';
+  return `${id} source=${source}`;
+}
+
 function isSuccessfulToolCall(call) {
   return call.status === 'passed' && call.isError !== true;
 }
 
 function findPostWorkframeMissingWorkframeSkips(audit) {
   const firstOpen = audit.timeline.find((event) =>
+    event.kind === 'workframe_opened' ||
     event.kind === 'tool_lifecycle_completed' &&
     event.toolName === 'ResearchAction' &&
     event.action === 'open_work_frame' &&
@@ -2052,7 +2114,13 @@ function renderMarkdown(audit) {
   lines.push(`## Research State`);
   lines.push(`- WorkFrame opened: ${audit.research.workFrameOpened ? 'yes' : 'no'}`);
   if (audit.research.workFrameIds.length > 0) lines.push(`- WorkFrame ids: ${audit.research.workFrameIds.map((id) => `\`${id}\``).join(', ')}`);
+  if (audit.research.workFrameOpenEvents.length > 0) {
+    lines.push(`- WorkFrame open sources: ${audit.research.workFrameOpenEvents.map(formatWorkFrameOpenEvent).join('; ')}`);
+  }
   lines.push(`- ContextPack compiled: ${audit.research.contextPackCompiled ? 'yes' : 'no'}`);
+  if (audit.research.contextPackCompileEvents.length > 0) {
+    lines.push(`- ContextPack compile sources: ${audit.research.contextPackCompileEvents.map(formatContextPackCompileEvent).join('; ')}`);
+  }
   lines.push(`- ResearchAction recorded results: ${audit.research.researchActionResults.length}`);
   lines.push(`- ResearchLedger writes: ${audit.research.ledgerWrites.length}`);
   const aitpBridgePassed = audit.research.aitpWriteBridgeCalls.filter((call) => call.ok).length;

@@ -1342,7 +1342,7 @@ export class TurnFlow {
   ): readonly FinalGateAitpCallObligation[] {
     if (workFrame?.contextPackId === undefined) return [];
     const pack = this.agent.researchContext.getPack(workFrame.contextPackId);
-    const obligations = (pack?.aitp?.compiled.callObligations ?? []).filter(isFinalGateAitpCall);
+    const obligations = (pack?.aitp?.compiled?.callObligations ?? []).filter(isFinalGateAitpCall);
     if (obligations.length === 0) return [];
     const trace = this.agent.researchAction.listRecentTrace(100, {
       workFrameId: workFrame.id,

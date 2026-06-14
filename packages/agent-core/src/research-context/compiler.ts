@@ -120,7 +120,7 @@ export function compileResearchContextPack(
     uniqueBindings([
       ...workflows.flatMap((workflow) => workflow.metadata.actionBindings),
       ...physics.capsules.flatMap((capsule) => bindingsFromAffordances(capsule)),
-      ...(aitp?.compiled.actionRecommendations ?? []),
+      ...(aitp?.compiled?.actionRecommendations ?? []),
       ...curatedRagActionBindings,
       ...curatedRagRepairActionBindings,
       ...curatedRagRepairResultActionBindings,
@@ -1027,8 +1027,11 @@ function collectAitp(
   input: CompileResearchContextPackInput,
   diagnostics: ResearchContextPackDiagnostic[],
 ): ResearchContextAitpSection | undefined {
-  if (input.aitp === null || input.aitp === undefined) return undefined;
   const claimRelationMap = collectAitpClaimRelationMap(input, diagnostics);
+  if (input.aitp === null || input.aitp === undefined) {
+    if (claimRelationMap === undefined) return undefined;
+    return relationMapOnlyAitpSection(claimRelationMap);
+  }
   const contextLines = [
     ...input.aitp.contextLines,
     ...relationMapContextLines(claimRelationMap),
@@ -1094,6 +1097,53 @@ function collectAitp(
     suggestedActionIds: input.aitp.actionRecommendations.map((binding) => binding.actionId),
     compiled: input.aitp,
     ...(claimRelationMap === undefined ? {} : { claimRelationMap }),
+  };
+}
+
+function relationMapOnlyAitpSection(
+  claimRelationMap: ResearchContextAitpSection['claimRelationMap'],
+): ResearchContextAitpSection {
+  return {
+    truthSource: 'aitp.claim_relation_map',
+    orientationOnly: true,
+    reminders: [
+      'AITP claim relation map is read-only recovery context; it does not update claim trust.',
+      'Treat can/cannot/blocker/next-action lines as conclusion-boundary guidance, not evidence promotion.',
+    ],
+    contextLines: relationMapContextLines(claimRelationMap),
+    liveRouteIds: [],
+    blockedRouteIds: [],
+    abandonedRouteIds: [],
+    pivotRequiredRouteIds: [],
+    provenanceGapIds: [],
+    sourceProvenanceGapIds: [],
+    codeProvenanceGapIds: [],
+    toolProvenanceGapIds: [],
+    validationProvenanceGapIds: [],
+    artifactProvenanceGapIds: [],
+    sourceAssetIds: [],
+    sourceAssetMissingHashIds: [],
+    sourceAssetDuplicateHashIds: [],
+    sourceStackCoverageClaimIds: [],
+    sourceStackEvidenceGapClaimIds: [],
+    sourceStackReconstructionGapClaimIds: [],
+    sourceStackReviewGapClaimIds: [],
+    sourceStackCoverageNextActions: [],
+    sourceReconstructionReviewClaimIds: [],
+    sourceReconstructionReviewOpenClaimIds: [],
+    sourceReconstructionReviewNeedsRevisionClaimIds: [],
+    sourceReconstructionReviewInconclusiveClaimIds: [],
+    sourceReconstructionReviewPacketClaimIds: [],
+    sourceReconstructionReviewNextActions: [],
+    trustBoundaryReasons: [
+      'Relation-map-only ContextPack has no full AITP process graph slice.',
+      'Relation map is orientation-only and cannot change kernel state or claim trust.',
+    ],
+    openObligationIds: [],
+    requiredCallIds: [],
+    trustPrerequisiteCallIds: [],
+    suggestedActionIds: [],
+    claimRelationMap,
   };
 }
 
