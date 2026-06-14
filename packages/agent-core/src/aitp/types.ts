@@ -378,6 +378,34 @@ export interface AitpMomentPolicy {
   readonly canUpdateClaimTrust: boolean;
 }
 
+export interface AitpMigrationHealth {
+  readonly kind: string;
+  readonly status: string;
+  readonly canonicalStore: string;
+  readonly ledgerPath?: string | undefined;
+  readonly ledgerStatus: string;
+  readonly fileDecisionCount: number;
+  readonly expectedTotalFileCount: number;
+  readonly noOmissionCheck: boolean;
+  readonly blockingFileCount: number;
+  readonly oldStoreRetirementSafe: boolean;
+  readonly semanticReviewRequired: boolean;
+  readonly rootL2GlobalMemoryRisk: boolean;
+  readonly rootL2GlobalMemoryDecisionCount: number;
+  readonly rootL2GlobalMemoryTopicCount: number;
+  readonly rootL2GlobalMemoryRiskReason: string;
+  readonly canonicalLegacySeedCount: number;
+  readonly activeLegacySeedCount: number;
+  readonly legacySeedTopicCount: number;
+  readonly legacySeedQuarantineStatus: string;
+  readonly legacySeedNextActions: readonly string[];
+  readonly nextActions: readonly string[];
+  readonly summaryLines: readonly string[];
+  readonly truthSource: string;
+  readonly orientationOnly: boolean;
+  readonly canUpdateClaimTrust: boolean;
+}
+
 export interface AitpProcessGraphSlice {
   readonly kind: 'process_graph_slice';
   readonly nodes: readonly AitpProcessGraphNode[];
@@ -387,6 +415,7 @@ export interface AitpProcessGraphSlice {
   readonly sourceAssetIndex: readonly AitpSourceAssetIndexItem[];
   readonly sourceStackCoverage: AitpSourceStackCoverage;
   readonly sourceReconstructionReview: AitpSourceReconstructionReview;
+  readonly migrationHealth: AitpMigrationHealth;
   readonly relationNeighborhood: readonly AitpRelationNeighborhoodItem[];
   readonly exploratoryRecords: readonly AitpExploratoryRecordItem[];
   readonly routeState: AitpRouteState;
@@ -529,6 +558,18 @@ export interface AitpTrustSummary {
   readonly trustedEdgeIds: readonly string[];
 }
 
+export interface AitpMigrationHealthSummary {
+  readonly status: string;
+  readonly oldStoreRetirementSafe: boolean;
+  readonly blockingFileCount: number;
+  readonly canonicalLegacySeedCount: number;
+  readonly activeLegacySeedCount: number;
+  readonly rootL2GlobalMemoryRisk: boolean;
+  readonly legacySeedQuarantineStatus: string;
+  readonly nextActions: readonly string[];
+  readonly lines: readonly string[];
+}
+
 export interface CompiledAitpProcessGraphSlice {
   readonly reminders: readonly string[];
   readonly contextLines: readonly string[];
@@ -539,6 +580,7 @@ export interface CompiledAitpProcessGraphSlice {
   readonly sourceAssets: AitpSourceAssetSummary;
   readonly sourceStackCoverage: AitpSourceStackCoverageSummary;
   readonly sourceReconstructionReview: AitpSourceReconstructionReviewSummary;
+  readonly migrationHealth: AitpMigrationHealthSummary;
   readonly provenance: AitpProvenanceGapSummary;
   readonly suggestedNextMoments: readonly DetectedResearchMoment[];
   readonly trust: AitpTrustSummary;

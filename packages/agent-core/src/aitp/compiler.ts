@@ -6,6 +6,8 @@ import {
 } from './write-bridge';
 import type {
   AitpCallObligation,
+  AitpMigrationHealth,
+  AitpMigrationHealthSummary,
   AitpMomentPolicyDecision,
   AitpObligationSummary,
   AitpOpenObligation,
@@ -66,6 +68,7 @@ export function compileAitpProcessGraphSlice(
     slice.sourceReconstructionReview,
     maxItems,
   );
+  const migrationHealth = summarizeMigrationHealth(slice.migrationHealth, maxItems);
   const trust = summarizeTrust(slice);
   const suggestedNextMoments = detectResearchMoments(slice, options);
   const callObligations = buildCallObligations(slice);
@@ -81,6 +84,7 @@ export function compileAitpProcessGraphSlice(
     sourceAssets,
     sourceStackCoverage,
     sourceReconstructionReview,
+    migrationHealth,
     suggestedNextMoments,
     callObligations,
     theoryReasoning,
@@ -97,6 +101,7 @@ export function compileAitpProcessGraphSlice(
       sourceAssets,
       sourceStackCoverage,
       sourceReconstructionReview,
+      migrationHealth,
       maxItems,
     ),
     contextLines,
@@ -107,11 +112,55 @@ export function compileAitpProcessGraphSlice(
     sourceAssets,
     sourceStackCoverage,
     sourceReconstructionReview,
+    migrationHealth,
     provenance,
     suggestedNextMoments,
     trust,
     diagnostics: buildDiagnostics(slice),
   };
+}
+
+export function compileAitpWorkspaceMigrationHealth(
+  input: unknown,
+  options: CompileAitpProcessGraphSliceOptions = {},
+): CompiledAitpProcessGraphSlice {
+  return compileAitpProcessGraphSlice(
+    {
+      kind: 'process_graph_slice',
+      truth_source: 'workspace_migration_health',
+      orientation_only: true,
+      nodes: [],
+      edges: [],
+      open_obligations: [],
+      source_backtrace: [],
+      source_asset_index: [],
+      relation_neighborhood: [],
+      exploratory_records: [],
+      provenance_gaps: [],
+      route_state: {},
+      trust_boundary_reasons: [
+        'workspace_migration_health is orientation-only',
+        'legacy migration surfaces are not evidence or validation records',
+        'this API cannot update kernel state',
+        'this API cannot update claim trust',
+      ],
+      recommended_moments: [],
+      moment_policy: {
+        kind: 'host_agnostic_moment_policy',
+        decisions: [],
+        recommended_moments: [],
+        trust_boundary_reasons: [
+          'workspace_migration_health is orientation-only',
+          'legacy migration surfaces are not evidence or validation records',
+        ],
+        truth_source: 'workspace_migration_health',
+        orientation_only: true,
+        can_update_claim_trust: false,
+      },
+      migration_health: input,
+    },
+    options,
+  );
 }
 
 export function summarizeObligations(
@@ -144,6 +193,7 @@ function buildContextLines(
   sourceAssets: AitpSourceAssetSummary,
   sourceStackCoverage: AitpSourceStackCoverageSummary,
   sourceReconstructionReview: AitpSourceReconstructionReviewSummary,
+  migrationHealth: AitpMigrationHealthSummary,
   moments: readonly DetectedResearchMoment[],
   callObligations: readonly AitpCallObligation[],
   theoryReasoning: AitpTheoryReasoningProjection | undefined,
@@ -161,6 +211,7 @@ function buildContextLines(
   lines.push(...sourceAssets.lines);
   lines.push(...sourceStackCoverage.lines);
   lines.push(...sourceReconstructionReview.lines);
+  lines.push(...migrationHealth.lines);
 
   const sourceGaps = slice.sourceBacktrace.filter((item) =>
     lowerJoin([item.status, item.reason, item.gap]).match(/gap|missing|unresolved|open|no source/) !==
@@ -254,6 +305,7 @@ function buildReminderLines(
   sourceAssets: AitpSourceAssetSummary,
   sourceStackCoverage: AitpSourceStackCoverageSummary,
   sourceReconstructionReview: AitpSourceReconstructionReviewSummary,
+  migrationHealth: AitpMigrationHealthSummary,
   maxItems: number,
 ): readonly string[] {
   const lines = [
@@ -304,6 +356,17 @@ function buildReminderLines(
   if (sourceReconstructionReview.openReviewClaimIds.length > 0) {
     lines.push(
       'Use AITP source reconstruction review status and review packets before treating source reconstruction as reviewed.',
+    );
+  }
+  if (
+    migrationHealth.status === 'blocked' ||
+    migrationHealth.status === 'review_required' ||
+    migrationHealth.canonicalLegacySeedCount > 0 ||
+    migrationHealth.activeLegacySeedCount > 0 ||
+    migrationHealth.rootL2GlobalMemoryRisk
+  ) {
+    lines.push(
+      'Use AITP migration health before retiring old stores or treating legacy_seed memory as active claim support.',
     );
   }
   return lines;
@@ -523,6 +586,56 @@ export function summarizeSourceReconstructionReview(
     nextActions,
     lines,
   };
+}
+
+export function summarizeMigrationHealth(
+  health: AitpMigrationHealth,
+  maxItems = MAX_CONTEXT_ITEMS,
+): AitpMigrationHealthSummary {
+  const nextActions = unique([
+    ...health.nextActions,
+    ...health.legacySeedNextActions,
+  ]);
+  const lines: string[] = [];
+  if (health.summaryLines.length > 0) {
+    lines.push(...bounded(health.summaryLines, maxItems));
+  } else if (hasMigrationHealthSignal(health)) {
+    lines.push(
+      [
+        `AITP migration health: status=${health.status}`,
+        `old_store_retirement_safe=${String(health.oldStoreRetirementSafe)}`,
+        `blocking_files=${String(health.blockingFileCount)}`,
+        `canonical_legacy_seeds=${String(health.canonicalLegacySeedCount)}`,
+        `active_legacy_seeds=${String(health.activeLegacySeedCount)}`,
+      ].join(', '),
+    );
+  }
+  if (nextActions.length > 0 && health.status !== 'clear') {
+    lines.push(`AITP migration next actions: ${bounded(nextActions, maxItems).join('; ')}`);
+  }
+  return {
+    status: health.status,
+    oldStoreRetirementSafe: health.oldStoreRetirementSafe,
+    blockingFileCount: health.blockingFileCount,
+    canonicalLegacySeedCount: health.canonicalLegacySeedCount,
+    activeLegacySeedCount: health.activeLegacySeedCount,
+    rootL2GlobalMemoryRisk: health.rootL2GlobalMemoryRisk,
+    legacySeedQuarantineStatus: health.legacySeedQuarantineStatus,
+    nextActions,
+    lines,
+  };
+}
+
+function hasMigrationHealthSignal(health: AitpMigrationHealth): boolean {
+  return (
+    health.status !== 'unknown' ||
+    health.ledgerStatus !== 'missing' ||
+    health.fileDecisionCount > 0 ||
+    health.blockingFileCount > 0 ||
+    health.canonicalLegacySeedCount > 0 ||
+    health.activeLegacySeedCount > 0 ||
+    health.rootL2GlobalMemoryRisk
+  );
 }
 
 function gapMatches(gap: AitpProvenanceGap, needles: readonly string[]): boolean {
@@ -1324,6 +1437,19 @@ function buildDiagnostics(slice: AitpProcessGraphSlice): readonly string[] {
   if (slice.sourceReconstructionReview.items.some((item) => item.reviewStatus !== 'passed')) {
     diagnostics.push('source-reconstruction-review-open');
   }
+  if (hasMigrationHealthSignal(slice.migrationHealth)) {
+    diagnostics.push('migration-health-present');
+  }
+  if (
+    slice.migrationHealth.status === 'blocked' ||
+    slice.migrationHealth.rootL2GlobalMemoryRisk ||
+    slice.migrationHealth.activeLegacySeedCount > 0
+  ) {
+    diagnostics.push('migration-health-blocked');
+  }
+  if (slice.migrationHealth.canonicalLegacySeedCount > 0) {
+    diagnostics.push('canonical-legacy-l2-seeds-present');
+  }
   return diagnostics;
 }
 
@@ -1520,6 +1646,9 @@ function withSliceDefaults(slice: AitpProcessGraphSlice): AitpProcessGraphSlice 
   const sourceReconstructionReview =
     (slice as { readonly sourceReconstructionReview?: AitpSourceReconstructionReview })
       .sourceReconstructionReview ?? emptySourceReconstructionReview();
+  const migrationHealth =
+    (slice as { readonly migrationHealth?: AitpMigrationHealth }).migrationHealth ??
+    emptyMigrationHealth();
   return {
     ...slice,
     routeState,
@@ -1527,6 +1656,7 @@ function withSliceDefaults(slice: AitpProcessGraphSlice): AitpProcessGraphSlice 
     sourceAssetIndex,
     sourceStackCoverage,
     sourceReconstructionReview,
+    migrationHealth,
   };
 }
 
@@ -1565,6 +1695,36 @@ function emptySourceReconstructionReview(): AitpSourceReconstructionReview {
     items: [],
     nextActions: [],
     truthSource: 'typed_records',
+    orientationOnly: true,
+    canUpdateClaimTrust: false,
+  };
+}
+
+function emptyMigrationHealth(): AitpMigrationHealth {
+  return {
+    kind: 'aitp_workspace_migration_health',
+    status: 'unknown',
+    canonicalStore: '',
+    ledgerPath: undefined,
+    ledgerStatus: 'missing',
+    fileDecisionCount: 0,
+    expectedTotalFileCount: 0,
+    noOmissionCheck: false,
+    blockingFileCount: 0,
+    oldStoreRetirementSafe: false,
+    semanticReviewRequired: false,
+    rootL2GlobalMemoryRisk: false,
+    rootL2GlobalMemoryDecisionCount: 0,
+    rootL2GlobalMemoryTopicCount: 0,
+    rootL2GlobalMemoryRiskReason: '',
+    canonicalLegacySeedCount: 0,
+    activeLegacySeedCount: 0,
+    legacySeedTopicCount: 0,
+    legacySeedQuarantineStatus: 'no_canonical_legacy_l2_seeds',
+    legacySeedNextActions: [],
+    nextActions: [],
+    summaryLines: [],
+    truthSource: 'aitp',
     orientationOnly: true,
     canUpdateClaimTrust: false,
   };
