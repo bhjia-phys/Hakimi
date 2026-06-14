@@ -157,7 +157,7 @@ export interface ResearchContextAitpSection {
   readonly requiredCallIds: readonly string[];
   readonly trustPrerequisiteCallIds: readonly string[];
   readonly suggestedActionIds: readonly string[];
-  readonly compiled: CompiledAitpProcessGraphSlice;
+  readonly compiled?: CompiledAitpProcessGraphSlice | undefined;
   readonly claimRelationMap?: ResearchContextAitpClaimRelationMapSection | undefined;
 }
 
