@@ -71,6 +71,14 @@ describe('tool lifecycle auto capture', () => {
     expect(agent.researchContext.requirePack(contextPackId ?? '').aitp?.claimRelationMap?.claimId).toBe(
       'claim-ads',
     );
+    expect(agent.researchLedger?.registry.listEvents()).toHaveLength(0);
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'research_ledger.auto_capture_skipped',
+        toolCallId: 'call_relation_map',
+        reason: 'aitp-canonical-context-surface',
+      }),
+    );
   });
 
   it('updates an existing AITP recovery WorkFrame when the relation map arrives after the brief', async () => {
