@@ -339,6 +339,9 @@ describe('ResearchContextManager', () => {
     expect(reminder).toContain('AITP process graph: truth_source=typed_records');
     expect(reminder).toContain('AITP recovery discipline');
     expect(reminder).toContain('AITP relation map: claim=claim-ridge-pade-h2o');
+    expect(reminder).toContain('AITP active claim statement (not a trust promotion)');
+    expect(reminder).toContain('H2O one-iteration LibRPA QSGW');
+    expect(reminder).toContain('restate the active claim statement/content');
     expect(reminder).toContain('current-state boundary for recovery');
     expect(reminder).toContain('use the bound AITP session/topic refs');
     expect(reminder).toContain('canonical topics root');

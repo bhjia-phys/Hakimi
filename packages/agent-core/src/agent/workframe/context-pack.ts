@@ -88,6 +88,14 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
       lines.push(
         `AITP relation map: claim=${relationMap.claimId || '<none>'} support=${String(relationMap.supportedCount)} limited=${String(relationMap.limitedCount)} not_tested=${String(relationMap.notTestedCount)} contradicted=${String(relationMap.contradictedCount)}`,
       );
+      if (relationMap.claimStatement.trim().length > 0) {
+        lines.push(
+          `AITP active claim statement (not a trust promotion): ${compactCue(relationMap.claimStatement)}`,
+        );
+        lines.push(
+          'For recovery briefs, restate the active claim statement/content before listing support, limits, blockers, and next actions; do not replace it with only the claim id.',
+        );
+      }
       const topicToken = aitpTopicToken(pack.sourceRefs);
       lines.push(
         'AITP relation map is the current-state boundary for recovery; prefer it over root .aitp files, legacy L0-L4 notes, runtime topic_state.json, or local summaries when naming the active claim and conclusion.',
