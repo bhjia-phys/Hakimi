@@ -19,6 +19,7 @@ import {
   KIMI_CODE_UPDATE_INSTALL_LOCK_FILE_NAME,
   KIMI_CODE_UPDATE_INSTALL_STATE_FILE_NAME,
   KIMI_CODE_UPDATE_DIR_NAME,
+  KIMI_CODE_UPDATE_ROLLOUT_LOG_FILE_NAME,
   KIMI_CODE_UPDATE_STATE_FILE_NAME,
 } from '#/constant/app';
 
@@ -72,6 +73,13 @@ export function getUpdateInstallStateFile(): string {
  */
 export function getUpdateInstallLockFile(): string {
   return join(getDataDir(), KIMI_CODE_UPDATE_DIR_NAME, KIMI_CODE_UPDATE_INSTALL_LOCK_FILE_NAME);
+}
+
+/**
+ * Return the rollout decision log: `<dataDir>/updates/rollout.log`.
+ */
+export function getUpdateRolloutLogFile(): string {
+  return join(getDataDir(), KIMI_CODE_UPDATE_DIR_NAME, KIMI_CODE_UPDATE_ROLLOUT_LOG_FILE_NAME);
 }
 
 /**
