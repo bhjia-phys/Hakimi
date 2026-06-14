@@ -1606,7 +1606,7 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       [
         `<aitp_recovery_alias action="get_claim_relation_map" source="context_pack" context_pack_id="${escapeXml(pack.id)}" requested_session_id="${escapeXml(args.session_id ?? '')}" requested_claim_id="${escapeXml(args.claim_id ?? args.aitp_claim_id ?? '')}" read_only="true">`,
         renderAitpClaimRelationMap(pack.aitp?.claimRelationMap, '  '),
-        '  <freshness>ContextPack snapshot. For a fresh backend read, call direct AITP MCP get_claim_relation_map with session_id topic:&lt;topic&gt; or the bare topic id.</freshness>',
+        renderAitpFreshnessHint(pack, 'get_claim_relation_map', '  '),
         '</aitp_recovery_alias>',
         '',
       ].join('\n'),
@@ -1624,7 +1624,7 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
       [
         `<aitp_recovery_alias action="get_process_graph_slice" source="context_pack" context_pack_id="${escapeXml(pack.id)}" requested_session_id="${escapeXml(args.session_id ?? '')}" requested_claim_id="${escapeXml(args.claim_id ?? args.aitp_claim_id ?? '')}" read_only="true">`,
         renderAitpSection(pack),
-        '  <freshness>ContextPack snapshot. For a fresh backend read, call direct AITP MCP get_process_graph_slice with session_id topic:&lt;topic&gt; or the bare topic id.</freshness>',
+        renderAitpFreshnessHint(pack, 'get_process_graph_slice', '  '),
         '</aitp_recovery_alias>',
         '',
       ].join('\n'),
@@ -5613,11 +5613,34 @@ function renderCuratedRagSection(pack: ResearchContextPack): string {
   ].join('\n');
 }
 
+function renderAitpFreshnessHint(
+  pack: ResearchContextPack,
+  operation: string,
+  indent = '',
+): string {
+  const base = pack.aitp?.canonicalBasePath;
+  const topicToken = firstAitpTopicRef(pack.sourceRefs) ?? `topic:${pack.topic}`;
+  if (base === undefined || base.trim().length === 0) {
+    return `${indent}<freshness>ContextPack snapshot. For a fresh backend read, call direct AITP MCP ${escapeXml(operation)} with session_id ${escapeXml(topicToken)} or the bare topic id, and use the canonical topics root containing the v5 .aitp store as base. Never pass workspace-root .aitp as base.</freshness>`;
+  }
+  return `${indent}<freshness>ContextPack snapshot. For a fresh backend read, call direct AITP MCP ${escapeXml(operation)} with base="${escapeXml(base)}" and session_id="${escapeXml(topicToken)}". Never pass workspace-root .aitp or a nested .aitp directory as base.</freshness>`;
+}
+
+function firstAitpTopicRef(refs: readonly string[] | undefined): string | undefined {
+  if (refs === undefined) return undefined;
+  for (const ref of refs) {
+    if (!ref.startsWith('aitp:topic:')) continue;
+    const topicId = ref.slice('aitp:topic:'.length).trim();
+    if (topicId.length > 0) return `topic:${topicId}`;
+  }
+  return undefined;
+}
+
 function renderAitpSection(pack: ResearchContextPack): string {
   const aitp = pack.aitp;
   if (aitp === undefined) return '  <aitp />';
   return [
-    `  <aitp truth_source="${escapeXml(aitp.truthSource)}" orientation_only="${String(aitp.orientationOnly)}">`,
+    `  <aitp truth_source="${escapeXml(aitp.truthSource)}" orientation_only="${String(aitp.orientationOnly)}"${aitp.canonicalBasePath === undefined ? '' : ` canonical_base="${escapeXml(aitp.canonicalBasePath)}"`}>`,
     renderBoundedStringList('context_lines', 'line', aitp.contextLines, '    '),
     renderAitpClaimRelationMap(aitp.claimRelationMap, '    '),
     renderBoundedStringList('live_routes', 'route', aitp.liveRouteIds, '    '),

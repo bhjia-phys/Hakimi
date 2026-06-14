@@ -1,4 +1,5 @@
 import type { Agent } from '..';
+import { resolveAitpCanonicalBasePath } from '../../aitp/session-bridge';
 import {
   compileResearchContextPack,
   type CompileResearchContextPackOptions,
@@ -45,6 +46,7 @@ export class ResearchContextManager {
       bridgePolicy: input.bridgePolicy,
       includeLedgerStatuses: input.includeLedgerStatuses,
       aitp: input.aitp,
+      aitpCanonicalBasePath: this.aitpCanonicalBasePath(),
       claimRelationMap: input.claimRelationMap,
       curatedRag: input.curatedRag,
       curatedRagReasonIds: input.curatedRagReasonIds,
@@ -67,6 +69,12 @@ export class ResearchContextManager {
       });
     }
     return pack;
+  }
+
+  private aitpCanonicalBasePath(): string | undefined {
+    const cwd = this.agent.config.cwd?.trim();
+    if (cwd === undefined || cwd.length === 0) return undefined;
+    return resolveAitpCanonicalBasePath(cwd);
   }
 
   listPacks(): readonly ResearchContextPack[] {

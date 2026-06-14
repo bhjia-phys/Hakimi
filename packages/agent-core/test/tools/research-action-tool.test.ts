@@ -857,6 +857,9 @@ describe('ResearchActionTool', () => {
   it('accepts AITP recovery alias actions against the active ContextPack', async () => {
     const agent = makeAgent();
     const tool = new ResearchActionTool(agent.researchAction);
+    agent.config.update({
+      cwd: 'F:/AI_Workspace/Theoretical-Physics',
+    });
 
     agent.workFrames.open(
       {
@@ -892,9 +895,16 @@ describe('ResearchActionTool', () => {
     expect(relation.isError).toBeUndefined();
     expect(relation.output).toContain('<aitp_recovery_alias action="get_claim_relation_map"');
     expect(relation.output).toContain('claim_id="claim-qsgw"');
+    expect(relation.output).toContain(
+      'base="F:/AI_Workspace/Theoretical-Physics/research/aitp-topics"',
+    );
+    expect(relation.output).toContain('Never pass workspace-root .aitp');
     expect(graph.isError).toBeUndefined();
     expect(graph.output).toContain('<aitp_recovery_alias action="get_process_graph_slice"');
     expect(graph.output).toContain('<aitp truth_source="typed_records"');
+    expect(graph.output).toContain(
+      'canonical_base="F:/AI_Workspace/Theoretical-Physics/research/aitp-topics"',
+    );
   });
 
   it('renders curated RAG promotion draft suggestions in loaded ContextPack XML', async () => {

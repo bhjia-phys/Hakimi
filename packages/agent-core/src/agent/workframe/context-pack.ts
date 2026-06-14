@@ -23,11 +23,17 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
   }
   if (pack.aitp !== undefined) {
     const topicToken = aitpTopicToken(pack.sourceRefs);
+    const canonicalBase = pack.aitp.canonicalBasePath;
     lines.push(
       topicToken === undefined
         ? 'AITP recovery discipline: answer from the ContextPack/typed AITP surfaces first; do not probe root .aitp, .aitp/.aitp, legacy L0-L4, or runtime files with Bash/Glob/Grep/Read to rediscover the active claim.'
         : `AITP recovery discipline: answer from the ContextPack/typed AITP surfaces first; if refreshing, use ${topicToken}; do not probe root .aitp, .aitp/.aitp, legacy L0-L4, or runtime files with Bash/Glob/Grep/Read to rediscover the active claim.`,
     );
+    if (canonicalBase !== undefined) {
+      lines.push(
+        `AITP canonical MCP base: ${canonicalBase}. Direct AITP MCP reads must pass base="${canonicalBase}"${topicToken === undefined ? '' : ` and session_id="${topicToken}"`}; never pass workspace-root .aitp or a nested .aitp directory as base.`,
+      );
+    }
   }
   if (pack.conventionIds.length > 0) {
     lines.push(`Conventions: ${bounded(pack.conventionIds).join(', ')}`);
@@ -91,6 +97,11 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
           ? 'When refreshing AITP recovery state, use the bound AITP session/topic refs and the canonical topics root containing the v5 .aitp store; never pass the .aitp directory itself as the base.'
           : `When refreshing AITP recovery state, use topic token ${topicToken} (from ${topicToken.replace(/^topic:/, 'aitp:topic:')}) and the canonical topics root containing the v5 .aitp store; never pass the .aitp directory itself as the base.`,
       );
+      if (pack.aitp.canonicalBasePath !== undefined) {
+        lines.push(
+          `Fresh direct AITP MCP read template: base="${pack.aitp.canonicalBasePath}", session_id="${topicToken ?? '<bound-session-or-topic>'}".`,
+        );
+      }
       if (relationMap.canSay.length > 0) {
         lines.push(`AITP relation map can say: ${bounded(relationMap.canSay).join(' | ')}`);
       }

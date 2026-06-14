@@ -87,6 +87,7 @@ describe('AITP dynamic session bridge', () => {
     const canonical = join(root, 'research', 'aitp-topics');
     mkdirSync(join(root, '.aitp', 'registry'), { recursive: true });
     mkdirSync(join(canonical, '.aitp', 'registry'), { recursive: true });
+    const canonicalPortable = portablePath(canonical);
 
     const cliCalls: string[][] = [];
     const cliProvider = createDynamicAitpCliClaimRelationMapProvider({
@@ -116,12 +117,14 @@ describe('AITP dynamic session bridge', () => {
       }),
     });
 
-    expect(resolveAitpCanonicalBasePath(root)).toBe(canonical);
+    expect(resolveAitpCanonicalBasePath(root)).toBe(canonicalPortable);
+    expect(resolveAitpCanonicalBasePath(join(canonical, '.aitp'))).toBe(canonicalPortable);
+    expect(resolveAitpCanonicalBasePath(join(root, '.aitp'))).toBe(canonicalPortable);
     expect(relationMap?.claimId).toBe('claim-ridge-pade-h2o');
     expect(cliCalls[0]).toEqual([
       'aitp-v5',
       '--base',
-      canonical,
+      canonicalPortable,
       'relation-map',
       'topic:qsgw-ac-error-molecules',
     ]);
@@ -129,7 +132,7 @@ describe('AITP dynamic session bridge', () => {
       {
         toolName: 'aitp_v5_get_claim_relation_map',
         args: {
-          base: canonical,
+          base: canonicalPortable,
           session_id: 'topic:qsgw-ac-error-molecules',
         },
       },
@@ -1140,6 +1143,10 @@ function workFrame(input: { readonly sourceRefs: readonly string[] }): WorkFrame
     openObligationIds: [],
     trustState: 'exploratory',
   };
+}
+
+function portablePath(path: string): string {
+  return path.replace(/\\/g, '/');
 }
 
 function argAfter(args: readonly string[], flag: string): string | undefined {

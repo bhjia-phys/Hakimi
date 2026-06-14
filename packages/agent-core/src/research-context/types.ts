@@ -124,6 +124,7 @@ export interface ResearchContextAitpClaimRelationMapSection {
 }
 
 export interface ResearchContextAitpSection {
+  readonly canonicalBasePath?: string | undefined;
   readonly truthSource: string;
   readonly orientationOnly: boolean;
   readonly reminders: readonly string[];
@@ -353,6 +354,7 @@ export interface CompileResearchContextPackOptions {
   readonly bridgePolicy?: BridgePolicy | undefined;
   readonly includeLedgerStatuses?: readonly ResearchLedgerEventStatus[] | undefined;
   readonly aitp?: CompiledAitpProcessGraphSlice | null | undefined;
+  readonly aitpCanonicalBasePath?: string | undefined;
   readonly claimRelationMap?: AitpClaimRelationMap | null | undefined;
   readonly curatedRag?: AitpCuratedRagSearchResult | null | undefined;
   readonly curatedRagReasonIds?: readonly string[] | undefined;
