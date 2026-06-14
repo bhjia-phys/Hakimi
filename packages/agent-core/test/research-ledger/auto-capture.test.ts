@@ -183,6 +183,43 @@ describe('tool lifecycle auto capture', () => {
     );
   });
 
+  it('falls back to AITP tool args when a legacy semantic review packet output is truncated', async () => {
+    const cwd = await tempDir('aitp-auto-capture-');
+    const records: AgentRecord[] = [];
+    const agent = makeAgent(cwd, records);
+
+    agent.toolLifecycle.recordStarted({
+      source: 'controller',
+      turnId: 0,
+      step: 1,
+      stepUuid: 'step-1',
+      toolCallId: 'call_legacy_packet_truncated',
+      toolName: 'mcp__aitp__aitp_v5_build_legacy_semantic_review_packet',
+      args: { base: cwd, topic: 'qsgw-ac-error-molecules' },
+      cwd,
+    });
+    await agent.toolLifecycle.recordCompleted({
+      source: 'controller',
+      turnId: 0,
+      toolCallId: 'call_legacy_packet_truncated',
+      result: {
+        output: '{"ok":true,"kind":"legacy_semantic_review_packet","topic":"qsgw-ac-error-molecules"...[truncated]',
+      },
+    });
+
+    const frame = agent.workFrames.active;
+    expect(frame?.topic).toBe('qsgw-ac-error-molecules');
+    expect(frame?.sourceRefs).toEqual(expect.arrayContaining(['aitp:topic:qsgw-ac-error-molecules']));
+    expect(agent.toolLifecycle.listRecent()[0]?.completed.workFrameId).toBe(frame?.id);
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        type: 'workframe.opened',
+        source: 'controller',
+        toolCallId: 'call_legacy_packet_truncated',
+      }),
+    );
+  });
+
   it('captures a git diff observation into the research ledger', async () => {
     const cwd = await tempDir('aitp-auto-capture-');
     const records: AgentRecord[] = [];
