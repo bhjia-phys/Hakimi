@@ -92,6 +92,77 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.trust.trustedEdgeIds).toEqual([]);
   });
 
+  it('projects workspace migration health into recovery context boundaries', () => {
+    const payload = {
+      ...fakeSlicePayload(),
+      migration_health: {
+        kind: 'aitp_workspace_migration_health',
+        status: 'blocked',
+        canonical_store: 'F:/AI_Workspace/Theoretical-Physics/research/aitp-topics/.aitp',
+        ledger_path:
+          'F:/AI_Workspace/Theoretical-Physics/research/aitp-topics/.aitp/migrations/workspace-inventory-20260614/workspace_file_migration_ledger.json',
+        ledger_status: 'ready',
+        file_decision_count: 8404,
+        expected_total_file_count: 8404,
+        no_omission_check: true,
+        blocking_file_count: 8338,
+        old_store_retirement_safe: false,
+        semantic_review_required: true,
+        root_l2_global_memory_risk: true,
+        root_l2_global_memory_decision_count: 2232,
+        root_l2_global_memory_topic_count: 18,
+        root_l2_global_memory_risk_reason:
+          'root workspace L2 entries appear under multiple topic prefixes',
+        canonical_legacy_seed_count: 2356,
+        active_legacy_seed_count: 0,
+        legacy_seed_topic_count: 19,
+        legacy_seed_quarantine_status: 'canonical_legacy_l2_seeds_require_review',
+        legacy_seed_next_actions: [
+          'keep_legacy_l2_seeds_orientation_only_until_reviewed',
+          'review_each_seed_source_claim_topic_alignment',
+        ],
+        next_actions: [
+          'resolve_blocking_file_decisions_before_old_store_retirement',
+          'do_not_treat_legacy_seed_memory_as_active_claim_support',
+        ],
+        summary_lines: [
+          'AITP migration health: status=blocked, old_store_retirement_safe=false, blocking_files=8338, no_omission_check=true.',
+          'Canonical legacy L2 seeds: count=2356, active=0, status=canonical_legacy_l2_seeds_require_review; legacy_seed memory is recovery orientation only until reviewed/reassigned/promoted.',
+        ],
+        truth_source: 'workspace_migration_ledgers_and_canonical_l2_seed_scan',
+        summary_inputs_trusted: false,
+        orientation_only: true,
+        can_update_kernel_state: false,
+        can_update_claim_trust: false,
+      },
+    };
+
+    const compiled = compileAitpProcessGraphSlice(payload);
+    const context = compiled.contextLines.join('\n');
+
+    expect(compiled.migrationHealth).toMatchObject({
+      status: 'blocked',
+      oldStoreRetirementSafe: false,
+      blockingFileCount: 8338,
+      canonicalLegacySeedCount: 2356,
+      activeLegacySeedCount: 0,
+      rootL2GlobalMemoryRisk: true,
+    });
+    expect(context).toContain('AITP migration health: status=blocked');
+    expect(context).toContain('Canonical legacy L2 seeds: count=2356');
+    expect(context).toContain('AITP migration next actions:');
+    expect(compiled.reminders.join('\n')).toContain(
+      'Use AITP migration health before retiring old stores',
+    );
+    expect(compiled.diagnostics).toEqual(
+      expect.arrayContaining([
+        'migration-health-present',
+        'migration-health-blocked',
+        'canonical-legacy-l2-seeds-present',
+      ]),
+    );
+  });
+
   it('normalizes AITP recommended moments for detector callers', () => {
     const slice = parseAitpProcessGraphSlice(fakeSlicePayload());
     const detector = new ResearchMomentDetector();

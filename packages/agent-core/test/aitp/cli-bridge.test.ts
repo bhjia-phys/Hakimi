@@ -22,6 +22,7 @@ import {
   buildAitpExploratoryRecordArgs,
   buildAitpHumanCheckpointRequestArgs,
   buildAitpProcessGraphSliceArgs,
+  buildAitpWorkspaceMigrationHealthArgs,
   buildAitpProofObligationCreateArgs,
   buildAitpRecordRefLookupArgs,
   buildAitpReferenceLocationRecordArgs,
@@ -2202,6 +2203,114 @@ describe('AITP CLI bridge', () => {
         sessionId: 's1',
       }),
     ).toEqual(['--base', 'F:/project', 'graph', 'slice', 's1', '--limit', '80']);
+  });
+
+  it('keeps workspace migration health args deterministic', () => {
+    expect(
+      buildAitpWorkspaceMigrationHealthArgs({
+        basePath: 'F:/project',
+        sampleLimit: 3,
+      }),
+    ).toEqual([
+      '--base',
+      'F:/project',
+      'workspace',
+      'migration-health',
+      '--sample-limit',
+      '3',
+    ]);
+  });
+
+  it('falls back to workspace migration health when scoped graph recovery is unavailable', async () => {
+    const calls: { command: string; args: readonly string[] }[] = [];
+    const runner: AitpCommandRunner = {
+      async run(command, args) {
+        calls.push({ command, args });
+        if (args.includes('graph')) {
+          return {
+            exitCode: 1,
+            stdout: '',
+            stderr: 'session binding is missing or malformed',
+          };
+        }
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            kind: 'aitp_workspace_migration_health',
+            status: 'blocked',
+            canonical_store: 'F:/project/research/aitp-topics/.aitp',
+            ledger_path: 'F:/project/research/aitp-topics/.aitp/migrations/run/workspace_file_migration_ledger.json',
+            ledger_status: 'ready',
+            file_decision_count: 8404,
+            expected_total_file_count: 8404,
+            no_omission_check: true,
+            blocking_file_count: 8338,
+            old_store_retirement_safe: false,
+            semantic_review_required: true,
+            root_l2_global_memory_risk: true,
+            root_l2_global_memory_decision_count: 2232,
+            root_l2_global_memory_topic_count: 18,
+            root_l2_global_memory_risk_reason: 'root L2 entries require semantic reassignment',
+            canonical_legacy_seed_count: 2356,
+            active_legacy_seed_count: 0,
+            legacy_seed_topic_count: 19,
+            legacy_seed_quarantine_status: 'canonical_legacy_l2_seeds_require_review',
+            legacy_seed_next_actions: [
+              'keep_legacy_l2_seeds_orientation_only_until_reviewed',
+            ],
+            next_actions: [
+              'do_not_treat_legacy_seed_memory_as_active_claim_support',
+            ],
+            summary_lines: [
+              'AITP migration health: status=blocked, old_store_retirement_safe=false, blocking_files=8338, no_omission_check=true.',
+              'Canonical legacy L2 seeds: count=2356, active=0, status=canonical_legacy_l2_seeds_require_review; legacy_seed memory is recovery orientation only until reviewed/reassigned/promoted.',
+            ],
+            truth_source: 'workspace_migration_ledgers_and_canonical_l2_seed_scan',
+            summary_inputs_trusted: false,
+            orientation_only: true,
+            can_update_kernel_state: false,
+            can_update_claim_trust: false,
+          }),
+          stderr: '',
+        };
+      },
+    };
+    const provider = createAitpCliProcessGraphSliceProvider({
+      basePath: 'F:/project',
+      runner,
+      limit: 8,
+    });
+
+    const compiled = await provider.getProcessGraphSlice({
+      workFrame: {
+        id: 'frame.aitp.l0-l4',
+        domain: 'theoretical-physics/general',
+        topic: 'AITP L0-L4 migration',
+        goal: 'Recover migration boundary.',
+        activeObjectIds: [],
+        assumptionIds: [],
+        conventionIds: [],
+        sourceRefs: ['aitp:topic:L0-L4'],
+        openObligationIds: [],
+        trustState: 'exploratory',
+      },
+      prompt: [{ type: 'text', text: 'Can old stores retire?' }],
+    });
+
+    expect(calls.map((call) => call.args)).toEqual([
+      ['--base', 'F:/project', 'graph', 'slice', 'topic:L0-L4', '--limit', '8'],
+      ['--base', 'F:/project', 'workspace', 'migration-health', '--sample-limit', '3'],
+    ]);
+    expect(compiled?.trust.truthSource).toBe('workspace_migration_health');
+    expect(compiled?.contextLines.join('\n')).toContain('AITP migration health: status=blocked');
+    expect(compiled?.contextLines.join('\n')).toContain('Canonical legacy L2 seeds: count=2356');
+    expect(compiled?.diagnostics).toEqual(
+      expect.arrayContaining([
+        'migration-health-present',
+        'migration-health-blocked',
+        'canonical-legacy-l2-seeds-present',
+      ]),
+    );
   });
 
   it('creates a WorkFrame-scoped process graph provider without guessing scope', async () => {

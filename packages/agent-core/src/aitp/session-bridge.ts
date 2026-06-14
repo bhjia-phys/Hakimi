@@ -71,13 +71,22 @@ export function createDynamicAitpCliProcessGraphSliceProvider(
     async getProcessGraphSlice(input) {
       const scope = resolveScope(input.workFrame);
       if (scope === null || scope === undefined) return null;
-      return createDynamicAitpCliBridge(options).readProcessGraphSlice({
-        sessionId: scope.sessionId,
-        claimId: scope.claimId,
-        limit: options.limit,
-        activeContext: promptText(input.prompt),
-        signal: input.signal,
-      });
+      const bridge = createDynamicAitpCliBridge(options);
+      const activeContext = promptText(input.prompt);
+      try {
+        return await bridge.readProcessGraphSlice({
+          sessionId: scope.sessionId,
+          claimId: scope.claimId,
+          limit: options.limit,
+          activeContext,
+          signal: input.signal,
+        });
+      } catch {
+        return bridge.readWorkspaceMigrationHealth({
+          activeContext,
+          signal: input.signal,
+        });
+      }
     },
   };
 }

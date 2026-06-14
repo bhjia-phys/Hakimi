@@ -2,7 +2,11 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
 
-import { compileAitpProcessGraphSlice, type CompileAitpProcessGraphSliceOptions } from './compiler';
+import {
+  compileAitpProcessGraphSlice,
+  compileAitpWorkspaceMigrationHealth,
+  type CompileAitpProcessGraphSliceOptions,
+} from './compiler';
 import {
   parseAitpCuratedRagChunk,
   parseAitpCuratedRagCorpus,
@@ -253,6 +257,11 @@ export interface ReadAitpProcessGraphSliceInput extends CompileAitpProcessGraphS
   readonly sessionId: string;
   readonly claimId?: string | undefined;
   readonly limit?: number | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export interface ReadAitpWorkspaceMigrationHealthInput extends CompileAitpProcessGraphSliceOptions {
+  readonly sampleLimit?: number | undefined;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -890,6 +899,23 @@ export class AitpCliBridge {
     });
   }
 
+  async readWorkspaceMigrationHealth(
+    input: ReadAitpWorkspaceMigrationHealthInput = {},
+  ): Promise<CompiledAitpProcessGraphSlice> {
+    const payload = await this.runJson(
+      buildAitpWorkspaceMigrationHealthArgs({
+        basePath: this.options.basePath,
+        sampleLimit: input.sampleLimit,
+      }),
+      input.signal,
+    );
+    return compileAitpWorkspaceMigrationHealth(payload, {
+      prompt: input.prompt,
+      activeContext: input.activeContext,
+      maxContextItems: input.maxContextItems,
+    });
+  }
+
   async readClaimRelationMap(
     input: ReadAitpClaimRelationMapInput,
   ): Promise<AitpClaimRelationMap> {
@@ -1257,13 +1283,21 @@ export function createAitpCliProcessGraphSliceProvider(
     async getProcessGraphSlice(input) {
       const scope = resolveScope(input.workFrame);
       if (scope === null || scope === undefined) return null;
-      return bridge.readProcessGraphSlice({
-        sessionId: scope.sessionId,
-        claimId: scope.claimId,
-        limit: options.limit,
-        activeContext: promptText(input.prompt),
-        signal: input.signal,
-      });
+      const activeContext = promptText(input.prompt);
+      try {
+        return await bridge.readProcessGraphSlice({
+          sessionId: scope.sessionId,
+          claimId: scope.claimId,
+          limit: options.limit,
+          activeContext,
+          signal: input.signal,
+        });
+      } catch {
+        return bridge.readWorkspaceMigrationHealth({
+          activeContext,
+          signal: input.signal,
+        });
+      }
     },
   };
 }
@@ -1320,6 +1354,25 @@ export function buildAitpProcessGraphSliceArgs(input: {
     args.push('--claim', input.claimId.trim());
   }
   return args;
+}
+
+export function buildAitpWorkspaceMigrationHealthArgs(input: {
+  readonly basePath: string;
+  readonly sampleLimit?: number | undefined;
+}): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  const sampleLimit = input.sampleLimit ?? 3;
+  if (!Number.isInteger(sampleLimit) || sampleLimit < 0) {
+    throw new AitpCliBridgeError('AITP migration health sample limit must be a non-negative integer.');
+  }
+  return [
+    '--base',
+    input.basePath,
+    'workspace',
+    'migration-health',
+    '--sample-limit',
+    String(sampleLimit),
+  ];
 }
 
 export function buildAitpClaimRelationMapArgs(input: {

@@ -3,6 +3,7 @@ import type {
   AitpLifecycleTriggerInfo,
   AitpMomentPolicy,
   AitpMomentPolicyDecision,
+  AitpMigrationHealth,
   AitpObligationSeverity,
   AitpPayloadDraftSchema,
   AitpOpenObligation,
@@ -54,6 +55,9 @@ export function parseAitpProcessGraphSlice(input: unknown): AitpProcessGraphSlic
     ),
     sourceReconstructionReview: parseSourceReconstructionReview(
       valueFor(input, 'source_reconstruction_review', 'sourceReconstructionReview'),
+    ),
+    migrationHealth: parseMigrationHealth(
+      valueFor(input, 'migration_health', 'migrationHealth'),
     ),
     relationNeighborhood: objectArray(input['relation_neighborhood']).map(
       parseRelationNeighborhoodItem,
@@ -717,6 +721,88 @@ function parseMomentPolicy(value: unknown): AitpMomentPolicy {
     truthSource: stringValue(value['truth_source']) ?? 'aitp',
     orientationOnly: booleanValue(value['orientation_only']) ?? true,
     canUpdateClaimTrust: booleanValue(value['can_update_claim_trust']) ?? false,
+  };
+}
+
+function parseMigrationHealth(value: unknown): AitpMigrationHealth {
+  if (!isRecord(value)) {
+    return emptyMigrationHealth();
+  }
+  return {
+    kind: stringValue(value['kind']) ?? 'aitp_workspace_migration_health',
+    status: stringValue(value['status']) ?? 'unknown',
+    canonicalStore: stringValue(valueFor(value, 'canonical_store', 'canonicalStore')) ?? '',
+    ledgerPath: stringValue(valueFor(value, 'ledger_path', 'ledgerPath')),
+    ledgerStatus: stringValue(valueFor(value, 'ledger_status', 'ledgerStatus')) ?? 'missing',
+    fileDecisionCount: numberValue(valueFor(value, 'file_decision_count', 'fileDecisionCount')) ?? 0,
+    expectedTotalFileCount: numberValue(valueFor(value, 'expected_total_file_count', 'expectedTotalFileCount')) ?? 0,
+    noOmissionCheck: booleanValue(valueFor(value, 'no_omission_check', 'noOmissionCheck')) ?? false,
+    blockingFileCount: numberValue(valueFor(value, 'blocking_file_count', 'blockingFileCount')) ?? 0,
+    oldStoreRetirementSafe:
+      booleanValue(valueFor(value, 'old_store_retirement_safe', 'oldStoreRetirementSafe')) ?? false,
+    semanticReviewRequired:
+      booleanValue(valueFor(value, 'semantic_review_required', 'semanticReviewRequired')) ?? false,
+    rootL2GlobalMemoryRisk:
+      booleanValue(valueFor(value, 'root_l2_global_memory_risk', 'rootL2GlobalMemoryRisk')) ?? false,
+    rootL2GlobalMemoryDecisionCount: numberValue(
+      valueFor(value, 'root_l2_global_memory_decision_count', 'rootL2GlobalMemoryDecisionCount'),
+    ) ?? 0,
+    rootL2GlobalMemoryTopicCount: numberValue(
+      valueFor(value, 'root_l2_global_memory_topic_count', 'rootL2GlobalMemoryTopicCount'),
+    ) ?? 0,
+    rootL2GlobalMemoryRiskReason:
+      stringValue(valueFor(value, 'root_l2_global_memory_risk_reason', 'rootL2GlobalMemoryRiskReason')) ?? '',
+    canonicalLegacySeedCount: numberValue(
+      valueFor(value, 'canonical_legacy_seed_count', 'canonicalLegacySeedCount'),
+    ) ?? 0,
+    activeLegacySeedCount: numberValue(
+      valueFor(value, 'active_legacy_seed_count', 'activeLegacySeedCount'),
+    ) ?? 0,
+    legacySeedTopicCount: numberValue(
+      valueFor(value, 'legacy_seed_topic_count', 'legacySeedTopicCount'),
+    ) ?? 0,
+    legacySeedQuarantineStatus:
+      stringValue(valueFor(value, 'legacy_seed_quarantine_status', 'legacySeedQuarantineStatus')) ??
+      'no_canonical_legacy_l2_seeds',
+    legacySeedNextActions: stringArray(
+      valueFor(value, 'legacy_seed_next_actions', 'legacySeedNextActions'),
+    ),
+    nextActions: stringArray(valueFor(value, 'next_actions', 'nextActions')),
+    summaryLines: stringArray(valueFor(value, 'summary_lines', 'summaryLines')),
+    truthSource: stringValue(valueFor(value, 'truth_source', 'truthSource')) ?? 'aitp',
+    orientationOnly: booleanValue(valueFor(value, 'orientation_only', 'orientationOnly')) ?? true,
+    canUpdateClaimTrust:
+      booleanValue(valueFor(value, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,
+  };
+}
+
+function emptyMigrationHealth(): AitpMigrationHealth {
+  return {
+    kind: 'aitp_workspace_migration_health',
+    status: 'unknown',
+    canonicalStore: '',
+    ledgerPath: undefined,
+    ledgerStatus: 'missing',
+    fileDecisionCount: 0,
+    expectedTotalFileCount: 0,
+    noOmissionCheck: false,
+    blockingFileCount: 0,
+    oldStoreRetirementSafe: false,
+    semanticReviewRequired: false,
+    rootL2GlobalMemoryRisk: false,
+    rootL2GlobalMemoryDecisionCount: 0,
+    rootL2GlobalMemoryTopicCount: 0,
+    rootL2GlobalMemoryRiskReason: '',
+    canonicalLegacySeedCount: 0,
+    activeLegacySeedCount: 0,
+    legacySeedTopicCount: 0,
+    legacySeedQuarantineStatus: 'no_canonical_legacy_l2_seeds',
+    legacySeedNextActions: [],
+    nextActions: [],
+    summaryLines: [],
+    truthSource: 'aitp',
+    orientationOnly: true,
+    canUpdateClaimTrust: false,
   };
 }
 
