@@ -2272,6 +2272,20 @@ describe('AITP CLI bridge', () => {
         trustState: 'exploratory',
       }),
     ).toEqual({ sessionId: 'session-qg', claimId: 'claim-mipt' });
+    expect(
+      resolveAitpScopeFromWorkFrame({
+        id: 'frame.qsgw',
+        domain: 'theoretical-physics/general',
+        topic: 'qsgw-ac-error-molecules',
+        goal: 'Restore the current AITP topic state.',
+        activeObjectIds: [],
+        assumptionIds: [],
+        conventionIds: [],
+        sourceRefs: ['aitp:topic:qsgw-ac-error-molecules'],
+        openObligationIds: [],
+        trustState: 'exploratory',
+      }),
+    ).toEqual({ sessionId: 'topic:qsgw-ac-error-molecules', claimId: undefined });
   });
 });
 

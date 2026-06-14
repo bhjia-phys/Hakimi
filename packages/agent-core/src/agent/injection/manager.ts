@@ -16,6 +16,7 @@ const ACTIVE_BACKGROUND_TASK_GUIDANCE =
 
 export class InjectionManager {
   private readonly injectors: DynamicInjector[];
+  private readonly researchContextInjector: ResearchContextInjector;
   // Goal context is injected at continuation boundaries (turn start, each
   // continuation, after compaction) via `injectGoal()`, NOT in the per-step
   // `inject()` loop. Boundary-cadence append-only injection keeps one fresh copy
@@ -28,12 +29,13 @@ export class InjectionManager {
   private readonly autoresearchInjector: AutoresearchInjector | null;
 
   constructor(protected readonly agent: Agent) {
+    this.researchContextInjector = new ResearchContextInjector(agent);
     this.injectors = [
       new PluginSessionStartInjector(agent),
       new TodoListReminderInjector(agent),
       new PlanModeInjector(agent),
       new PermissionModeInjector(agent),
-      new ResearchContextInjector(agent),
+      this.researchContextInjector,
     ];
     this.goalInjector = agent.type === 'main' ? new GoalInjector(agent) : null;
     this.toolsDiffInjector = new ToolsDiffInjector(agent);
@@ -44,6 +46,12 @@ export class InjectionManager {
     for (const injector of this.injectors) {
       await injector.inject();
     }
+  }
+
+  async injectResearchContextForPrompt(
+    prompt: Parameters<ResearchContextInjector['injectForPrompt']>[0],
+  ): Promise<void> {
+    await this.researchContextInjector.injectForPrompt(prompt);
   }
 
   /**

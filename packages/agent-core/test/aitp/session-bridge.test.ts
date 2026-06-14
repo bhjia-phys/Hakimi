@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -22,6 +26,7 @@ import {
   createDynamicAitpMcpFirstWriteBridgeExecutor,
   mcpArgsForAitpClaimRelationMapRead,
   mcpArgsForAitpProcessGraphSliceRead,
+  resolveAitpCanonicalBasePath,
   type AitpCommandRunner,
 } from '../../src/aitp';
 import type { WorkFrame } from '../../src/research-action';
@@ -74,6 +79,60 @@ describe('AITP dynamic session bridge', () => {
     expect(calls).toEqual([
       ['aitp-v5', '--base', 'F:/project-a', 'relation-map', 'qsgw-si-recovery'],
       ['aitp-v5', '--base', 'F:/project-b', 'relation-map', 'qsgw-si-recovery'],
+    ]);
+  });
+
+  it('prefers the canonical research/aitp-topics store over a root compatibility store', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hakimi-aitp-workspace-'));
+    const canonical = join(root, 'research', 'aitp-topics');
+    mkdirSync(join(root, '.aitp', 'registry'), { recursive: true });
+    mkdirSync(join(canonical, '.aitp', 'registry'), { recursive: true });
+
+    const cliCalls: string[][] = [];
+    const cliProvider = createDynamicAitpCliClaimRelationMapProvider({
+      basePath: () => root,
+      runner: recordingRunner(cliCalls),
+    });
+    const relationMap = await cliProvider.getClaimRelationMap({
+      workFrame: workFrame({
+        sourceRefs: ['aitp:topic:qsgw-ac-error-molecules'],
+      }),
+    });
+
+    const mcpCalls: Array<{ readonly toolName: string; readonly args: Readonly<Record<string, unknown>> }> = [];
+    const mcpProvider = createDynamicAitpMcpFirstClaimRelationMapProvider({
+      basePath: () => root,
+      runner: recordingRunner([]),
+      mcpTransport: {
+        async callTool(input) {
+          mcpCalls.push({ toolName: input.toolName, args: input.args });
+          return fakeClaimRelationMapPayload();
+        },
+      },
+    });
+    await mcpProvider.getClaimRelationMap({
+      workFrame: workFrame({
+        sourceRefs: ['aitp:topic:qsgw-ac-error-molecules'],
+      }),
+    });
+
+    expect(resolveAitpCanonicalBasePath(root)).toBe(canonical);
+    expect(relationMap?.claimId).toBe('claim-ridge-pade-h2o');
+    expect(cliCalls[0]).toEqual([
+      'aitp-v5',
+      '--base',
+      canonical,
+      'relation-map',
+      'topic:qsgw-ac-error-molecules',
+    ]);
+    expect(mcpCalls).toEqual([
+      {
+        toolName: 'aitp_v5_get_claim_relation_map',
+        args: {
+          base: canonical,
+          session_id: 'topic:qsgw-ac-error-molecules',
+        },
+      },
     ]);
   });
 

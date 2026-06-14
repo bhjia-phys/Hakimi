@@ -118,6 +118,60 @@ describe('ResearchContextManager', () => {
     expect((lastMessage?.content[0] as { text: string }).text).toContain('frame.fqhe');
   });
 
+  it('opens an implicit AITP topic recovery frame before the first model turn', async () => {
+    const processGraphCalls: string[][] = [];
+    const relationCalls: string[][] = [];
+    const aitpProcessGraphProvider: AitpProcessGraphSliceProvider = {
+      async getProcessGraphSlice(input) {
+        processGraphCalls.push([...input.workFrame.sourceRefs]);
+        return null;
+      },
+    };
+    const aitpClaimRelationMapProvider: AitpClaimRelationMapProvider = {
+      async getClaimRelationMap(input) {
+        relationCalls.push([...input.workFrame.sourceRefs]);
+        return parseAitpClaimRelationMap(aitpClaimRelationMapPayload());
+      },
+    };
+    const agent = makeAgent(undefined, {
+      aitpProcessGraphProvider,
+      aitpClaimRelationMapProvider,
+    });
+    agent.config.update({
+      cwd: 'F:/AI_Workspace/Theoretical-Physics',
+    });
+
+    agent.context.appendUserMessage([
+      {
+        type: 'text',
+        text:
+          '请作为一个全新的研究会话，恢复理论物理工作区里 `qsgw-ac-error-molecules` 的当前研究状态。请基于 AITP v5 typed records 给出简报。',
+      },
+    ]);
+    await agent.injection.inject();
+
+    expect(agent.workFrames.active).toMatchObject({
+      id: 'frame.aitp.qsgw-ac-error-molecules',
+      domain: 'theoretical-physics/general',
+      topic: 'qsgw-ac-error-molecules',
+      sourceRefs: ['aitp:topic:qsgw-ac-error-molecules'],
+    });
+    expect(processGraphCalls).toEqual([['aitp:topic:qsgw-ac-error-molecules']]);
+    expect(relationCalls).toEqual([['aitp:topic:qsgw-ac-error-molecules']]);
+    const pack = agent.researchContext.listPacks().at(-1);
+    expect(pack?.aitp?.claimRelationMap?.claimId).toBe('claim-ridge-pade-h2o');
+    const lastMessage = agent.context.history.at(-1);
+    const reminder = (lastMessage?.content[0] as { text: string }).text;
+    expect(reminder).toContain('AITP research context is active.');
+    expect(reminder).toContain('AITP recovery discipline');
+    expect(reminder).toContain('do not probe root .aitp');
+    expect(reminder).toContain('AITP relation map: claim=claim-ridge-pade-h2o');
+    expect(reminder).toContain('AITP relation map is the current-state boundary for recovery');
+    expect(reminder).toContain('use topic token topic:qsgw-ac-error-molecules');
+    expect(reminder).toContain('never pass the .aitp directory itself as the base');
+    expect(reminder).toContain('runtime/application failures');
+  });
+
   it('threads primitive tool plan hints through context injection and action attribution', async () => {
     const records: AgentRecord[] = [];
     const workflowRecipes = new WorkflowRecipeRegistry();
@@ -274,7 +328,11 @@ describe('ResearchContextManager', () => {
     const lastMessage = agent.context.history.at(-1);
     const reminder = (lastMessage?.content[0] as { text: string }).text;
     expect(reminder).toContain('AITP process graph: truth_source=typed_records');
+    expect(reminder).toContain('AITP recovery discipline');
     expect(reminder).toContain('AITP relation map: claim=claim-ridge-pade-h2o');
+    expect(reminder).toContain('current-state boundary for recovery');
+    expect(reminder).toContain('use the bound AITP session/topic refs');
+    expect(reminder).toContain('canonical topics root');
     expect(reminder).toContain('AITP relation map cannot say');
     expect(reminder).toContain('runtime/application failures');
     expect(reminder).toContain('AITP relation map next valid actions');

@@ -559,6 +559,7 @@ export class TurnFlow {
         ended = promptHookEnded.event;
         blockedByUserPromptHook = promptHookEnded.blocked;
       } else {
+        await this.agent.injection.injectResearchContextForPrompt(input);
         const stopReason = await this.runStepLoop(turnId, signal);
         completedStopReason = stopReason;
         if (stopReason === 'filtered') {

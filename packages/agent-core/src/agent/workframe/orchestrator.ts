@@ -169,7 +169,7 @@ export class WorkFrameOrchestrator {
 
   private inferFrame(input: readonly { readonly type?: string; readonly text?: string }[]): WorkFrame | undefined {
     const frames = this.agent.workFrames.list();
-    if (frames.length === 0) return undefined;
+    if (frames.length === 0) return this.openImplicitAitpRecoveryFrame(input);
     if (frames.length === 1) return this.agent.workFrames.requireFrame(frames[0]!.id);
 
     const prompt = normalizePrompt(input);
@@ -188,6 +188,93 @@ export class WorkFrameOrchestrator {
     if (winner.score <= 0) return this.agent.workFrames.active ?? winner.frame;
     return winner.frame;
   }
+
+  private openImplicitAitpRecoveryFrame(
+    input: readonly { readonly type?: string; readonly text?: string }[],
+  ): WorkFrame | undefined {
+    const rawPrompt = promptText(input);
+    const prompt = rawPrompt.toLowerCase();
+    const topicId = inferAitpTopicId(rawPrompt);
+    if (topicId === undefined || !shouldOpenImplicitAitpRecoveryFrame(prompt, this.agent.config.cwd)) {
+      return undefined;
+    }
+    return this.agent.workFrames.open(
+      {
+        id: `frame.aitp.${safeFrameToken(topicId)}`,
+        domain: 'theoretical-physics/general',
+        topic: topicId,
+        goal: `Restore AITP topic ${topicId} current research state from typed records.`,
+        sourceRefs: [`aitp:topic:${topicId}`],
+        trustState: 'exploratory',
+      },
+      { source: 'controller' },
+    );
+  }
+}
+
+function shouldOpenImplicitAitpRecoveryFrame(prompt: string, cwd: string): boolean {
+  const normalizedCwd = cwd.toLowerCase().replaceAll('\\', '/');
+  const isTheoryWorkspace =
+    normalizedCwd.includes('theoretical-physics') ||
+    prompt.includes('theoretical physics') ||
+    prompt.includes('理论物理');
+  if (!isTheoryWorkspace && !prompt.includes('aitp')) return false;
+  return [
+    'aitp',
+    'typed records',
+    'typed record',
+    'current research state',
+    'research state',
+    'recovery',
+    'recover',
+    'restore',
+    'continuation',
+    'semantic review',
+    '恢复',
+    '继续',
+    '课题',
+    '研究状态',
+    '当前研究',
+  ].some((term) => prompt.includes(term));
+}
+
+function inferAitpTopicId(prompt: string): string | undefined {
+  const preferred = prompt.matchAll(/[`'"“”‘’]([A-Za-z0-9][A-Za-z0-9_.-]{2,160})[`'"“”‘’]/g);
+  for (const match of preferred) {
+    const candidate = normalizeTopicCandidate(match[1]);
+    if (candidate !== undefined) return candidate;
+  }
+  const fallback = prompt.matchAll(/\b[A-Za-z][A-Za-z0-9]+(?:-[A-Za-z0-9]+){1,}\b/g);
+  for (const match of fallback) {
+    const candidate = normalizeTopicCandidate(match[0]);
+    if (candidate !== undefined) return candidate;
+  }
+  return undefined;
+}
+
+function normalizeTopicCandidate(value: string | undefined): string | undefined {
+  const candidate = value?.trim();
+  if (candidate === undefined || candidate.length === 0) return undefined;
+  const normalized = candidate.toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_.-]{2,160}$/.test(normalized)) return undefined;
+  if (!normalized.includes('-')) return undefined;
+  if (
+    [
+      'aitp-v5',
+      'kimi-code',
+      'theoretical-physics',
+      'typed-records',
+      'research-state',
+      'current-research-state',
+    ].includes(normalized)
+  ) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function safeFrameToken(value: string): string {
+  return value.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-').replaceAll(/^-|-$/g, '').slice(0, 64) || 'topic';
 }
 
 function detectSourceContextReviewOutcome(
