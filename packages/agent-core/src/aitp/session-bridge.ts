@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import {
   createAitpCliBridge,
@@ -474,14 +474,25 @@ function createDynamicAitpCliBridge(options: DynamicAitpCliBridgeOptions): AitpC
 }
 
 export function resolveAitpCanonicalBasePath(basePath: string): string {
+  const normalizedBasePath = stripAitpStoreSuffix(basePath);
   for (const candidate of [
-    join(basePath, 'research', 'aitp-topics'),
-    join(basePath, 'aitp-topics'),
-    basePath,
+    join(normalizedBasePath, 'research', 'aitp-topics'),
+    join(normalizedBasePath, 'aitp-topics'),
+    normalizedBasePath,
   ]) {
-    if (isAitpBasePath(candidate)) return candidate;
+    if (isAitpBasePath(candidate)) return toPortablePath(candidate);
   }
-  return basePath;
+  return toPortablePath(normalizedBasePath);
+}
+
+function stripAitpStoreSuffix(path: string): string {
+  let current = path;
+  while (basename(current).toLowerCase() === '.aitp') {
+    const parent = dirname(current);
+    if (parent === current) return current;
+    current = parent;
+  }
+  return current;
 }
 
 async function readProcessGraphSliceViaMcp(input: {
@@ -548,6 +559,10 @@ function dynamicBasePath(options: DynamicAitpCliBridgeOptions): string {
 
 function isAitpBasePath(path: string): boolean {
   return existsSync(join(path, '.aitp', 'registry')) || existsSync(join(path, '.aitp'));
+}
+
+function toPortablePath(path: string): string {
+  return path.replace(/\\/g, '/');
 }
 
 function promptText(prompt: readonly AitpProcessGraphPromptPart[]): string {

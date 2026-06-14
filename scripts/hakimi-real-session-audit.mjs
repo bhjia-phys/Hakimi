@@ -58,6 +58,7 @@ function parseCli(args) {
       expectAitpMcpOperations: [],
       expectAitpResearchRunTopics: [],
       expectFreshAitpResearchRunTopics: [],
+      expectNoAitpRootBase: false,
       evalCasePaths: [],
       expectNoPostWorkframeMissingWorkframe: false,
     },
@@ -161,6 +162,9 @@ function parseCli(args) {
       case '--expect-aitp-mcp-operation':
         result.options.expectAitpMcpOperations.push(requireValue(args, ++i, arg));
         break;
+      case '--expect-no-aitp-root-base':
+        result.options.expectNoAitpRootBase = true;
+        break;
       case '--expect-aitp-research-run-topic':
         result.options.expectAitpResearchRunTopics.push(requireValue(args, ++i, arg));
         break;
@@ -241,6 +245,8 @@ Checks:
                                  Require a successful execute_aitp_write_bridge operation
   --expect-aitp-mcp-operation <operation>
                                  Require a successful direct AITP MCP operation
+  --expect-no-aitp-root-base     Fail when a direct AITP MCP call passes a .aitp
+                                 directory as base instead of the topics root
   --expect-aitp-research-run-topic <topic>
                                  Require an AITP research_run record for the topic
   --expect-fresh-aitp-research-run-topic <topic>
@@ -824,6 +830,7 @@ function scanAitpMcpCompletion(audit, toolName, args, outputSummary, entry) {
   audit.research.aitpMcpCalls.push({
     toolName,
     operation,
+    base: stringOrUndefined(args?.base),
     topicId: firstString(args?.topic_id, args?.topicId, matchJsonField(outputSummary ?? '', 'topic_id')),
     runId: firstString(args?.run_id, args?.runId, matchJsonField(outputSummary ?? '', 'run_id')),
     status: stringOrUndefined(entry.status),
@@ -1307,6 +1314,16 @@ function evaluateExpectations(audit, options) {
         : `AITP MCP calls found: ${audit.research.aitpMcpCalls.map(formatAitpMcpCall).join(', ') || '(none)'}`,
     });
   }
+  if (options.expectNoAitpRootBase) {
+    const badCalls = audit.research.aitpMcpCalls.filter((call) => isAitpRootBasePath(call.base));
+    expectations.push({
+      name: 'no-aitp-root-base',
+      pass: badCalls.length === 0,
+      detail: badCalls.length === 0
+        ? 'no direct AITP MCP call used a .aitp directory as base'
+        : `root-base calls: ${badCalls.map(formatAitpMcpCall).join(', ')}`,
+    });
+  }
   for (const topic of options.expectAitpResearchRunTopics ?? []) {
     const matching = aitpResearchRunDetailsForTopic(audit, topic);
     expectations.push({
@@ -1504,7 +1521,13 @@ function formatAitpBridgeCall(call) {
 
 function formatAitpMcpCall(call) {
   const target = `${call.operation ?? call.toolName ?? 'unknown'}${call.topicId ? `:${call.topicId}` : ''}`;
-  return `${target} status=${call.status ?? 'unknown'}${call.isError ? ' error=true' : ''}`;
+  return `${target}${call.base ? ` base=${call.base}` : ''} status=${call.status ?? 'unknown'}${call.isError ? ' error=true' : ''}`;
+}
+
+function isAitpRootBasePath(base) {
+  if (typeof base !== 'string') return false;
+  const normalized = base.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  return normalized.endsWith('/.aitp') || normalized.includes('/.aitp/.aitp');
 }
 
 function aitpResearchRunDetailsForTopic(audit, topic) {
@@ -2152,7 +2175,7 @@ function renderMarkdown(audit) {
     lines.push('- No direct AITP MCP completions found.');
   } else {
     for (const call of audit.research.aitpMcpCalls.slice(-20)) {
-      lines.push(`- \`${call.operation ?? call.toolName}\`${call.topicId ? ` topic=\`${call.topicId}\`` : ''}${call.runId ? ` run=\`${call.runId}\`` : ''} status=${call.status ?? 'unknown'}${call.isError ? ' error=true' : ''}`);
+      lines.push(`- \`${call.operation ?? call.toolName}\`${call.topicId ? ` topic=\`${call.topicId}\`` : ''}${call.runId ? ` run=\`${call.runId}\`` : ''}${call.base ? ` base=\`${call.base}\`` : ''} status=${call.status ?? 'unknown'}${call.isError ? ' error=true' : ''}`);
       if (call.output) lines.push(`  output: ${singleLine(call.output).slice(0, 320)}`);
     }
   }

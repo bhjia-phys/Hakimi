@@ -1028,11 +1028,13 @@ function collectAitp(
   diagnostics: ResearchContextPackDiagnostic[],
 ): ResearchContextAitpSection | undefined {
   const claimRelationMap = collectAitpClaimRelationMap(input, diagnostics);
+  const canonicalBasePath = nonEmptyString(input.aitpCanonicalBasePath);
   if (input.aitp === null || input.aitp === undefined) {
     if (claimRelationMap === undefined) return undefined;
-    return relationMapOnlyAitpSection(claimRelationMap);
+    return relationMapOnlyAitpSection(claimRelationMap, canonicalBasePath);
   }
   const contextLines = [
+    ...(canonicalBasePath === undefined ? [] : [`AITP canonical MCP base: ${canonicalBasePath}`]),
     ...input.aitp.contextLines,
     ...relationMapContextLines(claimRelationMap),
   ];
@@ -1046,6 +1048,7 @@ function collectAitp(
     });
   }
   return {
+    ...(canonicalBasePath === undefined ? {} : { canonicalBasePath }),
     truthSource: input.aitp.trust.truthSource,
     orientationOnly: input.aitp.trust.orientationOnly,
     reminders: input.aitp.reminders,
@@ -1102,15 +1105,20 @@ function collectAitp(
 
 function relationMapOnlyAitpSection(
   claimRelationMap: ResearchContextAitpSection['claimRelationMap'],
+  canonicalBasePath: string | undefined,
 ): ResearchContextAitpSection {
   return {
+    ...(canonicalBasePath === undefined ? {} : { canonicalBasePath }),
     truthSource: 'aitp.claim_relation_map',
     orientationOnly: true,
     reminders: [
       'AITP claim relation map is read-only recovery context; it does not update claim trust.',
       'Treat can/cannot/blocker/next-action lines as conclusion-boundary guidance, not evidence promotion.',
     ],
-    contextLines: relationMapContextLines(claimRelationMap),
+    contextLines: [
+      ...(canonicalBasePath === undefined ? [] : [`AITP canonical MCP base: ${canonicalBasePath}`]),
+      ...relationMapContextLines(claimRelationMap),
+    ],
     liveRouteIds: [],
     blockedRouteIds: [],
     abandonedRouteIds: [],
@@ -1145,6 +1153,11 @@ function relationMapOnlyAitpSection(
     suggestedActionIds: [],
     claimRelationMap,
   };
+}
+
+function nonEmptyString(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized === undefined || normalized.length === 0 ? undefined : normalized;
 }
 
 function collectAitpClaimRelationMap(

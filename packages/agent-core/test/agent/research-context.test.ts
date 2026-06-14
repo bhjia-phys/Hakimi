@@ -160,6 +160,9 @@ describe('ResearchContextManager', () => {
     expect(relationCalls).toEqual([['aitp:topic:qsgw-ac-error-molecules']]);
     const pack = agent.researchContext.listPacks().at(-1);
     expect(pack?.aitp?.claimRelationMap?.claimId).toBe('claim-ridge-pade-h2o');
+    expect(pack?.aitp?.canonicalBasePath).toBe(
+      'F:/AI_Workspace/Theoretical-Physics/research/aitp-topics',
+    );
     const lastMessage = agent.context.history.at(-1);
     const reminder = (lastMessage?.content[0] as { text: string }).text;
     expect(reminder).toContain('AITP research context is active.');
@@ -168,6 +171,12 @@ describe('ResearchContextManager', () => {
     expect(reminder).toContain('AITP relation map: claim=claim-ridge-pade-h2o');
     expect(reminder).toContain('AITP relation map is the current-state boundary for recovery');
     expect(reminder).toContain('use topic token topic:qsgw-ac-error-molecules');
+    expect(reminder).toContain(
+      'AITP canonical MCP base: F:/AI_Workspace/Theoretical-Physics/research/aitp-topics',
+    );
+    expect(reminder).toContain(
+      'base="F:/AI_Workspace/Theoretical-Physics/research/aitp-topics"',
+    );
     expect(reminder).toContain('never pass the .aitp directory itself as the base');
     expect(reminder).toContain('runtime/application failures');
   });
