@@ -346,6 +346,9 @@ describe('AITP process graph slice adapter', () => {
           'system:system-h2o-water:needs_revision/needs_source_reconstruction',
           'system:system-c2h2-acetylene:pending/pending',
         ]],
+        next_action_refs: [
+          'review_group:legacy-l2-seed-review:l2:l2:claim-l2-82d402af:system',
+        ],
         next_actions: [
           'keep_all_legacy_seed_entries_orientation_only_until_reviewed',
         ],
@@ -395,6 +398,16 @@ describe('AITP process graph slice adapter', () => {
     expect(context).toContain(
       'system:system-h2o-extracted:0:needs_revision/needs_source_reconstruction',
     );
+    expect(context).toContain(
+      'system:system-c2h2-acetylene:2:pending/pending',
+    );
+    expect(context).toContain(
+      'review_group:legacy-l2-seed-review:l2:l2:claim-l2-82d402af:system',
+    );
+    expect(compiled.migrationHealth.nextActions).toEqual([
+      'keep_all_legacy_seed_entries_orientation_only_until_reviewed',
+      'review_group:legacy-l2-seed-review:l2:l2:claim-l2-82d402af:system',
+    ]);
     expect(compiled.diagnostics).toEqual(
       expect.arrayContaining([
         'migration-health-present',
