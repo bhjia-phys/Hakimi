@@ -117,6 +117,35 @@ describe('AITP process graph slice adapter', () => {
         active_legacy_seed_count: 0,
         legacy_seed_topic_count: 19,
         legacy_seed_quarantine_status: 'canonical_legacy_l2_seeds_require_review',
+        legacy_seed_review_group_count: 512,
+        legacy_seed_topic_scope_mismatch_count: 72,
+        legacy_seed_global_l2_count: 124,
+        legacy_seed_review_blocking_class_counts: {
+          topic_scope_alignment_required: 18,
+          global_l2_topic_reassignment_required: 27,
+        },
+        legacy_seed_review_groups: [
+          {
+            group_id:
+              'legacy-l2-seed-review:l2:qsgw-headwing-update-librpa:claim-l2-82d402af:claim',
+            topic_id: 'L2',
+            target_topic_id: 'qsgw-headwing-update-librpa',
+            source_claim_id: 'claim-l2-82d402af',
+            memory_role: 'claim',
+            seed_count: 4,
+            priority_score: 574,
+            blocking_classes: [
+              'global_l2_topic_reassignment_required',
+              'topic_scope_alignment_required',
+              'source_topic_scope_mismatch',
+            ],
+            review_focus: [
+              'assign_global_l2_seed_to_target_topic_or_archive',
+              'verify_topic_scope_source_claim_alignment',
+            ],
+            can_update_claim_trust: false,
+          },
+        ],
         legacy_seed_next_actions: [
           'keep_legacy_l2_seeds_orientation_only_until_reviewed',
           'review_each_seed_source_claim_topic_alignment',
@@ -128,6 +157,7 @@ describe('AITP process graph slice adapter', () => {
         summary_lines: [
           'AITP migration health: status=blocked, old_store_retirement_safe=false, blocking_files=8338, no_omission_check=true.',
           'Canonical legacy L2 seeds: count=2356, active=0, status=canonical_legacy_l2_seeds_require_review; legacy_seed memory is recovery orientation only until reviewed/reassigned/promoted.',
+          'Legacy L2 seed review groups: groups=512, global_l2_seeds=124, topic_scope_mismatches=72; topic-level semantic review can be complete while per-seed L2 review remains required.',
         ],
         truth_source: 'workspace_migration_ledgers_and_canonical_l2_seed_scan',
         summary_inputs_trusted: false,
@@ -147,18 +177,29 @@ describe('AITP process graph slice adapter', () => {
       canonicalLegacySeedCount: 2356,
       activeLegacySeedCount: 0,
       rootL2GlobalMemoryRisk: true,
+      legacySeedReviewGroupCount: 512,
+      legacySeedTopicScopeMismatchCount: 72,
+      legacySeedGlobalL2Count: 124,
     });
     expect(context).toContain('AITP migration health: status=blocked');
     expect(context).toContain('Canonical legacy L2 seeds: count=2356');
+    expect(context).toContain('Legacy L2 seed review groups: groups=512');
+    expect(context).toContain('Top legacy L2 seed review groups:');
+    expect(context).toContain('target=qsgw-headwing-update-librpa');
     expect(context).toContain('AITP migration next actions:');
     expect(compiled.reminders.join('\n')).toContain(
       'Use AITP migration health before retiring old stores',
+    );
+    expect(compiled.reminders.join('\n')).toContain(
+      'Use AITP legacy L2 seed review groups before reassigning',
     );
     expect(compiled.diagnostics).toEqual(
       expect.arrayContaining([
         'migration-health-present',
         'migration-health-blocked',
         'canonical-legacy-l2-seeds-present',
+        'canonical-legacy-l2-seed-review-groups-present',
+        'canonical-legacy-l2-topic-scope-mismatches-present',
       ]),
     );
   });
