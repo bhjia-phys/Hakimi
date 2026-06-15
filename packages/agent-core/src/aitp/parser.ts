@@ -888,6 +888,13 @@ function parseLegacySeedSemanticSubgroup(
     sourcePaths: stringArray(valueFor(raw, 'source_paths', 'sourcePaths')),
     sampleEntryIds: stringArray(valueFor(raw, 'sample_entry_ids', 'sampleEntryIds')),
     reviewHint: stringValue(valueFor(raw, 'review_hint', 'reviewHint')) ?? '',
+    reviewStatus: stringValue(valueFor(raw, 'review_status', 'reviewStatus')) ?? 'pending',
+    reviewDecision:
+      stringValue(valueFor(raw, 'review_decision', 'reviewDecision')) ?? 'pending',
+    latestReviewResult:
+      recordValue(valueFor(raw, 'latest_review_result', 'latestReviewResult')),
+    terminalReviewRecorded:
+      booleanValue(valueFor(raw, 'terminal_review_recorded', 'terminalReviewRecorded')) ?? false,
     canUpdateClaimTrust:
       booleanValue(valueFor(raw, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,
   };

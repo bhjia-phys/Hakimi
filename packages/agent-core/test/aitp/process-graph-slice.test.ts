@@ -195,6 +195,14 @@ describe('AITP process graph slice adapter', () => {
                   'memory-legacy-l2-l2-entries-claim-headwing-algorithm-trace-v1',
                 ],
                 review_hint: 'review_claim_scope_and_evidence_before_promotion',
+                review_status: 'needs_revision',
+                review_decision: 'needs_source_reconstruction',
+                latest_review_result: {
+                  review_id: 'legacy-l2-seed-subgroup-review-headwing-trace',
+                  source_family: 'claim',
+                  source_object_id: 'claim-headwing-algorithm-trace-v1',
+                },
+                terminal_review_recorded: false,
                 can_update_claim_trust: false,
               },
             ],
@@ -255,6 +263,13 @@ describe('AITP process graph slice adapter', () => {
       seedCount: 2,
       canUpdateClaimTrust: false,
     });
+    expect(compiled.migrationHealth.legacySeedReviewGroups[0]?.semanticSubgroups[1]).toMatchObject({
+      sourceFamily: 'claim',
+      sourceObjectId: 'claim-headwing-algorithm-trace-v1',
+      reviewStatus: 'needs_revision',
+      reviewDecision: 'needs_source_reconstruction',
+      terminalReviewRecorded: false,
+    });
     expect(context).toContain('AITP migration health: status=blocked');
     expect(context).toContain('Canonical legacy L2 seeds: count=2356');
     expect(context).toContain('Legacy L2 seed review groups: groups=512');
@@ -264,7 +279,7 @@ describe('AITP process graph slice adapter', () => {
     expect(context).toContain('review=needs_revision/needs_source_reconstruction');
     expect(context).toContain('semantic_mix=true');
     expect(context).toContain(
-      'subgroups=claim:claim-cand-headwing-rotation-v1:2|claim:claim-headwing-algorithm-trace-v1:2',
+      'subgroups=claim:claim-headwing-algorithm-trace-v1:2:needs_revision/needs_source_reconstruction|claim:claim-cand-headwing-rotation-v1:2',
     );
     expect(context).toContain('latest_review=legacy-l2-seed-group-review-qsgw-needs-source');
     expect(context).toContain('AITP migration next actions:');
