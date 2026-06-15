@@ -400,8 +400,13 @@ export interface AitpMigrationHealth {
   readonly legacySeedQuarantineStatus: string;
   readonly legacySeedNextActions: readonly string[];
   readonly legacySeedReviewGroupCount: number;
+  readonly legacySeedOpenReviewGroupCount: number;
+  readonly legacySeedReviewedGroupCount: number;
+  readonly legacySeedTerminalReviewGroupCount: number;
   readonly legacySeedTopicScopeMismatchCount: number;
   readonly legacySeedGlobalL2Count: number;
+  readonly legacySeedReviewStatusCounts: Readonly<Record<string, unknown>>;
+  readonly legacySeedReviewDecisionCounts: Readonly<Record<string, unknown>>;
   readonly legacySeedReviewBlockingClassCounts: Readonly<Record<string, unknown>>;
   readonly legacySeedReviewGroups: readonly AitpLegacySeedReviewGroupSummary[];
   readonly nextActions: readonly string[];
@@ -421,6 +426,10 @@ export interface AitpLegacySeedReviewGroupSummary {
   readonly priorityScore: number;
   readonly blockingClasses: readonly string[];
   readonly reviewFocus: readonly string[];
+  readonly reviewStatus: string;
+  readonly reviewDecision: string;
+  readonly latestReviewResult: Readonly<Record<string, unknown>>;
+  readonly terminalReviewRecorded: boolean;
   readonly canUpdateClaimTrust: boolean;
 }
 
@@ -585,8 +594,13 @@ export interface AitpMigrationHealthSummary {
   readonly rootL2GlobalMemoryRisk: boolean;
   readonly legacySeedQuarantineStatus: string;
   readonly legacySeedReviewGroupCount: number;
+  readonly legacySeedOpenReviewGroupCount: number;
+  readonly legacySeedReviewedGroupCount: number;
+  readonly legacySeedTerminalReviewGroupCount: number;
   readonly legacySeedTopicScopeMismatchCount: number;
   readonly legacySeedGlobalL2Count: number;
+  readonly legacySeedReviewStatusCounts: Readonly<Record<string, unknown>>;
+  readonly legacySeedReviewDecisionCounts: Readonly<Record<string, unknown>>;
   readonly legacySeedReviewGroups: readonly AitpLegacySeedReviewGroupSummary[];
   readonly nextActions: readonly string[];
   readonly lines: readonly string[];

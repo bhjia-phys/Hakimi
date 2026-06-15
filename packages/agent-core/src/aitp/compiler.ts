@@ -364,14 +364,14 @@ function buildReminderLines(
     migrationHealth.status === 'review_required' ||
     migrationHealth.canonicalLegacySeedCount > 0 ||
     migrationHealth.activeLegacySeedCount > 0 ||
-    migrationHealth.legacySeedReviewGroupCount > 0 ||
+    migrationHealth.legacySeedOpenReviewGroupCount > 0 ||
     migrationHealth.rootL2GlobalMemoryRisk
   ) {
     lines.push(
       'Use AITP migration health before retiring old stores or treating legacy_seed memory as active claim support.',
     );
   }
-  if (migrationHealth.legacySeedReviewGroupCount > 0) {
+  if (migrationHealth.legacySeedOpenReviewGroupCount > 0) {
     lines.push(
       'Use AITP legacy L2 seed review groups before reassigning, archiving, or promoting migrated L2 memory.',
     );
@@ -624,6 +624,9 @@ export function summarizeMigrationHealth(
     lines.push(
       [
         `Legacy L2 seed review groups: groups=${String(health.legacySeedReviewGroupCount)}`,
+        `open=${String(health.legacySeedOpenReviewGroupCount)}`,
+        `reviewed=${String(health.legacySeedReviewedGroupCount)}`,
+        `terminal=${String(health.legacySeedTerminalReviewGroupCount)}`,
         `global_l2_seeds=${String(health.legacySeedGlobalL2Count)}`,
         `topic_scope_mismatches=${String(health.legacySeedTopicScopeMismatchCount)}`,
       ].join(', '),
@@ -649,8 +652,13 @@ export function summarizeMigrationHealth(
     rootL2GlobalMemoryRisk: health.rootL2GlobalMemoryRisk,
     legacySeedQuarantineStatus: health.legacySeedQuarantineStatus,
     legacySeedReviewGroupCount: health.legacySeedReviewGroupCount,
+    legacySeedOpenReviewGroupCount: health.legacySeedOpenReviewGroupCount,
+    legacySeedReviewedGroupCount: health.legacySeedReviewedGroupCount,
+    legacySeedTerminalReviewGroupCount: health.legacySeedTerminalReviewGroupCount,
     legacySeedTopicScopeMismatchCount: health.legacySeedTopicScopeMismatchCount,
     legacySeedGlobalL2Count: health.legacySeedGlobalL2Count,
+    legacySeedReviewStatusCounts: health.legacySeedReviewStatusCounts,
+    legacySeedReviewDecisionCounts: health.legacySeedReviewDecisionCounts,
     legacySeedReviewGroups: bounded(health.legacySeedReviewGroups, maxItems),
     nextActions,
     lines,
@@ -666,6 +674,9 @@ function hasMigrationHealthSignal(health: AitpMigrationHealth): boolean {
     health.canonicalLegacySeedCount > 0 ||
     health.activeLegacySeedCount > 0 ||
     health.legacySeedReviewGroupCount > 0 ||
+    health.legacySeedOpenReviewGroupCount > 0 ||
+    health.legacySeedReviewedGroupCount > 0 ||
+    health.legacySeedTerminalReviewGroupCount > 0 ||
     health.legacySeedTopicScopeMismatchCount > 0 ||
     health.legacySeedGlobalL2Count > 0 ||
     health.rootL2GlobalMemoryRisk
@@ -678,7 +689,11 @@ function renderLegacySeedReviewGroup(group: AitpLegacySeedReviewGroupSummary): s
   const blockers = group.blockingClasses.length > 0
     ? ` blockers=${group.blockingClasses.join('|')}`
     : '';
-  return `${group.groupId} topic=${group.topicId}${target}${claim} role=${group.memoryRole} seeds=${String(group.seedCount)}${blockers}`;
+  const review = ` review=${group.reviewStatus}/${group.reviewDecision}`;
+  const terminal = group.terminalReviewRecorded ? ' terminal=true' : '';
+  const reviewId = stringValue(group.latestReviewResult['review_id']) ?? stringValue(group.latestReviewResult['reviewId']);
+  const latest = reviewId === undefined ? '' : ` latest_review=${reviewId}`;
+  return `${group.groupId} topic=${group.topicId}${target}${claim} role=${group.memoryRole} seeds=${String(group.seedCount)}${blockers}${review}${terminal}${latest}`;
 }
 
 function gapMatches(gap: AitpProvenanceGap, needles: readonly string[]): boolean {
@@ -1486,7 +1501,8 @@ function buildDiagnostics(slice: AitpProcessGraphSlice): readonly string[] {
   if (
     slice.migrationHealth.status === 'blocked' ||
     slice.migrationHealth.rootL2GlobalMemoryRisk ||
-    slice.migrationHealth.activeLegacySeedCount > 0
+    slice.migrationHealth.activeLegacySeedCount > 0 ||
+    slice.migrationHealth.legacySeedOpenReviewGroupCount > 0
   ) {
     diagnostics.push('migration-health-blocked');
   }
@@ -1495,6 +1511,12 @@ function buildDiagnostics(slice: AitpProcessGraphSlice): readonly string[] {
   }
   if (slice.migrationHealth.legacySeedReviewGroupCount > 0) {
     diagnostics.push('canonical-legacy-l2-seed-review-groups-present');
+  }
+  if (slice.migrationHealth.legacySeedOpenReviewGroupCount > 0) {
+    diagnostics.push('canonical-legacy-l2-seed-review-groups-open');
+  }
+  if (slice.migrationHealth.legacySeedTerminalReviewGroupCount > 0) {
+    diagnostics.push('canonical-legacy-l2-seed-review-groups-terminal');
   }
   if (slice.migrationHealth.legacySeedTopicScopeMismatchCount > 0) {
     diagnostics.push('canonical-legacy-l2-topic-scope-mismatches-present');
@@ -1772,8 +1794,13 @@ function emptyMigrationHealth(): AitpMigrationHealth {
     legacySeedQuarantineStatus: 'no_canonical_legacy_l2_seeds',
     legacySeedNextActions: [],
     legacySeedReviewGroupCount: 0,
+    legacySeedOpenReviewGroupCount: 0,
+    legacySeedReviewedGroupCount: 0,
+    legacySeedTerminalReviewGroupCount: 0,
     legacySeedTopicScopeMismatchCount: 0,
     legacySeedGlobalL2Count: 0,
+    legacySeedReviewStatusCounts: {},
+    legacySeedReviewDecisionCounts: {},
     legacySeedReviewBlockingClassCounts: {},
     legacySeedReviewGroups: [],
     nextActions: [],
@@ -1807,6 +1834,10 @@ function hasAny(text: string, needles: readonly string[]): boolean {
 
 function isNonEmptyString(value: string | undefined): value is string {
   return value !== undefined && value.length > 0;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
