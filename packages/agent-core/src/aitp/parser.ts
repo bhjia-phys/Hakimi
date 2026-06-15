@@ -832,7 +832,10 @@ function parseMigrationHealth(value: unknown): AitpMigrationHealth {
       ? legacyReviewBlockingClassCounts
       : recordValue(reviewBlockingClassCounts),
     legacySeedReviewGroups: parseLegacySeedReviewGroups(value),
-    nextActions: stringArray(valueFor(value, 'next_actions', 'nextActions')),
+    nextActions: unique([
+      ...stringArray(valueFor(value, 'next_actions', 'nextActions')),
+      ...stringArray(valueFor(value, 'next_action_refs', 'nextActionRefs')),
+    ]),
     summaryLines: stringArray(valueFor(value, 'summary_lines', 'summaryLines')),
     truthSource: stringValue(valueFor(value, 'truth_source', 'truthSource')) ?? 'aitp',
     orientationOnly: booleanValue(valueFor(value, 'orientation_only', 'orientationOnly')) ?? true,

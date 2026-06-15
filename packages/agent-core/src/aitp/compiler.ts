@@ -717,10 +717,7 @@ function renderLegacySeedSemanticSubgroups(
   const rendered = sorted.slice(0, limit).map((item) => {
     const family = item.sourceFamily === '' ? 'unknown' : item.sourceFamily;
     const objectId = item.sourceObjectId === '' ? 'missing-object' : item.sourceObjectId;
-    const review = item.reviewStatus !== 'pending' || item.reviewDecision !== 'pending'
-      ? `:${item.reviewStatus}/${item.reviewDecision}`
-      : '';
-    return `${family}:${objectId}:${String(item.seedCount)}${review}`;
+    return `${family}:${objectId}:${String(item.seedCount)}:${item.reviewStatus}/${item.reviewDecision}`;
   });
   const remaining = group.semanticSubgroupCount - rendered.length;
   if (remaining > 0) rendered.push(`...(+${String(remaining)} more)`);
