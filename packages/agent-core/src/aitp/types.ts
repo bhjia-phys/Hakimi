@@ -426,10 +426,25 @@ export interface AitpLegacySeedReviewGroupSummary {
   readonly priorityScore: number;
   readonly blockingClasses: readonly string[];
   readonly reviewFocus: readonly string[];
+  readonly sourceFamilyCounts: Readonly<Record<string, unknown>>;
+  readonly semanticMixDetected: boolean;
+  readonly semanticSubgroupCount: number;
+  readonly semanticSubgroups: readonly AitpLegacySeedSemanticSubgroupSummary[];
   readonly reviewStatus: string;
   readonly reviewDecision: string;
   readonly latestReviewResult: Readonly<Record<string, unknown>>;
   readonly terminalReviewRecorded: boolean;
+  readonly canUpdateClaimTrust: boolean;
+}
+
+export interface AitpLegacySeedSemanticSubgroupSummary {
+  readonly sourceFamily: string;
+  readonly sourceObjectId: string;
+  readonly seedCount: number;
+  readonly memoryKindCounts: Readonly<Record<string, unknown>>;
+  readonly sourcePaths: readonly string[];
+  readonly sampleEntryIds: readonly string[];
+  readonly reviewHint: string;
   readonly canUpdateClaimTrust: boolean;
 }
 
