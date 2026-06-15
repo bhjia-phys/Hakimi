@@ -484,13 +484,15 @@ function createDynamicAitpCliBridge(options: DynamicAitpCliBridgeOptions): AitpC
 
 export function resolveAitpCanonicalBasePath(basePath: string): string {
   const normalizedBasePath = stripAitpStoreSuffix(basePath);
+  // Prefer canonical topics-root stores even when a workspace-root .aitp exists.
   for (const candidate of [
     join(normalizedBasePath, 'research', 'aitp-topics'),
     join(normalizedBasePath, 'aitp-topics'),
-    normalizedBasePath,
   ]) {
     if (isAitpBasePath(candidate)) return toPortablePath(candidate);
   }
+  // Fall back to the base path itself only if no topics-root store was found.
+  if (isAitpBasePath(normalizedBasePath)) return toPortablePath(normalizedBasePath);
   return toPortablePath(normalizedBasePath);
 }
 
