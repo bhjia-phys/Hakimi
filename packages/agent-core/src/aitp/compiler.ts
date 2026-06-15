@@ -6,6 +6,7 @@ import {
 } from './write-bridge';
 import type {
   AitpCallObligation,
+  AitpLegacySeedReviewGroupSummary,
   AitpMigrationHealth,
   AitpMigrationHealthSummary,
   AitpMomentPolicyDecision,
@@ -363,10 +364,16 @@ function buildReminderLines(
     migrationHealth.status === 'review_required' ||
     migrationHealth.canonicalLegacySeedCount > 0 ||
     migrationHealth.activeLegacySeedCount > 0 ||
+    migrationHealth.legacySeedReviewGroupCount > 0 ||
     migrationHealth.rootL2GlobalMemoryRisk
   ) {
     lines.push(
       'Use AITP migration health before retiring old stores or treating legacy_seed memory as active claim support.',
+    );
+  }
+  if (migrationHealth.legacySeedReviewGroupCount > 0) {
+    lines.push(
+      'Use AITP legacy L2 seed review groups before reassigning, archiving, or promoting migrated L2 memory.',
     );
   }
   return lines;
@@ -610,6 +617,26 @@ export function summarizeMigrationHealth(
       ].join(', '),
     );
   }
+  if (
+    health.legacySeedReviewGroupCount > 0 &&
+    !lines.some((line) => line.includes('Legacy L2 seed review groups:'))
+  ) {
+    lines.push(
+      [
+        `Legacy L2 seed review groups: groups=${String(health.legacySeedReviewGroupCount)}`,
+        `global_l2_seeds=${String(health.legacySeedGlobalL2Count)}`,
+        `topic_scope_mismatches=${String(health.legacySeedTopicScopeMismatchCount)}`,
+      ].join(', '),
+    );
+  }
+  if (health.legacySeedReviewGroups.length > 0) {
+    lines.push(
+      `Top legacy L2 seed review groups: ${bounded(
+        health.legacySeedReviewGroups.map(renderLegacySeedReviewGroup),
+        maxItems,
+      ).join('; ')}`,
+    );
+  }
   if (nextActions.length > 0 && health.status !== 'clear') {
     lines.push(`AITP migration next actions: ${bounded(nextActions, maxItems).join('; ')}`);
   }
@@ -621,6 +648,10 @@ export function summarizeMigrationHealth(
     activeLegacySeedCount: health.activeLegacySeedCount,
     rootL2GlobalMemoryRisk: health.rootL2GlobalMemoryRisk,
     legacySeedQuarantineStatus: health.legacySeedQuarantineStatus,
+    legacySeedReviewGroupCount: health.legacySeedReviewGroupCount,
+    legacySeedTopicScopeMismatchCount: health.legacySeedTopicScopeMismatchCount,
+    legacySeedGlobalL2Count: health.legacySeedGlobalL2Count,
+    legacySeedReviewGroups: bounded(health.legacySeedReviewGroups, maxItems),
     nextActions,
     lines,
   };
@@ -634,8 +665,20 @@ function hasMigrationHealthSignal(health: AitpMigrationHealth): boolean {
     health.blockingFileCount > 0 ||
     health.canonicalLegacySeedCount > 0 ||
     health.activeLegacySeedCount > 0 ||
+    health.legacySeedReviewGroupCount > 0 ||
+    health.legacySeedTopicScopeMismatchCount > 0 ||
+    health.legacySeedGlobalL2Count > 0 ||
     health.rootL2GlobalMemoryRisk
   );
+}
+
+function renderLegacySeedReviewGroup(group: AitpLegacySeedReviewGroupSummary): string {
+  const target = group.targetTopicId === '' ? '' : ` target=${group.targetTopicId}`;
+  const claim = group.sourceClaimId === '' ? '' : ` claim=${group.sourceClaimId}`;
+  const blockers = group.blockingClasses.length > 0
+    ? ` blockers=${group.blockingClasses.join('|')}`
+    : '';
+  return `${group.groupId} topic=${group.topicId}${target}${claim} role=${group.memoryRole} seeds=${String(group.seedCount)}${blockers}`;
 }
 
 function gapMatches(gap: AitpProvenanceGap, needles: readonly string[]): boolean {
@@ -1450,6 +1493,12 @@ function buildDiagnostics(slice: AitpProcessGraphSlice): readonly string[] {
   if (slice.migrationHealth.canonicalLegacySeedCount > 0) {
     diagnostics.push('canonical-legacy-l2-seeds-present');
   }
+  if (slice.migrationHealth.legacySeedReviewGroupCount > 0) {
+    diagnostics.push('canonical-legacy-l2-seed-review-groups-present');
+  }
+  if (slice.migrationHealth.legacySeedTopicScopeMismatchCount > 0) {
+    diagnostics.push('canonical-legacy-l2-topic-scope-mismatches-present');
+  }
   return diagnostics;
 }
 
@@ -1722,6 +1771,11 @@ function emptyMigrationHealth(): AitpMigrationHealth {
     legacySeedTopicCount: 0,
     legacySeedQuarantineStatus: 'no_canonical_legacy_l2_seeds',
     legacySeedNextActions: [],
+    legacySeedReviewGroupCount: 0,
+    legacySeedTopicScopeMismatchCount: 0,
+    legacySeedGlobalL2Count: 0,
+    legacySeedReviewBlockingClassCounts: {},
+    legacySeedReviewGroups: [],
     nextActions: [],
     summaryLines: [],
     truthSource: 'aitp',

@@ -4,6 +4,7 @@ import type {
   AitpMomentPolicy,
   AitpMomentPolicyDecision,
   AitpMigrationHealth,
+  AitpLegacySeedReviewGroupSummary,
   AitpObligationSeverity,
   AitpPayloadDraftSchema,
   AitpOpenObligation,
@@ -767,6 +768,21 @@ function parseMigrationHealth(value: unknown): AitpMigrationHealth {
     legacySeedNextActions: stringArray(
       valueFor(value, 'legacy_seed_next_actions', 'legacySeedNextActions'),
     ),
+    legacySeedReviewGroupCount: numberValue(
+      valueFor(value, 'legacy_seed_review_group_count', 'legacySeedReviewGroupCount'),
+    ) ?? 0,
+    legacySeedTopicScopeMismatchCount: numberValue(
+      valueFor(value, 'legacy_seed_topic_scope_mismatch_count', 'legacySeedTopicScopeMismatchCount'),
+    ) ?? 0,
+    legacySeedGlobalL2Count: numberValue(
+      valueFor(value, 'legacy_seed_global_l2_count', 'legacySeedGlobalL2Count'),
+    ) ?? 0,
+    legacySeedReviewBlockingClassCounts: recordValue(
+      valueFor(value, 'legacy_seed_review_blocking_class_counts', 'legacySeedReviewBlockingClassCounts'),
+    ),
+    legacySeedReviewGroups: objectArray(
+      valueFor(value, 'legacy_seed_review_groups', 'legacySeedReviewGroups'),
+    ).map(parseLegacySeedReviewGroup),
     nextActions: stringArray(valueFor(value, 'next_actions', 'nextActions')),
     summaryLines: stringArray(valueFor(value, 'summary_lines', 'summaryLines')),
     truthSource: stringValue(valueFor(value, 'truth_source', 'truthSource')) ?? 'aitp',
@@ -798,11 +814,32 @@ function emptyMigrationHealth(): AitpMigrationHealth {
     legacySeedTopicCount: 0,
     legacySeedQuarantineStatus: 'no_canonical_legacy_l2_seeds',
     legacySeedNextActions: [],
+    legacySeedReviewGroupCount: 0,
+    legacySeedTopicScopeMismatchCount: 0,
+    legacySeedGlobalL2Count: 0,
+    legacySeedReviewBlockingClassCounts: {},
+    legacySeedReviewGroups: [],
     nextActions: [],
     summaryLines: [],
     truthSource: 'aitp',
     orientationOnly: true,
     canUpdateClaimTrust: false,
+  };
+}
+
+function parseLegacySeedReviewGroup(raw: Record<string, unknown>): AitpLegacySeedReviewGroupSummary {
+  return {
+    groupId: stringValue(valueFor(raw, 'group_id', 'groupId')) ?? '',
+    topicId: stringValue(valueFor(raw, 'topic_id', 'topicId')) ?? '',
+    targetTopicId: stringValue(valueFor(raw, 'target_topic_id', 'targetTopicId')) ?? '',
+    sourceClaimId: stringValue(valueFor(raw, 'source_claim_id', 'sourceClaimId')) ?? '',
+    memoryRole: stringValue(valueFor(raw, 'memory_role', 'memoryRole')) ?? '',
+    seedCount: numberValue(valueFor(raw, 'seed_count', 'seedCount')) ?? 0,
+    priorityScore: numberValue(valueFor(raw, 'priority_score', 'priorityScore')) ?? 0,
+    blockingClasses: stringArray(valueFor(raw, 'blocking_classes', 'blockingClasses')),
+    reviewFocus: stringArray(valueFor(raw, 'review_focus', 'reviewFocus')),
+    canUpdateClaimTrust:
+      booleanValue(valueFor(raw, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,
   };
 }
 
