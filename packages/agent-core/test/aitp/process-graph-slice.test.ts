@@ -301,6 +301,112 @@ describe('AITP process graph slice adapter', () => {
     );
   });
 
+  it('recovers legacy L2 semantic subgroup reviews from compact migration-health payloads', () => {
+    const compiled = compileAitpProcessGraphSlice({
+      ...fakeSlicePayload(),
+      migration_health: {
+        kind: 'canonical_legacy_l2_seed_review_worklist_progress',
+        status: 'blocked',
+        canonical_store: 'F:/AI_Workspace/Theoretical-Physics/research/aitp-topics/.aitp',
+        canonical_legacy_seed_count: 2356,
+        active_legacy_seed_count: 0,
+        legacy_seed_topic_count: 19,
+        legacy_seed_review_group_count: 512,
+        legacy_seed_open_review_group_count: 495,
+        legacy_seed_reviewed_group_count: 24,
+        legacy_seed_terminal_review_group_count: 17,
+        legacy_seed_topic_scope_mismatch_count: 4,
+        legacy_seed_global_l2_count: 124,
+        orientation_only: true,
+        can_update_claim_trust: false,
+        top_group_ids: [
+          'legacy-l2-seed-review:l2:l2:claim-l2-82d402af:system',
+        ],
+        top_group_topics: ['L2'],
+        top_group_target_topics: ['L2'],
+        top_group_source_claim_ids: ['claim-l2-82d402af'],
+        top_group_memory_roles: ['system'],
+        top_group_blocking_classes: [[
+          'global_l2_topic_reassignment_required',
+          'legacy_graph_node_object_review_required',
+          'semantic_subgroup_split_required',
+        ]],
+        top_group_review_focus: [[
+          'split_mixed_seed_group_by_source_object_before_terminal_review',
+          'assign_global_l2_seed_to_target_topic_or_archive',
+        ]],
+        top_group_semantic_mix_detected: [true],
+        top_group_semantic_subgroup_counts: [11],
+        top_group_semantic_subgroups: [[
+          'system:system-c2h2-acetylene:2',
+          'system:system-h2o-water:2',
+        ]],
+        top_group_semantic_subgroup_review_progress: [[
+          'system:system-h2o-extracted:needs_revision/needs_source_reconstruction',
+          'system:system-h2o-water:needs_revision/needs_source_reconstruction',
+          'system:system-c2h2-acetylene:pending/pending',
+        ]],
+        next_actions: [
+          'keep_all_legacy_seed_entries_orientation_only_until_reviewed',
+        ],
+        truth_source: 'canonical_memory_l2_seed_scan_grouped_for_review',
+      },
+    });
+
+    const group = compiled.migrationHealth.legacySeedReviewGroups[0];
+    const context = compiled.contextLines.join('\n');
+
+    expect(group).toMatchObject({
+      groupId: 'legacy-l2-seed-review:l2:l2:claim-l2-82d402af:system',
+      topicId: 'L2',
+      targetTopicId: 'L2',
+      memoryRole: 'system',
+      semanticMixDetected: true,
+      semanticSubgroupCount: 11,
+    });
+    expect(compiled.migrationHealth).toMatchObject({
+      status: 'blocked',
+      canonicalLegacySeedCount: 2356,
+      legacySeedReviewGroupCount: 512,
+      legacySeedOpenReviewGroupCount: 495,
+      legacySeedReviewedGroupCount: 24,
+      legacySeedTerminalReviewGroupCount: 17,
+      legacySeedTopicScopeMismatchCount: 4,
+      legacySeedGlobalL2Count: 124,
+    });
+    expect(group?.semanticSubgroups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceFamily: 'system',
+          sourceObjectId: 'system-h2o-extracted',
+          reviewStatus: 'needs_revision',
+          reviewDecision: 'needs_source_reconstruction',
+          canUpdateClaimTrust: false,
+        }),
+        expect.objectContaining({
+          sourceFamily: 'system',
+          sourceObjectId: 'system-h2o-water',
+          seedCount: 2,
+          reviewStatus: 'needs_revision',
+          reviewDecision: 'needs_source_reconstruction',
+        }),
+      ]),
+    );
+    expect(context).toContain(
+      'system:system-h2o-extracted:0:needs_revision/needs_source_reconstruction',
+    );
+    expect(compiled.diagnostics).toEqual(
+      expect.arrayContaining([
+        'migration-health-present',
+        'migration-health-blocked',
+        'canonical-legacy-l2-seeds-present',
+        'canonical-legacy-l2-seed-review-groups-present',
+        'canonical-legacy-l2-seed-review-groups-open',
+      ]),
+    );
+    expect(compiled.trust.orientationOnly).toBe(true);
+  });
+
   it('treats terminal legacy L2 seed group reviews as historical, not open backlog', () => {
     const compiled = compileAitpProcessGraphSlice({
       ...fakeSlicePayload(),
