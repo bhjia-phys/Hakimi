@@ -636,7 +636,7 @@ export function summarizeMigrationHealth(
   if (health.legacySeedReviewGroups.length > 0) {
     lines.push(
       `Top legacy L2 seed review groups: ${bounded(
-        health.legacySeedReviewGroups.map(renderLegacySeedReviewGroup),
+        health.legacySeedReviewGroups.map((group) => renderLegacySeedReviewGroup(group, maxItems)),
         maxItems,
       ).join('; ')}`,
     );
@@ -684,7 +684,10 @@ function hasMigrationHealthSignal(health: AitpMigrationHealth): boolean {
   );
 }
 
-function renderLegacySeedReviewGroup(group: AitpLegacySeedReviewGroupSummary): string {
+function renderLegacySeedReviewGroup(
+  group: AitpLegacySeedReviewGroupSummary,
+  maxItems = MAX_CONTEXT_ITEMS,
+): string {
   const target = group.targetTopicId === '' ? '' : ` target=${group.targetTopicId}`;
   const claim = group.sourceClaimId === '' ? '' : ` claim=${group.sourceClaimId}`;
   const blockers = group.blockingClasses.length > 0
@@ -692,7 +695,7 @@ function renderLegacySeedReviewGroup(group: AitpLegacySeedReviewGroupSummary): s
     : '';
   const semanticMix = group.semanticMixDetected ? ' semantic_mix=true' : '';
   const semanticSubgroups = group.semanticSubgroups.length > 0
-    ? ` subgroups=${renderLegacySeedSemanticSubgroups(group)}`
+    ? ` subgroups=${renderLegacySeedSemanticSubgroups(group, maxItems)}`
     : group.semanticSubgroupCount > 0
       ? ` subgroup_count=${String(group.semanticSubgroupCount)}`
       : '';
@@ -703,11 +706,15 @@ function renderLegacySeedReviewGroup(group: AitpLegacySeedReviewGroupSummary): s
   return `${group.groupId} topic=${group.topicId}${target}${claim} role=${group.memoryRole} seeds=${String(group.seedCount)}${blockers}${semanticMix}${semanticSubgroups}${review}${terminal}${latest}`;
 }
 
-function renderLegacySeedSemanticSubgroups(group: AitpLegacySeedReviewGroupSummary): string {
+function renderLegacySeedSemanticSubgroups(
+  group: AitpLegacySeedReviewGroupSummary,
+  maxItems = MAX_CONTEXT_ITEMS,
+): string {
   const sorted = group.semanticSubgroups.slice().sort((left, right) =>
     compareLegacySeedSemanticSubgroups(left, right)
   );
-  const rendered = sorted.slice(0, 5).map((item) => {
+  const limit = Math.max(0, maxItems);
+  const rendered = sorted.slice(0, limit).map((item) => {
     const family = item.sourceFamily === '' ? 'unknown' : item.sourceFamily;
     const objectId = item.sourceObjectId === '' ? 'missing-object' : item.sourceObjectId;
     const review = item.reviewStatus !== 'pending' || item.reviewDecision !== 'pending'
