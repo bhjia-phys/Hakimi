@@ -771,12 +771,27 @@ function parseMigrationHealth(value: unknown): AitpMigrationHealth {
     legacySeedReviewGroupCount: numberValue(
       valueFor(value, 'legacy_seed_review_group_count', 'legacySeedReviewGroupCount'),
     ) ?? 0,
+    legacySeedOpenReviewGroupCount: numberValue(
+      valueFor(value, 'legacy_seed_open_review_group_count', 'legacySeedOpenReviewGroupCount'),
+    ) ?? 0,
+    legacySeedReviewedGroupCount: numberValue(
+      valueFor(value, 'legacy_seed_reviewed_group_count', 'legacySeedReviewedGroupCount'),
+    ) ?? 0,
+    legacySeedTerminalReviewGroupCount: numberValue(
+      valueFor(value, 'legacy_seed_terminal_review_group_count', 'legacySeedTerminalReviewGroupCount'),
+    ) ?? 0,
     legacySeedTopicScopeMismatchCount: numberValue(
       valueFor(value, 'legacy_seed_topic_scope_mismatch_count', 'legacySeedTopicScopeMismatchCount'),
     ) ?? 0,
     legacySeedGlobalL2Count: numberValue(
       valueFor(value, 'legacy_seed_global_l2_count', 'legacySeedGlobalL2Count'),
     ) ?? 0,
+    legacySeedReviewStatusCounts: recordValue(
+      valueFor(value, 'legacy_seed_review_status_counts', 'legacySeedReviewStatusCounts'),
+    ),
+    legacySeedReviewDecisionCounts: recordValue(
+      valueFor(value, 'legacy_seed_review_decision_counts', 'legacySeedReviewDecisionCounts'),
+    ),
     legacySeedReviewBlockingClassCounts: recordValue(
       valueFor(value, 'legacy_seed_review_blocking_class_counts', 'legacySeedReviewBlockingClassCounts'),
     ),
@@ -815,8 +830,13 @@ function emptyMigrationHealth(): AitpMigrationHealth {
     legacySeedQuarantineStatus: 'no_canonical_legacy_l2_seeds',
     legacySeedNextActions: [],
     legacySeedReviewGroupCount: 0,
+    legacySeedOpenReviewGroupCount: 0,
+    legacySeedReviewedGroupCount: 0,
+    legacySeedTerminalReviewGroupCount: 0,
     legacySeedTopicScopeMismatchCount: 0,
     legacySeedGlobalL2Count: 0,
+    legacySeedReviewStatusCounts: {},
+    legacySeedReviewDecisionCounts: {},
     legacySeedReviewBlockingClassCounts: {},
     legacySeedReviewGroups: [],
     nextActions: [],
@@ -838,6 +858,11 @@ function parseLegacySeedReviewGroup(raw: Record<string, unknown>): AitpLegacySee
     priorityScore: numberValue(valueFor(raw, 'priority_score', 'priorityScore')) ?? 0,
     blockingClasses: stringArray(valueFor(raw, 'blocking_classes', 'blockingClasses')),
     reviewFocus: stringArray(valueFor(raw, 'review_focus', 'reviewFocus')),
+    reviewStatus: stringValue(valueFor(raw, 'review_status', 'reviewStatus')) ?? 'pending',
+    reviewDecision: stringValue(valueFor(raw, 'review_decision', 'reviewDecision')) ?? 'pending',
+    latestReviewResult: recordValue(valueFor(raw, 'latest_review_result', 'latestReviewResult')),
+    terminalReviewRecorded:
+      booleanValue(valueFor(raw, 'terminal_review_recorded', 'terminalReviewRecorded')) ?? false,
     canUpdateClaimTrust:
       booleanValue(valueFor(raw, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,
   };

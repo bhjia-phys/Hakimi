@@ -118,8 +118,22 @@ describe('AITP process graph slice adapter', () => {
         legacy_seed_topic_count: 19,
         legacy_seed_quarantine_status: 'canonical_legacy_l2_seeds_require_review',
         legacy_seed_review_group_count: 512,
+        legacy_seed_open_review_group_count: 440,
+        legacy_seed_reviewed_group_count: 72,
+        legacy_seed_terminal_review_group_count: 61,
         legacy_seed_topic_scope_mismatch_count: 72,
         legacy_seed_global_l2_count: 124,
+        legacy_seed_review_status_counts: {
+          pending: 440,
+          passed: 61,
+          needs_revision: 11,
+        },
+        legacy_seed_review_decision_counts: {
+          pending: 440,
+          archive: 48,
+          reassign: 13,
+          needs_source_reconstruction: 11,
+        },
         legacy_seed_review_blocking_class_counts: {
           topic_scope_alignment_required: 18,
           global_l2_topic_reassignment_required: 27,
@@ -143,6 +157,14 @@ describe('AITP process graph slice adapter', () => {
               'assign_global_l2_seed_to_target_topic_or_archive',
               'verify_topic_scope_source_claim_alignment',
             ],
+            review_status: 'needs_revision',
+            review_decision: 'needs_source_reconstruction',
+            latest_review_result: {
+              review_id: 'legacy-l2-seed-group-review-qsgw-needs-source',
+              decision: 'needs_source_reconstruction',
+              status: 'needs_revision',
+            },
+            terminal_review_recorded: false,
             can_update_claim_trust: false,
           },
         ],
@@ -157,7 +179,7 @@ describe('AITP process graph slice adapter', () => {
         summary_lines: [
           'AITP migration health: status=blocked, old_store_retirement_safe=false, blocking_files=8338, no_omission_check=true.',
           'Canonical legacy L2 seeds: count=2356, active=0, status=canonical_legacy_l2_seeds_require_review; legacy_seed memory is recovery orientation only until reviewed/reassigned/promoted.',
-          'Legacy L2 seed review groups: groups=512, global_l2_seeds=124, topic_scope_mismatches=72; topic-level semantic review can be complete while per-seed L2 review remains required.',
+          'Legacy L2 seed review groups: groups=512, open=440, reviewed=72, terminal=61, global_l2_seeds=124, topic_scope_mismatches=72; topic-level semantic review can be complete while open per-seed L2 review remains required.',
         ],
         truth_source: 'workspace_migration_ledgers_and_canonical_l2_seed_scan',
         summary_inputs_trusted: false,
@@ -178,14 +200,20 @@ describe('AITP process graph slice adapter', () => {
       activeLegacySeedCount: 0,
       rootL2GlobalMemoryRisk: true,
       legacySeedReviewGroupCount: 512,
+      legacySeedOpenReviewGroupCount: 440,
+      legacySeedReviewedGroupCount: 72,
+      legacySeedTerminalReviewGroupCount: 61,
       legacySeedTopicScopeMismatchCount: 72,
       legacySeedGlobalL2Count: 124,
     });
     expect(context).toContain('AITP migration health: status=blocked');
     expect(context).toContain('Canonical legacy L2 seeds: count=2356');
     expect(context).toContain('Legacy L2 seed review groups: groups=512');
+    expect(context).toContain('open=440');
     expect(context).toContain('Top legacy L2 seed review groups:');
     expect(context).toContain('target=qsgw-headwing-update-librpa');
+    expect(context).toContain('review=needs_revision/needs_source_reconstruction');
+    expect(context).toContain('latest_review=legacy-l2-seed-group-review-qsgw-needs-source');
     expect(context).toContain('AITP migration next actions:');
     expect(compiled.reminders.join('\n')).toContain(
       'Use AITP migration health before retiring old stores',
@@ -199,9 +227,98 @@ describe('AITP process graph slice adapter', () => {
         'migration-health-blocked',
         'canonical-legacy-l2-seeds-present',
         'canonical-legacy-l2-seed-review-groups-present',
+        'canonical-legacy-l2-seed-review-groups-open',
         'canonical-legacy-l2-topic-scope-mismatches-present',
       ]),
     );
+  });
+
+  it('treats terminal legacy L2 seed group reviews as historical, not open backlog', () => {
+    const compiled = compileAitpProcessGraphSlice({
+      ...fakeSlicePayload(),
+      migration_health: {
+        kind: 'aitp_workspace_migration_health',
+        status: 'clear',
+        canonical_store: 'F:/AI_Workspace/Theoretical-Physics/research/aitp-topics/.aitp',
+        ledger_status: 'ready',
+        file_decision_count: 1,
+        expected_total_file_count: 1,
+        no_omission_check: true,
+        blocking_file_count: 0,
+        old_store_retirement_safe: true,
+        semantic_review_required: false,
+        root_l2_global_memory_risk: false,
+        root_l2_global_memory_decision_count: 0,
+        root_l2_global_memory_topic_count: 0,
+        root_l2_global_memory_risk_reason: '',
+        canonical_legacy_seed_count: 1,
+        active_legacy_seed_count: 0,
+        legacy_seed_topic_count: 1,
+        legacy_seed_quarantine_status: 'canonical_legacy_l2_seeds_require_review',
+        legacy_seed_review_group_count: 1,
+        legacy_seed_open_review_group_count: 0,
+        legacy_seed_reviewed_group_count: 1,
+        legacy_seed_terminal_review_group_count: 1,
+        legacy_seed_topic_scope_mismatch_count: 0,
+        legacy_seed_global_l2_count: 0,
+        legacy_seed_review_status_counts: { passed: 1 },
+        legacy_seed_review_decision_counts: { archive: 1 },
+        legacy_seed_review_blocking_class_counts: {},
+        legacy_seed_review_groups: [
+          {
+            group_id: 'legacy-l2-seed-review:fqhe:fqhe:claim-fqhe:claim',
+            topic_id: 'fqhe',
+            target_topic_id: 'fqhe',
+            source_claim_id: 'claim-fqhe',
+            memory_role: 'claim',
+            seed_count: 1,
+            priority_score: 1,
+            blocking_classes: [],
+            review_focus: ['keep_legacy_seed_orientation_only_until_review_result'],
+            review_status: 'passed',
+            review_decision: 'archive',
+            latest_review_result: {
+              review_id: 'legacy-l2-seed-group-review-fqhe-archive',
+              status: 'passed',
+              decision: 'archive',
+            },
+            terminal_review_recorded: true,
+            can_update_claim_trust: false,
+          },
+        ],
+        legacy_seed_next_actions: [],
+        next_actions: [],
+        summary_lines: [
+          'Legacy L2 seed review groups: groups=1, open=0, reviewed=1, terminal=1, global_l2_seeds=0, topic_scope_mismatches=0.',
+        ],
+        truth_source: 'workspace_migration_ledgers_and_canonical_l2_seed_scan',
+        summary_inputs_trusted: false,
+        orientation_only: true,
+        can_update_kernel_state: false,
+        can_update_claim_trust: false,
+      },
+    });
+
+    const reminders = compiled.reminders.join('\n');
+
+    expect(compiled.migrationHealth).toMatchObject({
+      status: 'clear',
+      legacySeedReviewGroupCount: 1,
+      legacySeedOpenReviewGroupCount: 0,
+      legacySeedReviewedGroupCount: 1,
+      legacySeedTerminalReviewGroupCount: 1,
+    });
+    expect(compiled.contextLines.join('\n')).toContain('review=passed/archive terminal=true');
+    expect(compiled.diagnostics).toEqual(
+      expect.arrayContaining([
+        'canonical-legacy-l2-seeds-present',
+        'canonical-legacy-l2-seed-review-groups-present',
+        'canonical-legacy-l2-seed-review-groups-terminal',
+      ]),
+    );
+    expect(compiled.diagnostics).not.toContain('migration-health-blocked');
+    expect(compiled.diagnostics).not.toContain('canonical-legacy-l2-seed-review-groups-open');
+    expect(reminders).not.toContain('Use AITP legacy L2 seed review groups before reassigning');
   });
 
   it('normalizes AITP recommended moments for detector callers', () => {
