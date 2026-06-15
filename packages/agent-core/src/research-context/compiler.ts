@@ -1186,6 +1186,19 @@ function collectAitpClaimRelationMap(
     cannotSay: relationMap.cannotSay,
     currentBlockers: relationMap.currentBlockers,
     nextValidActions: relationMap.nextValidActions,
+    topicClaimBoundaries:
+      relationMap.topicClaimBoundaries === undefined
+        ? undefined
+        : {
+            activeClaimId: relationMap.topicClaimBoundaries.activeClaimId,
+            siblingClaimCount: relationMap.topicClaimBoundaries.siblingClaimCount,
+            siblingClaims: relationMap.topicClaimBoundaries.siblingClaims,
+            boundaryRule: relationMap.topicClaimBoundaries.boundaryRule,
+            canSay: relationMap.topicClaimBoundaries.canSay,
+            cannotSay: relationMap.topicClaimBoundaries.cannotSay,
+            orientationOnly: true,
+            canUpdateClaimTrust: false,
+          },
     orientationOnly: true,
     canUpdateClaimTrust: false,
     trustUpdateAllowed: false,
@@ -1211,6 +1224,26 @@ function relationMapContextLines(
   }
   if (relationMap.nextValidActions.length > 0) {
     lines.push(`Relation map next valid actions: ${relationMap.nextValidActions.slice(0, 4).join('; ')}`);
+  }
+  if (relationMap.topicClaimBoundaries !== undefined) {
+    const boundaries = relationMap.topicClaimBoundaries;
+    lines.push(
+      `Topic claim boundaries: active=${boundaries.activeClaimId || '<none>'} sibling_count=${String(boundaries.siblingClaimCount)}.`,
+    );
+    if (boundaries.boundaryRule.length > 0) {
+      lines.push(`Topic claim boundary rule: ${boundaries.boundaryRule}`);
+    }
+    if (boundaries.siblingClaims.length > 0) {
+      lines.push(
+        `Sibling claims are orientation-only: ${boundaries.siblingClaims
+          .slice(0, 4)
+          .map((item) => `${item.claimId} [${item.confidenceState || 'unknown'}] ${item.statementExcerpt}`)
+          .join('; ')}`,
+      );
+    }
+    if (boundaries.cannotSay.length > 0) {
+      lines.push(`Topic claim boundary cannot say: ${boundaries.cannotSay.slice(0, 3).join('; ')}`);
+    }
   }
   lines.push('Relation map boundary: orientation-only; never treat non-testing failures as algorithm evidence or claim-trust updates.');
   return lines;

@@ -272,7 +272,14 @@ describe('ResearchContextManager', () => {
 
     expect(pack.aitp?.contextLines.join('\n')).toContain('Source gaps: claim-fqhe');
     expect(pack.aitp?.contextLines.join('\n')).toContain('AITP claim relation map');
+    expect(pack.aitp?.contextLines.join('\n')).toContain('Topic claim boundaries');
+    expect(pack.aitp?.contextLines.join('\n')).toContain('claim-old-four-diagnostic');
     expect(pack.aitp?.claimRelationMap?.notTestedCount).toBe(1);
+    expect(pack.aitp?.claimRelationMap?.topicClaimBoundaries).toMatchObject({
+      activeClaimId: 'claim-ridge-pade-h2o',
+      siblingClaimCount: 1,
+      canUpdateClaimTrust: false,
+    });
     expect(pack.aitp?.claimRelationMap?.cannotSay.join('\n')).toContain(
       'runtime/application failures',
     );
@@ -1528,6 +1535,30 @@ function aitpClaimRelationMapPayload() {
       },
     ],
     object_relations: [],
+    topic_claim_boundaries: {
+      kind: 'topic_claim_boundaries',
+      active_claim_id: 'claim-ridge-pade-h2o',
+      sibling_claim_count: 1,
+      sibling_claims: [
+        {
+          claim_id: 'claim-old-four-diagnostic',
+          confidence_state: 'legacy_seed',
+          evidence_profile: 'code_method',
+          statement_excerpt:
+            'Older four-diagnostic finite-size numerical claim belongs to topic history only.',
+        },
+      ],
+      boundary_rule:
+        'Sibling claims are same-topic research lines for orientation only; their records cannot support, limit, or refute the active claim unless explicitly linked to this active claim.',
+      current_conclusion: {
+        can_say: ['same-topic sibling claims exist and may explain topic history'],
+        cannot_say: [
+          'cannot use sibling-claim evidence or legacy reviews as active-claim support without an explicit claim link',
+        ],
+      },
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
     current_conclusion: {
       can_say: ['H2O evidence supports reduced AC amplification within the tested setup.'],
       cannot_say: [

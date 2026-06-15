@@ -898,6 +898,9 @@ describe('ResearchActionTool', () => {
     expect(relation.output).toContain('<claim_statement trust_boundary="not_a_trust_promotion">');
     expect(relation.output).toContain('Scoped H2O ridge Padé diagnostics');
     expect(relation.output).toContain('Restate the active claim statement/content');
+    expect(relation.output).toContain('<topic_claim_boundaries');
+    expect(relation.output).toContain('claim-qsgw-old-numerical');
+    expect(relation.output).toContain('cannot use sibling-claim evidence');
     expect(relation.output).toContain(
       'base="F:/AI_Workspace/Theoretical-Physics/research/aitp-topics"',
     );
@@ -5968,6 +5971,30 @@ function qsgwRelationMapPayload(): any {
     contradicted_by: [],
     not_tested_by: [],
     object_relations: [],
+    topic_claim_boundaries: {
+      kind: 'topic_claim_boundaries',
+      active_claim_id: 'claim-qsgw',
+      sibling_claim_count: 1,
+      sibling_claims: [
+        {
+          claim_id: 'claim-qsgw-old-numerical',
+          confidence_state: 'legacy_seed',
+          evidence_profile: 'code_method',
+          statement_excerpt:
+            'Older numerical diagnostic claim is same-topic history and not active-claim support.',
+        },
+      ],
+      boundary_rule:
+        'Sibling claims are same-topic research lines for orientation only; their records cannot support, limit, or refute the active claim unless explicitly linked to this active claim.',
+      current_conclusion: {
+        can_say: ['same-topic sibling claims exist and may explain topic history'],
+        cannot_say: [
+          'cannot use sibling-claim evidence or legacy reviews as active-claim support without an explicit claim link',
+        ],
+      },
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
     current_conclusion: {
       can_say: ['active claim remains hypothesis'],
       cannot_say: ['cannot update claim trust from this relation map alone'],

@@ -9,6 +9,7 @@ import {
   compileAitpProcessGraphSlice,
   compileResearchContextPack,
   createWorkFrame,
+  parseAitpClaimRelationMap,
   parseAitpLiteratureSourceReviewHandoff,
   type DomainProfile,
   type FileBackedResearchEvalCase,
@@ -178,6 +179,31 @@ describe('compileResearchContextPack', () => {
       ]),
     );
     expect(pack.diagnostics.map((item) => item.source)).toContain('aitp');
+  });
+
+  it('projects AITP topic claim boundaries from relation-map-only recovery context', () => {
+    const pack = compileResearchContextPack({
+      workFrame: createWorkFrame({
+        id: 'frame.relation-map-only',
+        domain: DOMAIN,
+        topic: 'quantum-chaos-long-range-spin-chains',
+        goal: 'Recover active claim without mixing sibling claim evidence.',
+      }),
+      claimRelationMap: parseAitpClaimRelationMap(relationMapWithSiblingClaimsPayload()),
+      now: () => 123,
+    });
+
+    const context = pack.aitp?.contextLines.join('\n') ?? '';
+
+    expect(pack.aitp?.truthSource).toBe('aitp.claim_relation_map');
+    expect(pack.aitp?.claimRelationMap?.topicClaimBoundaries).toMatchObject({
+      activeClaimId: 'claim-active-a2',
+      siblingClaimCount: 1,
+      canUpdateClaimTrust: false,
+    });
+    expect(context).toContain('Topic claim boundaries');
+    expect(context).toContain('claim-old-four-diagnostic');
+    expect(context).toContain('cannot use sibling-claim evidence');
   });
 
   it('suggests curated RAG promotion draft bindings only for claim-support review context', () => {
@@ -1499,5 +1525,69 @@ function curatedRagSearchPayload() {
       },
     ],
     raw: {},
+  };
+}
+
+function relationMapWithSiblingClaimsPayload() {
+  return {
+    kind: 'claim_relation_map',
+    topic_id: 'quantum-chaos-long-range-spin-chains',
+    session_id: 'codex-hs-alpha-axis-20260605',
+    claim_id: 'claim-active-a2',
+    claim_statement: 'Active A2 Schur-tail theorem remains an open theorem candidate.',
+    confidence_state: 'hypothesis',
+    evidence_profile: 'semi_formal_theory',
+    latest_claim_status: {},
+    supported_by: [],
+    limited_by: [],
+    contradicted_by: [],
+    not_tested_by: [],
+    object_relations: [],
+    topic_claim_boundaries: {
+      kind: 'topic_claim_boundaries',
+      active_claim_id: 'claim-active-a2',
+      sibling_claim_count: 1,
+      sibling_claims: [
+        {
+          claim_id: 'claim-old-four-diagnostic',
+          confidence_state: 'legacy_seed',
+          evidence_profile: 'code_method',
+          statement_excerpt:
+            'Old finite-size four-diagnostic numerical claim belongs to topic history only.',
+        },
+      ],
+      boundary_rule:
+        'Sibling claims are same-topic research lines for orientation only; their records cannot support, limit, or refute the active claim unless explicitly linked to this active claim.',
+      current_conclusion: {
+        can_say: ['same-topic sibling claims exist and may explain topic history'],
+        cannot_say: [
+          'cannot use sibling-claim evidence or legacy reviews as active-claim support without an explicit claim link',
+        ],
+      },
+      orientation_only: true,
+      can_update_claim_trust: false,
+    },
+    current_conclusion: {
+      can_say: ['active claim remains hypothesis'],
+      cannot_say: ['cannot promote old numerical evidence to active theorem support'],
+    },
+    current_blockers: ['prove the all-n Schur rowspace theorem'],
+    next_valid_actions: ['prove the active A2 theorem over Z or Q'],
+    source_records: {
+      claims: ['claim-active-a2'],
+      sibling_claims: ['claim-old-four-diagnostic'],
+      evidence: [],
+      tool_runs: [],
+      claim_statuses: [],
+      proof_obligations: [],
+      object_relations: [],
+    },
+    derived_from: ['claim_status_records', 'topic_claim_boundary_records'],
+    truth_source: false,
+    orientation_only: true,
+    summary_inputs_trusted: false,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+    trust_update_allowed: false,
   };
 }
