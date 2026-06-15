@@ -241,7 +241,8 @@ function shouldOpenImplicitAitpRecoveryFrame(prompt: string, cwd: string): boole
 function inferAitpTopicId(prompt: string): string | undefined {
   const preferred = prompt.matchAll(/[`'"“”‘’]([A-Za-z0-9][A-Za-z0-9_.-]{2,160})[`'"“”‘’]/g);
   for (const match of preferred) {
-    const candidate = normalizeTopicCandidate(match[1]);
+    // Quoted candidates may be single-word AITP topic IDs (e.g. 'L2').
+    const candidate = normalizeTopicCandidate(match[1], { allowSingleWord: true });
     if (candidate !== undefined) return candidate;
   }
   const fallback = prompt.matchAll(/\b[A-Za-z][A-Za-z0-9]+(?:-[A-Za-z0-9]+){1,}\b/g);
@@ -252,12 +253,15 @@ function inferAitpTopicId(prompt: string): string | undefined {
   return undefined;
 }
 
-function normalizeTopicCandidate(value: string | undefined): string | undefined {
+function normalizeTopicCandidate(
+  value: string | undefined,
+  options: { allowSingleWord?: boolean } = {},
+): string | undefined {
   const candidate = value?.trim();
   if (candidate === undefined || candidate.length === 0) return undefined;
   const normalized = candidate.toLowerCase();
   if (!/^[a-z0-9][a-z0-9_.-]{2,160}$/.test(normalized)) return undefined;
-  if (!normalized.includes('-')) return undefined;
+  if (!options.allowSingleWord && !normalized.includes('-')) return undefined;
   if (
     [
       'aitp-v5',
