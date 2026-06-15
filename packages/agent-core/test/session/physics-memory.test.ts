@@ -100,7 +100,7 @@ describe('Session physics memory', () => {
       expect(rootsLoaded).toMatchObject({
         type: 'physics_memory.roots_loaded',
         source: 'session-start',
-        capsuleCount: 4,
+        capsuleCount: 7,
         domains: ['fqhe', 'theoretical-physics/general'],
         diagnostics: [],
       });
