@@ -7,6 +7,7 @@ import {
 import type {
   AitpCallObligation,
   AitpLegacySeedReviewGroupSummary,
+  AitpLegacySeedSemanticSubgroupSummary,
   AitpMigrationHealth,
   AitpMigrationHealthSummary,
   AitpMomentPolicyDecision,
@@ -703,14 +704,45 @@ function renderLegacySeedReviewGroup(group: AitpLegacySeedReviewGroupSummary): s
 }
 
 function renderLegacySeedSemanticSubgroups(group: AitpLegacySeedReviewGroupSummary): string {
-  const rendered = group.semanticSubgroups.slice(0, 5).map((item) => {
+  const sorted = group.semanticSubgroups.slice().sort((left, right) =>
+    compareLegacySeedSemanticSubgroups(left, right)
+  );
+  const rendered = sorted.slice(0, 5).map((item) => {
     const family = item.sourceFamily === '' ? 'unknown' : item.sourceFamily;
     const objectId = item.sourceObjectId === '' ? 'missing-object' : item.sourceObjectId;
-    return `${family}:${objectId}:${String(item.seedCount)}`;
+    const review = item.reviewStatus !== 'pending' || item.reviewDecision !== 'pending'
+      ? `:${item.reviewStatus}/${item.reviewDecision}`
+      : '';
+    return `${family}:${objectId}:${String(item.seedCount)}${review}`;
   });
   const remaining = group.semanticSubgroupCount - rendered.length;
   if (remaining > 0) rendered.push(`...(+${String(remaining)} more)`);
   return rendered.join('|');
+}
+
+function compareLegacySeedSemanticSubgroups(
+  left: AitpLegacySeedSemanticSubgroupSummary,
+  right: AitpLegacySeedSemanticSubgroupSummary,
+): number {
+  const leftReviewed = legacySeedSemanticSubgroupReviewed(left);
+  const rightReviewed = legacySeedSemanticSubgroupReviewed(right);
+  if (leftReviewed !== rightReviewed) return leftReviewed ? -1 : 1;
+  if (left.terminalReviewRecorded !== right.terminalReviewRecorded) {
+    return left.terminalReviewRecorded ? -1 : 1;
+  }
+  return `${left.sourceFamily}:${left.sourceObjectId}`.localeCompare(
+    `${right.sourceFamily}:${right.sourceObjectId}`,
+  );
+}
+
+function legacySeedSemanticSubgroupReviewed(
+  item: AitpLegacySeedSemanticSubgroupSummary,
+): boolean {
+  return (
+    item.reviewStatus !== 'pending' ||
+    item.reviewDecision !== 'pending' ||
+    Object.keys(item.latestReviewResult).length > 0
+  );
 }
 
 function gapMatches(gap: AitpProvenanceGap, needles: readonly string[]): boolean {
