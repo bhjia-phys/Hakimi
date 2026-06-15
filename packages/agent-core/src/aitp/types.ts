@@ -445,6 +445,10 @@ export interface AitpLegacySeedSemanticSubgroupSummary {
   readonly sourcePaths: readonly string[];
   readonly sampleEntryIds: readonly string[];
   readonly reviewHint: string;
+  readonly reviewStatus: string;
+  readonly reviewDecision: string;
+  readonly latestReviewResult: Readonly<Record<string, unknown>>;
+  readonly terminalReviewRecorded: boolean;
   readonly canUpdateClaimTrust: boolean;
 }
 
