@@ -407,6 +407,77 @@ describe('AITP process graph slice adapter', () => {
     expect(compiled.trust.orientationOnly).toBe(true);
   });
 
+  it('renders expanded compact legacy L2 semantic subgroup reviews up to maxContextItems', () => {
+    const subgroupProgress = [
+      'system:system-c2h2-acetylene:needs_revision/needs_topic_alignment',
+      'system:system-ch4-methane:needs_revision/needs_topic_alignment',
+      'system:system-co-carbon-monoxide:needs_revision/needs_topic_alignment',
+      'system:system-co2-carbon-dioxide:needs_revision/needs_topic_alignment',
+      'system:system-h2o-extracted:needs_revision/needs_source_reconstruction',
+      'system:system-n2-dinitrogen:needs_revision/needs_topic_alignment',
+    ];
+    const compiled = compileAitpProcessGraphSlice({
+      ...fakeSlicePayload(),
+      migration_health: {
+        kind: 'canonical_legacy_l2_seed_review_worklist_progress',
+        status: 'blocked',
+        canonical_store: 'F:/AI_Workspace/Theoretical-Physics/research/aitp-topics/.aitp',
+        canonical_legacy_seed_count: 2356,
+        active_legacy_seed_count: 0,
+        legacy_seed_topic_count: 19,
+        legacy_seed_review_group_count: 512,
+        legacy_seed_open_review_group_count: 495,
+        legacy_seed_reviewed_group_count: 24,
+        legacy_seed_terminal_review_group_count: 17,
+        legacy_seed_topic_scope_mismatch_count: 4,
+        legacy_seed_global_l2_count: 124,
+        orientation_only: true,
+        can_update_claim_trust: false,
+        top_group_ids: [
+          'legacy-l2-seed-review:l2:l2:claim-l2-82d402af:system',
+        ],
+        top_group_topics: ['L2'],
+        top_group_target_topics: ['L2'],
+        top_group_source_claim_ids: ['claim-l2-82d402af'],
+        top_group_memory_roles: ['system'],
+        top_group_blocking_classes: [[
+          'global_l2_topic_reassignment_required',
+          'legacy_graph_node_object_review_required',
+          'semantic_subgroup_split_required',
+        ]],
+        top_group_review_focus: [[
+          'split_mixed_seed_group_by_source_object_before_terminal_review',
+          'assign_global_l2_seed_to_target_topic_or_archive',
+        ]],
+        top_group_semantic_mix_detected: [true],
+        top_group_semantic_subgroup_counts: [6],
+        top_group_semantic_subgroups: [[
+          'system:system-c2h2-acetylene:2',
+          'system:system-ch4-methane:2',
+          'system:system-co-carbon-monoxide:2',
+          'system:system-co2-carbon-dioxide:2',
+          'system:system-h2o-extracted:1',
+          'system:system-n2-dinitrogen:2',
+        ]],
+        top_group_semantic_subgroup_review_progress: [subgroupProgress],
+        next_actions: [
+          'keep_all_legacy_seed_entries_orientation_only_until_reviewed',
+        ],
+        truth_source: 'canonical_memory_l2_seed_scan_grouped_for_review',
+      },
+    }, { maxContextItems: 6 });
+
+    const context = compiled.contextLines.join('\n');
+    const legacyGroupLine = compiled.contextLines.find((line) =>
+      line.startsWith('Top legacy L2 seed review groups:')
+    );
+
+    expect(context).toContain(
+      'system:system-n2-dinitrogen:2:needs_revision/needs_topic_alignment',
+    );
+    expect(legacyGroupLine).not.toContain('...(+1 more)');
+  });
+
   it('treats terminal legacy L2 seed group reviews as historical, not open backlog', () => {
     const compiled = compileAitpProcessGraphSlice({
       ...fakeSlicePayload(),
