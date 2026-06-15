@@ -730,9 +730,44 @@ function parseMigrationHealth(value: unknown): AitpMigrationHealth {
   if (!isRecord(value)) {
     return emptyMigrationHealth();
   }
+  const legacySeedCount = valueFor(value, 'legacy_seed_count', 'legacySeedCount');
+  const reviewGroupCount = valueFor(value, 'review_group_count', 'reviewGroupCount');
+  const openReviewGroupCount = valueFor(value, 'open_review_group_count', 'openReviewGroupCount');
+  const reviewedGroupCount = valueFor(value, 'reviewed_group_count', 'reviewedGroupCount');
+  const terminalReviewGroupCount = valueFor(
+    value,
+    'terminal_review_group_count',
+    'terminalReviewGroupCount',
+  );
+  const topicScopeMismatchCount = valueFor(
+    value,
+    'topic_scope_mismatch_count',
+    'topicScopeMismatchCount',
+  );
+  const globalL2SeedCount = valueFor(value, 'global_l2_seed_count', 'globalL2SeedCount');
+  const reviewStatusCounts = valueFor(value, 'review_status_counts', 'reviewStatusCounts');
+  const reviewDecisionCounts = valueFor(value, 'review_decision_counts', 'reviewDecisionCounts');
+  const reviewBlockingClassCounts = valueFor(
+    value,
+    'review_group_blocking_class_counts',
+    'reviewGroupBlockingClassCounts',
+  );
+  const statusFromOpenGroups = numberValue(openReviewGroupCount);
+  const legacyReviewStatusCounts = recordValue(
+    valueFor(value, 'legacy_seed_review_status_counts', 'legacySeedReviewStatusCounts'),
+  );
+  const legacyReviewDecisionCounts = recordValue(
+    valueFor(value, 'legacy_seed_review_decision_counts', 'legacySeedReviewDecisionCounts'),
+  );
+  const legacyReviewBlockingClassCounts = recordValue(
+    valueFor(value, 'legacy_seed_review_blocking_class_counts', 'legacySeedReviewBlockingClassCounts'),
+  );
   return {
     kind: stringValue(value['kind']) ?? 'aitp_workspace_migration_health',
-    status: stringValue(value['status']) ?? 'unknown',
+    status: stringValue(value['status'])
+      ?? (statusFromOpenGroups !== undefined && statusFromOpenGroups > 0
+        ? 'blocked'
+        : 'unknown'),
     canonicalStore: stringValue(valueFor(value, 'canonical_store', 'canonicalStore')) ?? '',
     ledgerPath: stringValue(valueFor(value, 'ledger_path', 'ledgerPath')),
     ledgerStatus: stringValue(valueFor(value, 'ledger_status', 'ledgerStatus')) ?? 'missing',
@@ -756,7 +791,7 @@ function parseMigrationHealth(value: unknown): AitpMigrationHealth {
       stringValue(valueFor(value, 'root_l2_global_memory_risk_reason', 'rootL2GlobalMemoryRiskReason')) ?? '',
     canonicalLegacySeedCount: numberValue(
       valueFor(value, 'canonical_legacy_seed_count', 'canonicalLegacySeedCount'),
-    ) ?? 0,
+    ) ?? numberValue(legacySeedCount) ?? 0,
     activeLegacySeedCount: numberValue(
       valueFor(value, 'active_legacy_seed_count', 'activeLegacySeedCount'),
     ) ?? 0,
@@ -771,34 +806,32 @@ function parseMigrationHealth(value: unknown): AitpMigrationHealth {
     ),
     legacySeedReviewGroupCount: numberValue(
       valueFor(value, 'legacy_seed_review_group_count', 'legacySeedReviewGroupCount'),
-    ) ?? 0,
+    ) ?? numberValue(reviewGroupCount) ?? 0,
     legacySeedOpenReviewGroupCount: numberValue(
       valueFor(value, 'legacy_seed_open_review_group_count', 'legacySeedOpenReviewGroupCount'),
-    ) ?? 0,
+    ) ?? numberValue(openReviewGroupCount) ?? 0,
     legacySeedReviewedGroupCount: numberValue(
       valueFor(value, 'legacy_seed_reviewed_group_count', 'legacySeedReviewedGroupCount'),
-    ) ?? 0,
+    ) ?? numberValue(reviewedGroupCount) ?? 0,
     legacySeedTerminalReviewGroupCount: numberValue(
       valueFor(value, 'legacy_seed_terminal_review_group_count', 'legacySeedTerminalReviewGroupCount'),
-    ) ?? 0,
+    ) ?? numberValue(terminalReviewGroupCount) ?? 0,
     legacySeedTopicScopeMismatchCount: numberValue(
       valueFor(value, 'legacy_seed_topic_scope_mismatch_count', 'legacySeedTopicScopeMismatchCount'),
-    ) ?? 0,
+    ) ?? numberValue(topicScopeMismatchCount) ?? 0,
     legacySeedGlobalL2Count: numberValue(
       valueFor(value, 'legacy_seed_global_l2_count', 'legacySeedGlobalL2Count'),
-    ) ?? 0,
-    legacySeedReviewStatusCounts: recordValue(
-      valueFor(value, 'legacy_seed_review_status_counts', 'legacySeedReviewStatusCounts'),
-    ),
-    legacySeedReviewDecisionCounts: recordValue(
-      valueFor(value, 'legacy_seed_review_decision_counts', 'legacySeedReviewDecisionCounts'),
-    ),
-    legacySeedReviewBlockingClassCounts: recordValue(
-      valueFor(value, 'legacy_seed_review_blocking_class_counts', 'legacySeedReviewBlockingClassCounts'),
-    ),
-    legacySeedReviewGroups: objectArray(
-      valueFor(value, 'legacy_seed_review_groups', 'legacySeedReviewGroups'),
-    ).map(parseLegacySeedReviewGroup),
+    ) ?? numberValue(globalL2SeedCount) ?? 0,
+    legacySeedReviewStatusCounts: Object.keys(legacyReviewStatusCounts).length > 0
+      ? legacyReviewStatusCounts
+      : recordValue(reviewStatusCounts),
+    legacySeedReviewDecisionCounts: Object.keys(legacyReviewDecisionCounts).length > 0
+      ? legacyReviewDecisionCounts
+      : recordValue(reviewDecisionCounts),
+    legacySeedReviewBlockingClassCounts: Object.keys(legacyReviewBlockingClassCounts).length > 0
+      ? legacyReviewBlockingClassCounts
+      : recordValue(reviewBlockingClassCounts),
+    legacySeedReviewGroups: parseLegacySeedReviewGroups(value),
     nextActions: stringArray(valueFor(value, 'next_actions', 'nextActions')),
     summaryLines: stringArray(valueFor(value, 'summary_lines', 'summaryLines')),
     truthSource: stringValue(valueFor(value, 'truth_source', 'truthSource')) ?? 'aitp',
@@ -874,6 +907,143 @@ function parseLegacySeedReviewGroup(raw: Record<string, unknown>): AitpLegacySee
       booleanValue(valueFor(raw, 'terminal_review_recorded', 'terminalReviewRecorded')) ?? false,
     canUpdateClaimTrust:
       booleanValue(valueFor(raw, 'can_update_claim_trust', 'canUpdateClaimTrust')) ?? false,
+  };
+}
+
+function parseLegacySeedReviewGroups(
+  raw: Record<string, unknown>,
+): readonly AitpLegacySeedReviewGroupSummary[] {
+  const fullGroups = objectArray(
+    valueFor(raw, 'legacy_seed_review_groups', 'legacySeedReviewGroups'),
+  );
+  if (fullGroups.length > 0) {
+    return fullGroups.map(parseLegacySeedReviewGroup);
+  }
+  return parseCompactLegacySeedReviewGroups(raw).map(parseLegacySeedReviewGroup);
+}
+
+function parseCompactLegacySeedReviewGroups(
+  raw: Record<string, unknown>,
+): readonly Record<string, unknown>[] {
+  const groupIds = stringArray(valueFor(raw, 'top_group_ids', 'topGroupIds'));
+  if (groupIds.length === 0) return [];
+
+  const topics = stringArray(valueFor(raw, 'top_group_topics', 'topGroupTopics'));
+  const targetTopics = stringArray(valueFor(raw, 'top_group_target_topics', 'topGroupTargetTopics'));
+  const sourceClaimIds = stringArray(
+    valueFor(raw, 'top_group_source_claim_ids', 'topGroupSourceClaimIds'),
+  );
+  const memoryRoles = stringArray(valueFor(raw, 'top_group_memory_roles', 'topGroupMemoryRoles'));
+  const blockingClasses = stringMatrix(
+    valueFor(raw, 'top_group_blocking_classes', 'topGroupBlockingClasses'),
+  );
+  const reviewFocus = stringMatrix(valueFor(raw, 'top_group_review_focus', 'topGroupReviewFocus'));
+  const semanticMixDetected = booleanArray(
+    valueFor(raw, 'top_group_semantic_mix_detected', 'topGroupSemanticMixDetected'),
+  );
+  const semanticSubgroupCounts = numberArray(
+    valueFor(raw, 'top_group_semantic_subgroup_counts', 'topGroupSemanticSubgroupCounts'),
+  );
+  const semanticSubgroups = stringMatrix(
+    valueFor(raw, 'top_group_semantic_subgroups', 'topGroupSemanticSubgroups'),
+  );
+  const semanticSubgroupReviewProgress = stringMatrix(
+    valueFor(
+      raw,
+      'top_group_semantic_subgroup_review_progress',
+      'topGroupSemanticSubgroupReviewProgress',
+    ),
+  );
+
+  return groupIds.map((groupId, index) => ({
+    group_id: groupId,
+    topic_id: topics[index] ?? '',
+    target_topic_id: targetTopics[index] ?? '',
+    source_claim_id: sourceClaimIds[index] ?? '',
+    memory_role: memoryRoles[index] ?? '',
+    seed_count: 0,
+    priority_score: 0,
+    blocking_classes: blockingClasses[index] ?? [],
+    review_focus: reviewFocus[index] ?? [],
+    source_family_counts: {},
+    semantic_mix_detected: semanticMixDetected[index] ?? false,
+    semantic_subgroup_count: semanticSubgroupCounts[index] ?? 0,
+    semantic_subgroups: mergeCompactSemanticSubgroups(
+      semanticSubgroups[index] ?? [],
+      semanticSubgroupReviewProgress[index] ?? [],
+    ),
+    review_status: 'pending',
+    review_decision: 'pending',
+    latest_review_result: {},
+    terminal_review_recorded: false,
+    can_update_claim_trust: false,
+  }));
+}
+
+function mergeCompactSemanticSubgroups(
+  subgroupItems: readonly string[],
+  reviewProgressItems: readonly string[],
+): readonly Record<string, unknown>[] {
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const item of subgroupItems) {
+    const parsed = parseCompactSemanticSubgroup(item);
+    if (parsed === undefined) continue;
+    byKey.set(`${String(parsed['source_family'])}:${String(parsed['source_object_id'])}`, parsed);
+  }
+  for (const item of reviewProgressItems) {
+    const parsed = parseCompactSemanticSubgroupReviewProgress(item);
+    if (parsed === undefined) continue;
+    const key = `${String(parsed['source_family'])}:${String(parsed['source_object_id'])}`;
+    const existing = byKey.get(key) ?? {
+      source_family: parsed['source_family'],
+      source_object_id: parsed['source_object_id'],
+      seed_count: 0,
+      memory_kind_counts: {},
+      source_paths: [],
+      sample_entry_ids: [],
+      review_hint: '',
+      terminal_review_recorded: false,
+      can_update_claim_trust: false,
+    };
+    byKey.set(key, { ...existing, ...parsed });
+  }
+  return [...byKey.values()];
+}
+
+function parseCompactSemanticSubgroup(item: string): Record<string, unknown> | undefined {
+  const parts = item.split(':');
+  if (parts.length < 3) return undefined;
+  const seedCount = Number(parts[parts.length - 1]);
+  return {
+    source_family: parts[0] ?? '',
+    source_object_id: parts.slice(1, -1).join(':'),
+    seed_count: Number.isFinite(seedCount) ? seedCount : 0,
+    memory_kind_counts: {},
+    source_paths: [],
+    sample_entry_ids: [],
+    review_hint: '',
+    review_status: 'pending',
+    review_decision: 'pending',
+    latest_review_result: {},
+    terminal_review_recorded: false,
+    can_update_claim_trust: false,
+  };
+}
+
+function parseCompactSemanticSubgroupReviewProgress(
+  item: string,
+): Record<string, unknown> | undefined {
+  const parts = item.split(':');
+  if (parts.length < 3) return undefined;
+  const [status, decision] = (parts[parts.length - 1] ?? '').split('/');
+  return {
+    source_family: parts[0] ?? '',
+    source_object_id: parts.slice(1, -1).join(':'),
+    review_status: status?.trim() || 'pending',
+    review_decision: decision?.trim() || 'pending',
+    latest_review_result: {},
+    terminal_review_recorded: false,
+    can_update_claim_trust: false,
   };
 }
 
@@ -1071,11 +1241,26 @@ function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function numberArray(value: unknown): readonly number[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item));
+}
+
 function stringArray(value: unknown): readonly string[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
     .map((item) => item.trim());
+}
+
+function booleanArray(value: unknown): readonly boolean[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is boolean => typeof item === 'boolean');
+}
+
+function stringMatrix(value: unknown): readonly (readonly string[])[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(stringArray);
 }
 
 function stringList(value: unknown): readonly string[] {
