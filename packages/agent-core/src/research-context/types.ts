@@ -1,6 +1,10 @@
 import type { DomainProfileId } from '../domain-profile';
 import type { DomainPackManifest } from '../domain-pack';
-import type { AitpClaimRelationMap, CompiledAitpProcessGraphSlice } from '../aitp';
+import type {
+  AitpClaimRelationMap,
+  AitpClaimRelationMapSiblingClaim,
+  CompiledAitpProcessGraphSlice,
+} from '../aitp';
 import type { AitpCuratedRagIndexMode, AitpCuratedRagSearchResult } from '../aitp/curated-rag';
 import type { AitpLiteratureSourceReviewHandoff } from '../aitp/literature-source-review-handoff';
 import type {
@@ -117,6 +121,18 @@ export interface ResearchContextAitpClaimRelationMapSection {
   readonly cannotSay: readonly string[];
   readonly currentBlockers: readonly string[];
   readonly nextValidActions: readonly string[];
+  readonly topicClaimBoundaries:
+    | {
+        readonly activeClaimId: string;
+        readonly siblingClaimCount: number;
+        readonly siblingClaims: readonly AitpClaimRelationMapSiblingClaim[];
+        readonly boundaryRule: string;
+        readonly canSay: readonly string[];
+        readonly cannotSay: readonly string[];
+        readonly orientationOnly: true;
+        readonly canUpdateClaimTrust: false;
+      }
+    | undefined;
   readonly orientationOnly: true;
   readonly canUpdateClaimTrust: false;
   readonly trustUpdateAllowed: false;

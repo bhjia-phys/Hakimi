@@ -14,6 +14,26 @@ export interface AitpClaimRelationMapEntry {
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
+export interface AitpClaimRelationMapSiblingClaim {
+  readonly claimId: string;
+  readonly confidenceState: string;
+  readonly evidenceProfile: string;
+  readonly statementExcerpt: string;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export interface AitpClaimRelationMapTopicClaimBoundaries {
+  readonly activeClaimId: string;
+  readonly siblingClaimCount: number;
+  readonly siblingClaims: readonly AitpClaimRelationMapSiblingClaim[];
+  readonly boundaryRule: string;
+  readonly canSay: readonly string[];
+  readonly cannotSay: readonly string[];
+  readonly orientationOnly: true;
+  readonly canUpdateClaimTrust: false;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
 export interface AitpClaimRelationMap {
   readonly kind: 'claim_relation_map';
   readonly topicId: string;
@@ -28,6 +48,7 @@ export interface AitpClaimRelationMap {
   readonly contradictedBy: readonly AitpClaimRelationMapEntry[];
   readonly notTestedBy: readonly AitpClaimRelationMapEntry[];
   readonly objectRelations: readonly Readonly<Record<string, unknown>>[];
+  readonly topicClaimBoundaries: AitpClaimRelationMapTopicClaimBoundaries | undefined;
   readonly canSay: readonly string[];
   readonly cannotSay: readonly string[];
   readonly currentBlockers: readonly string[];
@@ -87,6 +108,9 @@ export function parseAitpClaimRelationMap(input: unknown): AitpClaimRelationMap 
 
   const conclusion = recordValue(valueFor(input, 'current_conclusion', 'currentConclusion'));
   const sourceRecords = recordOfStringArrays(valueFor(input, 'source_records', 'sourceRecords'));
+  const topicClaimBoundaries = parseTopicClaimBoundaries(
+    valueFor(input, 'topic_claim_boundaries', 'topicClaimBoundaries'),
+  );
   return {
     kind: 'claim_relation_map',
     topicId: stringValue(valueFor(input, 'topic_id', 'topicId')) ?? '',
@@ -103,6 +127,7 @@ export function parseAitpClaimRelationMap(input: unknown): AitpClaimRelationMap 
     contradictedBy: objectArray(valueFor(input, 'contradicted_by', 'contradictedBy')).map(parseEntry),
     notTestedBy: objectArray(valueFor(input, 'not_tested_by', 'notTestedBy')).map(parseEntry),
     objectRelations: objectArray(valueFor(input, 'object_relations', 'objectRelations')),
+    topicClaimBoundaries,
     canSay: stringArray(valueFor(conclusion, 'can_say', 'canSay')),
     cannotSay: stringArray(valueFor(conclusion, 'cannot_say', 'cannotSay')),
     currentBlockers: stringArray(valueFor(input, 'current_blockers', 'currentBlockers')),
@@ -131,6 +156,47 @@ function parseEntry(raw: Readonly<Record<string, unknown>>): AitpClaimRelationMa
     evidenceRefs: stringArray(valueFor(raw, 'evidence_refs', 'evidenceRefs')),
     toolRunIds: stringArray(valueFor(raw, 'tool_run_ids', 'toolRunIds')),
     artifactIds: stringArray(valueFor(raw, 'artifact_ids', 'artifactIds')),
+    raw,
+  };
+}
+
+function parseTopicClaimBoundaries(
+  input: unknown,
+): AitpClaimRelationMapTopicClaimBoundaries | undefined {
+  if (!isRecord(input)) return undefined;
+  if (stringValue(input['kind']) !== 'topic_claim_boundaries') return undefined;
+  if (input['orientation_only'] !== true || input['can_update_claim_trust'] !== false) {
+    throw new AitpClaimRelationMapParseError(
+      'AITP topic claim boundaries must be orientation-only and unable to update claim trust.',
+    );
+  }
+  const conclusion = recordValue(valueFor(input, 'current_conclusion', 'currentConclusion'));
+  const siblingClaims = objectArray(valueFor(input, 'sibling_claims', 'siblingClaims')).map(
+    parseSiblingClaim,
+  );
+  return {
+    activeClaimId: stringValue(valueFor(input, 'active_claim_id', 'activeClaimId')) ?? '',
+    siblingClaimCount:
+      numberValue(valueFor(input, 'sibling_claim_count', 'siblingClaimCount')) ??
+      siblingClaims.length,
+    siblingClaims,
+    boundaryRule: stringValue(valueFor(input, 'boundary_rule', 'boundaryRule')) ?? '',
+    canSay: stringArray(valueFor(conclusion, 'can_say', 'canSay')),
+    cannotSay: stringArray(valueFor(conclusion, 'cannot_say', 'cannotSay')),
+    orientationOnly: true,
+    canUpdateClaimTrust: false,
+    raw: input,
+  };
+}
+
+function parseSiblingClaim(
+  raw: Readonly<Record<string, unknown>>,
+): AitpClaimRelationMapSiblingClaim {
+  return {
+    claimId: stringValue(valueFor(raw, 'claim_id', 'claimId')) ?? '',
+    confidenceState: stringValue(valueFor(raw, 'confidence_state', 'confidenceState')) ?? '',
+    evidenceProfile: stringValue(valueFor(raw, 'evidence_profile', 'evidenceProfile')) ?? '',
+    statementExcerpt: stringValue(valueFor(raw, 'statement_excerpt', 'statementExcerpt')) ?? '',
     raw,
   };
 }
@@ -167,6 +233,10 @@ function stringArray(value: unknown): readonly string[] {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function valueFor(

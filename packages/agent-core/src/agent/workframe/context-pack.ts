@@ -122,6 +122,26 @@ export function renderResearchContextPackReminder(pack: ResearchContextPack): st
       if (relationMap.nextValidActions.length > 0) {
         lines.push(`AITP relation map next valid actions: ${bounded(relationMap.nextValidActions).join(' | ')}`);
       }
+      if (relationMap.topicClaimBoundaries !== undefined) {
+        const boundaries = relationMap.topicClaimBoundaries;
+        lines.push(
+          `AITP topic claim boundaries: active=${boundaries.activeClaimId || '<none>'} sibling_count=${String(boundaries.siblingClaimCount)}; ${compactCue(boundaries.boundaryRule)}`,
+        );
+        if (boundaries.siblingClaims.length > 0) {
+          lines.push(
+            `AITP sibling claims are orientation-only: ${bounded(
+              boundaries.siblingClaims.map((claim) =>
+                `${claim.claimId} [${claim.confidenceState || 'unknown'}] ${compactCue(claim.statementExcerpt)}`,
+              ),
+            ).join(' | ')}`,
+          );
+        }
+        if (boundaries.cannotSay.length > 0) {
+          lines.push(
+            `AITP topic claim boundary cannot say: ${bounded(boundaries.cannotSay).join(' | ')}`,
+          );
+        }
+      }
       lines.push(
         'AITP relation map is a conclusion-boundary surface only; do not treat application/runtime failures as algorithm evidence or trust updates.',
       );

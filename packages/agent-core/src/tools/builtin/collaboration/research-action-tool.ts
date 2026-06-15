@@ -5754,8 +5754,28 @@ function renderAitpClaimRelationMap(
     renderBoundedStringList('cannot_say', 'item', relationMap.cannotSay, `${indent}  `),
     renderBoundedStringList('current_blockers', 'blocker', relationMap.currentBlockers, `${indent}  `),
     renderBoundedStringList('next_valid_actions', 'action', relationMap.nextValidActions, `${indent}  `),
+    renderTopicClaimBoundaries(relationMap.topicClaimBoundaries, `${indent}  `),
     `${indent}  <boundary>Conclusion-boundary surface only; do not convert runtime/application failures into algorithm evidence or claim-trust updates.</boundary>`,
     `${indent}</claim_relation_map>`,
+  ].join('\n');
+}
+
+function renderTopicClaimBoundaries(
+  boundaries: NonNullable<NonNullable<ResearchContextPack['aitp']>['claimRelationMap']>['topicClaimBoundaries'],
+  indent: string,
+): string {
+  if (boundaries === undefined) return `${indent}<topic_claim_boundaries />`;
+  const siblingLines = boundaries.siblingClaims.slice(0, 8).map((claim) =>
+    `${indent}  <sibling_claim claim_id="${escapeXml(claim.claimId)}" confidence_state="${escapeXml(claim.confidenceState)}" evidence_profile="${escapeXml(claim.evidenceProfile)}">${escapeXml(compactText(claim.statementExcerpt, 500))}</sibling_claim>`,
+  );
+  return [
+    `${indent}<topic_claim_boundaries active_claim_id="${escapeXml(boundaries.activeClaimId)}" sibling_claim_count="${String(boundaries.siblingClaimCount)}" orientation_only="true" can_update_claim_trust="false">`,
+    boundaries.boundaryRule.trim().length === 0
+      ? `${indent}  <boundary_rule />`
+      : `${indent}  <boundary_rule>${escapeXml(compactText(boundaries.boundaryRule, 700))}</boundary_rule>`,
+    renderBoundedStringList('cannot_say', 'item', boundaries.cannotSay, `${indent}  `),
+    ...siblingLines,
+    `${indent}</topic_claim_boundaries>`,
   ].join('\n');
 }
 
