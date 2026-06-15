@@ -201,7 +201,7 @@ describe('refreshAllProviderModels', () => {
     expect(result.changed).toEqual([
       {
         providerId: KIMI_CODE_PROVIDER_NAME,
-        providerName: 'Kimi Code',
+        providerName: 'Kimi Platform',
         added: 0,
         removed: 0,
       },

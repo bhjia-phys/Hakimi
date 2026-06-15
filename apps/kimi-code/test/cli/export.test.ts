@@ -23,6 +23,7 @@ import type {
 } from '@moonshot-ai/kimi-code-sdk';
 
 let tmp: string;
+const originalEnv = { ...process.env };
 
 type CreateKimiDeviceId = typeof createKimiDeviceIdFn;
 
@@ -94,10 +95,12 @@ vi.mock('@moonshot-ai/kimi-telemetry', () => ({
 
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), 'kimi-export-'));
+  process.env.HAKIMI_HOME = '/tmp/kimi-export-home';
 });
 
 afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
+  process.env = { ...originalEnv };
   vi.clearAllMocks();
   mocks.harnessGetConfig.mockResolvedValue({
     providers: {},

@@ -230,6 +230,6 @@ describe('handleUpgrade', () => {
     await expect(handleUpgrade('0.4.0', { ...deps, ...writable })).resolves.toBe(0);
 
     expect(deps.installUpdate).toHaveBeenCalledWith('npm-global', '0.5.0', 'darwin');
-    expect(stdout.join('')).toContain('Updated @moonshot-ai/kimi-code to 0.5.0');
+    expect(stdout.join('')).toContain('Updated @bhjia-phys/hakimi to 0.5.0');
   });
 });
