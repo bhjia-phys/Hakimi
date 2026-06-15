@@ -157,6 +157,47 @@ describe('AITP process graph slice adapter', () => {
               'assign_global_l2_seed_to_target_topic_or_archive',
               'verify_topic_scope_source_claim_alignment',
             ],
+            source_family_counts: {
+              claim: 4,
+            },
+            semantic_mix_detected: true,
+            semantic_subgroup_count: 2,
+            semantic_subgroups: [
+              {
+                source_family: 'claim',
+                source_object_id: 'claim-cand-headwing-rotation-v1',
+                seed_count: 2,
+                memory_kind_counts: {
+                  'legacy_l2_entry:claim': 1,
+                  'legacy_l2_graph_node:claim': 1,
+                },
+                source_paths: [
+                  'D:/aitp/L2/entries/claim-cand-headwing-rotation-v1.md',
+                ],
+                sample_entry_ids: [
+                  'memory-legacy-l2-l2-entries-claim-cand-headwing-rotation-v1',
+                ],
+                review_hint: 'review_claim_scope_and_evidence_before_promotion',
+                can_update_claim_trust: false,
+              },
+              {
+                source_family: 'claim',
+                source_object_id: 'claim-headwing-algorithm-trace-v1',
+                seed_count: 2,
+                memory_kind_counts: {
+                  'legacy_l2_entry:claim': 1,
+                  'legacy_l2_graph_node:claim': 1,
+                },
+                source_paths: [
+                  'D:/aitp/L2/entries/claim-headwing-algorithm-trace-v1.md',
+                ],
+                sample_entry_ids: [
+                  'memory-legacy-l2-l2-entries-claim-headwing-algorithm-trace-v1',
+                ],
+                review_hint: 'review_claim_scope_and_evidence_before_promotion',
+                can_update_claim_trust: false,
+              },
+            ],
             review_status: 'needs_revision',
             review_decision: 'needs_source_reconstruction',
             latest_review_result: {
@@ -206,6 +247,14 @@ describe('AITP process graph slice adapter', () => {
       legacySeedTopicScopeMismatchCount: 72,
       legacySeedGlobalL2Count: 124,
     });
+    expect(compiled.migrationHealth.legacySeedReviewGroups[0]?.semanticMixDetected).toBe(true);
+    expect(compiled.migrationHealth.legacySeedReviewGroups[0]?.semanticSubgroupCount).toBe(2);
+    expect(compiled.migrationHealth.legacySeedReviewGroups[0]?.semanticSubgroups[0]).toMatchObject({
+      sourceFamily: 'claim',
+      sourceObjectId: 'claim-cand-headwing-rotation-v1',
+      seedCount: 2,
+      canUpdateClaimTrust: false,
+    });
     expect(context).toContain('AITP migration health: status=blocked');
     expect(context).toContain('Canonical legacy L2 seeds: count=2356');
     expect(context).toContain('Legacy L2 seed review groups: groups=512');
@@ -213,6 +262,10 @@ describe('AITP process graph slice adapter', () => {
     expect(context).toContain('Top legacy L2 seed review groups:');
     expect(context).toContain('target=qsgw-headwing-update-librpa');
     expect(context).toContain('review=needs_revision/needs_source_reconstruction');
+    expect(context).toContain('semantic_mix=true');
+    expect(context).toContain(
+      'subgroups=claim:claim-cand-headwing-rotation-v1:2|claim:claim-headwing-algorithm-trace-v1:2',
+    );
     expect(context).toContain('latest_review=legacy-l2-seed-group-review-qsgw-needs-source');
     expect(context).toContain('AITP migration next actions:');
     expect(compiled.reminders.join('\n')).toContain(

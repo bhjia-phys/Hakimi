@@ -689,11 +689,28 @@ function renderLegacySeedReviewGroup(group: AitpLegacySeedReviewGroupSummary): s
   const blockers = group.blockingClasses.length > 0
     ? ` blockers=${group.blockingClasses.join('|')}`
     : '';
+  const semanticMix = group.semanticMixDetected ? ' semantic_mix=true' : '';
+  const semanticSubgroups = group.semanticSubgroups.length > 0
+    ? ` subgroups=${renderLegacySeedSemanticSubgroups(group)}`
+    : group.semanticSubgroupCount > 0
+      ? ` subgroup_count=${String(group.semanticSubgroupCount)}`
+      : '';
   const review = ` review=${group.reviewStatus}/${group.reviewDecision}`;
   const terminal = group.terminalReviewRecorded ? ' terminal=true' : '';
   const reviewId = stringValue(group.latestReviewResult['review_id']) ?? stringValue(group.latestReviewResult['reviewId']);
   const latest = reviewId === undefined ? '' : ` latest_review=${reviewId}`;
-  return `${group.groupId} topic=${group.topicId}${target}${claim} role=${group.memoryRole} seeds=${String(group.seedCount)}${blockers}${review}${terminal}${latest}`;
+  return `${group.groupId} topic=${group.topicId}${target}${claim} role=${group.memoryRole} seeds=${String(group.seedCount)}${blockers}${semanticMix}${semanticSubgroups}${review}${terminal}${latest}`;
+}
+
+function renderLegacySeedSemanticSubgroups(group: AitpLegacySeedReviewGroupSummary): string {
+  const rendered = group.semanticSubgroups.slice(0, 5).map((item) => {
+    const family = item.sourceFamily === '' ? 'unknown' : item.sourceFamily;
+    const objectId = item.sourceObjectId === '' ? 'missing-object' : item.sourceObjectId;
+    return `${family}:${objectId}:${String(item.seedCount)}`;
+  });
+  const remaining = group.semanticSubgroupCount - rendered.length;
+  if (remaining > 0) rendered.push(`...(+${String(remaining)} more)`);
+  return rendered.join('|');
 }
 
 function gapMatches(gap: AitpProvenanceGap, needles: readonly string[]): boolean {
