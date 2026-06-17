@@ -10,6 +10,7 @@ import {
   type AitpCuratedRagProvider,
   type AitpProcessGraphPromptPart,
   type AitpProcessGraphSliceProvider,
+  type AitpRecordingNavigatorProvider,
   type AitpRecordRefLookupProvider,
   type AitpRuntimePayloadProfilesProvider,
   type AitpWorkFrameScope,
@@ -34,6 +35,16 @@ import {
   type AitpLiteratureSourceReviewHandoffProvider,
 } from './literature-source-review-handoff';
 import { parseAitpRecordRefLookup } from './record-ref-lookup';
+import {
+  parseAitpRecordingCandidateClassification,
+  parseAitpRecordingEffectVerification,
+  parseAitpRecordingNavigationState,
+  parseAitpRecordingSlotExpansion,
+  type AitpRecordingCandidateInput,
+  type AitpRecordingEffectVerificationInput,
+  type AitpRecordingNavigationInput,
+  type AitpRecordingSlotExpansionInput,
+} from './recording-navigator';
 import { parseAitpRuntimePayloadProfilesCatalog } from './runtime-payload-profiles';
 import type { CompiledAitpProcessGraphSlice } from './types';
 import {
@@ -210,6 +221,107 @@ export function createDynamicAitpMcpFirstRuntimePayloadProfilesProvider(
       } catch (error) {
         if (options.fallbackOnMcpError === false) throw error;
         return fallback.getRuntimePayloadProfiles(input);
+      }
+    },
+  };
+}
+
+export function createDynamicAitpCliRecordingNavigatorProvider(
+  options: DynamicAitpCliBridgeOptions,
+): AitpRecordingNavigatorProvider {
+  return {
+    classifyRecordingCandidate(input) {
+      return createDynamicAitpCliBridge(options).classifyRecordingCandidate(input);
+    },
+    readRecordingNavigationState(input) {
+      return createDynamicAitpCliBridge(options).readRecordingNavigationState(input);
+    },
+    expandRecordingSlot(input) {
+      return createDynamicAitpCliBridge(options).expandRecordingSlot(input);
+    },
+    verifyRecordingEffect(input) {
+      return createDynamicAitpCliBridge(options).verifyRecordingEffect(input);
+    },
+  };
+}
+
+export function createDynamicAitpMcpFirstRecordingNavigatorProvider(
+  options: DynamicAitpMcpFirstBridgeOptions,
+): AitpRecordingNavigatorProvider {
+  const fallback = createDynamicAitpCliRecordingNavigatorProvider(options);
+  return {
+    async classifyRecordingCandidate(input) {
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.classifyRecordingCandidate(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('classifyRecordingCandidate');
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args: mcpArgsForAitpRecordingCandidateClassification(dynamicBasePath(options), input),
+          signal: input.signal,
+        });
+        return parseAitpRecordingCandidateClassification(
+          normalizeAitpWriteBridgePayload(rawPayload),
+        );
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.classifyRecordingCandidate(input);
+      }
+    },
+    async readRecordingNavigationState(input) {
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.readRecordingNavigationState(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('readRecordingNavigationState');
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args: mcpArgsForAitpRecordingNavigationState(dynamicBasePath(options), input),
+          signal: input.signal,
+        });
+        return parseAitpRecordingNavigationState(normalizeAitpWriteBridgePayload(rawPayload));
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.readRecordingNavigationState(input);
+      }
+    },
+    async expandRecordingSlot(input) {
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.expandRecordingSlot(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('expandRecordingSlot');
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args: mcpArgsForAitpRecordingSlotExpansion(dynamicBasePath(options), input),
+          signal: input.signal,
+        });
+        return parseAitpRecordingSlotExpansion(normalizeAitpWriteBridgePayload(rawPayload));
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.expandRecordingSlot(input);
+      }
+    },
+    async verifyRecordingEffect(input) {
+      const transport = options.mcpTransport;
+      if (transport === undefined) {
+        return fallback.verifyRecordingEffect(input);
+      }
+      try {
+        const target = aitpRuntimeBridgeTargetForOperation('verifyRecordingEffect');
+        const rawPayload = await transport.callTool({
+          toolName: target.mcpInvocation.tool,
+          args: mcpArgsForAitpRecordingEffectVerification(dynamicBasePath(options), input),
+          signal: input.signal,
+        });
+        return parseAitpRecordingEffectVerification(normalizeAitpWriteBridgePayload(rawPayload));
+      } catch (error) {
+        if (options.fallbackOnMcpError === false) throw error;
+        return fallback.verifyRecordingEffect(input);
       }
     },
   };
@@ -554,6 +666,69 @@ export function mcpArgsForAitpClaimRelationMapRead(
   };
 }
 
+export function mcpArgsForAitpRecordingCandidateClassification(
+  basePath: string,
+  input: AitpRecordingCandidateInput,
+): Readonly<Record<string, unknown>> {
+  const args: Record<string, unknown> = {
+    base: basePath,
+    event_type: input.eventType,
+  };
+  assignOptional(args, 'session_id', input.sessionId);
+  assignOptional(args, 'summary', input.summary);
+  assignOptional(args, 'topic_id', input.topicId);
+  assignOptional(args, 'claim_id', input.claimId);
+  assignOptionalArray(args, 'touched_refs', input.touchedRefs);
+  assignOptionalArray(args, 'produced_artifacts', input.producedArtifacts);
+  assignOptional(args, 'tool_call_id', input.toolCallId);
+  assignOptional(args, 'risk_hint', input.riskHint);
+  if (input.payload !== undefined) args['payload'] = input.payload;
+  return args;
+}
+
+export function mcpArgsForAitpRecordingNavigationState(
+  basePath: string,
+  input: AitpRecordingNavigationInput,
+): Readonly<Record<string, unknown>> {
+  const args: Record<string, unknown> = {
+    base: basePath,
+    session_id: input.sessionId,
+  };
+  assignOptional(args, 'claim_id', input.claimId);
+  if (input.limit !== undefined) args['limit'] = input.limit;
+  return args;
+}
+
+export function mcpArgsForAitpRecordingSlotExpansion(
+  basePath: string,
+  input: AitpRecordingSlotExpansionInput,
+): Readonly<Record<string, unknown>> {
+  const args: Record<string, unknown> = {
+    base: basePath,
+    session_id: input.sessionId,
+    slot: input.slot,
+  };
+  assignOptional(args, 'claim_id', input.claimId);
+  if (input.candidate !== undefined) args['candidate'] = input.candidate;
+  return args;
+}
+
+export function mcpArgsForAitpRecordingEffectVerification(
+  basePath: string,
+  input: AitpRecordingEffectVerificationInput,
+): Readonly<Record<string, unknown>> {
+  const args: Record<string, unknown> = {
+    base: basePath,
+    session_id: input.sessionId,
+  };
+  assignOptionalArray(args, 'expected_refs', input.expectedRefs);
+  assignOptionalArray(args, 'before_node_ids', input.beforeNodeIds);
+  assignOptionalArray(args, 'before_edge_ids', input.beforeEdgeIds);
+  assignOptional(args, 'claim_id', input.claimId);
+  if (input.limit !== undefined) args['limit'] = input.limit;
+  return args;
+}
+
 function dynamicBridgeOptions(options: DynamicAitpCliBridgeOptions): AitpCliBridgeOptions {
   return {
     basePath: dynamicBasePath(options),
@@ -566,6 +741,21 @@ function dynamicBridgeOptions(options: DynamicAitpCliBridgeOptions): AitpCliBrid
 
 function dynamicBasePath(options: DynamicAitpCliBridgeOptions): string {
   return resolveAitpCanonicalBasePath(options.basePath());
+}
+
+function assignOptional(args: Record<string, unknown>, key: string, value: string | undefined): void {
+  if (value === undefined || value.trim().length === 0) return;
+  args[key] = value.trim();
+}
+
+function assignOptionalArray(
+  args: Record<string, unknown>,
+  key: string,
+  values: readonly string[] | undefined,
+): void {
+  if (values === undefined) return;
+  const cleaned = values.map((value) => value.trim()).filter((value) => value.length > 0);
+  if (cleaned.length > 0) args[key] = cleaned;
 }
 
 function isAitpBasePath(path: string): boolean {
