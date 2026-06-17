@@ -115,6 +115,67 @@ describe('AITP write bridge executor', () => {
         source: 'aitp_v5_get_runtime_payload_profiles',
       },
     });
+    expect(byOperation.get('classifyRecordingCandidate')).toMatchObject({
+      entrypointKey: 'recording_candidate_classification',
+      mcpTool: 'aitp_v5_classify_recording_candidate',
+      cliFallback: 'aitp-v5 recording classify-candidate <args>',
+      surface: 'recording_candidate_classification',
+      executionRole: 'read',
+      stateEffect: 'read_only',
+      claimTrustMutation: 'none',
+      canUpdateClaimTrust: false,
+      mcpArguments: {
+        required: ['base', 'event_type'],
+        optional: [
+          'session_id',
+          'summary',
+          'topic_id',
+          'claim_id',
+          'touched_refs',
+          'produced_artifacts',
+          'tool_call_id',
+          'risk_hint',
+          'payload',
+        ],
+        source: 'aitp_v5_classify_recording_candidate',
+      },
+    });
+    expect(byOperation.get('readRecordingNavigationState')).toMatchObject({
+      entrypointKey: 'recording_navigation_state',
+      mcpTool: 'aitp_v5_get_recording_navigation_state',
+      surface: 'recording_navigation_state',
+      executionRole: 'read',
+      stateEffect: 'read_only',
+      mcpArguments: {
+        required: ['base', 'session_id'],
+        optional: ['claim_id', 'limit'],
+        source: 'aitp_v5_get_recording_navigation_state',
+      },
+    });
+    expect(byOperation.get('expandRecordingSlot')).toMatchObject({
+      entrypointKey: 'recording_slot_expansion',
+      mcpTool: 'aitp_v5_expand_recording_slot',
+      surface: 'recording_slot_expansion',
+      executionRole: 'read',
+      stateEffect: 'read_only',
+      mcpArguments: {
+        required: ['base', 'session_id', 'slot'],
+        optional: ['claim_id', 'candidate'],
+        source: 'aitp_v5_expand_recording_slot',
+      },
+    });
+    expect(byOperation.get('verifyRecordingEffect')).toMatchObject({
+      entrypointKey: 'recording_effect_verification',
+      mcpTool: 'aitp_v5_verify_recording_effect',
+      surface: 'recording_effect_verification',
+      executionRole: 'read',
+      stateEffect: 'read_only',
+      mcpArguments: {
+        required: ['base', 'session_id'],
+        optional: ['expected_refs', 'before_node_ids', 'before_edge_ids', 'claim_id', 'limit'],
+        source: 'aitp_v5_verify_recording_effect',
+      },
+    });
     expect(aitpRuntimeBridgeTargetForOperation('recordEvidence')).toMatchObject({
       operation: 'recordEvidence',
       entrypointKey: 'record_evidence',

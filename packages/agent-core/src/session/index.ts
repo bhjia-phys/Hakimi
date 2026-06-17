@@ -31,6 +31,7 @@ import {
   createDynamicAitpMcpFirstLiteratureComparisonDraftProvider,
   createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider,
   createDynamicAitpMcpFirstProcessGraphSliceProvider,
+  createDynamicAitpMcpFirstRecordingNavigatorProvider,
   createDynamicAitpMcpFirstRecordRefLookupProvider,
   createDynamicAitpMcpFirstRuntimePayloadProfilesProvider,
   createDynamicAitpMcpFirstWriteBridgeExecutor,
@@ -41,6 +42,7 @@ import {
   type AitpLiteratureSourceReviewHandoffProvider,
   type AitpMcpWriteBridgeTransport,
   type AitpProcessGraphSliceProvider,
+  type AitpRecordingNavigatorProvider,
   type AitpRecordRefLookupProvider,
   type AitpRuntimePayloadProfilesProvider,
   type AitpWriteBridgeExecutor,
@@ -114,6 +116,7 @@ export interface SessionOptions {
   readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
   readonly aitpClaimRelationMapProvider?: AitpClaimRelationMapProvider | undefined;
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
+  readonly aitpRecordingNavigatorProvider?: AitpRecordingNavigatorProvider | undefined;
   readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider | undefined;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
   readonly aitpLiteratureComparisonDraftProvider?: AitpLiteratureComparisonDraftProvider | undefined;
@@ -1223,6 +1226,10 @@ export class Session {
         config.aitpRuntimePayloadProfilesProvider ??
         this.options.aitpRuntimePayloadProfilesProvider ??
         aitpBridges?.runtimePayloadProfilesProvider,
+      aitpRecordingNavigatorProvider:
+        config.aitpRecordingNavigatorProvider ??
+        this.options.aitpRecordingNavigatorProvider ??
+        aitpBridges?.recordingNavigatorProvider,
       aitpRecordRefLookupProvider:
         config.aitpRecordRefLookupProvider ??
         this.options.aitpRecordRefLookupProvider ??
@@ -1269,6 +1276,7 @@ export class Session {
         readonly processGraphProvider: AitpProcessGraphSliceProvider;
         readonly claimRelationMapProvider: AitpClaimRelationMapProvider;
         readonly runtimePayloadProfilesProvider: AitpRuntimePayloadProfilesProvider;
+        readonly recordingNavigatorProvider: AitpRecordingNavigatorProvider;
         readonly recordRefLookupProvider: AitpRecordRefLookupProvider;
         readonly curatedRagProvider: AitpCuratedRagProvider;
         readonly literatureComparisonDraftProvider: AitpLiteratureComparisonDraftProvider;
@@ -1297,6 +1305,11 @@ export class Session {
         fallbackOnMcpError: config?.fallbackOnMcpError,
       }),
       runtimePayloadProfilesProvider: createDynamicAitpMcpFirstRuntimePayloadProfilesProvider({
+        ...bridgeOptions,
+        mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
+        fallbackOnMcpError: config?.fallbackOnMcpError,
+      }),
+      recordingNavigatorProvider: createDynamicAitpMcpFirstRecordingNavigatorProvider({
         ...bridgeOptions,
         mcpTransport: this.createAitpMcpTransport(config?.mcpServerName ?? 'aitp'),
         fallbackOnMcpError: config?.fallbackOnMcpError,

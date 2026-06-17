@@ -26,6 +26,21 @@ import {
   type AitpRuntimePayloadProfilesCatalog,
 } from './runtime-payload-profiles';
 import {
+  parseAitpRecordingCandidateClassification,
+  parseAitpRecordingEffectVerification,
+  parseAitpRecordingNavigationState,
+  parseAitpRecordingSlotExpansion,
+  type AitpRecordingCandidateClassification,
+  type AitpRecordingCandidateInput,
+  type AitpRecordingEffectVerification,
+  type AitpRecordingEffectVerificationInput,
+  type AitpRecordingNavigationInput,
+  type AitpRecordingNavigationState,
+  type AitpRecordingNavigatorProvider,
+  type AitpRecordingSlotExpansion,
+  type AitpRecordingSlotExpansionInput,
+} from './recording-navigator';
+import {
   parseAitpClaimRelationMap,
   type AitpClaimRelationMap,
   type AitpClaimRelationMapProvider,
@@ -200,6 +215,14 @@ export interface AitpRecordRefLookupProvider {
   lookupRecordRefs(input: AitpRecordRefLookupProviderInput): Promise<AitpRecordRefLookup>;
 }
 
+export type {
+  AitpRecordingCandidateInput,
+  AitpRecordingEffectVerificationInput,
+  AitpRecordingNavigationInput,
+  AitpRecordingNavigatorProvider,
+  AitpRecordingSlotExpansionInput,
+};
+
 export interface AitpCuratedRagProviderInput {
   readonly signal?: AbortSignal | undefined;
 }
@@ -278,6 +301,11 @@ export interface LookupAitpRecordRefsInput {
   readonly refs: readonly string[];
   readonly signal?: AbortSignal | undefined;
 }
+
+export type ClassifyAitpRecordingCandidateInput = AitpRecordingCandidateInput;
+export type ReadAitpRecordingNavigationStateInput = AitpRecordingNavigationInput;
+export type ExpandAitpRecordingSlotInput = AitpRecordingSlotExpansionInput;
+export type VerifyAitpRecordingEffectInput = AitpRecordingEffectVerificationInput;
 
 export interface ReadAitpCuratedRagCorpusInput {
   readonly signal?: AbortSignal | undefined;
@@ -936,6 +964,58 @@ export class AitpCliBridge {
     return parseAitpRuntimePayloadProfilesCatalog(payload);
   }
 
+  async classifyRecordingCandidate(
+    input: ClassifyAitpRecordingCandidateInput,
+  ): Promise<AitpRecordingCandidateClassification> {
+    const payload = await this.runJson(
+      buildAitpRecordingClassifyCandidateArgs({
+        basePath: this.options.basePath,
+        ...input,
+      }),
+      input.signal,
+    );
+    return parseAitpRecordingCandidateClassification(payload);
+  }
+
+  async readRecordingNavigationState(
+    input: ReadAitpRecordingNavigationStateInput,
+  ): Promise<AitpRecordingNavigationState> {
+    const payload = await this.runJson(
+      buildAitpRecordingNavigationStateArgs({
+        basePath: this.options.basePath,
+        ...input,
+      }),
+      input.signal,
+    );
+    return parseAitpRecordingNavigationState(payload);
+  }
+
+  async expandRecordingSlot(
+    input: ExpandAitpRecordingSlotInput,
+  ): Promise<AitpRecordingSlotExpansion> {
+    const payload = await this.runJson(
+      buildAitpRecordingExpandSlotArgs({
+        basePath: this.options.basePath,
+        ...input,
+      }),
+      input.signal,
+    );
+    return parseAitpRecordingSlotExpansion(payload);
+  }
+
+  async verifyRecordingEffect(
+    input: VerifyAitpRecordingEffectInput,
+  ): Promise<AitpRecordingEffectVerification> {
+    const payload = await this.runJson(
+      buildAitpRecordingVerifyEffectArgs({
+        basePath: this.options.basePath,
+        ...input,
+      }),
+      input.signal,
+    );
+    return parseAitpRecordingEffectVerification(payload);
+  }
+
   async lookupRecordRefs(input: LookupAitpRecordRefsInput): Promise<AitpRecordRefLookup> {
     const payload = await this.runJson(
       buildAitpRecordRefLookupArgs({ basePath: this.options.basePath, refs: input.refs }),
@@ -1386,6 +1466,90 @@ export function buildAitpClaimRelationMapArgs(input: {
 
 export function buildAitpRuntimePayloadProfilesArgs(): readonly string[] {
   return ['adapter', 'payload-profiles'];
+}
+
+export function buildAitpRecordingClassifyCandidateArgs(
+  input: ClassifyAitpRecordingCandidateInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.eventType, 'eventType');
+  const args = [
+    '--base',
+    input.basePath,
+    'recording',
+    'classify-candidate',
+    '--event-type',
+    input.eventType.trim(),
+  ];
+  pushOptional(args, '--session', input.sessionId);
+  pushOptional(args, '--summary', input.summary);
+  pushOptional(args, '--topic', input.topicId);
+  pushOptional(args, '--claim', input.claimId);
+  pushRepeated(args, '--touched-ref', input.touchedRefs);
+  pushRepeated(args, '--produced-artifact', input.producedArtifacts);
+  pushOptional(args, '--tool-call-id', input.toolCallId);
+  pushOptional(args, '--risk-hint', input.riskHint);
+  if (input.payload !== undefined) {
+    args.push('--payload-json', JSON.stringify(input.payload));
+  }
+  return args;
+}
+
+export function buildAitpRecordingNavigationStateArgs(
+  input: ReadAitpRecordingNavigationStateInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.sessionId, 'sessionId');
+  const args = ['--base', input.basePath, 'recording', 'navigation-state', input.sessionId.trim()];
+  pushOptional(args, '--claim', input.claimId);
+  if (input.limit !== undefined) {
+    if (!Number.isInteger(input.limit) || input.limit <= 0) {
+      throw new AitpCliBridgeError('AITP recording navigation limit must be a positive integer.');
+    }
+    args.push('--limit', String(input.limit));
+  }
+  return args;
+}
+
+export function buildAitpRecordingExpandSlotArgs(
+  input: ExpandAitpRecordingSlotInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.sessionId, 'sessionId');
+  requireNonEmpty(input.slot, 'slot');
+  const args = [
+    '--base',
+    input.basePath,
+    'recording',
+    'expand-slot',
+    input.sessionId.trim(),
+    '--slot',
+    input.slot.trim(),
+  ];
+  pushOptional(args, '--claim', input.claimId);
+  if (input.candidate !== undefined) {
+    args.push('--candidate-json', JSON.stringify(input.candidate));
+  }
+  return args;
+}
+
+export function buildAitpRecordingVerifyEffectArgs(
+  input: VerifyAitpRecordingEffectInput & { readonly basePath: string },
+): readonly string[] {
+  requireNonEmpty(input.basePath, 'basePath');
+  requireNonEmpty(input.sessionId, 'sessionId');
+  const args = ['--base', input.basePath, 'recording', 'verify-effect', input.sessionId.trim()];
+  pushOptional(args, '--claim', input.claimId);
+  pushRepeated(args, '--expected-ref', input.expectedRefs);
+  pushRepeated(args, '--before-node-id', input.beforeNodeIds);
+  pushRepeated(args, '--before-edge-id', input.beforeEdgeIds);
+  if (input.limit !== undefined) {
+    if (!Number.isInteger(input.limit) || input.limit <= 0) {
+      throw new AitpCliBridgeError('AITP recording verification limit must be a positive integer.');
+    }
+    args.push('--limit', String(input.limit));
+  }
+  return args;
 }
 
 export function buildAitpRecordRefLookupArgs(input: {

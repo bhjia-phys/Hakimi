@@ -19,6 +19,7 @@ import type {
   AitpLiteratureComparisonDraftProvider,
   AitpLiteratureSourceReviewHandoffProvider,
   AitpProcessGraphSliceProvider,
+  AitpRecordingNavigatorProvider,
   AitpRecordRefLookupProvider,
   AitpRuntimePayloadProfilesProvider,
   AitpWriteBridgeExecutor,
@@ -131,6 +132,7 @@ export interface AgentOptions {
   readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider | undefined;
   readonly aitpClaimRelationMapProvider?: AitpClaimRelationMapProvider | undefined;
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider | undefined;
+  readonly aitpRecordingNavigatorProvider?: AitpRecordingNavigatorProvider | undefined;
   readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider | undefined;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider | undefined;
   readonly aitpLiteratureComparisonDraftProvider?: AitpLiteratureComparisonDraftProvider | undefined;
@@ -174,6 +176,7 @@ export class Agent {
   readonly aitpProcessGraphProvider?: AitpProcessGraphSliceProvider;
   readonly aitpClaimRelationMapProvider?: AitpClaimRelationMapProvider;
   readonly aitpRuntimePayloadProfilesProvider?: AitpRuntimePayloadProfilesProvider;
+  readonly aitpRecordingNavigatorProvider?: AitpRecordingNavigatorProvider;
   readonly aitpRecordRefLookupProvider?: AitpRecordRefLookupProvider;
   readonly aitpCuratedRagProvider?: AitpCuratedRagProvider;
   readonly aitpLiteratureComparisonDraftProvider?: AitpLiteratureComparisonDraftProvider;
@@ -257,6 +260,7 @@ export class Agent {
     this.aitpProcessGraphProvider = options.aitpProcessGraphProvider;
     this.aitpClaimRelationMapProvider = options.aitpClaimRelationMapProvider;
     this.aitpRuntimePayloadProfilesProvider = options.aitpRuntimePayloadProfilesProvider;
+    this.aitpRecordingNavigatorProvider = options.aitpRecordingNavigatorProvider;
     this.aitpRecordRefLookupProvider = options.aitpRecordRefLookupProvider;
     this.aitpCuratedRagProvider = options.aitpCuratedRagProvider;
     this.aitpLiteratureComparisonDraftProvider =

@@ -94,6 +94,10 @@ export type AitpRuntimeBridgeOperation =
   | 'readClaimRelationMap'
   | 'readMomentPolicy'
   | 'readRuntimePayloadProfiles'
+  | 'classifyRecordingCandidate'
+  | 'readRecordingNavigationState'
+  | 'expandRecordingSlot'
+  | 'verifyRecordingEffect'
   | 'lookupRecordRefs'
   | 'readCuratedRagCorpus'
   | 'searchCuratedRagCorpus'
@@ -161,6 +165,36 @@ const AITP_READ_TARGET_MCP_ARGUMENTS = {
     required: [],
     optional: [],
     source: 'aitp_v5_get_runtime_payload_profiles',
+  },
+  recording_candidate_classification: {
+    required: ['base', 'event_type'],
+    optional: [
+      'session_id',
+      'summary',
+      'topic_id',
+      'claim_id',
+      'touched_refs',
+      'produced_artifacts',
+      'tool_call_id',
+      'risk_hint',
+      'payload',
+    ],
+    source: 'aitp_v5_classify_recording_candidate',
+  },
+  recording_navigation_state: {
+    required: ['base', 'session_id'],
+    optional: ['claim_id', 'limit'],
+    source: 'aitp_v5_get_recording_navigation_state',
+  },
+  recording_slot_expansion: {
+    required: ['base', 'session_id', 'slot'],
+    optional: ['claim_id', 'candidate'],
+    source: 'aitp_v5_expand_recording_slot',
+  },
+  recording_effect_verification: {
+    required: ['base', 'session_id'],
+    optional: ['expected_refs', 'before_node_ids', 'before_edge_ids', 'claim_id', 'limit'],
+    source: 'aitp_v5_verify_recording_effect',
   },
   record_ref_lookup: {
     required: ['base', 'refs'],
@@ -233,6 +267,42 @@ export const AITP_RUNTIME_BRIDGE_TARGETS: readonly AitpRuntimeBridgeTarget[] = [
     'aitp_v5_get_runtime_payload_profiles',
     'aitp-v5 adapter payload-profiles',
     'runtime_payload_profiles',
+    'read',
+    'read_only',
+  ),
+  bridgeTarget(
+    'classifyRecordingCandidate',
+    'recording_candidate_classification',
+    'aitp_v5_classify_recording_candidate',
+    'aitp-v5 recording classify-candidate <args>',
+    'recording_candidate_classification',
+    'read',
+    'read_only',
+  ),
+  bridgeTarget(
+    'readRecordingNavigationState',
+    'recording_navigation_state',
+    'aitp_v5_get_recording_navigation_state',
+    'aitp-v5 recording navigation-state <session-id>',
+    'recording_navigation_state',
+    'read',
+    'read_only',
+  ),
+  bridgeTarget(
+    'expandRecordingSlot',
+    'recording_slot_expansion',
+    'aitp_v5_expand_recording_slot',
+    'aitp-v5 recording expand-slot <session-id> --slot <slot>',
+    'recording_slot_expansion',
+    'read',
+    'read_only',
+  ),
+  bridgeTarget(
+    'verifyRecordingEffect',
+    'recording_effect_verification',
+    'aitp_v5_verify_recording_effect',
+    'aitp-v5 recording verify-effect <session-id>',
+    'recording_effect_verification',
     'read',
     'read_only',
   ),

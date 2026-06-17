@@ -66,6 +66,10 @@ import {
   type AitpCuratedRagSearchResult,
   type AitpLiteratureComparisonDraft,
   type AitpLiteratureSourceReviewHandoff,
+  type AitpRecordingCandidateClassification,
+  type AitpRecordingEffectVerification,
+  type AitpRecordingNavigationState,
+  type AitpRecordingSlotExpansion,
   type AitpRecordRefLookup,
   type AitpRecordRefLookupItem,
   type AitpRuntimePayloadProfilesCatalog,
@@ -120,6 +124,10 @@ const ACTIONS = [
   'inspect_source_context_review_handoff',
   'inspect_handoff_guard_remediation_taxonomy',
   'inspect_aitp_runtime_payload_profiles',
+  'classify_aitp_recording_candidate',
+  'inspect_aitp_recording_navigation_state',
+  'expand_aitp_recording_slot',
+  'verify_aitp_recording_effect',
   'inspect_aitp_curated_rag_corpus',
   'search_aitp_curated_rag_corpus',
   'inspect_aitp_curated_rag_chunk',
@@ -336,6 +344,42 @@ export const ResearchActionToolInputSchema = z.object({
     .record(z.string(), z.unknown())
     .optional()
     .describe('Structured payload for draft_aitp_write_bridge_call or execute_aitp_write_bridge.'),
+  recording_event_type: z
+    .string()
+    .optional()
+    .describe('AITP recording navigator durable event type, such as tool_run_completed or result_observed.'),
+  recording_summary: z
+    .string()
+    .optional()
+    .describe('Short untrusted host summary for AITP recording navigation classification.'),
+  recording_slot: z
+    .string()
+    .optional()
+    .describe('First-level AITP recording slot to expand, such as evidence or proof_obligation.'),
+  touched_refs: z
+    .array(z.string())
+    .optional()
+    .describe('Typed/source refs touched by a candidate recording moment.'),
+  produced_artifacts: z
+    .array(z.string())
+    .optional()
+    .describe('Artifact refs produced by a candidate recording moment.'),
+  tool_call_id: z
+    .string()
+    .optional()
+    .describe('Host tool call id associated with a candidate recording moment.'),
+  risk_hint: z
+    .string()
+    .optional()
+    .describe('Untrusted host risk hint for checkpoint-sensitive recording navigation.'),
+  before_node_ids: z
+    .array(z.string())
+    .optional()
+    .describe('Optional graph node ids captured before an AITP typed write, for read-only effect verification.'),
+  before_edge_ids: z
+    .array(z.string())
+    .optional()
+    .describe('Optional graph edge ids captured before an AITP typed write, for read-only effect verification.'),
   aitp_handoff: z
     .record(z.string(), z.unknown())
     .optional()
@@ -725,6 +769,14 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
           return ok(`${renderHandoffGuardRemediationTaxonomy('')}\n`);
         case 'inspect_aitp_runtime_payload_profiles':
           return await this.inspectAitpRuntimePayloadProfiles(ctx);
+        case 'classify_aitp_recording_candidate':
+          return await this.classifyAitpRecordingCandidate(args, ctx);
+        case 'inspect_aitp_recording_navigation_state':
+          return await this.inspectAitpRecordingNavigationState(args, ctx);
+        case 'expand_aitp_recording_slot':
+          return await this.expandAitpRecordingSlot(args, ctx);
+        case 'verify_aitp_recording_effect':
+          return await this.verifyAitpRecordingEffect(args, ctx);
         case 'inspect_aitp_curated_rag_corpus':
           return await this.inspectAitpCuratedRagCorpus(ctx);
         case 'search_aitp_curated_rag_corpus':
@@ -1077,6 +1129,116 @@ export class ResearchActionTool implements BuiltinTool<ResearchActionToolInput> 
     }
     const catalog = await this.manager.readAitpRuntimePayloadProfiles(ctx.signal);
     return ok(renderAitpRuntimePayloadProfiles(catalog));
+  }
+
+  private async classifyAitpRecordingCandidate(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction classify_aitp_recording_candidate requires a session manager.');
+    }
+    if (!this.manager.hasAitpRecordingNavigatorProvider()) {
+      return errorResult('AITP recording navigator provider is not configured');
+    }
+    const eventType = firstText(args.recording_event_type);
+    if (eventType === undefined) {
+      return errorResult('ResearchAction classify_aitp_recording_candidate requires recording_event_type.');
+    }
+    const classification = await this.manager.classifyAitpRecordingCandidate({
+      sessionId: firstText(args.session_id),
+      eventType,
+      summary: firstText(args.recording_summary),
+      topicId: firstText(args.aitp_topic_id, args.topic),
+      claimId: firstText(args.aitp_claim_id, args.claim_id),
+      touchedRefs: nonEmptyStrings(args.touched_refs ?? args.source_refs ?? []),
+      producedArtifacts: nonEmptyStrings(args.produced_artifacts ?? []),
+      toolCallId: firstText(args.tool_call_id),
+      riskHint: firstText(args.risk_hint),
+      payload: args.aitp_payload,
+      signal: ctx.signal,
+    });
+    return ok(renderAitpRecordingCandidateClassification(classification));
+  }
+
+  private async inspectAitpRecordingNavigationState(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult(
+        'ResearchAction inspect_aitp_recording_navigation_state requires a session manager.',
+      );
+    }
+    if (!this.manager.hasAitpRecordingNavigatorProvider()) {
+      return errorResult('AITP recording navigator provider is not configured');
+    }
+    const sessionId = firstText(args.session_id);
+    if (sessionId === undefined) {
+      return errorResult('ResearchAction inspect_aitp_recording_navigation_state requires session_id.');
+    }
+    const state = await this.manager.readAitpRecordingNavigationState({
+      sessionId,
+      claimId: firstText(args.aitp_claim_id, args.claim_id),
+      limit: args.limit,
+      signal: ctx.signal,
+    });
+    return ok(renderAitpRecordingNavigationState(state));
+  }
+
+  private async expandAitpRecordingSlot(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction expand_aitp_recording_slot requires a session manager.');
+    }
+    if (!this.manager.hasAitpRecordingNavigatorProvider()) {
+      return errorResult('AITP recording navigator provider is not configured');
+    }
+    const sessionId = firstText(args.session_id);
+    if (sessionId === undefined) {
+      return errorResult('ResearchAction expand_aitp_recording_slot requires session_id.');
+    }
+    const slot = firstText(args.recording_slot);
+    if (slot === undefined) {
+      return errorResult('ResearchAction expand_aitp_recording_slot requires recording_slot.');
+    }
+    const candidate = args.aitp_payload ?? recordingCandidateContextFromArgs(args);
+    const expansion = await this.manager.expandAitpRecordingSlot({
+      sessionId,
+      slot,
+      claimId: firstText(args.aitp_claim_id, args.claim_id),
+      candidate,
+      signal: ctx.signal,
+    });
+    return ok(renderAitpRecordingSlotExpansion(expansion));
+  }
+
+  private async verifyAitpRecordingEffect(
+    args: ResearchActionToolInput,
+    ctx: ExecutableToolContext,
+  ): Promise<ExecutableToolResult> {
+    if (this.manager === undefined) {
+      return errorResult('ResearchAction verify_aitp_recording_effect requires a session manager.');
+    }
+    if (!this.manager.hasAitpRecordingNavigatorProvider()) {
+      return errorResult('AITP recording navigator provider is not configured');
+    }
+    const sessionId = firstText(args.session_id);
+    if (sessionId === undefined) {
+      return errorResult('ResearchAction verify_aitp_recording_effect requires session_id.');
+    }
+    const verification = await this.manager.verifyAitpRecordingEffect({
+      sessionId,
+      expectedRefs: nonEmptyStrings(args.evidence_refs ?? []),
+      beforeNodeIds: nonEmptyStrings(args.before_node_ids ?? []),
+      beforeEdgeIds: nonEmptyStrings(args.before_edge_ids ?? []),
+      claimId: firstText(args.aitp_claim_id, args.claim_id),
+      limit: args.limit,
+      signal: ctx.signal,
+    });
+    return ok(renderAitpRecordingEffectVerification(verification));
   }
 
   private async inspectAitpCuratedRagCorpus(
@@ -2403,6 +2565,85 @@ function renderAitpRuntimePayloadProfiles(
     `  <profile_binding action="run_benchmark_adapter" profile_id="${escapeXml(benchmarkProfile?.profileId ?? '')}" capture_mode="${escapeXml(benchmarkProfile?.capturePolicy.captureMode ?? '')}" />`,
     `  <profile_binding action="capture_primitive_tool_run" profile_id="${escapeXml(primitiveProfile?.profileId ?? '')}" capture_mode="${escapeXml(primitiveProfile?.capturePolicy.captureMode ?? '')}" requires_tool_call_id="${String(primitiveProfile?.capturePolicy.requiresToolCallId ?? false)}" />`,
     '</aitp_runtime_payload_profiles>',
+    '',
+  ].join('\n');
+}
+
+function renderAitpRecordingCandidateClassification(
+  classification: AitpRecordingCandidateClassification,
+): string {
+  const target = aitpRuntimeBridgeTargetForOperation('classifyRecordingCandidate');
+  return [
+    `<aitp_recording_candidate_classification event_type="${escapeXml(classification.eventType)}" decision="${classification.decision}" session_id="${escapeXml(classification.sessionId)}" topic_id="${escapeXml(classification.topicId)}" claim_id="${escapeXml(classification.claimId)}" recognized_event_type="${String(classification.recognizedEventType)}" next_read_tool="${escapeXml(classification.nextReadTool)}" read_only="true" write_at_classification="false" write_at_navigation="false" executes_write_now="false" records_validation_result="false" claim_trust_mutation="none" can_update_claim_trust="false" agent_should_not_record_every_step="true">`,
+    `  <runtime_target operation="classifyRecordingCandidate" entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" state_effect="${target.stateEffect}" />`,
+    `  <summary>${escapeXml(classification.summary)}</summary>`,
+    renderStringList('trigger_reasons', 'reason', classification.triggerReasons, '  '),
+    renderStringList('suggested_slots', 'slot', classification.suggestedSlots, '  '),
+    renderStringList('candidate_refs', 'ref', classification.candidateRefs, '  '),
+    renderStringList('produced_artifacts', 'artifact', classification.producedArtifacts, '  '),
+    '  <progressive_sequence>classify -> inspect_aitp_recording_navigation_state -> expand_aitp_recording_slot -> existing typed write/preflight -> verify_aitp_recording_effect</progressive_sequence>',
+    '  <write_boundary deepest_layer_uses_existing_typed_tools="true" trust_apply_exposed_to_host="false" />',
+    '</aitp_recording_candidate_classification>',
+    '',
+  ].join('\n');
+}
+
+function renderAitpRecordingNavigationState(state: AitpRecordingNavigationState): string {
+  const target = aitpRuntimeBridgeTargetForOperation('readRecordingNavigationState');
+  const graphNodeCount = recordNumberAttr(state.graphContext, 'node_count');
+  const graphEdgeCount = recordNumberAttr(state.graphContext, 'edge_count');
+  return [
+    `<aitp_recording_navigation_state session_id="${escapeXml(state.sessionId)}" requested_session_id="${escapeXml(state.requestedSessionId)}" topic_id="${escapeXml(state.topicId)}" claim_id="${escapeXml(state.claimId)}" read_only="true" executes_write_now="false" records_validation_result="false" claim_trust_mutation="none" can_update_claim_trust="false" first_level_slot_count="${String(state.firstLevelSlots.length)}" graph_node_count="${escapeXml(graphNodeCount)}" graph_edge_count="${escapeXml(graphEdgeCount)}">`,
+    `  <runtime_target operation="readRecordingNavigationState" entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" state_effect="${target.stateEffect}" />`,
+    renderStringList('recommended_slots', 'slot', state.recommendedSlots, '  '),
+    '  <first_level_slots>',
+    ...state.firstLevelSlots.map(
+      (slot) =>
+        `    <slot name="${escapeXml(slot.slot)}" record_kind="${escapeXml(slot.recordKind)}" current_count="${String(slot.currentCount)}" recommended_write_tool="${escapeXml(slot.recommendedWriteTool)}" expand_with="${escapeXml(slot.expandWith)}" read_only_at_this_layer="true" can_update_claim_trust="false">${escapeXml(slot.whenToUse)}</slot>`,
+    ),
+    '  </first_level_slots>',
+    renderStringList('trust_boundary_reasons', 'reason', state.trustBoundaryReasons, '  '),
+    `  <next_step read_tool="${escapeXml(recordStringAttr(state.nextStep, 'read_tool'))}" verify_tool="${escapeXml(recordStringAttr(state.nextStep, 'verify_tool'))}" write_boundary="${escapeXml(recordStringAttr(state.nextStep, 'write_boundary'))}" />`,
+    '  <navigation_boundary slot_expansion_required_before_write="true" trust_apply_exposed_to_host="false" />',
+    '</aitp_recording_navigation_state>',
+    '',
+  ].join('\n');
+}
+
+function renderAitpRecordingSlotExpansion(expansion: AitpRecordingSlotExpansion): string {
+  const target = aitpRuntimeBridgeTargetForOperation('expandRecordingSlot');
+  const writeOperation = writeBridgeOperationForRecordingTool(expansion.recommendedWriteTool);
+  return [
+    `<aitp_recording_slot_expansion slot="${escapeXml(expansion.slot)}" session_id="${escapeXml(expansion.sessionId)}" topic_id="${escapeXml(expansion.topicId)}" claim_id="${escapeXml(expansion.claimId)}" record_kind="${escapeXml(expansion.recordKind)}" recommended_write_tool="${escapeXml(expansion.recommendedWriteTool)}" read_only="true" slot_expansion_writes="false" executes_write_now="false" writes_kernel_state_if_followed="${String(expansion.trustEffect.writesKernelState)}" claim_trust_mutation="none" can_update_claim_trust="false" trust_preflight_required_for_trust_change="${String(expansion.trustEffect.trustPreflightRequiredForTrustChange)}">`,
+    `  <runtime_target operation="expandRecordingSlot" entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" state_effect="${target.stateEffect}" />`,
+    `  <when_to_use>${escapeXml(expansion.whenToUse)}</when_to_use>`,
+    renderRecordingFieldHints('required_fields', expansion.requiredFields, '  '),
+    renderRecordingFieldHints('optional_fields', expansion.optionalFields, '  '),
+    renderStringList('recommended_links', 'link', expansion.recommendedLinks, '  '),
+    renderStringList('recording_sequence', 'step', expansion.recordingSequence, '  '),
+    renderStringList('warnings', 'warning', expansion.warnings, '  '),
+    `  <next_write_or_preflight existing_typed_entrypoint="${escapeXml(expansion.recommendedWriteTool)}"${writeOperation === undefined ? '' : ` research_action="draft_aitp_write_bridge_call" aitp_operation="${escapeXml(writeOperation)}"`} requires_complete_fields="true" executes_now="false" trust_apply_exposed_to_host="false" />`,
+    `  <verify_with research_action="verify_aitp_recording_effect" mcp_tool="${escapeXml(expansion.verifyWith)}" read_only="true" />`,
+    '</aitp_recording_slot_expansion>',
+    '',
+  ].join('\n');
+}
+
+function renderAitpRecordingEffectVerification(
+  verification: AitpRecordingEffectVerification,
+): string {
+  const target = aitpRuntimeBridgeTargetForOperation('verifyRecordingEffect');
+  return [
+    `<aitp_recording_effect_verification session_id="${escapeXml(verification.sessionId)}" topic_id="${escapeXml(verification.topicId)}" claim_id="${escapeXml(verification.claimId)}" verified="${String(verification.verified)}" read_only="true" verification_writes="false" executes_write_now="false" records_validation_result="false" claim_trust_mutation="none" can_update_claim_trust="false">`,
+    `  <runtime_target operation="verifyRecordingEffect" entrypoint_key="${escapeXml(target.entrypointKey)}" mcp_tool="${escapeXml(target.mcpTool)}" cli_fallback="${escapeXml(target.cliFallback)}" surface="${escapeXml(target.surface)}" state_effect="${target.stateEffect}" />`,
+    renderStringList('expected_refs', 'ref', verification.expectedRefs, '  '),
+    renderStringList('found_refs', 'ref', verification.foundRefs, '  '),
+    renderStringList('missing_refs', 'ref', verification.missingRefs, '  '),
+    renderStringList('current_recommended_slots', 'slot', verification.currentRecommendedSlots, '  '),
+    renderStringList('failure_reasons', 'reason', verification.failureReasons, '  '),
+    `  <graph_delta before_node_count="${escapeXml(recordNumberAttr(verification.graphDelta, 'before_node_count'))}" after_node_count="${escapeXml(recordNumberAttr(verification.graphDelta, 'after_node_count'))}" before_edge_count="${escapeXml(recordNumberAttr(verification.graphDelta, 'before_edge_count'))}" after_edge_count="${escapeXml(recordNumberAttr(verification.graphDelta, 'after_edge_count'))}" />`,
+    '  <verification_boundary reads_typed_store_only="true" trust_apply_exposed_to_host="false" />',
+    '</aitp_recording_effect_verification>',
     '',
   ].join('\n');
 }
@@ -4455,6 +4696,83 @@ function buildBenchmarkAdapterAitpToolRunPayload(
     artifactIds: normalizeArtifactIds(result.artifactRefs),
     sourceRefs,
   };
+}
+
+function recordingCandidateContextFromArgs(
+  args: ResearchActionToolInput,
+): Readonly<Record<string, unknown>> {
+  return {
+    event_type: args.recording_event_type ?? '',
+    decision: '',
+    suggested_slots: [],
+    candidate_refs: nonEmptyStrings(args.touched_refs ?? args.source_refs ?? []),
+    produced_artifacts: nonEmptyStrings(args.produced_artifacts ?? []),
+  };
+}
+
+function renderRecordingFieldHints(
+  container: string,
+  fields: readonly {
+    readonly name: string;
+    readonly knownValue: string;
+    readonly source: string;
+  }[],
+  indent: string,
+): string {
+  if (fields.length === 0) return `${indent}<${container} />`;
+  return [
+    `${indent}<${container}>`,
+    ...fields.map(
+      (field) =>
+        `${indent}  <field name="${escapeXml(field.name)}" known_value="${escapeXml(field.knownValue)}" source="${escapeXml(field.source)}" />`,
+    ),
+    `${indent}</${container}>`,
+  ].join('\n');
+}
+
+function writeBridgeOperationForRecordingTool(
+  mcpTool: string,
+): AitpWriteBridgeOperation | undefined {
+  switch (mcpTool) {
+    case 'aitp_v5_start_research_run':
+      return 'startResearchRun';
+    case 'aitp_v5_record_research_run_event':
+      return 'recordResearchRunEvent';
+    case 'aitp_v5_record_exploratory_record':
+      return 'recordExploratoryRecord';
+    case 'aitp_v5_register_source_asset':
+      return 'registerSourceAsset';
+    case 'aitp_v5_capture_source_asset_auto':
+      return 'captureSourceAssetAuto';
+    case 'aitp_v5_record_evidence':
+      return 'recordEvidence';
+    case 'aitp_v5_record_tool_run':
+      return 'recordToolRun';
+    case 'aitp_v5_capture_tool_run_auto':
+      return 'captureToolRunAuto';
+    case 'aitp_v5_capture_code_state_auto':
+      return 'captureCodeStateAuto';
+    case 'aitp_v5_attach_artifact':
+      return 'attachArtifact';
+    case 'aitp_v5_attach_artifact_auto':
+      return 'attachArtifactAuto';
+    case 'aitp_v5_record_reference_location':
+      return 'recordReferenceLocation';
+    case 'aitp_v5_create_proof_obligation':
+      return 'createProofObligation';
+    case 'aitp_v5_create_validation_contract':
+      return 'createValidationContract';
+    case 'aitp_v5_record_validation_result':
+      return 'recordValidationResult';
+    case 'aitp_v5_record_source_reconstruction_review_result':
+      return 'recordSourceReconstructionReviewResult';
+    case 'aitp_v5_request_human_checkpoint':
+      return 'requestHumanCheckpoint';
+    case 'aitp_v5_preflight_trust_update':
+      return 'preflightTrustUpdate';
+    default:
+      return undefined;
+  }
 }
 
 function evidenceStatusForBenchmarkOutcome(outcome: BenchmarkAdapterOutcome): string {

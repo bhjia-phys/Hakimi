@@ -30,6 +30,14 @@ import type {
   AitpLiteratureComparisonDraftInput,
   AitpLiteratureSourceReviewHandoff,
   AitpLiteratureSourceReviewHandoffInput,
+  AitpRecordingCandidateClassification,
+  AitpRecordingCandidateInput,
+  AitpRecordingEffectVerification,
+  AitpRecordingEffectVerificationInput,
+  AitpRecordingNavigationInput,
+  AitpRecordingNavigationState,
+  AitpRecordingSlotExpansion,
+  AitpRecordingSlotExpansionInput,
   AitpRecordRefLookup,
   AitpRuntimePayloadProfilesCatalog,
 } from '../../aitp';
@@ -205,6 +213,10 @@ export class ResearchActionManager {
     return this.agent.aitpRuntimePayloadProfilesProvider !== undefined;
   }
 
+  hasAitpRecordingNavigatorProvider(): boolean {
+    return this.agent.aitpRecordingNavigatorProvider !== undefined;
+  }
+
   hasAitpRecordRefLookupProvider(): boolean {
     return this.agent.aitpRecordRefLookupProvider !== undefined;
   }
@@ -228,6 +240,42 @@ export class ResearchActionManager {
       throw new Error('AITP runtime payload profiles provider is not configured for this session.');
     }
     return this.agent.aitpRuntimePayloadProfilesProvider.getRuntimePayloadProfiles({ signal });
+  }
+
+  async classifyAitpRecordingCandidate(
+    input: AitpRecordingCandidateInput,
+  ): Promise<AitpRecordingCandidateClassification> {
+    if (this.agent.aitpRecordingNavigatorProvider === undefined) {
+      throw new Error('AITP recording navigator provider is not configured for this session.');
+    }
+    return this.agent.aitpRecordingNavigatorProvider.classifyRecordingCandidate(input);
+  }
+
+  async readAitpRecordingNavigationState(
+    input: AitpRecordingNavigationInput,
+  ): Promise<AitpRecordingNavigationState> {
+    if (this.agent.aitpRecordingNavigatorProvider === undefined) {
+      throw new Error('AITP recording navigator provider is not configured for this session.');
+    }
+    return this.agent.aitpRecordingNavigatorProvider.readRecordingNavigationState(input);
+  }
+
+  async expandAitpRecordingSlot(
+    input: AitpRecordingSlotExpansionInput,
+  ): Promise<AitpRecordingSlotExpansion> {
+    if (this.agent.aitpRecordingNavigatorProvider === undefined) {
+      throw new Error('AITP recording navigator provider is not configured for this session.');
+    }
+    return this.agent.aitpRecordingNavigatorProvider.expandRecordingSlot(input);
+  }
+
+  async verifyAitpRecordingEffect(
+    input: AitpRecordingEffectVerificationInput,
+  ): Promise<AitpRecordingEffectVerification> {
+    if (this.agent.aitpRecordingNavigatorProvider === undefined) {
+      throw new Error('AITP recording navigator provider is not configured for this session.');
+    }
+    return this.agent.aitpRecordingNavigatorProvider.verifyRecordingEffect(input);
   }
 
   async lookupAitpRecordRefs(

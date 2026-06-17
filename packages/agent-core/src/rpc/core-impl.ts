@@ -72,6 +72,11 @@ import {
   type TelemetryClient,
   type TelemetryProperties,
 } from '../telemetry';
+import {
+  mergeDefaultAitpMcpConfig,
+  resolveDefaultAitpRuntime,
+  type DefaultAitpRuntime,
+} from '../aitp';
 import type { CoreRPCClient } from './client';
 import type {
   ActivateSkillPayload,
@@ -320,7 +325,12 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       cwd: workDir,
       homeDir: this.homeDir,
     });
-    const withCallerMcp = mergeCallerMcpServers(baseMcpConfig, options.mcpServers);
+    const defaultAitpRuntime = await resolveDefaultAitpRuntime({
+      workDir,
+      homeDir: this.homeDir,
+    });
+    const withDefaultAitpMcp = mergeDefaultAitpMcpConfig(baseMcpConfig, defaultAitpRuntime);
+    const withCallerMcp = mergeCallerMcpServers(withDefaultAitpMcp, options.mcpServers);
     const parentKaos = overrides.kaos ?? (await this.getKaos());
     const persistenceKaos = overrides.persistenceKaos ?? parentKaos;
     // Read the workspace local config (`.kimi-code/local.toml`) through the
@@ -382,7 +392,7 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       background: sessionConfig.background,
       hooks: [...(config.hooks ?? []), ...this.plugins.enabledHooks()],
       permissionRules: config.permission?.rules,
-      skills: this.resolveSessionSkillConfig(config),
+      skills: this.resolveSessionSkillConfig(config, defaultAitpRuntime),
       mcpConfig,
       experimentalFlags: this.experimentalFlags,
       imageLimits: this.imageLimits,
@@ -512,7 +522,12 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       cwd: summary.workDir,
       homeDir: this.homeDir,
     });
-    const withCallerMcp = mergeCallerMcpServers(baseMcpConfig, input.mcpServers);
+    const defaultAitpRuntime = await resolveDefaultAitpRuntime({
+      workDir: summary.workDir,
+      homeDir: this.homeDir,
+    });
+    const withDefaultAitpMcp = mergeDefaultAitpMcpConfig(baseMcpConfig, defaultAitpRuntime);
+    const withCallerMcp = mergeCallerMcpServers(withDefaultAitpMcp, input.mcpServers);
     await this.pluginsReady;
     const pluginSessionStarts = this.plugins.enabledSessionStarts();
     const pluginCommands = await this.plugins.enabledCommands();
@@ -533,7 +548,7 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       background: sessionConfig.background,
       hooks: [...(config.hooks ?? []), ...this.plugins.enabledHooks()],
       permissionRules: config.permission?.rules,
-      skills: this.resolveSessionSkillConfig(config),
+      skills: this.resolveSessionSkillConfig(config, defaultAitpRuntime),
       mcpConfig,
       experimentalFlags: this.experimentalFlags,
       imageLimits: this.imageLimits,
@@ -1241,13 +1256,20 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
     return this.kaos;
   }
 
-  private resolveSessionSkillConfig(config: KimiConfig): SessionSkillConfig {
+  private resolveSessionSkillConfig(
+    config: KimiConfig,
+    defaultAitpRuntime?: DefaultAitpRuntime | undefined,
+  ): SessionSkillConfig {
     const explicitDirs = this.skillDirs.length > 0 ? this.skillDirs : undefined;
+    const extraDirs = [
+      ...(config.extraSkillDirs ?? []),
+      ...(defaultAitpRuntime?.skillDir === undefined ? [] : [defaultAitpRuntime.skillDir]),
+    ];
     return {
       userHomeDir: this.userHomeDir,
       brandHomeDir: this.homeDir,
       explicitDirs,
-      extraDirs: config.extraSkillDirs,
+      extraDirs: extraDirs.length > 0 ? extraDirs : undefined,
       pluginSkillRoots: this.plugins.pluginSkillRoots(),
       mergeAllAvailableSkills: config.mergeAllAvailableSkills,
     };

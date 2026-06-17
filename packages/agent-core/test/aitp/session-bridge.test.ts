@@ -21,11 +21,16 @@ import {
   createDynamicAitpMcpFirstLiteratureComparisonDraftProvider,
   createDynamicAitpMcpFirstLiteratureSourceReviewHandoffProvider,
   createDynamicAitpMcpFirstProcessGraphSliceProvider,
+  createDynamicAitpMcpFirstRecordingNavigatorProvider,
   createDynamicAitpMcpFirstRecordRefLookupProvider,
   createDynamicAitpMcpFirstRuntimePayloadProfilesProvider,
   createDynamicAitpMcpFirstWriteBridgeExecutor,
   mcpArgsForAitpClaimRelationMapRead,
   mcpArgsForAitpProcessGraphSliceRead,
+  mcpArgsForAitpRecordingCandidateClassification,
+  mcpArgsForAitpRecordingEffectVerification,
+  mcpArgsForAitpRecordingNavigationState,
+  mcpArgsForAitpRecordingSlotExpansion,
   resolveAitpCanonicalBasePath,
   type AitpCommandRunner,
 } from '../../src/aitp';
@@ -536,6 +541,205 @@ describe('AITP dynamic session bridge', () => {
     expect(cliCalls[0]).toEqual(['aitp-v5', 'adapter', 'payload-profiles']);
   });
 
+  it('uses CLI and MCP-first providers for progressive recording navigator reads', async () => {
+    const cliCalls: string[][] = [];
+    const cliProvider = createDynamicAitpMcpFirstRecordingNavigatorProvider({
+      basePath: () => 'F:/project',
+      runner: recordingRunner(cliCalls),
+    });
+
+    const classified = await cliProvider.classifyRecordingCandidate({
+      sessionId: 'session-qg',
+      eventType: 'tool_run_completed',
+      summary: 'Solver produced a durable residual table.',
+      topicId: 'qg',
+      claimId: 'claim-mipt',
+      touchedRefs: ['source_asset:asset-reviewed'],
+      producedArtifacts: ['artifact:residual-table'],
+      toolCallId: 'call-solver',
+      payload: { host: 'hakimi' },
+    });
+    const state = await cliProvider.readRecordingNavigationState({
+      sessionId: 'session-qg',
+      claimId: 'claim-mipt',
+      limit: 9,
+    });
+    const expansion = await cliProvider.expandRecordingSlot({
+      sessionId: 'session-qg',
+      slot: 'evidence',
+      claimId: 'claim-mipt',
+      candidate: { event_type: 'tool_run_completed' },
+    });
+    const verification = await cliProvider.verifyRecordingEffect({
+      sessionId: 'session-qg',
+      expectedRefs: ['evidence:evidence-mipt'],
+      beforeNodeIds: ['claim:claim-mipt'],
+      beforeEdgeIds: ['edge:old'],
+      claimId: 'claim-mipt',
+      limit: 12,
+    });
+
+    expect(classified.decision).toBe('navigate');
+    expect(state.recommendedSlots).toContain('evidence');
+    expect(expansion.recommendedWriteTool).toBe('aitp_v5_record_evidence');
+    expect(verification.canUpdateClaimTrust).toBe(false);
+    expect(cliCalls[0]).toEqual([
+      'aitp-v5',
+      '--base',
+      'F:/project',
+      'recording',
+      'classify-candidate',
+      '--event-type',
+      'tool_run_completed',
+      '--session',
+      'session-qg',
+      '--summary',
+      'Solver produced a durable residual table.',
+      '--topic',
+      'qg',
+      '--claim',
+      'claim-mipt',
+      '--touched-ref',
+      'source_asset:asset-reviewed',
+      '--produced-artifact',
+      'artifact:residual-table',
+      '--tool-call-id',
+      'call-solver',
+      '--payload-json',
+      '{"host":"hakimi"}',
+    ]);
+    expect(cliCalls[1]).toEqual([
+      'aitp-v5',
+      '--base',
+      'F:/project',
+      'recording',
+      'navigation-state',
+      'session-qg',
+      '--claim',
+      'claim-mipt',
+      '--limit',
+      '9',
+    ]);
+
+    const mcpCalls: Array<{ readonly toolName: string; readonly args: Readonly<Record<string, unknown>> }> = [];
+    const mcpProvider = createDynamicAitpMcpFirstRecordingNavigatorProvider({
+      basePath: () => 'F:/project',
+      runner: recordingRunner([]),
+      mcpTransport: {
+        async callTool(input) {
+          mcpCalls.push({ toolName: input.toolName, args: input.args });
+          if (input.toolName === 'aitp_v5_classify_recording_candidate') {
+            return { ok: true, recording_candidate_classification: fakeRecordingCandidateClassification() };
+          }
+          if (input.toolName === 'aitp_v5_get_recording_navigation_state') {
+            return { ok: true, recording_navigation_state: fakeRecordingNavigationState() };
+          }
+          if (input.toolName === 'aitp_v5_expand_recording_slot') {
+            return { ok: true, recording_slot_expansion: fakeRecordingSlotExpansion() };
+          }
+          return { ok: true, recording_effect_verification: fakeRecordingEffectVerification() };
+        },
+      },
+    });
+
+    await mcpProvider.classifyRecordingCandidate({
+      sessionId: 'session-qg',
+      eventType: 'tool_run_completed',
+      summary: 'Solver produced a durable residual table.',
+      topicId: 'qg',
+      claimId: 'claim-mipt',
+      touchedRefs: ['source_asset:asset-reviewed'],
+      producedArtifacts: ['artifact:residual-table'],
+      toolCallId: 'call-solver',
+      payload: { host: 'hakimi' },
+    });
+    await mcpProvider.readRecordingNavigationState({
+      sessionId: 'session-qg',
+      claimId: 'claim-mipt',
+      limit: 9,
+    });
+    await mcpProvider.expandRecordingSlot({
+      sessionId: 'session-qg',
+      slot: 'evidence',
+      claimId: 'claim-mipt',
+      candidate: { event_type: 'tool_run_completed' },
+    });
+    await mcpProvider.verifyRecordingEffect({
+      sessionId: 'session-qg',
+      expectedRefs: ['evidence:evidence-mipt'],
+      beforeNodeIds: ['claim:claim-mipt'],
+      beforeEdgeIds: ['edge:old'],
+      claimId: 'claim-mipt',
+      limit: 12,
+    });
+
+    expect(mcpCalls).toEqual([
+      {
+        toolName: 'aitp_v5_classify_recording_candidate',
+        args: {
+          base: 'F:/project',
+          session_id: 'session-qg',
+          event_type: 'tool_run_completed',
+          summary: 'Solver produced a durable residual table.',
+          topic_id: 'qg',
+          claim_id: 'claim-mipt',
+          touched_refs: ['source_asset:asset-reviewed'],
+          produced_artifacts: ['artifact:residual-table'],
+          tool_call_id: 'call-solver',
+          payload: { host: 'hakimi' },
+        },
+      },
+      {
+        toolName: 'aitp_v5_get_recording_navigation_state',
+        args: {
+          base: 'F:/project',
+          session_id: 'session-qg',
+          claim_id: 'claim-mipt',
+          limit: 9,
+        },
+      },
+      {
+        toolName: 'aitp_v5_expand_recording_slot',
+        args: {
+          base: 'F:/project',
+          session_id: 'session-qg',
+          slot: 'evidence',
+          claim_id: 'claim-mipt',
+          candidate: { event_type: 'tool_run_completed' },
+        },
+      },
+      {
+        toolName: 'aitp_v5_verify_recording_effect',
+        args: {
+          base: 'F:/project',
+          session_id: 'session-qg',
+          expected_refs: ['evidence:evidence-mipt'],
+          before_node_ids: ['claim:claim-mipt'],
+          before_edge_ids: ['edge:old'],
+          claim_id: 'claim-mipt',
+          limit: 12,
+        },
+      },
+    ]);
+    expect(
+      mcpArgsForAitpRecordingCandidateClassification('F:/project', {
+        eventType: 'result_observed',
+      }),
+    ).toEqual({ base: 'F:/project', event_type: 'result_observed' });
+    expect(
+      mcpArgsForAitpRecordingNavigationState('F:/project', { sessionId: 's1' }),
+    ).toEqual({ base: 'F:/project', session_id: 's1' });
+    expect(
+      mcpArgsForAitpRecordingSlotExpansion('F:/project', {
+        sessionId: 's1',
+        slot: 'evidence',
+      }),
+    ).toEqual({ base: 'F:/project', session_id: 's1', slot: 'evidence' });
+    expect(
+      mcpArgsForAitpRecordingEffectVerification('F:/project', { sessionId: 's1' }),
+    ).toEqual({ base: 'F:/project', session_id: 's1' });
+  });
+
   it('looks up AITP record refs through dynamic CLI fallback', async () => {
     const calls: string[][] = [];
     const provider = createDynamicAitpCliRecordRefLookupProvider({
@@ -1025,6 +1229,34 @@ function recordingRunner(calls: string[][]): AitpCommandRunner {
           stderr: '',
         };
       }
+      if (args.includes('recording') && args.includes('classify-candidate')) {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify(fakeRecordingCandidateClassification()),
+          stderr: '',
+        };
+      }
+      if (args.includes('recording') && args.includes('navigation-state')) {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify(fakeRecordingNavigationState()),
+          stderr: '',
+        };
+      }
+      if (args.includes('recording') && args.includes('expand-slot')) {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify(fakeRecordingSlotExpansion()),
+          stderr: '',
+        };
+      }
+      if (args.includes('recording') && args.includes('verify-effect')) {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify(fakeRecordingEffectVerification()),
+          stderr: '',
+        };
+      }
       if (args.includes('record-ref-lookup')) {
         const start = args.indexOf('record-ref-lookup') + 1;
         return {
@@ -1419,6 +1651,190 @@ function fakeRuntimePayloadProfilesCatalog(): any {
     profile_count: profiles.length,
     profile_index: profiles.map((profile) => profile.profile_id),
     profiles,
+  };
+}
+
+function fakeRecordingCandidateClassification(): any {
+  return {
+    ok: true,
+    kind: 'recording_candidate_classification',
+    decision: 'navigate',
+    event_type: 'tool_run_completed',
+    recognized_event_type: true,
+    trigger_reasons: [
+      'recognized event_type:tool_run_completed',
+      'candidate includes produced artifacts',
+    ],
+    suggested_slots: ['tool_run', 'artifact', 'evidence'],
+    next_read_tool: 'aitp_v5_get_recording_navigation_state',
+    session_id: 'session-qg',
+    topic_id: 'qg',
+    claim_id: 'claim-mipt',
+    summary: 'Solver produced a durable residual table.',
+    candidate_refs: ['source_asset:asset-reviewed'],
+    produced_artifacts: ['artifact:residual-table'],
+    tool_call_id: 'call-solver',
+    risk_hint: '',
+    payload_keys: ['host'],
+    allowed_decisions: ['ignore', 'defer', 'navigate', 'checkpoint'],
+    navigation_policy: {
+      write_at_classification: false,
+      write_at_navigation: false,
+      write_only_after_slot_expansion: true,
+      trust_change_requires_preflight: true,
+      agent_should_not_record_every_step: true,
+    },
+    truth_source: 'event_metadata_and_typed_records',
+    summary_inputs_trusted: false,
+    orientation_only: true,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+  };
+}
+
+function fakeRecordingNavigationState(): any {
+  return {
+    ok: true,
+    kind: 'recording_navigation_state',
+    session_id: 'session-qg',
+    requested_session_id: 'session-qg',
+    topic_id: 'qg',
+    claim_id: 'claim-mipt',
+    current_position: {
+      session_id: 'session-qg',
+      topic_id: 'qg',
+      claim_id: 'claim-mipt',
+    },
+    first_level_slots: [
+      {
+        slot: 'evidence',
+        record_kind: 'evidence',
+        current_count: 0,
+        recommended_write_tool: 'aitp_v5_record_evidence',
+        expand_with: 'aitp_v5_expand_recording_slot',
+        read_only_at_this_layer: true,
+        can_update_claim_trust: false,
+        when_to_use: 'Record a typed support, contradiction, diagnostic, or negative result.',
+      },
+      {
+        slot: 'proof_obligation',
+        record_kind: 'proof_obligation',
+        current_count: 1,
+        recommended_write_tool: 'aitp_v5_create_proof_obligation',
+        expand_with: 'aitp_v5_expand_recording_slot',
+        read_only_at_this_layer: true,
+        can_update_claim_trust: false,
+        when_to_use: 'Record an open theorem or unresolved validation gap.',
+      },
+    ],
+    recommended_slots: ['evidence', 'proof_obligation'],
+    graph_context: {
+      node_count: 2,
+      edge_count: 1,
+      recommended_moments: [],
+      provenance_gaps: [],
+      open_obligations: [],
+    },
+    next_step: {
+      read_tool: 'aitp_v5_expand_recording_slot',
+      write_boundary: 'only the expanded deepest slot names the write/preflight tool',
+      verify_tool: 'aitp_v5_verify_recording_effect',
+    },
+    trust_boundary_reasons: [
+      'recording_navigation_state is read-only',
+      'slot expansion can recommend typed writes but cannot perform them',
+    ],
+    truth_source: 'typed_records',
+    summary_inputs_trusted: false,
+    orientation_only: true,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+  };
+}
+
+function fakeRecordingSlotExpansion(): any {
+  return {
+    ok: true,
+    kind: 'recording_slot_expansion',
+    slot: 'evidence',
+    session_id: 'session-qg',
+    requested_session_id: 'session-qg',
+    topic_id: 'qg',
+    claim_id: 'claim-mipt',
+    recommended_write_tool: 'aitp_v5_record_evidence',
+    cli_template: 'aitp-v5 evidence record --topic <topic-id> --claim <claim-id>',
+    record_kind: 'evidence',
+    required_fields: [
+      { name: 'base', known_value: '', source: 'agent_or_human_must_supply' },
+      { name: 'topic_id', known_value: 'qg', source: 'current_position' },
+      { name: 'claim_id', known_value: 'claim-mipt', source: 'current_position' },
+      { name: 'evidence_type', known_value: '', source: 'agent_or_human_must_supply' },
+      { name: 'status', known_value: '', source: 'agent_or_human_must_supply' },
+      { name: 'summary', known_value: '', source: 'agent_or_human_must_supply' },
+    ],
+    optional_fields: [],
+    recommended_links: ['claim:<claim_id>', 'tool_run:<run_id>'],
+    graph_edges_created: ['claim --has_evidence--> evidence'],
+    when_to_use: 'Record typed evidence after provenance exists.',
+    candidate_context: {
+      event_type: 'tool_run_completed',
+      decision: 'navigate',
+      suggested_slots: ['evidence'],
+      candidate_refs: ['source_asset:asset-reviewed'],
+      produced_artifacts: ['artifact:residual-table'],
+    },
+    recording_sequence: [
+      'read recording_navigation_state',
+      'expand one slot',
+      'call the recommended existing typed write/preflight tool with complete fields',
+      'call aitp_v5_verify_recording_effect with expected refs or before graph ids',
+    ],
+    trust_effect: {
+      writes_kernel_state: true,
+      can_update_claim_trust: false,
+      claim_trust_mutation: 'none',
+      trust_preflight_required_for_trust_change: false,
+    },
+    warnings: ['slot expansion is read-only guidance; it does not write a record'],
+    verify_with: 'aitp_v5_verify_recording_effect',
+    truth_source: 'typed_records',
+    summary_inputs_trusted: false,
+    orientation_only: true,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
+  };
+}
+
+function fakeRecordingEffectVerification(): any {
+  return {
+    ok: true,
+    kind: 'recording_effect_verification',
+    verified: true,
+    session_id: 'session-qg',
+    requested_session_id: 'session-qg',
+    topic_id: 'qg',
+    claim_id: 'claim-mipt',
+    expected_refs: ['evidence:evidence-mipt'],
+    found_refs: ['evidence:evidence-mipt'],
+    missing_refs: [],
+    record_ref_lookup: fakeRecordRefLookup(['evidence:evidence-mipt'], {
+      foundRefs: ['evidence:evidence-mipt'],
+    }).record_ref_lookup,
+    graph_delta: {
+      before_node_count: 1,
+      after_node_count: 2,
+      new_node_ids: ['evidence:evidence-mipt'],
+      before_edge_count: 1,
+      after_edge_count: 2,
+      new_edge_ids: ['claim:claim-mipt--has_evidence--evidence:evidence-mipt'],
+    },
+    current_recommended_slots: ['validation_result'],
+    failure_reasons: [],
+    truth_source: 'typed_records',
+    summary_inputs_trusted: false,
+    orientation_only: true,
+    can_update_kernel_state: false,
+    can_update_claim_trust: false,
   };
 }
 
