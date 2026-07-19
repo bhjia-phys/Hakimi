@@ -394,7 +394,7 @@ describe('MoonshotWebSearchProvider', () => {
       localFallback: fallback,
     });
 
-    await expect(provider.search('query', { limit: 3 })).resolves.toEqual([
+    await expect(provider.search('query')).resolves.toEqual([
       {
         title: 'Fallback result',
         url: 'https://example.com/fallback',
@@ -403,7 +403,7 @@ describe('MoonshotWebSearchProvider', () => {
     ]);
 
     expect(getAccessToken).toHaveBeenCalledTimes(1);
-    expect(fallback.search).toHaveBeenCalledWith('query', { limit: 3 });
+    expect(fallback.search).toHaveBeenCalledWith('query', undefined);
   });
 });
 

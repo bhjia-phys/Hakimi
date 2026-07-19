@@ -211,6 +211,69 @@ export interface GoalChange {
   readonly actor?: GoalActor;
 }
 
+export type AutoresearchStatus = 'active' | 'paused' | 'stopped' | 'complete' | 'blocked';
+
+export type AutoresearchPhase =
+  | 'planning'
+  | 'context_refresh'
+  | 'action_selection'
+  | 'source_review'
+  | 'validation'
+  | 'answer_drafting'
+  | 'awaiting_approval'
+  | 'blocked'
+  | 'complete';
+
+export type AutoresearchTerminalAnswerState =
+  | ''
+  | 'answered_with_validated_support'
+  | 'answered_with_conditional_support'
+  | 'blocked_needs_human'
+  | 'negative_or_inconclusive'
+  | 'draft_only';
+
+export type AutoresearchEventType =
+  | 'run_started'
+  | 'context_refreshed'
+  | 'action_selected'
+  | 'action_started'
+  | 'action_completed'
+  | 'operator_checkpoint'
+  | 'status_changed'
+  | 'answer_drafted'
+  | 'answer_finalized'
+  | 'blocked'
+  | 'run_stopped';
+
+export type AutoresearchEventStatus = 'recorded' | 'blocked' | 'failed' | 'superseded';
+
+export interface AutoresearchSnapshot {
+  readonly id: string;
+  readonly aitpRunId: string;
+  readonly topicId: string;
+  readonly objective: string;
+  readonly researchQuestion: string;
+  readonly operator: string;
+  readonly title?: string;
+  readonly claimId?: string;
+  readonly sessionId?: string;
+  readonly hypothesis?: string;
+  readonly status: AutoresearchStatus;
+  readonly phase: AutoresearchPhase;
+  readonly terminalAnswerState: AutoresearchTerminalAnswerState;
+  readonly stopReason?: string;
+  readonly eventIds: readonly string[];
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly orientationOnly: boolean;
+  readonly canUpdateKernelState: boolean;
+  readonly canUpdateClaimTrust: boolean;
+}
+
+export interface AutoresearchToolResult {
+  readonly autoresearch: AutoresearchSnapshot | null;
+}
+
 export type KimiErrorCode =
   | 'config.invalid'
   | 'session.not_found'
@@ -245,6 +308,9 @@ export type KimiErrorCode =
   | 'goal.metadata_reserved'
   | 'goal.not_resumable'
   | 'goal.unsupported_agent'
+  | 'autoresearch.already_exists'
+  | 'autoresearch.not_found'
+  | 'autoresearch.aitp_bridge_required'
   | 'model.not_configured'
   | 'model.config_invalid'
   | 'profile.thinking_alias_conflict'
@@ -884,6 +950,11 @@ export interface McpServerStatusPayload {
   readonly error?: string;
 }
 
+export interface AutoresearchUpdatedEvent {
+  readonly type: 'autoresearch.updated';
+  readonly snapshot: AutoresearchSnapshot | null;
+}
+
 export type AgentEvent =
   | ErrorEvent
   | WarningEvent
@@ -898,6 +969,7 @@ export type AgentEvent =
   | ConfigChangedEvent
   | ModelCatalogChangedEvent
   | GoalUpdatedEvent
+  | AutoresearchUpdatedEvent
   | SkillActivatedEvent
   | PluginCommandActivatedEvent
   | TurnStartedEvent
@@ -1127,6 +1199,83 @@ export const goalChangeSchema = z.object({
   actor: goalActorSchema.optional(),
 }) satisfies z.ZodType<GoalChange>;
 
+export const autoresearchStatusSchema = z.enum([
+  'active',
+  'paused',
+  'stopped',
+  'complete',
+  'blocked',
+]) satisfies z.ZodType<AutoresearchStatus>;
+
+export const autoresearchPhaseSchema = z.enum([
+  'planning',
+  'context_refresh',
+  'action_selection',
+  'source_review',
+  'validation',
+  'answer_drafting',
+  'awaiting_approval',
+  'blocked',
+  'complete',
+]) satisfies z.ZodType<AutoresearchPhase>;
+
+export const autoresearchTerminalAnswerStateSchema = z.enum([
+  '',
+  'answered_with_validated_support',
+  'answered_with_conditional_support',
+  'blocked_needs_human',
+  'negative_or_inconclusive',
+  'draft_only',
+]) satisfies z.ZodType<AutoresearchTerminalAnswerState>;
+
+export const autoresearchEventTypeSchema = z.enum([
+  'run_started',
+  'context_refreshed',
+  'action_selected',
+  'action_started',
+  'action_completed',
+  'operator_checkpoint',
+  'status_changed',
+  'answer_drafted',
+  'answer_finalized',
+  'blocked',
+  'run_stopped',
+]) satisfies z.ZodType<AutoresearchEventType>;
+
+export const autoresearchEventStatusSchema = z.enum([
+  'recorded',
+  'blocked',
+  'failed',
+  'superseded',
+]) satisfies z.ZodType<AutoresearchEventStatus>;
+
+export const autoresearchSnapshotSchema = z.object({
+  id: z.string(),
+  aitpRunId: z.string(),
+  topicId: z.string(),
+  objective: z.string(),
+  researchQuestion: z.string(),
+  operator: z.string(),
+  title: z.string().optional(),
+  claimId: z.string().optional(),
+  sessionId: z.string().optional(),
+  hypothesis: z.string().optional(),
+  status: autoresearchStatusSchema,
+  phase: autoresearchPhaseSchema,
+  terminalAnswerState: autoresearchTerminalAnswerStateSchema,
+  stopReason: z.string().optional(),
+  eventIds: z.array(z.string()),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  orientationOnly: z.boolean(),
+  canUpdateKernelState: z.boolean(),
+  canUpdateClaimTrust: z.boolean(),
+}) satisfies z.ZodType<AutoresearchSnapshot>;
+
+export const autoresearchToolResultSchema = z.object({
+  autoresearch: autoresearchSnapshotSchema.nullable(),
+}) satisfies z.ZodType<AutoresearchToolResult>;
+
 export const kimiErrorCodeSchema = z.enum([
   'config.invalid',
   'session.not_found',
@@ -1161,6 +1310,9 @@ export const kimiErrorCodeSchema = z.enum([
   'goal.metadata_reserved',
   'goal.not_resumable',
   'goal.unsupported_agent',
+  'autoresearch.already_exists',
+  'autoresearch.not_found',
+  'autoresearch.aitp_bridge_required',
   'model.not_configured',
   'model.config_invalid',
   'profile.thinking_alias_conflict',
@@ -1434,6 +1586,11 @@ export const goalUpdatedEventSchema = z.object({
   snapshot: goalSnapshotSchema.nullable(),
   change: goalChangeSchema.optional(),
 }) satisfies z.ZodType<GoalUpdatedEvent>;
+
+export const autoresearchUpdatedEventSchema = z.object({
+  type: z.literal('autoresearch.updated'),
+  snapshot: autoresearchSnapshotSchema.nullable(),
+}) satisfies z.ZodType<AutoresearchUpdatedEvent>;
 
 export const skillActivatedEventSchema = z.object({
   type: z.literal('skill.activated'),
@@ -1743,6 +1900,7 @@ export const agentEventSchema = z.discriminatedUnion('type', [
   sessionStatusChangedEventSchema,
   modelCatalogChangedEventSchema,
   goalUpdatedEventSchema,
+  autoresearchUpdatedEventSchema,
   skillActivatedEventSchema,
   pluginCommandActivatedEventSchema,
   turnStartedEventSchema,

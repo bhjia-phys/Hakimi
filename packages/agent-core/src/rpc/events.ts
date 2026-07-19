@@ -1,11 +1,10 @@
 export { MCP_OAUTH_AUTHORIZATION_URL_TOOL_UPDATE } from '@moonshot-ai/protocol';
 
-import type { AgentEvent as ProtocolAgentEvent } from '@moonshot-ai/protocol';
-import type { AutoresearchSnapshot } from '../agent/autoresearch';
-
 export type {
+  AgentEvent,
   AgentStatusUpdatedEvent,
   AssistantDeltaEvent,
+  AutoresearchUpdatedEvent,
   BackgroundTaskStartedEvent,
   BackgroundTaskTerminatedEvent,
   CompactionBlockedEvent,
@@ -15,6 +14,7 @@ export type {
   CompactionStartedEvent,
   CronFiredEvent,
   ErrorEvent,
+  Event,
   GoalUpdatedEvent,
   HookResultEvent,
   McpOAuthAuthorizationUrlUpdateData,
@@ -50,13 +50,5 @@ export type {
   UsageStatus,
   WarningEvent,
 } from '@moonshot-ai/protocol';
-
-export interface AutoresearchUpdatedEvent {
-  readonly type: 'autoresearch.updated';
-  readonly snapshot: AutoresearchSnapshot | null;
-}
-
-export type AgentEvent = ProtocolAgentEvent | AutoresearchUpdatedEvent;
-export type Event = AgentEvent & { readonly agentId: string; readonly sessionId: string };
 
 export type { KimiErrorPayload } from '../errors';

@@ -120,6 +120,34 @@ describe('events / display re-exports', () => {
     expect((parsed as { status: string }).status).toBe('blocked');
   });
 
+  it('validates autoresearch.updated events', () => {
+    const parsed = eventSchema.parse({
+      type: 'autoresearch.updated',
+      agentId: 'main',
+      sessionId: 'sess_1',
+      snapshot: {
+        id: 'autoresearch_1',
+        aitpRunId: 'aitp_run_1',
+        topicId: 'topic_1',
+        objective: 'Check the conjecture.',
+        researchQuestion: 'Does the bound hold?',
+        operator: 'human',
+        status: 'active',
+        phase: 'validation',
+        terminalAnswerState: '',
+        eventIds: ['event_1'],
+        createdAt: 1,
+        updatedAt: 2,
+        orientationOnly: true,
+        canUpdateKernelState: false,
+        canUpdateClaimTrust: false,
+      },
+    });
+
+    expect(parsed.type).toBe('autoresearch.updated');
+    expect((parsed as { snapshot: { phase: string } }).snapshot.phase).toBe('validation');
+  });
+
   it('preserves detached on task events', () => {
     const parsed = eventSchema.parse({
       type: 'task.started',

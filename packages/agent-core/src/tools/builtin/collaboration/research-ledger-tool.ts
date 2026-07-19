@@ -26,7 +26,7 @@ import {
 import { GENERIC_THEORETICAL_PHYSICS_DOMAIN } from '../../../research-defaults';
 import { PHYSICS_CAPSULE_KINDS, type PhysicsCapsuleKind } from '../../../physics-memory';
 import { toInputJsonSchema } from '../../support/input-schema';
-import DESCRIPTION from './research-ledger-tool.md';
+import DESCRIPTION from './research-ledger-tool.md?raw';
 
 const ACTIONS = [
   'list_topics',

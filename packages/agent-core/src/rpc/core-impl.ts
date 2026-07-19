@@ -1457,7 +1457,7 @@ async function createRuntimeConfig(input: {
   readonly resolveOAuthTokenProvider?: OAuthTokenProviderResolver | undefined;
 }): Promise<ToolServices> {
   const localFetcher = new LocalFetchURLProvider();
-  const localSearcher = new LocalWebSearchProvider({ urlFetcher: localFetcher });
+  const localSearcher = new LocalWebSearchProvider();
   const searchService = input.config.services?.moonshotSearch;
   const fetchService = input.config.services?.moonshotFetch;
 

@@ -44,7 +44,8 @@ import {
 import {
   applyCompletionBudget,
   resolveCompletionBudget,
-} from '../../utils/completion-budget';import { renderPrompt } from '../../utils/render-prompt';
+} from '../../utils/completion-budget';
+import { renderPrompt } from '../../utils/render-prompt';
 import compactionInstructionTemplate from './compaction-instruction.md?raw';
 import type { CompactionBeginData, CompactionResult } from './types';
 import {
@@ -386,12 +387,12 @@ export class FullCompaction {
 
   private buildInstruction(
     customInstruction: string | undefined,
-    researchSnapshot: string,
+    researchSnapshot: string | undefined,
   ): string {
     const base = renderPrompt(compactionInstructionTemplate, {
       customInstruction: customInstruction?.trim() ?? '',
     }).trimEnd();
-    if (researchSnapshot.trim().length === 0) return base;
+    if (researchSnapshot === undefined || researchSnapshot.trim().length === 0) return base;
     return `${base}\n\n${renderResearchCompactionInstruction(researchSnapshot)}`;
   }
 
