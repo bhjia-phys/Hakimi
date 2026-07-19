@@ -2532,17 +2532,20 @@ describe('FullCompaction', () => {
         resolve();
       });
     });
+    const completed = ctx.once('compaction.completed');
 
     ctx.mockNextResponse({ type: 'text', text: 'Compacted summary.' });
     await ctx.rpc.beginCompaction({});
     await compacted;
+    await completed;
 
     const history = ctx.compactHistory();
-    expect(history).toHaveLength(1);
-    expect(history[0]).toMatchObject({
-      role: 'assistant',
-      text: 'Compacted summary.\n\n## TODO List\n  [in_progress] Fix the auth bug\n  [pending] Add tests',
-    });
+    const summary = history.find((message) => message.text.includes('## TODO List'));
+    expect(summary?.role).toBe('user');
+    expect(summary?.text).toContain('Compacted summary.');
+    expect(summary?.text).toContain(
+      '## TODO List\n  [in_progress] Fix the auth bug\n  [pending] Add tests',
+    );
     await ctx.expectResumeMatches();
   });
 
@@ -2642,10 +2645,12 @@ describe('FullCompaction', () => {
       evidenceRefs: ['ledger:event.fqhe.raw'],
     });
     const compacted = ctx.once('context.apply_compaction');
+    const completed = ctx.once('compaction.completed');
 
     ctx.mockNextResponse({ type: 'text', text: 'Compacted summary without research details.' });
     await ctx.rpc.beginCompaction({});
     await compacted;
+    await completed;
 
     const prompt = ctx.llmCalls[0]?.history.at(-1)?.content
       .map((part) => (part.type === 'text' ? part.text : ''))
@@ -2658,7 +2663,9 @@ describe('FullCompaction', () => {
     expect(prompt).toContain('raw_tool=Bash');
     expect(prompt).toContain('obl.dimension');
 
-    const [summary] = ctx.compactHistory();
+    const summary = ctx
+      .compactHistory()
+      .find((message) => message.text.includes('## Hakimi Research State'));
     expect(summary?.text).toContain('Compacted summary without research details.');
     expect(summary?.text).toContain('## Hakimi Research State');
     expect(summary?.text).toContain('### WorkFrame frame.fqhe (active)');
@@ -2730,12 +2737,16 @@ describe('FullCompaction', () => {
       { source: 'controller' },
     );
     const compacted = ctx.once('context.apply_compaction');
+    const completed = ctx.once('compaction.completed');
 
     ctx.mockNextResponse({ type: 'text', text: 'Cross-topic summary.' });
     await ctx.rpc.beginCompaction({});
     await compacted;
+    await completed;
 
-    const text = ctx.compactHistory()[0]?.text ?? '';
+    const text =
+      ctx.compactHistory().find((message) => message.text.includes('## Hakimi Research State'))
+        ?.text ?? '';
     expect(text).toContain('### WorkFrame frame.librpa (active)');
     expect(text).toContain('### WorkFrame frame.fqhe');
     const fqheBlock = workFrameSnapshotBlock(text, 'frame.fqhe');
@@ -2932,11 +2943,11 @@ function hookPayloadLoggerCommand(logPath: string): string {
     "let input = '';",
     "process.stdin.on('data', (chunk) => { input += chunk; });",
     "process.stdin.on('end', () => {",
-    `  fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(JSON.parse(input)) + '\\n');`,
+    "  fs.appendFileSync(process.argv[2], JSON.stringify(JSON.parse(input)) + '\\n');",
     '});',
-  ].join('');
-  writeFileSync(scriptPath, script);
-  return `${process.execPath} ${scriptPath}`;
+  ].join('\n');
+  writeFileSync(scriptPath, script, 'utf-8');
+  return `${JSON.stringify(process.execPath)} ${JSON.stringify(scriptPath)} ${JSON.stringify(logPath)}`;
 }
 
 function readHookPayloads(logPath: string): Array<Record<string, unknown>> {

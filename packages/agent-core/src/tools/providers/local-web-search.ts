@@ -8,14 +8,13 @@
 
 import { parseHTML as rawParseHTML } from 'linkedom';
 
-import type { UrlFetcher, WebSearchProvider, WebSearchResult } from '../builtin';
+import type { WebSearchProvider, WebSearchResult } from '../builtin';
 
 interface LocalWebSearchProviderOptions {
   searchUrl?: string;
   searchUrls?: readonly string[];
   userAgent?: string;
   fetchImpl?: typeof fetch;
-  urlFetcher?: UrlFetcher;
 }
 
 interface DomElementLike {
@@ -44,14 +43,12 @@ export class LocalWebSearchProvider implements WebSearchProvider {
   private readonly searchUrls: readonly string[];
   private readonly userAgent: string;
   private readonly fetchImpl: typeof fetch;
-  private readonly urlFetcher: UrlFetcher | undefined;
 
   constructor(options: LocalWebSearchProviderOptions = {}) {
     this.searchUrls =
       options.searchUrls ?? (options.searchUrl !== undefined ? [options.searchUrl] : DEFAULT_SEARCH_URLS);
     this.userAgent = options.userAgent ?? DEFAULT_USER_AGENT;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
-    this.urlFetcher = options.urlFetcher;
   }
 
   async search(
@@ -60,22 +57,7 @@ export class LocalWebSearchProvider implements WebSearchProvider {
   ): Promise<WebSearchResult[]> {
     const limit = options?.limit ?? 5;
     const html = await this.fetchSearchHtml(query);
-    const results = parseSearchResults(html, limit);
-    if (options?.includeContent !== true || this.urlFetcher === undefined) return results;
-
-    return Promise.all(
-      results.map(async (result): Promise<WebSearchResult> => {
-        try {
-          const fetched = await this.urlFetcher?.fetch(result.url, {
-            toolCallId: options.toolCallId,
-          });
-          if (fetched?.content === undefined || fetched.content.length === 0) return result;
-          return { ...result, content: fetched.content };
-        } catch {
-          return result;
-        }
-      }),
-    );
+    return parseSearchResults(html, limit);
   }
 
   private async fetchSearchHtml(query: string): Promise<string> {

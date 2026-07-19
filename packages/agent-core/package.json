@@ -28,6 +28,7 @@
   "type": "module",
   "imports": {
     "#/agent": "./src/agent/index.ts",
+    "#/agent/autoresearch": "./src/agent/autoresearch/index.ts",
     "#/agent/background": "./src/agent/background/index.ts",
     "#/agent/compaction": "./src/agent/compaction/index.ts",
     "#/agent/config": "./src/agent/config/index.ts",

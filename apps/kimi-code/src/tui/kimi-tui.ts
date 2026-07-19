@@ -23,7 +23,6 @@ import {
 import { resolve } from 'pathe';
 
 import type { CLIOptions } from '#/cli/options';
-import { PRODUCT_NAME } from '#/constant/app';
 import { MigrationScreenComponent, type MigrationScreenResult } from '#/migration/index';
 import { copyTextToClipboard } from '#/utils/clipboard/clipboard-text';
 import { appendInputHistory, loadInputHistory } from '#/utils/history/input-history';

@@ -1,3 +1,7 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'pathe';
+
 import type { ContentPart } from '@moonshot-ai/kosong';
 import { describe, expect, it } from 'vitest';
 

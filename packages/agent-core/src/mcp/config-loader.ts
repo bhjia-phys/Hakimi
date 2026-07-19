@@ -52,16 +52,20 @@ export async function loadMcpServers(
   input: LoadMcpServersInput,
 ): Promise<Record<string, McpServerConfig>> {
   const paths = await resolveMcpJsonPaths({ cwd: input.cwd, homeDir: input.homeDir });
+  const projectRootCwdBase = preserveSlashPrefixedDriveStyle(
+    input.cwd,
+    dirname(paths.projectRoot),
+  );
   const [user, projectRoot, project] = await Promise.all([
     readMcpJson(paths.user),
-    readMcpJson(paths.projectRoot, { stdioCwdBase: dirname(paths.projectRoot) }),
+    readMcpJson(paths.projectRoot, { stdioCwdBase: projectRootCwdBase }),
     readMcpJson(paths.project),
   ]);
   return { ...user, ...projectRoot, ...project };
 }
 
 async function findProjectRoot(cwd: string): Promise<string> {
-  const start = normalize(cwd);
+  const start = normalizePathPreservingSlashPrefixedDrive(cwd);
   let current = start;
 
   while (true) {
@@ -139,6 +143,15 @@ function normalizeStdioCwd(config: McpServerConfig, cwdBase: string): McpServerC
 }
 
 function resolvePath(base: string, value: string): string {
+  if (isSlashPrefixedWindowsAbsolutePath(value)) {
+    return `/${win32.normalize(value.slice(1)).replaceAll('\\', '/')}`;
+  }
+  if (isAbsolute(value) && !isWindowsAbsolutePath(value)) {
+    return normalize(value);
+  }
+  if (isSlashPrefixedWindowsAbsolutePath(base)) {
+    return `/${win32.resolve(base.slice(1), value).replaceAll('\\', '/')}`;
+  }
   if (isWindowsAbsolutePath(base)) {
     return win32.resolve(base, value).replaceAll('\\', '/');
   }
@@ -146,6 +159,20 @@ function resolvePath(base: string, value: string): string {
     return win32.resolve(value).replaceAll('\\', '/');
   }
   return isAbsolute(value) ? normalize(value) : resolve(base, value);
+}
+
+function normalizePathPreservingSlashPrefixedDrive(value: string): string {
+  if (!isSlashPrefixedWindowsAbsolutePath(value)) return normalize(value);
+  return `/${normalize(value.slice(1))}`;
+}
+
+function preserveSlashPrefixedDriveStyle(reference: string, value: string): string {
+  if (!isSlashPrefixedWindowsAbsolutePath(reference)) return value;
+  return isSlashPrefixedWindowsAbsolutePath(value) ? value : `/${value}`;
+}
+
+function isSlashPrefixedWindowsAbsolutePath(value: string): boolean {
+  return /^\/[A-Za-z]:[\\/]/.test(value);
 }
 
 function isWindowsAbsolutePath(value: string): boolean {

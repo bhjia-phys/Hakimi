@@ -513,10 +513,35 @@ export function projectContext(
       case 'tools.register_user_tool':
       case 'tools.unregister_user_tool':
       case 'tools.set_active_tools':
+      case 'tools.runtime_exposure':
       case 'tools.update_store':
+      case 'reasoning.audit':
       case 'llm.tools_snapshot':
       case 'llm.request':
       case 'mcp.tools_discovered':
+      case 'tool_lifecycle.started':
+      case 'tool_lifecycle.completed':
+      case 'workframe.opened':
+      case 'workframe.switched':
+      case 'workframe.closed':
+      case 'workframe.context_attached':
+      case 'physics_memory.roots_loaded':
+      case 'physics_memory.capsule_loaded':
+      case 'physics_memory.context_compiled':
+      case 'physics_memory.capsules_promoted':
+      case 'research_ledger.roots_loaded':
+      case 'research_ledger.event_loaded':
+      case 'research_ledger.event_written':
+      case 'research_ledger.auto_capture_skipped':
+      case 'research_ledger.proposals_compiled':
+      case 'research_action.result_recorded':
+      case 'research_action.call_started':
+      case 'research_action.call_finished':
+      case 'research_action.raw_tool_escape':
+      case 'research_context.context_compiled':
+      case 'autoresearch.create':
+      case 'autoresearch.update':
+      case 'autoresearch.clear':
         break;
       default: {
         const _exhaustive: never = rec;

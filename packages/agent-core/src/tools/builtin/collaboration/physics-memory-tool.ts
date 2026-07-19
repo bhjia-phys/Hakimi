@@ -23,7 +23,7 @@ import {
   type ReliabilityState,
 } from '../../../physics-memory';
 import { toInputJsonSchema } from '../../support/input-schema';
-import DESCRIPTION from './physics-memory-tool.md';
+import DESCRIPTION from './physics-memory-tool.md?raw';
 
 const ACTIONS = [
   'list_domains',

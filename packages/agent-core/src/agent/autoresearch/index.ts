@@ -1,51 +1,30 @@
 import { randomUUID } from 'node:crypto';
 
 import { ErrorCodes, KimiError } from '#/errors';
+import type {
+  AutoresearchEventStatus,
+  AutoresearchEventType,
+  AutoresearchPhase,
+  AutoresearchSnapshot,
+  AutoresearchStatus,
+  AutoresearchTerminalAnswerState,
+  AutoresearchToolResult,
+} from '@moonshot-ai/protocol';
 import type { Agent } from '..';
 import type { AgentRecordOf } from '../records/types';
-import type {
-  AitpResearchRunEventStatus,
-  AitpResearchRunEventType,
-  AitpResearchRunPhase,
-  AitpResearchRunStatus,
-  AitpResearchRunTerminalAnswerState,
-} from '../../aitp';
+
+export type {
+  AutoresearchEventStatus,
+  AutoresearchEventType,
+  AutoresearchPhase,
+  AutoresearchSnapshot,
+  AutoresearchStatus,
+  AutoresearchTerminalAnswerState,
+  AutoresearchToolResult,
+} from '@moonshot-ai/protocol';
 
 const MAX_AUTORESEARCH_TEXT_LENGTH = 4000;
 const DEFAULT_AUTORESEARCH_OPERATOR = 'human';
-
-export type AutoresearchStatus = AitpResearchRunStatus;
-export type AutoresearchPhase = AitpResearchRunPhase;
-export type AutoresearchTerminalAnswerState = AitpResearchRunTerminalAnswerState;
-export type AutoresearchEventType = AitpResearchRunEventType;
-export type AutoresearchEventStatus = AitpResearchRunEventStatus;
-
-export interface AutoresearchSnapshot {
-  readonly id: string;
-  readonly aitpRunId: string;
-  readonly topicId: string;
-  readonly objective: string;
-  readonly researchQuestion: string;
-  readonly operator: string;
-  readonly title?: string | undefined;
-  readonly claimId?: string | undefined;
-  readonly sessionId?: string | undefined;
-  readonly hypothesis?: string | undefined;
-  readonly status: AutoresearchStatus;
-  readonly phase: AutoresearchPhase;
-  readonly terminalAnswerState: AutoresearchTerminalAnswerState;
-  readonly stopReason?: string | undefined;
-  readonly eventIds: readonly string[];
-  readonly createdAt: number;
-  readonly updatedAt: number;
-  readonly orientationOnly: boolean;
-  readonly canUpdateKernelState: boolean;
-  readonly canUpdateClaimTrust: boolean;
-}
-
-export interface AutoresearchToolResult {
-  readonly autoresearch: AutoresearchSnapshot | null;
-}
 
 export interface StartAutoresearchInput {
   readonly topicId: string;
