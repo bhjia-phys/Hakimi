@@ -92,14 +92,14 @@ describe('WelcomeComponent', () => {
     expect(codes.size).toBeGreaterThanOrEqual(6);
   });
 
-  it('keeps the high-detail pixel ship instead of an ASCII line drawing', () => {
+  it('keeps a compact pixel research ship instead of an ASCII line drawing', () => {
     const output = plain(new WelcomeComponent(appState).render(120).join('\n'));
     const fullBlock = String.fromCodePoint(0x2588);
     const pixelLines = output.split('\n').filter((line) => line.includes(fullBlock));
     const blockCount = Array.from(output).filter((char) => char === fullBlock).length;
 
-    expect(pixelLines.length).toBeGreaterThanOrEqual(20);
-    expect(blockCount).toBeGreaterThanOrEqual(250);
+    expect(pixelLines.length).toBeGreaterThanOrEqual(14);
+    expect(blockCount).toBeGreaterThanOrEqual(130);
     expect(output).not.toContain('/\\');
     expect(output).not.toContain('[==]');
     expect(output).not.toContain('===>');
