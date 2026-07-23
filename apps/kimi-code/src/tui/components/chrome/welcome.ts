@@ -18,43 +18,36 @@ const HAKIMI_TAGLINE = 'truth-seeking physics research agent';
 const HAKIMI_READY_LINE = 'Ready to explore the frontiers of physics knowledge.';
 
 const HAKIMI_LOGO_COLORS = {
-  B: '#1F8DFF',
   C: '#28D7FF',
   D: '#2759C7',
-  E: '#F6F2E3',
   G: '#FFD45C',
-  O: '#FF9D2E',
   S: '#9AA7B6',
   W: '#DDE7F3',
+  Y: '#FFF3A3',
 } as const;
+
+const HAKIMI_PIXEL = String.fromCodePoint(0x2588);
 
 type HakimiLogoColorKey = keyof typeof HAKIMI_LOGO_COLORS;
 
 const HAKIMI_PIXEL_LOGO = [
-  '............................................',
-  '....................E.......................',
-  '...................ESE......................',
-  '...................ESO................E.....',
-  '..................ESOOE..............EE.....',
-  '..................ESOOOE............EOE.....',
-  '.................ESOOOOE...........EOOE.....',
-  '.................ESSSEEEEEEEEEE...EOOOE.....',
-  '................EEEEEDDDWWWWWWWEEEEOOOE.....',
-  '...............EECWWWDDDWWWEEEEEEEWEEOE.....',
-  '..............CCCCWWWDDDWEEEEECCCBEEWEE.....',
-  '............EEWCCCCWWWWWEBEEEECCCCCBEEE.....',
-  '.........EEEEWOOOOOOWWWWEEEEECCCCCCBEWWEEEEE',
-  '.......EESSSEWOOOOOEEEWWWEEBCCCCCBEEWWWWWEE.',
-  '........ESSSEWOOOOEOOOEEWWWEEEEEEEWWDWWEE...',
-  '........EOOOOSWWEOOGGGOOEWWWWWWWWDDDESE.....',
-  '........BESOEESSEOGGGGGOEWWWWDDDDDDDSE......',
-  '......BCCCEECEEEEOGGGGGOESDDDDDDDDDSE.......',
-  '....BCCCCCCEEE..EOGGGGGOESDDDDDDDDDS........',
-  '..BBBCCCC.EEE....EEGGGEESDDDDDSSSSS.........',
-  '..BBBCCCEEEE.......EEE...DSDDDDE............',
-  '..BBCC....E.............EEEESSSE............',
-  '.BB.C.......................EEE.............',
-  '.B..........................................',
+  '....................................',
+  '..............G.....................',
+  '................G............C......',
+  '...........W.....G.....W....CCC.....',
+  '..........WWW....S....WWW..CWWC.....',
+  '.........WSSSW..SSS..WSSSWCWWWC.....',
+  '........WSDDSSWSWWWWSWSSDDWWWWC.....',
+  '......GGWSDDDSSWCYCWSSDDDSSWCCC.....',
+  '....GG..WSDDSSWYYYYYWSSDDSW..C......',
+  '..GG....WSSSWWYYGGGYYWWSSSW.........',
+  '.G.......WWW.WYYYYYYYW.WWW..........',
+  '..........C..WWCYYY.CWW..C..........',
+  '.........CCC...WWWWW...CCC..........',
+  '........CWC.....WWW.....CWC.........',
+  '.......CWC.......W.......CWC........',
+  '......CC...................CC.......',
+  '....................................',
 ] as const;
 
 function padAnsi(text: string, width: number): string {
@@ -66,7 +59,7 @@ function renderHakimiPixelLogo(): string[] {
     Array.from(row)
       .map((pixel) => {
         if (pixel === '.') return ' ';
-        return chalk.hex(HAKIMI_LOGO_COLORS[pixel as HakimiLogoColorKey])('█');
+        return chalk.hex(HAKIMI_LOGO_COLORS[pixel as HakimiLogoColorKey])(HAKIMI_PIXEL);
       })
       .join(''),
   );
