@@ -130,7 +130,7 @@ jobs:
           grep -Fq 'Copied: 0; already imported: 1' <<< "$repeat_output"
 
       - name: Upload installable package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hakimi-linux-node24
           path: dist-pack/
