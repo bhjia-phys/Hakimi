@@ -1071,6 +1071,17 @@ corepack enable
 corepack prepare pnpm@10.33.0 --activate
 ```
 
+From a Hakimi checkout, build and install the WSL package:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm -C apps/kimi-code build
+mkdir -p dist-pack
+pnpm -C apps/kimi-code pack --pack-destination ../../dist-pack
+npm install -g ./dist-pack/bhjia-phys-hakimi-0.20.1.tgz
+hakimi --version
+```
+
 Stop Kimi Code before importing, inspect the plan, then create an isolated
 Hakimi copy:
 
