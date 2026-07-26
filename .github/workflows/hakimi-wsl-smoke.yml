@@ -1,0 +1,126 @@
+name: Hakimi WSL package smoke
+
+on:
+  push:
+    branches:
+      - agent/chatgpt-oauth-wsl
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hakimi-wsl-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Build and install on Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out Hakimi
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and pack Hakimi
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm -C apps/kimi-code build
+          mkdir -p dist-pack
+          pnpm -C apps/kimi-code pack --pack-destination ../../dist-pack
+          package_path="$(find dist-pack -maxdepth 1 -type f -name 'bhjia-phys-hakimi-*.tgz' -print -quit)"
+          test -n "$package_path"
+          echo "package_path=$package_path" >> "$GITHUB_OUTPUT"
+          (
+            cd dist-pack
+            sha256sum ./*.tgz > SHA256SUMS
+          )
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "runner=$RUNNER_OS/$RUNNER_ARCH"
+            echo "node=$(node --version)"
+            echo "pnpm=$(pnpm --version)"
+          } > dist-pack/BUILD-INFO.txt
+
+      - name: Install package and exercise session migration
+        shell: bash
+        env:
+          HAKIMI_PACKAGE: ${{ steps.pack.outputs.package_path }}
+        run: |
+          set -euo pipefail
+          prefix="$RUNNER_TEMP/hakimi-prefix"
+          source_home="$RUNNER_TEMP/kimi-home"
+          target_home="$RUNNER_TEMP/hakimi-home"
+          work_dir="$RUNNER_TEMP/original-workspace"
+          session_dir="$source_home/sessions/legacy-bucket/session-linux"
+
+          npm install --prefix "$prefix" "$HAKIMI_PACKAGE"
+          hakimi="$prefix/node_modules/.bin/hakimi"
+          test -x "$hakimi"
+          "$hakimi" --version | tee dist-pack/SMOKE-RESULT.txt
+          "$hakimi" login --help | grep -F -- '--enable-experimental'
+
+          mkdir -p "$session_dir/agents/main" "$work_dir"
+          printf '{"workDir":"%s","title":"Linux package smoke"}\n' "$work_dir" \
+            > "$session_dir/state.json"
+          printf 'source-wire\n' > "$session_dir/agents/main/wire.jsonl"
+          printf 'api_key = "must-not-copy"\n' > "$source_home/config.toml"
+
+          dry_output="$(
+            "$hakimi" session import-kimi \
+              --source-home "$source_home" \
+              --target-home "$target_home" \
+              --session-id session-linux \
+              --dry-run
+          )"
+          printf '%s\n' "$dry_output" | tee -a dist-pack/SMOKE-RESULT.txt
+          grep -Fq 'Selected sessions: 1' <<< "$dry_output"
+          grep -Fq '1 would be copied' <<< "$dry_output"
+          test ! -e "$target_home"
+
+          import_output="$(
+            "$hakimi" session import-kimi \
+              --source-home "$source_home" \
+              --target-home "$target_home" \
+              --session-id session-linux
+          )"
+          printf '%s\n' "$import_output" | tee -a dist-pack/SMOKE-RESULT.txt
+          grep -Fq 'Copied: 1; already imported: 0' <<< "$import_output"
+          grep -Fq 'openai-codex/gpt-5.5' <<< "$import_output"
+          imported_state="$(
+            find "$target_home/sessions" -type f \
+              -path '*/session-linux/state.json' -print -quit
+          )"
+          test -n "$imported_state"
+          test ! -e "$target_home/config.toml"
+
+          repeat_output="$(
+            "$hakimi" session import-kimi \
+              --source-home "$source_home" \
+              --target-home "$target_home" \
+              --session-id session-linux
+          )"
+          printf '%s\n' "$repeat_output" | tee -a dist-pack/SMOKE-RESULT.txt
+          grep -Fq 'Copied: 0; already imported: 1' <<< "$repeat_output"
+
+      - name: Upload installable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: hakimi-linux-node24
+          path: dist-pack/
+          if-no-files-found: error
+          retention-days: 14
