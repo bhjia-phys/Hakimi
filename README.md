@@ -1011,6 +1011,19 @@ device-code login:
 hakimi login --provider openai-codex --enable-experimental
 ```
 
+For a headless WSL terminal, prevent the best-effort browser launch and copy
+the printed URL and one-time code into a browser yourself:
+
+```sh
+hakimi login --provider openai-codex --enable-experimental --no-open
+```
+
+Hakimi automatically honors `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and
+`NO_PROXY` for OAuth and model requests. If OpenAI reports
+`unsupported_country_region_territory`, verify that the WSL network exits from
+a location where the service is supported and permitted; Hakimi now preserves
+that server error instead of reducing it to a generic `403`.
+
 Alternatively, enable it from `/experiments`, or add:
 
 ```toml
@@ -1104,7 +1117,7 @@ Hakimi copy:
 ```sh
 hakimi session import-kimi --dry-run
 hakimi session import-kimi
-hakimi login --provider openai-codex --enable-experimental
+hakimi login --provider openai-codex --enable-experimental --no-open
 cd /path/to/the/original/workspace
 hakimi --session SESSION_ID --model openai-codex/gpt-5.5
 ```

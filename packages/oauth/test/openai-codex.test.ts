@@ -5,8 +5,10 @@ import {
   extractOpenAICodexAccountId,
   OPENAI_CODEX_OAUTH_KEY,
   OPENAI_CODEX_PROVIDER_NAME,
+  OAuthUnauthorizedError,
   OpenAICodexOAuthToolkit,
   removeOpenAICodexConfig,
+  requestOpenAICodexDeviceAuthorization,
   type ManagedKimiConfigShape,
   type TokenInfo,
   type TokenStorage,
@@ -200,6 +202,37 @@ describe('OpenAICodexOAuthToolkit', () => {
       apiKey: 'fresh-access',
       headers: { 'ChatGPT-Account-Id': 'acct-existing' },
     });
+  });
+});
+
+describe('OpenAI Codex OAuth diagnostics', () => {
+  it('surfaces a safe, actionable region rejection from the device endpoint', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(
+        {
+          error: {
+            code: 'unsupported_country_region_territory',
+            message: 'Country, region, or territory not supported',
+            type: 'request_forbidden',
+          },
+        },
+        403,
+      ),
+    );
+
+    const request = requestOpenAICodexDeviceAuthorization(
+      {
+        name: 'openai-codex',
+        oauthHost: 'https://auth.openai.com',
+        clientId: 'test-client',
+      },
+      { fetchImpl: fetchImpl as typeof fetch },
+    );
+
+    await expect(request).rejects.toBeInstanceOf(OAuthUnauthorizedError);
+    await expect(request).rejects.toThrow(
+      /unsupported_country_region_territory.*HTTP_PROXY.*HTTPS_PROXY.*NO_PROXY/i,
+    );
   });
 });
 

@@ -146,6 +146,7 @@ location as TUI `/login`.
 ```sh
 hakimi login
 hakimi login --provider openai-codex --enable-experimental
+hakimi login --provider openai-codex --enable-experimental --no-open
 ```
 
 Use `--provider kimi-code` (the default) or `--provider openai-codex`. Press
@@ -155,6 +156,8 @@ cancellation or failure, and `0` on success.
 `--enable-experimental` explicitly writes
 `[experimental].openai-codex-oauth = true` before ChatGPT login. Without that
 option, enable the feature first through `/experiments` or `config.toml`.
+`--no-open` is intended for headless WSL and SSH terminals: it prints the URL
+and one-time code but skips the best-effort local browser launch.
 
 ### `hakimi session import-kimi`
 

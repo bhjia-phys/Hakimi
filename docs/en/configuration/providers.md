@@ -193,6 +193,14 @@ subscription sign-in. The one-command terminal opt-in is:
 hakimi login --provider openai-codex --enable-experimental
 ```
 
+Add `--no-open` in a headless WSL shell to print the verification URL and
+one-time code without attempting to launch a local browser. OAuth and model
+traffic honor the standard `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and
+`NO_PROXY` environment variables. A server-side
+`unsupported_country_region_territory` response means the current network
+location is unsupported; use only a location where OpenAI service is available
+and permitted.
+
 You can instead enable `openai-codex-oauth` in `/experiments` (or under
 `[experimental]` in `config.toml`) and choose
 `ChatGPT / OpenAI Codex (OAuth)` from `/login`. The provider uses the Responses

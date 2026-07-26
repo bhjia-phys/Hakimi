@@ -12,6 +12,7 @@ import { openUrl } from '#/utils/open-url';
 
 export interface LoginFlowOptions {
   readonly enableExperimental?: boolean;
+  readonly openBrowser?: boolean;
 }
 
 export async function runLoginFlow(
@@ -83,7 +84,9 @@ export async function runLoginFlow(
         process.stderr.write(
           [
             '',
-            `Opening browser for Hakimi ${providerLabel} login: ${url}`,
+            options.openBrowser === false
+              ? `Open this URL for Hakimi ${providerLabel} login: ${url}`
+              : `Opening browser for Hakimi ${providerLabel} login: ${url}`,
             `If the browser did not open, paste the URL above and enter code: ${data.userCode}`,
             data.expiresIn !== null && data.expiresIn !== undefined
               ? `Code expires in ${data.expiresIn}s.`
@@ -94,10 +97,12 @@ export async function runLoginFlow(
             .filter((line): line is string => line !== undefined)
             .join('\n'),
         );
-        try {
-          openUrl(url);
-        } catch {
-          // Best effort only: the manual fallback has already been printed.
+        if (options.openBrowser !== false) {
+          try {
+            openUrl(url);
+          } catch {
+            // Best effort only: the manual fallback has already been printed.
+          }
         }
       },
     });

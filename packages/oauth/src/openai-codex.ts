@@ -439,7 +439,7 @@ export async function requestOpenAICodexDeviceAuthorization(
     'start OpenAI Codex device authorization',
   );
   if (!response.ok) {
-    throw oauthResponseError(response.status, 'OpenAI Codex device authorization failed');
+    throw await oauthResponseError(response, 'OpenAI Codex device authorization failed');
   }
   const data = await readJsonRecord(response, 'OpenAI Codex device authorization');
   const deviceAuthId = requiredString(data, 'device_auth_id');
@@ -493,7 +493,7 @@ export async function pollOpenAICodexDeviceToken(
     if (response.status === 401) {
       return { kind: 'denied', description: 'OpenAI rejected the device authorization.' };
     }
-    throw oauthResponseError(response.status, 'OpenAI Codex device authorization polling failed');
+    throw await oauthResponseError(response, 'OpenAI Codex device authorization polling failed');
   }
 
   const data = await readJsonRecord(response, 'OpenAI Codex device authorization polling');
@@ -534,7 +534,7 @@ export async function refreshOpenAICodexAccessToken(
     'refresh OpenAI Codex access token',
   );
   if (!response.ok) {
-    throw oauthResponseError(response.status, 'OpenAI Codex token refresh failed');
+    throw await oauthResponseError(response, 'OpenAI Codex token refresh failed');
   }
   const tokens = await readOpenAICodexTokenResponse(response);
   return tokenInfoFromResponse(tokens, options.now, refreshToken);
@@ -567,7 +567,7 @@ async function exchangeOpenAICodexAuthorizationCode(
     'exchange OpenAI Codex authorization code',
   );
   if (!response.ok) {
-    throw oauthResponseError(response.status, 'OpenAI Codex token exchange failed');
+    throw await oauthResponseError(response, 'OpenAI Codex token exchange failed');
   }
   return tokenInfoFromResponse(await readOpenAICodexTokenResponse(response), options.now);
 }
@@ -650,14 +650,50 @@ async function fetchOAuth(
   }
 }
 
-function oauthResponseError(status: number, message: string): OAuthError {
+async function oauthResponseError(response: Response, message: string): Promise<OAuthError> {
+  const status = response.status;
+  const detail = await readOAuthErrorDetail(response);
+  const fullMessage = `${message} (${String(status)})${detail === undefined ? '.' : `: ${detail}`}`;
   if (status === 401 || status === 403) {
-    return new OAuthUnauthorizedError(`${message} (${String(status)}).`);
+    return new OAuthUnauthorizedError(fullMessage);
   }
   if (status === 429 || status >= 500) {
-    return new RetryableRefreshError(`${message} (${String(status)}).`);
+    return new RetryableRefreshError(fullMessage);
   }
-  return new OAuthError(`${message} (${String(status)}).`);
+  return new OAuthError(fullMessage);
+}
+
+async function readOAuthErrorDetail(response: Response): Promise<string | undefined> {
+  let value: unknown;
+  try {
+    value = await response.json();
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(value)) return undefined;
+  const error = isRecord(value['error']) ? value['error'] : value;
+  const code = safeOAuthErrorText(error['code']);
+  const message = safeOAuthErrorText(error['message'] ?? error['error_description']);
+  if (code === 'unsupported_country_region_territory') {
+    return [
+      message ?? 'Country, region, or territory not supported.',
+      `[${code}]`,
+      'Use a network location where OpenAI services are supported and permitted.',
+      'Hakimi honors HTTP_PROXY, HTTPS_PROXY, and NO_PROXY.',
+    ].join(' ');
+  }
+  if (message !== undefined && code !== undefined) return `${message} [${code}]`;
+  return message ?? code;
+}
+
+function safeOAuthErrorText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const text = value
+    .replaceAll(/[\u0000-\u001F\u007F]/g, ' ')
+    .replaceAll(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+  return text.length === 0 ? undefined : text;
 }
 
 async function readJsonRecord(response: Response, label: string): Promise<Record<string, unknown>> {

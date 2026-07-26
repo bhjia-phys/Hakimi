@@ -24,9 +24,17 @@ export function registerLoginCommand(parent: Command): void {
       'Enable the experimental ChatGPT OAuth provider before login.',
       false,
     )
-    .action(async (options: { provider: string; enableExperimental?: boolean }) => {
-      await runLoginFlow(options.provider, {
-        enableExperimental: options.enableExperimental === true,
-      });
-    });
+    .option('--no-open', 'Print the device URL without opening a browser.')
+    .action(
+      async (options: {
+        provider: string;
+        enableExperimental?: boolean;
+        open?: boolean;
+      }) => {
+        await runLoginFlow(options.provider, {
+          enableExperimental: options.enableExperimental === true,
+          openBrowser: options.open !== false,
+        });
+      },
+    );
 }

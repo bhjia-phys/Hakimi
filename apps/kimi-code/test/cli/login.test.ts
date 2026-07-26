@@ -254,6 +254,53 @@ describe('hakimi login', () => {
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
+  it('supports headless WSL login without attempting to open a browser', async () => {
+    mockGetExperimentalFeatures.mockResolvedValue([
+      { id: 'openai-codex-oauth', enabled: true },
+    ]);
+    mockLogin.mockImplementation(
+      async (
+        _providerName: string | undefined,
+        options: {
+          onDeviceCode?: (data: {
+            userCode: string;
+            verificationUri: string;
+            verificationUriComplete: string;
+            expiresIn: number | null;
+          }) => void | Promise<void>;
+        },
+      ) => {
+        await options.onDeviceCode?.({
+          userCode: 'ABCD-EFGH',
+          verificationUri: 'https://example.com/v',
+          verificationUriComplete: 'https://example.com/v?code=ABCD-EFGH',
+          expiresIn: 600,
+        });
+        return { providerName: 'managed:openai-codex', ok: true };
+      },
+    );
+
+    const program = new Command('hakimi').exitOverride();
+    registerLoginCommand(program);
+
+    await expect(
+      program.parseAsync([
+        'node',
+        'hakimi',
+        'login',
+        '--provider',
+        'openai-codex',
+        '--no-open',
+      ]),
+    ).rejects.toThrow(ExitCalled);
+
+    const written = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+    expect(written).toContain('Open this URL for Hakimi ChatGPT / OpenAI Codex login');
+    expect(written).toContain('ABCD-EFGH');
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
   it('exits 1 when auth.login throws', async () => {
     mockLogin.mockRejectedValue(new Error('boom'));
 
