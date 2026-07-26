@@ -42,8 +42,12 @@ jobs:
           pnpm -C apps/kimi-code build
           mkdir -p dist-pack
           pnpm -C apps/kimi-code pack --pack-destination ../../dist-pack
-          package_path="$(find dist-pack -maxdepth 1 -type f -name 'bhjia-phys-hakimi-*.tgz' -print -quit)"
+          package_path="$(
+            find dist-pack -maxdepth 1 -type f \
+              -name 'bhjia-phys-hakimi-*.tgz' -print -quit
+          )"
           test -n "$package_path"
+          package_path="$(realpath "$package_path")"
           echo "package_path=$package_path" >> "$GITHUB_OUTPUT"
           (
             cd dist-pack
