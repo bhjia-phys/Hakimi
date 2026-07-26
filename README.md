@@ -1071,7 +1071,23 @@ corepack enable
 corepack prepare pnpm@10.33.0 --activate
 ```
 
-From a Hakimi checkout, build and install the WSL package:
+The fastest path is the Linux package built and smoke-tested by GitHub Actions
+for the experimental preview:
+
+```sh
+(
+  cd /tmp
+  curl -fLO https://github.com/bhjia-phys/Hakimi/releases/download/hakimi-v0.20.1-oauth-preview.1/bhjia-phys-hakimi-0.20.1.tgz
+  curl -fLO https://github.com/bhjia-phys/Hakimi/releases/download/hakimi-v0.20.1-oauth-preview.1/SHA256SUMS
+  sha256sum -c SHA256SUMS
+  npm install -g ./bhjia-phys-hakimi-0.20.1.tgz
+)
+hakimi --version
+```
+
+The expected package SHA256 is
+`6d7de235d7fb3d9af9160841a16af76255f8331f7b442cdba4521416b588399c`.
+To rebuild the same package from a Hakimi checkout instead:
 
 ```sh
 pnpm install --frozen-lockfile

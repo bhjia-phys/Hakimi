@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - agent/chatgpt-oauth-wsl
+    paths:
+      - .github/workflows/hakimi-wsl-smoke.yml
+      - .nvmrc
+      - package.json
+      - pnpm-lock.yaml
+      - apps/kimi-code/**
+      - apps/kimi-web/**
+      - packages/**
   workflow_dispatch:
 
 permissions:
@@ -127,4 +135,4 @@ jobs:
           name: hakimi-linux-node24
           path: dist-pack/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
