@@ -961,6 +961,7 @@ export class ToolManager {
     this.ensureBuiltinToolsInitialized();
     return this.buildLoopTools({
       enabledTools: this.enabledTools,
+      deferredUserTools: this.deferredUserTools,
       mcpAccessPatterns: this.mcpAccessPatterns,
       builtinTools: this.builtinTools,
       userTools: this.userTools,
