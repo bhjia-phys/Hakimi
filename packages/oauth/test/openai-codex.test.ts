@@ -225,31 +225,37 @@ describe('OpenAI Codex managed config', () => {
     expect(config.providers[OPENAI_CODEX_PROVIDER_NAME]).toMatchObject({
       type: 'openai_responses',
       baseUrl: 'https://chatgpt.com/backend-api/codex',
+      generationKwargs: {
+        parallel_tool_calls: true,
+        tool_choice: 'auto',
+        include: ['reasoning.encrypted_content'],
+      },
       oauth: {
         storage: 'file',
         key: OPENAI_CODEX_OAUTH_KEY,
         oauthHost: 'https://auth.openai.com',
       },
     });
-    expect(config.models?.['openai-codex/gpt-5.6-sol']).toMatchObject({
+    expect(config.models?.['openai-codex/gpt-5.5']).toMatchObject({
       provider: OPENAI_CODEX_PROVIDER_NAME,
-      model: 'gpt-5.6-sol',
-      maxContextSize: 500_000,
-      maxInputSize: 372_000,
+      model: 'gpt-5.5',
+      maxContextSize: 272_000,
+      maxInputSize: 272_000,
+      capabilities: ['thinking', 'always_thinking', 'tool_use', 'image_in'],
+      supportEfforts: ['low', 'medium', 'high', 'xhigh'],
+      defaultEffort: 'medium',
     });
-    expect(config.models?.['openai-codex/gpt-5.3-codex-spark']).toMatchObject({
-      maxContextSize: 128_000,
-      maxInputSize: 100_000,
-    });
+    expect(config.models?.['openai-codex/gpt-5.6-sol']).toBeUndefined();
+    expect(config.models?.['openai-codex/gpt-5.2']).toBeDefined();
     expect(config.models?.['openai-codex/gpt-5.4']).toBeDefined();
-    expect(config.models?.['openai-codex/gpt-5.5']).toBeDefined();
+    expect(config.models?.['openai-codex/gpt-5.4-mini']).toBeDefined();
     expect(config.models?.['keep/model']).toBeDefined();
-    expect(config.defaultModel).toBe('openai-codex/gpt-5.6-sol');
+    expect(config.defaultModel).toBe('openai-codex/gpt-5.5');
 
     removeOpenAICodexConfig(config);
 
     expect(config.providers[OPENAI_CODEX_PROVIDER_NAME]).toBeUndefined();
-    expect(config.models?.['openai-codex/gpt-5.6-sol']).toBeUndefined();
+    expect(config.models?.['openai-codex/gpt-5.5']).toBeUndefined();
     expect(config.models?.['keep/model']).toBeDefined();
     expect(config.defaultModel).toBeUndefined();
   });

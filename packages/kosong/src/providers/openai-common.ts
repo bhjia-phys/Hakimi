@@ -115,8 +115,12 @@ export function convertOpenAIError(error: unknown): ChatProviderError {
   // APIError with a status code => status error
   if (error instanceof OpenAIAPIError && typeof error.status === 'number') {
     const reqId = error.requestID ?? null;
+    // The ChatGPT Codex backend reports exhausted subscription usage as a
+    // 404 for some account/model combinations. Treat only its explicit usage
+    // markers as rate limiting; unrelated 404s remain ordinary status errors.
+    const status = isOpenAIUsageLimit404(error) ? 429 : error.status;
     return normalizeAPIStatusError(
-      error.status,
+      status,
       error.message,
       reqId,
       parseRetryAfterMs(error.headers),
@@ -145,6 +149,19 @@ export function convertOpenAIError(error: unknown): ChatProviderError {
     return classifyBaseApiError(error.message);
   }
   return new ChatProviderError(`Error: ${String(error)}`);
+}
+
+function isOpenAIUsageLimit404(error: OpenAIAPIError): boolean {
+  if (error.status !== 404) return false;
+  let body = '';
+  try {
+    body = JSON.stringify(error.error);
+  } catch {
+    body = '';
+  }
+  return /usage[_ -]?(?:limit|not[_ -]?included)|rate[_ -]?limit/i.test(
+    `${error.message}\n${body}`,
+  );
 }
 /** Shape of a function-type tool call (subset used by the guard). */
 export interface FunctionToolCallShape {

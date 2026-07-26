@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockLogin = vi.fn();
 const mockGetExperimentalFeatures = vi.fn();
+const mockEnsureConfigFile = vi.fn();
+const mockSetConfig = vi.fn();
 
 vi.mock('@moonshot-ai/kimi-code-sdk', async () => {
   const actual = await vi.importActual<typeof import('@moonshot-ai/kimi-code-sdk')>(
@@ -23,6 +25,8 @@ vi.mock('@moonshot-ai/kimi-code-sdk', async () => {
         login: mockLogin,
       },
       getExperimentalFeatures: mockGetExperimentalFeatures,
+      ensureConfigFile: mockEnsureConfigFile,
+      setConfig: mockSetConfig,
     })),
   };
 });
@@ -47,7 +51,11 @@ describe('hakimi login', () => {
   beforeEach(() => {
     mockLogin.mockReset();
     mockGetExperimentalFeatures.mockReset();
+    mockEnsureConfigFile.mockReset();
+    mockSetConfig.mockReset();
     mockGetExperimentalFeatures.mockResolvedValue([]);
+    mockEnsureConfigFile.mockResolvedValue(undefined);
+    mockSetConfig.mockResolvedValue({});
     vi.mocked(openUrl).mockReset();
     vi.mocked(createKimiHarness).mockClear();
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number | string | null) => {
@@ -153,6 +161,40 @@ describe('hakimi login', () => {
       expect.objectContaining({
         signal: expect.any(AbortSignal),
         onDeviceCode: expect.any(Function),
+      }),
+    );
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it('can opt in and log in with one command', async () => {
+    mockGetExperimentalFeatures.mockResolvedValue([
+      { id: 'openai-codex-oauth', enabled: true },
+    ]);
+    mockLogin.mockResolvedValue({ providerName: 'managed:openai-codex', ok: true });
+    const program = new Command('hakimi').exitOverride();
+    registerLoginCommand(program);
+
+    await expect(
+      program.parseAsync([
+        'node',
+        'hakimi',
+        'login',
+        '--provider',
+        'openai-codex',
+        '--enable-experimental',
+      ]),
+    ).rejects.toThrow(ExitCalled);
+
+    expect(mockEnsureConfigFile).toHaveBeenCalledOnce();
+    expect(mockSetConfig).toHaveBeenCalledWith({
+      experimental: {
+        'openai-codex-oauth': true,
+      },
+    });
+    expect(mockLogin).toHaveBeenCalledWith(
+      'managed:openai-codex',
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
       }),
     );
     expect(exitSpy).toHaveBeenCalledWith(0);

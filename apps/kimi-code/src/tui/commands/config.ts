@@ -6,6 +6,7 @@ import {
   type Session,
   type ThinkingEffort,
 } from '@moonshot-ai/kimi-code-sdk';
+import { OPENAI_CODEX_PROVIDER_NAME } from '@moonshot-ai/kimi-code-oauth';
 
 import { EditorSelectorComponent } from '../components/dialogs/editor-selector';
 import { EffortSelectorComponent } from '../components/dialogs/effort-selector';
@@ -26,7 +27,7 @@ import { NO_ACTIVE_SESSION_MESSAGE } from '../constant/kimi-tui';
 import { formatErrorMessage } from '../utils/event-payload';
 import { thinkingEffortToConfig } from '../utils/thinking-config';
 import { showUsage } from './info';
-import { setExperimentalFeatures } from './experimental-flags';
+import { isExperimentalFlagEnabled, setExperimentalFeatures } from './experimental-flags';
 import type { SlashCommandHost } from './dispatch';
 
 // ---------------------------------------------------------------------------
@@ -392,10 +393,16 @@ async function applyEditorChoice(host: SlashCommandHost, value: string): Promise
 
 export function showModelPicker(host: SlashCommandHost, selectedValue: string = host.state.appState.model): void {
   const models = Object.fromEntries(
-    Object.entries(host.state.appState.availableModels).map(([alias, model]) => [
-      alias,
-      effectiveModelForHost(host, model),
-    ]),
+    Object.entries(host.state.appState.availableModels)
+      .filter(
+        ([, model]) =>
+          model.provider !== OPENAI_CODEX_PROVIDER_NAME ||
+          isExperimentalFlagEnabled('openai-codex-oauth'),
+      )
+      .map(([alias, model]) => [
+        alias,
+        effectiveModelForHost(host, model),
+      ]),
   );
   const entries = Object.entries(models);
   if (entries.length === 0) {

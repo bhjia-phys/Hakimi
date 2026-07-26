@@ -711,7 +711,7 @@ itself. Any host-facing `trust apply` path remains AITP-owned future work.
 
 ## Relationship To Upstream
 
-Hakimi remains close to upstream Kimi Code on purpose. The SDK/OAuth imports stay compatible where useful, while Hakimi uses its own `.hakimi` user/project config roots by default so model, MCP, session, and runtime state do not collide with a separate Kimi Code install. The user-facing product is `Hakimi`, the npm package is `@bhjia-phys/hakimi`, and the primary executable is `hakimi`. Hakimi releases use an independent semver line, currently `0.13.0`, instead of mirroring upstream Kimi Code tags. This is a native fork, not an external wrapper.
+Hakimi remains close to upstream Kimi Code on purpose. The SDK/OAuth imports stay compatible where useful, while Hakimi uses its own `.hakimi` user/project config roots by default so model, MCP, session, and runtime state do not collide with a separate Kimi Code install. The user-facing product is `Hakimi`, the npm package is `@bhjia-phys/hakimi`, and the primary executable is `hakimi`. Hakimi releases use an independent semver line, currently `0.20.1`, instead of mirroring upstream Kimi Code tags. This is a native fork, not an external wrapper.
 
 Codex and ForgeCode are references rather than dependencies: Codex informs tool exposure, structured tool outputs, and action traces; ForgeCode informs harness and repeatable eval workflows.
 
@@ -874,7 +874,10 @@ corepack pnpm --config.engine-strict=false install
 corepack pnpm --config.engine-strict=false build
 New-Item -ItemType Directory -Force dist-pack
 corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ..\..\dist-pack
-npm install -g .\dist-pack\bhjia-phys-hakimi-0.13.0.tgz
+$package = Get-ChildItem .\dist-pack\bhjia-phys-hakimi-*.tgz |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1
+npm install -g $package.FullName
 hakimi --version
 hakimi
 ```
@@ -883,7 +886,7 @@ For an isolated install check without touching the global npm prefix:
 
 ```powershell
 $prefix = "$PWD\.sisyphus\drafts\_scratch\hakimi-install-prefix"
-npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.13.0.tgz
+npm install --prefix $prefix $package.FullName
 & "$prefix\node_modules\.bin\hakimi.cmd" --version
 ```
 
@@ -957,8 +960,6 @@ behavior cues; the harness can assert cues or reasoning-led tool calls without
 printing the underlying thinking text. Expectation failures return exit code
 `2`, and a timed-out real run returns `124`.
 
-## DeepSeek Quick Setup
-
 ## Kimi For Coding Login
 
 Hakimi can use the managed Kimi for Coding model through the inherited Kimi
@@ -1003,25 +1004,88 @@ experimental because OpenAI documents ChatGPT sign-in for Codex clients, but
 does not publish this third-party integration as a general OpenAI API OAuth
 contract.
 
-Enable the experiment from `/experiments`, or add:
+The shortest terminal flow enables the experiment explicitly and starts the
+device-code login:
+
+```sh
+hakimi login --provider openai-codex --enable-experimental
+```
+
+Alternatively, enable it from `/experiments`, or add:
 
 ```toml
 [experimental]
 openai-codex-oauth = true
 ```
 
-Then run either:
+and then run:
 
-```powershell
+```sh
 hakimi login --provider openai-codex
 ```
 
 or `/login` and choose `ChatGPT / OpenAI Codex (OAuth)`. Hakimi stores the
 refresh token under `~/.hakimi/credentials/`, provisions
-`managed:openai-codex`, and adds selectable GPT aliases including
-`openai-codex/gpt-5.6-sol`, `gpt-5.5`, and `gpt-5.4`. The generic
-`gpt-5.6` alias is intentionally not provisioned because the current Codex
-OAuth integration requires an explicit GPT-5.6 variant.
+`managed:openai-codex`, and makes `openai-codex/gpt-5.5` the default. The
+standard-Responses aliases currently exposed are `gpt-5.5`, `gpt-5.4`,
+`gpt-5.4-mini`, and `gpt-5.2`. GPT-5.6 is intentionally omitted until Hakimi
+implements the current Codex Responses Lite and code-mode tool protocol.
+
+This uses the ChatGPT/Codex allowance attached to the signed-in account, not
+OpenAI API-key billing. Actual model and quota availability still depends on
+the account's ChatGPT plan. Verify the end-to-end route with:
+
+```sh
+hakimi --model openai-codex/gpt-5.5 --prompt "Reply exactly OK."
+```
+
+To turn the experiment off without deleting its saved token, use
+`/experiments` or set:
+
+```toml
+[experimental]
+openai-codex-oauth = false
+```
+
+After reload or restart, GPT aliases disappear from the model picker and
+runtime requests through `managed:openai-codex` are rejected.
+
+### WSL: keep Kimi Code and Hakimi side by side
+
+On the WSL machine that already contains the Kimi Code session, keep the two
+homes separate:
+
+```sh
+export HAKIMI_HOME="$HOME/.hakimi"
+# Official Kimi Code remains under ~/.kimi-code.
+```
+
+Install Node with `nvm` if needed. A packaged Hakimi CLI needs Node
+`>=22.19.0`; building this checkout requires Node `>=24.15.0` and pnpm
+`10.33.0`:
+
+```sh
+nvm install 24
+nvm use 24
+corepack enable
+corepack prepare pnpm@10.33.0 --activate
+```
+
+Stop Kimi Code before importing, inspect the plan, then create an isolated
+Hakimi copy:
+
+```sh
+hakimi session import-kimi --dry-run
+hakimi session import-kimi
+hakimi login --provider openai-codex --enable-experimental
+cd /path/to/the/original/workspace
+hakimi --session SESSION_ID --model openai-codex/gpt-5.5
+```
+
+If Kimi Code uses a custom home, pass it with
+`--source-home /path/to/kimi-home`. The import copies session directories only:
+it never copies Kimi config or credentials, never overwrites an existing
+Hakimi session, and is a one-time fork rather than a live two-way sync.
 
 ## DeepSeek Quick Setup
 

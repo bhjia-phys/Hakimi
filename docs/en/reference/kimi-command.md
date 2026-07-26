@@ -132,7 +132,7 @@ In `stream-json` mode, regular replies produce an Assistant message; when the mo
 
 ## Subcommands
 
-`kimi` provides the following subcommands: `login` (non-interactive login), `acp` (ACP IDE mode), `web` (run the local REST/WebSocket/web service in the foreground and open the web UI), `doctor` (validate configuration files), `export` (export a session), `migrate` (migrate legacy data), `upgrade` (check for updates), and `provider` (manage providers).
+`kimi` provides the following subcommands: `login` (non-interactive login), `session` (Hakimi session import), `acp` (ACP IDE mode), `web` (run the local REST/WebSocket/web service in the foreground and open the web UI), `doctor` (validate configuration files), `export` (export a session), `migrate` (migrate legacy data), `upgrade` (check for updates), and `provider` (manage providers).
 
 ### `hakimi login`
 
@@ -145,12 +145,38 @@ location as TUI `/login`.
 
 ```sh
 hakimi login
-hakimi login --provider openai-codex
+hakimi login --provider openai-codex --enable-experimental
 ```
 
 Use `--provider kimi-code` (the default) or `--provider openai-codex`. Press
 `Ctrl-C` at any time during polling to cancel; the exit code is `1` on
 cancellation or failure, and `0` on success.
+
+`--enable-experimental` explicitly writes
+`[experimental].openai-codex-oauth = true` before ChatGPT login. Without that
+option, enable the feature first through `/experiments` or `config.toml`.
+
+### `hakimi session import-kimi`
+
+Copy current-format Kimi Code sessions into Hakimi's separate home so the
+conversation can resume with a Hakimi model:
+
+```sh
+hakimi session import-kimi --dry-run
+hakimi session import-kimi
+hakimi --session SESSION_ID --model openai-codex/gpt-5.5
+```
+
+| Option | Description |
+| --- | --- |
+| `--source-home <path>` | Kimi Code home; defaults to `$KIMI_CODE_HOME` or `~/.kimi-code` |
+| `--target-home <path>` | Hakimi home; defaults to `$HAKIMI_HOME` or `~/.hakimi` |
+| `--session-id <id>` | Import only the specified session |
+| `--dry-run` | Show what would be copied without writing files |
+
+The command copies session directories only, refuses nested homes and
+same-ID conflicts, never overwrites an imported session, and rebuilds Hakimi's
+session index. It does not copy provider config or OAuth credentials.
 
 ### `kimi acp`
 

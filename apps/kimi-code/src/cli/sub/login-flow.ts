@@ -10,7 +10,14 @@ import { OPENAI_CODEX_PROVIDER_NAME } from '@moonshot-ai/kimi-code-oauth';
 import { createKimiCodeHostIdentity } from '#/cli/version';
 import { openUrl } from '#/utils/open-url';
 
-export async function runLoginFlow(requestedProvider = 'kimi-code'): Promise<never> {
+export interface LoginFlowOptions {
+  readonly enableExperimental?: boolean;
+}
+
+export async function runLoginFlow(
+  requestedProvider = 'kimi-code',
+  options: LoginFlowOptions = {},
+): Promise<never> {
   const identity = createKimiCodeHostIdentity();
   const harness = createKimiHarness({
     identity,
@@ -27,6 +34,20 @@ export async function runLoginFlow(requestedProvider = 'kimi-code'): Promise<nev
     process.exit(1);
   }
   if (openAICodex) {
+    if (options.enableExperimental === true) {
+      try {
+        await harness.ensureConfigFile();
+        await harness.setConfig({
+          experimental: {
+            'openai-codex-oauth': true,
+          },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`Could not enable ChatGPT OAuth: ${message}\n`);
+        process.exit(1);
+      }
+    }
     const features = await harness.getExperimentalFeatures();
     const enabled = features.some(
       (feature) => feature.id === 'openai-codex-oauth' && feature.enabled,
@@ -38,6 +59,7 @@ export async function runLoginFlow(requestedProvider = 'kimi-code'): Promise<nev
           'Enable it in config.toml with:',
           '[experimental]',
           'openai-codex-oauth = true',
+          'Or run: hakimi login --provider openai-codex --enable-experimental',
           '',
         ].join('\n'),
       );

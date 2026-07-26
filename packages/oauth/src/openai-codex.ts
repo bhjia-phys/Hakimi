@@ -76,52 +76,31 @@ interface OpenAICodexModel {
 
 const OPENAI_CODEX_MODELS: readonly OpenAICodexModel[] = [
   {
-    id: 'gpt-5.6-sol',
-    displayName: 'GPT-5.6 Sol (ChatGPT)',
-    maxContextSize: 500_000,
-    maxInputSize: 372_000,
+    id: 'gpt-5.5',
+    displayName: 'GPT-5.5 (ChatGPT)',
+    maxContextSize: 272_000,
+    maxInputSize: 272_000,
     supportEfforts: ['low', 'medium', 'high', 'xhigh'],
-  },
-  {
-    id: 'gpt-5.6-terra',
-    displayName: 'GPT-5.6 Terra (ChatGPT)',
-    maxContextSize: 500_000,
-    maxInputSize: 372_000,
-    supportEfforts: ['low', 'medium', 'high', 'xhigh'],
-  },
-  {
-    id: 'gpt-5.6-luna',
-    displayName: 'GPT-5.6 Luna (ChatGPT)',
-    maxContextSize: 500_000,
-    maxInputSize: 372_000,
-    supportEfforts: ['low', 'medium', 'high'],
   },
   {
     id: 'gpt-5.4',
     displayName: 'GPT-5.4 (ChatGPT)',
-    maxContextSize: 1_050_000,
-    maxInputSize: 922_000,
-    supportEfforts: ['low', 'medium', 'high', 'xhigh'],
-  },
-  {
-    id: 'gpt-5.5',
-    displayName: 'GPT-5.5 (ChatGPT)',
-    maxContextSize: 400_000,
+    maxContextSize: 272_000,
     maxInputSize: 272_000,
     supportEfforts: ['low', 'medium', 'high', 'xhigh'],
   },
   {
     id: 'gpt-5.4-mini',
     displayName: 'GPT-5.4 mini (ChatGPT)',
-    maxContextSize: 400_000,
+    maxContextSize: 272_000,
     maxInputSize: 272_000,
-    supportEfforts: ['low', 'medium', 'high'],
+    supportEfforts: ['low', 'medium', 'high', 'xhigh'],
   },
   {
-    id: 'gpt-5.3-codex-spark',
-    displayName: 'GPT-5.3 Codex Spark (ChatGPT)',
-    maxContextSize: 128_000,
-    maxInputSize: 100_000,
+    id: 'gpt-5.2',
+    displayName: 'GPT-5.2 (ChatGPT)',
+    maxContextSize: 272_000,
+    maxInputSize: 272_000,
     supportEfforts: ['low', 'medium', 'high', 'xhigh'],
   },
 ] as const;
@@ -143,11 +122,16 @@ export function applyOpenAICodexConfig(
 ): OpenAICodexApplyResult {
   const oauthHost = normalizeIssuer(options.oauthHost ?? OPENAI_CODEX_ISSUER);
   const oauthKey = options.oauthKey ?? OPENAI_CODEX_OAUTH_KEY;
-  const defaultModel = `${OPENAI_CODEX_PLATFORM_ID}/gpt-5.6-sol`;
+  const defaultModel = `${OPENAI_CODEX_PLATFORM_ID}/gpt-5.5`;
 
   config.providers[OPENAI_CODEX_PROVIDER_NAME] = {
     type: 'openai_responses',
     baseUrl: OPENAI_CODEX_API_BASE_URL,
+    generationKwargs: {
+      parallel_tool_calls: true,
+      tool_choice: 'auto',
+      include: ['reasoning.encrypted_content'],
+    },
     oauth: {
       storage: 'file',
       key: oauthKey,
@@ -167,10 +151,9 @@ export function applyOpenAICodexConfig(
       model: model.id,
       maxContextSize: model.maxContextSize,
       maxInputSize: model.maxInputSize,
-      capabilities: ['tool_use', 'image_in'],
+      capabilities: ['thinking', 'always_thinking', 'tool_use', 'image_in'],
       supportEfforts: [...model.supportEfforts],
       defaultEffort: 'medium',
-      offEffort: 'none',
       displayName: model.displayName,
     };
   }

@@ -19,7 +19,14 @@ export function registerLoginCommand(parent: Command): void {
       'Login provider: kimi-code (default) or openai-codex.',
       'kimi-code',
     )
-    .action(async (options: { provider: string }) => {
-      await runLoginFlow(options.provider);
+    .option(
+      '--enable-experimental',
+      'Enable the experimental ChatGPT OAuth provider before login.',
+      false,
+    )
+    .action(async (options: { provider: string; enableExperimental?: boolean }) => {
+      await runLoginFlow(options.provider, {
+        enableExperimental: options.enableExperimental === true,
+      });
     });
 }

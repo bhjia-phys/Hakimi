@@ -1,7 +1,10 @@
 import type { Logger } from '#/logging/types';
 import type { ProviderConfig as KosongProviderConfig, ModelCapability, ProviderRequestAuth } from '@moonshot-ai/kosong';
 import { APIStatusError, getModelCapability, UNKNOWN_CAPABILITY } from '@moonshot-ai/kosong';
-import { parseKimiCodeCustomHeaders } from '@moonshot-ai/kimi-code-oauth';
+import {
+  OPENAI_CODEX_PROVIDER_NAME,
+  parseKimiCodeCustomHeaders,
+} from '@moonshot-ai/kimi-code-oauth';
 import {
   effectiveModelAlias,
   type KimiConfig,
@@ -11,6 +14,7 @@ import {
   type ProviderType,
 } from '../config';
 import { ErrorCodes, isKimiError, KimiError } from '../errors';
+import type { FlagId } from '../flags';
 
 export interface BearerTokenProvider {
   getAccessToken(options?: { readonly force?: boolean }): Promise<string>;
@@ -44,6 +48,7 @@ interface ProviderManagerOptions {
   readonly kimiRequestHeaders?: Record<string, string>;
   readonly resolveOAuthTokenProvider?: OAuthTokenProviderResolver;
   readonly promptCacheKey?: string;
+  readonly isExperimentalFeatureEnabled?: (id: FlagId) => boolean;
 }
 
 type AuthorizedRequest = <T>(
@@ -105,6 +110,20 @@ export class ProviderManager implements ModelProvider {
       throw new KimiError(
         ErrorCodes.CONFIG_INVALID,
         `Model "${model}" must define a provider in config.toml.`,
+      );
+    }
+    if (
+      providerName === OPENAI_CODEX_PROVIDER_NAME &&
+      this.options.isExperimentalFeatureEnabled !== undefined &&
+      !this.options.isExperimentalFeatureEnabled('openai-codex-oauth')
+    ) {
+      throw new KimiError(
+        ErrorCodes.CONFIG_INVALID,
+        [
+          'ChatGPT / OpenAI Codex OAuth is experimental and currently disabled.',
+          'Enable [experimental] openai-codex-oauth = true in config.toml,',
+          'or run `hakimi login --provider openai-codex --enable-experimental`.',
+        ].join(' '),
       );
     }
 

@@ -119,6 +119,35 @@ describe('convertOpenAIError: provider rate limit', () => {
     expect((result as APIProviderRateLimitError).statusCode).toBe(429);
   });
 
+  it('normalizes ChatGPT Codex usage-limit 404s to APIProviderRateLimitError', () => {
+    const err = new OpenAIAPIError(
+      404,
+      {
+        code: 'usage_limit_reached',
+        message: 'Your ChatGPT usage limit has been reached.',
+      },
+      'Not found',
+      new Headers({ 'retry-after': '30' }),
+    );
+    const result = convertOpenAIError(err);
+    expect(result).toBeInstanceOf(APIProviderRateLimitError);
+    expect((result as APIProviderRateLimitError).statusCode).toBe(429);
+    expect((result as APIProviderRateLimitError).retryAfterMs).toBe(30_000);
+  });
+
+  it('does not reinterpret unrelated OpenAI 404s as rate limits', () => {
+    const err = new OpenAIAPIError(
+      404,
+      { code: 'model_not_found', message: 'The model does not exist.' },
+      'Not found',
+      new Headers(),
+    );
+    const result = convertOpenAIError(err);
+    expect(result).toBeInstanceOf(APIStatusError);
+    expect(result).not.toBeInstanceOf(APIProviderRateLimitError);
+    expect((result as APIStatusError).statusCode).toBe(404);
+  });
+
   it('reads an integer retry-after header (seconds) onto the rate-limit error', () => {
     const err = new OpenAIAPIError(
       429,

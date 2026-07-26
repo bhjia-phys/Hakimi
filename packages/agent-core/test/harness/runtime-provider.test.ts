@@ -1026,6 +1026,52 @@ describe('ProviderManager prompt cache key', () => {
   });
 });
 
+describe('ProviderManager experimental provider gates', () => {
+  const config: KimiConfig = {
+    defaultModel: 'openai-codex/gpt-5.5',
+    providers: {
+      'managed:openai-codex': {
+        type: 'openai_responses',
+        baseUrl: 'https://chatgpt.com/backend-api/codex',
+        oauth: { storage: 'file', key: 'oauth/openai-codex' },
+      },
+    },
+    models: {
+      'openai-codex/gpt-5.5': {
+        provider: 'managed:openai-codex',
+        model: 'gpt-5.5',
+        maxContextSize: 272_000,
+      },
+    },
+  };
+
+  it('blocks the managed ChatGPT provider when the experiment is disabled', () => {
+    const manager = new ProviderManager({
+      config,
+      isExperimentalFeatureEnabled: () => false,
+    });
+
+    expect(() => manager.resolveProviderConfig('openai-codex/gpt-5.5')).toThrow(
+      /openai-codex-oauth.*disabled|disabled.*openai-codex-oauth/i,
+    );
+  });
+
+  it('allows the managed ChatGPT provider when the experiment is enabled', () => {
+    const manager = new ProviderManager({
+      config,
+      isExperimentalFeatureEnabled: (id) => id === 'openai-codex-oauth',
+    });
+
+    expect(manager.resolveProviderConfig('openai-codex/gpt-5.5')).toMatchObject({
+      providerName: 'managed:openai-codex',
+      provider: {
+        type: 'openai_responses',
+        model: 'gpt-5.5',
+      },
+    });
+  });
+});
+
 describe('ProviderManager OAuth auth', () => {
   function oauthConfig(): KimiConfig {
     return {
