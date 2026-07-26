@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { KimiConfig, ModelAlias } from '../../src/config';
 import { ErrorCodes, KimiError } from '../../src/errors';
@@ -1040,6 +1040,38 @@ describe('ProviderManager OAuth auth', () => {
       },
     };
   }
+
+  it('forwards provider-specific request auth headers without dropping the bearer token', async () => {
+    const getAccessToken = vi.fn(async () => 'fallback-token');
+    const getRequestAuth = vi.fn(async () => ({
+      apiKey: 'chatgpt-access',
+      headers: {
+        'ChatGPT-Account-Id': 'acct-123',
+        originator: 'hakimi',
+      },
+    }));
+    const manager = new ProviderManager({
+      config: oauthConfig(),
+      resolveOAuthTokenProvider: () => ({
+        getAccessToken,
+        getRequestAuth,
+      }),
+    });
+
+    const resolveAuth = manager.resolveAuth('kimi-code/kimi-for-coding');
+    const request = vi.fn(async () => 'ok');
+
+    await expect(resolveAuth?.(request)).resolves.toBe('ok');
+    expect(request).toHaveBeenCalledWith({
+      apiKey: 'chatgpt-access',
+      headers: {
+        'ChatGPT-Account-Id': 'acct-123',
+        originator: 'hakimi',
+      },
+    });
+    expect(getRequestAuth).toHaveBeenCalledOnce();
+    expect(getAccessToken).not.toHaveBeenCalled();
+  });
 
   it('preserves non-Kimi token fetch failures instead of guessing their category', async () => {
     const tokenError = new Error('token storage permission denied');

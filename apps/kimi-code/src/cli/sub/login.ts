@@ -13,8 +13,13 @@ import { runLoginFlow } from './login-flow';
 export function registerLoginCommand(parent: Command): void {
   parent
     .command('login')
-    .description('Authenticate Hakimi with Kimi for Coding via the device-code flow.')
-    .action(async () => {
-      await runLoginFlow();
+    .description('Authenticate Hakimi with Kimi for Coding or ChatGPT via a device-code flow.')
+    .option(
+      '-p, --provider <provider>',
+      'Login provider: kimi-code (default) or openai-codex.',
+      'kimi-code',
+    )
+    .action(async (options: { provider: string }) => {
+      await runLoginFlow(options.provider);
     });
 }

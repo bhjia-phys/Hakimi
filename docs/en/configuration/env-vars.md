@@ -153,7 +153,7 @@ Switches that control the behavior of subsystems such as telemetry, background t
 
 ## Experimental feature flags
 
-Experimental features are gated behind `KIMI_CODE_EXPERIMENTAL_*` environment variables. In Hakimi, the core AITP research runtime flags are on by default; set an individual flag to a falsy value (`0`, `false`, `no`, `off`) to opt out for one launch. Each flag also accepts truthy values (`1`, `true`, `yes`, `on`); the master switch `KIMI_CODE_EXPERIMENTAL_FLAG` forces every experimental feature on. These flags are not read from `config.toml`.
+Experimental features are gated behind `KIMI_CODE_EXPERIMENTAL_*` environment variables. In Hakimi, the core AITP research runtime flags are on by default; set an individual flag to a falsy value (`0`, `false`, `no`, `off`) to opt out for one launch. Each flag also accepts truthy values (`1`, `true`, `yes`, `on`); the master switch `KIMI_CODE_EXPERIMENTAL_FLAG` forces every experimental feature on. Persistent overrides can also be set in the `[experimental]` table of `config.toml` or through `/experiments`.
 
 | Environment variable | Purpose | Default |
 | --- | --- | --- |
@@ -165,6 +165,7 @@ Experimental features are gated behind `KIMI_CODE_EXPERIMENTAL_*` environment va
 | `KIMI_CODE_EXPERIMENTAL_RESEARCH_HARNESS` | Enable research eval case registries and harness candidate/eval loading. | `true` (on) |
 | `KIMI_CODE_EXPERIMENTAL_GOAL_COMMAND` | Enable the `/goal` command and autonomous goal mode. Hakimi works toward a stated objective across automatic continuation turns until the goal completes, pauses, or becomes blocked. | `true` (on) |
 | `KIMI_CODE_EXPERIMENTAL_TOOL_SELECT` | Enable progressive MCP tool disclosure for models that support dynamically loaded tools. | `false` (off) |
+| `KIMI_CODE_EXPERIMENTAL_OPENAI_CODEX_OAUTH` | Enable ChatGPT subscription login and the managed OpenAI Codex Responses provider. | `false` (off) |
 | `KIMI_CODE_EXPERIMENTAL_MICRO_COMPACTION` | Enable the experimental micro-compaction path. | `false` (off) |
 
 ```sh

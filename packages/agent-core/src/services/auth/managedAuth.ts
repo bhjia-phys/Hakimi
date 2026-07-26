@@ -4,8 +4,14 @@ import type { OAuthTokenProviderResolver } from '../../session/provider-manager'
 import {
   applyManagedKimiCodeConfig,
   applyManagedKimiCodeLogoutConfig,
+  applyOpenAICodexConfig,
   KIMI_CODE_PROVIDER_NAME,
   KimiOAuthToolkit,
+  OPENAI_CODEX_ISSUER,
+  OPENAI_CODEX_OAUTH_KEY,
+  OPENAI_CODEX_PROVIDER_NAME,
+  OpenAICodexOAuthToolkit,
+  removeOpenAICodexConfig,
   resolveKimiCodeLoginAuth,
   resolveKimiCodeRuntimeAuth,
   type BearerTokenProvider,
@@ -47,6 +53,7 @@ export interface ServicesAuthFacade {
 
 class ServicesManagedAuthFacade implements ServicesAuthFacade {
   private readonly toolkit: KimiOAuthToolkit<ServicesManagedConfig>;
+  private readonly openAICodexToolkit: OpenAICodexOAuthToolkit;
 
   constructor(
     private readonly options: Pick<IEnvironmentService, 'homeDir' | 'configPath'>,
@@ -63,12 +70,40 @@ class ServicesManagedAuthFacade implements ServicesAuthFacade {
         remove: applyManagedKimiCodeLogoutConfig,
       },
     });
+    this.openAICodexToolkit = new OpenAICodexOAuthToolkit({
+      homeDir: options.homeDir,
+      userAgent: 'hakimi-service',
+    });
   }
 
   async login(
     providerName: string | undefined = KIMI_CODE_PROVIDER_NAME,
     options: ServicesAuthLoginOptions = {},
   ): Promise<ServicesAuthLoginResult> {
+    if (providerName === OPENAI_CODEX_PROVIDER_NAME) {
+      const oauthRef = this.openAICodexOAuthRef(options.oauthRef, options.oauthHost);
+      const status = await this.openAICodexToolkit.status(oauthRef);
+      const hadToken = status.providers.some((provider) => provider.hasToken);
+      await this.openAICodexToolkit.login({
+        oauthRef,
+        signal: options.signal,
+        onDeviceCode: options.onDeviceCode,
+      });
+      const config = readConfigFile(this.options.configPath) as ServicesManagedConfig;
+      const provision = applyOpenAICodexConfig(config, {
+        oauthKey: oauthRef.key,
+        oauthHost: oauthRef.oauthHost,
+        preserveDefaultModel: hadToken,
+      });
+      await writeConfigFile(this.options.configPath, config);
+      return {
+        providerName: provision.providerName,
+        ok: true,
+        defaultModel: provision.defaultModel,
+        defaultThinking: provision.defaultThinking,
+        configPath: this.options.configPath,
+      };
+    }
     const auth = this.resolveManagedAuth(providerName);
     const loginAuth = resolveKimiCodeLoginAuth({
       configuredBaseUrl: auth.baseUrl,
@@ -98,6 +133,16 @@ class ServicesManagedAuthFacade implements ServicesAuthFacade {
   async logout(
     providerName?: string | undefined,
   ): Promise<ServicesAuthLogoutResult> {
+    if (providerName === OPENAI_CODEX_PROVIDER_NAME) {
+      await this.openAICodexToolkit.logout(this.openAICodexOAuthRef());
+      const config = readConfigFile(this.options.configPath) as ServicesManagedConfig;
+      removeOpenAICodexConfig(config);
+      await writeConfigFile(this.options.configPath, config);
+      return {
+        providerName: OPENAI_CODEX_PROVIDER_NAME,
+        ok: true,
+      };
+    }
     const result = await this.toolkit.logout(
       providerName,
       this.resolveRuntimeManagedAuth(providerName).oauthRef,
@@ -112,6 +157,11 @@ class ServicesManagedAuthFacade implements ServicesAuthFacade {
     providerName?: string,
     oauthRef?: OAuthRef | undefined,
   ): Promise<string | undefined> {
+    if (providerName === OPENAI_CODEX_PROVIDER_NAME) {
+      return this.openAICodexToolkit.getCachedAccessToken(
+        this.openAICodexOAuthRef(oauthRef),
+      );
+    }
     return this.toolkit.getCachedAccessToken(
       providerName,
       this.runtimeOAuthRef(providerName, oauthRef),
@@ -122,6 +172,9 @@ class ServicesManagedAuthFacade implements ServicesAuthFacade {
     providerName: string,
     oauthRef?: OAuthRef | undefined,
   ): BearerTokenProvider => {
+    if (providerName === OPENAI_CODEX_PROVIDER_NAME) {
+      return this.openAICodexToolkit.tokenProvider(this.openAICodexOAuthRef(oauthRef));
+    }
     return this.toolkit.tokenProvider(
       providerName,
       this.runtimeOAuthRef(providerName, oauthRef),
@@ -164,6 +217,29 @@ class ServicesManagedAuthFacade implements ServicesAuthFacade {
       configuredBaseUrl: auth.baseUrl,
       configuredOAuthRef: oauthRef ?? auth.oauthRef,
     }).oauthRef;
+  }
+
+  private openAICodexOAuthRef(
+    oauthRef?:
+      | OAuthRef
+      | {
+          readonly storage?: 'file' | 'keyring' | undefined;
+          readonly key?: string | undefined;
+          readonly oauthHost?: string | undefined;
+        }
+      | undefined,
+    requestedOAuthHost?: string | undefined,
+  ): OAuthRef {
+    const configured = this.resolveManagedAuth(OPENAI_CODEX_PROVIDER_NAME).oauthRef;
+    return {
+      storage: oauthRef?.storage ?? configured?.storage ?? 'file',
+      key: oauthRef?.key ?? configured?.key ?? OPENAI_CODEX_OAUTH_KEY,
+      oauthHost:
+        requestedOAuthHost ??
+        oauthRef?.oauthHost ??
+        configured?.oauthHost ??
+        OPENAI_CODEX_ISSUER,
+    };
   }
 }
 

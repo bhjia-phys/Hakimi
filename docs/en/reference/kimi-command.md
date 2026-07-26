@@ -134,15 +134,23 @@ In `stream-json` mode, regular replies produce an Assistant message; when the mo
 
 `kimi` provides the following subcommands: `login` (non-interactive login), `acp` (ACP IDE mode), `web` (run the local REST/WebSocket/web service in the foreground and open the web UI), `doctor` (validate configuration files), `export` (export a session), `migrate` (migrate legacy data), `upgrade` (check for updates), and `provider` (manage providers).
 
-### `kimi login`
+### `hakimi login`
 
-Log in to Kimi Code OAuth via the RFC 8628 device-code flow, without entering the TUI. The command issues a device authorization request, prints the verification URL and user code to stderr, then polls until the browser-side authorization is complete. The generated token is written to the same local location as TUI `/login` and is loaded automatically the next time `kimi` starts.
+Log in through an OAuth device-code flow without entering the TUI. Kimi Code is
+the default provider. Hakimi also supports the experimental ChatGPT / OpenAI
+Codex provider after `openai-codex-oauth` is enabled. The command prints the
+verification URL and user code to stderr, then polls until browser-side
+authorization completes. The generated token is written to the same local
+location as TUI `/login`.
 
 ```sh
-kimi login
+hakimi login
+hakimi login --provider openai-codex
 ```
 
-This subcommand has no flags. Press `Ctrl-C` at any time during polling to cancel; the exit code is `1` on cancellation or failure, and `0` on success.
+Use `--provider kimi-code` (the default) or `--provider openai-codex`. Press
+`Ctrl-C` at any time during polling to cancel; the exit code is `1` on
+cancellation or failure, and `0` on success.
 
 ### `kimi acp`
 

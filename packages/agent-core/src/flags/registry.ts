@@ -97,6 +97,15 @@ export const FLAG_DEFINITIONS = [
     surface: 'both',
   },
   {
+    id: 'openai-codex-oauth',
+    title: 'ChatGPT / OpenAI Codex OAuth',
+    description:
+      'Allow Hakimi to authenticate with a ChatGPT subscription and use the OpenAI Codex backend.',
+    env: 'KIMI_CODE_EXPERIMENTAL_OPENAI_CODEX_OAUTH',
+    default: false,
+    surface: 'both',
+  },
+  {
     id: 'micro-compaction',
     title: 'Micro compaction',
     description: 'Trim older large tool results from context while keeping recent conversation intact.',

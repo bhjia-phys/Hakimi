@@ -5,22 +5,53 @@
  */
 
 import { createKimiHarness } from '@moonshot-ai/kimi-code-sdk';
+import { OPENAI_CODEX_PROVIDER_NAME } from '@moonshot-ai/kimi-code-oauth';
 
 import { createKimiCodeHostIdentity } from '#/cli/version';
 import { openUrl } from '#/utils/open-url';
 
-export async function runLoginFlow(): Promise<never> {
+export async function runLoginFlow(requestedProvider = 'kimi-code'): Promise<never> {
   const identity = createKimiCodeHostIdentity();
   const harness = createKimiHarness({
     identity,
     uiMode: 'cli',
   });
+  const normalizedProvider = requestedProvider.trim().toLowerCase();
+  const openAICodex =
+    normalizedProvider === 'openai-codex' ||
+    normalizedProvider === 'chatgpt';
+  if (!openAICodex && normalizedProvider !== 'kimi-code' && normalizedProvider !== 'kimi') {
+    process.stderr.write(
+      `Unknown login provider "${requestedProvider}". Use "kimi-code" or "openai-codex".\n`,
+    );
+    process.exit(1);
+  }
+  if (openAICodex) {
+    const features = await harness.getExperimentalFeatures();
+    const enabled = features.some(
+      (feature) => feature.id === 'openai-codex-oauth' && feature.enabled,
+    );
+    if (!enabled) {
+      process.stderr.write(
+        [
+          'ChatGPT / OpenAI Codex OAuth is experimental and currently disabled.',
+          'Enable it in config.toml with:',
+          '[experimental]',
+          'openai-codex-oauth = true',
+          '',
+        ].join('\n'),
+      );
+      process.exit(1);
+    }
+  }
+  const providerName = openAICodex ? OPENAI_CODEX_PROVIDER_NAME : undefined;
+  const providerLabel = openAICodex ? 'ChatGPT / OpenAI Codex' : 'Kimi-for-Coding';
   const controller = new AbortController();
   process.once('SIGINT', () => {
     controller.abort();
   });
   try {
-    const result = await harness.auth.login(undefined, {
+    const result = await harness.auth.login(providerName, {
       signal: controller.signal,
       onDeviceCode: (data) => {
         const url = data.verificationUriComplete || data.verificationUri;
@@ -30,7 +61,7 @@ export async function runLoginFlow(): Promise<never> {
         process.stderr.write(
           [
             '',
-            `Opening browser for Hakimi Kimi-for-Coding login: ${url}`,
+            `Opening browser for Hakimi ${providerLabel} login: ${url}`,
             `If the browser did not open, paste the URL above and enter code: ${data.userCode}`,
             data.expiresIn !== null && data.expiresIn !== undefined
               ? `Code expires in ${data.expiresIn}s.`
@@ -49,7 +80,7 @@ export async function runLoginFlow(): Promise<never> {
       },
     });
     process.stderr.write(
-      `Logged in to Kimi for Coding. Hakimi model config was provisioned via ${result.providerName}.\n`,
+      `Logged in to ${providerLabel}. Hakimi model config was provisioned via ${result.providerName}.\n`,
     );
     process.exit(0);
   } catch (error) {

@@ -10,6 +10,7 @@ import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockLogin = vi.fn();
+const mockGetExperimentalFeatures = vi.fn();
 
 vi.mock('@moonshot-ai/kimi-code-sdk', async () => {
   const actual = await vi.importActual<typeof import('@moonshot-ai/kimi-code-sdk')>(
@@ -21,6 +22,7 @@ vi.mock('@moonshot-ai/kimi-code-sdk', async () => {
       auth: {
         login: mockLogin,
       },
+      getExperimentalFeatures: mockGetExperimentalFeatures,
     })),
   };
 });
@@ -44,6 +46,8 @@ describe('hakimi login', () => {
 
   beforeEach(() => {
     mockLogin.mockReset();
+    mockGetExperimentalFeatures.mockReset();
+    mockGetExperimentalFeatures.mockResolvedValue([]);
     vi.mocked(openUrl).mockReset();
     vi.mocked(createKimiHarness).mockClear();
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number | string | null) => {
@@ -130,6 +134,42 @@ describe('hakimi login', () => {
       ),
     ).toBe(true);
     expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it('routes --provider openai-codex through the experimental ChatGPT provider', async () => {
+    mockGetExperimentalFeatures.mockResolvedValue([
+      { id: 'openai-codex-oauth', enabled: true },
+    ]);
+    mockLogin.mockResolvedValue({ providerName: 'managed:openai-codex', ok: true });
+    const program = new Command('hakimi').exitOverride();
+    registerLoginCommand(program);
+
+    await expect(
+      program.parseAsync(['node', 'hakimi', 'login', '--provider', 'openai-codex']),
+    ).rejects.toThrow(ExitCalled);
+
+    expect(mockLogin).toHaveBeenCalledWith(
+      'managed:openai-codex',
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+        onDeviceCode: expect.any(Function),
+      }),
+    );
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it('explains how to enable ChatGPT OAuth when its experiment is off', async () => {
+    const program = new Command('hakimi').exitOverride();
+    registerLoginCommand(program);
+
+    await expect(
+      program.parseAsync(['node', 'hakimi', 'login', '--provider', 'chatgpt']),
+    ).rejects.toThrow(ExitCalled);
+
+    expect(mockLogin).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    const written = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+    expect(written).toContain('openai-codex-oauth = true');
   });
 
   it('still prints device code prompt when opening the browser fails', async () => {

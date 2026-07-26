@@ -41,8 +41,20 @@ import { OAuthManager, type LoginOptions, type OAuthManagerOptions } from './oau
 import { FileTokenStorage, type TokenStorage } from './storage';
 import type { OAuthFlowConfig } from './types';
 
+export interface BearerRequestAuth {
+  readonly apiKey: string;
+  readonly headers?: Record<string, string> | undefined;
+}
+
 export interface BearerTokenProvider {
   getAccessToken(options?: { readonly force?: boolean | undefined }): Promise<string>;
+  /**
+   * Optional richer request auth for providers that require account-routing
+   * headers in addition to a bearer token.
+   */
+  getRequestAuth?(
+    options?: { readonly force?: boolean | undefined },
+  ): Promise<BearerRequestAuth>;
 }
 
 export interface AuthProviderStatus {

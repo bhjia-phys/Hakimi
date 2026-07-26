@@ -10,7 +10,7 @@ import {
   OpenAIResponsesChatProvider,
   OpenAIResponsesStreamedMessage,
 } from '#/providers/openai-responses';
-import type { GenerateOptions } from '#/provider';
+import type { GenerateOptions, ProviderRequestAuth } from '#/provider';
 import type { Tool } from '#/tool';
 import { describe, it, expect, vi } from 'vitest';
 
@@ -97,6 +97,44 @@ const MUL_TOOL: Tool = {
 };
 
 describe('OpenAIResponsesChatProvider', () => {
+  it('forwards request-scoped bearer and account headers to the client factory', async () => {
+    const auths: ProviderRequestAuth[] = [];
+    const create = vi.fn().mockResolvedValue(makeResponsesAPIResponse());
+    const provider = new OpenAIResponsesChatProvider({
+      model: 'gpt-5.6-sol',
+      baseUrl: 'https://chatgpt.com/backend-api/codex',
+      clientFactory: (auth) => {
+        auths.push(auth);
+        return { responses: { create } } as never;
+      },
+    });
+    (provider as any)._stream = false;
+
+    const stream = await provider.generate('', [], [], {
+      auth: {
+        apiKey: 'chatgpt-access',
+        headers: {
+          'ChatGPT-Account-Id': 'acct-123',
+          originator: 'hakimi',
+        },
+      },
+    });
+    for await (const part of stream) {
+      void part;
+    }
+
+    expect(auths).toEqual([
+      {
+        apiKey: 'chatgpt-access',
+        headers: {
+          'ChatGPT-Account-Id': 'acct-123',
+          originator: 'hakimi',
+        },
+      },
+    ]);
+    expect(create).toHaveBeenCalledOnce();
+  });
+
   describe('message conversion', () => {
     it('sends system prompt as top-level instructions', async () => {
       const provider = createProvider();

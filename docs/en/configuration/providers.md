@@ -186,6 +186,14 @@ To route Vertex requests through a custom (e.g. proxied) endpoint, set `base_url
 
 The Kimi Code managed service uses OAuth rather than static API keys. After running `/login`, the built-in authentication toolchain automatically writes and refreshes credentials — no manual configuration is needed in `config.toml` for this.
 
+Hakimi also has an experimental `managed:openai-codex` provider for ChatGPT
+subscription sign-in. Enable `openai-codex-oauth` in `/experiments` (or under
+`[experimental]` in `config.toml`), then choose
+`ChatGPT / OpenAI Codex (OAuth)` from `/login`. The provider uses the Responses
+wire against the Codex backend and injects the refreshed bearer token plus the
+`ChatGPT-Account-Id` header per request. It is not interchangeable with an
+OpenAI API key.
+
 ## Next steps
 
 - [Configuration files](./config-files.md) — full field reference for the `providers` and `models` tables

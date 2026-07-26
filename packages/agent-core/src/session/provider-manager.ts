@@ -14,6 +14,9 @@ import { ErrorCodes, isKimiError, KimiError } from '../errors';
 
 export interface BearerTokenProvider {
   getAccessToken(options?: { readonly force?: boolean }): Promise<string>;
+  getRequestAuth?(
+    options?: { readonly force?: boolean },
+  ): Promise<ProviderRequestAuth>;
 }
 
 export type OAuthTokenProviderResolver = (
@@ -186,9 +189,13 @@ export class ProviderManager implements ModelProvider {
 
     const log = options?.log;
     const fetchAuth = async (force: boolean): Promise<ProviderRequestAuth> => {
-      let apiKey: string;
+      let auth: ProviderRequestAuth;
       try {
-        apiKey = await tokenProvider.getAccessToken(force ? { force: true } : undefined);
+        const tokenOptions = force ? { force: true } : undefined;
+        auth =
+          tokenProvider.getRequestAuth === undefined
+            ? { apiKey: await tokenProvider.getAccessToken(tokenOptions) }
+            : await tokenProvider.getRequestAuth(tokenOptions);
       } catch (error) {
         // login-required is an expected state (the user must /login); don't
         // warn. Other failures (connection errors, etc.) are logged once for
@@ -198,8 +205,8 @@ export class ProviderManager implements ModelProvider {
         }
         throw error;
       }
-      if (apiKey.trim().length === 0) throw loginRequired();
-      return { apiKey };
+      if (auth.apiKey === undefined || auth.apiKey.trim().length === 0) throw loginRequired();
+      return auth;
     };
 
     return async (request) => {
@@ -429,21 +436,6 @@ function kimiUserAgentHeader(
 ): Record<string, string> {
   const userAgent = kimiRequestHeaders?.['User-Agent'];
   return userAgent === undefined ? {} : { 'User-Agent': userAgent };
-}
-
-function generationKwargsField(
-  generationKwargs: Record<string, unknown> | undefined,
-): { generationKwargs?: Record<string, unknown> } {
-  if (generationKwargs === undefined || Object.keys(generationKwargs).length === 0) return {};
-  return { generationKwargs: structuredClone(generationKwargs) };
-}
-
-function providerForCapabilityProbe(provider: KosongProviderConfig): KosongProviderConfig {
-  const apiKey = provider.apiKey && provider.apiKey.length > 0 ? provider.apiKey : 'capability-probe';
-  if (provider.type === 'vertexai') {
-    return { ...provider, vertexai: false, project: undefined, location: undefined, apiKey };
-  }
-  return { ...provider, apiKey };
 }
 
 function providerApiKey(provider: ProviderConfig): string | undefined {

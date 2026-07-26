@@ -995,6 +995,34 @@ If prompt mode says no model is configured, run `hakimi login` again or open
 setup; Hakimi intentionally keeps its package, executable, sessions, and config
 separate.
 
+## Experimental ChatGPT / OpenAI Codex Login
+
+Hakimi can also use a ChatGPT subscription through the OpenAI Codex OAuth
+device flow. This is separate from OpenAI API-key billing and remains
+experimental because OpenAI documents ChatGPT sign-in for Codex clients, but
+does not publish this third-party integration as a general OpenAI API OAuth
+contract.
+
+Enable the experiment from `/experiments`, or add:
+
+```toml
+[experimental]
+openai-codex-oauth = true
+```
+
+Then run either:
+
+```powershell
+hakimi login --provider openai-codex
+```
+
+or `/login` and choose `ChatGPT / OpenAI Codex (OAuth)`. Hakimi stores the
+refresh token under `~/.hakimi/credentials/`, provisions
+`managed:openai-codex`, and adds selectable GPT aliases including
+`openai-codex/gpt-5.6-sol`, `gpt-5.5`, and `gpt-5.4`. The generic
+`gpt-5.6` alias is intentionally not provisioned because the current Codex
+OAuth integration requires an explicit GPT-5.6 variant.
+
 ## DeepSeek Quick Setup
 
 If the managed Kimi-for-coding endpoint is unavailable for your account, configure DeepSeek as the native default model:

@@ -6,6 +6,8 @@ import {
   FileTokenStorage,
   KIMI_CODE_PROVIDER_NAME,
   KimiOAuthToolkit,
+  OPENAI_CODEX_OAUTH_KEY,
+  OPENAI_CODEX_PROVIDER_NAME,
   OAuthConnectionError,
   OAuthError,
   RetryableRefreshError,
@@ -42,6 +44,10 @@ function freshToken(): TokenInfo {
     tokenType: 'Bearer',
     expiresIn: 3600,
   };
+}
+
+function jwt(payload: Record<string, unknown>): string {
+  return `header.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.signature`;
 }
 
 beforeEach(async () => {
@@ -96,7 +102,7 @@ describe('KimiHarness.auth', () => {
         const error = await harness.auth
           .resolveOAuthTokenProvider(KIMI_CODE_PROVIDER_NAME)
           .getAccessToken()
-          .catch((caught: unknown) => caught);
+          .catch((error: unknown) => error);
 
         expect(error).toBeInstanceOf(KimiError);
         expect(error).toMatchObject({
@@ -262,6 +268,132 @@ oauth = { storage = "file", key = "${oauthKey}", oauth_host = "https://auth.dev.
       storage: 'file',
       key: 'oauth/kimi-code',
     });
+  });
+
+  it('logs in with ChatGPT device OAuth and provisions selectable GPT models', async () => {
+    const onDeviceCode = vi.fn();
+    const fetchMock = vi.fn<FetchMock>(async (input, init) => {
+      const url = fetchInputUrl(input);
+      if (url === 'https://auth.openai.com/api/accounts/deviceauth/usercode') {
+        const deviceRequestBody = init?.body;
+        if (typeof deviceRequestBody !== 'string') {
+          throw new TypeError('expected the device authorization body to be a JSON string');
+        }
+        expect(JSON.parse(deviceRequestBody)).toEqual({
+          client_id: expect.any(String),
+        });
+        return new Response(
+          JSON.stringify({
+            device_auth_id: 'device-auth-id',
+            user_code: 'ABCD-EFGH',
+            interval: '5',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      if (url === 'https://auth.openai.com/api/accounts/deviceauth/token') {
+        return new Response(
+          JSON.stringify({
+            authorization_code: 'authorization-code',
+            code_verifier: 'code-verifier',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      if (url === 'https://auth.openai.com/oauth/token') {
+        return new Response(
+          JSON.stringify({
+            id_token: jwt({ chatgpt_account_id: 'acct-123' }),
+            access_token: 'chatgpt-access',
+            refresh_token: 'chatgpt-refresh',
+            expires_in: 3600,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const harness = createKimiHarness({ homeDir, identity: TEST_IDENTITY });
+
+    await expect(
+      harness.auth.login(OPENAI_CODEX_PROVIDER_NAME, { onDeviceCode }),
+    ).resolves.toMatchObject({
+      providerName: OPENAI_CODEX_PROVIDER_NAME,
+      ok: true,
+      defaultModel: 'openai-codex/gpt-5.6-sol',
+      defaultThinking: true,
+    });
+    expect(onDeviceCode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userCode: 'ABCD-EFGH',
+        verificationUri: 'https://auth.openai.com/codex/device',
+      }),
+    );
+
+    const config = await harness.getConfig({ reload: true });
+    expect(config.providers[OPENAI_CODEX_PROVIDER_NAME]).toMatchObject({
+      type: 'openai_responses',
+      baseUrl: 'https://chatgpt.com/backend-api/codex',
+      oauth: {
+        storage: 'file',
+        key: OPENAI_CODEX_OAUTH_KEY,
+        oauthHost: 'https://auth.openai.com',
+      },
+    });
+    expect(config.defaultModel).toBe('openai-codex/gpt-5.6-sol');
+    expect(config.models?.['openai-codex/gpt-5.6-sol']).toMatchObject({
+      provider: OPENAI_CODEX_PROVIDER_NAME,
+      model: 'gpt-5.6-sol',
+    });
+
+    const tokenProvider = harness.auth.resolveOAuthTokenProvider(
+      OPENAI_CODEX_PROVIDER_NAME,
+      config.providers[OPENAI_CODEX_PROVIDER_NAME]?.oauth,
+    );
+    await expect(tokenProvider.getRequestAuth?.()).resolves.toMatchObject({
+      apiKey: 'chatgpt-access',
+      headers: {
+        'ChatGPT-Account-Id': 'acct-123',
+        originator: 'hakimi',
+      },
+    });
+  });
+
+  it('removes ChatGPT OAuth credentials and managed models on logout', async () => {
+    const storage = new FileTokenStorage(join(homeDir, 'credentials'));
+    await storage.save('openai-codex', {
+      ...freshToken(),
+      accountId: 'acct-123',
+    });
+    await writeFile(
+      join(homeDir, 'config.toml'),
+      `
+default_model = "openai-codex/gpt-5.4"
+
+[providers."managed:openai-codex"]
+type = "openai_responses"
+base_url = "https://chatgpt.com/backend-api/codex"
+oauth = { storage = "file", key = "oauth/openai-codex", oauth_host = "https://auth.openai.com" }
+
+[models."openai-codex/gpt-5.4"]
+provider = "managed:openai-codex"
+model = "gpt-5.4"
+max_context_size = 400000
+`,
+    );
+    const harness = createKimiHarness({ homeDir, identity: TEST_IDENTITY });
+
+    await expect(harness.auth.logout(OPENAI_CODEX_PROVIDER_NAME)).resolves.toEqual({
+      providerName: OPENAI_CODEX_PROVIDER_NAME,
+      ok: true,
+    });
+
+    await expect(storage.load('openai-codex')).resolves.toBeUndefined();
+    const config = await harness.getConfig({ reload: true });
+    expect(config.providers[OPENAI_CODEX_PROVIDER_NAME]).toBeUndefined();
+    expect(config.models?.['openai-codex/gpt-5.4']).toBeUndefined();
+    expect(config.defaultModel).toBeUndefined();
   });
 
   it('logs in against the configured scoped OAuth host and base URL when env is absent', async () => {

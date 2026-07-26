@@ -1317,6 +1317,40 @@ describe('KimiTUI startup', () => {
     });
   });
 
+  it('routes the experimental ChatGPT platform through the OpenAI Codex OAuth provider', async () => {
+    const session = makeSession();
+    const harness = makeHarness(session, {
+      auth: {
+        status: vi.fn(async () => ({
+          providers: [{ providerName: 'managed:openai-codex', hasToken: false }],
+        })),
+        login: vi.fn(async () => {}),
+        logout: vi.fn(),
+        getManagedUsage: vi.fn(),
+      },
+    });
+    const driver = makeDriver(harness, makeStartupInput());
+
+    await expect(driver.init()).resolves.toBe(false);
+    harness.track.mockClear();
+
+    vi.mocked(promptPlatformSelection).mockResolvedValue('openai-codex');
+    await handleLoginCommand(driver as any);
+
+    expect(harness.auth.login).toHaveBeenCalledWith(
+      'managed:openai-codex',
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+        onDeviceCode: expect.any(Function),
+      }),
+    );
+    expect(harness.track).toHaveBeenCalledWith('login', {
+      provider: 'managed:openai-codex',
+      method: 'oauth',
+      already_logged_in: false,
+    });
+  });
+
   it('logs login failures with session context', async () => {
     const warn = vi.spyOn(log, 'warn').mockImplementation(() => {});
     const session = makeSession();
