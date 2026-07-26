@@ -1090,8 +1090,8 @@ for the experimental preview:
 ```sh
 (
   cd /tmp
-  curl -fLO https://github.com/bhjia-phys/Hakimi/releases/download/hakimi-v0.20.1-oauth-preview.1/bhjia-phys-hakimi-0.20.1.tgz
-  curl -fLO https://github.com/bhjia-phys/Hakimi/releases/download/hakimi-v0.20.1-oauth-preview.1/SHA256SUMS
+  curl -fLO https://github.com/bhjia-phys/Hakimi/releases/download/hakimi-v0.20.1-oauth-preview.2/bhjia-phys-hakimi-0.20.1.tgz
+  curl -fLO https://github.com/bhjia-phys/Hakimi/releases/download/hakimi-v0.20.1-oauth-preview.2/SHA256SUMS
   sha256sum -c SHA256SUMS
   npm install -g ./bhjia-phys-hakimi-0.20.1.tgz
 )
@@ -1099,7 +1099,7 @@ hakimi --version
 ```
 
 The expected package SHA256 is
-`6d7de235d7fb3d9af9160841a16af76255f8331f7b442cdba4521416b588399c`.
+`d6152587c684f94f976ad60516fdc983afdded0231aef5c75fda59cf48f96a63`.
 To rebuild the same package from a Hakimi checkout instead:
 
 ```sh
