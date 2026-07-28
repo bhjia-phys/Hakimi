@@ -1035,6 +1035,24 @@ export class OpenAIResponsesStreamedMessage implements StreamedMessage {
     }
   }
 }
+/**
+ * True when the provider targets the ChatGPT Codex backend
+ * (`chatgpt.com/backend-api/codex`), a restricted Responses-API dialect that
+ * rejects parameters the standard API accepts (e.g. `max_output_tokens`).
+ */
+export function isChatGptCodexBackend(baseUrl: string | undefined): boolean {
+  if (baseUrl === undefined) return false;
+  try {
+    const url = new URL(baseUrl);
+    return (
+      (url.hostname === 'chatgpt.com' || url.hostname === 'chat.openai.com') &&
+      url.pathname.replace(/\/+$/, '').endsWith('/backend-api/codex')
+    );
+  } catch {
+    return false;
+  }
+}
+
 export class OpenAIResponsesChatProvider implements ChatProvider {
   readonly name: string = 'openai-responses';
 
@@ -1190,6 +1208,11 @@ export class OpenAIResponsesChatProvider implements ChatProvider {
   }
 
   withMaxCompletionTokens(maxCompletionTokens: number): OpenAIResponsesChatProvider {
+    // The ChatGPT Codex backend (chatgpt.com/backend-api/codex) speaks a
+    // restricted Responses-API dialect and rejects `max_output_tokens`
+    // outright ("Unsupported parameter"). Drop the cap for that endpoint
+    // instead of failing every request.
+    if (isChatGptCodexBackend(this._baseUrl)) return this._clone();
     return this.withGenerationKwargs({ max_output_tokens: maxCompletionTokens });
   }
 
