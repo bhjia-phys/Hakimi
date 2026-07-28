@@ -413,6 +413,8 @@ Hakimi 不是在 coding agent 外面套一个研究记录本。它是 [MoonshotA
 ## 现在已经能做什么
 
 - `hakimi` 是这个包唯一安装的 CLI 命令，因此不会覆盖单独安装的 Kimi Code `kimi` 命令。
+- session 存放在 `~/.hakimi`，并与单独安装的 Kimi Code 双向共享：查找 session 时会自动回退到上游 `~/.kimi-code` 的 session store（`hakimi -r <session-id>` 和 `/sessions` 列表可以直接列出并恢复 `kimi` 创建的 session），同时每个 hakimi session 会以符号链接加索引行的形式镜像到 `~/.kimi-code`，因此未修改的 `kimi` CLI 也能列出并恢复 hakimi 的 session。
+- 更新检查只和 Hakimi 自己的 GitHub releases 比较版本（包括 prerelease tag），产品内 banner 也走 Hakimi 自己的通道，所以升级提示永远不会指向上游 Kimi Code 的构建。
 - TUI welcome screen 已经使用 Hakimi 像素探索飞船和 physics research 文案。
 - WorkFrame 能按 domain、topic、assumptions、conventions、context pack 和 trust state 隔离当前科研问题。
 - Domain packs、workflow recipes、physics memory、evals、action bindings 和 tool inventory 可以从 file-backed `.aitp` fixtures 加载。
@@ -449,7 +451,7 @@ Hakimi 围绕五个科研 runtime 层组织。
 
 ## 与上游的关系
 
-Hakimi 刻意保持贴近上游 Kimi Code。SDK/OAuth imports 和 `.kimi-code` 数据目录目前继续兼容；用户看到的产品名是 `Hakimi`，npm 包名是 `@bhjia-phys/hakimi`，主命令是 `hakimi`。这是一个原生 fork，不是外部 wrapper。
+Hakimi 刻意保持贴近上游 Kimi Code。SDK/OAuth imports 在有用的地方保持兼容；Hakimi 默认使用自己的 `.hakimi` 用户/项目配置根，因此 model、MCP、session 和 runtime state 不会和单独安装的 Kimi Code 冲突。唯一的例外是 session 共享：当 session 在 `~/.hakimi` 下找不到时，Hakimi 会透明回退到上游 `~/.kimi-code` 的 session store，因此 `hakimi -r <session-id>` 和 `/sessions` 选择器可以恢复 `kimi` 创建的 session；反向也不需要修改 Kimi Code——Hakimi 每次创建或 fork session 时都会把它镜像到 `~/.kimi-code/sessions`（符号链接加一行 session 索引；kimi 会忽略指向自己 store 之外的索引项，所以符号链接必须真实放在那边），启动时还会对存量的 hakimi session 做一次镜像补齐。新建 session 始终写入 `~/.hakimi`；删除 hakimi session 时会同时移除它的镜像。用户看到的产品名是 `Hakimi`，npm 包名是 `@bhjia-phys/hakimi`，主命令是 `hakimi`。Hakimi 使用独立的 semver 发布线（当前为 `0.20.1`），不跟随上游 Kimi Code 的 tag。这是一个原生 fork，不是外部 wrapper。
 
 Codex 和 ForgeCode 是参考而不是依赖：Codex 提供 tool exposure、结构化 tool output、action trace 等工程启发；ForgeCode 提供 harness 和可复现 eval workflow 的设计参考。
 
@@ -601,6 +603,26 @@ formula capsule
 - Node.js `>=24.15.0`
 - pnpm `10.33.0`
 
+### 从 GitHub Releases 安装
+
+每个 [GitHub release](https://github.com/bhjia-phys/Hakimi/releases) 都附带预构建的 npm tarball（`bhjia-phys-hakimi-<version>.tgz`）。下载后全局安装：
+
+```bash
+# Linux / macOS / WSL — 把版本号替换成你下载的 release 版本
+npm install -g ./bhjia-phys-hakimi-0.20.1.tgz
+hakimi --version
+```
+
+```powershell
+# Windows
+npm install -g .\bhjia-phys-hakimi-0.20.1.tgz
+hakimi --version
+```
+
+目前 release 以 GitHub *prerelease* 形式发布，不会出现在 `releases/latest` 别名下——请在 releases 页面选择最新 tag。运行中的 Hakimi 会检查同一个 release 通道，发现新版本时提示使用 `hakimi upgrade` 升级。
+
+### 从源码构建
+
 从本 fork 构建一个本地可安装的 CLI 包：
 
 ```powershell
@@ -608,7 +630,19 @@ corepack pnpm --config.engine-strict=false install
 corepack pnpm --config.engine-strict=false build
 New-Item -ItemType Directory -Force dist-pack
 corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ..\..\dist-pack
-npm install -g .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
+npm install -g .\dist-pack\bhjia-phys-hakimi-0.20.1.tgz
+hakimi --version
+hakimi
+```
+
+同样的流程在 Linux / macOS / WSL 下：
+
+```bash
+corepack pnpm --config.engine-strict=false install
+corepack pnpm --config.engine-strict=false build
+mkdir -p dist-pack
+corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ../../dist-pack
+npm install -g ./dist-pack/bhjia-phys-hakimi-0.20.1.tgz
 hakimi --version
 hakimi
 ```
@@ -617,7 +651,7 @@ hakimi
 
 ```powershell
 $prefix = "$PWD\.sisyphus\drafts\_scratch\hakimi-install-prefix"
-npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.8.0.tgz
+npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.20.1.tgz
 & "$prefix\node_modules\.bin\hakimi.cmd" --version
 ```
 

@@ -44,6 +44,8 @@ That means a research action can search literature, inspect code, prepare patche
 ## What Works Today
 
 - `hakimi` is the only CLI command installed by this package, so it does not overwrite a separate Kimi Code `kimi` command.
+- Sessions live under `~/.hakimi` and are shared with a separate Kimi Code install in both directions: session lookup falls back to the upstream `~/.kimi-code` store (`hakimi -r <session-id>` and the `/sessions` picker list and resume `kimi` sessions), and each Hakimi session is mirrored into `~/.kimi-code` as a symlink plus index line, so the unpatched `kimi` CLI can list and resume Hakimi sessions too.
+- Update checks compare against Hakimi's own GitHub releases (including prerelease tags), and the in-product banner channel is Hakimi-owned, so upgrade prompts never point at upstream Kimi Code builds.
 - The TUI welcome screen uses the Hakimi pixel spacecraft identity and physics research copy.
 - WorkFrames keep active research topics scoped by domain, topic, assumptions, conventions, context pack, and trust state.
 - Domain packs, workflow recipes, physics memory, evals, action bindings, and tool inventories can be loaded from file-backed `.hakimi` fixtures, with legacy `.aitp` fixtures still scanned for compatibility.
@@ -711,7 +713,7 @@ itself. Any host-facing `trust apply` path remains AITP-owned future work.
 
 ## Relationship To Upstream
 
-Hakimi remains close to upstream Kimi Code on purpose. The SDK/OAuth imports stay compatible where useful, while Hakimi uses its own `.hakimi` user/project config roots by default so model, MCP, session, and runtime state do not collide with a separate Kimi Code install. The user-facing product is `Hakimi`, the npm package is `@bhjia-phys/hakimi`, and the primary executable is `hakimi`. Hakimi releases use an independent semver line, currently `0.13.0`, instead of mirroring upstream Kimi Code tags. This is a native fork, not an external wrapper.
+Hakimi remains close to upstream Kimi Code on purpose. The SDK/OAuth imports stay compatible where useful, while Hakimi uses its own `.hakimi` user/project config roots by default so model, MCP, session, and runtime state do not collide with a separate Kimi Code install. Session lookup is the deliberate exception: when a session is not found under `~/.hakimi`, Hakimi transparently falls back to the upstream `~/.kimi-code` session store, so `hakimi -r <session-id>` and the `/sessions` picker can resume sessions originally created by `kimi`. The reverse direction works without patching Kimi Code: every session Hakimi creates or forks is mirrored into `~/.kimi-code/sessions` as a symlink plus a session-index line (Kimi ignores index entries outside its own store, so the symlink must physically live there), and a best-effort sweep on startup backfills mirrors for older Hakimi sessions. New sessions themselves are always written under `~/.hakimi`; deleting a Hakimi session also removes its mirror. The user-facing product is `Hakimi`, the npm package is `@bhjia-phys/hakimi`, and the primary executable is `hakimi`. Hakimi releases use an independent semver line, currently `0.20.1`, instead of mirroring upstream Kimi Code tags. This is a native fork, not an external wrapper.
 
 Codex and ForgeCode are references rather than dependencies: Codex informs tool exposure, structured tool outputs, and action traces; ForgeCode informs harness and repeatable eval workflows.
 
@@ -811,7 +813,8 @@ Close the first formal-theory loop with capsules, derivation blocks, physics len
 ## Current Status
 
 - Upstream parity with `MoonshotAI/kimi-code:main` was refreshed on 2026-06-03 and merged through commit `6a22523` (`fix: simplify goal budget schema and fix output caps (#365)`), preserving the AITP runtime integrations.
-- `hakimi --version` now follows Hakimi's own CLI/package release line. The current local package version is `0.13.0`; upstream Kimi Code release numbers are treated as sync points, not Hakimi release numbers.
+- `hakimi --version` now follows Hakimi's own CLI/package release line. The current local package version is `0.20.1`; upstream Kimi Code release numbers are treated as sync points, not Hakimi release numbers.
+- Update checks and in-product announcement banners are served from Hakimi's own release channel (the `bhjia-phys/Hakimi` GitHub releases, including prerelease tags), so upgrade prompts always compare Hakimi versions and suggest `hakimi upgrade` — never upstream Kimi Code builds.
 - The AITP Agent 0.0.1 physics-memory vertical slice is implemented and now starts enabled in Hakimi unless `KIMI_CODE_EXPERIMENTAL_PHYSICS_MEMORY=0` is set.
 - `packages/agent-core` now includes physics-memory types, parser, scanner, registry, compiler, session scanning, append-only records, a model-invocable `PhysicsMemory` builtin tool, LibRPA fixture capsules, and a foundational `ResearchActionRegistry`.
 - Windows baseline failures in the broader `agent-core` suite have been resolved; see [AITP Agent 0.0.1 Audit](docs/internal/aitp-agent-0.0.1-audit.md).
@@ -867,6 +870,26 @@ Requirements are inherited from Kimi Code:
 - Node.js `>=24.15.0`
 - pnpm `10.33.0`
 
+### Install From GitHub Releases
+
+Each [GitHub release](https://github.com/bhjia-phys/Hakimi/releases) attaches a prebuilt npm tarball (`bhjia-phys-hakimi-<version>.tgz`). Download it and install globally:
+
+```bash
+# Linux / macOS / WSL — substitute the version of the release you downloaded
+npm install -g ./bhjia-phys-hakimi-0.20.1.tgz
+hakimi --version
+```
+
+```powershell
+# Windows
+npm install -g .\bhjia-phys-hakimi-0.20.1.tgz
+hakimi --version
+```
+
+Releases are currently published as GitHub *prereleases*, so they do not appear under the `releases/latest` alias — pick the newest tag on the releases page. A running Hakimi checks the same release channel for newer versions and offers `hakimi upgrade` when one appears.
+
+### Build From Source
+
 Build a local installable CLI package from this fork:
 
 ```powershell
@@ -874,7 +897,19 @@ corepack pnpm --config.engine-strict=false install
 corepack pnpm --config.engine-strict=false build
 New-Item -ItemType Directory -Force dist-pack
 corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ..\..\dist-pack
-npm install -g .\dist-pack\bhjia-phys-hakimi-0.13.0.tgz
+npm install -g .\dist-pack\bhjia-phys-hakimi-0.20.1.tgz
+hakimi --version
+hakimi
+```
+
+The same flow on Linux / macOS / WSL:
+
+```bash
+corepack pnpm --config.engine-strict=false install
+corepack pnpm --config.engine-strict=false build
+mkdir -p dist-pack
+corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ../../dist-pack
+npm install -g ./dist-pack/bhjia-phys-hakimi-0.20.1.tgz
 hakimi --version
 hakimi
 ```
@@ -883,7 +918,7 @@ For an isolated install check without touching the global npm prefix:
 
 ```powershell
 $prefix = "$PWD\.sisyphus\drafts\_scratch\hakimi-install-prefix"
-npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.13.0.tgz
+npm install --prefix $prefix .\dist-pack\bhjia-phys-hakimi-0.20.1.tgz
 & "$prefix\node_modules\.bin\hakimi.cmd" --version
 ```
 
