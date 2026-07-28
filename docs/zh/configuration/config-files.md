@@ -234,8 +234,28 @@ display_name = "Kimi for Coding (custom)"
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `timeout_ms` | `integer` | `7200000`（2 小时） | 单个子代理（`Agent` / `AgentSwarm`）允许运行的最长时间（毫秒）。超时后子代理以 `timed_out` 收尾。`0` 表示无超时——子代理一直运行到自行结束或被模型手动停止。该值是后台任务管理器对每个子代理任务的 per-task timeout，因此对前台与后台子代理同时生效。在 print 模式（`kimi -p`）下未显式设置时默认为 `0`。注意：超过 `2147483647`（约 24.8 天）的值会被运行时钳到约 24.8 天 |
+| `preset` | `string` | 未设置 | `[subagent.presets]` 中当前激活的 preset 名称。可在运行时用 `/preset <name>` 切换（`/preset off` 清除）——切换会重载 session |
+| `agents` | table | 未设置 | 按子代理类型（profile 名，如 `explore`、`plan`、`coder`）的覆盖项：`[subagent.agents.explore]` 下可设 `model`（`[models]` 里的别名）和/或 `thinking_effort`。未设置的字段继承父 agent 当前值 |
+| `presets` | table | 未设置 | 命名的按类型覆盖组合：`[subagent.presets.<名称>.<类型>]`，字段与 `agents` 相同。`preset` 指定的组合逐字段优先于 `agents` |
 
 `timeout_ms` 可被环境变量 `KIMI_SUBAGENT_TIMEOUT_MS` 覆盖，优先级高于配置文件。
+
+子代理模型/思维强度的逐字段优先级：`[subagent.presets.<激活项>.<类型>]` → `[subagent.agents.<类型>]` → 继承父 agent。`model` 别名若未在 `[models]` 中定义，会在日志中告警并回退为父 agent 模型，不会因笔误导致子代理启动失败。示例——一个 oh-my-opencode-slim 风格的 `gpt` preset：只读搜索用便宜快速的模型，规划用中等思维强度，`coder` 有意继承主 agent：
+
+```toml
+[subagent]
+preset = "gpt"
+
+[subagent.presets.gpt.explore]
+model = "openai-codex/gpt-5.6-luna"
+thinking_effort = "low"
+
+[subagent.presets.gpt.plan]
+model = "openai-codex/gpt-5.6-luna"
+thinking_effort = "medium"
+```
+
+在 TUI 中用 `/preset`（或 `/preset status`）查看当前激活的 preset 与各类型的生效覆盖，`/preset <name>` 切换，`/preset off` 清除。
 
 ## `image`
 

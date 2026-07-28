@@ -8,6 +8,7 @@ export * from './types';
 
 export { dispatchInput, type SlashCommandHost } from './dispatch';
 export { handleAitpCommand } from './aitp';
+export { handlePresetCommand } from './preset';
 export { handleAutoresearchCommand, parseAutoresearchCommand } from './autoresearch';
 export { handleLoginCommand, handleLogoutCommand } from './auth';
 export { handleBtwCommand } from './btw';
