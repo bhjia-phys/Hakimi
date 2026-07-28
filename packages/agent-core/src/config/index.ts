@@ -6,4 +6,5 @@ export * from './resolve';
 export * from './schema';
 export * from './toml';
 export * from './env-model';
+export * from './subagent-models';
 export * from './workspace-local';

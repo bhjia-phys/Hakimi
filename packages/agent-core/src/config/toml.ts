@@ -322,7 +322,7 @@ export function transformTomlData(data: Record<string, unknown>): Record<string,
     } else if (targetKey === 'aitp' && isPlainObject(value)) {
       result[targetKey] = transformPlainObject(value);
     } else if (targetKey === 'subagent' && isPlainObject(value)) {
-      result[targetKey] = transformPlainObject(value);
+      result[targetKey] = transformSubagentData(value);
     } else if (!isPlainObject(value)) {
       result[targetKey] = value;
     }
@@ -348,6 +348,29 @@ function transformPlainObject(data: Record<string, unknown>): Record<string, unk
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
     out[snakeToCamel(key)] = value;
+  }
+  return out;
+}
+
+/**
+ * `[subagent]`: top-level keys are snake→camel like any plain section, but
+ * `agents` / `presets` are nested records whose leaf keys (profile names,
+ * preset names) must pass through untouched while their inner fields
+ * (`thinking_effort` → `thinkingEffort`) get camelCased.
+ */
+function transformSubagentData(data: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    const targetKey = snakeToCamel(key);
+    if (targetKey === 'agents' && isPlainObject(value)) {
+      out[targetKey] = transformRecord(value, transformPlainObject);
+    } else if (targetKey === 'presets' && isPlainObject(value)) {
+      out[targetKey] = transformRecord(value, (preset) =>
+        transformRecord(preset, transformPlainObject),
+      );
+    } else {
+      out[targetKey] = value;
+    }
   }
   return out;
 }
@@ -692,7 +715,36 @@ function backgroundToToml(
 function subagentToToml(subagent: SubagentConfig, rawSubagent: unknown): Record<string, unknown> {
   const out = cloneRecord(rawSubagent);
   for (const [key, value] of Object.entries(subagent)) {
-    setDefined(out, camelToSnake(key), value);
+    const snakeKey = camelToSnake(key);
+    if (snakeKey === 'agents' && isPlainObject(value)) {
+      setDefined(out, snakeKey, subagentOverrideRecordToToml(value));
+    } else if (snakeKey === 'presets' && isPlainObject(value)) {
+      const presets: Record<string, unknown> = {};
+      for (const [presetName, preset] of Object.entries(value)) {
+        presets[presetName] = isPlainObject(preset) ? subagentOverrideRecordToToml(preset) : preset;
+      }
+      setDefined(out, snakeKey, presets);
+    } else {
+      setDefined(out, snakeKey, value);
+    }
+  }
+  return out;
+}
+
+/** camelCase the inner fields (`thinkingEffort` → `thinking_effort`) of a
+ *  profile-name → override record, keeping the profile names as-is. */
+function subagentOverrideRecordToToml(record: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [name, override] of Object.entries(record)) {
+    if (!isPlainObject(override)) {
+      out[name] = override;
+      continue;
+    }
+    const converted: Record<string, unknown> = {};
+    for (const [field, fieldValue] of Object.entries(override)) {
+      setDefined(converted, camelToSnake(field), fieldValue);
+    }
+    out[name] = converted;
   }
   return out;
 }

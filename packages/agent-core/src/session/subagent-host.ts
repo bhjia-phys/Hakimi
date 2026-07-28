@@ -9,6 +9,7 @@ import type { PromptOrigin } from '../agent/context';
 import { ErrorCodes } from '../errors';
 import { DenyAllPermissionPolicy } from '../agent/permission/policies/deny-all';
 import { InMemoryAgentRecordPersistence } from '../agent/records';
+import { resolveSubagentModelOverride } from '../config/subagent-models';
 import { isAbortError } from '../loop/errors';
 import {
   DEFAULT_AGENT_PROFILES,
@@ -182,7 +183,7 @@ export class SessionSubagentHost {
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
       this.emitSubagentSpawned(parent, agentId, profileName, runOptions);
       try {
-        child.config.update({ modelAlias: parent.config.modelAlias });
+        child.config.update(this.resolveChildModelConfig(parent, profileName));
         return await this.runPromptTurn(parent, agentId, child, profileName, runOptions);
       } catch (error) {
         this.emitSubagentFailed(parent, agentId, runOptions, error);
@@ -198,7 +199,7 @@ export class SessionSubagentHost {
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
       try {
         runOptions.signal.throwIfAborted();
-        child.config.update({ modelAlias: parent.config.modelAlias });
+        child.config.update(this.resolveChildModelConfig(parent, profileName));
         this.emitSubagentStarted(parent, agentId);
         const turnId = child.turn.retry('agent-host');
         if (turnId === null) {
@@ -401,11 +402,11 @@ export class SessionSubagentHost {
     child: Agent,
     profile: ResolvedAgentProfile,
   ): Promise<void> {
-    // A subagent always inherits the parent agent's model.
+    // A subagent inherits the parent agent's model unless `[subagent]` in
+    // config.toml overrides it for this profile.
     child.config.update({
       cwd: parent.config.cwd,
-      modelAlias: parent.config.modelAlias,
-      thinkingEffort: parent.config.thinkingEffort,
+      ...this.resolveChildModelConfig(parent, profile.name),
     });
 
     const context = await prepareSystemPromptContext(
@@ -415,6 +416,27 @@ export class SessionSubagentHost {
     );
     child.useProfile(profile, context, this.session.options.kimiHomeDir);
     child.tools.inheritUserTools(parent.tools);
+  }
+
+  /**
+   * Model alias + thinking effort a child of `profileName` should run with:
+   * the `[subagent]` override (preset layer first, then `agents`) when
+   * configured, otherwise the parent agent's current values.
+   */
+  private resolveChildModelConfig(
+    parent: Agent,
+    profileName: string,
+  ): { modelAlias?: string; thinkingEffort: string } {
+    const override = resolveSubagentModelOverride(
+      this.session.options.config,
+      profileName,
+      (message) => this.session.log.warn('subagent model override ignored', { message }),
+    );
+    const modelAlias = override.modelAlias ?? parent.config.modelAlias;
+    return {
+      ...(modelAlias !== undefined ? { modelAlias } : {}),
+      thinkingEffort: override.thinkingEffort ?? parent.config.thinkingEffort,
+    };
   }
 
   /**
