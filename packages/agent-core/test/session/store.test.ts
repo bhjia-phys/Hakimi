@@ -4,7 +4,7 @@
  * Wiring: real temporary session storage; no stubbed collaborators.
  * Run: pnpm exec vitest run test/session/store.test.ts
  */
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -427,5 +427,202 @@ describe('SessionStore resolveWorkspaceId option', () => {
 
     expect(stats).toEqual({ scanned: 1, added: 1, repaired: 0 });
     expect((await resolved.list({})).map((s) => s.id)).toEqual([sessionId]);
+  });
+});
+
+describe('SessionStore fallbackHomeDir option', () => {
+  let homeDir: string;
+  let fallbackHome: string;
+  let store: SessionStore;
+  const tempRoots: string[] = [];
+
+  beforeEach(async () => {
+    homeDir = await mkdtemp(join(tmpdir(), 'kimi-store-home-'));
+    fallbackHome = await mkdtemp(join(tmpdir(), 'kimi-store-fallback-'));
+    store = new SessionStore(homeDir, { fallbackHomeDir: fallbackHome });
+  });
+
+  afterEach(async () => {
+    await rm(homeDir, { recursive: true, force: true });
+    await rm(fallbackHome, { recursive: true, force: true });
+    for (const root of tempRoots) {
+      await rm(root, { recursive: true, force: true });
+    }
+    tempRoots.length = 0;
+  });
+
+  async function trackWorkDir(label: string): Promise<string> {
+    const wd = await makeWorkDir(label);
+    tempRoots.push(wd);
+    return wd;
+  }
+
+  async function seedFallbackSession(
+    sessionId: string,
+    workDir: string,
+    state: Record<string, unknown> = {},
+  ): Promise<string> {
+    const dir = join(fallbackHome, 'sessions', encodeWorkDirKey(workDir), sessionId);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'state.json'), JSON.stringify({ workDir, ...state }), 'utf-8');
+    // Fallback lookup is index-only: a session without an index entry in the
+    // fallback home is invisible, matching how upstream Kimi Code tracks its
+    // own sessions.
+    await appendSessionIndexEntry(fallbackHome, { sessionId, sessionDir: dir, workDir });
+    return dir;
+  }
+
+  it('gets a session that only exists in the fallback home', async () => {
+    const workDir = await trackWorkDir('fallback-get');
+    const dir = await seedFallbackSession('sess_fallback_get', workDir);
+
+    const summary = await store.get('sess_fallback_get');
+
+    expect(summary.sessionDir).toBe(dir);
+    expect(summary.workDir).toBe(workDir);
+  });
+
+  it('merges fallback sessions into list(), primary wins on id conflict', async () => {
+    const wdPrimary = await trackWorkDir('fallback-primary');
+    const wdFallback = await trackWorkDir('fallback-copy');
+    await store.create({ id: 'sess_shared', workDir: wdPrimary });
+    await seedFallbackSession('sess_shared', wdFallback);
+    await seedFallbackSession('sess_fallback_only', wdFallback);
+
+    const sessions = await store.list();
+
+    const ids = sessions.map((s) => s.id);
+    expect(ids.filter((id) => id === 'sess_shared')).toHaveLength(1);
+    expect(ids).toContain('sess_fallback_only');
+    expect(sessions.find((s) => s.id === 'sess_shared')?.workDir).toBe(wdPrimary);
+  });
+
+  it('merges fallback sessions into list({ workDir })', async () => {
+    const workDir = await trackWorkDir('fallback-wd');
+    const other = await trackWorkDir('fallback-other');
+    await seedFallbackSession('sess_wd_match', workDir);
+    await seedFallbackSession('sess_wd_other', other);
+
+    const sessions = await store.list({ workDir });
+
+    expect(sessions.map((s) => s.id)).toEqual(['sess_wd_match']);
+  });
+
+  it('still creates new sessions in the primary home', async () => {
+    const workDir = await trackWorkDir('fallback-create');
+
+    const summary = await store.create({ id: 'sess_primary_create', workDir });
+
+    expect(summary.sessionDir.startsWith(join(homeDir, 'sessions'))).toBe(true);
+    // The fallback gains only a symlink mirror pointing back at the primary
+    // dir — the session itself is never written into the fallback home.
+    const fallbackIndex = await readSessionIndex(fallbackHome, join(fallbackHome, 'sessions'));
+    const mirrored = fallbackIndex.get('sess_primary_create');
+    expect(mirrored).toBeDefined();
+    expect((await lstat(mirrored!.sessionDir)).isSymbolicLink()).toBe(true);
+    expect(await realpath(mirrored!.sessionDir)).toBe(await realpath(summary.sessionDir));
+  });
+
+  it('forks a fallback session into the primary home', async () => {
+    const workDir = await trackWorkDir('fallback-fork');
+    await seedFallbackSession('sess_fork_src', workDir);
+
+    const forked = await store.fork({ sourceId: 'sess_fork_src', targetId: 'sess_fork_dst' });
+
+    expect(forked.sessionDir.startsWith(join(homeDir, 'sessions'))).toBe(true);
+    expect(forked.workDir).toBe(workDir);
+  });
+
+  describe('fallback mirroring', () => {
+    async function fallbackMirrorOf(sessionId: string) {
+      const index = await readSessionIndex(fallbackHome, join(fallbackHome, 'sessions'));
+      return index.get(sessionId);
+    }
+
+    it('mirrors newly created sessions into the fallback store as symlink + index line', async () => {
+      const workDir = await trackWorkDir('mirror-create');
+      const summary = await store.create({ id: 'sess_mirror_create', workDir });
+
+      const mirrored = await fallbackMirrorOf('sess_mirror_create');
+      expect(mirrored).toBeDefined();
+      expect(mirrored?.workDir).toBe(workDir);
+      // The mirror is a symlink inside the fallback sessions dir (Kimi drops
+      // index entries pointing outside its own store) targeting the real
+      // primary session dir.
+      expect(mirrored?.sessionDir.startsWith(join(fallbackHome, 'sessions'))).toBe(true);
+      const linkStat = await lstat(mirrored!.sessionDir);
+      expect(linkStat.isSymbolicLink()).toBe(true);
+      expect(await realpath(mirrored!.sessionDir)).toBe(await realpath(summary.sessionDir));
+      // Kimi-side reads resolve through the mirror to the same summary.
+      const viaStore = await store.get('sess_mirror_create');
+      expect(viaStore.workDir).toBe(workDir);
+    });
+
+    it('mirrors forks into the fallback store', async () => {
+      const workDir = await trackWorkDir('mirror-fork');
+      await store.create({ id: 'sess_mirror_fork_src', workDir });
+      await writeFile(
+        join(homeDir, 'sessions', encodeWorkDirKey(workDir), 'sess_mirror_fork_src', 'state.json'),
+        JSON.stringify({ workDir }),
+        'utf-8',
+      );
+
+      await store.fork({ sourceId: 'sess_mirror_fork_src', targetId: 'sess_mirror_fork_dst' });
+
+      const mirrored = await fallbackMirrorOf('sess_mirror_fork_dst');
+      expect(mirrored).toBeDefined();
+      expect((await lstat(mirrored!.sessionDir)).isSymbolicLink()).toBe(true);
+    });
+
+    it('removes the fallback mirror on delete', async () => {
+      const workDir = await trackWorkDir('mirror-delete');
+      await store.create({ id: 'sess_mirror_delete', workDir });
+      const mirrored = await fallbackMirrorOf('sess_mirror_delete');
+      expect(mirrored).toBeDefined();
+
+      await store.delete('sess_mirror_delete');
+
+      expect(await fallbackMirrorOf('sess_mirror_delete')).toBeUndefined();
+      await expect(lstat(mirrored!.sessionDir)).rejects.toThrow();
+    });
+
+    it('mirrorPrimaryIntoFallback backfills pre-existing primary sessions idempotently', async () => {
+      const workDir = await trackWorkDir('mirror-sweep');
+      // Seed a primary session directly (no create(), so no mirror exists).
+      const dir = join(homeDir, 'sessions', encodeWorkDirKey(workDir), 'sess_mirror_sweep');
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, 'state.json'), JSON.stringify({ workDir }), 'utf-8');
+      await appendSessionIndexEntry(homeDir, {
+        sessionId: 'sess_mirror_sweep',
+        sessionDir: dir,
+        workDir,
+      });
+      expect(await fallbackMirrorOf('sess_mirror_sweep')).toBeUndefined();
+
+      await store.mirrorPrimaryIntoFallback();
+
+      const mirrored = await fallbackMirrorOf('sess_mirror_sweep');
+      expect(mirrored).toBeDefined();
+      expect((await lstat(mirrored!.sessionDir)).isSymbolicLink()).toBe(true);
+
+      // Second sweep is a no-op (session already mirrored).
+      await store.mirrorPrimaryIntoFallback();
+      const after = await readSessionIndex(fallbackHome, join(fallbackHome, 'sessions'));
+      expect([...after.keys()].filter((id) => id === 'sess_mirror_sweep')).toHaveLength(1);
+    });
+
+    it('does not overwrite a real fallback directory sitting at the mirror path', async () => {
+      const workDir = await trackWorkDir('mirror-conflict');
+      const bucket = encodeWorkDirKey(workDir);
+      // A fallback-native directory with the same id occupies the mirror path.
+      const realDir = join(fallbackHome, 'sessions', bucket, 'sess_mirror_conflict');
+      await mkdir(realDir, { recursive: true });
+      await writeFile(join(realDir, 'state.json'), JSON.stringify({ workDir }), 'utf-8');
+
+      await store.create({ id: 'sess_mirror_conflict', workDir });
+
+      // The real directory is untouched (still not a symlink).
+      expect((await lstat(realDir)).isSymbolicLink()).toBe(false);
+    });
   });
 });

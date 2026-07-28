@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 
+import { join, resolve } from 'pathe';
+
 import { ErrorCodes, KimiError } from '#/errors';
 import { getRootLogger, log } from '#/logging/logger';
 import { PluginManager } from '#/plugin';
@@ -199,6 +201,18 @@ export interface KimiCoreOptions {
   readonly uiMode?: string | undefined;
 }
 
+/**
+ * Upstream Kimi Code keeps its sessions under `~/.kimi-code`; Hakimi uses
+ * `~/.hakimi`. Return the upstream home as a read-only session-store fallback
+ * so `hakimi -r` and the session picker can see upstream sessions, or
+ * undefined when the primary home already is that directory (e.g. HAKIMI_HOME
+ * points there) — a self-fallback would only double every index read.
+ */
+function legacyKimiCodeHome(primaryHomeDir: string): string | undefined {
+  const legacy = join(homedir(), '.kimi-code');
+  return resolve(legacy) === resolve(primaryHomeDir) ? undefined : legacy;
+}
+
 export class KimiCore implements PromisableMethods<CoreAPI> {
   readonly sdk: Promise<SDKRPC>;
   readonly homeDir: string;
@@ -269,7 +283,12 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
     this.imageLimits = new ImageLimits(process.env, this.config.image);
     this.sessionStore = new SessionStore(this.homeDir, {
       resolveWorkspaceId: options.resolveWorkspaceId,
+      fallbackHomeDir: legacyKimiCodeHome(this.homeDir),
     });
+    // Backfill mirrors for sessions created before mirroring existed, so the
+    // unpatched `kimi` CLI sees them too. Fire-and-forget: session sharing
+    // must never delay or break startup.
+    void this.sessionStore.mirrorPrimaryIntoFallback().catch(() => {});
     this.globalMcpConfig = new GlobalMcpConfigStore(this.homeDir);
     this.globalMcpOAuth = new McpOAuthService({ kimiHomeDir: this.homeDir });
     this.plugins = new PluginManager({ kimiHomeDir: this.homeDir });
