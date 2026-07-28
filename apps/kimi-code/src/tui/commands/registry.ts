@@ -37,6 +37,12 @@ const SWARM_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
   { value: 'off', description: 'Turn swarm mode off' },
 ];
 
+const AITP_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
+  { value: 'on', description: 'Enable the AITP research runtime' },
+  { value: 'off', description: 'Disable the AITP research runtime' },
+  { value: 'status', description: 'Show the AITP master switch and per-flag states' },
+];
+
 const ADD_DIR_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
   { value: 'list', description: 'Show configured additional workspace directories' },
 ];
@@ -63,6 +69,11 @@ export function autoresearchArgumentCompletions(argumentPrefix: string): Autocom
 /** Argument autocompletion for the `/swarm` command (subcommands). */
 export function swarmArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
   return completeLeadingArg(SWARM_ARG_COMPLETIONS, argumentPrefix);
+}
+
+/** Argument autocompletion for the `/aitp` command (subcommands). */
+export function aitpArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
+  return completeLeadingArg(AITP_ARG_COMPLETIONS, argumentPrefix);
 }
 
 /** Argument autocompletion for the `/add-dir` command. */
@@ -326,6 +337,19 @@ export const BUILTIN_SLASH_COMMANDS = [
       return trimmed === '' || trimmed === 'status' || trimmed.startsWith('pause')
         ? 'always'
         : 'idle-only';
+    },
+  },
+  {
+    name: 'aitp',
+    aliases: [],
+    description: 'Toggle the built-in AITP research runtime on or off',
+    priority: 80,
+    argumentHint: '[on|off|status]',
+    completeArgs: aitpArgumentCompletions,
+    // Toggling reloads the session, so keep it idle-only like a model switch.
+    availability: (args) => {
+      const trimmed = args.trim();
+      return trimmed === '' || trimmed === 'status' ? 'always' : 'idle-only';
     },
   },
   {

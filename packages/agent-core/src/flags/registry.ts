@@ -108,3 +108,34 @@ export const FLAG_DEFINITIONS = [
 
 /** Literal union of registered flag ids. */
 export type FlagId = (typeof FLAG_DEFINITIONS)[number]['id'];
+
+/**
+ * The AITP research-runtime flags, controlled together by the `[aitp]`
+ * config master switch (`aitp.enabled`).
+ */
+export const AITP_FLAG_IDS = [
+  'physics-memory',
+  'research-ledger',
+  'research-action',
+  'domain-profile',
+  'workflow-recipe',
+  'research-harness',
+] as const satisfies readonly FlagId[];
+
+/**
+ * Merge the `[aitp]` master switch into the `[experimental]` per-flag
+ * overrides. When `aitpEnabled === false` every AITP flag is forced off at
+ * the config layer; an explicit `[experimental]` entry for a flag still
+ * wins over the master switch, and env vars keep their higher precedence
+ * in the resolver.
+ */
+export function applyAitpMasterSwitch(
+  experimental: Record<string, boolean> | undefined,
+  aitpEnabled: boolean | undefined,
+): Record<string, boolean> | undefined {
+  if (aitpEnabled !== false) return experimental;
+  const merged: Record<string, boolean> = Object.fromEntries(
+    AITP_FLAG_IDS.map((id) => [id, false]),
+  );
+  return { ...merged, ...experimental };
+}

@@ -192,6 +192,19 @@ export const ExperimentalConfigSchema = z.record(z.string(), z.boolean());
 
 export type ExperimentalConfig = z.infer<typeof ExperimentalConfigSchema>;
 
+/**
+ * Master switch for the built-in AITP research runtime (physics memory,
+ * research ledger/actions, domain profiles, workflow recipes, research
+ * harness). Defaults to on; `enabled = false` forces every AITP feature
+ * flag off unless that flag is explicitly set in `[experimental]` or via
+ * its env var.
+ */
+export const AitpConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+});
+
+export type AitpConfig = z.infer<typeof AitpConfigSchema>;
+
 export const HookDefSchema = z
   .object({
     event: z.enum(HOOK_EVENT_TYPES),
@@ -310,6 +323,7 @@ export const KimiConfigSchema = z.object({
   image: ImageConfigSchema.optional(),
   modelCatalog: ModelCatalogConfigSchema.optional(),
   experimental: ExperimentalConfigSchema.optional(),
+  aitp: AitpConfigSchema.optional(),
   telemetry: z.boolean().optional(),
   raw: z.record(z.string(), z.unknown()).optional(),
 });
@@ -326,6 +340,7 @@ const SubagentConfigPatchSchema = SubagentConfigSchema.partial();
 const ImageConfigPatchSchema = ImageConfigSchema.partial();
 const ModelCatalogConfigPatchSchema = ModelCatalogConfigSchema.partial();
 const ExperimentalConfigPatchSchema = ExperimentalConfigSchema;
+const AitpConfigPatchSchema = AitpConfigSchema.partial();
 const MoonshotServiceConfigPatchSchema = MoonshotServiceConfigSchema.partial();
 const ServicesConfigPatchSchema = z.object({
   moonshotSearch: MoonshotServiceConfigPatchSchema.optional(),
@@ -354,6 +369,7 @@ export const KimiConfigPatchSchema = z
     image: ImageConfigPatchSchema.optional(),
     modelCatalog: ModelCatalogConfigPatchSchema.optional(),
     experimental: ExperimentalConfigPatchSchema.optional(),
+    aitp: AitpConfigPatchSchema.optional(),
     telemetry: z.boolean().optional(),
   })
   .strict();

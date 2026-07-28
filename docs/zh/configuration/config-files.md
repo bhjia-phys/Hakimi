@@ -258,6 +258,16 @@ display_name = "Kimi for Coding (custom)"
 | `micro_compaction` | `boolean` | `false` | 清理较旧的大型工具结果内容，同时保留最近对话 |
 -->
 
+## `aitp`
+
+`aitp` 是 Hakimi 内置 AITP 科研 runtime 的总开关。设置 `enabled = false` 会一次性关闭全部六个 AITP 功能 flag：`physics-memory`、`research-ledger`、`research-action`、`domain-profile`、`workflow-recipe` 和 `research-harness`。
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `enabled` | `boolean` | `true` | 启用内置 AITP 科研 runtime |
+
+在 `[experimental]` 中为某个 flag 显式设置的值仍优先于总开关，`KIMI_CODE_EXPERIMENTAL_*` 环境变量的优先级更高，因此可以在总开关关闭时单独重新启用某项功能。改动在 session（重新）加载后生效；在 TUI 中用 `/aitp on|off|status` 可以直接修改本节并重载当前 session。
+
 ## `services`
 
 `services` 配置网页搜索（`moonshot_search`）和网页抓取（`moonshot_fetch`）两项内置服务。只识别这两个固定 key，其他 key 会被忽略。两项字段相同：

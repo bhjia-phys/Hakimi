@@ -33,6 +33,7 @@ import {
   type MoonshotServiceConfig,
 } from '../config';
 import {
+  applyAitpMasterSwitch,
   FLAG_DEFINITIONS,
   FlagResolver,
   type ExperimentalFeatureState,
@@ -278,7 +279,7 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
     this.experimentalFlags = new FlagResolver(
       process.env,
       FLAG_DEFINITIONS,
-      this.config.experimental,
+      applyAitpMasterSwitch(this.config.experimental, this.config.aitp?.enabled),
     );
     this.imageLimits = new ImageLimits(process.env, this.config.image);
     this.sessionStore = new SessionStore(this.homeDir, {
@@ -1362,7 +1363,9 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
 
   private setRuntimeConfig(config: KimiConfig): KimiConfig {
     this.config = config;
-    this.experimentalFlags.setConfigOverrides(config.experimental);
+    this.experimentalFlags.setConfigOverrides(
+      applyAitpMasterSwitch(config.experimental, config.aitp?.enabled),
+    );
     this.imageLimits.setConfig(config.image);
     return this.config;
   }

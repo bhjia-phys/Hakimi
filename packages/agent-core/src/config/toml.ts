@@ -8,6 +8,7 @@ import {
   KimiConfigSchema,
   formatConfigValidationError,
   getDefaultConfig,
+  type AitpConfig,
   type BackgroundConfig,
   type ExperimentalConfig,
   type HookDefConfig,
@@ -318,6 +319,8 @@ export function transformTomlData(data: Record<string, unknown>): Record<string,
       result[targetKey] = transformPlainObject(value);
     } else if (targetKey === 'experimental' && isPlainObject(value)) {
       result[targetKey] = cloneRecord(value);
+    } else if (targetKey === 'aitp' && isPlainObject(value)) {
+      result[targetKey] = transformPlainObject(value);
     } else if (targetKey === 'subagent' && isPlainObject(value)) {
       result[targetKey] = transformPlainObject(value);
     } else if (!isPlainObject(value)) {
@@ -502,6 +505,7 @@ export function configToTomlData(config: KimiConfig): Record<string, unknown> {
   setSection(out, 'subagent', config.subagent, subagentToToml);
   setSection(out, 'image', config.image, imageToToml);
   setSection(out, 'experimental', config.experimental, experimentalToToml);
+  setSection(out, 'aitp', config.aitp, aitpToToml);
   setSection(out, 'permission', config.permission, permissionToToml);
   setHooks(out, config.hooks);
 
@@ -708,6 +712,14 @@ function experimentalToToml(
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(experimental)) {
     setDefined(out, key, value);
+  }
+  return out;
+}
+
+function aitpToToml(aitp: AitpConfig, rawAitp: unknown): Record<string, unknown> {
+  const out = cloneRecord(rawAitp);
+  for (const [key, value] of Object.entries(aitp)) {
+    setDefined(out, camelToSnake(key), value);
   }
   return out;
 }

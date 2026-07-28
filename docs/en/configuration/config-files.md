@@ -258,6 +258,16 @@ In print mode (`kimi -p "<prompt>"`), Kimi Code stays alive after the main agent
 | `micro_compaction` | `boolean` | `false` | Trim older large tool results from context while preserving recent conversation |
 -->
 
+## `aitp`
+
+`aitp` is the master switch for Hakimi's built-in AITP research runtime. Setting `enabled = false` turns off all six AITP feature flags at once: `physics-memory`, `research-ledger`, `research-action`, `domain-profile`, `workflow-recipe`, and `research-harness`.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | `boolean` | `true` | Enable the built-in AITP research runtime |
+
+An explicit `[experimental]` entry for an individual flag still wins over the master switch, and the `KIMI_CODE_EXPERIMENTAL_*` environment variables keep their higher precedence, so a single feature can be re-enabled while the rest stay off. Changes take effect when a session (re)loads; in the TUI, `/aitp on|off|status` edits this section and reloads the current session for you.
+
 ## `services`
 
 `services` configures two built-in services: web search (`moonshot_search`) and web fetch (`moonshot_fetch`). Only these two fixed keys are recognized; other keys are ignored. Both entries share the same fields:

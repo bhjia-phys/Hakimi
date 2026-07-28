@@ -20,6 +20,7 @@ import type {
   TranscriptEntry,
 } from '../types';
 import { formatErrorMessage } from '../utils/event-payload';
+import { handleAitpCommand } from './aitp';
 import { handleLoginCommand, handleLogoutCommand } from './auth';
 import { handleAutoresearchCommand } from './autoresearch';
 import { handleBtwCommand } from './btw';
@@ -353,6 +354,9 @@ async function handleBuiltInSlashCommand(
       return;
     case 'autoresearch':
       await handleAutoresearchCommand(host, args);
+      return;
+    case 'aitp':
+      await handleAitpCommand(host, args);
       return;
     case 'init':
       await handleInitCommand(host);
