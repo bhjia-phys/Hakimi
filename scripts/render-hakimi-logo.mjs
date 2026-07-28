@@ -1,5 +1,5 @@
-// Hakimi pixel-logo generator v6: compact cat-ear spaceship icon (11 cols).
-// v6: symmetric light-blue eyes on the visor, flat base, one-row flame flicker.
+// Hakimi pixel-logo generator v7: compact cat-ear spaceship icon (11 cols).
+// v7: symmetric light-blue eyes on the visor, flat base, no flame.
 import { deflateSync } from 'node:zlib';
 import { writeFileSync } from 'node:fs';
 
@@ -12,7 +12,6 @@ const grid = [
   'SWBBBBBBBWS', // visor
   'SWoooooooWS', // orange collar
   'SSSSSSSSSSS', // flat base
-  '....FfF....', // flame flicker
 ];
 
 const W = 11;
@@ -26,8 +25,6 @@ const COLORS = {
   o: '#F5831F', // orange inner ear / collar
   V: '#8FE6FF', // visor highlight / eyes
   B: '#1E7CF0', // visor blue
-  F: '#EAFBFF', // flame white
-  f: '#4FD0FF', // flame cyan
 };
 
 console.log('--- grid ---');
@@ -67,10 +64,10 @@ const chunk = (type, data) => {
 const ihdr = Buffer.alloc(13);
 ihdr.writeUInt32BE(pngW, 0); ihdr.writeUInt32BE(pngH, 4);
 ihdr[8] = 8; ihdr[9] = 2;
-writeFileSync('/tmp/hakimi-logo/logo6.png', Buffer.concat([
+writeFileSync('/tmp/hakimi-logo/logo7.png', Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   chunk('IHDR', ihdr),
   chunk('IDAT', deflateSync(raw)),
   chunk('IEND', Buffer.alloc(0)),
 ]));
-console.log('--- wrote /tmp/hakimi-logo/logo6.png ---');
+console.log('--- wrote /tmp/hakimi-logo/logo7.png ---');

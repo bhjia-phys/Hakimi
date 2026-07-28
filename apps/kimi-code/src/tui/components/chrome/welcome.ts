@@ -25,8 +25,6 @@ const HAKIMI_LOGO_COLORS = {
   o: '#F5831F',
   V: '#8FE6FF',
   B: '#1E7CF0',
-  F: '#EAFBFF',
-  f: '#4FD0FF',
 } as const;
 
 const HAKIMI_PIXEL = String.fromCodePoint(0x2588);
@@ -42,7 +40,6 @@ const HAKIMI_PIXEL_LOGO = [
   'SWBBBBBBBWS',
   'SWoooooooWS',
   'SSSSSSSSSSS',
-  '....FfF....',
 ] as const;
 
 function padAnsi(text: string, width: number): string {
