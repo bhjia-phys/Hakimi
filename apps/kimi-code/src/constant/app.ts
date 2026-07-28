@@ -88,7 +88,10 @@ export const KIMI_CODE_CDN_LATEST_URL = `${KIMI_CODE_CDN_BASE}/latest`;
 // stays unchanged forever — already-shipped clients hard-fail on non-semver
 // bodies, and the CDN install scripts read it for fresh installs.
 export const KIMI_CODE_CDN_LATEST_JSON_URL = `${KIMI_CODE_CDN_BASE}/latest.json`;
-export const KIMI_CODE_TIPS_BANNER_URL = 'https://cdn.kimi.com/kimi-code-tips/tips.json';
+// TIPS banner announcements come from Hakimi's own release channel, not the
+// upstream Kimi CDN — upstream tips carry Kimi branding and version gates that
+// do not apply to Hakimi. A missing tips.json (404) simply shows no banner.
+export const KIMI_CODE_TIPS_BANNER_URL = `${KIMI_CODE_CDN_BASE}/tips.json`;
 export const KIMI_CODE_PLUGIN_MARKETPLACE_URL = `${KIMI_CODE_CDN_BASE}/plugins/marketplace.json`;
 export const KIMI_CODE_PLUGIN_MARKETPLACE_URL_ENV = 'KIMI_CODE_PLUGIN_MARKETPLACE_URL';
 // Official plugins whose usage bills against the user's plan quota. Installing
@@ -99,6 +102,11 @@ export const KIMI_CODE_INSTALL_PS1_URL = `${KIMI_CODE_CDN_BASE}/install.ps1`;
 // Official download page, referenced by prompt copy that steers users away
 // from third-party install sources.
 export const KIMI_CODE_OFFICIAL_INSTALL_URL = 'https://www.kimi.com/code';
+// Update-check fallback: Hakimi publishes previews as GitHub *prereleases*,
+// which the `releases/latest/download/...` static channel above never
+// resolves to, so the newest version is also derived from release tag names.
+export const KIMI_CODE_GITHUB_RELEASES_API_URL =
+  'https://api.github.com/repos/bhjia-phys/Hakimi/releases?per_page=10';
 
 // Native install commands, split by platform. Use these for prompt copy and spawn calls only; do not assemble the strings elsewhere.
 export const NATIVE_INSTALL_COMMAND_UNIX = `curl -fsSL ${KIMI_CODE_INSTALL_SH_URL} | bash`;

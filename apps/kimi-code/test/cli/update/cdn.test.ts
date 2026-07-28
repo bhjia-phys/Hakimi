@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { fetchLatestFromCdn, fetchLatestVersionFromCdn } from '#/cli/update/cdn';
-import { KIMI_CODE_CDN_LATEST_JSON_URL, KIMI_CODE_CDN_LATEST_URL } from '#/constant/app';
+import {
+  KIMI_CODE_CDN_LATEST_JSON_URL,
+  KIMI_CODE_CDN_LATEST_URL,
+  KIMI_CODE_GITHUB_RELEASES_API_URL,
+} from '#/constant/app';
 
 function mockFetchOk(body: string): typeof fetch {
   return vi.fn(async () => ({
@@ -165,20 +169,77 @@ describe('fetchLatestFromCdn', () => {
     });
   }
 
-  it('throws when both latest.json and plain /latest fail', async () => {
+  it('throws when latest.json, plain /latest, and the GitHub API all fail', async () => {
     const f = mockRoutedFetch({
       [KIMI_CODE_CDN_LATEST_JSON_URL]: { status: 500 },
       [KIMI_CODE_CDN_LATEST_URL]: { status: 500 },
+      [KIMI_CODE_GITHUB_RELEASES_API_URL]: { status: 403 },
     });
-    await expect(fetchLatestFromCdn(f)).rejects.toThrow(/HTTP 500/);
+    await expect(fetchLatestFromCdn(f)).rejects.toThrow(/HTTP 403/);
   });
 
-  it('propagates the plain /latest error when the fallback also breaks', async () => {
+  it('propagates the GitHub API error when every earlier source breaks', async () => {
     const f = mockRoutedFetch({
       [KIMI_CODE_CDN_LATEST_JSON_URL]: new Error('json down'),
       [KIMI_CODE_CDN_LATEST_URL]: { body: 'not-a-version' },
+      [KIMI_CODE_GITHUB_RELEASES_API_URL]: { body: 'not json {' },
     });
-    await expect(fetchLatestFromCdn(f)).rejects.toThrow(/invalid semver/);
+    await expect(fetchLatestFromCdn(f)).rejects.toThrow();
+  });
+
+  describe('GitHub releases fallback', () => {
+    const GITHUB_BODY = JSON.stringify([
+      { tag_name: 'hakimi-v0.20.1-oauth-preview.2', draft: false, prerelease: true },
+      { tag_name: 'hakimi-v0.20.1-oauth-preview.1', draft: false, prerelease: true },
+      { tag_name: 'hakimi-v0.19.0', draft: false, prerelease: false },
+    ]);
+
+    it('returns the newest semver across hakimi release tags, prereleases included', async () => {
+      const f = mockRoutedFetch({
+        [KIMI_CODE_GITHUB_RELEASES_API_URL]: { body: GITHUB_BODY },
+      });
+      await expect(fetchLatestFromCdn(f)).resolves.toEqual({
+        latest: '0.20.1-oauth-preview.2',
+        manifest: null,
+      });
+    });
+
+    it('skips draft releases and non-semver tags', async () => {
+      const f = mockRoutedFetch({
+        [KIMI_CODE_GITHUB_RELEASES_API_URL]: {
+          body: JSON.stringify([
+            { tag_name: 'hakimi-v9.9.9', draft: true },
+            { tag_name: 'nightly-build' },
+            { tag_name: 'hakimi-v0.20.0', draft: false },
+          ]),
+        },
+      });
+      await expect(fetchLatestFromCdn(f)).resolves.toEqual({
+        latest: '0.20.0',
+        manifest: null,
+      });
+    });
+
+    it('accepts bare v-prefixed tags', async () => {
+      const f = mockRoutedFetch({
+        [KIMI_CODE_GITHUB_RELEASES_API_URL]: {
+          body: JSON.stringify([{ tag_name: 'v0.21.0', draft: false }]),
+        },
+      });
+      await expect(fetchLatestFromCdn(f)).resolves.toEqual({
+        latest: '0.21.0',
+        manifest: null,
+      });
+    });
+
+    it('throws when no release tag is valid semver', async () => {
+      const f = mockRoutedFetch({
+        [KIMI_CODE_GITHUB_RELEASES_API_URL]: {
+          body: JSON.stringify([{ tag_name: 'nightly' }]),
+        },
+      });
+      await expect(fetchLatestFromCdn(f)).rejects.toThrow(/no semver release tags/);
+    });
   });
 
   it('falls back to plain /latest when latest.json hangs past the request timeout', async () => {
@@ -210,7 +271,7 @@ describe('fetchLatestFromCdn', () => {
     }
   });
 
-  it('rejects when plain /latest also hangs past the request timeout', async () => {
+  it('rejects when every source hangs past the request timeout', async () => {
     vi.useFakeTimers();
     try {
       const f = vi.fn(async (_input: string | URL, init?: RequestInit) => {
@@ -223,7 +284,8 @@ describe('fetchLatestFromCdn', () => {
 
       const result = fetchLatestFromCdn(f);
       const expectation = expect(result).rejects.toThrow(/aborted/);
-      await vi.advanceTimersByTimeAsync(6_000);
+      // latest.json + plain /latest + GitHub API: three sequential timeouts.
+      await vi.advanceTimersByTimeAsync(10_000);
 
       await expectation;
     } finally {
