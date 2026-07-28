@@ -1,5 +1,5 @@
-// Hakimi pixel-logo generator v4: compact cat-ear spaceship icon (11 cols).
-// Same palette as v3, shrunk to sit closer to the upstream Kimi Code logo size (7x2).
+// Hakimi pixel-logo generator v6: compact cat-ear spaceship icon (11 cols).
+// v6: symmetric light-blue eyes on the visor, flat base, one-row flame flicker.
 import { deflateSync } from 'node:zlib';
 import { writeFileSync } from 'node:fs';
 
@@ -8,12 +8,11 @@ const grid = [
   '.SoS...SoS.', // orange inner ears
   'SSSSSSSSSSS', // head top
   'SWWWWWWWWWS', // hull
-  'SWVBBBBBbWS', // visor: gloss left, deep right
+  'SWVBBBBBVWS', // visor: light-blue eyes, both sides
   'SWBBBBBBBWS', // visor
   'SWoooooooWS', // orange collar
-  '.SSS...SSS.', // landing gear
-  '....FFF....', // flame
-  '.....f.....', // flame core
+  'SSSSSSSSSSS', // flat base
+  '....FfF....', // flame flicker
 ];
 
 const W = 11;
@@ -25,9 +24,8 @@ const COLORS = {
   S: '#3A4A63', // dark outline
   W: '#F2F7FD', // hull white
   o: '#F5831F', // orange inner ear / collar
-  V: '#8FE6FF', // visor highlight
+  V: '#8FE6FF', // visor highlight / eyes
   B: '#1E7CF0', // visor blue
-  b: '#0F4FB8', // visor deep
   F: '#EAFBFF', // flame white
   f: '#4FD0FF', // flame cyan
 };
@@ -69,10 +67,10 @@ const chunk = (type, data) => {
 const ihdr = Buffer.alloc(13);
 ihdr.writeUInt32BE(pngW, 0); ihdr.writeUInt32BE(pngH, 4);
 ihdr[8] = 8; ihdr[9] = 2;
-writeFileSync('/tmp/hakimi-logo/logo4.png', Buffer.concat([
+writeFileSync('/tmp/hakimi-logo/logo6.png', Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   chunk('IHDR', ihdr),
   chunk('IDAT', deflateSync(raw)),
   chunk('IEND', Buffer.alloc(0)),
 ]));
-console.log('--- wrote /tmp/hakimi-logo/logo4.png ---');
+console.log('--- wrote /tmp/hakimi-logo/logo6.png ---');
