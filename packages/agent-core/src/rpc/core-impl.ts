@@ -33,6 +33,7 @@ import {
   type MoonshotServiceConfig,
 } from '../config';
 import {
+  AITP_FLAG_IDS,
   applyAitpMasterSwitch,
   FLAG_DEFINITIONS,
   FlagResolver,
@@ -334,7 +335,7 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       cwd: workDir,
       homeDir: this.homeDir,
     });
-    const defaultAitpRuntime = await resolveDefaultAitpRuntime({
+    const defaultAitpRuntime = await this.resolveDefaultAitpRuntimeIfEnabled({
       workDir,
       homeDir: this.homeDir,
     });
@@ -525,7 +526,7 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       cwd: summary.workDir,
       homeDir: this.homeDir,
     });
-    const defaultAitpRuntime = await resolveDefaultAitpRuntime({
+    const defaultAitpRuntime = await this.resolveDefaultAitpRuntimeIfEnabled({
       workDir: summary.workDir,
       homeDir: this.homeDir,
     });
@@ -1249,6 +1250,22 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       throw error;
     });
     return this.kaos;
+  }
+
+  /**
+   * Resolve the default AITP runtime (MCP bridge + generated skill dir) only
+   * when at least one AITP feature flag is effectively on. With the `[aitp]`
+   * master switch off (and no per-flag env/experimental re-enable) this
+   * returns undefined, so no AITP MCP server is injected, no skill dir is
+   * appended, and the AITP repo is not cloned/synced.
+   */
+  private async resolveDefaultAitpRuntimeIfEnabled(options: {
+    readonly workDir: string;
+    readonly homeDir: string;
+  }): Promise<DefaultAitpRuntime | undefined> {
+    const anyAitpFlagEnabled = AITP_FLAG_IDS.some((id) => this.experimentalFlags.enabled(id));
+    if (!anyAitpFlagEnabled) return undefined;
+    return resolveDefaultAitpRuntime(options);
   }
 
   private resolveSessionSkillConfig(
