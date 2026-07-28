@@ -932,6 +932,21 @@ describe('OpenAIResponsesChatProvider', () => {
       expect(provider.maxCompletionTokens).toBe(1024);
     });
 
+    it('withMaxCompletionTokens omits max_output_tokens for the ChatGPT Codex backend', async () => {
+      const provider = new OpenAIResponsesChatProvider({
+        model: 'gpt-5.6-sol',
+        apiKey: 'test-key',
+        baseUrl: 'https://chatgpt.com/backend-api/codex',
+      }).withMaxCompletionTokens(1024);
+      const history: Message[] = [
+        { role: 'user', content: [{ type: 'text', text: 'Hi' }], toolCalls: [] },
+      ];
+      const body = await captureRequestBody(provider, '', [], history);
+
+      expect(body['max_output_tokens']).toBeUndefined();
+      expect(provider.maxCompletionTokens).toBeUndefined();
+    });
+
     it('maps json_schema response format to text.format', async () => {
       const provider = createProvider();
       const history: Message[] = [
