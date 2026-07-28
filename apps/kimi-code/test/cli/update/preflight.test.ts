@@ -286,7 +286,7 @@ describe('runUpdatePreflight', () => {
     expect(detectInstallSource).toHaveBeenCalledTimes(1);
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/^npm(\.cmd)?$/),
-      ['install', '-g', '@moonshot-ai/kimi-code@0.5.0'],
+      ['install', '-g', '@bhjia-phys/hakimi@0.5.0'],
       { detached: true, stdio: 'ignore' },
     );
   });
@@ -372,15 +372,15 @@ describe('runUpdatePreflight', () => {
     expect(mocks.promptForInstallChoice).toHaveBeenCalledWith(
       expect.objectContaining({
         target: { version: '0.7.0' },
-        installCommand: 'npm install -g @moonshot-ai/kimi-code@0.7.0',
+        installCommand: 'npm install -g @bhjia-phys/hakimi@0.7.0',
       }),
     );
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/^npm(\.cmd)?$/),
-      ['install', '-g', '@moonshot-ai/kimi-code@0.7.0'],
+      ['install', '-g', '@bhjia-phys/hakimi@0.7.0'],
       { stdio: 'inherit' },
     );
-    expect(stdout.join('')).toContain('Updated @moonshot-ai/kimi-code to 0.7.0');
+    expect(stdout.join('')).toContain('Updated @bhjia-phys/hakimi to 0.7.0');
   });
 
   it('falls back to the cached foreground prompt target when the refresh hangs', async () => {
@@ -400,7 +400,7 @@ describe('runUpdatePreflight', () => {
       expect(mocks.promptForInstallChoice).toHaveBeenCalledWith(
         expect.objectContaining({
           target: { version: '0.6.0' },
-          installCommand: 'npm install -g @moonshot-ai/kimi-code@0.6.0',
+          installCommand: 'npm install -g @bhjia-phys/hakimi@0.6.0',
         }),
       );
     } finally {
@@ -438,7 +438,7 @@ describe('runUpdatePreflight', () => {
       await runUpdatePreflight('0.4.0', options);
       expect(mocks.spawn).toHaveBeenCalledWith(
         'pnpm.cmd',
-        ['add', '-g', '@moonshot-ai/kimi-code@0.5.0'],
+        ['add', '-g', '@bhjia-phys/hakimi@0.5.0'],
         { stdio: 'inherit', shell: true },
       );
     } finally {
@@ -618,7 +618,7 @@ describe('runUpdatePreflight', () => {
       await expect(runUpdatePreflight('0.4.0', options)).resolves.toBe('continue');
       expect(mocks.spawn).toHaveBeenCalledWith(
         'npm.cmd',
-        ['install', '-g', '@moonshot-ai/kimi-code@0.5.0'],
+        ['install', '-g', '@bhjia-phys/hakimi@0.5.0'],
         { detached: true, stdio: 'ignore', shell: true, windowsHide: true },
       );
     } finally {
@@ -931,7 +931,7 @@ describe('runUpdatePreflight', () => {
 
       expect(mocks.spawn).toHaveBeenCalledWith(
         expect.stringMatching(/^npm(\.cmd)?$/),
-        ['install', '-g', '@moonshot-ai/kimi-code@0.5.0'],
+        ['install', '-g', '@bhjia-phys/hakimi@0.5.0'],
         { detached: true, stdio: 'ignore' },
       );
       expect(track).toHaveBeenCalledWith('update_background_install_started', expect.objectContaining({
@@ -1057,7 +1057,7 @@ describe('runUpdatePreflight', () => {
 
       expect(mocks.spawn).toHaveBeenCalledWith(
         expect.stringMatching(/^npm(\.cmd)?$/),
-        ['install', '-g', '@moonshot-ai/kimi-code@0.5.0'],
+        ['install', '-g', '@bhjia-phys/hakimi@0.5.0'],
         { detached: true, stdio: 'ignore' },
       );
       expect(track).toHaveBeenCalledWith('update_background_install_started', expect.objectContaining({
