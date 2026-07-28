@@ -28,6 +28,11 @@ const SWARM_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
   { value: 'off', description: 'Turn swarm mode off' },
 ];
 
+const PRESET_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
+  { value: 'off', description: 'Clear the active subagent preset' },
+  { value: 'status', description: 'Show the active preset and effective overrides' },
+];
+
 const ADD_DIR_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
   { value: 'list', description: 'Show configured additional workspace directories' },
 ];
@@ -49,6 +54,12 @@ export function goalArgumentCompletions(argumentPrefix: string): AutocompleteIte
 /** Argument autocompletion for the `/swarm` command (subcommands). */
 export function swarmArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
   return completeLeadingArg(SWARM_ARG_COMPLETIONS, argumentPrefix);
+}
+
+/** Argument autocompletion for the `/preset` command (subcommands; preset
+ *  names themselves are config-driven and not completed). */
+export function presetArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
+  return completeLeadingArg(PRESET_ARG_COMPLETIONS, argumentPrefix);
 }
 
 /** Argument autocompletion for the `/add-dir` command. */
@@ -307,6 +318,19 @@ export const BUILTIN_SLASH_COMMANDS = [
       return trimmed === '' || trimmed === 'status' || trimmed === 'pause' || trimmed === 'cancel'
         ? 'always'
         : 'idle-only';
+    },
+  },
+  {
+    name: 'preset',
+    aliases: [],
+    description: 'Switch the active subagent model preset ([subagent.presets])',
+    priority: 80,
+    argumentHint: '[<name>|off|status]',
+    completeArgs: presetArgumentCompletions,
+    // Switching reloads the session, so keep it idle-only like a model switch.
+    availability: (args) => {
+      const trimmed = args.trim();
+      return trimmed === '' || trimmed === 'status' ? 'always' : 'idle-only';
     },
   },
   {

@@ -43,6 +43,7 @@ import { handleFeedbackCommand, showMcpServers, showStatusReport, showUsage } fr
 import { handleAddDirCommand } from './add-dir';
 import { parseSlashInput } from './parse';
 import { handlePluginsCommand } from './plugins';
+import { handlePresetCommand } from './preset';
 import { handleProviderCommand } from './provider';
 import {
   findBuiltInSlashCommand,
@@ -488,6 +489,9 @@ async function handleBuiltInSlashCommand(
       return;
     case 'goal':
       await handleGoalCommand(host, args);
+      return;
+    case 'preset':
+      await handlePresetCommand(host, args);
       return;
     case 'init':
       await handleInitCommand(host);

@@ -78,6 +78,12 @@ export { parseAgentFileText, resolveAgentPath } from '@moonshot-ai/agent-core';
 // The synthesized `[models]` alias a `[secondary_model]` recipe with patch
 // fields materializes at runtime — hosts filter it out of model pickers.
 export { SECONDARY_DERIVED_MODEL_ALIAS } from '@moonshot-ai/agent-core';
+// `[subagent]` preset helpers — hosts (e.g. the CLI's `/preset` command) use
+// them to display the active preset and the effective per-type overrides.
+export {
+  activeSubagentPreset,
+  describeSubagentModelOverride,
+} from '@moonshot-ai/agent-core';
 
 // Process-wide HTTP proxy bootstrap — installed once at CLI startup so all
 // outbound fetch honors HTTP_PROXY / HTTPS_PROXY / NO_PROXY.

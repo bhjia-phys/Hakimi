@@ -288,7 +288,28 @@ In print mode (`kimi -p "<prompt>"`), Kimi Code stays alive after the main agent
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `timeout_ms` | `integer` | `7200000` (2 hours) | Maximum wall-clock time (milliseconds) a single subagent (`Agent` / `AgentSwarm`) is allowed to run before it is settled as `timed_out`. `0` means no timeout — the subagent runs until it finishes or the model stops it. This is the background-task manager's per-task timeout for each subagent task, so it applies to both foreground and background subagents. In print mode (`kimi -p`) the default is `0` unless explicitly set. Note: any value above `2147483647` (about 24.8 days) is clamped to roughly 24.8 days by the runtime |
+| `preset` | `string` | unset | Name of the active preset from `[subagent.presets]`. Switchable at runtime with `/preset <name>` (`/preset off` clears it) — switching reloads the session |
+| `agents` | table | unset | Per-subagent-type overrides keyed by profile name (`explore`, `plan`, `coder`): `[subagent.agents.explore]` with `model` (a `[models]` alias) and/or `thinking_effort`. Unset fields inherit the parent agent's current values |
+| `presets` | table | unset | Named bundles of per-type overrides: `[subagent.presets.<name>.<type>]`, same fields as `agents`. The bundle named by `preset` wins field-by-field over `agents` |
+
 `timeout_ms` can be overridden by the `KIMI_SUBAGENT_TIMEOUT_MS` environment variable, which takes higher priority than `config.toml`.
+
+Per-field precedence for a subagent's model/effort: `[subagent.presets.<active>.<type>]` → `[subagent.agents.<type>]` → inherit from the parent agent. A `model` alias that is not defined in `[models]` is ignored with a log warning (the subagent falls back to the parent model) so a typo never breaks subagent startup. Example — an oh-my-opencode-slim-style `gpt` preset: cheap + fast for read-only search, medium effort for planning, and `coder` deliberately inheriting the main agent:
+
+```toml
+[subagent]
+preset = "gpt"
+
+[subagent.presets.gpt.explore]
+model = "openai-codex/gpt-5.6-luna"
+thinking_effort = "low"
+
+[subagent.presets.gpt.plan]
+model = "openai-codex/gpt-5.6-luna"
+thinking_effort = "medium"
+```
+
+Use `/preset` (or `/preset status`) in the TUI to inspect the active preset and the effective per-type overrides, `/preset <name>` to switch, and `/preset off` to clear.
 
 ## `mcp`
 
