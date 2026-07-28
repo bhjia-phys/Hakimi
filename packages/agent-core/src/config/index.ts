@@ -8,4 +8,5 @@ export * from './schema';
 export * from './toml';
 export * from './env-model';
 export * from './secondary-model';
+export * from './subagent-models';
 export * from './workspace-local';

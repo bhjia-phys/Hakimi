@@ -177,12 +177,43 @@ export const BackgroundConfigSchema = z.object({
 
 export type BackgroundConfig = z.infer<typeof BackgroundConfigSchema>;
 
+export const SubagentModelConfigSchema = z.object({
+  /**
+   * Model alias from `[models]` to run this subagent type on. Unknown aliases
+   * are ignored with a warning (the subagent falls back to the parent model).
+   */
+  model: z.string().min(1).optional(),
+  /**
+   * Thinking effort for this subagent type (e.g. `low`, `medium`, `high`),
+   * overriding the effort inherited from the parent agent.
+   */
+  thinkingEffort: z.string().min(1).optional(),
+});
+
+export type SubagentModelConfig = z.infer<typeof SubagentModelConfigSchema>;
+
 export const SubagentConfigSchema = z.object({
   /**
    * Per-subagent (`Agent` / `AgentSwarm`, foreground and background) timeout
    * in milliseconds. `0` means no timeout. Defaults to 2 hours when unset.
    */
   timeoutMs: z.number().int().min(0).optional(),
+  /**
+   * Name of the active preset from `[subagent.presets]`. Preset entries take
+   * precedence over `[subagent.agents]`; unset/empty means no preset.
+   * Switchable at runtime with `/preset <name>`.
+   */
+  preset: z.string().optional(),
+  /**
+   * Per-subagent-type model/effort overrides, keyed by profile name
+   * (`explore`, `plan`, `coder`). Unset fields inherit from the parent agent.
+   */
+  agents: z.record(z.string(), SubagentModelConfigSchema).optional(),
+  /**
+   * Named bundles of per-type overrides; the bundle named by `preset`
+   * overrides `agents` for the types it lists.
+   */
+  presets: z.record(z.string(), z.record(z.string(), SubagentModelConfigSchema)).optional(),
 });
 
 export type SubagentConfig = z.infer<typeof SubagentConfigSchema>;

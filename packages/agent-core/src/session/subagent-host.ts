@@ -9,6 +9,10 @@ import type { PromptOrigin } from '../agent/context';
 import { ErrorCodes } from '../errors';
 import { DenyAllPermissionPolicy } from '../agent/permission/policies/deny-all';
 import { InMemoryAgentRecordPersistence } from '../agent/records';
+import {
+  resolveSubagentModelOverride,
+  type SubagentModelOverride,
+} from '../config/subagent-models';
 import { isAbortError } from '../loop/errors';
 import {
   prepareSystemPromptContext,
@@ -196,7 +200,7 @@ export class SessionSubagentHost {
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
       this.emitSubagentSpawned(parent, agentId, profileName, runOptions);
       try {
-        this.reInheritParentModel(parent, child);
+        this.reInheritParentModel(parent, child, profileName);
         return await this.runPromptTurn(parent, agentId, child, profileName, runOptions);
       } catch (error) {
         this.emitSubagentFailed(parent, agentId, runOptions, error);
@@ -212,7 +216,7 @@ export class SessionSubagentHost {
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
       try {
         runOptions.signal.throwIfAborted();
-        this.reInheritParentModel(parent, child);
+        this.reInheritParentModel(parent, child, profileName);
         this.emitSubagentStarted(parent, agentId);
         const turnId = child.turn.retry('agent-host');
         if (turnId === null) {
@@ -462,11 +466,12 @@ export class SessionSubagentHost {
   }
 
   /**
-   * The model a newly spawned subagent binds to: the configured secondary
-   * model by default (when the experiment is on), otherwise the parent's
-   * model and effort, inherited as before. The bound alias is validated up
-   * front so a dangling `[secondary_model]` pointer fails the spawn with a
-   * wrapped, actionable error instead of a mid-turn provider failure.
+   * The model a newly spawned subagent binds to: an explicit `[subagent]`
+   * override for this profile first (user config always wins), then the
+   * configured secondary model (when the experiment is on), otherwise the
+   * parent's model and effort, inherited as before. The bound alias is
+   * validated up front so a dangling pointer fails the spawn with a wrapped,
+   * actionable error instead of a mid-turn provider failure.
    */
   private resolveSpawnBinding(
     parent: Agent,
@@ -479,15 +484,20 @@ export class SessionSubagentHost {
       { modelAlias: parent.config.modelAlias, thinkingEffort: parent.config.thinkingEffort },
       modelChoice ?? profile.modelPreference,
     );
-    if (binding.modelAlias !== undefined) {
+    const override = this.resolveSubagentOverride(profile.name);
+    const effective: SubagentModelBinding = {
+      modelAlias: override.modelAlias ?? binding.modelAlias,
+      thinkingEffort: override.thinkingEffort ?? binding.thinkingEffort,
+    };
+    if (effective.modelAlias !== undefined) {
       const providerManager = this.session.options.providerManager;
       try {
-        providerManager?.resolveProviderConfig(binding.modelAlias);
+        providerManager?.resolveProviderConfig(effective.modelAlias);
       } catch (error) {
-        throw wrapSubagentModelError(error, binding.modelAlias, parent.config.modelAlias);
+        throw wrapSubagentModelError(error, effective.modelAlias, parent.config.modelAlias);
       }
     }
-    return binding;
+    return effective;
   }
 
   /**
@@ -495,11 +505,36 @@ export class SessionSubagentHost {
    * model so subagents follow mid-session `/model` switches. With the
    * `secondary-model` experiment on, a resumed subagent instead keeps the
    * model it was bound to at spawn (v2 semantics: no child-follows-parent
-   * invariant).
+   * invariant). An explicit `[subagent]` override for the profile takes
+   * precedence over both: it is (re)applied on every resume/retry so
+   * `/preset` switches and config reloads reach already-spawned subagents.
    */
-  private reInheritParentModel(parent: Agent, child: Agent): void {
+  private reInheritParentModel(parent: Agent, child: Agent, profileName: string): void {
+    const override = this.resolveSubagentOverride(profileName);
+    if (override.modelAlias !== undefined || override.thinkingEffort !== undefined) {
+      child.config.update({
+        ...(override.modelAlias !== undefined ? { modelAlias: override.modelAlias } : {}),
+        ...(override.thinkingEffort !== undefined
+          ? { thinkingEffort: override.thinkingEffort }
+          : {}),
+      });
+      return;
+    }
     if (this.session.experimentalFlags.enabled('secondary-model')) return;
     child.config.update({ modelAlias: parent.config.modelAlias });
+  }
+
+  /**
+   * The `[subagent]` override for `profileName` (preset layer first, then
+   * `agents`); empty when nothing is configured, in which case the caller
+   * falls back to the binding/parent values.
+   */
+  private resolveSubagentOverride(profileName: string): SubagentModelOverride {
+    return resolveSubagentModelOverride(
+      this.session.options.config,
+      profileName,
+      (message) => this.session.log.warn('subagent model override ignored', { message }),
+    );
   }
 
   /**
