@@ -294,7 +294,7 @@ In print mode (`kimi -p "<prompt>"`), Kimi Code stays alive after the main agent
 
 `timeout_ms` can be overridden by the `KIMI_SUBAGENT_TIMEOUT_MS` environment variable, which takes higher priority than `config.toml`.
 
-Per-field precedence for a subagent's model/effort: `[subagent.presets.<active>.<type>]` → `[subagent.agents.<type>]` → inherit from the parent agent. A `model` alias that is not defined in `[models]` is ignored with a log warning (the subagent falls back to the parent model) so a typo never breaks subagent startup. Example — an oh-my-opencode-slim-style `gpt` preset: cheap + fast for read-only search, medium effort for planning, and `coder` deliberately inheriting the main agent:
+Per-field precedence for a subagent's model/effort: `[subagent.presets.<active>.<type>]` → `[subagent.agents.<type>]` → inherit from the parent agent. A `model` alias that is not defined in `[models]` is ignored with a log warning (the subagent falls back to the parent model) so a typo never breaks subagent startup. Example — an oh-my-opencode-slim-style `gpt` preset: cheap + fast for read-only search, high effort on the inherited main model for planning (plan quality drives the whole task and planning runs once per flow), and a cheap model at max effort for delegated implementation (Fixer style — the main agent already did the decomposition):
 
 ```toml
 [subagent]
@@ -305,8 +305,12 @@ model = "openai-codex/gpt-5.6-luna"
 thinking_effort = "low"
 
 [subagent.presets.gpt.plan]
+# model intentionally unset: inherits the main agent's model
+thinking_effort = "high"
+
+[subagent.presets.gpt.coder]
 model = "openai-codex/gpt-5.6-luna"
-thinking_effort = "medium"
+thinking_effort = "xhigh"
 ```
 
 Use `/preset` (or `/preset status`) in the TUI to inspect the active preset and the effective per-type overrides, `/preset <name>` to switch, and `/preset off` to clear.

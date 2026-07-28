@@ -294,7 +294,7 @@ max_output_size = 8192
 
 `timeout_ms` 可被环境变量 `KIMI_SUBAGENT_TIMEOUT_MS` 覆盖，优先级高于配置文件。
 
-子代理模型/思维强度的逐字段优先级：`[subagent.presets.<激活项>.<类型>]` → `[subagent.agents.<类型>]` → 继承父 agent。`model` 别名若未在 `[models]` 中定义，会在日志中告警并回退为父 agent 模型，不会因笔误导致子代理启动失败。示例——一个 oh-my-opencode-slim 风格的 `gpt` preset：只读搜索用便宜快速的模型，规划用中等思维强度，`coder` 有意继承主 agent：
+子代理模型/思维强度的逐字段优先级：`[subagent.presets.<激活项>.<类型>]` → `[subagent.agents.<类型>]` → 继承父 agent。`model` 别名若未在 `[models]` 中定义，会在日志中告警并回退为父 agent 模型，不会因笔误导致子代理启动失败。示例——一个 oh-my-opencode-slim 风格的 `gpt` preset：只读搜索用便宜快速的模型，规划继承主模型并用高思维强度（规划质量决定整个任务走向，且每次规划流程只跑一次），委托实现用便宜模型拉满思维强度（Fixer 风格——主 agent 已完成任务分解）：
 
 ```toml
 [subagent]
@@ -305,8 +305,12 @@ model = "openai-codex/gpt-5.6-luna"
 thinking_effort = "low"
 
 [subagent.presets.gpt.plan]
+# model intentionally unset: inherits the main agent's model
+thinking_effort = "high"
+
+[subagent.presets.gpt.coder]
 model = "openai-codex/gpt-5.6-luna"
-thinking_effort = "medium"
+thinking_effort = "xhigh"
 ```
 
 在 TUI 中用 `/preset`（或 `/preset status`）查看当前激活的 preset 与各类型的生效覆盖，`/preset <name>` 切换，`/preset off` 清除。
