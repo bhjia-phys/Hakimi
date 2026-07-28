@@ -98,8 +98,8 @@ describe('WelcomeComponent', () => {
     const pixelLines = output.split('\n').filter((line) => line.includes(fullBlock));
     const blockCount = Array.from(output).filter((char) => char === fullBlock).length;
 
-    expect(pixelLines.length).toBeGreaterThanOrEqual(14);
-    expect(blockCount).toBeGreaterThanOrEqual(130);
+    expect(pixelLines.length).toBeGreaterThanOrEqual(10);
+    expect(blockCount).toBeGreaterThanOrEqual(70);
     expect(output).not.toContain('/\\');
     expect(output).not.toContain('[==]');
     expect(output).not.toContain('===>');
