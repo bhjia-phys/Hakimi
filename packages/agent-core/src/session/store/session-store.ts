@@ -1,7 +1,7 @@
 import type { Dirent } from 'node:fs';
-import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
-import { dirname, isAbsolute, join, relative, resolve } from 'pathe';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'pathe';
 
 import { z } from 'zod';
 
@@ -62,10 +62,24 @@ export type SessionStoreOptions = {
    * the registered bucket instead of splitting into a second one.
    */
   readonly resolveWorkspaceId?: (workDir: string) => Promise<string | undefined>;
+  /**
+   * Optional fallback home directory for session lookup. When a session is
+   * not found in the primary `sessionsDir`, the fallback's session index is
+   * consulted. Used by Hakimi to transparently resume Kimi Code sessions.
+   * `create`/`fork` always write into the primary home and additionally
+   * mirror the new session into the fallback store (symlink + index line), so
+   * an unpatched `kimi` CLI can list and resume Hakimi sessions too;
+   * `delete` removes that mirror. Entry-level mutators (`rename`/`archive`)
+   * and resumed sessions follow the resolved entry, so they operate on the
+   * fallback copy when that is where the session lives.
+   */
+  readonly fallbackHomeDir?: string | undefined;
 };
 
 export class SessionStore {
   readonly sessionsDir: string;
+  private readonly fallbackSessionsDir: string | undefined;
+  private readonly fallbackHomeDir: string | undefined;
   private readonly resolveWorkspaceId: SessionStoreOptions['resolveWorkspaceId'];
 
   constructor(
@@ -74,6 +88,11 @@ export class SessionStore {
   ) {
     this.sessionsDir = join(homeDir, 'sessions');
     this.resolveWorkspaceId = options.resolveWorkspaceId;
+    this.fallbackHomeDir = options.fallbackHomeDir;
+    this.fallbackSessionsDir =
+      options.fallbackHomeDir !== undefined
+        ? join(options.fallbackHomeDir, 'sessions')
+        : undefined;
   }
 
   sessionDirFor(input: { readonly id: string; readonly workDir: string }): string {
@@ -134,6 +153,7 @@ export class SessionStore {
       sessionDir: dir,
       workDir,
     });
+    await this.mirrorEntryToFallback({ sessionId: input.id, sessionDir: dir, workDir });
     return this.summaryFromDir(input.id, dir, workDir);
   }
 
@@ -176,6 +196,11 @@ export class SessionStore {
       await appendForkedMarkers(forkedState);
       const summary = await this.summaryFromDir(input.targetId, targetDir, source.workDir);
       await appendSessionIndexEntry(this.homeDir, {
+        sessionId: input.targetId,
+        sessionDir: targetDir,
+        workDir: source.workDir,
+      });
+      await this.mirrorEntryToFallback({
         sessionId: input.targetId,
         sessionDir: targetDir,
         workDir: source.workDir,
@@ -246,6 +271,78 @@ export class SessionStore {
     const entry = await this.findExistingSessionEntry(id);
     await rm(entry.sessionDir, { recursive: true, force: true });
     await appendSessionIndexDeletion(this.homeDir, id);
+    await this.removeFallbackMirror(id);
+  }
+
+  /**
+   * Mirror a primary session into the fallback (upstream Kimi Code) store so
+   * the unpatched `kimi` CLI can list and resume it: a symlink inside the
+   * fallback's sessions dir plus an index line naming the fallback-side path.
+   * Kimi drops index entries whose sessionDir lies outside its own sessions
+   * dir, which is why the symlink must physically live there. Best-effort:
+   * mirror failures never fail the primary operation.
+   */
+  private async mirrorEntryToFallback(entry: SessionIndexEntry): Promise<void> {
+    if (this.fallbackHomeDir === undefined || this.fallbackSessionsDir === undefined) return;
+    if (!isSafeSessionId(entry.sessionId)) return;
+    try {
+      const linkDir = join(this.fallbackSessionsDir, basename(dirname(entry.sessionDir)));
+      const linkPath = join(linkDir, entry.sessionId);
+      await mkdir(linkDir, { recursive: true, mode: 0o700 });
+      // Refresh a stale mirror (e.g. a dangling symlink), but never destroy a
+      // real file or directory that happens to sit at the mirror path — in
+      // that case this session simply goes unmirrored.
+      const existing = await lstat(linkPath).catch(() => undefined);
+      if (existing !== undefined) {
+        if (!existing.isSymbolicLink()) return;
+        await rm(linkPath, { force: true });
+      }
+      await symlink(entry.sessionDir, linkPath, 'dir');
+      await appendSessionIndexEntry(this.fallbackHomeDir, {
+        sessionId: entry.sessionId,
+        sessionDir: linkPath,
+        workDir: entry.workDir,
+      });
+    } catch {
+      // Mirroring is best-effort; the primary store remains authoritative.
+    }
+  }
+
+  /** Remove the fallback-store mirror of a deleted session. Best-effort. */
+  private async removeFallbackMirror(id: string): Promise<void> {
+    if (this.fallbackHomeDir === undefined || this.fallbackSessionsDir === undefined) return;
+    try {
+      const fallbackIndex = await readSessionIndex(this.fallbackHomeDir, this.fallbackSessionsDir);
+      const mirrored = fallbackIndex.get(id);
+      if (mirrored !== undefined) {
+        // Only unlink an actual symlink: a fallback-native session directory
+        // (an entry Kimi itself wrote) is never touched.
+        const linkStat = await lstat(mirrored.sessionDir).catch(() => undefined);
+        if (linkStat?.isSymbolicLink() === true) {
+          await rm(mirrored.sessionDir, { force: true });
+        }
+      }
+      await appendSessionIndexDeletion(this.fallbackHomeDir, id);
+    } catch {
+      // Best-effort: a dangling mirror is filtered out by isDirectory checks.
+    }
+  }
+
+  /**
+   * One-shot best-effort sweep: mirror every indexed primary session into the
+   * fallback store, so sessions created before mirroring existed (or while it
+   * failed) become visible to the unpatched `kimi` CLI too.
+   */
+  async mirrorPrimaryIntoFallback(): Promise<void> {
+    if (this.fallbackHomeDir === undefined || this.fallbackSessionsDir === undefined) return;
+    const index = await readSessionIndex(this.homeDir, this.sessionsDir);
+    if (index.size === 0) return;
+    const fallbackIndex = await readSessionIndex(this.fallbackHomeDir, this.fallbackSessionsDir);
+    for (const entry of index.values()) {
+      if (fallbackIndex.has(entry.sessionId)) continue;
+      if (!(await isDirectory(entry.sessionDir))) continue;
+      await this.mirrorEntryToFallback(entry);
+    }
   }
 
   async list(options: ListSessionsPayload = {}): Promise<readonly SessionSummary[]> {
@@ -407,6 +504,18 @@ export class SessionStore {
       sessions.push(summary);
       seen.add(entry.sessionId);
     }
+    // Merge fallback sessions matching the same workDir.
+    if (this.fallbackSessionsDir !== undefined && this.fallbackHomeDir !== undefined) {
+      const fallbackIndex = await readSessionIndex(this.fallbackHomeDir, this.fallbackSessionsDir);
+      for (const entry of fallbackIndex.values()) {
+        if (seen.has(entry.sessionId) || !(await isDirectory(entry.sessionDir))) continue;
+        const summary = await this.summaryFromDir(entry.sessionId, entry.sessionDir, entry.workDir);
+        if (!areSameFsPath(summary.workDir, workDir)) continue;
+        if (!includeArchive && summary.archived === true) continue;
+        sessions.push(summary);
+        seen.add(entry.sessionId);
+      }
+    }
     sessions.sort(compareSessionSummary);
     return sessions;
   }
@@ -436,6 +545,17 @@ export class SessionStore {
       if (!includeArchive && summary.archived === true) continue;
       sessions.push(summary);
     }
+    // Merge fallback sessions (deduplicate by id, primary wins).
+    if (this.fallbackSessionsDir !== undefined && this.fallbackHomeDir !== undefined) {
+      const fallbackIndex = await readSessionIndex(this.fallbackHomeDir, this.fallbackSessionsDir);
+      for (const entry of fallbackIndex.values()) {
+        if (index.has(entry.sessionId)) continue;
+        if (!(await isDirectory(entry.sessionDir))) continue;
+        const summary = await this.summaryFromDir(entry.sessionId, entry.sessionDir, entry.workDir);
+        if (!includeArchive && summary.archived === true) continue;
+        sessions.push(summary);
+      }
+    }
     sessions.sort(compareSessionSummary);
     return sessions;
   }
@@ -460,7 +580,14 @@ export class SessionStore {
   private async findSessionEntry(id: string): Promise<SessionIndexEntry | undefined> {
     if (!isSafeSessionId(id)) return undefined;
     const index = await readSessionIndex(this.homeDir, this.sessionsDir);
-    return index.get(id);
+    const entry = index.get(id);
+    if (entry !== undefined) return entry;
+    // Fall back to the legacy Kimi Code sessions directory when present.
+    if (this.fallbackSessionsDir !== undefined && this.fallbackHomeDir !== undefined) {
+      const fallbackIndex = await readSessionIndex(this.fallbackHomeDir, this.fallbackSessionsDir);
+      return fallbackIndex.get(id);
+    }
+    return undefined;
   }
 
   private async findExistingSessionEntry(id: string): Promise<SessionIndexEntry> {
