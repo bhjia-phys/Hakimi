@@ -64,7 +64,7 @@ describe('getLogDir', () => {
 
 describe('getBinDir', () => {
   it('returns <dataDir>/bin', () => {
-    expect(getBinDir()).toBe(join(homedir(), '.kimi-code', 'bin'));
+    expect(getBinDir()).toBe(join(homedir(), '.hakimi', 'bin'));
   });
 
   it('respects KIMI_CODE_HOME', () => {

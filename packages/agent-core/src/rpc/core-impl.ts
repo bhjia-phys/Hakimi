@@ -206,14 +206,18 @@ export interface KimiCoreOptions {
 
 /**
  * Upstream Kimi Code keeps its sessions under `~/.kimi-code`; Hakimi uses
- * `~/.hakimi`. Return the upstream home as a read-only session-store fallback
- * so `hakimi -r` and the session picker can see upstream sessions, or
- * undefined when the primary home already is that directory (e.g. HAKIMI_HOME
- * points there) — a self-fallback would only double every index read.
+ * `~/.hakimi`. Return the upstream home as a session-store fallback so
+ * `hakimi -r` and the session picker can see upstream sessions, or undefined
+ * when the primary home already is that directory (e.g. HAKIMI_HOME points
+ * there) — a self-fallback would only double every index read.
+ *
+ * Sharing is wired only for the default `~/.hakimi` home: a custom primary
+ * home (tests, sandboxed runs, an explicit HAKIMI_HOME) must never read from
+ * — or mirror into — the user's real upstream session store.
  */
 function legacyKimiCodeHome(primaryHomeDir: string): string | undefined {
-  const legacy = join(homedir(), '.kimi-code');
-  return resolve(legacy) === resolve(primaryHomeDir) ? undefined : legacy;
+  if (resolve(primaryHomeDir) !== resolve(join(homedir(), '.hakimi'))) return undefined;
+  return join(homedir(), '.kimi-code');
 }
 
 export class KimiCore implements PromisableMethods<CoreAPI> {
