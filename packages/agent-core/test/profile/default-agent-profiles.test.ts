@@ -73,6 +73,7 @@ describe('default agent profiles', () => {
     }
   });
 
+
   it('fails loudly when an embedded system prompt source is missing', () => {
     expect(() =>
       loadAgentProfilesFromSources(['profile/default/agent.yaml'], {

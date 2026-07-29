@@ -125,9 +125,11 @@ function rgBinaryName(): string {
 }
 
 function getShareDir(): string {
+  const hakimiOverride = process.env['HAKIMI_HOME'];
+  if (hakimiOverride !== undefined && hakimiOverride !== '') return hakimiOverride;
   const override = process.env['KIMI_CODE_HOME'];
   if (override !== undefined && override !== '') return override;
-  return join(homedir(), '.kimi-code');
+  return join(homedir(), '.hakimi');
 }
 
 function getVendorRgPath(_binName: string): string | undefined {

@@ -45,7 +45,7 @@ import { runNativeAssetSmokeIfRequested } from './native/smoke';
 /**
  * Outcome of a CLI command run, reported back to the process entrypoint.
  *
- * `handleMainCommand` is a reusable, unit-tested handler — it must not terminate
+ * `handleMainCommand` is a reusable, unit-tested handler 鈥?it must not terminate
  * the process itself. It reports here whether a headless (`kimi -p`) run
  * completed so the entrypoint (the only place that owns the process) can arm the
  * force-exit fallback.
@@ -126,7 +126,7 @@ export async function handleUpgradeCommand(version: string): Promise<void> {
   process.exit(exitCode);
 }
 
-/** A neutral CLIOptions value — `kimi migrate` never opens a chat session. */
+/** A neutral CLIOptions value 鈥?`kimi migrate` never opens a chat session. */
 const MIGRATE_CLI_OPTIONS: CLIOptions = {
   session: undefined,
   continue: false,
@@ -208,7 +208,7 @@ export function main(): void {
           // await, the failed run's `finally` cleanup has already torn down its
           // ref'd handles (sockets, timers, background tasks). If the event loop
           // drains during the await, Node exits on its own with the DEFAULT code
-          // 0 and `process.exit(1)` never runs — headless (`kimi -p`) failures
+          // 0 and `process.exit(1)` never runs 鈥?headless (`kimi -p`) failures
           // would then exit 0 nondeterministically. Setting `process.exitCode`
           // up front makes that drain-exit report failure too.
           process.exitCode = 1;
