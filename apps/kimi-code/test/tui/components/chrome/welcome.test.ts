@@ -85,10 +85,24 @@ describe('WelcomeComponent', () => {
     expect(text).toContain('Ready to explore the frontiers of physics knowledge.');
   });
 
-  it('renders the pixel ship with multiple colors by default', () => {
-    const codes = truecolorCodes(headerOf(new WelcomeComponent(appState).render(96)));
+  it('renders the detailed pixel ship with multiple colors by default', () => {
+    const header = headerOf(new WelcomeComponent(appState).render(96));
+    const codes = truecolorCodes(header);
 
     expect(codes.size).toBeGreaterThanOrEqual(6);
+  });
+
+  it('keeps the high-detail pixel ship instead of an ASCII line drawing', () => {
+    const output = plain(new WelcomeComponent(appState).render(120).join('\n'));
+    const fullBlock = String.fromCodePoint(0x2588);
+    const pixelLines = output.split('\n').filter((line) => line.includes(fullBlock));
+    const blockCount = Array.from(output).filter((char) => char === fullBlock).length;
+
+    expect(pixelLines.length).toBeGreaterThanOrEqual(20);
+    expect(blockCount).toBeGreaterThanOrEqual(250);
+    expect(output).not.toContain('/\\');
+    expect(output).not.toContain('[==]');
+    expect(output).not.toContain('===>');
   });
 
   it('paints the banner in rainbow while colored', () => {

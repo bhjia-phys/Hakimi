@@ -5,6 +5,7 @@ import { ErrorCodes, KimiError } from '#/errors';
 import { getRootLogger, log } from '#/logging/logger';
 import { PluginManager } from '#/plugin';
 import { LocalFetchURLProvider } from '#/tools/providers/local-fetch-url';
+import { LocalWebSearchProvider } from '#/tools/providers/local-web-search';
 import { MoonshotFetchURLProvider } from '#/tools/providers/moonshot-fetch-url';
 import { MoonshotWebSearchProvider } from '#/tools/providers/moonshot-web-search';
 import { ImageLimits } from '#/tools/support/image-limits';
@@ -1518,6 +1519,7 @@ async function createRuntimeConfig(input: {
   readonly resolveOAuthTokenProvider?: OAuthTokenProviderResolver | undefined;
 }): Promise<ToolServices> {
   const localFetcher = new LocalFetchURLProvider();
+  const localSearcher = new LocalWebSearchProvider();
   const searchService = withServiceEnv(
     input.config.services?.moonshotSearch,
     WEB_SEARCH_BASE_URL_ENV,
@@ -1541,10 +1543,11 @@ async function createRuntimeConfig(input: {
           }),
     webSearcher:
       searchService?.baseUrl === undefined
-        ? undefined
+        ? localSearcher
         : new MoonshotWebSearchProvider({
             baseUrl: searchService.baseUrl,
             defaultHeaders: input.kimiRequestHeaders,
+            localFallback: localSearcher,
             ...serviceCredentials(searchService, input.resolveOAuthTokenProvider),
           }),
   };

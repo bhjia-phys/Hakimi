@@ -36,6 +36,7 @@ import type { Command } from 'commander';
 
 import { createKimiCodeHostIdentity, createKimiCodeUserAgent } from '#/cli/version';
 import { fetchCatalogOrBuiltIn } from '#/utils/catalog-fetch';
+import { getDataDir } from '#/utils/paths';
 
 import { isKimiV2Enabled } from '../experimental-v2';
 
@@ -43,11 +44,29 @@ interface WritableLike {
   write(chunk: string): boolean;
 }
 
+const DEEPSEEK_PROVIDER_ID = 'deepseek';
+const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
+const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro';
+const DEEPSEEK_DEFAULT_CONTEXT_SIZE = 1_000_000;
+const DEEPSEEK_DEFAULT_MAX_OUTPUT_SIZE = 384_000;
+
+interface DeepSeekOptions {
+  readonly apiKey?: string;
+  readonly model?: string;
+  readonly alias?: string;
+  readonly baseUrl?: string;
+  readonly contextSize?: string | number;
+  readonly maxOutputSize?: string | number;
+  readonly default?: boolean;
+  readonly thinking?: boolean;
+}
+
 export interface ProviderDeps {
   readonly getHarness: () => KimiHarness;
   readonly stdout: WritableLike;
   readonly stderr: WritableLike;
   readonly env: NodeJS.ProcessEnv;
+  readonly readSecret?: (prompt: string) => Promise<string | undefined>;
   readonly exit: (code: number) => never;
 }
 
@@ -203,6 +222,100 @@ export async function handleProviderList(
   }
   if (config.defaultModel !== undefined) {
     deps.stdout.write(`\nDefault model: ${config.defaultModel}\n`);
+  }
+}
+
+export async function handleDeepSeekAdd(
+  deps: ProviderDeps,
+  opts: DeepSeekOptions,
+): Promise<void> {
+  const apiKey = await resolveDeepSeekApiKey(opts.apiKey, deps);
+  if (apiKey === undefined) {
+    deps.stderr.write(
+      'Missing DeepSeek API key. Pass --api-key <key>, set DEEPSEEK_API_KEY, or run this command in an interactive terminal.\n',
+    );
+    deps.exit(1);
+  }
+
+  const model = nonEmptyString(opts.model) ?? DEEPSEEK_DEFAULT_MODEL;
+  const alias = nonEmptyString(opts.alias) ?? `${DEEPSEEK_PROVIDER_ID}/${model}`;
+  const baseUrl = nonEmptyString(opts.baseUrl) ?? DEEPSEEK_BASE_URL;
+  const maxContextSize = parsePositiveIntegerOption(
+    opts.contextSize,
+    'context-size',
+    DEEPSEEK_DEFAULT_CONTEXT_SIZE,
+    deps,
+  );
+  const maxOutputSize = parsePositiveIntegerOption(
+    opts.maxOutputSize,
+    'max-output-size',
+    DEEPSEEK_DEFAULT_MAX_OUTPUT_SIZE,
+    deps,
+  );
+  const makeDefault = opts.default !== false;
+  const thinkingCapable = isDeepSeekThinkingCapable(model);
+  const defaultThinking = thinkingCapable && opts.thinking !== false;
+
+  const harness = deps.getHarness();
+  await harness.ensureConfigFile();
+
+  let config = await harness.getConfig();
+  if (config.providers[DEEPSEEK_PROVIDER_ID] !== undefined) {
+    config = await harness.removeProvider(DEEPSEEK_PROVIDER_ID);
+  }
+
+  const provider: KimiConfig['providers'][string] = {
+    type: 'openai',
+    baseUrl,
+    apiKey,
+    source: {
+      kind: 'deepseek',
+      url: 'https://api-docs.deepseek.com/quick_start/pricing',
+      model,
+    },
+  };
+  if (thinkingCapable) {
+    provider.generationKwargs = {
+      extra_body: {
+        thinking: { type: defaultThinking ? 'enabled' : 'disabled' },
+      },
+    };
+  }
+
+  const models = { ...(config.models ?? {}) };
+  models[alias] = {
+    provider: DEEPSEEK_PROVIDER_ID,
+    model,
+    maxContextSize,
+    maxOutputSize,
+    capabilities: thinkingCapable ? ['thinking', 'tool_use'] : ['tool_use'],
+    displayName: deepSeekDisplayName(model),
+  };
+
+  const nextConfig: Partial<KimiConfig> = {
+    providers: {
+      ...config.providers,
+      [DEEPSEEK_PROVIDER_ID]: provider,
+    },
+    models,
+  };
+  if (makeDefault) {
+    nextConfig.defaultModel = alias;
+    nextConfig.thinking = { enabled: defaultThinking };
+  } else {
+    nextConfig.defaultModel = config.defaultModel;
+    nextConfig.thinking = config.thinking;
+  }
+
+  await harness.setConfig(nextConfig);
+
+  deps.stdout.write(
+    `Configured DeepSeek (${model}) as ${alias} using ${baseUrl}.\n`,
+  );
+  if (makeDefault) {
+    deps.stdout.write(
+      `Default model set to ${alias}${defaultThinking ? ' with thinking enabled' : ''}.\n`,
+    );
   }
 }
 
@@ -566,12 +679,16 @@ function resolveDeps(overrides: Partial<ProviderDeps> = {}): ResolvedProviderDep
         // Same engine gate as the TUI's `/provider` flow: the SDK's v2-backed
         // harness by default, the legacy agent-core harness when
         // KIMI_CODE_LEGACY_FLAG is set.
-        harness ??= (isKimiV2Enabled() ? createKimiHarnessV2 : createKimiHarness)({ identity });
+        harness ??= (isKimiV2Enabled() ? createKimiHarnessV2 : createKimiHarness)({
+          homeDir: getDataDir(),
+          identity,
+        });
         return harness;
       }),
     stdout: overrides.stdout ?? process.stdout,
     stderr: overrides.stderr ?? process.stderr,
     env: overrides.env ?? process.env,
+    readSecret: overrides.readSecret ?? promptForSecret,
     exit: overrides.exit ?? ((code: number) => process.exit(code)),
     // The v2 harness boots an engine whose watchers hold the event loop open;
     // close it so a one-shot command can exit. No-op for injected harnesses.
@@ -586,6 +703,103 @@ function resolveApiKey(flag: string | undefined, env: NodeJS.ProcessEnv): string
   const fromEnv = env['KIMI_REGISTRY_API_KEY'];
   if (typeof fromEnv === 'string' && fromEnv.length > 0) return fromEnv;
   return undefined;
+}
+
+async function resolveDeepSeekApiKey(
+  flag: string | undefined,
+  deps: ProviderDeps,
+): Promise<string | undefined> {
+  const fromFlag = nonEmptyString(flag);
+  if (fromFlag !== undefined) return fromFlag;
+  const fromEnv = nonEmptyString(deps.env['DEEPSEEK_API_KEY']);
+  if (fromEnv !== undefined) return fromEnv;
+  if (deps.readSecret === undefined) return undefined;
+  return nonEmptyString(await deps.readSecret('DeepSeek API key: '));
+}
+
+function nonEmptyString(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
+}
+
+function parsePositiveIntegerOption(
+  raw: string | number | undefined,
+  name: string,
+  fallback: number,
+  deps: ProviderDeps,
+): number {
+  if (raw === undefined) return fallback;
+  const text = String(raw).trim();
+  if (!/^\d+$/.test(text) || Number(text) <= 0) {
+    deps.stderr.write(`--${name} must be a positive integer.\n`);
+    deps.exit(1);
+  }
+  return Number(text);
+}
+
+function isDeepSeekThinkingCapable(model: string): boolean {
+  return model.trim().toLowerCase() !== 'deepseek-chat';
+}
+
+function deepSeekDisplayName(model: string): string {
+  if (model === 'deepseek-v4-pro') return 'DeepSeek V4 Pro';
+  if (model === 'deepseek-v4-flash') return 'DeepSeek V4 Flash';
+  if (model === 'deepseek-reasoner') return 'DeepSeek Reasoner';
+  if (model === 'deepseek-chat') return 'DeepSeek Chat';
+  return `DeepSeek ${model}`;
+}
+
+async function promptForSecret(prompt: string): Promise<string | undefined> {
+  const stdin = process.stdin;
+  const stderr = process.stderr;
+  if (!stdin.isTTY || !stderr.isTTY || typeof stdin.setRawMode !== 'function') {
+    return undefined;
+  }
+
+  return await new Promise<string | undefined>((resolve) => {
+    let value = '';
+    let done = false;
+    const wasRaw = stdin.isRaw;
+
+    const finish = (result: string | undefined): void => {
+      if (done) return;
+      done = true;
+      stdin.off('data', onData);
+      stdin.setRawMode(wasRaw);
+      stderr.write('\n');
+      resolve(result);
+    };
+
+    const onData = (chunk: Buffer | string): void => {
+      for (const char of String(chunk)) {
+        if (char === '\u0003') {
+          finish(undefined);
+          return;
+        }
+        if (char === '\r' || char === '\n') {
+          finish(value);
+          return;
+        }
+        if (char === '\u007f' || char === '\b') {
+          if (value.length > 0) {
+            value = value.slice(0, -1);
+            stderr.write('\b \b');
+          }
+          continue;
+        }
+        if (char >= ' ') {
+          value += char;
+          stderr.write('*');
+        }
+      }
+    };
+
+    stderr.write(prompt);
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    stdin.on('data', onData);
+  });
 }
 
 function asManaged(config: KimiConfig): ManagedKimiConfigShape {

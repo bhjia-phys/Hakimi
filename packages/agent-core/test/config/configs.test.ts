@@ -398,7 +398,7 @@ removed_flag = true
     await ensureConfigFile(configPath);
 
     const text = await readFile(configPath, 'utf-8');
-    expect(text).toContain('Runtime settings for Kimi Code.');
+    expect(text).toContain('Runtime settings for Hakimi.');
     expect(text).not.toMatch(/^default_thinking =/m);
     expect(text).not.toMatch(/^default_model =/m);
 
@@ -673,9 +673,44 @@ micro_compaction = false
 });
 
 describe('config path env override', () => {
+  it('uses ~/.hakimi by default', () => {
+    const savedHakimi = process.env['HAKIMI_HOME'];
+    const savedKimi = process.env['KIMI_CODE_HOME'];
+    try {
+      delete process.env['HAKIMI_HOME'];
+      delete process.env['KIMI_CODE_HOME'];
+
+      expect(resolveKimiHome().replaceAll('\\', '/')).toMatch(/\/\.hakimi$/);
+    } finally {
+      if (savedHakimi === undefined) delete process.env['HAKIMI_HOME'];
+      else process.env['HAKIMI_HOME'] = savedHakimi;
+      if (savedKimi === undefined) delete process.env['KIMI_CODE_HOME'];
+      else process.env['KIMI_CODE_HOME'] = savedKimi;
+    }
+  });
+
+  it('prefers HAKIMI_HOME over KIMI_CODE_HOME', () => {
+    const savedHakimi = process.env['HAKIMI_HOME'];
+    const savedKimi = process.env['KIMI_CODE_HOME'];
+    try {
+      process.env['HAKIMI_HOME'] = '/tmp/hakimi-from-env';
+      process.env['KIMI_CODE_HOME'] = '/tmp/kimi-from-env';
+
+      expect(resolveKimiHome()).toBe('/tmp/hakimi-from-env');
+      expect(resolveConfigPath({})).toBe('/tmp/hakimi-from-env/config.toml');
+    } finally {
+      if (savedHakimi === undefined) delete process.env['HAKIMI_HOME'];
+      else process.env['HAKIMI_HOME'] = savedHakimi;
+      if (savedKimi === undefined) delete process.env['KIMI_CODE_HOME'];
+      else process.env['KIMI_CODE_HOME'] = savedKimi;
+    }
+  });
+
   it('uses KIMI_CODE_HOME when no explicit homeDir is supplied', () => {
+    const savedHakimi = process.env['HAKIMI_HOME'];
     const saved = process.env['KIMI_CODE_HOME'];
     try {
+      delete process.env['HAKIMI_HOME'];
       process.env['KIMI_CODE_HOME'] = '/tmp/kimi-from-env';
 
       expect(resolveKimiHome()).toBe('/tmp/kimi-from-env');
@@ -683,6 +718,8 @@ describe('config path env override', () => {
       expect(resolveConfigPath({})).toBe('/tmp/kimi-from-env/config.toml');
       expect(resolveConfigPath({ configPath: '/tmp/custom.toml' })).toBe('/tmp/custom.toml');
     } finally {
+      if (savedHakimi === undefined) delete process.env['HAKIMI_HOME'];
+      else process.env['HAKIMI_HOME'] = savedHakimi;
       if (saved === undefined) delete process.env['KIMI_CODE_HOME'];
       else process.env['KIMI_CODE_HOME'] = saved;
     }

@@ -125,7 +125,10 @@ function classifySearchError(error: unknown): string {
     return `Search timed out: ${message}`;
   }
   if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('auth')) {
-    return `Search failed (authentication): ${message}`;
+    return [
+      `Search failed (authentication): ${message}`,
+      'Hakimi normally falls back to a no-auth local web search provider when Moonshot/Kimi search auth is unavailable. If you still see this authentication error, the fallback provider is disabled or unavailable: use FetchURL for known URLs or Read for local sources, and report the search as unavailable instead of fabricating results.',
+    ].join('\n');
   }
   if (
     lower.includes('http ') ||

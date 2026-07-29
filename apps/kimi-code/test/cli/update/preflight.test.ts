@@ -63,7 +63,7 @@ vi.mock('../../../src/tui/config', () => ({
     readonly fallback: TuiConfig;
 
     constructor(fallback: TuiConfig) {
-      super('Invalid client preferences in ~/.kimi-code/tui.toml; using defaults.');
+      super('Invalid client preferences in ~/.hakimi/tui.toml; using defaults.');
       this.fallback = fallback;
     }
   },
