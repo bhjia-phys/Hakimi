@@ -68,7 +68,7 @@ describe('initializeServerTelemetry', () => {
     const client = initializeServerTelemetry({ version: '1.2.3' });
     expect(mocks.initializeTelemetry).toHaveBeenCalledWith(
       expect.objectContaining({
-        appName: 'kimi-code-cli',
+        appName: 'hakimi-cli',
         version: '1.2.3',
         uiMode: 'web',
         model: 'kimi-k2',

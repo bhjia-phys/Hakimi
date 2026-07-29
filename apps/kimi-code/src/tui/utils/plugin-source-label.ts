@@ -1,5 +1,7 @@
 import type { PluginSummary } from '@moonshot-ai/kimi-code-sdk';
 
+import { KIMI_CODE_CDN_BASE } from '#/constant/app';
+
 export const OFFICIAL_BADGE = 'official';
 export const CURATED_BADGE = 'curated';
 export const THIRD_PARTY_BADGE = 'third-party';
@@ -52,14 +54,16 @@ export function pluginTrustLabel(plugin: PluginSummary): PluginTrustLabel {
 }
 
 /**
- * Returns true only for install sources that are unambiguously Kimi-built
- * official plugins — an https URL under the official Kimi CDN plugin path.
- * Everything else (local paths, GitHub repos, curated or third-party URLs)
- * is treated as unofficial and should be confirmed before install.
+ * Returns true only for install sources that are unambiguously Hakimi-built
+ * official plugins — an https URL under the official plugin path of Hakimi's
+ * own release CDN, or (legacy) the upstream Kimi CDN plugin path. Everything
+ * else (local paths, GitHub repos, curated or third-party URLs) is treated as
+ * unofficial and should be confirmed before install.
  */
 export function isOfficialPluginSource(source: string): boolean {
   const trimmed = source.trim();
   if (!trimmed.startsWith('https://')) return false;
+  if (trimmed.startsWith(`${KIMI_CODE_CDN_BASE}/plugins/official/`)) return true;
   try {
     return isOfficialPluginUrl(new URL(trimmed));
   } catch {

@@ -16,6 +16,7 @@ import {
   type CoreAPI,
   type SDKAPI,
 } from '../../src';
+import { LocalWebSearchProvider } from '../../src/tools/providers/local-web-search';
 import {
   __resetRootLoggerForTest,
   getRootLogger,
@@ -1019,7 +1020,9 @@ max_context_size = 100000
       model: 'default-mock',
     });
     const before = core.sessions.get(created.id);
-    expect(before?.options.toolServices?.webSearcher).toBeUndefined();
+    // Hakimi always wires the no-auth local web search as the baseline
+    // searcher; a configured moonshot_search service replaces it on reload.
+    expect(before?.options.toolServices?.webSearcher).toBeInstanceOf(LocalWebSearchProvider);
 
     await writeFile(
       configPath,
@@ -1035,6 +1038,7 @@ base_url = "https://search.example.test/v1"
     expect(after).toBeDefined();
     expect(after).not.toBe(before);
     expect(after?.options.toolServices?.webSearcher).toBeDefined();
+    expect(after?.options.toolServices?.webSearcher).not.toBeInstanceOf(LocalWebSearchProvider);
     expect(reloaded.agents['main']).toBeDefined();
   });
 
