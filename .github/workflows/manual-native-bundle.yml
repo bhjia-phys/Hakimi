@@ -2,6 +2,12 @@ name: Manual Native Bundle
 
 on:
   workflow_dispatch:
+    inputs:
+      sign-macos:
+        description: 'Sign + notarize macOS builds (requires Apple secrets configured)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -10,9 +16,12 @@ jobs:
   build:
     uses: ./.github/workflows/_native-build.yml
     with:
-      upload-artifact-prefix: kimi-code-native
+      cli-package-filter: '@bhjia-phys/hakimi'
+      binary-name: hakimi
+      artifact-base-name: hakimi
+      upload-artifact-prefix: hakimi-native
+      sign-macos: ${{ inputs.sign-macos }}
       retention-days: 3
-      sign-macos: true
     secrets:
       APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}

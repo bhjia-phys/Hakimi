@@ -1,4 +1,14 @@
-// Covers the RESP commands and parser paths not exercised by server.test.ts.
+/**
+ * Scenario: the MiniDb RESP TCP server's protocol and recovery paths beyond
+ * the basic commands covered by `server.test.ts`.
+ * Responsibilities: QUIT close, inline (non-array) commands, reply ordering
+ * under pipeline pressure, mid-reply client abort, oversized-request discard
+ * and connection recovery, and per-command error isolation (one bad command
+ * never starves its pipelined siblings).
+ * Wiring: a real local TCP server over a temporary MiniDb directory; no
+ * external network.
+ * Run: pnpm exec vitest run packages/minidb/test/server-extra.test.ts
+ */
 import { expect, test } from 'vitest';
 import assert from 'node:assert/strict';
 import net from 'node:net';
@@ -184,18 +194,38 @@ test('RESP: an oversized request gets -ERR and the connection recovers', { timeo
   const srv = await startServer({ dir, port: 0, fsyncPolicy: 'no' });
   try {
     const sock = await connect(srv.port);
-    // 65MB of bulk payload crosses the parser's 64MB cap.
-    const big = Buffer.alloc(65 * 1024 * 1024, 'x'.charCodeAt(0));
+    // 65MB of bulk payload crosses the parser's 64MB cap. The payload
+    // deliberately embeds CRLF and RESP-looking frames (including a fake
+    // PING): the parser must consume the oversized frame by its declared
+    // length, never by its content, so none of those bytes can surface as a
+    // reply. The oversized frame and the pipelined PING are written in one
+    // call, so recovery must hold no matter where TCP splits the stream —
+    // including a final chunk that carries the payload tail and the PING
+    // together.
+    const big = Buffer.alloc(65 * 1024 * 1024);
+    const pattern = Buffer.from('x*1\r\n$4\r\nPING\r\n$99\r\nyy\r\n');
+    for (let i = 0; i < big.length; i += pattern.length) pattern.copy(big, i);
     const head = Buffer.from(`*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$${big.length}\r\n`);
-    sock.write(Buffer.concat([head, big, Buffer.from('\r\n')]));
-    // Pipelined right behind it: once the parser recovers from the -ERR this
-    // fresh small command must still be answered.
-    sock.write(encode('PING'));
-    const data = await collectUntil(sock, (s) => s.includes('+PONG'));
+    sock.write(Buffer.concat([head, big, Buffer.from('\r\n'), Buffer.from(encode('PING'))]));
+    // Wait for the reply stream to be COMPLETE (the real +PONG is the last
+    // reply): the payload's fake PING, were it misparsed, would land between
+    // the -ERR and the real +PONG.
+    const data = await collectUntil(sock, (s) => s.endsWith('+PONG\r\n'));
     const tooLarge = data.indexOf('too large');
     const pong = data.indexOf('+PONG');
+    assert.ok(data.startsWith('-ERR '), `expected a leading -ERR, got ${JSON.stringify(data.slice(0, 120))}`);
     assert.ok(tooLarge !== -1, `expected a too-large -ERR, got ${JSON.stringify(data.slice(0, 120))}`);
     assert.ok(pong > tooLarge, 'PING after the oversized request must be answered');
+    assert.equal(
+      (data.match(/too large/g) ?? []).length,
+      1,
+      'the oversized request must be reported exactly once',
+    );
+    assert.equal(
+      (data.match(/\+PONG/g) ?? []).length,
+      1,
+      'payload bytes must not be misparsed into extra PONG replies',
+    );
     sock.end();
   } finally {
     await srv.close();

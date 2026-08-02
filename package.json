@@ -26,6 +26,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "clean": "pnpm -r run clean",
+    "check:hakimi:boundary": "node scripts/check-hakimi-release-boundary.mjs",
     "changeset": "changeset",
     "version": "changeset version",
     "version:release": "changeset version",

@@ -69,6 +69,54 @@ describe('status panel report lines', () => {
     expect(output).not.toContain('Runtime');
   });
 
+  it('shows the upstream Kimi Code baseline when available', () => {
+    const lines = buildStatusReportLines({
+      version: '0.22.0',
+      model: 'k2',
+      workDir: '/tmp/project',
+      sessionId: 'ses-1',
+      sessionTitle: null,
+      thinkingEffort: 'off',
+      permissionMode: 'manual',
+      planMode: false,
+      contextUsage: 0,
+      contextTokens: 0,
+      maxContextTokens: 0,
+      availableModels: {},
+      upstream: {
+        version: '0.30.0',
+        commit: '37d9bdc5859dccafc82de3e990b28e72cd5ff488',
+      },
+    }).map(strip);
+
+    const output = lines.join('\n');
+    expect(output).toContain('>_ Hakimi (v0.22.0)');
+    expect(output).toContain('Based on     Kimi Code 0.30.0');
+    expect(output).toContain('Upstream     37d9bdc');
+  });
+
+  it('omits upstream rows when no baseline is recorded', () => {
+    const lines = buildStatusReportLines({
+      version: '0.22.0',
+      model: 'k2',
+      workDir: '/tmp/project',
+      sessionId: 'ses-1',
+      sessionTitle: null,
+      thinkingEffort: 'off',
+      permissionMode: 'manual',
+      planMode: false,
+      contextUsage: 0,
+      contextTokens: 0,
+      maxContextTokens: 0,
+      availableModels: {},
+    }).map(strip);
+
+    const output = lines.join('\n');
+    expect(output).toContain('>_ Hakimi (v0.22.0)');
+    expect(output).not.toContain('Based on');
+    expect(output).not.toContain('Upstream');
+  });
+
   it('formats extra usage section in status report', () => {
     const lines = buildStatusReportLines({
       version: '1.2.3',

@@ -1,15 +1,19 @@
 /**
  * `auth` domain (cross-cutting) — `IWebSearchProviderService` implementation.
  *
- * Resolves the `WebSearch` backend from two sources, in precedence order:
+ * Resolves the `WebSearch` backend from three sources, in precedence order:
  * (1) an explicit `[services.moonshot_search]` config section (read through
  * `config`) — built with its `apiKey` and/or an `oauth` ref resolved
  * through `IOAuthService.resolveTokenProvider(...)`; and (2) the managed Kimi
  * OAuth provider (`managed:kimi-code`) when it carries an `oauth` ref (the
  * state after a successful Kimi login), whose bearer token comes from
  * `IOAuthService.resolveTokenProvider(...)` and whose base URL is derived from
- * the provider's `baseUrl`. The explicit config wins over the managed
- * derivation. When neither source is configured it yields `undefined`.
+ * the provider's `baseUrl`. Both Moonshot backends carry the local no-auth
+ * provider (`LocalWebSearchProvider`) as their failure fallback, mirroring
+ * v1's `createRuntimeConfig`. (3) When neither source is configured the local
+ * provider is returned directly, so a Hakimi install without Kimi OAuth
+ * (e.g. DeepSeek or OpenAI models) still gets a working `WebSearch`. The
+ * explicit config wins over the managed derivation.
  * Tests and hosts that need a custom backend bind `IWebSearchProviderService`
  * directly. Bound at App scope.
  *
@@ -36,6 +40,7 @@ import { IProviderService, type ProviderConfig } from '#/kosong/provider/provide
 import { isOAuthCatalogVendor } from '#/kosong/provider/providerDefinition';
 
 import { SERVICES_SECTION, type ServicesConfig } from '../configSection';
+import { LocalWebSearchProvider } from './providers/local-web-search';
 import { MoonshotWebSearchProvider } from './providers/moonshot-web-search';
 import type { WebSearchProvider } from '#/agent/tools/web-search/web-search';
 import { IWebSearchProviderService } from './webSearch';
@@ -51,8 +56,12 @@ export class WebSearchProviderService implements IWebSearchProviderService {
     @IAgentIdentity private readonly identity: IAgentIdentity,
   ) {}
 
-  getWebSearchProvider(): WebSearchProvider | undefined {
-    return this.fromServicesConfig() ?? this.fromManagedOAuth();
+  getWebSearchProvider(): WebSearchProvider {
+    return this.fromServicesConfig() ?? this.fromManagedOAuth() ?? this.localProvider();
+  }
+
+  private localProvider(): WebSearchProvider {
+    return new LocalWebSearchProvider();
   }
 
   hasWebSearchProvider(): boolean {
@@ -93,6 +102,7 @@ export class WebSearchProviderService implements IWebSearchProviderService {
       apiKey: nonEmptyString(search.apiKey),
       defaultHeaders: { ...this.identity.current().requestHeaders },
       customHeaders: search.customHeaders,
+      localFallback: this.localProvider(),
     });
   }
 
@@ -106,6 +116,7 @@ export class WebSearchProviderService implements IWebSearchProviderService {
       tokenProvider,
       defaultHeaders: { ...this.bootstrap.args.requestHeaders },
       customHeaders: provider.customHeaders,
+      localFallback: this.localProvider(),
     });
   }
 }

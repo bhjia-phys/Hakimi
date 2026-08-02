@@ -2112,6 +2112,395 @@ describe('v1↔v2 agent interaction parity', () => {
     }
   });
 
+  it('resumeSession appends custom agent profiles after the builtin delegatable agents', async () => {
+    const restoreEnv = scrubConfigEnv();
+    const pair = await makeAgentParityPair();
+    try {
+      // A regular (non-override) agent file discovered from the shared
+      // project agent directory: v1 auto-appends every file profile to the
+      // builtin default's delegation record, so the default agent's
+      // subagentNames must end with the file profiles in catalog order.
+      const agentDir = join(pair.workDir, '.agents', 'agents');
+      await mkdir(agentDir, { recursive: true });
+      await writeFile(
+        join(agentDir, 'alpha.md'),
+        '---\nname: alpha\ndescription: Alpha test agent.\n---\n\nAlpha body.\n',
+        'utf-8',
+      );
+      await createOnBoth(pair, { id: 'session_parity_alpha' });
+      await Promise.all([
+        pair.v1.closeSession({ sessionId: 'session_parity_alpha' }),
+        pair.v2.closeSession({ sessionId: 'session_parity_alpha' }),
+      ]);
+      const [v1Resumed, v2Resumed] = await Promise.all([
+        pair.v1.resumeSession({ id: 'session_parity_alpha' }),
+        pair.v2.resumeSession({ id: 'session_parity_alpha' }),
+      ]);
+      const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
+      const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
+      expect(v1SubagentNames).toEqual(['coder', 'explore', 'plan', 'alpha']);
+      expect(v2SubagentNames).toEqual(['coder', 'explore', 'plan', 'alpha']);
+    } finally {
+      await closeSessionPair(pair);
+      restoreEnv();
+    }
+  });
+
+  it('resumeSession preserves explicit subagent order while dropping missing and duplicate names', async () => {
+    const restoreEnv = scrubConfigEnv();
+    const agentFilesDir = await makeTempDir('kimi-sdk-parity-agents-');
+    const reviewerPath = join(agentFilesDir, 'reviewer.md');
+    // Non-alphabetical declared order with a missing name and a duplicate:
+    // v1's linked record keeps the first occurrence position of each key.
+    await writeFile(
+      reviewerPath,
+      [
+        '---',
+        'name: reviewer',
+        'description: Reviewer test agent.',
+        'subagents:',
+        '  - plan',
+        '  - missing-agent',
+        '  - coder',
+        '  - plan',
+        '---',
+        '',
+        'Reviewer body.',
+        '',
+      ].join('\n'),
+      'utf-8',
+    );
+    const pair = await makeAgentParityPair();
+    try {
+      // The same per-session `CreateSessionOptions` on both engines — v2
+      // must honor `agentFiles` exactly like v1, not via a client-level seed.
+      const input = {
+        workDir: pair.workDir,
+        id: 'session_parity_reviewer',
+        agentProfile: 'reviewer',
+        agentFiles: [reviewerPath],
+      } as const;
+      await Promise.all([
+        pair.v1.createSession(input),
+        pair.v2.createSession(input),
+      ]);
+      await Promise.all([
+        pair.v1.closeSession({ sessionId: 'session_parity_reviewer' }),
+        pair.v2.closeSession({ sessionId: 'session_parity_reviewer' }),
+      ]);
+      const [v1Resumed, v2Resumed] = await Promise.all([
+        pair.v1.resumeSession({ id: 'session_parity_reviewer' }),
+        pair.v2.resumeSession({ id: 'session_parity_reviewer' }),
+      ]);
+      const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
+      const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
+      expect(v1SubagentNames).toEqual(['plan', 'coder']);
+      expect(v2SubagentNames).toEqual(['plan', 'coder']);
+    } finally {
+      await closeSessionPair(pair);
+      restoreEnv();
+    }
+  });
+
+  it('resumeSession lists the whole merged catalog for a custom caller without an allowlist', async () => {
+    const restoreEnv = scrubConfigEnv();
+    const agentFilesDir = await makeTempDir('kimi-sdk-parity-agents-');
+    const alphaPath = join(agentFilesDir, 'alpha.md');
+    await writeFile(
+      alphaPath,
+      '---\nname: alpha\ndescription: Alpha test agent.\n---\n\nAlpha body.\n',
+      'utf-8',
+    );
+    // A caller without `subagents` delegates to the whole catalog in v1's
+    // merged order — the builtin names first, then the file profiles — the
+    // caller itself and the default profile included.
+    const pair = await makeAgentParityPair();
+    try {
+      const input = {
+        workDir: pair.workDir,
+        id: 'session_parity_alpha_caller',
+        agentProfile: 'alpha',
+        agentFiles: [alphaPath],
+      } as const;
+      await Promise.all([
+        pair.v1.createSession(input),
+        pair.v2.createSession(input),
+      ]);
+      await Promise.all([
+        pair.v1.closeSession({ sessionId: 'session_parity_alpha_caller' }),
+        pair.v2.closeSession({ sessionId: 'session_parity_alpha_caller' }),
+      ]);
+      const [v1Resumed, v2Resumed] = await Promise.all([
+        pair.v1.resumeSession({ id: 'session_parity_alpha_caller' }),
+        pair.v2.resumeSession({ id: 'session_parity_alpha_caller' }),
+      ]);
+      const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
+      const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
+      expect(v1SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan', 'alpha']);
+      expect(v2SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan', 'alpha']);
+    } finally {
+      await closeSessionPair(pair);
+      restoreEnv();
+    }
+  });
+
+  it('resumeSession includes the default name when a plain agent file overrides the agent profile without an allowlist', async () => {
+    const restoreEnv = scrubConfigEnv();
+    const agentFilesDir = await makeTempDir('kimi-sdk-parity-agents-');
+    const agentPath = join(agentFilesDir, 'agent.md');
+    await writeFile(
+      agentPath,
+      '---\nname: agent\ndescription: Override agent.\noverride: true\n---\n\nOverride body.\n',
+      'utf-8',
+    );
+    // v1 links a no-allowlist override to the WHOLE merged catalog — the
+    // default name itself included — unlike the builtin default, which never
+    // delegates to itself.
+    const pair = await makeAgentParityPair();
+    try {
+      const input = {
+        workDir: pair.workDir,
+        id: 'session_parity_agent_override',
+        agentFiles: [agentPath],
+      } as const;
+      await Promise.all([
+        pair.v1.createSession(input),
+        pair.v2.createSession(input),
+      ]);
+      await Promise.all([
+        pair.v1.closeSession({ sessionId: 'session_parity_agent_override' }),
+        pair.v2.closeSession({ sessionId: 'session_parity_agent_override' }),
+      ]);
+      const [v1Resumed, v2Resumed] = await Promise.all([
+        pair.v1.resumeSession({ id: 'session_parity_agent_override' }),
+        pair.v2.resumeSession({ id: 'session_parity_agent_override' }),
+      ]);
+      const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
+      const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
+      expect(v1SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan']);
+      expect(v2SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan']);
+    } finally {
+      await closeSessionPair(pair);
+      restoreEnv();
+    }
+  });
+
+  it('resumeSession keeps the builtin delegation when SYSTEM.md overrides the default prompt', async () => {
+    const restoreEnv = scrubConfigEnv();
+    const pair = await makeSessionParityPair();
+    try {
+      // SYSTEM.md replaces only the prompt; the delegation record stays the
+      // builtin default's — file profiles appended, the default name excluded.
+      await writeFile(join(pair.v1Home.raw, 'SYSTEM.md'), 'SYSTEM override prompt.\n', 'utf-8');
+      await writeFile(join(pair.v2Home.raw, 'SYSTEM.md'), 'SYSTEM override prompt.\n', 'utf-8');
+      const agentDir = join(pair.workDir, '.agents', 'agents');
+      await mkdir(agentDir, { recursive: true });
+      await writeFile(
+        join(agentDir, 'alpha.md'),
+        '---\nname: alpha\ndescription: Alpha test agent.\n---\n\nAlpha body.\n',
+        'utf-8',
+      );
+      await createOnBoth(pair, { id: 'session_parity_system' });
+      await Promise.all([
+        pair.v1.closeSession({ sessionId: 'session_parity_system' }),
+        pair.v2.closeSession({ sessionId: 'session_parity_system' }),
+      ]);
+      const [v1Resumed, v2Resumed] = await Promise.all([
+        pair.v1.resumeSession({ id: 'session_parity_system' }),
+        pair.v2.resumeSession({ id: 'session_parity_system' }),
+      ]);
+      const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
+      const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
+      expect(v1SubagentNames).toEqual(['coder', 'explore', 'plan', 'alpha']);
+      expect(v2SubagentNames).toEqual(['coder', 'explore', 'plan', 'alpha']);
+    } finally {
+      await closeSessionPair(pair);
+      restoreEnv();
+    }
+  });
+
+  it('keeps per-session explicit agent files from leaking into sessions created without them', async () => {
+    const restoreEnv = scrubConfigEnv();
+    const agentFilesDir = await makeTempDir('kimi-sdk-parity-agents-');
+    const alphaPath = join(agentFilesDir, 'alpha.md');
+    await writeFile(
+      alphaPath,
+      '---\nname: alpha\ndescription: Alpha test agent.\n---\n\nAlpha body.\n',
+      'utf-8',
+    );
+    const pair = await makeAgentParityPair();
+    try {
+      await Promise.all([
+        pair.v1.createSession({
+          workDir: pair.workDir,
+          id: 'session_parity_with_agent',
+          agentProfile: 'alpha',
+          agentFiles: [alphaPath],
+        }),
+        pair.v2.createSession({
+          workDir: pair.workDir,
+          id: 'session_parity_with_agent',
+          agentProfile: 'alpha',
+          agentFiles: [alphaPath],
+        }),
+      ]);
+      // A sibling session created afterwards on the same clients without
+      // agentFiles must not see the explicit profile.
+      await createOnBoth(pair, { id: 'session_parity_plain' });
+      const [v1Resumed, v2Resumed] = await Promise.all([
+        pair.v1.resumeSession({ id: 'session_parity_plain' }),
+        pair.v2.resumeSession({ id: 'session_parity_plain' }),
+      ]);
+      const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
+      const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
+      expect(v1SubagentNames).toEqual(['coder', 'explore', 'plan']);
+      expect(v2SubagentNames).toEqual(['coder', 'explore', 'plan']);
+    } finally {
+      await closeSessionPair(pair);
+      restoreEnv();
+    }
+  });
+
+  it('resumeSession restores explicit agent profiles from session persistence even after the source file is deleted', async () => {
+    const restoreEnv = scrubConfigEnv();
+    const agentFilesDir = await makeTempDir('kimi-sdk-parity-agents-');
+    const alphaPath = join(agentFilesDir, 'alpha.md');
+    await writeFile(
+      alphaPath,
+      '---\nname: alpha\ndescription: Alpha test agent.\n---\n\nAlpha body.\n',
+      'utf-8',
+    );
+    const pair = await makeAgentParityPair();
+    try {
+      const input = {
+        workDir: pair.workDir,
+        id: 'session_parity_persist',
+        agentProfile: 'alpha',
+        agentFiles: [alphaPath],
+      } as const;
+      await Promise.all([
+        pair.v1.createSession(input),
+        pair.v2.createSession(input),
+      ]);
+      await Promise.all([
+        pair.v1.closeSession({ sessionId: 'session_parity_persist' }),
+        pair.v2.closeSession({ sessionId: 'session_parity_persist' }),
+      ]);
+      // v1 resumes from its persisted catalog snapshot; v2 from the explicit
+      // files copied into the session dir — deleting the source file before
+      // resume must change neither.
+      await rm(alphaPath);
+      const [v1Client2, v2Client2] = [new SDKRpcClient({ homeDir: pair.v1Home.raw, identity: TEST_IDENTITY }), new SDKRpcClientV2({ homeDir: pair.v2Home.raw, identity: TEST_IDENTITY })];
+      try {
+        const [v1Resumed, v2Resumed] = await Promise.all([
+          v1Client2.resumeSession({ id: 'session_parity_persist' }),
+          v2Client2.resumeSession({ id: 'session_parity_persist' }),
+        ]);
+        const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
+        const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
+        expect(v1SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan', 'alpha']);
+        expect(v2SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan', 'alpha']);
+      } finally {
+        await v1Client2.close();
+        await v2Client2.close();
+      }
+    } finally {
+      await closeSessionPair(pair);
+      restoreEnv();
+    }
+  });
+
+  it('lists the whole merged catalog for an unbound agent when a file overrides the default profile', async () => {
+    const restoreEnv = scrubConfigEnv();
+    const agentFilesDir = await makeTempDir('kimi-sdk-parity-agents-');
+    const agentPath = join(agentFilesDir, 'agent.md');
+    await writeFile(
+      agentPath,
+      '---\nname: agent\ndescription: Override agent.\noverride: true\n---\n\nOverride body.\n',
+      'utf-8',
+    );
+    // Model-less on both engines: v1 still binds the default (now the file
+    // override) whose record covers the whole merged catalog; v2 stays
+    // unbound and resolves through the same effective default — both must
+    // include the default name itself.
+    const pair = await makeSessionParityPair();
+    try {
+      const input = {
+        workDir: pair.workDir,
+        id: 'session_parity_unbound_override',
+        agentFiles: [agentPath],
+      } as const;
+      await Promise.all([
+        pair.v1.createSession(input),
+        pair.v2.createSession(input),
+      ]);
+      await Promise.all([
+        pair.v1.closeSession({ sessionId: 'session_parity_unbound_override' }),
+        pair.v2.closeSession({ sessionId: 'session_parity_unbound_override' }),
+      ]);
+      const [v1Resumed, v2Resumed] = await Promise.all([
+        pair.v1.resumeSession({ id: 'session_parity_unbound_override' }),
+        pair.v2.resumeSession({ id: 'session_parity_unbound_override' }),
+      ]);
+      const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
+      const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
+      expect(v1SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan']);
+      expect(v2SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan']);
+    } finally {
+      await closeSessionPair(pair);
+      restoreEnv();
+    }
+  });
+
+  it('binds --agent-file and --agent through the harness createSession path the TUI uses', async () => {
+    const restoreEnv = scrubConfigEnv();
+    const v1HomeDir = await makeTempDir('kimi-sdk-parity-v1-home-');
+    const v2HomeDir = await makeTempDir('kimi-sdk-parity-v2-home-');
+    const workDir = await makeTempDir('kimi-sdk-parity-work-');
+    await writeFile(join(v1HomeDir, 'config.toml'), AGENT_CONFIG_TOML, 'utf-8');
+    await writeFile(join(v2HomeDir, 'config.toml'), AGENT_CONFIG_TOML, 'utf-8');
+    const agentFilesDir = await makeTempDir('kimi-sdk-parity-agents-');
+    const reviewerPath = join(agentFilesDir, 'reviewer.md');
+    await writeFile(
+      reviewerPath,
+      '---\nname: reviewer\ndescription: Reviewer test agent.\nsubagents:\n  - plan\n  - coder\n---\n\nReviewer body.\n',
+      'utf-8',
+    );
+    const v1Harness = createKimiHarness({ homeDir: v1HomeDir, identity: TEST_IDENTITY });
+    const v2Harness = createKimiHarnessV2({ homeDir: v2HomeDir, identity: TEST_IDENTITY });
+    try {
+      // The TUI's startup path (kimi-tui.ts) puts --agent/--agent-file into
+      // CreateSessionOptions and calls harness.createSession.
+      const input = {
+        workDir,
+        id: 'session_parity_harness',
+        model: 'fixture-model',
+        agentProfile: 'reviewer',
+        agentFiles: [reviewerPath],
+      } as const;
+      const [v1Session, v2Session] = await Promise.all([
+        v1Harness.createSession(input),
+        v2Harness.createSession(input),
+      ]);
+      await Promise.all([
+        v1Harness.closeSession(v1Session.id),
+        v2Harness.closeSession(v2Session.id),
+      ]);
+      const [v1Resumed, v2Resumed] = await Promise.all([
+        v1Harness.resumeSession({ id: 'session_parity_harness' }),
+        v2Harness.resumeSession({ id: 'session_parity_harness' }),
+      ]);
+      const v1SubagentNames = v1Resumed.getResumeState()?.agents['main']!.config.subagentNames;
+      const v2SubagentNames = v2Resumed.getResumeState()?.agents['main']!.config.subagentNames;
+      expect(v1SubagentNames).toEqual(['plan', 'coder']);
+      expect(v2SubagentNames).toEqual(['plan', 'coder']);
+    } finally {
+      await v1Harness.close();
+      await v2Harness.close();
+      restoreEnv();
+    }
+  });
+
   it('clearContext empties both histories', async () => {
     const restoreEnv = scrubConfigEnv();
     const pair = await makeAgentParityPair();

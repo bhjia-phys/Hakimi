@@ -34,56 +34,156 @@ const reply = {
 class RespParser {
   private buf: Buffer = Buffer.alloc(0);
   private readonly maxBuf: number;
+  // An oversized bulk's declared payload (+ trailing CRLF) still to consume
+  // verbatim after its `$N\r\n` header was rejected: the bytes are counted
+  // off, never parsed, so arbitrary CRLF / `*` / `$` content inside them
+  // cannot surface as a command.
+  private discardBulk = 0;
+  // Remaining args of an aborted array frame to skip: each `$M\r\n` header is
+  // parsed (headers are tiny) and its M+2 payload bytes are counted off.
+  private discardArgs = 0;
+  // An oversized inline command line: consume bytes until the next CRLF
+  // (inline commands are line-based, so the line end is the frame end).
+  private discardInline = false;
 
   constructor({ maxBuf = 64 * 1024 * 1024 }: { maxBuf?: number } = {}) {
     this.maxBuf = maxBuf;
   }
 
   *feed(chunk: Buffer): Generator<Buffer[]> {
-    this.buf = this.buf.length ? Buffer.concat([this.buf, chunk]) : chunk;
-    if (this.buf.length > this.maxBuf) {
-      // Drop the buffered oversized request before reporting: without the
-      // reset every later chunk would fail with the same error and the giant
-      // buffer would be retained for the life of the connection.
-      this.buf = Buffer.alloc(0);
-      throw new Error(`RESP request too large (>${this.maxBuf} bytes)`);
-    }
-    while (this.buf.length) {
-      const parsed = this.tryParse();
-      if (!parsed) break;
-      yield parsed;
-    }
-  }
+    let work = this.buf.length === 0 ? chunk : Buffer.concat([this.buf, chunk]);
+    this.buf = Buffer.alloc(0);
+    let pos = 0;
 
-  private tryParse(): Buffer[] | null {
-    if (this.buf[0] !== 0x2a /* '*' */) {
-      const idx = this.buf.indexOf(CRLF);
-      if (idx === -1) return null;
-      const line = this.buf.subarray(0, idx).toString();
-      this.buf = this.buf.subarray(idx + 2);
-      return line.split(' ').filter(Boolean).map((s) => Buffer.from(s));
-    }
+    while (pos < work.length) {
+      if (this.discardBulk > 0) {
+        const take = Math.min(this.discardBulk, work.length - pos);
+        this.discardBulk -= take;
+        pos += take;
+        continue;
+      }
+      if (this.discardArgs > 0) {
+        if (work[pos] !== 0x24 /* '$' */) {
+          // The aborted frame's remainder is not an argument header — stop
+          // skipping and resume normal parsing (best effort on a malformed
+          // stream; the size backstop still bounds the buffer).
+          this.discardArgs = 0;
+          continue;
+        }
+        const end = work.indexOf(CRLF, pos + 1);
+        if (end === -1) {
+          this.buf = work.subarray(pos);
+          return;
+        }
+        const len = Number(work.subarray(pos + 1, end).toString());
+        this.discardArgs -= 1;
+        this.discardBulk = len + 2;
+        pos = end + 2;
+        continue;
+      }
+      if (this.discardInline) {
+        const end = work.indexOf(CRLF, pos);
+        if (end === -1) return; // keep dropping bytes until the line ends
+        this.discardInline = false;
+        pos = end + 2;
+        continue;
+      }
 
-    let pos = 1;
-    let end = this.buf.indexOf(CRLF, pos);
-    if (end === -1) return null;
-    const argc = Number(this.buf.subarray(pos, end).toString());
-    pos = end + 2;
+      if (work[pos] !== 0x2a /* '*' */) {
+        const end = work.indexOf(CRLF, pos);
+        if (end === -1) {
+          if (work.length - pos > this.maxBuf) {
+            this.discardInline = true;
+            throw new Error(`RESP request too large (>${this.maxBuf} bytes)`);
+          }
+          this.buf = work.subarray(pos);
+          return;
+        }
+        const line = work.subarray(pos, end).toString();
+        pos = end + 2;
+        yield line.split(' ').filter(Boolean).map((s) => Buffer.from(s));
+        continue;
+      }
 
-    const args: Buffer[] = [];
-    for (let i = 0; i < argc; i++) {
-      if (pos >= this.buf.length || this.buf[pos] !== 0x24 /* '$' */) return null;
-      pos++;
-      end = this.buf.indexOf(CRLF, pos);
-      if (end === -1) return null;
-      const len = Number(this.buf.subarray(pos, end).toString());
-      pos = end + 2;
-      if (this.buf.length - pos < len + 2) return null;
-      args.push(this.buf.subarray(pos, pos + len));
-      pos += len + 2;
+      // RESP array: `*<argc>\r\n` followed by `<argc>` bulk arguments.
+      let p = pos + 1;
+      let end = work.indexOf(CRLF, p);
+      if (end === -1) {
+        if (work.length - pos > this.maxBuf) {
+          this.discardInline = true;
+          throw new Error(`RESP request too large (>${this.maxBuf} bytes)`);
+        }
+        this.buf = work.subarray(pos);
+        return;
+      }
+      const argc = Number(work.subarray(p, end).toString());
+      p = end + 2;
+      const args: Buffer[] = [];
+      for (let i = 0; i < argc; i++) {
+        if (p >= work.length) {
+          if (work.length - pos > this.maxBuf) {
+            // The buffered prefix alone already exceeds the cap: reject and
+            // skip the frame's remaining args by their length prefixes (the
+            // next bytes to arrive are arg i's `$M\r\n` header).
+            this.discardArgs = argc - i;
+            this.buf = Buffer.alloc(0);
+            throw new Error(`RESP request too large (>${this.maxBuf} bytes)`);
+          }
+          this.buf = work.subarray(pos);
+          return;
+        }
+        if (work[p] !== 0x24 /* '$' */) {
+          if (work.length - pos > this.maxBuf) {
+            this.discardArgs = argc - i;
+            this.buf = work.subarray(p);
+            throw new Error(`RESP request too large (>${this.maxBuf} bytes)`);
+          }
+          this.buf = work.subarray(pos);
+          return;
+        }
+        p++;
+        end = work.indexOf(CRLF, p);
+        if (end === -1) {
+          if (work.length - pos > this.maxBuf) {
+            // The `$` of arg i is consumed but its length header is pending;
+            // retain from the `$` so the skip pass can still read the length.
+            this.discardArgs = argc - i;
+            this.buf = work.subarray(p - 1);
+            throw new Error(`RESP request too large (>${this.maxBuf} bytes)`);
+          }
+          this.buf = work.subarray(pos);
+          return;
+        }
+        const len = Number(work.subarray(p, end).toString());
+        p = end + 2;
+        if (len > this.maxBuf) {
+          // Reject at the length prefix, before any payload is buffered: the
+          // frame is dead, so consume its declared payload + CRLF verbatim
+          // and skip any remaining args by their own length prefixes.
+          this.discardBulk = len + 2;
+          this.discardArgs = argc - i - 1;
+          this.buf = work.subarray(p);
+          throw new Error(`RESP request too large (>${this.maxBuf} bytes)`);
+        }
+        if (work.length - p < len + 2) {
+          if (work.length - pos > this.maxBuf) {
+            // Over the cap mid-payload: the bytes already buffered are
+            // dropped, the rest of this bulk is counted off, then the
+            // remaining args are skipped.
+            this.discardBulk = len + 2 - (work.length - p);
+            this.discardArgs = argc - i - 1;
+            this.buf = Buffer.alloc(0);
+            throw new Error(`RESP request too large (>${this.maxBuf} bytes)`);
+          }
+          this.buf = work.subarray(pos);
+          return;
+        }
+        args.push(work.subarray(p, p + len));
+        p += len + 2;
+      }
+      pos = p;
+      yield args;
     }
-    this.buf = this.buf.subarray(pos);
-    return args;
   }
 }
 
@@ -205,8 +305,10 @@ export async function startServer({ dir, port = 6379, host = '127.0.0.1', fsyncP
             send(res);
           }
         } catch (e) {
-          // Parser-level failure (e.g. oversized request): feed() has already
-          // reset its buffer, so the connection can keep serving new commands.
+          // Parser-level failure (e.g. oversized request): the parser has
+          // already entered its discard state, so the connection can keep
+          // serving new commands once the oversized frame's bytes have been
+          // consumed.
           send(reply.err((e as Error).message));
         }
       });

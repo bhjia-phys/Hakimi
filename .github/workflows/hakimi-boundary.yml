@@ -1,0 +1,29 @@
+name: Hakimi Release Boundary
+
+# Hakimi-specific downstream boundary checks (package identity, upstream
+# baseline provenance, changeset hygiene, updater URLs, release-tag and
+# workflow parameterization). Kept separate from the upstream CI workflows so
+# upstream syncs never conflict with it. Runs the shared script with full
+# history so the upstream-commit provenance checks execute.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Hakimi release boundary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run boundary checks
+        run: node scripts/check-hakimi-release-boundary.mjs

@@ -1,13 +1,16 @@
 /**
- * `auth` domain (cross-cutting) — OAuth-backed web search seam.
+ * `auth` domain (cross-cutting) — web search backend seam.
  *
- * Owns the seam for the `WebSearch` backend, which needs an authenticated
- * Moonshot search provider. `IWebSearchProviderService` exposes the
- * configured `WebSearchProvider` (or `undefined` when search is not
- * configured), and `hasWebSearchProvider` answers presence alone — for tool
- * activation gates, which may run before the identity snapshot the composed
- * provider embeds has frozen. Tests and hosts that need a custom backend bind
- * `IWebSearchProviderService` directly. Bound at App scope.
+ * Owns the seam for the `WebSearch` backend. `IWebSearchProviderService`
+ * exposes the configured `WebSearchProvider`: a Moonshot search backend
+ * (explicit `[services.moonshot_search]` config, or the managed Kimi OAuth
+ * provider after a successful login) when one is available, and the no-auth
+ * local HTML search provider otherwise — never `undefined`, so the `WebSearch`
+ * tool is always registered. `hasWebSearchProvider` answers presence of a real
+ * Moonshot backend alone, for hosts that gate on it. The default
+ * `WebSearchProviderService` builds the backend itself; tests and hosts that
+ * need a custom backend bind `IWebSearchProviderService` directly. Bound at
+ * App scope.
  */
 
 import { createDecorator, type ServiceIdentifier } from '#/_base/di/instantiation';
@@ -19,7 +22,7 @@ export type { WebSearchProvider, WebSearchResult } from '#/agent/tools/web-searc
 export interface IWebSearchProviderService {
   readonly _serviceBrand: undefined;
 
-  getWebSearchProvider(): WebSearchProvider | undefined;
+  getWebSearchProvider(): WebSearchProvider;
   hasWebSearchProvider(): boolean;
 }
 
