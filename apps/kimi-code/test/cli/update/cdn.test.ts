@@ -232,6 +232,52 @@ describe('fetchLatestFromCdn', () => {
       });
     });
 
+    it('accepts scoped Hakimi package tags', async () => {
+      const f = mockRoutedFetch({
+        [KIMI_CODE_GITHUB_RELEASES_API_URL]: {
+          body: JSON.stringify([
+            { tag_name: '@bhjia-phys/hakimi@0.22.0', draft: false },
+            { tag_name: '@bhjia-phys/hakimi@0.21.0', draft: false },
+          ]),
+        },
+      });
+      await expect(fetchLatestFromCdn(f)).resolves.toEqual({
+        latest: '0.22.0',
+        manifest: null,
+      });
+    });
+
+    it('accepts legacy upstream package tags', async () => {
+      const f = mockRoutedFetch({
+        [KIMI_CODE_GITHUB_RELEASES_API_URL]: {
+          body: JSON.stringify([
+            { tag_name: '@moonshot-ai/kimi-code@0.30.0', draft: false },
+          ]),
+        },
+      });
+      await expect(fetchLatestFromCdn(f)).resolves.toEqual({
+        latest: '0.30.0',
+        manifest: null,
+      });
+    });
+
+    it('ignores version-like malformed tags (strict semver only)', async () => {
+      const f = mockRoutedFetch({
+        [KIMI_CODE_GITHUB_RELEASES_API_URL]: {
+          body: JSON.stringify([
+            { tag_name: 'hakimi-2024.01', draft: false },
+            { tag_name: 'hakimi-v1.2', draft: false },
+            { tag_name: 'hakimi-v01.2.3', draft: false },
+            { tag_name: 'hakimi-v0.22.0', draft: false },
+          ]),
+        },
+      });
+      await expect(fetchLatestFromCdn(f)).resolves.toEqual({
+        latest: '0.22.0',
+        manifest: null,
+      });
+    });
+
     it('throws when no release tag is valid semver', async () => {
       const f = mockRoutedFetch({
         [KIMI_CODE_GITHUB_RELEASES_API_URL]: {

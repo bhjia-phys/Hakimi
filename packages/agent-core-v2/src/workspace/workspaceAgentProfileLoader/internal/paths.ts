@@ -20,8 +20,17 @@ export function resolveAgentPath(path: string, baseDir: string, osHomeDir: strin
   return resolve(baseDir, path);
 }
 
-export async function isDirectoryPath(fs: IHostFileSystem, p: string): Promise<boolean> {
-  try {
+/**
+ * Session-dir directory holding the per-session explicit agent files: the
+ * session lifecycle copies the caller's `--agent-file` contents here at
+ * create time, and the explicit-file source loads them from this copy (never
+ * from the original paths) so a resumed session keeps the files it was
+ * created with — the same snapshot semantics v1 gets from its persisted
+ * catalog snapshot.
+ */
+export const SESSION_EXPLICIT_AGENT_FILES_DIR = 'agent-files';
+
+export async function isDirectoryPath(fs: IHostFileSystem, p: string): Promise<boolean> {  try {
     const resolved = await fs.realpath(p);
     return (await fs.stat(resolved)).isDirectory;
   } catch (error) {
@@ -50,7 +59,7 @@ export async function pathExists(fs: IHostFileSystem, p: string): Promise<boolea
   }
 }
 
-function isMissingPathError(error: unknown): boolean {
+export function isMissingPathError(error: unknown): boolean {
   return (
     error instanceof HostFsError &&
     (error.code === OsFsErrors.codes.OS_FS_NOT_FOUND ||

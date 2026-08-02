@@ -13,8 +13,10 @@
  * requires `override: true` in the frontmatter — a non-override collision is
  * warned about and skipped to the next candidate. `ready` resolves
  * immediately: the registry is already populated when this service is
- * constructed, and every later change arrives through `onDidChange`. Bound at
- * Session scope.
+ * constructed, and every later change arrives through `onDidChange`. The
+ * per-name provenance (`builtin` / `system` — the `<home>/SYSTEM.md` prompt
+ * override — / `file`) tracked by `profileSource` mirrors v1's delegation
+ * semantics. Bound at Session scope.
  */
 
 import { Disposable } from '#/_base/di/lifecycle';
@@ -30,11 +32,14 @@ import {
   type AgentProfileRegistration,
 } from '#/app/agentProfileCatalog/agentProfileRegistry';
 import { BUILTIN_AGENT_PROFILE_SOURCE_ID } from '#/app/agentProfileCatalog/builtinAgentProfileLoader';
+import { AGENT_PROFILE_SOURCE_PRIORITY } from '#/app/agentProfileCatalog/agentProfileContribution';
 
 import { ISessionAgentProfileCatalogSeed } from './agentProfileCatalogSeed';
+import { IExplicitFileAgentSource } from './explicitFileAgentSource';
 import {
   ISessionAgentProfileCatalog,
   type AgentProfileInspection,
+  type AgentProfileSource,
   type AgentProfileSuppressedCandidate,
 } from './sessionAgentProfileCatalog';
 
@@ -53,12 +58,14 @@ export class SessionAgentProfileCatalogService
 
   private merged = new Map<string, AgentProfile>();
   private inspections = new Map<string, AgentProfileInspection>();
+  private builtinDefault: AgentProfile | undefined;
   private readonly onDidChangeEmitter = this._register(new Emitter<string>());
   readonly onDidChange: Event<string> = this.onDidChangeEmitter.event;
 
   constructor(
     @IAgentProfileRegistry private readonly registry: IAgentProfileRegistry,
     @ISessionAgentProfileCatalogSeed private readonly seed: ISessionAgentProfileCatalogSeed,
+    @IExplicitFileAgentSource private readonly explicit: IExplicitFileAgentSource,
     @ILogService private readonly log: ILogService,
   ) {
     super();
@@ -72,10 +79,17 @@ export class SessionAgentProfileCatalogService
         this.onDidChangeEmitter.fire(change.sourceId);
       }),
     );
+    // The per-session explicit files are copied into the session dir at
+    // create time; fold them into the projection once the source's first
+    // load resolves (an invalid `--agent-file` rejects `ready`).
+    void this.explicit.ready.then(() => {
+      this.reproject();
+      this.onDidChangeEmitter.fire('explicit');
+    });
   }
 
   get ready(): Promise<void> {
-    return Promise.resolve();
+    return this.explicit.ready;
   }
 
   get(name: string): AgentProfile | undefined {
@@ -100,6 +114,25 @@ export class SessionAgentProfileCatalogService
     return this.inspections.get(name);
   }
 
+  profileSource(name: string): AgentProfileSource {
+    const inspection = this.inspections.get(name);
+    if (inspection === undefined || inspection.sourceId === BUILTIN_AGENT_PROFILE_SOURCE_ID) {
+      return 'builtin';
+    }
+    // The `<home>/SYSTEM.md` prompt override is synthesized against the
+    // builtin default with the same name and a copied description — only the
+    // prompt differs. A regular agent file that replaces the default carries
+    // its own description.
+    if (
+      name === DEFAULT_AGENT_PROFILE_NAME &&
+      this.builtinDefault !== undefined &&
+      inspection.profile.description === this.builtinDefault.description
+    ) {
+      return 'system';
+    }
+    return 'file';
+  }
+
   async load(): Promise<void> {
     await this.ready;
   }
@@ -120,10 +153,24 @@ export class SessionAgentProfileCatalogService
   private reproject(): void {
     const merged = new Map<string, AgentProfile>();
     const inspections = new Map<string, AgentProfileInspection>();
-    const entries = this.relevantEntries();
+    const entries = [...this.relevantEntries()];
+    // The per-session explicit source (session-dir copies of `--agent-file`)
+    // participates in the merge at the same priority as the workspace
+    // explicit loader; it is session-local, so no workspace-key filter.
+    const explicitContribution = this.explicit.contribution();
+    if (explicitContribution.profiles.length > 0) {
+      entries.push({
+        sourceId: 'explicit',
+        priority: AGENT_PROFILE_SOURCE_PRIORITY.explicit,
+        contribution: explicitContribution,
+      });
+    }
 
     const builtinEntry = entries.find((e) => e.sourceId === BUILTIN_AGENT_PROFILE_SOURCE_ID);
     if (builtinEntry !== undefined) {
+      this.builtinDefault = builtinEntry.contribution.profiles.find(
+        (profile) => profile.name === DEFAULT_AGENT_PROFILE_NAME,
+      );
       for (const profile of builtinEntry.contribution.profiles) {
         merged.set(profile.name, profile);
         inspections.set(profile.name, {

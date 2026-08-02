@@ -7,6 +7,8 @@ import {
   KIMI_CODE_GITHUB_RELEASES_API_URL,
 } from '#/constant/app';
 
+import { parseReleaseTag } from '../../../scripts/native/release-tag.mjs';
+
 import type { UpdateManifest } from './types';
 
 const CDN_FETCH_TIMEOUT_MS = 3_000;
@@ -96,9 +98,10 @@ async function fetchUpdateManifestFromCdn(fetchImpl: typeof fetch): Promise<Upda
  * ships previews as GitHub prereleases, which `releases/latest/download/...`
  * never serves — without this the update check would never see them.
  *
- * The newest version is the max semver over release tag names with the
- * `hakimi-v`/`v` prefix stripped (`hakimi-v0.20.1-oauth-preview.2` →
- * `0.20.1-oauth-preview.2`). Drafts and non-semver tags are ignored.
+ * The newest version is the max semver over release tag names. The canonical
+ * `hakimi-v<semver>` prefix and the historical tag forms (`v`, scoped
+ * package tags, legacy upstream tags) are all accepted (see
+ * `scripts/native/release-tag.mjs`). Drafts and non-semver tags are ignored.
  *
  * **Throws** on any failure; callers must catch (see above).
  */
@@ -120,7 +123,7 @@ async function fetchLatestVersionFromGithub(fetchImpl: typeof fetch): Promise<st
     if (typeof release !== 'object' || release === null) continue;
     const record = release as { tag_name?: unknown; draft?: unknown };
     if (record.draft === true || typeof record.tag_name !== 'string') continue;
-    const version = valid(record.tag_name.replace(/^hakimi-v/, '').replace(/^v/, ''));
+    const version = parseReleaseTag(record.tag_name);
     if (version === null) continue;
     if (latest === null || gt(version, latest)) latest = version;
   }

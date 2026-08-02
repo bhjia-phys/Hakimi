@@ -171,6 +171,7 @@ import {
   IAgentLoopService,
   IAgentPermissionModeService,
   IAgentPermissionRulesService,
+  IAgentProfileCatalogService,
   IAgentProfileService,
   IAgentRPCService,
   IAgentSkillService,
@@ -196,6 +197,7 @@ import {
   ISessionMetadata,
   ISessionSecondaryModelWarningService,
   ISessionSkillCatalog,
+  ISessionAgentProfileCatalog,
   ISessionWorkspaceContext,
   ITelemetryService,
   IWorkspaceAliases,
@@ -226,6 +228,7 @@ import {
   resolveKimiHome,
   resolveLoggingConfig,
   resolvePrintBackgroundMode,
+  subagentAllowlistFor,
   summarizeSkill,
   type IAgentScopeHandle,
   type IDisposable,
@@ -950,6 +953,8 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
       foldAgentWireReplay(join(ctx.sessionDir, 'agents', agent.id, 'wire.jsonl')),
     ]);
     const profile = agent.accessor.get(IAgentProfileService).data();
+    const catalog = session.accessor.get(ISessionAgentProfileCatalog);
+    await catalog.ready;
     return {
       type,
       config: {
@@ -958,6 +963,7 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
         modelAlias: profile.modelAlias,
         modelCapabilities: profile.modelCapabilities,
         profileName: profile.profileName,
+        subagentNames: this.v1SubagentNames(catalog, profile),
         thinkingEffort: profile.thinkingLevel,
         systemPrompt: profile.systemPrompt,
       },
@@ -974,6 +980,71 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
       toolStore: folded.toolStore,
       background: background as readonly BackgroundTaskInfo[],
     };
+  }
+
+  /**
+   * The v1 `AgentConfigData.subagentNames` equivalent for one resumed agent:
+   * the profile names it may delegate to, derived from the effective subagent
+   * allowlist (`subagentAllowlistFor` — the caller's own, falling back to the
+   * default profile's) resolved against the live Session-scope profile
+   * catalog.
+   *
+   * An explicit allowlist keeps its declared order, drops names the catalog
+   * does not contain, and deduplicates on the first occurrence (v1's linked
+   * `Record<string, profile>` keeps the first insertion position for a
+   * repeated key).
+   *
+   * An undefined allowlist means "any type" and must mirror v1's merged
+   * catalog order, not v2's. v1 loads its builtin profiles from the
+   * alphabetical source array `['agent.yaml', 'coder.yaml', 'explore.yaml',
+   * 'plan.yaml']` and appends file profiles after them (the default profile
+   * additionally auto-appends every regular file profile to its delegation
+   * record), so the v1-compatible order is: the builtin names sorted, then
+   * the file-only names in the Session catalog's stable merge order. The
+   * builtin name set comes from the App-scope catalog; v2's own builtin
+   * registration order (import order) is engine-internal and must not leak
+   * into the wire. The default profile itself drops out for the builtin
+   * default, a SYSTEM.md prompt override, an unbound agent, and an unknown
+   * caller (v1's `caller?.subagents ?? default.subagents` fallback); a
+   * regular agent file that overrides the default profile with no allowlist
+   * links to the whole catalog, itself included, and so does a custom caller
+   * (v1's `linkSubagentAllowlist` `?? [...merged.keys()]`). The
+   * builtin/SYSTEM.md/file distinction comes from the catalog's
+   * `profileSource` provenance contract.
+   */
+  private v1SubagentNames(
+    catalog: ISessionAgentProfileCatalog,
+    caller: { readonly profileName?: string; readonly subagents?: readonly string[] },
+  ): readonly string[] {
+    const allowlist = subagentAllowlistFor(catalog, caller);
+    if (allowlist !== undefined) {
+      return [...new Set(allowlist.filter((name) => catalog.get(name) !== undefined))];
+    }
+    const builtinNames = new Set(
+      this.engineAccessor.get(IAgentProfileCatalogService).list().map((profile) => profile.name),
+    );
+    const merged = catalog.list();
+    const builtin = merged
+      .filter((profile) => builtinNames.has(profile.name))
+      .map((profile) => profile.name)
+      .toSorted();
+    const files = merged.filter((profile) => !builtinNames.has(profile.name)).map((p) => p.name);
+    const v1Ordered = [...builtin, ...files];
+    const resolvesThroughDefault =
+      caller.profileName === undefined ||
+      caller.profileName === DEFAULT_AGENT_PROFILE_NAME ||
+      catalog.get(caller.profileName) === undefined;
+    // A regular agent file that overrides the default profile links to the
+    // whole merged catalog (itself included) in v1 — the builtin default and
+    // the SYSTEM.md prompt override never delegate to themselves. The
+    // catalog's provenance contract makes that distinction; without it the
+    // default name would wrongly drop out of an override's snapshot.
+    const defaultIsFileOverride =
+      catalog.profileSource(DEFAULT_AGENT_PROFILE_NAME) === 'file';
+    const dropDefault = resolvesThroughDefault && !defaultIsFileOverride;
+    return dropDefault
+      ? v1Ordered.filter((name) => name !== DEFAULT_AGENT_PROFILE_NAME)
+      : v1Ordered;
   }
 
   /**
@@ -1070,6 +1141,10 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
       sessionId: input.id,
       workDir,
       additionalDirs: input.additionalDirs,
+      // v1's per-session `--agent-file`: the engine copies the files into the
+      // session dir and the session-scoped explicit source loads them, so the
+      // binding survives close / resume without re-passing them.
+      explicitFiles: input.agentFiles,
     });
     // Wired before the optional main-agent materialization so a profile-bind
     // warning (oversized AGENTS.md) reaches the listeners like v1's create.
@@ -1077,9 +1152,11 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     if (
       input.model !== undefined ||
       input.thinking !== undefined ||
-      input.permission !== undefined
+      input.permission !== undefined ||
+      input.agentProfile !== undefined
     ) {
       const agent = await this.materializeMainAgent(handle, {
+        profile: input.agentProfile,
         model: input.model,
         thinking: input.thinking,
       });
@@ -1310,14 +1387,17 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
    * The session's materialized main agent with v1's eager default binding
    * applied: a freshly created agent whose profile is still unbound gets the
    * default profile + configured default model (the same bind kap-server's
-   * prompt route performs on first use). A home with no configured model
-   * leaves the agent unbound instead of failing — v1's model-less session
-   * reads (`model: undefined`, `'off'` thinking, zero capabilities) map onto
-   * the unbound state exactly.
+   * prompt route performs on first use); an explicit `binding.profile`
+   * (v1's `CreateSessionOptions.agentProfile`) is bound instead. A home with
+   * no configured model leaves the agent unbound instead of failing — v1's
+   * model-less session reads (`model: undefined`, `'off'` thinking, zero
+   * capabilities) map onto the unbound state exactly. An explicit profile
+   * with no configured model fails on v2 (the bind requires a model) where
+   * v1 binds model-less — the engine-side bind contract, not a resume gap.
    */
   private async materializeMainAgent(
     session: ISessionScopeHandle,
-    binding?: { readonly model?: string; readonly thinking?: string },
+    binding?: { readonly profile?: string; readonly model?: string; readonly thinking?: string },
   ): Promise<IAgentScopeHandle> {
     await this.modelReady;
     const agent = await ensureMainAgent(session);
@@ -1325,7 +1405,7 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     if (binding !== undefined || profile.data().profileName === undefined) {
       try {
         await profile.bind({
-          profile: DEFAULT_AGENT_PROFILE_NAME,
+          profile: binding?.profile ?? DEFAULT_AGENT_PROFILE_NAME,
           model: binding?.model,
           thinking: binding?.thinking,
         });

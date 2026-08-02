@@ -7,7 +7,9 @@ import {
   createKimiCodeUserAgent,
   getHostPackageJsonPath,
   getHostPackageRoot,
+  getUpstreamBase,
   getVersion,
+  UpstreamBaseSchema,
 } from '#/cli/version';
 
 describe('cli version helpers', () => {
@@ -18,6 +20,52 @@ describe('cli version helpers', () => {
     expect(pkgPath.endsWith(join('apps', 'kimi-code', 'package.json'))).toBe(true);
     expect(getHostPackageRoot()).toBe(dirname(pkgPath));
     expect(getVersion()).toBe(pkg.version);
+  });
+
+  it('exposes the recorded upstream Kimi Code baseline', () => {
+    expect(getUpstreamBase()).toEqual({
+      repository: 'https://github.com/MoonshotAI/kimi-code.git',
+      version: '0.30.0',
+      commit: '37d9bdc5859dccafc82de3e990b28e72cd5ff488',
+    });
+  });
+
+  it('reads the upstream baseline from upstream-base.json next to the host package', () => {
+    const basePath = join(getHostPackageRoot(), 'upstream-base.json');
+    const upstream = JSON.parse(readFileSync(basePath, 'utf8')) as Record<string, unknown>;
+
+    expect(getUpstreamBase()).toEqual(upstream);
+  });
+
+  it('rejects upstream base metadata with an unknown field', () => {
+    expect(() =>
+      UpstreamBaseSchema.parse({
+        repository: 'https://github.com/MoonshotAI/kimi-code.git',
+        version: '0.30.0',
+        commit: '37d9bdc5859dccafc82de3e990b28e72cd5ff488',
+        extra: 'leak',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects upstream base metadata with a non-semver version', () => {
+    expect(() =>
+      UpstreamBaseSchema.parse({
+        repository: 'https://github.com/MoonshotAI/kimi-code.git',
+        version: '1.2.3garbage',
+        commit: '37d9bdc5859dccafc82de3e990b28e72cd5ff488',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects upstream base metadata with a malformed commit', () => {
+    expect(() =>
+      UpstreamBaseSchema.parse({
+        repository: 'https://github.com/MoonshotAI/kimi-code.git',
+        version: '0.30.0',
+        commit: '37d9bdc',
+      }),
+    ).toThrow();
   });
 
   it('builds the product user-agent for ad-hoc fetches', () => {

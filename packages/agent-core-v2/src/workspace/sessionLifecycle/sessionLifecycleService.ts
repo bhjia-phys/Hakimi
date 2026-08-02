@@ -65,7 +65,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { join } from 'pathe';
+import { basename, join } from 'pathe';
 import { ulid } from 'ulid';
 
 import { IInstantiationService } from '#/_base/di/instantiation';
@@ -81,6 +81,10 @@ import { unwrapErrorCause } from '#/_base/errors/errors';
 import { Emitter, type Event } from '#/_base/event';
 import { DEFAULT_PLAN_MODE_SECTION } from '#/features/plan/configSection';
 import { IAgentPlanService } from '#/features/plan/plan';
+import {
+  resolveAgentPath,
+  SESSION_EXPLICIT_AGENT_FILES_DIR,
+} from '#/workspace/workspaceAgentProfileLoader/internal/paths';
 import { IBootstrapService } from '#/app/bootstrap/bootstrap';
 import { CRON_SESSION_TAG, type CronTask } from '#/app/cron/cronTask';
 import { ICronTaskPersistence } from '#/app/cron/cronTaskPersistence';
@@ -232,6 +236,11 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
     const sessionId = opts.sessionId ?? createSessionId();
     const handle = await this.materializeSession({ ...opts, sessionId });
     try {
+      // A fatal explicit agent file (unreadable or unparseable) must fail
+      // session creation explicitly, mirroring v1's create-time validation.
+      if (opts.explicitFiles !== undefined && opts.explicitFiles.length > 0) {
+        await handle.accessor.get(ISessionAgentProfileCatalog).ready;
+      }
       const main =
         opts.mainAgentBinding === undefined
           ? undefined
@@ -256,10 +265,37 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
     return handle;
   }
 
+  /**
+   * Persists the caller's per-session explicit agent files into the session
+   * dir before the scope's agent-file catalog loads: each file is resolved
+   * through the same `~` / workDir rules as the explicit source, read, and
+   * written to `<sessionDir>/agent-files/<index>-<name>`. The catalog reads
+   * only these copies, so the session keeps exactly the files it was created
+   * with across close / resume / new-client resume (v1's snapshot semantics),
+   * and sessions created without `explicitFiles` never see them.
+   */
+  private async copyExplicitAgentFiles(
+    opts: MaterializeSessionOptions,
+    sessionDir: string,
+  ): Promise<void> {
+    if (opts.explicitFiles === undefined || opts.explicitFiles.length === 0) return;
+    const destDir = join(sessionDir, SESSION_EXPLICIT_AGENT_FILES_DIR);
+    await this.hostFs.mkdir(destDir, { recursive: true });
+    for (const [index, file] of opts.explicitFiles.entries()) {
+      const filePath = resolveAgentPath(file, opts.workDir, this.bootstrap.osHomeDir);
+      const text = await this.hostFs.readText(filePath);
+      await this.hostFs.writeText(
+        join(destDir, `${String(index).padStart(2, '0')}-${basename(filePath)}`),
+        text,
+      );
+    }
+  }
+
   private async materializeSession(opts: MaterializeSessionOptions): Promise<ISessionScopeHandle> {
     const workspaceId = this.workspaceId;
     const sessionScope = sessionScopeOf(this.handlerScope, opts.sessionId);
     const sessionDir = sessionDirOf(this.bootstrap.homeDir, this.handlerScope, opts.sessionId);
+    await this.copyExplicitAgentFiles(opts, sessionDir);
     const metaScope = sessionScope;
     await this.workspaceDirs.ready;
     await this.workspaceDirs.mergeAdditionalDirs(opts.workDir, opts.additionalDirs ?? []);

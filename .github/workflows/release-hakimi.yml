@@ -1,0 +1,136 @@
+name: Release Hakimi
+
+# Hakimi-specific release workflow, independent from the upstream
+# release.yml (which stays untouched for upstream sync and is gated to the
+# MoonshotAI owner). Runs the changesets release PR / npm publish flow on
+# pushes to main only, then publishes native assets under the canonical
+# `hakimi-v<version>` tag. Ordinary PRs never trigger publishing; manual
+# native-asset repairs go through repair-hakimi-native-release.yml instead.
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    name: Release Hakimi
+    runs-on: ubuntu-latest
+    if: github.repository == 'bhjia-phys/Hakimi'
+    outputs:
+      packages_published: ${{ steps.changesets.outputs.published }}
+      hakimi_native_release: ${{ steps.hakimi-release.outputs.should_publish }}
+      hakimi_release_version: ${{ steps.hakimi-release.outputs.version }}
+      hakimi_release_tag: ${{ steps.hakimi-release.outputs.tag }}
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write # Required for NPM Trusted Publishing (OIDC)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run Hakimi release-boundary checks
+        run: node scripts/check-hakimi-release-boundary.mjs
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: "pnpm"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm for Trusted Publishing
+        run: npm install -g npm@11
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Hakimi built-in catalog
+        shell: bash
+        run: |
+          CATALOG_FILE="$RUNNER_TEMP/hakimi-built-in-catalog.json"
+          node apps/kimi-code/scripts/update-catalog.mjs --out "$CATALOG_FILE"
+          echo "KIMI_CODE_BUILT_IN_CATALOG_FILE=$CATALOG_FILE" >> "$GITHUB_ENV"
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Create Release Pull Request or Publish to npm
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          publish: pnpm changeset publish
+          version: pnpm run version:release
+          commit: "ci: release hakimi packages"
+          title: "ci: release hakimi packages"
+          # The only GitHub Release/tag for a Hakimi version is the canonical
+          # hakimi-v<version> one created below; changesets must not also
+          # create a scoped-package (@bhjia-phys/hakimi@<version>) release.
+          createGithubReleases: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # NPM_TOKEN is not needed with Trusted Publishing (OIDC)
+
+      - name: Resolve Hakimi native release
+        if: steps.changesets.outputs.published == 'true'
+        id: hakimi-release
+        run: node apps/kimi-code/scripts/native/resolve-release.mjs
+        env:
+          CHANGESETS_PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
+
+      - name: Create GitHub Release (if missing)
+        if: steps.changesets.outputs.published == 'true' && steps.hakimi-release.outputs.should_publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.hakimi-release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.hakimi-release.outputs.version }}
+          # Pin the release tag to the exact commit that published the npm
+          # package. The default gh behavior targets the latest main commit,
+          # which may have advanced while this workflow was running.
+          RELEASE_TARGET: ${{ github.sha }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "GitHub Release $RELEASE_TAG already exists"
+          else
+            args=(--title "Hakimi $RELEASE_VERSION" --notes "Hakimi $RELEASE_VERSION — see CHANGELOG.md")
+            case "$RELEASE_VERSION" in
+              *-*) args+=(--prerelease) ;;
+            esac
+            gh release create "$RELEASE_TAG" --target "$RELEASE_TARGET" "${args[@]}"
+            echo "Created GitHub Release $RELEASE_TAG"
+          fi
+
+          read -r tag_type tag_target < <(
+            gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
+              --jq '.object.type + " " + .object.sha'
+          )
+          if [[ "$tag_type" == "tag" ]]; then
+            tag_target=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_target" --jq '.object.sha')
+          fi
+          if [[ "$tag_target" != "$RELEASE_TARGET" ]]; then
+            echo "Release tag $RELEASE_TAG targets $tag_target, expected $RELEASE_TARGET" >&2
+            exit 1
+          fi
+
+  native-release:
+    name: Hakimi native release assets
+    needs: release
+    if: needs.release.outputs.hakimi_native_release == 'true'
+    permissions:
+      # Reusable workflows cannot elevate the caller's token. The Hakimi
+      # repository defaults GITHUB_TOKEN to read-only, while publish-assets
+      # must upload files to the canonical GitHub Release.
+      contents: write
+    uses: ./.github/workflows/_hakimi-native-release.yml
+    with:
+      version: ${{ needs.release.outputs.hakimi_release_version }}
+      tag: ${{ needs.release.outputs.hakimi_release_tag }}
+      checkout-ref: ${{ needs.release.outputs.hakimi_release_tag }}

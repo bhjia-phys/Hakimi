@@ -3,11 +3,31 @@ name: _native-build
 on:
   workflow_call:
     inputs:
+      cli-package-filter:
+        description: 'pnpm filter of the CLI package to build (build:native, smoke, package)'
+        required: false
+        type: string
+        default: '@moonshot-ai/kimi-code'
+      binary-name:
+        description: 'Name of the native executable produced by the CLI package (notarization path)'
+        required: false
+        type: string
+        default: 'kimi'
+      artifact-base-name:
+        description: 'Base name of the zip artifacts produced by package.mjs (apps/kimi-code/dist-native/artifacts/<base>-<target>.zip)'
+        required: false
+        type: string
+        default: 'kimi-code'
       upload-artifact-prefix:
         description: 'Prefix for uploaded artifact name'
         required: false
         type: string
         default: 'kimi-code-native'
+      checkout-ref:
+        description: 'Git ref to check out before building (defaults to the triggering commit)'
+        required: false
+        type: string
+        default: ''
       retention-days:
         description: 'Artifact retention in days'
         required: false
@@ -57,6 +77,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          # An explicit checkout-ref lets repair runs build the exact release
+          # commit instead of the current main HEAD; callers that omit it
+          # keep the upstream default (the triggering commit).
+          ref: ${{ inputs.checkout-ref || github.sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -92,17 +117,17 @@ jobs:
 
       - name: Build native executable (release profile, macOS signed)
         if: runner.os == 'macOS' && inputs.sign-macos
-        run: pnpm --filter @moonshot-ai/kimi-code run build:native:release
+        run: pnpm --filter ${{ inputs.cli-package-filter }} run build:native:release
 
       - name: Build native executable (local profile)
         if: '!(runner.os == ''macOS'' && inputs.sign-macos)'
-        run: pnpm --filter @moonshot-ai/kimi-code run build:native:sea
+        run: pnpm --filter ${{ inputs.cli-package-filter }} run build:native:sea
 
       - name: Notarize macOS binary
         if: runner.os == 'macOS' && inputs.sign-macos
         uses: ./.github/actions/macos-notarize
         with:
-          binary-path: ${{ github.workspace }}/apps/kimi-code/dist-native/bin/${{ matrix.target }}/kimi
+          binary-path: ${{ github.workspace }}/apps/kimi-code/dist-native/bin/${{ matrix.target }}/${{ inputs.binary-name }}
           notarization-key-p8: ${{ secrets.APPLE_NOTARIZATION_KEY_P8 }}
           notarization-key-id: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
           notarization-issuer-id: ${{ secrets.APPLE_NOTARIZATION_ISSUER_ID }}
@@ -112,10 +137,10 @@ jobs:
         uses: ./.github/actions/macos-keychain-cleanup
 
       - name: Smoke test native executable
-        run: pnpm --filter @moonshot-ai/kimi-code run test:native:smoke
+        run: pnpm --filter ${{ inputs.cli-package-filter }} run test:native:smoke
 
       - name: Package native artifact
-        run: pnpm --filter @moonshot-ai/kimi-code run package:native
+        run: pnpm --filter ${{ inputs.cli-package-filter }} run package:native
 
       - name: Upload native artifact
         uses: actions/upload-artifact@v7
@@ -123,6 +148,6 @@ jobs:
           name: ${{ inputs.upload-artifact-prefix }}-${{ matrix.target }}
           retention-days: ${{ inputs.retention-days }}
           path: |
-            apps/kimi-code/dist-native/artifacts/kimi-code-${{ matrix.target }}.zip
-            apps/kimi-code/dist-native/artifacts/kimi-code-${{ matrix.target }}.zip.sha256
+            apps/kimi-code/dist-native/artifacts/${{ inputs.artifact-base-name }}-${{ matrix.target }}.zip
+            apps/kimi-code/dist-native/artifacts/${{ inputs.artifact-base-name }}-${{ matrix.target }}.zip.sha256
           if-no-files-found: ignore

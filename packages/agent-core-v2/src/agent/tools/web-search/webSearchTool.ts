@@ -2,14 +2,11 @@
  * `tools` domain — `WebSearchTool` implementation (the `WebSearch` tool).
  *
  * Resolves the host-injected `WebSearchProvider` from the App-scope
- * `IWebSearchProviderService` (`auth` domain) per invocation — the activation
- * gate checks presence alone, and the provider (which embeds the frozen
- * identity headers) only composes once a call needs it, so tool construction
- * during a fast bootstrap cannot race the identity freeze and a mid-session
- * login or config edit reaches the next call. The tool only activates when a
- * provider is configured, because there is no local search backend; results
- * render through `ToolResultBuilder`, and provider errors classify into
- * model-readable output.
+ * `IWebSearchProviderService` (`auth` domain) per invocation — the service
+ * always yields a provider (a Moonshot backend when configured, the no-auth
+ * local HTML search backend otherwise), so the tool is always registered and
+ * provider errors classify into model-readable output. The public contract
+ * (schemas, provider types, `IWebSearchTool`) lives in `./web-search`.
  *
  * Registered via the module-level `registerAgentToolService(IWebSearchTool,
  * WebSearchTool)` at the bottom of this file — the same "import = register"
@@ -63,12 +60,6 @@ export class WebSearchTool implements IWebSearchTool {
     { toolCallId, signal }: ExecutableToolContext,
   ): Promise<ExecutableToolResult> {
     const provider = this.providerService.getWebSearchProvider();
-    if (provider === undefined) {
-      return {
-        isError: true,
-        output: 'Web search is no longer configured; the provider was removed after this session started.',
-      };
-    }
     try {
       const results = await provider.search(args.query, { toolCallId, signal });
       const builder = new ToolResultBuilder({ maxLineLength: null });
@@ -134,5 +125,4 @@ function classifySearchError(error: unknown): string {
 registerAgentToolService(IWebSearchTool, WebSearchTool, {
   name: 'WebSearch',
   domain: 'auth',
-  when: (accessor) => accessor.get(IWebSearchProviderService).hasWebSearchProvider(),
 });

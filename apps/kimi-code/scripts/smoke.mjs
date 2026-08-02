@@ -66,6 +66,6 @@ const exportHelpOutput = await runBundle(['export', '--help']);
 assertIncludes(exportHelpOutput, 'Usage: hakimi export', 'export --help');
 
 const webHelpOutput = await runBundle(['web', '--help']);
-assertIncludes(webHelpOutput, 'Usage: kimi web', 'web --help');
+assertIncludes(webHelpOutput, 'Usage: hakimi web', 'web --help');
 
 console.log(`Bundle smoke passed: ${bundlePath}`);

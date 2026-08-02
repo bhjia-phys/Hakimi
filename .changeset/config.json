@@ -1,5 +1,5 @@
 {
-  "changelog": ["@changesets/changelog-github", { "repo": "MoonshotAI/kimi-code" }],
+  "changelog": ["@changesets/changelog-github", { "repo": "bhjia-phys/Hakimi" }],
   "commit": false,
   "fixed": [],
   "linked": [],

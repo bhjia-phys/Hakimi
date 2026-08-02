@@ -1,9 +1,21 @@
+/**
+ * Scenario: native release archives and aggregate manifest production.
+ *
+ * Responsibilities asserted: package a native executable, require the exact
+ * six-platform Hakimi artifact set, verify each archive checksum, normalize
+ * supported release tags, and emit clear subprocess failures. The package and
+ * manifest scripts are real subprocess boundaries; fixture binaries and
+ * archives live in isolated directories removed after every test.
+ *
+ * Run: `pnpm --filter @bhjia-phys/hakimi exec vitest run test/scripts/native/release-artifacts.test.ts`
+ */
+
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { inflateRawSync } from 'node:zlib';
 
@@ -18,6 +30,14 @@ const artifactsDir = resolve(appRoot, 'dist-native/artifacts');
 const target = 'test-zip-artifact';
 const executableName = process.platform === 'win32' ? 'hakimi.exe' : 'hakimi';
 const fakeBinary = resolve(appRoot, 'dist-native/bin', target, executableName);
+const expectedNativeTargets = [
+  'darwin-arm64',
+  'darwin-x64',
+  'linux-arm64',
+  'linux-x64',
+  'win32-arm64',
+  'win32-x64',
+] as const;
 
 function sha256(bytes: Buffer | string): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -90,10 +110,42 @@ function findEndOfCentralDirectory(zip: Buffer): number {
 }
 
 describe('native release artifacts', () => {
+  // Every release dir created via makeReleaseDir is tracked and removed in
+  // afterEach so no /tmp leftovers survive the suite.
+  const tempReleaseDirs: string[] = [];
+
+  async function makeReleaseDir(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'hakimi-manifest-zip-'));
+    tempReleaseDirs.push(dir);
+    return dir;
+  }
+
+  async function stageZipChecksum(releaseDir: string, targetName: string): Promise<string> {
+    const archiveBytes = Buffer.from('fake zip bytes');
+    const checksum = sha256(archiveBytes);
+    await writeFile(join(releaseDir, `${targetName}.zip`), archiveBytes);
+    await writeFile(
+      join(releaseDir, `${targetName}.zip.sha256`),
+      `${checksum}  ${targetName}.zip\n`,
+    );
+    return checksum;
+  }
+
+  async function stageCompleteRelease(releaseDir: string): Promise<string> {
+    let checksum = '';
+    for (const targetName of expectedNativeTargets) {
+      checksum = await stageZipChecksum(releaseDir, `hakimi-${targetName}`);
+    }
+    return checksum;
+  }
+
   afterEach(() => {
     rmSync(resolve(appRoot, 'dist-native/bin', target), { recursive: true, force: true });
     rmSync(resolve(artifactsDir, `hakimi-${target}.zip`), { force: true });
     rmSync(resolve(artifactsDir, `hakimi-${target}.zip.sha256`), { force: true });
+    for (const dir of tempReleaseDirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('packages the native binary as a zip archive and checksums the archive', async () => {
@@ -118,16 +170,10 @@ describe('native release artifacts', () => {
   });
 
   it('produces a manifest from zip archive checksums', async () => {
-    const releaseDir = await mkdtemp(join(tmpdir(), 'hakimi-manifest-zip-'));
-    const archiveBytes = Buffer.from('fake zip bytes');
-    const checksum = sha256(archiveBytes);
-    await writeFile(join(releaseDir, 'hakimi-darwin-arm64.zip'), archiveBytes);
-    await writeFile(
-      join(releaseDir, 'hakimi-darwin-arm64.zip.sha256'),
-      `${checksum}  hakimi-darwin-arm64.zip\n`,
-    );
+    const releaseDir = await makeReleaseDir();
+    const checksum = await stageCompleteRelease(releaseDir);
 
-    await execFileAsync(process.execPath, [manifestScript, releaseDir, '@bhjia-phys/hakimi@0.5.0']);
+    await execFileAsync(process.execPath, [manifestScript, releaseDir, 'hakimi-v0.5.0']);
 
     const manifest = JSON.parse(
       await readFile(join(releaseDir, 'manifest.json'), 'utf-8'),
@@ -136,15 +182,74 @@ describe('native release artifacts', () => {
       tag: string;
       platforms: Record<string, { filename: string; checksum: string }>;
     };
-    expect(manifest).toEqual({
-      version: '0.5.0',
-      tag: '@bhjia-phys/hakimi@0.5.0',
-      platforms: {
-        'darwin-arm64': {
-          filename: 'hakimi-darwin-arm64.zip',
-          checksum,
-        },
-      },
+    expect(manifest.version).toBe('0.5.0');
+    expect(manifest.tag).toBe('hakimi-v0.5.0');
+    expect(Object.keys(manifest.platforms)).toEqual([
+      'darwin-arm64',
+      'darwin-x64',
+      'linux-arm64',
+      'linux-x64',
+      'win32-arm64',
+      'win32-x64',
+    ]);
+    for (const targetName of expectedNativeTargets) {
+      expect(manifest.platforms[targetName]).toEqual({
+        filename: `hakimi-${targetName}.zip`,
+        checksum,
+      });
+    }
+  });
+
+  it('normalizes historical release tags into the canonical hakimi-v form in the manifest', async () => {
+    const releaseDir = await makeReleaseDir();
+    await stageCompleteRelease(releaseDir);
+
+    await execFileAsync(process.execPath, [manifestScript, releaseDir, '@bhjia-phys/hakimi@0.5.0']);
+
+    const manifest = JSON.parse(await readFile(join(releaseDir, 'manifest.json'), 'utf-8')) as {
+      version: string;
+      tag: string;
+    };
+    expect(manifest.version).toBe('0.5.0');
+    expect(manifest.tag).toBe('hakimi-v0.5.0');
+  });
+
+  it('exits with code 1 and names missing files when a platform artifact is absent', async () => {
+    const releaseDir = await makeReleaseDir();
+    for (const targetName of expectedNativeTargets.slice(0, -1)) {
+      await stageZipChecksum(releaseDir, `hakimi-${targetName}`);
+    }
+
+    const result = spawnSync(process.execPath, [manifestScript, releaseDir, 'hakimi-v0.5.0'], {
+      encoding: 'utf-8',
     });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Missing required native release artifacts');
+    expect(result.stderr).toContain('hakimi-win32-x64.zip');
+  });
+
+  it('exits with code 1 and reports the archive when its checksum does not match', async () => {
+    const releaseDir = await makeReleaseDir();
+    await stageCompleteRelease(releaseDir);
+    await writeFile(join(releaseDir, 'hakimi-linux-x64.zip'), 'corrupted archive');
+
+    const result = spawnSync(process.execPath, [manifestScript, releaseDir, 'hakimi-v0.5.0'], {
+      encoding: 'utf-8',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Checksum mismatch for hakimi-linux-x64.zip');
+  });
+
+  it('exits with code 1 and a clear stderr line when the release tag is not strict semver', async () => {
+    const releaseDir = await makeReleaseDir();
+
+    const result = spawnSync(process.execPath, [manifestScript, releaseDir, 'nightly-build'], {
+      encoding: 'utf-8',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Invalid release tag');
   });
 });

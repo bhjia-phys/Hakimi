@@ -41,6 +41,15 @@ export interface CreateSessionOptions {
    * the session closes. Not carried over by fork or resume.
    */
   readonly mcpServers?: Readonly<Record<string, McpServerConfig>>;
+  /**
+   * Per-session explicit agent files (v1's `--agent-file`): the file
+   * contents are copied into the session dir at create time and the
+   * session-scoped explicit agent-file source loads them from that copy, so
+   * the profiles survive close / resume / new-client resume exactly as the
+   * session was created with, and never leak into sessions created without
+   * them.
+   */
+  readonly explicitFiles?: readonly string[];
 }
 
 export interface ForkSessionOptions {

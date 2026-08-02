@@ -1,0 +1,139 @@
+name: _hakimi-native-release
+
+# Hakimi-native release asset pipeline, shared by the automatic release
+# workflow (release-hakimi.yml) and the manual repair workflow
+# (repair-hakimi-native-release.yml). Builds the six-platform native archives
+# from the given ref, then uploads zips + sha256 + manifest.json + latest +
+# latest.json to the given canonical `hakimi-v<version>` GitHub Release.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Hakimi semver the assets belong to (strict semver)'
+        required: true
+        type: string
+      tag:
+        description: 'Canonical GitHub release tag to upload to (hakimi-v<version>)'
+        required: true
+        type: string
+      checkout-ref:
+        description: 'Git ref to check out and build from (release commit or canonical tag)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  validate-release:
+    name: Validate release identity
+    runs-on: ubuntu-latest
+    outputs:
+      source_commit: ${{ steps.source-identity.outputs.source_commit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify version and tag identity
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          # Env-passed inputs, validated by the shared zero-dependency helper:
+          # the tag must be exactly formatReleaseTag(version), i.e. a canonical
+          # hakimi-v<strict-semver> tag.
+          node --input-type=module -e "
+          import { formatReleaseTag } from './apps/kimi-code/scripts/native/release-tag.mjs';
+          const version = process.env.INPUT_VERSION;
+          const tag = process.env.INPUT_TAG;
+          const expected = formatReleaseTag(version);
+          if (tag !== expected) {
+            console.error('Release identity mismatch: version ' + JSON.stringify(version) +
+              ' requires tag ' + JSON.stringify(expected) + ', got ' + JSON.stringify(tag));
+            process.exit(1);
+          }
+          console.log('Release identity valid: ' + tag);
+          "
+
+      - name: Checkout release source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout-ref }}
+          fetch-depth: 0
+
+      - name: Verify release source version and resolve its commit
+        id: source-identity
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          node --input-type=module -e "
+          import { readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('apps/kimi-code/package.json', 'utf8'));
+          if (pkg.version !== process.env.INPUT_VERSION) {
+            throw new Error('Release source package version ' + JSON.stringify(pkg.version) +
+              ' does not match requested version ' + JSON.stringify(process.env.INPUT_VERSION));
+          }
+          "
+          echo "source_commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  native-artifacts:
+    name: Hakimi native release artifacts
+    needs: validate-release
+    uses: ./.github/workflows/_native-build.yml
+    with:
+      cli-package-filter: '@bhjia-phys/hakimi'
+      binary-name: hakimi
+      artifact-base-name: hakimi
+      upload-artifact-prefix: hakimi-native
+      # Resolve the tag/ref once in validate-release and pin every downstream
+      # job to that immutable commit, even if a mutable tag moves mid-run.
+      checkout-ref: ${{ needs.validate-release.outputs.source_commit }}
+      retention-days: 7
+      sign-macos: false
+    # No Apple signing secrets are configured on the Hakimi fork; macOS
+    # builds are unsigned.
+
+  publish-assets:
+    name: Publish native release assets
+    needs:
+      - validate-release
+      - native-artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # Build from the same ref the native archives were built from, so
+          # produce-manifest.mjs matches the shipped source.
+          ref: ${{ needs.validate-release.outputs.source_commit }}
+
+      - name: Download native artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: hakimi-native-*
+          path: dist-native-release
+          merge-multiple: true
+
+      - name: Produce manifest.json
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node apps/kimi-code/scripts/native/produce-manifest.mjs dist-native-release "$RELEASE_TAG"
+
+      - name: Generate latest and latest.json
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          # `latest` is a bare semver + newline; `latest.json` is the rollout
+          # manifest (empty rollout = fully rolled out).
+          printf '%s\n' "$RELEASE_VERSION" > dist-native-release/latest
+          node -e "console.log(JSON.stringify({version: process.argv[1], publishedAt: new Date().toISOString(), rollout: []}, null, 2))" "$RELEASE_VERSION" > dist-native-release/latest.json
+
+      - name: Upload assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: gh release upload "$RELEASE_TAG" dist-native-release/* --clobber

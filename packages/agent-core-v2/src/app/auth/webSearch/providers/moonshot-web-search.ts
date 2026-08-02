@@ -11,6 +11,7 @@ export interface MoonshotWebSearchProviderOptions {
   baseUrl: string;
   defaultHeaders?: Record<string, string>;
   customHeaders?: Record<string, string>;
+  localFallback?: WebSearchProvider;
   fetchImpl?: typeof fetch;
 }
 
@@ -35,6 +36,7 @@ export class MoonshotWebSearchProvider implements WebSearchProvider {
   private readonly baseUrl: string;
   private readonly defaultHeaders: Record<string, string>;
   private readonly customHeaders: Record<string, string>;
+  private readonly localFallback: WebSearchProvider | undefined;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: MoonshotWebSearchProviderOptions) {
@@ -43,10 +45,28 @@ export class MoonshotWebSearchProvider implements WebSearchProvider {
     this.baseUrl = options.baseUrl;
     this.defaultHeaders = options.defaultHeaders ?? {};
     this.customHeaders = options.customHeaders ?? {};
+    this.localFallback = options.localFallback;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
   async search(
+    query: string,
+    options?: {
+      toolCallId?: string;
+      signal?: AbortSignal;
+    },
+  ): Promise<WebSearchResult[]> {
+    try {
+      return await this.searchViaMoonshot(query, options);
+    } catch (error) {
+      if (this.localFallback !== undefined && options?.signal?.aborted !== true) {
+        return this.localFallback.search(query, options);
+      }
+      throw error;
+    }
+  }
+
+  private async searchViaMoonshot(
     query: string,
     options?: {
       toolCallId?: string;

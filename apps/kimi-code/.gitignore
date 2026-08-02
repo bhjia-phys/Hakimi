@@ -8,4 +8,5 @@ agents/
 src/generated/vis-web-asset.ts
 
 # Copied from packages/pi-tui/native at build time by scripts/copy-native-assets.mjs
+# Anchored to the package root so `test/scripts/native/` stays trackable.
 /native/

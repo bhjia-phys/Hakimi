@@ -2,6 +2,7 @@ import { appendFile, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { appRoot } from './paths.mjs';
+import { formatReleaseTag } from './release-tag.mjs';
 
 const packageName = '@bhjia-phys/hakimi';
 const packageJson = JSON.parse(
@@ -36,7 +37,9 @@ const publishedPackage = parsePublishedPackages().find(
 
 const version = publishedPackage?.version ?? packageJson.version;
 const shouldPublish = publishedPackage !== undefined;
-const tag = `${packageName}@${version}`;
+// Canonical Hakimi release tag: hakimi-v<semver>. Throws on a malformed
+// version so a broken release can never silently use a bad tag.
+const tag = formatReleaseTag(version);
 const githubOutput = process.env['GITHUB_OUTPUT'];
 
 if (githubOutput !== undefined) {

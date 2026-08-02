@@ -1,0 +1,68 @@
+name: Repair Hakimi Native Release
+
+# Manual repair path for a release whose native assets failed to build or
+# upload after the package was published. It never re-publishes the package,
+# never creates a version or a GitHub Release — it only rebuilds the
+# six-platform archives from the release's canonical tag and overwrites the
+# assets of the existing release (idempotent via `--clobber`).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Hakimi version to rebuild native assets for (strict semver, e.g. 0.22.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  validate-release:
+    name: Validate version and existing release
+    runs-on: ubuntu-latest
+    if: github.repository == 'bhjia-phys/Hakimi' && github.ref == 'refs/heads/main'
+    outputs:
+      release_tag: ${{ steps.identity.outputs.release_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Derive canonical tag from the input version
+        id: identity
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          # Input passes through env, never through shell text. The shared
+          # zero-dependency helper throws unless the version is strict semver.
+          node --input-type=module -e "
+          import { formatReleaseTag } from './apps/kimi-code/scripts/native/release-tag.mjs';
+          const tag = formatReleaseTag(process.env.INPUT_VERSION);
+          process.stdout.write('release_tag=' + tag + '\n');
+          " >> "$GITHUB_OUTPUT"
+
+      - name: Verify the canonical GitHub Release already exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.identity.outputs.release_tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "GitHub Release $RELEASE_TAG exists; repairing its native assets"
+          else
+            echo "GitHub Release $RELEASE_TAG does not exist; nothing to repair." >&2
+            exit 1
+          fi
+
+  rebuild:
+    name: Rebuild and overwrite native release assets
+    needs: validate-release
+    if: github.repository == 'bhjia-phys/Hakimi' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/_hakimi-native-release.yml
+    with:
+      version: ${{ inputs.version }}
+      tag: ${{ needs.validate-release.outputs.release_tag }}
+      # Build from the canonical release tag so the archives match the
+      # published source, never from the current main HEAD.
+      checkout-ref: ${{ needs.validate-release.outputs.release_tag }}
