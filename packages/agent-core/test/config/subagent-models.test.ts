@@ -139,6 +139,28 @@ describe('resolveSubagentModelOverride', () => {
     });
   });
 
+  it('lets a swarm route override the selected profile field-by-field', () => {
+    const config = parseConfigString(
+      `${SUBAGENT_TOML}
+[subagent.agents.swarm]
+thinking_effort = "medium"
+
+[subagent.presets.fast.swarm]
+thinking_effort = "high"
+`,
+      'config.toml',
+    );
+
+    expect(resolveSubagentModelOverride(config, 'explore', undefined, 'agent')).toEqual({
+      modelAlias: 'acme/mini',
+      thinkingEffort: 'minimal',
+    });
+    expect(resolveSubagentModelOverride(config, 'explore', undefined, 'swarm')).toEqual({
+      modelAlias: 'acme/mini',
+      thinkingEffort: 'high',
+    });
+  });
+
   it('drops an unknown model alias with a warning instead of failing', () => {
     const config = parseConfigString(
       `${SUBAGENT_TOML}\n[subagent.agents.coder]\nmodel = "acme/typo"\n`,
@@ -170,5 +192,29 @@ describe('subagent preset helpers', () => {
       thinkingEffort: 'minimal',
     });
     expect(describeSubagentModelOverride(config.subagent, 'coder')).toBeUndefined();
+  });
+
+  it('round-trips reserved main and swarm routes as ordinary preset entries', () => {
+    const config = parseConfigString(
+      `${SUBAGENT_TOML}
+[subagent.presets.fast.main]
+model = "acme/main"
+thinking_effort = "high"
+
+[subagent.presets.fast.swarm]
+model = "acme/mini"
+thinking_effort = "low"
+`,
+      'config.toml',
+    );
+
+    expect(config.subagent?.presets?.['fast']?.['main']).toEqual({
+      model: 'acme/main',
+      thinkingEffort: 'high',
+    });
+    expect(describeSubagentModelOverride(config.subagent, '', 'swarm')).toEqual({
+      model: 'acme/mini',
+      thinkingEffort: 'low',
+    });
   });
 });

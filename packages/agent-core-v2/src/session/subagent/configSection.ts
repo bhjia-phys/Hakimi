@@ -1,40 +1,44 @@
 /**
  * `subagent` domain — subagent config-section schema, env binding, and
- * timeout / model resolution.
+ * timeout / model-route resolution.
  *
- * Owns the `[subagent]` configuration section (`timeout_ms` on disk) together
- * with the `KIMI_SUBAGENT_TIMEOUT_MS` env override (precedence: env >
- * config.toml > 2h default). While
+ * Owns the `[subagent]` configuration section (`timeout_ms`, `preset`,
+ * `agents`, and `presets` on disk) together with the
+ * `KIMI_SUBAGENT_TIMEOUT_MS` env override, mirroring v1's
+ * `resolveSubagentTimeoutMs` precedence (env > config.toml > 2h default). While
  * the env var is set, `stripEnvBoundFields` restores the env-free raw value
  * before persistence, so the override never leaks into `config.toml`. Per-run
  * timeouts resolve through `resolveSubagentTimeoutMs`, and the timeout
  * message renders with `formatSubagentTimeoutDescription`.
  *
- * The model half of the spawn binding is the secondary model (the
- * `[secondary_model]` section on disk): when its
- * experiment is enabled and the model is set, newly spawned subagents bind to
- * it by default instead of inheriting the caller's model, and the
- * `Agent`/`AgentSwarm` tools let the parent model pick per spawn via their
- * `model` parameter. When unset, spawning behavior is unchanged (subagents
- * inherit the caller's model). A recipe with patch fields binds the
- * synthesized derived entry (`SECONDARY_DERIVED_MODEL_ID`); a pointer-only
+ * The effective model precedence is explicit tool `model` > active
+ * preset/[subagent.agents] route `model` > profile `modelPreference` > the
+ * configured secondary model > the caller's model. When explicit, the tool
+ * choice remains the base model while route `thinkingEffort` still applies as
+ * a field-level override; without it, route model resolution is unchanged.
+ * When the secondary-model experiment is enabled and configured, it supplies
+ * the default instead of the caller's model. A recipe with patch fields binds
+ * the synthesized derived entry (`SECONDARY_DERIVED_MODEL_ID`); a pointer-only
  * recipe binds the pointed entry directly. `default_effort` is passed as the
  * explicit subagent thinking; without it the subagent resolves thinking
  * naturally (global thinking config → the bound model's default effort)
- * rather than inheriting the caller's level. Both tools resolve spawn
- * bindings through `resolveSubagentBinding`, advertise the pair via
+ * rather than inheriting the caller's level. An active preset then overrides
+ * Agent by profile; AgentSwarm resolves `preset.swarm > preset.<profile> >
+ * agents.swarm > agents.<profile>` field-by-field. Both tools resolve spawn
+ * bindings through `resolveSubagentBinding`, advertise the base pair via
  * `buildSubagentModelDescriptions` (each line suffixed with the entry's
  * resolved capability flags, so the parent can route multimodal or
  * thinking-heavy subagent tasks instead of guessing from the model id),
- * and wrap spawn failures with
- * `wrapSubagentModelError`; while the experiment is off they also strip the
- * no-op `model` parameter from their advertised schemas via
- * `stripSubagentModelParameter`. Spawn reporting reads the display-facing
- * alias from `subagentDisplayModel`: the derived entry id means nothing to a
- * user, so it resolves back to the recipe's base alias — flag-independent on
- * purpose, since interpreting an already-persisted derived binding (resume)
- * must keep working after the experiment is switched off. Self-registered
- * at module load via `registerConfigSection`.
+ * and wrap spawn failures with `wrapSubagentModelError`; while the
+ * experiment is off they also strip the no-op `model` parameter from their
+ * advertised schemas via `stripSubagentModelParameter`. Spawn reporting
+ * reads the display-facing alias from `subagentDisplayModel`: the derived
+ * entry id means nothing to a user, so it resolves back to the recipe's base
+ * alias — flag-independent on purpose, since interpreting an
+ * already-persisted derived binding (resume) must keep working after the
+ * experiment is switched off. Self-registered at module load via
+ * `registerConfigSection`, so the `config` domain never imports this
+ * domain's types.
  */
 
 import { z } from 'zod';
@@ -61,16 +65,38 @@ import {
 import { registerConfigSection } from '#/app/config/configSectionContributions';
 import type { ModelCapability } from '#/kosong/contract/capability';
 import type { IModelCatalog } from '#/kosong/model/catalog';
+import {
+  camelToSnake,
+  cloneRecord,
+  setDefined,
+  transformPlainObject,
+} from '#/app/config/toml';
 
 import { SECONDARY_MODEL_FLAG_ID } from './flag';
 
 export const SUBAGENT_SECTION = 'subagent';
 
+export const SUBAGENT_PRESET_MAIN_PROFILE = 'main';
+export const SUBAGENT_PRESET_SWARM_PROFILE = 'swarm';
+
+export type SubagentRouteKind = 'agent' | 'swarm';
+
+export const SubagentModelConfigSchema = z.object({
+  model: z.string().min(1).optional(),
+  thinkingEffort: z.string().min(1).optional(),
+});
+
 export const SubagentConfigSchema = z.object({
   timeoutMs: z.number().int().min(0).optional(),
+  preset: z.string().optional(),
+  agents: z.record(z.string(), SubagentModelConfigSchema).optional(),
+  presets: z
+    .record(z.string(), z.record(z.string(), SubagentModelConfigSchema))
+    .optional(),
 });
 
 export type SubagentConfig = z.infer<typeof SubagentConfigSchema>;
+export type SubagentModelConfig = z.infer<typeof SubagentModelConfigSchema>;
 
 export const DEFAULT_SUBAGENT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -90,10 +116,87 @@ export const subagentEnvBindings: EnvBindings<SubagentConfig> = envBindings(
 
 export const stripSubagentEnv = stripEnvBoundFields(subagentEnvBindings);
 
+export const subagentFromToml = (rawSnake: unknown): unknown => {
+  if (!isPlainObject(rawSnake)) return rawSnake;
+  const out = transformPlainObject(rawSnake);
+  if (isPlainObject(rawSnake['agents'])) {
+    out['agents'] = modelConfigRecordFromToml(rawSnake['agents']);
+  }
+  if (isPlainObject(rawSnake['presets'])) {
+    const presets: Record<string, unknown> = {};
+    for (const [name, entries] of Object.entries(rawSnake['presets'])) {
+      presets[name] = isPlainObject(entries)
+        ? modelConfigRecordFromToml(entries)
+        : entries;
+    }
+    out['presets'] = presets;
+  }
+  return out;
+};
+
+export const subagentToToml = (value: unknown, rawSnake: unknown): unknown => {
+  if (!isPlainObject(value)) return value;
+  const out = cloneRecord(rawSnake);
+  setDefined(out, 'timeout_ms', value['timeoutMs']);
+  setDefined(out, 'preset', value['preset']);
+  setDefined(
+    out,
+    'agents',
+    isPlainObject(value['agents'])
+      ? modelConfigRecordToToml(value['agents'], out['agents'])
+      : value['agents'],
+  );
+  if (isPlainObject(value['presets'])) {
+    const rawPresets = cloneRecord(out['presets']);
+    const presets: Record<string, unknown> = {};
+    for (const [name, entries] of Object.entries(value['presets'])) {
+      presets[name] = isPlainObject(entries)
+        ? modelConfigRecordToToml(entries, rawPresets[name])
+        : entries;
+    }
+    out['presets'] = presets;
+  } else {
+    setDefined(out, 'presets', value['presets']);
+  }
+  return out;
+};
+
+function modelConfigRecordFromToml(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [name, entry] of Object.entries(value)) {
+    out[name] = isPlainObject(entry) ? transformPlainObject(entry) : entry;
+  }
+  return out;
+}
+
+function modelConfigRecordToToml(
+  value: Record<string, unknown>,
+  rawSnake: unknown,
+): Record<string, unknown> {
+  const raw = cloneRecord(rawSnake);
+  const out: Record<string, unknown> = {};
+  for (const [name, entry] of Object.entries(value)) {
+    if (!isPlainObject(entry)) {
+      out[name] = entry;
+      continue;
+    }
+    const converted = cloneRecord(raw[name]);
+    for (const [key, field] of Object.entries(entry)) {
+      setDefined(converted, camelToSnake(key), field);
+    }
+    out[name] = converted;
+  }
+  return out;
+}
+
 registerConfigSection(SUBAGENT_SECTION, SubagentConfigSchema, {
   defaultValue: { timeoutMs: DEFAULT_SUBAGENT_TIMEOUT_MS },
   env: subagentEnvBindings,
   stripEnv: stripSubagentEnv,
+  fromToml: subagentFromToml,
+  toToml: subagentToToml,
 });
 
 export function resolveSubagentTimeoutMs(config: IConfigService): number {
@@ -117,23 +220,82 @@ export function resolveSubagentBinding(
   config: IConfigService,
   flags: IFlagService,
   own: { modelAlias: string; thinkingLevel: string },
-  requested?: SubagentModelChoice,
+  explicitModel?: SubagentModelChoice,
+  routing?: { profileName: string; route: SubagentRouteKind },
+  profilePreference?: SubagentModelChoice,
 ): { model: string; thinking?: string; displayModel: string } {
   const secondary = resolveSecondaryModel(config, flags);
-  if (requested !== 'primary' && secondary?.model !== undefined) {
-    const model =
-      secondaryModelPatch(secondary) === undefined ? secondary.model : SECONDARY_DERIVED_MODEL_ID;
-    return {
-      model,
+  // An explicit "secondary" request must never silently degrade to the
+  // caller's model: the fallback is only for the implicit default path.
+  if (explicitModel === 'secondary' && secondary?.model === undefined) {
+    throw new Error(
+      'model: "secondary" was requested but no secondary model is available — ' +
+        'configure [secondary_model].model (or the KIMI_SECONDARY_MODEL env var) and ' +
+        'enable the secondary-model experiment (KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL, ' +
+        'or [experimental] secondary-model = true).',
+    );
+  }
+  const modelChoice = explicitModel ?? profilePreference;
+  let binding: { model: string; thinking?: string };
+  if (modelChoice !== 'primary' && secondary?.model !== undefined) {
+    binding = {
+      model:
+        secondaryModelPatch(secondary) === undefined
+          ? secondary.model
+          : SECONDARY_DERIVED_MODEL_ID,
       thinking: secondary.defaultEffort,
-      displayModel: subagentDisplayModel(config, model),
+    };
+  } else {
+    binding = { model: own.modelAlias, thinking: own.thinkingLevel };
+  }
+  if (routing !== undefined) {
+    const override = resolveSubagentModelOverride(config, routing.profileName, routing.route);
+    binding = {
+      model: explicitModel === undefined ? override.model ?? binding.model : binding.model,
+      thinking: override.thinkingEffort ?? binding.thinking,
     };
   }
   return {
-    model: own.modelAlias,
-    thinking: own.thinkingLevel,
-    displayModel: subagentDisplayModel(config, own.modelAlias),
+    model: binding.model,
+    thinking: binding.thinking,
+    displayModel: subagentDisplayModel(config, binding.model),
   };
+}
+
+export function resolveSubagentModelOverride(
+  config: IConfigService,
+  profileName: string,
+  route: SubagentRouteKind = 'agent',
+): SubagentModelConfig {
+  const subagent = config.get<SubagentConfig | undefined>(SUBAGENT_SECTION);
+  if (subagent === undefined) return {};
+  const presetEntry =
+    subagent.preset === undefined
+      ? undefined
+      : subagent.presets?.[subagent.preset]?.[profileName];
+  const agentsEntry = subagent.agents?.[profileName];
+  const presetSwarmEntry =
+    route === 'swarm' && subagent.preset !== undefined
+      ? subagent.presets?.[subagent.preset]?.[SUBAGENT_PRESET_SWARM_PROFILE]
+      : undefined;
+  const agentsSwarmEntry =
+    route === 'swarm'
+      ? subagent.agents?.[SUBAGENT_PRESET_SWARM_PROFILE]
+      : undefined;
+  return compactSubagentModelConfig({
+    model: firstConfiguredString(
+      presetSwarmEntry?.model,
+      presetEntry?.model,
+      agentsSwarmEntry?.model,
+      agentsEntry?.model,
+    ),
+    thinkingEffort: firstConfiguredString(
+      presetSwarmEntry?.thinkingEffort,
+      presetEntry?.thinkingEffort,
+      agentsSwarmEntry?.thinkingEffort,
+      agentsEntry?.thinkingEffort,
+    ),
+  });
 }
 
 export function subagentDisplayModel(
@@ -144,6 +306,26 @@ export function subagentDisplayModel(
   return (
     config.get<SecondaryModelConfig | undefined>(SECONDARY_MODEL_SECTION)?.model ?? boundAlias
   );
+}
+
+function compactSubagentModelConfig(
+  value: SubagentModelConfig,
+): SubagentModelConfig {
+  const compact: SubagentModelConfig = {};
+  if (value.model !== undefined) compact.model = value.model;
+  if (value.thinkingEffort !== undefined) {
+    compact.thinkingEffort = value.thinkingEffort;
+  }
+  return compact;
+}
+
+function firstConfiguredString(
+  ...values: readonly (string | undefined)[]
+): string | undefined {
+  for (const value of values) {
+    if (value !== undefined && value.trim().length > 0) return value;
+  }
+  return undefined;
 }
 
 export function buildSubagentModelDescriptions(

@@ -1184,22 +1184,33 @@ describe('SessionSubagentHost', () => {
       'Completed the delegated task end to end and reported a technically complete summary so the parent agent can continue without repeating prior work. ' +
       'The report covers the investigation, the changes made, and the verification results in enough detail for the caller to act on directly.';
     // Harness model registry entries resolvable through the child's
-    // ProviderManager: the secondary alias and the synthesized derived entry
-    // (in production `applySecondaryModelConfig` injects the latter into the
-    // session runtime config).
+    // ProviderManager: the primary/secondary aliases and the synthesized
+    // derived entry (in production `applySecondaryModelConfig` injects the
+    // latter into the session runtime config).
     const withSecondaryModels = (config?: KimiConfig): KimiConfig => ({
       providers: { 'test-provider': { type: 'kimi', apiKey: 'test-key' } },
       ...config,
       models: {
+        'primary-model': {
+          provider: 'test-provider',
+          model: 'primary-model',
+          maxContextSize: 1_000_000,
+          capabilities: ['thinking'],
+          supportEfforts: ['low', 'medium', 'high'],
+        },
         'cheap-model': {
           provider: 'test-provider',
           model: 'cheap-model',
           maxContextSize: 1_000_000,
+          capabilities: ['thinking'],
+          supportEfforts: ['low', 'medium', 'high'],
         },
         '__secondary__': {
           provider: 'test-provider',
           model: 'cheap-model',
           maxContextSize: 65536,
+          capabilities: ['thinking'],
+          supportEfforts: ['low', 'medium', 'high'],
         },
       },
     });
@@ -1210,9 +1221,11 @@ describe('SessionSubagentHost', () => {
       providerManager?: Session['options']['providerManager'];
       modelChoice?: 'primary' | 'secondary';
       profilePreference?: 'primary' | 'secondary';
+      swarmIndex?: number;
     }) {
-      const parent = testAgent();
+      const parent = testAgent({ initialConfig: withSecondaryModels() });
       parent.configure();
+      parent.agent.config.update({ modelAlias: 'primary-model', thinkingEffort: 'off' });
       const child = testAgent({ initialConfig: withSecondaryModels() });
       child.configure({ tools: ['Read'] });
       child.mockNextResponse({ type: 'text', text: LONG_SUMMARY });
@@ -1246,6 +1259,7 @@ describe('SessionSubagentHost', () => {
         description: 'Do work',
         runInBackground: false,
         signal,
+        swarmIndex: options.swarmIndex,
       });
       await handle.completion;
       return { parent, child, handle };
@@ -1299,6 +1313,95 @@ describe('SessionSubagentHost', () => {
         profilePreference: 'primary',
       });
       expect(child.agent.config.modelAlias).toBe(parent.agent.config.modelAlias);
+    });
+
+    it('uses the profile route for Agent and the swarm route for AgentSwarm', async () => {
+      const config = withSecondaryModels({
+        providers: {},
+        subagent: {
+          preset: 'research',
+          presets: {
+            research: {
+              coder: { model: 'cheap-model', thinkingEffort: 'low' },
+              swarm: { model: '__secondary__', thinkingEffort: 'high' },
+            },
+          },
+        },
+      });
+
+      const agent = await spawnChild({ config });
+      expect(agent.child.agent.config.modelAlias).toBe('cheap-model');
+      expect(agent.child.agent.config.thinkingEffort).toBe('low');
+
+      const swarm = await spawnChild({ config, swarmIndex: 0 });
+      expect(swarm.child.agent.config.modelAlias).toBe('__secondary__');
+      expect(swarm.child.agent.config.thinkingEffort).toBe('high');
+    });
+
+    it('lets explicit primary override active profile and swarm route models', async () => {
+      const config = withSecondaryModels({
+        providers: {},
+        secondaryModel: { model: 'cheap-model' },
+        subagent: {
+          preset: 'research',
+          presets: {
+            research: {
+              coder: { model: '__secondary__', thinkingEffort: 'low' },
+              swarm: { model: 'cheap-model', thinkingEffort: 'high' },
+            },
+          },
+        },
+      });
+
+      const agent = await spawnChild({
+        config,
+        experimentalFlags: secondaryFlags(),
+        modelChoice: 'primary',
+      });
+      expect(agent.child.agent.config.modelAlias).toBe(agent.parent.agent.config.modelAlias);
+      expect(agent.child.agent.config.thinkingEffort).toBe('low');
+
+      const swarm = await spawnChild({
+        config,
+        experimentalFlags: secondaryFlags(),
+        modelChoice: 'primary',
+        swarmIndex: 0,
+      });
+      expect(swarm.child.agent.config.modelAlias).toBe(swarm.parent.agent.config.modelAlias);
+      expect(swarm.child.agent.config.thinkingEffort).toBe('high');
+    });
+
+    it('lets explicit secondary override active profile and swarm route models', async () => {
+      const config = withSecondaryModels({
+        providers: {},
+        secondaryModel: { model: 'cheap-model' },
+        subagent: {
+          preset: 'research',
+          presets: {
+            research: {
+              coder: { model: '__secondary__', thinkingEffort: 'low' },
+              swarm: { model: 'cheap-model', thinkingEffort: 'high' },
+            },
+          },
+        },
+      });
+
+      const agent = await spawnChild({
+        config,
+        experimentalFlags: secondaryFlags(),
+        modelChoice: 'secondary',
+      });
+      expect(agent.child.agent.config.modelAlias).toBe('cheap-model');
+      expect(agent.child.agent.config.thinkingEffort).toBe('low');
+
+      const swarm = await spawnChild({
+        config,
+        experimentalFlags: secondaryFlags(),
+        modelChoice: 'secondary',
+        swarmIndex: 0,
+      });
+      expect(swarm.child.agent.config.modelAlias).toBe('cheap-model');
+      expect(swarm.child.agent.config.thinkingEffort).toBe('high');
     });
 
     it('fails the spawn with a wrapped error when the secondary model does not resolve', async () => {

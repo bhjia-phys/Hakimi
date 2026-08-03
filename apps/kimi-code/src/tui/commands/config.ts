@@ -365,7 +365,7 @@ function showEditorPicker(host: SlashCommandHost): void {
   );
 }
 
-async function refreshModelsForPicker(host: SlashCommandHost): Promise<void> {
+export async function refreshModelsForPicker(host: SlashCommandHost): Promise<void> {
   try {
     const result = await withTimeout(
       host.authFlow.refreshOAuthProviderModels(),
@@ -431,7 +431,7 @@ async function applyEditorChoice(host: SlashCommandHost, value: string): Promise
  * `__secondary__` derived entry — a runtime artifact of the `[secondary_model]`
  * recipe that must never be selectable as a primary or secondary model.
  */
-function pickerModelsForHost(host: SlashCommandHost): Record<string, ModelAlias> {
+export function pickerModelsForHost(host: SlashCommandHost): Record<string, ModelAlias> {
   return Object.fromEntries(
     Object.entries(host.state.appState.availableModels)
       .filter(

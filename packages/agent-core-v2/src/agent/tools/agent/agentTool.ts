@@ -10,13 +10,14 @@
  * under TaskList/TaskOutput/TaskStop when `run_in_background=true` or after
  * detach), and terminal text formatting.
  *
- * Spawn bindings use an explicit tool choice first, then the target profile's
- * symbolic model preference, before `resolveSubagentBinding` falls back to the
- * configured secondary model or the caller's model. The selected alias is
- * resolved through the model catalog before lifecycle allocation. A resumed
- * agent keeps the model recorded in its own wire journal — with per-subagent
- * models there is no "child follows the parent's current model" invariant to
- * enforce.
+ * Spawn model precedence is explicit tool `model`, active `[subagent]` route
+ * `model`, profile `modelPreference`, configured secondary model, then the
+ * caller's model. `resolveSubagentBinding` keeps an explicit model above the
+ * route model while still allowing route `thinkingEffort` to override. The
+ * selected alias is resolved through the model catalog before lifecycle
+ * allocation. A resumed agent keeps the model recorded in its own wire journal
+ * — with per-subagent models there is no "child follows the parent's current
+ * model" invariant to enforce.
  *
  * Registered via the module-level `registerAgentToolService(ISubagentTool,
  * SubagentTool)` at the bottom of this file — the same "import = register"
@@ -317,7 +318,9 @@ export class SubagentTool implements ISubagentTool {
         this.config,
         this.flags,
         { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel },
-        args.model ?? profile.modelPreference,
+        args.model,
+        { profileName: profile.name, route: 'agent' },
+        profile.modelPreference,
       );
       let created: IAgentScopeHandle;
       try {

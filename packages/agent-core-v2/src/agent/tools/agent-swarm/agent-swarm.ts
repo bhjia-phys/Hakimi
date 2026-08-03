@@ -57,7 +57,7 @@ export const AgentSwarmToolInputSchema = z
       .enum(['secondary', 'primary'])
       .optional()
       .describe(
-        'Which model to run the item-spawned subagents on: "secondary" = the configured secondary model; "primary" = the main model you are running on (for hard, quality-sensitive tasks). This explicit choice overrides the selected agent type\'s model_preference; without either, secondary is the default when configured. Only effective when a secondary model is configured; otherwise subagents inherit your model. Resumed subagents always keep their own model.',
+        'Which model to run the item-spawned subagents on: "secondary" = the configured secondary model (falling back to your model if unavailable); "primary" = the main model you are running on (for hard, quality-sensitive tasks). This explicit choice overrides the active preset/[subagent.agents] route model and the selected agent type\'s model_preference. Without it, precedence is active route model > profile model_preference > configured secondary model > your model. Route thinking_effort may still override the selected model\'s thinking effort. Resumed subagents always keep their own model.',
       ),
   })
   .strict();

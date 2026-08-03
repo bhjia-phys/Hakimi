@@ -2,6 +2,7 @@ import {
   BUILTIN_SLASH_COMMANDS,
   findBuiltInSlashCommand,
   parseSlashInput,
+  presetArgumentCompletions,
   resolveSlashCommandAvailability,
   addDirArgumentCompletions,
   sortSlashCommands,
@@ -73,6 +74,23 @@ describe('built-in slash command registry', () => {
     expect(values('on')).toBeNull();
     expect(values('off')).toBeNull();
     expect(values('Ship feature X')).toBeNull();
+  });
+
+  it('keeps preset configuration idle-only while status stays available', () => {
+    const preset = findBuiltInSlashCommand('preset');
+    expect(preset).toBeDefined();
+    expect(resolveSlashCommandAvailability(preset!, '')).toBe('idle-only');
+    expect(resolveSlashCommandAvailability(preset!, 'edit physics')).toBe('idle-only');
+    expect(resolveSlashCommandAvailability(preset!, 'physics')).toBe('idle-only');
+    expect(resolveSlashCommandAvailability(preset!, 'status')).toBe('always');
+  });
+
+  it('offers preset edit, off, and status argument completions', () => {
+    const values = presetArgumentCompletions('')?.map((item) => item.value);
+    expect(values).toEqual(['edit', 'off', 'status']);
+    expect(presetArgumentCompletions('ed')).toEqual([
+      { value: 'edit', label: 'edit', description: 'Create or configure an agent preset' },
+    ]);
   });
 
   it('offers add-dir list and directory argument completions', () => {

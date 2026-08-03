@@ -437,6 +437,32 @@ describe('ModelSelectorComponent', () => {
     expect(onSelect).toHaveBeenLastCalledWith({ alias: 'kimi', thinking: 'max' });
   });
 
+  it('renders every declared GPT-5.6 effort including the Ultra tier', () => {
+    const picker = new ModelSelectorComponent({
+      models: {
+        sol: effortModel(
+          'GPT-5.6 Sol (ChatGPT)',
+          ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+          'medium',
+          ['always_thinking'],
+        ),
+      },
+      currentValue: 'sol',
+      currentThinkingEffort: 'medium',
+      onSelect: vi.fn(),
+      onCancel: vi.fn(),
+    });
+
+    const out = text(picker);
+    expect(out).toContain('Low');
+    expect(out).toContain('[ Medium ]');
+    expect(out).toContain('High');
+    expect(out).toContain('Xhigh');
+    expect(out).toContain('Max');
+    expect(out).toContain('Ultra');
+    expect(out).not.toContain('Off');
+  });
+
   it('defaults an effort model without a current level to its defaultEffort', () => {
     const onSelect = vi.fn();
     const picker = new ModelSelectorComponent({
