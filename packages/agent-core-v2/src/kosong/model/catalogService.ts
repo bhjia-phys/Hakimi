@@ -558,9 +558,11 @@ export class ModelCatalog extends Disposable implements IModelCatalog {
       return {
         canRefresh: true,
         async getAuth(options): Promise<ProviderRequestAuth | undefined> {
-          const apiKey = await tokens.getAccessToken(providerKey, oauthRef, {
-            force: options?.force === true,
-          });
+          const tokenOptions = { force: options?.force === true };
+          if (tokens.getRequestAuth !== undefined) {
+            return tokens.getRequestAuth(providerKey, oauthRef, tokenOptions);
+          }
+          const apiKey = await tokens.getAccessToken(providerKey, oauthRef, tokenOptions);
           return { apiKey };
         },
       };

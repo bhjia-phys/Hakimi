@@ -60,7 +60,7 @@ describe('FileTokenStorage', () => {
   });
 
   it('persists tokens in snake_case JSON (Python-compatible)', async () => {
-    const token = sampleToken();
+    const token = sampleToken({ accountId: 'acct-123' });
     await storage.save('kimi-code', token);
     const raw = readFileSync(join(dir, 'kimi-code.json'), 'utf-8');
     const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -69,7 +69,10 @@ describe('FileTokenStorage', () => {
     expect(parsed['expires_at']).toBe(1_700_000_000);
     expect(parsed['token_type']).toBe('Bearer');
     expect(parsed['expires_in']).toBe(3600);
+    expect(parsed['account_id']).toBe('acct-123');
     expect(parsed['accessToken']).toBeUndefined();
+    expect(parsed['accountId']).toBeUndefined();
+    await expect(storage.load('kimi-code')).resolves.toEqual(token);
   });
 
   it.skipIf(process.platform === 'win32')('writes the credentials file with mode 0600', async () => {

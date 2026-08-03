@@ -6,7 +6,10 @@ import {
   getModelCapability,
   UNKNOWN_CAPABILITY,
 } from '@moonshot-ai/kosong';
-import { parseKimiCodeCustomHeaders } from '@moonshot-ai/kimi-code-oauth';
+import {
+  OPENAI_CODEX_PROVIDER_NAME,
+  parseKimiCodeCustomHeaders,
+} from '@moonshot-ai/kimi-code-oauth';
 import {
   effectiveModelAlias,
   type KimiConfig,
@@ -16,9 +19,13 @@ import {
   type ProviderType,
 } from '../config';
 import { ErrorCodes, isKimiError, KimiError } from '../errors';
+import type { FlagId } from '../flags';
 
 export interface BearerTokenProvider {
   getAccessToken(options?: { readonly force?: boolean }): Promise<string>;
+  getRequestAuth?(
+    options?: { readonly force?: boolean },
+  ): Promise<ProviderRequestAuth>;
 }
 
 export type OAuthTokenProviderResolver = (
@@ -46,6 +53,7 @@ interface ProviderManagerOptions {
   readonly kimiRequestHeaders?: Record<string, string>;
   readonly resolveOAuthTokenProvider?: OAuthTokenProviderResolver;
   readonly promptCacheKey?: string;
+  readonly isExperimentalFeatureEnabled?: (id: FlagId) => boolean;
 }
 
 type AuthorizedRequest = <T>(
@@ -108,6 +116,21 @@ export class ProviderManager implements ModelProvider {
       throw new KimiError(
         ErrorCodes.CONFIG_INVALID,
         `Model "${model}" must define a provider in config.toml.`,
+      );
+    }
+
+    if (
+      providerName === OPENAI_CODEX_PROVIDER_NAME &&
+      this.options.isExperimentalFeatureEnabled !== undefined &&
+      !this.options.isExperimentalFeatureEnabled('openai-codex-oauth')
+    ) {
+      throw new KimiError(
+        ErrorCodes.CONFIG_INVALID,
+        [
+          'ChatGPT / OpenAI Codex OAuth is experimental and currently disabled.',
+          'Enable [experimental] openai-codex-oauth = true with /experiments, or run',
+          '`hakimi login --provider openai-codex --enable-experimental`.',
+        ].join(' '),
       );
     }
 
@@ -192,9 +215,13 @@ export class ProviderManager implements ModelProvider {
 
     const log = options?.log;
     const fetchAuth = async (force: boolean): Promise<ProviderRequestAuth> => {
-      let apiKey: string;
+      let auth: ProviderRequestAuth;
       try {
-        apiKey = await tokenProvider.getAccessToken(force ? { force: true } : undefined);
+        const tokenOptions = force ? { force: true } : undefined;
+        auth =
+          tokenProvider.getRequestAuth === undefined
+            ? { apiKey: await tokenProvider.getAccessToken(tokenOptions) }
+            : await tokenProvider.getRequestAuth(tokenOptions);
       } catch (error) {
         // login-required is an expected state (the user must /login); don't
         // warn. Other failures (connection errors, etc.) are logged once for
@@ -204,8 +231,8 @@ export class ProviderManager implements ModelProvider {
         }
         throw error;
       }
-      if (apiKey.trim().length === 0) throw loginRequired();
-      return { apiKey };
+      if (auth.apiKey === undefined || auth.apiKey.trim().length === 0) throw loginRequired();
+      return auth;
     };
 
     return async (request) => {
@@ -436,14 +463,6 @@ function kimiUserAgentHeader(
 ): Record<string, string> {
   const userAgent = kimiRequestHeaders?.['User-Agent'];
   return userAgent === undefined ? {} : { 'User-Agent': userAgent };
-}
-
-function providerForCapabilityProbe(provider: KosongProviderConfig): KosongProviderConfig {
-  const apiKey = provider.apiKey && provider.apiKey.length > 0 ? provider.apiKey : 'capability-probe';
-  if (provider.type === 'vertexai') {
-    return { ...provider, vertexai: false, project: undefined, location: undefined, apiKey };
-  }
-  return { ...provider, apiKey };
 }
 
 function providerApiKey(provider: ProviderConfig): string | undefined {

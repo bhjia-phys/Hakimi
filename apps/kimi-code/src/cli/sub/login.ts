@@ -13,8 +13,28 @@ import { runLoginFlow } from './login-flow';
 export function registerLoginCommand(parent: Command): void {
   parent
     .command('login')
-    .description('Authenticate Hakimi with Kimi for Coding via the device-code flow.')
-    .action(async () => {
-      await runLoginFlow();
-    });
+    .description('Authenticate Hakimi with Kimi for Coding or ChatGPT via a device-code flow.')
+    .option(
+      '-p, --provider <provider>',
+      'Login provider: kimi-code (default) or openai-codex.',
+      'kimi-code',
+    )
+    .option(
+      '--enable-experimental',
+      'Enable the experimental ChatGPT OAuth provider before login.',
+      false,
+    )
+    .option('--no-open', 'Print the device URL without opening a browser.')
+    .action(
+      async (options: {
+        provider: string;
+        enableExperimental?: boolean;
+        open?: boolean;
+      }) => {
+        await runLoginFlow(options.provider, {
+          enableExperimental: options.enableExperimental === true,
+          openBrowser: options.open !== false,
+        });
+      },
+    );
 }

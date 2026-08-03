@@ -247,6 +247,39 @@ describe('OpenAI base quota classification (vendor-neutral)', () => {
     expect(error).toBeInstanceOf(APIProviderRateLimitError);
     expect(isRetryableGenerateError(error)).toBe(true);
   });
+
+  it('normalizes ChatGPT Codex usage-limit 404s to a retryable rate limit', () => {
+    const source = new OpenAIAPIError(
+      404,
+      {
+        code: 'usage_limit_reached',
+        message: 'Your ChatGPT usage limit has been reached.',
+      },
+      'Not found',
+      new Headers({ 'retry-after': '30' }),
+    );
+
+    const error = convertOpenAIError(source);
+
+    expect(error).toBeInstanceOf(APIProviderRateLimitError);
+    expect((error as APIProviderRateLimitError).statusCode).toBe(429);
+    expect((error as APIProviderRateLimitError).retryAfterMs).toBe(30_000);
+  });
+
+  it('keeps unrelated OpenAI 404s as status errors', () => {
+    const source = new OpenAIAPIError(
+      404,
+      { code: 'model_not_found', message: 'The model does not exist.' },
+      'Not found',
+      new Headers(),
+    );
+
+    const error = convertOpenAIError(source);
+
+    expect(error).toBeInstanceOf(APIStatusError);
+    expect(error).not.toBeInstanceOf(APIProviderRateLimitError);
+    expect((error as APIStatusError).statusCode).toBe(404);
+  });
 });
 
 describe('OpenAI Responses quota-exhausted conversion', () => {

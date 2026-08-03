@@ -6,6 +6,7 @@ import {
   FileTokenStorage,
   KIMI_CODE_PROVIDER_NAME,
   KimiOAuthToolkit,
+  OPENAI_CODEX_PROVIDER_NAME,
   OAuthConnectionError,
   OAuthError,
   RetryableRefreshError,
@@ -66,6 +67,28 @@ describe('KimiHarness.auth', () => {
     await expect(harness.auth.getCachedAccessToken()).resolves.toBe('oauth-access-token');
   });
 
+  it('resolves ChatGPT request auth with its account-routing headers', async () => {
+    await new FileTokenStorage(join(homeDir, 'credentials')).save('openai-codex', {
+      ...freshToken(),
+      accessToken: 'chatgpt-access',
+      accountId: 'acct-123',
+    });
+    const harness = createKimiHarness({ homeDir, identity: TEST_IDENTITY });
+
+    await expect(harness.auth.status(OPENAI_CODEX_PROVIDER_NAME)).resolves.toEqual({
+      providers: [{ providerName: OPENAI_CODEX_PROVIDER_NAME, hasToken: true }],
+    });
+    await expect(
+      harness.auth.resolveOAuthTokenProvider(OPENAI_CODEX_PROVIDER_NAME).getRequestAuth?.(),
+    ).resolves.toMatchObject({
+      apiKey: 'chatgpt-access',
+      headers: {
+        'ChatGPT-Account-Id': 'acct-123',
+        originator: 'hakimi',
+      },
+    });
+  });
+
   it('maps missing runtime OAuth tokens to login-required errors', async () => {
     const harness = createKimiHarness({ homeDir, identity: TEST_IDENTITY });
 
@@ -96,7 +119,7 @@ describe('KimiHarness.auth', () => {
         const error = await harness.auth
           .resolveOAuthTokenProvider(KIMI_CODE_PROVIDER_NAME)
           .getAccessToken()
-          .catch((caught: unknown) => caught);
+          .catch((error: unknown) => error);
 
         expect(error).toBeInstanceOf(KimiError);
         expect(error).toMatchObject({

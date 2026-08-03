@@ -137,13 +137,21 @@ kimi -p "List changed files" --output-format stream-json
 
 ### `kimi login`
 
-通过 RFC 8628 device-code 流程登录 Kimi Code OAuth，无需进入 TUI。命令会发起一次 device authorization 请求，将验证地址和用户码打印到 stderr，然后轮询直到浏览器侧完成授权。生成的 token 写入与 TUI `/login` 相同的本地位置，下次启动 `kimi` 时会自动加载。
+通过 device-code 流程登录 Kimi Code OAuth 或实验性的 ChatGPT / OpenAI Codex OAuth，无需进入 TUI。命令会将验证地址和用户码打印到 stderr，然后轮询直到浏览器侧完成授权。生成的 token 写入与 TUI `/login` 相同的本地位置，下次启动时会自动加载。
 
 ```sh
 kimi login
+hakimi login --provider openai-codex --enable-experimental
+hakimi login --provider openai-codex --enable-experimental --no-open
 ```
 
-该子命令没有任何 flag。在轮询期间随时按 `Ctrl-C` 可取消登录；取消或失败时退出码为 `1`，成功为 `0`。
+| 选项 | 说明 |
+| --- | --- |
+| `--provider <provider>` | 选择 `kimi-code`（默认）或 `openai-codex`；也接受别名 `chatgpt`。 |
+| `--enable-experimental` | 在开始 ChatGPT 登录前持久启用 `openai-codex-oauth`。 |
+| `--no-open` | 打印设备授权地址和用户码，不尝试打开浏览器。 |
+
+ChatGPT OAuth 默认关闭。请先通过 `/experiments` 启用，或使用 `--enable-experimental`。轮询期间随时按 `Ctrl-C` 可取消登录；取消或失败时退出码为 `1`，成功为 `0`。
 
 ### `kimi acp`
 

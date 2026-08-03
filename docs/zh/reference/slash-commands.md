@@ -12,7 +12,7 @@
 
 | 命令 | 别名 | 说明 | 随时可用 |
 | --- | --- | --- | --- |
-| `/login` | — | 选择账号或平台并登录：Kimi Code 走 OAuth 验证码流程，Kimi Platform 通过 API 密钥登录 | 否 |
+| `/login` | — | 选择账号或平台并登录：Kimi Code 使用 OAuth，Kimi Platform 使用 API 密钥；在 `/experiments` 中启用 `openai-codex-oauth` 后还会显示实验性的 ChatGPT OAuth | 否 |
 | `/logout` | — | 清除当前所选账号的凭据 | 否 |
 | `/provider` | — | 打开交互式供应商管理器，查看、添加和删除已配置的供应商。详见[平台与模型 — `/provider` 与供应商管理](../configuration/providers.md#provider-—-交互式供应商管理) | 是 |
 | `/model` | — | 切换当前会话使用的 LLM 模型 | 是 |

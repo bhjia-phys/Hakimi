@@ -142,7 +142,8 @@ export function convertOpenAIError(
     if (isOpenAIInsufficientQuotaError(error)) {
       return new APIProviderQuotaExhaustedError(error.message, reqId, retryAfterMs, traceId);
     }
-    return normalizeAPIStatusError(error.status, error.message, reqId, retryAfterMs, traceId);
+    const status = isOpenAIUsageLimit404(error) ? 429 : error.status;
+    return normalizeAPIStatusError(status, error.message, reqId, retryAfterMs, traceId);
   }
   if (
     error instanceof OpenAIAPIError &&
@@ -158,6 +159,19 @@ export function convertOpenAIError(
     return classifyBaseApiError(error.message);
   }
   return new ChatProviderError(`Error: ${String(error)}`);
+}
+
+function isOpenAIUsageLimit404(error: OpenAIAPIError): boolean {
+  if (error.status !== 404) return false;
+  let body = '';
+  try {
+    body = JSON.stringify(error.error);
+  } catch {
+    body = '';
+  }
+  return /usage[_ -]?(?:limit|not[_ -]?included)|rate[_ -]?limit/i.test(
+    `${error.message}\n${body}`,
+  );
 }
 
 export interface FunctionToolCallShape {

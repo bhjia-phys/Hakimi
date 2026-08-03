@@ -174,6 +174,7 @@ export type {
   AuthManagedUsageResult,
   AuthProviderStatus,
   AuthStatus,
+  BearerRequestAuth,
   BearerTokenProvider,
   KimiOAuthLoginOptions,
   KimiOAuthLoginResult,
@@ -181,6 +182,32 @@ export type {
   KimiOAuthTokenRef,
   KimiOAuthToolkitOptions,
 } from './toolkit';
+
+export {
+  applyOpenAICodexConfig,
+  extractOpenAICodexAccountId,
+  OPENAI_CODEX_API_BASE_URL,
+  OPENAI_CODEX_CLIENT_ID,
+  OPENAI_CODEX_ISSUER,
+  OPENAI_CODEX_OAUTH_KEY,
+  OPENAI_CODEX_PLATFORM_ID,
+  OPENAI_CODEX_PROVIDER_NAME,
+  OpenAICodexOAuthToolkit,
+  parseOpenAICodexJwtClaims,
+  pollOpenAICodexDeviceToken,
+  refreshOpenAICodexAccessToken,
+  removeOpenAICodexConfig,
+  requestOpenAICodexDeviceAuthorization,
+} from './openai-codex';
+export type {
+  OpenAICodexApplyResult,
+  OpenAICodexClaims,
+  OpenAICodexLoginOptions,
+  OpenAICodexLoginResult,
+  OpenAICodexOAuthRef,
+  OpenAICodexOAuthToolkitOptions,
+  OpenAICodexTokenResponse,
+} from './openai-codex';
 
 export { refreshProviderModels } from './refreshProviderModels';
 export type {

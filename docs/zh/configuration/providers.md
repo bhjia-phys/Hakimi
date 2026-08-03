@@ -35,7 +35,7 @@ Kimi Code CLI 支持同时接入多家 LLM 平台——用 Kimi Code 托管服�
 - **Custom registry (api.json)**：粘贴自定义 registry 地址和 Bearer token，CLI 自动创建 `providers` / `models` 条目。后续启动时，同一个 registry 地址下的供应商会一起刷新，因此上游新增、删除供应商以及模型元数据变化都会同步。
 
 ::: warning
-通过 `/login` 登录的 Kimi Code OAuth 托管账号不会在 `/provider` 里显示，请用 `/login` 和 `/logout` 管理。
+通过 `/login` 登录的 Kimi Code 账号和实验性的 ChatGPT OAuth 账号不会在 `/provider` 里显示，请用 `/login` 和 `/logout` 管理。
 :::
 
 非交互环境下也可以用 shell 命令完成同样操作：[`kimi provider`](../reference/kimi-command.md#kimi-provider)。
@@ -155,6 +155,20 @@ kimi
 ## OAuth 与凭证注入
 
 Kimi Code 托管服务使用 OAuth 而非静态 API 密钥。运行 `/login` 后，内置的认证工具链会自动写入并刷新凭证，`config.toml` 里无需手动配置这部分内容。
+
+Hakimi 也可以通过实验性的 OpenAI Codex OAuth 供应商使用 ChatGPT 订阅。在 TUI 中先运行 `/experiments`，启用 `openai-codex-oauth`，再运行 `/login` 并选择 **ChatGPT / OpenAI Codex (OAuth)**。如果希望在终端中一次完成启用和登录，请运行：
+
+```sh
+hakimi login --provider openai-codex --enable-experimental
+```
+
+该命令会打开设备授权页面，并将 GPT-5.6 Sol、Terra、Luna 写入为可用的 Codex 模型。在无法启动浏览器的无头机器或 WSL 环境中，加上 `--no-open`；Hakimi 只打印验证地址和用户码，不尝试打开浏览器。
+
+```sh
+hakimi login --provider openai-codex --enable-experimental --no-open
+```
+
+该供应商默认关闭。Token 与 Hakimi 的其他 OAuth 凭证存放在同一位置；运行 `/logout` 会同时删除凭证和自动生成的 `openai-codex/*` 模型条目。
 
 ## 下一步
 

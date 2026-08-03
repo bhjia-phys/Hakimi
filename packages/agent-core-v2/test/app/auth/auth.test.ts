@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
   clearManagedKimiCodeConfig,
+  OPENAI_CODEX_PROVIDER_NAME,
   resolveKimiCodeOAuthKey,
   resolveKimiCodeRuntimeAuth,
 } from '@moonshot-ai/kimi-code-oauth';
@@ -45,6 +46,7 @@ import { registerTelemetryServices } from '../telemetry/stubs';
 import { stubAgentIdentity } from '../../app/agentIdentity/stubs';
 
 const OAUTH_PROVIDER = 'managed:kimi-code';
+const OPENAI_OAUTH_PROVIDER = OPENAI_CODEX_PROVIDER_NAME;
 const NON_OAUTH_PROVIDER = 'openai-main';
 
 const deviceAuth = {
@@ -276,6 +278,55 @@ describe('OAuthService', () => {
         oauth: EXAMPLE_COM_SCOPED_REF,
       }),
     );
+  });
+
+  it('provisions ChatGPT models through the v2 auth service', async () => {
+    toolkit.login.mockImplementation((_provider, options) => {
+      options.onDeviceCode(deviceAuth);
+      return Promise.resolve({ providerName: OPENAI_OAUTH_PROVIDER, ok: true });
+    });
+    const svc = createService();
+
+    const start = await svc.startLogin(OPENAI_OAUTH_PROVIDER);
+    expect(start).toMatchObject({
+      provider: OPENAI_OAUTH_PROVIDER,
+      status: 'pending',
+      user_code: deviceAuth.userCode,
+    });
+    await vi.waitFor(() =>
+      expect(svc.getFlow(OPENAI_OAUTH_PROVIDER)?.status).toBe('authenticated'),
+    );
+
+    expect(toolkit.login).toHaveBeenCalledWith(
+      OPENAI_OAUTH_PROVIDER,
+      expect.objectContaining({
+        oauthRef: {
+          storage: 'file',
+          key: 'oauth/openai-codex',
+          oauthHost: 'https://auth.openai.com',
+        },
+        baseUrl: 'https://chatgpt.com/backend-api/codex',
+        oauthHost: 'https://auth.openai.com',
+      }),
+    );
+    expect(providers[OPENAI_OAUTH_PROVIDER]).toMatchObject({
+      type: 'openai_responses',
+      baseUrl: 'https://chatgpt.com/backend-api/codex',
+    });
+    expect(models['openai-codex/gpt-5.6-sol']).toMatchObject({
+      provider: OPENAI_OAUTH_PROVIDER,
+      model: 'gpt-5.6-sol',
+    });
+    expect(
+      Object.keys(models)
+        .filter((id) => id.startsWith('openai-codex/'))
+        .map((id) => id.slice('openai-codex/'.length)),
+    ).toEqual([
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+    ]);
+    expect(defaultModel).toBe('openai-codex/gpt-5.6-sol');
   });
 
   it('startLogin resolves an env-scoped oauth ref for the managed provider without oauth config', async () => {

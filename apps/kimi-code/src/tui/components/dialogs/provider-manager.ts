@@ -33,6 +33,7 @@ import type { ProviderConfig } from '@moonshot-ai/kimi-code-sdk';
 import {
   getOpenPlatformById,
   isOpenPlatformId,
+  OPENAI_CODEX_PROVIDER_NAME,
   type CustomRegistrySource,
 } from '@moonshot-ai/kimi-code-oauth';
 import {
@@ -129,7 +130,7 @@ function sourceUrlLabel(url: string): string {
 /**
  * Group providers into source rows + append the synthetic add-row.
  * The grouping rules:
- *   - `DEFAULT_OAUTH_PROVIDER_NAME` → skipped (managed via /logout).
+ *   - managed OAuth providers → skipped (managed via /logout).
  *   - Open Platform id (`isOpenPlatformId(id)`) → 1 source per provider,
  *     label = `OpenPlatformDefinition.name`.
  *   - `cfg.source.kind === 'apiJson'` → one source per `{url, apiKey}`
@@ -144,7 +145,7 @@ function buildRows(opts: ProviderManagerOptions): readonly Row[] {
   const customRegistryIndex = new Map<string, number>();
 
   for (const [id, cfg] of Object.entries(opts.providers)) {
-    if (id === DEFAULT_OAUTH_PROVIDER_NAME) continue;
+    if (id === DEFAULT_OAUTH_PROVIDER_NAME || id === OPENAI_CODEX_PROVIDER_NAME) continue;
 
     const isActive = id === opts.activeProviderId;
 

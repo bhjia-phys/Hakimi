@@ -346,6 +346,17 @@ describe('KimiHarness config API', () => {
         source: 'default',
       },
       {
+        id: 'openai-codex-oauth',
+        title: 'ChatGPT / OpenAI Codex OAuth',
+        description:
+          'Allow Hakimi to authenticate with a ChatGPT subscription and use the OpenAI Codex backend.',
+        surface: 'both',
+        env: 'KIMI_CODE_EXPERIMENTAL_OPENAI_CODEX_OAUTH',
+        defaultEnabled: false,
+        enabled: false,
+        source: 'default',
+      },
+      {
         id: 'secondary-model',
         title: 'Secondary model for subagents',
         description:

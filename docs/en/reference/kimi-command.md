@@ -137,13 +137,21 @@ In `stream-json` mode, regular replies produce an Assistant message; when the mo
 
 ### `kimi login`
 
-Log in to Kimi Code OAuth via the RFC 8628 device-code flow, without entering the TUI. The command issues a device authorization request, prints the verification URL and user code to stderr, then polls until the browser-side authorization is complete. The generated token is written to the same local location as TUI `/login` and is loaded automatically the next time `kimi` starts.
+Log in to Kimi Code OAuth or the experimental ChatGPT / OpenAI Codex OAuth provider via a device-code flow, without entering the TUI. The command prints the verification URL and user code to stderr, then polls until browser-side authorization is complete. The generated token is written to the same local location as TUI `/login` and is loaded automatically on the next launch.
 
 ```sh
 kimi login
+hakimi login --provider openai-codex --enable-experimental
+hakimi login --provider openai-codex --enable-experimental --no-open
 ```
 
-This subcommand has no flags. Press `Ctrl-C` at any time during polling to cancel; the exit code is `1` on cancellation or failure, and `0` on success.
+| Option | Description |
+| --- | --- |
+| `--provider <provider>` | Select `kimi-code` (default) or `openai-codex`; `chatgpt` is accepted as an alias. |
+| `--enable-experimental` | Persistently enable `openai-codex-oauth` before starting ChatGPT login. |
+| `--no-open` | Print the device URL and user code without attempting to open a browser. |
+
+ChatGPT OAuth is disabled by default. Enable it first through `/experiments` or use `--enable-experimental`. Press `Ctrl-C` at any time during polling to cancel; the exit code is `1` on cancellation or failure, and `0` on success.
 
 ### `kimi acp`
 

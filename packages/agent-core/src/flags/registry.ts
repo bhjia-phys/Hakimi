@@ -33,6 +33,15 @@ export const FLAG_DEFINITIONS = [
     surface: 'core',
   },
   {
+    id: 'openai-codex-oauth',
+    title: 'ChatGPT / OpenAI Codex OAuth',
+    description:
+      'Allow Hakimi to authenticate with a ChatGPT subscription and use the OpenAI Codex backend.',
+    env: 'KIMI_CODE_EXPERIMENTAL_OPENAI_CODEX_OAUTH',
+    default: false,
+    surface: 'both',
+  },
+  {
     id: 'secondary-model',
     title: 'Secondary model for subagents',
     description:
