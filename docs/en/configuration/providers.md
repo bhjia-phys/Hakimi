@@ -35,7 +35,7 @@ Two paths when adding:
 - **Custom registry (api.json)**: paste a custom registry URL and Bearer token; the CLI automatically creates the `providers` / `models` entries. On later startup, providers from the same registry URL are refreshed together, so upstream provider additions, removals, and model metadata changes are synced.
 
 ::: warning
-Kimi Code OAuth managed accounts logged in via `/login` do not appear in `/provider`. Use `/login` and `/logout` to manage them.
+Kimi Code and experimental ChatGPT OAuth accounts logged in via `/login` do not appear in `/provider`. Use `/login` and `/logout` to manage them.
 :::
 
 The same operations are also available in non-interactive environments via the shell command: [`kimi provider`](../reference/kimi-command.md#kimi-provider).
@@ -185,6 +185,20 @@ To route Vertex requests through a custom (e.g. proxied) endpoint, set `base_url
 ## OAuth and credential injection
 
 The Kimi Code managed service uses OAuth rather than static API keys. After running `/login`, the built-in authentication toolchain automatically writes and refreshes credentials — no manual configuration is needed in `config.toml` for this.
+
+Hakimi can also use a ChatGPT subscription through the experimental OpenAI Codex OAuth provider. In the TUI, run `/experiments`, enable `openai-codex-oauth`, then run `/login` and select **ChatGPT / OpenAI Codex (OAuth)**. For a one-command terminal login, run:
+
+```sh
+hakimi login --provider openai-codex --enable-experimental
+```
+
+The command opens the device authorization page and provisions GPT-5.6 Sol, Terra, and Luna as the available Codex models. On a headless machine or WSL environment where browser launching is unavailable, add `--no-open`; Hakimi prints the URL and user code without trying to open a browser.
+
+```sh
+hakimi login --provider openai-codex --enable-experimental --no-open
+```
+
+This provider is off by default. Its token is stored with Hakimi's other OAuth credentials, and `/logout` removes both the credential and the generated `openai-codex/*` model entries.
 
 ## Next steps
 

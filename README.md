@@ -30,6 +30,7 @@ Hakimi is a fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-co
 - **Bidirectional session sharing**: `hakimi -r` and the `/sessions` picker can list and resume Kimi Code sessions from `~/.kimi-code`, and new Hakimi sessions are mirrored into `~/.kimi-code` (symlink + index line) so the upstream `kimi` CLI can resume them too. Sharing is wired only for the default `~/.hakimi` home.
 - **Own release channel**: update checks and the tips banner resolve against [`bhjia-phys/Hakimi` releases](https://github.com/bhjia-phys/Hakimi/releases) — including prereleases, which `releases/latest` never matches — instead of upstream Kimi Code builds. Hakimi versions follow their own semver line (currently `0.21.x`) and intentionally do not track upstream tags.
 - **DeepSeek provider**: first-class `provider add deepseek` setup with sane defaults, plus a no-auth local web-search fallback (DuckDuckGo/Bing HTML) so `WebSearch` keeps working when no Moonshot token is configured.
+- **Experimental ChatGPT OAuth**: opt-in device login can use a ChatGPT subscription through the OpenAI Codex backend, independently of OpenAI API-key billing.
 - **Subagent presets**: `[subagent.agents.<type>]` and `[subagent.presets.<name>]` in `config.toml` pin per-subagent-type models and thinking efforts (oh-my-opencode-slim style), switchable at runtime with `/preset <name>`.
 - **Transport identity**: provider-pipeline requests identify as `kimi-code-cli/<version> (hakimi)` so Kimi-for-Coding OAuth keeps working unchanged.
 
@@ -66,6 +67,19 @@ npm install -g ./dist-pack/bhjia-phys-hakimi-0.21.0.tgz
 ```
 
 > On Windows, install [Git for Windows](https://gitforwindows.org/) before first launch because Hakimi uses the bundled Git Bash as its shell environment. If Git Bash is installed in a custom location, set `KIMI_SHELL_PATH` to the absolute path of `bash.exe`.
+
+## Experimental ChatGPT / OpenAI Codex Login
+
+Enable the experiment and start the device-code flow from the terminal:
+
+```sh
+hakimi login --provider openai-codex --enable-experimental
+```
+
+For a headless terminal, add `--no-open` and open the printed URL manually. In
+the TUI, run `/experiments`, enable `openai-codex-oauth`, then run `/login` and
+choose `ChatGPT / OpenAI Codex (OAuth)`. Credentials and generated provider
+configuration remain under Hakimi's own home directory.
 
 ## Development
 

@@ -10,6 +10,7 @@
  */
 
 import { createDecorator, type ServiceIdentifier } from '#/_base/di/instantiation';
+import type { ProviderRequestAuth } from '#/kosong/contract/provider';
 
 import type { OAuthRef } from '../provider/provider';
 
@@ -22,6 +23,12 @@ export interface IModelOAuthTokens {
     oauthRef: OAuthRef,
     options?: { readonly force?: boolean },
   ): Promise<string>;
+  /** Returns request auth, including provider-specific routing headers. */
+  getRequestAuth?(
+    provider: string,
+    oauthRef: OAuthRef,
+    options?: { readonly force?: boolean },
+  ): Promise<ProviderRequestAuth>;
 }
 
 export const IModelOAuthTokens: ServiceIdentifier<IModelOAuthTokens> =

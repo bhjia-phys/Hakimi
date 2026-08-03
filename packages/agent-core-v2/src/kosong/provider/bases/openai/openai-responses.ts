@@ -391,6 +391,20 @@ export interface OpenAIResponsesGenerationKwargs {
   [key: string]: unknown;
 }
 
+/** ChatGPT's Codex backend rejects standard Responses API output caps. */
+export function isChatGptCodexBackend(baseUrl: string | undefined): boolean {
+  if (baseUrl === undefined) return false;
+  try {
+    const url = new URL(baseUrl);
+    return (
+      (url.hostname === 'chatgpt.com' || url.hostname === 'chat.openai.com') &&
+      url.pathname.replace(/\/+$/, '').endsWith('/backend-api/codex')
+    );
+  } catch {
+    return false;
+  }
+}
+
 interface ResponseInputItem {
   [key: string]: unknown;
 }
@@ -1117,7 +1131,10 @@ export class OpenAIResponsesChatProvider implements ChatProvider {
       kwargs = { ...kwargs, reasoning_effort: effort };
     }
 
-    if (options?.maxCompletionTokens !== undefined) {
+    if (
+      options?.maxCompletionTokens !== undefined &&
+      !isChatGptCodexBackend(this._baseUrl)
+    ) {
       let cap = options.maxCompletionTokens;
       if (
         options.usedContextTokens !== undefined &&

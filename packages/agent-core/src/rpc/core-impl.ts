@@ -1341,6 +1341,7 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       kimiRequestHeaders: this.kimiRequestHeaders,
       resolveOAuthTokenProvider: this.resolveOAuthTokenProvider,
       promptCacheKey: sessionId,
+      isExperimentalFeatureEnabled: (id) => this.experimentalFlags.enabled(id),
     });
   }
 

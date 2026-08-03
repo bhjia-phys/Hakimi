@@ -20,6 +20,8 @@ export interface TokenInfo {
   readonly tokenType: string;
   /** Original expires_in from server response (seconds). */
   readonly expiresIn: number;
+  /** Optional account/tenant selector required by some OAuth-backed APIs. */
+  readonly accountId?: string;
 }
 
 /** RFC 8628 §3.2 device authorization response. */
@@ -68,6 +70,7 @@ export interface TokenInfoWire {
   readonly scope: string;
   readonly token_type: string;
   readonly expires_in: number;
+  readonly account_id?: string;
 }
 
 export function tokenToWire(token: TokenInfo): TokenInfoWire {
@@ -78,10 +81,15 @@ export function tokenToWire(token: TokenInfo): TokenInfoWire {
     scope: token.scope,
     token_type: token.tokenType,
     expires_in: token.expiresIn,
+    account_id: token.accountId,
   };
 }
 
 export function tokenFromWire(wire: Partial<TokenInfoWire>): TokenInfo {
+  const accountId =
+    typeof wire.account_id === 'string' && wire.account_id.trim().length > 0
+      ? wire.account_id
+      : undefined;
   return {
     accessToken: wire.access_token ?? '',
     refreshToken: wire.refresh_token ?? '',
@@ -89,5 +97,6 @@ export function tokenFromWire(wire: Partial<TokenInfoWire>): TokenInfo {
     scope: wire.scope ?? '',
     tokenType: wire.token_type ?? '',
     expiresIn: typeof wire.expires_in === 'number' ? wire.expires_in : 0,
+    accountId,
   };
 }

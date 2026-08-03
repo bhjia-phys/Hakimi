@@ -10,6 +10,9 @@ import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockLogin = vi.fn();
+const mockGetExperimentalFeatures = vi.fn();
+const mockEnsureConfigFile = vi.fn();
+const mockSetConfig = vi.fn();
 
 vi.mock('@moonshot-ai/kimi-code-sdk', async () => {
   const actual = await vi.importActual<typeof import('@moonshot-ai/kimi-code-sdk')>(
@@ -21,6 +24,9 @@ vi.mock('@moonshot-ai/kimi-code-sdk', async () => {
       auth: {
         login: mockLogin,
       },
+      getExperimentalFeatures: mockGetExperimentalFeatures,
+      ensureConfigFile: mockEnsureConfigFile,
+      setConfig: mockSetConfig,
     })),
   };
 });
@@ -44,6 +50,12 @@ describe('hakimi login', () => {
 
   beforeEach(() => {
     mockLogin.mockReset();
+    mockGetExperimentalFeatures.mockReset();
+    mockEnsureConfigFile.mockReset();
+    mockSetConfig.mockReset();
+    mockGetExperimentalFeatures.mockResolvedValue([]);
+    mockEnsureConfigFile.mockResolvedValue(undefined);
+    mockSetConfig.mockResolvedValue({});
     vi.mocked(openUrl).mockReset();
     vi.mocked(createKimiHarness).mockClear();
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number | string | null) => {
@@ -169,6 +181,96 @@ describe('hakimi login', () => {
       true,
     );
     expect(openUrl).toHaveBeenCalledWith('https://example.com/v?code=ABCD-EFGH');
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it('enables and routes ChatGPT OAuth through the managed OpenAI Codex provider', async () => {
+    mockGetExperimentalFeatures.mockResolvedValue([
+      { id: 'openai-codex-oauth', enabled: true },
+    ]);
+    mockLogin.mockResolvedValue({ providerName: 'managed:openai-codex', ok: true });
+    const program = new Command('hakimi').exitOverride();
+    registerLoginCommand(program);
+
+    await expect(
+      program.parseAsync([
+        'node',
+        'hakimi',
+        'login',
+        '--provider',
+        'openai-codex',
+        '--enable-experimental',
+      ]),
+    ).rejects.toThrow(ExitCalled);
+
+    expect(mockEnsureConfigFile).toHaveBeenCalledOnce();
+    expect(mockSetConfig).toHaveBeenCalledWith({
+      experimental: { 'openai-codex-oauth': true },
+    });
+    expect(mockLogin).toHaveBeenCalledWith(
+      'managed:openai-codex',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it('explains how to enable ChatGPT OAuth while the experiment is disabled', async () => {
+    const program = new Command('hakimi').exitOverride();
+    registerLoginCommand(program);
+
+    await expect(
+      program.parseAsync(['node', 'hakimi', 'login', '--provider', 'chatgpt']),
+    ).rejects.toThrow(ExitCalled);
+
+    expect(mockLogin).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    const written = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+    expect(written).toContain('openai-codex-oauth = true');
+  });
+
+  it('supports headless ChatGPT OAuth without opening a browser', async () => {
+    mockGetExperimentalFeatures.mockResolvedValue([
+      { id: 'openai-codex-oauth', enabled: true },
+    ]);
+    mockLogin.mockImplementation(
+      async (
+        _providerName: string | undefined,
+        options: {
+          onDeviceCode?: (data: {
+            userCode: string;
+            verificationUri: string;
+            verificationUriComplete: string;
+            expiresIn: number | null;
+          }) => void | Promise<void>;
+        },
+      ) => {
+        await options.onDeviceCode?.({
+          userCode: 'ABCD-EFGH',
+          verificationUri: 'https://example.com/v',
+          verificationUriComplete: 'https://example.com/v?code=ABCD-EFGH',
+          expiresIn: 600,
+        });
+        return { providerName: 'managed:openai-codex', ok: true };
+      },
+    );
+    const program = new Command('hakimi').exitOverride();
+    registerLoginCommand(program);
+
+    await expect(
+      program.parseAsync([
+        'node',
+        'hakimi',
+        'login',
+        '--provider',
+        'openai-codex',
+        '--no-open',
+      ]),
+    ).rejects.toThrow(ExitCalled);
+
+    const written = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+    expect(written).toContain('Open this URL for Hakimi ChatGPT / OpenAI Codex login');
+    expect(written).toContain('ABCD-EFGH');
+    expect(openUrl).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 

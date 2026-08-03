@@ -1,5 +1,5 @@
 import { classifyKimiQuotaError } from '@moonshot-ai/kosong';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { KimiConfig, ModelAlias } from '../../src/config';
 import { ErrorCodes, KimiError } from '../../src/errors';
@@ -1027,6 +1027,49 @@ describe('ProviderManager prompt cache key', () => {
   });
 });
 
+describe('ProviderManager experimental provider gates', () => {
+  const config: KimiConfig = {
+    defaultModel: 'openai-codex/gpt-5.5',
+    providers: {
+      'managed:openai-codex': {
+        type: 'openai_responses',
+        baseUrl: 'https://chatgpt.com/backend-api/codex',
+        oauth: { storage: 'file', key: 'oauth/openai-codex' },
+      },
+    },
+    models: {
+      'openai-codex/gpt-5.5': {
+        provider: 'managed:openai-codex',
+        model: 'gpt-5.5',
+        maxContextSize: 272_000,
+      },
+    },
+  };
+
+  it('blocks the managed ChatGPT provider when the experiment is disabled', () => {
+    const manager = new ProviderManager({
+      config,
+      isExperimentalFeatureEnabled: () => false,
+    });
+
+    expect(() => manager.resolveProviderConfig('openai-codex/gpt-5.5')).toThrow(
+      /openai-codex-oauth.*disabled|disabled.*openai-codex-oauth/i,
+    );
+  });
+
+  it('allows the managed ChatGPT provider when the experiment is enabled', () => {
+    const manager = new ProviderManager({
+      config,
+      isExperimentalFeatureEnabled: (id) => id === 'openai-codex-oauth',
+    });
+
+    expect(manager.resolveProviderConfig('openai-codex/gpt-5.5')).toMatchObject({
+      providerName: 'managed:openai-codex',
+      provider: { type: 'openai_responses', model: 'gpt-5.5' },
+    });
+  });
+});
+
 describe('ProviderManager OAuth auth', () => {
   function oauthConfig(): KimiConfig {
     return {
@@ -1041,6 +1084,34 @@ describe('ProviderManager OAuth auth', () => {
       },
     };
   }
+
+  it('forwards provider-specific request auth headers with the bearer token', async () => {
+    const getAccessToken = vi.fn(async () => 'fallback-token');
+    const getRequestAuth = vi.fn(async () => ({
+      apiKey: 'chatgpt-access',
+      headers: {
+        'ChatGPT-Account-Id': 'acct-123',
+        originator: 'hakimi',
+      },
+    }));
+    const manager = new ProviderManager({
+      config: oauthConfig(),
+      resolveOAuthTokenProvider: () => ({ getAccessToken, getRequestAuth }),
+    });
+    const resolveAuth = manager.resolveAuth('kimi-code/kimi-for-coding');
+    const request = vi.fn(async () => 'ok');
+
+    await expect(resolveAuth?.(request)).resolves.toBe('ok');
+    expect(request).toHaveBeenCalledWith({
+      apiKey: 'chatgpt-access',
+      headers: {
+        'ChatGPT-Account-Id': 'acct-123',
+        originator: 'hakimi',
+      },
+    });
+    expect(getRequestAuth).toHaveBeenCalledOnce();
+    expect(getAccessToken).not.toHaveBeenCalled();
+  });
 
   it('preserves non-Kimi token fetch failures instead of guessing their category', async () => {
     const tokenError = new Error('token storage permission denied');

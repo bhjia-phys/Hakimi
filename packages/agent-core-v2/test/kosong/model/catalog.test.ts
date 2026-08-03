@@ -529,6 +529,48 @@ describe('Model assembly (pure data)', () => {
       host.dispose();
     }
   });
+
+  it('preserves provider-specific headers from the OAuth request-auth port', async () => {
+    const oauthTokens: IModelOAuthTokens = {
+      _serviceBrand: undefined,
+      hasCachedAccessToken: () => Promise.resolve(true),
+      getAccessToken: () => Promise.resolve('fallback-token'),
+      getRequestAuth: () =>
+        Promise.resolve({
+          apiKey: 'chatgpt-access',
+          headers: {
+            'ChatGPT-Account-Id': 'acct-123',
+            originator: 'hakimi',
+          },
+        }),
+    };
+    const { host, catalog } = createHost(
+      {
+        providers: {
+          codex: {
+            type: 'openai_responses',
+            oauth: { storage: 'file', key: 'oauth/openai-codex' },
+            baseUrl: 'https://chatgpt.com/backend-api/codex',
+          },
+        },
+        models: {
+          gpt: { provider: 'codex', model: 'gpt-5.5', maxContextSize: 272_000 },
+        },
+      },
+      oauthTokens,
+    );
+    try {
+      await expect(catalog.get('gpt').authProvider.getAuth()).resolves.toEqual({
+        apiKey: 'chatgpt-access',
+        headers: {
+          'ChatGPT-Account-Id': 'acct-123',
+          originator: 'hakimi',
+        },
+      });
+    } finally {
+      host.dispose();
+    }
+  });
 });
 
 describe('ModelCatalog caching and config-event invalidation', () => {

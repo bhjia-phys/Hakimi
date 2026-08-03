@@ -19,19 +19,27 @@ import {
   KIMI_CODE_PLATFORM_ID,
   KIMI_CODE_PROVIDER_NAME,
   KimiOAuthToolkit,
+  OPENAI_CODEX_API_BASE_URL,
+  OPENAI_CODEX_ISSUER,
+  OPENAI_CODEX_OAUTH_KEY,
+  OPENAI_CODEX_PROVIDER_NAME,
+  OpenAICodexOAuthToolkit,
   kimiCodeBaseUrl,
   OAuthError,
   applyManagedKimiCodeConfig,
+  applyOpenAICodexConfig,
   clearManagedKimiCodeConfig,
   fetchManagedKimiCodeModels,
   resolveKimiCodeLoginAuth,
   resolveKimiCodeOAuthRef,
   resolveKimiCodeRuntimeAuth,
   type AuthManagedUserInfoResult,
+  removeOpenAICodexConfig,
   type AuthManagedUsageResult,
   type BearerTokenProvider,
   type DeviceAuthorization,
   type ManagedKimiConfigShape,
+  type OpenAICodexOAuthRef,
 } from '@moonshot-ai/kimi-code-oauth';
 import type {
   OAuthFlowSnapshot,
@@ -410,6 +418,17 @@ export class OAuthService extends Disposable implements IOAuthService {
     readonly oauthHost: string | undefined;
   } {
     const config = this.providerService.get(provider);
+    if (provider === OPENAI_CODEX_PROVIDER_NAME) {
+      return {
+        oauthRef: config?.oauth ?? {
+          storage: 'file',
+          key: OPENAI_CODEX_OAUTH_KEY,
+          oauthHost: OPENAI_CODEX_ISSUER,
+        },
+        baseUrl: OPENAI_CODEX_API_BASE_URL,
+        oauthHost: config?.oauth?.oauthHost ?? OPENAI_CODEX_ISSUER,
+      };
+    }
     if (provider !== KIMI_CODE_PROVIDER_NAME) {
       return { oauthRef: config?.oauth, baseUrl: undefined, oauthHost: undefined };
     }
@@ -435,6 +454,14 @@ export class OAuthService extends Disposable implements IOAuthService {
   }
 
   private resolveRuntimeOAuthRef(provider: string, oauthRef?: OAuthRef): OAuthRef | undefined {
+    if (provider === OPENAI_CODEX_PROVIDER_NAME) {
+      const configured = this.providerService.get(provider)?.oauth;
+      return oauthRef ?? configured ?? {
+        storage: 'file',
+        key: OPENAI_CODEX_OAUTH_KEY,
+        oauthHost: OPENAI_CODEX_ISSUER,
+      };
+    }
     if (provider !== KIMI_CODE_PROVIDER_NAME) return oauthRef;
     const config = this.providerService.get(provider);
     return resolveKimiCodeRuntimeAuth({
@@ -497,6 +524,19 @@ export class OAuthService extends Disposable implements IOAuthService {
     oauthRef: OAuthRef | undefined,
     loginBaseUrl: string | undefined,
   ): Promise<void> {
+    if (provider === OPENAI_CODEX_PROVIDER_NAME) {
+      const next = structuredClone(this.readUserConfigShape());
+      applyOpenAICodexConfig(next, {
+        oauthKey: oauthRef?.key,
+        oauthHost: oauthRef?.oauthHost,
+        preserveDefaultModel: next.defaultModel !== undefined,
+      });
+      await this.config.replace(PROVIDERS_SECTION, next.providers);
+      await this.config.replace(MODELS_SECTION, next.models ?? {});
+      await this.config.replace(DEFAULT_MODEL_SECTION, next.defaultModel);
+      await this.config.replace(THINKING_SECTION, next.thinking);
+      return;
+    }
     if (oauthRef === undefined && provider !== KIMI_CODE_PROVIDER_NAME) return;
     const baseUrl =
       loginBaseUrl ?? this.providerService.get(provider)?.baseUrl ?? kimiCodeBaseUrl();
@@ -519,6 +559,15 @@ export class OAuthService extends Disposable implements IOAuthService {
   }
 
   private async deprovisionProvider(provider: string): Promise<void> {
+    if (provider === OPENAI_CODEX_PROVIDER_NAME) {
+      const next = structuredClone(this.readUserConfigShape());
+      removeOpenAICodexConfig(next);
+      await this.config.replace(PROVIDERS_SECTION, next.providers);
+      await this.config.replace(MODELS_SECTION, next.models ?? {});
+      await this.config.replace(DEFAULT_MODEL_SECTION, next.defaultModel);
+      await this.config.replace(THINKING_SECTION, next.thinking);
+      return;
+    }
     if (provider !== KIMI_CODE_PROVIDER_NAME) return;
     const next = structuredClone(this.readUserConfigShape());
     const cleanup = clearManagedKimiCodeConfig(next);
@@ -859,11 +908,86 @@ function managedModel(
   return config.models?.[alias] as ManagedModel | undefined;
 }
 
-class OAuthToolkitService extends KimiOAuthToolkit implements IOAuthToolkit {
+class OAuthToolkitService implements IOAuthToolkit {
   declare readonly _serviceBrand: undefined;
+  private readonly kimi: KimiOAuthToolkit;
+  private readonly openAICodex: OpenAICodexOAuthToolkit;
+
   constructor(@IBootstrapService bootstrap: IBootstrapService) {
-    super({ homeDir: bootstrap.homeDir, identity: bootstrap.clientIdentity });
+    this.kimi = new KimiOAuthToolkit({
+      homeDir: bootstrap.homeDir,
+      identity: bootstrap.clientIdentity,
+    });
+    this.openAICodex = new OpenAICodexOAuthToolkit({
+      homeDir: bootstrap.homeDir,
+      userAgent: 'hakimi',
+    });
   }
+
+  login(
+    providerName = KIMI_CODE_PROVIDER_NAME,
+    options: Parameters<IOAuthToolkit['login']>[1] = {},
+  ): ReturnType<IOAuthToolkit['login']> {
+    if (providerName === OPENAI_CODEX_PROVIDER_NAME) {
+      const oauthRef = openAICodexRef(options.oauthRef);
+      return this.openAICodex.login({
+        oauthRef,
+        signal: options.signal,
+        onDeviceCode: options.onDeviceCode,
+      });
+    }
+    return this.kimi.login(providerName, options);
+  }
+
+  async logout(
+    providerName = KIMI_CODE_PROVIDER_NAME,
+    oauthRef?: Parameters<IOAuthToolkit['logout']>[1],
+  ): ReturnType<IOAuthToolkit['logout']> {
+    if (providerName === OPENAI_CODEX_PROVIDER_NAME) {
+      await this.openAICodex.logout(openAICodexRef(oauthRef));
+      return { providerName, ok: true };
+    }
+    return this.kimi.logout(providerName, oauthRef);
+  }
+
+  getCachedAccessToken(
+    providerName = KIMI_CODE_PROVIDER_NAME,
+    oauthRef?: Parameters<IOAuthToolkit['getCachedAccessToken']>[1],
+  ): ReturnType<IOAuthToolkit['getCachedAccessToken']> {
+    if (providerName === OPENAI_CODEX_PROVIDER_NAME) {
+      return this.openAICodex.getCachedAccessToken(openAICodexRef(oauthRef));
+    }
+    return this.kimi.getCachedAccessToken(providerName, oauthRef);
+  }
+
+  tokenProvider(
+    providerName = KIMI_CODE_PROVIDER_NAME,
+    oauthRef?: Parameters<IOAuthToolkit['tokenProvider']>[1],
+  ): ReturnType<IOAuthToolkit['tokenProvider']> {
+    if (providerName === OPENAI_CODEX_PROVIDER_NAME) {
+      return this.openAICodex.tokenProvider(openAICodexRef(oauthRef));
+    }
+    return this.kimi.tokenProvider(providerName, oauthRef);
+  }
+
+  getManagedUsage(
+    providerName?: string,
+    options?: Parameters<IOAuthToolkit['getManagedUsage']>[1],
+  ): ReturnType<IOAuthToolkit['getManagedUsage']> {
+    return this.kimi.getManagedUsage(providerName, options);
+  }
+}
+
+function openAICodexRef(
+  ref: { readonly key?: string; readonly oauthHost?: string } | undefined,
+): OpenAICodexOAuthRef {
+  const storage =
+    ref !== undefined && 'storage' in ref && ref.storage === 'keyring' ? 'keyring' : 'file';
+  return {
+    storage,
+    key: ref?.key ?? OPENAI_CODEX_OAUTH_KEY,
+    oauthHost: ref?.oauthHost ?? OPENAI_CODEX_ISSUER,
+  };
 }
 
 registerScopedService(LifecycleScope.App, IOAuthService, OAuthService, ScopeActivation.OnScopeCreated, 'auth');
