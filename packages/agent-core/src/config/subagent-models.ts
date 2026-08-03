@@ -5,11 +5,21 @@ export interface SubagentModelOverride {
   readonly thinkingEffort?: string;
 }
 
+export type SubagentRouteKind = 'agent' | 'swarm';
+
+export const SUBAGENT_PRESET_MAIN_PROFILE = 'main';
+export const SUBAGENT_PRESET_SWARM_PROFILE = 'swarm';
+
 /**
- * Resolve the effective model/effort override for a subagent profile
- * (`explore`, `plan`, `coder`). Precedence, per field:
+ * Resolve the effective model/effort override for a subagent profile.
+ * Agent precedence, per field:
  *
  *   [subagent.presets.<active>.<profile>]  >  [subagent.agents.<profile>]
+ *
+ * AgentSwarm adds the reserved `swarm` route ahead of the selected profile at
+ * each layer:
+ *
+ *   preset.swarm > preset.<profile> > agents.swarm > agents.<profile>
  *
  * A field unset at both levels inherits the parent agent's value (handled by
  * the caller). A `model` naming an alias missing from `[models]` is dropped
@@ -19,6 +29,7 @@ export function resolveSubagentModelOverride(
   config: KimiConfig | undefined,
   profileName: string,
   warn: (message: string) => void = () => {},
+  route: SubagentRouteKind = 'agent',
 ): SubagentModelOverride {
   const subagent = config?.subagent;
   if (subagent === undefined) return {};
@@ -26,9 +37,25 @@ export function resolveSubagentModelOverride(
   const presetName = activeSubagentPreset(subagent);
   const presetEntry = presetName !== undefined ? subagent.presets?.[presetName]?.[profileName] : undefined;
   const agentsEntry = subagent.agents?.[profileName];
+  const presetSwarmEntry =
+    route === 'swarm' && presetName !== undefined
+      ? subagent.presets?.[presetName]?.[SUBAGENT_PRESET_SWARM_PROFILE]
+      : undefined;
+  const agentsSwarmEntry =
+    route === 'swarm' ? subagent.agents?.[SUBAGENT_PRESET_SWARM_PROFILE] : undefined;
 
-  const modelAlias = pickString(presetEntry?.model, agentsEntry?.model);
-  const thinkingEffort = pickString(presetEntry?.thinkingEffort, agentsEntry?.thinkingEffort);
+  const modelAlias = pickString(
+    presetSwarmEntry?.model,
+    presetEntry?.model,
+    agentsSwarmEntry?.model,
+    agentsEntry?.model,
+  );
+  const thinkingEffort = pickString(
+    presetSwarmEntry?.thinkingEffort,
+    presetEntry?.thinkingEffort,
+    agentsSwarmEntry?.thinkingEffort,
+    agentsEntry?.thinkingEffort,
+  );
 
   const override: { modelAlias?: string; thinkingEffort?: string } = {};
   if (modelAlias !== undefined) {
@@ -53,15 +80,35 @@ export function resolveSubagentModelOverride(
 export function describeSubagentModelOverride(
   subagent: SubagentConfig | undefined,
   profileName: string,
+  route: SubagentRouteKind = 'agent',
 ): SubagentModelConfig | undefined {
   if (subagent === undefined) return undefined;
   const presetName = activeSubagentPreset(subagent);
   const presetEntry = presetName !== undefined ? subagent.presets?.[presetName]?.[profileName] : undefined;
   const agentsEntry = subagent.agents?.[profileName];
-  const model = pickString(presetEntry?.model, agentsEntry?.model);
-  const thinkingEffort = pickString(presetEntry?.thinkingEffort, agentsEntry?.thinkingEffort);
+  const presetSwarmEntry =
+    route === 'swarm' && presetName !== undefined
+      ? subagent.presets?.[presetName]?.[SUBAGENT_PRESET_SWARM_PROFILE]
+      : undefined;
+  const agentsSwarmEntry =
+    route === 'swarm' ? subagent.agents?.[SUBAGENT_PRESET_SWARM_PROFILE] : undefined;
+  const model = pickString(
+    presetSwarmEntry?.model,
+    presetEntry?.model,
+    agentsSwarmEntry?.model,
+    agentsEntry?.model,
+  );
+  const thinkingEffort = pickString(
+    presetSwarmEntry?.thinkingEffort,
+    presetEntry?.thinkingEffort,
+    agentsSwarmEntry?.thinkingEffort,
+    agentsEntry?.thinkingEffort,
+  );
   if (model === undefined && thinkingEffort === undefined) return undefined;
-  return { ...(model !== undefined ? { model } : {}), ...(thinkingEffort !== undefined ? { thinkingEffort } : {}) };
+  const result: SubagentModelConfig = {};
+  if (model !== undefined) result.model = model;
+  if (thinkingEffort !== undefined) result.thinkingEffort = thinkingEffort;
+  return result;
 }
 
 /** Active preset name, or undefined when unset/blank. */

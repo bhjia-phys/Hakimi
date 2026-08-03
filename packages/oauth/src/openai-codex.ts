@@ -80,21 +80,21 @@ const OPENAI_CODEX_MODELS: readonly OpenAICodexModel[] = [
     displayName: 'GPT-5.6 Sol (ChatGPT)',
     maxContextSize: 500_000,
     maxInputSize: 372_000,
-    supportEfforts: ['low', 'medium', 'high', 'xhigh'],
+    supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
   },
   {
     id: 'gpt-5.6-terra',
     displayName: 'GPT-5.6 Terra (ChatGPT)',
     maxContextSize: 500_000,
     maxInputSize: 372_000,
-    supportEfforts: ['low', 'medium', 'high', 'xhigh'],
+    supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
   },
   {
     id: 'gpt-5.6-luna',
     displayName: 'GPT-5.6 Luna (ChatGPT)',
     maxContextSize: 500_000,
     maxInputSize: 372_000,
-    supportEfforts: ['low', 'medium', 'high'],
+    supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
   },
 ] as const;
 

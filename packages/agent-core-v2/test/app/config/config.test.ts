@@ -92,6 +92,7 @@ import {
   DEFAULT_SUBAGENT_TIMEOUT_MS,
   resolveSecondaryModel,
   resolveSubagentBinding,
+  resolveSubagentModelOverride,
   resolveSubagentTimeoutMs,
   SUBAGENT_SECTION,
   SUBAGENT_TIMEOUT_ENV,
@@ -1668,7 +1669,7 @@ describe('subagent config section', () => {
     ix.set(IConfigService, new SyncDescriptor(ConfigService));
     const config = ix.get(IConfigService);
     await config.ready;
-    return { config, disposables };
+    return { config, disposables, storage };
   }
 
   it('defaults to two hours and honours the env override', async () => {
@@ -1828,6 +1829,144 @@ describe('subagent config section', () => {
       displayModel: 'provider/secondary',
     });
     withRecipe.disposables.dispose();
+  it('routes Agent by profile and AgentSwarm through the preset swarm override', async () => {
+    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+    const { config, disposables } = await createConfig(
+      {},
+      [
+        '[subagent]',
+        'preset = "research"',
+        '',
+        '[subagent.agents.explore]',
+        'model = "provider/base-explore"',
+        'thinking_effort = "low"',
+        '',
+        '[subagent.presets.research.explore]',
+        'model = "provider/preset-explore"',
+        '',
+        '[subagent.presets.research.swarm]',
+        'thinking_effort = "ultra"',
+      ].join('\n'),
+    );
+
+    expect(config.get<SubagentConfig>(SUBAGENT_SECTION)).toMatchObject({
+      preset: 'research',
+      agents: {
+        explore: { model: 'provider/base-explore', thinkingEffort: 'low' },
+      },
+      presets: {
+        research: {
+          explore: { model: 'provider/preset-explore' },
+          swarm: { thinkingEffort: 'ultra' },
+        },
+      },
+    });
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(false), own, undefined, {
+        profileName: 'explore',
+        route: 'agent',
+      }),
+    ).toEqual({ model: 'provider/preset-explore', thinking: 'low', displayModel: 'provider/preset-explore' });
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(false), own, undefined, {
+        profileName: 'explore',
+        route: 'swarm',
+      }),
+    ).toEqual({ model: 'provider/preset-explore', thinking: 'ultra', displayModel: 'provider/preset-explore' });
+    expect(resolveSubagentModelOverride(config, '', 'swarm')).toEqual({
+      thinkingEffort: 'ultra',
+    });
+
+    disposables.dispose();
+  });
+
+  it('keeps explicit model choices ahead of active route models while applying route thinking', async () => {
+    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+    const { config, disposables } = await createConfig(
+      {},
+      [
+        '[secondary_model]',
+        'model = "provider/secondary"',
+        '',
+        '[subagent]',
+        'preset = "research"',
+        '',
+        '[subagent.agents.explore]',
+        'model = "provider/agent-route"',
+        'thinking_effort = "agent-effort"',
+        '',
+        '[subagent.presets.research.explore]',
+        'model = "provider/preset-route"',
+        'thinking_effort = "preset-effort"',
+        '',
+        '[subagent.presets.research.swarm]',
+        'model = "provider/swarm-route"',
+        'thinking_effort = "swarm-effort"',
+      ].join('\n'),
+    );
+
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), own, 'primary', {
+        profileName: 'explore',
+        route: 'agent',
+      }),
+    ).toEqual({ model: 'provider/main', thinking: 'preset-effort', displayModel: 'provider/main' });
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), own, 'secondary', {
+        profileName: 'explore',
+        route: 'agent',
+      }),
+    ).toEqual({ model: 'provider/secondary', thinking: 'preset-effort', displayModel: 'provider/secondary' });
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), own, undefined, {
+        profileName: 'explore',
+        route: 'agent',
+      }),
+    ).toEqual({ model: 'provider/preset-route', thinking: 'preset-effort', displayModel: 'provider/preset-route' });
+
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), own, 'primary', {
+        profileName: 'explore',
+        route: 'swarm',
+      }),
+    ).toEqual({ model: 'provider/main', thinking: 'swarm-effort', displayModel: 'provider/main' });
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), own, 'secondary', {
+        profileName: 'explore',
+        route: 'swarm',
+      }),
+    ).toEqual({ model: 'provider/secondary', thinking: 'swarm-effort', displayModel: 'provider/secondary' });
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), own, undefined, {
+        profileName: 'explore',
+        route: 'swarm',
+      }),
+    ).toEqual({ model: 'provider/swarm-route', thinking: 'swarm-effort', displayModel: 'provider/swarm-route' });
+
+    disposables.dispose();
+  });
+
+  it('persists preset route fields with snake_case TOML names', async () => {
+    const { config, disposables, storage } = await createConfig({});
+
+    await config.set(SUBAGENT_SECTION, {
+      preset: 'physics',
+      presets: {
+        physics: {
+          main: { model: 'provider/main', thinkingEffort: 'high' },
+          swarm: { model: 'provider/fast', thinkingEffort: 'low' },
+        },
+      },
+    });
+
+    const onDisk = new TextDecoder().decode(await storage.read('', 'config.toml'));
+    expect(onDisk).toContain('[subagent.presets.physics.main]');
+    expect(onDisk).toContain('[subagent.presets.physics.swarm]');
+    expect(onDisk).toContain('thinking_effort = "high"');
+    expect(onDisk).toContain('thinking_effort = "low"');
+
+    disposables.dispose();
+>>>>>>> c71d01db4 (feat(tui): add interactive /preset manager for agent model routing)
   });
 
   it('preserves the coded error contract when adding secondary-model guidance', () => {

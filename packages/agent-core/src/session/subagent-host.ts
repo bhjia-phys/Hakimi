@@ -12,6 +12,7 @@ import { InMemoryAgentRecordPersistence } from '../agent/records';
 import {
   resolveSubagentModelOverride,
   type SubagentModelOverride,
+  type SubagentRouteKind,
 } from '../config/subagent-models';
 import { isAbortError } from '../loop/errors';
 import {
@@ -179,7 +180,13 @@ export class SessionSubagentHost {
     const completion = this.runWithActiveChild(id, options, async (runOptions) => {
       this.emitSubagentSpawned(parent, id, profile.name, runOptions);
       try {
-        await this.configureChild(parent, agent, profile, options.modelChoice);
+        await this.configureChild(
+          parent,
+          agent,
+          profile,
+          options.modelChoice,
+          subagentRouteKind(options),
+        );
         return await this.runPromptTurn(parent, id, agent, profile.name, runOptions);
       } catch (error) {
         this.emitSubagentFailed(parent, id, runOptions, error);
@@ -200,7 +207,7 @@ export class SessionSubagentHost {
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
       this.emitSubagentSpawned(parent, agentId, profileName, runOptions);
       try {
-        this.reInheritParentModel(parent, child, profileName);
+        this.reInheritParentModel(parent, child, profileName, subagentRouteKind(options));
         return await this.runPromptTurn(parent, agentId, child, profileName, runOptions);
       } catch (error) {
         this.emitSubagentFailed(parent, agentId, runOptions, error);
@@ -216,7 +223,7 @@ export class SessionSubagentHost {
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
       try {
         runOptions.signal.throwIfAborted();
-        this.reInheritParentModel(parent, child, profileName);
+        this.reInheritParentModel(parent, child, profileName, subagentRouteKind(options));
         this.emitSubagentStarted(parent, agentId);
         const turnId = child.turn.retry('agent-host');
         if (turnId === null) {
@@ -445,8 +452,9 @@ export class SessionSubagentHost {
     child: Agent,
     profile: ResolvedAgentProfile,
     modelChoice?: SubagentModelChoice,
+    route: SubagentRouteKind = 'agent',
   ): Promise<void> {
-    const binding = this.resolveSpawnBinding(parent, profile, modelChoice);
+    const binding = this.resolveSpawnBinding(parent, profile, modelChoice, route);
     child.config.update({
       cwd: parent.config.cwd,
       modelAlias: binding.modelAlias,
@@ -466,17 +474,18 @@ export class SessionSubagentHost {
   }
 
   /**
-   * The model a newly spawned subagent binds to: an explicit `[subagent]`
-   * override for this profile first (user config always wins), then the
-   * configured secondary model (when the experiment is on), otherwise the
-   * parent's model and effort, inherited as before. The bound alias is
-   * validated up front so a dangling pointer fails the spawn with a wrapped,
-   * actionable error instead of a mid-turn provider failure.
+   * The model a newly spawned subagent binds to: an explicit tool `model`
+   * choice wins over the active `[subagent]` route model, which otherwise wins
+   * over the profile preference, configured secondary model, and parent's
+   * model. The route's thinking effort remains a per-field override. The
+   * bound alias is validated up front so a dangling pointer fails the spawn
+   * with a wrapped, actionable error instead of a mid-turn provider failure.
    */
   private resolveSpawnBinding(
     parent: Agent,
     profile: ResolvedAgentProfile,
     modelChoice?: SubagentModelChoice,
+    route: SubagentRouteKind = 'agent',
   ): SubagentModelBinding {
     const binding = resolveSubagentBinding(
       this.session.kimiConfig,
@@ -484,9 +493,10 @@ export class SessionSubagentHost {
       { modelAlias: parent.config.modelAlias, thinkingEffort: parent.config.thinkingEffort },
       modelChoice ?? profile.modelPreference,
     );
-    const override = this.resolveSubagentOverride(profile.name);
+    const override = this.resolveSubagentOverride(profile.name, route);
     const effective: SubagentModelBinding = {
-      modelAlias: override.modelAlias ?? binding.modelAlias,
+      modelAlias:
+        modelChoice !== undefined ? binding.modelAlias : override.modelAlias ?? binding.modelAlias,
       thinkingEffort: override.thinkingEffort ?? binding.thinkingEffort,
     };
     if (effective.modelAlias !== undefined) {
@@ -509,8 +519,13 @@ export class SessionSubagentHost {
    * precedence over both: it is (re)applied on every resume/retry so
    * `/preset` switches and config reloads reach already-spawned subagents.
    */
-  private reInheritParentModel(parent: Agent, child: Agent, profileName: string): void {
-    const override = this.resolveSubagentOverride(profileName);
+  private reInheritParentModel(
+    parent: Agent,
+    child: Agent,
+    profileName: string,
+    route: SubagentRouteKind,
+  ): void {
+    const override = this.resolveSubagentOverride(profileName, route);
     if (override.modelAlias !== undefined || override.thinkingEffort !== undefined) {
       child.config.update({
         ...(override.modelAlias !== undefined ? { modelAlias: override.modelAlias } : {}),
@@ -529,11 +544,15 @@ export class SessionSubagentHost {
    * `agents`); empty when nothing is configured, in which case the caller
    * falls back to the binding/parent values.
    */
-  private resolveSubagentOverride(profileName: string): SubagentModelOverride {
+  private resolveSubagentOverride(
+    profileName: string,
+    route: SubagentRouteKind,
+  ): SubagentModelOverride {
     return resolveSubagentModelOverride(
       this.session.options.config,
       profileName,
       (message) => this.session.log.warn('subagent model override ignored', { message }),
+      route,
     );
   }
 
@@ -719,4 +738,8 @@ function shouldSuppressQueuedAttemptFailureEvent(
   if (options.suppressRateLimitFailureEvent !== true) return false;
   if (isProviderRateLimitError(error)) return true;
   return isAbortError(error) || options.signal.aborted;
+}
+
+function subagentRouteKind(options: RunSubagentOptions): SubagentRouteKind {
+  return options.swarmIndex === undefined ? 'agent' : 'swarm';
 }

@@ -282,14 +282,16 @@ describe('OpenAI Codex managed config', () => {
       maxContextSize: 500_000,
       maxInputSize: 372_000,
       capabilities: ['thinking', 'always_thinking', 'tool_use', 'image_in'],
-      supportEfforts: ['low', 'medium', 'high', 'xhigh'],
+      supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
       defaultEffort: 'medium',
     });
-    expect(config.models?.['openai-codex/gpt-5.6-terra']).toBeDefined();
+    expect(config.models?.['openai-codex/gpt-5.6-terra']).toMatchObject({
+      supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    });
     expect(config.models?.['openai-codex/gpt-5.6-luna']).toMatchObject({
       maxContextSize: 500_000,
       maxInputSize: 372_000,
-      supportEfforts: ['low', 'medium', 'high'],
+      supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     });
     expect(result.models).toEqual([
       'gpt-5.6-sol',

@@ -375,13 +375,16 @@ merge_all_available_skills = true
 # subagent
 #   owner: src/session/subagent/configSection.ts
 #   scope: core
-#   hooks: stripEnv
+#   hooks: custom fromToml · custom toToml · stripEnv
 #   env:
 #     timeout_ms <- KIMI_SUBAGENT_TIMEOUT_MS (custom parse)
 # ##########################################################################
 
 [subagent]
 timeout_ms = 7200000
+# preset: string
+# agents: record<string, object>
+# presets: record<string, record<string, object>>
 
 # ##########################################################################
 # task

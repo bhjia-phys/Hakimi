@@ -316,6 +316,13 @@ describe('OAuthService', () => {
     expect(models['openai-codex/gpt-5.6-sol']).toMatchObject({
       provider: OPENAI_OAUTH_PROVIDER,
       model: 'gpt-5.6-sol',
+      supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    });
+    expect(models['openai-codex/gpt-5.6-terra']).toMatchObject({
+      supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    });
+    expect(models['openai-codex/gpt-5.6-luna']).toMatchObject({
+      supportEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     });
     expect(
       Object.keys(models)

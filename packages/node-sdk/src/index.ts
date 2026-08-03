@@ -83,6 +83,8 @@ export { SECONDARY_DERIVED_MODEL_ALIAS } from '@moonshot-ai/agent-core';
 export {
   activeSubagentPreset,
   describeSubagentModelOverride,
+  SUBAGENT_PRESET_MAIN_PROFILE,
+  SUBAGENT_PRESET_SWARM_PROFILE,
 } from '@moonshot-ai/agent-core';
 
 // Process-wide HTTP proxy bootstrap — installed once at CLI startup so all

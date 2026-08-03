@@ -29,6 +29,7 @@ const SWARM_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
 ];
 
 const PRESET_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
+  { value: 'edit', description: 'Create or configure an agent preset' },
   { value: 'off', description: 'Clear the active subagent preset' },
   { value: 'status', description: 'Show the active preset and effective overrides' },
 ];
@@ -323,14 +324,15 @@ export const BUILTIN_SLASH_COMMANDS = [
   {
     name: 'preset',
     aliases: [],
-    description: 'Switch the active subagent model preset ([subagent.presets])',
+    description: 'Configure and activate main, subagent, and swarm model presets',
     priority: 80,
-    argumentHint: '[<name>|off|status]',
+    argumentHint: '[<name>|edit <name>|off|status]',
     completeArgs: presetArgumentCompletions,
-    // Switching reloads the session, so keep it idle-only like a model switch.
+    // The visual manager can switch the live main model, so opening it is
+    // idle-only like `/model`; status remains safe while streaming.
     availability: (args) => {
       const trimmed = args.trim();
-      return trimmed === '' || trimmed === 'status' ? 'always' : 'idle-only';
+      return trimmed === 'status' ? 'always' : 'idle-only';
     },
   },
   {

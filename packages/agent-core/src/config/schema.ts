@@ -205,13 +205,15 @@ export const SubagentConfigSchema = z.object({
    */
   preset: z.string().optional(),
   /**
-   * Per-subagent-type model/effort overrides, keyed by profile name
-   * (`explore`, `plan`, `coder`). Unset fields inherit from the parent agent.
+   * Per-route model/effort overrides, keyed by profile name (`explore`,
+   * `plan`, `coder`) with the reserved `swarm` key as the batch-wide default.
+   * Unset fields inherit from the selected profile route, then the parent.
    */
   agents: z.record(z.string(), SubagentModelConfigSchema).optional(),
   /**
-   * Named bundles of per-type overrides; the bundle named by `preset`
-   * overrides `agents` for the types it lists.
+   * Named bundles of route overrides; the bundle named by `preset` overrides
+   * `agents`. `main` stores the primary-agent selection applied by the host,
+   * while `swarm` overrides every new AgentSwarm item before profile fallback.
    */
   presets: z.record(z.string(), z.record(z.string(), SubagentModelConfigSchema)).optional(),
 });
