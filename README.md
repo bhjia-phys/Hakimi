@@ -36,6 +36,44 @@ Hakimi is a fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-co
 
 Everything else — features, flags, config schema, behavior — is upstream Kimi Code. See the [upstream docs](https://moonshotai.github.io/kimi-code/en/) for the full reference; the `[subagent]` preset fields are documented in `docs/en/configuration/config-files.md`.
 
+## Roadmap
+
+**Positioning**: Hakimi is an agent for theoretical-physics research, tuned for chain-of-thought (CoT) models. It develops physics algorithm code and gains physical insight through a human-like research workflow backed by the [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) research-memory ledger.
+
+### Done · Product shell baseline
+
+Branding and welcome logo, own `~/.hakimi` home, bidirectional session sharing, own release channel, DeepSeek provider, ChatGPT/OpenAI Codex OAuth (experimental), subagent presets.
+
+### M1 · Product shell hardening (in progress)
+
+- Institutionalize the upstream sync cadence; polish release and CI automation.
+- One-click provider setup for more models, extending the DeepSeek pattern.
+
+### M2 · Research memory integration (depends on AITP M0.6 → M4)
+
+- Adopt the AITP "Hakimi contract": a CLI + files interface — Hakimi owns web retrieval, PDF reading, reasoning, and private caches; AITP owns the research ledger.
+- Integrate through a thin process-boundary bridge (`aitp enter/record/note` tools) plus AITP methodology Skills — never re-implement AITP inside Hakimi.
+- Ship AITP alongside the Hakimi install script; gate the integration behind an experimental flag until it matures.
+- Freeze and archive the old `aitp-research` branch; the research line is rebuilt on the new AITP.
+
+### M3 · Chain-of-thought adaptation
+
+- Deep adaptation for DeepSeek / Kimi reasoning models: thinking management, budgets, and display.
+- A physics-derivation CoT harness: structured hypothesis → derivation → verification chains. Conclusions and evidence land in AITP through its contract; raw reasoning chains stay out of the ledger.
+
+### M4 · Unified research workflow
+
+One methodology — hypothesis → derivation → verification → record — validated across project scales, from large codebases (librpa-class) to quick numerical checks. Physical insight stays uniform; scale changes what is recorded, not how the workflow is structured.
+
+### M5 · Web and mobile
+
+- Thinking-process visualization and research-knowledge retrieval in the web UI.
+- Remote control from a phone: the web mobile shell plus a remotely deployed hakimi server with hardened authentication.
+
+### M6 · Branding and community
+
+Bilingual docs, research use cases, and tutorials.
+
 ## Install
 
 Prebuilt binaries and install scripts are published on the [releases page](https://github.com/bhjia-phys/Hakimi/releases):
