@@ -976,6 +976,13 @@ class OAuthToolkitService implements IOAuthToolkit {
   ): ReturnType<IOAuthToolkit['getManagedUsage']> {
     return this.kimi.getManagedUsage(providerName, options);
   }
+
+  getManagedUserInfo(
+    providerName?: string,
+    options?: Parameters<IOAuthToolkit['getManagedUserInfo']>[1],
+  ): ReturnType<IOAuthToolkit['getManagedUserInfo']> {
+    return this.kimi.getManagedUserInfo(providerName, options);
+  }
 }
 
 function openAICodexRef(

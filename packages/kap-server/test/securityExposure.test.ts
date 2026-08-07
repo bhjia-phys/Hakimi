@@ -86,6 +86,7 @@ describe('server-v2 exposure hardening hooks', () => {
     await writeFile(join(assetsDir, 'index.html'), '<!doctype html><div id="app"></div>');
     await writeFile(join(assetsDir, 'app.js'), 'console.log("app")');
     server = await startServer({
+      hostIdentity: TEST_HOST_IDENTITY,
       host: '0.0.0.0',
       port: 0,
       homeDir: home,

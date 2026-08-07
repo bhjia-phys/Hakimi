@@ -282,7 +282,7 @@ export async function handleDeepSeekAdd(
     };
   }
 
-  const models = { ...(config.models ?? {}) };
+  const models = { ...config.models };
   models[alias] = {
     provider: DEEPSEEK_PROVIDER_ID,
     model,
@@ -756,7 +756,7 @@ async function promptForSecret(prompt: string): Promise<string | undefined> {
     return undefined;
   }
 
-  return await new Promise<string | undefined>((resolve) => {
+  return new Promise<string | undefined>((resolve) => {
     let value = '';
     let done = false;
     const wasRaw = stdin.isRaw;

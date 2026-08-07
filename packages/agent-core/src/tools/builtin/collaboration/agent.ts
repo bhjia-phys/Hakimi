@@ -149,19 +149,10 @@ export class AgentTool implements BuiltinTool<AgentToolInput> {
       subagentTimeoutMs?: number | undefined;
       subagentModelDescription?: string;
       showModelPreferences?: boolean;
-<<<<<<< HEAD
       // Mirrors the `secondary-model` experiment: off (the default), the
       // no-op `model` parameter is stripped from the advertised schema so the
       // secondary-model concept never enters the prompt.
       modelChoiceEnabled?: boolean;
-=======
-      /**
-       * Expose the `model` parameter in the model-facing schema. Defaults to
-       * false so the parent model cannot accidentally override active
-       * `[subagent]` routing while the secondary-model experiment is disabled.
-       */
-      showModelParameter?: boolean | undefined;
->>>>>>> f2baaba8b (fix: keep subagent model routing from being silently bypassed)
     },
   ) {
     const log = options?.log;
@@ -169,18 +160,10 @@ export class AgentTool implements BuiltinTool<AgentToolInput> {
     // `0` is preserved (not normalized): `0 ?? DEFAULT_SUBAGENT_TIMEOUT_MS`
     // stays `0`, and the BackgroundManager arms no timer for it.
     this.subagentTimeoutMs = options?.subagentTimeoutMs;
-<<<<<<< HEAD
     this.parameters =
       options?.modelChoiceEnabled === true
         ? AGENT_TOOL_PARAMETERS
         : AGENT_TOOL_PARAMETERS_NO_MODEL;
-=======
-    this.parameters = toInputJsonSchema(
-      options?.showModelParameter === true
-        ? AgentToolInputSchema
-        : AgentToolInputSchemaWithoutModel,
-    );
->>>>>>> f2baaba8b (fix: keep subagent model routing from being silently bypassed)
     const typeLines = buildSubagentDescriptions(
       subagents,
       options?.showModelPreferences ?? false,

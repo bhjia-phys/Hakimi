@@ -67,6 +67,7 @@ function makeCatalog(workspaceKey: string = WORKSPACE_KEY) {
   const catalog = new SessionAgentProfileCatalogService(
     registry,
     { _serviceBrand: undefined, workspaceKey },
+    { _serviceBrand: undefined, ready: Promise.resolve(), contribution: () => ({ profiles: [] }) },
     stubLog(),
   );
   const contribute = (

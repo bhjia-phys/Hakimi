@@ -25,8 +25,8 @@ describe('cli version helpers', () => {
   it('exposes the recorded upstream Kimi Code baseline', () => {
     expect(getUpstreamBase()).toEqual({
       repository: 'https://github.com/MoonshotAI/kimi-code.git',
-      version: '0.30.0',
-      commit: '37d9bdc5859dccafc82de3e990b28e72cd5ff488',
+      version: '0.34.0',
+      commit: '7cd64766c8eeff30f3de4bd6467870555d9440db',
     });
   });
 
@@ -41,8 +41,8 @@ describe('cli version helpers', () => {
     expect(() =>
       UpstreamBaseSchema.parse({
         repository: 'https://github.com/MoonshotAI/kimi-code.git',
-        version: '0.30.0',
-        commit: '37d9bdc5859dccafc82de3e990b28e72cd5ff488',
+        version: '0.34.0',
+        commit: '7cd64766c8eeff30f3de4bd6467870555d9440db',
         extra: 'leak',
       }),
     ).toThrow();
@@ -53,7 +53,7 @@ describe('cli version helpers', () => {
       UpstreamBaseSchema.parse({
         repository: 'https://github.com/MoonshotAI/kimi-code.git',
         version: '1.2.3garbage',
-        commit: '37d9bdc5859dccafc82de3e990b28e72cd5ff488',
+        commit: '7cd64766c8eeff30f3de4bd6467870555d9440db',
       }),
     ).toThrow();
   });
@@ -62,8 +62,8 @@ describe('cli version helpers', () => {
     expect(() =>
       UpstreamBaseSchema.parse({
         repository: 'https://github.com/MoonshotAI/kimi-code.git',
-        version: '0.30.0',
-        commit: '37d9bdc',
+        version: '0.34.0',
+        commit: '7cd64766',
       }),
     ).toThrow();
   });

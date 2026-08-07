@@ -441,9 +441,9 @@ describe('LocalWebSearchProvider', () => {
       },
     ]);
 
-    const requested = fetchImpl.mock.calls[0]?.[0];
-    expect(String(requested)).toContain('https://search.local/html/');
-    expect(String(requested)).toContain('q=quantum+gravity+algebra');
+    const requested = fetchImpl.mock.calls[0]?.[0] as string | undefined;
+    expect(requested).toContain('https://search.local/html/');
+    expect(requested).toContain('q=quantum+gravity+algebra');
   });
 
   it('falls back to Bing HTML results when the first local search endpoint fails', async () => {
@@ -481,6 +481,8 @@ describe('LocalWebSearchProvider', () => {
     ]);
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(String(fetchImpl.mock.calls[1]?.[0])).toContain('https://bing.local/search');
+    expect(fetchImpl.mock.calls[1]?.[0] as string | undefined).toContain(
+      'https://bing.local/search',
+    );
   });
 });

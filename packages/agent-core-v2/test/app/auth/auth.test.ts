@@ -27,6 +27,7 @@ import {
 } from '#/app/auth/configSection';
 import { IWebSearchProviderService } from '#/app/auth/webSearch/webSearch';
 import { WebSearchProviderService } from '#/app/auth/webSearch/webSearchService';
+import { LocalWebSearchProvider } from '#/app/auth/webSearch/providers/local-web-search';
 import { IAuthLegacyService } from '#/app/authLegacy/authLegacy';
 import { AuthLegacyService } from '#/app/authLegacy/authLegacyService';
 import { IConfigService } from '#/app/config/config';
@@ -921,19 +922,19 @@ describe('WebSearchProviderService', () => {
     return ix.get(IWebSearchProviderService);
   }
 
-  it('returns undefined when the managed provider is not configured', () => {
+  it('falls back to the local provider when the managed provider is not configured', () => {
     providers = { [NON_OAUTH_PROVIDER]: { type: 'openai', apiKey: 'sk-test' } };
-    expect(createService().getWebSearchProvider()).toBeUndefined();
+    expect(createService().getWebSearchProvider()).toBeInstanceOf(LocalWebSearchProvider);
     expect(resolveTokenProvider).not.toHaveBeenCalled();
   });
 
-  it('returns undefined when the managed provider is not an OAuth kimi provider', () => {
+  it('falls back to the local provider when the managed provider is not an OAuth kimi provider', () => {
     providers = { [OAUTH_PROVIDER]: { type: 'kimi', apiKey: 'sk-test' } };
-    expect(createService().getWebSearchProvider()).toBeUndefined();
+    expect(createService().getWebSearchProvider()).toBeInstanceOf(LocalWebSearchProvider);
     expect(resolveTokenProvider).not.toHaveBeenCalled();
   });
 
-  it('returns undefined when the oauth service yields no token provider', () => {
+  it('falls back to the local provider when the oauth service yields no token provider', () => {
     providers = {
       [OAUTH_PROVIDER]: {
         type: 'kimi',
@@ -942,7 +943,7 @@ describe('WebSearchProviderService', () => {
       },
     };
     resolveTokenProvider.mockReturnValue(undefined);
-    expect(createService().getWebSearchProvider()).toBeUndefined();
+    expect(createService().getWebSearchProvider()).toBeInstanceOf(LocalWebSearchProvider);
   });
 
   it('builds a search provider from the managed provider oauth ref', () => {
@@ -1081,9 +1082,9 @@ describe('WebSearchProviderService', () => {
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer access-token');
   });
 
-  it('returns undefined when services.moonshot_search has no baseUrl and no managed oauth', () => {
+  it('falls back to the local provider when services.moonshot_search has no baseUrl and no managed oauth', () => {
     servicesConfig = { moonshotSearch: { apiKey: 'search-key' } };
-    expect(createService().getWebSearchProvider()).toBeUndefined();
+    expect(createService().getWebSearchProvider()).toBeInstanceOf(LocalWebSearchProvider);
     expect(resolveTokenProvider).not.toHaveBeenCalled();
   });
 

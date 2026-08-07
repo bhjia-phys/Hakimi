@@ -1835,6 +1835,8 @@ describe('subagent config section', () => {
       displayModel: 'provider/secondary',
     });
     withRecipe.disposables.dispose();
+  });
+
   it('routes Agent by profile and AgentSwarm through the preset swarm override', async () => {
     const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
     const { config, disposables } = await createConfig(

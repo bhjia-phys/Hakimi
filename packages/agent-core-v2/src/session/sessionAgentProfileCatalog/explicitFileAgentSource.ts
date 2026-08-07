@@ -15,10 +15,17 @@
 
 import { createDecorator, type ServiceIdentifier } from '#/_base/di/instantiation';
 import { join } from 'pathe';
-import { LifecycleScope, ScopeActivation, registerScopedService } from '#/_base/di/scope';
-import type { AgentProfile } from '#/app/agentProfileCatalog/agentProfileCatalog';
+import { LifecycleScope } from '#/app/scopes';
+import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
+import {
+  DEFAULT_AGENT_PROFILE_NAME,
+  type AgentProfile,
+  type AgentProfileContext,
+  type SystemPromptRenderResult,
+} from '#/app/agentProfileCatalog/agentProfileCatalog';
 import type { AgentProfileContribution } from '#/app/agentProfileCatalog/agentProfileContribution';
-import { IUserAgentProfileLoader } from '#/workspace/workspaceAgentProfileLoader/userAgentProfileLoader';
+import { IAgentProfileRegistry } from '#/app/agentProfileCatalog/agentProfileRegistry';
+import { BUILTIN_AGENT_PROFILE_SOURCE_ID } from '#/app/agentProfileCatalog/builtinAgentProfileLoader';
 import { parseAgentFileText } from '#/workspace/workspaceAgentProfileLoader/internal/agentFile';
 import { agentProfileFromFile } from '#/workspace/workspaceAgentProfileLoader/internal/agentProfileFromFile';
 import {
@@ -45,7 +52,7 @@ export class ExplicitFileAgentSource implements IExplicitFileAgentSource {
 
   constructor(
     @ISessionContext private readonly sessionContext: ISessionContext,
-    @IUserAgentProfileLoader private readonly user: IUserAgentProfileLoader,
+    @IAgentProfileRegistry private readonly registry: IAgentProfileRegistry,
     @IHostFileSystem private readonly fs: IHostFileSystem,
   ) {
     this.readyPromise = this.load().then((contribution) => {
@@ -60,6 +67,21 @@ export class ExplicitFileAgentSource implements IExplicitFileAgentSource {
 
   contribution(): AgentProfileContribution {
     return this.contributionData;
+  }
+
+  private builtinBasePrompt(): (context: AgentProfileContext) => SystemPromptRenderResult {
+    const builtinEntry = this.registry
+      .entries()
+      .find((entry) => entry.sourceId === BUILTIN_AGENT_PROFILE_SOURCE_ID);
+    const builtinDefault = builtinEntry?.contribution.profiles.find(
+      (profile) => profile.name === DEFAULT_AGENT_PROFILE_NAME,
+    );
+    return builtinDefault === undefined
+      ? (context) => ({
+          text: '',
+          environment: { cwd: context.cwd ?? '', date: { disclosed: false } },
+        })
+      : (context) => builtinDefault.renderSystemPrompt(context);
   }
 
   private async load(): Promise<AgentProfileContribution> {
@@ -81,7 +103,7 @@ export class ExplicitFileAgentSource implements IExplicitFileAgentSource {
       profiles.push(
         agentProfileFromFile(
           parseAgentFileText({ path: filePath, source: 'explicit', text }),
-          (context) => this.user.getDefaultProfile().renderSystemPrompt(context),
+          (context) => this.builtinBasePrompt()(context),
         ),
       );
     }

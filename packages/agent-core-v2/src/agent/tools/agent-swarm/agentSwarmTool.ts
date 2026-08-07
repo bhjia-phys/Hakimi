@@ -6,19 +6,6 @@
  * session swarm coordinator (`ISessionSwarmService`) and renders the
  * per-subagent XML result. Reads persisted swarm item labels through the
  * Session-scoped coordinator so later `resume_agent_ids` calls relabel
-<<<<<<< HEAD
- * resumed subagents like v1. When the caller has a model bound, the tool
- * resolves the explicit or target-profile model preference up front via
- * `resolveSubagentBinding` (against `IConfigService`, `IFlagService`,
- * `ISessionAgentProfileCatalog`, and the caller's `IAgentProfileService`) and
- * threads it through the swarm tasks; otherwise binding is left to the
- * service, which keeps its own "no model bound" check and inherit-caller
- * fallback. The advertised `model` parameter lists the secondary/primary
- * pair via `buildSubagentModelDescriptions`, suffixing each line with the
- * entry's capability flags resolved through `IModelCatalog`. Swarm mode is
- * entered through `IAgentSwarmService`; the caller's agent id comes from
- * `IAgentScopeContext`. Pure tool — owns no scoped state.
-=======
  * resumed subagents like v1. For item spawns, model precedence is explicit
  * tool `model`, active `[subagent]` route `model`, profile `modelPreference`,
  * configured secondary model, then the caller's model. The resolver keeps an
@@ -30,7 +17,6 @@
  * state.
  * The public contract (input schema, constants, `IAgentSwarmTool`) lives in
  * `./agent-swarm`.
->>>>>>> c71d01db4 (feat(tui): add interactive /preset manager for agent model routing)
  *
  * Registered via the module-level `registerAgentToolService(IAgentSwarmTool,
  * AgentSwarmTool)` at the bottom of this file — the same "import = register"
@@ -67,7 +53,6 @@ import {
 import { SECONDARY_MODEL_FLAG_ID } from '#/session/subagent/flag';
 import {
   AgentSwarmToolInputSchema,
-  AgentSwarmToolInputSchemaWithoutModel,
   IAgentSwarmTool,
   MAX_AGENT_SWARM_SUBAGENTS,
   PROMPT_TEMPLATE_PLACEHOLDER,
@@ -110,12 +95,6 @@ export class AgentSwarmTool implements IAgentSwarmTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'AgentSwarm' as const;
 
-<<<<<<< HEAD
-  get parameters(): Record<string, unknown> {
-    return this.flags.enabled(SECONDARY_MODEL_FLAG_ID)
-      ? AGENT_SWARM_PARAMETERS
-      : AGENT_SWARM_PARAMETERS_NO_MODEL;
-=======
   /**
    * The model-facing parameter schema. The `model` parameter is exposed only
    * while the `secondary-model` experiment is enabled — otherwise the parent
@@ -123,12 +102,9 @@ export class AgentSwarmTool implements IAgentSwarmTool {
    * explicit choice.
    */
   get parameters(): Record<string, unknown> {
-    return toInputJsonSchema(
-      this.flags.enabled(SECONDARY_MODEL_FLAG_ID)
-        ? AgentSwarmToolInputSchema
-        : AgentSwarmToolInputSchemaWithoutModel,
-    );
->>>>>>> f2baaba8b (fix: keep subagent model routing from being silently bypassed)
+    return this.flags.enabled(SECONDARY_MODEL_FLAG_ID)
+      ? AGENT_SWARM_PARAMETERS
+      : AGENT_SWARM_PARAMETERS_NO_MODEL;
   }
 
   private readonly callerAgentId: string;
