@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 
 import type { ClipboardModule } from './clipboard-native';
@@ -124,15 +123,6 @@ export function runCommandAsync(
 
 export function isWaylandSession(env: NodeJS.ProcessEnv): boolean {
   return Boolean(env['WAYLAND_DISPLAY']) || env['XDG_SESSION_TYPE'] === 'wayland';
-}
-
-export function isWSL(env: NodeJS.ProcessEnv): boolean {
-  if (env['WSL_DISTRO_NAME'] !== undefined || env['WSLENV'] !== undefined) return true;
-  try {
-    return /microsoft|wsl/i.test(readFileSync('/proc/version', 'utf-8'));
-  } catch {
-    return false;
-  }
 }
 
 export function isFileLikeNativeFormat(format: string): boolean {

@@ -65,9 +65,16 @@ export interface ServerCliOptions {
   allowedHost?: string[];
 }
 
-export function parseServerOptions(opts: ServerCliOptions): ParsedServerOptions {
+export interface ServerOptionDefaults {
+  host?: string;
+}
+
+export function parseServerOptions(
+  opts: ServerCliOptions,
+  defaults: ServerOptionDefaults = {},
+): ParsedServerOptions {
   return {
-    host: parseHost(opts.host),
+    host: parseHost(opts.host, defaults.host),
     port: parsePort(opts.port, '--port', DEFAULT_SERVER_PORT),
     logLevel: parseLogLevel(opts.logLevel ?? DEFAULT_FOREGROUND_LOG_LEVEL),
     debugEndpoints: opts.debugEndpoints === true,
@@ -87,8 +94,8 @@ export function parseAllowedHostArgs(raw: readonly string[] | undefined): string
     .filter((entry) => entry.length > 0);
 }
 
-function parseHost(raw: string | boolean | undefined): string {
-  if (raw === undefined || raw === false) return DEFAULT_SERVER_HOST;
+function parseHost(raw: string | boolean | undefined, defaultHost?: string): string {
+  if (raw === undefined || raw === false) return defaultHost ?? DEFAULT_SERVER_HOST;
   if (raw === true || raw === '') return DEFAULT_LAN_HOST;
   return raw;
 }

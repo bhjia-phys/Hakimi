@@ -23,6 +23,7 @@ import { basename, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseImageMeta } from '#/utils/image/image-mime';
+import { isWSL } from '#/utils/platform';
 
 import {
   DEFAULT_LIST_TIMEOUT_MS,
@@ -31,7 +32,6 @@ import {
   isFileLikeNativeFormat,
   isSupportedImageMimeType,
   isWaylandSession,
-  isWSL,
   parseTargetList,
   runCommand as runCommandBase,
   safeAvailableFormats,

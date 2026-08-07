@@ -41,7 +41,8 @@ async function serveWebAsset(
 ): Promise<unknown> {
   const requestUrl = new URL(req.url, 'http://kimi-web.local');
   if (isReservedPath(requestUrl.pathname)) {
-    return reply.callNotFound();
+    reply.callNotFound();
+    return;
   }
 
   const filePath = await resolveStaticFile(assetsDir, requestUrl.pathname);
@@ -54,10 +55,16 @@ async function serveWebAsset(
     return reply.code(404).type('text/plain; charset=utf-8').send('Not found');
   }
 
-  return reply
+  const response = reply
     .type(mimeType(filePath))
-    .header('Content-Length', String(fileInfo.size))
-    .send(createReadStream(filePath));
+    .header('Content-Length', String(fileInfo.size));
+  if (extname(filePath) === '.html') {
+    // The SPA document carries security headers and chooses the current hashed
+    // asset bundle. Never reuse an older document after a server upgrade; static
+    // assets remain cacheable under the browser's normal rules.
+    response.header('Cache-Control', 'no-store');
+  }
+  return response.send(createReadStream(filePath));
 }
 
 async function resolveStaticFile(

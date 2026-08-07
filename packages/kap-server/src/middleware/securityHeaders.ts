@@ -9,8 +9,11 @@
  * Headers:
  *   - `X-Content-Type-Options: nosniff` — stop MIME sniffing.
  *   - `Referrer-Policy: no-referrer` — never leak the URL to third parties.
- *   - `Content-Security-Policy` — the bundled Web UI is same-origin, so
- *     `default-src 'self'` covers scripts, styles, and connections.
+ *   - `Content-Security-Policy` — the bundled Web UI is same-origin.
+ *     `connect-src` explicitly includes `ws:` / `wss:` because browsers do not
+ *     consistently match a page's HTTP(S) `'self'` source to its WebSocket
+ *     counterpart; without it, non-loopback Web UI binds can submit prompts over
+ *     REST but never receive the streamed transcript.
  *     `img-src` additionally allows `data:` (persisted base64 images) and
  *     `blob:` (local attachment previews, authenticated media — #1672);
  *     `font-src` additionally allows `data:` (KaTeX and the Inter /
@@ -41,7 +44,7 @@ export interface SecurityHeadersOptions {
 
 const HSTS_VALUE = 'max-age=31536000';
 const CONTENT_SECURITY_POLICY =
-  "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'self'";
+  "default-src 'self'; connect-src 'self' ws: wss:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'self'";
 
 /**
  * Build the `onSend` hook. Returns the payload unchanged so Fastify continues
@@ -54,7 +57,7 @@ export function createSecurityHeadersHook(
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'no-referrer');
     reply.header('Content-Security-Policy', CONTENT_SECURITY_POLICY);
-    if (opts.tls === true) {
+    if (opts.tls) {
       reply.header('Strict-Transport-Security', HSTS_VALUE);
     }
     return payload;
