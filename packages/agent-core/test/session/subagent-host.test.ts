@@ -1297,6 +1297,33 @@ describe('SessionSubagentHost', () => {
       expect(child.agent.config.modelAlias).toBe(parent.agent.config.modelAlias);
     });
 
+    it('fails an explicit model: secondary choice when no secondary model is configured', async () => {
+      const parent = testAgent({ initialConfig: withSecondaryModels() });
+      parent.configure();
+      parent.agent.config.update({ modelAlias: 'primary-model', thinkingEffort: 'off' });
+      const child = testAgent({ initialConfig: withSecondaryModels() });
+      child.configure({ tools: ['Read'] });
+      child.mockNextResponse({ type: 'text', text: LONG_SUMMARY });
+
+      const session = fakeSession(parent.agent, child.agent, {}, {
+        config: { providers: {} },
+        experimentalFlags: secondaryFlags(),
+      });
+      const host = new SessionSubagentHost(session, 'main');
+
+      const handle = await host.spawn({
+        profileName: 'coder',
+        modelChoice: 'secondary',
+        parentToolCallId: 'call_agent',
+        prompt: 'Do work',
+        description: 'Do work',
+        runInBackground: false,
+        signal,
+      });
+
+      await expect(handle.completion).rejects.toThrow(/no secondary model is available/);
+    });
+
     it('inherits the parent model for an explicit model: primary choice', async () => {
       const { parent, child } = await spawnChild({
         experimentalFlags: secondaryFlags(),

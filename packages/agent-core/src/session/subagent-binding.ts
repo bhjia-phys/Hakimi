@@ -53,6 +53,16 @@ export function resolveSubagentBinding(
   requested?: SubagentModelChoice,
 ): SubagentModelBinding {
   const secondary = resolveSecondaryModel(config, flags);
+  // An explicit "secondary" request must never silently degrade to the
+  // caller's model: the fallback is only for the implicit default path.
+  if (requested === 'secondary' && secondary?.model === undefined) {
+    throw new Error(
+      'model: "secondary" was requested but no secondary model is available — ' +
+        'configure [secondary_model].model (or the KIMI_SECONDARY_MODEL env var) and ' +
+        'enable the secondary-model experiment (KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL, ' +
+        'or [experimental] secondary-model = true).',
+    );
+  }
   if (requested !== 'primary' && secondary?.model !== undefined) {
     return {
       modelAlias:

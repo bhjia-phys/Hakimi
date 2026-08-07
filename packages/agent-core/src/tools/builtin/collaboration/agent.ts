@@ -40,52 +40,73 @@ import AGENT_DESCRIPTION_BASE from './agent.md?raw';
 
 // ── AgentTool input ──────────────────────────────────────────────────
 
+/**
+ * The `model` parameter of the Agent tool — the per-spawn secondary/primary
+ * choice. Exposed in the model-facing parameters only while the
+ * `secondary-model` experiment is enabled (see `showModelParameter` on
+ * {@link AgentTool}); otherwise the parent model cannot accidentally override
+ * active `[subagent]` routing.
+ */
+export const AGENT_MODEL_CHOICE_DESCRIPTION =
+  'Model for the new subagent: "secondary" uses the configured secondary model (fails with an error if none is configured or the experiment is disabled), "primary" uses the model you are running on. Only applies when spawning a new agent — a resumed agent keeps its bound model.';
+
+const AgentToolInputModelSchema = z.object({
+  model: z.enum(['primary', 'secondary']).optional().describe(AGENT_MODEL_CHOICE_DESCRIPTION),
+});
+
+const AgentToolInputBaseSchema = z.object({
+  prompt: z.string().describe('Full task prompt for the subagent'),
+  description: z.string().describe('Short task description (3-5 words) for UI display'),
+  subagent_type: z
+    .string()
+    .optional()
+    .describe(
+      'One of the available agent types (see "Available agent types" in this tool description). Defaults to "coder" when omitted.',
+    ),
+  resume: z
+    .string()
+    .optional()
+    .describe(
+      'Optional agent ID to resume instead of creating a new instance. When set, do not also pass subagent_type — the resumed agent keeps its own type, and supplying both is rejected.',
+    ),
+  run_in_background: z
+    .boolean()
+    .optional()
+    .describe(
+      'If true, return immediately without waiting for completion. Prefer false unless the task can run independently and there is a clear benefit to not waiting.',
+    ),
+});
+
+function normalizeAgentToolInput(input: unknown): unknown {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return input;
+  }
+  const record = input as Record<string, unknown>;
+  const normalized = { ...record };
+  const hasResumeId =
+    typeof normalized['resume'] === 'string' && normalized['resume'].trim().length > 0;
+  const hasSubagentType =
+    typeof normalized['subagent_type'] === 'string' && normalized['subagent_type'].length > 0;
+  if (!hasSubagentType && !hasResumeId) {
+    normalized['subagent_type'] = 'coder';
+  } else if (!hasSubagentType) {
+    delete normalized['subagent_type'];
+  }
+  return normalized;
+}
+
 export const AgentToolInputSchema = z.preprocess(
-  (input) => {
-    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-      return input;
-    }
-    const record = input as Record<string, unknown>;
-    const normalized = { ...record };
-    const hasResumeId =
-      typeof normalized['resume'] === 'string' && normalized['resume'].trim().length > 0;
-    const hasSubagentType =
-      typeof normalized['subagent_type'] === 'string' && normalized['subagent_type'].length > 0;
-    if (!hasSubagentType && !hasResumeId) {
-      normalized['subagent_type'] = 'coder';
-    } else if (!hasSubagentType) {
-      delete normalized['subagent_type'];
-    }
-    return normalized;
-  },
-  z.object({
-    prompt: z.string().describe('Full task prompt for the subagent'),
-    description: z.string().describe('Short task description (3-5 words) for UI display'),
-    subagent_type: z
-      .string()
-      .optional()
-      .describe(
-        'One of the available agent types (see "Available agent types" in this tool description). Defaults to "coder" when omitted.',
-      ),
-    model: z
-      .enum(['primary', 'secondary'])
-      .optional()
-      .describe(
-        'Model for the new subagent: "secondary" uses the configured secondary model (the default when one is set), "primary" uses the model you are running on. Only applies when spawning a new agent — a resumed agent keeps its bound model.',
-      ),
-    resume: z
-      .string()
-      .optional()
-      .describe(
-        'Optional agent ID to resume instead of creating a new instance. When set, do not also pass subagent_type — the resumed agent keeps its own type, and supplying both is rejected.',
-      ),
-    run_in_background: z
-      .boolean()
-      .optional()
-      .describe(
-        'If true, return immediately without waiting for completion. Prefer false unless the task can run independently and there is a clear benefit to not waiting.',
-      ),
-  }),
+  normalizeAgentToolInput,
+  AgentToolInputBaseSchema.extend(AgentToolInputModelSchema.shape),
+);
+
+/**
+ * The Agent tool input without the `model` parameter — exposed while the
+ * secondary-model experiment is disabled.
+ */
+export const AgentToolInputSchemaWithoutModel = z.preprocess(
+  normalizeAgentToolInput,
+  AgentToolInputBaseSchema,
 );
 
 export type AgentToolInput = z.infer<typeof AgentToolInputSchema>;
@@ -128,10 +149,19 @@ export class AgentTool implements BuiltinTool<AgentToolInput> {
       subagentTimeoutMs?: number | undefined;
       subagentModelDescription?: string;
       showModelPreferences?: boolean;
+<<<<<<< HEAD
       // Mirrors the `secondary-model` experiment: off (the default), the
       // no-op `model` parameter is stripped from the advertised schema so the
       // secondary-model concept never enters the prompt.
       modelChoiceEnabled?: boolean;
+=======
+      /**
+       * Expose the `model` parameter in the model-facing schema. Defaults to
+       * false so the parent model cannot accidentally override active
+       * `[subagent]` routing while the secondary-model experiment is disabled.
+       */
+      showModelParameter?: boolean | undefined;
+>>>>>>> f2baaba8b (fix: keep subagent model routing from being silently bypassed)
     },
   ) {
     const log = options?.log;
@@ -139,10 +169,18 @@ export class AgentTool implements BuiltinTool<AgentToolInput> {
     // `0` is preserved (not normalized): `0 ?? DEFAULT_SUBAGENT_TIMEOUT_MS`
     // stays `0`, and the BackgroundManager arms no timer for it.
     this.subagentTimeoutMs = options?.subagentTimeoutMs;
+<<<<<<< HEAD
     this.parameters =
       options?.modelChoiceEnabled === true
         ? AGENT_TOOL_PARAMETERS
         : AGENT_TOOL_PARAMETERS_NO_MODEL;
+=======
+    this.parameters = toInputJsonSchema(
+      options?.showModelParameter === true
+        ? AgentToolInputSchema
+        : AgentToolInputSchemaWithoutModel,
+    );
+>>>>>>> f2baaba8b (fix: keep subagent model routing from being silently bypassed)
     const typeLines = buildSubagentDescriptions(
       subagents,
       options?.showModelPreferences ?? false,

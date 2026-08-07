@@ -1738,11 +1738,11 @@ describe('subagent config section', () => {
       thinking: 'medium',
       displayModel: 'provider/main',
     });
-    expect(resolveSubagentBinding(noModel.config, secondaryModelFlags(), own, 'secondary')).toEqual({
-      model: 'provider/main',
-      thinking: 'medium',
-      displayModel: 'provider/main',
-    });
+    // An explicit "secondary" request with no configured secondary model must
+    // fail loudly instead of silently degrading to the caller's model.
+    expect(() =>
+      resolveSubagentBinding(noModel.config, secondaryModelFlags(), own, 'secondary'),
+    ).toThrow(/no secondary model is available/);
     noModel.disposables.dispose();
 
     const withModel = await createConfig({}, '[secondary_model]\nmodel = "provider/secondary"\n');
@@ -1798,6 +1798,12 @@ describe('subagent config section', () => {
       thinking: 'medium',
       displayModel: 'provider/main',
     });
+
+    // The explicit request is rejected the same way, even though a
+    // [secondary_model] section exists — the experiment gate is off.
+    expect(() =>
+      resolveSubagentBinding(config, secondaryModelFlags(false), own, 'secondary'),
+    ).toThrow(/no secondary model is available/);
 
     disposables.dispose();
   });
@@ -1966,7 +1972,6 @@ describe('subagent config section', () => {
     expect(onDisk).toContain('thinking_effort = "low"');
 
     disposables.dispose();
->>>>>>> c71d01db4 (feat(tui): add interactive /preset manager for agent model routing)
   });
 
   it('preserves the coded error contract when adding secondary-model guidance', () => {
