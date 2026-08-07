@@ -848,7 +848,11 @@ export class ToolManager {
               log: this.agent.log,
               subagentTimeoutMs: resolveSubagentTimeoutMs(this.agent.kimiConfig?.subagent?.timeoutMs),
               showModelPreferences: this.agent.experimentalFlags.enabled('secondary-model'),
+<<<<<<< HEAD
               modelChoiceEnabled: this.agent.experimentalFlags.enabled('secondary-model'),
+=======
+              showModelParameter: this.agent.experimentalFlags.enabled('secondary-model'),
+>>>>>>> f2baaba8b (fix: keep subagent model routing from being silently bypassed)
               subagentModelDescription: buildSubagentModelDescriptions(
                 this.agent.kimiConfig,
                 this.agent.experimentalFlags,

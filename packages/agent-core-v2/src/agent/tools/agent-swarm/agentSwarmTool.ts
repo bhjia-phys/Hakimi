@@ -67,6 +67,7 @@ import {
 import { SECONDARY_MODEL_FLAG_ID } from '#/session/subagent/flag';
 import {
   AgentSwarmToolInputSchema,
+  AgentSwarmToolInputSchemaWithoutModel,
   IAgentSwarmTool,
   MAX_AGENT_SWARM_SUBAGENTS,
   PROMPT_TEMPLATE_PLACEHOLDER,
@@ -109,10 +110,25 @@ export class AgentSwarmTool implements IAgentSwarmTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'AgentSwarm' as const;
 
+<<<<<<< HEAD
   get parameters(): Record<string, unknown> {
     return this.flags.enabled(SECONDARY_MODEL_FLAG_ID)
       ? AGENT_SWARM_PARAMETERS
       : AGENT_SWARM_PARAMETERS_NO_MODEL;
+=======
+  /**
+   * The model-facing parameter schema. The `model` parameter is exposed only
+   * while the `secondary-model` experiment is enabled — otherwise the parent
+   * model cannot accidentally override active `[subagent]` routing with an
+   * explicit choice.
+   */
+  get parameters(): Record<string, unknown> {
+    return toInputJsonSchema(
+      this.flags.enabled(SECONDARY_MODEL_FLAG_ID)
+        ? AgentSwarmToolInputSchema
+        : AgentSwarmToolInputSchemaWithoutModel,
+    );
+>>>>>>> f2baaba8b (fix: keep subagent model routing from being silently bypassed)
   }
 
   private readonly callerAgentId: string;

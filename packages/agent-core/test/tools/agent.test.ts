@@ -136,10 +136,28 @@ describe('AgentTool', () => {
     expect(tool.description).toContain('Default to a foreground subagent');
   });
 
+<<<<<<< HEAD
   it('exposes a primary/secondary model parameter in the JSON schema when the experiment is enabled', () => {
+=======
+  it('hides the model parameter in the JSON schema by default', () => {
+>>>>>>> f2baaba8b (fix: keep subagent model routing from being silently bypassed)
     const host = mockSubagentHost({ spawn: vi.fn() });
     const tool = agentTool(host, createBackgroundManager().manager, undefined, {
       modelChoiceEnabled: true,
+    });
+    const properties = (
+      tool.parameters as {
+        properties: Record<string, { description?: string; enum?: string[] }>;
+      }
+    ).properties;
+
+    expect(properties).not.toHaveProperty('model');
+  });
+
+  it('exposes a primary/secondary model parameter in the JSON schema when enabled', () => {
+    const host = mockSubagentHost({ spawn: vi.fn() });
+    const tool = agentTool(host, createBackgroundManager().manager, undefined, {
+      showModelParameter: true,
     });
     const properties = (
       tool.parameters as {

@@ -839,6 +839,25 @@ describe('AgentSwarmTool', () => {
     );
   });
 
+  it('fails the swarm when "secondary" is requested without a secondary model', async () => {
+    const host = mockSwarmHost();
+    const tool = new AgentSwarmTool(host.swarmService, makeAgentScopeContext({ agentId: host.callerAgentId, agentScope: '' }), mockSwarmMode(), stubConfig(), stubFlag(true), stubSwarmCatalog(), stubCallerProfile({ modelAlias: 'main-model', thinkingLevel: 'high' }));
+
+    const result = await executeTool(
+      tool,
+      context({
+        description: 'Review files',
+        prompt_template: 'Review {{item}}',
+        items: ['src/a.ts', 'src/b.ts'],
+        model: 'secondary',
+      }),
+    );
+
+    expect(result.output).toContain('no secondary model is available');
+    expect(result.isError).toBe(true);
+    expect(host.swarmService.run).not.toHaveBeenCalled();
+  });
+
   it('lets the tool call opt back into the primary model', async () => {
     const host = mockSwarmHost();
     const secondaryCoder: AgentProfile = normalizeAgentProfile({

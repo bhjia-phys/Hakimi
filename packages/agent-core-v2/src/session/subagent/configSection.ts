@@ -16,16 +16,20 @@
  * configured secondary model > the caller's model. When explicit, the tool
  * choice remains the base model while route `thinkingEffort` still applies as
  * a field-level override; without it, route model resolution is unchanged.
- * When the secondary-model experiment is enabled and configured, it supplies
- * the default instead of the caller's model. A recipe with patch fields binds
- * the synthesized derived entry (`SECONDARY_DERIVED_MODEL_ID`); a pointer-only
- * recipe binds the pointed entry directly. `default_effort` is passed as the
- * explicit subagent thinking; without it the subagent resolves thinking
- * naturally (global thinking config → the bound model's default effort)
- * rather than inheriting the caller's level. An active preset then overrides
- * Agent by profile; AgentSwarm resolves `preset.swarm > preset.<profile> >
- * agents.swarm > agents.<profile>` field-by-field. Both tools resolve spawn
- * bindings through `resolveSubagentBinding`, advertise the base pair via
+ * An explicit `"secondary"` request with no available secondary model (unset
+ * `[secondary_model].model` or the experiment disabled) fails loudly instead
+ * of silently falling back to the caller's model — only the implicit default
+ * path degrades. When the secondary-model experiment is enabled and
+ * configured, it supplies the default instead of the caller's model. A recipe
+ * with patch fields binds the synthesized derived entry
+ * (`SECONDARY_DERIVED_MODEL_ID`); a pointer-only recipe binds the pointed
+ * entry directly. `default_effort` is passed as the explicit subagent
+ * thinking; without it the subagent resolves thinking naturally (global
+ * thinking config → the bound model's default effort) rather than inheriting
+ * the caller's level. An active preset then overrides Agent by profile;
+ * AgentSwarm resolves `preset.swarm > preset.<profile> > agents.swarm >
+ * agents.<profile>` field-by-field. Both tools resolve spawn bindings through
+ * `resolveSubagentBinding`, advertise the base pair via
  * `buildSubagentModelDescriptions` (each line suffixed with the entry's
  * resolved capability flags, so the parent can route multimodal or
  * thinking-heavy subagent tasks instead of guessing from the model id),
