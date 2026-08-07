@@ -51,6 +51,7 @@ describe('createSecurityHeadersHook', () => {
     const styleSrc = directives.get('style-src');
     expect(styleSrc).toContain("'self'");
     expect(styleSrc).toContain("'unsafe-inline'");
+    expect(directives.get('connect-src')).toEqual(["'self'", 'ws:', 'wss:']);
     // Assert the EFFECTIVE script policy — script-src, falling back to
     // default-src when absent — rather than matching an exact substring, so
     // regressions like default-src gaining 'unsafe-inline' (which would

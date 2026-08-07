@@ -8,7 +8,7 @@
  */
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, type NetworkInterfaceInfo } from 'node:os';
 import { join } from 'node:path';
 
 import chalk, { Chalk } from 'chalk';
@@ -19,6 +19,10 @@ import { registerWebCommand } from '#/cli/sub/web';
 import type { LegacyKillDeps } from '#/cli/sub/web/legacy-kill';
 import type { WebCommandDeps } from '#/cli/sub/web/run';
 import type { ParsedServerOptions } from '#/cli/sub/web/shared';
+import {
+  parseDefaultRouteInterface,
+  resolveWslNatHost,
+} from '#/cli/sub/web/wsl-network';
 import { darkColors } from '#/tui/theme/colors';
 
 vi.mock('node:child_process', async (importOriginal) => {
@@ -76,6 +80,17 @@ function makeIo(): {
       },
     },
     readStdout: () => out,
+  };
+}
+
+function ipv4(address: string): NetworkInterfaceInfo {
+  return {
+    address,
+    netmask: '255.255.240.0',
+    family: 'IPv4',
+    mac: '00:00:00:00:00:00',
+    internal: false,
+    cidr: `${address}/20`,
   };
 }
 
@@ -143,6 +158,59 @@ describe('kimi web', () => {
       expect(stderr).toContain('0.28.0');
       expect(stderr).toContain('next major version');
     }
+  });
+});
+
+describe('WSL browser host resolution', () => {
+  const routeTable = [
+    'Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT',
+    'eth0 00000000 01001EAC 0003 0 0 0 00000000 0 0 0',
+  ].join('\n');
+  const interfaces = { eth0: [ipv4('172.30.98.229')] };
+
+  it('finds the interface carrying the default route', () => {
+    expect(parseDefaultRouteInterface(routeTable)).toBe('eth0');
+    expect(
+      parseDefaultRouteInterface(
+        'eth0 0008A8C0 00000000 0001 0 0 0 00FFFFFF 0 0 0',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('returns the WSL interface IPv4 in NAT mode', () => {
+    expect(
+      resolveWslNatHost({
+        env: { WSL_DISTRO_NAME: 'Ubuntu' },
+        readNetworkingMode: () => 'nat',
+        readFile: () => routeTable,
+        interfaces,
+      }),
+    ).toBe('172.30.98.229');
+  });
+
+  it.each(['mirrored', 'bridged', 'wsl1', 'none'])(
+    'keeps loopback behavior in %s mode',
+    (mode) => {
+      expect(
+        resolveWslNatHost({
+          env: { WSL_DISTRO_NAME: 'Ubuntu' },
+          readNetworkingMode: () => mode,
+          readFile: () => routeTable,
+          interfaces,
+        }),
+      ).toBeUndefined();
+    },
+  );
+
+  it('keeps loopback behavior when wslinfo is unavailable', () => {
+    expect(
+      resolveWslNatHost({
+        env: { WSL_DISTRO_NAME: 'Ubuntu' },
+        readNetworkingMode: () => undefined,
+        readFile: () => routeTable,
+        interfaces,
+      }),
+    ).toBeUndefined();
   });
 });
 
@@ -442,6 +510,51 @@ describe('`kimi web` option threading', () => {
       insecureNoTls: true,
       logLevel: 'silent',
     });
+  });
+
+  it('uses the WSL2 NAT host when it will open the browser', async () => {
+    const { handleWebCommand } = await import('#/cli/sub/web/run');
+    const { runner, calls } = makeRunner('http://172.30.98.229:58627');
+    const { stdout, stderr } = makeIo();
+    const openUrl = vi.fn();
+
+    await handleWebCommand(
+      { port: '58627', open: true },
+      {
+        startServerForeground: runner,
+        resolveBrowserHost: () => '172.30.98.229',
+        resolveToken: () => 'tok-wsl',
+        openUrl,
+        stdout,
+        stderr,
+      },
+    );
+
+    expect(calls.options).toMatchObject({ host: '172.30.98.229' });
+    expect(openUrl).toHaveBeenCalledWith(
+      'http://172.30.98.229:58627/#token=tok-wsl',
+    );
+  });
+
+  it.each([
+    { name: 'an explicit host', opts: { host: '127.0.0.1', open: true } },
+    { name: '--no-open', opts: { open: false } },
+  ])('does not resolve a WSL browser host with $name', async ({ opts }) => {
+    const { handleWebCommand } = await import('#/cli/sub/web/run');
+    const { runner, calls } = makeRunner();
+    const { stdout, stderr } = makeIo();
+    const resolveBrowserHost = vi.fn(() => '172.30.98.229');
+
+    await handleWebCommand(opts, {
+      startServerForeground: runner,
+      resolveBrowserHost,
+      openUrl: vi.fn(),
+      stdout,
+      stderr,
+    });
+
+    expect(resolveBrowserHost).not.toHaveBeenCalled();
+    expect(calls.options).toMatchObject({ host: '127.0.0.1' });
   });
 
   it('maps a bare --host to the default LAN host', async () => {

@@ -46,6 +46,7 @@ import {
   type ParsedServerOptions,
   type ServerCliOptions,
 } from './shared';
+import { resolveWslNatHost } from './wsl-network';
 
 const WEB_ASSETS_DIR = 'dist-web';
 
@@ -83,6 +84,8 @@ export interface WebCommandDeps {
    * it simply print/open the plain origin.
    */
   resolveToken?: () => string | undefined;
+  /** WSL2 NAT address used only when this command will open a browser. */
+  resolveBrowserHost?: () => string | undefined;
   /**
    * Non-loopback interface addresses to display for a wildcard bind. Defaults
    * to the machine's own interfaces (`listNetworkAddresses()`); inject a fixed
@@ -114,7 +117,7 @@ export function buildWebCommand(cmd: Command): Command {
     )
     .option(
       '--host [host]',
-      `Bind host. Omit to bind ${DEFAULT_SERVER_HOST} (this machine only); pass --host to bind ${DEFAULT_LAN_HOST} (all interfaces), or --host <host> for a specific host. The bearer token is printed at startup.`,
+      `Bind host. Omit to bind ${DEFAULT_SERVER_HOST} (or the WSL2 NAT address when opening a Windows browser); pass --host to bind ${DEFAULT_LAN_HOST} (all interfaces), or --host <host> for a specific host. The bearer token is printed at startup.`,
     )
     .option(
       '--allowed-host <host...>',
@@ -164,7 +167,11 @@ export async function handleWebCommand(
   opts: WebCliOptions,
   deps: WebCommandDeps = DEFAULT_WEB_COMMAND_DEPS,
 ): Promise<void> {
-  const parsed = parseServerOptions(opts);
+  const browserHost =
+    opts.open === true && (opts.host === undefined || opts.host === false)
+      ? deps.resolveBrowserHost?.()
+      : undefined;
+  const parsed = parseServerOptions(opts, { host: browserHost });
   const run = deps.startServerForeground ?? startServerForeground;
   await run(parsed, {
     onReady: (origin) => {
@@ -273,6 +280,10 @@ async function runServerInProcess(
     );
   }
   const v2 = await startServer({
+    // Hakimi defaults to ~/.hakimi, while kap-server defaults to ~/.kimi-code.
+    // Pass the resolved host data directory explicitly so the server writes the
+    // same token that the ready hook reads and carries in the browser URL.
+    homeDir: getDataDir(),
     host: options.host,
     port: options.port,
     // Report the CLI's product version as `server_version` (/meta, web UI)
@@ -427,6 +438,7 @@ export function formatReadyBanner(
 const DEFAULT_WEB_COMMAND_DEPS: WebCommandDeps = {
   startServerForeground,
   openUrl: defaultOpenUrl,
+  resolveBrowserHost: resolveWslNatHost,
   resolveToken: () => {
     // Read the persistent `<homeDir>/server.token` written on first boot
     // (M5.1). Best-effort: a missing/older server yields undefined and the

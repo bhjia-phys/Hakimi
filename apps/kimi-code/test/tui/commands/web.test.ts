@@ -7,6 +7,7 @@ import { handleWebCommand, webSessionUrl } from '#/tui/commands/web';
 const mocks = vi.hoisted(() => ({
   startServerForeground: vi.fn(),
   tryResolveServerToken: vi.fn(),
+  resolveWslNatHost: vi.fn(),
   getDataDir: vi.fn(() => '/tmp/kimi-home'),
   openUrl: vi.fn(),
 }));
@@ -22,6 +23,11 @@ vi.mock('#/cli/sub/web/shared', async (importOriginal) => {
     ...actual,
     tryResolveServerToken: mocks.tryResolveServerToken,
   };
+});
+
+vi.mock('#/cli/sub/web/wsl-network', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('#/cli/sub/web/wsl-network')>();
+  return { ...actual, resolveWslNatHost: mocks.resolveWslNatHost };
 });
 
 vi.mock('#/utils/open-url', async (importOriginal) => {
@@ -68,6 +74,7 @@ describe('handleWebCommand', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getDataDir.mockReturnValue('/tmp/kimi-home');
+    mocks.resolveWslNatHost.mockReturnValue(undefined);
   });
 
   it('shows an error and does nothing when there is no active session', async () => {
@@ -116,6 +123,33 @@ describe('handleWebCommand', () => {
     expect(written).toContain('Kimi server ready');
     expect(written).toContain('Ctrl+C');
     expect(written).toContain('/sessions/ses-1');
+    writeSpy.mockRestore();
+  });
+
+  it('uses a WSL2 NAT host for the foreground handoff', async () => {
+    mocks.resolveWslNatHost.mockReturnValue('172.30.98.229');
+    mocks.tryResolveServerToken.mockReturnValue('tok-wsl');
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    mocks.startServerForeground.mockImplementation(
+      async (_options: unknown, hooks: { onReady?: (origin: string) => void }) => {
+        hooks.onReady?.('http://172.30.98.229:58627');
+      },
+    );
+    const host = makeHost();
+
+    await handleWebCommand(host);
+    const task = host.setExitForegroundTask.mock.calls[0]![0] as (
+      exitCode: number,
+    ) => Promise<void>;
+    await task(0);
+
+    expect(mocks.startServerForeground).toHaveBeenCalledWith(
+      expect.objectContaining({ host: '172.30.98.229' }),
+      expect.any(Object),
+    );
+    expect(mocks.openUrl).toHaveBeenCalledWith(
+      'http://172.30.98.229:58627/sessions/ses-1#token=tok-wsl',
+    );
     writeSpy.mockRestore();
   });
 });

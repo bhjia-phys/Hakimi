@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import { splitTokenFragment } from '#/cli/sub/web/access-urls';
 import { formatReadyBanner, startServerForeground } from '#/cli/sub/web/run';
 import { parseServerOptions, tryResolveServerToken } from '#/cli/sub/web/shared';
+import { resolveWslNatHost } from '#/cli/sub/web/wsl-network';
 import { openUrl } from '#/utils/open-url';
 import { getDataDir } from '#/utils/paths';
 
@@ -39,7 +40,7 @@ export async function handleWebCommand(host: SlashCommandHost): Promise<void> {
  */
 function startNewServerAfterExit(host: SlashCommandHost, sessionId: string): void {
   host.setExitForegroundTask(async () => {
-    const options = parseServerOptions({});
+    const options = parseServerOptions({}, { host: resolveWslNatHost() });
     try {
       await startServerForeground(options, {
         onReady: (origin) => {
