@@ -129,7 +129,7 @@ export class KimiAuthFacade {
       userAgent:
         options.identity === undefined
           ? 'hakimi'
-          : `${options.identity.userAgentProduct}/${options.identity.version}`,
+          : `${options.identity.productName}/${options.identity.version}`,
       onRefresh: options.onRefresh,
     });
   }

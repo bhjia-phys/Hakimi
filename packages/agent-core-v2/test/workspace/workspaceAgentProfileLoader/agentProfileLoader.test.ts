@@ -295,7 +295,12 @@ function makeStack(fixture: Fixture, opts?: StackOptions) {
     _serviceBrand: undefined,
     workspaceKey: workspaceContext.workspaceId,
   };
-  const catalog = new SessionAgentProfileCatalogService(registry, seed, log);
+  const catalog = new SessionAgentProfileCatalogService(
+    registry,
+    seed,
+    { _serviceBrand: undefined, ready: Promise.resolve(), contribution: () => ({ profiles: [] }) },
+    log,
+  );
 
   return {
     registry,

@@ -104,7 +104,6 @@ import {
   RESUMED_LABEL,
   SUBAGENT_STOPPED_MESSAGE,
   SubagentToolInputSchema,
-  SubagentToolInputSchemaWithoutModel,
   USER_INTERRUPTED_SUBAGENT_MESSAGE,
   type SubagentToolInput,
 } from './agent';
@@ -121,12 +120,6 @@ export class SubagentTool implements ISubagentTool {
   declare readonly _serviceBrand: undefined;
   readonly name: string = 'Agent';
 
-<<<<<<< HEAD
-  get parameters(): Record<string, unknown> {
-    return this.flags.enabled(SECONDARY_MODEL_FLAG_ID)
-      ? SUBAGENT_TOOL_PARAMETERS
-      : SUBAGENT_TOOL_PARAMETERS_NO_MODEL;
-=======
   /**
    * The model-facing parameter schema. The `model` parameter is exposed only
    * while the `secondary-model` experiment is enabled — otherwise the parent
@@ -134,12 +127,9 @@ export class SubagentTool implements ISubagentTool {
    * explicit choice.
    */
   get parameters(): Record<string, unknown> {
-    return toInputJsonSchema(
-      this.flags.enabled(SECONDARY_MODEL_FLAG_ID)
-        ? SubagentToolInputSchema
-        : SubagentToolInputSchemaWithoutModel,
-    );
->>>>>>> f2baaba8b (fix: keep subagent model routing from being silently bypassed)
+    return this.flags.enabled(SECONDARY_MODEL_FLAG_ID)
+      ? SUBAGENT_TOOL_PARAMETERS
+      : SUBAGENT_TOOL_PARAMETERS_NO_MODEL;
   }
 
   private readonly callerAgentId: string;

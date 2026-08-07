@@ -81,8 +81,10 @@ export class SessionAgentProfileCatalogService
     );
     // The per-session explicit files are copied into the session dir at
     // create time; fold them into the projection once the source's first
-    // load resolves (an invalid `--agent-file` rejects `ready`).
+    // load resolves (an invalid `--agent-file` rejects `ready`). No event
+    // when there is nothing to fold in.
     void this.explicit.ready.then(() => {
+      if (this.explicit.contribution().profiles.length === 0) return;
       this.reproject();
       this.onDidChangeEmitter.fire('explicit');
     });

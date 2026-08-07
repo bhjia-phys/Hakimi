@@ -114,33 +114,18 @@ export class AgentSwarmTool implements BuiltinTool<AgentSwarmToolInput> {
     // SubagentBatch arms no timer for non-positive timeouts.
     private readonly subagentTimeoutMs?: number,
     subagentModelDescription?: string,
-<<<<<<< HEAD
     // Mirrors the `secondary-model` experiment: off (the default), the no-op
     // `model` parameter is stripped from the advertised schema so the
     // secondary-model concept never enters the prompt.
     modelChoiceEnabled = false,
-=======
-    /**
-     * Expose the `model` parameter in the model-facing schema. Defaults to
-     * false so the parent model cannot accidentally override active
-     * `[subagent]` routing while the secondary-model experiment is disabled.
-     */
-    showModelParameter = false,
->>>>>>> f2baaba8b (fix: keep subagent model routing from being silently bypassed)
   ) {
     this.description =
       subagentModelDescription === undefined
         ? AGENT_SWARM_DESCRIPTION
         : `${AGENT_SWARM_DESCRIPTION}\n\n${subagentModelDescription}`;
-<<<<<<< HEAD
     this.parameters = modelChoiceEnabled
       ? AGENT_SWARM_PARAMETERS
       : AGENT_SWARM_PARAMETERS_NO_MODEL;
-=======
-    this.parameters = toInputJsonSchema(
-      showModelParameter ? AgentSwarmToolInputSchema : AgentSwarmToolInputSchemaWithoutModel,
-    );
->>>>>>> f2baaba8b (fix: keep subagent model routing from being silently bypassed)
   }
 
   resolveExecution(args: AgentSwarmToolInput): ToolExecution {

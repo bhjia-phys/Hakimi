@@ -171,13 +171,14 @@ import {
   IAgentLoopService,
   IAgentPermissionModeService,
   IAgentPermissionRulesService,
-  IAgentProfileCatalogService,
   IAgentProfileService,
   IAgentRPCService,
   IAgentSkillService,
   IAgentSwarmService,
   IAgentTaskService,
   IAgentTokenCountingService,
+  IAgentProfileRegistry,
+  BUILTIN_AGENT_PROFILE_SOURCE_ID,
   IBootstrapService,
   IConfigService,
   IEventService,
@@ -1021,7 +1022,11 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
       return [...new Set(allowlist.filter((name) => catalog.get(name) !== undefined))];
     }
     const builtinNames = new Set(
-      this.engineAccessor.get(IAgentProfileCatalogService).list().map((profile) => profile.name),
+      this.engineAccessor
+        .get(IAgentProfileRegistry)
+        .entries()
+        .filter((entry) => entry.sourceId === BUILTIN_AGENT_PROFILE_SOURCE_ID)
+        .flatMap((entry) => entry.contribution.profiles.map((profile) => profile.name)),
     );
     const merged = catalog.list();
     const builtin = merged
