@@ -62,11 +62,11 @@ Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 f
 
 [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) 负责 `.aitp` schema、校验、持久化、provenance 和未来的图关系语义；Hakimi 负责编排、web/PDF 检索、推理、工具、UX 和临时私有缓存。集成边界始终是 CLI + 文件——不复制 runtime，不增加 SDK、API server、MCP server、daemon 或第二套账本。
 
-**当前兼容状态**——最后核对的 AITP HEAD 为 `8658f6827288f4bb61e5c193a346f0f73ebbe3b2`：M0/M0.5 已完成，M0.6 进行中，后续阶段仍被 gate 阻塞。安装插件后，`/skill:aitp` 可以用 Python 3.11 或更高版本手动调用当前 CLI。Hakimi 原生结构化 adapter **尚未启用**：包括 `enter --json` 在内的当前命令响应没有携带版本化 transport schema，因此 adapter 必须 fail closed，不能根据“字段看起来相似”猜测兼容。
+**当前兼容状态**——最后核对的 AITP HEAD 为 `8658f6827288f4bb61e5c193a346f0f73ebbe3b2`：M0/M0.5 已完成，M0.6 进行中，后续阶段仍被 gate 阻塞。安装插件后，`/skill:aitp` 可以用 Python 3.11 或更高版本手动调用当前 CLI。Hakimi 原生结构化 adapter **尚未实施，但已无阻塞**：AITP 已决策 `record/note prepare|save` 的 response 保持为**未版本化的 version-0 契约**（严格 shape 校验，未知 `status` 值 fail closed），第一个版本化 transport 契约点是 M1a gate 的 `aitp/enter-0.2`。完整矩阵、决策与 H0 实施计划见 `docs/aitp/`（AITP 仓库侧对应 `docs/hakimi/`）。
 
 | Hakimi 轨道 | AITP gate | 集成状态 |
 | --- | --- | --- |
-| **H0 · 当前 CLI** | 当前 M0/M0.6 | 通过已安装的 AITP Skill 可用：`init`、`enter`、`inventory`、`record prepare/save`、`note prepare/save`。在 response envelope 版本化之前不启用原生结构化 adapter。Hakimi 绝不自动运行 `init`、`init --adopt` 或 `inventory`。 |
+| **H0 · 当前 CLI** | 当前 M0/M0.6 | 通过已安装的 AITP Skill 可用：`init`、`enter`、`inventory`、`record prepare/save`、`note prepare/save`。原生结构化 adapter 按 version-0 契约规划（严格 shape 校验，未知 `status` fail closed）；第一个版本化 dispatch 点是 M1a 的 `aitp/enter-0.2`。Hakimi 绝不自动运行 `init`、`init --adopt` 或 `inventory`。 |
 | **H1 · 检索** | M1a gate 后 | 消费 `aitp/enter-0.2`、`aitp/list-0.1`、`aitp/show-0.1` 官方 golden fixtures；增加 closeout-first 恢复和 Note age 投影。`list`、`show` 当前不存在。 |
 | **H2 · 关系与诊断** | M1b gate 后 | 增加 `aitp/lite-entry-0.2` 关系、typed resolution、派生 `used_by`、`aitp/check-report-0.1` 和 `aitp/run-pointer-0.1`。`check` 当前不存在；不迁移 0.1，也不维护第二个索引。 |
 | **H3 · 科研记忆** | AITP M2–M4 gate 后 | 按 gate 顺序增加 reviewed artifacts、跨 Topic links 和 Skill-driven collaborator protocol。 |
