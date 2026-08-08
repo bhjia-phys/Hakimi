@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <strong>A product-shell fork of Kimi Code with its own identity.</strong><br />
-  <span>Same agent runtime — Hakimi branding, shared sessions, its own release channel, and a few extra conveniences.</span>
+  <strong>A Kimi Code fork evolving into a chain-of-thought-native agent for theoretical physics.</strong><br />
+  <span>Upstream engineering foundations — Hakimi research orchestration, staged AITP memory integration, and its own product experience.</span>
 </p>
 
 <p align="center">
@@ -19,9 +19,9 @@
 
 ## What Hakimi Is
 
-Hakimi is a fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) that tracks upstream `main` closely and layers a small, deliberately non-research "product shell" on top. The agent runtime — terminal loop, tools, sessions, skills, MCP, subagents, permissions, OAuth — is upstream Kimi Code; Hakimi changes how the product looks, where it lives, and how it updates.
+Hakimi is a fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) that tracks upstream `main` closely. Today's `main` provides a stable Hakimi product shell while the research layer is built behind explicit milestones: Hakimi will own the research loop, agent orchestration, tools, and interaction experience; the separate [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) remains the authority for durable research memory and evidence.
 
-> The AITP theoretical-physics research runtime that used to live on `main` now lives on the [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) branch and is not part of this line.
+The underlying terminal loop, tools, sessions, Skills, MCP, subagents, permissions, and OAuth continue to come from upstream Kimi Code. The historical deeply embedded research prototype remains archived on the [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) branch; it is not the integration path for this line.
 
 ## Differences From Upstream
 
@@ -38,7 +38,7 @@ Everything else — features, flags, config schema, behavior — is upstream Kim
 
 ## Roadmap
 
-**Positioning**: Hakimi is an agent for theoretical-physics research, tuned for chain-of-thought (CoT) models. It develops physics algorithm code and gains physical insight through a human-like research workflow backed by the [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) research-memory ledger.
+**Positioning**: Hakimi is being built as a theoretical-physics research agent for reasoning models such as DeepSeek and Kimi. It should develop scientific software, ask the right questions throughout a research project, test competing explanations, and preserve grounded results through AITP without storing transcripts or raw chain-of-thought as research memory.
 
 ### Done · Product shell baseline
 
@@ -49,30 +49,59 @@ Branding and welcome logo, own `~/.hakimi` home, bidirectional session sharing, 
 - Institutionalize the upstream sync cadence; polish release and CI automation.
 - One-click provider setup for more models, extending the DeepSeek pattern.
 
-### M2 · Research memory integration (depends on AITP M0.6 → M4)
+### M2 · Hakimi research-loop foundation
 
-- Adopt the AITP "Hakimi contract": a CLI + files interface — Hakimi owns web retrieval, PDF reading, reasoning, and private caches; AITP owns the research ledger.
-- Integrate through a thin process-boundary bridge (`aitp enter/record/note` tools) plus AITP methodology Skills — never re-implement AITP inside Hakimi.
-- Ship AITP alongside the Hakimi install script; gate the integration behind an experimental flag until it matures.
-- Freeze and archive the old `aitp-research` branch; the research line is rebuilt on the new AITP.
+This milestone is Hakimi-owned and does not wait for AITP:
 
-### M3 · Chain-of-thought adaptation
+- A Goal-like **Research Frame** holds the current scientific question, objective, focus, and blocker.
+- A Todo-like **Research Question Board** tracks what is unknown, why it matters now, the evidence needed, and whether it is open, under investigation, answered, blocked, or deferred.
+- Bounded research checkpoints identify the largest knowledge gap, invoke only the relevant independent subagent perspectives, and decide whether Hakimi should inspect code, read literature, run a benchmark, or ask the researcher.
+- Goal answers *what outcome to pursue*; Todo tracks *what actions to execute*; the research loop asks *what must be learned or challenged next*.
+- The same loop is evaluated across project scales, from a large scientific codebase to a quick numerical or analytic check; scale changes the evidence and actions, not the method.
 
-- Deep adaptation for DeepSeek / Kimi reasoning models: thinking management, budgets, and display.
-- A physics-derivation CoT harness: structured hypothesis → derivation → verification chains. Conclusions and evidence land in AITP through its contract; raw reasoning chains stay out of the ledger.
+### M3 · Staged AITP memory integration
 
-### M4 · Unified research workflow
+[AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) owns `.aitp` schemas, validation, persistence, provenance, and later graph semantics. Hakimi owns orchestration, web/PDF retrieval, reasoning, tools, UX, and ephemeral private caches. Integration remains CLI + files — no copied runtime, SDK, API server, MCP server, daemon, or second ledger.
 
-One methodology — hypothesis → derivation → verification → record — validated across project scales, from large codebases (librpa-class) to quick numerical checks. Physical insight stays uniform; scale changes what is recorded, not how the workflow is structured.
+**Current compatibility status** — last verified against AITP `8658f6827288f4bb61e5c193a346f0f73ebbe3b2`: M0/M0.5 are complete; M0.6 is in progress; later stages are blocked. The installed plugin's `/skill:aitp` workflow can use the current CLI manually with Python 3.11 or newer. Hakimi's native structured adapter is **not enabled yet**: current command responses, including `enter --json`, do not carry a versioned transport schema, so the adapter must fail closed rather than infer compatibility from similar-looking fields.
+
+| Hakimi track | AITP gate | Integration status |
+| --- | --- | --- |
+| **H0 · current CLI** | Current M0/M0.6 | Available through the installed AITP Skill: `init`, `enter`, `inventory`, `record prepare/save`, and `note prepare/save`. No native structured adapter until response envelopes are versioned. Hakimi never auto-runs `init`, `init --adopt`, or `inventory`. |
+| **H1 · retrieval** | After M1a gate | Consume official golden fixtures for `aitp/enter-0.2`, `aitp/list-0.1`, and `aitp/show-0.1`; add closeout-first recovery and Note-age projections. `list` and `show` do not exist today. |
+| **H2 · relations and diagnostics** | After M1b gate | Add `aitp/lite-entry-0.2` relations, typed resolution, derived `used_by`, `aitp/check-report-0.1`, and `aitp/run-pointer-0.1`. `check` does not exist today; no 0.1 migration or second index. |
+| **H3 · research memory** | After AITP M2–M4 gates | Add reviewed artifacts, cross-topic links, and the Skill-driven collaborator protocol in gate order. |
+| **Formal contract** | After M4 | Freeze Hakimi compatibility against AITP versioned JSON and extended official golden fixtures. AITP remains CLI + files; Hakimi private caches never write back. |
+
+Current persistent schemas include `aitp/lite-entry-0.1` and `aitp/lite-note-0.1`, but those identify AITP files, not the unversioned CLI response envelopes. There is no `aitp/enter-0.1`, `aitp list`, `aitp show`, `aitp check`, `aitp search`, or `aitp --version` today. A workspace without AITP must continue normally with an explicit degraded status; Hakimi must never initialize or adopt one without a user request.
+
+For the current manual path, install the plugin and reload:
+
+```text
+/plugins install /path/to/AITP-Research-Protocol/plugins/aitp-research-protocol
+/reload
+```
+
+Then invoke `/skill:aitp`. The Skill resolves its bundled `scripts/aitp.py` relative to the installed plugin root and selects a compatible Python interpreter; it does not require a global `aitp` executable.
+
+**Compatibility maintenance**: any change to supported AITP commands or schemas, launcher discovery, session lifecycle, Skill discovery, or stage status must update this Roadmap and `README.zh-CN.md` in the same change. Re-check AITP `--help`, versioned schemas, and official fixtures first; never describe a planned capability as available.
+
+### M4 · Physics reasoning and insight
+
+- Deep adaptation for DeepSeek / Kimi reasoning models: bounded thinking management, budgets, interruption, and structured presentation.
+- Research checkpoints ask stage-appropriate questions about the problem, prior work, progress, objective, current obstacle, validity of the present step, and available benchmarks.
+- Independent skeptical, literature, physical-consistency, numerical, and code perspectives challenge the main line before expensive or consequential actions.
+- Physics-aware checks cover approximations, dimensional analysis, symmetry and conservation constraints, solvable limits, convergence, cross-method comparison, and literature benchmarks.
+- The user-visible artifact is a structured research trace — frames, questions, candidate explanations, evidence, falsifiers, and decisions — not raw hidden chain-of-thought.
 
 ### M5 · Web and mobile
 
-- Thinking-process visualization and research-knowledge retrieval in the web UI.
-- Remote control from a phone: the web mobile shell plus a remotely deployed hakimi server with hardened authentication.
+- Structured research-state visualization, research-memory retrieval, and researcher decision checkpoints in the web UI.
+- Remote control from a phone: the web mobile shell plus a remotely deployed hakimi server with hardened authentication, including run approval, pause/resume, result inspection, and research-direction feedback.
 
 ### M6 · Branding and community
 
-Bilingual docs, research use cases, and tutorials.
+Bilingual docs, research use cases, evaluations, and tutorials.
 
 ## Install
 
@@ -127,7 +156,7 @@ corepack pnpm --config.engine-strict=false -C apps/kimi-code typecheck
 corepack pnpm --config.engine-strict=false -C apps/kimi-code test
 ```
 
-Layout follows upstream: the CLI is `apps/kimi-code`, the agent runtime is `packages/agent-core`, model providers are `packages/kosong`, and the SDK is `packages/node-sdk`.
+Layout follows upstream: the CLI is `apps/kimi-code`; the current kap-server runtime is `packages/agent-core-v2` while `packages/agent-core` remains the legacy engine; model providers are `packages/kosong`, and the SDK is `packages/node-sdk`.
 
 ## License
 
