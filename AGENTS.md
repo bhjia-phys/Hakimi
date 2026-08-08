@@ -71,6 +71,7 @@ This is a TypeScript monorepo built for agent-assisted development. Keep the roo
 - [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) is the source of truth for its stages, CLI commands, schemas, and golden fixtures. Hakimi orchestrates the agent and consumes AITP through CLI + files; it must not copy AITP's runtime, parser, validator, or canonical ledger writes.
 - Any change to Hakimi's AITP command/schema support, launcher resolution, session lifecycle, Skill discovery, or compatibility status must update both `README.md` and `README.zh-CN.md` in the same change. Re-check the current AITP stage and official fixtures first, and never describe a planned or blocked capability as available.
 - Before implementing or modifying any AITP integration, re-verify the AITP repository's current state (`git rev-parse HEAD` + `git status --short` in the AITP checkout, plus `aitp --help` for the actual CLI surface). Never build against a stale snapshot of AITP stages, commands, or schemas, and do not rely on the managed plugin copy as a source of truth.
+- Cross-repo handoff material for AITP development lives in `aitp-integration/` (`COMPATIBILITY.md` matrix + `TRACKING.md` status/checklist). Start AITP-related work there and update it in the same change.
 
 ## Where to Update Instructions
 
