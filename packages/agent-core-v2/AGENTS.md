@@ -1,6 +1,8 @@
 # agent-core-v2 Agent Guide
 
-> New agent engine built on the DI Scope architecture — work-in-progress port of `packages/agent-core`. Design: `plan/PLAN.md`. Porting status: `GAP_ANALYSIS.md`.
+> The architecture baseline is `upstream/main` (`01c74e937`): `agent-core-v2` is the default runtime with `App → Workspace → Session → Agent` scopes; `packages/agent-core` (v1) is legacy compatibility only.
+>
+> Planning documents have distinct roles: [`GOAL.md`](../../GOAL.md) is the stable Goal-mode behavior specification, the bilingual Roadmap in [`README.md`](../../README.md) and [`README.zh-CN.md`](../../README.zh-CN.md) defines six product tracks (Web, phone remote, AITP, Research Loop, UI/settings, and upstream/foundations), and [`IMPLEMENTATION.md`](../../IMPLEMENTATION.md) is their team execution plan. Shared contract rules are not a seventh track. Goal is not being migrated to `GoalFeature` yet. Planning order is fixed: freeze the canonical contract and architecture baseline, fix core correctness, unify public boundaries, handle the Hakimi overlay, and only then evaluate `GoalFeature`. Simplify repeated boundaries, duplicate implementations, and documentation—not Goal capability. Code remains the source of truth for architecture.
 
 ## Scopes
 
