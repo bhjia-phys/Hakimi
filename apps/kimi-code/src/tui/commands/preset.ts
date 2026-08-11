@@ -13,6 +13,10 @@ import {
   type ChoiceOption,
 } from '../components/dialogs/choice-picker';
 import { modelDisplayName } from '../components/dialogs/model-selector';
+import {
+  PresetNameInputDialogComponent,
+  type PresetNameInputResult,
+} from '../components/dialogs/preset-name-input-dialog';
 import { TabbedModelSelectorComponent } from '../components/dialogs/tabbed-model-selector';
 import { formatErrorMessage } from '../utils/event-payload';
 import {
@@ -23,6 +27,7 @@ import type { SlashCommandHost } from './dispatch';
 
 const APPLY_PRESET = '__apply_preset__';
 const CLEAR_PRESET = '__clear_preset__';
+const CREATE_PRESET = '__create_preset__';
 const BUILTIN_SUBAGENT_PROFILES = ['explore', 'plan', 'coder'] as const;
 
 /**
@@ -77,19 +82,16 @@ async function showPresetPicker(host: SlashCommandHost): Promise<void> {
   if (config === undefined) return;
   const active = activeSubagentPreset(config.subagent);
   const names = Object.keys(config.subagent?.presets ?? {}).toSorted();
-  if (names.length === 0) {
-    host.showNotice(
-      'No presets configured',
-      'Create one with /preset edit <name>, then choose models for Main, subagents, and Swarm.',
-    );
-    return;
-  }
-
   const options: ChoiceOption[] = names.map((name) => ({
     value: name,
     label: name,
     description: presetSummary(config, name),
   }));
+  options.push({
+    value: CREATE_PRESET,
+    label: 'Create new preset',
+    description: 'Configure model routes for Main, subagents, and Swarm.',
+  });
   if (active !== undefined) {
     options.push({
       value: CLEAR_PRESET,
@@ -102,12 +104,20 @@ async function showPresetPicker(host: SlashCommandHost): Promise<void> {
   host.mountEditorReplacement(
     new ChoicePickerComponent({
       title: 'Manage agent preset',
-      hint: '↑↓ navigate · Enter configure · Esc cancel',
+      hint: '↑↓ navigate · Enter select · Esc cancel',
+      notice: names.length === 0
+        ? 'No presets configured. Subagents currently use base routing / the parent model.'
+        : undefined,
+      noticeTone: 'warning',
       options,
       currentValue: active,
       searchable: names.length > 6,
       onSelect: (value) => {
         host.restoreEditor();
+        if (value === CREATE_PRESET) {
+          showPresetNameInput(host, names, config);
+          return;
+        }
         if (value === CLEAR_PRESET) {
           void switchPreset(host, undefined, config);
           return;
@@ -118,6 +128,26 @@ async function showPresetPicker(host: SlashCommandHost): Promise<void> {
         host.restoreEditor();
       },
     }),
+  );
+}
+
+function showPresetNameInput(
+  host: SlashCommandHost,
+  existingNames: readonly string[],
+  config: KimiConfig,
+): void {
+  host.mountEditorReplacement(
+    new PresetNameInputDialogComponent(
+      existingNames,
+      (result: PresetNameInputResult) => {
+        host.restoreEditor();
+        if (result.kind === 'cancel') {
+          void showPresetPicker(host);
+          return;
+        }
+        void showPresetEditor(host, result.value, config);
+      },
+    ),
   );
 }
 
