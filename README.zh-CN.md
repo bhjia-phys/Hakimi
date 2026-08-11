@@ -19,88 +19,82 @@
 
 ## Hakimi 是什么
 
-Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 fork，紧跟上游 `main`。当前 `main` 提供稳定的 Hakimi 产品外壳，科研层则按明确里程碑逐步建设：Hakimi 负责 research loop、agent 编排、工具和交互体验；独立的 [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) 负责持久研究记忆和证据权威。
+Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 fork，紧跟上游 `main`。当前 `main` 提供产品外壳，科研层则按明确 gate 建设：Hakimi 负责研究编排、工具和交互；独立的 [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) 仍是持久研究记忆和证据的权威。
 
-底层终端循环、工具、session、Skills、MCP、子代理、权限和 OAuth 继续来自上游 Kimi Code。历史上的深度内嵌科研原型保留在 [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) 分支用于归档；它不是当前产品线的集成路径。
+底层终端循环、工具、session、Skills、MCP、子代理、权限和 OAuth 继续来自上游 Kimi Code。历史上的深度内嵌科研原型保留在 [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) 分支归档，不是当前产品线的集成路径。
 
 ## 与上游的差异
 
-- **品牌**：`hakimi` 命令、`Hakimi` 产品名、像素风猫耳飞船欢迎图标。本包**只**安装 `hakimi` 可执行文件——不会覆盖独立安装的 Kimi Code 的 `kimi` 命令。
-- **独立主目录**：配置、session、日志、缓存都在 `~/.hakimi`（可用 `HAKIMI_HOME` 覆盖），与 Kimi Code 的 `~/.kimi-code` 互不干扰。
-- **双向 session 共享**：`hakimi -r` 和 `/sessions` 选择器可以列出并恢复 `~/.kimi-code` 里的 Kimi Code session；新建的 Hakimi session 也会镜像进 `~/.kimi-code`（软链 + 索引行），未修改的 `kimi` CLI 同样可以恢复它们。共享仅在默认 `~/.hakimi` 主目录下启用。
-- **独立发布通道**：更新检查和提示横幅都解析自 [`bhjia-phys/Hakimi` releases](https://github.com/bhjia-phys/Hakimi/releases)——包括 prerelease（`releases/latest` 永远匹配不到的那类）——而不是上游 Kimi Code 构建。Hakimi 使用独立的 semver 版本线（当前 `0.21.x`），有意不跟随上游 tag。
-- **DeepSeek provider**：内置 `provider add deepseek` 一键配置及合理默认值，外加无鉴权的本地网页搜索兜底（DuckDuckGo/Bing HTML），没有配置 Moonshot token 时 `WebSearch` 依然可用。
-- **子代理 preset**：`config.toml` 里的 `[subagent.agents.<类型>]` 和 `[subagent.presets.<名称>]` 可以固定各类子代理的模型与思维强度（oh-my-opencode-slim 风格），运行时用 `/preset <名称>` 切换。
-- **传输身份**：provider 请求以 `kimi-code-cli/<版本> (hakimi)` 标识自身，Kimi for Coding OAuth 流程不受影响。
+- **品牌**：`hakimi` 命令、`Hakimi` 产品名和像素风猫耳飞船欢迎图标。本包只安装 `hakimi`，不会覆盖独立安装的 `kimi` 命令。
+- **独立主目录**：配置、session、日志和缓存都在 `~/.hakimi`（可用 `HAKIMI_HOME` 覆盖），与 `~/.kimi-code` 独立。
+- **双向 session 共享**：`hakimi -r` 和 `/sessions` 可以恢复 Kimi Code session；新建的 Hakimi session 会镜像到 `~/.kimi-code`，供上游 CLI 恢复。共享只在默认的 `~/.hakimi` 主目录下启用。
+- **独立发布通道**：更新检查和提示使用 [Hakimi releases](https://github.com/bhjia-phys/Hakimi/releases)，包括 prerelease。Hakimi 使用独立的 semver 版本线（当前 `0.21.x`），不跟随上游 tag。
+- **DeepSeek provider**：提供 `provider add deepseek` 一键配置，以及无需鉴权的本地网页搜索兜底，让 `WebSearch` 在没有 Moonshot token 时仍可用。
+- **实验性 ChatGPT OAuth**：可选的 device login 通过 OpenAI Codex backend 使用 ChatGPT 订阅，不依赖 API key 计费。
+- **子代理 preset**：`[subagent.agents.<类型>]` 和 `[subagent.presets.<名称>]` 可以固定各类子代理的模型与思维强度，运行时用 `/preset <名称>` 切换。
+- **传输身份**：provider pipeline 请求以 `kimi-code-cli/<版本> (hakimi)` 标识，Kimi for Coding OAuth 流程不受影响。
 
-除此之外——功能、flag、配置 schema、行为——全部与上游 Kimi Code 一致。完整参考见[上游文档](https://moonshotai.github.io/kimi-code/zh/)；`[subagent]` preset 字段见 `docs/zh/configuration/config-files.md`。
+除此之外——功能、flag、配置 schema 和行为——都沿用上游 Kimi Code。完整参考见[上游文档](https://moonshotai.github.io/kimi-code/zh/)；`[subagent]` preset 字段见 `docs/zh/configuration/config-files.md`。
 
 ## Roadmap（路线图）
 
-**定位**：Hakimi 正在被建设为面向 DeepSeek、Kimi 等 reasoning 模型的理论物理科研 agent。它既要开发科研软件，也要在研究全过程中提出正确的问题、检验互相竞争的解释，并通过 AITP 保存有证据支撑的结果，而不是把 transcript 或原始思维链当成研究记忆。
+**定位**：Hakimi 正在被建设为面向 DeepSeek、Kimi 等 reasoning model 的理论物理科研 agent。它要开发科研软件、在研究全过程提出有用的问题、检验竞争性解释，并通过 AITP 保存有依据的结果，而不是把 transcript 或原始思维链当成研究记忆。
 
-### 已完成 · 产品外壳基线
+### 产品外壳基线
 
-品牌与欢迎 logo、独立 `~/.hakimi` 主目录、双向 session 共享、独立发布通道、DeepSeek provider、ChatGPT/OpenAI Codex OAuth（实验性）、子代理 presets。
+已完成：品牌与欢迎 logo、独立 `~/.hakimi` 主目录、双向 session 共享、独立发布通道、DeepSeek provider、实验性 ChatGPT/OpenAI Codex OAuth 和子代理 preset。
 
-### M1 · 产品外壳稳固化（进行中）
+### 共享 gate 与执行顺序
 
-- 上游同步节奏制度化；完善发布与 CI 自动化。
-- 延续 DeepSeek 模式，为更多模型提供一键配置。
+六条轨道固定为：**A Web**、**B 手机远程**、**C AITP 集成**、**D 内置 Hakimi Research Loop**、**E UI 与设置**、**F 持续吸收 Kimi Code 上游与基础功能建设**。共享 contract、发布、文档、评估和教程服务于六轨，不是第七条轨道。
 
-### M2 · Hakimi research loop 基础
+顺序是 **contract freeze → 核心正确性 → 公共边界 → Hakimi overlay → 最后评估 `GoalFeature`**。A–E 可以基于冻结 fixtures 并行开发，但跨轨集成与发布要等待 F 的 gate。默认 runtime 是 `agent-core-v2`；`packages/agent-core` 保留为 v1 legacy compatibility。
 
-这一里程碑由 Hakimi 自己负责，不需要等待 AITP：
+### A · Web
 
-- 类似 Goal 的 **Research Frame** 保存当前科学问题、目标、焦点和阻塞。
-- 类似 Todo 的 **Research Question Board** 追踪尚不知道什么、为什么现在重要、需要什么证据，以及问题处于开放、调查中、已回答、阻塞还是暂缓状态。
-- 有边界的 research checkpoint 找出当前最大的认知缺口，只调用相关的独立子代理视角，并决定 Hakimi 应该检查代码、阅读文献、运行 benchmark，还是询问研究者。
-- Goal 回答“要追求什么结果”，Todo 追踪“要执行什么动作”，research loop 则追问“下一步必须弄清或挑战什么”。
-- 同一套循环在不同规模的课题上验证——从大型科研代码库到快速数值或解析检验；规模改变证据与行动，不改变方法论。
+- **所有权**：外部 code-app Web owner 拥有 source；Hakimi owner 负责接收、branding、provenance 和发布 bundle。
+- **依赖**：F 的公共 contracts 以及 B–E 的公开 projection；A 不重新定义 domain ownership。
+- **交付**：Web source 继续位于外部 code-app 仓库。本仓只同步已提交的 `apps/kimi-code/dist-web`，通过公开 contract 展示 session、结构化研究状态、记忆检索和研究者 checkpoint。
 
-### M3 · 分阶段 AITP 记忆集成
+### B · 手机远程
 
-[AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) 负责 `.aitp` schema、校验、持久化、provenance 和未来的图关系语义；Hakimi 负责编排、web/PDF 检索、推理、工具、UX 和临时私有缓存。集成边界始终是 CLI + 文件——不复制 runtime，不增加 SDK、API server、MCP server、daemon 或第二套账本。
+- **所有权**：远程产品与部署 owner。
+- **依赖**：F 的 session、permission、auth、REST/WS 和 transcript contracts，以及 A 的可部署 bundle；C 是可选项，D 不得成为前置条件。
+- **交付**：首期是 responsive Web/PWA shell，不承诺原生 App。生产只使用 `kap-server` `/api/v1` REST/WS + transcript，并配合强化认证；范围包括 approval、暂停/恢复、结果查看、反馈、重连和 catch-up。不复活通用 `/api/v2` RPC、debug reflection 或 daemon。
 
-**当前兼容状态**——最后核对的 AITP HEAD 为 `8658f6827288f4bb61e5c193a346f0f73ebbe3b2`：M0/M0.5 已完成，M0.6 进行中，后续阶段仍被 gate 阻塞。安装插件后，`/skill:aitp` 可以用 Python 3.11 或更高版本手动调用当前 CLI。Hakimi 原生结构化 adapter **尚未实施，但已无阻塞**：AITP 已决策 `record/note prepare|save` 的 response 保持为**未版本化的 version-0 契约**（严格 shape 校验，未知 `status` 值 fail closed），第一个版本化 transport 契约点是 M1a gate 的 `aitp/enter-0.2`。完整矩阵、决策与 H0 实施计划见 `docs/aitp/`（AITP 仓库侧对应 `docs/hakimi/`）。
+### C · AITP 集成
 
-| Hakimi 轨道 | AITP gate | 集成状态 |
+- **所有权**：只负责 Hakimi 侧 AITP adapter；AITP 负责 `.aitp` schema、校验、持久化、provenance 和 ledger 语义。
+- **依赖**：AITP 的 CLI + 文件，以及 F 的 adapter/contribution 边界。D 的内置 loop 不依赖 C。
+
+最后核对的 AITP HEAD 是 `8658f6827288f4bb61e5c193a346f0f73ebbe3b2`：M0/M0.5 已完成，M0.6 进行中。H0 可实施；当前安装的 Skill 可用 Python 3.11 或更高版本手动调用 CLI，会相对 plugin 自带的 `scripts/aitp.py` 运行，不要求全局 `aitp` executable。Hakimi 原生结构化 adapter 尚未实现。`record`/`note prepare|save` 仍是严格、未版本化的 version-0 response contract，未知 `status` 必须 fail closed；第一个版本化 transport 点是 M1a 的 `aitp/enter-0.2`。持久化的 `aitp/lite-entry-0.1` 和 `aitp/lite-note-0.1` 标识 AITP 文件，不是 response envelope；当前不存在 `aitp/enter-0.1`、`aitp list`、`aitp show`、`aitp check`、`aitp search` 或 `aitp --version`。
+
+| Hakimi gate | AITP gate | 计划交付与当前事实 |
 | --- | --- | --- |
-| **H0 · 当前 CLI** | 当前 M0/M0.6 | 通过已安装的 AITP Skill 可用：`init`、`enter`、`inventory`、`record prepare/save`、`note prepare/save`。原生结构化 adapter 按 version-0 契约规划（严格 shape 校验，未知 `status` fail closed）；第一个版本化 dispatch 点是 M1a 的 `aitp/enter-0.2`。Hakimi 绝不自动运行 `init`、`init --adopt` 或 `inventory`。 |
-| **H1 · 检索** | M1a gate 后 | 消费 `aitp/enter-0.2`、`aitp/list-0.1`、`aitp/show-0.1` 官方 golden fixtures；增加 closeout-first 恢复和 Note age 投影。`list`、`show` 当前不存在。 |
-| **H2 · 关系与诊断** | M1b gate 后 | 增加 `aitp/lite-entry-0.2` 关系、typed resolution、派生 `used_by`、`aitp/check-report-0.1` 和 `aitp/run-pointer-0.1`。`check` 当前不存在；不迁移 0.1，也不维护第二个索引。 |
-| **H3 · 科研记忆** | AITP M2–M4 gate 后 | 按 gate 顺序增加 reviewed artifacts、跨 Topic links 和 Skill-driven collaborator protocol。 |
-| **正式契约** | M4 后 | 用 AITP versioned JSON 和扩展官方 golden fixtures 固化 Hakimi 兼容性。AITP 仍是 CLI + 文件；Hakimi 私有缓存永不写回。 |
+| H0 · 当前 CLI | M0/M0.6 | 通过已安装 Skill 使用 `init`、`enter`、`inventory` 和 `record`/`note prepare|save`；绝不自动运行 `init`、`init --adopt` 或 `inventory`。 |
+| H1 · 检索 | M1a 之后 | 计划消费 `enter-0.2`、`list-0.1`、`show-0.1` fixtures；当前不存在 `list`、`show`。 |
+| H2 · 关系与诊断 | M1b 之后 | 计划支持 relation、`used_by`、`check-report-0.1` 和 `run-pointer-0.1`；当前不存在 `check`。 |
+| H3 · 科研记忆 | AITP M2–M4 之后 | 计划增加 reviewed artifacts、跨 Topic links 和 Skill-driven collaborator protocol。 |
 
-当前持久化 schema 包括 `aitp/lite-entry-0.1` 和 `aitp/lite-note-0.1`，但它们标识的是 AITP 文件，不是未版本化的 CLI response envelope。当前不存在 `aitp/enter-0.1`、`aitp list`、`aitp show`、`aitp check`、`aitp search` 或 `aitp --version`。未采用 AITP 的 workspace 必须以明确的降级状态正常运行；没有用户请求时，Hakimi 绝不能擅自初始化或 adopt。
+边界始终是严格的 CLI + 文件：不复制 AITP runtime、SDK、API/MCP server、daemon、第二套 ledger，也不直接写 canonical 文件。未初始化或没有 AITP 的 workspace 要以明确 degraded status 继续运行。H1–H3 是规划，不是当前可用能力。详细矩阵和已核验决策见 [`docs/aitp/`](docs/aitp/)；修改兼容性声明前，先重新核对 AITP `--help`、schema 和官方 fixtures。
 
-当前手动使用方式是安装插件并 reload：
+### D · 内置 Hakimi Research Loop
 
-```text
-/plugins install /path/to/AITP-Research-Protocol/plugins/aitp-research-protocol
-/reload
-```
+- **所有权**：Hakimi research domain，包含 Research Frame、Research Question Board、bounded checkpoint、physics insight 和结构化 research trace。
+- **依赖**：F 的 agent、subagent、tool、permission 和 transcript seams；不依赖 C，必须能在没有 AITP 时运行。
+- **交付**：区分结果（`Goal`）、动作（`Todo`）和未知/挑战（Research Question）；使用 skeptical、literature、physics、numerical、code 等独立视角；执行有边界的物理检查；向用户展示 frame、问题、证据、falsifier 和决策，而不是 raw hidden chain-of-thought。
 
-随后调用 `/skill:aitp`。Skill 会相对已安装 plugin root 定位自带的 `scripts/aitp.py`，并选择兼容的 Python 解释器，不要求系统中存在全局 `aitp` 命令。
+### E · UI 与设置
 
-**兼容维护规则**：任何关于 AITP command/schema 支持、launcher 发现、session lifecycle、Skill discovery 或 stage 状态的改动，都必须在同一 change 更新本 Roadmap 和 `README.md`。升级 AITP 后先核对 `--help`、版本化 schema 和官方 fixtures；绝不能把规划中的能力描述为当前可用。
+- **所有权**：TUI、Web、mobile 的跨表面 UX 与设置 owner；业务 domain 继续拥有业务 schema 和语义。
+- **依赖**：A–D 与 F 的 typed contracts、events、config contributions 和状态 projection。
+- **交付**：统一设置、provider setup、交互、加载/错误/degraded 状态、双语文案和可访问性；不复制 domain 校验、默认值、持久化或状态机。
 
-### M4 · 物理推理与 insight
+### F · 持续吸收 Kimi Code 上游与基础功能建设
 
-- 深度适配 DeepSeek / Kimi reasoning 模型：有边界的 thinking 管理、预算、中断和结构化呈现。
-- Research checkpoint 根据阶段询问问题本身、已有工作、当前进度、最终目标、当前困境、眼下步骤是否成立以及是否存在 benchmark。
-- 在高成本或影响重大的行动前，由相互独立的反驳、文献、物理一致性、数值和代码视角挑战当前主线。
-- 物理检查覆盖近似、量纲、对称性与守恒约束、可解极限、收敛性、跨方法比较和文献 benchmark。
-- 用户看到的是结构化 research trace——frame、问题、候选解释、证据、证伪条件和决策——而不是原始隐藏思维链。
-
-### M5 · Web 与手机端
-
-- web 界面展示结构化研究状态、检索研究记忆，并承载研究者决策 checkpoint。
-- 手机远程操控：web 移动端 + 带强化认证的远程部署 hakimi server，包括批准 run、暂停/恢复、检查结果和反馈研究方向。
-
-### M6 · 品牌与社区
-
-双语文档、科研用例、评估与教程。
+- **所有权**：platform/engine owner，负责默认 `agent-core-v2` runtime、公共 facade、release/CI 和 Hakimi overlay regression checks。
+- **依赖**：upstream `main`、已分类的 migration/deletion 以及其他轨道的证据；F 分类并测试变更，不机械同步。
+- **交付**：维护 v2 canonical contracts 和 adapters，通过公共边界吸收 provider、auth、tools、session、SDK、transcript、permission、performance、security 变化，运行共享 gate 并维护 release automation。只有前置 gate 全部通过后才评估 `GoalFeature`；不提前迁移或删除 Goal 能力。
 
 ## 安装
 
@@ -134,6 +128,16 @@ npm install -g ./dist-pack/bhjia-phys-hakimi-0.21.0.tgz
 
 > Windows 上首次启动前请安装 [Git for Windows](https://gitforwindows.org/)，Hakimi 使用自带的 Git Bash 作为 shell 环境。Git Bash 装在自定义位置时，把 `KIMI_SHELL_PATH` 设为 `bash.exe` 的绝对路径。
 
+## 实验性 ChatGPT / OpenAI Codex 登录
+
+启用实验并从终端开始 device-code 流程：
+
+```sh
+hakimi login --provider openai-codex --enable-experimental
+```
+
+无头终端可加 `--no-open`，手动打开输出的 URL。在 TUI 中运行 `/experiments`，启用 `openai-codex-oauth`，再运行 `/login` 并选择 `ChatGPT / OpenAI Codex (OAuth)`。凭据和生成的 provider 配置仍保存在 Hakimi 自己的主目录下。
+
 ## 开发
 
 ```sh
@@ -142,7 +146,7 @@ corepack pnpm --config.engine-strict=false -C apps/kimi-code typecheck
 corepack pnpm --config.engine-strict=false -C apps/kimi-code test
 ```
 
-目录布局与上游一致：CLI 在 `apps/kimi-code`；当前 kap-server 运行时在 `packages/agent-core-v2`，`packages/agent-core` 保留为 legacy engine；模型 provider 在 `packages/kosong`，SDK 在 `packages/node-sdk`。
+目录布局与上游一致：CLI 在 `apps/kimi-code`；当前 kap-server runtime 在 `packages/agent-core-v2`，`packages/agent-core` 保留为 legacy engine；模型 provider 在 `packages/kosong`，SDK 在 `packages/node-sdk`。
 
 ## 许可证
 
