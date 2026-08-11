@@ -313,7 +313,7 @@ model = "openai-codex/gpt-5.6-luna"
 thinking_effort = "xhigh"
 ```
 
-在 TUI 中用 `/preset`（或 `/preset status`）查看当前激活的 preset 与各类型的生效覆盖，`/preset <name>` 切换，`/preset off` 清除。
+在 TUI 中使用 `/preset`（或 `/preset status`）查看当前激活的 preset 与各类型的生效覆盖，使用 `/preset <name>` 切换，使用 `/preset off` 清除。preset 管理器始终包含 `Create new preset`；尚未配置任何 preset 时，选择它并输入名称，然后配置主 Agent、子 Agent 和 Swarm 路由。也可以使用 `/preset edit <name>` 直接打开同一个路由编辑器。
 
 ## `mcp`
 

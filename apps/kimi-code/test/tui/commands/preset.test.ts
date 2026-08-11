@@ -210,14 +210,45 @@ describe('handlePresetCommand', () => {
     expect(text).toContain('swarm: inherits the selected task profile route');
   });
 
-  it('explains how to create a preset when none exist', async () => {
-    const { host } = makeHost({ subagent: {} });
+  it('creates the first preset from the empty manager without writing config yet', async () => {
+    const { host, harness } = makeHost({ subagent: {} });
 
     await handlePresetCommand(host, '');
 
-    expect(host.showNotice).toHaveBeenCalledWith(
-      'No presets configured',
-      'Create one with /preset edit <name>, then choose models for Main, subagents, and Swarm.',
+    const manager = stripAnsi(mountedPicker(host).render(100).join('\n'));
+    expect(manager).toContain('Manage agent preset');
+    expect(manager).toContain('No presets configured');
+    expect(manager).toContain('Create new preset');
+    expect(host.showNotice).not.toHaveBeenCalled();
+
+    mountedPicker(host).handleInput(ENTER);
+    expect(stripAnsi(mountedPicker(host).render(100).join('\n'))).toContain(
+      'Create agent preset',
     );
+    for (const character of 'physics') mountedPicker(host).handleInput(character);
+    mountedPicker(host).handleInput(ENTER);
+
+    await vi.waitFor(() => {
+      expect(host.mountEditorReplacement).toHaveBeenCalledTimes(3);
+    });
+    const editor = stripAnsi(mountedPicker(host).render(100).join('\n'));
+    expect(editor).toContain('Preset: physics');
+    expect(editor).toContain('Explore subagent');
+    expect(harness.setConfig).not.toHaveBeenCalled();
+  });
+
+  it('returns to the empty manager when preset creation is cancelled', async () => {
+    const { host } = makeHost({ subagent: {} });
+
+    await handlePresetCommand(host, '');
+    mountedPicker(host).handleInput(ENTER);
+    mountedPicker(host).handleInput('\u001B');
+
+    await vi.waitFor(() => {
+      expect(host.mountEditorReplacement).toHaveBeenCalledTimes(3);
+    });
+    const manager = stripAnsi(mountedPicker(host).render(100).join('\n'));
+    expect(manager).toContain('Manage agent preset');
+    expect(manager).toContain('Create new preset');
   });
 });

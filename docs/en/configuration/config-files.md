@@ -313,7 +313,7 @@ model = "openai-codex/gpt-5.6-luna"
 thinking_effort = "xhigh"
 ```
 
-Use `/preset` (or `/preset status`) in the TUI to inspect the active preset and the effective per-type overrides, `/preset <name>` to switch, and `/preset off` to clear.
+Use `/preset` (or `/preset status`) in the TUI to inspect the active preset and the effective per-type overrides, `/preset <name>` to switch, and `/preset off` to clear. The preset manager always includes `Create new preset`; when no presets exist yet, select it, enter a name, then configure the Main, subagent, and Swarm routes. Use `/preset edit <name>` as a direct shortcut to the same route editor.
 
 ## `mcp`
 
