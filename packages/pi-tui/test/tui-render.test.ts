@@ -540,6 +540,142 @@ describe("TUI differential rendering", () => {
 		tui.stop();
 	});
 
+	it("skips destructive redraws for stable-height updates above the viewport", async () => {
+		const terminal = new LoggingVirtualTerminal(40, 5);
+		const tui = new TUI(terminal);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = Array.from({ length: 12 }, (_, i) => `Line ${i}`);
+		tui.start();
+		await terminal.waitForRender();
+		const initialRedraws = tui.fullRedraws;
+		terminal.clearWrites();
+
+		for (const frame of ["/", "-", "\\", "|"]) {
+			component.lines = component.lines.map((line, i) => (i === 1 ? `Thinking ${frame}` : line));
+			tui.requestRender();
+			await terminal.waitForRender();
+		}
+
+		assert.strictEqual(tui.fullRedraws, initialRedraws, "Above-viewport spinner ticks should not full-redraw");
+		assert.ok(!terminal.getWrites().includes("\x1b[2J"), "Spinner ticks should not clear the viewport");
+		assert.ok(!terminal.getWrites().includes("\x1b[3J"), "Spinner ticks should not clear scrollback");
+		assert.deepStrictEqual(terminal.getViewport(), ["Line 7", "Line 8", "Line 9", "Line 10", "Line 11"]);
+
+		tui.stop();
+	});
+
+	it("repaints visible changes without clearing when the same frame also changes above the viewport", async () => {
+		const terminal = new LoggingVirtualTerminal(40, 5);
+		const tui = new TUI(terminal);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = Array.from({ length: 12 }, (_, i) => (i === 11 ? "Editor" : `Line ${i}`));
+		tui.start();
+		await terminal.waitForRender();
+		const initialRedraws = tui.fullRedraws;
+		terminal.clearWrites();
+
+		component.lines = component.lines.map((line, i) => {
+			if (i === 1) return "Thinking /";
+			if (i === 9) return "Visible update";
+			return line;
+		});
+		tui.requestRender();
+		await terminal.waitForRender();
+
+		assert.strictEqual(tui.fullRedraws, initialRedraws, "Stable-height updates should stay differential");
+		assert.ok(!terminal.getWrites().includes("\x1b[2J"), "Mixed stable-height updates should not clear");
+		assert.deepStrictEqual(terminal.getViewport(), ["Line 7", "Line 8", "Visible update", "Line 10", "Editor"]);
+
+		component.lines = [...component.lines, "After"];
+		tui.requestRender();
+		await terminal.waitForRender();
+
+		assert.strictEqual(tui.fullRedraws, initialRedraws, "Appending after a clamped update should stay differential");
+		assert.deepStrictEqual(terminal.getViewport(), ["Line 8", "Visible update", "Line 10", "Editor", "After"]);
+		const scrollBuffer = terminal.getScrollBuffer();
+		assert.strictEqual(scrollBuffer.filter((line) => line === "Editor").length, 1, "Editor should not duplicate");
+		assert.strictEqual(scrollBuffer.filter((line) => line === "After").length, 1, "Appended line should appear once");
+
+		tui.stop();
+	});
+
+	it("keeps the full-redraw fallback for above-viewport image changes", async () => {
+		const terminal = new LoggingVirtualTerminal(40, 5);
+		const tui = new TUI(terminal);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = Array.from({ length: 12 }, (_, i) =>
+			i === 1 ? encodeKitty("AAAA", { columns: 2, rows: 1, imageId: 90, moveCursor: false }) : `Line ${i}`,
+		);
+		tui.start();
+		await terminal.waitForRender();
+		const initialRedraws = tui.fullRedraws;
+
+		component.lines = component.lines.map((line, i) =>
+			i === 1 ? encodeKitty("BBBB", { columns: 2, rows: 1, imageId: 90, moveCursor: false }) : line,
+		);
+		tui.requestRender();
+		await terminal.waitForRender();
+
+		assert.ok(tui.fullRedraws > initialRedraws, "Above-viewport image changes must full-redraw");
+		tui.stop();
+	});
+
+	it("keeps the full-redraw fallback for above-viewport line-count changes", async () => {
+		const terminal = new LoggingVirtualTerminal(40, 5);
+		const tui = new TUI(terminal);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = Array.from({ length: 12 }, (_, i) => `Line ${i}`);
+		tui.start();
+		await terminal.waitForRender();
+		const initialRedraws = tui.fullRedraws;
+		terminal.clearWrites();
+
+		component.lines = [component.lines[0]!, "Inserted", ...component.lines.slice(1)];
+		tui.requestRender();
+		await terminal.waitForRender();
+
+		assert.ok(tui.fullRedraws > initialRedraws, "Line-count changes must retain the full-redraw fallback");
+		assert.ok(terminal.getWrites().includes("\x1b[2J"), "Fallback should still clear the viewport");
+
+		tui.stop();
+	});
+
+	it("emits destructive clears before synchronized full-render output", async () => {
+		const terminal = new LoggingVirtualTerminal(40, 5);
+		const tui = new TUI(terminal);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = Array.from({ length: 8 }, (_, i) => `Line ${i}`);
+		tui.start();
+		await terminal.waitForRender();
+		terminal.clearWrites();
+
+		tui.requestRender(true);
+		await terminal.waitForRender();
+
+		const writes = terminal.getWrites();
+		const clearIndex = writes.indexOf("\x1b[2J");
+		const syncStart = writes.indexOf("\x1b[?2026h");
+		const syncEnd = writes.indexOf("\x1b[?2026l", syncStart);
+		assert.ok(clearIndex >= 0, "Forced render should clear the viewport");
+		assert.ok(syncStart > clearIndex, "Destructive clear must precede synchronized output");
+		assert.ok(syncEnd > syncStart, "Synchronized output must be closed");
+		const synchronizedFrame = writes.slice(syncStart, syncEnd);
+		assert.ok(!synchronizedFrame.includes("\x1b[2J"), "ED2 must stay outside synchronized output");
+		assert.ok(!synchronizedFrame.includes("\x1b[3J"), "ED3 must stay outside synchronized output");
+
+		tui.stop();
+	});
+
 	it("resets styles after each rendered line", async () => {
 		const terminal = new VirtualTerminal(20, 6);
 		const tui = new TUI(terminal);

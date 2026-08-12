@@ -590,13 +590,14 @@ if (matchesKey(data, Key.enter)) {
 
 ## Differential Rendering
 
-The TUI uses three rendering strategies:
+The TUI uses four rendering strategies:
 
 1. **First Render**: Output all lines without clearing scrollback
-2. **Width Changed or Change Above Viewport**: Clear screen and full re-render
-3. **Normal Update**: Move cursor to first changed line, clear to end, render changed lines
+2. **Width Changed or Layout-Changing Update Above Viewport**: Clear screen and full re-render
+3. **Stable-Height Update Above Viewport**: Retain non-image changes without clearing; repaint only visible changes from the same frame (native scrollback keeps its prior offscreen bytes until a later full render)
+4. **Normal Update**: Move cursor to the first changed line and render the changed range
 
-All updates are wrapped in **synchronized output** (`\x1b[?2026h` ... `\x1b[?2026l`) for atomic, flicker-free rendering.
+Frame drawing is wrapped in **synchronized output** (`\x1b[?2026h` ... `\x1b[?2026l`) for atomic rendering. A destructive full-render clear is emitted before the synchronized frame so xterm.js-based terminals do not apply erase-command viewport side effects inside DEC 2026.
 
 ## Terminal Interface
 

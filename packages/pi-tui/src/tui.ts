@@ -1330,14 +1330,18 @@ export class TUI extends Container {
 		}
 		newLines = processedLines;
 
-		// Helper to clear scrollback and viewport and render all new lines
+		// Helper to clear scrollback and viewport and render all new lines. Keep
+		// erase-display commands outside DEC 2026: xterm.js applies their viewport
+		// side effects immediately even inside synchronized output, which makes
+		// repeated full redraws visibly yank the VS Code terminal viewport.
 		const fullRender = (clear: boolean): void => {
 			this.fullRedrawCount += 1;
-			let buffer = "\x1b[?2026h"; // Begin synchronized output
+			let buffer = "";
 			if (clear) {
 				buffer += this.deleteKittyImages(this.previousKittyImageIds);
 				buffer += "\x1b[2J\x1b[H\x1b[3J"; // Clear screen, home, then clear scrollback
 			}
+			buffer += "\x1b[?2026h"; // Begin synchronized output after any destructive clear
 			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) buffer += "\r\n";
 				const line = newLines[i]!;
@@ -1514,12 +1518,71 @@ export class TUI extends Container {
 			return;
 		}
 
-		// Differential rendering can only touch what was actually visible.
-		// If the first changed line is above the previous viewport, we need a full redraw.
+		// Differential rendering can only touch what was actually visible. Stable-height
+		// transient updates above the viewport (for example a thinking or subagent
+		// spinner) do not move any visible row, so commit them to the retained frame
+		// without destructively clearing the terminal. Native scrollback keeps its old
+		// bytes until a later full redraw; repainting those offscreen rows would risk
+		// the duplicate/lost-history bugs of the reverted viewport-anchor design.
+		// Length changes and image placements keep the full-redraw fallback because
+		// they can shift or overlay the visible viewport.
 		if (firstChanged < prevViewportTop) {
-			logRedraw(`firstChanged < viewportTop (${firstChanged} < ${prevViewportTop})`);
-			fullRender(true);
-			return;
+			const stableLineCount = newLines.length === this.previousLines.length;
+			let aboveViewportHasImage = false;
+			if (stableLineCount) {
+				const aboveViewportEnd = Math.min(lastChanged, prevViewportTop - 1);
+				for (let i = firstChanged; i <= aboveViewportEnd; i++) {
+					if (
+						(this.previousLineImageIds[i] ?? EMPTY_IMAGE_IDS).length > 0 ||
+						(lineImageIds[i] ?? EMPTY_IMAGE_IDS).length > 0
+					) {
+						aboveViewportHasImage = true;
+						break;
+					}
+				}
+			}
+
+			if (!stableLineCount || aboveViewportHasImage) {
+				logRedraw(`firstChanged < viewportTop (${firstChanged} < ${prevViewportTop})`);
+				fullRender(true);
+				return;
+			}
+
+			let visibleFirstChanged = -1;
+			for (let i = prevViewportTop; i <= lastChanged; i++) {
+				const oldLine = i < this.previousLines.length ? this.previousLines[i] : "";
+				const newLine = i < newLines.length ? newLines[i] : "";
+				if (oldLine !== newLine) {
+					visibleFirstChanged = i;
+					break;
+				}
+			}
+
+			if (visibleFirstChanged === -1) {
+				this.positionHardwareCursor(cursorPos, newLines.length);
+				this.previousLines = newLines;
+				this.previousRawLines = rawLines;
+				this.previousLineImageIds = lineImageIds;
+				this.previousKittyImageIds = this.unionKittyImageIds(lineImageIds);
+				this.previousWidth = width;
+				this.previousHeight = height;
+				this.previousViewportTop = prevViewportTop;
+				return;
+			}
+
+			const visibleRange = this.expandChangedRangeForKittyImages(
+				visibleFirstChanged,
+				lastChanged,
+				newLines,
+				lineImageIds,
+			);
+			if (visibleRange.firstChanged < prevViewportTop) {
+				logRedraw(`visible image crosses viewportTop (${visibleRange.firstChanged} < ${prevViewportTop})`);
+				fullRender(true);
+				return;
+			}
+			firstChanged = visibleRange.firstChanged;
+			lastChanged = visibleRange.lastChanged;
 		}
 
 		// Render from first changed line to end
