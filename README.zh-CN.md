@@ -46,9 +46,9 @@ Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 f
 
 ### 共享 gate 与执行顺序
 
-六条轨道固定为：**A Web**、**B 手机远程**、**C AITP 集成**、**D 内置 Hakimi Research Loop**、**E UI 与设置**、**F 持续吸收 Kimi Code 上游与基础功能建设**。共享 contract、发布、文档、评估和教程服务于六轨，不是第七条轨道。
+七条轨道固定为：**A Web**、**B 手机远程**、**C AITP 集成**、**D 内置 Hakimi Research Loop**、**E UI 与设置**、**F 持续吸收 Kimi Code 上游与基础功能建设**、**G DeepSeek 专属适配与 DeepSeek Harness 吸收**。共享 contract、发布、文档、评估和教程服务于七轨，不单独成轨。
 
-顺序是 **contract freeze → 核心正确性 → 公共边界 → Hakimi overlay → 最后评估 `GoalFeature`**。A–E 可以基于冻结 fixtures 并行开发，但跨轨集成与发布要等待 F 的 gate。默认 runtime 是 `agent-core-v2`；`packages/agent-core` 保留为 v1 legacy compatibility。
+顺序是 **contract freeze → 核心正确性 → 公共边界 → Hakimi overlay → 最后评估 `GoalFeature`**。A–E 和 G 可以基于冻结 fixtures 并行开发，但跨轨集成与发布要等待 F 的 gate。默认 runtime 是 `agent-core-v2`；`packages/agent-core` 保留为 v1 legacy compatibility。
 
 ### A · Web
 
@@ -67,22 +67,22 @@ Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 f
 - **所有权**：只负责 Hakimi 侧 AITP adapter；AITP 负责 `.aitp` schema、校验、持久化、provenance 和 ledger 语义。
 - **依赖**：AITP 的 CLI + 文件，以及 F 的 adapter/contribution 边界。D 的内置 loop 不依赖 C。
 
-最后核对的 AITP HEAD 是 `8658f6827288f4bb61e5c193a346f0f73ebbe3b2`：M0/M0.5 已完成，M0.6 进行中。H0 可实施；当前安装的 Skill 可用 Python 3.11 或更高版本手动调用 CLI，会相对 plugin 自带的 `scripts/aitp.py` 运行，不要求全局 `aitp` executable。Hakimi 原生结构化 adapter 尚未实现。`record`/`note prepare|save` 仍是严格、未版本化的 version-0 response contract，未知 `status` 必须 fail closed；第一个版本化 transport 点是 M1a 的 `aitp/enter-0.2`。持久化的 `aitp/lite-entry-0.1` 和 `aitp/lite-note-0.1` 标识 AITP 文件，不是 response envelope；当前不存在 `aitp/enter-0.1`、`aitp list`、`aitp show`、`aitp check`、`aitp search` 或 `aitp --version`。
+最后核对的 AITP HEAD 是 `9f9e873440b8d88bfbb2963d8b5717c83b9ef4cc`（2026-08-14，逐命令重新核对 `--help`）：M0/M0.5 已完成；M0.6 以缩小声明关闭；M1a、M1b-R1、M1c 均 **done；deterministic gate passed**（107 个测试）。H0 可实施；当前安装的 Skill 可用 Python 3.11 或更高版本手动调用 CLI，会相对 plugin 自带的 `scripts/aitp.py` 运行，不要求全局 `aitp` executable。Hakimi 原生结构化 adapter 尚未实现。`record`/`note prepare|save` 仍是严格、未版本化的 version-0 response contract，未知 `status` 必须 fail closed。版本化读契约 `aitp/enter-0.2`、`aitp/list-0.1`、`aitp/show-0.1`、`aitp/check-report-0.1` 已 shipped 且 gate 通过；M1c 作用域契约 `aitp/enter-0.3`/`aitp/list-0.2` 仅在传入单次 `--workstream <slug>` 时发出——adapter 落地后均可 feature-detect。持久化的 `aitp/lite-entry-0.1` 和 `aitp/lite-note-0.1` 标识 AITP 文件，不是 response envelope；不存在 `aitp/enter-0.1`、`aitp search`、`aitp --version`，`aitp lineage` 仍是 deferred candidate。
 
 | Hakimi gate | AITP gate | 计划交付与当前事实 |
 | --- | --- | --- |
 | H0 · 当前 CLI | M0/M0.6 | 通过已安装 Skill 使用 `init`、`enter`、`inventory` 和 `record`/`note prepare|save`；绝不自动运行 `init`、`init --adopt` 或 `inventory`。 |
-| H1 · 检索 | M1a 之后 | 计划消费 `enter-0.2`、`list-0.1`、`show-0.1` fixtures；当前不存在 `list`、`show`。 |
-| H2 · 关系与诊断 | M1b 之后 | 计划支持 relation、`used_by`、`check-report-0.1` 和 `run-pointer-0.1`；当前不存在 `check`。 |
-| H3 · 科研记忆 | AITP M2–M4 之后 | 计划增加 reviewed artifacts、跨 Topic links 和 Skill-driven collaborator protocol。 |
+| H1 · 检索 | M1a（gate 已通过） | 计划 feature-detect 并消费 `enter-0.2`、`list-0.1`、`show-0.1` 及 golden fixtures；AITP 侧已 shipped 且 gate 通过，Hakimi adapter 尚未实现。 |
+| H2 · 关系与诊断 | M1b-R1（gate 已通过） | 计划消费 `check-report-0.1`（exit 0/1 解析报告、exit 2 为错误包）；持久化 `based_on`/`used_by` 与 pointer bundle 不在 R1。 |
+| H3 · 科研记忆 | M1c（gate 已通过）；AITP M2–M4 之后 | 计划消费 M1c 作用域契约（`enter-0.3`/`list-0.2`，仅单次 `--workstream`），之后再消费 reviewed artifacts、跨 Topic links 和 Skill-driven collaborator protocol。 |
 
-边界始终是严格的 CLI + 文件：不复制 AITP runtime、SDK、API/MCP server、daemon、第二套 ledger，也不直接写 canonical 文件。未初始化或没有 AITP 的 workspace 要以明确 degraded status 继续运行。H1–H3 是规划，不是当前可用能力。详细矩阵和已核验决策见 [`docs/aitp/`](docs/aitp/)；修改兼容性声明前，先重新核对 AITP `--help`、schema 和官方 fixtures。
+边界始终是严格的 CLI + 文件：不复制 AITP runtime、SDK、API/MCP server、daemon、第二套 ledger，也不直接写 canonical 文件。未初始化或没有 AITP 的 workspace 要以明确 degraded status 继续运行。H1–H3 仍是 Hakimi 侧规划——它们对应的 AITP 契约已 shipped，但 Hakimi 的 adapter 支持尚未实现，不得写成 available。详细矩阵和已核验决策见 [`docs/aitp/`](docs/aitp/)；修改兼容性声明前，先重新核对 AITP `--help`、schema 和官方 fixtures。
 
 ### D · 内置 Hakimi Research Loop
 
 - **所有权**：Hakimi research domain，包含 Research Frame、Research Question Board、bounded checkpoint、physics insight 和结构化 research trace。
 - **依赖**：F 的 agent、subagent、tool、permission 和 transcript seams；不依赖 C，必须能在没有 AITP 时运行。
-- **交付**：区分结果（`Goal`）、动作（`Todo`）和未知/挑战（Research Question）；使用 skeptical、literature、physics、numerical、code 等独立视角；执行有边界的物理检查；向用户展示 frame、问题、证据、falsifier 和决策，而不是 raw hidden chain-of-thought。
+- **交付**：区分结果（`Goal`）、动作（`Todo`）和未知/挑战（Research Question）；使用 skeptical、literature、physics、numerical、code 等独立视角；执行有边界的物理检查；向用户展示 frame、问题、证据、falsifier 和决策，而不是 raw hidden chain-of-thought。维护一条持久化的**科研过程轨迹**：从 wire/transcript 事件派生的可重放科研阶段线（question → literature → hypothesis/derivation → numerics → evidence → decision），折叠成紧凑快照在 turn 边界注入上下文，让模型始终清楚"已做了什么、处于哪个阶段、下一步缺口"；AITP 启用时，轨迹节点映射到 `record`/`note prepare|save`，沉淀为有依据的 research memory 而非 transcript。
 
 ### E · UI 与设置
 
@@ -95,6 +95,12 @@ Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 f
 - **所有权**：platform/engine owner，负责默认 `agent-core-v2` runtime、公共 facade、release/CI 和 Hakimi overlay regression checks。
 - **依赖**：upstream `main`、已分类的 migration/deletion 以及其他轨道的证据；F 分类并测试变更，不机械同步。
 - **交付**：维护 v2 canonical contracts 和 adapters，通过公共边界吸收 provider、auth、tools、session、SDK、transcript、permission、performance、security 变化，运行共享 gate 并维护 release automation。只有前置 gate 全部通过后才评估 `GoalFeature`；不提前迁移或删除 Goal 能力。
+
+### G · DeepSeek 专属适配与 DeepSeek Harness 吸收
+
+- **所有权**：platform/engine owner；适配器落在 kosong provider 层，缓存纪律落在 v2 engine 的请求组装层。
+- **依赖**：F 的 contract freeze 与公共边界；以 DeepSeek Harness `main` 为参考上游，通过受跟踪的 intake 流程（计划 `docs/dsh-intake/`）评审；E 的 provider 设置面；不得回归 GPT/Kimi 路径。
+- **交付**：专用 DeepSeek 适配器——顶层 `thinking` 语义、官方 `reasoning_effort` 级别、按回合的 CoT passback 省 token、带 context window 的模型目录、DeepSeek 专属错误分类与遥测、流空闲 watchdog——全部锁在适配器层，核心保持 dialect-free；同时持续吸收 DeepSeek Harness 机制，以缓存命中为核心：epoch 请求头、session 日志派生请求、压缩后 system prompt 稳定、确定性工具排序、动态内容追加在尾部、缓存用量记账，以及断言"除首个请求外每个请求 `cacheReadTokens > 0`"的真 API 缓存 e2e。
 
 ## 安装
 

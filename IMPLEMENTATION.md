@@ -1,8 +1,8 @@
-# Hakimi 六轨团队实施计划
+# Hakimi 七轨团队实施计划
 
 状态：`active`。本文件是团队执行计划，不是产品路线图，也不是单个 package 的设计文档。根 `README.md` / `README.zh-CN.md` 描述产品方向；本文件描述 owner、边界、阶段、依赖和完成证据。`GOAL.md` 是 Goal mode 行为规格，保持原状，不在本计划中重写。
 
-六条轨道固定如下；共享 contract/gate 由 F 推进，但不是第七条轨道：
+七条轨道固定如下；共享 contract/gate 由 F 推进，不单独成轨：
 
 | 轨道 | 名称 | 主要 owner | 主要交付边界 |
 |---|---|---|---|
@@ -12,6 +12,7 @@
 | D | 内置 Hakimi Research Loop | Hakimi research domain owner | Research Frame、Research Question Board、bounded checkpoint、physics insight 与结构化 trace |
 | E | UI 与设置 | UI/settings owner；业务 domain 仍拥有 schema | TUI、Web、mobile 的设置、状态展示、双语与可访问性 |
 | F | 持续吸收 Kimi Code 上游与基础功能建设 | platform/engine owner | upstream intake、v2 canonical、共享 gate、release/CI 与基础能力；承接 P0/P1 |
+| G | DeepSeek 专属适配与 DeepSeek Harness 吸收 | platform/engine owner | 专用 DeepSeek 适配器（kosong provider 层）；DSH intake（缓存纪律、请求组装、真 API 缓存 e2e）；`docs/dsh-intake/` 跟踪；不回归 GPT/Kimi |
 
 ---
 
@@ -26,6 +27,7 @@
 - Web source 在外部 code-app 仓库；本仓只同步并提交 `apps/kimi-code/dist-web`。`apps/kimi-code/upstream-base.json` 只证明 CLI upstream commit，不证明 Web 来源。
 - 手机首期是 responsive Web/PWA remote shell，不承诺 native app。生产远程只使用 `kap-server` `/api/v1` REST/WS + transcript；不得复活 generic `/api/v2` RPC、debug reflection 或 daemon。
 - AITP 仍严格是 CLI + files。Hakimi 不复制 AITP runtime、parser、validator、canonical ledger 或 daemon，不创建 SDK/API/MCP server、vector service 或第二套 ledger；C 是可选 adapter，D 不依赖 C。
+- DeepSeek Harness（deepseek-harness `main`）是参考上游，不是 merge upstream：只按机制移植（epoch 请求头、session 日志派生请求、缓存纪律、压缩设计、真 API 缓存 e2e），每项带 hakimi 自己的 contract/type/test 证据并过 F gate；DeepSeek 专属 wire 语义只存在于 kosong adapter/provider 层，核心与 GPT/Kimi 路径保持 dialect-free。
 - `apps/kimi-code` 通过 `@moonshot-ai/kimi-code-sdk` 消费 core 能力，不直接依赖 `@moonshot-ai/agent-core`。E 不拥有 provider、research、AITP、remote 等业务 schema。
 
 ### 0.2 执行顺序与并行规则
@@ -38,11 +40,11 @@ F 先冻结 canonical matrix；随后完成 P0 核心正确性，再完成 P1 kl
 
 需要跨进程、远程恢复或 UI 更新的事实必须有可重放 event/wire/transcript projection；live、backfill、cold 必须收敛，旧 peer、断线、冷 session、未初始化 AITP 和关闭的实验 flag 都必须有明确 degraded contract，不得静默成功。
 
-AITP 的 `list`、`show`、`check` 在相应 gate 前不存在，不能调用、模拟或从文档推导；不得自动运行 `init`、`init --adopt` 或 `inventory`，不得直接写 canonical `.aitp` 文件。生产手机路径不能依赖 debug surface、未认证 reverse proxy、本地 canonical store 或 native engine。上游变更必须分类吸收而非机械同步；`GoalFeature` 在所有 shared gate 通过且不会产生第二个 Goal owner 前不迁移。
+AITP 的 `list`、`show`、`check` 现已 shipped（M1a/M1b-R1 gate passed），必须先 feature-detect 版本化 schema 再调用，绝不模拟或从文档推导；对未安装或旧版本 AITP 按不存在处理。不得自动运行 `init`、`init --adopt` 或 `inventory`，不得直接写 canonical `.aitp` 文件。生产手机路径不能依赖 debug surface、未认证 reverse proxy、本地 canonical store 或 native engine。上游变更必须分类吸收而非机械同步；`GoalFeature` 在所有 shared gate 通过且不会产生第二个 Goal owner 前不迁移。
 
 ---
 
-## 1. F 轨共享 gate（不是第七轨）
+## 1. F 轨共享 gate（不单独成轨）
 
 F 负责推进以下 gate，其他轨道消费其公开结果。
 
@@ -160,27 +162,27 @@ B 依赖 F 的 session lifecycle、permission、auth、transcript sequencing、R
 
 ### 4.1 当前 baseline 与 owner
 
-C 只交付可选 AITP CLI + files adapter；未安装或未初始化 AITP 时，D 和 Hakimi 主路径必须正常运行并显示 degraded status。最后核验的 AITP HEAD 是 `8658f6827288f4bb61e5c193a346f0f73ebbe3b2`：M0/M0.5 complete，M0.6 in progress，后续 gate 尚未开放。H0 可实施；当前安装的 Skill 可用 Python ≥ 3.11 手动调用 CLI，但 Hakimi native structured adapter 尚未实现。`record/note prepare|save` 是严格 shape 的未版本化 version-0 response contract，未知 `status` fail closed；第一个 versioned transport 是 M1a 的 `aitp/enter-0.2`。
+C 只交付可选 AITP CLI + files adapter；未安装或未初始化 AITP 时，D 和 Hakimi 主路径必须正常运行并显示 degraded status。最后核验的 AITP HEAD 是 `9f9e873440b8d88bfbb2963d8b5717c83b9ef4cc`（2026-08-14，逐命令核对 `--help`）：M0/M0.5 complete；M0.6 implementation closed（缩小声明）；M1a、M1b-R1、M1c 均 done 且 deterministic gate passed（107 tests）。H0 可实施；H1/H2/H3 的 AITP 前置 gate 已全部通过（读契约可 feature-detect），但 Hakimi native structured adapter 尚未实现。`record/note prepare|save` 是严格 shape 的未版本化 version-0 response contract，未知 `status` fail closed；第一个 versioned transport 是 M1a 的 `aitp/enter-0.2`。
 
 | Hakimi gate | AITP gate | 状态与计划 |
 |---|---|---|
 | H0 · 当前 CLI | M0/M0.6 | Skill 可手动调用 `init`、`enter`、`inventory`、`record/note prepare|save`；adapter 可开始实施，但不自动运行 `init`、`init --adopt` 或 `inventory`。 |
-| H1 · 检索 | M1a 后 | 计划消费 `enter-0.2`、`list-0.1`、`show-0.1` 官方 golden fixtures；当前 `list`、`show` 不存在。 |
-| H2 · 关系与诊断 | M1b 后 | 计划消费 `lite-entry-0.2` relation、`used_by`、`check-report-0.1`、`run-pointer-0.1`；当前 `check` 不存在。 |
-| H3 · 科研记忆 | M2–M4 后 | 计划消费 reviewed artifacts、跨 Topic links 和 collaborator protocol。 |
+| H1 · 检索 | M1a（gate passed） | feature-detect 并消费 `enter-0.2`、`list-0.1`、`show-0.1` 官方 golden fixtures；AITP 侧已 shipped，adapter 待实现。 |
+| H2 · 关系与诊断 | M1b-R1（gate passed） | 只消费 R1 实际发布的 `check-report-0.1`（exit 0/1 报告、exit 2 错误包）；`lite-entry-0.2` relation、`used_by`、`run-pointer-0.1` 均 deferred，不安排。 |
+| H3 · 科研记忆 | M1c（gate passed）；M2–M4 后 | 先整合 M1c scoped contracts（`enter-0.3`/`list-0.2`，仅单次 `--workstream`）；M2–M4 后消费 reviewed artifacts、跨 Topic links 和 collaborator protocol。 |
 
-当前持久化 `aitp/lite-entry-0.1` / `aitp/lite-note-0.1` 标识 AITP 文件，不是 CLI response envelope；不存在 `aitp/enter-0.1`、`aitp list`、`aitp show`、`aitp check`、`aitp search` 或 `aitp --version`。详细矩阵见 [`docs/aitp/`](docs/aitp/)。任何 status、command、schema、launcher 或 Skill discovery 变化都要先核验外部 AITP `--help`、schema、official fixtures 和双方 handoff，再更新本文件与双语 README；不得把规划写成 available。
+当前持久化 `aitp/lite-entry-0.1` / `aitp/lite-note-0.1` 标识 AITP 文件，不是 CLI response envelope；读契约 `enter-0.2`/`list-0.1`/`show-0.1`/`check-report-0.1` 与 M1c 作用域契约 `enter-0.3`/`list-0.2` 已 shipped，可 feature-detect；不存在 `aitp/enter-0.1`、`aitp search`、`aitp --version`，`lineage` 仍 deferred。详细矩阵见 [`docs/aitp/`](docs/aitp/)。任何 status、command、schema、launcher 或 Skill discovery 变化都要先核验外部 AITP `--help`、schema、official fixtures 和双方 handoff，再更新本文件与双语 README；不得把规划写成 available。
 
 ### 4.2 边界与阶段
 
 - **Owner/boundary：** C 的 adapter 由 AITP domain owner 实现，首选 v2 Feature/config/command/service contribution seam，例如 `packages/agent-core-v2/src/features/aitp/`；不得从 UI/server deep import。launcher 只调用外部 plugin 的 `scripts/aitp.py`，按 Skill 规则探测 Python ≥3.11。
 - **C0/H0：** version-0 envelope strict shape、`--help` capability、`enter` lifecycle、prepare→fill→save、`not_initialized` degrade、tree-hash zero-write 和 flag gate。
 - **C1/H1：** M1a 后 feature-detect 并消费 `enter/list/show` versioned contract 与 golden fixtures，提供 closeout-first recovery 和 Note-age signal；gate 前不调用或模拟。
-- **C2/H2：** M1b 后消费实际发布的 relation、typed resolution、`used_by`、check report 和 run pointer；所有 pointer projection 只读。
-- **C3/H3：** M2–M4 后按 gate 顺序消费 reviewed artifacts、cross-topic links 和 Skill collaborator protocol；正式 compatibility 以 versioned JSON + official fixtures 为准。
+- **C2/H2：** M1b-R1 后只消费实际发布的 check report（`check-report-0.1`，exit 0/1 报告、exit 2 错误包）；relation、typed resolution、`used_by`、run pointer 均未发布（deferred），不纳入；所有 pointer projection 只读。
+- **C3/H3：** M1c 后先整合 scoped contracts（仅单次 `--workstream <slug>` 时 feature-detect `enter-0.3`/`list-0.2`，严格 exact membership、relation 先全局计算）；M2–M4 后按 gate 顺序消费 reviewed artifacts、cross-topic links 和 Skill collaborator protocol；正式 compatibility 以 versioned JSON + official fixtures 为准。
 - **C4 maintenance：** 每次外部变化重跑 launcher、capability、shape、fixture、tree-hash 和 degraded tests。
 
-C 依赖 F 的 flag、session、event、klient/SDK 和 release boundary；A/B/E 只消费 capability/status projection，D 先产生 ephemeral trace，只有用户显式启用且通过 prepare/save/write gate 才写入 AITP。C 永不写 `.aitp` canonical files、第二 index、private cache/transcript/CoT 或第二 ledger；不存在的 `list`/`show`/`check` 必须返回 absent/blocked，而不是模拟。
+C 依赖 F 的 flag、session、event、klient/SDK 和 release boundary；A/B/E 只消费 capability/status projection，D 先产生 ephemeral trace，只有用户显式启用且通过 prepare/save/write gate 才写入 AITP。C 永不写 `.aitp` canonical files、第二 index、private cache/transcript/CoT 或第二 ledger；安装的 AITP 缺少对应命令（未安装或旧版本）时必须返回 absent/blocked，而不是模拟。
 
 ---
 
@@ -200,6 +202,7 @@ Frame 至少包含 scientific question、objective、focus、blocker；Question 
 - **D3 independent insight：** 按问题类型选择五类视角，执行近似、量纲、对称/守恒、可解极限、收敛、跨方法和文献 benchmark 检查，并分离 challenge 与 evidence。
 - **D4 research trace：** 以公开 wire/transcript projection 表达 frame、question、candidate、evidence、falsifier、perspective、checkpoint 和 decision，不展示 raw hidden chain-of-thought。
 - **D5 evaluation：** 在大型科研代码库、快速数值检查和解析检查上验证同一 loop；flag 默认关闭，依据证据决定发布。
+- **D6 research trajectory（科研过程轨迹）：** 以公开 wire/transcript projection 维护一条可重放的科研过程线——question → literature → hypothesis/derivation → numerics → evidence → decision——在 turn 边界折叠注入上下文，使模型清晰知道"已做了什么、处于哪个阶段、下一步缺口"；C 轨启用时轨迹节点与 `record`/`note prepare|save` 一一映射，沉淀为 research memory；不展示 raw hidden chain-of-thought。
 
 D 消费 F 的 Goal/Todo/session/subagent/tool/permission/transcript contract，不改变 Goal owner、不绕过 Todo、不复制 route/provider policy。A/B/E 消费公开 projection；C 是可选 persistence consumer。验收覆盖职责分离、hard ceiling、并发去重、五类视角、physics checks、live/backfill/cold replay、无 AITP、flag off、provider 不可用和超预算的 degraded path。
 
@@ -247,20 +250,42 @@ F 消费 upstream 与其他轨道的 provenance、安全、compatibility、trace
 
 ---
 
-## 8. 统一完成定义与停止规则
+## 8. G 轨：DeepSeek 专属适配与 DeepSeek Harness 吸收
 
-### 8.1 阶段完成定义
+### 8.1 owner 与边界
+
+G 由 platform/engine owner 推进：专用 DeepSeek 适配器落在 `packages/kosong` provider 层（v2 对应 provider base），缓存纪律落在 v2 engine 的请求组装/压缩层。G 不拥有 AITP runtime、research semantics 或 UI schema；不改动 provider 抽象的核心 contract，DeepSeek 专属 wire 语义（`thinking:{type}`、`reasoning_effort`、CoT passback、`x-deepseek-*` 遥测）只存在于 adapter 层，不得回归 GPT/Kimi 路径。
+
+DeepSeek Harness（deepseek-harness `main`）是参考上游，不是 merge upstream：不机械同步代码，只按机制移植，每项移植必须带 hakimi 自己的 contract/type/test 证据并过 F gate。intake 以 `docs/dsh-intake/` 跟踪（记录 DSH HEAD、评审过的机制、移植/延迟/拒绝决策），按 release 或周窗口 triage；先移植结构性稳定机制，延后 DSH 自己标 in-flux 的机制（如 epoch 字段定义）。
+
+### 8.2 阶段交付
+
+- **G0 adapter：** 专用 DeepSeek 适配器——顶层 `thinking` 语义、官方 `reasoning_effort`（off/high/max）、按回合 CoT passback 省 token、空 content 用 `""` 非 `null`、模型目录（context window、per-model maxTokens）、DeepSeek 专属错误分类（quota/context-window/429）与遥测头、流空闲 watchdog、session-title 关 thinking。
+- **G1 cache discipline：** epoch 请求头（system/tools/config 不可变纪元、变更显式记录）、请求从 session 日志派生并 deepFreeze、压缩后不重渲染 system prompt（KIMI_NOW 锚定）、动态内容追加尾部、确定性工具排序、`cacheReadTokens` 记账并在 TUI/telemetry 可见。
+- **G2 verification：** 相邻请求前缀逐字节稳定单元测试；key-gated 真 API e2e（断言请求 2+ 全部 `cacheReadTokens > 0`，对齐 DSH `request-cache.e2e.ts`）；跨 harness 基准（同模型、同科研工作流对比 hakimi vs DSH 的命中率/TTFT）驱动 intake 决策。
+- **G3 intake process：** `docs/dsh-intake/` 跟踪文档（HEAD、评审、决策）+ 周窗口 triage + 分类（移植/延迟/拒绝）+ 吸收面限定在 llm/session/agent-loop/compaction 的机制级变更。
+
+### 8.3 依赖与验收
+
+G 依赖 F 的 contract freeze 与公共边界、E 的 provider 设置面；以 DSH 文档（architecture、capability-seams、cookbook）为设计参考。验收：GPT/Kimi 路径 wire 字节不变（adapter 层作用域证明）、真 API 缓存命中 e2e 通过、`docs/dsh-intake/` 有 HEAD 与决策记录、无 deep import、无第二 provider 抽象。
+
+---
+
+## 9. 统一完成定义与停止规则
+
+### 9.1 阶段完成定义
 
 一条轨道只有在目标、owner、代码边界、依赖、公开 contract、版本/降级语义和 fixture 已冻结，并且实现、测试、typecheck、static boundary 及该阶段所需的 security/performance/accessibility 证据通过后，才能关闭阶段。mock/fake、设计文档或尚未过 gate 的外部能力不能标为 available；artifact、schema、source/provenance、fixture、版本和限制必须可追溯。跨轨集成必须经过 F gate，不得用 deep import 绕过。
 
-### 8.2 全局停止规则
+### 9.2 全局停止规则
 
 - 两个 domain 同时拥有 schema、状态机、transcript projection 或持久化时，停止集成并回到 F0，不用 merge 顺序或 UI adapter 掩盖冲突。
 - gate 依赖不存在的 AITP command/schema、未提交的 code-app source、未冻结的远程协议或未核验的 upstream 行为时，停止该集成，保留 degraded/fake path，不猜测未来 contract。
 - live/backfill/cold、resume、approval/question、reconnect 或 Goal 状态不能收敛时，停止 release，先补 shared transcript/contract evidence。
 - 安全边界依赖 debug reflection、generic `/api/v2`、daemon、未认证 proxy 或手机本地 canonical store 时，停止远程发布并回到 B0/F0。
+- DeepSeek 专属 wire 语义泄漏进核心层、DSH 机制移植缺少 hakimi 自身测试、或 intake 未记录 DSH HEAD/决策时，停止吸收并回到 G0/F0。
 - 发现 D 依赖 C、E 拥有业务 schema、A 搬回 Web source、任何轨道 deep import 或 `GOAL.md` 出现 diff 时，停止合并并修正边界。
 
-### 8.3 最终不变量
+### 9.3 最终不变量
 
-六轨可以并行，但共享 contract/gate 不是第七轨；默认 runtime 是 v2，v1 仅 legacy；Web source 留在外部 code-app，本仓只提交带 provenance 的 `dist-web`；手机首期只有 responsive Web/PWA；生产远程只有 `/api/v1` REST/WS + transcript；AITP 只有可选 CLI + files adapter；D 不依赖 C；E 不拥有业务 schema；Goal 能力保留，`GoalFeature` 只能在最后单独评估。所有轨道都必须通过公开 contract、event、config contribution、klient/SDK、REST/WS 或明确 adapter 集成。
+七轨可以并行，但共享 contract/gate 不单独成轨；默认 runtime 是 v2，v1 仅 legacy；Web source 留在外部 code-app，本仓只提交带 provenance 的 `dist-web`；手机首期只有 responsive Web/PWA；生产远程只有 `/api/v1` REST/WS + transcript；AITP 只有可选 CLI + files adapter；D 不依赖 C；E 不拥有业务 schema；Goal 能力保留，`GoalFeature` 只能在最后单独评估；DeepSeek 专属 wire 语义只在 adapter 层，GPT/Kimi 路径保持 dialect-free。所有轨道都必须通过公开 contract、event、config contribution、klient/SDK、REST/WS 或明确 adapter 集成。
