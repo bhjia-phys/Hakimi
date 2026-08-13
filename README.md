@@ -50,6 +50,8 @@ The seven tracks are fixed: **A Web**, **B Phone remote**, **C AITP integration*
 
 The order is **contract freeze → core correctness → public boundaries → Hakimi overlay → final `GoalFeature` evaluation**. A–E and G may develop in parallel against frozen fixtures, but cross-track integration and release wait for F's gates. The default runtime is `agent-core-v2`; `packages/agent-core` remains v1 legacy compatibility.
 
+**Platform decision (2026-08-14):** the research layer (D and C tracks) is implemented in Hakimi itself; DeepSeek Harness serves only as a mechanism reference upstream. DeepSeek Harness was evaluated as the research-layer home and rejected for now — release-candidate maturity with declared breaking changes — with a re-review condition: a stable DSH release plus a clear G2 cross-harness benchmark advantage.
+
 ### A · Web
 
 - **Owner:** external code-app Web owner for source; Hakimi owner for receiving, branding, provenance, and shipping the bundle.
@@ -80,6 +82,8 @@ The boundary remains strict CLI + files: no copied AITP runtime, SDK, API/MCP se
 
 ### D · Built-in Hakimi Research Loop
 
+The D track is the primary research-layer implementation track (2026-08-14 platform decision).
+
 - **Owner:** Hakimi research domain, including Research Frame, Research Question Board, bounded checkpoints, physics insight, and structured research trace.
 - **Depends on:** F's agent, subagent, tool, permission, and transcript seams; it does not depend on C and must run without AITP.
 - **Delivery:** distinguish outcome (`Goal`), action (`Todo`), and unknown/challenge (Research Question); use independent skeptical, literature, physics, numerical, and code perspectives; perform bounded physics-aware checks; expose frames, questions, evidence, falsifiers, and decisions rather than raw hidden chain-of-thought. Maintain a durable **research-process trajectory** (科研过程轨迹): a replayable line of research stages — question → literature → hypothesis/derivation → numerics → evidence → decision — derived from wire/transcript events and folded into a compact snapshot the model reads at turn boundaries, so it always knows what has been done and what the next gap is; when AITP is active, trajectory nodes map to `record`/`note prepare|save` entries as grounded research memory rather than transcript.
@@ -100,7 +104,7 @@ The boundary remains strict CLI + files: no copied AITP runtime, SDK, API/MCP se
 
 - **Owner:** platform/engine owner; adapter work lands in the kosong provider layer, cache discipline in the v2 engine's request assembly.
 - **Depends on:** F's contract freeze and public boundaries; DeepSeek Harness `main` reviewed as a reference upstream through a tracked intake process (planned `docs/dsh-intake/`); E's provider settings surface; must not regress the GPT/Kimi paths.
-- **Delivery:** a dedicated DeepSeek adapter — top-level `thinking` semantics, official `reasoning_effort` levels, per-turn CoT passback economy, a model catalog with context windows, DeepSeek-specific error classification and telemetry, and a stream idle watchdog — scoped entirely to the adapter layer over a dialect-free core; plus continuous intake of DeepSeek Harness mechanisms, led by cache discipline: epoch request headers, session-log-derived requests, stable post-compaction system prompts, deterministic tool ordering, dynamic content appended at the tail, cache-aware usage accounting, and a real-API cache-hit e2e asserting `cacheReadTokens > 0` on every request after the first.
+- **Delivery:** a dedicated DeepSeek adapter — top-level `thinking` semantics, official `reasoning_effort` levels, per-turn CoT passback economy, a model catalog with context windows, DeepSeek-specific error classification and telemetry, and a stream idle watchdog — scoped entirely to the adapter layer over a dialect-free core; plus continuous intake of DeepSeek Harness mechanisms, led by cache discipline: epoch request headers, session-log-derived requests, stable post-compaction system prompts, deterministic tool ordering, dynamic content appended at the tail, cache-aware usage accounting, and a real-API cache-hit e2e asserting `cacheReadTokens > 0` on every request after the first. Scope note (2026-08-14): mechanism intake only — DeepSeek Harness was evaluated and rejected as the research-layer home; no research layer is built on DSH.
 
 ## Install
 

@@ -28,11 +28,14 @@
 - 手机首期是 responsive Web/PWA remote shell，不承诺 native app。生产远程只使用 `kap-server` `/api/v1` REST/WS + transcript；不得复活 generic `/api/v2` RPC、debug reflection 或 daemon。
 - AITP 仍严格是 CLI + files。Hakimi 不复制 AITP runtime、parser、validator、canonical ledger 或 daemon，不创建 SDK/API/MCP server、vector service 或第二套 ledger；C 是可选 adapter，D 不依赖 C。
 - DeepSeek Harness（deepseek-harness `main`）是参考上游，不是 merge upstream：只按机制移植（epoch 请求头、session 日志派生请求、缓存纪律、压缩设计、真 API 缓存 e2e），每项带 hakimi 自己的 contract/type/test 证据并过 F gate；DeepSeek 专属 wire 语义只存在于 kosong adapter/provider 层，核心与 GPT/Kimi 路径保持 dialect-free。
+- **平台决策（2026-08-14 评审）：研究层（D/C 轨、研究循环、记忆集成）以 hakimi 为实现场；DSH 仅为机制参考上游。** DSH 曾作为研究层承载方评估并被否决——rc 级版本、README 明示 breaking changes、两月龄高频演进，尚不适合承载长期研究资产；可反转条件为 DSH 稳定 release 且 G2 跨 harness 基准给出明确优势（届时重新评审，不做默认迁移）。
 - `apps/kimi-code` 通过 `@moonshot-ai/kimi-code-sdk` 消费 core 能力，不直接依赖 `@moonshot-ai/agent-core`。E 不拥有 provider、research、AITP、remote 等业务 schema。
 
 ### 0.2 执行顺序与并行规则
 
 顺序固定为：**contract freeze → 核心正确性 → 公共边界 → Hakimi overlay → 最后评估 `GoalFeature`**。
+
+当前开工顺序（平台决策 2026-08-14 后）：**F P0（前缀正确性）→ G1 缓存纪律（压缩后不重渲染 + `KIMI_NOW` 锚定）→ C/H0 AITP adapter → D0–D6 research loop → G0 专用 DeepSeek adapter 按需**。
 
 F 先冻结 canonical matrix；随后完成 P0 核心正确性，再完成 P1 klient/SDK/REST/TUI 等公共边界，最后承接 P2 overlay 并接入 A–E。A–E 可在 gate 之间使用 frozen fixture、fake adapter 和 mock event 并行开发，但跨轨集成与 release 必须等待对应 F gate。
 
@@ -190,7 +193,7 @@ C 依赖 F 的 flag、session、event、klient/SDK 和 release boundary；A/B/E 
 
 ### 5.1 owner 与边界
 
-D 由 Hakimi research domain 拥有，首选 self-contained v2 Feature/domain；具体 Service scope、wire、tool/command contribution 先过 agent-core-v2 service-design gate。Research Frame、Research Question Board、checkpoint decision、perspective result、candidate explanation、evidence、falsifier 和 decision 都由 D 定义，不是 Goal、Todo 或 UI state 的别名。D 通过 v2 seams 和公开 klient/SDK contract 接入，不 import AITP 或界面内部。
+D 是研究层的主实现轨道（平台决策 2026-08-14：研究层留在 hakimi，DSH 仅作机制参考）。D 由 Hakimi research domain 拥有，首选 self-contained v2 Feature/domain；具体 Service scope、wire、tool/command contribution 先过 agent-core-v2 service-design gate。Research Frame、Research Question Board、checkpoint decision、perspective result、candidate explanation、evidence、falsifier 和 decision 都由 D 定义，不是 Goal、Todo 或 UI state 的别名。D 通过 v2 seams 和公开 klient/SDK contract 接入，不 import AITP 或界面内部。
 
 Frame 至少包含 scientific question、objective、focus、blocker；Question Board 表达 unknown、当前重要性、needed evidence 和 `open | under_investigation | answered | blocked | deferred`。skeptical、literature、physics、numerical、code 视角接收受限 context packet，输出 challenge/evidence/uncertainty；flag 默认 off。
 
@@ -258,6 +261,8 @@ G 由 platform/engine owner 推进：专用 DeepSeek 适配器落在 `packages/k
 
 DeepSeek Harness（deepseek-harness `main`）是参考上游，不是 merge upstream：不机械同步代码，只按机制移植，每项移植必须带 hakimi 自己的 contract/type/test 证据并过 F gate。intake 以 `docs/dsh-intake/` 跟踪（记录 DSH HEAD、评审过的机制、移植/延迟/拒绝决策），按 release 或周窗口 triage；先移植结构性稳定机制，延后 DSH 自己标 in-flux 的机制（如 epoch 字段定义）。
 
+平台评审结论（2026-08-14）：**DSH 不作研究层承载方**（rc 级成熟度、declared breaking changes）。G 轨范围因此限定为机制移植——DSH 只提供机制参考（缓存纪律、请求组装、DeepSeek wire 语义），不产生任何 DSH 侧研究层建设；跨 harness 基准（G2）保留为机制吸收的测量仪器，不再是迁移决策。
+
 ### 8.2 阶段交付
 
 - **G0 adapter：** 专用 DeepSeek 适配器——顶层 `thinking` 语义、官方 `reasoning_effort`（off/high/max）、按回合 CoT passback 省 token、空 content 用 `""` 非 `null`、模型目录（context window、per-model maxTokens）、DeepSeek 专属错误分类（quota/context-window/429）与遥测头、流空闲 watchdog、session-title 关 thinking。
@@ -288,4 +293,4 @@ G 依赖 F 的 contract freeze 与公共边界、E 的 provider 设置面；以 
 
 ### 9.3 最终不变量
 
-七轨可以并行，但共享 contract/gate 不单独成轨；默认 runtime 是 v2，v1 仅 legacy；Web source 留在外部 code-app，本仓只提交带 provenance 的 `dist-web`；手机首期只有 responsive Web/PWA；生产远程只有 `/api/v1` REST/WS + transcript；AITP 只有可选 CLI + files adapter；D 不依赖 C；E 不拥有业务 schema；Goal 能力保留，`GoalFeature` 只能在最后单独评估；DeepSeek 专属 wire 语义只在 adapter 层，GPT/Kimi 路径保持 dialect-free。所有轨道都必须通过公开 contract、event、config contribution、klient/SDK、REST/WS 或明确 adapter 集成。
+七轨可以并行，但共享 contract/gate 不单独成轨；默认 runtime 是 v2，v1 仅 legacy；Web source 留在外部 code-app，本仓只提交带 provenance 的 `dist-web`；手机首期只有 responsive Web/PWA；生产远程只有 `/api/v1` REST/WS + transcript；AITP 只有可选 CLI + files adapter；D 不依赖 C；E 不拥有业务 schema；Goal 能力保留，`GoalFeature` 只能在最后单独评估；DeepSeek 专属 wire 语义只在 adapter 层，GPT/Kimi 路径保持 dialect-free；**研究层实现以 hakimi v2 为唯一默认场，DSH 仅为机制参考上游、不承载研究资产，DSH 重新入选需走平台评审**。所有轨道都必须通过公开 contract、event、config contribution、klient/SDK、REST/WS 或明确 adapter 集成。
