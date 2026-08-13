@@ -30,7 +30,8 @@ export function resolveAgentPath(path: string, baseDir: string, osHomeDir: strin
  */
 export const SESSION_EXPLICIT_AGENT_FILES_DIR = 'agent-files';
 
-export async function isDirectoryPath(fs: IHostFileSystem, p: string): Promise<boolean> {  try {
+export async function isDirectoryPath(fs: IHostFileSystem, p: string): Promise<boolean> {
+  try {
     const resolved = await fs.realpath(p);
     return (await fs.stat(resolved)).isDirectory;
   } catch (error) {

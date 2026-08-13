@@ -1252,6 +1252,7 @@ async function makeSessionParityPair(configToml?: string): Promise<SessionParity
   const v1HomeDir = await makeTempDir('kimi-sdk-parity-v1-home-');
   const v2HomeDir = await makeTempDir('kimi-sdk-parity-v2-home-');
   const workDir = await makeTempDir('kimi-sdk-parity-work-');
+  await mkdir(join(workDir, '.git'));
   if (configToml !== undefined) {
     await writeFile(join(v1HomeDir, 'config.toml'), configToml, 'utf-8');
     await writeFile(join(v2HomeDir, 'config.toml'), configToml, 'utf-8');
@@ -1714,6 +1715,7 @@ async function makeAgentParityPair(configToml: string = AGENT_CONFIG_TOML): Prom
   const v1HomeDir = await makeTempDir('kimi-sdk-parity-v1-home-');
   const v2HomeDir = await makeTempDir('kimi-sdk-parity-v2-home-');
   const workDir = await makeTempDir('kimi-sdk-parity-work-');
+  await mkdir(join(workDir, '.git'));
   await writeFile(join(v1HomeDir, 'config.toml'), configToml, 'utf-8');
   await writeFile(join(v2HomeDir, 'config.toml'), configToml, 'utf-8');
   return {

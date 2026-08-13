@@ -187,6 +187,7 @@ function profileCatalogWithPreference(
     getDefault: () => main,
     list: () => [target],
     inspect: () => undefined,
+    profileSource: () => 'builtin',
     load: async () => {},
     reload: async () => {},
   };
@@ -595,6 +596,7 @@ describe('Agent tool description', () => {
       getDefault: () => restricted,
       list: () => profiles,
       inspect: () => undefined,
+      profileSource: () => 'builtin',
       load: async () => {},
       reload: async () => {},
     };
@@ -633,6 +635,7 @@ describe('Agent tool description', () => {
       getDefault: () => caller,
       list: () => [coder, explore],
       inspect: () => undefined,
+      profileSource: () => 'builtin',
       load: async () => {},
       reload: async () => {},
     };
@@ -669,6 +672,7 @@ describe('Agent tool description', () => {
       getDefault: () => caller,
       list: () => [coder, explore],
       inspect: () => undefined,
+      profileSource: () => 'builtin',
       load: async () => {},
       reload: async () => {},
     };
@@ -711,6 +715,7 @@ describe('Agent tool description', () => {
       getDefault: () => caller,
       list: () => [...profiles],
       inspect: () => undefined,
+      profileSource: () => 'builtin',
       load: async () => {},
       reload: async () => {},
     };
@@ -758,6 +763,7 @@ describe('Agent tool description', () => {
       getDefault: () => caller,
       list: () => [...profiles],
       inspect: () => undefined,
+      profileSource: () => 'builtin',
       load: async () => {},
       reload: async () => {},
     };
@@ -951,6 +957,7 @@ describe('Agent tool execution contract', () => {
       getDefault: () => caller,
       list: () => [coder, explore],
       inspect: () => undefined,
+      profileSource: () => 'builtin',
       load: async () => {},
       reload: async () => {},
     };
@@ -1262,24 +1269,20 @@ describe('Agent tool execution contract', () => {
     );
   });
 
-  it('inherits the caller model when no secondary model is configured', async () => {
+  it('rejects an explicit secondary choice when no secondary model is configured', async () => {
     const lifecycle = createAgentLifecycleStub({ createAgentIds: ['agent-child'] });
     const context = createAgentToolContext(lifecycle);
 
-    await executeAgentTool(context, {
+    const result = await executeAgentTool(context, {
       prompt: 'Investigate',
       description: 'Find cause',
       model: 'secondary',
     });
 
-    expect(lifecycle.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        binding: expect.objectContaining({
-          model: 'mock-model',
-          thinking: 'off',
-        }),
-      }),
-    );
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain('no secondary model is available');
+    expect(result.output).toContain('[secondary_model].model');
+    expect(lifecycle.create).not.toHaveBeenCalled();
   });
 
   it('points at the secondary model config when the configured alias is invalid', async () => {

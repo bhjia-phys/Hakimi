@@ -165,6 +165,7 @@ import {
 
 type MaterializeSessionOptions = Omit<CreateSessionOptions, 'sessionId'> & {
   readonly sessionId: string;
+  readonly loadPersistedExplicitFiles?: boolean;
 };
 
 // NOTE: stays Disposable — its own 'get' and 'config' collide with the Fiber
@@ -318,6 +319,9 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
           ...sessionAgentProfileCatalogSeed({
             _serviceBrand: undefined,
             workspaceKey: workspaceId,
+            loadExplicitFiles:
+              opts.loadPersistedExplicitFiles === true ||
+              (opts.explicitFiles !== undefined && opts.explicitFiles.length > 0),
           }),
           [ISessionProcessRunner, this.processRunner],
           ...sessionEphemeralMcpServersSeed(opts.mcpServers ?? {}),
@@ -419,6 +423,7 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
       workDir,
       additionalDirs: opts?.additionalDirs,
       mcpServers: opts?.mcpServers,
+      loadPersistedExplicitFiles: true,
     });
     const agents = handle.accessor.get(IAgentLifecycleService);
     if (agents.get(MAIN_AGENT_ID) === undefined) {
@@ -551,6 +556,7 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
       target = await this.materializeSession({
         sessionId: targetId,
         workDir: this.workspaceContext.cwd,
+        loadPersistedExplicitFiles: true,
       });
       const targetCtx = target.accessor.get(ISessionContext);
       const targetMeta = target.accessor.get(ISessionMetadata);

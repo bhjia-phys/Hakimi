@@ -220,7 +220,7 @@ async function withSkillCatalogWorkspace(
 ): Promise<void> {
   const workDir = await mkdtemp(join(tmpdir(), 'skill-catalog-'));
   const skillRoot = join(workDir, '.kimi-code', 'skills');
-  await mkdir(skillRoot, { recursive: true });
+  await Promise.all([mkdir(join(workDir, '.git')), mkdir(skillRoot, { recursive: true })]);
   try {
     await run({ workDir, skillRoot: await realpath(skillRoot) });
   } finally {
@@ -899,6 +899,7 @@ describe('WorkspaceSkillCatalogService', () => {
 
   it('rescans the workspace-root source when a project skill file changes on disk', async () => {
     const workDir = await mkdtemp(join(tmpdir(), 'skill-watch-'));
+    await mkdir(join(workDir, '.git'));
     const host = createScopedTestHost([
       stubPair(IBootstrapService, bootstrapStub),
       stubPair(IConfigService, configStub()),
@@ -942,6 +943,7 @@ describe('WorkspaceSkillCatalogService', () => {
 
   it('prunes terminal skill payloads from the workspace watch after discovery', async () => {
     const workDir = await mkdtemp(join(tmpdir(), 'skill-watch-plan-'));
+    await mkdir(join(workDir, '.git'));
     const skillDir = join(workDir, '.agents', 'skills', 'demo');
     const runtimeFile = join(skillDir, 'runtime', '0.py');
     await mkdir(join(skillDir, 'runtime'), { recursive: true });
@@ -985,6 +987,7 @@ describe('WorkspaceSkillCatalogService', () => {
 
   it('rescans when a skill under a dot directory appears on disk', async () => {
     const workDir = await mkdtemp(join(tmpdir(), 'skill-watch-dot-'));
+    await mkdir(join(workDir, '.git'));
     const host = createScopedTestHost([
       stubPair(IBootstrapService, bootstrapStub),
       stubPair(IConfigService, configStub()),

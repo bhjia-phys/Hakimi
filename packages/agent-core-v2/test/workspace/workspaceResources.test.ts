@@ -386,6 +386,7 @@ describe('workspace resource sharing (handler chain)', () => {
   }
 
   async function handlerFor(root: string): Promise<ISessionLifecycleService> {
+    await mkdir(join(root, '.git'), { recursive: true });
     const handler = await (host as ScopedTestHost).app.accessor
       .get(IWorkspaceLifecycleService)
       .handlerFor({ root });
@@ -417,10 +418,10 @@ describe('workspace resource sharing (handler chain)', () => {
     const m1 = s1.accessor.get(ISessionMcpHandle);
     const m2 = s2.accessor.get(ISessionMcpHandle);
     expect(m1.connectionManager).toBe(m2.connectionManager);
-    expect(connectAll).toHaveBeenCalledTimes(1);
     // Session creation no longer waits for the initial connect; the seeded
     // handle's readiness promise is the wait point.
     await m1.ready;
+    expect(connectAll).toHaveBeenCalledTimes(1);
     expect(m1.connectionManager.get('alpha')?.status).toBe('connected');
   }, 20000);
 

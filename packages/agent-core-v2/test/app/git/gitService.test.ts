@@ -153,12 +153,13 @@ describe('GitService', () => {
     });
 
     it('returns null when no ancestor holds a .git entry', async () => {
-      const plain = mkdtempSync(join(tmpdir(), 'git-service-plain-'));
-      try {
-        await expect(service.findWorkTree(plain)).resolves.toBeNull();
-      } finally {
-        rmSync(plain, { recursive: true, force: true });
-      }
+      const fsWithoutGitAncestors = new HostFileSystem();
+      fsWithoutGitAncestors.stat = async (path) => {
+        if (path.endsWith('/.git')) throw new Error('not found');
+        return new HostFileSystem().stat(path);
+      };
+
+      await expect(findGitWorkTree(fsWithoutGitAncestors, '/workspace/plain')).resolves.toBeNull();
     });
 
     it('resolves an absolute gitdir pointer in a .git file', async () => {

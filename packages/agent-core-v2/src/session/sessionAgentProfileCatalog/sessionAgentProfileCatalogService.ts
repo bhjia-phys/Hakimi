@@ -32,8 +32,10 @@ import {
   type AgentProfileRegistration,
 } from '#/app/agentProfileCatalog/agentProfileRegistry';
 import { BUILTIN_AGENT_PROFILE_SOURCE_ID } from '#/app/agentProfileCatalog/builtinAgentProfileLoader';
+import { AGENT_PROFILE_SOURCE_PRIORITY } from '#/app/agentProfileCatalog/agentProfileContribution';
 
 import { ISessionAgentProfileCatalogSeed } from './agentProfileCatalogSeed';
+import { IExplicitFileAgentSource } from './explicitFileAgentSource';
 import {
   ISessionAgentProfileCatalog,
   type AgentProfileInspection,
@@ -63,6 +65,7 @@ export class SessionAgentProfileCatalogService
   constructor(
     @IAgentProfileRegistry private readonly registry: IAgentProfileRegistry,
     @ISessionAgentProfileCatalogSeed private readonly seed: ISessionAgentProfileCatalogSeed,
+    @IExplicitFileAgentSource private readonly explicit: IExplicitFileAgentSource,
     @ILogService private readonly log: ILogService,
   ) {
     super();
@@ -76,10 +79,19 @@ export class SessionAgentProfileCatalogService
         this.onDidChangeEmitter.fire(change.sourceId);
       }),
     );
+    // The per-session explicit files are copied into the session dir at
+    // create time; fold them into the projection once the source's first
+    // load resolves (an invalid `--agent-file` rejects `ready`). No event
+    // when there is nothing to fold in.
+    void this.explicit.ready.then(() => {
+      if (this.explicit.contribution().profiles.length === 0) return;
+      this.reproject();
+      this.onDidChangeEmitter.fire('explicit');
+    });
   }
 
   get ready(): Promise<void> {
-    return Promise.resolve();
+    return this.explicit.ready;
   }
 
   get(name: string): AgentProfile | undefined {
@@ -144,6 +156,17 @@ export class SessionAgentProfileCatalogService
     const merged = new Map<string, AgentProfile>();
     const inspections = new Map<string, AgentProfileInspection>();
     const entries = [...this.relevantEntries()];
+    // The per-session explicit source (session-dir copies of `--agent-file`)
+    // participates in the merge at the same priority as the workspace
+    // explicit loader; it is session-local, so no workspace-key filter.
+    const explicitContribution = this.explicit.contribution();
+    if (explicitContribution.profiles.length > 0) {
+      entries.push({
+        sourceId: 'explicit',
+        priority: AGENT_PROFILE_SOURCE_PRIORITY.explicit,
+        contribution: explicitContribution,
+      });
+    }
 
     const builtinEntry = entries.find((e) => e.sourceId === BUILTIN_AGENT_PROFILE_SOURCE_ID);
     if (builtinEntry !== undefined) {

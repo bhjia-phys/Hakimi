@@ -160,6 +160,7 @@ async function withFixture(run: (fixture: Fixture) => Promise<void>): Promise<vo
       make('work'),
       make('extra-agents'),
     ]);
+    await mkdir(join(workDir, '.git'));
     await run({ homeDir, osHomeDir, workDir, extraDir });
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -294,8 +295,14 @@ function makeStack(fixture: Fixture, opts?: StackOptions) {
   const seed: ISessionAgentProfileCatalogSeed = {
     _serviceBrand: undefined,
     workspaceKey: workspaceContext.workspaceId,
+    loadExplicitFiles: false,
   };
-  const catalog = new SessionAgentProfileCatalogService(registry, seed, log);
+  const catalog = new SessionAgentProfileCatalogService(
+    registry,
+    seed,
+    { _serviceBrand: undefined, ready: Promise.resolve(), contribution: () => ({ profiles: [] }) },
+    log,
+  );
 
   return {
     registry,
