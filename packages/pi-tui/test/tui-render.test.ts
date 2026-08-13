@@ -607,7 +607,7 @@ describe("TUI differential rendering", () => {
 
 	it("skips destructive redraws for stable-height updates above the viewport", async () => {
 		const terminal = new LoggingVirtualTerminal(40, 5);
-		const tui = new TUI(terminal);
+		const tui = new TuiMainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -633,7 +633,7 @@ describe("TUI differential rendering", () => {
 
 	it("repaints visible changes without clearing when the same frame also changes above the viewport", async () => {
 		const terminal = new LoggingVirtualTerminal(40, 5);
-		const tui = new TUI(terminal);
+		const tui = new TuiMainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -670,7 +670,7 @@ describe("TUI differential rendering", () => {
 
 	it("keeps the full-redraw fallback for above-viewport image changes", async () => {
 		const terminal = new LoggingVirtualTerminal(40, 5);
-		const tui = new TUI(terminal);
+		const tui = new TuiMainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -693,7 +693,7 @@ describe("TUI differential rendering", () => {
 
 	it("keeps the full-redraw fallback for above-viewport line-count changes", async () => {
 		const terminal = new LoggingVirtualTerminal(40, 5);
-		const tui = new TUI(terminal);
+		const tui = new TuiMainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -715,7 +715,7 @@ describe("TUI differential rendering", () => {
 
 	it("emits destructive clears before synchronized full-render output", async () => {
 		const terminal = new LoggingVirtualTerminal(40, 5);
-		const tui = new TUI(terminal);
+		const tui = new TuiMainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
