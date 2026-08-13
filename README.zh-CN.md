@@ -50,6 +50,8 @@ Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 f
 
 顺序是 **contract freeze → 核心正确性 → 公共边界 → Hakimi overlay → 最后评估 `GoalFeature`**。A–E 和 G 可以基于冻结 fixtures 并行开发，但跨轨集成与发布要等待 F 的 gate。默认 runtime 是 `agent-core-v2`；`packages/agent-core` 保留为 v1 legacy compatibility。
 
+**平台决策（2026-08-14）：研究层（D/C 轨）在 Hakimi 自身实现；DeepSeek Harness 只作机制参考上游。** DSH 曾作为研究层承载方评估，本次否决——rc 级成熟度且明示 breaking changes；复审条件为 DSH 稳定 release 且 G2 跨 harness 基准给出明确优势。
+
 ### A · Web
 
 - **所有权**：外部 code-app Web owner 拥有 source；Hakimi owner 负责接收、branding、provenance 和发布 bundle。
@@ -80,6 +82,8 @@ Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 f
 
 ### D · 内置 Hakimi Research Loop
 
+D 轨是研究层的主实现轨道（2026-08-14 平台决策）。
+
 - **所有权**：Hakimi research domain，包含 Research Frame、Research Question Board、bounded checkpoint、physics insight 和结构化 research trace。
 - **依赖**：F 的 agent、subagent、tool、permission 和 transcript seams；不依赖 C，必须能在没有 AITP 时运行。
 - **交付**：区分结果（`Goal`）、动作（`Todo`）和未知/挑战（Research Question）；使用 skeptical、literature、physics、numerical、code 等独立视角；执行有边界的物理检查；向用户展示 frame、问题、证据、falsifier 和决策，而不是 raw hidden chain-of-thought。维护一条持久化的**科研过程轨迹**：从 wire/transcript 事件派生的可重放科研阶段线（question → literature → hypothesis/derivation → numerics → evidence → decision），折叠成紧凑快照在 turn 边界注入上下文，让模型始终清楚"已做了什么、处于哪个阶段、下一步缺口"；AITP 启用时，轨迹节点映射到 `record`/`note prepare|save`，沉淀为有依据的 research memory 而非 transcript。
@@ -100,7 +104,7 @@ Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 f
 
 - **所有权**：platform/engine owner；适配器落在 kosong provider 层，缓存纪律落在 v2 engine 的请求组装层。
 - **依赖**：F 的 contract freeze 与公共边界；以 DeepSeek Harness `main` 为参考上游，通过受跟踪的 intake 流程（计划 `docs/dsh-intake/`）评审；E 的 provider 设置面；不得回归 GPT/Kimi 路径。
-- **交付**：专用 DeepSeek 适配器——顶层 `thinking` 语义、官方 `reasoning_effort` 级别、按回合的 CoT passback 省 token、带 context window 的模型目录、DeepSeek 专属错误分类与遥测、流空闲 watchdog——全部锁在适配器层，核心保持 dialect-free；同时持续吸收 DeepSeek Harness 机制，以缓存命中为核心：epoch 请求头、session 日志派生请求、压缩后 system prompt 稳定、确定性工具排序、动态内容追加在尾部、缓存用量记账，以及断言"除首个请求外每个请求 `cacheReadTokens > 0`"的真 API 缓存 e2e。
+- **交付**：专用 DeepSeek 适配器——顶层 `thinking` 语义、官方 `reasoning_effort` 级别、按回合的 CoT passback 省 token、带 context window 的模型目录、DeepSeek 专属错误分类与遥测、流空闲 watchdog——全部锁在适配器层，核心保持 dialect-free；同时持续吸收 DeepSeek Harness 机制，以缓存命中为核心：epoch 请求头、session 日志派生请求、压缩后 system prompt 稳定、确定性工具排序、动态内容追加在尾部、缓存用量记账，以及断言"除首个请求外每个请求 `cacheReadTokens > 0`"的真 API 缓存 e2e。范围限定（2026-08-14）：仅机制吸收——DSH 已评估并被否决为研究层承载方，不在 DSH 上建任何研究层。
 
 ## 安装
 
