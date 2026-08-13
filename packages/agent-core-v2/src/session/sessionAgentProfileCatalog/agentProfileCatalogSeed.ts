@@ -2,10 +2,10 @@
  * `sessionAgentProfileCatalog` domain — seeded workspace-key contract.
  *
  * Defines `ISessionAgentProfileCatalogSeed`, the pure-data injection contract
- * carrying ONLY the workspace handler's `workspaceId`. The key travels as a
- * seed (rather than being recomputed from the session's workDir) because the
- * handler's id may be folded from an alias spelling of the root.
- * Session-scoped.
+ * carrying the workspace handler's `workspaceId` and whether this session has
+ * persisted explicit agent-file snapshots to load. The key travels as a seed
+ * (rather than being recomputed from the session's workDir) because the
+ * handler's id may be folded from an alias spelling of the root. Session-scoped.
  */
 
 import { createDecorator, type ServiceIdentifier } from '#/_base/di/instantiation';
@@ -15,6 +15,7 @@ export interface ISessionAgentProfileCatalogSeed {
   readonly _serviceBrand: undefined;
 
   readonly workspaceKey: string;
+  readonly loadExplicitFiles: boolean;
 }
 
 export const ISessionAgentProfileCatalogSeed: ServiceIdentifier<ISessionAgentProfileCatalogSeed> =

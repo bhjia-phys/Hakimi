@@ -627,6 +627,7 @@ effort = "medium"
   it('does not persist a session record when an explicit agent file cannot be loaded', async () => {
     const homeDir = await makeTempDir();
     const workDir = await makeTempDir();
+    await mkdir(join(workDir, '.git'));
     const harness = createKimiHarness({
       identity: TEST_IDENTITY,
       homeDir,

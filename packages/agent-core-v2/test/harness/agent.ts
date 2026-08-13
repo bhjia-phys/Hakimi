@@ -1186,6 +1186,7 @@ export class AgentTestContext {
             reg.defineInstance(ISessionAgentProfileCatalogSeed, {
               _serviceBrand: undefined,
               workspaceKey: workspaceId,
+              loadExplicitFiles: false,
             } satisfies ISessionAgentProfileCatalogSeed);
             reg.defineInstance(ISessionInstructionsProvider, this.createInstructionsProvider());
             reg.defineInstance(ISessionMcpHandle, {

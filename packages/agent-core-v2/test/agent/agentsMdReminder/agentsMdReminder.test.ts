@@ -692,11 +692,17 @@ describe('agentsMdReminder probing boundaries', () => {
   });
 
   it('probes only the immediate directory outside any project', async () => {
-    const h = createHarness();
     const outside = await mkdtemp(join(tmpdir(), 'kimi-reminder-outside-'));
     const outerAgentsMd = await writeAgentsMd(outside, 'outer instructions');
     const leaf = join(outside, 'leaf');
     const leafAgentsMd = await writeAgentsMd(leaf, 'leaf instructions');
+    const hostFs = new HostFileSystem();
+    const stat = hostFs.stat.bind(hostFs);
+    hostFs.stat = async (path) => {
+      if (path.endsWith('/.git')) throw new Error('not found');
+      return stat(path);
+    };
+    const h = createHarness({ hostFs });
 
     try {
       const result = await fire(h, didCtx('Read', { path: join(leaf, 'index.ts') }));
