@@ -57,10 +57,10 @@
  *   too (default-profile bind + permission mode).
  * - `prompt` / `steer` / `runShellCommand` / `cancelShellCommand` → the
  *   `klient.session(id).agent(id)` facade; `activatePluginCommand` →
- *   `IAgentRPCService` through the agent scope; `activateSkill` →
- *   `IAgentSkillService` through the agent scope (the RPC service's
- *   fire-and-forget variant would swallow v1's synchronous rejections) plus
- *   v1's main-only metadata update; `generateAgentsMd` →
+ *   `IAgentPluginCommandService` through the agent scope; `activateSkill` →
+ *   `IAgentSkillService` through the agent scope (the engine settles
+ *   `{turn_id}` and applies v1's main-only metadata update itself);
+ *   `generateAgentsMd` →
  *   `ISessionInitService` through the session scope; `getSessionWarnings` →
  *   rebuilt over the profile's cached AGENTS.md warning plus the engine's
  *   `prepareSystemPromptContext` (no v2 aggregate service exists).
@@ -155,8 +155,8 @@ import { SECONDARY_MODEL_SECTION } from '@moonshot-ai/agent-core-v2/app/kosongCo
 import { IAtomicDocumentStore } from '@moonshot-ai/agent-core-v2/persistence/interface/atomicDocumentStore';
 import { wrapSubagentModelError } from '@moonshot-ai/agent-core-v2/session/subagent/configSection';
 import { loadMcpServers } from '@moonshot-ai/agent-core-v2/workspace/workspaceMcpConfig/internal/config-loader';
+import type { McpServerConfig as WorkspaceMcpServerConfig } from '@moonshot-ai/agent-core-v2/mcpCore/config-schema';
 import {
-  applyPromptMetadataUpdate,
   bootstrap,
   DEFAULT_AGENT_PROFILE_NAME,
   drainQueryStoreDisposals,
@@ -164,21 +164,26 @@ import {
   ensureKimiHome,
   ensureMainAgent,
   IAgentActivityView,
+  IAgentContextInjectorService,
   IAgentContextMemoryService,
+  IAgentConversationUndoService,
   IAgentFullCompactionService,
   IAgentGoalService,
+  IAgentPluginService,
   IAgentLifecycleService,
   IAgentLoopService,
   IAgentPermissionModeService,
   IAgentPermissionRulesService,
+  IAgentPluginCommandService,
   IAgentProfileService,
-  IAgentRPCService,
   IAgentSkillService,
   IAgentSwarmService,
   IAgentTaskService,
   IAgentTokenCountingService,
   IAgentProfileRegistry,
   BUILTIN_AGENT_PROFILE_SOURCE_ID,
+  IAgentToolPolicyService,
+  IAgentToolRegistryService,
   IBootstrapService,
   IConfigService,
   IEventService,
@@ -223,7 +228,6 @@ import {
   PRINT_WAIT_CEILING_S_DEFAULT,
   ProfileError,
   ProfileErrors,
-  promptMetadataTextFromSkill,
   resolveAgentTaskConfig,
   resolveConfigPath,
   resolveKimiHome,
@@ -237,6 +241,7 @@ import {
   type Scope,
   type SecondaryModelConfig,
   type ServicesAccessor,
+  type SessionSummary as V2SessionSummary,
 } from '@moonshot-ai/agent-core-v2';
 import type { AgentHandle, Klient } from '@moonshot-ai/klient';
 import { createKlient } from '@moonshot-ai/klient/memory';
@@ -303,6 +308,7 @@ import type {
   SessionPlan,
   SessionStatus,
   SessionSummary,
+  SessionSummaryPage,
   SessionUsage,
   SkillSummary,
   TelemetryClient,
@@ -486,6 +492,13 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
 
   async ensureConfigFile(): Promise<void> {
     await ensureConfigFile(this.configPath);
+    // Surface a missing Git Bash early, before the TUI starts. The wait is
+    // Windows-only: the failure cannot happen on POSIX, and `ready` also
+    // covers the login-shell PATH enrichment, which spawns the user's login
+    // shell (5s timeout) — config-only commands must not block on that.
+    if (process.platform === 'win32') {
+      await this.app.accessor.get(IHostEnvironment).ready;
+    }
   }
 
   async close(): Promise<void> {
@@ -592,9 +605,10 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
         loadMcpServers({ fs, cwd: workDir, homeDir: this.homeDir, includeProject: true }),
         loadMcpServers({ fs, cwd: workDir, homeDir: this.homeDir, includeProject: false }),
       ]);
-      const gatedMcpServers = Object.keys(withProject)
-        .filter((name) => !(name in userOnly))
-        .toSorted();
+      const gatedMcpServers = Object.entries(withProject)
+        .filter(([name]) => !(name in userOnly))
+        .map(([name, config]) => describeWorkspaceMcpServer(name, config))
+        .toSorted((a, b) => a.name.localeCompare(b.name));
       return { trusted: false, gatedMcpServers };
     } catch {
       return { trusted: false, gatedMcpServers: [] };
@@ -722,7 +736,9 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
   }
 
   override async reloadPlugins(): Promise<ReloadSummary> {
-    return this.klient.global.plugins.reload();
+    const summary = await this.klient.global.plugins.reload();
+    await this.refreshPluginSessionStarts();
+    return summary;
   }
 
   override async getPluginInfo(id: string): Promise<PluginInfo> {
@@ -956,6 +972,13 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     const profile = agent.accessor.get(IAgentProfileService).data();
     const catalog = session.accessor.get(ISessionAgentProfileCatalog);
     await catalog.ready;
+    const toolPolicy = agent.accessor.get(IAgentToolPolicyService);
+    const tools = agent.accessor.get(IAgentToolRegistryService).list().map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      active: toolPolicy.isToolActive(tool.name, tool.source),
+      source: tool.source,
+    }));
     return {
       type,
       config: {
@@ -977,7 +1000,7 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
       plan: plan as ResumedAgentState['plan'],
       swarmMode: agent.accessor.get(IAgentSwarmService).isActive,
       usage: usage as ResumedAgentState['usage'],
-      tools: agent.accessor.get(IAgentRPCService).getTools({}) as ResumedAgentState['tools'],
+      tools: tools as ResumedAgentState['tools'],
       toolStore: folded.toolStore,
       background: background as readonly BackgroundTaskInfo[],
     };
@@ -1066,50 +1089,92 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
   }
 
   override async listSessions(input: ListSessionsOptions = {}): Promise<readonly SessionSummary[]> {
+    // Full-set semantics: drain keyset pages until the listing is exhausted
+    // (an unpaged query currently answers in one page, but a backend may cap
+    // it — never silently truncate the unpaged contract).
+    const all: SessionSummary[] = [];
+    let before: string | undefined;
+    for (;;) {
+      const page = await this.listSessionsPage({
+        workDir: input.workDir,
+        sessionId: input.sessionId,
+        before,
+      });
+      all.push(...page.items);
+      if (page.nextCursor === undefined) return all;
+      before = page.nextCursor;
+    }
+  }
+
+  override async listSessionsPage(input: ListSessionsOptions = {}): Promise<SessionSummaryPage> {
     // v1 rejects an empty workDir and bucket-filters by the normalized path;
     // the v2 index filters by workspace-id set instead.
     const workspaceIds =
       input.workDir === undefined
         ? undefined
         : await this.workspaceIdsFor(normalizeRequiredWorkDir('listSessions', input.workDir));
-    const page = await this.klient.global.sessions.list({
-      workspaceIds,
-      sessionId: input.sessionId,
-    });
-    const bootstrapService = this.engineAccessor.get(IBootstrapService);
     const workspacesById = new Map(
       (await this.klient.global.workspaces.list()).map((workspace) => [workspace.id, workspace]),
     );
-    const summaries: SessionSummary[] = [];
-    for (const item of page.items) {
-      const workDir = item.cwd ?? workspacesById.get(item.workspaceId)?.root;
-      // A session whose workDir is unrecoverable (corrupt metadata, deleted
-      // workspace) cannot be resumed on either engine; v1's store never lists
-      // one in the first place, so drop it here too.
-      if (workDir === undefined) continue;
-      // A live session reports its own outcome; the index may still carry a
-      // stale one while the mirror's clear is queued (a fresh turn just
-      // started after a failure).
-      const liveHandle = getLiveSessionById(this.engineAccessor, item.id);
-      const effectiveItem =
-        liveHandle === undefined
-          ? item
-          : {
-              ...item,
-              lastTurnReason: liveHandle.accessor.get(ISessionActivityView).state().lastTurnReason,
-            };
-      summaries.push(
-        v2SummaryToSessionSummary(effectiveItem, {
-          workDir,
-          sessionDir: sessionDirOf(
-            bootstrapService.homeDir,
-            workspacePersistenceScope(bootstrapService.scope('sessions'), item.workspaceId),
-            item.id,
-          ),
-        }),
-      );
+    const collected: SessionSummary[] = [];
+    let before = input.before;
+    // Entries dropped by the mapping (unrecoverable workDir) shrink the page;
+    // keep pulling keyset pages until the requested size is filled so callers
+    // never see a short or empty page that still carries a cursor.
+    for (;;) {
+      const remaining = input.limit === undefined ? undefined : input.limit - collected.length;
+      if (remaining !== undefined && remaining <= 0) break;
+      const page = await this.klient.global.sessions.list({
+        workspaceIds,
+        sessionId: input.sessionId,
+        limit: remaining,
+        before,
+      });
+      if (page.items.length === 0) return { items: collected, nextCursor: undefined };
+      for (const item of page.items) {
+        const summary = this.mapIndexSummary(item, workspacesById);
+        if (summary !== undefined) collected.push(summary);
+      }
+      if (page.nextCursor === undefined) return { items: collected, nextCursor: undefined };
+      before = page.nextCursor;
+      if (input.limit === undefined) return { items: collected, nextCursor: before };
     }
-    return summaries;
+    return { items: collected, nextCursor: before };
+  }
+
+  /**
+   * Map one v2 index summary to the v1 wire shape, resolving the filesystem
+   * facts the index does not carry. Returns `undefined` when the session's
+   * workDir is unrecoverable (corrupt metadata, deleted workspace): such a
+   * session cannot be resumed on either engine, and v1's store never lists
+   * one in the first place.
+   */
+  private mapIndexSummary(
+    item: V2SessionSummary,
+    workspacesById: ReadonlyMap<string, { readonly root: string }>,
+  ): SessionSummary | undefined {
+    const workDir = item.cwd ?? workspacesById.get(item.workspaceId)?.root;
+    if (workDir === undefined) return undefined;
+    // A live session reports its own outcome; the index may still carry a
+    // stale one while the mirror's clear is queued (a fresh turn just
+    // started after a failure).
+    const liveHandle = getLiveSessionById(this.engineAccessor, item.id);
+    const effectiveItem =
+      liveHandle === undefined
+        ? item
+        : {
+            ...item,
+            lastTurnReason: liveHandle.accessor.get(ISessionActivityView).state().lastTurnReason,
+          };
+    const bootstrapService = this.engineAccessor.get(IBootstrapService);
+    return v2SummaryToSessionSummary(effectiveItem, {
+      workDir,
+      sessionDir: sessionDirOf(
+        bootstrapService.homeDir,
+        workspacePersistenceScope(bootstrapService.scope('sessions'), item.workspaceId),
+        item.id,
+      ),
+    });
   }
 
   /**
@@ -1269,8 +1334,8 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
    * the live session, resume from disk. The v2 busy check reads each live
    * agent's activity view (turn lane only — background tasks do not block,
    * matching v1's `hasActiveTurn`). `forcePluginSessionStartReminder` has no
-   * v2 channel (the engine owns plugin session-start injection) and is
-   * ignored.
+   * v2 channel (the engine owns plugin session-start injection), so reload
+   * refreshes the durable guidance snapshot through the Agent service.
    */
   override async reloadSession(input: ReloadSessionRpcInput): Promise<ResumedSessionSummary> {
     const sessionId = input.sessionId;
@@ -1291,6 +1356,7 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     await this.configReady;
     await this.klient.global.config.reload();
     await this.klient.global.plugins.reload();
+    await this.refreshPluginSessionStarts(sessionId);
     if (live !== undefined) {
       await closeSessionById(this.engineAccessor, sessionId);
     }
@@ -1299,8 +1365,28 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     this.printSteerStates.delete(sessionId);
     const handle = await resumeSessionById(this.engineAccessor, sessionId);
     if (handle === undefined) throw SDKRpcClientV2.sessionNotFound(sessionId);
+    const main = handle.accessor.get(IAgentLifecycleService).get(MAIN_AGENT_ID);
+    await main?.accessor.get(IAgentPluginService).refreshSessionStart();
     this.wireSession(handle);
     return this.resumedSessionSummary(handle);
+  }
+
+  private async refreshPluginSessionStarts(excludedSessionId?: string): Promise<void> {
+    const workspaceLifecycle = this.engineAccessor.get(IWorkspaceLifecycleService);
+    await Promise.all(
+      workspaceLifecycle.handlers.list().map(async (handler) => {
+        await handler.accessor.get(IWorkspaceSkillCatalog).reload();
+        const sessions = handler.accessor.get(ISessionLifecycleService).list();
+        await Promise.all(
+          sessions.map(async (session) => {
+            if (session.id === excludedSessionId) return;
+            const main = session.accessor.get(IAgentLifecycleService).get(MAIN_AGENT_ID);
+            if (main === undefined) return;
+            await main.accessor.get(IAgentPluginService).refreshSessionStart();
+          }),
+        );
+      }),
+    );
   }
 
   /**
@@ -1532,20 +1618,21 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     return agent.clearPlan();
   }
 
-  /** Facade (`agentRPCService.listCommands`) — the v2-only contributed-command seam. */
+  /** Facade (`agentCommandService.list`) — the v2-only contributed-command seam. */
   override async listCommands(input: SessionIdRpcInput): Promise<readonly AgentCommandInfo[]> {
     const agent = await this.agentFacade(input.sessionId);
     return agent.listCommands();
   }
 
-  /** Facade (`agentRPCService.runCommand`) — runs the contribution engine-side. */
+  /** Facade (`agentCommandService.run`) — runs the contribution engine-side. */
   override async runCommand(input: RunCommandRpcInput): Promise<void> {
     const agent = await this.agentFacade(input.sessionId);
     return agent.runCommand({ name: input.name, args: input.args });
   }
 
   /**
-   * Facade (`agentRPCService.getContext`). The v2 `AgentContextData` is the
+   * Facade (`getContext`, merged client-side from `agentContextMemoryService.get`
+   * and `agentTokenCountingService.statusSize`). The v2 `AgentContextData` is the
    * same wire shape as v1's — the cast only bridges the two packages' type
    * declarations (v2's origin union carries kinds a v1 client never sees in
    * practice); the data itself crossed the same JSON boundary on both sides.
@@ -1622,18 +1709,18 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
   }
 
   /**
-   * Through the agent scope (`IAgentRPCService.cancelCompaction`, the v2 RPC
-   * surface's own cancel) — no klient facade exists. Aborts the in-flight
-   * compaction; a no-op when idle, like v1.
+   * Through the agent scope (`IAgentFullCompactionService.cancel`) — no
+   * klient facade exists. Aborts the in-flight compaction; a no-op when idle,
+   * like v1.
    */
   override async cancelCompaction(input: SessionIdRpcInput): Promise<void> {
     const agent = await this.agentScope(input.sessionId);
-    await agent.accessor.get(IAgentRPCService).cancelCompaction({});
+    agent.accessor.get(IAgentFullCompactionService).cancel();
   }
 
   /**
-   * Through the agent scope (`IAgentRPCService.undoHistory`, the v2 RPC
-   * surface's own undo) — no klient facade exists; the returned count is
+   * Through the agent scope (`IAgentConversationUndoService.undo`) — no
+   * klient facade exists; the returned count is
    * dropped (v1 returns void). Failure semantics differ by design: v2
    * prechecks and rejects atomically with `session.undo_unavailable`, while
    * v1 splices a partial suffix out of the live history and then throws
@@ -1641,7 +1728,7 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
    */
   override async undoHistory(input: SessionIdRpcInput & { count: number }): Promise<void> {
     const agent = await this.agentScope(input.sessionId);
-    await agent.accessor.get(IAgentRPCService).undoHistory({ count: input.count });
+    await agent.accessor.get(IAgentConversationUndoService).undo(input.count);
   }
 
   /**
@@ -1689,29 +1776,25 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
   }
 
   /**
-   * Facade (`agentRPCService.prompt`). The launch result (`{turn_id}`, or
+   * Facade (`agentPromptService.submit`). The launch result (`{turn_id}`, or
    * `undefined` when the prompt queued behind a running turn) is dropped —
    * v1's RPC returns void. The pre-provider surface matches v1: the metadata
    * update (title/lastPrompt) runs through the same shared helpers before the
    * turn launches, and a model-less turn fails asynchronously exactly like
-   * v1's. Two enqueue-semantics gaps vs v1, pinned in the migration tracker:
+   * v1's. One enqueue-semantics gap vs v1, pinned in the migration tracker:
    * v1 drops a prompt submitted while a turn is active (error event only)
-   * where v2 queues it FIFO, and v1 never consumes `disabledTools` (the
-   * payload field reaches the agent RPC but no code reads it) where v2
-   * applies it as the session tool denylist.
+   * where v2 queues it FIFO.
    */
   override async prompt(input: SessionPromptRpcInput): Promise<void> {
     const agent = await this.agentFacade(input.sessionId);
-    await agent.prompt({ input: input.input, disabledTools: input.disabledTools });
+    await agent.prompt({ input: input.input });
   }
 
   /**
-   * Facade (`agentRPCService.steer`). Mid-turn steers match v1 (the input
-   * joins the running turn). The idle-session case diverges by design and is
-   * pinned in the parity tests: v1 launches a fresh turn off a steer and
-   * updates title/lastPrompt like a prompt; v2's enqueue launches the turn
-   * first, so the follow-up `steer()` finds nothing pending and rejects with
-   * `prompt.not_found` — and the v2 RPC path never touches the metadata.
+   * Facade (`agentPromptService.submitSteer`). Matches v1 on both paths: mid-turn
+   * steers join the running turn, and an idle-session steer degrades to
+   * launching a fresh turn (the enqueue launches it directly) while
+   * title/lastPrompt are updated like a prompt's.
    */
   override async steer(input: SessionPromptRpcInput): Promise<void> {
     const agent = await this.agentFacade(input.sessionId);
@@ -1747,40 +1830,32 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
   }
 
   /**
-   * Through the agent scope (`IAgentSkillService.activate`) — deliberately
-   * NOT `IAgentRPCService.activateSkill`, whose `void this.skills.activate(...)`
-   * fire-and-forget turns v1's synchronous rejections (`skill.not_found` /
-   * `skill.type_unsupported`) into unhandled rejections. The direct call keeps
-   * v1's semantics: validate first, then render the skill prompt and launch a
-   * turn with it. v1's session layer then updates title/lastPrompt for the
-   * MAIN agent only; replicated here over the engine's shared metadata
-   * helpers. Busy-turn gap vs v1, pinned in the migration tracker: v1 drops
+   * Through the agent scope (`IAgentSkillService.activate`) — the direct call
+   * keeps v1's semantics: validate first (`skill.not_found` /
+   * `skill.type_unsupported` reject synchronously), then render the skill
+   * prompt and launch a turn with it. The engine updates title/lastPrompt for
+   * the MAIN agent only, matching v1's session layer. Busy-turn gap vs v1,
+   * pinned in the migration tracker: v1 drops
    * the activation into an error event while a turn runs; v2's activate
    * awaits the queued prompt's launch.
    */
   override async activateSkill(input: ActivateSkillRpcInput): Promise<void> {
     const agent = await this.agentScope(input.sessionId);
     await agent.accessor.get(IAgentSkillService).activate({ name: input.name, args: input.args });
-    if (this.interactiveAgentId === MAIN_AGENT_ID) {
-      await this.updatePromptMetadata(input.sessionId, promptMetadataTextFromSkill(input));
-    }
   }
 
   /**
-   * Through the agent scope (`IAgentRPCService.activatePluginCommand`) — the
-   * v2 RPC surface's own implementation: the same `request.invalid` rejection
-   * text for an unknown command, the same argument expansion, the activation
-   * event, the prompt enqueue, and the metadata update. Two gaps vs v1,
+   * Through the agent scope (`IAgentPluginCommandService.activate`): the same
+   * `request.invalid` rejection text for an unknown command, the same
+   * argument expansion, the activation event, the prompt enqueue, and the
+   * main-agent-only metadata update. Two gaps vs v1,
    * pinned in the migration tracker: v1 resolves the command against the
    * session's creation-time snapshot (v2 uses the app-global live view), and
-   * v1 drops the activation while a turn runs where v2 queues it. v1 also
-   * updates title/lastPrompt for the main agent only, where the v2 RPC does
-   * it unconditionally — only observable through a non-main
-   * `interactiveAgentId`.
+   * v1 drops the activation while a turn runs where v2 queues it.
    */
   override async activatePluginCommand(input: ActivatePluginCommandRpcInput): Promise<void> {
     const agent = await this.agentScope(input.sessionId);
-    await agent.accessor.get(IAgentRPCService).activatePluginCommand({
+    await agent.accessor.get(IAgentPluginCommandService).activate({
       pluginId: input.pluginId,
       commandName: input.commandName,
       args: input.args,
@@ -1805,8 +1880,7 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
   }
 
   /**
-   * No v2 service implements the session-warnings aggregate (`ISessionRPCService`
-   * is an interface without an implementation), so the SDK rebuilds v1's
+   * No v2 service implements the session-warnings aggregate, so the SDK rebuilds v1's
    * `Session.getSessionWarnings` over v2 primitives: the profile's cached
    * `agentsMdWarning` (computed on every bind, v1's bootstrap-time cache),
    * recomputed through the engine's own `prepareSystemPromptContext` when the
@@ -1852,23 +1926,6 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
   }
 
   /**
-   * v1's session-layer prompt-metadata update (title/lastPrompt), rebuilt
-   * over the engine's shared helper so skill/plugin-command activations land
-   * on the same metadata the native v2 prompt path writes.
-   */
-  private async updatePromptMetadata(sessionId: string, text: string | undefined): Promise<void> {
-    const session = this.requireLiveSession(sessionId);
-    await applyPromptMetadataUpdate(
-      {
-        metadata: session.accessor.get(ISessionMetadata),
-        eventService: this.engineAccessor.get(IEventService),
-        sessionId,
-      },
-      text,
-    );
-  }
-
-  /**
    * Through the session scope (`ISessionBtwService`) — no klient facade
    * exists. The v2 service is the port of v1's btw fork: same inherited
    * profile/context, same byte-identical side-question reminder, same
@@ -1900,9 +1957,10 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     const swarm = agent.accessor.get(IAgentSwarmService);
     if (input.enabled) {
       swarm.enter(input.trigger);
-      return;
+    } else {
+      swarm.exit();
     }
-    swarm.exit();
+    await agent.accessor.get(IAgentContextInjectorService).reconcileWhenIdle('swarm_mode');
   }
 
   /** v1's `swarm()` composition: enter with the one-shot `task` trigger, then prompt. */
@@ -2413,4 +2471,20 @@ function normalizeRequiredWorkDir(operation: string, workDir: string): string {
     throw new KimiError(ErrorCodes.REQUEST_WORK_DIR_REQUIRED, `${operation} requires workDir`);
   }
   return normalizeWorkDir(workDir);
+}
+
+function describeWorkspaceMcpServer(
+  name: string,
+  config: WorkspaceMcpServerConfig,
+): WorkspaceTrustInfo['gatedMcpServers'][number] {
+  if (config.transport === 'stdio') {
+    return {
+      name,
+      transport: config.transport,
+      command: config.command,
+      args: config.args,
+      cwd: config.cwd,
+    };
+  }
+  return { name, transport: config.transport, url: config.url };
 }

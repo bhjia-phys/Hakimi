@@ -59,6 +59,7 @@ import type {
   ResumeSessionInput,
   ResumedSessionSummary,
   SessionSummary,
+  SessionSummaryPage,
   SkillSummary,
   PluginCommandDef,
   Unsubscribe,
@@ -70,12 +71,6 @@ const MAIN_AGENT_ID = 'main';
 export interface SessionPromptRpcInput {
   readonly sessionId: string;
   readonly input: PromptInput;
-  /**
-   * Client-managed session tool denylist (full-replace semantics), forwarded
-   * to engines with profile tool gating. Omit to keep the persisted value;
-   * `[]` clears the client portion.
-   */
-  readonly disabledTools?: readonly string[];
 }
 
 export interface SessionIdRpcInput {
@@ -222,6 +217,17 @@ export abstract class SDKRpcClientBase {
   async listSessions(input: ListSessionsOptions = {}): Promise<readonly SessionSummary[]> {
     const rpc = await this.getRpc();
     return rpc.listSessions(input);
+  }
+
+  /**
+   * One keyset page of the session listing (`limit` / `before` in
+   * `ListSessionsOptions`). The base implementation serves the whole filtered
+   * set as a single terminal page — the v1 engine has no paged listing;
+   * `SDKRpcClientV2` overrides this with real index paging.
+   */
+  async listSessionsPage(input: ListSessionsOptions = {}): Promise<SessionSummaryPage> {
+    const items = await this.listSessions(input);
+    return { items, nextCursor: undefined };
   }
 
   async listWorkspaceSkills(workDir: string): Promise<readonly SkillSummary[]> {
@@ -374,7 +380,6 @@ export abstract class SDKRpcClientBase {
       sessionId: input.sessionId,
       agentId,
       input: input.input,
-      disabledTools: input.disabledTools,
     });
   }
 
