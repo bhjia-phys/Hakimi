@@ -5,19 +5,30 @@ Baseline audited **2026-08-08** against AITP HEAD
 `docs/hakimi/compatibility-matrix.md`）交叉核对一致；AITP HEAD 越过该基线后
 需重新核对各行。本文件是 Hakimi 侧视角；AITP 侧证据细节见对方文档。
 
+**当前 amendment（2026-08-14）：** 重新核验 AITP HEAD
+`9f9e873440b8d88bfbb2963d8b5717c83b9ef4cc`（工作树 clean，除刻意未跟踪
+`ref/`、`uv.lock`）并逐命令核对 `--help`。M0.6 以缩小声明关闭；M1a、
+M1b-R1、M1c 均 **done；deterministic gate passed**（107 tests）。AITP 读契约
+`enter-0.2`/`list-0.1`/`show-0.1`/`check-report-0.1` 与 M1c 作用域契约
+`enter-0.3`/`list-0.2`（仅单次 `--workstream`）已 shipped，可
+feature-detect；`lineage`/`lite-entry-0.2`/`run-pointer-0.1` 仍
+deferred；M2–M4 blocked。Hakimi native adapter（H0–H3）仍未实现。
+§1/§2/§3/§5/§6 已更新到当前状态；§4/§7 保留历史 baseline 证据。
+
 ## 1. Command matrix (Hakimi view)
 
 | Command | AITP stage | Status | Hakimi may call | Blocked on | Future feature-detect |
 |---|---|---|---|---|---|
 | `init` | M0 | available | no — human decision, blank dir only | — | `--help` presence |
 | `init --adopt` | M0.6 | available | no — touches an existing tree, human decision | — | `--help` presence |
-| `enter` | M0 | available | **yes** (session start/end) | — | no `schema` key; strict shape check |
+| `enter` | M0 | available | **yes** (session start/end) | — | no `schema` key; strict shape check；M1c（已 shipped；gate passed）：单次 `--workstream <slug>` 时 → `schema == "aitp/enter-0.3"` |
 | `inventory <path> --name <n>` | M0.6 | available | no — operator-only, **writes** `.aitp/local/legacy/<name>-inventory.json` | — | — |
-| `record prepare\|save` | M0 | available | yes (prepare → fill → save) | — | envelope shape + `status` enum |
-| `note prepare\|save` | M0 | available | yes | — | envelope shape + `status` enum |
-| `list` | M1a | **absent** (argparse invalid choice, exit 2) | no | M0.6 gate | top-level `schema == "aitp/list-0.1"` |
-| `show` | M1a | **absent** | no | M0.6 gate | top-level `schema == "aitp/show-0.1"` |
-| `check` | M1b | **absent** | no | M1a gate + cap reconciliation | exit 0/1/2 + `aitp/check-report-0.1` |
+| `record prepare\|save` | M0 | available | yes (prepare → fill → save) | — | envelope shape + `status` enum；M1c（已 shipped；gate passed）：repeatable `--workstream` 只播种 draft frontmatter（重复 slug 拒绝），envelope 不变 |
+| `note prepare\|save` | M0 | available | yes | — | envelope shape + `status` enum；M1c（已 shipped；gate passed）：repeatable `--workstream` 只播种 draft frontmatter（重复 slug 拒绝），envelope 不变 |
+| `list` | M1a | **available** (read-only) | **yes** (feature-detect schema) | —；M1a deterministic gate passed | top-level `schema == "aitp/list-0.1"`；M1c（已 shipped；gate passed）：单次 `--workstream <slug>` 时 → `schema == "aitp/list-0.2"` |
+| `show` | M1a | **available** (read-only) | **yes** (feature-detect schema) | —；M1a deterministic gate passed | top-level `schema == "aitp/show-0.1"`；malformed 记录 → exit 0 + `status:"malformed"` + `frontmatter:null` |
+| `check` | M1b-R1 (selected 2026-08-12) | **available** (read-only, zero-write) | **yes** (feature-detect schema) | —；M1b-R1 deterministic gate passed 2026-08-12 | 解析 `aitp/check-report-0.1`（exit 0/1 均带报告；exit 2 是标准错误包） |
+| `lineage` | deferred candidate (Followup 2, 2026-08-12 再次 deferred) | **absent** | no | 新的 reviewed freeze revision 选中 + 自身 reviewed spec | `aitp/lineage-0.1` 仅在真正 shipped 后 |
 
 ## 2. Schema existence (as of baseline)
 
@@ -29,10 +40,11 @@ Baseline audited **2026-08-08** against AITP HEAD
 | `aitp/lite-note-0.1` | file | exists | `notes.py:61,110` |
 | `aitp/legacy-inventory-0.1` | file | exists | `workspace.py:322` |
 | `aitp/enter-0.1` | **transport** | **does not exist** | `enter --json` has no top-level `schema` (`state.py:121-147`; verified live) |
-| `aitp/enter-0.2`, `aitp/list-0.1`, `aitp/show-0.1` | transport | blocked (spec frozen) | `docs/m1a-spec.md` §payloads |
-| `aitp/lite-entry-0.2` | file | blocked (pre-spec frozen) | `docs/m1b-spec.md:32` |
-| `aitp/check-report-0.1` | transport | blocked (pre-spec frozen) | `docs/m1b-spec.md:226` |
-| `aitp/run-pointer-0.1` | file | blocked (pre-spec frozen) | `docs/m1b-spec.md:288` |
+| `aitp/enter-0.2`, `aitp/list-0.1`, `aitp/show-0.1` | transport | **exists and available** | M1a deterministic gate passed；`docs/archive/m1a-spec.md`；`show-0.1` malformed 语义见 AITP 侧矩阵 |
+| `aitp/enter-0.3`, `aitp/list-0.2` | transport | **shipped and gated（M1c）** | 仅当传入单次 `--workstream <slug>` 时发出：旧 payload + additive top-level singular `workstream` key；严格 exact membership（unscoped 排除）；relation 先全局计算再严格作用域投影；`warnings` 全局；无 flag ⇒ 字节不变的 `enter-0.2`/`list-0.1`。Frozen contract：`docs/archive/m1c-workstreams-spec.md` |
+| `aitp/lite-entry-0.2` | file | candidate contract；blocked，未选中 | 2026-08-12 reviewed freeze revision 未选中（`docs/m1b-spec.md` §0.1） |
+| `aitp/check-report-0.1` | transport | **shipped and gated（M1b-R1）** | v0.1-only、read-only、zero-write；exit 0/1 带报告、exit 2 错误包（`docs/archive/m1b-r1-spec.md` §Report） |
+| `aitp/run-pointer-0.1` | file | candidate contract；deferred，未选中 | 2026-08-12 freeze revision deferred（`docs/m1b-spec.md` §8 Remote evidence） |
 
 `lite-*` schemas 是持久化文件 schema，**不是** CLI transport envelope。
 Transport envelope 在 M1a 之前保持未版本化。
@@ -56,7 +68,11 @@ Transport envelope 在 M1a 之前保持未版本化。
   增加 `schema` 字段，作为 documented M1a spec revision 或 M1b addendum——
   绝不是静默添加。
 - **Hakimi 的第一个版本化契约点是 M1a 的 `aitp/enter-0.2`**
-  （`docs/m1a-spec.md:253-288`）。该 gate 之前不得假定任何 schema 存在。
+  （`docs/archive/m1a-spec.md`）。M1a gate 已通过：
+  `enter-0.2`/`list-0.1`/`show-0.1` 可 feature-detect；M1b-R1 增加
+  `check-report-0.1`；M1c 增加 `enter-0.3`/`list-0.2`（仅单次
+  `--workstream`）。对未安装或旧版本 AITP 仍按 fail closed，不得假定任何
+  schema 存在。
 - **Golden fixtures**：M1a 时在 `tests/ledger/fixtures/golden/` 刻意再生成
   （`enter.json`、`enter-after-save.json`、新 `list.json`、`show.json`）；
   `root` 归一化为 `<golden-store>`；只有 synthetic `nio` store——无真实研究
@@ -77,13 +93,17 @@ Transport envelope 在 M1a 之前保持未版本化。
 
 ## 5. Red lines（Hakimi，现在与未来）
 
-1. 绝不调用 `list`/`show`/`check`（gate 前不存在，今天 exit 2）。绝不用
-   `rg` 或临时 Markdown 解析模拟它们。
+1. `list`/`show`/`check` 已 shipped（M1a/M1b-R1 gate passed）：先
+   feature-detect versioned schema 再消费。绝不用 `rg` 或临时 Markdown
+   解析模拟 `show`。`check` 解析 exit 0/1 报告、exit 2 作错误包；
+   compact `enter` **文本**仅面向人阅读，绝不解析。`lineage` 仍
+   deferred。
 2. 绝不自动运行 `init` / `init --adopt` / `inventory`——都需要人工决策；
    `inventory` 会写文件。
-3. 绝不假定 `aitp/enter-0.1` 或任何 transport schema 存在。契约点只在
-   gate 后存在：`enter-0.2`/`list-0.1`/`show-0.1`（M1a）、
-   `check-report-0.1`/`run-pointer-0.1`（M1b）。
+3. 绝不假定 `aitp/enter-0.1`（不存在）。当前契约点：`enter-0.2`/
+   `list-0.1`/`show-0.1`（M1a，passed）、`check-report-0.1`
+   （M1b-R1，passed）、`enter-0.3`/`list-0.2`（M1c，passed，仅单次
+   `--workstream`）。`lineage-0.1`/`run-pointer-0.1` 仍 deferred。
 4. 绝不写 `.aitp/topic/entries/`、`.aitp/topic/notes/`、`TOPIC.md`、
    `STORE.toml`；绝不绕过 `record/note prepare|save`；绝不复制
    runtime/parser/validator；绝不维护第二套账本；无 MCP/daemon/vector
@@ -96,25 +116,45 @@ Transport envelope 在 M1a 之前保持未版本化。
    （`records.py:125-133`）；`sha256:` 只验证本地文件。远端证据边界是 M1b
    pointer bundle——不要绕过它。
 8. Python ≥ 3.11 由 launcher 强制；探测顺序按 Skill，绝不自行发明。
+9. M1c workstreams（shipped；deterministic gate passed）：仅当调用传入单次
+   `--workstream <slug>` 时才 feature-detect `enter-0.3`/`list-0.2`；
+   无 flag 时 payload 保持 `enter-0.2`/`list-0.1` 字节不变。scoped
+   payload 成员是严格 exact membership（unscoped 记录不在 scope）；
+   superseded/resolved 集合先在整个 store 上计算，再严格作用域投影（含
+   handoff）；`warnings` 全局；scoped `workstream:` 文本行仅面向人阅
+   读，绝不解析。没有 workstream registry 文件或命令，不要发明。
+   `check` 无 scope flag。
 
 ## 6. Next steps and blocking
 
-阻塞链：`M0.6 gate` → `M1a implementation` → `M1a gate` → `M1b` → `M2–M4`。
-Hakimi H0 和 research loop 对该链零依赖。
+阻塞链：`M0.6（缩小声明关闭）` → `M1a gate（passed）` → `M1b-R1 gate（passed）` → `M1c gate（passed）` → `M2–M4（自然需求证据，blocked）`。
+Hakimi H0 和 research loop 对该链零依赖；H1/H2/H3 的 AITP 前置 gate 已全部
+通过。
 
 Hakimi 侧（并行）：
 
 - H0 now：adapter 骨架、launcher、严格 envelope 校验、capability 探测、
   `enter` lifecycle、prepare→save 流程、降级、tree-hash 测试、双语 README
   兼容矩阵。
-- H1 在 M1a gate 后；H2 在 M1b gate 后；正式 Hakimi contract 在 M4 后。
+- H1：M1a gate 已通过，可 feature-detect `enter-0.2`/`list-0.1`/
+  `show-0.1` 并消费官方 golden fixtures。
+- H2：M1b-R1 gate 已通过，只整合 `check-report-0.1`；`lite-entry-0.2`/
+  `used_by`/pointer bundle 未发布（deferred），不得安排。
+- H3：M1c gate 已通过，可整合 scoped contracts（单次 `--workstream` →
+  `enter-0.3`/`list-0.2`）。
+- 正式 Hakimi contract 在 M4 后。
 - Research-loop 能力（web/PDF/推理/UX/私有缓存）独立于所有 AITP gates。
 
-AITP 侧（by gate）：M0.6 剩余 gate 证据 → M1a implementation（含 golden
-regeneration）→ M1b（cap reconciliation → implementation spec → check/
-lite-entry-0.2）。详见 AITP `docs/hakimi/compatibility-matrix.md` §6。
+AITP 侧（by gate）：M0.6 缩小声明关闭 → M1a/M1b-R1/M1c 全部 done 且
+deterministic gate passed → M2–M4 保持 blocked 设计选项（各自自然需求）。
+详见 AITP `docs/hakimi/compatibility-matrix.md` §6。
 
 ## 7. Audit method (baseline evidence)
+
+以下为历史 **2026-08-08** baseline 证据，保留原审计观察，不代表当前状态；
+当前 amendment 见本文件头部。当前 M1c gate 证据在 AITP
+`docs/m1c-stage-notes.md`（107 passed、1,519 非空行、benchmark PASS、
+real-store 无 flag 旧 runtime parity、零写入）。
 
 - AITP `git rev-parse HEAD` = `8658f682…`；`git status --porcelain` =
   `?? ref/`、`?? uv.lock`（均为刻意未跟踪）。
