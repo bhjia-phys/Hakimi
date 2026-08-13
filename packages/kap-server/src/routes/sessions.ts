@@ -21,7 +21,7 @@
  * the native v2 services directly (the workspace handler's
  * `ISessionLifecycleService.fork` / `archive` / `restore`, reached through the
  * `sessionIndex` → `IWorkspaceLifecycleService.handlerFor` composition,
- * `IAgentFullCompactionService.begin`, `IAgentRPCService.cancel`); there is no
+ * `IAgentFullCompactionService.begin`, `IAgentLoopService.cancelFromUser`); there is no
  * v1-only projection to centralize, so no adapter is involved. `undo` likewise
  * calls `IAgentConversationUndoService.undo` directly (it throws
  * `session.undo_unavailable` with a structured reason) and only borrows
@@ -81,7 +81,7 @@ import {
   IAgentProfileService,
   IAgentConversationUndoService,
   IAgentFullCompactionService,
-  IAgentRPCService,
+  IAgentLoopService,
   IAuthSummaryService,
   ISessionActivityView,
   ISessionBtwService,
@@ -773,7 +773,7 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
           const agent = await resolveMainAgent(core, parsed.id);
           // No turnId → cancel whatever turn is active; a safe no-op when idle.
           // v1 always reports success once the session exists.
-          await agent.accessor.get(IAgentRPCService).cancel({});
+          agent.accessor.get(IAgentLoopService).cancelFromUser();
           requestLog(req)?.info({ session_id: parsed.id, action: 'abort' }, 'session action completed');
           reply.send(okEnvelope({ aborted: true }, req.id));
           return;
@@ -1108,6 +1108,7 @@ export interface SessionWireFields {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly archived: boolean;
+  readonly archivedAt?: number;
   readonly custom?: Record<string, unknown>;
   readonly lastTurnReason?: 'completed' | 'cancelled' | 'failed';
 }
@@ -1123,6 +1124,10 @@ export function toWireSession(
     title: fields.title ?? '',
     created_at: new Date(fields.createdAt).toISOString(),
     updated_at: new Date(fields.updatedAt).toISOString(),
+    // Archive moment; sessions archived before the field existed report
+    // nothing (clients fall back to updated_at for display).
+    archived_at:
+      fields.archivedAt === undefined ? undefined : new Date(fields.archivedAt).toISOString(),
     busy: facts.busy,
     main_turn_active: facts.mainTurnActive,
     pending_interaction: facts.pendingInteraction,
