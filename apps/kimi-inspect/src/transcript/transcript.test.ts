@@ -216,6 +216,28 @@ describe('fetchTranscriptPage', () => {
     expect(page.meta.activity).toBe('turn');
     expect(page.pendingInteractions).toEqual(['apr-1']);
     expect(page.seq).toBe(42);
+    // Legacy payload without the key: no continuation.
+    expect(page.continuation).toBeUndefined();
+  });
+
+  it('passes the reducer continuation through when present', async () => {
+    const { fetchImpl } = fakeFetch(
+      okEnvelope({
+        ...pageData,
+        items: [{ kind: 'marker', markerId: 'm1', marker: 'goal' }, turnItem(1)],
+        continuation: { standalonePlacements: [{ itemId: 'm1', beforeTurn: 1 }] },
+      }),
+    );
+    const page = await fetchTranscriptPage({
+      baseUrl: 'http://h:1',
+      sessionId: 's1',
+      agentId: 'main',
+      fetchImpl,
+    });
+    expect(page.items.map((item) => itemId(item))).toEqual(['m1', 't1']);
+    expect(page.continuation).toEqual({
+      standalonePlacements: [{ itemId: 'm1', beforeTurn: 1 }],
+    });
   });
 
   it('throws on a non-zero envelope code', async () => {
@@ -644,6 +666,158 @@ describe('TranscriptChatStore', () => {
     store.applyPage({ ...emptyPage, items: [turnItem(2)], hasMoreOlder: false });
     expect(store.getState().items.map((item) => itemId(item))).toEqual(['t1', 't2', 't3']);
     expect(store.getState().hasMoreOlder).toBe(false);
+  });
+
+  it('hydrates the placement memory from a replace page continuation', () => {
+    const store = new TranscriptChatStore();
+    store.applyPage(
+      {
+        ...emptyPage,
+        items: [
+          turnItem(0),
+          { kind: 'marker', markerId: 'H', marker: 'goal' },
+          { kind: 'marker', markerId: 'L', marker: 'skill' },
+          turnItem(1),
+        ],
+        hasMoreOlder: false,
+        continuation: { standalonePlacements: [{ itemId: 'H', beforeTurn: 1 }] },
+      },
+      { replace: true },
+    );
+    // The anchored placement landed in the reducer memory…
+    expect(store.getState().standalonePlacements?.get('H')).toEqual({ beforeTurn: 1 });
+    expect(store.getState().standalonePlacements?.has('L')).toBe(false);
+    // …so an ordinal correction re-derives the same layout the server would:
+    // H stays pinned by its anchor instead of following the moved turn.
+    store.applyOps([
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't0', ordinal: 2, state: 'completed', origin: { kind: 'user' } },
+      },
+    ]);
+    expect(store.getState().items.map((item) => itemId(item))).toEqual(['H', 't1', 't0', 'L']);
+
+    // A replace page WITHOUT a continuation (legacy server) starts the
+    // placement memory clean again.
+    store.applyPage({ ...emptyPage, items: [turnItem(5)], hasMoreOlder: false }, { replace: true });
+    expect(store.getState().standalonePlacements?.size).toBe(0);
+  });
+
+  it('merges a prepended page continuation into the retained placements, filling only unplaced ids', () => {
+    const store = new TranscriptChatStore();
+    store.applyPage(
+      {
+        ...emptyPage,
+        items: [turnItem(1), { kind: 'marker', markerId: 'H', marker: 'goal' }],
+        hasMoreOlder: true,
+        continuation: { standalonePlacements: [{ itemId: 'H', beforeTurn: 2 }] },
+      },
+      { replace: true },
+    );
+    // Prepend an older page: the fresh marker G gains its anchor; the already
+    // loaded H keeps its existing placement even when the older page (a stale
+    // or sloppy producer) repeats an entry for it.
+    store.applyPage({
+      ...emptyPage,
+      items: [{ kind: 'marker', markerId: 'G', marker: 'goal' }, turnItem(0)],
+      hasMoreOlder: false,
+      continuation: {
+        standalonePlacements: [
+          { itemId: 'G', beforeTurn: 1 },
+          { itemId: 'H', beforeTurn: 99 },
+        ],
+      },
+    });
+    // G's anchor lands in the layout on the same pass: beforeTurn 1 slots it
+    // into the gap closed by t1 (behind t0), not at the raw prepend position.
+    expect(store.getState().items.map((item) => itemId(item))).toEqual(['t0', 'G', 't1', 'H']);
+    const placements = store.getState().standalonePlacements;
+    expect(placements?.get('G')).toEqual({ beforeTurn: 1 });
+    expect(placements?.get('H')).toEqual({ beforeTurn: 2 });
+
+    // An entry naming an item the page does not carry is dropped, not
+    // hydrated (the anchor memory pages in with the item itself); a fresh
+    // item without an entry stays unplaced.
+    store.applyPage({
+      ...emptyPage,
+      items: [{ kind: 'marker', markerId: 'G0', marker: 'goal' }],
+      hasMoreOlder: false,
+      continuation: { standalonePlacements: [{ itemId: 'ghost', beforeTurn: 1 }] },
+    });
+    expect(store.getState().standalonePlacements?.has('ghost')).toBe(false);
+    expect(store.getState().standalonePlacements?.has('G0')).toBe(false);
+  });
+
+  it('fills a missing placement for an already-loaded duplicate item from an older page', () => {
+    const store = new TranscriptChatStore();
+    // The window loaded H without an anchor (the replace page carried no
+    // continuation entry for it — e.g. H arrived live first).
+    store.applyPage(
+      {
+        ...emptyPage,
+        items: [turnItem(0), turnItem(1), { kind: 'marker', markerId: 'H', marker: 'goal' }],
+        hasMoreOlder: true,
+      },
+      { replace: true },
+    );
+    expect(store.getState().standalonePlacements?.has('H')).toBe(false);
+
+    let notified = 0;
+    store.subscribe(() => {
+      notified += 1;
+    });
+    // The older page repeats only already-loaded items — no fresh items, no
+    // hasMoreOlder change — but it carries H's anchor. That placement fill is
+    // a change of its own: no early return, listeners fire, and H re-anchors
+    // into its segment (ahead of t1) on the same pass.
+    store.applyPage({
+      ...emptyPage,
+      items: [turnItem(0), { kind: 'marker', markerId: 'H', marker: 'goal' }],
+      hasMoreOlder: true,
+      continuation: { standalonePlacements: [{ itemId: 'H', beforeTurn: 1 }] },
+    });
+    expect(notified).toBe(1);
+    expect(store.getState().items.map((item) => itemId(item))).toEqual(['t0', 'H', 't1']);
+    expect(store.getState().standalonePlacements?.get('H')).toEqual({ beforeTurn: 1 });
+
+    // Repeating the same page changes nothing at all: the retained placement
+    // is NOT overwritten and the early return holds.
+    store.applyPage({
+      ...emptyPage,
+      items: [turnItem(0), { kind: 'marker', markerId: 'H', marker: 'goal' }],
+      hasMoreOlder: true,
+      continuation: { standalonePlacements: [{ itemId: 'H', beforeTurn: 99 }] },
+    });
+    expect(notified).toBe(1);
+    expect(store.getState().standalonePlacements?.get('H')).toEqual({ beforeTurn: 1 });
+  });
+
+  it('re-anchors a duplicated live item immediately when an older page brings its placement', () => {
+    const store = new TranscriptChatStore();
+    // The newest page carries H live-first, in the tail past the loaded
+    // turns, with no continuation entry — H has no anchor yet.
+    store.applyPage(
+      {
+        ...emptyPage,
+        items: [turnItem(1), turnItem(2), { kind: 'marker', markerId: 'H', marker: 'goal' }],
+        hasMoreOlder: true,
+      },
+      { replace: true },
+    );
+    expect(store.getState().standalonePlacements?.has('H')).toBe(false);
+
+    // The older page brings the fresh t0 and repeats H — now with its anchor.
+    // Merging the placement must re-normalize the window on the same pass:
+    // H slots into its historical segment ahead of t1, not after the live
+    // tail, and no later op is needed to converge.
+    store.applyPage({
+      ...emptyPage,
+      items: [turnItem(0), { kind: 'marker', markerId: 'H', marker: 'goal' }],
+      hasMoreOlder: true,
+      continuation: { standalonePlacements: [{ itemId: 'H', beforeTurn: 1 }] },
+    });
+    expect(store.getState().items.map((item) => itemId(item))).toEqual(['t0', 'H', 't1', 't2']);
+    expect(store.getState().standalonePlacements?.get('H')).toEqual({ beforeTurn: 1 });
   });
 
   it('applies ops through the package reducer and notifies once per batch', () => {

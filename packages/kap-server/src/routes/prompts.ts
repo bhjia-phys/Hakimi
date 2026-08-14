@@ -17,6 +17,7 @@ import {
   IAuthSummaryService,
   IEventService,
   IFileService,
+  ISessionLegacyService,
   ISessionMetadata,
   parseKimiFileUrl,
   promptMetadataTextFromContentParts,
@@ -58,13 +59,18 @@ import { defineRoute } from '../middleware/defineRoute';
 import { ensureMainAgent, MAIN_AGENT_ID } from '../transport/mainAgent';
 import { parseActionSuffix } from './action-suffix';
 
+interface PromptRouteReply {
+  header(name: string, value: string): unknown;
+  send(payload: unknown): unknown;
+}
+
 interface PromptRouteHost {
   get(
     path: string,
     options: { preHandler: unknown[]; schema?: Record<string, unknown> },
     handler: (
       req: { id: string; params: unknown },
-      reply: { send(payload: unknown): unknown },
+      reply: PromptRouteReply,
     ) => Promise<void> | void,
   ): unknown;
   post(
@@ -72,7 +78,7 @@ interface PromptRouteHost {
     options: { preHandler: unknown[]; schema?: Record<string, unknown> },
     handler: (
       req: { id: string; body: unknown; params: unknown },
-      reply: { send(payload: unknown): unknown },
+      reply: PromptRouteReply,
     ) => Promise<void> | void,
   ): unknown;
 }
@@ -268,6 +274,19 @@ export function registerPromptsRoutes(app: PromptRouteHost, core: Scope): void {
             }
             throw error;
           }
+        }
+        if (req.body.plan_mode !== undefined || req.body.swarm_mode !== undefined) {
+          await core.accessor.get(ISessionLegacyService).updateProfile(session_id, {
+            agent_config: {
+              plan_mode: req.body.plan_mode,
+              swarm_mode: req.body.swarm_mode,
+            },
+          });
+          reply.header('Deprecation', '@1786406400');
+          reply.header(
+            'Warning',
+            '299 - "plan_mode and swarm_mode on /prompts are deprecated; use /sessions/{id}/profile"',
+          );
         }
         const parts = contentToCoreParts(resolvedContent);
         const session = await resolveSession(core, session_id);

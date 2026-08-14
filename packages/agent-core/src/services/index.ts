@@ -155,6 +155,7 @@ export {
 } from './prompt/prompt';
 export type {
   AgentStateSnapshot,
+  LegacyPromptSubmission,
   PromptAbortResult,
   PromptDispatchLogEntry,
   SyntheticPromptAbortedEvent,

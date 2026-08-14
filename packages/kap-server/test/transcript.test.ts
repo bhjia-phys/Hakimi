@@ -61,7 +61,7 @@ interface TurnContract {
 
 interface TranscriptContract {
   agent_id: string;
-  items: (TurnContract | { kind: 'marker' | 'taskref' })[];
+  items: (TurnContract | { kind: 'marker' | 'taskref'; markerId?: string; refId?: string })[];
   has_more: boolean;
   tasks: unknown[];
   interactions: {
@@ -75,6 +75,9 @@ interface TranscriptContract {
   agents: { agentId: string; type?: string }[];
   pending_interactions: string[];
   seq?: number;
+  continuation?: {
+    standalonePlacements: { itemId: string; beforeTurn?: number; beforeItem?: string }[];
+  };
 }
 
 interface OpsCatchupContract {
@@ -371,6 +374,59 @@ describe('server-v2 /api/v1/sessions/{sid}/transcript', () => {
     );
     expect(unknown.body.code).toBe(0);
     expect(unknown.body.data.items).toEqual([]);
+  });
+
+  it('narrows the placement continuation to each page of a backfilled live session', async () => {
+    const id = await createSession();
+    await ensureMainAgent(id);
+    // A compaction summary folds to a marker between the two turns.
+    await seedMainAgentMessages(id, [
+      { role: 'user', content: [{ type: 'text', text: 'one' }], toolCalls: [] },
+      { role: 'assistant', content: [{ type: 'text', text: 'a1' }], toolCalls: [] },
+      {
+        role: 'user',
+        content: [{ type: 'text', text: 'summary of old' }],
+        toolCalls: [],
+        origin: { kind: 'compaction_summary' },
+      },
+      { role: 'user', content: [{ type: 'text', text: 'two' }], toolCalls: [] },
+      { role: 'assistant', content: [{ type: 'text', text: 'a2' }], toolCalls: [] },
+    ]);
+
+    // Reboot + resume: the live store backfills from the wire records via
+    // snapshotToOps, so the marker lands anchored (beforeTurn) in the store's
+    // placement memory.
+    await server!.close();
+    server = undefined;
+    await boot();
+    await resumeSessionById(server!.core.accessor, id);
+
+    // The newest page holds only t1 — no standalone items, no continuation.
+    const newest = await getJson<TranscriptContract>(
+      `/api/v1/sessions/${id}/transcript?agent_id=main&page_size=1`,
+    );
+    expect(newest.body.data.items.map((item) => (item as TurnContract).turnId)).toEqual(['t1']);
+    expect(newest.body.data.has_more).toBe(true);
+    expect(newest.body.data.continuation).toBeUndefined();
+
+    // The older page carries the marker — and its placement anchor rides
+    // along, narrowed to exactly this page's items.
+    const older = await getJson<TranscriptContract>(
+      `/api/v1/sessions/${id}/transcript?agent_id=main&page_size=1&before_turn=t1`,
+    );
+    expect(older.body.data.items.map((item) => item.kind)).toEqual(['turn', 'marker']);
+    expect(older.body.data.continuation).toEqual({
+      standalonePlacements: [{ itemId: 'm1', beforeTurn: 1 }],
+    });
+
+    // A full read carries the whole continuation for its whole item set.
+    const full = await getJson<TranscriptContract>(
+      `/api/v1/sessions/${id}/transcript?agent_id=main`,
+    );
+    expect(full.body.data.items.map((item) => item.kind)).toEqual(['turn', 'marker', 'turn']);
+    expect(full.body.data.continuation).toEqual({
+      standalonePlacements: [{ itemId: 'm1', beforeTurn: 1 }],
+    });
   });
 
   it('rebuilds the main agent for a cold session from the wire records', async () => {

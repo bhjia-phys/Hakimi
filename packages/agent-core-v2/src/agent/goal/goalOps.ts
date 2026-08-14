@@ -33,6 +33,7 @@ import { defineModel } from '#/wire/model';
 import type {
   GoalBudgetLimits,
   GoalChange,
+  GoalMutationRef,
   GoalSnapshot,
   GoalStatus,
 } from './types';
@@ -58,6 +59,28 @@ const GoalStatusSchema = z.enum(['active', 'paused', 'blocked', 'complete']);
 
 const GoalActorSchema = z.enum(['user', 'model', 'runtime', 'system']);
 
+// Same value as `GOAL_MUTATION_MAX_AT` in `@moonshot-ai/protocol`'s
+// events.ts; mirrored locally (the wire layer keeps no runtime protocol
+// import).
+const GOAL_MUTATION_MAX_AT = 8_640_000_000_000_000;
+
+const GoalMutationSchema = z.object({
+  id: z.string(),
+  // Bounded to the valid Date range so the transcript's marker projection
+  // (`new Date(at).toISOString()`) can never throw on a persisted mutation.
+  at: z
+    .number()
+    .finite()
+    .nonnegative()
+    .max(GOAL_MUTATION_MAX_AT)
+    .refine((value) => Number.isFinite(new Date(value).getTime()), {
+      message: 'at must be a valid Date epoch-ms',
+    }),
+  kind: z.enum(['create', 'update', 'clear']),
+  goalId: z.string(),
+  status: GoalStatusSchema.optional(),
+}).strip();
+
 const GoalBudgetLimitsSchema = z
   .object({
     tokenBudget: z.number().finite().nonnegative().optional(),
@@ -71,6 +94,7 @@ declare module '#/app/event/eventBus' {
     'goal.updated': {
       snapshot: GoalSnapshot | null;
       change?: GoalChange;
+      mutation?: GoalMutationRef;
     };
   }
 }
@@ -94,6 +118,7 @@ export const createGoal = GoalModel.defineOp('goal.create', {
       status: GoalStatusSchema.optional(),
       actor: GoalActorSchema.optional(),
       budgetLimits: GoalBudgetLimitsSchema.optional(),
+      mutation: GoalMutationSchema.optional(),
     })
     .strip(),
   apply: (_s, p) => ({
@@ -121,6 +146,7 @@ export const updateGoal = GoalModel.defineOp('goal.update', {
       wallClockResumedAt: z.number().finite().nonnegative().optional(),
       budgetLimits: GoalBudgetLimitsSchema.optional(),
       actor: GoalActorSchema.optional(),
+      mutation: GoalMutationSchema.optional(),
     })
     .strip(),
   apply: (s, p) => {
@@ -159,7 +185,10 @@ export const updateGoal = GoalModel.defineOp('goal.update', {
 });
 
 export const clearGoal = GoalModel.defineOp('goal.clear', {
-  schema: z.object({}),
+  schema: z.object({
+    goalId: z.string().optional(),
+    mutation: GoalMutationSchema.optional(),
+  }).strip(),
   apply: () => null,
 });
 

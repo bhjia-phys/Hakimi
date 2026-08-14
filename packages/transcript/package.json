@@ -21,6 +21,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./test-support/goal-transcript-fixtures": {
+      "types": "./test-support/goalTranscriptFixtures.ts",
+      "default": "./test-support/goalTranscriptFixtures.ts"
     }
   },
   "scripts": {

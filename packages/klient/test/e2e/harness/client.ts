@@ -94,11 +94,8 @@ const DEFAULT_API_PREFIX = '/api/v1';
 const DEFAULT_CONTROL_ACK_TIMEOUT_MS = 5_000;
 
 /**
- * Per-request stateless session controls that the server REST surface
- * requires on every prompt submission. Scenarios that don't care about
- * these can leave them at the defaults; tests that exercise switching
- * model / thinking / permission / plan mode override only the field
- * they need.
+ * Per-request prompt controls used by the legacy live-server scenarios.
+ * Session modes and goals are configured through the session profile surface.
  *
  * `model` matches what the existing server-e2e scenarios assume (the
  * default provider exposes `kimi-code/kimi-for-coding`).
@@ -107,18 +104,16 @@ export const DEFAULT_PROMPT_CONTROLS = {
   model: 'kimi-code/kimi-for-coding',
   thinking: 'off' as PromptThinking,
   permission_mode: 'manual' as PromptPermissionMode,
-  plan_mode: false,
 } as const;
 
 /**
  * Looser input shape for `submitPrompt` / `submitAndWait`. `content` is
- * required; the four stateless controls fall back to
- * `DEFAULT_PROMPT_CONTROLS` when omitted. `metadata` carries through
- * verbatim.
+ * required; prompt controls fall back to `DEFAULT_PROMPT_CONTROLS` when
+ * omitted. `metadata` carries through verbatim.
  */
 export type PromptSubmitInput =
   Pick<PromptSubmission, 'content'>
-  & Partial<Pick<PromptSubmission, 'metadata' | 'model' | 'thinking' | 'permission_mode' | 'plan_mode'>>;
+  & Partial<Pick<PromptSubmission, 'metadata' | 'model' | 'thinking' | 'permission_mode'>>;
 
 export interface TerminalAttachOptions {
   sinceSeq?: number;

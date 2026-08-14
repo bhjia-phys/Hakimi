@@ -306,6 +306,14 @@ interface FullCompactionCompletePayload {
  */
 interface GoalClearPayload {
   _name: 'goal.clear';
+  goalId?: string;
+  mutation?: {
+    id: string;
+    at: number;
+    kind: 'create' | 'update' | 'clear';
+    goalId: string;
+    status?: 'active' | 'paused' | 'blocked' | 'complete';
+  };
 }
 
 /**
@@ -324,6 +332,13 @@ interface GoalCreatePayload {
     tokenBudget?: number;
     turnBudget?: number;
     wallClockBudgetMs?: number;
+  };
+  mutation?: {
+    id: string;
+    at: number;
+    kind: 'create' | 'update' | 'clear';
+    goalId: string;
+    status?: 'active' | 'paused' | 'blocked' | 'complete';
   };
 }
 
@@ -346,6 +361,13 @@ interface GoalUpdatePayload {
     wallClockBudgetMs?: number;
   };
   actor?: 'user' | 'model' | 'runtime' | 'system';
+  mutation?: {
+    id: string;
+    at: number;
+    kind: 'create' | 'update' | 'clear';
+    goalId: string;
+    status?: 'active' | 'paused' | 'blocked' | 'complete';
+  };
 }
 
 /**

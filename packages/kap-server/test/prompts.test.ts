@@ -157,7 +157,7 @@ describe('server-v2 /api/v1 prompts', () => {
     method: 'GET' | 'POST',
     path: string,
     arg?: unknown,
-  ): Promise<{ status: number; body: Envelope<T> }> {
+  ): Promise<{ status: number; headers: Headers; body: Envelope<T> }> {
     const headers = authHeaders(
       server as RunningServer,
       arg === undefined ? {} : { 'content-type': 'application/json' },
@@ -170,7 +170,7 @@ describe('server-v2 /api/v1 prompts', () => {
       init.body = JSON.stringify(arg);
     }
     const res = await fetch(`${base}${path}`, init as never);
-    return { status: res.status, body: (await res.json()) as Envelope<T> };
+    return { status: res.status, headers: res.headers, body: (await res.json()) as Envelope<T> };
   }
 
   async function createSession(cwd: string): Promise<string> {
@@ -233,6 +233,82 @@ describe('server-v2 /api/v1 prompts', () => {
     const source = agent?.accessor.get(IAgentTitlePromptSource);
     expect(source).toBeDefined();
     await expect(source!.firstUserPrompts(3)).resolves.toEqual(prompts);
+  });
+
+  it.each(['plan_mode', 'swarm_mode'] as const)(
+    'adapts the deprecated prompt field %s through the session profile surface',
+    async (field) => {
+      const id = await createSession(home as string);
+
+      const submitted = await call<PromptItemWire>('POST', `/api/v1/sessions/${id}/prompts`, {
+        content: [{ type: 'text', text: 'hello' }],
+        [field]: true,
+      });
+
+      expect(submitted.body.code).toBe(0);
+      expect(submitted.headers.get('deprecation')).toBe('@1786406400');
+      expect(submitted.headers.get('warning')).toContain('use /sessions/{id}/profile');
+
+      const status = await call<{ plan_mode: boolean; swarm_mode: boolean }>(
+        'GET',
+        `/api/v1/sessions/${id}/status`,
+      );
+      expect(status.body.data[field]).toBe(true);
+    },
+  );
+
+  it('adapts the committed Web bundle mode payload including false values', async () => {
+    const id = await createSession(home as string);
+    const enabled = await call<unknown>('POST', `/api/v1/sessions/${id}/profile`, {
+      agent_config: { plan_mode: true, swarm_mode: true },
+    });
+    expect(enabled.body.code).toBe(0);
+
+    const submitted = await call<PromptItemWire>('POST', `/api/v1/sessions/${id}/prompts`, {
+      content: [{ type: 'text', text: 'hello' }],
+      plan_mode: false,
+      swarm_mode: false,
+    });
+    expect(submitted.body.code).toBe(0);
+    expect(submitted.headers.get('deprecation')).toBe('@1786406400');
+
+    const status = await call<{ plan_mode: boolean; swarm_mode: boolean }>(
+      'GET',
+      `/api/v1/sessions/${id}/status`,
+    );
+    expect(status.body.data.plan_mode).toBe(false);
+    expect(status.body.data.swarm_mode).toBe(false);
+  });
+
+  it('does not adapt deprecated modes when a later prompt control rejects', async () => {
+    const id = await createSession(home as string);
+    const rejected = await call<null>('POST', `/api/v1/sessions/${id}/prompts`, {
+      content: [{ type: 'text', text: 'hello' }],
+      profile: 'missing-profile',
+      plan_mode: true,
+    });
+    expect(rejected.body.code).toBe(40001);
+    expect(rejected.headers.get('deprecation')).toBeNull();
+
+    const status = await call<{ plan_mode: boolean }>('GET', `/api/v1/sessions/${id}/status`);
+    expect(status.body.data.plan_mode).toBe(false);
+  });
+
+  it.each([
+    ['goal_objective', 'ship the feature'],
+    ['goal_control', 'pause'],
+  ])('rejects the deprecated no-op prompt field %s before mutating the session', async (field, value) => {
+    const id = await createSession(home as string);
+    const session = getLiveSessionById(server!.core.accessor, id);
+
+    const { body } = await call<null>('POST', `/api/v1/sessions/${id}/prompts`, {
+      content: [{ type: 'text', text: 'hello' }],
+      [field]: value,
+    });
+
+    expect(body.code).toBe(40001);
+    expect(body.details?.[0]?.path).toBe(field);
+    expect(session!.accessor.get(IAgentLifecycleService).get('main')).toBeUndefined();
   });
 
   it('rejects a stale file reference without creating the agent or mutating the model', async () => {

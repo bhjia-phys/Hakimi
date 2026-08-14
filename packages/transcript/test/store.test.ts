@@ -2,9 +2,20 @@ import { describe, expect, it } from 'vitest';
 
 import { AgentTranscript } from '#/store/agentTranscript';
 import { TranscriptStore } from '#/store/transcriptStore';
-import { appendAtOffset } from '#/ops/apply';
+import {
+  appendAtOffset,
+  applyOperation,
+  filterContinuation,
+  normalizeStandaloneItems,
+  type AgentState,
+  type StandalonePlacement,
+} from '#/ops/apply';
+import { agentTranscriptSnapshotSchema } from '#/contract/schema';
+import { goalMarkerFromMutation } from '#/history/goalMarker';
 import type {
+  AgentTranscriptSnapshot,
   FrameUpsertOp,
+  MarkerUpsertOp,
   TurnUpsertOp,
   TranscriptOperation,
 } from '#/ops/operation';
@@ -398,6 +409,242 @@ describe('AgentTranscript', () => {
     expect(fresh.hasMoreOlder).toBe(true);
   });
 
+  it('carries the placement continuation through snapshot/reset so corrections converge', () => {
+    const turn = (turnId: string, ordinal: number): TurnUpsertOp => ({
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId, ordinal, state: 'completed', origin: { kind: 'user' } },
+    });
+    const tx = new AgentTranscript('main');
+    tx.apply([
+      turn('a', 0),
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'H', marker: 'goal' }, beforeTurn: 1 },
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'L', marker: 'skill' } },
+      turn('b', 1),
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['a', 'H', 'L', 'b']);
+
+    // The snapshot carries ONLY the anchored item's entry (the unanchored
+    // live item has no placement to share).
+    const snapshot = tx.snapshot();
+    expect(snapshot.continuation).toEqual({
+      standalonePlacements: [{ itemId: 'H', beforeTurn: 1 }],
+    });
+
+    // The continuation survives the JSON wire roundtrip and schema validation.
+    const wire = JSON.parse(JSON.stringify(snapshot)) as AgentTranscriptSnapshot;
+    expect(agentTranscriptSnapshotSchema.parse(wire).continuation).toEqual(snapshot.continuation);
+    const fresh = new AgentTranscript('main');
+    fresh.receive([{ op: 'reset', agentId: 'main', snapshot: wire }]);
+    expect(fresh.getItems().map(itemLabel)).toEqual(['a', 'H', 'L', 'b']);
+
+    // The ordinal correction lands identically on both peers: the anchored H
+    // stays pinned ahead of b on the reset peer too, instead of diverging.
+    tx.apply([turn('a', 2)]);
+    fresh.apply([turn('a', 2)]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['H', 'b', 'a', 'L']);
+    expect(fresh.getItems().map(itemLabel)).toEqual(['H', 'b', 'a', 'L']);
+
+    // A legacy snapshot without a continuation still resets — it just starts
+    // with an empty placement memory, so the correction takes the legacy
+    // (live-segment) layout instead of crashing.
+    const legacySnapshot: AgentTranscriptSnapshot = { ...snapshot, continuation: undefined };
+    expect(agentTranscriptSnapshotSchema.safeParse(JSON.parse(JSON.stringify(legacySnapshot))).success).toBe(true);
+    const legacy = new AgentTranscript('main');
+    legacy.receive([{ op: 'reset', agentId: 'main', snapshot: legacySnapshot }]);
+    expect(legacy.getItems().map(itemLabel)).toEqual(['a', 'H', 'L', 'b']);
+    legacy.apply([turn('a', 2)]);
+    expect(legacy.getItems().map(itemLabel)).toEqual(['b', 'a', 'H', 'L']);
+  });
+
+  it('windows the snapshot continuation with the items, never leaking paged-out ids', () => {
+    const turn = (turnId: string, ordinal: number): TurnUpsertOp => ({
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId, ordinal, state: 'completed', origin: { kind: 'user' } },
+    });
+    const tx = new AgentTranscript('main');
+    tx.apply([
+      turn('t0', 0),
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'H', marker: 'goal' }, beforeTurn: 1 },
+      turn('t1', 1),
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'T', marker: 'goal' }, beforeTurn: 2 },
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'H', 't1', 'T']);
+
+    // tailTurns 1 keeps [t1, T]: only T's anchor rides along; H's placement
+    // memory pages in with H itself on the older page.
+    const windowed = tx.snapshot({ tailTurns: 1 });
+    expect(windowed.items.map(itemLabel)).toEqual(['t1', 'T']);
+    expect(windowed.continuation).toEqual({
+      standalonePlacements: [{ itemId: 'T', beforeTurn: 2 }],
+    });
+
+    // tailTurns 0 (the kap-server baseline reset window) ships no items — and
+    // no continuation at all.
+    const empty = tx.snapshot({ tailTurns: 0 });
+    expect(empty.items).toEqual([]);
+    expect(empty.continuation).toBeUndefined();
+  });
+
+  it('cuts ghost beforeItem successors out of the continuation on snapshot, reset and page filter', () => {
+    const turn = (turnId: string, ordinal: number): TurnUpsertOp => ({
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId, ordinal, state: 'completed', origin: { kind: 'user' } },
+    });
+    const tx = new AgentTranscript('main');
+    tx.apply([
+      turn('t0', 0),
+      // A's successor never lands: the ghost edge must not leak onto the wire.
+      {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'A', marker: 'goal' },
+        beforeTurn: 1,
+        beforeItem: 'ghost',
+      },
+      // B's ONLY anchor is the ghost edge: nothing visible remains, so the
+      // whole entry drops out of the continuation.
+      {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'B', marker: 'skill' },
+        beforeItem: 'ghost',
+      },
+      // C points at a turn id: not a standalone successor, the edge cuts too.
+      {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'C', marker: 'mode' },
+        beforeTurn: 1,
+        beforeItem: 't1',
+      },
+      turn('t1', 1),
+    ]);
+
+    // The snapshot emits only the cut-back anchors — never a ghost id.
+    const snapshot = tx.snapshot();
+    expect(snapshot.continuation).toEqual({
+      standalonePlacements: [
+        { itemId: 'A', beforeTurn: 1 },
+        { itemId: 'C', beforeTurn: 1 },
+      ],
+    });
+    // …which survives the JSON wire roundtrip and schema validation.
+    const wire = JSON.parse(JSON.stringify(snapshot)) as AgentTranscriptSnapshot;
+    expect(agentTranscriptSnapshotSchema.parse(wire).continuation).toEqual(snapshot.continuation);
+    const fresh = new AgentTranscript('main');
+    fresh.receive([{ op: 'reset', agentId: 'main', snapshot: wire }]);
+    expect(fresh.snapshot().continuation).toEqual(snapshot.continuation);
+
+    // A dirty snapshot (ghost edges already on the wire, e.g. from an older
+    // or sloppy producer) hydrates through the same filter on reset: the
+    // ghost edge falls back to the turn anchor, the anchor-less entry drops.
+    const dirty: AgentTranscriptSnapshot = {
+      ...wire,
+      continuation: {
+        standalonePlacements: [
+          { itemId: 'A', beforeTurn: 1, beforeItem: 'ghost' },
+          { itemId: 'B', beforeItem: 'ghost' },
+          { itemId: 'ghost', beforeTurn: 1 },
+        ],
+      },
+    };
+    const peer = new AgentTranscript('main');
+    peer.receive([{ op: 'reset', agentId: 'main', snapshot: dirty }]);
+    expect(peer.snapshot().continuation).toEqual({
+      standalonePlacements: [{ itemId: 'A', beforeTurn: 1 }],
+    });
+  });
+
+  it('keeps a same-window beforeItem successor but cuts it once the successor pages out', () => {
+    const turn = (turnId: string, ordinal: number): TurnUpsertOp => ({
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId, ordinal, state: 'completed', origin: { kind: 'user' } },
+    });
+    const tx = new AgentTranscript('main');
+    tx.apply([
+      turn('t0', 0),
+      {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'm1', marker: 'goal' },
+        beforeTurn: 1,
+        beforeItem: 'm2',
+      },
+      {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'm2', marker: 'skill' },
+        beforeTurn: 1,
+      },
+      turn('t1', 1),
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'm1', 'm2', 't1']);
+
+    // Both ends of the edge are visible in the full snapshot: it rides along.
+    const snapshot = tx.snapshot();
+    expect(snapshot.continuation).toEqual({
+      standalonePlacements: [
+        { itemId: 'm1', beforeTurn: 1, beforeItem: 'm2' },
+        { itemId: 'm2', beforeTurn: 1 },
+      ],
+    });
+
+    // The page filter keeps the edge while both ends are on the page…
+    expect(filterContinuation(snapshot, snapshot.items)).toEqual(snapshot.continuation);
+    // …and cuts it back to the turn anchor when the successor is not — the
+    // page never leaks an id it does not carry.
+    const page = snapshot.items.filter((item) => itemLabel(item) !== 'm2');
+    expect(filterContinuation(snapshot, page)).toEqual({
+      standalonePlacements: [{ itemId: 'm1', beforeTurn: 1 }],
+    });
+  });
+
+  it('snapshots a zero-tail window with no items at all, even standalone-only', () => {
+    const tx = new AgentTranscript('main');
+    tx.apply([
+      {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'H', marker: 'goal' },
+        beforeTurn: 0,
+      },
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'L', marker: 'skill' } },
+    ]);
+
+    // tailTurns 0 ships NO items — standalone-only state included — and no
+    // continuation; the held items report as older history to page in.
+    const windowed = tx.snapshot({ tailTurns: 0 });
+    expect(windowed.items).toEqual([]);
+    expect(windowed.continuation).toBeUndefined();
+    expect(windowed.hasMoreOlder).toBe(true);
+
+    // The default snapshot is untouched: items and anchors still materialize.
+    const full = tx.snapshot();
+    expect(full.items.map(itemLabel)).toEqual(['H', 'L']);
+    expect(full.continuation).toEqual({
+      standalonePlacements: [{ itemId: 'H', beforeTurn: 0 }],
+    });
+    expect(full.hasMoreOlder).toBe(false);
+
+    // A wholly empty store invents no older history…
+    const empty = new AgentTranscript('main');
+    expect(empty.snapshot({ tailTurns: 0 }).hasMoreOlder).toBe(false);
+    // …while an items-empty state that already flagged older history (the
+    // kap-server baseline reset shape) keeps its flag across a re-snapshot.
+    const reset = new AgentTranscript('main');
+    reset.receive([
+      {
+        op: 'reset',
+        agentId: 'main',
+        snapshot: {
+          items: [],
+          tasks: [],
+          interactions: [],
+          attachments: [],
+          todos: [],
+          prompts: [],
+          meta: {},
+          hasMoreOlder: true,
+        },
+      },
+    ]);
+    expect(reset.snapshot({ tailTurns: 0 }).hasMoreOlder).toBe(true);
+  });
+
   it('onChange emits accepted ops once per apply batch', () => {
     const tx = new AgentTranscript('main');
     const seen: string[] = [];
@@ -428,6 +675,19 @@ describe('AgentTranscript', () => {
     ]);
     expect(tx.getMeta().goal?.status).toBe('active');
     expect(tx.getMeta().modes?.plan?.reviewPath).toBe('/p');
+  });
+
+  it('meta.merge clears Goal on null and keeps it when absent', () => {
+    const tx = new AgentTranscript('main');
+    tx.apply([{ op: 'meta.merge', meta: { goal: { objective: 'ship it', status: 'active' } } }]);
+    tx.apply([{ op: 'meta.merge', meta: { activity: 'turn' } }]);
+    expect(tx.getMeta().goal?.objective).toBe('ship it');
+
+    const firstClear = tx.apply([{ op: 'meta.merge', meta: { goal: null } }]);
+    expect(firstClear.accepted).toHaveLength(1);
+    expect(tx.getMeta().goal).toBeUndefined();
+    const duplicateClear = tx.apply([{ op: 'meta.merge', meta: { goal: null } }]);
+    expect(duplicateClear.accepted).toHaveLength(0);
   });
 
   it('meta.merge clears a mode badge on null and keeps absent keys', () => {
@@ -538,6 +798,788 @@ describe('AgentTranscript', () => {
     expect(items[0]?.kind).toBe('marker');
   });
 
+  it('replays an anchored standalone op without reordering same-anchor siblings', () => {
+    const tx = new AgentTranscript('main');
+    const t0: TranscriptOperation = {
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'completed', origin: { kind: 'user' } },
+    };
+    const t1: TranscriptOperation = {
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId: 't1', ordinal: 1, state: 'completed', origin: { kind: 'user' } },
+    };
+    const m1: TranscriptOperation = {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'm1', marker: 'goal' },
+      beforeTurn: 1,
+    };
+    tx.apply([
+      t0,
+      m1,
+      {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'm2', marker: 'skill' },
+        beforeTurn: 1,
+      },
+      t1,
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'm1', 'm2', 't1']);
+
+    // Replaying the first anchored op must not push it past its same-anchor
+    // sibling: the anchor pins the segment, not a slot within it.
+    const replay = tx.apply([m1]);
+    expect(replay.accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'm1', 'm2', 't1']);
+
+    // A structurally identical replay carrying fresh object references (as a
+    // JSON / structuredClone roundtrip produces) is a no-op too — the store
+    // compares the item's observable fields, not object identity.
+    const cloned = tx.apply([structuredClone(m1)]);
+    expect(cloned.accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'm1', 'm2', 't1']);
+
+    // A content refresh replaces in place — still no reorder.
+    const refreshedOp: TranscriptOperation = {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'm1', marker: 'goal', payload: { v: 1 } },
+      beforeTurn: 1,
+    };
+    const refreshed = tx.apply([refreshedOp]);
+    expect(refreshed.accepted).toHaveLength(1);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'm1', 'm2', 't1']);
+
+    // Replaying the refreshed op through a clone is a no-op again: structural
+    // equality covers the payload.
+    const clonedRefresh = tx.apply([structuredClone(refreshedOp)]);
+    expect(clonedRefresh.accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'm1', 'm2', 't1']);
+  });
+
+  it('keeps marker+taskref sibling order under an anchored replay', () => {
+    const tx = new AgentTranscript('main');
+    const m1: TranscriptOperation = {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'm1', marker: 'goal' },
+      beforeTurn: 1,
+    };
+    const r1: TranscriptOperation = {
+      op: 'taskref.upsert',
+      item: { kind: 'taskref', refId: 'r1', taskId: 'bash-1' },
+      beforeTurn: 1,
+    };
+    tx.apply([
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'completed', origin: { kind: 'user' } },
+      },
+      m1,
+      r1,
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't1', ordinal: 1, state: 'completed', origin: { kind: 'user' } },
+      },
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'm1', 'r1', 't1']);
+
+    const replay = tx.apply([m1]);
+    expect(replay.accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'm1', 'r1', 't1']);
+
+    // The taskref sibling replays as a no-op under fresh references too.
+    const clonedRef = tx.apply([structuredClone(r1)]);
+    expect(clonedRef.accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'm1', 'r1', 't1']);
+  });
+
+  it('restores same-segment sibling order via beforeItem after a live-first landing', () => {
+    const tx = new AgentTranscript('main');
+    const t0: TranscriptOperation = {
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'completed', origin: { kind: 'user' } },
+    };
+    const t1: TranscriptOperation = {
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId: 't1', ordinal: 1, state: 'completed', origin: { kind: 'user' } },
+    };
+    // goal:2 landed live-first (a live op carries no anchor) and sits past
+    // t1; the backfill then replays the historical segment [goal:1, goal:2]
+    // snapshotToOps-style: the first op chains to its in-segment successor,
+    // the last one carries no beforeItem.
+    tx.apply([
+      t0,
+      t1,
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'goal:2', marker: 'goal' } },
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 't1', 'goal:2']);
+
+    const backfillA: TranscriptOperation = {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'goal:1', marker: 'goal' },
+      beforeTurn: 1,
+      beforeItem: 'goal:2',
+    };
+    const backfillB: TranscriptOperation = {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'goal:2', marker: 'goal' },
+      beforeTurn: 1,
+    };
+    tx.apply([backfillA, backfillB]);
+    // The successor is relocated into the anchored segment first, then the
+    // earlier sibling slots in before it — the historical order holds.
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'goal:1', 'goal:2', 't1']);
+
+    // Replaying the anchored pair changes nothing and accepts nothing.
+    const replay = tx.apply([backfillA, backfillB]);
+    expect(replay.accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'goal:1', 'goal:2', 't1']);
+  });
+
+  it('keeps the other same-segment siblings in place on a beforeItem replay', () => {
+    const tx = new AgentTranscript('main');
+    const m = (id: string, beforeItem?: string): MarkerUpsertOp => ({
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: id, marker: 'goal' },
+      beforeTurn: 1,
+      beforeItem,
+    });
+    // Cold order: m1 chained to m2 chained to m3, all before turn 1.
+    tx.apply([
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'completed', origin: { kind: 'user' } },
+      },
+      m('m1', 'm2'),
+      m('m2', 'm3'),
+      m('m3'),
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't1', ordinal: 1, state: 'completed', origin: { kind: 'user' } },
+      },
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'm1', 'm2', 'm3', 't1']);
+
+    // Replaying the head of the chain must not push it (or its successor)
+    // past the rest of the segment.
+    const replay = tx.apply([m('m1', 'm2')]);
+    expect(replay.accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'm1', 'm2', 'm3', 't1']);
+  });
+
+  it('falls back to the beforeTurn anchor when the beforeItem successor is unknown', () => {
+    const tx = new AgentTranscript('main');
+    tx.apply([
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'completed', origin: { kind: 'user' } },
+      },
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't1', ordinal: 1, state: 'running', origin: { kind: 'user' } },
+      },
+    ]);
+    // The successor never arrived (partial history): the item lands by its
+    // turn anchor alone, exactly like a legacy op.
+    const op: TranscriptOperation = {
+      op: 'taskref.upsert',
+      item: { kind: 'taskref', refId: 'r1', taskId: 'bash-1' },
+      beforeTurn: 1,
+      beforeItem: 'r-missing',
+    };
+    tx.apply([op]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'r1', 't1']);
+    expect(tx.apply([op]).accepted).toHaveLength(0);
+  });
+
+  it('converges a beforeItem chain on first pass under any arrival order', () => {
+    const t0: TurnUpsertOp = {
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'completed', origin: { kind: 'user' } },
+    };
+    const t1: TurnUpsertOp = {
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId: 't1', ordinal: 1, state: 'completed', origin: { kind: 'user' } },
+    };
+    // snapshotToOps-style chaining for the segment [A, B, C] before turn 1.
+    const chain: Record<string, MarkerUpsertOp> = {
+      A: {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'A', marker: 'goal' },
+        beforeTurn: 1,
+        beforeItem: 'B',
+      },
+      B: {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'B', marker: 'goal' },
+        beforeTurn: 1,
+        beforeItem: 'C',
+      },
+      C: {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'C', marker: 'goal' },
+        beforeTurn: 1,
+      },
+    };
+    const permutations: readonly (readonly [string, string, string])[] = [
+      ['A', 'B', 'C'],
+      ['A', 'C', 'B'],
+      ['B', 'A', 'C'],
+      ['B', 'C', 'A'],
+      ['C', 'A', 'B'],
+      ['C', 'B', 'A'],
+    ];
+    for (const order of permutations) {
+      const tx = new AgentTranscript('main');
+      tx.apply([t0, t1]);
+      // One apply per op, in the permutation's arrival order: the remembered
+      // placements must re-derive A,B,C on the first pass, with no replay.
+      for (const id of order) tx.apply([chain[id]!]);
+      expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'A', 'B', 'C', 't1']);
+
+      // Replaying the same ops — in order, then shuffled through a
+      // structuredClone roundtrip — moves nothing and accepts nothing.
+      expect(tx.apply(order.map((id) => chain[id]!)).accepted).toHaveLength(0);
+      const shuffled = [...order].reverse().map((id) => structuredClone(chain[id]!));
+      expect(tx.apply(shuffled).accepted).toHaveLength(0);
+      expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'A', 'B', 'C', 't1']);
+    }
+  });
+
+  it('holds a partial beforeItem chain in arrival order until the missing successor lands', () => {
+    const tx = new AgentTranscript('main');
+    tx.apply([
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'completed', origin: { kind: 'user' } },
+      },
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't1', ordinal: 1, state: 'completed', origin: { kind: 'user' } },
+      },
+    ]);
+    const tail: MarkerUpsertOp = {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'C', marker: 'goal' },
+      beforeTurn: 1,
+    };
+    const head: MarkerUpsertOp = {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'A', marker: 'goal' },
+      beforeTurn: 1,
+      beforeItem: 'B',
+    };
+    // Tail first, then the head whose successor B is still missing: with the
+    // chain relation incomplete the current (arrival) order is the fallback.
+    tx.apply([tail]);
+    tx.apply([head]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'C', 'A', 't1']);
+    // The missing middle lands: the remembered A->B->C relations re-derive
+    // the historical order on this same pass.
+    const middle: MarkerUpsertOp = {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'B', marker: 'goal' },
+      beforeTurn: 1,
+      beforeItem: 'C',
+    };
+    tx.apply([middle]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'A', 'B', 'C', 't1']);
+    // Converged: any replay is a no-op.
+    expect(tx.apply([middle, head, tail]).accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'A', 'B', 'C', 't1']);
+  });
+
+  it('converges a turn-less segment anchored at ordinal 0 and keeps it ahead of the first turn', () => {
+    // snapshotToOps anchors a snapshot without any turn at ordinal 0 (the
+    // first visible turn), so the whole segment stays ONE placement group
+    // instead of an unanchored live tail.
+    const chain: Record<string, MarkerUpsertOp> = {
+      A: {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'A', marker: 'goal' },
+        beforeTurn: 0,
+        beforeItem: 'B',
+      },
+      B: {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'B', marker: 'goal' },
+        beforeTurn: 0,
+        beforeItem: 'C',
+      },
+      C: {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'C', marker: 'goal' },
+        beforeTurn: 0,
+      },
+    };
+    const t0: TurnUpsertOp = {
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'running', origin: { kind: 'user' } },
+    };
+    const permutations: readonly (readonly [string, string, string])[] = [
+      ['A', 'B', 'C'],
+      ['A', 'C', 'B'],
+      ['B', 'A', 'C'],
+      ['B', 'C', 'A'],
+      ['C', 'A', 'B'],
+      ['C', 'B', 'A'],
+    ];
+    for (const order of permutations) {
+      const tx = new AgentTranscript('main');
+      // One apply per op, in the permutation's arrival order: the remembered
+      // placements must re-derive A,B,C on the first pass, with no turn
+      // present at all.
+      for (const id of order) tx.apply([chain[id]!]);
+      expect(tx.getItems().map(itemLabel)).toEqual(['A', 'B', 'C']);
+      // The first turn lands after the anchored group, not before it.
+      tx.apply([t0]);
+      expect(tx.getItems().map(itemLabel)).toEqual(['A', 'B', 'C', 't0']);
+      // A JSON-roundtripped replay moves nothing and accepts nothing.
+      const replayed = JSON.parse(
+        JSON.stringify(order.map((id) => chain[id]!)),
+      ) as TranscriptOperation[];
+      expect(tx.apply(replayed).accepted).toHaveLength(0);
+      expect(tx.getItems().map(itemLabel)).toEqual(['A', 'B', 'C', 't0']);
+    }
+  });
+
+  it('consumes remembered placements when the anchored turns arrive', () => {
+    const tx = new AgentTranscript('main');
+    const turn = (n: number): TurnUpsertOp => ({
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId: `t${n}`, ordinal: n, state: 'completed', origin: { kind: 'user' } },
+    });
+    const marker = (id: string, beforeTurn: number): MarkerUpsertOp => ({
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: id, marker: 'goal' },
+      beforeTurn,
+    });
+    // The groups land before their anchor turns exist: they wait at the tail.
+    tx.apply([turn(0), marker('G1', 1), marker('G2', 2)]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'G1', 'G2']);
+    // Each arriving turn pulls its anchored group back ahead of itself.
+    tx.apply([turn(1)]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'G1', 't1', 'G2']);
+    tx.apply([turn(2)]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'G1', 't1', 'G2', 't2']);
+    // Header replays stay no-ops — normalization never manufactures a change.
+    expect(tx.apply([turn(1)]).accepted).toHaveLength(0);
+    expect(tx.apply([turn(2)]).accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'G1', 't1', 'G2', 't2']);
+  });
+
+  it('consumes placements when a skeleton turn arrives via step or frame', () => {
+    const tx = new AgentTranscript('main');
+    tx.apply([
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'G1', marker: 'goal' }, beforeTurn: 1 },
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'G2', marker: 'goal' }, beforeTurn: 2 },
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['G1', 'G2']);
+    // A step for a not-yet-seen turn auto-vivifies it — the anchored group
+    // slots ahead of the skeleton on the same pass.
+    tx.apply([
+      {
+        op: 'step.upsert',
+        turnId: 't1',
+        step: { kind: 'step', stepId: 't1.1', turnId: 't1', ordinal: 1, state: 'running' },
+      },
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['G1', 't1', 'G2']);
+    // Same for a frame-first arrival.
+    tx.apply([
+      {
+        op: 'frame.upsert',
+        turnId: 't2',
+        stepId: 't2.1',
+        frame: { kind: 'thinking', frameId: 't2.1.f1', text: 'x' } satisfies ThinkingFrame,
+      },
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['G1', 't1', 'G2', 't2']);
+  });
+
+  it('re-slots anchored groups when a turn ordinal update moves their boundary', () => {
+    const tx = new AgentTranscript('main');
+    tx.apply([
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'running', origin: { kind: 'user' } },
+      },
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'G', marker: 'goal' }, beforeTurn: 1 },
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'G']);
+    // The ordinal correction moves the boundary itself: the group anchored at
+    // ordinal 1 now belongs ahead of this turn.
+    tx.apply([
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't0', ordinal: 1, state: 'running', origin: { kind: 'user' } },
+      },
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['G', 't0']);
+  });
+
+  it('re-sorts the timeline when a turn ordinal update crosses another turn', () => {
+    const tx = new AgentTranscript('main');
+    const turn = (turnId: string, ordinal: number): TurnUpsertOp => ({
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId, ordinal, state: 'completed', origin: { kind: 'user' } },
+    });
+    tx.apply([
+      turn('a', 0),
+      turn('b', 2),
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'G', marker: 'goal' }, beforeTurn: 2 },
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['a', 'G', 'b']);
+
+    // The correction moves `a` past `b`: an in-place replace would leave the
+    // turns out of ordinal order, so the turn is re-inserted at its new
+    // ordinal and the anchored group re-derives against the new boundaries.
+    tx.apply([turn('a', 3)]);
+    const items = tx.getItems();
+    expect(items.map(itemLabel)).toEqual(['G', 'b', 'a']);
+    expect(
+      items.filter((i) => i.kind === 'turn').map((i) => i.kind === 'turn' && i.ordinal),
+    ).toEqual([2, 3]);
+
+    // Replaying the same header is a no-op: nothing moves, nothing is accepted.
+    expect(tx.apply([turn('a', 3)]).accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['G', 'b', 'a']);
+  });
+
+  it('carries the trailing live segment along when a turn ordinal update moves the turn forward', () => {
+    const tx = new AgentTranscript('main');
+    const turn = (turnId: string, ordinal: number): TurnUpsertOp => ({
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId, ordinal, state: 'completed', origin: { kind: 'user' } },
+    });
+    // Placement-less (live) standalone items trailing a turn belong to that
+    // turn's segment: when the ordinal correction moves the turn past `b`,
+    // they must follow it instead of being stranded ahead of `b`.
+    tx.apply([
+      turn('a', 0),
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'L', marker: 'skill' } },
+      { op: 'taskref.upsert', item: { kind: 'taskref', refId: 'R', taskId: 'task-1' } },
+      turn('b', 1),
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['a', 'L', 'R', 'b']);
+
+    tx.apply([turn('a', 2)]);
+    const items = tx.getItems();
+    expect(items.map(itemLabel)).toEqual(['b', 'a', 'L', 'R']);
+    expect(
+      items.filter((i) => i.kind === 'turn').map((i) => i.kind === 'turn' && i.ordinal),
+    ).toEqual([1, 2]);
+
+    // Replaying the same header is a no-op: nothing moves, nothing is accepted.
+    expect(tx.apply([turn('a', 2)]).accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['b', 'a', 'L', 'R']);
+  });
+
+  it('carries the trailing live segment along when a turn ordinal update moves the turn backward', () => {
+    const tx = new AgentTranscript('main');
+    const turn = (turnId: string, ordinal: number): TurnUpsertOp => ({
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId, ordinal, state: 'completed', origin: { kind: 'user' } },
+    });
+    tx.apply([
+      turn('a', 2),
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'L', marker: 'skill' } },
+      turn('b', 3),
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['a', 'L', 'b']);
+
+    tx.apply([turn('a', 0)]);
+    const items = tx.getItems();
+    expect(items.map(itemLabel)).toEqual(['a', 'L', 'b']);
+    expect(
+      items.filter((i) => i.kind === 'turn').map((i) => i.kind === 'turn' && i.ordinal),
+    ).toEqual([0, 3]);
+
+    // Replaying the same header is a no-op: nothing moves, nothing is accepted.
+    expect(tx.apply([turn('a', 0)]).accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['a', 'L', 'b']);
+  });
+
+  it('carries the live segment past an anchored item sitting inside the gap', () => {
+    const tx = new AgentTranscript('main');
+    const turn = (turnId: string, ordinal: number): TurnUpsertOp => ({
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId, ordinal, state: 'completed', origin: { kind: 'user' } },
+    });
+    // An anchored marker inside the gap must not stop the scan: the
+    // placement-less `L` beyond it still belongs to `a`'s live segment.
+    tx.apply([
+      turn('a', 0),
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'H', marker: 'goal' }, beforeTurn: 1 },
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'L', marker: 'skill' } },
+      turn('b', 1),
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['a', 'H', 'L', 'b']);
+
+    // Moving `a` past `b`: `H` stays pinned by its absolute beforeTurn anchor
+    // ahead of `b`, while `L` follows its turn.
+    tx.apply([turn('a', 2)]);
+    const items = tx.getItems();
+    expect(items.map(itemLabel)).toEqual(['H', 'b', 'a', 'L']);
+    expect(
+      items.filter((i) => i.kind === 'turn').map((i) => i.kind === 'turn' && i.ordinal),
+    ).toEqual([1, 2]);
+
+    // Replaying the same header is a no-op: nothing moves, nothing is accepted.
+    expect(tx.apply([turn('a', 2)]).accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['H', 'b', 'a', 'L']);
+
+    // Moving back: `L` follows `a` forward again; inside the reopened gap the
+    // anchored `H` still takes precedence over the unplaced `L`, restoring the
+    // original layout exactly.
+    tx.apply([turn('a', 0)]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['a', 'H', 'L', 'b']);
+  });
+
+  it('applies ops to a hand-built legacy state without standalonePlacements', () => {
+    // States constructed before the reducer gained its placement memory (or
+    // by hand in external stores) never carried the field: the reducer must
+    // read it as empty instead of crashing on `.get`/`.has` of undefined.
+    const legacyState: AgentState = {
+      items: [],
+      tasks: new Map(),
+      interactions: new Map(),
+      attachments: new Map(),
+      todos: new Map(),
+      prompts: new Map(),
+      meta: {},
+      pendingInteractions: new Set(),
+      hasMoreOlder: false,
+    };
+    const marked = applyOperation(legacyState, {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'legacy', marker: 'notice' },
+    });
+    expect(marked.changed).toBe(true);
+    expect(marked.state.items.map(itemLabel)).toEqual(['legacy']);
+
+    const turned = applyOperation(legacyState, {
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'running', origin: { kind: 'user' } },
+    });
+    expect(turned.changed).toBe(true);
+    expect(turned.state.items.map(itemLabel)).toEqual(['t0']);
+  });
+
+  it('slots an anchored group ahead of unplaced live items within its segment', () => {
+    const tx = new AgentTranscript('main');
+    tx.apply([
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'completed', origin: { kind: 'user' } },
+      },
+    ]);
+    // A live item lands while the backfill is still reading: no placement.
+    tx.apply([{ op: 'marker.upsert', item: { kind: 'marker', markerId: 'L', marker: 'skill' } }]);
+    // The historical segment then backfills anchored before turn 1: inside
+    // the same gap it takes precedence over the unplaced live item, without
+    // displacing the live item from its gap.
+    tx.apply([
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'H', marker: 'goal' }, beforeTurn: 1 },
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'H', 'L']);
+    tx.apply([
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't1', ordinal: 1, state: 'running', origin: { kind: 'user' } },
+      },
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'H', 'L', 't1']);
+  });
+
+  it('items.remove clears successor edges into the drop set, even with no item left', () => {
+    const t0: TurnUpsertOp = {
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'completed', origin: { kind: 'user' } },
+    };
+    const t1: TurnUpsertOp = {
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId: 't1', ordinal: 1, state: 'completed', origin: { kind: 'user' } },
+    };
+    const marker = (id: string, beforeItem?: string): MarkerUpsertOp => ({
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: id, marker: 'goal' },
+      beforeTurn: 1,
+      beforeItem,
+    });
+
+    // A -> B chained; removing B must drop A's dangling edge to it.
+    const tx = new AgentTranscript('main');
+    tx.apply([t0, t1, marker('A', 'B'), marker('B')]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'A', 'B', 't1']);
+    tx.apply([{ op: 'items.remove', ids: ['B'] }]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'A', 't1']);
+    // B re-anchors, now claiming the head of the segment: had the stale
+    // A -> B edge survived, the cycle fallback would pin the old order.
+    tx.apply([marker('B', 'A')]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'B', 'A', 't1']);
+
+    // The edge can also outlive its target entirely (it never arrived): a
+    // remove that deletes no item still cleans the hidden placement, so the
+    // op is accepted rather than dropped as a no-op.
+    const hidden = new AgentTranscript('main');
+    hidden.apply([t0, t1, marker('A', 'ghost')]);
+    expect(hidden.getItems().map(itemLabel)).toEqual(['t0', 'A', 't1']);
+    const cleaned = hidden.apply([{ op: 'items.remove', ids: ['ghost'] }]);
+    expect(cleaned.accepted).toHaveLength(1);
+    hidden.apply([marker('ghost', 'A')]);
+    expect(hidden.getItems().map(itemLabel)).toEqual(['t0', 'ghost', 'A', 't1']);
+
+    // A remove touching neither items nor placements stays a no-op.
+    expect(hidden.apply([{ op: 'items.remove', ids: ['never-seen'] }]).accepted).toHaveLength(0);
+  });
+
+  it('absorbs a legacy beforeItem-only upsert as a tail item without leaking the orphan anchor', () => {
+    // Pre-contract ops could carry beforeItem without beforeTurn (the wire
+    // schema now rejects that shape); the reducer stays tolerant: the item
+    // lands in the anchor-less tail group like a live append, and the orphan
+    // edge never reaches the snapshot continuation.
+    const tx = new AgentTranscript('main');
+    tx.apply([
+      {
+        op: 'turn.upsert',
+        turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'completed', origin: { kind: 'user' } },
+      },
+      {
+        op: 'marker.upsert',
+        item: { kind: 'marker', markerId: 'A', marker: 'goal' },
+        beforeItem: 'B',
+      },
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'B', marker: 'skill' } },
+    ]);
+    // The orphan edge cannot pull B into a segment: A flushes in the
+    // anchor-less tail group, after the gap's placement-less live items.
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'B', 'A']);
+
+    // No anchor survives projection: the continuation ships nothing — a
+    // beforeItem-only entry would fail the wire schema.
+    const snapshot = tx.snapshot();
+    expect(snapshot.continuation).toBeUndefined();
+    const wire = JSON.parse(JSON.stringify(snapshot)) as AgentTranscriptSnapshot;
+    expect(agentTranscriptSnapshotSchema.safeParse(wire).success).toBe(true);
+  });
+
+  it('items.remove drops a placement whose only anchor was the removed successor', () => {
+    const freshState = (): AgentState => ({
+      items: [],
+      tasks: new Map(),
+      interactions: new Map(),
+      attachments: new Map(),
+      todos: new Map(),
+      prompts: new Map(),
+      meta: {},
+      pendingInteractions: new Set(),
+      hasMoreOlder: false,
+      standalonePlacements: new Map(),
+    });
+    const placed = applyOperation(freshState(), {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'A', marker: 'goal' },
+      beforeItem: 'B',
+    });
+    expect(placed.state.standalonePlacements?.get('A')).toEqual({ beforeItem: 'B' });
+
+    // B never arrived: the remove touches only the hidden placement, which
+    // dies with its only anchor instead of lingering as an anchor-less entry.
+    const removed = applyOperation(placed.state, { op: 'items.remove', ids: ['B'] });
+    expect(removed.changed).toBe(true);
+    expect(removed.state.standalonePlacements?.has('A')).toBe(false);
+    expect(removed.state.items.map(itemLabel)).toEqual(['A']);
+
+    // A turn-anchored survivor keeps its anchor; only the dangling edge cuts.
+    const anchored = applyOperation(freshState(), {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'C', marker: 'goal' },
+      beforeTurn: 1,
+      beforeItem: 'B',
+    });
+    const cleaned = applyOperation(anchored.state, { op: 'items.remove', ids: ['B'] });
+    expect(cleaned.changed).toBe(true);
+    expect(cleaned.state.standalonePlacements?.get('C')).toEqual({ beforeTurn: 1 });
+  });
+
+  it('items.remove re-normalizes the merged gap and keeps anchored replays no-ops', () => {
+    const turn = (turnId: string, ordinal: number): TurnUpsertOp => ({
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId, ordinal, state: 'completed', origin: { kind: 'user' } },
+    });
+    const h: MarkerUpsertOp = {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'H', marker: 'goal' },
+      beforeTurn: 2,
+    };
+    const tx = new AgentTranscript('main');
+    tx.apply([
+      turn('t0', 0),
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'G', marker: 'goal' }, beforeTurn: 1 },
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'L1', marker: 'skill' } },
+      turn('t1', 1),
+      h,
+      { op: 'marker.upsert', item: { kind: 'marker', markerId: 'L2', marker: 'skill' } },
+      turn('t2', 2),
+    ]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'G', 'L1', 't1', 'H', 'L2', 't2']);
+
+    // Removing t1 merges the two gaps it separated: the surviving placements
+    // re-derive the combined segment — anchored groups first in ascending
+    // anchor order, then the live items in their relative order.
+    tx.apply([{ op: 'items.remove', ids: ['t1'] }]);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'G', 'H', 'L1', 'L2', 't2']);
+
+    // A duplicate anchored op landing on the merged gap is absorbed: nothing
+    // accepted, order stable — also through a fresh-reference replay.
+    expect(tx.apply([h]).accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'G', 'H', 'L1', 'L2', 't2']);
+    expect(tx.apply([structuredClone(h)]).accepted).toHaveLength(0);
+    expect(tx.getItems().map(itemLabel)).toEqual(['t0', 'G', 'H', 'L1', 'L2', 't2']);
+  });
+
+  it('absorbs a JSON-replayed goal clear marker as an exact duplicate', () => {
+    // A clear mutation carries no status: the canonical payload must not own
+    // a `status: undefined` key, or the JSON roundtrip (which drops such
+    // keys) would stop comparing equal and a replay would spuriously land.
+    const marker = goalMarkerFromMutation({ id: 'm-clear', at: 1000, kind: 'clear', goalId: 'g1' });
+    expect(marker.payload).toEqual({
+      version: 1,
+      mutationId: 'm-clear',
+      kind: 'clear',
+      goalId: 'g1',
+    });
+    expect(Object.hasOwn(marker.payload as object, 'status')).toBe(false);
+
+    const tx = new AgentTranscript('main');
+    const anchored: TranscriptOperation = { op: 'marker.upsert', item: marker, beforeTurn: 1 };
+    tx.apply([anchored]);
+    const replayedAnchored = JSON.parse(JSON.stringify(anchored)) as TranscriptOperation;
+    expect(tx.apply([replayedAnchored]).accepted).toHaveLength(0);
+    // The unanchored (live-style) duplicate replays as a no-op too.
+    const unanchored: TranscriptOperation = { op: 'marker.upsert', item: marker };
+    const replayedUnanchored = JSON.parse(JSON.stringify(unanchored)) as TranscriptOperation;
+    expect(tx.apply([replayedUnanchored]).accepted).toHaveLength(0);
+    expect(tx.getItems()).toHaveLength(1);
+  });
+
+  it('never structurally equates non-plain payloads such as Date', () => {
+    // deepEqual only recurses into plain objects: two distinct Date instances
+    // (no enumerable keys) must not be called equal, or a payload refresh
+    // would be swallowed as a duplicate.
+    const tx = new AgentTranscript('main');
+    const dated = (ms: number): TranscriptOperation => ({
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'd1', marker: 'notice', payload: new Date(ms) },
+    });
+    tx.apply([dated(1000)]);
+    const replaced = tx.apply([dated(2000)]);
+    expect(replaced.accepted).toHaveLength(1);
+    const item = tx.getItems()[0];
+    expect(item?.kind === 'marker' && item.payload instanceof Date && item.payload.getTime()).toBe(
+      2000,
+    );
+  });
+
   it('appends standalone items without an anchor at the end (live order)', () => {
     const tx = new AgentTranscript('main');
     tx.apply([turn1, { op: 'marker.upsert', item: { kind: 'marker', markerId: 'm9', marker: 'notice' } }]);
@@ -575,6 +1617,36 @@ describe('AgentTranscript', () => {
     const turn = tx.getTurn('t1');
     const frame = turn?.steps[0]?.frames.find((f) => f.kind === 'tool');
     expect(frame?.kind === 'tool' && frame.input).toEqual({ path: '/b' });
+  });
+});
+
+describe('normalizeStandaloneItems', () => {
+  const turn = (n: number): TranscriptItem => ({
+    kind: 'turn',
+    turnId: `t${n}`,
+    ordinal: n,
+    state: 'completed',
+    origin: { kind: 'user' },
+    steps: [],
+  });
+  const marker = (id: string): TranscriptItem => ({ kind: 'marker', markerId: id, marker: 'goal' });
+
+  it('re-derives the segment layout from placements without touching the map', () => {
+    // A REST-prepend-style merge: the older page's fresh turn sits ahead of
+    // the window, and the already-loaded H gains its anchor only now.
+    const items: TranscriptItem[] = [turn(0), turn(1), turn(2), marker('H')];
+    const placements: ReadonlyMap<string, StandalonePlacement> = new Map([
+      ['H', { beforeTurn: 1 }],
+    ]);
+    const normalized = normalizeStandaloneItems(items, placements);
+    expect(normalized.map(itemLabel)).toEqual(['t0', 'H', 't1', 't2']);
+    // Read-only: normalization never writes the placement memory…
+    expect(placements).toEqual(new Map([['H', { beforeTurn: 1 }]]));
+    // …and an already-canonical layout returns the same reference, so a
+    // converged merge stays a no-op for the caller.
+    expect(normalizeStandaloneItems(normalized, placements)).toBe(normalized);
+    // No placements at all: the window is trusted as-is.
+    expect(normalizeStandaloneItems(items, undefined)).toBe(items);
   });
 });
 

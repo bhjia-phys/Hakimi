@@ -92,6 +92,7 @@ import type {
   GoalBudgetReport,
   GoalChange,
   GoalChangeStats,
+  GoalMutationRef,
   GoalSnapshot,
   GoalStatus,
   GoalToolResult,
@@ -501,19 +502,22 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     const objective = this.validateObjective(input.objective);
     this.prepareForGoalCreation(input.replace === true);
     const wallClockResumedAt = Date.now();
+    const goalId = randomUUID();
+    const mutation = this.newGoalMutation('create', goalId, 'active');
     this.wire.dispatch(
       createGoal({
-        goalId: randomUUID(),
+        goalId,
         objective,
         completionCriterion: normalizeCompletionCriterion(input.completionCriterion),
         wallClockResumedAt,
+        mutation,
       }),
     );
     this.liveWallClockStartedAt = this.deadlineScheduler.now();
     this.adoptStarterTurn(actor);
     const state = this.requireState();
     this.refreshWallClockDeadline(state);
-    this.emitGoalUpdated(this.toSnapshot(state));
+    this.emitGoalUpdated(this.toSnapshot(state), undefined, mutation);
     this.telemetry.track2('goal_created', { actor, replace: input.replace === true });
     return this.toSnapshot(state);
   }
@@ -605,9 +609,10 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     this.assertSupportedAgent();
     const state = this.requireState();
     const budgetLimits = { ...state.budgetLimits, ...input.budgetLimits };
-    this.wire.dispatch(updateGoal({ budgetLimits }));
+    const mutation = this.newGoalMutation('update', state.goalId, state.status);
+    this.wire.dispatch(updateGoal({ budgetLimits, mutation }));
     const next = this.requireState();
-    this.emitGoalUpdated(this.toSnapshot(next));
+    this.emitGoalUpdated(this.toSnapshot(next), undefined, mutation);
     this.telemetry.track2('goal_budget_set', {
       actor,
       ...budgetTelemetryProperties(input.budgetLimits),
@@ -655,18 +660,24 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     this.assertSupportedAgent();
     const state = this.goalState;
     if (state === null || state.status !== 'active') return null;
-    this.dispatchCompletion(state, input.reason, actor);
+    const mutation = this.dispatchCompletion(state, input.reason, actor);
     const completed = this.requireState();
     const snapshot = this.toSnapshot(completed);
-    this.emitCompletion(completed, snapshot, input.reason, actor);
+    this.emitCompletion(completed, snapshot, input.reason, actor, mutation);
     this.trackStatusChanged(completed, actor);
     this.clearInternal(actor, { preserveLiveContinuation: true });
     return snapshot;
   }
 
-  private dispatchCompletion(state: GoalState, reason: string | undefined, actor: GoalActor): void {
+  private dispatchCompletion(
+    state: GoalState,
+    reason: string | undefined,
+    actor: GoalActor,
+  ): GoalMutationRef {
     const wallClockMs = this.settleWallClock(state);
-    this.wire.dispatch(updateGoal({ status: 'complete', reason, wallClockMs, actor }));
+    const mutation = this.newGoalMutation('update', state.goalId, 'complete');
+    this.wire.dispatch(updateGoal({ status: 'complete', reason, wallClockMs, actor, mutation }));
+    return mutation;
   }
 
   private emitCompletion(
@@ -674,6 +685,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     snapshot: GoalSnapshot,
     reason: string | undefined,
     actor: GoalActor,
+    mutation: GoalMutationRef,
   ): void {
     this.emitGoalUpdated(snapshot, {
       kind: 'completion',
@@ -681,7 +693,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       reason,
       stats: this.statsOf(state),
       actor,
-    });
+    }, mutation);
   }
 
   async pauseOnInterrupt(input: GoalReasonInput = {}): Promise<GoalSnapshot | null> {
@@ -698,9 +710,12 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     const state = this.goalState;
     if (state === null || state.status !== 'active' || !matchesGoal(state, goalId)) return null;
     const tokensUsed = state.tokensUsed + Math.max(0, tokenDelta);
-    this.wire.dispatch(updateGoal({ tokensUsed }));
+    const mutation = this.newGoalMutation('update', state.goalId, state.status);
+    this.wire.dispatch(updateGoal({ tokensUsed, mutation }));
     const next = this.requireState();
-    return this.blockIfBudgetReached(next) ?? this.toSnapshot(next);
+    const snapshot = this.toSnapshot(next);
+    this.emitGoalUpdated(snapshot, undefined, mutation);
+    return this.blockIfBudgetReached(next) ?? snapshot;
   }
 
   async incrementTurn(): Promise<GoalSnapshot | null> {
@@ -712,9 +727,10 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     const state = this.goalState;
     if (state === null || state.status !== 'active' || !matchesGoal(state, goalId)) return null;
     const turnsUsed = state.turnsUsed + 1;
-    this.wire.dispatch(updateGoal({ turnsUsed }));
+    const mutation = this.newGoalMutation('update', state.goalId, state.status);
+    this.wire.dispatch(updateGoal({ turnsUsed, mutation }));
     const next = this.requireState();
-    this.emitGoalUpdated(this.toSnapshot(next));
+    this.emitGoalUpdated(this.toSnapshot(next), undefined, mutation);
     this.telemetry.track2('goal_continued', { turns_used: next.turnsUsed });
     return this.toSnapshot(next);
   }
@@ -1006,15 +1022,24 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     if (state.status !== 'active') return;
 
     const reason = 'Paused after agent resume';
+    const mutation = this.newGoalMutation('update', state.goalId, 'paused');
     this.wire.dispatch(
       updateGoal({
         status: 'paused',
         reason,
         wallClockMs: this.settleWallClock(state),
         actor: 'runtime',
+        mutation,
       }),
     );
-    this.trackStatusChanged(this.requireState(), 'runtime');
+    const paused = this.requireState();
+    this.emitGoalUpdated(this.toSnapshot(paused), {
+      kind: 'lifecycle',
+      status: 'paused',
+      reason,
+      actor: 'runtime',
+    }, mutation);
+    this.trackStatusChanged(paused, 'runtime');
   }
 
   private appendForkClearedReminder(): void {
@@ -1029,13 +1054,15 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     actor: GoalActor,
     opts: { readonly emit?: boolean; readonly track?: boolean; readonly preserveLiveContinuation?: boolean } = {},
   ): void {
-    if (this.goalState === null) return;
+    const state = this.goalState;
+    if (state === null) return;
+    const mutation = this.newGoalMutation('clear', state.goalId);
     this.resumeContinuation = undefined;
     this.cancelPendingContinuation(opts.preserveLiveContinuation === true);
     this.wallClockDeadline.clear();
     this.liveWallClockStartedAt = undefined;
-    this.wire.dispatch(clearGoal({}));
-    if (opts.emit !== false) this.emitGoalUpdated(null);
+    this.wire.dispatch(clearGoal({ goalId: state.goalId, mutation }));
+    if (opts.emit !== false) this.emitGoalUpdated(null, undefined, mutation);
     if (opts.track !== false) this.telemetry.track2('goal_cleared', { actor });
   }
 
@@ -1062,13 +1089,14 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       this.wallClockDeadline.clear();
       this.liveWallClockStartedAt = undefined;
     }
+    const mutation = this.newGoalMutation('update', state.goalId, status);
     this.wire.dispatch(
-      updateGoal({ status, reason, wallClockMs, wallClockResumedAt, actor }),
+      updateGoal({ status, reason, wallClockMs, wallClockResumedAt, actor, mutation }),
     );
     const next = this.requireState();
     if (status === 'active') this.adoptStarterTurn(actor);
     if (status === 'active') this.refreshWallClockDeadline(next);
-    this.emitGoalUpdated(this.toSnapshot(next), { kind: 'lifecycle', status, reason, actor });
+    this.emitGoalUpdated(this.toSnapshot(next), { kind: 'lifecycle', status, reason, actor }, mutation);
     this.trackStatusChanged(next, actor);
     return this.toSnapshot(next);
   }
@@ -1092,8 +1120,20 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     return state;
   }
 
-  private emitGoalUpdated(snapshot: GoalSnapshot | null, change?: GoalChange): void {
-    this.eventBus.publish({ type: 'goal.updated', snapshot, change });
+  private newGoalMutation(
+    kind: GoalMutationRef['kind'],
+    goalId: string,
+    status?: GoalStatus,
+  ): GoalMutationRef {
+    return { id: randomUUID(), at: Date.now(), kind, goalId, status };
+  }
+
+  private emitGoalUpdated(
+    snapshot: GoalSnapshot | null,
+    change?: GoalChange,
+    mutation?: GoalMutationRef,
+  ): void {
+    this.eventBus.publish({ type: 'goal.updated', snapshot, change, mutation });
   }
 
   private settleWallClock(state: GoalState): number {

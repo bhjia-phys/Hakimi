@@ -77,19 +77,45 @@ describe('promptSubmissionSchema', () => {
     ).toThrow();
   });
 
-  it('accepts the full bundle of controls when supplied', () => {
+  it('accepts the full bundle of prompt controls when supplied', () => {
     const parsed = promptSubmissionSchema.parse({
       content: [{ type: 'text', text: 'hi' }],
       model: 'kimi-code/k2',
       thinking: 'off',
       permission_mode: 'manual',
-      plan_mode: false,
     });
     expect(parsed.model).toBe('kimi-code/k2');
     expect(parsed.thinking).toBe('off');
     expect(parsed.permission_mode).toBe('manual');
-    expect(parsed.plan_mode).toBe(false);
   });
+
+  it.each([
+    ['plan_mode', false],
+    ['swarm_mode', true],
+    ['goal_objective', 'ship the feature'],
+    ['goal_control', 'pause'],
+  ])('rejects the deprecated no-op field %s', (field, value) => {
+    const result = promptSubmissionSchema.safeParse({
+      content: [{ type: 'text', text: 'hi' }],
+      [field]: value,
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues[0]?.path).toEqual([field]);
+  });
+
+  it.each(['plan_mode', 'swarm_mode', 'goal_objective', 'goal_control'])(
+    'rejects the deprecated no-op field %s even when explicitly undefined',
+    (field) => {
+      const result = promptSubmissionSchema.safeParse({
+        content: [{ type: 'text', text: 'hi' }],
+        [field]: undefined,
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues[0]?.path).toEqual([field]);
+    },
+  );
 
   it('rejects empty content array', () => {
     expect(

@@ -46,6 +46,7 @@
 
 import { MAIN_AGENT_ID, type Scope } from '@moonshot-ai/agent-core-v2';
 import {
+  filterContinuation,
   isPlainAgentId,
   paginateTurns,
   transcriptOpsCatchupResponseSchema,
@@ -219,20 +220,27 @@ export function registerTranscriptRoutes(app: TranscriptRouteHost, deps: Transcr
         await transcriptService.whenReady(session_id);
         await transcriptService.ensureAgentHistory(session_id, query.agent_id);
         const transcript = store.ensureAgent(query.agent_id);
-        const page = paginateTurns(transcript.getItems(), pageQuery);
+        // Materialize once, then page the materialization: the reducer
+        // continuation must line up with exactly the page's items, and the
+        // globals ride the same consistent read.
+        const snapshot = transcript.snapshot();
+        const page = paginateTurns(snapshot.items, pageQuery);
         reply.send(
           okEnvelope(
             {
               agent_id: query.agent_id,
               items: page.items,
               has_more: page.hasMore,
-              tasks: [...transcript.getTasks().values()],
-              interactions: [...transcript.getInteractions().values()],
-              attachments: [...transcript.getAttachments().values()],
-              todos: [...transcript.getTodos().values()],
-              meta: transcript.getMeta(),
+              tasks: snapshot.tasks,
+              interactions: snapshot.interactions,
+              attachments: snapshot.attachments,
+              todos: snapshot.todos,
+              meta: snapshot.meta,
               agents: store.agents(),
               pending_interactions: transcript.listPendingInteractions(),
+              // Placement baseline narrowed to this page's items (absent when
+              // the page holds no anchored standalone items).
+              continuation: filterContinuation(snapshot, page.items),
               // Watermark: this state includes every op batch with seq <= N.
               seq: transcriptService.getSeqWatermark(session_id, query.agent_id),
             },
@@ -275,6 +283,9 @@ export function registerTranscriptRoutes(app: TranscriptRouteHost, deps: Transcr
             meta: snapshot.meta,
             agents: roster,
             pending_interactions: [],
+            // Cold rebuilds carry no placement memory yet (undefined) — the
+            // page-local narrowing keeps the contract identical to live.
+            continuation: filterContinuation(snapshot, page.items),
           },
           req.id,
         ),
