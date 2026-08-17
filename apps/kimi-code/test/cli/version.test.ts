@@ -25,8 +25,8 @@ describe('cli version helpers', () => {
   it('exposes the recorded upstream Kimi Code baseline', () => {
     expect(getUpstreamBase()).toEqual({
       repository: 'https://github.com/MoonshotAI/kimi-code.git',
-      version: '0.34.0',
-      commit: '01c74e937',
+      version: '0.35.0',
+      commit: '23e68eee8bdfaded522dfabf2c9ad6996939a679',
     });
   });
 

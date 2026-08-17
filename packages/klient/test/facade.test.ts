@@ -105,7 +105,8 @@ describe('facade routing', () => {
       supported: true,
       state: 'partial',
       steps: [{ id: 'permissions', state: 'missing' }],
-      install: { running: false },
+      // The completed-install note survives the contract parse (not stripped).
+      install: { running: false, note: 'user-skill-migrated' },
     };
     channel.result = [status];
 
@@ -178,6 +179,33 @@ describe('agent profile routing', () => {
       service: 'agentProfileService',
       method: 'getEffectiveThinkingLevel',
       args: [],
+    });
+  });
+});
+
+describe('agent skill routing', () => {
+  it('promptWithSkills routes to agentSkillService.promptWithSkills with the agent scope', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const agent = klient.session('s1').agent('main');
+
+    channel.result = { turn_id: 7 };
+    await expect(
+      agent.promptWithSkills({
+        input: [{ type: 'text', text: 'Review this change.' }],
+        skills: [{ name: 'review' }, { name: 'security', args: 'src/app.ts' }],
+      }),
+    ).resolves.toEqual({ turn_id: 7 });
+    expect(channel.calls[0]).toEqual({
+      scope: { sessionId: 's1', agentId: 'main' },
+      service: 'agentSkillService',
+      method: 'promptWithSkills',
+      args: [
+        {
+          input: [{ type: 'text', text: 'Review this change.' }],
+          skills: [{ name: 'review' }, { name: 'security', args: 'src/app.ts' }],
+        },
+      ],
     });
   });
 });
@@ -344,61 +372,40 @@ describe('agent mcp / compaction routing', () => {
 });
 
 describe('session lifecycle routing', () => {
-  it('delete resolves the workspace handler and calls the lifecycle delete', async () => {
+  it('delete calls the App session manager', async () => {
     const channel = new FakeChannel();
     const klient = createKlientFromChannel(channel);
-    channel.results.set('sessionIndex.get', SUMMARY);
-    channel.results.set('sessionLifecycleService.delete', undefined);
+    channel.results.set('sessionManager.delete', undefined);
 
     await klient.session('s1').delete();
 
     expect(channel.calls).toEqual([
-      { scope: {}, service: 'sessionIndex', method: 'get', args: ['s1'] },
-      {
-        scope: { workspaceId: 'w1' },
-        service: 'sessionLifecycleService',
-        method: 'delete',
-        args: ['s1'],
-      },
+      { scope: {}, service: 'sessionManager', method: 'delete', args: ['s1'] },
     ]);
   });
 
-  it('delete throws a not-found RPCError when the session is not in the index', async () => {
+  it('restore forwards resume options to the App session manager', async () => {
     const channel = new FakeChannel();
     const klient = createKlientFromChannel(channel);
-    channel.results.set('sessionIndex.get', undefined);
-
-    await expect(klient.session('gone').delete()).rejects.toMatchObject({
-      name: 'RPCError',
-      code: 40404,
-    });
-    expect(channel.calls).toHaveLength(1);
-  });
-
-  it('restore forwards resume options to the lifecycle restore', async () => {
-    const channel = new FakeChannel();
-    const klient = createKlientFromChannel(channel);
-    channel.results.set('sessionIndex.get', SUMMARY);
-    channel.results.set('sessionLifecycleService.restore', { id: 's1', kind: 'session' });
+    channel.results.set('sessionManager.restore', { id: 's1', kind: 'session' });
 
     const opts = {
       mcpServers: { example: { transport: 'stdio' as const, command: 'node' } },
     };
     await expect(klient.session('s1').restore(opts)).resolves.toBe(true);
 
-    expect(channel.calls[1]).toEqual({
-      scope: { workspaceId: 'w1' },
-      service: 'sessionLifecycleService',
+    expect(channel.calls[0]).toEqual({
+      scope: {},
+      service: 'sessionManager',
       method: 'restore',
       args: ['s1', opts],
     });
   });
 
-  it('sessions.create forwards mcpServers to the engine', async () => {
+  it('sessions.create forwards mcpServers to the App session manager', async () => {
     const channel = new FakeChannel();
     const klient = createKlientFromChannel(channel);
-    channel.results.set('workspaceLifecycleService.handlerFor', { id: 'w1', kind: 'workspace' });
-    channel.results.set('sessionLifecycleService.create', { id: 's1', kind: 'session' });
+    channel.results.set('sessionManager.create', { id: 's1', kind: 'session' });
     channel.results.set('sessionMetadata.read', {
       id: 's1',
       createdAt: 1,
@@ -411,9 +418,9 @@ describe('session lifecycle routing', () => {
     };
     await klient.global.sessions.create({ workDir: '/x', mcpServers });
 
-    expect(channel.calls[1]).toMatchObject({
-      scope: { workspaceId: 'w1' },
-      service: 'sessionLifecycleService',
+    expect(channel.calls[0]).toMatchObject({
+      scope: {},
+      service: 'sessionManager',
       method: 'create',
       args: [{ workDir: '/x', mcpServers }],
     });
@@ -513,6 +520,37 @@ describe('event hub', () => {
     expect(channel.subscriptions[0]?.dispose).not.toHaveBeenCalled();
     subB.dispose();
     expect(channel.subscriptions[0]?.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('delivers session.metaUpdated when the patch carries no lastPrompt', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const seen: unknown[] = [];
+    const errors: Error[] = [];
+    klient.events.onError((error) => {
+      errors.push(error);
+    });
+
+    klient.events.on('session.metaUpdated', (event) => seen.push(event));
+    channel.emit(0, {
+      type: 'session.meta.updated',
+      payload: {
+        agentId: 'main',
+        sessionId: 's1',
+        title: 'generated title',
+        patch: { title: 'generated title', isCustomTitle: false },
+      },
+    });
+    await tick();
+    expect(seen).toEqual([
+      {
+        agentId: 'main',
+        sessionId: 's1',
+        title: 'generated title',
+        patch: { title: 'generated title', isCustomTitle: false },
+      },
+    ]);
+    expect(errors).toHaveLength(0);
   });
 
   it('disposes the emitter subscription when the last listener detaches', async () => {

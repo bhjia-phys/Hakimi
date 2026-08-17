@@ -17,17 +17,17 @@ export const DEFAULT_PROFILE_NAME = 'coder';
 export const RESUMED_LABEL = 'subagent';
 
 /**
- * The `model` parameter of the Agent tool — the per-spawn secondary/primary
- * choice. Exposed in the model-facing parameters only while the
- * `secondary-model` experiment is enabled; the tool exposes
+ * The `model` parameter of the Agent tool — the per-spawn pool choice.
+ * Exposed in the model-facing parameters only while the `secondary-model`
+ * experiment is enabled and a pool is configured; the tool exposes
  * {@link SubagentToolInputSchemaWithoutModel} otherwise, so the parent model
  * cannot accidentally override active `[subagent]` routing.
  */
 const SUBAGENT_MODEL_CHOICE_DESCRIPTION =
-  'Which model to run the subagent on: "secondary" = the configured secondary model (fails with an error if none is configured or the experiment is disabled); "primary" = the main model you are running on (for hard, quality-sensitive tasks). This explicit choice overrides the active preset/[subagent.agents] route model and the selected agent type\'s model_preference. Without it, precedence is active route model > profile model_preference > configured secondary model > your model. Route thinking_effort may still override the selected model\'s thinking effort. Ignored when resuming — resumed subagents keep their own model.';
+  'Which model to run the subagent on: one of the aliases listed under "Available models" in this tool description, or "primary" for the main model you are running on (for hard, quality-sensitive tasks). When omitted, the configured default model is used. Ignored when resuming — resumed subagents keep their own model.';
 
 const SubagentToolInputModelSchema = z.object({
-  model: z.enum(['secondary', 'primary']).optional().describe(SUBAGENT_MODEL_CHOICE_DESCRIPTION),
+  model: z.string().optional().describe(SUBAGENT_MODEL_CHOICE_DESCRIPTION),
 });
 
 const SubagentToolInputBaseSchema = z.object({
@@ -78,7 +78,7 @@ export const SubagentToolInputSchema = z.preprocess(
 
 /**
  * The Agent tool input without the `model` parameter — exposed while the
- * secondary-model experiment is disabled.
+ * secondary-model experiment is disabled or no pool is configured.
  */
 export const SubagentToolInputSchemaWithoutModel = z.preprocess(
   normalizeSubagentToolInput,

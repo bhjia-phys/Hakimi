@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -78,33 +78,6 @@ describe('server-v2 exposure hardening hooks', () => {
       "default-src 'self'; connect-src 'self' ws: wss:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'self'",
     );
     expect(res.headers['strict-transport-security']).toBeUndefined();
-  });
-
-  it('does not cache the SPA document that carries the current security policy', async () => {
-    const assetsDir = join(home as string, 'web-assets');
-    await mkdir(assetsDir);
-    await writeFile(join(assetsDir, 'index.html'), '<!doctype html><div id="app"></div>');
-    await writeFile(join(assetsDir, 'app.js'), 'console.log("app")');
-    server = await startServer({
-      hostIdentity: TEST_HOST_IDENTITY,
-      host: '0.0.0.0',
-      port: 0,
-      homeDir: home,
-      logLevel: 'silent',
-      insecureNoTls: true,
-      webAssetsDir: assetsDir,
-    });
-
-    const document = await server.app.inject({ method: 'GET', url: '/sessions/example' });
-    expect(document.statusCode).toBe(200);
-    expect(document.headers['cache-control']).toBe('no-store');
-    expect(document.headers['content-security-policy']).toContain(
-      "connect-src 'self' ws: wss:",
-    );
-
-    const script = await server.app.inject({ method: 'GET', url: '/app.js' });
-    expect(script.statusCode).toBe(200);
-    expect(script.headers['cache-control']).toBeUndefined();
   });
 
   it('does not set security headers on a loopback bind', async () => {

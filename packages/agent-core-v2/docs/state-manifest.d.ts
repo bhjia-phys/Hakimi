@@ -23,7 +23,7 @@
 // references become '(circular)', and class instances collapse to a '(ClassName)'
 // marker — the wire shape of an entry is the JSON projection of the type here.
 //
-// Index (App: 0 keys · Workspace: 6 keys · Session: 18 keys · Agent: 69 keys)
+// Index (App: 0 keys · Workspace: 6 keys · Session: 18 keys · Agent: 70 keys)
 //   App
 //   Workspace
 //     workspaceDirs.ephemeralDirs          src/workspace/workspaceDirs/workspaceDirsService.ts
@@ -62,7 +62,7 @@
 //     agentsMdReminder.known                          src/agent/agentsMdReminder/agentsMdReminderService.ts
 //     agentsMdReminder.seeded                         src/agent/agentsMdReminder/agentsMdReminderService.ts
 //     contextProjector.lastRepairSignature            src/agent/contextProjector/contextProjectorService.ts
-//     dateChange.seed                                 src/agent/dateChange/dateChangeService.ts
+//     dateChange.seed                                 src/features/dateChange/dateChangeService.ts
 //     externalHooks.stopHookContinuationUsed          src/agent/externalHooks/externalHooksService.ts
 //     fullCompaction.activeTurnId                     src/agent/fullCompaction/fullCompactionService.ts
 //     fullCompaction.compactionCountInTurn            src/agent/fullCompaction/fullCompactionService.ts
@@ -101,6 +101,7 @@
 //     profile.emittedThinkingEffortWarnings           src/agent/profile/profileService.ts
 //     profile.emittedToolPatternWarnings              src/agent/profile/profileService.ts
 //     prompt.launching                                src/agent/prompt/promptService.ts
+//     runtime.binding                                 src/agent/runtimeBinding/runtimeBindingService.ts
 //     shellCommand.tasks                              src/agent/shellCommand/shellCommandService.ts
 //     stepRetry.failedAttempts                        src/agent/stepRetry/stepRetryService.ts
 //     stepRetry.lastFailedDriverId                    src/agent/stepRetry/stepRetryService.ts
@@ -448,7 +449,7 @@ export interface SessionStateSnapshot {
     readonly id: string;
     readonly version?: number;
     readonly title?: string;
-    readonly isCustomTitle?: boolean;
+    readonly titleKind?: 'replaceable' | 'generated' | 'custom';
     readonly lastPrompt?: string;
     readonly createdAt: number;
     readonly updatedAt: number;
@@ -732,6 +733,14 @@ export interface AgentStateSnapshot {
       readonly turnId: number;
       readonly origin: /* PromptOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ /* UserPromptOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
         readonly kind: 'user';
+        readonly skillActivations?: readonly /* BundledSkillActivation — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
+          readonly activationId: string;
+          readonly skillName: string;
+          readonly skillArgs?: string;
+          readonly skillType?: string;
+          readonly skillPath?: string;
+          readonly skillSource?: 'project' | 'user' | 'extra' | 'builtin';
+        }[];
       } | /* SkillActivationOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
         readonly kind: 'skill_activation';
         readonly activationId: string;
@@ -857,6 +866,14 @@ export interface AgentStateSnapshot {
     turnId: number;
     origin: /* PromptOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ /* UserPromptOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
       readonly kind: 'user';
+      readonly skillActivations?: readonly /* BundledSkillActivation — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
+        readonly activationId: string;
+        readonly skillName: string;
+        readonly skillArgs?: string;
+        readonly skillType?: string;
+        readonly skillPath?: string;
+        readonly skillSource?: 'project' | 'user' | 'extra' | 'builtin';
+      }[];
     } | /* SkillActivationOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
       readonly kind: 'skill_activation';
       readonly activationId: string;
@@ -914,6 +931,14 @@ export interface AgentStateSnapshot {
       readonly turnId: number;
       readonly origin: /* PromptOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ /* UserPromptOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
         readonly kind: 'user';
+        readonly skillActivations?: readonly /* BundledSkillActivation — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
+          readonly activationId: string;
+          readonly skillName: string;
+          readonly skillArgs?: string;
+          readonly skillType?: string;
+          readonly skillPath?: string;
+          readonly skillSource?: 'project' | 'user' | 'extra' | 'builtin';
+        }[];
       } | /* SkillActivationOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
         readonly kind: 'skill_activation';
         readonly activationId: string;
@@ -999,12 +1024,6 @@ export interface AgentStateSnapshot {
   'agentsMdReminder.seeded': boolean;
   // src/agent/contextProjector/contextProjectorService.ts
   'contextProjector.lastRepairSignature': string | null;
-  // src/agent/dateChange/dateChangeService.ts
-  'dateChange.seed': /* DateDisclosure — packages/agent-core-v2/src/agent/dateChange/dateChangeService.ts */ {
-    readonly localDate: string;
-    readonly timeZone: string;
-    readonly renderGeneration: number;
-  } | undefined;
   // src/agent/externalHooks/externalHooksService.ts
   'externalHooks.stopHookContinuationUsed': boolean;
   // src/agent/fullCompaction/fullCompactionService.ts
@@ -1118,6 +1137,11 @@ export interface AgentStateSnapshot {
   'profile.emittedToolPatternWarnings': Set<string>;
   // src/agent/prompt/promptService.ts
   'prompt.launching': boolean;
+  // src/agent/runtimeBinding/runtimeBindingService.ts
+  'runtime.binding': /* RuntimeBinding — packages/agent-core-v2/src/runtime/runtime.ts */ {
+    readonly workspaceId: string;
+    readonly runtimeId: string;
+  };
   // src/agent/shellCommand/shellCommandService.ts
   'shellCommand.tasks': Map<string, string>;
   // src/agent/stepRetry/stepRetryService.ts
@@ -1143,6 +1167,7 @@ export interface AgentStateSnapshot {
     readonly kind: 'agent';
     readonly agentId?: string;
     readonly subagentType?: string;
+    readonly parentToolCallId?: string;
     readonly model?: string;
     readonly thinkingEffort?: string;
     readonly taskId: string;
@@ -1192,6 +1217,12 @@ export interface AgentStateSnapshot {
     inputCacheCreation: number;
   } | undefined;
   'usage.currentTurnId': number | undefined;
+  // src/features/dateChange/dateChangeService.ts
+  'dateChange.seed': /* DateDisclosure — packages/agent-core-v2/src/features/dateChange/dateChangeService.ts */ {
+    readonly localDate: string;
+    readonly timeZone: string;
+    readonly renderGeneration: number;
+  } | undefined;
   // src/features/plan/injection/planModeInjection.ts
   'plan.wasActive': boolean;
 }
