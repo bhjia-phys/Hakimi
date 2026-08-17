@@ -233,7 +233,9 @@ const KNOWN_DIFFS = {
   // default title 'New Session' into state.json and reports it for
   // never-titled sessions where v2 leaves the title unset; only that
   // materialized default is projected away (explicit titles compare in
-  // full). Per-home paths (sessionDir, agent homedirs) compare after the
+  // full). `titleKind` is v2-only (the v1 wire has no canonical title-state
+  // field, only the `isCustomTitle` boolean inside `sessionMetadata`) —
+  // deleted. Per-home paths (sessionDir, agent homedirs) compare after the
   // home-prefix scrub — both engines lay sessions out as
   // `<home>/sessions/<workdir-key>/<id>` with the same key derivation.
   listSessions: (summaries: readonly SessionSummary[], home: HomePair): unknown =>
@@ -332,9 +334,14 @@ const KNOWN_DIFFS = {
   },
   // Session skills: `path`s point into each engine's own home (user skills)
   // or the shared packages (builtins) — after the home-prefix scrub the
-  // summaries compare in full.
+  // summaries compare in full. The builtin `tower` skill is v2-only (the v1
+  // tower implementation was removed ahead of v1's deprecation), so it is
+  // projected out — an engine gap, not catalog data.
   listSkills: (skills: readonly SkillSummary[], home: HomePair): unknown =>
-    scrubHomePrefixes(skills, home),
+    scrubHomePrefixes(
+      skills.filter((skill) => skill.name !== 'tower'),
+      home,
+    ),
 } satisfies Record<string, (value: never, other: never) => unknown>;
 
 /** See the KNOWN_DIFFS goal note above for what this projects and why. */
@@ -362,6 +369,7 @@ function projectSessionSummary(summary: SessionSummary, home: HomePair): unknown
   const projected = scrubHomePrefixes(summary, home) as Record<string, unknown>;
   delete projected['createdAt'];
   delete projected['updatedAt'];
+  delete projected['titleKind'];
   // `lastTurnReason` is v2-only: the v1 engine never records a turn outcome,
   // so the field cannot compare across engines.
   delete projected['lastTurnReason'];
@@ -433,7 +441,9 @@ function projectResumedAgents(
  *   DESCRIPTIONS are engine-owned constants that legitimately drift between
  *   the engines (the subagent/cron docs embed engine-specific facts), and
  *   v1 additionally registers the `select_tools` meta tool v2 has no
- *   counterpart for — both are engine design, not resume data. A model-less
+ *   counterpart for — both are engine design, not resume data. v2's default
+ *   profile also carries `TowerInit` (the tower-mode entry point); tower is
+ *   v2-only, so the tool is projected out of both rosters. A model-less
  *   agent's roster is not compared at all (v1 initializes builtin tools
  *   only on a profiled agent; v2 exposes them unbound).
  */
@@ -451,6 +461,7 @@ function projectResumedAgent(agent: ResumedAgentState, home: HomePair): unknown 
     const tools = projected['tools'] as readonly Record<string, unknown>[];
     projected['tools'] = tools
       .filter((tool) => tool['name'] !== 'select_tools')
+      .filter((tool) => tool['name'] !== 'TowerInit')
       .map((tool) => ({ name: tool['name'], active: tool['active'], source: tool['source'] }))
       .toSorted((a, b) => String(a.name).localeCompare(String(b.name)));
   }
@@ -515,7 +526,7 @@ async function closeAll(...harnesses: readonly KimiHarness[]): Promise<void> {
  * and skew the comparison; the original values are restored on cleanup.
  */
 const CONFIG_ENV_PATTERN =
-  /^(KIMI_MODEL_|KIMI_LOOP_|KIMI_MCP_|KIMI_WEB_|KIMI_SECONDARY_|KIMI_IMAGE_|KIMI_CODE_BACKGROUND_|KIMI_CODE_MODEL_CATALOG_)/;
+  /^(KIMI_MODEL_|KIMI_LOOP_|KIMI_MCP_|KIMI_WEB_|KIMI_IMAGE_|KIMI_CODE_BACKGROUND_|KIMI_CODE_MODEL_CATALOG_)/;
 
 function scrubConfigEnv(): () => void {
   const saved: Record<string, string> = {};
@@ -633,35 +644,6 @@ api_key = "fixture-api-key"
 enabled = "not-a-boolean"
 `;
 
-/**
- * Secondary-model parity fixture: one resolvable model and the experiment
- * enabled, no `[secondary_model]` recipe — the apply cases persist the recipe
- * through `setConfig` mid-test.
- */
-const SECONDARY_MODEL_CONFIG_TOML = `
-default_provider = "fixture-provider"
-default_model = "fixture-model"
-
-[providers.fixture-provider]
-type = "kimi"
-api_key = "fixture-api-key"
-base_url = "https://example.com/v1"
-
-[models.fixture-model]
-provider = "fixture-provider"
-model = "kimi-for-coding"
-max_context_size = 262144
-
-[experimental]
-secondary-model = true
-`;
-
-/** Same fixture with a dangling `[secondary_model]` pointer baked in. */
-const SECONDARY_MODEL_BROKEN_CONFIG_TOML = `${SECONDARY_MODEL_CONFIG_TOML}
-[secondary_model]
-model = "missing-model"
-`;
-
 function expectConfigParity(v1Config: KimiConfig, v2Config: KimiConfig): void {
   const project = KNOWN_DIFFS.getConfig;
   expect(normalize(project(v2Config), '')).toEqual(normalize(project(v1Config), ''));
@@ -697,7 +679,13 @@ describe('v1↔v2 return-value parity', () => {
         v1.listWorkspaceSkills(workDir),
         v2.listWorkspaceSkills(workDir),
       ]);
-      expect(normalize(v2Skills, 'name')).toEqual(normalize(v1Skills, 'name'));
+      // The builtin `tower` skill is v2-only (the v1 tower implementation
+      // was removed ahead of v1's deprecation) — project it out.
+      const withoutTower = (skills: readonly SkillSummary[]): readonly SkillSummary[] =>
+        skills.filter((skill) => skill.name !== 'tower');
+      expect(normalize(withoutTower(v2Skills), 'name')).toEqual(
+        normalize(withoutTower(v1Skills), 'name'),
+      );
     } finally {
       await closeAll(v1, v2);
     }
@@ -1235,9 +1223,7 @@ describe('v1↔v2 plugin parity', () => {
 // referenced path, so sharing it makes the workDir / additionalDirs /
 // configPath comparisons exact). Explicit session ids keep identity
 // comparisons meaningful. No provider calls anywhere — create / resume /
-// reload / fork never touch a model. `deleteSession` has no parity case:
-// the v2 engine has no session-deletion capability, so the v2 side stays
-// not_implemented by design (tracked in `.tmp/v2-migration-tracker.md`).
+// reload / fork / delete never touch a model.
 // ---------------------------------------------------------------------------
 
 interface SessionParityPair {
@@ -1322,6 +1308,96 @@ async function appendMainWireRecord(
     }
   }
   throw new Error(`wire.jsonl for ${sessionId} not found under ${sessionsRoot}`);
+}
+
+/**
+ * The on-disk session directory under the given home (both engines lay
+ * sessions out as `<home>/sessions/<workdir-key>/<id>`).
+ */
+async function sessionDirPath(home: HomePair, sessionId: string): Promise<string> {
+  const sessionsRoot = join(home.raw, 'sessions');
+  for (const bucket of await readdir(sessionsRoot)) {
+    const dir = join(sessionsRoot, bucket, sessionId);
+    try {
+      await readdir(dir);
+      return dir;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+  throw new Error(`session dir for ${sessionId} not found under ${sessionsRoot}`);
+}
+
+/**
+ * Fabricate a subagent on disk the way the engine would have left it: a
+ * `wire.jsonl` opening with the main wire's protocol envelope re-stamped to
+ * the subagent's creation time, plus a state.json `agents` entry. Feeds the
+ * SAME subagent through both engines' fork paths.
+ */
+async function fabricateSubagentWire(
+  sessionDir: string,
+  agentId: string,
+  createdAt: number,
+  records: readonly JsonObject[],
+): Promise<void> {
+  const mainWire = await readFile(join(sessionDir, 'agents', 'main', 'wire.jsonl'), 'utf-8');
+  const envelope = {
+    ...(JSON.parse(mainWire.split('\n', 1)[0]!) as Record<string, unknown>),
+    created_at: createdAt,
+  };
+  const agentDir = join(sessionDir, 'agents', agentId);
+  await mkdir(agentDir, { recursive: true });
+  await writeFile(
+    join(agentDir, 'wire.jsonl'),
+    `${[envelope, ...records].map((record) => JSON.stringify(record)).join('\n')}\n`,
+    'utf-8',
+  );
+  const statePath = join(sessionDir, 'state.json');
+  const state = JSON.parse(await readFile(statePath, 'utf-8')) as Record<string, unknown>;
+  const agents = (state['agents'] ?? {}) as Record<string, unknown>;
+  agents[agentId] = { homedir: agentDir, type: 'sub', parentAgentId: 'main' };
+  state['agents'] = agents;
+  await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf-8');
+}
+
+/** The `user:`/`assistant:` text lines of a fork/resume result's main replay. */
+function replayMessageTexts(resumed: ResumedSessionSummary): readonly string[] {
+  const entries: string[] = [];
+  for (const record of resumed.agents['main']?.replay ?? []) {
+    if (record.type !== 'message') continue;
+    const message = record.message;
+    entries.push(
+      `${message.role}:${message.content
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text ?? '')
+        .join('')}`,
+    );
+  }
+  return entries;
+}
+
+/**
+ * Whether the persisted session directory still exists under the home (both
+ * engines lay sessions out as `<home>/sessions/<workdir-key>/<id>`).
+ */
+async function sessionDirExists(home: HomePair, sessionId: string): Promise<boolean> {
+  const sessionsRoot = join(home.raw, 'sessions');
+  let buckets: readonly string[];
+  try {
+    buckets = await readdir(sessionsRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+  for (const bucket of buckets) {
+    try {
+      await readdir(join(sessionsRoot, bucket, sessionId));
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && (error as NodeJS.ErrnoException).code !== 'ENOTDIR') throw error;
+    }
+  }
+  return false;
 }
 
 describe('v1↔v2 session lifecycle parity', () => {
@@ -1478,6 +1554,41 @@ describe('v1↔v2 session lifecycle parity', () => {
     }
   });
 
+  it('deleteSession removes the session from the listing and disk on both engines', async () => {
+    const pair = await makeSessionParityPair();
+    try {
+      await createOnBoth(pair, { id: 'session_parity_delete' });
+      // Deleting a live session closes it first on both engines.
+      await Promise.all([
+        pair.v1.deleteSession({ sessionId: 'session_parity_delete' }),
+        pair.v2.deleteSession({ sessionId: 'session_parity_delete' }),
+      ]);
+      const project = KNOWN_DIFFS.listSessions;
+      const [v1List, v2List] = await Promise.all([
+        pair.v1.listSessions(),
+        pair.v2.listSessions(),
+      ]);
+      expect(normalize(project(v2List, pair.v2Home), 'id')).toEqual(
+        normalize(project(v1List, pair.v1Home), 'id'),
+      );
+      expect(v1List).toHaveLength(0);
+      // The persisted session directory is gone on both engines.
+      expect(await sessionDirExists(pair.v1Home, 'session_parity_delete')).toBe(false);
+      expect(await sessionDirExists(pair.v2Home, 'session_parity_delete')).toBe(false);
+      // Resume and re-delete reject with session_not_found on both engines.
+      for (const client of [pair.v1, pair.v2]) {
+        await expect(client.resumeSession({ id: 'session_parity_delete' })).rejects.toMatchObject({
+          code: ErrorCodes.SESSION_NOT_FOUND,
+        });
+        await expect(
+          client.deleteSession({ sessionId: 'session_parity_delete' }),
+        ).rejects.toMatchObject({ code: ErrorCodes.SESSION_NOT_FOUND });
+      }
+    } finally {
+      await closeSessionPair(pair);
+    }
+  });
+
   it('forkSession copies the session with merged metadata on both engines', async () => {
     const pair = await makeSessionParityPair();
     try {
@@ -1517,6 +1628,143 @@ describe('v1↔v2 session lifecycle parity', () => {
         'session_parity_fork',
         'session_parity_source',
       ]);
+    } finally {
+      await closeSessionPair(pair);
+    }
+  });
+
+  it('forkSession truncates at the given turn index identically on both engines', async () => {
+    const pair = await makeSessionParityPair();
+    try {
+      // Source metadata: a metadata-less fork reports `{}` on v1 vs an unset
+      // field on v2 (pre-existing gap the full-fork case above never hits) —
+      // a non-empty map compares exactly.
+      await createOnBoth(pair, {
+        id: 'session_parity_fork_turns',
+        metadata: { origin: 'fork-turns' },
+      });
+      // See materializeMainAgentOnBoth: v2's main agent is lazy, so
+      // materialize it on the source first.
+      await materializeMainAgentOnBoth(pair, 'session_parity_fork_turns');
+      await Promise.all([
+        pair.v1.closeSession({ sessionId: 'session_parity_fork_turns' }),
+        pair.v2.closeSession({ sessionId: 'session_parity_fork_turns' }),
+      ]);
+      // Both sessions closed: feed the SAME three user-visible turns into
+      // each engine's main wire (a turn.prompt op plus the user/assistant
+      // append_message pair, the shape a real prompt journals). Times start
+      // at the close moment so every pre-existing record sits before them.
+      const t0 = Date.now();
+      const turnRecords = (question: string, answer: string, start: number): JsonObject[] => [
+        {
+          type: 'turn.prompt',
+          input: [{ type: 'text', text: question }],
+          origin: { kind: 'user' },
+          time: start,
+        },
+        {
+          type: 'context.append_message',
+          message: { role: 'user', content: [{ type: 'text', text: question }] },
+          time: start + 1,
+        },
+        {
+          type: 'context.append_message',
+          message: { role: 'assistant', content: [{ type: 'text', text: answer }] },
+          time: start + 2,
+        },
+      ];
+      const records = [
+        ...turnRecords('first question', 'first answer', t0 + 1),
+        ...turnRecords('second question', 'second answer', t0 + 11),
+        ...turnRecords('third question', 'third answer', t0 + 21),
+      ];
+      for (const record of records) {
+        await appendMainWireRecord(pair.v1Home, 'session_parity_fork_turns', record);
+        await appendMainWireRecord(pair.v2Home, 'session_parity_fork_turns', record);
+      }
+      // Two subagents fabricated on disk for both engines: one whose records
+      // predate the cut (retained), one created after it (dropped).
+      for (const home of [pair.v1Home, pair.v2Home]) {
+        const sessionDir = await sessionDirPath(home, 'session_parity_fork_turns');
+        await fabricateSubagentWire(sessionDir, 'sub_old', t0 + 4, [
+          {
+            type: 'context.append_message',
+            message: { role: 'user', content: [{ type: 'text', text: 'old sub task' }] },
+            time: t0 + 5,
+          },
+          {
+            type: 'context.append_message',
+            message: { role: 'assistant', content: [{ type: 'text', text: 'old sub done' }] },
+            time: t0 + 6,
+          },
+        ]);
+        await fabricateSubagentWire(sessionDir, 'sub_new', t0 + 23, [
+          {
+            type: 'context.append_message',
+            message: { role: 'user', content: [{ type: 'text', text: 'late sub task' }] },
+            time: t0 + 24,
+          },
+        ]);
+      }
+
+      const input = {
+        id: 'session_parity_fork_turns',
+        forkId: 'session_parity_fork_cut',
+        title: 'Cut Fork',
+        turnIndex: 1,
+      } as const;
+      const [v1Fork, v2Fork] = await Promise.all([
+        pair.v1.forkSession(input),
+        pair.v2.forkSession(input),
+      ]);
+      const project = KNOWN_DIFFS.forkSession;
+      expect(project(v2Fork as ResumedSessionSummary, pair.v2Home)).toEqual(
+        project(v1Fork as ResumedSessionSummary, pair.v1Home),
+      );
+      // lastPrompt re-derives from the retained turn, and the replay holds
+      // exactly the turns through the cut — on both engines.
+      expect(v1Fork.lastPrompt).toBe('second question');
+      expect(v2Fork.lastPrompt).toBe('second question');
+      const expectedReplay = [
+        'user:first question',
+        'assistant:first answer',
+        'user:second question',
+        'assistant:second answer',
+      ];
+      expect(replayMessageTexts(v1Fork as ResumedSessionSummary)).toEqual(expectedReplay);
+      expect(replayMessageTexts(v2Fork as ResumedSessionSummary)).toEqual(expectedReplay);
+      // The subagent created after the cut is omitted on both engines.
+      expect(
+        Object.keys((v1Fork as ResumedSessionSummary).sessionMetadata.agents).toSorted(),
+      ).toEqual(['main', 'sub_old']);
+      expect(
+        Object.keys((v2Fork as ResumedSessionSummary).sessionMetadata.agents).toSorted(),
+      ).toEqual(['main', 'sub_old']);
+
+      // A negative index rejects with request.invalid on both engines.
+      await expect(
+        pair.v1.forkSession({ id: input.id, forkId: 'session_parity_fork_neg', turnIndex: -1 }),
+      ).rejects.toMatchObject({ code: ErrorCodes.REQUEST_INVALID, details: { turnIndex: -1 } });
+      await expect(
+        pair.v2.forkSession({ id: input.id, forkId: 'session_parity_fork_neg', turnIndex: -1 }),
+      ).rejects.toMatchObject({ code: ErrorCodes.REQUEST_INVALID, details: { turnIndex: -1 } });
+
+      // An out-of-range index rejects with the available turn count and
+      // leaves no fork behind on either engine.
+      await expect(
+        pair.v1.forkSession({ id: input.id, forkId: 'session_parity_fork_oob', turnIndex: 5 }),
+      ).rejects.toMatchObject({
+        code: ErrorCodes.REQUEST_INVALID,
+        details: { turnIndex: 5, availableTurns: 3 },
+      });
+      await expect(
+        pair.v2.forkSession({ id: input.id, forkId: 'session_parity_fork_oob', turnIndex: 5 }),
+      ).rejects.toMatchObject({
+        code: ErrorCodes.REQUEST_INVALID,
+        details: { turnIndex: 5, availableTurns: 3 },
+      });
+      expect(await sessionDirExists(pair.v1Home, 'session_parity_fork_oob')).toBe(false);
+      expect(await sessionDirExists(pair.v2Home, 'session_parity_fork_oob')).toBe(false);
     } finally {
       await closeSessionPair(pair);
     }
@@ -2224,7 +2472,10 @@ describe('v1↔v2 agent interaction parity', () => {
       const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
       const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
       expect(v1SubagentNames).toEqual(['coder', 'explore', 'plan', 'alpha']);
-      expect(v2SubagentNames).toEqual(['coder', 'explore', 'plan', 'alpha']);
+      // The v2 engine unconditionally registers the tower feature's
+// `tower-worker` profile (v1 tower was removed upstream), so the v2
+// catalog carries it after the builtin delegatable agents.
+      expect(v2SubagentNames).toEqual(['coder', 'explore', 'plan', 'alpha', 'tower-worker']);
     } finally {
       await closeSessionPair(pair);
       restoreEnv();
@@ -2322,7 +2573,7 @@ describe('v1↔v2 agent interaction parity', () => {
       const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
       const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
       expect(v1SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan', 'alpha']);
-      expect(v2SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan', 'alpha']);
+            expect(v2SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan', 'alpha', 'tower-worker']);
     } finally {
       await closeSessionPair(pair);
       restoreEnv();
@@ -2363,7 +2614,7 @@ describe('v1↔v2 agent interaction parity', () => {
       const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
       const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
       expect(v1SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan']);
-      expect(v2SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan']);
+            expect(v2SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan', 'tower-worker']);
     } finally {
       await closeSessionPair(pair);
       restoreEnv();
@@ -2397,7 +2648,10 @@ describe('v1↔v2 agent interaction parity', () => {
       const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
       const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
       expect(v1SubagentNames).toEqual(['coder', 'explore', 'plan', 'alpha']);
-      expect(v2SubagentNames).toEqual(['coder', 'explore', 'plan', 'alpha']);
+      // The v2 engine unconditionally registers the tower feature's
+// `tower-worker` profile (v1 tower was removed upstream), so the v2
+// catalog carries it after the builtin delegatable agents.
+      expect(v2SubagentNames).toEqual(['coder', 'explore', 'plan', 'alpha', 'tower-worker']);
     } finally {
       await closeSessionPair(pair);
       restoreEnv();
@@ -2439,7 +2693,7 @@ describe('v1↔v2 agent interaction parity', () => {
       const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
       const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
       expect(v1SubagentNames).toEqual(['coder', 'explore', 'plan']);
-      expect(v2SubagentNames).toEqual(['coder', 'explore', 'plan']);
+            expect(v2SubagentNames).toEqual(['coder', 'explore', 'plan', 'tower-worker']);
     } finally {
       await closeSessionPair(pair);
       restoreEnv();
@@ -2484,7 +2738,7 @@ describe('v1↔v2 agent interaction parity', () => {
         const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
         const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
         expect(v1SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan', 'alpha']);
-        expect(v2SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan', 'alpha']);
+              expect(v2SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan', 'alpha', 'tower-worker']);
       } finally {
         await v1Client2.close();
         await v2Client2.close();
@@ -2530,7 +2784,7 @@ describe('v1↔v2 agent interaction parity', () => {
       const v1SubagentNames = v1Resumed.agents['main']!.config.subagentNames;
       const v2SubagentNames = v2Resumed.agents['main']!.config.subagentNames;
       expect(v1SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan']);
-      expect(v2SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan']);
+            expect(v2SubagentNames).toEqual(['agent', 'coder', 'explore', 'plan', 'tower-worker']);
     } finally {
       await closeSessionPair(pair);
       restoreEnv();
@@ -2928,6 +3182,26 @@ describe('v1↔v2 agent interaction parity', () => {
     }
   });
 
+  it('cancel is a silent no-op on an idle session and rejects a missing session identically', async () => {
+    const restoreEnv = scrubConfigEnv();
+    const pair = await makeSessionParityPair();
+    try {
+      await createOnBoth(pair, { id: 'session_parity_agent_cancel' });
+      const input = { sessionId: 'session_parity_agent_cancel' } as const;
+      // No turn is running: cancel resolves without an effect on both engines.
+      await Promise.all([pair.v1.cancel(input), pair.v2.cancel(input)]);
+      await expect(pair.v1.cancel({ sessionId: 'session_missing' })).rejects.toMatchObject({
+        code: ErrorCodes.SESSION_NOT_FOUND,
+      });
+      await expect(pair.v2.cancel({ sessionId: 'session_missing' })).rejects.toMatchObject({
+        code: ErrorCodes.SESSION_NOT_FOUND,
+      });
+    } finally {
+      await closeSessionPair(pair);
+      restoreEnv();
+    }
+  });
+
   it('activateSkill renders, launches, and rejects identically', async () => {
     const restoreEnv = scrubConfigEnv();
     const pair = await makeSessionParityPair();
@@ -3096,96 +3370,6 @@ describe('v1↔v2 agent interaction parity', () => {
       await expect(pair.v2.getSessionWarnings({ sessionId: 'session_missing' })).rejects.toMatchObject(
         { code: ErrorCodes.SESSION_NOT_FOUND },
       );
-    } finally {
-      await closeSessionPair(pair);
-      restoreEnv();
-    }
-  });
-
-  it('applyPersistedSecondaryModel validates, applies, and refreshes warnings identically', async () => {
-    const restoreEnv = scrubConfigEnv();
-    const pair = await makeSessionParityPair(SECONDARY_MODEL_CONFIG_TOML);
-    try {
-      await createOnBoth(pair, { id: 'session_parity_secondary_apply' });
-      const input = { sessionId: 'session_parity_secondary_apply' } as const;
-      const applyError = (client: SDKRpcClient | SDKRpcClientV2) =>
-        client.applyPersistedSecondaryModel(input).then(
-          () => undefined,
-          (error: unknown) => error as Error,
-        );
-
-      // No recipe persisted yet: both reject with v1's persist-first error.
-      const [v1NoRecipe, v2NoRecipe] = await Promise.all([
-        applyError(pair.v1),
-        applyError(pair.v2),
-      ]);
-      expect(v1NoRecipe).toMatchObject({ code: ErrorCodes.CONFIG_INVALID });
-      expect(v2NoRecipe).toMatchObject({ code: ErrorCodes.CONFIG_INVALID });
-      expect(v2NoRecipe?.message).toBe(v1NoRecipe?.message);
-
-      // A dangling recipe: both reject, pointing at [secondary_model].
-      await Promise.all([
-        pair.v1.setConfig({ secondaryModel: { model: 'missing-model' } }),
-        pair.v2.setConfig({ secondaryModel: { model: 'missing-model' } }),
-      ]);
-      const [v1Broken, v2Broken] = await Promise.all([
-        applyError(pair.v1),
-        applyError(pair.v2),
-      ]);
-      expect(v1Broken).toMatchObject({ code: ErrorCodes.CONFIG_INVALID });
-      expect(v2Broken).toMatchObject({ code: ErrorCodes.CONFIG_INVALID });
-      expect(v1Broken?.message).toContain('[secondary_model].model');
-      expect(v2Broken?.message).toContain('[secondary_model].model');
-
-      // A valid recipe: both apply cleanly. The warnings pull converges on
-      // empty — v1's snapshot never held the broken recipe (its apply
-      // validates before mutating), v2's live-config warning cache is
-      // refreshed by the successful apply.
-      await Promise.all([
-        pair.v1.setConfig({ secondaryModel: { model: 'fixture-model' } }),
-        pair.v2.setConfig({ secondaryModel: { model: 'fixture-model' } }),
-      ]);
-      await Promise.all([
-        pair.v1.applyPersistedSecondaryModel(input),
-        pair.v2.applyPersistedSecondaryModel(input),
-      ]);
-      const [v1Warnings, v2Warnings] = await Promise.all([
-        pair.v1.getSessionWarnings(input),
-        pair.v2.getSessionWarnings(input),
-      ]);
-      expect(v2Warnings).toEqual(v1Warnings);
-      expect(v1Warnings).toEqual([]);
-
-      await expect(
-        pair.v1.applyPersistedSecondaryModel({ sessionId: 'session_missing' }),
-      ).rejects.toMatchObject({ code: ErrorCodes.SESSION_NOT_FOUND });
-      await expect(
-        pair.v2.applyPersistedSecondaryModel({ sessionId: 'session_missing' }),
-      ).rejects.toMatchObject({ code: ErrorCodes.SESSION_NOT_FOUND });
-    } finally {
-      await closeSessionPair(pair);
-      restoreEnv();
-    }
-  });
-
-  it('getSessionWarnings flags a creation-time broken secondary recipe on both engines', async () => {
-    const restoreEnv = scrubConfigEnv();
-    const pair = await makeSessionParityPair(SECONDARY_MODEL_BROKEN_CONFIG_TOML);
-    try {
-      await createOnBoth(pair, { id: 'session_parity_secondary_broken' });
-      const input = { sessionId: 'session_parity_secondary_broken' } as const;
-      const [v1Warnings, v2Warnings] = await Promise.all([
-        pair.v1.getSessionWarnings(input),
-        pair.v2.getSessionWarnings(input),
-      ]);
-      // The message wording is engine-specific; the code + severity are the
-      // shared contract.
-      const codes = (warnings: readonly { code: string; severity: string }[]) =>
-        warnings.map(({ code, severity }) => ({ code, severity }));
-      expect(codes(v2Warnings)).toEqual(codes(v1Warnings));
-      expect(codes(v1Warnings)).toEqual([
-        { code: 'secondary-model-invalid', severity: 'warning' },
-      ]);
     } finally {
       await closeSessionPair(pair);
       restoreEnv();
@@ -3966,10 +4150,10 @@ describe('v1↔v2 global MCP parity', () => {
     });
     for (const homeDir of [pair.v1HomeDir, pair.v2HomeDir]) {
       const externalOAuth = new McpOAuthService({ kimiHomeDir: homeDir });
-      externalOAuth
+      await externalOAuth
         .getProvider('oauth-authorized', authorizedUrl)
         .saveTokens({ access_token: 'test-access-token', token_type: 'Bearer' });
-      externalOAuth
+      await externalOAuth
         .getProvider('sse', statusServer.oauthUrl)
         .saveTokens({ access_token: 'stale-sse-token', token_type: 'Bearer' });
     }

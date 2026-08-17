@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { extname, join, normalize, resolve, sep } from 'node:path';
+import { extname, join, normalize, relative, resolve, sep } from 'node:path';
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
@@ -41,8 +41,7 @@ async function serveWebAsset(
 ): Promise<unknown> {
   const requestUrl = new URL(req.url, 'http://kimi-web.local');
   if (isReservedPath(requestUrl.pathname)) {
-    reply.callNotFound();
-    return;
+    return reply.callNotFound();
   }
 
   const filePath = await resolveStaticFile(assetsDir, requestUrl.pathname);
@@ -55,16 +54,20 @@ async function serveWebAsset(
     return reply.code(404).type('text/plain; charset=utf-8').send('Not found');
   }
 
-  const response = reply
+  return reply
     .type(mimeType(filePath))
-    .header('Content-Length', String(fileInfo.size));
-  if (extname(filePath) === '.html') {
-    // The SPA document carries security headers and chooses the current hashed
-    // asset bundle. Never reuse an older document after a server upgrade; static
-    // assets remain cacheable under the browser's normal rules.
-    response.header('Cache-Control', 'no-store');
+    .header('Cache-Control', cacheControl(assetsDir, filePath))
+    .header('Content-Length', String(fileInfo.size))
+    .send(createReadStream(filePath));
+}
+
+function cacheControl(assetsDir: string, filePath: string): string {
+  const assetPath = relative(assetsDir, filePath);
+  const fileName = filePath.slice(filePath.lastIndexOf(sep) + 1);
+  if (assetPath.startsWith(`assets${sep}`) && /[-.][A-Za-z0-9_-]{8}\.[^.]+$/.test(fileName)) {
+    return 'public, max-age=31536000, immutable';
   }
-  return response.send(createReadStream(filePath));
+  return 'no-cache';
 }
 
 async function resolveStaticFile(

@@ -16,6 +16,11 @@ export type JsonObject = { readonly [key: string]: JsonValue };
 
 export type Unsubscribe = () => void;
 
+export interface AgentRuntimeBinding {
+  readonly workspaceId: string;
+  readonly runtimeId: string;
+}
+
 export type { CapabilityStatus } from '@moonshot-ai/agent-core-v2/app/capability/types';
 
 export type {
@@ -111,6 +116,11 @@ export type PromptPart = Extract<ContentPart, { type: 'text' | 'image_url' | 'vi
 
 export type PromptInput = readonly PromptPart[];
 
+export interface PromptSkillActivation {
+  readonly name: string;
+  readonly args?: string;
+}
+
 export interface KimiHarnessOptions {
   readonly identity?: KimiHostIdentity | undefined;
   readonly homeDir?: string | undefined;
@@ -158,6 +168,14 @@ export interface CreateSessionOptions {
 export interface RenameSessionInput {
   readonly id: string;
   readonly title: string;
+}
+
+export interface GenerateSessionTitleInput {
+  readonly id: string;
+  /** Regenerate even when the session already has a generated/custom title. */
+  readonly force?: boolean;
+  /** Conversation excerpt to generate from (default `user_prompts`). */
+  readonly source?: 'user_prompts' | 'first_turn' | 'digest';
 }
 
 export interface ResumeSessionInput {
@@ -300,9 +318,20 @@ export interface SessionStatus {
   readonly usage?: SessionUsage;
 }
 
+/**
+ * The engine's canonical title state: `replaceable` (a prompt-derived easy
+ * title auto generation may overwrite), `generated` (an auto-generated title
+ * already landed), `custom` (a user-set title that is never overwritten).
+ * Only populated by the v2 engine on live / resumed sessions (read off the
+ * metadata document); v1 backends leave it undefined, and the v2 list path
+ * does not project it.
+ */
+export type SessionTitleKind = 'replaceable' | 'generated' | 'custom';
+
 export interface SessionSummary {
   readonly id: string;
   readonly title?: string | undefined;
+  readonly titleKind?: SessionTitleKind;
   readonly lastPrompt?: string;
   readonly workDir: string;
   readonly sessionDir: string;
