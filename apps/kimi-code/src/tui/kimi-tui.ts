@@ -779,9 +779,11 @@ export class KimiTUI {
         if (c.added <= 0) continue;
         this.showStatus(`${c.providerName} · +${String(c.added)} model${c.added > 1 ? 's' : ''}.`);
       }
-      for (const f of result.failed) {
-        this.showStatus(`Skipped refreshing ${f.provider}: ${f.reason}`, 'warning');
-      }
+      // Background refreshes at startup are best-effort probes: providers whose
+      // catalog could not be refreshed (auth rejected, network down, ...) are
+      // silently skipped here — the user did not ask for a refresh, so a
+      // warning would just be noise on every launch. Manual refreshes (e.g.
+      // from the model picker) still surface `failed` entries.
     } catch {
       // Best-effort: startup must not crash on background refresh failures.
     }
