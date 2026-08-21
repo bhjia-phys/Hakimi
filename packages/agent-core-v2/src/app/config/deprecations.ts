@@ -1,12 +1,11 @@
 /**
- * `config` domain — declarative config-key deprecation detection.
+ * `config` domain — declarative config deprecation detection.
  *
- * A section declares its renames once (`RegisterSectionOptions.deprecations`,
- * snake_case keys as written on disk) and this module turns the presence of a
- * deprecated key in the on-disk document into a warning `ConfigDiagnostic`.
- * Detection is read-only: the old value is never mapped onto the new key (the
- * section schema no longer knows the old key, so it is dropped at validation),
- * and the user's file is left untouched — the warning is the migration guide.
+ * Sections declare deprecated keys (`RegisterSectionOptions.deprecations`) or a
+ * deprecated whole-section control surface (`RegisterSectionOptions.deprecation`).
+ * This module turns their presence in the raw on-disk document into warning
+ * `ConfigDiagnostic`s. Detection is read-only: values are never migrated or
+ * rewritten, so the warning itself is the migration guide.
  */
 
 import type { ConfigDiagnostic, ConfigSection } from './config';
@@ -36,6 +35,28 @@ export function collectKeyDeprecations(
           ' Run /update-config to fix it.',
       });
     }
+  }
+  return diagnostics;
+}
+
+export function collectSectionDeprecations(
+  rawSnake: Record<string, unknown>,
+  sections: readonly ConfigSection[],
+): ConfigDiagnostic[] {
+  const diagnostics: ConfigDiagnostic[] = [];
+  for (const section of sections) {
+    const deprecation = section.deprecation;
+    if (deprecation === undefined) continue;
+    const snakeDomain = camelToSnake(section.domain);
+    if (!Object.prototype.hasOwnProperty.call(rawSnake, snakeDomain)) continue;
+    diagnostics.push({
+      domain: section.domain,
+      severity: 'warning',
+      message:
+        `[${snakeDomain}] is deprecated and remains readable only for compatibility; ` +
+        `use ${deprecation.replacement} instead.` +
+        (deprecation.message === undefined ? '' : ` ${deprecation.message}`),
+    });
   }
   return diagnostics;
 }

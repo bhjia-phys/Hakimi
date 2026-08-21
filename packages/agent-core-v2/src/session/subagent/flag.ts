@@ -1,10 +1,12 @@
 /**
- * `subagent` domain — registers the `secondary-model` experimental flag
+ * `subagent` domain — registers the deprecated `secondary-model` fallback flag
  * into `flag`.
  *
- * Gates the subagent model pool for newly spawned subagents, including the
- * agent-facing model choices and startup pool validation. Off by default;
- * enable via `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL`, the master
+ * Enables best-effort legacy `[secondary_model]` aliases for Agent,
+ * AgentSwarm, and Tower workers when no canonical preset is active. It does
+ * not add a model choice to the agent-facing tool schemas or make legacy pool
+ * validation a startup blocker. Off by default; enable via
+ * `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL`, the master
  * `KIMI_CODE_EXPERIMENTAL_FLAG`, or the `[experimental]` config section.
  */
 
@@ -15,9 +17,9 @@ export const SECONDARY_MODEL_FLAG_ENV = 'KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL'
 
 export const secondaryModelFlag: FlagDefinitionInput = {
   id: SECONDARY_MODEL_FLAG_ID,
-  title: 'Secondary model for subagents',
+  title: 'Legacy secondary model fallback',
   description:
-    'Let newly spawned subagents use a separately configured secondary model by default, with an explicit primary-model override for quality-sensitive tasks.',
+    'Allow Agent, AgentSwarm, and Tower workers to use a legacy [secondary_model] alias when no canonical preset is active; canonical [subagent] routes take precedence and Tower reviewers never use this fallback.',
   env: SECONDARY_MODEL_FLAG_ENV,
   default: false,
   surface: 'core',

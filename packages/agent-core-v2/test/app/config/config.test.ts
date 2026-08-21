@@ -22,7 +22,6 @@ import {
   isError2,
   resetUnexpectedErrorHandler,
   setUnexpectedErrorHandler,
-  toErrorPayload,
 } from '#/errors';
 import { WIRE_PROTOCOL_VERSION } from '#/wire/migration/migration';
 import { createTestAgent, type TestAgentContext } from '../../harness';
@@ -75,6 +74,7 @@ import {
   PROVIDERS_SECTION,
   THINKING_SECTION,
 } from '#/app/kosongConfig/configSection';
+import { IModelCatalog } from '#/kosong/model/catalog';
 import { type ThinkingConfig } from '#/kosong/model/thinking';
 import {
   KEEP_ALIVE_ON_EXIT_ENV,
@@ -86,17 +86,15 @@ import {
 import { applyPrintModeConfigDefaults } from '#/agent/task/printDefaults';
 import '#/session/subagent/configSection';
 import {
+  assertValidSubagentModelConfig,
   DEFAULT_SUBAGENT_TIMEOUT_MS,
   resolveSubagentBinding,
-  resolveSubagentModelOverride,
-  resolveSubagentModelPool,
   resolveSubagentTimeoutMs,
   SECONDARY_MODEL_SECTION,
   SUBAGENT_SECTION,
   SUBAGENT_TIMEOUT_ENV,
   type SecondaryModelConfig,
   type SubagentConfig,
-  wrapSubagentModelError,
 } from '#/session/subagent/configSection';
 import { SECONDARY_MODEL_FLAG_ID } from '#/session/subagent/flag';
 import {
@@ -1350,6 +1348,141 @@ describe('config deprecations', () => {
 
     disposables.dispose();
   });
+
+  it('warns while keeping the whole legacy section readable', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[secondary_model]\nmodel = "provider/legacy"\ndefault_effort = "low"\n',
+    );
+
+    expect(config.get<SecondaryModelConfig>(SECONDARY_MODEL_SECTION)).toEqual({
+      model: 'provider/legacy',
+      defaultEffort: 'low',
+    });
+    expect(config.diagnostics()).toContainEqual({
+      domain: SECONDARY_MODEL_SECTION,
+      severity: 'warning',
+      message:
+        '[secondary_model] is deprecated and remains readable only for compatibility; use [subagent] and /preset instead. The legacy model pool is only a compatibility fallback; provider and model maintenance will not rewrite this section.',
+    });
+    disposables.dispose();
+  });
+
+  it('keeps the whole-section warning after a reload', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[secondary_model]\nmodel = "provider/legacy"\n',
+    );
+    const warning = {
+      domain: SECONDARY_MODEL_SECTION,
+      severity: 'warning' as const,
+      message:
+        '[secondary_model] is deprecated and remains readable only for compatibility; use [subagent] and /preset instead. The legacy model pool is only a compatibility fallback; provider and model maintenance will not rewrite this section.',
+    };
+
+    await config.reload();
+    expect(config.diagnostics()).toContainEqual(warning);
+    disposables.dispose();
+  });
+
+  it('does not migrate or rewrite the legacy section when another section is written', async () => {
+    const { config, disposables, storage } = await createConfig(
+      {},
+      '[secondary_model]\nmodel = "provider/legacy"\ndefault_effort = "low"\n',
+    );
+
+    await config.set(SUBAGENT_SECTION, { preset: 'research' });
+
+    const onDisk = new TextDecoder().decode(await storage.read('', 'config.toml'));
+    expect(onDisk).toContain('[secondary_model]');
+    expect(onDisk).toContain('model = "provider/legacy"');
+    expect(onDisk).toContain('default_effort = "low"');
+    expect(config.get<SecondaryModelConfig>(SECONDARY_MODEL_SECTION)).toEqual({
+      model: 'provider/legacy',
+      defaultEffort: 'low',
+    });
+    disposables.dispose();
+  });
+
+  it('emits a diagnostics update when the legacy section warning clears', async () => {
+    const disposables = new DisposableStore();
+    const ix = disposables.add(new TestInstantiationService());
+    const storage = new InMemoryStorageService();
+    await storage.write(
+      '',
+      'config.toml',
+      new TextEncoder().encode('[secondary_model]\nmodel = "provider/legacy"\n'),
+    );
+    ix.stub(ILogService, stubLog());
+    ix.stub(IBootstrapService, stubBootstrap('/tmp/kimi-cfg', {}));
+    ix.stub(IFileSystemStorageService, storage);
+    ix.set(IAtomicTomlDocumentStore, new SyncDescriptor(TomlAtomicDocumentStore));
+    ix.set(IConfigRegistry, new SyncDescriptor(ConfigRegistry));
+    ix.set(IConfigService, new SyncDescriptor(ConfigService));
+    const config = ix.get(IConfigService);
+    const emissions: Array<readonly unknown[]> = [];
+    config.onDidChangeDiagnostics((diagnostics) => emissions.push(diagnostics));
+    await config.ready;
+
+    expect(emissions).toHaveLength(1);
+    expect(emissions[0]).toContainEqual({
+      domain: SECONDARY_MODEL_SECTION,
+      severity: 'warning',
+      message:
+        '[secondary_model] is deprecated and remains readable only for compatibility; use [subagent] and /preset instead. The legacy model pool is only a compatibility fallback; provider and model maintenance will not rewrite this section.',
+    });
+
+    await storage.write('', 'config.toml', new TextEncoder().encode('[subagent]\npreset = "research"\n'));
+    await config.reload();
+
+    expect(emissions.at(-1)).toEqual([]);
+    expect(config.diagnostics()).not.toContainEqual(
+      expect.objectContaining({ domain: SECONDARY_MODEL_SECTION }),
+    );
+    disposables.dispose();
+  });
+
+  it('refreshes section deprecation diagnostics after set', async () => {
+    const { config, disposables } = await createConfig({});
+    await config.set(SECONDARY_MODEL_SECTION, { model: 'provider/legacy' });
+
+    expect(
+      config.diagnostics().some((diagnostic) => diagnostic.domain === SECONDARY_MODEL_SECTION),
+    ).toBe(true);
+    disposables.dispose();
+  });
+
+  it('clears section deprecation diagnostics after replace', async () => {
+    const { config, disposables } = await createConfig({});
+    await config.set(SECONDARY_MODEL_SECTION, { model: 'provider/legacy' });
+    expect(
+      config.diagnostics().some((diagnostic) => diagnostic.domain === SECONDARY_MODEL_SECTION),
+    ).toBe(true);
+
+    await config.replace(SECONDARY_MODEL_SECTION, undefined);
+
+    expect(
+      config.diagnostics().some((diagnostic) => diagnostic.domain === SECONDARY_MODEL_SECTION),
+    ).toBe(false);
+    disposables.dispose();
+  });
+
+  it('refreshes section deprecation diagnostics after replaceSections', async () => {
+    const { config, disposables } = await createConfig({});
+    await config.replaceSections({
+      [SECONDARY_MODEL_SECTION]: { model: 'provider/legacy' },
+    });
+    expect(
+      config.diagnostics().some((diagnostic) => diagnostic.domain === SECONDARY_MODEL_SECTION),
+    ).toBe(true);
+
+    await config.replaceSections({ [SECONDARY_MODEL_SECTION]: null });
+
+    expect(
+      config.diagnostics().some((diagnostic) => diagnostic.domain === SECONDARY_MODEL_SECTION),
+    ).toBe(false);
+    disposables.dispose();
+  });
 });
 
 describe('task config section', () => {
@@ -1744,45 +1877,174 @@ describe('subagent config section', () => {
     disposables.dispose();
   });
 
-  it('resolves the spawn binding: pool default, explicit alias, primary opt-in, inherit without pool', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+  function modelCatalogFor(...ids: string[]): IModelCatalog {
+    const known = new Set(ids);
+    return {
+      _serviceBrand: undefined,
+      get: (id: string) => {
+        if (!known.has(id)) {
+          throw new Error2(
+            ErrorCodes.CONFIG_INVALID,
+            `Model "${id}" is not configured in config.toml.`,
+            { details: { model: id } },
+          );
+        }
+        return { id } as never;
+      },
+    } as unknown as IModelCatalog;
+  }
 
-    const noPool = await createConfig({});
-    expect(resolveSubagentBinding(noPool.config, secondaryModelFlags(), own)).toEqual({
-      model: 'provider/main',
-      thinking: 'medium',
+  it('inherits the caller binding when no canonical or legacy route applies', async () => {
+    const { config, disposables } = await createConfig({});
+    const resolution = resolveSubagentBinding(config, secondaryModelFlags(), modelCatalogFor(), {
+      route: 'agent',
+      profileName: 'explore',
+      caller: { modelAlias: 'provider/main', thinkingLevel: 'medium' },
     });
-    expect(resolveSubagentBinding(noPool.config, secondaryModelFlags(), own, 'primary')).toEqual({
-      model: 'provider/main',
-      thinking: 'medium',
-    });
-    noPool.disposables.dispose();
 
-    const pool = await createConfig(
-      {},
-      '[secondary_model]\ndefault_model = "provider/fast"\n\n[secondary_model.models]\n"provider/fast" = "fast and cheap"\n"provider/smart" = "hard tasks"\n',
-    );
-    // An omitted model falls back to the pool default; pool bindings carry no
-    // explicit thinking (the subagent resolves thinking naturally).
-    expect(resolveSubagentBinding(pool.config, secondaryModelFlags(), own)).toEqual({
-      model: 'provider/fast',
-      thinking: undefined,
-    });
-    // A pool alias binds directly.
-    expect(resolveSubagentBinding(pool.config, secondaryModelFlags(), own, 'provider/smart')).toEqual({
-      model: 'provider/smart',
-      thinking: undefined,
-    });
-    // "primary" always inherits the caller.
-    expect(resolveSubagentBinding(pool.config, secondaryModelFlags(), own, 'primary')).toEqual({
+    expect(resolution).toMatchObject({
       model: 'provider/main',
       thinking: 'medium',
+      source: 'caller',
+      modelSource: 'caller',
+      thinkingSource: 'caller',
     });
-    pool.disposables.dispose();
+    disposables.dispose();
   });
 
-  it('routes Agent by profile and AgentSwarm through the preset swarm override', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+  it('rejects an active preset that is not configured', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[subagent]\npreset = "missing"\n',
+    );
+
+    let caught: unknown;
+    try {
+      assertValidSubagentModelConfig(config, secondaryModelFlags(), modelCatalogFor());
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(isError2(caught)).toBe(true);
+    expect((caught as Error2).code).toBe(ErrorCodes.CONFIG_INVALID);
+    expect((caught as Error2).message).toContain(
+      '[subagent].preset "missing" does not name a configured preset',
+    );
+    disposables.dispose();
+  });
+
+  it('does not let ConfigService defaults hide malformed real [subagent] TOML', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[subagent]\nagents = "not-a-record"\n',
+    );
+
+    expect(config.get<SubagentConfig>(SUBAGENT_SECTION)).toEqual({
+      timeoutMs: DEFAULT_SUBAGENT_TIMEOUT_MS,
+    });
+
+    let caught: unknown;
+    try {
+      assertValidSubagentModelConfig(config, secondaryModelFlags(), modelCatalogFor());
+    } catch (error) {
+      caught = error;
+    }
+    expect(isError2(caught)).toBe(true);
+    expect((caught as Error2).code).toBe(ErrorCodes.CONFIG_INVALID);
+    expect((caught as Error2).message).toContain('[subagent] is invalid');
+    disposables.dispose();
+  });
+
+  it('rejects whitespace-only fields in the active route instead of falling back', () => {
+    const invalidRoute = {
+      agents: { explore: { model: 'provider/agents-model' } },
+      presets: { research: { explore: { model: '   ', thinkingEffort: '\t' } } },
+      preset: 'research',
+    };
+    const invalidConfig = {
+      inspect: () => ({ userValue: invalidRoute }),
+      get: () => invalidRoute,
+    } as unknown as IConfigService;
+
+    expect(() =>
+      resolveSubagentBinding(invalidConfig, secondaryModelFlags(), modelCatalogFor('provider/agents-model'), {
+        route: 'agent',
+        profileName: 'explore',
+        caller: { modelAlias: 'provider/main', thinkingLevel: 'medium' },
+      }),
+    ).toThrowError(expect.objectContaining({ code: ErrorCodes.CONFIG_INVALID }));
+  });
+
+  it('does not let whitespace-only fields in an inactive preset block routing', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      [
+        '[subagent]',
+        'preset = "research"',
+        '',
+        '[subagent.presets.research.explore]',
+        'model = "provider/active"',
+        '',
+        '[subagent.presets.inactive.explore]',
+        'model = "   "',
+        'thinking_effort = "\t"',
+      ].join('\n'),
+    );
+    const catalog = modelCatalogFor('provider/active');
+
+    expect(() => assertValidSubagentModelConfig(config, secondaryModelFlags(), catalog)).not.toThrow();
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), catalog, {
+        route: 'agent',
+        profileName: 'explore',
+        caller: { modelAlias: 'provider/main', thinkingLevel: 'medium' },
+      }),
+    ).toMatchObject({ model: 'provider/active', modelSource: 'preset' });
+    disposables.dispose();
+  });
+
+  it('does not treat an Object prototype key as a configured route', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[subagent.agents.explore]\nmodel = "provider/explore"\n',
+    );
+    const resolution = resolveSubagentBinding(
+      config,
+      secondaryModelFlags(false),
+      modelCatalogFor('provider/explore'),
+      {
+        route: 'agent',
+        profileName: 'constructor',
+        caller: { modelAlias: 'provider/main', thinkingLevel: 'medium' },
+      },
+    );
+
+    expect(resolution).toMatchObject({
+      model: 'provider/main',
+      thinking: 'medium',
+      modelSource: 'caller',
+      thinkingSource: 'caller',
+    });
+    disposables.dispose();
+  });
+
+  it('rejects a blank canonical model from live config instead of using a fallback', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[secondary_model]\ndefault_model = "provider/legacy"\n\n[subagent.agents.explore]\nmodel = "   "\n',
+    );
+
+    expect(() =>
+      resolveSubagentBinding(config, secondaryModelFlags(), modelCatalogFor('provider/legacy'), {
+        route: 'agent',
+        profileName: 'explore',
+        caller: { modelAlias: 'provider/main', thinkingLevel: 'medium' },
+      }),
+    ).toThrowError(expect.objectContaining({ code: ErrorCodes.CONFIG_INVALID }));
+    disposables.dispose();
+  });
+
+  it('resolves model and thinking fields independently across preset and agents', async () => {
     const { config, disposables } = await createConfig(
       {},
       [
@@ -1790,155 +2052,253 @@ describe('subagent config section', () => {
         'preset = "research"',
         '',
         '[subagent.agents.explore]',
-        'model = "provider/base-explore"',
-        'thinking_effort = "low"',
+        'model = "provider/agents-model"',
+        '',
+        '[subagent.agents.plan]',
+        'thinking_effort = "agents-thinking"',
         '',
         '[subagent.presets.research.explore]',
-        'model = "provider/preset-explore"',
+        'thinking_effort = "preset-thinking"',
         '',
-        '[subagent.presets.research.swarm]',
-        'thinking_effort = "ultra"',
+        '[subagent.presets.research.plan]',
+        'model = "provider/preset-model"',
       ].join('\n'),
     );
+    const caller = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+    const catalog = modelCatalogFor('provider/agents-model', 'provider/preset-model');
 
-    expect(config.get<SubagentConfig>(SUBAGENT_SECTION)).toMatchObject({
-      preset: 'research',
-      agents: {
-        explore: { model: 'provider/base-explore', thinkingEffort: 'low' },
-      },
-      presets: {
-        research: {
-          explore: { model: 'provider/preset-explore' },
-          swarm: { thinkingEffort: 'ultra' },
-        },
-      },
-    });
     expect(
-      resolveSubagentBinding(config, secondaryModelFlags(false), own, undefined, {
-        profileName: 'explore',
+      resolveSubagentBinding(config, secondaryModelFlags(false), catalog, {
         route: 'agent',
-      }),
-    ).toEqual({ model: 'provider/preset-explore', thinking: 'low' });
-    expect(
-      resolveSubagentBinding(config, secondaryModelFlags(false), own, undefined, {
         profileName: 'explore',
-        route: 'swarm',
+        caller,
       }),
-    ).toEqual({ model: 'provider/preset-explore', thinking: 'ultra' });
-    expect(resolveSubagentModelOverride(config, '', 'swarm')).toEqual({
-      thinkingEffort: 'ultra',
+    ).toMatchObject({
+      model: 'provider/agents-model',
+      thinking: 'preset-thinking',
+      modelSource: 'agents',
+      thinkingSource: 'preset',
     });
-  });
-
-  it('keeps the pool inert while the secondary-model experiment is off', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
-    const { config, disposables } = await createConfig(
-      {},
-      '[secondary_model]\ndefault_model = "provider/fast"\nforce = true\n\n[secondary_model.models]\n"provider/fast" = "fast and cheap"\n',
-    );
-
-    // Flag off: the pool (and force) are ignored — spawns inherit the caller,
-    // and an explicit choice fails like the no-pool case.
-    expect(resolveSubagentBinding(config, secondaryModelFlags(false), own)).toEqual({
-      model: 'provider/main',
-      thinking: 'medium',
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(false), catalog, {
+        route: 'agent',
+        profileName: 'plan',
+        caller,
+      }),
+    ).toMatchObject({
+      model: 'provider/preset-model',
+      thinking: 'agents-thinking',
+      modelSource: 'preset',
+      thinkingSource: 'agents',
     });
-    expect(() =>
-      resolveSubagentBinding(config, secondaryModelFlags(false), own, 'provider/fast'),
-    ).toThrow(/no \[secondary_model\.models\] pool is configured/);
-
     disposables.dispose();
   });
 
-  it('keeps explicit model choices ahead of active route models while applying route thinking', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+  it('does not use the legacy fallback when an active preset omits only model', async () => {
     const { config, disposables } = await createConfig(
       {},
       [
         '[secondary_model]',
-        'default_model = "provider/secondary"',
-        '',
-        '[secondary_model.models]',
-        '"provider/secondary" = ""',
+        'default_model = "provider/legacy"',
         '',
         '[subagent]',
         'preset = "research"',
         '',
-        '[subagent.agents.explore]',
-        'model = "provider/agent-route"',
-        'thinking_effort = "agent-effort"',
-        '',
         '[subagent.presets.research.explore]',
-        'model = "provider/preset-route"',
-        'thinking_effort = "preset-effort"',
-        '',
-        '[subagent.presets.research.swarm]',
-        'model = "provider/swarm-route"',
-        'thinking_effort = "swarm-effort"',
+        'thinking_effort = "preset-thinking"',
       ].join('\n'),
     );
+    const caller = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+    const resolution = resolveSubagentBinding(
+      config,
+      secondaryModelFlags(),
+      modelCatalogFor('provider/legacy'),
+      { route: 'agent', profileName: 'explore', caller },
+    );
 
-    expect(
-      resolveSubagentBinding(config, secondaryModelFlags(), own, 'primary', {
-        profileName: 'explore',
-        route: 'agent',
-      }),
-    ).toEqual({ model: 'provider/main', thinking: 'preset-effort' });
-    expect(
-      resolveSubagentBinding(config, secondaryModelFlags(), own, 'provider/secondary', {
-        profileName: 'explore',
-        route: 'agent',
-      }),
-    ).toEqual({ model: 'provider/secondary', thinking: 'preset-effort' });
-    expect(
-      resolveSubagentBinding(config, secondaryModelFlags(), own, undefined, {
-        profileName: 'explore',
-        route: 'agent',
-      }),
-    ).toEqual({ model: 'provider/preset-route', thinking: 'preset-effort' });
-
-    expect(
-      resolveSubagentBinding(config, secondaryModelFlags(), own, 'primary', {
-        profileName: 'explore',
-        route: 'swarm',
-      }),
-    ).toEqual({ model: 'provider/main', thinking: 'swarm-effort' });
-    expect(
-      resolveSubagentBinding(config, secondaryModelFlags(), own, 'provider/secondary', {
-        profileName: 'explore',
-        route: 'swarm',
-      }),
-    ).toEqual({ model: 'provider/secondary', thinking: 'swarm-effort' });
-    expect(
-      resolveSubagentBinding(config, secondaryModelFlags(), own, undefined, {
-        profileName: 'explore',
-        route: 'swarm',
-      }),
-    ).toEqual({ model: 'provider/swarm-route', thinking: 'swarm-effort' });
+    expect(resolution).toMatchObject({
+      model: 'provider/main',
+      thinking: 'preset-thinking',
+      modelSource: 'caller',
+      thinkingSource: 'preset',
+    });
+    disposables.dispose();
   });
 
-  it('treats a pool-less default_model as an implicit single-entry pool', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+  it('uses the canonical agents route when no preset is active', async () => {
     const { config, disposables } = await createConfig(
       {},
-      '[secondary_model]\ndefault_model = "provider/fast"\n',
+      '[subagent.agents.explore]\nmodel = "provider/explore"\nthinking_effort = "low"\n',
+    );
+    const resolution = resolveSubagentBinding(
+      config,
+      secondaryModelFlags(false),
+      modelCatalogFor('provider/explore'),
+      {
+        route: 'agent',
+        profileName: 'explore',
+        caller: { modelAlias: 'provider/main', thinkingLevel: 'medium' },
+      },
     );
 
-    // An omitted model falls back to the default; pool bindings carry no
-    // explicit thinking.
-    expect(resolveSubagentBinding(config, secondaryModelFlags(), own)).toEqual({
-      model: 'provider/fast',
-      thinking: undefined,
+    expect(resolution).toMatchObject({
+      model: 'provider/explore',
+      thinking: 'low',
+      source: 'agents',
     });
-    // The only other choice is "primary".
-    expect(resolveSubagentBinding(config, secondaryModelFlags(), own, 'primary')).toEqual({
+    disposables.dispose();
+  });
+
+  it('applies active preset precedence for Agent and AgentSwarm routes', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      [
+        '[subagent]',
+        'preset = "research"',
+        '',
+        '[subagent.agents.explore]',
+        'model = "provider/agent"',
+        'thinking_effort = "agent"',
+        '',
+        '[subagent.agents.swarm]',
+        'model = "provider/agents-swarm"',
+        '',
+        '[subagent.presets.research.explore]',
+        'model = "provider/preset-agent"',
+        'thinking_effort = "preset-agent"',
+        '',
+        '[subagent.presets.research.swarm]',
+        'model = "provider/preset-swarm"',
+        'thinking_effort = "preset-swarm"',
+      ].join('\n'),
+    );
+    const caller = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+    const catalog = modelCatalogFor('provider/preset-agent', 'provider/preset-swarm');
+
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), catalog, {
+        route: 'agent',
+        profileName: 'explore',
+        caller,
+      }),
+    ).toMatchObject({ model: 'provider/preset-agent', thinking: 'preset-agent', source: 'preset' });
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), catalog, {
+        route: 'swarm',
+        profileName: 'explore',
+        caller,
+      }),
+    ).toMatchObject({ model: 'provider/preset-swarm', thinking: 'preset-swarm', source: 'preset' });
+    disposables.dispose();
+  });
+
+  it('uses tower-specific canonical routes and never uses legacy fallback for reviewers', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      [
+        '[secondary_model]',
+        'default_model = "provider/legacy"',
+        '',
+        '[subagent.agents.tower_worker]',
+        'model = "provider/worker"',
+        'thinking_effort = "low"',
+        '',
+        '[subagent.agents.tower_reviewer]',
+        'thinking_effort = "review"',
+      ].join('\n'),
+    );
+    const caller = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+    const catalog = modelCatalogFor('provider/worker', 'provider/legacy');
+
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), catalog, {
+        route: 'tower_worker',
+        caller,
+      }),
+    ).toMatchObject({ model: 'provider/worker', thinking: 'low', source: 'agents' });
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), catalog, {
+        route: 'tower_reviewer',
+        caller,
+      }),
+    ).toMatchObject({ model: 'provider/main', thinking: 'review', source: 'caller' });
+    disposables.dispose();
+  });
+
+  it('uses the legacy default only as a best-effort fallback without an active preset', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[secondary_model]\ndefault_model = "provider/legacy"\n',
+    );
+    const caller = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+    const resolution = resolveSubagentBinding(
+      config,
+      secondaryModelFlags(),
+      modelCatalogFor('provider/legacy'),
+      { route: 'agent', profileName: 'coder', caller },
+    );
+
+    expect(resolution).toMatchObject({
+      model: 'provider/legacy',
+      thinking: undefined,
+      source: 'legacy-secondary',
+    });
+
+    const primary = resolveSubagentBinding(
+      config,
+      secondaryModelFlags(),
+      modelCatalogFor('provider/legacy'),
+      { route: 'agent', profileName: 'coder', modelPreference: 'primary', caller },
+    );
+    expect(primary).toMatchObject({ model: 'provider/main', thinking: 'medium', source: 'caller' });
+    disposables.dispose();
+  });
+
+  it('degrades a dangling legacy fallback to the caller binding', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[secondary_model]\ndefault_model = "provider/removed"\n',
+    );
+    const resolution = resolveSubagentBinding(
+      config,
+      secondaryModelFlags(),
+      modelCatalogFor(),
+      {
+        route: 'agent',
+        profileName: 'coder',
+        caller: { modelAlias: 'provider/main', thinkingLevel: 'medium' },
+      },
+    );
+
+    expect(resolution).toMatchObject({
       model: 'provider/main',
       thinking: 'medium',
+      source: 'caller',
     });
-    expect(() => resolveSubagentBinding(config, secondaryModelFlags(), own, 'provider/smart')).toThrow(
-      /Invalid model "provider\/smart"\. Available models: provider\/fast, primary\./,
+    disposables.dispose();
+  });
+
+  it('rejects a dangling canonical route alias with coded guidance', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[subagent.agents.coder]\nmodel = "provider/removed"\n',
     );
 
+    let caught: unknown;
+    try {
+      resolveSubagentBinding(config, secondaryModelFlags(false), modelCatalogFor(), {
+        route: 'agent',
+        profileName: 'coder',
+        caller: { modelAlias: 'provider/main', thinkingLevel: 'medium' },
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(isError2(caught)).toBe(true);
+    expect((caught as Error2).code).toBe(ErrorCodes.CONFIG_INVALID);
+    expect((caught as Error2).message).toContain(
+      'configure the route through /preset or [subagent.agents]',
+    );
     disposables.dispose();
   });
 
@@ -1951,6 +2311,8 @@ describe('subagent config section', () => {
         physics: {
           main: { model: 'provider/main', thinkingEffort: 'high' },
           swarm: { model: 'provider/fast', thinkingEffort: 'low' },
+          tower_worker: { model: 'provider/worker', thinkingEffort: 'medium' },
+          tower_reviewer: { model: 'provider/reviewer', thinkingEffort: 'high' },
         },
       },
     });
@@ -1958,92 +2320,16 @@ describe('subagent config section', () => {
     const onDisk = new TextDecoder().decode(await storage.read('', 'config.toml'));
     expect(onDisk).toContain('[subagent.presets.physics.main]');
     expect(onDisk).toContain('[subagent.presets.physics.swarm]');
+    expect(onDisk).toContain('[subagent.presets.physics.tower_worker]');
+    expect(onDisk).toContain('[subagent.presets.physics.tower_reviewer]');
     expect(onDisk).toContain('thinking_effort = "high"');
     expect(onDisk).toContain('thinking_effort = "low"');
 
     disposables.dispose();
   });
 
-  it('falls back to the legacy model key when no pool keys are set', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
-    const { config, disposables } = await createConfig(
-      {},
-      '[secondary_model]\nmodel = "provider/fast"\ndefault_effort = "low"\n',
-    );
-
-    // Recipe patch fields have no pool counterpart: the schema keeps them
-    // (so config writes round-trip losslessly for the v1 engine) but pool
-    // resolution ignores them; the lone legacy key forms the implicit
-    // single-entry pool.
-    expect(config.get<SecondaryModelConfig>(SECONDARY_MODEL_SECTION)).toEqual({
-      model: 'provider/fast',
-      defaultEffort: 'low',
-    });
-    expect(resolveSubagentModelPool(config)).toEqual({
-      defaultModel: 'provider/fast',
-      models: { 'provider/fast': '' },
-    });
-    expect(resolveSubagentBinding(config, secondaryModelFlags(), own)).toEqual({
-      model: 'provider/fast',
-      thinking: undefined,
-    });
-    expect(() => resolveSubagentBinding(config, secondaryModelFlags(), own, 'provider/smart')).toThrow(
-      /Invalid model "provider\/smart"\. Available models: provider\/fast, primary\./,
-    );
-
-    disposables.dispose();
-  });
-
-  it('lets default_model win over the legacy model key', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
-    const { config, disposables } = await createConfig(
-      {},
-      '[secondary_model]\nmodel = "provider/slow"\ndefault_model = "provider/fast"\n',
-    );
-
-    expect(resolveSubagentBinding(config, secondaryModelFlags(), own)).toEqual({
-      model: 'provider/fast',
-      thinking: undefined,
-    });
-
-    disposables.dispose();
-  });
-
-  it('does not let the legacy model key substitute for a pool table default_model', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
-    const { config, disposables } = await createConfig(
-      {},
-      '[secondary_model]\nmodel = "provider/fast"\n\n[secondary_model.models]\n"provider/fast" = "fast and cheap"\n',
-    );
-
-    expect(() => resolveSubagentBinding(config, secondaryModelFlags(), own)).toThrow(
-      '[secondary_model].default_model is required when [secondary_model.models] is configured',
-    );
-
-
-    disposables.dispose();
-  });
-
-  it('lets force pin the legacy model fallback when no default_model is set', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
-    const { config, disposables } = await createConfig(
-      {},
-      '[secondary_model]\nmodel = "provider/fast"\nforce = true\n',
-    );
-
-    expect(resolveSubagentBinding(config, secondaryModelFlags(), own)).toEqual({
-      model: 'provider/fast',
-      thinking: undefined,
-    });
-    expect(() => resolveSubagentBinding(config, secondaryModelFlags(), own, 'primary')).toThrow(
-      /Invalid model "primary": \[secondary_model\]\.force is set/,
-    );
-
-    disposables.dispose();
-  });
-
-  it('round-trips legacy recipe patch fields the pool resolution ignores', async () => {
-    const { config, disposables } = await createConfig(
+  it('round-trips legacy recipe values without making them a canonical route', async () => {
+    const { config, disposables, storage } = await createConfig(
       {},
       '[secondary_model]\nmodel = "provider/fast"\ndefault_effort = "low"\nmax_output_size = 8192\n',
     );
@@ -2053,133 +2339,41 @@ describe('subagent config section', () => {
       defaultEffort: 'low',
       maxOutputSize: 8192,
     });
-    expect(resolveSubagentModelPool(config)).toEqual({
-      defaultModel: 'provider/fast',
-      models: { 'provider/fast': '' },
-    });
+    await config.set(SECONDARY_MODEL_SECTION, { displayName: 'Legacy pool' });
 
-    // A v2 write validates before persisting — the patch fields must survive.
-    await config.set(SECONDARY_MODEL_SECTION, { defaultModel: 'provider/fast' });
-    const after = config.get<SecondaryModelConfig>(SECONDARY_MODEL_SECTION);
-    expect(after?.defaultEffort).toBe('low');
-    expect(after?.maxOutputSize).toBe(8192);
-
-    disposables.dispose();
-  });
-
-  it('binds every spawn to the forced default_model, rejecting even "primary"', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
-    const { config, disposables } = await createConfig(
-      {},
-      '[secondary_model]\ndefault_model = "provider/fast"\nforce = true\n',
-    );
-
-    expect(config.get<SecondaryModelConfig>(SECONDARY_MODEL_SECTION)).toEqual({
-      defaultModel: 'provider/fast',
-      force: true,
-    });
-    // An omitted model binds the forced default, with no thinking inheritance.
-    expect(resolveSubagentBinding(config, secondaryModelFlags(), own)).toEqual({
+    expect(config.get<SecondaryModelConfig>(SECONDARY_MODEL_SECTION)).toMatchObject({
       model: 'provider/fast',
-      thinking: undefined,
+      defaultEffort: 'low',
+      maxOutputSize: 8192,
+      displayName: 'Legacy pool',
     });
-    // Any explicit choice — "primary" included — is rejected.
-    expect(() => resolveSubagentBinding(config, secondaryModelFlags(), own, 'primary')).toThrow(
-      /Invalid model "primary": \[secondary_model\]\.force is set/,
-    );
-
+    const onDisk = new TextDecoder().decode(await storage.read('', 'config.toml'));
+    expect(onDisk).toContain('model = "provider/fast"');
+    expect(onDisk).toContain('default_effort = "low"');
+    expect(onDisk).toContain('max_output_size = 8192');
     disposables.dispose();
   });
 
-  it('rejects force combined with a models table at spawn resolution, matching startup validation', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
-    const { config, disposables } = await createConfig(
+  it('persists canonical writes without deleting the legacy section', async () => {
+    const { config, disposables, storage } = await createConfig(
       {},
-      '[secondary_model]\ndefault_model = "provider/fast"\nforce = true\n\n[secondary_model.models]\n"provider/fast" = "fast and cheap"\n',
+      '[secondary_model]\nmodel = "provider/fast"\ndefault_effort = "low"\n\n',
     );
 
-    // A live session can reach this state through a deep-merged config patch
-    // that adds force without clearing the pool table; spawn resolution must
-    // fail the same way the startup pre-flight does.
-    expect(() => resolveSubagentBinding(config, secondaryModelFlags(), own)).toThrow(
-      /\[secondary_model\]\.force cannot be combined with \[secondary_model\.models\]/,
-    );
-
-    disposables.dispose();
-  });
-
-  it('rejects an alias outside the pool, listing the available models', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
-    const { config, disposables } = await createConfig(
-      {},
-      '[secondary_model]\ndefault_model = "provider/fast"\n\n[secondary_model.models]\n"provider/fast" = "fast and cheap"\n"provider/smart" = "hard tasks"\n',
-    );
-
-    let caught: unknown;
-    try {
-      resolveSubagentBinding(config, secondaryModelFlags(), own, 'provider/typo');
-    } catch (error) {
-      caught = error;
-    }
-    expect(isError2(caught)).toBe(true);
-    expect((caught as Error2).code).toBe(ErrorCodes.CONFIG_INVALID);
-    expect((caught as Error2).message).toBe(
-      'Invalid model "provider/typo". Available models: provider/fast, provider/smart, primary.',
-    );
-
-    disposables.dispose();
-  });
-
-  it('rejects a stray model choice when no pool is configured', async () => {
-    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
-    const { config, disposables } = await createConfig({});
-
-    expect(() => resolveSubagentBinding(config, secondaryModelFlags(), own, 'provider/fast')).toThrow(
-      /Invalid model "provider\/fast": no \[secondary_model\.models\] pool is configured/,
-    );
-
-    disposables.dispose();
-  });
-
-  it('preserves the coded error contract when adding subagent-model guidance', () => {
-    const cause = new Error2(
-      ErrorCodes.CONFIG_INVALID,
-      'Model "provider/bad" is not configured in config.toml.',
-      { details: { model: 'provider/bad' } },
-    );
-
-    const result = wrapSubagentModelError(cause, 'provider/bad', 'provider/main');
-
-    expect(toErrorPayload(result)).toMatchObject({
-      code: ErrorCodes.CONFIG_INVALID,
-      message: expect.stringContaining('comes from [secondary_model.models]'),
-      details: {
-        model: 'provider/bad',
-        subagentModel: 'provider/bad',
-        subagentModelConfig: {
-          section: 'secondary_model.models',
-        },
-      },
-      cause: {
-        code: ErrorCodes.CONFIG_INVALID,
-        details: { model: 'provider/bad' },
-      },
+    await config.set(SUBAGENT_SECTION, {
+      agents: { coder: { model: 'provider/coder' } },
     });
-  });
 
-  it('passes through config-invalid failures that are not a missing bound alias', () => {
-    const malformed = new Error2(
-      ErrorCodes.CONFIG_INVALID,
-      'Model "provider/pool" must declare a wire protocol (config: models.<id>.protocol).',
-    );
-    expect(wrapSubagentModelError(malformed, 'provider/pool', 'provider/main')).toBe(malformed);
-
-    const unrelated = new Error2(
-      ErrorCodes.CONFIG_INVALID,
-      'Model "provider/other" is not configured in config.toml.',
-      { details: { model: 'provider/other' } },
-    );
-    expect(wrapSubagentModelError(unrelated, 'provider/pool', 'provider/main')).toBe(unrelated);
+    const onDisk = new TextDecoder().decode(await storage.read('', 'config.toml'));
+    expect(onDisk).toContain('[secondary_model]');
+    expect(onDisk).toContain('model = "provider/fast"');
+    expect(onDisk).toContain('default_effort = "low"');
+    expect(onDisk).toContain('[subagent.agents.coder]');
+    expect(config.get<SecondaryModelConfig>(SECONDARY_MODEL_SECTION)).toMatchObject({
+      model: 'provider/fast',
+      defaultEffort: 'low',
+    });
+    disposables.dispose();
   });
 });
 

@@ -19,9 +19,9 @@
 
 ## What Hakimi is
 
-Hakimi is a fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) that tracks upstream `main` closely. The current `main` provides the product shell while Hakimi builds its research layer behind explicit gates: Hakimi owns research orchestration, tools, and interaction; the separate [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) remains authoritative for durable research memory and evidence.
+Hakimi is a fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code), but upstream is a selectively reviewed engineering source rather than a product-parity target. The current product shell largely inherits Kimi Code foundations, while Hakimi owns its v2 architecture decisions, research orchestration, tools, workflows, and interaction. The separate [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) remains authoritative for durable research memory and evidence.
 
-The terminal loop, tools, sessions, Skills, MCP, subagents, permissions, and OAuth continue to come from upstream Kimi Code. The historical deeply embedded prototype is archived on the [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) branch and is not the integration path for this line.
+The terminal loop, tools, sessions, Skills, MCP, subagents, permissions, and OAuth originated in upstream Kimi Code and remain candidates for general-purpose upstream improvements. Hakimi absorbs only changes that fit its goals and canonical v2 contracts; upstream product-specific behavior is not imported by default. The historical deeply embedded prototype is archived on the [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) branch and is not the integration path for this line.
 
 ## Differences from upstream
 
@@ -33,8 +33,9 @@ The terminal loop, tools, sessions, Skills, MCP, subagents, permissions, and OAu
 - **Experimental ChatGPT OAuth:** opt-in device login can use a ChatGPT subscription through the OpenAI Codex backend, independently of API-key billing.
 - **Subagent presets:** `[subagent.agents.<type>]` and `[subagent.presets.<name>]` can pin per-subagent models and thinking efforts; switch at runtime with `/preset <name>`.
 - **Transport identity:** provider-pipeline requests identify as `kimi-code-cli/<version> (hakimi)` so Kimi-for-Coding OAuth keeps working.
+- **Selective upstream intake:** upstream changes are classified as general-purpose adoption, v2 adaptation, legacy-only compatibility, Hakimi overlay conflict, or rejection; product parity is not a goal.
 
-Everything else — features, flags, config schema, and behavior — follows upstream Kimi Code. See the [upstream docs](https://moonshotai.github.io/kimi-code/en/) for the full reference; `[subagent]` preset fields are documented in `docs/en/configuration/config-files.md`.
+For inherited behavior that Hakimi has not overridden, the [upstream docs](https://moonshotai.github.io/kimi-code/en/) remain a useful starting point. When Hakimi differs, this repository's code and local documentation are authoritative; `[subagent]` preset fields are documented in `docs/en/configuration/config-files.md`, and the product plan is below.
 
 ## Roadmap
 
@@ -48,9 +49,19 @@ Done: branding and welcome logo, own `~/.hakimi` home, bidirectional session sha
 
 The seven tracks are fixed: **A Web**, **B Phone remote**, **C AITP integration**, **D Built-in Hakimi Research Loop**, **E UI and settings**, **F Continuous Kimi Code upstream absorption and foundation work**, and **G Dedicated DeepSeek adapter and DeepSeek Harness intake**. Shared contracts, release work, documentation, evaluations, and tutorials serve all seven tracks; they are not an additional track.
 
-The order is **contract freeze → core correctness → public boundaries → Hakimi overlay → final `GoalFeature` evaluation**. A–E and G may develop in parallel against frozen fixtures, but cross-track integration and release wait for F's gates. The default runtime is `agent-core-v2`; `packages/agent-core` remains v1 legacy compatibility.
+The order is **contract freeze → core correctness → public boundaries → Hakimi overlay → reusable Tower workflow runtime → final `GoalFeature` evaluation**. A–E and G may develop in parallel against frozen fixtures, but cross-track integration and release wait for F's gates. The default runtime is `agent-core-v2`; `packages/agent-core` is frozen as v1 legacy compatibility and rollback reference.
 
 **Platform decision (2026-08-14):** the research layer (D and C tracks) is implemented in Hakimi itself; DeepSeek Harness serves only as a mechanism reference upstream. DeepSeek Harness was evaluated as the research-layer home and rejected for now — release-candidate maturity with declared breaking changes — with a re-review condition: a stable DSH release plus a clear G2 cross-harness benchmark advantage.
+
+### Cross-track foundation · composable Tower workflows
+
+Tower will evolve from its current fixed worker/reviewer protocol into a reusable, validated, and observable multi-agent workflow runtime. This is a shared F/E/A foundation, not an eighth product track: F owns the headless engine, compiler, recovery, worktree isolation, and tool-enforced gates; E owns the cross-surface workflow UX; A carries the visual editor and live monitor in the external code-app Web source. D may contribute research workflow templates, while C remains an optional AITP adapter and never becomes Tower's state store.
+
+The design separates three concerns. A **workflow** defines nodes, dependencies, scopes, artifacts, fan-out/fan-in, review and merge gates, retries, and completion criteria. A **role/profile** defines tools, permissions, communication, and worktree confinement. A canonical **preset** maps semantic routes such as research, architecture, implementation, testing, and review to models and Thinking effort. Model aliases do not belong in workflow files, and changing a preset must not change the workflow graph. The implementation plan wraps these three policy concerns with two additional infrastructure layers: the authoritative compiler/runtime and its typed public projection.
+
+`Agent` remains the leaf delegation primitive, `AgentSwarm` becomes a reusable fan-out/fan-in primitive, and Tower orchestrates them through one control tower, disjoint mission scopes, worker branches, independent review, and deterministic merge gates. Versioned workflow templates and typed runtime projections will support TUI launch/status flows and, later, visual graph authoring plus live execution inspection without moving engine state into the UI.
+
+The current baseline already provides the fixed Tower protocol and separate `tower_worker` / `tower_reviewer` preset routes. Named workflow roles, a schema/compiler, resumable DAG execution, public projections, reusable engineering/research templates, and the visual editor are roadmap items, not shipped capabilities. The detailed contract, phases, evidence, and stop rules live in [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
 
 ### A · Web
 
@@ -86,19 +97,19 @@ The D track is the primary research-layer implementation track (2026-08-14 platf
 
 - **Owner:** Hakimi research domain, including Research Frame, Research Question Board, bounded checkpoints, physics insight, and structured research trace.
 - **Depends on:** F's agent, subagent, tool, permission, and transcript seams; it does not depend on C and must run without AITP.
-- **Delivery:** distinguish outcome (`Goal`), action (`Todo`), and unknown/challenge (Research Question); use independent skeptical, literature, physics, numerical, and code perspectives; perform bounded physics-aware checks; expose frames, questions, evidence, falsifiers, and decisions rather than raw hidden chain-of-thought. Maintain a durable **research-process trajectory** (科研过程轨迹): a replayable line of research stages — question → literature → hypothesis/derivation → numerics → evidence → decision — derived from wire/transcript events and folded into a compact snapshot the model reads at turn boundaries, so it always knows what has been done and what the next gap is; when AITP is active, trajectory nodes map to `record`/`note prepare|save` entries as grounded research memory rather than transcript.
+- **Delivery:** distinguish outcome (`Goal`), action (`Todo`), and unknown/challenge (Research Question); use independent skeptical, literature, physics, numerical, and code perspectives; perform bounded physics-aware checks; expose frames, questions, evidence, falsifiers, and decisions rather than raw hidden chain-of-thought. Maintain a durable **research-process trajectory** (科研过程轨迹): a replayable line of research stages — question → literature → hypothesis/derivation → numerics → evidence → decision — derived from wire/transcript events and folded into a compact snapshot the model reads at turn boundaries, so it always knows what has been done and what the next gap is; when AITP is active and persistence is explicitly enabled, eligible trajectory nodes enter the adapter-gated `record`/`note prepare|save` flow and become grounded research memory only after that write gate succeeds.
 
 ### E · UI and settings
 
 - **Owner:** cross-surface UX and settings owner for TUI, Web, and mobile; domain owners retain business schemas and semantics.
 - **Depends on:** A–D and F typed contracts, events, config contributions, and status projections.
-- **Delivery:** keep settings, provider setup, interaction, loading/error/degraded states, bilingual copy, and accessibility behavior consistent without duplicating domain validation, defaults, persistence, or state machines.
+- **Delivery:** keep settings, provider setup, interaction, loading/error/degraded states, bilingual copy, and accessibility behavior consistent without duplicating domain validation, defaults, persistence, or state machines. For Tower workflows, E owns graph/navigation semantics, validation-result diagnostics and degraded-state presentation, preset overlays, and live execution inspection; TUI starts with template selection and status, while the visual editor is delivered through A's external Web source.
 
 ### F · Continuous Kimi Code upstream absorption and foundation work
 
-- **Owner:** platform/engine owner for the default `agent-core-v2` runtime, public facades, release/CI, and Hakimi overlay regression checks.
+- **Owner:** platform/engine owner for the default `agent-core-v2` runtime, public facades, release/CI, Hakimi overlay regression checks, and the headless Tower workflow runtime.
 - **Depends on:** upstream `main`, classified migrations/deletions, and evidence from the other tracks; F classifies and tests changes instead of mechanically syncing them.
-- **Delivery:** maintain v2 canonical contracts and adapters, absorb provider/auth/tools/session/SDK/transcript/permission/performance/security work through public boundaries, run the shared gates, and maintain release automation. Evaluate `GoalFeature` only after the preceding gates pass; do not move or remove Goal capability early.
+- **Delivery:** maintain v2 canonical contracts and adapters, absorb provider/auth/tools/session/SDK/transcript/permission/performance/security work through public boundaries, run the shared gates, and maintain release automation. Build the versioned Tower workflow schema/compiler, deterministic recovery, role-route resolution, worktree/review/merge enforcement, and typed public projections consumed by E/A/D/C. Evaluate `GoalFeature` only after the preceding gates pass; do not move or remove Goal capability early.
 
 ### G · Dedicated DeepSeek adapter and DeepSeek Harness intake
 

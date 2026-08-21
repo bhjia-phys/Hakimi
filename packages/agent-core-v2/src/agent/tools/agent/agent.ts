@@ -16,20 +16,6 @@ import { type AgentTool } from '#/tool/toolContract';
 export const DEFAULT_PROFILE_NAME = 'coder';
 export const RESUMED_LABEL = 'subagent';
 
-/**
- * The `model` parameter of the Agent tool — the per-spawn pool choice.
- * Exposed in the model-facing parameters only while the `secondary-model`
- * experiment is enabled and a pool is configured; the tool exposes
- * {@link SubagentToolInputSchemaWithoutModel} otherwise, so the parent model
- * cannot accidentally override active `[subagent]` routing.
- */
-const SUBAGENT_MODEL_CHOICE_DESCRIPTION =
-  'Which model to run the subagent on: one of the aliases listed under "Available models" in this tool description, or "primary" for the main model you are running on (for hard, quality-sensitive tasks). When omitted, the configured default model is used. Ignored when resuming — resumed subagents keep their own model.';
-
-const SubagentToolInputModelSchema = z.object({
-  model: z.string().optional().describe(SUBAGENT_MODEL_CHOICE_DESCRIPTION),
-});
-
 const SubagentToolInputBaseSchema = z.object({
   prompt: z.string().describe('Full task prompt for the subagent'),
   description: z.string().describe('Short task description (3-5 words) for UI display'),
@@ -51,7 +37,7 @@ const SubagentToolInputBaseSchema = z.object({
     .describe(
       'If true, return immediately without waiting for completion. Prefer false unless the task can run independently and there is a clear benefit to not waiting.',
     ),
-});
+}).strict();
 
 function normalizeSubagentToolInput(input: unknown): unknown {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
@@ -72,15 +58,6 @@ function normalizeSubagentToolInput(input: unknown): unknown {
 }
 
 export const SubagentToolInputSchema = z.preprocess(
-  normalizeSubagentToolInput,
-  SubagentToolInputBaseSchema.extend(SubagentToolInputModelSchema.shape),
-);
-
-/**
- * The Agent tool input without the `model` parameter — exposed while the
- * secondary-model experiment is disabled or no pool is configured.
- */
-export const SubagentToolInputSchemaWithoutModel = z.preprocess(
   normalizeSubagentToolInput,
   SubagentToolInputBaseSchema,
 );

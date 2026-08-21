@@ -2,16 +2,13 @@
  * `subagent` domain — `ISessionSubagentModelsValidationService` implementation.
  *
  * Backstop for the session lifecycle's pre-materialization check: validates
- * the configured subagent model section (`[secondary_model.models]` +
- * `[secondary_model].default_model`, plus the `force` rules) once per session
- * at scope construction (`ScopeActivation.OnScopeCreated`), so a broken pool
- * or forced model fails session creation with `Error2(CONFIG_INVALID)` even
- * on paths that bypass the lifecycle service. Reads the section through
- * `config` and resolves aliases through the model catalog — a lone
- * `default_model` included, as the implicit single-entry pool; a session
- * with neither pool nor force, or running with the `secondary-model`
- * experiment off, is a no-op. The checks themselves live in
- * `assertValidSubagentModelConfig` (configSection). Bound at Session scope.
+ * canonical `[subagent]` route aliases once per session at
+ * `ScopeActivation.OnScopeCreated`. Eager activation failures are sticky DI
+ * failures; the workspace session lifecycle explicitly observes this service
+ * before publishing a materialized session. Legacy `[secondary_model]` aliases
+ * are readable compatibility fallbacks and are deliberately excluded from this
+ * blocker. The checks themselves live in `assertValidSubagentModelConfig`
+ * (configSection). Bound at Session scope.
  */
 
 import { LifecycleScope } from '#/app/scopes';

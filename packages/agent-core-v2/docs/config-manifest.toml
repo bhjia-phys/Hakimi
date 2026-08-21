@@ -319,6 +319,7 @@ merge_all_available_skills = true
 # secondaryModel (config.toml: secondary_model)
 #   owner: src/session/subagent/configSection.ts
 #   scope: core
+#   section deprecation: use [subagent] and /preset instead; the legacy section remains explicit compatibility input/output
 # ##########################################################################
 
 [secondary_model]

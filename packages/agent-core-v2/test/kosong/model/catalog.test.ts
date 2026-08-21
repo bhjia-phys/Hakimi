@@ -491,6 +491,29 @@ describe('Model assembly (pure data)', () => {
     );
   });
 
+  it('does not resolve prototype names as configured models or providers', () => {
+    const { host, catalog } = createHost(kimiSections);
+    try {
+      for (const id of ['constructor', 'toString', '__proto__']) {
+        expect(() => catalog.get(id)).toThrowError(
+          expect.objectContaining({ code: ConfigErrors.codes.CONFIG_INVALID }),
+        );
+      }
+      const invalidProvider = createHost({
+        models: { prototype: { provider: 'constructor', model: 'm', maxContextSize: 1 } },
+      });
+      try {
+        expect(() => invalidProvider.catalog.get('prototype')).toThrowError(
+          expect.objectContaining({ code: ConfigErrors.codes.CONFIG_INVALID }),
+        );
+      } finally {
+        invalidProvider.host.dispose();
+      }
+    } finally {
+      host.dispose();
+    }
+  });
+
   it('findByName matches name, model, and aliases', () => {
     const { host, catalog } = createHost({
       ...kimiSections,

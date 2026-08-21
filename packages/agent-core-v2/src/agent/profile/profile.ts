@@ -83,6 +83,11 @@ export type ProfileUpdateData = Partial<{
   activeToolNames: readonly string[];
 }>;
 
+export interface ProfileRebindData {
+  readonly modelAlias: string;
+  readonly thinkingLevel?: string;
+}
+
 export interface ProfileBindingSnapshot {
   readonly modelAlias?: string;
   readonly profileName?: string;
@@ -131,6 +136,7 @@ export interface IAgentProfileService {
 
   configure(options: ProfileServiceOptions): void;
   update(changed: ProfileUpdateData): void;
+  rebind(binding: ProfileRebindData): void;
   applyBindingSnapshot(snapshot: ProfileBindingSnapshot): void;
   bind(input: BindAgentInput): Promise<void>;
   setModel(model: string): Promise<ProfileSetModelResult>;

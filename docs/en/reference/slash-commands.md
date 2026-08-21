@@ -16,7 +16,8 @@ Some commands are only available in the idle state. Executing these commands whi
 | `/logout` | — | Clear credentials for the currently selected account | No |
 | `/provider` | — | Open the interactive provider manager to view, add, and remove configured providers. See [Platforms & Models — `/provider` and provider management](../configuration/providers.md#provider-—-interactive-provider-management) | Yes |
 | `/model` | — | Switch the LLM model used in the current session | Yes |
-| `/secondary-model` | `/subagent-model` | Pick the default model for subagents (writes `[secondary_model] default_model`; see the [subagent model pool](../configuration/config-files.md#subagent-model-pool)). Visible when the subagent model pool experiment is enabled | Yes |
+| `/preset` | — | Configure and activate canonical `main`, Agent, AgentSwarm, and Tower model routes through `[subagent]` | No |
+| `/secondary-model` | `/subagent-model` | Deprecated compatibility command. It is hidden from completion and help; typing it only shows a migration notice. Use `/preset` instead | Yes |
 | `/settings` | `/config` | Open the settings panel inside the TUI | Yes |
 | `/experiments` | `/experimental` | Open the experimental feature panel | Yes |
 | `/permission` | — | Select a permission mode | Yes |

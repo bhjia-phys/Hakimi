@@ -39,6 +39,7 @@ describe('tower-worker profile', () => {
     // only spawn read-only profiles — a write-capable child would run on the
     // main checkout outside the roster and the write guard.
     expect(TOWER_WORKER_PROFILE_DEF.subagents).toEqual(['explore', 'plan']);
+    expect(TOWER_WORKER_PROFILE_DEF.preserveBindingOnResume).toBe(true);
     for (const name of [
       'TowerSend',
       'TowerInbox',

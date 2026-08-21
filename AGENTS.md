@@ -10,6 +10,7 @@ This is a TypeScript monorepo built for agent-assisted development. Keep the roo
 - Treat code, not documentation, as the source of truth. Unless the user explicitly says otherwise, do not read ordinary Markdown just to understand the implementation.
 - Before making code changes, read the relevant code and the most recent constraints, and follow the nearest `AGENTS.md` in the directory tree.
 - Keep changes focused. Do not slip in unrelated refactors along the way.
+- Treat upstream Kimi Code as a source of selectively adopted general-purpose improvements, not as a product-parity target. Absorb upstream changes only when they advance Hakimi's goals; do not import upstream product-specific behavior by default.
 - When committing, do not add any co-author attribution, and do not reveal the identity of the agent in commit messages, PR descriptions, or any explanatory text.
 
 ## Project Map
@@ -18,7 +19,7 @@ This is a TypeScript monorepo built for agent-assisted development. Keep the roo
 - the browser web UI: **its source no longer lives in this repo.** It is developed in the code-app repo (`apps/web`) and shipped as the committed, prebuilt bundle `apps/kimi-code/dist-web` (gitignored, force-added), synced from code-app with `KIMI_CODE_REPO=<this checkout> pnpm run sync:web` — sync and commit the bundle in the same change whenever the web UI should ship differently. After every sync, run `node apps/kimi-code/scripts/patch-web-branding.mjs` to re-apply the Hakimi brand strings (document title + visible UI text) and commit the patched bundle together with the sync. `apps/kimi-code/scripts/check-web-assets.mjs` guards packaging against a missing bundle. To hack on the web UI against this repo's server, run `pnpm dev:server` here and point code-app's `pnpm dev:web` at it via `KIMI_SERVER_URL`.
 - `apps/vis`, `apps/vis/server`, `apps/vis/web`: visual debugging tools for sessions and replays.
 - `apps/kimi-inspect`: web inspector for the kap-server `/api/v1/debug` RPC surface — workspace/session browser, per-session transcript chat, per-scope Service panels, and the DI unit inspection view. See `apps/kimi-inspect/AGENTS.md`.
-- `packages/agent-core`: the unified agent engine, including Agent, Session, profile, skills, tools, plan, permission, background, records, the in-process DI service layer (`src/services/`), and other core capabilities. See `packages/agent-core/AGENTS.md`.
+- `packages/agent-core`: the frozen v1 legacy runtime and compatibility-contract source, retained for the existing rollback path and config/data compatibility. New product features belong only in `packages/agent-core-v2`; see `packages/agent-core/AGENTS.md` for its maintenance-only policy.
 - `packages/agent-core-v2`: the DI × Scope agent engine (the v2 port behind kap-server). Four `LifecycleScope` tiers — `App` / `Workspace` / `Session` / `Agent` (`app/scopes.ts`) — plus the L3 unit layer (`Service`/`Fiber` units, collection contribution points, the Feature seam in `src/features/`); there is no App-level session lifecycle facade — callers compose `ISessionIndex` → `IWorkspaceLifecycleService.handlerFor` → the handler. See `packages/agent-core-v2/AGENTS.md` and use the `agent-core-dev` skill (`.agents/skills/agent-core-dev/SKILL.md`) when developing here.
 - `packages/node-sdk`: the public TypeScript SDK and harness.
 - `packages/kosong`: the LLM / provider abstraction layer.
@@ -63,7 +64,7 @@ This is a TypeScript monorepo built for agent-assisted development. Keep the roo
 ## Experimental Features
 
 - Gate a not-yet-public feature behind an experimental flag. Flags are env-driven and default off: `KIMI_CODE_EXPERIMENTAL_<NAME>` toggles one, `KIMI_CODE_EXPERIMENTAL_FLAG` enables all. Release by flipping the entry's `default` to `true`.
-  - `packages/agent-core` (v1): add the flag to the central registry at `packages/agent-core/src/flags/registry.ts`, then check it with `flags.enabled('my-feature')`.
+  - `packages/agent-core` (v1) is frozen: do not add new feature flags or product behavior there. Touch its existing flag registry only when required by the maintenance-only compatibility policy in `packages/agent-core/AGENTS.md`.
   - `packages/agent-core-v2` and kap-server modules: there is no central catalog — declare the flag in the owning domain via `registerFlagDefinition` at import time (see `packages/agent-core-v2/docs/flag.md`), then check it with `IFlagService.enabled(id)`. Current search-index-separation flags: `persistence_minidb_readmodel` (session read model, default on) and `search_worker` (global search worker host, default on).
 
 ## AITP Compatibility Maintenance

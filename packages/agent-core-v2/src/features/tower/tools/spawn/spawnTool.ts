@@ -12,12 +12,12 @@
  * `IAgentTaskService` under a `SubagentTask` — the same background path as
  * the `Agent` tool. Spawn concurrency is gated by `ITowerRateLimitService`;
  * the slot is released when the agent's completion settles (or immediately on
- * a launch/registration failure). The worker's model binding follows the same
- * rule as the `Agent`/`AgentSwarm` tools (`resolveSubagentBinding`): the
- * configured secondary model while the secondary-model experiment is on,
- * otherwise the tower's own model — except reviewers, who always bind the
- * tower's (primary) model. The resolved model is reported in the tool output
- * and the `spawn` line of the tower activity log. The spawned agent is pinned
+ * a launch/registration failure). Worker and reviewer model bindings use the
+ * canonical `tower_worker` and `tower_reviewer` routes through
+ * `resolveSubagentBinding`: an active preset route wins, and without a preset
+ * workers may use the gated legacy fallback while reviewers inherit the
+ * caller's model. The resolved model is reported in the tool output and the
+ * `spawn` line of the tower activity log. The spawned agent is pinned
  * to the `auto` permission mode regardless of the tower's own mode: workers
  * and reviewers run detached and unattended, so per-call approval prompts
  * would serialize the fleet on the user's attention (and with no approval
@@ -197,21 +197,17 @@ export class TowerSpawnTool implements ITowerSpawnTool {
       let slotHeld = true;
       try {
         const controller = new AbortController();
-        // The same binding rule as the Agent/AgentSwarm tools: the configured
-        // secondary model when the experiment is on, otherwise inherit the
-        // tower's own model. Reviewers are the exception — they always bind
-        // the tower's (primary) model: review quality is not where the
-        // secondary model saves money.
         const own = this.profile.data();
         const binding =
           own.modelAlias === undefined
             ? undefined
-            : resolveSubagentBinding(
-                this.config,
-                this.flags,
-                { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel },
-                args.kind === 'reviewer' ? 'primary' : undefined,
-              );
+            : resolveSubagentBinding(this.config, this.flags, this.modelCatalog, {
+                route: args.kind === 'worker' ? 'tower_worker' : 'tower_reviewer',
+                caller: {
+                  modelAlias: own.modelAlias,
+                  thinkingLevel: own.thinkingLevel,
+                },
+              });
         let handle: SubagentHandle;
         try {
           handle = await this.launch(prompt, description, toolCallId, controller, binding);
@@ -332,8 +328,7 @@ export class TowerSpawnTool implements ITowerSpawnTool {
 
     let created: IAgentScopeHandle;
     try {
-      // Validate the bound alias up front so a dangling [secondary_model]
-      // pointer fails the spawn here, not mid-turn inside the worker.
+      // Validate the resolved canonical route before lifecycle allocation.
       if (binding !== undefined) this.modelCatalog.get(binding.model);
       created = await this.lifecycle.create({
         binding: {
@@ -346,7 +341,7 @@ export class TowerSpawnTool implements ITowerSpawnTool {
     } catch (error) {
       throw binding === undefined
         ? error
-        : wrapSubagentModelError(error, binding.model, this.profile.data().modelAlias);
+        : wrapSubagentModelError(error, binding, this.profile.data().modelAlias);
     }
     // Pin the spawned agent to auto (see the file header): the fleet runs
     // unattended, and broadcastPermissionMode will not move it off auto later.

@@ -666,31 +666,23 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
   }
 
   /**
-   * v1's removal cascades: the provider entry, every model pointing at it,
-   * the default pointers when they dangle, and the `[secondary_model]`
-   * subagent pool entries (the section itself when its default dangles).
-   * The engine's own `kosong.removeProvider` only clears the
-   * default-provider pointer, so the full v1 cascade is computed from the
-   * user-layer values (see `planProviderRemoval`) and persisted as ONE
-   * atomic multi-section replace — the same single-write shape as v1's
-   * `removeKimiProvider`, so a process exit can never leave the file in a
-   * halfway-cascaded state.
+   * Remove a provider and its model aliases in one atomic multi-section write.
+   * The deprecated `[secondary_model]` section is intentionally not inspected
+   * or written, so provider removal preserves its raw compatibility values.
    */
   override async removeProvider(providerId: string): Promise<KimiConfig> {
     await this.configReady;
-    const [providers, models, defaultModel, defaultProvider, secondaryModel] = await Promise.all([
+    const [providers, models, defaultModel, defaultProvider] = await Promise.all([
       this.klient.global.config.inspect<Record<string, unknown>>('providers'),
       this.klient.global.config.inspect<Record<string, Record<string, unknown>>>('models'),
       this.klient.global.config.inspect<string>('defaultModel'),
       this.klient.global.config.inspect<string>('defaultProvider'),
-      this.klient.global.config.inspect<Record<string, unknown>>('secondaryModel'),
     ]);
     const plan = planProviderRemoval({
       providers: providers.userValue,
       models: models.userValue,
       defaultModel: defaultModel.userValue,
       defaultProvider: defaultProvider.userValue,
-      secondaryModel: secondaryModel.userValue,
       providerId,
     });
     const sections: Record<string, unknown> = {
@@ -702,11 +694,6 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     }
     if (plan.clearDefaultProvider) {
       sections['defaultProvider'] = undefined;
-    }
-    if (plan.secondaryModel !== undefined) {
-      // `null` clears the whole section; a replacement object folds the
-      // filtered pool into the same atomic write.
-      sections['secondaryModel'] = plan.secondaryModel ?? undefined;
     }
     await this.klient.global.config.replaceSections({ sections });
     return this.getConfig();

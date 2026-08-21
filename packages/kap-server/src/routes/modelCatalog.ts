@@ -42,11 +42,9 @@
  * transform's `setDefined` drops those). The kosong
  * persistence bridge then pushes the change into the registries, which is
  * also what invalidates the catalog cache. Multi-step sequences are
- * serialized through `enqueueProviderWrite`. Replace and delete additionally
- * cascade into the `[secondary_model]` subagent pool (repointing renamed
- * aliases, filtering entries whose model alias disappeared, clearing the
- * section when its default dangles) so the engine's create/resume pool
- * validation never meets a dangling pool.
+ * serialized through `enqueueProviderWrite`. Provider writes intentionally
+ * leave the deprecated `[secondary_model]` compatibility section untouched,
+ * including aliases that no longer resolve.
  */
 
 import {
@@ -72,11 +70,6 @@ import {
   MODELS_SECTION,
   PROVIDERS_SECTION,
 } from '@moonshot-ai/agent-core-v2/app/kosongConfig/configSection';
-import {
-  SECONDARY_MODEL_SECTION,
-  cascadeSubagentModelPool,
-  type SecondaryModelConfig,
-} from '@moonshot-ai/agent-core-v2/session/subagent/configSection';
 import { z } from 'zod';
 
 import { errEnvelope, okEnvelope } from '../envelope';
@@ -565,24 +558,6 @@ export function registerModelCatalogRoutes(app: ModelCatalogRouteHost, core: Sco
           }
         }
 
-        const renamedAliases = new Map<string, string>();
-        if (newId !== provider_id) {
-          for (const oldAlias of previousAliasIds) {
-            const bare = models[oldAlias]?.model;
-            const renamed = bare === undefined ? undefined : `${newId}/${bare}`;
-            if (renamed !== undefined && nextModels[renamed] !== undefined) {
-              renamedAliases.set(oldAlias, renamed);
-            }
-          }
-        }
-        const secondaryModel = config.inspect<SecondaryModelConfig>(
-          SECONDARY_MODEL_SECTION,
-        ).userValue;
-        const cascadedPool = cascadeSubagentModelPool(secondaryModel, nextModels, renamedAliases);
-        if (cascadedPool !== undefined) {
-          await config.replace(SECONDARY_MODEL_SECTION, cascadedPool);
-        }
-
         const saved = await core.accessor.get(IModelCatalog).getProvider(newId);
         reply.send(okEnvelope({ provider: saved }, req.id));
       });
@@ -791,13 +766,6 @@ export function registerModelCatalogRoutes(app: ModelCatalogRouteHost, core: Sco
         );
         if (Object.keys(restModels).length !== Object.keys(models).length) {
           await config.replace(MODELS_SECTION, restModels);
-        }
-        const secondaryModel = config.inspect<SecondaryModelConfig>(
-          SECONDARY_MODEL_SECTION,
-        ).userValue;
-        const cascadedPool = cascadeSubagentModelPool(secondaryModel, restModels);
-        if (cascadedPool !== undefined) {
-          await config.replace(SECONDARY_MODEL_SECTION, cascadedPool);
         }
         (reply as unknown as StatusReply).code(204).send();
       });

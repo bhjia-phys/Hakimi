@@ -10,22 +10,12 @@
  * under TaskList/TaskOutput/TaskStop when `run_in_background=true` or after
  * detach), and terminal text formatting.
  *
- * Spawn bindings use the explicit tool `model` choice first, before
- * `resolveSubagentBinding` falls back to the configured `[secondary_model.models]`
- * pool default or the caller's model; with `[secondary_model].force` set the
- * `model` parameter is not advertised and every spawn binds `default_model`.
- * The pool is gated behind the `secondary-model` experiment (via
- * `IFlagService`): while it is off the `model` parameter is stripped and
- * every spawn inherits the caller's model. The active `[subagent]` preset
- * route (and the profile's `model_preference`) layers on top of the pool
- * binding: route `model` wins only without an explicit tool choice, route
- * `thinkingEffort` always applies as a field-level override, and a
- * `model_preference: "primary"` pins the caller's own model. The selected
- * alias is
- * resolved through the model catalog before lifecycle allocation. A resumed
- * agent keeps the model recorded in its own wire journal — with per-subagent
- * models there is no "child follows the parent's current model" invariant to
- * enforce.
+ * Spawn bindings are resolved through the canonical `[subagent]` route table:
+ * the active preset takes precedence, followed by `agents`, then the caller's
+ * binding. The legacy `[secondary_model]` section is consulted only as a
+ * compatibility fallback when no preset is active. On resume, ordinary
+ * profiles reconcile the same route before the run and event snapshot, while
+ * profiles that own their binding preserve it.
  *
  * Registered via the module-level `registerAgentToolService(ISubagentTool,
  * SubagentTool)` at the bottom of this file — the same "import = register"
@@ -98,14 +88,12 @@ import { ISessionWorkspaceContext } from '#/session/workspaceContext/workspaceCo
 import { emitAgentRunSpawned, mirrorAgentRun } from '#/session/subagent/mirrorAgentRun';
 import { ISessionSubagentService } from '#/session/subagent/subagent';
 import {
-  buildSubagentModelDescriptions,
-  exposesSubagentModelChoice,
   formatSubagentTimeoutDescription,
   resolveSubagentBinding,
   resolveSubagentTimeoutMs,
-  stripSubagentModelParameter,
   wrapSubagentModelError,
 } from '#/session/subagent/configSection';
+import { refreshSubagentBindingOnResume } from '#/session/subagent/resumeBinding';
 import {
   BACKGROUND_AGENT_UNAVAILABLE,
   DEFAULT_PROFILE_NAME,
@@ -123,24 +111,10 @@ import AGENT_BACKGROUND_DISABLED_DESCRIPTION from './agent-background-disabled.m
 import AGENT_BACKGROUND_DESCRIPTION from './agent-background-enabled.md?raw';
 import AGENT_DESCRIPTION_BASE from './agent.md?raw';
 
-const SUBAGENT_TOOL_PARAMETERS = toInputJsonSchema(SubagentToolInputSchema);
-const SUBAGENT_TOOL_PARAMETERS_NO_MODEL = stripSubagentModelParameter(SUBAGENT_TOOL_PARAMETERS);
-
 export class SubagentTool implements ISubagentTool {
   declare readonly _serviceBrand: undefined;
   readonly name: string = 'Agent';
-
-  /**
-   * The model-facing parameter schema. The `model` parameter is exposed only
-   * while the `secondary-model` experiment is enabled and a pool is
-   * configured — otherwise the parent model cannot accidentally override
-   * active `[subagent]` routing with an explicit choice.
-   */
-  get parameters(): Record<string, unknown> {
-    return exposesSubagentModelChoice(this.config, this.flags)
-      ? SUBAGENT_TOOL_PARAMETERS
-      : SUBAGENT_TOOL_PARAMETERS_NO_MODEL;
-  }
+  readonly parameters: Record<string, unknown> = toInputJsonSchema(SubagentToolInputSchema);
 
   private readonly callerAgentId: string;
   private readonly canRunInBackground: () => boolean;
@@ -195,14 +169,6 @@ export class SubagentTool implements ISubagentTool {
     );
     if (typeLines) {
       description += `\n\nAvailable agent types (pass via subagent_type):\n${typeLines}`;
-    }
-    const modelLines = buildSubagentModelDescriptions(
-      this.config,
-      this.flags,
-      this.profile.data().modelAlias,
-    );
-    if (modelLines !== undefined) {
-      description += `\n\n${modelLines}`;
     }
     return description;
   }
@@ -299,7 +265,15 @@ export class SubagentTool implements ISubagentTool {
       }
       await this.ensureOwnedIdleSubagent(resumeAgentId, target);
       agentId = target.id;
-      const resumed = target.accessor.get(IAgentProfileService).data();
+      const resumed = await refreshSubagentBindingOnResume(
+        this.config,
+        this.flags,
+        this.catalog,
+        this.modelCatalog,
+        target.accessor.get(IAgentProfileService),
+        this.profile.data(),
+        'agent',
+      );
       profileName = resumed.profileName ?? RESUMED_LABEL;
       displayModel = resumed.modelAlias;
     } else {
@@ -327,14 +301,15 @@ export class SubagentTool implements ISubagentTool {
           details: { agentId: this.callerAgentId },
         });
       }
-      const binding = resolveSubagentBinding(
-        this.config,
-        this.flags,
-        { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel },
-        args.model,
-        { profileName: profile.name, route: 'agent' },
-        profile.modelPreference,
-      );
+      const binding = resolveSubagentBinding(this.config, this.flags, this.modelCatalog, {
+        route: 'agent',
+        profileName: profile.name,
+        modelPreference: profile.modelPreference,
+        caller: {
+          modelAlias: own.modelAlias,
+          thinkingLevel: own.thinkingLevel,
+        },
+      });
       let created: IAgentScopeHandle;
       try {
         this.modelCatalog.get(binding.model);
@@ -348,7 +323,7 @@ export class SubagentTool implements ISubagentTool {
           runtimeId: runtime.identity.runtimeId,
         });
       } catch (error) {
-        throw wrapSubagentModelError(error, binding.model, own.modelAlias);
+        throw wrapSubagentModelError(error, binding, own.modelAlias);
       }
       created.accessor.get(IAgentPermissionModeService).setMode(this.permissionMode.mode);
       created.accessor

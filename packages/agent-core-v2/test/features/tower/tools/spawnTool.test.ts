@@ -39,6 +39,7 @@ import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import {
   DEFAULT_SUBAGENT_TIMEOUT_MS,
   SECONDARY_MODEL_SECTION,
+  SUBAGENT_SECTION,
 } from '#/session/subagent/configSection';
 import { SECONDARY_MODEL_FLAG_ID } from '#/session/subagent/flag';
 import {
@@ -47,6 +48,7 @@ import {
 } from '#/session/subagent/subagent';
 import type { ExecutableToolResult } from '#/tool/toolContract';
 
+import { StubConfigService } from '../../../kosong/stubs';
 import { executeTool } from '../../../tools/fixtures/execute-tool';
 
 const execFileAsync = promisify(execFile);
@@ -83,6 +85,8 @@ describe('TowerSpawnTool', () => {
   let completion: Deferred<{ readonly summary: string }>;
   let secondaryFlagOn: boolean;
   let secondaryModel: { readonly model: string } | undefined;
+  let subagentConfig: Record<string, unknown> | undefined;
+  let config: StubConfigService;
   let createdSetMode: Mock<(mode: PermissionMode) => void>;
 
   async function git(cwd: string, ...args: string[]): Promise<void> {
@@ -107,6 +111,8 @@ describe('TowerSpawnTool', () => {
     completion = deferred();
     secondaryFlagOn = false;
     secondaryModel = undefined;
+    subagentConfig = undefined;
+    config = new StubConfigService();
     createdSetMode = vi.fn();
     createAgent = vi.fn(
       async () =>
@@ -166,10 +172,7 @@ describe('TowerSpawnTool', () => {
     ix.stub(IAgentProfileService, {
       data: () => ({ profileName: 'agent', modelAlias: 'kimi-code', thinkingLevel: 'off' }),
     } as unknown as IAgentProfileService);
-    ix.stub(IConfigService, {
-      get: ((domain: string) =>
-        domain === SECONDARY_MODEL_SECTION ? secondaryModel : undefined) as IConfigService['get'],
-    });
+    ix.stub(IConfigService, config);
     ix.stub(IFlagService, {
       enabled: (id: string) => id === SECONDARY_MODEL_FLAG_ID && secondaryFlagOn,
     } as unknown as IFlagService);
@@ -183,6 +186,8 @@ describe('TowerSpawnTool', () => {
   });
 
   function execute(args: TowerSpawnToolInput): Promise<ExecutableToolResult> {
+    config.setSilent(SECONDARY_MODEL_SECTION, secondaryModel);
+    config.setSilent(SUBAGENT_SECTION, subagentConfig);
     return executeTool(ix.get(ITowerSpawnTool), {
       args,
       turnId: 0,
@@ -290,7 +295,7 @@ describe('TowerSpawnTool', () => {
     expect(createdSetMode).toHaveBeenCalledWith('auto');
   });
 
-  it('binds the configured secondary model and reports it in the output and activity log', async () => {
+  it('uses the legacy fallback for workers and reports it in the output and activity log', async () => {
     secondaryFlagOn = true;
     secondaryModel = { model: 'cheap/fast' };
 
@@ -306,7 +311,7 @@ describe('TowerSpawnTool', () => {
     expect(activityLog).toMatch(/spawn .*model=cheap\/fast/);
   });
 
-  it('inherits the tower model when the secondary-model experiment is off', async () => {
+  it('inherits the caller model when the legacy fallback is disabled', async () => {
     const result = await execute(WORKER_ARGS);
 
     expect(result.isError).toBeUndefined();
@@ -315,7 +320,7 @@ describe('TowerSpawnTool', () => {
     expect(activityLog).toMatch(/spawn .*model=kimi-code/);
   });
 
-  it('binds reviewers to the tower model even when the secondary model is configured', async () => {
+  it('keeps reviewers on the caller model when the legacy fallback is configured', async () => {
     secondaryFlagOn = true;
     secondaryModel = { model: 'cheap/fast' };
 
@@ -329,6 +334,74 @@ describe('TowerSpawnTool', () => {
     expect(result.output).toContain('model: kimi-code');
     expect(createAgent).toHaveBeenCalledWith({
       binding: { profile: 'tower-worker', model: 'kimi-code', thinking: 'off' },
+      labels: { parentAgentId: 'main' },
+    });
+  });
+
+  it('uses separate canonical preset routes for workers and reviewers', async () => {
+    secondaryFlagOn = true;
+    secondaryModel = { model: 'cheap/fast' };
+    subagentConfig = {
+      preset: 'research',
+      presets: {
+        research: {
+          tower_worker: { model: 'preset/worker', thinkingEffort: 'low' },
+          tower_reviewer: { model: 'preset/reviewer', thinkingEffort: 'high' },
+        },
+      },
+    };
+
+    const worker = await execute(WORKER_ARGS);
+    const reviewer = await execute({
+      name: 'reviewer-a',
+      kind: 'reviewer',
+      review_target: 'feat/build-gemm',
+    });
+
+    expect(worker.isError).toBeUndefined();
+    expect(reviewer.isError).toBeUndefined();
+    expect(createAgent).toHaveBeenNthCalledWith(1, {
+      binding: { profile: 'tower-worker', model: 'preset/worker', thinking: 'low' },
+      labels: { parentAgentId: 'main' },
+    });
+    expect(createAgent).toHaveBeenNthCalledWith(2, {
+      binding: { profile: 'tower-worker', model: 'preset/reviewer', thinking: 'high' },
+      labels: { parentAgentId: 'main' },
+    });
+  });
+
+  it('falls back each tower route field independently to the base route', async () => {
+    secondaryFlagOn = true;
+    secondaryModel = { model: 'legacy/removed' };
+    subagentConfig = {
+      preset: 'research',
+      agents: {
+        tower_worker: { model: 'agents/worker', thinkingEffort: 'agents-worker' },
+        tower_reviewer: { model: 'agents/reviewer', thinkingEffort: 'agents-reviewer' },
+      },
+      presets: {
+        research: {
+          tower_worker: { thinkingEffort: 'preset-worker' },
+          tower_reviewer: { model: 'preset/reviewer' },
+        },
+      },
+    };
+
+    const worker = await execute(WORKER_ARGS);
+    const reviewer = await execute({
+      name: 'reviewer-a',
+      kind: 'reviewer',
+      review_target: 'feat/build-gemm',
+    });
+
+    expect(worker.isError).toBeUndefined();
+    expect(reviewer.isError).toBeUndefined();
+    expect(createAgent).toHaveBeenNthCalledWith(1, {
+      binding: { profile: 'tower-worker', model: 'agents/worker', thinking: 'preset-worker' },
+      labels: { parentAgentId: 'main' },
+    });
+    expect(createAgent).toHaveBeenNthCalledWith(2, {
+      binding: { profile: 'tower-worker', model: 'preset/reviewer', thinking: 'agents-reviewer' },
       labels: { parentAgentId: 'main' },
     });
   });

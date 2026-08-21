@@ -31,8 +31,9 @@
  * guard runs before name resolution so `already bound` fails fast, and again
  * in the synchronous segment before the first dispatch, so concurrent binds
  * cannot both pass (an edge-level guard always leaves an interleaving
- * window); a same-name rebind keeps the persisted thinking effort unless the
- * caller explicitly overrides it. The AGENTS.md portion of the system-prompt
+ * window); a same-profile bind keeps the persisted thinking effort unless the
+ * caller explicitly overrides it. The explicit `rebind()` API instead resolves
+ * a fresh target-model default when thinking is omitted. The AGENTS.md portion of the system-prompt
  * context comes from the seeded `ISessionInstructionsProvider` (the
  * workspace handler's shared, watch-refreshed snapshot — the working
  * directory is always the session's frozen cwd, so the snapshot always
@@ -147,6 +148,7 @@ import type {
   ProfileBindingSnapshot,
   ProfileData,
   ProfileModelContext,
+  ProfileRebindData,
   ProfileServiceOptions,
   ProfileSetModelResult,
   ProfileUpdateData,
@@ -352,6 +354,21 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
     if (activeToolNames !== undefined) {
       this.setActiveTools(activeToolNames);
     }
+  }
+
+  rebind(binding: ProfileRebindData): void {
+    const model = this.resolveModelForThinking(binding.modelAlias);
+    const thinkingLevel = this.resolveThinkingEffort(binding.thinkingLevel, model);
+    this.wire.dispatch(
+      configUpdate({
+        modelAlias: binding.modelAlias,
+        thinkingEffort: thinkingLevel,
+      }),
+    );
+    this.afterConfigDispatch({
+      modelAlias: binding.modelAlias,
+      thinkingLevel,
+    });
   }
 
   applyBindingSnapshot(snapshot: ProfileBindingSnapshot): void {

@@ -47,7 +47,7 @@ export class ModelService extends Disposable implements IModelService {
     this._onDidChangeDefaultModel.event;
 
   get(id: string): ModelRecord | undefined {
-    return this.models[id];
+    return Object.hasOwn(this.models, id) ? this.models[id] : undefined;
   }
 
   list(): Readonly<Record<string, ModelRecord>> {
@@ -74,13 +74,13 @@ export class ModelService extends Disposable implements IModelService {
 
   async set(id: string, model: ModelRecord): Promise<void> {
     await this.ready;
-    if (deepEqual(this.models[id], model)) return;
+    if (Object.hasOwn(this.models, id) && deepEqual(this.models[id], model)) return;
     await this.applyRecords({ ...this.models, [id]: model });
   }
 
   async delete(id: string): Promise<void> {
     await this.ready;
-    if (!(id in this.models)) return;
+    if (!Object.hasOwn(this.models, id)) return;
     const { [id]: _removed, ...rest } = this.models;
     await this.applyRecords(rest);
   }

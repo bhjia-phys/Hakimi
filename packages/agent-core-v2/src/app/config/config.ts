@@ -66,6 +66,16 @@ export interface ConfigKeyDeprecation {
   readonly message?: string;
 }
 
+/**
+ * A whole config section that remains readable for compatibility but is no
+ * longer a supported product control surface.
+ */
+export interface ConfigSectionDeprecation {
+  readonly replacement: string;
+  /** Optional extra guidance appended to the generated warning message. */
+  readonly message?: string;
+}
+
 export type EnvBindings<T> = EnvBinding | { [K in keyof T]?: EnvBinding | EnvBindings<T[K]> };
 
 export type AnyEnvBindings = EnvBinding | { readonly [key: string]: EnvBinding | AnyEnvBindings };
@@ -140,6 +150,7 @@ export interface ConfigSection<T = unknown> {
   readonly fromToml?: ConfigFromToml;
   readonly toToml?: ConfigToToml;
   readonly deprecations?: readonly ConfigKeyDeprecation[];
+  readonly deprecation?: ConfigSectionDeprecation;
 }
 
 export interface RegisterSectionOptions<T> {
@@ -151,6 +162,7 @@ export interface RegisterSectionOptions<T> {
   readonly fromToml?: ConfigFromToml;
   readonly toToml?: ConfigToToml;
   readonly deprecations?: readonly ConfigKeyDeprecation[];
+  readonly deprecation?: ConfigSectionDeprecation;
 }
 
 export interface ConfigEffectiveOverlay {
@@ -243,8 +255,8 @@ export interface IConfigService {
   readonly onDidChangeConfiguration: Event<ConfigChangedEvent>;
   readonly onDidSectionChange: Event<ConfigSectionChangedEvent>;
   /**
-   * Fired when the diagnostics list changes (load / reload / env overlay
-   * re-application), carrying the full current list — including an empty
+   * Fired when the diagnostics list changes (load / reload / user write /
+   * env overlay re-application), carrying the full current list — including an empty
    * list when the last diagnostic clears.
    */
   readonly onDidChangeDiagnostics: Event<readonly ConfigDiagnostic[]>;

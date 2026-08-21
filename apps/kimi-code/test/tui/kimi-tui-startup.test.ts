@@ -260,6 +260,46 @@ function captureInputListeners(driver: StartupDriver) {
 }
 
 describe('KimiTUI startup', () => {
+  it('keeps deprecated subagent model commands out of help and autocomplete', async () => {
+    const tui = makeDriver(makeHarness(), makeStartupInput()) as unknown as {
+      state: TUIState;
+      getSlashCommands(): readonly {
+        name: string;
+        aliases: readonly string[];
+      }[];
+      setupAutocomplete(): void;
+      showHelpPanel(): void;
+      mountEditorReplacement(panel: unknown): void;
+    };
+    const commands = tui.getSlashCommands();
+    expect(commands.some((command) => command.name === 'secondary-model')).toBe(false);
+    expect(commands.some((command) => command.aliases.includes('subagent-model'))).toBe(false);
+
+    const setAutocompleteProvider = vi.spyOn(tui.state.editor, 'setAutocompleteProvider');
+    tui.setupAutocomplete();
+    const provider = setAutocompleteProvider.mock.calls.at(-1)?.[0] as unknown as {
+      getSuggestions(
+        lines: string[],
+        cursorLine: number,
+        cursorCol: number,
+        options: { signal: AbortSignal },
+      ): Promise<{ items: readonly { value: string }[] } | null>;
+    };
+    const suggestions = await provider.getSuggestions(['/'], 0, 1, {
+      signal: new AbortController().signal,
+    });
+    expect(suggestions?.items.map((item) => item.value)).not.toContain('secondary-model');
+    expect(suggestions?.items.map((item) => item.value)).not.toContain('subagent-model');
+
+    const mountEditorReplacement = vi.spyOn(tui, 'mountEditorReplacement');
+    tui.showHelpPanel();
+    const panel = mountEditorReplacement.mock.calls.at(-1)?.[0] as {
+      render(width: number): readonly string[];
+    };
+    expect(panel.render(160).join('\n')).not.toContain('/secondary-model');
+    expect(panel.render(160).join('\n')).not.toContain('/subagent-model');
+  });
+
   it('creates a fresh session from startup flags and syncs runtime state', async () => {
     const session = makeSession({
       getStatus: vi.fn(async () => ({

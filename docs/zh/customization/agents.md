@@ -117,6 +117,16 @@ disallowedTools:
 
 作为 subagent 委派的自定义 Agent 不会携带内置 subagent 的角色框架（"你的最后一条消息就是完整交付"）。如果编写的 Agent 用于委派，请在正文中说明：其最后一条消息应当是交付给调用方的完整、自包含的结果。
 
+### subagent 模型路由
+
+Agent、AgentSwarm 和 Tower 的模型选择通过 canonical `[subagent]` 节配置，而不是通过逐次派生的工具参数配置。基础路由写在 `[subagent.agents.<profile>]` 下，preset 专用路由写在 `[subagent.presets.<name>.<route>]` 下；路由值使用 `model` 和 `thinking_effort`。
+
+canonical 路由 key 中，`main` 表示激活 preset 时应用的 main agent 绑定，`swarm` 表示 AgentSwarm 默认路由，`tower_worker` 表示 Tower worker，`tower_reviewer` 表示 Tower reviewer。`explore`、`plan` 和 `coder` 等其他 key 表示 Agent profile。worker 与 reviewer 路由彼此独立。
+
+路由优先级是确定的：Agent 使用 active preset 的 profile 路由 → 基础 `agents.<profile>` 路由 → 调用方模型和 Thinking 档位；AgentSwarm 使用 active preset 的 `swarm` 路由 → active preset 的 profile 路由 → `agents.swarm` → `agents.<profile>` → 调用方；Tower 使用对应的 preset 路由 → 对应的基础路由 → 调用方。没有 active preset 时只剩基础路由和调用方。canonical 别名会根据已配置的模型目录校验；使用 `/preset` 编辑路由并激活 preset。
+
+`Agent` 和 `AgentSwarm` 工具 schema 不再暴露 `model` 参数。适用时使用 `subagent_type` 选择 profile，再由 canonical 路由确定模型。新派生和 resume 使用同一个 resolver，因此普通路由修改会影响之后的恢复，而保留的 binding 不会被改写。legacy `[secondary_model]` 仅保留显式配置/API 兼容读写和受 flag 控制的 best-effort fallback，不会替代 canonical 路由。
+
 ### 选择 main agent
 
 两个 CLI flag 用于选择驱动新会话的 Agent，在 print 模式（`kimi -p`）和交互式 TUI 中均可使用：

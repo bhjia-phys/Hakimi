@@ -33,7 +33,9 @@
  * surface, and the Session-scope `ISessionAgentProfileCatalog` projects the
  * registry into the merged, name-deduped read view that consumers (the
  * `Agent` tool, the swarm scheduler, the per-agent profile binding) resolve
- * profiles through.
+ * profiles through. Profiles may set `preserveBindingOnResume` when their
+ * model and thinking binding is owned by the profile rather than active
+ * subagent routing configuration.
  */
 
 import type { ILogger } from '#/_base/log/log';
@@ -94,6 +96,7 @@ export interface AgentProfile {
   readonly disallowedTools?: readonly string[];
   readonly subagents?: readonly string[];
   readonly modelPreference?: AgentModelPreference;
+  readonly preserveBindingOnResume?: boolean;
   readonly systemPrompt: (context: AgentProfileContext) => string;
   readonly renderSystemPrompt: (context: AgentProfileContext) => SystemPromptRenderResult;
   readonly promptPrefix?: (ctx: AgentProfilePromptPrefixContext) => Promise<string>;

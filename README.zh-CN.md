@@ -19,9 +19,9 @@
 
 ## Hakimi 是什么
 
-Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 fork，紧跟上游 `main`。当前 `main` 提供产品外壳，科研层则按明确 gate 建设：Hakimi 负责研究编排、工具和交互；独立的 [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) 仍是持久研究记忆和证据的权威。
+Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 fork，但上游是经过选择性评审的工程来源，不是产品 parity 目标。当前产品外壳大体继承 Kimi Code 基础，Hakimi 则自主决定 v2 架构、研究编排、工具、workflow 和交互；独立的 [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) 仍是持久研究记忆和证据的权威。
 
-底层终端循环、工具、session、Skills、MCP、子代理、权限和 OAuth 继续来自上游 Kimi Code。历史上的深度内嵌科研原型保留在 [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) 分支归档，不是当前产品线的集成路径。
+底层终端循环、工具、session、Skills、MCP、子代理、权限和 OAuth 源自上游 Kimi Code，也继续作为通用改进的候选来源。Hakimi 只吸收符合自身目标和 canonical v2 contract 的变化，不默认引入上游产品特定行为。历史上的深度内嵌科研原型保留在 [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) 分支归档，不是当前产品线的集成路径。
 
 ## 与上游的差异
 
@@ -33,8 +33,9 @@ Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 f
 - **实验性 ChatGPT OAuth**：可选的 device login 通过 OpenAI Codex backend 使用 ChatGPT 订阅，不依赖 API key 计费。
 - **子代理 preset**：`[subagent.agents.<类型>]` 和 `[subagent.presets.<名称>]` 可以固定各类子代理的模型与思维强度，运行时用 `/preset <名称>` 切换。
 - **传输身份**：provider pipeline 请求以 `kimi-code-cli/<版本> (hakimi)` 标识，Kimi for Coding OAuth 流程不受影响。
+- **选择性吸收上游**：上游变化按“通用能力直接吸收、v2 适配、仅 legacy 兼容、与 Hakimi overlay 冲突、拒绝”分类处理；不追求产品 parity。
 
-除此之外——功能、flag、配置 schema 和行为——都沿用上游 Kimi Code。完整参考见[上游文档](https://moonshotai.github.io/kimi-code/zh/)；`[subagent]` preset 字段见 `docs/zh/configuration/config-files.md`。
+对于 Hakimi 尚未覆盖的继承行为，[上游文档](https://moonshotai.github.io/kimi-code/zh/)仍是有用的起点；当两者不同时，以本仓代码和本地文档为准。`[subagent]` preset 字段见 `docs/zh/configuration/config-files.md`，产品规划见下方 Roadmap。
 
 ## Roadmap（路线图）
 
@@ -48,9 +49,19 @@ Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 f
 
 七条轨道固定为：**A Web**、**B 手机远程**、**C AITP 集成**、**D 内置 Hakimi Research Loop**、**E UI 与设置**、**F 持续吸收 Kimi Code 上游与基础功能建设**、**G DeepSeek 专属适配与 DeepSeek Harness 吸收**。共享 contract、发布、文档、评估和教程服务于七轨，不单独成轨。
 
-顺序是 **contract freeze → 核心正确性 → 公共边界 → Hakimi overlay → 最后评估 `GoalFeature`**。A–E 和 G 可以基于冻结 fixtures 并行开发，但跨轨集成与发布要等待 F 的 gate。默认 runtime 是 `agent-core-v2`；`packages/agent-core` 保留为 v1 legacy compatibility。
+顺序是 **contract freeze → 核心正确性 → 公共边界 → Hakimi overlay → 可复用 Tower workflow runtime → 最后评估 `GoalFeature`**。A–E 和 G 可以基于冻结 fixtures 并行开发，但跨轨集成与发布要等待 F 的 gate。默认 runtime 是 `agent-core-v2`；`packages/agent-core` 冻结为 v1 legacy compatibility 与 rollback 参考。
 
 **平台决策（2026-08-14）：研究层（D/C 轨）在 Hakimi 自身实现；DeepSeek Harness 只作机制参考上游。** DSH 曾作为研究层承载方评估，本次否决——rc 级成熟度且明示 breaking changes；复审条件为 DSH 稳定 release 且 G2 跨 harness 基准给出明确优势。
+
+### 跨轨基础能力 · 可编排 Tower workflow
+
+Tower 将从当前固定的 worker/reviewer 协议演进为可复用、可校验、可观察的多 Agent workflow runtime。这是 F/E/A 共享基础能力，不是第八条产品轨道：F 拥有 headless engine、compiler、恢复、worktree 隔离和工具强制 gate；E 拥有跨 surface workflow UX；A 在外部 code-app Web source 中承载可视化编辑器和实时监控。D 可以提供科研 workflow 模板，C 仍只是可选 AITP adapter，绝不成为 Tower 的状态存储。
+
+设计分离三个关注点：**workflow** 定义节点、依赖、scope、产物、fan-out/fan-in、评审/合并 gate、重试和完成条件；**role/profile** 定义工具、权限、通信和 worktree 约束；canonical **preset** 把 research、architecture、implementation、testing、review 等语义 route 映射到模型和 Thinking 强度。workflow 文件不包含模型别名，切换 preset 也不得改变 workflow 图。实施计划在这三个策略关注点之外，再增加 authoritative compiler/runtime 与 typed public projection 两层基础设施。
+
+`Agent` 保持为叶子委派原语，`AgentSwarm` 成为可复用的 fan-out/fan-in 原语，Tower 则通过唯一 control tower、互斥 mission scope、worker 分支、独立 review 和确定性 merge gate 编排它们。版本化 workflow template 与 typed runtime projection 先支持 TUI 启动/状态流程，之后再支持可视化图编辑与实时执行检查，engine 状态始终不归 UI 所有。
+
+当前基线已经具备固定 Tower 协议以及独立的 `tower_worker` / `tower_reviewer` preset route。named workflow role、schema/compiler、可恢复 DAG 执行、公共 projection、可复用工程/科研模板和可视化编辑器仍是 roadmap 项，不是已发布能力。详细 contract、阶段、证据和停止规则见 [`IMPLEMENTATION.md`](IMPLEMENTATION.md)。
 
 ### A · Web
 
@@ -86,19 +97,19 @@ D 轨是研究层的主实现轨道（2026-08-14 平台决策）。
 
 - **所有权**：Hakimi research domain，包含 Research Frame、Research Question Board、bounded checkpoint、physics insight 和结构化 research trace。
 - **依赖**：F 的 agent、subagent、tool、permission 和 transcript seams；不依赖 C，必须能在没有 AITP 时运行。
-- **交付**：区分结果（`Goal`）、动作（`Todo`）和未知/挑战（Research Question）；使用 skeptical、literature、physics、numerical、code 等独立视角；执行有边界的物理检查；向用户展示 frame、问题、证据、falsifier 和决策，而不是 raw hidden chain-of-thought。维护一条持久化的**科研过程轨迹**：从 wire/transcript 事件派生的可重放科研阶段线（question → literature → hypothesis/derivation → numerics → evidence → decision），折叠成紧凑快照在 turn 边界注入上下文，让模型始终清楚"已做了什么、处于哪个阶段、下一步缺口"；AITP 启用时，轨迹节点映射到 `record`/`note prepare|save`，沉淀为有依据的 research memory 而非 transcript。
+- **交付**：区分结果（`Goal`）、动作（`Todo`）和未知/挑战（Research Question）；使用 skeptical、literature、physics、numerical、code 等独立视角；执行有边界的物理检查；向用户展示 frame、问题、证据、falsifier 和决策，而不是 raw hidden chain-of-thought。维护一条持久化的**科研过程轨迹**：从 wire/transcript 事件派生的可重放科研阶段线（question → literature → hypothesis/derivation → numerics → evidence → decision），折叠成紧凑快照在 turn 边界注入上下文，让模型始终清楚"已做了什么、处于哪个阶段、下一步缺口"；AITP 启用且用户显式开启持久化时，符合条件的轨迹节点才进入 adapter-gated `record`/`note prepare|save` 流程，并只在 write gate 成功后沉淀为有依据的 research memory。
 
 ### E · UI 与设置
 
 - **所有权**：TUI、Web、mobile 的跨表面 UX 与设置 owner；业务 domain 继续拥有业务 schema 和语义。
 - **依赖**：A–D 与 F 的 typed contracts、events、config contributions 和状态 projection。
-- **交付**：统一设置、provider setup、交互、加载/错误/degraded 状态、双语文案和可访问性；不复制 domain 校验、默认值、持久化或状态机。
+- **交付**：统一设置、provider setup、交互、加载/错误/degraded 状态、双语文案和可访问性；不复制 domain 校验、默认值、持久化或状态机。对于 Tower workflow，E 拥有图结构/导航语义、校验结果/诊断与降级展示、preset overlay 和实时执行检查；TUI 先提供模板选择与状态入口，可视化编辑器则通过 A 的外部 Web source 交付。
 
 ### F · 持续吸收 Kimi Code 上游与基础功能建设
 
-- **所有权**：platform/engine owner，负责默认 `agent-core-v2` runtime、公共 facade、release/CI 和 Hakimi overlay regression checks。
+- **所有权**：platform/engine owner，负责默认 `agent-core-v2` runtime、公共 facade、release/CI、Hakimi overlay regression checks 和 headless Tower workflow runtime。
 - **依赖**：upstream `main`、已分类的 migration/deletion 以及其他轨道的证据；F 分类并测试变更，不机械同步。
-- **交付**：维护 v2 canonical contracts 和 adapters，通过公共边界吸收 provider、auth、tools、session、SDK、transcript、permission、performance、security 变化，运行共享 gate 并维护 release automation。只有前置 gate 全部通过后才评估 `GoalFeature`；不提前迁移或删除 Goal 能力。
+- **交付**：维护 v2 canonical contracts 和 adapters，通过公共边界吸收 provider、auth、tools、session、SDK、transcript、permission、performance、security 变化，运行共享 gate 并维护 release automation；建设版本化 Tower workflow schema/compiler、确定性恢复、role-route 解析、worktree/review/merge 强制规则，以及供 E/A/D/C 消费的 typed public projection。只有前置 gate 全部通过后才评估 `GoalFeature`；不提前迁移或删除 Goal 能力。
 
 ### G · DeepSeek 专属适配与 DeepSeek Harness 吸收
 
