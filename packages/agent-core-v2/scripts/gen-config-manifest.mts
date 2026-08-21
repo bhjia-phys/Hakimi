@@ -289,6 +289,12 @@ function renderSection(section: ConfigSectionContribution, owner: string | undef
       lines.push(`#     ${deprecation.key} -> ${deprecation.replacement}`);
     }
   }
+  if (options.deprecation !== undefined) {
+    lines.push(
+      `#   section deprecation: use ${options.deprecation.replacement} instead; ` +
+        'the legacy section remains explicit compatibility input/output',
+    );
+  }
   const envRows = flattenEnvBindings(options.env);
   if (envRows.length > 0) {
     lines.push('#   env:');

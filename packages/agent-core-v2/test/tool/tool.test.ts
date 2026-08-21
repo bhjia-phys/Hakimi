@@ -108,9 +108,9 @@ const BACKGROUND_AGENT_NEXT_STEP =
   'next_step: The completion arrives automatically in a later turn — do NOT wait, poll, or call TaskOutput on it; continue with other work or hand back to the user. (If you have nothing to do until it finishes, run such tasks in the foreground next time.)';
 
 /**
- * Model entries backing the `[secondary_model.models]` pools used below: the harness
- * creates a real session scope, so the startup pool validation resolves every
- * pool alias through the real catalog unless a stub catalog is injected.
+ * Model entries used by the deprecated `[secondary_model.models]` compatibility
+ * pools below. Canonical `[subagent]` startup validation intentionally does not
+ * inspect this legacy pool.
  */
 const POOL_MODEL_ENTRIES = {
   'provider/fast': { provider: 'test-provider', model: 'fast-model', maxContextSize: 262_144 },
@@ -176,6 +176,7 @@ function noopDisposable() {
 function profileCatalogWithPreference(
   profileName: string,
   modelPreference: 'primary' | 'secondary',
+  options: { readonly preserveBindingOnResume?: boolean } = {},
 ): ISessionAgentProfileCatalog {
   const main: AgentProfile = normalizeAgentProfile({
     name: 'agent',
@@ -186,6 +187,7 @@ function profileCatalogWithPreference(
     name: profileName,
     description: `${profileName} agent`,
     modelPreference,
+    preserveBindingOnResume: options.preserveBindingOnResume,
     systemPrompt: () => profileName,
   });
   return {
@@ -220,6 +222,40 @@ function modelCatalogResolving(...aliases: readonly string[]): IModelCatalog {
     }),
     notifyConfigChanged: () => {},
   } as unknown as IModelCatalog;
+}
+
+function resumableProfileService(data: {
+  readonly profileName: string;
+  readonly modelAlias: string;
+  readonly thinkingLevel: string;
+}): IAgentProfileService {
+  let current = {
+    ...data,
+    modelCapabilities: {},
+    systemPrompt: '',
+  } as ProfileData;
+  const update = vi.fn((changed: Parameters<IAgentProfileService['update']>[0]) => {
+    const next = { ...current };
+    if (changed.modelAlias !== undefined) next.modelAlias = changed.modelAlias;
+    if (changed.thinkingLevel !== undefined) next.thinkingLevel = changed.thinkingLevel;
+    current = next;
+  });
+  const rebind = vi.fn((binding: Parameters<IAgentProfileService['rebind']>[0]) => {
+    current = {
+      ...current,
+      modelAlias: binding.modelAlias,
+      thinkingLevel: binding.thinkingLevel ?? 'off',
+    };
+  });
+  return {
+    _serviceBrand: undefined,
+    data: () => current,
+    update,
+    rebind,
+    republishStatus: vi.fn(),
+    getEffectiveThinkingLevel: () => current.thinkingLevel,
+    isToolActive: () => false,
+  } as unknown as IAgentProfileService;
 }
 
 interface AgentLifecycleStubOptions {
@@ -504,12 +540,18 @@ describe('SubagentToolInputSchema', () => {
     expect(properties).not.toHaveProperty('timeout');
   });
 
-  it('exposes the model parameter as a free-form string in the JSON schema', () => {
-    const properties = agentSchemaProperties<{ description?: string; type?: string; enum?: string[] }>();
+  it('does not expose a per-spawn model parameter in the JSON schema', () => {
+    expect(agentSchemaProperties()).not.toHaveProperty('model');
+  });
 
-    expect(properties['model']?.type).toBe('string');
-    expect(properties['model']?.enum).toBeUndefined();
-    expect(properties['model']?.description).toContain('Available models');
+  it('rejects a per-spawn model parameter at the input boundary', () => {
+    const parsed = SubagentToolInputSchema.safeParse({
+      prompt: 'Investigate',
+      description: 'Find cause',
+      model: 'provider/fast',
+    });
+
+    expect(parsed.success).toBe(false);
   });
 
   it('normalizes the default subagent type into tool args', () => {
@@ -845,96 +887,22 @@ describe('Agent tool description', () => {
     );
   });
 
-  it('omits the models section when no [secondary_model.models] pool is configured', () => {
-    ctx = createTestAgent();
+  it('does not expose legacy model-pool controls in the description', () => {
+    ctx = createTestAgent(
+      secondaryModelFlags(),
+      {
+        initialConfig: {
+          secondaryModel: {
+            defaultModel: 'provider/fast',
+            models: { 'provider/fast': 'fast and cheap' },
+          },
+          models: POOL_MODEL_ENTRIES,
+        },
+      },
+    );
 
     expect(agentDescription()).not.toContain('Available models');
-  });
-
-  it('renders the pool in config order with the default first and a generic primary line', () => {
-    ctx = createTestAgent(secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: {
-          defaultModel: 'provider/fast',
-          models: {
-            'provider/fast': 'fast and cheap',
-            'provider/smart': 'hard tasks',
-          },
-        },
-        models: POOL_MODEL_ENTRIES,
-      },
-    });
-
-    const description = agentDescription();
-
-    expect(description).toContain('Available models (pass via model):');
-    // The caller's own model is not in the pool: generic primary hint last.
-    const defaultIndex = description.indexOf('- provider/fast [default]: fast and cheap');
-    const smartIndex = description.indexOf('- provider/smart: hard tasks');
-    const primaryIndex = description.indexOf(
-      '- primary: the main model you are running on, bound with your current thinking level; use it for hard, quality-sensitive subagent tasks',
-    );
-    expect(defaultIndex).toBeGreaterThanOrEqual(0);
-    expect(smartIndex).toBeGreaterThan(defaultIndex);
-    expect(primaryIndex).toBeGreaterThan(smartIndex);
-  });
-
-  it('lists the caller-in-pool alias with a [main model] marker and renders empty descriptions bare', () => {
-    ctx = createTestAgent(secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: {
-          defaultModel: 'provider/fast',
-          models: {
-            'provider/fast': 'fast and cheap',
-            'mock-model': 'the main model, great at hard things',
-            'provider/smart': '',
-          },
-        },
-        models: POOL_MODEL_ENTRIES,
-      },
-    });
-
-    const description = agentDescription();
-
-    expect(description).toContain('- provider/fast [default]: fast and cheap');
-    // The caller's own alias is a normal pool entry: a pool binding carries no
-    // thinking, while the `primary` line below binds the same model WITH the
-    // caller's thinking level — both choices stay visible.
-    expect(description).toContain('- mock-model [main model]: the main model, great at hard things');
-    // An empty-string description renders a bare alias line.
-    expect(description).toContain('- provider/smart\n');
-    expect(description).toContain(
-      '- primary (mock-model): the main model you are running on, bound with your current thinking level; use it for hard, quality-sensitive subagent tasks',
-    );
-  });
-
-  it('marks the caller-as-default alias with both [default] and [main model]', () => {
-    ctx = createTestAgent(secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: {
-          defaultModel: 'mock-model',
-          models: {
-            'mock-model': 'the main model, great at hard things',
-            'provider/fast': 'fast and cheap',
-          },
-        },
-        models: POOL_MODEL_ENTRIES,
-      },
-    });
-
-    const description = agentDescription();
-
-    // The caller IS the default: the marker pair sits on its pool line, which
-    // still leads the list.
-    const defaultIndex = description.indexOf(
-      '- mock-model [default] [main model]: the main model, great at hard things',
-    );
-    const fastIndex = description.indexOf('- provider/fast: fast and cheap');
-    expect(defaultIndex).toBeGreaterThanOrEqual(0);
-    expect(fastIndex).toBeGreaterThan(defaultIndex);
-    expect(description).toContain(
-      '- primary (mock-model): the main model you are running on, bound with your current thinking level',
-    );
+    expect(agentDescription()).not.toContain('pass via model');
   });
 
   function agentParameters(): Record<string, unknown> {
@@ -943,80 +911,20 @@ describe('Agent tool description', () => {
     return tool!.parameters!;
   }
 
-  it('strips the model parameter from the advertised schema when no pool is configured', () => {
-    ctx = createTestAgent();
+  it('never advertises a per-spawn model parameter', () => {
+    ctx = createTestAgent(secondaryModelFlags(), {
+      initialConfig: {
+        secondaryModel: {
+          defaultModel: 'provider/fast',
+          models: { 'provider/fast': 'fast and cheap' },
+        },
+        models: POOL_MODEL_ENTRIES,
+      },
+    });
 
     const properties = agentParameters()['properties'] as Record<string, unknown>;
-
     expect(properties).not.toHaveProperty('model');
     expect(properties).toHaveProperty('prompt');
-  });
-
-  it('advertises the model parameter when a pool is configured', () => {
-    ctx = createTestAgent(secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: {
-          defaultModel: 'provider/fast',
-          models: { 'provider/fast': 'fast and cheap' },
-        },
-        models: POOL_MODEL_ENTRIES,
-      },
-    });
-
-    const properties = agentParameters()['properties'] as Record<
-      string,
-      { type?: string; enum?: unknown }
-    >;
-
-    expect(properties['model']?.type).toBe('string');
-    expect(properties['model']?.enum).toBeUndefined();
-  });
-
-  it('strips the model parameter and pool description while the experiment is off', () => {
-    ctx = createTestAgent(secondaryModelFlags(false), {
-      initialConfig: {
-        secondaryModel: {
-          defaultModel: 'provider/fast',
-          models: { 'provider/fast': 'fast and cheap' },
-        },
-        models: POOL_MODEL_ENTRIES,
-      },
-    });
-
-    const properties = agentParameters()['properties'] as Record<string, unknown>;
-    expect(properties).not.toHaveProperty('model');
-    expect(agentDescription()).not.toContain('Available models');
-  });
-
-  it('treats a pool-less default_model as an implicit single-entry pool', () => {
-    ctx = createTestAgent(secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: { defaultModel: 'provider/fast' },
-        models: POOL_MODEL_ENTRIES,
-      },
-    });
-
-    const properties = agentParameters()['properties'] as Record<string, unknown>;
-    expect(properties).toHaveProperty('model');
-
-    const description = agentDescription();
-    expect(description).toContain('- provider/fast [default]\n');
-    expect(description).toContain(
-      '- primary: the main model you are running on, bound with your current thinking level; use it for hard, quality-sensitive subagent tasks',
-    );
-  });
-
-  it('hides the model parameter and the pool description when force is set', () => {
-    ctx = createTestAgent(secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: { defaultModel: 'provider/fast', force: true },
-        models: POOL_MODEL_ENTRIES,
-      },
-    });
-
-    const properties = agentParameters()['properties'] as Record<string, unknown>;
-    expect(properties).not.toHaveProperty('model');
-    expect(agentDescription()).not.toContain('Available models');
   });
 });
 
@@ -1245,201 +1153,108 @@ describe('Agent tool execution contract', () => {
     expect(result.output).toContain('child result');
   });
 
-  it('spawns the subagent on the pool default model when the tool call omits model', async () => {
+  it('uses a canonical agents route for a fresh Agent spawn', async () => {
     const lifecycle = createAgentLifecycleStub({ createAgentIds: ['agent-child'] });
-    const context = createAgentToolContext(lifecycle, secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: {
-          defaultModel: 'provider/fast',
-          models: { 'provider/fast': 'fast and cheap', 'provider/smart': 'hard tasks' },
+    const context = createAgentToolContext(
+      lifecycle,
+      modelProviderServices(modelCatalogResolving('mock-model', 'provider/explore')),
+      secondaryModelFlags(false),
+      {
+        initialConfig: {
+          subagent: {
+            agents: { explore: { model: 'provider/explore', thinkingEffort: 'low' } },
+          },
         },
       },
-    });
+    );
 
     await executeAgentTool(context, {
       prompt: 'Investigate',
       description: 'Find cause',
-    });
-
-    // Pool bindings carry no explicit thinking: the subagent resolves thinking
-    // naturally instead of inheriting the caller's level.
-    expect(lifecycle.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        binding: expect.objectContaining({
-          model: 'provider/fast',
-          thinking: undefined,
-        }),
-      }),
-    );
-    expect(lifecycle.publishedEvents).toContainEqual(
-      expect.objectContaining({
-        type: 'subagent.spawned',
-        subagentId: 'agent-child',
-        model: 'provider/fast',
-      }),
-    );
-  });
-
-  it('spawns on the caller model when the tool call opts into "primary"', async () => {
-    const lifecycle = createAgentLifecycleStub({ createAgentIds: ['agent-child'] });
-    const context = createAgentToolContext(lifecycle, secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: {
-          defaultModel: 'provider/fast',
-          models: { 'provider/fast': 'fast and cheap' },
-        },
-      },
-    });
-
-    await executeAgentTool(context, {
-      prompt: 'Investigate',
-      description: 'Find cause',
-      model: 'primary',
+      subagent_type: 'explore',
     });
 
     expect(lifecycle.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        binding: expect.objectContaining({
-          model: 'mock-model',
-          thinking: 'off',
-        }),
+        binding: expect.objectContaining({ model: 'provider/explore', thinking: 'low' }),
       }),
     );
   });
 
-  it('binds the caller-in-pool alias without thinking, unlike "primary"', async () => {
-    const lifecycle = createAgentLifecycleStub({
-      createAgentIds: ['agent-child', 'agent-child-2'],
-    });
-    const context = createAgentToolContext(lifecycle, secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: {
-          defaultModel: 'provider/fast',
-          models: { 'provider/fast': 'fast and cheap', 'mock-model': 'the main model' },
-        },
-      },
-    });
-
-    // Same model, two bindings: the pool alias resolves thinking naturally,
-    // "primary" inherits the caller's level.
-    await executeAgentTool(context, {
-      prompt: 'Investigate',
-      description: 'Find cause',
-      model: 'mock-model',
-    });
-    await executeAgentTool(context, {
-      prompt: 'Investigate',
-      description: 'Find cause',
-      model: 'primary',
-    });
-
-    expect(lifecycle.create).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        binding: expect.objectContaining({ model: 'mock-model', thinking: undefined }),
-      }),
-    );
-    expect(lifecycle.create).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        binding: expect.objectContaining({ model: 'mock-model', thinking: 'off' }),
-      }),
-    );
-  });
-
-  it('spawns on the pool alias chosen via the model parameter', async () => {
+  it('uses the active preset route ahead of agents for a fresh Agent spawn', async () => {
     const lifecycle = createAgentLifecycleStub({ createAgentIds: ['agent-child'] });
-    const context = createAgentToolContext(lifecycle, secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: {
-          defaultModel: 'provider/fast',
-          models: { 'provider/fast': 'fast and cheap', 'provider/smart': 'hard tasks' },
+    const context = createAgentToolContext(
+      lifecycle,
+      modelProviderServices(
+        modelCatalogResolving('mock-model', 'provider/agents', 'provider/preset'),
+      ),
+      secondaryModelFlags(false),
+      {
+        initialConfig: {
+          subagent: {
+            preset: 'research',
+            agents: { explore: { model: 'provider/agents', thinkingEffort: 'medium' } },
+            presets: {
+              research: { explore: { model: 'provider/preset', thinkingEffort: 'high' } },
+            },
+          },
         },
       },
-    });
+    );
 
     await executeAgentTool(context, {
       prompt: 'Investigate',
       description: 'Find cause',
-      model: 'provider/smart',
+      subagent_type: 'explore',
     });
 
     expect(lifecycle.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        binding: expect.objectContaining({
-          model: 'provider/smart',
-          thinking: undefined,
-        }),
+        binding: expect.objectContaining({ model: 'provider/preset', thinking: 'high' }),
       }),
     );
   });
 
-  it('rejects a model choice outside the pool, listing the available models', async () => {
+  it('rejects a blank canonical model instead of using the caller or legacy fallback', async () => {
     const lifecycle = createAgentLifecycleStub({ createAgentIds: ['agent-child'] });
-    const context = createAgentToolContext(lifecycle, secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: {
-          defaultModel: 'provider/fast',
-          models: { 'provider/fast': 'fast and cheap', 'provider/smart': 'hard tasks' },
+    const context = createAgentToolContext(
+      lifecycle,
+      modelProviderServices(modelCatalogResolving('mock-model', 'provider/legacy')),
+      secondaryModelFlags(),
+      {
+        initialConfig: {
+          secondaryModel: { defaultModel: 'provider/legacy' },
+          subagent: {
+            agents: { explore: { model: '   ' } },
+          },
         },
       },
-    });
+    );
 
     const result = await executeAgentTool(context, {
       prompt: 'Investigate',
       description: 'Find cause',
-      model: 'provider/typo',
+      subagent_type: 'explore',
     });
 
     expect(result.isError).toBe(true);
-    expect(result.output).toContain(
-      'Invalid model "provider/typo". Available models: provider/fast, provider/smart, primary.',
-    );
+    expect(result.output).toContain('cannot be blank');
     expect(lifecycle.create).not.toHaveBeenCalled();
   });
 
-  it('inherits the caller model when no pool is configured', async () => {
-    const lifecycle = createAgentLifecycleStub({ createAgentIds: ['agent-child'] });
-    const context = createAgentToolContext(lifecycle);
-
-    await executeAgentTool(context, {
-      prompt: 'Investigate',
-      description: 'Find cause',
-    });
-
-    expect(lifecycle.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        binding: expect.objectContaining({
-          model: 'mock-model',
-          thinking: 'off',
-        }),
-      }),
-    );
-  });
-
-  it('binds the forced default_model and rejects any explicit choice, "primary" included', async () => {
+  it('uses the legacy fallback only when no preset is active', async () => {
     const lifecycle = createAgentLifecycleStub({ createAgentIds: ['agent-child'] });
     const context = createAgentToolContext(lifecycle, secondaryModelFlags(), {
       initialConfig: {
-        secondaryModel: { defaultModel: 'provider/fast', force: true },
+        secondaryModel: { defaultModel: 'provider/fast' },
       },
     });
-
-    // The model parameter is not advertised under force; a stray choice is
-    // rejected instead of binding anything.
-    const rejected = await executeAgentTool(context, {
-      prompt: 'Investigate',
-      description: 'Find cause',
-      model: 'primary',
-    });
-    expect(rejected.isError).toBe(true);
-    expect(rejected.output).toContain('[secondary_model].force is set');
-    expect(lifecycle.create).not.toHaveBeenCalled();
 
     await executeAgentTool(context, {
       prompt: 'Investigate',
       description: 'Find cause',
     });
+
     expect(lifecycle.create).toHaveBeenCalledWith(
       expect.objectContaining({
         binding: expect.objectContaining({ model: 'provider/fast', thinking: undefined }),
@@ -1447,35 +1262,7 @@ describe('Agent tool execution contract', () => {
     );
   });
 
-  it('rejects a pool that gained the reserved "primary" key through a runtime config edit', async () => {
-    const lifecycle = createAgentLifecycleStub({ createAgentIds: ['agent-child'] });
-    const context = createAgentToolContext(lifecycle, secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: {
-          defaultModel: 'provider/fast',
-          models: { 'provider/fast': 'fast and cheap' },
-        },
-      },
-    });
-    // The startup validation already passed; now the pool breaks at runtime.
-    await (context.get(IConfigService) as StubConfigService).replace(SECONDARY_MODEL_SECTION, {
-      defaultModel: 'primary',
-      models: { primary: 'reserved word' },
-    });
-
-    const result = await executeAgentTool(context, {
-      prompt: 'Investigate',
-      description: 'Find cause',
-    });
-
-    expect(result.isError).toBe(true);
-    expect(result.output).toContain('[secondary_model.models] key "primary" is reserved');
-    expect(lifecycle.create).not.toHaveBeenCalled();
-  });
-
-  it('points at the [secondary_model.models] config when the bound alias stops resolving', async () => {
-    // The pool validates at session creation, but a later config edit (or a
-    // catalog refresh) can still leave the bound alias dangling at spawn time.
+  it('wraps canonical model failures with the canonical route guidance', async () => {
     const lifecycle = createAgentLifecycleStub({
       createError: new Error2(
         ErrorCodes.CONFIG_INVALID,
@@ -1486,10 +1273,13 @@ describe('Agent tool execution contract', () => {
     const context = createAgentToolContext(
       lifecycle,
       modelProviderServices(modelCatalogResolving('mock-model', 'provider/bad')),
-      secondaryModelFlags(),
+      secondaryModelFlags(false),
       {
         initialConfig: {
-          secondaryModel: { defaultModel: 'provider/bad', models: { 'provider/bad': 'broken' } },
+          subagent: {
+            preset: 'research',
+            presets: { research: { explore: { model: 'provider/bad' } } },
+          },
         },
       },
     );
@@ -1497,32 +1287,28 @@ describe('Agent tool execution contract', () => {
     const result = await executeAgentTool(context, {
       prompt: 'Investigate',
       description: 'Find cause',
+      subagent_type: 'explore',
     });
 
     expect(result.isError).toBe(true);
-    expect(result.output).toContain('Model "provider/bad" is not configured in config.toml.');
-    expect(result.output).toContain('comes from [secondary_model.models]');
+    expect(result.output).toContain('comes from [subagent]');
+    expect(result.output).toContain('configure it through /preset or [subagent.agents]');
   });
 
-  it('does not rewrite spawn failures unrelated to the model config', async () => {
+  it('does not rewrite spawn failures unrelated to model routing', async () => {
     const lifecycle = createAgentLifecycleStub({
       createError: new Error('MCP server failed to start'),
     });
-    const context = createAgentToolContext(lifecycle, secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: { defaultModel: 'provider/fast', models: { 'provider/fast': 'fast and cheap' } },
-      },
-    });
+    const context = createAgentToolContext(lifecycle);
 
     const result = await executeAgentTool(context, {
       prompt: 'Investigate',
       description: 'Find cause',
-      model: 'primary',
     });
 
     expect(result.isError).toBe(true);
     expect(result.output).toContain('MCP server failed to start');
-    expect(result.output).not.toContain('[secondary_model.models]');
+    expect(result.output).not.toContain('[subagent]');
   });
 
   it('mirrors v1-compatible subagent lifecycle event fields', async () => {
@@ -1786,15 +1572,12 @@ describe('Agent tool execution contract', () => {
     expect(lifecycle.run).not.toHaveBeenCalled();
   });
 
-  it('keeps a directly resumed subagent on its own recorded model', async () => {
-    const targetProfile = {
-      _serviceBrand: undefined,
-      data: () => ({ profileName: 'explore', modelAlias: 'stale-model' }),
-      update: vi.fn(),
-      republishStatus: vi.fn(),
-      getEffectiveThinkingLevel: () => 'medium',
-      isToolActive: () => false,
-    } as unknown as IAgentProfileService;
+  it('rebinds a directly resumed subagent to the caller when no override exists', async () => {
+    const targetProfile = resumableProfileService({
+      profileName: 'explore',
+      modelAlias: 'stale-model',
+      thinkingLevel: 'medium',
+    });
     const lifecycle = createAgentLifecycleStub({
       runCompletion: async () => ({ summary: 'resumed result' }),
     });
@@ -1817,12 +1600,219 @@ describe('Agent tool execution contract', () => {
       resume: 'agent-existing',
     });
 
-    expect(targetProfile.update).not.toHaveBeenCalled();
+    expect(targetProfile.data()).toMatchObject({
+      modelAlias: 'mock-model',
+      thinkingLevel: 'off',
+    });
     expect(lifecycle.run).toHaveBeenCalledWith(
       'agent-existing',
       { kind: 'prompt', prompt: 'Continue' },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+  });
+
+  it('applies model and thinking preset overrides before directly resuming', async () => {
+    const targetProfile = resumableProfileService({
+      profileName: 'explore',
+      modelAlias: 'stale-model',
+      thinkingLevel: 'medium',
+    });
+    const lifecycle = createAgentLifecycleStub({
+      runCompletion: async () => ({ summary: 'resumed result' }),
+    });
+    const context = createAgentToolContext(
+      lifecycle,
+      sessionService(
+        ISessionMetadata,
+        sessionMetadataStub({ 'agent-existing': subagentMeta() }),
+      ),
+      sessionService(
+        ISessionAgentProfileCatalog,
+        profileCatalogWithPreference('explore', 'secondary'),
+      ),
+      configServices(() => ({
+        providers: {},
+        subagent: {
+          preset: 'research',
+          presets: {
+            research: {
+              explore: { model: 'provider/smart', thinkingEffort: 'high' },
+            },
+          },
+        },
+      })),
+    );
+    lifecycle.addHandle(
+      'agent-existing',
+      'explore',
+      new Map([[IAgentProfileService, targetProfile]]),
+    );
+
+    await executeAgentTool(context, {
+      prompt: 'Continue',
+      description: 'Continue work',
+      resume: 'agent-existing',
+    });
+
+    expect(targetProfile.data()).toMatchObject({
+      modelAlias: 'provider/smart',
+      thinkingLevel: 'high',
+    });
+    expect(lifecycle.publishedEvents).toContainEqual(
+      expect.objectContaining({
+        type: 'subagent.spawned',
+        subagentId: 'agent-existing',
+        model: 'provider/smart',
+        thinkingEffort: 'high',
+      }),
+    );
+  });
+
+  it('applies a thinking-only preset override using the caller model', async () => {
+    const targetProfile = resumableProfileService({
+      profileName: 'explore',
+      modelAlias: 'stale-model',
+      thinkingLevel: 'medium',
+    });
+    const lifecycle = createAgentLifecycleStub({
+      runCompletion: async () => ({ summary: 'resumed result' }),
+    });
+    const context = createAgentToolContext(
+      lifecycle,
+      sessionService(
+        ISessionMetadata,
+        sessionMetadataStub({ 'agent-existing': subagentMeta() }),
+      ),
+      sessionService(
+        ISessionAgentProfileCatalog,
+        profileCatalogWithPreference('explore', 'secondary'),
+      ),
+      configServices(() => ({
+        providers: {},
+        subagent: {
+          agents: { explore: { thinkingEffort: 'high' } },
+        },
+      })),
+    );
+    lifecycle.addHandle(
+      'agent-existing',
+      'explore',
+      new Map([[IAgentProfileService, targetProfile]]),
+    );
+
+    await executeAgentTool(context, {
+      prompt: 'Continue',
+      description: 'Continue work',
+      resume: 'agent-existing',
+    });
+
+    expect(targetProfile.data()).toMatchObject({
+      modelAlias: 'mock-model',
+      thinkingLevel: 'high',
+    });
+    expect(lifecycle.run).toHaveBeenCalledWith(
+      'agent-existing',
+      { kind: 'prompt', prompt: 'Continue' },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it('preserves a profile binding when its resume policy opts out of overrides', async () => {
+    const targetProfile = resumableProfileService({
+      profileName: 'explore',
+      modelAlias: 'stale-model',
+      thinkingLevel: 'medium',
+    });
+    const lifecycle = createAgentLifecycleStub({
+      runCompletion: async () => ({ summary: 'resumed result' }),
+    });
+    const context = createAgentToolContext(
+      lifecycle,
+      sessionService(
+        ISessionMetadata,
+        sessionMetadataStub({ 'agent-existing': subagentMeta() }),
+      ),
+      sessionService(
+        ISessionAgentProfileCatalog,
+        profileCatalogWithPreference('explore', 'secondary', {
+          preserveBindingOnResume: true,
+        }),
+      ),
+      configServices(() => ({
+        providers: {},
+        subagent: {
+          agents: { explore: { model: 'provider/smart', thinkingEffort: 'high' } },
+        },
+      })),
+    );
+    lifecycle.addHandle(
+      'agent-existing',
+      'explore',
+      new Map([[IAgentProfileService, targetProfile]]),
+    );
+
+    await executeAgentTool(context, {
+      prompt: 'Continue',
+      description: 'Continue work',
+      resume: 'agent-existing',
+    });
+
+    expect(targetProfile.data()).toMatchObject({
+      modelAlias: 'stale-model',
+      thinkingLevel: 'medium',
+    });
+    expect(lifecycle.publishedEvents).toContainEqual(
+      expect.objectContaining({
+        type: 'subagent.spawned',
+        subagentId: 'agent-existing',
+        model: 'stale-model',
+        thinkingEffort: 'medium',
+      }),
+    );
+  });
+
+  it('fails directly resumed subagents with a dangling preset model before running', async () => {
+    const targetProfile = resumableProfileService({
+      profileName: 'explore',
+      modelAlias: 'stale-model',
+      thinkingLevel: 'medium',
+    });
+    const lifecycle = createAgentLifecycleStub({
+      runCompletion: async () => ({ summary: 'resumed result' }),
+    });
+    const context = createAgentToolContext(
+      lifecycle,
+      sessionService(
+        ISessionMetadata,
+        sessionMetadataStub({ 'agent-existing': subagentMeta() }),
+      ),
+      sessionService(
+        ISessionAgentProfileCatalog,
+        profileCatalogWithPreference('explore', 'secondary'),
+      ),
+      configServices(() => ({
+        providers: {},
+        subagent: {
+          agents: { explore: { model: 'provider/bad' } },
+        },
+      })),
+    );
+    lifecycle.addHandle(
+      'agent-existing',
+      'explore',
+      new Map([[IAgentProfileService, targetProfile]]),
+    );
+
+    const result = await executeAgentTool(context, {
+      prompt: 'Continue',
+      description: 'Continue work',
+      resume: 'agent-existing',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain('[subagent] model alias "provider/bad"');
+    expect(result.output).toContain('configure the route through /preset or [subagent.agents]');
+    expect(lifecycle.run).not.toHaveBeenCalled();
   });
 
   it('registers background subagents with the task manager', async () => {
@@ -2366,12 +2356,12 @@ describe('AgentSwarmToolInputSchema', () => {
     ).toBe(true);
   });
 
-  it('exposes subagent_type, resume_agent_ids, and model parameters', () => {
+  it('exposes subagent_type and resume_agent_ids without a model parameter', () => {
     const properties = agentSwarmSchemaProperties<{ description?: string }>();
 
     expect(properties['subagent_type']?.description).toContain('defaults to coder');
     expect(properties['resume_agent_ids']?.description).toContain('Map of existing subagent');
-    expect(properties['model']?.description).toContain('Available models');
+    expect(properties).not.toHaveProperty('model');
     expect(properties).not.toHaveProperty('run_in_background');
     expect(properties).not.toHaveProperty('timeout');
   });
@@ -2409,49 +2399,7 @@ describe('AgentSwarm tool description', () => {
     );
   });
 
-  it('omits the models section when no [secondary_model.models] pool is configured', () => {
-    ctx = createTestAgent();
-
-    expect(agentSwarmDescription()).not.toContain('Available models');
-  });
-
-  it('renders the configured pool with the default marker and a generic primary line', () => {
-    ctx = createTestAgent(secondaryModelFlags(), {
-      initialConfig: {
-        secondaryModel: {
-          defaultModel: 'provider/fast',
-          models: { 'provider/fast': 'fast and cheap', 'provider/smart': 'hard tasks' },
-        },
-        models: POOL_MODEL_ENTRIES,
-      },
-    });
-
-    const description = agentSwarmDescription();
-
-    expect(description).toContain('Available models (pass via model):');
-    expect(description).toContain('- provider/fast [default]: fast and cheap');
-    expect(description).toContain('- provider/smart: hard tasks');
-    expect(description).toContain(
-      '- primary: the main model you are running on, bound with your current thinking level; use it for hard, quality-sensitive subagent tasks',
-    );
-  });
-
-  function agentSwarmParameters(): Record<string, unknown> {
-    const tool = ctx.toolsData().find((entry) => entry.name === 'AgentSwarm');
-    expect(tool?.parameters).toBeDefined();
-    return tool!.parameters!;
-  }
-
-  it('strips the model parameter from the advertised schema when no pool is configured', () => {
-    ctx = createTestAgent();
-
-    const properties = agentSwarmParameters()['properties'] as Record<string, unknown>;
-
-    expect(properties).not.toHaveProperty('model');
-    expect(properties).toHaveProperty('prompt_template');
-  });
-
-  it('advertises the model parameter when a pool is configured', () => {
+  it('does not mention legacy model-pool controls in the description', () => {
     ctx = createTestAgent(secondaryModelFlags(), {
       initialConfig: {
         secondaryModel: {
@@ -2462,13 +2410,30 @@ describe('AgentSwarm tool description', () => {
       },
     });
 
-    const properties = agentSwarmParameters()['properties'] as Record<
-      string,
-      { type?: string; enum?: unknown }
-    >;
+    expect(agentSwarmDescription()).not.toContain('Available models');
+    expect(agentSwarmDescription()).not.toContain('pass via model');
+  });
 
-    expect(properties['model']?.type).toBe('string');
-    expect(properties['model']?.enum).toBeUndefined();
+  function agentSwarmParameters(): Record<string, unknown> {
+    const tool = ctx.toolsData().find((entry) => entry.name === 'AgentSwarm');
+    expect(tool?.parameters).toBeDefined();
+    return tool!.parameters!;
+  }
+
+  it('never advertises a per-spawn model parameter', () => {
+    ctx = createTestAgent(secondaryModelFlags(), {
+      initialConfig: {
+        secondaryModel: {
+          defaultModel: 'provider/fast',
+          models: { 'provider/fast': 'fast and cheap' },
+        },
+        models: POOL_MODEL_ENTRIES,
+      },
+    });
+
+    const properties = agentSwarmParameters()['properties'] as Record<string, unknown>;
+    expect(properties).not.toHaveProperty('model');
+    expect(properties).toHaveProperty('prompt_template');
   });
 });
 
@@ -2616,18 +2581,15 @@ describe('AgentSwarm tool execution contract', () => {
     );
   });
 
-  it('threads the caller model into spawn task bindings when the tool call opts into "primary"', async () => {
+  it('threads the active swarm preset binding into spawn tasks', async () => {
     const runSwarm = vi.fn(
-      async (
-        args: SessionSwarmRunArgs,
-      ): Promise<readonly SessionSwarmRunResult[]> => {
-        return args.tasks.map((task, index) => ({
+      async (args: SessionSwarmRunArgs): Promise<readonly SessionSwarmRunResult[]> =>
+        args.tasks.map((task, index) => ({
           task,
           agentId: `agent-explore-${String(index + 1)}`,
           status: 'completed' as const,
           result: 'ok',
-        }));
-      },
+        })),
     );
     const swarmService: ISessionSwarmService = {
       _serviceBrand: undefined,
@@ -2637,14 +2599,18 @@ describe('AgentSwarm tool execution contract', () => {
     };
     ctx = createTestAgent(
       swarmServices(swarmService),
-      secondaryModelFlags(),
+      modelProviderServices(modelCatalogResolving('mock-model', 'provider/swarm')),
+      secondaryModelFlags(false),
       {
         initialConfig: {
-          secondaryModel: {
-            defaultModel: 'provider/fast',
-            models: { 'provider/fast': 'fast and cheap' },
+          subagent: {
+            preset: 'research',
+            presets: {
+              research: {
+                swarm: { model: 'provider/swarm', thinkingEffort: 'high' },
+              },
+            },
           },
-          models: POOL_MODEL_ENTRIES,
         },
       },
     );
@@ -2657,7 +2623,6 @@ describe('AgentSwarm tool execution contract', () => {
         prompt_template: 'Review {{item}}',
         items: ['src/a.ts', 'src/b.ts'],
         subagent_type: 'explore',
-        model: 'primary',
       },
       signal,
     });
@@ -2667,11 +2632,11 @@ describe('AgentSwarm tool execution contract', () => {
         tasks: [
           expect.objectContaining({
             kind: 'spawn',
-            binding: { model: 'mock-model', thinking: 'off' },
+            binding: { model: 'provider/swarm', thinking: 'high' },
           }),
           expect.objectContaining({
             kind: 'spawn',
-            binding: { model: 'mock-model', thinking: 'off' },
+            binding: { model: 'provider/swarm', thinking: 'high' },
           }),
         ],
       }),

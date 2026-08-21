@@ -201,10 +201,10 @@ export const BUILTIN_SLASH_COMMANDS = [
   {
     name: 'secondary-model',
     aliases: ['subagent-model'],
-    description: 'Configure the secondary model for subagents',
+    description: 'Deprecated; use /preset',
     priority: 90,
     availability: 'always',
-    experimentalFlag: 'secondary-model',
+    hidden: true,
   },
   {
     name: 'effort',

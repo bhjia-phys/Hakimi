@@ -7,99 +7,33 @@
  * - `[subagent]` — `timeout_ms`, together with the `KIMI_SUBAGENT_TIMEOUT_MS`
  *   env override (precedence: env > config.toml > 2h default). While the env
  *   var is set, `stripEnvBoundFields` restores the env-free raw value before
- *   persistence, so the override never leaks into `config.toml`. Per-run
- *   timeouts resolve through `resolveSubagentTimeoutMs`, and the timeout
- *   message renders with `formatSubagentTimeoutDescription`. The section also
- *   owns the preset routing tables (`preset`, `agents`, `presets`): an active
- *   preset overrides Agent by profile, AgentSwarm resolves
- *   `preset.swarm > preset.<profile> > agents.swarm > agents.<profile>`
- *   field-by-field, and the resolved route model/thinkingEffort is layered on
- *   top of the pool binding by `resolveSubagentBinding` when the tool does not
- *   pass an explicit `model`.
+ *   persistence, so the override never leaks into `config.toml`. The section
+ *   also owns the canonical route tables (`preset`, `agents`, `presets`). The
+ *   shared resolver applies `preset.<profile> > agents.<profile> > caller` for
+ *   Agent, `preset.swarm > preset.<profile> > agents.swarm > agents.<profile> >
+ *   caller` for AgentSwarm, and the dedicated `tower_worker` /
+ *   `tower_reviewer` route followed by caller for Tower. Fresh spawns and
+ *   resumes both use that resolver.
  *
- * - `[secondary_model]` — the subagent model pool: `default_model` names the
- *   fallback model and the `[secondary_model.models]` table maps alias →
- *   description. A `default_model` without a `[secondary_model.models]` table
- *   stands on its own as an implicit single-entry pool (empty description) —
- *   the minimal "secondary model" configuration. As a compatibility fallback
- *   for the v1 engine's recipe, a lone legacy `model` key (likewise without a
- *   pool table) forms the same implicit single-entry pool, ranked below
- *   `default_model`; the recipe's patch fields (`default_effort`, ...) have
- *   no pool counterpart and are ignored by pool resolution — but the schema
- *   still declares them so validation never strips them and config
- *   reads/writes round-trip losslessly for the v1 engine, and `model` never
- *   substitutes for
- *   the pool table's required `default_model`. `force = true` instead
- *   removes the choice entirely: every spawn binds the resolved default
- *   (`default_model` ?? `model`), the tools hide the `model` parameter
- *   exactly like the no-pool case, and combining
- *   it with a `[secondary_model.models]` table is rejected — the table's only
- *   purpose is offering the main agent a choice.
+ * - `[secondary_model]` — a deprecated compatibility section. Its schema and
+ *   explicit reads/writes remain available for v1/API round-trips, but it is
+ *   not a product control surface and provider/model maintenance must not
+ *   rewrite it.
  *
- * When a pool is configured (and not forced), newly spawned subagents
- * bind to the pool's default model unless the parent model picks a pool alias
- * — or `primary` (`PRIMARY_SUBAGENT_MODEL_CHOICE`), the always-available
- * symbolic choice binding the caller's own model and thinking level — per
- * spawn via the `Agent` / `AgentSwarm` tool `model` parameter. Pool bindings
- * carry no explicit thinking level, so the subagent resolves thinking
- * naturally (global thinking config → the bound model's default effort)
- * rather than inheriting the caller's level. Without a pool, spawning
- * behavior is unchanged (subagents inherit the caller's model) and the tools
- * strip the no-op `model` parameter from their advertised schemas via
- * `stripSubagentModelParameter`, so the concept never enters the prompt and a
- * stray `model` argument is rejected instead of silently inheriting; the
- * strip returns a shallow copy and never mutates the input, so callers can
- * keep both schema variants as shared constants. `force = true` shares this
- * hidden-parameter surface (see `exposesSubagentModelChoice`) while binding
- * every spawn to the resolved default in `resolveSubagentBinding`. The whole
- * pool is gated behind the `secondary-model` experimental flag (`flag.ts`):
- * while the experiment is off the section is inert — the tools strip the
- * `model` parameter, spawns bind the caller's model, and validation is
- * skipped.
- *
- * Spawn bindings resolve through `resolveSubagentBinding`: a forced
- * configuration short-circuits to the resolved default before anything else, and
- * any explicit request — `primary` included — throws (defensive; the tools
- * strip the parameter); `primary`
- * short-circuits to the caller's own model+thinking; with no pool a stray
- * non-`primary` request throws (defensive — the tools strip the parameter);
- * with a pool the request must be a pool alias, an omitted request falls back
- * to `default_model`, and anything else throws `CONFIG_INVALID` listing the
- * available choices so the parent model can retry. The tools advertise the
- * pool via `buildSubagentModelDescriptions`: the default model leads with a
- * `[default]` marker, the remaining aliases follow in config order, and the
- * caller's own alias is listed like any other pool entry (marked
- * `[main model]`) — pool alias bindings carry no thinking, so the trailing
- * `primary` line stays distinct from it: it binds the caller's model WITH the
- * caller's current thinking level, and names the alias in parentheses when
- * the caller is in the pool. An empty-string description renders a bare
- * `- alias` line. Spawn failures are wrapped by `wrapSubagentModelError`:
- * when the bound model is not the caller's own and the catalog failed on
- * exactly that alias, the parent model gets guidance toward
- * `[secondary_model.models]` instead of a bare resolution error.
- * Cross-field validation is NOT part of the schema — it is enforced as
- * `Error2(CONFIG_INVALID)` by `assertValidSubagentModelConfig` (run before
- * session materialization by the session lifecycle, with the Session-scope
- * validation service in `subagentModelsValidationService.ts` as backstop),
- * which checks the `force` rules (a default — `default_model` or the legacy
- * `model` fallback — required, a
- * `[secondary_model.models]` table rejected) and delegates the pool checks to
- * `assertValidSubagentModelPool`: the default must be present and name a
- * pool key, every pool key must resolve through the model catalog, and the
- * reserved `primary` alias is rejected outright — as a pool key it would be
- * unreachable (explicit requests short-circuit to the caller's model) and
- * would render a self-contradictory description. `resolveSubagentBinding`
- * repeats the reserved-key and force-rule checks so a pool broken by a
- * runtime config edit fails loudly at spawn instead of binding the wrong
- * model; any other malformation the startup checks missed surfaces as the
- * spawn-time errors above. Writes that rewrite the `[models]` table
- * (provider removal/replace at the edge, background catalog refreshes)
- * fold the pool through `cascadeSubagentModelPool` into the same atomic
- * write — renamed aliases are repointed, dropped aliases filtered, and the
- * whole section cleared when its effective default dangles (an emptied pool
- * table folds into the implicit single-entry form — a default naming no
- * pool key would fail validation) — so the startup
- * validation never meets a pool orphaned by a write it did not see.
+ * The legacy default is consulted only when no preset is active: Agent,
+ * AgentSwarm, and Tower workers may use it when the `secondary-model` flag is
+ * enabled, while Tower reviewers never do. It is best effort, so a dangling
+ * legacy alias degrades to the caller's binding. Canonical aliases fail with
+ * coded `[subagent]` guidance. The old model-description and schema-strip
+ * helpers remain exported only for compatibility callers, not for v2 tool
+ * schemas.
+ * Cross-field validation is enforced as `Error2(CONFIG_INVALID)` by
+ * `assertValidSubagentModelConfig` before session materialization, with the
+ * Session-scope validation service as backstop. It validates every canonical
+ * entry in `agents` and only the active preset's entries; inactive presets and
+ * legacy pool aliases are intentionally not startup blockers. `cascadeSubagentModelPool`
+ * remains exported for compatibility, but product provider/model maintenance
+ * no longer calls it or rewrites the deprecated section.
  * Self-registered at module load via `registerConfigSection`.
  */
 
@@ -131,12 +65,39 @@ export const SECONDARY_MODEL_SECTION = 'secondaryModel';
 
 export const SUBAGENT_PRESET_MAIN_PROFILE = 'main';
 export const SUBAGENT_PRESET_SWARM_PROFILE = 'swarm';
+export const SUBAGENT_PRESET_TOWER_WORKER_ROUTE = 'tower_worker';
+export const SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE = 'tower_reviewer';
+// Profile-named aliases keep the route keys easy to discover for hosts that
+// already model the main and swarm entries as profile names.
+export const SUBAGENT_PRESET_TOWER_WORKER_PROFILE = SUBAGENT_PRESET_TOWER_WORKER_ROUTE;
+export const SUBAGENT_PRESET_TOWER_REVIEWER_PROFILE = SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE;
 
-export type SubagentRouteKind = 'agent' | 'swarm';
+export type SubagentRouteKind =
+  | 'agent'
+  | 'swarm'
+  | typeof SUBAGENT_PRESET_TOWER_WORKER_ROUTE
+  | typeof SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE;
+
+export type SubagentBindingSource = 'preset' | 'agents' | 'legacy-secondary' | 'caller';
+
+export interface SubagentRouteRequest {
+  readonly route: SubagentRouteKind;
+  readonly profileName?: string;
+  readonly modelPreference?: AgentModelPreference;
+  readonly caller: { readonly modelAlias: string; readonly thinkingLevel: string };
+}
+
+export interface SubagentBindingResolution {
+  readonly model: string;
+  readonly thinking?: string;
+  readonly source: SubagentBindingSource;
+  readonly modelSource: SubagentBindingSource;
+  readonly thinkingSource: SubagentBindingSource;
+}
 
 export const SubagentModelConfigSchema = z.object({
-  model: z.string().min(1).optional(),
-  thinkingEffort: z.string().min(1).optional(),
+  model: z.string().optional(),
+  thinkingEffort: z.string().optional(),
 });
 
 export const SubagentConfigSchema = z.object({
@@ -271,7 +232,13 @@ registerConfigSection(SUBAGENT_SECTION, SubagentConfigSchema, {
   toToml: subagentToToml,
 });
 
-registerConfigSection(SECONDARY_MODEL_SECTION, SecondaryModelConfigSchema);
+registerConfigSection(SECONDARY_MODEL_SECTION, SecondaryModelConfigSchema, {
+  deprecation: {
+    replacement: '[subagent] and /preset',
+    message:
+      'The legacy model pool is only a compatibility fallback; provider and model maintenance will not rewrite this section.',
+  },
+});
 
 export function resolveSubagentTimeoutMs(config: IConfigService): number {
   return (
@@ -361,27 +328,104 @@ export function assertValidSubagentModelPool(
   }
 }
 
-export function assertValidSubagentModelConfig(
-  config: IConfigService,
-  flags: IFlagService,
-  modelCatalog: IModelCatalog,
-): void {
-  if (!flags.enabled(SECONDARY_MODEL_FLAG_ID)) return;
-  const section = config.get<SecondaryModelConfig | undefined>(SECONDARY_MODEL_SECTION);
-  if (section?.force === true) {
-    if (section.models !== undefined) {
-      throw new Error2(ErrorCodes.CONFIG_INVALID, SECONDARY_MODEL_FORCE_EXCLUDES_MODELS_MESSAGE, {
-        details: { section: SECONDARY_MODEL_SECTION, field: 'force' },
-      });
-    }
-    if (section.defaultModel === undefined && section.model === undefined) {
-      throw new Error2(ErrorCodes.CONFIG_INVALID, SECONDARY_MODEL_FORCE_REQUIRES_DEFAULT_MESSAGE, {
-        details: { section: SECONDARY_MODEL_SECTION, field: 'defaultModel' },
-      });
+export function activeSubagentPreset(
+  subagent: SubagentConfig | undefined,
+): string | undefined {
+  const preset = subagent?.preset?.trim();
+  return preset === undefined || preset.length === 0 ? undefined : preset;
+}
+
+function readSubagentConfig(config: IConfigService): SubagentConfig | undefined {
+  const raw = config.inspect<unknown>(SUBAGENT_SECTION).userValue;
+  if (raw !== undefined) {
+    const parsed = SubagentConfigSchema.safeParse(raw);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0]?.message ?? 'invalid section shape';
+      throw new Error2(
+        ErrorCodes.CONFIG_INVALID,
+        `[subagent] is invalid: ${issue}.`,
+        { details: { section: SUBAGENT_SECTION } },
+      );
     }
   }
-  const pool = resolveSubagentModelPool(config);
-  if (pool !== undefined) assertValidSubagentModelPool(pool, modelCatalog);
+  return config.get<SubagentConfig | undefined>(SUBAGENT_SECTION);
+}
+
+function requireActivePreset(
+  subagent: SubagentConfig | undefined,
+  active: string | undefined,
+): Record<string, SubagentModelConfig> | undefined {
+  if (active === undefined) return undefined;
+  const presets = subagent?.presets;
+  if (presets === undefined || !Object.hasOwn(presets, active)) {
+    throw new Error2(
+      ErrorCodes.CONFIG_INVALID,
+      `[subagent].preset "${active}" does not name a configured preset.`,
+      { details: { section: SUBAGENT_SECTION, field: 'preset', preset: active } },
+    );
+  }
+  return presets[active];
+}
+
+function ownRouteEntry(
+  routes: Record<string, SubagentModelConfig> | undefined,
+  routeName: string,
+): SubagentModelConfig | undefined {
+  return routes !== undefined && Object.hasOwn(routes, routeName) ? routes[routeName] : undefined;
+}
+
+/**
+ * Resolve the canonical model routes that hosts display. This helper only
+ * reports `[subagent]` route fields; the legacy section is intentionally not
+ * folded into the display because it is no longer a formal route.
+ */
+export function describeSubagentModelOverride(
+  subagent: SubagentConfig | undefined,
+  profileName: string,
+  route: SubagentRouteKind = 'agent',
+): SubagentModelConfig | undefined {
+  if (subagent === undefined) return undefined;
+  const active = activeSubagentPreset(subagent);
+  const entries = routeEntries(subagent, active, route, profileName);
+  const model = firstConfiguredEntry(entries, 'model')?.value;
+  const thinkingEffort = firstConfiguredEntry(entries, 'thinkingEffort')?.value;
+  if (model === undefined && thinkingEffort === undefined) return undefined;
+  return compactSubagentModelConfig({ model, thinkingEffort });
+}
+
+/**
+ * Validate only formal `[subagent]` routes. The legacy pool remains readable
+ * and round-trippable, but a dangling legacy alias is deliberately ignored by
+ * startup; the resolver falls back to the caller when it needs that alias.
+ */
+export function assertValidSubagentModelConfig(
+  config: IConfigService,
+  _flags: IFlagService,
+  modelCatalog: IModelCatalog,
+): void {
+  const subagent = readSubagentConfig(config);
+  if (subagent === undefined) return;
+
+  for (const [profileName, entry] of Object.entries(subagent.agents ?? {})) {
+    assertCanonicalEntry(entry, `agents.${profileName}`, modelCatalog);
+  }
+
+  const active = activeSubagentPreset(subagent);
+  const preset = requireActivePreset(subagent, active);
+  if (preset === undefined) return;
+  for (const [routeName, entry] of Object.entries(preset)) {
+    assertCanonicalEntry(entry, `presets.${active}.${routeName}`, modelCatalog);
+  }
+}
+
+function assertCanonicalEntry(
+  entry: SubagentModelConfig,
+  routeName: string,
+  modelCatalog: IModelCatalog,
+): void {
+  const model = canonicalRouteValue(entry.model, routeName, 'model');
+  if (model !== undefined) validateCanonicalModelAlias(model, routeName, modelCatalog);
+  canonicalRouteValue(entry.thinkingEffort, routeName, 'thinkingEffort');
 }
 
 export function cascadeSubagentModelPool(
@@ -421,91 +465,156 @@ export function cascadeSubagentModelPool(
 export function resolveSubagentBinding(
   config: IConfigService,
   flags: IFlagService,
-  own: { modelAlias: string; thinkingLevel: string },
-  requested?: string,
-  routing?: { profileName: string; route: SubagentRouteKind },
-  profilePreference?: AgentModelPreference,
-): { model: string; thinking?: string } {
-  const enabled = flags.enabled(SECONDARY_MODEL_FLAG_ID);
-  const section = config.get<SecondaryModelConfig | undefined>(SECONDARY_MODEL_SECTION);
-  if (enabled && section?.force === true) {
-    if (section.models !== undefined) {
-      throw new Error2(ErrorCodes.CONFIG_INVALID, SECONDARY_MODEL_FORCE_EXCLUDES_MODELS_MESSAGE, {
-        details: { section: SECONDARY_MODEL_SECTION, field: 'force' },
-      });
+  modelCatalog: IModelCatalog,
+  request: SubagentRouteRequest,
+): SubagentBindingResolution {
+  const subagent = readSubagentConfig(config);
+  const active = activeSubagentPreset(subagent);
+  requireActivePreset(subagent, active);
+  const entries = routeEntries(subagent, active, request.route, request.profileName);
+  const modelCandidate = firstConfiguredEntry(entries, 'model');
+  const thinkingCandidate = firstConfiguredEntry(entries, 'thinkingEffort');
+
+  let model = request.caller.modelAlias;
+  let modelSource: SubagentBindingSource = 'caller';
+  if (modelCandidate !== undefined) {
+    model = modelCandidate.value;
+    modelSource = modelCandidate.source;
+    validateCanonicalModelAlias(model, modelCandidate.routeName, modelCatalog);
+  } else if (
+    active === undefined &&
+    request.modelPreference !== 'primary' &&
+    request.route !== SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE &&
+    flags.enabled(SECONDARY_MODEL_FLAG_ID)
+  ) {
+    const legacy = config.get<SecondaryModelConfig | undefined>(SECONDARY_MODEL_SECTION);
+    const legacyAlias = legacy?.defaultModel ?? legacy?.model;
+    if (legacyAlias !== undefined) {
+      try {
+        modelCatalog.get(legacyAlias);
+        model = legacyAlias;
+        modelSource = 'legacy-secondary';
+      } catch {
+        // A deprecated fallback is best effort. A removed provider must not
+        // prevent a new session or a resume from inheriting its caller.
+      }
     }
-    const forcedModel = section.defaultModel ?? section.model;
-    if (forcedModel === undefined) {
-      throw new Error2(ErrorCodes.CONFIG_INVALID, SECONDARY_MODEL_FORCE_REQUIRES_DEFAULT_MESSAGE, {
-        details: { section: SECONDARY_MODEL_SECTION, field: 'defaultModel' },
-      });
-    }
-    if (requested !== undefined) {
-      throw new Error2(
-        ErrorCodes.CONFIG_INVALID,
-        `Invalid model "${requested}": [secondary_model].force is set, so every subagent binds "${forcedModel}" (omit the model parameter).`,
-        { details: { model: requested } },
-      );
-    }
-    return { model: forcedModel };
   }
-  // "primary" always binds the caller's own model+thinking; the preset route
-  // layers on top below (route model never wins over an explicit choice, but
-  // route thinkingEffort still applies).
-  const pool = enabled ? resolveSubagentModelPool(config) : undefined;
-  let binding: { model: string; thinking?: string };
-  if (requested === PRIMARY_SUBAGENT_MODEL_CHOICE) {
-    binding = { model: own.modelAlias, thinking: own.thinkingLevel };
-  } else if (pool === undefined) {
-    if (requested !== undefined) {
-      throw new Error2(
-        ErrorCodes.CONFIG_INVALID,
-        `Invalid model "${requested}": no [secondary_model.models] pool is configured, so subagents inherit the caller's model (pass "primary" or omit the model parameter).`,
-        { details: { model: requested } },
-      );
-    }
-    binding = { model: own.modelAlias, thinking: own.thinkingLevel };
-  } else {
-    if (Object.hasOwn(pool.models, PRIMARY_SUBAGENT_MODEL_CHOICE)) {
-      throw new Error2(ErrorCodes.CONFIG_INVALID, SECONDARY_MODEL_PRIMARY_MODEL_RESERVED_MESSAGE, {
-        details: {
-          section: SECONDARY_MODEL_SECTION,
-          field: 'models',
-          model: PRIMARY_SUBAGENT_MODEL_CHOICE,
-        },
-      });
-    }
-    const choice = requested ?? pool.defaultModel;
-    if (choice === undefined) {
-      throw new Error2(ErrorCodes.CONFIG_INVALID, SECONDARY_MODEL_DEFAULT_MODEL_REQUIRED_MESSAGE, {
-        details: { section: SECONDARY_MODEL_SECTION, field: 'defaultModel' },
-      });
-    }
-    if (!Object.hasOwn(pool.models, choice)) {
-      const available = [...Object.keys(pool.models), PRIMARY_SUBAGENT_MODEL_CHOICE];
-      throw new Error2(
-        ErrorCodes.CONFIG_INVALID,
-        `Invalid model "${choice}". Available models: ${available.join(', ')}.`,
-        { details: { model: choice, availableModels: available } },
-      );
-    }
-    binding = { model: choice };
+
+  const thinking =
+    thinkingCandidate !== undefined
+      ? thinkingCandidate.value
+      : modelSource === 'legacy-secondary'
+        ? undefined
+        : request.caller.thinkingLevel;
+  const thinkingSource: SubagentBindingSource =
+    thinkingCandidate?.source ?? (modelSource === 'legacy-secondary' ? 'legacy-secondary' : 'caller');
+  return {
+    model,
+    thinking,
+    source: modelSource,
+    modelSource,
+    thinkingSource,
+  };
+}
+
+interface RouteEntry {
+  readonly entry: SubagentModelConfig | undefined;
+  readonly source: SubagentBindingSource;
+  readonly routeName: string;
+}
+
+function routeEntries(
+  subagent: SubagentConfig | undefined,
+  active: string | undefined,
+  route: SubagentRouteKind,
+  profileName: string | undefined,
+): readonly RouteEntry[] {
+  const profile = profileName ?? '';
+  const preset = requireActivePreset(subagent, active);
+  const agents = subagent?.agents;
+  if (route === 'swarm') {
+    return active === undefined
+      ? [
+          { entry: ownRouteEntry(agents, SUBAGENT_PRESET_SWARM_PROFILE), source: 'agents', routeName: 'agents.swarm' },
+          { entry: ownRouteEntry(agents, profile), source: 'agents', routeName: `agents.${profile}` },
+        ]
+      : [
+          { entry: ownRouteEntry(preset, SUBAGENT_PRESET_SWARM_PROFILE), source: 'preset', routeName: `presets.${active}.swarm` },
+          { entry: ownRouteEntry(preset, profile), source: 'preset', routeName: `presets.${active}.${profile}` },
+          { entry: ownRouteEntry(agents, SUBAGENT_PRESET_SWARM_PROFILE), source: 'agents', routeName: 'agents.swarm' },
+          { entry: ownRouteEntry(agents, profile), source: 'agents', routeName: `agents.${profile}` },
+        ];
   }
-  // The active `[subagent]` preset route layers on top of the pool binding:
-  // its route model wins only when the tool passed no explicit `model`, while
-  // its `thinkingEffort` always applies as a field-level override. A profile
-  // `model_preference: "primary"` pins the caller's own model first.
-  if (profilePreference === 'primary') {
-    binding = { model: own.modelAlias, thinking: own.thinkingLevel };
+  if (
+    route === SUBAGENT_PRESET_TOWER_WORKER_ROUTE ||
+    route === SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE
+  ) {
+    return active === undefined
+      ? [
+          { entry: ownRouteEntry(agents, route), source: 'agents', routeName: `agents.${route}` },
+        ]
+      : [
+          { entry: ownRouteEntry(preset, route), source: 'preset', routeName: `presets.${active}.${route}` },
+          { entry: ownRouteEntry(agents, route), source: 'agents', routeName: `agents.${route}` },
+        ];
   }
-  if (routing !== undefined) {
-    const override = resolveSubagentModelOverride(config, routing.profileName, routing.route);
-    binding = {
-      model: requested === undefined ? override.model ?? binding.model : binding.model,
-      thinking: override.thinkingEffort ?? binding.thinking,
-    };
+  return active === undefined
+    ? [{ entry: ownRouteEntry(agents, profile), source: 'agents', routeName: `agents.${profile}` }]
+    : [
+        { entry: ownRouteEntry(preset, profile), source: 'preset', routeName: `presets.${active}.${profile}` },
+        { entry: ownRouteEntry(agents, profile), source: 'agents', routeName: `agents.${profile}` },
+      ];
+}
+
+function firstConfiguredEntry(
+  entries: readonly RouteEntry[],
+  field: 'model' | 'thinkingEffort',
+): { readonly value: string; readonly source: SubagentBindingSource; readonly routeName: string } | undefined {
+  for (const candidate of entries) {
+    const value = canonicalRouteValue(candidate.entry?.[field], candidate.routeName, field);
+    if (value !== undefined) {
+      return { value, source: candidate.source, routeName: candidate.routeName };
+    }
   }
-  return binding;
+  return undefined;
+}
+
+function canonicalRouteValue(
+  value: string | undefined,
+  routeName: string,
+  field: 'model' | 'thinkingEffort',
+): string | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    const fieldName = field === 'thinkingEffort' ? 'thinking_effort' : field;
+    throw new Error2(
+      ErrorCodes.CONFIG_INVALID,
+      `[subagent] ${fieldName} in ${routeName} cannot be blank; configure the route through /preset or [subagent.agents].`,
+      { details: { section: SUBAGENT_SECTION, route: routeName, field: fieldName } },
+    );
+  }
+  return normalized;
+}
+
+function validateCanonicalModelAlias(
+  alias: string,
+  routeName: string,
+  modelCatalog: IModelCatalog,
+): void {
+  try {
+    modelCatalog.get(alias);
+  } catch (error) {
+    throw new Error2(
+      ErrorCodes.CONFIG_INVALID,
+      `[subagent] model alias "${alias}" from ${routeName} could not be resolved; configure the route through /preset or [subagent.agents].`,
+      {
+        cause: error,
+        details: { section: SUBAGENT_SECTION, route: routeName, model: alias },
+      },
+    );
+  }
 }
 
 export function resolveSubagentModelOverride(
@@ -513,55 +622,20 @@ export function resolveSubagentModelOverride(
   profileName: string,
   route: SubagentRouteKind = 'agent',
 ): SubagentModelConfig {
-  const subagent = config.get<SubagentConfig | undefined>(SUBAGENT_SECTION);
-  if (subagent === undefined) return {};
-  const presetEntry =
-    subagent.preset === undefined
-      ? undefined
-      : subagent.presets?.[subagent.preset]?.[profileName];
-  const agentsEntry = subagent.agents?.[profileName];
-  const presetSwarmEntry =
-    route === 'swarm' && subagent.preset !== undefined
-      ? subagent.presets?.[subagent.preset]?.[SUBAGENT_PRESET_SWARM_PROFILE]
-      : undefined;
-  const agentsSwarmEntry =
-    route === 'swarm'
-      ? subagent.agents?.[SUBAGENT_PRESET_SWARM_PROFILE]
-      : undefined;
+  const subagent = readSubagentConfig(config);
+  const active = activeSubagentPreset(subagent);
+  const entries = routeEntries(subagent, active, route, profileName);
   return compactSubagentModelConfig({
-    model: firstConfiguredString(
-      presetSwarmEntry?.model,
-      presetEntry?.model,
-      agentsSwarmEntry?.model,
-      agentsEntry?.model,
-    ),
-    thinkingEffort: firstConfiguredString(
-      presetSwarmEntry?.thinkingEffort,
-      presetEntry?.thinkingEffort,
-      agentsSwarmEntry?.thinkingEffort,
-      agentsEntry?.thinkingEffort,
-    ),
+    model: firstConfiguredEntry(entries, 'model')?.value,
+    thinkingEffort: firstConfiguredEntry(entries, 'thinkingEffort')?.value,
   });
 }
 
-function compactSubagentModelConfig(
-  value: SubagentModelConfig,
-): SubagentModelConfig {
+function compactSubagentModelConfig(value: SubagentModelConfig): SubagentModelConfig {
   const compact: SubagentModelConfig = {};
   if (value.model !== undefined) compact.model = value.model;
-  if (value.thinkingEffort !== undefined) {
-    compact.thinkingEffort = value.thinkingEffort;
-  }
+  if (value.thinkingEffort !== undefined) compact.thinkingEffort = value.thinkingEffort;
   return compact;
-}
-
-function firstConfiguredString(
-  ...values: readonly (string | undefined)[]
-): string | undefined {
-  for (const value of values) {
-    if (value !== undefined && value.trim().length > 0) return value;
-  }
-  return undefined;
 }
 
 export function buildSubagentModelDescriptions(
@@ -617,23 +691,26 @@ export function stripSubagentModelParameter(
 
 export function wrapSubagentModelError(
   error: unknown,
-  boundModel: string,
+  resolution: Pick<SubagentBindingResolution, 'model' | 'source'>,
   callerModelAlias: string | undefined,
 ): unknown {
-  if (boundModel === callerModelAlias) return error;
+  if (resolution.source === 'caller' || resolution.source === 'legacy-secondary') return error;
+  if (resolution.model === callerModelAlias) return error;
   if (!isError2(error) || error.code !== ErrorCodes.CONFIG_INVALID) return error;
-  if (error.details?.['model'] !== boundModel) return error;
+  if (error.details?.['model'] !== resolution.model) return error;
+  const route = typeof error.details?.['route'] === 'string' ? error.details['route'] : 'canonical route';
   return new Error2(
     error.code,
-    `${error.message} (subagent model "${boundModel}" comes from [secondary_model.models] — check that it names a valid [models] entry)`,
+    `${error.message} (subagent model "${resolution.model}" comes from [subagent] ${route} — configure it through /preset or [subagent.agents])`,
     {
       cause: error,
       name: error.name,
       details: {
         ...error.details,
-        subagentModel: boundModel,
+        subagentModel: resolution.model,
         subagentModelConfig: {
-          section: 'secondary_model.models',
+          section: 'subagent',
+          route,
         },
       },
     },

@@ -112,6 +112,34 @@ describe('ProviderService', () => {
     expect(events.at(-1)).toEqual({ added: [], removed: ['moonshot'], changed: [] });
   });
 
+  it('treats prototype names as ordinary missing keys until explicitly configured', async () => {
+    const service = createService();
+    const events: Array<{ added: readonly string[]; removed: readonly string[]; changed: readonly string[] }> = [];
+    service.onDidChangeProviders((event) =>
+      events.push({ added: event.added, removed: event.removed, changed: event.changed }),
+    );
+    const names = ['constructor', 'toString', '__proto__'];
+
+    for (const name of names) {
+      expect(service.get(name)).toBeUndefined();
+      await service.delete(name);
+    }
+    expect(events).toEqual([]);
+
+    const config: ProviderConfig = { type: 'kimi' };
+    for (const name of names) {
+      await service.set(name, config);
+      expect(service.get(name)).toEqual(config);
+      expect(events.at(-1)).toEqual({ added: [name], removed: [], changed: [] });
+    }
+
+    for (const name of names) {
+      await service.delete(name);
+      expect(service.get(name)).toBeUndefined();
+      expect(events.at(-1)).toEqual({ added: [], removed: [name], changed: [] });
+    }
+  });
+
   it('loadAll fires only for real diffs on re-sync', async () => {
     const service = createService({ moonshot: { type: 'kimi' } });
     const events: unknown[] = [];

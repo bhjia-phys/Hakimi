@@ -47,7 +47,7 @@ export class ProviderService extends Disposable implements IProviderService {
     this._onDidChangeDefaultProvider.event;
 
   get(name: string): ProviderConfig | undefined {
-    return this.providers[name];
+    return Object.hasOwn(this.providers, name) ? this.providers[name] : undefined;
   }
 
   list(): Readonly<Record<string, ProviderConfig>> {
@@ -74,13 +74,13 @@ export class ProviderService extends Disposable implements IProviderService {
 
   async set(name: string, config: ProviderConfig): Promise<void> {
     await this.ready;
-    if (deepEqual(this.providers[name], config)) return;
+    if (Object.hasOwn(this.providers, name) && deepEqual(this.providers[name], config)) return;
     await this.applyRecords({ ...this.providers, [name]: config });
   }
 
   async delete(name: string): Promise<void> {
     await this.ready;
-    if (!(name in this.providers)) return;
+    if (!Object.hasOwn(this.providers, name)) return;
     const { [name]: _removed, ...rest } = this.providers;
     await this.applyRecords(rest);
     if (this.defaultProvider === name) {

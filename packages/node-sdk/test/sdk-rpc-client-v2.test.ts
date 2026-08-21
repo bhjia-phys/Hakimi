@@ -33,7 +33,10 @@ import {
   drainQueryStoreDisposals,
   drainSessionIndexMirror,
   HostProcessError,
+  IAppendLogStore,
   IHostRequestHeaders,
+  ISessionIndex,
+  ISessionIndexMirror,
   ISessionManager,
   OsProcessErrors,
 } from '@moonshot-ai/agent-core-v2';
@@ -91,6 +94,14 @@ async function makeHarness(): Promise<{ harness: KimiHarness; homeDir: string }>
   return { harness: createKimiHarnessV2({ homeDir, identity: TEST_IDENTITY }), homeDir };
 }
 
+/** Create a project-root fixture that cannot discover this checkout's config. */
+async function makeProjectRoot(): Promise<string> {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-project-'));
+  tempDirs.push(projectRoot);
+  await mkdir(join(projectRoot, '.git'));
+  return projectRoot;
+}
+
 /** Whether the persisted session directory exists under `<home>/sessions/<bucket>/<id>`. */
 async function sessionDirExists(homeDir: string, sessionId: string): Promise<boolean> {
   let buckets: readonly string[];
@@ -124,6 +135,236 @@ describe('SDKRpcClientV2 (agent-core-v2 wiring)', () => {
       expect(await session.getRuntime()).toEqual(binding);
     } finally {
       await harness.close();
+    }
+  });
+
+  it('rejects a missing active preset before creating a session directory', async () => {
+    const { harness, homeDir } = await makeHarness();
+    const workDir = await makeProjectRoot();
+    const id = 'ses_missing_preset';
+    try {
+      await harness.setConfig({ subagent: { preset: 'missing', presets: {} } });
+
+      await expect(harness.createSession({ id, workDir })).rejects.toMatchObject({
+        code: ErrorCodes.CONFIG_INVALID,
+      });
+      expect(harness.getSession(id)).toBeUndefined();
+      expect(await sessionDirExists(homeDir, id)).toBe(false);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('does not treat a prototype name as an active preset', async () => {
+    const { harness, homeDir } = await makeHarness();
+    const workDir = await makeProjectRoot();
+    const id = 'ses_prototype_preset';
+    try {
+      await harness.setConfig({ subagent: { preset: 'toString', presets: {} } });
+
+      await expect(harness.createSession({ id, workDir })).rejects.toMatchObject({
+        code: ErrorCodes.CONFIG_INVALID,
+        message: expect.stringContaining('does not name a configured preset'),
+      });
+      expect(harness.getSession(id)).toBeUndefined();
+      expect(await sessionDirExists(homeDir, id)).toBe(false);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('rejects a dangling canonical agents route without leaving a session directory', async () => {
+    const { harness, homeDir } = await makeHarness();
+    const workDir = await makeProjectRoot();
+    const id = 'ses_dangling_agents_route';
+    try {
+      await harness.setConfig({
+        subagent: { agents: { coder: { model: 'provider/removed' } } },
+      });
+
+      await expect(harness.createSession({ id, workDir })).rejects.toMatchObject({
+        code: ErrorCodes.CONFIG_INVALID,
+        message: expect.stringContaining('from agents.coder could not be resolved'),
+      });
+      expect(harness.getSession(id)).toBeUndefined();
+      expect(await sessionDirExists(homeDir, id)).toBe(false);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('removes a materialized create failure before allowing the id to retry', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-'));
+    tempDirs.push(homeDir);
+    const workDir = await makeProjectRoot();
+    const id = 'ses_materialized_create_failure';
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+
+    try {
+      const appendLogStore = client.engineAccessor.get(IAppendLogStore);
+      const removeIndexSpy = vi.spyOn(client.engineAccessor.get(ISessionIndex), 'remove');
+      const originalAppend = appendLogStore.append.bind(appendLogStore);
+      const appendSpy = vi
+        .spyOn(appendLogStore, 'append')
+        .mockImplementation((scope, key, record) => {
+          if (
+            scope === '' &&
+            key === 'session_index.jsonl' &&
+            (record as { readonly sessionId?: string }).sessionId === id
+          ) {
+            throw new Error('create index append failed');
+          }
+          originalAppend(scope, key, record);
+        });
+
+      try {
+        await expect(client.createSession({ id, workDir })).rejects.toThrow(
+          'create index append failed',
+        );
+      } finally {
+        appendSpy.mockRestore();
+      }
+
+      expect(client.engineAccessor.get(ISessionManager).get(id)).toBeUndefined();
+      expect(await sessionDirExists(homeDir, id)).toBe(false);
+      expect(
+        client.engineAccessor
+          .get(ISessionIndexMirror)
+          .pending()
+          .some((summary) => summary.id === id),
+      ).toBe(false);
+      expect(removeIndexSpy).toHaveBeenCalledWith(id);
+      expect(await client.listSessions({ sessionId: id })).toEqual([]);
+      removeIndexSpy.mockRestore();
+
+      await expect(client.createSession({ id, workDir })).resolves.toMatchObject({ id });
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('allows a dangling legacy secondary-model alias as a compatibility fallback', async () => {
+    const { harness, homeDir } = await makeHarness();
+    const workDir = await makeProjectRoot();
+    const id = 'ses_dangling_legacy_alias';
+    try {
+      await harness.setConfig({
+        secondaryModel: { defaultModel: 'provider/removed' },
+      });
+
+      const session = await harness.createSession({ id, workDir });
+      expect(harness.getSession(id)).toBe(session);
+      expect(await sessionDirExists(homeDir, id)).toBe(true);
+      await session.close();
+      expect(harness.getSession(id)).toBeUndefined();
+      expect(await sessionDirExists(homeDir, id)).toBe(true);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('keeps an existing session directory when canonical validation rejects resume', async () => {
+    const { harness, homeDir } = await makeHarness();
+    const workDir = await makeProjectRoot();
+    const id = 'ses_resume_dangling_route';
+    try {
+      const session = await harness.createSession({ id, workDir });
+      await session.close();
+      expect(await sessionDirExists(homeDir, id)).toBe(true);
+
+      await harness.setConfig({
+        subagent: { agents: { coder: { model: 'provider/removed' } } },
+      });
+      await expect(harness.resumeSession({ id })).rejects.toMatchObject({
+        code: ErrorCodes.CONFIG_INVALID,
+      });
+      expect(harness.getSession(id)).toBeUndefined();
+      expect(await sessionDirExists(homeDir, id)).toBe(true);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('cleans a materialized fork failure without announcing or retaining the target', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-'));
+    tempDirs.push(homeDir);
+    const workDir = await makeProjectRoot();
+    const sourceId = 'ses_fork_cleanup_source';
+    const targetId = 'ses_fork_cleanup_target';
+    const records: TelemetryRecord[] = [];
+    const client = new SDKRpcClientV2({
+      homeDir,
+      identity: TEST_IDENTITY,
+      telemetry: recordingTelemetry(records),
+    });
+
+    try {
+      await client.createSession({ id: sourceId, workDir });
+      const appendLogStore = client.engineAccessor.get(IAppendLogStore);
+      const removeIndexSpy = vi.spyOn(client.engineAccessor.get(ISessionIndex), 'remove');
+      const originalAppend = appendLogStore.append.bind(appendLogStore);
+      const appendSpy = vi
+        .spyOn(appendLogStore, 'append')
+        .mockImplementation((scope, key, record) => {
+          if (
+            scope === '' &&
+            key === 'session_index.jsonl' &&
+            (record as { readonly sessionId?: string }).sessionId === targetId
+          ) {
+            throw new Error('fork index append failed');
+          }
+          originalAppend(scope, key, record);
+        });
+
+      try {
+        await expect(client.forkSession({ id: sourceId, forkId: targetId })).rejects.toThrow(
+          'fork index append failed',
+        );
+      } finally {
+        appendSpy.mockRestore();
+      }
+
+      expect(client.engineAccessor.get(ISessionManager).get(targetId)).toBeUndefined();
+      expect(await sessionDirExists(homeDir, targetId)).toBe(false);
+      expect(
+        client.engineAccessor
+          .get(ISessionIndexMirror)
+          .pending()
+          .some((summary) => summary.id === targetId),
+      ).toBe(false);
+      expect(await client.listSessions({ sessionId: targetId })).toEqual([]);
+      expect(
+        records.some((record) => record.event === 'session_started' && record.sessionId === targetId),
+      ).toBe(false);
+      expect(await sessionDirExists(homeDir, sourceId)).toBe(true);
+      expect(removeIndexSpy).toHaveBeenCalledWith(targetId);
+      removeIndexSpy.mockRestore();
+
+      await expect(client.forkSession({ id: sourceId, forkId: targetId })).resolves.toMatchObject({
+        id: targetId,
+      });
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('does not delete a live source session on duplicate fork', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-'));
+    tempDirs.push(homeDir);
+    const workDir = await makeProjectRoot();
+    const sourceId = 'ses_duplicate_fork_source';
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+
+    try {
+      await client.createSession({ id: sourceId, workDir });
+
+      await expect(client.forkSession({ id: sourceId, forkId: sourceId })).rejects.toMatchObject({
+        code: ErrorCodes.SESSION_ALREADY_EXISTS,
+      });
+      expect(client.engineAccessor.get(ISessionManager).get(sourceId)).toBeDefined();
+      expect(await sessionDirExists(homeDir, sourceId)).toBe(true);
+    } finally {
+      await client.close();
     }
   });
 
@@ -737,9 +978,13 @@ key = "${titleOAuthRef.key}"
     }
   });
 
-  it('cascades removeProvider into the secondary_model pool', async () => {
+  it('preserves the deprecated secondary_model pool during provider removal', async () => {
     const { harness } = await makeHarness();
     try {
+      const legacyPool = {
+        defaultModel: 'a/m1',
+        models: { 'a/m1': 'fast', 'b/m1': 'smart' },
+      };
       await harness.setConfig({
         providers: {
           a: { type: 'openai', baseUrl: 'https://a.example.test/v1', apiKey: 'sk-a' },
@@ -749,30 +994,13 @@ key = "${titleOAuthRef.key}"
           'a/m1': { provider: 'a', model: 'm1', maxContextSize: 100 },
           'b/m1': { provider: 'b', model: 'm1', maxContextSize: 100 },
         },
-        secondaryModel: {
-          defaultModel: 'a/m1',
-          models: { 'a/m1': 'fast', 'b/m1': 'smart' },
-        },
+        secondaryModel: legacyPool,
       });
 
-      // Pool entries naming a removed model alias are filtered out; the
-      // surviving default keeps the section valid.
-      const filtered = await harness.removeProvider('b');
-      expect(filtered.secondaryModel).toEqual({
-        defaultModel: 'a/m1',
-        models: { 'a/m1': 'fast' },
-      });
-
-      // When the pool's default dangles the whole section is dropped — a
-      // leftover models table without its default would fail pool validation
-      // on every session create.
-      await harness.setConfig({
-        secondaryModel: { defaultModel: 'a/m1', models: { 'a/m1': 'fast' } },
-      });
-      const cleared = await harness.removeProvider('a');
-      expect(cleared.secondaryModel).toBeUndefined();
+      const removed = await harness.removeProvider('b');
+      expect(removed.secondaryModel).toEqual(legacyPool);
       const reread = await harness.getConfig({ reload: true });
-      expect(reread.secondaryModel).toBeUndefined();
+      expect(reread.secondaryModel).toEqual(legacyPool);
     } finally {
       await harness.close();
     }
@@ -1089,28 +1317,7 @@ describe('removeProviderFromConfig', () => {
     expect(next.defaultProvider).toBe('a');
   });
 
-  it('filters secondary_model pool entries whose model alias was removed', () => {
-    const config = {
-      providers: { a: { type: 'openai' }, b: { type: 'openai' } },
-      models: {
-        'a/m1': { provider: 'a', model: 'm1', maxContextSize: 100 },
-        'b/m1': { provider: 'b', model: 'm1', maxContextSize: 100 },
-      },
-      secondaryModel: {
-        defaultModel: 'a/m1',
-        models: { 'a/m1': 'fast', 'b/m1': 'smart' },
-      },
-    } as unknown as KimiConfig;
-
-    const next = removeProviderFromConfig(config, 'b');
-
-    expect(next.secondaryModel).toEqual({
-      defaultModel: 'a/m1',
-      models: { 'a/m1': 'fast' },
-    });
-  });
-
-  it('drops the secondary_model section when its default model dangles', () => {
+  it('preserves the secondary_model section unchanged, including dangling aliases', () => {
     const config = {
       providers: { a: { type: 'openai' }, b: { type: 'openai' } },
       models: {
@@ -1123,15 +1330,9 @@ describe('removeProviderFromConfig', () => {
       },
     } as unknown as KimiConfig;
 
-    expect(removeProviderFromConfig(config, 'b').secondaryModel).toBeUndefined();
-
-    // The legacy recipe's `model` key acts as the default fallback and
-    // cascades the same way.
-    const legacy = {
-      ...config,
-      secondaryModel: { model: 'b/m1', default_effort: 'low' },
-    } as unknown as KimiConfig;
-    expect(removeProviderFromConfig(legacy, 'b').secondaryModel).toBeUndefined();
+    expect(removeProviderFromConfig(config, 'b').secondaryModel).toEqual(
+      config.secondaryModel,
+    );
   });
 
   it('leaves the secondary_model section untouched when nothing dangles', () => {

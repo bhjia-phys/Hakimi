@@ -52,25 +52,10 @@ export const AgentSwarmToolInputSchema = z
       .describe(
         'Map of existing subagent agent_id to the prompt used to resume that subagent. These resumed subagents are launched before new item-based subagents.',
       ),
-    model: z
-      .string()
-      .optional()
-      .describe(
-        'Which model to run the item-spawned subagents on: one of the aliases listed under "Available models" in this tool description, or "primary" for the main model you are running on (for hard, quality-sensitive tasks). When omitted, the configured default model is used. Resumed subagents always keep their own model.',
-      ),
   })
   .strict();
 
 export type AgentSwarmToolInput = z.infer<typeof AgentSwarmToolInputSchema>;
-
-/**
- * The `AgentSwarm` tool input without the `model` parameter — exposed while
- * the secondary-model experiment is disabled so the parent model cannot
- * accidentally override active `[subagent]` routing.
- */
-export const AgentSwarmToolInputSchemaWithoutModel = AgentSwarmToolInputSchema.omit({
-  model: true,
-});
 
 
 export interface IAgentSwarmTool extends AgentTool<AgentSwarmToolInput> { readonly _serviceBrand: undefined }

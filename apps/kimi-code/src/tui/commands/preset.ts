@@ -3,6 +3,8 @@ import {
   describeSubagentModelOverride,
   SUBAGENT_PRESET_MAIN_PROFILE,
   SUBAGENT_PRESET_SWARM_PROFILE,
+  SUBAGENT_PRESET_TOWER_WORKER_ROUTE,
+  SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE,
   type KimiConfig,
   type KimiConfigPatch,
   type ThinkingEffort,
@@ -163,7 +165,9 @@ async function showPresetEditor(
     .filter(
       (profileName) =>
         profileName !== SUBAGENT_PRESET_MAIN_PROFILE &&
-        profileName !== SUBAGENT_PRESET_SWARM_PROFILE,
+        profileName !== SUBAGENT_PRESET_SWARM_PROFILE &&
+        profileName !== SUBAGENT_PRESET_TOWER_WORKER_ROUTE &&
+        profileName !== SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE,
     );
   for (const profileName of BUILTIN_SUBAGENT_PROFILES) {
     if (!profileNames.includes(profileName)) profileNames.push(profileName);
@@ -182,13 +186,15 @@ async function showPresetEditor(
     {
       value: APPLY_PRESET,
       label: active === name ? 'Reapply preset' : 'Activate preset',
-      description: 'Apply Main to this session and enable its Agent/Swarm routing.',
+      description: 'Apply Main to this session and enable Agent, Swarm, and Tower routing.',
     },
     routeOption(config, name, SUBAGENT_PRESET_MAIN_PROFILE, 'Main agent'),
     ...profileNames.map((profileName) =>
       routeOption(config, name, profileName, `${capitalize(profileName)} subagent`),
     ),
     routeOption(config, name, SUBAGENT_PRESET_SWARM_PROFILE, 'Swarm default'),
+    routeOption(config, name, SUBAGENT_PRESET_TOWER_WORKER_ROUTE, 'Tower worker'),
+    routeOption(config, name, SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE, 'Tower reviewer'),
   ];
 
   host.mountEditorReplacement(
@@ -345,8 +351,42 @@ async function showPresetStatus(host: SlashCommandHost): Promise<void> {
   const subagent = config.subagent;
   const active = activeSubagentPreset(subagent);
   const presetNames = Object.keys(subagent?.presets ?? {});
-  const profileNames = collectProfileNames(subagent?.agents, subagent?.presets)
-    .filter((name) => name !== SUBAGENT_PRESET_MAIN_PROFILE && name !== SUBAGENT_PRESET_SWARM_PROFILE);
+  const profileNames = (active === undefined
+    ? Object.keys(subagent?.agents ?? {})
+    : collectProfileNames(subagent?.agents, subagent?.presets)
+  ).filter(
+    (name) =>
+      name !== SUBAGENT_PRESET_MAIN_PROFILE &&
+      name !== SUBAGENT_PRESET_SWARM_PROFILE &&
+      name !== SUBAGENT_PRESET_TOWER_WORKER_ROUTE &&
+      name !== SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE,
+  );
+
+  const main = mainRouteForStatus(host, config, active);
+  const swarm = describeSubagentModelOverride(subagent, '', 'swarm');
+  const towerWorker = describeSubagentModelOverride(
+    subagent,
+    '',
+    SUBAGENT_PRESET_TOWER_WORKER_ROUTE,
+  );
+  const towerReviewer = describeSubagentModelOverride(
+    subagent,
+    '',
+    SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE,
+  );
+  const legacyModel = active === undefined
+    ? config.secondaryModel?.defaultModel ?? config.secondaryModel?.model
+    : undefined;
+  const hasCanonicalOverride =
+    profileNames.length > 0 ||
+    swarm !== undefined ||
+    towerWorker !== undefined ||
+    towerReviewer !== undefined;
+  const noActiveCanonical = active === undefined && !hasCanonicalOverride;
+  const legacyAwareFallback =
+    active === undefined && legacyModel !== undefined
+      ? 'legacy compatibility may apply; otherwise inherits parent'
+      : 'inherits parent';
 
   const lines: string[] = [
     active === undefined
@@ -356,24 +396,41 @@ async function showPresetStatus(host: SlashCommandHost): Promise<void> {
       ? 'Defined presets: none'
       : `Defined presets: ${presetNames.map((name) => (name === active ? `${name} *` : name)).join(', ')}`,
   ];
-  const main = active === undefined
-    ? undefined
-    : subagent?.presets?.[active]?.[SUBAGENT_PRESET_MAIN_PROFILE];
   lines.push(`  main: ${formatRoute(main, config, 'keeps current/default model')}`);
 
-  if (profileNames.length === 0) {
-    lines.push('No subagent model overrides configured — subagents inherit the parent model.');
+  if (noActiveCanonical) {
+    lines.push(
+      legacyModel === undefined
+        ? 'No canonical subagent model routes configured — subagents and Tower workers use the parent model.'
+        : 'No canonical subagent model routes configured — legacy compatibility may apply to eligible subagents and Tower workers; otherwise they use the parent model.',
+    );
+  } else if (!hasCanonicalOverride) {
+    lines.push('No canonical subagent model routes configured — subagents inherit the parent model.');
   } else {
     lines.push('Effective Agent routes (preset > [subagent.agents] > parent):');
     for (const profileName of profileNames.toSorted()) {
       const effective = describeSubagentModelOverride(subagent, profileName);
-      lines.push(`  ${profileName}: ${formatRoute(effective, config, 'inherits parent')}`);
+      lines.push(`  ${profileName}: ${formatRoute(effective, config, legacyAwareFallback)}`);
     }
   }
-  const swarm = describeSubagentModelOverride(subagent, '', 'swarm');
-  lines.push(
-    `  swarm: ${formatRoute(swarm, config, 'inherits the selected task profile route')}`,
-  );
+  if (!noActiveCanonical) {
+    lines.push(
+      `  swarm: ${formatRoute(
+        swarm,
+        config,
+        active === undefined && legacyModel !== undefined
+          ? 'legacy compatibility may apply; otherwise follows the task profile or parent'
+          : 'inherits the selected task profile route',
+      )}`,
+    );
+    lines.push(`  tower_worker: ${formatRoute(towerWorker, config, legacyAwareFallback)}`);
+    lines.push(`  tower_reviewer: ${formatRoute(towerReviewer, config, 'inherits parent')}`);
+  }
+  if (legacyModel !== undefined && !noActiveCanonical) {
+    lines.push(
+      `  legacy compatibility fallback: model=${legacyModel} (configured compatibility fallback; may apply when the secondary-model flag and profile permit)`,
+    );
+  }
   lines.push('Open /preset to configure, or switch directly with /preset <name>.');
   host.showStatus(lines.join('\n'));
 }
@@ -406,11 +463,39 @@ function routeOption(
   };
 }
 
+function mainRouteFallback(
+  host: SlashCommandHost,
+  config: KimiConfig,
+): { model: string; thinkingEffort: string } {
+  return {
+    model: host.state.appState.model || config.defaultModel || '',
+    thinkingEffort: host.state.appState.thinkingEffort,
+  };
+}
+
+function mainRouteForStatus(
+  host: SlashCommandHost,
+  config: KimiConfig,
+  activePreset: string | undefined,
+): { model?: string; thinkingEffort?: string } {
+  const configured = activePreset === undefined
+    ? undefined
+    : config.subagent?.presets?.[activePreset]?.[SUBAGENT_PRESET_MAIN_PROFILE];
+  const fallback = mainRouteFallback(host, config);
+  return {
+    model: configured?.model ?? (fallback.model || undefined),
+    thinkingEffort: configured?.thinkingEffort ?? fallback.thinkingEffort,
+  };
+}
+
 function routeFallback(
   host: SlashCommandHost,
   config: KimiConfig,
   profileName: string,
 ): { model: string; thinkingEffort: string } {
+  if (profileName === SUBAGENT_PRESET_MAIN_PROFILE) {
+    return mainRouteFallback(host, config);
+  }
   const base = config.subagent?.agents?.[profileName];
   return {
     model: base?.model ?? host.state.appState.model,
@@ -447,12 +532,20 @@ function routeInheritanceDescription(profileName: string): string {
   if (profileName === SUBAGENT_PRESET_SWARM_PROFILE) {
     return 'Falls back to each swarm task profile, then base routing / parent.';
   }
+  if (profileName === SUBAGENT_PRESET_TOWER_WORKER_ROUTE) {
+    return 'Applies to Tower workers, then falls back to [subagent.agents.tower_worker], then the parent model.';
+  }
+  if (profileName === SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE) {
+    return 'Applies to Tower reviewers, then falls back to [subagent.agents.tower_reviewer], then the parent model.';
+  }
   return `Falls back to [subagent.agents.${profileName}], then the parent model.`;
 }
 
 function routeLabel(profileName: string): string {
   if (profileName === SUBAGENT_PRESET_MAIN_PROFILE) return 'Main agent';
   if (profileName === SUBAGENT_PRESET_SWARM_PROFILE) return 'Swarm default';
+  if (profileName === SUBAGENT_PRESET_TOWER_WORKER_ROUTE) return 'Tower worker';
+  if (profileName === SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE) return 'Tower reviewer';
   return `${capitalize(profileName)} subagent`;
 }
 

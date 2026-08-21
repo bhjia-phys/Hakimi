@@ -114,6 +114,34 @@ describe('ModelService', () => {
     expect(events.at(-1)).toEqual({ added: [], removed: ['k1'], changed: [] });
   });
 
+  it('treats prototype names as ordinary missing keys until explicitly configured', async () => {
+    const service = createService();
+    const events: Array<{ added: readonly string[]; removed: readonly string[]; changed: readonly string[] }> = [];
+    service.onDidChangeModels((event) =>
+      events.push({ added: event.added, removed: event.removed, changed: event.changed }),
+    );
+    const ids = ['constructor', 'toString', '__proto__'];
+
+    for (const id of ids) {
+      expect(service.get(id)).toBeUndefined();
+      await service.delete(id);
+    }
+    expect(events).toEqual([]);
+
+    const model: ModelRecord = { model: 'kimi-k2' };
+    for (const id of ids) {
+      await service.set(id, model);
+      expect(service.get(id)).toEqual(model);
+      expect(events.at(-1)).toEqual({ added: [id], removed: [], changed: [] });
+    }
+
+    for (const id of ids) {
+      await service.delete(id);
+      expect(service.get(id)).toBeUndefined();
+      expect(events.at(-1)).toEqual({ added: [], removed: [id], changed: [] });
+    }
+  });
+
   it('replaceAll replaces the records and keeps the default pointer', async () => {
     const service = createService({ a: { model: 'm-a' }, b: { model: 'm-b' } });
     await service.setDefaultModel('a');

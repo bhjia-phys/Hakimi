@@ -15,7 +15,11 @@ import { IAgentUserToolService } from '#/agent/userTool/userTool';
 import { IEventBus, type DomainEvent } from '#/app/event/eventBus';
 import { IConfigService } from '#/app/config/config';
 import { IFlagService } from '#/app/flag/flag';
-import { normalizeAgentProfile } from '#/app/agentProfileCatalog/agentProfileCatalog';
+import {
+  normalizeAgentProfile,
+  type AgentProfile,
+} from '#/app/agentProfileCatalog/agentProfileCatalog';
+import { SUBAGENT_SECTION } from '#/session/subagent/configSection';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
 import { APIProviderRateLimitError } from '#/kosong/contract/errors';
 import { IModelCatalog, type Model } from '#/kosong/model/catalog';
@@ -882,6 +886,8 @@ describe('SessionSwarmService metadata compatibility', () => {
   let createAgent: ReturnType<typeof vi.fn>;
   let runAgent: ReturnType<typeof vi.fn>;
   let eventBus: IEventBus;
+  let config: StubConfigService;
+  let exploreProfile: AgentProfile;
   let resolverAcquire: Mock<(binding: unknown, required: unknown) => void>;
 
   beforeEach(() => {
@@ -898,13 +904,21 @@ describe('SessionSwarmService metadata compatibility', () => {
 
     ix.stub(IAgentLifecycleService, lifecycle);
     ix.stub(ISessionSubagentService, subagents);
+    const coderProfile = normalizeAgentProfile({
+      name: 'coder',
+      tools: [],
+      systemPrompt: () => '',
+    });
+    exploreProfile = normalizeAgentProfile({
+      name: 'explore',
+      tools: [],
+      systemPrompt: () => '',
+    });
     ix.stub(ISessionAgentProfileCatalog, {
       _serviceBrand: undefined,
       ready: Promise.resolve(),
       get: (name: string) =>
-        name === 'coder'
-          ? normalizeAgentProfile({ name: 'coder', tools: [], systemPrompt: () => '' })
-          : undefined,
+        name === 'coder' ? coderProfile : name === 'explore' ? exploreProfile : undefined,
       getDefault: () => normalizeAgentProfile({ name: 'agent', tools: [], systemPrompt: () => '' }),
       list: () => [],
     });
@@ -953,7 +967,8 @@ describe('SessionSwarmService metadata compatibility', () => {
       },
     });
     ix.stub(ILogService, stubLog());
-    ix.stub(IConfigService, new StubConfigService({}));
+    config = new StubConfigService({});
+    ix.stub(IConfigService, config);
     ix.stub(IFlagService, stubFlag(() => false));
     ix.stub(IModelCatalog, {
       _serviceBrand: undefined,
@@ -1153,7 +1168,7 @@ describe('SessionSwarmService metadata compatibility', () => {
     expect(runAgent).not.toHaveBeenCalled();
   });
 
-  it('keeps resumed children on their own recorded model', async () => {
+  it('applies the caller binding to resumed children when no route override exists', async () => {
     agents['agent-existing'] = {
       labels: { parentAgentId: 'main' },
     };
@@ -1171,7 +1186,105 @@ describe('SessionSwarmService metadata compatibility', () => {
       }),
     ).resolves.toMatchObject([{ status: 'completed', agentId: 'agent-existing' }]);
 
-    expect(child.accessor.get(IAgentProfileService).data().modelAlias).toBe('stale-model');
+    expect(child.accessor.get(IAgentProfileService).data()).toMatchObject({
+      modelAlias: 'kimi-test',
+      thinkingLevel: 'medium',
+    });
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'subagent.spawned',
+        subagentId: 'agent-existing',
+        model: 'kimi-test',
+        thinkingEffort: 'medium',
+      }),
+    );
+    expect(runAgent).toHaveBeenCalledWith(
+      'agent-existing',
+      { kind: 'prompt', prompt: 'Continue' },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it('applies the swarm preset precedence before resuming and emits the updated binding', async () => {
+    await config.replace(SUBAGENT_SECTION, {
+      preset: 'research',
+      agents: {
+        explore: { model: 'provider/agent-route', thinkingEffort: 'agent-effort' },
+        swarm: { model: 'provider/swarm-route', thinkingEffort: 'swarm-effort' },
+      },
+      presets: {
+        research: {
+          explore: { model: 'provider/preset-route', thinkingEffort: 'preset-effort' },
+          swarm: { model: 'provider/swarm-preset', thinkingEffort: 'swarm-preset-effort' },
+        },
+      },
+    });
+    agents['agent-existing'] = {
+      labels: { parentAgentId: 'main' },
+    };
+    const child = agentHandle('agent-existing', lifecycle, eventBus, {
+      profileName: 'explore',
+      modelAlias: 'stale-model',
+      thinkingLevel: 'medium',
+    });
+    const profile = child.accessor.get(IAgentProfileService);
+    handles.set('agent-existing', child);
+    const service = ix.get(ISessionSwarmService);
+
+    await expect(
+      service.run({
+        callerAgentId: 'main',
+        tasks: [resumeSessionTask('agent-existing')],
+      }),
+    ).resolves.toMatchObject([{ status: 'completed', agentId: 'agent-existing' }]);
+
+    expect(profile.data()).toMatchObject({
+      modelAlias: 'provider/swarm-preset',
+      thinkingLevel: 'swarm-preset-effort',
+    });
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'subagent.spawned',
+        subagentId: 'agent-existing',
+        model: 'provider/swarm-preset',
+        thinkingEffort: 'swarm-preset-effort',
+      }),
+    );
+  });
+
+  it('preserves a swarm child binding when its profile opts out of resume overrides', async () => {
+    exploreProfile = normalizeAgentProfile({
+      name: 'explore',
+      tools: [],
+      preserveBindingOnResume: true,
+      systemPrompt: () => '',
+    });
+    await config.replace(SUBAGENT_SECTION, {
+      agents: {
+        explore: { model: 'provider/swarm-route', thinkingEffort: 'high' },
+      },
+    });
+    agents['agent-existing'] = {
+      labels: { parentAgentId: 'main' },
+    };
+    const child = agentHandle('agent-existing', lifecycle, eventBus, {
+      profileName: 'explore',
+      modelAlias: 'stale-model',
+      thinkingLevel: 'medium',
+    });
+    const profile = child.accessor.get(IAgentProfileService);
+    handles.set('agent-existing', child);
+    const service = ix.get(ISessionSwarmService);
+
+    await service.run({
+      callerAgentId: 'main',
+      tasks: [resumeSessionTask('agent-existing')],
+    });
+
+    expect(profile.data()).toMatchObject({
+      modelAlias: 'stale-model',
+      thinkingLevel: 'medium',
+    });
     expect(eventBus.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'subagent.spawned',
@@ -1180,10 +1293,40 @@ describe('SessionSwarmService metadata compatibility', () => {
         thinkingEffort: 'medium',
       }),
     );
-    expect(runAgent).toHaveBeenCalledWith(
-      'agent-existing',
-      { kind: 'prompt', prompt: 'Continue' },
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+  });
+
+  it('fails a swarm resume with a dangling agents route model before running or emitting', async () => {
+    await config.replace(SUBAGENT_SECTION, {
+      agents: {
+        explore: { model: 'provider/bad', thinkingEffort: 'high' },
+      },
+    });
+    agents['agent-existing'] = {
+      labels: { parentAgentId: 'main' },
+    };
+    const child = agentHandle('agent-existing', lifecycle, eventBus, {
+      profileName: 'explore',
+      modelAlias: 'stale-model',
+      thinkingLevel: 'medium',
+    });
+    handles.set('agent-existing', child);
+    const service = ix.get(ISessionSwarmService);
+
+    await expect(
+      service.run({
+        callerAgentId: 'main',
+        tasks: [resumeSessionTask('agent-existing')],
+      }),
+    ).resolves.toMatchObject([
+      {
+        status: 'failed',
+        error:
+          '[subagent] model alias "provider/bad" from agents.explore could not be resolved; configure the route through /preset or [subagent.agents].',
+      },
+    ]);
+    expect(runAgent).not.toHaveBeenCalled();
+    expect(eventBus.publish).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'subagent.spawned' }),
     );
   });
 
@@ -1221,7 +1364,7 @@ describe('SessionSwarmService metadata compatibility', () => {
     );
   });
 
-  it('points at the [secondary_model.models] config when a spawn task binding is invalid', async () => {
+  it('reports an invalid explicit spawn binding without creating an agent', async () => {
     const service = ix.get(ISessionSwarmService);
     const spawnTask: SessionSwarmSpawnTask = {
       ...spawnSessionTask('src/a.ts'),
@@ -1237,7 +1380,7 @@ describe('SessionSwarmService metadata compatibility', () => {
     ).resolves.toMatchObject([
       {
         status: 'failed',
-        error: expect.stringContaining('comes from [secondary_model.models]'),
+        error: 'Model "provider/bad" is not configured in config.toml.',
       },
     ]);
     expect(createAgent).not.toHaveBeenCalled();
@@ -1246,6 +1389,17 @@ describe('SessionSwarmService metadata compatibility', () => {
   it('does not emit spawned again when a rate-limited child retries', async () => {
     vi.useFakeTimers();
     try {
+      await config.replace(SUBAGENT_SECTION, {
+        preset: 'research',
+        presets: {
+          research: {
+            agent: { model: 'provider/first', thinkingEffort: 'first-effort' },
+          },
+          updated: {
+            agent: { model: 'provider/second', thinkingEffort: 'second-effort' },
+          },
+        },
+      });
       agents['agent-retry'] = {
         labels: { parentAgentId: 'main' },
       };
@@ -1285,10 +1439,21 @@ describe('SessionSwarmService metadata compatibility', () => {
       await vi.advanceTimersByTimeAsync(0);
       rateLimited.reject(new APIProviderRateLimitError('Rate limited'));
       await vi.advanceTimersByTimeAsync(0);
+      await config.replace(SUBAGENT_SECTION, {
+        preset: 'updated',
+        presets: {
+          updated: {
+            agent: { model: 'provider/second', thinkingEffort: 'second-effort' },
+          },
+        },
+      });
       blocker.resolve({ summary: 'blocker summary' });
       await vi.advanceTimersByTimeAsync(3_000);
       await running;
 
+      expect(
+        handles.get('agent-retry')?.accessor.get(IAgentProfileService).data(),
+      ).toMatchObject({ modelAlias: 'provider/second', thinkingLevel: 'second-effort' });
       expect(
         published
           .filter((event) => event.type === 'subagent.spawned')
@@ -1480,6 +1645,13 @@ function profileService(data: ProfileData): IAgentProfileService {
     data: () => current,
     update: (changed) => {
       current = { ...current, ...changed };
+    },
+    rebind: (binding) => {
+      current = {
+        ...current,
+        modelAlias: binding.modelAlias,
+        thinkingLevel: binding.thinkingLevel ?? 'off',
+      };
     },
     republishStatus: () => {},
     getEffectiveThinkingLevel: () => current.thinkingLevel,

@@ -107,6 +107,8 @@ timeout = 5
 | `telemetry` | `boolean` | `true` | 是否启用匿名遥测；显式设为 `false` 时关闭 |
 | `providers` | `table` | `{}` | API 供应商表 → [`providers`](#providers) |
 | `models` | `table` | — | 模型别名表 → [`models`](#models) |
+| `subagent` | `table` | — | canonical Agent、AgentSwarm 和 Tower 路由 → [`[subagent]`](#subagent) |
+| `secondary_model` | `table` | — | 已废弃的兼容 fallback 和显式 API round-trip 数据 → [`[secondary_model]`](#已废弃的-secondary_model) |
 | `thinking` | `table` | — | Thinking 模式默认参数 → [`thinking`](#thinking) |
 | `loop_control` | `table` | — | Agent 循环控制参数 → [`loop_control`](#loop-control) |
 | `background` | `table` | — | 后台任务运行参数 → [`background`](#background) |
@@ -117,7 +119,7 @@ timeout = 5
 | `hooks` | `array<table>` | — | 生命周期 hook，详见 [Hooks](../customization/hooks.md) |
 | `identity` | `table` | — | 自定义 Agent 身份 → [`identity`](#identity) |
 
-以下各节对 `providers`、`models`、`thinking`、`loop_control`、`background`、`image`、`services`、`permission` 等嵌套表逐一展开。
+以下各节对 `providers`、`models`、`subagent`、`secondary_model`、`thinking`、`loop_control`、`background`、`image`、`services`、`permission` 等嵌套表逐一展开。
 
 ## `providers`
 
@@ -190,73 +192,69 @@ display_name = "Kimi for Coding (custom)"
 
 无需修改配置文件也可以临时切换模型——通过 `KIMI_MODEL_*` 环境变量在内存里合成一个临时供应商，详见[用环境变量定义模型](./env-vars.md#用环境变量定义模型-kimi-model)。
 
-## `secondary_model`
+## `[subagent]`
 
-subagent 默认继承 main agent 正在运行的模型。`[secondary_model]` 节把这件事变成可配置的：为 subagent 准备一批候选模型（模型池）并指定默认绑定——通常是一个更便宜的模型，供不需要主模型能力的子任务使用。
+`[subagent]` 是 Agent、AgentSwarm 和 Tower 路由的 canonical 模型控制面。每条路由都可以用 `model` 设置模型别名、用 `thinking_effort` 设置 Thinking 档位；别名必须存在于 [`[models]`](#models) 中。
 
-### subagent 模型池
+### canonical subagent 路由
 
-该功能目前是实验功能，默认关闭。通过 `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL=1` 启用，或使用 master `KIMI_CODE_EXPERIMENTAL_FLAG=1`。它在包括交互式 TUI 在内的所有启动方式下生效。实验功能关闭时，模型池配置不生效：subagent 继承调用方模型，会话启动也会跳过池校验。
-
-只想让所有 subagent 默认换用一个模型时不需要 models 表——一行 `default_model` 就是只含一个条目的模型池：
+设置 active preset 并定义路由表，例如：
 
 ```toml
-[secondary_model]
-default_model = "kimi-code/kimi-for-coding-highspeed"
+[subagent]
+preset = "fast"
+
+[subagent.agents.explore]
+model = "provider/fast"
+thinking_effort = "medium"
+
+[subagent.agents.swarm]
+model = "provider/swarm"
+
+[subagent.agents.tower_worker]
+model = "provider/worker"
+
+[subagent.agents.tower_reviewer]
+model = "provider/reviewer"
+
+[subagent.presets.fast.main]
+model = "provider/main"
+thinking_effort = "high"
+
+[subagent.presets.fast.explore]
+model = "provider/fast"
 ```
 
-在交互式 TUI 中，也可以用 [`/secondary-model`](../reference/slash-commands.md) 命令（别名 `/subagent-model`）打开模型选择器来设置：选择后写入 `default_model`（已有 models 表而所选别名不在其中时，会一并补一条空描述条目），之后派生的 subagent 立即按新默认值绑定，无需重启会话。
+这些路由 key 的含义是固定的：
 
-| 字段 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `default_model` | `string` | — | subagent 默认模型。配置 `[secondary_model.models]` 时必填，且必须是其中的 key；单独写下它（不写 models 表）则等价于只含它一个条目的模型池 |
-| `models` | `table<string, string>` | — | subagent 模型池。key 是 [`[models]`](#models) 中已配置条目的别名，value 是 main agent 挑选 subagent 模型时看到的描述（中英文均可；空字符串表示只列出别名、不给提示） |
-| `force` | `boolean` | `false` | 把所有 subagent 固定到 `default_model`：不再提供 `model` 参数，main agent 无法改选其他模型或 `"primary"`。必须配置 `default_model`，且不能与 `[secondary_model.models]` 同时使用 |
+- `main`：激活 preset 时应用的 main agent 模型和 Thinking 设置。TUI 的 `/preset` 命令会让全局 `default_model` 和 `thinking` 与这条路由保持同步。
+- `explore`、`plan`、`coder` 以及其他 profile 名称：所选 subagent profile 使用的 Agent 路由。
+- `swarm`：AgentSwarm 的默认路由；swarm 选定的 profile 仍可贡献自己的 profile 路由。
+- `tower_worker`：Tower worker 任务使用的模型。
+- `tower_reviewer`：Tower reviewer 任务使用的模型。worker 和 reviewer 路由彼此独立。
 
-配置模型池（显式的 `[secondary_model.models]` 表，或仅一行 `default_model` 形成的隐式单条目池）即启用模型选择：`Agent` / `AgentSwarm` 工具会获得 `model` 参数，工具描述中会列出模型池（默认模型标注 `[default]`），main agent 可按次派生选择模型（除非设置了 `force`，见下文）。模型池只引用已配置的 [`[models]`](#models) 条目——下面的 `kimi-code/*` 别名由 `/login` 自动提供——并附上挑选提示：
+preset 激活时，路由按以下优先级解析：Agent 使用 `presets.<active>.<profile>` → `agents.<profile>` → 调用方模型和 Thinking 档位；AgentSwarm 使用 `presets.<active>.swarm` → `presets.<active>.<profile>` → `agents.swarm` → `agents.<profile>` → 调用方；Tower 使用对应的 `presets.<active>.tower_worker` 或 `presets.<active>.tower_reviewer` → 对应的 `agents` 路由 → 调用方。没有 active preset 时，会先考虑 `agents` 路由。已配置但无法解析的 canonical 别名会被视为配置错误；inactive preset 的路由不会阻止启动。
 
-```toml
-[secondary_model]
-default_model = "kimi-code/kimi-for-coding-highspeed"
-[secondary_model.models]
-"kimi-code/k3" = "难题选它。擅长复杂推理、算法设计、深度调试、数学和系统性难题。"
-"kimi-code/kimi-for-coding-highspeed" = "又快又便宜。适合日常重构、代码解释、小改动、总结和批量简单任务。"
-"kimi-code/kimi-for-coding" = "均衡的编码主力。适合大多数功能开发和代码修改任务。"
-```
+Agent 和 AgentSwarm 不再接受逐次派生的 `model` 参数。请通过这些 canonical 路由选择模型；工具调用仍可在适用时通过 `subagent_type` 选择 profile。路由同时用于新派生和 resume，因此普通 profile 路由的修改会影响之后的恢复，而保留的 binding 不会被改写。
 
-派生时按以下顺序解析 subagent 的模型：工具调用显式传入的 `model` → `default_model`。`model` 参数接受池中任意别名，或 `"primary"` ——调用方自己正在运行的模型，始终合法，即使它不在池中。`default_model` 与 `[secondary_model.models]` 都未配置时，该参数不会出现，subagent 继承调用方模型。绑定池中别名时不携带显式 Thinking 档位——subagent 按 "全局 `[thinking]` 配置 → 所绑定模型的默认 effort" 自然解析，不继承调用方的档位；`"primary"` 则连模型带档位一起继承调用方。
+### 超时
 
-要彻底收回 main agent 的选择权——让所有 subagent 固定跑在同一个模型上——加上 `force = true`：
+`timeout_ms` 设置单个 subagent 任务的最长墙钟时间（默认 `7200000`，即 2 小时）。设置为 `0` 表示无超时。环境变量 `KIMI_SUBAGENT_TIMEOUT_MS` 优先于配置值；在 print 模式（`kimi -p`）下，未显式设置时默认为 `0`。超过 `2147483647`（约 24.8 天）的值会被运行时钳制。
 
-```toml
-[secondary_model]
-default_model = "kimi-code/kimi-for-coding-highspeed"
-force = true
-```
+### 已废弃的 `[secondary_model]`
 
-设置 `force` 后不再提供 `model` 参数（与完全未配置时一样），每次派生都绑定 `default_model`；显式传入 `model`（包括 `"primary"`）会报错。`force` 必须搭配 `default_model`，且不能与 `[secondary_model.models]` 表同时使用——表的意义在于提供选择，而 force 取消了选择。
+`[secondary_model]` 仍保留显式配置/API schema 的读写能力，以及旧配置文件的兼容性。它不再是第二套产品控制面：加载时会给出废弃警告，`/secondary-model` 和 `/subagent-model` 只显示迁移提示，provider/model 维护会原样保留该节，不会重写或迁移别名。新的配置请使用 `/preset` 和 `[subagent]`。
 
-利用自然解析会落到所绑定模型的默认 effort 这一点，可以给池中不同条目配不同的 Thinking 档位：为同一个底层模型再注册一个 `[models]` 条目作为「变体」，用 [`[models."<alias>".overrides]`](#模型覆盖项) 只覆盖 `default_effort`，再把两个别名都放进模型池——main agent 挑选别名时便同时选定了档位：
+没有 canonical preset 激活时，`KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL=1`（或 `KIMI_CODE_EXPERIMENTAL_FLAG=1`）会为 Agent、AgentSwarm 和 Tower worker 启用 best-effort 的 legacy fallback。仅当 legacy `default_model` 或 `model` 仍能解析时才使用它；否则使用调用方模型。Tower reviewer 永远不使用该 fallback。active canonical preset 始终优先；legacy 的 `force`、模型池选择和逐次 `model` 语义不再控制 v2 路由。
 
-```toml
-# "kimi-code/kimi-for-coding-highspeed" 由 /login 提供；这里为同一模型注册一个高档位变体
-[models.kimi-for-coding-highspeed-deep]
-provider = "managed:kimi-code"
-model = "kimi-for-coding-highspeed"
+以下 legacy 字段仍可通过 `getConfig` / `setConfig` 和 REST/config API 进行 round-trip：
 
-[models.kimi-for-coding-highspeed-deep.overrides]
-default_effort = "high"
-
-[secondary_model]
-default_model = "kimi-code/kimi-for-coding-highspeed"
-[secondary_model.models]
-"kimi-code/kimi-for-coding-highspeed" = "又快又便宜。适合日常重构、代码解释、小改动、总结和批量简单任务。"
-kimi-for-coding-highspeed-deep = "同一模型的高 Thinking 档位。适合较难的子任务。"
-```
-
-注意 `default_effort` 是模型级默认值：一旦设置了全局 `[thinking].effort`，它对 main agent 和 subagent 都优先生效，变体的默认档位只在全局未设置时起作用。取值与回落规则同 [`[models]` 条目的 `default_effort`](#models)。
-
-配置错误一律直接报错，不做静默回退：`default_model` 缺失、不是池中 key，或池中 key 无法解析到已配置的 `[models]` 条目时，会话的创建、恢复（resume）与 fork 都会在启动时直接失败；`force` 未搭配 `default_model` 或与 `[secondary_model.models]` 表同用时亦然。别名 `primary` 是保留字——它始终绑定调用方自己的模型——不能作为池中 key。工具调用传入的 `model` 既不是池中别名也不是 `"primary"` 时，本次派生报错并列出可选值。
+| 字段 | 类型 | 兼容含义 |
+| --- | --- | --- |
+| `default_model` | `string` | secondary-model flag 开启且没有 preset 时的 best-effort fallback 别名 |
+| `models` | `table<string, string>` | 保留的 legacy 模型池数据；不会用于生成 Agent 或 AgentSwarm 工具 schema |
+| `force` | `boolean` | 为兼容性保留；不会强制 canonical v2 路由 |
+| `model` 和 legacy 模型元数据字段 | 不定 | 为旧配置/API 客户端保留；`model` 可以提供 fallback 别名 |
 
 ## `thinking`
 
@@ -319,40 +317,6 @@ kimi-for-coding-highspeed-deep = "同一模型的高 Thinking 档位。适合较
 `keep_alive_on_exit` 可被环境变量 `KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT` 覆盖，`max_running_tasks` 可被 `KIMI_CODE_BACKGROUND_MAX_RUNNING_TASKS` 覆盖，优先级均高于配置文件。
 
 在 print 模式（`kimi -p "<prompt>"`）下，只要还有未决的后台任务，Kimi Code 在 main agent 的 turn 结束后不会退出：每个任务完成都会以合成 user 消息回馈给 main agent，steer 出新的 turn（默认 `print_background_mode = "steer"`），直到某 turn 结束时没有任何未决任务才退出。该循环受 `print_wait_ceiling_s` 与 `print_max_turns` 约束，默认值都近似不设限。print 模式下后台工作也不会被墙钟超时杀掉：后台 `Bash` 任务默认无超时（`bash_task_timeout_s = 0`），subagent 默认无超时（`[subagent] timeout_ms = 0`），只有模型自己能停止任务。将 `print_background_mode` 设为 `"drain"` 可等待任务结束但不回馈结果，设为 `"exit"` 则在 main agent 结束后立即退出。
-
-## `subagent`
-
-`subagent` 控制派生 subagent（`Agent` / `AgentSwarm`）的运行方式。
-
-| 字段 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `timeout_ms` | `integer` | `7200000`（2 小时） | 单个子代理（`Agent` / `AgentSwarm`）允许运行的最长时间（毫秒）。超时后子代理以 `timed_out` 收尾。`0` 表示无超时——子代理一直运行到自行结束或被模型手动停止。该值是后台任务管理器对每个子代理任务的 per-task timeout，因此对前台与后台子代理同时生效。在 print 模式（`kimi -p`）下未显式设置时默认为 `0`。注意：超过 `2147483647`（约 24.8 天）的值会被运行时钳到约 24.8 天 |
-| `preset` | `string` | 未设置 | `[subagent.presets]` 中当前激活的 preset 名称。可在运行时用 `/preset <name>` 切换（`/preset off` 清除）——切换会重载 session |
-| `agents` | table | 未设置 | 按子代理类型（profile 名，如 `explore`、`plan`、`coder`）的覆盖项：`[subagent.agents.explore]` 下可设 `model`（`[models]` 里的别名）和/或 `thinking_effort`。未设置的字段继承父 agent 当前值 |
-| `presets` | table | 未设置 | 命名的按类型覆盖组合：`[subagent.presets.<名称>.<类型>]`，字段与 `agents` 相同。`preset` 指定的组合逐字段优先于 `agents` |
-
-`timeout_ms` 可被环境变量 `KIMI_SUBAGENT_TIMEOUT_MS` 覆盖，优先级高于配置文件。
-
-子代理模型/思维强度的逐字段优先级：`[subagent.presets.<激活项>.<类型>]` → `[subagent.agents.<类型>]` → 继承父 agent。`model` 别名若未在 `[models]` 中定义，会在日志中告警并回退为父 agent 模型，不会因笔误导致子代理启动失败。示例——一个 oh-my-opencode-slim 风格的 `gpt` preset：只读搜索用便宜快速的模型，规划继承主模型并用高思维强度（规划质量决定整个任务走向，且每次规划流程只跑一次），委托实现用便宜模型拉满思维强度（Fixer 风格——主 agent 已完成任务分解）：
-
-```toml
-[subagent]
-preset = "gpt"
-
-[subagent.presets.gpt.explore]
-model = "openai-codex/gpt-5.6-luna"
-thinking_effort = "low"
-
-[subagent.presets.gpt.plan]
-# model intentionally unset: inherits the main agent's model
-thinking_effort = "high"
-
-[subagent.presets.gpt.coder]
-model = "openai-codex/gpt-5.6-luna"
-thinking_effort = "xhigh"
-```
-
-在 TUI 中使用 `/preset`（或 `/preset status`）查看当前激活的 preset 与各类型的生效覆盖，使用 `/preset <name>` 切换，使用 `/preset off` 清除。preset 管理器始终包含 `Create new preset`；尚未配置任何 preset 时，选择它并输入名称，然后配置主 Agent、子 Agent 和 Swarm 路由。也可以使用 `/preset edit <name>` 直接打开同一个路由编辑器。
 
 ## `mcp`
 

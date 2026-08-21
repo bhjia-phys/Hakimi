@@ -33,13 +33,29 @@ const AVAILABLE_MODELS = {
     name: 'Acme Mini',
     supportEfforts: ['low', 'medium', 'high'],
   },
+  'acme/legacy': {
+    provider: 'acme',
+    model: 'legacy',
+    name: 'Acme Legacy',
+    supportEfforts: ['low', 'medium', 'high'],
+  },
 };
 
 const SUBAGENT_CONFIG = {
   preset: 'fast',
-  agents: { explore: { model: 'acme/mini', thinkingEffort: 'low' } },
+  agents: {
+    main: { model: 'acme/mini', thinkingEffort: 'low' },
+    explore: { model: 'acme/mini', thinkingEffort: 'low' },
+    tower_worker: { model: 'acme/main', thinkingEffort: 'medium' },
+    tower_reviewer: { model: 'acme/main', thinkingEffort: 'high' },
+  },
   presets: {
-    fast: { explore: { thinkingEffort: 'minimal' }, plan: { model: 'acme/mini' } },
+    fast: {
+      explore: { thinkingEffort: 'minimal' },
+      plan: { model: 'acme/mini' },
+      tower_worker: { model: 'acme/main' },
+      tower_reviewer: { model: 'acme/main' },
+    },
     deep: {
       main: { model: 'acme/main', thinkingEffort: 'high' },
       coder: { model: 'acme/main', thinkingEffort: 'high' },
@@ -53,9 +69,17 @@ interface TestPicker {
   render(width: number): string[];
 }
 
-function makeHost(options: { hasSession?: boolean; subagent?: unknown } = {}) {
+function makeHost(
+  options: {
+    hasSession?: boolean;
+    subagent?: unknown;
+    secondaryModel?: { defaultModel?: string; model?: string };
+  } = {},
+) {
   const config = {
+    defaultModel: 'acme/main',
     subagent: options.subagent === undefined ? SUBAGENT_CONFIG : options.subagent,
+    secondaryModel: options.secondaryModel,
     models: AVAILABLE_MODELS,
   };
   const harness = {
@@ -130,6 +154,8 @@ describe('handlePresetCommand', () => {
     expect(routes).toContain('Main agent');
     expect(routes).toContain('Explore subagent');
     expect(routes).toContain('Swarm default');
+    expect(routes).toContain('Tower worker');
+    expect(routes).toContain('Tower reviewer');
 
     mountedPicker(host).handleInput(DOWN);
     mountedPicker(host).handleInput(DOWN);
@@ -205,9 +231,117 @@ describe('handlePresetCommand', () => {
     );
     expect(text).toContain('Active agent preset: fast');
     expect(text).toContain('fast *');
-    expect(text).toContain('main: keeps current/default model');
+    expect(text).toContain('main: model=acme/main  effort=medium');
+    expect(text).not.toContain('main: model=acme/mini');
     expect(text).toContain('explore: model=acme/mini  effort=minimal');
     expect(text).toContain('swarm: inherits the selected task profile route');
+  });
+
+  it('does not present a configured legacy model as effective while a preset is active', async () => {
+    const { host, harness } = makeHost({
+      secondaryModel: { defaultModel: 'acme/legacy' },
+    });
+
+    await handlePresetCommand(host, 'status');
+
+    expect(harness.setConfig).not.toHaveBeenCalled();
+    const text = stripAnsi(
+      (host.showStatus as ReturnType<typeof vi.fn>).mock.calls.map(([value]) => String(value)).join('\n'),
+    );
+    expect(text).toContain('Effective Agent routes (preset > [subagent.agents] > parent):');
+    expect(text).not.toContain('legacy compatibility fallback');
+  });
+
+  it('summarizes legacy-only routing without claiming parent inheritance', async () => {
+    const { host, harness } = makeHost({
+      subagent: { agents: { main: { model: 'acme/mini' } } },
+      secondaryModel: { defaultModel: 'acme/legacy' },
+    });
+
+    await handlePresetCommand(host, 'status');
+
+    expect(harness.setConfig).not.toHaveBeenCalled();
+    const text = stripAnsi(
+      (host.showStatus as ReturnType<typeof vi.fn>).mock.calls.map(([value]) => String(value)).join('\n'),
+    );
+    expect(text).toContain('main: model=acme/main  effort=medium');
+    expect(text).not.toContain('main: model=acme/mini');
+    expect(text).toContain(
+      'No canonical subagent model routes configured — legacy compatibility may apply to eligible subagents and Tower workers; otherwise they use the parent model.',
+    );
+    expect(text).not.toContain('tower_worker: inherits parent');
+    expect(text).not.toContain('legacy compatibility fallback: model=acme/legacy');
+    expect(text).not.toContain('Effective Agent routes (preset > [subagent.agents] > parent):');
+  });
+
+  it('uses the current main rather than agents.main in the main route picker', async () => {
+    const { host } = makeHost({
+      secondaryModel: { defaultModel: 'acme/legacy' },
+    });
+
+    await handlePresetCommand(host, 'edit fast');
+    mountedPicker(host).handleInput(DOWN);
+    mountedPicker(host).handleInput(ENTER);
+
+    await vi.waitFor(() => {
+      expect(host.mountEditorReplacement).toHaveBeenCalledTimes(2);
+    });
+    const text = stripAnsi(mountedPicker(host).render(100).join('\n'));
+    expect(text).toContain('❯ main    acme ← current');
+    expect(text).not.toContain('❯ mini    acme ← current');
+  });
+
+  it('uses preset then base routes, never the legacy model, in the route picker', async () => {
+    const { host } = makeHost({
+      secondaryModel: { defaultModel: 'acme/legacy' },
+    });
+
+    await handlePresetCommand(host, 'edit fast');
+    mountedPicker(host).handleInput(DOWN);
+    mountedPicker(host).handleInput(DOWN);
+    mountedPicker(host).handleInput(ENTER);
+
+    await vi.waitFor(() => {
+      expect(host.mountEditorReplacement).toHaveBeenCalledTimes(2);
+    });
+    expect(stripAnsi(mountedPicker(host).render(100).join('\n'))).toContain('❯ mini    acme ← current');
+  });
+
+  it('documents Tower base-route fallback in the preset picker', async () => {
+    const { host } = makeHost({
+      subagent: {
+        presets: { fast: {} },
+        agents: {
+          tower_worker: { model: 'acme/main' },
+          tower_reviewer: { model: 'acme/main' },
+        },
+      },
+    });
+
+    await handlePresetCommand(host, 'edit fast');
+    mountedPicker(host).handleInput(ENTER);
+    const text = stripAnsi(mountedPicker(host).render(100).join('\n'));
+    expect(text).toContain('[subagent.agents.tower_worker]');
+    expect(text).toContain('[subagent.agents.tower_reviewer]');
+  });
+
+  it('shows tower-only routes on status without claiming no overrides', async () => {
+    const { host, harness } = makeHost({
+      subagent: {
+        agents: {
+          tower_worker: { model: 'acme/main', thinkingEffort: 'medium' },
+        },
+      },
+    });
+
+    await handlePresetCommand(host, 'status');
+
+    expect(harness.setConfig).not.toHaveBeenCalled();
+    const text = stripAnsi(
+      (host.showStatus as ReturnType<typeof vi.fn>).mock.calls.map(([value]) => String(value)).join('\n'),
+    );
+    expect(text).toContain('tower_worker: model=acme/main  effort=medium');
+    expect(text).not.toContain('No subagent model overrides configured');
   });
 
   it('creates the first preset from the empty manager without writing config yet', async () => {

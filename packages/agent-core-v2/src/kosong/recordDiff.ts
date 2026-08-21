@@ -27,14 +27,14 @@ export function diffRecords<T>(
   const removed: string[] = [];
   const changed: string[] = [];
   for (const key of Object.keys(curr)) {
-    if (!(key in prev)) {
+    if (!Object.hasOwn(prev, key)) {
       added.push(key);
     } else if (!deepEqual(prev[key], curr[key])) {
       changed.push(key);
     }
   }
   for (const key of Object.keys(prev)) {
-    if (!(key in curr)) {
+    if (!Object.hasOwn(curr, key)) {
       removed.push(key);
     }
   }

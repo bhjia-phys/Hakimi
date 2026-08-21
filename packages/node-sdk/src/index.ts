@@ -85,7 +85,11 @@ export {
   describeSubagentModelOverride,
   SUBAGENT_PRESET_MAIN_PROFILE,
   SUBAGENT_PRESET_SWARM_PROFILE,
-} from '@moonshot-ai/agent-core';
+  SUBAGENT_PRESET_TOWER_WORKER_ROUTE,
+  SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE,
+  SUBAGENT_PRESET_TOWER_WORKER_PROFILE,
+  SUBAGENT_PRESET_TOWER_REVIEWER_PROFILE,
+} from '@moonshot-ai/agent-core-v2/session/subagent/configSection';
 // Reserved key of the v2 engine's subagent model pool: it always binds the
 // caller's own model, so hosts must not offer a user alias named `primary`
 // as the subagent default model.

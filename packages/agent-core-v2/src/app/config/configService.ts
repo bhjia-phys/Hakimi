@@ -20,9 +20,9 @@
  * atomic-document store (reloading when the document changes on disk), and logs
  * through `log`. Late section / overlay registration re-validates the
  * already-loaded raw value and re-runs overlays. Section-declared key
- * `deprecations` are detected from the on-disk document on every load and
- * reported as warning diagnostics (the deprecated value is NOT applied, and
- * the file is never rewritten); env-var renames declared via a binding's
+ * `deprecations` are detected from the on-disk document on load and after
+ * user writes, and reported as warning diagnostics (the deprecated value is
+ * NOT applied, and the file is never rewritten); env-var renames declared via a binding's
  * `deprecatedEnv` still resolve as a fallback, likewise with a warning.
  * Diagnostics changes are published through `onDidChangeDiagnostics`.
  * `ConfigRegistry` is also the
@@ -74,7 +74,10 @@ import {
   getConfigSectionContributions,
 } from './configSectionContributions';
 import { getConfigOverlayContributions } from './configOverlayContributions';
-import { collectKeyDeprecations } from './deprecations';
+import {
+  collectKeyDeprecations,
+  collectSectionDeprecations,
+} from './deprecations';
 import { migrateThinkingEffortMaxToHigh } from './migrations';
 import {
   applySectionToToml,
@@ -183,7 +186,8 @@ function isSameSection(
     existing.fromToml === options.fromToml &&
     existing.toToml === options.toToml &&
     deepEqual(existing.defaultValue, options.defaultValue) &&
-    deepEqual(existing.deprecations, options.deprecations)
+    deepEqual(existing.deprecations, options.deprecations) &&
+    deepEqual(existing.deprecation, options.deprecation)
   );
 }
 
@@ -281,6 +285,7 @@ export class ConfigRegistry extends Disposable implements IConfigRegistry {
       fromToml: options.fromToml,
       toToml: options.toToml,
       deprecations: options.deprecations,
+      deprecation: options.deprecation,
     });
     this._onDidRegisterSection.fire({ domain });
   }
@@ -345,6 +350,7 @@ export class ConfigService extends Disposable implements IConfigService {
   private memory: ResolvedConfig = {};
   private delivered: ResolvedConfig = {};
   private readonly diagnosticsList: ConfigDiagnostic[] = [];
+  private rawDeprecationDiagnostics: ConfigDiagnostic[] = [];
   private lastDiagnosticsSnapshot = '[]';
   private readonly configKey: string;
 
@@ -415,6 +421,25 @@ export class ConfigService extends Disposable implements IConfigService {
     if (!duplicate) this.diagnosticsList.push(diagnostic);
   }
 
+  private replaceRawDeprecationDiagnostics(rawSnake: ResolvedConfig): void {
+    for (const previous of this.rawDeprecationDiagnostics) {
+      const index = this.diagnosticsList.findIndex(
+        (existing) =>
+          existing.domain === previous.domain &&
+          existing.severity === previous.severity &&
+          existing.message === previous.message,
+      );
+      if (index >= 0) this.diagnosticsList.splice(index, 1);
+    }
+    this.rawDeprecationDiagnostics = [
+      ...collectKeyDeprecations(rawSnake, this.registry.listSections()),
+      ...collectSectionDeprecations(rawSnake, this.registry.listSections()),
+    ];
+    for (const diagnostic of this.rawDeprecationDiagnostics) {
+      this.pushDiagnostic(diagnostic);
+    }
+  }
+
   private emitDiagnosticsIfChanged(): void {
     const snapshot = JSON.stringify(this.diagnosticsList);
     if (snapshot === this.lastDiagnosticsSnapshot) return;
@@ -452,7 +477,10 @@ export class ConfigService extends Disposable implements IConfigService {
       }
       await this.persist(domain);
       this.rebuildEffective('set', [domain]);
+      this.replaceRawDeprecationDiagnostics(this.rawSnake);
+      this.emitDiagnosticsIfChanged();
     });
+    await this.stateChain;
   }
 
   async replace(
@@ -480,7 +508,10 @@ export class ConfigService extends Disposable implements IConfigService {
       }
       await this.persist(domain);
       this.rebuildEffective('set', [domain]);
+      this.replaceRawDeprecationDiagnostics(this.rawSnake);
+      this.emitDiagnosticsIfChanged();
     });
+    await this.stateChain;
   }
 
   async replaceSections(
@@ -518,7 +549,10 @@ export class ConfigService extends Disposable implements IConfigService {
       this.raw = staged;
       await this.persistDomains(domains);
       this.rebuildEffective('set', domains);
+      this.replaceRawDeprecationDiagnostics(this.rawSnake);
+      this.emitDiagnosticsIfChanged();
     });
+    await this.stateChain;
   }
 
   private stripEnv(domain: string, value: unknown): unknown {
@@ -566,12 +600,10 @@ export class ConfigService extends Disposable implements IConfigService {
       this.log.warn('config load failed', { error: describeUnknownError(error) });
     }
     const nextRawSnake = cloneRecord(fileData);
-    // Key-deprecation warnings derive from the on-disk document, so collect
-    // them before the unchanged-file early return — the list was just cleared
-    // above and a no-op reload must not drop them.
-    for (const diagnostic of collectKeyDeprecations(nextRawSnake, this.registry.listSections())) {
-      this.pushDiagnostic(diagnostic);
-    }
+    // Key- and section-deprecation warnings derive from the on-disk document,
+    // so refresh them before the unchanged-file early return — a no-op reload
+    // must not drop them.
+    this.replaceRawDeprecationDiagnostics(nextRawSnake);
     if (source !== 'load' && JSON.stringify(nextRawSnake) === JSON.stringify(this.rawSnake)) {
       // The file is unchanged, so values and change events stay as they are —
       // but env-derived diagnostics (deprecated env fallbacks, overlay

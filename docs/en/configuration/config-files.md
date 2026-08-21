@@ -107,6 +107,8 @@ Fields in the config file fall into two categories: **top-level scalars** that d
 | `telemetry` | `boolean` | `true` | Whether anonymous telemetry is enabled; disabled only when explicitly set to `false` |
 | `providers` | `table` | `{}` | API provider table → [`providers`](#providers) |
 | `models` | `table` | — | Model alias table → [`models`](#models) |
+| `subagent` | `table` | — | Canonical Agent, AgentSwarm, and Tower routes → [`[subagent]`](#subagent) |
+| `secondary_model` | `table` | — | Deprecated compatibility fallback and explicit API round-trip data → [`[secondary_model]`](#deprecated-secondary_model) |
 | `thinking` | `table` | — | Default parameters for Thinking mode → [`thinking`](#thinking) |
 | `loop_control` | `table` | — | Agent loop control parameters → [`loop_control`](#loop-control) |
 | `background` | `table` | — | Background task runtime parameters → [`background`](#background) |
@@ -117,7 +119,7 @@ Fields in the config file fall into two categories: **top-level scalars** that d
 | `hooks` | `array<table>` | — | Lifecycle hooks; see [Hooks](../customization/hooks.md) |
 | `identity` | `table` | — | Custom agent identity → [`identity`](#identity) |
 
-The following sections cover each of the nested tables in turn: `providers`, `models`, `thinking`, `loop_control`, `background`, `tools`, `image`, `services`, and `permission`.
+The following sections cover each of the nested tables in turn: `providers`, `models`, `subagent`, `secondary_model`, `thinking`, `loop_control`, `background`, `tools`, `image`, `services`, and `permission`.
 
 ## `providers`
 
@@ -190,74 +192,69 @@ display_name = "Kimi for Coding (custom)"
 
 You can also switch models temporarily without touching the config file — by setting `KIMI_MODEL_*` environment variables, the CLI synthesizes a temporary provider in memory that does not persist after restart. See [Define a model from environment variables](./env-vars.md#define-a-model-from-environment-variables-kimi-model).
 
-## `secondary_model`
+## `[subagent]`
 
-Subagents inherit the model the main agent is running by default. The `[secondary_model]` section makes this configurable: it offers subagents a pool of candidate models plus a default binding — typically a cheaper model for subtasks that do not need the main model's capability.
+The `[subagent]` section is the canonical model control surface for Agent, AgentSwarm, and Tower routes. Each route may set a model alias with `model` and a Thinking level with `thinking_effort`; aliases must exist in [`[models]`](#models).
 
-### Subagent model pool
+### Canonical subagent routes
 
-This feature is experimental and disabled by default. Enable it with `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL=1`, or the master `KIMI_CODE_EXPERIMENTAL_FLAG=1`. It takes effect in every launch mode, including the interactive TUI. While the experiment is off, the pool keys stay inert: subagents inherit the caller's model and session startup skips the pool validation.
-
-To simply point every subagent at one model by default, no models table is needed — a single `default_model` line is a pool with a single entry:
+Set an active preset and define route tables like this:
 
 ```toml
-[secondary_model]
-default_model = "kimi-code/kimi-for-coding-highspeed"
+[subagent]
+preset = "fast"
+
+[subagent.agents.explore]
+model = "provider/fast"
+thinking_effort = "medium"
+
+[subagent.agents.swarm]
+model = "provider/swarm"
+
+[subagent.agents.tower_worker]
+model = "provider/worker"
+
+[subagent.agents.tower_reviewer]
+model = "provider/reviewer"
+
+[subagent.presets.fast.main]
+model = "provider/main"
+thinking_effort = "high"
+
+[subagent.presets.fast.explore]
+model = "provider/fast"
 ```
 
-In the interactive TUI, the [`/secondary-model`](../reference/slash-commands.md) command (alias `/subagent-model`) opens a model selector for this: the choice is written to `default_model` (when a models table exists and the picked alias is not in it, an entry with an empty description is added), and newly spawned subagents pick up the new default immediately — no session restart needed.
+The route keys have fixed meanings:
 
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `default_model` | `string` | — | Default subagent model. Required when `[secondary_model.models]` is configured, and must be one of its keys; written on its own (without a models table) it is equivalent to a pool containing only that entry |
-| `models` | `table<string, string>` | — | Subagent model pool. Each key is the alias of a configured [`[models]`](#models) entry; each value is the description the main agent sees when picking a subagent model (Chinese or English; an empty string lists the alias with no hint) |
-| `force` | `boolean` | `false` | Pin every subagent to `default_model`: the `model` parameter is not advertised, so the main agent cannot pick another model or `"primary"`. Requires `default_model`; cannot be combined with `[secondary_model.models]` |
+- `main`: the main-agent model and Thinking setting applied when a preset is activated. The TUI's `/preset` command keeps the global `default_model` and `thinking` values in sync with this route.
+- `explore`, `plan`, `coder`, and other profile names: Agent routes for the selected subagent profile.
+- `swarm`: the default AgentSwarm route; a swarm's selected profile can still contribute its profile route.
+- `tower_worker`: the model for Tower worker tasks.
+- `tower_reviewer`: the model for Tower reviewer tasks. Worker and reviewer routes are independent.
 
-A configured pool — an explicit `[secondary_model.models]` table or a lone `default_model` — enables model selection: the `Agent` / `AgentSwarm` tools gain a `model` parameter, and the tool description lists the pool (the default marked `[default]`) so the main agent can choose per spawn (unless `force` is set — see below). The pool only references configured [`[models]`](#models) entries — the `kimi-code/*` aliases below are provisioned by `/login` — and attaches the selection hints:
+When a preset is active, route resolution follows these priorities. Agent uses `presets.<active>.<profile>` → `agents.<profile>` → the caller's model and Thinking level. AgentSwarm uses `presets.<active>.swarm` → `presets.<active>.<profile>` → `agents.swarm` → `agents.<profile>` → the caller. Tower uses the matching `presets.<active>.tower_worker` or `presets.<active>.tower_reviewer` route → the matching `agents` route → the caller. With no active preset, the `agents` route is considered before the caller. A configured canonical alias that cannot be resolved is a configuration error; inactive preset routes do not block startup.
 
-```toml
-[secondary_model]
-default_model = "kimi-code/kimi-for-coding-highspeed"
-[secondary_model.models]
-"kimi-code/k3" = "Pick this for hard problems. Strong at complex reasoning, algorithm design, deep debugging, math, and systematic challenges."
-"kimi-code/kimi-for-coding-highspeed" = "Fast and cheap. Good for daily refactoring, code explanation, small edits, summaries, and simple batch tasks."
-"kimi-code/kimi-for-coding" = "A balanced coding workhorse. Good for most feature development and code-change tasks."
-```
+Agent and AgentSwarm do not accept a per-spawn `model` parameter. Choose the model through these canonical routes instead; the tool call still selects the profile with `subagent_type` where applicable. The route is applied on fresh spawns and on resume, so changing a normal profile route affects later resumes while a preserved binding remains unchanged.
 
-A spawn resolves the subagent's model in this order: an explicit tool-call `model` → `default_model`. The `model` parameter accepts any pool alias, or `"primary"` — the model the caller itself is running, always valid even when that model is not in the pool. When neither `default_model` nor `[secondary_model.models]` is configured, the parameter is not advertised and subagents inherit the caller's model. Binding a pool alias carries no explicit thinking effort — the subagent resolves it naturally (global `[thinking]` config → the bound model's default effort) instead of inheriting the caller's level, while `"primary"` inherits both the model and the level from the caller.
+### Timeout
 
-To take the choice away from the main agent entirely — every subagent runs on one fixed model — add `force = true`:
+`timeout_ms` sets the maximum wall-clock time for one subagent task (`7200000` by default, or 2 hours). Set it to `0` for no timeout. `KIMI_SUBAGENT_TIMEOUT_MS` takes priority over the config value; in print mode (`kimi -p`) the default is `0` unless explicitly set. Values above `2147483647` (about 24.8 days) are clamped by the runtime.
 
-```toml
-[secondary_model]
-default_model = "kimi-code/kimi-for-coding-highspeed"
-force = true
-```
+### Deprecated `[secondary_model]`
 
-With `force` set, the `model` parameter is not advertised (just like when nothing is configured) and every spawn binds `default_model`; an explicit `model` argument, `"primary"` included, is rejected with an error. `force` requires `default_model` and cannot be combined with a `[secondary_model.models]` table — the table exists to offer a choice, and force removes it.
+`[secondary_model]` is retained for explicit config/API schema reads and writes and for compatibility with older files. It is not a second product control surface: loading it emits a deprecation warning, `/secondary-model` and `/subagent-model` only show a migration notice, and provider/model maintenance preserves the section exactly instead of rewriting or migrating aliases. Use `/preset` and `[subagent]` for new configuration.
 
-Because natural resolution lands on the bound model's default effort, different pool entries can carry different thinking levels: register a second `[models]` entry as a "variant" of the same underlying model, override only its `default_effort` via [`[models."<alias>".overrides]`](#model-overrides), and list both aliases in the pool — the main agent picks the thinking level together with the alias:
+When no canonical preset is active, `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL=1` (or `KIMI_CODE_EXPERIMENTAL_FLAG=1`) enables a best-effort legacy fallback for Agent, AgentSwarm, and Tower workers. The legacy `default_model` or `model` value is used only if its alias still resolves; otherwise the caller's model is used. Tower reviewers never use this fallback. An active canonical preset always takes precedence, and the legacy `force`, pool choice, and per-spawn `model` semantics no longer control v2 routing.
 
-```toml
-# "kimi-code/kimi-for-coding-highspeed" is provisioned by /login; this
-# registers a higher-effort variant of the same model
-[models.kimi-for-coding-highspeed-deep]
-provider = "managed:kimi-code"
-model = "kimi-for-coding-highspeed"
+The legacy fields remain accepted for round-tripping through `getConfig` / `setConfig` and the REST/config APIs:
 
-[models.kimi-for-coding-highspeed-deep.overrides]
-default_effort = "high"
-
-[secondary_model]
-default_model = "kimi-code/kimi-for-coding-highspeed"
-[secondary_model.models]
-"kimi-code/kimi-for-coding-highspeed" = "Fast and cheap. Good for daily refactoring, code explanation, small edits, summaries, and simple batch tasks."
-kimi-for-coding-highspeed-deep = "The same model at a high thinking level. Good for harder subtasks."
-```
-
-Note that `default_effort` stays a model-level default: once a global `[thinking].effort` is set, it wins for the main agent and subagents alike, and the variant's default only applies when no global effort is set. Value and fallback rules follow the [`[models]` entry's `default_effort`](#models).
-
-Configuration errors fail loudly instead of falling back silently: session creation, resume, and fork all fail at startup when `default_model` is missing, is not a pool key, or a pool key does not resolve to a configured `[models]` entry — and likewise when `force` is set without `default_model` or combined with a `[secondary_model.models]` table. The alias `primary` is reserved — it always binds the caller's own model — and is rejected as a pool key. A spawn whose `model` is neither a pool alias nor `"primary"` fails with an error listing the available choices.
+| Field | Type | Compatibility meaning |
+| --- | --- | --- |
+| `default_model` | `string` | Best-effort fallback alias when the secondary-model flag is enabled and no preset is active |
+| `models` | `table<string, string>` | Preserved legacy pool data; it is not used to build Agent or AgentSwarm tool schemas |
+| `force` | `boolean` | Preserved for compatibility; it does not force a canonical v2 route |
+| `model` and legacy model metadata fields | varies | Preserved for older config/API clients; `model` can supply the fallback alias |
 
 ## `thinking`
 
@@ -320,40 +317,6 @@ Retries only apply to transient failures — connection errors, timeouts, HTTP 4
 `keep_alive_on_exit` can be overridden by the `KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT` environment variable, and `max_running_tasks` by `KIMI_CODE_BACKGROUND_MAX_RUNNING_TASKS`; both take higher priority than `config.toml`.
 
 In print mode (`kimi -p "<prompt>"`), Kimi Code stays alive after the main agent's turn as long as background tasks are still pending: each completion is fed back to the main agent as a synthetic user message, steering it into a new turn (`print_background_mode = "steer"` by default), and the run exits once a turn ends with nothing pending. The loop is bounded by `print_wait_ceiling_s` and `print_max_turns`, both effectively unbounded by default. Background work is never killed by a wall-clock cap in print mode either: background `Bash` tasks default to no timeout (`bash_task_timeout_s = 0`), and subagents run without a timeout (`[subagent] timeout_ms = 0`), so only the model itself stops a task. Set `print_background_mode` to `"drain"` to wait for tasks without feeding results back, or `"exit"` to end the run as soon as the main agent finishes.
-
-## `subagent`
-
-`subagent` controls how spawned subagents (`Agent` / `AgentSwarm`) run.
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `timeout_ms` | `integer` | `7200000` (2 hours) | Maximum wall-clock time (milliseconds) a single subagent (`Agent` / `AgentSwarm`) is allowed to run before it is settled as `timed_out`. `0` means no timeout — the subagent runs until it finishes or the model stops it. This is the background-task manager's per-task timeout for each subagent task, so it applies to both foreground and background subagents. In print mode (`kimi -p`) the default is `0` unless explicitly set. Note: any value above `2147483647` (about 24.8 days) is clamped to roughly 24.8 days by the runtime |
-| `preset` | `string` | unset | Name of the active preset from `[subagent.presets]`. Switchable at runtime with `/preset <name>` (`/preset off` clears it) — switching reloads the session |
-| `agents` | table | unset | Per-subagent-type overrides keyed by profile name (`explore`, `plan`, `coder`): `[subagent.agents.explore]` with `model` (a `[models]` alias) and/or `thinking_effort`. Unset fields inherit the parent agent's current values |
-| `presets` | table | unset | Named bundles of per-type overrides: `[subagent.presets.<name>.<type>]`, same fields as `agents`. The bundle named by `preset` wins field-by-field over `agents` |
-
-`timeout_ms` can be overridden by the `KIMI_SUBAGENT_TIMEOUT_MS` environment variable, which takes higher priority than `config.toml`.
-
-Per-field precedence for a subagent's model/effort: `[subagent.presets.<active>.<type>]` → `[subagent.agents.<type>]` → inherit from the parent agent. A `model` alias that is not defined in `[models]` is ignored with a log warning (the subagent falls back to the parent model) so a typo never breaks subagent startup. Example — an oh-my-opencode-slim-style `gpt` preset: cheap + fast for read-only search, high effort on the inherited main model for planning (plan quality drives the whole task and planning runs once per flow), and a cheap model at max effort for delegated implementation (Fixer style — the main agent already did the decomposition):
-
-```toml
-[subagent]
-preset = "gpt"
-
-[subagent.presets.gpt.explore]
-model = "openai-codex/gpt-5.6-luna"
-thinking_effort = "low"
-
-[subagent.presets.gpt.plan]
-# model intentionally unset: inherits the main agent's model
-thinking_effort = "high"
-
-[subagent.presets.gpt.coder]
-model = "openai-codex/gpt-5.6-luna"
-thinking_effort = "xhigh"
-```
-
-Use `/preset` (or `/preset status`) in the TUI to inspect the active preset and the effective per-type overrides, `/preset <name>` to switch, and `/preset off` to clear. The preset manager always includes `Create new preset`; when no presets exist yet, select it, enter a name, then configure the Main, subagent, and Swarm routes. Use `/preset edit <name>` as a direct shortcut to the same route editor.
 
 ## `mcp`
 

@@ -209,10 +209,13 @@ describe('built-in slash command registry', () => {
     expect(resolveSlashCommandAvailability(reloadTui!, '')).toBe('always');
   });
 
-  it('gates secondary-model behind the secondary-model experiment, always available', () => {
+  it('keeps deprecated subagent model commands resolvable but hidden', () => {
     const command = findBuiltInSlashCommand('secondary-model');
+    const alias = findBuiltInSlashCommand('subagent-model');
     expect(command).toBeDefined();
-    expect((command as KimiSlashCommand).experimentalFlag).toBe('secondary-model');
+    expect(alias?.name).toBe('secondary-model');
+    expect((command as KimiSlashCommand).hidden).toBe(true);
+    expect((command as KimiSlashCommand).experimentalFlag).toBeUndefined();
     expect(resolveSlashCommandAvailability(command!, '')).toBe('always');
   });
 });

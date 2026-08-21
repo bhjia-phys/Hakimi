@@ -9,7 +9,9 @@ export interface KimiSlashCommand<Name extends string = string> extends SlashCom
   readonly description: string;
   readonly priority?: number;
   readonly availability?: SlashCommandAvailability | ((args: string) => SlashCommandAvailability);
-  /** When set, the command is hidden from the palette and blocked unless this flag is enabled. */
+  /** Hidden commands remain resolvable for compatibility but stay out of public command lists. */
+  readonly hidden?: boolean;
+  /** When set, the command is omitted unless this flag is enabled. */
   readonly experimentalFlag?: FlagId;
   /**
    * Generic argument autocompletion. `argumentPrefix` is the text typed after

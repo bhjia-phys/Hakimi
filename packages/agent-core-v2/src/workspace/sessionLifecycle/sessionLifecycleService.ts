@@ -83,23 +83,24 @@
  * depends on MCP.
  * The session-level services whose subscriptions
  * must exist before the first agent / turn (external hooks, cron, the
- * subagent model-pool startup validation) opt into `OnScopeCreated` activation.
- * The subagent model pool itself is validated even earlier — at
- * the top of `materializeSession`, before the MCP overlay, the session scope,
- * and any persisted artifact come into existence, and again at the top of
- * `fork` before the source session's files are copied — so a broken pool
- * (or invalid `force` configuration) fails create/resume/fork without
- * leaving orphaned session dirs or leaked
- * overlay connections behind; the Session-scope validation service
- * (`session/subagent/subagentModelsValidationService.ts`) repeats the same
- * check at scope activation as a backstop for paths that bypass this service.
- * That pre-flight awaits the kosong model/provider registries' `ready`
- * alongside `config.ready` first: the catalog resolves aliases through those
- * registries rather than the config document, so a cold bootstrap that
- * creates a session before hydration completes must not fail a valid pool
- * with `CONFIG_INVALID`.
- * The pool is gated behind the `secondary-model` experiment, so with the
- * experiment off these validations are no-ops and the section stays inert.
+ * canonical subagent-route validation) opt into `OnScopeCreated` activation.
+ * Canonical `[subagent]` routes are validated earlier — at the top of
+ * `materializeSession`, before the MCP overlay, the session scope, and any
+ * persisted artifact come into existence, and again at the top of `fork` before
+ * the source session's files are copied — so a configured route with a
+ * dangling alias fails create/resume/fork without leaving orphaned session
+ * dirs or leaked overlay connections behind. The Session-scope validation
+ * service (`session/subagent/subagentModelsValidationService.ts`) repeats the
+ * same check at scope activation as an explicit backstop for session
+ * materializations that use this lifecycle path; a bare scope created outside
+ * the session lifecycle does not acquire this veto automatically. That pre-flight
+ * awaits the kosong model/provider registries'
+ * `ready` alongside `config.ready` first: the catalog resolves aliases through
+ * those registries rather than the config document, so a cold bootstrap that
+ * creates a session before hydration completes must not fail a valid route
+ * with `CONFIG_INVALID`. Deprecated `[secondary_model]` aliases are not
+ * startup blockers; when its flag is off the section stays inert, and when
+ * enabled it is only a best-effort fallback without an active preset.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -107,7 +108,7 @@ import { randomUUID } from 'node:crypto';
 import { basename, join } from 'pathe';
 import { ulid } from 'ulid';
 
-import type { IInstantiationService } from '#/_base/di/instantiation';
+import { IInstantiationService } from '#/_base/di/instantiation';
 import { Disposable } from '#/_base/di/lifecycle';
 import {
   createScopedChildHandle,
@@ -137,6 +138,7 @@ import {
 import { ITelemetryService } from '#/app/telemetry/telemetry';
 import { ErrorCodes, Error2, isError2 } from '#/errors';
 import { IHostFileSystem, type HostDirEntry } from '#/os/interface/hostFileSystem';
+import { OsFsErrors } from '#/os/interface/hostFsErrors';
 import { IAppendLogStore } from '#/persistence/interface/appendLogStore';
 import { IAtomicDocumentStore } from '#/persistence/interface/atomicDocumentStore';
 import { IAgentLifecycleService, MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
@@ -146,6 +148,7 @@ import { ISessionContext, sessionContextSeed } from '#/session/sessionContext/se
 import { sessionEphemeralMcpServersSeed } from '#/session/mcp/ephemeralMcpServers';
 import { sessionAgentProfileCatalogSeed } from '#/session/sessionAgentProfileCatalog/agentProfileCatalogSeed';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
+import { ISessionSubagentModelsValidationService } from '#/session/subagent/subagentModelsValidation';
 import { ISessionMetadata, type SessionMeta } from '#/session/sessionMetadata/sessionMetadata';
 import { ISessionSkillCatalogData } from '#/session/sessionSkillCatalog/skillCatalogData';
 import { ISessionInstructionsProvider } from '#/session/sessionInstructions/instructionsProvider';
@@ -294,6 +297,8 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
     await this.workspaceSkillCatalog
       .reloadSources(SESSION_CREATE_RELOAD_SKILL_SOURCES)
       .catch(() => undefined);
+    const sessionDir = sessionDirOf(this.bootstrap.homeDir, this.handlerScope, sessionId);
+    const sessionDirExisted = await this.sessionDirExists(sessionDir);
     const handle = await this.materializeSession({ ...opts, sessionId });
     try {
       // A fatal explicit agent file (unreadable or unparseable) must fail
@@ -314,11 +319,12 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
       }
       await this.appendSessionIndexEntry(sessionId, opts.workDir);
     } catch (error) {
-      const sessionDir = handle.accessor.get(ISessionContext).sessionDir;
-      this.sessions.delete(sessionId);
-      await this.drainAgents(handle).catch(() => {});
-      handle.dispose();
-      await this.hostFs.remove(sessionDir).catch(() => {});
+      await this.cleanupFailedSession(
+        sessionId,
+        handle,
+        handle.accessor.get(ISessionContext).sessionDir,
+        !sessionDirExisted,
+      );
       throw error;
     }
     await this.announceCreated({ sessionId, handle, source: 'startup' });
@@ -356,62 +362,83 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
     assertValidSubagentModelConfig(this.config, this.flags, this.modelCatalog);
   }
 
+  private async sessionDirExists(sessionDir: string): Promise<boolean> {
+    try {
+      await this.hostFs.lstat(sessionDir);
+      return true;
+    } catch (error) {
+      if (
+        isError2(error) &&
+        (error.code === OsFsErrors.codes.OS_FS_NOT_FOUND ||
+          error.code === OsFsErrors.codes.OS_FS_NOT_DIRECTORY)
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
   private async materializeSession(opts: MaterializeSessionOptions): Promise<ISessionScopeHandle> {
     const workspaceId = this.workspaceId;
     const sessionScope = sessionScopeOf(this.handlerScope, opts.sessionId);
     const sessionDir = sessionDirOf(this.bootstrap.homeDir, this.handlerScope, opts.sessionId);
-    await this.copyExplicitAgentFiles(opts, sessionDir);
+    const sessionDirExisted = await this.sessionDirExists(sessionDir);
     const metaScope = sessionScope;
     await this.assertSubagentModelPoolPreFlight();
-    await this.workspaceDirs.ready;
-    await this.workspaceDirs.mergeAdditionalDirs(opts.workDir, opts.additionalDirs ?? []);
-    const ctx: ISessionContext = {
-      _serviceBrand: undefined,
-      sessionId: opts.sessionId,
-      workspaceId,
-      sessionDir,
-      metaScope,
-      cwd: opts.workDir,
-      scope: (subKey?: string): string =>
-        subKey === undefined || subKey === '' ? sessionScope : `${sessionScope}/${subKey}`,
-    };
-    const handle = createScopedChildHandle(
-      this.instantiation,
-      LifecycleScope.Session,
-      opts.sessionId,
-      {
-        seeds: [
-          ...sessionContextSeed(ctx),
-          [ITelemetryService, this.telemetry.withContext({ sessionId: opts.sessionId })],
-          ...sessionAgentProfileCatalogSeed({
-            _serviceBrand: undefined,
-            workspaceKey: workspaceId,
-            loadExplicitFiles:
-              opts.loadPersistedExplicitFiles === true ||
-              (opts.explicitFiles !== undefined && opts.explicitFiles.length > 0),
-          }),
-          [ISessionSkillCatalogData, this.workspaceSkillCatalog.sessionData()],
-          [ISessionInstructionsProvider, this.workspaceInstructions.sessionProvider()],
-          [ISessionMcpHandle, this.workspaceMcp.sessionHandle()],
-          [ISessionWorkspaceInfo, this.workspaceDirs.sessionInfo()],
-          ...sessionEphemeralMcpServersSeed(opts.mcpServers ?? {}),
-        ],
-        configureContainer: (container) => {
-          this._onWillCreateSession.fire({
-            sessionId: opts.sessionId,
-            readSeed: (id) => container.invokeFunction((accessor) => accessor.get(id)),
-            contributeSeed: (id, value) => {
-              container.provide(id, value);
-            },
-            onSessionDispose: (dispose) => {
-              container.anchorKernelEntry(dispose, 'sessionLifecycle:willCreateParticipant');
-            },
-          });
-        },
-      },
-    ) as ISessionScopeHandle;
+
+    let handle: ISessionScopeHandle | undefined;
     try {
+      await this.copyExplicitAgentFiles(opts, sessionDir);
+      await this.workspaceDirs.ready;
+      await this.workspaceDirs.mergeAdditionalDirs(opts.workDir, opts.additionalDirs ?? []);
+      const ctx: ISessionContext = {
+        _serviceBrand: undefined,
+        sessionId: opts.sessionId,
+        workspaceId,
+        sessionDir,
+        metaScope,
+        cwd: opts.workDir,
+        scope: (subKey?: string): string =>
+          subKey === undefined || subKey === '' ? sessionScope : `${sessionScope}/${subKey}`,
+      };
+      handle = createScopedChildHandle(
+        this.instantiation,
+        LifecycleScope.Session,
+        opts.sessionId,
+        {
+          seeds: [
+            ...sessionContextSeed(ctx),
+            [ITelemetryService, this.telemetry.withContext({ sessionId: opts.sessionId })],
+            ...sessionAgentProfileCatalogSeed({
+              _serviceBrand: undefined,
+              workspaceKey: workspaceId,
+              loadExplicitFiles:
+                opts.loadPersistedExplicitFiles === true ||
+                (opts.explicitFiles !== undefined && opts.explicitFiles.length > 0),
+            }),
+            [ISessionSkillCatalogData, this.workspaceSkillCatalog.sessionData()],
+            [ISessionInstructionsProvider, this.workspaceInstructions.sessionProvider()],
+            [ISessionMcpHandle, this.workspaceMcp.sessionHandle()],
+            [ISessionWorkspaceInfo, this.workspaceDirs.sessionInfo()],
+            ...sessionEphemeralMcpServersSeed(opts.mcpServers ?? {}),
+          ],
+          configureContainer: (container) => {
+            this._onWillCreateSession.fire({
+              sessionId: opts.sessionId,
+              readSeed: (id) => container.invokeFunction((accessor) => accessor.get(id)),
+              contributeSeed: (id, value) => {
+                container.provide(id, value);
+              },
+              onSessionDispose: (dispose) => {
+                container.anchorKernelEntry(dispose, 'sessionLifecycle:willCreateParticipant');
+              },
+            });
+          },
+        },
+      ) as ISessionScopeHandle;
+      await handle.accessor.get(IInstantiationService).cascade.whenIdle();
       await handle.accessor.get(ISessionMetadata).ready;
+      handle.accessor.get(ISessionSubagentModelsValidationService);
       await handle.accessor.get(ISessionToolPolicy).ready;
       await Promise.all([
         this.workspaceAgentProfileLoader.ready,
@@ -420,13 +447,20 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
         this.userAgentProfileLoader.ready,
         this.pluginAgentProfileLoader.ready,
       ]);
+      this.sessions.set(opts.sessionId, handle);
+      return handle;
     } catch (error) {
-      handle.dispose();
-      void this.explicitAgentProfileLoader.reload().catch(() => undefined);
+      await this.cleanupFailedSession(
+        opts.sessionId,
+        handle,
+        sessionDir,
+        !sessionDirExisted,
+      );
+      if (handle !== undefined) {
+        void this.explicitAgentProfileLoader.reload().catch(() => undefined);
+      }
       throw error;
     }
-    this.sessions.set(opts.sessionId, handle);
-    return handle;
   }
 
   private async appendSessionIndexEntry(sessionId: string, workDir: string): Promise<void> {
@@ -575,6 +609,31 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
     }
   }
 
+  private async cleanupFailedSession(
+    sessionId: string,
+    handle: ISessionScopeHandle | undefined,
+    sessionDir: string,
+    removeArtifacts: boolean,
+  ): Promise<void> {
+    this.sessions.delete(sessionId);
+    if (handle !== undefined) await this.drainAgents(handle).catch(() => {});
+    // Metadata writes must settle before evicting the mirror: a late record
+    // after evict would reintroduce the failed session into read-your-writes.
+    await drainSessionMetadataWrites().catch(() => {});
+    if (removeArtifacts) {
+      await this.indexMirror.evict(sessionId).catch(() => {});
+      await this.index.remove(sessionId).catch(() => {});
+    }
+    if (handle !== undefined) {
+      try {
+        handle.dispose();
+      } catch {
+        // Preserve the original lifecycle failure.
+      }
+    }
+    if (removeArtifacts) await this.hostFs.remove(sessionDir).catch(() => {});
+  }
+
   async fork(opts: ForkSessionOptions): Promise<ISessionScopeHandle> {
     const sourceId = opts.sourceSessionId;
 
@@ -602,6 +661,7 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
     let targetId: string | undefined;
     let target: ISessionScopeHandle | undefined;
     let targetSessionDir: string | undefined;
+    let targetSessionDirExisted: boolean | undefined;
     try {
       await this.assertSubagentModelPoolPreFlight();
       // A turn that just ended may still have its outcome write queued;
@@ -631,6 +691,7 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
             );
 
       targetSessionDir = sessionDirOf(this.bootstrap.homeDir, this.handlerScope, targetId);
+      targetSessionDirExisted = await this.sessionDirExists(targetSessionDir);
       await this.copySessionFiles(
         sessionDirOf(this.bootstrap.homeDir, this.handlerScope, sourceId),
         targetSessionDir,
@@ -713,17 +774,13 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
       await this.announceCreated({ sessionId: targetId, handle: target, source: 'fork' });
       return target;
     } catch (error) {
-      if (targetId !== undefined) {
-        this.sessions.delete(targetId);
-      }
-      if (target !== undefined) {
-        try {
-          target.dispose();
-        } catch {
-        }
-      }
-      if (targetSessionDir !== undefined) {
-        await this.hostFs.remove(targetSessionDir).catch(() => {});
+      if (targetId !== undefined && targetSessionDir !== undefined) {
+        await this.cleanupFailedSession(
+          targetId,
+          target,
+          targetSessionDir,
+          targetSessionDirExisted === false,
+        );
       }
       throw error;
     }

@@ -117,6 +117,16 @@ A file with invalid content discovered in a directory is skipped with a warning 
 
 Custom agents delegated as sub-agents run without the built-in sub-agent framing ("your final message is the entire handoff"). If you write an agent meant for delegation, state in the body that its last message should be the complete, self-contained result for the caller.
 
+### Subagent model routing
+
+Model selection for Agent, AgentSwarm, and Tower is configured through the canonical `[subagent]` section, not through a per-spawn tool argument. Put base routes under `[subagent.agents.<profile>]` and preset-specific routes under `[subagent.presets.<name>.<route>]`; route values use `model` and `thinking_effort`.
+
+The canonical route keys are `main` for the main-agent binding applied when a preset is activated, `swarm` for the AgentSwarm default, `tower_worker` for Tower workers, and `tower_reviewer` for Tower reviewers. Other keys such as `explore`, `plan`, and `coder` name Agent profiles. Worker and reviewer routes are independent.
+
+Route precedence is deterministic. Agent uses the active preset's profile route → the base `agents.<profile>` route → the caller's model and Thinking level. AgentSwarm uses the active preset's `swarm` route → the active preset's profile route → `agents.swarm` → `agents.<profile>` → the caller. Tower uses its matching preset route → its matching base route → the caller. With no active preset, only the base route and caller remain. Canonical aliases are validated against the configured model catalog; use `/preset` to edit routes and activate a preset.
+
+The `Agent` and `AgentSwarm` tool schemas do not expose a `model` parameter. Select the profile with `subagent_type` where applicable, then let the canonical route determine the model. Fresh spawns and resumes use the same resolver, so a normal route change affects later resumes while a preserved binding remains unchanged. The legacy `[secondary_model]` section is retained only for explicit config/API compatibility and a flag-controlled best-effort fallback; it does not replace canonical routes.
+
 ### Selecting the Main Agent
 
 Two CLI flags select which agent drives a new session, in both print mode (`kimi -p`) and the interactive TUI:

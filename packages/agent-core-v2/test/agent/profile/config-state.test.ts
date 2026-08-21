@@ -399,6 +399,17 @@ describe('ConfigState thinking clamp for always-thinking models', () => {
     expect(profile.data().thinkingLevel).toBe('max');
   });
 
+  it('rebinds a model-only binding with the target model default effort', () => {
+    profile.update({ modelAlias: 'kimi-code/ultra', thinkingLevel: 'ultra' });
+
+    profile.rebind({ modelAlias: 'kimi-code/custom' });
+
+    expect(profile.data()).toMatchObject({
+      modelAlias: 'kimi-code/custom',
+      thinkingLevel: 'max',
+    });
+  });
+
   it('projects an inherited concrete effort to on when switching to a boolean model', () => {
     profile.update({ modelAlias: 'kimi-code/ultra', thinkingLevel: 'ultra' });
 

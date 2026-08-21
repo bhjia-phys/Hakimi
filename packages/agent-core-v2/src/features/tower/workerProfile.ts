@@ -2,7 +2,8 @@
  * `tower` domain — the `tower-worker` agent profile: the profile TowerSpawn
  * binds on every worker/reviewer agent. Self-contained like the builtin
  * profiles — its structured `renderSystemPrompt` merges the shared base
- * template with the worker role text at call time.
+ * template with the worker role text at call time. Its model and thinking
+ * binding is preserved when the worker or reviewer is resumed.
  *
  * The worker drops `AgentSwarm` from the coder tool set on purpose: the tower
  * is the sole orchestrator, and a worker-side swarm fan-out would run
@@ -90,6 +91,7 @@ export const TOWER_WORKER_PROFILE_DEF: AgentProfile = normalizeAgentProfile({
     'Use this agent for non-trivial software engineering work that may require reading files, editing code, running commands, and returning a compact but technically complete summary to the parent agent.',
   tools: TOWER_WORKER_TOOLS,
   subagents: ['explore', 'plan'],
+  preserveBindingOnResume: true,
   renderSystemPrompt: (context) =>
     renderSystemPromptResult(TOWER_WORKER_ROLE, context, {
       skillActive: skillActiveFor(TOWER_WORKER_TOOLS),

@@ -13,9 +13,9 @@
  * `binding` resolved by the caller; without
  * one, spawns inherit the caller agent's model and thinking level. Spawn
  * bindings are resolved through the model catalog before lifecycle allocation.
- * Resumed agents keep the model recorded in their own wire journal — with
- * per-subagent models there is no "child follows the parent's current model"
- * invariant to enforce. Bound at Session scope — contributed into every
+ * Resume and retry reconcile active `[subagent]` field overrides before the
+ * run and event snapshot, except for profiles that explicitly preserve their
+ * binding. Bound at Session scope — contributed into every
  * Session scope by `SwarmFeature` (`features/swarm/swarmFeature`).
  */
 
@@ -28,6 +28,8 @@ import { IAgentProfileService } from '#/agent/profile/profile';
 import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { IAgentUserToolService } from '#/agent/userTool/userTool';
+import { IConfigService } from '#/app/config/config';
+import { IFlagService } from '#/app/flag/flag';
 import { IEventBus } from '#/app/event/eventBus';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
 import { applyProfilePromptPrefix } from '#/app/agentProfileCatalog/promptPrefix';
@@ -40,7 +42,7 @@ import {
 } from '#/session/agentLifecycle/subagentMetadata';
 import { emitAgentRunSpawned, mirrorAgentRun } from '#/session/subagent/mirrorAgentRun';
 import { ISessionSubagentService } from '#/session/subagent/subagent';
-import { wrapSubagentModelError } from '#/session/subagent/configSection';
+import { refreshSubagentBindingOnResume } from '#/session/subagent/resumeBinding';
 import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import { ISessionMetadata, type AgentMeta } from '#/session/sessionMetadata/sessionMetadata';
 import { IAgentRuntimeBindingService } from '#/agent/runtimeBinding/runtimeBinding';
@@ -86,6 +88,8 @@ export class SessionSwarmService implements ISessionSwarmService {
     @IAgentLifecycleService private readonly lifecycle: IAgentLifecycleService,
     @ISessionSubagentService private readonly subagents: ISessionSubagentService,
     @ISessionAgentProfileCatalog private readonly catalog: ISessionAgentProfileCatalog,
+    @IConfigService private readonly config: IConfigService,
+    @IFlagService private readonly flags: IFlagService,
     @ISessionContext private readonly sessionContext: ISessionContext,
     @ISessionMetadata private readonly metadata: ISessionMetadata,
     @IRuntimeResolver private readonly runtimeResolver: IRuntimeResolver,
@@ -162,21 +166,16 @@ export class SessionSwarmService implements ISessionSwarmService {
       model: callerData.modelAlias,
       thinking: callerData.thinkingLevel,
     };
-    let child: IAgentScopeHandle;
-    try {
-      this.modelCatalog.get(binding.model);
-      child = await this.lifecycle.create({
-        binding: {
-          profile: profile.name,
-          model: binding.model,
-          thinking: binding.thinking,
-        },
-        labels: subagentLabels(callerAgentId, { swarmItem: options.swarmItem }),
-        runtimeId: callerRuntime.runtimeId,
-      });
-    } catch (error) {
-      throw wrapSubagentModelError(error, binding.model, callerData.modelAlias);
-    }
+    this.modelCatalog.get(binding.model);
+    const child = await this.lifecycle.create({
+      binding: {
+        profile: profile.name,
+        model: binding.model,
+        thinking: binding.thinking,
+      },
+      labels: subagentLabels(callerAgentId, { swarmItem: options.swarmItem }),
+      runtimeId: callerRuntime.runtimeId,
+    });
     child.accessor
       .get(IAgentPermissionModeService)
       .setMode(caller.accessor.get(IAgentPermissionModeService).mode);
@@ -221,10 +220,18 @@ export class SessionSwarmService implements ISessionSwarmService {
     const caller = this.requireHandle(callerAgentId, 'Caller agent');
     const child = this.requireHandle(agentId, 'Agent instance');
     this.requireIdleSubagent(agentId, child);
-    const profileName =
-      child.accessor.get(IAgentProfileService).data().profileName ?? RESUMED_PROFILE_FALLBACK;
+    const resumed = await refreshSubagentBindingOnResume(
+      this.config,
+      this.flags,
+      this.catalog,
+      this.modelCatalog,
+      child.accessor.get(IAgentProfileService),
+      caller.accessor.get(IAgentProfileService).data(),
+      'swarm',
+    );
+    const profileName = resumed.profileName ?? RESUMED_PROFILE_FALLBACK;
     if (!retryTurn) {
-      const resumedModel = child.accessor.get(IAgentProfileService).data().modelAlias;
+      const resumedModel = resumed.modelAlias;
       emitAgentRunSpawned(caller, agentId, {
         profileName,
         parentToolCallId: options.parentToolCallId,
