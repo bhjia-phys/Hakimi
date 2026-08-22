@@ -277,6 +277,15 @@ export const OPENAI_VISION_TOOL_CAPABILITY = Object.freeze({
   max_context_tokens: 0,
 });
 
+export const DEEPSEEK_VISION_CAPABILITY = Object.freeze({
+  image_in: true,
+  video_in: false,
+  audio_in: false,
+  thinking: true,
+  tool_use: true,
+  max_context_tokens: 0,
+});
+
 export const OPENAI_TEXT_TOOL_CAPABILITY = Object.freeze({
   image_in: false,
   video_in: false,
@@ -287,6 +296,7 @@ export const OPENAI_TEXT_TOOL_CAPABILITY = Object.freeze({
 });
 
 export const OPENAI_VISION_TOOL_PREFIXES = ['gpt-4o', 'gpt-4-turbo', 'gpt-4.1', 'gpt-4.5'] as const;
+export const DEEPSEEK_VISION_PREFIXES = ['deepseek-v4-flash-vision'] as const;
 
 export function isOpenAIReasoningModel(normalizedModelName: string): boolean {
   return /^o\d/.test(normalizedModelName);

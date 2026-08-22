@@ -15,7 +15,15 @@
 import {
   applyCustomRegistryProvider,
   CustomRegistryApiError,
+  deepSeekCapabilities,
+  DEEPSEEK_BASE_URL,
+  DEEPSEEK_DEFAULT_CONTEXT_SIZE,
+  DEEPSEEK_DEFAULT_MAX_OUTPUT_SIZE,
+  DEEPSEEK_DEFAULT_MODEL,
+  deepSeekDisplayName,
+  DEEPSEEK_PROVIDER_ID,
   fetchCustomRegistry,
+  isDeepSeekThinkingCapable,
   type CustomRegistrySource,
   type ManagedKimiConfigShape,
 } from '@moonshot-ai/kimi-code-oauth';
@@ -43,12 +51,6 @@ import { isKimiV2Enabled } from '../experimental-v2';
 interface WritableLike {
   write(chunk: string): boolean;
 }
-
-const DEEPSEEK_PROVIDER_ID = 'deepseek';
-const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
-const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro';
-const DEEPSEEK_DEFAULT_CONTEXT_SIZE = 1_000_000;
-const DEEPSEEK_DEFAULT_MAX_OUTPUT_SIZE = 384_000;
 
 interface DeepSeekOptions {
   readonly apiKey?: string;
@@ -282,14 +284,16 @@ export async function handleDeepSeekAdd(
     };
   }
 
-  const models = { ...config.models };
-  models[alias] = {
-    provider: DEEPSEEK_PROVIDER_ID,
-    model,
-    maxContextSize,
-    maxOutputSize,
-    capabilities: thinkingCapable ? ['thinking', 'tool_use'] : ['tool_use'],
-    displayName: deepSeekDisplayName(model),
+  const models = {
+    ...config.models,
+    [alias]: {
+      provider: DEEPSEEK_PROVIDER_ID,
+      model,
+      maxContextSize,
+      maxOutputSize,
+      capabilities: deepSeekCapabilities(model),
+      displayName: deepSeekDisplayName(model),
+    },
   };
 
   const nextConfig: Partial<KimiConfig> = {
@@ -737,18 +741,6 @@ function parsePositiveIntegerOption(
   return Number(text);
 }
 
-function isDeepSeekThinkingCapable(model: string): boolean {
-  return model.trim().toLowerCase() !== 'deepseek-chat';
-}
-
-function deepSeekDisplayName(model: string): string {
-  if (model === 'deepseek-v4-pro') return 'DeepSeek V4 Pro';
-  if (model === 'deepseek-v4-flash') return 'DeepSeek V4 Flash';
-  if (model === 'deepseek-reasoner') return 'DeepSeek Reasoner';
-  if (model === 'deepseek-chat') return 'DeepSeek Chat';
-  return `DeepSeek ${model}`;
-}
-
 async function promptForSecret(prompt: string): Promise<string | undefined> {
   const stdin = process.stdin;
   const stderr = process.stderr;
@@ -780,7 +772,7 @@ async function promptForSecret(prompt: string): Promise<string | undefined> {
           finish(value);
           return;
         }
-        if (char === '\u007f' || char === '\b') {
+        if (char === '\u007F' || char === '\b') {
           if (value.length > 0) {
             value = value.slice(0, -1);
             stderr.write('\b \b');

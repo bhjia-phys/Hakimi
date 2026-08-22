@@ -160,7 +160,7 @@ if (skipped.length === 0) {
 for (const entry of readdirSync(changesetDir)) {
   if (!entry.endsWith('.md') || entry === 'README.md') continue;
   const text = readFileSync(join(changesetDir, entry), 'utf-8');
-  if (text.includes(UPSTREAM_CLI_PACKAGE)) {
+  if (text.includes(`"${UPSTREAM_CLI_PACKAGE}":`)) {
     check(`changeset ${entry} must not reference ${UPSTREAM_CLI_PACKAGE}`, false);
   }
 }

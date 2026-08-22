@@ -90,8 +90,44 @@ max_context_size = 200000
 [providers.openai]
 type = "openai"
 base_url = "https://api.openai.com/v1"
-api_key = "sk-xxxxx"
+api_key = "YOUR_API_KEY"
 ```
+
+### DeepSeek
+
+DeepSeek 使用同一条 `openai` provider 路径。添加 provider 时保留 `source.kind = "deepseek"` 标记，Hakimi 就能从 provider 的 `/models` endpoint 刷新官方模型列表。`/model` 选择器和启动时刷新都会使用这份列表，因此上游发布新模型后无需手动重写 `config.toml`。
+
+```toml
+[providers.deepseek]
+type = "openai"
+base_url = "https://api.deepseek.com"
+api_key = "YOUR_API_KEY"
+source = { kind = "deepseek" }
+
+[models."deepseek/deepseek-v4-pro"]
+provider = "deepseek"
+model = "deepseek-v4-pro"
+max_context_size = 1000000
+max_output_size = 384000
+capabilities = ["thinking", "tool_use"]
+display_name = "DeepSeek V4 Pro"
+```
+
+`deepseek-v4-flash-vision-exp` 会被识别为视觉模型。当官方 `/models` 响应包含它时，Hakimi 会自动加入该模型；也可以直接配置：
+
+```toml
+[models."deepseek/deepseek-v4-flash-vision-exp"]
+provider = "deepseek"
+model = "deepseek-v4-flash-vision-exp"
+max_context_size = 1000000
+max_output_size = 384000
+capabilities = ["image_in", "thinking", "tool_use"]
+display_name = "DeepSeek V4 Flash Vision Exp"
+```
+
+选择视觉模型后，Hakimi 使用 DeepSeek 的 OpenAI 兼容 `image_url` 内容块发送图片。你可以粘贴图片或使用媒体工具。现有 OpenAI adapter 已支持基础流程所需的 base64 和公开 URL 图片形式，不要求使用 Files API；同时仍需遵守 DeepSeek 的图片限制，包括 48 MiB 请求体上限，以及内联或公开 URL 图片的 32 MiB 单图上限。
+
+DeepSeek 的推理响应使用 `reasoning_content`，Thinking effort 会通过 OpenAI 兼容 provider 转发。如果网关改用了其他推理字段名，请在模型别名上设置 `reasoning_key`。
 
 ## `openai_responses`
 

@@ -7055,7 +7055,7 @@ command = "vim"
     });
   });
 
-  it('refreshes only OAuth provider models before opening /model picker', async () => {
+  it('refreshes all supported provider models before opening /model picker', async () => {
     const { driver } = await makeDriver(makeSession(), {
       getConfig: vi.fn(async () => ({
         models: {
@@ -7070,10 +7070,7 @@ command = "vim"
       })),
     });
     const tui = driver as unknown as KimiTUI;
-    const refreshProviderModels = vi
-      .spyOn(tui.authFlow, 'refreshProviderModels')
-      .mockRejectedValue(new Error('full provider refresh should not run'));
-    const refreshOAuthProviderModels = vi.fn(async () => {
+    const refreshProviderModels = vi.spyOn(tui.authFlow, 'refreshProviderModels').mockImplementation(async () => {
       await Promise.resolve();
       tui.setAppState({
         availableModels: {
@@ -7088,12 +7085,6 @@ command = "vim"
       });
       return { changed: [], unchanged: ['managed:kimi-code'], failed: [] };
     });
-    (
-      tui.authFlow as unknown as {
-        refreshOAuthProviderModels: typeof refreshOAuthProviderModels;
-      }
-    ).refreshOAuthProviderModels = refreshOAuthProviderModels;
-
     driver.handleUserInput('/model');
 
     await vi.waitFor(() => {
@@ -7103,11 +7094,10 @@ command = "vim"
       expect(output).toContain('Fresh Kimi K2');
       expect(output).not.toContain('Old Kimi K2');
     });
-    expect(refreshOAuthProviderModels).toHaveBeenCalledOnce();
-    expect(refreshProviderModels).not.toHaveBeenCalled();
+    expect(refreshProviderModels).toHaveBeenCalledOnce();
   });
 
-  it('opens /model picker after 2s when OAuth refresh is still pending', async () => {
+  it('opens /model picker after 2s when provider refresh is still pending', async () => {
     const { driver } = await makeDriver(makeSession(), {
       getConfig: vi.fn(async () => ({
         models: {
@@ -7122,19 +7112,19 @@ command = "vim"
       })),
     });
     const tui = driver as unknown as KimiTUI;
-    const refreshOAuthProviderModels = vi.fn(() => new Promise<never>(() => {}));
+    const refreshProviderModels = vi.fn(() => new Promise<never>(() => {}));
     (
       tui.authFlow as unknown as {
-        refreshOAuthProviderModels: typeof refreshOAuthProviderModels;
+        refreshProviderModels: typeof refreshProviderModels;
       }
-    ).refreshOAuthProviderModels = refreshOAuthProviderModels;
+    ).refreshProviderModels = refreshProviderModels;
 
     vi.useFakeTimers();
     try {
       driver.handleUserInput('/model');
       await Promise.resolve();
 
-      expect(refreshOAuthProviderModels).toHaveBeenCalledOnce();
+      expect(refreshProviderModels).toHaveBeenCalledOnce();
       expect(driver.state.editorContainer.children[0]).not.toBeInstanceOf(TabbedModelSelectorComponent);
 
       await vi.advanceTimersByTimeAsync(1_999);

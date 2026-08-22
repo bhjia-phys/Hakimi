@@ -5,6 +5,12 @@ import {
   type CustomRegistrySource,
 } from './custom-registry';
 import {
+  applyDeepSeekProviderModels,
+  fetchDeepSeekModels,
+  isDeepSeekProvider,
+  resolveDeepSeekProviderApiKey,
+} from './deepseek';
+import {
   applyManagedApiKeyProviderModels,
   applyManagedKimiCodeConfig,
   fetchManagedKimiCodeModels,
@@ -357,17 +363,19 @@ function pickDefaultModel(
 
 /**
  * Refresh remote model metadata for the configured providers and persist any
- * changes through the host. Handles four provider kinds, in order:
+ * changes through the host. Handles five provider kinds, in order:
  *
  *  1. Managed Kimi Code (OAuth) — `GET /models` against the runtime endpoint.
  *  2. Open platforms (moonshot-cn, moonshot-ai, …) — platform catalog fetch.
- *  2.5. Managed-endpoint API-key providers — hand-written `type: 'kimi'`
+ *  2.5. DeepSeek official providers — OpenAI-compatible `GET /models`, with
+ *     DeepSeek-specific metadata for thinking and vision aliases.
+ *  3. Managed-endpoint API-key providers — hand-written `type: 'kimi'`
  *     providers (including a hand-written `managed:kimi-code` without an oauth
  *     ref) whose baseUrl is exactly the managed Kimi Code endpoint; refreshed
  *     via `GET /models` with the configured API key as Bearer. Only model
  *     aliases are merged; the provider record is user-owned and never
  *     rewritten.
- *  3. Custom registries (models.dev-style, keyed by `provider.source`).
+ *  4. Custom registries (models.dev-style, keyed by `provider.source`).
  *
  * Each branch diffs old vs new and only writes when something actually changed
  * (`removeProvider` then `setConfig`). Failures are collected per-provider and
@@ -539,7 +547,64 @@ export async function refreshProviderModels(
   }
 
   // ---------------------------------------------------------------------------
-  // 2.5. Managed-endpoint API-key providers (hand-configured distributed keys)
+  // 2.5. DeepSeek official providers
+  // ---------------------------------------------------------------------------
+  for (const providerId of Object.keys(config.providers)) {
+    if (targetId !== undefined && targetId !== providerId) continue;
+    const provider = readProvider(config, providerId);
+    if (provider === undefined || !isDeepSeekProvider(provider)) continue;
+    const apiKey = resolveDeepSeekProviderApiKey(provider);
+    if (apiKey === undefined) continue;
+
+    try {
+      const models = await fetchDeepSeekModels({
+        apiKey,
+        baseUrl: provider.baseUrl,
+      });
+      if (models.length === 0) continue;
+      const next = structuredClone(config);
+      applyDeepSeekProviderModels(next, providerId, models);
+      const refreshedAliasKeys = providerRefreshAliasKeys(
+        config,
+        next,
+        providerId,
+        `${providerId}/`,
+      );
+      restoreDefaultSelection(next, config.defaultModel, config.thinking?.enabled);
+      clampDanglingDefault(next);
+      clearDefaultThinkingWhenDefaultRemoved(next, config.defaultModel);
+
+      if (providerModelsEqual(config, next, providerId, refreshedAliasKeys)) {
+        unchanged.push(providerId);
+      } else {
+        const { added, removed } = computeChanges(
+          collectModelIdsForAliases(config, refreshedAliasKeys),
+          collectModelIdsForAliases(next, refreshedAliasKeys),
+        );
+        await host.removeProvider(providerId);
+        config = await host.setConfig({
+          providers: next.providers,
+          models: next.models,
+          defaultModel: next.defaultModel,
+          thinking: next.thinking,
+        });
+        changed.push({
+          providerId,
+          providerName: 'DeepSeek',
+          added,
+          removed,
+        });
+      }
+    } catch (error) {
+      failed.push({
+        provider: providerId,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 3. Managed-endpoint API-key providers (hand-configured distributed keys)
   // ---------------------------------------------------------------------------
   // A hand-written `type: 'kimi'` provider whose baseUrl is exactly the managed
   // Kimi Code endpoint, carrying an API key (inline or via `env.KIMI_API_KEY`)
@@ -616,7 +681,7 @@ export async function refreshProviderModels(
   }
 
   // ---------------------------------------------------------------------------
-  // 3. Custom Registry providers (grouped by URL, with API-key candidates)
+  // 4. Custom Registry providers (grouped by URL, with API-key candidates)
   // ---------------------------------------------------------------------------
   const customSources = new Map<
     string,

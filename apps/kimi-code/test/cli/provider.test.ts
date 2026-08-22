@@ -598,6 +598,25 @@ describe('kimi provider deepseek', () => {
     expect(stdout.join('')).toContain('Configured DeepSeek (deepseek-v4-pro)');
   });
 
+  it('configures the DeepSeek Vision model with image input capability', async () => {
+    const { harness, current } = makeHarness({ providers: {}, models: {} } as unknown as KimiConfig);
+    const { deps, exitCodes } = makeDeps(harness);
+
+    await tryRun(() =>
+      handleDeepSeekAdd(deps, {
+        apiKey: 'sk-deepseek',
+        model: 'deepseek-v4-flash-vision-exp',
+      }),
+    );
+
+    expect(exitCodes).toEqual([]);
+    expect(current().models?.['deepseek/deepseek-v4-flash-vision-exp']).toMatchObject({
+      model: 'deepseek-v4-flash-vision-exp',
+      capabilities: ['image_in', 'thinking', 'tool_use'],
+      displayName: 'DeepSeek V4 Flash Vision Exp',
+    });
+  });
+
   it('supports env api keys, custom model metadata, and --no-default', async () => {
     const { harness, current } = makeHarness({
       providers: {

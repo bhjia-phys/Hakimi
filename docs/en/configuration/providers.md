@@ -95,24 +95,14 @@ api_key = "sk-xxxxx"
 
 ### DeepSeek
 
-DeepSeek uses the same `openai` provider path. For Hakimi, the non-interactive setup command writes this config for you:
-
-```sh
-DEEPSEEK_API_KEY=sk-... hakimi provider deepseek
-```
-
-As of 2026-06-04, DeepSeek's official OpenAI-format base URL is `https://api.deepseek.com`, and the active model ids are `deepseek-v4-pro` and `deepseek-v4-flash`; the older `deepseek-chat` and `deepseek-reasoner` names are scheduled for deprecation on 2026-07-24. The shortcut defaults to `deepseek-v4-pro`, declares the documented 1M context and 384K output ceiling, and marks the alias thinking/tool-call capable. When Hakimi forwards thinking-effort controls through the OpenAI-compatible provider, DeepSeek models are mapped to the documented `high` / `max` values.
-
-Equivalent manual config:
+DeepSeek uses the same `openai` provider path. Add the provider with a `source.kind = "deepseek"` marker so Hakimi can refresh its official model list from the provider's `/models` endpoint. The `/model` picker and the startup refresh both use that list, so newly published models can appear without rewriting `config.toml` by hand.
 
 ```toml
 [providers.deepseek]
 type = "openai"
 base_url = "https://api.deepseek.com"
-api_key = "sk-xxxxx"
-
-[providers.deepseek.generation_kwargs.extra_body.thinking]
-type = "enabled"
+api_key = "YOUR_API_KEY"
+source = { kind = "deepseek" }
 
 [models."deepseek/deepseek-v4-pro"]
 provider = "deepseek"
@@ -122,6 +112,22 @@ max_output_size = 384000
 capabilities = ["thinking", "tool_use"]
 display_name = "DeepSeek V4 Pro"
 ```
+
+`deepseek-v4-flash-vision-exp` is recognized as a vision model. It is added automatically when the official `/models` response includes it, or can be configured directly:
+
+```toml
+[models."deepseek/deepseek-v4-flash-vision-exp"]
+provider = "deepseek"
+model = "deepseek-v4-flash-vision-exp"
+max_context_size = 1000000
+max_output_size = 384000
+capabilities = ["image_in", "thinking", "tool_use"]
+display_name = "DeepSeek V4 Flash Vision Exp"
+```
+
+Hakimi sends images using DeepSeek's OpenAI-compatible `image_url` content blocks. Paste an image or use the media tools after selecting the vision model. The provider's base64 and public-URL image forms work through the existing OpenAI adapter; Files API uploads are not required for the basic flow. DeepSeek's image limits still apply, including the 48 MiB request-body limit and 32 MiB limit for an inline or public-URL image.
+
+DeepSeek reasoning responses use `reasoning_content`, and thinking effort is forwarded through the OpenAI-compatible provider. If a gateway changes the reasoning field name, set `reasoning_key` on the model alias.
 
 ## `openai_responses`
 

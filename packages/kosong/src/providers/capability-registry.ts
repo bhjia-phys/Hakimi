@@ -28,6 +28,8 @@ const OPENAI_VISION_TOOL_PREFIXES = [
   'gpt-4.5',
 ] as const;
 
+const DEEPSEEK_VISION_PREFIXES = ['deepseek-v4-flash-vision'] as const;
+
 // Claude prefixes are grouped by capability set, not by version family:
 // a new model joins the group whose capability it matches (e.g. Fable sits
 // with Opus/Sonnet/Haiku 4), rather than getting a per-version group.
@@ -66,6 +68,15 @@ const OPENAI_VISION_TOOL_CAPABILITY: ModelCapability = Object.freeze({
   video_in: false,
   audio_in: false,
   thinking: false,
+  tool_use: true,
+  max_context_tokens: 0,
+});
+
+const DEEPSEEK_VISION_CAPABILITY: ModelCapability = Object.freeze({
+  image_in: true,
+  video_in: false,
+  audio_in: false,
+  thinking: true,
   tool_use: true,
   max_context_tokens: 0,
 });
@@ -119,6 +130,10 @@ const OPENAI_LEGACY_CAPABILITY_CATALOG: readonly CapabilityCatalogEntry[] = [
   {
     matches: isOpenAIReasoningModel,
     capability: OPENAI_REASONING_CAPABILITY,
+  },
+  {
+    matches: (name) => hasPrefix(name, DEEPSEEK_VISION_PREFIXES),
+    capability: DEEPSEEK_VISION_CAPABILITY,
   },
   {
     matches: (name) => hasPrefix(name, OPENAI_VISION_TOOL_PREFIXES),

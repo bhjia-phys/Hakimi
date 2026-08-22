@@ -302,6 +302,14 @@ describe('resolveCapability', () => {
 
   it('falls back to the base catalog and then to UNKNOWN', () => {
     expect(registry.resolveCapability('openai', 'gpt-4o').image_in).toBe(true);
+    const deepSeekVision = registry.resolveCapability(
+      'openai',
+      'deepseek-v4-flash-vision-exp',
+    );
+    expect(deepSeekVision.image_in).toBe(true);
+    expect(deepSeekVision.thinking).toBe(true);
+    expect(deepSeekVision.tool_use).toBe(true);
+    expect(isUnknownCapability(registry.resolveCapability('openai', 'deepseek-not-real'))).toBe(true);
     expect(isUnknownCapability(registry.resolveCapability('openai', 'mystery-model'))).toBe(true);
     expect(registry.resolveCapability('anthropic', 'claude-opus-4-1').thinking).toBe(true);
   });
