@@ -65,6 +65,8 @@ import {
   convertContentPart,
   convertOpenAIError,
   convertToolMessageContent,
+  DEEPSEEK_VISION_CAPABILITY,
+  DEEPSEEK_VISION_PREFIXES,
   extractUsage,
   hasModelPrefix,
   isFunctionToolCall,
@@ -786,6 +788,9 @@ export function getOpenAILegacyModelCapability(modelName: string) {
   const normalized = modelName.toLowerCase();
   if (isOpenAIReasoningModel(normalized)) {
     return OPENAI_REASONING_CAPABILITY;
+  }
+  if (hasModelPrefix(normalized, DEEPSEEK_VISION_PREFIXES)) {
+    return DEEPSEEK_VISION_CAPABILITY;
   }
   if (hasModelPrefix(normalized, OPENAI_VISION_TOOL_PREFIXES)) {
     return OPENAI_VISION_TOOL_CAPABILITY;

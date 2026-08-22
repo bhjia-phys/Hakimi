@@ -133,6 +133,17 @@ describe('getModelCapability: openai', () => {
     expect(cap.tool_use).toBe(true);
   });
 
+  it('deepseek-v4-flash-vision-exp → image_in + thinking + tool_use', () => {
+    const cap = getModelCapability('openai', 'deepseek-v4-flash-vision-exp');
+    expect(cap.image_in).toBe(true);
+    expect(cap.thinking).toBe(true);
+    expect(cap.tool_use).toBe(true);
+  });
+
+  it('unknown DeepSeek model stays conservative', () => {
+    expect(getModelCapability('openai', 'deepseek-not-real')).toEqual(UNKNOWN_CAPABILITY);
+  });
+
   it('o1 → thinking=true, tool_use=true', () => {
     const cap = getModelCapability('openai', 'o1');
     expect(cap.thinking).toBe(true);

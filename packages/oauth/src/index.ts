@@ -158,6 +158,26 @@ export type {
 } from './open-platform';
 
 export {
+  applyDeepSeekProviderModels,
+  deepSeekCapabilities,
+  DEEPSEEK_BASE_URL,
+  DEEPSEEK_DEFAULT_CONTEXT_SIZE,
+  DEEPSEEK_DEFAULT_MAX_OUTPUT_SIZE,
+  DEEPSEEK_DEFAULT_MODEL,
+  deepSeekDisplayName,
+  deepSeekModelInfo,
+  DEEPSEEK_PROVIDER_ID,
+  DEEPSEEK_VISION_MODEL_PREFIX,
+  DeepSeekModelsApiError,
+  fetchDeepSeekModels,
+  isDeepSeekProvider,
+  isDeepSeekThinkingCapable,
+  isDeepSeekVisionModel,
+  resolveDeepSeekProviderApiKey,
+} from './deepseek';
+export type { DeepSeekModelInfo, DeepSeekProviderView } from './deepseek';
+
+export {
   applyCustomRegistryEntries,
   applyCustomRegistryProvider,
   capabilitiesFromCustomEntry,

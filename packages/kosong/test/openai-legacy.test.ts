@@ -167,6 +167,48 @@ describe('OpenAILegacyChatProvider', () => {
       ]);
     });
 
+    it('sends DeepSeek Vision images in the official Chat Completions shape', async () => {
+      const provider = createProvider({ model: 'deepseek-v4-flash-vision-exp' });
+      const imageUrl = 'data:image/png;base64,iVBORw0KGgo=';
+      const history: Message[] = [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'think', think: 'earlier reasoning' },
+            { type: 'text', text: 'Ready for the image.' },
+          ],
+          toolCalls: [],
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Describe this image.' },
+            { type: 'image_url', imageUrl: { url: imageUrl } },
+          ],
+          toolCalls: [],
+        },
+      ];
+
+      const body = await captureRequestBody(provider, '', [], history);
+
+      expect(body['model']).toBe('deepseek-v4-flash-vision-exp');
+      expect(body['messages']).toEqual([
+        {
+          role: 'assistant',
+          content: 'Ready for the image.',
+          reasoning_content: 'earlier reasoning',
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Describe this image.' },
+            { type: 'image_url', image_url: { url: imageUrl } },
+          ],
+        },
+      ]);
+      expect(body['reasoning_effort']).toBe('high');
+    });
+
     it('tool definitions', async () => {
       const provider = createProvider();
       const history: Message[] = [

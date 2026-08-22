@@ -1196,6 +1196,62 @@ describe('refreshAllProviderModels', () => {
     expect(host.current().defaultProvider).toBe('my-kimi');
   });
 
+  it('refreshes DeepSeek models from its official OpenAI-compatible endpoint', async () => {
+    const host = makeRefreshHost({
+      providers: {
+        deepseek: {
+          type: 'openai',
+          baseUrl: 'https://api.deepseek.com',
+          apiKey: 'sk-deepseek',
+          source: { kind: 'deepseek' },
+        },
+      },
+      models: {
+        'deepseek/deepseek-v4-pro': {
+          provider: 'deepseek',
+          model: 'deepseek-v4-pro',
+          maxContextSize: 1_000_000,
+          capabilities: ['thinking', 'tool_use'],
+        },
+      },
+      defaultModel: 'deepseek/deepseek-v4-pro',
+      telemetry: true,
+    } as unknown as KimiConfig);
+    const fetchMock = vi.fn<FetchMock>(async (input) => {
+      expect(fetchInputUrl(input)).toBe('https://api.deepseek.com/models');
+      return new Response(
+        JSON.stringify({
+          data: [
+            { id: 'deepseek-v4-pro' },
+            { id: 'deepseek-v4-flash-vision-exp' },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await refreshAllProviderModels({
+      getConfig: async () => host.current(),
+      removeProvider: host.removeProvider,
+      setConfig: host.setConfig,
+      resolveOAuthToken: vi.fn(),
+    });
+
+    expect(result).toEqual({
+      changed: [{ providerId: 'deepseek', providerName: 'DeepSeek', added: 1, removed: 0 }],
+      unchanged: [],
+      failed: [],
+    });
+    expect(host.current().models?.['deepseek/deepseek-v4-flash-vision-exp']).toMatchObject({
+      model: 'deepseek-v4-flash-vision-exp',
+      maxContextSize: 1_000_000,
+      maxOutputSize: 384_000,
+      capabilities: ['image_in', 'thinking', 'tool_use'],
+    });
+    expect(host.current().defaultModel).toBe('deepseek/deepseek-v4-pro');
+  });
+
   it('leaves registry-sourced providers at the managed base URL to the registry branch', async () => {
     const baseUrl = 'https://api.managed.example.test/coding/v1';
     vi.stubEnv('KIMI_CODE_BASE_URL', baseUrl);
