@@ -222,4 +222,40 @@ describe('FooterComponent line-2 hints', () => {
 
     expect(stripAnsi(footer.render(120)[1] ?? '')).not.toContain('Goal objective is too long');
   });
+
+  it('shows Research badge when phase is ready', () => {
+    const footer = new FooterComponent({ ...appState, researchModePhase: 'ready', researchLoopStatus: 'active' });
+    const line1 = stripAnsi(footer.render(120)[0] ?? '');
+    expect(line1).toContain('[Research]');
+  });
+
+  it('shows Research badge when phase is probing', () => {
+    const footer = new FooterComponent({ ...appState, researchModePhase: 'probing', researchLoopStatus: 'active' });
+    const line1 = stripAnsi(footer.render(120)[0] ?? '');
+    expect(line1).toContain('[Research]');
+  });
+
+  it('shows Research degraded badge when phase is degraded', () => {
+    const footer = new FooterComponent({ ...appState, researchModePhase: 'degraded', researchLoopStatus: 'active' });
+    const line1 = stripAnsi(footer.render(120)[0] ?? '');
+    expect(line1).toContain('[Research degraded]');
+  });
+
+  it('shows Research paused badge when loop is paused', () => {
+    const footer = new FooterComponent({ ...appState, researchModePhase: 'ready', researchLoopStatus: 'paused' });
+    const line1 = stripAnsi(footer.render(120)[0] ?? '');
+    expect(line1).toContain('[Research paused]');
+  });
+
+  it('does not show Research badge when phase is inactive', () => {
+    const footer = new FooterComponent({ ...appState, researchModePhase: 'inactive' });
+    const line1 = stripAnsi(footer.render(120)[0] ?? '');
+    expect(line1).not.toContain('[Research]');
+  });
+
+  it('does not show Research badge when phase is undefined', () => {
+    const footer = new FooterComponent(appState);
+    const line1 = stripAnsi(footer.render(120)[0] ?? '');
+    expect(line1).not.toContain('[Research]');
+  });
 });

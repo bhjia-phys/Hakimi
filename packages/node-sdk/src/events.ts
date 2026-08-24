@@ -15,6 +15,8 @@ export type {
   AgentStatusUpdatedEvent,
   SessionMetaUpdatedEvent,
   GoalUpdatedEvent,
+  ResearchUpdatedEvent,
+  AitpModeUpdatedEvent,
   SkillActivatedEvent,
   PluginCommandActivatedEvent,
   ErrorEvent,

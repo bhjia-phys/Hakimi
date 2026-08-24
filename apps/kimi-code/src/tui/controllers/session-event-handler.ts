@@ -14,6 +14,7 @@ import type {
   GoalChange,
   GoalUpdatedEvent,
   HookResultEvent,
+  ResearchUpdatedEvent,
   Session,
   SessionMetaUpdatedEvent,
   SkillActivatedEvent,
@@ -75,6 +76,7 @@ import { errorReportHintLine } from '../constant/feedback';
 import { formatStepDebugTiming } from '#/utils/usage/debug-timing';
 import { nextTranscriptId } from '../utils/transcript-id';
 import type { BtwPanelController } from './btw-panel';
+import type { ResearchController } from './research-controller';
 import { isPluginMcpToolName, PluginUpdateNotifier } from './plugin-update-notifier';
 import type { StreamingUIController } from './streaming-ui';
 import type { TasksBrowserController } from './tasks-browser';
@@ -121,6 +123,7 @@ export interface SessionEventHost {
   shiftQueuedMessage(): QueuedMessage | undefined;
   readonly btwPanelController: BtwPanelController;
   readonly tasksBrowserController: TasksBrowserController;
+  readonly researchController: ResearchController;
 }
 
 export class SessionEventHandler {
@@ -217,7 +220,10 @@ export class SessionEventHandler {
       if (event.type === 'tool.progress') {
         mcpOAuthOpener.handleToolProgress(event);
       }
-      this.handleEvent(event, sendQueued);
+      // Keep the Session object that owns the subscription alongside the event.
+      // A stale callback can still run after unsubscribe, and session ids may be
+      // reused by a reload; Research validates this object identity itself.
+      this.handleEvent(event, sendQueued, session);
     });
     void this.syncMcpServerStatusSnapshot(session);
   }
@@ -257,7 +263,11 @@ export class SessionEventHandler {
     host.setAppState({ mcpServersSummary: summary || null });
   }
 
-  handleEvent(event: Event, sendQueued: (item: QueuedMessage) => void): void {
+  handleEvent(
+    event: Event,
+    sendQueued: (item: QueuedMessage) => void,
+    sourceSession?: Session,
+  ): void {
     if (this.subAgentEventHandler.routeChildAgentEvent(event)) return;
 
     if ('turnId' in event && event.turnId !== undefined) {
@@ -283,6 +293,8 @@ export class SessionEventHandler {
       case 'agent.status.updated': this.handleStatusUpdate(event); break;
       case 'session.meta.updated': this.handleSessionMetaChanged(event); break;
       case 'goal.updated': this.handleGoalUpdated(event); break;
+      case 'research.updated': this.handleResearchUpdated(event, sourceSession); break;
+      case 'aitp_mode.updated': break;
       case 'skill.activated': this.handleSkillActivated(event); break;
       case 'plugin_command.activated': this.handlePluginCommandActivated(event); break;
       case 'error': this.handleSessionError(event); break;
@@ -796,6 +808,24 @@ export class SessionEventHandler {
     if (marker !== null) {
       state.transcriptContainer.addChild(marker);
       state.ui.requestRender();
+    }
+  }
+
+  private handleResearchUpdated(
+    event: ResearchUpdatedEvent,
+    sourceSession?: Session,
+  ): void {
+    // The live board is only ever driven by this full snapshot event.
+    // `aitp_mode.updated` deliberately does not hydrate: the session pushes a
+    // `research.updated` snapshot for every structured research state change,
+    // so an extra getResearch round-trip would be redundant (and could race a
+    // fresher event). The controller also checks sourceSession identity so an
+    // unsubscribed callback cannot update a replacement session.
+    if (sourceSession !== undefined && this.host.session !== sourceSession) return;
+    if (sourceSession === undefined) {
+      this.host.researchController.setSnapshot(event.snapshot);
+    } else {
+      this.host.researchController.setSnapshot(event.snapshot, sourceSession);
     }
   }
 

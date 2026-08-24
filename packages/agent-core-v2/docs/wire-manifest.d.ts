@@ -21,7 +21,12 @@
 // owning model offloads inline media to blob storage), cross-reducers
 // (foreign models that also reduce this record on dispatch and replay).
 
-// Index (52 record types)
+// Index (68 record types)
+//   aitp_mode.enter                    aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   aitp_mode.exit                     aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   aitp_mode.set_line                 aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   aitp_mode.set_loop_status          aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   aitp_mode.set_phase                aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   config.update                      profile                     persisted  src/agent/profile/profileOps.ts
 //   context.append_loop_event          contextMemory               persisted  src/agent/contextMemory/contextOps.ts
 //   context.append_message             contextMemory               persisted  src/agent/contextMemory/contextOps.ts
@@ -53,6 +58,17 @@
 //   plan.revision                      plan                        persisted  src/features/plan/planOps.ts
 //   plugin.session_start               pluginSessionStartSnapshot  persisted  src/agent/plugin/agentPluginOps.ts
 //   profile.bind                       profile                     persisted  src/agent/profile/profileOps.ts
+//   research.ack_checkpoint            research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.commit_checkpoint         researchCursor              persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.create_line               research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.create_question           research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.propose_checkpoint        research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.reopen_question           research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.set_focus                 research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.steer                     research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.switch_line               research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.update_line               research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.update_question           research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   runtime.set_binding                runtimeBinding              persisted  src/agent/runtimeBinding/runtimeBindingOps.ts
 //   skill.activate                     skill                       transient  src/agent/skill/skillOps.ts
 //   swarm_mode.enter                   swarm                       persisted  src/features/swarm/swarmOps.ts
@@ -74,6 +90,51 @@
 //   turn.prompt                        turn                        persisted  src/agent/loop/turnOps.ts
 //   turn.steer                         turn                        persisted  src/agent/loop/turnOps.ts
 //   usage.record                       usage                       persisted  src/agent/usage/usageOps.ts
+
+/**
+ * model: aitpMode · persisted · toEvent
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface AitpModeEnterPayload {
+  _name: 'aitp_mode.enter';
+  actor: 'user' | 'model';
+  lineSlug?: string;
+}
+
+/**
+ * model: aitpMode · persisted · toEvent
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface AitpModeExitPayload {
+  _name: 'aitp_mode.exit';
+}
+
+/**
+ * model: aitpMode · persisted · toEvent
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface AitpModeSetLinePayload {
+  _name: 'aitp_mode.set_line';
+  lineSlug: string;
+}
+
+/**
+ * model: aitpMode · persisted · toEvent
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface AitpModeSetLoopStatusPayload {
+  _name: 'aitp_mode.set_loop_status';
+  loopStatus: 'active' | 'paused';
+}
+
+/**
+ * model: aitpMode · persisted · toEvent
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface AitpModeSetPhasePayload {
+  _name: 'aitp_mode.set_phase';
+  phase: 'inactive' | 'probing' | 'ready' | 'degraded';
+}
 
 /**
  * model: profile · persisted
@@ -109,7 +170,7 @@ interface ContextAppendLoopEventPayload {
 }
 
 /**
- * model: contextMemory · persisted · blobs · cross-reducers: plan, goalForkNotice, task.notificationDelivery, todo
+ * model: contextMemory · persisted · blobs · cross-reducers: plan, goalForkNotice, task.notificationDelivery, todo, aitpMode, research
  * owner: src/agent/contextMemory/contextOps.ts
  */
 interface ContextAppendMessagePayload {
@@ -144,14 +205,14 @@ interface ContextAppendMessagePayload {
 }
 
 /**
- * model: contextMemory · persisted · blobs · cross-reducers: plan, task.notificationDelivery, todo
+ * model: contextMemory · persisted · blobs · cross-reducers: plan, task.notificationDelivery, todo, aitpMode, research
  * owner: src/agent/contextMemory/contextOps.ts
  * shared base: ...contextCompactionBaseShape
  */
 type ContextApplyCompactionPayload = { _name: 'context.apply_compaction'; } & ({ summary: string, compactedCount: number, contextSummary?: string } | { contextSummary: string, compactedCount: number, summary?: string } | { summary: ContextMessage, count: number, compactedCount?: number });
 
 /**
- * model: contextMemory · persisted · blobs · cross-reducers: plan, task.notificationDelivery, todo
+ * model: contextMemory · persisted · blobs · cross-reducers: plan, task.notificationDelivery, todo, aitpMode, research
  * owner: src/agent/contextMemory/contextOps.ts
  */
 interface ContextClearPayload {
@@ -159,7 +220,7 @@ interface ContextClearPayload {
 }
 
 /**
- * model: contextMemory · persisted · blobs · cross-reducers: plan, task.notificationDelivery, todo
+ * model: contextMemory · persisted · blobs · cross-reducers: plan, task.notificationDelivery, todo, aitpMode, research
  * owner: src/agent/contextMemory/contextOps.ts
  */
 interface ContextUndoPayload {
@@ -485,6 +546,159 @@ interface ProfileBindPayload {
 }
 
 /**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchAckCheckpointPayload {
+  _name: 'research.ack_checkpoint';
+  checkpointId: string;
+  entryId?: string;
+}
+
+/**
+ * model: researchCursor · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchCommitCheckpointPayload {
+  _name: 'research.commit_checkpoint';
+  checkpointId: string;
+  entryId: string;
+  committedAt: number;
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchCreateLinePayload {
+  _name: 'research.create_line';
+  slug: string;
+  title: string;
+  objective?: string;
+  assessment?: string;
+  createdAt: number;
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchCreateQuestionPayload {
+  _name: 'research.create_question';
+  id: string;
+  lineSlug: string;
+  wording: string;
+  assessment?: string;
+  priority: number;
+  neededEvidence: string[];
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchProposeCheckpointPayload {
+  _name: 'research.propose_checkpoint';
+  checkpointId: string;
+  questionId?: string;
+  lineSlug?: string;
+  assessment?: string;
+  nextAction?: string;
+  idempotencyKey: string;
+  createdAt: number;
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchReopenQuestionPayload {
+  _name: 'research.reopen_question';
+  questionId: string;
+  expectedRevision: number;
+  reason?: string;
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchSetFocusPayload {
+  _name: 'research.set_focus';
+  questionId: string;
+  boundedAction?: string;
+  expectedRevision: number;
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchSteerPayload {
+  _name: 'research.steer';
+  kind: 'set_focus' | 'update_question' | 'switch_line' | 'pause_loop' | 'resume_loop' | 'reopen_question' | 'defer_question' | 'block_question' | 'close_question';
+  questionId?: string;
+  lineSlug?: string;
+  expectedRevision: number;
+  boundedAction?: string;
+  wording?: string;
+  assessment?: string;
+  priority?: number;
+  workflow?: 'open' | 'active' | 'deferred' | 'blocked' | 'closed' | 'cancelled';
+  epistemic?: 'unknown' | 'candidate' | 'supported' | 'contradicted' | 'inconclusive';
+  neededEvidence?: string[];
+  nextBoundedAction?: string;
+  reason?: string;
+  actor: 'human' | 'model';
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchSwitchLinePayload {
+  _name: 'research.switch_line';
+  lineSlug: string;
+  expectedRevision: number;
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchUpdateLinePayload {
+  _name: 'research.update_line';
+  slug: string;
+  expectedRevision: number;
+  title?: string;
+  objective?: string;
+  status?: 'active' | 'paused' | 'completed' | 'blocked';
+  assessment?: string;
+  reason?: string;
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchUpdateQuestionPayload {
+  _name: 'research.update_question';
+  questionId: string;
+  expectedRevision: number;
+  wording?: string;
+  assessment?: string;
+  priority?: number;
+  workflow?: 'open' | 'active' | 'deferred' | 'blocked' | 'closed' | 'cancelled';
+  epistemic?: 'unknown' | 'candidate' | 'supported' | 'contradicted' | 'inconclusive';
+  neededEvidence?: string[];
+  nextBoundedAction?: string;
+  evidenceRefs?: string[];
+  falsifierRefs?: string[];
+  reason?: string;
+  actor: 'human' | 'model';
+}
+
+/**
  * model: runtimeBinding · persisted
  * owner: src/agent/runtimeBinding/runtimeBindingOps.ts
  */
@@ -756,6 +970,11 @@ interface UsageRecordPayload {
 
 /** Record type → payload sketch. */
 interface WirePayloadMap {
+  "aitp_mode.enter": AitpModeEnterPayload;
+  "aitp_mode.exit": AitpModeExitPayload;
+  "aitp_mode.set_line": AitpModeSetLinePayload;
+  "aitp_mode.set_loop_status": AitpModeSetLoopStatusPayload;
+  "aitp_mode.set_phase": AitpModeSetPhasePayload;
   "config.update": ConfigUpdatePayload;
   "context.append_loop_event": ContextAppendLoopEventPayload;
   "context.append_message": ContextAppendMessagePayload;
@@ -787,6 +1006,17 @@ interface WirePayloadMap {
   "plan.revision": PlanRevisionPayload;
   "plugin.session_start": PluginSessionStartPayload;
   "profile.bind": ProfileBindPayload;
+  "research.ack_checkpoint": ResearchAckCheckpointPayload;
+  "research.commit_checkpoint": ResearchCommitCheckpointPayload;
+  "research.create_line": ResearchCreateLinePayload;
+  "research.create_question": ResearchCreateQuestionPayload;
+  "research.propose_checkpoint": ResearchProposeCheckpointPayload;
+  "research.reopen_question": ResearchReopenQuestionPayload;
+  "research.set_focus": ResearchSetFocusPayload;
+  "research.steer": ResearchSteerPayload;
+  "research.switch_line": ResearchSwitchLinePayload;
+  "research.update_line": ResearchUpdateLinePayload;
+  "research.update_question": ResearchUpdateQuestionPayload;
   "runtime.set_binding": RuntimeSetBindingPayload;
   "skill.activate": SkillActivatePayload;
   "swarm_mode.enter": SwarmModeEnterPayload;

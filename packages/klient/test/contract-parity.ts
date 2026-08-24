@@ -135,6 +135,8 @@ import type {
   TurnEndedEvent,
   TurnStartedEvent,
   WarningEvent,
+  ResearchUpdatedEvent,
+  AitpModeUpdatedEvent,
 } from '@moonshot-ai/protocol';
 
 import {
@@ -194,6 +196,8 @@ import {
   turnEndedEventSchema,
   turnStartedEventSchema,
   warningEventSchema,
+  researchUpdatedEventSchema,
+  aitpModeUpdatedEventSchema,
 } from '../src/contract/agent/events.js';
 import {
   approvalRequestSchema,
@@ -203,6 +207,32 @@ import {
   fullCompactionInputSchema,
   mcpServerEntrySchema,
 } from '../src/contract/agent/services.js';
+import type {
+  ResearchStatusSnapshot as EngineResearchSnapshot,
+  ResearchQuestion as EngineResearchQuestion,
+  ResearchLine as EngineResearchLine,
+  ResearchFocus as EngineResearchFocus,
+  ResearchAlert as EngineResearchAlert,
+  ResearchCheckpoint as EngineResearchCheckpoint,
+  ResearchCommittedCursor as EngineResearchCursor,
+  AitpAdapterHealth as EngineAitpHealth,
+  HumanSteeringCommand as EngineHumanSteeringCommand,
+  ResearchLineCreationInput as EngineResearchLineCreationInput,
+} from '@moonshot-ai/agent-core-v2/features/aitpResearch/types';
+import type { UpdateLineInput as EngineUpdateLineInput } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
+import {
+  researchStatusSnapshotSchema,
+  researchQuestionSchema,
+  researchLineSchema,
+  researchFocusSchema,
+  researchAlertSchema,
+  researchCheckpointSchema,
+  researchCommittedCursorSchema,
+  aitpAdapterHealthSchema,
+  humanSteeringCommandSchema,
+  researchLineCreationInputSchema,
+  researchLineUpdateInputSchema,
+} from '../src/contract/agent/researchSchemas.js';
 import {
   createChildSessionOptionsSchema,
   createSessionOptionsSchema,
@@ -614,6 +644,40 @@ const _mcpServerEntry: AssertWire<typeof mcpServerEntrySchema, McpServerEntry> =
 const _fullCompactionInput: AssertWire<typeof fullCompactionInputSchema, FullCompactionInput> =
   true;
 
+// agent/researchSchemas.ts — AITP Research Mode wire shapes, mirrored from
+// `agent-core-v2/src/features/aitpResearch/types.ts` and
+// `agent-core-v2/src/features/aitpResearch/research/agentResearch.ts`.
+
+// One-directional: the engine types use `readonly` arrays where the wire
+// schemas infer mutable arrays, so only the engine → wire direction holds
+// for the snapshot and question types.
+const _researchSnapshot: AssertEngineToWire<
+  typeof researchStatusSnapshotSchema,
+  EngineResearchSnapshot
+> = true;
+const _researchQuestion: AssertEngineToWire<typeof researchQuestionSchema, EngineResearchQuestion> =
+  true;
+const _researchLine: AssertEngineToWire<typeof researchLineSchema, EngineResearchLine> = true;
+const _researchFocus: AssertWire<typeof researchFocusSchema, EngineResearchFocus> = true;
+const _researchAlert: AssertWire<typeof researchAlertSchema, EngineResearchAlert> = true;
+const _researchCheckpoint: AssertWire<typeof researchCheckpointSchema, EngineResearchCheckpoint> =
+  true;
+const _researchCursor: AssertWire<typeof researchCommittedCursorSchema, EngineResearchCursor> =
+  true;
+const _aitpHealth: AssertWire<typeof aitpAdapterHealthSchema, EngineAitpHealth> = true;
+const _humanSteeringCommand: AssertWire<
+  typeof humanSteeringCommandSchema,
+  EngineHumanSteeringCommand
+> = true;
+const _researchLineCreation: AssertWire<
+  typeof researchLineCreationInputSchema,
+  EngineResearchLineCreationInput
+> = true;
+const _researchLineUpdate: AssertWire<
+  typeof researchLineUpdateInputSchema,
+  EngineUpdateLineInput
+> = true;
+
 // ── agent scope (events.ts) ─────────────────────────────────────────────────
 // Parity against the protocol event types (the stream carries flat
 // `{ type, ... }` events; schemas keep the `type` literal). One-directional
@@ -650,6 +714,14 @@ const _compactionCompletedEvent: AssertWire<
   CompactionCompletedEvent
 > = true;
 const _warningEvent: AssertWire<typeof warningEventSchema, WarningEvent> = true;
+const _researchUpdatedEvent: AssertWire<
+  typeof researchUpdatedEventSchema,
+  ResearchUpdatedEvent
+> = true;
+const _aitpModeUpdatedEvent: AssertWire<
+  typeof aitpModeUpdatedEventSchema,
+  AitpModeUpdatedEvent
+> = true;
 // No parity assertions for `errorEventSchema`, `permissionApproval*Schema`,
 // and `agentStatusUpdatedEventSchema`: they are deliberately `z.looseObject`s
 // (index signature breaks both-ways assignability) — `permission.approval.*`

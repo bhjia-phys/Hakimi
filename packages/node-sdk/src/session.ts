@@ -30,6 +30,9 @@ import type {
   PromptSkillActivation,
   ReloadSessionOptions,
   ReloadSummary,
+  ResearchCommand,
+  ResearchCommandResponse,
+  ResearchStatusSnapshot,
   ResumedSessionState,
   ResumedSessionSummary,
   SessionPlan,
@@ -546,6 +549,26 @@ export class Session {
   async cancelGoal(): Promise<GoalSnapshot> {
     this.ensureOpen();
     return this.rpc.cancelGoal({ sessionId: this.id });
+  }
+
+  // --- AITP Research Mode ---------------------------------------------------
+  // The research surface exists only on the v2 engine; a v1-backed session
+  // rejects with `not_implemented` from the base RPC client.
+
+  /** Read the current research-mode snapshot for this session's main agent. */
+  async getResearch(): Promise<ResearchStatusSnapshot> {
+    this.ensureOpen();
+    return this.rpc.getResearch({ sessionId: this.id });
+  }
+
+  /**
+   * Submit one research steering command (mode on/off, pause/resume, question
+   * create/edit, focus, line switch, reopen/defer/block/close, checkpoint
+   * propose/commit). Resolves with the post-command snapshot.
+   */
+  async commandResearch(command: ResearchCommand): Promise<ResearchCommandResponse> {
+    this.ensureOpen();
+    return this.rpc.commandResearch({ sessionId: this.id, command });
   }
 
   /**

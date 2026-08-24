@@ -12,7 +12,7 @@
 <p align="center">
   <a href="README.zh-CN.md">Chinese</a> |
   <a href="https://github.com/bhjia-phys/Hakimi">Repository</a> |
-  <a href="https://moonshotai.github.io/kimi-code/en/">Upstream Kimi Code docs</a>
+  <a href="docs/en/guides/getting-started.md">Hakimi user manual</a>
 </p>
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -80,16 +80,19 @@ The current baseline already provides the fixed Tower protocol and separate `tow
 - **Owner:** Hakimi's AITP adapter only. AITP owns `.aitp` schemas, validation, persistence, provenance, and ledger semantics.
 - **Depends on:** AITP's CLI + files and F's adapter/contribution boundaries. D's built-in loop runs without C.
 
-Last verified against AITP HEAD `9f9e873440b8d88bfbb2963d8b5717c83b9ef4cc` (2026-08-14, `--help` re-checked command by command): M0/M0.5 are complete, M0.6 is closed under its narrowed reviewed claim, and M1a, M1b-R1, and M1c are **done; deterministic gate passed** (107 tests). H0 is implementable; the installed Skill currently provides the manual CLI path with Python 3.11 or newer, locates its bundled `scripts/aitp.py`, and does not require a global `aitp` executable. Hakimi's native structured adapter is not implemented. `record`/`note prepare|save` remain strict, unversioned version-0 response contracts that fail closed on unknown `status`. The versioned read transports `aitp/enter-0.2`, `aitp/list-0.1`, `aitp/show-0.1`, and `aitp/check-report-0.1` are shipped and gated, and the M1c scoped contracts `aitp/enter-0.3`/`aitp/list-0.2` are emitted only with the single-occurrence `--workstream <slug>` flag; all may be feature-detected when the adapter lands. The persistent `aitp/lite-entry-0.1` and `aitp/lite-note-0.1` schemas identify AITP files, not response envelopes; `aitp/enter-0.1`, `aitp search`, and `aitp --version` do not exist, and `aitp lineage` remains a deferred candidate.
+Last verified against AITP HEAD `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290` (2026-08-23, `--help` re-checked command by command; the committed HEAD is version `0.8.0` — a Skill-only amendment now committed): M0/M0.5 are complete, M0.6 is closed under its narrowed reviewed claim, and M1a, M1b-R1, M1c, M1d, and M1e are **done; deterministic gate passed** (154 tests). The installed Skill provides the manual CLI path with Python 3.11 or newer, locates its bundled `scripts/aitp.py`, and does not require a global `aitp` executable. The first experimental default-on slice of Hakimi's native AITP Research Mode is **implemented** behind the flag `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` (default on): it includes strict contract discovery, Python probe, `enter`/`list`/`show`/`check` read-side consumption (H0–H5), `record`/`note prepare|save` write-gated persistence, scoped `--workstream` reads/checks, M1e `sha256-once:`/policy finding-code compatibility, and a TUI `/research` command with a Research Board and manager. It does **not** auto-run `init`, `init --adopt`, `inventory`, or `backfill --apply`; `backfill` is not exposed as a model tool in this slice. The Research state model covers Question/Line/Focus, the three-axis (workflow/epistemic/persistence) question model, revision-based human steering with optimistic concurrency, pending-checkpoint and save+show+check commit barrier, and a Goal-complete guard that blocks completion when a checkpoint is pending or degraded. Mode, loop, Question, Focus, and checkpoint transitions push one complete Research snapshot to the TUI; stale cold hydration cannot overwrite a newer live update. Active research steps receive semantic state-maintenance guidance, while ordinary tool calls and AITP reads are not misreported as scientific progress. `/research on` activates the capability and Board but does not schedule a model turn; Goal remains the sole cross-turn continuation owner. The protocol (`packages/protocol`), `node-sdk`, `kap-server` REST (`GET/POST /sessions/{id}/research`), and `klient` surfaces are wired. When the flag is off (`=0` or `/experiments`), all AITP tools, skills, and the Research Board are hidden and zero AITP I/O occurs; when the flag is on but the mode is not entered, the surface is available but zero AITP I/O still occurs. `record`/`note prepare|save` remain strict, unversioned version-0 response contracts that fail closed on unknown `status`. The versioned read transports `aitp/enter-0.2`, `aitp/list-0.1`, `aitp/show-0.1`, and `aitp/check-report-0.1` are shipped and gated; the M1c scoped contracts `aitp/enter-0.3`/`aitp/list-0.2` and the M1d scoped `check` contract `aitp/check-report-0.2` are emitted only with the single-occurrence `--workstream <slug>` flag; M1e adds the `backfill` command (`aitp/backfill-0.1` success envelope, dry-run default) and `sha256-once:` mutable-observation pins with no transport schema change. AITP 0.8 is a **Skill-only amendment** (now committed): it defines `method-observation` candidate markers, conservative card/trial review, two-step human decisions (approval + publication), and the platform tool/card/Skill three-layer boundary — it changes no CLI, schema, or transport. The persistent `aitp/lite-entry-0.1` and `aitp/lite-note-0.1` schemas identify AITP files, not response envelopes; `aitp/enter-0.1`, `aitp search`, and `aitp --version` do not exist, and `aitp lineage` remains a deferred candidate. A typed AITP question/line registry, literature/compute/Portfolio support, and H6 native method-distillation orchestration are **not implemented**.
 
-| Hakimi gate | AITP gate | Planned delivery and current fact |
+| Hakimi gate | AITP gate | Status |
 | --- | --- | --- |
-| H0 · current CLI | M0/M0.6 | Use the installed Skill for `init`, `enter`, `inventory`, and `record`/`note prepare|save`; never auto-run `init`, `init --adopt`, or `inventory`. |
-| H1 · retrieval | M1a (gate passed) | Planned feature-detection of `enter-0.2`, `list-0.1`, and `show-0.1` and their golden fixtures; the AITP side is shipped and gated, the Hakimi adapter is not yet implemented. |
-| H2 · relations and diagnostics | M1b-R1 (gate passed) | Planned `check-report-0.1` consumption (parse on exits 0/1; exit 2 is the error envelope); persisted `based_on`/`used_by` and pointer bundles are not in R1. |
-| H3 · research memory | M1c (gate passed); AITP M2–M4 after | Planned consumption of the M1c scoped contracts (`enter-0.3`/`list-0.2`, only with the single-occurrence `--workstream` flag) and, later, reviewed artifacts, cross-topic links, and the Skill-driven collaborator protocol. |
+| H0 · current CLI | M0/M0.6 | **Implemented (experimental).** Launcher adapter, Python ≥ 3.11 probe, strict version-0 prepare/save envelope validation, contract-accurate record/Note argv, `enter` lifecycle, prepare→fill→save flow, and typed `not_initialized` degradation. Never auto-runs `init`, `init --adopt`, or `inventory`. |
+| H1 · retrieval | M1a (gate passed) | **Implemented (experimental).** Strictly feature-detects and consumes `enter-0.2`, `list-0.1`, and `show-0.1` (including malformed Entry responses); closeout-first handoff and Note-age signal. Full canonical Entry reads use `show`, never ad hoc Markdown parsing. |
+| H2 · relations and diagnostics | M1b-R1 (gate passed) | **Implemented (experimental).** Strictly consumes `check-report-0.1`: exits 0/1 are data-bearing success, warning-only findings do not degrade the adapter, and error findings block checkpoint commit. A valid exit-2 AITP error fails closed; parser misuse remains a command error rather than degrading the whole adapter. Persisted `based_on`/`used_by` and pointer bundles are not in R1. |
+| H3 · research memory | M1c (gate passed); AITP M2–M4 after | **Implemented (experimental).** Consumes M1c scoped contracts (`enter-0.3`/`list-0.2`, only with the single-occurrence `--workstream` flag). Typed question/line registry, reviewed artifacts, cross-topic links, and Skill-driven collaborator protocol are not implemented. |
+| H4 · workstream health | M1d (gate passed) | **Implemented (experimental).** Consumes scoped `check` (`check-report-0.2`, only with `--workstream`: admitted in-scope counts, `by_code`/`outside_scope`, four-line text is human-only); without the flag `check-report-0.1` stays byte-unchanged. |
+| H5 · evidence lifecycle | M1e (gate passed) | **Implemented (experimental).** Reads `backfill-0.1` success envelope and `sha256-once:`/policy finding codes; no transport schema change. `backfill` is not exposed as a model tool; `--apply` requires a human decision pin and is not auto-invoked. |
+| H6 · native distillation | planned (adapter-contract extension not yet frozen) | **Planned, unavailable.** Native method-distillation orchestration: Session-scope coordinator, candidate/proposal lifecycle, human question + decision write, crash/resume. See [`docs/aitp/method-distillation-orchestration.md`](docs/aitp/method-distillation-orchestration.md). |
 
-The boundary remains strict CLI + files: no copied AITP runtime, SDK, API/MCP server, daemon, second ledger, or direct canonical-file writes. An uninitialized or AITP-free workspace continues with an explicit degraded status. H1–H3 remain Hakimi-side plans — the AITP contracts they target are shipped, but Hakimi's adapter support for them is not yet implemented and must not be described as available. The detailed matrix and verified decisions are in [`docs/aitp/`](docs/aitp/); re-check AITP `--help`, schemas, and official fixtures before changing compatibility claims.
+The boundary remains strict CLI + files: no copied AITP runtime, SDK, API/MCP server, daemon, second ledger, or direct canonical-file writes. An uninitialized or AITP-free workspace continues with an explicit degraded status. The experimental first slice (H0–H5) is implemented behind `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` (default on); a plain launch exposes `/research` and `EnterAITPMode` but does not enter the mode, probe AITP, show the Board, or open AITP plugin skills — the inactive state has zero AITP I/O and never auto-runs `init`, `init --adopt`, `inventory`, or `backfill --apply`. Set `=0` or toggle `/experiments` to hide the entire Research surface. H6 (native method-distillation orchestration) is planned and unavailable; it depends on a reviewed adapter-contract extension that has not been frozen. AITP 0.8 is a committed Skill-only amendment that defines method-observation markers and method-card distillation rules without changing CLI/schema/transport. The detailed matrix and verified decisions are in [`docs/aitp/`](docs/aitp/); the native distillation orchestration design is in [`docs/aitp/method-distillation-orchestration.md`](docs/aitp/method-distillation-orchestration.md). Re-check AITP `--help`, schemas, and official fixtures before changing compatibility claims.
 
 ### D · Built-in Hakimi Research Loop
 
@@ -117,35 +120,25 @@ The D track is the primary research-layer implementation track (2026-08-14 platf
 - **Depends on:** F's contract freeze and public boundaries; DeepSeek Harness `main` reviewed as a reference upstream through a tracked intake process (planned `docs/dsh-intake/`); E's provider settings surface; must not regress the GPT/Kimi paths.
 - **Delivery:** a dedicated DeepSeek adapter — top-level `thinking` semantics, official `reasoning_effort` levels, per-turn CoT passback economy, a model catalog with context windows, DeepSeek-specific error classification and telemetry, and a stream idle watchdog — scoped entirely to the adapter layer over a dialect-free core; plus continuous intake of DeepSeek Harness mechanisms, led by cache discipline: epoch request headers, session-log-derived requests, stable post-compaction system prompts, deterministic tool ordering, dynamic content appended at the tail, cache-aware usage accounting, and a real-API cache-hit e2e asserting `cacheReadTokens > 0` on every request after the first. Scope note (2026-08-14): mechanism intake only — DeepSeek Harness was evaluated and rejected as the research-layer home; no research layer is built on DSH.
 
-## Install
+## Install from source
 
-Prebuilt binaries and install scripts are published on the [releases page](https://github.com/bhjia-phys/Hakimi/releases):
-
-```sh
-curl -fsSL https://github.com/bhjia-phys/Hakimi/releases/latest/download/install.sh | bash
-```
-
-To update an existing install, run `hakimi upgrade` inside the terminal.
-
-## Build from source
-
-Requires Node.js and pnpm (via corepack):
+Hakimi does not yet publish a public npm package or release install script. Building the current development version requires Node.js 24.15.0 or later and pnpm 10.33.0:
 
 ```sh
 git clone https://github.com/bhjia-phys/Hakimi.git
 cd Hakimi
-corepack pnpm --config.engine-strict=false install
-corepack pnpm --config.engine-strict=false -C apps/kimi-code build
-node apps/kimi-code/dist/main.mjs --version
+corepack enable
+corepack prepare pnpm@10.33.0 --activate
+pnpm install
+pnpm build:packages
+pnpm -C apps/kimi-code build
+mkdir -p .tmp/dist-pack
+pnpm -C apps/kimi-code pack --pack-destination ../../.tmp/dist-pack
+npm install -g ./.tmp/dist-pack/bhjia-phys-hakimi-0.21.0.tgz
+hakimi --version
 ```
 
-To pack an installable tarball:
-
-```sh
-mkdir -p dist-pack
-corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ../../dist-pack
-npm install -g ./dist-pack/bhjia-phys-hakimi-0.21.0.tgz
-```
+The tarball filename contains the current package version. If it has changed, use the filename printed by `pnpm pack` instead of `0.21.0`. To update a source installation, pull the desired revision and repeat the build, pack, and global-install steps.
 
 > On Windows, install [Git for Windows](https://gitforwindows.org/) before first launch because Hakimi uses the bundled Git Bash as its shell environment. If Git Bash is installed in a custom location, set `KIMI_SHELL_PATH` to the absolute path of `bash.exe`.
 

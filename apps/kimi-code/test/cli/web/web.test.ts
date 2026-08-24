@@ -1,9 +1,9 @@
 /**
- * Tests for the `kimi web` Commander wiring and its subcommands.
+ * Tests for the `hakimi web` Commander wiring and its subcommands.
  *
  * These tests don't actually start the server — the foreground runner is
  * injected, so they verify option parsing, the ready banner / one-line ready
- * output, browser opening, and the rotate-token / deprecated `kimi server kill`
+ * output, browser opening, and the rotate-token / deprecated `hakimi server kill`
  * subcommands against fake deps.
  */
 
@@ -36,7 +36,7 @@ function stripAnsi(text: string): string {
 
 function makeProgram(): Command {
   // `commander` exitOverride avoids killing the test runner when --help/error fires.
-  const program = new Command('kimi').exitOverride();
+  const program = new Command('hakimi').exitOverride();
   registerWebCommand(program);
   return program;
 }
@@ -94,7 +94,7 @@ function ipv4(address: string): NetworkInterfaceInfo {
   };
 }
 
-describe('kimi web', () => {
+describe('hakimi web', () => {
   it('registers the `web` command with only the rotate-token subcommand', () => {
     const program = makeProgram();
     const web = program.commands.find((c) => c.name() === 'web');
@@ -128,12 +128,12 @@ describe('kimi web', () => {
     expect(longs).not.toContain('--idle-grace-ms');
   });
 
-  it('routes `kimi server` and any legacy subcommand to a deprecation notice', async () => {
+  it('routes `hakimi server` and any legacy subcommand to a deprecation notice', async () => {
     for (const argv of [
-      ['node', 'kimi', 'server'],
-      ['node', 'kimi', 'server', 'run', '--port', '1'],
-      ['node', 'kimi', 'server', 'status'],
-      ['node', 'kimi', 'server', 'ps', '--json'],
+      ['node', 'hakimi', 'server'],
+      ['node', 'hakimi', 'server', 'run', '--port', '1'],
+      ['node', 'hakimi', 'server', 'status'],
+      ['node', 'hakimi', 'server', 'ps', '--json'],
     ]) {
       const program = makeProgram();
       let stderr = '';
@@ -152,9 +152,9 @@ describe('kimi web', () => {
       exitSpy.mockRestore();
 
       expect(exitCalls).toEqual([1]);
-      expect(stderr).toContain('`kimi server` has been deprecated and no longer works.');
-      expect(stderr).toContain('kimi web');
-      expect(stderr).toContain('kimi server kill');
+      expect(stderr).toContain('`hakimi server` has been deprecated and no longer works.');
+      expect(stderr).toContain('hakimi web');
+      expect(stderr).toContain('hakimi server kill');
       expect(stderr).toContain('0.28.0');
       expect(stderr).toContain('next major version');
     }
@@ -214,7 +214,7 @@ describe('WSL browser host resolution', () => {
   });
 });
 
-describe('`kimi web` ready banner', () => {
+describe('`hakimi web` ready banner', () => {
   it('prints the TUI-style ready panel once listening', async () => {
     const { handleWebCommand } = await import('#/cli/sub/web/run');
     // The runner reports the actual bound origin — the banner must take the
@@ -234,7 +234,7 @@ describe('`kimi web` ready banner', () => {
     );
 
     const plain = stripAnsi(readStdout());
-    expect(plain).toContain('Kimi server ready');
+    expect(plain).toContain('Hakimi server ready');
     expect(plain).toContain('Local:');
     expect(plain).toContain('http://127.0.0.1:58628/#token=tok');
     expect(plain).toContain('Token:');
@@ -251,10 +251,10 @@ describe('`kimi web` ready banner', () => {
     expect(plain).not.toContain('╰');
     expect(plain).toContain('▐█▛█▛█▌');
     expect(plain).toContain('▐█████▌');
-    expect(plain).not.toContain('Kimi server:');
+    expect(plain).not.toContain('Hakimi server:');
 
     // Title is above the URLs; Logs/Stop are at the bottom.
-    expect(plain.indexOf('Kimi server ready')).toBeLessThan(plain.indexOf('Local:'));
+    expect(plain.indexOf('Hakimi server ready')).toBeLessThan(plain.indexOf('Local:'));
     expect(plain.indexOf('Logs:')).toBeLessThan(plain.indexOf('Stop:'));
   });
 
@@ -277,7 +277,7 @@ describe('`kimi web` ready banner', () => {
     const out = readStdout();
     const color = new Chalk({ level: 3 });
     expect(out).toContain(color.hex(darkColors.primary)('▐█▛█▛█▌'));
-    expect(out).toContain(color.bold.hex(darkColors.primary)('Kimi server ready'));
+    expect(out).toContain(color.bold.hex(darkColors.primary)('Hakimi server ready'));
     expect(out).toContain(color.hex(darkColors.accent)('http://127.0.0.1:58627/'));
     expect(out).toContain(color.bold.hex(darkColors.textDim)('Local:    '));
     expect(out).toContain(color.hex(darkColors.textMuted)('off'));
@@ -360,7 +360,7 @@ describe('ready banner reflects the bind class', () => {
     );
 
     const raw = stripAnsi(readStdout());
-    expect(raw).toContain('Kimi server ready');
+    expect(raw).toContain('Hakimi server ready');
     expect(raw).toContain('Local:');
     expect(raw).toContain('Network:');
     // Full token-bearing URLs are printed plainly (no box, no truncation) so
@@ -392,7 +392,7 @@ describe('ready banner reflects the bind class', () => {
     );
 
     const raw = stripAnsi(readStdout());
-    expect(raw).toContain('Kimi server ready');
+    expect(raw).toContain('Hakimi server ready');
     expect(raw).toContain('Local:');
     expect(raw).toContain('http://127.0.0.1:58627/#token=tok-loop');
     expect(raw).toContain('Token:');
@@ -405,7 +405,7 @@ describe('ready banner reflects the bind class', () => {
   });
 });
 
-describe('`kimi web` opens the browser', () => {
+describe('`hakimi web` opens the browser', () => {
   it('opens the Web UI URL with the #token= fragment by default', async () => {
     const { handleWebCommand } = await import('#/cli/sub/web/run');
     const { runner } = makeRunner();
@@ -461,7 +461,7 @@ describe('`kimi web` opens the browser', () => {
   });
 });
 
-describe('`kimi web` option threading', () => {
+describe('`hakimi web` option threading', () => {
   it('threads the CLI flags into the foreground runner options', async () => {
     const { handleWebCommand } = await import('#/cli/sub/web/run');
     const { runner, calls } = makeRunner();
@@ -614,8 +614,8 @@ describe('`kimi web` option threading', () => {
     );
 
     const plain = stripAnsi(readStdout());
-    expect(plain).toContain('Kimi server: http://127.0.0.1:58627/#token=tok');
-    expect(plain).not.toContain('Kimi server ready');
+    expect(plain).toContain('Hakimi server: http://127.0.0.1:58627/#token=tok');
+    expect(plain).not.toContain('Hakimi server ready');
     expect(plain).not.toContain('Local:');
   });
 
@@ -648,7 +648,7 @@ describe('shared parsers stay strict', () => {
 describe('server web asset directory resolution', () => {
   it('uses extracted SEA web assets when available', async () => {
     const { resolveServerWebAssetsDir } = await import('#/cli/sub/web/run');
-    expect(resolveServerWebAssetsDir('/cache/kimi/dist-web')).toBe('/cache/kimi/dist-web');
+    expect(resolveServerWebAssetsDir('/cache/hakimi/dist-web')).toBe('/cache/hakimi/dist-web');
   });
 
   it('falls back to package dist-web outside SEA mode', async () => {
@@ -658,7 +658,7 @@ describe('server web asset directory resolution', () => {
 
   it('returns the assets dir when it is built, dev mode or not', async () => {
     const { serverWebAssetsDir } = await import('#/cli/sub/web/run');
-    const dir = mkdtempSync(join(tmpdir(), 'kimi-web-assets-'));
+    const dir = mkdtempSync(join(tmpdir(), 'hakimi-web-assets-'));
     try {
       writeFileSync(join(dir, 'index.html'), '<html></html>');
       expect(serverWebAssetsDir({}, dir)).toBe(dir);
@@ -670,7 +670,7 @@ describe('server web asset directory resolution', () => {
 
   it('requires built assets outside dev mode', async () => {
     const { serverWebAssetsDir } = await import('#/cli/sub/web/run');
-    const dir = mkdtempSync(join(tmpdir(), 'kimi-web-assets-'));
+    const dir = mkdtempSync(join(tmpdir(), 'hakimi-web-assets-'));
     try {
       expect(serverWebAssetsDir({}, dir)).toBe(dir);
     } finally {
@@ -680,7 +680,7 @@ describe('server web asset directory resolution', () => {
 
   it('tolerates missing assets in dev mode (API-only server)', async () => {
     const { serverWebAssetsDir } = await import('#/cli/sub/web/run');
-    const dir = mkdtempSync(join(tmpdir(), 'kimi-web-assets-'));
+    const dir = mkdtempSync(join(tmpdir(), 'hakimi-web-assets-'));
     try {
       expect(serverWebAssetsDir({ KIMI_CODE_DEV_SERVER: '1' }, dir)).toBeUndefined();
     } finally {
@@ -737,7 +737,7 @@ function makeLegacyKillDeps(overrides: Partial<LegacyKillDeps> = {}): {
   return { deps, writes, errors, signals, state, clock };
 }
 
-describe('`kimi server kill` (deprecated, legacy servers only)', () => {
+describe('`hakimi server kill` (deprecated, legacy servers only)', () => {
   const legacyLock = { pid: 1234, host: '127.0.0.1', port: 58627 };
 
   it('is registered as the only working subcommand of the deprecated `server` command', () => {
@@ -759,13 +759,13 @@ describe('`kimi server kill` (deprecated, legacy servers only)', () => {
     expect(notice).toContain('Ctrl+C');
   });
 
-  it('prints "No running legacy Kimi server." and sends no signal when no lock exists', async () => {
+  it('prints "No running legacy Hakimi server." and sends no signal when no lock exists', async () => {
     const { handleLegacyKillCommand } = await import('#/cli/sub/web/legacy-kill');
     const { deps, writes, signals } = makeLegacyKillDeps({ readLock: async () => undefined });
 
     await handleLegacyKillCommand(deps);
 
-    expect(writes.join('')).toContain('No running legacy Kimi server.');
+    expect(writes.join('')).toContain('No running legacy Hakimi server.');
     expect(signals).toEqual([]);
   });
 
@@ -778,7 +778,7 @@ describe('`kimi server kill` (deprecated, legacy servers only)', () => {
 
     await handleLegacyKillCommand(deps);
 
-    expect(writes.join('')).toContain('No running legacy Kimi server.');
+    expect(writes.join('')).toContain('No running legacy Hakimi server.');
     expect(signals).toEqual([]);
     expect(state.shutdownCalls).toBe(0);
     expect(state.removeCalls).toBe(1);
@@ -878,7 +878,7 @@ describe('`kimi server kill` (deprecated, legacy servers only)', () => {
 describe('readLegacyLock', () => {
   let dir: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'kimi-legacy-lock-'));
+    dir = mkdtempSync(join(tmpdir(), 'hakimi-legacy-lock-'));
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
@@ -922,7 +922,7 @@ describe('readLegacyLock', () => {
 describe('resolveServerToken', () => {
   let dir: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'kimi-server-token-'));
+    dir = mkdtempSync(join(tmpdir(), 'hakimi-server-token-'));
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
@@ -1007,12 +1007,12 @@ describe('accessUrlLines', () => {
   });
 });
 
-describe('`kimi web rotate-token`', () => {
+describe('`hakimi web rotate-token`', () => {
   let dir: string;
   let prevHome: string | undefined;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'kimi-rotate-'));
+    dir = mkdtempSync(join(tmpdir(), 'hakimi-rotate-'));
     prevHome = process.env['KIMI_CODE_HOME'];
     process.env['KIMI_CODE_HOME'] = dir;
     vi.resetModules();
@@ -1029,7 +1029,7 @@ describe('`kimi web rotate-token`', () => {
 
   it('writes a new token to server.token and prints it', async () => {
     const { registerWebCommand } = await import('#/cli/sub/web');
-    const program = new Command('kimi').exitOverride();
+    const program = new Command('hakimi').exitOverride();
     registerWebCommand(program);
     let stdout = '';
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
@@ -1037,7 +1037,7 @@ describe('`kimi web rotate-token`', () => {
       return true;
     });
 
-    await program.parseAsync(['node', 'kimi', 'web', 'rotate-token']);
+    await program.parseAsync(['node', 'hakimi', 'web', 'rotate-token']);
     writeSpy.mockRestore();
 
     const token = readFileSync(join(dir, 'server.token'), 'utf8').trim();
@@ -1065,7 +1065,7 @@ describe('`kimi web rotate-token`', () => {
       }),
     );
 
-    const program = new Command('kimi').exitOverride();
+    const program = new Command('hakimi').exitOverride();
     registerWebCommand(program);
     let stdout = '';
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
@@ -1073,7 +1073,7 @@ describe('`kimi web rotate-token`', () => {
       return true;
     });
 
-    await program.parseAsync(['node', 'kimi', 'web', 'rotate-token']);
+    await program.parseAsync(['node', 'hakimi', 'web', 'rotate-token']);
     writeSpy.mockRestore();
 
     const token = readFileSync(join(dir, 'server.token'), 'utf8').trim();

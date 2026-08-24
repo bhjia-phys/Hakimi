@@ -120,7 +120,7 @@ describe('handleWebCommand', () => {
       'http://127.0.0.1:58627/sessions/ses-1#token=tok-1',
     );
     const written = writeSpy.mock.calls.map((call) => String(call[0])).join('');
-    expect(written).toContain('Kimi server ready');
+    expect(written).toContain('Hakimi server ready');
     expect(written).toContain('Ctrl+C');
     expect(written).toContain('/sessions/ses-1');
     writeSpy.mockRestore();

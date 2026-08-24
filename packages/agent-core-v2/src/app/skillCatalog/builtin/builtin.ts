@@ -16,6 +16,7 @@
 
 import type { SkillDefinition } from '#/app/skillCatalog/types';
 
+import { CHECK_HAKIMI_DOCS_SKILL } from './check-hakimi-docs';
 import { CHECK_KIMI_CODE_DOCS_SKILL } from './check-kimi-code-docs';
 import { CUSTOM_THEME_SKILL } from './custom-theme';
 import { IMPORT_FROM_CC_CODEX_SKILL } from './import-from-cc-codex';
@@ -35,6 +36,7 @@ export const BUILTIN_SKILLS: readonly SkillDefinition[] = [
   UPDATE_CONFIG_SKILL,
   CUSTOM_THEME_SKILL,
   WRITE_GOAL_SKILL,
+  CHECK_HAKIMI_DOCS_SKILL,
   CHECK_KIMI_CODE_DOCS_SKILL,
   SUB_SKILL_PARENT,
   SUB_SKILL_REVIEW,
@@ -48,6 +50,7 @@ export function visibleBuiltinSkills(productSkillsEnabled: boolean): readonly Sk
 }
 
 export {
+  CHECK_HAKIMI_DOCS_SKILL,
   CHECK_KIMI_CODE_DOCS_SKILL,
   CUSTOM_THEME_SKILL,
   IMPORT_FROM_CC_CODEX_SKILL,

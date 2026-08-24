@@ -126,6 +126,7 @@ describe('findUpwardRoot', () => {
     });
 
     const hasMarker = async (markerPath: string): Promise<boolean> => {
+      if (!markerPath.startsWith(`${root}${nodePath.sep}`)) return false;
       try {
         await stat(markerPath);
         return true;

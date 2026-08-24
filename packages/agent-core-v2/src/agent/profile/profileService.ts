@@ -123,6 +123,7 @@ import type { ToolSource } from '#/tool/toolContract';
 import { ISessionWorkspaceContext } from '#/session/workspaceContext/workspaceContext';
 import { ISessionInstructionsProvider } from '#/session/sessionInstructions/instructionsProvider';
 import { ISessionSkillCatalog } from '#/session/sessionSkillCatalog/skillCatalog';
+import { IAgentSkillVisibilityService } from '#/agent/skillVisibility/skillVisibility';
 import { BUILTIN_SKILL_SOURCE_ID } from '#/app/skillCatalog/skillSource';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
 import { ISessionToolPolicy } from '#/session/sessionToolPolicy/sessionToolPolicy';
@@ -266,6 +267,7 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
     @IPluginService private readonly plugins: IPluginService,
     @IAgentIdentity private readonly identity: IAgentIdentity,
     @IAgentAgentsMdReminderService private readonly agentsMdReminder: IAgentAgentsMdReminderService,
+    @IAgentSkillVisibilityService private readonly skillVisibility: IAgentSkillVisibilityService,
   ) {
     super();
     this.states.register(profileActiveToolNamesOverlayKey);
@@ -1029,7 +1031,9 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
     if (this.frozenSkillListing !== undefined) return this.frozenSkillListing;
     try {
       await this.skillCatalog.ready;
-      const listing = this.skillCatalog.catalog.getModelSkillListing();
+      const listing = this.skillCatalog.catalog.getModelSkillListing((skill) =>
+        this.skillVisibility.isSkillVisible(skill),
+      );
       // Freeze only on success — a not-yet-ready catalog must not pin an
       // empty listing for the agent's lifetime.
       this.frozenSkillListing = listing;

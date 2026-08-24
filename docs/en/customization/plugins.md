@@ -1,6 +1,6 @@
 # Plugins
 
-Plugins package reusable Kimi Code CLI capabilities into installable units — they can add [Agent Skills](./skills.md), custom [agents](./agents.md), automatically load a specified Skill at session start, contribute system-prompt instructions, and declare MCP servers to provide real tool capabilities. They are ideal for sharing workflows with a team, connecting to external services, or installing extensions from the [official plugins](#official-plugins).
+Plugins package reusable Hakimi capabilities into installable units — they can add [Agent Skills](./skills.md), custom [agents](./agents.md), automatically load a specified Skill at session start, contribute system-prompt instructions, and declare MCP servers to provide real tool capabilities. They are ideal for sharing workflows with a team, connecting to external services, or installing extensions from the [official plugins](#official-plugins).
 
 ## Installation and Management
 
@@ -105,7 +105,7 @@ You must first complete OAuth login with a Kimi Code account via `/login`; data 
 
 #### How to use
 
-1. Describe your need in natural language, and Kimi Code will automatically invoke the data capabilities
+1. Describe your need in natural language, and Hakimi will automatically invoke the data capabilities
 2. Explicitly trigger the data query skill with `/skill:kimi-datasource`
 
 #### What you can do
@@ -186,7 +186,7 @@ Kimi Computer Use lets AI operate your desktop apps directly, clicking, dragging
 The first time you use Kimi Computer Use after installation, it shows an authorization window — just follow the prompts:
 
 1. Click **Authorize** next to **Accessibility** and **Screen Recording**, and enable both permissions in System Settings — the former lets it perform clicks, typing, and scrolling; the latter lets it read screen content and locate UI elements
-2. Turn on the **Kimi Code** switch under "Connect local agents", then restart Kimi Code for it to take effect
+2. Turn on the **Kimi Code** switch under "Connect local agents", then restart Hakimi for it to take effect
 
 <div style="max-width: 380px; margin: 0 auto;">
 
@@ -196,7 +196,7 @@ The first time you use Kimi Computer Use after installation, it shows an authori
 
 #### Notes for the Windows version
 
-The Windows version (WinCU) installs differently from the macOS one: run `/plugins install https://cdn.kimi.com/kimi-computer-use-windows/latest/kimi-cu-win-plugin.zip` in Kimi Code, then restart after installation. A few things to know before using it:
+The Windows version (WinCU) installs differently from the macOS one: run `/plugins install https://cdn.kimi.com/kimi-computer-use-windows/latest/kimi-cu-win-plugin.zip` in Hakimi, then restart after installation. A few things to know before using it:
 
 - **It may briefly take over your mouse and keyboard**: Unlike the macOS version, the Windows version cannot reliably inject input in the background; it may briefly activate the target window and use your real mouse and keyboard while performing actions
 - **System requirements**: Windows 10 version 1903 (Build 18362) or later, or Windows 11, x64; a real interactive desktop session is required, and Windows Server needs Desktop Experience
@@ -232,7 +232,7 @@ Example:
 {
   "name": "kimi-finance",
   "version": "1.0.0",
-  "description": "Finance data and analysis workflows for Kimi Code CLI",
+  "description": "Finance data and analysis workflows for Hakimi",
   "skills": "./skills/",
   "systemPromptPath": "./SYSTEM.md",
   "sessionStart": {
@@ -275,7 +275,7 @@ Use `systemPrompt` for a short inline instruction, or `systemPromptPath` to keep
 }
 ```
 
-System-prompt contributions take effect on both agent engines. The interactive TUI, `kimi -p`, and `kimi web` use the v2 engine by default; setting `KIMI_CODE_LEGACY_FLAG=1` routes the local CLI surfaces to the legacy engine.
+System-prompt contributions take effect on both agent engines. The interactive TUI, `hakimi -p`, and `hakimi web` use the v2 engine by default; setting `KIMI_CODE_LEGACY_FLAG=1` routes the local CLI surfaces to the legacy engine.
 
 Each field — the inline `systemPrompt` and the `systemPromptPath` file — is limited to 32 KB (UTF-8 bytes): oversized content is ignored and reported in the plugin diagnostics. Across all enabled plugins, one prompt build injects at most 64 KB of instructions; contributions beyond the budget are skipped with a warning, including a single plugin whose inline text and file together exceed that budget.
 
@@ -322,7 +322,7 @@ After installing and enabling the plugin, type this in the chat:
 /kimi-finance:report TSLA
 ```
 
-Kimi replaces `$ARGUMENTS` in the body with `TSLA`, then runs the prompt. The three details below cover each step.
+Hakimi replaces `$ARGUMENTS` in the body with `TSLA`, then runs the prompt. The three details below cover each step.
 
 ### Declaring Commands (the `commands` field)
 
@@ -359,7 +359,7 @@ my-plugin/
       SKILL.md
 ```
 
-`sessionStart.skill` loads a plugin Skill into the main Agent at session start, making it suitable for initialization instructions, workflow rules, or mapping terminology from other tools to Kimi Code CLI. It only injects text; it does not execute code.
+`sessionStart.skill` loads a plugin Skill into the main Agent at session start, making it suitable for initialization instructions, workflow rules, or mapping terminology from other tools to Hakimi. It only injects text; it does not execute code.
 
 Regardless of how a Skill is loaded (`sessionStart.skill`, `/skill:<name>`, or automatic model invocation), `skillInstructions` appears alongside that plugin's Skill.
 

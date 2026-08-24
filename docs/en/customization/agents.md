@@ -1,12 +1,12 @@
 # Agents and Sub-Agents
 
-Every session in Kimi Code CLI is driven by a **main Agent**. The main Agent understands the user's intent, plans steps, calls tools, and when needed dispatches **sub-agents** to handle more focused sub-tasks — for example, exploring an unfamiliar codebase, reviewing multiple implementations in parallel, or planning a large refactor without touching the main context.
+Every session in Hakimi is driven by a **main Agent**. The main Agent understands the user's intent, plans steps, calls tools, and when needed dispatches **sub-agents** to handle more focused sub-tasks — for example, exploring an unfamiliar codebase, reviewing multiple implementations in parallel, or planning a large refactor without touching the main context.
 
 A sub-agent receives a task description from the main Agent, works in its own isolated context, and then returns its conclusions. It does not communicate with the user directly, and its intermediate reasoning and tool call records do not mix into the main Agent's history.
 
 ## Built-in Sub-Agents
 
-Kimi Code CLI includes three built-in sub-agents, ready to use out of the box, each aimed at a different task shape:
+Hakimi includes three built-in sub-agents, ready to use out of the box, each aimed at a different task shape:
 
 - **`coder`**: The default sub-agent — a general-purpose software engineering assistant that can read and write files, execute commands, search code, and land concrete changes.
 - **`explore`**: Dedicated to codebase exploration; performs read-only operations only and does not modify any files. Ideal for quickly searching, reading, and summarizing a repository without touching files.
@@ -45,13 +45,13 @@ Beyond the three built-in sub-agents, you can define your own agents as Markdown
 
 ### Agent Locations
 
-Kimi Code CLI discovers agent files by scope; more specific scopes take higher priority: **Explicit (`--agent-file`) > Project > Extra > User > Plugin > Built-in**. When two files define the same `name`, the higher-priority scope wins. Each directory is scanned recursively for `.md` files.
+Hakimi discovers agent files by scope; more specific scopes take higher priority: **Explicit (`--agent-file`) > Project > Extra > User > Plugin > Built-in**. When two files define the same `name`, the higher-priority scope wins. Each directory is scanned recursively for `.md` files.
 
 **User level** (applies to all projects):
-- `$KIMI_CODE_HOME/agents/` (default: `~/.kimi-code/agents/`)
+- `$KIMI_CODE_HOME/agents/` (default: `~/.hakimi/agents/`)
 - `~/.agents/agents/`
 
-The Kimi-specific user agent directory moves with `KIMI_CODE_HOME`, while the generic `~/.agents/agents/` directory stays under the real OS home so it can be shared across tools.
+The Hakimi-specific user agent directory moves with `KIMI_CODE_HOME` (and `HAKIMI_HOME`, which takes priority), while the generic `~/.agents/agents/` directory stays under the real OS home so it can be shared across tools.
 
 **Project level** (project root = the nearest directory containing `.git`, searching upward from the working directory):
 - `.kimi-code/agents/`
@@ -68,7 +68,7 @@ extra_agent_dirs = ["~/team-agents", ".agents/team-agents"]
 **Built-in agents** are distributed with the CLI and have the lowest priority. A directory-discovered file does not override a same-name built-in Agent unless its frontmatter declares `override: true`. A file loaded through `--agent-file` is treated as explicit launch intent, may override a same-name built-in Agent, outranks every directory scope, and applies to the current launch only. Separately, `$KIMI_CODE_HOME/SYSTEM.md` permanently overrides the default main agent's system prompt (it is not part of agent-file discovery); its precedence interactions are covered in the SYSTEM.md section below.
 
 ::: warning Trust model
-Agent files are prompt configuration, and project-level files come from the repository itself — including repositories you have just cloned and do not trust yet. A project-scoped file can take over a built-in agent entirely: naming it `agent.md` with `override: true` replaces the **default main agent's whole system prompt**, and `coder.md` with `override: true` replaces the default sub-agent type. Unlike `AGENTS.md` content — which is injected into the prompt as reference data — an override file *is* the system prompt, and a file without a `tools` list keeps every tool. Review `.kimi-code/agents/` and `.agents/agents/` in unfamiliar repositories with the same caution you would apply to scripts, before running Kimi Code inside them.
+Agent files are prompt configuration, and project-level files come from the repository itself — including repositories you have just cloned and do not trust yet. A project-scoped file can take over a built-in agent entirely: naming it `agent.md` with `override: true` replaces the **default main agent's whole system prompt**, and `coder.md` with `override: true` replaces the default sub-agent type. Unlike `AGENTS.md` content — which is injected into the prompt as reference data — an override file *is* the system prompt, and a file without a `tools` list keeps every tool. Review `.kimi-code/agents/` and `.agents/agents/` in unfamiliar repositories with the same caution you would apply to scripts, before running Hakimi inside them.
 :::
 
 ### Agent File Format
@@ -129,7 +129,7 @@ The `Agent` and `AgentSwarm` tool schemas do not expose a `model` parameter. Sel
 
 ### Selecting the Main Agent
 
-Two CLI flags select which agent drives a new session, in both print mode (`kimi -p`) and the interactive TUI:
+Two CLI flags select which agent drives a new session, in both print mode (`hakimi -p`) and the interactive TUI:
 
 - **`--agent <name>`**: Start the session with the named agent as the main Agent. The name can refer to a built-in agent or to any discovered file; an unknown name fails with an error listing the available agents.
 - **`--agent-file <path>`**: Load one agent file at the highest priority for this launch and start with it. The flag accepts exactly one file: it cannot be repeated, and it cannot be combined with `--agent`.
@@ -139,8 +139,8 @@ Both flags only apply when starting a new session — neither can be combined wi
 For example:
 
 ```sh
-kimi --agent reviewer
-kimi -p --agent reviewer "Review the changes on this branch"
+hakimi --agent reviewer
+hakimi -p --agent reviewer "Review the changes on this branch"
 ```
 
 The bound agent is the session's identity: it is fixed at the session's first bind and cannot be switched later. In the TUI the flags bind only the startup session; a session created later in the same process (for example via `/new`) starts with the default agent.
@@ -149,7 +149,7 @@ For main-agent customization, reference `${base_prompt}` in the body so the envi
 
 ### Overriding the main agent's system prompt with SYSTEM.md
 
-To override the main agent's system prompt permanently — without passing `--agent` or `--agent-file` on every launch — write a `$KIMI_CODE_HOME/SYSTEM.md` file (default: `~/.kimi-code/SYSTEM.md`; it moves with `KIMI_CODE_HOME`). While the file exists and is non-empty, it replaces the built-in default main agent's system prompt in full — and only the prompt: the description, tool set, and sub-agent delegation allowlist are inherited from the built-in defaults. SYSTEM.md takes effect in every launch mode, including interactive TUI sessions.
+To override the main agent's system prompt permanently — without passing `--agent` or `--agent-file` on every launch — write a `$KIMI_CODE_HOME/SYSTEM.md` file (default: `~/.hakimi/SYSTEM.md`; it moves with `KIMI_CODE_HOME`, and `HAKIMI_HOME` takes priority over both). While the file exists and is non-empty, it replaces the built-in default main agent's system prompt in full — and only the prompt: the description, tool set, and sub-agent delegation allowlist are inherited from the built-in defaults. SYSTEM.md takes effect in every launch mode, including interactive TUI sessions.
 
 SYSTEM.md is a plain Markdown body — no frontmatter is required or read. A missing or empty file has no effect, and a read failure falls back to the built-in prompt with a warning. Explicit intent still outranks it: a project-scoped same-name agent file declaring `override: true` and any file passed via `--agent-file` take precedence, and selecting another agent with `--agent` bypasses it entirely. Within the user scope itself, SYSTEM.md wins over a same-name file discovered in the `agents/` directories.
 
@@ -182,7 +182,7 @@ ${plugin_sections}
 
 ## Instruction Files
 
-Global Kimi-specific instructions can live at `$KIMI_CODE_HOME/AGENTS.md` (default: `~/.kimi-code/AGENTS.md`). When you relocate the data root with `KIMI_CODE_HOME`, this global instruction file moves with it. Generic cross-tool instructions can still live under `~/.agents/AGENTS.md` in the real OS home, and project-level instructions remain under the project tree, for example `.kimi-code/AGENTS.md` or `AGENTS.md`.
+Global Hakimi-specific instructions can live at `$KIMI_CODE_HOME/AGENTS.md` (default: `~/.hakimi/AGENTS.md`). When you relocate the data root with `KIMI_CODE_HOME`, this global instruction file moves with it. Generic cross-tool instructions can still live under `~/.agents/AGENTS.md` in the real OS home, and project-level instructions remain under the project tree, for example `.kimi-code/AGENTS.md` or `AGENTS.md`.
 
 ## Storage Location in the Session Directory
 

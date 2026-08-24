@@ -1,6 +1,6 @@
 # 配置覆盖
 
-Kimi Code CLI 有三个地方可以影响运行参数：配置文件、命令行选项、环境变量。它们不是简单的"谁优先级高谁赢"——三者面向不同场景，作用范围互不相同：
+Hakimi 有三个地方可以影响运行参数：配置文件、命令行选项、环境变量。它们不是简单的"谁优先级高谁赢"——三者面向不同场景，作用范围互不相同：
 
 - **配置文件** 保存长期偏好（模型、密钥、循环控制等），每次启动都生效
 - **命令行选项** 做本次启动的临时切换，退出后失效
@@ -12,7 +12,7 @@ Kimi Code CLI 有三个地方可以影响运行参数：配置文件、命令行
 
 环境变量按作用分三类，不能合并成一条线性优先级：
 
-1. **定位配置文件**：`KIMI_CODE_HOME` 决定数据根目录，配置文件路径因此变为 `$KIMI_CODE_HOME/config.toml`。这一步先于其他所有解析，不是普通参数的后备来源。
+1. **定位配置文件**：`HAKIMI_HOME`（优先级最高）或 `KIMI_CODE_HOME` 决定数据根目录，配置文件路径因此变为 `$KIMI_CODE_HOME/config.toml`（或 `$HAKIMI_HOME/config.toml`）。这一步先于其他所有解析，不是普通参数的后备来源。
 2. **运行时开关**：`KIMI_DISABLE_TELEMETRY` 等少量变量直接关闭对应子系统——即使 `config.toml` 里 `telemetry = true`，只要这个变量是真值，遥测就会被禁用。语义是"额外禁用"，不是"普通覆盖"。
 3. **运行端点与诊断**：`KIMI_CODE_OAUTH_HOST`、`KIMI_CODE_BASE_URL`、`KIMI_LOG_LEVEL` 等在 OAuth 或日志子系统初始化时读取。完整列表见[环境变量](./env-vars.md)。
 
@@ -21,7 +21,7 @@ Kimi Code CLI 有三个地方可以影响运行参数：配置文件、命令行
 对模型别名、Plan 模式、yolo 模式、Skills 目录等普通运行参数，优先级从高到低：
 
 1. **命令行选项**（`-m`、`--plan`、`--yolo` 等）：仅对本次启动生效
-2. **用户配置文件**（`~/.kimi-code/config.toml`）：保存长期偏好
+2. **用户配置文件**（`~/.hakimi/config.toml`）：保存长期偏好
 
 少数环境变量明确覆盖特定配置字段，例如 `KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT` 的优先级高于 `[background].keep_alive_on_exit`。这类例外在[环境变量](./env-vars.md)和[配置文件](./config-files.md)对应字段里都有标注。
 
@@ -79,7 +79,7 @@ Kimi Code CLI 有三个地方可以影响运行参数：配置文件、命令行
 **隔离测试环境**——用单独的数据目录，避免污染主配置和会话：
 
 ```sh
-KIMI_CODE_HOME="$PWD/.kimi-sandbox" kimi
+KIMI_CODE_HOME="$PWD/.hakimi-sandbox" hakimi
 ```
 
 **一次性使用测试密钥**——由于供应商凭证只从配置文件读，把测试密钥写进 `env` 子表：
@@ -92,13 +92,13 @@ KIMI_API_KEY = "sk-test"
 **跳过审批运行批处理任务**：
 
 ```sh
-kimi --yolo -p "批量重命名以下文件..."
+hakimi --yolo -p "批量重命名以下文件..."
 ```
 
 **临时进入 Plan 模式**（若想永久生效，在配置文件设 `default_plan_mode = true`）：
 
 ```sh
-kimi --plan
+hakimi --plan
 ```
 
 ## 下一步

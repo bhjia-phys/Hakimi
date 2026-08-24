@@ -18,8 +18,11 @@
  * One full pass also runs explicitly (after restore and profile binding) and
  * re-runs on every `agent.status.updated` event, so tools newly allowed by a
  * runtime re-bind or `setActiveTools` are activated without a restart.
- * Already-registered names are skipped, and besides withdrawn records
- * nothing is ever unregistered here: restricting visibility remains the
+ * Already-registered names are skipped. Besides withdrawn records, a full
+ * pass also deactivates records whose `when` predicate has flipped from
+ * `true` to `false` since the last pass — so feature-gated tools (e.g.
+ * AITP Research Mode's active-only tool surface) are withdrawn when the
+ * mode exits. Restricting visibility of statically-allowed tools remains the
  * request-time tool policy's job.
  *
  * Resolving contributions lazily inside `activate()` / the change
@@ -78,6 +81,7 @@ export class AgentToolActivationService extends Service implements IAgentToolAct
   }
 
   activate(): Promise<void> {
+    this.deactivateStaleWhenRecords();
     this.activateRecords(this.contributions.items);
     return Promise.resolve();
   }
@@ -103,6 +107,17 @@ export class AgentToolActivationService extends Service implements IAgentToolAct
         });
         this.registrations.set(record, registration);
         this._register(registration);
+      }
+    });
+  }
+
+  private deactivateStaleWhenRecords(): void {
+    const registered = this.registrations.keys();
+    this.instantiationService.invokeFunction((accessor) => {
+      for (const record of registered) {
+        if (record.options.when === undefined) continue;
+        if (record.options.when(accessor)) continue;
+        this.deactivateRecord(record);
       }
     });
   }

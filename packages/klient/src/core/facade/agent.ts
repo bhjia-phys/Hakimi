@@ -23,6 +23,23 @@ import type { IAgentUsageService } from '@moonshot-ai/agent-core-v2/agent/usage/
 import type { ContentPart } from '@moonshot-ai/agent-core-v2/kosong/contract/message';
 import type { PermissionMode } from '@moonshot-ai/agent-core-v2/agent/permissionPolicy/types';
 
+import type {
+  HumanSteeringCommand,
+  ResearchCheckpoint,
+  ResearchCommittedCursor,
+  ResearchLine,
+  ResearchLineCreationInput,
+  ResearchQuestion,
+  ResearchStatusSnapshot,
+} from '@moonshot-ai/agent-core-v2/features/aitpResearch/types';
+import type {
+  CommitCheckpointInput,
+  CreateQuestionInput,
+  ProposeCheckpointInput,
+  UpdateLineInput,
+  UpdateQuestionInput,
+} from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
+import type { AitpModeEntryOptions } from '@moonshot-ai/agent-core-v2/features/aitpResearch/mode/agentAitpMode';
 import type { ScopeRef } from '../channel.js';
 import type { ScopedCaller } from './session.js';
 
@@ -96,6 +113,39 @@ export interface AgentFacade {
    * Throws when there is nothing to compact or a turn is active.
    */
   compact(input?: { instruction?: string }): Promise<boolean>;
+
+  /** AITP Research Mode — snapshot read and steering command dispatch. */
+  readonly research: ResearchFacade;
+  /** AITP Mode lifecycle — enter / exit / pause / resume. */
+  readonly aitpMode: AitpModeFacade;
+}
+
+export type ResearchSnapshot = ResearchStatusSnapshot;
+export type { HumanSteeringCommand };
+
+export interface ResearchFacade {
+  getSnapshot(): Promise<ResearchSnapshot>;
+  getQuestions(): Promise<readonly ResearchQuestion[]>;
+  getLines(): Promise<readonly ResearchLine[]>;
+  getPendingCheckpoint(): Promise<ResearchCheckpoint | undefined>;
+  getCommittedCursor(): Promise<ResearchCommittedCursor | undefined>;
+  createQuestion(input: CreateQuestionInput): Promise<ResearchQuestion>;
+  createLine(input: ResearchLineCreationInput): Promise<ResearchLine>;
+  updateLine(input: UpdateLineInput): Promise<ResearchLine>;
+  updateQuestion(input: UpdateQuestionInput): Promise<ResearchQuestion>;
+  setFocus(questionId: string, boundedAction?: string, expectedRevision?: number): Promise<void>;
+  switchLine(lineSlug: string, expectedRevision?: number): Promise<void>;
+  steer(command: HumanSteeringCommand): Promise<void>;
+  reopenQuestion(questionId: string, reason?: string, expectedRevision?: number): Promise<void>;
+  proposeCheckpoint(input: ProposeCheckpointInput): Promise<ResearchCheckpoint>;
+  commitCheckpoint(input: CommitCheckpointInput): Promise<void>;
+}
+
+export interface AitpModeFacade {
+  enter(options: AitpModeEntryOptions): Promise<void>;
+  exit(): Promise<void>;
+  pauseLoop(expectedRevision: number): Promise<void>;
+  resumeLoop(expectedRevision: number): Promise<void>;
 }
 
 export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFacade {
@@ -173,5 +223,77 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
       call(scope, 'agentFullCompactionService', 'begin', [
         { source: 'manual', instruction: input?.instruction },
       ]) as Promise<boolean>,
+
+    research: {
+      getSnapshot: () =>
+        call(scope, 'agentResearchService', 'getSnapshot', []) as Promise<ResearchSnapshot>,
+      getQuestions: () =>
+        call(scope, 'agentResearchService', 'getQuestions', []) as Promise<
+          readonly ResearchQuestion[]
+        >,
+      getLines: () =>
+        call(scope, 'agentResearchService', 'getLines', []) as Promise<readonly ResearchLine[]>,
+      getPendingCheckpoint: () =>
+        call(scope, 'agentResearchService', 'getPendingCheckpoint', []) as Promise<
+          ResearchCheckpoint | undefined
+        >,
+      getCommittedCursor: () =>
+        call(scope, 'agentResearchService', 'getCommittedCursor', []) as Promise<
+          ResearchCommittedCursor | undefined
+        >,
+      createQuestion: (input) =>
+        call(scope, 'agentResearchService', 'createQuestion', [input]) as Promise<ResearchQuestion>,
+      createLine: (input) =>
+        call(scope, 'agentResearchService', 'createLine', [input]) as Promise<ResearchLine>,
+      updateLine: (input) =>
+        call(scope, 'agentResearchService', 'updateLine', [input]) as Promise<ResearchLine>,
+      updateQuestion: (input) =>
+        call(scope, 'agentResearchService', 'updateQuestion', [input]) as Promise<ResearchQuestion>,
+      setFocus: (questionId, boundedAction, expectedRevision) =>
+        call(
+          scope,
+          'agentResearchService',
+          'setFocus',
+          boundedAction === undefined
+            ? expectedRevision === undefined ? [questionId] : [questionId, expectedRevision]
+            : expectedRevision === undefined
+              ? [questionId, boundedAction]
+              : [questionId, boundedAction, expectedRevision],
+        ) as Promise<void>,
+      switchLine: (lineSlug, expectedRevision) =>
+        call(
+          scope,
+          'agentResearchService',
+          'switchLine',
+          expectedRevision === undefined ? [lineSlug] : [lineSlug, expectedRevision],
+        ) as Promise<void>,
+      steer: (command) =>
+        call(scope, 'agentResearchService', 'steer', [command]) as Promise<void>,
+      reopenQuestion: (questionId, reason, expectedRevision) =>
+        call(
+          scope,
+          'agentResearchService',
+          'reopenQuestion',
+          reason === undefined
+            ? expectedRevision === undefined ? [questionId] : [questionId, expectedRevision]
+            : expectedRevision === undefined
+              ? [questionId, reason]
+              : [questionId, reason, expectedRevision],
+        ) as Promise<void>,
+      proposeCheckpoint: (input) =>
+        call(scope, 'agentResearchService', 'proposeCheckpoint', [input]) as Promise<ResearchCheckpoint>,
+      commitCheckpoint: (input) =>
+        call(scope, 'agentResearchService', 'commitCheckpoint', [input]) as Promise<void>,
+    },
+
+    aitpMode: {
+      enter: (options) =>
+        call(scope, 'agentAitpModeService', 'enter', [options]) as Promise<void>,
+      exit: () => call(scope, 'agentAitpModeService', 'exit', []) as Promise<void>,
+      pauseLoop: (expectedRevision) =>
+        call(scope, 'agentAitpModeService', 'pauseLoop', [expectedRevision]) as Promise<void>,
+      resumeLoop: (expectedRevision) =>
+        call(scope, 'agentAitpModeService', 'resumeLoop', [expectedRevision]) as Promise<void>,
+    },
   };
 }

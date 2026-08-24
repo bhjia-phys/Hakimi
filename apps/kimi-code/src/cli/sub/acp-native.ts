@@ -22,7 +22,7 @@
 import type { Command } from 'commander';
 
 import { getVersion } from '#/cli/version';
-import { KIMI_CODE_HOME_ENV } from '#/constant/app';
+import { KIMI_CODE_HOME_ENV, PRODUCT_NAME } from '#/constant/app';
 import { getDataDir } from '#/utils/paths';
 
 import { runLoginFlow } from './login-flow';
@@ -30,7 +30,7 @@ import { runLoginFlow } from './login-flow';
 export function registerNativeAcpCommand(parent: Command): void {
   parent
     .command('acp')
-    .description('Run kimi-code as an Agent Client Protocol (ACP) server over stdio.')
+    .description(`Run ${PRODUCT_NAME} as an Agent Client Protocol (ACP) server over stdio.`)
     .option(
       '--login',
       'Run the device-code login flow then exit (entry point for ACP terminal-auth).',
@@ -57,7 +57,7 @@ export function registerNativeAcpCommand(parent: Command): void {
         const { runAcpServer } = await import('@moonshot-ai/acp-server');
         await runAcpServer({
           homeDir: getDataDir(),
-          agentInfo: { name: 'Kimi Code CLI', version: getVersion() },
+          agentInfo: { name: PRODUCT_NAME, version: getVersion() },
           ...(terminalAuthEnv ? { terminalAuthEnv } : {}),
           ...(legacyCommand !== undefined && legacyCommand.length > 0
             ? { terminalAuthLegacyCommand: legacyCommand }

@@ -22,6 +22,7 @@ export const CHECK_KIMI_CODE_DOCS_SKILL: SkillDefinition = {
   metadata: {
     ...parsed.metadata,
     type: parsed.metadata.type ?? 'inline',
+    disableModelInvocation: true,
   },
   productSpecific: true,
 };

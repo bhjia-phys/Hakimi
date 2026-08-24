@@ -160,3 +160,57 @@ describe('SessionEventWiring status snapshot fold', () => {
     expect(events[0]).not.toHaveProperty('model');
   });
 });
+
+describe('SessionEventWiring research / aitp_mode event forwarding', () => {
+  it('forwards research.updated with the full snapshot payload', () => {
+    const agent = new FakeAgentHandle('main');
+    const { sink, events } = collectingSink();
+    const wiring = new SessionEventWiring(makeSession([agent]), sink);
+    try {
+      agent.bus.emit({
+        type: 'research.updated',
+        snapshot: {
+          mode: 'ready',
+          loopStatus: 'active',
+          questions: [],
+          lines: [],
+          openQuestionCount: 0,
+          activeQuestionCount: 0,
+          blockedQuestionCount: 0,
+          alerts: [],
+          aitpHealth: { phase: 'ready' },
+          revision: 3,
+        },
+      });
+    } finally {
+      wiring.dispose();
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'research.updated',
+      sessionId: 's1',
+      agentId: 'main',
+    });
+    // The snapshot payload must survive the translation intact.
+    expect((events[0] as { snapshot?: { revision?: number } }).snapshot?.revision).toBe(3);
+  });
+
+  it('forwards aitp_mode.updated as a bare signal', () => {
+    const agent = new FakeAgentHandle('main');
+    const { sink, events } = collectingSink();
+    const wiring = new SessionEventWiring(makeSession([agent]), sink);
+    try {
+      agent.bus.emit({ type: 'aitp_mode.updated' });
+    } finally {
+      wiring.dispose();
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'aitp_mode.updated',
+      sessionId: 's1',
+      agentId: 'main',
+    });
+  });
+});

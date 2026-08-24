@@ -1,6 +1,6 @@
 # 环境变量
 
-Kimi Code CLI 通过环境变量控制少数运行时行为——迁移数据目录、关闭遥测、不改配置文件临时切换模型。
+Hakimi 通过环境变量控制少数运行时行为——迁移数据目录、关闭遥测、不改配置文件临时切换模型。
 
 ::: warning 重要：API 密钥不在这里配置
 `KIMI_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY` 等密钥变量**不会**从 shell 环境变量自动读取。在终端里 `export KIMI_API_KEY=xxx` 不会让任何供应商获得密钥——必须写在 `config.toml` 的 `[providers.<name>]` 段或 `[providers.<name>.env]` 子表里。
@@ -14,13 +14,13 @@ Kimi Code CLI 通过环境变量控制少数运行时行为——迁移数据目
 
 ### `KIMI_CODE_HOME`
 
-覆盖数据根目录，默认 `~/.kimi-code`。设置后，配置文件、会话、日志、OAuth 凭据等全部数据都落到新路径下：
+覆盖数据根目录，默认 `~/.hakimi`。设置后，配置文件、会话、日志、OAuth 凭据等全部数据都落到新路径下：
 
 ```sh
-export KIMI_CODE_HOME="/path/to/custom/kimi-code"
+export KIMI_CODE_HOME="/path/to/custom/hakimi"
 ```
 
-> 确保目录可写。多个 `kimi` 实例共用同一个 `KIMI_CODE_HOME` 会共享配置和凭证。
+> 如果设置了 `HAKIMI_HOME`，则其优先级最高，其次为 `KIMI_CODE_HOME`，最后是默认的 `~/.hakimi`。确保目录可写。多个 `hakimi` 实例共用同一个数据根目录会共享配置和凭证。
 
 数据目录的完整结构见[数据路径](./data-locations.md)。
 
@@ -93,7 +93,7 @@ export KIMI_MODEL_API_KEY="YOUR_API_KEY"
 export KIMI_MODEL_BASE_URL="https://api.example.com/v1"
 export KIMI_MODEL_MAX_CONTEXT_SIZE="262144"
 export KIMI_MODEL_CAPABILITIES="image_in,thinking"
-kimi
+hakimi
 ```
 
 完整变量列表：
@@ -121,7 +121,7 @@ kimi
 | 环境变量 | 用途 | 合法值 |
 | --- | --- | --- |
 | `KIMI_DISABLE_TELEMETRY` | 关闭匿名遥测上报 | `1`、`true`、`yes`、`y`（不区分大小写） |
-| `KIMI_CODE_PASSWORD` | 为 `kimi web` 本地服务设置并列鉴权密码，与 bearer token 同时有效；把服务绑定到非本机地址时建议设置，见[本地服务与 API](../guides/server.md#鉴权) | 任意非空字符串；未设置时仅 token 有效 |
+| `KIMI_CODE_PASSWORD` | 为 `hakimi web` 本地服务设置并列鉴权密码，与 bearer token 同时有效；把服务绑定到非本机地址时建议设置，见[本地服务与 API](../guides/server.md#鉴权) | 任意非空字符串；未设置时仅 token 有效 |
 | `KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT` | 会话关闭时是否保留后台任务，优先级高于 `config.toml`。默认会在退出时停止后台任务 | 真值：`1`/`true`/`yes`/`on`；假值：`0`/`false`/`no`/`off` |
 | `KIMI_CODE_BACKGROUND_MAX_RUNNING_TASKS` | 同时运行的后台任务数上限，优先级高于 `config.toml` 的 `[background] max_running_tasks`（不设置表示无上限） | 正整数；非法值被忽略 |
 | `KIMI_IMAGE_MAX_EDGE_PX` | 图片压缩的最长边上限（像素），优先级高于 `config.toml` 的 `[image] max_edge_px`（默认 `2000`） | 正整数；非法值被忽略 |
@@ -131,10 +131,11 @@ kimi
 | `KIMI_SUBAGENT_TIMEOUT_MS` | 单个 subagent（`Agent` / `AgentSwarm`）可运行的最长时间（毫秒）；优先级高于 `config.toml` 的 `[subagent] timeout_ms`（默认 `7200000`，即 2 小时） | 正整数；非法值回退到配置或默认值 |
 | `KIMI_CODE_IDENTITY_NAME` | Agent 在系统提示词中的自称，优先级高于 `config.toml` 的 `[identity] name`，且不会被写回配置文件 | 任意非空字符串；空值视为未设置 |
 | `KIMI_CODE_IDENTITY_SLUG` | 协议标识，用于发给第三方 provider 的 `User-Agent` 产品名和 MCP 客户端名，优先级高于 `[identity] slug`。未设置时由名称派生 | 任意非空字符串；会转小写并将连续非字母数字字符折叠为 `-` |
-| `KIMI_CODE_BUILTIN_PRODUCT_SKILLS` | 是否向模型提供介绍 Kimi Code 自身的内置 Skills，优先级高于 `config.toml` 的 `builtin_product_skills`（默认开启） | 真值：`1`/`true`/`yes`/`on`；假值：`0`/`false`/`no`/`off` |
+| `KIMI_CODE_BUILTIN_PRODUCT_SKILLS` | 是否向模型提供介绍 Hakimi 自身的内置 Skills，优先级高于 `config.toml` 的 `builtin_product_skills`（默认开启） | 真值：`1`/`true`/`yes`/`on`；假值：`0`/`false`/`no`/`off` |
 | `KIMI_CODE_TUI_FULL_SCREEN` | 启用实验性的 fullscreen alternate-screen 界面：可滚动的 transcript 视口、鼠标选择文本、可点击链接、Ctrl-Shift-F 搜索 | `1` 开启；其他值保持常规内联界面 |
 | `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL` | 当没有 active canonical `[subagent]` preset 时，为 Agent、AgentSwarm 和 Tower worker 启用已废弃 `[secondary_model]` 的 best-effort fallback；不再增加逐次派生的 `model` 参数，也不改变 `/preset` 路由。master `KIMI_CODE_EXPERIMENTAL_FLAG=1` 也会启用本功能 | 真值：`1`/`true`/`yes`/`on`；假值：`0`/`false`/`no`/`off` |
 | `KIMI_CODE_EXPERIMENTAL_OPENAI_CODEX_OAUTH` | 启用 ChatGPT / OpenAI Codex OAuth 登录及其自动生成的模型；master `KIMI_CODE_EXPERIMENTAL_FLAG=1` 也会启用本功能 | 真值：`1`/`true`/`yes`/`on`；假值：`0`/`false`/`no`/`off` |
+| `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` | 启用实验性 AITP Research Mode：开放 `/research` 命令和 `EnterAITPMode` 能力，但模式本身仍需用 `/research on`（或模型入口路径）显式进入。**默认开启**，普通启动即可使用 Research 入口；设置 `=0` 可完全隐藏（master `KIMI_CODE_EXPERIMENTAL_FLAG=1` 也会启用本功能） | 真值：`1`/`true`/`yes`/`on`；假值：`0`/`false`/`no`/`off` |
 | `KIMI_MCP_STARTUP_TIMEOUT_MS` | 所有 MCP server 的全局默认连接超时（毫秒）；优先级高于 `config.toml` 的 `[mcp] startup_timeout_ms`，但低于 `mcp.json` 中单个 server 的 `startupTimeoutMs`（默认 `30000`） | `1` 到 `2147483647` 的整数；非法值被忽略 |
 | `KIMI_MCP_TOOL_TIMEOUT_MS` | 所有 MCP server 的全局默认单次工具调用超时（毫秒）；优先级高于 `config.toml` 的 `[mcp] tool_timeout_ms`，但低于 `mcp.json` 中单个 server 的 `toolTimeoutMs`（默认 `60000`） | `1` 到 `2147483647` 的整数；非法值被忽略 |
 | `KIMI_LOOP_MAX_STEPS_PER_TURN` | Agent 单轮最大步数；优先级高于 `config.toml` 的 `[loop_control] max_steps_per_turn`（不设或 `0` 表示无上限） | 非负整数；非法值被忽略 |
@@ -145,7 +146,7 @@ kimi
 | `KIMI_WEB_FETCH_BASE_URL` | 网页抓取（`FetchURL`）服务的 API URL；优先级高于 `[services.moonshot_fetch] base_url`。文件中持久化的凭据和自定义 header 不会发送到环境变量指定的端点。环境变量和配置都没有指定端点时，已登录用户会先尝试 Kimi OAuth 托管抓取服务，再回退到本地直接请求 | 非空字符串；空白值被忽略 |
 | `KIMI_WEB_FETCH_API_KEY` | 网页抓取（`FetchURL`）服务的 API 密钥；设置后同时替换配置中的 API 密钥和 OAuth 凭据 | 非空字符串；空白值被忽略 |
 | `KIMI_CODE_EXPERIMENTAL_FLAG` | 在当前进程启用所有已注册的实验功能；不用于选择 Agent 引擎 | `1`、`true`、`yes`、`on` |
-| `KIMI_CODE_LEGACY_FLAG` | 让 `kimi`、`kimi -p`、`kimi doctor`、`kimi acp`、`kimi export` 和 `kimi provider` 使用旧版 `agent-core` 引擎；这些命令默认使用 `agent-core-v2` | `1`、`true`、`yes`、`on` |
+| `KIMI_CODE_LEGACY_FLAG` | 让 `hakimi`、`hakimi -p`、`hakimi doctor`、`hakimi acp`、`hakimi export` 和 `hakimi provider` 使用旧版 `agent-core` 引擎；这些命令默认使用 `agent-core-v2` | `1`、`true`、`yes`、`on` |
 | `KIMI_SHELL_PATH` | Windows 上覆盖 Git Bash 路径（自动探测失败时使用） | 绝对路径 |
 | `KIMI_MODEL_MAX_COMPLETION_TOKENS` | 单步 LLM 请求的 `max_completion_tokens` 硬上限，仅对 `kimi` 供应商生效 | 正整数；`0` 或负数禁用 clamp |
 | `KIMI_MODEL_TEMPERATURE` | 每次请求的采样温度，仅对 `kimi` 供应商生效（全局生效，不依赖 `KIMI_MODEL_NAME`） | 数字，如 `0.3` |
@@ -155,7 +156,7 @@ kimi
 | `KIMI_CODE_NO_AUTO_UPDATE` | 完全禁用更新预检——不检查、不后台安装、不提示。同时兼容旧名 `KIMI_CLI_NO_AUTO_UPDATE` | 真值：`1`/`true`/`yes`/`on` |
 | `KIMI_DISABLE_CRON` | 禁用定时任务工具（`CronCreate` 拒绝新计划，已有任务不触发） | `1` 表示禁用 |
 
-`KIMI_CODE_IDENTITY_*` 和 `KIMI_CODE_BUILTIN_PRODUCT_SKILLS` 这三个变量由默认的 `agent-core-v2` 引擎读取。设置 `KIMI_CODE_LEGACY_FLAG=1` 后，旧版 `kimi` / `kimi -p` 路径会忽略它们。
+`KIMI_CODE_IDENTITY_*` 和 `KIMI_CODE_BUILTIN_PRODUCT_SKILLS` 这三个变量由默认的 `agent-core-v2` 引擎读取。设置 `KIMI_CODE_LEGACY_FLAG=1` 后，旧版 `hakimi` / `hakimi -p` 路径会忽略它们。
 
 ## 诊断日志
 
@@ -185,7 +186,7 @@ CLI 还会读取一些标准系统变量来检测运行环境，不会修改它�
 
 ## HTTP 代理
 
-Kimi Code 会遵循标准代理环境变量，让所有出网流量——模型 API 调用、MCP 服务、网络工具、遥测、登录、更新检查——都走代理：
+Hakimi 会遵循标准代理环境变量，让所有出网流量——模型 API 调用、MCP 服务、网络工具、遥测、登录、更新检查——都走代理：
 
 - `HTTP_PROXY` / `http_proxy`：用于 `http://` 请求的代理
 - `HTTPS_PROXY` / `https_proxy`：用于 `https://` 请求的代理
@@ -196,7 +197,7 @@ Kimi Code 会遵循标准代理环境变量，让所有出网流量——模型 
 
 仅当设置了其中任一变量时才启用代理，否则直连。回环地址（`localhost`、`127.0.0.1`、`::1`）始终绕过代理，因此配置了代理后，本地服务（例如 localhost 上的 MCP 服务）仍能正常工作——你也可以把自己的内网主机加入 `NO_PROXY` 一并放行。
 
-以 Node 子进程运行的 stdio MCP 服务，在其 Node 版本支持 `NODE_USE_ENV_PROXY` 时（Node ≥ 22.21 或 ≥ 24.5）会自动遵循 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`；SOCKS 代理仅作用于 Kimi Code 自身的流量。
+以 Node 子进程运行的 stdio MCP 服务，在其 Node 版本支持 `NODE_USE_ENV_PROXY` 时（Node ≥ 22.21 或 ≥ 24.5）会自动遵循 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`；SOCKS 代理仅作用于 Hakimi 自身的流量。
 
 ## 下一步
 

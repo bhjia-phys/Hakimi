@@ -577,7 +577,13 @@ describe('agentsMdReminder lazy seeding after a restore', () => {
   });
 
   it('treats the brand-home AGENTS.md as injected after a restore', async () => {
-    const h = createHarness();
+    const hostFs = new HostFileSystem();
+    const stat = hostFs.stat.bind(hostFs);
+    hostFs.stat = async (path) => {
+      if (path.endsWith('/.git')) throw new Error('not found');
+      return stat(path);
+    };
+    const h = createHarness({ hostFs });
     await writeAgentsMd(homeDir, 'brand instructions');
 
     const result = await fire(h, didCtx('Read', { path: join(homeDir, 'notes.txt') }));

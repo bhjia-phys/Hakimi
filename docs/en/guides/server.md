@@ -1,8 +1,8 @@
 # Local Server and API
 
-Kimi Code CLI ships with a built-in local server: running `kimi web` starts a foreground process that mounts three things at once — the web UI in your browser, a REST API (`/api/v1`), and a WebSocket event stream (`/api/v1/ws`). The web UI lets you use Kimi Code in a browser; the REST and WebSocket APIs are for scripts and third-party tools, letting you create sessions, submit prompts, and follow execution from code — all reading and writing the same session data as the TUI and the web UI.
+Hakimi ships with a built-in local server: running `hakimi web` starts a foreground process that mounts three things at once — the web UI in your browser, a REST API (`/api/v1`), and a WebSocket event stream (`/api/v1/ws`). The web UI lets you use Hakimi in a browser; the REST and WebSocket APIs are for scripts and third-party tools, letting you create sessions, submit prompts, and follow execution from code — all reading and writing the same session data as the TUI and the web UI.
 
-> Make sure Kimi Code CLI is installed and ready to use first — either logged in via `/login` (in the TUI, or `kimi login`), or with a provider configured in `config.toml`. The server shares the CLI's login state and configuration, so no separate credential is needed for it.
+> Make sure Hakimi is installed and ready to use first — either logged in via `/login` (in the TUI, or `hakimi login`), or with a provider configured in `config.toml`. The server shares the CLI's login state and configuration, so no separate credential is needed for it.
 
 ::: warning
 The REST and WebSocket APIs described on this page are experimental: interface stability is not guaranteed, and endpoints, fields, and event types may change in any release. When integrating, rely on the `/openapi.json` and `/asyncapi.json` documents served by your version.
@@ -11,12 +11,12 @@ The REST and WebSocket APIs described on this page are experimental: interface s
 ## Start the server
 
 ```sh
-kimi web                 # run the server in the foreground and open the browser
-kimi web --no-open       # run the server only, don't open the browser
-kimi web --port 58628    # pick a specific bind port
+hakimi web                 # run the server in the foreground and open the browser
+hakimi web --no-open       # run the server only, don't open the browser
+hakimi web --port 58628    # pick a specific bind port
 ```
 
-The server binds to `127.0.0.1:58627` by default (loopback only). If the port is taken it automatically retries with the next one, so multiple instances can coexist on the same machine; each instance registers under `~/.kimi-code/server/instances/`. The startup banner prints the access URL and the plaintext token:
+The server binds to `127.0.0.1:58627` by default (loopback only). If the port is taken it automatically retries with the next one, so multiple instances can coexist on the same machine; each instance registers under `~/.hakimi/server/instances/`. The startup banner prints the access URL and the plaintext token:
 
 ```text
 Local:   http://127.0.0.1:58627/#token=...
@@ -24,11 +24,11 @@ Token:   ...
 Stop:    Ctrl+C
 ```
 
-The server runs in the foreground; press `Ctrl-C` for a clean shutdown. For the full option list such as `--host` and `--log-level`, see the [kimi command reference](../reference/kimi-command.md#kimi-web).
+The server runs in the foreground; press `Ctrl-C` for a clean shutdown. For the full option list such as `--host` and `--log-level`, see the [hakimi command reference](../reference/kimi-command.md#hakimi-web).
 
 ## Authentication
 
-Every `/api/*` endpoint requires a bearer token (any request carrying this string is treated as authorized). The token is generated on the first server boot, persisted at `~/.kimi-code/server.token` (file mode 0600), and reused across restarts.
+Every `/api/*` endpoint requires a bearer token (any request carrying this string is treated as authorized). The token is generated on the first server boot, persisted at `~/.hakimi/server.token` (file mode 0600), and reused across restarts.
 
 Pick the carrying method that fits your client:
 
@@ -36,12 +36,12 @@ Pick the carrying method that fits your client:
 - **web UI**: the URL in the startup banner carries a `#token=` fragment, so opening it in a browser completes sign-in automatically. The fragment is never sent to the server.
 - **WebSocket**: clients that can set headers use `Authorization: Bearer`; clients that cannot (such as browsers) pass the subprotocol (a protocol name declared during the WebSocket handshake) `kimi-code.bearer.<token>` instead.
 
-If the token leaks, run `kimi web rotate-token`: the new token is written to `server.token` immediately, the old one stops working at once, and running instances pick up the new token without a restart.
+If the token leaks, run `hakimi web rotate-token`: the new token is written to `server.token` immediately, the old one stops working at once, and running instances pick up the new token without a restart.
 
 If you bind the server to a non-loopback address (`--host`), also set the `KIMI_CODE_PASSWORD` environment variable as a parallel credential; the server then rate-limits authentication failures automatically.
 
 ::: danger
-`--dangerous-bypass-auth` disables authentication entirely — anyone who can reach the port can control your sessions, file system, and shell. Only use it on trusted networks or behind your own authenticating proxy. See the [kimi command reference](../reference/kimi-command.md#kimi-web).
+`--dangerous-bypass-auth` disables authentication entirely — anyone who can reach the port can control your sessions, file system, and shell. Only use it on trusted networks or behind your own authenticating proxy. See the [hakimi command reference](../reference/kimi-command.md#hakimi-web).
 :::
 
 ## Drive a session over the API
@@ -113,4 +113,4 @@ While running, the server describes itself with two specification documents, bot
 ## Next steps
 
 - [Server API](../reference/server-api.md) — full REST endpoint inventory, error codes, WebSocket events, and the transcript protocol
-- [kimi command](../reference/kimi-command.md#kimi-web) — all `kimi web` command-line options
+- [hakimi command](../reference/kimi-command.md#hakimi-web) — all `hakimi web` command-line options

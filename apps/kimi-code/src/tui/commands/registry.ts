@@ -52,6 +52,28 @@ export function goalArgumentCompletions(argumentPrefix: string): AutocompleteIte
   return completeLeadingArg(GOAL_ARG_COMPLETIONS, argumentPrefix);
 }
 
+/** Subcommands offered when autocompleting `/research <…>`. */
+const RESEARCH_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
+  { value: 'status', description: 'Show research mode status' },
+  { value: 'on', description: 'Enter research mode' },
+  { value: 'off', description: 'Exit research mode' },
+  { value: 'pause', description: 'Pause the research loop' },
+  { value: 'resume', description: 'Resume the research loop' },
+  { value: 'manage', description: 'Open the question manager' },
+  { value: 'edit', description: 'Edit a question' },
+  { value: 'focus', description: 'Set focus on a question' },
+  { value: 'defer', description: 'Defer a question' },
+  { value: 'block', description: 'Block a question' },
+  { value: 'close', description: 'Close a question' },
+  { value: 'reopen', description: 'Reopen a question' },
+  { value: 'line', description: 'Switch research line' },
+];
+
+/** Argument autocompletion for the `/research` command (subcommands). */
+export function researchArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
+  return completeLeadingArg(RESEARCH_ARG_COMPLETIONS, argumentPrefix);
+}
+
 /** Argument autocompletion for the `/swarm` command (subcommands). */
 export function swarmArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
   return completeLeadingArg(SWARM_ARG_COMPLETIONS, argumentPrefix);
@@ -317,6 +339,24 @@ export const BUILTIN_SLASH_COMMANDS = [
       const trimmed = args.trim();
       if (trimmed === 'next' || trimmed.startsWith('next ')) return 'always';
       return trimmed === '' || trimmed === 'status' || trimmed === 'pause' || trimmed === 'cancel'
+        ? 'always'
+        : 'idle-only';
+    },
+  },
+  {
+    name: 'research',
+    aliases: [],
+    description: 'Manage AITP Research Mode',
+    priority: 80,
+    argumentHint:
+      '[status|on|off|pause|resume|manage|edit|focus|defer|block|close|reopen|line] | <questionId>',
+    completeArgs: researchArgumentCompletions,
+    experimentalFlag: 'aitp_research_mode',
+    // status / pause / resume are safe while streaming; on / off / manage /
+    // question actions start or steer a turn and so are idle-only.
+    availability: (args) => {
+      const trimmed = args.trim();
+      return trimmed === '' || trimmed === 'status' || trimmed === 'pause' || trimmed === 'resume'
         ? 'always'
         : 'idle-only';
     },

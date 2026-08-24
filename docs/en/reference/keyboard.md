@@ -1,6 +1,6 @@
 # Keyboard Shortcuts
 
-Kimi Code CLI's TUI interactive mode supports a set of keyboard shortcuts. The shortcuts are organized into five groups by usage context: general input, mode switching, during streaming, tool output control, the approval panel, and popup navigation. Type `/help` in the TUI at any time to open the built-in shortcut reference.
+Hakimi's TUI interactive mode supports a set of keyboard shortcuts. The shortcuts are organized into five groups by usage context: general input, mode switching, during streaming, tool output control, the approval panel, and popup navigation. Type `/help` in the TUI at any time to open the built-in shortcut reference.
 
 ## General Shortcuts
 
@@ -13,8 +13,8 @@ The following keys are always available in the input box:
 | `↑` / `↓` | Browse input history |
 | `Esc` | Close a popup / cancel completion / interrupt streaming output or context compaction |
 | `Ctrl-C` | Interrupt the current streaming output, or clear the input box |
-| `Ctrl-D` | Exit Kimi Code CLI when the input box is empty |
-| `Ctrl-T` | Expand or collapse the todo list when it is truncated |
+| `Ctrl-D` | Exit Hakimi when the input box is empty |
+| `Ctrl-T` | Expand or collapse the standalone todo list when it is truncated outside Research Mode |
 
 Pressing `Ctrl-C` **during streaming** cancels immediately — no second confirmation needed.
 
@@ -67,9 +67,9 @@ Pressing `Ctrl-S` causes the model to see your message at the next interruptible
 
 | Shortcut | Function |
 | --- | --- |
-| `Ctrl-O` | Expand or collapse tool output and compaction summaries |
+| `Ctrl-O` | Expand or collapse tool output, compaction summaries, and the Research Board |
 
-When collapsed tool call results exist in the history, press `Ctrl-O` to toggle between collapsed and expanded views. After compaction, the same shortcut shows or hides the compaction summary in the compaction block.
+When collapsed tool call results exist in the history, press `Ctrl-O` to toggle between collapsed and expanded views. In Research Mode, the same shortcut expands or collapses the Research Board in the Todo slot, including its Research Line summary and Actions projection. After compaction, the same shortcut shows or hides the compaction summary in the compaction block.
 
 ## Approval Panel
 
@@ -99,4 +99,4 @@ After opening the help panel with `/help`, use the following keys to navigate an
 ## Next steps
 
 - [Slash Commands](./slash-commands.md) — Quick reference for built-in TUI control commands
-- [`kimi` Command](./kimi-command.md) — Complete reference for startup flags and subcommands
+- [`hakimi` Command](./kimi-command.md) — Complete reference for startup flags and subcommands

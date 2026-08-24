@@ -1,15 +1,23 @@
 ---
 name: check-kimi-code-docs
-description: Answer questions about the Kimi Code product using the official documentation — CLI usage, configuration, slash commands, features, membership and quota, API onboarding, third-party tool setup, and error codes. Use when the user asks how Kimi Code works, how to set something up, or what a Kimi Code error message means.
+description: Compatibility alias for check-hakimi-docs. Use check-hakimi-docs for Hakimi product questions instead. This skill answers Kimi platform questions — account, membership, quota, and platform error codes — using the official Kimi documentation. Only invoke explicitly when the question is about the Kimi platform, not the Hakimi CLI product.
+disable-model-invocation: true
 ---
 
 # Check Kimi Code docs (check-kimi-code-docs)
 
-Answer Kimi Code **product** questions from the official documentation site, not from memory. This skill covers product usage ("how do I configure a provider", "what does this error mean", "how does membership quota work"); it is not for developing the Kimi Code repository itself.
+> This is a **compatibility alias**. For Hakimi product questions (CLI usage, configuration, skills, MCP, hooks, sessions, goals, server API, etc.), use the `check-hakimi-docs` skill instead. This skill is kept for explicit invocations about the **Kimi platform** — account, membership, quota, and platform error codes.
+
+## Hakimi vs Kimi boundary
+
+Hakimi is a fork of Kimi Code. The two products share a common ancestry but have diverged:
+
+- **Hakimi product questions** (CLI commands, config files, env vars, data locations, customization, server API, built-in tools, slash commands, keyboard shortcuts): use the `check-hakimi-docs` skill, which reads from the local docs checkout or `raw.githubusercontent.com/bhjia-phys/Hakimi/main/docs/{en,zh}`.
+- **Kimi platform questions** (account, login/OAuth, membership plans, quota, rate limits, fuel packs, Kimi Open Platform vs Kimi Code platform, platform error codes): use this skill, which reads from the official Kimi docs.
 
 ## The single source of truth
 
-Official documentation (English):
+Official Kimi documentation (English):
 
 ```
 https://www.kimi.com/code/docs/en/
@@ -38,7 +46,8 @@ If no row fits the question, fetch the docs home page and follow its navigation 
 
 ## How to answer
 
-1. Pick the page from the table above.
-2. **FetchURL the page before answering** — answer strictly from the fetched content, never from memory.
-3. Cite the page link(s) you used at the end of the answer.
-4. If the fetch fails or the docs do not cover the question, say so plainly: answer from what you already know, attach the docs entry link (`https://www.kimi.com/code/docs/en/`), and mark which parts you could not verify. **Never invent config keys, command names, model IDs, or product behaviors.**
+1. Determine whether the question is a **Hakimi** product question or a **Kimi platform** question (see the boundary section above). For Hakimi product questions, direct the user to the `check-hakimi-docs` skill.
+2. Pick the page from the table above.
+3. **FetchURL the page before answering** — answer strictly from the fetched content, never from memory.
+4. Cite the page link(s) you used at the end of the answer.
+5. If the fetch fails or the docs do not cover the question, say so plainly: answer from what you already know, attach the docs entry link (`https://www.kimi.com/code/docs/en/`), and mark which parts you could not verify. **Never invent config keys, command names, model IDs, or product behaviors.**

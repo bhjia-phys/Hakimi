@@ -1,6 +1,6 @@
 # Slash Commands
 
-Slash commands are built-in control commands provided by Kimi Code CLI in the interactive TUI, covering account configuration, session management, mode switching, information queries, and more. Type `/` in the input box to trigger command completion — the candidate list filters in real time as you continue typing; command aliases are also matched.
+Slash commands are built-in control commands provided by Hakimi in the interactive TUI, covering account configuration, session management, mode switching, information queries, and more. Type `/` in the input box to trigger command completion — the candidate list filters in real time as you continue typing; command aliases are also matched.
 
 After typing the full command name, press `Enter` to execute. If the `/`-prefixed input does not match any built-in or Skill command, it is sent to the Agent as a regular message.
 
@@ -39,10 +39,10 @@ Some commands are only available in the idle state. Executing these commands whi
 | `/reload-tui` | — | Reload only the `tui.toml` UI preferences (theme, editor, notifications, etc.) without rebuilding the session | Yes |
 | `/init` | — | Analyze the current codebase and generate `AGENTS.md` | No |
 | `/export-md [<path>]` | `/export` | Export the current session as a Markdown file | No |
-| `/export-debug-zip` | — | Export the current session as a debug ZIP archive (same behavior as [`kimi export`](./kimi-command.md#kimi-export)) | No |
+| `/export-debug-zip` | — | Export the current session as a debug ZIP archive (same behavior as [`hakimi export`](./kimi-command.md#hakimi-export)) | No |
 | `/copy` | — | Copy the last assistant message to the clipboard | No |
 | `/add-dir [<path>]` | — | Add an extra workspace directory to the current session. Run without a path (or with `list`) to list configured directories. When adding, choose whether to remember the directory for the project in `.kimi-code/local.toml` | No |
-| `/web` | — | Open the current session in the web UI: pick a running server to connect to, or start a new foreground server after the TUI exits. See [`kimi web`](./kimi-command.md#kimi-web) | Yes |
+| `/web` | — | Open the current session in the web UI: pick a running server to connect to, or start a new foreground server after the TUI exits. See [`hakimi web`](./kimi-command.md#hakimi-web) | Yes |
 
 ## Modes & Run Control
 
@@ -53,8 +53,9 @@ Some commands are only available in the idle state. Executing these commands whi
 | `/plan [on\|off]` | — | Toggle Plan mode. Without arguments, flips the current state; explicitly passing `on`/`off` forces the setting. Simply toggling does not create an empty plan file | Yes |
 | `/plan clear` | — | Clear the current plan | No |
 | `/swarm on\|off` | — | Turn swarm mode on or off without sending a prompt. | Yes |
-| `/swarm <task>` | — | Turn swarm mode on, then send `<task>` as a normal prompt. If the turn completes normally, swarm mode turns off automatically. In `manual` permission mode, Kimi Code asks whether to switch to `auto` or `yolo` before starting. | No |
+| `/swarm <task>` | — | Turn swarm mode on, then send `<task>` as a normal prompt. If the turn completes normally, swarm mode turns off automatically. In `manual` permission mode, Hakimi asks whether to switch to `auto` or `yolo` before starting. | No |
 | `/goal [...]` | — | Start or manage an autonomous goal | See below |
+| `/research [...]` | — | Control experimental AITP Research Mode (`aitp_research_mode` flag, default on) | See below |
 
 ::: warning
 `/yolo` skips approval for regular tool calls. Please make sure you understand the potential risks before enabling it. Plan mode exit approval is not bypassed by `/yolo`; `Bash` inside Plan mode is still subject to the regular `/yolo` allow rules.
@@ -62,7 +63,7 @@ Some commands are only available in the idle state. Executing these commands whi
 
 ## Autonomous Goal
 
-`/goal` starts or manages goal mode: a persistent objective that Kimi Code works toward across automatically continuing turns. For usage guidance and examples, see [Goals](../guides/goals.md).
+`/goal` starts or manages goal mode: a persistent objective that Hakimi works toward across automatically continuing turns. For usage guidance and examples, see [Goals](../guides/goals.md).
 
 ```sh
 /goal Update the checkout docs, run docs build, and stop if still blocked after 20 turns
@@ -93,10 +94,49 @@ If an upcoming goal needs to start with `manage`, put `--` after `next`:
 In non-interactive prompt mode, only the create forms start goal mode:
 
 ```sh
-kimi -p "/goal Fix the failing checkout test"
+hakimi -p "/goal Fix the failing checkout test"
 ```
 
-Prompt mode exits with code `0` when the goal completes, `3` when it blocks, and `6` when it pauses. Other `/goal` subcommands, including `next`, are TUI controls and are not handled by `kimi -p`.
+Prompt mode exits with code `0` when the goal completes, `3` when it blocks, and `6` when it pauses. Other `/goal` subcommands, including `next`, are TUI controls and are not handled by `hakimi -p`.
+
+## Experimental Research Mode
+
+`/research` controls the experimental AITP Research Mode — a joint research capability backed by the AITP evidence ledger. It is gated behind the `aitp_research_mode` experimental flag (env `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`, default on). The flag being on only makes the surface available — `/research` and the `EnterAITPMode` capability exist, but the mode stays inactive with zero AITP I/O until you enter it explicitly with `/research on` (or the model `EnterAITPMode` entry path with its approval gate). When the flag is off (set `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=0` or toggle it in `/experiments`), the command is not available, all AITP tools and skills are hidden, and zero AITP I/O occurs.
+
+::: warning
+Research Mode is experimental. It runs an autonomous research loop that may take many turns. When entering from `manual` or `yolo` permission mode, a prompt asks whether to switch to `auto` or `yolo` first — the loop may stop and wait for approvals under `manual` mode.
+:::
+
+The grammar mirrors `/goal`: reserved subcommands are only honored as the first token; free text after `--` separates arguments from user input.
+
+| Command | Action | Availability |
+| --- | --- | --- |
+| `/research` or `/research status` | Display the current research snapshot: mode, loop status, current line, focus question, and AITP health | Always available |
+| `/research on` | Enter Research Mode (user-initiated). In `manual` or `yolo` mode, prompts for permission mode choice first | Idle only |
+| `/research on -- <line slug>` | Enter Research Mode and switch to a specific research line | Idle only |
+| `/research off` | Exit Research Mode; revokes AITP tool admissions and hides the Research Board. Already-saved AITP records are not deleted | Idle only |
+| `/research pause` | Pause the research loop without exiting AITP mode | Always available |
+| `/research resume` | Resume a paused research loop | Always available |
+| `/research manage` | Open the line-first Research Manager: select a Research Line, press <kbd>Enter</kbd> to inspect its questions, <kbd>S</kbd> to switch, <kbd>P</kbd> to pause/resume, <kbd>E</kbd> to edit, <kbd>B</kbd> to block, <kbd>C</kbd> to complete/close, <kbd>R</kbd> to reopen, and <kbd>Esc</kbd> to move back or cancel | Idle only |
+| `/research edit <questionId> -- <new wording>` | Replace a question's wording using the current snapshot revision | Idle only |
+| `/research focus <questionId> -- <bounded action>` | Set the current focus question and its next bounded action | Idle only |
+| `/research defer <questionId> [-- <reason>]` | Defer a question (workflow disposition change; reason optional) | Idle only |
+| `/research block <questionId> [-- <reason>]` | Block a question | Idle only |
+| `/research close <questionId> [-- <reason>]` | Close a question | Idle only |
+| `/research reopen <questionId> [-- <reason>]` | Reopen a previously closed question | Idle only |
+| `/research line <slug>` | Switch the current research line | Idle only |
+
+Subcommands (`on`, `off`, `pause`, `resume`, `manage`, `status`, `edit`, `focus`, `defer`, `block`, `close`, `reopen`, `line`) are only honored as the first token. If your text needs to start with one of those words, use `--`:
+
+```sh
+/research focus q-17 -- on the boundary zero mode
+```
+
+All mutating commands carry the latest snapshot `revision` as `expectedRevision` for optimistic concurrency. If the agent has modified the question since you last saw it, the command returns a `research_stale_revision` error and the manager refreshes so you can retry.
+
+The Research Board appears in the live chrome area when Research Mode is active. It shows the current line, focus question or candidate questions, assessment, bounded action, Todo Actions progress, checkpoint state, and prioritized alerts — not the full portfolio. Press `Ctrl-O` to expand or collapse the board in place; in Research Mode the Todo list is projected into the board instead of replacing it. The board is read-only; all edits go through `/research manage` or the direct steering commands.
+
+When AITP is not installed, not initialized, or its `check` returns exit 2, the mode shows `degraded` and blocks question closure, Goal completion, and session closeout until the adapter recovers or the user explicitly chooses to proceed without persistence. Research Mode does not automatically run `init`, `init --adopt`, `inventory`, or `backfill --apply`; `backfill` is not exposed as a model tool in this experimental slice.
 
 ## Information & Status
 
@@ -108,26 +148,26 @@ Prompt mode exits with code `0` when the goal completes, `3` when it blocks, and
 | `/status` | — | Show the current session runtime state: version, model, working directory, permission mode, etc. | Yes |
 | `/mcp` | — | List MCP servers and their connection status in the current session | Yes |
 | `/plugins` | — | Open the interactive plugin manager | Yes |
-| `/version` | — | Display the Kimi Code CLI version number | Yes |
+| `/version` | — | Display the Hakimi version number | Yes |
 | `/feedback` | `/bug` | Submit feedback with optional diagnostic logs and codebase context | Yes |
 
 ## Exit
 
 | Command | Alias | Description | Always available |
 | --- | --- | --- | --- |
-| `/exit` | `/quit`, `/q` | Exit Kimi Code CLI | No |
+| `/exit` | `/quit`, `/q` | Exit Hakimi | No |
 
 ## Built-in skill commands
 
-Kimi Code CLI ships with a set of built-in Skills that appear directly as `/<name>` slash commands. Unlike external Skills, they do not require the `skill:` prefix and are available out of the box.
+Hakimi ships with a set of built-in Skills that appear directly as `/<name>` slash commands. Unlike external Skills, they do not require the `skill:` prefix and are available out of the box.
 
 | Command | Description |
 | --- | --- |
 | `/mcp-config` | Configure MCP servers and handle MCP OAuth login. See [MCP](../customization/mcp.md) |
 | `/custom-theme [<text>]` | Create or edit a custom TUI color theme. See [Themes](../customization/themes.md) |
 | `/update-config` | Inspect or edit `config.toml` (model, provider, permission, hooks) and `tui.toml` (theme, editor, notifications, auto-update) |
-| `/check-kimi-code-docs` | Answer Kimi Code product questions (CLI usage, configuration, membership, error codes) against the official docs |
-| `/import-from-cc-codex` | Import Claude Code and Codex instructions, skills, and MCP settings into Kimi Code |
+| `/check-hakimi-docs` | Answer Hakimi product questions (CLI usage, configuration, skills, MCP, hooks, server API, error codes) against the official Hakimi docs. `/check-kimi-code-docs` is a compatibility alias that the model never invokes automatically — use it explicitly only for Kimi platform questions (account, membership, quota, platform error codes). Legacy v1 engines only expose `/check-kimi-code-docs` |
+| `/import-from-cc-codex` | Import Claude Code and Codex instructions, skills, and MCP settings into Hakimi |
 | `/sub-skill` | Discover and reorganize the local skill inventory into hierarchical sub-skill bundles. Includes `/sub-skill.review` (read-only proposal) and `/sub-skill.consolidate` (apply the reorganization) |
 
 All built-in Skill commands are only available in the idle state.
@@ -152,7 +192,7 @@ For example, a child Skill named `review` inside a parent Skill named `code-styl
 
 For convenience, external Skill commands also support a shorthand form that omits the `skill:` prefix — `/<name>` — as long as the name is not taken by a system slash command. That is, `/code-style` falls back to matching `/skill:code-style`.
 
-Built-in Skills shipped with Kimi Code CLI appear directly as `/<name>` in the slash command panel. For example, `/mcp-config` helps configure MCP servers and handle MCP OAuth login, and `/custom-theme [extra text]` invokes the custom-theme workflow to create or edit a TUI theme.
+Built-in Skills shipped with Hakimi appear directly as `/<name>` in the slash command panel. For example, `/mcp-config` helps configure MCP servers and handle MCP OAuth login, and `/custom-theme [extra text]` invokes the custom-theme workflow to create or edit a TUI theme.
 
 ::: info
 All Skill commands are only available in the idle state. `flow`-type Skills are also exposed via `/skill:<name>` — there is no separate `/flow:` namespace.

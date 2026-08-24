@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import logoUrl from '../Kimi.png'
+import logoUrl from '../HakimiLogo.svg'
 
 withDefaults(defineProps<{ size?: number }>(), { size: 56 })
 </script>
@@ -10,7 +10,7 @@ withDefaults(defineProps<{ size?: number }>(), { size: 56 })
     :src="logoUrl"
     :width="size"
     :height="size"
-    alt="Kimi"
+    alt="Hakimi"
   />
 </template>
 

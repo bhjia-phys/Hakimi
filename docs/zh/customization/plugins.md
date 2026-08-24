@@ -1,6 +1,6 @@
 # Plugins
 
-Plugins 把可复用的 Kimi Code CLI 能力打包成可安装单元——可以添加 [Agent Skills](./skills.md)、自定义 [Agent](./agents.md)、在会话启动时自动加载指定 Skill、提供系统提示词指令，也可以声明 MCP servers 来提供真实工具能力。适合把工作流共享给团队、连接外部服务，或从[官方插件](#官方插件)安装扩展。
+Plugins 把可复用的 Hakimi 能力打包成可安装单元——可以添加 [Agent Skills](./skills.md)、自定义 [Agent](./agents.md)、在会话启动时自动加载指定 Skill、提供系统提示词指令，也可以声明 MCP servers 来提供真实工具能力。适合把工作流共享给团队、连接外部服务，或从[官方插件](#官方插件)安装扩展。
 
 ## 安装与管理
 
@@ -105,7 +105,7 @@ Kimi Datasource 是 Kimi Code 官方数据插件，让你用自然语言直接�
 
 #### 使用方式
 
-1. 直接用自然语言描述你的需求，Kimi Code 会自动调用数据能力
+1. 直接用自然语言描述你的需求，Hakimi 会自动调用数据能力
 2. 通过 `/skill:kimi-datasource` 明确触发数据查询 Skill
 
 #### 能做什么
@@ -188,7 +188,7 @@ Kimi Computer Use 让 AI 直接操作你的桌面应用，可以完成点击、�
 安装后首次使用时，Kimi Computer Use 会弹出授权窗口，按照提示操作即可：
 
 1. 点击**辅助功能**和**屏幕录制**右侧的**去授权**，在系统设置中开启这两项权限。前者用于执行点击、输入与滚动，后者用于读取屏幕内容、识别需要操作的位置
-2. 在**接入本地 Agent**中打开 **Kimi Code** 开关，重启 Kimi Code 后生效
+2. 在**接入本地 Agent**中打开 **Kimi Code** 开关，重启 Hakimi 后生效
 
 <div style="max-width: 380px; margin: 0 auto;">
 
@@ -198,6 +198,7 @@ Kimi Computer Use 让 AI 直接操作你的桌面应用，可以完成点击、�
 
 #### Windows 版注意事项
 
+Windows 版（WinCU）的安装方式与 macOS 版不同：在 Hakimi 中运行 `/plugins install https://cdn.kimi.com/kimi-computer-use-windows/latest/kimi-cu-win-plugin.zip`，安装完成后重启。使用前需要了解几点：
 
 - **会短暂占用键鼠**：Windows 版无法像 macOS 版那样稳定地全程后台输入，执行操作时可能短暂激活目标窗口并使用你的鼠标键盘
 - **系统要求**：Windows 10 version 1903（Build 18362）或更新版本 / Windows 11，x64；需要真实交互式桌面会话，Windows Server 需要 Desktop Experience
@@ -207,12 +208,13 @@ Kimi Computer Use 让 AI 直接操作你的桌面应用，可以完成点击、�
 #### 能做什么
 
 - **在桌面软件整理和录入信息**：让 AI 把散落在各处的信息整理进备忘录、表格或笔记软件，不用手动逐条输入
-- **测试网站和应用流程**：将重复的测试步骤交给AI，截图确认渲染和跳转是否正常
-- **处理重复操作**：反复打开、复制、粘贴、检查类型的工作，让AI在后台静默完成，不抢占鼠标
-- **搞定没有接口的软件**：操作没有 CLI 或 API 的桌面端应用，例如让它把剪映里这段视频的片头剪掉三秒再导出
+- **测试网站和应用流程**：改完页面后，让 AI 把关键流程逐一点击走一遍，每步截图，确认渲染和跳转正常
+- **处理重复操作**：反复打开、复制、粘贴、检查这类操作可以在后台静默完成，不抢占你的鼠标
+- **执行固定步骤的任务**：步骤清晰的流程，把步骤说清楚 AI 就会照做；例如让 AI 打开网易云音乐并播放某首歌
+- **搞定没有接口的软件**：大量专业工具和内部系统根本没有 CLI 或 API，以前必须自己动手点击的操作现在可以交给 AI——例如在 Final Cut Pro 里剪掉视频开头三秒再导出
 
 ::: warning 注意
-涉及资金、账号和对外发布的操作不建议使用此能力。
+不要让它处理任何涉及资金、账号或对外发布的操作，例如转账付款、删除重要文件、修改密码或发布内容。判断任务是否适合，可以看三点：结果可验证、操作可逆、出错风险低。
 :::
 
 ## Plugin manifest
@@ -232,7 +234,7 @@ Plugin 是一个带 manifest 的目录或 zip 文件。Manifest 可以放在以�
 {
   "name": "kimi-finance",
   "version": "1.0.0",
-  "description": "Finance data and analysis workflows for Kimi Code CLI",
+  "description": "Finance data and analysis workflows for Hakimi",
   "skills": "./skills/",
   "systemPromptPath": "./SYSTEM.md",
   "sessionStart": {
@@ -275,7 +277,7 @@ Plugin 是一个带 manifest 的目录或 zip 文件。Manifest 可以放在以�
 }
 ```
 
-系统提示词贡献在两个 Agent 引擎上都生效。交互式 TUI、`kimi -p` 和 `kimi web` 默认使用 v2 引擎；设置 `KIMI_CODE_LEGACY_FLAG=1` 后，本地 CLI 界面会改用旧版引擎。
+系统提示词贡献在两个 Agent 引擎上都生效。交互式 TUI、`hakimi -p` 和 `hakimi web` 默认使用 v2 引擎；设置 `KIMI_CODE_LEGACY_FLAG=1` 后，本地 CLI 界面会改用旧版引擎。
 
 `systemPrompt` 字段与 `systemPromptPath` 文件各限制为 32 KB（UTF-8 字节）：超限内容会被忽略，并显示在 plugin 的 diagnostics 中。一次提示词构建最多注入所有已启用 plugin 合计 64 KB 的指令；超出预算的贡献会被跳过并给出警告——单个 plugin 的内联文本与文件合计超过该预算时同样整体跳过。
 
@@ -322,7 +324,7 @@ description: 拉取指定股票的财报并总结
 /kimi-finance:report TSLA
 ```
 
-Kimi 会把正文里的 `$ARGUMENTS` 替换成 `TSLA`，再执行这段提示词。三处细节分述如下。
+Hakimi 会把正文里的 `$ARGUMENTS` 替换成 `TSLA`，再执行这段提示词。三处细节分述如下。
 
 ### 声明命令（`commands` 字段）
 
@@ -359,7 +361,7 @@ my-plugin/
       SKILL.md
 ```
 
-`sessionStart.skill` 在会话启动时把一个 plugin Skill 加载到 main agent，适合放置初始化说明、工作流规则，或把其他工具中的术语映射到 Kimi Code CLI。它只注入文本，不执行代码。
+`sessionStart.skill` 在会话启动时把一个 plugin Skill 加载到 main agent，适合放置初始化说明、工作流规则，或把其他工具中的术语映射到 Hakimi。它只注入文本，不执行代码。
 
 无论 Skill 通过哪种方式加载（`sessionStart.skill`、`/skill:<name>` 或模型自动调用），`skillInstructions` 都会随该 plugin 的 Skill 一起出现。
 

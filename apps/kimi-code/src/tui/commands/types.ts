@@ -1,5 +1,4 @@
 import type { AutocompleteItem, SlashCommand } from '@moonshot-ai/pi-tui';
-import type { FlagId } from '@moonshot-ai/kimi-code-sdk';
 
 export type SlashCommandAvailability = 'always' | 'idle-only';
 
@@ -11,8 +10,11 @@ export interface KimiSlashCommand<Name extends string = string> extends SlashCom
   readonly availability?: SlashCommandAvailability | ((args: string) => SlashCommandAvailability);
   /** Hidden commands remain resolvable for compatibility but stay out of public command lists. */
   readonly hidden?: boolean;
-  /** When set, the command is omitted unless this flag is enabled. */
-  readonly experimentalFlag?: FlagId;
+  /** When set, the command is omitted unless this flag is enabled. Accepts any
+   *  string so v2-engine flags (registered dynamically via
+   *  `registerFlagDefinition`, e.g. `aitp_research_mode`) can gate commands
+   *  without a static `FlagId` entry in the v1 catalog. */
+  readonly experimentalFlag?: string;
   /**
    * Generic argument autocompletion. `argumentPrefix` is the text typed after
    * `/<command> `; return suggestions or `null`. Declared as a plain function
