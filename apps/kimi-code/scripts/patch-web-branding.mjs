@@ -28,9 +28,13 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const distWeb = resolve(appRoot, 'dist-web');
+const defaultDistWeb = resolve(appRoot, 'dist-web');
 
-function assertWebAssets() {
+// Increment whenever the replacement rules change so provenance cannot silently
+// bless a bundle patched with different branding semantics.
+export const WEB_BRANDING_PATCH_VERSION = 1;
+
+function assertWebAssets(distWeb) {
   const indexHtml = join(distWeb, 'index.html');
   if (!statSync(indexHtml).isFile()) {
     throw new Error(`dist-web/index.html not found at ${distWeb}; run the web sync first.`);
@@ -83,26 +87,31 @@ function walkAssets(dir, out = []) {
   return out;
 }
 
-assertWebAssets();
+export function patchWebBranding(distWeb = defaultDistWeb) {
+  assertWebAssets(distWeb);
 
-let total = 0;
-const assetsDir = join(distWeb, 'assets');
-for (const file of walkAssets(assetsDir)) {
-  const { body, count } = patchText(readFileSync(file, 'utf8'), JS_REPLACEMENTS);
-  if (count > 0) {
-    writeFileSync(file, body);
-    total += count;
+  let total = 0;
+  for (const file of walkAssets(distWeb)) {
+    const { body, count } = patchText(readFileSync(file, 'utf8'), JS_REPLACEMENTS);
+    if (count > 0) {
+      writeFileSync(file, body);
+      total += count;
+    }
   }
+
+  const indexHtml = join(distWeb, 'index.html');
+  const { body: html, count: htmlCount } = patchText(
+    readFileSync(indexHtml, 'utf8'),
+    HTML_REPLACEMENTS,
+  );
+  if (htmlCount > 0) {
+    writeFileSync(indexHtml, html);
+    total += htmlCount;
+  }
+  return total;
 }
 
-const indexHtml = join(distWeb, 'index.html');
-const { body: html, count: htmlCount } = patchText(
-  readFileSync(indexHtml, 'utf8'),
-  HTML_REPLACEMENTS,
-);
-if (htmlCount > 0) {
-  writeFileSync(indexHtml, html);
-  total += htmlCount;
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const total = patchWebBranding();
+  console.log(`Web branding patched: ${total} replacement(s) in ${defaultDistWeb}.`);
 }
-
-console.log(`Web branding patched: ${total} replacement(s) in ${distWeb}.`);

@@ -65,9 +65,9 @@ Tower 将从当前固定的 worker/reviewer 协议演进为可复用、可校验
 
 ### A · Web
 
-- **所有权**：外部 code-app Web owner 拥有 source；Hakimi owner 负责接收、branding、provenance 和发布 bundle。
+- **所有权**：Hakimi 拥有恢复到 `apps/kimi-web` 的 in-repo source；过渡期同时负责接收、branding、验证和发布 external production bundle。
 - **依赖**：F 的公共 contracts 以及 B–E 的公开 projection；A 不重新定义 domain ownership。
-- **交付**：Web source 继续位于外部 code-app 仓库。本仓只同步已提交的 `apps/kimi-code/dist-web`，通过公开 contract 展示 session、结构化研究状态、记忆检索和研究者 checkpoint。
+- **交付**：`apps/kimi-web` 是从上游最后公开快照恢复的 source-shadow workspace。在 contract/UX parity 与 provenance cutover 通过前，发布版 CLI/native 继续使用已提交的 external `apps/kimi-code/dist-web`。
 
 ### B · 手机远程
 

@@ -65,9 +65,9 @@ The current baseline already provides the fixed Tower protocol and separate `tow
 
 ### A · Web
 
-- **Owner:** external code-app Web owner for source; Hakimi owner for receiving, branding, provenance, and shipping the bundle.
+- **Owner:** Hakimi owns the restored in-repo source at `apps/kimi-web`; during the transition it also receives, brands, verifies, and ships the external production bundle.
 - **Depends on:** F's public contracts and B–E projections; A does not redefine domain ownership.
-- **Delivery:** Web source stays in the external code-app repository. This repository only syncs the committed `apps/kimi-code/dist-web`, which presents sessions, structured research state, memory retrieval, and researcher checkpoints through public contracts.
+- **Delivery:** `apps/kimi-web` is a source-shadow workspace restored from the last public upstream snapshot. Until contract/UX parity and provenance cutover pass, released CLI/native builds continue using the committed external bundle at `apps/kimi-code/dist-web`.
 
 ### B · Phone remote
 

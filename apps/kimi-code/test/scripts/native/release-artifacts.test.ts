@@ -21,7 +21,12 @@ import { inflateRawSync } from 'node:zlib';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { appRoot } from '../../../scripts/native/paths.mjs';
+import { verifyWebAssets } from '../../../scripts/check-web-assets.mjs';
+import { writeNativeBuildReceipt } from '../../../scripts/native/build-receipt.mjs';
+import {
+  appRoot,
+  nativeBuildReceiptPath,
+} from '../../../scripts/native/paths.mjs';
 
 const execFileAsync = promisify(execFile);
 const packageScript = resolve(appRoot, 'scripts/native/package.mjs');
@@ -41,6 +46,22 @@ const expectedNativeTargets = [
 
 function sha256(bytes: Buffer | string): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+async function stageNativePackageInput(binaryContent: string) {
+  mkdirSync(resolve(appRoot, 'dist-native/bin', target), { recursive: true });
+  writeFileSync(fakeBinary, binaryContent, { mode: 0o755 });
+  const { provenance } = await verifyWebAssets();
+  await writeNativeBuildReceipt({ target, provenance, binaryPath: fakeBinary });
+  return provenance;
+}
+
+function runNativePackage() {
+  return spawnSync(process.execPath, [packageScript], {
+    cwd: appRoot,
+    env: { ...process.env, KIMI_CODE_BUILD_TARGET: target },
+    encoding: 'utf8',
+  });
 }
 
 function zipEntryNames(zipPath: string): readonly string[] {
@@ -141,6 +162,7 @@ describe('native release artifacts', () => {
 
   afterEach(() => {
     rmSync(resolve(appRoot, 'dist-native/bin', target), { recursive: true, force: true });
+    rmSync(nativeBuildReceiptPath(target), { force: true });
     rmSync(resolve(artifactsDir, `hakimi-${target}.zip`), { force: true });
     rmSync(resolve(artifactsDir, `hakimi-${target}.zip.sha256`), { force: true });
     for (const dir of tempReleaseDirs.splice(0)) {
@@ -148,10 +170,9 @@ describe('native release artifacts', () => {
     }
   });
 
-  it('packages the native binary as a zip archive and checksums the archive', async () => {
+  it('packages the receipt-bound native binary as a zip archive and checksums it', async () => {
     const binaryContent = 'native binary payload\n';
-    mkdirSync(resolve(appRoot, 'dist-native/bin', target), { recursive: true });
-    writeFileSync(fakeBinary, binaryContent, { mode: 0o755 });
+    await stageNativePackageInput(binaryContent);
 
     await execFileAsync(process.execPath, [packageScript], {
       cwd: appRoot,
@@ -167,6 +188,41 @@ describe('native release artifacts', () => {
     expect(readFileSync(checksumPath, 'utf-8')).toBe(
       `${sha256(readFileSync(archivePath))}  hakimi-${target}.zip\n`,
     );
+  });
+
+  it('rejects packaging when the native build receipt is missing', () => {
+    mkdirSync(resolve(appRoot, 'dist-native/bin', target), { recursive: true });
+    writeFileSync(fakeBinary, 'unreceipted binary\n', { mode: 0o755 });
+
+    const result = runNativePackage();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Native build receipt not found');
+    expect(existsSync(resolve(artifactsDir, `hakimi-${target}.zip`))).toBe(false);
+  });
+
+  it('rejects packaging when the binary no longer matches its receipt', async () => {
+    await stageNativePackageInput('original binary\n');
+    writeFileSync(fakeBinary, 'changed binary\n', { mode: 0o755 });
+
+    const result = runNativePackage();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('binary sha256 does not match');
+  });
+
+  it('rejects packaging when the receipt records a stale Web identity', async () => {
+    const provenance = await stageNativePackageInput('native binary\n');
+    await writeNativeBuildReceipt({
+      target,
+      provenance: { ...provenance, commit: '0'.repeat(40) },
+      binaryPath: fakeBinary,
+    });
+
+    const result = runNativePackage();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Web identity does not match');
   });
 
   it('produces a manifest from zip archive checksums', async () => {

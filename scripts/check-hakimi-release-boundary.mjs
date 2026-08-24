@@ -17,6 +17,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import {
+  assertWebAssets,
+  WEB_SOURCE_REPOSITORY,
+} from '../apps/kimi-code/scripts/check-web-assets.mjs';
+import {
   formatReleaseTag,
   isValidSemver,
   parseReleaseTag,
@@ -25,6 +29,7 @@ import {
 const root = resolve(import.meta.dirname, '..');
 const cliPackagePath = join(root, 'apps/kimi-code/package.json');
 const upstreamBasePath = join(root, 'apps/kimi-code/upstream-base.json');
+const webBasePath = join(root, 'apps/kimi-code/web-base.json');
 const changesetConfigPath = join(root, '.changeset/config.json');
 const changesetDir = join(root, '.changeset');
 const appConstantsPath = join(root, 'apps/kimi-code/src/constant/app.ts');
@@ -122,6 +127,31 @@ check(
   /^[a-f0-9]{40}$/.test(upstreamBase.commit),
   JSON.stringify(upstreamBase.commit),
 );
+
+// ---------------------------------------------------------------------------
+// 2.1 External Web bundle provenance
+// ---------------------------------------------------------------------------
+
+check(
+  'package publishes web-base.json',
+  Array.isArray(cliPackage.files) && cliPackage.files.includes('web-base.json'),
+);
+try {
+  await assertWebAssets();
+  check('dist-web matches its recorded provenance', true);
+  const webBase = parseJsonFile(webBasePath);
+  check(
+    'web-base.json repository matches the canonical source identifier',
+    webBase.repository === WEB_SOURCE_REPOSITORY,
+    JSON.stringify(webBase.repository),
+  );
+} catch (error) {
+  check(
+    'dist-web matches its recorded provenance',
+    false,
+    error instanceof Error ? error.message : String(error),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // 3. Git provenance (only when the object is available locally)
