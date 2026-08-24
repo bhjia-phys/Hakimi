@@ -1,12 +1,18 @@
+import { createServer, type Server } from 'node:http';
+
 import { afterEach, describe, it, expect, vi } from 'vitest';
 
 import {
   fetchManagedUsage,
+  fetchManagedUsageFromBase,
   formatDuration,
   isManagedKimiCode,
   isManagedKimiCodeBaseUrl,
   kimiCodeBaseUrl,
   kimiCodeUsageUrl,
+  kimiCodeUsageUrlFromBase,
+  OFFICIAL_KIMI_CODE_USAGE_URL,
+  officialKimiCodeUsageUrl,
   parseManagedUsagePayload,
 } from '../src/managed-usage';
 
@@ -55,6 +61,46 @@ describe('isManagedKimiCodeBaseUrl', () => {
     expect(isManagedKimiCodeBaseUrl(undefined)).toBe(false);
     expect(isManagedKimiCodeBaseUrl('')).toBe(false);
     expect(isManagedKimiCodeBaseUrl('not a url')).toBe(false);
+  });
+});
+
+describe('officialKimiCodeUsageUrl', () => {
+  it('resolves the Anthropic protocol root to the v1 usages endpoint', () => {
+    expect(officialKimiCodeUsageUrl('https://api.kimi.com/coding')).toBe(
+      'https://api.kimi.com/coding/v1/usages',
+    );
+    expect(officialKimiCodeUsageUrl('https://api.kimi.com/coding/')).toBe(
+      'https://api.kimi.com/coding/v1/usages',
+    );
+  });
+
+  it('resolves the v1 base, with or without a trailing slash', () => {
+    expect(officialKimiCodeUsageUrl('https://api.kimi.com/coding/v1')).toBe(
+      'https://api.kimi.com/coding/v1/usages',
+    );
+    expect(officialKimiCodeUsageUrl('https://api.kimi.com/coding/v1/')).toBe(
+      'https://api.kimi.com/coding/v1/usages',
+    );
+  });
+
+  it('is case-insensitive on the origin but strict on the path', () => {
+    expect(officialKimiCodeUsageUrl('https://API.KIMI.COM/coding/v1')).toBe(
+      'https://api.kimi.com/coding/v1/usages',
+    );
+    expect(officialKimiCodeUsageUrl('https://api.kimi.com/CODING/v1')).toBeUndefined();
+  });
+
+  it('rejects other hosts, paths, and unparseable values', () => {
+    expect(officialKimiCodeUsageUrl('https://api.kimi.com/coding/v2')).toBeUndefined();
+    expect(officialKimiCodeUsageUrl('https://api.kimi.com/v1')).toBeUndefined();
+    expect(officialKimiCodeUsageUrl('https://api.moonshot.cn/v1')).toBeUndefined();
+    expect(officialKimiCodeUsageUrl('https://gateway.example.com/coding/v1')).toBeUndefined();
+  });
+
+  it('rejects undefined and unparseable values', () => {
+    expect(officialKimiCodeUsageUrl(undefined)).toBeUndefined();
+    expect(officialKimiCodeUsageUrl('')).toBeUndefined();
+    expect(officialKimiCodeUsageUrl('not a url')).toBeUndefined();
   });
 });
 
@@ -227,7 +273,7 @@ describe('parseManagedUsagePayload', () => {
 });
 
 describe('fetchManagedUsage', () => {
-  it('sends only Authorization and Accept headers', async () => {
+  it('sends only Authorization and Accept headers to the pinned official URL', async () => {
     const fetchMock = vi.fn(
       async () =>
         new Response(JSON.stringify({ usage: { used: 1, limit: 10 } }), {
@@ -237,7 +283,7 @@ describe('fetchManagedUsage', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(fetchManagedUsage('https://api.example/usages', 'access-token')).resolves.toEqual({
+    await expect(fetchManagedUsage('access-token')).resolves.toEqual({
       kind: 'ok',
       parsed: {
         summary: { used: 1, limit: 10, window: { duration: 1, unit: 'week' } },
@@ -249,10 +295,23 @@ describe('fetchManagedUsage', () => {
     const calls = fetchMock.mock.calls as unknown as [string, RequestInit?][];
     const init = calls[0]?.[1] ?? {};
     const headers = new Headers((init.headers ?? {}) as Record<string, string>);
+    expect(calls[0]?.[0]).toBe(OFFICIAL_KIMI_CODE_USAGE_URL);
+    expect(init.redirect).toBe('error');
     expect(headers.get('authorization')).toBe('Bearer access-token');
     expect(headers.get('accept')).toBe('application/json');
     expect(headers.get('user-agent')).toBeNull();
     expect(headers.get('x-msh-platform')).toBeNull();
+  });
+
+  it('never accepts a caller-supplied destination: the pinned URL is the only outbound', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchManagedUsage('access-token');
+
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit?][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]).toBe(OFFICIAL_KIMI_CODE_USAGE_URL);
   });
 
   it('surfaces JSON API error messages with status', async () => {
@@ -267,7 +326,7 @@ describe('fetchManagedUsage', () => {
       ),
     );
 
-    const result = await fetchManagedUsage('https://api.example/usages', 'access-token');
+    const result = await fetchManagedUsage('access-token');
 
     expect(result.kind).toBe('error');
     if (result.kind !== 'error') return;
@@ -287,7 +346,7 @@ describe('fetchManagedUsage', () => {
       ),
     );
 
-    const result = await fetchManagedUsage('https://api.example/usages', 'access-token');
+    const result = await fetchManagedUsage('access-token');
 
     expect(result.kind).toBe('error');
     if (result.kind !== 'error') return;
@@ -298,12 +357,217 @@ describe('fetchManagedUsage', () => {
   it('falls back to local usage hints when the API error body is empty', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
 
-    const result = await fetchManagedUsage('https://api.example/usages', 'access-token');
+    const result = await fetchManagedUsage('access-token');
 
     expect(result.kind).toBe('error');
     if (result.kind !== 'error') return;
     expect(result.status).toBe(404);
     expect(result.message).toBe('Usage endpoint not available. Try Kimi For Coding.');
+  });
+
+  it('redacts the credential from HTTP error bodies that echo it back', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ message: 'invalid key sk-super-secret-token' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      ),
+    );
+
+    const result = await fetchManagedUsage('sk-super-secret-token');
+
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') return;
+    expect(result.message).toBe('invalid key [redacted]');
+    expect(result.message).not.toContain('sk-super-secret-token');
+  });
+
+  it('redacts the credential from network failure messages', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('fetch failed for sk-net-token');
+      }),
+    );
+
+    const result = await fetchManagedUsage('sk-net-token');
+
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') return;
+    expect(result.message).toBe('Failed to fetch usage: fetch failed for [redacted]');
+    expect(result.message).not.toContain('sk-net-token');
+  });
+
+  it('aborts the request when the caller signal is already aborted', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const aborted = new AbortController();
+    aborted.abort();
+
+    const result = await fetchManagedUsage('access-token', {
+      signal: aborted.signal,
+    });
+
+    expect(result).toEqual({ kind: 'error', message: 'Usage query cancelled.' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('signals the internal controller when the caller aborts mid-flight', async () => {
+    const controller = new AbortController();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_input: unknown, init: RequestInit | undefined) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              reject(new DOMException('aborted', 'AbortError'));
+            });
+          }),
+      ),
+    );
+
+    const pending = fetchManagedUsage('access-token', {
+      signal: controller.signal,
+    });
+    controller.abort();
+    const result = await pending;
+
+    expect(result).toEqual({ kind: 'error', message: 'Usage query cancelled.' });
+  });
+});
+
+describe('kimiCodeUsageUrlFromBase', () => {
+  it('derives /usages from a custom managed provider base, tolerating a trailing slash', () => {
+    expect(kimiCodeUsageUrlFromBase('https://gw.example.com/coding/v1')).toBe(
+      'https://gw.example.com/coding/v1/usages',
+    );
+    expect(kimiCodeUsageUrlFromBase('https://gw.example.com/coding/v1/')).toBe(
+      'https://gw.example.com/coding/v1/usages',
+    );
+    expect(kimiCodeUsageUrlFromBase('https://gw.example.com')).toBe(
+      'https://gw.example.com/usages',
+    );
+    expect(kimiCodeUsageUrlFromBase('http://127.0.0.1:58627')).toBe(
+      'http://127.0.0.1:58627/usages',
+    );
+  });
+
+  it('rejects userinfo, query, hash, non-http(s) schemes, and unparseable values', () => {
+    expect(kimiCodeUsageUrlFromBase('https://user:pass@host/coding/v1')).toBeUndefined();
+    expect(kimiCodeUsageUrlFromBase('https://host/coding/v1?token=abc')).toBeUndefined();
+    expect(kimiCodeUsageUrlFromBase('https://host/coding/v1#frag')).toBeUndefined();
+    expect(kimiCodeUsageUrlFromBase('ftp://host/coding/v1')).toBeUndefined();
+    expect(kimiCodeUsageUrlFromBase('not a url')).toBeUndefined();
+    expect(kimiCodeUsageUrlFromBase(undefined)).toBeUndefined();
+  });
+});
+
+describe('fetchManagedUsageFromBase', () => {
+  it('contacts the derived /usages URL of a custom managed provider base with redirect refusal', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ usage: { used: 1, limit: 10 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await fetchManagedUsageFromBase(
+      'https://gw.example.com/coding/v1',
+      'access-token',
+    );
+
+    expect(result.kind).toBe('ok');
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit?][];
+    const init = calls[0]?.[1] ?? {};
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]).toBe('https://gw.example.com/coding/v1/usages');
+    expect(init.redirect).toBe('error');
+  });
+
+  it('issues no request for an invalid provider base', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    for (const base of [
+      'https://user:pass@host/coding/v1',
+      'https://host/coding/v1?token=abc',
+      'https://host/coding/v1#frag',
+      'ftp://host/coding/v1',
+      'not a url',
+    ]) {
+      const result = await fetchManagedUsageFromBase(base, 'access-token');
+      expect(result).toEqual({
+        kind: 'error',
+        message: 'Failed to fetch usage: invalid provider base URL.',
+      });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('redacts the credential from a custom-base usage server that echoes it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ message: 'rejected custom-base-token' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      ),
+    );
+
+    const result = await fetchManagedUsageFromBase('https://gw.example.com', 'custom-base-token');
+
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') return;
+    expect(result.status).toBe(401);
+    expect(result.message).toBe('rejected [redacted]');
+    expect(result.message).not.toContain('custom-base-token');
+  });
+
+  it('does not follow a 30x redirect from a custom managed provider host', async () => {
+    let usageHits = 0;
+    let targetHits = 0;
+    const server: Server = createServer((req, res) => {
+      if (req.url === '/usages') {
+        usageHits += 1;
+        res.writeHead(302, { Location: '/target' });
+        res.end();
+        return;
+      }
+      if (req.url === '/target') {
+        targetHits += 1;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('{}');
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === 'string') throw new Error('no port');
+
+      const result = await fetchManagedUsageFromBase(
+        `http://127.0.0.1:${address.port}`,
+        'redirect-token',
+      );
+
+      expect(result.kind).toBe('error');
+      if (result.kind === 'ok') throw new Error('expected error');
+      expect(result.message).not.toContain('redirect-token');
+      expect(usageHits).toBe(1);
+      // The redirect target must never receive a request carrying the token.
+      expect(targetHits).toBe(0);
+    } finally {
+      server.close();
+    }
   });
 });
 

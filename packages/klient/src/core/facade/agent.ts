@@ -20,6 +20,16 @@ import type { IAgentShellCommandService } from '@moonshot-ai/agent-core-v2/agent
 import type { IAgentSkillService } from '@moonshot-ai/agent-core-v2/agent/skill/skill';
 import type { IAgentTaskService } from '@moonshot-ai/agent-core-v2/agent/task/task';
 import type { IAgentUsageService } from '@moonshot-ai/agent-core-v2/agent/usage/usage';
+import type {
+  GoalReasonInput,
+  ResumeGoalInput,
+} from '@moonshot-ai/agent-core-v2/agent/goal/goal';
+import type {
+  CreateGoalInput,
+  GoalBudgetLimits,
+  GoalSnapshot,
+  GoalToolResult,
+} from '@moonshot-ai/agent-core-v2/agent/goal/types';
 import type { ContentPart } from '@moonshot-ai/agent-core-v2/kosong/contract/message';
 import type { PermissionMode } from '@moonshot-ai/agent-core-v2/agent/permissionPolicy/types';
 
@@ -60,6 +70,25 @@ export type RuntimeBinding = ReturnType<IAgentRuntimeBindingService['get']>;
 export type PlanData = Awaited<ReturnType<IAgentPlanService['status']>>;
 export type AgentTaskInfo = Awaited<ReturnType<IAgentTaskService['list']>>[number];
 export type McpServerEntry = ReturnType<IAgentMcpService['list']>[number];
+
+/**
+ * The main-agent goal lifecycle. `markBlocked` / `markComplete` are
+ * deliberately absent: those transitions are owned by the engine's loop and
+ * the model's goal tools, not by clients. The engine's `actor` argument is
+ * never sent — the wire default (`user`) applies.
+ */
+export interface AgentGoalFacade {
+  /** Create a goal; fails when one already exists unless `replace` is set. */
+  create(input: CreateGoalInput): Promise<GoalSnapshot>;
+  /** The current goal snapshot, or `null` when no goal exists. */
+  get(): Promise<GoalSnapshot | null>;
+  pause(input?: GoalReasonInput): Promise<GoalSnapshot>;
+  resume(input?: ResumeGoalInput): Promise<GoalSnapshot>;
+  /** Clear the goal; resolves with the snapshot from just before the clear. */
+  cancel(input?: GoalReasonInput): Promise<GoalSnapshot>;
+  /** Merge budget limits over the current goal. */
+  setBudgetLimits(limits: GoalBudgetLimits): Promise<GoalSnapshot>;
+}
 
 export interface AgentFacade {
   prompt(input: { input: readonly ContentPart[] }): Promise<PromptLaunchResult>;
@@ -118,6 +147,8 @@ export interface AgentFacade {
   readonly research: ResearchFacade;
   /** AITP Mode lifecycle — enter / exit / pause / resume. */
   readonly aitpMode: AitpModeFacade;
+  /** Main-agent goal lifecycle (`goal.updated` flows through `events`). */
+  readonly goal: AgentGoalFacade;
 }
 
 export type ResearchSnapshot = ResearchStatusSnapshot;
@@ -294,6 +325,25 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
         call(scope, 'agentAitpModeService', 'pauseLoop', [expectedRevision]) as Promise<void>,
       resumeLoop: (expectedRevision) =>
         call(scope, 'agentAitpModeService', 'resumeLoop', [expectedRevision]) as Promise<void>,
+    },
+
+    goal: {
+      create: (input) =>
+        call(scope, 'agentGoalService', 'createGoal', [input]) as Promise<GoalSnapshot>,
+      get: async () => {
+        const result = (await call(scope, 'agentGoalService', 'getGoal', [])) as GoalToolResult;
+        return result.goal;
+      },
+      pause: (input) =>
+        call(scope, 'agentGoalService', 'pauseGoal', [input ?? {}]) as Promise<GoalSnapshot>,
+      resume: (input) =>
+        call(scope, 'agentGoalService', 'resumeGoal', [input ?? {}]) as Promise<GoalSnapshot>,
+      cancel: (input) =>
+        call(scope, 'agentGoalService', 'cancelGoal', [input ?? {}]) as Promise<GoalSnapshot>,
+      setBudgetLimits: (limits) =>
+        call(scope, 'agentGoalService', 'setBudgetLimits', [
+          { budgetLimits: limits },
+        ]) as Promise<GoalSnapshot>,
     },
   };
 }

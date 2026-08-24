@@ -68,6 +68,7 @@ describe('DefaultToolApprovePermissionPolicyService', () => {
     ['GetGoal', {}],
     ['SetGoalBudget', { tokenBudget: 1000 }],
     ['UpdateGoal', { status: 'complete' }],
+    ['GetProviderUsage', {}],
   ] as const)('approves %s', (toolName, args) => {
     expect(policy.evaluate(policyContext(toolName, args))).toEqual({ kind: 'approve' });
   });
@@ -79,6 +80,7 @@ describe('DefaultToolApprovePermissionPolicyService', () => {
     ['Custom', { value: 1 }],
     ['CronCreate', { cron: '*/5 * * * *', prompt: 'ping' }],
     ['CronDelete', { id: 'job_1' }],
+    ['SetSubagentPreset', { preset: 'balanced' }],
   ] as const)('does not approve %s', (toolName, args) => {
     expect(
       policy.evaluate(policyContext(toolName, args)),

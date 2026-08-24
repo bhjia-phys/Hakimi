@@ -20,6 +20,8 @@ export interface IpcFrame {
   readonly token?: string;
   readonly code?: number;
   readonly msg?: string;
+  /** `RPCError.details` on error/stream_error frames; JSON-serializable. */
+  readonly details?: unknown;
   readonly data?: unknown;
 }
 

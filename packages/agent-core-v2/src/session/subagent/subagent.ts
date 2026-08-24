@@ -3,10 +3,17 @@
  * on other agents, plus the hook / event surface those runs announce.
  *
  * Owns *runs* — one agent driving a turn on another and the requester-side
- * announcements that come with it. The `onWillStartAgentTask` hook slot and
- * the `onDidStopAgentTask` event announce a run's start and stop so observers
- * can translate them into the `SubagentStart` / `SubagentStop` external hook
- * commands. Session-scoped — one instance per session.
+ * announcements that come with it. The `onWillStartAgentTask` hook slot, the
+ * `onDidStopAgentTask` event, and the run-lifecycle events
+ * (`onDidStartAgentRun` / `onDidFinishAgentRun` with their `notifyAgentRun*`
+ * publish methods) announce a run's start, stop, and ledger facts. The
+ * run-lifecycle events are Session-internal: they carry no `type` discriminator
+ * and live only on this Session service, so mirror/recorder consumers never
+ * touch the per-agent `IEventBus` and the events can never reach the WebSocket
+ * wire. The external-hook commands are translated from the hook slot and the
+ * stop event. A run's completion reports the agent's cumulative `usage` (the
+ * legacy wire semantics) plus the per-run `runUsage` delta reserved for the
+ * internal ledger. Session-scoped — one instance per session.
  */
 
 import { createDecorator, type ServiceIdentifier } from '#/_base/di/instantiation';
@@ -26,10 +33,17 @@ export interface RunAgentOptions {
   readonly onReady?: () => void;
 }
 
+export interface AgentRunCompletion {
+  readonly summary: string;
+  readonly usage?: TokenUsage;
+  readonly runUsage?: TokenUsage;
+}
+
 export interface AgentRunHandle {
   readonly agentId: string;
   readonly turn: Turn;
-  readonly completion: Promise<{ readonly summary: string; readonly usage?: TokenUsage }>;
+  readonly baseline: TokenUsage;
+  readonly completion: Promise<AgentRunCompletion>;
 }
 
 export interface AgentTaskStartHookContext {
@@ -47,16 +61,43 @@ export type AgentTaskHooks = {
   readonly onWillStartAgentTask: AgentTaskStartHookContext;
 };
 
+export type AgentRunStatus = 'completed' | 'failed' | 'cancelled';
+
+export interface AgentRunStartedEvent {
+  readonly runId: string;
+  readonly childAgentId: string;
+  readonly parentAgentId: string;
+  readonly profileName: string;
+  readonly modelAlias?: string;
+  readonly thinkingEffort?: string;
+  readonly startedAt: number;
+}
+
+export interface AgentRunFinishedEvent {
+  readonly runId: string;
+  readonly status: AgentRunStatus;
+  readonly startedAt: number;
+  readonly endedAt: number;
+  readonly durationMs: number;
+  readonly usage?: TokenUsage;
+  readonly contextTokens?: number;
+  readonly errorCode?: string;
+}
+
 export interface ISessionSubagentService {
   readonly _serviceBrand: undefined;
 
   readonly hooks: Hooks<AgentTaskHooks>;
 
   readonly onDidStopAgentTask: Event<AgentTaskStopHookContext>;
+  readonly onDidStartAgentRun: Event<AgentRunStartedEvent>;
+  readonly onDidFinishAgentRun: Event<AgentRunFinishedEvent>;
 
   run(agentId: string, request: AgentRunRequest, opts: RunAgentOptions): Promise<AgentRunHandle>;
 
   notifyAgentTaskStopped(context: AgentTaskStopHookContext): void;
+  notifyAgentRunStarted(event: AgentRunStartedEvent): void;
+  notifyAgentRunFinished(event: AgentRunFinishedEvent): void;
 }
 
 export const ISessionSubagentService: ServiceIdentifier<ISessionSubagentService> =

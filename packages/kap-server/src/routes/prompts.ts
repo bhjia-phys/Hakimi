@@ -17,7 +17,6 @@ import {
   IAuthSummaryService,
   IEventService,
   IFileService,
-  ISessionLegacyService,
   ISessionMetadata,
   parseKimiFileUrl,
   promptMetadataTextFromContentParts,
@@ -58,6 +57,7 @@ import { requestLog } from '../lib/requestLog';
 import { defineRoute } from '../middleware/defineRoute';
 import { ensureMainAgent, MAIN_AGENT_ID } from '../transport/mainAgent';
 import { parseActionSuffix } from './action-suffix';
+import { applySessionAgentConfig } from './sessionAgentConfig';
 
 interface PromptRouteReply {
   header(name: string, value: string): unknown;
@@ -276,11 +276,9 @@ export function registerPromptsRoutes(app: PromptRouteHost, core: Scope): void {
           }
         }
         if (req.body.plan_mode !== undefined || req.body.swarm_mode !== undefined) {
-          await core.accessor.get(ISessionLegacyService).updateProfile(session_id, {
-            agent_config: {
-              plan_mode: req.body.plan_mode,
-              swarm_mode: req.body.swarm_mode,
-            },
+          await applySessionAgentConfig(core, session_id, {
+            plan_mode: req.body.plan_mode,
+            swarm_mode: req.body.swarm_mode,
           });
           reply.header('Deprecation', '@1786406400');
           reply.header(

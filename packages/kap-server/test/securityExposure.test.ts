@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -78,6 +78,52 @@ describe('server-v2 exposure hardening hooks', () => {
       "default-src 'self'; connect-src 'self' ws: wss:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'self'",
     );
     expect(res.headers['strict-transport-security']).toBeUndefined();
+  });
+
+  it('caches content-hashed assets and revalidates the SPA document and stable assets', async () => {
+    const assetsDir = join(home as string, 'web-assets');
+    const hashedAssetsDir = join(assetsDir, 'assets');
+    await mkdir(hashedAssetsDir, { recursive: true });
+    await writeFile(join(assetsDir, 'index.html'), '<!doctype html><div id="app"></div>');
+    await writeFile(join(assetsDir, 'boot.js'), 'console.log("boot")');
+    await writeFile(join(hashedAssetsDir, 'app-abc12345.js'), 'console.log("app")');
+    await writeFile(join(hashedAssetsDir, 'runtime-config.js'), 'console.log("config")');
+    server = await startServer({
+      hostIdentity: TEST_HOST_IDENTITY,
+      host: '0.0.0.0',
+      port: 0,
+      homeDir: home,
+      logLevel: 'silent',
+      insecureNoTls: true,
+      webAssetsDir: assetsDir,
+    });
+
+    const document = await server.app.inject({ method: 'GET', url: '/sessions/example' });
+    expect(document.statusCode).toBe(200);
+    expect(document.headers['cache-control']).toBe('no-cache');
+    expect(document.headers['content-security-policy']).toContain(
+      "connect-src 'self' ws: wss:",
+    );
+
+    const hashedScript = await server.app.inject({
+      method: 'GET',
+      url: '/assets/app-abc12345.js',
+    });
+    expect(hashedScript.statusCode).toBe(200);
+    expect(hashedScript.headers['cache-control']).toBe(
+      'public, max-age=31536000, immutable',
+    );
+
+    const stableAsset = await server.app.inject({
+      method: 'GET',
+      url: '/assets/runtime-config.js',
+    });
+    expect(stableAsset.statusCode).toBe(200);
+    expect(stableAsset.headers['cache-control']).toBe('no-cache');
+
+    const rootScript = await server.app.inject({ method: 'GET', url: '/boot.js' });
+    expect(rootScript.statusCode).toBe(200);
+    expect(rootScript.headers['cache-control']).toBe('no-cache');
   });
 
   it('does not set security headers on a loopback bind', async () => {

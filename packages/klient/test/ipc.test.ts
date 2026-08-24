@@ -4,8 +4,13 @@ import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
+import { getLiveSessionById } from '@moonshot-ai/agent-core-v2/app/sessionManager/sessionLookup';
+import { IAgentLifecycleService } from '@moonshot-ai/agent-core-v2/session/agentLifecycle/agentLifecycle';
+
 import { defineKlientConformance } from './helpers/conformance.js';
 import { createKlient, serveKlientIpc, type KlientIpcHost } from '../src/transports/ipc/index.js';
+import { IpcChannel } from '../src/transports/ipc/channel.js';
+import { RPCError } from '../src/core/errors.js';
 import { makeEngine, type TestEngine } from './helpers/engine.js';
 
 defineKlientConformance('ipc', async () => {
@@ -71,5 +76,95 @@ describe('ipc transport specifics', () => {
     await expect(ok.global.env()).resolves.toMatchObject({ platform: process.platform });
     await ok.close();
     await teardown();
+  });
+
+  it('enforces the contract allowlist for raw socket calls', async () => {
+    const socketPath = await setup();
+    const klient = createKlient({ socketPath });
+    const created = await klient.global.sessions.create({ workDir: process.cwd() });
+    const raw = new IpcChannel({ socketPath });
+    const agentScope = { sessionId: created.id, agentId: 'main' };
+    try {
+      // Same allowlist as the in-process dispatcher: engine-only goal members fail.
+      for (const method of ['markComplete', 'markBlocked', 'pauseActiveGoal', 'goalState']) {
+        await expect(raw.call(agentScope, 'agentGoalService', method, [])).rejects.toMatchObject({
+          name: 'RPCError',
+          code: 40001,
+        });
+      }
+      // A smuggled extra arg (the engine `actor`) fails host-side input validation…
+      await expect(
+        raw.call(agentScope, 'agentGoalService', 'pauseGoal', [{}, 'model']),
+      ).rejects.toMatchObject({
+        name: 'RPCError',
+        code: 40001,
+        message: expect.stringContaining('input validation failed'),
+      });
+      // …while a legitimate raw call succeeds.
+      await expect(raw.call(agentScope, 'agentGoalService', 'getGoal', [])).resolves.toEqual({
+        goal: null,
+      });
+    } finally {
+      await raw.close();
+      await klient.session(created.id).close();
+      await klient.close();
+      await teardown();
+    }
+  });
+
+  it('round-trips coded engine error details over the socket', async () => {
+    const socketPath = await setup();
+    const klient = createKlient({ socketPath });
+    const created = await klient.global.sessions.create({ workDir: process.cwd() });
+    const raw = new IpcChannel({ socketPath });
+    try {
+      await klient.session(created.id).agent('main').goal.create({ objective: 'first' });
+
+      // Duplicate create → engine Error2(goal.already_exists) → coded RPCError.
+      const dup = await raw
+        .call({ sessionId: created.id, agentId: 'main' }, 'agentGoalService', 'createGoal', [
+          { objective: 'second' },
+        ])
+        .then(
+          () => {
+            throw new Error('expected createGoal to reject');
+          },
+          (error: unknown) => error as RPCError,
+        );
+      expect(dup).toMatchObject({
+        name: 'RPCError',
+        code: 40001,
+        message: 'A goal already exists; use replace to start a new one',
+      });
+      expect(dup.details).toEqual({ code: 'goal.already_exists' });
+
+      // Subagent goal access → Error2(goal.unsupported_agent); its original
+      // details survive the socket round-trip.
+      const sessionScope = getLiveSessionById(app.accessor, created.id);
+      if (sessionScope === undefined) throw new Error('expected a live session scope');
+      await sessionScope.accessor.get(IAgentLifecycleService).create({ agentId: 'ipc-sub' });
+      const unsupported = await raw
+        .call({ sessionId: created.id, agentId: 'ipc-sub' }, 'agentGoalService', 'getGoal', [])
+        .then(
+          () => {
+            throw new Error('expected getGoal to reject');
+          },
+          (error: unknown) => error as RPCError,
+        );
+      expect(unsupported).toMatchObject({
+        name: 'RPCError',
+        code: 40001,
+        message: 'Goals are only supported by the main agent',
+      });
+      expect(unsupported.details).toEqual({
+        code: 'goal.unsupported_agent',
+        details: { agentId: 'ipc-sub' },
+      });
+    } finally {
+      await raw.close();
+      await klient.session(created.id).close();
+      await klient.close();
+      await teardown();
+    }
   });
 });

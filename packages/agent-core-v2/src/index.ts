@@ -137,6 +137,8 @@ export type {
 export * from '#/app/sessionIndex/sessionIndex';
 export * from '#/app/sessionIndex/sessionIndexService';
 export * from '#/app/sessionIndex/sessionIndexMirrorService';
+export * from '#/app/agentRunUsage/agentRunUsage';
+import '#/app/agentRunUsage/agentRunUsageService';
 export * from '#/session/sessionMetadata/sessionMetadata';
 export * from '#/session/sessionMetadata/sessionMetadataService';
 export * from '#/session/sessionMetadata/promptMetadata';
@@ -463,6 +465,7 @@ export * from '#/session/interaction/interaction';
 export * from '#/session/interaction/interactionOps';
 export * from '#/session/interaction/interactionService';
 export * from '#/session/sessionContext/sessionContext';
+export * from '#/session/agentRunUsage/agentRunUsageRecorderService';
 
 import '#/session/approval/approval';
 import '#/session/approval/approvalService';
@@ -525,6 +528,10 @@ export * from '#/persistence/backends/minidb/miniDbQueryStore';
 export * from '#/persistence/backends/memory/inMemoryStorageService';
 export * from '#/agent/tools/web-search/web-search';
 import '#/agent/tools/web-search/webSearchTool';
+export * from '#/agent/tools/provider-usage/provider-usage';
+import '#/agent/tools/provider-usage/providerUsageTool';
+export * from '#/agent/tools/subagent-preset/subagent-preset';
+import '#/agent/tools/subagent-preset/subagentPresetTool';
 export * from '#/app/auth/auth';
 export * from '#/app/auth/authService';
 export * from '#/app/auth/configSection';
@@ -533,6 +540,8 @@ export * from '#/app/auth/webSearch/webSearchService';
 export * from '#/app/auth/webSearch/providers/moonshot-web-search';
 export * from '#/app/authLegacy/authLegacy';
 export * from '#/app/authLegacy/authLegacyService';
+export * from '#/app/providerUsage/providerUsage';
+export * from '#/app/providerUsage/providerUsageService';
 export * from '#/app/file/fileService';
 export * from '#/app/file/fileServiceImpl';
 export {

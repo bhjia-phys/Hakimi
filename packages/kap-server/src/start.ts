@@ -29,6 +29,7 @@ import {
   type Scope,
   type ScopeSeed,
 } from '@moonshot-ai/agent-core-v2';
+import { deepEqual } from '@moonshot-ai/agent-core-v2/app/config/configPure';
 import {
   createKimiDefaultHeaders,
   type KimiHostIdentity,
@@ -43,6 +44,7 @@ import { registerRequestLogging } from './requestLogging';
 import { resolveRequestId } from './request-id';
 import { registerApiV1Routes } from './routes/registerApiV1Routes';
 import { registerApiV2Routes } from './routes/registerApiV2Routes';
+import { camelToSnake, toConfigResponse } from './routes/config';
 import { registerWebAssetRoutes } from './routes/webAssets';
 import {
   createServerLogger,
@@ -381,6 +383,10 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
   }
 
   const close = async (): Promise<void> => {
+    // Tear down the config-reload bridge FIRST: from this point no more
+    // `event.config.changed` may be published, even by a microtask queued
+    // before close began (it would race a closing broadcaster).
+    disposeConfigReloadBridge();
     await app.close();
     configWarningSubscription.dispose();
     pluginChangeSubscription.dispose();
@@ -455,6 +461,50 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
     });
   };
   const configWarningSubscription = configService.onDidChangeDiagnostics(publishConfigWarnings);
+
+  // Bridge external config-file reloads to the same `event.config.changed`
+  // global WS event as POST /config (see `routes/config.ts`), so every client
+  // converges without polling. `IConfigService` fires `onDidChangeConfiguration`
+  // once per domain, synchronously inside a single reload commit, so the
+  // changed domains of one synchronous reload are merged via a microtask into a
+  // single event. Only `source === 'reload'` is bridged: the initial `load` is
+  // not a change (no client is connected yet), and REST `set` publishes its own
+  // event in the route — relaying it here would double-publish. A reload
+  // reports every registered domain, so unchanged domains (whose delivered
+  // value deep-equals the previous one — the same rule `onDidSectionChange`
+  // applies) are dropped instead of flooding `changedFields`. `changedFields`
+  // carries the touched domain keys in the same snake_case style as the
+  // `config` payload and the set route's changedFields.
+  let reloadBridgeDisposed = false;
+  let reloadBatch: readonly string[] | undefined;
+  let reloadFlushScheduled = false;
+  const configReloadSubscription = configService.onDidChangeConfiguration((change) => {
+    if (change.source !== 'reload') return;
+    if (deepEqual(change.value, change.previousValue)) return;
+    reloadBatch =
+      reloadBatch === undefined ? [change.domain] : [...reloadBatch, change.domain];
+    if (reloadFlushScheduled) return;
+    reloadFlushScheduled = true;
+    queueMicrotask(() => {
+      reloadFlushScheduled = false;
+      const changedFields = reloadBatch;
+      reloadBatch = undefined;
+      // A close that landed before the microtask runs must not publish into a
+      // half-torn-down broadcaster.
+      if (changedFields === undefined || reloadBridgeDisposed) return;
+      core.accessor.get(IEventService).publish({
+        type: 'event.config.changed',
+        payload: {
+          changedFields: changedFields.map(camelToSnake),
+          config: toConfigResponse(configService.getAll()),
+        },
+      });
+    });
+  });
+  const disposeConfigReloadBridge = (): void => {
+    reloadBridgeDisposed = true;
+    configReloadSubscription.dispose();
+  };
 
   // Fan plugin/capability lifecycle facts out as global WS events so every
   // client (desktop settings, web, CLI) converges without polling: plugin

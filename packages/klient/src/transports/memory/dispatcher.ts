@@ -5,26 +5,40 @@
  * auto-materialized via `ensureMainAgent`). Scope routing resolves workspace
  * instances through `IWorkspaceInstanceManager` and live sessions through the
  * App `SessionManager`, matching the server's `resolveScope`. Every argument,
- * result, and event payload passes
- * through `wireClone` (a JSON round-trip), so consumers observe
- * byte-identical data no matter whether the call crossed a socket or stayed
- * in-process — and non-serializable leaks fail early.
+ * result, and event payload passes through `wireClone` (a JSON round-trip), so
+ * consumers observe byte-identical data no matter whether the call crossed a
+ * socket or stayed in-process — and non-serializable leaks fail early.
+ *
+ * The dispatcher is the server-side enforcement point, with `globalContract`
+ * as the method allowlist: unregistered services/methods, call/stream type
+ * mismatches, and members outside the contract (engine-only methods such as
+ * `markComplete`, or private getters) are rejected, and every args tuple is
+ * parsed against the contract's input schema no matter what the client sent —
+ * the exact-length tuples also reject smuggled extra arguments (e.g. the
+ * goal `actor`). Property reads are limited to zero-arg contract entries.
+ * Every failure surfaces as a wire-safe `RPCError` (see `toRPCError`):
+ * stacks and causes never cross.
  *
  * Shared by the memory transport and the IPC host, which guarantees ipc and
  * memory behave identically by construction.
  */
 
 import type { ServiceIdentifier } from '@moonshot-ai/agent-core-v2/_base/di/instantiation';
-import { IWorkspaceInstanceManager } from '@moonshot-ai/agent-core-v2/workspace/workspaceInstance/workspaceInstanceManager';
+import { isError2 } from '@moonshot-ai/agent-core-v2/_base/errors/errors';
 import { ISessionManager } from '@moonshot-ai/agent-core-v2/app/sessionManager/sessionManager';
 import { getLiveSessionById } from '@moonshot-ai/agent-core-v2/app/sessionManager/sessionLookup';
+import { IWorkspaceInstanceManager } from '@moonshot-ai/agent-core-v2/workspace/workspaceInstance/workspaceInstanceManager';
 import { IAgentLifecycleService } from '@moonshot-ai/agent-core-v2/session/agentLifecycle/agentLifecycle';
 import { ensureMainAgent } from '@moonshot-ai/agent-core-v2/session/agentLifecycle/mainAgent';
 import { ISessionInteractionService } from '@moonshot-ai/agent-core-v2/session/interaction/interaction';
 import { IEventBus } from '@moonshot-ai/agent-core-v2/app/event/eventBus';
+import type { z } from 'zod';
 
+import { globalContract, isStreamingContract } from '../../contract/index.js';
+import type { ProcedureContract, StreamingProcedureContract } from '../../contract/types.js';
 import type { EventSourceRef, IDisposable, ScopeRef } from '../../core/channel.js';
 import { RPCError } from '../../core/errors.js';
+import { KlientValidationError, parseInput } from '../../core/validation.js';
 import { IEventService, serviceTokens } from './serviceRegistry.js';
 
 /** Structural minimum of an engine `Scope` / `IScopeHandle`. */
@@ -53,6 +67,35 @@ export interface MemoryDispatcher {
 
 const REQUEST_INVALID = 40001;
 const NOT_FOUND = 40404;
+const INTERNAL_ERROR = 50001;
+
+/**
+ * Map any dispatcher failure to a wire-safe `RPCError`:
+ * - `RPCError` passes through untouched;
+ * - `KlientValidationError` (host-side contract parse) becomes 40001 with
+ *   sanitized issue summaries — never the offending payload;
+ * - an engine `Error2` becomes 40001 carrying its business `code` and original
+ *   `details` under `details`;
+ * - anything else is an internal 50001.
+ * Messages survive; stacks and causes never do.
+ */
+export function toRPCError(error: unknown): RPCError {
+  if (error instanceof RPCError) return error;
+  if (error instanceof KlientValidationError) {
+    return new RPCError(
+      REQUEST_INVALID,
+      error.message,
+      error.issues.map((issue) => ({ path: issue.path.map(String).join('.'), message: issue.message })),
+    );
+  }
+  if (isError2(error)) {
+    return new RPCError(REQUEST_INVALID, error.message, {
+      code: error.code,
+      details: error.details,
+    });
+  }
+  return new RPCError(INTERNAL_ERROR, error instanceof Error ? error.message : String(error));
+}
 
 type ScopeKind = 'core' | 'workspace' | 'session' | 'agent';
 
@@ -93,6 +136,28 @@ export function createMemoryDispatcher(root: ScopeLike): MemoryDispatcher {
       throw new RPCError(REQUEST_INVALID, `unknown service: ${service}`);
     }
     return resolved.like.accessor.get(token) as Record<string, unknown>;
+  }
+
+  /** The contract is the server-side allowlist: only registered procedures dispatch. */
+  function resolveProcedure(
+    service: string,
+    method: string,
+  ): ProcedureContract | StreamingProcedureContract {
+    const serviceContract = globalContract[service];
+    if (serviceContract === undefined) {
+      throw new RPCError(REQUEST_INVALID, `unknown service: ${service}`);
+    }
+    const procedure = serviceContract[method];
+    if (procedure === undefined) {
+      throw new RPCError(REQUEST_INVALID, `method not found: ${service}.${method}`);
+    }
+    return procedure;
+  }
+
+  /** Property reads are only allowed for zero-arg contract entries. */
+  function isZeroArgProcedure(procedure: ProcedureContract): boolean {
+    const { items } = (procedure.input as z.ZodTuple).def;
+    return Array.isArray(items) && items.length === 0;
   }
 
   /** Mirrors kap-server's WS `eventMap` per scope kind. */
@@ -154,88 +219,87 @@ export function createMemoryDispatcher(root: ScopeLike): MemoryDispatcher {
 
   return {
     async call(scope, service, method, args) {
-      const resolved = await resolveScope(scope);
-      const instance = resolveService(resolved, service);
-      const member = instance[method];
-      if (member === undefined) {
-        throw new RPCError(REQUEST_INVALID, `method not found: ${service}.${method}`);
+      const name = `${service}.${method}`;
+      try {
+        const procedure = resolveProcedure(service, method);
+        if (isStreamingContract(procedure)) {
+          throw new RPCError(REQUEST_INVALID, `${name} is a streaming procedure — use stream`);
+        }
+        // The host never trusts client-side validation: parse unconditionally,
+        // then clone so arguments cross the same JSON boundary a socket
+        // transport imposes (zod passes `z.unknown()` leaves by reference).
+        const wireArgs = wireClone(parseInput(name, procedure, args));
+        const resolved = await resolveScope(scope);
+        const instance = resolveService(resolved, service);
+        const member = instance[method];
+        if (member === undefined) {
+          throw new RPCError(REQUEST_INVALID, `method not found: ${name}`);
+        }
+        if (typeof member !== 'function') {
+          if (!isZeroArgProcedure(procedure)) {
+            throw new RPCError(REQUEST_INVALID, `not a readable property: ${name}`);
+          }
+          return wireClone(member);
+        }
+        const result = await (member as (...a: unknown[]) => unknown).apply(instance, wireArgs);
+        return wireClone(result);
+      } catch (error) {
+        throw toRPCError(error);
       }
-      if (typeof member !== 'function') {
-        return wireClone(member);
-      }
-      const clonedArgs = args.map(wireClone);
-      const result = await (member as (...a: unknown[]) => unknown).apply(instance, clonedArgs);
-      return wireClone(result);
     },
 
     stream(scope, service, method, args): AsyncIterable<unknown> {
-      // Special case: modelResolver.generate routes to
-      // getRequester(modelId).request(input, signal, params) because the
-      // catalog has no `generate` method — the facade synthesises the call.
-      if (service === 'modelResolver' && method === 'generate') {
-        return {
-          [Symbol.asyncIterator]() {
-            let source: AsyncIterator<unknown> | undefined;
-            let started: Promise<void> | undefined;
-            const controller = new AbortController();
-
-            const ensureStarted = (): Promise<void> => {
-              started ??= (async () => {
-                const resolved = await resolveScope(scope);
-                const catalog = resolveService(resolved, 'modelResolver');
-                const [modelId, input, params] = args;
-                const requester = (catalog as { getRequester(id: string): { request(...a: unknown[]): AsyncIterable<unknown> } })
-                  .getRequester(modelId as string);
-                const iterable = requester.request(
-                  wireClone(input),
-                  controller.signal,
-                  wireClone(params),
-                );
-                source = iterable[Symbol.asyncIterator]();
-              })();
-              return started;
-            };
-
-            return {
-              async next() {
-                await ensureStarted();
-                const result = await source!.next();
-                if (result.done) return { done: true, value: undefined };
-                return { done: false, value: wireClone(result.value) };
-              },
-              async return(value?: unknown) {
-                controller.abort();
-                await source?.return?.(value);
-                return { done: true as const, value: undefined };
-              },
-            };
-          },
-        };
-      }
-
-      // The underlying service method returns an AsyncIterable; we wire-clone
-      // each yielded chunk so in-process consumers observe the same data as
-      // networked ones.
+      const name = `${service}.${method}`;
       return {
         [Symbol.asyncIterator]() {
           let source: AsyncIterator<unknown> | undefined;
           let started: Promise<void> | undefined;
+          // Wired only into the modelResolver.generate route below; aborting
+          // it for other streams is a no-op (their return() cancels).
+          const controller = new AbortController();
 
+          // Contract resolution, input parsing, and scope resolution all
+          // happen on the first `next()` — startup failures surface there.
           const ensureStarted = (): Promise<void> => {
             started ??= (async () => {
+              const procedure = resolveProcedure(service, method);
+              if (!isStreamingContract(procedure)) {
+                throw new RPCError(
+                  REQUEST_INVALID,
+                  `${name} is not a streaming procedure — use call`,
+                );
+              }
+              // Parse + clone the args tuple (same JSON boundary as call()).
+              const wireArgs = wireClone(parseInput(name, procedure, args));
               const resolved = await resolveScope(scope);
+              // Special case: modelResolver.generate routes to
+              // getRequester(modelId).request(input, signal, params) because the
+              // catalog has no `generate` method — the facade synthesises the call.
+              if (service === 'modelResolver' && method === 'generate') {
+                const catalog = resolveService(resolved, 'modelResolver');
+                const [modelId, input, params] = wireArgs;
+                const requester = (
+                  catalog as {
+                    getRequester(id: string): {
+                      request(...a: unknown[]): AsyncIterable<unknown>;
+                    };
+                  }
+                ).getRequester(modelId as string);
+                const iterable = requester.request(input, controller.signal, params);
+                source = iterable[Symbol.asyncIterator]();
+                return;
+              }
               const instance = resolveService(resolved, service);
               const member = instance[method];
-              if (member === undefined) {
-                throw new RPCError(REQUEST_INVALID, `method not found: ${service}.${method}`);
-              }
               if (typeof member !== 'function') {
-                throw new RPCError(REQUEST_INVALID, `not a streaming method: ${service}.${method}`);
+                throw new RPCError(REQUEST_INVALID, `not a streaming method: ${name}`);
               }
-              const clonedArgs = args.map(wireClone);
+              // The underlying service method returns an AsyncIterable; we
+              // wire-clone each yielded chunk so in-process consumers observe
+              // the same data as networked ones.
               const iterable = (member as (...a: unknown[]) => unknown).apply(
                 instance,
-                clonedArgs,
+                wireArgs,
               ) as AsyncIterable<unknown>;
               source = iterable[Symbol.asyncIterator]();
             })();
@@ -244,13 +308,22 @@ export function createMemoryDispatcher(root: ScopeLike): MemoryDispatcher {
 
           return {
             async next() {
-              await ensureStarted();
-              const result = await source!.next();
-              if (result.done) return { done: true, value: undefined };
-              return { done: false, value: wireClone(result.value) };
+              try {
+                await ensureStarted();
+                const result = await source!.next();
+                if (result.done) return { done: true, value: undefined };
+                return { done: false, value: wireClone(result.value) };
+              } catch (error) {
+                throw toRPCError(error);
+              }
             },
             async return(value?: unknown) {
-              await source?.return?.(value);
+              try {
+                controller.abort();
+                await source?.return?.(value);
+              } catch (error) {
+                throw toRPCError(error);
+              }
               return { done: true as const, value: undefined };
             },
           };
@@ -269,11 +342,11 @@ export function createMemoryDispatcher(root: ScopeLike): MemoryDispatcher {
           try {
             inner = subscribeSource(resolved, source, handler);
           } catch (error) {
-            onError?.(error instanceof Error ? error : new Error(String(error)));
+            onError?.(toRPCError(error));
           }
         },
         (error: unknown) => {
-          onError?.(error instanceof Error ? error : new Error(String(error)));
+          onError?.(toRPCError(error));
         },
       );
       return {

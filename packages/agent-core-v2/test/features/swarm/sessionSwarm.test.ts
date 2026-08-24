@@ -1573,12 +1573,17 @@ function subagentStub(): ISessionSubagentService {
     _serviceBrand: undefined,
     hooks: createHooks<AgentTaskHooks, keyof AgentTaskHooks>(['onWillStartAgentTask']),
     onDidStopAgentTask: Event.None,
+    onDidStartAgentRun: Event.None,
+    onDidFinishAgentRun: Event.None,
     run: vi.fn(async (agentId: string) => ({
       agentId,
       turn: {} as never,
+      baseline: { inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0 },
       completion: Promise.resolve({ summary: 'child summary' }),
     })),
     notifyAgentTaskStopped: () => {},
+    notifyAgentRunStarted: () => {},
+    notifyAgentRunFinished: () => {},
   } as ISessionSubagentService;
 }
 

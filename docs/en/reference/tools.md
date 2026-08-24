@@ -131,6 +131,19 @@ To prevent all users from firing at the same time on the hour, the scheduler app
 
 **`CronDelete`** accepts a single `id`. For recurring tasks, all future fires stop immediately; for one-time tasks, the pending fire is cancelled. One-time tasks that have already fired are auto-deleted, so calling `CronDelete` on an already-fired one-time task returns `No cron job with id ...`. Deletion is irreversible — use `CronCreate` again to restore. `CronDelete` is also blocked in Plan mode.
 
+## Provider usage and subagent routing
+
+These two main-agent-only tools report provider quota and steer subagent model routing. Neither is available to `coder` and `explore` subagents.
+
+| Tool | Default Approval | Description |
+| --- | --- | --- |
+| `GetProviderUsage` | Auto-allow | Query usage across the configured supported usage providers |
+| `SetSubagentPreset` | Requires approval | Activate a `[subagent]` routing preset for subsequent subagent spawns |
+
+**`GetProviderUsage`** queries usage across the configured supported usage providers — the managed Kimi OAuth provider, the official `api.kimi.com/coding` API-key provider, the managed OpenAI Codex provider (OAuth), and the exact-base OpenCode Go provider. The Kimi routes also report the Extra Usage balance (remaining cents and currency); Codex and OpenCode Go report rate-limit or subscription-quota windows instead. The optional `provider` argument queries a single provider; omitting it queries every configured supported usage provider. Providers without a usage endpoint report `unsupported` instead of guessing an endpoint, and failed queries return a redacted error — credentials never appear in the output. Read-only and automatically allowed, but only the main agent can call it.
+
+**`SetSubagentPreset`** activates a configured routing preset so the next [subagent model/effort resolution](../configuration/config-files.md#subagent) uses its routes immediately. It accepts `preset` (a name from `[subagent.presets]`), validates that the preset exists and that every route model it references resolves, then persists the activation. It never changes the main or default model or the thinking mode, never reloads the session, and reports `main_model_changed: false` on success. The change affects only subsequent `Agent` / `AgentSwarm` spawns. Requires approval by default — add a permission rule to allow it automatically; see [Approval rules](../configuration/config-files.md#permission).
+
 ## Next steps
 
 - [Agent & Sub-Agents](../customization/agents.md) — Scheduling mechanics and context isolation for the `Agent` tool

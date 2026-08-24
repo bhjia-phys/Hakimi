@@ -73,7 +73,7 @@ export async function serveKlientIpc(options: ServeKlientIpcOptions): Promise<Kl
     };
     const sendError = (id: string, error: unknown): void => {
       if (error instanceof RPCError) {
-        send({ type: 'error', id, code: error.code, msg: error.message });
+        send({ type: 'error', id, code: error.code, msg: error.message, details: error.details });
       } else {
         send({
           type: 'error',
@@ -86,7 +86,13 @@ export async function serveKlientIpc(options: ServeKlientIpcOptions): Promise<Kl
 
     const sendStreamError = (id: string, error: unknown): void => {
       if (error instanceof RPCError) {
-        send({ type: 'stream_error', id, code: error.code, msg: error.message });
+        send({
+          type: 'stream_error',
+          id,
+          code: error.code,
+          msg: error.message,
+          details: error.details,
+        });
       } else {
         send({
           type: 'stream_error',

@@ -5,7 +5,14 @@
  * Not a Service: `runAgentTurn` is a pure function that borrows
  * `IAgentPromptService`, `IAgentContextMemoryService`, `IAgentUsageService`,
  * and `IEventBus` from the target agent's scope. It has no notion of a caller:
- * it emits no record signals, runs no hooks, and tracks no telemetry.
+ * it emits no record signals, runs no hooks, and tracks no telemetry. It snaps
+ * the agent's cumulative usage before the run, exposes that snapshot as the
+ * handle's `baseline`, and reports the cumulative total as the completion's
+ * `usage` (the legacy wire semantics) alongside the non-negative per-run
+ * delta as `runUsage`, which the internal usage ledger consumes — so
+ * resumed/retried agents never re-attribute prior history while the external
+ * contract stays cumulative. `runUsageSince` derives the delta for a run that
+ * ended in failure or cancellation.
  *
  * The lifecycle is imperative — the caller awaits the returned `completion`
  * promise. Turn hooks are not used because there is exactly one observer (the
@@ -14,7 +21,7 @@
  */
 
 import { APIProviderRateLimitError, isProviderRateLimitError } from '#/kosong/contract/errors';
-import { type TokenUsage } from '#/kosong/contract/usage';
+import { emptyUsage, subtractUsage, type TokenUsage } from '#/kosong/contract/usage';
 
 import { linkAbortSignal, userCancellationReason } from '#/_base/utils/abort';
 import type { IAgentScopeHandle } from '#/_base/di/scope';
@@ -26,7 +33,7 @@ import { IAgentLoopService, type Turn, type TurnResult } from '#/agent/loop/loop
 import { IAgentUsageService } from '#/agent/usage/usage';
 import type { AgentProfileSummaryPolicy } from '#/app/agentProfileCatalog/agentProfileCatalog';
 
-import type { AgentRunHandle, AgentRunRequest } from './subagent';
+import type { AgentRunCompletion, AgentRunHandle, AgentRunRequest } from './subagent';
 
 export const AGENT_RUN_PROMPT_ORIGIN: PromptOrigin = {
   kind: 'system_trigger',
@@ -48,6 +55,8 @@ export async function runAgentTurn(
   options: RunAgentTurnOptions,
 ): Promise<AgentRunHandle> {
   options.signal.throwIfAborted();
+  const usage = target.accessor.get(IAgentUsageService);
+  const baseline = usage?.status().total ?? emptyUsage();
   const promptService = target.accessor.get(IAgentPromptService);
   const turn =
     request.kind === 'prompt'
@@ -64,15 +73,25 @@ export async function runAgentTurn(
     void turn.ready.then(() => options.onReady?.()).catch(() => {});
   }
 
-  const completion = awaitRun(target, turn, options);
-  return { agentId: target.id, turn, completion };
+  const completion = awaitRun(target, turn, options, baseline);
+  return { agentId: target.id, turn, baseline, completion };
+}
+
+export function runUsageSince(
+  target: IAgentScopeHandle,
+  baseline: TokenUsage,
+): TokenUsage | undefined {
+  const total = target.accessor.get(IAgentUsageService)?.status().total;
+  if (total === undefined) return undefined;
+  return subtractUsage(total, baseline);
 }
 
 async function awaitRun(
   target: IAgentScopeHandle,
   turn: Turn,
   options: RunAgentTurnOptions,
-): Promise<{ summary: string; usage?: TokenUsage }> {
+  baseline: TokenUsage,
+): Promise<AgentRunCompletion> {
   const controller = new AbortController();
   const unlink = linkAbortSignal(options.signal, controller);
   const loop = target.accessor.get(IAgentLoopService);
@@ -92,8 +111,9 @@ async function awaitRun(
       },
       cancelTurn,
     );
-    const usage = target.accessor.get(IAgentUsageService)?.status().total;
-    return { summary, usage };
+    const total = target.accessor.get(IAgentUsageService)?.status().total;
+    if (total === undefined) return { summary };
+    return { summary, usage: total, runUsage: subtractUsage(total, baseline) };
   } finally {
     unlink();
     if (controller.signal.aborted) {

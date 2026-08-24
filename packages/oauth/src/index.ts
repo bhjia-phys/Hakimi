@@ -101,15 +101,47 @@ export {
   isManagedKimiCodeBaseUrl,
   kimiCodeBaseUrl,
   kimiCodeUsageUrl,
+  officialKimiCodeUsageUrl,
   parseManagedUsagePayload,
 } from './managed-usage';
 export type {
+  BoosterWalletInfo,
   FetchManagedUsageError,
+  FetchManagedUsageOptions,
   FetchManagedUsageResult,
   ParsedManagedUsage,
   UsageRow,
   UsageWindow,
 } from './managed-usage';
+
+export {
+  fetchCodexUsage,
+  officialCodexUsageUrl,
+  OFFICIAL_CODEX_BASE_URL,
+  OFFICIAL_CODEX_USAGE_URL,
+  parseCodexUsagePayload,
+} from './codex-usage';
+export type {
+  CodexRequestAuth,
+  FetchCodexUsageError,
+  FetchCodexUsageOptions,
+  FetchCodexUsageResult,
+  ParsedCodexUsage,
+} from './codex-usage';
+
+export {
+  fetchOpenCodeGoUsage,
+  opencodeGoUsageUrl,
+  OPENCODE_GO_BASE_URL,
+  OPENCODE_GO_USAGE_URL,
+  parseOpenCodeGoUsagePayload,
+} from './opencode-usage';
+export type {
+  FetchOpenCodeGoUsageError,
+  FetchOpenCodeGoUsageOptions,
+  FetchOpenCodeGoUsageResult,
+  ParsedOpenCodeGoUsage,
+} from './opencode-usage';
 
 export { fetchChatTitle, kimiCodeToolsUrl } from './managed-tools';
 export type {
