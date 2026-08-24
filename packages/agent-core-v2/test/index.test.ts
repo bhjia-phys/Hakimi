@@ -84,6 +84,22 @@ const V2_RECORD_TYPES: ReadonlySet<string> = new Set([
   'token_counting.measured',
   'token_counting.truncated',
   'token_counting.rebased',
+  'aitp_mode.enter',
+  'aitp_mode.exit',
+  'aitp_mode.set_phase',
+  'aitp_mode.set_loop_status',
+  'aitp_mode.set_line',
+  'research.create_line',
+  'research.update_line',
+  'research.create_question',
+  'research.update_question',
+  'research.set_focus',
+  'research.switch_line',
+  'research.steer',
+  'research.propose_checkpoint',
+  'research.commit_checkpoint',
+  'research.ack_checkpoint',
+  'research.reopen_question',
 ]);
 
 describe('v1 wire vocabulary', () => {

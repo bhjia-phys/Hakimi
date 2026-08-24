@@ -23,6 +23,7 @@ import {
   SkillToolInputSchema,
 } from '#/agent/tools/skill/skill';
 import { SkillTool } from '#/agent/tools/skill/skillTool';
+import { IAgentSkillVisibilityService } from '#/agent/skillVisibility/skillVisibility';
 import { ITelemetryService } from '#/app/telemetry/telemetry';
 import { IAgentToolRegistryService } from '#/agent/toolRegistry/toolRegistry';
 import type { Turn } from '#/agent/loop/loop';
@@ -66,6 +67,15 @@ function fakeTurn(): Turn {
     ready: Promise.resolve(),
     result: Promise.resolve({ type: 'completed', steps: 0, truncated: false }),
     cancel: () => true,
+  };
+}
+
+function stubVisibility(): IAgentSkillVisibilityService {
+  return {
+    _serviceBrand: undefined,
+    isSkillVisible: () => true,
+    hiddenReason: () => undefined,
+    filterVisible: (skills) => skills,
   };
 }
 
@@ -116,6 +126,7 @@ describe('AgentSkillService', () => {
     };
     ix.set(ISessionSkillCatalog, skillCatalog);
     ix.set(IAgentSkillService, new SyncDescriptor(AgentSkillService));
+    ix.set(IAgentSkillVisibilityService, stubVisibility());
   });
   afterEach(() => disposables.dispose());
 
@@ -243,6 +254,7 @@ describe('SkillTool', () => {
     const tool = new SkillTool(
       ix.get(ISessionSkillCatalog),
       stubSkillService(),
+      stubVisibility(),
       stubSessionContext(),
     );
     return depth === undefined ? tool : tool.withInitialQueryDepth(depth);

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { log, type GoalSnapshot } from '@moonshot-ai/kimi-code-sdk';
+import { log, type GoalSnapshot, type ResearchStatusSnapshot } from '@moonshot-ai/kimi-code-sdk';
 import type { MigrationPlan } from '@moonshot-ai/migration-legacy';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -153,6 +153,29 @@ function goalSnapshot(overrides: Partial<GoalSnapshot> = {}): GoalSnapshot {
       overBudget: false,
     },
     ...overrides,
+  };
+}
+
+function researchSnapshot(mode: 'ready' | 'degraded'): ResearchStatusSnapshot {
+  return {
+    mode,
+    loopStatus: 'active',
+    currentLineSlug: 'line-a',
+    questions: [],
+    lines: [{
+      slug: 'line-a',
+      title: 'Line A',
+      objective: 'Investigate A',
+      status: 'active',
+      createdAt: 1,
+      revision: 1,
+    }],
+    openQuestionCount: 0,
+    activeQuestionCount: 0,
+    blockedQuestionCount: 0,
+    alerts: [],
+    aitpHealth: { phase: mode },
+    revision: 1,
   };
 }
 
@@ -605,6 +628,31 @@ describe('KimiTUI startup', () => {
     expect(harness.createSession).not.toHaveBeenCalled();
     expect(driver.state.startupState).toBe('ready');
     expect(driver.state.appState.sessionId).toBe('ses-latest');
+  });
+
+  it('hydrates Research Board after resume subscription for ready and degraded snapshots', async () => {
+    for (const mode of ['ready', 'degraded'] as const) {
+      const getResearch = vi.fn(async () => researchSnapshot(mode));
+      const session = makeSession({
+        id: `ses-${mode}`,
+        getResearch,
+      });
+      const harness = makeHarness(session, {
+        listSessions: vi.fn(async () => [{ id: session.id }]),
+        getExperimentalFeatures: vi.fn(async () => [
+          { id: 'aitp_research_mode', enabled: true },
+        ]),
+      });
+      const driver = makeDriver(harness, makeStartupInput({ continue: true }));
+
+      await expect(driver.init()).resolves.toBe(true);
+      await (
+        driver as unknown as { finishStartup(shouldReplayHistory: boolean): Promise<void> }
+      ).finishStartup(true);
+
+      expect(getResearch).toHaveBeenCalledOnce();
+      expect(driver.state.researchBoard.getSnapshot()?.mode).toBe(mode);
+    }
   });
 
   it('applies --auto permission when resuming a session via --continue', async () => {
@@ -1329,7 +1377,7 @@ describe('KimiTUI startup', () => {
 
     expect(resumeSession).not.toHaveBeenCalled();
     expect(driver.state.activeDialog).toBeNull();
-    const expectedResumeCmd = `cd ${quoteShellArg('/tmp/proj-b')} && kimi --resume ${quoteShellArg('ses-other-cwd')}`;
+    const expectedResumeCmd = `cd ${quoteShellArg('/tmp/proj-b')} && hakimi --resume ${quoteShellArg('ses-other-cwd')}`;
     expect(copyTextToClipboardMock).toHaveBeenCalledWith(expectedResumeCmd);
     const transcript = driver.state.transcriptContainer.render(160).join('\n');
     expect(transcript).toContain('Current session is in a different working directory.');
@@ -1367,7 +1415,7 @@ describe('KimiTUI startup', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(resumeSession).not.toHaveBeenCalled();
-    const expectedResumeCmd = `cd ${quoteShellArg('/tmp/proj$(touch /tmp/pwned)')} && kimi --resume ${quoteShellArg('ses-other-cwd')}`;
+    const expectedResumeCmd = `cd ${quoteShellArg('/tmp/proj$(touch /tmp/pwned)')} && hakimi --resume ${quoteShellArg('ses-other-cwd')}`;
     expect(copyTextToClipboardMock).toHaveBeenCalledWith(expectedResumeCmd);
     const transcript = driver.state.transcriptContainer.render(160).join('\n');
     expect(transcript).toContain(`To resume, run: ${expectedResumeCmd}`);
@@ -1404,7 +1452,7 @@ describe('KimiTUI startup', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(resumeSession).not.toHaveBeenCalled();
-    const expectedResumeCmd = `cd ${quoteShellArg('/tmp/proj-b')} && kimi --resume ${quoteShellArg('ses-other-cwd')}`;
+    const expectedResumeCmd = `cd ${quoteShellArg('/tmp/proj-b')} && hakimi --resume ${quoteShellArg('ses-other-cwd')}`;
     expect(copyTextToClipboardMock).toHaveBeenCalledWith(expectedResumeCmd);
     expect(stop).toHaveBeenCalledOnce();
     expect(stop).toHaveBeenCalledWith(0);

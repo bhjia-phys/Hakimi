@@ -11,18 +11,44 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   plan change**——冻结的 M1a/M1b spec 已覆盖 Hakimi 全部集成需求；
   `record/note prepare|save` 按 version-0 契约处理（详见
   `compatibility-matrix.md` §3）。
-- Current amendment: **2026-08-14**，重新核验 AITP HEAD
-  `9f9e873440b8d88bfbb2963d8b5717c83b9ef4cc`（工作树 clean，逐命令核对
-  `--help`）。M0.6 以缩小声明关闭；M1a、M1b-R1、M1c 均 **done；
-  deterministic gate passed**（107 tests）。Hakimi 现在可 feature-detect
-  读契约 `enter-0.2`/`list-0.1`/`show-0.1`/`check-report-0.1` 与 M1c
-  作用域契约 `enter-0.3`/`list-0.2`（仅单次 `--workstream`）；
-  `lineage`/`lite-entry-0.2`/`run-pointer-0.1` 仍 deferred，M2–M4
-  blocked。Hakimi native adapter（H0–H3）尚未实现。
+- Current amendment: **2026-08-23**，重新核验 AITP HEAD
+  `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290`（committed HEAD 是
+  0.8.0——Skill-only amendment 已 commit）。M0.6 以缩小
+  声明关闭；M1a、M1b-R1、M1c、M1d、M1e 均 **done；deterministic gate
+  passed**（154 tests）。Hakimi 可 feature-detect 读契约
+  `enter-0.2`/`list-0.1`/`show-0.1`/`check-report-0.1`、M1c 作用域契约
+  `enter-0.3`/`list-0.2`、M1d 作用域 check 契约 `check-report-0.2`（均仅
+  单次 `--workstream`）；M1e 增加 `backfill` 命令与
+  `sha256-once:` 可变观测 pin。AITP 0.8 是 **Skill-only amendment**（已
+  commit），定义了 `method-observation` marker 候选、保守
+  card/trial review、两步 human decision（approval + publication）和
+  platform tool/card/Skill 三层边界——不改 CLI/schema/transport。**Hakimi
+  native adapter（H0–H5）的首个实验性纵切片已实现**，受 flag
+  `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`（默认开启）门控：strict
+  contract discovery、Python probe、`enter`/`list`/`show`/`check` 读侧消费、
+  `record`/`note prepare|save` 写入门控持久化、scoped `--workstream`
+  读取/check、M1e finding-code 兼容、Research state（Question/Line/Focus、
+  三轴问题模型、revision-based human steering、pending checkpoint 与
+  save+show+check barrier、Goal complete guard）、mode/loop/Question/Focus/
+  checkpoint 的单一完整 snapshot push、active step 的语义状态维护 guidance、
+  protocol/node-sdk/kap-server/klient 公开表面、TUI `/research` Board/manager
+  与 stale-hydrate 防护。`/research on` 只激活 capability 和 Board，不调度
+  模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。flag 开启
+  时普通启动已开放 `/research` 与 `EnterAITPMode`，但仅开放入口——
+  进入模式仍需 `/research on` 或模型入口，inactive 状态零 AITP I/O，
+  不自动 init/adopt/inventory/backfill apply；本轮不把 backfill 暴露为
+  模型工具。flag 关闭时（`=0` 或 `/experiments`）所有 AITP 工具、
+  skill 和 Research Board 隐藏，零 AITP I/O。
+  H6/C6 native method-distillation orchestration 是 **planned，
+  unavailable**。`lineage`/`lite-entry-0.2`/
+  `run-pointer-0.1` 仍 deferred，M2–M4 blocked。
 - 完整兼容矩阵、假设核对与决策：
   [`compatibility-matrix.md`](compatibility-matrix.md)。
 - AITP 状态跟踪与开发前核对清单：
   [`TRACKING.md`](TRACKING.md)（Hakimi 侧补充，AITP 侧无对应文件）。
+- Native method-distillation orchestration 设计：
+  [`method-distillation-orchestration.md`](method-distillation-orchestration.md)
+  （基于真实 v2 scope/Feature seam 的分阶段规划，尚未实现）。
 
 ## 职责边界（双方已确认；使用前重新核对）
 
@@ -32,16 +58,21 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   私有缓存**永不写回** AITP。
 - Hakimi 不复制 AITP runtime/parser/validator，不写 `.aitp` canonical 文件
   （`entries/`、`notes/`、`TOPIC.md`、`STORE.toml`），不绕过
-  `record/note prepare|save`。
+  `record/note prepare|save`。AITP 0.8 的 `method-observation` marker 和
+  method-card distillation 规则属于 AITP Skill 语义，Hakimi native
+  coordinator（H6/C6）若实现也不复制这些语义，只做编排和交互。
 
 ## 分阶段计划（Hakimi 侧；AITP 侧对应 roadmap gates）
 
 | Phase | AITP 前置 | Hakimi 工作 |
 |---|---|---|
-| H0 | 现在（无 gate） | launcher adapter（argv-only、Python ≥ 3.11 探测）、未版本化 envelope 的严格 shape 校验、`--help` capability 探测、`enter` lifecycle、prepare→fill→save 流程、`not_initialized` 优雅降级、tree-hash 零写入测试 |
-| H1 | M1a gate（已通过） | feature-detect `aitp/enter-0.2`、`aitp/list-0.1`、`aitp/show-0.1` 并做 schema dispatch；closeout-first handoff；Note-age 信号；AITP golden-fixture 兼容测试 |
-| H2 | M1b-R1 gate（已通过） | 只整合 R1 实际发布的 `aitp check`（解析 `check-report-0.1`，exit 0/1 报告、exit 2 错误包）；`aitp/lite-entry-0.2`（`based_on`、typed closures）、派生 `used_by`、pointer bundle 均未发布（deferred），不得安排 |
-| H3 | M1c gate（已通过） | 整合 M1c scoped contracts：仅传入单次 `--workstream <slug>` 时 feature-detect `aitp/enter-0.3`/`aitp/list-0.2`（严格 exact membership、relation 先全局计算）；无 flag 时保持旧 schema |
+| H0 | 现在（无 gate） | launcher adapter（argv-only、Python ≥ 3.11 探测）、未版本化 envelope 的严格 shape 校验、`--help` capability 探测、`enter` lifecycle、prepare→fill→save 流程、`not_initialized` 优雅降级、tree-hash 零写入测试 — **已实现（实验性，flag 门控，默认开启）** |
+| H1 | M1a gate（已通过） | feature-detect `aitp/enter-0.2`、`aitp/list-0.1`、`aitp/show-0.1` 并做 schema dispatch；closeout-first handoff；Note-age 信号；AITP golden-fixture 兼容测试 — **已实现（实验性）** |
+| H2 | M1b-R1 gate（已通过） | 只整合 R1 实际发布的 `aitp check`（解析 `check-report-0.1`，exit 0/1 报告、exit 2 错误包）；`aitp/lite-entry-0.2`（`based_on`、typed closures）、派生 `used_by`、pointer bundle 均未发布（deferred），不得安排 — **已实现（实验性）** |
+| H3 | M1c gate（已通过） | 整合 M1c scoped contracts：仅传入单次 `--workstream <slug>` 时 feature-detect `aitp/enter-0.3`/`aitp/list-0.2`（严格 exact membership、relation 先全局计算）；无 flag 时保持旧 schema — **已实现（实验性）** |
+| H4 | M1d gate（已通过） | 整合 M1d scoped `check`：仅传入单次 `--workstream <slug>` 时 feature-detect `aitp/check-report-0.2`（0.1 payload + additive `workstream`/`counts.by_code`/`counts.outside_scope`；admitted in-scope 计数，不与 0.1 直接比较；scoped `clean` ≠ 全库健康；四行文本仅人阅）；无 flag 时 `check-report-0.1` 字节不变 — **已实现（实验性）** |
+| H5 | M1e gate（已通过） | 整合 M1e evidence lifecycle：feature-detect `backfill` 命令与 `aitp/backfill-0.1` 成功 envelope；在现有 check transports 中读取 `sha256-once:`/policy finding codes（无 transport schema 变化）；`backfill` 默认 dry-run、`--apply` 写入，必须由 human decision Entry pin mapping — **已实现（实验性，但 `backfill` 不作为模型工具暴露，不自动 `--apply`）** |
+| H6 | reviewed adapter-contract extension（planned，尚未冻结） | native method-distillation orchestration：Session-scope coordinator、candidate/proposal lifecycle、human question + decision write、crash/resume；当前 **planned，unavailable**。详见 [`method-distillation-orchestration.md`](method-distillation-orchestration.md)。前置：H0–H5 全部落地 + reviewed adapter-contract extension 冻结 marker discovery/exact-card trial/decision receipt |
 | 正式 Hakimi contract | M4 后 | versioned `--json` + extended golden fixtures 作为任何 agent 集成的 pass gate |
 
 Hakimi 的 research-loop 能力（web/PDF/推理/session UX/私有缓存）独立于所有
@@ -51,7 +82,7 @@ AITP gates，可随时并行推进。
 
 以下任一变化必须在**同一 change** 更新本目录：
 
-- stage 状态翻转（M0.6 gate、M1a gate、M1b gate、M1c、M2–M4）；
+- stage 状态翻转（M0.6 gate、M1a gate、M1b gate、M1c/M1d/M1e slice gates、M2–M4）；
 - CLI 面变化（新增/移除命令或 flag；`--help` 输出）；
 - schema 状态变化（新冻结 payload/文件 schema、版本 bump）；
 - Hakimi 侧集成发现改变矩阵行或红线。
@@ -65,9 +96,13 @@ side 的对应维护契约在 AITP 仓库 `docs/hakimi/README.md`。
    M1b、Hakimi contract）；
 2. AITP 仓库 `docs/hakimi/compatibility-matrix.md`（对方侧决策与假设核对）；
 3. 本目录 `compatibility-matrix.md` 与 `TRACKING.md`；
-4. AITP `docs/archive/m1a-spec.md`、`docs/m1b-spec.md`、
+4. 本目录 `theory-research-agent-design.md`（设计备忘录，首个实验性纵切片已实现）；
+5. AITP `docs/archive/m1a-spec.md`、`docs/m1b-spec.md`、
+   `docs/archive/m1c-workstreams-spec.md`、
+   `docs/archive/m1d-workstream-health-spec.md`、
+   `docs/archive/m1e-evidence-lifecycle-backfill-spec.md`、
    `docs/archive/collaborator-design.md`；
-5. 已安装插件的 `skills/using-aitp/SKILL.md`（Python 探测顺序、命令表）；
-6. AITP runtime：`plugins/aitp-research-protocol/scripts/aitp.py` +
+6. 已安装插件的 `skills/using-aitp/SKILL.md`（Python 探测顺序、命令表）；
+7. AITP runtime：`plugins/aitp-research-protocol/scripts/aitp.py` +
    `scripts/vendor/aitp/`；
-7. 本仓库 `AGENTS.md` / `README.md` / 架构代码。
+8. 本仓库 `AGENTS.md` / `README.md` / 架构代码（`packages/agent-core-v2/src/features/aitpResearch/`）。

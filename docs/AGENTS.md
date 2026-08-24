@@ -6,7 +6,7 @@ This repository uses VitePress for the documentation site. Most user-facing page
 
 - Locales live under `docs/en/` and `docs/zh/` with mirrored paths and filenames.
 - Main sections (nav + sidebar) are:
-  - Guides: getting-started, migration, use-cases, interaction, sessions
+  - Guides: getting-started, migration, use-cases, interaction, sessions, research-mode
   - Customization: mcp, skills, plugins, datasource, agents, hooks
   - Configuration: config-files, providers, overrides, env-vars, data-locations
   - Reference: kimi-command, tools, slash-commands, keyboard
@@ -29,7 +29,7 @@ Before rewriting a page, always: (1) understand why the original is structured t
 
 ## Readers
 
-Kimi Code documentation serves two overlapping audiences. Write for both simultaneously.
+Hakimi documentation serves two overlapping audiences. Write for both simultaneously.
 
 **Technical users** — familiar with the terminal, config files, API keys, and environment variables. Give them commands and paths directly; do not explain basics.
 
@@ -74,7 +74,7 @@ Term mapping (Chinese <-> English, and proper noun handling):
 | YOLO 模式 | YOLO mode | yes | yes (YOLO mode) |
 | Thinking 模式 | Thinking mode | yes | yes (Thinking mode) |
 | MCP | MCP | yes | yes |
-| Kimi Code CLI | Kimi Code CLI | yes | yes |
+| Hakimi | Hakimi | yes | yes |
 | Agent Skills | Agent Skills | yes | yes |
 | Skill | skill | yes | no |
 | 系统提示词 | system prompt | no | no |
@@ -118,7 +118,7 @@ Rules:
 - When documenting Kimi Code CLI or VS Code: always use `api.kimi.com/coding/…`. Never write `api.moonshot.cn` in this context.
 - When documenting Open Platform integration: use `api.moonshot.cn/v1`.
 - Distinguish context explicitly: "in Kimi Code CLI / VS Code" vs "in third-party tools / your own product".
-- Product full names: **Kimi Code CLI** and **Kimi Code for VS Code**. Do not abbreviate to "Kimi CLI".
+- Product full name: **Hakimi**. When referring to the upstream product, use **Kimi Code CLI** or **Kimi Code for VS Code** — never "Kimi CLI".
 
 ## Typography
 
@@ -197,9 +197,9 @@ Outline prompt:
 ```markdown
 ## Install and upgrade
 
-Kimi Code CLI requires Node.js 24.15.0 or later. We recommend using pnpm for installation and management.
+Hakimi requires Node.js 24.15.0 or later. We recommend using pnpm for installation and management.
 
-If you haven't installed pnpm yet, please refer to the pnpm installation docs first. Install Kimi Code CLI:
+If you haven't installed pnpm yet, please refer to the pnpm installation docs first. Install Hakimi:
 
 (code block)
 
@@ -308,7 +308,7 @@ Before shipping, verify these values match the rest of the docs:
 - **Upgrade command**: matches `guides/getting-started.md`
 - **Model ID**: use `kimi-for-coding`, not a versioned model name
 - **Login command**: `/login`, not `/setup`
-- **Product full name**: **Kimi Code CLI** or **Kimi Code for VS Code** — never "Kimi CLI"
+- **Product full name**: **Hakimi** — never "Hakimi CLI"
 - **Platform URLs**: `api.kimi.com/coding/…` for Kimi Code platform; `api.moonshot.cn/v1` for Open Platform — never mix the two
 
 ## Build and preview

@@ -13,6 +13,7 @@ import { openUrl } from '#/utils/open-url';
 
 import { FooterComponent } from './components/chrome/footer';import { GutterContainer } from './components/chrome/gutter-container';
 import type { MoonLoader, SpinnerStyle } from './components/chrome/moon-loader';
+import { ResearchBoardComponent } from './components/chrome/research-board';
 import { TodoPanelComponent } from './components/chrome/todo-panel';
 import type { SessionRow } from './components/dialogs/session-picker';
 import { CustomEditor } from './components/editor/custom-editor';
@@ -39,6 +40,8 @@ export interface TUIState {
   activityContainer: Container;
   todoPanelContainer: Container;
   todoPanel: TodoPanelComponent;
+  /** Shares the todoPanelContainer slot with TodoPanel; visible when research mode is active/degraded. */
+  researchBoard: ResearchBoardComponent;
   queueContainer: Container;
   btwPanelContainer: Container;
   editorContainer: Container;
@@ -121,6 +124,7 @@ export function createTUIState(options: KimiTUIOptions): TUIState {
   const activityContainer = new GutterContainer(CHROME_GUTTER, CHROME_GUTTER);
   const todoPanelContainer = new GutterContainer(CHROME_GUTTER, CHROME_GUTTER);
   const todoPanel = new TodoPanelComponent();
+  const researchBoard = new ResearchBoardComponent();
   const queueContainer = new GutterContainer(CHROME_GUTTER, CHROME_GUTTER);
   const btwPanelContainer = new GutterContainer(CHROME_GUTTER, CHROME_GUTTER);
   const editorContainer = new GutterContainer(CHROME_GUTTER, CHROME_GUTTER);
@@ -165,6 +169,7 @@ export function createTUIState(options: KimiTUIOptions): TUIState {
     activityContainer,
     todoPanelContainer,
     todoPanel,
+    researchBoard,
     queueContainer,
     btwPanelContainer,
     editorContainer,

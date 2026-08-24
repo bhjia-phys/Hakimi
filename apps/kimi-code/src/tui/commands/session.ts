@@ -112,7 +112,7 @@ function forkResumeCommand(workDir: string, forkId: string): string {
   // wrong working directory. `pushd` switches drive + directory in both
   // cmd.exe and PowerShell (`cd /d` would break PowerShell).
   const changeDir = process.platform === 'win32' ? `pushd ${dir}` : `cd ${dir}`;
-  return `${changeDir} && kimi --resume ${quoteShellArg(forkId)}`;
+  return `${changeDir} && hakimi --resume ${quoteShellArg(forkId)}`;
 }
 
 function forkSourceTitle(host: SlashCommandHost, session: Session): string {

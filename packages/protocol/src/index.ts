@@ -19,6 +19,7 @@ export * from './task';
 export * from './fs';
 export * from './file';
 export * from './modelCatalog';
+export * from './research';
 
 export * from './rest/meta';
 export * from './rest/auth';

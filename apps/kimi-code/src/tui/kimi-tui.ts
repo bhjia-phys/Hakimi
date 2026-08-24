@@ -54,6 +54,7 @@ import {
 } from './commands';
 import * as slashCommands from './commands/dispatch';
 import { CacheHintController } from './controllers/cache-hint-controller';
+import { ResearchController } from './controllers/research-controller';
 import { BannerComponent } from './components/chrome/banner';
 import { DeviceCodeBoxComponent } from './components/chrome/device-code-box';
 import { GutterContainer } from './components/chrome/gutter-container';
@@ -381,6 +382,7 @@ export class KimiTUI {
   readonly sessionReplay: SessionReplayRenderer;
   readonly tasksBrowserController: TasksBrowserController;
   readonly editorKeyboard: EditorKeyboardController;
+  readonly researchController: ResearchController;
 
   /** Timer that auto-clears the one-shot "moved to background" footer hint. */
   private detachHintClearTimer: ReturnType<typeof setTimeout> | undefined;
@@ -465,6 +467,7 @@ export class KimiTUI {
     this.sessionReplay = new SessionReplayRenderer(this);
     this.tasksBrowserController = new TasksBrowserController(this);
     this.editorKeyboard = new EditorKeyboardController(this, this.imageStore);
+    this.researchController = new ResearchController(this);
     this.editorKeyboard.install();
     this.buildLayout();
   }
@@ -813,6 +816,7 @@ export class KimiTUI {
     }
     if (this.session !== undefined) {
       this.sessionEventHandler.startSubscription();
+      await this.researchController.hydrate(this.session);
       void this.showSessionWarnings(this.session);
     }
     if (shouldReplayHistory) {
@@ -1899,6 +1903,10 @@ export class KimiTUI {
     return this.session;
   }
 
+  getResearchSession(): Session | undefined {
+    return this.session;
+  }
+
   /**
    * Seed appState with the config defaults the v2 engine would apply at
    * createSession time (model, permission, plan mode, thinking effort,
@@ -2067,6 +2075,7 @@ export class KimiTUI {
       /* keep the new session usable even if dynamic skills fail */
     }
     this.sessionEventHandler.startSubscription();
+    void this.researchController.hydrate(session);
     void this.showSessionWarnings(session);
     // The session-only thinking override was consumed by this session; the
     // runtime status now owns the displayed effort.
@@ -2080,6 +2089,7 @@ export class KimiTUI {
     const previous = this.unloadCurrentSession('switching session');
     await previous?.close();
     this.session = session;
+    this.researchController.bindSession(session);
     this.harness.setTelemetryContext({ sessionId: session.id });
     this.registerSessionHandlers(session);
     this.syncAdditionalDirs(session);
@@ -2159,6 +2169,7 @@ export class KimiTUI {
     this.approvalController.cancelAll(reason);
     this.questionController.cancelAll(reason);
     this.session = undefined;
+    this.researchController.clear();
     this.state.swarmModeEntry = undefined;
     this.harness.setTelemetryContext({ sessionId: null });
     this.setAppState({ goal: null });
@@ -2299,6 +2310,7 @@ export class KimiTUI {
     this.sessionEventHandler.resetRuntimeState();
     this.tasksBrowserController.close();
     this.btwPanelController.clear();
+    this.researchController.clear();
     this.state.footer.setBackgroundCounts({ bashTasks: 0, agentTasks: 0 });
     this.streamingUI.setTodoList([]);
     this.streamingUI.setTurnId(undefined);
@@ -2310,7 +2322,7 @@ export class KimiTUI {
 
   private async showResumeOtherWorkDirHint(session: SessionRow): Promise<void> {
     this.hideSessionPicker();
-    const command = `cd ${quoteShellArg(session.work_dir)} && kimi --resume ${quoteShellArg(session.id)}`;
+    const command = `cd ${quoteShellArg(session.work_dir)} && hakimi --resume ${quoteShellArg(session.id)}`;
     const message = `Current session is in a different working directory.\n  To resume, run: ${command}`;
     try {
       await copyTextToClipboard(command);
@@ -2379,6 +2391,7 @@ export class KimiTUI {
       this.showStatus(`Warning: ${resumeState.warning}`, 'warning');
     }
     this.showStatus(statusMessage);
+    void this.researchController.hydrate(session);
     void this.showSessionWarnings(session);
     void this.cacheHint.maybeShowOnResume();
   }
@@ -2394,6 +2407,7 @@ export class KimiTUI {
 
     this.resetSessionRuntime();
     this.session = session;
+    this.researchController.bindSession(session);
     this.harness.setTelemetryContext({ sessionId: session.id });
     this.registerSessionHandlers(session);
     await this.syncRuntimeState(session);
@@ -2410,6 +2424,7 @@ export class KimiTUI {
       this.showStatus(`Warning: ${resumeState.warning}`, 'warning');
     }
     this.showStatus(statusMessage);
+    void this.researchController.hydrate(session);
     void this.showSessionWarnings(session);
   }
 
@@ -2449,6 +2464,7 @@ export class KimiTUI {
     this.sessionEventHandler.startSubscription();
     this.clearTranscriptAndRedraw();
     this.showStatus(`Started a new session (${session.id}).`);
+    void this.researchController.hydrate(session);
     void this.showSessionWarnings(session);
     void this.showConfigWarningsIfAny();
   }
@@ -2642,8 +2658,8 @@ export class KimiTUI {
     this.btwPanelController.clear();
     this.clearTerminalInlineImages();
     this.state.todoPanel.clear();
-    this.state.todoPanelContainer.clear();
     this.imageStore.clear();
+    this.syncTodoPanelSlot();
     this.renderWelcome();
     // No forced full render on session reset: let the differential renderer
     // converge on its own (a mass change above the viewport still makes the
@@ -3126,8 +3142,20 @@ export class KimiTUI {
     );
   }
 
+  syncTodoPanelSlot(): void {
+    const { state } = this;
+    state.researchBoard.setTodos(state.todoPanel.getTodos());
+    state.todoPanelContainer.clear();
+    if (state.researchBoard.isVisible()) {
+      state.todoPanelContainer.addChild(state.researchBoard);
+    } else if (!state.todoPanel.isEmpty()) {
+      state.todoPanelContainer.addChild(state.todoPanel);
+    }
+  }
+
   toggleToolOutputExpansion(): void {
     this.state.toolOutputExpanded = !this.state.toolOutputExpanded;
+    this.state.researchBoard.setExpanded(this.state.toolOutputExpanded);
     const children = this.state.transcriptContainer.children;
 
     // A component is expandable only if it sits at or after the start of the

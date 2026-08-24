@@ -35,6 +35,7 @@ import { registerOAuthRoutes } from './oauth';
 import { registerPluginsRoutes } from './plugins';
 import { registerPromptsRoutes } from './prompts';
 import { registerQuestionsRoutes } from './questions';
+import { registerResearchRoutes } from './research';
 import { registerRuntimeRoutes } from './runtime';
 import { registerSearchRoutes } from './search';
 import { registerSessionExportRoute } from './sessionExport';
@@ -131,6 +132,10 @@ export async function registerApiV1Routes(
       );
       registerSessionsRoutes(
         apiV1 as unknown as Parameters<typeof registerSessionsRoutes>[0],
+        core,
+      );
+      registerResearchRoutes(
+        apiV1 as unknown as Parameters<typeof registerResearchRoutes>[0],
         core,
       );
       registerRuntimeRoutes(apiV1 as unknown as Parameters<typeof registerRuntimeRoutes>[0], core);

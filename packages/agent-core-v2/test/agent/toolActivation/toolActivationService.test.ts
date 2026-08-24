@@ -558,4 +558,68 @@ describe('AgentToolActivationService', () => {
       app.dispose();
     });
   });
+
+  describe('when predicate retraction', () => {
+    it('retracts a registered tool when its when predicate flips true→false', async () => {
+      let gate = true;
+      registerAgentToolService(IAlphaTool, AlphaTool, {
+        name: 'Alpha',
+        when: () => gate,
+      });
+      const ix = createActivationHost();
+      const registry = ix.get(IAgentToolRegistryService);
+      const activation = ix.get(IAgentToolActivationService);
+
+      await activation.activate();
+      expect(registry.resolve('Alpha')).toBeInstanceOf(AlphaTool);
+      expect(alphaConstructions).toBe(1);
+
+      // Flip the gate to false and re-activate (simulates agent.status.updated)
+      gate = false;
+      await activation.activate();
+      expect(registry.resolve('Alpha')).toBeUndefined();
+    });
+
+    it('re-activates a retracted tool when its when predicate flips false→true', async () => {
+      let gate = false;
+      registerAgentToolService(IBetaTool, BetaTool, {
+        name: 'Beta',
+        when: () => gate,
+      });
+      const ix = createActivationHost();
+      const registry = ix.get(IAgentToolRegistryService);
+      const activation = ix.get(IAgentToolActivationService);
+
+      await activation.activate();
+      expect(registry.resolve('Beta')).toBeUndefined();
+      expect(betaConstructions).toBe(0);
+
+      gate = true;
+      await activation.activate();
+      expect(registry.resolve('Beta')).toBeInstanceOf(BetaTool);
+      expect(betaConstructions).toBe(1);
+    });
+
+    it('handles true→false→true round-trip', async () => {
+      let gate = true;
+      registerAgentToolService(IGammaTool, GammaTool, {
+        name: 'Gamma',
+        when: () => gate,
+      });
+      const ix = createActivationHost();
+      const registry = ix.get(IAgentToolRegistryService);
+      const activation = ix.get(IAgentToolActivationService);
+
+      await activation.activate();
+      expect(registry.resolve('Gamma')).toBeInstanceOf(GammaTool);
+
+      gate = false;
+      await activation.activate();
+      expect(registry.resolve('Gamma')).toBeUndefined();
+
+      gate = true;
+      await activation.activate();
+      expect(registry.resolve('Gamma')).toBeInstanceOf(GammaTool);
+    });
+  });
 });

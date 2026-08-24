@@ -1,8 +1,8 @@
 # 开始使用
 
-## Kimi Code CLI 是什么
+## Hakimi 是什么
 
-Kimi Code CLI 是一个运行在终端中的 AI Agent，帮助你完成软件开发任务和日常的终端操作——阅读和修改代码、执行 Shell 命令、搜索文件、抓取网页，并在执行过程中根据反馈自主规划和调整下一步行动。
+Hakimi 是一个运行在终端中的 AI Agent，帮助你完成软件开发任务和日常的终端操作——阅读和修改代码、执行 Shell 命令、搜索文件、抓取网页，并在执行过程中根据反馈自主规划和调整下一步行动。
 
 它适用于以下场景：
 
@@ -14,84 +14,63 @@ Kimi Code CLI 是一个运行在终端中的 AI Agent，帮助你完成软件开
 
 ## 安装
 
-提供两种安装方式：官方安装脚本（推荐，无需预装 Node.js）和 npm 全局安装。
+Hakimi 目前尚未发布公开 npm 包或 release 安装脚本，需要从本仓库构建并安装当前开发版本。
 
 ::: tip 安装之前
-Kimi Code CLI 为全交互式 TUI 应用，推荐在支持真彩色与连字的现代终端中运行以获得最佳体验，例如 [Kitty](https://sw.kovidgoyal.net/kitty/) 或 [Ghostty](https://ghostty.org/)。
+Hakimi 为全交互式 TUI 应用，推荐在支持真彩色与连字的现代终端中运行以获得最佳体验，例如 [Kitty](https://sw.kovidgoyal.net/kitty/) 或 [Ghostty](https://ghostty.org/)。
 :::
 
-### 脚本安装（推荐）
+### 从源码构建安装
 
-- **macOS / Linux**：
-
-```sh
-curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash
-```
-
-- **Windows（PowerShell）**：
-
-```powershell
-irm https://code.kimi.com/kimi-code/install.ps1 | iex
-```
-
-> Windows 用户首次启动前还需要安装 [Git for Windows](https://gitforwindows.org/)，Kimi Code CLI 会使用其中的 Git Bash 作为 Shell 环境。如果 Git Bash 安装在非标准路径，请把 `KIMI_SHELL_PATH` 设为 `bash.exe` 的绝对路径。
-
-脚本会自动下载最新版本、校验 checksum，并把 `kimi` 可执行文件放到你的 `PATH` 中。
-
-### npm 安装
-
-需要 Node.js 22.19.0 或更高版本：
+构建仓库需要 Node.js 24.15.0 或更高版本，以及 pnpm 10.33.0：
 
 ```sh
-node --version
-npm install -g @moonshot-ai/kimi-code
+git clone https://github.com/bhjia-phys/Hakimi.git
+cd Hakimi
+corepack enable
+corepack prepare pnpm@10.33.0 --activate
+pnpm install
+pnpm build:packages
+pnpm -C apps/kimi-code build
+mkdir -p .tmp/dist-pack
+pnpm -C apps/kimi-code pack --pack-destination ../../.tmp/dist-pack
+npm install -g ./.tmp/dist-pack/bhjia-phys-hakimi-0.21.0.tgz
+hakimi --version
 ```
 
-或用 pnpm：
+压缩包文件名包含当前包版本；如果仓库版本已经变化，请使用 `pnpm pack` 实际打印的文件名替换示例中的 `0.21.0`。
 
-```sh
-pnpm add -g @moonshot-ai/kimi-code
-```
+> Windows 用户首次启动前还需要安装 [Git for Windows](https://gitforwindows.org/)，Hakimi 会使用其中的 Git Bash 作为 Shell 环境。如果 Git Bash 安装在非标准路径，请把 `KIMI_SHELL_PATH` 设为 `bash.exe` 的绝对路径。
 
 ## 升级与卸载
 
-安装完成后，验证可执行文件是否就绪：
+升级源码安装时，拉取目标 revision，重复上面的构建与打包步骤，再用 `npm install -g` 安装新生成的压缩包。
+
+卸载全局包：
 
 ```sh
-kimi --version
-```
-
-**升级**：运行 `kimi upgrade`，CLI 会检查最新版本并展示更新选项。选择 `Install update now` 后根据当前安装来源执行升级；也可以直接用包管理器：
-
-```sh
-npm install -g @moonshot-ai/kimi-code@latest
-```
-
-**卸载**：脚本安装的用户删除 `kimi` 可执行文件即可；npm 安装的用户：
-
-```sh
-npm uninstall -g @moonshot-ai/kimi-code
+npm uninstall -g @bhjia-phys/hakimi
 ```
 
 ## 第一次启动
 
-进入项目目录后直接运行 `kimi` 启动交互界面：
+进入项目目录后直接运行 `hakimi` 启动交互界面：
 
 ```sh
 cd your-project
-kimi
+hakimi
 ```
 
 只想执行一条指令而不进入交互界面时，使用 `-p`：
 
 ```sh
-kimi -p "帮我看一下这个项目的目录结构"
+hakimi -p "帮我看一下这个项目的目录结构"
 ```
 
 继续上一次会话加 `-c`：
 
 ```sh
-kimi -c
+hakimi -c
 ```
 
 首次启动时需要配置 API 来源。在交互界面中输入 `/login` 进入登录流程：
@@ -108,7 +87,7 @@ kimi -c
 需要退出登录时，输入 `/logout` 清除当前凭证。
 
 ::: tip 使用其他 AI 供应商
-如果你想接入 Anthropic、OpenAI、Google 等其他供应商，需要直接编辑 `~/.kimi-code/config.toml` 配置 API 密钥，详见[平台与模型](../configuration/providers.md)。配置项完整说明见[配置文件](../configuration/config-files.md)、[环境变量](../configuration/env-vars.md)和[配置覆盖](../configuration/overrides.md)。
+如果你想接入 Anthropic、OpenAI、Google 等其他供应商，需要直接编辑 `~/.hakimi/config.toml` 配置 API 密钥，详见[平台与模型](../configuration/providers.md)。配置项完整说明见[配置文件](../configuration/config-files.md)、[环境变量](../configuration/env-vars.md)和[配置覆盖](../configuration/overrides.md)。
 :::
 
 ## 第一个对话
@@ -119,7 +98,7 @@ kimi -c
 帮我看一下这个项目的目录结构，简单介绍一下每个目录是做什么的
 ```
 
-Kimi Code CLI 会自动调用文件读取、搜索等工具浏览相关内容后给出回答。只读操作默认自动执行无需确认；对于会修改文件或执行 Shell 命令的操作，默认会在执行前征求确认。
+Hakimi 会自动调用文件读取、搜索等工具浏览相关内容后给出回答。只读操作默认自动执行无需确认；对于会修改文件或执行 Shell 命令的操作，默认会在执行前征求确认。
 
 也可以直接描述更具体的任务：
 
@@ -127,7 +106,7 @@ Kimi Code CLI 会自动调用文件读取、搜索等工具浏览相关内容后
 在 src/utils 里新增一个函数，用来把任意字符串转成 kebab-case，并补一个单元测试
 ```
 
-Kimi Code CLI 会规划步骤、修改代码、运行测试，并在每一步告诉你它做了什么。
+Hakimi 会规划步骤、修改代码、运行测试，并在每一步告诉你它做了什么。
 
 ::: tip 不知道能做什么？输入 `/help`
 随时在输入框输入 `/help`，可以打开内置的命令和快捷键面板，按 `↑`/`↓` 翻看，`Esc` 关闭。退出时输入 `/exit`，或按 `Ctrl-C` 两次，或在输入框为空时按 `Ctrl-D`。
@@ -161,7 +140,7 @@ Kimi Code CLI 会规划步骤、修改代码、运行测试，并在每一步告
 
 ## 数据存放在哪里
 
-Kimi Code CLI 的本地数据默认保存在 `~/.kimi-code/` 下，包含配置文件、会话记录、日志和更新缓存。如需迁移到别处，通过 `KIMI_CODE_HOME` 环境变量指定新路径。完整说明见[数据路径](../configuration/data-locations.md)和[环境变量](../configuration/env-vars.md)。
+Hakimi 的本地数据默认保存在 `~/.hakimi/` 下，包含配置文件、会话记录、日志和更新缓存。如需迁移到别处，设置 `HAKIMI_HOME` 环境变量（优先级高于 `KIMI_CODE_HOME`）。路径解析顺序为：`HAKIMI_HOME` > `KIMI_CODE_HOME` > `~/.hakimi`。完整说明见[数据路径](../configuration/data-locations.md)和[环境变量](../configuration/env-vars.md)。
 
 ## 下一步
 

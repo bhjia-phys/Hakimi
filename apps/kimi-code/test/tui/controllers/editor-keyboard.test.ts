@@ -29,6 +29,8 @@ function createHarness(options: { streamingPhase?: string; isCompacting?: boolea
   const cancelCompaction = vi.fn(async () => {});
   const btwCancelRunning = vi.fn(() => false);
   const btwCloseOrCancel = vi.fn(() => false);
+  const researchBoardVisible = vi.fn(() => false);
+  const toggleTodoPanelExpansion = vi.fn();
   const session = { cancel: vi.fn(async () => {}), cancelCompaction };
 
   const host = {
@@ -41,11 +43,15 @@ function createHarness(options: { streamingPhase?: string; isCompacting?: boolea
       },
       footer: { setTransientHint: vi.fn() },
       ui: { requestRender: vi.fn() },
+      researchBoard: { isVisible: researchBoardVisible },
+      todoPanel: { hasOverflow: vi.fn(() => true) },
     },
     session,
     btwPanelController: { cancelRunning: btwCancelRunning, closeOrCancel: btwCloseOrCancel },
     openUndoSelector,
     cancelRunningShellCommand,
+    toggleTodoPanelExpansion,
+    track: vi.fn(),
     updateEditorBorderHighlight: vi.fn(),
     updateGoalLengthWarning: vi.fn(),
   } as unknown as EditorKeyboardHost;
@@ -144,6 +150,28 @@ describe('EditorKeyboardController double-Esc undo', () => {
     expect(cancelRunningShellCommand).toHaveBeenCalled();
     const session = host.session as unknown as { cancel: ReturnType<typeof vi.fn> };
     expect(session.cancel).toHaveBeenCalled();
+  });
+});
+
+describe('EditorKeyboardController Ctrl-T research board priority', () => {
+  it('does not toggle the hidden TodoPanel while Research Board is visible', () => {
+    const { editor, host } = createHarness();
+    const isVisible = host.state.researchBoard.isVisible as ReturnType<typeof vi.fn>;
+    isVisible.mockReturnValue(true);
+    const toggle = host.toggleTodoPanelExpansion as ReturnType<typeof vi.fn>;
+    const handler = editor['onToggleTodoExpand'] as unknown as () => boolean;
+
+    expect(handler()).toBe(false);
+    expect(toggle).not.toHaveBeenCalled();
+  });
+
+  it('keeps Ctrl-T Todo expansion in ordinary mode', () => {
+    const { editor, host } = createHarness();
+    const toggle = host.toggleTodoPanelExpansion as ReturnType<typeof vi.fn>;
+    const handler = editor['onToggleTodoExpand'] as unknown as () => boolean;
+
+    expect(handler()).toBe(true);
+    expect(toggle).toHaveBeenCalledOnce();
   });
 });
 

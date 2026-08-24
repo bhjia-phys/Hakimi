@@ -12,7 +12,7 @@
 <p align="center">
   <a href="README.md">English</a> |
   <a href="https://github.com/bhjia-phys/Hakimi">仓库</a> |
-  <a href="https://moonshotai.github.io/kimi-code/zh/">上游 Kimi Code 文档</a>
+  <a href="docs/zh/guides/getting-started.md">Hakimi 使用手册</a>
 </p>
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -80,16 +80,19 @@ Tower 将从当前固定的 worker/reviewer 协议演进为可复用、可校验
 - **所有权**：只负责 Hakimi 侧 AITP adapter；AITP 负责 `.aitp` schema、校验、持久化、provenance 和 ledger 语义。
 - **依赖**：AITP 的 CLI + 文件，以及 F 的 adapter/contribution 边界。D 的内置 loop 不依赖 C。
 
-最后核对的 AITP HEAD 是 `9f9e873440b8d88bfbb2963d8b5717c83b9ef4cc`（2026-08-14，逐命令重新核对 `--help`）：M0/M0.5 已完成；M0.6 以缩小声明关闭；M1a、M1b-R1、M1c 均 **done；deterministic gate passed**（107 个测试）。H0 可实施；当前安装的 Skill 可用 Python 3.11 或更高版本手动调用 CLI，会相对 plugin 自带的 `scripts/aitp.py` 运行，不要求全局 `aitp` executable。Hakimi 原生结构化 adapter 尚未实现。`record`/`note prepare|save` 仍是严格、未版本化的 version-0 response contract，未知 `status` 必须 fail closed。版本化读契约 `aitp/enter-0.2`、`aitp/list-0.1`、`aitp/show-0.1`、`aitp/check-report-0.1` 已 shipped 且 gate 通过；M1c 作用域契约 `aitp/enter-0.3`/`aitp/list-0.2` 仅在传入单次 `--workstream <slug>` 时发出——adapter 落地后均可 feature-detect。持久化的 `aitp/lite-entry-0.1` 和 `aitp/lite-note-0.1` 标识 AITP 文件，不是 response envelope；不存在 `aitp/enter-0.1`、`aitp search`、`aitp --version`，`aitp lineage` 仍是 deferred candidate。
+最后核对的 AITP HEAD 是 `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290`（2026-08-23，逐命令重新核对 `--help`；committed HEAD 是 0.8.0——Skill-only amendment 已 commit）：M0/M0.5 已完成；M0.6 以缩小声明关闭；M1a、M1b-R1、M1c、M1d、M1e 均 **done；deterministic gate passed**（154 个测试）。当前安装的 Skill 可用 Python 3.11 或更高版本手动调用 CLI，会相对 plugin 自带的 `scripts/aitp.py` 运行，不要求全局 `aitp` executable。Hakimi 原生 AITP Research Mode 的首个实验性（默认开启）纵切片**已实现**，受 flag `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`（默认开启）门控：包含严格契约发现、Python 探测、`enter`/`list`/`show`/`check` 读侧消费（H0–H5）、`record`/`note prepare|save` 写入门控持久化、scoped `--workstream` 读取/check、M1e `sha256-once:`/policy finding code 兼容，以及 TUI `/research` 命令与 Research Board 和管理器。**不**自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`；本轮不把 `backfill` 暴露为模型工具。Research state 模型覆盖 Question/Line/Focus、三轴（workflow/epistemic/persistence）问题模型、基于 revision 的人类 steering（乐观并发）、pending checkpoint 与 save+show+check commit barrier，以及 Goal complete 守卫（checkpoint pending 或 degraded 时阻止完成）。mode、loop、Question、Focus 和 checkpoint 转换会向 TUI 推送一个完整 Research 快照，冷启动 hydrate 不能覆盖更新的实时状态；active research step 会收到语义状态维护规则，普通工具调用和 AITP 读取不会被误报为科研进展。`/research on` 只激活 capability 和 Board，不会调度模型轮次；跨轮次 continuation 仍只由 Goal 负责。protocol（`packages/protocol`）、`node-sdk`、`kap-server` REST（`GET/POST /sessions/{id}/research`）和 `klient` 表面已接通。flag 关闭时（`=0` 或 `/experiments` 切换）所有 AITP 工具、skill 和 Research Board 隐藏，零 AITP I/O；flag 开启但未进入模式时同样零 AITP I/O。`record`/`note prepare|save` 仍是严格、未版本化的 version-0 response contract，未知 `status` 必须 fail closed。版本化读契约 `aitp/enter-0.2`、`aitp/list-0.1`、`aitp/show-0.1`、`aitp/check-report-0.1` 已 shipped 且 gate 通过；M1c 作用域契约 `aitp/enter-0.3`/`aitp/list-0.2` 和 M1d 作用域 check 契约 `aitp/check-report-0.2` 仅在传入单次 `--workstream <slug>` 时发出；M1e 增加 `backfill` 命令（`backfill-0.1` 成功 envelope，默认 dry-run）和 `sha256-once:` 可变观测 pin，无 transport schema 变化。AITP 0.8 是 **Skill-only amendment**（已 commit）：定义 `method-observation` marker 候选、保守 card/trial review、两步 human decision（approval + publication）和 platform tool/card/Skill 三层边界——不改 CLI/schema/transport。持久化的 `aitp/lite-entry-0.1` 和 `aitp/lite-note-0.1` 标识 AITP 文件，不是 response envelope；不存在 `aitp/enter-0.1`、`aitp search`、`aitp --version`，`aitp lineage` 仍是 deferred candidate。typed AITP question/line registry、literature/compute/Portfolio 支持和 H6 native method-distillation orchestration **未实现**。
 
-| Hakimi gate | AITP gate | 计划交付与当前事实 |
+| Hakimi gate | AITP gate | 状态 |
 | --- | --- | --- |
-| H0 · 当前 CLI | M0/M0.6 | 通过已安装 Skill 使用 `init`、`enter`、`inventory` 和 `record`/`note prepare|save`；绝不自动运行 `init`、`init --adopt` 或 `inventory`。 |
-| H1 · 检索 | M1a（gate 已通过） | 计划 feature-detect 并消费 `enter-0.2`、`list-0.1`、`show-0.1` 及 golden fixtures；AITP 侧已 shipped 且 gate 通过，Hakimi adapter 尚未实现。 |
-| H2 · 关系与诊断 | M1b-R1（gate 已通过） | 计划消费 `check-report-0.1`（exit 0/1 解析报告、exit 2 为错误包）；持久化 `based_on`/`used_by` 与 pointer bundle 不在 R1。 |
-| H3 · 科研记忆 | M1c（gate 已通过）；AITP M2–M4 之后 | 计划消费 M1c 作用域契约（`enter-0.3`/`list-0.2`，仅单次 `--workstream`），之后再消费 reviewed artifacts、跨 Topic links 和 Skill-driven collaborator protocol。 |
+| H0 · 当前 CLI | M0/M0.6 | **已实现（实验性）。** Launcher adapter、Python ≥ 3.11 探测、严格的 version-0 prepare/save envelope 校验、与契约一致的 record/Note argv、`enter` lifecycle、prepare→fill→save 流程，以及 typed `not_initialized` 降级。绝不自动运行 `init`、`init --adopt` 或 `inventory`。 |
+| H1 · 检索 | M1a（gate 已通过） | **已实现（实验性）。** 严格 feature-detect 并消费 `enter-0.2`、`list-0.1` 和 `show-0.1`（包括 malformed Entry 响应）；支持 closeout-first handoff 和 Note-age 信号。完整 canonical Entry 只通过 `show` 读取，不使用临时 Markdown 解析。 |
+| H2 · 关系与诊断 | M1b-R1（gate 已通过） | **已实现（实验性）。** 严格消费 `check-report-0.1`：exit 0/1 都是带数据的成功响应，只有 warning 的 findings 不会使适配器降级，error finding 会阻止 checkpoint commit。有效的 exit-2 AITP 错误会 fail closed；参数解析错误只作为命令错误，不会使整个适配器降级。持久化 `based_on`/`used_by` 与 pointer bundle 不在 R1。 |
+| H3 · 科研记忆 | M1c（gate 已通过）；AITP M2–M4 之后 | **已实现（实验性）。** 消费 M1c 作用域契约（`enter-0.3`/`list-0.2`，仅单次 `--workstream`）。typed question/line registry、reviewed artifacts、跨 Topic links 和 Skill-driven collaborator protocol 未实现。 |
+| H4 · workstream 健康 | M1d（gate 已通过） | **已实现（实验性）。** 消费 scoped `check`（`check-report-0.2`，仅 `--workstream`：admitted in-scope 计数、`by_code`/`outside_scope`，四行文本仅人阅）；无 flag 时 `check-report-0.1` 字节不变。 |
+| H5 · evidence lifecycle | M1e（gate 已通过） | **已实现（实验性）。** 读取 `backfill-0.1` 成功 envelope 和 `sha256-once:`/policy finding codes；无 transport schema 变化。`backfill` 不作为模型工具暴露；`--apply` 需 human decision pin，不自动调用。 |
+| H6 · native distillation | planned（adapter-contract extension 未冻结） | **planned，unavailable**。native method-distillation orchestration：Session-scope coordinator、candidate/proposal lifecycle、human question + decision write、crash/resume。详见 [`docs/aitp/method-distillation-orchestration.md`](docs/aitp/method-distillation-orchestration.md)。 |
 
-边界始终是严格的 CLI + 文件：不复制 AITP runtime、SDK、API/MCP server、daemon、第二套 ledger，也不直接写 canonical 文件。未初始化或没有 AITP 的 workspace 要以明确 degraded status 继续运行。H1–H3 仍是 Hakimi 侧规划——它们对应的 AITP 契约已 shipped，但 Hakimi 的 adapter 支持尚未实现，不得写成 available。详细矩阵和已核验决策见 [`docs/aitp/`](docs/aitp/)；修改兼容性声明前，先重新核对 AITP `--help`、schema 和官方 fixtures。
+边界始终是严格的 CLI + 文件：不复制 AITP runtime、SDK、API/MCP server、daemon、第二套 ledger，也不直接写 canonical 文件。未初始化或没有 AITP 的 workspace 要以明确 degraded status 继续运行。首个实验性切片（H0–H5）已实现，受 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`（默认开启）门控；普通启动已开放 `/research` 和 `EnterAITPMode`，但不进入模式、不探测 AITP、不显示 Board、不开放 AITP plugin skill——inactive 状态零 AITP I/O，绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`。设置 `=0` 或在 `/experiments` 中切换可隐藏整个 Research 入口。H6（native method-distillation orchestration）是 planned 且 unavailable，依赖尚未冻结的 reviewed adapter-contract extension。AITP 0.8 是已 commit 的 Skill-only amendment，定义 `method-observation` marker 和 method-card distillation 规则，不改 CLI/schema/transport。详细矩阵和已核验决策见 [`docs/aitp/`](docs/aitp/)；native distillation orchestration 设计见 [`docs/aitp/method-distillation-orchestration.md`](docs/aitp/method-distillation-orchestration.md)。修改兼容性声明前，先重新核对 AITP `--help`、schema 和官方 fixtures。
 
 ### D · 内置 Hakimi Research Loop
 
@@ -117,35 +120,25 @@ D 轨是研究层的主实现轨道（2026-08-14 平台决策）。
 - **依赖**：F 的 contract freeze 与公共边界；以 DeepSeek Harness `main` 为参考上游，通过受跟踪的 intake 流程（计划 `docs/dsh-intake/`）评审；E 的 provider 设置面；不得回归 GPT/Kimi 路径。
 - **交付**：专用 DeepSeek 适配器——顶层 `thinking` 语义、官方 `reasoning_effort` 级别、按回合的 CoT passback 省 token、带 context window 的模型目录、DeepSeek 专属错误分类与遥测、流空闲 watchdog——全部锁在适配器层，核心保持 dialect-free；同时持续吸收 DeepSeek Harness 机制，以缓存命中为核心：epoch 请求头、session 日志派生请求、压缩后 system prompt 稳定、确定性工具排序、动态内容追加在尾部、缓存用量记账，以及断言"除首个请求外每个请求 `cacheReadTokens > 0`"的真 API 缓存 e2e。范围限定（2026-08-14）：仅机制吸收——DSH 已评估并被否决为研究层承载方，不在 DSH 上建任何研究层。
 
-## 安装
+## 从源码安装
 
-预编译二进制和安装脚本发布在 [releases 页面](https://github.com/bhjia-phys/Hakimi/releases)：
-
-```sh
-curl -fsSL https://github.com/bhjia-phys/Hakimi/releases/latest/download/install.sh | bash
-```
-
-已有安装在终端里运行 `hakimi upgrade` 即可更新。
-
-## 从源码构建
-
-需要 Node.js 和 pnpm（经 corepack）：
+Hakimi 目前尚未发布公开 npm 包或 release 安装脚本。构建当前开发版本需要 Node.js 24.15.0 或更高版本，以及 pnpm 10.33.0：
 
 ```sh
 git clone https://github.com/bhjia-phys/Hakimi.git
 cd Hakimi
-corepack pnpm --config.engine-strict=false install
-corepack pnpm --config.engine-strict=false -C apps/kimi-code build
-node apps/kimi-code/dist/main.mjs --version
+corepack enable
+corepack prepare pnpm@10.33.0 --activate
+pnpm install
+pnpm build:packages
+pnpm -C apps/kimi-code build
+mkdir -p .tmp/dist-pack
+pnpm -C apps/kimi-code pack --pack-destination ../../.tmp/dist-pack
+npm install -g ./.tmp/dist-pack/bhjia-phys-hakimi-0.21.0.tgz
+hakimi --version
 ```
 
-打包可安装的 tarball：
-
-```sh
-mkdir -p dist-pack
-corepack pnpm --config.engine-strict=false -C apps/kimi-code pack --pack-destination ../../dist-pack
-npm install -g ./dist-pack/bhjia-phys-hakimi-0.21.0.tgz
-```
+压缩包文件名包含当前包版本；如果版本已经变化，请使用 `pnpm pack` 实际打印的文件名替换示例中的 `0.21.0`。升级源码安装时，拉取目标 revision 后重复构建、打包与全局安装步骤。
 
 > Windows 上首次启动前请安装 [Git for Windows](https://gitforwindows.org/)，Hakimi 使用自带的 Git Bash 作为 shell 环境。Git Bash 装在自定义位置时，把 `KIMI_SHELL_PATH` 设为 `bash.exe` 的绝对路径。
 

@@ -1,8 +1,8 @@
 # 本地服务与 API
 
-Kimi Code CLI 内置一个本地服务：运行 `kimi web` 会在前台启动一个进程，同时挂载浏览器里的 web UI、REST API（`/api/v1`）和 WebSocket 事件流（`/api/v1/ws`）。web UI 用于在浏览器里直接使用 Kimi Code；REST 与 WebSocket API 面向脚本和第三方工具，可以用代码创建会话、提交提示词、实时跟进执行过程——它们与 TUI、web UI 读写同一份会话数据。
+Hakimi 内置一个本地服务：运行 `hakimi web` 会在前台启动一个进程，同时挂载浏览器里的 web UI、REST API（`/api/v1`）和 WebSocket 事件流（`/api/v1/ws`）。web UI 用于在浏览器里直接使用 Hakimi；REST 与 WebSocket API 面向脚本和第三方工具，可以用代码创建会话、提交提示词、实时跟进执行过程——它们与 TUI、web UI 读写同一份会话数据。
 
-> 开始前请确认 Kimi Code CLI 已安装并处于可用状态——完成 `/login` 登录（TUI 内或 `kimi login`），或已在 `config.toml` 配置供应商。服务与 CLI 共享同一份登录态与配置，无需为服务单独准备凭证。
+> 开始前请确认 Hakimi 已安装并处于可用状态——完成 `/login` 登录（TUI 内或 `hakimi login`），或已在 `config.toml` 配置供应商。服务与 CLI 共享同一份登录态与配置，无需为服务单独准备凭证。
 
 ::: warning 注意
 本页介绍的 REST 与 WebSocket API 为实验性特性：不保证接口稳定性，端点、字段与事件类型可能随版本随时更改。集成时请以当前版本服务的 `/openapi.json` 与 `/asyncapi.json` 为准。
@@ -11,12 +11,12 @@ Kimi Code CLI 内置一个本地服务：运行 `kimi web` 会在前台启动一
 ## 启动服务
 
 ```sh
-kimi web                 # 前台运行服务并打开浏览器
-kimi web --no-open       # 只运行服务，不打开浏览器
-kimi web --port 58628    # 指定绑定端口
+hakimi web                 # 前台运行服务并打开浏览器
+hakimi web --no-open       # 只运行服务，不打开浏览器
+hakimi web --port 58628    # 指定绑定端口
 ```
 
-服务默认绑定 `127.0.0.1:58627`（仅本机访问）；端口被占用时自动 +1 重试，同一台机器因此可以并存多个实例，每个实例登记在 `~/.kimi-code/server/instances/` 下。启动横幅会打印访问地址和明文 token：
+服务默认绑定 `127.0.0.1:58627`（仅本机访问）；端口被占用时自动 +1 重试，同一台机器因此可以并存多个实例，每个实例登记在 `~/.hakimi/server/instances/` 下。启动横幅会打印访问地址和明文 token：
 
 ```text
 Local:   http://127.0.0.1:58627/#token=...
@@ -24,11 +24,11 @@ Token:   ...
 Stop:    Ctrl+C
 ```
 
-服务在前台运行，按 `Ctrl-C` 干净退出。`--host`、`--log-level` 等完整选项见 [kimi 命令参考](../reference/kimi-command.md#kimi-web)。
+服务在前台运行，按 `Ctrl-C` 干净退出。`--host`、`--log-level` 等完整选项见 [hakimi 命令参考](../reference/kimi-command.md#hakimi-web)。
 
 ## 鉴权
 
-所有 `/api/*` 接口都要求 bearer token（持有者令牌：任何携带该字符串的请求都被视为已授权）。token 在首次启动服务时生成，持久化在 `~/.kimi-code/server.token`（文件权限 0600），跨重启复用。
+所有 `/api/*` 接口都要求 bearer token（持有者令牌：任何携带该字符串的请求都被视为已授权）。token 在首次启动服务时生成，持久化在 `~/.hakimi/server.token`（文件权限 0600），跨重启复用。
 
 按客户端类型选择携带方式：
 
@@ -36,12 +36,12 @@ Stop:    Ctrl+C
 - **web UI**：启动横幅里的地址自带 `#token=` 片段，浏览器打开后自动完成登录；该片段不会发送到服务端。
 - **WebSocket**：能自定义请求头的客户端用 `Authorization: Bearer`；浏览器等不能自定义头的客户端改用子协议（WebSocket 握手时声明的协议名）`kimi-code.bearer.<token>`。
 
-token 泄露时运行 `kimi web rotate-token` 轮换：新 token 立即写入 `server.token`，旧 token 即刻失效，正在运行的实例无需重启。
+token 泄露时运行 `hakimi web rotate-token` 轮换：新 token 立即写入 `server.token`，旧 token 即刻失效，正在运行的实例无需重启。
 
 如果把服务绑定到非本机地址（`--host`），建议额外设置 `KIMI_CODE_PASSWORD` 环境变量作为并列凭证；此时服务端会对鉴权失败自动限流。
 
 ::: danger 警告
-`--dangerous-bypass-auth` 会彻底关闭鉴权，任何能访问该端口的人都能控制你的会话、文件系统和 shell。仅在可信网络或自有鉴权代理之后使用，详见 [kimi 命令参考](../reference/kimi-command.md#kimi-web)。
+`--dangerous-bypass-auth` 会彻底关闭鉴权，任何能访问该端口的人都能控制你的会话、文件系统和 shell。仅在可信网络或自有鉴权代理之后使用，详见 [hakimi 命令参考](../reference/kimi-command.md#hakimi-web)。
 :::
 
 ## 用 API 驱动一个会话
@@ -113,4 +113,4 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 ## 下一步
 
 - [服务 API](../reference/server-api.md) — REST 端点全集、错误码、WebSocket 事件与转录协议
-- [kimi 命令](../reference/kimi-command.md#kimi-web) — `kimi web` 的全部命令行选项
+- [hakimi 命令](../reference/kimi-command.md#hakimi-web) — `hakimi web` 的全部命令行选项

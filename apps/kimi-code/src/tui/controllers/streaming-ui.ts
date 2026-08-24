@@ -33,6 +33,7 @@ export interface StreamingUIHost {
   resetLivePane(): void;
   updateActivityPane(): void;
   updateQueueDisplay(): void;
+  syncTodoPanelSlot(): void;
   requireSession(): Session;
   deferUserMessages: boolean;
   shiftQueuedMessage(): QueuedMessage | undefined;
@@ -723,13 +724,9 @@ export class StreamingUIController {
   }
 
   setTodoList(todos: readonly TodoItem[]): void {
-    const { state } = this.host;
-    state.todoPanel.setTodos(todos);
-    state.todoPanelContainer.clear();
-    if (!state.todoPanel.isEmpty()) {
-      state.todoPanelContainer.addChild(state.todoPanel);
-    }
-    state.ui.requestRender();
+    this.host.state.todoPanel.setTodos(todos);
+    this.host.syncTodoPanelSlot();
+    this.host.state.ui.requestRender();
   }
 
   beginCompaction(instruction?: string): void {

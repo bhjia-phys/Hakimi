@@ -33,7 +33,7 @@ import {
   usagePercentFromRatio,
 } from '#/utils/usage/usage-format';
 
-const DEFAULT_STATUS_LINE_ITEMS = ['mode', 'goal', 'model', 'tasks', 'cwd', 'git'] as const;
+const DEFAULT_STATUS_LINE_ITEMS = ['mode', 'goal', 'research', 'model', 'tasks', 'cwd', 'git'] as const;
 
 const MAX_CWD_SEGMENTS = 3;
 const GOAL_TIMER_INTERVAL_MS = 1_000;
@@ -139,6 +139,29 @@ function formatBadgeElapsed(ms: number): string {
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   return `${hours}h${minutes % 60}m`;
+}
+
+/**
+ * Footer research badge. Driven by `researchModePhase` (the accurate AITP
+ * phase), not the legacy boolean:
+ * - `probing` / `ready` + loop active → `[Research]` (primary)
+ * - loop `paused` → `[Research paused]` (textMuted)
+ * - `degraded` → `[Research degraded]` (warning)
+ * - `inactive` / undefined → no badge
+ */
+function formatResearchBadge(
+  state: AppState,
+  colors: ColorPalette,
+): string | null {
+  const phase = state.researchModePhase;
+  if (phase === undefined || phase === 'inactive') return null;
+  if (phase === 'degraded') {
+    return chalk.hex(colors.warning)('[Research degraded]');
+  }
+  if (state.researchLoopStatus === 'paused') {
+    return chalk.hex(colors.textMuted)('[Research paused]');
+  }
+  return chalk.hex(colors.primary)('[Research]');
 }
 
 function modelDisplayName(state: AppState): string {
@@ -373,6 +396,7 @@ export class FooterComponent implements Component {
     const slots: Record<string, string[]> = {
       mode: [],
       goal: [],
+      research: [],
       model: [],
       tasks: [],
       cwd: [],
@@ -395,6 +419,9 @@ export class FooterComponent implements Component {
 
     const goalBadge = formatGoalBadge(state.goal, colors, this.goalWallClockMs(state.goal));
     if (goalBadge !== null) slots['goal'] = [goalBadge];
+
+    const researchBadge = formatResearchBadge(state, colors);
+    if (researchBadge !== null) slots['research'] = [researchBadge];
 
     const model = modelDisplayName(state);
     if (model) {

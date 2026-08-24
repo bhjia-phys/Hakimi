@@ -8,7 +8,7 @@
 |---|---|---|---|
 | A | Web | 外部 code-app Web owner；Hakimi 负责 bundle 接收与 provenance | 桌面/浏览器 Web、Tower graph editor/live monitor、`dist-web` 同步与来源证明 |
 | B | 手机远程 | 远程产品与部署 owner | responsive Web/PWA 手机 shell、`kap-server` 远程部署、安全与恢复交互 |
-| C | AITP 集成 | AITP adapter owner | CLI + files 的可选 adapter、H0–H3 gate 兼容，以及 gated workflow adapter nodes |
+| C | AITP 集成 | AITP adapter owner | CLI + files 的可选 adapter、H0–H5 gate 兼容、planned H6 native distillation orchestration，以及 gated workflow adapter nodes |
 | D | 内置 Hakimi Research Loop | Hakimi research domain owner | Research Frame、Question Board、physics insight、结构化 trace 与 research-cycle template |
 | E | UI 与设置 | UI/settings/workflow UX owner；业务 domain 仍拥有 schema | TUI、Web、mobile 的设置、Tower workflow authoring/inspection、双语与可访问性 |
 | F | 持续吸收 Kimi Code 上游与基础功能建设 | platform/engine owner | upstream intake、v2 canonical、共享 gate、Tower workflow runtime、release/CI；承接 P0–P3 |
@@ -22,7 +22,7 @@
 
 - 默认 runtime 是 `agent-core-v2`：`packages/kap-server` 直接依赖 v2，CLI 默认通过 SDK/进程内 v2；只有显式 `KIMI_CODE_LEGACY_FLAG` 才走 v1。`packages/agent-core` 冻结为 legacy runtime、rollback 路径和配置/数据 compatibility contract source，只接受安全、构建、数据迁移与维持 rollback/兼容所必需的修改；所有新产品能力只进入 v2。
 - v2 的 `[subagent]` 与 `/preset` 是 Agent、AgentSwarm、Tower 的 canonical 模型控制面：Agent/Swarm 不接受逐次 `model`，普通 profile、`swarm`、`tower_worker`、`tower_reviewer` route 统一解析 fresh/resume binding。`[secondary_model]` 仅保留显式配置/API round-trip 和无 active preset 时受旧 flag 控制的 best-effort fallback，不是第二套产品路由。当前 Tower 已有唯一 control tower、mission/worktree、worker/reviewer、review/merge gate 和 activity log；通用 workflow schema/compiler、named role route、可恢复 DAG 与可视化仍是 P3 规划。
-- v2 Scope 固定为 `App → Workspace → Session → Agent`，定义在 `packages/agent-core-v2/src/app/scopes.ts`。App 没有 session lifecycle facade；按 id 查找 session 必须组合 `ISessionIndex → IWorkspaceLifecycleService.handlerFor → handler.ISessionLifecycleService`。
+- v2 当前真实 `LifecycleScope` 固定为 `App → Session → Agent`，定义在 `packages/agent-core-v2/src/app/scopes.ts`；代码中尚无 `Workspace` tier。Workspace 资源目前由 `Program`/`WorkspaceInstance` 与 session lifecycle 手工装配，四层 `App → Workspace → Session → Agent` 是待 F 轨单独核对和实现的目标架构，不能由 C 轨或普通 Feature 先行假定。
 - Goal 仍由 `packages/agent-core-v2/src/agent/goal/` 的 Agent-scope `IAgentGoalService` 拥有；`src/features/plan/` 是现有 Feature 抽取，不代表 Goal 已迁到 `GoalFeature`。
 - 调用路径是并列的：TUI → `packages/node-sdk` / 进程内 v2，native print → `apps/kimi-code/src/cli/v2/run-v2-print.ts` 直接使用 v2，Web → `packages/kap-server` REST/WS。`packages/transcript` 与 `packages/klient` 提供可复用 contract/facade，不构成强制线性层链。
 - Web source 在外部 code-app 仓库；本仓只同步并提交 `apps/kimi-code/dist-web`。`apps/kimi-code/upstream-base.json` 只证明 CLI upstream commit，不证明 Web 来源。
@@ -36,7 +36,7 @@
 
 顺序固定为：**contract freeze → 核心正确性 → 公共边界 → Hakimi overlay → 可复用 Tower workflow runtime → 最后评估 `GoalFeature`**。
 
-当前开工顺序（平台决策 2026-08-14 后）：**F P0（前缀正确性）→ G1 缓存纪律（压缩后不重渲染 + `KIMI_NOW` 锚定）→ C/H0 AITP adapter → D0–D6 research loop → G0 专用 DeepSeek adapter 按需**。P3.0/P3.1 只能在 P2.1 canonical subagent routing 稳定后开始；P3.2 runtime 复用现有 session/subagent、`IAgentTaskService` detached-task、transcript 和 permission 生命周期，由 P3.1 冻结一个 Tower-owned adapter，不新增未定义的 generic public task facade；P3.4 Web 可视化依赖 P3.3 typed workflow projection 和 A 的 provenance gate。
+当前开工顺序（平台决策 2026-08-14 后）：**F P0（前缀正确性）→ G1 缓存纪律（压缩后不重渲染 + `KIMI_NOW` 锚定）→ C/H0–H5 AITP adapter（首个实验性纵切片已实现）→ D0–D6 research loop → G0 专用 DeepSeek adapter 按需**。P3.0/P3.1 只能在 P2.1 canonical subagent routing 稳定后开始；P3.2 runtime 复用现有 session/subagent、`IAgentTaskService` detached-task、transcript 和 permission 生命周期，由 P3.1 冻结一个 Tower-owned adapter，不新增未定义的 generic public task facade；P3.4 Web 可视化依赖 P3.3 typed workflow projection 和 A 的 provenance gate。
 
 F 先冻结 canonical matrix；随后完成 P0 核心正确性、P1 klient/SDK/REST/TUI 公共边界和 P2 overlay，再交付 P3 workflow contract/runtime 并接入 A–E/G。A–E、G 可在 gate 之间使用 frozen fixture、fake adapter 和 mock event 并行开发，但跨轨集成与 release 必须等待对应 F gate；D/C 可以在 P3 schema fixture 上设计模板和 adapter node，不能提前实现第二套 runtime。
 
@@ -44,7 +44,7 @@ F 先冻结 canonical matrix；随后完成 P0 核心正确性、P1 klient/SDK/R
 
 需要跨进程、远程恢复或 UI 更新的事实必须有可重放 event/wire/transcript projection；live、backfill、cold 必须收敛，旧 peer、断线、冷 session、未初始化 AITP 和关闭的实验 flag 都必须有明确 degraded contract，不得静默成功。
 
-AITP 的 `list`、`show`、`check` 现已 shipped（M1a/M1b-R1 gate passed），必须先 feature-detect 版本化 schema 再调用，绝不模拟或从文档推导；对未安装或旧版本 AITP 按不存在处理。不得自动运行 `init`、`init --adopt` 或 `inventory`，不得直接写 canonical `.aitp` 文件。生产手机路径不能依赖 debug surface、未认证 reverse proxy、本地 canonical store 或 native engine。上游变更必须分类吸收而非机械同步；`GoalFeature` 在所有 shared gate 通过且不会产生第二个 Goal owner 前不迁移。
+AITP 的 `list`、`show`、`check`、`backfill` 现已 shipped（M1a/M1b-R1/M1c/M1d/M1e gate passed），Hakimi 首个实验性纵切片已实现 strict contract discovery 与 feature-detect 消费（`aitp_research_mode` flag，默认开启；仅开放 `/research` 与 `EnterAITPMode` 入口，进入模式仍需 `/research on` 或模型入口，inactive 零 AITP I/O），绝不模拟或从文档推导；对未安装或旧版本 AITP 按不存在处理。不得自动运行 `init`、`init --adopt` 或 `inventory`，不得直接写 canonical `.aitp` 文件。AITP 0.8 Skill-only amendment（已 commit）定义 `method-observation` marker 和 method-card distillation 规则，但不改 CLI/schema/transport；Hakimi native method-distillation orchestration（H6/C6）是 planned，unavailable。生产手机路径不能依赖 debug surface、未认证 reverse proxy、本地 canonical store 或 native engine。上游变更必须分类吸收而非机械同步；`GoalFeature` 在所有 shared gate 通过且不会产生第二个 Goal owner 前不迁移。
 
 ---
 
@@ -260,26 +260,32 @@ B 依赖 F 的 session lifecycle、permission、auth、transcript sequencing、R
 
 ### 4.1 当前 baseline 与 owner
 
-C 只交付可选 AITP CLI + files adapter；未安装或未初始化 AITP 时，D 和 Hakimi 主路径必须正常运行并显示 degraded status。最后核验的 AITP HEAD 是 `9f9e873440b8d88bfbb2963d8b5717c83b9ef4cc`（2026-08-14，逐命令核对 `--help`）：M0/M0.5 complete；M0.6 implementation closed（缩小声明）；M1a、M1b-R1、M1c 均 done 且 deterministic gate passed（107 tests）。H0 可实施；H1/H2/H3 的 AITP 前置 gate 已全部通过（读契约可 feature-detect），但 Hakimi native structured adapter 尚未实现。`record/note prepare|save` 是严格 shape 的未版本化 version-0 response contract，未知 `status` fail closed；第一个 versioned transport 是 M1a 的 `aitp/enter-0.2`。
+C 只交付可选 AITP CLI + files adapter；未安装或未初始化 AITP 时，D 和 Hakimi 主路径必须正常运行并显示 degraded status。最后核验的 AITP HEAD 是 `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290`（2026-08-23，逐命令核对 `--help`；committed HEAD 是 0.8.0——Skill-only amendment 已 commit）：M0/M0.5 complete；M0.6 implementation closed（缩小声明）；M1a、M1b-R1、M1c、M1d、M1e 均 done 且 deterministic gate passed（154 tests）。**Hakimi 原生 AITP Research Mode 的首个实验性（默认开启）纵切片已实现**，受 flag `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`（默认开启）门控：H0–H5 的读侧消费（strict contract discovery、Python probe、`enter`/`list`/`show`/`check`、scoped `--workstream` 读取/check、M1e finding-code 兼容）、`record`/`note prepare|save` 写入门控持久化、Research state（Question/Line/Focus、三轴问题模型、revision-based human steering、pending checkpoint 与 save+show+check barrier、Goal complete guard）、mode/loop/Question/Focus/checkpoint 的单一完整 snapshot push、active step 的语义状态维护 guidance、protocol/node-sdk/kap-server/klient 公开表面、以及 TUI `/research` Board/manager 与 stale-hydrate 防护均已落地。`/research on` 只激活 capability 和 Board，不调度模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。flag 关闭时（`=0` 或 `/experiments`）所有 AITP 工具、skill 和 Research Board 隐藏，零 AITP I/O；flag 开启但未进入模式时同样零 AITP I/O。不自动运行 `init`/`init --adopt`/`inventory`/`backfill --apply`；本轮不把 `backfill` 暴露为模型工具。typed AITP question/line registry、literature/compute/Portfolio、H6 native distillation orchestration 未实现。AITP 0.8 是 Skill-only amendment（已 commit），定义 `method-observation` marker 候选、保守 card/trial review、两步 human decision（approval + publication）和 platform tool/card/Skill 三层边界——不改 CLI/schema/transport。`record/note prepare|save` 是严格 shape 的未版本化 version-0 response contract，未知 `status` fail closed；第一个 versioned transport 是 M1a 的 `aitp/enter-0.2`。
 
-| Hakimi gate | AITP gate | 状态与计划 |
+| Hakimi gate | AITP gate | 状态 |
 |---|---|---|
-| H0 · 当前 CLI | M0/M0.6 | Skill 可手动调用 `init`、`enter`、`inventory`、`record/note prepare|save`；adapter 可开始实施，但不自动运行 `init`、`init --adopt` 或 `inventory`。 |
-| H1 · 检索 | M1a（gate passed） | feature-detect 并消费 `enter-0.2`、`list-0.1`、`show-0.1` 官方 golden fixtures；AITP 侧已 shipped，adapter 待实现。 |
-| H2 · 关系与诊断 | M1b-R1（gate passed） | 只消费 R1 实际发布的 `check-report-0.1`（exit 0/1 报告、exit 2 错误包）；`lite-entry-0.2` relation、`used_by`、`run-pointer-0.1` 均 deferred，不安排。 |
-| H3 · 科研记忆 | M1c（gate passed）；M2–M4 后 | 先整合 M1c scoped contracts（`enter-0.3`/`list-0.2`，仅单次 `--workstream`）；M2–M4 后消费 reviewed artifacts、跨 Topic links 和 collaborator protocol。 |
+| H0 · 当前 CLI | M0/M0.6 | **已实现（实验性）。** Launcher adapter、Python ≥ 3.11 探测、严格 envelope 校验、`enter` lifecycle、prepare→fill→save、`not_initialized` 降级、flag gate。不自动运行 `init`、`init --adopt`、`inventory`。 |
+| H1 · 检索 | M1a（gate passed） | **已实现（实验性）。** Feature-detect 并消费 `enter-0.2`、`list-0.1`、`show-0.1` 官方 golden fixtures；closeout-first recovery 和 Note-age signal。 |
+| H2 · 关系与诊断 | M1b-R1（gate passed） | **已实现（实验性）。** 只消费 R1 实际发布的 `check-report-0.1`（exit 0/1 报告、exit 2 错误包）；`lite-entry-0.2` relation、`used_by`、`run-pointer-0.1` 均 deferred，不安排。 |
+| H3 · 科研记忆 | M1c（gate passed）；M2–M4 后 | **已实现（实验性）。** 先整合 M1c scoped contracts（`enter-0.3`/`list-0.2`，仅单次 `--workstream`，严格 exact membership、relation 先全局计算）。typed question/line registry、reviewed artifacts、跨 Topic links 和 collaborator protocol 未实现。 |
+| H4 · workstream 健康 | M1d（gate passed） | **已实现（实验性）。** 整合 scoped `check`（`check-report-0.2`，仅单次 `--workstream`，admitted in-scope 计数、`by_code`/`outside_scope`，scoped `clean` ≠ 全库健康，四行文本仅人阅）；无 flag 时 `check-report-0.1` 字节不变。 |
+| H5 · evidence lifecycle | M1e（gate passed） | **已实现（实验性）。** 读取 `backfill-0.1` 成功 envelope 和 `sha256-once:`/policy finding codes（无 transport schema 变化）；`backfill` 不作为模型工具暴露，不自动 backfill、不推断 workstreams。 |
+| H6 · native distillation | planned（adapter-contract extension 未冻结） | **planned，unavailable**。native method-distillation orchestration：Session-scope coordinator、candidate/proposal lifecycle、human question + decision write、crash/resume。详见 [`docs/aitp/method-distillation-orchestration.md`](docs/aitp/method-distillation-orchestration.md)。 |
 
-当前持久化 `aitp/lite-entry-0.1` / `aitp/lite-note-0.1` 标识 AITP 文件，不是 CLI response envelope；读契约 `enter-0.2`/`list-0.1`/`show-0.1`/`check-report-0.1` 与 M1c 作用域契约 `enter-0.3`/`list-0.2` 已 shipped，可 feature-detect；不存在 `aitp/enter-0.1`、`aitp search`、`aitp --version`，`lineage` 仍 deferred。详细矩阵见 [`docs/aitp/`](docs/aitp/)。任何 status、command、schema、launcher 或 Skill discovery 变化都要先核验外部 AITP `--help`、schema、official fixtures 和双方 handoff，再更新本文件与双语 README；不得把规划写成 available。
+当前持久化 `aitp/lite-entry-0.1` / `aitp/lite-note-0.1` 标识 AITP 文件，不是 CLI response envelope；读契约 `enter-0.2`/`list-0.1`/`show-0.1`/`check-report-0.1`、M1c 作用域契约 `enter-0.3`/`list-0.2`、M1d 作用域 check 契约 `check-report-0.2`、M1e `backfill-0.1` 成功 envelope 已 shipped，均已实现 feature-detect 消费；不存在 `aitp/enter-0.1`、`aitp search`、`aitp --version`，`lineage` 仍 deferred。AITP 0.8 Skill-only amendment（已 commit）定义 `method-observation` marker 和 method-card distillation 规则，但不改 CLI/schema/transport。详细矩阵见 [`docs/aitp/`](docs/aitp/)；native method-distillation orchestration 规划见 [`docs/aitp/method-distillation-orchestration.md`](docs/aitp/method-distillation-orchestration.md)。任何 status、command、schema、launcher 或 Skill discovery 变化都要先核验外部 AITP `--help`、schema、official fixtures 和双方 handoff，再更新本文件与双语 README；不得把规划写成 available。
 
 ### 4.2 边界与阶段
 
-- **Owner/boundary：** C 的 adapter 由 Hakimi AITP adapter/domain owner 实现，首选 v2 Feature/config/command/service contribution seam，例如 `packages/agent-core-v2/src/features/aitp/`；不得从 UI/server deep import。launcher 只调用外部 plugin 的 `scripts/aitp.py`，按 Skill 规则探测 Python ≥3.11。
-- **C0/H0：** version-0 envelope strict shape、`--help` capability、`enter` lifecycle、prepare→fill→save、`not_initialized` degrade、tree-hash zero-write 和 flag gate。
-- **C1/H1：** M1a 后 feature-detect 并消费 `enter/list/show` versioned contract 与 golden fixtures，提供 closeout-first recovery 和 Note-age signal；gate 前不调用或模拟。
-- **C2/H2：** M1b-R1 后只消费实际发布的 check report（`check-report-0.1`，exit 0/1 报告、exit 2 错误包）；relation、typed resolution、`used_by`、run pointer 均未发布（deferred），不纳入；所有 pointer projection 只读。
-- **C3/H3：** M1c 后先整合 scoped contracts（仅单次 `--workstream <slug>` 时 feature-detect `enter-0.3`/`list-0.2`，严格 exact membership、relation 先全局计算）；M2–M4 后按 gate 顺序消费 reviewed artifacts、cross-topic links 和 Skill collaborator protocol；正式 compatibility 以 versioned JSON + official fixtures 为准。
-- **C4 maintenance：** 每次外部变化重跑 launcher、capability、shape、fixture、tree-hash 和 degraded tests。
-- **C5 optional workflow nodes：** 只在 F/P3.1 node/artifact contract 和对应 AITP capability gate 冻结后，贡献 feature-detected 的 read、prepare、save adapter node；node 输入输出必须是 C 拥有的 versioned adapter contract，不能把 shell command、`.aitp` 路径写入或 ledger mutation 暴露给 workflow template。AITP absent/old/not_initialized 时返回声明的 degraded/blocked artifact，不阻断无 AITP workflow 分支。
+- **Owner/boundary：** C 的 adapter 由 Hakimi AITP adapter/domain owner 实现，首选 v2 Feature/config/command/service contribution seam，例如 `packages/agent-core-v2/src/features/aitpResearch/`；不得从 UI/server deep import。launcher 只调用外部 plugin 的 `scripts/aitp.py`，按 Skill 规则探测 Python ≥3.11。首个实验性纵切片已实现（`aitp_research_mode` flag，默认开启；仅开放 `/research` 与 `EnterAITPMode`，进入模式仍需显式 `/research on` 或模型入口，inactive 零 AITP I/O），覆盖 H0–H5。
+- **C0/H0（已实现，实验性）：** version-0 envelope strict shape、`--help` capability、`enter` lifecycle、prepare→fill→save、`not_initialized` degrade、tree-hash zero-write 和 flag gate。
+- **C1/H1（已实现，实验性）：** M1a 后 feature-detect 并消费 `enter/list/show` versioned contract 与 golden fixtures，提供 closeout-first recovery 和 Note-age signal。
+- **C2/H2（已实现，实验性）：** M1b-R1 后只消费实际发布的 check report（`check-report-0.1`，exit 0/1 报告、exit 2 错误包）；relation、typed resolution、`used_by`、run pointer 均未发布（deferred），不纳入；所有 pointer projection 只读。
+- **C3/H3（已实现，实验性）：** M1c 后先整合 scoped contracts（仅单次 `--workstream <slug>` 时 feature-detect `enter-0.3`/`list-0.2`，严格 exact membership、relation 先全局计算）；typed question/line registry、reviewed artifacts、cross-topic links 和 collaborator protocol 未实现；正式 compatibility 以 versioned JSON + official fixtures 为准。
+- **C4/H4（已实现，实验性）：** M1d 后整合 scoped `check`（仅单次 `--workstream <slug>` 时 feature-detect `check-report-0.2`，admitted in-scope 计数、`by_code`/`outside_scope`，scoped `clean` ≠ 全库健康，四行文本仅人阅）；无 flag 时 `check-report-0.1` 字节不变。
+- **C5/H5（已实现，实验性）：** M1e 后读取 `backfill-0.1` 成功 envelope 和 `sha256-once:`/policy finding codes（无 transport schema 变化）；`backfill` 不作为模型工具暴露，不自动 backfill、不推断 workstreams。
+- **C6/H6（planned，unavailable）：** native method-distillation orchestration——Session-scope coordinator、candidate/proposal lifecycle、human question + decision write、crash/resume。前置：H0–H5 全部落地 + reviewed adapter-contract extension 冻结 marker discovery/exact-card trial/decision receipt semantics。当前 **planned，unavailable**，详见 [`docs/aitp/method-distillation-orchestration.md`](docs/aitp/method-distillation-orchestration.md)。
+- **C7 maintenance：** 每次外部变化重跑 launcher、capability、shape、fixture、tree-hash 和 degraded tests。
+- **C8 optional workflow nodes：** 只在 F/P3.1 node/artifact contract 和对应 AITP capability gate 冻结后，贡献 feature-detected 的 read、prepare、save adapter node；node 输入输出必须是 C 拥有的 versioned adapter contract，不能把 shell command、`.aitp` 路径写入或 ledger mutation 暴露给 workflow template。AITP absent/old/not_initialized 时返回声明的 degraded/blocked artifact，不阻断无 AITP workflow 分支。
 
 C 依赖 F 的 flag、session、event、klient/SDK、P3 node contribution 和 release boundary；A/B/E 只消费 capability/status projection，D 先产生 ephemeral trace，只有用户显式启用且通过 prepare/save/write gate 才写入 AITP。C 永不写 `.aitp` canonical files、第二 index、private cache/transcript/CoT、Tower activity log 派生 memory 或第二 ledger；安装的 AITP 缺少对应命令（未安装或旧版本）时必须返回 absent/blocked，而不是模拟。
 
@@ -333,7 +339,7 @@ E 依赖 F 的 config registry、manifest、klient/SDK、events、permission、t
 
 ### 7.1 owner 与边界
 
-F 是 platform/engine owner：`packages/agent-core-v2` 拥有 App/Workspace/Session/Agent scopes、services、features、config/wire/tool/profile/command contributions，以及 Tower workflow 的 schema registry、validator/compiler、run state machine、worktree/review/merge protocol 和 public projection；`packages/agent-core` 冻结为 legacy compatibility/rollback source，不承载新 workflow runtime。`packages/transcript` 是 transcript contract、op-batch 和 reducer 的 sole owner；`packages/klient` 是 typed facade；`packages/node-sdk`、`packages/kap-server` 是 public transport；生产远程 surface 固定为 `/api/v1` REST/WS + transcript。
+F 是 platform/engine owner：`packages/agent-core-v2` 拥有当前 App/Session/Agent scopes、未来 Workspace scope 的架构演进、services、features、config/wire/tool/profile/command contributions，以及 Tower workflow 的 schema registry、validator/compiler、run state machine、worktree/review/merge protocol 和 public projection；`packages/agent-core` 冻结为 legacy compatibility/rollback source，不承载新 workflow runtime。`packages/transcript` 是 transcript contract、op-batch 和 reducer 的 sole owner；`packages/klient` 是 typed facade；`packages/node-sdk`、`packages/kap-server` 是 public transport；生产远程 surface 固定为 `/api/v1` REST/WS + transcript。
 
 F 还拥有 CLI/TUI/native print 基础、upstream intake、release/CI、security/performance 和 shared gate，但不拥有外部 Web source、B deployment config、C AITP runtime、D research semantics、领域 workflow artifact schema 或 E UI information architecture。每个 upstream window 要记录 base commit，并把变更分类为直接吸收、v2 adapter、legacy-only、overlay conflict 或拒绝；`upstream-base.json` 不替代 Web provenance。外部或项目贡献的 workflow/role/node kind 必须经 F 的 version/capability/permission/import-boundary gate，不能通过 prompt 或 UI 注入运行时实现。
 

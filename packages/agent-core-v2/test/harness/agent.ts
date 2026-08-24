@@ -89,6 +89,8 @@ interface UnregisterToolPayload { readonly name: string }
 import { type UsageStatus } from '#/agent/usage/usage';
 import { IAgentSkillService, type PromptWithSkillsInput, type SkillActivationInput } from '#/agent/skill/skill';
 import { AgentSkillService } from '#/agent/skill/skillService';
+import { IAgentSkillVisibilityService } from '#/agent/skillVisibility/skillVisibility';
+import type { SkillDefinition } from '#/app/skillCatalog/types';
 import { IAgentRuntimeBindingSeed } from '#/agent/runtimeBinding/runtimeBinding';
 import { IAgentRuntimeService } from '#/agent/runtimeBinding/agentRuntime';
 import type { RuntimeLease } from '#/runtime/runtime';
@@ -741,6 +743,12 @@ export function skillServices(
   return [
     sessionService(ISessionSkillCatalog, catalogService),
     agentService(IAgentSkillService, new SyncDescriptor(AgentSkillService)),
+    agentService(IAgentSkillVisibilityService, {
+      _serviceBrand: undefined,
+      isSkillVisible: () => true,
+      hiddenReason: () => undefined,
+      filterVisible: (skills: readonly SkillDefinition[]) => skills,
+    }),
   ];
 }
 
@@ -1347,6 +1355,12 @@ export class AgentTestContext {
             );
             reg.defineDescriptor(IAgentGoalService, new SyncDescriptor(AgentGoalService));
             reg.defineDescriptor(IAgentSkillService, new SyncDescriptor(AgentSkillService));
+            reg.defineInstance(IAgentSkillVisibilityService, {
+              _serviceBrand: undefined,
+              isSkillVisible: () => true,
+              hiddenReason: () => undefined,
+              filterVisible: (skills: readonly SkillDefinition[]) => skills,
+            });
             reg.defineDescriptor(IAgentUserToolService, new SyncDescriptor(AgentUserToolService));
             const agentScope = `${sessionScope}/agents/${agentId}`;
             reg.defineInstance(IAgentScopeContext, {

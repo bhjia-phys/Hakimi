@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -111,11 +111,15 @@ describe('GitService', () => {
 
     it('throws FS_GIT_UNAVAILABLE when not a repo', async () => {
       const notRepo = mkdtempSync(join(tmpdir(), 'not-repo-'));
+      const savedCeiling = process.env['GIT_CEILING_DIRECTORIES'];
+      process.env['GIT_CEILING_DIRECTORIES'] = dirname(notRepo);
       try {
         await expect(service.status(notRepo)).rejects.toMatchObject({
           code: ErrorCodes.FS_GIT_UNAVAILABLE,
         });
       } finally {
+        if (savedCeiling === undefined) delete process.env['GIT_CEILING_DIRECTORIES'];
+        else process.env['GIT_CEILING_DIRECTORIES'] = savedCeiling;
         rmSync(notRepo, { recursive: true, force: true });
       }
     });

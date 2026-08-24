@@ -182,17 +182,32 @@ function stripOriginDisclosure(history: readonly unknown[]): readonly unknown[] 
   });
 }
 
+interface ExperimentalFeatureLike {
+  readonly id: string;
+  title?: string;
+  description?: string;
+}
+
 const KNOWN_DIFFS = {
   // v2's flag registry is per-domain and already carries flags v1 does not
   // have (minidb backend, subagent); v1-only flags would be the symmetric
   // case. Parity is enforced on the intersection of ids until the registries
-  // are unified.
+  // are unified. The shared secondary-model id intentionally describes
+  // engine-specific behavior, so only its presentation copy is projected out.
   getExperimentalFeatures: (
-    features: readonly { id: string }[],
-    other: readonly { id: string }[],
-  ): readonly { id: string }[] => {
+    features: readonly ExperimentalFeatureLike[],
+    other: readonly ExperimentalFeatureLike[],
+  ): readonly ExperimentalFeatureLike[] => {
     const otherIds = new Set(other.map((feature) => feature.id));
-    return features.filter((feature) => otherIds.has(feature.id));
+    return features
+      .filter((feature) => otherIds.has(feature.id))
+      .map((feature) => {
+        if (feature.id !== 'secondary-model') return feature;
+        const projected = { ...feature };
+        delete projected.title;
+        delete projected.description;
+        return projected;
+      });
   },
   // `raw`: the v1 write path carries a passthrough clone of the original
   // TOML document inside the returned config; the v2 engine keeps the same

@@ -17,6 +17,10 @@ import {
   type ProviderRefreshFailure,
 } from './modelCatalog';
 import { workspaceSchema, type Workspace } from './workspace';
+import {
+  researchStatusSnapshotSchema,
+  type ResearchStatusSnapshot,
+} from './research';
 
 export interface TokenUsage {
   readonly inputOther: number;
@@ -637,6 +641,15 @@ export interface GoalUpdatedEvent {
   readonly change?: GoalChange;
 }
 
+export interface ResearchUpdatedEvent {
+  readonly type: 'research.updated';
+  readonly snapshot: ResearchStatusSnapshot;
+}
+
+export interface AitpModeUpdatedEvent {
+  readonly type: 'aitp_mode.updated';
+}
+
 export interface SkillActivatedEvent {
   readonly type: 'skill.activated';
   readonly activationId: string;
@@ -991,6 +1004,8 @@ export type AgentEvent =
   | PluginChangedEvent
   | CapabilityChangedEvent
   | GoalUpdatedEvent
+  | ResearchUpdatedEvent
+  | AitpModeUpdatedEvent
   | SkillActivatedEvent
   | PluginCommandActivatedEvent
   | TurnStartedEvent
@@ -1596,6 +1611,15 @@ export const goalUpdatedEventSchema = z.object({
   change: goalChangeSchema.optional(),
 }) satisfies z.ZodType<GoalUpdatedEvent>;
 
+export const researchUpdatedEventSchema = z.object({
+  type: z.literal('research.updated'),
+  snapshot: researchStatusSnapshotSchema,
+}) satisfies z.ZodType<ResearchUpdatedEvent>;
+
+export const aitpModeUpdatedEventSchema = z.object({
+  type: z.literal('aitp_mode.updated'),
+}) satisfies z.ZodType<AitpModeUpdatedEvent>;
+
 export const skillActivatedEventSchema = z.object({
   type: z.literal('skill.activated'),
   activationId: z.string(),
@@ -1917,6 +1941,8 @@ export const agentEventSchema = z.discriminatedUnion('type', [
   pluginChangedEventSchema,
   capabilityChangedEventSchema,
   goalUpdatedEventSchema,
+  researchUpdatedEventSchema,
+  aitpModeUpdatedEventSchema,
   skillActivatedEventSchema,
   pluginCommandActivatedEventSchema,
   turnStartedEventSchema,

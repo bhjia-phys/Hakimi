@@ -53,6 +53,9 @@ import type {
   PluginSummary,
   ReloadSummary,
   CompactOptions,
+  ResearchCommand,
+  ResearchCommandResponse,
+  ResearchStatusSnapshot,
   SessionPlan,
   SessionStatus,
   SessionUsage,
@@ -805,6 +808,29 @@ export abstract class SDKRpcClientBase {
       sessionId: input.sessionId,
       agentId: this.interactiveAgentId,
     });
+  }
+
+  // --- AITP Research Mode -----------------------------------------------
+  // The research surface exists only on the v2 engine (the `aitpResearch`
+  // feature). The base implementation fails with `not_implemented` so a v1
+  // client reports the gap clearly; only `SDKRpcClientV2` overrides these.
+
+  async getResearch(input: SessionIdRpcInput): Promise<ResearchStatusSnapshot> {
+    void input;
+    throw new KimiError(
+      ErrorCodes.NOT_IMPLEMENTED,
+      'getResearch is only available on the agent-core-v2 engine.',
+    );
+  }
+
+  async commandResearch(
+    input: SessionIdRpcInput & { readonly command: ResearchCommand },
+  ): Promise<ResearchCommandResponse> {
+    void input;
+    throw new KimiError(
+      ErrorCodes.NOT_IMPLEMENTED,
+      'commandResearch is only available on the agent-core-v2 engine.',
+    );
   }
 
   async getCronTasks(input: SessionIdRpcInput): Promise<GetCronTasksResult> {

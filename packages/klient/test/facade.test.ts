@@ -629,3 +629,225 @@ describe('event hub', () => {
     expect(errors[0]).toBeInstanceOf(KlientValidationError);
   });
 });
+
+describe('research.updated event schema', () => {
+  it('uses the complete ResearchStatusSnapshot contract for valid and malformed payloads', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const agent = klient.session('s1').agent('main');
+    const seen: unknown[] = [];
+    const errors: Error[] = [];
+    agent.events.onError((error) => errors.push(error));
+    agent.events.on('research.updated', (event) => seen.push(event));
+
+    const question = {
+      id: 'q1',
+      lineSlug: 'main',
+      wording: 'Question',
+      priority: 0,
+      neededEvidence: [],
+      evidenceRefs: [],
+      falsifierRefs: [],
+      workflow: 'open' as const,
+      epistemic: 'unknown' as const,
+      persistence: 'working' as const,
+      revision: 1,
+    };
+    const line = {
+      slug: 'main',
+      title: 'Main',
+      status: 'active' as const,
+      createdAt: 1,
+      revision: 1,
+    };
+    const snapshot = {
+      mode: 'ready' as const,
+      loopStatus: 'active' as const,
+      currentLineSlug: 'main',
+      currentFocus: { questionId: 'q1', boundedAction: 'act', revision: 1 },
+      currentQuestion: question,
+      questions: [question],
+      lines: [line],
+      openQuestionCount: 1,
+      activeQuestionCount: 0,
+      blockedQuestionCount: 0,
+      alerts: [],
+      goalSummary: { status: 'active', remainingTurns: 3 },
+      aitpHealth: { phase: 'ready' as const, contractVersion: '0.1' },
+      pendingCheckpoint: {
+        checkpointId: 'cp1',
+        questionId: 'q1',
+        lineSlug: 'main',
+        idempotencyKey: 'key1',
+        persistence: 'pending_commit' as const,
+        createdAt: 1,
+      },
+      latestCommittedCheckpoint: { checkpointId: 'cp0', entryId: 'e0', committedAt: 1 },
+      revision: 2,
+    };
+
+    channel.emit(0, { type: 'research.updated', snapshot });
+    channel.emit(0, { type: 'research.updated', snapshot: { ...snapshot, currentFocus: { questionId: 'q1' } } });
+    channel.emit(0, { type: 'research.updated', snapshot: { ...snapshot, currentQuestion: { id: 'q1' } } });
+    channel.emit(0, { type: 'research.updated', snapshot: { ...snapshot, pendingCheckpoint: { checkpointId: 'cp1' } } });
+    channel.emit(0, { type: 'research.updated', snapshot: { ...snapshot, aitpHealth: { contractVersion: '0.1' } } });
+    await tick();
+
+    expect(seen).toHaveLength(1);
+    expect(errors).toHaveLength(4);
+    expect(errors.every((error) => error instanceof KlientValidationError)).toBe(true);
+  });
+});
+
+describe('research facade routing', () => {
+  const snapshot = {
+    mode: 'inactive',
+    loopStatus: 'active',
+    questions: [],
+    lines: [],
+    openQuestionCount: 0,
+    activeQuestionCount: 0,
+    blockedQuestionCount: 0,
+    alerts: [],
+    aitpHealth: { phase: 'inactive' },
+    revision: 0,
+  };
+
+  it('routes getSnapshot to agentResearchService.getSnapshot', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    channel.results.set('agentResearchService.getSnapshot', snapshot);
+
+    const agent = klient.session('s1').agent('main');
+    const result = await agent.research.getSnapshot();
+
+    expect(result).toEqual(snapshot);
+    expect(channel.calls[0]).toMatchObject({
+      service: 'agentResearchService',
+      method: 'getSnapshot',
+      args: [],
+    });
+  });
+
+  it('routes steer to agentResearchService.steer with the command as positional arg', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    channel.result = undefined;
+
+    const agent = klient.session('s1').agent('main');
+    await agent.research.steer({
+      kind: 'pause_loop',
+      expectedRevision: 5,
+    });
+
+    expect(channel.calls[0]).toMatchObject({
+      service: 'agentResearchService',
+      method: 'steer',
+      args: [{ kind: 'pause_loop', expectedRevision: 5 }],
+    });
+  });
+
+  it('routes setFocus with two positional args', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    channel.result = undefined;
+
+    const agent = klient.session('s1').agent('main');
+    await agent.research.setFocus('q1', 'next step');
+
+    expect(channel.calls[0]).toMatchObject({
+      service: 'agentResearchService',
+      method: 'setFocus',
+      args: ['q1', 'next step'],
+    });
+  });
+
+  it('omits optional tuple holes for focus, reopen, switch, and mode loop calls', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    channel.result = undefined;
+
+    const agent = klient.session('s1').agent('main');
+    await agent.research.setFocus('q1', undefined, 7);
+    await agent.research.setFocus('q1', 'bounded action');
+    await agent.research.setFocus('q1', 'bounded action', 8);
+    await agent.research.reopenQuestion('q1', undefined, 9);
+    await agent.research.reopenQuestion('q1', 'new evidence');
+    await agent.research.reopenQuestion('q1', 'new evidence', 10);
+    await agent.research.switchLine('alt');
+    await agent.research.switchLine('alt', 11);
+    await agent.aitpMode.pauseLoop(12);
+    await agent.aitpMode.resumeLoop(13);
+
+    expect(channel.calls.map((call) => call.args)).toEqual([
+      ['q1', 7],
+      ['q1', 'bounded action'],
+      ['q1', 'bounded action', 8],
+      ['q1', 9],
+      ['q1', 'new evidence'],
+      ['q1', 'new evidence', 10],
+      ['alt'],
+      ['alt', 11],
+      [12],
+      [13],
+    ]);
+    expect(channel.calls.every((call) => !call.args.includes(null))).toBe(true);
+  });
+
+  it('routes updateLine with its structured input', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    channel.result = { slug: 'main', title: 'Updated', status: 'paused', createdAt: 1, revision: 2 };
+
+    const agent = klient.session('s1').agent('main');
+    await agent.research.updateLine({
+      slug: 'main',
+      expectedRevision: 1,
+      assessment: 'supported direction',
+      status: 'paused',
+      reason: 'new evidence',
+    });
+
+    expect(channel.calls[0]).toMatchObject({
+      service: 'agentResearchService',
+      method: 'updateLine',
+      args: [{
+        slug: 'main',
+        expectedRevision: 1,
+        assessment: 'supported direction',
+        status: 'paused',
+        reason: 'new evidence',
+      }],
+    });
+  });
+
+  it('routes switchLine with an optional expected revision', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    channel.result = undefined;
+
+    const agent = klient.session('s1').agent('main');
+    await agent.research.switchLine('alt', 7);
+
+    expect(channel.calls[0]).toMatchObject({
+      service: 'agentResearchService',
+      method: 'switchLine',
+      args: ['alt', 7],
+    });
+  });
+
+  it('routes aitpMode.enter through agentAitpModeService', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    channel.result = undefined;
+
+    const agent = klient.session('s1').agent('main');
+    await agent.aitpMode.enter({ actor: 'user' });
+
+    expect(channel.calls[0]).toMatchObject({
+      service: 'agentAitpModeService',
+      method: 'enter',
+      args: [{ actor: 'user' }],
+    });
+  });
+});

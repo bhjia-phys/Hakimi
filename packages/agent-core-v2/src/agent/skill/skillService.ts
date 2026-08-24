@@ -40,6 +40,7 @@ import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import { Service } from '#/_base/di/service';
 import { ErrorCodes, Error2 } from '#/errors';
 import { isUserActivatableSkillType, type SkillDefinition } from '#/app/skillCatalog/types';
+import { IAgentSkillVisibilityService } from '#/agent/skillVisibility/skillVisibility';
 import { IAgentPromptService, type PromptLaunchResult } from '#/agent/prompt/prompt';
 import { ITelemetryService } from '#/app/telemetry/telemetry';
 import { IAgentLoopService, type Turn } from '#/agent/loop/loop';
@@ -71,6 +72,7 @@ export class AgentSkillService extends Service implements IAgentSkillService {
     @ISessionMetadata private readonly metadata: ISessionMetadata,
     @IEventService private readonly eventService: IEventService,
     @IAgentScopeContext private readonly scopeContext: IAgentScopeContext,
+    @IAgentSkillVisibilityService private readonly visibility: IAgentSkillVisibilityService,
   ) {
     super();
   }
@@ -80,6 +82,9 @@ export class AgentSkillService extends Service implements IAgentSkillService {
     const skill = this.skillCatalog.catalog.getSkill(input.name);
     if (skill === undefined) {
       throw new Error2(ErrorCodes.SKILL_NOT_FOUND, `Skill "${input.name}" was not found`);
+    }
+    if (!this.visibility.isSkillVisible(skill)) {
+      throw new Error2(ErrorCodes.SKILL_NOT_FOUND, `Skill "${input.name}" is not available`);
     }
     if (!isUserActivatableSkillType(skill.metadata.type)) {
       throw new Error2(
@@ -189,6 +194,9 @@ export class AgentSkillService extends Service implements IAgentSkillService {
     const skill = this.skillCatalog.catalog.getSkill(input.name);
     if (skill === undefined) {
       throw new Error2(ErrorCodes.SKILL_NOT_FOUND, `Skill "${input.name}" was not found`);
+    }
+    if (!this.visibility.isSkillVisible(skill)) {
+      throw new Error2(ErrorCodes.SKILL_NOT_FOUND, `Skill "${input.name}" is not available`);
     }
     if (!isUserActivatableSkillType(skill.metadata.type)) {
       throw new Error2(

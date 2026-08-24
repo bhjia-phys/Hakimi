@@ -84,6 +84,12 @@ export interface AppState {
   sessionTitle: string | null;
   /** Current goal snapshot for the footer badge; null/undefined when no active goal. */
   goal?: GoalSnapshot | null;
+  /** True while research mode is active (loop running or degraded); for footer badge. */
+  researchMode?: boolean;
+  /** Research loop status when research mode is active; for footer badge detail. */
+  researchLoopStatus?: 'active' | 'paused';
+  /** Current AITP research mode phase; `undefined`/`'inactive'` hides the footer badge. */
+  researchModePhase?: 'inactive' | 'probing' | 'ready' | 'degraded';
   mcpServersSummary: string | null;
   /** Optional banner shown below the welcome panel; null means no banner to render. */
   banner?: BannerState | null;

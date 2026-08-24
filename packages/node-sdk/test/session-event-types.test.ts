@@ -119,6 +119,8 @@ describe('Event public types', () => {
         case 'prompt.completed':
         case 'prompt.aborted':
         case 'prompt.steered':
+        case 'research.updated':
+        case 'aitp_mode.updated':
           return;
         default:
           assertNever(event);

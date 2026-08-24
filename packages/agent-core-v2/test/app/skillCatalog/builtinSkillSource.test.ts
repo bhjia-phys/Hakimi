@@ -29,6 +29,7 @@ const PRODUCT_SKILLS = [
   'import-from-cc-codex',
   'update-config',
   'custom-theme',
+  'check-hakimi-docs',
   'check-kimi-code-docs',
 ];
 const NEUTRAL_SKILLS = BUILTIN_SKILLS.map((s) => s.name).filter(

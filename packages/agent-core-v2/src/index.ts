@@ -696,3 +696,24 @@ export type { AgentToolContributionOptions } from '#/agent/toolRegistry/toolCont
 export * from '#/agent/userTool/userTool';
 export * from '#/agent/userTool/userToolOps';
 export * from '#/agent/userTool/userToolService';
+
+// Skill visibility seam
+export * from '#/agent/skillVisibility/skillVisibility';
+import '#/agent/skillVisibility/skillVisibilityService';
+
+// AITP Research Mode feature
+import '#/features/aitpResearch/flag';
+import '#/features/aitpResearch/errors';
+export { AitpResearchErrors } from '#/features/aitpResearch/errors';
+export * from '#/features/aitpResearch/types';
+export * from '#/features/aitpResearch/aitpResearchOps';
+export * from '#/features/aitpResearch/adapter/sessionAitpAdapter';
+export * from '#/features/aitpResearch/mode/agentAitpMode';
+export * from '#/features/aitpResearch/research/agentResearch';
+export * from '#/features/aitpResearch/injection/aitpResearchInjectionContract';
+export * from '#/features/aitpResearch/tools/aitpModeTools';
+import '#/features/aitpResearch/tools/aitpModeToolsImpl';
+export * from '#/features/aitpResearch/tools/researchTools';
+import '#/features/aitpResearch/tools/researchToolsImpl';
+export * from '#/features/aitpResearch/tools/aitpAdapterTools';
+import '#/features/aitpResearch/aitpResearchFeature';

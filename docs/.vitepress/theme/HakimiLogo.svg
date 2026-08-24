@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" role="img" aria-labelledby="title">
+  <title id="title">Hakimi cat-ear spacecraft</title>
+  <g shape-rendering="crispEdges">
+    <g fill="#3A4A63">
+      <rect x="40" y="30" width="20" height="20"/>
+      <rect x="160" y="30" width="20" height="20"/>
+      <rect x="20" y="50" width="20" height="20"/>
+      <rect x="60" y="50" width="20" height="20"/>
+      <rect x="140" y="50" width="20" height="20"/>
+      <rect x="180" y="50" width="20" height="20"/>
+      <rect x="0" y="70" width="220" height="20"/>
+      <rect x="0" y="90" width="20" height="80"/>
+      <rect x="200" y="90" width="20" height="80"/>
+      <rect x="0" y="170" width="220" height="20"/>
+    </g>
+    <g fill="#F2F7FD">
+      <rect x="20" y="90" width="180" height="20"/>
+      <rect x="20" y="110" width="20" height="60"/>
+      <rect x="180" y="110" width="20" height="60"/>
+    </g>
+    <g fill="#F5831F">
+      <rect x="40" y="50" width="20" height="20"/>
+      <rect x="160" y="50" width="20" height="20"/>
+      <rect x="40" y="150" width="140" height="20"/>
+    </g>
+    <g fill="#1E7CF0">
+      <rect x="60" y="110" width="100" height="20"/>
+      <rect x="40" y="130" width="140" height="20"/>
+    </g>
+    <g fill="#8FE6FF">
+      <rect x="40" y="110" width="20" height="20"/>
+      <rect x="160" y="110" width="20" height="20"/>
+    </g>
+  </g>
+</svg>

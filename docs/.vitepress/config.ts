@@ -19,8 +19,8 @@ const mermaidOptimizeDeps = [
 
 const config = withMermaid(defineConfig({
   base,
-  title: 'Kimi Code CLI Docs',
-  description: 'Kimi Code CLI Documentation',
+  title: 'Hakimi Docs',
+  description: 'Hakimi Documentation',
 
   head: [
     ['link', { rel: 'icon', type: 'image/x-icon', href: `${base}favicon.ico` }],
@@ -34,8 +34,8 @@ const config = withMermaid(defineConfig({
       label: '简体中文',
       lang: 'zh-CN',
       link: '/zh/',
-      title: 'Kimi Code CLI 文档',
-      description: 'Kimi Code CLI 用户文档',
+      title: 'Hakimi 文档',
+      description: 'Hakimi 用户文档',
       themeConfig: {
         nav: [
           { text: '指南', link: '/zh/guides/getting-started', activeMatch: '/zh/guides/' },
@@ -55,6 +55,7 @@ const config = withMermaid(defineConfig({
                 { text: '交互与输入', link: '/zh/guides/interaction' },
                 { text: '会话与上下文', link: '/zh/guides/sessions' },
                 { text: '使用目标模式', link: '/zh/guides/goals' },
+                { text: '研究模式', link: '/zh/guides/research-mode' },
                 { text: '在 IDE 中使用', link: '/zh/guides/ides' },
                 { text: '本地服务与 API', link: '/zh/guides/server' },
               ],
@@ -89,8 +90,8 @@ const config = withMermaid(defineConfig({
             {
               text: '参考手册',
               items: [
-                { text: 'kimi 命令', link: '/zh/reference/kimi-command' },
-                { text: 'kimi acp 子命令', link: '/zh/reference/kimi-acp' },
+                { text: 'hakimi 命令', link: '/zh/reference/kimi-command' },
+                { text: 'hakimi acp 子命令', link: '/zh/reference/kimi-acp' },
                 { text: '服务 API', link: '/zh/reference/server-api' },
                 { text: '内置工具', link: '/zh/reference/tools' },
                 { text: '斜杠命令', link: '/zh/reference/slash-commands' },
@@ -113,8 +114,8 @@ const config = withMermaid(defineConfig({
       label: 'English',
       lang: 'en-US',
       link: '/en/',
-      title: 'Kimi Code CLI Docs',
-      description: 'Kimi Code CLI User Documentation',
+      title: 'Hakimi Docs',
+      description: 'Hakimi User Documentation',
       themeConfig: {
         nav: [
           { text: 'Guides', link: '/en/guides/getting-started', activeMatch: '/en/guides/' },
@@ -134,6 +135,7 @@ const config = withMermaid(defineConfig({
                 { text: 'Interaction and Input', link: '/en/guides/interaction' },
                 { text: 'Sessions and Context', link: '/en/guides/sessions' },
                 { text: 'Using Goals', link: '/en/guides/goals' },
+                { text: 'Research Mode', link: '/en/guides/research-mode' },
                 { text: 'Using in IDEs', link: '/en/guides/ides' },
                 { text: 'Local Server and API', link: '/en/guides/server' },
               ],
@@ -168,8 +170,8 @@ const config = withMermaid(defineConfig({
             {
               text: 'Reference',
               items: [
-                { text: 'kimi Command', link: '/en/reference/kimi-command' },
-                { text: 'kimi acp Subcommand', link: '/en/reference/kimi-acp' },
+                { text: 'hakimi Command', link: '/en/reference/kimi-command' },
+                { text: 'hakimi acp Subcommand', link: '/en/reference/kimi-acp' },
                 { text: 'Server API', link: '/en/reference/server-api' },
                 { text: 'Built-in Tools', link: '/en/reference/tools' },
                 { text: 'Slash Commands', link: '/en/reference/slash-commands' },
@@ -194,7 +196,7 @@ const config = withMermaid(defineConfig({
     outline: [2, 3],
     search: { provider: 'local' },
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/MoonshotAI/kimi-code' },
+      { icon: 'github', link: 'https://github.com/bhjia-phys/Hakimi' },
     ],
   },
 

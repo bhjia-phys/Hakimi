@@ -3,6 +3,7 @@ import {
   findBuiltInSlashCommand,
   parseSlashInput,
   presetArgumentCompletions,
+  researchArgumentCompletions,
   resolveSlashCommandAvailability,
   addDirArgumentCompletions,
   sortSlashCommands,
@@ -217,5 +218,39 @@ describe('built-in slash command registry', () => {
     expect((command as KimiSlashCommand).hidden).toBe(true);
     expect((command as KimiSlashCommand).experimentalFlag).toBeUndefined();
     expect(resolveSlashCommandAvailability(command!, '')).toBe('always');
+  });
+
+  it('registers research with experimental flag and subcommand-aware availability', () => {
+    const research = findBuiltInSlashCommand('research');
+    expect(research).toBeDefined();
+    expect((research as KimiSlashCommand).experimentalFlag).toBe('aitp_research_mode');
+    // status / pause / resume are always available
+    expect(resolveSlashCommandAvailability(research!, '')).toBe('always');
+    expect(resolveSlashCommandAvailability(research!, 'status')).toBe('always');
+    expect(resolveSlashCommandAvailability(research!, 'pause')).toBe('always');
+    expect(resolveSlashCommandAvailability(research!, 'resume')).toBe('always');
+    // on / off / manage / question actions are idle-only
+    expect(resolveSlashCommandAvailability(research!, 'on')).toBe('idle-only');
+    expect(resolveSlashCommandAvailability(research!, 'off')).toBe('idle-only');
+    expect(resolveSlashCommandAvailability(research!, 'manage')).toBe('idle-only');
+    expect(resolveSlashCommandAvailability(research!, 'edit q1 -- text')).toBe('idle-only');
+    expect(resolveSlashCommandAvailability(research!, 'focus q1 -- action')).toBe('idle-only');
+    expect(resolveSlashCommandAvailability(research!, 'defer q1')).toBe('idle-only');
+  });
+
+  it('offers research subcommand argument completions', () => {
+    const values = (prefix: string): string[] | null => {
+      const items = researchArgumentCompletions(prefix);
+      return items === null ? null : items.map((item) => item.value);
+    };
+    expect(values('')).toEqual([
+      'status', 'on', 'off', 'pause', 'resume', 'manage',
+      'edit', 'focus', 'defer', 'block', 'close', 'reopen', 'line',
+    ]);
+    expect(values('s')).toEqual(['status']);
+    expect(values('st')).toEqual(['status']);
+    expect(values('status')).toBeNull();
+    // After a space, completion returns null (free text)
+    expect(researchArgumentCompletions('on ')).toBeNull();
   });
 });

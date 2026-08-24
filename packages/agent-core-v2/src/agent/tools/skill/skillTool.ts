@@ -22,6 +22,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { SkillActivationOrigin } from '#/agent/contextMemory/types';
 import { IAgentSkillService } from '#/agent/skill/skill';
+import { IAgentSkillVisibilityService } from '#/agent/skillVisibility/skillVisibility';
 import { renderModelToolSkillPrompt } from '#/agent/skill/prompt';
 import type { ExecutableToolResult, ToolDeliveryMessage, ToolExecution } from '#/tool/toolContract';
 import { registerAgentToolService } from '#/agent/toolRegistry/toolContribution';
@@ -54,6 +55,7 @@ export class SkillTool implements ISkillTool {
   constructor(
     @ISessionSkillCatalog private readonly catalog: ISessionSkillCatalog,
     @IAgentSkillService private readonly skill: IAgentSkillService,
+    @IAgentSkillVisibilityService private readonly visibility: IAgentSkillVisibilityService,
     @ISessionContext private readonly sessionContext: ISessionContext,
   ) {}
 
@@ -68,7 +70,7 @@ export class SkillTool implements ISkillTool {
   }
 
   withInitialQueryDepth(initialQueryDepth: number): SkillTool {
-    const clone = new SkillTool(this.catalog, this.skill, this.sessionContext);
+    const clone = new SkillTool(this.catalog, this.skill, this.visibility, this.sessionContext);
     clone.queryDepth = initialQueryDepth;
     return clone;
   }
@@ -77,6 +79,7 @@ export class SkillTool implements ISkillTool {
     return executeModelSkill(
       this.catalog,
       this.skill,
+      this.visibility,
       args,
       this.queryDepth,
       this.sessionContext.sessionId,
@@ -89,6 +92,7 @@ registerAgentToolService(ISkillTool, SkillTool, { name: 'Skill', domain: 'skill'
 export async function executeModelSkill(
   catalog: ISessionSkillCatalog,
   skillService: IAgentSkillService,
+  visibility: IAgentSkillVisibilityService,
   args: SkillToolInput,
   queryDepth: number,
   sessionId: string,
@@ -102,6 +106,10 @@ export async function executeModelSkill(
   const skill = catalog.catalog.getSkill(args.skill);
   if (skill === undefined) {
     return errorResult(`Skill "${args.skill}" not found in the current skill listing.`);
+  }
+  if (!visibility.isSkillVisible(skill)) {
+    const reason = visibility.hiddenReason(skill);
+    return errorResult(reason ?? `Skill "${args.skill}" is not available.`);
   }
   if (skill.metadata.disableModelInvocation === true) {
     return errorResult(

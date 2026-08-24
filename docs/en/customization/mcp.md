@@ -1,10 +1,10 @@
 # Model Context Protocol
 
-[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is an open protocol that lets models safely call tools exposed by external processes or services — for example, reading GitHub issues, querying databases, or operating the local file system. Kimi Code CLI acts as an MCP client to connect these external tools and exposes them to the Agent alongside built-in tools (`Read`, `Bash`, `Grep`, etc.) with no behavioral difference.
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is an open protocol that lets models safely call tools exposed by external processes or services — for example, reading GitHub issues, querying databases, or operating the local file system. Hakimi acts as an MCP client to connect these external tools and exposes them to the Agent alongside built-in tools (`Read`, `Bash`, `Grep`, etc.) with no behavioral difference.
 
 ## Connection Methods
 
-Kimi Code CLI supports three MCP server connection methods:
+Hakimi supports three MCP server connection methods:
 
 - **stdio**: The CLI starts the local MCP server as a child process and communicates via standard input/output. Suitable for local command-line tools.
 - **HTTP**: The CLI connects to an already-running HTTP endpoint. Suitable for remote services or processes that need to run persistently.
@@ -14,7 +14,7 @@ Kimi Code CLI supports three MCP server connection methods:
 
 MCP server configuration is written in `mcp.json`, at two levels:
 
-- **User level**: `~/.kimi-code/mcp.json` (or `$KIMI_CODE_HOME/mcp.json`), shared across projects
+- **User level**: `~/.hakimi/mcp.json` (or `$KIMI_CODE_HOME/mcp.json`), shared across projects
 - **Project level**: `.kimi-code/mcp.json` in the working directory, effective only for the current repository
 
 Entries with the same name: the project-level entry takes precedence and overrides the user-level entry.
@@ -23,7 +23,7 @@ Run `/mcp-config` in the TUI to interactively add, edit, or delete servers witho
 
 Deleting a server from the configuration does not interrupt open sessions: the server stays listed in `/mcp` as `removed`, its tools remain visible there, and calls to them fail with a removal notice, while new sessions do not register the tools at all. Conversely, a server added mid-session — by editing `mcp.json` or installing a plugin — is not registered in already-open sessions; it only joins sessions created later.
 
-When Kimi Code finds project-level MCP servers in an untrusted folder, it shows each server's transport and launch target in the workspace trust prompt. The prompt defaults to `Don't trust`; move to `Trust this folder` and confirm only after reviewing the listed command and arguments or remote URL. Trusting the folder enables the project-level MCP servers for that workspace.
+When Hakimi finds project-level MCP servers in an untrusted folder, it shows each server's transport and launch target in the workspace trust prompt. The prompt defaults to `Don't trust`; move to `Trust this folder` and confirm only after reviewing the listed command and arguments or remote URL. Trusting the folder enables the project-level MCP servers for that workspace.
 
 Structure of `mcp.json`:
 

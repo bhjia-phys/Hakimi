@@ -31,6 +31,8 @@ import { IAppendLogStore } from '#/persistence/interface/appendLogStore';
 import { IFileSystemStorageService } from '#/persistence/interface/storage';
 import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import { ISessionSkillCatalog } from '#/session/sessionSkillCatalog/skillCatalog';
+import { IAgentSkillVisibilityService } from '#/agent/skillVisibility/skillVisibility';
+import type { SkillDefinition } from '#/app/skillCatalog/types';
 import { ISessionInstructionsProvider } from '#/session/sessionInstructions/instructionsProvider';
 import { ISessionToolPolicy } from '#/session/sessionToolPolicy/sessionToolPolicy';
 import { ISessionWorkspaceContext } from '#/session/workspaceContext/workspaceContext';
@@ -219,6 +221,12 @@ function buildHost(key: string): {
   host.stub(ISessionSkillCatalog, {
     _serviceBrand: undefined,
     onDidChange: () => ({ dispose: () => {} }),
+  });
+  host.stub(IAgentSkillVisibilityService, {
+    _serviceBrand: undefined,
+    isSkillVisible: () => true,
+    hiddenReason: () => undefined,
+    filterVisible: (skills: readonly SkillDefinition[]) => skills,
   });
   host.stub(ISessionInstructionsProvider, {
     _serviceBrand: undefined,

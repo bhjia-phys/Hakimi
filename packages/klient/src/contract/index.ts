@@ -25,6 +25,10 @@ import {
   agentTokenCountingContract,
   agentUsageContract,
 } from './agent/services.js';
+import {
+  agentAitpModeContract,
+  agentResearchContract,
+} from './agent/research.js';
 import { authContract, authSummaryContract } from './global/auth.js';
 import { capabilitiesContract } from './global/capabilities.js';
 import { catalogContract } from './global/catalog.js';
@@ -87,6 +91,8 @@ export const globalContract: KlientContract = {
   agentTaskService: agentTaskContract,
   agentMcpService: agentMcpContract,
   agentFullCompactionService: agentFullCompactionContract,
+  agentResearchService: agentResearchContract,
+  agentAitpModeService: agentAitpModeContract,
 };
 
 export type { KlientContract, ProcedureContract, ServiceContract, StreamingProcedureContract } from './types.js';

@@ -172,6 +172,8 @@ import {
   IAgentTaskService,
   IAgentTokenCountingService,
   IAgentProfileRegistry,
+  IAgentResearchService,
+  IAgentAitpModeService,
   BUILTIN_AGENT_PROFILE_SOURCE_ID,
   IAgentToolPolicyService,
   IAgentToolRegistryService,
@@ -294,6 +296,9 @@ import type {
   ResumeSessionInput,
   ResumedAgentState,
   ResumedSessionSummary,
+  ResearchCommand,
+  ResearchCommandResponse,
+  ResearchStatusSnapshot,
   SessionPlan,
   SessionStatus,
   SessionSummary,
@@ -2116,6 +2121,141 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
   override async cancelGoal(input: SessionIdRpcInput): Promise<GoalSnapshot> {
     const agent = await this.agentScope(input.sessionId);
     return agent.accessor.get(IAgentGoalService).cancelGoal();
+  }
+
+  /**
+   * AITP Research Mode — the research surface is an agent-core-v2 feature
+   * (`aitpResearch` domain, Agent scope, main-only). The snapshot is read
+   * directly from `IAgentResearchService.getSnapshot()`; the command is
+   * dispatched through the engine's steering / mode / checkpoint methods,
+   * then the post-command snapshot is returned so the caller gets immediate
+   * confirmation. `enter_mode` / `exit_mode` / loop commands route to
+   * `IAgentAitpModeService`; focus, line, and question lifecycle commands use
+   * their dedicated Research methods. The engine enforces the
+   * `expectedRevision` optimistic-concurrency guard, and defer/block/close
+   * remain human steering operations.
+   * `create_question` / `create_line` / `update_line` use their dedicated
+   * service methods;
+   * checkpoints use `proposeCheckpoint` / `commitCheckpoint`.
+   */
+  override async getResearch(input: SessionIdRpcInput): Promise<ResearchStatusSnapshot> {
+    const agent = await this.agentScope(input.sessionId);
+    return agent.accessor.get(IAgentResearchService).getSnapshot() as ResearchStatusSnapshot;
+  }
+
+  override async commandResearch(
+    input: SessionIdRpcInput & { readonly command: ResearchCommand },
+  ): Promise<ResearchCommandResponse> {
+    const agent = await this.agentScope(input.sessionId);
+    const research = agent.accessor.get(IAgentResearchService);
+    const mode = agent.accessor.get(IAgentAitpModeService);
+    const cmd = input.command;
+
+    switch (cmd.kind) {
+      case 'enter_mode':
+        await mode.enter({ actor: cmd.actor, lineSlug: cmd.lineSlug });
+        break;
+      case 'exit_mode':
+        await mode.exit();
+        break;
+      case 'pause_loop':
+        mode.pauseLoop(cmd.expectedRevision);
+        break;
+      case 'resume_loop':
+        mode.resumeLoop(cmd.expectedRevision);
+        break;
+      case 'create_question':
+        research.createQuestion({
+          lineSlug: cmd.lineSlug,
+          wording: cmd.wording,
+          assessment: cmd.assessment,
+          priority: cmd.priority,
+          neededEvidence: cmd.neededEvidence,
+        });
+        break;
+      case 'create_line':
+        research.createLine({
+          slug: cmd.slug,
+          title: cmd.title,
+          objective: cmd.objective,
+          assessment: cmd.assessment,
+        });
+        break;
+      case 'update_line':
+        research.updateLine({
+          slug: cmd.lineSlug,
+          expectedRevision: cmd.expectedRevision,
+          title: cmd.title,
+          objective: cmd.objective,
+          status: cmd.status,
+          assessment: cmd.assessment,
+          reason: cmd.reason,
+        });
+        break;
+      case 'update_question':
+        research.updateQuestion({
+          questionId: cmd.questionId,
+          expectedRevision: cmd.expectedRevision,
+          wording: cmd.wording,
+          assessment: cmd.assessment,
+          priority: cmd.priority,
+          workflow: cmd.workflow,
+          epistemic: cmd.epistemic,
+          neededEvidence: cmd.neededEvidence,
+          nextBoundedAction: cmd.nextBoundedAction,
+          reason: cmd.reason,
+        });
+        break;
+      case 'set_focus':
+        research.setFocus(cmd.questionId, cmd.boundedAction, cmd.expectedRevision);
+        break;
+      case 'switch_line':
+        research.switchLine(cmd.lineSlug, cmd.expectedRevision);
+        break;
+      case 'reopen_question':
+        research.reopenQuestion(cmd.questionId, cmd.reason, cmd.expectedRevision);
+        break;
+      case 'defer_question':
+        research.steer({
+          kind: 'defer_question',
+          questionId: cmd.questionId,
+          expectedRevision: cmd.expectedRevision,
+          reason: cmd.reason,
+        });
+        break;
+      case 'block_question':
+        research.steer({
+          kind: 'block_question',
+          questionId: cmd.questionId,
+          expectedRevision: cmd.expectedRevision,
+          reason: cmd.reason,
+        });
+        break;
+      case 'close_question':
+        research.steer({
+          kind: 'close_question',
+          questionId: cmd.questionId,
+          expectedRevision: cmd.expectedRevision,
+          reason: cmd.reason,
+        });
+        break;
+      case 'propose_checkpoint':
+        research.proposeCheckpoint({
+          questionId: cmd.questionId,
+          lineSlug: cmd.lineSlug,
+          assessment: cmd.assessment,
+          nextAction: cmd.nextAction,
+        });
+        break;
+      case 'commit_checkpoint':
+        await research.commitCheckpoint({
+          checkpointId: cmd.checkpointId,
+          entryId: cmd.entryId,
+        });
+        break;
+    }
+
+    return { snapshot: research.getSnapshot() } as ResearchCommandResponse;
   }
 
   /**

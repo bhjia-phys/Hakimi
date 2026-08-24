@@ -1351,6 +1351,146 @@ describe('removeProviderFromConfig', () => {
   });
 });
 
+describe('SDKRpcClientV2 AITP Research Mode', () => {
+  it('getResearch returns an inactive snapshot without triggering AITP I/O', async () => {
+    const { harness } = await makeHarness();
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-'));
+    tempDirs.push(workDir);
+    const session = await harness.createSession({ id: 'ses_research_get', workDir });
+    try {
+      const snapshot = await session.getResearch();
+      expect(snapshot.mode).toBe('inactive');
+      expect(snapshot.loopStatus).toBe('active');
+      expect(snapshot.revision).toBe(0);
+      expect(snapshot.questions).toHaveLength(0);
+      expect(snapshot.aitpHealth.phase).toBe('inactive');
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('commandResearch preserves line and question assessments through dedicated methods', async () => {
+    const { harness } = await makeHarness();
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-update-'));
+    tempDirs.push(workDir);
+    const session = await harness.createSession({ id: 'ses_research_update', workDir });
+    try {
+      await session.commandResearch({ kind: 'enter_mode', actor: 'user' });
+      await session.commandResearch({
+        kind: 'create_line',
+        slug: 'main',
+        title: 'Main line',
+        assessment: 'initial direction',
+      });
+      const updated = await session.commandResearch({
+        kind: 'update_line',
+        lineSlug: 'main',
+        expectedRevision: 1,
+        assessment: 'supported direction',
+      });
+      expect(updated.snapshot.lines[0]).toMatchObject({
+        slug: 'main',
+        assessment: 'supported direction',
+        revision: 2,
+      });
+
+      const withQuestion = await session.commandResearch({
+        kind: 'create_question',
+        lineSlug: 'main',
+        wording: 'Why?',
+        assessment: 'candidate mechanism',
+      });
+      expect(withQuestion.snapshot.questions[0]).toMatchObject({
+        wording: 'Why?',
+        assessment: 'candidate mechanism',
+      });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('commandResearch pause_loop and resume_loop return real loopStatus snapshots', async () => {
+    const { harness } = await makeHarness();
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-loop-'));
+    tempDirs.push(workDir);
+    const session = await harness.createSession({ id: 'ses_research_loop', workDir });
+    try {
+      const entered = await session.commandResearch({ kind: 'enter_mode', actor: 'user' });
+      expect(entered.snapshot.mode).not.toBe('inactive');
+
+      const revision = entered.snapshot.revision;
+      const paused = await session.commandResearch({ kind: 'pause_loop', expectedRevision: revision });
+      expect(paused.snapshot.loopStatus).toBe('paused');
+
+      await expect(
+        session.commandResearch({ kind: 'resume_loop', expectedRevision: revision + 1 }),
+      ).rejects.toMatchObject({ code: 'research.revision_stale' });
+
+      const resumed = await session.commandResearch({ kind: 'resume_loop', expectedRevision: revision });
+      expect(resumed.snapshot.loopStatus).toBe('active');
+    } finally {
+      await session.close();
+      await harness.close();
+    }
+  });
+
+  it('commandResearch enter_mode surfaces the flag-disabled code when explicitly disabled', async () => {
+    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '0');
+    const { harness } = await makeHarness();
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-enter-'));
+    tempDirs.push(workDir);
+    const session = await harness.createSession({ id: 'ses_research_enter', workDir });
+    try {
+      await expect(
+        session.commandResearch({ kind: 'enter_mode', actor: 'user' }),
+      ).rejects.toMatchObject({
+        code: 'aitp.mode_flag_disabled',
+      });
+    } finally {
+      await harness.close();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('commandResearch pause_loop with stale revision throws research.revision_stale', async () => {
+    const { harness } = await makeHarness();
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-pause-'));
+    tempDirs.push(workDir);
+    const session = await harness.createSession({ id: 'ses_research_pause', workDir });
+    try {
+      // pause_loop routes through the dedicated mode service, which enforces
+      // the public Research revision. Revision 0 is the initial state, so 999 is stale.
+      await expect(
+        session.commandResearch({ kind: 'pause_loop', expectedRevision: 999 }),
+      ).rejects.toMatchObject({
+        code: 'research.revision_stale',
+      });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('commandResearch set_focus reports inactive before validating the question', async () => {
+    const { harness } = await makeHarness();
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-focus-'));
+    tempDirs.push(workDir);
+    const session = await harness.createSession({ id: 'ses_research_focus', workDir });
+    try {
+      await expect(
+        session.commandResearch({
+          kind: 'set_focus',
+          questionId: 'q-nonexistent',
+          expectedRevision: 999,
+        }),
+      ).rejects.toMatchObject({
+        code: 'aitp.mode_inactive',
+      });
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
 async function writeSkill(dir: string, name: string): Promise<void> {  await mkdir(dir, { recursive: true });
   await writeFile(
     join(dir, 'SKILL.md'),
