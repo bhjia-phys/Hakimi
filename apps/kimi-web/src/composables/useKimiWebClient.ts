@@ -353,7 +353,7 @@ export interface ExtendedState extends KimiClientState {
   availableOpenInApps: string[];
   /** Global daemon configuration (secrets redacted). */
   config: AppConfig | null;
-  /** Provider usage is loaded only when requested from settings. */
+  /** Provider usage is prefetched after server auth and refreshed from settings. */
   providerUsage: ProviderUsageResult[];
   providerUsageLoading: boolean;
   providerUsageLoaded: boolean;

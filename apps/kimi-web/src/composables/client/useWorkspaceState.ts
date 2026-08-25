@@ -932,6 +932,9 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       if (!firstLoad) await checkAuth();
       await loadConfig();
       ensureEventConnection();
+      // Usage queries may reach external provider endpoints; prefetch without
+      // delaying workspace/session startup. The settings panel can refresh again.
+      void refreshProviderUsage();
 
       // Load workspaces first (registered + derived, each with a session_count),
       // then fetch only the first page of sessions per workspace. This replaces

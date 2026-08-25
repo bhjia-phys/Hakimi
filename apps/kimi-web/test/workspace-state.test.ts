@@ -42,6 +42,10 @@ vi.mock('../src/api', () => ({
   getKimiWebApi: () => apiMock,
 }));
 
+beforeEach(() => {
+  apiMock.getProviderUsage.mockReset().mockResolvedValue([]);
+});
+
 function createSession(): AppSession {
   return {
     id: 'sess_1',
@@ -1347,6 +1351,74 @@ describe('useWorkspaceState — first-load auth gate', () => {
     } as unknown as UseWorkspaceStateDeps;
   }
 
+  it('prefetches provider usage after first-load server auth succeeds', async () => {
+    const initialized = ref(false);
+    const state = createState();
+    const usage = [
+      {
+        provider: 'managed:kimi-code',
+        kind: 'ok' as const,
+        summary: { used: 17, limit: 100 },
+        limits: [],
+        extraUsage: null,
+      },
+    ];
+    apiMock.getAuth.mockResolvedValue({
+      ready: true,
+      defaultModel: 'kimi-code',
+      managedProvider: null,
+    });
+    apiMock.getProviderUsage.mockResolvedValue(usage);
+    const ws = useWorkspaceState(state, createLoadDeps(initialized, ref(null)));
+
+    await ws.load();
+
+    expect(apiMock.getProviderUsage).toHaveBeenCalledOnce();
+    expect(state.providerUsage).toEqual(usage);
+    expect(state.providerUsageLoading).toBe(false);
+    expect(state.providerUsageLoaded).toBe(true);
+    expect(state.providerUsageError).toBeNull();
+    expect(initialized.value).toBe(true);
+  });
+
+  it('does not wait for provider usage prefetch to initialize', async () => {
+    const initialized = ref(false);
+    const state = createState();
+    apiMock.getAuth.mockResolvedValue({
+      ready: true,
+      defaultModel: 'kimi-code',
+      managedProvider: null,
+    });
+    apiMock.getProviderUsage.mockReturnValue(new Promise(() => {}));
+    const ws = useWorkspaceState(state, createLoadDeps(initialized, ref(null)));
+
+    await ws.load();
+
+    expect(apiMock.getProviderUsage).toHaveBeenCalledOnce();
+    expect(state.providerUsageLoading).toBe(true);
+    expect(state.providerUsageLoaded).toBe(false);
+    expect(initialized.value).toBe(true);
+  });
+
+  it('does not block first-load initialization when provider usage prefetch fails', async () => {
+    const initialized = ref(false);
+    const state = createState();
+    apiMock.getAuth.mockResolvedValue({
+      ready: true,
+      defaultModel: 'kimi-code',
+      managedProvider: null,
+    });
+    apiMock.getProviderUsage.mockRejectedValue(new Error('usage unavailable'));
+    const ws = useWorkspaceState(state, createLoadDeps(initialized, ref(null)));
+
+    await ws.load();
+
+    expect(apiMock.getProviderUsage).toHaveBeenCalledOnce();
+    expect(state.providerUsageLoaded).toBe(true);
+    expect(state.providerUsageError).toBe('usage unavailable');
+    expect(initialized.value).toBe(true);
+  });
+
   it('keeps the splash up and retries /auth when the first check fails transiently', async () => {
     vi.useFakeTimers();
     try {
@@ -1401,6 +1473,8 @@ describe('useWorkspaceState — first-load auth gate', () => {
     // A definitive "not ready" answer behaves exactly as before: initialize and
     // let the auth gate show /login. The global WS does not require a session.
     expect(apiMock.getAuth).toHaveBeenCalledTimes(1);
+    expect(apiMock.getProviderUsage).toHaveBeenCalledOnce();
+    expect(state.providerUsageLoaded).toBe(true);
     expect(initialized.value).toBe(true);
     expect(state.authReady).toBe(false);
     expect(deps.ensureEventConnection).toHaveBeenCalledOnce();
@@ -1421,6 +1495,7 @@ describe('useWorkspaceState — first-load auth gate', () => {
 
         await ws.load();
         expect(apiMock.getAuth).toHaveBeenCalledTimes(1);
+        expect(apiMock.getProviderUsage).not.toHaveBeenCalled();
         expect(initialized.value).toBe(false);
 
         // No retry loop is running — recovery belongs to the ServerAuthDialog,
