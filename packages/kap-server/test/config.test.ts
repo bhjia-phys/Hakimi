@@ -430,7 +430,12 @@ describe('server-v2 config changed → WS global fan-out (real connection)', () 
     const frames: Array<Record<string, unknown>> = [];
     ws.on('message', (data) => {
       try {
-        frames.push(JSON.parse(String(data)) as Record<string, unknown>);
+        const text = Array.isArray(data)
+          ? Buffer.concat(data).toString('utf8')
+          : Buffer.isBuffer(data)
+            ? data.toString('utf8')
+            : Buffer.from(new Uint8Array(data)).toString('utf8');
+        frames.push(JSON.parse(text) as Record<string, unknown>);
       } catch {
         // ignore non-JSON control frames
       }

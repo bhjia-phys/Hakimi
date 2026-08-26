@@ -1,11 +1,23 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { Error2, isError2 } from '#/_base/errors/errors';
 import {
   onUnexpectedError,
   resetUnexpectedErrorHandler,
   safelyCallListener,
   setUnexpectedErrorHandler,
 } from '#/_base/errors/unexpectedError';
+
+describe('Error2', () => {
+  it('recognizes errors created by another module copy through the global brand', () => {
+    const foreign = new Error('foreign');
+    Object.defineProperty(foreign, Symbol.for('@moonshot-ai/agent-core-v2/Error2'), { value: true });
+
+    expect(isError2(foreign)).toBe(true);
+    expect(isError2(new Error2('internal', 'local'))).toBe(true);
+    expect(isError2(new Error('plain'))).toBe(false);
+  });
+});
 
 describe('onUnexpectedError + setUnexpectedErrorHandler', () => {
   afterEach(() => {

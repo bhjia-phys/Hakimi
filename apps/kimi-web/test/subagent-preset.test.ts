@@ -1,4 +1,4 @@
-import { computed } from 'vue';
+import { computed, nextTick } from 'vue';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AppConfig } from '../src/api/types';
@@ -10,7 +10,7 @@ import {
   thinkingConfigForPreset,
 } from '../src/lib/subagentPreset';
 
-const apiMock = vi.hoisted(() => ({ setConfig: vi.fn() }));
+const apiMock = vi.hoisted(() => ({ listModels: vi.fn(), setConfig: vi.fn() }));
 
 vi.mock('../src/api', () => ({
   getKimiWebApi: () => apiMock,
@@ -112,6 +112,35 @@ describe('preset main runtime application', () => {
     expect(state.thinking).toBe('max');
     expect(state.thinkingBySession).toEqual({ sess_a: 'max', sess_b: 'low' });
     expect(apiMock.setConfig).not.toHaveBeenCalled();
+  });
+
+  it('keeps preset thinking through a draft model catalog refresh', async () => {
+    const { state, modelProvider, persistSessionProfile } = createHarness();
+    state.activeSessionId = undefined;
+    state.thinking = 'low';
+    apiMock.listModels.mockResolvedValue([
+      {
+        id: 'new/draft',
+        provider: 'acme',
+        model: 'new/draft',
+        maxContextSize: 128_000,
+        capabilities: ['thinking'],
+        supportEfforts: ['low', 'max'],
+        defaultEffort: 'low',
+      },
+    ]);
+
+    const applied = await modelProvider.applyPresetMainRoute({
+      model: 'new/draft',
+      thinkingEffort: 'max',
+    });
+    await modelProvider.loadModels();
+    await nextTick();
+
+    expect(applied).toBe(true);
+    expect(modelProvider.draftModel.value).toBe('new/draft');
+    expect(state.thinking).toBe('max');
+    expect(persistSessionProfile).not.toHaveBeenCalled();
   });
 
   it('applies to the session captured before a slow global save', async () => {

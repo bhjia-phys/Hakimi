@@ -211,10 +211,7 @@ describe('GetProviderUsageTool', () => {
       release = resolve;
     });
     const usage = stubUsageService([]);
-    (usage.queryUsage as ReturnType<typeof vi.fn>).mockImplementation(async () => {
-      await gate;
-      return [];
-    });
+    (usage.queryUsage as ReturnType<typeof vi.fn>).mockReturnValue(gate.then(() => []));
     const tool = new GetProviderUsageTool(usage);
     const execution = tool.resolveExecution({});
     if (execution.isError === true) throw new Error('execution should not be an error');
@@ -379,10 +376,10 @@ describe('SetSubagentPresetTool', () => {
 
   it('patches only the preset key into an existing print-mode memory overlay', async () => {
     const config = new LayeredStubConfigService();
-    config.set(SUBAGENT_SECTION, SUBAGENT_SECTION_WITH_PRESETS, ConfigTarget.User);
+    await config.set(SUBAGENT_SECTION, SUBAGENT_SECTION_WITH_PRESETS, ConfigTarget.User);
     // `applyPrintModeConfigDefaults` overlays the whole effective subagent
     // section (with the print-timeout) into ConfigTarget.Memory.
-    config.set(
+    await config.set(
       SUBAGENT_SECTION,
       { ...SUBAGENT_SECTION_WITH_PRESETS, timeoutMs: 0 },
       ConfigTarget.Memory,
