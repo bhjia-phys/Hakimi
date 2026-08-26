@@ -64,7 +64,7 @@ Fill in the following:
 | GitHub Workflow | `release-hakimi.yml` |
 | Environment | leave empty |
 
-Each publishable package needs its Trusted Publisher configured once. The Hakimi release workflow lives at `.github/workflows/release-hakimi.yml` and already has `id-token: write` configured. (The upstream `release.yml` is kept untouched for upstream sync and is gated to the `MoonshotAI` owner; it never runs on this fork.)
+Each publishable package needs its Trusted Publisher configured once. The Hakimi release workflow lives at `.github/workflows/release-hakimi.yml` and already has `id-token: write` configured. (The inherited upstream `release.yml` is retained for selective upstream intake and is gated to the `MoonshotAI` owner; it never runs in the standalone Hakimi repository.)
 
 ## Development Workflow
 
@@ -109,7 +109,7 @@ The release PR runs:
 
 - `pnpm changeset version`: bumps publishable package versions and updates changelogs;
 - Deletes the consumed `.changeset/*.md` files;
-- Uses the title `[CI]: Release packages`.
+- Uses the title `ci: release hakimi packages`.
 
 ### 5. Merge the release PR
 

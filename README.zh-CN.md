@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <strong>从 Kimi Code fork 演进而来的理论物理思维链科研 agent。</strong><br />
-  <span>沿用上游工程基础——由 Hakimi 负责科研编排、分阶段 AITP 记忆集成和独立产品体验。</span>
+  <strong>基于 Kimi Code 工程基础独立演进的理论物理思维链科研 agent。</strong><br />
+  <span>由 Hakimi 独立治理——负责科研编排、分阶段 AITP 记忆集成和自身产品体验。</span>
 </p>
 
 <p align="center">
@@ -19,9 +19,19 @@
 
 ## Hakimi 是什么
 
-Hakimi 是 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的 fork，但上游是经过选择性评审的工程来源，不是产品 parity 目标。当前产品外壳大体继承 Kimi Code 基础，Hakimi 则自主决定 v2 架构、研究编排、工具、workflow 和交互；独立的 [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) 仍是持久研究记忆和证据的权威。
+Hakimi 是基于 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 工程基础继续发展的独立项目。仓库完整保留继承的 Git 历史和上游署名，但已不再属于 Kimi Code 的 GitHub fork network，也不以产品 parity 为目标。Hakimi 自主决定 v2 架构、研究编排、工具、workflow、交互和发布版本线；独立的 [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) 仍是持久研究记忆和证据的权威。
 
-底层终端循环、工具、session、Skills、MCP、子代理、权限和 OAuth 源自上游 Kimi Code，也继续作为通用改进的候选来源。Hakimi 只吸收符合自身目标和 canonical v2 contract 的变化，不默认引入上游产品特定行为。历史上的深度内嵌科研原型保留在 [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) 分支归档，不是当前产品线的集成路径。
+底层终端循环、工具、session、Skills、MCP、子代理、权限和 OAuth 源自 Kimi Code，也继续作为经过选择性评审的通用改进来源。Hakimi 只吸收符合自身目标和 canonical v2 contract 的变化，不默认引入上游产品特定行为。历史上的深度内嵌科研原型保留在 [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) 分支归档，不是当前产品线的集成路径。
+
+## 仓库沿革与贡献者
+
+- **当前独立主仓库**：[`bhjia-phys/Hakimi`](https://github.com/bhjia-phys/Hakimi)
+- **历史 fork 归档**：[`bhjia-phys/Hakimi-upstream-archive`](https://github.com/bhjia-phys/Hakimi-upstream-archive)，保留迁移前的 Pull Request、Release 和 fork-network 元数据
+- **上游工程基础**：[`MoonshotAI/kimi-code`](https://github.com/MoonshotAI/kimi-code)
+- **项目负责人**：[`@bhjia-phys`](https://github.com/bhjia-phys)
+- **独立贡献者**：[`@TensorSpicyJ`](https://github.com/TensorSpicyJ)，包括通过[归档 PR #5](https://github.com/bhjia-phys/Hakimi-upstream-archive/pull/5)合入的工作
+
+GitHub 自动生成的 Contributors 列表主要依据可归属的 commit，未必完整呈现 Pull Request、review 或迁移前活动；保留的 Git 历史与归档仓库才是长期 provenance 记录。
 
 ## 与上游的差异
 

@@ -4,7 +4,7 @@ Thanks for taking the time to contribute! This project moves quickly, and though
 
 ## Before You Start
 
-Hakimi is a runtime-native theoretical-physics research fork of Kimi Code. It keeps the upstream CLI/TUI runtime shape where compatibility matters, while adding AITP research memory, WorkFrames, research actions, evidence capture, and domain isolation inside the runtime. If your change shifts CLI/TUI behavior, agent workflows, public APIs, or the AITP research contract, open an issue first so we can align before you invest time in a PR.
+Hakimi is an independent, standalone continuation built on the engineering foundations of [Kimi Code](https://github.com/MoonshotAI/kimi-code). It keeps the upstream CLI/TUI runtime shape where compatibility matters, while adding AITP research memory, WorkFrames, research actions, evidence capture, and domain isolation inside the runtime. The canonical repository is [`bhjia-phys/Hakimi`](https://github.com/bhjia-phys/Hakimi); the former fork is retained as a [read-only lineage archive](https://github.com/bhjia-phys/Hakimi-upstream-archive). If your change shifts CLI/TUI behavior, agent workflows, public APIs, or the AITP research contract, open an issue first so we can align before you invest time in a PR.
 
 We hold AI-assisted contributions to the same standard as hand-written ones. **You should understand what you submit** — what changed, how it behaves at the edges, and why it fits this codebase. If you cannot explain that, the PR is not ready for review.
 
