@@ -23,15 +23,20 @@ Hakimi 是基于 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code)
 
 底层终端循环、工具、session、Skills、MCP、子代理、权限和 OAuth 源自 Kimi Code，也继续作为经过选择性评审的通用改进来源。Hakimi 只吸收符合自身目标和 canonical v2 contract 的变化，不默认引入上游产品特定行为。历史上的深度内嵌科研原型保留在 [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) 分支归档，不是当前产品线的集成路径。
 
-## 仓库沿革与贡献者
+## 仓库沿革
 
 - **当前独立主仓库**：[`bhjia-phys/Hakimi`](https://github.com/bhjia-phys/Hakimi)
 - **历史 fork 归档**：[`bhjia-phys/Hakimi-upstream-archive`](https://github.com/bhjia-phys/Hakimi-upstream-archive)，保留迁移前的 Pull Request、Release 和 fork-network 元数据
 - **上游工程基础**：[`MoonshotAI/kimi-code`](https://github.com/MoonshotAI/kimi-code)
-- **项目负责人**：[`@bhjia-phys`](https://github.com/bhjia-phys)
-- **独立贡献者**：[`@TensorSpicyJ`](https://github.com/TensorSpicyJ)，包括通过[归档 PR #5](https://github.com/bhjia-phys/Hakimi-upstream-archive/pull/5)合入的工作
 
-GitHub 自动生成的 Contributors 列表主要依据可归属的 commit，未必完整呈现 Pull Request、review 或迁移前活动；保留的 Git 历史与归档仓库才是长期 provenance 记录。
+保留的 Git 历史继续保留 Kimi Code 原作者署名，并与归档仓库和许可证署名共同构成长期 provenance 记录。
+
+## Hakimi 项目贡献者
+
+- **项目负责人**：[`@bhjia-phys`](https://github.com/bhjia-phys)
+- **贡献者**：[`@TensorSpicyJ`](https://github.com/TensorSpicyJ)，包括通过[归档 PR #5](https://github.com/bhjia-phys/Hakimi-upstream-archive/pull/5)合入的工作
+
+本人工维护列表只收录直接为 Hakimi 作出的贡献。Kimi Code 开发者通过上游链接、保留的 Git 历史、归档仓库和许可证获得署名，不作为 Hakimi 项目贡献者列出。GitHub 自动生成的 Contributors 页面无法在不重写历史的情况下过滤继承的作者，因此仍可能显示上游开发者。
 
 ## 与上游的差异
 
