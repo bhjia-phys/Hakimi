@@ -15,6 +15,12 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  IAgentResearchService,
+  ensureMainAgent,
+  resumeSessionById,
+} from '@moonshot-ai/agent-core-v2';
+
 import { type RunningServer, startServer } from '../src/start';
 import { TEST_HOST_IDENTITY } from './helpers/hostIdentity';
 import { authHeaders } from './helpers/auth';
@@ -28,16 +34,27 @@ interface Envelope<T> {
   stack?: string;
 }
 
+interface ResearchAlert {
+  fingerprint: string;
+  acknowledgedAt?: number;
+}
+
 interface ResearchSnapshot {
   mode: string;
   loopStatus: string;
-  questions: unknown[];
-  lines: unknown[];
+  questions: Array<{ id: string }>;
+  lines: Array<{ slug: string }>;
   openQuestionCount: number;
   activeQuestionCount: number;
   blockedQuestionCount: number;
-  alerts: unknown[];
+  alerts: ResearchAlert[];
   aitpHealth: { phase: string };
+  phase: string;
+  humanGate?: {
+    gateId: string;
+    resolvedAt?: number;
+    resolution?: string;
+  };
   revision: number;
 }
 
@@ -177,6 +194,144 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
     // not INTERNAL_ERROR (50001).
     expect(body.code).toBe(40001);
     expect(body.msg).toMatch(/AITP Research Mode is not enabled/i);
+  });
+
+  it('POST resolves human decisions, acknowledges alerts, and maps attention errors', async () => {
+    await server!.close();
+    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
+    server = await startServer({
+      hostIdentity: TEST_HOST_IDENTITY,
+      host: '127.0.0.1',
+      port: 0,
+      homeDir: home as string,
+      logLevel: 'silent',
+      debugEndpoints: true,
+    });
+    base = `http://127.0.0.1:${server.port}`;
+
+    const sessionId = await createSession();
+    const entered = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'enter_mode', actor: 'user' } },
+    );
+    expect(entered.body.code).toBe(0);
+
+    const liveSession = await resumeSessionById(server.core.accessor, sessionId);
+    expect(liveSession).toBeDefined();
+    const agent = await ensureMainAgent(liveSession!);
+    const research = agent.accessor.get(IAgentResearchService);
+    const gate = research.requestHumanDecision({
+      kind: 'decision',
+      prompt: 'Choose the next research direction.',
+    });
+
+    const missingGate = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'resolve_decision',
+          gateId: 'missing-gate',
+          resolution: 'ignored',
+          nextPhase: 'idle',
+        },
+      },
+    );
+    expect(missingGate.body.code).toBe(40001);
+
+    const invalidPhase = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'resolve_decision',
+          gateId: gate.gateId,
+          resolution: 'not yet',
+          nextPhase: 'orienting',
+        },
+      },
+    );
+    expect(invalidPhase.body.code).toBe(40001);
+
+    const resolved = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'resolve_decision',
+          gateId: gate.gateId,
+          resolution: 'Continue with the measured path.',
+          nextPhase: 'idle',
+        },
+      },
+    );
+    expect(resolved.body.code).toBe(0);
+    expect(resolved.body.data.snapshot.phase).toBe('idle');
+    expect(resolved.body.data.snapshot.humanGate).toMatchObject({
+      gateId: gate.gateId,
+      resolution: 'Continue with the measured path.',
+      resolvedAt: expect.any(Number),
+    });
+
+    const repeated = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'resolve_decision',
+          gateId: gate.gateId,
+          resolution: 'again',
+          nextPhase: 'idle',
+        },
+      },
+    );
+    expect(repeated.body.code).toBe(40001);
+
+    const createdLine = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'create_line', slug: 'main', title: 'Main line' } },
+    );
+    expect(createdLine.body.data.snapshot.lines[0]?.slug).toBe('main');
+    const createdQuestion = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'create_question',
+          lineSlug: 'main',
+          wording: 'Why?',
+        },
+      },
+    );
+    const questionId = createdQuestion.body.data.snapshot.questions[0]!.id;
+    const closed = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'close_question',
+          questionId,
+          expectedRevision: createdQuestion.body.data.snapshot.revision,
+        },
+      },
+    );
+    const reopened = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'reopen_question',
+          questionId,
+          expectedRevision: closed.body.data.snapshot.revision,
+        },
+      },
+    );
+    const alert = reopened.body.data.snapshot.alerts.find(
+      (candidate) => candidate.fingerprint === `research.alert.reopened.question.${questionId}`,
+    );
+    expect(alert).toBeDefined();
+
+    const acknowledged = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'acknowledge_alert', fingerprint: alert!.fingerprint } },
+    );
+    expect(acknowledged.body.code).toBe(0);
+    expect(acknowledged.body.data.snapshot.alerts.find(
+      (candidate) => candidate.fingerprint === alert!.fingerprint,
+    )).toMatchObject({ acknowledgedAt: expect.any(Number) });
   });
 
   it('POST pause_loop and resume_loop return the real loopStatus snapshot', async () => {

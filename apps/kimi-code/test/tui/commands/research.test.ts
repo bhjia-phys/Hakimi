@@ -37,6 +37,7 @@ function makeSnapshot(
     blockedQuestionCount: 0,
     alerts: [],
     aitpHealth: { phase: 'ready' },
+    phase: 'action_executing',
     revision: 8,
     ...overrides,
   };
@@ -376,6 +377,51 @@ describe('handleResearchCommand manager actions', () => {
       expectedRevision: snapshot.revision,
       boundedAction: 'Measure bounded result',
     });
+  });
+
+  it('opens attention by default and routes human decisions and alerts through the controller', async () => {
+    setExperimentalFeatures([{ id: 'aitp_research_mode', enabled: true }]);
+    const gate = {
+      gateId: 'gate-1',
+      kind: 'decision' as const,
+      prompt: 'Choose the next experiment.',
+      createdAt: 10,
+    };
+    const alert = {
+      fingerprint: 'alert-fingerprint',
+      kind: 'stale' as const,
+      message: 'Refresh stale evidence.',
+      createdAt: 11,
+    };
+    const snapshot = makeSnapshot({ humanGate: gate, alerts: [alert] });
+    const { host, session, researchController, mounted } = makeResearchHost(snapshot);
+
+    await handleResearchCommand(host, 'manage');
+    const manager = mounted.mock.calls[0]?.[0] as ResearchManagerComponent;
+    expect(manager.render(100).map(stripAnsi).join('\n')).toContain('Research attention');
+
+    manager.handleInput('r');
+    manager.handleInput('approved');
+    manager.handleInput('\r');
+    manager.handleInput('\r');
+    await vi.waitFor(() => expect(session.commandResearch).toHaveBeenCalledOnce());
+    expect(session.commandResearch).toHaveBeenCalledWith({
+      kind: 'resolve_decision',
+      gateId: 'gate-1',
+      resolution: 'approved',
+      nextPhase: 'idle',
+    });
+    expect(researchController.applySnapshot).toHaveBeenCalledTimes(2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    manager.handleInput('\u001B[B');
+    manager.handleInput('a');
+    await vi.waitFor(() => expect(session.commandResearch).toHaveBeenCalledTimes(2));
+    expect(session.commandResearch).toHaveBeenNthCalledWith(2, {
+      kind: 'acknowledge_alert',
+      fingerprint: 'alert-fingerprint',
+    });
+    expect(researchController.applySnapshot).toHaveBeenCalledTimes(3);
   });
 
   it('returns from question editing to the same manager layer on cancel and save', async () => {

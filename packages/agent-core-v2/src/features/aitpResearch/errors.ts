@@ -25,6 +25,7 @@ export const AitpResearchErrors = {
     AITP_ADAPTER_SPAWN_FAILED: 'aitp.adapter_spawn_failed',
     AITP_ADAPTER_CONTRACT_UNKNOWN: 'aitp.adapter_contract_unknown',
     AITP_ADAPTER_COMMAND_FAILED: 'aitp.adapter_command_failed',
+    AITP_ADAPTER_OUTPUT_LIMIT: 'aitp.adapter_output_limit',
     AITP_ADAPTER_NOT_INITIALIZED: 'aitp.adapter_not_initialized',
     AITP_ADAPTER_SINGLE_FLIGHT: 'aitp.adapter_single_flight',
     AITP_CHECKPOINT_PENDING: 'aitp.checkpoint_pending',
@@ -35,6 +36,13 @@ export const AitpResearchErrors = {
     RESEARCH_QUESTION_NOT_FOUND: 'research.question_not_found',
     RESEARCH_LINE_NOT_FOUND: 'research.line_not_found',
     RESEARCH_LOOP_PAUSED: 'research.loop_paused',
+    RESEARCH_PHASE_TRANSITION_INVALID: 'research.phase_transition_invalid',
+    RESEARCH_ACTION_NOT_FOUND: 'research.action_not_found',
+    RESEARCH_ACTION_STATUS_INVALID: 'research.action_status_invalid',
+    RESEARCH_GATE_PENDING: 'research.gate_pending',
+    RESEARCH_HUMAN_GATE_NOT_FOUND: 'research.human_gate_not_found',
+    RESEARCH_HUMAN_GATE_ALREADY_RESOLVED: 'research.human_gate_already_resolved',
+    RESEARCH_HUMAN_APPROVAL_REQUIRED: 'research.human_approval_required',
   },
   info: {
     'aitp.mode_inactive': {
@@ -103,6 +111,12 @@ export const AitpResearchErrors = {
       public: true,
       action: 'Check the AITP error code and message; resolve the underlying issue and retry.',
     },
+    'aitp.adapter_output_limit': {
+      title: 'AITP adapter output exceeded its limit',
+      retryable: false,
+      public: true,
+      action: 'Check the AITP plugin output and retry.',
+    },
     'aitp.adapter_not_initialized': {
       title: 'AITP workspace is not initialized',
       retryable: false,
@@ -162,6 +176,48 @@ export const AitpResearchErrors = {
       retryable: false,
       public: true,
       action: 'Resume the research loop before performing research operations.',
+    },
+    'research.phase_transition_invalid': {
+      title: 'Research phase transition is invalid',
+      retryable: false,
+      public: true,
+      action: 'Check the current research phase and use a valid transition.',
+    },
+    'research.action_not_found': {
+      title: 'Research action not found',
+      retryable: false,
+      public: true,
+      action: 'Plan the action first or check the actionId.',
+    },
+    'research.action_status_invalid': {
+      title: 'Research action status is invalid for this operation',
+      retryable: false,
+      public: true,
+      action: 'Check the action status and use a valid lifecycle operation.',
+    },
+    'research.gate_pending': {
+      title: 'A human gate is pending',
+      retryable: false,
+      public: true,
+      action: 'Resolve the pending human gate before proceeding.',
+    },
+    'research.human_gate_not_found': {
+      title: 'The requested human gate is not pending',
+      retryable: false,
+      public: true,
+      action: 'Refresh Research status and resolve the current unresolved human gate.',
+    },
+    'research.human_gate_already_resolved': {
+      title: 'The human gate is already resolved',
+      retryable: false,
+      public: true,
+      action: 'Keep the existing decision as the scientific trace and continue from the restored phase.',
+    },
+    'research.human_approval_required': {
+      title: 'Human approval is required before starting this research action',
+      retryable: false,
+      public: true,
+      action: 'Request and resolve an approval gate for this action before starting it.',
     },
   },
 } as const satisfies ErrorDomain;

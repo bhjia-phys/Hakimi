@@ -407,6 +407,12 @@ describe('MoonshotWebSearchProvider', () => {
   });
 });
 
+function fetchInputUrl(input: Parameters<typeof fetch>[0] | undefined): string | undefined {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return input?.url;
+}
+
 describe('LocalWebSearchProvider', () => {
   it('parses DuckDuckGo HTML results without an API token', async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
@@ -441,7 +447,7 @@ describe('LocalWebSearchProvider', () => {
       },
     ]);
 
-    const requested = fetchImpl.mock.calls[0]?.[0] as string | undefined;
+    const requested = fetchInputUrl(fetchImpl.mock.calls[0]?.[0]);
     expect(requested).toContain('https://search.local/html/');
     expect(requested).toContain('q=quantum+gravity+algebra');
   });
@@ -481,8 +487,6 @@ describe('LocalWebSearchProvider', () => {
     ]);
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(fetchImpl.mock.calls[1]?.[0] as string | undefined).toContain(
-      'https://bing.local/search',
-    );
+    expect(fetchInputUrl(fetchImpl.mock.calls[1]?.[0])).toContain('https://bing.local/search');
   });
 });

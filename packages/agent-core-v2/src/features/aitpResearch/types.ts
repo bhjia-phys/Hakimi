@@ -3,9 +3,11 @@
  * Mode feature.
  *
  * Defines the three-axis research state model (workflow / epistemic /
- * persistence), the mode lifecycle phases, the adapter contract types, the
- * `ResearchStatusSnapshot`, and the `HumanSteeringCommand` union. No scoped
- * state — only types and zod schemas. Scope-agnostic.
+ * persistence), the mode lifecycle phases, the Research Loop scientific state
+ * layer (phase / action / progress / state change / human gate), the adapter
+ * contract types, the `ResearchStatusSnapshot`, and the
+ * `HumanSteeringCommand` union. No scoped state — only types and zod schemas.
+ * Scope-agnostic.
  */
 
 import { z } from 'zod';
@@ -62,7 +64,6 @@ export interface ResearchCheckpoint {
   readonly nextAction?: string;
   readonly idempotencyKey: string;
   readonly persistence: QuestionPersistence;
-  readonly committedEntryId?: string;
   readonly createdAt: number;
 }
 
@@ -89,6 +90,110 @@ export interface ResearchCommittedCursor {
   readonly committedAt: number;
 }
 
+// ---------------------------------------------------------------------------
+// Research Loop scientific state layer (Phase 1 contract)
+//
+// A minimal, pure-science state machine layered on top of the existing
+// AITP-backed working state. The phase tracks where the agent is in the
+// orient→plan→act→evaluate→update→checkpoint cycle. The action spec captures a
+// single bounded research action; the progress report records what the agent
+// did and learned. No AITP id / hash / revision leaks into the scientific
+// state — those are persistence concerns owned by the checkpoint layer.
+// ---------------------------------------------------------------------------
+
+export type ResearchPhase =
+  | 'idle'
+  | 'orienting'
+  | 'gap_analysis'
+  | 'action_planned'
+  | 'action_executing'
+  | 'evaluating'
+  | 'state_updated'
+  | 'checkpoint_pending'
+  | 'awaiting_human';
+
+export type ResearchActionKind =
+  | 'experiment'
+  | 'derivation'
+  | 'literature_review'
+  | 'data_analysis'
+  | 'simulation'
+  | 'other';
+
+export type ResearchActionStatus = 'planned' | 'in_progress' | 'completed' | 'abandoned';
+
+export interface ResearchActionSpec {
+  readonly actionId: string;
+  readonly questionId?: string;
+  readonly lineSlug?: string;
+  readonly kind: ResearchActionKind;
+  readonly purpose: string;
+  readonly expectedEvidence: readonly string[];
+  readonly stopCondition: string;
+  readonly allowedToolKinds: readonly string[];
+  readonly status: ResearchActionStatus;
+  readonly createdAt: number;
+  readonly completedAt?: number;
+  readonly requiresHumanApproval: boolean;
+}
+
+export type ResearchProgressLevel = 'brief' | 'detail' | 'audit';
+
+export interface ResearchProgressDetail {
+  readonly assumptions?: readonly string[];
+  readonly derivation?: string;
+  readonly tests?: readonly string[];
+  readonly observations?: readonly string[];
+  readonly sources?: readonly string[];
+  readonly limitations?: readonly string[];
+  readonly detailHint?: string;
+  readonly artifactRefs?: readonly string[];
+}
+
+export interface ResearchProgressReport {
+  readonly headline: string;
+  readonly question?: string;
+  readonly motivation: string;
+  readonly workPerformed: string;
+  readonly result: string;
+  readonly mainlineImpact: string;
+  readonly uncertainties: readonly string[];
+  readonly nextAction?: string;
+  readonly phaseChange?: { readonly from: ResearchPhase; readonly to: ResearchPhase };
+  readonly humanDecision?: string;
+  readonly detail?: ResearchProgressDetail;
+  readonly recordedAt: number;
+}
+
+export interface ResearchStateChange {
+  readonly beforePhase: ResearchPhase;
+  readonly afterPhase: ResearchPhase;
+  readonly actionId?: string;
+  readonly summary: string;
+  readonly changedAt: number;
+}
+
+export type ResearchHumanGateKind = 'approval' | 'review' | 'decision';
+
+export interface ResearchHumanGate {
+  readonly gateId: string;
+  readonly kind: ResearchHumanGateKind;
+  readonly actionId?: string;
+  readonly questionId?: string;
+  readonly prompt: string;
+  readonly resolvedAt?: number;
+  readonly resolution?: string;
+  readonly createdAt: number;
+}
+
+export interface ResearchScientificSnapshot {
+  readonly phase: ResearchPhase;
+  readonly currentAction?: ResearchActionSpec;
+  readonly latestProgress?: ResearchProgressReport;
+  readonly recentStateChange?: ResearchStateChange;
+  readonly humanGate?: ResearchHumanGate;
+}
+
 export interface ResearchStatusSnapshot {
   readonly mode: AitpModePhase;
   readonly loopStatus: ResearchLoopStatus;
@@ -103,16 +208,25 @@ export interface ResearchStatusSnapshot {
   readonly alerts: readonly ResearchAlert[];
   readonly goalSummary?: { readonly status: string; readonly remainingTurns?: number };
   readonly aitpHealth: AitpAdapterHealth;
+  readonly aitpMaintenance?: AitpMaintenanceReceipt;
   readonly pendingCheckpoint?: ResearchCheckpoint;
   readonly latestCommittedCheckpoint?: ResearchCommittedCursor;
+  readonly phase: ResearchPhase;
+  readonly currentAction?: ResearchActionSpec;
+  readonly latestProgress?: ResearchProgressReport;
+  readonly recentStateChange?: ResearchStateChange;
+  readonly humanGate?: ResearchHumanGate;
   readonly revision: number;
 }
 
 export interface ResearchAlert {
+  readonly fingerprint: string;
   readonly kind: 'contradiction' | 'blocked' | 'reopened' | 'commit_failed' | 'degraded' | 'stale';
   readonly message: string;
   readonly questionId?: string;
   readonly lineSlug?: string;
+  readonly createdAt: number;
+  readonly acknowledgedAt?: number;
 }
 
 export interface AitpAdapterHealth {
@@ -123,6 +237,56 @@ export interface AitpAdapterHealth {
   readonly lastCheckAt?: number;
   readonly lastError?: string;
   readonly notInitialized?: boolean;
+}
+
+export type AitpMaintenanceStatus = 'ready' | 'degraded';
+
+export type AitpMaintenanceMemoryStatus =
+  | AitpEnterResult['memory_status']
+  | 'unknown';
+
+export type AitpMaintenanceDegradedReason =
+  | 'adapter_not_ready'
+  | 'adapter_degraded'
+  | 'enter_failed'
+  | 'check_unavailable'
+  | 'check_findings'
+  | 'stale_generation';
+
+export interface AitpMaintenanceWarningSummary {
+  readonly level: 'warning';
+  readonly code: string;
+}
+
+export interface AitpMaintenanceCheckSummary {
+  readonly status: 'clean' | 'findings' | 'unavailable';
+  readonly counts?: {
+    readonly entries: number;
+    readonly notes: number;
+    readonly errors: number;
+    readonly warnings: number;
+  };
+  readonly findingCodes: readonly string[];
+}
+
+/**
+ * Read-only current-state maintenance derived from one AITP `enter` → `check`
+ * cycle. It deliberately contains no Entry/Note identifiers, paths, hashes,
+ * revisions, or raw transport errors, so it is safe for Research snapshots and
+ * context injection.
+ */
+export interface AitpMaintenanceReceipt {
+  readonly status: AitpMaintenanceStatus;
+  readonly refreshedAt: number;
+  readonly memoryStatus: AitpMaintenanceMemoryStatus;
+  readonly workstream?: string;
+  readonly latestWorkingNoteAt?: number;
+  readonly activeNewerThanWorkingNote: boolean | null;
+  readonly unresolvedFailureCount: number;
+  readonly nextAction?: string;
+  readonly warningSummaries: readonly AitpMaintenanceWarningSummary[];
+  readonly check: AitpMaintenanceCheckSummary;
+  readonly degradedReason?: AitpMaintenanceDegradedReason;
 }
 
 export type HumanSteeringCommand =
@@ -434,3 +598,20 @@ export const QuestionEpistemicSchema = z.enum([
 export const QuestionPersistenceSchema = z.enum([
   'working', 'pending_commit', 'committed', 'degraded',
 ]);
+
+export const ResearchPhaseSchema = z.enum([
+  'idle', 'orienting', 'gap_analysis', 'action_planned', 'action_executing',
+  'evaluating', 'state_updated', 'checkpoint_pending', 'awaiting_human',
+]);
+
+export const ResearchActionKindSchema = z.enum([
+  'experiment', 'derivation', 'literature_review', 'data_analysis', 'simulation', 'other',
+]);
+
+export const ResearchActionStatusSchema = z.enum([
+  'planned', 'in_progress', 'completed', 'abandoned',
+]);
+
+export const ResearchHumanGateKindSchema = z.enum(['approval', 'review', 'decision']);
+
+export const ResearchProgressLevelSchema = z.enum(['brief', 'detail', 'audit']);

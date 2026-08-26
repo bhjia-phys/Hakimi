@@ -275,11 +275,12 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
 
   private maybeDegrade(error: unknown, checkFailed = false): void {
     const notInitialized = isAitpNotInitializedError(error);
-    const errorCode = error instanceof AitpResearchError ? String(error.code) : undefined;
+    const errorCode: string | undefined = error instanceof AitpResearchError ? error.code : undefined;
     const unavailableCheck = checkFailed && error instanceof AitpResearchError && (
       error.details?.['aitpCode'] !== undefined ||
       errorCode === AitpResearchErrors.codes.AITP_ADAPTER_CONTRACT_UNKNOWN ||
       errorCode === AitpResearchErrors.codes.AITP_ADAPTER_SPAWN_FAILED ||
+      errorCode === AitpResearchErrors.codes.AITP_ADAPTER_OUTPUT_LIMIT ||
       errorCode === AitpResearchErrors.codes.AITP_ADAPTER_TIMEOUT
     );
     if (!notInitialized && !unavailableCheck) return;
@@ -358,19 +359,20 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
     for (let i = 0; i < 10; i++) {
       const contractPath = join(current, CONTRACT_FILE);
       const manifestPath = join(current, MANIFEST_FILE);
+      let isPluginRoot = false;
       try {
         const [contractStat, manifestStat] = await Promise.all([
           this.hostFs.stat(contractPath),
           this.hostFs.stat(manifestPath),
         ]);
-        if (contractStat.isFile && manifestStat.isFile) {
-          return current;
-        }
+        isPluginRoot = contractStat.isFile && manifestStat.isFile;
       } catch {
-        const parent = dirname(current);
-        if (parent === current) break;
-        current = parent;
       }
+      if (isPluginRoot) return current;
+
+      const parent = dirname(current);
+      if (parent === current) break;
+      current = parent;
     }
     return null;
   }

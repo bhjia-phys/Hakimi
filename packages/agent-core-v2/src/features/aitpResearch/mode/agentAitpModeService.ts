@@ -6,14 +6,17 @@
  * `.set_line`), checks
  * the experimental flag (`flags`), enforces main-agent-only (`scopeContext`),
  * blocks entry while Plan mode is active (`planService`), activates the
- * Session-scope AITP adapter (`adapter`) on enter, and publishes
+ * Session-scope AITP adapter (`adapter`) on enter, runs read-only current-state
+ * maintenance after a ready probe, and publishes
  * `agent.status.updated` after each op (`eventBus`). The `aitp_mode.updated`
  * signal is the sole responsibility of each op's `toEvent` — the service does
  * not manually re-publish it. Conversation undo and active-mode cold restore
  * replay silently and never trigger `toEvent`, so the service explicitly
  * publishes `aitp_mode.updated` + `agent.status.updated` once for downstream
  * consumers (e.g. `AgentResearchService`). Inactive cold restore stays silent.
- * Mode state follows
+ * Legacy sessions with an older persisted active-tool allowlist are repaired on
+ * entry and active restore by adding the current Research tools to the profile
+ * overlay. Mode state follows
  * conversation undo through the checkpointed `AitpModeModel`. On `exit` and on
  * conversation undo / cold restore that reverts the mode to inactive, the
  * adapter is reset to its zero-I/O state. When entering with a `lineSlug`,
@@ -25,11 +28,13 @@
 import { Service } from '#/_base/di/service';
 import { IEventBus } from '#/app/event/eventBus';
 import { IFlagService } from '#/app/flag/flag';
+import { IAgentProfileService } from '#/agent/profile/profile';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentPlanService } from '#/features/plan/plan';
 import { IWireService } from '#/wire/wire';
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
 import { ISessionAitpAdapter } from '#/features/aitpResearch/adapter/sessionAitpAdapter';
+import { ISessionAitpLifecycleCoordinator } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
 import type { AitpAdapterHealth, AitpModePhase, ResearchLoopStatus } from '#/features/aitpResearch/types';
 import { AitpResearchError, AitpResearchErrors } from '#/features/aitpResearch/errors';
 
@@ -44,6 +49,34 @@ import {
 } from '#/features/aitpResearch/aitpResearchOps';
 import { type AitpModeEntryOptions, IAgentAitpModeService } from './agentAitpMode';
 
+const RESEARCH_MODE_TOOL_NAMES = [
+  'ExitAITPMode',
+  'GetResearchStatus',
+  'AcknowledgeResearchAlert',
+  'CreateResearchLine',
+  'UpdateResearchLine',
+  'CreateResearchQuestion',
+  'UpdateResearchQuestion',
+  'SetResearchFocus',
+  'SetResearchPhase',
+  'ProposeResearchCheckpoint',
+  'CommitResearchCheckpoint',
+  'PlanResearchAction',
+  'StartResearchAction',
+  'CompleteResearchAction',
+  'RecordResearchProgress',
+  'RequestResearchDecision',
+  'ResolveResearchDecision',
+  'aitp_enter',
+  'aitp_list',
+  'aitp_show',
+  'aitp_check',
+  'aitp_record_prepare',
+  'aitp_record_save',
+  'aitp_note_prepare',
+  'aitp_note_save',
+] as const;
+
 export class AgentAitpModeService extends Service implements IAgentAitpModeService {
   declare readonly _serviceBrand: undefined;
 
@@ -56,6 +89,8 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     @IAgentPlanService private readonly planService: IAgentPlanService,
     @ISessionAitpAdapter private readonly adapter: ISessionAitpAdapter,
     @IEventBus private readonly eventBus: IEventBus,
+    @IAgentProfileService private readonly profile: IAgentProfileService,
+    @ISessionAitpLifecycleCoordinator private readonly coordinator?: ISessionAitpLifecycleCoordinator,
   ) {
     super();
 
@@ -135,14 +170,19 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
       );
     }
 
+    this.ensureResearchTools();
     this.wire.dispatch(aitpModeEnter({ actor: options.actor, lineSlug: options.lineSlug }));
     this.publishAgentStatus();
 
     try {
       const health = await this.adapter.probe();
-      if (this.isProbeCurrent(generation)) {
-        this.setPhase(health.phase === 'ready' ? 'ready' : 'degraded');
+      if (!this.isProbeCurrent(generation)) return;
+      if (health.phase !== 'ready') {
+        this.setPhase('degraded');
+        return;
       }
+      const maintenanceStatus = await this.refreshMaintenance(options.lineSlug);
+      if (this.isProbeCurrent(generation)) this.setPhase(maintenanceStatus);
     } catch {
       if (this.isProbeCurrent(generation)) this.setPhase('degraded');
     }
@@ -150,12 +190,10 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
 
   async exit(): Promise<void> {
     this.probeGeneration += 1;
-    if (!this.isActive) {
-      this.adapter.reset();
-      return;
-    }
-    this.wire.dispatch(aitpModeExit({}));
+    this.coordinator?.reset();
     this.adapter.reset();
+    if (!this.isActive) return;
+    this.wire.dispatch(aitpModeExit({}));
     this.publishAgentStatus();
   }
 
@@ -193,6 +231,7 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
   }
 
   resetAdapter(): void {
+    this.coordinator?.reset();
     this.adapter.reset();
   }
 
@@ -236,13 +275,19 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
   private reconcileAfterRestore(): Promise<boolean> {
     const generation = ++this.probeGeneration;
     if (!this.isActive) {
+      this.coordinator?.reset();
       this.adapter.reset();
       return Promise.resolve(false);
     }
+    this.coordinator?.reset();
+    this.ensureResearchTools();
     return this.adapter.probe().then(
-      (health) => {
+      async (health) => {
         if (!this.isProbeCurrent(generation)) return false;
-        const nextPhase = health.phase === 'ready' ? 'ready' : 'degraded';
+        const nextPhase = health.phase === 'ready'
+          ? await this.refreshMaintenance(this.wire.getModel(AitpModeModel).current.currentLineSlug)
+          : 'degraded';
+        if (!this.isProbeCurrent(generation)) return false;
         const changed = this.phase !== nextPhase;
         if (changed) this.setPhase(nextPhase);
         return changed;
@@ -254,6 +299,21 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
         return changed;
       },
     );
+  }
+
+  private async refreshMaintenance(workstream?: string): Promise<'ready' | 'degraded'> {
+    if (this.coordinator === undefined) return 'ready';
+    try {
+      const receipt = await this.coordinator.refresh({ workstream, force: true });
+      return receipt.status;
+    } catch {
+      return 'degraded';
+    }
+  }
+
+  private ensureResearchTools(): void {
+    if (this.scopeCtx.agentId !== MAIN_AGENT_ID) return;
+    for (const name of RESEARCH_MODE_TOOL_NAMES) this.profile.addActiveTool(name);
   }
 
   private isProbeCurrent(generation: number): boolean {

@@ -4109,6 +4109,7 @@ command = "vim"
       blockedQuestionCount: 0,
       alerts: [],
       aitpHealth: { phase: 'ready' },
+      phase: 'action_executing',
       revision: 1,
     };
     driver.state.researchBoard.setSnapshot(snapshot);

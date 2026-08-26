@@ -10,6 +10,7 @@
 
 import {
   Container,
+  Input,
   Key,
   matchesKey,
   CURSOR_MARKER,
@@ -42,8 +43,26 @@ function formatDialogError(error: unknown): string {
 
 type ResearchQuestion = NonNullable<ResearchStatusSnapshot['currentQuestion']>;
 type ResearchLine = ResearchStatusSnapshot['lines'][number];
+type ResearchAlert = ResearchStatusSnapshot['alerts'][number];
+type ResearchHumanGate = NonNullable<ResearchStatusSnapshot['humanGate']>;
+type ResearchRecoveryPhase = Extract<
+  ResearchStatusSnapshot['phase'],
+  'idle' | 'gap_analysis' | 'action_planned' | 'action_executing' | 'evaluating'
+>;
 
 type LineStatus = 'active' | 'paused' | 'completed' | 'blocked';
+
+const RESEARCH_RECOVERY_PHASES = [
+  'idle',
+  'gap_analysis',
+  'action_planned',
+  'action_executing',
+  'evaluating',
+] as const satisfies readonly ResearchRecoveryPhase[];
+
+type ResearchAttentionItem =
+  | { readonly kind: 'gate'; readonly gate: ResearchHumanGate }
+  | { readonly kind: 'alert'; readonly alert: ResearchAlert };
 
 // ---------------------------------------------------------------------------
 // Manager
@@ -77,6 +96,16 @@ export type ResearchManagerAction =
       readonly reason?: string;
     }
   | {
+      readonly kind: 'resolve_human_decision';
+      readonly gateId: string;
+      readonly resolution: string;
+      readonly nextPhase: ResearchRecoveryPhase;
+    }
+  | {
+      readonly kind: 'acknowledge_alert';
+      readonly fingerprint: string;
+    }
+  | {
       readonly kind: 'edit_line';
       readonly lineSlug: string;
     }
@@ -101,7 +130,7 @@ export interface ResearchManagerOptions {
   readonly snapshot: ResearchStatusSnapshot;
   readonly selectedQuestionId?: string;
   readonly selectedLineSlug?: string;
-  readonly initialView?: 'lines' | 'questions';
+  readonly initialView?: 'attention' | 'lines' | 'questions';
   readonly pageSize?: number;
   readonly onAction: (
     action: ResearchManagerAction,
@@ -114,10 +143,16 @@ export class ResearchManagerComponent extends Container implements Focusable {
 
   private readonly opts: ResearchManagerOptions;
   private snapshot: ResearchStatusSnapshot;
-  private view: 'lines' | 'questions' = 'lines';
+  private view: 'attention' | 'lines' | 'questions' = 'lines';
+  private attentionMode: 'list' | 'resolution' | 'phase' = 'list';
   private selectedLineSlug: string | undefined;
   private lineList: SearchableList<ResearchLine>;
   private questionList: SearchableList<ResearchQuestion>;
+  private attentionList: SearchableList<ResearchAttentionItem>;
+  private readonly phaseList: SearchableList<ResearchRecoveryPhase>;
+  private readonly resolutionInput = new Input();
+  private resolutionGateId: string | undefined;
+  private resolutionError: string | undefined;
   private busy = false;
 
   constructor(opts: ResearchManagerOptions) {
@@ -131,10 +166,22 @@ export class ResearchManagerComponent extends Container implements Focusable {
       this.selectedLineSlug,
       opts.selectedQuestionId,
     );
+    this.attentionList = this.createAttentionList();
+    this.phaseList = new SearchableList({
+      items: [...RESEARCH_RECOVERY_PHASES],
+      toSearchText: (phase) => phaseLabel(phase),
+      pageSize: RESEARCH_RECOVERY_PHASES.length,
+      searchable: false,
+    });
+    this.resolutionInput.onSubmit = (value) => this.submitResolution(value);
   }
 
   handleInput(data: string): void {
     if (this.busy) return;
+    if (this.view === 'attention') {
+      this.handleAttentionInput(data);
+      return;
+    }
 
     if (matchesKey(data, Key.escape)) {
       if (this.view === 'questions') {
@@ -154,8 +201,81 @@ export class ResearchManagerComponent extends Container implements Focusable {
     this.handleQuestionInput(data);
   }
 
+  private handleAttentionInput(data: string): void {
+    if (
+      matchesKey(data, Key.escape) ||
+      matchesKey(data, Key.ctrl('c')) ||
+      matchesKey(data, Key.ctrl('d'))
+    ) {
+      if (this.attentionMode === 'phase') {
+        this.attentionMode = 'resolution';
+        this.invalidate();
+      } else if (this.attentionMode === 'resolution') {
+        this.attentionMode = 'list';
+        this.resolutionError = undefined;
+        this.invalidate();
+      } else {
+        this.opts.onCancel();
+      }
+      return;
+    }
+
+    if (this.attentionMode === 'resolution') {
+      this.resolutionInput.handleInput(data);
+      this.resolutionError = undefined;
+      this.invalidate();
+      return;
+    }
+
+    if (this.attentionMode === 'phase') {
+      if (matchesKey(data, Key.enter)) {
+        const phase = this.phaseList.selected();
+        const gate = this.unresolvedHumanGate();
+        const resolution = this.resolutionInput.getValue().trim();
+        if (
+          gate !== undefined &&
+          this.resolutionGateId !== undefined &&
+          phase !== undefined &&
+          resolution.length > 0
+        ) {
+          void this.applyAction({
+            kind: 'resolve_human_decision',
+            gateId: this.resolutionGateId,
+            resolution,
+            nextPhase: phase,
+          });
+        }
+        return;
+      }
+      this.phaseList.handleKey(data);
+      return;
+    }
+
+    const decoded = printableChar(data).toLowerCase();
+    if (decoded === 'l') {
+      this.view = 'lines';
+      this.invalidate();
+      return;
+    }
+    const selected = this.attentionList.selected();
+    if (selected?.kind === 'gate' && decoded === 'r') {
+      this.beginResolution();
+      return;
+    }
+    if (selected?.kind === 'alert' && decoded === 'a') {
+      void this.applyAction({
+        kind: 'acknowledge_alert',
+        fingerprint: selected.alert.fingerprint,
+      });
+      return;
+    }
+    this.attentionList.handleKey(data);
+  }
+
   override render(width: number): string[] {
     const safeWidth = Math.max(0, width);
+    if (this.view === 'attention') return this.renderAttention(safeWidth);
+
     const lines: string[] = [
       currentTheme.fg('primary', '─'.repeat(safeWidth)),
       currentTheme.boldFg(
@@ -194,6 +314,117 @@ export class ResearchManagerComponent extends Container implements Focusable {
     lines.push('');
     lines.push(currentTheme.fg('primary', '─'.repeat(safeWidth)));
     return lines.map((line) => truncateToWidth(line, safeWidth, ELLIPSIS));
+  }
+
+  private renderAttention(width: number): string[] {
+    const lines: string[] = [
+      currentTheme.fg('primary', '─'.repeat(width)),
+      currentTheme.boldFg('primary', ' Research attention'),
+      currentTheme.fg('textMuted', ` ${attentionHint(this.attentionMode)}`),
+      '',
+    ];
+
+    if (this.attentionMode === 'list') {
+      const view = this.attentionList.view();
+      if (view.items.length === 0) {
+        lines.push(currentTheme.fg('textMuted', '  No unresolved attention.'));
+      } else {
+        for (let i = view.page.start; i < view.page.end; i++) {
+          const item = view.items[i];
+          if (item === undefined) continue;
+          lines.push(renderAttentionItem(item, i === view.selectedIndex));
+        }
+        const below = view.items.length - view.page.end;
+        if (below > 0) {
+          lines.push('');
+          lines.push(currentTheme.fg('textMuted', ` ▼ ${String(below)} more`));
+        }
+      }
+    } else if (this.attentionMode === 'resolution') {
+      const gate = this.unresolvedHumanGate();
+      if (gate !== undefined) {
+        lines.push(
+          `${currentTheme.fg('textDim', '  Decision needed:')} ${currentTheme.fg('text', collapseSummary(gate.prompt))}`,
+        );
+      }
+      lines.push('');
+      this.resolutionInput.focused = this.focused;
+      const inputWidth = Math.max(1, width - 4);
+      const inputLine = this.resolutionInput.render(inputWidth)[0] ?? '> ';
+      lines.push(`${currentTheme.fg('textDim', '  Resolution:')} ${inputLine}`);
+      if (this.resolutionError !== undefined) {
+        lines.push(currentTheme.fg('error', `  ${this.resolutionError}`));
+      }
+    } else {
+      lines.push(currentTheme.fg('textDim', '  Recovery phase:'));
+      const view = this.phaseList.view();
+      for (let i = view.page.start; i < view.page.end; i++) {
+        const phase = view.items[i];
+        if (phase === undefined) continue;
+        const pointer = i === view.selectedIndex ? SELECT_POINTER : ' ';
+        const prefix = currentTheme.fg(
+          i === view.selectedIndex ? 'primary' : 'textDim',
+          `  ${pointer} `,
+        );
+        const label = i === view.selectedIndex
+          ? currentTheme.boldFg('primary', phaseLabel(phase))
+          : currentTheme.fg('text', phaseLabel(phase));
+        lines.push(prefix + label);
+      }
+    }
+
+    lines.push('');
+    lines.push(currentTheme.fg('primary', '─'.repeat(width)));
+    return lines.map((line) => truncateToWidth(line, width, ELLIPSIS));
+  }
+
+  private beginResolution(): void {
+    const selected = this.attentionList.selected();
+    const gate = selected?.kind === 'gate' ? selected.gate : this.unresolvedHumanGate();
+    if (gate === undefined) return;
+    this.resolutionGateId = gate.gateId;
+    this.resolutionInput.setValue('');
+    this.resolutionError = undefined;
+    this.attentionMode = 'resolution';
+    this.invalidate();
+  }
+
+  private submitResolution(value: string): void {
+    const resolution = value.trim();
+    if (resolution.length === 0) {
+      this.resolutionError = 'Resolution must not be empty.';
+      this.invalidate();
+      return;
+    }
+    if (this.resolutionGateId === undefined || this.unresolvedHumanGate() === undefined) {
+      this.resolutionError = 'The human decision is no longer pending. Refresh the manager.';
+      this.invalidate();
+      return;
+    }
+    this.resolutionInput.setValue(resolution);
+    this.resolutionError = undefined;
+    this.attentionMode = 'phase';
+    this.invalidate();
+  }
+
+  private unresolvedHumanGate(): ResearchHumanGate | undefined {
+    const gate = this.snapshot.humanGate;
+    return gate !== undefined && gate.resolvedAt === undefined ? gate : undefined;
+  }
+
+  private createAttentionList(): SearchableList<ResearchAttentionItem> {
+    const items: ResearchAttentionItem[] = [];
+    const gate = this.unresolvedHumanGate();
+    if (gate !== undefined) items.push({ kind: 'gate', gate });
+    for (const alert of this.snapshot.alerts) {
+      if (alert.acknowledgedAt === undefined) items.push({ kind: 'alert', alert });
+    }
+    return new SearchableList({
+      items,
+      toSearchText: (item) => item.kind === 'gate' ? item.gate.prompt : item.alert.message,
+      pageSize: this.opts.pageSize,
+      searchable: false,
+    });
   }
 
   private handleLineInput(data: string): void {
@@ -383,6 +614,13 @@ export class ResearchManagerComponent extends Container implements Focusable {
         this.snapshot = result;
         this.lineList = this.createLineList(selectedLineSlug);
         this.questionList = this.createQuestionList(selectedLineSlug, selectedQuestionId);
+        this.attentionList = this.createAttentionList();
+        if (this.view === 'attention') {
+          this.attentionMode = 'list';
+          this.resolutionGateId = undefined;
+          this.resolutionError = undefined;
+          if (this.attentionList.view().items.length === 0) this.view = 'lines';
+        }
       }
     } finally {
       this.busy = false;
@@ -423,6 +661,31 @@ function lineHint(): string {
 
 function questionHint(): string {
   return '↑↓ navigate · PgUp/PgDn page · E edit · F focus · D defer · B block · C close · R reopen · Esc cancel';
+}
+
+function phaseLabel(phase: ResearchRecoveryPhase): string {
+  return {
+    idle: 'Idle',
+    gap_analysis: 'Gap analysis',
+    action_planned: 'Action planned',
+    action_executing: 'Action executing',
+    evaluating: 'Evaluating',
+  }[phase];
+}
+
+function attentionHint(mode: 'list' | 'resolution' | 'phase'): string {
+  if (mode === 'resolution') return 'Type a resolution · Enter continue · Esc back';
+  if (mode === 'phase') return '↑↓ choose recovery phase · Enter apply · Esc back';
+  return '↑↓ navigate · R resolve decision · A acknowledge alert · L research lines · Esc cancel';
+}
+
+function renderAttentionItem(item: ResearchAttentionItem, selected: boolean): string {
+  const pointer = selected ? `${SELECT_POINTER} ` : '  ';
+  const prefix = currentTheme.fg(selected ? 'primary' : 'textDim', `  ${pointer}`);
+  const label = item.kind === 'gate' ? '[decision]' : '[alert]';
+  const text = item.kind === 'gate' ? item.gate.prompt : item.alert.message;
+  const body = `${label} ${collapseSummary(text)}`;
+  return prefix + (selected ? currentTheme.boldFg('primary', body) : currentTheme.fg('text', body));
 }
 
 // ---------------------------------------------------------------------------

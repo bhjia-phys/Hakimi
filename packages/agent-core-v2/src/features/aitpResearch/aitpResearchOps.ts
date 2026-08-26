@@ -11,13 +11,22 @@
  *   `aitp_mode.set_line` ops mutate it.
  *
  * - `ResearchModel` (checkpointed): holds the Research working state —
- *   questions, lines, focus, pending checkpoint, and the alert list. It
- *   follows conversation undo so human steering and question lifecycle can be
- *   undone. The `research.create_question` / `research.update_question` /
+ *   questions, lines, focus, pending checkpoint, the alert list, and the
+ *   scientific state layer (phase / current action / latest progress / recent
+ *   state change / human gate). It follows conversation undo so human
+ *   steering and question lifecycle can be undone. The
+ *   `research.create_question` / `research.update_question` /
  *   `research.update_line` / `research.set_focus` / `research.switch_line` /
  *   `research.steer` / `research.propose_checkpoint` /
  *   `research.ack_checkpoint` / `research.reopen_question` /
- *   `research.create_line` ops mutate it.
+ *   `research.upsert_alert` / `research.clear_alert` /
+ *   `research.ack_alert` / `research.create_line` ops and the
+ *   scientific-loop ops `research.plan_action` / `research.start_action` /
+ *   `research.complete_action` / `research.record_progress` /
+ *   `research.set_phase` / `research.request_human_decision` /
+ *   `research.resolve_human_decision` mutate it. Alert production is owned by
+ *   `AgentResearchService`, while these alert ops provide replayable state
+ *   transitions.
  *
  * - `ResearchCursorModel` (non-checkpointed): holds the committed cursor and
  *   the global research revision. It does NOT follow conversation undo:
@@ -55,8 +64,12 @@ import type {
   QuestionWorkflow,
   QuestionEpistemic,
   QuestionPersistence,
+  ResearchActionKind,
+  ResearchActionStatus,
   ResearchAlert,
   ResearchCommittedCursor,
+  ResearchHumanGateKind,
+  ResearchPhase,
   ResearchStatusSnapshot,
 } from './types';
 
@@ -189,6 +202,11 @@ export interface ResearchWorkingState {
   readonly pendingCheckpoint: ResearchCheckpointRecord | null;
   readonly alerts: readonly ResearchAlert[];
   readonly revision: number;
+  readonly phase: ResearchPhase;
+  readonly currentAction: ResearchActionSpecRecord | null;
+  readonly latestProgress: ResearchProgressReportRecord | null;
+  readonly recentStateChange: ResearchStateChangeRecord | null;
+  readonly humanGate: ResearchHumanGateRecord | null;
 }
 
 export interface ResearchQuestionRecord {
@@ -234,6 +252,66 @@ export interface ResearchCheckpointRecord {
   readonly createdAt: number;
 }
 
+export interface ResearchActionSpecRecord {
+  readonly actionId: string;
+  readonly questionId?: string;
+  readonly lineSlug?: string;
+  readonly kind: ResearchActionKind;
+  readonly purpose: string;
+  readonly expectedEvidence: readonly string[];
+  readonly stopCondition: string;
+  readonly allowedToolKinds: readonly string[];
+  readonly status: ResearchActionStatus;
+  readonly createdAt: number;
+  readonly completedAt?: number;
+  readonly requiresHumanApproval: boolean;
+}
+
+export interface ResearchProgressDetailRecord {
+  readonly assumptions?: readonly string[];
+  readonly derivation?: string;
+  readonly tests?: readonly string[];
+  readonly observations?: readonly string[];
+  readonly sources?: readonly string[];
+  readonly limitations?: readonly string[];
+  readonly detailHint?: string;
+  readonly artifactRefs?: readonly string[];
+}
+
+export interface ResearchProgressReportRecord {
+  readonly headline: string;
+  readonly question?: string;
+  readonly motivation: string;
+  readonly workPerformed: string;
+  readonly result: string;
+  readonly mainlineImpact: string;
+  readonly uncertainties: readonly string[];
+  readonly nextAction?: string;
+  readonly phaseChange?: { readonly from: ResearchPhase; readonly to: ResearchPhase };
+  readonly humanDecision?: string;
+  readonly detail?: ResearchProgressDetailRecord;
+  readonly recordedAt: number;
+}
+
+export interface ResearchStateChangeRecord {
+  readonly beforePhase: ResearchPhase;
+  readonly afterPhase: ResearchPhase;
+  readonly actionId?: string;
+  readonly summary: string;
+  readonly changedAt: number;
+}
+
+export interface ResearchHumanGateRecord {
+  readonly gateId: string;
+  readonly kind: ResearchHumanGateKind;
+  readonly actionId?: string;
+  readonly questionId?: string;
+  readonly prompt: string;
+  readonly resolvedAt?: number;
+  readonly resolution?: string;
+  readonly createdAt: number;
+}
+
 export type ResearchModelState = Checkpointed<ResearchWorkingState>;
 
 export const ResearchModel = defineCheckpointedModel<ResearchWorkingState>(
@@ -245,6 +323,11 @@ export const ResearchModel = defineCheckpointedModel<ResearchWorkingState>(
     pendingCheckpoint: null,
     alerts: [],
     revision: 0,
+    phase: 'idle',
+    currentAction: null,
+    latestProgress: null,
+    recentStateChange: null,
+    humanGate: null,
   }),
 );
 
@@ -254,6 +337,19 @@ const QuestionWorkflowSchema = z.enum([
 const QuestionEpistemicSchema = z.enum([
   'unknown', 'candidate', 'supported', 'contradicted', 'inconclusive',
 ]);
+
+const ResearchPhaseSchema = z.enum([
+  'idle', 'orienting', 'gap_analysis', 'action_planned', 'action_executing',
+  'evaluating', 'state_updated', 'checkpoint_pending', 'awaiting_human',
+]);
+const ResearchActionKindSchema = z.enum([
+  'experiment', 'derivation', 'literature_review', 'data_analysis', 'simulation', 'other',
+]);
+const ResearchHumanGateKindSchema = z.enum(['approval', 'review', 'decision']);
+
+const StringListSchema = z.array(z.string().max(500)).max(50);
+const ShortTextSchema = z.string().max(2000);
+const LongTextSchema = z.string().max(8000);
 
 declare module '#/wire/types' {
   interface PersistedOpMap {
@@ -268,6 +364,16 @@ declare module '#/wire/types' {
     'research.commit_checkpoint': typeof researchCommitCheckpoint;
     'research.ack_checkpoint': typeof researchAcknowledgeCheckpoint;
     'research.reopen_question': typeof researchReopenQuestion;
+    'research.upsert_alert': typeof researchUpsertAlert;
+    'research.clear_alert': typeof researchClearAlert;
+    'research.ack_alert': typeof researchAcknowledgeAlert;
+    'research.plan_action': typeof researchPlanAction;
+    'research.start_action': typeof researchStartAction;
+    'research.complete_action': typeof researchCompleteAction;
+    'research.record_progress': typeof researchRecordProgress;
+    'research.set_phase': typeof researchSetPhase;
+    'research.request_human_decision': typeof researchRequestHumanDecision;
+    'research.resolve_human_decision': typeof researchResolveHumanDecision;
   }
 }
 
@@ -615,6 +721,389 @@ export const researchReopenQuestion = ResearchModel.defineOp('research.reopen_qu
       current: {
         ...s.current,
         questions: { ...s.current.questions, [p.questionId]: reopened },
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchUpsertAlert = ResearchModel.defineOp('research.upsert_alert', {
+  schema: z.object({
+    fingerprint: z.string().min(1),
+    kind: z.enum(['contradiction', 'blocked', 'reopened', 'commit_failed', 'degraded', 'stale']),
+    message: z.string(),
+    questionId: z.string().optional(),
+    lineSlug: z.string().optional(),
+    createdAt: z.number(),
+  }),
+  apply: (s, p) => {
+    const existingIndex = s.current.alerts.findIndex((alert) => alert.fingerprint === p.fingerprint);
+    if (existingIndex === -1) {
+      const alert: ResearchAlert = {
+        fingerprint: p.fingerprint,
+        kind: p.kind,
+        message: p.message,
+        questionId: p.questionId,
+        lineSlug: p.lineSlug,
+        createdAt: p.createdAt,
+      };
+      return {
+        ...s,
+        current: {
+          ...s.current,
+          alerts: [...s.current.alerts, alert],
+          revision: s.current.revision + 1,
+        },
+      };
+    }
+
+    const existing = s.current.alerts[existingIndex]!;
+    if (
+      existing.kind === p.kind &&
+      existing.message === p.message &&
+      existing.questionId === p.questionId &&
+      existing.lineSlug === p.lineSlug
+    ) return s;
+
+    const alerts = [...s.current.alerts];
+    alerts[existingIndex] = {
+      ...existing,
+      kind: p.kind,
+      message: p.message,
+      questionId: p.questionId,
+      lineSlug: p.lineSlug,
+    };
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        alerts,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchClearAlert = ResearchModel.defineOp('research.clear_alert', {
+  schema: z.object({ fingerprint: z.string().min(1) }),
+  apply: (s, p) => {
+    const alerts = s.current.alerts.filter((alert) => alert.fingerprint !== p.fingerprint);
+    if (alerts.length === s.current.alerts.length) return s;
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        alerts,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchAcknowledgeAlert = ResearchModel.defineOp('research.ack_alert', {
+  schema: z.object({
+    fingerprint: z.string().min(1),
+    acknowledgedAt: z.number(),
+  }),
+  apply: (s, p) => {
+    const existingIndex = s.current.alerts.findIndex((alert) => alert.fingerprint === p.fingerprint);
+    if (existingIndex === -1) return s;
+    const existing = s.current.alerts[existingIndex]!;
+    if (existing.acknowledgedAt !== undefined) return s;
+    const alerts = [...s.current.alerts];
+    alerts[existingIndex] = { ...existing, acknowledgedAt: p.acknowledgedAt };
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        alerts,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Research Loop scientific state ops (Phase 1)
+//
+// These ops mutate the scientific state layer (phase / action / progress /
+// state change / human gate) without touching AITP persistence. Transition
+// checks use the current phase as a guard; ops that don't match the expected
+// phase are no-ops (return state unchanged), so they replay safely. The
+// service layer performs the pre-dispatch validation (throws on invalid
+// transitions) so callers get clear errors on live calls while replay stays
+// idempotent.
+// ---------------------------------------------------------------------------
+
+const VALID_TRANSITIONS: Readonly<Record<ResearchPhase, readonly ResearchPhase[]>> = {
+  idle: ['orienting', 'gap_analysis', 'action_planned', 'awaiting_human'],
+  orienting: ['gap_analysis', 'idle', 'awaiting_human'],
+  gap_analysis: ['action_planned', 'idle', 'awaiting_human'],
+  action_planned: ['action_executing', 'idle', 'awaiting_human'],
+  action_executing: ['evaluating', 'idle', 'awaiting_human'],
+  evaluating: ['state_updated', 'idle', 'awaiting_human'],
+  state_updated: ['checkpoint_pending', 'gap_analysis', 'idle', 'awaiting_human'],
+  checkpoint_pending: ['idle', 'gap_analysis', 'awaiting_human'],
+  awaiting_human: ['idle', 'gap_analysis', 'action_planned', 'action_executing', 'evaluating'],
+};
+
+function isTransitionValid(from: ResearchPhase, to: ResearchPhase): boolean {
+  return VALID_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+export const researchPlanAction = ResearchModel.defineOp('research.plan_action', {
+  schema: z.object({
+    actionId: z.string(),
+    questionId: z.string().optional(),
+    lineSlug: z.string().optional(),
+    kind: ResearchActionKindSchema,
+    purpose: LongTextSchema,
+    expectedEvidence: StringListSchema,
+    stopCondition: ShortTextSchema,
+    allowedToolKinds: StringListSchema,
+    requiresHumanApproval: z.boolean(),
+    createdAt: z.number(),
+  }),
+  apply: (s, p) => {
+    if (
+      s.current.phase !== 'gap_analysis' &&
+      s.current.phase !== 'action_planned' &&
+      s.current.phase !== 'awaiting_human'
+    ) return s;
+    if (p.questionId !== undefined && s.current.questions[p.questionId] === undefined) return s;
+    if (p.lineSlug !== undefined && s.current.lines[p.lineSlug] === undefined) return s;
+    const action: ResearchActionSpecRecord = {
+      actionId: p.actionId,
+      questionId: p.questionId,
+      lineSlug: p.lineSlug,
+      kind: p.kind,
+      purpose: p.purpose,
+      expectedEvidence: p.expectedEvidence,
+      stopCondition: p.stopCondition,
+      allowedToolKinds: p.allowedToolKinds,
+      status: 'planned',
+      createdAt: p.createdAt,
+      requiresHumanApproval: p.requiresHumanApproval,
+    };
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        phase: 'action_planned',
+        currentAction: action,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchStartAction = ResearchModel.defineOp('research.start_action', {
+  schema: z.object({
+    actionId: z.string(),
+    startedAt: z.number(),
+  }),
+  apply: (s, p) => {
+    const action = s.current.currentAction;
+    if (action === null || action.actionId !== p.actionId) return s;
+    if (s.current.phase !== 'action_planned') return s;
+    if (action.status !== 'planned') return s;
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        phase: 'action_executing',
+        currentAction: { ...action, status: 'in_progress' },
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchCompleteAction = ResearchModel.defineOp('research.complete_action', {
+  schema: z.object({
+    actionId: z.string(),
+    status: z.enum(['completed', 'abandoned']),
+    completedAt: z.number(),
+  }),
+  apply: (s, p) => {
+    const action = s.current.currentAction;
+    if (action === null || action.actionId !== p.actionId) return s;
+    if (s.current.phase !== 'action_executing') return s;
+    if (action.status !== 'in_progress') return s;
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        phase: 'evaluating',
+        currentAction: { ...action, status: p.status, completedAt: p.completedAt },
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchRecordProgress = ResearchModel.defineOp('research.record_progress', {
+  schema: z.object({
+    headline: ShortTextSchema,
+    question: ShortTextSchema.optional(),
+    motivation: LongTextSchema,
+    workPerformed: LongTextSchema,
+    result: LongTextSchema,
+    mainlineImpact: LongTextSchema,
+    uncertainties: StringListSchema,
+    nextAction: ShortTextSchema.optional(),
+    phaseChange: z.object({
+      from: ResearchPhaseSchema,
+      to: ResearchPhaseSchema,
+    }).optional(),
+    humanDecision: ShortTextSchema.optional(),
+    detail: z.object({
+      assumptions: StringListSchema.optional(),
+      derivation: LongTextSchema.optional(),
+      tests: StringListSchema.optional(),
+      observations: StringListSchema.optional(),
+      sources: StringListSchema.optional(),
+      limitations: StringListSchema.optional(),
+      detailHint: ShortTextSchema.optional(),
+      artifactRefs: StringListSchema.optional(),
+    }).optional(),
+    recordedAt: z.number(),
+  }),
+  apply: (s, p) => {
+    const phase = p.phaseChange !== undefined
+      ? (isTransitionValid(p.phaseChange.from, p.phaseChange.to) ? p.phaseChange.to : s.current.phase)
+      : s.current.phase;
+    const progress: ResearchProgressReportRecord = {
+      headline: p.headline,
+      question: p.question,
+      motivation: p.motivation,
+      workPerformed: p.workPerformed,
+      result: p.result,
+      mainlineImpact: p.mainlineImpact,
+      uncertainties: p.uncertainties,
+      nextAction: p.nextAction,
+      phaseChange: p.phaseChange,
+      humanDecision: p.humanDecision,
+      detail: p.detail,
+      recordedAt: p.recordedAt,
+    };
+    const stateChange: ResearchStateChangeRecord | null = p.phaseChange !== undefined
+      ? {
+          beforePhase: p.phaseChange.from,
+          afterPhase: phase,
+          actionId: s.current.currentAction?.actionId,
+          summary: p.headline,
+          changedAt: p.recordedAt,
+        }
+      : s.current.recentStateChange;
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        phase,
+        latestProgress: progress,
+        recentStateChange: stateChange,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchSetPhase = ResearchModel.defineOp('research.set_phase', {
+  schema: z.object({
+    phase: ResearchPhaseSchema,
+    reason: ShortTextSchema.optional(),
+    changedAt: z.number(),
+  }),
+  apply: (s, p) => {
+    if (s.current.phase === p.phase) return s;
+    if (!isTransitionValid(s.current.phase, p.phase)) return s;
+    const stateChange: ResearchStateChangeRecord = {
+      beforePhase: s.current.phase,
+      afterPhase: p.phase,
+      actionId: s.current.currentAction?.actionId,
+      summary: p.reason ?? `Phase: ${s.current.phase} → ${p.phase}`,
+      changedAt: p.changedAt,
+    };
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        phase: p.phase,
+        recentStateChange: stateChange,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchRequestHumanDecision = ResearchModel.defineOp('research.request_human_decision', {
+  schema: z.object({
+    gateId: z.string(),
+    kind: ResearchHumanGateKindSchema,
+    actionId: z.string().optional(),
+    questionId: z.string().optional(),
+    prompt: LongTextSchema,
+    createdAt: z.number(),
+  }),
+  apply: (s, p) => {
+    if (p.actionId !== undefined && s.current.currentAction?.actionId !== p.actionId) return s;
+    if (p.questionId !== undefined && s.current.questions[p.questionId] === undefined) return s;
+    const gate: ResearchHumanGateRecord = {
+      gateId: p.gateId,
+      kind: p.kind,
+      actionId: p.actionId,
+      questionId: p.questionId,
+      prompt: p.prompt,
+      createdAt: p.createdAt,
+    };
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        phase: 'awaiting_human',
+        humanGate: gate,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchResolveHumanDecision = ResearchModel.defineOp('research.resolve_human_decision', {
+  schema: z.object({
+    gateId: z.string(),
+    resolution: ShortTextSchema,
+    nextPhase: ResearchPhaseSchema,
+    changedAt: z.number(),
+  }),
+  apply: (s, p) => {
+    const gate = s.current.humanGate;
+    if (
+      s.current.phase !== 'awaiting_human' ||
+      gate === null ||
+      gate.gateId !== p.gateId ||
+      gate.resolvedAt !== undefined ||
+      !isTransitionValid('awaiting_human', p.nextPhase)
+    ) return s;
+
+    const stateChange: ResearchStateChangeRecord = {
+      beforePhase: 'awaiting_human',
+      afterPhase: p.nextPhase,
+      actionId: s.current.currentAction?.actionId,
+      summary: p.resolution,
+      changedAt: p.changedAt,
+    };
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        phase: p.nextPhase,
+        humanGate: {
+          ...gate,
+          resolvedAt: p.changedAt,
+          resolution: p.resolution,
+        },
+        recentStateChange: stateChange,
         revision: s.current.revision + 1,
       },
     };

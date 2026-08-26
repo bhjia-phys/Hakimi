@@ -260,6 +260,16 @@ async function dispatchResearchCommand(
         entryId: cmd.entryId,
       });
       break;
+    case 'resolve_decision':
+      research.resolveHumanDecision({
+        gateId: cmd.gateId,
+        resolution: cmd.resolution,
+        nextPhase: cmd.nextPhase,
+      });
+      break;
+    case 'acknowledge_alert':
+      research.acknowledgeAlert(cmd.fingerprint);
+      break;
   }
 }
 
@@ -278,6 +288,9 @@ const RESEARCH_CLIENT_ERRORS: ReadonlySet<string> = new Set([
   'research.question_not_found',
   'research.line_not_found',
   'research.loop_paused',
+  'research.phase_transition_invalid',
+  'research.human_gate_not_found',
+  'research.human_gate_already_resolved',
 ]);
 
 function sendResearchError(

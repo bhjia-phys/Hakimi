@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  researchAlertSchema,
   researchCommandRequestSchema,
   researchStatusSnapshotSchema,
 } from '../research';
@@ -20,7 +21,39 @@ const validSnapshot = {
   blockedQuestionCount: 0,
   alerts: [],
   aitpHealth: { phase: 'inactive' },
+  phase: 'idle',
   revision: 0,
+};
+
+const readyMaintenanceReceipt = {
+  status: 'ready',
+  refreshedAt: 1_700_000_000_000,
+  memoryStatus: 'available',
+  workstream: 'main-line',
+  latestWorkingNoteAt: 1_699_999_000_000,
+  activeNewerThanWorkingNote: true,
+  unresolvedFailureCount: 0,
+  nextAction: 'review the latest working note',
+  warningSummaries: [{ level: 'warning', code: 'legacy_entry' }],
+  check: {
+    status: 'clean',
+    counts: { entries: 2, notes: 1, errors: 0, warnings: 0 },
+    findingCodes: [],
+  },
+};
+
+const degradedMaintenanceReceipt = {
+  status: 'degraded',
+  refreshedAt: 1_700_000_000_100,
+  memoryStatus: 'unknown',
+  activeNewerThanWorkingNote: null,
+  unresolvedFailureCount: 0,
+  warningSummaries: [],
+  check: {
+    status: 'unavailable',
+    findingCodes: [],
+  },
+  degradedReason: 'check_unavailable',
 };
 
 describe('researchStatusSnapshotSchema', () => {
@@ -28,6 +61,104 @@ describe('researchStatusSnapshotSchema', () => {
     const parsed = researchStatusSnapshotSchema.parse(validSnapshot);
     expect(parsed.mode).toBe('inactive');
     expect(parsed.revision).toBe(0);
+  });
+
+  it('accepts active and acknowledged alert records', () => {
+    const alerts = [
+      {
+        fingerprint: 'research.alert.blocked.question.q1',
+        kind: 'blocked',
+        message: 'Question q1 is blocked',
+        questionId: 'q1',
+        lineSlug: 'main-line',
+        createdAt: 100,
+      },
+      {
+        fingerprint: 'research.alert.stale.line.main-line',
+        kind: 'stale',
+        message: 'Evidence is stale',
+        lineSlug: 'main-line',
+        createdAt: 200,
+        acknowledgedAt: 300,
+      },
+    ];
+    const snapshot = { ...validSnapshot, alerts };
+    const parsed = researchStatusSnapshotSchema.parse(
+      JSON.parse(JSON.stringify(snapshot)),
+    );
+    expect(parsed.alerts).toEqual(alerts);
+    expect(researchAlertSchema.parse(alerts[0]).acknowledgedAt).toBeUndefined();
+    expect(researchAlertSchema.parse(alerts[1]).acknowledgedAt).toBe(300);
+  });
+
+  it('rejects incomplete, invalid, or unknown alert fields', () => {
+    const alert = {
+      fingerprint: 'research.alert.degraded.session',
+      kind: 'degraded' as const,
+      message: 'Research is degraded',
+      createdAt: 400,
+    };
+    const { fingerprint: _fingerprint, ...missingFingerprint } = alert;
+    void _fingerprint;
+    const { createdAt: _createdAt, ...missingCreatedAt } = alert;
+    void _createdAt;
+
+    expect(() => researchAlertSchema.parse(missingFingerprint)).toThrow();
+    expect(() => researchAlertSchema.parse(missingCreatedAt)).toThrow();
+    expect(() =>
+      researchAlertSchema.parse({ ...alert, acknowledgedAt: 'later' }),
+    ).toThrow();
+    expect(() =>
+      researchAlertSchema.parse({ ...alert, fingerprint: '' }),
+    ).toThrow();
+    expect(() =>
+      researchAlertSchema.parse({ ...alert, internalId: 'engineering-only' }),
+    ).toThrow();
+  });
+
+  it('accepts a ready maintenance receipt after a JSON round-trip', () => {
+    const snapshot = {
+      ...validSnapshot,
+      aitpMaintenance: JSON.parse(JSON.stringify(readyMaintenanceReceipt)),
+    };
+    const parsed = researchStatusSnapshotSchema.parse(snapshot);
+    expect(parsed.aitpMaintenance).toEqual(readyMaintenanceReceipt);
+  });
+
+  it('accepts a degraded maintenance receipt without check counts', () => {
+    const parsed = researchStatusSnapshotSchema.parse({
+      ...validSnapshot,
+      aitpMaintenance: degradedMaintenanceReceipt,
+    });
+    expect(parsed.aitpMaintenance).toMatchObject({
+      status: 'degraded',
+      check: { status: 'unavailable', findingCodes: [] },
+      degradedReason: 'check_unavailable',
+    });
+  });
+
+  it('rejects an invalid maintenance enum value', () => {
+    expect(() =>
+      researchStatusSnapshotSchema.parse({
+        ...validSnapshot,
+        aitpMaintenance: { ...readyMaintenanceReceipt, status: 'unknown' },
+      }),
+    ).toThrow();
+  });
+
+  it('rejects invalid maintenance check counts', () => {
+    expect(() =>
+      researchStatusSnapshotSchema.parse({
+        ...validSnapshot,
+        aitpMaintenance: {
+          ...readyMaintenanceReceipt,
+          check: {
+            ...readyMaintenanceReceipt.check,
+            counts: { ...readyMaintenanceReceipt.check.counts, errors: -1 },
+          },
+        },
+      }),
+    ).toThrow();
   });
 
   it('accepts a full snapshot with questions and lines', () => {
@@ -91,6 +222,42 @@ describe('researchStatusSnapshotSchema', () => {
         persistence: 'pending_commit',
         createdAt: 1000,
       },
+      phase: 'action_planned',
+      currentAction: {
+        actionId: 'act-1',
+        questionId: 'q1',
+        lineSlug: 'main-line',
+        kind: 'experiment',
+        purpose: 'Test hypothesis H1',
+        expectedEvidence: ['exp-A result'],
+        stopCondition: 'p < 0.05',
+        allowedToolKinds: ['shell'],
+        status: 'planned',
+        createdAt: 2000,
+        requiresHumanApproval: false,
+      },
+      latestProgress: {
+        headline: 'Ran exp-A',
+        motivation: 'Need evidence for H1',
+        workPerformed: 'Conducted experiment',
+        result: 'p = 0.03',
+        mainlineImpact: 'Supports candidate mechanism',
+        uncertainties: ['small sample size'],
+        recordedAt: 3000,
+      },
+      recentStateChange: {
+        beforePhase: 'orienting',
+        afterPhase: 'action_planned',
+        summary: 'Planned experiment after gap analysis',
+        changedAt: 2500,
+      },
+      humanGate: {
+        gateId: 'gate-1',
+        kind: 'approval',
+        actionId: 'act-1',
+        prompt: 'Approve experiment?',
+        createdAt: 2100,
+      },
       revision: 5,
     };
     const parsed = researchStatusSnapshotSchema.parse(full);
@@ -108,6 +275,75 @@ describe('researchStatusSnapshotSchema', () => {
     const { aitpHealth: _drop, ...rest } = validSnapshot;
     void _drop;
     expect(() => researchStatusSnapshotSchema.parse(rest)).toThrow();
+  });
+
+  it('rejects a missing phase field', () => {
+    const { phase: _drop, ...rest } = validSnapshot;
+    void _drop;
+    expect(() => researchStatusSnapshotSchema.parse(rest)).toThrow();
+  });
+
+  it('accepts a snapshot with all scientific state fields populated', () => {
+    const snapshot = {
+      ...validSnapshot,
+      phase: 'awaiting_human',
+      currentAction: {
+        actionId: 'act-1',
+        kind: 'derivation',
+        purpose: 'Derive prediction from theory',
+        expectedEvidence: ['analytical result'],
+        stopCondition: 'consistent with known bounds',
+        allowedToolKinds: ['shell'],
+        status: 'in_progress',
+        createdAt: 1000,
+        requiresHumanApproval: true,
+      },
+      latestProgress: {
+        headline: 'Derived key identity',
+        motivation: 'Connect theory to observable',
+        workPerformed: 'Symbolic derivation',
+        result: 'Closed-form expression obtained',
+        mainlineImpact: 'Narrows parameter space',
+        uncertainties: ['assumes continuity'],
+        nextAction: 'Numerical verification',
+        phaseChange: { from: 'action_executing', to: 'evaluating' },
+        humanDecision: 'proceed to evaluation',
+        detail: {
+          derivation: 'step-by-step algebra',
+          assumptions: ['smoothness'],
+          artifactRefs: ['notebook-1'],
+        },
+        recordedAt: 2000,
+      },
+      recentStateChange: {
+        beforePhase: 'action_executing',
+        afterPhase: 'evaluating',
+        actionId: 'act-1',
+        summary: 'Action completed, entering evaluation',
+        changedAt: 1500,
+      },
+      humanGate: {
+        gateId: 'gate-1',
+        kind: 'decision',
+        actionId: 'act-1',
+        prompt: 'Which branch to pursue?',
+        resolvedAt: 2500,
+        resolution: 'branch A',
+        createdAt: 1200,
+      },
+    };
+    const parsed = researchStatusSnapshotSchema.parse(snapshot);
+    expect(parsed.phase).toBe('awaiting_human');
+    expect(parsed.currentAction?.actionId).toBe('act-1');
+    expect(parsed.latestProgress?.phaseChange?.to).toBe('evaluating');
+    expect(parsed.recentStateChange?.actionId).toBe('act-1');
+    expect(parsed.humanGate?.resolution).toBe('branch A');
+  });
+
+  it('rejects an invalid phase enum value', () => {
+    expect(() =>
+      researchStatusSnapshotSchema.parse({ ...validSnapshot, phase: 'unknown' }),
+    ).toThrow();
   });
 });
 
@@ -237,6 +473,47 @@ describe('researchCommandRequestSchema', () => {
       },
     });
     expect(parsed.command.kind).toBe('commit_checkpoint');
+  });
+
+  it('accepts human decision and alert acknowledgement commands', () => {
+    const resolved = researchCommandRequestSchema.parse({
+      command: {
+        kind: 'resolve_decision',
+        gateId: 'gate-1',
+        resolution: 'Proceed with the bounded experiment.',
+        nextPhase: 'action_planned',
+      },
+    });
+    expect(resolved.command).toMatchObject({
+      kind: 'resolve_decision',
+      gateId: 'gate-1',
+      resolution: 'Proceed with the bounded experiment.',
+      nextPhase: 'action_planned',
+    });
+
+    const acknowledged = researchCommandRequestSchema.parse({
+      command: {
+        kind: 'acknowledge_alert',
+        fingerprint: 'research.alert.blocked.question.q1',
+      },
+    });
+    expect(acknowledged.command).toEqual({
+      kind: 'acknowledge_alert',
+      fingerprint: 'research.alert.blocked.question.q1',
+    });
+  });
+
+  it('rejects incomplete human decision and acknowledgement commands', () => {
+    expect(() =>
+      researchCommandRequestSchema.parse({
+        command: { kind: 'resolve_decision', gateId: 'gate-1', resolution: 'Proceed.' },
+      }),
+    ).toThrow();
+    expect(() =>
+      researchCommandRequestSchema.parse({
+        command: { kind: 'acknowledge_alert' },
+      }),
+    ).toThrow();
   });
 
   it('accepts a pause_loop command', () => {

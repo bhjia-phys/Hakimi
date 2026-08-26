@@ -18,11 +18,11 @@ deterministic gate passed**（154 tests）。AITP 读契约
 marker 候选、保守 card/trial review、两步 human decision（approval +
 publication）和 platform tool/card/Skill 三层边界——不改 CLI/schema/
 transport。`lineage`/`lite-entry-0.2`/`run-pointer-0.1` 仍 deferred；
-M2–M4 blocked。**Hakimi native adapter（H0–H5）首个实验性纵切片已实现**
-（flag `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`，默认开启）：strict
+M2–M4 blocked。**Hakimi adapter 的 H0–H4 已实现，H5 仅部分集成**
+（flag `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`，默认开启；这是 Hakimi 产品 flag，不是 AITP 协议状态，也不是 H6 可用性信号）：strict
 contract discovery、Python probe、对 `enter`/`list`/`show`/`check` 全部已发布
 read transport 与 version-0 prepare/save envelope 的严格 Zod 校验、与 0.8
-契约一致的 record/Note argv、scoped `--workstream`、M1e finding-code 兼容、
+契约一致的 record/Note argv、scoped `--workstream`、M1e check finding code 的 opaque projection（不实现 backfill/sha256-once/check-policy 语义）、
 Research state（Question/Line/Focus、三轴问题模型、revision steering、pending
 checkpoint barrier、Goal complete guard）、mode/loop/Question/Focus/checkpoint
 的单一完整 snapshot push、active step 的语义状态维护 guidance、
@@ -39,6 +39,7 @@ Board 隐藏，零 AITP I/O。不自动 init/adopt/inventory/backfill apply；
 backfill 不作为模型工具暴露。typed question/line registry、
 literature/compute/Portfolio、H6 未实现。H6/C6 native
 method-distillation orchestration 是 **planned，unavailable**。
+当前状态维护已接通：进入模式以及 active undo/cold restore 在 ready probe 后只读执行 `enter` → `check`，不是 session-end automatic closeout。maintenance receipt 和 context injection 只暴露安全摘要；完整 Research snapshot/API 或 expanded Board 仍可能包含 checkpoint、revision 和 adapter health 字段。warning-only 保持 ready，error finding 或周期不可用时显示 degraded。该周期不自动 init/adopt/backfill，不自动写 semantic handoff、Entry 或 Note；Session-scope coordinator 仅负责这项维护，不改变 H6 native method-distillation orchestration 仍为 planned/unavailable 的状态。alerts 和 generic human gate 已实现，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard，`ResolveResearchDecision` 不会自动写入 AITP decision Entry。degraded active Research Mode 会阻止 AITP writes 和 Goal completion，未解决 human gate 也会阻止 Goal completion，但本地 Question/Line mutation 仍可能发生，当前没有 automatic session-closeout。
 §1/§2/§3/§5/§6 已更新到当前状态；§4/§7 保留历史 baseline 证据。
 
 ## 1. Command matrix (Hakimi view)
@@ -47,14 +48,14 @@ method-distillation orchestration 是 **planned，unavailable**。
 |---|---|---|---|---|---|
 | `init` | M0 | available | no — human decision, blank dir only | — | `--help` presence |
 | `init --adopt` | M0.6 | available | no — touches an existing tree, human decision | — | `--help` presence |
-| `enter` | M0 | available | **yes** (session start/end) | — | no `schema` key; strict shape check；M1c（已 shipped；gate passed）：单次 `--workstream <slug>` 时 → `schema == "aitp/enter-0.3"` |
+| `enter` | M0 | available | **yes** (mode entry and active undo/cold-restore maintenance only) | — | no `schema` key; strict shape check；M1c（已 shipped；gate passed）：单次 `--workstream <slug>` 时 → `schema == "aitp/enter-0.3"`；not session-end closeout |
 | `inventory <path> --name <n>` | M0.6 | available | no — operator-only, **writes** `.aitp/local/legacy/<name>-inventory.json` | — | — |
 | `record prepare\|save` | M0 | available | yes (prepare → fill → save) | — | envelope shape + `status` enum；M1c（已 shipped；gate passed）：repeatable `--workstream` 只播种 draft frontmatter（重复 slug 拒绝），envelope 不变 |
 | `note prepare\|save` | M0 | available | yes | — | envelope shape + `status` enum；M1c（已 shipped；gate passed）：repeatable `--workstream` 只播种 draft frontmatter（重复 slug 拒绝），envelope 不变 |
 | `list` | M1a | **available** (read-only) | **yes** (feature-detect schema) | —；M1a deterministic gate passed | top-level `schema == "aitp/list-0.1"`；M1c（已 shipped；gate passed）：单次 `--workstream <slug>` 时 → `schema == "aitp/list-0.2"` |
 | `show` | M1a | **available** (read-only) | **yes** (feature-detect schema) | —；M1a deterministic gate passed | top-level `schema == "aitp/show-0.1"`；malformed 记录 → exit 0 + `status:"malformed"` + `frontmatter:null` |
 | `check` | M1b-R1 (selected 2026-08-12) | **available** (read-only, zero-write) | **yes** (feature-detect schema) | —；M1b-R1 deterministic gate passed 2026-08-12 | 解析 `aitp/check-report-0.1`（exit 0/1 均带报告；exit 2 是标准错误包）；M1d（已 shipped；gate passed）：单次 `--workstream <slug>` 时 → `aitp/check-report-0.2`（admitted in-scope 计数、`by_code`/`outside_scope`；四行文本仅人阅）；无 flag ⇒ `check-report-0.1` 字节不变 |
-| `backfill` | M1e (2026-08-15) | **available** (dry-run default; `--apply` writes metadata only) | **yes** (feature-detect `aitp/backfill-0.1` success envelope) | —；M1e deterministic gate passed | `aitp backfill workstreams --mapping … --decision <human-entry> [--apply]`；dry-run-first，只 add/merge `workstreams`，需 human decision pin mapping |
+| `backfill` | M1e (2026-08-15) | **available upstream** (dry-run default; `--apply` writes metadata only) | **no — operator-only**; Hakimi adapter does not expose, call, or parse the `aitp/backfill-0.1` success envelope | —；M1e deterministic gate passed upstream | `aitp backfill workstreams --mapping … --decision <human-entry> [--apply]`；AITP upstream is dry-run-first，只 add/merge `workstreams`，需 human decision pin mapping；Hakimi does not implement this integration |
 | `lineage` | deferred candidate (Followup 2, 2026-08-12 再次 deferred) | **absent** | no | 新的 reviewed freeze revision 选中 + 自身 reviewed spec | `aitp/lineage-0.1` 仅在真正 shipped 后 |
 
 ## 2. Schema existence (as of baseline)
@@ -72,7 +73,7 @@ method-distillation orchestration 是 **planned，unavailable**。
 | `aitp/lite-entry-0.2` | file | candidate contract；blocked，未选中 | 2026-08-12 reviewed freeze revision 未选中（`docs/m1b-spec.md` §0.1） |
 | `aitp/check-report-0.1` | transport | **shipped and gated（M1b-R1）** | v0.1-only、read-only、zero-write；exit 0/1 带报告、exit 2 错误包（`docs/archive/m1b-r1-spec.md` §Report） |
 | `aitp/check-report-0.2` | transport | **shipped and gated（M1d）** | 仅当传入单次 `--workstream <slug>` 时发出：0.1 payload + additive top-level singular `workstream`、`counts.by_code`（per-level）、`counts.outside_scope`（global−scoped level delta）；scoped `counts.entries`/`notes` 是 admitted in-scope 计数，**不与 0.1 直接比较**；exit 0/1 在 scoped report 上评估（scoped `clean` ≠ 全库健康）；四行 scoped 文本仅人阅。Frozen contract：`docs/archive/m1d-workstream-health-spec.md` |
-| `aitp/backfill-0.1` | transport | **shipped and gated（M1e）** | `aitp backfill workstreams` 成功 envelope；dry-run default，`--apply` 只 add/merge `workstreams` metadata，需 human decision Entry sha256-pin mapping。Frozen contract：`docs/archive/m1e-evidence-lifecycle-backfill-spec.md` |
+| `aitp/backfill-0.1` | transport | **AITP upstream shipped and gated（M1e）** | AITP `aitp backfill workstreams` 成功 envelope；dry-run default，`--apply` 只 add/merge `workstreams` metadata，需 human decision Entry sha256-pin mapping。Hakimi adapter 不消费该 envelope，不实现其 `sha256-once:`/policy 语义。Frozen contract：`docs/archive/m1e-evidence-lifecycle-backfill-spec.md` |
 | `aitp/run-pointer-0.1` | file | candidate contract；deferred，未选中 | 2026-08-12 freeze revision deferred（`docs/m1b-spec.md` §8 Remote evidence） |
 
 `lite-*` schemas 是持久化文件 schema，**不是** CLI transport envelope。
@@ -105,11 +106,13 @@ Transport envelope 在 M1a 之前保持未版本化。
   envelope与 `sha256-once:` pin/policy finding codes（无 transport schema
   变化）。对未安装或旧版本 AITP 仍按 fail closed，不得假定任何
   schema 存在。
-- **Golden fixtures**：M1a 时在 `tests/ledger/fixtures/golden/` 刻意再生成
-  （`enter.json`、`enter-after-save.json`、新 `list.json`、`show.json`）；
-  `root` 归一化为 `<golden-store>`；只有 synthetic `nio` store——无真实研究
-  数据（`docs/m1a-spec.md:518-544`）。Hakimi 可将它们作为官方协议 fixtures
-  消费。
+- **Official AITP 0.8.0 golden fixtures**：已 commit 的 fixtures 覆盖
+  `enter.json`、`enter-after-save.json`、`list.json`、`show.json`、`check.json`
+  和 `check-workstream.json`；`root` 归一化为 `<golden-store>`，只有 synthetic
+  `nio` store，无真实研究数据（`docs/m1a-spec.md:518-544` 及 0.8.0 fixture
+  contract）。Hakimi 已有本地 parser/contract tests 覆盖这六个 fixture，但不启动
+  live CLI subprocess，因此不是 live CLI conformance；fixture 通过不等于 adapter
+  已实现 backfill、`sha256-once:` 或 `check-policy` 语义。
 
 ## 4. Hakimi integration assumptions — check results（双方核对一致）
 
@@ -125,14 +128,16 @@ Transport envelope 在 M1a 之前保持未版本化。
 
 ## 5. Red lines（Hakimi，现在与未来）
 
-1. `list`/`show`/`check`/`backfill` 已 shipped（M1a/M1b-R1/M1c/M1d/M1e
-   gate passed）：先 feature-detect versioned schema 再消费。绝不用 `rg` 或临时 Markdown
-   解析模拟 `show`。`check` 解析 exit 0/1 报告、exit 2 作错误包；
-   compact `enter` **文本**仅面向人阅读，绝不解析。`check` 无 flag 时是
-   `check-report-0.1`，有单次 `--workstream` 时是 `check-report-0.2`
-   （admitted in-scope 计数，不与 0.1 比较，scoped `clean` ≠ 全库健康，
-   四行文本仅人阅）。`backfill` 默认 dry-run，`--apply` 需 human
-   decision pin。`lineage` 仍 deferred。
+1. AITP upstream 的 `list`/`show`/`check`/`backfill` 均已 shipped（M1a/M1b-R1/M1c/M1d/M1e
+   gate passed），但 Hakimi adapter 只消费 `list`/`show`/`check`；`backfill` 在 Hakimi 侧是
+   **no/operator-only**，不暴露、不调用、不解析 `aitp/backfill-0.1` 成功 envelope。
+   先 feature-detect versioned schema 再消费。绝不用 `rg` 或临时 Markdown 解析模拟
+   `show`。`check` 解析 exit 0/1 报告、exit 2 作错误包；compact `enter` **文本**仅
+   面向人阅读，绝不解析。`check` 无 flag 时是 `check-report-0.1`，有单次
+   `--workstream` 时是 `check-report-0.2`（admitted in-scope 计数，不与 0.1 比较，
+   scoped `clean` ≠ 全库健康，四行文本仅人阅）。Hakimi 只把 check finding code
+   投影为 opaque string，不实现 `sha256-once:` 或 `check-policy` 语义；AITP upstream
+   的 `backfill` 默认 dry-run、`--apply` 需 human decision pin。`lineage` 仍 deferred。
 2. 绝不自动运行 `init` / `init --adopt` / `inventory`——都需要人工决策；
    `inventory` 会写文件。
 3. 绝不假定 `aitp/enter-0.1`（不存在）。当前契约点：`enter-0.2`/
@@ -169,21 +174,20 @@ Transport envelope 在 M1a 之前保持未版本化。
     in-scope 计数，**不与 `check-report-0.1` 直接比较**；exit 0/1 在
     scoped report 上评估（scoped `clean` ≠ 全库健康）；四行 scoped
     文本仅人阅，绝不解析。
-11. M1e evidence lifecycle（shipped；deterministic gate passed）：
-    `backfill workstreams` 默认 dry-run，`--apply` 只 add/merge
+11. M1e evidence lifecycle 是 AITP upstream shipped 且 deterministic gate passed：
+    AITP 的 `backfill workstreams` 默认 dry-run，`--apply` 只 add/merge
     `workstreams` metadata，必须由 human decision Entry sha256-pin
-    mapping；`sha256-once:` 是可变观测 pin（check 报告 drift/missing 为
-    historical 警告而非 error，在 mutable patterns 匹配时）；`.aitp/local/
-    check-policy.json` 是 reviewed store policy（mutable patterns 降级
-    legacy strict drift/missing 为 historical 警告，immutable/unmatched
-    仍 error，无 policy ⇒ 字节不变的 check）。不自动 backfill、不推断
+    mapping；`sha256-once:` 是可变观测 pin，`.aitp/local/check-policy.json`
+    是 reviewed store policy。Hakimi adapter 不暴露、不调用、不解析
+    `backfill-0.1` 成功 envelope，只把 check finding code 作为 opaque string
+    投影，因此不实现上述 pin/policy 语义；Hakimi 不自动 backfill、不推断
     workstreams。
 
 ## 6. Next steps and blocking
 
 阻塞链：`M0.6（缩小声明关闭）` → `M1a gate（passed）` → `M1b-R1 gate（passed）` → `M1c gate（passed）` → `M1d gate（passed）` → `M1e gate（passed）` → `M2–M4（自然需求证据，blocked）`。
-Hakimi H0–H5 的首个实验性纵切片已实现（flag 门控，默认开启）；H6 和正式
-contract 仍 blocked。
+Hakimi H0–H4 已实现、H5 仅部分集成（flag 门控，默认开启）；H6 和正式
+contract 仍 blocked。该 flag 是 Hakimi 产品决策，不是 AITP 协议状态或 H6 可用性信号。
 
 Hakimi 侧（并行）：
 
@@ -191,7 +195,8 @@ Hakimi 侧（并行）：
   capability 探测、`enter` lifecycle、prepare→save 流程、降级、tree-hash 测试、
   双语 README 兼容矩阵。
 - H1 **已实现（实验性）**：feature-detect 并消费 `enter-0.2`/`list-0.1`/
-  `show-0.1` 并消费官方 golden fixtures。
+  `show-0.1`；官方 0.8.0 六个 golden fixtures 只用于本地 parser/contract
+  tests，不启动 live CLI subprocess，不等于 live CLI conformance。
 - H2 **已实现（实验性）**：整合 `check-report-0.1`；`lite-entry-0.2`/
   `used_by`/pointer bundle 未发布（deferred），不得安排。
 - H3 **已实现（实验性）**：整合 scoped contracts（单次 `--workstream` →
@@ -199,9 +204,9 @@ Hakimi 侧（并行）：
 - H4 **已实现（实验性）**：整合 scoped `check`（单次 `--workstream` →
   `check-report-0.2`，admitted in-scope 计数、`by_code`/`outside_scope`，
   四行文本仅人阅，无 flag 时 `check-report-0.1` 字节不变）。
-- H5 **已实现（实验性）**：读取 `backfill-0.1` 成功
-  envelope 和 `sha256-once:`/policy finding codes（无 transport schema
-  变化）；`backfill` 不作为模型工具暴露，不自动 `--apply`。
+- H5 **部分集成（实验性）**：AITP upstream 已 shipped `backfill-0.1` 和
+  `sha256-once:`/policy 语义；Hakimi 只把 check finding code 投影为 opaque string，
+  不暴露、不调用、不解析 backfill 成功 envelope，也不实现这些语义。
 - H6：**planned，unavailable**。native method-distillation orchestration：
   Session-scope coordinator、candidate/proposal lifecycle、human question +
   decision write、crash/resume。前置：H0–H5 全部落地 + reviewed

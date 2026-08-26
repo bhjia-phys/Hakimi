@@ -175,6 +175,7 @@ function researchSnapshot(mode: 'ready' | 'degraded'): ResearchStatusSnapshot {
     blockedQuestionCount: 0,
     alerts: [],
     aitpHealth: { phase: mode },
+    phase: 'action_executing',
     revision: 1,
   };
 }

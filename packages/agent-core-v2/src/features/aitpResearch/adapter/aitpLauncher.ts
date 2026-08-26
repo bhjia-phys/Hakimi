@@ -14,7 +14,10 @@
  * argparse-style stderr-only fallback is used. Scope-agnostic.
  */
 
-import { IHostProcessService, type HostProcessError } from '#/os/interface/hostProcess';
+import {
+  IHostProcessService,
+  type IHostProcess,
+} from '#/os/interface/hostProcess';
 
 import { AitpResearchError, AitpResearchErrors } from '../errors';
 import type {
@@ -45,10 +48,128 @@ import {
 const PYTHON_CANDIDATES = ['python3.13', 'python3.12', 'python3.11', 'python3'];
 const MIN_PYTHON_VERSION = [3, 11, 0];
 const DEFAULT_TIMEOUT_MS = 30_000;
+const SIGTERM_GRACE_MS = 3_000;
 const MAX_STDOUT_BYTES = 1_000_000;
 const MAX_STDERR_BYTES = 200_000;
 
 type AllowedExits = readonly number[];
+
+type ProcessWaitOutcome =
+  | { readonly kind: 'exit'; readonly exitCode: number }
+  | { readonly kind: 'wait_error'; readonly error: unknown };
+
+type OutputObservation =
+  | { readonly kind: 'end' }
+  | { readonly kind: 'stream_error'; readonly error: unknown };
+
+interface OutputCapture {
+  readonly chunks: Buffer[];
+  readonly done: Promise<OutputObservation>;
+  dispose(): void;
+}
+
+type TerminationReason =
+  | { readonly kind: 'timeout' }
+  | { readonly kind: 'output_limit'; readonly stream: 'stdout' | 'stderr'; readonly limitBytes: number };
+
+function observeOutput(
+  stream: IHostProcess['stdout'],
+  maxBytes: number,
+  onOverflow: () => void,
+): OutputCapture {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  let overflowed = false;
+  let settled = false;
+  let resolveDone!: (observation: OutputObservation) => void;
+  const done = new Promise<OutputObservation>((resolve) => {
+    resolveDone = resolve;
+  });
+
+  const onData = (chunk: string | Uint8Array): void => {
+    if (settled || overflowed) return;
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk);
+    if (size + buffer.byteLength > maxBytes) {
+      overflowed = true;
+      onOverflow();
+      return;
+    }
+    size += buffer.byteLength;
+    chunks.push(buffer);
+  };
+  const onEnd = (): void => {
+    finish({ kind: 'end' });
+  };
+  const onClose = (): void => {
+    finish({ kind: 'end' });
+  };
+  const onError = (error: unknown): void => {
+    finish({ kind: 'stream_error', error });
+  };
+  const cleanup = (): void => {
+    stream.off('data', onData);
+    stream.off('end', onEnd);
+    stream.off('close', onClose);
+    stream.off('error', onError);
+  };
+  const finish = (observation: OutputObservation): void => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    resolveDone(observation);
+  };
+
+  stream.on('data', onData);
+  stream.once('end', onEnd);
+  stream.once('close', onClose);
+  stream.once('error', onError);
+
+  return {
+    chunks,
+    done,
+    dispose: () => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        resolveDone({ kind: 'end' });
+      } else {
+        cleanup();
+      }
+    },
+  };
+}
+
+async function disposeProcess(proc: IHostProcess): Promise<void> {
+  try {
+    await proc.dispose();
+  } catch {
+  }
+}
+
+async function killProcess(proc: IHostProcess, signal: NodeJS.Signals): Promise<void> {
+  try {
+    await proc.kill(signal);
+  } catch {
+  }
+}
+
+function waitForExitWithin(waitPromise: Promise<ProcessWaitOutcome>, timeoutMs: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(false);
+    }, timeoutMs);
+  });
+  return Promise.race([waitPromise.then(() => true), timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
+async function terminateProcess(proc: IHostProcess, waitPromise: Promise<ProcessWaitOutcome>): Promise<void> {
+  await killProcess(proc, 'SIGTERM');
+  const exited = await waitForExitWithin(waitPromise, SIGTERM_GRACE_MS);
+  if (!exited) await killProcess(proc, 'SIGKILL');
+}
 
 const AITP_NOT_INITIALIZED_CODE = 'not_initialized';
 
@@ -80,7 +201,7 @@ export class AitpLauncher {
       try {
         const result = await this.runRaw(candidate, ['-c', 'import sys; print(sys.version_info[:3])']);
         if (result.exitCode !== 0) continue;
-        const match = result.stdout.match(/\((\d+),\s*(\d+),\s*(\d+)\)/);
+        const match = result.stdout.trim().match(/^\((\d+),\s*(\d+),\s*(\d+)\)$/);
         if (match === null) continue;
         const major = parseInt(match[1]!, 10);
         const minor = parseInt(match[2]!, 10);
@@ -245,8 +366,8 @@ export class AitpLauncher {
     readonly stdout: string;
     readonly stderr: string;
   }> {
-    const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    let proc;
+    const timeoutMs = Math.max(0, this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    let proc: IHostProcess;
     try {
       proc = await this.hostProcess.spawn(command, args, {
         cwd: this.options.cwd,
@@ -256,64 +377,95 @@ export class AitpLauncher {
         mergeStderr: false,
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_ADAPTER_SPAWN_FAILED,
-        `Failed to spawn AITP process: ${(error as HostProcessError).message}`,
+        `Failed to spawn AITP process: ${message}`,
+        { cause: error },
       );
     }
 
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-    let stdoutSize = 0;
-    let stderrSize = 0;
-    let timedOut = false;
-
-    proc.stdout.on('data', (chunk: Buffer) => {
-      if (stdoutSize >= MAX_STDOUT_BYTES) return;
-      stdoutSize += chunk.length;
-      stdoutChunks.push(chunk);
+    let resolveTermination!: (reason: TerminationReason) => void;
+    const termination = new Promise<TerminationReason>((resolve) => {
+      resolveTermination = resolve;
     });
-    proc.stderr.on('data', (chunk: Buffer) => {
-      if (stderrSize >= MAX_STDERR_BYTES) return;
-      stderrSize += chunk.length;
-      stderrChunks.push(chunk);
+    const stdoutCapture = observeOutput(proc.stdout, MAX_STDOUT_BYTES, () => {
+      resolveTermination({ kind: 'output_limit', stream: 'stdout', limitBytes: MAX_STDOUT_BYTES });
     });
-
-    const exitPromise = proc.wait();
-
-    const timeoutPromise = new Promise<never>((_resolve, reject) => {
-      const timer = setTimeout(() => {
-        timedOut = true;
-        void proc.kill('SIGTERM').then(() => {
-          setTimeout(() => {
-            void proc.kill('SIGKILL').catch(() => {});
-          }, 3_000);
-        });
-        reject(new AitpResearchError(AitpResearchErrors.codes.AITP_ADAPTER_TIMEOUT, `AITP timed out after ${timeoutMs}ms`));
+    const stderrCapture = observeOutput(proc.stderr, MAX_STDERR_BYTES, () => {
+      resolveTermination({ kind: 'output_limit', stream: 'stderr', limitBytes: MAX_STDERR_BYTES });
+    });
+    const waitPromise: Promise<ProcessWaitOutcome> = Promise.resolve()
+      .then(() => proc.wait())
+      .then(
+        (exitCode): ProcessWaitOutcome => ({ kind: 'exit', exitCode }),
+        (error): ProcessWaitOutcome => ({ kind: 'wait_error', error }),
+      );
+    const completed = Promise.all([waitPromise, stdoutCapture.done, stderrCapture.done]).then(
+      ([waitResult, stdoutResult, stderrResult]) => {
+        if (waitResult.kind === 'wait_error') return waitResult;
+        if (stdoutResult.kind === 'stream_error') return stdoutResult;
+        if (stderrResult.kind === 'stream_error') return stderrResult;
+        return waitResult;
+      },
+    );
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<TerminationReason>((resolve) => {
+      timeoutHandle = setTimeout(() => {
+        resolve({ kind: 'timeout' });
       }, timeoutMs);
-      void exitPromise.finally(() => {
-        clearTimeout(timer);
-      });
     });
+    let disposed = false;
+    const dispose = async (): Promise<void> => {
+      if (disposed) return;
+      disposed = true;
+      stdoutCapture.dispose();
+      stderrCapture.dispose();
+      await disposeProcess(proc);
+    };
 
-    let exitCode: number;
     try {
-      exitCode = await Promise.race([exitPromise, timeoutPromise]);
-    } catch (error) {
-      await Promise.resolve().then(() => proc.dispose()).catch(() => undefined);
-      throw error;
+      const outcome = await Promise.race([completed, timeout, termination]);
+      if (outcome.kind === 'wait_error') {
+        const message = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+        throw new AitpResearchError(
+          AitpResearchErrors.codes.AITP_ADAPTER_SPAWN_FAILED,
+          `AITP process failed while waiting: ${message}`,
+          { cause: outcome.error },
+        );
+      }
+      if (outcome.kind === 'stream_error') {
+        const message = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+        throw new AitpResearchError(
+          AitpResearchErrors.codes.AITP_ADAPTER_SPAWN_FAILED,
+          `AITP process output stream failed: ${message}`,
+          { cause: outcome.error },
+        );
+      }
+      if (outcome.kind === 'exit') {
+        return {
+          exitCode: outcome.exitCode,
+          stdout: Buffer.concat(stdoutCapture.chunks).toString('utf8'),
+          stderr: Buffer.concat(stderrCapture.chunks).toString('utf8'),
+        };
+      }
+
+      await terminateProcess(proc, waitPromise);
+      if (outcome.kind === 'timeout') {
+        throw new AitpResearchError(
+          AitpResearchErrors.codes.AITP_ADAPTER_TIMEOUT,
+          `AITP timed out after ${timeoutMs}ms`,
+        );
+      }
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_ADAPTER_OUTPUT_LIMIT,
+        `AITP ${outcome.stream} output exceeded the ${outcome.limitBytes}-byte limit`,
+        { details: { stream: outcome.stream, limitBytes: outcome.limitBytes } },
+      );
+    } finally {
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+      await dispose();
     }
-
-    await Promise.resolve().then(() => proc.dispose()).catch(() => undefined);
-
-    const stdout = Buffer.concat(stdoutChunks).toString('utf8');
-    const stderr = Buffer.concat(stderrChunks).toString('utf8');
-
-    if (timedOut) {
-      throw new AitpResearchError(AitpResearchErrors.codes.AITP_ADAPTER_TIMEOUT, `AITP timed out after ${timeoutMs}ms`);
-    }
-
-    return { exitCode, stdout, stderr };
   }
 
   private versionGte(actual: readonly number[], minimum: readonly number[]): boolean {

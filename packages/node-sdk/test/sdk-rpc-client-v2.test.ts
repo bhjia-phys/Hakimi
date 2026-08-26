@@ -25,6 +25,7 @@ import {
   KimiHarness,
   removeProviderFromConfig,
   SDKRpcClientV2,
+  Session,
   type Event,
   type KimiConfig,
 } from '#/index';
@@ -33,7 +34,10 @@ import {
   drainQueryStoreDisposals,
   drainSessionIndexMirror,
   HostProcessError,
+  IAgentResearchService,
   IAppendLogStore,
+  ensureMainAgent,
+  getLiveSessionById,
   IHostRequestHeaders,
   ISessionIndex,
   ISessionIndexMirror,
@@ -1366,6 +1370,85 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
       expect(snapshot.aitpHealth.phase).toBe('inactive');
     } finally {
       await harness.close();
+    }
+  });
+
+  it('commandResearch resolves human decisions and acknowledges lifecycle alerts', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-attention-home-'));
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-attention-work-'));
+    tempDirs.push(homeDir, workDir);
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+    const summary = await client.createSession({ id: 'ses_research_attention', workDir });
+    const session = new Session({
+      id: summary.id,
+      workDir: summary.workDir,
+      summary,
+      rpc: client,
+    });
+    try {
+      await session.commandResearch({ kind: 'enter_mode', actor: 'user' });
+      const liveSession = getLiveSessionById(client.engineAccessor, session.id);
+      expect(liveSession).toBeDefined();
+      const agent = await ensureMainAgent(liveSession!);
+      const research = agent.accessor.get(IAgentResearchService);
+      const gate = research.requestHumanDecision({
+        kind: 'decision',
+        prompt: 'Choose the next research direction.',
+      });
+      const waiting = await session.getResearch();
+      expect(waiting.phase).toBe('awaiting_human');
+      expect(waiting.humanGate?.gateId).toBe(gate.gateId);
+
+      const resolved = await session.commandResearch({
+        kind: 'resolve_decision',
+        gateId: gate.gateId,
+        resolution: 'Continue with the measured path.',
+        nextPhase: 'idle',
+      });
+      expect(resolved.snapshot.phase).toBe('idle');
+      expect(resolved.snapshot.humanGate).toMatchObject({
+        gateId: gate.gateId,
+        resolution: 'Continue with the measured path.',
+        resolvedAt: expect.any(Number),
+      });
+
+      const line = await session.commandResearch({
+        kind: 'create_line',
+        slug: 'main',
+        title: 'Main line',
+      });
+      const question = await session.commandResearch({
+        kind: 'create_question',
+        lineSlug: 'main',
+        wording: 'Why?',
+      });
+      const questionId = question.snapshot.questions[0]!.id;
+      const closed = await session.commandResearch({
+        kind: 'close_question',
+        questionId,
+        expectedRevision: question.snapshot.revision,
+      });
+      const reopened = await session.commandResearch({
+        kind: 'reopen_question',
+        questionId,
+        expectedRevision: closed.snapshot.revision,
+      });
+      const alert = reopened.snapshot.alerts.find(
+        (candidate) => candidate.fingerprint === `research.alert.reopened.question.${questionId}`,
+      );
+      expect(line.snapshot.lines[0]?.slug).toBe('main');
+      expect(alert).toBeDefined();
+
+      const acknowledged = await session.commandResearch({
+        kind: 'acknowledge_alert',
+        fingerprint: alert!.fingerprint,
+      });
+      expect(acknowledged.snapshot.alerts.find(
+        (candidate) => candidate.fingerprint === alert!.fingerprint,
+      )).toMatchObject({ acknowledgedAt: expect.any(Number) });
+    } finally {
+      await session.close();
+      await client.close();
     }
   });
 

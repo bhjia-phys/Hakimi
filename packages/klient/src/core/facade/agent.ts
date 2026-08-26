@@ -27,6 +27,7 @@ import type {
   HumanSteeringCommand,
   ResearchCheckpoint,
   ResearchCommittedCursor,
+  ResearchHumanGate,
   ResearchLine,
   ResearchLineCreationInput,
   ResearchQuestion,
@@ -36,6 +37,7 @@ import type {
   CommitCheckpointInput,
   CreateQuestionInput,
   ProposeCheckpointInput,
+  ResolveHumanDecisionInput,
   UpdateLineInput,
   UpdateQuestionInput,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
@@ -137,6 +139,8 @@ export interface ResearchFacade {
   switchLine(lineSlug: string, expectedRevision?: number): Promise<void>;
   steer(command: HumanSteeringCommand): Promise<void>;
   reopenQuestion(questionId: string, reason?: string, expectedRevision?: number): Promise<void>;
+  acknowledgeAlert(fingerprint: string): Promise<void>;
+  resolveHumanDecision(input: ResolveHumanDecisionInput): Promise<ResearchHumanGate>;
   proposeCheckpoint(input: ProposeCheckpointInput): Promise<ResearchCheckpoint>;
   commitCheckpoint(input: CommitCheckpointInput): Promise<void>;
 }
@@ -280,6 +284,10 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
               ? [questionId, reason]
               : [questionId, reason, expectedRevision],
         ) as Promise<void>,
+      acknowledgeAlert: (fingerprint) =>
+        call(scope, 'agentResearchService', 'acknowledgeAlert', [fingerprint]) as Promise<void>,
+      resolveHumanDecision: (input) =>
+        call(scope, 'agentResearchService', 'resolveHumanDecision', [input]) as Promise<ResearchHumanGate>,
       proposeCheckpoint: (input) =>
         call(scope, 'agentResearchService', 'proposeCheckpoint', [input]) as Promise<ResearchCheckpoint>,
       commitCheckpoint: (input) =>

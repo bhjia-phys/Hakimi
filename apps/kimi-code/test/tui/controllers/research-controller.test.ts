@@ -38,6 +38,7 @@ function makeSnapshot(
     blockedQuestionCount: 0,
     alerts: [],
     aitpHealth: { phase: 'ready' },
+    phase: 'action_executing',
     revision: 1,
     ...overrides,
   };
@@ -119,6 +120,40 @@ describe('ResearchController', () => {
     controller.setSnapshot(makeSnapshot({ mode: 'inactive' }));
     expect(host.setAppState).toHaveBeenCalledWith(
       expect.objectContaining({ researchMode: false, researchModePhase: 'inactive' }),
+    );
+  });
+
+  it('applySnapshot preserves unresolved human attention in the board projection', () => {
+    const { host, researchBoard } = makeHost();
+    const controller = new ResearchController(host);
+    const session = { getResearch: vi.fn() } as unknown as Session;
+    const token = controller.beginRequest(session);
+    const gate = {
+      gateId: 'gate-1',
+      kind: 'review' as const,
+      prompt: 'Review the derivation before continuing.',
+      createdAt: 10,
+    };
+    const alert = {
+      fingerprint: 'alert-fingerprint',
+      kind: 'contradiction' as const,
+      message: 'The latest result conflicts with prior evidence.',
+      createdAt: 11,
+    };
+    const snapshot = makeSnapshot({
+      phase: 'awaiting_human',
+      humanGate: gate,
+      alerts: [alert],
+      revision: 2,
+    });
+
+    expect(token).toBeDefined();
+    expect(controller.applySnapshot(token!, snapshot)).toBe(true);
+    expect(researchBoard.getSnapshot()).toBe(snapshot);
+    expect(researchBoard.getSnapshot()?.humanGate).toEqual(gate);
+    expect(researchBoard.getSnapshot()?.alerts).toEqual([alert]);
+    expect(host.setAppState).toHaveBeenCalledWith(
+      expect.objectContaining({ researchMode: true, researchModePhase: 'ready' }),
     );
   });
 
