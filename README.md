@@ -23,15 +23,20 @@ Hakimi is an independent, standalone continuation built on the engineering found
 
 The terminal loop, tools, sessions, Skills, MCP, subagents, permissions, and OAuth originated in Kimi Code and remain candidates for selectively reviewed general-purpose improvements. Hakimi absorbs only changes that fit its goals and canonical v2 contracts; upstream product-specific behavior is not imported by default. The historical deeply embedded prototype is archived on the [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) branch and is not the integration path for this line.
 
-## Repository lineage and contributors
+## Repository lineage
 
 - **Canonical standalone repository:** [`bhjia-phys/Hakimi`](https://github.com/bhjia-phys/Hakimi)
 - **Historical fork archive:** [`bhjia-phys/Hakimi-upstream-archive`](https://github.com/bhjia-phys/Hakimi-upstream-archive), retained for the original pull requests, releases, and fork-network metadata
 - **Upstream foundation:** [`MoonshotAI/kimi-code`](https://github.com/MoonshotAI/kimi-code)
-- **Project stewardship:** [`@bhjia-phys`](https://github.com/bhjia-phys)
-- **Independent contributor:** [`@TensorSpicyJ`](https://github.com/TensorSpicyJ), including work merged through [archive PR #5](https://github.com/bhjia-phys/Hakimi-upstream-archive/pull/5)
 
-GitHub's generated contributor list is based on attributed commits and may not represent pull-request, review, or pre-migration activity completely. The preserved Git history and archive are the durable provenance record.
+The preserved Git history retains the original Kimi Code authorship and remains the durable provenance record alongside the archive and license attribution.
+
+## Hakimi project contributors
+
+- **Project lead:** [`@bhjia-phys`](https://github.com/bhjia-phys)
+- **Contributor:** [`@TensorSpicyJ`](https://github.com/TensorSpicyJ), including work merged through [archive PR #5](https://github.com/bhjia-phys/Hakimi-upstream-archive/pull/5)
+
+This curated list covers work contributed specifically to Hakimi. Kimi Code developers are credited through the upstream link, preserved Git history, archive, and license; they are not presented as Hakimi project contributors. GitHub's automatically generated Contributors page cannot filter inherited authors without rewriting history, so it may still show upstream developers.
 
 ## Differences from upstream
 
