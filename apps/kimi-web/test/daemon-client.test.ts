@@ -262,7 +262,8 @@ describe('DaemonKimiWebApi config and provider usage', () => {
 
     const [url, init] = vi.mocked(fetch).mock.calls[0]!;
     expect(url).toBe('http://daemon.test/api/v1/config');
-    expect(JSON.parse(String(init?.body))).toEqual({
+    if (typeof init?.body !== 'string') throw new Error('expected a JSON string body');
+    expect(JSON.parse(init.body)).toEqual({
       subagent: {
         preset: 'kimi-heavy',
         presets: { 'kimi-heavy': { researcher: { model: 'kimi', thinkingEffort: 'max' } } },

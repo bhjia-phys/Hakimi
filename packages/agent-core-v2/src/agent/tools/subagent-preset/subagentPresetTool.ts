@@ -106,7 +106,7 @@ export class SetSubagentPresetTool implements ISetSubagentPresetTool {
       if (this.config.inspect<SubagentConfig>(SUBAGENT_SECTION).memoryValue !== undefined) {
         await this.config.set(SUBAGENT_SECTION, { preset: args.preset }, ConfigTarget.Memory);
       }
-    } catch (error) {
+    } catch {
       if (signal.aborted) return { isError: true, output: 'Preset activation cancelled.' };
       return { isError: true, output: 'Failed to activate subagent preset.' };
     }

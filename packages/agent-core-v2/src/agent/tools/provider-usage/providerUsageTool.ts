@@ -58,7 +58,7 @@ export class GetProviderUsageTool implements IGetProviderUsageTool {
       // successful query result.
       if (signal.aborted) return { isError: true, output: 'Query cancelled.' };
       return { output: JSON.stringify(results, null, 2) };
-    } catch (error) {
+    } catch {
       if (signal.aborted) return { isError: true, output: 'Query cancelled.' };
       return { isError: true, output: 'Failed to query provider usage.' };
     }

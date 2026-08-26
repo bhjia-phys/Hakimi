@@ -230,7 +230,7 @@ import {
   type ServicesAccessor,
   type SessionSummary as V2SessionSummary,
 } from '@moonshot-ai/agent-core-v2';
-import type { AgentHandle, Klient } from '@moonshot-ai/klient';
+import { RPCError, type AgentHandle, type Klient } from '@moonshot-ai/klient';
 import { createKlient } from '@moonshot-ai/klient/memory';
 import { assertKimiHostIdentity, createKimiDefaultHeaders } from '@moonshot-ai/kimi-code-oauth';
 
@@ -1669,7 +1669,27 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
    */
   override async setModel(input: SetSessionModelRpcInput): Promise<SetSessionModelRpcResult> {
     const agent = await this.agentFacade(input.sessionId);
-    return agent.setModel(input.model);
+    try {
+      return await agent.setModel(input.model);
+    } catch (error) {
+      const details = error instanceof RPCError ? error.details : undefined;
+      if (
+        error instanceof RPCError &&
+        error.code === 40001 &&
+        typeof details === 'object' &&
+        details !== null &&
+        (details as Record<string, unknown>)['code'] === ErrorCodes.CONFIG_INVALID
+      ) {
+        const businessDetails = (details as Record<string, unknown>)['details'];
+        throw new KimiError(ErrorCodes.CONFIG_INVALID, error.message, {
+          details:
+            typeof businessDetails === 'object' && businessDetails !== null
+              ? (businessDetails as Record<string, unknown>)
+              : undefined,
+        });
+      }
+      throw error;
+    }
   }
 
   /**

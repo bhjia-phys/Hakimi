@@ -48,7 +48,6 @@ import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle'
 
 import { runUsageSince } from './runAgentTurn';
 import {
-  type AgentRunFinishedEvent,
   type AgentRunHandle,
   type AgentRunStartedEvent,
   type AgentRunStatus,

@@ -188,6 +188,27 @@ interface ExperimentalFeatureLike {
   description?: string;
 }
 
+const NON_PARITY_SKILL_NAMES = new Set(['check-hakimi-docs', 'tower']);
+const NON_PARITY_TOOL_NAMES = new Set([
+  'select_tools',
+  'TowerInit',
+  'EnterAITPMode',
+  'GetProviderUsage',
+  'SetSubagentPreset',
+]);
+
+function projectSharedSkills(skills: readonly SkillSummary[]): readonly unknown[] {
+  return skills
+    .filter((skill) => !NON_PARITY_SKILL_NAMES.has(skill.name))
+    .map((skill) => {
+      if (skill.name !== 'check-kimi-code-docs') return skill;
+      const projected: Record<string, unknown> = { ...skill };
+      delete projected['description'];
+      delete projected['disableModelInvocation'];
+      return projected;
+    });
+}
+
 const KNOWN_DIFFS = {
   // v2's flag registry is per-domain and already carries flags v1 does not
   // have (minidb backend, subagent); v1-only flags would be the symmetric
@@ -349,14 +370,12 @@ const KNOWN_DIFFS = {
   },
   // Session skills: `path`s point into each engine's own home (user skills)
   // or the shared packages (builtins) — after the home-prefix scrub the
-  // summaries compare in full. The builtin `tower` skill is v2-only (the v1
-  // tower implementation was removed ahead of v1's deprecation), so it is
-  // projected out — an engine gap, not catalog data.
+  // summaries compare in full. V2-only product skills (tower and Hakimi docs)
+  // are projected out. The shared Kimi docs skill remains required on both
+  // engines, with only its engine-specific description and invocation policy
+  // projected out (v1 product skill versus v2 compatibility alias).
   listSkills: (skills: readonly SkillSummary[], home: HomePair): unknown =>
-    scrubHomePrefixes(
-      skills.filter((skill) => skill.name !== 'tower'),
-      home,
-    ),
+    scrubHomePrefixes(projectSharedSkills(skills), home),
 } satisfies Record<string, (value: never, other: never) => unknown>;
 
 /** See the KNOWN_DIFFS goal note above for what this projects and why. */
@@ -454,13 +473,11 @@ function projectResumedAgents(
  *   of the path after the home scrub).
  * - `tools`: compared as sorted {name, active, source} triples. Tool
  *   DESCRIPTIONS are engine-owned constants that legitimately drift between
- *   the engines (the subagent/cron docs embed engine-specific facts), and
- *   v1 additionally registers the `select_tools` meta tool v2 has no
- *   counterpart for — both are engine design, not resume data. v2's default
- *   profile also carries `TowerInit` (the tower-mode entry point); tower is
- *   v2-only, so the tool is projected out of both rosters. A model-less
- *   agent's roster is not compared at all (v1 initializes builtin tools
- *   only on a profiled agent; v2 exposes them unbound).
+ *   the engines. Frozen v1 additionally registers `select_tools`; v2 owns the
+ *   tower entry point, AITP Research Mode entry, provider-usage query, and
+ *   subagent-preset mutation. Those engine-specific tools are projected out.
+ *   A model-less agent's roster is not compared at all (v1 initializes builtin
+ *   tools only on a profiled agent; v2 exposes them unbound).
  */
 function projectResumedAgent(agent: ResumedAgentState, home: HomePair): unknown {
   const projected = scrubHomePrefixes(agent, home) as Record<string, unknown>;
@@ -475,8 +492,7 @@ function projectResumedAgent(agent: ResumedAgentState, home: HomePair): unknown 
   } else {
     const tools = projected['tools'] as readonly Record<string, unknown>[];
     projected['tools'] = tools
-      .filter((tool) => tool['name'] !== 'select_tools')
-      .filter((tool) => tool['name'] !== 'TowerInit')
+      .filter((tool) => !NON_PARITY_TOOL_NAMES.has(String(tool['name'])))
       .map((tool) => ({ name: tool['name'], active: tool['active'], source: tool['source'] }))
       .toSorted((a, b) => String(a.name).localeCompare(String(b.name)));
   }
@@ -694,12 +710,8 @@ describe('v1↔v2 return-value parity', () => {
         v1.listWorkspaceSkills(workDir),
         v2.listWorkspaceSkills(workDir),
       ]);
-      // The builtin `tower` skill is v2-only (the v1 tower implementation
-      // was removed ahead of v1's deprecation) — project it out.
-      const withoutTower = (skills: readonly SkillSummary[]): readonly SkillSummary[] =>
-        skills.filter((skill) => skill.name !== 'tower');
-      expect(normalize(withoutTower(v2Skills), 'name')).toEqual(
-        normalize(withoutTower(v1Skills), 'name'),
+      expect(normalize(projectSharedSkills(v2Skills), 'name')).toEqual(
+        normalize(projectSharedSkills(v1Skills), 'name'),
       );
     } finally {
       await closeAll(v1, v2);
