@@ -31,13 +31,6 @@ The terminal loop, tools, sessions, Skills, MCP, subagents, permissions, and OAu
 
 The preserved Git history retains the original Kimi Code authorship and remains the durable provenance record alongside the archive and license attribution.
 
-## Hakimi project contributors
-
-- **Project lead:** [`@bhjia-phys`](https://github.com/bhjia-phys)
-- **Contributor:** [`@TensorSpicyJ`](https://github.com/TensorSpicyJ), including work merged through [archive PR #5](https://github.com/bhjia-phys/Hakimi-upstream-archive/pull/5)
-
-This curated list covers work contributed specifically to Hakimi. Kimi Code developers are credited through the upstream link, preserved Git history, archive, and license; they are not presented as Hakimi project contributors. GitHub's automatically generated Contributors page cannot filter inherited authors without rewriting history, so it may still show upstream developers.
-
 ## Differences from upstream
 
 - **Branding:** `hakimi` command, `Hakimi` product name, and a pixel cat-ear spacecraft welcome logo. The package installs only `hakimi`; it never overwrites a separate `kimi` command.
