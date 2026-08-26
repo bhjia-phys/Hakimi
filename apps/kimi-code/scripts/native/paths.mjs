@@ -2,8 +2,21 @@ import { resolve } from 'node:path';
 
 export const appRoot = resolve(import.meta.dirname, '..', '..');
 
+const WINDOWS_RESERVED_TARGET = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+export function assertSafeNativeTarget(target) {
+  if (
+    typeof target !== 'string' ||
+    !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(target) ||
+    WINDOWS_RESERVED_TARGET.test(target)
+  ) {
+    throw new Error(`Invalid native build target: ${JSON.stringify(target)}`);
+  }
+  return target;
+}
+
 export function targetTriple({ platform = process.platform, arch = process.arch, env = process.env } = {}) {
-  return env.KIMI_CODE_BUILD_TARGET ?? `${platform}-${arch}`;
+  return assertSafeNativeTarget(env.KIMI_CODE_BUILD_TARGET ?? `${platform}-${arch}`);
 }
 
 export function executableName(platform = process.platform) {
@@ -19,7 +32,7 @@ export function nativeIntermediatesDir() {
 }
 
 export function nativeBinDir(target = targetTriple()) {
-  return resolve(nativeDistRoot(), 'bin', target);
+  return resolve(nativeDistRoot(), 'bin', assertSafeNativeTarget(target));
 }
 
 export function nativeBinPath(target = targetTriple(), platform = process.platform) {
@@ -39,7 +52,19 @@ export function nativeSeaConfigPath() {
 }
 
 export function nativeManifestDir(target = targetTriple()) {
-  return resolve(nativeIntermediatesDir(), 'native-assets', target);
+  return resolve(nativeIntermediatesDir(), 'native-assets', assertSafeNativeTarget(target));
+}
+
+export function nativeWebAssetsDir(target = targetTriple()) {
+  return resolve(nativeIntermediatesDir(), 'web-assets', assertSafeNativeTarget(target));
+}
+
+export function nativeWebSnapshotDir(target = targetTriple()) {
+  return resolve(nativeWebAssetsDir(target), 'bundle');
+}
+
+export function nativeBuildReceiptPath(target = targetTriple()) {
+  return resolve(nativeWebAssetsDir(target), 'build-receipt.json');
 }
 
 export function nativeArtifactsDir() {
@@ -51,7 +76,7 @@ export function nativeSmokeHome() {
 }
 
 export function nativeManifestKey(target = targetTriple()) {
-  return `native/${target}/manifest.json`;
+  return `native/${assertSafeNativeTarget(target)}/manifest.json`;
 }
 
 export const SEA_SENTINEL_FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';

@@ -1277,6 +1277,108 @@ describe('SessionEventBroadcaster', () => {
         payload: { warnings },
       });
     });
+
+    it('delivers event.config.changed to a global-only target as a flat camelCase frame', async () => {
+      const globalView = collectingTarget();
+      bc.addGlobalTarget(globalView.target);
+
+      eventBus.emit({
+        type: 'event.config.changed',
+        payload: {
+          changedFields: ['default_permission_mode', 'experimental'],
+          config: { providers: {}, default_permission_mode: 'yolo', yolo: true },
+        },
+      });
+
+      await vi.waitFor(() => expect(globalView.envelopes).toHaveLength(1));
+      const frame = globalView.envelopes[0]!;
+      expect(frame).toMatchObject({
+        type: 'event.config.changed',
+        session_id: '__global__',
+        payload: {
+          // The projected flat frame: field name stays `changedFields` (the
+          // web client reads both `changedFields` and `changed_fields` aliases).
+          type: 'event.config.changed',
+          changedFields: ['default_permission_mode', 'experimental'],
+          config: { providers: {}, default_permission_mode: 'yolo', yolo: true },
+        },
+      });
+      const payload = frame.payload as Record<string, unknown>;
+      expect(payload['changed_fields']).toBeUndefined();
+      expect(payload['agentId']).toBe('main');
+      expect(frame.volatile).toBeUndefined(); // durable — replayable from the global journal
+      expect(globalView.deliveries).toEqual(['immediate']);
+    });
+
+    it('delivers exactly one config.changed copy to a target that is both global and subscribed', async () => {
+      sessions.set('s1', new FakeLifecycle());
+
+      const both = collectingTarget();
+      bc.addGlobalTarget(both.target);
+      await bc.subscribe('s1', both.target);
+
+      eventBus.emit({
+        type: 'event.config.changed',
+        payload: { changedFields: ['experimental'], config: { providers: {}, experimental: {} } },
+      });
+
+      await vi.waitFor(() => expect(both.envelopes).toHaveLength(1));
+      await bc.getCursor('s1'); // drain any would-be duplicate
+      expect(both.envelopes).toHaveLength(1);
+      expect(both.envelopes[0]).toMatchObject({
+        type: 'event.config.changed',
+        payload: { changedFields: ['experimental'], config: { providers: {}, experimental: {} } },
+      });
+    });
+
+    it('drops malformed event.config.changed payloads', async () => {
+      const globalView = collectingTarget();
+      bc.addGlobalTarget(globalView.target);
+
+      eventBus.emit({ type: 'event.config.changed', payload: null });
+      eventBus.emit({
+        type: 'event.config.changed',
+        payload: { changedFields: 'nope', config: {} },
+      });
+      eventBus.emit({ type: 'event.config.changed', payload: { changedFields: [42], config: {} } });
+      eventBus.emit({ type: 'event.config.changed', payload: { changedFields: [], config: 'nope' } });
+      eventBus.emit({ type: 'event.config.changed', payload: { changedFields: ['x'] } }); // no config
+      // Unknown extra fields are tolerated (the publisher may grow payloads
+      // forward-compatibly), but only the validated fields reach the frame.
+      eventBus.emit({
+        type: 'event.config.changed',
+        payload: {
+          changedFields: [],
+          config: { providers: {} },
+          agentId: 'evil',
+          sessionId: 'not-the-frame-session',
+        },
+      });
+
+      // A valid frame right after proves the malformed ones were dropped, not
+      // merely slow.
+      eventBus.emit({
+        type: 'event.config.changed',
+        payload: { changedFields: ['experimental'], config: { providers: {}, experimental: {} } },
+      });
+
+      await vi.waitFor(() => expect(globalView.envelopes).toHaveLength(2));
+      // The forward-compat frame carried extra payload fields — they must not
+      // leak into the wire frame (agentId/sessionId are stamped at the edge).
+      const tolerant = globalView.envelopes[0]!;
+      expect(tolerant).toMatchObject({
+        type: 'event.config.changed',
+        payload: { changedFields: [] },
+      });
+      expect((tolerant.payload as Record<string, unknown>)['evil']).toBeUndefined();
+      expect(tolerant.session_id).toBe('__global__');
+      expect((tolerant.payload as Record<string, unknown>)['agentId']).toBe('main');
+      const valid = globalView.envelopes[1]!;
+      expect(valid).toMatchObject({
+        type: 'event.config.changed',
+        payload: { changedFields: ['experimental'] },
+      });
+    });
   });
 
   it('emits a durable event.session.work_changed(busy) trailing turn.started', async () => {

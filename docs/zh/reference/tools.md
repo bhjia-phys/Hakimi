@@ -131,6 +131,19 @@ Plan 模式是一种受约束的工作状态：进入后 `Write` 与 `Edit` 只�
 
 **`CronDelete`** 只接受一个 `id`。对周期任务，未来所有触发立即停止；对一次性任务，挂起的那次触发会被取消。已触发的一次性任务会自动删除，因此对已触发过的一次性任务调用 `CronDelete` 会返回 `No cron job with id ...`。删除不可撤销，需要还原时只能再次 `CronCreate`。`CronDelete` 在 Plan 模式下同样会被拦截。
 
+## 用量查询与 subagent 路由
+
+下面两个工具仅 main agent 可见：一个用于查询供应商额度，一个用于调整 subagent 的模型路由。`coder` 与 `explore` 类型的 subagent 无法调用它们。
+
+| 工具 | 默认审批 | 说明 |
+| --- | --- | --- |
+| `GetProviderUsage` | 自动放行 | 查询已配置的受支持用量供应商 |
+| `SetSubagentPreset` | 需审批 | 激活一个 `[subagent]` 路由预设，作用于后续 subagent 生成 |
+
+**`GetProviderUsage`** 查询已配置的受支持用量供应商（managed Kimi OAuth、官方 `api.kimi.com/coding` API-key 供应商、managed OpenAI Codex（OAuth）以及精确基址的 OpenCode Go 供应商）的用量。Kimi 路由还会报告 Extra Usage 余额（剩余美分与币种）；Codex 与 OpenCode Go 只报告速率限额或订阅配额窗口。可选参数 `provider` 指定单个供应商；省略时查询所有可识别的受支持用量供应商。没有用量接口的供应商会返回 `unsupported`，而不是猜测接口地址；失败的查询返回脱敏后的错误信息，凭据不会出现在输出中。该工具只读且默认自动放行，但仅 main agent 可以调用。
+
+**`SetSubagentPreset`** 激活一个已配置的路由预设，使下一次 [subagent 模型/精力解析](../configuration/config-files.md#subagent) 立即使用该预设的路由。参数 `preset` 传入 `[subagent.presets]` 中的名称；工具会先校验预设存在、每条路由引用的模型别名可解析，再持久化激活结果。它不会修改 main model、default model 或 thinking 配置，不会重新加载会话，成功时返回 `main_model_changed: false`。变更只影响后续的 `Agent` / `AgentSwarm` 生成。默认需要审批，如需自动切换，请在[审批规则](../configuration/config-files.md#permission)中显式放行。
+
 ## 下一步
 
 - [Agent 与 subagent](../customization/agents.md) — `Agent` 工具的调度机制与上下文隔离

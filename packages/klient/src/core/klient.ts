@@ -19,9 +19,12 @@ import { parseChunk, parseInput, parseOutput } from './validation.js';
 
 export interface KlientOptions {
   /**
-   * Validate wire inputs/outputs and event payloads against the contract.
-   * Default `true`. Disable only on measured hot paths — validation is cheap
-   * (sub-µs for typical payloads) and is the drift tripwire.
+   * Validate wire inputs/outputs and event payloads against the contract
+   * client-side. Default `true`. Disable only on measured hot paths —
+   * validation is cheap (sub-µs for typical payloads) and is the drift
+   * tripwire. `false` skips only the client-side checks: the host-side
+   * dispatcher always enforces the contract allowlist and parses every input
+   * tuple, so invalid calls still fail with `RPCError(40001)`.
    */
   readonly validate?: boolean;
 }

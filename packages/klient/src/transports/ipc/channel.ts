@@ -315,6 +315,7 @@ export class IpcChannel implements KlientChannel {
         const error = new RPCError(
           typeof frame.code === 'number' ? frame.code : 50001,
           frame.msg ?? 'error',
+          frame.details,
         );
         const p = this.take(id);
         if (p !== undefined) {
@@ -349,6 +350,7 @@ export class IpcChannel implements KlientChannel {
             new RPCError(
               typeof frame.code === 'number' ? frame.code : 50001,
               frame.msg ?? 'stream error',
+              frame.details,
             ),
           );
         }

@@ -36,6 +36,20 @@ import type { UsageStatus } from '@moonshot-ai/agent-core-v2/agent/usage/usage';
 import type { SkillSummary } from '@moonshot-ai/agent-core-v2/app/skillCatalog/types';
 import type { McpServerEntry } from '@moonshot-ai/agent-core-v2/mcpCore/connection-manager';
 import type { FullCompactionInput } from '@moonshot-ai/agent-core-v2/agent/fullCompaction/fullCompaction';
+import type {
+  GoalReasonInput,
+  IAgentGoalService,
+  ResumeGoalInput,
+} from '@moonshot-ai/agent-core-v2/agent/goal/goal';
+import type {
+  CreateGoalInput,
+  GoalActor,
+  GoalBudgetLimits,
+  GoalBudgetReport,
+  GoalSnapshot,
+  GoalStatus,
+  GoalToolResult,
+} from '@moonshot-ai/agent-core-v2/agent/goal/types';
 import type { ISessionScopeHandle } from '@moonshot-ai/agent-core-v2/_base/di/scope';
 import type {
   CreateChildSessionOptions,
@@ -124,6 +138,10 @@ import type {
   CompactionCancelledEvent,
   CompactionCompletedEvent,
   CompactionStartedEvent,
+  GoalChange,
+  GoalChangeStats,
+  GoalMutation,
+  GoalUpdatedEvent,
   PromptAbortedEvent,
   PromptCompletedEvent,
   TaskInfo,
@@ -186,6 +204,10 @@ import {
   compactionCancelledEventSchema,
   compactionCompletedEventSchema,
   compactionStartedEventSchema,
+  goalChangeSchema,
+  goalChangeStatsSchema,
+  goalMutationSchema,
+  goalUpdatedEventSchema,
   promptAbortedEventSchema,
   promptCompletedEventSchema,
   thinkingDeltaEventSchema,
@@ -204,8 +226,18 @@ import {
   approvalResponseSchema,
 } from '../src/contract/session/approval.js';
 import {
+  createGoalInputSchema,
   fullCompactionInputSchema,
+  goalActorSchema,
+  goalBudgetLimitsSchema,
+  goalBudgetReportSchema,
+  goalReasonInputSchema,
+  goalSnapshotSchema,
+  goalStatusSchema,
+  goalToolResultSchema,
   mcpServerEntrySchema,
+  resumeGoalInputSchema,
+  setGoalBudgetLimitsInputSchema,
 } from '../src/contract/agent/services.js';
 import type {
   ResearchStatusSnapshot as EngineResearchSnapshot,
@@ -729,6 +761,22 @@ const _resolvedHumanGate: AssertWire<
   ReturnType<IAgentResearchService['resolveHumanDecision']>
 > = true;
 
+// agent/services.ts (goal) — parity against the engine's `agent/goal` types.
+const _goalStatus: AssertWire<typeof goalStatusSchema, GoalStatus> = true;
+const _goalActor: AssertWire<typeof goalActorSchema, GoalActor> = true;
+const _goalBudgetLimits: AssertWire<typeof goalBudgetLimitsSchema, GoalBudgetLimits> = true;
+const _goalBudgetReport: AssertWire<typeof goalBudgetReportSchema, GoalBudgetReport> = true;
+const _goalSnapshot: AssertWire<typeof goalSnapshotSchema, GoalSnapshot> = true;
+const _goalToolResult: AssertWire<typeof goalToolResultSchema, GoalToolResult> = true;
+const _createGoalInput: AssertWire<typeof createGoalInputSchema, CreateGoalInput> = true;
+const _goalReasonInput: AssertWire<typeof goalReasonInputSchema, GoalReasonInput> = true;
+const _resumeGoalInput: AssertWire<typeof resumeGoalInputSchema, ResumeGoalInput> = true;
+type SetGoalBudgetLimitsInput = Parameters<IAgentGoalService['setBudgetLimits']>[0];
+const _setGoalBudgetLimitsInput: AssertWire<
+  typeof setGoalBudgetLimitsInputSchema,
+  SetGoalBudgetLimitsInput
+> = true;
+
 // ── agent scope (events.ts) ─────────────────────────────────────────────────
 // Parity against the protocol event types (the stream carries flat
 // `{ type, ... }` events; schemas keep the `type` literal). One-directional
@@ -773,6 +821,10 @@ const _aitpModeUpdatedEvent: AssertWire<
   typeof aitpModeUpdatedEventSchema,
   AitpModeUpdatedEvent
 > = true;
+const _goalChangeStats: AssertWire<typeof goalChangeStatsSchema, GoalChangeStats> = true;
+const _goalChange: AssertWire<typeof goalChangeSchema, GoalChange> = true;
+const _goalMutation: AssertWire<typeof goalMutationSchema, GoalMutation> = true;
+const _goalUpdatedEvent: AssertWire<typeof goalUpdatedEventSchema, GoalUpdatedEvent> = true;
 // No parity assertions for `errorEventSchema`, `permissionApproval*Schema`,
 // and `agentStatusUpdatedEventSchema`: they are deliberately `z.looseObject`s
 // (index signature breaks both-ways assignability) — `permission.approval.*`

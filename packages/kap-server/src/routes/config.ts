@@ -13,8 +13,9 @@
  * expose a whole-config view or redaction, so this route is the edge facade
  * that:
  *   - projects `getAll()` (camelCase resolved config) into the snake_case
- *     `ConfigResponse`, redacting provider credentials to `has_api_key`
- *     (mirrors v1 `toConfigResponse`);
+ *     `ConfigResponse`, projecting providers to `has_api_key`, recursively
+ *     removing credential fields elsewhere, and omitting the arbitrary `raw`
+ *     domain so REST/WS/journal outputs share one safe view;
  *   - splits v1's flat multi-domain `POST /config` patch into per-domain
  *     `IConfigService.set(domain, value)` calls (snake_case → camelCase);
  *   - republishes the change as a v2 `DomainEvent` on `IEventService`.
@@ -128,16 +129,55 @@ export function registerConfigRoutes(app: ConfigRouteHost, core: Scope): void {
 
 // ---------------------------------------------------------------------------
 // Edge facade — project the v2 resolved config into the v1 `ConfigResponse`
-// wire shape. Top-level domain keys are mapped camelCase→snake_case generically,
-// so this route does not enumerate the config domains; values pass through
-// unchanged except `providers`, whose credentials are redacted to `has_api_key`
-// (the only domain-specific transform). Pure projection: no service calls.
+// wire shape. Only domains in the public v1 contract may cross this edge;
+// unknown plugin/future domains and the arbitrary `raw` domain are omitted
+// because no finite redaction policy can make unknown values safe over REST,
+// WS, or the durable global event journal. Credential-bearing passthrough
+// domains use explicit public projections; remaining fixed-schema domains are
+// recursively scrubbed. External reload events reuse this exact projection.
 // ---------------------------------------------------------------------------
 
-function toConfigResponse(resolved: Record<string, unknown>): ConfigResponse {
+const PUBLIC_CONFIG_DOMAINS = new Set([
+  'providers',
+  'defaultProvider',
+  'defaultModel',
+  'models',
+  'thinking',
+  'planMode',
+  'defaultPermissionMode',
+  'defaultPlanMode',
+  'permission',
+  'hooks',
+  'services',
+  'mergeAllAvailableSkills',
+  'extraSkillDirs',
+  'loopControl',
+  'background',
+  'subagent',
+  'secondaryModel',
+  'experimental',
+  'telemetry',
+]);
+
+export function toConfigResponse(resolved: Record<string, unknown>): ConfigResponse {
   const wire: Record<string, unknown> = {};
   for (const [domain, value] of Object.entries(resolved)) {
-    wire[camelToSnake(domain)] = domain === 'providers' ? toProviderResponses(value) : value;
+    if (!PUBLIC_CONFIG_DOMAINS.has(domain)) continue;
+    let projected: unknown;
+    switch (domain) {
+      case 'providers':
+        projected = toProviderResponses(value);
+        break;
+      case 'models':
+        projected = toModelResponses(value);
+        break;
+      case 'services':
+        projected = toServiceResponses(value);
+        break;
+      default:
+        projected = redactConfigValue(value);
+    }
+    wire[camelToSnake(domain)] = projected;
   }
   // v1 wire echo: surface `yolo` as a derived boolean of the effective default
   // permission mode. `yolo` is not a config domain; it is computed here so the
@@ -151,6 +191,117 @@ function toConfigResponse(resolved: Record<string, unknown>): ConfigResponse {
     wire['providers'] = {};
   }
   return wire as ConfigResponse;
+}
+
+function redactConfigValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactConfigValue);
+  if (!isPlainObject(value)) return value;
+  const safe: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (isSensitiveConfigKey(key)) continue;
+    safe[key] = redactConfigValue(child);
+  }
+  return safe;
+}
+
+function isSensitiveConfigKey(key: string): boolean {
+  const normalized = key.replaceAll(/[-_\s]/g, '').toLowerCase();
+  return (
+    normalized === 'oauth' ||
+    normalized === 'customheaders' ||
+    normalized === 'authorization' ||
+    normalized === 'proxyauthorization' ||
+    normalized === 'cookie' ||
+    normalized === 'setcookie' ||
+    normalized.endsWith('apikey') ||
+    normalized.endsWith('accesstoken') ||
+    normalized.endsWith('refreshtoken') ||
+    normalized.endsWith('clientsecret') ||
+    normalized.endsWith('password')
+  );
+}
+
+const MODEL_RESPONSE_KEYS = [
+  'providerId',
+  'baseUrl',
+  'protocol',
+  'name',
+  'aliases',
+  'provider',
+  'model',
+  'maxContextSize',
+  'maxInputSize',
+  'maxOutputSize',
+  'capabilities',
+  'displayName',
+  'reasoningKey',
+  'adaptiveThinking',
+  'betaApi',
+  'supportEfforts',
+  'defaultEffort',
+  'offEffort',
+] as const;
+
+const MODEL_OVERRIDE_RESPONSE_KEYS = [
+  'maxContextSize',
+  'maxInputSize',
+  'maxOutputSize',
+  'capabilities',
+  'displayName',
+  'reasoningKey',
+  'adaptiveThinking',
+  'supportEfforts',
+  'defaultEffort',
+  'offEffort',
+] as const;
+
+const PUBLIC_MODEL_PROTOCOLS = new Set([
+  'anthropic',
+  'openai',
+  'openai_responses',
+  'google-genai',
+]);
+
+function toModelResponses(value: unknown): Record<string, Record<string, unknown>> {
+  const result: Record<string, Record<string, unknown>> = {};
+  if (!isPlainObject(value)) return result;
+  for (const [id, raw] of Object.entries(value)) {
+    if (!isPlainObject(raw)) continue;
+    const model = pickPublicFields(raw, MODEL_RESPONSE_KEYS);
+    if (
+      model['protocol'] !== undefined &&
+      (typeof model['protocol'] !== 'string' || !PUBLIC_MODEL_PROTOCOLS.has(model['protocol']))
+    ) {
+      delete model['protocol'];
+    }
+    if (isPlainObject(raw['overrides'])) {
+      model['overrides'] = pickPublicFields(raw['overrides'], MODEL_OVERRIDE_RESPONSE_KEYS);
+    }
+    result[id] = model;
+  }
+  return result;
+}
+
+function pickPublicFields(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (value[key] !== undefined) result[key] = value[key];
+  }
+  return result;
+}
+
+function toServiceResponses(value: unknown): Record<string, Record<string, unknown>> {
+  const result: Record<string, Record<string, unknown>> = {};
+  if (!isPlainObject(value)) return result;
+  for (const key of ['moonshotSearch', 'moonshotFetch'] as const) {
+    const raw = value[key];
+    if (!isPlainObject(raw)) continue;
+    result[key] = typeof raw['baseUrl'] === 'string' ? { baseUrl: raw['baseUrl'] } : {};
+  }
+  return result;
 }
 
 interface ProviderLike {
@@ -225,6 +376,7 @@ function snakeToCamel(str: string): string {
   return str.replaceAll(/_([a-z])/g, (_, ch: string) => ch.toUpperCase());
 }
 
-function camelToSnake(str: string): string {
+/** camelCase → snake_case, used to project config domain keys onto the wire. */
+export function camelToSnake(str: string): string {
   return str.replaceAll(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`);
 }

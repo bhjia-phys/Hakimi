@@ -36,8 +36,7 @@ import {
   type ManagedUserInfoResult,
 } from './managed-userinfo';
 import {
-  fetchManagedUsage,
-  kimiCodeUsageUrl,
+  fetchManagedUsageFromBase,
   type FetchManagedUsageError,
   type ParsedManagedUsage,
 } from './managed-usage';
@@ -294,6 +293,7 @@ export class KimiOAuthToolkit<TConfig = unknown> {
     options: {
       readonly oauthRef?: KimiOAuthTokenRef | undefined;
       readonly baseUrl?: string | undefined;
+      readonly signal?: AbortSignal | undefined;
     } = {},
   ): Promise<AuthManagedUsageResult> {
     const name = providerName ?? KIMI_CODE_PROVIDER_NAME;
@@ -301,7 +301,9 @@ export class KimiOAuthToolkit<TConfig = unknown> {
       const accessToken = await this.ensureFresh(name, {
         oauthRef: options.oauthRef ?? this.defaultOAuthRef(options.baseUrl),
       });
-      const result = await fetchManagedUsage(managedUsageUrl(options.baseUrl), accessToken);
+      const result = await fetchManagedUsageFromBase(options.baseUrl, accessToken, {
+        signal: options.signal,
+      });
       if (result.kind === 'error') return result;
       return {
         kind: 'ok',
@@ -498,11 +500,6 @@ function defaultKimiHome(): string {
   const override = process.env['KIMI_CODE_HOME'];
   if (override !== undefined && override.length > 0) return override;
   return join(homedir(), '.kimi-code');
-}
-
-function managedUsageUrl(baseUrl: string | undefined): string {
-  if (baseUrl === undefined) return kimiCodeUsageUrl();
-  return `${baseUrl.replace(/\/+$/, '')}/usages`;
 }
 
 function managedUserInfoUrl(baseUrl: string | undefined): string {

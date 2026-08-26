@@ -66,6 +66,8 @@ const AGENT_TOOLS = [
   // TowerInit stays in the default allowlist so the main agent can enter
   // tower mode; the rest of the Tower* set is activated by TowerInit.
   'TowerInit',
+  'GetProviderUsage',
+  'SetSubagentPreset',
   'mcp__*',
 ] as const;
 

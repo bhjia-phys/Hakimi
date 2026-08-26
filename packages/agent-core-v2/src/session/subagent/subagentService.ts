@@ -3,8 +3,10 @@
  *
  * Owns the "drive a turn on another agent" operation (`run`) and the
  * requester-side announcement surface those runs share: the
- * `onWillStartAgentTask` hook slot and the `onDidStopAgentTask` event fired
- * around each mirrored run. The service resolves the target agent from the
+ * `onWillStartAgentTask` hook slot, the `onDidStopAgentTask` event, and the
+ * Session-internal run-lifecycle events (`onDidStartAgentRun` /
+ * `onDidFinishAgentRun`) fired around each mirrored run for ledger consumers.
+ * The service resolves the target agent from the
  * lifecycle registry and picks its summary policy from the profile catalog;
  * turn driving itself is delegated to a pure helper. Bound at Session scope.
  */
@@ -25,8 +27,10 @@ import { createHooks } from '#/hooks';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
 
 import {
+  type AgentRunFinishedEvent,
   type AgentRunHandle,
   type AgentRunRequest,
+  type AgentRunStartedEvent,
   type AgentTaskHooks,
   type AgentTaskStopHookContext,
   ISessionSubagentService,
@@ -41,9 +45,23 @@ export class SessionSubagentService extends Service implements ISessionSubagentS
   private readonly onDidStopAgentTaskEmitter = this._register(
     new Emitter<AgentTaskStopHookContext>(),
   );
+  private readonly onDidStartAgentRunEmitter = this._register(
+    new Emitter<AgentRunStartedEvent>(),
+  );
+  private readonly onDidFinishAgentRunEmitter = this._register(
+    new Emitter<AgentRunFinishedEvent>(),
+  );
 
   get onDidStopAgentTask() {
     return this.onDidStopAgentTaskEmitter.event;
+  }
+
+  get onDidStartAgentRun() {
+    return this.onDidStartAgentRunEmitter.event;
+  }
+
+  get onDidFinishAgentRun() {
+    return this.onDidFinishAgentRunEmitter.event;
   }
 
   constructor(
@@ -69,6 +87,14 @@ export class SessionSubagentService extends Service implements ISessionSubagentS
 
   notifyAgentTaskStopped(context: AgentTaskStopHookContext): void {
     this.onDidStopAgentTaskEmitter.fire(context);
+  }
+
+  notifyAgentRunStarted(event: AgentRunStartedEvent): void {
+    this.onDidStartAgentRunEmitter.fire(event);
+  }
+
+  notifyAgentRunFinished(event: AgentRunFinishedEvent): void {
+    this.onDidFinishAgentRunEmitter.fire(event);
   }
 
   private summaryPolicyFor(handle: IAgentScopeHandle): AgentProfileSummaryPolicy | undefined {

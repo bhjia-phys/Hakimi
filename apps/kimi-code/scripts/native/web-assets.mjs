@@ -1,17 +1,25 @@
-import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { readdir, readFile, stat } from 'node:fs/promises';
-import { join, relative, resolve } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { copyFile, mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
+import { dirname, join, relative, resolve } from 'node:path';
 
+import {
+  verifyWebAssets,
+  verifyWebAssetsAgainstProvenance,
+} from '../check-web-assets.mjs';
 import {
   WEB_ASSET_MANIFEST_VERSION,
   buildWebAssetKey,
   buildWebManifestKey,
 } from './manifest.mjs';
+import { assertSafeNativeTarget } from './paths.mjs';
 
 export { WEB_ASSET_MANIFEST_VERSION };
 
 const WEB_ASSETS_DIR = 'dist-web';
+
+function compareStrings(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
 
 function toPosixPath(path) {
   return path.split('\\').join('/');
@@ -63,22 +71,24 @@ export function webAssetKey(target, relativePath) {
 }
 
 async function collectAssetRoot({
-  appRoot,
+  assetRoot,
+  files,
   target,
   root,
   requiredFile,
   missingMessage,
   assetKey,
 }) {
-  const assetRoot = resolve(appRoot, ...root.split('/'));
   await assertBuiltAssetRoot({ assetRoot, requiredFile, message: missingMessage });
 
-  const files = (await listFiles(assetRoot)).sort((a, b) => a.localeCompare(b));
+  const collectedFiles = files ?? (await listFiles(assetRoot));
+  collectedFiles.sort((left, right) =>
+    compareStrings(toPosixPath(relative(assetRoot, left)), toPosixPath(relative(assetRoot, right))),
+  );
   const manifestFiles = [];
   const assets = {};
 
-  for (const file of files) {
-    if (!existsSync(file)) continue;
+  for (const file of collectedFiles) {
     const bytes = await readFile(file);
     const relativePath = toPosixPath(relative(assetRoot, file));
     const key = assetKey(target, relativePath);
@@ -104,15 +114,65 @@ async function collectAssetRoot({
   };
 }
 
-export async function collectWebAssets({ appRoot, target }) {
-  const buildCommand =
-    'pnpm --filter @moonshot-ai/kimi-web run build && pnpm --filter @moonshot-ai/kimi-code run build';
-  return collectAssetRoot({
+async function snapshotVerifiedBundle({ appRoot, target, sourceRoot, verifiedSource }) {
+  assertSafeNativeTarget(target);
+  const snapshotRoot = resolve(
     appRoot,
+    'dist-native',
+    'intermediates',
+    'web-assets',
+    target,
+    'bundle',
+  );
+  const snapshotParent = dirname(snapshotRoot);
+  const stagingRoot = resolve(snapshotParent, `.bundle-${process.pid}-${randomUUID()}`);
+  await mkdir(snapshotParent, { recursive: true });
+
+  try {
+    for (const sourceFile of verifiedSource.files) {
+      const relativePath = relative(sourceRoot, sourceFile);
+      const destination = resolve(stagingRoot, relativePath);
+      await mkdir(dirname(destination), { recursive: true });
+      await copyFile(sourceFile, destination);
+    }
+    const verifiedSnapshot = await verifyWebAssetsAgainstProvenance(
+      stagingRoot,
+      verifiedSource.provenance,
+    );
+    await rm(snapshotRoot, { recursive: true, force: true });
+    await rename(stagingRoot, snapshotRoot);
+    return {
+      snapshotRoot,
+      provenance: verifiedSnapshot.provenance,
+      files: verifiedSnapshot.provenance.bundle.files.map((entry) =>
+        resolve(snapshotRoot, ...entry.path.split('/')),
+      ),
+    };
+  } finally {
+    await rm(stagingRoot, { recursive: true, force: true });
+  }
+}
+
+export async function collectWebAssets({ appRoot, target }) {
+  const sourceRoot = resolve(appRoot, WEB_ASSETS_DIR);
+  const verifiedSource = await verifyWebAssets(
+    sourceRoot,
+    resolve(appRoot, 'web-base.json'),
+  );
+  const snapshot = await snapshotVerifiedBundle({
+    appRoot,
+    target,
+    sourceRoot,
+    verifiedSource,
+  });
+  const collected = await collectAssetRoot({
+    assetRoot: snapshot.snapshotRoot,
+    files: snapshot.files,
     target,
     root: WEB_ASSETS_DIR,
     requiredFile: 'index.html',
-    missingMessage: `Kimi web build output was not found at ${resolve(appRoot, WEB_ASSETS_DIR)}. Run \`${buildCommand}\` before building native SEA assets. App root: ${appRoot}`,
+    missingMessage: `Verified Hakimi web snapshot disappeared before native SEA collection: ${snapshot.snapshotRoot}`,
     assetKey: webAssetKey,
   });
+  return { ...collected, provenance: snapshot.provenance };
 }

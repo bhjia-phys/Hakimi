@@ -33,6 +33,7 @@
     "dist-web",
     "native",
     "upstream-base.json",
+    "web-base.json",
     "scripts/postinstall.mjs",
     "scripts/postinstall",
     "README.md"

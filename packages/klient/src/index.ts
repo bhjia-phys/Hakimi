@@ -69,6 +69,7 @@ export type {
   AgentCommandInfo,
   AgentContextData,
   AgentFacade,
+  AgentGoalFacade,
   AgentTaskInfo,
   McpServerEntry,
   PlanData,
@@ -139,3 +140,14 @@ export type {
 export type { SkillSummary } from '@moonshot-ai/agent-core-v2/app/skillCatalog/types';
 export type { ContentPart } from '@moonshot-ai/agent-core-v2/kosong/contract/message';
 export type { PermissionMode } from '@moonshot-ai/agent-core-v2/agent/permissionPolicy/types';
+export type {
+  CreateGoalInput,
+  GoalBudgetLimits,
+  GoalBudgetReport,
+  GoalSnapshot,
+  GoalStatus,
+} from '@moonshot-ai/agent-core-v2/agent/goal/types';
+export type {
+  GoalReasonInput,
+  ResumeGoalInput,
+} from '@moonshot-ai/agent-core-v2/agent/goal/goal';

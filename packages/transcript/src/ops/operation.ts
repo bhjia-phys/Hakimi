@@ -78,6 +78,18 @@ export interface MarkerUpsertOp {
    * exists). Absent = append at the end — the live real-time order.
    */
   readonly beforeTurn?: number;
+  /**
+   * Backfill-only intra-segment anchor: the id of the standalone item that
+   * directly followed this one inside the same historical segment. When set
+   * it decides the order WITHIN the `beforeTurn` segment — the item lands
+   * immediately before the named successor (relocating the successor into
+   * the segment first when a live-first append left it outside). Absent on
+   * the segment's last item and on every legacy/live op. Requires
+   * `beforeTurn`: it only refines the turn anchor's intra-segment order and
+   * never travels alone — the wire schema rejects `beforeItem` without
+   * `beforeTurn`.
+   */
+  readonly beforeItem?: string;
 }
 
 export interface TaskRefUpsertOp {
@@ -85,6 +97,11 @@ export interface TaskRefUpsertOp {
   readonly item: TranscriptTaskRef;
   /** Same placement anchor as `MarkerUpsertOp.beforeTurn`. */
   readonly beforeTurn?: number;
+  /**
+   * Same in-segment successor anchor as `MarkerUpsertOp.beforeItem` —
+   * including its contract: valid only together with `beforeTurn`.
+   */
+  readonly beforeItem?: string;
 }
 
 export interface TaskUpsertOp {
@@ -140,7 +157,6 @@ export interface ItemsRemoveOp {
   readonly op: 'items.remove';
   readonly ids: readonly string[];
 }
-
 export type TranscriptOperation =
   | ResetOp
   | TurnUpsertOp
@@ -162,6 +178,32 @@ export interface TranscriptOpBatch {
   readonly ops: readonly TranscriptOperation[];
 }
 
+/**
+ * One remembered standalone-placement anchor, in JSON-safe wire form: the
+ * reducer-internal placement map re-keyed as an explicit `itemId` entry (a
+ * Map cannot cross a process boundary). Mirrors the `beforeTurn` /
+ * `beforeItem` anchors of the standalone upsert ops, including their
+ * contract: `beforeItem` only refines a `beforeTurn` anchor and never
+ * appears without one.
+ */
+export interface StandalonePlacementBaselineEntry {
+  readonly itemId: string;
+  readonly beforeTurn?: number;
+  readonly beforeItem?: string;
+}
+
+/**
+ * The reducer continuation of a snapshot: the placement memory a consumer
+ * must hydrate to keep applying ops convergently on top of it (an ordinal
+ * correction or a `beforeItem` chain re-derives the standalone layout from
+ * these anchors). This is reducer convergence state, NOT rendering content —
+ * a display-only consumer can ignore it. Optional so pre-continuation peers
+ * stay wire-compatible; its absence hydrates as an empty memory.
+ */
+export interface TranscriptContinuation {
+  readonly standalonePlacements: readonly StandalonePlacementBaselineEntry[];
+}
+
 /** Full materialized state of one AgentTranscript, as used by `reset`. */
 export interface AgentTranscriptSnapshot {
   readonly items: readonly TranscriptItem[];
@@ -180,6 +222,13 @@ export interface AgentTranscriptSnapshot {
    * older turns exist and must be paged in over REST.
    */
   readonly hasMoreOlder?: boolean;
+  /**
+   * Reducer continuation for exactly this item window — the standalone
+   * placement baseline, not rendering content (see `TranscriptContinuation`).
+   * Entries cover only standalone items present in `items`; absent when
+   * nothing in the window is anchored (or the producer predates the field).
+   */
+  readonly continuation?: TranscriptContinuation;
 }
 
 export interface AppliedOps {

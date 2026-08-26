@@ -276,7 +276,10 @@ export class OAuthService extends Disposable implements IOAuthService {
     return this.toolkit.getCachedAccessToken(provider, this.resolveRuntimeOAuthRef(provider, oauthRef));
   }
 
-  getManagedUsage(provider = KIMI_CODE_PROVIDER_NAME): Promise<AuthManagedUsageResult> {
+  getManagedUsage(
+    provider = KIMI_CODE_PROVIDER_NAME,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<AuthManagedUsageResult> {
     const configured = this.providerService.get(provider);
     const auth = resolveKimiCodeRuntimeAuth({
       configuredBaseUrl: configured?.baseUrl,
@@ -285,6 +288,7 @@ export class OAuthService extends Disposable implements IOAuthService {
     return this.toolkit.getManagedUsage(provider, {
       oauthRef: auth.oauthRef,
       baseUrl: auth.baseUrl,
+      signal: options?.signal,
     });
   }
 

@@ -19,20 +19,41 @@
  * reports the child's bound model alias and its effective thinking effort, so
  * clients can render both at spawn instead of waiting for the first
  * `agent.status.updated` frame.
+ *
+ * Alongside the UI signals, each mirror owns a unique `runId` and announces
+ * the run through the Session service's internal run-lifecycle events
+ * (`ISessionSubagentService.notifyAgentRunStarted` / `notifyAgentRunFinished`),
+ * which the Session-scoped `agentRunUsage` recorder folds into the persistent
+ * ledger. These events stay off the per-agent `IEventBus` entirely, so they
+ * can never leak onto the WebSocket wire. Every mirror emits exactly
+ * one started and (when the process survives) one finished event —
+ * completed / failed / cancelled — regardless of abort or rate-limit
+ * suppression of the UI signals, so a crash after started alone is the only
+ * incomplete run. An ordinary start-hook failure counts as `failed`; only
+ * aborts (`signal.aborted` or an abort-shaped error) are `cancelled`.
  */
 
+import { randomUUID } from 'node:crypto';
+
 import type { IAgentScopeHandle } from '#/_base/di/scope';
-import { userCancellationReason } from '#/_base/utils/abort';
+import { isAbortError, userCancellationReason } from '#/_base/utils/abort';
 import { IAgentTokenCountingService } from '#/agent/tokenCounting/tokenCounting';
 import { IAgentProfileService } from '#/agent/profile/profile';
 import { isProviderRateLimitError } from '#/kosong/contract/errors';
 import { type TokenUsage } from '#/kosong/contract/usage';
 import { ITelemetryService } from '#/app/telemetry/telemetry';
 import { IEventBus } from '#/app/event/eventBus';
-import { isAbortError } from '#/_base/utils/abort';
+import { isError2 } from '#/errors';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
 
-import { type AgentRunHandle, ISessionSubagentService } from './subagent';
+import { runUsageSince } from './runAgentTurn';
+import {
+  type AgentRunFinishedEvent,
+  type AgentRunHandle,
+  type AgentRunStartedEvent,
+  type AgentRunStatus,
+  ISessionSubagentService,
+} from './subagent';
 
 export interface SubagentSpawnedEvent {
   readonly type: 'subagent.spawned';
@@ -136,11 +157,52 @@ export async function mirrorAgentRun(
   const eventBus = requester.accessor.get(IEventBus);
   const subagents = requester.accessor.get(ISessionSubagentService);
   const agentLifecycle = requester.accessor.get(IAgentLifecycleService);
+  const runId = randomUUID();
+  const startedAt = Date.now();
+  const childProfile = agentLifecycle?.get(run.agentId)?.accessor.get(IAgentProfileService);
+  let finished = false;
+  const finish = (
+    status: AgentRunStatus,
+    outcome: {
+      readonly usage?: TokenUsage;
+      readonly contextTokens?: number;
+      readonly errorCode?: string;
+    },
+  ): void => {
+    if (finished) return;
+    finished = true;
+    const endedAt = Date.now();
+    subagents?.notifyAgentRunFinished({
+      runId,
+      status,
+      startedAt,
+      endedAt,
+      durationMs: Math.max(0, endedAt - startedAt),
+      usage: outcome.usage,
+      contextTokens: outcome.contextTokens,
+      errorCode: outcome.errorCode,
+    });
+  };
   eventBus?.publish({ type: 'subagent.started', subagentId: run.agentId });
+  const started: AgentRunStartedEvent = {
+    runId,
+    childAgentId: run.agentId,
+    parentAgentId: requester.id,
+    profileName: options.profileName,
+    modelAlias: childProfile?.data().modelAlias,
+    thinkingEffort: childProfile?.getEffectiveThinkingLevel(),
+    startedAt,
+  };
+  subagents?.notifyAgentRunStarted(started);
   if (options.prompt !== undefined) {
     const cancelAndRethrow = (reason: unknown): never => {
       options.cancel?.(reason);
       void run.completion.catch(() => {});
+      finish(runFinishStatus(options, reason), {
+        usage: childUsageSince(agentLifecycle, run),
+        contextTokens: childContextTokens(agentLifecycle, run.agentId),
+        errorCode: runErrorCode(reason),
+      });
       throw reason;
     };
     try {
@@ -159,6 +221,7 @@ export async function mirrorAgentRun(
   try {
     const result = await run.completion;
     const contextTokens = childContextTokens(agentLifecycle, run.agentId);
+    finish('completed', { usage: result.runUsage, contextTokens });
     eventBus?.publish({
       type: 'subagent.completed',
       subagentId: run.agentId,
@@ -170,7 +233,7 @@ export async function mirrorAgentRun(
       agentName: options.profileName,
       response: result.summary,
     });
-    return result;
+    return { summary: result.summary, usage: result.usage };
   } catch (error) {
     if (!isAbortError(error) && !shouldSuppressFailure(options, error)) {
       eventBus?.publish({
@@ -179,8 +242,31 @@ export async function mirrorAgentRun(
         error: errorMessage(error),
       });
     }
+    finish(runFinishStatus(options, error), {
+      usage: childUsageSince(agentLifecycle, run),
+      contextTokens: childContextTokens(agentLifecycle, run.agentId),
+      errorCode: runErrorCode(error),
+    });
     throw error;
   }
+}
+
+function runFinishStatus(options: MirrorAgentRunOptions, error: unknown): AgentRunStatus {
+  if (options.signal.aborted || isAbortError(error)) return 'cancelled';
+  return 'failed';
+}
+
+function runErrorCode(error: unknown): string | undefined {
+  return isError2(error) ? error.code : undefined;
+}
+
+function childUsageSince(
+  agentLifecycle: IAgentLifecycleService,
+  run: AgentRunHandle,
+): TokenUsage | undefined {
+  const child = agentLifecycle.get(run.agentId);
+  if (child === undefined) return undefined;
+  return runUsageSince(child, run.baseline);
 }
 
 function shouldSuppressFailure(options: MirrorAgentRunOptions, error: unknown): boolean {

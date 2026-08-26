@@ -23,6 +23,7 @@ import type { TranscriptTurn } from '../model/turn';
 import {
   EMPTY_AGENT_STATE,
   applyOperation,
+  continuationForItems,
   type AgentState,
 } from '../ops/apply';
 import type {
@@ -152,23 +153,32 @@ export class AgentTranscript {
     let items = this.#state.items;
     let hasMoreOlder = this.#state.hasMoreOlder;
     if (window !== undefined) {
-      const turnCount = items.reduce((n, entry) => (entry.kind === 'turn' ? n + 1 : n), 0);
-      if (turnCount > window.tailTurns) {
-        const skip = turnCount - window.tailTurns;
-        const kept: TranscriptItem[] = [];
-        let seen = 0;
-        for (const entry of items) {
-          if (entry.kind === 'turn') {
-            seen += 1;
-            if (seen <= skip) continue;
-            kept.push(entry);
-          } else if (seen > skip) {
-            // Non-turn items between skipped turns belong to skipped segments.
-            kept.push(entry);
+      if (window.tailTurns === 0) {
+        // A zero-tail window ships NO items at all — turn-less standalone
+        // items included: anything held counts as older history (a wholly
+        // empty state keeps its own flag), and with no items the placement
+        // continuation below comes out empty as well.
+        if (items.length > 0) hasMoreOlder = true;
+        items = [];
+      } else {
+        const turnCount = items.reduce((n, entry) => (entry.kind === 'turn' ? n + 1 : n), 0);
+        if (turnCount > window.tailTurns) {
+          const skip = turnCount - window.tailTurns;
+          const kept: TranscriptItem[] = [];
+          let seen = 0;
+          for (const entry of items) {
+            if (entry.kind === 'turn') {
+              seen += 1;
+              if (seen <= skip) continue;
+              kept.push(entry);
+            } else if (seen > skip) {
+              // Non-turn items between skipped turns belong to skipped segments.
+              kept.push(entry);
+            }
           }
+          items = kept;
+          hasMoreOlder = true;
         }
-        items = kept;
-        hasMoreOlder = true;
       }
     }
     return {
@@ -180,6 +190,10 @@ export class AgentTranscript {
       prompts: [...this.#state.prompts.values()],
       meta: this.#state.meta,
       hasMoreOlder,
+      // The reducer's placement memory projected onto exactly this window:
+      // paged-out items carry no entries, and the key is omitted entirely when
+      // nothing visible is anchored.
+      continuation: continuationForItems(items, this.#state.standalonePlacements),
     };
   }
 }

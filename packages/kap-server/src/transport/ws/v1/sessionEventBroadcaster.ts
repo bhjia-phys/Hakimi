@@ -83,6 +83,8 @@ import type {
   Event,
 } from './events';
 import { isVolatileEventType } from './events';
+import { z } from 'zod';
+import { configResponseSchema, type ConfigResponse } from '../../../protocol/rest-config';
 import type { SessionCursor } from '../../../protocol/ws-control';
 import type { InFlightTurn, SnapshotSubagent } from '../../../protocol/rest-snapshot';
 import {
@@ -947,6 +949,30 @@ export class SessionEventBroadcaster {
       );
       return;
     }
+    if (event.type === 'event.config.changed') {
+      const payload = configChangedPayload(event.payload);
+      if (payload === undefined) return;
+      // Global fan-out of config mutations: both producers — the POST /config
+      // route (`routes/config.ts`, in-route publish after a set) and the
+      // external-reload bridge (`start.ts`, merged one-event-per-reload) —
+      // publish the same `{ changedFields, config }` payload on IEventService;
+      // project it field-by-field onto the flat v1 `ConfigChangedEvent` frame
+      // (the `changedFields` snake_case-or-camelCase values pass through as
+      // published; the FIELD NAME on the wire stays `changedFields`, which the
+      // web client reads alongside its `changed_fields` alias). The frame is
+      // durable in the global journal; current Web clients reconcile `/config`
+      // on reconnect because they do not yet carry a global replay cursor.
+      void this.dispatchGlobal({
+        type: 'event.config.changed',
+        changedFields: payload.changedFields,
+        config: payload.config,
+        agentId: 'main',
+        sessionId: GLOBAL_SESSION_ID,
+      } as Event).catch((error: unknown) =>
+        this.logDispatchError(GLOBAL_SESSION_ID, 'event.config.changed', error),
+      );
+      return;
+    }
     if (event.type === 'event.di.unit_changed') {
       const payload = diUnitChangedPayload(event.payload);
       if (payload === undefined) return;
@@ -1762,4 +1788,27 @@ function configWarningPayload(payload: unknown): { warnings: ConfigWarningItem[]
     items.push(typeof domain === 'string' ? { domain, message } : { message });
   }
   return { warnings: items };
+}
+
+const configChangedPayloadSchema = z.object({
+  changedFields: z.array(z.string()),
+  config: configResponseSchema,
+});
+
+/**
+ * Validate the `event.config.changed` payload published on the core
+ * `IEventService` (`{ changedFields, config }` — shared by the POST /config
+ * route and the external-reload bridge in `start.ts`). The frame is projected
+ * field-by-field onto the flat v1 `ConfigChangedEvent`; no payload field is
+ * spread into the envelope. Malformed payloads — a non-array / non-string
+ * `changedFields`, or a `config` object that fails the `configResponseSchema`
+ * parse — are dropped, never forwarded.
+ */
+function configChangedPayload(
+  payload: unknown,
+): { changedFields: readonly string[]; config: ConfigResponse } | undefined {
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  const parsed = configChangedPayloadSchema.safeParse(payload);
+  if (!parsed.success) return undefined;
+  return parsed.data;
 }

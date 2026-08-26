@@ -42,6 +42,7 @@ import type { TranscriptTask } from '../model/task';
 import type { TodoItem, TranscriptTodo } from '../model/todo';
 import type { TranscriptTurn } from '../model/turn';
 import type { AgentTranscriptSnapshot } from '../ops/operation';
+import { goalMarkerFromMutation, readGoalMutation } from './goalMarker';
 
 export interface HistoryWireRecord {
   readonly type: string;
@@ -284,6 +285,16 @@ export function foldWireRecordFacts(
     }
   }
   const pushMarker = (marker: string, record: HistoryWireRecord): void => {
+    if (marker === 'goal') {
+      const mutation = readGoalMutation(record['mutation']);
+      if (mutation !== undefined) {
+        const item = goalMarkerFromMutation(mutation);
+        if (!appended.some((entry) => entry.kind === 'marker' && entry.markerId === item.markerId)) {
+          appended.push(item);
+        }
+        return;
+      }
+    }
     markerSeq += 1;
     const item: TranscriptMarker = {
       kind: 'marker',
@@ -387,6 +398,12 @@ export function foldWireRecordFacts(
         break;
       }
       case 'goal.clear': {
+        goalTouched = true;
+        goal = undefined;
+        pushMarker('goal', record);
+        break;
+      }
+      case 'forked': {
         goalTouched = true;
         goal = undefined;
         break;
@@ -551,6 +568,7 @@ export function foldWireRecordFacts(
         })
       : base.items;
 
+  if (goal?.status === 'active') goal = { ...goal, status: 'paused' };
   const modesTouched = planActive !== undefined || swarmActive !== undefined;
   const meta: TranscriptMeta = {
     ...base.meta,

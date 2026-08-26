@@ -340,6 +340,7 @@ export const transcriptMetaSchema = z.object({
 });
 
 export const transcriptMetaMergeSchema = transcriptMetaSchema.extend({
+  goal: goalMetaSchema.nullable().optional(),
   modes: modesMetaMergeSchema.optional(),
 });
 
@@ -380,6 +381,48 @@ export const transcriptPromptSchema = z.object({
   steeredAt: z.string().optional(),
 });
 
+/**
+ * `beforeItem` is an intra-segment refinement of the `beforeTurn` anchor and
+ * never travels alone: the wire accepts a bare op / entry (legacy / live), a
+ * `beforeTurn` anchor, or both — a `beforeItem` without `beforeTurn` carries
+ * no placement information and is rejected. (An empty `beforeItem` is already
+ * rejected by its own `min(1)`.)
+ */
+function placementAnchorsRefine(
+  value: { beforeTurn?: number; beforeItem?: string },
+  ctx: z.RefinementCtx,
+): void {
+  if (value.beforeItem !== undefined && value.beforeTurn === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'beforeItem requires beforeTurn',
+      path: ['beforeItem'],
+    });
+  }
+}
+
+/**
+ * Wire form of one standalone-placement anchor (`StandalonePlacementBaselineEntry`):
+ * `itemId` names the placed marker / taskref; an entry is expected to carry at
+ * least one anchor — both absent carries no information and hydrates to nothing.
+ */
+export const standalonePlacementBaselineEntrySchema = z
+  .object({
+    itemId: z.string().min(1),
+    beforeTurn: z.number().int().optional(),
+    beforeItem: z.string().min(1).optional(),
+  })
+  .superRefine(placementAnchorsRefine);
+
+/**
+ * The reducer continuation riding a snapshot / REST page: reducer convergence
+ * state (standalone placement anchors), never rendering content. See
+ * `TranscriptContinuation` in `ops/operation.ts`.
+ */
+export const transcriptContinuationSchema = z.object({
+  standalonePlacements: z.array(standalonePlacementBaselineEntrySchema),
+});
+
 export const agentTranscriptSnapshotSchema = z.object({
   items: z.array(transcriptItemSchema),
   tasks: z.array(transcriptTaskSchema),
@@ -390,6 +433,8 @@ export const agentTranscriptSnapshotSchema = z.object({
   prompts: z.array(transcriptPromptSchema).default([]),
   meta: transcriptMetaSchema,
   hasMoreOlder: z.boolean().optional(),
+  // Added later; optional so newer consumers tolerate older servers.
+  continuation: transcriptContinuationSchema.optional(),
 });
 
 export const turnHeaderSchema = transcriptTurnSchema.omit({ steps: true });
@@ -421,16 +466,22 @@ export const transcriptOperationSchema = z.discriminatedUnion('op', [
     offset: z.number().int().nonnegative(),
     text: z.string(),
   }),
-  z.object({
-    op: z.literal('marker.upsert'),
-    item: transcriptMarkerSchema,
-    beforeTurn: z.number().int().optional(),
-  }),
-  z.object({
-    op: z.literal('taskref.upsert'),
-    item: transcriptTaskRefSchema,
-    beforeTurn: z.number().int().optional(),
-  }),
+  z
+    .object({
+      op: z.literal('marker.upsert'),
+      item: transcriptMarkerSchema,
+      beforeTurn: z.number().int().optional(),
+      beforeItem: z.string().min(1).optional(),
+    })
+    .superRefine(placementAnchorsRefine),
+  z
+    .object({
+      op: z.literal('taskref.upsert'),
+      item: transcriptTaskRefSchema,
+      beforeTurn: z.number().int().optional(),
+      beforeItem: z.string().min(1).optional(),
+    })
+    .superRefine(placementAnchorsRefine),
   z.object({ op: z.literal('task.upsert'), task: transcriptTaskSchema }),
   z.object({ op: z.literal('interaction.upsert'), interaction: interactionSchema }),
   z.object({ op: z.literal('attachment.upsert'), attachment: attachmentSchema }),
@@ -552,6 +603,8 @@ export const transcriptResponseSchema = z.object({
   pending_interactions: z.array(z.string()),
   /** Op-batch watermark: this state includes every batch with seq <= N. */
   seq: transcriptSeqSchema.optional(),
+  /** Reducer continuation narrowed to this page's items; absent on legacy servers. */
+  continuation: transcriptContinuationSchema.optional(),
 });
 
 /**

@@ -3,11 +3,14 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, it, expect } from 'vitest';
+import { z } from 'zod';
 
 import {
+  GOAL_MUTATION_MAX_AT,
   agentEventSchema,
   assistantDeltaEventSchema,
   eventSchema,
+  goalMutationSchema,
   shellCompletedEventSchema,
   toolCallStartedEventSchema,
 } from '../events';
@@ -118,6 +121,71 @@ describe('events / display re-exports', () => {
 
     expect(parsed.agentId).toBe('agent_1');
     expect(parsed.sessionId).toBe('sess_1');
+  });
+
+  it('round-trips goal.updated with its mutation payload', () => {
+    const mutation = {
+      id: 'mutation-1',
+      at: 1000,
+      kind: 'update',
+      goalId: 'g1',
+      status: 'blocked',
+    } as const;
+    const parsed = eventSchema.parse({
+      type: 'goal.updated',
+      agentId: 'main',
+      sessionId: 'sess_1',
+      snapshot: null,
+      mutation,
+    });
+
+    expect(parsed.type).toBe('goal.updated');
+    expect((parsed as { mutation?: unknown }).mutation).toEqual(mutation);
+
+    // The epoch floor round-trips too.
+    const atZero = eventSchema.parse({
+      type: 'goal.updated',
+      agentId: 'main',
+      sessionId: 'sess_1',
+      snapshot: null,
+      mutation: { ...mutation, at: 0 },
+    });
+    expect((atZero as { mutation?: { at: number } }).mutation?.at).toBe(0);
+  });
+
+  it('rejects goal.updated mutations whose `at` leaves the valid Date range', () => {
+    const base = {
+      type: 'goal.updated',
+      agentId: 'main',
+      sessionId: 'sess_1',
+      snapshot: null,
+      mutation: { id: 'mutation-1', kind: 'update', goalId: 'g1' },
+    };
+    // Negative, beyond the Date epoch ceiling, and one past the exact ceiling
+    // (8_640_000_000_000_000 is still a valid Date) all fail.
+    for (const at of [-1, 1e30, GOAL_MUTATION_MAX_AT + 1]) {
+      expect(
+        eventSchema.safeParse({ ...base, mutation: { ...base.mutation, at } }).success,
+      ).toBe(false);
+    }
+    // The exact ceiling still parses.
+    expect(
+      eventSchema.safeParse({
+        ...base,
+        mutation: { ...base.mutation, at: GOAL_MUTATION_MAX_AT },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('exposes the goal mutation `at` ceiling in the JSON Schema output', () => {
+    // The AsyncAPI/JSON-Schema surface must carry the bound explicitly, not
+    // just the runtime refine.
+    const json = z.toJSONSchema(goalMutationSchema, {
+      target: 'draft-7',
+      io: 'input',
+      unrepresentable: 'any',
+    }) as { properties?: Record<string, unknown> };
+    expect(json.properties?.['at']).toMatchObject({ maximum: GOAL_MUTATION_MAX_AT });
   });
 
   it('validates prompt.submitted events', () => {

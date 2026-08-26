@@ -57,6 +57,14 @@ export interface GoalChange {
   readonly actor?: GoalActor;
 }
 
+export interface GoalMutationRef {
+  readonly id: string;
+  readonly at: number;
+  readonly kind: 'create' | 'update' | 'clear';
+  readonly goalId: string;
+  readonly status?: GoalStatus;
+}
+
 export interface CreateGoalInput {
   readonly objective: string;
   readonly completionCriterion?: string;

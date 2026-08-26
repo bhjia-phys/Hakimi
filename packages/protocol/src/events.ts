@@ -231,6 +231,19 @@ export interface GoalChange {
   readonly actor?: GoalActor;
 }
 
+/**
+ * Stable identity of one goal lifecycle mutation (create / update / clear).
+ * Carried by `goal.updated` so transcript projections can key the timeline
+ * marker by `goal:<id>` and let the cold fold reproduce the same marker.
+ */
+export interface GoalMutation {
+  readonly id: string;
+  readonly at: number;
+  readonly kind: 'create' | 'update' | 'clear';
+  readonly goalId: string;
+  readonly status?: GoalStatus;
+}
+
 export type KimiErrorCode =
   | 'config.invalid'
   | 'session.not_found'
@@ -639,6 +652,7 @@ export interface GoalUpdatedEvent {
   readonly type: 'goal.updated';
   readonly snapshot: GoalSnapshot | null;
   readonly change?: GoalChange;
+  readonly mutation?: GoalMutation;
 }
 
 export interface ResearchUpdatedEvent {
@@ -1246,6 +1260,32 @@ export const goalChangeSchema = z.object({
   actor: goalActorSchema.optional(),
 }) satisfies z.ZodType<GoalChange>;
 
+/**
+ * Upper bound for `GoalMutation.at`: the largest epoch-ms value that still
+ * survives `new Date(at).toISOString()` (ECMAScript's exact Date ceiling).
+ * Mirrored by same-valued local constants in kap-server's events-zod port,
+ * agent-core-v2's goal Ops, and the transcript's mutation reader (those
+ * packages stay free of a runtime edge to this one).
+ */
+export const GOAL_MUTATION_MAX_AT = 8_640_000_000_000_000;
+
+export const goalMutationSchema = z.object({
+  id: z.string(),
+  // Bounded to the valid Date range so the transcript's marker projection
+  // (`new Date(at).toISOString()`) can never throw on a persisted mutation.
+  at: z
+    .number()
+    .finite()
+    .nonnegative()
+    .max(GOAL_MUTATION_MAX_AT)
+    .refine((value) => Number.isFinite(new Date(value).getTime()), {
+      message: 'at must be a valid Date epoch-ms',
+    }),
+  kind: z.enum(['create', 'update', 'clear']),
+  goalId: z.string(),
+  status: goalStatusSchema.optional(),
+}) satisfies z.ZodType<GoalMutation>;
+
 export const kimiErrorCodeSchema = z.enum([
   'config.invalid',
   'session.not_found',
@@ -1609,6 +1649,7 @@ export const goalUpdatedEventSchema = z.object({
   type: z.literal('goal.updated'),
   snapshot: goalSnapshotSchema.nullable(),
   change: goalChangeSchema.optional(),
+  mutation: goalMutationSchema.optional(),
 }) satisfies z.ZodType<GoalUpdatedEvent>;
 
 export const researchUpdatedEventSchema = z.object({

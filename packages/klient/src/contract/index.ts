@@ -1,9 +1,10 @@
 /**
  * The aggregated klient contract — service wire name → method → zod
  * input/output schemas, across the core/session/agent scopes. The klient
- * factory validates every call against this table; transports never see it.
- * Event registrations live in the per-scope `events.ts` files alongside
- * their payload schemas.
+ * factory validates every call against this table, and the shared in-process
+ * dispatcher (memory transport + IPC host) uses it as the server-side method
+ * allowlist and input validator. Event registrations live in the per-scope
+ * `events.ts` files alongside their payload schemas.
  */
 
 import type { KlientContract } from './types.js';
@@ -12,6 +13,7 @@ import {
   agentCommandContract,
   agentContextMemoryContract,
   agentFullCompactionContract,
+  agentGoalContract,
   agentLoopContract,
   agentMcpContract,
   agentPermissionModeContract,
@@ -93,6 +95,7 @@ export const globalContract: KlientContract = {
   agentFullCompactionService: agentFullCompactionContract,
   agentResearchService: agentResearchContract,
   agentAitpModeService: agentAitpModeContract,
+  agentGoalService: agentGoalContract,
 };
 
 export type { KlientContract, ProcedureContract, ServiceContract, StreamingProcedureContract } from './types.js';

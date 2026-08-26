@@ -371,6 +371,201 @@ describe('agent mcp / compaction routing', () => {
   });
 });
 
+describe('agent goal routing', () => {
+  const GOAL_SNAPSHOT = {
+    goalId: 'g1',
+    objective: 'ship it',
+    completionCriterion: 'tests pass',
+    status: 'active',
+    turnsUsed: 0,
+    tokensUsed: 0,
+    wallClockMs: 0,
+    budget: {
+      tokenBudget: null,
+      turnBudget: null,
+      wallClockBudgetMs: null,
+      remainingTokens: null,
+      remainingTurns: null,
+      remainingWallClockMs: null,
+      tokenBudgetReached: false,
+      turnBudgetReached: false,
+      wallClockBudgetReached: false,
+      overBudget: false,
+    },
+  };
+
+  it('maps goal methods to agentGoalService with positional wire args', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const agent = klient.session('s1').agent('main');
+    const scope = { sessionId: 's1', agentId: 'main' };
+
+    channel.results.set('agentGoalService.createGoal', GOAL_SNAPSHOT);
+    await expect(
+      agent.goal.create({ objective: 'ship it', completionCriterion: 'tests pass' }),
+    ).resolves.toEqual(GOAL_SNAPSHOT);
+    expect(channel.calls[0]).toEqual({
+      scope,
+      service: 'agentGoalService',
+      method: 'createGoal',
+      args: [{ objective: 'ship it', completionCriterion: 'tests pass' }],
+    });
+
+    // get unwraps the engine's `{ goal }` tool result.
+    channel.results.set('agentGoalService.getGoal', { goal: GOAL_SNAPSHOT });
+    await expect(agent.goal.get()).resolves.toEqual(GOAL_SNAPSHOT);
+    expect(channel.calls[1]).toEqual({
+      scope,
+      service: 'agentGoalService',
+      method: 'getGoal',
+      args: [],
+    });
+
+    channel.results.set('agentGoalService.getGoal', { goal: null });
+    await expect(agent.goal.get()).resolves.toBeNull();
+
+    // Omitted inputs cross the wire as `{}`; the engine's actor is never sent.
+    channel.results.set('agentGoalService.pauseGoal', { ...GOAL_SNAPSHOT, status: 'paused' });
+    await agent.goal.pause();
+    expect(channel.calls[3]).toEqual({
+      scope,
+      service: 'agentGoalService',
+      method: 'pauseGoal',
+      args: [{}],
+    });
+
+    channel.results.set('agentGoalService.resumeGoal', GOAL_SNAPSHOT);
+    await agent.goal.resume();
+    expect(channel.calls[4]).toEqual({
+      scope,
+      service: 'agentGoalService',
+      method: 'resumeGoal',
+      args: [{}],
+    });
+
+    channel.results.set('agentGoalService.cancelGoal', GOAL_SNAPSHOT);
+    await agent.goal.cancel();
+    expect(channel.calls[5]).toEqual({
+      scope,
+      service: 'agentGoalService',
+      method: 'cancelGoal',
+      args: [{}],
+    });
+
+    channel.results.set('agentGoalService.setBudgetLimits', GOAL_SNAPSHOT);
+    await agent.goal.setBudgetLimits({ tokenBudget: 100, turnBudget: 3 });
+    expect(channel.calls[6]).toEqual({
+      scope,
+      service: 'agentGoalService',
+      method: 'setBudgetLimits',
+      args: [{ budgetLimits: { tokenBudget: 100, turnBudget: 3 } }],
+    });
+
+    // Reasons and resume flags pass through; still no actor.
+    await agent.goal.pause({ reason: 'hold' });
+    expect(channel.calls[7]?.args).toEqual([{ reason: 'hold' }]);
+    await agent.goal.resume({ continueIfBlocked: true });
+    expect(channel.calls[8]?.args).toEqual([{ continueIfBlocked: true }]);
+    expect(channel.calls.every((call) => call.args.length <= 1)).toBe(true);
+  });
+
+  it('rejects invalid goal input before the call leaves the client', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const agent = klient.session('s1').agent('main');
+
+    await expect(
+      agent.goal.create({ objective: 42 as unknown as string }),
+    ).rejects.toBeInstanceOf(KlientValidationError);
+    await expect(
+      agent.goal.setBudgetLimits({ tokenBudget: '100' as unknown as number }),
+    ).rejects.toBeInstanceOf(KlientValidationError);
+    await expect(
+      agent.goal.resume({ continueIfPaused: 'yes' as unknown as boolean }),
+    ).rejects.toBeInstanceOf(KlientValidationError);
+    expect(channel.calls).toHaveLength(0);
+  });
+
+  it('rejects out-of-domain budget limits before the call leaves the client', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const agent = klient.session('s1').agent('main');
+
+    // Negative, infinite, and NaN limits are all off the wire domain.
+    await expect(agent.goal.setBudgetLimits({ tokenBudget: -1 })).rejects.toBeInstanceOf(
+      KlientValidationError,
+    );
+    await expect(
+      agent.goal.setBudgetLimits({ turnBudget: Number.POSITIVE_INFINITY }),
+    ).rejects.toBeInstanceOf(KlientValidationError);
+    await expect(
+      agent.goal.setBudgetLimits({ wallClockBudgetMs: Number.NaN }),
+    ).rejects.toBeInstanceOf(KlientValidationError);
+    // The budget object is strict: unknown keys are rejected.
+    await expect(
+      agent.goal.setBudgetLimits({ tokenBudget: 1, memoryBudget: 2 } as unknown as Parameters<
+        typeof agent.goal.setBudgetLimits
+      >[0]),
+    ).rejects.toBeInstanceOf(KlientValidationError);
+    expect(channel.calls).toHaveLength(0);
+  });
+
+  it('rejects drifted goal output payloads', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const agent = klient.session('s1').agent('main');
+
+    channel.results.set('agentGoalService.pauseGoal', { goalId: 'g1' }); // missing fields
+    await expect(agent.goal.pause()).rejects.toBeInstanceOf(KlientValidationError);
+
+    channel.results.set('agentGoalService.getGoal', { goal: { status: 'active' } });
+    await expect(agent.goal.get()).rejects.toBeInstanceOf(KlientValidationError);
+  });
+
+  it('forwards goal.updated stream events and validates payloads', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const agent = klient.session('s1').agent('main');
+    const seen: unknown[] = [];
+    const errors: Error[] = [];
+    agent.events.onError((error) => {
+      errors.push(error);
+    });
+
+    agent.events.on('goal.updated', (event) => seen.push(event));
+    expect(channel.subscriptions).toHaveLength(1);
+    expect(channel.subscriptions[0]?.scope).toEqual({ sessionId: 's1', agentId: 'main' });
+    expect(channel.subscriptions[0]?.source).toEqual({ kind: 'stream', name: 'events' });
+
+    const updated = {
+      type: 'goal.updated',
+      snapshot: GOAL_SNAPSHOT,
+      change: { kind: 'lifecycle', status: 'active', actor: 'user' },
+      mutation: { id: 'm1', at: 1, kind: 'create', goalId: 'g1', status: 'active' },
+    };
+    const cleared = {
+      type: 'goal.updated',
+      snapshot: null,
+      mutation: { id: 'm2', at: 2, kind: 'clear', goalId: 'g1' },
+    };
+    channel.emit(0, updated);
+    channel.emit(0, cleared);
+    // `at` beyond the valid Date ceiling fails validation.
+    channel.emit(0, {
+      type: 'goal.updated',
+      snapshot: null,
+      mutation: { id: 'm3', at: 9e30, kind: 'clear', goalId: 'g1' },
+    });
+    // `snapshot` is required (nullable, not optional).
+    channel.emit(0, { type: 'goal.updated' });
+    await tick();
+
+    expect(seen).toEqual([updated, cleared]);
+    expect(errors).toHaveLength(2);
+    expect(errors.every((error) => error instanceof KlientValidationError)).toBe(true);
+  });
+});
+
 describe('session lifecycle routing', () => {
   it('delete calls the App session manager', async () => {
     const channel = new FakeChannel();

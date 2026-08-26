@@ -38,3 +38,12 @@ export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
     inputCacheCreation: a.inputCacheCreation + b.inputCacheCreation,
   };
 }
+
+export function subtractUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  return {
+    inputOther: Math.max(0, a.inputOther - b.inputOther),
+    output: Math.max(0, a.output - b.output),
+    inputCacheRead: Math.max(0, a.inputCacheRead - b.inputCacheRead),
+    inputCacheCreation: Math.max(0, a.inputCacheCreation - b.inputCacheCreation),
+  };
+}

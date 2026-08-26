@@ -4,7 +4,7 @@ The isomorphic transcript rendering data layer — agent-granular L1 store, idem
 
 ## Cold rebuild
 
-The cold rebuild is a two-level fold over `wire.jsonl` as the single source of truth: `history/groupTurns.ts` (context messages → turn tree) plus `history/foldFacts.ts` (non-context records → tasks, interactions, todos, goal/plan/swarm meta, and end-appended markers/taskrefs; interactions left pending at shutdown fold to `cancelled`).
+The cold rebuild is a two-level fold over `wire.jsonl` as the single source of truth: `history/groupTurns.ts` (context messages → turn tree) plus `history/foldFacts.ts` (non-context records → tasks, interactions, todos, goal/plan/swarm meta, and end-appended markers/taskrefs; interactions left pending at shutdown fold to `cancelled`). Goal create/update/clear records rebuild the same marker sequence as live events, while `forked` clears inherited Goal state without inventing a marker. `meta.merge` uses `goal: null` as the explicit clear signal; an absent Goal key preserves concurrent live state during backfill.
 
 ## Plan content
 

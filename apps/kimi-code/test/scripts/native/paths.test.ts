@@ -4,14 +4,18 @@ import { describe, expect, it } from 'vitest';
 
 import {
   appRoot,
+  assertSafeNativeTarget,
   executableName,
   nativeIntermediatesDir,
   nativeBinDir,
   nativeBinPath,
   nativeBlobPath,
+  nativeBuildReceiptPath,
   nativeJsBundlePath,
   nativeManifestKey,
   nativeSeaConfigPath,
+  nativeWebAssetsDir,
+  nativeWebSnapshotDir,
   targetTriple,
   nativeDistRoot,
   nativeManifestDir,
@@ -39,6 +43,25 @@ describe('targetTriple', () => {
         env: { KIMI_CODE_BUILD_TARGET: 'linux-arm64' },
       }),
     ).toBe('linux-arm64');
+  });
+
+  it('rejects cross-platform target names that can escape native build directories', () => {
+    for (const target of [
+      '../../outside',
+      '/tmp/outside',
+      '..',
+      'nested/target',
+      'nested\\target',
+      'C:',
+      'D:foo',
+      'foo:bar',
+      'target.',
+      'target ',
+      'CON',
+      'nul',
+    ]) {
+      expect(() => assertSafeNativeTarget(target)).toThrow(/Invalid native build target/);
+    }
   });
 });
 
@@ -76,6 +99,15 @@ describe('path helpers', () => {
     expect(nativeBlobPath()).toBe(p('dist-native/intermediates/hakimi.blob'));
     expect(nativeSeaConfigPath()).toBe(
       p('dist-native/intermediates/sea-config.json'),
+    );
+    expect(nativeWebAssetsDir('linux-x64')).toBe(
+      p('dist-native/intermediates/web-assets/linux-x64'),
+    );
+    expect(nativeWebSnapshotDir('linux-x64')).toBe(
+      p('dist-native/intermediates/web-assets/linux-x64/bundle'),
+    );
+    expect(nativeBuildReceiptPath('linux-x64')).toBe(
+      p('dist-native/intermediates/web-assets/linux-x64/build-receipt.json'),
     );
   });
 
