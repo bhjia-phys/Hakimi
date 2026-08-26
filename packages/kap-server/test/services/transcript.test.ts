@@ -6,13 +6,15 @@
  * flush upserts) and the converged store state.
  */
 
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
   IAgentLifecycleService,
   IAgentLoopService,
+  IAgentGoalService,
+  IWireService,
   IEventBus,
   ISessionIndex,
   ISessionInteractionService,
@@ -31,6 +33,8 @@ import {
 import {
   AgentTranscript,
   TranscriptStore,
+  foldWireRecordFacts,
+  groupMessagesIntoSnapshot,
   type AgentTranscriptSnapshot,
   type AppendOp,
   type FrameUpsertOp,
@@ -40,6 +44,11 @@ import {
   type TranscriptTask,
   type TranscriptTurn,
 } from '@moonshot-ai/transcript';
+import {
+  forkedGoalRecords,
+  goalTranscriptScenarios,
+  stableMutationScenario,
+} from '@moonshot-ai/transcript/test-support/goal-transcript-fixtures';
 import { describe, expect, it } from 'vitest';
 
 import { bindSessionTranscript } from '../../src/services/transcript/coreBinding';
@@ -377,6 +386,23 @@ describe('AgentTranscriptProjector', () => {
     expect(ops.find((op) => op.op === 'marker.upsert')).toMatchObject({ beforeTurn: 1 });
     expect(ops.find((op) => op.op === 'taskref.upsert')).toMatchObject({ beforeTurn: 2 });
 
+    // A multi-item segment chains every item but the last to its historical
+    // successor via beforeItem, so a partial backfill can restore the
+    // sibling order even when the successor already landed live-first.
+    const chained = snapshotToOps({
+      ...snapshot,
+      items: [
+        snapshot.items[0]!,
+        { kind: 'marker', markerId: 'm1', marker: 'skill' },
+        { kind: 'marker', markerId: 'm2', marker: 'goal' },
+        snapshot.items[2]!,
+      ],
+    });
+    const [first, second] = chained.filter((op) => op.op === 'marker.upsert');
+    expect(first).toMatchObject({ beforeTurn: 1, beforeItem: 'm2' });
+    expect(second).toMatchObject({ beforeTurn: 1 });
+    expect(second?.beforeItem).toBeUndefined();
+
     // A live turn arrived before the backfill landed; anchored items must
     // slot into their historical positions, not append past it.
     const tx = new AgentTranscript('main');
@@ -394,6 +420,157 @@ describe('AgentTranscriptProjector', () => {
         return item.refId;
       }),
     ).toEqual(['t0', 'm1', 't1', 'r1', 't2']);
+  });
+
+  it('snapshotToOps anchors a turn-less snapshot segment at ordinal 0', () => {
+    const snapshot: AgentTranscriptSnapshot = {
+      interactions: [],
+      attachments: [],
+      todos: [],
+      prompts: [],
+      items: [
+        { kind: 'marker', markerId: 'A', marker: 'goal' },
+        { kind: 'marker', markerId: 'B', marker: 'skill' },
+        { kind: 'marker', markerId: 'C', marker: 'compaction' },
+      ],
+      tasks: [],
+      meta: {},
+    };
+    const ops = snapshotToOps(snapshot);
+    const segment = ops.filter((op) => op.op === 'marker.upsert');
+    // No snapshot turn at all: the segment anchors at the first visible turn
+    // (ordinal 0) instead of going out as an unanchored live tail, and the
+    // sibling chain rides along as usual.
+    expect(segment[0]).toMatchObject({ beforeTurn: 0, beforeItem: 'B' });
+    expect(segment[1]).toMatchObject({ beforeTurn: 0, beforeItem: 'C' });
+    expect(segment[2]).toMatchObject({ beforeTurn: 0 });
+    expect(segment[2]?.beforeItem).toBeUndefined();
+
+    const labels = (tx: AgentTranscript): string[] =>
+      tx.getItems().map((item) => {
+        if (item.kind === 'turn') return item.turnId;
+        if (item.kind === 'marker') return item.markerId;
+        return item.refId;
+      });
+    const permutations: readonly (readonly [number, number, number])[] = [
+      [0, 1, 2],
+      [0, 2, 1],
+      [1, 0, 2],
+      [1, 2, 0],
+      [2, 0, 1],
+      [2, 1, 0],
+    ];
+    for (const order of permutations) {
+      const tx = new AgentTranscript('main');
+      // Every arrival order converges on the first pass.
+      for (const index of order) tx.apply([segment[index]!]);
+      expect(labels(tx)).toEqual(['A', 'B', 'C']);
+      // The first live turn (ordinal 0) lands after the anchored segment.
+      tx.apply([
+        {
+          op: 'turn.upsert',
+          turn: { kind: 'turn', turnId: 't0', ordinal: 0, state: 'running', origin: { kind: 'user' } },
+        },
+      ]);
+      expect(labels(tx)).toEqual(['A', 'B', 'C', 't0']);
+      // A JSON-roundtripped replay is a no-op.
+      const replayed = JSON.parse(
+        JSON.stringify(order.map((index) => segment[index]!)),
+      ) as TranscriptOperation[];
+      expect(tx.apply(replayed).accepted).toHaveLength(0);
+      expect(labels(tx)).toEqual(['A', 'B', 'C', 't0']);
+    }
+  });
+
+  it('re-anchors an already-present standalone item when backfill carries beforeTurn', () => {
+    const projector = new AgentTranscriptProjector('main');
+    // Cold snapshot: one historical turn followed by the stable Goal marker
+    // (a trailing standalone item anchors past the last snapshot turn).
+    const cold = foldWireRecordFacts([stableMutationScenario.record], groupMessagesIntoSnapshot([]));
+    const coldSnapshot: AgentTranscriptSnapshot = {
+      ...cold,
+      items: [
+        {
+          kind: 'turn',
+          turnId: 't0',
+          ordinal: 0,
+          state: 'completed',
+          origin: { kind: 'user' },
+          prompt: 'one',
+          steps: [],
+        },
+        ...cold.items,
+      ],
+    };
+    const coldOps = snapshotToOps(coldSnapshot);
+    expect(coldOps.find((op) => op.op === 'marker.upsert')).toMatchObject({ beforeTurn: 1 });
+
+    const liveGoalOps = projector.map(
+      ev({
+        type: 'goal.updated',
+        snapshot: {
+          goalId: 'g1',
+          objective: 'ship it',
+          status: 'blocked',
+          tokensUsed: 12,
+          budget: { tokenBudget: null },
+        },
+        mutation: stableMutationScenario.mutation,
+      }),
+    );
+    const liveTurnOp: TranscriptOperation = {
+      op: 'turn.upsert',
+      turn: { kind: 'turn', turnId: 't1', ordinal: 1, state: 'running', origin: { kind: 'user' } },
+    };
+    const idsOf = (tx: AgentTranscript): string[] =>
+      tx.getItems().map((item) => {
+        if (item.kind === 'turn') return item.turnId;
+        if (item.kind === 'marker') return item.markerId;
+        return item.refId;
+      });
+
+    // Live-first: the marker appended past the live turn; the anchored
+    // backfill must move it back to its historical slot, not replace in place.
+    const liveFirst = new AgentTranscript('main');
+    liveFirst.apply([liveTurnOp]);
+    liveFirst.apply(liveGoalOps);
+    expect(idsOf(liveFirst)).toEqual(['t1', 'goal:mutation-1']);
+    liveFirst.apply(coldOps);
+
+    // Cold-first: the duplicate live upsert has no anchor and stays put.
+    const coldFirst = new AgentTranscript('main');
+    coldFirst.apply(coldOps);
+    coldFirst.apply([liveTurnOp]);
+    coldFirst.apply(liveGoalOps);
+
+    for (const merged of [liveFirst, coldFirst]) {
+      expect(idsOf(merged)).toEqual(['t0', 'goal:mutation-1', 't1']);
+      expect(
+        merged.getItems().filter((item) => item.kind === 'marker' && item.marker === 'goal'),
+      ).toHaveLength(1);
+    }
+    expect(coldFirst.getItems()).toEqual(liveFirst.getItems());
+  });
+
+  it('snapshotToOps clears stale Goal only when backfill requests it', () => {
+    const snapshot: AgentTranscriptSnapshot = {
+      items: [],
+      tasks: [],
+      interactions: [],
+      attachments: [],
+      todos: [],
+      prompts: [],
+      meta: {},
+    };
+    const stale = new AgentTranscript('main');
+    stale.apply([{ op: 'meta.merge', meta: { goal: { objective: 'old', status: 'active' } } }]);
+    stale.apply(snapshotToOps(snapshot, undefined, { goalMode: 'clear' }));
+    expect(stale.getMeta().goal).toBeUndefined();
+
+    const concurrent = new AgentTranscript('main');
+    concurrent.apply([{ op: 'meta.merge', meta: { goal: { objective: 'new', status: 'active' } } }]);
+    concurrent.apply(snapshotToOps(snapshot, undefined, { goalMode: 'preserve' }));
+    expect(concurrent.getMeta().goal?.objective).toBe('new');
   });
 
   it('flushes open frames on turn.ended even without step completion', () => {
@@ -927,6 +1104,21 @@ describe('AgentTranscriptProjector', () => {
     });
   });
 
+  it.each(goalTranscriptScenarios)(
+    'projects shared Goal scenario live: $name',
+    ({ events, expectedGoal, expectedGoalMarkers }) => {
+      const projector = new AgentTranscriptProjector('main');
+      const tx = new AgentTranscript('main');
+      for (const event of events) {
+        tx.apply(projector.map(ev({ type: 'goal.updated', ...event })));
+      }
+      expect(tx.getMeta().goal).toEqual(expectedGoal);
+      expect(
+        tx.getItems().filter((item) => item.kind === 'marker' && item.marker === 'goal'),
+      ).toHaveLength(expectedGoalMarkers);
+    },
+  );
+
   it('projects goal updates into meta.goal plus an inline marker', () => {
     const projector = new AgentTranscriptProjector('main');
     const tx = new AgentTranscript('main');
@@ -953,9 +1145,72 @@ describe('AgentTranscriptProjector', () => {
     const marker = tx.getItems().find((item) => item.kind === 'marker');
     expect(marker).toMatchObject({ marker: 'goal', payload: { snapshot } });
 
-    // Cleared goal: only the marker lands (meta.merge cannot express clearing).
     const clearedOps = projector.map(ev({ type: 'goal.updated', snapshot: null }));
-    expect(clearedOps.every((op) => op.op === 'marker.upsert')).toBe(true);
+    expect(clearedOps[0]).toEqual({ op: 'meta.merge', meta: { goal: null } });
+    tx.apply(clearedOps);
+    expect(tx.getMeta().goal).toBeUndefined();
+    expect(clearedOps.at(-1)?.op).toBe('marker.upsert');
+  });
+
+  it('projects a stable goal mutation marker the cold fold reproduces and dedupes', () => {
+    const projector = new AgentTranscriptProjector('main');
+    const tx = new AgentTranscript('main');
+    const snapshot = {
+      goalId: 'g1',
+      objective: 'ship it',
+      status: 'blocked',
+      completionCriterion: 'tests green',
+      tokensUsed: 12,
+      budget: { tokenBudget: null },
+    };
+    const liveOps = projector.map(
+      ev({ type: 'goal.updated', snapshot, mutation: stableMutationScenario.mutation }),
+    );
+    tx.apply(liveOps);
+
+    const liveMarker = tx.getItems().find((item) => item.kind === 'marker' && item.marker === 'goal');
+    expect(liveMarker).toEqual({
+      kind: 'marker',
+      markerId: 'goal:mutation-1',
+      marker: 'goal',
+      payload: {
+        version: 1,
+        mutationId: 'mutation-1',
+        kind: 'update',
+        goalId: 'g1',
+        status: 'blocked',
+      },
+      at: '1970-01-01T00:00:01.000Z',
+    });
+    expect(tx.getMeta().goal).toEqual({
+      objective: 'ship it',
+      status: 'blocked',
+      completionCriterion: 'tests green',
+      budgetUsed: 12,
+    });
+
+    // The cold fold of the persisted record derives the identical marker.
+    const cold = foldWireRecordFacts([stableMutationScenario.record], groupMessagesIntoSnapshot([]));
+    const coldMarker = cold.items.find((item) => item.kind === 'marker' && item.marker === 'goal');
+    expect(coldMarker).toEqual(liveMarker);
+
+    // Applying the live batch and the cold backfill batch in either order
+    // converges: the shared `goal:<mutation id>` key upserts in place, so the
+    // marker lands exactly once and meta.goal matches the live projection.
+    const coldOps = snapshotToOps(cold);
+    const liveFirst = new AgentTranscript('main');
+    liveFirst.apply(liveOps);
+    liveFirst.apply(coldOps);
+    const coldFirst = new AgentTranscript('main');
+    coldFirst.apply(coldOps);
+    coldFirst.apply(liveOps);
+    for (const merged of [liveFirst, coldFirst]) {
+      expect(
+        merged.getItems().filter((item) => item.kind === 'marker' && item.marker === 'goal'),
+      ).toEqual([liveMarker]);
+      expect(merged.getMeta().goal).toEqual(tx.getMeta().goal);
+    }
+    expect(coldFirst.getItems()).toEqual(liveFirst.getItems());
   });
 
   it('mirrors plan / swarm mode slices into meta.modes (only when provided)', () => {
@@ -1630,7 +1885,7 @@ describe('AgentTranscriptProjector', () => {
           updatedAt: new Date(3000).toISOString(),
         },
       ]);
-      expect(snapshot!.meta.goal).toMatchObject({ objective: 'fix the bug', status: 'active' });
+      expect(snapshot!.meta.goal).toMatchObject({ objective: 'fix the bug', status: 'paused' });
       expect(snapshot!.meta.modes).toEqual({ plan: {} });
       expect(snapshot!.interactions).toEqual([
         {
@@ -1777,7 +2032,7 @@ describe('bindSessionTranscript', () => {
       this.disposeHandlers.add(cb);
       return { dispose: () => this.disposeHandlers.delete(cb) };
     }
-    add(id: string, opts?: { loopStatus?: unknown }): FakeAgentHandle {
+    add(id: string, opts?: { loopStatus?: unknown; goal?: unknown; flush?: () => Promise<void> }): FakeAgentHandle {
       const bus = new FakeBus();
       const handle: FakeAgentHandle = {
         id,
@@ -1788,6 +2043,10 @@ describe('bindSessionTranscript', () => {
             if (token === IAgentLoopService) {
               return { status: () => opts?.loopStatus ?? { state: 'idle' } };
             }
+            if (token === IAgentGoalService) {
+              return { getGoal: () => ({ goal: opts?.goal ?? null }) };
+            }
+            if (token === IWireService) return { flush: opts?.flush ?? (async () => undefined) };
             return undefined;
           },
         },
@@ -1884,6 +2143,17 @@ describe('bindSessionTranscript', () => {
     expect(store.agents().find((a) => a.agentId === 'main')?.disposedAt).toBeUndefined();
     binding.dispose();
   });
+
+  async function seedGoalWireHome(): Promise<string> {
+    const home = await mkdtemp(join(tmpdir(), 'transcript-goal-backfill-'));
+    const wireDir = join(home, 'sessions', 'ws', 's1', 'agents', 'main');
+    await mkdir(wireDir, { recursive: true });
+    await writeFile(
+      join(wireDir, 'wire.jsonl'),
+      `${JSON.stringify({ type: 'goal.create', goalId: 'old', objective: 'old goal', time: 1000 })}\n`,
+    );
+    return home;
+  }
 
   async function seedWireHome(): Promise<string> {
     const home = await mkdtemp(join(tmpdir(), 'transcript-overlay-'));
@@ -2165,6 +2435,207 @@ describe('bindSessionTranscript', () => {
     sub.bus.emit(ev({ type: 'turn.started', turnId: 1, origin: { kind: 'user' } }));
     expect(byAgent.get('sub-1')!.length).toBeGreaterThan(1);
     binding.dispose();
+  });
+
+  it('overlays the authoritative active Goal on first transcript bind', async () => {
+    const home = await seedGoalWireHome();
+    try {
+      const agents = new FakeAgents();
+      agents.add('main', {
+        goal: {
+          goalId: 'live',
+          objective: 'live goal',
+          status: 'active',
+          turnsUsed: 0,
+          tokensUsed: 7,
+          wallClockMs: 0,
+          budget: { tokenBudget: null },
+        },
+      });
+      const service = new TranscriptService({
+        homeDir: home,
+        core: fakeCoreWithAgents(new SessionInteractionService(new TestSessionStateService()), agents),
+      });
+      const store = service.forSessionLive('s1');
+      await service.whenReady('s1');
+
+      expect(store?.getAgent('main')?.getMeta().goal).toMatchObject({
+        objective: 'live goal',
+        status: 'active',
+        budgetUsed: 7,
+      });
+      service.dropSession('s1');
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('does not resurrect an old Goal when it was cleared before first bind', async () => {
+    const home = await seedGoalWireHome();
+    try {
+      const agents = new FakeAgents();
+      agents.add('main', { goal: null });
+      const service = new TranscriptService({
+        homeDir: home,
+        core: fakeCoreWithAgents(new SessionInteractionService(new TestSessionStateService()), agents),
+      });
+      const store = service.forSessionLive('s1');
+      await service.whenReady('s1');
+
+      expect(store?.getAgent('main')?.getMeta().goal).toBeUndefined();
+      service.dropSession('s1');
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('does not resurrect an old Goal when live clear races the backfill', async () => {
+    const home = await seedGoalWireHome();
+    try {
+      const agents = new FakeAgents();
+      const main = agents.add('main');
+      const service = new TranscriptService({
+        homeDir: home,
+        core: fakeCoreWithAgents(new SessionInteractionService(new TestSessionStateService()), agents),
+      });
+      const store = service.forSessionLive('s1');
+      main.bus.emit(ev({ type: 'goal.updated', snapshot: null }));
+      await service.whenReady('s1');
+
+      expect(store?.getAgent('main')?.getMeta().goal).toBeUndefined();
+      expect(
+        store?.getAgent('main')?.getItems().filter((item) => item.kind === 'marker' && item.marker === 'goal'),
+      ).toHaveLength(2);
+      service.dropSession('s1');
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('gates the cold backfill on the pending wire flush barrier', async () => {
+    const home = await seedGoalWireHome();
+    const wirePath = join(home, 'sessions', 'ws', 's1', 'agents', 'main', 'wire.jsonl');
+    // A stable-mutation goal.update that exists only in the engine's pending
+    // buffer until `flush()` appends it to wire.jsonl.
+    const pending = {
+      type: 'goal.update',
+      status: 'blocked',
+      mutation: { id: 'pending-mutation', at: 2000, kind: 'update', goalId: 'old', status: 'blocked' },
+      time: 2000,
+    };
+    let flushStarted!: () => void;
+    let releaseFlush!: () => void;
+    const started = new Promise<void>((resolve) => {
+      flushStarted = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      releaseFlush = resolve;
+    });
+    const flush = async (): Promise<void> => {
+      // The pending record hits disk only when the flush completes: a
+      // backfill that reads before awaiting the barrier can never see it.
+      flushStarted();
+      await released;
+      await appendFile(wirePath, `${JSON.stringify(pending)}\n`);
+    };
+    try {
+      const agents = new FakeAgents();
+      agents.add('main', {
+        goal: {
+          goalId: 'old',
+          objective: 'old goal',
+          status: 'blocked',
+          turnsUsed: 0,
+          tokensUsed: 0,
+          wallClockMs: 0,
+          budget: { tokenBudget: null },
+        },
+        flush,
+      });
+      const service = new TranscriptService({
+        homeDir: home,
+        core: fakeCoreWithAgents(new SessionInteractionService(new TestSessionStateService()), agents),
+      });
+      const store = service.forSessionLive('s1');
+      let readySettled = false;
+      const ready = service.whenReady('s1').then(() => {
+        readySettled = true;
+      });
+      // The flush is held before appending: a barrier-respecting backfill is
+      // parked on it, so whenReady must still be pending after real loop
+      // turns gave any un-gated read the chance to settle.
+      await started;
+      for (let i = 0; i < 5; i += 1) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      expect(readySettled).toBe(false);
+      // …and the pending mutation cannot be in the store yet: its record only
+      // reaches disk once the held flush completes, so the marker appearing
+      // here would prove the read ran before the barrier.
+      expect(
+        store
+          ?.getAgent('main')
+          ?.getItems()
+          .filter((item) => item.kind === 'marker' && item.markerId === 'goal:pending-mutation'),
+      ).toEqual([]);
+      releaseFlush();
+      await ready;
+
+      const main = store?.getAgent('main');
+      // The cold fold read the flushed record: its stable marker landed
+      // exactly once, keyed by the pending mutation id.
+      const stableMarkers =
+        main
+          ?.getItems()
+          .filter((item) => item.kind === 'marker' && item.markerId === 'goal:pending-mutation') ??
+        [];
+      expect(stableMarkers).toHaveLength(1);
+      expect(main?.getMeta().goal).toMatchObject({ objective: 'old goal', status: 'blocked' });
+      service.dropSession('s1');
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('still reads the persisted history when the wire flush fails', async () => {
+    const home = await seedGoalWireHome();
+    try {
+      const agents = new FakeAgents();
+      agents.add('main', {
+        goal: {
+          goalId: 'old',
+          objective: 'old goal',
+          status: 'active',
+          turnsUsed: 0,
+          tokensUsed: 0,
+          wallClockMs: 0,
+          budget: { tokenBudget: null },
+        },
+        flush: () => Promise.reject(new Error('flush boom')),
+      });
+      const service = new TranscriptService({
+        homeDir: home,
+        core: fakeCoreWithAgents(new SessionInteractionService(new TestSessionStateService()), agents),
+      });
+      const store = service.forSessionLive('s1');
+      // The rejection is absorbed (best-effort readiness)…
+      await service.whenReady('s1');
+
+      // …and the already-persisted goal.create still backfills: its legacy
+      // marker and goal meta are only produced by the cold read, so their
+      // presence proves the read ran past the failed flush.
+      const main = store?.getAgent('main');
+      expect(
+        main
+          ?.getItems()
+          .filter((item) => item.kind === 'marker' && item.marker === 'goal')
+          .map((item) => item.kind === 'marker' && item.markerId),
+      ).toEqual(['m1']);
+      expect(main?.getMeta().goal).toMatchObject({ objective: 'old goal', status: 'active' });
+      service.dropSession('s1');
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 
   it('overlays the in-flight turn as running after a backfill', async () => {

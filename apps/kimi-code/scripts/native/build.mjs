@@ -6,8 +6,12 @@ import { runInjectStep } from './03-inject.mjs';
 import { runSeaBlobStep } from './02-sea-blob.mjs';
 import { runSignStep } from './04-sign.mjs';
 import { runVerifyStep } from './05-verify.mjs';
+import {
+  removeNativeBuildReceipt,
+  writeNativeBuildReceipt,
+} from './build-receipt.mjs';
 import { run } from './exec.mjs';
-import { appRoot, nativeIntermediatesDir } from './paths.mjs';
+import { appRoot, nativeIntermediatesDir, targetTriple } from './paths.mjs';
 import { BUILT_IN_CATALOG_ENV } from '../built-in-catalog.mjs';
 
 const { values } = parseArgs({
@@ -33,6 +37,8 @@ function ensureNodeVersion() {
 }
 
 ensureNodeVersion();
+const target = targetTriple();
+await removeNativeBuildReceipt(target);
 console.log(`==> Native build (profile=${profile})`);
 
 if (profile === 'release' && process.env[BUILT_IN_CATALOG_ENV] === undefined) {
@@ -42,7 +48,7 @@ if (profile === 'release' && process.env[BUILT_IN_CATALOG_ENV] === undefined) {
 }
 
 await runBundleStep();
-await runSeaBlobStep();
+const webProvenance = await runSeaBlobStep();
 await runInjectStep();
 
 const identity =
@@ -53,5 +59,6 @@ await runSignStep({ identity, keychainPath });
 // Verify always runs (codesign -dv); spctl gatekeeper gate only after notarization
 // (CI macos-notarize composite action) — orchestrator just self-checks signing here.
 await runVerifyStep({ requireGatekeeper: false });
+await writeNativeBuildReceipt({ target, provenance: webProvenance });
 
 console.log('==> Native build complete');

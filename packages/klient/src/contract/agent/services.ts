@@ -2,8 +2,8 @@
  * Agent-scope domain service contracts. These mirror the signatures of the
  * engine's domain Services (prompt / skill / loop / permissionMode / command /
  * contextMemory / tokenCounting / shellCommand / profile / usage / plan /
- * task) that the agent facade calls directly; payload and result schemas are
- * shared in `agent/schemas.ts` (they mirror the same wire shapes).
+ * task / goal) that the agent facade calls directly; payload and result schemas
+ * are shared in `agent/schemas.ts` (they mirror the same wire shapes).
  */
 
 import { z } from 'zod';
@@ -136,5 +136,101 @@ export const agentTaskContract = {
   readOutput: {
     input: z.tuple([z.string(), z.number().optional()]),
     output: z.string(),
+  },
+} satisfies ServiceContract;
+
+/** `GoalStatus` from the engine's `agent/goal/types`. */
+export const goalStatusSchema = z.enum(['active', 'paused', 'blocked', 'complete']);
+
+/** `GoalActor` from the engine's `agent/goal/types`. */
+export const goalActorSchema = z.enum(['user', 'model', 'runtime', 'system']);
+
+/**
+ * `GoalBudgetLimits` from the engine's `agent/goal/types`. Strict — unknown
+ * keys are rejected — and every limit must be a non-negative finite number
+ * (zod v4's `z.number()` already rejects NaN and ±Infinity).
+ */
+export const goalBudgetLimitsSchema = z
+  .object({
+    tokenBudget: z.number().nonnegative().optional(),
+    turnBudget: z.number().nonnegative().optional(),
+    wallClockBudgetMs: z.number().nonnegative().optional(),
+  })
+  .strict();
+
+/** `GoalBudgetReport` from the engine's `agent/goal/types`. */
+export const goalBudgetReportSchema = z.object({
+  tokenBudget: z.number().nullable(),
+  turnBudget: z.number().nullable(),
+  wallClockBudgetMs: z.number().nullable(),
+  remainingTokens: z.number().nullable(),
+  remainingTurns: z.number().nullable(),
+  remainingWallClockMs: z.number().nullable(),
+  tokenBudgetReached: z.boolean(),
+  turnBudgetReached: z.boolean(),
+  wallClockBudgetReached: z.boolean(),
+  overBudget: z.boolean(),
+});
+
+/** `GoalSnapshot` from the engine's `agent/goal/types`. */
+export const goalSnapshotSchema = z.object({
+  goalId: z.string(),
+  objective: z.string(),
+  completionCriterion: z.string().optional(),
+  status: goalStatusSchema,
+  turnsUsed: z.number(),
+  tokensUsed: z.number(),
+  wallClockMs: z.number(),
+  budget: goalBudgetReportSchema,
+  terminalReason: z.string().optional(),
+});
+
+/** `GoalToolResult` from the engine's `agent/goal/types`. */
+export const goalToolResultSchema = z.object({
+  goal: goalSnapshotSchema.nullable(),
+});
+
+/** `CreateGoalInput` from the engine's `agent/goal/types`. */
+export const createGoalInputSchema = z.object({
+  objective: z.string(),
+  completionCriterion: z.string().optional(),
+  replace: z.boolean().optional(),
+});
+
+/** `GoalReasonInput` from the engine's `agent/goal/goal`. */
+export const goalReasonInputSchema = z.object({
+  reason: z.string().optional(),
+});
+
+/** `ResumeGoalInput` from the engine's `agent/goal/goal`. */
+export const resumeGoalInputSchema = z.object({
+  reason: z.string().optional(),
+  continueIfPaused: z.boolean().optional(),
+  continueIfBlocked: z.boolean().optional(),
+});
+
+/** The `setBudgetLimits` input record (`{ budgetLimits: GoalBudgetLimits }`). */
+export const setGoalBudgetLimitsInputSchema = z.object({
+  budgetLimits: goalBudgetLimitsSchema,
+});
+
+/**
+ * `IAgentGoalService` from the engine's `agent/goal/goal`. Only the
+ * user-facing lifecycle (create/get/pause/resume/cancel/setBudgetLimits) is
+ * on the wire: `markBlocked` / `markComplete` / `pauseActiveGoal` are
+ * runtime/model-owned transitions the engine's loop drives, and this table is
+ * the dispatcher's allowlist — anything not listed here is unreachable. The
+ * exact-length input tuples also reject the engine's trailing `actor`
+ * argument; the wire default (`user`) always applies.
+ */
+export const agentGoalContract = {
+  getGoal: { input: z.tuple([]), output: goalToolResultSchema },
+  createGoal: { input: z.tuple([createGoalInputSchema]), output: goalSnapshotSchema },
+  pauseGoal: { input: z.tuple([goalReasonInputSchema]), output: goalSnapshotSchema },
+  resumeGoal: { input: z.tuple([resumeGoalInputSchema]), output: goalSnapshotSchema },
+  cancelGoal: { input: z.tuple([goalReasonInputSchema]), output: goalSnapshotSchema },
+  setBudgetLimits: {
+    input: z.tuple([setGoalBudgetLimitsInputSchema]),
+    output: goalSnapshotSchema,
   },
 } satisfies ServiceContract;

@@ -57,6 +57,11 @@ describe('SessionInitService', () => {
         onWillStartAgentTask: { run: vi.fn(async () => {}) },
       },
       notifyAgentTaskStopped: vi.fn(),
+      onDidStopAgentTask: () => ({ dispose: () => {} }),
+      onDidStartAgentRun: () => ({ dispose: () => {} }),
+      onDidFinishAgentRun: () => ({ dispose: () => {} }),
+      notifyAgentRunStarted: vi.fn(),
+      notifyAgentRunFinished: vi.fn(),
       get: vi.fn((id: string) => handles[id]),
       create: vi.fn(async () => handles['agent-0']),
       run: vi.fn(async (agentId: string) => ({
@@ -98,7 +103,11 @@ describe('SessionInitService', () => {
         get: (id: unknown) => {
           if (id === IAgentPermissionModeService) return permissionMode;
           if (id === IAgentProfileService)
-            return { republishStatus, getEffectiveThinkingLevel: () => 'off' };
+            return {
+              republishStatus,
+              getEffectiveThinkingLevel: () => 'off',
+              data: () => ({ modelAlias: 'mock-model', profileName: 'coder' }),
+            };
           return undefined;
         },
       },

@@ -7,7 +7,6 @@
  *              model?: string,
  *              thinking?: 'off'|'low'|'medium'|'high'|'xhigh'|'max',
  *              permission_mode?: 'manual'|'yolo'|'auto',
- *              plan_mode?: boolean,
  *              disabled_tools?: string[],
  *            }
  *     Reply: PromptSubmitResult { prompt_id, user_message_id, status, content, created_at }
@@ -43,6 +42,13 @@ export type PromptThinking = z.infer<typeof promptThinkingSchema>;
 export const promptPermissionModeSchema = z.enum(['manual', 'yolo', 'auto']);
 export type PromptPermissionMode = z.infer<typeof promptPermissionModeSchema>;
 
+const deprecatedPromptFields = [
+  'plan_mode',
+  'swarm_mode',
+  'goal_objective',
+  'goal_control',
+] as const;
+
 export const promptSubmissionSchema = z.object({
   content: z.array(messageContentSchema).min(1),
   metadata: z.record(z.string(), z.unknown()).optional(),
@@ -53,14 +59,26 @@ export const promptSubmissionSchema = z.object({
   model: z.string().min(1).optional(),
   thinking: promptThinkingSchema.optional(),
   permission_mode: promptPermissionModeSchema.optional(),
-  plan_mode: z.boolean().optional(),
-  swarm_mode: z.boolean().optional(),
-  goal_objective: z.string().optional(),
-  goal_control: z.enum(['pause', 'resume', 'cancel']).optional(),
+  // Canonical prompt submissions reject these session-control aliases. The
+  // kap-server edge temporarily adapts the two mode fields for its committed Web bundle;
+  // Goal aliases remain invalid and all new clients use the canonical session surfaces.
+  plan_mode: z.never().optional(),
+  swarm_mode: z.never().optional(),
+  goal_objective: z.never().optional(),
+  goal_control: z.never().optional(),
   // Client-managed session tool denylist: full-replace on every submit; the
   // bound profile's own deny always survives. Omit to keep the persisted
   // value, send `[]` to clear the client portion.
   disabled_tools: z.array(z.string()).optional(),
+}).superRefine((value, ctx) => {
+  for (const field of deprecatedPromptFields) {
+    if (!Object.hasOwn(value, field)) continue;
+    ctx.addIssue({
+      code: 'custom',
+      path: [field],
+      message: `${field} is not accepted on prompt submissions`,
+    });
+  }
 });
 export type PromptSubmission = z.infer<typeof promptSubmissionSchema>;
 

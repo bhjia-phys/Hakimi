@@ -11,6 +11,7 @@ import { z } from 'zod';
 
 import type { EventRegistration } from '../types.js';
 import { researchStatusSnapshotSchema } from './researchSchemas.js';
+import { goalActorSchema, goalSnapshotSchema, goalStatusSchema } from './services.js';
 
 /**
  * Scope-stream registration (`kind: 'stream'`). Declared structurally here
@@ -194,6 +195,57 @@ export const aitpModeUpdatedEventSchema = z.object({
   type: z.literal('aitp_mode.updated'),
 });
 
+/** Protocol `GoalChangeStats` — mirrored field-for-field. */
+export const goalChangeStatsSchema = z.object({
+  turnsUsed: z.number(),
+  tokensUsed: z.number(),
+  wallClockMs: z.number(),
+});
+
+/** Protocol `GoalChange` — mirrored field-for-field. */
+export const goalChangeSchema = z.object({
+  kind: z.enum(['lifecycle', 'completion']),
+  status: goalStatusSchema.optional(),
+  reason: z.string().optional(),
+  stats: goalChangeStatsSchema.optional(),
+  actor: goalActorSchema.optional(),
+});
+
+/**
+ * Same value as `GOAL_MUTATION_MAX_AT` in `@moonshot-ai/protocol`'s events.ts
+ * (and the engine's goal Ops) — the largest epoch-ms that survives
+ * `new Date(at).toISOString()`; mirrored locally (klient keeps no runtime
+ * protocol import).
+ */
+export const GOAL_MUTATION_MAX_AT = 8_640_000_000_000_000;
+
+/**
+ * Protocol `GoalMutation` — mirrored field-for-field. Bounded to the valid
+ * Date range so transcript marker projections can never throw on it.
+ */
+export const goalMutationSchema = z.object({
+  id: z.string(),
+  at: z
+    .number()
+    .finite()
+    .nonnegative()
+    .max(GOAL_MUTATION_MAX_AT)
+    .refine((value) => Number.isFinite(new Date(value).getTime()), {
+      message: 'at must be a valid Date epoch-ms',
+    }),
+  kind: z.enum(['create', 'update', 'clear']),
+  goalId: z.string(),
+  status: goalStatusSchema.optional(),
+});
+
+/** Protocol `GoalUpdatedEvent` — mirrored field-for-field. */
+export const goalUpdatedEventSchema = z.object({
+  type: z.literal('goal.updated'),
+  snapshot: goalSnapshotSchema.nullable(),
+  change: goalChangeSchema.optional(),
+  mutation: goalMutationSchema.optional(),
+});
+
 // ── registrations ───────────────────────────────────────────────────────────
 
 /** Public event name → payload type. Keys must stay in sync with `agentEvents`. */
@@ -219,6 +271,7 @@ export interface AgentEventPayloads {
   'agent.status.updated': z.infer<typeof agentStatusUpdatedEventSchema>;
   'research.updated': z.infer<typeof researchUpdatedEventSchema>;
   'aitp_mode.updated': z.infer<typeof aitpModeUpdatedEventSchema>;
+  'goal.updated': z.infer<typeof goalUpdatedEventSchema>;
 }
 
 export type AgentEventName = keyof AgentEventPayloads;
@@ -290,5 +343,11 @@ export const agentEvents = {
     name: 'events',
     type: 'aitp_mode.updated',
     schema: aitpModeUpdatedEventSchema,
+  },
+  'goal.updated': {
+    kind: 'stream',
+    name: 'events',
+    type: 'goal.updated',
+    schema: goalUpdatedEventSchema,
   },
 } satisfies Record<AgentEventName, AgentEventRegistration>;

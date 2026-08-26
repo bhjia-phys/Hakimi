@@ -18,6 +18,7 @@ import {
   transcriptPlanResponseSchema,
   transcriptResponseSchema,
   type TranscriptAttachment,
+  type TranscriptContinuation,
   type TranscriptInteraction,
   type TranscriptItem,
   type TranscriptMeta,
@@ -40,6 +41,13 @@ export interface TranscriptPage {
   readonly pendingInteractions: readonly string[];
   /** Op-batch watermark (state includes every batch with seq <= N); absent on legacy servers. */
   readonly seq?: number | undefined;
+  /**
+   * Reducer continuation (standalone placement baseline) covering exactly this
+   * page's items — hydrated into the store's placement memory so later ops
+   * re-derive the same layout as the server. Absent on legacy servers and on
+   * pages without anchored standalone items.
+   */
+  readonly continuation?: TranscriptContinuation | undefined;
 }
 
 /** One turn per page: fine-grained paging — the viewport grows a turn at a time. */
@@ -97,6 +105,7 @@ export async function fetchTranscriptPage(
     meta: parsed.data.meta,
     pendingInteractions: parsed.data.pending_interactions,
     seq: parsed.data.seq,
+    continuation: parsed.data.continuation,
   };
 }
 

@@ -54,6 +54,8 @@ export function isAppendOnly(ops: readonly TranscriptOperation[]): boolean {
  * detail is stripped, leaving turn headers, standalone items, tasks,
  * interactions and meta (exactly what 'turn' admits); 'block' and 'delta'
  * carry the full snapshot, and 'off' never reaches here (no reset is sent).
+ * The reducer `continuation` is convergence state, not step/frame detail, so
+ * it rides through the spread untouched at every grade.
  */
 export function redactSnapshotForGrade(
   grade: TranscriptGrade,

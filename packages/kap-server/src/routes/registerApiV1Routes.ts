@@ -34,6 +34,7 @@ import { registerModelCatalogRoutes } from './modelCatalog';
 import { registerOAuthRoutes } from './oauth';
 import { registerPluginsRoutes } from './plugins';
 import { registerPromptsRoutes } from './prompts';
+import { registerProviderUsageRoutes } from './providerUsage';
 import { registerQuestionsRoutes } from './questions';
 import { registerResearchRoutes } from './research';
 import { registerRuntimeRoutes } from './runtime';
@@ -125,6 +126,10 @@ export async function registerApiV1Routes(
 
       registerAuthRoute(apiV1 as unknown as Parameters<typeof registerAuthRoute>[0], core);
       registerOAuthRoutes(apiV1 as unknown as Parameters<typeof registerOAuthRoutes>[0], core);
+      registerProviderUsageRoutes(
+        apiV1 as unknown as Parameters<typeof registerProviderUsageRoutes>[0],
+        core,
+      );
       registerConfigRoutes(apiV1 as unknown as Parameters<typeof registerConfigRoutes>[0], core);
       registerModelCatalogRoutes(
         apiV1 as unknown as Parameters<typeof registerModelCatalogRoutes>[0],

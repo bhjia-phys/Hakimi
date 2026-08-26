@@ -6,7 +6,9 @@ import { paginateTurns } from '#/pagination/paginate';
 import { ViewRegistry } from '#/view/registry';
 import { groupMessagesIntoSnapshot } from '#/history/groupTurns';
 import { foldWireRecordFacts, type HistoryWireRecord } from '#/history/foldFacts';
+import { GOAL_MUTATION_MAX_AT } from '#/history/goalMarker';
 import {
+  agentTranscriptSnapshotSchema,
   transcriptOperationSchema,
   transcriptQuerySchema,
   transcriptResponseSchema,
@@ -14,6 +16,11 @@ import {
 } from '#/contract/schema';
 import type { TranscriptItem } from '#/model/item';
 import type { AgentTranscriptSnapshot, TranscriptOperation } from '#/ops/operation';
+import {
+  forkedGoalRecords,
+  goalTranscriptScenarios,
+  stableMutationScenario,
+} from '../test-support/goalTranscriptFixtures';
 
 const idLabel = (i: TranscriptItem): string =>
   i.kind === 'turn' ? i.turnId : i.kind === 'marker' ? i.markerId : i.refId;
@@ -159,6 +166,7 @@ describe('granularity', () => {
       todos: [{ todoId: 'todo', items: [{ title: 'write tests', status: 'in_progress' as const }] }],
       prompts: [{ promptId: 'p1', status: 'running' as const, createdAt: '2026-07-22T00:00:00.000Z' }],
       meta: {},
+      continuation: { standalonePlacements: [{ itemId: 'm1', beforeTurn: 2 }] },
     };
     const turnGrade = redactSnapshotForGrade('turn', snapshot);
     // Global entities flow at 'turn' grade untouched.
@@ -166,6 +174,9 @@ describe('granularity', () => {
     expect(turnGrade.attachments).toHaveLength(1);
     expect(turnGrade.todos).toHaveLength(1);
     expect(turnGrade.prompts).toHaveLength(1);
+    // The reducer continuation is convergence state, not step/frame detail:
+    // it rides through the redaction untouched.
+    expect(turnGrade.continuation).toEqual(snapshot.continuation);
     const turn = turnGrade.items[0];
     expect(turn?.kind === 'turn' && turn.steps).toEqual([]);
     expect(turn?.kind === 'turn' && turn.prompt).toBe('hi');
@@ -275,11 +286,177 @@ describe('contract schemas', () => {
       { op: 'todo.upsert', todo: { todoId: 'todo', items: [{ title: 'x', status: 'done' }] } },
       promptOp,
       { op: 'meta.merge', meta: { goal: { objective: 'x', status: 'active' } } },
+      { op: 'meta.merge', meta: { goal: null } },
       { op: 'items.remove', ids: ['t1'] },
     ];
     for (const op of ops) {
       expect(transcriptOperationSchema.parse(op)).toBeDefined();
     }
+  });
+
+  it('roundtrips the beforeItem in-segment anchor on standalone upserts', () => {
+    // The backfill-only sibling chain survives validation verbatim; ops
+    // without it (legacy / live) validate unchanged.
+    const anchored: TranscriptOperation = {
+      op: 'marker.upsert',
+      item: { kind: 'marker', markerId: 'm1', marker: 'goal' },
+      beforeTurn: 1,
+      beforeItem: 'm2',
+    };
+    expect(transcriptOperationSchema.parse(anchored)).toEqual(anchored);
+    const anchoredRef: TranscriptOperation = {
+      op: 'taskref.upsert',
+      item: { kind: 'taskref', refId: 'r1', taskId: 'task1' },
+      beforeTurn: 1,
+      beforeItem: 'r2',
+    };
+    expect(transcriptOperationSchema.parse(anchoredRef)).toEqual(anchoredRef);
+  });
+
+  it('rejects an empty beforeItem on standalone upserts while omitting it stays valid', () => {
+    // The anchor must NAME an item: an empty string carries no information —
+    // same contract as the continuation's standalonePlacementBaselineEntry.
+    // Legacy ops simply omit the key and keep validating.
+    const marker = { kind: 'marker', markerId: 'm1', marker: 'goal' } as const;
+    const taskref = { kind: 'taskref', refId: 'r1', taskId: 'task1' } as const;
+    expect(
+      transcriptOperationSchema.safeParse({
+        op: 'marker.upsert',
+        item: marker,
+        beforeTurn: 1,
+        beforeItem: '',
+      }).success,
+    ).toBe(false);
+    expect(
+      transcriptOperationSchema.safeParse({
+        op: 'taskref.upsert',
+        item: taskref,
+        beforeTurn: 1,
+        beforeItem: '',
+      }).success,
+    ).toBe(false);
+    expect(transcriptOperationSchema.safeParse({ op: 'marker.upsert', item: marker }).success).toBe(
+      true,
+    );
+    expect(
+      transcriptOperationSchema.safeParse({ op: 'taskref.upsert', item: taskref }).success,
+    ).toBe(true);
+  });
+
+  it('rejects a beforeItem anchor without beforeTurn on standalone upserts', () => {
+    // beforeItem only refines the beforeTurn segment's intra-order and never
+    // travels alone; a bare op (legacy / live) and both anchors together stay
+    // valid.
+    const marker = { kind: 'marker', markerId: 'm1', marker: 'goal' } as const;
+    const taskref = { kind: 'taskref', refId: 'r1', taskId: 'task1' } as const;
+    expect(
+      transcriptOperationSchema.safeParse({ op: 'marker.upsert', item: marker, beforeItem: 'm2' })
+        .success,
+    ).toBe(false);
+    expect(
+      transcriptOperationSchema.safeParse({ op: 'taskref.upsert', item: taskref, beforeItem: 'r2' })
+        .success,
+    ).toBe(false);
+    expect(
+      transcriptOperationSchema.safeParse({ op: 'marker.upsert', item: marker, beforeTurn: 1 })
+        .success,
+    ).toBe(true);
+    expect(
+      transcriptOperationSchema.safeParse({
+        op: 'taskref.upsert',
+        item: taskref,
+        beforeTurn: 1,
+        beforeItem: 'r2',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects a continuation entry whose beforeItem lacks a beforeTurn anchor', () => {
+    // Same contract as the upsert ops: a baseline entry's beforeItem refines
+    // its beforeTurn anchor and never stands alone.
+    const baseSnapshot = {
+      items: [{ kind: 'marker', markerId: 'm1', marker: 'goal' }],
+      tasks: [],
+      interactions: [],
+      attachments: [],
+      todos: [],
+      prompts: [],
+      meta: {},
+    };
+    const anchored = {
+      ...baseSnapshot,
+      continuation: { standalonePlacements: [{ itemId: 'm1', beforeTurn: 1, beforeItem: 'm2' }] },
+    };
+    expect(agentTranscriptSnapshotSchema.safeParse(anchored).success).toBe(true);
+    const orphan = {
+      ...baseSnapshot,
+      continuation: { standalonePlacements: [{ itemId: 'm1', beforeItem: 'm2' }] },
+    };
+    expect(agentTranscriptSnapshotSchema.safeParse(orphan).success).toBe(false);
+  });
+
+  it('roundtrips the snapshot continuation and tolerates its absence', () => {
+    // The reducer continuation rides the snapshot / REST page as JSON-safe
+    // entries; legacy shapes without the key validate unchanged.
+    const continuation = {
+      standalonePlacements: [
+        { itemId: 'm1', beforeTurn: 1, beforeItem: 'r1' },
+        { itemId: 'r1', beforeTurn: 1 },
+      ],
+    };
+    const baseSnapshot = {
+      items: [
+        { kind: 'marker', markerId: 'm1', marker: 'goal' },
+        { kind: 'taskref', refId: 'r1', taskId: 'task1' },
+      ],
+      tasks: [],
+      interactions: [],
+      attachments: [],
+      todos: [],
+      prompts: [],
+      meta: {},
+    };
+    const withContinuation = { ...baseSnapshot, continuation };
+    expect(agentTranscriptSnapshotSchema.parse(withContinuation)).toEqual(withContinuation);
+    expect(agentTranscriptSnapshotSchema.parse(baseSnapshot)).toEqual(baseSnapshot);
+    // Anchor-less entries are shape-legal (they hydrate to nothing).
+    expect(
+      agentTranscriptSnapshotSchema.safeParse({
+        ...baseSnapshot,
+        continuation: { standalonePlacements: [{ itemId: 'm1' }] },
+      }).success,
+    ).toBe(true);
+    // A non-integer beforeTurn or an empty itemId is rejected.
+    expect(
+      agentTranscriptSnapshotSchema.safeParse({
+        ...baseSnapshot,
+        continuation: { standalonePlacements: [{ itemId: 'm1', beforeTurn: 1.5 }] },
+      }).success,
+    ).toBe(false);
+    expect(
+      agentTranscriptSnapshotSchema.safeParse({
+        ...baseSnapshot,
+        continuation: { standalonePlacements: [{ itemId: '', beforeTurn: 1 }] },
+      }).success,
+    ).toBe(false);
+
+    // The REST page shape carries the same optional field.
+    const basePage = {
+      agent_id: 'main',
+      items: [],
+      has_more: false,
+      tasks: [],
+      interactions: [],
+      attachments: [],
+      todos: [],
+      prompts: [],
+      meta: {},
+      agents: [],
+      pending_interactions: [],
+    };
+    const pageWithContinuation = { ...basePage, continuation };
+    expect(transcriptResponseSchema.parse(pageWithContinuation)).toEqual(pageWithContinuation);
+    expect(transcriptResponseSchema.safeParse(basePage).success).toBe(true);
   });
 
   it('roundtrips ops carrying the extended wire detail', () => {
@@ -740,6 +917,145 @@ describe('foldWireRecordFacts (cold facts)', () => {
     expect(folded.items).toBe(base.items);
   });
 
+  it.each(goalTranscriptScenarios)(
+    'folds shared Goal scenario: $name',
+    ({ records, expectedGoal, expectedColdGoal, expectedGoalMarkers }) => {
+      const folded = foldWireRecordFacts(records, groupMessagesIntoSnapshot([]));
+      expect(folded.meta.goal).toEqual(expectedColdGoal ?? expectedGoal);
+      expect(
+        folded.items.filter((item) => item.kind === 'marker' && item.marker === 'goal'),
+      ).toHaveLength(expectedGoalMarkers);
+    },
+  );
+
+  it('folds a record carrying a stable mutation into one canonical goal marker', () => {
+    // The same mutation arriving in two records (e.g. the live op record plus
+    // a replayed copy) folds to exactly one marker, keyed by the mutation id.
+    const folded = foldWireRecordFacts(
+      [stableMutationScenario.record, { ...stableMutationScenario.record, time: 2000 }],
+      groupMessagesIntoSnapshot([]),
+    );
+    expect(
+      folded.items.filter((item) => item.kind === 'marker' && item.marker === 'goal'),
+    ).toEqual([
+      {
+        kind: 'marker',
+        markerId: 'goal:mutation-1',
+        marker: 'goal',
+        payload: {
+          version: 1,
+          mutationId: 'mutation-1',
+          kind: 'update',
+          goalId: 'g1',
+          status: 'blocked',
+        },
+        at: '1970-01-01T00:00:01.000Z',
+      },
+    ]);
+
+    // Records written before mutations existed keep the legacy `mN` ids.
+    const legacy = foldWireRecordFacts(
+      [{ type: 'goal.update', status: 'blocked', time: 1001 }],
+      groupMessagesIntoSnapshot([]),
+    );
+    expect(
+      legacy.items
+        .filter((item) => item.kind === 'marker' && item.marker === 'goal')
+        .map((item) => item.kind === 'marker' && item.markerId),
+    ).toEqual(['m1']);
+
+    // A mutation whose `at` cannot form a valid Date is rejected by the
+    // reader — the fold falls back to the legacy `mN` marker instead of
+    // throwing on the ISO conversion.
+    const outOfRange = foldWireRecordFacts(
+      [
+        {
+          type: 'goal.update',
+          status: 'blocked',
+          mutation: { id: 'mutation-2', at: 1e30, kind: 'update', goalId: 'g1', status: 'blocked' },
+          time: 1001,
+        },
+      ],
+      groupMessagesIntoSnapshot([]),
+    );
+    expect(
+      outOfRange.items
+        .filter((item) => item.kind === 'marker' && item.marker === 'goal')
+        .map((item) => item.kind === 'marker' && item.markerId),
+    ).toEqual(['m1']);
+
+    // A negative epoch is rejected the same way (0 remains valid).
+    const negative = foldWireRecordFacts(
+      [
+        {
+          type: 'goal.update',
+          status: 'blocked',
+          mutation: { id: 'mutation-3', at: -1, kind: 'update', goalId: 'g1', status: 'blocked' },
+          time: 1001,
+        },
+      ],
+      groupMessagesIntoSnapshot([]),
+    );
+    expect(
+      negative.items
+        .filter((item) => item.kind === 'marker' && item.marker === 'goal')
+        .map((item) => item.kind === 'marker' && item.markerId),
+    ).toEqual(['m1']);
+
+    const epochFloor = foldWireRecordFacts(
+      [
+        {
+          type: 'goal.update',
+          status: 'blocked',
+          mutation: { id: 'mutation-4', at: 0, kind: 'update', goalId: 'g1', status: 'blocked' },
+          time: 1001,
+        },
+      ],
+      groupMessagesIntoSnapshot([]),
+    );
+    expect(
+      epochFloor.items
+        .filter((item) => item.kind === 'marker' && item.marker === 'goal')
+        .map((item) => item.kind === 'marker' && item.markerId),
+    ).toEqual(['goal:mutation-4']);
+
+    // The exact Date ceiling still yields a canonical marker…
+    const ceiling = foldWireRecordFacts(
+      [
+        {
+          type: 'goal.update',
+          status: 'blocked',
+          mutation: { id: 'mutation-5', at: GOAL_MUTATION_MAX_AT, kind: 'update', goalId: 'g1', status: 'blocked' },
+          time: 1001,
+        },
+      ],
+      groupMessagesIntoSnapshot([]),
+    );
+    expect(
+      ceiling.items
+        .filter((item) => item.kind === 'marker' && item.marker === 'goal')
+        .map((item) => item.kind === 'marker' && item.markerId),
+    ).toEqual(['goal:mutation-5']);
+
+    // …while one past it falls back to the legacy `mN` marker.
+    const pastCeiling = foldWireRecordFacts(
+      [
+        {
+          type: 'goal.update',
+          status: 'blocked',
+          mutation: { id: 'mutation-6', at: GOAL_MUTATION_MAX_AT + 1, kind: 'update', goalId: 'g1', status: 'blocked' },
+          time: 1001,
+        },
+      ],
+      groupMessagesIntoSnapshot([]),
+    );
+    expect(
+      pastCeiling.items
+        .filter((item) => item.kind === 'marker' && item.marker === 'goal')
+        .map((item) => item.kind === 'marker' && item.markerId),
+    ).toEqual(['m1']);
+  });
+
   it('folds goal create/update/clear into meta.goal with markers, last write wins', () => {
     const base = baseWithMarker();
     // The base carries one compaction marker (`m1`) — folded markers must
@@ -787,6 +1103,18 @@ describe('foldWireRecordFacts (cold facts)', () => {
       base,
     );
     expect(cleared.meta.goal).toBeUndefined();
+    expect(
+      cleared.items.filter((item) => item.kind === 'marker' && item.marker === 'goal'),
+    ).toHaveLength(2);
+
+    const forked = foldWireRecordFacts(
+      forkedGoalRecords,
+      base,
+    );
+    expect(forked.meta.goal).toBeUndefined();
+    expect(
+      forked.items.filter((item) => item.kind === 'marker' && item.marker === 'goal'),
+    ).toHaveLength(1);
   });
 
   it('marks user-cancelled turns with interruption markers, skipping unattributable cancels', () => {

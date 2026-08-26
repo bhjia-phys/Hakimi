@@ -9,8 +9,16 @@ export * from './model/task';
 export * from './model/meta';
 export * from './model/prompt';
 export * from './ops/operation';
-export { EMPTY_AGENT_STATE, applyOperation, appendAtOffset } from './ops/apply';
-export type { AgentState, ApplyResult } from './ops/apply';
+export {
+  EMPTY_AGENT_STATE,
+  applyOperation,
+  appendAtOffset,
+  continuationForItems,
+  filterContinuation,
+  normalizeStandaloneItems,
+  placementsFromContinuation,
+} from './ops/apply';
+export type { AgentState, ApplyResult, StandalonePlacement } from './ops/apply';
 export * from './store/agentTranscript';
 export * from './store/transcriptStore';
 export * from './granularity/grade';
@@ -19,5 +27,6 @@ export * from './view/registry';
 export * from './pagination/paginate';
 export * from './history/groupTurns';
 export * from './history/foldFacts';
+export * from './history/goalMarker';
 export * from './contract/schema';
 export * from './contract/events';

@@ -47,7 +47,10 @@ export interface IOAuthService {
   logout(provider?: string): Promise<OAuthLogoutResponse>;
   status(provider?: string): Promise<AuthStatus>;
   refreshOAuthProviderModels(): Promise<RefreshOAuthProviderModelsResponse>;
-  getManagedUsage(provider?: string): Promise<AuthManagedUsageResult>;
+  getManagedUsage(
+    provider?: string,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<AuthManagedUsageResult>;
   getManagedUserInfo(provider?: string): Promise<AuthManagedUserInfoResult>;
   resolveTokenProvider(provider: string, oauthRef?: OAuthRef): BearerTokenProvider | undefined;
   getCachedAccessToken(provider: string, oauthRef?: OAuthRef): Promise<string | undefined>;
@@ -68,7 +71,7 @@ export interface IOAuthToolkit {
   tokenProvider(providerName?: string, oauthRef?: KimiOAuthTokenRef): BearerTokenProvider;
   getManagedUsage(
     providerName?: string,
-    options?: { readonly oauthRef?: KimiOAuthTokenRef; readonly baseUrl?: string },
+    options?: { readonly oauthRef?: KimiOAuthTokenRef; readonly baseUrl?: string; readonly signal?: AbortSignal },
   ): Promise<AuthManagedUsageResult>;
   getManagedUserInfo(
     providerName?: string,

@@ -139,7 +139,8 @@ export interface TranscriptMeta {
   readonly agent?: AgentStatusMeta;
 }
 
-/** Contract shape of a `meta.merge` payload — like {@link TranscriptMeta}, but mode keys may be `null` to clear. */
-export type TranscriptMetaMerge = Omit<TranscriptMeta, 'modes'> & {
+/** Contract shape of a `meta.merge` payload — `null` clears Goal or individual mode keys. */
+export type TranscriptMetaMerge = Omit<TranscriptMeta, 'goal' | 'modes'> & {
+  readonly goal?: GoalMeta | null;
   readonly modes?: ModesMetaMerge;
 };

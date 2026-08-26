@@ -38,7 +38,7 @@ import type {
   Event,
   SessionSummary,
 } from '../../src';
-import type { PromptSubmission, Session } from '@moonshot-ai/protocol';
+import type { Session } from '@moonshot-ai/protocol';
 
 import {
   type IAuthSummaryService,
@@ -46,6 +46,7 @@ import {
   type ICoreProcessService,
   type ILogService,
   type ISessionService,
+  type LegacyPromptSubmission as PromptSubmission,
   PromptAlreadyCompletedError,
   PromptNotFoundError,
   PromptService,

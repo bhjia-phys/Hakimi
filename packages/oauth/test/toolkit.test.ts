@@ -651,6 +651,105 @@ describe('KimiOAuthToolkit', () => {
     });
   });
 
+  it('forwards a caller signal to the managed usage fetch', async () => {
+    const storage = new MemoryTokenStorage();
+    storage.tokens.set('kimi-code', token('access-1'));
+    const fetchSignals: AbortSignal[] = [];
+    const fetchImpl = vi.fn(
+      (_input: unknown, init?: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal === undefined || signal === null) return;
+          fetchSignals.push(signal);
+          signal.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'));
+          });
+        }),
+    ) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchImpl);
+    const toolkit = new KimiOAuthToolkit({
+      homeDir: join('/tmp', 'kimi-oauth-toolkit-test'),
+      identity: TEST_IDENTITY,
+      storage,
+      now: () => 100,
+    });
+
+    const controller = new AbortController();
+    const pending = toolkit.getManagedUsage(undefined, { signal: controller.signal });
+    // Wait until the usage fetch is actually in flight, then cancel it: the
+    // caller signal must reach the fetch machinery mid-request.
+    await vi.waitFor(() => {
+      expect(fetchSignals[0]).toBeDefined();
+    });
+    controller.abort();
+    const result = await pending;
+
+    expect(fetchSignals[0]?.aborted).toBe(true);
+    expect(result).toMatchObject({ kind: 'error', message: 'Usage query cancelled.' });
+  });
+
+  it('derives the managed usage URL from a custom provider base', async () => {
+    const storage = new MemoryTokenStorage();
+    const oauthKey = 'custom-host';
+    storage.tokens.set(
+      resolveKimiTokenStorageName({ providerName: KIMI_CODE_PROVIDER_NAME, oauthKey }),
+      token('access-1'),
+    );
+    const fetchImpl = vi.fn(
+      async (_input: unknown, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify({ usage: { used: 10, limit: 100, name: 'Weekly limit' } }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+    );
+    vi.stubGlobal('fetch', fetchImpl);
+    const toolkit = new KimiOAuthToolkit({
+      homeDir: join('/tmp', 'kimi-oauth-toolkit-test'),
+      identity: TEST_IDENTITY,
+      storage,
+      now: () => 100,
+    });
+
+    await expect(
+      toolkit.getManagedUsage(undefined, {
+        baseUrl: 'https://gw.example.com/coding/v1',
+        oauthRef: { key: oauthKey },
+      }),
+    ).resolves.toMatchObject({ kind: 'ok' });
+
+    const calls = fetchImpl.mock.calls as unknown as [string, RequestInit?][];
+    expect(calls[0]?.[0]).toBe('https://gw.example.com/coding/v1/usages');
+    expect(calls[0]?.[1]?.redirect).toBe('error');
+  });
+
+  it('rejects an invalid custom managed provider base without outbound request', async () => {
+    const storage = new MemoryTokenStorage();
+    const oauthKey = 'bad-base';
+    storage.tokens.set(
+      resolveKimiTokenStorageName({ providerName: KIMI_CODE_PROVIDER_NAME, oauthKey }),
+      token('access-1'),
+    );
+    const fetchImpl = vi.fn(async (_input: unknown, _init?: RequestInit) => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchImpl);
+    const toolkit = new KimiOAuthToolkit({
+      homeDir: join('/tmp', 'kimi-oauth-toolkit-test'),
+      identity: TEST_IDENTITY,
+      storage,
+      now: () => 100,
+    });
+
+    const result = await toolkit.getManagedUsage(undefined, {
+      baseUrl: 'https://user:pass@host/coding/v1',
+      oauthRef: { key: oauthKey },
+    });
+
+    expect(result).toMatchObject({
+      kind: 'error',
+      message: 'Failed to fetch usage: invalid provider base URL.',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('propagates the managed profile response', async () => {
     const storage = new MemoryTokenStorage();
     storage.tokens.set('kimi-code', token('access-1'));

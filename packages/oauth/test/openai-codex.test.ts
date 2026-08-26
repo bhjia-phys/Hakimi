@@ -5,21 +5,29 @@
  * Run: pnpm exec vitest run packages/oauth/test/openai-codex.test.ts
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   applyOpenAICodexConfig,
   extractOpenAICodexAccountId,
+  fetchCodexUsage,
+  OFFICIAL_CODEX_USAGE_URL,
+  officialCodexUsageUrl,
   OPENAI_CODEX_OAUTH_KEY,
   OPENAI_CODEX_PROVIDER_NAME,
   OAuthUnauthorizedError,
   OpenAICodexOAuthToolkit,
+  parseCodexUsagePayload,
   removeOpenAICodexConfig,
   requestOpenAICodexDeviceAuthorization,
   type ManagedKimiConfigShape,
   type TokenInfo,
   type TokenStorage,
 } from '../src';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 class MemoryTokenStorage implements TokenStorage {
   readonly tokens = new Map<string, TokenInfo>();
@@ -355,5 +363,275 @@ describe('OpenAI Codex managed config', () => {
 
     expect(config.defaultModel).toBe('builtin/default-model');
     expect(config.thinking).toEqual({ enabled: true });
+  });
+});
+
+describe('officialCodexUsageUrl', () => {
+  it('resolves exactly the official managed Codex base to the fixed usage URL', () => {
+    expect(officialCodexUsageUrl('https://chatgpt.com/backend-api/codex')).toBe(
+      OFFICIAL_CODEX_USAGE_URL,
+    );
+    expect(officialCodexUsageUrl('https://chatgpt.com/backend-api/codex/')).toBe(
+      OFFICIAL_CODEX_USAGE_URL,
+    );
+  });
+
+  it('is case-insensitive on the origin but strict on the path', () => {
+    expect(officialCodexUsageUrl('https://CHATGPT.COM/backend-api/codex')).toBe(
+      OFFICIAL_CODEX_USAGE_URL,
+    );
+    expect(officialCodexUsageUrl('https://chatgpt.com/BACKEND-API/codex')).toBeUndefined();
+  });
+
+  it('rejects other hosts, paths, and unparseable values', () => {
+    expect(officialCodexUsageUrl('https://chatgpt.com/backend-api')).toBeUndefined();
+    expect(officialCodexUsageUrl('https://chatgpt.com/backend-api/codex/wham/usage')).toBeUndefined();
+    expect(officialCodexUsageUrl('https://proxy.example.com/backend-api/codex')).toBeUndefined();
+    expect(officialCodexUsageUrl('https://api.openai.com/v1')).toBeUndefined();
+    expect(officialCodexUsageUrl('not a url')).toBeUndefined();
+    expect(officialCodexUsageUrl(undefined)).toBeUndefined();
+    expect(officialCodexUsageUrl('')).toBeUndefined();
+  });
+});
+
+describe('parseCodexUsagePayload', () => {
+  const EPOCH_ISO = new Date(1_780_000_000 * 1000).toISOString();
+
+  it('normalizes root and nested additional rate-limit windows into percent rows', () => {
+    const parsed = parseCodexUsagePayload({
+      plan_type: 'plus',
+      rate_limit: {
+        primary_window: {
+          used_percent: 17,
+          limit_window_seconds: 86_400,
+          reset_after_seconds: 12_345,
+          reset_at: 1_780_000_000,
+        },
+        secondary_window: {
+          used_percent: 42.6,
+          limit_window_seconds: 604_800,
+          reset_after_seconds: 55,
+          reset_at: 1_780_000_000,
+        },
+      },
+      additional_rate_limits: [
+        {
+          limit_name: 'Codex Other',
+          metered_feature: 'codex_other',
+          rate_limit: {
+            primary_window: {
+              used_percent: 100,
+              limit_window_seconds: 3600,
+              reset_at: 1_780_000_000,
+            },
+            secondary_window: {
+              used_percent: 50,
+              limit_window_seconds: 300,
+              reset_at: 1_780_000_000,
+            },
+          },
+        },
+        {
+          limit_name: '',
+          metered_feature: 'codex_fallback',
+          rate_limit: {
+            primary_window: {
+              used_percent: 133.7,
+              limit_window_seconds: 300,
+              reset_at: 1_780_000_000,
+            },
+          },
+        },
+      ],
+    });
+    expect(parsed.summary).toEqual({
+      name: 'Primary window',
+      used: 17,
+      limit: 100,
+      window: { duration: 1, unit: 'day' },
+      resetAt: EPOCH_ISO,
+    });
+    expect(parsed.limits).toEqual([
+      {
+        name: 'Secondary window',
+        used: 43,
+        limit: 100,
+        window: { duration: 1, unit: 'week' },
+        resetAt: EPOCH_ISO,
+      },
+      {
+        name: 'Codex Other',
+        used: 100,
+        limit: 100,
+        window: { duration: 1, unit: 'hour' },
+        resetAt: EPOCH_ISO,
+      },
+      {
+        name: 'Codex Other secondary window',
+        used: 50,
+        limit: 100,
+        window: { duration: 5, unit: 'minute' },
+        resetAt: EPOCH_ISO,
+      },
+      // Empty limit_name falls back to metered_feature; over-limit percent clamps.
+      {
+        name: 'codex_fallback',
+        used: 100,
+        limit: 100,
+        window: { duration: 5, unit: 'minute' },
+        resetAt: EPOCH_ISO,
+      },
+    ]);
+    expect(parsed.extraUsage).toBeNull();
+  });
+
+  it('omits a window row without a numeric used_percent', () => {
+    const parsed = parseCodexUsagePayload({
+      rate_limit: {
+        primary_window: { used_percent: 'n/a', reset_at: 1 },
+        secondary_window: { used_percent: 5 },
+      },
+    });
+    expect(parsed.summary).toBeNull();
+    expect(parsed.limits).toEqual([
+      { name: 'Secondary window', used: 5, limit: 100 },
+    ]);
+  });
+
+  it('omits resetAt for extreme but finite reset_at instead of throwing', () => {
+    // An epoch seconds value far outside the valid Date range must not blow
+    // up `toISOString()`; the row survives without a reset time.
+    const parsed = parseCodexUsagePayload({
+      rate_limit: {
+        primary_window: {
+          used_percent: 17,
+          limit_window_seconds: 86_400,
+          reset_at: 1e300,
+        },
+        secondary_window: { used_percent: 5, reset_at: 8.64e15 + 1 },
+      },
+    });
+    expect(parsed.summary).toEqual({
+      name: 'Primary window',
+      used: 17,
+      limit: 100,
+      window: { duration: 1, unit: 'day' },
+      resetAt: undefined,
+    });
+    expect(parsed.limits[0]).toMatchObject({ name: 'Secondary window', used: 5, limit: 100 });
+    expect(parsed.limits[0]?.resetAt).toBeUndefined();
+  });
+
+  it('returns empty when payload or rate_limit is not an object', () => {
+    expect(parseCodexUsagePayload(null)).toEqual({ summary: null, limits: [], extraUsage: null });
+    expect(parseCodexUsagePayload('nope')).toEqual({ summary: null, limits: [], extraUsage: null });
+    expect(parseCodexUsagePayload({})).toEqual({ summary: null, limits: [], extraUsage: null });
+  });
+});
+
+describe('fetchCodexUsage', () => {
+  it('sends the Bearer access token plus the request-auth headers to the pinned URL', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        jsonResponse({
+          plan_type: 'plus',
+          rate_limit: {
+            primary_window: { used_percent: 17, limit_window_seconds: 86_400, reset_at: 1_780_000_000 },
+          },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await fetchCodexUsage({
+      apiKey: 'codex-access-token',
+      headers: {
+        'ChatGPT-Account-Id': 'acct-123',
+        'User-Agent': 'hakimi',
+        originator: 'hakimi',
+        // Provider-supplied headers must never replace the credential boundary.
+        Authorization: 'Bearer wrong-token',
+        Accept: 'text/plain',
+      },
+    });
+
+    expect(result.kind).toBe('ok');
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit?][];
+    const init = calls[0]?.[1] ?? {};
+    const headers = new Headers((init.headers ?? {}) as Record<string, string>);
+    expect(calls[0]?.[0]).toBe(OFFICIAL_CODEX_USAGE_URL);
+    expect(init.redirect).toBe('error');
+    expect(headers.get('authorization')).toBe('Bearer codex-access-token');
+    expect(headers.get('accept')).toBe('application/json');
+    expect(headers.get('chatgpt-account-id')).toBe('acct-123');
+    expect(headers.get('user-agent')).toBe('hakimi');
+    expect(headers.get('originator')).toBe('hakimi');
+  });
+
+  it('never accepts a caller-supplied destination: the pinned URL is the only outbound', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchCodexUsage({ apiKey: 'codex-access-token' });
+
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit?][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]).toBe(OFFICIAL_CODEX_USAGE_URL);
+  });
+
+  it('redacts the access token from HTTP error bodies that echo it back', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ message: 'invalid token codex-access-token' }, 401)),
+    );
+
+    const result = await fetchCodexUsage({ apiKey: 'codex-access-token' });
+
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') return;
+    expect(result.status).toBe(401);
+    expect(result.message).toBe('invalid token [redacted]');
+    expect(result.message).not.toContain('codex-access-token');
+  });
+
+  it('surfaces HTTP 404 with a provider-specific hint', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
+
+    const result = await fetchCodexUsage({ apiKey: 'codex-404-token' });
+
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') return;
+    expect(result.status).toBe(404);
+    expect(result.message).toBe('Usage endpoint not available for OpenAI Codex.');
+    expect(result.message).not.toContain('codex-404-token');
+  });
+
+  it('redacts the access token from network failure messages', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('fetch failed for codex-access-token');
+      }),
+    );
+
+    const result = await fetchCodexUsage({ apiKey: 'codex-access-token' });
+
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') return;
+    expect(result.message).toBe('Failed to fetch usage: fetch failed for [redacted]');
+    expect(result.message).not.toContain('codex-access-token');
+  });
+
+  it('does not issue a request when the caller signal is already aborted', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    vi.stubGlobal('fetch', fetchMock);
+    const aborted = new AbortController();
+    aborted.abort();
+
+    const result = await fetchCodexUsage({ apiKey: 'codex-signal-token' }, {
+      signal: aborted.signal,
+    });
+
+    expect(result).toEqual({ kind: 'error', message: 'Usage query cancelled.' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

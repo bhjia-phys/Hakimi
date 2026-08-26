@@ -103,6 +103,12 @@ export interface AgentStatePatch {
   goal_control?: 'pause' | 'resume' | 'cancel';
 }
 
+/** Legacy v1 adapter input; canonical prompt submissions reject these session-control aliases. */
+export type LegacyPromptSubmission = Omit<
+  PromptSubmission,
+  'plan_mode' | 'swarm_mode' | 'goal_objective' | 'goal_control'
+> & Pick<AgentStatePatch, 'plan_mode' | 'swarm_mode' | 'goal_objective' | 'goal_control'>;
+
 /**
  * Where an `applyAgentState` call originated. `'prompt'` is the
  * `POST /prompts` body override path; `'meta'` is the legacy source label for
@@ -129,11 +135,11 @@ export interface IPromptService {
    * Returns status=`running` when the session is idle, or status=`queued` when
    * another prompt is active.
    */
-  submit(sid: string, body: PromptSubmission): Promise<PromptSubmitResult>;
+  submit(sid: string, body: LegacyPromptSubmission): Promise<PromptSubmitResult>;
 
   /**
    * Start a BTW side-channel agent for a session. Returns the forked agent id;
-   * callers submit follow-up prompts with `PromptSubmission.agent_id`.
+   * callers submit follow-up prompts with `LegacyPromptSubmission.agent_id`.
    */
   startBtw(sid: string): Promise<string>;
 

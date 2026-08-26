@@ -66,6 +66,7 @@
  */
 
 import type { DomainEvent } from '@moonshot-ai/agent-core-v2';
+import { goalMarkerFromMutation } from '@moonshot-ai/transcript';
 import type {
   AgentRef,
   AgentUsageMeta,
@@ -78,6 +79,7 @@ import type {
   TranscriptInteraction,
   TranscriptMarker,
   TranscriptOperation,
+  GoalMutationLike,
   TranscriptPrompt,
   TranscriptTask,
   TranscriptTodo,
@@ -1098,27 +1100,30 @@ export class AgentTranscriptProjector {
       tokensUsed: number;
       budget: { tokenBudget: number | null };
     } | null;
+    mutation?: GoalMutationLike;
   }): TranscriptOperation[] {
     const ops: TranscriptOperation[] = [];
     const snapshot = event.snapshot;
-    if (snapshot !== null) {
-      ops.push({
-        op: 'meta.merge',
-        meta: {
-          goal: {
-            objective: snapshot.objective,
-            status: snapshot.status,
-            completionCriterion: snapshot.completionCriterion,
-            budgetUsed: snapshot.tokensUsed,
-            budgetLimit: snapshot.budget.tokenBudget ?? undefined,
-          },
-        },
-      });
-    }
-    // Known limitation: a cleared goal (`snapshot: null`) cannot be expressed
-    // by `meta.merge` (absent keys keep prior state) — the 'goal' marker
-    // lands, and `meta.goal` refreshes on the next reset.
-    ops.push(this.markerOp('goal', restOf(event)));
+    ops.push({
+      op: 'meta.merge',
+      meta: {
+        goal:
+          snapshot === null
+            ? null
+            : {
+                objective: snapshot.objective,
+                status: snapshot.status,
+                completionCriterion: snapshot.completionCriterion,
+                budgetUsed: snapshot.tokensUsed,
+                budgetLimit: snapshot.budget.tokenBudget ?? undefined,
+              },
+      },
+    });
+    ops.push(
+      event.mutation === undefined
+        ? this.markerOp('goal', restOf(event))
+        : { op: 'marker.upsert', item: goalMarkerFromMutation(event.mutation) },
+    );
     return ops;
   }
 

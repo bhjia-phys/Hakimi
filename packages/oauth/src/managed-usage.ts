@@ -1,8 +1,8 @@
 /**
  * Managed-platform usage fetch / parse.
  *
- * Only `managed:kimi-code` is supported today. The platform exposes a
- * `/usages` endpoint that returns a payload of the shape:
+ * The Kimi Code platform exposes a `/usages` endpoint that returns a payload
+ * of the shape:
  *
  *   {
  *     "usage":  { "used": "40", "limit": "1000", "resetTime": "2026-08-03T05:20:51Z" },
@@ -19,10 +19,19 @@
  * Numbers arrive as decimal strings; `timeUnit` is a proto-style enum. The
  * parser normalizes the payload into a structured, camelCase domain model;
  * presentation (labels, reset hints) is left to the consumer.
+ *
+ * Two credential-bearing fetch boundaries live here, both with
+ * `redirect: 'error'` and token redaction: the public official API-key
+ * adapter `fetchManagedUsage(accessToken, opts?)` is pinned to
+ * `OFFICIAL_KIMI_CODE_USAGE_URL` (no caller-supplied URL), and the internal
+ * `fetchManagedUsageFromBase(baseUrl, ...)` supports custom managed OAuth
+ * hosts by strictly validating the provider **base** URL and deriving the
+ * `/usages` endpoint. The internal helper is not exported from the package
+ * entry.
  */
 
-import { readApiErrorMessage } from './api-error';
 import { isRecord } from './utils';
+import { fetchBearerUsageJson, type UsageFetchOptions } from './usage-fetch';
 
 const MANAGED_PREFIX = 'managed:';
 const KIMI_CODE_PLATFORM_ID = 'kimi-code';
@@ -58,6 +67,28 @@ export function isManagedKimiCodeBaseUrl(baseUrl: string | undefined): boolean {
   const managed = parseNormalizedUrl(kimiCodeBaseUrl());
   const candidate = parseNormalizedUrl(baseUrl);
   return managed !== undefined && candidate !== undefined && managed === candidate;
+}
+
+export const OFFICIAL_KIMI_CODE_BASE_URL = 'https://api.kimi.com/coding';
+export const OFFICIAL_KIMI_CODE_V1_URL = 'https://api.kimi.com/coding/v1';
+export const OFFICIAL_KIMI_CODE_USAGE_URL = 'https://api.kimi.com/coding/v1/usages';
+
+/**
+ * Strict official-endpoint resolver for the Kimi Code platform's `/usages`
+ * endpoint. Accepts exactly the official `https://api.kimi.com/coding`
+ * (Anthropic protocol root) and `https://api.kimi.com/coding/v1` bases —
+ * trailing slashes and origin case tolerated, path case strict — and returns
+ * the single canonical `https://api.kimi.com/coding/v1/usages` URL. Any other
+ * host or path (Moonshot Open Platform, proxies, mirrors) returns `undefined`
+ * so callers never guess an endpoint for a base they cannot trust.
+ */
+export function officialKimiCodeUsageUrl(baseUrl: string | undefined): string | undefined {
+  if (baseUrl === undefined) return undefined;
+  const normalized = parseNormalizedUrl(baseUrl);
+  const root = parseNormalizedUrl(OFFICIAL_KIMI_CODE_BASE_URL);
+  const v1 = parseNormalizedUrl(OFFICIAL_KIMI_CODE_V1_URL);
+  if (normalized === undefined || root === undefined || v1 === undefined) return undefined;
+  return normalized === root || normalized === v1 ? OFFICIAL_KIMI_CODE_USAGE_URL : undefined;
 }
 
 function parseNormalizedUrl(value: string): string | undefined {
@@ -281,42 +312,83 @@ export interface FetchManagedUsageError {
   readonly message: string;
 }
 
+export interface FetchManagedUsageOptions extends UsageFetchOptions {}
+
+const MANAGED_USAGE_HINTS = {
+  unauthorized: 'Authorization failed. Please check your API key (try /login).',
+  notFound: 'Usage endpoint not available. Try Kimi For Coding.',
+  statusPrefix: 'Failed to fetch usage',
+} as const;
+
+/**
+ * The single boundary that holds the credential as a Bearer token, so it is
+ * also the single place where error messages built from untrusted input (HTTP
+ * error bodies, network failures) get the credential defensively scrubbed — a
+ * misbehaving or attacker-controlled server echoing the token back must never
+ * leak it into a caller's output or logs. The official API-key adapter is
+ * pinned to `OFFICIAL_KIMI_CODE_USAGE_URL`: no caller-supplied URL is
+ * accepted, and `redirect: 'error'` means a 30x never re-sends the token to
+ * another host.
+ */
 export async function fetchManagedUsage(
-  url: string,
   accessToken: string,
-  opts: { timeoutMs?: number } = {},
+  opts: FetchManagedUsageOptions = {},
 ): Promise<FetchManagedUsageResult | FetchManagedUsageError> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => {
-    controller.abort();
-  }, opts.timeoutMs ?? 8000);
+  const result = await fetchBearerUsageJson(
+    OFFICIAL_KIMI_CODE_USAGE_URL,
+    accessToken,
+    {},
+    MANAGED_USAGE_HINTS,
+    opts,
+  );
+  if (result.kind === 'error') return result;
+  return { kind: 'ok', parsed: parseManagedUsagePayload(result.json) };
+}
+
+/**
+ * Strictly validate a managed provider **base** URL (not a full usage URL)
+ * and derive the `/usages` endpoint from it. Accepts only `http(s)` URLs
+ * without userinfo, query, or hash — a credential smuggled into the URL, or a
+ * proxy that requires extra path/query state, must not be contacted. The
+ * caller (`KimiOAuthToolkit`) keeps supporting custom managed OAuth hosts via
+ * `KIMI_CODE_BASE_URL` / `options.baseUrl`; `undefined` resolves to the
+ * configured default base. Returns `undefined` for anything invalid.
+ */
+export function kimiCodeUsageUrlFromBase(
+  baseUrl: string | undefined,
+): string | undefined {
+  if (baseUrl === undefined) return undefined;
+  let url: URL;
   try {
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-      },
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const status = res.status;
-      const hint =
-        status === 401
-          ? 'Authorization failed. Please check your API key (try /login).'
-          : status === 404
-            ? 'Usage endpoint not available. Try Kimi For Coding.'
-            : `Failed to fetch usage: HTTP ${String(status)}`;
-      return { kind: 'error', status, message: await readApiErrorMessage(res, hint) };
-    }
-    const json: unknown = await res.json();
-    return { kind: 'ok', parsed: parseManagedUsagePayload(json) };
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      return { kind: 'error', message: 'Failed to fetch usage: request timed out.' };
-    }
-    const msg = error instanceof Error ? error.message : String(error);
-    return { kind: 'error', message: `Failed to fetch usage: ${msg}` };
-  } finally {
-    clearTimeout(timer);
+    url = new URL(baseUrl);
+  } catch {
+    return undefined;
   }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+  if (url.username.length > 0 || url.password.length > 0) return undefined;
+  if (url.search.length > 0 || url.hash.length > 0) return undefined;
+  const pathname = url.pathname.replace(/\/+$/, '');
+  return `${url.origin}${pathname}/usages`;
+}
+
+/**
+ * Managed-provider usage fetch for a caller-supplied provider **base** host
+ * (custom `KIMI_CODE_BASE_URL` / `options.baseUrl`). Internal helper — not
+ * exported from the package entry — so the bearer-bearing fetch boundary
+ * stays inside this module: the base is strictly validated and the `/usages`
+ * endpoint derived before any outbound request (`redirect: 'error'`, token
+ * redaction). Invalid bases fail locally with no request issued.
+ */
+export async function fetchManagedUsageFromBase(
+  baseUrl: string | undefined,
+  accessToken: string,
+  opts: FetchManagedUsageOptions = {},
+): Promise<FetchManagedUsageResult | FetchManagedUsageError> {
+  const usageUrl = kimiCodeUsageUrlFromBase(baseUrl ?? kimiCodeBaseUrl());
+  if (usageUrl === undefined) {
+    return { kind: 'error', message: 'Failed to fetch usage: invalid provider base URL.' };
+  }
+  const result = await fetchBearerUsageJson(usageUrl, accessToken, {}, MANAGED_USAGE_HINTS, opts);
+  if (result.kind === 'error') return result;
+  return { kind: 'ok', parsed: parseManagedUsagePayload(result.json) };
 }

@@ -25,14 +25,28 @@ await agent.prompt({ input: [{ type: 'text', text: 'Say OK.' }] });
 await klient.close();
 ```
 
+Goal mode (main agent only):
+
+```ts
+const goal = await agent.goal.create({
+  objective: 'Refactor the auth module',
+  completionCriterion: 'all auth tests pass',
+});
+await agent.goal.setBudgetLimits({ turnBudget: 10, tokenBudget: 200_000 });
+agent.events.on('goal.updated', (e) => console.log(e.snapshot?.status));
+await agent.goal.pause();
+await agent.goal.resume();
+console.log(await agent.goal.get()); // GoalSnapshot | null
+```
+
 ## Architecture
 
 ```
 facade (klient.global.*, klient.session(id).*, session.agent(id).*, *.events.*)
    ↓ single-object params, zod-validated
-contract (procedure schemas, shared by all transports)
+contract (procedure schemas; also the host-side allowlist + input validator)
    ↓
-KlientChannel { call, listen }   ← the only transport SPI
+KlientChannel { call, stream, listen }   ← the only transport SPI
    ↓
 ipc │ memory
 ```
@@ -48,11 +62,17 @@ ipc │ memory
     `interactions.*`, `agents()`.
   - `session.agent(id).*` — `prompt/steer/cancel/runShellCommand/
     cancelShellCommand/getModel/setModel/setPermission/getUsage/getContext/
-    getPlan*/getTasks*/stopTask/getTaskOutput`.
+    getPlan*/getTasks*/stopTask/getTaskOutput`, plus the main-agent goal
+    lifecycle: `goal.create/get/pause/resume/cancel/setBudgetLimits`
+    (engine-owned `markBlocked`/`markComplete` are not on the wire at all;
+    `goal.updated` events flow through `agent(id).events`).
 - **Contract** — every method has a zod input tuple + output schema, validated
-  on the client before send / after receive (default on; `validate: false` to
-  disable). Validation is sub-µs for typical payloads — cheaper than the JSON
-  serialization the wire already pays.
+  on the client before send / after receive (default on; `validate: false`
+  skips only these client-side checks). The shared dispatcher always enforces
+  the same contract on the host side: it is the method allowlist, and every
+  input tuple is parsed before dispatch, so engine-only methods and smuggled
+  extra args never reach the engine. Validation is sub-µs for typical
+  payloads — cheaper than the JSON serialization the wire already pays.
 - **Events** — `klient.events.on(...)` for the global bus
   (`config.changed`, `kosong.models.changed`, `session.archived`, …),
   `session(id).events.on('metadata.changed' | 'interactions.changed' |

@@ -6,7 +6,7 @@
 
 | 轨道 | 名称 | 主要 owner | 主要交付边界 |
 |---|---|---|---|
-| A | Web | 外部 code-app Web owner；Hakimi 负责 bundle 接收与 provenance | 桌面/浏览器 Web、Tower graph editor/live monitor、`dist-web` 同步与来源证明 |
+| A | Web | Hakimi in-repo source owner；过渡期继续接收 code-app production bundle | `apps/kimi-web`、桌面/浏览器 Web、Tower graph editor/live monitor、parity 与 `dist-web` provenance |
 | B | 手机远程 | 远程产品与部署 owner | responsive Web/PWA 手机 shell、`kap-server` 远程部署、安全与恢复交互 |
 | C | AITP 集成 | AITP adapter owner | CLI + files 的可选 adapter、H0–H4 implemented、H5 partial 的 upstream/adapter 边界、planned H6 native distillation orchestration，以及 gated workflow adapter nodes |
 | D | 内置 Hakimi Research Loop | Hakimi research domain owner | Research Frame、Question Board、physics insight、结构化 trace 与 research-cycle template |
@@ -25,7 +25,7 @@
 - v2 当前真实 `LifecycleScope` 固定为 `App → Session → Agent`，定义在 `packages/agent-core-v2/src/app/scopes.ts`；代码中尚无 `Workspace` tier。Workspace 资源目前由 `Program`/`WorkspaceInstance` 与 session lifecycle 手工装配，四层 `App → Workspace → Session → Agent` 是待 F 轨单独核对和实现的目标架构，不能由 C 轨或普通 Feature 先行假定。
 - Goal 仍由 `packages/agent-core-v2/src/agent/goal/` 的 Agent-scope `IAgentGoalService` 拥有；`src/features/plan/` 是现有 Feature 抽取，不代表 Goal 已迁到 `GoalFeature`。
 - 调用路径是并列的：TUI → `packages/node-sdk` / 进程内 v2，native print → `apps/kimi-code/src/cli/v2/run-v2-print.ts` 直接使用 v2，Web → `packages/kap-server` REST/WS。`packages/transcript` 与 `packages/klient` 提供可复用 contract/facade，不构成强制线性层链。
-- Web source 在外部 code-app 仓库；本仓只同步并提交 `apps/kimi-code/dist-web`。`apps/kimi-code/upstream-base.json` 只证明 CLI upstream commit，不证明 Web 来源。
+- Web source 已从上游最后公开快照 `e7d5a0aee74e7f116cca0273c416ece9139a78a0` 恢复到 `apps/kimi-web`，作为 Hakimi 的 source-shadow workspace；在 parity/cutover gate 通过前，生产仍使用带 `web-base.json` provenance 的外部 code-app `apps/kimi-code/dist-web`，两者不得静默互相覆盖。
 - 手机首期是 responsive Web/PWA remote shell，不承诺 native app。生产远程只使用 `kap-server` `/api/v1` REST/WS + transcript；不得复活 generic `/api/v2` RPC、debug reflection 或 daemon。
 - AITP 仍严格是 CLI + files。Hakimi 不复制 AITP runtime、parser、validator、canonical ledger 或 daemon，不创建 SDK/API/MCP server、vector service 或第二套 ledger；C 是可选 adapter，D 不依赖 C。
 - DeepSeek Harness（deepseek-harness `main`）是参考上游，不是 merge upstream：只按机制移植（epoch 请求头、session 日志派生请求、缓存纪律、压缩设计、真 API 缓存 e2e），每项带 hakimi 自己的 contract/type/test 证据并过 F gate；DeepSeek 专属 wire 语义只存在于 kosong adapter/provider 层，核心与 GPT/Kimi 路径保持 dialect-free。
@@ -218,20 +218,20 @@ P3 gate 证据还至少包括：versioned golden fixtures；compiler 对同一 t
 
 ### 2.1 owner 与边界
 
-外部 code-app 拥有 Web source、页面和组件；本仓只接收 `apps/kimi-code/dist-web`。Hakimi 负责 bundle provenance、branding patch、serving 和 packaging，边界文件包括 `scripts/check-web-assets.mjs`、native Web asset manifest 与 `scripts/patch-web-branding.mjs`。A 消费 `/api/v1` REST/WS + transcript、klient/SDK、F 的 session/permission/config/workflow contract 及 D/E/C 的公开 projection，不 import v2 internals、AITP runtime 或 B 部署实现。Tower graph editor 和 live monitor 的 Web source 仍归 code-app；A 不实现 workflow validator、ready-set、preset resolver 或 merge gate。
+Hakimi 在 `apps/kimi-web` 拥有从最后公开上游快照恢复的 Web source、页面和组件；过渡期 production 仍使用外部 code-app 构建并提交的 `apps/kimi-code/dist-web`。A 同时负责 source parity、bundle provenance、branding、serving 和 packaging；source-shadow build 在 cutover gate 前不得覆盖 production bundle。A 只消费 `/api/v1` REST/WS + transcript、klient/SDK、F 的 session/permission/config/workflow contract 及 D/E/C 的公开 projection，不 import v2 internals、AITP runtime 或 B 部署实现。Tower graph editor 和 live monitor 的 Web source 归 A（in-repo `apps/kimi-web`）；A 不实现 workflow validator、ready-set、preset resolver 或 merge gate。
 
 ### 2.2 阶段交付
 
-- **A0 source/contract freeze：** 与 code-app owner 冻结 artifact 输入、branding patch、提交边界、REST/WS/transcript contract，以 fake server/fixture 作为验收基线。
-- **A1 Web shell：** 交付桌面/浏览器 session 创建恢复、transcript 和公开 Goal/Research/config projection；不复制业务 schema。
-- **A2 provenance/packaging：** 让 sync、patch、provenance、native manifest/checksum 可重放，缺 source commit、清单或 hash 时失败。
-- **A3 product integration：** 接入 approval/question、reconnect 和可选 domain status；旧 peer、冷 session、缺失能力显示 degraded。
-- **A4 release：** 归档 bundle provenance、contract parity、serving/security、native integrity 和 artifact evidence。
-- **A5 Tower visualization：** 在 F/P3.3 typed projection 和 E 的 interaction contract 冻结后，由 code-app 交付 workflow graph editor、template validation/result display、preset overlay 和 live execution timeline；Hakimi 同步 patched bundle 与 source commit/provenance。编辑态只提交 versioned template draft，运行态只显示 authoritative projection，断线按 sequence/cursor catch-up。
+- **A0 source/contract baseline：** 以 `e7d5a0aee74e7f116cca0273c416ece9139a78a0` 恢复 in-repo source，冻结历史 REST/WS fixture，并验证当前 kap-server 的 health/meta/session/snapshot/legacy WS 基线；同时与 code-app owner 冻结 artifact 输入、branding patch、提交边界。
+- **A1 source-shadow Web shell：** 在不替换 production `dist-web` 的前提下交付可 build/test/dev 的 Hakimi Web，逐项补齐 session、transcript 和公开 Goal/Research/config projection；不复制业务 schema。
+- **A2 provenance/packaging：** 过渡期保持 external sync、branding、provenance、native snapshot/receipt 可重放；cutover 时迁移为 in-repo source-tree provenance，缺 source identity、清单或 hash 时失败。
+- **A3 product integration/parity：** 接入 approval/question、reconnect、Goal/preset/provider usage、transcript v2 和可选 domain status；旧 peer、冷 session、缺失能力显示 degraded。
+- **A4 release/cutover：** contract/UX parity 后才允许 source build 生成 production `dist-web`，并归档 provenance、serving/security、native integrity 和 artifact evidence。
+- **A5 Tower visualization：** 在 F/P3.3 typed projection 和 E 的 interaction contract 冻结后，在 `apps/kimi-web` 交付 workflow graph editor、template validation/result display、preset overlay 和 live execution timeline；Hakimi 同步 patched bundle 与 source commit/provenance。编辑态只提交 versioned template draft，运行态只显示 authoritative projection，断线按 sequence/cursor catch-up。
 
 ### 2.3 依赖与验收
 
-A 依赖 F0/F1/F2 的公开 contract、SDK/klient、transcript 和 release gate；消费 B 的 remote contract，但不消费部署内部实现。验收必须证明 source 未复制进本仓、`dist-web` provenance 可重放、Web 能处理 live/backfill/cold transcript 与 degraded state，并通过 import-boundary/static check。
+A 依赖 F0/F1/F2 的公开 contract、SDK/klient、transcript 和 release gate；消费 B 的 remote contract，但不消费部署内部实现。验收必须证明 source-shadow 与 production bundle 边界明确、`dist-web` provenance 可重放、Web 能处理 live/backfill/cold transcript 与 degraded state，并通过 import-boundary/static check；未达到 parity 时不得执行 production cutover。
 
 ---
 
@@ -239,7 +239,7 @@ A 依赖 F0/F1/F2 的公开 contract、SDK/klient、transcript 和 release gate�
 
 ### 3.1 owner 与边界
 
-B 拥有手机 viewport 的 responsive layout、PWA manifest/install shell、触摸交互、网络状态、远程 approval/question 和部署安全。Web source 仍由外部 code-app/A 交付；B 负责 `kap-server` 生产 deployment boundary，包括 TLS、reverse proxy、认证授权、速率/来源限制、健康检查和安全日志。生产 client 只可用 `/api/v1` REST/WS + transcript；`/api/v1/debug/*` 即使保留也只能 loopback/dev-only。
+B 拥有手机 viewport 的 responsive layout、PWA manifest/install shell、触摸交互、网络状态、远程 approval/question 和部署安全。Web source 由 A 的 in-repo `apps/kimi-web` 交付；过渡期 production bundle 仍沿用 external provenance。B 负责 `kap-server` 生产 deployment boundary，包括 TLS、reverse proxy、认证授权、速率/来源限制、健康检查和安全日志。生产 client 只可用 `/api/v1` REST/WS + transcript；`/api/v1/debug/*` 即使保留也只能 loopback/dev-only。
 
 ### 3.2 阶段交付
 
@@ -341,7 +341,7 @@ E 依赖 F 的 config registry、manifest、klient/SDK、events、permission、t
 
 F 是 platform/engine owner：`packages/agent-core-v2` 拥有当前 App/Session/Agent scopes、未来 Workspace scope 的架构演进、services、features、config/wire/tool/profile/command contributions，以及 Tower workflow 的 schema registry、validator/compiler、run state machine、worktree/review/merge protocol 和 public projection；`packages/agent-core` 冻结为 legacy compatibility/rollback source，不承载新 workflow runtime。`packages/transcript` 是 transcript contract、op-batch 和 reducer 的 sole owner；`packages/klient` 是 typed facade；`packages/node-sdk`、`packages/kap-server` 是 public transport；生产远程 surface 固定为 `/api/v1` REST/WS + transcript。
 
-F 还拥有 CLI/TUI/native print 基础、upstream intake、release/CI、security/performance 和 shared gate，但不拥有外部 Web source、B deployment config、C AITP runtime、D research semantics、领域 workflow artifact schema 或 E UI information architecture。每个 upstream window 要记录 base commit，并把变更分类为直接吸收、v2 adapter、legacy-only、overlay conflict 或拒绝；`upstream-base.json` 不替代 Web provenance。外部或项目贡献的 workflow/role/node kind 必须经 F 的 version/capability/permission/import-boundary gate，不能通过 prompt 或 UI 注入运行时实现。
+F 还拥有 CLI/TUI/native print 基础、upstream intake、release/CI、security/performance 和 shared gate，但不拥有 A 的 Web UI schema/state、B deployment config、C AITP runtime、D research semantics、领域 workflow artifact schema 或 E UI information architecture。每个 upstream window 要记录 base commit，并把变更分类为直接吸收、v2 adapter、legacy-only、overlay conflict 或拒绝；`upstream-base.json` 不替代 Web source/bundle provenance。外部或项目贡献的 workflow/role/node kind 必须经 F 的 version/capability/permission/import-boundary gate，不能通过 prompt 或 UI 注入运行时实现。
 
 ### 7.2 阶段交付
 
@@ -390,14 +390,14 @@ G 依赖 F 的 contract freeze 与公共边界、E 的 provider 设置面；以 
 ### 9.2 全局停止规则
 
 - 两个 domain 同时拥有 schema、状态机、transcript/workflow projection 或持久化时，停止集成并回到 F0，不用 merge 顺序或 UI adapter 掩盖冲突。
-- gate 依赖不存在的 AITP command/schema、未提交的 code-app source、未冻结的远程协议或未核验的 upstream 行为时，停止该集成，保留 degraded/fake path，不猜测未来 contract。
+- gate 依赖不存在的 AITP command/schema、未提交或未测试的 Web source、不可获取的 external artifact、未冻结的远程协议或未核验的 upstream 行为时，停止该集成，保留 degraded/fake path，不猜测未来 contract。
 - live/backfill/cold、resume、approval/question、reconnect、Goal 或 Tower run/node 状态不能收敛时，停止 release，先补 shared transcript/contract evidence。
 - Tower 出现多个 control tower、workflow/template 内 raw model/provider secret/任意 executable、UI 或 `.tower/` 成为第二 runtime owner、或未经过 validator 的动态 node/edge 时，停止 P3 并回到 P3.1 contract gate。
 - Tower scope/dependency/review/merge gate 可被 prompt 绕过、crash/resume 后重复 spawn/review/merge、preset 切换改变 graph/artifact contract、或 visual state 与 authoritative projection 不一致时，停止 P3 发布并补 compiler/recovery/conformance evidence。
 - 安全边界依赖 debug reflection、generic `/api/v2`、daemon、未认证 proxy 或手机本地 canonical store 时，停止远程发布并回到 B0/F0。
 - DeepSeek 专属 wire 语义泄漏进核心层、DSH 机制移植缺少 hakimi 自身测试、或 intake 未记录 DSH HEAD/决策时，停止吸收并回到 G0/F0。
-- 发现 D 依赖 C、E 拥有业务 schema/workflow runtime、A 搬回 Web source、任何轨道 deep import 或 `GOAL.md` 出现 diff 时，停止合并并修正边界。
+- 发现 D 依赖 C、E 拥有业务 schema/workflow runtime、A 的 source-shadow 在 parity/provenance gate 前覆盖 production `dist-web`、任何轨道 deep import 或 `GOAL.md` 出现 diff 时，停止合并并修正边界。
 
 ### 9.3 最终不变量
 
-七轨可以并行，但共享 contract/gate 与 Tower workflow runtime 不单独成轨；默认 runtime 是 v2，v1 仅 legacy compatibility/rollback；`[subagent]` preset 是唯一正式 model route 控制面，workflow 只引用语义 route；唯一 control tower 和 tool-enforced scope/review/merge gate 不可绕过；template 与 `.tower/` runtime state 分离；Web source 留在外部 code-app，本仓只提交带 provenance 的 `dist-web`；手机首期只有 responsive Web/PWA；生产远程只有 `/api/v1` REST/WS + transcript；AITP 只有可选 CLI + files adapter；D 不依赖 C；E 不拥有业务 schema 或 workflow runtime；Goal 能力保留，`GoalFeature` 只能在 P0–P3 后最后单独评估；DeepSeek 专属 wire 语义只在 adapter 层，GPT/Kimi 路径保持 dialect-free；**研究层实现以 hakimi v2 为唯一默认场，DSH 仅为机制参考上游、不承载研究资产，DSH 重新入选需走平台评审**。所有轨道都必须通过公开 contract、event、config contribution、klient/SDK、REST/WS 或明确 adapter 集成。
+七轨可以并行，但共享 contract/gate 与 Tower workflow runtime 不单独成轨；默认 runtime 是 v2，v1 仅 legacy compatibility/rollback；`[subagent]` preset 是唯一正式 model route 控制面，workflow 只引用语义 route；唯一 control tower 和 tool-enforced scope/review/merge gate 不可绕过；template 与 `.tower/` runtime state 分离；Web source 由本仓 `apps/kimi-web` 拥有，过渡期 production 继续使用带 provenance 的 external `dist-web`，达到 parity 后才迁移 source-tree provenance 并 cutover；手机首期只有 responsive Web/PWA；生产远程只有 `/api/v1` REST/WS + transcript；AITP 只有可选 CLI + files adapter；D 不依赖 C；E 不拥有业务 schema 或 workflow runtime；Goal 能力保留，`GoalFeature` 只能在 P0–P3 后最后单独评估；DeepSeek 专属 wire 语义只在 adapter 层，GPT/Kimi 路径保持 dialect-free；**研究层实现以 hakimi v2 为唯一默认场，DSH 仅为机制参考上游、不承载研究资产，DSH 重新入选需走平台评审**。所有轨道都必须通过公开 contract、event、config contribution、klient/SDK、REST/WS 或明确 adapter 集成。

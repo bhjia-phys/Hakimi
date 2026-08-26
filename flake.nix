@@ -80,6 +80,7 @@
         ./packages/transcript
         ./packages/tree-sitter-bash
         ./apps/kimi-code
+        ./apps/kimi-web
         ./apps/vscode
         ./apps/kimi-inspect
         ./apps/vis
@@ -107,6 +108,7 @@
         "@moonshot-ai/transcript"
         "@moonshot-ai/tree-sitter-bash"
         "@bhjia-phys/hakimi"
+        "@bhjia-phys/hakimi-web"
         "kimi-code"
         "@moonshot-ai/kimi-inspect"
         "@moonshot-ai/vis"

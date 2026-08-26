@@ -14,8 +14,12 @@ import { join } from 'node:path';
 import { Service } from '@moonshot-ai/agent-core-v2/_base/di/service';
 import { CommandContribution } from '@moonshot-ai/agent-core-v2/agent/command/commandContribution';
 import { IFeatureManager } from '@moonshot-ai/agent-core-v2/app/feature/featureManager';
+import { getLiveSessionById } from '@moonshot-ai/agent-core-v2/app/sessionManager/sessionLookup';
+import { IAgentGoalService } from '@moonshot-ai/agent-core-v2/agent/goal/goal';
+import { IAgentLifecycleService } from '@moonshot-ai/agent-core-v2/session/agentLifecycle/agentLifecycle';
+import { ensureMainAgent } from '@moonshot-ai/agent-core-v2/session/agentLifecycle/mainAgent';
 
-import type { Klient } from '../../src/index.js';
+import type { AgentEventPayloads, Klient, RPCError } from '../../src/index.js';
 import type { TestEngine } from './engine.js';
 
 export interface KlientConformanceTarget {
@@ -38,6 +42,16 @@ async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<voi
     });
   }
   throw new Error(`waitFor timed out after ${timeoutMs}ms`);
+}
+
+/** Await a rejection and hand back the error for shape assertions. */
+async function captureRejection(promise: Promise<unknown>): Promise<RPCError> {
+  try {
+    await promise;
+  } catch (error) {
+    return error as RPCError;
+  }
+  throw new Error('expected the call to reject');
 }
 
 export function defineKlientConformance(
@@ -363,6 +377,193 @@ export function defineKlientConformance(
         );
       } finally {
         await handle.dispose();
+        await target.klient.session(created.id).close();
+      }
+    });
+
+    it('goal lifecycle round-trips through the facade and goal.updated events', async () => {
+      const created = await target.klient.global.sessions.create({
+        workDir: process.cwd(),
+        title: 'conformance goal',
+      });
+      try {
+        const agent = target.klient.session(created.id).agent('main');
+        const events: AgentEventPayloads['goal.updated'][] = [];
+        const errors: Error[] = [];
+        agent.events.onError((error) => {
+          errors.push(error);
+        });
+        const sub = agent.events.on('goal.updated', (event) => {
+          events.push(event);
+        });
+        // The stream subscription attaches asynchronously (main-agent
+        // materialization; on ipc also a frame exchange) — let it settle so
+        // no lifecycle event is missed.
+        await new Promise((resolve) => {
+          setTimeout(resolve, 300);
+        });
+
+        expect(await agent.goal.get()).toBeNull();
+
+        // create — the completion criterion round-trips.
+        const first = await agent.goal.create({
+          objective: 'conformance goal',
+          completionCriterion: 'the criterion is met',
+        });
+        expect(first).toMatchObject({
+          objective: 'conformance goal',
+          completionCriterion: 'the criterion is met',
+          status: 'active',
+          turnsUsed: 0,
+          tokensUsed: 0,
+        });
+        expect(first.budget).toMatchObject({
+          tokenBudget: null,
+          turnBudget: null,
+          wallClockBudgetMs: null,
+          overBudget: false,
+        });
+        expect(await agent.goal.get()).toMatchObject({ goalId: first.goalId, status: 'active' });
+
+        // All three budget kinds merge into the budget report.
+        const budgeted = await agent.goal.setBudgetLimits({
+          tokenBudget: 1000,
+          turnBudget: 5,
+          wallClockBudgetMs: 60_000,
+        });
+        expect(budgeted.budget).toMatchObject({
+          tokenBudget: 1000,
+          turnBudget: 5,
+          wallClockBudgetMs: 60_000,
+          remainingTokens: 1000,
+          remainingTurns: 5,
+          tokenBudgetReached: false,
+          turnBudgetReached: false,
+          wallClockBudgetReached: false,
+          overBudget: false,
+        });
+        expect(budgeted.budget.remainingWallClockMs).toBeGreaterThan(0);
+        expect(budgeted.budget.remainingWallClockMs).toBeLessThanOrEqual(60_000);
+
+        // pause / resume through the facade.
+        expect((await agent.goal.pause({ reason: 'conformance pause' })).status).toBe('paused');
+        expect((await agent.goal.get())?.status).toBe('paused');
+        expect((await agent.goal.resume()).status).toBe('active');
+
+        // Engine-owned transitions are driven through the engine service
+        // (they stay off the facade): blocked, resumed, then complete.
+        const sessionScope = getLiveSessionById(target.app.accessor, created.id);
+        if (sessionScope === undefined) throw new Error('expected a live session scope');
+        const goalService = (await ensureMainAgent(sessionScope)).accessor.get(IAgentGoalService);
+
+        const blocked = await goalService.markBlocked({ reason: 'conformance impasse' });
+        expect(blocked?.status).toBe('blocked');
+        expect((await agent.goal.get())?.status).toBe('blocked');
+        expect((await agent.goal.resume()).status).toBe('active');
+
+        const completed = await goalService.markComplete({ reason: 'conformance done' });
+        expect(completed).toMatchObject({ goalId: first.goalId, status: 'complete' });
+
+        // markComplete publishes a completion event then a clear event; both
+        // carry a mutation with a stable identity for the same goalId.
+        await waitFor(
+          () =>
+            events.some((event) => event.change?.kind === 'completion') &&
+            events.some((event) => event.snapshot === null),
+          5_000,
+        );
+        const completion = events.find((event) => event.change?.kind === 'completion');
+        expect(completion).toMatchObject({
+          snapshot: { goalId: first.goalId, status: 'complete' },
+          mutation: { kind: 'update', status: 'complete', goalId: first.goalId },
+        });
+        expect(completion?.change?.stats).toMatchObject({ turnsUsed: 0, tokensUsed: 0 });
+        const cleared = events.find((event) => event.snapshot === null);
+        expect(cleared?.mutation).toMatchObject({ kind: 'clear', goalId: first.goalId });
+        expect(cleared?.mutation?.id).not.toBe(completion?.mutation?.id);
+        expect(events.every((event) => typeof event.mutation?.id === 'string')).toBe(true);
+        expect(errors).toEqual([]);
+
+        expect(await agent.goal.get()).toBeNull();
+
+        // cancel resolves with the pre-clear snapshot; get() is null again.
+        const second = await agent.goal.create({ objective: 'conformance goal 2' });
+        const cancelled = await agent.goal.cancel({ reason: 'conformance cancel' });
+        expect(cancelled).toMatchObject({ goalId: second.goalId, status: 'active' });
+        expect(await agent.goal.get()).toBeNull();
+
+        sub.dispose();
+      } finally {
+        await target.klient.session(created.id).close();
+      }
+    });
+
+    it('goal commands reject non-main agents', async () => {
+      const created = await target.klient.global.sessions.create({
+        workDir: process.cwd(),
+        title: 'conformance goal restriction',
+      });
+      try {
+        const sessionScope = getLiveSessionById(target.app.accessor, created.id);
+        if (sessionScope === undefined) throw new Error('expected a live session scope');
+        await sessionScope.accessor
+          .get(IAgentLifecycleService)
+          .create({ agentId: 'conformance-sub' });
+
+        const sub = target.klient.session(created.id).agent('conformance-sub');
+        // Identical coded RPCError on both transports (ipc round-trips details).
+        const getError = await captureRejection(sub.goal.get());
+        expect(getError).toMatchObject({
+          name: 'RPCError',
+          code: 40001,
+          message: 'Goals are only supported by the main agent',
+        });
+        expect(getError.details).toEqual({
+          code: 'goal.unsupported_agent',
+          details: { agentId: 'conformance-sub' },
+        });
+        const createError = await captureRejection(sub.goal.create({ objective: 'nope' }));
+        expect(createError).toMatchObject({
+          name: 'RPCError',
+          code: 40001,
+          message: 'Goals are only supported by the main agent',
+        });
+        expect(createError.details).toEqual({
+          code: 'goal.unsupported_agent',
+          details: { agentId: 'conformance-sub' },
+        });
+      } finally {
+        await target.klient.session(created.id).close();
+      }
+    });
+
+    it('goal business failures surface as coded RPCError (no goal, duplicate create)', async () => {
+      const created = await target.klient.global.sessions.create({
+        workDir: process.cwd(),
+        title: 'conformance goal errors',
+      });
+      try {
+        const agent = target.klient.session(created.id).agent('main');
+
+        // No goal yet: lifecycle ops fail with goal.not_found.
+        const pauseError = await captureRejection(agent.goal.pause());
+        expect(pauseError).toMatchObject({
+          name: 'RPCError',
+          code: 40001,
+          message: 'No current goal',
+        });
+        expect(pauseError.details).toEqual({ code: 'goal.not_found' });
+
+        // A duplicate create (without `replace`) fails with goal.already_exists.
+        await agent.goal.create({ objective: 'conformance goal errors' });
+        const dupError = await captureRejection(agent.goal.create({ objective: 'duplicate' }));
+        expect(dupError).toMatchObject({
+          name: 'RPCError',
+          code: 40001,
+          message: 'A goal already exists; use replace to start a new one',
+        });
+        expect(dupError.details).toEqual({ code: 'goal.already_exists' });
+      } finally {
         await target.klient.session(created.id).close();
       }
     });

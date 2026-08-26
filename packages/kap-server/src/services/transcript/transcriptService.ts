@@ -45,6 +45,8 @@ import { readFile } from 'node:fs/promises';
 
 import {
   IAgentLifecycleService,
+  IAgentGoalService,
+  IWireService,
   ISessionIndex,
   ISessionMetadata,
   IAgentLoopService,
@@ -60,9 +62,11 @@ import {
   foldWireRecordFacts,
   groupMessagesIntoSnapshot,
   isPlainAgentId,
+  itemId,
   type AgentDescriptor,
   type AgentTranscript,
   type AgentTranscriptSnapshot,
+  type GoalMeta,
   type TranscriptChangeEvent,
   type TranscriptMarker,
   type TranscriptOperation,
@@ -88,6 +92,11 @@ export interface TranscriptServiceDeps {
   readonly homeDir: string;
   readonly core: Scope;
   readonly logger?: TranscriptBindingLogger;
+}
+
+interface ColdTranscriptRebuild {
+  readonly snapshot: AgentTranscriptSnapshot;
+  readonly goalTouched: boolean;
 }
 
 interface LiveEntry {
@@ -131,6 +140,7 @@ export class TranscriptService {
   >();
   /** Debounced post-turn heals: `${sessionId}:${agentId}` → pending ordinals + timer. */
   private readonly healTimers = new Map<string, { ordinals: Set<number>; timer: NodeJS.Timeout }>();
+  private readonly goalRevisions = new Map<string, number>();
 
   constructor(private readonly deps: TranscriptServiceDeps) {
     // Live entries must not outlive their session: once it closes or archives,
@@ -261,9 +271,24 @@ export class TranscriptService {
    * without colliding.
    */
   private async backfillAgent(sessionId: string, store: TranscriptStore, agentId: string): Promise<void> {
-    let snapshot: AgentTranscriptSnapshot | undefined;
+    const transcript = store.ensureAgent(agentId);
+    const goalRevisionKey = `${sessionId}:${agentId}`;
+    const goalRevisionBeforeRead = this.goalRevisions.get(goalRevisionKey) ?? 0;
+    let rebuilt: ColdTranscriptRebuild | undefined;
     try {
-      snapshot = await this.readColdSnapshot(sessionId, agentId);
+      const session = getLiveSessionById(this.deps.core.accessor, sessionId);
+      const agent = session?.accessor.get(IAgentLifecycleService).get(agentId);
+      if (agent !== undefined) await agent.accessor.get(IWireService).flush();
+    } catch (error) {
+      // The flush only fences off the engine's pending buffer; a failed flush
+      // must not skip the history already persisted on disk.
+      this.deps.logger?.warn(
+        { sessionId, agentId, err: error instanceof Error ? error.message : error },
+        'transcript: wire flush before history backfill failed, reading anyway',
+      );
+    }
+    try {
+      rebuilt = await this.readColdTranscript(sessionId, agentId);
     } catch (error) {
       this.deps.logger?.warn(
         { sessionId, agentId, err: error instanceof Error ? error.message : error },
@@ -272,14 +297,27 @@ export class TranscriptService {
     }
     // The entry may have been dropped (session closed) while reading from disk.
     if (this.live.get(sessionId)?.store !== store) return;
-    const transcript = store.ensureAgent(agentId);
+    const snapshot = rebuilt?.snapshot;
     if (snapshot !== undefined) {
       // Turns merge live-first (`healTurnOps`): ops the projector landed
       // while the records were being read (a tool frame's display/approvalId,
       // a longer text frame) must not be replaced by the staler persisted
       // version.
-      const ops = snapshotToOps(snapshot, (turn) =>
-        healTurnOps(turn, transcript.getTurn(turn.turnId)),
+      const liveGoal = this.liveGoalMeta(sessionId, agentId);
+      const goalMode =
+        (this.goalRevisions.get(goalRevisionKey) ?? 0) !== goalRevisionBeforeRead
+          ? 'preserve'
+          : liveGoal === null
+            ? 'clear'
+            : 'merge';
+      const snapshotWithLiveGoal =
+        liveGoal === undefined || liveGoal === null
+          ? snapshot
+          : { ...snapshot, meta: { ...snapshot.meta, goal: liveGoal } };
+      const ops = snapshotToOps(
+        snapshotWithLiveGoal,
+        (turn) => healTurnOps(turn, transcript.getTurn(turn.turnId)),
+        { goalMode },
       );
       const overlay = this.liveTurnOverlay(sessionId, agentId, transcript, snapshot);
       if (overlay !== undefined) ops.push(overlay);
@@ -414,6 +452,10 @@ export class TranscriptService {
    * replayed history cannot retrigger heals.
    */
   private handleLiveOps(sessionId: string, event: TranscriptChangeEvent): void {
+    if (event.ops.some((op) => op.op === 'meta.merge' && Object.hasOwn(op.meta, 'goal'))) {
+      const key = `${sessionId}:${event.agentId}`;
+      this.goalRevisions.set(key, (this.goalRevisions.get(key) ?? 0) + 1);
+    }
     this.dispatchOps(sessionId, event);
     for (const op of event.ops) {
       if (op.op === 'turn.upsert' && TERMINAL_TURN_STATES.has(op.turn.state)) {
@@ -474,6 +516,24 @@ export class TranscriptService {
         prompt: existing?.prompt ?? snapshotTurn?.prompt,
         startedAt: existing?.startedAt ?? snapshotTurn?.startedAt,
       },
+    };
+  }
+
+  private liveGoalMeta(sessionId: string, agentId: string): GoalMeta | null | undefined {
+    if (agentId !== MAIN_AGENT_ID) return undefined;
+    const session = getLiveSessionById(this.deps.core.accessor, sessionId);
+    const agent = session?.accessor.get(IAgentLifecycleService).get(agentId);
+    if (agent === undefined) return undefined;
+    const goals = agent.accessor.get(IAgentGoalService);
+    if (goals === undefined) return undefined;
+    const goal = goals.getGoal().goal;
+    if (goal === null) return null;
+    return {
+      objective: goal.objective,
+      status: goal.status,
+      completionCriterion: goal.completionCriterion,
+      budgetUsed: goal.tokensUsed,
+      budgetLimit: goal.budget.tokenBudget ?? undefined,
     };
   }
 
@@ -553,12 +613,19 @@ export class TranscriptService {
     sessionId: string,
     agentId: string = MAIN_AGENT_ID,
   ): Promise<AgentTranscriptSnapshot | undefined> {
+    return (await this.readColdTranscript(sessionId, agentId))?.snapshot;
+  }
+
+  private async readColdTranscript(
+    sessionId: string,
+    agentId: string,
+  ): Promise<ColdTranscriptRebuild | undefined> {
     const summary = await this.deps.core.accessor.get(ISessionIndex).get(sessionId);
     if (summary === undefined) return undefined;
     // Path-hostile ids never map to a real agent directory — answer empty
     // instead of letting the id traverse outside `<sessionDir>/agents/`.
     if (!isPlainAgentId(agentId)) {
-      return groupMessagesIntoSnapshot([]);
+      return { snapshot: groupMessagesIntoSnapshot([]), goalTouched: false };
     }
     const wirePath = join(
       this.deps.homeDir,
@@ -574,7 +641,7 @@ export class TranscriptService {
       records = await readWireRecords(wirePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return groupMessagesIntoSnapshot([]);
+        return { snapshot: groupMessagesIntoSnapshot([]), goalTouched: false };
       }
       throw error;
     }
@@ -582,12 +649,23 @@ export class TranscriptService {
     const base = groupMessagesIntoSnapshot(messages);
     // Second fold: tasks / interactions / todos / meta (goal, plan, swarm)
     // come from the non-`context.*` records in the same journal.
-    return foldWireRecordFacts(records, base);
+    return {
+      snapshot: foldWireRecordFacts(records, base),
+      goalTouched: records.some((record) =>
+        record.type === 'goal.create' ||
+        record.type === 'goal.update' ||
+        record.type === 'goal.clear' ||
+        record.type === 'forked'
+      ),
+    };
   }
 
   /** Dispose the live store + binding for a session (session closed / server shutdown). */
   dropSession(sessionId: string): void {
     this.opsListeners.delete(sessionId);
+    for (const key of this.goalRevisions.keys()) {
+      if (key.startsWith(`${sessionId}:`)) this.goalRevisions.delete(key);
+    }
     for (const [key, pending] of this.healTimers) {
       if (key.startsWith(`${sessionId}:`)) {
         clearTimeout(pending.timer);
@@ -611,9 +689,17 @@ export class TranscriptService {
  * the reducer's standalone path is append-only, so without an anchor a
  * historical marker replayed after live turns arrived would land past them.
  * The anchor is the ordinal of the snapshot turn directly following the item
- * (trailing items anchor past the last snapshot turn, which is where the
- * engine's next live turn lands); a turn-anchored insert places the item
+ * (trailing items anchor past the last snapshot turn — a turn-less snapshot
+ * anchors at ordinal 0, the first visible turn — which is where the engine's
+ * next live turn lands); a turn-anchored insert places the item
  * before the first turn with `ordinal >= beforeTurn`.
+ *
+ * A run of adjacent standalone items forms ONE segment under the same
+ * `beforeTurn` anchor. To keep their relative order when only part of the
+ * segment backfills (the rest already landed live-first past the anchor),
+ * each item but the last also carries `beforeItem`: the id of its historical
+ * successor inside the segment, which the reducer uses to slot the item
+ * immediately before that successor.
  *
  * `turnOps` customizes the per-turn flattening (the backfill passes a
  * live-first merge; the default flattens wholesale for cold reads).
@@ -621,17 +707,24 @@ export class TranscriptService {
 export function snapshotToOps(
   snapshot: AgentTranscriptSnapshot,
   turnOps: (turn: TranscriptTurn) => TranscriptOperation[] = snapshotTurnOps,
+  options: { readonly goalMode?: 'merge' | 'clear' | 'preserve' } = {},
 ): TranscriptOperation[] {
   const ops: TranscriptOperation[] = [];
   /** Standalone items seen since the last turn, awaiting their anchor. */
   const pending: (TranscriptMarker | TranscriptTaskRef)[] = [];
   let lastTurnOrdinal: number | undefined;
   const flushPending = (beforeTurn?: number): void => {
-    for (const item of pending) {
+    for (let index = 0; index < pending.length; index += 1) {
+      const item = pending[index]!;
+      // Chain the segment: every item names its historical successor (the
+      // last carries none), so the reducer can restore the sibling order
+      // even when the successor already landed live-first past the anchor.
+      const next = pending[index + 1];
+      const beforeItem = next === undefined ? undefined : itemId(next);
       ops.push(
         item.kind === 'marker'
-          ? { op: 'marker.upsert', item, beforeTurn }
-          : { op: 'taskref.upsert', item, beforeTurn },
+          ? { op: 'marker.upsert', item, beforeTurn, beforeItem }
+          : { op: 'taskref.upsert', item, beforeTurn, beforeItem },
       );
     }
     pending.length = 0;
@@ -647,12 +740,21 @@ export function snapshotToOps(
   }
   // Trailing standalone items followed the last snapshot turn in history but
   // precede the engine's next live turn (`lastTurnOrdinal + 1`, matched
-  // robustly by the reducer's `>=` placement when ordinals drift).
-  flushPending(lastTurnOrdinal === undefined ? undefined : lastTurnOrdinal + 1);
+  // robustly by the reducer's `>=` placement when ordinals drift). A snapshot
+  // without any turn anchors at ordinal 0 — the first visible turn — so the
+  // segment stays one anchored group ahead of the first live turn instead of
+  // going out as an unanchored live tail.
+  flushPending(lastTurnOrdinal === undefined ? 0 : lastTurnOrdinal + 1);
   for (const task of snapshot.tasks) {
     ops.push({ op: 'task.upsert', task });
   }
-  ops.push({ op: 'meta.merge', meta: snapshot.meta });
+  const goal =
+    options.goalMode === 'preserve'
+      ? undefined
+      : options.goalMode === 'clear'
+        ? null
+        : snapshot.meta.goal;
+  ops.push({ op: 'meta.merge', meta: { ...snapshot.meta, goal } });
   return ops;
 }
 

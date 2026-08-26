@@ -541,6 +541,20 @@ describe('AgentGoalService', () => {
       expect(goals.getGoal().goal).toMatchObject({ tokensUsed: 30, turnsUsed: 1 });
     });
 
+    it('publishes token accounting updates once while active', async () => {
+      await goals.createGoal({ objective: 'work' });
+      events.length = 0;
+
+      await goals.recordTokenUsage(30);
+
+      expect(events).toHaveLength(1);
+      expect(events[0]?.snapshot).toMatchObject({ status: 'active', tokensUsed: 30 });
+      await goals.pauseGoal();
+      events.length = 0;
+      await goals.recordTokenUsage(12);
+      expect(events).toHaveLength(0);
+    });
+
     it('sets budget limits through SetGoalBudget-style updates', async () => {
       await goals.createGoal({ objective: 'work' });
       const snapshot = await goals.setBudgetLimits(
@@ -558,9 +572,12 @@ describe('AgentGoalService', () => {
     it('blocks when a token budget is reached', async () => {
       await goals.createGoal({ objective: 'work' });
       await goals.setBudgetLimits({ budgetLimits: { tokenBudget: 10 } }, 'model');
+      events.length = 0;
 
       const snapshot = await goals.recordTokenUsage(10);
 
+      expect(events.map((event) => event.snapshot?.status)).toEqual(['active', 'blocked']);
+      expect(events[0]?.snapshot).toMatchObject({ tokensUsed: 10 });
       expect(snapshot).toMatchObject({
         status: 'blocked',
         tokensUsed: 10,
@@ -657,8 +674,48 @@ describe('AgentGoalService', () => {
       expect(recordsWithoutMetadata[0]).not.toHaveProperty('budgetLimits');
       expect(recordsWithoutMetadata[1]).not.toHaveProperty('goalId');
       expect(recordsWithoutMetadata[1]).not.toHaveProperty('status');
-      expect(recordsWithoutMetadata.at(-1)).not.toHaveProperty('goalId');
+      // The clear record carries the goal identity anchoring its stable
+      // mutation; free-floating audit fields stay out.
+      expect(recordsWithoutMetadata.at(-1)).toMatchObject({ goalId: expect.any(String) });
       expect(recordsWithoutMetadata.at(-1)).not.toHaveProperty('reason');
+    });
+
+    it('shares one stable mutation between each wire record and its live event', async () => {
+      const created = await goals.createGoal({ objective: 'work' });
+      await goals.pauseGoal({ reason: 'break' });
+      await goals.cancelGoal();
+      await ctx.wire.flush();
+
+      const goalOps = goalRecords(records);
+      expect(goalOps.map((record) => record.type)).toEqual([
+        'goal.create',
+        'goal.update',
+        'goal.clear',
+      ]);
+      expect(events).toHaveLength(3);
+
+      // One mutation ref is minted per lifecycle call and lands on both the
+      // persisted record and the live `goal.updated` event, so the cold fold
+      // and the live projector derive the same marker id from either source.
+      const [createRecord, updateRecord, clearRecord] = goalOps;
+      const [createEvent, updateEvent, clearEvent] = events;
+      expect(createRecord?.['mutation']).toEqual(createEvent?.mutation);
+      expect(updateRecord?.['mutation']).toEqual(updateEvent?.mutation);
+      expect(clearRecord?.['mutation']).toEqual(clearEvent?.mutation);
+
+      expect(createEvent?.mutation).toMatchObject({
+        kind: 'create',
+        goalId: created.goalId,
+        status: 'active',
+      });
+      expect(updateEvent?.mutation).toMatchObject({
+        kind: 'update',
+        goalId: created.goalId,
+        status: 'paused',
+      });
+      expect(clearEvent?.mutation).toMatchObject({ kind: 'clear', goalId: created.goalId });
+      const mutationIds = events.map((event) => event.mutation?.id);
+      expect(new Set(mutationIds).size).toBe(3);
     });
 
     it('restores state from patch records', async () => {
@@ -691,6 +748,7 @@ describe('AgentGoalService', () => {
 
     it('normalizes active replayed goals to paused', async () => {
       records.length = 0;
+      events.length = 0;
       await restoreGoalRecords(ctx, goals, [
         {
           type: 'goal.create',
@@ -708,6 +766,17 @@ describe('AgentGoalService', () => {
           type: 'goal.update',
           status: 'paused',
           reason: 'Paused after agent resume',
+        }),
+      ]);
+      expect(events).toEqual([
+        expect.objectContaining({
+          snapshot: expect.objectContaining({ status: 'paused' }),
+          change: expect.objectContaining({
+            kind: 'lifecycle',
+            status: 'paused',
+            reason: 'Paused after agent resume',
+            actor: 'runtime',
+          }),
         }),
       ]);
     });
