@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <strong>A Kimi Code fork evolving into a chain-of-thought-native agent for theoretical physics.</strong><br />
-  <span>Upstream engineering foundations — Hakimi research orchestration, staged AITP memory integration, and its own product experience.</span>
+  <strong>A standalone Kimi Code continuation evolving into a chain-of-thought-native agent for theoretical physics.</strong><br />
+  <span>Kimi Code engineering foundations — independent Hakimi governance, research orchestration, staged AITP memory integration, and product experience.</span>
 </p>
 
 <p align="center">
@@ -19,9 +19,19 @@
 
 ## What Hakimi is
 
-Hakimi is a fork of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code), but upstream is a selectively reviewed engineering source rather than a product-parity target. The current product shell largely inherits Kimi Code foundations, while Hakimi owns its v2 architecture decisions, research orchestration, tools, workflows, and interaction. The separate [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) remains authoritative for durable research memory and evidence.
+Hakimi is an independent, standalone continuation built on the engineering foundations of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The repository preserves its inherited Git history and upstream attribution, but it is no longer in the Kimi Code GitHub fork network and does not target product parity. Hakimi owns its v2 architecture decisions, research orchestration, tools, workflows, interaction, and release line. The separate [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) remains authoritative for durable research memory and evidence.
 
-The terminal loop, tools, sessions, Skills, MCP, subagents, permissions, and OAuth originated in upstream Kimi Code and remain candidates for general-purpose upstream improvements. Hakimi absorbs only changes that fit its goals and canonical v2 contracts; upstream product-specific behavior is not imported by default. The historical deeply embedded prototype is archived on the [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) branch and is not the integration path for this line.
+The terminal loop, tools, sessions, Skills, MCP, subagents, permissions, and OAuth originated in Kimi Code and remain candidates for selectively reviewed general-purpose improvements. Hakimi absorbs only changes that fit its goals and canonical v2 contracts; upstream product-specific behavior is not imported by default. The historical deeply embedded prototype is archived on the [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) branch and is not the integration path for this line.
+
+## Repository lineage and contributors
+
+- **Canonical standalone repository:** [`bhjia-phys/Hakimi`](https://github.com/bhjia-phys/Hakimi)
+- **Historical fork archive:** [`bhjia-phys/Hakimi-upstream-archive`](https://github.com/bhjia-phys/Hakimi-upstream-archive), retained for the original pull requests, releases, and fork-network metadata
+- **Upstream foundation:** [`MoonshotAI/kimi-code`](https://github.com/MoonshotAI/kimi-code)
+- **Project stewardship:** [`@bhjia-phys`](https://github.com/bhjia-phys)
+- **Independent contributor:** [`@TensorSpicyJ`](https://github.com/TensorSpicyJ), including work merged through [archive PR #5](https://github.com/bhjia-phys/Hakimi-upstream-archive/pull/5)
+
+GitHub's generated contributor list is based on attributed commits and may not represent pull-request, review, or pre-migration activity completely. The preserved Git history and archive are the durable provenance record.
 
 ## Differences from upstream
 
