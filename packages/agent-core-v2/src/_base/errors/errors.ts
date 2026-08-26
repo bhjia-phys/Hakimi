@@ -40,12 +40,16 @@ export interface Error2Options {
   readonly name?: string;
 }
 
+const ERROR2_BRAND = Symbol.for('@moonshot-ai/agent-core-v2/Error2');
+
 export class Error2 extends Error {
+  declare readonly [ERROR2_BRAND]: true;
   readonly code: ErrorCode;
   readonly details?: Readonly<Record<string, unknown>>;
 
   constructor(code: ErrorCode, message: string, options?: Error2Options) {
     super(message, options?.cause === undefined ? undefined : { cause: options.cause });
+    Object.defineProperty(this, ERROR2_BRAND, { value: true });
     this.name = options?.name ?? 'Error2';
     this.code = code;
     this.details = options?.details;
@@ -53,12 +57,17 @@ export class Error2 extends Error {
 }
 
 export function isError2(error: unknown): error is Error2 {
-  return error instanceof Error2;
+  return (
+    error instanceof Error2 ||
+    (typeof error === 'object' &&
+      error !== null &&
+      (error as { readonly [ERROR2_BRAND]?: unknown })[ERROR2_BRAND] === true)
+  );
 }
 
 export function unwrapErrorCause(error: unknown): unknown {
   let current = error;
-  while (current instanceof Error2 && current.cause !== undefined) {
+  while (isError2(current) && current.cause !== undefined) {
     current = current.cause;
   }
   return current;

@@ -75,17 +75,18 @@ import { isAcpModeId } from './modes';
 import { AcpSession } from './session';
 import { negotiateVersion } from './version';
 
-/**
- * Klient's stable wire code for "session not found" (`RPCError.code`) — the
- * branch key across the wire, mirrored from the klient facade's `NOT_FOUND`.
- */
+/** Klient wire codes used to classify session lookup failures. */
+const REQUEST_INVALID_CODE = 40001;
 const SESSION_NOT_FOUND_CODE = 40404;
 
 function isSessionNotFound(error: unknown): boolean {
-  return (
-    (error instanceof RPCError && error.code === SESSION_NOT_FOUND_CODE) ||
-    (isError2(error) && error.code === ErrorCodes.SESSION_NOT_FOUND)
-  );
+  if (isError2(error)) return error.code === ErrorCodes.SESSION_NOT_FOUND;
+  if (!(error instanceof RPCError)) return false;
+  if (error.code === SESSION_NOT_FOUND_CODE) return true;
+  if (error.code !== REQUEST_INVALID_CODE || typeof error.details !== 'object' || error.details === null) {
+    return false;
+  }
+  return (error.details as Record<string, unknown>)['code'] === ErrorCodes.SESSION_NOT_FOUND;
 }
 
 /** Host-provided slash commands plus optional aliases that activate engine skills. */

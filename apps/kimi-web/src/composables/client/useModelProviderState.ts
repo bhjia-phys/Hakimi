@@ -118,6 +118,9 @@ export function useModelProviderState(
   // no backend session exists yet, so POST /profile has nothing to target).
   // Applied and cleared when the first prompt creates the session.
   const draftModel = ref<string | null>(null);
+  let draftThinkingOverride:
+    | { readonly modelId: string | undefined; readonly level: ThinkingLevel }
+    | undefined;
 
   function modelById(modelId: string | null | undefined): AppModel | undefined {
     if (modelId === undefined || modelId === null || modelId.length === 0) return undefined;
@@ -214,10 +217,29 @@ export function useModelProviderState(
     // resolution (and any later /status fold) agrees with what the user just
     // chose — the daemon profile write lands via persistSessionProfile.
     const sid = rawState.activeSessionId;
-    if (level !== undefined && sid !== null && sid !== undefined) {
+    if (sid === null || sid === undefined) {
+      draftThinkingOverride =
+        level === undefined ? undefined : { modelId: currentModelId(), level };
+    } else if (level !== undefined) {
       rawState.thinkingBySession = { ...rawState.thinkingBySession, [sid]: level };
     }
     return level;
+  }
+
+  function syncDisplayedThinking(): void {
+    const sid = rawState.activeSessionId;
+    const modelId = currentModelId();
+    const draftOverride = draftThinkingOverride;
+    if (sid === null || sid === undefined) {
+      if (draftOverride !== undefined && draftOverride.modelId === modelId) {
+        rawState.thinking = draftOverride.level;
+        return;
+      }
+    }
+    draftThinkingOverride = undefined;
+    const model = modelById(modelId);
+    if (model === undefined) return;
+    rawState.thinking = thinkingLevelForSession(sid, model);
   }
 
   // The displayed level tracks the ACTIVE session, and the active session or
@@ -226,9 +248,10 @@ export function useModelProviderState(
   // catalog/default arriving late. Re-resolve on any of these so a pick made
   // for one session/model is never submitted to — or rendered on — another (a
   // foreign level used to leave the composer showing nothing selected with no
-  // way to switch). The picker paths (setThinking/setModel) apply the same
-  // resolution synchronously, so the watcher's re-resolution after them is an
-  // idempotent no-op.
+  // way to switch). The picker paths (setThinking/setModel/preset) apply the
+  // same resolution synchronously. A draft explicit pick is pinned to its
+  // model until that model changes or a real session becomes active, so neither
+  // this watcher nor a catalog refresh can replace it with the model default.
   watch(
     [
       () => rawState.activeSessionId,
@@ -238,11 +261,7 @@ export function useModelProviderState(
         return sid === null || sid === undefined ? undefined : rawState.thinkingBySession[sid];
       },
     ],
-    () => {
-      const model = modelById(currentModelId());
-      if (model === undefined) return;
-      rawState.thinking = thinkingLevelForSession(rawState.activeSessionId, model);
-    },
+    syncDisplayedThinking,
   );
 
   /** Persist an explicit thinking pick as the daemon-wide default ([thinking]
@@ -285,14 +304,10 @@ export function useModelProviderState(
     try {
       const api = getKimiWebApi();
       models.value = await api.listModels();
-      // Resolve the active session's level: its own daemon-reported level when
-      // still declared, else the model's catalog default. Always re-resolved
-      // (not just when unset) so a level carried over from another model can't
-      // outlive the catalog refresh that makes it invalid.
-      const active = modelById(currentModelId());
-      if (active !== undefined) {
-        rawState.thinking = thinkingLevelForSession(rawState.activeSessionId, active);
-      }
+      // Re-resolve after every catalog refresh so an active session cannot keep
+      // an invalid level, while a model-matched explicit draft pick still wins
+      // over the catalog default until the draft is consumed.
+      syncDisplayedThinking();
     } catch (err) {
       pushOperationFailure('loadModels', err);
     }
@@ -336,6 +351,7 @@ export function useModelProviderState(
       // In-memory only: a model switch is not a thinking pick, so nothing is
       // persisted beyond the in-memory level (a derived default would otherwise
       // masquerade as an explicit choice later).
+      draftThinkingOverride = undefined;
       draftModel.value = modelId;
       rawState.thinking = nextThinking;
       if (nextThinking !== prevThinking && nextThinking !== undefined) {
@@ -584,8 +600,10 @@ export function useModelProviderState(
 
     if (targetSessionId === null) {
       if (model !== undefined) draftModel.value = model;
-      if (thinking !== undefined && rawState.activeSessionId == null) {
-        rawState.thinking = thinking;
+      if (rawState.activeSessionId === undefined || rawState.activeSessionId === null) {
+        draftThinkingOverride =
+          thinking === undefined ? undefined : { modelId: currentModelId(), level: thinking };
+        if (thinking !== undefined) rawState.thinking = thinking;
       }
       return true;
     }
