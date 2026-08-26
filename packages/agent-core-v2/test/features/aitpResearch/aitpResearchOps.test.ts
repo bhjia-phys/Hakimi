@@ -26,6 +26,16 @@ import {
   researchCommitCheckpoint,
   researchAcknowledgeCheckpoint,
   researchReopenQuestion,
+  researchUpsertAlert,
+  researchClearAlert,
+  researchAcknowledgeAlert,
+  researchPlanAction,
+  researchStartAction,
+  researchCompleteAction,
+  researchRecordProgress,
+  researchSetPhase,
+  researchRequestHumanDecision,
+  researchResolveHumanDecision,
 } from '#/features/aitpResearch/aitpResearchOps';
 import { AppendLogStore } from '#/persistence/backends/node-fs/appendLogStore';
 import { InMemoryStorageService } from '#/persistence/backends/memory/inMemoryStorageService';
@@ -169,6 +179,11 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(state.focus).toBeNull();
       expect(state.pendingCheckpoint).toBeNull();
       expect(state.revision).toBe(0);
+      expect(state.phase).toBe('idle');
+      expect(state.currentAction).toBeNull();
+      expect(state.latestProgress).toBeNull();
+      expect(state.recentStateChange).toBeNull();
+      expect(state.humanGate).toBeNull();
     });
 
     it('createQuestion adds a question and bumps revision', () => {
@@ -283,6 +298,80 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(wire.getModel(ResearchModel).current.questions['q1']!.workflow).toBe('open');
     });
 
+    it('upsertAlert deduplicates by fingerprint without bumping revision', () => {
+      wire.dispatch(researchUpsertAlert({
+        fingerprint: 'research.alert.blocked.question.q1',
+        kind: 'blocked',
+        message: 'Question q1 is blocked',
+        questionId: 'q1',
+        lineSlug: 'main',
+        createdAt: 100,
+      }));
+      const revision = wire.getModel(ResearchModel).current.revision;
+      wire.dispatch(researchUpsertAlert({
+        fingerprint: 'research.alert.blocked.question.q1',
+        kind: 'blocked',
+        message: 'Question q1 is blocked',
+        questionId: 'q1',
+        lineSlug: 'main',
+        createdAt: 200,
+      }));
+
+      expect(wire.getModel(ResearchModel).current.alerts).toEqual([{
+        fingerprint: 'research.alert.blocked.question.q1',
+        kind: 'blocked',
+        message: 'Question q1 is blocked',
+        questionId: 'q1',
+        lineSlug: 'main',
+        createdAt: 100,
+      }]);
+      expect(wire.getModel(ResearchModel).current.revision).toBe(revision);
+    });
+
+    it('clearAlert removes a condition alert and acknowledgeAlert preserves it', () => {
+      wire.dispatch(researchUpsertAlert({
+        fingerprint: 'research.alert.stale.maintenance',
+        kind: 'stale',
+        message: 'stale',
+        createdAt: 100,
+      }));
+      wire.dispatch(researchAcknowledgeAlert({ fingerprint: 'research.alert.stale.maintenance', acknowledgedAt: 200 }));
+      const acknowledged = wire.getModel(ResearchModel).current.alerts[0]!;
+      expect(acknowledged.acknowledgedAt).toBe(200);
+      const revision = wire.getModel(ResearchModel).current.revision;
+
+      wire.dispatch(researchAcknowledgeAlert({ fingerprint: 'research.alert.stale.maintenance', acknowledgedAt: 300 }));
+      expect(wire.getModel(ResearchModel).current.revision).toBe(revision);
+      wire.dispatch(researchClearAlert({ fingerprint: 'research.alert.stale.maintenance' }));
+      expect(wire.getModel(ResearchModel).current.alerts).toEqual([]);
+      wire.dispatch(researchClearAlert({ fingerprint: 'research.alert.stale.maintenance' }));
+      expect(wire.getModel(ResearchModel).current.revision).toBe(revision + 1);
+    });
+
+    it('upsertAlert updates changed content while retaining identity and acknowledgement', () => {
+      wire.dispatch(researchUpsertAlert({
+        fingerprint: 'research.alert.blocked.aitp-failure',
+        kind: 'blocked',
+        message: 'one failure',
+        createdAt: 100,
+      }));
+      wire.dispatch(researchAcknowledgeAlert({ fingerprint: 'research.alert.blocked.aitp-failure', acknowledgedAt: 200 }));
+      wire.dispatch(researchUpsertAlert({
+        fingerprint: 'research.alert.blocked.aitp-failure',
+        kind: 'blocked',
+        message: 'two failures',
+        createdAt: 300,
+      }));
+
+      expect(wire.getModel(ResearchModel).current.alerts[0]).toEqual({
+        fingerprint: 'research.alert.blocked.aitp-failure',
+        kind: 'blocked',
+        message: 'two failures',
+        createdAt: 100,
+        acknowledgedAt: 200,
+      });
+    });
+
     it('proposeCheckpoint sets pendingCheckpoint', () => {
       wire.dispatch(researchProposeCheckpoint({
         checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000,
@@ -382,6 +471,240 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(wire.getModel(ResearchModel).current.lines['main']!.title).toBe('First');
       expect(wire.getModel(ResearchModel).current.lines['main']!.createdAt).toBe(100);
       expect(wire.getModel(ResearchModel).current.revision).toBe(1);
+    });
+  });
+
+  describe('ResearchModel scientific state ops', () => {
+    it('setPhase transitions idle→orienting and records state change', () => {
+      wire.dispatch(researchSetPhase({ phase: 'orienting', reason: 'start', changedAt: 100 }));
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.phase).toBe('orienting');
+      expect(state.recentStateChange).not.toBeNull();
+      expect(state.recentStateChange!.beforePhase).toBe('idle');
+      expect(state.recentStateChange!.afterPhase).toBe('orienting');
+      expect(state.recentStateChange!.summary).toBe('start');
+      expect(state.revision).toBe(1);
+    });
+
+    it('setPhase is a no-op when phase is unchanged', () => {
+      wire.dispatch(researchSetPhase({ phase: 'orienting', changedAt: 100 }));
+      wire.dispatch(researchSetPhase({ phase: 'orienting', changedAt: 200 }));
+      expect(wire.getModel(ResearchModel).current.revision).toBe(1);
+    });
+
+    it('setPhase is a no-op for invalid transition', () => {
+      wire.dispatch(researchSetPhase({ phase: 'action_executing', changedAt: 100 }));
+      expect(wire.getModel(ResearchModel).current.phase).toBe('idle');
+      expect(wire.getModel(ResearchModel).current.revision).toBe(0);
+    });
+
+    it('planAction transitions to action_planned and stores the action', () => {
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
+      wire.dispatch(researchCreateLine({ slug: 'main', title: 'Main', createdAt: 200 }));
+      wire.dispatch(researchCreateQuestion({ id: 'q1', lineSlug: 'main', wording: 'Q1', priority: 0, neededEvidence: [] }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', questionId: 'q1', lineSlug: 'main', kind: 'experiment',
+        purpose: 'test hypothesis', expectedEvidence: ['measurement'],
+        stopCondition: 'p < 0.05', allowedToolKinds: ['bash'], requiresHumanApproval: false,
+        createdAt: 300,
+      }));
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.phase).toBe('action_planned');
+      expect(state.currentAction).not.toBeNull();
+      expect(state.currentAction!.actionId).toBe('a1');
+      expect(state.currentAction!.status).toBe('planned');
+      expect(state.currentAction!.kind).toBe('experiment');
+    });
+
+    it('planAction is a no-op from an invalid phase', () => {
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', kind: 'experiment', purpose: 'x', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 100,
+      }));
+      expect(wire.getModel(ResearchModel).current.currentAction).toBeNull();
+    });
+
+    it('planAction is a no-op when questionId is missing', () => {
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', questionId: 'missing', kind: 'experiment', purpose: 'x',
+        expectedEvidence: [], stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false,
+        createdAt: 200,
+      }));
+      expect(wire.getModel(ResearchModel).current.currentAction).toBeNull();
+    });
+
+    it('startAction transitions action_planned→action_executing', () => {
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', kind: 'experiment', purpose: 'x', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 200,
+      }));
+      wire.dispatch(researchStartAction({ actionId: 'a1', startedAt: 300 }));
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.phase).toBe('action_executing');
+      expect(state.currentAction!.status).toBe('in_progress');
+    });
+
+    it('startAction is a no-op with wrong actionId', () => {
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', kind: 'experiment', purpose: 'x', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 200,
+      }));
+      wire.dispatch(researchStartAction({ actionId: 'wrong', startedAt: 300 }));
+      expect(wire.getModel(ResearchModel).current.phase).toBe('action_planned');
+    });
+
+    it('completeAction transitions action_executing→evaluating', () => {
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', kind: 'experiment', purpose: 'x', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 200,
+      }));
+      wire.dispatch(researchStartAction({ actionId: 'a1', startedAt: 300 }));
+      wire.dispatch(researchCompleteAction({ actionId: 'a1', status: 'completed', completedAt: 400 }));
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.phase).toBe('evaluating');
+      expect(state.currentAction!.status).toBe('completed');
+      expect(state.currentAction!.completedAt).toBe(400);
+    });
+
+    it('completeAction is a no-op from wrong phase', () => {
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', kind: 'experiment', purpose: 'x', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 200,
+      }));
+      wire.dispatch(researchCompleteAction({ actionId: 'a1', status: 'completed', completedAt: 300 }));
+      expect(wire.getModel(ResearchModel).current.phase).toBe('action_planned');
+    });
+
+    it('recordProgress stores the report and updates phase via phaseChange', () => {
+      wire.dispatch(researchSetPhase({ phase: 'orienting', changedAt: 100 }));
+      wire.dispatch(researchRecordProgress({
+        headline: 'Found gap', motivation: 'no data', workPerformed: 'literature review',
+        result: 'gap identified', mainlineImpact: 'opens new direction', uncertainties: [],
+        phaseChange: { from: 'orienting', to: 'gap_analysis' }, recordedAt: 200,
+      }));
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.phase).toBe('gap_analysis');
+      expect(state.latestProgress).not.toBeNull();
+      expect(state.latestProgress!.headline).toBe('Found gap');
+      expect(state.recentStateChange!.beforePhase).toBe('orienting');
+      expect(state.recentStateChange!.afterPhase).toBe('gap_analysis');
+    });
+
+    it('recordProgress ignores invalid phaseChange but still stores the report', () => {
+      wire.dispatch(researchRecordProgress({
+        headline: 'test', motivation: 'm', workPerformed: 'w', result: 'r',
+        mainlineImpact: 'i', uncertainties: [],
+        phaseChange: { from: 'idle', to: 'action_executing' }, recordedAt: 100,
+      }));
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.phase).toBe('idle');
+      expect(state.latestProgress).not.toBeNull();
+      expect(state.latestProgress!.headline).toBe('test');
+    });
+
+    it('recordProgress stores detail fields', () => {
+      wire.dispatch(researchRecordProgress({
+        headline: 'detailed', motivation: 'm', workPerformed: 'w', result: 'r',
+        mainlineImpact: 'i', uncertainties: ['u1'],
+        detail: { assumptions: ['a1'], derivation: 'step 1', tests: ['t1'] },
+        recordedAt: 100,
+      }));
+      const progress = wire.getModel(ResearchModel).current.latestProgress!;
+      expect(progress.detail).toBeDefined();
+      expect(progress.detail!.assumptions).toEqual(['a1']);
+      expect(progress.detail!.derivation).toBe('step 1');
+    });
+
+    it('requestHumanDecision sets phase to awaiting_human and stores gate', () => {
+      wire.dispatch(researchSetPhase({ phase: 'orienting', changedAt: 100 }));
+      wire.dispatch(researchRequestHumanDecision({
+        gateId: 'g1', kind: 'approval', prompt: 'approve experiment?', createdAt: 200,
+      }));
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.phase).toBe('awaiting_human');
+      expect(state.humanGate).not.toBeNull();
+      expect(state.humanGate!.gateId).toBe('g1');
+      expect(state.humanGate!.kind).toBe('approval');
+    });
+
+    it('requestHumanDecision is a no-op when actionId does not match currentAction', () => {
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', kind: 'experiment', purpose: 'x', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 200,
+      }));
+      wire.dispatch(researchRequestHumanDecision({
+        gateId: 'g1', kind: 'approval', actionId: 'wrong', prompt: 'p', createdAt: 300,
+      }));
+      expect(wire.getModel(ResearchModel).current.humanGate).toBeNull();
+    });
+
+    it('resolveHumanDecision restores a legal phase and preserves the resolved gate', () => {
+      wire.dispatch(researchSetPhase({ phase: 'orienting', changedAt: 100 }));
+      wire.dispatch(researchRequestHumanDecision({
+        gateId: 'g1', kind: 'decision', prompt: 'choose a direction', createdAt: 200,
+      }));
+      wire.dispatch(researchResolveHumanDecision({
+        gateId: 'g1', resolution: 'Continue with the measured path', nextPhase: 'gap_analysis', changedAt: 300,
+      }));
+
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.phase).toBe('gap_analysis');
+      expect(state.humanGate).toMatchObject({
+        gateId: 'g1',
+        prompt: 'choose a direction',
+        resolvedAt: 300,
+        resolution: 'Continue with the measured path',
+      });
+      expect(state.recentStateChange).toMatchObject({
+        beforePhase: 'awaiting_human',
+        afterPhase: 'gap_analysis',
+        summary: 'Continue with the measured path',
+        changedAt: 300,
+      });
+    });
+
+    it('resolveHumanDecision is a no-op for a wrong gate id', () => {
+      wire.dispatch(researchRequestHumanDecision({
+        gateId: 'g1', kind: 'review', prompt: 'review the result', createdAt: 100,
+      }));
+      const before = wire.getModel(ResearchModel).current;
+      wire.dispatch(researchResolveHumanDecision({
+        gateId: 'wrong', resolution: 'ignored', nextPhase: 'idle', changedAt: 200,
+      }));
+
+      const after = wire.getModel(ResearchModel).current;
+      expect(after).toBe(before);
+      expect(after.phase).toBe('awaiting_human');
+      expect(after.humanGate?.resolvedAt).toBeUndefined();
+    });
+
+    it('resolveHumanDecision is a no-op for an invalid recovery phase and on double resolve', () => {
+      wire.dispatch(researchRequestHumanDecision({
+        gateId: 'g1', kind: 'review', prompt: 'review the result', createdAt: 100,
+      }));
+      const beforeInvalid = wire.getModel(ResearchModel).current;
+      wire.dispatch(researchResolveHumanDecision({
+        gateId: 'g1', resolution: 'ignored', nextPhase: 'state_updated', changedAt: 200,
+      }));
+      expect(wire.getModel(ResearchModel).current).toBe(beforeInvalid);
+
+      wire.dispatch(researchResolveHumanDecision({
+        gateId: 'g1', resolution: 'approved', nextPhase: 'idle', changedAt: 300,
+      }));
+      const resolved = wire.getModel(ResearchModel).current;
+      wire.dispatch(researchResolveHumanDecision({
+        gateId: 'g1', resolution: 'changed later', nextPhase: 'gap_analysis', changedAt: 400,
+      }));
+
+      expect(wire.getModel(ResearchModel).current).toBe(resolved);
+      expect(resolved.humanGate?.resolution).toBe('approved');
+      expect(resolved.phase).toBe('idle');
     });
   });
 

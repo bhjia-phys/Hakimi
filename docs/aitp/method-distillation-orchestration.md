@@ -27,7 +27,8 @@ AITP 0.8 is a committed **Skill-only amendment** at release surface
 These rules live entirely in the AITP Skill (`distilling-methods/SKILL.md`)
 and its `using-aitp` fallback routing. They change no CLI command, flag,
 file schema, transport schema, or exit code. A model running the Skill can
-already perform best-effort session-boundary harvest today.
+perform best-effort, explicitly guided harvest today; this is upstream Skill
+behavior, not an automatic Hakimi session-closeout or a native H6 runtime.
 
 This document describes what a **Hakimi native coordinator** would add on top:
 session/turn checkpoint scheduling, single-flight scan, process lease
@@ -80,9 +81,11 @@ directory does not exist today and is not created in this change.
 
 The App-scope Feature registration owns:
 
-- Feature recipe and experimental flag/config registration
+- Future H6 Feature recipe and experimental flag/config registration
   (`registerFlagDefinition` at import time; `IFlagService.enabled(id)` check;
-  default off).
+  default off for that future native feature). This is separate from the current
+  `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` product flag, which is default on
+  and is neither an AITP protocol-state nor an H6-availability signal.
 - AITP plugin/contract/Python capability detection (probe for installed
   plugin, `--help` surface, contract schema version, Python ≥ 3.11).
 - Launcher factory: creates argv-only process spawners that call the external
@@ -177,7 +180,10 @@ Launcher constraints:
 ## 5. Native lifecycle checkpoints
 
 Future native coordinator bounded checkpoints (all Session-scope, all
-ephemeral unless written to AITP canonical ledger):
+ephemeral unless written to AITP canonical ledger) are planned only. The
+current Hakimi adapter performs read-only `enter` → `check` on mode entry and
+active undo/cold restore after a ready probe; it does not perform automatic
+session-end closeout, method scanning, or H6 orchestration:
 
 1. **Session start/resume:** probe plugin/contract/Python; run `enter` and
    `check --json` (exit 2 = unknown state, fail closed; exit 1 = read
@@ -210,7 +216,11 @@ ledger. It is not a durable second state machine or append-only history.
 
 The first native version reuses the existing Session-scope generic question
 broker (`ISessionQuestionService`, `src/session/question/question.ts`), not a
-new AITP-specific UI kind:
+new AITP-specific UI kind. This whole section is planned H6 behavior, not current
+Hakimi adapter behavior. Alerts and the generic human gate are shipped, but
+candidate confirmation is not a runtime-enforced guard on `SetResearchFocus`,
+and `ResolveResearchDecision` does not automatically write an AITP decision
+Entry.
 
 - `ISessionQuestionService` is bound at Session scope
   (`registerScopedService(LifecycleScope.Session, …)`).
@@ -336,7 +346,7 @@ Future C6/H6 code must follow this order; no step may be skipped:
 3. **H2:** `check` (H2 scope).
 4. **H3:** scoped read (M1c `enter-0.3`/`list-0.2`).
 5. **H4:** scoped `check` (M1d `check-report-0.2`).
-6. **H5:** `backfill` + `sha256-once:`/policy codes (M1e).
+6. **H5 boundary:** AITP upstream ships `backfill-0.1` plus `sha256-once:`/policy semantics, but Hakimi's current adapter is only partial: it projects check finding codes as opaque strings and does not expose, call, or parse backfill. Any native H6 integration would require a separately reviewed adapter-contract extension.
 7. **Reviewed adapter-contract extension:** freeze marker discovery,
    exact-card trial, decision/publish receipt, and degraded semantics
    (preferred: new schema version, not in-place mutation of

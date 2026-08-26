@@ -708,6 +708,7 @@ export { AitpResearchErrors } from '#/features/aitpResearch/errors';
 export * from '#/features/aitpResearch/types';
 export * from '#/features/aitpResearch/aitpResearchOps';
 export * from '#/features/aitpResearch/adapter/sessionAitpAdapter';
+export * from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
 export * from '#/features/aitpResearch/mode/agentAitpMode';
 export * from '#/features/aitpResearch/research/agentResearch';
 export * from '#/features/aitpResearch/injection/aitpResearchInjectionContract';

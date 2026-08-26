@@ -74,6 +74,7 @@ function makeSnapshot(
     blockedQuestionCount: 0,
     alerts: [],
     aitpHealth: { phase: 'ready' },
+    phase: 'action_executing',
     revision: 9,
     ...overrides,
   };
@@ -242,6 +243,83 @@ describe('ResearchManagerComponent', () => {
     onAction.mockClear();
     manager.handleInput('r');
     expect(onAction).toHaveBeenCalledWith({ kind: 'reopen', questionId: 'q1', reason: undefined });
+  });
+
+  it('starts in attention view, hides identifiers, and resolves a human gate', async () => {
+    const gate = {
+      gateId: 'gate-1',
+      kind: 'decision' as const,
+      prompt: 'Choose the next experiment for sample B.',
+      createdAt: 10,
+    };
+    const alert = {
+      fingerprint: 'alert-fingerprint',
+      kind: 'contradiction' as const,
+      message: 'A contradiction needs review.',
+      createdAt: 11,
+    };
+    const onAction = vi.fn(async () => makeSnapshot({
+      humanGate: { ...gate, resolvedAt: 12, resolution: 'approved' },
+      alerts: [alert],
+    }));
+    const manager = new ResearchManagerComponent({
+      snapshot: makeSnapshot({ humanGate: gate, alerts: [alert] }),
+      initialView: 'attention',
+      onAction,
+      onCancel: vi.fn(),
+    });
+
+    const initialOutput = manager.render(100).map(stripAnsi).join('\n');
+    expect(initialOutput).toContain('Research attention');
+    expect(initialOutput).toContain('Choose the next experiment for sample B.');
+    expect(initialOutput).toContain('A contradiction needs review.');
+    expect(initialOutput).not.toContain('gate-1');
+    expect(initialOutput).not.toContain('alert-fingerprint');
+
+    manager.handleInput('r');
+    manager.handleInput('approved');
+    manager.handleInput(ENTER);
+    const phaseOutput = manager.render(100).map(stripAnsi).join('\n');
+    expect(phaseOutput).toContain('Recovery phase:');
+    for (const label of ['Idle', 'Gap analysis', 'Action planned', 'Action executing', 'Evaluating']) {
+      expect(phaseOutput).toContain(label);
+    }
+    expect(phaseOutput).not.toContain('awaiting_human');
+
+    manager.handleInput(ENTER);
+    await vi.waitFor(() => expect(onAction).toHaveBeenCalledOnce());
+    expect(onAction).toHaveBeenCalledWith({
+      kind: 'resolve_human_decision',
+      gateId: 'gate-1',
+      resolution: 'approved',
+      nextPhase: 'idle',
+    });
+  });
+
+  it('acknowledges the selected alert and returns to lines when cleared', async () => {
+    const alert = {
+      fingerprint: 'alert-fingerprint',
+      kind: 'stale' as const,
+      message: 'Refresh the stale evidence.',
+      createdAt: 11,
+    };
+    const onAction = vi.fn(async () => makeSnapshot({
+      alerts: [{ ...alert, acknowledgedAt: 12 }],
+    }));
+    const manager = new ResearchManagerComponent({
+      snapshot: makeSnapshot({ alerts: [alert] }),
+      initialView: 'attention',
+      onAction,
+      onCancel: vi.fn(),
+    });
+
+    manager.handleInput('a');
+    await vi.waitFor(() => expect(onAction).toHaveBeenCalledOnce());
+    expect(onAction).toHaveBeenCalledWith({
+      kind: 'acknowledge_alert',
+      fingerprint: 'alert-fingerprint',
+    });
+    expect(manager.render(100).map(stripAnsi).join('\n')).toContain('Research lines');
   });
 
   it('shows an empty question state for a line without questions', () => {

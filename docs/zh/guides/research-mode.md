@@ -3,7 +3,7 @@
 研究模式（Research Mode）是一项实验性功能，让 Hakimi 成为以 [AITP](https://github.com/bhjia-phys/AITP-Research-Protocol) 证据账本为支撑的联合研究伙伴。Agent 不再是回答一个问题就忘记，而是维护一个实时的研究问题看板，通过有界行动自主推进，并将持久检查点写入 AITP——同时你始终可以通过斜杠命令和研究面板完全掌控方向。
 
 ::: warning 实验性
-研究模式由 `aitp_research_mode` 实验性标志控制，**默认开启**。其界面、行为和工具名称可能在版本间变化。关于实验性标志的工作方式，参见[环境变量](../configuration/env-vars.md#runtime-switches)。
+研究模式由 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`（`aitp_research_mode`）实验性标志控制，**默认开启**。这个 default-on flag 是 Hakimi 的产品设置，不是 AITP 协议状态信号，也不是 H6 可用性信号。其界面、行为和工具名称可能在版本间变化。关于实验性标志的工作方式，参见[环境变量](../configuration/env-vars.md#runtime-switches)。
 :::
 
 ## 前置条件
@@ -14,11 +14,11 @@
 - **已安装 AITP 插件** — 会话技能目录中必须能发现 `aitp-research-protocol` 插件。适配器会解析插件根目录，读取其 `aitp.contract.json` 和 `kimi.plugin.json`，并验证合约版本。插件缺失或版本不兼容将导致降级。
 - **已初始化的 AITP workspace** — 当前工作目录必须已经是已初始化的 AITP workspace。适配器**不会**自动初始化、领养或运行 `init` / `init --adopt` / `inventory` / `backfill --apply`。未初始化的 workspace 将导致降级。
 
-当三项条件全部满足时，适配器进入 `ready` 阶段，完整的 AITP 工具面对 Agent 可用。
+当三项条件全部满足时，适配器进入 `ready` 阶段，受支持的 AITP 读写工具面对 Agent 可用。适配器不暴露、不调用、不解析 upstream 的 `backfill-0.1` 成功 envelope，也不实现 `sha256-once:` 或 `check-policy` 语义。
 
 ## 启用研究模式
 
-`aitp_research_mode` 标志默认开启，普通启动即可让 `/research` 命令和 `EnterAITPMode` 能力对 Agent 可用。但标志只是开放入口——它**不会**进入研究模式、探测 AITP、显示研究面板或开放 AITP plugin skill 和研究工具。inactive 状态下零 AITP I/O，绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`。你仍需显式进入模式（通过 `/research on` 或模型 `EnterAITPMode` 入口路径）才能激活 AITP 适配器，并让后续研究轮次使用这些科研能力。
+`KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`（`aitp_research_mode`）标志默认开启，普通启动即可让 `/research` 命令和 `EnterAITPMode` 能力对 Agent 可用。这个 flag 只是 Hakimi 的产品决策，不报告 AITP 协议阶段，也不表示 H6 可用。标志只是开放入口——它**不会**进入研究模式、探测 AITP、显示研究面板或开放 AITP plugin skill 和研究工具。inactive 状态下零 AITP I/O，绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`。你仍需显式进入模式（通过 `/research on` 或模型 `EnterAITPMode` 入口路径）才能激活 AITP 适配器，并让后续研究轮次使用这些科研能力。
 
 ```sh
 hakimi
@@ -53,7 +53,15 @@ hakimi
 /research status
 ```
 
-会显示模式阶段、循环状态、当前研究线、焦点问题和 AITP 适配器健康状态。
+会显示模式阶段、循环状态、当前研究线、焦点问题、AITP 适配器健康状态，以及（可用时）current-state maintenance 摘要。
+
+## 当前状态维护（current-state maintenance）
+
+适配器 probe 报告 `ready` 后，进入研究模式会执行一次只读 AITP 周期：先执行 `enter`，再执行 `check`。活跃模式下的会话撤销和冷恢复会在适配器 probe 后重复同一周期；如果指定了 workstream，周期会针对该 workstream 执行。
+
+maintenance receipt 和上下文注入只暴露安全摘要：Working Note age、active state 是否更新、未解决 failure 数、next action、warning code，以及 check 的状态、计数和 finding code。完整 Research snapshot/API 响应或展开的 Board 仍可能包含 checkpoint、revision 和 adapter health 字段；这些 projection 不等同于 maintenance receipt 或上下文注入。
+
+只有 warning 的 check findings 会保持模式为 `ready`；error finding 或 `enter`/`check` 周期不可用时会显示 `degraded`。这项维护是只读的：不会自动运行 `init`、adopt 或执行 backfill，也不会自动写入 semantic handoff、Entry 或 Note。它只在进入模式以及 active undo/cold restore 后运行，不是 session-end automatic closeout。
 
 ## 暂停与恢复
 
@@ -71,22 +79,23 @@ hakimi
 
 ## 研究面板
 
-研究模式激活后，**研究面板**（Research Board）会出现在 live chrome 区域（输入框上方的持久 UI 区域）。面板展示研究状态的精选视图——不是完整的问题清单，而是需要你关注的项目：
+研究模式激活后，**研究面板**（Research Board）会出现在 live chrome 区域（输入框上方的持久 UI 区域）。默认的紧凑 Board 采用 **science-first** 叙事：先讲清科研进展，再展示任务清单。它突出显示：
 
-- 当前焦点问题及其下一个有界行动
-- 被阻塞或存在矛盾的问题
-- 最近重新打开的问题
-- 最近关闭的问题
+- 当前 Research phase 和 progress headline
+- 已完成的物理工作及其 insight 或 result
+- 这些结果对 mainline 的影响
+- 当前 uncertainty 或未解决的问题
+- 下一个有界行动，以及 human gate 或 active alert
 
-模式、循环、问题、焦点和检查点发生变化时，core 会向 TUI 推送一个完整快照，因此面板无需轮询即可立即更新；冷会话读取也不能覆盖更新的实时快照。
+Todo **Actions** 保留为辅助信息，不再是紧凑 Board 的主叙事。模式、循环、问题、焦点和检查点发生变化时，core 会向 TUI 推送一个完整快照，因此面板无需轮询即可立即更新；冷会话读取也不能覆盖更新的实时快照。
 
-面板跟踪的是语义化科研状态，而不是原始活动日志。普通工具调用和 AITP `list` / `show` / `check` 读取本身不会改变面板。研究模式激活后，Agent 会在每个步骤收到状态维护规则：实质性工作前先创建 Question，用 `SetResearchFocus` 声明有界行动，并且只在新证据、失败或持续无进展改变判断或下一动作时调用 `UpdateResearchQuestion`。如果没有发生这类语义转换，面板保持不变是预期行为。
+面板跟踪的是语义化科研状态，而不是原始活动日志。普通工具调用和 AITP `list` / `show` / `check` 读取本身不会改变面板。研究模式激活后，Agent 会在每个步骤收到状态维护规则：实质性工作前先创建 Question，用 `SetResearchFocus` 声明有界行动，并且只在新证据、失败或持续无进展改变判断或下一动作时调用 `UpdateResearchQuestion`。这是语义 guidance，不保证 candidate confirmation 会在 runtime guard 每一次 `SetResearchFocus` 调用。如果没有发生这类语义转换，面板保持不变是预期行为。
 
-Research Mode 会把当前会话的 `TodoList` 投影为面板中的 **Actions**。Todo 状态仍与 Research Question 和 AITP 账本分离：完成一个 action 本身不会改变 epistemic 状态，也不会自动创建 AITP Entry。紧凑视图显示当前有界行动和 Todo 进度；按 `Ctrl-O` 可以在原位置展开面板，查看当前研究线、各支线摘要、assessment、证据计数、检查点、alerts 和有界 Actions 列表，再按一次 `Ctrl-O` 折叠。普通非研究模式下，`Ctrl-T` 仍用于展开独立的 Todo 面板。
+Research Mode 会把当前会话的 `TodoList` 投影为面板中的 **Actions**。Todo 状态仍与 Research Question 和 AITP 账本分离：完成一个 action 本身不会改变 epistemic 状态，也不会自动创建 AITP Entry。按 `Ctrl-O` 可以在原位置展开 Board；展开视图会补充 derivation、tests、sources 和 checkpoint 细节，同时保留当前研究线摘要、assessment、alerts 和有界 Actions 列表，再按一次 `Ctrl-O` 折叠。普通非研究模式下，`Ctrl-T` 仍用于展开独立的 Todo 面板。
 
-Agent 提出候选问题供你确认时，可以先把它们登记为开放的 working state，使其出现在面板上；但在你确认之前，不得把某个候选设为 Focus，也不得持久化为 AITP decision。Hakimi Research Line 与 AITP workstream 属于不同命名空间：如果两者 slug 不同，Agent 可以读取已有 workstream，但不得静默创建 alias，也不得直接用 Research Line slug 进行持久化。
+Agent 提出候选问题供你确认时，可以先把它们登记为开放的 working state，使其出现在面板上。预期行为是在确认前不把候选设为 Focus、不持久化为 AITP decision，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard。alerts 和 generic human gate 已实现；`ResolveResearchDecision` 只解析 runtime state，不会自动写入 AITP `decision` Entry。Hakimi Research Line 与 AITP workstream 属于不同命名空间：如果两者 slug 不同，Agent 可以读取已有 workstream，但不得静默创建 alias，也不得直接用 Research Line slug 进行持久化。
 
-面板为只读。所有人类编辑通过 `/research manage` 或各个 `/research` 子命令完成。管理器现在以研究线为第一层：选择 Research Line 后按 `Enter` 查看该线的问题，按 `Esc` 返回研究线列表。研究线视图显示状态、问题计数和 assessment；问题视图支持设置焦点、编辑、延后、阻塞、关闭和重新打开。
+面板为只读。所有人类编辑通过 `/research manage` 或各个 `/research` 子命令完成。如果存在 unresolved gate 或 active alert，`/research manage` 会先进入 **Attention view**，而不是直接进入普通列表。在 Attention view 中，按 `R` 输入 resolution 并选择要恢复的 phase，按 `A` acknowledge alert，按 `L` 返回 lines。Attention view 中的 `R` 表示 resolution，不是普通 question view 中原有的 reopen 语义。清除 attention 项目后，普通管理器仍以研究线为第一层：选择 Research Line 后按 `Enter` 查看该线的问题，按 `Esc` 返回研究线列表。研究线视图显示状态、问题计数和 assessment；问题视图支持设置焦点、编辑、延后、阻塞、关闭和重新打开。
 
 ## 研究方向引导
 
@@ -100,7 +109,7 @@ Agent 提出候选问题供你确认时，可以先把它们登记为开放的 w
 /research manage
 ```
 
-按 `↑` / `↓` 浏览，`F` 设置焦点，`E` 编辑措辞，`D` 延后，`B` 阻塞，`C` 关闭，`R` 重新打开，`Esc` 取消。
+在普通研究线和问题视图中，按 `↑` / `↓` 浏览，`F` 设置焦点，`E` 编辑措辞，`D` 延后，`B` 阻塞，`C` 关闭，`R` 重新打开，`Esc` 取消。这些快捷键保持不变；只有 Attention view 将 `R` 用作 resolution。
 
 ### 直接引导命令
 
@@ -131,7 +140,7 @@ Agent 可用的 AITP 工具面按适配器健康状态分为两层：
 
 这一屏障意味着 AITP 不健康时 Agent 无法静默持久化证据。适配器会按照已安装的 AITP 契约，校验每个有版本的读响应和未版本化的 prepare/save 响应；未知 schema、未知 status 或额外 transport 字段都会 fail closed，不会被接纳为科研状态。`aitp_record_prepare` 只接受 `observation`、`result`、`failure`、`decision`、`source`、`code_change`、`run` 或 `closeout`；Note prepare 使用 `working` 或 `theory` 模式，save 只接受 prepare 返回的 draft path。
 
-`aitp_check` 把退出码 0 视为 clean，把退出码 1 视为成功返回 findings。只有 warning 的 findings 会保留展示，但不会使适配器降级，也不会阻止 checkpoint cursor；error finding 会让该 checkpoint 保持 pending。退出码 2 表示命令失败：有效的 AITP JSON 错误或无效的 check transport 会使适配器降级，参数解析错误则只报告为工具错误，不会污染整个会话。全文 `Grep` 可以定位候选记录，但完整的 canonical Entry 必须通过 `aitp_show` 读取；`aitp_show` 失败后，绝不能改用直接解析 Markdown 来模拟成功。
+`aitp_check` 把退出码 0 视为 clean，把退出码 1 视为成功返回 findings。只有 warning 的 findings 会保留展示，但不会使适配器降级，也不会阻止 checkpoint cursor；error finding 会让该 checkpoint 保持 pending。finding code 只作为 opaque string 投影；适配器不实现 AITP 的 `sha256-once:` 或 `check-policy` 语义。在进入或恢复时的维护周期中，error finding 还会让 Research Mode receipt 显示为 `degraded`。退出码 2 表示命令失败：有效的 AITP JSON 错误或无效的 check transport 会使适配器降级，参数解析错误则只报告为工具错误，不会污染整个会话。全文 `Grep` 可以定位候选记录，但完整的 canonical Entry 必须通过 `aitp_show` 读取；`aitp_show` 失败后，绝不能改用直接解析 Markdown 来模拟成功。
 
 ## 降级模式
 
@@ -146,8 +155,8 @@ Agent 可用的 AITP 工具面按适配器健康状态分为两层：
 
 - **读工具**仍可用——Agent 仍可列出和查看 AITP 条目。
 - **写工具**被阻止——`record_save` 或 `note_save` 无法执行。
-- **问题关闭、Goal 完成和会话收尾被阻止**——这些操作依赖持久化，需要适配器健康。
-- 研究模式**不会**自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`。用户必须手动初始化 workspace 或解决 AITP 健康问题。
+- **AITP writes 和 active Research Mode 的 Goal 完成被阻止**——未解决的 human gate 也会阻止 Goal 完成。本地 Question/Line mutation 仍可能发生，但不是持久化的 AITP write。
+- 研究模式不会执行 automatic session-closeout。它**不会**自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`，适配器也不暴露、不调用、不解析 upstream 的 `backfill-0.1` 成功 envelope。用户必须手动初始化 workspace 或解决 AITP 健康问题。
 
 适配器降级时你可以显式选择在不持久化的情况下继续，但该操作会跳过账本写入。
 

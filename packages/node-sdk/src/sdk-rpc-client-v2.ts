@@ -2253,6 +2253,16 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
           entryId: cmd.entryId,
         });
         break;
+      case 'resolve_decision':
+        research.resolveHumanDecision({
+          gateId: cmd.gateId,
+          resolution: cmd.resolution,
+          nextPhase: cmd.nextPhase,
+        });
+        break;
+      case 'acknowledge_alert':
+        research.acknowledgeAlert(cmd.fingerprint);
+        break;
     }
 
     return { snapshot: research.getSnapshot() } as ResearchCommandResponse;

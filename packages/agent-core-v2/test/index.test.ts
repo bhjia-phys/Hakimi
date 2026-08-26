@@ -100,6 +100,16 @@ const V2_RECORD_TYPES: ReadonlySet<string> = new Set([
   'research.commit_checkpoint',
   'research.ack_checkpoint',
   'research.reopen_question',
+  'research.upsert_alert',
+  'research.clear_alert',
+  'research.ack_alert',
+  'research.plan_action',
+  'research.start_action',
+  'research.complete_action',
+  'research.record_progress',
+  'research.set_phase',
+  'research.request_human_decision',
+  'research.resolve_human_decision',
 ]);
 
 describe('v1 wire vocabulary', () => {

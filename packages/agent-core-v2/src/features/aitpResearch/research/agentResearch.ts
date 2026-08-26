@@ -3,23 +3,33 @@
  *
  * The Agent-scope (main-only) Research state machine. Manages research
  * questions, lines, focus, the three-axis state (workflow / epistemic /
- * persistence), human steering commands, pending/committed checkpoints, and
- * the `ResearchStatusSnapshot`. Research working state follows conversation
- * undo through the checkpointed `ResearchModel`; the committed cursor does
- * not — once a checkpoint is committed to AITP, conversation undo cannot
- * retract that external fact. Bound at Agent scope.
+ * persistence), human steering commands, pending/committed checkpoints, the
+ * Research Loop scientific state layer (phase / action / progress / state
+ * change / human gate), and the `ResearchStatusSnapshot`. Research working
+ * state follows conversation undo through the checkpointed `ResearchModel`;
+ * the committed cursor does not — once a checkpoint is committed to AITP,
+ * conversation undo cannot retract that external fact. Bound at Agent scope.
  */
 
 import { createDecorator } from '#/_base/di/instantiation';
 
 import type {
   HumanSteeringCommand,
+  ResearchActionKind,
+  ResearchActionSpec,
   ResearchCheckpoint,
   ResearchCommittedCursor,
+  ResearchHumanGate,
+  ResearchHumanGateKind,
   ResearchLine,
   ResearchLineCreationInput,
   ResearchLineUpdateInput,
+  ResearchPhase,
+  ResearchProgressLevel,
+  ResearchProgressReport,
   ResearchQuestion,
+  ResearchScientificSnapshot,
+  ResearchStateChange,
   ResearchStatusSnapshot,
 } from '../types';
 
@@ -61,6 +71,55 @@ export interface CommitCheckpointInput {
   readonly entryId: string;
 }
 
+export interface PlanActionInput {
+  readonly actionId?: string;
+  readonly questionId?: string;
+  readonly lineSlug?: string;
+  readonly kind: ResearchActionKind;
+  readonly purpose: string;
+  readonly expectedEvidence?: readonly string[];
+  readonly stopCondition: string;
+  readonly allowedToolKinds?: readonly string[];
+  readonly requiresHumanApproval?: boolean;
+}
+
+export interface RecordProgressInput {
+  readonly headline: string;
+  readonly question?: string;
+  readonly motivation: string;
+  readonly workPerformed: string;
+  readonly result: string;
+  readonly mainlineImpact: string;
+  readonly uncertainties?: readonly string[];
+  readonly nextAction?: string;
+  readonly phaseChange?: { readonly from: ResearchPhase; readonly to: ResearchPhase };
+  readonly humanDecision?: string;
+  readonly detail?: {
+    readonly assumptions?: readonly string[];
+    readonly derivation?: string;
+    readonly tests?: readonly string[];
+    readonly observations?: readonly string[];
+    readonly sources?: readonly string[];
+    readonly limitations?: readonly string[];
+    readonly detailHint?: string;
+    readonly artifactRefs?: readonly string[];
+  };
+}
+
+export interface RequestHumanDecisionInput {
+  readonly gateId?: string;
+  readonly kind: ResearchHumanGateKind;
+  readonly actionId?: string;
+  readonly questionId?: string;
+  readonly prompt: string;
+}
+
+export interface ResolveHumanDecisionInput {
+  readonly gateId: string;
+  readonly resolution: string;
+  readonly nextPhase: ResearchPhase;
+}
+
 export interface IAgentResearchService {
   readonly _serviceBrand: undefined;
 
@@ -69,6 +128,7 @@ export interface IAgentResearchService {
   getLines(): readonly ResearchLine[];
   getPendingCheckpoint(): ResearchCheckpoint | null;
   getCommittedCursor(): ResearchCommittedCursor | null;
+  getScientificProgress(level: ResearchProgressLevel): ResearchScientificSnapshot;
 
   createQuestion(input: CreateQuestionInput): ResearchQuestion;
   createLine(input: ResearchLineCreationInput): ResearchLine;
@@ -78,9 +138,18 @@ export interface IAgentResearchService {
   switchLine(lineSlug: string, expectedRevision?: number): void;
   steer(command: HumanSteeringCommand): void;
   reopenQuestion(questionId: string, reason?: string, expectedRevision?: number): void;
+  acknowledgeAlert(fingerprint: string): void;
 
   proposeCheckpoint(input: ProposeCheckpointInput): ResearchCheckpoint;
   commitCheckpoint(input: CommitCheckpointInput): Promise<void>;
+
+  planAction(input: PlanActionInput): ResearchActionSpec;
+  startAction(actionId: string): void;
+  completeAction(actionId: string, status: 'completed' | 'abandoned'): void;
+  recordProgress(input: RecordProgressInput): ResearchProgressReport;
+  setPhase(phase: ResearchPhase, reason?: string): ResearchStateChange;
+  requestHumanDecision(input: RequestHumanDecisionInput): ResearchHumanGate;
+  resolveHumanDecision(input: ResolveHumanDecisionInput): ResearchHumanGate;
 }
 
 export const IAgentResearchService =

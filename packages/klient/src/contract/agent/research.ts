@@ -3,10 +3,11 @@
  * `IAgentResearchService` and `IAgentAitpModeService` method signatures the
  * research facade calls: `getSnapshot` (read), `steer` (dispatch a
  * `HumanSteeringCommand`), `setFocus`, `createQuestion`, `createLine`,
- * `updateLine`, `updateQuestion`, `reopenQuestion`, `proposeCheckpoint`,
- * `commitCheckpoint` on the research service; `enter`, `exit`, `pauseLoop`,
- * `resumeLoop` on the mode service. The `HumanSteeringCommand` union and the
- * snapshot shape are mirrored as zod schemas in `./researchSchemas.ts`.
+ * `updateLine`, `updateQuestion`, `reopenQuestion`, `acknowledgeAlert`,
+ * `resolveHumanDecision`, `proposeCheckpoint`, `commitCheckpoint` on the
+ * research service; `enter`, `exit`, `pauseLoop`, `resumeLoop` on the mode
+ * service. The `HumanSteeringCommand` union and the snapshot shape are
+ * mirrored as zod schemas in `./researchSchemas.ts`.
  */
 
 import { z } from 'zod';
@@ -22,6 +23,9 @@ import {
   researchLineUpdateInputSchema,
   researchQuestionSchema,
   researchStatusSnapshotSchema,
+  researchAlertFingerprintSchema,
+  resolveHumanDecisionInputSchema,
+  researchHumanGateSchema,
   type AitpModeEntryOptions,
   type CommitCheckpointInput,
   type CreateQuestionInput,
@@ -127,6 +131,14 @@ export const agentResearchContract = {
   reopenQuestion: {
     input: reopenQuestionArgsSchema,
     output: noResult,
+  },
+  acknowledgeAlert: {
+    input: z.tuple([researchAlertFingerprintSchema]),
+    output: noResult,
+  },
+  resolveHumanDecision: {
+    input: z.tuple([resolveHumanDecisionInputSchema]),
+    output: researchHumanGateSchema,
   },
   proposeCheckpoint: {
     input: z.tuple([proposeCheckpointInputSchema]),

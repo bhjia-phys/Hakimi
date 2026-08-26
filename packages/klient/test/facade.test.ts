@@ -683,6 +683,7 @@ describe('research.updated event schema', () => {
         createdAt: 1,
       },
       latestCommittedCheckpoint: { checkpointId: 'cp0', entryId: 'e0', committedAt: 1 },
+      phase: 'action_planned' as const,
       revision: 2,
     };
 
@@ -710,6 +711,7 @@ describe('research facade routing', () => {
     blockedQuestionCount: 0,
     alerts: [],
     aitpHealth: { phase: 'inactive' },
+    phase: 'idle',
     revision: 0,
   };
 
@@ -834,6 +836,47 @@ describe('research facade routing', () => {
       method: 'switchLine',
       args: ['alt', 7],
     });
+  });
+
+  it('routes human gate resolution and alert acknowledgement through the research service', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    channel.results.set('agentResearchService.resolveHumanDecision', {
+      gateId: 'gate-1',
+      kind: 'decision',
+      prompt: 'Choose the next bounded phase.',
+      resolution: 'Proceed with gap analysis.',
+      resolvedAt: 10,
+      createdAt: 1,
+    });
+    channel.results.set('agentResearchService.acknowledgeAlert', undefined);
+
+    const agent = klient.session('s1').agent('main');
+    await agent.research.resolveHumanDecision({
+      gateId: 'gate-1',
+      resolution: 'Proceed with gap analysis.',
+      nextPhase: 'gap_analysis',
+    });
+    await agent.research.acknowledgeAlert('research.alert.blocked.question.q1');
+
+    expect(channel.calls).toEqual([
+      {
+        scope: { sessionId: 's1', agentId: 'main' },
+        service: 'agentResearchService',
+        method: 'resolveHumanDecision',
+        args: [{
+          gateId: 'gate-1',
+          resolution: 'Proceed with gap analysis.',
+          nextPhase: 'gap_analysis',
+        }],
+      },
+      {
+        scope: { sessionId: 's1', agentId: 'main' },
+        service: 'agentResearchService',
+        method: 'acknowledgeAlert',
+        args: ['research.alert.blocked.question.q1'],
+      },
+    ]);
   });
 
   it('routes aitpMode.enter through agentAitpModeService', async () => {

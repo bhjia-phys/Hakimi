@@ -635,10 +635,17 @@ async function steerQuestion(
   host.track(`research_${kind}`, { questionId });
 }
 
+export function hasUnresolvedResearchAttention(snapshot: ResearchStatusSnapshot): boolean {
+  return (
+    (snapshot.humanGate !== undefined && snapshot.humanGate.resolvedAt === undefined) ||
+    snapshot.alerts.some((alert) => alert.acknowledgedAt === undefined)
+  );
+}
+
 interface ResearchManagerView {
   readonly selectedLineSlug?: string;
   readonly selectedQuestionId?: string;
-  readonly initialView?: 'lines' | 'questions';
+  readonly initialView?: 'attention' | 'lines' | 'questions';
 }
 
 async function showResearchManager(
@@ -670,7 +677,7 @@ async function showResearchManager(
       snapshot,
       selectedLineSlug: view.selectedLineSlug,
       selectedQuestionId: view.selectedQuestionId,
-      initialView: view.initialView,
+      initialView: view.initialView ?? (hasUnresolvedResearchAttention(snapshot) ? 'attention' : undefined),
       onAction: async (action) => {
         try {
           return await handleResearchManagerAction(host, action);
@@ -706,6 +713,9 @@ function managerViewForAction(
   host: ResearchCommandHost,
   action: ResearchManagerAction,
 ): ResearchManagerView {
+  if (action.kind === 'resolve_human_decision' || action.kind === 'acknowledge_alert') {
+    return { initialView: 'attention' };
+  }
   if ('questionId' in action) {
     const question = host.state.researchBoard.getSnapshot()?.questions.find(
       (item) => item.id === action.questionId,
@@ -740,6 +750,28 @@ async function handleResearchManagerActionCore(
     case 'edit_line':
       await showResearchLineEditDialog(host, action.lineSlug);
       return;
+    case 'resolve_human_decision': {
+      const token = beginResearchRequest(host, session);
+      if (token === undefined) return;
+      const response = await session.commandResearch({
+        kind: 'resolve_decision',
+        gateId: action.gateId,
+        resolution: action.resolution,
+        nextPhase: action.nextPhase,
+      });
+      if (!applyResearchResponse(host, token, response)) return;
+      return response.snapshot;
+    }
+    case 'acknowledge_alert': {
+      const token = beginResearchRequest(host, session);
+      if (token === undefined) return;
+      const response = await session.commandResearch({
+        kind: 'acknowledge_alert',
+        fingerprint: action.fingerprint,
+      });
+      if (!applyResearchResponse(host, token, response)) return;
+      return response.snapshot;
+    }
     case 'switch_line': {
       const token = beginResearchRequest(host, session);
       if (token === undefined) return;

@@ -78,11 +78,14 @@ export const researchFocusSchema = z.object({
 });
 
 export const researchAlertSchema = z.object({
+  fingerprint: z.string().min(1),
   kind: researchAlertKindSchema,
   message: z.string(),
   questionId: z.string().optional(),
   lineSlug: z.string().optional(),
-});
+  createdAt: z.number(),
+  acknowledgedAt: z.number().optional(),
+}).strict();
 
 export const aitpAdapterHealthSchema = z.object({
   phase: aitpModePhaseSchema,
@@ -92,6 +95,50 @@ export const aitpAdapterHealthSchema = z.object({
   lastCheckAt: z.number().optional(),
   lastError: z.string().optional(),
   notInitialized: z.boolean().optional(),
+});
+
+export const aitpMaintenanceStatusSchema = z.enum(['ready', 'degraded']);
+export const aitpMaintenanceMemoryStatusSchema = z.enum([
+  'available',
+  'partial',
+  'not_established',
+  'unknown',
+]);
+export const aitpMaintenanceDegradedReasonSchema = z.enum([
+  'adapter_not_ready',
+  'adapter_degraded',
+  'enter_failed',
+  'check_unavailable',
+  'check_findings',
+  'stale_generation',
+]);
+export const aitpMaintenanceWarningSummarySchema = z.object({
+  level: z.literal('warning'),
+  code: z.string(),
+});
+export const aitpMaintenanceCheckCountsSchema = z.object({
+  entries: z.number().int().nonnegative(),
+  notes: z.number().int().nonnegative(),
+  errors: z.number().int().nonnegative(),
+  warnings: z.number().int().nonnegative(),
+});
+export const aitpMaintenanceCheckSummarySchema = z.object({
+  status: z.enum(['clean', 'findings', 'unavailable']),
+  counts: aitpMaintenanceCheckCountsSchema.optional(),
+  findingCodes: z.array(z.string()),
+});
+export const aitpMaintenanceReceiptSchema = z.object({
+  status: aitpMaintenanceStatusSchema,
+  refreshedAt: z.number(),
+  memoryStatus: aitpMaintenanceMemoryStatusSchema,
+  workstream: z.string().optional(),
+  latestWorkingNoteAt: z.number().optional(),
+  activeNewerThanWorkingNote: z.boolean().nullable(),
+  unresolvedFailureCount: z.number().int().nonnegative(),
+  nextAction: z.string().optional(),
+  warningSummaries: z.array(aitpMaintenanceWarningSummarySchema),
+  check: aitpMaintenanceCheckSummarySchema,
+  degradedReason: aitpMaintenanceDegradedReasonSchema.optional(),
 });
 
 export const researchCommittedCursorSchema = z.object({
@@ -108,13 +155,109 @@ export const researchCheckpointSchema = z.object({
   nextAction: z.string().optional(),
   idempotencyKey: z.string(),
   persistence: questionPersistenceSchema,
-  committedEntryId: z.string().optional(),
   createdAt: z.number(),
 });
 
 export const researchGoalSummarySchema = z.object({
   status: z.string(),
   remainingTurns: z.number().optional(),
+});
+
+// ── Research Loop scientific state layer ────────────────────────────────────
+
+export const researchPhaseSchema = z.enum([
+  'idle',
+  'orienting',
+  'gap_analysis',
+  'action_planned',
+  'action_executing',
+  'evaluating',
+  'state_updated',
+  'checkpoint_pending',
+  'awaiting_human',
+]);
+
+export const researchActionKindSchema = z.enum([
+  'experiment',
+  'derivation',
+  'literature_review',
+  'data_analysis',
+  'simulation',
+  'other',
+]);
+
+export const researchActionStatusSchema = z.enum([
+  'planned',
+  'in_progress',
+  'completed',
+  'abandoned',
+]);
+
+export const researchHumanGateKindSchema = z.enum(['approval', 'review', 'decision']);
+
+export const researchActionSpecSchema = z.object({
+  actionId: z.string(),
+  questionId: z.string().optional(),
+  lineSlug: z.string().optional(),
+  kind: researchActionKindSchema,
+  purpose: z.string(),
+  expectedEvidence: z.array(z.string()),
+  stopCondition: z.string(),
+  allowedToolKinds: z.array(z.string()),
+  status: researchActionStatusSchema,
+  createdAt: z.number(),
+  completedAt: z.number().optional(),
+  requiresHumanApproval: z.boolean(),
+});
+
+export const researchProgressDetailSchema = z.object({
+  assumptions: z.array(z.string()).optional(),
+  derivation: z.string().optional(),
+  tests: z.array(z.string()).optional(),
+  observations: z.array(z.string()).optional(),
+  sources: z.array(z.string()).optional(),
+  limitations: z.array(z.string()).optional(),
+  detailHint: z.string().optional(),
+  artifactRefs: z.array(z.string()).optional(),
+});
+
+export const researchProgressReportSchema = z.object({
+  headline: z.string(),
+  question: z.string().optional(),
+  motivation: z.string(),
+  workPerformed: z.string(),
+  result: z.string(),
+  mainlineImpact: z.string(),
+  uncertainties: z.array(z.string()),
+  nextAction: z.string().optional(),
+  phaseChange: z
+    .object({
+      from: researchPhaseSchema,
+      to: researchPhaseSchema,
+    })
+    .optional(),
+  humanDecision: z.string().optional(),
+  detail: researchProgressDetailSchema.optional(),
+  recordedAt: z.number(),
+});
+
+export const researchStateChangeSchema = z.object({
+  beforePhase: researchPhaseSchema,
+  afterPhase: researchPhaseSchema,
+  actionId: z.string().optional(),
+  summary: z.string(),
+  changedAt: z.number(),
+});
+
+export const researchHumanGateSchema = z.object({
+  gateId: z.string(),
+  kind: researchHumanGateKindSchema,
+  actionId: z.string().optional(),
+  questionId: z.string().optional(),
+  prompt: z.string(),
+  resolvedAt: z.number().optional(),
+  resolution: z.string().optional(),
+  createdAt: z.number(),
 });
 
 export const researchStatusSnapshotSchema = z.object({
@@ -131,8 +274,14 @@ export const researchStatusSnapshotSchema = z.object({
   alerts: z.array(researchAlertSchema),
   goalSummary: researchGoalSummarySchema.optional(),
   aitpHealth: aitpAdapterHealthSchema,
+  aitpMaintenance: aitpMaintenanceReceiptSchema.optional(),
   pendingCheckpoint: researchCheckpointSchema.optional(),
   latestCommittedCheckpoint: researchCommittedCursorSchema.optional(),
+  phase: researchPhaseSchema,
+  currentAction: researchActionSpecSchema.optional(),
+  latestProgress: researchProgressReportSchema.optional(),
+  recentStateChange: researchStateChangeSchema.optional(),
+  humanGate: researchHumanGateSchema.optional(),
   revision: z.number(),
 });
 export type ResearchStatusSnapshot = z.infer<typeof researchStatusSnapshotSchema>;
@@ -249,6 +398,16 @@ export const researchCommandSchema = z.discriminatedUnion('kind', [
     kind: z.literal('commit_checkpoint'),
     checkpointId: z.string(),
     entryId: z.string(),
+  }),
+  z.object({
+    kind: z.literal('resolve_decision'),
+    gateId: z.string(),
+    resolution: z.string(),
+    nextPhase: researchPhaseSchema,
+  }),
+  z.object({
+    kind: z.literal('acknowledge_alert'),
+    fingerprint: z.string(),
   }),
 ]);
 export type ResearchCommand = z.infer<typeof researchCommandSchema>;

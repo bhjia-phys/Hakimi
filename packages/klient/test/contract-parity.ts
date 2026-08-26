@@ -216,10 +216,19 @@ import type {
   ResearchCheckpoint as EngineResearchCheckpoint,
   ResearchCommittedCursor as EngineResearchCursor,
   AitpAdapterHealth as EngineAitpHealth,
+  AitpMaintenanceReceipt as EngineAitpMaintenanceReceipt,
   HumanSteeringCommand as EngineHumanSteeringCommand,
   ResearchLineCreationInput as EngineResearchLineCreationInput,
+  ResearchActionSpec as EngineResearchActionSpec,
+  ResearchProgressReport as EngineResearchProgressReport,
+  ResearchStateChange as EngineResearchStateChange,
+  ResearchHumanGate as EngineResearchHumanGate,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/types';
-import type { UpdateLineInput as EngineUpdateLineInput } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
+import type {
+  IAgentResearchService,
+  ResolveHumanDecisionInput as EngineResolveHumanDecisionInput,
+  UpdateLineInput as EngineUpdateLineInput,
+} from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
 import {
   researchStatusSnapshotSchema,
   researchQuestionSchema,
@@ -229,9 +238,16 @@ import {
   researchCheckpointSchema,
   researchCommittedCursorSchema,
   aitpAdapterHealthSchema,
+  aitpMaintenanceReceiptSchema,
   humanSteeringCommandSchema,
   researchLineCreationInputSchema,
   researchLineUpdateInputSchema,
+  researchActionSpecSchema,
+  researchProgressReportSchema,
+  researchStateChangeSchema,
+  researchHumanGateSchema,
+  researchAlertFingerprintSchema,
+  resolveHumanDecisionInputSchema,
 } from '../src/contract/agent/researchSchemas.js';
 import {
   createChildSessionOptionsSchema,
@@ -665,6 +681,10 @@ const _researchCheckpoint: AssertWire<typeof researchCheckpointSchema, EngineRes
 const _researchCursor: AssertWire<typeof researchCommittedCursorSchema, EngineResearchCursor> =
   true;
 const _aitpHealth: AssertWire<typeof aitpAdapterHealthSchema, EngineAitpHealth> = true;
+const _aitpMaintenanceReceipt: AssertEngineToWire<
+  typeof aitpMaintenanceReceiptSchema,
+  EngineAitpMaintenanceReceipt
+> = true;
 const _humanSteeringCommand: AssertWire<
   typeof humanSteeringCommandSchema,
   EngineHumanSteeringCommand
@@ -676,6 +696,37 @@ const _researchLineCreation: AssertWire<
 const _researchLineUpdate: AssertWire<
   typeof researchLineUpdateInputSchema,
   EngineUpdateLineInput
+> = true;
+const _researchAlertFingerprint: AssertWire<
+  typeof researchAlertFingerprintSchema,
+  Parameters<IAgentResearchService['acknowledgeAlert']>[0]
+> = true;
+const _resolveHumanDecisionInput: AssertWire<
+  typeof resolveHumanDecisionInputSchema,
+  EngineResolveHumanDecisionInput
+> = true;
+
+// Research Loop scientific state layer — one-directional (engine uses
+// `readonly` arrays, wire infers mutable arrays).
+const _researchActionSpec: AssertEngineToWire<
+  typeof researchActionSpecSchema,
+  EngineResearchActionSpec
+> = true;
+const _researchProgressReport: AssertEngineToWire<
+  typeof researchProgressReportSchema,
+  EngineResearchProgressReport
+> = true;
+const _researchStateChange: AssertWire<
+  typeof researchStateChangeSchema,
+  EngineResearchStateChange
+> = true;
+const _researchHumanGate: AssertWire<
+  typeof researchHumanGateSchema,
+  EngineResearchHumanGate
+> = true;
+const _resolvedHumanGate: AssertWire<
+  typeof researchHumanGateSchema,
+  ReturnType<IAgentResearchService['resolveHumanDecision']>
 > = true;
 
 // ── agent scope (events.ts) ─────────────────────────────────────────────────

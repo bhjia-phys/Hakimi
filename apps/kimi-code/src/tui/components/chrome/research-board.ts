@@ -18,16 +18,33 @@ import { currentTheme } from '#/tui/theme';
 import type { ColorPalette } from '#/tui/theme/colors';
 import type { TodoItem } from './todo-panel';
 
-const MAX_COMPACT_ROWS = 12;
-const MAX_EXPANDED_ROWS = 24;
+const MAX_COMPACT_ROWS = 14;
+const MAX_EXPANDED_ROWS = 36;
 const MAX_LINE_SUMMARIES = 4;
 const MAX_ACTION_ROWS = 4;
 const MAX_ALERT_ROWS = 2;
+const MAX_PROGRESS_DETAIL_ROWS = 6;
+const MAX_UNCERTAINTY_ROWS = 2;
+const MAX_MAINTENANCE_CODES = 3;
 
 /** Extract sub-types from the snapshot shape (the SDK only re-exports the snapshot). */
 type ResearchQuestion = NonNullable<ResearchStatusSnapshot['currentQuestion']>;
 type ResearchLine = ResearchStatusSnapshot['lines'][number];
 type ResearchAlert = ResearchStatusSnapshot['alerts'][number];
+type AitpMaintenanceReceipt = NonNullable<ResearchStatusSnapshot['aitpMaintenance']>;
+
+/** Phase labels shown to the user, with human-friendly spacing. */
+const PHASE_LABELS: Record<ResearchStatusSnapshot['phase'], string> = {
+  idle: 'idle',
+  orienting: 'orienting',
+  gap_analysis: 'gap analysis',
+  action_planned: 'action planned',
+  action_executing: 'executing',
+  evaluating: 'evaluating',
+  state_updated: 'state updated',
+  checkpoint_pending: 'checkpoint pending',
+  awaiting_human: 'awaiting human',
+};
 
 export class ResearchBoardComponent implements Component {
   private snapshot: ResearchStatusSnapshot | null = null;
@@ -183,22 +200,26 @@ function orderedAlerts(
       case 'stale': return 5;
     }
   };
-  return [...alerts].toSorted((a, b) => rank(a) - rank(b));
+  return alerts
+    .filter((alert) => alert.acknowledgedAt === undefined)
+    .toSorted((a, b) => rank(a) - rank(b));
 }
 
 function renderAttentionRows(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
+  expanded = false,
 ): string[] {
   const rows: string[] = [];
   const alerts = orderedAlerts(snap.alerts);
   const alert = alerts[0];
   if (alert !== undefined) {
     rows.push(
-      `  ${chalk.hex(colors.warning)('Attention:')} ${chalk.hex(colors.textMuted)(formatAlertSummary(snap.alerts, colors))} · ${chalk.hex(colors.text)(normalizeSummary(alert.message))}`,
+      `  ${chalk.hex(colors.warning)('Attention:')} ${chalk.hex(colors.textMuted)(formatAlertSummary(alerts, colors))} · ${chalk.hex(colors.text)(normalizeSummary(alert.message))}`,
     );
   }
-  if (snap.pendingCheckpoint !== undefined) {
+  // Pending checkpoint is engineering audit info — only show in expanded view.
+  if (expanded && snap.pendingCheckpoint !== undefined) {
     rows.push(
       `  ${chalk.hex(colors.warning)('Pending checkpoint:')} ${chalk.hex(colors.text)(normalizeSummary(snap.pendingCheckpoint.checkpointId))}${formatCheckpointDetails(snap.pendingCheckpoint, colors)}`,
     );
@@ -240,6 +261,10 @@ function buildCompactRows(
   const question = snap.currentFocus === undefined ? undefined : snap.currentQuestion;
   const currentLine = findCurrentLine(snap);
 
+  // Human gate / blocked / stale takes top priority — most actionable info.
+  const gateRow = renderHumanGateRow(snap, colors);
+  if (gateRow !== undefined) rows.push(gateRow);
+
   if (question !== undefined) {
     rows.push(renderFocus(question, colors));
     rows.push(renderAssessment(snap, question, colors));
@@ -257,6 +282,11 @@ function buildCompactRows(
   }
 
   rows.push(...renderAttentionRows(snap, colors));
+
+  // Scientific progress summary (phase, headline, impact, nextAction).
+  rows.push(...renderCompactScientificRows(snap, colors));
+  const maintenanceReminder = renderCompactMaintenanceReminder(snap, colors);
+  if (maintenanceReminder !== undefined) rows.push(maintenanceReminder);
 
   const candidates = candidateQuestions(snap);
   const currentCandidates = snap.currentLineSlug === undefined
@@ -277,8 +307,8 @@ function buildCompactRows(
     rows.push(`  ${chalk.hex(colors.textDim)('Todo:')} ${chalk.hex(colors.textMuted)('none recorded')}`);
   }
   rows.push(renderTodoProgress(todos, colors));
-  const checkpoint = formatCompactCheckpoint(snap, colors);
-  if (checkpoint !== undefined) rows.push(checkpoint);
+  // Checkpoint engineering IDs moved to expanded view only — compact stays
+  // focused on scientific progress, not audit plumbing.
 
   if (snap.aitpHealth.lastError !== undefined) {
     rows.push(
@@ -324,7 +354,12 @@ function buildExpandedRows(
   rows.push(
     `  ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(colors.text)(nextAction ?? (normalizeSummary(currentLine?.objective) || 'none'))}`,
   );
-  rows.push(...renderAttentionRows(snap, colors));
+  rows.push(...renderAttentionRows(snap, colors, true));
+
+  // Scientific progress detail: phase, progress report, current action, gate.
+  rows.push(...renderExpandedScientificRows(snap, colors));
+  rows.push(...renderExpandedMaintenanceRows(snap, colors));
+
   rows.push(renderResearchCounts(
     snap,
     Math.max(0, candidateQuestions(snap).length - candidateQuestions(snap).filter((q) => q.lineSlug === snap.currentLineSlug).length),
@@ -356,25 +391,29 @@ function buildExpandedRows(
     rows.push(`  ${chalk.hex(colors.textDim)('Evidence:')} ${chalk.hex(colors.textMuted)('none selected')}`);
   }
 
-  const committed = snap.latestCommittedCheckpoint;
-  if (committed !== undefined) {
-    rows.push(
-      `  ${chalk.hex(colors.success)('Committed checkpoint:')} ${chalk.hex(colors.text)(normalizeSummary(committed.entryId ?? committed.checkpointId))}`,
-    );
-  }
+  // Checkpoint details live in expanded view only (engineering audit info).
+  const checkpoint = formatCompactCheckpoint(snap, colors);
+  if (checkpoint !== undefined) rows.push(checkpoint);
 
-  if (snap.alerts.length === 0) {
+  const alerts = orderedAlerts(snap.alerts);
+  if (alerts.length === 0) {
     rows.push(`  ${chalk.hex(colors.textDim)('Alerts:')} ${chalk.hex(colors.textMuted)('none')}`);
   } else {
-    rows.push(`  ${chalk.hex(colors.warning)('Alerts:')} ${formatAlertSummary(snap.alerts, colors)}`);
-    for (const alert of orderedAlerts(snap.alerts).slice(0, MAX_ALERT_ROWS)) {
+    rows.push(`  ${chalk.hex(colors.warning)('Alerts:')} ${formatAlertSummary(alerts, colors)}`);
+    for (const alert of alerts.slice(0, MAX_ALERT_ROWS)) {
       rows.push(`    ${chalk.hex(colors.warning)('⚠')} ${chalk.hex(colors.textMuted)(normalizeSummary(alert.message))}`);
     }
-    if (snap.alerts.length > MAX_ALERT_ROWS) {
+    if (alerts.length > MAX_ALERT_ROWS) {
       rows.push(
-        `    ${chalk.hex(colors.textMuted)(`… +${String(snap.alerts.length - MAX_ALERT_ROWS)} more alerts`)}`,
+        `    ${chalk.hex(colors.textMuted)(`… +${String(alerts.length - MAX_ALERT_ROWS)} more alerts`)}`,
       );
     }
+  }
+  const acknowledgedCount = snap.alerts.length - alerts.length;
+  if (acknowledgedCount > 0) {
+    rows.push(
+      `  ${chalk.hex(colors.textDim)('acknowledged alerts:')} ${chalk.hex(colors.textMuted)(String(acknowledgedCount))}`,
+    );
   }
   return rows;
 }
@@ -504,4 +543,322 @@ export function formatAlertSummary(
   return chalk.hex(colors.warning)(
     `${alerts.length} alert${alerts.length === 1 ? '' : 's'}`,
   );
+}
+
+// ── Scientific progress formatters ──────────────────────────────────────────
+
+/** Human-readable phase label with a color matching its semantic. */
+function renderPhase(
+  phase: ResearchStatusSnapshot['phase'],
+  colors: ColorPalette,
+): string {
+  const label = PHASE_LABELS[phase] ?? phase;
+  if (phase === 'awaiting_human') return chalk.hex(colors.warning)(label);
+  if (phase === 'idle') return chalk.hex(colors.textMuted)(label);
+  if (phase === 'action_executing' || phase === 'evaluating')
+    return chalk.hex(colors.primary)(label);
+  return chalk.hex(colors.text)(label);
+}
+
+/**
+ * Compact scientific summary: phase, progress headline (or "本轮没有记录进展"),
+ * one-line mainline impact, and next action. Does NOT include audit identifiers.
+ */
+function renderCompactScientificRows(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string[] {
+  const rows: string[] = [
+    `  ${chalk.hex(colors.textDim)('Phase:')} ${renderPhase(snap.phase, colors)}`,
+  ];
+
+  const progress = snap.latestProgress;
+  const headline = progress !== undefined ? normalizeSummary(progress.headline) : '';
+  rows.push(
+    `  ${chalk.hex(colors.textDim)('Progress:')} ${chalk.hex(headline.length === 0 ? colors.textMuted : colors.text)(headline || '本轮没有记录进展')}`,
+  );
+
+  if (progress !== undefined) {
+    const impact = normalizeSummary(progress.mainlineImpact);
+    if (impact.length > 0) {
+      rows.push(
+        `  ${chalk.hex(colors.textDim)('Impact:')} ${chalk.hex(colors.text)(impact)}`,
+      );
+    }
+    const nextAction = normalizeSummary(progress.nextAction);
+    if (nextAction.length > 0) {
+      rows.push(
+        `  ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(colors.text)(nextAction)}`,
+      );
+    }
+  }
+
+  return rows;
+}
+
+/**
+ * Human gate takes priority over everything else in compact — if the loop is
+ * blocked waiting for a human decision, that is the most actionable info.
+ */
+function renderHumanGateRow(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string | undefined {
+  const gate = snap.humanGate;
+  if (gate === undefined || gate.resolvedAt !== undefined) return undefined;
+  const kindLabel = gate.kind === 'approval'
+    ? 'Approval needed'
+    : gate.kind === 'review'
+      ? 'Review needed'
+      : 'Decision needed';
+  return `  ${chalk.hex(colors.warning).bold('⏸ ' + kindLabel + ':')} ${chalk.hex(colors.text)(normalizeSummary(gate.prompt))}`;
+}
+
+/**
+ * Expanded scientific detail: full progress report fields (motivation,
+ * workPerformed, result, mainlineImpact, uncertainties, phaseChange),
+ * current action spec (purpose, expected evidence, stop condition), and
+ * the human gate prompt.
+ */
+function renderExpandedScientificRows(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string[] {
+  const rows: string[] = [
+    `  ${chalk.hex(colors.textDim)('Phase:')} ${renderPhase(snap.phase, colors)}`,
+  ];
+
+  // ── Progress detail ──
+  const progress = snap.latestProgress;
+  if (progress !== undefined) {
+    rows.push(
+      `  ${chalk.hex(colors.textStrong).bold('Latest progress')}`,
+    );
+    const fields: Array<[string, string]> = [
+      ['Headline', normalizeSummary(progress.headline)],
+      ['Motivation', normalizeSummary(progress.motivation)],
+      ['Work', normalizeSummary(progress.workPerformed)],
+      ['Result', normalizeSummary(progress.result)],
+      ['Impact', normalizeSummary(progress.mainlineImpact)],
+    ];
+    let added = 0;
+    for (const [label, value] of fields) {
+      if (value.length === 0 || added >= MAX_PROGRESS_DETAIL_ROWS) break;
+      rows.push(
+        `    ${chalk.hex(colors.textDim)(label + ':')} ${chalk.hex(colors.text)(value)}`,
+      );
+      added++;
+    }
+    if (progress.uncertainties.length > 0) {
+      const shown = progress.uncertainties.slice(0, MAX_UNCERTAINTY_ROWS);
+      const joined = shown.map((u) => normalizeSummary(u)).join(' · ');
+      const suffix = progress.uncertainties.length > MAX_UNCERTAINTY_ROWS
+        ? ` · +${String(progress.uncertainties.length - MAX_UNCERTAINTY_ROWS)} more`
+        : '';
+      rows.push(
+        `    ${chalk.hex(colors.textDim)('Uncertainties:')} ${chalk.hex(colors.warning)(joined)}${chalk.hex(colors.textMuted)(suffix)}`,
+      );
+    }
+    if (progress.phaseChange !== undefined) {
+      const from = PHASE_LABELS[progress.phaseChange.from] ?? progress.phaseChange.from;
+      const to = PHASE_LABELS[progress.phaseChange.to] ?? progress.phaseChange.to;
+      rows.push(
+        `    ${chalk.hex(colors.textDim)('Phase change:')} ${chalk.hex(colors.textMuted)(from)} → ${chalk.hex(colors.text)(to)}`,
+      );
+    }
+    const nextAction = normalizeSummary(progress.nextAction);
+    if (nextAction.length > 0) {
+      rows.push(
+        `    ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(colors.text)(nextAction)}`,
+      );
+    }
+  } else {
+    rows.push(
+      `  ${chalk.hex(colors.textDim)('Progress:')} ${chalk.hex(colors.textMuted)('本轮没有记录进展')}`,
+    );
+  }
+
+  // ── Current action detail ──
+  const action = snap.currentAction;
+  if (action !== undefined) {
+    rows.push(
+      `  ${chalk.hex(colors.textStrong).bold('Current action')}`,
+    );
+    rows.push(
+      `    ${chalk.hex(colors.textDim)('Kind:')} ${chalk.hex(colors.text)(action.kind)} · ${chalk.hex(colors.textMuted)(action.status)}`,
+    );
+    const purpose = normalizeSummary(action.purpose);
+    if (purpose.length > 0) {
+      rows.push(
+        `    ${chalk.hex(colors.textDim)('Purpose:')} ${chalk.hex(colors.text)(purpose)}`,
+      );
+    }
+    if (action.expectedEvidence.length > 0) {
+      const joined = action.expectedEvidence.map((e) => normalizeSummary(e)).join(' · ');
+      rows.push(
+        `    ${chalk.hex(colors.textDim)('Expected evidence:')} ${chalk.hex(colors.text)(joined)}`,
+      );
+    }
+    const stop = normalizeSummary(action.stopCondition);
+    if (stop.length > 0) {
+      rows.push(
+        `    ${chalk.hex(colors.textDim)('Stop condition:')} ${chalk.hex(colors.text)(stop)}`,
+      );
+    }
+  }
+
+  // ── Human gate ──
+  const gate = snap.humanGate;
+  if (gate !== undefined && gate.resolvedAt === undefined) {
+    const kindLabel = gate.kind === 'approval'
+      ? 'Approval needed'
+      : gate.kind === 'review'
+        ? 'Review needed'
+        : 'Decision needed';
+    rows.push(
+      `  ${chalk.hex(colors.warning).bold('⏸ ' + kindLabel + ':')} ${chalk.hex(colors.text)(normalizeSummary(gate.prompt))}`,
+    );
+    if (gate.resolution !== undefined) {
+      const resolution = normalizeSummary(gate.resolution);
+      if (resolution.length > 0) {
+        rows.push(
+          `    ${chalk.hex(colors.textDim)('Resolution:')} ${chalk.hex(colors.textMuted)(resolution)}`,
+        );
+      }
+    }
+  }
+
+  return rows;
+}
+
+// ── AITP maintenance formatters ─────────────────────────────────────────────
+
+/**
+ * Compact maintenance disclosure keeps only the highest-severity handoff
+ * signal. It deliberately excludes timestamps, identifiers, and raw check
+ * objects from the compact research view.
+ */
+function renderCompactMaintenanceReminder(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string | undefined {
+  const maintenance = snap.aitpMaintenance;
+  if (maintenance === undefined) return undefined;
+
+  const label = chalk.hex(colors.warning)('Research reminder:');
+  if (maintenance.unresolvedFailureCount > 0) {
+    const count = maintenance.unresolvedFailureCount;
+    const noun = `unresolved AITP failure${count === 1 ? '' : 's'}`;
+    return `  ${label} ${chalk.hex(colors.text)(`${String(count)} ${noun}`)}`;
+  }
+  if (maintenance.status === 'degraded') {
+    return `  ${label} ${chalk.hex(colors.warning)('AITP maintenance degraded')}`;
+  }
+  if (maintenance.activeNewerThanWorkingNote === true) {
+    return `  ${label} ${chalk.hex(colors.warning)('Working Note is behind active entries')}`;
+  }
+
+  const nextAction = normalizeSummary(maintenance.nextAction);
+  if (nextAction.length > 0) {
+    return `  ${label} ${chalk.hex(colors.text)(`AITP next action: ${nextAction}`)}`;
+  }
+  return undefined;
+}
+
+function renderExpandedMaintenanceRows(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string[] {
+  const maintenance = snap.aitpMaintenance;
+  if (maintenance === undefined) return [];
+
+  const rows: string[] = [
+    `  ${chalk.hex(colors.textStrong).bold('AITP maintenance handoff')} ${chalk.hex(colors.textMuted)('(not a physical conclusion)')}`,
+    `    ${chalk.hex(colors.textDim)('Status:')} ${renderMaintenanceStatus(maintenance.status, colors)}`,
+    `    ${chalk.hex(colors.textDim)('Memory:')} ${chalk.hex(colors.text)(formatMaintenanceMemoryStatus(maintenance.memoryStatus))}`,
+    `    ${chalk.hex(colors.textDim)('Working Note:')} ${renderWorkingNoteFreshness(maintenance, colors)}`,
+    `    ${chalk.hex(colors.textDim)('Unresolved failures:')} ${chalk.hex(maintenance.unresolvedFailureCount > 0 ? colors.warning : colors.text)(String(maintenance.unresolvedFailureCount))}`,
+    `    ${chalk.hex(colors.textDim)('Next AITP action:')} ${chalk.hex(colors.text)(normalizeSummary(maintenance.nextAction) || 'none recorded')}`,
+    `    ${chalk.hex(colors.textDim)('Check:')} ${renderMaintenanceCheck(maintenance.check, colors)}`,
+  ];
+
+  const warningCodes = formatMaintenanceCodes(
+    maintenance.warningSummaries.map((warning) => warning.code),
+  );
+  if (warningCodes !== undefined) {
+    rows.push(
+      `    ${chalk.hex(colors.textDim)('Warnings:')} ${chalk.hex(colors.warning)(warningCodes)}`,
+    );
+  }
+
+  const findingCodes = formatMaintenanceCodes(maintenance.check.findingCodes);
+  if (findingCodes !== undefined) {
+    rows.push(
+      `    ${chalk.hex(colors.textDim)('Finding codes:')} ${chalk.hex(colors.warning)(findingCodes)}`,
+    );
+  }
+
+  return rows;
+}
+
+function renderMaintenanceStatus(
+  status: AitpMaintenanceReceipt['status'],
+  colors: ColorPalette,
+): string {
+  return chalk.hex(status === 'degraded' ? colors.warning : colors.success)(status);
+}
+
+function formatMaintenanceMemoryStatus(
+  status: AitpMaintenanceReceipt['memoryStatus'],
+): string {
+  return status.replaceAll('_', ' ');
+}
+
+function renderWorkingNoteFreshness(
+  maintenance: AitpMaintenanceReceipt,
+  colors: ColorPalette,
+): string {
+  const date = maintenance.latestWorkingNoteAt === undefined
+    ? undefined
+    : formatMaintenanceDate(maintenance.latestWorkingNoteAt);
+  const suffix = date === undefined ? '' : ` · latest ${date}`;
+
+  if (maintenance.activeNewerThanWorkingNote === true) {
+    return chalk.hex(colors.warning)(`stale — active entries are newer${suffix}`);
+  }
+  if (maintenance.latestWorkingNoteAt === undefined) {
+    return chalk.hex(colors.textMuted)('not established');
+  }
+  if (maintenance.activeNewerThanWorkingNote === false) {
+    return chalk.hex(colors.success)(`current${suffix}`);
+  }
+  return chalk.hex(colors.textMuted)(`freshness unknown${suffix}`);
+}
+
+function formatMaintenanceDate(timestamp: number): string | undefined {
+  if (!Number.isFinite(timestamp)) return undefined;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString().slice(0, 10);
+}
+
+function renderMaintenanceCheck(
+  check: AitpMaintenanceReceipt['check'],
+  colors: ColorPalette,
+): string {
+  const counts = check.counts;
+  const summary = counts === undefined
+    ? check.status
+    : `${check.status} · errors ${String(counts.errors)} · warnings ${String(counts.warnings)}`;
+  return chalk.hex(check.status === 'clean' ? colors.success : colors.warning)(summary);
+}
+
+function formatMaintenanceCodes(codes: readonly string[]): string | undefined {
+  const normalized = codes.map(normalizeSummary).filter((code) => code.length > 0);
+  if (normalized.length === 0) return undefined;
+  const shown = normalized.slice(0, MAX_MAINTENANCE_CODES).join(', ');
+  const suffix = normalized.length > MAX_MAINTENANCE_CODES
+    ? ` · +${String(normalized.length - MAX_MAINTENANCE_CODES)} more`
+    : '';
+  return `${shown}${suffix}`;
 }
