@@ -1,5 +1,13 @@
 # @moonshot-ai/acp-adapter
 
+## 0.3.10
+
+### Patch Changes
+
+- Updated dependencies [[`322e0f0`](https://github.com/bhjia-phys/Hakimi/commit/322e0f0ea3fdb40e005e51c5935021fedff1820e), [`d96cd03`](https://github.com/bhjia-phys/Hakimi/commit/d96cd037702637305422222e985139e51ff83c8c), [`50616ed`](https://github.com/bhjia-phys/Hakimi/commit/50616ed9caf0b8ce6e4890b0dba84e81335d044b)]:
+  - @moonshot-ai/kimi-code-sdk@0.19.0
+  - @moonshot-ai/agent-core@0.15.9
+
 ## 0.3.9
 
 ### Patch Changes

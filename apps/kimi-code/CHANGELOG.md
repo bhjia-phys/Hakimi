@@ -1,5 +1,64 @@
 # @bhjia-phys/hakimi
 
+## 0.22.0
+
+### Minor Changes
+
+- [`322e0f0`](https://github.com/bhjia-phys/Hakimi/commit/322e0f0ea3fdb40e005e51c5935021fedff1820e) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add experimental AITP Research Mode with a science-first progress Board, explicit action phases, human decision and alert steering, and verified AITP current-state maintenance. Run `/research on` to enter and `/research manage` to review attention items.
+
+- [`322e0f0`](https://github.com/bhjia-phys/Hakimi/commit/322e0f0ea3fdb40e005e51c5935021fedff1820e) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add a built-in Hakimi documentation skill and align the bundled manual and ACP identity with Hakimi. Run `/check-hakimi-docs` for product help.
+
+- [`61591bc`](https://github.com/bhjia-phys/Hakimi/commit/61591bce09f4467aa1664cb8ecb6aa6904b7accd) Thanks [@chengluyu](https://github.com/chengluyu)! - Add `session.promptWithSkills(input, skills)` to submit one prompt with one or more skill activations bundled into the same user message — one turn, one undo unit (v2 engine only; rejects on the v1 engine).
+
+- [`44a6c70`](https://github.com/bhjia-phys/Hakimi/commit/44a6c70e66762ea9e122f8dceae16dc759086a7c) Thanks [@chengluyu](https://github.com/chengluyu)! - Activate multiple skills in a single prompt. Type `/` after whitespace to insert a skill token; all referenced skills run with the prompt as one turn (and undo as one unit).
+
+- [`bdf6b6b`](https://github.com/bhjia-phys/Hakimi/commit/bdf6b6b339149950d173f2cf77a389f454cf64dc) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add an interactive /preset manager for assigning models and thinking efforts to the main agent, subagent profiles, and AgentSwarm. Run /preset to configure and activate a routing preset.
+  Explicit Agent/AgentSwarm model arguments override the active preset's model routing, while preset thinking effort still applies by route.
+
+- [`008b29d`](https://github.com/bhjia-phys/Hakimi/commit/008b29d6c8cd59ab8baef23359efa94596081b97) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add experimental ChatGPT subscription login through OpenAI Codex OAuth. Enable `openai-codex-oauth` in `/experiments`, then run `/login`.
+
+- [`d618dd5`](https://github.com/bhjia-phys/Hakimi/commit/d618dd5bfd17ab3d902a4ea15bdf689d8214c9ca) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add the GetProviderUsage and SetSubagentPreset builtin tools for the main agent to query Kimi plan usage and activate a `[subagent]` routing preset for subsequent subagent spawns. Call GetProviderUsage before spawning many subagents, then SetSubagentPreset to switch the active preset.
+
+- [`f492cd7`](https://github.com/bhjia-phys/Hakimi/commit/f492cd7c9e03666ecfd10dc47ca9b48c35de2318) Thanks [@tpoisonooo](https://github.com/tpoisonooo)! - Add the /tower slash command to orchestrate multiple agents iterating on one repo in parallel — you act as the control tower while worker agents execute missions in their own git worktrees. Run /tower to start.
+
+- [`eb8d9ea`](https://github.com/bhjia-phys/Hakimi/commit/eb8d9ea12367bfa155435aea8f0b37f51b014305) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Support Markdown-defined custom agents on agent-core.
+
+- [`eb8d9ea`](https://github.com/bhjia-phys/Hakimi/commit/eb8d9ea12367bfa155435aea8f0b37f51b014305) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add the /secondary_model slash command to configure the secondary model used by subagents.
+
+### Patch Changes
+
+- [`d655e5c`](https://github.com/bhjia-phys/Hakimi/commit/d655e5c08a506b192d2c3a7b7faf0ae76b8f2e97) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - web: Reject incomplete, unbranded, or unprovenanced Web bundles, snapshot verified assets for SEA, and require receipt-bound native binaries during packaging.
+
+- [`9f8de1c`](https://github.com/bhjia-phys/Hakimi/commit/9f8de1cb8216e994ea40185e0e5655893fc81616) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add DeepSeek Vision model detection and official model-list refresh, so `deepseek-v4-flash-vision-exp` appears in `/model` and accepts image input. Open `/model` after configuring a DeepSeek provider to refresh its models.
+
+- [`7d104cb`](https://github.com/bhjia-phys/Hakimi/commit/7d104cb22a4663c59172a4b4fe98bfd083814bfc) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - web: Fix `/web` under WSL so the authenticated page opens in the default Windows browser, reconnects reused tabs without a hard refresh, and continues receiving live replies.
+
+- [`6b72345`](https://github.com/bhjia-phys/Hakimi/commit/6b72345f8bb03487e3bcc05b541e65484818428c) Thanks [@bj456736](https://github.com/bj456736)! - Print the full `hakimi --resume` command after `/fork` and copy it to the clipboard, so the fork can be entered directly from a new CLI process.
+
+- [`d96cd03`](https://github.com/bhjia-phys/Hakimi/commit/d96cd037702637305422222e985139e51ff83c8c) Thanks [@chengluyu](https://github.com/chengluyu)! - Warn in the footer while a typed `/goal` objective exceeds the 4000-character limit, and restore the input instead of losing it when an over-limit objective is rejected. The error message now suggests putting long content in a file and referencing the file path.
+
+- [`eb8d9ea`](https://github.com/bhjia-phys/Hakimi/commit/eb8d9ea12367bfa155435aea8f0b37f51b014305) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Keep Hakimi versions independent from the upstream baseline shown in `/status`, and publish verified six-platform native assets under canonical `hakimi-v<version>` releases.
+
+- [`f492cd7`](https://github.com/bhjia-phys/Hakimi/commit/f492cd7c9e03666ecfd10dc47ca9b48c35de2318) Thanks [@tpoisonooo](https://github.com/tpoisonooo)! - Fix several seconds of startup lag: the global search index (used only by the web UI's search) was being opened and synced in every terminal session, including ones that never search. It now loads on demand, so interactive startup stays fast.
+
+- [`008b29d`](https://github.com/bhjia-phys/Hakimi/commit/008b29d6c8cd59ab8baef23359efa94596081b97) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Limit the OpenAI Codex model picker to the GPT-5.6 Sol, Terra, and Luna models and expose their supported thinking effort levels after ChatGPT OAuth login.
+
+- [`ee564e5`](https://github.com/bhjia-phys/Hakimi/commit/ee564e5ec90afd068123b8052928c53f1fd5a27d) Thanks [@sailist](https://github.com/sailist)! - Persist the token counting ledger (`token_counting.measured` / `truncated` / `rebased`) to the wire journal, so the displayed context size keeps its measured value after archiving and unarchiving a session (or any close → resume) instead of dropping to a smaller estimate until the next LLM call.
+
+- [`fa0f6b5`](https://github.com/bhjia-phys/Hakimi/commit/fa0f6b5f0bef0d5c26a3d77ef5cdaea603310d04) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Let `/preset` create the first routing preset from its manager when none are configured. Run `/preset` and select `Create new preset`.
+
+- [`f492cd7`](https://github.com/bhjia-phys/Hakimi/commit/f492cd7c9e03666ecfd10dc47ca9b48c35de2318) Thanks [@tpoisonooo](https://github.com/tpoisonooo)! - Queue slash skill commands entered while the agent is busy instead of rejecting them with "Cannot /<cmd> while streaming" — they now behave exactly like normal input: queued visibly by default, and Ctrl-S steers them into the running turn as real skill activations.
+
+- [`e9367bd`](https://github.com/bhjia-phys/Hakimi/commit/e9367bd07545489ff222a2cfcff45cc86d5a6943) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Route Agent, AgentSwarm, and Tower model selection through canonical `/preset` routes, refresh normal profile bindings on resume, and retain legacy `/secondary-model` data only as a deprecated compatibility fallback.
+
+- [`d90971b`](https://github.com/bhjia-phys/Hakimi/commit/d90971bde9c1e3847360a17a1fac1bd7310bd013) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Make opt-in Research Mode keep current state across restore and AITP checks, distinguish historical findings from active blockers, and record each bounded research action with its physical result and next step.
+
+- [`f6d96e1`](https://github.com/bhjia-phys/Hakimi/commit/f6d96e13350214899e0d549d9766cdff3511ece0) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Silence startup warnings when the background provider-model refresh fails; manual refreshes still report failures.
+
+- [`9b50e3e`](https://github.com/bhjia-phys/Hakimi/commit/9b50e3ebc4d8bcfc7dc17cb179ecb36b13bb8d0e) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Fix long terminal sessions flickering or hiding the input area while thinking and subagents are running.
+
+- [`50616ed`](https://github.com/bhjia-phys/Hakimi/commit/50616ed9caf0b8ce6e4890b0dba84e81335d044b) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Fix model-selection and missing-session errors for clients using the v2 runtime.
+
 ## 0.13.0
 
 ### Minor Changes

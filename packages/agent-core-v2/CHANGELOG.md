@@ -1,5 +1,11 @@
 # @moonshot-ai/agent-core-v2
 
+## 0.4.1
+
+### Patch Changes
+
+- [`d96cd03`](https://github.com/bhjia-phys/Hakimi/commit/d96cd037702637305422222e985139e51ff83c8c) Thanks [@chengluyu](https://github.com/chengluyu)! - Include the file-reference workaround in the `GOAL_OBJECTIVE_TOO_LONG` error message so clients surface how to submit long objectives.
+
 ## 0.4.0
 
 ### Minor Changes

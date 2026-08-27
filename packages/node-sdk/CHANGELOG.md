@@ -1,5 +1,15 @@
 # @moonshot-ai/kimi-code-sdk
 
+## 0.19.0
+
+### Minor Changes
+
+- [`322e0f0`](https://github.com/bhjia-phys/Hakimi/commit/322e0f0ea3fdb40e005e51c5935021fedff1820e) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add experimental AITP Research Mode with a science-first progress Board, explicit action phases, human decision and alert steering, and verified AITP current-state maintenance. Run `/research on` to enter and `/research manage` to review attention items.
+
+### Patch Changes
+
+- [`50616ed`](https://github.com/bhjia-phys/Hakimi/commit/50616ed9caf0b8ce6e4890b0dba84e81335d044b) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Fix model-selection and missing-session errors for clients using the v2 runtime.
+
 ## 0.18.0
 
 ### Minor Changes

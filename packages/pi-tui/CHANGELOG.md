@@ -1,5 +1,13 @@
 # @moonshot-ai/pi-tui
 
+## 0.84.4
+
+### Patch Changes
+
+- [`9b50e3e`](https://github.com/bhjia-phys/Hakimi/commit/9b50e3ebc4d8bcfc7dc17cb179ecb36b13bb8d0e) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Avoid destructive redraws for stable-height updates above the viewport and keep erase commands outside synchronized output.
+
+- [`44a6c70`](https://github.com/bhjia-phys/Hakimi/commit/44a6c70e66762ea9e122f8dceae16dc759086a7c) Thanks [@chengluyu](https://github.com/chengluyu)! - Add an opt-in inline slash autocomplete trigger that fires after whitespace mid-input and at the start of subsequent editor lines.
+
 ## 0.84.3
 
 ### Patch Changes

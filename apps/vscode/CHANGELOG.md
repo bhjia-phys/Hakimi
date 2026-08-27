@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1
+
+### Patch Changes
+
+- Updated dependencies [[`322e0f0`](https://github.com/bhjia-phys/Hakimi/commit/322e0f0ea3fdb40e005e51c5935021fedff1820e), [`50616ed`](https://github.com/bhjia-phys/Hakimi/commit/50616ed9caf0b8ce6e4890b0dba84e81335d044b)]:
+  - @moonshot-ai/kimi-code-sdk@0.19.0
+
 ## 0.7.0
 
 ### Minor Changes
