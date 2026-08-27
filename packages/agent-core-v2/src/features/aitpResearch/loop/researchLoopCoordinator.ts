@@ -1,19 +1,17 @@
 /**
  * `aitpResearch` domain — `IResearchLoopCoordinator` contract + implementation.
  *
- * The minimal Research Loop lifecycle coordinator. Subscribes to `turn.started`
- * and `turn.ended` on the Agent-scope `IEventBus`. On `turn.started`, when
- * Research Mode is active and the loop is running, if the scientific phase is
- * `idle` it advances to `orienting` — the sole state mutation; the coordinator
- * never enqueues a continuation (Goal owns that). The current turn's semantic
- * revision and action id are recorded in plain fields (never written to the
- * wire model) for dedup and state judgment. On `turn.ended`, no automatic
- * result judgment, action completion, or AITP write occurs; preserved state is
- * surfaced by the next `AitpResearchInjection` cycle. Only the main agent's
- * coordinator subscribes; subagent instances are inert. Subscribes exactly
- * once at construction — mode enter/exit, pause/resume, and wire restore do
- * not re-register. Bound at Agent scope — contributed into every Agent scope
- * by `AitpResearchFeature`.
+ * Drives deterministic turn-boundary maintenance for the main agent through
+ * `IEventBus`, `IAgentAitpModeService`, `IAgentResearchService`, and the
+ * Session-scope AITP lifecycle coordinator. It advances an admitted idle active
+ * loop to orienting at turn start and refreshes the read-only AITP current-state
+ * projection after admitted turns that changed research state. Admission is
+ * required: only a Goal-owned continuation lease with the
+ * `system_trigger` / `goal_continuation` origin while Research Mode is active
+ * and the loop is running proceeds; ordinary user / system / subagent / cron
+ * turns abstain. It never judges results, completes actions, writes AITP
+ * records, or enqueues continuations; Goal owns continuation. Subagent
+ * instances remain inert. Bound at Agent scope.
  */
 
 import { Service } from '#/_base/di/service';
@@ -21,8 +19,10 @@ import { createDecorator } from '#/_base/di/instantiation';
 import { IEventBus } from '#/app/event/eventBus';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import type { TurnEndedEvent, TurnStartedEvent } from '#/agent/loop/turnEvents';
+import { ISessionAitpLifecycleCoordinator } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import { IAgentResearchService } from '#/features/aitpResearch/research/agentResearch';
+import { IResearchTurnAdmission } from '#/features/aitpResearch/loop/researchTurnAdmission';
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
 
 export interface IResearchLoopCoordinator {
@@ -44,14 +44,20 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
     @IAgentResearchService private readonly research: IAgentResearchService,
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
     @IAgentScopeContext scopeCtx: IAgentScopeContext,
+    @IResearchTurnAdmission private readonly admission: IResearchTurnAdmission,
+    @ISessionAitpLifecycleCoordinator private readonly maintenance?: ISessionAitpLifecycleCoordinator,
   ) {
     super();
     if (scopeCtx.agentId !== MAIN_AGENT_ID) return;
     this._register(
-      eventBus.subscribe('turn.started', (e) => this.onTurnStarted(e)),
+      eventBus.subscribe('turn.started', (e) => {
+        this.onTurnStarted(e);
+      }),
     );
     this._register(
-      eventBus.subscribe('turn.ended', (e) => this.onTurnEnded(e)),
+      eventBus.subscribe('turn.ended', (e) => {
+        this.onTurnEnded(e);
+      }),
     );
   }
 
@@ -59,7 +65,7 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
     if (this.lastTurnId === event.turnId) return;
     this.lastTurnId = event.turnId;
 
-    if (!this.mode.isActive || this.mode.loopStatus !== 'active') {
+    if (!this.admission.isTurnAdmitted(event.turnId)) {
       this.turnStartRevision = null;
       this.turnStartActionId = null;
       return;
@@ -74,20 +80,25 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
     try {
       this.research.setPhase('orienting', 'turn.started auto-advance');
     } catch {
-      // Phase may have changed between snapshot and setPhase, or the mode
-      // may have transitioned; the injection cycle will surface the current
-      // state. Minimal safe implementation — no further action.
+      return;
     }
   }
 
-  private onTurnEnded(_event: TurnEndedEvent): void {
-    // Minimal safe implementation: do not auto-judge results, auto-complete
-    // actions, or auto-write AITP. If the current action is still in_progress
-    // or the phase is action_executing/evaluating, state is preserved and the
-    // next AitpResearchInjection cycle surfaces the pending action/phase/gate
-    // to the main agent. No deterministic stale/blocked alert is produced —
-    // there is no runtime alert-adding op in the existing wire vocabulary.
-    // turnStartRevision / turnStartActionId remain available for state
-    // judgment but no mutation is performed here.
+  private onTurnEnded(event: TurnEndedEvent): void {
+    if (this.lastTurnId !== event.turnId) return;
+    if (!this.mode.isActive || this.mode.loopStatus !== 'active') return;
+    if (this.maintenance === undefined || this.turnStartRevision === null) return;
+
+    const snapshot = this.research.getSnapshot();
+    const researchChanged = snapshot.revision !== this.turnStartRevision ||
+      (snapshot.currentAction?.actionId ?? null) !== this.turnStartActionId;
+    this.turnStartRevision = null;
+    this.turnStartActionId = null;
+    if (!researchChanged) return;
+
+    void this.maintenance.refresh({
+      workstream: snapshot.currentLineSlug,
+      force: true,
+    }).catch(() => undefined);
   }
 }

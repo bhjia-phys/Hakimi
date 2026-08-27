@@ -564,8 +564,8 @@ export class Session {
   /**
    * Submit one research steering command (mode on/off, pause/resume, question
    * create/edit, focus, line switch, reopen/defer/block/close, human decision
-   * resolve, alert acknowledgement, checkpoint propose/commit). Resolves with
-   * the post-command snapshot.
+   * resolve, typed evidence review, run observation, alert acknowledgement,
+   * checkpoint propose/commit). Resolves with the post-command snapshot.
    */
   async commandResearch(command: ResearchCommand): Promise<ResearchCommandResponse> {
     this.ensureOpen();

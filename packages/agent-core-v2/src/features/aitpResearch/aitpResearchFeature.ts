@@ -12,8 +12,9 @@
  * (`features/aitpResearch/aitpResearchOps`) stay on their static
  * import=register channels. `EnterAITPMode` is permanently registered but
  * flag-gated through its `when` predicate; all other tools are active-only
- * (their `when` checks `mode.isActive`). Registered into the feature table at
- * import.
+ * (their `when` checks `mode.isActive`). The active overlay exposes the
+ * semantic Begin/Conclude action path while retaining lower-level recovery
+ * tools only where needed. Registered into the feature table at import.
  */
 
 import { Feature } from '#/features/feature';
@@ -32,9 +33,12 @@ import { IAgentAitpModeService } from './mode/agentAitpMode';
 import { AgentAitpModeService } from './mode/agentAitpModeService';
 import { IAgentResearchService } from './research/agentResearch';
 import { AgentResearchService } from './research/agentResearchService';
+import { IDurableCommitService } from './research/durableCommit';
+import { DurableCommitService } from './research/durableCommitService';
 import { AitpResearchInjection } from './injection/aitpResearchInjection';
 import { IAitpResearchInjection } from './injection/aitpResearchInjectionContract';
 import { IResearchLoopCoordinator, ResearchLoopCoordinator } from './loop/researchLoopCoordinator';
+import { IResearchTurnAdmission, ResearchTurnAdmission } from './loop/researchTurnAdmission';
 
 import {
   IEnterAITPModeTool,
@@ -43,36 +47,38 @@ import {
 import { EnterAITPModeTool, ExitAITPModeTool } from './tools/aitpModeToolsImpl';
 import {
   ICommitResearchCheckpointTool,
-  ICompleteResearchActionTool,
+  IConcludeResearchActionTool,
   ICreateResearchLineTool,
   ICreateResearchQuestionTool,
   IGetResearchStatusTool,
   IAcknowledgeResearchAlertTool,
-  IPlanResearchActionTool,
+  IBeginResearchActionTool,
   IProposeResearchCheckpointTool,
   IRecordResearchProgressTool,
+  IReviewResearchEvidenceTool,
+  IObserveResearchRunTool,
   IRequestResearchDecisionTool,
   IResolveResearchDecisionTool,
   ISetResearchFocusTool,
-  ISetResearchPhaseTool,
   IStartResearchActionTool,
   IUpdateResearchLineTool,
   IUpdateResearchQuestionTool,
 } from './tools/researchTools';
 import {
   CommitResearchCheckpointTool,
-  CompleteResearchActionTool,
+  ConcludeResearchActionTool,
   CreateResearchLineTool,
   CreateResearchQuestionTool,
   GetResearchStatusTool,
   AcknowledgeResearchAlertTool,
-  PlanResearchActionTool,
+  BeginResearchActionTool,
   ProposeResearchCheckpointTool,
   RecordResearchProgressTool,
+  ReviewResearchEvidenceTool,
+  ObserveResearchRunTool,
   RequestResearchDecisionTool,
   ResolveResearchDecisionTool,
   SetResearchFocusTool,
-  SetResearchPhaseTool,
   StartResearchActionTool,
   UpdateResearchLineTool,
   UpdateResearchQuestionTool,
@@ -120,9 +126,11 @@ export class AitpResearchFeature extends Feature {
     );
 
     this.contributeAgentService(IAgentAitpModeService, AgentAitpModeService);
+    this.contributeAgentService(IDurableCommitService, DurableCommitService);
     this.contributeAgentService(IAgentResearchService, AgentResearchService);
 
     this.contributeAgentService(IAitpResearchInjection, AitpResearchInjection);
+    this.contributeAgentService(IResearchTurnAdmission, ResearchTurnAdmission);
     this.contributeAgentService(IResearchLoopCoordinator, ResearchLoopCoordinator);
 
     this.contributeTool(IEnterAITPModeTool, EnterAITPModeTool, {
@@ -171,11 +179,6 @@ export class AitpResearchFeature extends Feature {
       domain: 'aitpResearch',
       when: isAitpModeActive,
     });
-    this.contributeTool(ISetResearchPhaseTool, SetResearchPhaseTool, {
-      name: 'SetResearchPhase',
-      domain: 'aitpResearch',
-      when: isAitpModeActive,
-    });
     this.contributeTool(IProposeResearchCheckpointTool, ProposeResearchCheckpointTool, {
       name: 'ProposeResearchCheckpoint',
       domain: 'aitpResearch',
@@ -186,8 +189,8 @@ export class AitpResearchFeature extends Feature {
       domain: 'aitpResearch',
       when: isAitpModeActive,
     });
-    this.contributeTool(IPlanResearchActionTool, PlanResearchActionTool, {
-      name: 'PlanResearchAction',
+    this.contributeTool(IBeginResearchActionTool, BeginResearchActionTool, {
+      name: 'BeginResearchAction',
       domain: 'aitpResearch',
       when: isAitpModeActive,
     });
@@ -196,13 +199,23 @@ export class AitpResearchFeature extends Feature {
       domain: 'aitpResearch',
       when: isAitpModeActive,
     });
-    this.contributeTool(ICompleteResearchActionTool, CompleteResearchActionTool, {
-      name: 'CompleteResearchAction',
+    this.contributeTool(IConcludeResearchActionTool, ConcludeResearchActionTool, {
+      name: 'ConcludeResearchAction',
       domain: 'aitpResearch',
       when: isAitpModeActive,
     });
     this.contributeTool(IRecordResearchProgressTool, RecordResearchProgressTool, {
       name: 'RecordResearchProgress',
+      domain: 'aitpResearch',
+      when: isAitpModeActive,
+    });
+    this.contributeTool(IReviewResearchEvidenceTool, ReviewResearchEvidenceTool, {
+      name: 'ReviewResearchEvidence',
+      domain: 'aitpResearch',
+      when: isAitpModeActive,
+    });
+    this.contributeTool(IObserveResearchRunTool, ObserveResearchRunTool, {
+      name: 'ObserveResearchRun',
       domain: 'aitpResearch',
       when: isAitpModeActive,
     });

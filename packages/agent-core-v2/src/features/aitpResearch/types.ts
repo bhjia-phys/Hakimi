@@ -11,6 +11,7 @@
  */
 
 import { z } from 'zod';
+import type { HumanGateKind } from '#/agent/humanGate/humanGate';
 
 export type AitpModePhase = 'inactive' | 'probing' | 'ready' | 'degraded';
 
@@ -56,14 +57,82 @@ export interface ResearchFocus {
   readonly revision: number;
 }
 
+export type ResearchNextStepSource =
+  | 'research_action'
+  | 'research_run'
+  | 'human_gate'
+  | 'aitp_maintenance'
+  | 'question';
+
+export type ResearchNextStepFreshness = 'current' | 'stale' | 'blocked';
+
+export interface ResearchEffectiveNextStep {
+  readonly text: string;
+  readonly source: ResearchNextStepSource;
+  readonly freshness: ResearchNextStepFreshness;
+  readonly observedAt: number;
+  readonly derivedFrom: {
+    readonly actionId?: string;
+    readonly entryId?: string;
+    readonly questionId?: string;
+    readonly lineSlug?: string;
+  };
+}
+
+export interface ResearchCheckpointCheckReceipt {
+  readonly status: 'clean' | 'findings';
+  readonly errors: number;
+  readonly warnings: number;
+  readonly findingFingerprints: readonly string[];
+  readonly errorFindingFingerprints: readonly string[];
+  readonly newErrorFindingFingerprints?: readonly string[];
+  readonly preExistingErrorFindingFingerprints?: readonly string[];
+  readonly checkedAt: number;
+}
+
+export type ResearchCheckpointPrepareReceipt =
+  | {
+      readonly status: 'prepared';
+      readonly id: string;
+      readonly path: string;
+      readonly idempotencyKey?: string;
+      readonly workstreams?: readonly string[];
+    }
+  | {
+      readonly status: 'existing';
+      /** Derived from the returned path; absent only for an unexpected path shape. */
+      readonly id?: string;
+      readonly path: string;
+      readonly idempotencyKey: string;
+      readonly workstreams?: readonly string[];
+    };
+
+export interface ResearchCheckpointSaveReceipt {
+  readonly status: 'saved' | 'already_saved';
+  /** The draft passed to record save, or the canonical path returned by an existing prepare hit. */
+  readonly draftPath: string;
+  readonly path: string;
+  readonly source?: 'record_save' | 'prepare_existing';
+}
+
+export interface ResearchCheckpointReceipt {
+  readonly prepare?: ResearchCheckpointPrepareReceipt;
+  readonly save?: ResearchCheckpointSaveReceipt;
+  readonly preSaveCheck?: ResearchCheckpointCheckReceipt;
+  readonly postSaveCheck?: ResearchCheckpointCheckReceipt;
+}
+
 export interface ResearchCheckpoint {
   readonly checkpointId: string;
+  readonly committedEntryId?: string;
   readonly questionId?: string;
+  readonly questionRevision?: number;
   readonly lineSlug?: string;
   readonly assessment?: string;
   readonly nextAction?: string;
   readonly idempotencyKey: string;
   readonly persistence: QuestionPersistence;
+  readonly receipt?: ResearchCheckpointReceipt;
   readonly createdAt: number;
 }
 
@@ -87,6 +156,7 @@ export interface ResearchLineUpdateInput {
 export interface ResearchCommittedCursor {
   readonly checkpointId: string;
   readonly entryId?: string;
+  readonly receipt?: ResearchCheckpointReceipt;
   readonly committedAt: number;
 }
 
@@ -122,6 +192,39 @@ export type ResearchActionKind =
 
 export type ResearchActionStatus = 'planned' | 'in_progress' | 'completed' | 'abandoned';
 
+export type ResearchRunStage =
+  | 'queued'
+  | 'running'
+  | 'scf'
+  | 'band'
+  | 'analyzing'
+  | 'completed'
+  | 'failed'
+  | 'unknown';
+
+export type ResearchSchedulerState =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'unknown';
+
+export interface ResearchRunState {
+  /** Every run observation is attached to the bounded Research Action that owns it. */
+  readonly actionId: string;
+  readonly campaign: string;
+  readonly jobId: string;
+  readonly sourcePin?: string;
+  readonly binaryPin?: string;
+  readonly stage: ResearchRunStage;
+  readonly schedulerState: ResearchSchedulerState;
+  readonly lastObservedAt: number;
+  readonly nextCheckAt?: number;
+  readonly terminalState?: 'completed' | 'failed' | 'cancelled';
+  readonly artifactRefs: readonly string[];
+}
+
 export interface ResearchActionSpec {
   readonly actionId: string;
   readonly questionId?: string;
@@ -131,10 +234,12 @@ export interface ResearchActionSpec {
   readonly expectedEvidence: readonly string[];
   readonly stopCondition: string;
   readonly allowedToolKinds: readonly string[];
+  readonly retryOfEntryId?: string;
   readonly status: ResearchActionStatus;
   readonly createdAt: number;
   readonly completedAt?: number;
   readonly requiresHumanApproval: boolean;
+  readonly run?: ResearchRunState;
 }
 
 export type ResearchProgressLevel = 'brief' | 'detail' | 'audit';
@@ -173,7 +278,7 @@ export interface ResearchStateChange {
   readonly changedAt: number;
 }
 
-export type ResearchHumanGateKind = 'approval' | 'review' | 'decision';
+export type ResearchHumanGateKind = HumanGateKind;
 
 export interface ResearchHumanGate {
   readonly gateId: string;
@@ -189,6 +294,7 @@ export interface ResearchHumanGate {
 export interface ResearchScientificSnapshot {
   readonly phase: ResearchPhase;
   readonly currentAction?: ResearchActionSpec;
+  readonly currentRun?: ResearchRunState;
   readonly latestProgress?: ResearchProgressReport;
   readonly recentStateChange?: ResearchStateChange;
   readonly humanGate?: ResearchHumanGate;
@@ -206,25 +312,50 @@ export interface ResearchStatusSnapshot {
   readonly activeQuestionCount: number;
   readonly blockedQuestionCount: number;
   readonly alerts: readonly ResearchAlert[];
+  readonly effectiveNextStep?: ResearchEffectiveNextStep;
   readonly goalSummary?: { readonly status: string; readonly remainingTurns?: number };
   readonly aitpHealth: AitpAdapterHealth;
   readonly aitpMaintenance?: AitpMaintenanceReceipt;
   readonly pendingCheckpoint?: ResearchCheckpoint;
   readonly latestCommittedCheckpoint?: ResearchCommittedCursor;
+  readonly committedCheckpointHistory?: readonly ResearchCommittedCursor[];
   readonly phase: ResearchPhase;
   readonly currentAction?: ResearchActionSpec;
+  readonly currentRun?: ResearchRunState;
   readonly latestProgress?: ResearchProgressReport;
   readonly recentStateChange?: ResearchStateChange;
   readonly humanGate?: ResearchHumanGate;
   readonly revision: number;
 }
 
+export type ResearchAlertClassification =
+  | 'active_blocker'
+  | 'historical_unresolved'
+  | 'superseded_by_retry'
+  | 'warning';
+
+export type ResearchAlertSource =
+  | 'question'
+  | 'aitp_failure'
+  | 'aitp_check'
+  | 'adapter'
+  | 'checkpoint';
+
+export type ResearchAlertState = 'active' | 'acknowledged' | 'cleared' | 'superseded';
+
 export interface ResearchAlert {
   readonly fingerprint: string;
   readonly kind: 'contradiction' | 'blocked' | 'reopened' | 'commit_failed' | 'degraded' | 'stale';
+  readonly classification?: ResearchAlertClassification;
+  readonly source?: ResearchAlertSource;
+  readonly state?: ResearchAlertState;
   readonly message: string;
   readonly questionId?: string;
   readonly lineSlug?: string;
+  readonly relatedEntryId?: string;
+  readonly workstream?: string;
+  readonly retryOfEntryId?: string;
+  readonly reason?: string;
   readonly createdAt: number;
   readonly acknowledgedAt?: number;
 }
@@ -250,7 +381,6 @@ export type AitpMaintenanceDegradedReason =
   | 'adapter_degraded'
   | 'enter_failed'
   | 'check_unavailable'
-  | 'check_findings'
   | 'stale_generation';
 
 export interface AitpMaintenanceWarningSummary {
@@ -269,11 +399,29 @@ export interface AitpMaintenanceCheckSummary {
   readonly findingCodes: readonly string[];
 }
 
+export interface AitpMaintenanceFailureSummary {
+  readonly entryId: string;
+  readonly kind: AitpEntryKind;
+  readonly summary: string;
+  readonly source: string;
+  readonly authority: AitpAuthority;
+  readonly createdAt?: number;
+  readonly workstream?: string;
+}
+
+export interface AitpMaintenanceNextAction {
+  readonly text: string;
+  readonly entryId: string;
+  readonly authority: AitpAuthority;
+  readonly createdAt?: number;
+  readonly source: string;
+}
+
 /**
  * Read-only current-state maintenance derived from one AITP `enter` → `check`
- * cycle. It deliberately contains no Entry/Note identifiers, paths, hashes,
- * revisions, or raw transport errors, so it is safe for Research snapshots and
- * context injection.
+ * cycle. It keeps stable entry references needed to distinguish historical
+ * failures from current blockers, while raw paths, hashes, revisions, and
+ * transport errors remain outside the Research snapshot.
  */
 export interface AitpMaintenanceReceipt {
   readonly status: AitpMaintenanceStatus;
@@ -283,7 +431,9 @@ export interface AitpMaintenanceReceipt {
   readonly latestWorkingNoteAt?: number;
   readonly activeNewerThanWorkingNote: boolean | null;
   readonly unresolvedFailureCount: number;
+  readonly unresolvedFailures: readonly AitpMaintenanceFailureSummary[];
   readonly nextAction?: string;
+  readonly nextActionDetails?: AitpMaintenanceNextAction;
   readonly warningSummaries: readonly AitpMaintenanceWarningSummary[];
   readonly check: AitpMaintenanceCheckSummary;
   readonly degradedReason?: AitpMaintenanceDegradedReason;

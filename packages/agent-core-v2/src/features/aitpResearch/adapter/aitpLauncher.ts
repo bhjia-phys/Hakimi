@@ -70,6 +70,7 @@ interface OutputCapture {
 
 type TerminationReason =
   | { readonly kind: 'timeout' }
+  | { readonly kind: 'cancelled' }
   | { readonly kind: 'output_limit'; readonly stream: 'stdout' | 'stderr'; readonly limitBytes: number };
 
 function observeOutput(
@@ -194,12 +195,12 @@ export class AitpLauncher {
     private readonly options: AitpLauncherOptions,
   ) {}
 
-  async probePython(): Promise<string | null> {
+  async probePython(options?: { readonly signal?: AbortSignal }): Promise<string | null> {
     for (const candidate of this.options.pythonPath
       ? [this.options.pythonPath]
       : PYTHON_CANDIDATES) {
       try {
-        const result = await this.runRaw(candidate, ['-c', 'import sys; print(sys.version_info[:3])']);
+        const result = await this.runRaw(candidate, ['-c', 'import sys; print(sys.version_info[:3])'], options?.signal);
         if (result.exitCode !== 0) continue;
         const match = result.stdout.trim().match(/^\((\d+),\s*(\d+),\s*(\d+)\)$/);
         if (match === null) continue;
@@ -209,40 +210,42 @@ export class AitpLauncher {
         if (this.versionGte([major, minor, patch], MIN_PYTHON_VERSION)) {
           return candidate;
         }
-      } catch {
+      } catch (error) {
+        if (isOperationCancelled(error)) throw error;
         continue;
       }
     }
     return null;
   }
 
-  async enter(workstream?: string, recent?: number): Promise<AitpLaunchResult<AitpEnterResult>> {
+  async enter(workstream?: string, recent?: number, options?: { readonly signal?: AbortSignal }): Promise<AitpLaunchResult<AitpEnterResult>> {
     const args = ['enter', '--json'];
     if (recent !== undefined) args.push('--recent', String(recent));
     if (workstream !== undefined) args.push('--workstream', workstream);
-    return this.runValidated(args, [0], parseEnterResult);
+    return this.runValidated(args, [0], parseEnterResult, options?.signal);
   }
 
   async list(
     workstream?: string,
     kind?: AitpEntryKind,
     since?: string,
+    options?: { readonly signal?: AbortSignal },
   ): Promise<AitpLaunchResult<AitpListResult>> {
     const args = ['list', '--json'];
     if (workstream !== undefined) args.push('--workstream', workstream);
     if (kind !== undefined) args.push('--kind', kind);
     if (since !== undefined) args.push('--since', since);
-    return this.runValidated(args, [0], parseListResult);
+    return this.runValidated(args, [0], parseListResult, options?.signal);
   }
 
-  async show(id: string): Promise<AitpLaunchResult<AitpShowResult>> {
-    return this.runValidated(['show', id, '--json'], [0], parseShowResult);
+  async show(id: string, options?: { readonly signal?: AbortSignal }): Promise<AitpLaunchResult<AitpShowResult>> {
+    return this.runValidated(['show', id, '--json'], [0], parseShowResult, options?.signal);
   }
 
-  async check(workstream?: string): Promise<AitpLaunchResult<AitpCheckReport>> {
+  async check(workstream?: string, options?: { readonly signal?: AbortSignal }): Promise<AitpLaunchResult<AitpCheckReport>> {
     const args = ['check', '--json'];
     if (workstream !== undefined) args.push('--workstream', workstream);
-    return this.runValidated(args, [0, 1], parseCheckReport);
+    return this.runValidated(args, [0, 1], parseCheckReport, options?.signal);
   }
 
   async recordPrepare(params: {
@@ -251,7 +254,7 @@ export class AitpLauncher {
     readonly createdBy?: string;
     readonly idempotencyKey?: string;
     readonly workstreams?: readonly string[];
-  }): Promise<AitpLaunchResult<AitpRecordPrepareResult>> {
+  }, options?: { readonly signal?: AbortSignal }): Promise<AitpLaunchResult<AitpRecordPrepareResult>> {
     const args = ['record', 'prepare', '--kind', params.kind, '--json'];
     if (params.authority !== undefined) args.push('--authority', params.authority);
     if (params.createdBy !== undefined) args.push('--created-by', params.createdBy);
@@ -259,11 +262,11 @@ export class AitpLauncher {
     for (const ws of params.workstreams ?? []) {
       args.push('--workstream', ws);
     }
-    return this.runValidated(args, [0], parseRecordPrepareResult);
+    return this.runValidated(args, [0], parseRecordPrepareResult, options?.signal);
   }
 
-  async recordSave(draftPath: string): Promise<AitpLaunchResult<AitpRecordSaveResult>> {
-    return this.runValidated(['record', 'save', draftPath, '--json'], [0], parseRecordSaveResult);
+  async recordSave(draftPath: string, options?: { readonly signal?: AbortSignal }): Promise<AitpLaunchResult<AitpRecordSaveResult>> {
+    return this.runValidated(['record', 'save', draftPath, '--json'], [0], parseRecordSaveResult, options?.signal);
   }
 
   async notePrepare(params: {
@@ -271,26 +274,27 @@ export class AitpLauncher {
     readonly title: string;
     readonly createdBy: string;
     readonly workstreams?: readonly string[];
-  }): Promise<AitpLaunchResult<AitpNotePrepareResult>> {
+  }, options?: { readonly signal?: AbortSignal }): Promise<AitpLaunchResult<AitpNotePrepareResult>> {
     const args = ['note', 'prepare', '--mode', params.mode, '--title', params.title, '--created-by', params.createdBy, '--json'];
     for (const ws of params.workstreams ?? []) {
       args.push('--workstream', ws);
     }
-    return this.runValidated(args, [0], parseNotePrepareResult);
+    return this.runValidated(args, [0], parseNotePrepareResult, options?.signal);
   }
 
-  async noteSave(draftPath: string): Promise<AitpLaunchResult<AitpNoteSaveResult>> {
-    return this.runValidated(['note', 'save', draftPath, '--json'], [0], parseNoteSaveResult);
+  async noteSave(draftPath: string, options?: { readonly signal?: AbortSignal }): Promise<AitpLaunchResult<AitpNoteSaveResult>> {
+    return this.runValidated(['note', 'save', draftPath, '--json'], [0], parseNoteSaveResult, options?.signal);
   }
 
   private async runValidated<T>(
     args: readonly string[],
     allowedExits: AllowedExits,
     parse: (raw: unknown) => T,
+    signal?: AbortSignal,
   ): Promise<AitpLaunchResult<T>> {
-    const python = await this.resolvePython();
+    const python = await this.resolvePython(signal);
     const fullArgs = [this.options.launcherScript, ...args];
-    const result = await this.runRaw(python, fullArgs);
+    const result = await this.runRaw(python, fullArgs, signal);
 
     if (allowedExits.includes(result.exitCode)) {
       let parsed: unknown;
@@ -349,9 +353,9 @@ export class AitpLauncher {
     );
   }
 
-  private async resolvePython(): Promise<string> {
+  private async resolvePython(signal?: AbortSignal): Promise<string> {
     if (this.options.pythonPath) return this.options.pythonPath;
-    const found = await this.probePython();
+    const found = await this.probePython({ signal });
     if (found === null) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_ADAPTER_SPAWN_FAILED,
@@ -361,11 +365,12 @@ export class AitpLauncher {
     return found;
   }
 
-  private async runRaw(command: string, args: readonly string[]): Promise<{
+  private async runRaw(command: string, args: readonly string[], signal?: AbortSignal): Promise<{
     readonly exitCode: number;
     readonly stdout: string;
     readonly stderr: string;
   }> {
+    if (signal?.aborted) throw operationCancelledError();
     const timeoutMs = Math.max(0, this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     let proc: IHostProcess;
     try {
@@ -415,6 +420,11 @@ export class AitpLauncher {
         resolve({ kind: 'timeout' });
       }, timeoutMs);
     });
+    const onAbort = (): void => {
+      resolveTermination({ kind: 'cancelled' });
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
     let disposed = false;
     const dispose = async (): Promise<void> => {
       if (disposed) return;
@@ -457,12 +467,14 @@ export class AitpLauncher {
           `AITP timed out after ${timeoutMs}ms`,
         );
       }
+      if (outcome.kind === 'cancelled') throw operationCancelledError();
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_ADAPTER_OUTPUT_LIMIT,
         `AITP ${outcome.stream} output exceeded the ${outcome.limitBytes}-byte limit`,
         { details: { stream: outcome.stream, limitBytes: outcome.limitBytes } },
       );
     } finally {
+      signal?.removeEventListener('abort', onAbort);
       if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
       await dispose();
     }
@@ -477,6 +489,18 @@ export class AitpLauncher {
     }
     return true;
   }
+}
+
+function operationCancelledError(): AitpResearchError {
+  return new AitpResearchError(
+    AitpResearchErrors.codes.AITP_ADAPTER_OPERATION_CANCELLED,
+    'AITP operation was cancelled before a result could be returned.',
+  );
+}
+
+function isOperationCancelled(error: unknown): boolean {
+  return error instanceof AitpResearchError
+    && error.code === AitpResearchErrors.codes.AITP_ADAPTER_OPERATION_CANCELLED;
 }
 
 export function isAitpNotInitializedError(error: unknown): boolean {

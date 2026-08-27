@@ -74,6 +74,20 @@ interface ManifestFile {
   readonly version?: unknown;
 }
 
+interface LifecycleOperation {
+  readonly generation: number;
+  readonly signal: AbortSignal;
+}
+
+function combineSignals(first: AbortSignal, second: AbortSignal | undefined): AbortSignal {
+  return second === undefined ? first : AbortSignal.any([first, second]);
+}
+
+function isOperationCancelled(error: unknown): error is AitpResearchError {
+  return error instanceof AitpResearchError
+    && error.code === AitpResearchErrors.codes.AITP_ADAPTER_OPERATION_CANCELLED;
+}
+
 export class SessionAitpAdapterService extends Service implements ISessionAitpAdapter {
   declare readonly _serviceBrand: undefined;
 
@@ -81,6 +95,12 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
   private contractIdentity: AitpContractIdentity | null = null;
   private launcher: AitpLauncher | null = null;
   private mutationInFlight = false;
+  private lifecycleGeneration = 0;
+  private lifecycleController = new AbortController();
+  private probeInFlight: {
+    readonly generation: number;
+    readonly promise: Promise<AitpAdapterHealth>;
+  } | undefined;
 
   constructor(
     @ISessionSkillCatalog private readonly skillCatalog: ISessionSkillCatalog,
@@ -109,16 +129,102 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
   }
 
   reset(): void {
+    this.lifecycleGeneration += 1;
+    this.lifecycleController.abort();
+    this.lifecycleController = new AbortController();
+    this.probeInFlight = undefined;
     this.healthState = { phase: 'inactive' };
     this.contractIdentity = null;
     this.launcher = null;
-    this.mutationInFlight = false;
+    // Keep this lock until the old mutation settles. A reset cannot prove that
+    // an external save did not take effect after its process was interrupted.
   }
 
-  async probe(): Promise<AitpAdapterHealth> {
+  override dispose(): void {
+    this.reset();
+    super.dispose();
+  }
+
+  probe(): Promise<AitpAdapterHealth> {
+    const operation = this.captureLifecycle();
+    if (this.probeInFlight?.generation === operation.generation) {
+      return this.probeInFlight.promise;
+    }
+    const promise = this.runProbe(operation);
+    this.probeInFlight = { generation: operation.generation, promise };
+    void promise.then(
+      () => { this.clearProbeInFlight(promise); },
+      () => { this.clearProbeInFlight(promise); },
+    );
+    return promise;
+  }
+
+  async enter(options?: AitpAdapterEnterOptions): Promise<AitpEnterResult> {
+    return this.executeRead(options, (launcher, signal) =>
+      launcher.enter(options?.workstream, options?.recent, { signal }),
+    );
+  }
+
+  async list(options?: AitpAdapterListOptions): Promise<AitpListResult> {
+    return this.executeRead(options, (launcher, signal) =>
+      launcher.list(options?.workstream, options?.kind, options?.since, { signal }),
+    );
+  }
+
+  async show(options: AitpAdapterShowOptions): Promise<AitpShowResult> {
+    return this.executeRead(options, (launcher, signal) =>
+      launcher.show(options.id, { signal }),
+    );
+  }
+
+  async check(options?: AitpAdapterCheckOptions): Promise<AitpCheckReport> {
+    return this.executeRead(options, (launcher, signal) =>
+      launcher.check(options?.workstream, { signal }),
+      true,
+    );
+  }
+
+  async recordPrepare(options: AitpAdapterRecordPrepareOptions): Promise<AitpRecordPrepareResult> {
+    return this.singleFlight(options, (launcher, signal) =>
+      launcher.recordPrepare({
+        kind: options.kind,
+        authority: options.authority,
+        createdBy: options.createdBy,
+        idempotencyKey: options.idempotencyKey,
+        workstreams: options.workstreams,
+      }, { signal }),
+    );
+  }
+
+  async recordSave(options: AitpAdapterRecordSaveOptions): Promise<AitpRecordSaveResult> {
+    return this.singleFlight(options, (launcher, signal) =>
+      launcher.recordSave(options.draftPath, { signal }),
+    );
+  }
+
+  async notePrepare(options: AitpAdapterNotePrepareOptions): Promise<AitpNotePrepareResult> {
+    return this.singleFlight(options, (launcher, signal) =>
+      launcher.notePrepare({
+        mode: options.mode,
+        title: options.title,
+        createdBy: options.createdBy,
+        workstreams: options.workstreams,
+      }, { signal }),
+    );
+  }
+
+  async noteSave(options: AitpAdapterNoteSaveOptions): Promise<AitpNoteSaveResult> {
+    return this.singleFlight(options, (launcher, signal) =>
+      launcher.noteSave(options.draftPath, { signal }),
+    );
+  }
+
+  private async runProbe(operation: LifecycleOperation): Promise<AitpAdapterHealth> {
+    this.assertCurrent(operation);
     this.healthState = { ...this.healthState, phase: 'probing' };
     try {
-      const identity = await this.resolveIdentityFromCatalog();
+      const identity = await this.resolveIdentityFromCatalog(operation);
+      this.assertCurrent(operation);
       if (identity === null) {
         this.healthState = {
           phase: 'degraded',
@@ -127,13 +233,12 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
         };
         return this.healthState;
       }
-      this.contractIdentity = identity;
-      this.launcher = new AitpLauncher(this.hostProcess, {
+      const candidate = new AitpLauncher(this.hostProcess, {
         launcherScript: identity.launcherPath,
         cwd: this.sessionCtx.cwd,
       });
-
-      const python = await this.launcher.probePython();
+      const python = await candidate.probePython({ signal: operation.signal });
+      this.assertCurrent(operation);
       if (python === null) {
         this.healthState = {
           phase: 'degraded',
@@ -145,6 +250,8 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
         return this.healthState;
       }
 
+      this.contractIdentity = identity;
+      this.launcher = candidate;
       this.healthState = {
         phase: 'ready',
         contractVersion: identity.contractVersion,
@@ -154,6 +261,7 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
       };
       return this.healthState;
     } catch (error) {
+      this.assertCurrent(operation);
       const message = error instanceof Error ? error.message : String(error);
       this.healthState = {
         phase: 'degraded',
@@ -165,90 +273,75 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
     }
   }
 
-  async enter(options?: AitpAdapterEnterOptions): Promise<AitpEnterResult> {
-    const launcher = this.requireLauncher();
+  private async executeRead<T>(
+    options: { readonly signal?: AbortSignal } | undefined,
+    operation: (launcher: AitpLauncher, signal: AbortSignal) => Promise<{ readonly data: T }>,
+    checkFailed = false,
+  ): Promise<T> {
+    const lifecycle = this.captureLifecycle();
+    const launcher = this.requireLauncher(lifecycle);
+    const signal = combineSignals(lifecycle.signal, options?.signal);
     try {
-      const result = await launcher.enter(options?.workstream, options?.recent);
+      const result = await operation(launcher, signal);
+      this.assertCurrent(lifecycle);
       return result.data;
     } catch (error) {
-      this.maybeDegrade(error);
+      this.assertCurrent(lifecycle);
+      if (isOperationCancelled(error)) throw error;
+      this.maybeDegrade(error, checkFailed);
       throw error;
     }
   }
 
-  async list(options?: AitpAdapterListOptions): Promise<AitpListResult> {
-    const launcher = this.requireLauncher();
+  private async singleFlight<T>(
+    options: { readonly signal?: AbortSignal },
+    operation: (launcher: AitpLauncher, signal: AbortSignal) => Promise<{ readonly data: T }>,
+  ): Promise<T> {
+    if (this.mutationInFlight) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_ADAPTER_SINGLE_FLIGHT,
+        'An AITP mutation is already in progress',
+      );
+    }
+    const lifecycle = this.captureLifecycle();
+    const launcher = this.requireLauncher(lifecycle);
+    const signal = combineSignals(lifecycle.signal, options.signal);
+    this.mutationInFlight = true;
     try {
-      const result = await launcher.list(options?.workstream, options?.kind, options?.since);
+      const result = await operation(launcher, signal);
+      this.assertCurrent(lifecycle);
       return result.data;
     } catch (error) {
-      this.maybeDegrade(error);
+      this.assertCurrent(lifecycle);
+      if (isOperationCancelled(error)) throw error;
       throw error;
+    } finally {
+      this.mutationInFlight = false;
     }
   }
 
-  async show(options: AitpAdapterShowOptions): Promise<AitpShowResult> {
-    const launcher = this.requireLauncher();
-    try {
-      const result = await launcher.show(options.id);
-      return result.data;
-    } catch (error) {
-      this.maybeDegrade(error);
-      throw error;
+  private captureLifecycle(): LifecycleOperation {
+    return {
+      generation: this.lifecycleGeneration,
+      signal: this.lifecycleController.signal,
+    };
+  }
+
+  private assertCurrent(operation: LifecycleOperation): void {
+    if (operation.generation !== this.lifecycleGeneration || operation.signal.aborted) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_ADAPTER_OPERATION_CANCELLED,
+        'AITP operation was invalidated by Research Mode reset or exit.',
+      );
     }
   }
 
-  async check(options?: AitpAdapterCheckOptions): Promise<AitpCheckReport> {
-    const launcher = this.requireLauncher();
-    try {
-      const result = await launcher.check(options?.workstream);
-      return result.data;
-    } catch (error) {
-      this.maybeDegrade(error, true);
-      throw error;
-    }
+  private clearProbeInFlight(promise: Promise<AitpAdapterHealth>): void {
+    if (this.probeInFlight?.promise === promise) this.probeInFlight = undefined;
   }
 
-  async recordPrepare(options: AitpAdapterRecordPrepareOptions): Promise<AitpRecordPrepareResult> {
-    return this.singleFlight(() => {
-      const launcher = this.requireLauncher();
-      return launcher.recordPrepare({
-        kind: options.kind,
-        authority: options.authority,
-        createdBy: options.createdBy,
-        idempotencyKey: options.idempotencyKey,
-        workstreams: options.workstreams,
-      });
-    }).then((r) => r.data);
-  }
-
-  async recordSave(options: AitpAdapterRecordSaveOptions): Promise<AitpRecordSaveResult> {
-    return this.singleFlight(() => {
-      const launcher = this.requireLauncher();
-      return launcher.recordSave(options.draftPath);
-    }).then((r) => r.data);
-  }
-
-  async notePrepare(options: AitpAdapterNotePrepareOptions): Promise<AitpNotePrepareResult> {
-    return this.singleFlight(() => {
-      const launcher = this.requireLauncher();
-      return launcher.notePrepare({
-        mode: options.mode,
-        title: options.title,
-        createdBy: options.createdBy,
-        workstreams: options.workstreams,
-      });
-    }).then((r) => r.data);
-  }
-
-  async noteSave(options: AitpAdapterNoteSaveOptions): Promise<AitpNoteSaveResult> {
-    return this.singleFlight(() => {
-      const launcher = this.requireLauncher();
-      return launcher.noteSave(options.draftPath);
-    }).then((r) => r.data);
-  }
-
-  private requireLauncher(): AitpLauncher {
+  private requireLauncher(operation: LifecycleOperation): AitpLauncher {
+    this.assertCurrent(operation);
     if (this.launcher === null) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_ADAPTER_NOT_READY,
@@ -256,21 +349,6 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
       );
     }
     return this.launcher;
-  }
-
-  private async singleFlight<T>(fn: () => Promise<{ readonly data: T }>): Promise<{ readonly data: T }> {
-    if (this.mutationInFlight) {
-      throw new AitpResearchError(
-        AitpResearchErrors.codes.AITP_ADAPTER_SINGLE_FLIGHT,
-        'An AITP mutation is already in progress',
-      );
-    }
-    this.mutationInFlight = true;
-    try {
-      return await fn();
-    } finally {
-      this.mutationInFlight = false;
-    }
   }
 
   private maybeDegrade(error: unknown, checkFailed = false): void {
@@ -295,11 +373,13 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
     };
   }
 
-  private async resolveIdentityFromCatalog(): Promise<AitpContractIdentity | null> {
+  private async resolveIdentityFromCatalog(operation: LifecycleOperation): Promise<AitpContractIdentity | null> {
+    this.assertCurrent(operation);
     const skill = this.skillCatalog.catalog.getPluginSkill(AITP_PLUGIN_ID, AITP_SKILL_NAME);
     if (skill === undefined) return null;
     const skillDir = dirname(skill.path);
-    const pluginRoot = await this.findPluginRoot(skillDir);
+    const pluginRoot = await this.findPluginRoot(skillDir, operation);
+    this.assertCurrent(operation);
     if (pluginRoot === null) return null;
 
     const contractPath = join(pluginRoot, CONTRACT_FILE);
@@ -313,8 +393,10 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
         this.hostFs.readText(manifestPath),
       ]);
     } catch {
+      this.assertCurrent(operation);
       return null;
     }
+    this.assertCurrent(operation);
 
     let contract: ContractFile;
     let manifest: ManifestFile;
@@ -354,9 +436,10 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
     };
   }
 
-  private async findPluginRoot(skillDir: string): Promise<string | null> {
+  private async findPluginRoot(skillDir: string, operation: LifecycleOperation): Promise<string | null> {
     let current = skillDir;
     for (let i = 0; i < 10; i++) {
+      this.assertCurrent(operation);
       const contractPath = join(current, CONTRACT_FILE);
       const manifestPath = join(current, MANIFEST_FILE);
       let isPluginRoot = false;
@@ -365,8 +448,10 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
           this.hostFs.stat(contractPath),
           this.hostFs.stat(manifestPath),
         ]);
+        this.assertCurrent(operation);
         isPluginRoot = contractStat.isFile && manifestStat.isFile;
       } catch {
+        this.assertCurrent(operation);
       }
       if (isPluginRoot) return current;
 

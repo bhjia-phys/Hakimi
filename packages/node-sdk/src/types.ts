@@ -91,6 +91,10 @@ export type {
   ResearchCommand,
   ResearchCommandRequest,
   ResearchCommandResponse,
+  ResearchEvidencePacket,
+  ResearchRunState,
+  ResearchRunStage,
+  ResearchSchedulerState,
 } from '@moonshot-ai/agent-core';
 // The snapshot type is re-exported from agent-core-v2 (the engine's own
 // type, which uses `readonly` arrays) so the v2 client's direct engine

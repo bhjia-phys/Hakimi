@@ -36,6 +36,13 @@ function makeSnapshot(
     activeQuestionCount: 1,
     blockedQuestionCount: 0,
     alerts: [],
+    effectiveNextStep: {
+      text: 'Run experiment A',
+      source: 'question',
+      freshness: 'current',
+      observedAt: 1,
+      derivedFrom: { questionId: 'q1', lineSlug: 'test-line' },
+    },
     aitpHealth: { phase: 'ready' },
     phase: 'action_executing',
     revision: 1,
@@ -55,6 +62,7 @@ function makeMaintenance(
     latestWorkingNoteAt: 1_699_999_000_000,
     activeNewerThanWorkingNote: false,
     unresolvedFailureCount: 0,
+    unresolvedFailures: [],
     warningSummaries: [],
     check: {
       status: 'clean',
@@ -145,11 +153,11 @@ describe('ResearchBoardComponent', () => {
     expect(questionLine).toBeDefined();
   });
 
-  it('renders next bounded action', () => {
+  it('renders the single effective next step', () => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(makeSnapshot());
     const lines = board.render(80).map(stripAnsi);
-    const nextLine = lines.find((l) => l.includes('next:'));
+    const nextLine = lines.find((l) => l.includes('Next:'));
     expect(nextLine).toBeDefined();
     expect(nextLine).toContain('Run experiment A');
   });
@@ -416,7 +424,7 @@ describe('ResearchBoardComponent', () => {
     expect(joined).not.toContain('\u001B[9m');
   });
 
-  it('orders bounded research attention before candidates, counts, and Todo actions', () => {
+  it('orders active attention before the effective next step and summaries', () => {
     const baseQuestion = makeSnapshot().currentQuestion!;
     const candidate = {
       ...baseQuestion,
@@ -459,9 +467,9 @@ describe('ResearchBoardComponent', () => {
     );
     const rows = board.render(160).map(stripAnsi);
     const indexOf = (text: string): number => rows.findIndex((row) => row.includes(text));
-    expect(indexOf('Focus:')).toBeLessThan(indexOf('next:'));
-    expect(indexOf('next:')).toBeLessThan(indexOf('Attention:'));
-    expect(indexOf('Attention:')).toBeLessThan(indexOf('Candidates (current line)'));
+    expect(indexOf('Focus:')).toBeLessThan(indexOf('Attention:'));
+    expect(indexOf('Attention:')).toBeLessThan(indexOf('Next:'));
+    expect(indexOf('Next:')).toBeLessThan(indexOf('Candidates (current line)'));
     expect(indexOf('Candidates (current line)')).toBeLessThan(indexOf('Research:'));
     expect(indexOf('Research:')).toBeLessThan(indexOf('Todo:'));
   });
@@ -547,6 +555,13 @@ describe('ResearchBoardComponent', () => {
           nextAction: 'Check edge state localization',
           recordedAt: 100,
         },
+        effectiveNextStep: {
+          text: 'Check edge state localization',
+          source: 'question',
+          freshness: 'current',
+          observedAt: 100,
+          derivedFrom: { questionId: 'q1', lineSlug: 'test-line' },
+        },
       }),
     );
     const output = board.render(100).map(stripAnsi).join('\n');
@@ -570,6 +585,28 @@ describe('ResearchBoardComponent', () => {
     expect(output).toContain('本轮没有记录进展');
     // Impact and Next should NOT appear when there is no progress.
     expect(output).not.toContain('Impact:');
+  });
+
+  it('compact shows an action-bound scheduler observation', () => {
+    const board = new ResearchBoardComponent();
+    board.setSnapshot(makeSnapshot({
+      currentRun: {
+        actionId: 'action-1',
+        campaign: 'campaign-r2',
+        jobId: '3128781',
+        stage: 'scf',
+        schedulerState: 'running',
+        lastObservedAt: 1_000,
+        nextCheckAt: 2_000,
+        artifactRefs: ['scf.log'],
+      },
+    }));
+    const output = board.render(120).map(stripAnsi).join('\n');
+    expect(output).toContain('Run: job 3128781');
+    expect(output).toContain('running / scf');
+    expect(output).toContain('next check');
+    expect(output).not.toContain('campaign-r2');
+    expect(output).not.toContain('action-1');
   });
 
   it('compact shows human gate at the top when unresolved', () => {
@@ -674,6 +711,16 @@ describe('ResearchBoardComponent', () => {
           requiresHumanApproval: false,
           createdAt: 90,
         },
+        currentRun: {
+          actionId: 'a1',
+          campaign: 'bi2se3-r2',
+          jobId: '3128781',
+          stage: 'scf',
+          schedulerState: 'running',
+          lastObservedAt: 100,
+          nextCheckAt: 200,
+          artifactRefs: ['scf.log'],
+        },
       }),
     );
     board.setExpanded(true);
@@ -697,6 +744,12 @@ describe('ResearchBoardComponent', () => {
     expect(output).toContain('Expected evidence:');
     expect(output).toContain('Stop condition:');
     expect(output).toContain('χ² < 2');
+    expect(output).toContain('Current run');
+    expect(output).toContain('bi2se3-r2');
+    expect(output).toContain('3128781');
+    expect(output).toContain('running');
+    expect(output).toContain('scf');
+    expect(output).toContain('scf.log');
   });
 
   it('expanded shows no-progress message when latestProgress is absent', () => {
@@ -778,10 +831,17 @@ describe('ResearchBoardComponent', () => {
     expect(board.render(100).length).toBeLessThanOrEqual(36);
   });
 
-  it('compact shows one stale Working Note reminder with priority over next action', () => {
+  it('compact shows one derived stale Working Note next step', () => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(
       makeSnapshot({
+        effectiveNextStep: {
+          text: 'Review active entries newer than the latest Working Note',
+          source: 'aitp_maintenance',
+          freshness: 'stale',
+          observedAt: 10,
+          derivedFrom: { lineSlug: 'test-line' },
+        },
         aitpMaintenance: makeMaintenance({
           activeNewerThanWorkingNote: true,
           nextAction: 'refresh the Working Note',
@@ -789,69 +849,93 @@ describe('ResearchBoardComponent', () => {
       }),
     );
     const output = board.render(120).map(stripAnsi).join('\n');
-    expect(output).toContain('Research reminder: Working Note is behind active entries');
-    expect(output).not.toContain('AITP next action: refresh the Working Note');
-    expect(output.split('Research reminder:')).toHaveLength(2);
+    expect(output).toContain('Next: Review active entries newer than the latest Working Note');
+    expect(output).not.toContain('Research reminder:');
+    expect(output).not.toContain('refresh the Working Note');
   });
 
-  it('compact prioritizes unresolved failures over degraded and stale signals', () => {
+  it('compact surfaces historical failures as attention without audit identifiers', () => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(
       makeSnapshot({
+        alerts: [{
+          fingerprint: 'research.alert.blocked.aitp-failure.failure-1',
+          kind: 'blocked',
+          classification: 'historical_unresolved',
+          source: 'aitp_failure',
+          state: 'active',
+          message: 'A historical failed attempt still needs review.',
+          relatedEntryId: 'failure-1',
+          workstream: 'audit-workstream',
+          createdAt: 1,
+        }],
         aitpMaintenance: makeMaintenance({
           status: 'degraded',
           activeNewerThanWorkingNote: true,
-          unresolvedFailureCount: 2,
+          unresolvedFailureCount: 1,
           nextAction: 'inspect the failure handoff',
         }),
       }),
     );
     const output = board.render(120).map(stripAnsi).join('\n');
-    expect(output).toContain('Research reminder: 2 unresolved AITP failures');
-    expect(output).not.toContain('AITP maintenance degraded');
-    expect(output).not.toContain('Working Note is behind active entries');
+    expect(output).toContain('A historical failed attempt still needs review.');
+    expect(output).not.toContain('failure-1');
+    expect(output).not.toContain('audit-workstream');
     expect(output).not.toContain('inspect the failure handoff');
   });
 
-  it('compact shows degraded maintenance when there is no higher-severity signal', () => {
+  it('keeps degraded maintenance detail out of compact view', () => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(
       makeSnapshot({
         aitpMaintenance: makeMaintenance({ status: 'degraded' }),
       }),
     );
-    const output = board.render(120).map(stripAnsi).join('\n');
-    expect(output).toContain('Research reminder: AITP maintenance degraded');
+    const compact = board.render(120).map(stripAnsi).join('\n');
+    expect(compact).not.toContain('AITP maintenance degraded');
+    board.setExpanded(true);
+    expect(board.render(120).map(stripAnsi).join('\n')).toContain('Status: degraded');
   });
 
-  it('compact shows the AITP next action when maintenance is otherwise ready', () => {
+  it('compact shows an AITP handoff only through the effective next step', () => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(
       makeSnapshot({
+        effectiveNextStep: {
+          text: 'Review the latest handoff',
+          source: 'aitp_maintenance',
+          freshness: 'current',
+          observedAt: 10,
+          derivedFrom: { entryId: 'entry-hidden' },
+        },
         aitpMaintenance: makeMaintenance({ nextAction: 'review the latest handoff' }),
       }),
     );
     const output = board.render(120).map(stripAnsi).join('\n');
-    expect(output).toContain('Research reminder: AITP next action: review the latest handoff');
+    expect(output).toContain('Next: Review the latest handoff');
+    expect(output).not.toContain('entry-hidden');
+    expect(output).not.toContain('Research reminder:');
   });
 
-  it('expanded shows clean maintenance handoff detail without audit identifiers', () => {
+  it('expanded explains the scope of a clean maintenance check', () => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(makeSnapshot({ aitpMaintenance: makeMaintenance() }));
     board.setExpanded(true);
     const output = board.render(140).map(stripAnsi).join('\n');
     expect(output).toContain('AITP maintenance handoff');
-    expect(output).toContain('(not a physical conclusion)');
+    expect(output).toContain('Structural consistency only');
+    expect(output).toContain('not a physical conclusion');
+    expect(output).toContain('does not resolve historical failures');
     expect(output).toContain('Status: ready');
     expect(output).toContain('Memory: available');
     expect(output).toMatch(/Working Note: current · latest \d{4}-\d{2}-\d{2}/u);
-    expect(output).toContain('Unresolved failures: 0');
-    expect(output).toContain('Next AITP action: none recorded');
-    expect(output).toContain('Check: clean · errors 0 · warnings 0');
+    expect(output).toContain('Historical unresolved failures: 0');
+    expect(output).toContain('Recorded handoff next: none recorded');
+    expect(output).toContain('Structural check: clean · errors 0 · warnings 0');
     expect(output).not.toContain('1700000000000');
   });
 
-  it('expanded shows maintenance findings and concise check details', () => {
+  it('expanded shows historical failure identities and structural findings', () => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(
       makeSnapshot({
@@ -860,6 +944,14 @@ describe('ResearchBoardComponent', () => {
           memoryStatus: 'partial',
           activeNewerThanWorkingNote: true,
           unresolvedFailureCount: 3,
+          unresolvedFailures: [{
+            entryId: 'failure-entry-1',
+            kind: 'failure',
+            summary: 'The first run failed before producing evidence.',
+            source: '.aitp/topic/entries/failure-entry-1.md',
+            authority: 'agent',
+            workstream: 'magnetic-symmetry',
+          }],
           nextAction: 'repair the AITP handoff',
           warningSummaries: [
             { level: 'warning', code: 'stale_working_note' },
@@ -878,17 +970,60 @@ describe('ResearchBoardComponent', () => {
     expect(output).toContain('Status: degraded');
     expect(output).toContain('Memory: partial');
     expect(output).toContain('Working Note: stale — active entries are newer');
-    expect(output).toContain('Unresolved failures: 3');
-    expect(output).toContain('Next AITP action: repair the AITP handoff');
-    expect(output).toContain('Check: findings · errors 2 · warnings 3');
+    expect(output).toContain('Historical unresolved failures: 3');
+    expect(output).toContain('failure-entry-1');
+    expect(output).toContain('workstream magnetic-symmetry');
+    expect(output).toContain('Recorded handoff next: repair the AITP handoff');
+    expect(output).toContain('Structural check: findings · errors 2 · warnings 3');
     expect(output).toContain('Warnings: stale_working_note, legacy_entry');
     expect(output).toContain('Finding codes: missing_note, unresolved_entry');
+  });
+
+  it('expanded distinguishes active blockers from historical failures', () => {
+    const board = new ResearchBoardComponent();
+    board.setSnapshot(makeSnapshot({
+      alerts: [{
+        fingerprint: 'active-blocker',
+        kind: 'blocked',
+        classification: 'active_blocker',
+        source: 'question',
+        state: 'active',
+        message: 'A current decision blocks the next experiment.',
+        createdAt: 1,
+      }, {
+        fingerprint: 'historical-failure',
+        kind: 'blocked',
+        classification: 'historical_unresolved',
+        source: 'aitp_failure',
+        state: 'active',
+        message: 'An earlier failed attempt remains open.',
+        relatedEntryId: 'failure-entry-2',
+        workstream: 'magnetic-symmetry',
+        createdAt: 2,
+      }],
+    }));
+    board.setExpanded(true);
+    const output = board.render(140).map(stripAnsi).join('\n');
+    expect(output).toContain('active blocker · A current decision blocks the next experiment.');
+    expect(output).toContain('historical unresolved · An earlier failed attempt remains open.');
+    expect(output).toContain('entry failure-entry-2 · workstream magnetic-symmetry');
   });
 
   it('compact does not expose maintenance audit fields or check counts JSON', () => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(
       makeSnapshot({
+        alerts: [{
+          fingerprint: 'historical-audit-alert',
+          kind: 'blocked',
+          classification: 'historical_unresolved',
+          source: 'aitp_failure',
+          state: 'active',
+          message: 'A historical failed attempt needs review.',
+          relatedEntryId: 'audit-entry-id',
+          workstream: 'audit-workstream',
+          createdAt: 1,
+        }],
         aitpMaintenance: makeMaintenance({
           refreshedAt: 1_700_123_456_789,
           workstream: 'audit-workstream',
@@ -906,7 +1041,7 @@ describe('ResearchBoardComponent', () => {
       }),
     );
     const output = board.render(140).map(stripAnsi).join('\n');
-    expect(output).toContain('Research reminder: 1 unresolved AITP failure');
+    expect(output).toContain('A historical failed attempt needs review.');
     expect(output).not.toContain('1700123456789');
     expect(output).not.toContain('audit-workstream');
     expect(output).not.toContain('audit-entry-id');

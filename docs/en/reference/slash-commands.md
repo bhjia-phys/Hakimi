@@ -55,7 +55,7 @@ Some commands are only available in the idle state. Executing these commands whi
 | `/swarm on\|off` | — | Turn swarm mode on or off without sending a prompt. | Yes |
 | `/swarm <task>` | — | Turn swarm mode on, then send `<task>` as a normal prompt. If the turn completes normally, swarm mode turns off automatically. In `manual` permission mode, Hakimi asks whether to switch to `auto` or `yolo` before starting. | No |
 | `/goal [...]` | — | Start or manage an autonomous goal | See below |
-| `/research [...]` | — | Control experimental AITP Research Mode (`aitp_research_mode` flag, default on) | See below |
+| `/research [...]` | — | Control experimental AITP Research Mode (`aitp_research_mode` flag, default off) | See below |
 
 ::: warning
 `/yolo` skips approval for regular tool calls. Please make sure you understand the potential risks before enabling it. Plan mode exit approval is not bypassed by `/yolo`; `Bash` inside Plan mode is still subject to the regular `/yolo` allow rules.
@@ -101,7 +101,7 @@ Prompt mode exits with code `0` when the goal completes, `3` when it blocks, and
 
 ## Experimental Research Mode
 
-`/research` controls the experimental AITP Research Mode — a joint research capability backed by the AITP evidence ledger. It is gated behind the `aitp_research_mode` experimental flag (env `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`, default on). The flag being on only makes the surface available — `/research` and the `EnterAITPMode` capability exist, but the mode stays inactive with zero AITP I/O until you enter it explicitly with `/research on` (or the model `EnterAITPMode` entry path with its approval gate). When the flag is off (set `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=0` or toggle it in `/experiments`), the command is not available, all AITP tools and skills are hidden, and zero AITP I/O occurs.
+`/research` controls the experimental AITP Research Mode — a joint research capability backed by the AITP evidence ledger. It is gated behind the `aitp_research_mode` experimental flag (env `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`, default off; set it to `1` before launch to expose the command). The flag being on only makes the surface available — `/research` and the `EnterAITPMode` capability exist, but the mode stays inactive with zero AITP I/O until you enter it explicitly with `/research on` (or the model `EnterAITPMode` entry path with its approval gate). When the flag is off (set `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=0` or toggle it in `/experiments`), the command is not available, all AITP tools and skills are hidden, and zero AITP I/O occurs.
 
 ::: warning
 Research Mode is experimental. It runs an autonomous research loop that may take many turns. When entering from `manual` or `yolo` permission mode, a prompt asks whether to switch to `auto` or `yolo` first — the loop may stop and wait for approvals under `manual` mode.

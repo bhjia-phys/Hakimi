@@ -19,7 +19,7 @@ marker 候选、保守 card/trial review、两步 human decision（approval +
 publication）和 platform tool/card/Skill 三层边界——不改 CLI/schema/
 transport。`lineage`/`lite-entry-0.2`/`run-pointer-0.1` 仍 deferred；
 M2–M4 blocked。**Hakimi adapter 的 H0–H4 已实现，H5 仅部分集成**
-（flag `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`，默认开启；这是 Hakimi 产品 flag，不是 AITP 协议状态，也不是 H6 可用性信号）：strict
+（flag `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`，默认关闭；这是 Hakimi 产品 flag，不是 AITP 协议状态，也不是 H6 可用性信号）：strict
 contract discovery、Python probe、对 `enter`/`list`/`show`/`check` 全部已发布
 read transport 与 version-0 prepare/save envelope 的严格 Zod 校验、与 0.8
 契约一致的 record/Note argv、scoped `--workstream`、M1e check finding code 的 opaque projection（不实现 backfill/sha256-once/check-policy 语义）、
@@ -32,14 +32,14 @@ error finding 阻止 checkpoint cursor；exit 2 优先解析 stdout 的严格 AI
 错误包，argparse stderr-only misuse 只作为命令错误。`/research on` 只激活
 capability 和 Board，不调度模型 turn；Goal 仍是跨 turn continuation 的
 唯一 owner。
-flag 开启时普通启动已开放 `/research` 与 `EnterAITPMode`，但仅开放
+设置 flag 开启后才会开放 `/research` 与 `EnterAITPMode`，但仅开放
 入口——进入模式仍需 `/research on` 或模型入口，inactive 状态零 AITP
 I/O。flag off 时（`=0` 或 `/experiments`）所有 AITP 工具、skill 和
 Board 隐藏，零 AITP I/O。不自动 init/adopt/inventory/backfill apply；
 backfill 不作为模型工具暴露。typed question/line registry、
 literature/compute/Portfolio、H6 未实现。H6/C6 native
 method-distillation orchestration 是 **planned，unavailable**。
-当前状态维护已接通：进入模式以及 active undo/cold restore 在 ready probe 后只读执行 `enter` → `check`，不是 session-end automatic closeout。maintenance receipt 和 context injection 只暴露安全摘要；完整 Research snapshot/API 或 expanded Board 仍可能包含 checkpoint、revision 和 adapter health 字段。warning-only 保持 ready，error finding 或周期不可用时显示 degraded。该周期不自动 init/adopt/backfill，不自动写 semantic handoff、Entry 或 Note；Session-scope coordinator 仅负责这项维护，不改变 H6 native method-distillation orchestration 仍为 planned/unavailable 的状态。alerts 和 generic human gate 已实现，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard，`ResolveResearchDecision` 不会自动写入 AITP decision Entry。degraded active Research Mode 会阻止 AITP writes 和 Goal completion，未解决 human gate 也会阻止 Goal completion，但本地 Question/Line mutation 仍可能发生，当前没有 automatic session-closeout。
+当前状态维护已接通：进入模式以及 active undo/cold restore 在 ready probe 后只读执行 `enter` → `check`，不是 session-end automatic closeout。maintenance receipt 和 context injection 只暴露安全摘要；完整 Research snapshot/API 或 expanded Board 仍可能包含 checkpoint、revision 和 adapter health 字段。合法的 check findings（包括 error finding）保持 ready；只有周期不可用或无效时显示 degraded。error finding 仍可按具体 checkpoint 的保存屏障阻止提交。该周期不自动 init/adopt/backfill，不自动写 semantic handoff、Entry 或 Note；Session-scope coordinator 仅负责这项维护，不改变 H6 native method-distillation orchestration 仍为 planned/unavailable 的状态。Checkpoint receipt 会绑定具体 Entry、prepare/save receipt 和 pre-save finding baseline；commit 前复核 `show` 与 scoped `check`，只阻止新增或无法归因的 error。alerts 使用稳定 fingerprint，区分 active blocker、historical unresolved、superseded retry 和 warning，清除记录保留但不再注入。alerts 和 generic human gate 已实现，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard，`ResolveResearchDecision` 不会自动写入 AITP decision Entry。degraded active Research Mode 会阻止 AITP writes 和 Goal completion，未解决 human gate 也会阻止 Goal completion，但本地 Question/Line mutation 仍可能发生，当前没有 automatic session-closeout。Research Loop 的 public contract 还同步了 main-agent-only、zero-write 的 typed evidence review，以及绑定当前 action 的显式 run observation；正常有界行动使用 `BeginResearchAction` → 科研工作 → `ConcludeResearchAction`，该 observation 不提交或轮询 scheduler，不创建 campaign 聚合实体，也不把 RUNNING 当作科学结论。
 §1/§2/§3/§5/§6 已更新到当前状态；§4/§7 保留历史 baseline 证据。
 
 ## 1. Command matrix (Hakimi view)
@@ -186,7 +186,7 @@ Transport envelope 在 M1a 之前保持未版本化。
 ## 6. Next steps and blocking
 
 阻塞链：`M0.6（缩小声明关闭）` → `M1a gate（passed）` → `M1b-R1 gate（passed）` → `M1c gate（passed）` → `M1d gate（passed）` → `M1e gate（passed）` → `M2–M4（自然需求证据，blocked）`。
-Hakimi H0–H4 已实现、H5 仅部分集成（flag 门控，默认开启）；H6 和正式
+Hakimi H0–H4 已实现、H5 仅部分集成（flag 门控，默认关闭）；H6 和正式
 contract 仍 blocked。该 flag 是 Hakimi 产品决策，不是 AITP 协议状态或 H6 可用性信号。
 
 Hakimi 侧（并行）：

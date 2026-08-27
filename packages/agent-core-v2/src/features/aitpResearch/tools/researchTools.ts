@@ -2,10 +2,9 @@
  * `aitpResearch` domain — Research tool contracts.
  *
  * Defines the input schemas and Agent-scope identifiers for the active-only
- * Research tools, including the seven Research Loop main-agent tools
- * (`PlanResearchAction` / `StartResearchAction` / `CompleteResearchAction` /
- * `RecordResearchProgress` / `RequestResearchDecision` /
- * `SetResearchPhase` / `ResolveResearchDecision`). Inputs are
+ * Research tools, including the bounded action tools (`BeginResearchAction` /
+ * `ConcludeResearchAction`), evidence and run review, human decisions, and
+ * recovery-oriented atomic operations. Inputs are
  * structured and carry zod length constraints. Bound at Agent scope.
  */
 
@@ -13,6 +12,7 @@ import { z } from 'zod';
 
 import { createDecorator } from '#/_base/di/instantiation';
 import type { AgentTool } from '#/tool/toolContract';
+import { ResearchEvidencePacketSchema } from '../research/evidencePacket';
 
 // ── GetResearchStatus ────────────────────────────────────────────────────
 
@@ -207,6 +207,7 @@ export const PlanResearchActionInputSchema = z
     expected_evidence: z.array(z.string().max(500)).max(50).default([]),
     stop_condition: z.string().min(1).max(2000),
     allowed_tool_kinds: z.array(z.string().max(100)).max(20).default([]),
+    retry_of_entry_id: z.string().optional(),
     requires_human_approval: z.boolean().default(false),
   })
   .strict();
@@ -217,6 +218,17 @@ export interface IPlanResearchActionTool extends AgentTool<PlanResearchActionInp
 }
 export const IPlanResearchActionTool =
   createDecorator<IPlanResearchActionTool>('planResearchActionTool');
+
+// ── BeginResearchAction ──────────────────────────────────────────────────
+
+export const BeginResearchActionInputSchema = PlanResearchActionInputSchema;
+export type BeginResearchActionInput = PlanResearchActionInput;
+
+export interface IBeginResearchActionTool extends AgentTool<BeginResearchActionInput> {
+  readonly _serviceBrand: undefined;
+}
+export const IBeginResearchActionTool =
+  createDecorator<IBeginResearchActionTool>('beginResearchActionTool');
 
 // ── StartResearchAction ──────────────────────────────────────────────────
 
@@ -290,6 +302,57 @@ export interface IRecordResearchProgressTool extends AgentTool<RecordResearchPro
 }
 export const IRecordResearchProgressTool =
   createDecorator<IRecordResearchProgressTool>('recordResearchProgressTool');
+
+// ── ConcludeResearchAction ────────────────────────────────────────────────
+
+export const ConcludeResearchActionInputSchema = RecordResearchProgressInputSchema.extend({
+  action_id: z.string().min(1).max(200),
+  status: z.enum(['completed', 'abandoned']),
+}).omit({ phase_change: true }).strict();
+export type ConcludeResearchActionToolInput = z.infer<typeof ConcludeResearchActionInputSchema>;
+
+export interface IConcludeResearchActionTool extends AgentTool<ConcludeResearchActionToolInput> {
+  readonly _serviceBrand: undefined;
+}
+export const IConcludeResearchActionTool =
+  createDecorator<IConcludeResearchActionTool>('concludeResearchActionTool');
+
+// ── ReviewResearchEvidence ───────────────────────────────────────────────
+
+export const ReviewResearchEvidenceInputSchema = z.object({
+  packet: ResearchEvidencePacketSchema,
+  expected_revision: z.number().int().nonnegative(),
+}).strict();
+export type ReviewResearchEvidenceInput = z.infer<typeof ReviewResearchEvidenceInputSchema>;
+
+export interface IReviewResearchEvidenceTool extends AgentTool<ReviewResearchEvidenceInput> {
+  readonly _serviceBrand: undefined;
+}
+export const IReviewResearchEvidenceTool =
+  createDecorator<IReviewResearchEvidenceTool>('reviewResearchEvidenceTool');
+
+// ── ObserveResearchRun ───────────────────────────────────────────────────
+
+export const ObserveResearchRunInputSchema = z.object({
+  action_id: z.string().min(1).max(200),
+  expected_revision: z.number().int().nonnegative(),
+  campaign: z.string().min(1).max(500),
+  job_id: z.string().min(1).max(200),
+  source_pin: z.string().max(500).optional(),
+  binary_pin: z.string().max(500).optional(),
+  stage: z.enum(['queued', 'running', 'scf', 'band', 'analyzing', 'completed', 'failed', 'unknown']),
+  scheduler_state: z.enum(['pending', 'running', 'completed', 'failed', 'cancelled', 'unknown']),
+  next_check_at: z.number().optional(),
+  terminal_state: z.enum(['completed', 'failed', 'cancelled']).optional(),
+  artifact_refs: z.array(z.string().max(500)).max(50).default([]),
+}).strict();
+export type ObserveResearchRunToolInput = z.infer<typeof ObserveResearchRunInputSchema>;
+
+export interface IObserveResearchRunTool extends AgentTool<ObserveResearchRunToolInput> {
+  readonly _serviceBrand: undefined;
+}
+export const IObserveResearchRunTool =
+  createDecorator<IObserveResearchRunTool>('observeResearchRunTool');
 
 // ── RequestResearchDecision ──────────────────────────────────────────────
 

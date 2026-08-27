@@ -84,7 +84,7 @@ The App-scope Feature registration owns:
 - Future H6 Feature recipe and experimental flag/config registration
   (`registerFlagDefinition` at import time; `IFlagService.enabled(id)` check;
   default off for that future native feature). This is separate from the current
-  `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` product flag, which is default on
+  `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` product flag, which is default off
   and is neither an AITP protocol-state nor an H6-availability signal.
 - AITP plugin/contract/Python capability detection (probe for installed
   plugin, `--help` surface, contract schema version, Python ≥ 3.11).

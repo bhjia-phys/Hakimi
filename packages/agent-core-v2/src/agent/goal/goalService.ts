@@ -48,7 +48,7 @@ import { defineState } from '#/_base/state/stateRegistry';
 import { abortError } from '#/_base/utils/abort';
 import { isPlainRecord } from '#/_base/utils/canonical-args';
 import { IAgentContextInjectorService } from '#/agent/contextInjector/contextInjector';
-import type { ContextMessage, PromptOrigin } from '#/agent/contextMemory/types';
+import type { ContextMessage } from '#/agent/contextMemory/types';
 import { GoalInjection } from '#/agent/goal/injection/goalInjection';
 import {
   IAgentLoopService,
@@ -116,10 +116,6 @@ const GOAL_FORK_CLEARED_REMINDER = [
 
 const GOAL_FORK_CLEARED_REMINDER_NAME = 'goal_fork_cleared';
 
-const GOAL_CONTINUATION_ORIGIN: PromptOrigin = {
-  kind: 'system_trigger',
-  name: 'goal_continuation',
-};
 const GOAL_RATE_LIMIT_PAUSE_REASON = 'Paused after provider rate limit';
 const GOAL_PROVIDER_CONNECTION_PAUSE_PREFIX = 'Paused after provider connection error';
 const GOAL_PROVIDER_AUTH_PAUSE_PREFIX = 'Paused after provider authentication error';
@@ -189,8 +185,8 @@ interface GoalForkNoticeState {
 }
 
 interface PendingContinuation {
-  readonly receipt: EnqueueReceipt;
   readonly goalId: string;
+  receipt?: EnqueueReceipt;
   turnId?: number;
 }
 
@@ -495,6 +491,16 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
   isGoalToolTarget(turnId: number, goalId: string): boolean {
     this.assertSupportedAgent();
     return this.goalTurnTargets.get(turnId) === goalId;
+  }
+
+  isGoalContinuationTurn(turnId: number, goalId?: string): boolean {
+    this.assertSupportedAgent();
+    if (goalId === undefined || this.goalState?.goalId !== goalId || this.goalState.status !== 'active') {
+      return false;
+    }
+    return this.pendingContinuation?.goalId === goalId && (
+      this.pendingContinuation.turnId === undefined || this.pendingContinuation.turnId === turnId
+    );
   }
 
   async createGoal(input: CreateGoalInput, actor: GoalActor = 'user'): Promise<GoalSnapshot> {
@@ -949,15 +955,26 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
         },
       ],
       toolCalls: [],
-      origin: GOAL_CONTINUATION_ORIGIN,
+      origin: {
+        kind: 'system_trigger',
+        name: 'goal_continuation',
+        goalId,
+      },
     };
     const request = new MessageStepRequest(message, {
       kind: 'goal_continuation',
       admission: 'newTurn',
     });
-    const receipt = this.loopService.enqueue(request);
-    const pending: PendingContinuation = { receipt, goalId };
+    const pending: PendingContinuation = { goalId };
     this.pendingContinuation = pending;
+    let receipt: EnqueueReceipt;
+    try {
+      receipt = this.loopService.enqueue(request);
+      pending.receipt = receipt;
+    } catch (error) {
+      if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
+      throw error;
+    }
     void receipt.assigned
       .then(({ turn }) => {
         pending.turnId = turn.id;
@@ -1003,7 +1020,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     if (preserveLiveContinuation && pending?.turnId === this.liveTurnId) return;
     this.pendingContinuation = undefined;
     const cancellation = reason ?? abortError('Goal continuation cancelled');
-    const aborted = pending?.receipt.abort(cancellation);
+    const aborted = pending?.receipt?.abort(cancellation) ?? false;
     if (pending !== undefined && !aborted && pending.turnId !== undefined) {
       this.loopService.cancel(pending.turnId, cancellation);
     }

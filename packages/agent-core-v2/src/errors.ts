@@ -35,6 +35,7 @@ import { UsageErrors } from '#/agent/usage/errors';
 import { WebErrors } from '#/app/web/errors';
 import { WireErrors } from '#/wire/errors';
 import { WorkspaceErrors } from '#/app/workspace/errors';
+import { AitpResearchErrors } from '#/features/aitpResearch/errors';
 
 export * from '#/_base/errors/codes';
 export * from '#/_base/errors/errorMessage';
@@ -71,6 +72,7 @@ export { UsageErrors } from '#/agent/usage/errors';
 export { WebErrors } from '#/app/web/errors';
 export { WireErrors } from '#/wire/errors';
 export { WorkspaceErrors } from '#/app/workspace/errors';
+export { AitpResearchErrors } from '#/features/aitpResearch/errors';
 
 export const ErrorCodes = {
   ...CoreErrors.codes,
@@ -104,6 +106,7 @@ export const ErrorCodes = {
   ...WebErrors.codes,
   ...WireErrors.codes,
   ...WorkspaceErrors.codes,
+  ...AitpResearchErrors.codes,
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

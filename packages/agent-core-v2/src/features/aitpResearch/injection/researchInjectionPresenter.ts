@@ -14,6 +14,7 @@
 
 import type {
   AitpMaintenanceReceipt,
+  ResearchRunState,
   ResearchActionSpec,
   ResearchHumanGate,
   ResearchProgressReport,
@@ -67,6 +68,9 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
   if (snapshot.currentAction !== undefined) {
     lines.push(renderActionLine(snapshot.currentAction));
   }
+  if (snapshot.currentRun !== undefined) {
+    lines.push(renderRunBlock(snapshot.currentRun));
+  }
 
   if (snapshot.latestProgress !== undefined) {
     lines.push(renderProgressBlock(snapshot.latestProgress));
@@ -83,7 +87,12 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
     `Questions: ${snapshot.openQuestionCount} open · ${snapshot.activeQuestionCount} active · ${snapshot.blockedQuestionCount} blocked`,
   );
 
-  const activeAlerts = snapshot.alerts.filter((alert) => alert.acknowledgedAt === undefined);
+  const activeAlerts = snapshot.alerts.filter((alert) =>
+    alert.state !== 'acknowledged' &&
+    alert.state !== 'cleared' &&
+    alert.state !== 'superseded' &&
+    alert.acknowledgedAt === undefined,
+  );
   if (activeAlerts.length > 0) {
     lines.push('Alerts:');
     for (const alert of activeAlerts.slice(0, 3)) {
@@ -111,6 +120,9 @@ function renderDetail(snapshot: ResearchStatusSnapshot): string {
   if (snapshot.currentAction !== undefined) {
     lines.push(`Action: ${snapshot.currentAction.kind} — ${snapshot.currentAction.purpose}`);
   }
+  if (snapshot.currentRun !== undefined) {
+    lines.push(renderRunBlock(snapshot.currentRun));
+  }
 
   if (snapshot.latestProgress !== undefined) {
     lines.push(`Latest: ${snapshot.latestProgress.headline}`);
@@ -129,6 +141,13 @@ function renderDetail(snapshot: ResearchStatusSnapshot): string {
   }
 
   return lines.join('\n');
+}
+
+function renderRunBlock(run: ResearchRunState): string {
+  const next = run.nextCheckAt === undefined
+    ? 'no next check scheduled'
+    : `next check ${new Date(run.nextCheckAt).toISOString()}`;
+  return `Run ${run.jobId}: ${run.schedulerState} / ${run.stage} (${next})`;
 }
 
 function renderMaintenanceBlock(receipt: AitpMaintenanceReceipt): string {
@@ -226,10 +245,16 @@ function appendGuidance(lines: string[]): void {
     '- Before each bounded action, SetResearchFocus to declare the question and the next concrete step.',
   );
   lines.push(
-    '- Use PlanResearchAction to declare a bounded action with a stop condition and expected evidence before executing it, then StartResearchAction and CompleteResearchAction.',
+    '- Before a bounded action, use BeginResearchAction to declare its purpose, expected evidence, and stop condition, then perform only that bounded work.',
   );
   lines.push(
-    '- After each bounded action, RecordResearchProgress with what was done, the result, the mainline impact, and the next step.',
+    '- After synchronous work or a completed external run, use ConcludeResearchAction once with what was physically done, the result, tests/derivation/observations, limitations, mainline impact, and next step. It does not submit or poll HPC jobs, write AITP, or change the question assessment automatically.',
+  );
+  lines.push(
+    '- If an action needs human approval, resolve the approval gate to action_planned and then use StartResearchAction; if there is no active action, use RecordResearchProgress for maintenance or recovery.',
+  );
+  lines.push(
+    '- When delegating evidence gathering to a subagent, require one strict ResearchEvidencePacket (claim, evidence, method, assumptions, tests, limitations, and refs). On return, call ReviewResearchEvidence against the current Research state before deciding what physical interpretation to record; child packets never update Research state directly.',
   );
   lines.push(
     '- UpdateResearchQuestion only when the epistemic, workflow, or assessment state semantically changes (new evidence, falsification, failure, or sustained no-progress). Update assessment only when the scientific interpretation changes; do not update for ordinary tool calls or AITP reads.',

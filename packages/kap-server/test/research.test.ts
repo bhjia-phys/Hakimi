@@ -50,6 +50,16 @@ interface ResearchSnapshot {
   alerts: ResearchAlert[];
   aitpHealth: { phase: string };
   phase: string;
+  currentRun?: {
+    actionId: string;
+    campaign: string;
+    jobId: string;
+    stage: string;
+    schedulerState: string;
+    lastObservedAt: number;
+    nextCheckAt?: number;
+    artifactRefs: string[];
+  };
   humanGate?: {
     gateId: string;
     resolvedAt?: number;
@@ -404,6 +414,64 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
     );
     expect(status).toBe(200);
     expect(body.code).toBe(40001);
+  });
+
+  it('POST dispatches an action-bound run observation to the research service', async () => {
+    await server!.close();
+    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
+    server = await startServer({
+      hostIdentity: TEST_HOST_IDENTITY,
+      host: '127.0.0.1',
+      port: 0,
+      homeDir: home as string,
+      logLevel: 'silent',
+      debugEndpoints: true,
+    });
+    base = `http://127.0.0.1:${server.port}`;
+
+    const sessionId = await createSession();
+    const entered = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'enter_mode', actor: 'user' } },
+    );
+    expect(entered.body.code).toBe(0);
+
+    const liveSession = await resumeSessionById(server.core.accessor, sessionId);
+    const agent = await ensureMainAgent(liveSession!);
+    const research = agent.accessor.get(IAgentResearchService);
+    research.setPhase('gap_analysis');
+    const action = research.planAction({
+      kind: 'simulation',
+      purpose: 'Run the bounded HPC calculation.',
+      stopCondition: 'Stop after the declared analyzer evidence exists.',
+    });
+    research.startAction(action.actionId);
+    const before = research.getSnapshot();
+
+    const observed = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'observe_run',
+          actionId: action.actionId,
+          expectedRevision: before.revision,
+          campaign: 'bi2se3-r2',
+          jobId: '3128781',
+          stage: 'scf',
+          schedulerState: 'running',
+          artifactRefs: ['scf.log'],
+        },
+      },
+    );
+    expect(observed.body.code).toBe(0);
+    expect(observed.body.data.snapshot.currentRun).toMatchObject({
+      actionId: action.actionId,
+      campaign: 'bi2se3-r2',
+      jobId: '3128781',
+      stage: 'scf',
+      schedulerState: 'running',
+      artifactRefs: ['scf.log'],
+    });
   });
 
   it('POST on a non-existent session returns SESSION_NOT_FOUND', async () => {

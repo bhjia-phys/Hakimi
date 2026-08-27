@@ -252,4 +252,46 @@ describe('AitpLauncher process termination', () => {
     expect((error as Error).message).toContain('wait failed');
     expect(dispose).toHaveBeenCalledOnce();
   });
+
+  it('terminates and disposes a running process when its operation signal is aborted', async () => {
+    let resolveWait!: (exitCode: number) => void;
+    const waitPromise = new Promise<number>((resolve) => {
+      resolveWait = resolve;
+    });
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const kill = vi.fn(async (signal?: NodeJS.Signals) => {
+      if (signal === 'SIGTERM') {
+        stdout.end();
+        stderr.end();
+        resolveWait(143);
+      }
+    });
+    const dispose = vi.fn();
+    const process: IHostProcess = {
+      _serviceBrand: undefined,
+      pid: 43,
+      exitCode: null,
+      stdin: new PassThrough(),
+      stdout,
+      stderr,
+      wait: () => waitPromise,
+      kill,
+      dispose,
+    };
+    const spawn = vi.fn<IHostProcessService['spawn']>(async () => process);
+    const launcher = makeLauncher(spawn, { pythonPath: 'python3' });
+    const controller = new AbortController();
+
+    const pending = launcher.check(undefined, { signal: controller.signal });
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledOnce());
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({
+      code: AitpResearchErrors.codes.AITP_ADAPTER_OPERATION_CANCELLED,
+    });
+    expect(kill).toHaveBeenCalledOnce();
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    expect(dispose).toHaveBeenCalledOnce();
+  });
 });

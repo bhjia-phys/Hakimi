@@ -2,17 +2,15 @@
  * `aitpResearch` domain — `EnterAITPModeTool` / `ExitAITPModeTool` implementations.
  *
  * `EnterAITPMode` checks the flag, main-agent-only, and Plan conflict, then
- * delegates to `IAgentAitpModeService.enter`. In `auto` permission mode the
- * entry is auto-approved; other postures defer to a cold `waitUntil` review.
- * `ExitAITPMode` delegates to `IAgentAitpModeService.exit`. Bound at Agent
+ * delegates to `IAgentAitpModeService.enter`; its interaction posture is
+ * decided by the normal permission-policy chain. `ExitAITPMode` delegates to
+ * `IAgentAitpModeService.exit`. Bound at Agent
  * scope.
  */
 
 import type { ToolExecution } from '#/tool/toolContract';
 import { toInputJsonSchema } from '#/tool/input-schema';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
-import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
-import { IAgentToolApprovalService } from '#/agent/toolApproval/toolApproval';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentPlanService } from '#/features/plan/plan';
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
@@ -52,8 +50,6 @@ export class EnterAITPModeTool implements IEnterAITPModeTool {
 
   constructor(
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
-    @IAgentPermissionModeService private readonly modeService: IAgentPermissionModeService,
-    @IAgentToolApprovalService private readonly toolApproval: IAgentToolApprovalService,
     @IAgentScopeContext private readonly scopeCtx: IAgentScopeContext,
     @IFlagService private readonly flags: IFlagService,
     @IAgentPlanService private readonly planService: IAgentPlanService,

@@ -55,7 +55,7 @@
 | `/swarm on\|off` | — | 开启或关闭 swarm mode，但不发送提示词。 | 是 |
 | `/swarm <task>` | — | 先开启 swarm mode，再把 `<task>` 作为普通提示词发送。如果该轮次正常完成，swarm mode 会自动关闭。若当前是 `manual` 权限模式，启动前会提示是否切换到 `auto` 或 `yolo`。 | 否 |
 | `/goal [...]` | — | 开始或管理目标模式 | 见下文 |
-| `/research [...]` | — | 控制实验性 AITP Research Mode（`aitp_research_mode` flag，默认开启） | 见下文 |
+| `/research [...]` | — | 控制实验性 AITP Research Mode（`aitp_research_mode` flag，默认关闭） | 见下文 |
 
 ::: warning 注意
 `/yolo` 会跳过普通工具调用的审批确认，使用前请确保了解可能的风险。Plan 模式的退出审批不会被 `/yolo` 跳过；Plan 模式下的 `Bash` 也按 `/yolo` 的普通放行规则处理。
@@ -101,7 +101,7 @@ Prompt 模式在目标完成时以退出码 `0` 退出，在目标阻塞时以 `
 
 ## 实验性 Research Mode
 
-`/research` 控制实验性 AITP Research Mode——由 AITP 证据账本支撑的联合科研能力。它受 `aitp_research_mode` 实验 flag 门控（环境变量 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`，默认开启）。flag 开启只是开放入口——`/research` 命令和 `EnterAITPMode` 能力存在，但模式保持 inactive，零 AITP I/O，直到你显式用 `/research on`（或模型 `EnterAITPMode` 入口路径及其审批 gate）进入；绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`。flag 关闭时——设置 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=0` 或在 `/experiments` 中切换——该命令不可用，所有 AITP 工具和 skill 隐藏，零 AITP I/O。
+`/research` 控制实验性 AITP Research Mode——由 AITP 证据账本支撑的联合科研能力。它受 `aitp_research_mode` 实验 flag 门控（环境变量 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`，默认关闭；启动前设置为 `1` 才会开放该命令）。flag 开启只是开放入口——`/research` 命令和 `EnterAITPMode` 能力存在，但模式保持 inactive，零 AITP I/O，直到你显式用 `/research on`（或模型 `EnterAITPMode` 入口路径及其审批 gate）进入；绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`。flag 关闭时——设置 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=0` 或在 `/experiments` 中切换——该命令不可用，所有 AITP 工具和 skill 隐藏，零 AITP I/O。
 
 ::: warning 注意
 Research Mode 是实验性功能。它会运行一个可能持续多个轮次的自治研究循环。从 `manual` 或 `yolo` 权限模式进入时，会先提示是否切换到 `auto` 或 `yolo`——在 `manual` 模式下循环可能会因等待审批而暂停。

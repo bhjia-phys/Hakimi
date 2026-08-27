@@ -28,6 +28,7 @@ export const AitpResearchErrors = {
     AITP_ADAPTER_OUTPUT_LIMIT: 'aitp.adapter_output_limit',
     AITP_ADAPTER_NOT_INITIALIZED: 'aitp.adapter_not_initialized',
     AITP_ADAPTER_SINGLE_FLIGHT: 'aitp.adapter_single_flight',
+    AITP_ADAPTER_OPERATION_CANCELLED: 'aitp.adapter_operation_cancelled',
     AITP_CHECKPOINT_PENDING: 'aitp.checkpoint_pending',
     AITP_CHECKPOINT_DEGRADED: 'aitp.checkpoint_degraded',
     AITP_GOAL_COMPLETE_BLOCKED: 'aitp.goal_complete_blocked',
@@ -128,6 +129,12 @@ export const AitpResearchErrors = {
       retryable: false,
       public: true,
       action: 'Wait for the current AITP operation to finish.',
+    },
+    'aitp.adapter_operation_cancelled': {
+      title: 'The AITP operation was cancelled',
+      retryable: true,
+      public: true,
+      action: 'Retry the operation after the current Research lifecycle is ready.',
     },
     'aitp.checkpoint_pending': {
       title: 'Research checkpoint is pending commit',

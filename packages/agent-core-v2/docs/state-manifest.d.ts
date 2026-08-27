@@ -821,6 +821,7 @@ export interface AgentStateSnapshot {
       } | /* SystemTriggerOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
         readonly kind: 'system_trigger';
         readonly name: string;
+        readonly goalId?: string;
       } | /* TaskOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
         readonly kind: 'task';
         readonly taskId: string;
@@ -954,6 +955,7 @@ export interface AgentStateSnapshot {
     } | /* SystemTriggerOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
       readonly kind: 'system_trigger';
       readonly name: string;
+      readonly goalId?: string;
     } | /* TaskOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
       readonly kind: 'task';
       readonly taskId: string;
@@ -1019,6 +1021,7 @@ export interface AgentStateSnapshot {
       } | /* SystemTriggerOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
         readonly kind: 'system_trigger';
         readonly name: string;
+        readonly goalId?: string;
       } | /* TaskOrigin — packages/agent-core-v2/src/agent/contextMemory/types.ts */ {
         readonly kind: 'task';
         readonly taskId: string;

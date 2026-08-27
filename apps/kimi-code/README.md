@@ -47,7 +47,7 @@ Use `hakimi -p "<instruction>"` for a non-interactive run and `hakimi -c` to res
 
 ## Experimental Research Mode
 
-Research Mode requires Python 3.11 or later, the `aitp-research-protocol` plugin, and an initialized AITP workspace. The `aitp_research_mode` experimental flag is enabled by default, so a plain launch already makes `/research` and the `EnterAITPMode` capability available. Launch Hakimi, then enter the mode from the TUI:
+Research Mode requires Python 3.11 or later, the `aitp-research-protocol` plugin, and an initialized AITP workspace. The `aitp_research_mode` experimental flag is disabled by default; set `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=1` before launch to make `/research` and the `EnterAITPMode` capability available. Launch Hakimi, then enter the mode from the TUI:
 
 ```sh
 cd /path/to/initialized-aitp-workspace
@@ -60,7 +60,7 @@ hakimi
 /research manage
 ```
 
-See the [English Research Mode guide](../../docs/en/guides/research-mode.md) or [中文研究模式指南](../../docs/zh/guides/research-mode.md) for prerequisites, the Research Board, steering commands, persistence barriers, and degraded behavior.
+The normal bounded-action path is `BeginResearchAction` → perform the scientific work → `ConcludeResearchAction`, which records the physical work, result, tests or derivation, limitations, mainline impact, and next step in one Research transition. It does not submit or poll scheduler jobs, write AITP, or change a question's assessment automatically. The Research Loop can review typed child evidence packets without implicit state writes and record explicit, action-bound HPC observations. See the [English Research Mode guide](../../docs/en/guides/research-mode.md) or [中文研究模式指南](../../docs/zh/guides/research-mode.md) for prerequisites, the Research Board, steering commands, persistence barriers, and degraded behavior.
 
 ## User manual
 
