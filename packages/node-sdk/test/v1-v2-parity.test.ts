@@ -557,7 +557,7 @@ async function closeAll(...harnesses: readonly KimiHarness[]): Promise<void> {
  * and skew the comparison; the original values are restored on cleanup.
  */
 const CONFIG_ENV_PATTERN =
-  /^(KIMI_MODEL_|KIMI_LOOP_|KIMI_MCP_|KIMI_WEB_|KIMI_IMAGE_|KIMI_CODE_BACKGROUND_|KIMI_CODE_MODEL_CATALOG_)/;
+  /^(KIMI_MODEL_|KIMI_LOOP_|KIMI_MCP_|KIMI_WEB_|KIMI_IMAGE_|KIMI_CODE_BACKGROUND_|KIMI_CODE_MODEL_CATALOG_|KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE$|KIMI_CODE_EXPERIMENTAL_FLAG$)/;
 
 function scrubConfigEnv(): () => void {
   const saved: Record<string, string> = {};

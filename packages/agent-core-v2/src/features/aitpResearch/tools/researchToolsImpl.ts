@@ -3,10 +3,11 @@
  *
  * Each tool delegates to `IAgentResearchService` (and `IAgentAitpModeService`
  * for the mode gate). Active-only: the `when` predicate in the Feature
- * contribution checks `mode.isActive`. The Research Loop tools
- * (Plan/Start/Complete/Record/Request/SetPhase/Resolve) return
- * scientific-language reports — what was done, the result, the mainline impact,
- * and the next step — rather than raw ids or revisions. Bound at Agent scope.
+ * contribution checks `mode.isActive`. Normal bounded work uses
+ * `BeginResearchAction` and `ConcludeResearchAction`; atomic operations kept in
+ * this module support approval recovery and maintenance. Research outputs lead
+ * with what was done, the result, the mainline impact, and the next step rather
+ * than raw ids or revisions. Bound at Agent scope.
  */
 
 import type { ToolExecution } from '#/tool/toolContract';
@@ -18,13 +19,21 @@ import { AitpResearchError } from '#/features/aitpResearch/errors';
 import {
   ICommitResearchCheckpointTool,
   ICompleteResearchActionTool,
+  IConcludeResearchActionTool,
   ICreateResearchLineTool,
   ICreateResearchQuestionTool,
   IGetResearchStatusTool,
   IAcknowledgeResearchAlertTool,
   IPlanResearchActionTool,
+  IBeginResearchActionTool,
   IProposeResearchCheckpointTool,
   IRecordResearchProgressTool,
+  IReviewResearchEvidenceTool,
+  ReviewResearchEvidenceInputSchema,
+  type ReviewResearchEvidenceInput,
+  IObserveResearchRunTool,
+  ObserveResearchRunInputSchema,
+  type ObserveResearchRunToolInput,
   IRequestResearchDecisionTool,
   IResolveResearchDecisionTool,
   ISetResearchFocusTool,
@@ -34,11 +43,13 @@ import {
   IUpdateResearchQuestionTool,
   CommitResearchCheckpointInputSchema,
   CompleteResearchActionInputSchema,
+  ConcludeResearchActionInputSchema,
   CreateResearchLineInputSchema,
   CreateResearchQuestionInputSchema,
   GetResearchStatusInputSchema,
   AcknowledgeResearchAlertInputSchema,
   PlanResearchActionInputSchema,
+  BeginResearchActionInputSchema,
   ProposeResearchCheckpointInputSchema,
   RecordResearchProgressInputSchema,
   RequestResearchDecisionInputSchema,
@@ -50,11 +61,13 @@ import {
   UpdateResearchQuestionInputSchema,
   type CommitResearchCheckpointInput,
   type CompleteResearchActionInput,
+  type ConcludeResearchActionToolInput,
   type CreateResearchLineInput,
   type CreateResearchQuestionInput,
   type GetResearchStatusInput,
   type AcknowledgeResearchAlertInput,
   type PlanResearchActionInput,
+  type BeginResearchActionInput,
   type ProposeResearchCheckpointInput,
   type RecordResearchProgressInput,
   type RequestResearchDecisionInput,
@@ -389,7 +402,7 @@ export class ProposeResearchCheckpointTool implements IProposeResearchCheckpoint
           nextAction: args.next_action,
         });
         return {
-          output: `Proposed checkpoint ${checkpoint.checkpointId}. Use aitp_record_prepare/save to write the AITP entry, then CommitResearchCheckpoint.`,
+          output: `Proposed checkpoint ${checkpoint.checkpointId}. Pass checkpoint_id=${checkpoint.checkpointId} to aitp_record_prepare and aitp_record_save, fill and save the draft, then call CommitResearchCheckpoint with the saved Entry ID.`,
         };
       },
     };
@@ -456,10 +469,12 @@ export class PlanResearchActionTool implements IPlanResearchActionTool {
             expectedEvidence: args.expected_evidence,
             stopCondition: args.stop_condition,
             allowedToolKinds: args.allowed_tool_kinds,
+            retryOfEntryId: args.retry_of_entry_id,
             requiresHumanApproval: args.requires_human_approval,
           });
           const lines: string[] = [
             `Planned ${action.kind} action.`,
+            `Action ID: ${action.actionId}`,
             `Purpose: ${action.purpose}`,
             `Stop condition: ${action.stopCondition}`,
           ];
@@ -471,6 +486,61 @@ export class PlanResearchActionTool implements IPlanResearchActionTool {
           }
           lines.push(`Mainline impact: research phase advanced to ${this.research.getSnapshot().phase}.`);
           lines.push('Next step: call StartResearchAction when ready to execute.');
+          return { output: lines.join('\n') };
+        } catch (error) {
+          if (error instanceof AitpResearchError) return errorResult(error.message);
+          throw error;
+        }
+      },
+    };
+  }
+}
+
+export class BeginResearchActionTool implements IBeginResearchActionTool {
+  declare readonly _serviceBrand: undefined;
+  readonly name = 'BeginResearchAction' as const;
+  readonly description = 'Plan and begin one bounded research action atomically, stopping at a human approval gate when required.';
+  readonly parameters: Record<string, unknown> = toInputJsonSchema(BeginResearchActionInputSchema);
+
+  constructor(
+    @IAgentResearchService private readonly research: IAgentResearchService,
+    @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+  ) {}
+
+  resolveExecution(args: BeginResearchActionInput): ToolExecution {
+    return {
+      description: `Beginning research action: ${args.kind}`,
+      approvalRule: this.name,
+      execute: async () => {
+        const inactive = requireActive(this.mode);
+        if (inactive !== undefined) return errorResult(inactive);
+        try {
+          const action = this.research.planAndStartAction({
+            kind: args.kind,
+            purpose: args.purpose,
+            questionId: args.question_id,
+            lineSlug: args.line_slug,
+            expectedEvidence: args.expected_evidence,
+            stopCondition: args.stop_condition,
+            allowedToolKinds: args.allowed_tool_kinds,
+            retryOfEntryId: args.retry_of_entry_id,
+            requiresHumanApproval: args.requires_human_approval,
+          });
+          const snapshot = this.research.getSnapshot();
+          const lines: string[] = [
+            action.status === 'in_progress'
+              ? `Started ${action.kind} action.`
+              : `Planned ${action.kind} action; execution is waiting for approval.`,
+            `Action ID: ${action.actionId}`,
+            `Purpose: ${action.purpose}`,
+            `Phase: ${snapshot.phase}.`,
+          ];
+          if (action.requiresHumanApproval) {
+            lines.push('Human approval is required before execution; no scientific work has been marked as started.');
+          } else {
+            lines.push('Mainline impact: the bounded action is now the active research step.');
+            lines.push('Next step: perform the planned work and collect the expected evidence.');
+          }
           return { output: lines.join('\n') };
         } catch (error) {
           if (error instanceof AitpResearchError) return errorResult(error.message);
@@ -512,7 +582,7 @@ export class StartResearchActionTool implements IStartResearchActionTool {
             lines.push(`Stop condition: ${action.stopCondition}`);
           }
           lines.push('Mainline impact: the research loop is now in the executing phase.');
-          lines.push('Next step: perform the planned work, then call CompleteResearchAction and RecordResearchProgress.');
+          lines.push('Next step: perform the planned work, then call ConcludeResearchAction with the physical result and mainline impact.');
           return { output: lines.join('\n') };
         } catch (error) {
           if (error instanceof AitpResearchError) return errorResult(error.message);
@@ -555,6 +625,84 @@ export class CompleteResearchActionTool implements ICompleteResearchActionTool {
             lines.push('Mainline impact: the action was abandoned; assess whether to replan or adjust the research direction.');
             lines.push('Next step: call RecordResearchProgress to document what was learned, then replan if needed.');
           }
+          return { output: lines.join('\n') };
+        } catch (error) {
+          if (error instanceof AitpResearchError) return errorResult(error.message);
+          throw error;
+        }
+      },
+    };
+  }
+}
+
+export class ConcludeResearchActionTool implements IConcludeResearchActionTool {
+  declare readonly _serviceBrand: undefined;
+  readonly name = 'ConcludeResearchAction' as const;
+  readonly description = 'Conclude one bounded research action and record what was done, the result, and its scientific impact in one step.';
+  readonly parameters: Record<string, unknown> = toInputJsonSchema(ConcludeResearchActionInputSchema);
+
+  constructor(
+    @IAgentResearchService private readonly research: IAgentResearchService,
+    @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+  ) {}
+
+  resolveExecution(args: ConcludeResearchActionToolInput): ToolExecution {
+    return {
+      description: `Concluding research action: ${args.status}`,
+      approvalRule: this.name,
+      execute: async () => {
+        const inactive = requireActive(this.mode);
+        if (inactive !== undefined) return errorResult(inactive);
+        try {
+          const conclusion = this.research.concludeAction({
+            actionId: args.action_id,
+            status: args.status,
+            progress: {
+              headline: args.headline,
+              question: args.question,
+              motivation: args.motivation,
+              workPerformed: args.work_performed,
+              result: args.result,
+              mainlineImpact: args.mainline_impact,
+              uncertainties: args.uncertainties,
+              nextAction: args.next_action,
+              humanDecision: args.human_decision,
+              detail: args.detail === undefined ? undefined : {
+                assumptions: args.detail.assumptions,
+                derivation: args.detail.derivation,
+                tests: args.detail.tests,
+                observations: args.detail.observations,
+                sources: args.detail.sources,
+                limitations: args.detail.limitations,
+                detailHint: args.detail.detail_hint,
+                artifactRefs: args.detail.artifact_refs,
+              },
+            },
+          });
+          const progress = conclusion.progress;
+          const lines: string[] = [
+            `Scientific work: ${progress.workPerformed}`,
+            `Result: ${progress.result}`,
+            `Mainline impact: ${progress.mainlineImpact}`,
+          ];
+          if (progress.detail?.tests !== undefined && progress.detail.tests.length > 0) {
+            lines.push(`Tests: ${progress.detail.tests.join('; ')}`);
+          }
+          if (progress.detail?.derivation !== undefined) {
+            lines.push(`Derivation: ${progress.detail.derivation}`);
+          }
+          if (progress.detail?.observations !== undefined && progress.detail.observations.length > 0) {
+            lines.push(`Observations: ${progress.detail.observations.join('; ')}`);
+          }
+          if (progress.detail?.limitations !== undefined && progress.detail.limitations.length > 0) {
+            lines.push(`Limitations: ${progress.detail.limitations.join('; ')}`);
+          }
+          if (progress.uncertainties.length > 0) {
+            lines.push(`Uncertainties: ${progress.uncertainties.join('; ')}`);
+          }
+          if (progress.nextAction !== undefined) lines.push(`Next step: ${progress.nextAction}`);
+          lines.push(`Action ${conclusion.action.actionId} is ${conclusion.action.status}; Research phase is state_updated.`);
+          lines.push('Assessment and epistemic state were not changed automatically; update the Research question only if the scientific interpretation changed.');
           return { output: lines.join('\n') };
         } catch (error) {
           if (error instanceof AitpResearchError) return errorResult(error.message);
@@ -620,6 +768,101 @@ export class RecordResearchProgressTool implements IRecordResearchProgressTool {
           }
           lines.push(`Phase: ${snapshot.phase}.`);
           return { output: lines.join('\n') };
+        } catch (error) {
+          if (error instanceof AitpResearchError) return errorResult(error.message);
+          throw error;
+        }
+      },
+    };
+  }
+}
+
+export class ReviewResearchEvidenceTool implements IReviewResearchEvidenceTool {
+  declare readonly _serviceBrand: undefined;
+  readonly name = 'ReviewResearchEvidence' as const;
+  readonly description = 'Validate one typed subagent evidence packet against the current Research revision without changing scientific state.';
+  readonly parameters: Record<string, unknown> = toInputJsonSchema(ReviewResearchEvidenceInputSchema);
+
+  constructor(
+    @IAgentResearchService private readonly research: IAgentResearchService,
+    @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+  ) {}
+
+  resolveExecution(args: ReviewResearchEvidenceInput): ToolExecution {
+    return {
+      description: `Reviewing ${args.packet.kind} evidence packet`,
+      approvalRule: this.name,
+      execute: async () => {
+        const inactive = requireActive(this.mode);
+        if (inactive !== undefined) return errorResult(inactive);
+        try {
+          const review = this.research.reviewEvidencePacket(
+            args.packet,
+            args.expected_revision,
+          );
+          const target = review.questionId === undefined
+            ? review.lineSlug === undefined ? 'the current Research state' : `line ${review.lineSlug}`
+            : `question ${review.questionId}`;
+          return {
+            output: [
+              `Evidence packet ${review.packet.packet_id} reviewed for ${target}.`,
+              `Claim: ${review.packet.claim}`,
+              `Evidence: ${review.packet.evidence}`,
+              `Confidence: ${review.packet.confidence}.`,
+              'No assessment, epistemic state, or AITP record was changed.',
+              'Main-agent synthesis required: decide whether to call RecordResearchProgress and/or UpdateResearchQuestion with the physical interpretation.',
+              `Research revision remains ${review.researchRevision}.`,
+            ].join('\n'),
+          };
+        } catch (error) {
+          if (error instanceof AitpResearchError) return errorResult(error.message);
+          throw error;
+        }
+      },
+    };
+  }
+}
+
+export class ObserveResearchRunTool implements IObserveResearchRunTool {
+  declare readonly _serviceBrand: undefined;
+  readonly name = 'ObserveResearchRun' as const;
+  readonly description = 'Record a read-only observation of an external HPC or scheduler run. This does not submit, poll, or claim scientific success.';
+  readonly parameters: Record<string, unknown> = toInputJsonSchema(ObserveResearchRunInputSchema);
+
+  constructor(
+    @IAgentResearchService private readonly research: IAgentResearchService,
+    @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+  ) {}
+
+  resolveExecution(args: ObserveResearchRunToolInput): ToolExecution {
+    return {
+      description: `Recording run observation for job ${args.job_id}`,
+      approvalRule: this.name,
+      execute: async () => {
+        const inactive = requireActive(this.mode);
+        if (inactive !== undefined) return errorResult(inactive);
+        try {
+          const run = this.research.observeRun({
+            actionId: args.action_id,
+            expectedRevision: args.expected_revision,
+            campaign: args.campaign,
+            jobId: args.job_id,
+            sourcePin: args.source_pin,
+            binaryPin: args.binary_pin,
+            stage: args.stage,
+            schedulerState: args.scheduler_state,
+            nextCheckAt: args.next_check_at,
+            terminalState: args.terminal_state,
+            artifactRefs: args.artifact_refs,
+          });
+          return {
+            output: [
+              `Observed job ${run.jobId}: ${run.schedulerState} / ${run.stage}.`,
+              `Last observed at: ${new Date(run.lastObservedAt).toISOString()}.`,
+              run.nextCheckAt === undefined ? 'No next check was scheduled.' : `Next check at: ${new Date(run.nextCheckAt).toISOString()}.`,
+              'This is an observation only; no scheduler submission, automatic polling, or scientific conclusion was performed.',
+            ].join('\n'),
+          };
         } catch (error) {
           if (error instanceof AitpResearchError) return errorResult(error.message);
           throw error;

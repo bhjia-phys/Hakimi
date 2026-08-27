@@ -2,16 +2,19 @@
  * `aitpResearch` domain — Research Mode context injection.
  *
  * Owns the `aitp_research` context-injection provider: while AITP Research
- * Mode is active, it injects the scientific Research Loop state — current
- * question, phase, current action, latest progress, mainline impact, next
- * step, and any pending human gate — plus active semantic guidance. Verbosity
- * is Brief (full guidance) on a new turn or when progress changed since the
- * last disclosure, and Detail (compressed summary) within the same turn. The
- * disclosure carries the snapshot revision / phase / progress timestamp so
- * the next step can decide; compaction and undo both re-arm the new-turn flag
- * or drop the prior disclosure, so they re-inject the full guidance. Inactive
- * mode injects nothing (zero disclosure), and AITP entry / hash / revision /
- * checkpoint ids never leak into the injected text. Bound at Agent scope.
+ * Mode is active and the current turn is admitted as a Research turn (a Goal
+ * research continuation), it injects the scientific Research Loop state —
+ * current question, phase, current action, latest progress, mainline impact,
+ * next step, and any pending human gate — plus active semantic guidance.
+ * Ordinary user / system / subagent / cron turns abstain (zero disclosure)
+ * even while the mode is active. Verbosity is Brief (full guidance) on a new
+ * turn or when progress changed since the last disclosure, and Detail
+ * (compressed summary) within the same turn. The disclosure carries the
+ * snapshot revision / phase / progress timestamp so the next step can decide;
+ * compaction and undo both re-arm the new-turn flag or drop the prior
+ * disclosure, so they re-inject the full guidance. Inactive mode injects
+ * nothing (zero disclosure), and AITP entry / hash / revision / checkpoint ids
+ * never leak into the injected text. Bound at Agent scope.
  */
 
 import { Service } from '#/_base/di/service';
@@ -22,6 +25,7 @@ import {
 } from '#/agent/contextInjector/contextInjector';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import { IAgentResearchService } from '#/features/aitpResearch/research/agentResearch';
+import { IResearchTurnAdmission } from '#/features/aitpResearch/loop/researchTurnAdmission';
 
 import type { IAitpResearchInjection } from './aitpResearchInjectionContract';
 import {
@@ -38,6 +42,7 @@ export class AitpResearchInjection extends Service implements IAitpResearchInjec
     @IAgentContextInjectorService injector: IAgentContextInjectorService,
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
     @IAgentResearchService private readonly research: IAgentResearchService,
+    @IResearchTurnAdmission private readonly admission: IResearchTurnAdmission,
   ) {
     super();
 
@@ -53,6 +58,7 @@ export class AitpResearchInjection extends Service implements IAitpResearchInjec
     context: ContextInjectionContext<InjectionDisclosure>,
   ): ContextInjectionResult<InjectionDisclosure> | undefined {
     if (!this.mode.isActive) return undefined;
+    if (!this.admission.isCurrentResearchTurn()) return undefined;
     const snapshot = this.research.getSnapshot();
     const verbosity = resolveVerbosity(context, snapshot);
     return renderResearchInjection(snapshot, verbosity);

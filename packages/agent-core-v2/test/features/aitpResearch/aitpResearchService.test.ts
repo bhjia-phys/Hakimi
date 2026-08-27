@@ -3,6 +3,7 @@ import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DisposableStore } from '#/_base/di/lifecycle';
+import { Emitter } from '#/_base/event';
 import { SyncDescriptor } from '#/_base/di/descriptors';
 import { createServices, TestInstantiationService } from '#/_base/di/test';
 import { ILogService } from '#/_base/log/log';
@@ -12,6 +13,7 @@ import { contextAppendMessage, contextUndo } from '#/agent/contextMemory/context
 import { makeAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { BeforeToolExecuteEventImpl } from '#/agent/toolExecutor/beforeToolExecuteEvent';
 import type { ResolvedToolExecutionHookContext } from '#/agent/toolExecutor/toolHooks';
+import type { TurnStartedEvent } from '#/agent/loop/turnEvents';
 import type { ToolExecution, RunnableToolExecution } from '#/tool/toolContract';
 import { IEventBus } from '#/app/event/eventBus';
 import { EventBusService } from '#/app/event/eventBusService';
@@ -19,6 +21,8 @@ import { InMemorySkillCatalog } from '#/app/skillCatalog/registry';
 import { SessionAitpAdapterService } from '#/features/aitpResearch/adapter/sessionAitpAdapterService';
 import { ISessionAitpAdapter } from '#/features/aitpResearch/adapter/sessionAitpAdapter';
 import { SessionAitpLifecycleCoordinatorService } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinatorService';
+import { IDurableCommitService } from '#/features/aitpResearch/research/durableCommit';
+import { DurableCommitService } from '#/features/aitpResearch/research/durableCommitService';
 import {
   AitpModeModel,
   ResearchModel,
@@ -27,12 +31,18 @@ import {
   aitpModeSetPhase,
   aitpModeSetLoopStatus,
   researchProposeCheckpoint,
+  researchBindCheckpointEntry,
+  researchBindCheckpointReceipt,
   researchCommitCheckpoint,
   researchAcknowledgeCheckpoint,
   researchCreateLine,
 } from '#/features/aitpResearch/aitpResearchOps';
 import { aitpResearchModeFlag } from '#/features/aitpResearch/flag';
 import { AitpResearchErrors } from '#/features/aitpResearch/errors';
+import {
+  parseResearchEvidencePacket,
+  type ResearchEvidencePacket,
+} from '#/features/aitpResearch/research/evidencePacket';
 import type {
   AitpAdapterHealth,
   AitpCheckReport,
@@ -65,14 +75,20 @@ import { registerTestAgentWire, testWireScope } from '../../wire/stubs';
 const SCOPE = 'wire';
 const KEY = 'aitp-research-service-test';
 
+const GOAL_CONTINUATION_ORIGIN = {
+  kind: 'system_trigger' as const,
+  name: 'goal_continuation' as const,
+  goalId: 'goal-test',
+};
+
 function runnableExecution(execution: ToolExecution): RunnableToolExecution {
   if (!('execute' in execution)) throw new Error('Expected runnable tool execution');
   return execution;
 }
 
 describe('AITP Research flag', () => {
-  it('makes the capability available by default without entering the mode', () => {
-    expect(aitpResearchModeFlag.default).toBe(true);
+  it('keeps the capability opt-in by default without entering the mode', () => {
+    expect(aitpResearchModeFlag.default).toBe(false);
   });
 });
 
@@ -296,6 +312,47 @@ describe('AITP managed plugin contract discovery', () => {
     expect(adapter.resolveContractIdentity()).toBeNull();
     expect(spawn).not.toHaveBeenCalled();
   });
+
+  it('isolates a probe that finishes after reset from a subsequent probe', async () => {
+    let releaseOldWait!: (exitCode: number) => void;
+    const oldWait = new Promise<number>((resolve) => { releaseOldWait = resolve; });
+    const oldStdout = new PassThrough();
+    const oldStderr = new PassThrough();
+    const oldProcess: IHostProcess = {
+      _serviceBrand: undefined,
+      pid: 11,
+      exitCode: null,
+      stdin: new PassThrough(),
+      stdout: oldStdout,
+      stderr: oldStderr,
+      wait: () => oldWait,
+      kill: async () => {},
+      dispose: () => {},
+    };
+    let probeCalls = 0;
+    const spawn = vi.fn<IHostProcessService['spawn']>(async (_command, args) => {
+      if (!args?.includes('-c')) return completedProcess('');
+      probeCalls += 1;
+      if (probeCalls === 1) return oldProcess;
+      return completedProcess('(3, 13, 0)\n');
+    });
+    const { adapter } = buildManagedPluginAdapter({ spawn });
+
+    const oldProbe = adapter.probe();
+    await vi.waitFor(() => expect(probeCalls).toBe(1));
+    adapter.reset();
+    const newProbe = adapter.probe();
+    await expect(newProbe).resolves.toMatchObject({ phase: 'ready', pythonVersion: 'python3.13' });
+    releaseOldWait(143);
+    oldStdout.end();
+    oldStderr.end();
+
+    await expect(oldProbe).rejects.toMatchObject({
+      code: AitpResearchErrors.codes.AITP_ADAPTER_OPERATION_CANCELLED,
+    });
+    expect(adapter.health).toMatchObject({ phase: 'ready', pythonVersion: 'python3.13' });
+    expect(adapter.resolveContractIdentity()?.pluginVersion).toBe('0.8.0');
+  });
 });
 
 describe('AITP adapter mutation single-flight', () => {
@@ -383,7 +440,9 @@ function makeStubModeSvc(opts?: {
 
 function makeStubAdapter(overrides?: {
   show?: (opts: { id: string }) => Promise<AitpShowResult>;
-  check?: () => Promise<AitpCheckReport>;
+  check?: (opts?: { workstream?: string }) => Promise<AitpCheckReport>;
+  recordPrepare?: () => Promise<AitpRecordPrepareResult>;
+  recordSave?: () => Promise<AitpRecordSaveResult>;
 }): ISessionAitpAdapter & { _setHealth(h: AitpAdapterHealth): void } {
   let health: AitpAdapterHealth = { phase: 'inactive' };
   const stubEnter: AitpEnterResult = {
@@ -452,8 +511,8 @@ function makeStubAdapter(overrides?: {
     list: async () => stubList,
     show: overrides?.show ?? (async () => stubShow),
     check: overrides?.check ?? (async () => stubCheck),
-    recordPrepare: async () => stubRecordPrepare,
-    recordSave: async () => stubRecordSave,
+    recordPrepare: overrides?.recordPrepare ?? (async () => stubRecordPrepare),
+    recordSave: overrides?.recordSave ?? (async () => stubRecordSave),
     notePrepare: async () => stubNotePrepare,
     noteSave: async () => stubNoteSave,
     resolveContractIdentity: () => null,
@@ -461,6 +520,50 @@ function makeStubAdapter(overrides?: {
     isDegraded: () => health.phase === 'degraded',
     reset() { health = { phase: 'inactive' }; },
   };
+}
+
+function bindCompleteCheckpointReceipt(
+  checkpointId: string,
+  entryId = 'e1',
+  preSaveErrors: readonly { readonly code: string; readonly path: string; readonly message: string }[] = [],
+): void {
+  const pending = wire.getModel(ResearchModel).current.pendingCheckpoint;
+  if (pending === null || pending.checkpointId !== checkpointId) {
+    throw new Error(`Missing pending checkpoint ${checkpointId}`);
+  }
+  const draftPath = `.aitp/local/drafts/${entryId}.md`;
+  const errorFindingFingerprints = preSaveErrors
+    .map((finding) => `${finding.code}:${finding.path}:${finding.message}`)
+    .sort();
+  wire.dispatch(
+    researchBindCheckpointEntry({ checkpointId, entryId }),
+    researchBindCheckpointReceipt({
+      checkpointId,
+      receipt: {
+        prepare: {
+          status: 'prepared',
+          id: entryId,
+          path: draftPath,
+          idempotencyKey: pending.idempotencyKey,
+        },
+        save: {
+          status: 'saved',
+          draftPath,
+          path: `.aitp/topic/entries/entry-${entryId}.md`,
+        },
+        preSaveCheck: {
+          status: preSaveErrors.length === 0 ? 'clean' : 'findings',
+          errors: preSaveErrors.length,
+          warnings: 0,
+          findingFingerprints: preSaveErrors
+            .map((finding) => `error:${finding.code}:${finding.path}:${finding.message}`)
+            .sort(),
+          errorFindingFingerprints,
+          checkedAt: 900,
+        },
+      },
+    }),
+  );
 }
 
 function makeVetoEvent(toolName: string, args: unknown): BeforeToolExecuteEventImpl {
@@ -496,6 +599,200 @@ describe('AITP adapter zero-I/O when inactive', () => {
   });
 });
 
+describe('durable checkpoint verification', () => {
+  it('verifies an active saved Entry and records a clean post-save receipt', async () => {
+    const showSpy = vi.fn<(opts: { id: string }) => Promise<AitpShowResult>>().mockResolvedValue({
+      schema: 'aitp/show-0.1', root: '/workspace', id: 'e1', status: 'active',
+      source: '.aitp/topic/entries/entry-e1.md', legacy_derived: false, frontmatter: {}, body: '',
+    });
+    const checkSpy = vi.fn().mockResolvedValue({
+      schema: 'aitp/check-report-0.1', root: '/workspace', status: 'clean',
+      counts: { entries: 1, notes: 0, errors: 0, warnings: 0 }, findings: [],
+    } as AitpCheckReport);
+    const adapter = makeStubAdapter({ show: showSpy, check: checkSpy });
+    const durable = new DurableCommitService(adapter);
+
+    await durable.verifyEntry('e1');
+    const result = await durable.checkAfterSave({
+      workstreams: ['main'],
+      preSaveCheck: {
+        status: 'clean', errors: 0, warnings: 0,
+        findingFingerprints: [], errorFindingFingerprints: [], checkedAt: 100,
+      },
+    });
+
+    expect(showSpy).toHaveBeenCalledWith({ id: 'e1' });
+    expect(checkSpy).toHaveBeenCalledWith({ workstream: 'main' });
+    expect(result.postSaveCheck).toMatchObject({ status: 'clean', errors: 0, warnings: 0 });
+  });
+
+  it('rejects new errors but preserves an unchanged pre-save error as a receipt warning', async () => {
+    const existing = { level: 'error' as const, code: 'legacy', path: 'old.md', message: 'old error' };
+    const adapter = makeStubAdapter({
+      check: async () => ({
+        schema: 'aitp/check-report-0.1', root: '/workspace', status: 'findings',
+        counts: { entries: 1, notes: 0, errors: 1, warnings: 0 }, findings: [existing],
+      }),
+    });
+    const durable = new DurableCommitService(adapter);
+    const baseline = {
+      status: 'findings' as const, errors: 1, warnings: 0,
+      findingFingerprints: ['error:legacy:old.md:old error'],
+      errorFindingFingerprints: ['legacy:old.md:old error'], checkedAt: 100,
+    };
+
+    await expect(durable.checkAfterSave({ preSaveCheck: baseline })).resolves.toMatchObject({
+      postSaveCheck: { newErrorFindingFingerprints: [], preExistingErrorFindingFingerprints: ['legacy:old.md:old error'] },
+    });
+
+    const newAdapter = makeStubAdapter({
+      check: async () => ({
+        schema: 'aitp/check-report-0.1', root: '/workspace', status: 'findings',
+        counts: { entries: 1, notes: 0, errors: 1, warnings: 0 },
+        findings: [{ level: 'error', code: 'new', path: 'entry.md', message: 'new error' }],
+      }),
+    });
+    const newDurable = new DurableCommitService(newAdapter);
+    await expect(newDurable.checkAfterSave({ preSaveCheck: baseline })).rejects.toThrow('new error finding');
+  });
+
+  it('contributes an Agent-scoped verifier that the Research service consumes', async () => {
+    const adapter = makeStubAdapter();
+    const durable: IDurableCommitService = new DurableCommitService(adapter);
+    wire.dispatch(aitpModeEnter({ actor: 'user' }));
+    wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
+    const verifyEntry = vi.spyOn(durable, 'verifyEntry');
+    const checkAfterSave = vi.spyOn(durable, 'checkAfterSave');
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(
+      wire, makeScopeCtx(), eventBus, makeStubModeSvc(), adapter, makeToolExecutorStub(), makeStubGoalService(), undefined, durable,
+    );
+
+    await svc.commitCheckpoint({ checkpointId: 'cp1', entryId: 'e1' });
+
+    expect(verifyEntry).toHaveBeenCalledWith('e1');
+    expect(checkAfterSave).toHaveBeenCalledOnce();
+    expect(wire.getModel(ResearchCursorModel).cursor).toMatchObject({ checkpointId: 'cp1', entryId: 'e1' });
+  });
+});
+
+describe('typed research evidence packets', () => {
+  it('strictly parses a packet and applies defaults without mutating Research state', async () => {
+    const packet: ResearchEvidencePacket = parseResearchEvidencePacket({
+      packet_id: 'packet-1',
+      kind: 'derivation',
+      claim: 'The symmetry constraint preserves the stated degeneracy.',
+      evidence: 'A two-line derivation under the declared boundary conditions.',
+    });
+    expect(packet.assumptions).toEqual([]);
+    expect(packet.confidence).toBe('medium');
+    expect(() => parseResearchEvidencePacket({
+      ...packet,
+      unexpected: true,
+    })).toThrow();
+  });
+
+  it('serially reviews a packet against the current revision and never changes assessment', async () => {
+    wire.dispatch(aitpModeEnter({ actor: 'user' }));
+    const adapter = makeStubAdapter();
+    const mode = makeStubModeSvc({ isActive: true });
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(wire, makeScopeCtx(), eventBus, mode, adapter, makeToolExecutorStub(), makeStubGoalService());
+    svc.createLine({ slug: 'main', title: 'Main' });
+    const question = svc.createQuestion({ lineSlug: 'main', wording: 'Does the construction preserve symmetry?' });
+    const packet = parseResearchEvidencePacket({
+      packet_id: 'packet-1',
+      kind: 'result',
+      question_id: question.id,
+      line_slug: 'main',
+      claim: 'The computed observable is invariant.',
+      evidence: 'Independent evaluations agree within the declared tolerance.',
+      tests: ['Compared both symmetry branches.'],
+    });
+    const before = svc.getSnapshot();
+    const review = svc.reviewEvidencePacket(packet, before.revision);
+
+    expect(review).toMatchObject({
+      packet,
+      researchRevision: before.revision,
+      questionId: question.id,
+      lineSlug: 'main',
+      targetConfirmed: true,
+      assessmentChanged: false,
+      nextOperations: ['RecordResearchProgress', 'UpdateResearchQuestion'],
+    });
+    expect(svc.getSnapshot()).toEqual(before);
+  });
+
+  it('rejects a packet after the Research revision changes', async () => {
+    wire.dispatch(aitpModeEnter({ actor: 'user' }));
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(wire, makeScopeCtx(), eventBus, makeStubModeSvc(), makeStubAdapter(), makeToolExecutorStub(), makeStubGoalService());
+    svc.createLine({ slug: 'main', title: 'Main' });
+    const question = svc.createQuestion({ lineSlug: 'main', wording: 'Q' });
+    const packet = parseResearchEvidencePacket({
+      packet_id: 'packet-2', kind: 'observation', question_id: question.id,
+      claim: 'An observation.', evidence: 'A measured value.',
+    });
+    const revision = svc.getSnapshot().revision;
+    svc.updateQuestion({ questionId: question.id, assessment: 'New assessment' });
+    await expect(() => svc.reviewEvidencePacket(packet, revision)).toThrow('revision is stale');
+  });
+});
+
+describe('research run observations', () => {
+  it('records a bounded HPC observation and derives a wait-next-step without polling', async () => {
+    wire.dispatch(aitpModeEnter({ actor: 'user' }));
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(wire, makeScopeCtx(), eventBus, makeStubModeSvc(), makeStubAdapter(), makeToolExecutorStub(), makeStubGoalService());
+    svc.setPhase('gap_analysis');
+    const action = svc.planAction({
+      kind: 'simulation', purpose: 'Run the bounded scheduler calculation for the current question.',
+      stopCondition: 'Stop after the analyzer has produced the required evidence.',
+    });
+    svc.startAction(action.actionId);
+    const before = svc.getSnapshot();
+    const run = svc.observeRun({
+      actionId: action.actionId,
+      expectedRevision: before.revision,
+      campaign: 'campaign-bi2se3-r2',
+      jobId: '3128781',
+      sourcePin: 'source-sha',
+      binaryPin: 'binary-sha',
+      stage: 'scf',
+      schedulerState: 'running',
+      nextCheckAt: Date.now() + 60_000,
+      artifactRefs: ['run/scf.log'],
+    });
+
+    expect(run).toMatchObject({ actionId: action.actionId, jobId: '3128781', stage: 'scf', schedulerState: 'running' });
+    expect(svc.getSnapshot().currentRun).toEqual(run);
+    expect(svc.getSnapshot().effectiveNextStep?.source).toBe('research_run');
+    expect(svc.getSnapshot().effectiveNextStep?.text).toContain('3128781');
+  });
+
+  it('rejects stale or invalid terminal observations and never submits a scheduler job', async () => {
+    wire.dispatch(aitpModeEnter({ actor: 'user' }));
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(wire, makeScopeCtx(), eventBus, makeStubModeSvc(), makeStubAdapter(), makeToolExecutorStub(), makeStubGoalService());
+    svc.setPhase('gap_analysis');
+    const action = svc.planAction({
+      kind: 'simulation', purpose: 'Run one bounded HPC calculation and inspect its evidence.',
+      stopCondition: 'Stop when the declared artifacts exist.',
+    });
+    const revision = svc.getSnapshot().revision;
+    await expect(() => svc.observeRun({
+      actionId: action.actionId, expectedRevision: revision - 1, campaign: 'c', jobId: 'j',
+      stage: 'running', schedulerState: 'completed', artifactRefs: [],
+    })).toThrow('revision is stale');
+    await expect(() => svc.observeRun({
+      actionId: action.actionId, expectedRevision: revision, campaign: 'c', jobId: 'j',
+      stage: 'running', schedulerState: 'completed', artifactRefs: [],
+    })).toThrow('requires an explicit terminal state');
+  });
+});
+
 describe('commitCheckpoint barrier', () => {
   it('requires a pending checkpoint with matching id', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
@@ -507,9 +804,23 @@ describe('commitCheckpoint barrier', () => {
     );
   });
 
+  it('rejects a pending checkpoint without prepare/save/check receipts', async () => {
+    wire.dispatch(aitpModeEnter({ actor: 'user' }));
+    wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp-missing', idempotencyKey: 'key1', createdAt: 1000 }));
+    const adapter = makeStubAdapter();
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(wire, makeScopeCtx(), eventBus, makeStubModeSvc(), adapter, makeToolExecutorStub(), makeStubGoalService());
+
+    await expect(svc.commitCheckpoint({ checkpointId: 'cp-missing', entryId: 'e1' })).rejects.toThrow(
+      'no complete AITP prepare/save receipt',
+    );
+    expect(wire.getModel(ResearchCursorModel).cursor).toBeNull();
+  });
+
   it('calls show + check before advancing the cursor', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     const showSpy = vi.fn<(opts: { id: string }) => Promise<AitpShowResult>>().mockResolvedValue({
       schema: 'aitp/show-0.1', root: '/workspace', id: 'e1', status: 'active',
@@ -527,8 +838,16 @@ describe('commitCheckpoint barrier', () => {
 
     expect(showSpy).toHaveBeenCalledWith({ id: 'e1' });
     expect(checkSpy).toHaveBeenCalledOnce();
-    expect(wire.getModel(ResearchCursorModel).cursor).not.toBeNull();
-    expect(wire.getModel(ResearchCursorModel).cursor!.entryId).toBe('e1');
+    expect(wire.getModel(ResearchCursorModel).cursor).toMatchObject({
+      checkpointId: 'cp1',
+      entryId: 'e1',
+      receipt: {
+        prepare: { status: 'prepared', id: 'e1' },
+        save: { status: 'saved' },
+        preSaveCheck: { status: 'clean', errors: 0 },
+        postSaveCheck: { status: 'clean', errors: 0 },
+      },
+    });
   });
 
   it('acknowledges the question and reconciles an undone pending checkpoint', async () => {
@@ -540,6 +859,7 @@ describe('commitCheckpoint barrier', () => {
     wire.dispatch(researchCreateLine({ slug: 'main', title: 'Main', createdAt: 1 }));
     const question = svc.createQuestion({ lineSlug: 'main', wording: 'Q1' });
     const checkpoint = svc.proposeCheckpoint({ questionId: question.id });
+    bindCompleteCheckpointReceipt(checkpoint.checkpointId);
     wire.dispatch(contextAppendMessage({ message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } } }));
 
     await svc.commitCheckpoint({ checkpointId: checkpoint.checkpointId, entryId: 'e1' });
@@ -549,6 +869,9 @@ describe('commitCheckpoint barrier', () => {
 
     wire.dispatch(contextUndo({ count: 1 }));
     expect(wire.getModel(ResearchModel).current.pendingCheckpoint?.checkpointId).toBe(checkpoint.checkpointId);
+    // The committed-cursor reconcile is a lifecycle action fired on undo
+    // (`context.undone`), not a read side-effect; `getPendingCheckpoint` stays pure.
+    eventBus.publish({ type: 'context.undone', turns: 1 });
     expect(svc.getPendingCheckpoint()).toBeNull();
     expect(wire.getModel(ResearchModel).current.questions[question.id]!.persistence).toBe('committed');
   });
@@ -569,6 +892,7 @@ describe('commitCheckpoint barrier', () => {
   ] as const)('keeps the pending checkpoint when show returns %s', async (_case, entryId, status) => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     const showSpy = vi.fn().mockResolvedValue({
       schema: 'aitp/show-0.1', root: '/workspace', id: entryId, status,
@@ -590,6 +914,7 @@ describe('commitCheckpoint barrier', () => {
   it('treats a repeated commit with the same checkpoint and entry as idempotent', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     const showSpy = vi.fn<(opts: { id: string }) => Promise<AitpShowResult>>().mockResolvedValue({
       schema: 'aitp/show-0.1', root: '/workspace', id: 'e1', status: 'active',
@@ -615,6 +940,7 @@ describe('commitCheckpoint barrier', () => {
   it('does not overwrite a committed cursor with a different entry', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     const showSpy = vi.fn<(opts: { id: string }) => Promise<AitpShowResult>>().mockResolvedValue({
       schema: 'aitp/show-0.1', root: '/workspace', id: 'e1', status: 'active',
@@ -637,9 +963,46 @@ describe('commitCheckpoint barrier', () => {
     expect(wire.getModel(ResearchCursorModel).cursor).toMatchObject({ checkpointId: 'cp1', entryId: 'e1' });
   });
 
-  it('rechecks pending state after the adapter barrier before advancing the cursor', async () => {
+  it('appends two different checkpoints to the committed history sequentially', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
+    // First checkpoint: propose → bind full receipt → commit.
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1', 'e1');
+
+    const adapter = makeStubAdapter({
+      show: async ({ id }: { id: string }) => ({
+        schema: 'aitp/show-0.1', root: '/workspace', id, status: 'active',
+        source: `.aitp/topic/entries/entry-${id}.md`, legacy_derived: false, frontmatter: {}, body: '',
+      }),
+    });
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(wire, makeScopeCtx(), eventBus, makeStubModeSvc(), adapter, makeToolExecutorStub(), makeStubGoalService());
+
+    await svc.commitCheckpoint({ checkpointId: 'cp1', entryId: 'e1' });
+    expect(wire.getModel(ResearchModel).current.pendingCheckpoint).toBeNull();
+
+    // Second, independent checkpoint: a new proposal is accepted after commit,
+    // bound to a different AITP entry, and appended to the history.
+    const second = svc.proposeCheckpoint({});
+    bindCompleteCheckpointReceipt(second.checkpointId, 'e2');
+    await svc.commitCheckpoint({ checkpointId: second.checkpointId, entryId: 'e2' });
+
+    const cursor = wire.getModel(ResearchCursorModel);
+    expect(cursor.cursor).toMatchObject({ checkpointId: second.checkpointId, entryId: 'e2' });
+    expect(cursor.history).toMatchObject([
+      { checkpointId: 'cp1', entryId: 'e1' },
+      { checkpointId: second.checkpointId, entryId: 'e2' },
+    ]);
+    expect(wire.getModel(ResearchModel).current.pendingCheckpoint).toBeNull();
+    // The `latestCommittedCheckpoint` projection stays compatible and points at
+    // the latest commit; the full ordered history is exposed additively.
+    expect(svc.getSnapshot().latestCommittedCheckpoint).toMatchObject({ checkpointId: second.checkpointId, entryId: 'e2' });
+    expect(svc.getSnapshot().committedCheckpointHistory).toHaveLength(2);
+    expect(svc.getSnapshot().committedCheckpointHistory![1]).toMatchObject({ checkpointId: second.checkpointId, entryId: 'e2' });
+  });
+
+  it('rejects a checkpoint when its question revision changes during the show barrier', async () => {
+    wire.dispatch(aitpModeEnter({ actor: 'user' }));
 
     let releaseShow!: (result: AitpShowResult) => void;
     const showResult: AitpShowResult = {
@@ -656,22 +1019,27 @@ describe('commitCheckpoint barrier', () => {
     const modeSvc = makeStubModeSvc();
     const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
     const svc = new AgentResearchService(wire, makeScopeCtx(), eventBus, modeSvc, adapter, makeToolExecutorStub(), makeStubGoalService());
+    svc.createLine({ slug: 'main', title: 'Main' });
+    const question = svc.createQuestion({ lineSlug: 'main', wording: 'Q1' });
+    const checkpoint = svc.proposeCheckpoint({ questionId: question.id });
+    bindCompleteCheckpointReceipt(checkpoint.checkpointId);
 
-    const commitPromise = svc.commitCheckpoint({ checkpointId: 'cp1', entryId: 'e1' });
+    const commitPromise = svc.commitCheckpoint({ checkpointId: checkpoint.checkpointId, entryId: 'e1' });
     expect(showSpy).toHaveBeenCalledWith({ id: 'e1' });
-    wire.dispatch(researchAcknowledgeCheckpoint({ checkpointId: 'cp1', entryId: 'external-e1' }));
+    svc.updateQuestion({ questionId: question.id, assessment: 'Concurrent revision update' });
     releaseShow(showResult);
 
     await expect(commitPromise).rejects.toThrow('changed while the AITP show barrier was running');
     expect(checkSpy).not.toHaveBeenCalled();
     expect(modeSvc._setPhaseCalls).not.toContain('degraded');
     expect(wire.getModel(ResearchCursorModel).cursor).toBeNull();
-    expect(wire.getModel(ResearchModel).current.pendingCheckpoint).toBeNull();
+    expect(wire.getModel(ResearchModel).current.pendingCheckpoint?.checkpointId).toBe(checkpoint.checkpointId);
   });
 
   it('rechecks the committed cursor after the asynchronous check barrier', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     let releaseCheck!: (report: AitpCheckReport) => void;
     const checkPromise = new Promise<AitpCheckReport>((resolve) => { releaseCheck = resolve; });
@@ -696,9 +1064,36 @@ describe('commitCheckpoint barrier', () => {
     expect(wire.getModel(ResearchModel).current.pendingCheckpoint?.checkpointId).toBe('cp1');
   });
 
+  it('allows unchanged pre-existing check errors and records them as receipt warnings', async () => {
+    wire.dispatch(aitpModeEnter({ actor: 'user' }));
+    wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp-existing', idempotencyKey: 'key1', createdAt: 1000 }));
+    const existingFinding = { code: 'legacy_error', path: 'old.md', message: 'pre-existing error' };
+    bindCompleteCheckpointReceipt('cp-existing', 'e1', [existingFinding]);
+
+    const checkSpy = vi.fn().mockResolvedValue({
+      schema: 'aitp/check-report-0.1', root: '/workspace', status: 'findings',
+      counts: { entries: 1, notes: 0, errors: 1, warnings: 0 },
+      findings: [{ level: 'error', ...existingFinding }],
+    } as AitpCheckReport);
+    const adapter = makeStubAdapter({ check: checkSpy });
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const modeSvc = makeStubModeSvc();
+    const svc = new AgentResearchService(wire, makeScopeCtx(), eventBus, modeSvc, adapter, makeToolExecutorStub(), makeStubGoalService());
+
+    await svc.commitCheckpoint({ checkpointId: 'cp-existing', entryId: 'e1' });
+
+    expect(modeSvc._setPhaseCalls).not.toContain('degraded');
+    expect(wire.getModel(ResearchCursorModel).cursor?.receipt?.postSaveCheck).toMatchObject({
+      errors: 1,
+      newErrorFindingFingerprints: [],
+      preExistingErrorFindingFingerprints: ['legacy_error:old.md:pre-existing error'],
+    });
+  });
+
   it('rejects when check reports error findings (degraded, cursor not advanced)', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     const checkSpy = vi.fn().mockResolvedValue({
       schema: 'aitp/check-report-0.1', root: '/workspace', status: 'findings',
@@ -719,6 +1114,7 @@ describe('commitCheckpoint barrier', () => {
   it('rejects when show throws (degraded, cursor not advanced)', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     const showSpy = vi.fn().mockRejectedValue(new Error('show failed'));
     const adapter = makeStubAdapter({ show: showSpy });
@@ -729,6 +1125,60 @@ describe('commitCheckpoint barrier', () => {
     await expect(svc.commitCheckpoint({ checkpointId: 'cp1', entryId: 'e1' })).rejects.toThrow('commit barrier failed');
     expect(wire.getModel(ResearchCursorModel).cursor).toBeNull();
     expect(modeSvc._setPhaseCalls).toContain('degraded');
+  });
+});
+
+describe('research snapshot pure reads', () => {
+  it('read projections never dispatch, publish, or invoke the adapter and leave revision/state untouched', async () => {
+    wire.dispatch(aitpModeEnter({ actor: 'user' }));
+    const adapter = makeStubAdapter();
+    const showSpy = vi.spyOn(adapter, 'show');
+    const checkSpy = vi.spyOn(adapter, 'check');
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(
+      wire,
+      makeScopeCtx(),
+      eventBus,
+      makeStubModeSvc({ isActive: true, phase: 'ready' }),
+      adapter,
+      makeToolExecutorStub(),
+      makeStubGoalService(),
+    );
+
+    // Seed state through a real mutation (which legitimately dispatches + publishes).
+    svc.createLine({ slug: 'main', title: 'Main' });
+    svc.createQuestion({ lineSlug: 'main', wording: 'Q1' });
+
+    const dispatchSpy = vi.spyOn(wire, 'dispatch');
+    const researchEvents: unknown[] = [];
+    disposables.add(eventBus.subscribe('research.updated', (e) => researchEvents.push(e as never)));
+    dispatchSpy.mockClear();
+    showSpy.mockClear();
+    checkSpy.mockClear();
+
+    const stateBefore = wire.getModel(ResearchModel).current;
+    const revisionBefore = stateBefore.revision;
+    const cursorBefore = wire.getModel(ResearchCursorModel).cursor;
+    const snapshotBefore = svc.getSnapshot();
+
+    svc.getSnapshot();
+    svc.getSnapshot();
+    svc.getQuestions();
+    svc.getLines();
+    svc.getPendingCheckpoint();
+    svc.getCommittedCursor();
+    svc.getScientificProgress('brief');
+    svc.getScientificProgress('detail');
+    svc.getScientificProgress('audit');
+
+    expect(dispatchSpy).not.toHaveBeenCalled();
+    expect(researchEvents).toHaveLength(0);
+    expect(showSpy).not.toHaveBeenCalled();
+    expect(checkSpy).not.toHaveBeenCalled();
+    expect(wire.getModel(ResearchModel).current).toEqual(stateBefore);
+    expect(wire.getModel(ResearchModel).current.revision).toBe(revisionBefore);
+    expect(wire.getModel(ResearchCursorModel).cursor).toEqual(cursorBefore);
+    expect(svc.getSnapshot()).toEqual(snapshotBefore);
   });
 });
 
@@ -1088,15 +1538,22 @@ describe('legacy Research tool compatibility', () => {
 
     await modeSvc.enter({ actor: 'user' });
 
-    expect(addActiveTool.mock.calls.map(([name]) => name)).toEqual(
+    const toolNames = addActiveTool.mock.calls.map(([name]) => name);
+    expect(toolNames).toEqual(
       expect.arrayContaining([
         'CreateResearchQuestion',
         'SetResearchFocus',
-        'SetResearchPhase',
+        'BeginResearchAction',
+        'ConcludeResearchAction',
         'ResolveResearchDecision',
         'AcknowledgeResearchAlert',
       ]),
     );
+    expect(toolNames).not.toEqual(expect.arrayContaining([
+      'PlanResearchAction',
+      'CompleteResearchAction',
+      'SetResearchPhase',
+    ]));
   });
 
   it('repairs the Research tool overlay when restoring an active mode', async () => {
@@ -1108,15 +1565,22 @@ describe('legacy Research tool compatibility', () => {
     await wire.restore();
 
     expect(modeSvc.isActive).toBe(true);
-    expect(addActiveTool.mock.calls.map(([name]) => name)).toEqual(
+    const toolNames = addActiveTool.mock.calls.map(([name]) => name);
+    expect(toolNames).toEqual(
       expect.arrayContaining([
         'CreateResearchQuestion',
         'SetResearchFocus',
-        'SetResearchPhase',
+        'BeginResearchAction',
+        'ConcludeResearchAction',
         'ResolveResearchDecision',
         'AcknowledgeResearchAlert',
       ]),
     );
+    expect(toolNames).not.toEqual(expect.arrayContaining([
+      'PlanResearchAction',
+      'CompleteResearchAction',
+      'SetResearchPhase',
+    ]));
   });
 });
 
@@ -1200,6 +1664,7 @@ describe('UpdateGoal barrier and subagent veto', () => {
   it('vetoes UpdateGoal(complete) when a pending checkpoint exists and mode is active', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     const adapter = makeStubAdapter();
     const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
@@ -1315,6 +1780,7 @@ describe('UpdateGoal barrier and subagent veto', () => {
   it('does not veto UpdateGoal(non-complete)', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     const adapter = makeStubAdapter();
     const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
@@ -1482,6 +1948,7 @@ describe('checkpoint degraded syncs research.updated', () => {
 
     await modeSvc.enter({ actor: 'user' });
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     const researchEvents: { type: string; snapshot?: { mode: string } }[] = [];
     disposables.add(eventBus.subscribe('research.updated', (e) => researchEvents.push(e as never)));
@@ -1502,7 +1969,8 @@ describe('injection active guidance', () => {
 
     const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
     const providers = captureProviders();
-    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc);
+    const admission = await makeInjectionAdmission(modeSvc, true);
+    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc, admission);
 
     expect(providers.list).toHaveLength(1);
     expect(providers.list[0]!.name).toBe('aitp_research');
@@ -1521,7 +1989,30 @@ describe('injection active guidance', () => {
 
     const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
     const providers = captureProviders();
-    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc);
+    const admission = await makeInjectionAdmission(modeSvc, false);
+    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc, admission);
+
+    const output = providers.call(0, { isNewTurn: true });
+    expect(output).toBeUndefined();
+  });
+
+  it('abstains (zero disclosure) for an ordinary turn even while mode is active', async () => {
+    const modeSvc = await buildRealModeService();
+    const researchSvc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user', lineSlug: 'main' });
+    researchSvc.createQuestion({ lineSlug: 'main', wording: 'What causes X?' });
+    researchSvc.setPhase('orienting');
+
+    const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
+    const providers = captureProviders();
+    // Ordinary turn (user origin, not a Goal research continuation) → not admitted.
+    const admission = await makeInjectionAdmission(modeSvc, false);
+    eventBus.publish({
+      type: 'turn.started',
+      turnId: 1,
+      origin: { kind: 'user' },
+    });
+    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc, admission);
 
     const output = providers.call(0, { isNewTurn: true });
     expect(output).toBeUndefined();
@@ -1614,6 +2105,24 @@ function captureProviders() {
     return typeof content === 'string' ? content : undefined;
   }
   return { list, stub, call };
+}
+
+async function makeInjectionAdmission(
+  modeSvc: Awaited<ReturnType<typeof buildRealModeService>>,
+  admitted: boolean,
+): Promise<import('#/features/aitpResearch/loop/researchTurnAdmission').IResearchTurnAdmission> {
+  const { ResearchTurnAdmission } = await import('#/features/aitpResearch/loop/researchTurnAdmission');
+  const admission = new ResearchTurnAdmission(
+    eventBus,
+    makeAgentScopeContext({ agentId: MAIN_AGENT_ID, agentScope: '' }),
+    modeSvc,
+    { _serviceBrand: undefined, isGoalContinuationTurn: () => admitted } as unknown as IAgentGoalService,
+  );
+  disposables.add(admission);
+  if (admitted) {
+    eventBus.publish({ type: 'turn.started', turnId: 1, origin: GOAL_CONTINUATION_ORIGIN });
+  }
+  return admission;
 }
 
 async function buildRealModeService(
@@ -2103,6 +2612,128 @@ function findCommandCall(spawn: ReturnType<typeof vi.fn>): readonly unknown[] {
   return call;
 }
 
+describe('checkpoint receipt tool integration', () => {
+  it('binds prepare, pre-save check, and save receipts to the pending checkpoint', async () => {
+    const adapter = makeStubAdapter();
+    adapter._setHealth({ phase: 'ready', contractVersion: '0.1', pluginVersion: '0.8.0' });
+    const modeSvc = makeStubModeSvc({ isActive: true, phase: 'ready' });
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const researchSvc = new AgentResearchService(
+      wire,
+      makeScopeCtx(),
+      eventBus,
+      modeSvc,
+      adapter,
+      makeToolExecutorStub(),
+      makeStubGoalService(),
+    );
+    const checkpoint = researchSvc.proposeCheckpoint({});
+    const recordPrepareSpy = vi.spyOn(adapter, 'recordPrepare');
+    const checkSpy = vi.spyOn(adapter, 'check');
+    const recordSaveSpy = vi.spyOn(adapter, 'recordSave');
+    const { AitpRecordPrepareTool, AitpRecordSaveTool } = await import(
+      '#/features/aitpResearch/tools/aitpAdapterTools'
+    );
+    const prepareTool = new AitpRecordPrepareTool(adapter, modeSvc, researchSvc);
+    const saveTool = new AitpRecordSaveTool(adapter, modeSvc, researchSvc);
+
+    await runnableExecution(prepareTool.resolveExecution({
+      kind: 'result',
+      authority: 'agent',
+      created_by: 'agent:main',
+      workstreams: ['magnetic-symmetry'],
+      checkpoint_id: checkpoint.checkpointId,
+    })).execute({ turnId: 1, toolCallId: 'prepare', signal: new AbortController().signal });
+    await runnableExecution(saveTool.resolveExecution({
+      draft_path: '.aitp/local/drafts/entry-test.md',
+      checkpoint_id: checkpoint.checkpointId,
+    })).execute({ turnId: 1, toolCallId: 'save', signal: new AbortController().signal });
+
+    expect(recordPrepareSpy).toHaveBeenCalledWith(expect.objectContaining({
+      idempotencyKey: checkpoint.idempotencyKey,
+      workstreams: ['magnetic-symmetry'],
+    }));
+    expect(checkSpy).toHaveBeenCalledWith({ workstream: 'magnetic-symmetry' });
+    expect(recordSaveSpy).toHaveBeenCalledWith({
+      draftPath: '.aitp/local/drafts/entry-test.md',
+    });
+    expect(researchSvc.getPendingCheckpoint()).toMatchObject({
+      checkpointId: checkpoint.checkpointId,
+      committedEntryId: 'entry-test',
+      receipt: {
+        prepare: {
+          id: 'entry-test',
+          idempotencyKey: checkpoint.idempotencyKey,
+          workstreams: ['magnetic-symmetry'],
+        },
+        save: {
+          status: 'saved',
+          draftPath: '.aitp/local/drafts/entry-test.md',
+        },
+        preSaveCheck: { status: 'clean', errors: 0 },
+      },
+    });
+  });
+
+  it('treats a canonical existing prepare hit as an already-saved checkpoint', async () => {
+    let checkpointIdempotencyKey = 'unused';
+    const adapter = makeStubAdapter({
+      show: async () => ({
+        schema: 'aitp/show-0.1',
+        root: '/workspace',
+        id: 'entry-e1',
+        status: 'active',
+        source: '.aitp/topic/entries/entry-e1.md',
+        legacy_derived: false,
+        frontmatter: {},
+        body: '',
+      }),
+      recordPrepare: async () => ({
+        status: 'existing',
+        path: '.aitp/topic/entries/entry-e1.md',
+        idempotency_key: checkpointIdempotencyKey,
+      }),
+    });
+    adapter._setHealth({ phase: 'ready', contractVersion: '0.1', pluginVersion: '0.8.0' });
+    const modeSvc = makeStubModeSvc({ isActive: true, phase: 'ready' });
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const researchSvc = new AgentResearchService(
+      wire,
+      makeScopeCtx(),
+      eventBus,
+      modeSvc,
+      adapter,
+      makeToolExecutorStub(),
+      makeStubGoalService(),
+    );
+    const checkpoint = researchSvc.proposeCheckpoint({});
+    checkpointIdempotencyKey = checkpoint.idempotencyKey;
+    const { AitpRecordPrepareTool } = await import('#/features/aitpResearch/tools/aitpAdapterTools');
+    await runnableExecution(new AitpRecordPrepareTool(adapter, modeSvc, researchSvc).resolveExecution({
+      kind: 'result',
+      authority: 'agent',
+      created_by: 'agent:main',
+      checkpoint_id: checkpoint.checkpointId,
+    })).execute({ turnId: 1, toolCallId: 'prepare-existing', signal: new AbortController().signal });
+
+    expect(researchSvc.getPendingCheckpoint()).toMatchObject({
+      committedEntryId: 'entry-e1',
+      receipt: {
+        prepare: { status: 'existing', id: 'entry-e1', path: '.aitp/topic/entries/entry-e1.md' },
+        save: {
+          status: 'already_saved',
+          source: 'prepare_existing',
+          draftPath: '.aitp/topic/entries/entry-e1.md',
+          path: '.aitp/topic/entries/entry-e1.md',
+        },
+        preSaveCheck: { status: 'clean', errors: 0 },
+      },
+    });
+    await researchSvc.commitCheckpoint({ checkpointId: checkpoint.checkpointId, entryId: 'entry-e1' });
+    expect(researchSvc.getCommittedCursor()).toMatchObject({ entryId: 'entry-e1' });
+  });
+});
+
 describe('launcher argv precision', () => {
   it('enter passes --recent and --workstream', async () => {
     const { adapter, spawn } = buildScriptedAdapter([
@@ -2213,6 +2844,7 @@ describe('checkpoint barrier: warning vs error', () => {
   it('warning-only findings allow the cursor (exit 1, 0 errors)', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     const adapter = makeStubAdapter({
       show: async () => ({
@@ -2236,6 +2868,7 @@ describe('checkpoint barrier: warning vs error', () => {
   it('error findings block the cursor (exit 1, >0 errors)', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     const adapter = makeStubAdapter({
       show: async () => ({
@@ -2256,6 +2889,7 @@ describe('checkpoint barrier: warning vs error', () => {
   it('adapter check throw (exit 2) fails closed', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     wire.dispatch(researchProposeCheckpoint({ checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000 }));
+    bindCompleteCheckpointReceipt('cp1');
 
     const adapter = makeStubAdapter({
       show: async () => ({
@@ -2282,7 +2916,8 @@ describe('injection guidance content', () => {
 
     const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
     const providers = captureProviders();
-    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc);
+    const admission = await makeInjectionAdmission(modeSvc, true);
+    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc, admission);
 
     const output = providers.call(0, { isNewTurn: true })!;
     expect(output).toContain('aitp_show');
@@ -2412,7 +3047,7 @@ describe('Research Loop scientific state', () => {
     expect(() => svc.setPhase('idle')).toThrow('already');
   });
 
-  it('planAction requires gap_analysis or action_planned phase', async () => {
+  it('planAction can plan directly from orienting', async () => {
     const modeSvc = await buildRealModeService();
     const svc = await buildRealResearchService(modeSvc);
     await modeSvc.enter({ actor: 'user' });
@@ -2423,12 +3058,12 @@ describe('Research Loop scientific state', () => {
     })).toThrow('Cannot plan action from phase');
 
     svc.setPhase('orienting');
-    svc.setPhase('gap_analysis');
     const action = svc.planAction({
       kind: 'experiment', purpose: 'test', stopCondition: 'p < 0.05',
     });
     expect(action.status).toBe('planned');
     expect(action.kind).toBe('experiment');
+    expect(action.actionId).toMatch(/[0-9a-f-]{36}/);
   });
 
   it('planAction rejects missing question/line', async () => {
@@ -2443,6 +3078,32 @@ describe('Research Loop scientific state', () => {
     expect(() => svc.planAction({
       lineSlug: 'missing', kind: 'experiment', purpose: 'x', stopCondition: 'done',
     })).toThrow('Line missing not found');
+  });
+
+  it('planAction rejects when a foreground action is still live (no orphaning)', async () => {
+    const modeSvc = await buildRealModeService();
+    const svc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    svc.setPhase('gap_analysis');
+    const action = svc.planAction({ kind: 'experiment', purpose: 'first', stopCondition: 'done' });
+
+    expect(() => svc.planAction({ kind: 'derivation', purpose: 'second', stopCondition: 'done' })).toThrow(
+      'Cannot plan a new action',
+    );
+    // The existing foreground action is preserved, not orphaned.
+    expect(svc.getSnapshot().currentAction?.actionId).toBe(action.actionId);
+    expect(svc.getSnapshot().currentAction?.status).toBe('planned');
+    expect(svc.getSnapshot().phase).toBe('action_planned');
+  });
+
+  it('planAction error names the allowed next phases for an illegal phase', async () => {
+    const modeSvc = await buildRealModeService();
+    const svc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+
+    expect(() => svc.planAction({
+      kind: 'experiment', purpose: 'x', stopCondition: 'done',
+    })).toThrow(/Cannot plan action from phase 'idle'. Allowed next phases: orienting, gap_analysis, action_planned, awaiting_human/);
   });
 
   it('start/complete lifecycle', async () => {
@@ -2461,6 +3122,99 @@ describe('Research Loop scientific state', () => {
     svc.completeAction(action.actionId, 'completed');
     expect(svc.getSnapshot().phase).toBe('evaluating');
     expect(svc.getSnapshot().currentAction?.status).toBe('completed');
+  });
+
+  it('concludeAction records scientific progress with the completed action atomically', async () => {
+    const modeSvc = await buildRealModeService();
+    const svc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    svc.setPhase('gap_analysis');
+    const action = svc.planAndStartAction({
+      kind: 'derivation',
+      purpose: 'derive the symmetry constraint',
+      stopCondition: 'the constraint is internally consistent',
+    });
+
+    const conclusion = svc.concludeAction({
+      actionId: action.actionId,
+      status: 'completed',
+      progress: {
+        headline: 'Symmetry constraint derived',
+        motivation: 'The current question requires a closed-form constraint.',
+        workPerformed: 'Derived the constraint from the representation algebra.',
+        result: 'The constraint is consistent with the assumed generators.',
+        mainlineImpact: 'The derivation supports the current research direction.',
+        nextAction: 'Test the constraint against the numerical spectrum.',
+        detail: {
+          derivation: 'Applied the commutator identity and matched coefficients.',
+          tests: ['Symbolic consistency check passed'],
+          limitations: ['The derivation assumes an exact symmetry limit'],
+        },
+      },
+    });
+
+    expect(conclusion.action.status).toBe('completed');
+    expect(conclusion.progress.result).toContain('consistent');
+    expect(svc.getSnapshot().phase).toBe('state_updated');
+    expect(svc.getSnapshot().currentAction?.status).toBe('completed');
+    expect(svc.getSnapshot().latestProgress?.detail?.tests).toEqual(['Symbolic consistency check passed']);
+  });
+
+  it('concludeAction records what was learned when an action is abandoned', async () => {
+    const modeSvc = await buildRealModeService();
+    const svc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    svc.setPhase('gap_analysis');
+    const action = svc.planAndStartAction({
+      kind: 'experiment',
+      purpose: 'test the numerical branch',
+      stopCondition: 'the input validation failure is localized',
+    });
+
+    const conclusion = svc.concludeAction({
+      actionId: action.actionId,
+      status: 'abandoned',
+      progress: {
+        headline: 'Numerical branch abandoned',
+        motivation: 'The input validation failure prevents a meaningful run.',
+        workPerformed: 'Checked the harness inputs and reproduced the failure.',
+        result: 'No physical result was obtained because the harness stopped early.',
+        mainlineImpact: 'The branch needs input repair before a scientific comparison.',
+        uncertainties: ['The remote input file still needs inspection'],
+        nextAction: 'Repair the input and retry the bounded experiment.',
+        detail: {
+          limitations: ['This is a harness failure, not evidence against the hypothesis'],
+        },
+      },
+    });
+
+    expect(conclusion.action.status).toBe('abandoned');
+    expect(svc.getSnapshot().phase).toBe('state_updated');
+    expect(svc.getSnapshot().latestProgress?.uncertainties).toHaveLength(1);
+  });
+
+  it('concludeAction rejects an action that is not executing without changing state', async () => {
+    const modeSvc = await buildRealModeService();
+    const svc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    svc.setPhase('gap_analysis');
+    const action = svc.planAction({
+      kind: 'experiment', purpose: 'test the branch', stopCondition: 'done',
+    });
+    const before = svc.getSnapshot();
+
+    expect(() => svc.concludeAction({
+      actionId: action.actionId,
+      status: 'completed',
+      progress: {
+        headline: 'Should not be recorded',
+        motivation: 'The action has not started yet.',
+        workPerformed: 'Nothing was executed.',
+        result: 'No result.',
+        mainlineImpact: 'No impact.',
+      },
+    })).toThrow("not in 'in_progress' status");
+    expect(svc.getSnapshot()).toEqual(before);
   });
 
   it('startAction rejects wrong actionId', async () => {
@@ -2565,6 +3319,22 @@ describe('Research Loop scientific state', () => {
     expect(() => svc.requestHumanDecision({
       kind: 'approval', actionId: 'wrong', prompt: 'p',
     })).toThrow('Action wrong not found');
+  });
+
+  it('requestHumanDecision rejects while a human gate is already pending', async () => {
+    const modeSvc = await buildRealModeService();
+    const svc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    svc.setPhase('orienting');
+    const gate = svc.requestHumanDecision({ kind: 'approval', prompt: 'approve the first thing' });
+
+    expect(() => svc.requestHumanDecision({ kind: 'decision', prompt: 'override it' })).toThrow(
+      'already pending',
+    );
+    // The original unresolved gate is preserved, not overwritten.
+    expect(svc.getSnapshot().humanGate?.gateId).toBe(gate.gateId);
+    expect(svc.getSnapshot().humanGate?.resolvedAt).toBeUndefined();
+    expect(svc.getSnapshot().phase).toBe('awaiting_human');
   });
 
   it('resolveHumanDecision restores a valid phase and keeps the resolved gate', async () => {
@@ -2814,6 +3584,40 @@ describe('Research Loop tool schemas', () => {
     }).success).toBe(false);
   });
 
+  it('ConcludeResearchActionInputSchema requires scientific content and rejects phase_change', () => {
+    const base = {
+      action_id: 'action-1',
+      status: 'completed',
+      headline: 'A meaningful conclusion',
+      motivation: 'A bounded question needs an answer.',
+      work_performed: 'Derived and checked the stated relation.',
+      result: 'The relation is consistent with the assumptions.',
+      mainline_impact: 'The result supports the current direction.',
+    };
+    expect(schemas.ConcludeResearchActionInputSchema.safeParse(base).success).toBe(true);
+    expect(schemas.ConcludeResearchActionInputSchema.safeParse({
+      ...base,
+      phase_change: { from: 'evaluating', to: 'state_updated' },
+    }).success).toBe(false);
+    expect(schemas.ConcludeResearchActionInputSchema.safeParse({
+      ...base,
+      result: 'x',
+    }).success).toBe(false);
+  });
+
+  it('ConcludeResearchActionInputSchema rejects unknown keys', () => {
+    expect(schemas.ConcludeResearchActionInputSchema.safeParse({
+      action_id: 'action-1',
+      status: 'completed',
+      headline: 'A meaningful conclusion',
+      motivation: 'A bounded question needs an answer.',
+      work_performed: 'Derived and checked the stated relation.',
+      result: 'The relation is consistent with the assumptions.',
+      mainline_impact: 'The result supports the current direction.',
+      extra: true,
+    }).success).toBe(false);
+  });
+
   it('RequestResearchDecisionInputSchema requires prompt ≥ 10 chars', () => {
     expect(schemas.RequestResearchDecisionInputSchema.safeParse({
       kind: 'approval', prompt: 'short',
@@ -2893,9 +3697,9 @@ describe('Research Loop tool implementations', () => {
     return new ToolCls(researchSvc, modeSvc);
   }
 
-  it('PlanResearchAction returns scientific language output', async () => {
+  it('PlanResearchAction returns scientific language output and action id', async () => {
     const { modeSvc, researchSvc } = await buildToolHarness();
-    researchSvc.setPhase('gap_analysis');
+    researchSvc.setPhase('orienting');
     const tool = await makeTool(
       (await import('#/features/aitpResearch/tools/researchToolsImpl')).PlanResearchActionTool,
       researchSvc, modeSvc,
@@ -2912,9 +3716,82 @@ describe('Research Loop tool implementations', () => {
     expect(result.isError).toBeFalsy();
     const output = typeof result.output === 'string' ? result.output : '';
     expect(output).toContain('Planned experiment action');
+    expect(output).toMatch(/Action ID: [0-9a-f-]{36}/);
     expect(output).toContain('Purpose: Test the hypothesis about X');
     expect(output).toContain('Stop condition: p < 0.05');
     expect(output).toContain('Next step');
+  });
+
+  it('BeginResearchAction atomically plans and starts a non-gated action', async () => {
+    const { modeSvc, researchSvc } = await buildToolHarness();
+    researchSvc.setPhase('orienting');
+    const tool = await makeTool(
+      (await import('#/features/aitpResearch/tools/researchToolsImpl')).BeginResearchActionTool,
+      researchSvc, modeSvc,
+    );
+    const exec = tool.resolveExecution({
+      kind: 'simulation',
+      purpose: 'Run the bounded simulation for the current hypothesis',
+      expected_evidence: ['simulation output'],
+      stop_condition: 'the output is reproducible',
+      allowed_tool_kinds: ['Bash'],
+      requires_human_approval: false,
+    });
+    const result = await runnableExecution(exec).execute({ turnId: 1, toolCallId: 'tc1', signal: new AbortController().signal });
+    expect(result.isError).toBeFalsy();
+    expect(researchSvc.getSnapshot().phase).toBe('action_executing');
+    expect(result.output).toContain('Started simulation action');
+    expect(result.output).toMatch(/Action ID: [0-9a-f-]{36}/);
+  });
+
+  it('ConcludeResearchAction reports physical work first and completes the loop in one call', async () => {
+    const { modeSvc, researchSvc } = await buildToolHarness();
+    researchSvc.setPhase('orienting');
+    const actionTool = await makeTool(
+      (await import('#/features/aitpResearch/tools/researchToolsImpl')).BeginResearchActionTool,
+      researchSvc, modeSvc,
+    );
+    const begin = await runnableExecution(actionTool.resolveExecution({
+      kind: 'derivation',
+      purpose: 'Derive the constrained response',
+      expected_evidence: ['consistent coefficients'],
+      stop_condition: 'the coefficients satisfy the identity',
+      allowed_tool_kinds: [],
+      requires_human_approval: false,
+    })).execute({ turnId: 1, toolCallId: 'tc1', signal: new AbortController().signal });
+    expect(begin.isError).toBeFalsy();
+    const actionId = researchSvc.getSnapshot().currentAction?.actionId;
+    expect(actionId).toBeDefined();
+
+    const tool = await makeTool(
+      (await import('#/features/aitpResearch/tools/researchToolsImpl')).ConcludeResearchActionTool,
+      researchSvc, modeSvc,
+    );
+    const result = await runnableExecution(tool.resolveExecution({
+      action_id: actionId!,
+      status: 'completed',
+      headline: 'Response constraint derived',
+      motivation: 'The current question requires a constrained response.',
+      work_performed: 'Derived the response from the Ward identity and checked coefficients.',
+      result: 'All coefficients satisfy the identity.',
+      mainline_impact: 'The result supports the current symmetry hypothesis.',
+      uncertainties: [],
+      next_action: 'Compare the relation with the numerical output.',
+      detail: {
+        derivation: 'Matched the independent tensor structures.',
+        tests: ['Coefficient check passed'],
+      },
+    })).execute({ turnId: 1, toolCallId: 'tc2', signal: new AbortController().signal });
+
+    expect(result.isError).toBeFalsy();
+    const output = typeof result.output === 'string' ? result.output : '';
+    expect(output.startsWith('Scientific work:')).toBe(true);
+    expect(output).toContain('Ward identity');
+    expect(output).toContain('All coefficients satisfy the identity');
+    expect(output).toContain('Coefficient check passed');
+    expect(output).toContain('Mainline impact');
+    expect(researchSvc.getSnapshot().phase).toBe('state_updated');
+    expect(researchSvc.getSnapshot().currentAction?.status).toBe('completed');
   });
 
   it('SetResearchPhase reports transition, reason, and next-step significance without ids', async () => {
@@ -3088,7 +3965,8 @@ describe('injection Brief/Detail and scientific content', () => {
 
     const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
     const providers = captureProviders();
-    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc);
+    const admission = await makeInjectionAdmission(modeSvc, true);
+    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc, admission);
 
     const output = providers.call(0, { isNewTurn: true })!;
     expect(output).toContain('Phase: orienting');
@@ -3107,7 +3985,8 @@ describe('injection Brief/Detail and scientific content', () => {
 
     const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
     const providers = captureProviders();
-    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc);
+    const admission = await makeInjectionAdmission(modeSvc, true);
+    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc, admission);
 
     const output = providers.call(0, { isNewTurn: true })!;
     expect(output).not.toMatch(/\bentry[_ ]id\b/i);
@@ -3124,7 +4003,8 @@ describe('injection Brief/Detail and scientific content', () => {
 
     const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
     const providers = captureProviders();
-    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc);
+    const admission = await makeInjectionAdmission(modeSvc, true);
+    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc, admission);
 
     const brief = providers.call(0, { isNewTurn: true })!;
     const detail = providers.call(0, {
@@ -3150,7 +4030,8 @@ describe('injection Brief/Detail and scientific content', () => {
 
     const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
     const providers = captureProviders();
-    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc);
+    const admission = await makeInjectionAdmission(modeSvc, true);
+    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc, admission);
 
     // First call (new turn) → brief
     const firstOutput = providers.call(0, { isNewTurn: true })!;
@@ -3191,7 +4072,8 @@ describe('injection Brief/Detail and scientific content', () => {
 
     const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
     const providers = captureProviders();
-    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc);
+    const admission = await makeInjectionAdmission(modeSvc, true);
+    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc, admission);
 
     const output = providers.call(0, { isNewTurn: true })!;
     expect(output).toContain('Pending human gate');
@@ -3215,7 +4097,8 @@ describe('injection Brief/Detail and scientific content', () => {
 
     const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
     const providers = captureProviders();
-    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc);
+    const admission = await makeInjectionAdmission(modeSvc, true);
+    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc, admission);
 
     const output = providers.call(0, { isNewTurn: true })!;
     expect(output).toContain('Resolved gate');
@@ -3231,7 +4114,8 @@ describe('injection Brief/Detail and scientific content', () => {
 
     const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
     const providers = captureProviders();
-    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc);
+    const admission = await makeInjectionAdmission(modeSvc, false);
+    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc, admission);
 
     expect(providers.call(0, { isNewTurn: true })).toBeUndefined();
     expect(providers.call(0, { isNewTurn: false })).toBeUndefined();
@@ -3244,7 +4128,8 @@ describe('injection Brief/Detail and scientific content', () => {
 
     const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
     const providers = captureProviders();
-    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc);
+    const admission = await makeInjectionAdmission(modeSvc, true);
+    new AitpResearchInjection(providers.stub as never, modeSvc, researchSvc, admission);
 
     // New turn → brief with phase idle
     providers.call(0, { isNewTurn: true });
@@ -3291,24 +4176,55 @@ describe('ResearchLoopCoordinator', () => {
       agentId: opts?.agentId ?? MAIN_AGENT_ID,
       agentScope: '',
     });
-    const coordinator = new ResearchLoopCoordinator(eventBus, researchSvc, modeSvc, scopeCtx);
+    const maintenance = {
+      _serviceBrand: undefined,
+      onDidUpdate: vi.fn(() => ({ dispose: vi.fn() })),
+      refresh: vi.fn().mockResolvedValue({
+        status: 'ready',
+        refreshedAt: 1,
+        memoryStatus: 'available',
+        activeNewerThanWorkingNote: false,
+        unresolvedFailureCount: 0,
+        unresolvedFailures: [],
+        warningSummaries: [],
+        check: { status: 'clean', findingCodes: [] },
+      }),
+      snapshot: vi.fn(),
+      reset: vi.fn(),
+    };
+    const { ResearchTurnAdmission } = await import('#/features/aitpResearch/loop/researchTurnAdmission');
+    const admission = new ResearchTurnAdmission(
+      eventBus,
+      scopeCtx,
+      modeSvc,
+      { _serviceBrand: undefined, isGoalContinuationTurn: () => true } as unknown as IAgentGoalService,
+    );
+    disposables.add(admission);
+    const coordinator = new ResearchLoopCoordinator(
+      eventBus,
+      researchSvc,
+      modeSvc,
+      scopeCtx,
+      admission,
+      maintenance as never,
+    );
     disposables.add(coordinator);
-    return { modeSvc, researchSvc, coordinator, adapter };
+    return { modeSvc, researchSvc, coordinator, adapter, maintenance };
   }
 
-  function turnStarted(turnId: number) {
-    eventBus.publish({ type: 'turn.started', turnId, origin: { kind: 'user' } });
+  function turnStarted(turnId: number, origin: TurnStartedEvent['origin'] = { kind: 'user' }) {
+    eventBus.publish({ type: 'turn.started', turnId, origin });
   }
 
   function turnEnded(turnId: number, reason: 'completed' | 'cancelled' | 'failed' = 'completed') {
     eventBus.publish({ type: 'turn.ended', turnId, reason });
   }
 
-  it('turn.started advances idle → orienting when mode is active and loop is running', async () => {
+  it('turn.started advances idle → orienting for an admitted research turn', async () => {
     const { researchSvc } = await buildCoordinatorHarness();
     expect(researchSvc.getSnapshot().phase).toBe('idle');
 
-    turnStarted(1);
+    turnStarted(1, GOAL_CONTINUATION_ORIGIN);
 
     expect(researchSvc.getSnapshot().phase).toBe('orienting');
   });
@@ -3342,7 +4258,7 @@ describe('ResearchLoopCoordinator', () => {
     researchSvc.setPhase('orienting');
     researchSvc.setPhase('gap_analysis');
 
-    turnStarted(1);
+    turnStarted(1, GOAL_CONTINUATION_ORIGIN);
 
     expect(researchSvc.getSnapshot().phase).toBe('gap_analysis');
   });
@@ -3350,17 +4266,17 @@ describe('ResearchLoopCoordinator', () => {
   it('duplicate turn.started is idempotent', async () => {
     const { researchSvc } = await buildCoordinatorHarness();
 
-    turnStarted(1);
+    turnStarted(1, GOAL_CONTINUATION_ORIGIN);
     expect(researchSvc.getSnapshot().phase).toBe('orienting');
     const revisionAfterFirst = researchSvc.getSnapshot().revision;
 
-    turnStarted(1);
+    turnStarted(1, GOAL_CONTINUATION_ORIGIN);
     expect(researchSvc.getSnapshot().revision).toBe(revisionAfterFirst);
   });
 
-  it('turn.ended does not change phase, complete action, or call AITP', async () => {
-    const { researchSvc, adapter } = await buildCoordinatorHarness();
-    researchSvc.setPhase('orienting');
+  it('turn.ended refreshes maintenance without changing or completing the action', async () => {
+    const { researchSvc, adapter, maintenance } = await buildCoordinatorHarness();
+    turnStarted(1, GOAL_CONTINUATION_ORIGIN);
     researchSvc.setPhase('gap_analysis');
     const action = researchSvc.planAction({
       kind: 'experiment', purpose: 'test something here', stopCondition: 'done',
@@ -3375,13 +4291,14 @@ describe('ResearchLoopCoordinator', () => {
 
     expect(researchSvc.getSnapshot().phase).toBe('action_executing');
     expect(researchSvc.getSnapshot().currentAction?.status).toBe('in_progress');
+    expect(maintenance.refresh).toHaveBeenCalledWith({ workstream: 'main', force: true });
     expect(showSpy).not.toHaveBeenCalled();
     expect(checkSpy).not.toHaveBeenCalled();
   });
 
-  it('turn.ended with failure does not mutate state or invent alerts', async () => {
-    const { researchSvc } = await buildCoordinatorHarness();
-    researchSvc.setPhase('orienting');
+  it('turn.ended with failure refreshes maintenance without inventing alerts', async () => {
+    const { researchSvc, maintenance } = await buildCoordinatorHarness();
+    turnStarted(1, GOAL_CONTINUATION_ORIGIN);
     const before = researchSvc.getSnapshot();
 
     turnEnded(1, 'failed');
@@ -3390,17 +4307,20 @@ describe('ResearchLoopCoordinator', () => {
     expect(after.phase).toBe(before.phase);
     expect(after.alerts).toEqual(before.alerts);
     expect(after.revision).toBe(before.revision);
+    expect(maintenance.refresh).toHaveBeenCalledOnce();
   });
 
-  it('turn.ended does not enqueue or fire research.updated', async () => {
-    const { researchSvc } = await buildCoordinatorHarness();
+  it('turn.ended skips maintenance when research state did not change', async () => {
+    const { researchSvc, maintenance } = await buildCoordinatorHarness();
     researchSvc.setPhase('orienting');
+    turnStarted(1, GOAL_CONTINUATION_ORIGIN);
 
     const updatedEvents: { type: string }[] = [];
     disposables.add(eventBus.subscribe('research.updated', (e) => updatedEvents.push(e as never)));
 
     turnEnded(1, 'completed');
 
+    expect(maintenance.refresh).not.toHaveBeenCalled();
     expect(updatedEvents).toHaveLength(0);
     expect(researchSvc.getSnapshot().phase).toBe('orienting');
   });
@@ -3408,7 +4328,7 @@ describe('ResearchLoopCoordinator', () => {
   it('subscription persists across mode exit/re-enter (no re-registration)', async () => {
     const { modeSvc, researchSvc } = await buildCoordinatorHarness();
 
-    turnStarted(1);
+    turnStarted(1, GOAL_CONTINUATION_ORIGIN);
     expect(researchSvc.getSnapshot().phase).toBe('orienting');
 
     await modeSvc.exit();
@@ -3416,8 +4336,149 @@ describe('ResearchLoopCoordinator', () => {
 
     researchSvc.setPhase('idle');
 
-    turnStarted(2);
+    turnStarted(2, GOAL_CONTINUATION_ORIGIN);
     expect(researchSvc.getSnapshot().phase).toBe('orienting');
+  });
+
+  it('ordinary user turn abstains: no idle → orienting even while mode is active', async () => {
+    const { researchSvc } = await buildCoordinatorHarness();
+    expect(researchSvc.getSnapshot().phase).toBe('idle');
+
+    turnStarted(1);
+
+    expect(researchSvc.getSnapshot().phase).toBe('idle');
+  });
+
+  it('ordinary user turn that mutates research does not trigger turn-end AITP maintenance', async () => {
+    const { researchSvc, maintenance } = await buildCoordinatorHarness();
+
+    turnStarted(1);
+    researchSvc.createLine({ slug: 'side-line', title: 'Ordinary side work' });
+    researchSvc.createQuestion({ lineSlug: 'side-line', wording: 'Unrelated question' });
+
+    turnEnded(1, 'completed');
+
+    expect(maintenance.refresh).not.toHaveBeenCalled();
+  });
+
+  it('non-goal system trigger turn abstains from orienting', async () => {
+    const { researchSvc } = await buildCoordinatorHarness();
+
+    turnStarted(3, { kind: 'system_trigger', name: 'some_other_system_event' });
+
+    expect(researchSvc.getSnapshot().phase).toBe('idle');
+  });
+
+  it('cron turn abstains from orienting', async () => {
+    const { researchSvc } = await buildCoordinatorHarness();
+
+    turnStarted(4, {
+      kind: 'cron_job',
+      jobId: 'job-1',
+      cron: '* * * * *',
+      recurring: true,
+      coalescedCount: 0,
+      stale: false,
+    });
+
+    expect(researchSvc.getSnapshot().phase).toBe('idle');
+  });
+
+  it('a granted research lease is released so a later ordinary turn abstains', async () => {
+    const { researchSvc } = await buildCoordinatorHarness();
+
+    turnStarted(1, GOAL_CONTINUATION_ORIGIN);
+    expect(researchSvc.getSnapshot().phase).toBe('orienting');
+    researchSvc.setPhase('idle');
+    turnEnded(1, 'completed');
+
+    turnStarted(2);
+    expect(researchSvc.getSnapshot().phase).toBe('idle');
+  });
+});
+
+describe('ResearchTurnAdmission', () => {
+  async function buildAdmissionHarness(opts?: {
+    readonly agentId?: string;
+    readonly enterMode?: boolean;
+    readonly pauseLoop?: boolean;
+    readonly goalContinuation?: boolean;
+  }) {
+    const modeSvc = await buildRealModeService();
+    if (opts?.enterMode !== false) {
+      await modeSvc.enter({ actor: 'user', lineSlug: 'main' });
+    }
+    if (opts?.pauseLoop) {
+      modeSvc.pauseLoop(wire.getModel(ResearchModel).current.revision);
+    }
+    const { ResearchTurnAdmission } = await import('#/features/aitpResearch/loop/researchTurnAdmission');
+    const admission = new ResearchTurnAdmission(
+      eventBus,
+      makeAgentScopeContext({ agentId: opts?.agentId ?? MAIN_AGENT_ID, agentScope: '' }),
+      modeSvc,
+      {
+        _serviceBrand: undefined,
+        isGoalContinuationTurn: () => opts?.goalContinuation !== false,
+      } as unknown as IAgentGoalService,
+    );
+    disposables.add(admission);
+    return { modeSvc, admission };
+  }
+
+  function startTurn(turnId: number, origin: TurnStartedEvent['origin'] = { kind: 'user' }) {
+    eventBus.publish({ type: 'turn.started', turnId, origin });
+  }
+
+  function endTurn(turnId: number) {
+    eventBus.publish({ type: 'turn.ended', turnId, reason: 'completed' });
+  }
+
+  it('admits a Goal research continuation while mode is active and loop is running', async () => {
+    const { admission } = await buildAdmissionHarness();
+    startTurn(1, GOAL_CONTINUATION_ORIGIN);
+    expect(admission.isTurnAdmitted(1)).toBe(true);
+    expect(admission.isCurrentResearchTurn()).toBe(true);
+  });
+
+  it('does not admit an ordinary user turn even while mode is active', async () => {
+    const { admission } = await buildAdmissionHarness();
+    startTurn(1);
+    expect(admission.isTurnAdmitted(1)).toBe(false);
+    expect(admission.isCurrentResearchTurn()).toBe(false);
+  });
+
+  it('does not admit when mode is inactive', async () => {
+    const { admission } = await buildAdmissionHarness({ enterMode: false });
+    startTurn(1, GOAL_CONTINUATION_ORIGIN);
+    expect(admission.isCurrentResearchTurn()).toBe(false);
+  });
+
+  it('does not admit when the loop is paused', async () => {
+    const { admission } = await buildAdmissionHarness({ pauseLoop: true });
+    startTurn(1, GOAL_CONTINUATION_ORIGIN);
+    expect(admission.isCurrentResearchTurn()).toBe(false);
+  });
+
+  it('does not admit a trigger without a Goal continuation lease', async () => {
+    const { admission } = await buildAdmissionHarness({ goalContinuation: false });
+    startTurn(1, GOAL_CONTINUATION_ORIGIN);
+    expect(admission.isCurrentResearchTurn()).toBe(false);
+  });
+
+  it('is inert for a subagent instance', async () => {
+    const { admission } = await buildAdmissionHarness({ agentId: 'subagent-1' });
+    startTurn(1, GOAL_CONTINUATION_ORIGIN);
+    expect(admission.isCurrentResearchTurn()).toBe(false);
+  });
+
+  it('releases the lease on turn.ended so a later turn is not admitted', async () => {
+    const { admission } = await buildAdmissionHarness();
+    startTurn(1, GOAL_CONTINUATION_ORIGIN);
+    expect(admission.isCurrentResearchTurn()).toBe(true);
+    endTurn(1);
+    expect(admission.isCurrentResearchTurn()).toBe(false);
+    startTurn(2);
+    expect(admission.isCurrentResearchTurn()).toBe(false);
   });
 });
 
@@ -3505,11 +4566,13 @@ describe('Session AITP current-state maintenance coordinator', () => {
       });
     });
     const coordinator = new SessionAitpLifecycleCoordinatorService(adapter);
+    const updates: AitpMaintenanceReceipt[] = [];
+    disposables.add(coordinator.onDidUpdate((receipt) => updates.push(receipt)));
 
     const receipt = await coordinator.refresh({ workstream: 'main', force: true });
 
-    expect(enterSpy).toHaveBeenCalledWith({ workstream: 'main' });
-    expect(checkSpy).toHaveBeenCalledWith({ workstream: 'main' });
+    expect(enterSpy).toHaveBeenCalledWith({ workstream: 'main', signal: expect.any(AbortSignal) });
+    expect(checkSpy).toHaveBeenCalledWith({ workstream: 'main', signal: expect.any(AbortSignal) });
     expect(order).toEqual(['enter', 'check']);
     expect(receipt).toMatchObject({
       status: 'ready',
@@ -3526,12 +4589,13 @@ describe('Session AITP current-state maintenance coordinator', () => {
         findingCodes: ['policy_warning'],
       },
     });
-    expect(JSON.stringify(receipt)).not.toContain('entry-secret');
+    expect(receipt.nextActionDetails).toMatchObject({ entryId: 'entry-secret', authority: 'agent' });
+    expect(updates).toEqual([receipt]);
     expect(JSON.stringify(receipt)).not.toContain('/private/check-path');
     expect(JSON.stringify(receipt)).not.toContain('private check message');
   });
 
-  it('keeps warning-only checks ready and degrades on error findings', async () => {
+  it('keeps valid check findings ready, including error findings', async () => {
     const adapter = makeStubAdapter();
     adapter._setHealth({ phase: 'ready' });
     vi.spyOn(adapter, 'enter').mockResolvedValue(enteredResult());
@@ -3551,11 +4615,10 @@ describe('Session AITP current-state maintenance coordinator', () => {
         message: 'private error message',
       }],
     }));
-    const degraded = await coordinator.refresh({ workstream: 'main', force: true });
+    const findings = await coordinator.refresh({ workstream: 'main', force: true });
 
-    expect(degraded).toMatchObject({
-      status: 'degraded',
-      degradedReason: 'check_findings',
+    expect(findings).toMatchObject({
+      status: 'ready',
       check: { status: 'findings', findingCodes: ['missing_refs'] },
     });
     expect(checkSpy).toHaveBeenCalledTimes(2);
@@ -3632,6 +4695,7 @@ describe('Research maintenance lifecycle projection', () => {
       latestWorkingNoteAt: Date.now() - 3_600_000,
       activeNewerThanWorkingNote: true,
       unresolvedFailureCount: 2,
+      unresolvedFailures: [],
       nextAction: 'Inspect the failed bounded action',
       warningSummaries: [{ level: 'warning', code: 'policy_warning' }],
       check: {
@@ -3648,6 +4712,7 @@ describe('Research maintenance lifecycle projection', () => {
   function coordinatorStub(value: AitpMaintenanceReceipt) {
     return {
       _serviceBrand: undefined,
+      onDidUpdate: vi.fn(() => ({ dispose: vi.fn() })),
       refresh: vi.fn().mockResolvedValue(value),
       snapshot: vi.fn().mockReturnValue(value),
       reset: vi.fn(),
@@ -3780,7 +4845,9 @@ describe('Research lifecycle alerts', () => {
       expectedRevision: blocked.revision,
       workflow: 'closed',
     });
-    expect(researchSvc.getSnapshot().alerts.some((alert) => alert.kind === 'blocked')).toBe(false);
+    expect(researchSvc.getSnapshot().alerts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'blocked', questionId: question.id, state: 'cleared' }),
+    ]));
 
     researchSvc.reopenQuestion(question.id, 'new evidence', researchSvc.getSnapshot().revision);
     const reopened = researchSvc.getSnapshot().alerts.find((alert) => alert.kind === 'reopened');
@@ -3795,7 +4862,9 @@ describe('Research lifecycle alerts', () => {
       uncertainties: [],
     });
     const afterProgress = researchSvc.getSnapshot();
-    expect(afterProgress.alerts.some((alert) => alert.kind === 'reopened')).toBe(false);
+    expect(afterProgress.alerts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'reopened', questionId: question.id, state: 'cleared' }),
+    ]));
     expect(afterProgress.alerts.some((alert) => alert.kind === 'contradiction')).toBe(false);
   });
 
@@ -3833,6 +4902,7 @@ describe('Research lifecycle alerts', () => {
     const researchSvc = await buildRealResearchService(modeSvc, adapter);
     await modeSvc.enter({ actor: 'user' });
     const checkpoint = researchSvc.proposeCheckpoint({});
+    bindCompleteCheckpointReceipt(checkpoint.checkpointId);
 
     await expect(researchSvc.commitCheckpoint({ checkpointId: checkpoint.checkpointId, entryId: 'e1' })).rejects.toThrow();
 
@@ -3844,8 +4914,10 @@ describe('Research lifecycle alerts', () => {
     expect(failed.latestCommittedCheckpoint).toBeUndefined();
 
     modeSvc.setPhase('ready');
-    expect(researchSvc.getSnapshot().alerts.some((alert) => alert.kind === 'degraded')).toBe(false);
-    expect(researchSvc.getSnapshot().alerts.some((alert) => alert.kind === 'commit_failed')).toBe(true);
+    expect(researchSvc.getSnapshot().alerts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'degraded', state: 'cleared' }),
+      expect.objectContaining({ kind: 'commit_failed', state: 'active' }),
+    ]));
   });
 
   it('reconciles maintenance stale and unresolved-failure alerts on true/false transitions', async () => {
@@ -3855,6 +4927,7 @@ describe('Research lifecycle alerts', () => {
       memoryStatus: 'available',
       activeNewerThanWorkingNote,
       unresolvedFailureCount,
+      unresolvedFailures: [],
       warningSummaries: [],
       check: {
         status: 'clean',
@@ -3863,8 +4936,10 @@ describe('Research lifecycle alerts', () => {
       },
     });
     let current = makeReceipt(true, 2);
+    const coordinatorUpdate = new Emitter<AitpMaintenanceReceipt>();
     const coordinator = {
       _serviceBrand: undefined,
+      onDidUpdate: coordinatorUpdate.event,
       refresh: vi.fn(),
       snapshot: vi.fn(() => current),
       reset: vi.fn(),
@@ -3881,18 +4956,91 @@ describe('Research lifecycle alerts', () => {
       coordinator as never,
     );
 
+    // Maintenance receipt changes are a lifecycle event: firing `onDidUpdate`
+    // runs the reconcile, then the published snapshot is read back purely.
+    coordinatorUpdate.fire(current);
     let snapshot = service.getSnapshot();
     expect(snapshot.alerts).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'stale' }),
-      expect.objectContaining({ kind: 'blocked', message: expect.stringContaining('2 unresolved failure') }),
+      expect.objectContaining({ kind: 'stale', classification: 'warning' }),
+      expect.objectContaining({
+        kind: 'stale',
+        classification: 'historical_unresolved',
+        message: expect.stringContaining('2 historical unresolved failure'),
+      }),
     ]));
 
     current = makeReceipt(false, 0);
+    coordinatorUpdate.fire(current);
     snapshot = service.getSnapshot();
-    expect(snapshot.alerts).toEqual([]);
+    expect(snapshot.alerts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fingerprint: 'research.alert.stale.maintenance', state: 'cleared' }),
+      expect.objectContaining({ fingerprint: 'research.alert.blocked.aitp-failure', state: 'cleared' }),
+    ]));
   });
 
-  it('restores alert state through conversation undo', async () => {
+  it('clears disappeared AITP warnings while retaining their history', async () => {
+    let current: AitpMaintenanceReceipt = {
+      status: 'ready',
+      refreshedAt: 1,
+      memoryStatus: 'available',
+      activeNewerThanWorkingNote: false,
+      unresolvedFailureCount: 0,
+      unresolvedFailures: [],
+      warningSummaries: [{ level: 'warning', code: 'invalid_timestamp' }],
+      check: {
+        status: 'findings',
+        counts: { entries: 1, notes: 0, errors: 0, warnings: 1 },
+        findingCodes: ['invalid_timestamp'],
+      },
+    };
+    const coordinatorUpdate = new Emitter<AitpMaintenanceReceipt>();
+    const coordinator = {
+      _serviceBrand: undefined,
+      onDidUpdate: coordinatorUpdate.event,
+      refresh: vi.fn(),
+      snapshot: vi.fn(() => current),
+      reset: vi.fn(),
+    };
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const service = new AgentResearchService(
+      wire,
+      makeScopeCtx(),
+      eventBus,
+      makeStubModeSvc({ isActive: true, phase: 'ready' }),
+      makeStubAdapter(),
+      makeToolExecutorStub(),
+      makeStubGoalService(),
+      coordinator as never,
+    );
+
+    coordinatorUpdate.fire(current);
+    expect(service.getSnapshot().alerts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        fingerprint: 'research.alert.warning.aitp.invalid_timestamp',
+        classification: 'warning',
+        state: 'active',
+      }),
+    ]));
+    current = {
+      ...current,
+      warningSummaries: [],
+      check: {
+        ...current.check,
+        status: 'clean',
+        counts: { entries: 1, notes: 0, errors: 0, warnings: 0 },
+        findingCodes: [],
+      },
+    };
+    coordinatorUpdate.fire(current);
+    expect(service.getSnapshot().alerts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        fingerprint: 'research.alert.warning.aitp.invalid_timestamp',
+        state: 'cleared',
+      }),
+    ]));
+  });
+
+  it('restores alert state through conversation undo, including cleared history', async () => {
     const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
     const service = new AgentResearchService(
       wire,

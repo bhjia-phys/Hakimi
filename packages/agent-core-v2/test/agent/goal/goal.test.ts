@@ -953,9 +953,10 @@ describe('AgentGoalService core workflow hooks', () => {
     expect(resumed.status).toBe('active');
     expect(loopService.launches).toHaveLength(1);
     expect(loopService.drainNextBatch(context)).toBeDefined();
-    expect(context.get().at(-1)?.origin).toEqual({
+    expect(context.get().at(-1)?.origin).toMatchObject({
       kind: 'system_trigger',
       name: 'goal_continuation',
+      goalId: expect.any(String),
     });
   });
 
@@ -984,9 +985,10 @@ describe('AgentGoalService core workflow hooks', () => {
         expect(loopService.launches).toHaveLength(1);
       });
       expect(loopService.drainNextBatch(context)).toBeDefined();
-      expect(context.get().at(-1)?.origin).toEqual({
+      expect(context.get().at(-1)?.origin).toMatchObject({
         kind: 'system_trigger',
         name: 'goal_continuation',
+        goalId: expect.any(String),
       });
     },
   );
@@ -1064,9 +1066,10 @@ describe('AgentGoalService core workflow hooks', () => {
     });
     expect(goals.getGoal().goal).toMatchObject({ objective: 'new task', status: 'active' });
     expect(loopService.drainNextBatch(context)).toBeDefined();
-    expect(context.get().at(-1)?.origin).toEqual({
+    expect(context.get().at(-1)?.origin).toMatchObject({
       kind: 'system_trigger',
       name: 'goal_continuation',
+      goalId: expect.any(String),
     });
   });
 
@@ -1366,9 +1369,10 @@ describe('AgentGoalService core workflow hooks', () => {
     });
     expect(loopService.launches).toHaveLength(1);
     expect(loopService.drainNextBatch(context)).toBeDefined();
-    expect(context.get().at(-1)?.origin).toEqual({
+    expect(context.get().at(-1)?.origin).toMatchObject({
       kind: 'system_trigger',
       name: 'goal_continuation',
+      goalId: expect.any(String),
     });
     expect(JSON.stringify(context.get().at(-1)?.content)).toContain('Continue working toward');
   });
@@ -1652,9 +1656,10 @@ describe('AgentGoalService core workflow hooks', () => {
     expect(goals.getGoal().goal).toMatchObject({ status: 'active', turnsUsed: 1 });
     expect(loopService.launches).toHaveLength(1);
     expect(loopService.drainNextBatch(context)).toBeDefined();
-    expect(context.get().at(-1)?.origin).toEqual({
+    expect(context.get().at(-1)?.origin).toMatchObject({
       kind: 'system_trigger',
       name: 'goal_continuation',
+      goalId: expect.any(String),
     });
     const prompt = JSON.stringify(context.get().at(-1)?.content);
     expect(prompt).toContain('per-turn step limit');

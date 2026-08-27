@@ -17,7 +17,7 @@ import {
   resolveKimiCodeOAuthRef,
   resolveKimiTokenStorageName,
 } from '@moonshot-ai/kimi-code-oauth';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createKimiHarnessV2,
@@ -1356,6 +1356,14 @@ describe('removeProviderFromConfig', () => {
 });
 
 describe('SDKRpcClientV2 AITP Research Mode', () => {
+  beforeEach(() => {
+    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('getResearch returns an inactive snapshot without triggering AITP I/O', async () => {
     const { harness } = await makeHarness();
     const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-'));
@@ -1489,6 +1497,72 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
       });
     } finally {
       await harness.close();
+    }
+  });
+
+  it('commandResearch dispatches typed evidence review and run observation', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-run-home-'));
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-run-work-'));
+    tempDirs.push(homeDir, workDir);
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+    const sessionSummary = await client.createSession({ id: 'ses_research_run', workDir });
+    const session = new Session({
+      id: sessionSummary.id,
+      workDir: sessionSummary.workDir,
+      summary: sessionSummary,
+      rpc: client,
+    });
+    try {
+      await session.commandResearch({ kind: 'enter_mode', actor: 'user' });
+      const liveSession = getLiveSessionById(client.engineAccessor, session.id);
+      const agent = await ensureMainAgent(liveSession!);
+      const research = agent.accessor.get(IAgentResearchService);
+      research.setPhase('gap_analysis');
+      const action = research.planAction({
+        kind: 'simulation',
+        purpose: 'Run the bounded HPC calculation.',
+        stopCondition: 'Stop after the declared analyzer evidence exists.',
+      });
+      research.startAction(action.actionId);
+      const before = await session.getResearch();
+
+      const reviewed = await session.commandResearch({
+        kind: 'review_evidence',
+        expectedRevision: before.revision,
+        packet: {
+          packet_id: 'packet-sdk-1',
+          kind: 'observation',
+          claim: 'The scheduler has started the bounded calculation.',
+          evidence: 'The scheduler reports a running job.',
+          action_id: action.actionId,
+          assumptions: [],
+          tests: [],
+          artifact_refs: [],
+          source_refs: [],
+          limitations: [],
+          confidence: 'medium',
+        },
+      });
+      expect(reviewed.snapshot.revision).toBe(before.revision);
+
+      const observed = await session.commandResearch({
+        kind: 'observe_run',
+        actionId: action.actionId,
+        expectedRevision: before.revision,
+        campaign: 'bi2se3-r2',
+        jobId: '3128781',
+        stage: 'scf',
+        schedulerState: 'running',
+        artifactRefs: ['scf.log'],
+      });
+      expect(observed.snapshot.currentRun).toMatchObject({
+        actionId: action.actionId,
+        jobId: '3128781',
+        schedulerState: 'running',
+      });
+    } finally {
+      await session.close();
+      await client.close();
     }
   });
 

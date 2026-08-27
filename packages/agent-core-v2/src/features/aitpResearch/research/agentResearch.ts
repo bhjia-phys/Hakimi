@@ -13,11 +13,16 @@
 
 import { createDecorator } from '#/_base/di/instantiation';
 
+import type { ResearchEvidencePacket, ResearchEvidenceReview } from './evidencePacket';
 import type {
+  ResearchRunStage,
+  ResearchRunState,
+  ResearchSchedulerState,
   HumanSteeringCommand,
   ResearchActionKind,
   ResearchActionSpec,
   ResearchCheckpoint,
+  ResearchCheckpointReceipt,
   ResearchCommittedCursor,
   ResearchHumanGate,
   ResearchHumanGateKind,
@@ -80,6 +85,7 @@ export interface PlanActionInput {
   readonly expectedEvidence?: readonly string[];
   readonly stopCondition: string;
   readonly allowedToolKinds?: readonly string[];
+  readonly retryOfEntryId?: string;
   readonly requiresHumanApproval?: boolean;
 }
 
@@ -106,6 +112,17 @@ export interface RecordProgressInput {
   };
 }
 
+export interface ConcludeResearchActionInput {
+  readonly actionId: string;
+  readonly status: 'completed' | 'abandoned';
+  readonly progress: Omit<RecordProgressInput, 'phaseChange'>;
+}
+
+export interface ResearchActionConclusion {
+  readonly action: ResearchActionSpec;
+  readonly progress: ResearchProgressReport;
+}
+
 export interface RequestHumanDecisionInput {
   readonly gateId?: string;
   readonly kind: ResearchHumanGateKind;
@@ -120,6 +137,20 @@ export interface ResolveHumanDecisionInput {
   readonly nextPhase: ResearchPhase;
 }
 
+export interface ObserveResearchRunInput {
+  readonly actionId: string;
+  readonly expectedRevision: number;
+  readonly campaign: string;
+  readonly jobId: string;
+  readonly sourcePin?: string;
+  readonly binaryPin?: string;
+  readonly stage: ResearchRunStage;
+  readonly schedulerState: ResearchSchedulerState;
+  readonly nextCheckAt?: number;
+  readonly terminalState?: ResearchRunState['terminalState'];
+  readonly artifactRefs?: readonly string[];
+}
+
 export interface IAgentResearchService {
   readonly _serviceBrand: undefined;
 
@@ -129,6 +160,8 @@ export interface IAgentResearchService {
   getPendingCheckpoint(): ResearchCheckpoint | null;
   getCommittedCursor(): ResearchCommittedCursor | null;
   getScientificProgress(level: ResearchProgressLevel): ResearchScientificSnapshot;
+  reviewEvidencePacket(packet: ResearchEvidencePacket, expectedRevision: number): ResearchEvidenceReview;
+  observeRun(input: ObserveResearchRunInput): ResearchRunState;
 
   createQuestion(input: CreateQuestionInput): ResearchQuestion;
   createLine(input: ResearchLineCreationInput): ResearchLine;
@@ -141,11 +174,14 @@ export interface IAgentResearchService {
   acknowledgeAlert(fingerprint: string): void;
 
   proposeCheckpoint(input: ProposeCheckpointInput): ResearchCheckpoint;
+  bindPendingCheckpointReceipt(receipt: ResearchCheckpointReceipt): ResearchCheckpoint;
   commitCheckpoint(input: CommitCheckpointInput): Promise<void>;
 
   planAction(input: PlanActionInput): ResearchActionSpec;
+  planAndStartAction(input: PlanActionInput): ResearchActionSpec;
   startAction(actionId: string): void;
   completeAction(actionId: string, status: 'completed' | 'abandoned'): void;
+  concludeAction(input: ConcludeResearchActionInput): ResearchActionConclusion;
   recordProgress(input: RecordProgressInput): ResearchProgressReport;
   setPhase(phase: ResearchPhase, reason?: string): ResearchStateChange;
   requestHumanDecision(input: RequestHumanDecisionInput): ResearchHumanGate;

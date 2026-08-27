@@ -58,12 +58,11 @@ const RESEARCH_MODE_TOOL_NAMES = [
   'CreateResearchQuestion',
   'UpdateResearchQuestion',
   'SetResearchFocus',
-  'SetResearchPhase',
   'ProposeResearchCheckpoint',
   'CommitResearchCheckpoint',
-  'PlanResearchAction',
+  'BeginResearchAction',
   'StartResearchAction',
-  'CompleteResearchAction',
+  'ConcludeResearchAction',
   'RecordResearchProgress',
   'RequestResearchDecision',
   'ResolveResearchDecision',
@@ -97,7 +96,7 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     this._register(
       this.wire.hooks.onDidRestore.register('aitpMode', async (_ctx, next) => {
         const phaseChanged = await this.reconcileAfterRestore();
-        if (this.isActive && !phaseChanged) this.publishModeAndStatus();
+        if (!phaseChanged && this.isActive) this.publishModeAndStatus();
         await next();
       }),
     );
@@ -105,7 +104,7 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     this._register(
       this.eventBus.subscribe('context.undone', () => {
         void this.reconcileAfterRestore().then((phaseChanged) => {
-          if (this.isActive && !phaseChanged) this.publishModeAndStatus();
+          if (!phaseChanged && this.isActive) this.publishModeAndStatus();
         });
       }),
     );
@@ -280,6 +279,7 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
       return Promise.resolve(false);
     }
     this.coordinator?.reset();
+    this.adapter.reset();
     this.ensureResearchTools();
     return this.adapter.probe().then(
       async (health) => {

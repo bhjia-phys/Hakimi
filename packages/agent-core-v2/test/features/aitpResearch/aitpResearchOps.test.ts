@@ -23,6 +23,8 @@ import {
   researchSwitchLine,
   researchSteer,
   researchProposeCheckpoint,
+  researchBindCheckpointEntry,
+  researchBindCheckpointReceipt,
   researchCommitCheckpoint,
   researchAcknowledgeCheckpoint,
   researchReopenQuestion,
@@ -320,15 +322,22 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(wire.getModel(ResearchModel).current.alerts).toEqual([{
         fingerprint: 'research.alert.blocked.question.q1',
         kind: 'blocked',
+        classification: 'active_blocker',
+        source: 'question',
+        state: 'active',
         message: 'Question q1 is blocked',
         questionId: 'q1',
         lineSlug: 'main',
+        relatedEntryId: undefined,
+        workstream: undefined,
+        retryOfEntryId: undefined,
+        reason: undefined,
         createdAt: 100,
       }]);
       expect(wire.getModel(ResearchModel).current.revision).toBe(revision);
     });
 
-    it('clearAlert removes a condition alert and acknowledgeAlert preserves it', () => {
+    it('clearAlert retains a cleared condition and acknowledgeAlert preserves it', () => {
       wire.dispatch(researchUpsertAlert({
         fingerprint: 'research.alert.stale.maintenance',
         kind: 'stale',
@@ -343,9 +352,39 @@ describe('aitpResearch ops (wire-backed)', () => {
       wire.dispatch(researchAcknowledgeAlert({ fingerprint: 'research.alert.stale.maintenance', acknowledgedAt: 300 }));
       expect(wire.getModel(ResearchModel).current.revision).toBe(revision);
       wire.dispatch(researchClearAlert({ fingerprint: 'research.alert.stale.maintenance' }));
-      expect(wire.getModel(ResearchModel).current.alerts).toEqual([]);
+      expect(wire.getModel(ResearchModel).current.alerts[0]).toMatchObject({
+        fingerprint: 'research.alert.stale.maintenance',
+        state: 'cleared',
+        acknowledgedAt: 200,
+      });
+      const clearedRevision = wire.getModel(ResearchModel).current.revision;
       wire.dispatch(researchClearAlert({ fingerprint: 'research.alert.stale.maintenance' }));
-      expect(wire.getModel(ResearchModel).current.revision).toBe(revision + 1);
+      expect(wire.getModel(ResearchModel).current.revision).toBe(clearedRevision);
+    });
+
+    it('upsertAlert reactivates a cleared condition and clears its acknowledgement', () => {
+      wire.dispatch(researchUpsertAlert({
+        fingerprint: 'research.alert.stale.maintenance',
+        kind: 'stale',
+        message: 'stale',
+        createdAt: 100,
+      }));
+      wire.dispatch(researchAcknowledgeAlert({ fingerprint: 'research.alert.stale.maintenance', acknowledgedAt: 200 }));
+      wire.dispatch(researchClearAlert({ fingerprint: 'research.alert.stale.maintenance' }));
+      wire.dispatch(researchUpsertAlert({
+        fingerprint: 'research.alert.stale.maintenance',
+        kind: 'stale',
+        message: 'stale again',
+        createdAt: 300,
+      }));
+
+      expect(wire.getModel(ResearchModel).current.alerts[0]).toMatchObject({
+        fingerprint: 'research.alert.stale.maintenance',
+        state: 'active',
+        acknowledgedAt: undefined,
+        message: 'stale again',
+        createdAt: 100,
+      });
     });
 
     it('upsertAlert updates changed content while retaining identity and acknowledgement', () => {
@@ -366,7 +405,16 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(wire.getModel(ResearchModel).current.alerts[0]).toEqual({
         fingerprint: 'research.alert.blocked.aitp-failure',
         kind: 'blocked',
+        classification: 'active_blocker',
+        source: 'adapter',
+        state: 'acknowledged',
         message: 'two failures',
+        questionId: undefined,
+        lineSlug: undefined,
+        relatedEntryId: undefined,
+        workstream: undefined,
+        retryOfEntryId: undefined,
+        reason: undefined,
         createdAt: 100,
         acknowledgedAt: 200,
       });
@@ -382,6 +430,51 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(state.pendingCheckpoint!.persistence).toBe('pending_commit');
     });
 
+    it('restores a pending checkpoint with its bound AITP entry and receipts', async () => {
+      wire.dispatch(
+        researchProposeCheckpoint({
+          checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000,
+        }),
+        researchBindCheckpointEntry({ checkpointId: 'cp1', entryId: 'e1' }),
+        researchBindCheckpointReceipt({
+          checkpointId: 'cp1',
+          receipt: {
+            prepare: {
+              status: 'prepared',
+              id: 'e1',
+              path: '.aitp/local/drafts/e1.md',
+              idempotencyKey: 'key1',
+            },
+            save: {
+              status: 'saved',
+              draftPath: '.aitp/local/drafts/e1.md',
+              path: '.aitp/topic/entries/entry-e1.md',
+            },
+            preSaveCheck: {
+              status: 'clean',
+              errors: 0,
+              warnings: 0,
+              findingFingerprints: [],
+              errorFindingFingerprints: [],
+              checkedAt: 1100,
+            },
+          },
+        }),
+      );
+
+      await wire.restore();
+
+      expect(wire.getModel(ResearchModel).current.pendingCheckpoint).toMatchObject({
+        checkpointId: 'cp1',
+        committedEntryId: 'e1',
+        receipt: {
+          prepare: { status: 'prepared', id: 'e1', idempotencyKey: 'key1' },
+          save: { status: 'saved', draftPath: '.aitp/local/drafts/e1.md' },
+          preSaveCheck: { status: 'clean', errors: 0 },
+        },
+      });
+    });
+
     it('proposeCheckpoint preserves the first pending checkpoint', () => {
       wire.dispatch(researchProposeCheckpoint({
         checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000,
@@ -394,6 +487,27 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(wire.getModel(ResearchModel).current.revision).toBe(1);
     });
 
+    it('proposeCheckpoint does not silently overwrite a pending checkpoint for the same question revision', () => {
+      wire.dispatch(researchCreateLine({ slug: 'main', title: 'Main', createdAt: 1 }));
+      wire.dispatch(researchCreateQuestion({ id: 'q1', lineSlug: 'main', wording: 'Q1', priority: 0, neededEvidence: [] }));
+      wire.dispatch(researchProposeCheckpoint({
+        checkpointId: 'cp1', questionId: 'q1', idempotencyKey: 'key1', createdAt: 1000,
+      }));
+      const firstRevision = wire.getModel(ResearchModel).current.revision;
+      const firstQuestionRevision = wire.getModel(ResearchModel).current.questions['q1']!.revision;
+
+      // A second checkpoint for the same question remains pending on the first.
+      wire.dispatch(researchProposeCheckpoint({
+        checkpointId: 'cp2', questionId: 'q1', idempotencyKey: 'key2', createdAt: 2000,
+      }));
+
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.pendingCheckpoint?.checkpointId).toBe('cp1');
+      expect(state.pendingCheckpoint?.questionId).toBe('q1');
+      expect(state.revision).toBe(firstRevision);
+      expect(state.questions['q1']!.revision).toBe(firstQuestionRevision);
+    });
+
     it('createQuestion ignores a question whose line is missing', () => {
       wire.dispatch(researchCreateQuestion({
         id: 'orphan', lineSlug: 'missing', wording: 'Orphan', priority: 0, neededEvidence: [],
@@ -403,16 +517,22 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(wire.getModel(ResearchModel).current.revision).toBe(0);
     });
 
-    it('commitCheckpoint does not overwrite a different committed cursor', () => {
+    it('commitCheckpoint appends a different committed cursor to history', () => {
       wire.dispatch(researchCommitCheckpoint({ checkpointId: 'cp1', entryId: 'e1', committedAt: 1000 }));
       wire.dispatch(researchCommitCheckpoint({ checkpointId: 'cp2', entryId: 'e2', committedAt: 2000 }));
 
-      expect(wire.getModel(ResearchCursorModel).cursor).toEqual({
-        checkpointId: 'cp1',
-        entryId: 'e1',
-        committedAt: 1000,
+      const cursorModel = wire.getModel(ResearchCursorModel);
+      // `cursor` is the latest commit projection; `history` keeps every commit.
+      expect(cursorModel.cursor).toEqual({
+        checkpointId: 'cp2',
+        entryId: 'e2',
+        committedAt: 2000,
       });
-      expect(wire.getModel(ResearchCursorModel).revision).toBe(1);
+      expect(cursorModel.history).toEqual([
+        { checkpointId: 'cp1', entryId: 'e1', committedAt: 1000 },
+        { checkpointId: 'cp2', entryId: 'e2', committedAt: 2000 },
+      ]);
+      expect(cursorModel.revision).toBe(2);
     });
 
     it('acknowledgeCheckpoint commits the linked question and clears pending state', () => {
@@ -706,14 +826,75 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(resolved.humanGate?.resolution).toBe('approved');
       expect(resolved.phase).toBe('idle');
     });
+
+    it('requestHumanDecision is a replay no-op when a human gate is already pending', () => {
+      wire.dispatch(researchSetPhase({ phase: 'orienting', changedAt: 100 }));
+      wire.dispatch(researchRequestHumanDecision({
+        gateId: 'g1', kind: 'approval', prompt: 'approve?', createdAt: 200,
+      }));
+      const before = wire.getModel(ResearchModel).current;
+      // A second request for a new gate must not overwrite the unresolved gate.
+      wire.dispatch(researchRequestHumanDecision({
+        gateId: 'g2', kind: 'decision', prompt: 'choose?', createdAt: 300,
+      }));
+
+      const after = wire.getModel(ResearchModel).current;
+      expect(after).toBe(before);
+      expect(after.humanGate?.gateId).toBe('g1');
+      expect(after.humanGate?.resolvedAt).toBeUndefined();
+      expect(after.phase).toBe('awaiting_human');
+    });
+
+    it('planAction is a replay no-op while a foreground action is still live (no orphaning)', () => {
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', kind: 'experiment', purpose: 'first', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 200,
+      }));
+      expect(wire.getModel(ResearchModel).current.currentAction?.actionId).toBe('a1');
+
+      // Replanning from action_planned (an allowed phase) must not orphan a1.
+      wire.dispatch(researchPlanAction({
+        actionId: 'a2', kind: 'derivation', purpose: 'second', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 300,
+      }));
+
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.currentAction?.actionId).toBe('a1');
+      expect(state.currentAction?.status).toBe('planned');
+      expect(state.phase).toBe('action_planned');
+    });
+
+    it('planAction remains allowed once no foreground action is live', () => {
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', kind: 'experiment', purpose: 'first', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 200,
+      }));
+      wire.dispatch(researchStartAction({ actionId: 'a1', startedAt: 300 }));
+      wire.dispatch(researchCompleteAction({ actionId: 'a1', status: 'abandoned', completedAt: 400 }));
+      // After abandon the action is no longer foreground; reach a plan-able phase
+      // via legal transitions (evaluating → idle → gap_analysis) and re-plan.
+      wire.dispatch(researchSetPhase({ phase: 'idle', changedAt: 500 }));
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 600 }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'a2', kind: 'derivation', purpose: 'second', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 700,
+      }));
+
+      expect(wire.getModel(ResearchModel).current.currentAction?.actionId).toBe('a2');
+    });
   });
 
   describe('ResearchCursorModel (non-checkpointed)', () => {
-    it('starts with null cursor', () => {
-      expect(wire.getModel(ResearchCursorModel).cursor).toBeNull();
+    it('starts with null cursor and empty history', () => {
+      const state = wire.getModel(ResearchCursorModel);
+      expect(state.cursor).toBeNull();
+      expect(state.history).toEqual([]);
+      expect(state.revision).toBe(0);
     });
 
-    it('commitCheckpoint advances the cursor', () => {
+    it('commitCheckpoint advances the cursor and appends to history (idempotent)', () => {
       wire.dispatch(researchCommitCheckpoint({
         checkpointId: 'cp1', entryId: 'e1', committedAt: 2000,
       }));
@@ -725,17 +906,99 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(cursor.cursor!.checkpointId).toBe('cp1');
       expect(cursor.cursor!.entryId).toBe('e1');
       expect(cursor.cursor!.committedAt).toBe(2000);
+      expect(cursor.history).toEqual([{ checkpointId: 'cp1', entryId: 'e1', committedAt: 2000 }]);
       expect(cursor.revision).toBe(1);
     });
 
-    it('committed cursor is NOT reverted by conversation undo', () => {
+    it('commitCheckpoint rejects a same-checkpoint different-entry commit', () => {
+      wire.dispatch(researchCommitCheckpoint({ checkpointId: 'cp1', entryId: 'e1', committedAt: 1000 }));
+      wire.dispatch(researchCommitCheckpoint({ checkpointId: 'cp1', entryId: 'e2', committedAt: 2000 }));
+
+      const cursor = wire.getModel(ResearchCursorModel);
+      // The conflicting commit is a no-op: the first commit is preserved.
+      expect(cursor.cursor).toEqual({ checkpointId: 'cp1', entryId: 'e1', committedAt: 1000 });
+      expect(cursor.history).toEqual([{ checkpointId: 'cp1', entryId: 'e1', committedAt: 1000 }]);
+      expect(cursor.revision).toBe(1);
+    });
+
+    it('commitCheckpoint is idempotent for an older commit even after a newer one', () => {
+      wire.dispatch(researchCommitCheckpoint({ checkpointId: 'cp1', entryId: 'e1', committedAt: 1000 }));
+      wire.dispatch(researchCommitCheckpoint({ checkpointId: 'cp2', entryId: 'e2', committedAt: 2000 }));
+      wire.dispatch(researchCommitCheckpoint({ checkpointId: 'cp1', entryId: 'e1', committedAt: 3000 }));
+
+      const cursor = wire.getModel(ResearchCursorModel);
+      expect(cursor.cursor).toEqual({ checkpointId: 'cp2', entryId: 'e2', committedAt: 2000 });
+      expect(cursor.history).toEqual([
+        { checkpointId: 'cp1', entryId: 'e1', committedAt: 1000 },
+        { checkpointId: 'cp2', entryId: 'e2', committedAt: 2000 },
+      ]);
+      expect(cursor.revision).toBe(2);
+    });
+
+    it('committed cursor and its AITP receipt are NOT reverted by conversation undo', () => {
       wire.dispatch(researchCommitCheckpoint({
-        checkpointId: 'cp1', entryId: 'e1', committedAt: 2000,
+        checkpointId: 'cp1',
+        entryId: 'e1',
+        receipt: {
+          prepare: {
+            status: 'prepared',
+            id: 'e1',
+            path: '.aitp/local/drafts/e1.md',
+            idempotencyKey: 'key1',
+          },
+          save: {
+            status: 'saved',
+            draftPath: '.aitp/local/drafts/e1.md',
+            path: '.aitp/topic/entries/entry-e1.md',
+          },
+          preSaveCheck: {
+            status: 'clean', errors: 0, warnings: 0,
+            findingFingerprints: [], errorFindingFingerprints: [], checkedAt: 1900,
+          },
+          postSaveCheck: {
+            status: 'clean', errors: 0, warnings: 0,
+            findingFingerprints: [], errorFindingFingerprints: [], checkedAt: 2000,
+          },
+        },
+        committedAt: 2000,
       }));
       wire.dispatch(contextAppendMessage({ message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } } }));
       wire.dispatch(contextUndo({ count: 1 }));
-      expect(wire.getModel(ResearchCursorModel).cursor).not.toBeNull();
-      expect(wire.getModel(ResearchCursorModel).cursor!.checkpointId).toBe('cp1');
+      expect(wire.getModel(ResearchCursorModel).cursor).toMatchObject({
+        checkpointId: 'cp1',
+        entryId: 'e1',
+        receipt: {
+          prepare: { id: 'e1' },
+          save: { status: 'saved' },
+          postSaveCheck: { status: 'clean' },
+        },
+      });
+      // The ordered commit history is equally durable across conversation undo.
+      expect(wire.getModel(ResearchCursorModel).history).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ checkpointId: 'cp1', entryId: 'e1' }),
+        ]),
+      );
+    });
+
+    it('cold restore rebuilds the latest cursor and the full commit history', async () => {
+      wire.dispatch(researchCommitCheckpoint({
+        checkpointId: 'cp1', entryId: 'e1', receipt: {
+          prepare: { status: 'prepared', id: 'e1', path: '.aitp/local/drafts/e1.md', idempotencyKey: 'key1' },
+          save: { status: 'saved', draftPath: '.aitp/local/drafts/e1.md', path: '.aitp/topic/entries/entry-e1.md' },
+        }, committedAt: 1000,
+      }));
+      wire.dispatch(researchCommitCheckpoint({ checkpointId: 'cp2', entryId: 'e2', committedAt: 2000 }));
+
+      await wire.restore();
+
+      const cursor = wire.getModel(ResearchCursorModel);
+      expect(cursor.cursor).toMatchObject({ checkpointId: 'cp2', entryId: 'e2' });
+      expect(cursor.history).toMatchObject([
+        { checkpointId: 'cp1', entryId: 'e1', committedAt: 1000 },
+        { checkpointId: 'cp2', entryId: 'e2', committedAt: 2000 },
+      ]);
+      expect(cursor.revision).toBe(2);
     });
   });
 

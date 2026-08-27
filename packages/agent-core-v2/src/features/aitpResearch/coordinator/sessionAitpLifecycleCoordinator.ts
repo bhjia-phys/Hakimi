@@ -8,6 +8,7 @@
  */
 
 import { createDecorator } from '#/_base/di/instantiation';
+import type { Event } from '#/_base/event';
 
 import type { AitpMaintenanceReceipt } from '../types';
 
@@ -18,6 +19,8 @@ export interface AitpMaintenanceRefreshOptions {
 
 export interface ISessionAitpLifecycleCoordinator {
   readonly _serviceBrand: undefined;
+
+  readonly onDidUpdate: Event<AitpMaintenanceReceipt>;
 
   refresh(options?: AitpMaintenanceRefreshOptions): Promise<AitpMaintenanceReceipt>;
   snapshot(): AitpMaintenanceReceipt | undefined;

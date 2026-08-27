@@ -17,8 +17,8 @@
  * adjudication), any other Write/Edit and every TaskStop/CronCreate/
  * CronDelete call is vetoed with a `toolApproval.formatDenyMessage`-
  * formatted reason, and an `ExitPlanMode` call outside `auto` mode defers
- * to a cold `waitUntil` factory running the `exitPlanModeReview` user
- * review. Bound at Agent scope — contributed into every Agent scope by
+ * to a cold `waitUntil` factory running the `exitPlanModeReview` through the
+ * shared `humanGate` transport. Bound at Agent scope — contributed into every Agent scope by
  * `PlanFeature` (`features/plan/planFeature`).
  */
 
@@ -36,6 +36,7 @@ import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMo
 import { PlanModeInjection } from '#/features/plan/injection/planModeInjection';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentStateService } from '#/agent/state/agentState';
+import { IAgentHumanGateService } from '#/agent/humanGate/humanGate';
 import { IAgentToolApprovalService } from '#/agent/toolApproval/toolApproval';
 import { denyToolExecution } from '#/agent/toolExecutor/beforeToolExecuteEvent';
 import { IAgentToolExecutorService } from '#/agent/toolExecutor/toolExecutor';
@@ -82,13 +83,14 @@ export class AgentPlanService extends Service implements IAgentPlanService {
     @IAgentScopeContext private readonly agentCtx: IAgentScopeContext,
     @IAgentToolExecutorService toolExecutor: IAgentToolExecutorService,
     @IAgentToolApprovalService private readonly toolApproval: IAgentToolApprovalService,
+    @IAgentHumanGateService private readonly humanGate: IAgentHumanGateService,
     @IAgentPermissionModeService private readonly modeService: IAgentPermissionModeService,
     @ITelemetryService telemetry: ITelemetryService,
     @IAgentStateService states: IAgentStateService,
   ) {
     super();
 
-    this.review = new ExitPlanModeReview(this, this.toolApproval, telemetry);
+    this.review = new ExitPlanModeReview(this, this.humanGate, telemetry);
 
     this._register(
       this.wire.hooks.onDidRestore.register('plan', async (_ctx, next) => {

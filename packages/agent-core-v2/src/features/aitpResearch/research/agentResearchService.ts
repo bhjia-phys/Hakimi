@@ -4,8 +4,9 @@
  * Manages the Research state through wire dispatches on the checkpointed
  * `ResearchModel` (questions, lines, focus, pending checkpoint, alerts, and
  * the scientific state layer — phase / action / progress / state change /
- * human gate) and the non-checkpointed `ResearchCursorModel` (committed
- * cursor). Deterministic lifecycle alerts are reconciled from question, mode,
+ * human gate) and the non-checkpointed `ResearchCursorModel` (latest
+ * committed cursor plus an ordered history of every committed
+ * checkpoint/Entry). Deterministic lifecycle alerts are reconciled from question, mode,
  * checkpoint, and maintenance state; alert records are fingerprinted,
  * replayable, and acknowledgement-aware. Line and question mutations carry
  * optimistic-concurrency revisions. Human steering commands carry
@@ -13,12 +14,23 @@
  * is rejected. The AITP commit barrier
  * (`commitCheckpoint`) requires a non-empty `entryId` and calls the
  * Session-scope adapter's `show` + `check` before advancing the committed
- * cursor and acknowledging the checkpointed working state. Reads reconcile a
- * committed cursor with an undone pending checkpoint idempotently. The
+ * cursor and acknowledging the checkpointed working state. The read surface
+ * (`getSnapshot` / `getQuestions` / `getLines` / `getPendingCheckpoint` /
+ * `getCommittedCursor` / `getScientificProgress`) is pure: it only projects the
+ * current wire models and never dispatches an op, reconciles alerts or the
+ * committed cursor, publishes an event, or calls the adapter. Deterministic
+ * alert / committed-cursor reconciliation runs through the explicit
+ * `reconcile()` lifecycle hook, invoked only on a direct mutation (via
+ * `publishResearchUpdated`), a maintenance receipt update
+ * (`coordinator.onDidUpdate`), a commit barrier, a wire restore, or a
+ * conversation undo (`context.undone`). The
  * scientific state layer (plan/start/complete/record/set-phase/request/resolve-gate)
- * performs pre-dispatch validation (throws on invalid transitions, missing
+ * and typed subagent evidence review performs pre-dispatch validation (throws on invalid transitions, missing
  * actions, wrong action status, or mismatched gates) while the wire ops themselves are no-ops
- * on mismatched state so they replay safely. `getScientificProgress(level)`
+ * on mismatched state so they replay safely. Both the live validation and the
+ * replay no-ops consult the single phase-transition authority in
+ * `transitions/researchTransitionAuthority`, which is the one and only copy of
+ * the phase policy. `getScientificProgress(level)`
  * is a pure derived read with brief/detail/audit projections. Publishes a
  * `research.updated` event carrying the full `ResearchStatusSnapshot` after
  * every direct mutation; the snapshot includes the Session coordinator's safe
@@ -51,7 +63,10 @@ import { AitpResearchError, AitpResearchErrors } from '#/features/aitpResearch/e
 import type {
   HumanSteeringCommand,
   ResearchActionSpec,
+  AitpCheckReport,
   ResearchCheckpoint,
+  ResearchCheckpointCheckReceipt,
+  ResearchCheckpointReceipt,
   ResearchCommittedCursor,
   ResearchHumanGate,
   ResearchLine,
@@ -60,10 +75,13 @@ import type {
   ResearchProgressLevel,
   ResearchProgressReport,
   ResearchQuestion,
+  ResearchRunState,
   ResearchScientificSnapshot,
   ResearchStateChange,
   ResearchStatusSnapshot,
+  ResearchEffectiveNextStep,
   ResearchAlert,
+  AitpMaintenanceReceipt,
 } from '#/features/aitpResearch/types';
 import {
   AitpModeModel,
@@ -78,6 +96,7 @@ import {
   researchSwitchLine,
   researchSteer,
   researchProposeCheckpoint,
+  researchBindCheckpointReceipt,
   researchCommitCheckpoint,
   researchAcknowledgeCheckpoint,
   researchReopenQuestion,
@@ -85,26 +104,42 @@ import {
   researchClearAlert,
   researchAcknowledgeAlert,
   researchPlanAction,
+  researchBindCheckpointEntry,
   researchStartAction,
   researchCompleteAction,
+  researchObserveRun,
   researchRecordProgress,
   researchSetPhase,
   researchRequestHumanDecision,
   researchResolveHumanDecision,
   type ResearchActionSpecRecord,
+  type ResearchRunStateRecord,
   type ResearchQuestionRecord,
   type ResearchLineRecord,
   type ResearchCheckpointRecord,
   type ResearchHumanGateRecord,
   type ResearchProgressReportRecord,
   type ResearchStateChangeRecord,
+  type ResearchWorkingState,
 } from '#/features/aitpResearch/aitpResearchOps';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
+import { IDurableCommitService } from './durableCommit';
+import type { ResearchEvidencePacket, ResearchEvidenceReview } from './evidencePacket';
+import {
+  PLAN_ACTION_PHASES,
+  allowedNextPhases,
+  isLiveForegroundAction,
+  isPhaseTransitionValid,
+  isUnresolvedHumanGate,
+} from '#/features/aitpResearch/transitions/researchTransitionAuthority';
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
 
 import {
   type CommitCheckpointInput,
+  type ConcludeResearchActionInput,
+  type ResearchActionConclusion,
   type CreateQuestionInput,
+  type ObserveResearchRunInput,
   IAgentResearchService,
   type PlanActionInput,
   type ProposeCheckpointInput,
@@ -124,8 +159,10 @@ const AITP_MUTATION_TOOLS = new Set([
   'ProposeResearchCheckpoint',
   'CommitResearchCheckpoint',
   'PlanResearchAction',
+  'BeginResearchAction',
   'StartResearchAction',
   'CompleteResearchAction',
+  'ConcludeResearchAction',
   'RecordResearchProgress',
   'RequestResearchDecision',
   'SetResearchPhase',
@@ -175,11 +212,19 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     @IAgentToolExecutorService toolExecutor: IAgentToolExecutorService,
     @IAgentGoalService private readonly goal: IAgentGoalService,
     @ISessionAitpLifecycleCoordinator private readonly coordinator?: ISessionAitpLifecycleCoordinator,
+    @IDurableCommitService private readonly durable?: IDurableCommitService,
   ) {
     super();
     this._register(
       toolExecutor.onBeforeExecuteTool((event) => this.guardToolExecution(event)),
     );
+    if (this.coordinator !== undefined) {
+      this._register(
+        this.coordinator.onDidUpdate(() => {
+          this.publishResearchUpdated();
+        }),
+      );
+    }
     this._register(
       this.eventBus.subscribe('aitp_mode.updated', () => {
         this.publishResearchUpdated();
@@ -191,16 +236,19 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       }),
     );
     this._register(
-      this.wire.hooks.onDidRestore.register('researchAlerts', async (_ctx, next) => {
+      this.wire.hooks.onDidRestore.register('researchReconcile', async (_ctx, next) => {
         await next();
-        this.reconcileAlerts();
+        this.reconcile();
+      }),
+    );
+    this._register(
+      this.eventBus.subscribe('context.undone', () => {
+        this.reconcile();
       }),
     );
   }
 
   getSnapshot(): ResearchStatusSnapshot {
-    this.reconcileCommittedCheckpoint();
-    this.reconcileAlerts();
     const state = this.wire.getModel(ResearchModel).current;
     const cursor = this.wire.getModel(ResearchCursorModel);
     const questions = Object.values(state.questions).map(toQuestion);
@@ -214,6 +262,9 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     const aitpMaintenance = this.mode.isActive
       ? this.coordinator?.snapshot()
       : undefined;
+    const currentAction = state.currentAction === null ? undefined : toActionSpec(state.currentAction);
+    const latestProgress = state.latestProgress === null ? undefined : toProgressReport(state.latestProgress);
+    const humanGate = state.humanGate === null ? undefined : toHumanGate(state.humanGate);
 
     return {
       mode: this.mode.phase,
@@ -232,7 +283,16 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       openQuestionCount: questions.filter((q) => q.workflow === 'open').length,
       activeQuestionCount: questions.filter((q) => q.workflow === 'active').length,
       blockedQuestionCount: questions.filter((q) => q.workflow === 'blocked').length,
-      alerts: [...state.alerts],
+      alerts: state.alerts.map(toAlert),
+      effectiveNextStep: deriveEffectiveNextStep({
+        phase: state.phase,
+        currentAction,
+        currentRun: state.currentRun === null ? undefined : toRunState(state.currentRun),
+        latestProgress,
+        currentQuestion,
+        humanGate,
+        maintenance: aitpMaintenance,
+      }),
       goalSummary: this.getGoalSummary(),
       aitpHealth: this.mode.health ?? { phase: 'inactive' },
       aitpMaintenance,
@@ -240,11 +300,13 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         ? undefined
         : toCheckpoint(state.pendingCheckpoint),
       latestCommittedCheckpoint: cursor.cursor ?? undefined,
+      committedCheckpointHistory: cursor.history,
       phase: state.phase,
-      currentAction: state.currentAction === null ? undefined : toActionSpec(state.currentAction),
-      latestProgress: state.latestProgress === null ? undefined : toProgressReport(state.latestProgress),
+      currentAction,
+      currentRun: state.currentRun === null ? undefined : toRunState(state.currentRun),
+      latestProgress,
       recentStateChange: state.recentStateChange === null ? undefined : toStateChange(state.recentStateChange),
-      humanGate: state.humanGate === null ? undefined : toHumanGate(state.humanGate),
+      humanGate,
       revision: state.revision,
     };
   }
@@ -258,9 +320,6 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   }
 
   getPendingCheckpoint(): ResearchCheckpoint | null {
-    if (this.reconcileCommittedCheckpoint()) {
-      this.publishResearchUpdated();
-    }
     const pending = this.wire.getModel(ResearchModel).current.pendingCheckpoint;
     return pending === null ? null : toCheckpoint(pending);
   }
@@ -275,6 +334,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     return {
       phase: state.phase,
       currentAction: state.currentAction === null ? undefined : toActionSpec(state.currentAction),
+      currentRun: state.currentRun === null ? undefined : toRunState(state.currentRun),
       latestProgress: level === 'brief'
         ? progress === null
           ? undefined
@@ -298,6 +358,104 @@ export class AgentResearchService extends Service implements IAgentResearchServi
             : toProgressReport(progress),
       recentStateChange: state.recentStateChange === null ? undefined : toStateChange(state.recentStateChange),
       humanGate: state.humanGate === null ? undefined : toHumanGate(state.humanGate),
+    };
+  }
+
+  observeRun(input: ObserveResearchRunInput): ResearchRunState {
+    this.assertMutationAllowed();
+    const state = this.wire.getModel(ResearchModel).current;
+    if (input.expectedRevision !== state.revision) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        `Research revision is stale. Expected ${input.expectedRevision}, got ${state.revision}.`,
+      );
+    }
+    if (state.currentAction?.actionId !== input.actionId) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_NOT_FOUND,
+        `Run observation targets action ${input.actionId}, which is not the current Research action.`,
+      );
+    }
+    if (input.terminalState === undefined && ['completed', 'failed', 'cancelled'].includes(input.schedulerState)) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        `Terminal scheduler state ${input.schedulerState} requires an explicit terminal state.`,
+      );
+    }
+    const observedAt = now();
+    this.wire.dispatch(researchObserveRun({
+      actionId: input.actionId,
+      campaign: input.campaign,
+      jobId: input.jobId,
+      sourcePin: input.sourcePin,
+      binaryPin: input.binaryPin,
+      stage: input.stage,
+      schedulerState: input.schedulerState,
+      lastObservedAt: observedAt,
+      nextCheckAt: input.nextCheckAt,
+      terminalState: input.terminalState,
+      artifactRefs: input.artifactRefs === undefined ? [] : [...input.artifactRefs],
+    }));
+    this.publishResearchUpdated();
+    const run = this.wire.getModel(ResearchModel).current.currentRun;
+    if (run === null) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        `Run observation for ${input.jobId} could not be retained.`,
+      );
+    }
+    return toRunState(run);
+  }
+
+  reviewEvidencePacket(
+    packet: ResearchEvidencePacket,
+    expectedRevision: number,
+  ): ResearchEvidenceReview {
+    this.assertMainAgent();
+    const state = this.wire.getModel(ResearchModel).current;
+    if (state.revision !== expectedRevision) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        `Research revision is stale. Expected ${expectedRevision}, got ${state.revision}. Review the packet against the current Research state.`,
+      );
+    }
+    const action = state.currentAction;
+    if (packet.action_id !== undefined && action?.actionId !== packet.action_id) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_NOT_FOUND,
+        `Evidence packet ${packet.packet_id} targets action ${packet.action_id}, which is not the current Research action.`,
+      );
+    }
+    const questionId = packet.question_id ?? action?.questionId ?? state.focus?.questionId;
+    const question = questionId === undefined ? undefined : state.questions[questionId];
+    if (questionId !== undefined && question === undefined) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_QUESTION_NOT_FOUND,
+        `Evidence packet ${packet.packet_id} targets unknown question ${questionId}.`,
+      );
+    }
+    const lineSlug = packet.line_slug ?? action?.lineSlug ?? question?.lineSlug;
+    if (packet.line_slug !== undefined && state.lines[packet.line_slug] === undefined) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_LINE_NOT_FOUND,
+        `Evidence packet ${packet.packet_id} targets unknown line ${packet.line_slug}.`,
+      );
+    }
+    if (question !== undefined && lineSlug !== undefined && question.lineSlug !== lineSlug) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_LINE_NOT_FOUND,
+        `Evidence packet ${packet.packet_id} targets line ${lineSlug}, but question ${question.id} belongs to ${question.lineSlug}.`,
+      );
+    }
+
+    return {
+      packet,
+      researchRevision: state.revision,
+      questionId,
+      lineSlug,
+      targetConfirmed: true,
+      assessmentChanged: false,
+      nextOperations: ['RecordResearchProgress', 'UpdateResearchQuestion'],
     };
   }
 
@@ -608,6 +766,9 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       researchUpsertAlert({
         fingerprint: `${ALERT_FINGERPRINTS.reopened}.${questionId}`,
         kind: 'reopened',
+        classification: 'warning',
+        source: 'question',
+        state: 'active',
         message: reopenedQuestionMessage(questionId),
         questionId,
         lineSlug: existing.lineSlug,
@@ -677,13 +838,120 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     return toCheckpoint(pending);
   }
 
+  bindPendingCheckpointReceipt(receipt: ResearchCheckpointReceipt): ResearchCheckpoint {
+    this.assertMutationAllowed();
+    const pending = this.wire.getModel(ResearchModel).current.pendingCheckpoint;
+    if (pending === null) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        'Cannot bind an AITP receipt without a pending research checkpoint',
+      );
+    }
+    if (!checkpointQuestionRevisionMatches(this.wire.getModel(ResearchModel).current, pending)) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${pending.checkpointId} was created from an older question revision; re-propose it before binding AITP receipts`,
+      );
+    }
+    const existingReceipt = pending.receipt;
+    if (
+      receipt.prepare !== undefined &&
+      existingReceipt?.prepare !== undefined &&
+      JSON.stringify(receipt.prepare) !== JSON.stringify(existingReceipt.prepare)
+    ) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${pending.checkpointId} is already bound to a different AITP prepare receipt`,
+      );
+    }
+    if (receipt.preSaveCheck !== undefined && existingReceipt?.save !== undefined) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${pending.checkpointId} cannot replace its pre-save baseline after save`,
+      );
+    }
+    const mergedReceipt: ResearchCheckpointReceipt = {
+      prepare: receipt.prepare ?? existingReceipt?.prepare,
+      save: receipt.save ?? existingReceipt?.save,
+      preSaveCheck: receipt.preSaveCheck ?? existingReceipt?.preSaveCheck,
+      postSaveCheck: receipt.postSaveCheck ?? existingReceipt?.postSaveCheck,
+    };
+    if (receipt.save !== undefined && mergedReceipt.prepare === undefined) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${pending.checkpointId} cannot bind a save receipt before prepare`,
+      );
+    }
+    if (
+      receipt.save !== undefined &&
+      mergedReceipt.prepare !== undefined &&
+      receipt.save.draftPath !== mergedReceipt.prepare.path
+    ) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${pending.checkpointId} save receipt does not match its prepared draft`,
+      );
+    }
+    if (receipt.postSaveCheck !== undefined && mergedReceipt.save === undefined) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${pending.checkpointId} cannot bind a post-save check before save`,
+      );
+    }
+    const preparedId = mergedReceipt.prepare === undefined
+      ? undefined
+      : mergedReceipt.prepare.id;
+    const preparedKey = mergedReceipt.prepare?.status === 'existing'
+      ? mergedReceipt.prepare.idempotencyKey
+      : mergedReceipt.prepare?.idempotencyKey;
+    if (preparedKey !== undefined && preparedKey !== pending.idempotencyKey) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `AITP prepare receipt idempotency key does not match checkpoint ${pending.checkpointId}`,
+      );
+    }
+    if (preparedId !== undefined && pending.committedEntryId !== undefined && pending.committedEntryId !== preparedId) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `AITP prepare receipt is bound to ${preparedId}, not ${pending.committedEntryId}`,
+      );
+    }
+    if (preparedId !== undefined) {
+      this.wire.dispatch(
+        researchBindCheckpointEntry({
+          checkpointId: pending.checkpointId,
+          entryId: preparedId,
+        }),
+      );
+    }
+    this.wire.dispatch(
+      researchBindCheckpointReceipt({
+        checkpointId: pending.checkpointId,
+        receipt: toWireCheckpointReceipt(receipt),
+      }),
+    );
+    const updated = this.wire.getModel(ResearchModel).current.pendingCheckpoint;
+    if (updated === null) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${pending.checkpointId} could not retain its AITP receipt`,
+      );
+    }
+    return toCheckpoint(updated);
+  }
+
   async commitCheckpoint(input: CommitCheckpointInput): Promise<void> {
     this.assertMutationAllowed();
     const current = this.wire.getModel(ResearchModel).current;
-    const currentCursor = this.wire.getModel(ResearchCursorModel).cursor;
-    const cursorMatches = currentCursor?.checkpointId === input.checkpointId &&
-      currentCursor.entryId === input.entryId;
-    if (cursorMatches) {
+    const cursorModel = this.wire.getModel(ResearchCursorModel);
+    const currentCursor = cursorModel.cursor;
+    const committedHistory = cursorModel.history;
+
+    // Same checkpoint + same Entry is idempotent, even if it is not the latest.
+    const duplicateCommit = committedHistory.find(
+      (c) => c.checkpointId === input.checkpointId && c.entryId === input.entryId,
+    );
+    if (duplicateCommit !== undefined) {
       if (current.pendingCheckpoint?.checkpointId === input.checkpointId) {
         this.wire.dispatch(
           researchAcknowledgeCheckpoint({
@@ -695,10 +963,14 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       }
       return;
     }
-    if (currentCursor !== null) {
+    // Same checkpoint + different Entry is rejected.
+    const existingCommit = committedHistory.find(
+      (c) => c.checkpointId === input.checkpointId,
+    );
+    if (existingCommit !== undefined) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
-        `A checkpoint is already committed as ${currentCursor.checkpointId}/${currentCursor.entryId}`,
+        `Checkpoint ${input.checkpointId} is already committed to AITP entry ${existingCommit.entryId ?? '?'}`,
       );
     }
     const pending = current.pendingCheckpoint;
@@ -708,15 +980,52 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         `No pending checkpoint with id ${input.checkpointId}`,
       );
     }
-
-    let shown: Awaited<ReturnType<ISessionAitpAdapter['show']>>;
-    try {
-      shown = await this.adapter.show({ id: input.entryId });
-      if (shown.id !== input.entryId || shown.status !== 'active') {
+    if (pending.questionId !== undefined && pending.questionRevision !== undefined) {
+      const question = current.questions[pending.questionId];
+      if (question === undefined || question.revision !== pending.questionRevision) {
         throw new AitpResearchError(
-          AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
-          `AITP entry ${input.entryId} was not returned as an active matching entry`,
+          AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+          `Checkpoint ${input.checkpointId} was created from an older question revision; re-propose it from the current research state`,
         );
+      }
+    }
+    if (pending.committedEntryId !== undefined && pending.committedEntryId !== input.entryId) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${input.checkpointId} is already bound to AITP entry ${pending.committedEntryId}`,
+      );
+    }
+    const receipt = pending.receipt;
+    if (receipt?.prepare === undefined || receipt.save === undefined || receipt.preSaveCheck === undefined) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${input.checkpointId} has no complete AITP prepare/save receipt; prepare and save through the Research AITP tools before committing`,
+      );
+    }
+    const preSaveCheck = receipt.preSaveCheck;
+    if (receipt.prepare.id !== undefined && receipt.prepare.id !== input.entryId) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${input.checkpointId} prepare receipt identifies ${receipt.prepare.id}, not ${input.entryId}`,
+      );
+    }
+    if (receipt.save.draftPath !== receipt.prepare.path) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${input.checkpointId} save receipt does not match its prepared draft`,
+      );
+    }
+    try {
+      if (this.durable !== undefined) {
+        await this.durable.verifyEntry(input.entryId);
+      } else {
+        const shown = await this.adapter.show({ id: input.entryId });
+        if (shown.id !== input.entryId || shown.status !== 'active') {
+          throw new AitpResearchError(
+            AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
+            `AITP entry ${input.entryId} was not returned as an active matching entry`,
+          );
+        }
       }
     } catch (error) {
       this.markCommitBarrierFailed();
@@ -726,7 +1035,14 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         `AITP commit barrier failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-
+    if (pending.committedEntryId === undefined) {
+      this.wire.dispatch(
+        researchBindCheckpointEntry({
+          checkpointId: input.checkpointId,
+          entryId: input.entryId,
+        }),
+      );
+    }
     const afterShow = this.wire.getModel(ResearchModel).current;
     const afterShowCursor = this.wire.getModel(ResearchCursorModel).cursor;
     const afterShowPending = afterShow.pendingCheckpoint;
@@ -734,19 +1050,44 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       afterShowCursor.entryId === input.entryId;
     if (!showAlreadyCommitted) {
       if (
-        afterShowCursor !== null ||
+        !cursorEquals(afterShowCursor, currentCursor) ||
         afterShowPending === null ||
         afterShowPending.checkpointId !== input.checkpointId ||
-        afterShowPending.idempotencyKey !== pending.idempotencyKey
+        afterShowPending.committedEntryId !== input.entryId ||
+        afterShowPending.idempotencyKey !== pending.idempotencyKey ||
+        !checkpointQuestionRevisionMatches(afterShow, afterShowPending)
       ) {
         throw new AitpResearchError(
           AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
           `Checkpoint ${input.checkpointId} changed while the AITP show barrier was running`,
         );
       }
-      let report: Awaited<ReturnType<ISessionAitpAdapter['check']>>;
+      let postSaveCheck: ResearchCheckpointCheckReceipt;
       try {
-        report = await this.adapter.check();
+        if (this.durable !== undefined) {
+          postSaveCheck = (await this.durable.checkAfterSave({
+            workstreams: receipt.prepare.workstreams,
+            preSaveCheck,
+          })).postSaveCheck;
+        } else {
+          const workstreams = receipt.prepare.workstreams;
+          const report = await this.adapter.check(workstreams?.length === 1
+            ? { workstream: workstreams[0] }
+            : undefined);
+          postSaveCheck = toCheckpointCheckReceipt(report, preSaveCheck);
+          if (report.counts.errors > 0 && preSaveCheck === undefined) {
+            throw new AitpResearchError(
+              AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
+              `AITP check reports ${report.counts.errors} error finding(s) and no reliable pre-save baseline is available. Checkpoint remains pending.`,
+            );
+          }
+          if ((postSaveCheck.newErrorFindingFingerprints?.length ?? 0) > 0) {
+            throw new AitpResearchError(
+              AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
+              `AITP check reports ${postSaveCheck.newErrorFindingFingerprints!.length} new error finding(s) after commit. Checkpoint remains pending.`,
+            );
+          }
+        }
       } catch (error) {
         this.markCommitBarrierFailed();
         if (error instanceof AitpResearchError) throw error;
@@ -755,13 +1096,12 @@ export class AgentResearchService extends Service implements IAgentResearchServi
           `AITP commit barrier failed: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
-      if (report.counts.errors > 0) {
-        this.markCommitBarrierFailed();
-        throw new AitpResearchError(
-          AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
-          `AITP check reports ${report.counts.errors} error finding(s) after commit. Checkpoint remains pending.`,
-        );
-      }
+      this.wire.dispatch(
+        researchBindCheckpointReceipt({
+          checkpointId: input.checkpointId,
+          receipt: toWireCheckpointReceipt({ postSaveCheck }),
+        }),
+      );
     }
 
     const after = this.wire.getModel(ResearchModel).current;
@@ -780,10 +1120,12 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       return;
     }
     if (
-      afterCursor !== null ||
+      !cursorEquals(afterCursor, currentCursor) ||
       afterPending === null ||
       afterPending.checkpointId !== input.checkpointId ||
-      afterPending.idempotencyKey !== pending.idempotencyKey
+      afterPending.committedEntryId !== input.entryId ||
+      afterPending.idempotencyKey !== pending.idempotencyKey ||
+      !checkpointQuestionRevisionMatches(after, afterPending)
     ) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
@@ -791,11 +1133,24 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       );
     }
 
+    const committedReceipt = afterPending.receipt;
+    if (
+      committedReceipt?.prepare === undefined ||
+      committedReceipt.save === undefined ||
+      committedReceipt.preSaveCheck === undefined ||
+      committedReceipt.postSaveCheck === undefined
+    ) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${input.checkpointId} is missing a complete AITP barrier receipt`,
+      );
+    }
     const committedAt = Date.now();
     this.wire.dispatch(
       researchCommitCheckpoint({
         checkpointId: input.checkpointId,
         entryId: input.entryId,
+        receipt: toWireCheckpointReceipt(committedReceipt),
         committedAt,
       }),
       researchAcknowledgeCheckpoint({
@@ -821,14 +1176,17 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   planAction(input: PlanActionInput): ResearchActionSpec {
     this.assertMutationAllowed();
     const state = this.wire.getModel(ResearchModel).current;
-    if (
-      state.phase !== 'gap_analysis' &&
-      state.phase !== 'action_planned' &&
-      state.phase !== 'awaiting_human'
-    ) {
+    if (!PLAN_ACTION_PHASES.includes(state.phase)) {
+      const allowed = allowedNextPhases(state.phase).join(', ');
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_PHASE_TRANSITION_INVALID,
-        `Cannot plan action from phase '${state.phase}'`,
+        `Cannot plan action from phase '${state.phase}'. Allowed next phases: ${allowed || 'none'}. Read Research status and continue from the current phase.`,
+      );
+    }
+    if (isLiveForegroundAction(state.currentAction)) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        `Cannot plan a new action while action ${state.currentAction!.actionId} is still ${state.currentAction!.status}. Complete or abandon it before planning a new action.`,
       );
     }
     if (input.questionId !== undefined && state.questions[input.questionId] === undefined) {
@@ -854,6 +1212,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         expectedEvidence: input.expectedEvidence !== undefined ? [...input.expectedEvidence] : [],
         stopCondition: input.stopCondition,
         allowedToolKinds: input.allowedToolKinds !== undefined ? [...input.allowedToolKinds] : [],
+        retryOfEntryId: input.retryOfEntryId,
         requiresHumanApproval: input.requiresHumanApproval ?? false,
         createdAt: Date.now(),
       }),
@@ -867,6 +1226,21 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       );
     }
     return toActionSpec(record);
+  }
+
+  planAndStartAction(input: PlanActionInput): ResearchActionSpec {
+    const action = this.planAction(input);
+    if (action.requiresHumanApproval) {
+      this.requestHumanDecision({
+        kind: 'approval',
+        actionId: action.actionId,
+        questionId: action.questionId,
+        prompt: `Approve the ${action.kind} action: ${action.purpose}`,
+      });
+      return this.getSnapshot().currentAction ?? action;
+    }
+    this.startAction(action.actionId);
+    return this.getSnapshot().currentAction ?? action;
   }
 
   startAction(actionId: string): void {
@@ -935,15 +1309,99 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this.publishResearchUpdated();
   }
 
+  concludeAction(input: ConcludeResearchActionInput): ResearchActionConclusion {
+    this.assertMutationAllowed();
+    const state = this.wire.getModel(ResearchModel).current;
+    const action = state.currentAction;
+    if (action === null || action.actionId !== input.actionId) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_NOT_FOUND,
+        `Action ${input.actionId} not found`,
+      );
+    }
+    if (action.status !== 'in_progress') {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        `Action ${input.actionId} is not in 'in_progress' status (got '${action.status}')`,
+      );
+    }
+    if (state.phase !== 'action_executing') {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_PHASE_TRANSITION_INVALID,
+        `Cannot conclude action from phase '${state.phase}'`,
+      );
+    }
+
+    const completedAt = Date.now();
+    const recordedAt = Date.now();
+    this.wire.dispatch(
+      researchCompleteAction({
+        actionId: input.actionId,
+        status: input.status,
+        completedAt,
+      }),
+      researchRecordProgress({
+        headline: input.progress.headline,
+        question: input.progress.question,
+        motivation: input.progress.motivation,
+        workPerformed: input.progress.workPerformed,
+        result: input.progress.result,
+        mainlineImpact: input.progress.mainlineImpact,
+        uncertainties: input.progress.uncertainties !== undefined ? [...input.progress.uncertainties] : [],
+        nextAction: input.progress.nextAction,
+        phaseChange: { from: 'evaluating', to: 'state_updated' },
+        humanDecision: input.progress.humanDecision,
+        detail: input.progress.detail === undefined ? undefined : {
+          assumptions: input.progress.detail.assumptions !== undefined ? [...input.progress.detail.assumptions] : undefined,
+          derivation: input.progress.detail.derivation,
+          tests: input.progress.detail.tests !== undefined ? [...input.progress.detail.tests] : undefined,
+          observations: input.progress.detail.observations !== undefined ? [...input.progress.detail.observations] : undefined,
+          sources: input.progress.detail.sources !== undefined ? [...input.progress.detail.sources] : undefined,
+          limitations: input.progress.detail.limitations !== undefined ? [...input.progress.detail.limitations] : undefined,
+          detailHint: input.progress.detail.detailHint,
+          artifactRefs: input.progress.detail.artifactRefs !== undefined ? [...input.progress.detail.artifactRefs] : undefined,
+        },
+        recordedAt,
+      }),
+    );
+    this.clearTransitionAlerts();
+    this.publishResearchUpdated();
+
+    const next = this.wire.getModel(ResearchModel).current;
+    const completedAction = next.currentAction;
+    const progress = next.latestProgress;
+    if (
+      completedAction === null ||
+      completedAction.actionId !== input.actionId ||
+      completedAction.status !== input.status ||
+      progress === null ||
+      progress.recordedAt !== recordedAt ||
+      next.phase !== 'state_updated'
+    ) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        `Action ${input.actionId} conclusion did not produce a consistent Research state; inspect the current snapshot before retrying`,
+      );
+    }
+    return {
+      action: toActionSpec(completedAction),
+      progress: toProgressReport(progress),
+    };
+  }
+
   recordProgress(input: RecordProgressInput): ResearchProgressReport {
     this.assertMutationAllowed();
+    const currentPhase = this.wire.getModel(ResearchModel).current.phase;
     if (
       input.phaseChange !== undefined &&
-      !isPhaseTransitionValid(input.phaseChange.from, input.phaseChange.to)
+      (
+        input.phaseChange.from !== currentPhase ||
+        !isPhaseTransitionValid(input.phaseChange.from, input.phaseChange.to)
+      )
     ) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_PHASE_TRANSITION_INVALID,
-        `Invalid phase transition: ${input.phaseChange.from} → ${input.phaseChange.to}`,
+        `Invalid phase transition from current phase '${currentPhase}': ${input.phaseChange.from} → ${input.phaseChange.to}. Read Research status before recording progress.`,
       );
     }
     const recordedAt = Date.now();
@@ -1025,6 +1483,12 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_QUESTION_NOT_FOUND,
         `Question ${input.questionId} not found`,
+      );
+    }
+    if (isUnresolvedHumanGate(state.humanGate)) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_GATE_PENDING,
+        `Human gate ${state.humanGate.gateId} is already pending; resolve it before requesting a new decision`,
       );
     }
     const gateId = input.gateId ?? randomUUID();
@@ -1109,6 +1573,9 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         desired.set(fingerprint, {
           fingerprint,
           kind: 'blocked',
+          classification: 'active_blocker',
+          source: 'question',
+          state: 'active',
           message: blockedQuestionMessage(question.id),
           questionId: question.id,
           lineSlug: question.lineSlug,
@@ -1123,6 +1590,9 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       desired.set(ALERT_FINGERPRINTS.degraded, {
         fingerprint: ALERT_FINGERPRINTS.degraded,
         kind: 'degraded',
+        classification: 'active_blocker',
+        source: 'adapter',
+        state: 'active',
         message: 'AITP Research Mode is degraded; restore a ready adapter before continuing.',
         createdAt: now(),
       });
@@ -1135,21 +1605,81 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       desired.set(ALERT_FINGERPRINTS.stale, {
         fingerprint: ALERT_FINGERPRINTS.stale,
         kind: 'stale',
-        message: 'AITP active entries are newer than the latest Working Note; review current state before continuing.',
+        classification: 'warning',
+        source: 'aitp_check',
+        state: 'active',
+        message: 'AITP active entries are newer than the latest Working Note; review current state before following the previous handoff.',
+        reason: 'active entries are newer than the latest Working Note',
         createdAt: now(),
       });
     } else if (maintenance?.activeNewerThanWorkingNote === false) {
       clear.add(ALERT_FINGERPRINTS.stale);
     }
-    if (maintenance !== undefined && maintenance.unresolvedFailureCount > 0) {
+
+    const failurePrefix = `${ALERT_FINGERPRINTS.aitpFailure}.`;
+    const failures = maintenance?.unresolvedFailures ?? [];
+    const retryAction = state.currentAction?.retryOfEntryId === undefined
+      ? undefined
+      : state.currentAction;
+    if (failures.length > 0) {
+      for (const failure of failures) {
+        const fingerprint = `${failurePrefix}${failure.entryId}`;
+        const superseded = retryAction?.retryOfEntryId === failure.entryId;
+        desired.set(fingerprint, {
+          fingerprint,
+          kind: 'stale',
+          classification: superseded ? 'superseded_by_retry' : 'historical_unresolved',
+          source: 'aitp_failure',
+          state: 'active',
+          message: superseded
+            ? `Historical AITP failure ${failure.entryId} is superseded by retry action ${retryAction.actionId}; await new evidence before drawing a conclusion.`
+            : `Historical AITP failure ${failure.entryId}: ${failure.summary}. This does not block a new retry.`,
+          relatedEntryId: failure.entryId,
+          workstream: failure.workstream,
+          retryOfEntryId: superseded ? failure.entryId : undefined,
+          reason: superseded ? 'a retry action is active' : 'unresolved historical failure',
+          createdAt: failure.createdAt ?? now(),
+        });
+      }
+    } else if (maintenance !== undefined && maintenance.unresolvedFailureCount > 0) {
       desired.set(ALERT_FINGERPRINTS.aitpFailure, {
         fingerprint: ALERT_FINGERPRINTS.aitpFailure,
-        kind: 'blocked',
-        message: `AITP reports ${maintenance.unresolvedFailureCount} unresolved failure(s); review them before continuing.`,
-        createdAt: now(),
+        kind: 'stale',
+        classification: 'historical_unresolved',
+        source: 'aitp_failure',
+        state: 'active',
+        message: `AITP reports ${maintenance.unresolvedFailureCount} historical unresolved failure(s). This does not block a new retry.`,
+        reason: 'unresolved historical failure',
+        createdAt: maintenance.refreshedAt,
       });
     } else if (maintenance?.unresolvedFailureCount === 0) {
       clear.add(ALERT_FINGERPRINTS.aitpFailure);
+    }
+
+    for (const alert of state.alerts) {
+      if (alert.fingerprint.startsWith(failurePrefix) && !desired.has(alert.fingerprint)) {
+        clear.add(alert.fingerprint);
+      }
+    }
+
+    const warningPrefix = 'research.alert.warning.aitp.';
+    for (const warning of maintenance?.warningSummaries ?? []) {
+      const fingerprint = `${warningPrefix}${warning.code}`;
+      desired.set(fingerprint, {
+        fingerprint,
+        kind: 'stale',
+        classification: 'warning',
+        source: 'aitp_check',
+        state: 'active',
+        message: `AITP data-quality warning: ${warning.code}.`,
+        reason: warning.code,
+        createdAt: maintenance?.refreshedAt ?? now(),
+      });
+    }
+    for (const alert of state.alerts) {
+      if (alert.fingerprint.startsWith(warningPrefix) && !desired.has(alert.fingerprint)) {
+        clear.add(alert.fingerprint);
+      }
     }
 
     for (const fingerprint of clear) {
@@ -1163,9 +1693,16 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       if (
         existing !== undefined &&
         existing.kind === alert.kind &&
+        existing.classification === alert.classification &&
+        existing.source === alert.source &&
+        existing.state === alert.state &&
         existing.message === alert.message &&
         existing.questionId === alert.questionId &&
-        existing.lineSlug === alert.lineSlug
+        existing.lineSlug === alert.lineSlug &&
+        existing.relatedEntryId === alert.relatedEntryId &&
+        existing.workstream === alert.workstream &&
+        existing.retryOfEntryId === alert.retryOfEntryId &&
+        existing.reason === alert.reason
       ) continue;
       this.wire.dispatch(researchUpsertAlert(alert));
     }
@@ -1197,12 +1734,18 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       researchUpsertAlert({
         fingerprint: ALERT_FINGERPRINTS.commitFailed,
         kind: 'commit_failed',
+        classification: 'active_blocker',
+        source: 'checkpoint',
+        state: 'active',
         message: 'Research checkpoint commit failed; the pending checkpoint remains uncommitted.',
         createdAt: now(),
       }),
       researchUpsertAlert({
         fingerprint: ALERT_FINGERPRINTS.degraded,
         kind: 'degraded',
+        classification: 'active_blocker',
+        source: 'adapter',
+        state: 'active',
         message: 'AITP Research Mode is degraded; restore a ready adapter before continuing.',
         createdAt: now(),
       }),
@@ -1210,19 +1753,27 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this.publishResearchUpdated();
   }
 
-  private reconcileCommittedCheckpoint(): boolean {
+  private reconcile(): void {
+    this.reconcileCommittedCheckpoint();
+    this.reconcileAlerts();
+  }
+
+  private reconcileCommittedCheckpoint(): void {
     const pending = this.wire.getModel(ResearchModel).current.pendingCheckpoint;
-    const cursor = this.wire.getModel(ResearchCursorModel).cursor;
-    if (pending === null || cursor === null || pending.checkpointId !== cursor.checkpointId) {
-      return false;
-    }
+    if (pending === null) return;
+    const commits = this.wire.getModel(ResearchCursorModel).history;
+    const matched = commits.find(
+      (commit) =>
+        commit.checkpointId === pending.checkpointId &&
+        (pending.committedEntryId === undefined || commit.entryId === pending.committedEntryId),
+    );
+    if (matched === undefined) return;
     this.wire.dispatch(
       researchAcknowledgeCheckpoint({
         checkpointId: pending.checkpointId,
-        entryId: cursor.entryId,
+        entryId: matched.entryId,
       }),
     );
-    return this.wire.getModel(ResearchModel).current.pendingCheckpoint === null;
   }
 
   private assertMainAgent(): void {
@@ -1255,6 +1806,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   }
 
   private publishResearchUpdated(): void {
+    this.reconcile();
     this.eventBus.publish({ type: 'research.updated', snapshot: this.getSnapshot() });
   }
 
@@ -1305,15 +1857,112 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function toCheckpointCheckReceipt(
+  report: AitpCheckReport,
+  baseline?: ResearchCheckpointCheckReceipt,
+): ResearchCheckpointCheckReceipt {
+  const findingFingerprints = report.findings.map((finding) =>
+    `${finding.level}:${finding.code}:${finding.path}:${finding.message}`,
+  ).toSorted();
+  const errorFindingFingerprints = report.findings
+    .filter((finding) => finding.level === 'error')
+    .map((finding) => `${finding.code}:${finding.path}:${finding.message}`)
+    .toSorted();
+  const baselineErrors = baseline === undefined
+    ? undefined
+    : new Set(baseline.errorFindingFingerprints);
+  return {
+    status: report.status,
+    errors: report.counts.errors,
+    warnings: report.counts.warnings,
+    findingFingerprints,
+    errorFindingFingerprints,
+    newErrorFindingFingerprints: baselineErrors === undefined
+      ? undefined
+      : errorFindingFingerprints.filter((fingerprint) => !baselineErrors.has(fingerprint)),
+    preExistingErrorFindingFingerprints: baselineErrors === undefined
+      ? undefined
+      : errorFindingFingerprints.filter((fingerprint) => baselineErrors.has(fingerprint)),
+    checkedAt: Date.now(),
+  };
+}
+
+function toWireCheckpointReceipt(receipt: ResearchCheckpointReceipt) {
+  return {
+    prepare: receipt.prepare === undefined
+      ? undefined
+      : receipt.prepare.status === 'prepared'
+        ? {
+            ...receipt.prepare,
+            workstreams: receipt.prepare.workstreams === undefined
+              ? undefined
+              : [...receipt.prepare.workstreams],
+          }
+        : {
+            ...receipt.prepare,
+            workstreams: receipt.prepare.workstreams === undefined
+              ? undefined
+              : [...receipt.prepare.workstreams],
+          },
+    save: receipt.save,
+    preSaveCheck: receipt.preSaveCheck === undefined
+      ? undefined
+      : {
+          ...receipt.preSaveCheck,
+          findingFingerprints: [...receipt.preSaveCheck.findingFingerprints],
+          errorFindingFingerprints: [...receipt.preSaveCheck.errorFindingFingerprints],
+          newErrorFindingFingerprints: receipt.preSaveCheck.newErrorFindingFingerprints === undefined
+            ? undefined
+            : [...receipt.preSaveCheck.newErrorFindingFingerprints],
+          preExistingErrorFindingFingerprints: receipt.preSaveCheck.preExistingErrorFindingFingerprints === undefined
+            ? undefined
+            : [...receipt.preSaveCheck.preExistingErrorFindingFingerprints],
+        },
+    postSaveCheck: receipt.postSaveCheck === undefined
+      ? undefined
+      : {
+          ...receipt.postSaveCheck,
+          findingFingerprints: [...receipt.postSaveCheck.findingFingerprints],
+          errorFindingFingerprints: [...receipt.postSaveCheck.errorFindingFingerprints],
+          newErrorFindingFingerprints: receipt.postSaveCheck.newErrorFindingFingerprints === undefined
+            ? undefined
+            : [...receipt.postSaveCheck.newErrorFindingFingerprints],
+          preExistingErrorFindingFingerprints: receipt.postSaveCheck.preExistingErrorFindingFingerprints === undefined
+            ? undefined
+            : [...receipt.postSaveCheck.preExistingErrorFindingFingerprints],
+        },
+  };
+}
+
+function checkpointQuestionRevisionMatches(
+  state: ResearchWorkingState,
+  checkpoint: ResearchCheckpointRecord,
+): boolean {
+  if (checkpoint.questionId === undefined || checkpoint.questionRevision === undefined) return true;
+  return state.questions[checkpoint.questionId]?.revision === checkpoint.questionRevision;
+}
+
+function cursorEquals(
+  a: ResearchCommittedCursor | null,
+  b: ResearchCommittedCursor | null,
+): boolean {
+  if (a === null && b === null) return true;
+  if (a === null || b === null) return false;
+  return a.checkpointId === b.checkpointId && a.entryId === b.entryId;
+}
+
 function toCheckpoint(r: ResearchCheckpointRecord): ResearchCheckpoint {
   return {
     checkpointId: r.checkpointId,
+    committedEntryId: r.committedEntryId,
     questionId: r.questionId,
+    questionRevision: r.questionRevision,
     lineSlug: r.lineSlug,
     assessment: r.assessment,
     nextAction: r.nextAction,
     idempotencyKey: r.idempotencyKey,
     persistence: r.persistence,
+    receipt: r.receipt,
     createdAt: r.createdAt,
   };
 }
@@ -1348,6 +1997,22 @@ function toLine(r: ResearchLineRecord): ResearchLine {
   };
 }
 
+function toRunState(r: ResearchRunStateRecord): ResearchRunState {
+  return {
+    actionId: r.actionId,
+    campaign: r.campaign,
+    jobId: r.jobId,
+    sourcePin: r.sourcePin,
+    binaryPin: r.binaryPin,
+    stage: r.stage,
+    schedulerState: r.schedulerState,
+    lastObservedAt: r.lastObservedAt,
+    nextCheckAt: r.nextCheckAt,
+    terminalState: r.terminalState,
+    artifactRefs: r.artifactRefs,
+  };
+}
+
 function toActionSpec(r: ResearchActionSpecRecord): ResearchActionSpec {
   return {
     actionId: r.actionId,
@@ -1358,10 +2023,12 @@ function toActionSpec(r: ResearchActionSpecRecord): ResearchActionSpec {
     expectedEvidence: r.expectedEvidence,
     stopCondition: r.stopCondition,
     allowedToolKinds: r.allowedToolKinds,
+    retryOfEntryId: r.retryOfEntryId,
     status: r.status,
     createdAt: r.createdAt,
     completedAt: r.completedAt,
     requiresHumanApproval: r.requiresHumanApproval,
+    run: r.run === undefined ? undefined : toRunState(r.run),
   };
 }
 
@@ -1405,18 +2072,163 @@ function toHumanGate(r: ResearchHumanGateRecord): ResearchHumanGate {
   };
 }
 
-const VALID_PHASE_TRANSITIONS: Readonly<Record<ResearchPhase, readonly ResearchPhase[]>> = {
-  idle: ['orienting', 'gap_analysis', 'action_planned', 'awaiting_human'],
-  orienting: ['gap_analysis', 'idle', 'awaiting_human'],
-  gap_analysis: ['action_planned', 'idle', 'awaiting_human'],
-  action_planned: ['action_executing', 'idle', 'awaiting_human'],
-  action_executing: ['evaluating', 'idle', 'awaiting_human'],
-  evaluating: ['state_updated', 'idle', 'awaiting_human'],
-  state_updated: ['checkpoint_pending', 'gap_analysis', 'idle', 'awaiting_human'],
-  checkpoint_pending: ['idle', 'gap_analysis', 'awaiting_human'],
-  awaiting_human: ['idle', 'gap_analysis', 'action_planned', 'action_executing', 'evaluating'],
-};
+function toAlert(alert: ResearchAlert): ResearchAlert {
+  const classification = alert.classification ?? (alert.kind === 'blocked' ? 'active_blocker' : 'warning');
+  const source = alert.source ?? (
+    alert.questionId !== undefined
+      ? 'question'
+      : alert.kind === 'commit_failed'
+        ? 'checkpoint'
+        : 'adapter'
+  );
+  return {
+    ...alert,
+    classification,
+    source,
+    state: alert.state ?? (alert.acknowledgedAt === undefined ? 'active' : 'acknowledged'),
+  };
+}
 
-function isPhaseTransitionValid(from: ResearchPhase, to: ResearchPhase): boolean {
-  return VALID_PHASE_TRANSITIONS[from]?.includes(to) ?? false;
+function deriveEffectiveNextStep(input: {
+  readonly phase: ResearchPhase;
+  readonly currentAction?: ResearchActionSpec;
+  readonly currentRun?: ResearchRunState;
+  readonly latestProgress?: ResearchProgressReport;
+  readonly currentQuestion?: ResearchQuestion;
+  readonly humanGate?: ResearchHumanGate;
+  readonly maintenance?: AitpMaintenanceReceipt;
+}): ResearchEffectiveNextStep | undefined {
+  const gate = input.humanGate;
+  if (gate !== undefined && gate.resolvedAt === undefined) {
+    return {
+      text: `Human ${gate.kind} required: ${gate.prompt}`,
+      source: 'human_gate',
+      freshness: 'blocked',
+      observedAt: gate.createdAt,
+      derivedFrom: {
+        actionId: gate.actionId,
+        questionId: gate.questionId,
+      },
+    };
+  }
+
+  const run = input.currentRun;
+  if (run !== undefined && (run.schedulerState === 'pending' || run.schedulerState === 'running')) {
+    const isOverdue = run.nextCheckAt !== undefined && run.nextCheckAt < now();
+    return {
+      text: isOverdue
+        ? `Observe HPC job ${run.jobId} now; its expected check time has passed.`
+        : `Wait for HPC job ${run.jobId} and observe it at the scheduled check time.`,
+      source: 'research_run',
+      freshness: isOverdue ? 'stale' : 'current',
+      observedAt: run.lastObservedAt,
+      derivedFrom: { actionId: run.actionId },
+    };
+  }
+  if (run !== undefined && run.terminalState !== undefined) {
+    return {
+      text: `Evaluate the ${run.terminalState} HPC evidence for job ${run.jobId} before changing the scientific assessment.`,
+      source: 'research_run',
+      freshness: 'current',
+      observedAt: run.lastObservedAt,
+      derivedFrom: { actionId: run.actionId },
+    };
+  }
+
+  const action = input.currentAction;
+  if (action !== undefined) {
+    if (action.status === 'planned') {
+      return {
+        text: `Start the planned ${action.kind} action when ready.`,
+        source: 'research_action',
+        freshness: 'current',
+        observedAt: action.createdAt,
+        derivedFrom: {
+          actionId: action.actionId,
+          questionId: action.questionId,
+          lineSlug: action.lineSlug,
+        },
+      };
+    }
+    if (action.status === 'in_progress') {
+      return {
+        text: `Continue the ${action.kind} action and collect its expected evidence before evaluation.`,
+        source: 'research_action',
+        freshness: 'current',
+        observedAt: action.createdAt,
+        derivedFrom: {
+          actionId: action.actionId,
+          questionId: action.questionId,
+          lineSlug: action.lineSlug,
+        },
+      };
+    }
+    if (input.phase === 'evaluating') {
+      return {
+        text: `Evaluate the evidence from the completed ${action.kind} action before updating the research state.`,
+        source: 'research_action',
+        freshness: 'current',
+        observedAt: action.completedAt ?? action.createdAt,
+        derivedFrom: {
+          actionId: action.actionId,
+          questionId: action.questionId,
+          lineSlug: action.lineSlug,
+        },
+      };
+    }
+  }
+
+  if (input.latestProgress?.nextAction !== undefined) {
+    return {
+      text: input.latestProgress.nextAction,
+      source: 'question',
+      freshness: 'current',
+      observedAt: input.latestProgress.recordedAt,
+      derivedFrom: {
+        questionId: input.currentQuestion?.id,
+        lineSlug: input.currentQuestion?.lineSlug,
+      },
+    };
+  }
+
+  if (input.currentQuestion?.nextBoundedAction !== undefined) {
+    return {
+      text: input.currentQuestion.nextBoundedAction,
+      source: 'question',
+      freshness: 'current',
+      observedAt: now(),
+      derivedFrom: {
+        questionId: input.currentQuestion.id,
+        lineSlug: input.currentQuestion.lineSlug,
+      },
+    };
+  }
+
+  const maintenance = input.maintenance;
+  if (maintenance?.activeNewerThanWorkingNote === true) {
+    return {
+      text: 'Review active AITP entries newer than the latest Working Note before following the previous handoff.',
+      source: 'aitp_maintenance',
+      freshness: 'stale',
+      observedAt: maintenance.refreshedAt,
+      derivedFrom: {
+        entryId: maintenance.nextActionDetails?.entryId,
+        lineSlug: maintenance.workstream,
+      },
+    };
+  }
+  if (maintenance?.nextAction !== undefined) {
+    return {
+      text: maintenance.nextAction,
+      source: 'aitp_maintenance',
+      freshness: 'current',
+      observedAt: maintenance.refreshedAt,
+      derivedFrom: {
+        entryId: maintenance.nextActionDetails?.entryId,
+        lineSlug: maintenance.workstream,
+      },
+    };
+  }
+
+  return undefined;
 }

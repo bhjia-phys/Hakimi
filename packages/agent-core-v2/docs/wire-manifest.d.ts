@@ -21,7 +21,7 @@
 // owning model offloads inline media to blob storage), cross-reducers
 // (foreign models that also reduce this record on dispatch and replay).
 
-// Index (78 record types)
+// Index (81 record types)
 //   aitp_mode.enter                    aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   aitp_mode.exit                     aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   aitp_mode.set_line                 aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
@@ -60,11 +60,14 @@
 //   profile.bind                       profile                     persisted  src/agent/profile/profileOps.ts
 //   research.ack_alert                 research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.ack_checkpoint            research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.bind_checkpoint_entry     research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.bind_checkpoint_receipt   research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.clear_alert               research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.commit_checkpoint         researchCursor              persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.complete_action           research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.create_line               research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.create_question           research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.observe_run               research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.plan_action               research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.propose_checkpoint        research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.record_progress           research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
@@ -601,6 +604,54 @@ interface ResearchAckCheckpointPayload {
  * model: research · persisted
  * owner: src/features/aitpResearch/aitpResearchOps.ts
  */
+interface ResearchBindCheckpointEntryPayload {
+  _name: 'research.bind_checkpoint_entry';
+  checkpointId: string;
+  entryId: string;
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchBindCheckpointReceiptPayload {
+  _name: 'research.bind_checkpoint_receipt';
+  checkpointId: string;
+  receipt: {
+    prepare?: object | object;
+    save?: {
+      status: 'saved' | 'already_saved';
+      draftPath: string;
+      path: string;
+      source?: 'record_save' | 'prepare_existing';
+    };
+    preSaveCheck?: {
+      status: 'clean' | 'findings';
+      errors: number;
+      warnings: number;
+      findingFingerprints: string[];
+      errorFindingFingerprints: string[];
+      newErrorFindingFingerprints?: string[];
+      preExistingErrorFindingFingerprints?: string[];
+      checkedAt: number;
+    };
+    postSaveCheck?: {
+      status: 'clean' | 'findings';
+      errors: number;
+      warnings: number;
+      findingFingerprints: string[];
+      errorFindingFingerprints: string[];
+      newErrorFindingFingerprints?: string[];
+      preExistingErrorFindingFingerprints?: string[];
+      checkedAt: number;
+    };
+  };
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
 interface ResearchClearAlertPayload {
   _name: 'research.clear_alert';
   fingerprint: string;
@@ -614,6 +665,35 @@ interface ResearchCommitCheckpointPayload {
   _name: 'research.commit_checkpoint';
   checkpointId: string;
   entryId: string;
+  receipt?: {
+    prepare?: object | object;
+    save?: {
+      status: 'saved' | 'already_saved';
+      draftPath: string;
+      path: string;
+      source?: 'record_save' | 'prepare_existing';
+    };
+    preSaveCheck?: {
+      status: 'clean' | 'findings';
+      errors: number;
+      warnings: number;
+      findingFingerprints: string[];
+      errorFindingFingerprints: string[];
+      newErrorFindingFingerprints?: string[];
+      preExistingErrorFindingFingerprints?: string[];
+      checkedAt: number;
+    };
+    postSaveCheck?: {
+      status: 'clean' | 'findings';
+      errors: number;
+      warnings: number;
+      findingFingerprints: string[];
+      errorFindingFingerprints: string[];
+      newErrorFindingFingerprints?: string[];
+      preExistingErrorFindingFingerprints?: string[];
+      checkedAt: number;
+    };
+  };
   committedAt: number;
 }
 
@@ -659,6 +739,25 @@ interface ResearchCreateQuestionPayload {
  * model: research · persisted
  * owner: src/features/aitpResearch/aitpResearchOps.ts
  */
+interface ResearchObserveRunPayload {
+  _name: 'research.observe_run';
+  actionId: string;
+  campaign: string;
+  jobId: string;
+  sourcePin?: string;
+  binaryPin?: string;
+  stage: 'queued' | 'running' | 'scf' | 'band' | 'analyzing' | 'completed' | 'failed' | 'unknown';
+  schedulerState: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'unknown';
+  lastObservedAt: number;
+  nextCheckAt?: number;
+  terminalState?: 'completed' | 'failed' | 'cancelled';
+  artifactRefs: string[];
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
 interface ResearchPlanActionPayload {
   _name: 'research.plan_action';
   actionId: string;
@@ -669,6 +768,7 @@ interface ResearchPlanActionPayload {
   expectedEvidence: string[];
   stopCondition: string;
   allowedToolKinds: string[];
+  retryOfEntryId?: string;
   requiresHumanApproval: boolean;
   createdAt: number;
 }
@@ -680,6 +780,7 @@ interface ResearchPlanActionPayload {
 interface ResearchProposeCheckpointPayload {
   _name: 'research.propose_checkpoint';
   checkpointId: string;
+  committedEntryId?: string;
   questionId?: string;
   lineSlug?: string;
   assessment?: string;
@@ -865,9 +966,16 @@ interface ResearchUpsertAlertPayload {
   _name: 'research.upsert_alert';
   fingerprint: string;
   kind: 'contradiction' | 'blocked' | 'reopened' | 'commit_failed' | 'degraded' | 'stale';
+  classification?: 'active_blocker' | 'historical_unresolved' | 'superseded_by_retry' | 'warning';
+  source?: 'question' | 'aitp_failure' | 'aitp_check' | 'adapter' | 'checkpoint';
+  state?: 'active' | 'acknowledged' | 'cleared' | 'superseded';
   message: string;
   questionId?: string;
   lineSlug?: string;
+  relatedEntryId?: string;
+  workstream?: string;
+  retryOfEntryId?: string;
+  reason?: string;
   createdAt: number;
 }
 
@@ -1181,11 +1289,14 @@ interface WirePayloadMap {
   "profile.bind": ProfileBindPayload;
   "research.ack_alert": ResearchAckAlertPayload;
   "research.ack_checkpoint": ResearchAckCheckpointPayload;
+  "research.bind_checkpoint_entry": ResearchBindCheckpointEntryPayload;
+  "research.bind_checkpoint_receipt": ResearchBindCheckpointReceiptPayload;
   "research.clear_alert": ResearchClearAlertPayload;
   "research.commit_checkpoint": ResearchCommitCheckpointPayload;
   "research.complete_action": ResearchCompleteActionPayload;
   "research.create_line": ResearchCreateLinePayload;
   "research.create_question": ResearchCreateQuestionPayload;
+  "research.observe_run": ResearchObserveRunPayload;
   "research.plan_action": ResearchPlanActionPayload;
   "research.propose_checkpoint": ResearchProposeCheckpointPayload;
   "research.record_progress": ResearchRecordProgressPayload;

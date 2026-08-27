@@ -23,7 +23,7 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   commit），定义了 `method-observation` marker 候选、保守
   card/trial review、两步 human decision（approval + publication）和
   platform tool/card/Skill 三层边界——不改 CLI/schema/transport。**Hakimi adapter 的 H0–H4 已实现，H5 仅部分集成**，受 flag
-  `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`（默认开启）门控；这是 Hakimi 产品 flag，不是 AITP 协议状态，也不是 H6 可用性信号：strict
+  `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`（默认关闭）门控；这是 Hakimi 产品 flag，不是 AITP 协议状态，也不是 H6 可用性信号：strict
   contract discovery、Python probe、`enter`/`list`/`show`/`check` 读侧消费、
   `record`/`note prepare|save` 写入门控持久化、scoped `--workstream`
   读取/check、M1e check finding code 的 opaque projection（不实现 backfill/sha256-once/check-policy 语义）、Research state（Question/Line/Focus、
@@ -32,13 +32,12 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   checkpoint 的单一完整 snapshot push、active step 的语义状态维护 guidance、
   protocol/node-sdk/kap-server/klient 公开表面、TUI `/research` Board/manager
   与 stale-hydrate 防护。`/research on` 只激活 capability 和 Board，不调度
-  模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。flag 开启
-  时普通启动已开放 `/research` 与 `EnterAITPMode`，但仅开放入口——
+  模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。设置 flag 开启后才会开放 `/research` 与 `EnterAITPMode`，但仅开放入口——
   进入模式仍需 `/research on` 或模型入口，inactive 状态零 AITP I/O，
   不自动 init/adopt/inventory/backfill apply；本轮不把 backfill 暴露为
   模型工具。flag 关闭时（`=0` 或 `/experiments`）所有 AITP 工具、
   skill 和 Research Board 隐藏，零 AITP I/O。
-  当前状态维护也已接通：进入模式以及 active undo/cold restore 在 ready probe 后只读执行 `enter` → `check`，不是 session-end automatic closeout。maintenance receipt 和 context injection 只暴露安全摘要；完整 Research snapshot/API 或 expanded Board 仍可能包含 checkpoint、revision 和 adapter health 字段。warning-only 保持 ready，error finding 或周期不可用时显示 degraded；不会自动 init/adopt/backfill，也不会自动写 semantic handoff、Entry 或 Note。该 coordinator 不是 H6 native method-distillation orchestration。
+  当前状态维护也已接通：进入模式以及 active undo/cold restore 在 ready probe 后只读执行 `enter` → `check`，不是 session-end automatic closeout。maintenance receipt 和 context injection 只暴露安全摘要；完整 Research snapshot/API 或 expanded Board 仍可能包含 checkpoint、revision 和 adapter health 字段。合法的 check findings（包括 error finding）保持 ready；只有周期不可用或无效时显示 degraded。error finding 仍可按具体 checkpoint 的保存屏障阻止提交；不会自动 init/adopt/backfill，也不会自动写 semantic handoff、Entry 或 Note。该 coordinator 不是 H6 native method-distillation orchestration。Checkpoint 还会保留 prepare/save/check receipt、具体 Entry ID 和 pre-save finding baseline；commit 前用 `show` + scoped `check` 验证，旧 error 只作为可审计 warning，新 error 才阻止提交。Research alerts 使用稳定 fingerprint，并区分 active blocker、historical unresolved、superseded retry 和 warning；清除记录保留在 snapshot 中但不再注入模型。Research Loop 还实现 typed child evidence packet 的 main-agent-only review（review 本身 zero-write）和绑定当前 action 的显式 run observation；正常有界行动路径是 `BeginResearchAction` → 科研工作 → `ConcludeResearchAction`，后者在一个 Research transition 中记录物理工作、结果、测试或推导、限制、主线影响和下一步，但不会自动更新问题 assessment 或写入 AITP。它不提交/轮询 HPC、不创建 campaign 实体，也不把 RUNNING 当作科学结论。完整的 scheduler observer、文献库和 method distillation 仍未实现。
   H6/C6 native method-distillation orchestration 是 **planned，
   unavailable**。`lineage`/`lite-entry-0.2`/
   `run-pointer-0.1` 仍 deferred，M2–M4 blocked。
@@ -68,7 +67,7 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
 
 | Phase | AITP 前置 | Hakimi 工作 |
 |---|---|---|
-| H0 | 现在（无 gate） | launcher adapter（argv-only、Python ≥ 3.11 探测）、未版本化 envelope 的严格 shape 校验、`--help` capability 探测、`enter` lifecycle、prepare→fill→save 流程、`not_initialized` 优雅降级、tree-hash 零写入测试 — **已实现（实验性，flag 门控，默认开启）** |
+| H0 | 现在（无 gate） | launcher adapter（argv-only、Python ≥ 3.11 探测）、未版本化 envelope 的严格 shape 校验、`--help` capability 探测、`enter` lifecycle、prepare→fill→save 流程、`not_initialized` 优雅降级、tree-hash 零写入测试 — **已实现（实验性，flag 门控，默认关闭）** |
 | H1 | M1a gate（已通过） | feature-detect `aitp/enter-0.2`、`aitp/list-0.1`、`aitp/show-0.1` 并做 schema dispatch；Note-age 信号；当前状态维护不等于 session-end closeout；官方 0.8.0 fixtures 的本地 parser/contract 兼容测试 — **已实现（实验性；不是 live CLI conformance）** |
 | H2 | M1b-R1 gate（已通过） | 只整合 R1 实际发布的 `aitp check`（解析 `check-report-0.1`，exit 0/1 报告、exit 2 错误包）；`aitp/lite-entry-0.2`（`based_on`、typed closures）、派生 `used_by`、pointer bundle 均未发布（deferred），不得安排 — **已实现（实验性）** |
 | H3 | M1c gate（已通过） | 整合 M1c scoped contracts：仅传入单次 `--workstream <slug>` 时 feature-detect `aitp/enter-0.3`/`aitp/list-0.2`（严格 exact membership、relation 先全局计算）；无 flag 时保持旧 schema — **已实现（实验性）** |

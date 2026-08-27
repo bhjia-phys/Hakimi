@@ -3,9 +3,9 @@
  *
  * Owns the user-facing review that intercepts an `ExitPlanMode` call carrying
  * a non-empty `plan_review` display: emits `plan_submitted` / `plan_resolved`
- * through `telemetry`, drives the approval round-trip through `toolApproval`
- * (origin `exit-plan-mode-review-ask`, matching the legacy permission
- * policy's telemetry), and folds every approval outcome (approve with or
+ * through `telemetry`, drives the shared human-interaction round-trip through
+ * `humanGate` (origin `exit-plan-mode-review-ask`, matching the legacy
+ * permission policy's telemetry), and folds every approval outcome (approve with or
  * without a selected option, Revise with feedback, Reject and Exit, dismiss)
  * into a synthetic tool result, exiting plan mode through `plan` when the
  * outcome deactivates it.
@@ -15,7 +15,7 @@ import type {
   ApprovalResponse,
   PermissionPolicyResolution,
 } from '#/agent/permissionPolicy/types';
-import type { IAgentToolApprovalService } from '#/agent/toolApproval/toolApproval';
+import type { IAgentHumanGateService } from '#/agent/humanGate/humanGate';
 import type {
   BeforeExecuteDecision,
   ResolvedToolExecutionHookContext,
@@ -32,7 +32,7 @@ type PlanReviewOption = NonNullable<PlanReviewDisplay['options']>[number];
 export class ExitPlanModeReview {
   constructor(
     private readonly plan: IAgentPlanService,
-    private readonly toolApproval: IAgentToolApprovalService,
+    private readonly humanGate: IAgentHumanGateService,
     private readonly telemetry: ITelemetryService,
   ) {}
 
@@ -45,7 +45,7 @@ export class ExitPlanModeReview {
     this.trackPlanTelemetry('plan_submitted', {
       has_options: display.options !== undefined && display.options.length >= 2,
     });
-    return this.toolApproval.requestToolApproval(
+    return this.humanGate.request(
       context,
       {
         kind: 'ask',
@@ -54,7 +54,7 @@ export class ExitPlanModeReview {
         },
         resolveApproval: (result) => this.approvalResult(result, display),
       },
-      'exit-plan-mode-review-ask',
+      { kind: 'review', origin: 'exit-plan-mode-review-ask' },
     );
   }
 

@@ -8,7 +8,7 @@
  * Wiring: real wire and plan services against a fireable executor event
  * stub; a stand-in listener registered after the plan listener proves
  * whether the guard ended adjudication (veto/allow) or abstained;
- * `IAgentToolApprovalService` is a recording stub.
+ * `IAgentHumanGateService` is a recording review-transport stub.
  * Run: `pnpm --filter @moonshot-ai/agent-core-v2 exec vitest run test/features/plan/planGuard.test.ts`.
  */
 
@@ -18,6 +18,7 @@ import { DisposableStore } from '#/_base/di/lifecycle';
 import { createServices, type TestInstantiationService } from '#/_base/di/test';
 import { IAgentContextInjectorService } from '#/agent/contextInjector/contextInjector';
 import { IAgentContextMemoryService } from '#/agent/contextMemory/contextMemory';
+import { IAgentHumanGateService } from '#/agent/humanGate/humanGate';
 import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
 import type {
   ApprovalResponse,
@@ -63,6 +64,7 @@ type AskResult = Extract<PermissionPolicyResult, { kind: 'ask' }>;
 
 interface ApprovalRequestRecord {
   readonly ask: AskResult;
+  readonly kind: 'approval' | 'review' | 'decision';
   readonly origin: string;
 }
 
@@ -161,12 +163,20 @@ describe('AgentPlanService plan-guard listener', () => {
       resolvePermissionResolution: async () => {
         throw new Error('resolvePermissionResolution is not used by the plan-guard listener');
       },
-      requestToolApproval: async (_context, ask, origin) => {
-        requests.push({ ask, origin });
-        return mapResolution(ask.resolveApproval?.(approvalResponse));
+      requestToolApproval: async () => {
+        throw new Error('requestToolApproval is not used by the plan review');
       },
       formatDenyMessage: (message: string) => formatDenyMessage(message),
       formatApprovalRejectionMessage: (toolName, result) =>
+        `Tool "${toolName}" was not run (${result.decision}).`,
+    };
+    const humanGate: IAgentHumanGateService = {
+      _serviceBrand: undefined,
+      request: async (_context, ask, request) => {
+        requests.push({ ask, kind: request.kind, origin: request.origin });
+        return mapResolution(ask.resolveApproval?.(approvalResponse));
+      },
+      formatRejection: (toolName, result) =>
         `Tool "${toolName}" was not run (${result.decision}).`,
     };
 
@@ -194,6 +204,7 @@ describe('AgentPlanService plan-guard listener', () => {
         reg.definePartialInstance(IAgentTelemetryContextService, { set: () => {} });
         reg.defineInstance(IAgentToolExecutorService, executorEvents.executor);
         reg.defineInstance(IAgentToolApprovalService, toolApproval);
+        reg.defineInstance(IAgentHumanGateService, humanGate);
         reg.defineInstance(IAgentPermissionModeService, stubPermissionModeService(() => mode));
         reg.defineInstance(ITelemetryService, recordingTelemetry(records));
         reg.defineInstance(IAgentStateService, new AgentStateService());
@@ -361,13 +372,14 @@ describe('AgentPlanService plan-guard listener', () => {
   });
 
   describe('exit plan mode review', () => {
-    it('asks through toolApproval under the legacy origin and tracks plan_submitted', async () => {
+    it('asks through the shared human gate under the legacy origin and tracks plan_submitted', async () => {
       await enterPlan();
       const decision = await run(
         hookContext('ExitPlanMode', { display: planReviewDisplay() }),
       );
 
       expect(requests).toHaveLength(1);
+      expect(requests[0]?.kind).toBe('review');
       expect(requests[0]?.origin).toBe('exit-plan-mode-review-ask');
       expect(requests[0]?.ask.kind).toBe('ask');
       expect(requests[0]?.ask.reason).toEqual({ has_options: false });

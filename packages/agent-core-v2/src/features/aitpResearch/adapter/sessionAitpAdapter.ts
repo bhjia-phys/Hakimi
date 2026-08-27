@@ -26,26 +26,30 @@ import type {
   AitpShowResult,
 } from '../types';
 
-export interface AitpAdapterEnterOptions {
+interface AitpAdapterOperationOptions {
+  readonly signal?: AbortSignal;
+}
+
+export interface AitpAdapterEnterOptions extends AitpAdapterOperationOptions {
   readonly workstream?: string;
   readonly recent?: number;
 }
 
-export interface AitpAdapterListOptions {
+export interface AitpAdapterListOptions extends AitpAdapterOperationOptions {
   readonly workstream?: string;
   readonly kind?: AitpEntryKind;
   readonly since?: string;
 }
 
-export interface AitpAdapterShowOptions {
+export interface AitpAdapterShowOptions extends AitpAdapterOperationOptions {
   readonly id: string;
 }
 
-export interface AitpAdapterCheckOptions {
+export interface AitpAdapterCheckOptions extends AitpAdapterOperationOptions {
   readonly workstream?: string;
 }
 
-export interface AitpAdapterRecordPrepareOptions {
+export interface AitpAdapterRecordPrepareOptions extends AitpAdapterOperationOptions {
   readonly kind: AitpEntryKind;
   readonly authority?: AitpAuthority;
   readonly createdBy?: string;
@@ -53,18 +57,18 @@ export interface AitpAdapterRecordPrepareOptions {
   readonly workstreams?: readonly string[];
 }
 
-export interface AitpAdapterRecordSaveOptions {
+export interface AitpAdapterRecordSaveOptions extends AitpAdapterOperationOptions {
   readonly draftPath: string;
 }
 
-export interface AitpAdapterNotePrepareOptions {
+export interface AitpAdapterNotePrepareOptions extends AitpAdapterOperationOptions {
   readonly mode: AitpNoteMode;
   readonly title: string;
   readonly createdBy: string;
   readonly workstreams?: readonly string[];
 }
 
-export interface AitpAdapterNoteSaveOptions {
+export interface AitpAdapterNoteSaveOptions extends AitpAdapterOperationOptions {
   readonly draftPath: string;
 }
 

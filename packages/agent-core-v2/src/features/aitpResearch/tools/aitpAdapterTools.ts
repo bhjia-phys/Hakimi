@@ -19,7 +19,16 @@ import type { AgentTool, ToolExecution } from '#/tool/toolContract';
 import { toInputJsonSchema } from '#/tool/input-schema';
 import { ISessionAitpAdapter } from '#/features/aitpResearch/adapter/sessionAitpAdapter';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
+import { IAgentResearchService } from '#/features/aitpResearch/research/agentResearch';
 import { AitpResearchError } from '#/features/aitpResearch/errors';
+import type {
+  AitpCheckReport,
+  AitpRecordPrepareResult,
+  AitpRecordSaveResult,
+  ResearchCheckpointCheckReceipt,
+  ResearchCheckpointReceipt,
+  ResearchCheckpointSaveReceipt,
+} from '#/features/aitpResearch/types';
 import {
   AitpEntryKindSchema,
   AitpAuthoritySchema,
@@ -57,6 +66,86 @@ function errorResult(message: string) {
 
 function ok(data: unknown) {
   return { output: JSON.stringify(data, null, 2) };
+}
+
+function toCheckpointCheckReceipt(report: AitpCheckReport): ResearchCheckpointCheckReceipt {
+  return {
+    status: report.status,
+    errors: report.counts.errors,
+    warnings: report.counts.warnings,
+    findingFingerprints: report.findings.map((finding) =>
+      `${finding.level}:${finding.code}:${finding.path}:${finding.message}`,
+    ).toSorted(),
+    errorFindingFingerprints: report.findings
+      .filter((finding) => finding.level === 'error')
+      .map((finding) => `${finding.code}:${finding.path}:${finding.message}`)
+      .toSorted(),
+    checkedAt: Date.now(),
+  };
+}
+
+function toPrepareReceipt(
+  result: AitpRecordPrepareResult,
+  idempotencyKey: string | undefined,
+  workstreams: readonly string[] | undefined,
+): ResearchCheckpointReceipt['prepare'] {
+  return result.status === 'prepared'
+    ? {
+        status: result.status,
+        id: result.id,
+        path: result.path,
+        idempotencyKey,
+        workstreams,
+      }
+    : {
+        status: result.status,
+        id: entryIdFromPath(result.path),
+        path: result.path,
+        idempotencyKey: result.idempotency_key,
+        workstreams,
+      };
+}
+
+function toSaveReceipt(
+  result: AitpRecordSaveResult,
+  draftPath: string,
+): ResearchCheckpointSaveReceipt {
+  return {
+    status: result.status,
+    draftPath,
+    path: result.path,
+    source: 'record_save',
+  };
+}
+
+function toExistingSaveReceipt(path: string): ResearchCheckpointSaveReceipt {
+  return {
+    status: 'already_saved',
+    draftPath: path,
+    path,
+    source: 'prepare_existing',
+  };
+}
+
+function entryIdFromPath(path: string): string | undefined {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  if (!name.startsWith('entry-') || !name.endsWith('.md')) return undefined;
+  return name.slice(0, -3);
+}
+
+function isCanonicalEntryPath(path: string): boolean {
+  const prefix = '.aitp/topic/entries/';
+  const name = path.slice(prefix.length);
+  return path.startsWith(prefix) && name.startsWith('entry-') && name.endsWith('.md');
+}
+
+function bindCheckpointReceipt(
+  research: IAgentResearchService,
+  receipt: ResearchCheckpointReceipt,
+): void {
+  if (research.getPendingCheckpoint() !== null) {
+    research.bindPendingCheckpointReceipt(receipt);
+  }
 }
 
 export const AitpEnterInputSchema = z.object({
@@ -185,6 +274,7 @@ export class AitpCheckTool implements IAitpCheckTool {
   constructor(
     @ISessionAitpAdapter private readonly adapter: ISessionAitpAdapter,
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+    @IAgentResearchService private readonly research: IAgentResearchService,
   ) {}
 
   resolveExecution(args: AitpCheckInput): ToolExecution {
@@ -196,6 +286,19 @@ export class AitpCheckTool implements IAitpCheckTool {
         if (err !== undefined) return errorResult(err);
         try {
           const result = await this.adapter.check({ workstream: args.workstream });
+          const pending = this.research.getPendingCheckpoint();
+          if (pending !== null) {
+            const receipt = toCheckpointCheckReceipt(result);
+            if (pending.receipt?.save !== undefined) {
+              // Keep the barrier's post-save evidence stable; an ordinary later
+              // check must not rewrite the receipt used for commit verification.
+              if (pending.receipt.postSaveCheck === undefined) {
+                bindCheckpointReceipt(this.research, { postSaveCheck: receipt });
+              }
+            } else if (pending.receipt?.preSaveCheck === undefined) {
+              bindCheckpointReceipt(this.research, { preSaveCheck: receipt });
+            }
+          }
           return ok(result);
         } catch (error) {
           if (error instanceof AitpResearchError) return errorResult(error.message);
@@ -212,6 +315,7 @@ export const AitpRecordPrepareInputSchema = z.object({
   created_by: NonemptyString.optional(),
   idempotency_key: NonemptyString.optional(),
   workstreams: WorkstreamsSchema,
+  checkpoint_id: NonemptyString.optional(),
 }).strict().refine(
   (d) => {
     const auth = d.authority ?? 'agent';
@@ -227,12 +331,13 @@ export const IAitpRecordPrepareTool = createDecorator<IAitpRecordPrepareTool>('a
 export class AitpRecordPrepareTool implements IAitpRecordPrepareTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'aitp_record_prepare' as const;
-  readonly description = `Prepare a new AITP durable-event Entry draft. The result is a draft path only: read the draft, replace every template prompt with real content, then call aitp_record_save. Valid kinds: ${ENTRY_KINDS_DESC}. Use authority "agent" for agent-authored records; created_by is required for agent authority.`;
+  readonly description = `Prepare a new AITP durable-event Entry draft. The result is a draft path only: read the draft, replace every template prompt with real content, then call aitp_record_save. Valid kinds: ${ENTRY_KINDS_DESC}. Use authority "agent" for agent-authored records; created_by is required for agent authority. Pass checkpoint_id only when this Entry is the durable record for that pending Research checkpoint.`;
   readonly parameters: Record<string, unknown> = toInputJsonSchema(AitpRecordPrepareInputSchema);
 
   constructor(
     @ISessionAitpAdapter private readonly adapter: ISessionAitpAdapter,
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+    @IAgentResearchService private readonly research: IAgentResearchService,
   ) {}
 
   resolveExecution(args: AitpRecordPrepareInput): ToolExecution {
@@ -245,13 +350,36 @@ export class AitpRecordPrepareTool implements IAitpRecordPrepareTool {
         const werr = requireReadyStrict(this.adapter);
         if (werr !== undefined) return errorResult(werr);
         try {
+          const pending = this.research.getPendingCheckpoint();
+          if (args.checkpoint_id !== undefined && pending?.checkpointId !== args.checkpoint_id) {
+            return errorResult(`No pending Research checkpoint with id ${args.checkpoint_id}.`);
+          }
+          const bindsCheckpoint = args.checkpoint_id !== undefined && pending !== null;
           const result = await this.adapter.recordPrepare({
             kind: args.kind,
             authority: args.authority,
             createdBy: args.created_by,
-            idempotencyKey: args.idempotency_key,
+            idempotencyKey: bindsCheckpoint ? pending.idempotencyKey : args.idempotency_key,
             workstreams: args.workstreams,
           });
+          if (bindsCheckpoint) {
+            const prepare = toPrepareReceipt(result, pending.idempotencyKey, args.workstreams);
+            bindCheckpointReceipt(this.research, { prepare });
+            if (result.status === 'existing' && isCanonicalEntryPath(result.path)) {
+              // AITP's idempotency lookup also searches canonical Entries. There is
+              // no draft to save in this case, so record the durable hit as an
+              // already-saved receipt and establish the check baseline now.
+              const preSaveReport = await this.adapter.check(
+                args.workstreams?.length === 1 ? { workstream: args.workstreams[0] } : undefined,
+              );
+              bindCheckpointReceipt(this.research, {
+                preSaveCheck: toCheckpointCheckReceipt(preSaveReport),
+              });
+              bindCheckpointReceipt(this.research, {
+                save: toExistingSaveReceipt(result.path),
+              });
+            }
+          }
           return ok(result);
         } catch (error) {
           if (error instanceof AitpResearchError) return errorResult(error.message);
@@ -264,6 +392,7 @@ export class AitpRecordPrepareTool implements IAitpRecordPrepareTool {
 
 export const AitpRecordSaveInputSchema = z.object({
   draft_path: NonemptyString,
+  checkpoint_id: NonemptyString.optional(),
 }).strict();
 export type AitpRecordSaveInput = z.infer<typeof AitpRecordSaveInputSchema>;
 export interface IAitpRecordSaveTool extends AgentTool<AitpRecordSaveInput> { readonly _serviceBrand: undefined; }
@@ -272,12 +401,13 @@ export const IAitpRecordSaveTool = createDecorator<IAitpRecordSaveTool>('aitpRec
 export class AitpRecordSaveTool implements IAitpRecordSaveTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'aitp_record_save' as const;
-  readonly description = 'Validate and save a prepared AITP Entry draft into the canonical ledger. The draft must already be filled in.';
+  readonly description = 'Validate and save a prepared AITP Entry draft into the canonical ledger. The draft must already be filled in. Pass checkpoint_id when saving the Entry bound to a pending Research checkpoint so Hakimi records the pre-save baseline and save receipt.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(AitpRecordSaveInputSchema);
 
   constructor(
     @ISessionAitpAdapter private readonly adapter: ISessionAitpAdapter,
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+    @IAgentResearchService private readonly research: IAgentResearchService,
   ) {}
 
   resolveExecution(args: AitpRecordSaveInput): ToolExecution {
@@ -290,9 +420,34 @@ export class AitpRecordSaveTool implements IAitpRecordSaveTool {
         const werr = requireReadyStrict(this.adapter);
         if (werr !== undefined) return errorResult(werr);
         try {
+          const pending = this.research.getPendingCheckpoint();
+          if (args.checkpoint_id !== undefined && pending?.checkpointId !== args.checkpoint_id) {
+            return errorResult(`No pending Research checkpoint with id ${args.checkpoint_id}.`);
+          }
+          const bindsCheckpoint = args.checkpoint_id !== undefined && pending !== null;
+          if (bindsCheckpoint && pending.receipt?.prepare?.path !== args.draft_path) {
+            return errorResult(
+              `Draft ${args.draft_path} is not the prepared draft bound to checkpoint ${pending.checkpointId}.`,
+            );
+          }
+          if (bindsCheckpoint) {
+            const workstreams = pending.receipt?.prepare?.workstreams;
+            const checkOptions = workstreams?.length === 1
+              ? { workstream: workstreams[0] }
+              : undefined;
+            const preSaveReport = await this.adapter.check(checkOptions);
+            bindCheckpointReceipt(this.research, {
+              preSaveCheck: toCheckpointCheckReceipt(preSaveReport),
+            });
+          }
           const result = await this.adapter.recordSave({
             draftPath: args.draft_path,
           });
+          if (bindsCheckpoint) {
+            bindCheckpointReceipt(this.research, {
+              save: toSaveReceipt(result, args.draft_path),
+            });
+          }
           return ok(result);
         } catch (error) {
           if (error instanceof AitpResearchError) return errorResult(error.message);

@@ -33,6 +33,7 @@ const readyMaintenanceReceipt = {
   latestWorkingNoteAt: 1_699_999_000_000,
   activeNewerThanWorkingNote: true,
   unresolvedFailureCount: 0,
+  unresolvedFailures: [],
   nextAction: 'review the latest working note',
   warningSummaries: [{ level: 'warning', code: 'legacy_entry' }],
   check: {
@@ -298,6 +299,16 @@ describe('researchStatusSnapshotSchema', () => {
         createdAt: 1000,
         requiresHumanApproval: true,
       },
+      currentRun: {
+        actionId: 'act-1',
+        campaign: 'bi2se3-r2',
+        jobId: '3128781',
+        stage: 'scf',
+        schedulerState: 'running',
+        lastObservedAt: 1_500,
+        nextCheckAt: 2_000,
+        artifactRefs: ['scf.log'],
+      },
       latestProgress: {
         headline: 'Derived key identity',
         motivation: 'Connect theory to observable',
@@ -335,6 +346,7 @@ describe('researchStatusSnapshotSchema', () => {
     const parsed = researchStatusSnapshotSchema.parse(snapshot);
     expect(parsed.phase).toBe('awaiting_human');
     expect(parsed.currentAction?.actionId).toBe('act-1');
+    expect(parsed.currentRun).toMatchObject({ actionId: 'act-1', jobId: '3128781' });
     expect(parsed.latestProgress?.phaseChange?.to).toBe('evaluating');
     expect(parsed.recentStateChange?.actionId).toBe('act-1');
     expect(parsed.humanGate?.resolution).toBe('branch A');
@@ -473,6 +485,60 @@ describe('researchCommandRequestSchema', () => {
       },
     });
     expect(parsed.command.kind).toBe('commit_checkpoint');
+  });
+
+  it('accepts strict evidence-review and bounded run-observation commands', () => {
+    const reviewed = researchCommandRequestSchema.parse({
+      command: {
+        kind: 'review_evidence',
+        expectedRevision: 7,
+        packet: {
+          packet_id: 'packet-1',
+          kind: 'result',
+          claim: 'The two branches agree within tolerance.',
+          evidence: 'The analyzer reports a maximum deviation below 1e-6.',
+          action_id: 'act-1',
+        },
+      },
+    });
+    expect(reviewed.command).toMatchObject({
+      kind: 'review_evidence',
+      expectedRevision: 7,
+      packet: { packet_id: 'packet-1', confidence: 'medium' },
+    });
+
+    const observed = researchCommandRequestSchema.parse({
+      command: {
+        kind: 'observe_run',
+        actionId: 'act-1',
+        expectedRevision: 7,
+        campaign: 'bi2se3-r2',
+        jobId: '3128781',
+        stage: 'scf',
+        schedulerState: 'running',
+        nextCheckAt: 2_000,
+      },
+    });
+    expect(observed.command).toMatchObject({
+      kind: 'observe_run',
+      actionId: 'act-1',
+      jobId: '3128781',
+      artifactRefs: [],
+    });
+
+    expect(() => researchCommandRequestSchema.parse({
+      command: {
+        kind: 'review_evidence',
+        expectedRevision: 7,
+        packet: {
+          packet_id: 'packet-1',
+          kind: 'result',
+          claim: 'claim',
+          evidence: 'evidence',
+          unexpected: true,
+        },
+      },
+    })).toThrow();
   });
 
   it('accepts human decision and alert acknowledgement commands', () => {

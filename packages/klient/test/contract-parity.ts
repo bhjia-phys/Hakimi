@@ -241,6 +241,7 @@ import {
 } from '../src/contract/agent/services.js';
 import type {
   ResearchStatusSnapshot as EngineResearchSnapshot,
+  ResearchRunState as EngineResearchRunState,
   ResearchQuestion as EngineResearchQuestion,
   ResearchLine as EngineResearchLine,
   ResearchFocus as EngineResearchFocus,
@@ -257,12 +258,17 @@ import type {
   ResearchHumanGate as EngineResearchHumanGate,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/types';
 import type {
+  ResearchEvidencePacket as EngineResearchEvidencePacket,
+} from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/evidencePacket';
+import type {
   IAgentResearchService,
   ResolveHumanDecisionInput as EngineResolveHumanDecisionInput,
   UpdateLineInput as EngineUpdateLineInput,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
 import {
   researchStatusSnapshotSchema,
+  researchRunStateSchema,
+  researchEvidencePacketSchema,
   researchQuestionSchema,
   researchLineSchema,
   researchFocusSchema,
@@ -702,6 +708,11 @@ const _fullCompactionInput: AssertWire<typeof fullCompactionInputSchema, FullCom
 const _researchSnapshot: AssertEngineToWire<
   typeof researchStatusSnapshotSchema,
   EngineResearchSnapshot
+> = true;
+const _researchRun: AssertWire<typeof researchRunStateSchema, EngineResearchRunState> = true;
+const _researchEvidencePacket: AssertWire<
+  typeof researchEvidencePacketSchema,
+  EngineResearchEvidencePacket
 > = true;
 const _researchQuestion: AssertEngineToWire<typeof researchQuestionSchema, EngineResearchQuestion> =
   true;

@@ -30,6 +30,7 @@ const MAX_MAINTENANCE_CODES = 3;
 /** Extract sub-types from the snapshot shape (the SDK only re-exports the snapshot). */
 type ResearchQuestion = NonNullable<ResearchStatusSnapshot['currentQuestion']>;
 type ResearchLine = ResearchStatusSnapshot['lines'][number];
+type ResearchRunState = NonNullable<ResearchStatusSnapshot['currentRun']>;
 type ResearchAlert = ResearchStatusSnapshot['alerts'][number];
 type AitpMaintenanceReceipt = NonNullable<ResearchStatusSnapshot['aitpMaintenance']>;
 
@@ -187,21 +188,25 @@ function candidateQuestions(
   );
 }
 
+function alertClassification(
+  alert: ResearchAlert,
+): NonNullable<ResearchAlert['classification']> {
+  return alert.classification ?? (alert.kind === 'blocked' ? 'active_blocker' : 'warning');
+}
+
 function orderedAlerts(
   alerts: readonly ResearchAlert[],
 ): readonly ResearchAlert[] {
   const rank = (alert: ResearchAlert): number => {
-    switch (alert.kind) {
-      case 'blocked': return 0;
-      case 'contradiction': return 1;
-      case 'reopened': return 2;
-      case 'commit_failed': return 3;
-      case 'degraded': return 4;
-      case 'stale': return 5;
+    switch (alertClassification(alert)) {
+      case 'active_blocker': return 0;
+      case 'historical_unresolved': return 1;
+      case 'superseded_by_retry': return 2;
+      case 'warning': return 3;
     }
   };
   return alerts
-    .filter((alert) => alert.acknowledgedAt === undefined)
+    .filter((alert) => alert.state !== 'acknowledged' && alert.state !== 'cleared' && alert.state !== 'superseded' && alert.acknowledgedAt === undefined)
     .toSorted((a, b) => rank(a) - rank(b));
 }
 
@@ -276,17 +281,15 @@ function buildCompactRows(
     rows.push(renderAssessment(snap, undefined, colors));
   }
 
-  const nextAction = nextBoundedAction(question, snap.currentFocus);
-  if (nextAction !== undefined) {
-    rows.push(`  ${chalk.hex(colors.textDim)('next:')} ${chalk.hex(colors.text)(nextAction)}`);
-  }
-
   rows.push(...renderAttentionRows(snap, colors));
 
-  // Scientific progress summary (phase, headline, impact, nextAction).
+  // Scientific progress summary (phase, headline, impact).
   rows.push(...renderCompactScientificRows(snap, colors));
-  const maintenanceReminder = renderCompactMaintenanceReminder(snap, colors);
-  if (maintenanceReminder !== undefined) rows.push(maintenanceReminder);
+  if (snap.currentRun !== undefined) {
+    rows.push(renderCompactRunRow(snap.currentRun, colors));
+  }
+  const effectiveNextStep = renderEffectiveNextStep(snap, colors);
+  if (effectiveNextStep !== undefined) rows.push(effectiveNextStep);
 
   const candidates = candidateQuestions(snap);
   const currentCandidates = snap.currentLineSlug === undefined
@@ -350,9 +353,9 @@ function buildExpandedRows(
   );
   rows.push(renderAssessment(snap, current, colors));
 
-  const nextAction = nextBoundedAction(current, snap.currentFocus);
+  const effectiveNextStep = renderEffectiveNextStep(snap, colors);
   rows.push(
-    `  ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(colors.text)(nextAction ?? (normalizeSummary(currentLine?.objective) || 'none'))}`,
+    effectiveNextStep ?? `  ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(colors.text)(normalizeSummary(currentLine?.objective) || 'none')}`,
   );
   rows.push(...renderAttentionRows(snap, colors, true));
 
@@ -401,7 +404,22 @@ function buildExpandedRows(
   } else {
     rows.push(`  ${chalk.hex(colors.warning)('Alerts:')} ${formatAlertSummary(alerts, colors)}`);
     for (const alert of alerts.slice(0, MAX_ALERT_ROWS)) {
-      rows.push(`    ${chalk.hex(colors.warning)('⚠')} ${chalk.hex(colors.textMuted)(normalizeSummary(alert.message))}`);
+      const classification = alertClassification(alert);
+      const label = classification === 'active_blocker'
+        ? 'active blocker'
+        : classification.replaceAll('_', ' ');
+      const color = classification === 'active_blocker' ? colors.error : colors.warning;
+      rows.push(
+        `    ${chalk.hex(color)(classification === 'active_blocker' ? '!' : '◇')} ${chalk.hex(color)(label)} · ${chalk.hex(colors.textMuted)(normalizeSummary(alert.message))}`,
+      );
+      const association = [
+        alert.relatedEntryId === undefined ? undefined : `entry ${alert.relatedEntryId}`,
+        alert.workstream === undefined ? undefined : `workstream ${alert.workstream}`,
+        alert.retryOfEntryId === undefined ? undefined : `retry of ${alert.retryOfEntryId}`,
+      ].filter((value) => value !== undefined).join(' · ');
+      if (association.length > 0) {
+        rows.push(`      ${chalk.hex(colors.textMuted)(association)}`);
+      }
     }
     if (alerts.length > MAX_ALERT_ROWS) {
       rows.push(
@@ -409,7 +427,9 @@ function buildExpandedRows(
       );
     }
   }
-  const acknowledgedCount = snap.alerts.length - alerts.length;
+  const acknowledgedCount = snap.alerts.filter(
+    (alert) => alert.state === 'acknowledged' || alert.acknowledgedAt !== undefined,
+  ).length;
   if (acknowledgedCount > 0) {
     rows.push(
       `  ${chalk.hex(colors.textDim)('acknowledged alerts:')} ${chalk.hex(colors.textMuted)(String(acknowledgedCount))}`,
@@ -495,14 +515,6 @@ function renderTodoProgress(todos: readonly TodoItem[], colors: ColorPalette): s
   return `  ${chalk.hex(colors.textDim)('Todo progress:')} ${chalk.hex(colors.textMuted)(formatTodoProgress(todos))}`;
 }
 
-function nextBoundedAction(
-  question: ResearchQuestion | undefined,
-  focus: ResearchStatusSnapshot['currentFocus'],
-): string | undefined {
-  const action = normalizeSummary(question?.nextBoundedAction ?? focus?.boundedAction);
-  return action.length === 0 ? undefined : action;
-}
-
 function formatCompactCheckpoint(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
@@ -562,7 +574,8 @@ function renderPhase(
 
 /**
  * Compact scientific summary: phase, progress headline (or "本轮没有记录进展"),
- * one-line mainline impact, and next action. Does NOT include audit identifiers.
+ * and one-line mainline impact. The effective next step is rendered separately
+ * so competing question/progress/AITP handoffs cannot appear as three commands.
  */
 function renderCompactScientificRows(
   snap: ResearchStatusSnapshot,
@@ -585,21 +598,46 @@ function renderCompactScientificRows(
         `  ${chalk.hex(colors.textDim)('Impact:')} ${chalk.hex(colors.text)(impact)}`,
       );
     }
-    const nextAction = normalizeSummary(progress.nextAction);
-    if (nextAction.length > 0) {
-      rows.push(
-        `  ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(colors.text)(nextAction)}`,
-      );
-    }
   }
 
   return rows;
 }
 
-/**
- * Human gate takes priority over everything else in compact — if the loop is
- * blocked waiting for a human decision, that is the most actionable info.
- */
+function renderCompactRunRow(
+  run: ResearchRunState,
+  colors: ColorPalette,
+): string {
+  const nextCheck = run.nextCheckAt === undefined
+    ? ''
+    : ` · next check ${formatRunTimestamp(run.nextCheckAt)}`;
+  const stateColor = run.schedulerState === 'failed' || run.schedulerState === 'cancelled'
+    ? colors.warning
+    : run.schedulerState === 'completed'
+      ? colors.success
+      : colors.text;
+  return `  ${chalk.hex(colors.textDim)('Run:')} ${chalk.hex(colors.text)(`job ${normalizeSummary(run.jobId)}`)} · ${chalk.hex(stateColor)(`${run.schedulerState} / ${run.stage}`)}${chalk.hex(colors.textMuted)(nextCheck)}`;
+}
+
+function formatRunTimestamp(timestamp: number): string {
+  if (!Number.isFinite(timestamp)) return 'unknown';
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? 'unknown' : date.toISOString();
+}
+
+/** Render the single derived next step after scientific progress. */
+function renderEffectiveNextStep(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string | undefined {
+  const next = snap.effectiveNextStep;
+  if (next === undefined) return undefined;
+  const label = next.freshness === 'blocked' ? 'Blocked' : 'Next';
+  const color = next.freshness === 'blocked' || next.freshness === 'stale'
+    ? colors.warning
+    : colors.text;
+  return `  ${chalk.hex(colors.textDim)(`${label}:`)} ${chalk.hex(color)(normalizeSummary(next.text))}`;
+}
+
 function renderHumanGateRow(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
@@ -707,6 +745,36 @@ function renderExpandedScientificRows(
     }
   }
 
+  // ── Current scheduler observation ──
+  const run = snap.currentRun;
+  if (run !== undefined) {
+    rows.push(`  ${chalk.hex(colors.textStrong).bold('Current run')}`);
+    rows.push(
+      `    ${chalk.hex(colors.textDim)('Campaign:')} ${chalk.hex(colors.text)(normalizeSummary(run.campaign))} · ${chalk.hex(colors.textDim)('Job:')} ${chalk.hex(colors.text)(normalizeSummary(run.jobId))}`,
+    );
+    rows.push(
+      `    ${chalk.hex(colors.textDim)('Scheduler:')} ${chalk.hex(colors.text)(run.schedulerState)} · ${chalk.hex(colors.textDim)('Stage:')} ${chalk.hex(colors.text)(run.stage)}`,
+    );
+    rows.push(
+      `    ${chalk.hex(colors.textDim)('Last observed:')} ${chalk.hex(colors.textMuted)(formatRunTimestamp(run.lastObservedAt))}${run.nextCheckAt === undefined ? '' : ` · ${chalk.hex(colors.textDim)('Next check:')} ${chalk.hex(colors.textMuted)(formatRunTimestamp(run.nextCheckAt))}`}`,
+    );
+    if (run.terminalState !== undefined) {
+      rows.push(
+        `    ${chalk.hex(colors.textDim)('Terminal:')} ${chalk.hex(colors.text)(run.terminalState)}`,
+      );
+    }
+    if (run.sourcePin !== undefined || run.binaryPin !== undefined) {
+      rows.push(
+        `    ${chalk.hex(colors.textDim)('Pins:')} ${chalk.hex(colors.textMuted)([run.sourcePin, run.binaryPin].filter((pin): pin is string => pin !== undefined).join(' · '))}`,
+      );
+    }
+    if (run.artifactRefs.length > 0) {
+      rows.push(
+        `    ${chalk.hex(colors.textDim)('Artifacts:')} ${chalk.hex(colors.textMuted)(run.artifactRefs.map(normalizeSummary).join(' · '))}`,
+      );
+    }
+  }
+
   // ── Human gate ──
   const gate = snap.humanGate;
   if (gate !== undefined && gate.resolvedAt === undefined) {
@@ -733,38 +801,6 @@ function renderExpandedScientificRows(
 
 // ── AITP maintenance formatters ─────────────────────────────────────────────
 
-/**
- * Compact maintenance disclosure keeps only the highest-severity handoff
- * signal. It deliberately excludes timestamps, identifiers, and raw check
- * objects from the compact research view.
- */
-function renderCompactMaintenanceReminder(
-  snap: ResearchStatusSnapshot,
-  colors: ColorPalette,
-): string | undefined {
-  const maintenance = snap.aitpMaintenance;
-  if (maintenance === undefined) return undefined;
-
-  const label = chalk.hex(colors.warning)('Research reminder:');
-  if (maintenance.unresolvedFailureCount > 0) {
-    const count = maintenance.unresolvedFailureCount;
-    const noun = `unresolved AITP failure${count === 1 ? '' : 's'}`;
-    return `  ${label} ${chalk.hex(colors.text)(`${String(count)} ${noun}`)}`;
-  }
-  if (maintenance.status === 'degraded') {
-    return `  ${label} ${chalk.hex(colors.warning)('AITP maintenance degraded')}`;
-  }
-  if (maintenance.activeNewerThanWorkingNote === true) {
-    return `  ${label} ${chalk.hex(colors.warning)('Working Note is behind active entries')}`;
-  }
-
-  const nextAction = normalizeSummary(maintenance.nextAction);
-  if (nextAction.length > 0) {
-    return `  ${label} ${chalk.hex(colors.text)(`AITP next action: ${nextAction}`)}`;
-  }
-  return undefined;
-}
-
 function renderExpandedMaintenanceRows(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
@@ -773,14 +809,28 @@ function renderExpandedMaintenanceRows(
   if (maintenance === undefined) return [];
 
   const rows: string[] = [
-    `  ${chalk.hex(colors.textStrong).bold('AITP maintenance handoff')} ${chalk.hex(colors.textMuted)('(not a physical conclusion)')}`,
+    `  ${chalk.hex(colors.textStrong).bold('AITP maintenance handoff')}`,
+    `    ${chalk.hex(colors.textMuted)('Structural consistency only; not a physical conclusion and does not resolve historical failures.')}`,
     `    ${chalk.hex(colors.textDim)('Status:')} ${renderMaintenanceStatus(maintenance.status, colors)}`,
     `    ${chalk.hex(colors.textDim)('Memory:')} ${chalk.hex(colors.text)(formatMaintenanceMemoryStatus(maintenance.memoryStatus))}`,
     `    ${chalk.hex(colors.textDim)('Working Note:')} ${renderWorkingNoteFreshness(maintenance, colors)}`,
-    `    ${chalk.hex(colors.textDim)('Unresolved failures:')} ${chalk.hex(maintenance.unresolvedFailureCount > 0 ? colors.warning : colors.text)(String(maintenance.unresolvedFailureCount))}`,
-    `    ${chalk.hex(colors.textDim)('Next AITP action:')} ${chalk.hex(colors.text)(normalizeSummary(maintenance.nextAction) || 'none recorded')}`,
-    `    ${chalk.hex(colors.textDim)('Check:')} ${renderMaintenanceCheck(maintenance.check, colors)}`,
+    `    ${chalk.hex(colors.textDim)('Historical unresolved failures:')} ${chalk.hex(maintenance.unresolvedFailureCount > 0 ? colors.warning : colors.text)(String(maintenance.unresolvedFailureCount))}`,
+    `    ${chalk.hex(colors.textDim)('Recorded handoff next:')} ${chalk.hex(colors.text)(normalizeSummary(maintenance.nextAction) || 'none recorded')}`,
+    `    ${chalk.hex(colors.textDim)('Structural check:')} ${renderMaintenanceCheck(maintenance.check, colors)}`,
   ];
+
+  for (const failure of maintenance.unresolvedFailures.slice(0, MAX_MAINTENANCE_CODES)) {
+    const workstream = normalizeSummary(failure.workstream);
+    const scope = workstream.length === 0 ? '' : ` · workstream ${workstream}`;
+    rows.push(
+      `      ${chalk.hex(colors.warning)('◇')} ${chalk.hex(colors.text)(failure.entryId)}${chalk.hex(colors.textMuted)(scope)} — ${chalk.hex(colors.textMuted)(normalizeSummary(failure.summary))}`,
+    );
+  }
+  if (maintenance.unresolvedFailures.length > MAX_MAINTENANCE_CODES) {
+    rows.push(
+      `      ${chalk.hex(colors.textMuted)(`… +${String(maintenance.unresolvedFailures.length - MAX_MAINTENANCE_CODES)} more historical failures`)}`,
+    );
+  }
 
   const warningCodes = formatMaintenanceCodes(
     maintenance.warningSummaries.map((warning) => warning.code),

@@ -10,6 +10,7 @@
  */
 
 import { Service } from '#/_base/di/service';
+import { Emitter, type Event } from '#/_base/event';
 
 import { ISessionAitpAdapter } from '../adapter/sessionAitpAdapter';
 import type {
@@ -32,8 +33,12 @@ export class SessionAitpLifecycleCoordinatorService
   implements ISessionAitpLifecycleCoordinator {
   declare readonly _serviceBrand: undefined;
 
+  private readonly updateEmitter = this._register(new Emitter<AitpMaintenanceReceipt>());
+  readonly onDidUpdate: Event<AitpMaintenanceReceipt> = this.updateEmitter.event;
+
   private readonly receipts = new Map<string, AitpMaintenanceReceipt>();
   private readonly inFlight = new Map<string, Promise<AitpMaintenanceReceipt>>();
+  private readonly refreshControllers = new Map<string, AbortController>();
   private generation = 0;
   private latestKey: string | undefined;
 
@@ -55,11 +60,13 @@ export class SessionAitpLifecycleCoordinatorService
     }
 
     const generation = this.generation;
-    const task = this.runRefresh(key, workstream, generation);
+    const controller = new AbortController();
+    const task = this.runRefresh(key, workstream, generation, controller.signal);
+    this.refreshControllers.set(key, controller);
     this.inFlight.set(key, task);
     void task.then(
-      () => { this.clearInFlight(key, task); },
-      () => { this.clearInFlight(key, task); },
+      () => { this.clearInFlight(key, task, controller); },
+      () => { this.clearInFlight(key, task, controller); },
     );
     return task;
   }
@@ -71,6 +78,8 @@ export class SessionAitpLifecycleCoordinatorService
 
   reset(): void {
     this.generation += 1;
+    for (const controller of this.refreshControllers.values()) controller.abort();
+    this.refreshControllers.clear();
     this.receipts.clear();
     this.inFlight.clear();
     this.latestKey = undefined;
@@ -80,6 +89,7 @@ export class SessionAitpLifecycleCoordinatorService
     key: string,
     workstream: string | undefined,
     generation: number,
+    signal: AbortSignal,
   ): Promise<AitpMaintenanceReceipt> {
     if (!this.adapter.isReady() || this.adapter.health.phase !== 'ready') {
       return this.storeIfCurrent(
@@ -93,8 +103,9 @@ export class SessionAitpLifecycleCoordinatorService
 
     let entered: AitpEnterResult;
     try {
-      entered = await this.adapter.enter(workstream === undefined ? undefined : { workstream });
+      entered = await this.adapter.enter({ workstream, signal });
     } catch {
+      if (!this.isCurrent(generation)) return this.degradedReceipt(workstream, 'stale_generation');
       return this.storeIfCurrent(
         key,
         generation,
@@ -108,8 +119,9 @@ export class SessionAitpLifecycleCoordinatorService
 
     let report: AitpCheckReport;
     try {
-      report = await this.adapter.check(workstream === undefined ? undefined : { workstream });
+      report = await this.adapter.check({ workstream, signal });
     } catch {
+      if (!this.isCurrent(generation)) return this.degradedReceipt(workstream, 'stale_generation');
       return this.storeIfCurrent(
         key,
         generation,
@@ -117,6 +129,7 @@ export class SessionAitpLifecycleCoordinatorService
       );
     }
 
+    if (!this.isCurrent(generation)) return this.degradedReceipt(workstream, 'stale_generation');
     return this.storeIfCurrent(key, generation, this.receiptFromResults(workstream, entered, report));
   }
 
@@ -136,7 +149,10 @@ export class SessionAitpLifecycleCoordinatorService
       },
       findingCodes,
     };
-    const status = report.counts.errors > 0 ? 'degraded' : 'ready';
+    // A valid check report, including exit-1 error findings, is transport
+    // success. Only an unavailable/invalid check reaches degradedReceipt();
+    // checkpoint barriers decide whether a particular finding blocks commit.
+    const status = 'ready';
     const warningSummaries: readonly AitpMaintenanceWarningSummary[] = entered.warnings.map((warning) => ({
       level: 'warning',
       code: summarizeCode(warning.code),
@@ -152,12 +168,29 @@ export class SessionAitpLifecycleCoordinatorService
         ? null
         : entered.counts.active_newer_than_latest_working_note > 0,
       unresolvedFailureCount: entered.counts.unresolved_failures,
+      unresolvedFailures: entered.unresolved_failures.map((failure) => ({
+        entryId: failure.id,
+        kind: failure.kind,
+        summary: failure.summary,
+        source: failure.source,
+        authority: failure.authority,
+        createdAt: parseTimestamp(failure.created_at),
+        workstream,
+      })),
       nextAction: 'status' in entered.next_action
         ? undefined
         : entered.next_action.text,
+      nextActionDetails: 'status' in entered.next_action
+        ? undefined
+        : {
+            text: entered.next_action.text,
+            entryId: entered.next_action.entry_id,
+            authority: entered.next_action.authority,
+            createdAt: parseTimestamp(entered.next_action.created_at),
+            source: entered.next_action.source,
+          },
       warningSummaries,
       check,
-      degradedReason: status === 'degraded' ? 'check_findings' : undefined,
     };
   }
 
@@ -173,7 +206,9 @@ export class SessionAitpLifecycleCoordinatorService
       latestWorkingNoteAt: undefined,
       activeNewerThanWorkingNote: null,
       unresolvedFailureCount: 0,
+      unresolvedFailures: [],
       nextAction: undefined,
+      nextActionDetails: undefined,
       warningSummaries: [],
       check: {
         status: 'unavailable',
@@ -192,6 +227,7 @@ export class SessionAitpLifecycleCoordinatorService
     if (this.isCurrent(generation)) {
       this.receipts.set(key, receipt);
       this.latestKey = key;
+      this.updateEmitter.fire(receipt);
     }
     return receipt;
   }
@@ -200,8 +236,13 @@ export class SessionAitpLifecycleCoordinatorService
     return generation === this.generation;
   }
 
-  private clearInFlight(key: string, task: Promise<AitpMaintenanceReceipt>): void {
+  private clearInFlight(
+    key: string,
+    task: Promise<AitpMaintenanceReceipt>,
+    controller: AbortController,
+  ): void {
     if (this.inFlight.get(key) === task) this.inFlight.delete(key);
+    if (this.refreshControllers.get(key) === controller) this.refreshControllers.delete(key);
   }
 }
 

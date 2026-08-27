@@ -267,6 +267,24 @@ async function dispatchResearchCommand(
         nextPhase: cmd.nextPhase,
       });
       break;
+    case 'review_evidence':
+      research.reviewEvidencePacket(cmd.packet, cmd.expectedRevision);
+      break;
+    case 'observe_run':
+      research.observeRun({
+        actionId: cmd.actionId,
+        expectedRevision: cmd.expectedRevision,
+        campaign: cmd.campaign,
+        jobId: cmd.jobId,
+        sourcePin: cmd.sourcePin,
+        binaryPin: cmd.binaryPin,
+        stage: cmd.stage,
+        schedulerState: cmd.schedulerState,
+        nextCheckAt: cmd.nextCheckAt,
+        terminalState: cmd.terminalState,
+        artifactRefs: cmd.artifactRefs,
+      });
+      break;
     case 'acknowledge_alert':
       research.acknowledgeAlert(cmd.fingerprint);
       break;
@@ -287,6 +305,8 @@ const RESEARCH_CLIENT_ERRORS: ReadonlySet<string> = new Set([
   'research.revision_stale',
   'research.question_not_found',
   'research.line_not_found',
+  'research.action_not_found',
+  'research.action_status_invalid',
   'research.loop_paused',
   'research.phase_transition_invalid',
   'research.human_gate_not_found',
@@ -299,7 +319,7 @@ function sendResearchError(
   err: unknown,
 ): void {
   if (isError2(err)) {
-    const code = String(err.code);
+    const code = err.code;
     if (code === 'session.not_found' || code === 'agent.not_found') {
       reply.send(
         errEnvelope(ErrorCode.SESSION_NOT_FOUND, err.message, requestId, err.stack),

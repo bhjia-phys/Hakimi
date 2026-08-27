@@ -28,6 +28,7 @@ export interface IAgentGoalService {
 
   getGoal(): GoalToolResult;
   isGoalToolTarget(turnId: number, goalId: string): boolean;
+  isGoalContinuationTurn(turnId: number, goalId?: string): boolean;
   createGoal(input: CreateGoalInput, actor?: GoalActor): Promise<GoalSnapshot>;
   pauseGoal(input?: GoalReasonInput, actor?: GoalActor): Promise<GoalSnapshot>;
   resumeGoal(input?: ResumeGoalInput, actor?: GoalActor): Promise<GoalSnapshot>;

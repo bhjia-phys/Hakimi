@@ -1,6 +1,6 @@
 # AITP × Hakimi 理论物理科研 Agent 设计备忘录
 
-> 状态：Hakimi adapter 的 H0–H4 已实现，H5 仅部分集成；`KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 默认开启。这个 Hakimi 产品 flag 不是 AITP 协议状态，也不是 H6 可用性信号；H6 native method-distillation orchestration 仍 planned/unavailable。
+> 状态：Hakimi adapter 的 H0–H4 已实现，H5 仅部分集成；`KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 默认关闭。这个 Hakimi 产品 flag 不是 AITP 协议状态，也不是 H6 可用性信号；H6 native method-distillation orchestration 仍 planned/unavailable。
 >
 > 本文件是 Hakimi 侧的设计交接材料，不是 AITP canonical Entry 或 Note。当前 Hakimi 仓库没有初始化 `.aitp` store；不能自动 `init --adopt`，也不能绕过 AITP 的 `record/note prepare|save` 写入伪账本。待在已初始化的 AITP Topic workspace 中继续工作时，应把本备忘录压缩为真实的 `decision` 或 `working Note`，并按 AITP pin 规则保存。
 >
@@ -22,7 +22,7 @@ AITP 不是 Hakimi 的常驻行为，而是一个显式的、可恢复的科研 
 
 这里需要区分“架构分离”和“科研可靠性分离”：Research Loop 与 AITP adapter 是两个可测试、可替换的内部服务，但完整的 `AITP Research Mode` 不允许把 AITP 当作可有可无的旁路。没有 AITP 时可以进行有限的 exploratory work，却不能把它称为完整可靠的研究模式，也不能关闭关键问题、宣布正式 result 或完成阶段交接。
 
-需要区分两个开关：实验性 Feature flag 决定该能力是否可用，**默认开启**（`=0` 或 `/experiments` 可关闭）；runtime mode 决定当前 main Agent 是否已经选择启用联合科研能力。permission `auto` 只决定模型发起的 mode-entry 工具是否免除一次用户确认，不能授予模型 human authority、改变研究目标或批准高风险动作。flag 开启仅开放 `/research` 与 `EnterAITPMode` 入口；进入模式仍需 `/research on` 或模型入口，inactive 状态零 AITP I/O，不自动 init/adopt/inventory/backfill。
+需要区分两个开关：实验性 Feature flag 决定该能力是否可用，**默认关闭**（设置为 `=1` 或在 `/experiments` 中开启）；runtime mode 决定当前 main Agent 是否已经选择启用联合科研能力。permission `auto` 只决定模型发起的 mode-entry 工具是否免除一次用户确认，不能授予模型 human authority、改变研究目标或批准高风险动作。flag 开启仅开放 `/research` 与 `EnterAITPMode` 入口；进入模式仍需 `/research on` 或模型入口，inactive 状态零 AITP I/O，不自动 init/adopt/inventory/backfill。
 
 ## 2. 真相分层与边界
 
@@ -331,7 +331,7 @@ ResearchStatusSnapshot:
 
 1. **working revision**：bounded action 被选择、开始、结束、取消或返回 no-progress 时，立即更新 runtime 的 Focus/action 状态；UI 可以显示 `running`、`evaluating` 或 `pending review`，但这不是科学结论。
 2. **assessed revision**：main Agent 消费并验证文献、推导、反驳、数值或 compute packet 后，通过单线程 reducer 生成 proposed checkpoint；此时更新 Question 的 evidence、confidence/limitations、next action，并重新计算 Line 汇总。
-3. **committed revision**：如果 proposed checkpoint 跨越 durable boundary，则先标记 `pending commit`，通过 AITP prepare/save/check 后才推进 canonical question/line/program 状态和 committed cursor。提交失败时保留 working state，显示 degraded，不能把 answer candidate 展示为已可靠回答。
+3. **committed revision**：如果 proposed checkpoint 跨越 durable boundary，则先标记 `pending commit`，通过 AITP prepare/save/check 后才推进 canonical question/line/program 状态和 committed cursor。提交失败时保留 working state，保持 checkpoint pending，并明确显示 commit barrier failure；只有 AITP transport 或维护周期不可用时才将 adapter 标为 degraded，不能把 answer candidate 展示为已可靠回答。
 
 各层级的更新触发条件不同：
 

@@ -26,13 +26,21 @@ import {
   researchAlertFingerprintSchema,
   resolveHumanDecisionInputSchema,
   researchHumanGateSchema,
+  researchEvidencePacketSchema,
+  researchEvidenceReviewSchema,
+  researchRunStageSchema,
+  researchSchedulerStateSchema,
+  researchRunStateSchema,
   type AitpModeEntryOptions,
   type CommitCheckpointInput,
   type CreateQuestionInput,
   type ProposeCheckpointInput,
   type UpdateQuestionInput,
 } from './researchSchemas.js';
-import type { UpdateLineInput } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
+import type {
+  ObserveResearchRunInput,
+  UpdateLineInput,
+} from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
 
 // ── input schemas (declared before use) ─────────────────────────────────────
 
@@ -75,6 +83,20 @@ const commitCheckpointInputSchema = z.object({
   checkpointId: z.string(),
   entryId: z.string(),
 }) satisfies z.ZodType<CommitCheckpointInput>;
+
+const observeResearchRunInputSchema = z.object({
+  actionId: z.string(),
+  expectedRevision: z.number(),
+  campaign: z.string(),
+  jobId: z.string(),
+  sourcePin: z.string().optional(),
+  binaryPin: z.string().optional(),
+  stage: researchRunStageSchema,
+  schedulerState: researchSchedulerStateSchema,
+  nextCheckAt: z.number().optional(),
+  terminalState: z.enum(['completed', 'failed', 'cancelled']).optional(),
+  artifactRefs: z.array(z.string()).optional(),
+}) satisfies z.ZodType<ObserveResearchRunInput>;
 
 const aitpModeEntryOptionsSchema = z.object({
   actor: z.enum(['user', 'model']),
@@ -147,6 +169,14 @@ export const agentResearchContract = {
   commitCheckpoint: {
     input: z.tuple([commitCheckpointInputSchema]),
     output: noResult,
+  },
+  reviewEvidencePacket: {
+    input: z.tuple([researchEvidencePacketSchema, z.number()]),
+    output: researchEvidenceReviewSchema,
+  },
+  observeRun: {
+    input: z.tuple([observeResearchRunInputSchema]),
+    output: researchRunStateSchema,
   },
 } satisfies ServiceContract;
 

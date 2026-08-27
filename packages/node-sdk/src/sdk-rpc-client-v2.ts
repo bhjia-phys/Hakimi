@@ -2160,7 +2160,7 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
    */
   override async getResearch(input: SessionIdRpcInput): Promise<ResearchStatusSnapshot> {
     const agent = await this.agentScope(input.sessionId);
-    return agent.accessor.get(IAgentResearchService).getSnapshot() as ResearchStatusSnapshot;
+    return agent.accessor.get(IAgentResearchService).getSnapshot();
   }
 
   override async commandResearch(
@@ -2278,6 +2278,24 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
           gateId: cmd.gateId,
           resolution: cmd.resolution,
           nextPhase: cmd.nextPhase,
+        });
+        break;
+      case 'review_evidence':
+        research.reviewEvidencePacket(cmd.packet, cmd.expectedRevision);
+        break;
+      case 'observe_run':
+        research.observeRun({
+          actionId: cmd.actionId,
+          expectedRevision: cmd.expectedRevision,
+          campaign: cmd.campaign,
+          jobId: cmd.jobId,
+          sourcePin: cmd.sourcePin,
+          binaryPin: cmd.binaryPin,
+          stage: cmd.stage,
+          schedulerState: cmd.schedulerState,
+          nextCheckAt: cmd.nextCheckAt,
+          terminalState: cmd.terminalState,
+          artifactRefs: cmd.artifactRefs,
         });
         break;
       case 'acknowledge_alert':

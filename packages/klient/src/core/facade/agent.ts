@@ -39,13 +39,19 @@ import type {
   ResearchCommittedCursor,
   ResearchHumanGate,
   ResearchLine,
+  ResearchRunState,
   ResearchLineCreationInput,
   ResearchQuestion,
   ResearchStatusSnapshot,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/types';
 import type {
+  ResearchEvidencePacket,
+  ResearchEvidenceReview,
+} from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/evidencePacket';
+import type {
   CommitCheckpointInput,
   CreateQuestionInput,
+  ObserveResearchRunInput,
   ProposeCheckpointInput,
   ResolveHumanDecisionInput,
   UpdateLineInput,
@@ -174,6 +180,8 @@ export interface ResearchFacade {
   resolveHumanDecision(input: ResolveHumanDecisionInput): Promise<ResearchHumanGate>;
   proposeCheckpoint(input: ProposeCheckpointInput): Promise<ResearchCheckpoint>;
   commitCheckpoint(input: CommitCheckpointInput): Promise<void>;
+  reviewEvidencePacket(packet: ResearchEvidencePacket, expectedRevision: number): Promise<ResearchEvidenceReview>;
+  observeRun(input: ObserveResearchRunInput): Promise<ResearchRunState>;
 }
 
 export interface AitpModeFacade {
@@ -323,6 +331,10 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
         call(scope, 'agentResearchService', 'proposeCheckpoint', [input]) as Promise<ResearchCheckpoint>,
       commitCheckpoint: (input) =>
         call(scope, 'agentResearchService', 'commitCheckpoint', [input]) as Promise<void>,
+      reviewEvidencePacket: (packet, expectedRevision) =>
+        call(scope, 'agentResearchService', 'reviewEvidencePacket', [packet, expectedRevision]) as Promise<ResearchEvidenceReview>,
+      observeRun: (input) =>
+        call(scope, 'agentResearchService', 'observeRun', [input]) as Promise<ResearchRunState>,
     },
 
     aitpMode: {

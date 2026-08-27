@@ -28,11 +28,14 @@
  *   `AgentResearchService`, while these alert ops provide replayable state
  *   transitions.
  *
- * - `ResearchCursorModel` (non-checkpointed): holds the committed cursor and
- *   the global research revision. It does NOT follow conversation undo:
+ * - `ResearchCursorModel` (non-checkpointed): holds the committed cursor
+ *   (latest commit), an ordered `history` of every committed checkpoint/Entry,
+ *   and the global research revision. It does NOT follow conversation undo:
  *   once a checkpoint is committed to AITP, undoing the conversation cannot
- *   retract that external fact. The `research.commit_checkpoint` op advances
- *   it; `research.ack_checkpoint` reconciles the checkpointed working state.
+ *   retract that external fact. The `research.commit_checkpoint` op appends a
+ *   new commit to both `cursor` and `history` (idempotent on a repeated
+ *   checkpoint/Entry); `research.ack_checkpoint` reconciles the checkpointed
+ *   working state.
  *
  * Research ops do NOT declare `toEvent`: the `AgentResearchService`
  * explicitly publishes a `research.updated` event carrying the full
@@ -66,12 +69,20 @@ import type {
   QuestionPersistence,
   ResearchActionKind,
   ResearchActionStatus,
+  ResearchRunState,
   ResearchAlert,
+  ResearchCheckpointReceipt,
   ResearchCommittedCursor,
   ResearchHumanGateKind,
   ResearchPhase,
   ResearchStatusSnapshot,
 } from './types';
+import {
+  PLAN_ACTION_PHASES,
+  isLiveForegroundAction,
+  isPhaseTransitionValid,
+  isUnresolvedHumanGate,
+} from './transitions/researchTransitionAuthority';
 
 export interface AitpModeState {
   readonly phase: AitpModePhase;
@@ -204,6 +215,7 @@ export interface ResearchWorkingState {
   readonly revision: number;
   readonly phase: ResearchPhase;
   readonly currentAction: ResearchActionSpecRecord | null;
+  readonly currentRun: ResearchRunStateRecord | null;
   readonly latestProgress: ResearchProgressReportRecord | null;
   readonly recentStateChange: ResearchStateChangeRecord | null;
   readonly humanGate: ResearchHumanGateRecord | null;
@@ -243,14 +255,19 @@ export interface ResearchFocusRecord {
 
 export interface ResearchCheckpointRecord {
   readonly checkpointId: string;
+  readonly committedEntryId?: string;
   readonly questionId?: string;
+  readonly questionRevision?: number;
   readonly lineSlug?: string;
   readonly assessment?: string;
   readonly nextAction?: string;
   readonly idempotencyKey: string;
   readonly persistence: QuestionPersistence;
+  readonly receipt?: ResearchCheckpointReceipt;
   readonly createdAt: number;
 }
+
+export interface ResearchRunStateRecord extends ResearchRunState {}
 
 export interface ResearchActionSpecRecord {
   readonly actionId: string;
@@ -261,10 +278,12 @@ export interface ResearchActionSpecRecord {
   readonly expectedEvidence: readonly string[];
   readonly stopCondition: string;
   readonly allowedToolKinds: readonly string[];
+  readonly retryOfEntryId?: string;
   readonly status: ResearchActionStatus;
   readonly createdAt: number;
   readonly completedAt?: number;
   readonly requiresHumanApproval: boolean;
+  readonly run?: ResearchRunStateRecord;
 }
 
 export interface ResearchProgressDetailRecord {
@@ -325,6 +344,7 @@ export const ResearchModel = defineCheckpointedModel<ResearchWorkingState>(
     revision: 0,
     phase: 'idle',
     currentAction: null,
+    currentRun: null,
     latestProgress: null,
     recentStateChange: null,
     humanGate: null,
@@ -351,6 +371,45 @@ const StringListSchema = z.array(z.string().max(500)).max(50);
 const ShortTextSchema = z.string().max(2000);
 const LongTextSchema = z.string().max(8000);
 
+const ResearchCheckpointCheckReceiptSchema = z.object({
+  status: z.enum(['clean', 'findings']),
+  errors: z.number().int().nonnegative(),
+  warnings: z.number().int().nonnegative(),
+  findingFingerprints: StringListSchema,
+  errorFindingFingerprints: StringListSchema,
+  newErrorFindingFingerprints: StringListSchema.optional(),
+  preExistingErrorFindingFingerprints: StringListSchema.optional(),
+  checkedAt: z.number(),
+}).strict();
+const ResearchCheckpointPrepareReceiptSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('prepared'),
+    id: z.string(),
+    path: z.string(),
+    idempotencyKey: z.string().optional(),
+    workstreams: StringListSchema.optional(),
+  }).strict(),
+  z.object({
+    status: z.literal('existing'),
+    id: z.string().optional(),
+    path: z.string(),
+    idempotencyKey: z.string(),
+    workstreams: StringListSchema.optional(),
+  }).strict(),
+]);
+const ResearchCheckpointSaveReceiptSchema = z.object({
+  status: z.enum(['saved', 'already_saved']),
+  draftPath: z.string(),
+  path: z.string(),
+  source: z.enum(['record_save', 'prepare_existing']).optional(),
+}).strict();
+const ResearchCheckpointReceiptSchema = z.object({
+  prepare: ResearchCheckpointPrepareReceiptSchema.optional(),
+  save: ResearchCheckpointSaveReceiptSchema.optional(),
+  preSaveCheck: ResearchCheckpointCheckReceiptSchema.optional(),
+  postSaveCheck: ResearchCheckpointCheckReceiptSchema.optional(),
+}).strict();
+
 declare module '#/wire/types' {
   interface PersistedOpMap {
     'research.create_line': typeof researchCreateLine;
@@ -361,6 +420,7 @@ declare module '#/wire/types' {
     'research.switch_line': typeof researchSwitchLine;
     'research.steer': typeof researchSteer;
     'research.propose_checkpoint': typeof researchProposeCheckpoint;
+    'research.bind_checkpoint_receipt': typeof researchBindCheckpointReceipt;
     'research.commit_checkpoint': typeof researchCommitCheckpoint;
     'research.ack_checkpoint': typeof researchAcknowledgeCheckpoint;
     'research.reopen_question': typeof researchReopenQuestion;
@@ -370,6 +430,7 @@ declare module '#/wire/types' {
     'research.plan_action': typeof researchPlanAction;
     'research.start_action': typeof researchStartAction;
     'research.complete_action': typeof researchCompleteAction;
+    'research.observe_run': typeof researchObserveRun;
     'research.record_progress': typeof researchRecordProgress;
     'research.set_phase': typeof researchSetPhase;
     'research.request_human_decision': typeof researchRequestHumanDecision;
@@ -651,6 +712,7 @@ export const researchSteer = ResearchModel.defineOp('research.steer', {
 export const researchProposeCheckpoint = ResearchModel.defineOp('research.propose_checkpoint', {
   schema: z.object({
     checkpointId: z.string(),
+    committedEntryId: z.string().optional(),
     questionId: z.string().optional(),
     lineSlug: z.string().optional(),
     assessment: z.string().optional(),
@@ -669,7 +731,11 @@ export const researchProposeCheckpoint = ResearchModel.defineOp('research.propos
     ) return s;
     const checkpoint: ResearchCheckpointRecord = {
       checkpointId: p.checkpointId,
+      committedEntryId: p.committedEntryId,
       questionId: p.questionId,
+      questionRevision: question === undefined
+        ? undefined
+        : question.revision + (question.persistence === 'pending_commit' ? 0 : 1),
       lineSlug: p.lineSlug,
       assessment: p.assessment,
       nextAction: p.nextAction,
@@ -694,6 +760,56 @@ export const researchProposeCheckpoint = ResearchModel.defineOp('research.propos
         ...s.current,
         questions,
         pendingCheckpoint: checkpoint,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchBindCheckpointEntry = ResearchModel.defineOp('research.bind_checkpoint_entry', {
+  schema: z.object({
+    checkpointId: z.string(),
+    entryId: z.string(),
+  }),
+  apply: (s, p) => {
+    const pending = s.current.pendingCheckpoint;
+    if (pending === null || pending.checkpointId !== p.checkpointId) return s;
+    if (pending.committedEntryId !== undefined) return s;
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        pendingCheckpoint: {
+          ...pending,
+          committedEntryId: p.entryId,
+        },
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchBindCheckpointReceipt = ResearchModel.defineOp('research.bind_checkpoint_receipt', {
+  schema: z.object({
+    checkpointId: z.string(),
+    receipt: ResearchCheckpointReceiptSchema,
+  }).strict(),
+  apply: (s, p) => {
+    const pending = s.current.pendingCheckpoint;
+    if (pending === null || pending.checkpointId !== p.checkpointId) return s;
+    const currentReceipt = pending.receipt;
+    const nextReceipt: ResearchCheckpointReceipt = {
+      prepare: p.receipt.prepare ?? currentReceipt?.prepare,
+      save: p.receipt.save ?? currentReceipt?.save,
+      preSaveCheck: p.receipt.preSaveCheck ?? currentReceipt?.preSaveCheck,
+      postSaveCheck: p.receipt.postSaveCheck ?? currentReceipt?.postSaveCheck,
+    };
+    if (sameCheckpointReceipt(currentReceipt, nextReceipt)) return s;
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        pendingCheckpoint: { ...pending, receipt: nextReceipt },
         revision: s.current.revision + 1,
       },
     };
@@ -731,20 +847,37 @@ export const researchUpsertAlert = ResearchModel.defineOp('research.upsert_alert
   schema: z.object({
     fingerprint: z.string().min(1),
     kind: z.enum(['contradiction', 'blocked', 'reopened', 'commit_failed', 'degraded', 'stale']),
+    classification: z.enum(['active_blocker', 'historical_unresolved', 'superseded_by_retry', 'warning']).optional(),
+    source: z.enum(['question', 'aitp_failure', 'aitp_check', 'adapter', 'checkpoint']).optional(),
+    state: z.enum(['active', 'acknowledged', 'cleared', 'superseded']).optional(),
     message: z.string(),
     questionId: z.string().optional(),
     lineSlug: z.string().optional(),
+    relatedEntryId: z.string().optional(),
+    workstream: z.string().optional(),
+    retryOfEntryId: z.string().optional(),
+    reason: z.string().optional(),
     createdAt: z.number(),
   }),
   apply: (s, p) => {
+    const classification = p.classification ?? (p.kind === 'blocked' ? 'active_blocker' : 'warning');
+    const source = p.source ?? (p.questionId === undefined ? 'adapter' : 'question');
+    const requestedState = p.state ?? 'active';
     const existingIndex = s.current.alerts.findIndex((alert) => alert.fingerprint === p.fingerprint);
     if (existingIndex === -1) {
       const alert: ResearchAlert = {
         fingerprint: p.fingerprint,
         kind: p.kind,
+        classification,
+        source,
+        state: requestedState,
         message: p.message,
         questionId: p.questionId,
         lineSlug: p.lineSlug,
+        relatedEntryId: p.relatedEntryId,
+        workstream: p.workstream,
+        retryOfEntryId: p.retryOfEntryId,
+        reason: p.reason,
         createdAt: p.createdAt,
       };
       return {
@@ -758,20 +891,41 @@ export const researchUpsertAlert = ResearchModel.defineOp('research.upsert_alert
     }
 
     const existing = s.current.alerts[existingIndex]!;
+    const recurring = existing.state === 'cleared' && requestedState === 'active';
+    const nextState = !recurring && existing.acknowledgedAt !== undefined && requestedState === 'active'
+      ? 'acknowledged'
+      : requestedState;
+    const nextAcknowledgedAt = recurring ? undefined : existing.acknowledgedAt;
     if (
       existing.kind === p.kind &&
+      existing.classification === classification &&
+      existing.source === source &&
+      existing.state === nextState &&
+      existing.acknowledgedAt === nextAcknowledgedAt &&
       existing.message === p.message &&
       existing.questionId === p.questionId &&
-      existing.lineSlug === p.lineSlug
+      existing.lineSlug === p.lineSlug &&
+      existing.relatedEntryId === p.relatedEntryId &&
+      existing.workstream === p.workstream &&
+      existing.retryOfEntryId === p.retryOfEntryId &&
+      existing.reason === p.reason
     ) return s;
 
     const alerts = [...s.current.alerts];
     alerts[existingIndex] = {
       ...existing,
       kind: p.kind,
+      classification,
+      source,
+      state: nextState,
+      acknowledgedAt: nextAcknowledgedAt,
       message: p.message,
       questionId: p.questionId,
       lineSlug: p.lineSlug,
+      relatedEntryId: p.relatedEntryId,
+      workstream: p.workstream,
+      retryOfEntryId: p.retryOfEntryId,
+      reason: p.reason,
     };
     return {
       ...s,
@@ -787,8 +941,15 @@ export const researchUpsertAlert = ResearchModel.defineOp('research.upsert_alert
 export const researchClearAlert = ResearchModel.defineOp('research.clear_alert', {
   schema: z.object({ fingerprint: z.string().min(1) }),
   apply: (s, p) => {
-    const alerts = s.current.alerts.filter((alert) => alert.fingerprint !== p.fingerprint);
-    if (alerts.length === s.current.alerts.length) return s;
+    const existingIndex = s.current.alerts.findIndex((alert) => alert.fingerprint === p.fingerprint);
+    if (existingIndex === -1) return s;
+    const existing = s.current.alerts[existingIndex]!;
+    if (existing.state === 'cleared') return s;
+    const alerts = [...s.current.alerts];
+    alerts[existingIndex] = {
+      ...existing,
+      state: 'cleared',
+    };
     return {
       ...s,
       current: {
@@ -811,7 +972,11 @@ export const researchAcknowledgeAlert = ResearchModel.defineOp('research.ack_ale
     const existing = s.current.alerts[existingIndex]!;
     if (existing.acknowledgedAt !== undefined) return s;
     const alerts = [...s.current.alerts];
-    alerts[existingIndex] = { ...existing, acknowledgedAt: p.acknowledgedAt };
+    alerts[existingIndex] = {
+      ...existing,
+      state: 'acknowledged',
+      acknowledgedAt: p.acknowledgedAt,
+    };
     return {
       ...s,
       current: {
@@ -827,29 +992,14 @@ export const researchAcknowledgeAlert = ResearchModel.defineOp('research.ack_ale
 // Research Loop scientific state ops (Phase 1)
 //
 // These ops mutate the scientific state layer (phase / action / progress /
-// state change / human gate) without touching AITP persistence. Transition
-// checks use the current phase as a guard; ops that don't match the expected
-// phase are no-ops (return state unchanged), so they replay safely. The
-// service layer performs the pre-dispatch validation (throws on invalid
-// transitions) so callers get clear errors on live calls while replay stays
-// idempotent.
+// state change / human gate) without touching AITP persistence. Phase and
+// invariant checks live in the `transitions/researchTransitionAuthority`
+// module; ops that violate them are no-ops (return state unchanged), so they
+// replay safely. The service layer performs the pre-dispatch validation
+// (throws on invalid transitions, missing actions, wrong action status, or
+// mismatched gates) so callers get clear errors on live calls while replay
+// stays idempotent.
 // ---------------------------------------------------------------------------
-
-const VALID_TRANSITIONS: Readonly<Record<ResearchPhase, readonly ResearchPhase[]>> = {
-  idle: ['orienting', 'gap_analysis', 'action_planned', 'awaiting_human'],
-  orienting: ['gap_analysis', 'idle', 'awaiting_human'],
-  gap_analysis: ['action_planned', 'idle', 'awaiting_human'],
-  action_planned: ['action_executing', 'idle', 'awaiting_human'],
-  action_executing: ['evaluating', 'idle', 'awaiting_human'],
-  evaluating: ['state_updated', 'idle', 'awaiting_human'],
-  state_updated: ['checkpoint_pending', 'gap_analysis', 'idle', 'awaiting_human'],
-  checkpoint_pending: ['idle', 'gap_analysis', 'awaiting_human'],
-  awaiting_human: ['idle', 'gap_analysis', 'action_planned', 'action_executing', 'evaluating'],
-};
-
-function isTransitionValid(from: ResearchPhase, to: ResearchPhase): boolean {
-  return VALID_TRANSITIONS[from]?.includes(to) ?? false;
-}
 
 export const researchPlanAction = ResearchModel.defineOp('research.plan_action', {
   schema: z.object({
@@ -861,15 +1011,13 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
     expectedEvidence: StringListSchema,
     stopCondition: ShortTextSchema,
     allowedToolKinds: StringListSchema,
+    retryOfEntryId: z.string().optional(),
     requiresHumanApproval: z.boolean(),
     createdAt: z.number(),
   }),
   apply: (s, p) => {
-    if (
-      s.current.phase !== 'gap_analysis' &&
-      s.current.phase !== 'action_planned' &&
-      s.current.phase !== 'awaiting_human'
-    ) return s;
+    if (!PLAN_ACTION_PHASES.includes(s.current.phase)) return s;
+    if (isLiveForegroundAction(s.current.currentAction)) return s;
     if (p.questionId !== undefined && s.current.questions[p.questionId] === undefined) return s;
     if (p.lineSlug !== undefined && s.current.lines[p.lineSlug] === undefined) return s;
     const action: ResearchActionSpecRecord = {
@@ -881,6 +1029,7 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
       expectedEvidence: p.expectedEvidence,
       stopCondition: p.stopCondition,
       allowedToolKinds: p.allowedToolKinds,
+      retryOfEntryId: p.retryOfEntryId,
       status: 'planned',
       createdAt: p.createdAt,
       requiresHumanApproval: p.requiresHumanApproval,
@@ -891,6 +1040,7 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
         ...s.current,
         phase: 'action_planned',
         currentAction: action,
+        currentRun: null,
         revision: s.current.revision + 1,
       },
     };
@@ -942,6 +1092,57 @@ export const researchCompleteAction = ResearchModel.defineOp('research.complete_
   },
 });
 
+const ResearchRunStageSchema = z.enum([
+  'queued', 'running', 'scf', 'band', 'analyzing', 'completed', 'failed', 'unknown',
+]);
+const ResearchSchedulerStateSchema = z.enum([
+  'pending', 'running', 'completed', 'failed', 'cancelled', 'unknown',
+]);
+
+export const researchObserveRun = ResearchModel.defineOp('research.observe_run', {
+  schema: z.object({
+    actionId: z.string(),
+    campaign: z.string().min(1).max(500),
+    jobId: z.string().min(1).max(200),
+    sourcePin: z.string().max(500).optional(),
+    binaryPin: z.string().max(500).optional(),
+    stage: ResearchRunStageSchema,
+    schedulerState: ResearchSchedulerStateSchema,
+    lastObservedAt: z.number(),
+    nextCheckAt: z.number().optional(),
+    terminalState: z.enum(['completed', 'failed', 'cancelled']).optional(),
+    artifactRefs: StringListSchema,
+  }).strict(),
+  apply: (s, p) => {
+    if (s.current.currentAction?.actionId !== p.actionId) return s;
+    const currentRun: ResearchRunStateRecord = {
+      actionId: p.actionId,
+      campaign: p.campaign,
+      jobId: p.jobId,
+      sourcePin: p.sourcePin,
+      binaryPin: p.binaryPin,
+      stage: p.stage,
+      schedulerState: p.schedulerState,
+      lastObservedAt: p.lastObservedAt,
+      nextCheckAt: p.nextCheckAt,
+      terminalState: p.terminalState,
+      artifactRefs: p.artifactRefs,
+    };
+    const currentAction = s.current.currentAction === null
+      ? null
+      : { ...s.current.currentAction, run: currentRun };
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        currentAction,
+        currentRun,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
 export const researchRecordProgress = ResearchModel.defineOp('research.record_progress', {
   schema: z.object({
     headline: ShortTextSchema,
@@ -971,7 +1172,7 @@ export const researchRecordProgress = ResearchModel.defineOp('research.record_pr
   }),
   apply: (s, p) => {
     const phase = p.phaseChange !== undefined
-      ? (isTransitionValid(p.phaseChange.from, p.phaseChange.to) ? p.phaseChange.to : s.current.phase)
+      ? (isPhaseTransitionValid(p.phaseChange.from, p.phaseChange.to) ? p.phaseChange.to : s.current.phase)
       : s.current.phase;
     const progress: ResearchProgressReportRecord = {
       headline: p.headline,
@@ -1017,7 +1218,7 @@ export const researchSetPhase = ResearchModel.defineOp('research.set_phase', {
   }),
   apply: (s, p) => {
     if (s.current.phase === p.phase) return s;
-    if (!isTransitionValid(s.current.phase, p.phase)) return s;
+    if (!isPhaseTransitionValid(s.current.phase, p.phase)) return s;
     const stateChange: ResearchStateChangeRecord = {
       beforePhase: s.current.phase,
       afterPhase: p.phase,
@@ -1049,6 +1250,7 @@ export const researchRequestHumanDecision = ResearchModel.defineOp('research.req
   apply: (s, p) => {
     if (p.actionId !== undefined && s.current.currentAction?.actionId !== p.actionId) return s;
     if (p.questionId !== undefined && s.current.questions[p.questionId] === undefined) return s;
+    if (isUnresolvedHumanGate(s.current.humanGate)) return s;
     const gate: ResearchHumanGateRecord = {
       gateId: p.gateId,
       kind: p.kind,
@@ -1083,7 +1285,7 @@ export const researchResolveHumanDecision = ResearchModel.defineOp('research.res
       gate === null ||
       gate.gateId !== p.gateId ||
       gate.resolvedAt !== undefined ||
-      !isTransitionValid('awaiting_human', p.nextPhase)
+      !isPhaseTransitionValid('awaiting_human', p.nextPhase)
     ) return s;
 
     const stateChange: ResearchStateChangeRecord = {
@@ -1112,34 +1314,40 @@ export const researchResolveHumanDecision = ResearchModel.defineOp('research.res
 
 export interface ResearchCursorState {
   readonly cursor: ResearchCommittedCursor | null;
+  readonly history: readonly ResearchCommittedCursor[];
   readonly revision: number;
 }
 
 export const ResearchCursorModel = defineModel<ResearchCursorState>(
   'researchCursor',
-  () => ({ cursor: null, revision: 0 }),
+  () => ({ cursor: null, history: [], revision: 0 }),
 );
 
 export const researchCommitCheckpoint = ResearchCursorModel.defineOp('research.commit_checkpoint', {
   schema: z.object({
     checkpointId: z.string(),
     entryId: z.string(),
+    receipt: ResearchCheckpointReceiptSchema.optional(),
     committedAt: z.number(),
   }),
   apply: (s, p) => {
-    if (
-      s.cursor?.checkpointId === p.checkpointId &&
-      s.cursor.entryId === p.entryId
-    ) {
+    // Same checkpoint + same Entry is idempotent (already committed).
+    if (s.history.some((c) => c.checkpointId === p.checkpointId && c.entryId === p.entryId)) {
       return s;
     }
-    if (s.cursor !== null) return s;
+    // Same checkpoint + different Entry is rejected (no-op; the service throws).
+    if (s.history.some((c) => c.checkpointId === p.checkpointId)) {
+      return s;
+    }
+    const committed: ResearchCommittedCursor = {
+      checkpointId: p.checkpointId,
+      entryId: p.entryId,
+      receipt: p.receipt,
+      committedAt: p.committedAt,
+    };
     return {
-      cursor: {
-        checkpointId: p.checkpointId,
-        entryId: p.entryId,
-        committedAt: p.committedAt,
-      },
+      cursor: committed,
+      history: [...s.history, committed],
       revision: s.revision + 1,
     };
   },
@@ -1153,6 +1361,7 @@ export const researchAcknowledgeCheckpoint = ResearchModel.defineOp('research.ac
   apply: (s, p) => {
     const pending = s.current.pendingCheckpoint;
     if (pending === null || pending.checkpointId !== p.checkpointId) return s;
+    if (p.entryId !== undefined && pending.committedEntryId !== undefined && pending.committedEntryId !== p.entryId) return s;
     const question = pending.questionId === undefined
       ? undefined
       : s.current.questions[pending.questionId];
@@ -1177,6 +1386,13 @@ export const researchAcknowledgeCheckpoint = ResearchModel.defineOp('research.ac
     };
   },
 });
+
+function sameCheckpointReceipt(
+  left: ResearchCheckpointReceipt | undefined,
+  right: ResearchCheckpointReceipt,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
 
 declare module '#/app/event/eventBus' {
   interface DomainEventMap {
