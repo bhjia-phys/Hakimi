@@ -1,6 +1,6 @@
 # Research Mode
 
-Research Mode is an experimental capability that turns Hakimi into a joint research partner backed by the [AITP](https://github.com/bhjia-phys/AITP-Research-Protocol) evidence ledger. Instead of answering a single question and forgetting, the agent maintains a live portfolio of research questions, steers itself through bounded actions, and persists durable checkpoints to AITP — all while you retain full control through slash commands and the Research Board.
+Research Mode is an experimental capability available in both the terminal UI (TUI) and Web. It turns Hakimi into a joint research partner backed by the [AITP](https://github.com/bhjia-phys/AITP-Research-Protocol) evidence ledger: the agent maintains a live portfolio of research questions, steers itself through bounded actions, and persists durable checkpoints to AITP while you retain control through `/research`, the Research Board, and the Research Manager.
 
 ::: warning Experimental
 Research Mode is gated behind the `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` (`aitp_research_mode`) experimental flag, which is **disabled by default**. This default-off flag is a Hakimi product setting, not an AITP protocol-state indicator and not an H6 availability signal. Its surface, behavior, and tool names may change between releases. See [Experimental features](../configuration/env-vars.md#runtime-switches) for how flags work.
@@ -18,32 +18,42 @@ When all three are satisfied, the adapter enters the `ready` phase and the suppo
 
 ## Enabling Research Mode
 
-The `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` (`aitp_research_mode`) flag is disabled by default. Set it to `1` before launch to make the `/research` command and the `EnterAITPMode` capability available to the agent. The flag is a Hakimi product decision only; it does not report an AITP protocol stage or H6 availability. However, the flag only makes the surface available — it does **not** enter Research Mode, probe AITP, show the Research Board, or open AITP plugin skills and research tools. In the inactive state, zero AITP I/O occurs; no `init`, `init --adopt`, `inventory`, or `backfill --apply` is ever auto-run. You still need to enter the mode explicitly (via `/research on` or the model `EnterAITPMode` entry path) to activate the AITP adapter and make the research capabilities available to subsequent research turns.
+The `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` (`aitp_research_mode`) flag is disabled by default. Set it to `1` before launch to make `/research` available in TUI and Web, show **Research** in the Web composer's **Modes** menu, and expose `EnterAITPMode` to the agent. These entry paths use the same authoritative server snapshot. The flag is a Hakimi product decision only; it does not report an AITP protocol stage or H6 availability, and it only makes the surface available — it does **not** enter Research Mode, probe AITP, show the Research Board, or open AITP plugin skills and research tools. In the inactive state, zero AITP I/O occurs; no `init`, `init --adopt`, `inventory`, or `backfill --apply` is ever auto-run. Enter explicitly from the Web **Modes** menu, with `/research on`, or through the model's `EnterAITPMode` path to activate the adapter for later research turns.
 
 ```sh
 KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=1 hakimi
 ```
 
-To hide the entire Research surface, set `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=0` before launching, or toggle it off interactively with `/experiments` inside the TUI. When the flag is off, the `/research` command is hidden from autocomplete, all AITP tools and skills are invisible to the model, and zero AITP I/O occurs.
+To hide the entire Research surface, set `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=0` before launching. TUI users can also toggle it with `/experiments`; Web follows the server's current flag state and hides the command and panels when disabled. In either surface, the flag-off state hides AITP tools and skills from the model and performs zero AITP I/O.
 
 ## Starting and stopping
 
-Use `/research on` to enter Research Mode. Hakimi activates the AITP adapter, probes the workspace, and shows the Research Board. The command does not create a research question or schedule a model turn by itself: submit a research question after entering, continue an active Goal, or let the model call `EnterAITPMode` while handling a research request. You can optionally select a research line at entry:
+In Web, open the composer's **Modes** menu and select **Research**. When the shared snapshot is inactive, this starts the capability and shows the Research Board; once the snapshot is `probing`, `ready`, or `degraded`, the same row stays active and opens the Research Manager instead of acting as an on/off switch. The button only activates the capability and Board — it does not create a question or schedule a model turn. Web enforces the Plan mode conflict before either manual transition: turn off Plan mode before starting Research, and exit Research before enabling Plan mode.
 
-```
+You can also use `/research on` in either TUI or the Web composer. Web routes a typed `/research` command through the Research command endpoint rather than sending it as a model prompt. Hakimi activates the AITP adapter, enters the `probing` phase while it checks the workspace, then shows the live Research Board with the resulting `ready` or `degraded` state. Submit a research question after entering, continue an active Goal, or let the model call `EnterAITPMode` while handling a research request. You can optionally select a research line at entry:
+
+```text
 /research on
 /research on -- boundary-zero-mode
 ```
 
-When entering from `manual` or `yolo` permission mode, a prompt asks whether to switch to `auto` or `yolo` first. This only chooses the approval posture for later research turns; it does not start an independent background loop. You can stay in `manual`, but a research turn may wait for confirmation on risky actions. An active Goal remains the owner of autonomous continuation across turns.
+In TUI only, entering from `manual` or `yolo` permission mode opens a keyboard prompt asking whether to switch to `auto` or `yolo`. Web uses the session's current permission mode; change it in the Web controls before entering if needed. Neither surface starts an independent background loop, and a research turn may still wait for approval in `manual`. An active Goal remains the sole owner of autonomous continuation across turns.
+
+### Web manual check
+
+1. With the flag enabled and the session idle, open **Modes** and select **Research**. Confirm that the Board appears and reaches `probing`, then `ready` or `degraded`, without scheduling a model response.
+2. Open **Modes** again and select the active **Research** row or **Manage**. Confirm that the Research Manager opens instead of exiting the mode.
+3. Run `/research off`. Confirm that the Board and **Research** tag disappear and that the **Modes** row returns to its start action.
+4. From an inactive session, send a research request that leads the model to call `EnterAITPMode`. Confirm that the same Board and active **Research** entry appear automatically.
+5. Restart with `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=0`. Confirm that the **Research** row and `/research` slash-menu entry are hidden.
 
 To exit Research Mode:
 
-```
+```text
 /research off
 ```
 
-Exiting revokes AITP tool admissions and hides the Research Board. Already-saved AITP records are **not** deleted — they persist in the ledger.
+Exiting revokes AITP tool admissions and hides the Research Board in both surfaces. Already-saved AITP records are **not** deleted — they persist in the ledger.
 
 ## Checking status
 
@@ -53,7 +63,7 @@ At any time, check the current research snapshot:
 /research status
 ```
 
-This displays the mode phase, loop status, current research line, the focus question, AITP adapter health, and—when available—the current-state maintenance summary.
+In TUI, this displays the mode phase, loop status, current research line, focus question, AITP adapter health, and—when available—the current-state maintenance summary. In Web, it refreshes the authoritative session snapshot and expands the live Board.
 
 ## Current-state maintenance
 
@@ -79,7 +89,7 @@ The paused state is included in the snapshot injected into subsequent model step
 
 ## The Research Board
 
-When Research Mode is active, a **Research Board** appears in the live chrome area (the persistent UI region above the input box). The default compact Board is **science-first**: it tells the story of the research before showing the task list. It highlights:
+When Research Mode is active, a **Research Board** appears above the input area in both TUI and Web. The default compact Board is **science-first**: it tells the story of the research before showing supporting task state. It highlights:
 
 - The current Research phase and a progress headline
 - The physics work already completed and its resulting insight or result
@@ -87,11 +97,11 @@ When Research Mode is active, a **Research Board** appears in the live chrome ar
 - The current uncertainty or unresolved question
 - The next bounded action, plus any human gate or active alert
 
-Todo **Actions** remain supporting information, not the compact Board's primary narrative. Mode, loop, question, focus, and checkpoint changes publish one complete snapshot to the TUI, so the board updates immediately without polling. A cold session read cannot overwrite a newer live update.
+The phase badge exposes `probing`, `ready`, or `degraded`. Mode, loop, question, focus, and checkpoint changes publish one complete snapshot to both surfaces. TUI rejects stale cold hydration; Web serializes same-session mutations and prevents an older HTTP response from overwriting a newer live WebSocket update.
 
 The board tracks semantic research state, not raw activity. Ordinary tool calls and AITP `list` / `show` / `check` reads do not change it by themselves. During an active research turn, the agent is instructed to create a question before substantive work, set its focus, begin one bounded action with `BeginResearchAction`, and conclude that action with `ConcludeResearchAction` after reporting the physical work, result, tests or derivation, limitations, mainline impact, and next step. `ConcludeResearchAction` does not submit or poll HPC jobs, write AITP, or change a question's assessment automatically. `PlanResearchAction`, `CompleteResearchAction`, `SetResearchPhase`, and `RecordResearchProgress` remain lower-level recovery or maintenance tools rather than the normal action path. The agent should call `UpdateResearchQuestion` only when evidence, failure, or sustained no-progress changes the assessment or next action. This is semantic guidance, not a runtime guarantee that candidate confirmation will guard every focus call. If no such semantic transition occurred, an unchanged board is expected.
 
-Research Mode also projects the session's `TodoList` into the board as **Actions**. Todo state remains separate from the Research Question and the AITP ledger: completing an action does not itself change an epistemic state or create an AITP Entry. Press `Ctrl-O` to expand the Board in place. The expanded view adds derivation, tests, sources, checkpoint details, and any current scheduler observation while retaining the current line summaries, assessment, alerts, and bounded Actions list; press `Ctrl-O` again to collapse it. In ordinary non-research mode, `Ctrl-T` continues to expand the standalone Todo panel.
+TUI additionally projects the session's `TodoList` into the board as **Actions**. Todo state remains separate from Research Questions and the AITP ledger: completing an action does not change an epistemic state or create an AITP Entry. Press `Ctrl-O` in TUI to expand derivation, tests, sources, question counts, checkpoints, alerts, scheduler observations, and Actions; `Ctrl-T` remains the non-research Todo shortcut. In Web, click **Expand** or **Collapse** on the Board; Web uses buttons and forms, not these TUI keyboard shortcuts.
 
 For child-agent work, the main agent can review a strict typed evidence packet containing the claim, evidence, assumptions, tests, sources, artifacts, limitations, and confidence. Reviewing a packet is deliberately zero-write: it does not alter the assessment, epistemic state, or AITP. The main agent must interpret the physics and explicitly record any resulting progress or question change.
 
@@ -99,21 +109,21 @@ For HPC work, the loop can record an explicit observation bound to the current R
 
 When the agent proposes candidate questions for confirmation, it may register them as open working state so they appear on the board. The intended behavior is to wait for confirmation before setting one as Focus or persisting a durable AITP decision, but candidate confirmation is not a runtime-enforced guard on `SetResearchFocus`. Alerts and a generic human gate are implemented; `ResolveResearchDecision` resolves runtime state but does not automatically write an AITP `decision` Entry. A Hakimi Research Line and an AITP workstream are separate namespaces: if their slugs differ, the agent may read the existing workstream but must not silently create an alias or use the Research Line slug for persistence.
 
-The board is read-only. All human edits go through `/research manage` or the individual `/research` subcommands. When an unresolved gate or active alert exists, `/research manage` opens an **Attention view** first. In that view, press `R` to enter a resolution and choose the phase to resume, `A` to acknowledge the alert, or `L` to return to the lines. In Attention view, `R` means resolution; it does not have the ordinary question-view meaning of reopen. Once attention items are cleared, the ordinary manager remains line-first: select a Research Line, press `Enter` to inspect its questions, and press `Esc` to return to the line list. The line view shows status, question counts, and assessment; the question view supports focus, edit, defer, block, close, and reopen actions.
+The Board is read-only. Use `/research manage` or a direct `/research` subcommand for changes. Both managers are line-first, but their controls differ. When an unresolved gate or active alert exists, the TUI opens an **Attention view** first: press `R` to enter a resolution and choose the phase to resume, `A` to acknowledge the alert, or `L` to return to the lines. In Attention view, `R` means resolution rather than reopen. After attention items are cleared, TUI selects a Research Line and opens its questions with keyboard commands; Web shows a clickable line list beside Line, Question, and Checkpoint forms.
 
 ## Steering the research
 
-Research Mode uses optimistic concurrency: every mutating command carries the latest snapshot `revision` as `expectedRevision`. If the agent has modified a question since you last saw the board, the command returns a `research_stale_revision` error and the board refreshes so you can retry with the current revision.
+Research Mode uses optimistic concurrency: every mutating command carries the latest snapshot `revision` as `expectedRevision`. A stale revision fails without applying the mutation. TUI refreshes the Board for a retry; Web re-reads the same session's authoritative snapshot. If a newer live revision arrives while a Web form is dirty, the Manager preserves the draft, shows a stale warning, and requires a refresh/retry rather than silently replacing the form.
 
 ### Research Manager
 
-Open an interactive manager to navigate and edit questions:
+Open the manager in either surface:
 
 ```
 /research manage
 ```
 
-In the ordinary line and question views, use `↑` / `↓` to navigate, `F` to set focus, `E` to edit wording, `D` to defer, `B` to block, `C` to close, `R` to reopen, and `Esc` to cancel. These shortcuts are unchanged; only Attention view assigns `R` to resolution.
+In TUI, use `↑` / `↓` and `Enter` to navigate line-first; use `F` to set focus, `E` to edit wording, `D` to defer, `B` to block, `C` to close, `R` to reopen, and `Esc` to go back or cancel. Only Attention view assigns `R` to resolution. In Web, select lines and questions by clicking, edit fields in the form, and use the labeled buttons for focus, workflow transitions, pause/resume, and save.
 
 ### Direct steering commands
 
@@ -144,6 +154,8 @@ The AITP tool surface exposed to the agent is split into two tiers based on adap
 
 This barrier means the agent cannot silently persist evidence when AITP is unhealthy. The adapter validates every versioned read response and unversioned prepare/save response against the installed AITP contract; unknown schemas, statuses, or extra transport fields fail closed instead of being accepted as research state. `aitp_record_prepare` accepts only `observation`, `result`, `failure`, `decision`, `source`, `code_change`, `run`, or `closeout`; Note preparation uses `working` or `theory` mode, and save accepts only the draft path returned by prepare.
 
+The Web Manager's Checkpoint form preserves this boundary. **Propose** creates only pending Research working state. **Commit** stays disabled until a checkpoint is pending and you enter an explicit existing AITP ledger `entryId`, obtained after the agent or official AITP CLI has completed the canonical save flow. Web sends that ID to the Research command endpoint to link the checkpoint; it never calls `record`/`note`, writes `.aitp` files, or creates a canonical Entry. Supplying an ID does not bypass the save → show → check barrier.
+
 `aitp_check` treats exit code 0 as clean and exit code 1 as a successful report containing findings. Findings remain visible without degrading the adapter. A new error finding keeps the relevant checkpoint pending, while a pre-existing error is retained as an auditable receipt warning. Finding codes are projected as opaque strings; the adapter does not implement AITP's `sha256-once:` or `check-policy` semantics. During entry/restore maintenance, valid error findings keep the Research Mode receipt `ready`; only an unavailable or invalid maintenance cycle is `degraded`. Exit code 2 is a failed command: a valid AITP JSON error or invalid check transport degrades the adapter, while an argument-parser misuse is reported as a tool error without poisoning the session. Full-text `Grep` may locate candidate records, but a complete canonical Entry must be read through `aitp_show`; a failed `aitp_show` is never replaced by direct Markdown parsing.
 
 ## Degraded mode
@@ -158,11 +170,9 @@ The adapter enters `degraded` when any of these conditions hold:
 In degraded mode:
 
 - **Read tools** remain available — the agent can still list and show AITP entries.
-- **Write tools** are blocked — no `record_save` or `note_save` can execute.
+- **Write tools and checkpoint commits** are blocked — no `record_save`, `note_save`, or pending-checkpoint commit can execute.
 - **AITP writes and active Research Mode Goal completion are blocked** — unresolved human-gate decisions also block Goal completion. Local Question/Line mutations may still occur, but they are not durable AITP writes.
 - Research Mode performs no automatic session-closeout. It does **not** automatically run `init`, `init --adopt`, `inventory`, or `backfill --apply`, and the adapter does not expose, call, or parse the upstream `backfill-0.1` success envelope. The user must initialize the workspace manually or resolve the AITP health issue.
-
-You can explicitly choose to proceed without persistence when the adapter is degraded, but this skips ledger writes for that operation.
 
 ## Exclusions and limitations
 
@@ -176,4 +186,4 @@ Research Mode has several hard exclusions:
 
 - [Slash commands reference](../reference/slash-commands.md#experimental-research-mode) — full `/research` command grammar
 - [Sessions and context](./sessions.md) — how conversation undo interacts with research state
-- [Using Goals](./goals.md) — another special mode; Goal completion is blocked while Research Mode is degraded
+- [Using Goals](./goals.md) — another special mode; Goal completion is blocked while a Research checkpoint is pending

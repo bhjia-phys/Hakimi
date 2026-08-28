@@ -737,7 +737,7 @@ describe('typed research evidence packets', () => {
     });
     const revision = svc.getSnapshot().revision;
     svc.updateQuestion({ questionId: question.id, assessment: 'New assessment' });
-    await expect(() => svc.reviewEvidencePacket(packet, revision)).toThrow('revision is stale');
+    expect(() => svc.reviewEvidencePacket(packet, revision)).toThrow('revision is stale');
   });
 });
 
@@ -782,11 +782,11 @@ describe('research run observations', () => {
       stopCondition: 'Stop when the declared artifacts exist.',
     });
     const revision = svc.getSnapshot().revision;
-    await expect(() => svc.observeRun({
+    expect(() => svc.observeRun({
       actionId: action.actionId, expectedRevision: revision - 1, campaign: 'c', jobId: 'j',
       stage: 'running', schedulerState: 'completed', artifactRefs: [],
     })).toThrow('revision is stale');
-    await expect(() => svc.observeRun({
+    expect(() => svc.observeRun({
       actionId: action.actionId, expectedRevision: revision, campaign: 'c', jobId: 'j',
       stage: 'running', schedulerState: 'completed', artifactRefs: [],
     })).toThrow('requires an explicit terminal state');

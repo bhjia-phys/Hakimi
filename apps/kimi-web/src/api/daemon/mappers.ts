@@ -27,6 +27,7 @@ import type {
   QuestionItem,
   QuestionOption,
   QuestionResponse,
+  ResearchStatusSnapshot,
 } from '../types';
 
 import type {
@@ -46,6 +47,7 @@ import type {
   WireQuestionOption,
   WireQuestionRequest,
   WireQuestionResponse,
+  WireResearchStatusSnapshot,
   WireSession,
   WireSessionUsage,
   WireWorkspace,
@@ -462,6 +464,48 @@ export function toAppGoal(snapshot: unknown): AppGoal | null {
   };
 }
 
+export function toAppResearchSnapshot(
+  snapshot: WireResearchStatusSnapshot,
+): ResearchStatusSnapshot {
+  const toQuestion = (
+    question: WireResearchStatusSnapshot['questions'][number],
+  ): ResearchStatusSnapshot['questions'][number] => ({
+    ...question,
+    neededEvidence: [...question.neededEvidence],
+    evidenceRefs: [...question.evidenceRefs],
+    falsifierRefs: [...question.falsifierRefs],
+  });
+  return {
+    mode: snapshot.mode,
+    loopStatus: snapshot.loopStatus,
+    currentLineSlug: snapshot.currentLineSlug,
+    currentFocus:
+      snapshot.currentFocus === undefined ? undefined : { ...snapshot.currentFocus },
+    currentQuestion:
+      snapshot.currentQuestion === undefined
+        ? undefined
+        : toQuestion(snapshot.currentQuestion),
+    questions: snapshot.questions.map(toQuestion),
+    lines: snapshot.lines.map((line) => ({ ...line })),
+    openQuestionCount: snapshot.openQuestionCount,
+    activeQuestionCount: snapshot.activeQuestionCount,
+    blockedQuestionCount: snapshot.blockedQuestionCount,
+    alerts: snapshot.alerts.map((alert) => ({ ...alert })),
+    goalSummary:
+      snapshot.goalSummary === undefined ? undefined : { ...snapshot.goalSummary },
+    aitpHealth: { ...snapshot.aitpHealth },
+    pendingCheckpoint:
+      snapshot.pendingCheckpoint === undefined
+        ? undefined
+        : { ...snapshot.pendingCheckpoint },
+    latestCommittedCheckpoint:
+      snapshot.latestCommittedCheckpoint === undefined
+        ? undefined
+        : { ...snapshot.latestCommittedCheckpoint },
+    revision: snapshot.revision,
+  };
+}
+
 /**
  * Map a WireEvent to an AppEvent.
  *
@@ -562,6 +606,13 @@ export function toAppEvent(wire: WireEvent): AppEvent {
         goal: goal?.status === 'complete' ? null : goal,
       };
     }
+
+    case 'event.research.updated':
+      return {
+        type: 'researchUpdated',
+        sessionId: w.session_id,
+        snapshot: toAppResearchSnapshot(w.payload.snapshot),
+      };
 
     // ----- Message lifecycle -----
     case 'event.message.created':

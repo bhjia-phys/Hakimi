@@ -4,9 +4,60 @@ import Icons from 'unplugin-icons/vite';
 import { FileSystemIconLoader } from 'unplugin-icons/loaders';
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { basename, dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+export const CANONICAL_VITE_ENVIRONMENT = {
+  VITE_KIMI_SERVER_HTTP_URL: '',
+  KIMI_WEB_DESKTOP: '0',
+  KIMI_BACKEND_DEFAULT_URL: 'http://127.0.0.1:58627',
+  KIMI_BACKEND_MULTI_URL: 'http://127.0.0.1:58628',
+  KIMI_SERVER_URL: 'http://127.0.0.1:58627',
+  WEB_PORT: '5175',
+  WEB_PREVIEW_PORT: '4175',
+} as const;
+
+export function assertCanonicalViteEnvironment(env: NodeJS.ProcessEnv): boolean {
+  if (env.KIMI_WEB_CANONICAL_BUILD !== '1') return false;
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('VITE_') && !(key in CANONICAL_VITE_ENVIRONMENT)) {
+      throw new Error(`Canonical Web build received unexpected environment variable ${key}.`);
+    }
+  }
+  for (const [key, value] of Object.entries(CANONICAL_VITE_ENVIRONMENT)) {
+    if (env[key] !== value) {
+      throw new Error(`Canonical Web build requires ${key}=${JSON.stringify(value)}.`);
+    }
+  }
+  return true;
+}
+
+export function canonicalViteEnvDir(env: NodeJS.ProcessEnv): false | undefined {
+  return env.KIMI_WEB_CANONICAL_BUILD === '1' ? false : undefined;
+}
+
+assertCanonicalViteEnvironment(process.env);
+
 const webPort = Number(process.env.WEB_PORT) || 5175;
+const webRoot = import.meta.dirname;
+const productionWebParent = resolve(webRoot, '../kimi-code');
+const requestedBuildOutDir = process.env.KIMI_WEB_BUILD_OUT_DIR;
+let buildOutDir = 'dist';
+if (requestedBuildOutDir !== undefined) {
+  if (!isAbsolute(requestedBuildOutDir)) {
+    throw new Error('KIMI_WEB_BUILD_OUT_DIR must be an absolute path.');
+  }
+  const resolvedOutDir = resolve(requestedBuildOutDir);
+  if (
+    dirname(resolvedOutDir) !== productionWebParent ||
+    !basename(resolvedOutDir).startsWith('.dist-web-staging-')
+  ) {
+    throw new Error(
+      'KIMI_WEB_BUILD_OUT_DIR must be a .dist-web-staging-* sibling of apps/kimi-code/dist-web.',
+    );
+  }
+  buildOutDir = resolvedOutDir;
+}
 // Dev-proxy backend presets: `default` is the kap-server started by the root
 // `pnpm dev:server` (port 58627); `multi` is a second kap-server instance
 // started with `pnpm dev:v2` (port 58628 — instances share the home dir, so
@@ -119,6 +170,8 @@ const apiProxyOptions = {
 };
 
 export default defineConfig({
+  // Canonical production assets must not read apps/kimi-web/.env* files.
+  envDir: canonicalViteEnvDir(process.env),
   plugins: [
     vue(),
     backendSwitcherPlugin(),
@@ -166,7 +219,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
+    outDir: buildOutDir,
     emptyOutDir: true,
     target: 'es2022',
   },

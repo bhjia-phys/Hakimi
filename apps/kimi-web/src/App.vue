@@ -15,6 +15,7 @@ import DiffView from './components/chat/DiffView.vue';
 import ModelPicker from './components/settings/ModelPicker.vue';
 import ProviderManager from './components/settings/ProviderManager.vue';
 import LoginDialog from './components/dialogs/LoginDialog.vue';
+import ResearchManagerDialog from './components/dialogs/ResearchManagerDialog.vue';
 import SettingsDialog from './components/settings/SettingsDialog.vue';
 import AddWorkspaceDialog from './components/dialogs/AddWorkspaceDialog.vue';
 import ConfirmDialogHost from './components/dialogs/ConfirmDialogHost.vue';
@@ -30,6 +31,12 @@ import { isTraceEnabled } from './debug/trace';
 import { useKimiWebClient } from './composables/useKimiWebClient';
 import { useConfirmDialog } from './composables/useConfirmDialog';
 import type { PromptAttachment } from './composables/useKimiWebClient';
+import {
+  createComposerCommandSubmission,
+  restoreComposerCommandSubmission,
+  type ComposerCommandEvent,
+  type ComposerCommandSubmission,
+} from './composables/useComposerDraft';
 import type { TurnAttachment } from './types';
 import { useAuthGate } from './composables/useAuthGate';
 import { usePageTitle } from './composables/usePageTitle';
@@ -42,8 +49,28 @@ import type { SwarmMember } from './composables/swarmGroups';
 import ServerAuthDialog from './components/ServerAuthDialog.vue';
 import { initServerAuth, onAuthRequired } from './api/daemon/serverAuth';
 import type { AppConfig, SubagentModelConfig, ThinkingLevel } from './api/types';
+import {
+  researchManagerMutationAllowed,
+  researchManagerSessionIsCurrent,
+  type ResearchManagerCommandAck,
+  type ResearchManagerCommandRequest,
+} from './lib/researchManagerCommand';
 import { commitLevel, effectiveThinkingLevel, segmentsFor } from './lib/modelThinking';
-import { stripSkillPrefix } from './lib/slashCommands';
+import {
+  isResearchIdleOnlyBusy,
+  parseResearchSlashCommand,
+  planModeToggleResearchDecision,
+  researchCommandFromSlash,
+  researchCommandResolutionError,
+  researchSlashAllowedWhileBusy,
+  researchSlashInputToRestore,
+  researchSlashNeedsSnapshot,
+  researchSlashSessionIsCurrent,
+  runResearchModeEnter,
+  submitResearchSlashCommand,
+  type ResearchSlashExecutionOutcome,
+} from './lib/researchCommand';
+import { parseSlash, stripSkillPrefix } from './lib/slashCommands';
 import Button from './components/ui/Button.vue';
 import IconButton from './components/ui/IconButton.vue';
 import Icon from './components/ui/Icon.vue';
@@ -327,6 +354,37 @@ const showLogin = ref(false);
 const showAddWorkspace = ref(false);
 const showStatusPanel = ref(false);
 const showSettings = ref(false);
+const showResearchManager = ref(false);
+const researchExpandSignal = ref(0);
+const researchStartInFlight = new Set<string>();
+const managerSessionId = ref<string | null>(null);
+const researchManagerCommandAck = ref<ResearchManagerCommandAck | null>(null);
+const researchIdleOnlyBusy = computed(() =>
+  isResearchIdleOnlyBusy(
+    client.working.value,
+    client.compaction.value !== null,
+  ),
+);
+
+function closeResearchManager(): void {
+  showResearchManager.value = false;
+  researchManagerCommandAck.value = null;
+  managerSessionId.value = null;
+}
+
+watch(client.activeSessionId, closeResearchManager, { flush: 'sync' });
+watch(showResearchManager, (isOpen) => {
+  if (!isOpen) {
+    researchManagerCommandAck.value = null;
+    managerSessionId.value = null;
+  }
+}, { flush: 'sync' });
+watch(
+  () => [client.researchEnabled.value, researchIdleOnlyBusy.value] as const,
+  ([enabled, busy]) => {
+    if (!enabled || busy) closeResearchManager();
+  },
+);
 
 type SubmitPayload = {
   text: string;
@@ -351,6 +409,7 @@ const anyOverlayOpen = computed<boolean>(
     showAddWorkspace.value ||
     showStatusPanel.value ||
     showSettings.value ||
+    showResearchManager.value ||
     showOnboarding.value ||
     showMobileSwitcher.value ||
     showMobileSettings.value,
@@ -521,18 +580,312 @@ async function handleEditMessage(payload: {
   conversationPaneRef.value?.loadComposerForEdit(payload.text, payload.attachments);
 }
 
-// Handler for slash commands emitted by Composer (via ConversationPane)
-function handleCommand(cmd: string): void {
+function reportResearchIssue(key: string): void {
+  client.reportResearchIssue(t(`research.commandError.${key}`));
+}
+
+function enterResearchMode(sessionId: string | undefined, lineSlug?: string) {
+  return runResearchModeEnter({
+    sessionId,
+    lineSlug,
+    pending: researchStartInFlight,
+    getState: () => ({
+      researchEnabled: client.researchEnabled.value,
+      activeSessionId: client.activeSessionId.value,
+      busy: researchIdleOnlyBusy.value,
+      planMode: client.planMode.value,
+    }),
+    refreshResearch: (id) => client.refreshResearchById(id),
+    commandResearch: (id, command) => client.commandResearchById(id, command),
+  });
+}
+
+function reportResearchEnterResult(
+  result: Awaited<ReturnType<typeof enterResearchMode>>,
+): void {
+  if (result.kind === 'rejected' && result.clientReported !== true) {
+    reportResearchIssue(result.reason);
+  }
+}
+
+function handleTogglePlanMode(): void {
+  const sessionId = client.activeSessionId.value;
+  if (
+    planModeToggleResearchDecision(
+      client.planMode.value,
+      client.research.value?.mode,
+      sessionId !== undefined && researchStartInFlight.has(sessionId),
+    ) === 'plan_conflict'
+  ) {
+    reportResearchIssue('plan_conflict');
+    return;
+  }
+  client.togglePlanMode();
+}
+
+async function handleResearchCommand(request: ResearchManagerCommandRequest): Promise<void> {
+  const sessionId = managerSessionId.value;
+  if (
+    !showResearchManager.value
+    || !researchManagerSessionIsCurrent(
+      sessionId,
+      managerSessionId.value,
+      client.activeSessionId.value,
+    )
+  ) {
+    return;
+  }
+  if (request.command.kind === 'enter_mode') {
+    const result = await enterResearchMode(sessionId, request.command.lineSlug);
+    reportResearchEnterResult(result);
+    if (
+      (result.kind !== 'entered' && result.kind !== 'already-active')
+      || !showResearchManager.value
+      || !researchManagerSessionIsCurrent(
+        sessionId,
+        managerSessionId.value,
+        client.activeSessionId.value,
+      )
+    ) {
+      return;
+    }
+    researchManagerCommandAck.value = request;
+    return;
+  }
+  if (!researchManagerMutationAllowed(researchIdleOnlyBusy.value)) {
+    reportResearchIssue('busy');
+    return;
+  }
+  const snapshot = await client.commandResearchById(sessionId, request.command);
+  if (
+    !showResearchManager.value
+    || !researchManagerSessionIsCurrent(
+      sessionId,
+      managerSessionId.value,
+      client.activeSessionId.value,
+    )
+  ) {
+    return;
+  }
+  if (snapshot !== null) researchManagerCommandAck.value = request;
+}
+
+async function openResearchManager(): Promise<boolean> {
+  if (researchIdleOnlyBusy.value) {
+    reportResearchIssue('busy');
+    return false;
+  }
+  if (!client.researchEnabled.value) {
+    reportResearchIssue('disabled');
+    return false;
+  }
+  const sessionId = client.activeSessionId.value;
+  if (sessionId === undefined) {
+    reportResearchIssue('snapshot_unavailable');
+    return false;
+  }
+  managerSessionId.value = sessionId;
+  researchManagerCommandAck.value = null;
+  if (!researchManagerSessionIsCurrent(
+    sessionId,
+    managerSessionId.value,
+    client.activeSessionId.value,
+  )) {
+    return false;
+  }
+  const snapshot = await client.refreshResearchById(sessionId);
+  if (!researchManagerSessionIsCurrent(
+    sessionId,
+    managerSessionId.value,
+    client.activeSessionId.value,
+  )) {
+    return false;
+  }
+  if (researchIdleOnlyBusy.value) {
+    reportResearchIssue('busy');
+    closeResearchManager();
+    return false;
+  }
+  if (!client.researchEnabled.value) {
+    reportResearchIssue('disabled');
+    closeResearchManager();
+    return false;
+  }
+  if (snapshot === null) {
+    reportResearchIssue('snapshot_unavailable');
+    closeResearchManager();
+    return false;
+  }
+  showResearchManager.value = true;
+  return true;
+}
+
+async function handleStartResearch(): Promise<void> {
+  const sessionId = client.activeSessionId.value;
+  const result = await enterResearchMode(sessionId);
+  reportResearchEnterResult(result);
+
+  if (
+    result.kind === 'entered'
+    && researchSlashSessionIsCurrent(sessionId, client.activeSessionId.value)
+  ) {
+    researchExpandSignal.value++;
+  } else if (
+    result.kind === 'already-active'
+    && researchSlashSessionIsCurrent(sessionId, client.activeSessionId.value)
+  ) {
+    await openResearchManager();
+  }
+}
+
+async function handleResearchSlash(
+  rawArgs: string,
+  submission: ComposerCommandSubmission,
+): Promise<ResearchSlashExecutionOutcome> {
+  const sessionId = submission.sessionId;
+  const parsed = parseResearchSlashCommand(rawArgs);
+  if (parsed.kind === 'error') {
+    reportResearchIssue(parsed.code);
+    return 'rejected';
+  }
+  if (parsed.kind === 'on') {
+    const result = await enterResearchMode(sessionId, parsed.lineSlug);
+    reportResearchEnterResult(result);
+    if (
+      result.kind === 'already-active'
+      && researchSlashSessionIsCurrent(sessionId, client.activeSessionId.value)
+    ) {
+      await openResearchManager();
+    }
+    return result.kind === 'rejected' ? 'rejected' : 'handled';
+  }
+
+  // Capture and validate the submitted session before any async work. A hand-
+  // typed command in the no-session draft is rejected rather than redirected to
+  // whichever session happens to become active later.
+  if (sessionId === undefined) {
+    reportResearchIssue('snapshot_unavailable');
+    return 'rejected';
+  }
+  if (!researchSlashSessionIsCurrent(sessionId, client.activeSessionId.value)) {
+    return 'rejected';
+  }
+
+  // The menu is hidden while the flag is off, but a hand-typed command still
+  // arrives here so it cannot leak into the model as an ordinary prompt.
+  if (!client.researchEnabled.value) {
+    reportResearchIssue('disabled');
+    return 'rejected';
+  }
+
+  if (researchIdleOnlyBusy.value && !researchSlashAllowedWhileBusy(parsed)) {
+    reportResearchIssue('busy');
+    return 'rejected';
+  }
+
+  if (parsed.kind === 'manage') {
+    return (await openResearchManager()) ? 'handled' : 'rejected';
+  }
+
+  if (parsed.kind === 'status') {
+    const snapshot = await client.refreshResearchById(sessionId);
+    if (!researchSlashSessionIsCurrent(sessionId, client.activeSessionId.value)) {
+      return 'rejected';
+    }
+    if (!client.researchEnabled.value) {
+      reportResearchIssue('disabled');
+      return 'rejected';
+    }
+    if (researchIdleOnlyBusy.value && !researchSlashAllowedWhileBusy(parsed)) {
+      reportResearchIssue('busy');
+      return 'rejected';
+    }
+    if (snapshot === null) {
+      reportResearchIssue('snapshot_unavailable');
+      return 'rejected';
+    }
+    researchExpandSignal.value++;
+    return 'handled';
+  }
+
+  // Revisioned commands resolve against a fresh authoritative snapshot for the
+  // submitted session, not a potentially stale board for the current session.
+  const needsSnapshot = researchSlashNeedsSnapshot(parsed);
+  const snapshot = needsSnapshot
+    ? await client.refreshResearchById(sessionId)
+    : null;
+  if (
+    needsSnapshot &&
+    !researchSlashSessionIsCurrent(sessionId, client.activeSessionId.value)
+  ) {
+    return 'rejected';
+  }
+  if (!client.researchEnabled.value) {
+    reportResearchIssue('disabled');
+    return 'rejected';
+  }
+  if (researchIdleOnlyBusy.value && !researchSlashAllowedWhileBusy(parsed)) {
+    reportResearchIssue('busy');
+    return 'rejected';
+  }
+
+  const resolutionError = researchCommandResolutionError(parsed, snapshot);
+  if (resolutionError !== null) {
+    reportResearchIssue(resolutionError);
+    return 'rejected';
+  }
+  const command = researchCommandFromSlash(parsed, snapshot);
+  if (command === null) {
+    reportResearchIssue('unresolved');
+    return 'rejected';
+  }
+  return submitResearchSlashCommand(
+    sessionId,
+    () => client.activeSessionId.value,
+    () => client.commandResearchById(sessionId, command),
+  );
+}
+
+function restoreResearchSlashInput(
+  submission: ComposerCommandSubmission,
+  outcome: ResearchSlashExecutionOutcome,
+): void {
+  const input = researchSlashInputToRestore(submission.input, outcome);
+  if (input === null) return;
+  restoreComposerCommandSubmission(
+    submission,
+    client.activeSessionId.value,
+    (value) => conversationPaneRef.value?.loadComposerForEdit(value) ?? false,
+  );
+}
+
+// Handler for slash commands emitted by Composer (via ConversationPane).
+// Parsing once here keeps every command on the same Unicode-whitespace path.
+function handleCommand(event: ComposerCommandEvent): void {
+  const submission =
+    typeof event === 'string'
+      ? createComposerCommandSubmission(event, client.activeSessionId.value)
+      : event;
+  const cmd = submission.input;
+  const parsedCommand = parseSlash(cmd);
+  const commandName = parsedCommand?.cmd ?? cmd;
+  const arg = parsedCommand?.arg.trim() ?? '';
+
+  if (commandName === '/research') {
+    void handleResearchSlash(arg, submission).then((outcome) => {
+      restoreResearchSlashInput(submission, outcome);
+    });
+    return;
+  }
   // `/compact <text>` carries an optional free-text instruction steering what
   // the summary should focus on (TUI parity).
-  if (cmd === '/compact' || cmd.startsWith('/compact ')) {
-    client.compact(cmd.slice('/compact'.length).trim() || undefined);
+  if (commandName === '/compact') {
+    client.compact(arg || undefined);
     return;
   }
   // `/swarm` toggles swarm mode; `/swarm on|off` sets it; `/swarm <task>` enables
   // swarm and runs the task right away (TUI parity).
-  if (cmd === '/swarm' || cmd.startsWith('/swarm ')) {
-    const arg = cmd.slice('/swarm'.length).trim();
+  if (commandName === '/swarm') {
     if (arg === 'on') client.setSwarmMode(true);
     else if (arg === 'off') client.setSwarmMode(false);
     else if (arg) { client.setSwarmMode(true); void client.sendPrompt(arg); }
@@ -541,8 +894,7 @@ function handleCommand(cmd: string): void {
   }
   // `/goal <objective>` creates a goal (and submits it); `/goal pause|resume|cancel`
   // controls the active one; bare `/goal` toggles goal mode for the next message.
-  if (cmd === '/goal' || cmd.startsWith('/goal ')) {
-    const arg = cmd.slice('/goal'.length).trim();
+  if (commandName === '/goal') {
     if (arg === 'pause' || arg === 'resume' || arg === 'cancel') client.controlGoal(arg);
     else if (arg) void client.createGoal(arg);
     else client.toggleGoalMode();
@@ -550,8 +902,7 @@ function handleCommand(cmd: string): void {
   }
   // `/btw <question>` opens (creating if needed) the side chat and asks it; bare
   // `/btw` toggles the side-chat tab for the active session.
-  if (cmd === '/btw' || cmd.startsWith('/btw ')) {
-    const arg = cmd.slice('/btw'.length).trim();
+  if (commandName === '/btw') {
     if (!arg && client.sideChatVisible.value) {
       // Use the detail-layer close so detailTarget is cleared too; the bare
       // client.closeSideChat() only hides the panel and leaves detailTarget set.
@@ -561,7 +912,7 @@ function handleCommand(cmd: string): void {
     }
     return;
   }
-  switch (cmd) {
+  switch (commandName) {
     // `/new` and `/clear` are aliases: both open the onboarding composer. The
     // session is only created when the user sends the first message.
     case '/new':
@@ -578,7 +929,7 @@ function handleCommand(cmd: string): void {
       void client.undo();
       break;
     case '/plan':
-      client.togglePlanMode();
+      handleTogglePlanMode();
       break;
     case '/auto':
       client.setPermission('auto');
@@ -597,17 +948,11 @@ function handleCommand(cmd: string): void {
       openLogin();
       break;
     default: {
-      // Not a built-in command → treat it as a session skill activation
-      // (the user picked `/skill:<skill>` from the menu, or typed
-      // `/<skill> args`). Strip the `skill:` display prefix — the REST API
-      // takes the bare skill name. The daemon answers an unknown name with
-      // skill.not_found, surfaced as a warning, so a stray slash is harmless.
-      // With no active session, create one first (same path as the first
-      // prompt) so the activation isn't silently dropped on the new-session
-      // screen.
-      const space = cmd.indexOf(' ');
-      const name = stripSkillPrefix((space === -1 ? cmd : cmd.slice(0, space)).slice(1));
-      const args = space === -1 ? undefined : cmd.slice(space + 1).trim() || undefined;
+      // Not a built-in command → treat it as a session skill activation. The
+      // structured parser keeps tabs/newlines in `arg` instead of folding them
+      // into the skill name or letting the command become a model prompt.
+      const name = stripSkillPrefix(commandName.slice(1));
+      const args = arg || undefined;
       if (!name) break;
       if (!client.activeSessionId.value && client.activeWorkspaceId.value) {
         void client.startSessionAndActivateSkill(client.activeWorkspaceId.value, name, args);
@@ -812,6 +1157,9 @@ function openPr(url: string): void {
       :tasks="client.tasks.value"
       :todos="client.todos.value"
       :goal="client.goal.value"
+      :research="client.research.value"
+      :research-enabled="client.researchEnabled.value"
+      :research-expand-signal="researchExpandSignal"
       :activation-badges="client.activationBadges.value"
       :status="client.status.value"
       :thinking="client.thinking.value"
@@ -864,11 +1212,13 @@ function openPr(url: string): void {
       @reorder-queue="handleReorderQueue"
       @set-permission="client.setPermission($event)"
       @set-thinking="client.setThinking($event)"
-      @toggle-plan="client.togglePlanMode()"
+      @toggle-plan="handleTogglePlanMode"
       @toggle-swarm="client.toggleSwarmMode()"
       @toggle-goal="client.toggleGoalMode()"
       @create-goal="client.createGoal($event)"
       @control-goal="client.controlGoal($event)"
+      @start-research="handleStartResearch"
+      @manage-research="openResearchManager"
       @refresh-git-status="client.activeSessionId.value && client.loadGitStatus(client.activeSessionId.value)"
       @rename-session="(id, title) => client.renameSession(id, title)"
       @fork-session="(id) => client.forkSession(id)"
@@ -1077,6 +1427,15 @@ function openPr(url: string): void {
       @close="showStatusPanel = false"
     />
 
+    <ResearchManagerDialog
+      v-if="client.researchEnabled.value && managerSessionId !== null"
+      :key="managerSessionId"
+      v-model:open="showResearchManager"
+      :snapshot="client.research.value"
+      :command-ack="researchManagerCommandAck"
+      @command="handleResearchCommand"
+    />
+
     <!-- Add Workspace overlay (daemon folder browser + paste-path fallback) -->
     <AddWorkspaceDialog
       v-if="showAddWorkspace"
@@ -1147,7 +1506,7 @@ function openPr(url: string): void {
       :server-version="client.serverVersion.value"
       @pick-model="openModelPicker()"
       @set-thinking="client.setThinking($event)"
-      @toggle-plan="client.togglePlanMode()"
+      @toggle-plan="handleTogglePlanMode"
       @toggle-swarm="client.toggleSwarmMode()"
       @set-permission="client.setPermission($event)"
       @set-color-scheme="client.setColorScheme($event)"

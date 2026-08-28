@@ -377,6 +377,194 @@ export interface AppGoal {
 }
 
 // ---------------------------------------------------------------------------
+// Research
+// ---------------------------------------------------------------------------
+
+export type ResearchModePhase = 'inactive' | 'probing' | 'ready' | 'degraded';
+export type ResearchLoopStatus = 'active' | 'paused';
+export type ResearchQuestionWorkflow =
+  | 'open'
+  | 'active'
+  | 'deferred'
+  | 'blocked'
+  | 'closed'
+  | 'cancelled';
+export type ResearchQuestionEpistemic =
+  | 'unknown'
+  | 'candidate'
+  | 'supported'
+  | 'contradicted'
+  | 'inconclusive';
+export type ResearchQuestionPersistence =
+  | 'working'
+  | 'pending_commit'
+  | 'committed'
+  | 'degraded';
+export type ResearchLineStatus = 'active' | 'paused' | 'completed' | 'blocked';
+export type ResearchAlertKind =
+  | 'contradiction'
+  | 'blocked'
+  | 'reopened'
+  | 'commit_failed'
+  | 'degraded'
+  | 'stale';
+
+export interface ResearchLine {
+  slug: string;
+  title: string;
+  objective?: string;
+  assessment?: string;
+  status: ResearchLineStatus;
+  createdAt: number;
+  revision: number;
+}
+
+export interface ResearchQuestion {
+  id: string;
+  lineSlug: string;
+  wording: string;
+  assessment?: string;
+  priority: number;
+  neededEvidence: string[];
+  evidenceRefs: string[];
+  falsifierRefs: string[];
+  nextBoundedAction?: string;
+  workflow: ResearchQuestionWorkflow;
+  epistemic: ResearchQuestionEpistemic;
+  persistence: ResearchQuestionPersistence;
+  revision: number;
+}
+
+export interface ResearchFocus {
+  questionId: string;
+  boundedAction?: string;
+  revision: number;
+}
+
+export interface ResearchAlert {
+  kind: ResearchAlertKind;
+  message: string;
+  questionId?: string;
+  lineSlug?: string;
+}
+
+export interface ResearchAdapterHealth {
+  phase: ResearchModePhase;
+  contractVersion?: string;
+  pluginVersion?: string;
+  pythonVersion?: string;
+  lastCheckAt?: number;
+  lastError?: string;
+  notInitialized?: boolean;
+}
+
+export interface ResearchCommittedCursor {
+  checkpointId: string;
+  entryId?: string;
+  committedAt: number;
+}
+
+export interface ResearchCheckpoint {
+  checkpointId: string;
+  questionId?: string;
+  lineSlug?: string;
+  assessment?: string;
+  nextAction?: string;
+  idempotencyKey: string;
+  persistence: ResearchQuestionPersistence;
+  committedEntryId?: string;
+  createdAt: number;
+}
+
+export interface ResearchGoalSummary {
+  status: string;
+  remainingTurns?: number;
+}
+
+export interface ResearchStatusSnapshot {
+  mode: ResearchModePhase;
+  loopStatus: ResearchLoopStatus;
+  currentLineSlug?: string;
+  currentFocus?: ResearchFocus;
+  currentQuestion?: ResearchQuestion;
+  questions: ResearchQuestion[];
+  lines: ResearchLine[];
+  openQuestionCount: number;
+  activeQuestionCount: number;
+  blockedQuestionCount: number;
+  alerts: ResearchAlert[];
+  goalSummary?: ResearchGoalSummary;
+  aitpHealth: ResearchAdapterHealth;
+  pendingCheckpoint?: ResearchCheckpoint;
+  latestCommittedCheckpoint?: ResearchCommittedCursor;
+  revision: number;
+}
+
+export type ResearchCommand =
+  | { kind: 'enter_mode'; actor: 'user' | 'model'; lineSlug?: string }
+  | { kind: 'exit_mode' }
+  | { kind: 'pause_loop'; expectedRevision: number; reason?: string }
+  | { kind: 'resume_loop'; expectedRevision: number; reason?: string }
+  | {
+      kind: 'create_question';
+      lineSlug: string;
+      wording: string;
+      assessment?: string;
+      priority?: number;
+      neededEvidence?: string[];
+    }
+  | {
+      kind: 'update_question';
+      questionId: string;
+      expectedRevision: number;
+      wording?: string;
+      assessment?: string;
+      priority?: number;
+      workflow?: ResearchQuestionWorkflow;
+      epistemic?: ResearchQuestionEpistemic;
+      neededEvidence?: string[];
+      nextBoundedAction?: string;
+      reason?: string;
+    }
+  | {
+      kind: 'set_focus';
+      questionId: string;
+      expectedRevision: number;
+      boundedAction?: string;
+      reason?: string;
+    }
+  | { kind: 'switch_line'; lineSlug: string; expectedRevision: number; reason?: string }
+  | { kind: 'reopen_question'; questionId: string; expectedRevision: number; reason?: string }
+  | { kind: 'defer_question'; questionId: string; expectedRevision: number; reason?: string }
+  | { kind: 'block_question'; questionId: string; expectedRevision: number; reason?: string }
+  | { kind: 'close_question'; questionId: string; expectedRevision: number; reason?: string }
+  | {
+      kind: 'create_line';
+      slug: string;
+      title: string;
+      objective?: string;
+      assessment?: string;
+    }
+  | {
+      kind: 'update_line';
+      lineSlug: string;
+      expectedRevision: number;
+      title?: string;
+      objective?: string;
+      status?: ResearchLineStatus;
+      assessment?: string;
+      reason?: string;
+    }
+  | {
+      kind: 'propose_checkpoint';
+      questionId?: string;
+      lineSlug?: string;
+      assessment?: string;
+      nextAction?: string;
+    }
+  | { kind: 'commit_checkpoint'; checkpointId: string; entryId: string };
+
+// ---------------------------------------------------------------------------
 // Terminal
 // ---------------------------------------------------------------------------
 
@@ -486,6 +674,7 @@ export type AppEvent =
   // light up the main conversation's moon. `reason` rides on deactivation.
   | { type: 'turnActiveChanged'; sessionId: string; active: boolean; reason?: string }
   | { type: 'goalUpdated'; sessionId: string; goal: AppGoal | null }
+  | { type: 'researchUpdated'; sessionId: string; snapshot: ResearchStatusSnapshot }
   | { type: 'configChanged'; changedFields: string[]; config: AppConfig }
   | {
       type: 'modelCatalogChanged';
@@ -784,6 +973,11 @@ export interface KimiWebApi {
   getSessionStatus(sessionId: string): Promise<AppSessionRuntimeStatus>;
   /** Current goal snapshot, or null when the session has no active goal. */
   getSessionGoal(sessionId: string): Promise<AppGoal | null>;
+  getSessionResearch(sessionId: string): Promise<ResearchStatusSnapshot>;
+  commandSessionResearch(
+    sessionId: string,
+    command: ResearchCommand,
+  ): Promise<ResearchStatusSnapshot>;
   getSessionWarnings(sessionId: string): Promise<AppSessionWarning[]>;
   archiveSession(sessionId: string): Promise<{ archived: true }>;
   restoreSession(sessionId: string): Promise<AppSession>;

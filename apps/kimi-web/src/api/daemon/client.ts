@@ -34,6 +34,8 @@ import type {
   PromptSubmission,
   PromptSubmitResult,
   QuestionResponse,
+  ResearchCommand,
+  ResearchStatusSnapshot,
 } from '../types';
 import { createAgentProjector } from './agentEventProjector';
 import { DaemonHttpClient } from './http';
@@ -48,6 +50,7 @@ import {
   toAppProvider,
   toAppProviderUsageResult,
   toAppQuestionRequest,
+  toAppResearchSnapshot,
   toAppSession,
   toAppTask,
   toWireApprovalResponse,
@@ -78,6 +81,8 @@ import type {
   WireProvider,
   WireProviderRefreshResult,
   WireProviderUsageResponse,
+  WireResearchCommandResponse,
+  WireResearchStatusSnapshot,
   WireSession,
   WireSessionAbortResult,
   WireSessionWarning,
@@ -474,6 +479,24 @@ export class DaemonKimiWebApi implements KimiWebApi {
       `/sessions/${encodeURIComponent(sessionId)}/goal`,
     );
     return toAppGoal(data);
+  }
+
+  async getSessionResearch(sessionId: string): Promise<ResearchStatusSnapshot> {
+    const data = await this.http.get<WireResearchStatusSnapshot>(
+      `/sessions/${encodeURIComponent(sessionId)}/research`,
+    );
+    return toAppResearchSnapshot(data);
+  }
+
+  async commandSessionResearch(
+    sessionId: string,
+    command: ResearchCommand,
+  ): Promise<ResearchStatusSnapshot> {
+    const data = await this.http.post<WireResearchCommandResponse>(
+      `/sessions/${encodeURIComponent(sessionId)}/research/command`,
+      { command },
+    );
+    return toAppResearchSnapshot(data.snapshot);
   }
 
   async getSessionWarnings(sessionId: string): Promise<WireSessionWarning[]> {
