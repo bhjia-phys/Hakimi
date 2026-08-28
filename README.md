@@ -19,17 +19,17 @@
 
 ## What Hakimi is
 
-Hakimi is an independent, standalone continuation built on the engineering foundations of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The repository preserves its inherited Git history and upstream attribution, but it is no longer in the Kimi Code GitHub fork network and does not target product parity. Hakimi owns its v2 architecture decisions, research orchestration, tools, workflows, interaction, and release line. The separate [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) remains authoritative for durable research memory and evidence.
+Hakimi is an independent, standalone continuation built on the engineering foundations of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The repository's Git history contains only Hakimi's own commits — it starts from the upstream 0.34.0 engineering foundation, and upstream provenance lives in the separate archive repository rather than in this history. Hakimi is no longer in the Kimi Code GitHub fork network and does not target product parity. Hakimi owns its v2 architecture decisions, research orchestration, tools, workflows, interaction, and release line. The separate [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) remains authoritative for durable research memory and evidence.
 
 The terminal loop, tools, sessions, Skills, MCP, subagents, permissions, and OAuth originated in Kimi Code and remain candidates for selectively reviewed general-purpose improvements. Hakimi absorbs only changes that fit its goals and canonical v2 contracts; upstream product-specific behavior is not imported by default. The historical deeply embedded prototype is archived on the [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) branch and is not the integration path for this line.
 
 ## Repository lineage
 
 - **Canonical standalone repository:** [`bhjia-phys/Hakimi`](https://github.com/bhjia-phys/Hakimi)
-- **Historical fork archive:** [`bhjia-phys/Hakimi-upstream-archive`](https://github.com/bhjia-phys/Hakimi-upstream-archive), retained for the original pull requests, releases, and fork-network metadata
+- **Historical fork archive:** [`bhjia-phys/Hakimi-upstream-archive`](https://github.com/bhjia-phys/Hakimi-upstream-archive), retained for the original Git history with Kimi Code authorship, pull requests, releases, and fork-network metadata
 - **Upstream foundation:** [`MoonshotAI/kimi-code`](https://github.com/MoonshotAI/kimi-code)
 
-The preserved Git history retains the original Kimi Code authorship and remains the durable provenance record alongside the archive and license attribution.
+This repository's history contains only Hakimi commits; upstream authorship and the pre-split fork history remain accessible through the archive repository and the MIT license attribution in [LICENSE](LICENSE).
 
 ## Differences from upstream
 

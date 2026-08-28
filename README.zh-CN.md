@@ -19,17 +19,17 @@
 
 ## Hakimi 是什么
 
-Hakimi 是基于 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 工程基础继续发展的独立项目。仓库完整保留继承的 Git 历史和上游署名，但已不再属于 Kimi Code 的 GitHub fork network，也不以产品 parity 为目标。Hakimi 自主决定 v2 架构、研究编排、工具、workflow、交互和发布版本线；独立的 [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) 仍是持久研究记忆和证据的权威。
+Hakimi 是基于 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 工程基础继续发展的独立项目。仓库的 Git 历史只包含 Hakimi 自己的 commit——起点是上游 0.34.0 工程基础快照，上游 provenance 保存在独立的归档仓库中，不在本仓库历史里。Hakimi 已不再属于 Kimi Code 的 GitHub fork network，也不以产品 parity 为目标。Hakimi 自主决定 v2 架构、研究编排、工具、workflow、交互和发布版本线；独立的 [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) 仍是持久研究记忆和证据的权威。
 
 底层终端循环、工具、session、Skills、MCP、子代理、权限和 OAuth 源自 Kimi Code，也继续作为经过选择性评审的通用改进来源。Hakimi 只吸收符合自身目标和 canonical v2 contract 的变化，不默认引入上游产品特定行为。历史上的深度内嵌科研原型保留在 [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) 分支归档，不是当前产品线的集成路径。
 
 ## 仓库沿革
 
 - **当前独立主仓库**：[`bhjia-phys/Hakimi`](https://github.com/bhjia-phys/Hakimi)
-- **历史 fork 归档**：[`bhjia-phys/Hakimi-upstream-archive`](https://github.com/bhjia-phys/Hakimi-upstream-archive)，保留迁移前的 Pull Request、Release 和 fork-network 元数据
+- **历史 fork 归档**：[`bhjia-phys/Hakimi-upstream-archive`](https://github.com/bhjia-phys/Hakimi-upstream-archive)，保留带 Kimi Code 原作者署名的原始 Git 历史、迁移前的 Pull Request、Release 和 fork-network 元数据
 - **上游工程基础**：[`MoonshotAI/kimi-code`](https://github.com/MoonshotAI/kimi-code)
 
-保留的 Git 历史继续保留 Kimi Code 原作者署名，并与归档仓库和许可证署名共同构成长期 provenance 记录。
+本仓库的历史只包含 Hakimi 自己的 commit；Kimi Code 作者署名与拆分前的 fork 历史通过归档仓库和 [LICENSE](LICENSE) 中的 MIT 许可证署名继续保留。
 
 ## 与上游的差异
 
