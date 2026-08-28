@@ -24,6 +24,8 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+      - name: Verify committed Hakimi web assets before package build
+        run: pnpm run build:web-assets -- --check
       - run: pnpm run build
       - name: Smoke test CLI bundle
         run: pnpm -C apps/kimi-code run smoke
@@ -63,7 +65,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @bhjia-phys/hakimi-web run check:style
+      - run: pnpm --filter @bhjia-phys/hakimi-web run typecheck
       - run: pnpm --filter @bhjia-phys/hakimi-web run test
+      - run: pnpm --filter @bhjia-phys/hakimi-web run build
+      - run: pnpm run build:web-assets -- --check
+      - run: pnpm run build:web-assets
 
   # pi-tui's suite runs on node:test (not vitest), so the root `pnpm run test`
   # does not execute it; it needs its own job.
@@ -139,6 +145,7 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:docs:sync-changelog
       - run: pnpm run lint
       - run: pnpm run sherif
 

@@ -3,18 +3,24 @@
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type ComponentPublicInstance } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ActivationBadges, ApprovalBlock, ChatTurn, ConversationStatus, FilePreviewRequest, PermissionMode, QueuedPromptView, TaskItem, TodoView, ToolMedia, TurnAttachment, UIQuestion, WebPreviewTarget, WorkspaceView } from '../../types';
-import type { AppGoal, AppModel, AppSkill, QuestionResponse, ThinkingLevel } from '../../api/types';
+import type { AppGoal, AppModel, AppSkill, QuestionResponse, ResearchStatusSnapshot, ThinkingLevel } from '../../api/types';
 import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
+import type { ComposerCommandEvent } from '../../composables/useComposerDraft';
 import ChatPane from './ChatPane.vue';
 import ChatHeader from './ChatHeader.vue';
 import Composer from './Composer.vue';
 import ChatDock from './ChatDock.vue';
+import ResearchBoard from './ResearchBoard.vue';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
 import Icon from '../ui/Icon.vue';
 import Spinner from '../ui/Spinner.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import { getVisibleWorkspaces } from '../../lib/workspacePicker';
+import {
+  shouldShowChatDock,
+  shouldShowEmptyConversation,
+} from '../../lib/conversationVisibility';
 import { safeRemove, STORAGE_KEYS } from '../../lib/storage';
 
 const { t } = useI18n();
@@ -28,6 +34,9 @@ const props = defineProps<{
   /** Model-maintained todo list (TodoList tool) — shown as a floating card. */
   todos?: TodoView[];
   goal?: AppGoal | null;
+  research?: ResearchStatusSnapshot | null;
+  researchEnabled?: boolean;
+  researchExpandSignal?: number;
   activationBadges?: ActivationBadges;
   status: ConversationStatus;
   thinking?: ThinkingLevel;
@@ -104,7 +113,7 @@ const emit = defineEmits<{
   cancelTask: [taskId: string];
   answer: [questionId: string, response: QuestionResponse];
   dismiss: [questionId: string];
-  command: [cmd: string];
+  command: [command: ComposerCommandEvent];
   interrupt: [];
   unqueue: [index: number];
   editQueued: [index: number];
@@ -116,6 +125,8 @@ const emit = defineEmits<{
   toggleGoal: [];
   createGoal: [objective: string];
   controlGoal: [action: 'pause' | 'resume' | 'cancel'];
+  startResearch: [];
+  manageResearch: [];
   compact: [];
   pickModel: [];
   selectModel: [modelId: string];
@@ -1308,7 +1319,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
         @touchmove.passive="onPanesTouchMove"
       >
         <div class="content-wrap" :class="[mobile ? 'align-mobile' : 'align-center']">
-          <template v-if="turns.length === 0 && !sessionLoading">
+          <template v-if="shouldShowEmptyConversation(turns.length, sessionLoading ?? false)">
             <!-- Empty session: Composer rendered in the centre of the pane -->
             <div class="empty-spacer" />
             <div class="empty-hint">
@@ -1369,6 +1380,13 @@ defineExpose({ loadComposerForEdit, focusComposer });
                 <span>{{ t('conversation.addWorkspace') }}</span>
               </button>
             </div>
+            <ResearchBoard
+              v-if="research && research.mode !== 'inactive'"
+              class="empty-research-board"
+              :snapshot="research"
+              :force-expanded="researchExpandSignal"
+              @manage="emit('manageResearch')"
+            />
             <Composer
               ref="emptyComposerRef"
               class="empty-composer"
@@ -1382,6 +1400,8 @@ defineExpose({ loadComposerForEdit, focusComposer });
               :plan-mode="planMode"
               :swarm-mode="swarmMode"
               :goal-mode="goalMode"
+              :research-enabled="researchEnabled"
+              :research="research"
               :goal="goal"
               :activation-badges="activationBadges"
               :models="models"
@@ -1404,6 +1424,8 @@ defineExpose({ loadComposerForEdit, focusComposer });
               @create-goal="emit('createGoal', $event)"
               @control-goal="emit('controlGoal', $event)"
               @focus-goal="focusGoal"
+              @start-research="emit('startResearch')"
+              @manage-research="emit('manageResearch')"
               @compact="emit('compact')"
               @pick-model="emit('pickModel')"
               @select-model="emit('selectModel', $event)"
@@ -1445,7 +1467,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
         </div>
       </div>
       <ChatDock
-        v-if="!(turns.length === 0 && !sessionLoading)"
+        v-if="shouldShowChatDock(turns.length, sessionLoading ?? false)"
         :ref="bindChatDock"
         :style="chatDockStyle"
         :session-id="sessionId"
@@ -1459,12 +1481,15 @@ defineExpose({ loadComposerForEdit, focusComposer });
         :plan-mode="planMode"
         :swarm-mode="swarmMode"
         :goal-mode="goalMode"
+        :research-enabled="researchEnabled"
         :activation-badges="activationBadges"
         :models="models"
         :starred-ids="starredIds"
         :skills="skills"
         :goal="goal"
         :goal-expand-signal="goalExpandSignal"
+        :research="research"
+        :research-expand-signal="researchExpandSignal"
         :dock-panel="dockPanel"
         :bash-tasks="bashTasks"
         :subagent-tasks="subagentTasks"
@@ -1486,6 +1511,8 @@ defineExpose({ loadComposerForEdit, focusComposer });
         @approval="handleApproval"
         @cancel-task="emit('cancelTask', $event)"
         @control-goal="emit('controlGoal', $event)"
+        @start-research="emit('startResearch')"
+        @manage-research="emit('manageResearch')"
         @submit="handleComposerSubmit"
         @steer="emit('steer', $event)"
         @command="emit('command', $event)"
@@ -1603,6 +1630,11 @@ defineExpose({ loadComposerForEdit, focusComposer });
 
 /* Empty-workspace spacers: push the centred Composer to the vertical middle. */
 .empty-spacer { flex: 1; }
+.empty-research-board {
+  --dock-inline-left: var(--space-4);
+  --dock-inline-right: var(--space-4);
+  flex: none;
+}
 
 /* Empty-session hint above the centred composer */
 .empty-hint {

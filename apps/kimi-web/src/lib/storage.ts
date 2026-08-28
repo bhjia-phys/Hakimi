@@ -52,6 +52,11 @@ export function draftStorageKey(sid: string | undefined): string {
   return `kimi-web.draft.${sid && sid.length > 0 ? sid : '__new__'}`;
 }
 
+/** Rejected commands waiting for a non-destructive per-session draft restore. */
+export function pendingDraftStorageKey(sid: string | undefined): string {
+  return `kimi-web.draft-pending.${sid && sid.length > 0 ? sid : '__new__'}`;
+}
+
 export function safeGetString(key: string): string | null {
   try {
     return globalThis.localStorage.getItem(key);

@@ -138,6 +138,131 @@ export interface WireGoalSnapshot {
   };
 }
 
+// GET /sessions/{id}/research and `research.updated` are camelCase protocol
+// shapes. They are mirrored locally so the browser remains decoupled from Core.
+export type WireResearchModePhase = 'inactive' | 'probing' | 'ready' | 'degraded';
+export type WireResearchLoopStatus = 'active' | 'paused';
+export type WireResearchQuestionWorkflow =
+  | 'open'
+  | 'active'
+  | 'deferred'
+  | 'blocked'
+  | 'closed'
+  | 'cancelled';
+export type WireResearchQuestionEpistemic =
+  | 'unknown'
+  | 'candidate'
+  | 'supported'
+  | 'contradicted'
+  | 'inconclusive';
+export type WireResearchQuestionPersistence =
+  | 'working'
+  | 'pending_commit'
+  | 'committed'
+  | 'degraded';
+export type WireResearchLineStatus = 'active' | 'paused' | 'completed' | 'blocked';
+export type WireResearchAlertKind =
+  | 'contradiction'
+  | 'blocked'
+  | 'reopened'
+  | 'commit_failed'
+  | 'degraded'
+  | 'stale';
+
+export interface WireResearchLine {
+  slug: string;
+  title: string;
+  objective?: string;
+  assessment?: string;
+  status: WireResearchLineStatus;
+  createdAt: number;
+  revision: number;
+}
+
+export interface WireResearchQuestion {
+  id: string;
+  lineSlug: string;
+  wording: string;
+  assessment?: string;
+  priority: number;
+  neededEvidence: string[];
+  evidenceRefs: string[];
+  falsifierRefs: string[];
+  nextBoundedAction?: string;
+  workflow: WireResearchQuestionWorkflow;
+  epistemic: WireResearchQuestionEpistemic;
+  persistence: WireResearchQuestionPersistence;
+  revision: number;
+}
+
+export interface WireResearchStatusSnapshot {
+  mode: WireResearchModePhase;
+  loopStatus: WireResearchLoopStatus;
+  currentLineSlug?: string;
+  currentFocus?: { questionId: string; boundedAction?: string; revision: number };
+  currentQuestion?: WireResearchQuestion;
+  questions: WireResearchQuestion[];
+  lines: WireResearchLine[];
+  openQuestionCount: number;
+  activeQuestionCount: number;
+  blockedQuestionCount: number;
+  alerts: Array<{
+    kind: WireResearchAlertKind;
+    message: string;
+    questionId?: string;
+    lineSlug?: string;
+  }>;
+  goalSummary?: { status: string; remainingTurns?: number };
+  aitpHealth: {
+    phase: WireResearchModePhase;
+    contractVersion?: string;
+    pluginVersion?: string;
+    pythonVersion?: string;
+    lastCheckAt?: number;
+    lastError?: string;
+    notInitialized?: boolean;
+  };
+  pendingCheckpoint?: {
+    checkpointId: string;
+    questionId?: string;
+    lineSlug?: string;
+    assessment?: string;
+    nextAction?: string;
+    idempotencyKey: string;
+    persistence: WireResearchQuestionPersistence;
+    committedEntryId?: string;
+    createdAt: number;
+  };
+  latestCommittedCheckpoint?: {
+    checkpointId: string;
+    entryId?: string;
+    committedAt: number;
+  };
+  revision: number;
+}
+
+export type WireResearchCommand =
+  | { kind: 'enter_mode'; actor: 'user' | 'model'; lineSlug?: string }
+  | { kind: 'exit_mode' }
+  | { kind: 'pause_loop'; expectedRevision: number; reason?: string }
+  | { kind: 'resume_loop'; expectedRevision: number; reason?: string }
+  | { kind: 'create_question'; lineSlug: string; wording: string; assessment?: string; priority?: number; neededEvidence?: string[] }
+  | { kind: 'update_question'; questionId: string; expectedRevision: number; wording?: string; assessment?: string; priority?: number; workflow?: WireResearchQuestionWorkflow; epistemic?: WireResearchQuestionEpistemic; neededEvidence?: string[]; nextBoundedAction?: string; reason?: string }
+  | { kind: 'set_focus'; questionId: string; expectedRevision: number; boundedAction?: string; reason?: string }
+  | { kind: 'switch_line'; lineSlug: string; expectedRevision: number; reason?: string }
+  | { kind: 'reopen_question'; questionId: string; expectedRevision: number; reason?: string }
+  | { kind: 'defer_question'; questionId: string; expectedRevision: number; reason?: string }
+  | { kind: 'block_question'; questionId: string; expectedRevision: number; reason?: string }
+  | { kind: 'close_question'; questionId: string; expectedRevision: number; reason?: string }
+  | { kind: 'create_line'; slug: string; title: string; objective?: string; assessment?: string }
+  | { kind: 'update_line'; lineSlug: string; expectedRevision: number; title?: string; objective?: string; status?: WireResearchLineStatus; assessment?: string; reason?: string }
+  | { kind: 'propose_checkpoint'; questionId?: string; lineSlug?: string; assessment?: string; nextAction?: string }
+  | { kind: 'commit_checkpoint'; checkpointId: string; entryId: string };
+
+export interface WireResearchCommandResponse {
+  snapshot: WireResearchStatusSnapshot;
+}
+
 // GET /sessions/{id}/warnings — session-level warnings (e.g. oversized AGENTS.md).
 export interface WireSessionWarning {
   code: string;
@@ -768,6 +893,9 @@ type WireEventSessionHistoryCompacted = WireEventBase<'event.session.history_com
   reason: 'auto_compact' | 'manual_compact' | 'history_rewrite';
   summary_message_id?: string;
 }>;
+type WireEventResearchUpdated = WireEventBase<'event.research.updated', {
+  snapshot: WireResearchStatusSnapshot;
+}>;
 
 // Workspace lifecycle (global — not session-scoped)
 type WireEventWorkspaceCreated = WireEventBase<'event.workspace.created', { workspace: WireWorkspace }>;
@@ -911,6 +1039,7 @@ export type WireEvent =
   | WireEventSessionStatusChanged
   | WireEventSessionUsageUpdated
   | WireEventSessionHistoryCompacted
+  | WireEventResearchUpdated
   // Workspace lifecycle
   | WireEventWorkspaceCreated
   | WireEventWorkspaceUpdated

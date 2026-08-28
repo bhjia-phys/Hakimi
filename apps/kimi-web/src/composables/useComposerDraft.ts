@@ -1,10 +1,104 @@
 // apps/kimi-web/src/composables/useComposerDraft.ts
 import { nextTick, ref, watch } from 'vue';
-import { draftStorageKey, safeGetString, safeRemove, safeSetString } from '../lib/storage';
+import {
+  draftStorageKey,
+  pendingDraftStorageKey,
+  safeGetJson,
+  safeGetString,
+  safeRemove,
+  safeSetJson,
+  safeSetString,
+} from '../lib/storage';
 
 export interface ComposerDraftDeps {
   /** Active session id — scopes the persisted draft (getter for reactivity). */
   sessionId: () => string | undefined;
+}
+
+export interface ComposerCommandSubmission {
+  input: string;
+  sessionId?: string;
+  draftGeneration: number;
+}
+
+export type ComposerCommandEvent = string | ComposerCommandSubmission;
+export type ComposerCommandRestoreResult = 'restored' | 'pending';
+
+const draftGenerationBySession = new Map<string, number>();
+
+function draftScope(sid: string | undefined): string {
+  return sid && sid.length > 0 ? sid : '__new__';
+}
+
+function currentDraftGeneration(sid: string | undefined): number {
+  return draftGenerationBySession.get(draftScope(sid)) ?? 0;
+}
+
+function bumpDraftGeneration(sid: string | undefined): void {
+  const key = draftScope(sid);
+  draftGenerationBySession.set(key, (draftGenerationBySession.get(key) ?? 0) + 1);
+}
+
+function readDraft(sid: string | undefined): string {
+  return safeGetString(draftStorageKey(sid)) ?? '';
+}
+
+function writeDraft(sid: string | undefined, value: string): void {
+  const key = draftStorageKey(sid);
+  if (value) safeSetString(key, value);
+  else safeRemove(key);
+}
+
+function readPendingDrafts(sid: string | undefined): string[] {
+  const value = safeGetJson<unknown>(pendingDraftStorageKey(sid));
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function writePendingDrafts(sid: string | undefined, drafts: string[]): void {
+  const key = pendingDraftStorageKey(sid);
+  if (drafts.length > 0) safeSetJson(key, drafts);
+  else safeRemove(key);
+}
+
+function enqueuePendingDraft(sid: string | undefined, input: string): void {
+  const pending = readPendingDrafts(sid);
+  if (!pending.includes(input)) writePendingDrafts(sid, [...pending, input]);
+}
+
+function loadDraft(sid: string | undefined): string {
+  const saved = readDraft(sid);
+  if (saved !== '') return saved;
+  const pending = readPendingDrafts(sid);
+  const restored = pending[0];
+  if (restored === undefined) return '';
+  writePendingDrafts(sid, pending.slice(1));
+  writeDraft(sid, restored);
+  return restored;
+}
+
+export function createComposerCommandSubmission(
+  input: string,
+  sessionId: string | undefined,
+): ComposerCommandSubmission {
+  return {
+    input,
+    sessionId,
+    draftGeneration: currentDraftGeneration(sessionId),
+  };
+}
+
+export function restoreComposerCommandSubmission(
+  submission: ComposerCommandSubmission,
+  activeSessionId: string | undefined,
+  applyNow: (input: string) => boolean,
+): ComposerCommandRestoreResult {
+  const unchanged = currentDraftGeneration(submission.sessionId) === submission.draftGeneration;
+  const empty = readDraft(submission.sessionId) === '';
+  if (activeSessionId === submission.sessionId && unchanged && empty && applyNow(submission.input)) {
+    return 'restored';
+  }
+  enqueuePendingDraft(submission.sessionId, submission.input);
+  return 'pending';
 }
 
 /**
@@ -18,15 +112,6 @@ export interface ComposerDraftDeps {
  */
 export function useComposerDraft(deps: ComposerDraftDeps) {
   const { sessionId } = deps;
-
-  function loadDraft(sid: string | undefined): string {
-    return safeGetString(draftStorageKey(sid)) ?? '';
-  }
-  function saveDraft(sid: string | undefined, value: string): void {
-    const key = draftStorageKey(sid);
-    if (value) safeSetString(key, value);
-    else safeRemove(key);
-  }
 
   const text = ref(loadDraft(sessionId()));
   const textareaRef = ref<HTMLTextAreaElement | null>(null);
@@ -43,16 +128,19 @@ export function useComposerDraft(deps: ComposerDraftDeps) {
   }
 
   watch(text, (value) => {
+    const sid = sessionId();
+    bumpDraftGeneration(sid);
+    // Persist synchronously so an async command rejection can compare both the
+    // generation and stored value without racing Vue's normal post-flush watch.
+    writeDraft(sid, value);
     void nextTick(autosize);
-    // Persist the live draft for the current session (empty clears the entry).
-    saveDraft(sessionId(), value);
-  });
+  }, { flush: 'sync' });
 
   // Switching sessions: stash the draft under the OLD session, then load the new
-  // session's draft into the box.
+  // session's draft (or its oldest pending command) into the box.
   watch(sessionId, (newSid, oldSid) => {
     if (newSid === oldSid) return;
-    saveDraft(oldSid, text.value);
+    writeDraft(oldSid, text.value);
     text.value = loadDraft(newSid);
     void nextTick(autosize);
   });
@@ -72,16 +160,39 @@ export function useComposerDraft(deps: ComposerDraftDeps) {
     });
   }
 
-  /**
-   * Synchronously clear the persisted draft for the current session.
-   * Call this right after clearing `text.value` on send/steer; relying on the
-   * text watcher is unsafe because the Composer may unmount before the watcher
-   * flushes (e.g. when the optimistic user message replaces the empty-session
-   * composer), causing the next mount to reload the stale draft.
-   */
+  /** Explicitly discard the persisted draft for callers that own that intent. */
   function clearDraft(): void {
-    saveDraft(sessionId(), '');
+    writeDraft(sessionId(), '');
   }
 
-  return { text, textareaRef, autosize, loadForEdit, clearDraft };
+  /**
+   * Synchronize the post-submit draft before the Composer can unmount. Normally
+   * this keeps the just-cleared value; if an older rejected command is pending,
+   * it becomes the next non-destructive draft instead.
+   */
+  function finalizeSubmissionDraft(): void {
+    const sid = sessionId();
+    if (text.value === '') {
+      const restored = loadDraft(sid);
+      if (restored !== '') {
+        text.value = restored;
+        return;
+      }
+    }
+    writeDraft(sid, text.value);
+  }
+
+  function captureCommandSubmission(input: string): ComposerCommandSubmission {
+    return createComposerCommandSubmission(input, sessionId());
+  }
+
+  return {
+    text,
+    textareaRef,
+    autosize,
+    loadForEdit,
+    clearDraft,
+    finalizeSubmissionDraft,
+    captureCommandSubmission,
+  };
 }

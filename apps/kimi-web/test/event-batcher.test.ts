@@ -18,6 +18,7 @@ import type {
   KimiEventConnection,
   KimiEventHandlers,
   KimiWebApi,
+  ResearchStatusSnapshot,
 } from '../src/api/types';
 import {
   coalesceAppRenderEvents,
@@ -632,6 +633,22 @@ describe('useKimiWebClient (resync integration)', () => {
     });
     const initialSnapshot = snapshot('seed', 10, 'epoch-1');
     const authoritativeSnapshot = snapshot('snapshot', 20, 'epoch-2');
+    const researchSnapshot = (revision: number): ResearchStatusSnapshot => ({
+      mode: 'ready',
+      loopStatus: 'active',
+      currentLineSlug: 'line-a',
+      questions: [],
+      lines: [],
+      openQuestionCount: 0,
+      activeQuestionCount: 0,
+      blockedQuestionCount: 0,
+      alerts: [],
+      aitpHealth: { phase: 'ready' },
+      revision,
+    });
+    const initialResearch = researchSnapshot(1);
+    const recoveredResearch = researchSnapshot(2);
+    const getSessionResearch = vi.fn(async () => initialResearch);
 
     let handlers: KimiEventHandlers | undefined;
     let resolveSnapshotRequest!: () => void;
@@ -703,6 +720,7 @@ describe('useKimiWebClient (resync integration)', () => {
       getFsHome: vi.fn(async () => ({ home: '/home/test', recentRoots: [] })),
       listSessions: vi.fn(async () => ({ items: [session], hasMore: false })),
       getSessionSnapshot,
+      getSessionResearch,
       getSessionStatus: vi.fn(async () => ({
         model: 'model-1',
         thinkingEffort: 'high',
@@ -745,6 +763,12 @@ describe('useKimiWebClient (resync integration)', () => {
 
       expect(assistantText()).toBe('seed');
       expect(handlers).toBeDefined();
+      await vi.waitFor(() => {
+        expect(getSessionResearch).toHaveBeenCalledWith(sessionId);
+        expect(client.research.value).toEqual(initialResearch);
+      });
+      getSessionResearch.mockClear();
+      getSessionResearch.mockResolvedValue(recoveredResearch);
 
       const beforeResync = pendingDelta('before', 4, { seq: 11 });
       handlers!.onEvent(beforeResync.appEvent, beforeResync.meta);
@@ -761,6 +785,10 @@ describe('useKimiWebClient (resync integration)', () => {
       resolveAuthoritativeSnapshot(authoritativeSnapshot);
       await snapshotApplied;
       expect(assistantText()).toBe('snapshot');
+      await vi.waitFor(() => {
+        expect(getSessionResearch).toHaveBeenCalledWith(sessionId);
+        expect(client.research.value).toEqual(recoveredResearch);
+      });
 
       const live = pendingDelta(' live', 8, { seq: 21 });
       handlers!.onEvent(live.appEvent, live.meta);
@@ -770,6 +798,28 @@ describe('useKimiWebClient (resync integration)', () => {
       );
 
       expect(assistantText()).toBe('snapshot live');
+
+      handlers!.onEvent(
+        {
+          type: 'configChanged',
+          config: {
+            providers: {},
+            defaultModel: 'model-1',
+            experimental: { aitp_research_mode: false },
+          },
+          changedFields: ['experimental'],
+        },
+        { sessionId: '__global__', seq: 1 },
+      );
+      expect(client.researchEnabled.value).toBe(false);
+      getSessionResearch.mockClear();
+
+      handlers!.onResync(sessionId, 22, 'epoch-3');
+      await vi.waitFor(() => {
+        expect(connection.seedSnapshot).toHaveBeenCalledTimes(3);
+      });
+      await Promise.resolve();
+      expect(getSessionResearch).not.toHaveBeenCalled();
     } finally {
       connection.close();
       vi.unstubAllGlobals();

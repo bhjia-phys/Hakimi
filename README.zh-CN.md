@@ -63,7 +63,7 @@ Hakimi 是基于 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code)
 
 ### 跨轨基础能力 · 可编排 Tower workflow
 
-Tower 将从当前固定的 worker/reviewer 协议演进为可复用、可校验、可观察的多 Agent workflow runtime。这是 F/E/A 共享基础能力，不是第八条产品轨道：F 拥有 headless engine、compiler、恢复、worktree 隔离和工具强制 gate；E 拥有跨 surface workflow UX；A 在外部 code-app Web source 中承载可视化编辑器和实时监控。D 可以提供科研 workflow 模板，C 仍只是可选 AITP adapter，绝不成为 Tower 的状态存储。
+Tower 将从当前固定的 worker/reviewer 协议演进为可复用、可校验、可观察的多 Agent workflow runtime。这是 F/E/A 共享基础能力，不是第八条产品轨道：F 拥有 headless engine、compiler、恢复、worktree 隔离和工具强制 gate；E 拥有跨 surface workflow UX；A 在仓库内唯一的 production source `apps/kimi-web` 中承载可视化编辑器和实时监控。D 可以提供科研 workflow 模板，C 仍只是可选 AITP adapter，绝不成为 Tower 的状态存储。
 
 设计分离三个关注点：**workflow** 定义节点、依赖、scope、产物、fan-out/fan-in、评审/合并 gate、重试和完成条件；**role/profile** 定义工具、权限、通信和 worktree 约束；canonical **preset** 把 research、architecture、implementation、testing、review 等语义 route 映射到模型和 Thinking 强度。workflow 文件不包含模型别名，切换 preset 也不得改变 workflow 图。实施计划在这三个策略关注点之外，再增加 authoritative compiler/runtime 与 typed public projection 两层基础设施。
 
@@ -73,9 +73,9 @@ Tower 将从当前固定的 worker/reviewer 协议演进为可复用、可校验
 
 ### A · Web
 
-- **所有权**：Hakimi 拥有恢复到 `apps/kimi-web` 的 in-repo source；过渡期同时负责接收、branding、验证和发布 external production bundle。
+- **所有权**：Hakimi 拥有 `apps/kimi-web`，它是浏览器 UI 唯一可编辑的 production source；`apps/kimi-code/dist-web` 与 `apps/kimi-code/web-base.json` 是被 Git 跟踪的派生发布产物。
 - **依赖**：F 的公共 contracts 以及 B–E 的公开 projection；A 不重新定义 domain ownership。
-- **交付**：`apps/kimi-web` 是从上游最后公开快照恢复的 source-shadow workspace。在 contract/UX parity 与 provenance cutover 通过前，发布版 CLI/native 继续使用已提交的 external `apps/kimi-code/dist-web`。
+- **交付**：production cutover 已完成。源码变更后，用 `pnpm run build:web-assets` 重新生成并一并提交 package assets，再用 `pnpm run build:web-assets -- --check` 对 clean rebuild 做逐字节核验；CI、release 与 native 会先校验 tracked assets 再生成；direct package build/prepack 与 Nix 则从源码生成并验证产物后消费。provenance schema v4 绑定 source、canonical recipe/toolchain 与 bundle identity，native receipt 还绑定最终 binary hash。生成物不得手工编辑或局部替换。此次 cutover 不代表 standalone Web 部署或手机远程轨道已经完成。
 
 ### B · 手机远程
 
@@ -95,6 +95,8 @@ Research Mode 进入以及 active undo/cold restore 会在 ready probe 后执行
 alerts 和 generic human gate 已实现，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard，`ResolveResearchDecision` 也不会自动写入 AITP decision Entry。active Research Mode 处于 degraded 时，AITP writes 和 Goal completion 会被阻止；未解决的 human gate 也会阻止 Goal completion，但本地 Question/Line mutation 仍可能发生。当前没有 automatic session-closeout。
 
 本地兼容性测试使用已 commit 的官方 AITP 0.8.0 golden fixtures：`enter.json`、`enter-after-save.json`、`list.json`、`show.json`、`check.json` 和 `check-workstream.json`。这些测试只运行本地 parser/contract 行为，不启动 live CLI subprocess，因此不等于 live CLI conformance 测试。
+
+这个 opt-in Research surface 同时支持 TUI 和 Web。Web 会把 `/research` 路由到 typed Research endpoint，并提供 Composer **Modes** 入口、live Board 与 line-first 表单 Manager。同一 session 的 mutation 使用 revision 防止 stale 写入；checkpoint commit 必须提供已有 AITP `entryId`，Web 不写 AITP ledger。
 
 | Hakimi gate | AITP gate | 状态 |
 | --- | --- | --- |

@@ -24,7 +24,7 @@
  */
 
 import type { ServiceIdentifier } from '@moonshot-ai/agent-core-v2/_base/di/instantiation';
-import { isError2 } from '@moonshot-ai/agent-core-v2/_base/errors/errors';
+import { ErrorCodes, isError2 } from '@moonshot-ai/agent-core-v2/errors';
 import { ISessionManager } from '@moonshot-ai/agent-core-v2/app/sessionManager/sessionManager';
 import { getLiveSessionById } from '@moonshot-ai/agent-core-v2/app/sessionManager/sessionLookup';
 import { IWorkspaceInstanceManager } from '@moonshot-ai/agent-core-v2/workspace/workspaceInstance/workspaceInstanceManager';
@@ -74,8 +74,9 @@ const INTERNAL_ERROR = 50001;
  * - `RPCError` passes through untouched;
  * - `KlientValidationError` (host-side contract parse) becomes 40001 with
  *   sanitized issue summaries — never the offending payload;
- * - an engine `Error2` becomes 40001 carrying its business `code` and original
- *   `details` under `details`;
+ * - an engine `Error2` carries its business `code` and original `details`;
+ *   `session.not_found` maps to the stable 40404 wire code, while other domain
+ *   errors remain request-invalid (40001);
  * - anything else is an internal 50001.
  * Messages survive; stacks and causes never do.
  */
@@ -89,7 +90,8 @@ export function toRPCError(error: unknown): RPCError {
     );
   }
   if (isError2(error)) {
-    return new RPCError(REQUEST_INVALID, error.message, {
+    const code = error.code === ErrorCodes.SESSION_NOT_FOUND ? NOT_FOUND : REQUEST_INVALID;
+    return new RPCError(code, error.message, {
       code: error.code,
       details: error.details,
     });

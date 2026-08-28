@@ -2,14 +2,17 @@
 
 Package-local rules for `apps/kimi-web` (`@bhjia-phys/hakimi-web`).
 
-> **Source provenance:** this tree was **restored from the last public snapshot**
-> of the upstream web UI and repackaged as the Hakimi workspace. It is currently
-> a **source shadow workspace**: production `dist-web` is still the external
-> code-app bundle, and this workspace's `dist/` is **not** copied/shipped into
-> the CLI package. Rebranded display strings say `Hakimi`/`Hakimi Web`, while all
-> wire/compat identifiers (`kimi-code.bearer.*`, `KIMI_SERVER_URL`, `/api/v1`,
-> local-storage keys such as `kimi-web.*`/`kimi-locale`, provider names, …) are
-> preserved on purpose.
+> **Production source and provenance:** `apps/kimi-web` is the only editable
+> production source for Hakimi Web. The derived `apps/kimi-code/dist-web` and
+> `apps/kimi-code/web-base.json` are tracked release assets. After source changes,
+> regenerate both with `pnpm run build:web-assets`, commit them together, and verify
+> reproducibility with `pnpm run build:web-assets -- --check`. Never hand-edit or
+> partially replace these outputs. Provenance schema v4 binds the complete source tree, canonical
+> recipe/toolchain, and bundle manifests and digests; native receipts also bind
+> that identity to the packaged binary hash. Rebranded display strings say
+> `Hakimi`/`Hakimi Web`, while all wire/compat identifiers
+> (`kimi-code.bearer.*`, `KIMI_SERVER_URL`, `/api/v1`, local-storage keys such as
+> `kimi-web.*`/`kimi-locale`, provider names, …) are preserved on purpose.
 
 ## What it is
 
@@ -51,14 +54,19 @@ The browser web UI for Hakimi — a peer to the TUI in `apps/kimi-code`. It talk
 
 ## Commands
 
-All via `pnpm --filter @bhjia-phys/hakimi-web …`:
+Local development commands use `pnpm --filter @bhjia-phys/hakimi-web …`:
 
 - `dev` — Vite dev server (port `WEB_PORT`, default 5175; proxies `/api/v1` to `KIMI_SERVER_URL`, default `http://127.0.0.1:58627`).
-- `build` — production build into `dist/`.
+- `build` — local Vite build into `dist/`; this is not the production package-asset workflow.
 - `typecheck` — `vue-tsc --noEmit`.
 - `test` — `vitest run` (pure logic tests only; no jsdom / component tests).
 - `check:style` — design-system §06 anti-pattern guard (`scripts/check-style.mjs`).
 - There is **no `lint` script** in this package; linting runs at the repo root via oxlint.
+
+Production assets are root-level workflows:
+
+- `pnpm run build:web-assets` — clean canonical build, branding patch, schema v4 provenance, verification, and atomic replacement of the tracked package outputs; commit them with source changes.
+- `pnpm run build:web-assets -- --check` — clean rebuild and byte-for-byte comparison with the tracked assets, without replacing them.
 
 Debugging against kap-server instances: start one from the repo root with `pnpm dev:server` (port 58627), optionally a second with `pnpm dev:v2` (port 58628 — instances share the home dir via the registry, so both can run at once). The dev server proxies `/api/v1` to the `default` preset; the Sidebar brand row carries a dev-only backend pill (engine generation `v1`/`v2` from `GET /api/v1/meta`'s `backend` field + endpoint) whose menu repoints the proxy at runtime — no Vite restart. Presets default to `http://127.0.0.1:58627` / `:58628`, overridable via `KIMI_BACKEND_DEFAULT_URL` / `KIMI_BACKEND_MULTI_URL`; the switcher endpoints (`GET/POST /__kimi-dev/backend`, dev-only, see `backendSwitcherPlugin` in `vite.config.ts`) drive the menu.
 
@@ -67,7 +75,7 @@ Debugging against kap-server instances: start one from the repo root with `pnpm 
 - **Do not depend on `@moonshot-ai/agent-core`** (mirrors the CLI/SDK rule). The web app is decoupled from core/protocol; wire types are re-implemented locally in `src/api/daemon/wire.ts`. Keep it that way.
 - **Same-origin by default:** the browser only talks to its own origin; Vite proxies `/api/v1` for both HTTP and WS. Set `VITE_KIMI_SERVER_HTTP_URL` only when you intentionally want direct (CORS) mode.
 - The WS connection is established eagerly after the auth/config gate even when no session exists, because workspace/config lifecycle events are global. Session subscriptions and cursors remain lazy. Since the current client has no `__global__` replay cursor, every successful (re)connect must re-read `/config` as the authoritative gap reconciler.
-- Vite-injected globals (`__KIMI_DEV_PROXY_TARGET__`, `__KIMI_DEV_BACKENDS__`, `__KIMI_WEB_VERSION__`) are declared in `src/env.d.ts` and defined in `vite.config.ts`. Do not hand-edit `dist/`.
+- Vite-injected globals (`__KIMI_DEV_PROXY_TARGET__`, `__KIMI_DEV_BACKENDS__`, `__KIMI_WEB_VERSION__`) are declared in `src/env.d.ts` and defined in `vite.config.ts`. Do not hand-edit local `dist/` or the tracked package outputs under `apps/kimi-code`; regenerate the latter only through the canonical root command and commit them with source changes.
 - **Theming:** the root element carries `data-color-scheme` (`light` | `dark` | `system`); react to it through `useIsDark()`, not by reading the DOM directly.
 - Keep the Vite **dev** proxy and **`preview`** proxy in sync — both are defined in `vite.config.ts` (shared `apiProxyOptions`).
 - The shared proxy strips the browser `Origin` header on forwarded requests: `changeOrigin` rewrites `Host` to the server but leaves `Origin` pointing at the Vite origin, and kap-server's WS upgrade path rejects that mismatch with 403. An Origin-less request is treated as a non-browser client. If you add another proxied path, route it through the same options.

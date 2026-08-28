@@ -63,7 +63,7 @@ The order is **contract freeze → core correctness → public boundaries → Ha
 
 ### Cross-track foundation · composable Tower workflows
 
-Tower will evolve from its current fixed worker/reviewer protocol into a reusable, validated, and observable multi-agent workflow runtime. This is a shared F/E/A foundation, not an eighth product track: F owns the headless engine, compiler, recovery, worktree isolation, and tool-enforced gates; E owns the cross-surface workflow UX; A carries the visual editor and live monitor in the external code-app Web source. D may contribute research workflow templates, while C remains an optional AITP adapter and never becomes Tower's state store.
+Tower will evolve from its current fixed worker/reviewer protocol into a reusable, validated, and observable multi-agent workflow runtime. This is a shared F/E/A foundation, not an eighth product track: F owns the headless engine, compiler, recovery, worktree isolation, and tool-enforced gates; E owns the cross-surface workflow UX; A carries the visual editor and live monitor in the in-repository `apps/kimi-web` production source. D may contribute research workflow templates, while C remains an optional AITP adapter and never becomes Tower's state store.
 
 The design separates three concerns. A **workflow** defines nodes, dependencies, scopes, artifacts, fan-out/fan-in, review and merge gates, retries, and completion criteria. A **role/profile** defines tools, permissions, communication, and worktree confinement. A canonical **preset** maps semantic routes such as research, architecture, implementation, testing, and review to models and Thinking effort. Model aliases do not belong in workflow files, and changing a preset must not change the workflow graph. The implementation plan wraps these three policy concerns with two additional infrastructure layers: the authoritative compiler/runtime and its typed public projection.
 
@@ -73,9 +73,9 @@ The current baseline already provides the fixed Tower protocol and separate `tow
 
 ### A · Web
 
-- **Owner:** Hakimi owns the restored in-repo source at `apps/kimi-web`; during the transition it also receives, brands, verifies, and ships the external production bundle.
+- **Owner:** Hakimi owns `apps/kimi-web`, the only editable production source for the browser UI; `apps/kimi-code/dist-web` and `apps/kimi-code/web-base.json` are tracked derived release assets.
 - **Depends on:** F's public contracts and B–E projections; A does not redefine domain ownership.
-- **Delivery:** `apps/kimi-web` is a source-shadow workspace restored from the last public upstream snapshot. Until contract/UX parity and provenance cutover pass, released CLI/native builds continue using the committed external bundle at `apps/kimi-code/dist-web`.
+- **Delivery:** the production cutover is complete. After source changes, regenerate and commit package assets with `pnpm run build:web-assets`, then verify a clean byte-for-byte rebuild with `pnpm run build:web-assets -- --check`; CI, release, and native flows verify tracked assets before regenerating them, while direct package build/prepack and Nix generate and validate assets for consumption. Provenance schema v4 binds source, canonical recipe/toolchain, and bundle identities, while the native receipt additionally binds the final binary hash. Generated outputs must not be edited by hand or partially replaced. This cutover does not claim a standalone Web deployment or completion of the phone-remote track.
 
 ### B · Phone remote
 
@@ -95,6 +95,8 @@ Research Mode entry and active undo/cold restore run a read-only current-state m
 Hakimi has alerts and a generic human gate, but candidate confirmation is not a runtime-enforced guard on `SetResearchFocus`, and `ResolveResearchDecision` does not automatically write an AITP decision Entry. In degraded active Research Mode, AITP writes and Goal completion are blocked; unresolved human gates also block Goal completion, while local Question/Line mutations may still occur. No automatic session-closeout is performed.
 
 The local compatibility tests use the committed official AITP 0.8.0 golden fixtures for `enter.json`, `enter-after-save.json`, `list.json`, `show.json`, `check.json`, and `check-workstream.json`. They exercise local parser/contract behavior without starting a live CLI subprocess, so they are not live CLI conformance tests.
+
+The opt-in Research surface is available in both TUI and Web. Web routes `/research` through the typed Research endpoint and provides a Composer **Modes** entry, live Board, and line-first form Manager. Same-session mutations are revision-safe, and checkpoint commit requires an existing AITP `entryId`; Web does not write the AITP ledger.
 
 | Hakimi gate | AITP gate | Status |
 | --- | --- | --- |

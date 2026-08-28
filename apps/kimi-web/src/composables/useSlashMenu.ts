@@ -12,6 +12,8 @@ export interface SlashMenuDeps {
   autosize: () => void;
   /** Current session skills (getter, so the menu stays reactive). */
   skills: () => AppSkill[];
+  /** Explicit false hides the experimental Research command; missing means on. */
+  researchEnabled?: () => boolean;
   /** Emit a chosen slash command up to the parent. */
   emitCommand: (cmd: string) => void;
   /** Record a sent command for ↑/↓ recall. */
@@ -33,7 +35,16 @@ export interface SlashMenuDeps {
  * when an item is chosen.
  */
 export function useSlashMenu(deps: SlashMenuDeps) {
-  const { text, textareaRef, autosize, skills, emitCommand, historyPush, clearDraft } = deps;
+  const {
+    text,
+    textareaRef,
+    autosize,
+    skills,
+    researchEnabled,
+    emitCommand,
+    historyPush,
+    clearDraft,
+  } = deps;
 
   const open = ref(false);
   const items = ref<SlashCommand[]>([]);
@@ -41,10 +52,14 @@ export function useSlashMenu(deps: SlashMenuDeps) {
 
   function update(): void {
     const val = text.value;
-    // Only show if the value starts with `/` and has no space yet (single token).
-    if (val.startsWith('/') && !val.includes(' ')) {
+    // Only show for a single slash token. Any Unicode whitespace means the user
+    // has started entering arguments, so the menu should close.
+    if (val.startsWith('/') && !/\p{White_Space}/u.test(val)) {
       // Built-in commands + the active session's skills (shown as /<skill-name>).
-      items.value = filterCommands(val, buildSlashItems(skills()));
+      items.value = filterCommands(
+        val,
+        buildSlashItems(skills(), { researchEnabled: researchEnabled?.() }),
+      );
       active.value = 0;
       open.value = items.value.length > 0;
     } else {

@@ -14,13 +14,9 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import {
-  assertWebAssets,
-  WEB_SOURCE_REPOSITORY,
-} from '../apps/kimi-code/scripts/check-web-assets.mjs';
 import {
   formatReleaseTag,
   isValidSemver,
@@ -28,9 +24,10 @@ import {
 } from '../apps/kimi-code/scripts/native/release-tag.mjs';
 
 const root = resolve(import.meta.dirname, '..');
+const rootPackagePath = join(root, 'package.json');
 const cliPackagePath = join(root, 'apps/kimi-code/package.json');
 const upstreamBasePath = join(root, 'apps/kimi-code/upstream-base.json');
-const webBasePath = join(root, 'apps/kimi-code/web-base.json');
+const webBuildScriptPath = join(root, 'apps/kimi-code/scripts/build-web-assets.mjs');
 const changesetConfigPath = join(root, '.changeset/config.json');
 const changesetDir = join(root, '.changeset');
 const appConstantsPath = join(root, 'apps/kimi-code/src/constant/app.ts');
@@ -130,25 +127,81 @@ check(
 );
 
 // ---------------------------------------------------------------------------
-// 2.1 External Web bundle provenance
+// 2.1 Build-time Web asset delivery
 // ---------------------------------------------------------------------------
 
+const rootPackage = parseJsonFile(rootPackagePath);
+const packageFiles = Array.isArray(cliPackage.files) ? cliPackage.files : [];
+check('package publishes dist-web', packageFiles.includes('dist-web'));
+check('package publishes web-base.json', packageFiles.includes('web-base.json'));
+check('Web source build entry exists', existsSync(webBuildScriptPath));
 check(
-  'package publishes web-base.json',
-  Array.isArray(cliPackage.files) && cliPackage.files.includes('web-base.json'),
+  'root build:web-assets invokes the source build entry',
+  rootPackage.scripts?.['build:web-assets'] ===
+    'node apps/kimi-code/scripts/build-web-assets.mjs',
+  JSON.stringify(rootPackage.scripts?.['build:web-assets']),
 );
+check(
+  'CLI package build generates Web assets',
+  typeof cliPackage.scripts?.build === 'string' &&
+    cliPackage.scripts.build.startsWith('node scripts/build-web-assets.mjs && '),
+  JSON.stringify(cliPackage.scripts?.build),
+);
+check(
+  'CLI package prepack generates Web assets',
+  cliPackage.scripts?.prepack === 'node scripts/build-web-assets.mjs',
+  JSON.stringify(cliPackage.scripts?.prepack),
+);
+
 try {
-  await assertWebAssets();
-  check('dist-web matches its recorded provenance', true);
-  const webBase = parseJsonFile(webBasePath);
+  const generatedPaths = [
+    'apps/kimi-code/dist-web',
+    'apps/kimi-code/web-base.json',
+  ];
+  const provenance = parseJsonFile(join(root, 'apps/kimi-code/web-base.json'));
+  const bundleFiles = Array.isArray(provenance.bundle?.files)
+    ? provenance.bundle.files.map(({ path }) => `apps/kimi-code/dist-web/${path}`)
+    : [];
+  const expectedTracked = new Set([
+    ...bundleFiles,
+    'apps/kimi-code/web-base.json',
+  ]);
+  const tracked = new Set(
+    git(['ls-files', '--', ...generatedPaths])
+      .split('\n')
+      .filter(Boolean),
+  );
+  const requiredTracked = [
+    'apps/kimi-code/dist-web/index.html',
+    'apps/kimi-code/dist-web/boot.js',
+    'apps/kimi-code/web-base.json',
+  ];
+  const missing = [...expectedTracked].filter(
+    (path) => !tracked.has(path) || !existsSync(join(root, path)),
+  );
+  const unexpected = [...tracked].filter((path) => !expectedTracked.has(path));
+  const missingRequired = requiredTracked.filter((path) => !expectedTracked.has(path));
   check(
-    'web-base.json repository matches the canonical source identifier',
-    webBase.repository === WEB_SOURCE_REPOSITORY,
-    JSON.stringify(webBase.repository),
+    'tracked Web outputs match the provenance manifest',
+    bundleFiles.length > 0 && missing.length === 0 && unexpected.length === 0 && missingRequired.length === 0,
+    [
+      ...missing.map((path) => `missing ${path}`),
+      ...unexpected.map((path) => `unexpected ${path}`),
+      ...missingRequired.map((path) => `manifest omits ${path}`),
+    ].join(', '),
+  );
+
+  const untracked = git(['ls-files', '--others', '--', ...generatedPaths])
+    .split('\n')
+    .filter(Boolean);
+  check(
+    'generated Web outputs contain no untracked files',
+    untracked.length === 0,
+    untracked.join(', '),
   );
 } catch (error) {
   check(
-    'dist-web matches its recorded provenance',
+    'tracked Web outputs match the provenance manifest',
     false,
     error instanceof Error ? error.message : String(error),
   );

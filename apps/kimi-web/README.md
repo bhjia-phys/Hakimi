@@ -83,39 +83,44 @@ The server's wire protocol has a few things that will bite you if forgotten:
 
 ## Release & deployment
 
-Hakimi Web is **not published as a standalone package**, and this workspace does
-**not yet own the production web bundle**.
+`apps/kimi-web` is the only editable production source for Hakimi Web. It is still
+not published or deployed as a standalone package: CLI and native releases serve
+the tracked derived `apps/kimi-code/dist-web` bundle together with its
+`apps/kimi-code/web-base.json` provenance.
 
-### Current release flow (phase 1: source shadow workspace)
+### Canonical production build
 
-- This `apps/kimi-web` tree is maintained as a **source shadow workspace**: we
-  track and evolve the web UI source here, but the **production `dist-web` that
-  is actually served today is still the external code-app bundle** (built from
-  the code-app repo and shipped as part of the CLI's `apps/kimi-code/dist-web`).
-- Hakimi does **not copy or ship** this workspace's build yet: there is no
-  `copy-web-assets` step and no release wiring from `apps/kimi-web/dist` into
-  the CLI package. Production stays on the external bundle until phase 2 flips
-  it over — deliberately, and only after the shadow source is validated against
-  the current server.
-- Local development/checks stay unchanged: `pnpm dev:web` (or
-  `pnpm -C apps/kimi-web run dev`), `pnpm -C apps/kimi-web run build` (produces
-  only the untracked local `dist/`), `typecheck`, `test`, `check:style`.
-- `apps/kimi-web/package.json` remains internal workspace metadata; the web UI
-  does not surface its own version or build commit.
+From the repository root, use the canonical command after every source change to
+generate and atomically replace the package bundle and its provenance:
 
-### Suggested improvements (for the later flip-over)
+```bash
+pnpm run build:web-assets
+```
 
-- **Keep the current coupling for now.** Because Hakimi is primarily a local
-  CLI/server product, bundling the web UI into the CLI package keeps installs
-  self-contained and avoids cross-origin/CORS complexity.
-- **Add an independent web-deploy workflow only when needed.** If a public
-  standalone web deployment is required later, create
-  `.github/workflows/web-deploy.yml` that builds `apps/kimi-web` and uploads
-  `dist/` to the chosen static host (S3/CloudFront, Cloudflare Pages, Vercel,
-  etc.). Until then, do not maintain a separate deploy target.
-- **Keep versioning owned by the CLI release.** `apps/kimi-web/package.json`
-  remains internal workspace metadata; do not surface it as a separate user
-  version unless the web app becomes an independently published product.
-- **Ensure the web build is exercised in CI.** The root `build` script already
-  builds every workspace, so `pnpm run build` in CI covers `apps/kimi-web`.
-  Keep it that way; do not bypass the web build in release pipelines.
+Commit both generated outputs with the source change. Use the check form to
+rebuild in a clean staging directory and require a byte-for-byte match with the
+tracked bundle and provenance:
+
+```bash
+pnpm run build:web-assets -- --check
+```
+
+Do not copy `apps/kimi-web/dist`, hand-edit the generated package outputs, or
+replace only part of the bundle. `web-base.json` provenance schema v4 binds three
+identities: the complete `apps/kimi-web` source manifest and digest, the canonical
+recipe/toolchain manifest and digest, and the generated bundle manifest and
+digest. CI, release, and native flows verify tracked outputs before regenerating
+them; direct package build/prepack and Nix generate and validate outputs for
+consumption. Native SEA builds collect a verified snapshot;
+the native receipt binds the same source/recipe/bundle identity and branding patch
+version to the final executable's SHA-256.
+
+For rollback, restore the source and canonical recipe from an older release tag,
+then regenerate the complete package outputs and native receipt. A mixed set must
+fail verification or packaging.
+
+Local development remains separate: `pnpm dev:web` (or
+`pnpm -C apps/kimi-web run dev`) runs Vite, while
+`pnpm -C apps/kimi-web run build` produces only the local `dist/` directory.
+`apps/kimi-web/package.json` remains internal workspace metadata; the Web UI has
+no independent version or standalone deployment channel.

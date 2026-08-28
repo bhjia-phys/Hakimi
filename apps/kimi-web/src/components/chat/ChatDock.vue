@@ -6,11 +6,13 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ActivationBadges, ApprovalBlock, ConversationStatus, PermissionMode, QueuedPromptView, TaskItem, TodoView, UIQuestion } from '../../types';
-import type { AppGoal, AppModel, AppSkill, QuestionResponse, ThinkingLevel } from '../../api/types';
+import type { AppGoal, AppModel, AppSkill, QuestionResponse, ResearchStatusSnapshot, ThinkingLevel } from '../../api/types';
 import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
+import type { ComposerCommandEvent } from '../../composables/useComposerDraft';
 import Composer from './Composer.vue';
 import GoalStrip from './GoalStrip.vue';
+import ResearchBoard from './ResearchBoard.vue';
 import QuestionCard from './QuestionCard.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import TasksPane from './TasksPane.vue';
@@ -33,12 +35,15 @@ const props = defineProps<{
   planMode?: boolean;
   swarmMode?: boolean;
   goalMode?: boolean;
+  researchEnabled?: boolean;
   activationBadges?: ActivationBadges;
   models?: AppModel[];
   starredIds?: string[];
   skills?: AppSkill[];
   goal?: AppGoal | null;
   goalExpandSignal?: number;
+  research?: ResearchStatusSnapshot | null;
+  researchExpandSignal?: number;
   dockPanel: 'bash' | 'subagent' | 'todos' | null;
   bashTasks: TaskItem[];
   subagentTasks: TaskItem[];
@@ -59,7 +64,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   submit: [payload: { text: string; attachments: PromptAttachment[] }];
   steer: [payload: { text: string; attachments: PromptAttachment[] }];
-  command: [cmd: string];
+  command: [command: ComposerCommandEvent];
   interrupt: [];
   setPermission: [mode: PermissionMode];
   setThinking: [level: ThinkingLevel];
@@ -70,6 +75,8 @@ const emit = defineEmits<{
   createGoal: [objective: string];
   controlGoal: [action: 'pause' | 'resume' | 'cancel'];
   focusGoal: [];
+  startResearch: [];
+  manageResearch: [];
   focusSwarm: [];
   compact: [];
   pickModel: [];
@@ -213,6 +220,12 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       :force-expanded="goalExpandSignal"
       @control-goal="emit('controlGoal', $event)"
     />
+    <ResearchBoard
+      v-if="research && research.mode !== 'inactive'"
+      :snapshot="research"
+      :force-expanded="researchExpandSignal"
+      @manage="emit('manageResearch')"
+    />
     <div v-if="hasDockWork" ref="workbarRef" class="dock-workbar">
       <Pill
         v-if="bashTasks.length > 0"
@@ -276,6 +289,8 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       :plan-mode="planMode"
       :swarm-mode="swarmMode"
       :goal-mode="goalMode"
+      :research-enabled="researchEnabled"
+      :research="research"
       :goal="goal"
       :activation-badges="activationBadges"
       :models="models"
@@ -295,6 +310,8 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       @create-goal="emit('createGoal', $event)"
       @control-goal="emit('controlGoal', $event)"
       @focus-goal="emit('focusGoal')"
+      @start-research="emit('startResearch')"
+      @manage-research="emit('manageResearch')"
       @focus-swarm="emit('focusSwarm')"
       @compact="emit('compact')"
       @pick-model="emit('pickModel')"

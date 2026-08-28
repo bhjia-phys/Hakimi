@@ -10,25 +10,30 @@
  * Run: `pnpm --filter @bhjia-phys/hakimi exec vitest run test/scripts/native/release-artifacts.test.ts`
  */
 
+import { execFile, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { inflateRawSync } from 'node:zlib';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { verifyWebAssets } from '../../../scripts/check-web-assets.mjs';
-import { writeNativeBuildReceipt } from '../../../scripts/native/build-receipt.mjs';
+import {
+  NATIVE_BUILD_RECEIPT_VERSION,
+  writeNativeBuildReceipt,
+} from '../../../scripts/native/build-receipt.mjs';
 import {
   appRoot,
   nativeBuildReceiptPath,
 } from '../../../scripts/native/paths.mjs';
 
 const execFileAsync = promisify(execFile);
+const repositoryRoot = resolve(appRoot, '../..');
+const buildWebAssetsScript = resolve(appRoot, 'scripts/build-web-assets.mjs');
 const packageScript = resolve(appRoot, 'scripts/native/package.mjs');
 const manifestScript = resolve(appRoot, 'scripts/native/produce-manifest.mjs');
 const artifactsDir = resolve(appRoot, 'dist-native/artifacts');
@@ -130,10 +135,112 @@ function findEndOfCentralDirectory(zip: Buffer): number {
   throw new Error('end of central directory not found');
 }
 
+function expectTextOrder(text: string, needles: readonly string[]): void {
+  let previous = -1;
+  for (const needle of needles) {
+    const current = text.indexOf(needle, previous + 1);
+    expect(current, `missing or out-of-order text: ${needle}`).toBeGreaterThan(previous);
+    previous = current;
+  }
+}
+
 describe('native release artifacts', () => {
   // Every release dir created via makeReleaseDir is tracked and removed in
   // afterEach so no /tmp leftovers survive the suite.
   const tempReleaseDirs: string[] = [];
+
+  beforeAll(async () => {
+    await execFileAsync(process.execPath, [buildWebAssetsScript], {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      maxBuffer: 20 * 1024 * 1024,
+      timeout: 180_000,
+    });
+  }, 180_000);
+
+  it('wires ignored Web outputs through package, CI, release, native, and Nix builds', () => {
+    const rootPackage = JSON.parse(
+      readFileSync(resolve(repositoryRoot, 'package.json'), 'utf8'),
+    ) as { scripts?: Record<string, string> };
+    const cliPackage = JSON.parse(
+      readFileSync(resolve(appRoot, 'package.json'), 'utf8'),
+    ) as { files?: string[]; scripts?: Record<string, string> };
+    const ignore = readFileSync(resolve(repositoryRoot, '.gitignore'), 'utf8');
+    const boundary = readFileSync(
+      resolve(repositoryRoot, 'scripts/check-hakimi-release-boundary.mjs'),
+      'utf8',
+    );
+    const boundaryWorkflow = readFileSync(
+      resolve(repositoryRoot, '.github/workflows/hakimi-boundary.yml'),
+      'utf8',
+    );
+    const ci = readFileSync(resolve(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+    const release = readFileSync(
+      resolve(repositoryRoot, '.github/workflows/release-hakimi.yml'),
+      'utf8',
+    );
+    const native = readFileSync(
+      resolve(repositoryRoot, '.github/workflows/_native-build.yml'),
+      'utf8',
+    );
+    const flake = readFileSync(resolve(repositoryRoot, 'flake.nix'), 'utf8');
+
+    expect(rootPackage.scripts?.['build:web-assets']).toBe(
+      'node apps/kimi-code/scripts/build-web-assets.mjs',
+    );
+    expect(rootPackage.scripts?.['test:docs:sync-changelog']).toBe(
+      'node --test docs/scripts/sync-changelog.test.mjs',
+    );
+    expect(cliPackage.files).toEqual(
+      expect.arrayContaining(['dist-web', 'web-base.json']),
+    );
+    expect(cliPackage.scripts?.['build']).toMatch(
+      /^node scripts\/build-web-assets\.mjs && /,
+    );
+    expect(cliPackage.scripts?.['prepack']).toBe('node scripts/build-web-assets.mjs');
+    expect(ignore).not.toContain('/apps/kimi-code/dist-web/');
+    expect(ignore).not.toContain('/apps/kimi-code/web-base.json');
+    expect(boundary).toContain("'ls-files'");
+    expect(boundary).toContain("'apps/kimi-code/dist-web'");
+    expect(boundary).toContain("'apps/kimi-code/web-base.json'");
+    expect(boundary).toContain('tracked Web outputs match the provenance manifest');
+    expect(boundary).toContain('generated Web outputs contain no untracked files');
+    expect(boundary).not.toContain("'--exclude-standard'");
+    expect(boundary).not.toContain('assertWebAssets');
+    expect(boundaryWorkflow).toContain('pull_request:');
+    expect(boundaryWorkflow).toContain('node scripts/check-hakimi-release-boundary.mjs');
+    expect(ci).toContain('pnpm run test:docs:sync-changelog');
+
+    expectTextOrder(ci, [
+      'Verify committed Hakimi web assets before package build',
+      'run: pnpm run build:web-assets -- --check',
+      '- run: pnpm run build\n',
+    ]);
+    expectTextOrder(ci, [
+      'pnpm run build:web-assets -- --check',
+      'pnpm run build:web-assets\n',
+    ]);
+    expectTextOrder(release, [
+      'Run Hakimi release-boundary checks',
+      'Install dependencies',
+      'pnpm run build:web-assets -- --check',
+      'pnpm run build:web-assets\n',
+      'Build packages',
+    ]);
+    expectTextOrder(native, [
+      'pnpm run build:web-assets -- --check',
+      'pnpm run build:web-assets\n',
+      'Build native executable',
+    ]);
+    expect(ci).not.toContain('--allow-nix-toolchain-mismatch');
+    expect(release).not.toContain('--allow-nix-toolchain-mismatch');
+    expect(native).not.toContain('--allow-nix-toolchain-mismatch');
+    expectTextOrder(flake, [
+      'KIMI_WEB_NIX_BUILD=1 pnpm run build:web-assets -- --allow-nix-toolchain-mismatch',
+      'KIMI_WEB_NIX_BUILD=1 pnpm run build:web-assets -- --check --allow-nix-toolchain-mismatch',
+      'pnpm --filter=@bhjia-phys/hakimi run build:native:sea',
+    ]);
+  });
 
   async function makeReleaseDir(): Promise<string> {
     const dir = await mkdtemp(join(tmpdir(), 'hakimi-manifest-zip-'));
@@ -170,9 +277,26 @@ describe('native release artifacts', () => {
     }
   });
 
-  it('packages the receipt-bound native binary as a zip archive and checksums it', async () => {
+  it('packages the v3 receipt-bound native binary as a zip archive and checksums it', async () => {
     const binaryContent = 'native binary payload\n';
-    await stageNativePackageInput(binaryContent);
+    const provenance = await stageNativePackageInput(binaryContent);
+    const receipt = JSON.parse(readFileSync(nativeBuildReceiptPath(target), 'utf8')) as {
+      version: number;
+      web: Record<string, unknown>;
+      binary: { sha256: string };
+    };
+    expect(receipt).toEqual({
+      version: NATIVE_BUILD_RECEIPT_VERSION,
+      target,
+      web: {
+        repository: provenance.repository,
+        sourceSha256: provenance.source.sha256,
+        recipeSha256: provenance.recipe.sha256,
+        bundleSha256: provenance.bundle.sha256,
+        brandingPatchVersion: provenance.brandingPatchVersion,
+      },
+      binary: { sha256: sha256(binaryContent) },
+    });
 
     await execFileAsync(process.execPath, [packageScript], {
       cwd: appRoot,
@@ -211,18 +335,59 @@ describe('native release artifacts', () => {
     expect(result.stderr).toContain('binary sha256 does not match');
   });
 
-  it('rejects packaging when the receipt records a stale Web identity', async () => {
+  it('rejects packaging when the receipt records stale source, recipe, or bundle identity', async () => {
     const provenance = await stageNativePackageInput('native binary\n');
     await writeNativeBuildReceipt({
       target,
-      provenance: { ...provenance, commit: '0'.repeat(40) },
+      provenance: {
+        ...provenance,
+        source: { ...provenance.source, sha256: '0'.repeat(64) },
+      },
       binaryPath: fakeBinary,
     });
+
+    let result = runNativePackage();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Web identity does not match');
+
+    await writeNativeBuildReceipt({
+      target,
+      provenance: {
+        ...provenance,
+        recipe: { ...provenance.recipe, sha256: '0'.repeat(64) },
+      },
+      binaryPath: fakeBinary,
+    });
+    result = runNativePackage();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Web identity does not match');
+
+    await writeNativeBuildReceipt({
+      target,
+      provenance: {
+        ...provenance,
+        bundle: { ...provenance.bundle, sha256: '0'.repeat(64) },
+      },
+      binaryPath: fakeBinary,
+    });
+    result = runNativePackage();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Web identity does not match');
+  });
+
+  it('rejects packaging with an old native build receipt schema', async () => {
+    await stageNativePackageInput('native binary\n');
+    const receiptPath = nativeBuildReceiptPath(target);
+    const receipt = JSON.parse(readFileSync(receiptPath, 'utf8')) as { version: number };
+    receipt.version = NATIVE_BUILD_RECEIPT_VERSION - 1;
+    writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
 
     const result = runNativePackage();
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('Web identity does not match');
+    expect(result.stderr).toContain(
+      `Native build receipt must use version ${NATIVE_BUILD_RECEIPT_VERSION}`,
+    );
   });
 
   it('produces a manifest from zip archive checksums', async () => {

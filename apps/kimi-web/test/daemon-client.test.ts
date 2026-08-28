@@ -66,6 +66,85 @@ const WIRE_GOAL = {
   },
 };
 
+const WIRE_RESEARCH = {
+  mode: 'ready',
+  loopStatus: 'active',
+  currentLineSlug: 'sources',
+  currentFocus: { questionId: 'q_1', boundedAction: 'Read the primary source', revision: 3 },
+  currentQuestion: {
+    id: 'q_1',
+    lineSlug: 'sources',
+    wording: 'What does the primary source establish?',
+    assessment: 'Still collecting evidence',
+    priority: 2,
+    neededEvidence: ['Primary source'],
+    evidenceRefs: ['ev_1'],
+    falsifierRefs: [],
+    nextBoundedAction: 'Read the primary source',
+    workflow: 'active',
+    epistemic: 'candidate',
+    persistence: 'working',
+    revision: 7,
+  },
+  questions: [
+    {
+      id: 'q_1',
+      lineSlug: 'sources',
+      wording: 'What does the primary source establish?',
+      assessment: 'Still collecting evidence',
+      priority: 2,
+      neededEvidence: ['Primary source'],
+      evidenceRefs: ['ev_1'],
+      falsifierRefs: [],
+      nextBoundedAction: 'Read the primary source',
+      workflow: 'active',
+      epistemic: 'candidate',
+      persistence: 'working',
+      revision: 7,
+    },
+  ],
+  lines: [
+    {
+      slug: 'sources',
+      title: 'Primary sources',
+      objective: 'Establish the source record',
+      assessment: 'One source found',
+      status: 'active',
+      createdAt: 1_700_000_000_000,
+      revision: 4,
+    },
+  ],
+  openQuestionCount: 1,
+  activeQuestionCount: 1,
+  blockedQuestionCount: 0,
+  alerts: [{ kind: 'stale', message: 'Recheck the cached source', questionId: 'q_1' }],
+  goalSummary: { status: 'active', remainingTurns: 8 },
+  aitpHealth: {
+    phase: 'ready',
+    contractVersion: '1.0',
+    pluginVersion: '2.0',
+    pythonVersion: '3.12',
+    lastCheckAt: 1_700_000_000_100,
+    notInitialized: false,
+  },
+  pendingCheckpoint: {
+    checkpointId: 'cp_1',
+    questionId: 'q_1',
+    lineSlug: 'sources',
+    assessment: 'Primary source located',
+    nextAction: 'Commit the ledger entry',
+    idempotencyKey: 'idem_1',
+    persistence: 'pending_commit',
+    createdAt: 1_700_000_000_200,
+  },
+  latestCommittedCheckpoint: {
+    checkpointId: 'cp_0',
+    entryId: 'entry_0',
+    committedAt: 1_700_000_000_050,
+  },
+  revision: 11,
+};
+
 function createApi(): DaemonKimiWebApi {
   return new DaemonKimiWebApi({
     serverHttpUrl: 'http://daemon.test',
@@ -205,6 +284,50 @@ describe('DaemonKimiWebApi.getSessionGoal', () => {
     expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(
       'http://daemon.test/api/v1/sessions/sess_42/goal',
     );
+  });
+});
+
+describe('DaemonKimiWebApi Research', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('gets and maps the complete Research snapshot from the encoded session path', async () => {
+    vi.mocked(fetch).mockResolvedValue(envelope(WIRE_RESEARCH));
+
+    const snapshot = await createApi().getSessionResearch('sess/1');
+
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(
+      'http://daemon.test/api/v1/sessions/sess%2F1/research',
+    );
+    expect(snapshot).toMatchObject({
+      mode: 'ready',
+      currentLineSlug: 'sources',
+      currentFocus: { questionId: 'q_1', revision: 3 },
+      currentQuestion: { id: 'q_1', revision: 7 },
+      questions: [{ id: 'q_1', lineSlug: 'sources' }],
+      lines: [{ slug: 'sources', revision: 4 }],
+      pendingCheckpoint: { checkpointId: 'cp_1', persistence: 'pending_commit' },
+      latestCommittedCheckpoint: { entryId: 'entry_0' },
+      aitpHealth: { contractVersion: '1.0' },
+      revision: 11,
+    });
+  });
+
+  it('posts the typed command and maps the returned snapshot', async () => {
+    vi.mocked(fetch).mockResolvedValue(envelope({ snapshot: WIRE_RESEARCH }));
+    const command = { kind: 'set_focus', questionId: 'q_1', expectedRevision: 11 } as const;
+
+    const snapshot = await createApi().commandSessionResearch('sess/1', command);
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0]!;
+    expect(url).toBe('http://daemon.test/api/v1/sessions/sess%2F1/research/command');
+    expect(init).toMatchObject({ method: 'POST', body: JSON.stringify({ command }) });
+    expect(snapshot.revision).toBe(11);
   });
 });
 
@@ -490,4 +613,45 @@ describe('DaemonKimiWebApi.connectEvents', () => {
       );
     },
   );
+
+  it('delivers both raw and protocol Research updates as the same typed event', () => {
+    FakeWebSocket.instances = [];
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const received: AppEvent[] = [];
+    connection = createApi().connectEvents({
+      onEvent(event) {
+        received.push(event);
+      },
+      onResync() {},
+      onError() {},
+      onConnectionChange() {},
+    });
+    const [socket] = FakeWebSocket.instances;
+    if (socket === undefined) throw new Error('WebSocket was not created');
+
+    socket.emit({ type: 'server_hello', payload: { protocol_version: 2 } });
+    socket.emit({
+      type: 'research.updated',
+      seq: 1,
+      session_id: 'session-1',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      payload: { snapshot: WIRE_RESEARCH },
+    });
+    socket.emit({
+      type: 'event.research.updated',
+      seq: 2,
+      session_id: 'session-1',
+      timestamp: '2026-01-01T00:00:01.000Z',
+      payload: { snapshot: WIRE_RESEARCH },
+    });
+
+    const updates = received.filter((event) => event.type === 'researchUpdated');
+    expect(updates).toHaveLength(2);
+    expect(updates[0]).toEqual(updates[1]);
+    expect(updates[0]).toMatchObject({
+      type: 'researchUpdated',
+      sessionId: 'session-1',
+      snapshot: { currentLineSlug: 'sources', revision: 11 },
+    });
+  });
 });

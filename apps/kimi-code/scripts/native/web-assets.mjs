@@ -138,6 +138,7 @@ async function snapshotVerifiedBundle({ appRoot, target, sourceRoot, verifiedSou
     const verifiedSnapshot = await verifyWebAssetsAgainstProvenance(
       stagingRoot,
       verifiedSource.provenance,
+      { verifySource: false, verifyRecipe: false },
     );
     await rm(snapshotRoot, { recursive: true, force: true });
     await rename(stagingRoot, snapshotRoot);
@@ -153,11 +154,16 @@ async function snapshotVerifiedBundle({ appRoot, target, sourceRoot, verifiedSou
   }
 }
 
-export async function collectWebAssets({ appRoot, target }) {
+export async function collectWebAssets({
+  appRoot,
+  target,
+  repositoryRoot = resolve(appRoot, '../..'),
+}) {
   const sourceRoot = resolve(appRoot, WEB_ASSETS_DIR);
   const verifiedSource = await verifyWebAssets(
     sourceRoot,
     resolve(appRoot, 'web-base.json'),
+    repositoryRoot,
   );
   const snapshot = await snapshotVerifiedBundle({
     appRoot,

@@ -8,3 +8,6 @@
 *.gif binary
 *.ico binary
 *.png binary
+
+# Canonical generated Web bundles may preserve upstream template whitespace.
+apps/kimi-code/dist-web/** -whitespace
