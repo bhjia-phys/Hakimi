@@ -1,0 +1,183 @@
+/**
+ * Welcome panel shown at the top of the TUI.
+ * Renders a round-bordered box with the Hakimi pixel ship, session, model, and version.
+ */
+
+import type { Component } from '@moonshot-ai/pi-tui';
+import { truncateToWidth, visibleWidth } from '@moonshot-ai/pi-tui';
+import chalk from 'chalk';
+
+import { effectiveModelAlias } from '@moonshot-ai/kimi-code-sdk';
+
+import { isRainbowDancing, renderDanceWelcomeHeader } from '#/tui/easter-eggs/dance';
+import { currentTheme } from '#/tui/theme';
+import type { ColorPalette } from '#/tui/theme/colors';
+import type { AppState } from '#/tui/types';
+
+const HAKIMI_TAGLINE = 'truth-seeking physics research agent';
+const HAKIMI_READY_LINE = 'Ready to explore the frontiers of physics knowledge.';
+
+const HAKIMI_PIXEL_LOGO = [
+  '...........EE...........',
+  '..........EWWE.....E....',
+  '.........EWOWE....EWE...',
+  '........EWWWWE..EEWWWE..',
+  '...EE..EWWCCCWEEWWCOWE..',
+  '..EWWEEWWCCCCCCCCCCWE...',
+  '.EWWWWWWCCCCCCCCCCWE....',
+  '.EWWSSSCCGGCCCCSSWE.....',
+  '..EWSSOOGGGGCOOSWE......',
+  '....EWSOOBBBBOSWE.......',
+  '......EWWBBBBWE.........',
+  '........EEBBE...........',
+  '..........BE............',
+] as const;
+
+const PIXEL_COLORS = {
+  B: '#1F8DFF',
+  C: '#28D7FF',
+  E: '#F6F2E3',
+  G: '#FFD45C',
+  O: '#FF9D2E',
+  S: '#9AA7B6',
+  W: '#DDE7F3',
+} as const;
+
+type PixelColorKey = keyof typeof PIXEL_COLORS;
+
+function padAnsi(text: string, width: number): string {
+  return text + ' '.repeat(Math.max(0, width - visibleWidth(text)));
+}
+
+function renderHakimiPixelLogo(): string[] {
+  return HAKIMI_PIXEL_LOGO.map((row) =>
+    Array.from(row)
+      .map((pixel) => {
+        if (pixel === '.') return ' ';
+        return chalk.hex(PIXEL_COLORS[pixel as PixelColorKey])('█');
+      })
+      .join(''),
+  );
+}
+
+function renderHakimiTextBlock(colors: ColorPalette): string[] {
+  const dim = chalk.hex(colors.textDim);
+  return [
+    chalk.bold.hex(colors.primary)('Hakimi'),
+    chalk.hex(colors.accent)(HAKIMI_TAGLINE),
+    '',
+    chalk.hex(colors.textStrong)('Welcome, researcher.'),
+    dim('Curiosity is the engine.'),
+    dim('Truth is the destination.'),
+    '',
+    chalk.hex(colors.primary)(`✦ ${HAKIMI_READY_LINE}`),
+  ];
+}
+
+function renderHakimiHeader(colors: ColorPalette, innerWidth: number): string[] {
+  const textLines = renderHakimiTextBlock(colors);
+
+  if (isRainbowDancing()) {
+    const logo = ['Hakimi', 'physics research'] as const;
+    const logoWidth = Math.max(...logo.map((row) => visibleWidth(row)));
+    const textWidth = Math.max(4, innerWidth - logoWidth - 2);
+    const ready = truncateToWidth(chalk.hex(colors.textDim)(HAKIMI_READY_LINE), textWidth, '…');
+    return renderDanceWelcomeHeader(logo, textWidth, ready);
+  }
+
+  const logo = renderHakimiPixelLogo();
+  const logoWidth = Math.max(...logo.map((row) => visibleWidth(row)));
+  const gap = '  ';
+  const textMinWidth = visibleWidth(HAKIMI_TAGLINE);
+
+  if (innerWidth < logoWidth + gap.length + textMinWidth) {
+    return textLines;
+  }
+
+  const rowCount = Math.max(logo.length, textLines.length);
+  const lines: string[] = [];
+  for (let index = 0; index < rowCount; index++) {
+    const left = padAnsi(logo[index] ?? '', logoWidth);
+    const right = textLines[index] ?? '';
+    lines.push(left + gap + right);
+  }
+  return lines;
+}
+
+export class WelcomeComponent implements Component {
+  private state: AppState;
+
+  constructor(state: AppState) {
+    this.state = state;
+  }
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    const colors = currentTheme.palette;
+    const safeWidth = Math.max(0, width);
+    const primary = (s: string): string => chalk.hex(colors.primary)(s);
+    const isLoggedOut = !this.state.model;
+    const activeModel = this.state.availableModels[this.state.model];
+    const effectiveActiveModel = activeModel === undefined ? undefined : effectiveModelAlias(activeModel);
+
+    if (safeWidth < 24) {
+      const title = chalk.bold.hex(colors.primary)('Welcome to Hakimi!');
+      const prompt = isLoggedOut
+        ? chalk.hex(colors.warning)('Run /login or /provider to get started.')
+        : chalk.hex(colors.textDim)('Send /help for help information.');
+      const model = isLoggedOut
+        ? chalk.hex(colors.warning)('not set, run /login or /provider')
+        : (effectiveActiveModel?.displayName ?? effectiveActiveModel?.model ?? this.state.model);
+      return ['', title, prompt, `Model: ${model}`].map((line) =>
+        truncateToWidth(line, safeWidth, '…'),
+      );
+    }
+
+    const innerWidth = Math.max(1, safeWidth - 4);
+    const pad = '  ';
+    const dim = chalk.hex(colors.textDim);
+    const labelStyle = chalk.bold.hex(colors.textDim);
+    const modelValue = isLoggedOut
+      ? chalk.hex(colors.warning)('not set, run /login or /provider')
+      : (effectiveActiveModel?.displayName ?? effectiveActiveModel?.model ?? this.state.model);
+
+    const infoLines = [
+      labelStyle('Directory: ') + this.state.workDir,
+      labelStyle('Session:   ') + this.state.sessionId,
+      labelStyle('Model:     ') + modelValue,
+      labelStyle('Version:   ') + this.state.version,
+    ];
+
+    if (this.state.mcpServersSummary) {
+      infoLines.push(labelStyle('MCP:       ') + this.state.mcpServersSummary);
+    }
+
+    if (isLoggedOut) {
+      infoLines.unshift(dim('Run /login or /provider to get started.'));
+    } else {
+      infoLines.unshift(dim('Send /help for help information.'));
+    }
+
+    const contentLines: string[] = [...renderHakimiHeader(colors, innerWidth), '', ...infoLines];
+
+    const lines: string[] = [
+      '',
+      primary('╭' + '─'.repeat(safeWidth - 2) + '╮'),
+      primary('│') + ' '.repeat(safeWidth - 2) + primary('│'),
+    ];
+
+    for (const content of contentLines) {
+      const truncated = truncateToWidth(content, innerWidth, '…');
+      const vis = visibleWidth(truncated);
+      const rightPad = Math.max(0, innerWidth - vis);
+      lines.push(primary('│') + pad + truncated + ' '.repeat(rightPad) + primary('│'));
+    }
+
+    lines.push(primary('│') + ' '.repeat(safeWidth - 2) + primary('│'));
+    lines.push(primary('╰' + '─'.repeat(safeWidth - 2) + '╯'));
+    lines.push('');
+
+    return lines.map((line) => truncateToWidth(line, safeWidth, '…'));
+  }
+}
