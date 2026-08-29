@@ -75,7 +75,7 @@ Tower 将从当前固定的 worker/reviewer 协议演进为可复用、可校验
 
 - **所有权**：Hakimi 拥有 `apps/kimi-web`，它是浏览器 UI 唯一可编辑的 production source；`apps/kimi-code/dist-web` 与 `apps/kimi-code/web-base.json` 是被 Git 跟踪的派生发布产物。
 - **依赖**：F 的公共 contracts 以及 B–E 的公开 projection；A 不重新定义 domain ownership。
-- **交付**：production cutover 已完成。源码变更后，用 `pnpm run build:web-assets` 重新生成并一并提交 package assets，再用 `pnpm run build:web-assets -- --check` 对 clean rebuild 做逐字节核验；CI、release 与 native 会先校验 tracked assets 再生成；direct package build/prepack 与 Nix 则从源码生成并验证产物后消费。provenance schema v4 绑定 source、canonical recipe/toolchain 与 bundle identity，native receipt 还绑定最终 binary hash。生成物不得手工编辑或局部替换。此次 cutover 不代表 standalone Web 部署或手机远程轨道已经完成。
+- **交付**：production cutover 已完成。源码变更后，用 `pnpm run build:web-assets` 重新生成并一并提交 package assets，再用 `pnpm run build:web-assets -- --check` 核验 clean rebuild；CI、release 与 native 会先校验 tracked assets 再生成；direct package build/prepack 与 Nix 则从源码生成并验证产物后消费。provenance schema v5 绑定 source、canonical recipe files、实际 canonical Node/pnpm 版本与 bundle identity；v4 native receipt 还会绑定该 toolchain 与最终 binary hash。Nix 直接提供仓库要求的精确 pnpm 版本，不再绕过 toolchain 检查。生成物不得手工编辑或局部替换。此次 cutover 不代表 standalone Web 部署或手机远程轨道已经完成。
 
 ### B · 手机远程
 

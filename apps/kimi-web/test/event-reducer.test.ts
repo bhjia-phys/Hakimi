@@ -774,17 +774,18 @@ describe('reduceAppEvent toolOutput — outputText accumulation', () => {
 
 describe('reduceAppEvent researchUpdated', () => {
   const snapshot = {
-    mode: 'ready' as const,
-    loopStatus: 'active' as const,
+    mode: 'ready',
+    loopStatus: 'active',
+    phase: 'idle',
     questions: [],
     lines: [],
     openQuestionCount: 0,
     activeQuestionCount: 0,
     blockedQuestionCount: 0,
     alerts: [],
-    aitpHealth: { phase: 'ready' as const },
+    aitpHealth: { phase: 'ready' },
     revision: 2,
-  };
+  } satisfies import('../src/api/types').ResearchStatusSnapshot;
 
   it('stores snapshots and increments the live version monotonically', () => {
     const state = createInitialState();

@@ -117,7 +117,7 @@ The grammar is the same in TUI and Web: reserved subcommands are honored only as
 | `/research off` | Exit Research Mode, revoke AITP tool admissions, and hide the Board; saved AITP records remain | TUI and Web; idle only |
 | `/research pause` | Pause the research loop without exiting AITP mode | TUI and Web; always available |
 | `/research resume` | Resume a paused research loop | TUI and Web; always available |
-| `/research manage` | Open the line-first Manager. TUI uses keyboard navigation and action keys; Web uses a clickable line list plus Line, Question, and Checkpoint forms | TUI and Web; idle only |
+| `/research manage` | Open the line-first Manager. TUI uses keyboard navigation and action keys; Web provides Line, Question, Science, and Checkpoint sections, including human-decision, alert, evidence-review, and external-run controls | TUI and Web; idle only |
 | `/research edit <questionId> -- <new wording>` | Replace a question's wording using the current snapshot revision | TUI and Web; idle only |
 | `/research focus <questionId> -- <bounded action>` | Set the current focus question and its next bounded action | TUI and Web; idle only |
 | `/research defer <questionId> [-- <reason>]` | Defer a question (workflow disposition change; reason optional) | TUI and Web; idle only |
@@ -134,7 +134,7 @@ Subcommands (`on`, `off`, `pause`, `resume`, `manage`, `status`, `edit`, `focus`
 
 While the main turn or context compaction is running, both surfaces accept only `/research status`, `/research pause`, and `/research resume`; Web does not open the Manager or accept Manager mutations until the current operation ends.
 
-Mutating commands carry the latest snapshot `revision` as `expectedRevision`. A stale revision fails without applying the mutation. TUI refreshes the Board; Web re-reads the same session's authoritative snapshot and preserves a dirty form with a stale warning so you can refresh and retry.
+Revisioned mutations carry the draft's captured snapshot or entity `revision` as `expectedRevision`; a stale revision fails without applying the mutation. Other mutations do not carry `expectedRevision` and instead rely on captured target or pending-checkpoint identity and server-side state constraints. TUI refreshes the Board; Web re-reads the same session's authoritative snapshot and preserves a dirty form with a stale warning so you can refresh and retry.
 
 The read-only Research Board appears above the input area in both surfaces and shows `probing`, `ready`, or `degraded` health, current line and focus, question counts, alerts, and checkpoint state. TUI additionally projects Todo Actions and uses `Ctrl-O` to expand or collapse the Board. Web uses **Expand**, **Collapse**, and **Manage** buttons plus forms; the TUI shortcuts do not apply there.
 

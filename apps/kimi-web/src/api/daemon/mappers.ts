@@ -464,46 +464,30 @@ export function toAppGoal(snapshot: unknown): AppGoal | null {
   };
 }
 
+function cloneResearchValue<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneResearchValue(item)) as T;
+  }
+  if (value !== null && typeof value === 'object') {
+    const clone: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      clone[key] = cloneResearchValue(child);
+    }
+    return clone as T;
+  }
+  return value;
+}
+
 export function toAppResearchSnapshot(
   snapshot: WireResearchStatusSnapshot,
 ): ResearchStatusSnapshot {
-  const toQuestion = (
-    question: WireResearchStatusSnapshot['questions'][number],
-  ): ResearchStatusSnapshot['questions'][number] => ({
-    ...question,
-    neededEvidence: [...question.neededEvidence],
-    evidenceRefs: [...question.evidenceRefs],
-    falsifierRefs: [...question.falsifierRefs],
-  });
-  return {
-    mode: snapshot.mode,
-    loopStatus: snapshot.loopStatus,
-    currentLineSlug: snapshot.currentLineSlug,
-    currentFocus:
-      snapshot.currentFocus === undefined ? undefined : { ...snapshot.currentFocus },
-    currentQuestion:
-      snapshot.currentQuestion === undefined
-        ? undefined
-        : toQuestion(snapshot.currentQuestion),
-    questions: snapshot.questions.map(toQuestion),
-    lines: snapshot.lines.map((line) => ({ ...line })),
-    openQuestionCount: snapshot.openQuestionCount,
-    activeQuestionCount: snapshot.activeQuestionCount,
-    blockedQuestionCount: snapshot.blockedQuestionCount,
-    alerts: snapshot.alerts.map((alert) => ({ ...alert })),
-    goalSummary:
-      snapshot.goalSummary === undefined ? undefined : { ...snapshot.goalSummary },
-    aitpHealth: { ...snapshot.aitpHealth },
-    pendingCheckpoint:
-      snapshot.pendingCheckpoint === undefined
-        ? undefined
-        : { ...snapshot.pendingCheckpoint },
-    latestCommittedCheckpoint:
-      snapshot.latestCommittedCheckpoint === undefined
-        ? undefined
-        : { ...snapshot.latestCommittedCheckpoint },
-    revision: snapshot.revision,
-  };
+  // Research REST and WS payloads are already camelCase. Deep-clone the complete
+  // JSON-safe protocol object so nested receipts/progress never share mutable
+  // wire references, while the bidirectional assignments keep the local wire and
+  // app mirrors structurally aligned at compile time.
+  const appSnapshot: ResearchStatusSnapshot = cloneResearchValue(snapshot);
+  const wireSnapshot: WireResearchStatusSnapshot = appSnapshot;
+  return wireSnapshot;
 }
 
 /**

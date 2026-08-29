@@ -5,6 +5,7 @@ import type {
   ResearchModePhase,
   ResearchStatusSnapshot,
 } from '../../api/types';
+import { researchProgressSummaries } from '../../lib/researchProgress';
 import Badge from '../ui/Badge.vue';
 import Banner from '../ui/Banner.vue';
 import Button from '../ui/Button.vue';
@@ -43,8 +44,22 @@ const focusedQuestion = computed(() => {
   return props.snapshot.questions.find((question) => question.id === id)
     ?? props.snapshot.currentQuestion;
 });
+const activeAlerts = computed(() =>
+  props.snapshot.alerts.filter((alert) => alert.state === undefined || alert.state === 'active'),
+);
+const activeHumanGate = computed(() =>
+  props.snapshot.humanGate?.resolvedAt === undefined ? props.snapshot.humanGate : undefined,
+);
+const progressSummaries = computed(() =>
+  props.snapshot.latestProgress === undefined
+    ? []
+    : researchProgressSummaries(props.snapshot.latestProgress),
+);
 const nextAction = computed(
-  () => focusedQuestion.value?.nextBoundedAction ?? props.snapshot.currentFocus?.boundedAction,
+  () => props.snapshot.effectiveNextStep?.text
+    ?? props.snapshot.latestProgress?.nextAction
+    ?? focusedQuestion.value?.nextBoundedAction
+    ?? props.snapshot.currentFocus?.boundedAction,
 );
 </script>
 
@@ -71,6 +86,59 @@ const nextAction = computed(
     </template>
 
     <div class="research-summary">
+      <div class="research-priority">
+        <div class="research-summary-row">
+          <span class="research-label">{{ t('research.scientificPhase') }}</span>
+          <Badge size="sm" variant="info">{{ t(`research.sciencePhase.${snapshot.phase}`) }}</Badge>
+          <span v-if="snapshot.recentStateChange">{{ snapshot.recentStateChange.summary }}</span>
+        </div>
+        <div v-if="snapshot.latestProgress" class="research-summary-row research-progress">
+          <span class="research-label">{{ t('research.progress') }}</span>
+          <strong>{{ snapshot.latestProgress.headline }}</strong>
+          <span>{{ snapshot.latestProgress.result }}</span>
+        </div>
+        <div
+          v-for="summary in progressSummaries"
+          :key="summary.kind"
+          class="research-summary-row"
+        >
+          <span class="research-label">{{ t(`research.${summary.kind}`) }}</span>
+          <span>{{ summary.text }}</span>
+        </div>
+        <div v-if="snapshot.currentAction" class="research-summary-row">
+          <span class="research-label">{{ t('research.currentAction') }}</span>
+          <Badge size="sm">{{ t(`research.actionStatus.${snapshot.currentAction.status}`) }}</Badge>
+          <span>{{ snapshot.currentAction.purpose }}</span>
+        </div>
+        <div v-if="snapshot.currentRun" class="research-summary-row">
+          <span class="research-label">{{ t('research.currentRun') }}</span>
+          <Badge size="sm" variant="info">{{ t(`research.runStage.${snapshot.currentRun.stage}`) }}</Badge>
+          <code>{{ snapshot.currentRun.campaign }} / {{ snapshot.currentRun.jobId }}</code>
+        </div>
+        <div v-if="nextAction" class="research-summary-row">
+          <span class="research-label">{{ t('research.nextAction') }}</span>
+          <Badge
+            v-if="snapshot.effectiveNextStep"
+            size="sm"
+            :variant="snapshot.effectiveNextStep.freshness === 'current' ? 'success' : 'warning'"
+          >
+            {{ t(`research.nextStepSource.${snapshot.effectiveNextStep.source}`) }}
+          </Badge>
+          <span>{{ nextAction }}</span>
+        </div>
+        <Banner v-if="activeHumanGate" variant="warning">
+          <strong>{{ t('research.humanGate') }}</strong>
+          <span>{{ activeHumanGate.prompt }}</span>
+        </Banner>
+        <Banner
+          v-for="alert in activeAlerts"
+          :key="alert.fingerprint"
+          variant="warning"
+        >
+          <strong>{{ t(`research.alertKind.${alert.kind}`) }}</strong>
+          <span>{{ alert.message }}</span>
+        </Banner>
+      </div>
       <div class="research-summary-row">
         <span class="research-label">{{ t('research.currentLine') }}</span>
         <strong>{{ currentLine?.title ?? snapshot.currentLineSlug ?? t('research.none') }}</strong>
@@ -80,18 +148,14 @@ const nextAction = computed(
         <span class="research-label">{{ t('research.focus') }}</span>
         <span>{{ focusedQuestion?.wording ?? t('research.none') }}</span>
       </div>
-      <div v-if="nextAction" class="research-summary-row">
-        <span class="research-label">{{ t('research.nextAction') }}</span>
-        <span>{{ nextAction }}</span>
-      </div>
       <div class="research-counts">
         <Badge size="sm">{{ t('research.counts.open', { count: snapshot.openQuestionCount }) }}</Badge>
         <Badge size="sm" variant="info">{{ t('research.counts.active', { count: snapshot.activeQuestionCount }) }}</Badge>
         <Badge size="sm" :variant="snapshot.blockedQuestionCount > 0 ? 'warning' : 'neutral'">
           {{ t('research.counts.blocked', { count: snapshot.blockedQuestionCount }) }}
         </Badge>
-        <Badge v-if="snapshot.alerts.length > 0" size="sm" variant="warning">
-          {{ t('research.counts.alerts', { count: snapshot.alerts.length }) }}
+        <Badge v-if="activeAlerts.length > 0" size="sm" variant="warning">
+          {{ t('research.counts.alerts', { count: activeAlerts.length }) }}
         </Badge>
       </div>
     </div>
@@ -145,8 +209,8 @@ const nextAction = computed(
       <section v-if="snapshot.alerts.length > 0">
         <h4>{{ t('research.alerts') }}</h4>
         <Banner
-          v-for="(alert, index) in snapshot.alerts"
-          :key="`${alert.kind}-${index}`"
+          v-for="alert in snapshot.alerts"
+          :key="alert.fingerprint"
           variant="warning"
         >
           <strong>{{ t(`research.alertKind.${alert.kind}`) }}</strong>
@@ -199,6 +263,14 @@ const nextAction = computed(
 }
 .research-spacer { flex: 1; }
 .research-summary { display: grid; gap: var(--space-2); }
+.research-priority {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+}
 .research-summary-row {
   min-width: 0;
   display: flex;

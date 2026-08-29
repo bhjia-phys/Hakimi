@@ -18,6 +18,10 @@ import {
 
 const indexHtml = readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf-8');
 const bootJsPath = fileURLToPath(new URL('../public/boot.js', import.meta.url));
+const chatHeader = readFileSync(
+  fileURLToPath(new URL('../src/components/chat/ChatHeader.vue', import.meta.url)),
+  'utf-8',
+);
 
 describe('index.html CSP hygiene', () => {
   it('has no <script> tag without a src attribute', () => {
@@ -57,5 +61,20 @@ describe('canonical Vite environment', () => {
     expect(() =>
       assertCanonicalViteEnvironment({ ...canonicalEnv, KIMI_WEB_DESKTOP: '1' }),
     ).toThrow(/requires KIMI_WEB_DESKTOP="0"/);
+  });
+});
+
+describe('ChatHeader Git summary container', () => {
+  it('uses the remaining Git region as the summary card container', () => {
+    expect(chatHeader).toMatch(
+      /<div class="ch-git-region">[\s\S]*?<GitSummaryCard[\s\S]*?\/>\s*<\/div>/,
+    );
+    expect(chatHeader).not.toContain('ch-spacer');
+
+    const regionStyle = /\.ch-git-region\s*\{([^}]*)\}/.exec(chatHeader)?.[1];
+    expect(regionStyle).toContain('flex: 1 1 0;');
+    expect(regionStyle).toContain('min-width: 0;');
+    expect(regionStyle).toContain('justify-content: flex-end;');
+    expect(regionStyle).toContain('container-type: inline-size;');
   });
 });

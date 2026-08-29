@@ -1,20 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import {
+  RESEARCH_DECISION_NEXT_PHASES,
+  researchCheckpointDraftTargetKey,
+  researchEvidenceDraftTargetKey,
   researchManagerAckMatchesDraft,
+  researchManagerCheckpointDraftIsStale,
   researchManagerDraftTarget,
   researchManagerDraftTargetMatches,
   researchManagerMutationAllowed,
+  researchManagerQuestionDraftIsStale,
+  researchManagerScienceDraftIsStale,
   researchManagerSessionIsCurrent,
+  researchRunTerminalStateIsConsistent,
   type ResearchManagerDraftContext,
 } from '../src/lib/researchManagerCommand';
 import { isResearchIdleOnlyBusy } from '../src/lib/researchCommand';
 
+const evidenceTargetKey = researchEvidenceDraftTargetKey({
+  questionId: 'q_1',
+  lineSlug: 'line-a',
+  actionId: 'action_1',
+});
 const context: ResearchManagerDraftContext = {
   lineEditorMode: 'edit',
   lineSlug: '',
   selectedLineSlug: 'line-a',
   questionEditorMode: 'edit',
   selectedQuestionId: 'q_1',
+  decisionGateId: 'gate_1',
+  evidenceTargetKey,
+  runActionId: 'action_1',
   checkpointEntryId: 'entry-1',
 };
 
@@ -31,7 +46,43 @@ describe('Research Manager command acknowledgements', () => {
       wording: 'Question',
     })).toEqual({ form: 'question', mode: 'create', key: 'line-a' });
     expect(researchManagerDraftTarget({
+      kind: 'resolve_decision',
+      gateId: 'gate_1',
+      resolution: 'continue',
+      nextPhase: 'idle',
+    })).toEqual({ form: 'decision', mode: 'resolve', key: 'gate_1' });
+    expect(researchManagerDraftTarget({
+      kind: 'review_evidence',
+      expectedRevision: 1,
+      packet: {
+        packet_id: 'packet_1',
+        kind: 'observation',
+        claim: 'claim',
+        evidence: 'evidence',
+        question_id: 'q_1',
+        line_slug: 'line-a',
+        action_id: 'action_1',
+        assumptions: [],
+        tests: [],
+        artifact_refs: [],
+        source_refs: [],
+        limitations: [],
+        confidence: 'medium',
+      },
+    })).toEqual({ form: 'evidence', mode: 'review', key: evidenceTargetKey });
+    expect(researchManagerDraftTarget({
+      kind: 'observe_run',
+      actionId: 'action_1',
+      expectedRevision: 1,
+      campaign: 'campaign_1',
+      jobId: 'job_1',
+      stage: 'running',
+      schedulerState: 'running',
+      artifactRefs: [],
+    })).toEqual({ form: 'run', mode: 'observe', key: 'action_1' });
+    expect(researchManagerDraftTarget({
       kind: 'propose_checkpoint',
+      expectedRevision: 1,
       questionId: 'q_1',
     })).toEqual({ form: 'checkpoint', mode: 'propose', key: 'question:q_1' });
     expect(researchManagerDraftTarget({
@@ -47,6 +98,7 @@ describe('Research Manager command acknowledgements', () => {
     { kind: 'set_focus', questionId: 'q_1', expectedRevision: 1 } as const,
     { kind: 'defer_question', questionId: 'q_1', expectedRevision: 1 } as const,
     { kind: 'switch_line', lineSlug: 'line-a', expectedRevision: 1 } as const,
+    { kind: 'acknowledge_alert', fingerprint: 'alert_1' } as const,
   ])('does not associate $kind with any dirty form', (command) => {
     expect(researchManagerDraftTarget(command)).toBeNull();
   });
@@ -73,6 +125,83 @@ describe('Research Manager command acknowledgements', () => {
       ...context,
       selectedQuestionId: 'q_2',
     })).toBe(false);
+  });
+
+  it('matches science acknowledgements against their captured base target', () => {
+    const decisionTarget = { form: 'decision', mode: 'resolve', key: 'gate_1' } as const;
+    const evidenceTarget = { form: 'evidence', mode: 'review', key: evidenceTargetKey } as const;
+    const runTarget = { form: 'run', mode: 'observe', key: 'action_1' } as const;
+
+    expect(researchManagerDraftTargetMatches(decisionTarget, context)).toBe(true);
+    expect(researchManagerDraftTargetMatches(evidenceTarget, context)).toBe(true);
+    expect(researchManagerDraftTargetMatches(runTarget, context)).toBe(true);
+    expect(researchManagerDraftTargetMatches(decisionTarget, {
+      ...context,
+      decisionGateId: 'gate_2',
+    })).toBe(false);
+    expect(researchManagerDraftTargetMatches(evidenceTarget, {
+      ...context,
+      evidenceTargetKey: researchEvidenceDraftTargetKey({ lineSlug: 'line-b' }),
+    })).toBe(false);
+    expect(researchManagerDraftTargetMatches(runTarget, {
+      ...context,
+      runActionId: 'action_2',
+    })).toBe(false);
+  });
+
+  it('only offers valid post-decision science phases', () => {
+    expect(RESEARCH_DECISION_NEXT_PHASES).toEqual([
+      'idle',
+      'gap_analysis',
+      'action_planned',
+      'action_executing',
+      'evaluating',
+    ]);
+  });
+
+  it('marks dirty science drafts stale when their revision or target changes', () => {
+    expect(researchManagerScienceDraftIsStale(false, 4, 5, 'target-a', 'target-b')).toBe(false);
+    expect(researchManagerScienceDraftIsStale(true, 4, 4, 'target-a', 'target-a')).toBe(false);
+    expect(researchManagerScienceDraftIsStale(true, 4, 5, 'target-a', 'target-a')).toBe(true);
+    expect(researchManagerScienceDraftIsStale(true, 4, 4, 'target-a', 'target-b')).toBe(true);
+    expect(researchManagerScienceDraftIsStale(true, null, 4, 'target-a', 'target-a')).toBe(true);
+  });
+
+  it('marks dirty question drafts stale from either snapshot or question revision', () => {
+    expect(researchManagerQuestionDraftIsStale(false, true, 10, 11, 4, 5)).toBe(false);
+    expect(researchManagerQuestionDraftIsStale(true, false, 10, 11, 4, 5)).toBe(false);
+    expect(researchManagerQuestionDraftIsStale(true, true, 10, 10, 4, 4)).toBe(false);
+    expect(researchManagerQuestionDraftIsStale(true, true, 10, 11, 4, 4)).toBe(true);
+    expect(researchManagerQuestionDraftIsStale(true, true, 10, 10, 4, 5)).toBe(true);
+  });
+
+  it('binds checkpoint drafts to revision, target, and pending checkpoint identity', () => {
+    const questionTarget = researchCheckpointDraftTargetKey({ questionId: 'q_1' });
+    const lineTarget = researchCheckpointDraftTargetKey({ lineSlug: 'line-a' });
+
+    expect(researchManagerCheckpointDraftIsStale(
+      false, 4, 5, questionTarget, lineTarget, 'checkpoint-1', 'checkpoint-2',
+    )).toBe(false);
+    expect(researchManagerCheckpointDraftIsStale(
+      true, 4, 4, questionTarget, questionTarget, 'checkpoint-1', 'checkpoint-1',
+    )).toBe(false);
+    expect(researchManagerCheckpointDraftIsStale(
+      true, 4, 5, questionTarget, questionTarget, 'checkpoint-1', 'checkpoint-1',
+    )).toBe(true);
+    expect(researchManagerCheckpointDraftIsStale(
+      true, 4, 4, questionTarget, lineTarget, 'checkpoint-1', 'checkpoint-1',
+    )).toBe(true);
+    expect(researchManagerCheckpointDraftIsStale(
+      true, 4, 4, questionTarget, questionTarget, 'checkpoint-1', 'checkpoint-2',
+    )).toBe(true);
+  });
+
+  it('requires terminal state to exactly match terminal scheduler states', () => {
+    expect(researchRunTerminalStateIsConsistent('completed', '')).toBe(false);
+    expect(researchRunTerminalStateIsConsistent('completed', 'completed')).toBe(true);
+    expect(researchRunTerminalStateIsConsistent('completed', 'failed')).toBe(false);
+    expect(researchRunTerminalStateIsConsistent('running', 'completed')).toBe(false);
+    expect(researchRunTerminalStateIsConsistent('running', '')).toBe(true);
   });
 
   it('rejects every Manager mutation during a main turn or compaction', () => {

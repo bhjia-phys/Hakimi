@@ -98,22 +98,26 @@ pnpm run build:web-assets
 ```
 
 Commit both generated outputs with the source change. Use the check form to
-rebuild in a clean staging directory and require a byte-for-byte match with the
-tracked bundle and provenance:
+rebuild in a clean staging directory and require a byte-for-byte bundle match plus
+the same source and recipe inputs:
 
 ```bash
 pnpm run build:web-assets -- --check
 ```
 
 Do not copy `apps/kimi-web/dist`, hand-edit the generated package outputs, or
-replace only part of the bundle. `web-base.json` provenance schema v4 binds three
-identities: the complete `apps/kimi-web` source manifest and digest, the canonical
-recipe/toolchain manifest and digest, and the generated bundle manifest and
-digest. CI, release, and native flows verify tracked outputs before regenerating
-them; direct package build/prepack and Nix generate and validate outputs for
-consumption. Native SEA builds collect a verified snapshot;
-the native receipt binds the same source/recipe/bundle identity and branding patch
-version to the final executable's SHA-256.
+replace only part of the bundle. `web-base.json` provenance schema v5 binds the
+complete `apps/kimi-web` source manifest, canonical recipe files, actual canonical
+Node/pnpm versions, and generated bundle, with a digest for each identity. A check
+accepts a different recorded Node version only when both versions satisfy the same
+canonical requirement, pnpm is exact, and every source, recipe-file, and bundle
+identity still matches. CI, release, and native flows verify tracked outputs before
+regenerating them; direct package build/prepack and Nix use the same strict
+preflight. Nix supplies pnpm 10.33.0, verifies the tracked clean rebuild before
+replacement, generates the consumable bundle, and verifies it again. Native SEA
+builds collect a verified snapshot; the v4 native receipt directly binds the actual
+toolchain, source/recipe/bundle identity, branding patch version, and final
+executable SHA-256.
 
 For rollback, restore the source and canonical recipe from an older release tag,
 then regenerate the complete package outputs and native receipt. A mixed set must

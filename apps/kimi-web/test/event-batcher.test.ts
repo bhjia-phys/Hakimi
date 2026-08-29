@@ -636,6 +636,7 @@ describe('useKimiWebClient (resync integration)', () => {
     const researchSnapshot = (revision: number): ResearchStatusSnapshot => ({
       mode: 'ready',
       loopStatus: 'active',
+      phase: 'idle',
       currentLineSlug: 'line-a',
       questions: [],
       lines: [],
@@ -690,6 +691,16 @@ describe('useKimiWebClient (resync integration)', () => {
       reconnect: vi.fn(),
       close: vi.fn(),
     };
+    const getMeta = vi.fn(async () => ({
+      serverVersion: '0.0.0',
+      serverId: 'server-1',
+      startedAt: '2026-01-01T00:00:00.000Z',
+      capabilities: {},
+      openInApps: [],
+      dangerousBypassAuth: false,
+      experimentalFlags: { aitp_research_mode: true },
+      backend: 'v2' as const,
+    }));
     const api: Partial<KimiWebApi> = {
       getAuth: vi.fn(async () => ({
         ready: true,
@@ -697,15 +708,7 @@ describe('useKimiWebClient (resync integration)', () => {
         managedProvider: null,
       })),
       getHealth: vi.fn(async () => ({ status: 'ok', uptimeSec: 1 })),
-      getMeta: vi.fn(async () => ({
-        serverVersion: '0.0.0',
-        serverId: 'server-1',
-        startedAt: '2026-01-01T00:00:00.000Z',
-        capabilities: {},
-        openInApps: [],
-        dangerousBypassAuth: false,
-        backend: 'v2',
-      })),
+      getMeta,
       getConfig: vi.fn(async () => ({ providers: {}, defaultModel: 'model-1' })),
       listModels: vi.fn(async () => []),
       listProviders: vi.fn(async () => []),
@@ -799,19 +802,37 @@ describe('useKimiWebClient (resync integration)', () => {
 
       expect(assistantText()).toBe('snapshot live');
 
+      getMeta.mockResolvedValue({
+        serverVersion: '0.0.0',
+        serverId: 'server-1',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        capabilities: {},
+        openInApps: [],
+        dangerousBypassAuth: false,
+        experimentalFlags: { aitp_research_mode: false },
+        backend: 'v2',
+      });
+      expect(client.researchEnabled.value).toBe(true);
+      getMeta.mockClear();
+      handlers!.onConnectionChange(false);
+      handlers!.onConnectionChange(true);
+      expect(client.researchEnabled.value).toBe(false);
+      await vi.waitFor(() => expect(getMeta).toHaveBeenCalledTimes(1));
+      expect(client.researchEnabled.value).toBe(false);
+
       handlers!.onEvent(
         {
           type: 'configChanged',
           config: {
             providers: {},
             defaultModel: 'model-1',
-            experimental: { aitp_research_mode: false },
+            experimental: { aitp_research_mode: true },
           },
           changedFields: ['experimental'],
         },
         { sessionId: '__global__', seq: 1 },
       );
-      expect(client.researchEnabled.value).toBe(false);
+      await vi.waitFor(() => expect(client.researchEnabled.value).toBe(false));
       getSessionResearch.mockClear();
 
       handlers!.onResync(sessionId, 22, 'epoch-3');

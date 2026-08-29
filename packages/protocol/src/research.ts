@@ -603,6 +603,7 @@ export const researchCommandSchema = z.discriminatedUnion('kind', [
   }),
   z.object({
     kind: z.literal('propose_checkpoint'),
+    expectedRevision: z.number(),
     questionId: z.string().optional(),
     lineSlug: z.string().optional(),
     assessment: z.string().optional(),

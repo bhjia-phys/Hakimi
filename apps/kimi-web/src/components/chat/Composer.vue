@@ -73,7 +73,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   running: false,
   starting: false,
-  researchEnabled: true,
+  researchEnabled: false,
   queued: () => [],
   searchFiles: undefined,
   uploadImage: undefined,

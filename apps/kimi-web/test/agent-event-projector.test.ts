@@ -585,6 +585,7 @@ describe('research.updated projection', () => {
   const snapshot = {
     mode: 'ready',
     loopStatus: 'active',
+    phase: 'idle',
     questions: [],
     lines: [],
     openQuestionCount: 0,
@@ -593,7 +594,7 @@ describe('research.updated projection', () => {
     alerts: [],
     aitpHealth: { phase: 'ready' },
     revision: 3,
-  };
+  } satisfies import('../src/api/types').ResearchStatusSnapshot;
 
   it('projects the raw agent event to a typed Research update', () => {
     const projector = createAgentProjector();

@@ -1,6 +1,6 @@
 // Validate a generated production Web bundle against its in-repository source
 // and deterministic build recipe. Git metadata is deliberately excluded: the
-// source, recipe/toolchain-requirement, and bundle digests are the complete identity.
+// source, actual canonical recipe/toolchain, and bundle digests are the complete identity.
 
 import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir, stat } from 'node:fs/promises';
@@ -13,7 +13,7 @@ const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const defaultRepositoryRoot = resolve(appRoot, '../..');
 const defaultTarget = resolve(appRoot, 'dist-web');
 const defaultProvenancePath = resolve(appRoot, 'web-base.json');
-export const WEB_PROVENANCE_SCHEMA_VERSION = 4;
+export const WEB_PROVENANCE_SCHEMA_VERSION = 5;
 export const WEB_SOURCE_REPOSITORY = 'hakimi';
 export const WEB_SOURCE_PATH = 'apps/kimi-web';
 export const WEB_SOURCE_FILES = [
@@ -236,7 +236,7 @@ export async function readWebToolchainRequirements(
   return { node, pnpm };
 }
 
-async function inspectWebRecipe(repositoryRoot) {
+async function inspectWebRecipe(repositoryRoot, actualToolchain) {
   const resolvedRepositoryRoot = resolve(repositoryRoot);
   const files = [];
   await appendRequiredFiles(resolvedRepositoryRoot, WEB_RECIPE_FILES, files, 'recipe');
@@ -244,11 +244,15 @@ async function inspectWebRecipe(repositoryRoot) {
     readWebToolchainRequirements(resolvedRepositoryRoot),
     buildFileRecords(resolvedRepositoryRoot, files),
   ]);
+  const toolchain = validateCanonicalToolchain(actualToolchain, toolchainRequirements);
   return {
     toolchainRequirements,
+    toolchain,
     fileCount: records.length,
     files: records,
-    sha256: sha256(`${JSON.stringify({ toolchainRequirements, files: records })}\n`),
+    sha256: sha256(
+      `${JSON.stringify({ toolchainRequirements, toolchain, files: records })}\n`,
+    ),
   };
 }
 
@@ -400,20 +404,68 @@ function validateToolchainRequirements(value) {
   return { node: value.node, pnpm: value.pnpm };
 }
 
+function parseSemver(value) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(value);
+  if (match === null) return undefined;
+  return {
+    numbers: match.slice(1, 4).map(Number),
+    prerelease: match[4] !== undefined,
+  };
+}
+
+function nodeVersionMeetsRequirement(version, requirement) {
+  const actual = parseSemver(version);
+  const minimum = parseSemver(requirement.slice('>='.length));
+  if (actual === undefined || minimum === undefined) return false;
+  for (let index = 0; index < actual.numbers.length; index += 1) {
+    if (actual.numbers[index] > minimum.numbers[index]) return true;
+    if (actual.numbers[index] < minimum.numbers[index]) return false;
+  }
+  return !actual.prerelease;
+}
+
+function validateCanonicalToolchain(value, requirements) {
+  if (
+    !isRecord(value) ||
+    typeof value.node !== 'string' ||
+    !SEMVER_PATTERN.test(value.node) ||
+    typeof value.pnpm !== 'string' ||
+    !SEMVER_PATTERN.test(value.pnpm) ||
+    value.canonical !== true
+  ) {
+    throw bundleError(
+      'Web provenance 无效：recipe.toolchain 必须包含实际 Node/pnpm semver 且 canonical 必须为 true。',
+    );
+  }
+  if (!nodeVersionMeetsRequirement(value.node, requirements.node)) {
+    throw bundleError(
+      `Web provenance 无效：recipe.toolchain.node ${value.node} 不满足 ${requirements.node}。`,
+    );
+  }
+  if (value.pnpm !== requirements.pnpm) {
+    throw bundleError(
+      `Web provenance 无效：recipe.toolchain.pnpm 必须是 ${requirements.pnpm}，实际为 ${value.pnpm}。`,
+    );
+  }
+  return { node: value.node, pnpm: value.pnpm, canonical: true };
+}
+
 function validateRecipe(value) {
   if (!isRecord(value)) {
     throw bundleError('Web provenance 无效：recipe 必须是 object。');
   }
   const toolchainRequirements = validateToolchainRequirements(value.toolchainRequirements);
+  const toolchain = validateCanonicalToolchain(value.toolchain, toolchainRequirements);
   const manifest = validateFileManifest(value, 'recipe', (files) => ({
     toolchainRequirements,
+    toolchain,
     files,
   }));
   const paths = manifest.files.map((entry) => entry.path);
   if (JSON.stringify(paths) !== JSON.stringify(WEB_RECIPE_FILES)) {
     throw bundleError('Web provenance 无效：recipe.files 必须精确覆盖 canonical build recipe。');
   }
-  return { toolchainRequirements, ...manifest };
+  return { toolchainRequirements, toolchain, ...manifest };
 }
 
 function validateRecordedProvenance(value) {
@@ -486,11 +538,12 @@ async function readRecordedProvenance(provenancePath) {
 export async function buildWebProvenance({
   target = defaultTarget,
   repositoryRoot = defaultRepositoryRoot,
+  toolchain,
 } = {}) {
   const [{ bundle }, source, recipe] = await Promise.all([
     inspectWebBundle(target),
     inspectWebSource(repositoryRoot),
-    inspectWebRecipe(repositoryRoot),
+    inspectWebRecipe(repositoryRoot, toolchain),
   ]);
   return {
     schemaVersion: WEB_PROVENANCE_SCHEMA_VERSION,
@@ -547,7 +600,7 @@ async function inspectAgainstProvenance(
   }
   let recipe = provenance.recipe;
   if (verifyRecipe) {
-    recipe = await inspectWebRecipe(repositoryRoot);
+    recipe = await inspectWebRecipe(repositoryRoot, provenance.recipe.toolchain);
     if (
       JSON.stringify(provenance.recipe.toolchainRequirements) !==
       JSON.stringify(recipe.toolchainRequirements)

@@ -3,14 +3,25 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
   ResearchCommand,
+  ResearchEvidencePacket,
   ResearchLineStatus,
+  ResearchPhase,
   ResearchQuestionEpistemic,
   ResearchQuestionWorkflow,
+  ResearchRunStage,
+  ResearchSchedulerState,
   ResearchStatusSnapshot,
 } from '../../api/types';
 import {
+  RESEARCH_DECISION_NEXT_PHASES,
+  researchCheckpointDraftTargetKey,
+  researchEvidenceDraftTargetKey,
   researchManagerAckMatchesDraft,
+  researchManagerCheckpointDraftIsStale,
   researchManagerDraftTarget,
+  researchManagerQuestionDraftIsStale,
+  researchManagerScienceDraftIsStale,
+  researchRunTerminalStateIsConsistent,
   type ResearchManagerCommandAck,
   type ResearchManagerCommandRequest,
   type ResearchManagerDraftTarget,
@@ -35,8 +46,9 @@ const open = defineModel<boolean>('open', { required: true });
 const emit = defineEmits<{ command: [request: ResearchManagerCommandRequest] }>();
 const { t } = useI18n();
 
-type Section = 'line' | 'question' | 'checkpoint';
+type Section = 'line' | 'question' | 'science' | 'checkpoint';
 type EditorMode = 'create' | 'edit';
+type ResearchTerminalState = '' | 'completed' | 'failed' | 'cancelled';
 
 const section = ref<Section>('line');
 const lineEditorMode = ref<EditorMode>('edit');
@@ -63,22 +75,69 @@ const checkpointAssessment = ref('');
 const checkpointNextAction = ref('');
 const checkpointEntryId = ref('');
 
+const decisionResolution = ref('');
+const decisionNextPhase = ref<ResearchPhase>('idle');
+const evidencePacketId = ref('');
+const evidenceKind = ref<ResearchEvidencePacket['kind']>('observation');
+const evidenceClaim = ref('');
+const evidenceBody = ref('');
+const evidenceConfidence = ref<ResearchEvidencePacket['confidence']>('medium');
+const runActionId = ref('');
+const runCampaign = ref('');
+const runJobId = ref('');
+const runSourcePin = ref('');
+const runBinaryPin = ref('');
+const runStage = ref<ResearchRunStage>('unknown');
+const runSchedulerState = ref<ResearchSchedulerState>('unknown');
+const runTerminalState = ref<ResearchTerminalState>('');
+const runArtifactRefs = ref('');
+
 const lineDirty = ref(false);
 const questionDirty = ref(false);
 const checkpointDirty = ref(false);
+const decisionDirty = ref(false);
+const evidenceDirty = ref(false);
+const runDirty = ref(false);
 const lineBaseRevision = ref<number | null>(null);
 const questionBaseRevision = ref<number | null>(null);
+const questionBaseSnapshotRevision = ref<number | null>(null);
+const checkpointBaseRevision = ref<number | null>(null);
+const decisionBaseRevision = ref<number | null>(null);
+const evidenceBaseRevision = ref<number | null>(null);
+const runBaseRevision = ref<number | null>(null);
+const checkpointBaseTarget = ref<{
+  questionId?: string;
+  lineSlug?: string;
+} | null>(null);
+const checkpointBasePendingCheckpointId = ref<string | null>(null);
+const decisionBaseGateId = ref<string | null>(null);
+const evidenceBaseTarget = ref<{
+  questionId?: string;
+  lineSlug?: string;
+  actionId?: string;
+} | null>(null);
+const runBaseActionId = ref<string | null>(null);
+const decisionPendingCommandId = ref<number | null>(null);
+const evidencePendingCommandId = ref<number | null>(null);
+const runPendingCommandId = ref<number | null>(null);
 let resettingLine = false;
 let resettingQuestion = false;
 let resettingCheckpoint = false;
+let resettingDecision = false;
+let resettingEvidence = false;
+let resettingRun = false;
 let lineDraftVersion = 0;
 let questionDraftVersion = 0;
 let checkpointDraftVersion = 0;
+let decisionDraftVersion = 0;
+let evidenceDraftVersion = 0;
+let runDraftVersion = 0;
 let nextCommandId = 0;
 
 const sectionOptions = computed(() => [
   { value: 'line', label: t('research.manager.sections.line') },
   { value: 'question', label: t('research.manager.sections.question') },
+  { value: 'science', label: t('research.manager.sections.science') },
   { value: 'checkpoint', label: t('research.manager.sections.checkpoint') },
 ]);
 const selectedLine = computed(() =>
@@ -90,6 +149,28 @@ const lineQuestions = computed(() =>
 const selectedQuestion = computed(() =>
   lineQuestions.value.find((question) => question.id === selectedQuestionId.value),
 );
+const currentCheckpointTarget = computed<{
+  questionId?: string;
+  lineSlug?: string;
+} | null>(() => {
+  if (props.snapshot === null || selectedLineSlug.value === '') return null;
+  return selectedQuestion.value === undefined
+    ? { lineSlug: selectedLineSlug.value }
+    : { questionId: selectedQuestion.value.id };
+});
+const currentCheckpointTargetKey = computed(() =>
+  currentCheckpointTarget.value === null
+    ? null
+    : researchCheckpointDraftTargetKey(currentCheckpointTarget.value),
+);
+const checkpointBaseTargetKey = computed(() =>
+  checkpointBaseTarget.value === null
+    ? null
+    : researchCheckpointDraftTargetKey(checkpointBaseTarget.value),
+);
+const currentPendingCheckpointId = computed(() =>
+  props.snapshot?.pendingCheckpoint?.checkpointId ?? null,
+);
 const lineStale = computed(() =>
   lineDirty.value
   && lineEditorMode.value === 'edit'
@@ -97,19 +178,114 @@ const lineStale = computed(() =>
   && selectedLine.value !== undefined
   && selectedLine.value.revision !== lineBaseRevision.value,
 );
-const questionStale = computed(() =>
-  questionDirty.value
-  && questionEditorMode.value === 'edit'
-  && questionBaseRevision.value !== null
-  && selectedQuestion.value !== undefined
-  && selectedQuestion.value.revision !== questionBaseRevision.value,
+const questionStale = computed(() => researchManagerQuestionDraftIsStale(
+  questionDirty.value,
+  questionEditorMode.value === 'edit',
+  questionBaseSnapshotRevision.value,
+  props.snapshot?.revision ?? null,
+  questionBaseRevision.value,
+  selectedQuestion.value?.revision ?? null,
+));
+const checkpointStale = computed(() => researchManagerCheckpointDraftIsStale(
+  checkpointDirty.value,
+  checkpointBaseRevision.value,
+  props.snapshot?.revision ?? null,
+  checkpointBaseTargetKey.value,
+  currentCheckpointTargetKey.value,
+  checkpointBasePendingCheckpointId.value,
+  currentPendingCheckpointId.value,
+));
+const currentDecisionGateId = computed(() => {
+  const gate = props.snapshot?.humanGate;
+  return gate !== undefined && gate.resolvedAt === undefined ? gate.gateId : null;
+});
+const currentEvidenceTarget = computed(() => ({
+  questionId: selectedQuestion.value?.id,
+  lineSlug: selectedLineSlug.value || undefined,
+  actionId: props.snapshot?.currentAction?.actionId,
+}));
+const currentEvidenceTargetKey = computed(() =>
+  props.snapshot === null ? null : researchEvidenceDraftTargetKey(currentEvidenceTarget.value),
 );
+const evidenceBaseTargetKey = computed(() =>
+  evidenceBaseTarget.value === null
+    ? null
+    : researchEvidenceDraftTargetKey(evidenceBaseTarget.value),
+);
+const currentRunActionId = computed(() =>
+  props.snapshot?.currentAction?.actionId
+    ?? props.snapshot?.currentRun?.actionId
+    ?? props.snapshot?.currentAction?.run?.actionId
+    ?? null,
+);
+const decisionStale = computed(() => researchManagerScienceDraftIsStale(
+  decisionDirty.value,
+  decisionBaseRevision.value,
+  props.snapshot?.revision ?? null,
+  decisionBaseGateId.value,
+  currentDecisionGateId.value,
+));
+const evidenceStale = computed(() => researchManagerScienceDraftIsStale(
+  evidenceDirty.value,
+  evidenceBaseRevision.value,
+  props.snapshot?.revision ?? null,
+  evidenceBaseTargetKey.value,
+  currentEvidenceTargetKey.value,
+));
+const runStale = computed(() => researchManagerScienceDraftIsStale(
+  runDirty.value,
+  runBaseRevision.value,
+  props.snapshot?.revision ?? null,
+  runBaseActionId.value,
+  currentRunActionId.value,
+));
 const modeActive = computed(() => props.snapshot !== null && props.snapshot.mode !== 'inactive');
 const canSaveLine = computed(() => lineTitle.value.trim() !== ''
   && (lineEditorMode.value === 'edit' || lineSlug.value.trim() !== ''));
 const canSaveQuestion = computed(() => selectedLineSlug.value !== '' && questionWording.value.trim() !== '');
+const canSteerQuestion = computed(() =>
+  selectedQuestion.value !== undefined
+  && questionBaseSnapshotRevision.value !== null
+  && !questionStale.value,
+);
+const canProposeCheckpoint = computed(() =>
+  checkpointBaseRevision.value !== null
+  && checkpointBaseTarget.value !== null
+  && !checkpointStale.value,
+);
 const canCommitCheckpoint = computed(() =>
-  props.snapshot?.pendingCheckpoint !== undefined && checkpointEntryId.value.trim() !== '',
+  checkpointBasePendingCheckpointId.value !== null
+  && checkpointEntryId.value.trim() !== ''
+  && !checkpointStale.value,
+);
+const activeAlerts = computed(() =>
+  props.snapshot?.alerts.filter((alert) => alert.state === undefined || alert.state === 'active') ?? [],
+);
+const canResolveDecision = computed(() =>
+  decisionBaseGateId.value !== null
+  && decisionResolution.value.trim() !== ''
+  && !decisionStale.value
+  && decisionPendingCommandId.value === null,
+);
+const canReviewEvidence = computed(() =>
+  evidenceBaseRevision.value !== null
+  && evidencePacketId.value.trim() !== ''
+  && evidenceClaim.value.trim() !== ''
+  && evidenceBody.value.trim() !== ''
+  && !evidenceStale.value
+  && evidencePendingCommandId.value === null,
+);
+const canObserveRun = computed(() =>
+  runBaseRevision.value !== null
+  && runBaseActionId.value !== null
+  && runCampaign.value.trim() !== ''
+  && runJobId.value.trim() !== ''
+  && researchRunTerminalStateIsConsistent(
+    runSchedulerState.value,
+    runTerminalState.value,
+  )
+  && !runStale.value
+  && runPendingCommandId.value === null,
 );
 
 function resetLineForm(): void {
@@ -142,6 +318,7 @@ function resetQuestionForm(): void {
   resettingQuestion = true;
   const question = selectedQuestion.value;
   try {
+    questionBaseSnapshotRevision.value = props.snapshot?.revision ?? null;
     if (questionEditorMode.value === 'create' || question === undefined) {
       questionWording.value = '';
       questionAssessment.value = '';
@@ -172,12 +349,75 @@ function resetQuestionForm(): void {
 
 function resetCheckpointForm(): void {
   resettingCheckpoint = true;
-  checkpointAssessment.value = '';
-  checkpointNextAction.value = '';
-  checkpointEntryId.value = '';
-  checkpointDraftVersion++;
-  checkpointDirty.value = false;
-  resettingCheckpoint = false;
+  try {
+    checkpointBaseRevision.value = props.snapshot?.revision ?? null;
+    checkpointBaseTarget.value = currentCheckpointTarget.value === null
+      ? null
+      : { ...currentCheckpointTarget.value };
+    checkpointBasePendingCheckpointId.value = currentPendingCheckpointId.value;
+    checkpointAssessment.value = '';
+    checkpointNextAction.value = '';
+    checkpointEntryId.value = '';
+  } finally {
+    checkpointDraftVersion++;
+    checkpointDirty.value = false;
+    resettingCheckpoint = false;
+  }
+}
+
+function resetDecisionForm(): void {
+  resettingDecision = true;
+  try {
+    decisionBaseRevision.value = props.snapshot?.revision ?? null;
+    decisionBaseGateId.value = currentDecisionGateId.value;
+    decisionResolution.value = '';
+    decisionNextPhase.value = 'idle';
+  } finally {
+    decisionDraftVersion++;
+    decisionDirty.value = false;
+    resettingDecision = false;
+  }
+}
+
+function resetEvidenceForm(): void {
+  resettingEvidence = true;
+  try {
+    evidenceBaseRevision.value = props.snapshot?.revision ?? null;
+    evidenceBaseTarget.value = props.snapshot === null
+      ? null
+      : { ...currentEvidenceTarget.value };
+    evidencePacketId.value = '';
+    evidenceKind.value = 'observation';
+    evidenceClaim.value = '';
+    evidenceBody.value = '';
+    evidenceConfidence.value = 'medium';
+  } finally {
+    evidenceDraftVersion++;
+    evidenceDirty.value = false;
+    resettingEvidence = false;
+  }
+}
+
+function resetRunForm(): void {
+  resettingRun = true;
+  const run = props.snapshot?.currentRun ?? props.snapshot?.currentAction?.run;
+  try {
+    runBaseRevision.value = props.snapshot?.revision ?? null;
+    runBaseActionId.value = currentRunActionId.value;
+    runActionId.value = currentRunActionId.value ?? '';
+    runCampaign.value = run?.campaign ?? '';
+    runJobId.value = run?.jobId ?? '';
+    runSourcePin.value = run?.sourcePin ?? '';
+    runBinaryPin.value = run?.binaryPin ?? '';
+    runStage.value = run?.stage ?? 'unknown';
+    runSchedulerState.value = run?.schedulerState ?? 'unknown';
+    runTerminalState.value = run?.terminalState ?? '';
+    runArtifactRefs.value = run?.artifactRefs.join('\n') ?? '';
+  } finally {
+    runDraftVersion++;
+    runDirty.value = false;
+    resettingRun = false;
+  }
 }
 
 function preferredQuestionId(): string {
@@ -198,6 +438,9 @@ function initializeManager(): void {
   resetLineForm();
   resetQuestionForm();
   resetCheckpointForm();
+  resetDecisionForm();
+  resetEvidenceForm();
+  resetRunForm();
 }
 
 watch(open, (isOpen) => {
@@ -212,14 +455,18 @@ watch(
     // disappears entirely, move to the current available selection.
     if (!snapshot.lines.some((line) => line.slug === selectedLineSlug.value)) {
       selectedLineSlug.value = snapshot.currentLineSlug ?? snapshot.lines[0]?.slug ?? '';
-      return;
+    } else if (lineEditorMode.value === 'edit' && !lineDirty.value) {
+      resetLineForm();
     }
-    if (lineEditorMode.value === 'edit' && !lineDirty.value) resetLineForm();
     if (!lineQuestions.value.some((question) => question.id === selectedQuestionId.value)) {
       selectedQuestionId.value = preferredQuestionId();
-      return;
+    } else if (questionEditorMode.value === 'edit' && !questionDirty.value) {
+      resetQuestionForm();
     }
-    if (questionEditorMode.value === 'edit' && !questionDirty.value) resetQuestionForm();
+    if (!checkpointDirty.value) resetCheckpointForm();
+    if (!decisionDirty.value) resetDecisionForm();
+    if (!evidenceDirty.value) resetEvidenceForm();
+    if (!runDirty.value) resetRunForm();
   },
 );
 
@@ -227,15 +474,38 @@ watch(selectedLineSlug, () => {
   selectedQuestionId.value = preferredQuestionId();
   resetLineForm();
   resetQuestionForm();
+  if (!checkpointDirty.value) resetCheckpointForm();
+  if (!evidenceDirty.value) resetEvidenceForm();
 });
-watch(selectedQuestionId, resetQuestionForm);
+watch(selectedQuestionId, () => {
+  resetQuestionForm();
+  if (!checkpointDirty.value) resetCheckpointForm();
+  if (!evidenceDirty.value) resetEvidenceForm();
+});
 watch(lineEditorMode, resetLineForm);
 watch(questionEditorMode, resetQuestionForm);
 
 function draftVersion(target: ResearchManagerDraftTarget): number {
   if (target.form === 'line') return lineDraftVersion;
   if (target.form === 'question') return questionDraftVersion;
+  if (target.form === 'decision') return decisionDraftVersion;
+  if (target.form === 'evidence') return evidenceDraftVersion;
+  if (target.form === 'run') return runDraftVersion;
   return checkpointDraftVersion;
+}
+
+function draftBaseRevision(target: ResearchManagerDraftTarget): number | undefined {
+  if (target.form === 'line' && target.mode === 'edit') {
+    return lineBaseRevision.value ?? undefined;
+  }
+  if (target.form === 'question' && target.mode === 'edit') {
+    return questionBaseRevision.value ?? undefined;
+  }
+  if (target.form === 'checkpoint') return checkpointBaseRevision.value ?? undefined;
+  if (target.form === 'decision') return decisionBaseRevision.value ?? undefined;
+  if (target.form === 'evidence') return evidenceBaseRevision.value ?? undefined;
+  if (target.form === 'run') return runBaseRevision.value ?? undefined;
+  return undefined;
 }
 
 function draftContext() {
@@ -245,27 +515,48 @@ function draftContext() {
     selectedLineSlug: selectedLineSlug.value,
     questionEditorMode: questionEditorMode.value,
     selectedQuestionId: selectedQuestionId.value,
+    decisionGateId: decisionBaseGateId.value ?? '',
+    evidenceTargetKey: evidenceBaseTargetKey.value ?? '',
+    runActionId: runBaseActionId.value ?? '',
     checkpointEntryId: checkpointEntryId.value,
   };
 }
 
 function emitManagerCommand(command: ResearchCommand): void {
   const target = researchManagerDraftTarget(command);
-  emit('command', {
+  const request: ResearchManagerCommandRequest = {
     id: ++nextCommandId,
     command,
-    draft: target === null ? undefined : { target, version: draftVersion(target) },
-  });
+    draft: target === null
+      ? undefined
+      : {
+          target,
+          version: draftVersion(target),
+          baseRevision: draftBaseRevision(target),
+        },
+  };
+  if (target?.form === 'decision') decisionPendingCommandId.value = request.id;
+  else if (target?.form === 'evidence') evidencePendingCommandId.value = request.id;
+  else if (target?.form === 'run') runPendingCommandId.value = request.id;
+  emit('command', request);
 }
 
 watch(
   () => props.commandAck,
   (ack) => {
-    const draft = ack?.draft;
-    if (!open.value || draft === undefined) return;
+    if (ack === null || ack === undefined) return;
+    if (decisionPendingCommandId.value === ack.id) decisionPendingCommandId.value = null;
+    if (evidencePendingCommandId.value === ack.id) evidencePendingCommandId.value = null;
+    if (runPendingCommandId.value === ack.id) runPendingCommandId.value = null;
+
+    const draft = ack.draft;
+    if (!open.value || !ack.succeeded || draft === undefined) return;
     if (!researchManagerAckMatchesDraft(draft, draftVersion(draft.target), draftContext())) return;
     if (draft.target.form === 'line') resetLineForm();
     else if (draft.target.form === 'question') resetQuestionForm();
+    else if (draft.target.form === 'decision') resetDecisionForm();
+    else if (draft.target.form === 'evidence') resetEvidenceForm();
+    else if (draft.target.form === 'run') resetRunForm();
     else resetCheckpointForm();
   },
 );
@@ -303,6 +594,55 @@ watch(
     if (resettingCheckpoint) return;
     checkpointDraftVersion++;
     checkpointDirty.value = true;
+  },
+  { flush: 'sync' },
+);
+watch(
+  [decisionResolution, decisionNextPhase],
+  () => {
+    if (resettingDecision) return;
+    decisionDraftVersion++;
+    decisionDirty.value = true;
+  },
+  { flush: 'sync' },
+);
+watch(
+  [evidencePacketId, evidenceKind, evidenceClaim, evidenceBody, evidenceConfidence],
+  () => {
+    if (resettingEvidence) return;
+    evidenceDraftVersion++;
+    evidenceDirty.value = true;
+  },
+  { flush: 'sync' },
+);
+watch(
+  runSchedulerState,
+  (schedulerState) => {
+    if (resettingRun) return;
+    runTerminalState.value = schedulerState === 'completed'
+      || schedulerState === 'failed'
+      || schedulerState === 'cancelled'
+      ? schedulerState
+      : '';
+  },
+  { flush: 'sync' },
+);
+watch(
+  [
+    runActionId,
+    runCampaign,
+    runJobId,
+    runSourcePin,
+    runBinaryPin,
+    runStage,
+    runSchedulerState,
+    runTerminalState,
+    runArtifactRefs,
+  ],
+  () => {
+    if (resettingRun) return;
+    runDraftVersion++;
+    runDirty.value = true;
   },
   { flush: 'sync' },
 );
@@ -405,13 +745,13 @@ function saveQuestion(): void {
 }
 
 function emitFocus(): void {
-  const snapshot = props.snapshot;
+  const expectedRevision = questionBaseSnapshotRevision.value;
   const question = selectedQuestion.value;
-  if (snapshot === null || question === undefined) return;
+  if (!canSteerQuestion.value || expectedRevision === null || question === undefined) return;
   emitManagerCommand({
     kind: 'set_focus',
     questionId: question.id,
-    expectedRevision: snapshot.revision,
+    expectedRevision,
     boundedAction: optionalText(questionNextAction.value),
     reason: optionalText(questionReason.value),
   });
@@ -420,37 +760,104 @@ function emitFocus(): void {
 function emitQuestionTransition(
   kind: 'defer_question' | 'block_question' | 'close_question' | 'reopen_question',
 ): void {
-  const snapshot = props.snapshot;
+  const expectedRevision = questionBaseSnapshotRevision.value;
   const question = selectedQuestion.value;
-  if (snapshot === null || question === undefined) return;
+  if (!canSteerQuestion.value || expectedRevision === null || question === undefined) return;
   emitManagerCommand({
     kind,
     questionId: question.id,
-    expectedRevision: snapshot.revision,
+    expectedRevision,
     reason: optionalText(questionReason.value),
   });
 }
 
 function proposeCheckpoint(): void {
-  const question = selectedQuestion.value;
+  const expectedRevision = checkpointBaseRevision.value;
+  const target = checkpointBaseTarget.value;
+  if (!canProposeCheckpoint.value || expectedRevision === null || target === null) return;
   emitManagerCommand({
     kind: 'propose_checkpoint',
-    questionId: question?.id,
-    lineSlug: question === undefined ? optionalText(selectedLineSlug.value) : undefined,
+    expectedRevision,
+    questionId: target.questionId,
+    lineSlug: target.lineSlug,
     assessment: optionalText(checkpointAssessment.value),
     nextAction: optionalText(checkpointNextAction.value),
   });
 }
 
 function commitCheckpoint(): void {
-  const checkpoint = props.snapshot?.pendingCheckpoint;
+  const checkpointId = checkpointBasePendingCheckpointId.value;
   const entryId = checkpointEntryId.value.trim();
-  if (checkpoint === undefined || entryId === '') return;
+  if (!canCommitCheckpoint.value || checkpointId === null) return;
   emitManagerCommand({
     kind: 'commit_checkpoint',
-    checkpointId: checkpoint.checkpointId,
+    checkpointId,
     entryId,
   });
+}
+
+function textLines(value: string): string[] {
+  return value.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+function resolveDecision(): void {
+  const gateId = decisionBaseGateId.value;
+  const resolution = decisionResolution.value.trim();
+  if (!canResolveDecision.value || gateId === null) return;
+  emitManagerCommand({
+    kind: 'resolve_decision',
+    gateId,
+    resolution,
+    nextPhase: decisionNextPhase.value,
+  });
+}
+
+function reviewEvidence(): void {
+  const expectedRevision = evidenceBaseRevision.value;
+  const target = evidenceBaseTarget.value;
+  if (!canReviewEvidence.value || expectedRevision === null || target === null) return;
+  emitManagerCommand({
+    kind: 'review_evidence',
+    expectedRevision,
+    packet: {
+      packet_id: evidencePacketId.value.trim(),
+      kind: evidenceKind.value,
+      claim: evidenceClaim.value.trim(),
+      evidence: evidenceBody.value.trim(),
+      question_id: target.questionId,
+      line_slug: target.lineSlug,
+      action_id: target.actionId,
+      assumptions: [],
+      tests: [],
+      artifact_refs: [],
+      source_refs: [],
+      limitations: [],
+      confidence: evidenceConfidence.value,
+    },
+  });
+}
+
+function observeRun(): void {
+  const expectedRevision = runBaseRevision.value;
+  const actionId = runBaseActionId.value;
+  if (!canObserveRun.value || expectedRevision === null || actionId === null) return;
+  emitManagerCommand({
+    kind: 'observe_run',
+    actionId,
+    expectedRevision,
+    campaign: runCampaign.value.trim(),
+    jobId: runJobId.value.trim(),
+    sourcePin: optionalText(runSourcePin.value),
+    binaryPin: optionalText(runBinaryPin.value),
+    stage: runStage.value,
+    schedulerState: runSchedulerState.value,
+    terminalState: runTerminalState.value || undefined,
+    artifactRefs: textLines(runArtifactRefs.value),
+  });
+}
+
+function acknowledgeAlert(fingerprint: string): void {
+  emitManagerCommand({ kind: 'acknowledge_alert', fingerprint });
 }
 </script>
 
@@ -545,7 +952,10 @@ function commitCheckpoint(): void {
               </div>
             </div>
             <Banner v-if="lineStale" variant="warning">
-              {{ t('research.manager.staleLine') }}
+              <span>{{ t('research.manager.staleLine') }}</span>
+              <Button variant="secondary" size="sm" @click="resetLineForm">
+                {{ t('research.manager.reloadDraft') }}
+              </Button>
             </Banner>
             <Field v-if="lineEditorMode === 'create'" :label="t('research.manager.lineSlug')">
               <Input v-model="lineSlug" :placeholder="t('research.manager.lineSlugPlaceholder')" />
@@ -594,7 +1004,10 @@ function commitCheckpoint(): void {
               </Button>
             </div>
             <Banner v-if="questionStale" variant="warning">
-              {{ t('research.manager.staleQuestion') }}
+              <span>{{ t('research.manager.staleQuestion') }}</span>
+              <Button variant="secondary" size="sm" @click="resetQuestionForm">
+                {{ t('research.manager.reloadDraft') }}
+              </Button>
             </Banner>
             <Field v-if="questionEditorMode === 'edit'" :label="t('research.manager.question')">
               <Select v-model="selectedQuestionId" :disabled="lineQuestions.length === 0">
@@ -653,7 +1066,7 @@ function commitCheckpoint(): void {
                 <Button
                   v-if="questionEditorMode === 'edit'"
                   variant="secondary"
-                  :disabled="!selectedQuestion"
+                  :disabled="!canSteerQuestion"
                   @click="emitFocus"
                 >
                   {{ t('research.manager.setFocus') }}
@@ -668,24 +1081,216 @@ function commitCheckpoint(): void {
               </div>
               <div v-if="questionEditorMode === 'edit' && selectedQuestion" class="transition-actions">
                 <span>{{ t('research.manager.transition') }}</span>
-                <Button variant="ghost" size="sm" @click="emitQuestionTransition('defer_question')">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  :disabled="!canSteerQuestion"
+                  @click="emitQuestionTransition('defer_question')"
+                >
                   {{ t('research.manager.defer') }}
                 </Button>
-                <Button variant="ghost" size="sm" @click="emitQuestionTransition('block_question')">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  :disabled="!canSteerQuestion"
+                  @click="emitQuestionTransition('block_question')"
+                >
                   {{ t('research.manager.block') }}
                 </Button>
-                <Button variant="ghost" size="sm" @click="emitQuestionTransition('close_question')">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  :disabled="!canSteerQuestion"
+                  @click="emitQuestionTransition('close_question')"
+                >
                   {{ t('research.manager.close') }}
                 </Button>
-                <Button variant="ghost" size="sm" @click="emitQuestionTransition('reopen_question')">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  :disabled="!canSteerQuestion"
+                  @click="emitQuestionTransition('reopen_question')"
+                >
                   {{ t('research.manager.reopen') }}
                 </Button>
               </div>
             </template>
           </section>
 
+          <section v-else-if="section === 'science'" class="editor-section">
+            <div class="science-control">
+              <h3>{{ t('research.manager.humanDecision') }}</h3>
+              <Banner v-if="decisionStale" variant="warning">
+                <span>{{ t('research.manager.staleDecision') }}</span>
+                <Button variant="secondary" size="sm" @click="resetDecisionForm">
+                  {{ t('research.manager.reloadDraft') }}
+                </Button>
+              </Banner>
+              <Banner v-if="snapshot?.humanGate && snapshot.humanGate.resolvedAt === undefined" variant="warning">
+                {{ snapshot.humanGate.prompt }}
+              </Banner>
+              <div v-else class="manager-empty">{{ t('research.manager.noHumanGate') }}</div>
+              <Field :label="t('research.manager.resolution')">
+                <Textarea
+                  v-model="decisionResolution"
+                  :rows="2"
+                  :disabled="decisionBaseGateId === null || decisionPendingCommandId !== null"
+                />
+              </Field>
+              <Field :label="t('research.manager.nextPhase')">
+                <Select
+                  v-model="decisionNextPhase"
+                  :disabled="decisionBaseGateId === null || decisionPendingCommandId !== null"
+                >
+                  <option
+                    v-for="phase in RESEARCH_DECISION_NEXT_PHASES"
+                    :key="phase"
+                    :value="phase"
+                  >
+                    {{ t(`research.sciencePhase.${phase}`) }}
+                  </option>
+                </Select>
+              </Field>
+              <Button :disabled="!canResolveDecision" @click="resolveDecision">
+                {{ t('research.manager.resolveDecision') }}
+              </Button>
+            </div>
+
+            <div class="science-control">
+              <h3>{{ t('research.manager.activeAlerts') }}</h3>
+              <div v-if="activeAlerts.length === 0" class="manager-empty">
+                {{ t('research.manager.noActiveAlerts') }}
+              </div>
+              <Banner v-for="alert in activeAlerts" v-else :key="alert.fingerprint" variant="warning">
+                <span>{{ alert.message }}</span>
+                <Button variant="secondary" size="sm" @click="acknowledgeAlert(alert.fingerprint)">
+                  {{ t('research.manager.acknowledge') }}
+                </Button>
+              </Banner>
+            </div>
+
+            <div class="science-control">
+              <h3>{{ t('research.manager.reviewEvidence') }}</h3>
+              <Banner v-if="evidenceStale" variant="warning">
+                <span>{{ t('research.manager.staleEvidence') }}</span>
+                <Button variant="secondary" size="sm" @click="resetEvidenceForm">
+                  {{ t('research.manager.reloadDraft') }}
+                </Button>
+              </Banner>
+              <div class="field-grid">
+                <Field :label="t('research.manager.packetId')">
+                  <Input v-model="evidencePacketId" />
+                </Field>
+                <Field :label="t('research.manager.evidenceKind')">
+                  <Select v-model="evidenceKind">
+                    <option value="observation">{{ t('research.manager.evidenceKinds.observation') }}</option>
+                    <option value="result">{{ t('research.manager.evidenceKinds.result') }}</option>
+                    <option value="failure">{{ t('research.manager.evidenceKinds.failure') }}</option>
+                    <option value="derivation">{{ t('research.manager.evidenceKinds.derivation') }}</option>
+                    <option value="literature">{{ t('research.manager.evidenceKinds.literature') }}</option>
+                  </Select>
+                </Field>
+                <Field :label="t('research.manager.confidence')">
+                  <Select v-model="evidenceConfidence">
+                    <option value="low">{{ t('research.manager.confidenceLevels.low') }}</option>
+                    <option value="medium">{{ t('research.manager.confidenceLevels.medium') }}</option>
+                    <option value="high">{{ t('research.manager.confidenceLevels.high') }}</option>
+                  </Select>
+                </Field>
+              </div>
+              <Field :label="t('research.manager.claim')">
+                <Textarea v-model="evidenceClaim" :rows="2" />
+              </Field>
+              <Field :label="t('research.manager.evidence')">
+                <Textarea v-model="evidenceBody" :rows="3" />
+              </Field>
+              <Button :disabled="!canReviewEvidence" @click="reviewEvidence">
+                {{ t('research.manager.reviewEvidence') }}
+              </Button>
+            </div>
+
+            <div class="science-control">
+              <h3>{{ t('research.manager.observeRun') }}</h3>
+              <Banner v-if="runStale" variant="warning">
+                <span>{{ t('research.manager.staleRun') }}</span>
+                <Button variant="secondary" size="sm" @click="resetRunForm">
+                  {{ t('research.manager.reloadDraft') }}
+                </Button>
+              </Banner>
+              <Banner
+                v-if="!researchRunTerminalStateIsConsistent(runSchedulerState, runTerminalState)"
+                variant="warning"
+              >
+                {{ t('research.manager.runTerminalMismatch') }}
+              </Banner>
+              <div class="field-grid">
+                <Field :label="t('research.manager.actionId')">
+                  <Input v-model="runActionId" disabled />
+                </Field>
+                <Field :label="t('research.manager.campaign')">
+                  <Input v-model="runCampaign" />
+                </Field>
+                <Field :label="t('research.manager.jobId')">
+                  <Input v-model="runJobId" />
+                </Field>
+              </div>
+              <div class="field-grid">
+                <Field :label="t('research.manager.runStage')">
+                  <Select v-model="runStage">
+                    <option value="queued">{{ t('research.runStage.queued') }}</option>
+                    <option value="running">{{ t('research.runStage.running') }}</option>
+                    <option value="scf">{{ t('research.runStage.scf') }}</option>
+                    <option value="band">{{ t('research.runStage.band') }}</option>
+                    <option value="analyzing">{{ t('research.runStage.analyzing') }}</option>
+                    <option value="completed">{{ t('research.runStage.completed') }}</option>
+                    <option value="failed">{{ t('research.runStage.failed') }}</option>
+                    <option value="unknown">{{ t('research.runStage.unknown') }}</option>
+                  </Select>
+                </Field>
+                <Field :label="t('research.manager.schedulerState')">
+                  <Select v-model="runSchedulerState">
+                    <option value="pending">{{ t('research.manager.schedulerStates.pending') }}</option>
+                    <option value="running">{{ t('research.manager.schedulerStates.running') }}</option>
+                    <option value="completed">{{ t('research.manager.schedulerStates.completed') }}</option>
+                    <option value="failed">{{ t('research.manager.schedulerStates.failed') }}</option>
+                    <option value="cancelled">{{ t('research.manager.schedulerStates.cancelled') }}</option>
+                    <option value="unknown">{{ t('research.manager.schedulerStates.unknown') }}</option>
+                  </Select>
+                </Field>
+                <Field :label="t('research.manager.terminalState')">
+                  <Select v-model="runTerminalState">
+                    <option value="">{{ t('research.none') }}</option>
+                    <option value="completed">{{ t('research.manager.schedulerStates.completed') }}</option>
+                    <option value="failed">{{ t('research.manager.schedulerStates.failed') }}</option>
+                    <option value="cancelled">{{ t('research.manager.schedulerStates.cancelled') }}</option>
+                  </Select>
+                </Field>
+              </div>
+              <div class="field-grid">
+                <Field :label="t('research.manager.sourcePin')">
+                  <Input v-model="runSourcePin" />
+                </Field>
+                <Field :label="t('research.manager.binaryPin')">
+                  <Input v-model="runBinaryPin" />
+                </Field>
+              </div>
+              <Field :label="t('research.manager.artifactRefs')" :hint="t('research.manager.onePerLine')">
+                <Textarea v-model="runArtifactRefs" :rows="2" />
+              </Field>
+              <Button :disabled="!canObserveRun" @click="observeRun">
+                {{ t('research.manager.observeRun') }}
+              </Button>
+            </div>
+          </section>
+
           <section v-else class="editor-section">
             <h3>{{ t('research.manager.proposeCheckpoint') }}</h3>
+            <Banner v-if="checkpointStale" variant="warning">
+              <span>{{ t('research.manager.staleCheckpoint') }}</span>
+              <Button variant="secondary" size="sm" @click="resetCheckpointForm">
+                {{ t('research.manager.reloadDraft') }}
+              </Button>
+            </Banner>
             <p class="section-note">
               {{ selectedQuestion?.wording ?? selectedLine?.title ?? t('research.none') }}
             </p>
@@ -696,7 +1301,7 @@ function commitCheckpoint(): void {
               <Textarea v-model="checkpointNextAction" :rows="2" />
             </Field>
             <div class="form-actions">
-              <Button :disabled="selectedLineSlug === ''" @click="proposeCheckpoint">
+              <Button :disabled="!canProposeCheckpoint" @click="proposeCheckpoint">
                 {{ t('research.manager.propose') }}
               </Button>
             </div>
@@ -794,6 +1399,14 @@ function commitCheckpoint(): void {
 .editor-section {
   display: grid;
   gap: var(--space-3);
+}
+.science-control {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
 }
 h3 {
   margin: 0;

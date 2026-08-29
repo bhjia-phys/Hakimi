@@ -49,10 +49,6 @@ import {
   SESSIONS_INITIAL_PAGE_SIZE,
   useWorkspaceState,
 } from './client/useWorkspaceState';
-
-const appearance = useAppearance();
-const notification = useNotification();
-const sound = useSoundNotification();
 import type {
   AppEvent,
   AppApprovalRequest,
@@ -108,6 +104,10 @@ import type {
 // ---------------------------------------------------------------------------
 // Internal reactive state (plain object wrapped in reactive())
 // ---------------------------------------------------------------------------
+
+const appearance = useAppearance();
+const notification = useNotification();
+const sound = useSoundNotification();
 
 const PERMISSION_STORAGE_KEY = STORAGE_KEYS.permission;
 const ACTIVE_WORKSPACE_KEY = STORAGE_KEYS.activeWorkspace;
@@ -286,6 +286,8 @@ interface QueuedPrompt {
 export interface ExtendedState extends KimiClientState {
   connected: boolean;
   serverVersion: string;
+  /** Effective experimental flags from `/meta`; missing fields enable nothing. */
+  experimentalFlags: Record<string, boolean>;
   /**
    * True when the connected server reports `dangerous_bypass_auth` in `/meta`,
    * meaning its bearer-token gate is disabled. The UI skips the server-token
@@ -391,6 +393,7 @@ const rawState: ExtendedState = reactive({
   ...createInitialState(),
   connected: false,
   serverVersion: '',
+  experimentalFlags: {},
   dangerousBypassAuth: false,
   backend: 'v1',
   workspaceName: 'kimi-web',
@@ -729,15 +732,15 @@ async function refreshSessionGoal(sessionId: string): Promise<void> {
 async function refreshSessionResearch(
   sessionId: string,
 ): Promise<ResearchStatusSnapshot | null> {
-  // The flag can flip while a sidecar or resync is queued behind a mutation.
-  // Check before entering the coordinator so disabled sessions issue no request.
-  if (rawState.config?.experimental?.['aitp_research_mode'] === false) return null;
+  // The effective meta flag can flip while a sidecar or resync is queued behind
+  // a mutation. Require strict true both before queueing and before issuing I/O.
+  if (rawState.experimentalFlags['aitp_research_mode'] !== true) return null;
   try {
     return await researchRequests.read(
       rawState,
       sessionId,
       () => {
-        if (rawState.config?.experimental?.['aitp_research_mode'] === false) {
+        if (rawState.experimentalFlags['aitp_research_mode'] !== true) {
           return Promise.reject(new Error('Research disabled'));
         }
         return getKimiWebApi().getSessionResearch(sessionId);
@@ -886,6 +889,7 @@ function applyEvent(event: ReturnType<typeof toAppEvent>, sessionId: string, seq
   rawState.compactionBySession = next.compactionBySession;
   if (event.type === 'configChanged') {
     workspaceState.applyConfig(event.config);
+    void workspaceState.refreshServerMeta(true);
   } else {
     rawState.config = next.config ?? null;
   }
@@ -1145,7 +1149,7 @@ function connectEventsIfNeeded(): void {
         // the dev proxy was moved to the other engine. Re-read authoritative
         // metadata and config: global config events currently have no client
         // replay cursor, so this closes any disconnect-window gap.
-        void workspaceState.refreshServerMeta();
+        void workspaceState.refreshServerMeta(true);
         void workspaceState.loadConfig();
       }
     },
@@ -2074,7 +2078,7 @@ const goal = computed<AppGoal | null>(() => {
 });
 
 const researchEnabled = computed<boolean>(
-  () => rawState.config?.experimental?.['aitp_research_mode'] !== false,
+  () => rawState.experimentalFlags['aitp_research_mode'] === true,
 );
 const research = computed<ResearchStatusSnapshot | null>(() => {
   if (!researchEnabled.value) return null;

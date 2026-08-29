@@ -62,6 +62,7 @@ import {
   planModeToggleResearchDecision,
   researchCommandFromSlash,
   researchCommandResolutionError,
+  researchEnterSlashOutcome,
   researchSlashAllowedWhileBusy,
   researchSlashInputToRestore,
   researchSlashNeedsSnapshot,
@@ -639,8 +640,7 @@ async function handleResearchCommand(request: ResearchManagerCommandRequest): Pr
     const result = await enterResearchMode(sessionId, request.command.lineSlug);
     reportResearchEnterResult(result);
     if (
-      (result.kind !== 'entered' && result.kind !== 'already-active')
-      || !showResearchManager.value
+      !showResearchManager.value
       || !researchManagerSessionIsCurrent(
         sessionId,
         managerSessionId.value,
@@ -649,11 +649,15 @@ async function handleResearchCommand(request: ResearchManagerCommandRequest): Pr
     ) {
       return;
     }
-    researchManagerCommandAck.value = request;
+    researchManagerCommandAck.value = {
+      ...request,
+      succeeded: result.kind === 'entered' || result.kind === 'already-active',
+    };
     return;
   }
   if (!researchManagerMutationAllowed(researchIdleOnlyBusy.value)) {
     reportResearchIssue('busy');
+    researchManagerCommandAck.value = { ...request, succeeded: false };
     return;
   }
   const snapshot = await client.commandResearchById(sessionId, request.command);
@@ -667,7 +671,7 @@ async function handleResearchCommand(request: ResearchManagerCommandRequest): Pr
   ) {
     return;
   }
-  if (snapshot !== null) researchManagerCommandAck.value = request;
+  researchManagerCommandAck.value = { ...request, succeeded: snapshot !== null };
 }
 
 async function openResearchManager(): Promise<boolean> {
@@ -757,7 +761,7 @@ async function handleResearchSlash(
     ) {
       await openResearchManager();
     }
-    return result.kind === 'rejected' ? 'rejected' : 'handled';
+    return researchEnterSlashOutcome(result);
   }
 
   // Capture and validate the submitted session before any async work. A hand-

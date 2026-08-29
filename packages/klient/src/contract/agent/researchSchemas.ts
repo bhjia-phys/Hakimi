@@ -617,6 +617,7 @@ export type UpdateQuestionInput = {
 };
 
 export type ProposeCheckpointInput = {
+  readonly expectedRevision?: number;
   readonly questionId?: string;
   readonly lineSlug?: string;
   readonly assessment?: string;

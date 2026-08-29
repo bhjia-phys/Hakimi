@@ -10,8 +10,9 @@ import {
   assertSafeNativeTarget,
 } from './paths.mjs';
 
-export const NATIVE_BUILD_RECEIPT_VERSION = 3;
+export const NATIVE_BUILD_RECEIPT_VERSION = 4;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -30,6 +31,7 @@ export async function sha256File(path) {
 function webIdentity(provenance) {
   return {
     repository: provenance.repository,
+    toolchain: provenance.recipe.toolchain,
     sourceSha256: provenance.source.sha256,
     recipeSha256: provenance.recipe.sha256,
     bundleSha256: provenance.bundle.sha256,
@@ -51,6 +53,12 @@ function validateReceipt(value, expectedTarget) {
   if (
     !isRecord(value.web) ||
     value.web.repository !== WEB_SOURCE_REPOSITORY ||
+    !isRecord(value.web.toolchain) ||
+    typeof value.web.toolchain.node !== 'string' ||
+    !SEMVER_PATTERN.test(value.web.toolchain.node) ||
+    typeof value.web.toolchain.pnpm !== 'string' ||
+    !SEMVER_PATTERN.test(value.web.toolchain.pnpm) ||
+    value.web.toolchain.canonical !== true ||
     typeof value.web.sourceSha256 !== 'string' ||
     !SHA256_PATTERN.test(value.web.sourceSha256) ||
     typeof value.web.recipeSha256 !== 'string' ||
@@ -74,6 +82,11 @@ function validateReceipt(value, expectedTarget) {
     target: value.target,
     web: {
       repository: value.web.repository,
+      toolchain: {
+        node: value.web.toolchain.node,
+        pnpm: value.web.toolchain.pnpm,
+        canonical: true,
+      },
       sourceSha256: value.web.sourceSha256,
       recipeSha256: value.web.recipeSha256,
       bundleSha256: value.web.bundleSha256,

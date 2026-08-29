@@ -6,6 +6,7 @@ import { rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { assertCanonicalBuildToolchain } from './build-web-assets.mjs';
 import { buildWebProvenance } from './check-web-assets.mjs';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,13 +55,18 @@ export function parseRecordWebProvenanceArgs(argv) {
  *   repositoryRoot?: string;
  *   target?: string;
  *   output?: string;
+ *   ambientEnvironment?: NodeJS.ProcessEnv;
+ *   checkToolchain?: typeof assertCanonicalBuildToolchain;
  * }} [options]
  */
 export async function recordWebProvenance({
   repositoryRoot = defaultRepositoryRoot,
   target = defaultTarget,
   output = defaultOutput,
+  ambientEnvironment = process.env,
+  checkToolchain = assertCanonicalBuildToolchain,
 } = {}) {
+  const resolvedRepositoryRoot = resolve(repositoryRoot);
   const resolvedTarget = resolve(target);
   const resolvedOutput = resolve(output);
   if (
@@ -70,9 +76,14 @@ export async function recordWebProvenance({
     throw new Error('web-base.json must live outside dist-web so it cannot hash itself.');
   }
 
+  const { actual } = await checkToolchain({
+    repositoryRoot: resolvedRepositoryRoot,
+    environment: ambientEnvironment,
+  });
   const provenance = await buildWebProvenance({
     target: resolvedTarget,
-    repositoryRoot: resolve(repositoryRoot),
+    repositoryRoot: resolvedRepositoryRoot,
+    toolchain: { ...actual, canonical: true },
   });
   const temporaryOutput = `${resolvedOutput}.${process.pid}.${randomUUID()}.tmp`;
   try {

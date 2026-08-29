@@ -91,11 +91,11 @@ The paused state is included in the snapshot injected into subsequent model step
 
 When Research Mode is active, a **Research Board** appears above the input area in both TUI and Web. The default compact Board is **science-first**: it tells the story of the research before showing supporting task state. It highlights:
 
-- The current Research phase and a progress headline
-- The physics work already completed and its resulting insight or result
-- How that result affects the mainline
-- The current uncertainty or unresolved question
-- The next bounded action, plus any human gate or active alert
+- The scientific phase and most recent state transition
+- The latest progress, including completed physics work and its resulting insight or result
+- How that result affects the mainline and the current uncertainty
+- The current bounded action and any recorded external-run observation
+- The effective next step, plus any unresolved human gate or active alert
 
 The phase badge exposes `probing`, `ready`, or `degraded`. Mode, loop, question, focus, and checkpoint changes publish one complete snapshot to both surfaces. TUI rejects stale cold hydration; Web serializes same-session mutations and prevents an older HTTP response from overwriting a newer live WebSocket update.
 
@@ -109,11 +109,11 @@ For HPC work, the loop can record an explicit observation bound to the current R
 
 When the agent proposes candidate questions for confirmation, it may register them as open working state so they appear on the board. The intended behavior is to wait for confirmation before setting one as Focus or persisting a durable AITP decision, but candidate confirmation is not a runtime-enforced guard on `SetResearchFocus`. Alerts and a generic human gate are implemented; `ResolveResearchDecision` resolves runtime state but does not automatically write an AITP `decision` Entry. A Hakimi Research Line and an AITP workstream are separate namespaces: if their slugs differ, the agent may read the existing workstream but must not silently create an alias or use the Research Line slug for persistence.
 
-The Board is read-only. Use `/research manage` or a direct `/research` subcommand for changes. Both managers are line-first, but their controls differ. When an unresolved gate or active alert exists, the TUI opens an **Attention view** first: press `R` to enter a resolution and choose the phase to resume, `A` to acknowledge the alert, or `L` to return to the lines. In Attention view, `R` means resolution rather than reopen. After attention items are cleared, TUI selects a Research Line and opens its questions with keyboard commands; Web shows a clickable line list beside Line, Question, and Checkpoint forms.
+The Board is read-only. Use `/research manage` or a direct `/research` subcommand for changes. Both managers are line-first, but their controls differ. When an unresolved gate or active alert exists, the TUI opens an **Attention view** first: press `R` to enter a resolution and choose the phase to resume, `A` to acknowledge the alert, or `L` to return to the lines. In Attention view, `R` means resolution rather than reopen. After attention items are cleared, TUI selects a Research Line and opens its questions with keyboard commands. Web shows a clickable line list beside Line, Question, Science, and Checkpoint sections; **Science** can resolve the current human decision with an explicit next phase, acknowledge active alerts, review a typed evidence packet, or record an observation for the current external run. These controls update Hakimi Research working state through the Research endpoint and do not write the AITP ledger.
 
 ## Steering the research
 
-Research Mode uses optimistic concurrency: every mutating command carries the latest snapshot `revision` as `expectedRevision`. A stale revision fails without applying the mutation. TUI refreshes the Board for a retry; Web re-reads the same session's authoritative snapshot. If a newer live revision arrives while a Web form is dirty, the Manager preserves the draft, shows a stale warning, and requires a refresh/retry rather than silently replacing the form.
+Research Mode uses optimistic concurrency for revisioned mutations: those commands carry the draft's captured snapshot or entity `revision` as `expectedRevision`, and a stale revision fails without applying the mutation. Checkpoint proposals use the Research snapshot revision captured when the user edits the form, so a later change cannot create a pending checkpoint against newer state. Other mutations rely on captured target or pending-checkpoint identity and server-side state constraints. TUI refreshes the Board for a retry; Web re-reads the same session's authoritative snapshot. If a newer live revision arrives while a Web form is dirty, the Manager preserves the draft, shows a stale warning, and requires a refresh/retry rather than silently replacing the form.
 
 ### Research Manager
 

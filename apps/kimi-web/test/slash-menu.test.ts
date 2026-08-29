@@ -9,6 +9,7 @@ import {
   researchCommandFromSlash,
   researchCommandResolutionError,
   researchComposerEntryState,
+  researchEnterSlashOutcome,
   researchSlashAllowedWhileBusy,
   researchSlashInputToRestore,
   researchSlashNeedsSnapshot,
@@ -315,6 +316,13 @@ describe('Research slash command', () => {
     expect(pending.has('session-a')).toBe(false);
   });
 
+  it('restores /research on only when enter was rejected or the session changed', () => {
+    expect(researchEnterSlashOutcome({ kind: 'ignored', reason: 'pending' })).toBe('handled');
+    expect(researchEnterSlashOutcome({ kind: 'ignored', reason: 'session_changed' })).toBe('rejected');
+    expect(researchEnterSlashOutcome({ kind: 'rejected', reason: 'disabled' })).toBe('rejected');
+    expect(researchEnterSlashOutcome({ kind: 'entered', snapshot })).toBe('handled');
+  });
+
   it('blocks enabling Plan while the current session has a pending Research enter', () => {
     expect(planModeToggleResearchDecision(false, 'inactive', true)).toBe('plan_conflict');
     expect(planModeToggleResearchDecision(false, 'ready', false)).toBe('plan_conflict');
@@ -416,14 +424,14 @@ describe('Research slash command', () => {
     });
   });
 
-  it.each([undefined, true])('shows /research when the flag is %s', (enabled) => {
-    const { slash } = setup('/res', [], enabled);
+  it('shows /research only when the effective flag is true', () => {
+    const { slash } = setup('/res', [], true);
     slash.update();
     expect(slash.items.value.map((item) => item.name)).toContain('/research');
   });
 
-  it('hides /research when the flag is false', () => {
-    const { slash } = setup('/res', [], false);
+  it.each([undefined, false])('hides /research when the effective flag is %s', (enabled) => {
+    const { slash } = setup('/res', [], enabled);
     slash.update();
     expect(slash.items.value.map((item) => item.name)).not.toContain('/research');
   });
@@ -488,6 +496,19 @@ describe('Research slash command', () => {
     expect(parseResearchSlashCommand('focus q_1 --')).toEqual({ kind: 'error', code: 'missing_text' });
     expect(parseResearchSlashCommand(`edit q_1 -- ${'x'.repeat(2001)}`)).toEqual({
       kind: 'error', code: 'text_too_long',
+    });
+  });
+
+  it.each([
+    '/research close q-1 accidental',
+    '/research block q-1 ignored-text -- Missing source',
+    '/research edit q-1 ignored-text -- New wording',
+    '/research focus q-1 ignored-text -- Check the archive',
+  ])('rejects question arguments before the documented separator: %s', (input) => {
+    const parsed = parseSlash(input);
+    expect(parsed.cmd).toBe('/research');
+    expect(parseResearchSlashCommand(parsed.arg ?? '')).toEqual({
+      kind: 'error', code: 'unexpected_arguments',
     });
   });
 

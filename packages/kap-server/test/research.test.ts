@@ -182,6 +182,17 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
     expect(body.details).toBeDefined();
   });
 
+  it('POST rejects propose_checkpoint without its expected revision', async () => {
+    const sessionId = await createSession();
+    const { status, body } = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'propose_checkpoint', lineSlug: 'main' } },
+    );
+    expect(status).toBe(200);
+    expect(body.code).toBe(40001);
+    expect(body.details).toBeDefined();
+  });
+
   it('POST rejects a body missing the command field', async () => {
     const sessionId = await createSession();
     const { status, body } = await postJson<unknown>(
@@ -398,6 +409,51 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
     );
     expect(status).toBe(200);
     expect(body.code).toBe(40001);
+  });
+
+  it('POST rejects a stale checkpoint proposal without creating pending state', async () => {
+    await server!.close();
+    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
+    server = await startServer({
+      hostIdentity: TEST_HOST_IDENTITY,
+      host: '127.0.0.1',
+      port: 0,
+      homeDir: home as string,
+      logLevel: 'silent',
+      debugEndpoints: true,
+    });
+    base = `http://127.0.0.1:${server.port}`;
+
+    const sessionId = await createSession();
+    const entered = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'enter_mode', actor: 'user' } },
+    );
+    const expectedRevision = entered.body.data.snapshot.revision;
+    const advanced = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'create_line', slug: 'main', title: 'Main line' } },
+    );
+    expect(advanced.body.data.snapshot.revision).toBeGreaterThan(expectedRevision);
+
+    const stale = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'propose_checkpoint',
+          expectedRevision,
+          lineSlug: 'main',
+        },
+      },
+    );
+    expect(stale.status).toBe(200);
+    expect(stale.body.code).toBe(40001);
+    expect(stale.body.msg).toMatch(/revision is stale/i);
+
+    const current = await getJson<ResearchSnapshot & { pendingCheckpoint?: unknown }>(
+      `/api/v1/sessions/${sessionId}/research`,
+    );
+    expect(current.body.data.pendingCheckpoint).toBeUndefined();
   });
 
   it('POST set_focus with stale revision maps to VALIDATION_FAILED', async () => {

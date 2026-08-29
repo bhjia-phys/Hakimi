@@ -5,7 +5,13 @@
 
 import { computed, ref, type Ref } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppApprovalRequest, AppQuestionRequest, AppSession, AppTask } from '../src/api/types';
+import type {
+  AppApprovalRequest,
+  AppQuestionRequest,
+  AppSession,
+  AppTask,
+  ResearchStatusSnapshot,
+} from '../src/api/types';
 import { DaemonApiError } from '../src/api/errors';
 import { createInitialState, reduceAppEvent } from '../src/api/daemon/eventReducer';
 import { mergeWorkspaces } from '../src/lib/mergeWorkspaces';
@@ -86,6 +92,7 @@ function createState(): ExtendedState {
     activeSessionId: 'sess_1',
     connected: true,
     serverVersion: '',
+    experimentalFlags: { aitp_research_mode: true },
     dangerousBypassAuth: false,
     backend: 'v1',
     workspaceName: 'kimi-web',
@@ -1156,6 +1163,16 @@ describe('useWorkspaceState — startSessionAndOpenSideChat', () => {
 });
 
 describe('useWorkspaceState — config reconciliation', () => {
+  beforeEach(() => {
+    apiMock.getMeta.mockReset().mockResolvedValue({
+      serverVersion: '1.0.0',
+      openInApps: [],
+      dangerousBypassAuth: false,
+      experimentalFlags: { aitp_research_mode: true },
+      backend: 'v2',
+    });
+  });
+
   it('updates config and the derived default model together', async () => {
     apiMock.getConfig.mockReset().mockResolvedValue({
       providers: {},
@@ -1251,6 +1268,36 @@ describe('useWorkspaceState — config reconciliation', () => {
     expect(state.defaultModel).toBe('provider/authoritative');
   });
 
+  it('fails closed and re-reads flags after a lost experimental POST response', async () => {
+    let rejectPost: ((error: Error) => void) | undefined;
+    apiMock.setConfig.mockReset().mockReturnValue(
+      new Promise((_, reject) => {
+        rejectPost = reject;
+      }),
+    );
+    apiMock.getConfig.mockReset().mockResolvedValue({
+      providers: {},
+      experimental: { aitp_research_mode: false },
+    });
+    apiMock.getMeta.mockResolvedValue({
+      serverVersion: '1.0.0',
+      openInApps: [],
+      dangerousBypassAuth: false,
+      experimentalFlags: { aitp_research_mode: false },
+      backend: 'v2',
+    });
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    const update = ws.updateConfig({ experimental: { aitp_research_mode: false } });
+    expect(state.experimentalFlags).toEqual({});
+    rejectPost?.(new Error('response lost'));
+
+    await expect(update).resolves.toBe(false);
+    expect(state.experimentalFlags['aitp_research_mode']).toBe(false);
+    expect(apiMock.getMeta).toHaveBeenCalledTimes(1);
+  });
+
   it('does not let an older POST response overwrite a live config event', async () => {
     const stale = { providers: {}, defaultModel: 'provider/stale' };
     let resolveStale: ((value: typeof stale) => void) | undefined;
@@ -1300,6 +1347,29 @@ describe('useWorkspaceState — config reconciliation', () => {
 
     expect(state.config).toEqual({ providers: {}, defaultModel: 'provider/newer' });
     expect(state.defaultModel).toBe('provider/newer');
+  });
+
+  it('re-reads effective meta flags after a config write instead of trusting config', async () => {
+    apiMock.setConfig.mockReset().mockResolvedValue({
+      providers: {},
+      experimental: { aitp_research_mode: true },
+    });
+    apiMock.getMeta.mockResolvedValue({
+      serverVersion: '1.0.0',
+      openInApps: [],
+      dangerousBypassAuth: false,
+      experimentalFlags: { aitp_research_mode: false },
+      backend: 'v2',
+    });
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    await expect(ws.updateConfig({ experimental: { aitp_research_mode: true } })).resolves.toBe(true);
+
+    expect(state.config?.experimental?.['aitp_research_mode']).toBe(true);
+    expect(state.experimentalFlags['aitp_research_mode']).toBe(false);
+    await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBeNull();
+    expect(apiMock.commandSessionResearch).not.toHaveBeenCalled();
   });
 });
 
@@ -1801,14 +1871,16 @@ describe('useWorkspaceState — refreshServerMeta', () => {
     apiMock.getMeta.mockReset();
   });
 
-  it('applies the meta payload including the v2 backend marker', async () => {
+  it('applies the meta payload including effective flags and the v2 backend marker', async () => {
     apiMock.getMeta.mockResolvedValue({
       serverVersion: '9.9.9',
       openInApps: ['finder'],
       dangerousBypassAuth: true,
+      experimentalFlags: { aitp_research_mode: true },
       backend: 'v2',
     });
     const state = createState();
+    state.experimentalFlags = {};
     const ws = useWorkspaceState(state, createDeps());
 
     await ws.refreshServerMeta();
@@ -1816,17 +1888,21 @@ describe('useWorkspaceState — refreshServerMeta', () => {
     expect(state.serverVersion).toBe('9.9.9');
     expect(state.availableOpenInApps).toEqual(['finder']);
     expect(state.dangerousBypassAuth).toBe(true);
+    expect(state.experimentalFlags).toEqual({ aitp_research_mode: true });
     expect(state.backend).toBe('v2');
   });
 
-  it('keeps the previous meta when /meta fails', async () => {
+  it('keeps previous meta on an ordinary failure but fails flags closed for config reconciliation', async () => {
     apiMock.getMeta.mockRejectedValue(new Error('connection refused'));
     const state = createState();
     state.backend = 'v2';
     const ws = useWorkspaceState(state, createDeps());
 
     await ws.refreshServerMeta();
+    expect(state.experimentalFlags).toEqual({ aitp_research_mode: true });
 
+    await ws.refreshServerMeta(true);
+    expect(state.experimentalFlags).toEqual({});
     expect(state.backend).toBe('v2');
     expect(state.serverVersion).toBe('');
   });
@@ -2379,10 +2455,11 @@ describe('useWorkspaceState — upsertWorkspacePreserveOrder hidden roots', () =
 });
 
 describe('useWorkspaceState — Research', () => {
-  function snapshot(revision: number) {
+  function snapshot(revision: number): ResearchStatusSnapshot {
     return {
-      mode: 'ready' as const,
-      loopStatus: 'active' as const,
+      mode: 'ready',
+      loopStatus: 'active',
+      phase: 'idle',
       currentLineSlug: 'line-a',
       questions: [],
       lines: [],
@@ -2390,7 +2467,7 @@ describe('useWorkspaceState — Research', () => {
       activeQuestionCount: 0,
       blockedQuestionCount: 0,
       alerts: [],
-      aitpHealth: { phase: 'ready' as const },
+      aitpHealth: { phase: 'ready' },
       revision,
     };
   }
@@ -2541,18 +2618,35 @@ describe('useWorkspaceState — Research', () => {
     );
   });
 
-  it('blocks commands when the experimental flag is explicitly false', async () => {
+  it.each([
+    ['missing', {}, { aitp_research_mode: true }],
+    ['false', { aitp_research_mode: false }, { aitp_research_mode: true }],
+  ] as const)('blocks commands when the effective meta flag is %s despite config', async (_case, flags, config) => {
     const state = createState();
-    state.config = { providers: {}, experimental: { aitp_research_mode: false } };
+    state.experimentalFlags = flags;
+    state.config = { providers: {}, experimental: config };
     const ws = useWorkspaceState(state, createDeps());
 
     await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBeNull();
     expect(apiMock.commandSessionResearch).not.toHaveBeenCalled();
   });
 
-  it('does not start a Research sidecar refresh when the flag is false', async () => {
+  it('allows commands only when meta is true even if persisted config is false', async () => {
+    const nextSnapshot = snapshot(2);
+    apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
     const state = createState();
+    state.experimentalFlags = { aitp_research_mode: true };
     state.config = { providers: {}, experimental: { aitp_research_mode: false } };
+    const ws = useWorkspaceState(state, createDeps());
+
+    await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBe(nextSnapshot);
+    expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
+  });
+
+  it('does not start a Research sidecar refresh unless the effective flag is true', async () => {
+    const state = createState();
+    state.experimentalFlags = { aitp_research_mode: false };
+    state.config = { providers: {}, experimental: { aitp_research_mode: true } };
     const deps = createDeps();
     const ws = useWorkspaceState(state, deps);
 

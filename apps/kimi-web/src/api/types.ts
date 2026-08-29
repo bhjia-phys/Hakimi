@@ -408,6 +408,68 @@ export type ResearchAlertKind =
   | 'commit_failed'
   | 'degraded'
   | 'stale';
+export type ResearchNextStepSource =
+  | 'research_action'
+  | 'research_run'
+  | 'human_gate'
+  | 'aitp_maintenance'
+  | 'question';
+export type ResearchNextStepFreshness = 'current' | 'stale' | 'blocked';
+export type ResearchAlertClassification =
+  | 'active_blocker'
+  | 'historical_unresolved'
+  | 'superseded_by_retry'
+  | 'warning';
+export type ResearchAlertSource =
+  | 'question'
+  | 'aitp_failure'
+  | 'aitp_check'
+  | 'adapter'
+  | 'checkpoint';
+export type ResearchAlertState = 'active' | 'acknowledged' | 'cleared' | 'superseded';
+export type AitpMaintenanceStatus = 'ready' | 'degraded';
+export type AitpMaintenanceMemoryStatus = 'available' | 'partial' | 'not_established' | 'unknown';
+export type AitpMaintenanceDegradedReason =
+  | 'adapter_not_ready'
+  | 'adapter_degraded'
+  | 'enter_failed'
+  | 'check_unavailable'
+  | 'stale_generation';
+export type ResearchPhase =
+  | 'idle'
+  | 'orienting'
+  | 'gap_analysis'
+  | 'action_planned'
+  | 'action_executing'
+  | 'evaluating'
+  | 'state_updated'
+  | 'checkpoint_pending'
+  | 'awaiting_human';
+export type ResearchActionKind =
+  | 'experiment'
+  | 'derivation'
+  | 'literature_review'
+  | 'data_analysis'
+  | 'simulation'
+  | 'other';
+export type ResearchActionStatus = 'planned' | 'in_progress' | 'completed' | 'abandoned';
+export type ResearchRunStage =
+  | 'queued'
+  | 'running'
+  | 'scf'
+  | 'band'
+  | 'analyzing'
+  | 'completed'
+  | 'failed'
+  | 'unknown';
+export type ResearchSchedulerState =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'unknown';
+export type ResearchHumanGateKind = 'approval' | 'review' | 'decision';
 
 export interface ResearchLine {
   slug: string;
@@ -441,11 +503,34 @@ export interface ResearchFocus {
   revision: number;
 }
 
+export interface ResearchEffectiveNextStep {
+  text: string;
+  source: ResearchNextStepSource;
+  freshness: ResearchNextStepFreshness;
+  observedAt: number;
+  derivedFrom: {
+    actionId?: string;
+    entryId?: string;
+    questionId?: string;
+    lineSlug?: string;
+  };
+}
+
 export interface ResearchAlert {
+  fingerprint: string;
   kind: ResearchAlertKind;
+  classification?: ResearchAlertClassification;
+  source?: ResearchAlertSource;
+  state?: ResearchAlertState;
   message: string;
   questionId?: string;
   lineSlug?: string;
+  relatedEntryId?: string;
+  workstream?: string;
+  retryOfEntryId?: string;
+  reason?: string;
+  createdAt: number;
+  acknowledgedAt?: number;
 }
 
 export interface ResearchAdapterHealth {
@@ -458,21 +543,196 @@ export interface ResearchAdapterHealth {
   notInitialized?: boolean;
 }
 
+export interface AitpMaintenanceFailureSummary {
+  entryId: string;
+  kind: 'observation' | 'result' | 'failure' | 'decision' | 'source' | 'code_change' | 'run' | 'closeout';
+  summary: string;
+  source: string;
+  authority: 'human' | 'agent' | 'source' | 'tool';
+  createdAt?: number;
+  workstream?: string;
+}
+
+export interface AitpMaintenanceNextAction {
+  text: string;
+  entryId: string;
+  authority: 'human' | 'agent' | 'source' | 'tool';
+  createdAt?: number;
+  source: string;
+}
+
+export interface AitpMaintenanceReceipt {
+  status: AitpMaintenanceStatus;
+  refreshedAt: number;
+  memoryStatus: AitpMaintenanceMemoryStatus;
+  workstream?: string;
+  latestWorkingNoteAt?: number;
+  activeNewerThanWorkingNote: boolean | null;
+  unresolvedFailureCount: number;
+  unresolvedFailures: AitpMaintenanceFailureSummary[];
+  nextAction?: string;
+  nextActionDetails?: AitpMaintenanceNextAction;
+  warningSummaries: Array<{ level: 'warning'; code: string }>;
+  check: {
+    status: 'clean' | 'findings' | 'unavailable';
+    counts?: { entries: number; notes: number; errors: number; warnings: number };
+    findingCodes: string[];
+  };
+  degradedReason?: AitpMaintenanceDegradedReason;
+}
+
+export interface ResearchCheckpointCheckReceipt {
+  status: 'clean' | 'findings';
+  errors: number;
+  warnings: number;
+  findingFingerprints: string[];
+  errorFindingFingerprints: string[];
+  newErrorFindingFingerprints?: string[];
+  preExistingErrorFindingFingerprints?: string[];
+  checkedAt: number;
+}
+
+export type ResearchCheckpointPrepareReceipt =
+  | {
+      status: 'prepared';
+      id: string;
+      path: string;
+      idempotencyKey?: string;
+      workstreams?: string[];
+    }
+  | {
+      status: 'existing';
+      id?: string;
+      path: string;
+      idempotencyKey: string;
+      workstreams?: string[];
+    };
+
+export interface ResearchCheckpointSaveReceipt {
+  status: 'saved' | 'already_saved';
+  draftPath: string;
+  path: string;
+  source?: 'record_save' | 'prepare_existing';
+}
+
+export interface ResearchCheckpointReceipt {
+  prepare?: ResearchCheckpointPrepareReceipt;
+  save?: ResearchCheckpointSaveReceipt;
+  preSaveCheck?: ResearchCheckpointCheckReceipt;
+  postSaveCheck?: ResearchCheckpointCheckReceipt;
+}
+
 export interface ResearchCommittedCursor {
   checkpointId: string;
   entryId?: string;
+  receipt?: ResearchCheckpointReceipt;
   committedAt: number;
 }
 
 export interface ResearchCheckpoint {
   checkpointId: string;
+  committedEntryId?: string;
   questionId?: string;
+  questionRevision?: number;
   lineSlug?: string;
   assessment?: string;
   nextAction?: string;
   idempotencyKey: string;
   persistence: ResearchQuestionPersistence;
-  committedEntryId?: string;
+  receipt?: ResearchCheckpointReceipt;
+  createdAt: number;
+}
+
+export interface ResearchRunState {
+  actionId: string;
+  campaign: string;
+  jobId: string;
+  sourcePin?: string;
+  binaryPin?: string;
+  stage: ResearchRunStage;
+  schedulerState: ResearchSchedulerState;
+  lastObservedAt: number;
+  nextCheckAt?: number;
+  terminalState?: 'completed' | 'failed' | 'cancelled';
+  artifactRefs: string[];
+}
+
+export interface ResearchEvidencePacket {
+  packet_id: string;
+  kind: 'observation' | 'result' | 'failure' | 'derivation' | 'literature';
+  claim: string;
+  evidence: string;
+  question_id?: string;
+  line_slug?: string;
+  action_id?: string;
+  method?: string;
+  assumptions: string[];
+  tests: string[];
+  artifact_refs: string[];
+  source_refs: string[];
+  limitations: string[];
+  confidence: 'low' | 'medium' | 'high';
+}
+
+export interface ResearchActionSpec {
+  actionId: string;
+  questionId?: string;
+  lineSlug?: string;
+  kind: ResearchActionKind;
+  purpose: string;
+  expectedEvidence: string[];
+  stopCondition: string;
+  allowedToolKinds: string[];
+  retryOfEntryId?: string;
+  status: ResearchActionStatus;
+  createdAt: number;
+  completedAt?: number;
+  requiresHumanApproval: boolean;
+  run?: ResearchRunState;
+}
+
+export interface ResearchProgressDetail {
+  assumptions?: string[];
+  derivation?: string;
+  tests?: string[];
+  observations?: string[];
+  sources?: string[];
+  limitations?: string[];
+  detailHint?: string;
+  artifactRefs?: string[];
+}
+
+export interface ResearchProgressReport {
+  headline: string;
+  question?: string;
+  motivation: string;
+  workPerformed: string;
+  result: string;
+  mainlineImpact: string;
+  uncertainties: string[];
+  nextAction?: string;
+  phaseChange?: { from: ResearchPhase; to: ResearchPhase };
+  humanDecision?: string;
+  detail?: ResearchProgressDetail;
+  recordedAt: number;
+}
+
+export interface ResearchStateChange {
+  beforePhase: ResearchPhase;
+  afterPhase: ResearchPhase;
+  actionId?: string;
+  summary: string;
+  changedAt: number;
+}
+
+export interface ResearchHumanGate {
+  gateId: string;
+  kind: ResearchHumanGateKind;
+  actionId?: string;
+  questionId?: string;
+  prompt: string;
+  resolvedAt?: number;
+  resolution?: string;
   createdAt: number;
 }
 
@@ -493,10 +753,19 @@ export interface ResearchStatusSnapshot {
   activeQuestionCount: number;
   blockedQuestionCount: number;
   alerts: ResearchAlert[];
+  effectiveNextStep?: ResearchEffectiveNextStep;
   goalSummary?: ResearchGoalSummary;
   aitpHealth: ResearchAdapterHealth;
+  aitpMaintenance?: AitpMaintenanceReceipt;
   pendingCheckpoint?: ResearchCheckpoint;
   latestCommittedCheckpoint?: ResearchCommittedCursor;
+  committedCheckpointHistory?: ResearchCommittedCursor[];
+  phase: ResearchPhase;
+  currentAction?: ResearchActionSpec;
+  currentRun?: ResearchRunState;
+  latestProgress?: ResearchProgressReport;
+  recentStateChange?: ResearchStateChange;
+  humanGate?: ResearchHumanGate;
   revision: number;
 }
 
@@ -557,12 +826,30 @@ export type ResearchCommand =
     }
   | {
       kind: 'propose_checkpoint';
+      expectedRevision: number;
       questionId?: string;
       lineSlug?: string;
       assessment?: string;
       nextAction?: string;
     }
-  | { kind: 'commit_checkpoint'; checkpointId: string; entryId: string };
+  | { kind: 'commit_checkpoint'; checkpointId: string; entryId: string }
+  | { kind: 'resolve_decision'; gateId: string; resolution: string; nextPhase: ResearchPhase }
+  | { kind: 'review_evidence'; packet: ResearchEvidencePacket; expectedRevision: number }
+  | {
+      kind: 'observe_run';
+      actionId: string;
+      expectedRevision: number;
+      campaign: string;
+      jobId: string;
+      sourcePin?: string;
+      binaryPin?: string;
+      stage: ResearchRunStage;
+      schedulerState: ResearchSchedulerState;
+      nextCheckAt?: number;
+      terminalState?: 'completed' | 'failed' | 'cancelled';
+      artifactRefs: string[];
+    }
+  | { kind: 'acknowledge_alert'; fingerprint: string };
 
 // ---------------------------------------------------------------------------
 // Terminal
@@ -964,7 +1251,7 @@ export interface AppSessionWarning {
 
 export interface KimiWebApi {
   getHealth(): Promise<{ status: 'ok'; uptimeSec: number }>;
-  getMeta(): Promise<{ serverVersion: string; serverId: string; startedAt: string; capabilities: Record<string, boolean>; openInApps: string[]; dangerousBypassAuth: boolean; backend: 'v1' | 'v2' }>;
+  getMeta(): Promise<{ serverVersion: string; serverId: string; startedAt: string; capabilities: Record<string, boolean>; openInApps: string[]; dangerousBypassAuth: boolean; experimentalFlags: Record<string, boolean>; backend: 'v1' | 'v2' }>;
   listSessions(input?: PageRequest & { busy?: boolean; workspaceId?: string; includeArchive?: boolean; archivedOnly?: boolean; excludeEmpty?: boolean }): Promise<Page<AppSession>>;
   createSession(input: { title?: string; cwd?: string; model?: string; workspaceId?: string }): Promise<AppSession>;
   /** Fetch one session by id (deep links beyond the first listSessions page). */

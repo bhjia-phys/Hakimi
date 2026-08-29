@@ -235,9 +235,14 @@ describe('native release artifacts', () => {
     expect(ci).not.toContain('--allow-nix-toolchain-mismatch');
     expect(release).not.toContain('--allow-nix-toolchain-mismatch');
     expect(native).not.toContain('--allow-nix-toolchain-mismatch');
+    expect(flake).not.toContain('--allow-nix-toolchain-mismatch');
+    expect(flake).not.toContain('KIMI_WEB_NIX_BUILD');
+    expect(flake).toContain('pnpmVersion = "10.33.0";');
+    expect(flake).toContain('pnpm-${pnpmVersion}.tgz');
     expectTextOrder(flake, [
-      'KIMI_WEB_NIX_BUILD=1 pnpm run build:web-assets -- --allow-nix-toolchain-mismatch',
-      'KIMI_WEB_NIX_BUILD=1 pnpm run build:web-assets -- --check --allow-nix-toolchain-mismatch',
+      'pnpm run build:web-assets -- --check',
+      'pnpm run build:web-assets\n',
+      'pnpm run build:web-assets -- --check',
       'pnpm --filter=@bhjia-phys/hakimi run build:native:sea',
     ]);
   });
@@ -277,7 +282,7 @@ describe('native release artifacts', () => {
     }
   });
 
-  it('packages the v3 receipt-bound native binary as a zip archive and checksums it', async () => {
+  it('packages the v4 receipt-bound native binary as a zip archive and checksums it', async () => {
     const binaryContent = 'native binary payload\n';
     const provenance = await stageNativePackageInput(binaryContent);
     const receipt = JSON.parse(readFileSync(nativeBuildReceiptPath(target), 'utf8')) as {
@@ -290,6 +295,7 @@ describe('native release artifacts', () => {
       target,
       web: {
         repository: provenance.repository,
+        toolchain: provenance.recipe.toolchain,
         sourceSha256: provenance.source.sha256,
         recipeSha256: provenance.recipe.sha256,
         bundleSha256: provenance.bundle.sha256,
@@ -335,8 +341,24 @@ describe('native release artifacts', () => {
     expect(result.stderr).toContain('binary sha256 does not match');
   });
 
-  it('rejects packaging when the receipt records stale source, recipe, or bundle identity', async () => {
+  it('rejects packaging when the receipt records stale toolchain, source, recipe, or bundle identity', async () => {
     const provenance = await stageNativePackageInput('native binary\n');
+    await writeNativeBuildReceipt({
+      target,
+      provenance: {
+        ...provenance,
+        recipe: {
+          ...provenance.recipe,
+          toolchain: { ...provenance.recipe.toolchain, node: '25.0.0' },
+        },
+      },
+      binaryPath: fakeBinary,
+    });
+
+    let result = runNativePackage();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Web identity does not match');
+
     await writeNativeBuildReceipt({
       target,
       provenance: {
@@ -346,7 +368,7 @@ describe('native release artifacts', () => {
       binaryPath: fakeBinary,
     });
 
-    let result = runNativePackage();
+    result = runNativePackage();
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('Web identity does not match');
 

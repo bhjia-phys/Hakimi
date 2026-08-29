@@ -487,6 +487,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   // Config events, POST responses, and reconnect GETs share one commit path.
   // A revision protects live updates from older HTTP responses; request ids also
   // prevent overlapping GETs or POSTs from landing out of order.
+  let serverMetaRequestId = 0;
   let configRevision = 0;
   let configRequestId = 0;
   let configMutationRequestId = 0;
@@ -522,10 +523,12 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   /** Update global config via POST /api/v1/config. */
   async function updateConfig(patch: Partial<AppConfig>): Promise<boolean> {
     const requestId = ++configMutationRequestId;
+    const changesExperimental = Object.prototype.hasOwnProperty.call(patch, 'experimental');
     // A user mutation outranks any reconnect GET that began before it.
     configRequestId += 1;
     configMutationsInFlight += 1;
     const revisionAtRequest = configRevision;
+    if (changesExperimental) rawState.experimentalFlags = {};
     try {
       const api = getKimiWebApi();
       const next = await api.setConfig(patch);
@@ -538,6 +541,10 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       pushOperationFailure('setConfig', err);
       return false;
     } finally {
+      // Config is only an input to flag resolution. Always re-read /meta after
+      // the POST settles, including response-loss failures, so env/master
+      // overrides and server defaults remain authoritative.
+      await refreshServerMeta(changesExperimental);
       configMutationsInFlight -= 1;
       if (configMutationsInFlight === 0 && reconcileConfigAfterMutationFailure) {
         reconcileConfigAfterMutationFailure = false;
@@ -892,19 +899,23 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   }
 
   /**
-   * Re-read GET /meta and apply the server-self fields (version, open-in
-   * apps, auth bypass, backend engine). Called on first load and on every WS
-   * (re)connect — the latter keeps the values truthful across backend
-   * restarts and dev-proxy backend switches.
+   * Re-read GET /meta and apply the server-self fields (version, open-in apps,
+   * auth bypass, effective experimental flags, backend engine). Called on first
+   * load and on every WS (re)connect. Config changes pass `failClosedFlags` so
+   * persisted config never masquerades as effective flag state while this read
+   * is pending or unavailable.
    */
-  async function refreshServerMeta(): Promise<void> {
+  async function refreshServerMeta(failClosedFlags = false): Promise<void> {
+    const requestId = ++serverMetaRequestId;
+    if (failClosedFlags) rawState.experimentalFlags = {};
     const m = await getKimiWebApi()
       .getMeta()
       .catch(() => null);
-    if (m === null) return;
+    if (m === null || requestId !== serverMetaRequestId) return;
     rawState.serverVersion = m.serverVersion;
     rawState.availableOpenInApps = m.openInApps;
     rawState.dangerousBypassAuth = m.dangerousBypassAuth;
+    rawState.experimentalFlags = m.experimentalFlags;
     rawState.backend = m.backend;
   }
 
@@ -2334,7 +2345,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   async function refreshResearchById(
     sessionId: string,
   ): Promise<ResearchStatusSnapshot | null> {
-    if (rawState.config?.experimental?.['aitp_research_mode'] === false) return null;
+    if (rawState.experimentalFlags['aitp_research_mode'] !== true) return null;
     return refreshSessionResearch(sessionId);
   }
 
@@ -2348,7 +2359,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     sessionId: string,
     command: ResearchCommand,
   ): Promise<ResearchStatusSnapshot | null> {
-    if (rawState.config?.experimental?.['aitp_research_mode'] === false) return null;
+    if (rawState.experimentalFlags['aitp_research_mode'] !== true) return null;
     try {
       // The coordinator serializes same-session POSTs and blocks sidecar GETs
       // behind the full mutation queue. The resolved value is exactly the
@@ -2357,7 +2368,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         rawState,
         sessionId,
         () => {
-          if (rawState.config?.experimental?.['aitp_research_mode'] === false) {
+          if (rawState.experimentalFlags['aitp_research_mode'] !== true) {
             return Promise.reject(new Error('Research disabled'));
           }
           return getKimiWebApi().commandSessionResearch(sessionId, command);

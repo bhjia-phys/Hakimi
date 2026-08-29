@@ -17,6 +17,7 @@ import { promisify } from 'node:util';
 import {
   buildWebProvenance,
   readWebToolchainRequirements,
+  verifyWebAssets,
   verifyWebAssetsAgainstProvenance,
 } from './check-web-assets.mjs';
 import { patchWebBranding } from './patch-web-branding.mjs';
@@ -24,10 +25,7 @@ import { patchWebBranding } from './patch-web-branding.mjs';
 const execFileAsync = promisify(execFile);
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = resolve(appRoot, '../..');
-const usage =
-  'Usage: node apps/kimi-code/scripts/build-web-assets.mjs ' +
-  '[--check] [--allow-nix-toolchain-mismatch]';
-const NIX_BUILD_MARKER = 'KIMI_WEB_NIX_BUILD';
+const usage = 'Usage: node apps/kimi-code/scripts/build-web-assets.mjs [--check]';
 const PASSTHROUGH_ENV_KEYS = [
   'PATH',
   'SystemRoot',
@@ -241,16 +239,26 @@ async function compareBundleDirectories(expectedRoot, generatedRoot) {
   }
 }
 
-async function assertGeneratedProvenance(provenancePath, expectedText) {
-  let generatedText;
-  try {
-    generatedText = await readFile(provenancePath, 'utf8');
-  } catch (error) {
-    throw new Error(
-      `Cannot read generated web-base.json: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  if (generatedText !== expectedText) {
+function canonicalRebuildIdentity(provenance) {
+  return {
+    schemaVersion: provenance.schemaVersion,
+    repository: provenance.repository,
+    source: provenance.source,
+    recipe: {
+      toolchainRequirements: provenance.recipe.toolchainRequirements,
+      fileCount: provenance.recipe.fileCount,
+      files: provenance.recipe.files,
+    },
+    brandingPatchVersion: provenance.brandingPatchVersion,
+    bundle: provenance.bundle,
+  };
+}
+
+function assertCanonicalRebuildIdentity(recorded, rebuilt) {
+  if (
+    JSON.stringify(canonicalRebuildIdentity(recorded)) !==
+    JSON.stringify(canonicalRebuildIdentity(rebuilt))
+  ) {
     throw new Error(
       'Generated web-base.json differs from the deterministic provenance of the clean rebuild.',
     );
@@ -343,7 +351,6 @@ export async function replaceProductionAssets(
 
 export function parseBuildWebAssetsArgs(argv) {
   let check = false;
-  let allowNixToolchainMismatch = false;
   const options = argv[0] === '--' ? argv.slice(1) : argv;
   for (const option of options) {
     if (option === '--check') {
@@ -353,39 +360,24 @@ export function parseBuildWebAssetsArgs(argv) {
       check = true;
       continue;
     }
-    if (option === '--allow-nix-toolchain-mismatch') {
-      if (allowNixToolchainMismatch) {
-        throw new Error(
-          `--allow-nix-toolchain-mismatch may only be specified once. ${usage}`,
-        );
-      }
-      allowNixToolchainMismatch = true;
-      continue;
-    }
     throw new Error(`Unknown option ${option}. ${usage}`);
   }
-  return { check, allowNixToolchainMismatch };
-}
-
-function assertNixToolchainBypass(ambientEnvironment) {
-  if (ambientEnvironment[NIX_BUILD_MARKER] !== '1') {
-    throw new Error(
-      `--allow-nix-toolchain-mismatch is restricted to the Nix build; ${NIX_BUILD_MARKER}=1 is required.`,
-    );
-  }
+  return { check };
 }
 
 /**
  * @param {{
  *   check?: boolean;
- *   allowNixToolchainMismatch?: boolean;
  *   ambientEnvironment?: NodeJS.ProcessEnv;
  *   repositoryRoot?: string;
  *   appRoot?: string;
  *   checkToolchain?: (options: {
  *     repositoryRoot: string;
  *     environment: NodeJS.ProcessEnv;
- *   }) => Promise<unknown>;
+ *   }) => Promise<{
+ *     requirements: { node: string; pnpm: string };
+ *     actual: { node: string; pnpm: string };
+ *   }>;
  *   build?: (options: {
  *     repositoryRoot: string;
  *     environment: NodeJS.ProcessEnv;
@@ -395,17 +387,12 @@ function assertNixToolchainBypass(ambientEnvironment) {
  */
 export async function buildWebAssets({
   check = false,
-  allowNixToolchainMismatch = false,
   ambientEnvironment = process.env,
   repositoryRoot: sourceRepositoryRoot = repositoryRoot,
   appRoot: targetAppRoot = appRoot,
   checkToolchain = assertCanonicalBuildToolchain,
   build = runViteBuild,
 } = {}) {
-  if (allowNixToolchainMismatch) {
-    assertNixToolchainBypass(ambientEnvironment);
-  }
-
   const resolvedRepositoryRoot = resolve(sourceRepositoryRoot);
   const resolvedAppRoot = resolve(targetAppRoot);
   const target = resolve(resolvedAppRoot, 'dist-web');
@@ -417,12 +404,11 @@ export async function buildWebAssets({
   });
 
   try {
-    if (!allowNixToolchainMismatch) {
-      await checkToolchain({
-        repositoryRoot: resolvedRepositoryRoot,
-        environment,
-      });
-    }
+    const { actual } = await checkToolchain({
+      repositoryRoot: resolvedRepositoryRoot,
+      environment,
+    });
+    const toolchain = { ...actual, canonical: true };
     await build({
       repositoryRoot: resolvedRepositoryRoot,
       environment,
@@ -439,6 +425,7 @@ export async function buildWebAssets({
     const provenance = await buildWebProvenance({
       target: stagingRoot,
       repositoryRoot: resolvedRepositoryRoot,
+      toolchain,
     });
     await verifyWebAssetsAgainstProvenance(stagingRoot, provenance, {
       repositoryRoot: resolvedRepositoryRoot,
@@ -446,8 +433,13 @@ export async function buildWebAssets({
     const provenanceText = `${JSON.stringify(provenance, null, 2)}\n`;
 
     if (check) {
+      const { provenance: recordedProvenance } = await verifyWebAssets(
+        target,
+        provenancePath,
+        resolvedRepositoryRoot,
+      );
       await compareBundleDirectories(stagingRoot, target);
-      await assertGeneratedProvenance(provenancePath, provenanceText);
+      assertCanonicalRebuildIdentity(recordedProvenance, provenance);
       return { check: true, patched, provenance };
     }
 
@@ -464,10 +456,8 @@ export async function buildWebAssets({
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { check, allowNixToolchainMismatch } = parseBuildWebAssetsArgs(
-    process.argv.slice(2),
-  );
-  const result = await buildWebAssets({ check, allowNixToolchainMismatch });
+  const { check } = parseBuildWebAssetsArgs(process.argv.slice(2));
+  const result = await buildWebAssets({ check });
   const identity =
     `source ${result.provenance.source.sha256}, ` +
     `recipe ${result.provenance.recipe.sha256}`;

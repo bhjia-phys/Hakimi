@@ -87,9 +87,9 @@ export function buildSlashItems(
   skills: ReadonlyArray<{ name: string; description: string; source?: string }> = [],
   options: { researchEnabled?: boolean } = {},
 ): SlashCommand[] {
-  const builtins = options.researchEnabled === false
-    ? SLASH_COMMANDS.filter((command) => command.name !== '/research')
-    : SLASH_COMMANDS;
+  const builtins = options.researchEnabled === true
+    ? SLASH_COMMANDS
+    : SLASH_COMMANDS.filter((command) => command.name !== '/research');
   const skillItems: SlashCommand[] = skills.map((s) => ({
     name: s.source === 'builtin' ? `/${s.name}` : `/${SKILL_COMMAND_PREFIX}${s.name}`,
     desc: s.description,

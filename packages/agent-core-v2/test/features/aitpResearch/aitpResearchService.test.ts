@@ -1455,6 +1455,27 @@ describe('public research mutation guards', () => {
     expect(svc.getPendingCheckpoint()).toBeNull();
   });
 
+  it('rejects a stale checkpoint proposal without creating pending state', async () => {
+    const modeSvc = await buildRealModeService();
+    const svc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    const expectedRevision = svc.getSnapshot().revision;
+
+    svc.createLine({ slug: 'main', title: 'Main' });
+    expect(svc.getSnapshot().revision).toBeGreaterThan(expectedRevision);
+
+    let staleError: unknown;
+    try {
+      svc.proposeCheckpoint({ expectedRevision, lineSlug: 'main' });
+    } catch (error) {
+      staleError = error;
+    }
+    expect(staleError).toMatchObject({
+      code: AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+    });
+    expect(svc.getPendingCheckpoint()).toBeNull();
+  });
+
   it('rejects unknown question ids for steering and reopening', async () => {
     const modeSvc = await buildRealModeService();
     const svc = await buildRealResearchService(modeSvc);

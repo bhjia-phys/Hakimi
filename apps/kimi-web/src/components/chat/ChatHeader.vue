@@ -270,20 +270,20 @@ function startArchive(): void {
       </template>
     </Menu>
 
-    <div class="ch-spacer" />
-
-    <!-- Compact Git summary. Detached HEAD remains visible; non-repositories do not. -->
-    <GitSummaryCard
-      v-if="isGitRepo"
-      :branch="branch"
-      :ahead="ahead"
-      :behind="behind"
-      :changes-count="changesCount"
-      :git-diff-stats="gitDiffStats"
-      :pr="pr"
-      @open-changes="emit('openChanges')"
-      @open-pr="emit('openPr', $event)"
-    />
+    <div class="ch-git-region">
+      <!-- Compact Git summary. Detached HEAD remains visible; non-repositories do not. -->
+      <GitSummaryCard
+        v-if="isGitRepo"
+        :branch="branch"
+        :ahead="ahead"
+        :behind="behind"
+        :changes-count="changesCount"
+        :git-diff-stats="gitDiffStats"
+        :pr="pr"
+        @open-changes="emit('openChanges')"
+        @open-pr="emit('openPr', $event)"
+      />
+    </div>
 
   </header>
 </template>
@@ -334,7 +334,13 @@ function startArchive(): void {
   outline: none;
 }
 
-.ch-spacer { flex: 1; min-width: 0; }
+.ch-git-region {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+  container-type: inline-size;
+}
 
 /* Overflow "…" trigger — IconButton (md). The "open" state keeps the
    sunken highlight while the menu is showing. */

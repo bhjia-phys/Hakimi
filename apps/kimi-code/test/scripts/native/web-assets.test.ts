@@ -82,11 +82,19 @@ function writeTestSource(repositoryRoot: string): void {
   writeFixtureFileIfMissing(join(webRoot, 'vite.config.ts'), 'export default {};\n');
 }
 
+async function checkTestToolchain(node = '24.16.0') {
+  return {
+    requirements: { node: '>=24.15.0', pnpm: '10.33.0' },
+    actual: { node, pnpm: '10.33.0' },
+  };
+}
+
 function recordExistingTestProvenance(appRoot: string) {
   return recordWebProvenance({
     repositoryRoot: appRoot,
     target: join(appRoot, 'dist-web'),
     output: join(appRoot, 'web-base.json'),
+    checkToolchain: () => checkTestToolchain(),
   });
 }
 
@@ -359,6 +367,7 @@ describe('web bundle provenance', () => {
         },
         recipe: {
           toolchainRequirements: { node: '>=24.15.0', pnpm: '10.33.0' },
+          toolchain: { node: '24.16.0', pnpm: '10.33.0', canonical: true },
           fileCount: 11,
           sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
         },
@@ -375,7 +384,6 @@ describe('web bundle provenance', () => {
         },
       });
       expect(first).not.toHaveProperty('baseRevision');
-      expect(first.recipe).not.toHaveProperty('toolchain');
       expect(first.source.files.map((entry: { path: string }) => entry.path)).toContain(
         'apps/kimi-web/public/tmp/fixture.txt',
       );
@@ -419,7 +427,7 @@ describe('web bundle provenance', () => {
         repository: 'hakimi',
       });
       await expect(assertWebAssets(distWeb, provenancePath, appRoot)).rejects.toThrow(
-        /schemaVersion 必须是 4/,
+        /schemaVersion 必须是 5/,
       );
 
       await recordTestProvenance(appRoot);
@@ -444,6 +452,38 @@ describe('web bundle provenance', () => {
       writeTestProvenance(appRoot, invalidRecipeDigest);
       await expect(assertWebAssets(distWeb, provenancePath, appRoot)).rejects.toThrow(
         /recipe\.sha256 与记录的文件清单不一致/,
+      );
+
+      await recordTestProvenance(appRoot);
+      const nonCanonicalToolchain = readTestProvenance(appRoot);
+      nonCanonicalToolchain.recipe.toolchain.canonical = false;
+      writeTestProvenance(appRoot, nonCanonicalToolchain);
+      await expect(assertWebAssets(distWeb, provenancePath, appRoot)).rejects.toThrow(
+        /canonical 必须为 true/,
+      );
+
+      await recordTestProvenance(appRoot);
+      const malformedToolchain = readTestProvenance(appRoot);
+      malformedToolchain.recipe.toolchain.node = 'current';
+      writeTestProvenance(appRoot, malformedToolchain);
+      await expect(assertWebAssets(distWeb, provenancePath, appRoot)).rejects.toThrow(
+        /实际 Node\/pnpm semver/,
+      );
+
+      await recordTestProvenance(appRoot);
+      const mismatchedPnpm = readTestProvenance(appRoot);
+      mismatchedPnpm.recipe.toolchain.pnpm = '10.32.0';
+      writeTestProvenance(appRoot, mismatchedPnpm);
+      await expect(assertWebAssets(distWeb, provenancePath, appRoot)).rejects.toThrow(
+        /recipe\.toolchain\.pnpm 必须是 10\.33\.0/,
+      );
+
+      await recordTestProvenance(appRoot);
+      const unsupportedNode = readTestProvenance(appRoot);
+      unsupportedNode.recipe.toolchain.node = '24.14.9';
+      writeTestProvenance(appRoot, unsupportedNode);
+      await expect(assertWebAssets(distWeb, provenancePath, appRoot)).rejects.toThrow(
+        /recipe\.toolchain\.node 24\.14\.9 不满足 >=24\.15\.0/,
       );
 
       await recordTestProvenance(appRoot);
@@ -834,77 +874,32 @@ describe('buildWebAssets', () => {
     }
   });
 
-  it('restricts the toolchain mismatch bypass to an explicit Nix build', async () => {
-    const appRoot = mkdtempSync(join(tmpdir(), 'kimi-web-nix-toolchain-bypass-'));
-    let toolchainChecks = 0;
-    const checkToolchain = async () => {
-      toolchainChecks += 1;
-    };
-    try {
-      writeTestSource(appRoot);
-      await expect(
-        buildWebAssets({
-          allowNixToolchainMismatch: true,
-          ambientEnvironment: {},
-          appRoot,
-          repositoryRoot: appRoot,
-          checkToolchain,
-          build: fakeBuild(),
-        }),
-      ).rejects.toThrow(/restricted to the Nix build; KIMI_WEB_NIX_BUILD=1 is required/);
-
-      await expect(
-        buildWebAssets({
-          allowNixToolchainMismatch: true,
-          ambientEnvironment: { KIMI_WEB_NIX_BUILD: '1' },
-          appRoot,
-          repositoryRoot: appRoot,
-          checkToolchain,
-          build: fakeBuild(),
-        }),
-      ).resolves.toMatchObject({ check: false, patched: 1 });
-      expect(toolchainChecks).toBe(0);
-    } finally {
-      rmSync(appRoot, { recursive: true, force: true });
-    }
-  });
-
   it('generates clean-source package assets and checks every generated file', async () => {
     const appRoot = mkdtempSync(join(tmpdir(), 'kimi-web-build-assets-'));
     const distWeb = join(appRoot, 'dist-web');
     let toolchainChecks = 0;
     const checkToolchain = async () => {
       toolchainChecks += 1;
+      return checkTestToolchain();
+    };
+    const checkMinimumNodeToolchain = async () => {
+      toolchainChecks += 1;
+      return checkTestToolchain('24.15.0');
     };
     try {
       writeTestSource(appRoot);
       expect(existsSync(distWeb)).toBe(false);
       expect(existsSync(join(appRoot, 'web-base.json'))).toBe(false);
 
-      expect(parseBuildWebAssetsArgs([])).toEqual({
-        check: false,
-        allowNixToolchainMismatch: false,
-      });
-      expect(parseBuildWebAssetsArgs(['--check'])).toEqual({
-        check: true,
-        allowNixToolchainMismatch: false,
-      });
-      expect(
-        parseBuildWebAssetsArgs([
-          '--',
-          '--check',
-          '--allow-nix-toolchain-mismatch',
-        ]),
-      ).toEqual({ check: true, allowNixToolchainMismatch: true });
+      expect(parseBuildWebAssetsArgs([])).toEqual({ check: false });
+      expect(parseBuildWebAssetsArgs(['--check'])).toEqual({ check: true });
+      expect(parseBuildWebAssetsArgs(['--', '--check'])).toEqual({ check: true });
       expect(() => parseBuildWebAssetsArgs(['--check', '--check'])).toThrow(
         /--check may only be specified once/,
       );
-      expect(() =>
-        parseBuildWebAssetsArgs([
-          '--allow-nix-toolchain-mismatch',
-          '--allow-nix-toolchain-mismatch',
-        ]),
-      ).toThrow(/--allow-nix-toolchain-mismatch may only be specified once/);
+      expect(() => parseBuildWebAssetsArgs(['--allow-nix-toolchain-mismatch'])).toThrow(
+        /Unknown option/,
+      );
       expect(() => parseBuildWebAssetsArgs(['--unknown'])).toThrow(/Unknown option/);
 
       const built = await buildWebAssets({
@@ -922,6 +917,9 @@ describe('buildWebAssets', () => {
       expect(JSON.parse(generatedProvenance)).toMatchObject({
         schemaVersion: WEB_PROVENANCE_SCHEMA_VERSION,
         repository: 'hakimi',
+        recipe: {
+          toolchain: { node: '24.16.0', pnpm: '10.33.0', canonical: true },
+        },
       });
 
       await expect(
@@ -942,6 +940,26 @@ describe('buildWebAssets', () => {
           check: true,
           appRoot,
           repositoryRoot: appRoot,
+          checkToolchain: checkMinimumNodeToolchain,
+          build: fakeBuild(),
+        }),
+      ).resolves.toMatchObject({
+        check: true,
+        provenance: {
+          recipe: {
+            toolchain: { node: '24.15.0', pnpm: '10.33.0', canonical: true },
+          },
+        },
+      });
+      expect(readFileSync(join(appRoot, 'web-base.json'), 'utf8')).toBe(
+        generatedProvenance,
+      );
+
+      await expect(
+        buildWebAssets({
+          check: true,
+          appRoot,
+          repositoryRoot: appRoot,
           checkToolchain,
           build: fakeBuild('const changed = true;\n'),
         }),
@@ -949,7 +967,7 @@ describe('buildWebAssets', () => {
       expect(readFileSync(join(distWeb, 'assets', 'app.js'), 'utf8')).toBe(
         'const brand = "Hakimi";\n',
       );
-      expect(toolchainChecks).toBe(3);
+      expect(toolchainChecks).toBe(4);
       expect(
         readdirSync(appRoot).filter((name) => name.startsWith('.dist-web-staging-')),
       ).toEqual([]);

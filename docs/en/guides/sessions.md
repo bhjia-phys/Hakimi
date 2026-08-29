@@ -54,6 +54,8 @@ hakimi --session
 `--continue` and `--session` are mutually exclusive.
 :::
 
+In the desktop web UI, the conversation header summarizes the current Git worktree beside the session title: branch or detached-HEAD state, changed-file count, ahead/behind counts, line additions/deletions, and pull request status. Select the worktree summary to open change details, or select the pull request badge to open that pull request. The card is hidden outside Git repositories and progressively removes lower-priority metrics when the conversation column narrows.
+
 ## Switching sessions inside the TUI
 
 You can manage sessions without leaving the terminal. The following slash commands are available only when the agent is idle:

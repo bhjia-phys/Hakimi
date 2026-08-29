@@ -2,4 +2,4 @@
 "@bhjia-phys/hakimi": patch
 ---
 
-web: Track the bundled Web UI and schema v4 provenance generated from Hakimi's source, with reproducibility checks and receipt-bound native packaging.
+web: Track the bundled Web UI with schema v5 provenance that records the actual canonical Node/pnpm toolchain, strict Nix reproducibility checks, and v4 receipt-bound native packaging.

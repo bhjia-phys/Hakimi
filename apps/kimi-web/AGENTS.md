@@ -7,9 +7,9 @@ Package-local rules for `apps/kimi-web` (`@bhjia-phys/hakimi-web`).
 > `apps/kimi-code/web-base.json` are tracked release assets. After source changes,
 > regenerate both with `pnpm run build:web-assets`, commit them together, and verify
 > reproducibility with `pnpm run build:web-assets -- --check`. Never hand-edit or
-> partially replace these outputs. Provenance schema v4 binds the complete source tree, canonical
-> recipe/toolchain, and bundle manifests and digests; native receipts also bind
-> that identity to the packaged binary hash. Rebranded display strings say
+> partially replace these outputs. Provenance schema v5 binds the complete source tree,
+> canonical recipe files, actual canonical Node/pnpm versions, and bundle manifests and
+> digests; v4 native receipts also bind that toolchain and identity to the packaged binary hash. Rebranded display strings say
 > `Hakimi`/`Hakimi Web`, while all wire/compat identifiers
 > (`kimi-code.bearer.*`, `KIMI_SERVER_URL`, `/api/v1`, local-storage keys such as
 > `kimi-web.*`/`kimi-locale`, provider names, …) are preserved on purpose.
@@ -65,8 +65,8 @@ Local development commands use `pnpm --filter @bhjia-phys/hakimi-web …`:
 
 Production assets are root-level workflows:
 
-- `pnpm run build:web-assets` — clean canonical build, branding patch, schema v4 provenance, verification, and atomic replacement of the tracked package outputs; commit them with source changes.
-- `pnpm run build:web-assets -- --check` — clean rebuild and byte-for-byte comparison with the tracked assets, without replacing them.
+- `pnpm run build:web-assets` — clean canonical build, branding patch, schema v5 provenance with the actual canonical Node/pnpm toolchain, verification, and atomic replacement of the tracked package outputs; commit them with source changes.
+- `pnpm run build:web-assets -- --check` — clean rebuild and byte-for-byte bundle comparison without replacing tracked assets; a different actual Node version is allowed only when both builds are canonical and every other identity matches.
 
 Debugging against kap-server instances: start one from the repo root with `pnpm dev:server` (port 58627), optionally a second with `pnpm dev:v2` (port 58628 — instances share the home dir via the registry, so both can run at once). The dev server proxies `/api/v1` to the `default` preset; the Sidebar brand row carries a dev-only backend pill (engine generation `v1`/`v2` from `GET /api/v1/meta`'s `backend` field + endpoint) whose menu repoints the proxy at runtime — no Vite restart. Presets default to `http://127.0.0.1:58627` / `:58628`, overridable via `KIMI_BACKEND_DEFAULT_URL` / `KIMI_BACKEND_MULTI_URL`; the switcher endpoints (`GET/POST /__kimi-dev/backend`, dev-only, see `backendSwitcherPlugin` in `vite.config.ts`) drive the menu.
 

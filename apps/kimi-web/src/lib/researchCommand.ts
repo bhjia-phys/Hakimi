@@ -213,14 +213,22 @@ function parseQuestionCommand(
   subcommand: string,
   tokens: readonly string[],
 ): ParsedResearchSlashCommand {
+  const separatorIndex = tokens.indexOf('--');
+  if (separatorIndex !== -1 && separatorIndex !== 2) {
+    return { kind: 'error', code: 'unexpected_arguments' };
+  }
+
   const questionId = tokens[1];
-  if (questionId === undefined || questionId === '--') {
+  if (questionId === undefined) {
     return { kind: 'error', code: 'missing_question' };
   }
 
-  const separatorIndex = tokens.indexOf('--', 2);
   if (subcommand === 'edit' || subcommand === 'focus') {
-    if (separatorIndex === -1) return { kind: 'error', code: 'missing_separator' };
+    if (separatorIndex === -1) {
+      return tokens.length === 2
+        ? { kind: 'error', code: 'missing_separator' }
+        : { kind: 'error', code: 'unexpected_arguments' };
+    }
     const text = tokens.slice(separatorIndex + 1).join(' ').trim();
     if (text.length === 0) return { kind: 'error', code: 'missing_text' };
     if (text.length > MAX_FREE_TEXT_LENGTH) {
@@ -231,10 +239,12 @@ function parseQuestionCommand(
       : { kind: 'focus', questionId, boundedAction: text };
   }
 
-  const reason =
-    separatorIndex === -1
-      ? undefined
-      : tokens.slice(separatorIndex + 1).join(' ').trim() || undefined;
+  if (separatorIndex === -1 && tokens.length !== 2) {
+    return { kind: 'error', code: 'unexpected_arguments' };
+  }
+  const reason = separatorIndex === -1
+    ? undefined
+    : tokens.slice(separatorIndex + 1).join(' ').trim() || undefined;
   if (reason !== undefined && reason.length > MAX_FREE_TEXT_LENGTH) {
     return { kind: 'error', code: 'text_too_long' };
   }
@@ -297,6 +307,15 @@ export function researchCommandResolutionError(
 }
 
 export type ResearchSlashExecutionOutcome = 'handled' | 'rejected';
+
+export function researchEnterSlashOutcome(
+  result: ResearchEnterResult,
+): ResearchSlashExecutionOutcome {
+  if (result.kind === 'rejected') return 'rejected';
+  return result.kind === 'ignored' && result.reason === 'session_changed'
+    ? 'rejected'
+    : 'handled';
+}
 
 export function researchSlashSessionIsCurrent(
   submittedSessionId: string | undefined,

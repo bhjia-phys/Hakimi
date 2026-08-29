@@ -91,11 +91,11 @@ maintenance receipt 和上下文注入只暴露安全摘要：Working Note age�
 
 研究模式激活后，**研究面板**（Research Board）会同时出现在 TUI 和 Web 的输入区上方。默认紧凑 Board 采用 **science-first** 叙事：先讲清科研进展，再展示辅助任务状态。它突出显示：
 
-- 当前 Research phase 和 progress headline
-- 已完成的物理工作及其 insight 或 result
-- 这些结果对 mainline 的影响
-- 当前 uncertainty 或未解决的问题
-- 下一个有界行动，以及 human gate 或 active alert
+- 当前 scientific phase 和最近一次 state transition
+- latest progress，包括已完成的物理工作及其 insight 或 result
+- 这些结果对 mainline 的影响和当前 uncertainty
+- 当前有界行动与已记录的 external-run observation
+- effective next step，以及 unresolved human gate 或 active alert
 
 phase badge 会显示 `probing`、`ready` 或 `degraded`。模式、循环、问题、焦点和检查点变化会向两个 surface 发布一个完整快照。TUI 会拒绝 stale cold hydration；Web 会串行处理同一 session 的 mutation，并阻止较旧的 HTTP response 覆盖更新的 live WebSocket update。
 
@@ -109,11 +109,11 @@ TUI 还会把当前 session 的 `TodoList` 投影为 Board 中的 **Actions**。
 
 Agent 提出候选问题供你确认时，可以先把它们登记为开放 working state，使其出现在 Board 上。预期行为是在确认前不把候选设为 Focus、不持久化为 AITP decision，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard。alerts 和 generic human gate 已实现；`ResolveResearchDecision` 只解析 runtime state，不会自动写入 AITP `decision` Entry。Hakimi Research Line 与 AITP workstream 属于不同命名空间：如果两者 slug 不同，Agent 可以读取已有 workstream，但不得静默创建 alias，也不得直接用 Research Line slug 进行持久化。
 
-Board 为只读。变更请使用 `/research manage` 或直接 `/research` 子命令。两个 Manager 都以研究线为第一层，但控件不同。如果存在 unresolved gate 或 active alert，TUI 会先打开 **Attention view**：按 `R` 输入 resolution 并选择要恢复的 phase，按 `A` acknowledge alert，按 `L` 返回 lines；这里的 `R` 表示 resolution，不是 reopen。清除 attention 项目后，TUI 先选择 Research Line，再用键盘命令打开问题；Web 在可点击研究线列表旁提供 Line、Question 和 Checkpoint 表单。
+Board 为只读。变更请使用 `/research manage` 或直接 `/research` 子命令。两个 Manager 都以研究线为第一层，但控件不同。如果存在 unresolved gate 或 active alert，TUI 会先打开 **Attention view**：按 `R` 输入 resolution 并选择要恢复的 phase，按 `A` acknowledge alert，按 `L` 返回 lines；这里的 `R` 表示 resolution，不是 reopen。清除 attention 项目后，TUI 先选择 Research Line，再用键盘命令打开问题。Web 在可点击研究线列表旁提供 Line、Question、Science 和 Checkpoint 区；**Science** 可用显式 next phase 解决当前 human decision、acknowledge active alert、review typed evidence packet，或记录当前 external run 的 observation。这些控件通过 Research endpoint 更新 Hakimi Research working state，不写入 AITP ledger。
 
 ## 研究方向引导
 
-研究模式使用乐观并发：每条 mutation command 都携带最新 snapshot 的 `revision` 作为 `expectedRevision`。stale revision 会失败且不应用变更。TUI 会刷新 Board 以供重试；Web 会重新读取同一 session 的 authoritative snapshot。若 Web 表单处于 dirty 状态时收到更新的 live revision，Manager 会保留草稿、显示 stale warning，并要求刷新后重试，不会静默覆盖表单。
+研究模式对带 revision 的 mutation 使用乐观并发：这类命令会携带草稿捕获的 snapshot 或 entity `revision` 作为 `expectedRevision`，stale revision 会失败且不应用变更。checkpoint proposal 使用用户编辑表单时捕获的 Research snapshot revision，因此后续状态变化不能基于更新后的状态创建 pending checkpoint。其他 mutation 依赖捕获的 target 或 pending-checkpoint identity，以及服务端状态约束。TUI 会刷新 Board 以供重试；Web 会重新读取同一 session 的 authoritative snapshot。若 Web 表单处于 dirty 状态时收到更新的 live revision，Manager 会保留草稿、显示 stale warning，并要求刷新后重试，不会静默覆盖表单。
 
 ### 研究管理器
 

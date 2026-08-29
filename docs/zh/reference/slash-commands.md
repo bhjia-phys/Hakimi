@@ -117,7 +117,7 @@ TUI 与 Web 使用相同语法：保留子命令仅作为第一个 token 时生�
 | `/research off` | 退出 Research Mode、回收 AITP 工具权限并隐藏 Board；已保存的 AITP 记录保留 | TUI 与 Web；仅空闲时 |
 | `/research pause` | 暂停研究循环，不退出 AITP 模式 | TUI 与 Web；随时可用 |
 | `/research resume` | 恢复已暂停的研究循环 | TUI 与 Web；随时可用 |
-| `/research manage` | 打开 line-first Manager。TUI 使用键盘导航和动作键；Web 使用可点击研究线列表，以及 Line、Question 和 Checkpoint 表单 | TUI 与 Web；仅空闲时 |
+| `/research manage` | 打开 line-first Manager。TUI 使用键盘导航和动作键；Web 提供 Line、Question、Science 和 Checkpoint 区，包括 human decision、alert、evidence review 与 external run 控件 | TUI 与 Web；仅空闲时 |
 | `/research edit <questionId> -- <新表述>` | 使用当前 snapshot revision 替换问题表述 | TUI 与 Web；仅空闲时 |
 | `/research focus <questionId> -- <bounded action>` | 设置当前焦点问题及下一个有界动作 | TUI 与 Web；仅空闲时 |
 | `/research defer <questionId> [-- <原因>]` | 暂缓问题（workflow 变更，原因可选） | TUI 与 Web；仅空闲时 |
@@ -134,7 +134,7 @@ TUI 与 Web 使用相同语法：保留子命令仅作为第一个 token 时生�
 
 主轮次或上下文压缩运行期间，两个 surface 都只接受 `/research status`、`/research pause` 和 `/research resume`；Web 在当前操作结束前不会打开 Manager，也不会接受 Manager mutation。
 
-mutation command 会携带最新 snapshot 的 `revision` 作为 `expectedRevision`。stale revision 会失败且不应用变更。TUI 会刷新 Board；Web 会重新读取同一 session 的 authoritative snapshot，并在表单 dirty 时保留草稿、显示 stale warning，供你刷新后重试。
+带 revision 的 mutation 会携带草稿捕获的 snapshot 或 entity `revision` 作为 `expectedRevision`；stale revision 会失败且不应用变更。其他 mutation 不携带 `expectedRevision`，而是依赖捕获的 target 或 pending-checkpoint identity，以及服务端状态约束。TUI 会刷新 Board；Web 会重新读取同一 session 的 authoritative snapshot，并在表单 dirty 时保留草稿、显示 stale warning，供你刷新后重试。
 
 只读 Research Board 会在两个 surface 的输入区上方显示 `probing`、`ready` 或 `degraded` 健康状态，以及当前研究线与焦点、问题计数、alerts 和 checkpoint。TUI 还会投影 Todo Actions，并用 `Ctrl-O` 展开或折叠 Board。Web 使用 **Expand**、**Collapse** 和 **Manage** 按钮及表单；TUI 快捷键不适用于 Web。
 
