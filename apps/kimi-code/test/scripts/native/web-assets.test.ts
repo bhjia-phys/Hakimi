@@ -58,6 +58,11 @@ function writeTestSource(repositoryRoot: string): void {
   writeFixtureFileIfMissing(join(repositoryRoot, '.npmrc'), 'engine-strict=true\n');
   writeFixtureFileIfMissing(join(repositoryRoot, '.nvmrc'), '24.15.0\n');
   writeFixtureFileIfMissing(
+    join(repositoryRoot, 'flake.lock'),
+    '{\n  "nodes": {},\n  "root": "root",\n  "version": 7\n}\n',
+  );
+  writeFixtureFileIfMissing(join(repositoryRoot, 'flake.nix'), '{ }\n');
+  writeFixtureFileIfMissing(
     join(repositoryRoot, 'package.json'),
     '{"private":true,"engines":{"node":">=24.15.0"},"packageManager":"pnpm@10.33.0"}\n',
   );
@@ -368,7 +373,7 @@ describe('web bundle provenance', () => {
         recipe: {
           toolchainRequirements: { node: '>=24.15.0', pnpm: '10.33.0' },
           toolchain: { node: '24.16.0', pnpm: '10.33.0', canonical: true },
-          fileCount: 11,
+          fileCount: 13,
           sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
         },
         brandingPatchVersion: WEB_BRANDING_PATCH_VERSION,
@@ -396,6 +401,8 @@ describe('web bundle provenance', () => {
         'apps/kimi-code/scripts/record-web-provenance.mjs',
         'apps/kimi-web/package.json',
         'apps/kimi-web/vite.config.ts',
+        'flake.lock',
+        'flake.nix',
         'package.json',
         'pnpm-lock.yaml',
         'pnpm-workspace.yaml',
@@ -689,10 +696,14 @@ describe('web bundle provenance', () => {
     const distWeb = writeMinimalBundle(appRoot);
     const provenancePath = join(appRoot, 'web-base.json');
     const rootPackagePath = join(appRoot, 'package.json');
+    const flakeNixPath = join(appRoot, 'flake.nix');
+    const flakeLockPath = join(appRoot, 'flake.lock');
     const rootPackage =
       '{"private":true,"engines":{"node":">=24.15.0"},"packageManager":"pnpm@10.33.0"}\n';
     try {
       await recordTestProvenance(appRoot);
+      const originalFlakeNix = readFileSync(flakeNixPath, 'utf8');
+      const originalFlakeLock = readFileSync(flakeLockPath, 'utf8');
       writeFileSync(
         rootPackagePath,
         '{"private":true,"engines":{"node":">=24.16.0"},"packageManager":"pnpm@10.33.0"}\n',
@@ -708,6 +719,18 @@ describe('web bundle provenance', () => {
       );
 
       writeFileSync(join(appRoot, '.nvmrc'), '24.15.0\n');
+      writeFileSync(flakeNixPath, '{ inputs = {}; }\n');
+      await expect(assertWebAssets(distWeb, provenancePath, appRoot)).rejects.toThrow(
+        /Web recipe 已漂移：flake\.nix 的 sha256 不匹配/,
+      );
+
+      writeFileSync(flakeNixPath, originalFlakeNix);
+      writeFileSync(flakeLockPath, originalFlakeLock.replace('"version": 7', '"version": 8'));
+      await expect(assertWebAssets(distWeb, provenancePath, appRoot)).rejects.toThrow(
+        /Web recipe 已漂移：flake\.lock 的 sha256 不匹配/,
+      );
+
+      writeFileSync(flakeLockPath, originalFlakeLock);
       writeFileSync(
         join(appRoot, 'apps', 'kimi-code', 'scripts', 'build-web-assets.mjs'),
         '// changed recipe\n',
@@ -935,16 +958,18 @@ describe('buildWebAssets', () => {
         generatedProvenance,
       );
 
-      await expect(
-        buildWebAssets({
-          check: true,
-          appRoot,
-          repositoryRoot: appRoot,
-          checkToolchain: checkMinimumNodeToolchain,
-          build: fakeBuild(),
-        }),
-      ).resolves.toMatchObject({
+      // A recorded producer on Node 24.16.0 is reproducible with the
+      // verifier's compatible Node 24.15.0 when the bundle is unchanged.
+      const compatibleCheck = await buildWebAssets({
         check: true,
+        appRoot,
+        repositoryRoot: appRoot,
+        checkToolchain: checkMinimumNodeToolchain,
+        build: fakeBuild(),
+      });
+      expect(compatibleCheck).toMatchObject({
+        check: true,
+        patched: 1,
         provenance: {
           recipe: {
             toolchain: { node: '24.15.0', pnpm: '10.33.0', canonical: true },

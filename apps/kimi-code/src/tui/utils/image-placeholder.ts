@@ -33,8 +33,8 @@ import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import type { PromptPart } from '@moonshot-ai/kimi-code-sdk';
-import { buildImageCompressionCaption } from '@moonshot-ai/kimi-code-sdk';
+import type { PromptPart } from '@bhjia-phys/hakimi-sdk';
+import { buildImageCompressionCaption } from '@bhjia-phys/hakimi-sdk';
 
 import { getCacheDir } from '#/utils/paths';
 

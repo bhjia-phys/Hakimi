@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 
-import { parseAgentFileText, resolveAgentPath } from '@moonshot-ai/kimi-code-sdk';
+import { parseAgentFileText, resolveAgentPath } from '@bhjia-phys/hakimi-sdk';
 
 import type { CLIOptions } from './options';
 

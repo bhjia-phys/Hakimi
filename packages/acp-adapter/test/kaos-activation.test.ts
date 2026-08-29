@@ -25,7 +25,7 @@ import {
   type WriteTextFileResponse,
 } from '@agentclientprotocol/sdk';
 import type { Kaos } from '@moonshot-ai/kaos';
-import type { KimiHarness, Session } from '@moonshot-ai/kimi-code-sdk';
+import type { KimiHarness, Session } from '@bhjia-phys/hakimi-sdk';
 import { describe, expect, it } from 'vitest';
 
 import { AcpKaos } from '../src/kaos-acp';

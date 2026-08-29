@@ -16,7 +16,7 @@ import type {
   QuestionRequest,
   Session,
   SessionSummary,
-} from "@moonshot-ai/kimi-code-sdk";
+} from "@bhjia-phys/hakimi-sdk";
 import { describe, expect, it } from "vitest";
 
 import { Events } from "../shared/bridge";

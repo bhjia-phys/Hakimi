@@ -32,7 +32,7 @@ import type {
   TurnStepStartedEvent,
   TokenUsage,
   WarningEvent,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 
 import { MoonLoader } from '../components/chrome/moon-loader';
 import { buildGoalMarker } from '../components/messages/goal-markers';

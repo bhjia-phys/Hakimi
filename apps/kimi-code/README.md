@@ -60,7 +60,7 @@ hakimi
 /research manage
 ```
 
-The normal bounded-action path is `BeginResearchAction` → perform the scientific work → `ConcludeResearchAction`, which records the physical work, result, tests or derivation, limitations, mainline impact, and next step in one Research transition. It does not submit or poll scheduler jobs, write AITP, or change a question's assessment automatically. The Research Loop can review typed child evidence packets without implicit state writes and record explicit, action-bound HPC observations. See the [English Research Mode guide](../../docs/en/guides/research-mode.md) or [中文研究模式指南](../../docs/zh/guides/research-mode.md) for prerequisites, the Research Board, steering commands, persistence barriers, and degraded behavior.
+The normal bounded-action path is `BeginResearchAction` → perform the scientific work → `ConcludeResearchAction`, which records the physical work, result, tests or derivation, limitations, mainline impact, and next step in one Research transition. It does not submit or poll scheduler jobs, write AITP, or change a question's assessment automatically. The Research Loop can review typed child evidence packets without implicit state writes and record explicit, action-bound HPC observations. For theoretical-physics sessions, the optional bundled `theory-physics` plugin adds literature-routing, derivation-checking, numerical/HPC evidence, and science-first reporting guidance without adding another runtime or database. See the [English Research Mode guide](../../docs/en/guides/research-mode.md) or [中文研究模式指南](../../docs/zh/guides/research-mode.md) for prerequisites, the Research Board, steering commands, persistence barriers, and degraded behavior.
 
 ## User manual
 

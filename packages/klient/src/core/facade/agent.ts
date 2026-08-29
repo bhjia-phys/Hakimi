@@ -42,6 +42,8 @@ import type {
   ResearchRunState,
   ResearchLineCreationInput,
   ResearchQuestion,
+  ResearchActionSpec,
+  ResearchPlan,
   ResearchStatusSnapshot,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/types';
 import type {
@@ -50,8 +52,12 @@ import type {
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/evidencePacket';
 import type {
   CommitCheckpointInput,
+  ConcludeResearchActionInput,
+  ResearchActionConclusion,
   CreateQuestionInput,
   ObserveResearchRunInput,
+  PlanActionInput,
+  PrepareResearchPlanInput,
   ProposeCheckpointInput,
   ResolveHumanDecisionInput,
   UpdateLineInput,
@@ -168,6 +174,10 @@ export interface ResearchFacade {
   getLines(): Promise<readonly ResearchLine[]>;
   getPendingCheckpoint(): Promise<ResearchCheckpoint | undefined>;
   getCommittedCursor(): Promise<ResearchCommittedCursor | undefined>;
+  getResearchPlan(): Promise<ResearchPlan | undefined>;
+  prepareResearchPlan(input: PrepareResearchPlanInput): Promise<ResearchPlan>;
+  finalizeResearchPlan(): Promise<ResearchPlan>;
+  discardResearchPlan(): Promise<ResearchPlan | undefined>;
   createQuestion(input: CreateQuestionInput): Promise<ResearchQuestion>;
   createLine(input: ResearchLineCreationInput): Promise<ResearchLine>;
   updateLine(input: UpdateLineInput): Promise<ResearchLine>;
@@ -182,6 +192,10 @@ export interface ResearchFacade {
   commitCheckpoint(input: CommitCheckpointInput): Promise<void>;
   reviewEvidencePacket(packet: ResearchEvidencePacket, expectedRevision: number): Promise<ResearchEvidenceReview>;
   observeRun(input: ObserveResearchRunInput): Promise<ResearchRunState>;
+  planAndStartAction(input: PlanActionInput): Promise<ResearchActionSpec>;
+  startAction(actionId: string): Promise<void>;
+  completeAction(actionId: string, status: 'completed' | 'abandoned'): Promise<void>;
+  concludeAction(input: ConcludeResearchActionInput): Promise<ResearchActionConclusion>;
 }
 
 export interface AitpModeFacade {
@@ -229,8 +243,9 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
     listCommands: () =>
       call(scope, 'agentCommandService', 'list', []) as Promise<readonly AgentCommandInfo[]>,
     runCommand: (input) =>
-      // Same `[undefined]` → `[null]` wire hazard as `cancel`: the engine's
-      // `args = ''` default only applies to a missing arg.
+      // Omit the optional arg rather than sending `[undefined]`, which JSON
+      // round-trips as `[null]`; the engine's `args = ''` default only applies
+      // to a missing arg.
       call(
         scope,
         'agentCommandService',
@@ -245,7 +260,9 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
     enterPlan: () => call(scope, 'agentPlanService', 'enter', []) as Promise<void>,
     clearPlan: () => call(scope, 'agentPlanService', 'clear', []) as Promise<void>,
     cancelPlan: (input) =>
-      call(scope, 'agentPlanService', 'cancel', [input?.id]) as Promise<void>,
+      // No id sends an empty arg list: `[undefined]` would cross the wire as
+      // `[null]`, which the ID-scoped reducer treats as a mismatch.
+      call(scope, 'agentPlanService', 'cancel', input?.id === undefined ? [] : [input.id]) as Promise<void>,
     getTasks: (input) =>
       call(scope, 'agentTaskService', 'list', [
         input?.activeOnly ?? false,
@@ -284,6 +301,14 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
         call(scope, 'agentResearchService', 'getCommittedCursor', []) as Promise<
           ResearchCommittedCursor | undefined
         >,
+      getResearchPlan: () =>
+        call(scope, 'agentResearchService', 'getResearchPlan', []) as Promise<ResearchPlan | undefined>,
+      prepareResearchPlan: (input) =>
+        call(scope, 'agentResearchService', 'prepareResearchPlan', [input]) as Promise<ResearchPlan>,
+      finalizeResearchPlan: () =>
+        call(scope, 'agentResearchService', 'finalizeResearchPlan', []) as Promise<ResearchPlan>,
+      discardResearchPlan: () =>
+        call(scope, 'agentResearchService', 'discardResearchPlan', []) as Promise<ResearchPlan | undefined>,
       createQuestion: (input) =>
         call(scope, 'agentResearchService', 'createQuestion', [input]) as Promise<ResearchQuestion>,
       createLine: (input) =>
@@ -335,6 +360,14 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
         call(scope, 'agentResearchService', 'reviewEvidencePacket', [packet, expectedRevision]) as Promise<ResearchEvidenceReview>,
       observeRun: (input) =>
         call(scope, 'agentResearchService', 'observeRun', [input]) as Promise<ResearchRunState>,
+      planAndStartAction: (input) =>
+        call(scope, 'agentResearchService', 'planAndStartAction', [input]) as Promise<ResearchActionSpec>,
+      startAction: (actionId) =>
+        call(scope, 'agentResearchService', 'startAction', [actionId]) as Promise<void>,
+      completeAction: (actionId, status) =>
+        call(scope, 'agentResearchService', 'completeAction', [actionId, status]) as Promise<void>,
+      concludeAction: (input) =>
+        call(scope, 'agentResearchService', 'concludeAction', [input]) as Promise<ResearchActionConclusion>,
     },
 
     aitpMode: {

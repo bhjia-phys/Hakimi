@@ -1,4 +1,4 @@
-import type { SessionSummary } from '@moonshot-ai/kimi-code-sdk';
+import type { SessionSummary } from '@bhjia-phys/hakimi-sdk';
 
 import type { SessionRow } from '#/tui/components/dialogs/session-picker';
 

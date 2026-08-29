@@ -26,9 +26,21 @@ export type StepRequestAdmission =
   | 'activeOrNextTurn'
   | 'activeTurnOnly';
 
+export type TurnIntent =
+  | {
+      readonly kind: 'goal_continuation';
+      readonly owner: 'goal';
+      readonly goalId: string;
+    }
+  | {
+      readonly kind: 'user' | 'system' | 'subagent' | 'cron';
+    };
+
 export interface TurnSeed {
   readonly input: readonly ContentPart[];
   readonly origin: PromptOrigin;
+  /** Runtime-only intent used by loop participants; never persisted. */
+  readonly intent?: TurnIntent;
 }
 
 export interface StepRequestOptions {
@@ -86,6 +98,7 @@ export abstract class StepRequest {
 
 export interface MessageStepRequestOptions extends StepRequestOptions {
   readonly kind?: string;
+  readonly turnIntent?: TurnIntent;
 }
 
 export class MessageStepRequest extends StepRequest {
@@ -93,14 +106,18 @@ export class MessageStepRequest extends StepRequest {
 
   constructor(
     private readonly message: ContextMessage,
-    options: MessageStepRequestOptions = {},
+    private readonly options: MessageStepRequestOptions = {},
   ) {
     super(options);
     this.kind = options.kind ?? 'message';
   }
 
   override get turnSeed(): TurnSeed {
-    return { input: this.message.content, origin: this.message.origin ?? USER_PROMPT_ORIGIN };
+    return {
+      input: this.message.content,
+      origin: this.message.origin ?? USER_PROMPT_ORIGIN,
+      intent: this.options.turnIntent,
+    };
   }
 
   resolveContextMessages(): readonly ContextMessage[] {

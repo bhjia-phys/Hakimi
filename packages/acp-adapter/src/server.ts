@@ -51,8 +51,8 @@ import type {
   ProviderConfig,
   Session,
   SessionSummary,
-} from '@moonshot-ai/kimi-code-sdk';
-import { log } from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
+import { log } from '@bhjia-phys/hakimi-sdk';
 import { LocalKaos, type Kaos } from '@moonshot-ai/kaos';
 
 import { TERMINAL_AUTH_METHOD, buildTerminalAuthMethod } from './auth-methods';

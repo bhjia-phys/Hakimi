@@ -3,7 +3,7 @@ import type {
   ContextMessage,
   PromptOrigin,
   ToolCall,
-} from "@moonshot-ai/kimi-code-sdk";
+} from "@bhjia-phys/hakimi-sdk";
 
 const INTERNAL_ORIGINS = new Set<PromptOrigin["kind"]>([
   "injection",

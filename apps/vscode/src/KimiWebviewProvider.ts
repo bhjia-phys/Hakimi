@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { KimiHarness } from "@moonshot-ai/kimi-code-sdk";
+import type { KimiHarness } from "@bhjia-phys/hakimi-sdk";
 import { Events } from "../shared/bridge";
 import { BridgeHandler } from "./bridge-handler";
 

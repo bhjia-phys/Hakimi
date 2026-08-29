@@ -5,29 +5,32 @@
 </p>
 
 <p align="center">
-  <strong>基于 Kimi Code 工程基础独立演进的理论物理思维链科研 agent。</strong><br />
-  <span>由 Hakimi 独立治理——负责科研编排、分阶段 AITP 记忆集成和自身产品体验。</span>
+  <strong>面向软件开发、终端任务和实验性理论物理科研工作流的开源终端 AI agent。</strong><br />
+  <span>在一个专注的工作空间中阅读代码、运行工具、延续会话，并用明确的证据和边界组织科研工作。</span>
 </p>
 
 <p align="center">
   <a href="README.md">English</a> |
   <a href="https://github.com/bhjia-phys/Hakimi">仓库</a> |
-  <a href="docs/zh/guides/getting-started.md">Hakimi 使用手册</a>
+  <a href="docs/zh/guides/getting-started.md">使用手册</a> |
+  <a href="LICENSE">许可证</a>
 </p>
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-## Hakimi 是什么
+## Hakimi 能做什么
 
-Hakimi 是基于 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 工程基础继续发展的独立项目。仓库的 Git 历史只包含 Hakimi 自己的 commit——起点是上游 0.34.0 工程基础快照，上游 provenance 保存在独立的归档仓库中，不在本仓库历史里。Hakimi 已不再属于 Kimi Code 的 GitHub fork network，也不以产品 parity 为目标。Hakimi 自主决定 v2 架构、研究编排、工具、workflow、交互和发布版本线；独立的 [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) 仍是持久研究记忆和证据的权威。
+Hakimi 是一个以终端为中心的 agent，适合让助手检查工作区、使用工具并跨回合保留上下文。它可以：
 
-底层终端循环、工具、session、Skills、MCP、子代理、权限和 OAuth 源自 Kimi Code，也继续作为经过选择性评审的通用改进来源。Hakimi 只吸收符合自身目标和 canonical v2 contract 的变化，不默认引入上游产品特定行为。历史上的深度内嵌科研原型保留在 [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) 分支归档，不是当前产品线的集成路径。
+- 阅读和修改代码及项目文件、搜索工作区并使用 Git；
+- 在配置的权限控制下运行 shell 命令、构建、测试和其他终端任务；
+- 执行一次性 prompt 或交互式会话，继续上一次会话并保留本地会话数据；
+- 连接已配置的模型 provider，并通过 MCP server、Skills 和子代理扩展 agent；
+- 使用 agent profile、preset 和权限模式，控制工具调用及委派工作的方式。
 
-## 仓库沿革
+Hakimi 首先服务于实际的软件开发和终端操作。科研功能则为实验性科学工作流增加结构，不取代专家判断或独立验证。
 
-- **当前独立主仓库**：[`bhjia-phys/Hakimi`](https://github.com/bhjia-phys/Hakimi)
-- **历史 fork 归档**：[`bhjia-phys/Hakimi-upstream-archive`](https://github.com/bhjia-phys/Hakimi-upstream-archive)，保留带 Kimi Code 原作者署名的原始 Git 历史、迁移前的 Pull Request、Release 和 fork-network 元数据
-- **上游工程基础**：[`MoonshotAI/kimi-code`](https://github.com/MoonshotAI/kimi-code)
+## 快速开始
 
 本仓库的历史只包含 Hakimi 自己的 commit；Kimi Code 作者署名与拆分前的 fork 历史通过归档仓库和 [LICENSE](LICENSE) 中的 MIT 许可证署名继续保留。
 
@@ -96,7 +99,7 @@ alerts 和 generic human gate 已实现，但 candidate confirmation 不是 `Set
 
 本地兼容性测试使用已 commit 的官方 AITP 0.8.0 golden fixtures：`enter.json`、`enter-after-save.json`、`list.json`、`show.json`、`check.json` 和 `check-workstream.json`。这些测试只运行本地 parser/contract 行为，不启动 live CLI subprocess，因此不等于 live CLI conformance 测试。
 
-这个 opt-in Research surface 同时支持 TUI 和 Web。Web 会把 `/research` 路由到 typed Research endpoint，并提供 Composer **Modes** 入口、live Board 与 line-first 表单 Manager。同一 session 的 mutation 使用 revision 防止 stale 写入；checkpoint commit 必须提供已有 AITP `entryId`，Web 不写 AITP ledger。
+这个 opt-in Research surface 同时支持 TUI 和 Web。Web 会把 `/research` 路由到 typed Research endpoint，并提供 Composer **Modes** 入口、live Board 与 line-first 表单 Manager。同一 session 中带 revision 的 mutation 会拒绝 stale 写入；checkpoint commit 必须提供已有 AITP `entryId`，Web 不写 AITP ledger。
 
 | Hakimi gate | AITP gate | 状态 |
 | --- | --- | --- |
@@ -138,7 +141,7 @@ D 轨是研究层的主实现轨道（2026-08-14 平台决策）。
 
 ## 从源码安装
 
-Hakimi 目前尚未发布公开 npm 包或 release 安装脚本。构建当前开发版本需要 Node.js 24.15.0 或更高版本，以及 pnpm 10.33.0：
+Hakimi 当前需要从源码构建。请使用 Node.js 24.15.0 或更高版本，以及 pnpm 10.33.0：
 
 ```sh
 git clone https://github.com/bhjia-phys/Hakimi.git
@@ -150,25 +153,66 @@ pnpm build:packages
 pnpm -C apps/kimi-code build
 mkdir -p .tmp/dist-pack
 pnpm -C apps/kimi-code pack --pack-destination ../../.tmp/dist-pack
-npm install -g ./.tmp/dist-pack/bhjia-phys-hakimi-0.21.0.tgz
+npm install -g "$(ls -t ./.tmp/dist-pack/*.tgz | head -n 1)"
 hakimi --version
 ```
 
-压缩包文件名包含当前包版本；如果版本已经变化，请使用 `pnpm pack` 实际打印的文件名替换示例中的 `0.21.0`。升级源码安装时，拉取目标 revision 后重复构建、打包与全局安装步骤。
+`pnpm pack` 会打印它实际创建的 tarball 文件名；上述命令会选择 `.tmp/dist-pack` 中最新的 tarball。更新源码安装时，拉取目标 revision 后重复构建、打包和安装步骤即可。
 
-> Windows 上首次启动前请安装 [Git for Windows](https://gitforwindows.org/)，Hakimi 使用自带的 Git Bash 作为 shell 环境。Git Bash 装在自定义位置时，把 `KIMI_SHELL_PATH` 设为 `bash.exe` 的绝对路径。
-
-## 实验性 ChatGPT / OpenAI Codex 登录
-
-启用实验并从终端开始 device-code 流程：
+启动交互式终端 agent、执行单次 prompt，或继续上一次会话：
 
 ```sh
-hakimi login --provider openai-codex --enable-experimental
+hakimi
+hakimi -p "Summarize the test failures in this repository."
+hakimi -c
 ```
 
-无头终端可加 `--no-open`，手动打开输出的 URL。在 TUI 中运行 `/experiments`，启用 `openai-codex-oauth`，再运行 `/login` 并选择 `ChatGPT / OpenAI Codex (OAuth)`。凭据和生成的 provider 配置仍保存在 Hakimi 自己的主目录下。
+进入交互式会话后，使用 `/login` 配置可用的 provider。Hakimi 默认将配置、会话、日志和缓存保存在 `~/.hakimi` 下；设置 `HAKIMI_HOME` 可改用其他数据目录。
+
+Windows 用户首次启动前请安装 [Git for Windows](https://gitforwindows.org/)。Hakimi 使用随 Git for Windows 提供的 Git Bash shell；如果 Git Bash 安装在其他位置，请将 `KIMI_SHELL_PATH` 设置为 `bash.exe` 的绝对路径。
+
+## 核心能力
+
+- **终端编码：** 检查文件、查看 diff、编辑代码，并在当前项目上下文中工作。
+- **搜索与执行：** 搜索项目内容，调用 shell 和文件工具，并在可见的工具活动中运行构建或测试。
+- **会话：** 使用交互式对话、prompt 模式、会话继续和会话恢复。
+- **Providers：** 通过 CLI 和 TUI 的 provider 设置配置并选择受支持的模型 provider。
+- **扩展：** 加载 MCP server 和 Skills，并把有界任务委派给子代理。
+- **控制：** 选择 manual、YOLO 或 auto 权限模式，并在已配置时使用 agent profile 或 preset。
+
+可用命令和设置会随开发版本演进。[使用手册](docs/zh/guides/getting-started.md)与[配置指南](docs/zh/configuration/config-files.md)是权威的起点。
+
+## 实验性科研功能
+
+Hakimi 的 Research Loop 围绕结构化状态、证据、falsifier 和决策组织实验性科研工作流。它可以在有界行动之间保留紧凑的科研过程轨迹，并向用户展示科研状态。它不会把 raw hidden chain-of-thought 暴露为科研记录，也不会仅凭 agent 的回答推断科学结论有效。
+
+可选的 `theory-physics` domain pack 增加面向物理的路由、推导检查、数值/HPC 证据边界和 science-first reporting。它不增加第二套 runtime、ledger、文献库或 scheduler observer。
+
+AITP Research Mode 默认关闭，是通过 AITP CLI 与文件进行的 opt-in 集成。当前 Hakimi 兼容性状态为：**H0–H4 已实现、H5 部分实现、H6 不可用**。已在一次性 scratch store 中用 managed AITP 0.8.0 CLI 完成真实子进程 smoke test；完整的跨平台及 failure-matrix conformance suite 仍待完成。维护中的兼容性细节见 [`docs/aitp/`](docs/aitp/)。
+
+## 当前状态与限制
+
+- Hakimi 是可从源码构建的开发版本。
+- 核心终端工作流——交互式会话、工具、provider 和项目操作——可用。
+- Research Loop、`theory-physics` pack 和 AITP Research Mode 均为实验性功能，可能继续变化。
+- 目前没有公开 npm 包或 release installer；请使用上面的源码构建路径。
+- Hakimi 不取代人工审阅、可复现实验或专家科研验证。
+
+## 文档
+
+- [快速开始](docs/zh/guides/getting-started.md)
+- [配置](docs/zh/configuration/config-files.md)
+- [Research Mode](docs/zh/guides/research-mode.md)
+- [AITP 文档与兼容性记录](docs/aitp/)
+- [实现说明](IMPLEMENTATION.md)
+
+## 项目背景
+
+Hakimi 是拥有独立 `hakimi` 命令、`~/.hakimi` 数据目录、semver 发布线和产品方向的独立仓库。它基于 [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code) 的部分工程基础，但不是追求产品 parity 的 fork，也不会自动采用上游行为。历史源代码与署名背景保存在 [`bhjia-phys/Hakimi-upstream-archive`](https://github.com/bhjia-phys/Hakimi-upstream-archive)；所需署名见 [MIT 许可证](LICENSE)。
 
 ## 开发
+
+在仓库根目录执行：
 
 ```sh
 corepack pnpm --config.engine-strict=false install
@@ -176,8 +220,8 @@ corepack pnpm --config.engine-strict=false -C apps/kimi-code typecheck
 corepack pnpm --config.engine-strict=false -C apps/kimi-code test
 ```
 
-目录布局与上游一致：CLI 在 `apps/kimi-code`；当前 kap-server runtime 在 `packages/agent-core-v2`，`packages/agent-core` 保留为 legacy engine；模型 provider 在 `packages/kosong`，SDK 在 `packages/node-sdk`。
+CLI 位于 `apps/kimi-code`；其他 packages 提供应用所使用的 SDK、模型/provider 集成和 agent runtime。
 
 ## 许可证
 
-MIT。上游 Kimi Code © Moonshot AI，见 [LICENSE](LICENSE)。
+MIT。详见 [LICENSE](LICENSE)。Hakimi 保留 Moonshot AI Kimi Code 工作所需的上游署名。

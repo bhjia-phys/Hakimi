@@ -13,7 +13,7 @@ import {
   resolveGlobalLogPath,
   resolveKimiHome,
   type TelemetryClient,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import {
   installCrashHandlers,
   setTelemetryContext,

@@ -1592,6 +1592,84 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
     }
   });
 
+  it('commandResearch returns the post-mutation snapshot for synchronous mutations', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-sync-home-'));
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-sync-work-'));
+    tempDirs.push(homeDir, workDir);
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+    const summary = await client.createSession({ id: 'ses_research_sync', workDir });
+    const session = new Session({
+      id: summary.id,
+      workDir: summary.workDir,
+      summary,
+      rpc: client,
+    });
+    try {
+      await session.commandResearch({ kind: 'enter_mode', actor: 'user' });
+      const liveSession = getLiveSessionById(client.engineAccessor, session.id);
+      const agent = await ensureMainAgent(liveSession!);
+      const research = agent.accessor.get(IAgentResearchService);
+      const createLine = vi.spyOn(research, 'createLine');
+
+      const result = await session.commandResearch({
+        kind: 'create_line',
+        slug: 'sync',
+        title: 'Synchronous line',
+      });
+
+      expect(createLine).toHaveBeenCalledWith({
+        slug: 'sync',
+        title: 'Synchronous line',
+        objective: undefined,
+        assessment: undefined,
+      });
+      expect(result.snapshot.lines).toContainEqual(
+        expect.objectContaining({ slug: 'sync', title: 'Synchronous line' }),
+      );
+      expect(result.snapshot.revision).toBeGreaterThan(0);
+    } finally {
+      await session.close();
+      await client.close();
+    }
+  });
+
+  it('commandResearch propagates synchronous mutation errors', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-error-home-'));
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-error-work-'));
+    tempDirs.push(homeDir, workDir);
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+    const summary = await client.createSession({ id: 'ses_research_error', workDir });
+    const session = new Session({
+      id: summary.id,
+      workDir: summary.workDir,
+      summary,
+      rpc: client,
+    });
+    try {
+      await session.commandResearch({ kind: 'enter_mode', actor: 'user' });
+      const liveSession = getLiveSessionById(client.engineAccessor, session.id);
+      const agent = await ensureMainAgent(liveSession!);
+      const research = agent.accessor.get(IAgentResearchService);
+      const failure = new Error('research mutation failed');
+      const createLine = vi.spyOn(research, 'createLine').mockImplementation(() => {
+        throw failure;
+      });
+
+      try {
+        await expect(session.commandResearch({
+          kind: 'create_line',
+          slug: 'error',
+          title: 'Error line',
+        })).rejects.toBe(failure);
+      } finally {
+        createLine.mockRestore();
+      }
+    } finally {
+      await session.close();
+      await client.close();
+    }
+  });
+
   it('commandResearch pause_loop and resume_loop return real loopStatus snapshots', async () => {
     const { harness } = await makeHarness();
     const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-loop-'));

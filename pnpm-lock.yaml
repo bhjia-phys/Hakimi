@@ -74,6 +74,9 @@ importers:
 
   apps/kimi-code:
     devDependencies:
+      '@bhjia-phys/hakimi-sdk':
+        specifier: workspace:^
+        version: link:../../packages/node-sdk
       '@moonshot-ai/acp-adapter':
         specifier: workspace:^
         version: link:../../packages/acp-adapter
@@ -89,9 +92,6 @@ importers:
       '@moonshot-ai/kimi-code-oauth':
         specifier: workspace:^
         version: link:../../packages/oauth
-      '@moonshot-ai/kimi-code-sdk':
-        specifier: workspace:^
-        version: link:../../packages/node-sdk
       '@moonshot-ai/kimi-telemetry':
         specifier: workspace:^
         version: link:../../packages/telemetry
@@ -367,12 +367,12 @@ importers:
       '@base-ui/react':
         specifier: ^1.0.0
         version: 1.6.0(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      '@bhjia-phys/hakimi-sdk':
+        specifier: workspace:^
+        version: link:../../packages/node-sdk
       '@fontsource-variable/inter':
         specifier: 5.2.8
         version: 5.2.8
-      '@moonshot-ai/kimi-code-sdk':
-        specifier: workspace:^
-        version: link:../../packages/node-sdk
       '@moonshot-ai/migration-legacy':
         specifier: workspace:^
         version: link:../../packages/migration-legacy
@@ -534,15 +534,15 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: ^0.23.0
         version: 0.23.0(zod@4.3.6)
+      '@bhjia-phys/hakimi-sdk':
+        specifier: workspace:^
+        version: link:../node-sdk
       '@moonshot-ai/agent-core':
         specifier: workspace:^
         version: link:../agent-core
       '@moonshot-ai/kaos':
         specifier: workspace:^
         version: link:../kaos
-      '@moonshot-ai/kimi-code-sdk':
-        specifier: workspace:^
-        version: link:../node-sdk
     devDependencies:
       jimp:
         specifier: ^1.6.1

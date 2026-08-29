@@ -1,10 +1,22 @@
-# @moonshot-ai/kimi-code-sdk
+# @bhjia-phys/hakimi-sdk
 
-The TypeScript SDK for Kimi Code
+The public TypeScript SDK for [Hakimi](https://github.com/bhjia-phys/Hakimi). It provides the `KimiHarness` API for creating and controlling Hakimi sessions from Node.js applications.
 
-Part of the [Kimi Code](https://github.com/MoonshotAI/kimi-code) monorepo.
+## Install
 
-See the main repository for documentation, issues, and contribution guidelines.
+```sh
+npm install @bhjia-phys/hakimi-sdk
+```
+
+## Use
+
+```ts
+import { createKimiHarness } from '@bhjia-phys/hakimi-sdk';
+
+const harness = await createKimiHarness();
+```
+
+See the [Hakimi repository](https://github.com/bhjia-phys/Hakimi) for API examples, issues, and contribution guidance.
 
 ## License
 

@@ -7,7 +7,7 @@
  * cannot remount the Board or roll the visible snapshot backwards.
  */
 
-import type { Session, ResearchStatusSnapshot } from '@moonshot-ai/kimi-code-sdk';
+import type { Session, ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
 
 import { isExperimentalFlagEnabled } from '../commands/experimental-flags';
 import type { TUIState } from '../tui-state';

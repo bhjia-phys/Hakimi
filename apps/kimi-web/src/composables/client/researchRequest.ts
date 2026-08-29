@@ -77,6 +77,41 @@ export function createResearchRequestCoordinator(): ResearchRequestCoordinator {
     return state.researchBySession[sessionId] ?? snapshot;
   }
 
+  async function currentAfterMutationTail(
+    state: ResearchRequestState,
+    sessionId: string,
+  ): Promise<ResearchStatusSnapshot | undefined> {
+    for (;;) {
+      const mutationTail = mutationTailBySession.get(sessionId);
+      if (mutationTail === undefined) return state.researchBySession[sessionId];
+      await mutationTail;
+    }
+  }
+
+  async function settleInvalidatedRead(
+    state: ResearchRequestState,
+    sessionId: string,
+    request: () => Promise<ResearchStatusSnapshot>,
+  ): Promise<ResearchStatusSnapshot> {
+    // A mutation may still be applying the state that invalidated this read.
+    // Await the full queue before choosing a value for the caller.
+    const current = await currentAfterMutationTail(state, sessionId);
+    if (current !== undefined) return current;
+
+    // A failed mutation may leave no applied snapshot. Re-read authoritatively
+    // instead of returning the invalidated response; keep retries iterative so
+    // a new mutation can invalidate this read without recursive generation use.
+    for (;;) {
+      const retryToken = beginResearchRequest(state, sessionId);
+      const retrySnapshot = await request();
+      if (applyResearchResponseIfCurrent(state, sessionId, retryToken, retrySnapshot)) {
+        return retrySnapshot;
+      }
+      const nextCurrent = await currentAfterMutationTail(state, sessionId);
+      if (nextCurrent !== undefined) return nextCurrent;
+    }
+  }
+
   async function read(
     state: ResearchRequestState,
     sessionId: string,
@@ -90,9 +125,8 @@ export function createResearchRequestCoordinator(): ResearchRequestCoordinator {
 
     const token = beginResearchRequest(state, sessionId);
     const snapshot = await request();
-    return applyResearchResponseIfCurrent(state, sessionId, token, snapshot)
-      ? snapshot
-      : currentOrResponse(state, sessionId, snapshot);
+    if (applyResearchResponseIfCurrent(state, sessionId, token, snapshot)) return snapshot;
+    return settleInvalidatedRead(state, sessionId, request);
   }
 
   function mutate(

@@ -4,14 +4,29 @@
  *
  * Defines the three-axis research state model (workflow / epistemic /
  * persistence), the mode lifecycle phases, the Research Loop scientific state
- * layer (phase / action / progress / state change / human gate), the adapter
- * contract types, the `ResearchStatusSnapshot`, and the
+ * layer (phase / action / progress / state change / human gate), the layered
+ * Program / Period / Status projection vocabulary (re-exported from the
+ * protocol-independent `research` types), the adapter contract types, the
+ * `ResearchStatusSnapshot`, and the
  * `HumanSteeringCommand` union. No scoped state — only types and zod schemas.
  * Scope-agnostic.
  */
 
 import { z } from 'zod';
 import type { HumanGateKind } from '#/agent/humanGate/humanGate';
+import type {
+  ResearchActionKind,
+  ResearchActionStatus,
+  ResearchPhase,
+  ResearchProgram,
+  ResearchProgramTopic,
+  ResearchPeriod,
+  ResearchRunStage,
+  ResearchSchedulerState,
+  ResearchStatusHealth,
+  ResearchStatusProjection,
+  ResearchPlan,
+} from '#/features/research/types';
 
 export type AitpModePhase = 'inactive' | 'probing' | 'ready' | 'degraded';
 
@@ -171,44 +186,22 @@ export interface ResearchCommittedCursor {
 // state — those are persistence concerns owned by the checkpoint layer.
 // ---------------------------------------------------------------------------
 
-export type ResearchPhase =
-  | 'idle'
-  | 'orienting'
-  | 'gap_analysis'
-  | 'action_planned'
-  | 'action_executing'
-  | 'evaluating'
-  | 'state_updated'
-  | 'checkpoint_pending'
-  | 'awaiting_human';
-
-export type ResearchActionKind =
-  | 'experiment'
-  | 'derivation'
-  | 'literature_review'
-  | 'data_analysis'
-  | 'simulation'
-  | 'other';
-
-export type ResearchActionStatus = 'planned' | 'in_progress' | 'completed' | 'abandoned';
-
-export type ResearchRunStage =
-  | 'queued'
-  | 'running'
-  | 'scf'
-  | 'band'
-  | 'analyzing'
-  | 'completed'
-  | 'failed'
-  | 'unknown';
-
-export type ResearchSchedulerState =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'unknown';
+// Re-exported from the protocol-independent `research` types; the AITP feature
+// keeps these import paths stable while the canonical unions live in
+// `features/research/types`.
+export type {
+  ResearchPhase,
+  ResearchActionKind,
+  ResearchActionStatus,
+  ResearchRunStage,
+  ResearchSchedulerState,
+  ResearchProgramTopic,
+  ResearchProgram,
+  ResearchPeriod,
+  ResearchStatusHealth,
+  ResearchStatusProjection,
+  ResearchPlan,
+};
 
 export interface ResearchRunState {
   /** Every run observation is attached to the bounded Research Action that owns it. */
@@ -325,6 +318,10 @@ export interface ResearchStatusSnapshot {
   readonly latestProgress?: ResearchProgressReport;
   readonly recentStateChange?: ResearchStateChange;
   readonly humanGate?: ResearchHumanGate;
+  readonly program?: ResearchProgram;
+  readonly period?: ResearchPeriod;
+  readonly researchPlan?: ResearchPlan;
+  readonly status?: ResearchStatusProjection;
   readonly revision: number;
 }
 
@@ -381,7 +378,8 @@ export type AitpMaintenanceDegradedReason =
   | 'adapter_degraded'
   | 'enter_failed'
   | 'check_unavailable'
-  | 'stale_generation';
+  | 'stale_generation'
+  | 'workstream_unbound';
 
 export interface AitpMaintenanceWarningSummary {
   readonly level: 'warning';
@@ -428,6 +426,7 @@ export interface AitpMaintenanceReceipt {
   readonly refreshedAt: number;
   readonly memoryStatus: AitpMaintenanceMemoryStatus;
   readonly workstream?: string;
+  readonly topic?: ResearchProgramTopic;
   readonly latestWorkingNoteAt?: number;
   readonly activeNewerThanWorkingNote: boolean | null;
   readonly unresolvedFailureCount: number;

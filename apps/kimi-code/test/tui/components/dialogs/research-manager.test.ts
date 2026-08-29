@@ -5,7 +5,7 @@ import {
   ResearchLineEditDialogComponent,
   ResearchManagerComponent,
 } from '#/tui/components/dialogs/research-manager';
-import type { ResearchStatusSnapshot } from '@moonshot-ai/kimi-code-sdk';
+import type { ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
 
 function stripAnsi(text: string): string {
   return text.replaceAll(/\u001B\[[0-9;]*m/g, '');

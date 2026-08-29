@@ -12,7 +12,7 @@ import {
 } from '#/tui/components/messages/goal-panel';
 import { STATUS_BULLET } from '#/tui/constant/symbols';
 import { darkColors } from '#/tui/theme/colors';
-import type { GoalSnapshot } from '@moonshot-ai/kimi-code-sdk';
+import type { GoalSnapshot } from '@bhjia-phys/hakimi-sdk';
 
 const previousChalkLevel = chalk.level;
 beforeAll(() => {

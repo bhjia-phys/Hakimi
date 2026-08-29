@@ -13,7 +13,7 @@ import {
   type WriteTextFileRequest,
   type WriteTextFileResponse,
 } from '@agentclientprotocol/sdk';
-import type { KimiHarness, SessionSummary } from '@moonshot-ai/kimi-code-sdk';
+import type { KimiHarness, SessionSummary } from '@bhjia-phys/hakimi-sdk';
 
 import { AcpServer } from '../src/server';
 import { AUTHED_STATUS } from './_helpers/harness-stubs';

@@ -1,5 +1,5 @@
-import type { KimiHarness, Session } from '@moonshot-ai/kimi-code-sdk';
-import { compressImageForModel, persistOriginalImage, sessionMediaOriginalsDir } from '@moonshot-ai/kimi-code-sdk';
+import type { KimiHarness, Session } from '@bhjia-phys/hakimi-sdk';
+import { compressImageForModel, persistOriginalImage, sessionMediaOriginalsDir } from '@bhjia-phys/hakimi-sdk';
 
 import { ClipboardMediaError, readClipboardMedia } from '#/utils/clipboard/clipboard-image';
 import { parseImageMeta } from '#/utils/image/image-mime';

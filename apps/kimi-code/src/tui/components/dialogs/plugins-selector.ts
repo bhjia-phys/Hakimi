@@ -12,7 +12,7 @@ import type {
   PluginInfo,
   PluginMcpServerInfo,
   PluginSummary,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import chalk from 'chalk';
 
 import { SELECT_POINTER } from '#/tui/constant/symbols';

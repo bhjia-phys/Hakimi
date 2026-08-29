@@ -20,7 +20,7 @@ import type {
   ExportSessionManifest,
   ExportSessionResult,
   SessionSummary,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 
 let tmp: string;
 
@@ -49,8 +49,8 @@ const mocks = vi.hoisted(() => ({
   harnessCreatesDeviceIdOnConstruction: false,
 }));
 
-vi.mock('@moonshot-ai/kimi-code-sdk', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@moonshot-ai/kimi-code-sdk')>();
+vi.mock('@bhjia-phys/hakimi-sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@bhjia-phys/hakimi-sdk')>();
   const createFakeHarness = (options: { readonly homeDir?: string } | undefined) => {
     const homeDir = options?.homeDir ?? '/tmp/kimi-export-home';
     if (mocks.harnessCreatesDeviceIdOnConstruction) {

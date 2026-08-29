@@ -100,6 +100,15 @@ describe('ipc transport specifics', () => {
         code: 40001,
         message: expect.stringContaining('input validation failed'),
       });
+      // A checkpoint proposal must carry the revision even when the raw socket
+      // caller bypasses the klient facade.
+      await expect(
+        raw.call(agentScope, 'agentResearchService', 'proposeCheckpoint', [{}]),
+      ).rejects.toMatchObject({
+        name: 'RPCError',
+        code: 40001,
+        message: expect.stringContaining('input validation failed'),
+      });
       // …while a legitimate raw call succeeds.
       await expect(raw.call(agentScope, 'agentGoalService', 'getGoal', [])).resolves.toEqual({
         goal: null,

@@ -4,7 +4,9 @@
  * Drives deterministic turn-boundary maintenance for the main agent through
  * `IEventBus`, `IAgentAitpModeService`, `IAgentResearchService`, and the
  * Session-scope AITP lifecycle coordinator. It advances an admitted idle active
- * loop to orienting at turn start and refreshes the read-only AITP current-state
+ * loop to orienting at turn start, notes the admitted loop boundary on the
+ * research period (one loop-count increment per admitted turn; ordinary turns
+ * abstain), and refreshes the read-only AITP current-state
  * projection after admitted turns that changed research state. Admission is
  * required: only a Goal-owned continuation lease with the
  * `system_trigger` / `goal_continuation` origin while Research Mode is active
@@ -70,6 +72,11 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
       this.turnStartActionId = null;
       return;
     }
+
+    // An admitted turn start is the loop boundary: the period's loop counter
+    // advances once here (never for ordinary turns), before the revision
+    // bookkeeping, so the boundary itself is not treated as research change.
+    this.research.noteLoopBoundary();
 
     const snapshot = this.research.getSnapshot();
     this.turnStartRevision = snapshot.revision;

@@ -7,8 +7,8 @@ import type {
   PromptOrigin,
   ResumedAgentState,
   ToolCall,
-} from '@moonshot-ai/kimi-code-sdk';
-import { limitAgentReplayByTurns } from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
+import { limitAgentReplayByTurns } from '@bhjia-phys/hakimi-sdk';
 
 import type {
   AppState,

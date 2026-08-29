@@ -6,7 +6,7 @@ import {
   type OAuthRef,
   type Session,
   type ThinkingEffort,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 
 import { createKimiCodeUserAgent } from '#/cli/version';
 

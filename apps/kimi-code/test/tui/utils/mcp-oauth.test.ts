@@ -1,7 +1,7 @@
 import {
   MCP_OAUTH_AUTHORIZATION_URL_TOOL_UPDATE,
   type ToolUpdate,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import { describe, expect, it, vi } from 'vitest';
 
 import {

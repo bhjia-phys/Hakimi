@@ -71,6 +71,18 @@ export function researchCheckpointDraftTargetKey(target: {
     : `question:${target.questionId}`;
 }
 
+export function researchManagerLineDraftIsStale(
+  dirty: boolean,
+  editing: boolean,
+  baseRevision: number | null,
+  currentRevision: number | null,
+): boolean {
+  if (!dirty || !editing) return false;
+  return baseRevision === null
+    || currentRevision === null
+    || baseRevision !== currentRevision;
+}
+
 export function researchManagerScienceDraftIsStale(
   dirty: boolean,
   baseRevision: number | null,

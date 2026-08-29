@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { isKimiError } from "@moonshot-ai/kimi-code-sdk";
+import { isKimiError } from "@bhjia-phys/hakimi-sdk";
 
 import { Events, Methods } from "../../shared/bridge";
 import type { ApprovalResponse, ContentPart } from "../../shared/legacy-sdk";

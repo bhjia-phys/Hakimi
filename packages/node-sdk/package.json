@@ -1,18 +1,17 @@
 {
-  "name": "@moonshot-ai/kimi-code-sdk",
+  "name": "@bhjia-phys/hakimi-sdk",
   "version": "0.18.0",
-  "private": true,
-  "description": "TypeScript SDK for the Kimi Code Agent",
+  "description": "TypeScript SDK for Hakimi",
   "license": "MIT",
-  "author": "Moonshot AI",
-  "homepage": "https://github.com/MoonshotAI/kimi-code/tree/main/packages/node-sdk#readme",
+  "author": "bhjia-phys",
+  "homepage": "https://github.com/bhjia-phys/Hakimi/tree/main/packages/node-sdk#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MoonshotAI/kimi-code.git",
+    "url": "git+https://github.com/bhjia-phys/Hakimi.git",
     "directory": "packages/node-sdk"
   },
   "bugs": {
-    "url": "https://github.com/MoonshotAI/kimi-code/issues"
+    "url": "https://github.com/bhjia-phys/Hakimi/issues"
   },
   "keywords": [
     "kimi",

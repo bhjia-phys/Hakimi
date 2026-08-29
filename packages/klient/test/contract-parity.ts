@@ -256,15 +256,20 @@ import type {
   ResearchProgressReport as EngineResearchProgressReport,
   ResearchStateChange as EngineResearchStateChange,
   ResearchHumanGate as EngineResearchHumanGate,
+  ResearchPlan as EngineResearchPlan,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/types';
 import type {
   ResearchEvidencePacket as EngineResearchEvidencePacket,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/evidencePacket';
 import type {
   IAgentResearchService,
+  ConcludeResearchActionInput as EngineConcludeResearchActionInput,
+  PlanActionInput as EnginePlanActionInput,
+  PrepareResearchPlanInput as EnginePrepareResearchPlanInput,
   ResolveHumanDecisionInput as EngineResolveHumanDecisionInput,
   UpdateLineInput as EngineUpdateLineInput,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
+import { agentResearchContract } from '../src/contract/agent/research.js';
 import {
   researchStatusSnapshotSchema,
   researchRunStateSchema,
@@ -286,6 +291,11 @@ import {
   researchHumanGateSchema,
   researchAlertFingerprintSchema,
   resolveHumanDecisionInputSchema,
+  planActionInputSchema,
+  concludeActionInputSchema,
+  researchActionConclusionSchema,
+  researchPlanSchema,
+  prepareResearchPlanInputSchema,
 } from '../src/contract/agent/researchSchemas.js';
 import {
   createChildSessionOptionsSchema,
@@ -389,6 +399,10 @@ type AssertWireToEngine<TSchema extends z.ZodType, TEngine> = [z.infer<TSchema>]
   MutableDeep<TEngine>,
 ]
   ? true
+  : never;
+
+type AssertExactly<TLeft, TRight> = [TLeft] extends [TRight]
+  ? [TRight] extends [TLeft] ? true : never
   : never;
 
 // Protocol wire shapes, derived from the engine interfaces (no direct
@@ -740,6 +754,17 @@ const _researchLineUpdate: AssertWire<
   typeof researchLineUpdateInputSchema,
   EngineUpdateLineInput
 > = true;
+type ProposeCheckpointContractInput = z.infer<
+  typeof agentResearchContract.proposeCheckpoint.input
+>[0];
+const _proposeCheckpointInput: AssertExactly<
+  ProposeCheckpointContractInput,
+  Parameters<IAgentResearchService['proposeCheckpoint']>[0]
+> = true;
+const _proposeCheckpointFacadeInput: AssertExactly<
+  ProposeCheckpointContractInput,
+  Parameters<AgentFacade['research']['proposeCheckpoint']>[0]
+> = true;
 const _researchAlertFingerprint: AssertWire<
   typeof researchAlertFingerprintSchema,
   Parameters<IAgentResearchService['acknowledgeAlert']>[0]
@@ -754,6 +779,26 @@ const _resolveHumanDecisionInput: AssertWire<
 const _researchActionSpec: AssertEngineToWire<
   typeof researchActionSpecSchema,
   EngineResearchActionSpec
+> = true;
+const _planActionInput: AssertEngineToWire<
+  typeof planActionInputSchema,
+  EnginePlanActionInput
+> = true;
+const _concludeActionInput: AssertWire<
+  typeof concludeActionInputSchema,
+  EngineConcludeResearchActionInput
+> = true;
+const _researchActionConclusion: AssertEngineToWire<
+  typeof researchActionConclusionSchema,
+  ReturnType<IAgentResearchService['concludeAction']>
+> = true;
+const _researchPlan: AssertEngineToWire<
+  typeof researchPlanSchema,
+  EngineResearchPlan
+> = true;
+const _prepareResearchPlanInput: AssertEngineToWire<
+  typeof prepareResearchPlanInputSchema,
+  EnginePrepareResearchPlanInput
 > = true;
 const _researchProgressReport: AssertEngineToWire<
   typeof researchProgressReportSchema,

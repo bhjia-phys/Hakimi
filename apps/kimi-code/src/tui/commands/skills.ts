@@ -1,4 +1,4 @@
-import type { Session, SkillSummary } from '@moonshot-ai/kimi-code-sdk';
+import type { Session, SkillSummary } from '@bhjia-phys/hakimi-sdk';
 
 import type { KimiSlashCommand } from './types';
 

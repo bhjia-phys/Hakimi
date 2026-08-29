@@ -11,11 +11,12 @@ This is a TypeScript monorepo built for agent-assisted development. Keep the roo
 - Before making code changes, read the relevant code and the most recent constraints, and follow the nearest `AGENTS.md` in the directory tree.
 - Keep changes focused. Do not slip in unrelated refactors along the way.
 - Treat upstream Kimi Code as a source of selectively adopted general-purpose improvements, not as a product-parity target. Absorb upstream changes only when they advance Hakimi's goals; do not import upstream product-specific behavior by default.
+- After every upstream Kimi Code review, append a check record to `apps/kimi-code/upstream-audit.json` with the actual remote tip; never substitute a potentially stale local `upstream/main`.
 - When committing, do not add any co-author attribution, and do not reveal the identity of the agent in commit messages, PR descriptions, or any explanatory text.
 
 ## Project Map
 
-- `apps/kimi-code`: the CLI / TUI application. It consumes core capabilities through `@moonshot-ai/kimi-code-sdk` and must not depend directly on `@moonshot-ai/agent-core`. When writing or modifying its terminal UI, use the `write-tui` skill (`.agents/skills/write-tui/SKILL.md`).
+- `apps/kimi-code`: the CLI / TUI application. It consumes core capabilities through `@bhjia-phys/hakimi-sdk` and must not depend directly on `@moonshot-ai/agent-core`. When writing or modifying its terminal UI, use the `write-tui` skill (`.agents/skills/write-tui/SKILL.md`).
 - `apps/kimi-web` is the browser Web UI and the only editable production source for the tracked derived outputs `apps/kimi-code/dist-web` and `apps/kimi-code/web-base.json`; develop it with `pnpm dev:server` plus `KIMI_SERVER_URL=http://127.0.0.1:58627 pnpm dev:web`. After source changes, regenerate both package assets with `pnpm run build:web-assets`, commit them together, then verify a clean rebuild with `pnpm run build:web-assets -- --check` — never hand-edit or partially replace the outputs; CI, native, release, direct package build/prepack, and Nix all enforce the canonical toolchain, provenance schema v5 binds source/recipe files plus the actual canonical Node/pnpm and bundle identities, the v4 native receipt directly binds that toolchain and the final binary hash, and rollback restores source/recipe from a canonical tag before regeneration.
 - `apps/vis`, `apps/vis/server`, `apps/vis/web`: visual debugging tools for sessions and replays.
 - `apps/kimi-inspect`: web inspector for the kap-server `/api/v1/debug` RPC surface — workspace/session browser, per-session transcript chat, per-scope Service panels, and the DI unit inspection view. See `apps/kimi-inspect/AGENTS.md`.

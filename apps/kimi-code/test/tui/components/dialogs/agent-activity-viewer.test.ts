@@ -1,5 +1,5 @@
 import type { Terminal } from '@moonshot-ai/pi-tui';
-import type { BackgroundTaskInfo } from '@moonshot-ai/kimi-code-sdk';
+import type { BackgroundTaskInfo } from '@bhjia-phys/hakimi-sdk';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AgentActivityViewer, formatSubagentActivityPreview } from '#/tui/components/dialogs/agent-activity-viewer';

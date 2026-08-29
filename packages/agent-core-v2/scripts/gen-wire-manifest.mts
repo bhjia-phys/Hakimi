@@ -841,7 +841,14 @@ function sketchPayloadFromSource(
   const literal = resolveSchemaLiteral(schemaExpr, source);
   if (literal === undefined) {
     const sketch = friendlyZodExpr(schemaExpr, absFile);
-    if (typeof sketch === 'string') return sketch;
+    // A transform chain such as `BaseSchema.extend(...)` is not a TypeScript
+    // payload type. Let the caller use the explicit, valid fallback rather
+    // than leaking Zod source into the generated declaration.
+    if (typeof sketch === 'string') {
+      return /(?:\bz\.|\.(?:extend|omit|pick|partial|merge)\s*\()/.test(sketch)
+        ? undefined
+        : sketch;
+    }
     if (!Array.isArray(sketch)) return new Map(Object.entries(sketch));
     return stringifySketch(sketch);
   }

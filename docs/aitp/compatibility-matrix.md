@@ -112,9 +112,11 @@ Transport envelope 在 M1a 之前保持未版本化。
   `enter.json`、`enter-after-save.json`、`list.json`、`show.json`、`check.json`
   和 `check-workstream.json`；`root` 归一化为 `<golden-store>`，只有 synthetic
   `nio` store，无真实研究数据（`docs/m1a-spec.md:518-544` 及 0.8.0 fixture
-  contract）。Hakimi 已有本地 parser/contract tests 覆盖这六个 fixture，但不启动
-  live CLI subprocess，因此不是 live CLI conformance；fixture 通过不等于 adapter
-  已实现 backfill、`sha256-once:` 或 `check-policy` 语义。
+  contract）。Hakimi 已有本地 parser/contract tests 覆盖这六个 fixture；此外，2026-08-29
+  已在一次性 scratch store 中用 managed AITP 0.8.0 CLI 完成真实子进程 smoke test，覆盖
+  scoped `enter`/`check`、`record`/`note` prepare/save、`show`/`list`、重复 prepare
+  复用和 clean check。完整跨平台及异常矩阵 conformance 仍待补齐；这些证据也不表示
+  adapter 已实现 backfill、`sha256-once:` 或 `check-policy` 语义。
 
 ## 4. Hakimi integration assumptions — check results（双方核对一致）
 
@@ -197,8 +199,10 @@ Hakimi 侧（并行）：
   capability 探测、`enter` lifecycle、prepare→save 流程、降级、tree-hash 测试、
   双语 README 兼容矩阵。
 - H1 **已实现（实验性）**：feature-detect 并消费 `enter-0.2`/`list-0.1`/
-  `show-0.1`；官方 0.8.0 六个 golden fixtures 只用于本地 parser/contract
-  tests，不启动 live CLI subprocess，不等于 live CLI conformance。
+  `show-0.1`；官方 0.8.0 六个 golden fixtures 用于本地 parser/contract 测试，且
+  2026-08-29 已用 managed AITP 0.8.0 CLI 在一次性 scratch store 完成真实子进程
+  smoke test（scoped `enter`/`check`、读写 prepare/save、`show`/`list`、重复 prepare
+  和 clean check）。完整跨平台及异常矩阵 conformance 仍待补齐。
 - H2 **已实现（实验性）**：整合 `check-report-0.1`；`lite-entry-0.2`/
   `used_by`/pointer bundle 未发布（deferred），不得安排。
 - H3 **已实现（实验性）**：整合 scoped contracts（单次 `--workstream` →
@@ -217,7 +221,7 @@ Hakimi 侧（并行）：
   decision receipt。详见
   [`method-distillation-orchestration.md`](method-distillation-orchestration.md)。
 - 正式 Hakimi contract 在 M4 后。
-- Research-loop 能力（web/PDF/推理/UX/私有缓存）独立于所有 AITP gates。
+- Research-loop 能力（web/PDF/推理/UX/私有缓存）独立于所有 AITP gates。可选的 `theory-physics` plugin 仅提供理论物理规程层（文献路由、推导检查、数值/HPC 证据边界和报告方式），不改变 AITP contract，也不提供文献库、scheduler observer 或 method distillation。
 
 AITP 侧（by gate）：M0.6 缩小声明关闭 → M1a/M1b-R1/M1c/M1d/M1e 全部 done
 且 deterministic gate passed → M2–M4 保持 blocked 设计选项（各自自然需求）。

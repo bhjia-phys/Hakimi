@@ -14,7 +14,12 @@
  * at a fork boundary. Injects reminders through
  * `contextInjector`, drives continuation turns by enqueueing `newTurn`
  * `StepRequest`s onto `loop` (the continuation message materializes when the
- * loop pops it), accounts live
+ * loop pops it). Folds the `GoalCompletionGuardContribution` and
+ * `GoalContinuationParticipantContribution` collections at Agent scope:
+ * `markComplete` consults the completion guards before dispatching the
+ * completion (a deny rejects the call with a coded error), and the automatic
+ * continuation launch consults the continuation participants before enqueueing
+ * (a hold skips the enqueue and leaves the goal active). Accounts live
  * turn usage through `usage`, observes terminal goal tool results through
  * `toolExecutor`, appends one-time reminder events through `systemReminder`, reports
  * telemetry through `telemetry`, and checks main-agent eligibility through
@@ -42,6 +47,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { TurnEndedEvent, TurnStartedEvent } from '#/agent/loop/turnEvents';
 import { Disposable, MutableDisposable, type IDisposable } from '#/_base/di/lifecycle';
+import { type CollectionView } from '#/_base/di/collection';
 import { LifecycleScope } from '#/app/scopes';
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
 import { defineState } from '#/_base/state/stateRegistry';
@@ -84,6 +90,13 @@ import { IEventBus } from '#/app/event/eventBus';
 
 import { IAgentGoalService, type GoalReasonInput, type ResumeGoalInput } from './goal';
 import { IGoalDeadlineScheduler } from './goalDeadlineScheduler';
+import {
+  GoalCompletionGuardContribution,
+  GoalContinuationParticipantContribution,
+  type GoalCompletionGuardInput,
+  type GoalContinuationDecisionResult,
+  type GoalContinuationInput,
+} from './goalContribution';
 import { clearGoal, createGoal, GoalModel, updateGoal, type GoalState } from './goalOps';
 import type {
   CreateGoalInput,
@@ -184,8 +197,13 @@ interface GoalForkNoticeState {
   readonly reminderPending: boolean;
 }
 
+type ContinuationReservationPhase = 'deciding' | 'held' | 'enqueued';
+
 interface PendingContinuation {
   readonly goalId: string;
+  readonly generation: number;
+  readonly stepCapped: boolean;
+  phase: ContinuationReservationPhase;
   receipt?: EnqueueReceipt;
   turnId?: number;
 }
@@ -278,7 +296,12 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
   declare readonly _serviceBrand: undefined;
 
   private readonly wallClockDeadline = this._register(new MutableDisposable<IDisposable>());
+  private readonly continuationRetrySubscriptions = new Map<
+    GoalContinuationParticipantContribution,
+    IDisposable
+  >();
   private pendingContinuation?: PendingContinuation;
+  private continuationGeneration = 0;
 
   constructor(
     @IWireService private readonly wire: IWireService,
@@ -295,6 +318,9 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     @IGoalDeadlineScheduler private readonly deadlineScheduler: IGoalDeadlineScheduler,
     @IAgentScopeContext private readonly agentContext: IAgentScopeContext,
     @IAgentStateService private readonly states: IAgentStateService,
+    @GoalCompletionGuardContribution private readonly completionGuards: CollectionView<GoalCompletionGuardContribution>,
+    @GoalContinuationParticipantContribution
+    private readonly continuationParticipants: CollectionView<GoalContinuationParticipantContribution>,
   ) {
     super();
     this.states.register(goalLiveTurnIdKey);
@@ -310,6 +336,20 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     this.states.register(goalLiveWallClockStartedAtKey);
     this.states.register(goalResumeContinuationKey);
     if (!this.isSupportedAgent) return;
+    for (const participant of this.continuationParticipants.items) {
+      this.bindContinuationRetry(participant);
+    }
+    this._register(
+      this.continuationParticipants.onDidChange(({ added, removed }) => {
+        for (const participant of removed) {
+          this.continuationRetrySubscriptions.get(participant)?.dispose();
+          this.continuationRetrySubscriptions.delete(participant);
+        }
+        for (const participant of added) {
+          this.bindContinuationRetry(participant);
+        }
+      }),
+    );
     this._register(
       new GoalInjection(
         {
@@ -597,7 +637,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     if (budgetBlocked !== null) return budgetBlocked;
     if (this.canLaunchContinuation()) {
       try {
-        this.launchContinuationTurn(state.goalId);
+        await this.launchContinuationTurn(state.goalId);
       } catch (error) {
         await this.settleGoalAfterContinuationFailure(error, state.goalId);
         throw error;
@@ -666,6 +706,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     this.assertSupportedAgent();
     const state = this.goalState;
     if (state === null || state.status !== 'active') return null;
+    await this.assertCompletionAllowed(state, input.reason, actor);
     const mutation = this.dispatchCompletion(state, input.reason, actor);
     const completed = this.requireState();
     const snapshot = this.toSnapshot(completed);
@@ -673,6 +714,40 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     this.trackStatusChanged(completed, actor);
     this.clearInternal(actor, { preserveLiveContinuation: true });
     return snapshot;
+  }
+
+  private async assertCompletionAllowed(
+    state: GoalState,
+    reason: string | undefined,
+    actor: GoalActor,
+  ): Promise<void> {
+    for (const record of this.completionGuards.records) {
+      const result = await record.value.guard(this.toCompletionGuardInput(state, reason, actor));
+      if (result.allow === true) continue;
+      const deny = result;
+      throw new Error2(ErrorCodes.GOAL_STATUS_INVALID, deny.reason, {
+        details: {
+          goalId: state.goalId,
+          guard: record.providerName,
+          ...(deny.code !== undefined ? { code: deny.code } : {}),
+          ...(deny.owner !== undefined ? { owner: deny.owner } : {}),
+          ...(deny.nextStep !== undefined ? { nextStep: deny.nextStep } : {}),
+        },
+      });
+    }
+  }
+
+  private toCompletionGuardInput(
+    state: GoalState,
+    reason: string | undefined,
+    actor: GoalActor,
+  ): GoalCompletionGuardInput {
+    return {
+      goalId: state.goalId,
+      objective: state.objective,
+      reason,
+      actor,
+    };
   }
 
   private dispatchCompletion(
@@ -864,7 +939,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
         return;
       }
       if (this.blockIfBudgetReached(state) !== null) return;
-      this.launchContinuationTurn(resumeContinuation.goalId);
+      await this.launchContinuationTurn(resumeContinuation.goalId);
       return;
     }
     if (goalId === undefined || lifecycleGoalId === undefined) return;
@@ -883,7 +958,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     const state = this.goalState;
     if (state === null || state.status !== 'active' || state.goalId !== lifecycleGoalId) return;
     if (this.blockIfBudgetReached(state) !== null) return;
-    this.launchContinuationTurn(lifecycleGoalId, stepCapped);
+    await this.launchContinuationTurn(lifecycleGoalId, stepCapped);
   }
 
   private clearTurnTracking(
@@ -943,56 +1018,158 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     } catch {}
   }
 
-  private launchContinuationTurn(goalId: string, stepCapped = false): void {
+  private launchContinuationTurn(goalId: string, stepCapped = false): void | Promise<void> {
     if (!this.isActiveGoal(goalId)) return;
-    if (this.pendingContinuation !== undefined) return;
-    const message: ContextMessage = {
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: stepCapped ? GOAL_STEP_CAP_CONTINUATION_PROMPT : GOAL_CONTINUATION_PROMPT,
-        },
-      ],
-      toolCalls: [],
-      origin: {
-        kind: 'system_trigger',
-        name: 'goal_continuation',
-        goalId,
-      },
-    };
-    const request = new MessageStepRequest(message, {
-      kind: 'goal_continuation',
-      admission: 'newTurn',
-    });
-    const pending: PendingContinuation = { goalId };
-    this.pendingContinuation = pending;
-    let receipt: EnqueueReceipt;
-    try {
-      receipt = this.loopService.enqueue(request);
-      pending.receipt = receipt;
-    } catch (error) {
-      if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
-      throw error;
+    const existing = this.pendingContinuation;
+    if (existing !== undefined) {
+      if (existing.phase !== 'held' || existing.goalId !== goalId) return;
+      this.pendingContinuation = undefined;
     }
-    void receipt.assigned
-      .then(({ turn }) => {
-        pending.turnId = turn.id;
-        if (!this.goalDrivenTurns.has(turn.id)) {
-          this.pendingContinuationGoals.set(turn.id, pending.goalId);
-        }
-        return turn.result;
-      })
-      .finally(() => {
-        if (pending.turnId !== undefined) this.pendingContinuationGoals.delete(pending.turnId);
-        if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
+
+    const pending: PendingContinuation = {
+      goalId,
+      generation: ++this.continuationGeneration,
+      stepCapped,
+      phase: 'deciding',
+    };
+    this.pendingContinuation = pending;
+
+    const enqueue = (): void => {
+      if (!this.isCurrentContinuation(pending)) return;
+      const message: ContextMessage = {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: pending.stepCapped ? GOAL_STEP_CAP_CONTINUATION_PROMPT : GOAL_CONTINUATION_PROMPT,
+          },
+        ],
+        toolCalls: [],
+        origin: {
+          kind: 'system_trigger',
+          name: 'goal_continuation',
+          goalId: pending.goalId,
+        },
+      };
+      const request = new MessageStepRequest(message, {
+        kind: 'goal_continuation',
+        admission: 'newTurn',
+        turnIntent: {
+          kind: 'goal_continuation',
+          owner: 'goal',
+          goalId: pending.goalId,
+        },
       });
+      pending.phase = 'enqueued';
+      let receipt: EnqueueReceipt;
+      try {
+        receipt = this.loopService.enqueue(request);
+        pending.receipt = receipt;
+      } catch (error) {
+        if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
+        throw error;
+      }
+      void receipt.assigned
+        .then(({ turn }) => {
+          if (!this.isCurrentContinuation(pending)) return;
+          pending.turnId = turn.id;
+          if (!this.goalDrivenTurns.has(turn.id)) {
+            this.pendingContinuationGoals.set(turn.id, pending.goalId);
+          }
+          return turn.result;
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (pending.turnId !== undefined) this.pendingContinuationGoals.delete(pending.turnId);
+          if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
+        });
+    };
+
+    if (this.continuationParticipants.records.length === 0) {
+      enqueue();
+      return;
+    }
+    const held = this.holdContinuation(goalId);
+    if (held instanceof Promise) {
+      return held.then(
+        (isHeld) => {
+          if (!this.isCurrentContinuation(pending)) return;
+          if (isHeld) {
+            pending.phase = 'held';
+          } else {
+            enqueue();
+          }
+        },
+        (error) => {
+          if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
+          throw error;
+        },
+      );
+    }
+    if (held) {
+      pending.phase = 'held';
+    } else {
+      enqueue();
+    }
+  }
+
+  private bindContinuationRetry(participant: GoalContinuationParticipantContribution): void {
+    if (this.continuationRetrySubscriptions.has(participant)) return;
+    const onDidRequestRetry = participant.onDidRequestRetry;
+    if (onDidRequestRetry === undefined) return;
+    const subscription = onDidRequestRetry((goalId) => this.retryHeldContinuation(goalId));
+    this.continuationRetrySubscriptions.set(participant, subscription);
+    this._register(subscription);
+  }
+
+  private retryHeldContinuation(goalId: string): void {
+    const pending = this.pendingContinuation;
+    if (pending?.goalId !== goalId || pending.phase !== 'held') return;
+    if (!this.isActiveGoal(goalId)) {
+      this.invalidateContinuation();
+      return;
+    }
+    if (!this.isLoopReadyForContinuation()) return;
+    this.pendingContinuation = undefined;
+    void Promise.resolve(this.launchContinuationTurn(goalId, pending.stepCapped)).catch((error) =>
+      this.settleGoalAfterContinuationFailure(error, goalId),
+    );
+  }
+
+  private holdContinuation(goalId: string, index = 0): boolean | Promise<boolean> {
+    const record = this.continuationParticipants.records[index];
+    if (record === undefined) return false;
+    const result = record.value.decide(this.toContinuationInput(goalId));
+    const resolve = (decision: GoalContinuationDecisionResult): boolean | Promise<boolean> => {
+      if (decision.decision === 'abstain') return this.holdContinuation(goalId, index + 1);
+      return decision.decision === 'hold';
+    };
+    return result instanceof Promise ? result.then(resolve) : resolve(result);
+  }
+
+  private toContinuationInput(goalId: string): GoalContinuationInput {
+    const state = this.goalState;
+    return {
+      goalId,
+      objective: state === null ? '' : state.objective,
+      turnsUsed: state === null ? 0 : state.turnsUsed,
+    };
   }
 
   private canLaunchContinuation(): boolean {
     if (this.liveTurnId !== undefined || this.pendingContinuation !== undefined) return false;
+    return this.isLoopReadyForContinuation();
+  }
+
+  private isLoopReadyForContinuation(): boolean {
     const status = this.loopService.status();
     return status.state === 'idle' && !status.hasPendingRequests;
+  }
+
+  private isCurrentContinuation(pending: PendingContinuation): boolean {
+    return this.pendingContinuation === pending &&
+      pending.generation === this.continuationGeneration &&
+      this.isActiveGoal(pending.goalId);
   }
 
   private isActiveGoal(goalId: string): boolean {
@@ -1026,7 +1203,18 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     }
   }
 
+  private invalidateContinuation(
+    preserveLiveContinuation = false,
+    reason?: unknown,
+  ): void {
+    const pending = this.pendingContinuation;
+    if (preserveLiveContinuation && pending?.turnId === this.liveTurnId) return;
+    this.continuationGeneration += 1;
+    this.cancelPendingContinuation(false, reason);
+  }
+
   private normalizeAfterReplay(): void {
+    this.invalidateContinuation();
     this.appendForkClearedReminder();
     this.wallClockDeadline.clear();
     this.liveWallClockStartedAt = undefined;
@@ -1072,10 +1260,13 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     opts: { readonly emit?: boolean; readonly track?: boolean; readonly preserveLiveContinuation?: boolean } = {},
   ): void {
     const state = this.goalState;
-    if (state === null) return;
+    if (state === null) {
+      this.invalidateContinuation();
+      return;
+    }
     const mutation = this.newGoalMutation('clear', state.goalId);
     this.resumeContinuation = undefined;
-    this.cancelPendingContinuation(opts.preserveLiveContinuation === true);
+    this.invalidateContinuation(opts.preserveLiveContinuation === true);
     this.wallClockDeadline.clear();
     this.liveWallClockStartedAt = undefined;
     this.wire.dispatch(clearGoal({ goalId: state.goalId, mutation }));
@@ -1099,7 +1290,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       this.liveWallClockStartedAt = this.deadlineScheduler.now();
     } else if (state.status === 'active') {
       this.resumeContinuation = undefined;
-      this.cancelPendingContinuation(
+      this.invalidateContinuation(
         opts.preserveLiveContinuation === true,
         opts.cancellationReason,
       );

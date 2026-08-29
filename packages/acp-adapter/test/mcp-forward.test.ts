@@ -19,8 +19,8 @@ import {
   type WriteTextFileRequest,
   type WriteTextFileResponse,
 } from '@agentclientprotocol/sdk';
-import type { KimiHarness, Session } from '@moonshot-ai/kimi-code-sdk';
-import { log } from '@moonshot-ai/kimi-code-sdk';
+import type { KimiHarness, Session } from '@bhjia-phys/hakimi-sdk';
+import { log } from '@bhjia-phys/hakimi-sdk';
 import type { McpServerConfig } from '@moonshot-ai/agent-core';
 
 import { acpMcpServersToConfigs } from '../src/mcp';

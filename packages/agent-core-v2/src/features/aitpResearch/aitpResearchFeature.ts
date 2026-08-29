@@ -2,7 +2,8 @@
  * `aitpResearch` domain — `AitpResearchFeature`: the AITP Research Mode
  * capability assembled as one App-scope Feature unit.
  *
- * Contributes the per-Agent `IAgentAitpModeService` and `IAgentResearchService`,
+ * Contributes the per-Agent `IAgentAitpModeService`, `IAgentResearchService`,
+ * the non-checkpointed external-fact facade `IAitpExternalFactService`, and
  * the per-Agent `IResearchLoopCoordinator` (minimal turn-lifecycle coordinator),
  * the Session-scope `ISessionAitpAdapter` and current-state maintenance
  * coordinator, the mode/Research/AITP adapter
@@ -35,6 +36,8 @@ import { IAgentResearchService } from './research/agentResearch';
 import { AgentResearchService } from './research/agentResearchService';
 import { IDurableCommitService } from './research/durableCommit';
 import { DurableCommitService } from './research/durableCommitService';
+import { IAitpExternalFactService } from './research/externalFact';
+import { AitpExternalFactService } from './research/externalFactService';
 import { AitpResearchInjection } from './injection/aitpResearchInjection';
 import { IAitpResearchInjection } from './injection/aitpResearchInjectionContract';
 import { IResearchLoopCoordinator, ResearchLoopCoordinator } from './loop/researchLoopCoordinator';
@@ -127,6 +130,7 @@ export class AitpResearchFeature extends Feature {
 
     this.contributeAgentService(IAgentAitpModeService, AgentAitpModeService);
     this.contributeAgentService(IDurableCommitService, DurableCommitService);
+    this.contributeAgentService(IAitpExternalFactService, AitpExternalFactService);
     this.contributeAgentService(IAgentResearchService, AgentResearchService);
 
     this.contributeAgentService(IAitpResearchInjection, AitpResearchInjection);

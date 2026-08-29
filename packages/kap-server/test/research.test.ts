@@ -50,6 +50,15 @@ interface ResearchSnapshot {
   alerts: ResearchAlert[];
   aitpHealth: { phase: string };
   phase: string;
+  currentAction?: { actionId: string; status: string };
+  latestProgress?: { result: string; mainlineImpact: string };
+  researchPlan?: {
+    status: string;
+    objective: string;
+    steps: string[];
+    expectedEvidence: string[];
+    stopCondition: string;
+  };
   currentRun?: {
     actionId: string;
     campaign: string;
@@ -169,6 +178,40 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
     expect(status).toBe(200);
     expect(body.code).toBe(40001);
     expect(body.details).toBeDefined();
+  });
+
+  it('POST rejects oversized Research Action and prepare_plan payloads at the route boundary', async () => {
+    const sessionId = await createSession();
+    const oversizedPlan = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'prepare_plan',
+          objective: '',
+          steps: ['step'],
+          expectedEvidence: ['evidence'],
+          stopCondition: 'stop',
+        },
+      },
+    );
+    expect(oversizedPlan.body.code).toBe(40001);
+    expect(oversizedPlan.body.details).toBeDefined();
+
+    const oversizedAction = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'begin_action',
+          actionKind: 'experiment',
+          purpose: 'purpose',
+          stopCondition: 'stop',
+          expectedEvidence: Array.from({ length: 51 }, () => 'evidence'),
+          unexpected: true,
+        },
+      },
+    );
+    expect(oversizedAction.body.code).toBe(40001);
+    expect(oversizedAction.body.details).toBeDefined();
   });
 
   it('POST rejects update_line without its expected revision', async () => {
@@ -528,6 +571,201 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
       schedulerState: 'running',
       artifactRefs: ['scf.log'],
     });
+  });
+
+  it('POST runs a bounded action lifecycle through the high-level commands', async () => {
+    await server!.close();
+    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
+    server = await startServer({
+      hostIdentity: TEST_HOST_IDENTITY,
+      host: '127.0.0.1',
+      port: 0,
+      homeDir: home as string,
+      logLevel: 'silent',
+      debugEndpoints: true,
+    });
+    base = `http://127.0.0.1:${server.port}`;
+
+    const sessionId = await createSession();
+    const entered = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'enter_mode', actor: 'user', lineSlug: 'main' } },
+    );
+    expect(entered.body.code).toBe(0);
+
+    const liveSession = await resumeSessionById(server.core.accessor, sessionId);
+    const agent = await ensureMainAgent(liveSession!);
+    const research = agent.accessor.get(IAgentResearchService);
+    research.setPhase('orienting');
+
+    const begun = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'begin_action',
+          actionKind: 'derivation',
+          purpose: 'Derive the symmetry constraint for the current question.',
+          expectedEvidence: ['A checked algebraic identity'],
+          stopCondition: 'Stop after the identity is checked.',
+        },
+      },
+    );
+    expect(begun.body.code).toBe(0);
+    const actionId = (begun.body.data.snapshot as ResearchSnapshot & {
+      currentAction?: { actionId: string; status: string };
+    }).currentAction?.actionId;
+    expect(actionId).toBeDefined();
+    expect(begun.body.data.snapshot.phase).toBe('action_executing');
+
+    const concluded = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'conclude_action',
+          actionId,
+          status: 'completed',
+          headline: 'Symmetry constraint derived',
+          motivation: 'The question requires an algebraic constraint.',
+          workPerformed: 'Derived and checked the constraint term by term.',
+          result: 'The identity holds for the chosen representation.',
+          mainlineImpact: 'The result supports the current symmetry hypothesis.',
+          nextAction: 'Compare the identity with the numerical evidence.',
+        },
+      },
+    );
+    expect(concluded.body.code).toBe(0);
+    expect(concluded.body.data.snapshot.phase).toBe('state_updated');
+    expect(concluded.body.data.snapshot.latestProgress).toMatchObject({
+      result: 'The identity holds for the chosen representation.',
+      mainlineImpact: 'The result supports the current symmetry hypothesis.',
+    });
+  });
+
+  it('POST prepares and discards a ResearchPlan through the public command surface', async () => {
+    await server!.close();
+    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
+    server = await startServer({
+      hostIdentity: TEST_HOST_IDENTITY,
+      host: '127.0.0.1',
+      port: 0,
+      homeDir: home as string,
+      logLevel: 'silent',
+      debugEndpoints: true,
+    });
+    base = `http://127.0.0.1:${server.port}`;
+
+    const sessionId = await createSession();
+    await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'enter_mode', actor: 'user', lineSlug: 'main' } },
+    );
+    const prepared = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'prepare_plan',
+          objective: 'Compare two symmetry-preserving calculation paths.',
+          steps: ['Run the two paths', 'Compare invariant observables'],
+          expectedEvidence: ['Matching invariant observables'],
+          stopCondition: 'Stop after both paths converge.',
+        },
+      },
+    );
+    expect(prepared.body.code).toBe(0);
+    expect(prepared.body.data.snapshot.researchPlan).toMatchObject({
+      status: 'draft',
+      objective: 'Compare two symmetry-preserving calculation paths.',
+    });
+
+    const discarded = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'discard_plan' } },
+    );
+    expect(discarded.body.code).toBe(0);
+    expect(discarded.body.data.snapshot.researchPlan?.status).toBe('discarded');
+  });
+
+  it('POST maps pending gates and missing human approval to VALIDATION_FAILED envelopes', async () => {
+    await server!.close();
+    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
+    server = await startServer({
+      hostIdentity: TEST_HOST_IDENTITY,
+      host: '127.0.0.1',
+      port: 0,
+      homeDir: home as string,
+      logLevel: 'silent',
+      debugEndpoints: true,
+    });
+    base = `http://127.0.0.1:${server.port}`;
+
+    const pendingSessionId = await createSession();
+    const pendingEntered = await postJson<unknown>(
+      `/api/v1/sessions/${pendingSessionId}/research/command`,
+      { command: { kind: 'enter_mode', actor: 'user' } },
+    );
+    expect(pendingEntered.body.code).toBe(0);
+    const pendingSession = await resumeSessionById(server.core.accessor, pendingSessionId);
+    const pendingAgent = await ensureMainAgent(pendingSession!);
+    pendingAgent.accessor.get(IAgentResearchService).requestHumanDecision({
+      kind: 'decision',
+      prompt: 'Choose the next bounded phase.',
+    });
+    const gatePending = await postJson<unknown>(
+      `/api/v1/sessions/${pendingSessionId}/research/command`,
+      {
+        command: {
+          kind: 'begin_action',
+          actionKind: 'experiment',
+          purpose: 'Run the bounded experiment.',
+          stopCondition: 'Stop at convergence.',
+          requiresHumanApproval: true,
+        },
+      },
+    );
+    expect(gatePending.status).toBe(200);
+    expect(gatePending.body).toMatchObject({
+      code: 40001,
+      data: null,
+      request_id: expect.any(String),
+    });
+    expect(gatePending.body.code).not.toBe(50001);
+
+    const approvalSessionId = await createSession();
+    const approvalEntered = await postJson<unknown>(
+      `/api/v1/sessions/${approvalSessionId}/research/command`,
+      { command: { kind: 'enter_mode', actor: 'user' } },
+    );
+    expect(approvalEntered.body.code).toBe(0);
+    const approvalSession = await resumeSessionById(server.core.accessor, approvalSessionId);
+    const approvalAgent = await ensureMainAgent(approvalSession!);
+    const approvalResearch = approvalAgent.accessor.get(IAgentResearchService);
+    approvalResearch.setPhase('orienting');
+    const begun = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${approvalSessionId}/research/command`,
+      {
+        command: {
+          kind: 'begin_action',
+          actionKind: 'experiment',
+          purpose: 'Run the bounded experiment.',
+          stopCondition: 'Stop at convergence.',
+          requiresHumanApproval: true,
+        },
+      },
+    );
+    expect(begun.body.code).toBe(0);
+    const actionId = begun.body.data.snapshot.currentAction?.actionId;
+    expect(actionId).toBeDefined();
+    const approvalRequired = await postJson<unknown>(
+      `/api/v1/sessions/${approvalSessionId}/research/command`,
+      { command: { kind: 'start_action', actionId } },
+    );
+    expect(approvalRequired.status).toBe(200);
+    expect(approvalRequired.body).toMatchObject({
+      code: 40001,
+      data: null,
+      request_id: expect.any(String),
+    });
+    expect(approvalRequired.body.code).not.toBe(50001);
   });
 
   it('POST on a non-existent session returns SESSION_NOT_FOUND', async () => {

@@ -25,7 +25,7 @@ import {
   type Session,
   type SessionStatus,
   type SessionUsage,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 
 import {
   approvalRequestToPermissionOptions,

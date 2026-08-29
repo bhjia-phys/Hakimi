@@ -19,6 +19,7 @@ import {
   researchManagerAckMatchesDraft,
   researchManagerCheckpointDraftIsStale,
   researchManagerDraftTarget,
+  researchManagerLineDraftIsStale,
   researchManagerQuestionDraftIsStale,
   researchManagerScienceDraftIsStale,
   researchRunTerminalStateIsConsistent,
@@ -171,13 +172,12 @@ const checkpointBaseTargetKey = computed(() =>
 const currentPendingCheckpointId = computed(() =>
   props.snapshot?.pendingCheckpoint?.checkpointId ?? null,
 );
-const lineStale = computed(() =>
-  lineDirty.value
-  && lineEditorMode.value === 'edit'
-  && lineBaseRevision.value !== null
-  && selectedLine.value !== undefined
-  && selectedLine.value.revision !== lineBaseRevision.value,
-);
+const lineStale = computed(() => researchManagerLineDraftIsStale(
+  lineDirty.value,
+  lineEditorMode.value === 'edit',
+  lineBaseRevision.value,
+  selectedLine.value?.revision ?? null,
+));
 const questionStale = computed(() => researchManagerQuestionDraftIsStale(
   questionDirty.value,
   questionEditorMode.value === 'edit',
@@ -241,8 +241,11 @@ const runStale = computed(() => researchManagerScienceDraftIsStale(
 ));
 const modeActive = computed(() => props.snapshot !== null && props.snapshot.mode !== 'inactive');
 const canSaveLine = computed(() => lineTitle.value.trim() !== ''
-  && (lineEditorMode.value === 'edit' || lineSlug.value.trim() !== ''));
-const canSaveQuestion = computed(() => selectedLineSlug.value !== '' && questionWording.value.trim() !== '');
+  && (lineEditorMode.value === 'edit' || lineSlug.value.trim() !== '')
+  && !lineStale.value);
+const canSaveQuestion = computed(() => selectedLineSlug.value !== ''
+  && questionWording.value.trim() !== ''
+  && !questionStale.value);
 const canSteerQuestion = computed(() =>
   selectedQuestion.value !== undefined
   && questionBaseSnapshotRevision.value !== null
@@ -957,20 +960,32 @@ function acknowledgeAlert(fingerprint: string): void {
                 {{ t('research.manager.reloadDraft') }}
               </Button>
             </Banner>
-            <Field v-if="lineEditorMode === 'create'" :label="t('research.manager.lineSlug')">
-              <Input v-model="lineSlug" :placeholder="t('research.manager.lineSlugPlaceholder')" />
+            <Field
+              v-if="lineEditorMode === 'create'"
+              :label="t('research.manager.lineSlug')"
+              control-id="research-manager-line-slug"
+            >
+              <Input
+                id="research-manager-line-slug"
+                v-model="lineSlug"
+                :placeholder="t('research.manager.lineSlugPlaceholder')"
+              />
             </Field>
-            <Field :label="t('research.manager.lineTitle')">
-              <Input v-model="lineTitle" />
+            <Field :label="t('research.manager.lineTitle')" control-id="research-manager-line-title">
+              <Input id="research-manager-line-title" v-model="lineTitle" />
             </Field>
-            <Field :label="t('research.manager.objective')">
-              <Textarea v-model="lineObjective" :rows="2" />
+            <Field :label="t('research.manager.objective')" control-id="research-manager-line-objective">
+              <Textarea id="research-manager-line-objective" v-model="lineObjective" :rows="2" />
             </Field>
-            <Field :label="t('research.manager.assessment')">
-              <Textarea v-model="lineAssessment" :rows="2" />
+            <Field :label="t('research.manager.assessment')" control-id="research-manager-line-assessment">
+              <Textarea id="research-manager-line-assessment" v-model="lineAssessment" :rows="2" />
             </Field>
-            <Field v-if="lineEditorMode === 'edit'" :label="t('research.manager.status')">
-              <Select v-model="lineStatus">
+            <Field
+              v-if="lineEditorMode === 'edit'"
+              :label="t('research.manager.status')"
+              control-id="research-manager-line-status"
+            >
+              <Select id="research-manager-line-status" v-model="lineStatus">
                 <option value="active">{{ t('research.lineStatus.active') }}</option>
                 <option value="paused">{{ t('research.lineStatus.paused') }}</option>
                 <option value="completed">{{ t('research.lineStatus.completed') }}</option>
@@ -1009,8 +1024,16 @@ function acknowledgeAlert(fingerprint: string): void {
                 {{ t('research.manager.reloadDraft') }}
               </Button>
             </Banner>
-            <Field v-if="questionEditorMode === 'edit'" :label="t('research.manager.question')">
-              <Select v-model="selectedQuestionId" :disabled="lineQuestions.length === 0">
+            <Field
+              v-if="questionEditorMode === 'edit'"
+              :label="t('research.manager.question')"
+              control-id="research-manager-question-selector"
+            >
+              <Select
+                id="research-manager-question-selector"
+                v-model="selectedQuestionId"
+                :disabled="lineQuestions.length === 0"
+              >
                 <option v-for="question in lineQuestions" :key="question.id" :value="question.id">
                   {{ question.wording }}
                 </option>
@@ -1020,15 +1043,19 @@ function acknowledgeAlert(fingerprint: string): void {
               {{ t('research.noQuestions') }}
             </div>
             <template v-else>
-              <Field :label="t('research.manager.wording')">
-                <Textarea v-model="questionWording" :rows="2" />
+              <Field :label="t('research.manager.wording')" control-id="research-manager-question-wording">
+                <Textarea id="research-manager-question-wording" v-model="questionWording" :rows="2" />
               </Field>
               <div class="field-grid">
-                <Field :label="t('research.manager.priority')">
-                  <Input v-model="questionPriority" type="number" />
+                <Field :label="t('research.manager.priority')" control-id="research-manager-question-priority">
+                  <Input id="research-manager-question-priority" v-model="questionPriority" type="number" />
                 </Field>
-                <Field v-if="questionEditorMode === 'edit'" :label="t('research.manager.workflowLabel')">
-                  <Select v-model="questionWorkflow">
+                <Field
+                  v-if="questionEditorMode === 'edit'"
+                  :label="t('research.manager.workflowLabel')"
+                  control-id="research-manager-question-workflow"
+                >
+                  <Select id="research-manager-question-workflow" v-model="questionWorkflow">
                     <option value="open">{{ t('research.workflow.open') }}</option>
                     <option value="active">{{ t('research.workflow.active') }}</option>
                     <option value="deferred">{{ t('research.workflow.deferred') }}</option>
@@ -1037,8 +1064,12 @@ function acknowledgeAlert(fingerprint: string): void {
                     <option value="cancelled">{{ t('research.workflow.cancelled') }}</option>
                   </Select>
                 </Field>
-                <Field v-if="questionEditorMode === 'edit'" :label="t('research.manager.epistemicLabel')">
-                  <Select v-model="questionEpistemic">
+                <Field
+                  v-if="questionEditorMode === 'edit'"
+                  :label="t('research.manager.epistemicLabel')"
+                  control-id="research-manager-question-epistemic"
+                >
+                  <Select id="research-manager-question-epistemic" v-model="questionEpistemic">
                     <option value="unknown">{{ t('research.epistemic.unknown') }}</option>
                     <option value="candidate">{{ t('research.epistemic.candidate') }}</option>
                     <option value="supported">{{ t('research.epistemic.supported') }}</option>
@@ -1047,17 +1078,33 @@ function acknowledgeAlert(fingerprint: string): void {
                   </Select>
                 </Field>
               </div>
-              <Field :label="t('research.manager.assessment')">
-                <Textarea v-model="questionAssessment" :rows="2" />
+              <Field :label="t('research.manager.assessment')" control-id="research-manager-question-assessment">
+                <Textarea id="research-manager-question-assessment" v-model="questionAssessment" :rows="2" />
               </Field>
-              <Field :label="t('research.manager.neededEvidence')" :hint="t('research.manager.onePerLine')">
-                <Textarea v-model="questionNeededEvidence" :rows="2" />
+              <Field
+                :label="t('research.manager.neededEvidence')"
+                :hint="t('research.manager.onePerLine')"
+                control-id="research-manager-question-needed-evidence"
+              >
+                <Textarea
+                  id="research-manager-question-needed-evidence"
+                  v-model="questionNeededEvidence"
+                  :rows="2"
+                />
               </Field>
-              <Field v-if="questionEditorMode === 'edit'" :label="t('research.manager.nextAction')">
-                <Textarea v-model="questionNextAction" :rows="2" />
+              <Field
+                v-if="questionEditorMode === 'edit'"
+                :label="t('research.manager.nextAction')"
+                control-id="research-manager-question-next-action"
+              >
+                <Textarea id="research-manager-question-next-action" v-model="questionNextAction" :rows="2" />
               </Field>
-              <Field v-if="questionEditorMode === 'edit'" :label="t('research.manager.reason')">
-                <Input v-model="questionReason" />
+              <Field
+                v-if="questionEditorMode === 'edit'"
+                :label="t('research.manager.reason')"
+                control-id="research-manager-question-reason"
+              >
+                <Input id="research-manager-question-reason" v-model="questionReason" />
               </Field>
               <div class="form-actions">
                 <Button :disabled="!canSaveQuestion" @click="saveQuestion">
@@ -1130,15 +1177,17 @@ function acknowledgeAlert(fingerprint: string): void {
                 {{ snapshot.humanGate.prompt }}
               </Banner>
               <div v-else class="manager-empty">{{ t('research.manager.noHumanGate') }}</div>
-              <Field :label="t('research.manager.resolution')">
+              <Field :label="t('research.manager.resolution')" control-id="research-manager-decision-resolution">
                 <Textarea
+                  id="research-manager-decision-resolution"
                   v-model="decisionResolution"
                   :rows="2"
                   :disabled="decisionBaseGateId === null || decisionPendingCommandId !== null"
                 />
               </Field>
-              <Field :label="t('research.manager.nextPhase')">
+              <Field :label="t('research.manager.nextPhase')" control-id="research-manager-decision-next-phase">
                 <Select
+                  id="research-manager-decision-next-phase"
                   v-model="decisionNextPhase"
                   :disabled="decisionBaseGateId === null || decisionPendingCommandId !== null"
                 >
@@ -1178,11 +1227,11 @@ function acknowledgeAlert(fingerprint: string): void {
                 </Button>
               </Banner>
               <div class="field-grid">
-                <Field :label="t('research.manager.packetId')">
-                  <Input v-model="evidencePacketId" />
+                <Field :label="t('research.manager.packetId')" control-id="research-manager-evidence-packet-id">
+                  <Input id="research-manager-evidence-packet-id" v-model="evidencePacketId" />
                 </Field>
-                <Field :label="t('research.manager.evidenceKind')">
-                  <Select v-model="evidenceKind">
+                <Field :label="t('research.manager.evidenceKind')" control-id="research-manager-evidence-kind">
+                  <Select id="research-manager-evidence-kind" v-model="evidenceKind">
                     <option value="observation">{{ t('research.manager.evidenceKinds.observation') }}</option>
                     <option value="result">{{ t('research.manager.evidenceKinds.result') }}</option>
                     <option value="failure">{{ t('research.manager.evidenceKinds.failure') }}</option>
@@ -1190,19 +1239,19 @@ function acknowledgeAlert(fingerprint: string): void {
                     <option value="literature">{{ t('research.manager.evidenceKinds.literature') }}</option>
                   </Select>
                 </Field>
-                <Field :label="t('research.manager.confidence')">
-                  <Select v-model="evidenceConfidence">
+                <Field :label="t('research.manager.confidence')" control-id="research-manager-evidence-confidence">
+                  <Select id="research-manager-evidence-confidence" v-model="evidenceConfidence">
                     <option value="low">{{ t('research.manager.confidenceLevels.low') }}</option>
                     <option value="medium">{{ t('research.manager.confidenceLevels.medium') }}</option>
                     <option value="high">{{ t('research.manager.confidenceLevels.high') }}</option>
                   </Select>
                 </Field>
               </div>
-              <Field :label="t('research.manager.claim')">
-                <Textarea v-model="evidenceClaim" :rows="2" />
+              <Field :label="t('research.manager.claim')" control-id="research-manager-evidence-claim">
+                <Textarea id="research-manager-evidence-claim" v-model="evidenceClaim" :rows="2" />
               </Field>
-              <Field :label="t('research.manager.evidence')">
-                <Textarea v-model="evidenceBody" :rows="3" />
+              <Field :label="t('research.manager.evidence')" control-id="research-manager-evidence-body">
+                <Textarea id="research-manager-evidence-body" v-model="evidenceBody" :rows="3" />
               </Field>
               <Button :disabled="!canReviewEvidence" @click="reviewEvidence">
                 {{ t('research.manager.reviewEvidence') }}
@@ -1224,19 +1273,19 @@ function acknowledgeAlert(fingerprint: string): void {
                 {{ t('research.manager.runTerminalMismatch') }}
               </Banner>
               <div class="field-grid">
-                <Field :label="t('research.manager.actionId')">
-                  <Input v-model="runActionId" disabled />
+                <Field :label="t('research.manager.actionId')" control-id="research-manager-run-action-id">
+                  <Input id="research-manager-run-action-id" v-model="runActionId" disabled />
                 </Field>
-                <Field :label="t('research.manager.campaign')">
-                  <Input v-model="runCampaign" />
+                <Field :label="t('research.manager.campaign')" control-id="research-manager-run-campaign">
+                  <Input id="research-manager-run-campaign" v-model="runCampaign" />
                 </Field>
-                <Field :label="t('research.manager.jobId')">
-                  <Input v-model="runJobId" />
+                <Field :label="t('research.manager.jobId')" control-id="research-manager-run-job-id">
+                  <Input id="research-manager-run-job-id" v-model="runJobId" />
                 </Field>
               </div>
               <div class="field-grid">
-                <Field :label="t('research.manager.runStage')">
-                  <Select v-model="runStage">
+                <Field :label="t('research.manager.runStage')" control-id="research-manager-run-stage">
+                  <Select id="research-manager-run-stage" v-model="runStage">
                     <option value="queued">{{ t('research.runStage.queued') }}</option>
                     <option value="running">{{ t('research.runStage.running') }}</option>
                     <option value="scf">{{ t('research.runStage.scf') }}</option>
@@ -1247,8 +1296,8 @@ function acknowledgeAlert(fingerprint: string): void {
                     <option value="unknown">{{ t('research.runStage.unknown') }}</option>
                   </Select>
                 </Field>
-                <Field :label="t('research.manager.schedulerState')">
-                  <Select v-model="runSchedulerState">
+                <Field :label="t('research.manager.schedulerState')" control-id="research-manager-run-scheduler-state">
+                  <Select id="research-manager-run-scheduler-state" v-model="runSchedulerState">
                     <option value="pending">{{ t('research.manager.schedulerStates.pending') }}</option>
                     <option value="running">{{ t('research.manager.schedulerStates.running') }}</option>
                     <option value="completed">{{ t('research.manager.schedulerStates.completed') }}</option>
@@ -1257,8 +1306,8 @@ function acknowledgeAlert(fingerprint: string): void {
                     <option value="unknown">{{ t('research.manager.schedulerStates.unknown') }}</option>
                   </Select>
                 </Field>
-                <Field :label="t('research.manager.terminalState')">
-                  <Select v-model="runTerminalState">
+                <Field :label="t('research.manager.terminalState')" control-id="research-manager-run-terminal-state">
+                  <Select id="research-manager-run-terminal-state" v-model="runTerminalState">
                     <option value="">{{ t('research.none') }}</option>
                     <option value="completed">{{ t('research.manager.schedulerStates.completed') }}</option>
                     <option value="failed">{{ t('research.manager.schedulerStates.failed') }}</option>
@@ -1267,15 +1316,19 @@ function acknowledgeAlert(fingerprint: string): void {
                 </Field>
               </div>
               <div class="field-grid">
-                <Field :label="t('research.manager.sourcePin')">
-                  <Input v-model="runSourcePin" />
+                <Field :label="t('research.manager.sourcePin')" control-id="research-manager-run-source-pin">
+                  <Input id="research-manager-run-source-pin" v-model="runSourcePin" />
                 </Field>
-                <Field :label="t('research.manager.binaryPin')">
-                  <Input v-model="runBinaryPin" />
+                <Field :label="t('research.manager.binaryPin')" control-id="research-manager-run-binary-pin">
+                  <Input id="research-manager-run-binary-pin" v-model="runBinaryPin" />
                 </Field>
               </div>
-              <Field :label="t('research.manager.artifactRefs')" :hint="t('research.manager.onePerLine')">
-                <Textarea v-model="runArtifactRefs" :rows="2" />
+              <Field
+                :label="t('research.manager.artifactRefs')"
+                :hint="t('research.manager.onePerLine')"
+                control-id="research-manager-run-artifact-refs"
+              >
+                <Textarea id="research-manager-run-artifact-refs" v-model="runArtifactRefs" :rows="2" />
               </Field>
               <Button :disabled="!canObserveRun" @click="observeRun">
                 {{ t('research.manager.observeRun') }}
@@ -1294,11 +1347,11 @@ function acknowledgeAlert(fingerprint: string): void {
             <p class="section-note">
               {{ selectedQuestion?.wording ?? selectedLine?.title ?? t('research.none') }}
             </p>
-            <Field :label="t('research.manager.assessment')">
-              <Textarea v-model="checkpointAssessment" :rows="3" />
+            <Field :label="t('research.manager.assessment')" control-id="research-manager-checkpoint-assessment">
+              <Textarea id="research-manager-checkpoint-assessment" v-model="checkpointAssessment" :rows="3" />
             </Field>
-            <Field :label="t('research.manager.nextAction')">
-              <Textarea v-model="checkpointNextAction" :rows="2" />
+            <Field :label="t('research.manager.nextAction')" control-id="research-manager-checkpoint-next-action">
+              <Textarea id="research-manager-checkpoint-next-action" v-model="checkpointNextAction" :rows="2" />
             </Field>
             <div class="form-actions">
               <Button :disabled="!canProposeCheckpoint" @click="proposeCheckpoint">
@@ -1314,8 +1367,13 @@ function acknowledgeAlert(fingerprint: string): void {
               <Field
                 :label="t('research.manager.entryId')"
                 :hint="t('research.manager.entryIdHint')"
+                control-id="research-manager-checkpoint-entry-id"
               >
-                <Input v-model="checkpointEntryId" :disabled="!snapshot?.pendingCheckpoint" />
+                <Input
+                  id="research-manager-checkpoint-entry-id"
+                  v-model="checkpointEntryId"
+                  :disabled="!snapshot?.pendingCheckpoint"
+                />
               </Field>
               <Button :disabled="!canCommitCheckpoint" @click="commitCheckpoint">
                 {{ t('research.manager.commit') }}

@@ -16,6 +16,8 @@
 
 当三项条件全部满足时，适配器进入 `ready` 阶段，受支持的 AITP 读写工具面对 Agent 可用。适配器不暴露、不调用、不解析 upstream 的 `backfill-0.1` 成功 envelope，也不实现 `sha256-once:` 或 `check-policy` 语义。
 
+对于理论物理研究，仓库内置的 `theory-physics` plugin 是可选的 domain pack。它为通用 Research Loop 增加物理领域的行动路由和报告规范——什么时候查文献、如何检查推导、如何区分调度器证据与物理结论，以及什么时候请求人类决策。它不增加第二个 runtime、自动后台 loop、文献数据库、HPC observer 或 AITP schema。
+
 ## 启用研究模式
 
 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`（`aitp_research_mode`）标志默认关闭。启动前将其设置为 `1`，才能让 TUI 与 Web 使用 `/research`、在 Web composer 的 **Modes** 菜单中显示 **Research**，并让 `EnterAITPMode` 能力对 Agent 可用。这些入口使用同一份服务端权威快照。这个 flag 只是 Hakimi 的产品决策，不报告 AITP 协议阶段，也不表示 H6 可用；它只开放入口——不会进入研究模式、探测 AITP、显示 Research Board 或开放 AITP plugin skill 和研究工具。inactive 状态下零 AITP I/O，绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`。你仍需通过 Web **Modes** 菜单、`/research on` 或模型 `EnterAITPMode` 入口路径显式进入，后续研究轮次才能使用适配器。
@@ -178,8 +180,8 @@ Web Manager 的 Checkpoint 表单保留这一边界。**Propose** 只创建 pend
 
 研究模式有以下硬性排除：
 
-- **Plan 模式冲突**：Plan 模式与研究模式互斥。进入一个前必须退出另一个。
-- **仅限主 Agent**：AITP 和 Research 变更工具仅在主 Agent 上可用。subagent 无法使用——必须通过类型化数据包将结果返回给主 Agent。
+- **Plan 模式冲突**：Plan 模式与研究模式在所有入口（包括直接 API 入口）上互斥。进入一个前必须退出另一个。如果旧会话恢复会让二者同时激活，Plan 模式优先，Hakimi 会在 probe AITP 或注入 Research guidance 前退出研究模式。
+- **仅限主 Agent**：AITP 和 Research 变更工具仅在主 Agent 上可用。子 Agent 无法使用——必须通过类型化数据包将结果返回给主 Agent。
 - **会话撤销**：研究工作状态（问题、焦点、研究线）通过检查点模型跟随会话撤销。已提交的 AITP 游标**不**跟随——一旦检查点提交到 AITP，会话撤销无法撤回这一外部事实。
 
 ## 下一步

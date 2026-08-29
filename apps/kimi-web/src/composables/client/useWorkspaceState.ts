@@ -326,6 +326,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   } = deps;
   let exportInFlight = false;
   let providerUsageRequestId = 0;
+  const gitStatusRequestIds = new Map<string, number>();
 
   async function loadOlderMessages(sessionId: string): Promise<void> {
     if (rawState.messagesLoadingMoreBySession[sessionId]) return;
@@ -414,15 +415,21 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
 
   /** Load git status for a session — defensive, never throws */
   async function loadGitStatus(sessionId: string): Promise<void> {
+    const requestId = (gitStatusRequestIds.get(sessionId) ?? 0) + 1;
+    gitStatusRequestIds.set(sessionId, requestId);
     try {
       const api = getKimiWebApi();
       const result = await api.getGitStatus(sessionId);
+      if (gitStatusRequestIds.get(sessionId) !== requestId) return;
       rawState.gitStatusBySession = {
         ...rawState.gitStatusBySession,
         [sessionId]: result,
       };
     } catch {
-      // Stale/old sessions may 404 — leave undefined, no crash
+      if (gitStatusRequestIds.get(sessionId) !== requestId) return;
+      const next = { ...rawState.gitStatusBySession };
+      delete next[sessionId];
+      rawState.gitStatusBySession = next;
     }
   }
 

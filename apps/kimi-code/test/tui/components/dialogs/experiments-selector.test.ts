@@ -1,4 +1,4 @@
-import type { ExperimentalFeatureState } from '@moonshot-ai/kimi-code-sdk';
+import type { ExperimentalFeatureState } from '@bhjia-phys/hakimi-sdk';
 import { describe, expect, it, vi } from 'vitest';
 
 import {

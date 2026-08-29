@@ -15,7 +15,7 @@ import {
   type ResearchCommand,
   type ResearchCommandResponse,
   type ResearchStatusSnapshot,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 
 import {
   ResearchEditDialogComponent,
@@ -191,12 +191,20 @@ function parseQuestionAction(
     return {
       kind: 'error',
       severity: 'hint',
+      restoreInput: true,
       message: `Provide a question ID, e.g. \`/research ${subcommand} <questionId>\`.`,
     };
   }
 
   const questionId = tokens[1]!;
   const separatorIndex = tokens.indexOf('--', 2);
+  if (separatorIndex !== -1 && separatorIndex !== 2) {
+    return {
+      kind: 'error',
+      restoreInput: true,
+      message: `Put \`--\` immediately after the question ID: \`/research ${subcommand} ${questionId} -- <text>\`.`,
+    };
+  }
 
   // For edit/focus: `--` and free text are required
   if (subcommand === 'edit' || subcommand === 'focus') {
@@ -228,7 +236,16 @@ function parseQuestionAction(
     return { kind: 'focus', questionId, boundedAction: freeText };
   }
 
-  // For defer/block/close/reopen: reason is optional
+  // For defer/block/close/reopen: reason is optional, but without `--` the
+  // command must stop after the question ID.
+  if (separatorIndex === -1 && tokens.length !== 2) {
+    return {
+      kind: 'error',
+      restoreInput: true,
+      message: `Use \`/research ${subcommand} ${questionId} -- <reason>\` for a reason, or omit the reason entirely.`,
+    };
+  }
+
   let reason: string | undefined;
   if (separatorIndex !== -1) {
     reason = tokens.slice(separatorIndex + 1).join(' ').trim() || undefined;

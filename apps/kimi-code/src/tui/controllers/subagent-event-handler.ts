@@ -1,7 +1,7 @@
 import type {
   BackgroundTaskInfo,
   Event,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import type { Component } from '@moonshot-ai/pi-tui';
 
 import {

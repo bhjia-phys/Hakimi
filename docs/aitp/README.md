@@ -42,7 +42,7 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   unavailable**。`lineage`/`lite-entry-0.2`/
   `run-pointer-0.1` 仍 deferred，M2–M4 blocked。
   alerts 和 generic human gate 已实现，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard，`ResolveResearchDecision` 不会自动写入 AITP decision Entry。degraded active Research Mode 会阻止 AITP writes 和 Goal completion；未解决 human gate 也会阻止 Goal completion，但本地 Question/Line mutation 仍可能发生，当前没有 automatic session-closeout。
-  Hakimi 的本地 parser/contract 测试使用已 commit 的官方 AITP 0.8.0 golden fixtures：`enter.json`、`enter-after-save.json`、`list.json`、`show.json`、`check.json`、`check-workstream.json`。这些测试不启动 live CLI subprocess，不等于 live CLI conformance。
+  Hakimi 的本地 parser/contract 测试使用已 commit 的官方 AITP 0.8.0 golden fixtures：`enter.json`、`enter-after-save.json`、`list.json`、`show.json`、`check.json`、`check-workstream.json`。此外，2026-08-29 已在一次性 scratch store 中用 managed AITP 0.8.0 CLI 完成真实子进程 smoke test，覆盖作用域 `enter`/`check`、`record` 与 `note` prepare/save、`show`/`list`、重复 prepare 复用和最终 clean check；完整跨平台及异常矩阵 conformance 仍待补齐。
 - 完整兼容矩阵、假设核对与决策：
   [`compatibility-matrix.md`](compatibility-matrix.md)。
 - AITP 状态跟踪与开发前核对清单：
@@ -55,7 +55,7 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
 
 - AITP = 协议、持久化、证据权威。接口是 **CLI + files**；无 SDK、API server、
   MCP server、daemon、vector service。
-- Hakimi = agent 编排、工具调用、web 检索、PDF 阅读、推理、私有缓存。
+- Hakimi = agent 编排、工具调用、web 检索、PDF 阅读、推理、私有缓存。理论物理领域规程通过可选的 `theory-physics` plugin 提供；它只约束通用 Research Loop 的行动路由、推导/数值证据检查和人类交互，不创建第二套 runtime、账本、文献库或 HPC observer。
   私有缓存**永不写回** AITP。
 - Hakimi 不复制 AITP runtime/parser/validator，不写 `.aitp` canonical 文件
   （`entries/`、`notes/`、`TOPIC.md`、`STORE.toml`），不绕过
@@ -68,7 +68,7 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
 | Phase | AITP 前置 | Hakimi 工作 |
 |---|---|---|
 | H0 | 现在（无 gate） | launcher adapter（argv-only、Python ≥ 3.11 探测）、未版本化 envelope 的严格 shape 校验、`--help` capability 探测、`enter` lifecycle、prepare→fill→save 流程、`not_initialized` 优雅降级、tree-hash 零写入测试 — **已实现（实验性，flag 门控，默认关闭）** |
-| H1 | M1a gate（已通过） | feature-detect `aitp/enter-0.2`、`aitp/list-0.1`、`aitp/show-0.1` 并做 schema dispatch；Note-age 信号；当前状态维护不等于 session-end closeout；官方 0.8.0 fixtures 的本地 parser/contract 兼容测试 — **已实现（实验性；不是 live CLI conformance）** |
+| H1 | M1a gate（已通过） | feature-detect `aitp/enter-0.2`、`aitp/list-0.1`、`aitp/show-0.1` 并做 schema dispatch；Note-age 信号；当前状态维护不等于 session-end closeout；官方 0.8.0 fixtures 的本地 parser/contract 兼容测试，以及 2026-08-29 managed CLI scratch-store smoke test — **已实现（实验性；完整跨平台及异常矩阵 conformance 仍 pending）** |
 | H2 | M1b-R1 gate（已通过） | 只整合 R1 实际发布的 `aitp check`（解析 `check-report-0.1`，exit 0/1 报告、exit 2 错误包）；`aitp/lite-entry-0.2`（`based_on`、typed closures）、派生 `used_by`、pointer bundle 均未发布（deferred），不得安排 — **已实现（实验性）** |
 | H3 | M1c gate（已通过） | 整合 M1c scoped contracts：仅传入单次 `--workstream <slug>` 时 feature-detect `aitp/enter-0.3`/`aitp/list-0.2`（严格 exact membership、relation 先全局计算）；无 flag 时保持旧 schema — **已实现（实验性）** |
 | H4 | M1d gate（已通过） | 整合 M1d scoped `check`：仅传入单次 `--workstream <slug>` 时 feature-detect `aitp/check-report-0.2`（0.1 payload + additive `workstream`/`counts.by_code`/`counts.outside_scope`；admitted in-scope 计数，不与 0.1 直接比较；scoped `clean` ≠ 全库健康；四行文本仅人阅）；无 flag 时 `check-report-0.1` 字节不变 — **已实现（实验性）** |

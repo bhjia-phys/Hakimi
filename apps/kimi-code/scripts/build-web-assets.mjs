@@ -240,6 +240,9 @@ async function compareBundleDirectories(expectedRoot, generatedRoot) {
 }
 
 function canonicalRebuildIdentity(provenance) {
+  // The recorded toolchain identifies the producer, while --check accepts any
+  // Node patch satisfying the floor. recipe.sha256 includes that toolchain, so
+  // compare requirements and recipe files directly instead of either value.
   return {
     schemaVersion: provenance.schemaVersion,
     repository: provenance.repository,

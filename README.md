@@ -5,29 +5,32 @@
 </p>
 
 <p align="center">
-  <strong>A standalone Kimi Code continuation evolving into a chain-of-thought-native agent for theoretical physics.</strong><br />
-  <span>Kimi Code engineering foundations — independent Hakimi governance, research orchestration, staged AITP memory integration, and product experience.</span>
+  <strong>An open-source terminal AI agent for software development, terminal tasks, and experimental theoretical-physics research workflows.</strong><br />
+  <span>Use one focused workspace to inspect code, run tools, keep sessions, and organize research work with explicit evidence and boundaries.</span>
 </p>
 
 <p align="center">
-  <a href="README.zh-CN.md">Chinese</a> |
+  <a href="README.zh-CN.md">中文</a> |
   <a href="https://github.com/bhjia-phys/Hakimi">Repository</a> |
-  <a href="docs/en/guides/getting-started.md">Hakimi user manual</a>
+  <a href="docs/en/guides/getting-started.md">User manual</a> |
+  <a href="LICENSE">License</a>
 </p>
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-## What Hakimi is
+## What Hakimi does
 
-Hakimi is an independent, standalone continuation built on the engineering foundations of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code). The repository's Git history contains only Hakimi's own commits — it starts from the upstream 0.34.0 engineering foundation, and upstream provenance lives in the separate archive repository rather than in this history. Hakimi is no longer in the Kimi Code GitHub fork network and does not target product parity. Hakimi owns its v2 architecture decisions, research orchestration, tools, workflows, interaction, and release line. The separate [AITP Research Protocol](https://github.com/bhjia-phys/AITP-Research-Protocol) remains authoritative for durable research memory and evidence.
+Hakimi is a terminal-first agent for work that benefits from an assistant able to inspect a workspace, use tools, and keep context across turns. It can:
 
-The terminal loop, tools, sessions, Skills, MCP, subagents, permissions, and OAuth originated in Kimi Code and remain candidates for selectively reviewed general-purpose improvements. Hakimi absorbs only changes that fit its goals and canonical v2 contracts; upstream product-specific behavior is not imported by default. The historical deeply embedded prototype is archived on the [`aitp-research`](https://github.com/bhjia-phys/Hakimi/tree/aitp-research) branch and is not the integration path for this line.
+- read and modify code and project files, search a workspace, and work with Git;
+- run shell commands, builds, tests, and other terminal tasks while respecting configured permissions;
+- start one-shot prompt runs or interactive sessions, resume previous sessions, and keep local session data;
+- connect to configured model providers and extend the agent with MCP servers, Skills, and subagents;
+- use profiles, presets, and permission modes to control how tools and delegated work are used.
 
-## Repository lineage
+Hakimi is designed for practical software work and terminal operations first. Its research features add structure around experimental scientific workflows; they do not replace an expert's judgment or independent verification.
 
-- **Canonical standalone repository:** [`bhjia-phys/Hakimi`](https://github.com/bhjia-phys/Hakimi)
-- **Historical fork archive:** [`bhjia-phys/Hakimi-upstream-archive`](https://github.com/bhjia-phys/Hakimi-upstream-archive), retained for the original Git history with Kimi Code authorship, pull requests, releases, and fork-network metadata
-- **Upstream foundation:** [`MoonshotAI/kimi-code`](https://github.com/MoonshotAI/kimi-code)
+## Quick start
 
 This repository's history contains only Hakimi commits; upstream authorship and the pre-split fork history remain accessible through the archive repository and the MIT license attribution in [LICENSE](LICENSE).
 
@@ -96,7 +99,7 @@ Hakimi has alerts and a generic human gate, but candidate confirmation is not a 
 
 The local compatibility tests use the committed official AITP 0.8.0 golden fixtures for `enter.json`, `enter-after-save.json`, `list.json`, `show.json`, `check.json`, and `check-workstream.json`. They exercise local parser/contract behavior without starting a live CLI subprocess, so they are not live CLI conformance tests.
 
-The opt-in Research surface is available in both TUI and Web. Web routes `/research` through the typed Research endpoint and provides a Composer **Modes** entry, live Board, and line-first form Manager. Same-session mutations are revision-safe, and checkpoint commit requires an existing AITP `entryId`; Web does not write the AITP ledger.
+The opt-in Research surface is available in both TUI and Web. Web routes `/research` through the typed Research endpoint and provides a Composer **Modes** entry, live Board, and line-first form Manager. Same-session mutations that carry a revision reject stale writes, and checkpoint commit requires an existing AITP `entryId`; Web does not write the AITP ledger.
 
 | Hakimi gate | AITP gate | Status |
 | --- | --- | --- |
@@ -138,7 +141,7 @@ The D track is the primary research-layer implementation track (2026-08-14 platf
 
 ## Install from source
 
-Hakimi does not yet publish a public npm package or release install script. Building the current development version requires Node.js 24.15.0 or later and pnpm 10.33.0:
+Hakimi currently builds from source. Use Node.js 24.15.0 or newer and pnpm 10.33.0:
 
 ```sh
 git clone https://github.com/bhjia-phys/Hakimi.git
@@ -150,25 +153,66 @@ pnpm build:packages
 pnpm -C apps/kimi-code build
 mkdir -p .tmp/dist-pack
 pnpm -C apps/kimi-code pack --pack-destination ../../.tmp/dist-pack
-npm install -g ./.tmp/dist-pack/bhjia-phys-hakimi-0.21.0.tgz
+npm install -g "$(ls -t ./.tmp/dist-pack/*.tgz | head -n 1)"
 hakimi --version
 ```
 
-The tarball filename contains the current package version. If it has changed, use the filename printed by `pnpm pack` instead of `0.21.0`. To update a source installation, pull the desired revision and repeat the build, pack, and global-install steps.
+`pnpm pack` prints the tarball filename it creates; the command above selects the newest tarball in `.tmp/dist-pack`. To update a source installation, pull the desired revision and repeat the build, pack, and install steps.
 
-> On Windows, install [Git for Windows](https://gitforwindows.org/) before first launch because Hakimi uses the bundled Git Bash as its shell environment. If Git Bash is installed in a custom location, set `KIMI_SHELL_PATH` to the absolute path of `bash.exe`.
-
-## Experimental ChatGPT / OpenAI Codex login
-
-Enable the experiment and start the device-code flow from the terminal:
+Start the interactive terminal agent, run a single prompt, or continue the previous session:
 
 ```sh
-hakimi login --provider openai-codex --enable-experimental
+hakimi
+hakimi -p "Summarize the test failures in this repository."
+hakimi -c
 ```
 
-For a headless terminal, add `--no-open` and open the printed URL manually. In the TUI, run `/experiments`, enable `openai-codex-oauth`, then run `/login` and choose `ChatGPT / OpenAI Codex (OAuth)`. Credentials and generated provider configuration remain under Hakimi's own home directory.
+Inside an interactive session, use `/login` to configure an available provider. Hakimi keeps configuration, sessions, logs, and caches under `~/.hakimi` by default. Set `HAKIMI_HOME` to use a different data directory.
+
+On Windows, install [Git for Windows](https://gitforwindows.org/) before first launch. Hakimi uses the Git Bash shell bundled with Git for Windows; if Git Bash is installed elsewhere, set `KIMI_SHELL_PATH` to the absolute path of `bash.exe`.
+
+## Core capabilities
+
+- **Terminal coding:** inspect files, review diffs, edit code, and work in the current project context.
+- **Search and execution:** search project contents, invoke shell and file tools, and run builds or tests with visible tool activity.
+- **Sessions:** use interactive conversations, prompt mode, session continuation, and session resumption.
+- **Providers:** configure and select supported model providers through the CLI and TUI provider settings.
+- **Extensibility:** load MCP servers and Skills, and delegate bounded work to subagents.
+- **Control:** choose manual, YOLO, or auto permission modes, and use agent profiles or presets where configured.
+
+The available commands and settings evolve with the development build. The [user manual](docs/en/guides/getting-started.md) and [configuration guide](docs/en/configuration/config-files.md) are the authoritative starting points.
+
+## Experimental research features
+
+Hakimi's Research Loop organizes an experimental research workflow around structured state, evidence, falsifiers, and decisions. It can keep a compact research process trajectory across bounded actions and present research status to the user. It does not expose raw hidden chain-of-thought as a research record, and it does not infer scientific validity from an agent response alone.
+
+The optional `theory-physics` domain pack adds physics-oriented routing, derivation checks, numerical/HPC evidence boundaries, and science-first reporting. It does not add a second runtime, ledger, literature database, or scheduler observer.
+
+AITP Research Mode is off by default and is an opt-in integration through the AITP CLI and files. Its current Hakimi compatibility status is **H0–H4 implemented, H5 partial, and H6 unavailable**. A live subprocess smoke test has exercised the managed AITP 0.8.0 CLI in a disposable scratch store; the complete cross-platform and failure-matrix conformance suite is still pending. See [`docs/aitp/`](docs/aitp/) for the maintained compatibility details.
+
+## Current status and limitations
+
+- Hakimi is a development version that can be built from source.
+- Core terminal workflows—interactive sessions, tools, providers, and project work—are usable.
+- Research Loop, the `theory-physics` pack, and AITP Research Mode are experimental and may change.
+- There is no public npm package or release installer yet; use the source build path above.
+- Hakimi does not replace human review, reproducible experiments, or expert scientific validation.
+
+## Documentation
+
+- [Getting started](docs/en/guides/getting-started.md)
+- [Configuration](docs/en/configuration/config-files.md)
+- [Research Mode](docs/en/guides/research-mode.md)
+- [AITP documentation and compatibility records](docs/aitp/)
+- [Implementation notes](IMPLEMENTATION.md)
+
+## Project background
+
+Hakimi is an independent repository with its own `hakimi` command, `~/.hakimi` data directory, semver release line, and product direction. It is based on selected engineering foundations from [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code), but it is not a product-parity fork and upstream behavior is not adopted automatically. The historical source and attribution context is preserved in [`bhjia-phys/Hakimi-upstream-archive`](https://github.com/bhjia-phys/Hakimi-upstream-archive); see the [MIT license](LICENSE) for required attribution.
 
 ## Development
+
+From the repository root:
 
 ```sh
 corepack pnpm --config.engine-strict=false install
@@ -176,8 +220,8 @@ corepack pnpm --config.engine-strict=false -C apps/kimi-code typecheck
 corepack pnpm --config.engine-strict=false -C apps/kimi-code test
 ```
 
-Layout follows upstream: the CLI is `apps/kimi-code`; the current kap-server runtime is `packages/agent-core-v2`, while `packages/agent-core` remains the legacy engine; model providers are in `packages/kosong`, and the SDK is in `packages/node-sdk`.
+The CLI lives in `apps/kimi-code`; packages provide the SDK, model/provider integrations, and agent runtime used by the application.
 
 ## License
 
-MIT. Upstream Kimi Code is © Moonshot AI; see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). Hakimi retains the required attribution for upstream Kimi Code work by Moonshot AI.

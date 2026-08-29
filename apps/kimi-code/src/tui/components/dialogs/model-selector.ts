@@ -1,4 +1,4 @@
-import { effectiveModelAlias, type ModelAlias, type ThinkingEffort } from '@moonshot-ai/kimi-code-sdk';
+import { effectiveModelAlias, type ModelAlias, type ThinkingEffort } from '@bhjia-phys/hakimi-sdk';
 import {
   Container,
   Key,

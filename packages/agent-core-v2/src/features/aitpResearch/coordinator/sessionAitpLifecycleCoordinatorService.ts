@@ -3,7 +3,10 @@
  *
  * Runs a read-only AITP `enter` → `check` cycle after the adapter probe has
  * reached `ready`. Refreshes are single-flight per workstream, while a prior
- * receipt satisfies non-forced reads. Adapter failures and check transport or
+ * receipt satisfies non-forced reads. A refresh without a bound workstream
+ * fails closed with a `workstream_unbound` degraded receipt and never calls
+ * `adapter.enter` / `adapter.check`, so an unbound Research Mode cannot read
+ * or scope the whole AITP Topic. Adapter failures and check transport or
  * contract failures become safe degraded receipts; valid check findings are
  * projected as codes and counts. `reset()` invalidates older async work so an
  * exit or inactive restore cannot repopulate the next lifecycle.
@@ -40,6 +43,7 @@ export class SessionAitpLifecycleCoordinatorService
   private readonly inFlight = new Map<string, Promise<AitpMaintenanceReceipt>>();
   private readonly refreshControllers = new Map<string, AbortController>();
   private generation = 0;
+  private currentKey: string | undefined;
   private latestKey: string | undefined;
 
   constructor(
@@ -51,12 +55,21 @@ export class SessionAitpLifecycleCoordinatorService
   refresh(options?: AitpMaintenanceRefreshOptions): Promise<AitpMaintenanceReceipt> {
     const workstream = options?.workstream;
     const key = workstream ?? DEFAULT_WORKSTREAM_KEY;
+    this.currentKey = key;
     const inFlight = this.inFlight.get(key);
     if (inFlight !== undefined) return inFlight;
 
     const previous = this.receipts.get(key);
     if (previous !== undefined && options?.force !== true) {
       return Promise.resolve(previous);
+    }
+
+    if (workstream === undefined) {
+      // No bound research line: fail closed instead of letting an un-scoped
+      // enter/check read the whole AITP Topic.
+      const receipt = this.degradedReceipt(workstream, 'workstream_unbound');
+      this.storeIfCurrent(key, this.generation, receipt);
+      return Promise.resolve(receipt);
     }
 
     const generation = this.generation;
@@ -72,8 +85,8 @@ export class SessionAitpLifecycleCoordinatorService
   }
 
   snapshot(): AitpMaintenanceReceipt | undefined {
-    if (this.latestKey !== undefined) return this.receipts.get(this.latestKey);
-    return this.receipts.get(DEFAULT_WORKSTREAM_KEY);
+    const key = this.currentKey ?? this.latestKey ?? DEFAULT_WORKSTREAM_KEY;
+    return this.receipts.get(key);
   }
 
   reset(): void {
@@ -82,6 +95,7 @@ export class SessionAitpLifecycleCoordinatorService
     this.refreshControllers.clear();
     this.receipts.clear();
     this.inFlight.clear();
+    this.currentKey = undefined;
     this.latestKey = undefined;
   }
 
@@ -163,6 +177,14 @@ export class SessionAitpLifecycleCoordinatorService
       refreshedAt: Date.now(),
       memoryStatus: entered.memory_status,
       workstream,
+      topic: entered.memory_status === 'not_established'
+        ? undefined
+        : {
+            id: entered.topic.id,
+            title: entered.topic.title,
+            goalText: entered.topic.goal.text,
+            goalSource: entered.topic.goal.source,
+          },
       latestWorkingNoteAt: parseTimestamp(entered.latest_working_note?.created_at),
       activeNewerThanWorkingNote: entered.counts.active_newer_than_latest_working_note === null
         ? null
@@ -203,6 +225,7 @@ export class SessionAitpLifecycleCoordinatorService
       refreshedAt: Date.now(),
       memoryStatus: 'unknown',
       workstream,
+      topic: undefined,
       latestWorkingNoteAt: undefined,
       activeNewerThanWorkingNote: null,
       unresolvedFailureCount: 0,
@@ -226,8 +249,10 @@ export class SessionAitpLifecycleCoordinatorService
   ): AitpMaintenanceReceipt {
     if (this.isCurrent(generation)) {
       this.receipts.set(key, receipt);
-      this.latestKey = key;
-      this.updateEmitter.fire(receipt);
+      if (this.currentKey === key) {
+        this.latestKey = key;
+        this.updateEmitter.fire(receipt);
+      }
     }
     return receipt;
   }

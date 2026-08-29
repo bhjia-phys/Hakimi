@@ -12,6 +12,7 @@ import {
   planModeEnter,
   planModeExit,
   planRevision,
+  planResolution,
 } from '#/features/plan/planOps';
 import { AppendLogStore } from '#/persistence/backends/node-fs/appendLogStore';
 import { InMemoryStorageService } from '#/persistence/backends/memory/inMemoryStorageService';
@@ -121,6 +122,34 @@ describe('plan ops (wire-backed)', () => {
     const active = wire.getModel(PlanModel);
     wire.dispatch(planModeEnter({ id: 'p1' }));
     expect(wire.getModel(PlanModel)).toBe(active);
+  });
+
+  it('uses first-writer-wins for competing active plan ids and id-scoped exit', () => {
+    wire.dispatch(planModeEnter({ id: 'p1' }));
+    const active = wire.getModel(PlanModel);
+
+    wire.dispatch(planModeEnter({ id: 'p2' }));
+    expect(wire.getModel(PlanModel)).toBe(active);
+    wire.dispatch(planModeCancel({ id: 'p2' }));
+    expect(wire.getModel(PlanModel)).toBe(active);
+    wire.dispatch(planModeExit({ id: 'p1' }));
+    expect(wire.getModel(PlanModel).current.active).toBe(false);
+  });
+
+  it('keeps plan revisions and resolutions monotonic during replay', () => {
+    wire.dispatch(planModeEnter({ id: 'p1' }));
+    wire.dispatch(planRevision({ id: 'p1', version: 3, path: 'v3', sha256: 'c', bytes: 3 }));
+    const afterRevision = wire.getModel(PlanModel);
+    wire.dispatch(planRevision({ id: 'p1', version: 2, path: 'v2', sha256: 'b', bytes: 2 }));
+    expect(wire.getModel(PlanModel)).toBe(afterRevision);
+
+    wire.dispatch(planResolution({ planId: 'p1', planRevision: 3, outcome: 'approved' }));
+    const resolved = wire.getModel(PlanModel);
+    wire.dispatch(planResolution({ planId: 'p1', planRevision: 2, outcome: 'revise' }));
+    expect(wire.getModel(PlanModel)).toBe(resolved);
+    expect(wire.getModel(PlanModel).current.resolution).toMatchObject({
+      planRevision: 3, outcome: 'approved',
+    });
   });
 
   it('ignores an invalid undo count without corrupting checkpoint state', () => {

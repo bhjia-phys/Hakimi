@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { visibleWidth } from '@moonshot-ai/pi-tui';
 
 import { ResearchBoardComponent } from '#/tui/components/chrome/research-board';
-import type { ResearchStatusSnapshot } from '@moonshot-ai/kimi-code-sdk';
+import type { ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
 
 function stripAnsi(text: string): string {
   return text.replaceAll(/\u001B\[[0-9;]*m/g, '');
@@ -160,6 +160,30 @@ describe('ResearchBoardComponent', () => {
     const nextLine = lines.find((l) => l.includes('Next:'));
     expect(nextLine).toBeDefined();
     expect(nextLine).toContain('Run experiment A');
+  });
+
+  it('renders a research plan as scientific work, not audit plumbing', () => {
+    const board = new ResearchBoardComponent();
+    board.setSnapshot(makeSnapshot({
+      researchPlan: {
+        planId: 'plan-1',
+        researchRevision: 2,
+        objective: 'Compare symmetry-on and symmetry-off energies',
+        steps: ['Run both calculations', 'Compare converged energies'],
+        expectedEvidence: ['Energy difference and tolerance'],
+        stopCondition: 'Stop after both calculations converge',
+        status: 'finalized',
+      },
+    }));
+    const compactOutput = board.render(140).map(stripAnsi).join('\\n');
+    expect(compactOutput).toContain('Plan: Compare symmetry-on and symmetry-off energies');
+    expect(compactOutput).toContain('finalized');
+    board.setExpanded(true);
+    const expandedOutput = board.render(140).map(stripAnsi).join('\\n');
+    expect(expandedOutput).toContain('Research plan');
+    expect(expandedOutput).toContain('1. Run both calculations');
+    expect(expandedOutput).toContain('Energy difference and tolerance');
+    expect(expandedOutput).not.toContain('plan-1');
   });
 
   it('renders alerts count', () => {

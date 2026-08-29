@@ -1,4 +1,4 @@
-import { createKimiHarness, type PermissionMode } from '@moonshot-ai/kimi-code-sdk';
+import { createKimiHarness, type PermissionMode } from '@bhjia-phys/hakimi-sdk';
 
 import {
   smokeIdentityFromEnv,

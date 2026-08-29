@@ -16,6 +16,7 @@
 
 import type { KimiErrorPayload } from '#/_base/errors/serialize';
 import type { PromptOrigin } from '#/agent/contextMemory/types';
+import type { TurnIntent } from './stepRequest';
 import type { FinishReason } from '#/kosong/contract/provider';
 import type { ContentPart, TextPart } from '#/kosong/contract/message';
 import type { TokenUsage } from '#/kosong/contract/usage';
@@ -34,6 +35,8 @@ export interface TurnStartedEvent {
   readonly type: 'turn.started';
   readonly turnId: number;
   readonly origin: PromptOrigin;
+  /** Runtime-only turn intent; absent on legacy or unclassified turns. */
+  readonly intent?: TurnIntent;
   readonly prompt?: string;
 }
 

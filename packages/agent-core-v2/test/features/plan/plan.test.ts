@@ -189,6 +189,22 @@ describe('Plan service', () => {
       expect(ctx.llmCalls).toHaveLength(0);
     });
 
+    it('rejects a stale entry when another plan wins during directory preparation', async () => {
+      const mkdir = vi.fn(async () => {
+        await ctx.dispatch({
+          type: 'plan_mode.enter',
+          id: 'winning-plan',
+        });
+      });
+      useFakes(createPlanFakes({ mkdir }));
+
+      await expect(plan.enter('racing-plan')).rejects.toThrow(
+        'Another plan entered before this plan could become active',
+      );
+      expect(await expectActivePlan()).toMatchObject({ id: 'winning-plan' });
+      expect(mkdir).toHaveBeenCalledTimes(1);
+    });
+
     it('derives the plan path from the agent homedir on enter and restore', async () => {
       useFakes(createPlanFakes({
         writeText: vi.fn(async (_path: string, _content: string): Promise<void> => {}),

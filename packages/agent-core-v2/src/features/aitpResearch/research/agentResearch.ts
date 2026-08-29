@@ -5,7 +5,9 @@
  * questions, lines, focus, the three-axis state (workflow / epistemic /
  * persistence), human steering commands, pending/committed checkpoints, the
  * Research Loop scientific state layer (phase / action / progress / state
- * change / human gate), and the `ResearchStatusSnapshot`. Research working
+ * change / human gate), the topic-bound Program, the auditable Period window
+ * (started/ended at mode enter/exit, line switch, and admitted loop
+ * boundaries), and the `ResearchStatusSnapshot`. Research working
  * state follows conversation undo through the checkpointed `ResearchModel`;
  * the committed cursor does not — once a checkpoint is committed to AITP,
  * conversation undo cannot retract that external fact. Bound at Agent scope.
@@ -32,10 +34,13 @@ import type {
   ResearchPhase,
   ResearchProgressLevel,
   ResearchProgressReport,
+  ResearchProgram,
+  ResearchPeriod,
   ResearchQuestion,
   ResearchScientificSnapshot,
   ResearchStateChange,
   ResearchStatusSnapshot,
+  ResearchPlan,
 } from '../types';
 
 export interface CreateQuestionInput {
@@ -65,7 +70,7 @@ export interface UpdateQuestionInput {
 }
 
 export interface ProposeCheckpointInput {
-  readonly expectedRevision?: number;
+  readonly expectedRevision: number;
   readonly questionId?: string;
   readonly lineSlug?: string;
   readonly assessment?: string;
@@ -138,6 +143,17 @@ export interface ResolveHumanDecisionInput {
   readonly nextPhase: ResearchPhase;
 }
 
+export interface PrepareResearchPlanInput {
+  readonly planId?: string;
+  readonly lineSlug?: string;
+  readonly questionId?: string;
+  readonly objective: string;
+  readonly steps: readonly string[];
+  readonly expectedEvidence: readonly string[];
+  readonly stopCondition: string;
+  readonly usePlanMode?: boolean;
+}
+
 export interface ObserveResearchRunInput {
   readonly actionId: string;
   readonly expectedRevision: number;
@@ -160,7 +176,14 @@ export interface IAgentResearchService {
   getLines(): readonly ResearchLine[];
   getPendingCheckpoint(): ResearchCheckpoint | null;
   getCommittedCursor(): ResearchCommittedCursor | null;
+  getProgram(): ResearchProgram | null;
+  getPeriod(): ResearchPeriod | null;
   getScientificProgress(level: ResearchProgressLevel): ResearchScientificSnapshot;
+  getResearchPlan(): ResearchPlan | null;
+  prepareResearchPlan(input: PrepareResearchPlanInput): Promise<ResearchPlan>;
+  finalizeResearchPlan(): Promise<ResearchPlan>;
+  discardResearchPlan(): ResearchPlan | null;
+  noteLoopBoundary(): void;
   reviewEvidencePacket(packet: ResearchEvidencePacket, expectedRevision: number): ResearchEvidenceReview;
   observeRun(input: ObserveResearchRunInput): ResearchRunState;
 

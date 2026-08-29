@@ -7,6 +7,7 @@ import {
   researchManagerCheckpointDraftIsStale,
   researchManagerDraftTarget,
   researchManagerDraftTargetMatches,
+  researchManagerLineDraftIsStale,
   researchManagerMutationAllowed,
   researchManagerQuestionDraftIsStale,
   researchManagerScienceDraftIsStale,
@@ -165,6 +166,14 @@ describe('Research Manager command acknowledgements', () => {
     expect(researchManagerScienceDraftIsStale(true, 4, 5, 'target-a', 'target-a')).toBe(true);
     expect(researchManagerScienceDraftIsStale(true, 4, 4, 'target-a', 'target-b')).toBe(true);
     expect(researchManagerScienceDraftIsStale(true, null, 4, 'target-a', 'target-a')).toBe(true);
+  });
+
+  it('marks only dirty edit line drafts stale when the line revision changes', () => {
+    expect(researchManagerLineDraftIsStale(false, true, 4, 5)).toBe(false);
+    expect(researchManagerLineDraftIsStale(true, false, null, 5)).toBe(false);
+    expect(researchManagerLineDraftIsStale(true, true, 4, 4)).toBe(false);
+    expect(researchManagerLineDraftIsStale(true, true, 4, 5)).toBe(true);
+    expect(researchManagerLineDraftIsStale(true, true, null, 4)).toBe(true);
   });
 
   it('marks dirty question drafts stale from either snapshot or question revision', () => {

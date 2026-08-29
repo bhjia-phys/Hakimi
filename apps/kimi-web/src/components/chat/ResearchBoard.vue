@@ -76,7 +76,12 @@ const nextAction = computed(
           {{ t(`research.loop.${snapshot.loopStatus}`) }}
         </Badge>
         <span class="research-spacer" />
-        <Button variant="ghost" size="sm" @click="expanded = !expanded">
+        <Button
+          variant="ghost"
+          size="sm"
+          :aria-expanded="expanded"
+          @click="expanded = !expanded"
+        >
           {{ expanded ? t('research.collapse') : t('research.expand') }}
         </Button>
         <Button variant="secondary" size="sm" @click="emit('manage')">

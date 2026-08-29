@@ -2,4 +2,4 @@
 "@bhjia-phys/hakimi": patch
 ---
 
-web: Group branch, working-tree changes, sync counts, and pull request status in a compact Git summary card.
+Add a compact Web Git summary card for branch, working-tree, sync, and pull request status.

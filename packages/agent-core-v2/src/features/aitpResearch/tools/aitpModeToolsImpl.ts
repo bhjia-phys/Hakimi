@@ -1,18 +1,17 @@
 /**
  * `aitpResearch` domain — `EnterAITPModeTool` / `ExitAITPModeTool` implementations.
  *
- * `EnterAITPMode` checks the flag, main-agent-only, and Plan conflict, then
- * delegates to `IAgentAitpModeService.enter`; its interaction posture is
- * decided by the normal permission-policy chain. `ExitAITPMode` delegates to
- * `IAgentAitpModeService.exit`. Bound at Agent
- * scope.
+ * `EnterAITPMode` checks the flag, main-agent-only, then delegates to
+ * `IAgentAitpModeService.enter`; its interaction posture is decided by the
+ * normal permission-policy chain. Research Mode is a long-lived scientific
+ * context and may nest under an active Plan overlay. `ExitAITPMode` delegates
+ * to `IAgentAitpModeService.exit`. Bound at Agent scope.
  */
 
 import type { ToolExecution } from '#/tool/toolContract';
 import { toInputJsonSchema } from '#/tool/input-schema';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
-import { IAgentPlanService } from '#/features/plan/plan';
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
 import { IFlagService } from '#/app/flag/flag';
 
@@ -28,7 +27,7 @@ import {
 const ENTER_DESCRIPTION = [
   'Enter AITP Research Mode — a joint research capability backed by the AITP evidence ledger.',
   'When active, Research tools and AITP adapter tools become available.',
-  'Plan mode and Research Mode are mutually exclusive.',
+  'Research Mode is a long-lived scientific context; a Plan overlay may be entered later without exiting it.',
   '',
   'Call this tool before any research, repository inspection, literature search, or direct .aitp access when the user explicitly asks to enter Research Mode, start an AITP-backed research session, or focus the session on a research line.',
   'Do not simulate Research Mode by reading .aitp files directly while the mode is inactive.',
@@ -52,7 +51,6 @@ export class EnterAITPModeTool implements IEnterAITPModeTool {
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
     @IAgentScopeContext private readonly scopeCtx: IAgentScopeContext,
     @IFlagService private readonly flags: IFlagService,
-    @IAgentPlanService private readonly planService: IAgentPlanService,
   ) {}
 
   resolveExecution(args: EnterAITPModeInput): ToolExecution {
@@ -70,13 +68,6 @@ export class EnterAITPModeTool implements IEnterAITPModeTool {
           return {
             isError: true,
             output: 'AITP Research Mode is only available on the main agent.',
-          };
-        }
-        const planStatus = await this.planService.status();
-        if (planStatus !== null) {
-          return {
-            isError: true,
-            output: 'Plan mode is active. Exit Plan mode before entering AITP Research Mode.',
           };
         }
         if (this.mode.isActive) {

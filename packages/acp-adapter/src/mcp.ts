@@ -27,7 +27,7 @@
 
 import type { McpServer, McpServerStdio } from '@agentclientprotocol/sdk';
 import type { McpServerConfig } from '@moonshot-ai/agent-core';
-import { log } from '@moonshot-ai/kimi-code-sdk';
+import { log } from '@bhjia-phys/hakimi-sdk';
 
 /**
  * Convert an ACP `McpServer[]` into the kernel-native

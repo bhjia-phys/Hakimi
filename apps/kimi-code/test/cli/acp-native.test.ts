@@ -150,7 +150,7 @@ describe('kimi acp', () => {
     // Stub the SDK harness so runLoginFlow doesn't hit a real OAuth endpoint:
     // harness.auth.login resolves immediately and triggers exit 0.
     const loginStub = vi.fn(async () => ({ providerName: 'kimi-code' }));
-    vi.doMock(import('@moonshot-ai/kimi-code-sdk'), async (importOriginal) => {
+    vi.doMock(import('@bhjia-phys/hakimi-sdk'), async (importOriginal) => {
       const actual = await importOriginal();
       return {
         ...actual,
@@ -174,7 +174,7 @@ describe('kimi acp', () => {
       expect(runAcpServer).not.toHaveBeenCalled();
       expect(exitSpy).toHaveBeenCalledWith(0);
     } finally {
-      vi.doUnmock('@moonshot-ai/kimi-code-sdk');
+      vi.doUnmock('@bhjia-phys/hakimi-sdk');
       vi.resetModules();
     }
   });

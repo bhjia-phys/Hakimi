@@ -1,4 +1,4 @@
-import type { Event } from '@moonshot-ai/kimi-code-sdk';
+import type { Event } from '@bhjia-phys/hakimi-sdk';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SessionEventHandler } from '#/tui/controllers/session-event-handler';

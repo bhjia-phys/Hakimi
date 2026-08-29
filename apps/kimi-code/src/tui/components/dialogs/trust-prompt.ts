@@ -7,7 +7,7 @@ import {
   type Focusable,
 } from '@moonshot-ai/pi-tui';
 
-import type { WorkspaceTrustMcpServerInfo } from '@moonshot-ai/kimi-code-sdk';
+import type { WorkspaceTrustMcpServerInfo } from '@bhjia-phys/hakimi-sdk';
 
 import { SELECT_POINTER } from '#/tui/constant/symbols';
 import { currentTheme } from '#/tui/theme';

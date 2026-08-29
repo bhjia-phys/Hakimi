@@ -45,6 +45,7 @@ const apiMock = vi.hoisted(() => ({
   getHealth: vi.fn(),
   getMeta: vi.fn(),
   getProviderUsage: vi.fn(),
+  getGitStatus: vi.fn(),
   getSessionResearch: vi.fn(),
   commandSessionResearch: vi.fn(),
   listSessions: vi.fn(),
@@ -1402,6 +1403,149 @@ describe('useWorkspaceState — provider usage requests', () => {
   });
 });
 
+describe('useWorkspaceState — git status requests', () => {
+  beforeEach(() => {
+    apiMock.getGitStatus.mockReset();
+  });
+
+  it('applies only the newest success when overlapping requests resolve out of order', async () => {
+    const older = {
+      branch: 'older',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 1,
+      deletions: 0,
+      pullRequest: null,
+    };
+    const newer = {
+      branch: 'newer',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 2,
+      deletions: 0,
+      pullRequest: null,
+    };
+    let resolveOlder: ((value: typeof older) => void) | undefined;
+    apiMock.getGitStatus
+      .mockImplementationOnce(() => new Promise<typeof older>((resolve) => {
+        resolveOlder = resolve;
+      }))
+      .mockResolvedValueOnce(newer);
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    const first = ws.loadGitStatus('sess_1');
+    const second = ws.loadGitStatus('sess_1');
+    await second;
+    expect(state.gitStatusBySession).toEqual({ sess_1: newer });
+
+    resolveOlder?.(older);
+    await first;
+    expect(state.gitStatusBySession).toEqual({ sess_1: newer });
+  });
+
+  it('clears an existing status when the newest request fails', async () => {
+    const older = {
+      branch: 'older',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 1,
+      deletions: 0,
+      pullRequest: null,
+    };
+    let resolveOlder: ((value: typeof older) => void) | undefined;
+    apiMock.getGitStatus
+      .mockImplementationOnce(() => new Promise<typeof older>((resolve) => {
+        resolveOlder = resolve;
+      }))
+      .mockRejectedValueOnce(new Error('latest status unavailable'));
+    const state = createState();
+    state.gitStatusBySession = { sess_1: older };
+    const ws = useWorkspaceState(state, createDeps());
+
+    const first = ws.loadGitStatus('sess_1');
+    const second = ws.loadGitStatus('sess_1');
+    await second;
+    expect(state.gitStatusBySession).toEqual({});
+
+    resolveOlder?.(older);
+    await first;
+    expect(state.gitStatusBySession).toEqual({});
+  });
+
+  it('keeps a newer success when an older request fails later', async () => {
+    const newer = {
+      branch: 'newer',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 2,
+      deletions: 0,
+      pullRequest: null,
+    };
+    let rejectOlder: ((reason?: unknown) => void) | undefined;
+    apiMock.getGitStatus
+      .mockImplementationOnce(() => new Promise<typeof newer>((_resolve, reject) => {
+        rejectOlder = reject;
+      }))
+      .mockResolvedValueOnce(newer);
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    const first = ws.loadGitStatus('sess_1');
+    const second = ws.loadGitStatus('sess_1');
+    await second;
+    expect(state.gitStatusBySession).toEqual({ sess_1: newer });
+
+    rejectOlder?.(new Error('older status unavailable'));
+    await first;
+    expect(state.gitStatusBySession).toEqual({ sess_1: newer });
+  });
+
+  it('keeps request tokens independent across sessions', async () => {
+    const firstStatus = {
+      branch: 'first',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 1,
+      deletions: 0,
+      pullRequest: null,
+    };
+    const secondStatus = {
+      branch: 'second',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 2,
+      deletions: 0,
+      pullRequest: null,
+    };
+    let resolveFirst: ((value: typeof firstStatus) => void) | undefined;
+    apiMock.getGitStatus
+      .mockImplementationOnce(() => new Promise<typeof firstStatus>((resolve) => {
+        resolveFirst = resolve;
+      }))
+      .mockResolvedValueOnce(secondStatus);
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    const first = ws.loadGitStatus('sess_1');
+    const second = ws.loadGitStatus('sess_2');
+    await second;
+    resolveFirst?.(firstStatus);
+    await first;
+
+    expect(state.gitStatusBySession).toEqual({
+      sess_1: firstStatus,
+      sess_2: secondStatus,
+    });
+  });
+});
+
 describe('useWorkspaceState — first-load auth gate', () => {
   beforeEach(() => {
     apiMock.getAuth.mockReset();
@@ -2599,6 +2743,70 @@ describe('useWorkspaceState — Research', () => {
     await expect(read).resolves.toBe(readSnapshot);
     expect(readRequest).toHaveBeenCalledOnce();
     expect(state.researchBySession['sess_1']).toBe(readSnapshot);
+  });
+
+  it('waits an in-flight read for the mutation that invalidated it', async () => {
+    const coordinator = createResearchRequestCoordinator();
+    const state = createInitialState();
+    const staleSnapshot = snapshot(2);
+    const mutationSnapshot = snapshot(3);
+    let resolveRead!: (value: typeof staleSnapshot) => void;
+    let resolveMutation!: (value: typeof mutationSnapshot) => void;
+    const readRequest = vi.fn(() => new Promise<typeof staleSnapshot>((resolve) => {
+      resolveRead = resolve;
+    }));
+    const mutationRequest = vi.fn(() => new Promise<typeof mutationSnapshot>((resolve) => {
+      resolveMutation = resolve;
+    }));
+
+    const read = coordinator.read(state, 'sess_1', readRequest);
+    await vi.waitFor(() => expect(readRequest).toHaveBeenCalledOnce());
+    const mutation = coordinator.mutate(state, 'sess_1', mutationRequest);
+    await vi.waitFor(() => expect(mutationRequest).toHaveBeenCalledOnce());
+    let readSettled = false;
+    const readResult = read.then((value) => {
+      readSettled = true;
+      return value;
+    });
+
+    resolveRead(staleSnapshot);
+    await Promise.resolve();
+    expect(readSettled).toBe(false);
+
+    resolveMutation(mutationSnapshot);
+    await expect(mutation).resolves.toBe(mutationSnapshot);
+    await expect(readResult).resolves.toBe(mutationSnapshot);
+    expect(state.researchBySession['sess_1']).toBe(mutationSnapshot);
+  });
+
+  it('refetches after an invalidated read when its mutation fails without state', async () => {
+    const coordinator = createResearchRequestCoordinator();
+    const state = createInitialState();
+    const staleSnapshot = snapshot(2);
+    const authoritativeSnapshot = snapshot(4);
+    let resolveRead!: (value: typeof staleSnapshot) => void;
+    let rejectMutation!: (reason?: unknown) => void;
+    const readRequest = vi.fn()
+      .mockImplementationOnce(() => new Promise<typeof staleSnapshot>((resolve) => {
+        resolveRead = resolve;
+      }))
+      .mockResolvedValueOnce(authoritativeSnapshot);
+    const mutationRequest = vi.fn(() => new Promise<typeof authoritativeSnapshot>((_resolve, reject) => {
+      rejectMutation = reject;
+    }));
+
+    const read = coordinator.read(state, 'sess_1', readRequest);
+    await vi.waitFor(() => expect(readRequest).toHaveBeenCalledOnce());
+    const mutation = coordinator.mutate(state, 'sess_1', mutationRequest);
+    await vi.waitFor(() => expect(mutationRequest).toHaveBeenCalledOnce());
+
+    resolveRead(staleSnapshot);
+    const error = new Error('mutation failed');
+    rejectMutation(error);
+    await expect(mutation).rejects.toBe(error);
+    await expect(read).resolves.toBe(authoritativeSnapshot);
+    expect(readRequest).toHaveBeenCalledTimes(2);
+    expect(state.researchBySession['sess_1']).toBe(authoritativeSnapshot);
   });
 
   it('refreshes authoritative state before surfacing a validation failure', async () => {

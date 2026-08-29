@@ -278,6 +278,7 @@ describe('server-v2 GET /api/v1/sessions/:id/snapshot', () => {
     emit(sid, {
       type: 'turn.started',
       turnId: 1,
+      origin: { kind: 'user' },
     } as unknown as DomainEvent); // durable → seq 1
     emit(sid, { type: 'assistant.delta', turnId: 1, delta: 'Hello' } as unknown as DomainEvent); // volatile
 

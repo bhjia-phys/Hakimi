@@ -20,11 +20,16 @@
  *   `research.steer` / `research.propose_checkpoint` /
  *   `research.ack_checkpoint` / `research.reopen_question` /
  *   `research.upsert_alert` / `research.clear_alert` /
- *   `research.ack_alert` / `research.create_line` ops and the
+ *   `research.ack_alert` / `research.create_line` ops, the
  *   scientific-loop ops `research.plan_action` / `research.start_action` /
  *   `research.complete_action` / `research.record_progress` /
  *   `research.set_phase` / `research.request_human_decision` /
- *   `research.resolve_human_decision` mutate it. Alert production is owned by
+ *   `research.resolve_human_decision`, and the local layered-state ops
+ *   `research.set_program` / `research.start_period` /
+ *   `research.update_period` / `research.end_period` (the topic-bound
+ *   program and the auditable period window; created/updated only at clear
+ *   semantic points by `AgentResearchService`) mutate it. Alert production is
+ *   owned by
  *   `AgentResearchService`, while these alert ops provide replayable state
  *   transitions.
  *
@@ -75,6 +80,8 @@ import type {
   ResearchCommittedCursor,
   ResearchHumanGateKind,
   ResearchPhase,
+  ResearchProgram,
+  ResearchPeriod,
   ResearchStatusSnapshot,
 } from './types';
 import {
@@ -219,6 +226,9 @@ export interface ResearchWorkingState {
   readonly latestProgress: ResearchProgressReportRecord | null;
   readonly recentStateChange: ResearchStateChangeRecord | null;
   readonly humanGate: ResearchHumanGateRecord | null;
+  readonly program: ResearchProgramRecord | null;
+  readonly period: ResearchPeriodRecord | null;
+  readonly periodHistory: readonly ResearchPeriodRecord[];
 }
 
 export interface ResearchQuestionRecord {
@@ -331,6 +341,10 @@ export interface ResearchHumanGateRecord {
   readonly createdAt: number;
 }
 
+export interface ResearchProgramRecord extends ResearchProgram {}
+
+export interface ResearchPeriodRecord extends ResearchPeriod {}
+
 export type ResearchModelState = Checkpointed<ResearchWorkingState>;
 
 export const ResearchModel = defineCheckpointedModel<ResearchWorkingState>(
@@ -348,6 +362,9 @@ export const ResearchModel = defineCheckpointedModel<ResearchWorkingState>(
     latestProgress: null,
     recentStateChange: null,
     humanGate: null,
+    program: null,
+    period: null,
+    periodHistory: [],
   }),
 );
 
@@ -428,6 +445,7 @@ declare module '#/wire/types' {
     'research.clear_alert': typeof researchClearAlert;
     'research.ack_alert': typeof researchAcknowledgeAlert;
     'research.plan_action': typeof researchPlanAction;
+    'research.begin_action': typeof researchBeginAction;
     'research.start_action': typeof researchStartAction;
     'research.complete_action': typeof researchCompleteAction;
     'research.observe_run': typeof researchObserveRun;
@@ -435,6 +453,10 @@ declare module '#/wire/types' {
     'research.set_phase': typeof researchSetPhase;
     'research.request_human_decision': typeof researchRequestHumanDecision;
     'research.resolve_human_decision': typeof researchResolveHumanDecision;
+    'research.set_program': typeof researchSetProgram;
+    'research.start_period': typeof researchStartPeriod;
+    'research.update_period': typeof researchUpdatePeriod;
+    'research.end_period': typeof researchEndPeriod;
   }
 }
 
@@ -615,15 +637,17 @@ export const researchSwitchLine = ResearchModel.defineOp('research.switch_line',
   apply: (s, p) => {
     if (s.current.lines[p.lineSlug] === undefined) return s;
     if (p.expectedRevision !== 0 && s.current.revision !== p.expectedRevision) return s;
-    const focusQuestion = s.current.focus === null
-      ? undefined
-      : s.current.questions[s.current.focus.questionId];
-    const focus = focusQuestion?.lineSlug === p.lineSlug ? s.current.focus : null;
     return {
       ...s,
       current: {
         ...s.current,
-        focus,
+        focus: null,
+        phase: 'idle',
+        currentAction: null,
+        currentRun: null,
+        latestProgress: null,
+        recentStateChange: null,
+        humanGate: null,
         revision: s.current.revision + 1,
       },
     };
@@ -1018,8 +1042,11 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
   apply: (s, p) => {
     if (!PLAN_ACTION_PHASES.includes(s.current.phase)) return s;
     if (isLiveForegroundAction(s.current.currentAction)) return s;
-    if (p.questionId !== undefined && s.current.questions[p.questionId] === undefined) return s;
+    if (isUnresolvedHumanGate(s.current.humanGate)) return s;
+    const question = p.questionId === undefined ? undefined : s.current.questions[p.questionId];
+    if (p.questionId !== undefined && question === undefined) return s;
     if (p.lineSlug !== undefined && s.current.lines[p.lineSlug] === undefined) return s;
+    if (question !== undefined && p.lineSlug !== undefined && question.lineSlug !== p.lineSlug) return s;
     const action: ResearchActionSpecRecord = {
       actionId: p.actionId,
       questionId: p.questionId,
@@ -1039,6 +1066,61 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
       current: {
         ...s.current,
         phase: 'action_planned',
+        currentAction: action,
+        currentRun: null,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+/**
+ * Atomic fast path for a non-gated bounded action. The strict plan/start Ops
+ * remain available for explicit approval workflows; this Op prevents the
+ * common BeginResearchAction path from leaving a planned action behind if a
+ * second dispatch would fail.
+ */
+export const researchBeginAction = ResearchModel.defineOp('research.begin_action', {
+  schema: z.object({
+    actionId: z.string(),
+    questionId: z.string().optional(),
+    lineSlug: z.string().optional(),
+    kind: ResearchActionKindSchema,
+    purpose: LongTextSchema,
+    expectedEvidence: StringListSchema,
+    stopCondition: ShortTextSchema,
+    allowedToolKinds: StringListSchema,
+    retryOfEntryId: z.string().optional(),
+    requiresHumanApproval: z.literal(false),
+    createdAt: z.number(),
+  }),
+  apply: (s, p) => {
+    if (!PLAN_ACTION_PHASES.includes(s.current.phase)) return s;
+    if (isLiveForegroundAction(s.current.currentAction)) return s;
+    if (isUnresolvedHumanGate(s.current.humanGate)) return s;
+    const question = p.questionId === undefined ? undefined : s.current.questions[p.questionId];
+    if (p.questionId !== undefined && question === undefined) return s;
+    if (p.lineSlug !== undefined && s.current.lines[p.lineSlug] === undefined) return s;
+    if (question !== undefined && p.lineSlug !== undefined && question.lineSlug !== p.lineSlug) return s;
+    const action: ResearchActionSpecRecord = {
+      actionId: p.actionId,
+      questionId: p.questionId,
+      lineSlug: p.lineSlug,
+      kind: p.kind,
+      purpose: p.purpose,
+      expectedEvidence: p.expectedEvidence,
+      stopCondition: p.stopCondition,
+      allowedToolKinds: p.allowedToolKinds,
+      retryOfEntryId: p.retryOfEntryId,
+      status: 'in_progress',
+      createdAt: p.createdAt,
+      requiresHumanApproval: false,
+    };
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        phase: 'action_executing',
         currentAction: action,
         currentRun: null,
         revision: s.current.revision + 1,
@@ -1114,7 +1196,9 @@ export const researchObserveRun = ResearchModel.defineOp('research.observe_run',
     artifactRefs: StringListSchema,
   }).strict(),
   apply: (s, p) => {
+    if (s.current.phase !== 'action_executing') return s;
     if (s.current.currentAction?.actionId !== p.actionId) return s;
+    if (s.current.currentAction.status !== 'in_progress') return s;
     const currentRun: ResearchRunStateRecord = {
       actionId: p.actionId,
       campaign: p.campaign,
@@ -1285,7 +1369,9 @@ export const researchResolveHumanDecision = ResearchModel.defineOp('research.res
       gate === null ||
       gate.gateId !== p.gateId ||
       gate.resolvedAt !== undefined ||
-      !isPhaseTransitionValid('awaiting_human', p.nextPhase)
+      !isPhaseTransitionValid('awaiting_human', p.nextPhase) ||
+      (p.nextPhase === 'action_executing' &&
+        (s.current.currentAction === null || s.current.currentAction.status !== 'in_progress'))
     ) return s;
 
     const stateChange: ResearchStateChangeRecord = {
@@ -1306,6 +1392,142 @@ export const researchResolveHumanDecision = ResearchModel.defineOp('research.res
           resolution: p.resolution,
         },
         recentStateChange: stateChange,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchSetProgram = ResearchModel.defineOp('research.set_program', {
+  schema: z.object({
+    topicId: z.string().min(1).max(200),
+    title: z.string().min(1).max(500),
+    goalText: z.string().max(8000),
+    goalSource: z.string().max(500),
+    establishedAt: z.number(),
+  }),
+  apply: (s, p) => {
+    const program = s.current.program;
+    if (
+      program !== null &&
+      program.topicId === p.topicId &&
+      program.title === p.title &&
+      program.goalText === p.goalText &&
+      program.goalSource === p.goalSource &&
+      program.establishedAt === p.establishedAt
+    ) return s;
+    const next: ResearchProgramRecord = {
+      topicId: p.topicId,
+      title: p.title,
+      goalText: p.goalText,
+      goalSource: p.goalSource,
+      establishedAt: p.establishedAt,
+    };
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        program: next,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchStartPeriod = ResearchModel.defineOp('research.start_period', {
+  schema: z.object({
+    id: z.string().min(1).max(200),
+    lineSlug: z.string().min(1).max(200),
+    startedAt: z.number(),
+  }),
+  apply: (s, p) => {
+    const open = s.current.period;
+    if (open !== null && open.endedAt === undefined) {
+      if (open.lineSlug === p.lineSlug) return s;
+      const closed: ResearchPeriodRecord = { ...open, endedAt: p.startedAt };
+      const next: ResearchPeriodRecord = {
+        id: p.id,
+        lineSlug: p.lineSlug,
+        startedAt: p.startedAt,
+        loopCount: 0,
+      };
+      return {
+        ...s,
+        current: {
+          ...s.current,
+          period: next,
+          periodHistory: [...s.current.periodHistory, closed],
+          revision: s.current.revision + 1,
+        },
+      };
+    }
+    const next: ResearchPeriodRecord = {
+      id: p.id,
+      lineSlug: p.lineSlug,
+      startedAt: p.startedAt,
+      loopCount: 0,
+    };
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        period: next,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchUpdatePeriod = ResearchModel.defineOp('research.update_period', {
+  schema: z.object({
+    id: z.string().min(1).max(200),
+    loopCount: z.number().int().nonnegative().optional(),
+    currentQuestionId: z.string().min(1).max(200).nullable().optional(),
+    summary: z.string().max(2000).nullable().optional(),
+  }),
+  apply: (s, p) => {
+    const open = s.current.period;
+    if (open === null || open.id !== p.id || open.endedAt !== undefined) return s;
+    const nextQuestionId = p.currentQuestionId === undefined
+      ? open.currentQuestionId
+      : p.currentQuestionId ?? undefined;
+    const nextSummary = p.summary === undefined ? open.summary : p.summary ?? undefined;
+    if (
+      (p.loopCount === undefined || p.loopCount === open.loopCount) &&
+      nextQuestionId === open.currentQuestionId &&
+      nextSummary === open.summary
+    ) return s;
+    const next: ResearchPeriodRecord = {
+      ...open,
+      loopCount: p.loopCount ?? open.loopCount,
+      currentQuestionId: nextQuestionId,
+      summary: nextSummary,
+    };
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        period: next,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchEndPeriod = ResearchModel.defineOp('research.end_period', {
+  schema: z.object({
+    endedAt: z.number(),
+  }),
+  apply: (s, p) => {
+    const open = s.current.period;
+    if (open === null || open.endedAt !== undefined) return s;
+    const closed: ResearchPeriodRecord = { ...open, endedAt: p.endedAt };
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        period: null,
+        periodHistory: [...s.current.periodHistory, closed],
         revision: s.current.revision + 1,
       },
     };

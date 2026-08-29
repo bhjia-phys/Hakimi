@@ -66,7 +66,7 @@ Local development commands use `pnpm --filter @bhjia-phys/hakimi-web …`:
 Production assets are root-level workflows:
 
 - `pnpm run build:web-assets` — clean canonical build, branding patch, schema v5 provenance with the actual canonical Node/pnpm toolchain, verification, and atomic replacement of the tracked package outputs; commit them with source changes.
-- `pnpm run build:web-assets -- --check` — clean rebuild and byte-for-byte bundle comparison without replacing tracked assets; a different actual Node version is allowed only when both builds are canonical and every other identity matches.
+- `pnpm run build:web-assets -- --check` — clean rebuild and byte-for-byte bundle comparison without replacing tracked assets; provenance records the actual Node/pnpm versions used during generation, while verification may use any Node version satisfying the declared floor and the exact pnpm version, and must reproduce byte-identical bundle plus source/recipe file identities.
 
 Debugging against kap-server instances: start one from the repo root with `pnpm dev:server` (port 58627), optionally a second with `pnpm dev:v2` (port 58628 — instances share the home dir via the registry, so both can run at once). The dev server proxies `/api/v1` to the `default` preset; the Sidebar brand row carries a dev-only backend pill (engine generation `v1`/`v2` from `GET /api/v1/meta`'s `backend` field + endpoint) whose menu repoints the proxy at runtime — no Vite restart. Presets default to `http://127.0.0.1:58627` / `:58628`, overridable via `KIMI_BACKEND_DEFAULT_URL` / `KIMI_BACKEND_MULTI_URL`; the switcher endpoints (`GET/POST /__kimi-dev/backend`, dev-only, see `backendSwitcherPlugin` in `vite.config.ts`) drive the menu.
 

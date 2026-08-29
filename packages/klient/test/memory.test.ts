@@ -144,6 +144,53 @@ describe('memory dispatcher contract allowlist', () => {
     }
   });
 
+  it('rejects Research wire limits at the dispatcher boundary', async () => {
+    const ctx = await setup();
+    try {
+      await expect(
+        ctx.dispatcher.call(ctx.agentScope, 'agentResearchService', 'prepareResearchPlan', [
+          {
+            objective: '',
+            steps: ['step'],
+            expectedEvidence: ['evidence'],
+            stopCondition: 'stop',
+          },
+        ]),
+      ).rejects.toMatchObject({
+        name: 'RPCError',
+        code: 40001,
+        message: expect.stringContaining('input validation failed'),
+      });
+      await expect(
+        ctx.dispatcher.call(ctx.agentScope, 'agentResearchService', 'planAndStartAction', [
+          {
+            kind: 'experiment',
+            purpose: 'purpose',
+            stopCondition: 'stop',
+            expectedEvidence: Array.from({ length: 51 }, () => 'evidence'),
+          },
+        ]),
+      ).rejects.toMatchObject({ name: 'RPCError', code: 40001 });
+    } finally {
+      await teardown(ctx);
+    }
+  });
+
+  it('rejects a checkpoint proposal without expectedRevision at memory boundary', async () => {
+    const ctx = await setup();
+    try {
+      await expect(
+        ctx.dispatcher.call(ctx.agentScope, 'agentResearchService', 'proposeCheckpoint', [{}]),
+      ).rejects.toMatchObject({
+        name: 'RPCError',
+        code: 40001,
+        message: expect.stringContaining('input validation failed'),
+      });
+    } finally {
+      await teardown(ctx);
+    }
+  });
+
   it('rejects call/stream type mismatches', async () => {
     const ctx = await setup();
     try {

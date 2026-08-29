@@ -29,7 +29,7 @@ This is a pnpm monorepo. The most relevant entry points are:
 
 - `apps/kimi-code` — CLI / TUI
 - `apps/vis` — session replay & debugging visualizer
-- `packages/node-sdk` — upstream-compatible public TypeScript SDK (`@moonshot-ai/kimi-code-sdk`)
+- `packages/node-sdk` — upstream-compatible public TypeScript SDK (`@bhjia-phys/hakimi-sdk`)
 - `packages/agent-core`, `kosong`, `kaos`, `oauth`, `telemetry` — internal engine packages
 - `docs/` — VitePress bilingual docs site
 

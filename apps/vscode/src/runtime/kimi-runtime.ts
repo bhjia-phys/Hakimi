@@ -5,7 +5,7 @@ import {
   type Session,
   type SessionSummary,
   type ThinkingEffort,
-} from "@moonshot-ai/kimi-code-sdk";
+} from "@bhjia-phys/hakimi-sdk";
 
 import type { RuntimeBroadcast } from "./session-runtime";
 import {

@@ -14,9 +14,9 @@ const mockGetExperimentalFeatures = vi.fn();
 const mockEnsureConfigFile = vi.fn();
 const mockSetConfig = vi.fn();
 
-vi.mock('@moonshot-ai/kimi-code-sdk', async () => {
-  const actual = await vi.importActual<typeof import('@moonshot-ai/kimi-code-sdk')>(
-    '@moonshot-ai/kimi-code-sdk',
+vi.mock('@bhjia-phys/hakimi-sdk', async () => {
+  const actual = await vi.importActual<typeof import('@bhjia-phys/hakimi-sdk')>(
+    '@bhjia-phys/hakimi-sdk',
   );
   return {
     ...actual,
@@ -33,7 +33,7 @@ vi.mock('@moonshot-ai/kimi-code-sdk', async () => {
 
 vi.mock('#/utils/open-url', () => ({ openUrl: vi.fn() }));
 
-import { createKimiHarness } from '@moonshot-ai/kimi-code-sdk';
+import { createKimiHarness } from '@bhjia-phys/hakimi-sdk';
 
 import { registerLoginCommand } from '#/cli/sub/login';
 import { openUrl } from '#/utils/open-url';

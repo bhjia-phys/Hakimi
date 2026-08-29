@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { DeviceAuthorization } from '@moonshot-ai/kimi-code-oauth';
-import { effectiveModelAlias, log } from '@moonshot-ai/kimi-code-sdk';
+import { effectiveModelAlias, log } from '@bhjia-phys/hakimi-sdk';
 import type {
   ApprovalRequest,
   ApprovalResponse,
@@ -16,7 +16,7 @@ import type {
   SkillSummary,
   TokenUsage,
   WorkspaceTrustInfo,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import type { MigrationPlan } from '@moonshot-ai/migration-legacy';
 import {
   deleteAllKittyImages,

@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { McpServerConfig as SdkMcpServerConfig, McpTestResult } from "@moonshot-ai/kimi-code-sdk";
+import type { McpServerConfig as SdkMcpServerConfig, McpTestResult } from "@bhjia-phys/hakimi-sdk";
 
 import { Events, Methods } from "../../shared/bridge";
 import {

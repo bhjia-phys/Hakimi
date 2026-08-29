@@ -29,6 +29,8 @@ export const WEB_RECIPE_FILES = [
   'apps/kimi-code/scripts/record-web-provenance.mjs',
   'apps/kimi-web/package.json',
   'apps/kimi-web/vite.config.ts',
+  'flake.lock',
+  'flake.nix',
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',

@@ -11,7 +11,7 @@ import type {
   ResumedAgentState,
   ResumedSessionState,
   ToolCall,
-} from "@moonshot-ai/kimi-code-sdk";
+} from "@bhjia-phys/hakimi-sdk";
 import { describe, expect, it } from "vitest";
 
 import {

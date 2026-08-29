@@ -29,7 +29,7 @@
  * `setOptions`.
  */
 
-import type { ProviderConfig } from '@moonshot-ai/kimi-code-sdk';
+import type { ProviderConfig } from '@bhjia-phys/hakimi-sdk';
 import {
   getOpenPlatformById,
   isOpenPlatformId,

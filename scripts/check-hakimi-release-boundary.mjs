@@ -4,8 +4,8 @@
  *
  * Verifies that Hakimi keeps its release identity intact: package name / bin /
  * repository, the upstream-baseline metadata (verified against the archive
- * remote, since Hakimi's own history no longer embeds upstream commits),
- * changeset hygiene, updater URLs, and the release-tag / workflow
+ * remote, since Hakimi's own history no longer embeds upstream commits), the
+ * upstream review audit, changeset hygiene, updater URLs, and the release-tag / workflow
  * parameterization. Structured data (JSON) is parsed; text checks are used
  * only for the few boundaries that live inside workflow YAML or source files
  * that cannot be read structurally.
@@ -26,23 +26,38 @@ import {
 const root = resolve(import.meta.dirname, '..');
 const rootPackagePath = join(root, 'package.json');
 const cliPackagePath = join(root, 'apps/kimi-code/package.json');
+const sdkPackagePath = join(root, 'packages/node-sdk/package.json');
+const acpAdapterPackagePath = join(root, 'packages/acp-adapter/package.json');
+const vscodePackagePath = join(root, 'apps/vscode/package.json');
+const pnpmWorkspacePath = join(root, 'pnpm-workspace.yaml');
+const flakePath = join(root, 'flake.nix');
 const upstreamBasePath = join(root, 'apps/kimi-code/upstream-base.json');
 const webBuildScriptPath = join(root, 'apps/kimi-code/scripts/build-web-assets.mjs');
+const upstreamAuditPath = join(root, 'apps/kimi-code/upstream-audit.json');
+const webBasePath = join(root, 'apps/kimi-code/web-base.json');
 const changesetConfigPath = join(root, '.changeset/config.json');
 const changesetDir = join(root, '.changeset');
 const appConstantsPath = join(root, 'apps/kimi-code/src/constant/app.ts');
 const resolveReleasePath = join(root, 'apps/kimi-code/scripts/native/resolve-release.mjs');
 const produceManifestPath = join(root, 'apps/kimi-code/scripts/native/produce-manifest.mjs');
 const releaseWorkflowPath = join(root, '.github/workflows/release-hakimi.yml');
+const upstreamReleaseWorkflowPath = join(root, '.github/workflows/release.yml');
+const pkgPrNewWorkflowPath = join(root, '.github/workflows/pkg-pr-new.yml');
 const repairWorkflowPath = join(root, '.github/workflows/repair-hakimi-native-release.yml');
 const nativeReleaseWorkflowPath = join(root, '.github/workflows/_hakimi-native-release.yml');
 const nativeBuildWorkflowPath = join(root, '.github/workflows/_native-build.yml');
 const manualWorkflowPath = join(root, '.github/workflows/manual-native-bundle.yml');
 
 const HAKIMI_PACKAGE_NAME = '@bhjia-phys/hakimi';
+const HAKIMI_SDK_PACKAGE_NAME = '@bhjia-phys/hakimi-sdk';
+const LEGACY_SDK_PACKAGE_NAME = '@moonshot-ai/kimi-code-sdk';
 const HAKIMI_REPO = 'bhjia-phys/Hakimi';
 const UPSTREAM_REPO_URL = 'https://github.com/MoonshotAI/kimi-code.git';
 const UPSTREAM_CLI_PACKAGE = '@moonshot-ai/kimi-code';
+const PUBLIC_WORKSPACE_PACKAGE_NAMES = new Set([
+  HAKIMI_PACKAGE_NAME,
+  HAKIMI_SDK_PACKAGE_NAME,
+]);
 
 const failures = [];
 const skipped = [];
@@ -75,6 +90,109 @@ function checkTextFile(name, filePath, required, forbidden = []) {
 
 function parseJsonFile(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf-8'));
+}
+
+function isRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isRealDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+}
+
+function isLowercaseSha(value) {
+  return typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
+}
+
+function workspacePatterns() {
+  const lines = readFileSync(pnpmWorkspacePath, 'utf-8').split(/\r?\n/);
+  const patterns = [];
+  let inPackages = false;
+
+  for (const line of lines) {
+    if (!inPackages) {
+      if (line.trim() === 'packages:') inPackages = true;
+      continue;
+    }
+    if (line.trim() !== '' && !/^\s/.test(line)) break;
+
+    const match = line.match(/^\s+-\s+(?:"([^"]+)"|'([^']+)'|([^#]+?))\s*(?:#.*)?$/);
+    const pattern = match?.[1] ?? match?.[2] ?? match?.[3];
+    if (pattern !== undefined) patterns.push(pattern.trim());
+  }
+
+  if (patterns.length === 0) {
+    throw new Error(`No workspace package patterns found in ${pnpmWorkspacePath}`);
+  }
+  return patterns;
+}
+
+function expandWorkspacePattern(pattern) {
+  let directories = [root];
+  for (const segment of pattern.split('/').filter(Boolean)) {
+    if (segment === '*') {
+      directories = directories.flatMap((directory) =>
+        readdirSync(directory, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => join(directory, entry.name)),
+      );
+      continue;
+    }
+    if (segment === '**') {
+      const expanded = [...directories];
+      for (const directory of expanded) {
+        const children = readdirSync(directory, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => join(directory, entry.name));
+        expanded.push(...children);
+      }
+      directories = expanded;
+      continue;
+    }
+    directories = directories
+      .map((directory) => join(directory, segment))
+      .filter((directory) => existsSync(directory));
+  }
+  return directories
+    .filter((directory) => directory !== root)
+    .map((directory) => join(directory, 'package.json'))
+    .filter((manifestPath) => existsSync(manifestPath));
+}
+
+function discoverWorkspacePackages() {
+  /** @type {Set<string>} */
+  const manifestPaths = new Set();
+  for (const workspacePattern of workspacePatterns()) {
+    const excluded = workspacePattern.startsWith('!');
+    const pattern = excluded ? workspacePattern.slice(1) : workspacePattern;
+    for (const manifestPath of expandWorkspacePattern(pattern)) {
+      const absolutePath = resolve(manifestPath);
+      if (excluded) manifestPaths.delete(absolutePath);
+      else manifestPaths.add(absolutePath);
+    }
+  }
+
+  const packages = [...manifestPaths].toSorted((left, right) => left.localeCompare(right)).map((manifestPath) => {
+    const pkg = parseJsonFile(manifestPath);
+    if (typeof pkg.name !== 'string' || pkg.name.length === 0) {
+      throw new Error(`Workspace manifest has no package name: ${manifestPath}`);
+    }
+    return { manifestPath, package: pkg };
+  });
+  const names = new Set();
+  for (const { manifestPath, package: pkg } of packages) {
+    if (names.has(pkg.name)) {
+      throw new Error(`Duplicate workspace package name ${pkg.name}: ${manifestPath}`);
+    }
+    names.add(pkg.name);
+  }
+  return packages;
+}
+
+function sameSet(left, right) {
+  return left.size === right.size && [...left].every((value) => right.has(value));
 }
 
 function git(args) {
@@ -110,6 +228,95 @@ check(
 check('package version is strict semver', isValidSemver(cliPackage.version));
 
 // ---------------------------------------------------------------------------
+// 1.1 Public SDK identity and consumers
+// ---------------------------------------------------------------------------
+
+const sdkPackage = parseJsonFile(sdkPackagePath);
+check(
+  'SDK package name is @bhjia-phys/hakimi-sdk',
+  sdkPackage.name === HAKIMI_SDK_PACKAGE_NAME,
+  JSON.stringify(sdkPackage.name),
+);
+check('SDK package is public', sdkPackage.private !== true, JSON.stringify(sdkPackage.private));
+check(
+  'SDK package metadata points at bhjia-phys/Hakimi',
+  sdkPackage.author === 'bhjia-phys' &&
+    sdkPackage.homepage?.includes(HAKIMI_REPO) &&
+    sdkPackage.repository?.url?.includes(HAKIMI_REPO) &&
+    sdkPackage.bugs?.url?.includes(HAKIMI_REPO),
+);
+check('SDK package version is strict semver', isValidSemver(sdkPackage.version));
+
+check(
+  'CLI depends on the public SDK workspace',
+  cliPackage.devDependencies?.[HAKIMI_SDK_PACKAGE_NAME] === 'workspace:^' &&
+    cliPackage.devDependencies?.[LEGACY_SDK_PACKAGE_NAME] === undefined,
+);
+
+const acpAdapterPackage = parseJsonFile(acpAdapterPackagePath);
+check(
+  'ACP adapter depends on the public SDK workspace',
+  acpAdapterPackage.dependencies?.[HAKIMI_SDK_PACKAGE_NAME] === 'workspace:^' &&
+    acpAdapterPackage.dependencies?.[LEGACY_SDK_PACKAGE_NAME] === undefined,
+);
+
+const vscodePackage = parseJsonFile(vscodePackagePath);
+check(
+  'VS Code extension depends on the public SDK workspace',
+  vscodePackage.dependencies?.[HAKIMI_SDK_PACKAGE_NAME] === 'workspace:^' &&
+    vscodePackage.dependencies?.[LEGACY_SDK_PACKAGE_NAME] === undefined,
+);
+
+let workspacePackages = [];
+try {
+  workspacePackages = discoverWorkspacePackages();
+  check(
+    'pnpm workspace patterns resolve uniquely named package manifests',
+    workspacePackages.length > 0,
+    `found ${workspacePackages.length} package manifests`,
+  );
+} catch (error) {
+  check(
+    'pnpm workspace patterns resolve uniquely named package manifests',
+    false,
+    error instanceof Error ? error.message : String(error),
+  );
+}
+const publicWorkspacePackageNames = new Set(
+  workspacePackages
+    .filter(({ package: pkg }) => pkg.private !== true)
+    .map(({ package: pkg }) => pkg.name),
+);
+const privateWorkspacePackageNames = workspacePackages
+  .filter(({ package: pkg }) => pkg.private === true)
+  .map(({ package: pkg }) => pkg.name);
+check(
+  'workspace manifests expose only Hakimi CLI and SDK publicly',
+  sameSet(publicWorkspacePackageNames, PUBLIC_WORKSPACE_PACKAGE_NAMES),
+  JSON.stringify([...publicWorkspacePackageNames].toSorted((left, right) => left.localeCompare(right))),
+);
+check(
+  'every other workspace manifest is explicitly private',
+  workspacePackages.length > 0 &&
+    workspacePackages.every(
+      ({ package: pkg }) =>
+        PUBLIC_WORKSPACE_PACKAGE_NAMES.has(pkg.name) || pkg.private === true,
+    ),
+  JSON.stringify(
+    workspacePackages
+      .filter(({ package: pkg }) => !PUBLIC_WORKSPACE_PACKAGE_NAMES.has(pkg.name) && pkg.private !== true)
+      .map(({ package: pkg }) => pkg.name),
+  ),
+);
+
+checkTextFile(
+  'flake workspaceNames uses the public SDK name',
+  flakePath,
+  [HAKIMI_SDK_PACKAGE_NAME],
+  [LEGACY_SDK_PACKAGE_NAME],
+);
+
+// ---------------------------------------------------------------------------
 // 2. Upstream baseline metadata
 // ---------------------------------------------------------------------------
 
@@ -124,6 +331,71 @@ check(
   'upstream-base.json commit is a 40-char lowercase sha',
   /^[a-f0-9]{40}$/.test(upstreamBase.commit),
   JSON.stringify(upstreamBase.commit),
+);
+
+const upstreamAudit = parseJsonFile(upstreamAuditPath);
+const auditFields = [
+  'checkedAt',
+  'upstreamRef',
+  'upstreamCommit',
+  'localTrackingRef',
+  'localTrackingCommit',
+  'scope',
+];
+const auditChecks =
+  isRecord(upstreamAudit) && Array.isArray(upstreamAudit.checks) ? upstreamAudit.checks : [];
+const auditEntriesAreRecords = auditChecks.every(isRecord);
+const auditEntriesHaveExpectedFields =
+  auditEntriesAreRecords &&
+  auditChecks.every((entry) => {
+    const keys = Object.keys(entry);
+    return keys.length === auditFields.length && auditFields.every((field) => keys.includes(field));
+  });
+const auditEntriesHaveValidDates =
+  auditEntriesHaveExpectedFields && auditChecks.every((entry) => isRealDate(entry.checkedAt));
+const auditEntriesHaveCanonicalRefs =
+  auditEntriesHaveExpectedFields &&
+  auditChecks.every(
+    (entry) =>
+      entry.upstreamRef === 'refs/heads/main' &&
+      entry.localTrackingRef === 'refs/remotes/upstream/main',
+  );
+const auditEntriesHaveValidCommits =
+  auditEntriesHaveExpectedFields &&
+  auditChecks.every(
+    (entry) => isLowercaseSha(entry.upstreamCommit) && isLowercaseSha(entry.localTrackingCommit),
+  );
+const auditEntriesHaveNonEmptyScopes =
+  auditEntriesHaveExpectedFields &&
+  auditChecks.every((entry) => typeof entry.scope === 'string' && entry.scope.trim().length > 0);
+const auditEntriesAreOrdered =
+  auditEntriesHaveValidDates &&
+  auditChecks.every((entry, index) => index === 0 || entry.checkedAt >= auditChecks[index - 1].checkedAt);
+const auditEntryKeys = auditEntriesAreRecords
+  ? auditChecks.map((entry) => JSON.stringify([entry.checkedAt, entry.upstreamCommit, entry.scope]))
+  : [];
+
+check(
+  'upstream-audit.json repository matches upstream',
+  isRecord(upstreamAudit) && upstreamAudit.repository === UPSTREAM_REPO_URL,
+  JSON.stringify(upstreamAudit?.repository),
+);
+check(
+  'upstream-audit.json checks is a non-empty array',
+  Array.isArray(upstreamAudit?.checks) && upstreamAudit.checks.length > 0,
+);
+check(
+  'upstream-audit.json entries have exactly the six audit fields',
+  auditEntriesHaveExpectedFields,
+);
+check('upstream-audit.json entries have real YYYY-MM-DD dates', auditEntriesHaveValidDates);
+check('upstream-audit.json entries use canonical refs', auditEntriesHaveCanonicalRefs);
+check('upstream-audit.json entries use lowercase 40-char SHAs', auditEntriesHaveValidCommits);
+check('upstream-audit.json entries have non-empty scopes', auditEntriesHaveNonEmptyScopes);
+check('upstream-audit.json entries are ordered by date', auditEntriesAreOrdered);
+check(
+  'upstream-audit.json entries have no duplicate date/commit/scope tuple',
+  new Set(auditEntryKeys).size === auditEntryKeys.length,
 );
 
 // ---------------------------------------------------------------------------
@@ -158,7 +430,7 @@ try {
     'apps/kimi-code/dist-web',
     'apps/kimi-code/web-base.json',
   ];
-  const provenance = parseJsonFile(join(root, 'apps/kimi-code/web-base.json'));
+  const provenance = parseJsonFile(webBasePath);
   const bundleFiles = Array.isArray(provenance.bundle?.files)
     ? provenance.bundle.files.map(({ path }) => `apps/kimi-code/dist-web/${path}`)
     : [];
@@ -259,9 +531,12 @@ for (const entry of readdirSync(changesetDir)) {
   if (text.includes(`"${UPSTREAM_CLI_PACKAGE}":`)) {
     check(`changeset ${entry} must not reference ${UPSTREAM_CLI_PACKAGE}`, false);
   }
+  if (text.includes(`"${LEGACY_SDK_PACKAGE_NAME}":`)) {
+    check(`changeset ${entry} must not reference ${LEGACY_SDK_PACKAGE_NAME}`, false);
+  }
 }
 if (!failures.some((failure) => failure.startsWith('changeset '))) {
-  check('changesets never reference the legacy CLI package name', true);
+  check('changesets never reference legacy CLI or SDK package names', true);
 }
 
 const changesetConfig = parseJsonFile(changesetConfigPath);
@@ -270,6 +545,17 @@ check(
   'changeset config changelog repo is bhjia-phys/Hakimi',
   changelogRepo === HAKIMI_REPO,
   JSON.stringify(changelogRepo),
+);
+const ignoredPackages = new Set(changesetConfig.ignore);
+check(
+  'changeset config ignores every private workspace package',
+  ignoredPackages.size === privateWorkspacePackageNames.length &&
+    privateWorkspacePackageNames.every((name) => ignoredPackages.has(name)),
+  JSON.stringify(changesetConfig.ignore),
+);
+check(
+  'changeset config leaves only Hakimi CLI and SDK publishable',
+  !ignoredPackages.has(HAKIMI_PACKAGE_NAME) && !ignoredPackages.has(HAKIMI_SDK_PACKAGE_NAME),
 );
 
 // ---------------------------------------------------------------------------
@@ -325,6 +611,32 @@ check(
 // ---------------------------------------------------------------------------
 // 7. Workflow parameterization
 // ---------------------------------------------------------------------------
+
+// 7.0 PR preview and upstream workflow boundary
+checkTextFile(
+  'pkg-pr-new.yml is the Hakimi PR preview workflow',
+  pkgPrNewWorkflowPath,
+  [
+    'name: pkg.pr.new (Hakimi)',
+    "github.repository == 'bhjia-phys/Hakimi'",
+    'cancel-in-progress: true',
+    'name: Publish Hakimi preview',
+    'pnpm --filter @bhjia-phys/hakimi run build',
+    'Publish Hakimi packages to pkg.pr.new',
+    "'./apps/kimi-code' './packages/node-sdk'",
+  ],
+  [
+    "github.repository_owner == 'MoonshotAI'",
+    UPSTREAM_CLI_PACKAGE,
+    LEGACY_SDK_PACKAGE_NAME,
+  ],
+);
+checkTextFile(
+  'upstream release.yml remains owner-gated and separate',
+  upstreamReleaseWorkflowPath,
+  ['name: Release', "github.repository_owner == 'MoonshotAI'"],
+  ["github.repository == 'bhjia-phys/Hakimi'"],
+);
 
 // 7.1 Automatic release workflow (release-hakimi.yml)
 checkTextFile(

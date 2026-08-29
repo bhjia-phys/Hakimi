@@ -5,7 +5,7 @@ import {
   type PromptInput,
   type Session,
   type SessionSummary,
-} from "@moonshot-ai/kimi-code-sdk";
+} from "@bhjia-phys/hakimi-sdk";
 
 import type { ContentPart as LegacyContentPart, ApprovalResponse } from "../../shared/legacy-sdk";
 import { Events } from "../../shared/bridge";
