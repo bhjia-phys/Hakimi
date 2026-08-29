@@ -6,7 +6,7 @@ import { StreamingUIController } from '#/tui/controllers/streaming-ui';
 import { ResearchBoardComponent } from '#/tui/components/chrome/research-board';
 import { TodoPanelComponent } from '#/tui/components/chrome/todo-panel';
 import { setExperimentalFeatures } from '#/tui/commands/experimental-flags';
-import type { ResearchStatusSnapshot, Session } from '@moonshot-ai/kimi-code-sdk';
+import type { ResearchStatusSnapshot, Session } from '@bhjia-phys/hakimi-sdk';
 import type { TUIState } from '#/tui/tui-state';
 
 function makeSnapshot(

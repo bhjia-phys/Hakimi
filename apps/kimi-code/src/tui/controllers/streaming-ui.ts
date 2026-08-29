@@ -1,4 +1,4 @@
-import type { Session } from '@moonshot-ai/kimi-code-sdk';
+import type { Session } from '@bhjia-phys/hakimi-sdk';
 
 import { PRODUCT_NAME } from '#/constant/app';
 

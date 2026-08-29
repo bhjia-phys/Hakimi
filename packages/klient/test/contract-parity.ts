@@ -256,12 +256,16 @@ import type {
   ResearchProgressReport as EngineResearchProgressReport,
   ResearchStateChange as EngineResearchStateChange,
   ResearchHumanGate as EngineResearchHumanGate,
+  ResearchPlan as EngineResearchPlan,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/types';
 import type {
   ResearchEvidencePacket as EngineResearchEvidencePacket,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/evidencePacket';
 import type {
   IAgentResearchService,
+  ConcludeResearchActionInput as EngineConcludeResearchActionInput,
+  PlanActionInput as EnginePlanActionInput,
+  PrepareResearchPlanInput as EnginePrepareResearchPlanInput,
   ResolveHumanDecisionInput as EngineResolveHumanDecisionInput,
   UpdateLineInput as EngineUpdateLineInput,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
@@ -286,6 +290,11 @@ import {
   researchHumanGateSchema,
   researchAlertFingerprintSchema,
   resolveHumanDecisionInputSchema,
+  planActionInputSchema,
+  concludeActionInputSchema,
+  researchActionConclusionSchema,
+  researchPlanSchema,
+  prepareResearchPlanInputSchema,
 } from '../src/contract/agent/researchSchemas.js';
 import {
   createChildSessionOptionsSchema,
@@ -754,6 +763,26 @@ const _resolveHumanDecisionInput: AssertWire<
 const _researchActionSpec: AssertEngineToWire<
   typeof researchActionSpecSchema,
   EngineResearchActionSpec
+> = true;
+const _planActionInput: AssertEngineToWire<
+  typeof planActionInputSchema,
+  EnginePlanActionInput
+> = true;
+const _concludeActionInput: AssertWire<
+  typeof concludeActionInputSchema,
+  EngineConcludeResearchActionInput
+> = true;
+const _researchActionConclusion: AssertEngineToWire<
+  typeof researchActionConclusionSchema,
+  ReturnType<IAgentResearchService['concludeAction']>
+> = true;
+const _researchPlan: AssertEngineToWire<
+  typeof researchPlanSchema,
+  EngineResearchPlan
+> = true;
+const _prepareResearchPlanInput: AssertEngineToWire<
+  typeof prepareResearchPlanInputSchema,
+  EnginePrepareResearchPlanInput
 > = true;
 const _researchProgressReport: AssertEngineToWire<
   typeof researchProgressReportSchema,

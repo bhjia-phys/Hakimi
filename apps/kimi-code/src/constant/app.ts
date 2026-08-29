@@ -1,4 +1,4 @@
-import { ErrorCodes } from '@moonshot-ai/kimi-code-sdk';
+import { ErrorCodes } from '@bhjia-phys/hakimi-sdk';
 
 export const PRODUCT_NAME = 'Hakimi';
 export const CLI_COMMAND_NAME = 'hakimi';

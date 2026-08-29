@@ -14,6 +14,9 @@
 
 2026-08-27 Hakimi Research Loop 收敛：模型正常行动路径改为 `BeginResearchAction` → 科研工作 → `ConcludeResearchAction`；后者由现有 Research service 在单一 transition 边界内记录 action completion 和科学 progress。`PlanResearchAction`、`CompleteResearchAction`、`SetResearchPhase` 保留为恢复/维护实现但不再进入 active tool overlay；没有新增 AITP schema、wire op、REST command 或自动 HPC 行为。相关 service/tool tests 通过；live AITP CLI subprocess conformance 仍 pending。
 
+| 2026-08-28 | `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290` | M1e（done；Research contract/domain pack fusion） | Hakimi 将 Goal completion/continuation 通过通用 contribution seam 与 Research Loop 解耦，Research context 改为 Brief/Delta，committed AITP fact 通过 facade 隔离；抽出协议无关的 Research 类型、evidence packet 和 transition authority，并新增可选 `theory-physics` domain pack。Plan/Research 互斥现在覆盖工具和直接 Plan API；旧会话恢复若同时激活二者则 Plan 优先。该 pack 只提供理论物理行动路由、推导/数值证据检查和 science-first reporting，不改变 AITP schema，不提供文献库、scheduler observer 或 method distillation。 |
+| 2026-08-29 | `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290` | M1e（live CLI smoke verified） | 使用真实 managed AITP 0.8.0 CLI 在一次性 scratch store 验证 `enter`/`check`（scoped，check exit 1 findings）、`record prepare`/`record save`、`note prepare`/`note save`、`show`/`list`、重复 idempotency prepare（`existing`）和最终 clean check。此前 fixture-only 证据已补充为实际 CLI 子进程证据；完整跨平台及异常矩阵仍 pending。 |
+
 每次核对后：追加一行，并更新 `compatibility-matrix.md` 中变化的行与双语 README。
 
 ## 开发前核对 checklist（每次 AITP 相关开发必做）

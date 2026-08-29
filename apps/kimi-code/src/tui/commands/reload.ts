@@ -1,4 +1,4 @@
-import type { KimiConfig } from '@moonshot-ai/kimi-code-sdk';
+import type { KimiConfig } from '@bhjia-phys/hakimi-sdk';
 
 import { currentTheme, lightColors } from '#/tui/theme';
 import { loadTuiConfig, type TuiConfig } from '../config';

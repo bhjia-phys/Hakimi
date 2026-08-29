@@ -23,7 +23,7 @@ import {
   truncateToWidth,
   visibleWidth,
 } from '@moonshot-ai/pi-tui';
-import type { BackgroundTaskInfo } from '@moonshot-ai/kimi-code-sdk';
+import type { BackgroundTaskInfo } from '@bhjia-phys/hakimi-sdk';
 
 import { MESSAGE_INDENT } from '#/tui/constant/rendering';
 import { STATUS_BULLET } from '#/tui/constant/symbols';

@@ -4,7 +4,7 @@ import type {
   ToolCallContent,
   ToolCallUpdate,
 } from '@agentclientprotocol/sdk';
-import type { ApprovalRequest, ApprovalResponse } from '@moonshot-ai/kimi-code-sdk';
+import type { ApprovalRequest, ApprovalResponse } from '@bhjia-phys/hakimi-sdk';
 
 import { displayBlockToAcpContent } from './convert';
 import { acpToolCallId } from './events-map';

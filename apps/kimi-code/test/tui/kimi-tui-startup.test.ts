@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { log, type GoalSnapshot, type ResearchStatusSnapshot } from '@moonshot-ai/kimi-code-sdk';
+import { log, type GoalSnapshot, type ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
 import type { MigrationPlan } from '@moonshot-ai/migration-legacy';
 import { describe, expect, it, vi } from 'vitest';
 

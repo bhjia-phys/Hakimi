@@ -21,7 +21,7 @@ import {
   type KimiErrorPayload,
   type KimiHarness,
   type Session,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 
 import { turnEndReasonToStopReason } from '../src/events-map';
 import { AcpServer } from '../src/server';

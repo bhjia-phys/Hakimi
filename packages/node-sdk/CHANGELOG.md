@@ -1,4 +1,6 @@
-# @moonshot-ai/kimi-code-sdk
+# @bhjia-phys/hakimi-sdk
+
+Entries below `0.19.0` predate the Hakimi package rename and retain their original upstream package names, links, and credits as release history.
 
 ## 0.18.0
 

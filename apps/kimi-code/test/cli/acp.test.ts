@@ -137,7 +137,7 @@ describe('hakimi acp', () => {
     // `importOriginal` preserves the other named exports (`ErrorCodes`, etc.)
     // that constant/app.ts depends on at module load.
     const loginStub = vi.fn(async () => ({ providerName: 'kimi-code' }));
-    vi.doMock(import('@moonshot-ai/kimi-code-sdk'), async (importOriginal) => {
+    vi.doMock(import('@bhjia-phys/hakimi-sdk'), async (importOriginal) => {
       const actual = await importOriginal();
       return {
         ...actual,
@@ -161,7 +161,7 @@ describe('hakimi acp', () => {
       expect(runAcpServer).not.toHaveBeenCalled();
       expect(exitSpy).toHaveBeenCalledWith(0);
     } finally {
-      vi.doUnmock('@moonshot-ai/kimi-code-sdk');
+      vi.doUnmock('@bhjia-phys/hakimi-sdk');
       vi.resetModules();
     }
   });

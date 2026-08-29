@@ -1,7 +1,11 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { HostProcessService } from '#/os/backends/node-local/hostProcessService';
 import type { IHostProcess, IHostProcessService } from '#/os/interface/hostProcess';
 import { AitpLauncher } from '#/features/aitpResearch/adapter/aitpLauncher';
 import { AitpResearchError, AitpResearchErrors } from '#/features/aitpResearch/errors';
@@ -57,13 +61,18 @@ function completedProcess(
 
 function makeLauncher(
   spawn: IHostProcessService['spawn'],
-  options?: { readonly pythonPath?: string; readonly timeoutMs?: number },
+  options?: {
+    readonly pythonPath?: string;
+    readonly timeoutMs?: number;
+    readonly cwd?: string;
+    readonly launcherScript?: string;
+  },
 ): AitpLauncher {
   return new AitpLauncher(
     { _serviceBrand: undefined, spawn },
     {
-      launcherScript: LAUNCHER_SCRIPT,
-      cwd: CWD,
+      launcherScript: options?.launcherScript ?? LAUNCHER_SCRIPT,
+      cwd: options?.cwd ?? CWD,
       pythonPath: options?.pythonPath,
       timeoutMs: options?.timeoutMs,
     },
@@ -284,7 +293,9 @@ describe('AitpLauncher process termination', () => {
     const controller = new AbortController();
 
     const pending = launcher.check(undefined, { signal: controller.signal });
-    await vi.waitFor(() => expect(spawn).toHaveBeenCalledOnce());
+    await vi.waitFor(() => {
+      expect(spawn).toHaveBeenCalledOnce();
+    });
     controller.abort();
 
     await expect(pending).rejects.toMatchObject({
@@ -293,5 +304,55 @@ describe('AitpLauncher process termination', () => {
     expect(kill).toHaveBeenCalledOnce();
     expect(kill).toHaveBeenCalledWith('SIGTERM');
     expect(dispose).toHaveBeenCalledOnce();
+  });
+});
+
+describe('AitpLauncher contract-faithful subprocess harness', () => {
+  it('passes argv without a shell and validates official enter/check payloads', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'aitp-launcher-contract-'));
+    try {
+      const enterPayload = await readFile(
+        join(import.meta.dirname, 'fixtures/aitp-0.8.0/enter.json'),
+        'utf8',
+      );
+      const checkPayload = await readFile(
+        join(import.meta.dirname, 'fixtures/aitp-0.8.0/check-workstream.json'),
+        'utf8',
+      );
+      const script = join(directory, 'aitp-fixture.py');
+      await writeFile(script, [
+        'import sys',
+        '',
+        'args = sys.argv[1:]',
+        'if args == ["enter", "--json", "--workstream", "crpa"]:',
+        `    print(${JSON.stringify(enterPayload)}, end="")`,
+        'elif args == ["check", "--json", "--workstream", "crpa"]:',
+        `    print(${JSON.stringify(checkPayload)}, end="")`,
+        'else:',
+        '    print("unexpected argv", file=sys.stderr)',
+        '    sys.exit(2)',
+        '',
+      ].join('\n'));
+
+      const hostProcess = new HostProcessService();
+      const launcher = makeLauncher(hostProcess.spawn.bind(hostProcess), {
+        pythonPath: '/usr/bin/python3',
+        cwd: directory,
+        launcherScript: script,
+      });
+      const enter = await launcher.enter('crpa');
+      const check = await launcher.check('crpa');
+
+      // The launcher script path is the first positional argument to Python;
+      // the fixture process verifies the remaining command argv exactly.
+      expect(enter.data.schema).toBe('aitp/enter-0.2');
+      expect(check.data.schema).toBe('aitp/check-report-0.2');
+      if (check.data.schema !== 'aitp/check-report-0.2') {
+        throw new Error('Expected the scoped check fixture to use check-report-0.2');
+      }
+      expect(check.data.workstream).toBe('crpa');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

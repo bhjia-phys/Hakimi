@@ -6,7 +6,7 @@ import {
   resolveKimiHome,
   type KimiConfig,
   type TelemetryClient,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 
 import type { PromptHarness } from './prompt-session';
 import {

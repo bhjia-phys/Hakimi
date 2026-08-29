@@ -18,8 +18,12 @@
  * CronDelete call is vetoed with a `toolApproval.formatDenyMessage`-
  * formatted reason, and an `ExitPlanMode` call outside `auto` mode defers
  * to a cold `waitUntil` factory running the `exitPlanModeReview` through the
- * shared `humanGate` transport. Bound at Agent scope — contributed into every Agent scope by
- * `PlanFeature` (`features/plan/planFeature`).
+ * shared `humanGate` transport. Plan mode is a short-lived, nestable overlay:
+ * it may be active alongside Research Mode, does not mutate Research or AITP
+ * state, and participates in the Goal continuation seam through
+ * `GoalContinuationParticipantContribution` (hold while active, abstain
+ * otherwise) — Goal remains the sole continuation owner. Bound at Agent scope
+ * — contributed into every Agent scope by `PlanFeature` (`features/plan/planFeature`).
  */
 
 import { createHash, randomUUID } from 'node:crypto';
@@ -56,7 +60,15 @@ import {
   IAgentPlanService,
   type PlanData,
   type PlanFilePath,
+  type PlanResolution,
+  type PlanResolutionOutcome,
 } from './plan';
+import {
+  GoalContinuationParticipantContribution,
+  type GoalContinuationInput,
+  type GoalContinuationDecisionResult,
+} from '#/agent/goal/goalContribution';
+import { currentConstruction } from '#/_base/di/fiber';
 import { ExitPlanModeReview } from './exitPlanModeReview';
 import {
   PlanModel,
@@ -64,6 +76,7 @@ import {
   planModeEnter,
   planModeExit,
   planRevision,
+  planResolution,
 } from './planOps';
 
 export class AgentPlanService extends Service implements IAgentPlanService {
@@ -91,6 +104,22 @@ export class AgentPlanService extends Service implements IAgentPlanService {
     super();
 
     this.review = new ExitPlanModeReview(this, this.humanGate, telemetry);
+
+    if (currentConstruction() !== undefined) {
+      this._register(
+        this.provide(GoalContinuationParticipantContribution, {
+          decide: (_input: GoalContinuationInput): GoalContinuationDecisionResult => {
+            if (!this.isActive) return { decision: 'abstain' };
+            return {
+              decision: 'hold',
+              owner: 'plan',
+              reason:
+                'Plan mode is active. Finish or exit the plan review before the goal continues automatically.',
+            };
+          },
+        }),
+      );
+    }
 
     this._register(
       this.wire.hooks.onDidRestore.register('plan', async (_ctx, next) => {
@@ -193,6 +222,13 @@ export class AgentPlanService extends Service implements IAgentPlanService {
     try {
       await this.ensurePlanDirectory(planFilePath);
       this.wire.dispatch(planModeEnter({ id }));
+      const entered = this.wire.getModel(PlanModel).current;
+      if (!entered.active || entered.id !== id) {
+        throw new Error2(
+          ErrorCodes.SESSION_PLAN_MODE_INVALID,
+          'Another plan entered before this plan could become active',
+        );
+      }
       this.telemetryContext.set({ mode: 'plan' });
       enterRecorded = true;
       if (createFile) {
@@ -220,6 +256,28 @@ export class AgentPlanService extends Service implements IAgentPlanService {
   exit(id?: string): void {
     this.wire.dispatch(planModeExit({ id }));
     this.telemetryContext.set({ mode: 'agent' });
+  }
+
+  getResolution(): PlanResolution | null {
+    return this.wire.getModel(PlanModel).current.resolution ?? null;
+  }
+
+  recordResolution(outcome: PlanResolutionOutcome, selectedLabel?: string): void {
+    const state = this.wire.getModel(PlanModel).current;
+    if (!state.active || state.id === undefined) {
+      throw new Error2(
+        ErrorCodes.SESSION_PLAN_MODE_INVALID,
+        'Cannot record a plan resolution while plan mode is inactive',
+      );
+    }
+    this.wire.dispatch(
+      planResolution({
+        planId: state.id,
+        planRevision: state.revisionCount?.[state.id] ?? 0,
+        outcome,
+        selectedLabel,
+      }),
+    );
   }
 
   async recordRevision(): Promise<void> {

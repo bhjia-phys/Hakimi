@@ -30,7 +30,7 @@ import type {
   SessionSummary,
   TelemetryProperties,
   Unsubscribe,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 
 export interface PromptHarness {
   readonly homeDir: string;

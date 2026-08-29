@@ -16,6 +16,8 @@ Research Mode has three hard prerequisites. If any is missing, the mode enters a
 
 When all three are satisfied, the adapter enters the `ready` phase and the supported AITP read/write tool surface becomes available to the agent. The adapter does not expose, call, or parse the upstream `backfill-0.1` success envelope, and it does not implement `sha256-once:` or `check-policy` semantics.
 
+For theoretical-physics work, the bundled `theory-physics` plugin is an optional domain pack. It adds physics-specific routing and reporting discipline to the generic Research Loop — when to search literature, how to check a derivation, how to separate scheduler evidence from physical conclusions, and when to request a human decision. It does not add another runtime, autonomous loop, literature database, HPC observer, or AITP schema.
+
 ## Enabling Research Mode
 
 The `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` (`aitp_research_mode`) flag is disabled by default. Set it to `1` before launch to make the `/research` command and the `EnterAITPMode` capability available to the agent. The flag is a Hakimi product decision only; it does not report an AITP protocol stage or H6 availability. However, the flag only makes the surface available — it does **not** enter Research Mode, probe AITP, show the Research Board, or open AITP plugin skills and research tools. In the inactive state, zero AITP I/O occurs; no `init`, `init --adopt`, `inventory`, or `backfill --apply` is ever auto-run. You still need to enter the mode explicitly (via `/research on` or the model `EnterAITPMode` entry path) to activate the AITP adapter and make the research capabilities available to subsequent research turns.
@@ -168,7 +170,7 @@ You can explicitly choose to proceed without persistence when the adapter is deg
 
 Research Mode has several hard exclusions:
 
-- **Plan mode conflict**: Plan mode and Research Mode are mutually exclusive. Exit one before entering the other.
+- **Plan mode conflict**: Plan mode and Research Mode are mutually exclusive at every entry point, including direct API entry. Exit one before entering the other. If an older session restore would activate both, Plan mode wins and Hakimi exits Research Mode before probing AITP or injecting Research guidance.
 - **Main agent only**: AITP and Research mutation tools are only available on the main agent. Subagents cannot use them — they must return results to the main agent via typed packets.
 - **Conversation undo**: Research working state (questions, focus, lines) follows conversation undo through the checkpointed model. The committed AITP cursor does **not** — once a checkpoint is committed to AITP, conversation undo cannot retract that external fact.
 

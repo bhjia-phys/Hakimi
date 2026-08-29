@@ -55,8 +55,8 @@ vi.mock('@moonshot-ai/kimi-code-oauth', async () => {
   };
 });
 
-vi.mock('@moonshot-ai/kimi-code-sdk', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@moonshot-ai/kimi-code-sdk')>();
+vi.mock('@bhjia-phys/hakimi-sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@bhjia-phys/hakimi-sdk')>();
   return {
     ...actual,
     resolveKimiHome: mocks.resolveKimiHome,

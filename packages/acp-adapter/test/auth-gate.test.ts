@@ -14,7 +14,7 @@ import {
   type WriteTextFileRequest,
   type WriteTextFileResponse,
 } from '@agentclientprotocol/sdk';
-import type { KimiConfig, KimiHarness, Session } from '@moonshot-ai/kimi-code-sdk';
+import type { KimiConfig, KimiHarness, Session } from '@bhjia-phys/hakimi-sdk';
 
 import { AcpServer } from '../src/server';
 import { AUTHED_STATUS, UNAUTHED_STATUS } from './_helpers/harness-stubs';

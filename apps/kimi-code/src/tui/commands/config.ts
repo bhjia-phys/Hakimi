@@ -6,7 +6,7 @@ import {
   type PermissionMode,
   type Session,
   type ThinkingEffort,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import { OPENAI_CODEX_PROVIDER_NAME } from '@moonshot-ai/kimi-code-oauth';
 
 import { EditorSelectorComponent } from '../components/dialogs/editor-selector';

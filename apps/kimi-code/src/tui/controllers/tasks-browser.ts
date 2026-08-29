@@ -1,4 +1,4 @@
-import type { BackgroundTaskInfo, Session } from '@moonshot-ai/kimi-code-sdk';
+import type { BackgroundTaskInfo, Session } from '@bhjia-phys/hakimi-sdk';
 import type { ProcessTerminal, TUI } from '@moonshot-ai/pi-tui';
 
 import { AgentActivityViewer, formatSubagentActivityPreview } from '../components/dialogs/agent-activity-viewer';

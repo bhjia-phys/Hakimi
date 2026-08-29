@@ -1,4 +1,4 @@
-import { ErrorCodes, KimiError } from '@moonshot-ai/kimi-code-sdk';
+import { ErrorCodes, KimiError } from '@bhjia-phys/hakimi-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {

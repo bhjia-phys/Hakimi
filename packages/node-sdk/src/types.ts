@@ -96,10 +96,13 @@ export type {
   ResearchRunStage,
   ResearchSchedulerState,
 } from '@moonshot-ai/agent-core';
-// The snapshot type is re-exported from agent-core-v2 (the engine's own
-// type, which uses `readonly` arrays) so the v2 client's direct engine
-// reads are type-compatible.
-export type { ResearchStatusSnapshot } from '@moonshot-ai/agent-core-v2';
+// The snapshot and local ResearchPlan type are re-exported from agent-core-v2
+// (the engine's own types, which use `readonly` arrays) so the v2 client's
+// direct engine reads are type-compatible.
+export type {
+  ResearchPlan,
+  ResearchStatusSnapshot,
+} from '@moonshot-ai/agent-core-v2';
 
 export type PermissionMode = 'yolo' | 'manual' | 'auto';
 

@@ -6,7 +6,7 @@ import {
   createKimiConfigRpc,
   type KimiConfigRpc,
   type KimiConfigValidationIssue,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import type { Command } from 'commander';
 import { z } from 'zod';
 

@@ -10,7 +10,7 @@
 
 import type { Component } from '@moonshot-ai/pi-tui';
 import { truncateToWidth, visibleWidth } from '@moonshot-ai/pi-tui';
-import type { ResearchStatusSnapshot } from '@moonshot-ai/kimi-code-sdk';
+import type { ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
 import chalk from 'chalk';
 
 import { CURRENT_MARK } from '#/tui/constant/symbols';
@@ -31,6 +31,7 @@ const MAX_MAINTENANCE_CODES = 3;
 type ResearchQuestion = NonNullable<ResearchStatusSnapshot['currentQuestion']>;
 type ResearchLine = ResearchStatusSnapshot['lines'][number];
 type ResearchRunState = NonNullable<ResearchStatusSnapshot['currentRun']>;
+type ResearchPlan = NonNullable<ResearchStatusSnapshot['researchPlan']>;
 type ResearchAlert = ResearchStatusSnapshot['alerts'][number];
 type AitpMaintenanceReceipt = NonNullable<ResearchStatusSnapshot['aitpMaintenance']>;
 
@@ -285,6 +286,9 @@ function buildCompactRows(
 
   // Scientific progress summary (phase, headline, impact).
   rows.push(...renderCompactScientificRows(snap, colors));
+  if (snap.researchPlan !== undefined) {
+    rows.push(renderCompactPlanRow(snap.researchPlan, colors));
+  }
   if (snap.currentRun !== undefined) {
     rows.push(renderCompactRunRow(snap.currentRun, colors));
   }
@@ -361,6 +365,9 @@ function buildExpandedRows(
 
   // Scientific progress detail: phase, progress report, current action, gate.
   rows.push(...renderExpandedScientificRows(snap, colors));
+  if (snap.researchPlan !== undefined) {
+    rows.push(...renderExpandedPlanRows(snap.researchPlan, colors));
+  }
   rows.push(...renderExpandedMaintenanceRows(snap, colors));
 
   rows.push(renderResearchCounts(
@@ -600,6 +607,32 @@ function renderCompactScientificRows(
     }
   }
 
+  return rows;
+}
+
+function renderCompactPlanRow(
+  plan: ResearchPlan,
+  colors: ColorPalette,
+): string {
+  const stepCount = `${String(plan.steps.length)} step${plan.steps.length === 1 ? '' : 's'}`;
+  return `  ${chalk.hex(colors.textDim)('Plan:')} ${chalk.hex(colors.text)(normalizeSummary(plan.objective))} · ${chalk.hex(colors.textMuted)(`${plan.status} · ${stepCount}`)}`;
+}
+
+function renderExpandedPlanRows(
+  plan: ResearchPlan,
+  colors: ColorPalette,
+): string[] {
+  const rows = [
+    `  ${chalk.hex(colors.textStrong).bold('Research plan')} · ${chalk.hex(colors.textMuted)(plan.status)}`,
+    `    ${chalk.hex(colors.textDim)('Objective:')} ${chalk.hex(colors.text)(normalizeSummary(plan.objective))}`,
+    `    ${chalk.hex(colors.textDim)('Stop condition:')} ${chalk.hex(colors.text)(normalizeSummary(plan.stopCondition))}`,
+  ];
+  for (const [index, step] of plan.steps.entries()) {
+    rows.push(`    ${chalk.hex(colors.textDim)(`${String(index + 1)}.`)} ${chalk.hex(colors.text)(normalizeSummary(step))}`);
+  }
+  if (plan.expectedEvidence.length > 0) {
+    rows.push(`    ${chalk.hex(colors.textDim)('Expected evidence:')} ${chalk.hex(colors.text)(plan.expectedEvidence.map(normalizeSummary).join(' · '))}`);
+  }
   return rows;
 }
 

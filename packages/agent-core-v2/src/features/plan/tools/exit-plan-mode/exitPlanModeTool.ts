@@ -101,7 +101,10 @@ export class ExitPlanModeTool implements IExitPlanModeTool {
       has_options: args.options !== undefined && args.options.length >= 2,
     });
 
-    const failed = this.exitPlanMode();
+    const failed = this.resolveAndExitPlan(
+      this.permissionMode.mode === 'auto' ? 'auto_approved' : 'approved',
+      undefined,
+    );
     if (failed !== undefined) return failed;
 
     if (this.permissionMode.mode === 'auto') {
@@ -123,8 +126,12 @@ export class ExitPlanModeTool implements IExitPlanModeTool {
     };
   }
 
-  private exitPlanMode(): ExecutableToolResult | undefined {
+  private resolveAndExitPlan(
+    outcome: Parameters<NonNullable<IAgentPlanService['recordResolution']>>[0],
+    selectedLabel: string | undefined,
+  ): ExecutableToolResult | undefined {
     try {
+      this.planMode.recordResolution?.(outcome, selectedLabel);
       this.planMode.exit();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to exit plan mode.';

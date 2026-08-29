@@ -1,4 +1,4 @@
-import { log, type Logger } from '@moonshot-ai/kimi-code-sdk';
+import { log, type Logger } from '@bhjia-phys/hakimi-sdk';
 import { track as trackTelemetry, type TelemetryProperties } from '@moonshot-ai/kimi-telemetry';
 
 import { refreshUpdateCache } from '#/cli/update/refresh';

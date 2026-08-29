@@ -27,7 +27,7 @@ import {
   type AvailableCommand,
   type SlashCommandsSnapshot,
 } from '@moonshot-ai/acp-adapter';
-import { createKimiHarness, type Session, type SkillSummary } from '@moonshot-ai/kimi-code-sdk';
+import { createKimiHarness, type Session, type SkillSummary } from '@bhjia-phys/hakimi-sdk';
 
 import { KIMI_CODE_HOME_ENV } from '#/constant/app';
 import { createKimiCodeHostIdentity, getVersion } from '#/cli/version';

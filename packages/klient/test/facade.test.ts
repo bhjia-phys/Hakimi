@@ -307,6 +307,21 @@ describe('session skills routing', () => {
     ]);
   });
 
+  it('cancelPlan omits an absent id and preserves an explicit id', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const agent = klient.session('s1').agent('main');
+    const scope = { sessionId: 's1', agentId: 'main' };
+
+    await agent.cancelPlan();
+    await agent.cancelPlan({ id: 'plan-1' });
+
+    expect(channel.calls).toEqual([
+      { scope, service: 'agentPlanService', method: 'cancel', args: [] },
+      { scope, service: 'agentPlanService', method: 'cancel', args: ['plan-1'] },
+    ]);
+  });
+
   it('getContext merges the contextMemory and tokenCounting reads', async () => {
     const channel = new FakeChannel();
     const klient = createKlientFromChannel(channel);
@@ -1087,5 +1102,42 @@ describe('research facade routing', () => {
       method: 'enter',
       args: [{ actor: 'user' }],
     });
+  });
+
+  it('rejects Research Action and prepare_plan inputs before crossing the channel', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const agent = klient.session('s1').agent('main');
+
+    await expect(agent.research.prepareResearchPlan({
+      objective: '',
+      steps: ['step'],
+      expectedEvidence: ['evidence'],
+      stopCondition: 'stop',
+    })).rejects.toMatchObject({ phase: 'input' });
+    await expect(agent.research.prepareResearchPlan({
+      objective: 'objective',
+      steps: ['step'],
+      expectedEvidence: Array.from({ length: 101 }, () => 'evidence'),
+      stopCondition: 'stop',
+    })).rejects.toMatchObject({ phase: 'input' });
+    await expect(agent.research.planAndStartAction({
+      kind: 'experiment',
+      purpose: 'x'.repeat(8001),
+      stopCondition: 'stop',
+    })).rejects.toMatchObject({ phase: 'input' });
+    await expect(agent.research.planAndStartAction({
+      kind: 'experiment',
+      purpose: 'purpose',
+      stopCondition: 'stop',
+      allowedToolKinds: Array.from({ length: 51 }, () => 'shell'),
+    })).rejects.toMatchObject({ phase: 'input' });
+    await expect(agent.research.planAndStartAction({
+      kind: 'experiment',
+      purpose: 'purpose',
+      stopCondition: 'stop',
+      unexpected: true,
+    } as never)).rejects.toMatchObject({ phase: 'input' });
+    expect(channel.calls).toHaveLength(0);
   });
 });

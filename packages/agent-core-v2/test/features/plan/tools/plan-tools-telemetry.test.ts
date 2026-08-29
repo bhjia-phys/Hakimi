@@ -124,6 +124,21 @@ describe('EnterPlanModeTool telemetry', () => {
     });
   });
 
+  it('enters plan mode while Research Mode is active (Plan nests under Research)', async () => {
+    const { telemetry } = recordingTelemetry();
+    const planMode = planService({ status: null });
+
+    const result = await executeTool(new EnterPlanModeTool(planMode, telemetry), {
+      turnId: 0,
+      toolCallId: 'call_enter_plan',
+      args: {},
+      signal: new AbortController().signal,
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(planMode.enter).toHaveBeenCalledOnce();
+  });
+
   it('uses inline guidance when no plan file path is available', async () => {
     const planMode = planService({
       status: null,

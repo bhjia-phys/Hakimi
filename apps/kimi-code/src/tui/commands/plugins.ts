@@ -7,7 +7,7 @@ import {
   type PluginInfo,
   type PluginSummary,
   type Session,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import { Markdown, Spacer } from '@moonshot-ai/pi-tui';
 
 import { NO_ACTIVE_SESSION_MESSAGE } from '../constant/kimi-tui';

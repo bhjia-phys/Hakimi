@@ -5,7 +5,7 @@ import type {
   ApprovalResponse as CoreApprovalResponse,
   QuestionRequest,
   QuestionResult,
-} from "@moonshot-ai/kimi-code-sdk";
+} from "@bhjia-phys/hakimi-sdk";
 
 import type { ApprovalResponse, QuestionRequest as LegacyQuestionRequest } from "../../shared/legacy-sdk";
 import { describeToolDisplay, toLegacyDisplay } from "./tool-display";

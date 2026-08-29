@@ -77,6 +77,10 @@ const V2_RECORD_TYPES: ReadonlySet<string> = new Set([
   'interaction.request',
   'interaction.resolved',
   'plan.revision',
+  'plan.resolution',
+  'research_plan.draft',
+  'research_plan.finalize',
+  'research_plan.discard',
   'interruptionReminder.recorded',
   'plugin.session_start',
   'runtime.set_binding',
@@ -105,6 +109,7 @@ const V2_RECORD_TYPES: ReadonlySet<string> = new Set([
   'research.upsert_alert',
   'research.clear_alert',
   'research.ack_alert',
+  'research.begin_action',
   'research.plan_action',
   'research.start_action',
   'research.complete_action',
@@ -113,6 +118,10 @@ const V2_RECORD_TYPES: ReadonlySet<string> = new Set([
   'research.set_phase',
   'research.request_human_decision',
   'research.resolve_human_decision',
+  'research.set_program',
+  'research.start_period',
+  'research.update_period',
+  'research.end_period',
 ]);
 
 describe('v1 wire vocabulary', () => {

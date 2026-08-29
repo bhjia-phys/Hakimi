@@ -606,4 +606,50 @@ describe('researchCommandRequestSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('fails closed at Research Action and prepare_plan wire limits', () => {
+    const prepare = {
+      kind: 'prepare_plan' as const,
+      planId: 'plan-1',
+      objective: 'Bound the next calculation.',
+      steps: ['Run the calculation'],
+      expectedEvidence: ['A reproducible result'],
+      stopCondition: 'Stop after the result is checked.',
+    };
+    expect(researchCommandRequestSchema.parse({ command: prepare }).command).toEqual(prepare);
+    expect(() => researchCommandRequestSchema.parse({
+      command: { ...prepare, objective: '' },
+    })).toThrow();
+    expect(() => researchCommandRequestSchema.parse({
+      command: { ...prepare, steps: Array.from({ length: 101 }, () => 'step') },
+    })).toThrow();
+    expect(() => researchCommandRequestSchema.parse({
+      command: { ...prepare, expectedEvidence: [''] },
+    })).toThrow();
+    expect(() => researchCommandRequestSchema.parse({
+      command: { ...prepare, unexpected: true },
+    })).toThrow();
+
+    const action = {
+      kind: 'begin_action' as const,
+      actionKind: 'experiment' as const,
+      purpose: 'Run the bounded experiment.',
+      expectedEvidence: ['The measured output'],
+      stopCondition: 'Stop at convergence.',
+      allowedToolKinds: ['shell'],
+    };
+    expect(researchCommandRequestSchema.parse({ command: action }).command).toMatchObject(action);
+    expect(() => researchCommandRequestSchema.parse({
+      command: { ...action, purpose: 'x'.repeat(8001) },
+    })).toThrow();
+    expect(() => researchCommandRequestSchema.parse({
+      command: { ...action, expectedEvidence: Array.from({ length: 51 }, () => 'evidence') },
+    })).toThrow();
+    expect(() => researchCommandRequestSchema.parse({
+      command: { ...action, allowedToolKinds: Array.from({ length: 51 }, () => 'tool') },
+    })).toThrow();
+    expect(() => researchCommandRequestSchema.parse({
+      command: { ...action, unexpected: true },
+    })).toThrow();
+  });
 });

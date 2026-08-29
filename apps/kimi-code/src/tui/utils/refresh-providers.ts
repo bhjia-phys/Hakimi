@@ -5,7 +5,7 @@ import {
   type RefreshProviderScope,
   type RefreshResult,
 } from '@moonshot-ai/kimi-code-oauth';
-import type { KimiConfig, KimiConfigPatch, OAuthRef } from '@moonshot-ai/kimi-code-sdk';
+import type { KimiConfig, KimiConfigPatch, OAuthRef } from '@bhjia-phys/hakimi-sdk';
 
 /**
  * CLI-side host for provider-model refresh. Kept on the SDK's full config types

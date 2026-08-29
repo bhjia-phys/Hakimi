@@ -67,6 +67,7 @@ export class ExitPlanModeReview {
     }
 
     const selected = selectedExitPlanModeOption(display.options, result.selectedLabel);
+    this.plan.recordResolution?.('approved', result.selectedLabel);
     this.plan.exit();
 
     if (result.selectedLabel !== undefined && result.selectedLabel.length > 0) {
@@ -97,6 +98,7 @@ export class ExitPlanModeReview {
     this.trackRejectedPlanResolution(result);
 
     if (result.decision === 'cancelled') {
+      this.plan.recordResolution?.('dismissed');
       return {
         kind: 'result',
         result: {
@@ -107,6 +109,7 @@ export class ExitPlanModeReview {
     }
 
     if (result.selectedLabel === 'Reject and Exit') {
+      this.plan.recordResolution?.('rejected_and_exited');
       this.plan.exit();
       return {
         kind: 'result',
@@ -120,6 +123,7 @@ export class ExitPlanModeReview {
 
     const feedback = result.feedback ?? '';
     if (result.selectedLabel === 'Revise' || feedback.length > 0) {
+      this.plan.recordResolution?.('revise');
       return {
         kind: 'result',
         result: {
@@ -132,6 +136,7 @@ export class ExitPlanModeReview {
       };
     }
 
+    this.plan.recordResolution?.('rejected');
     return {
       kind: 'result',
       result: {

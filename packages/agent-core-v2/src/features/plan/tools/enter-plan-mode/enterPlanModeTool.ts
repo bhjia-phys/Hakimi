@@ -3,9 +3,11 @@
  *
  * Enters plan mode through the plan service (`plan`), reporting an error when
  * plan mode is already active, and tracks the `plan_enter_resolved`
- * `auto_approved` outcome (`telemetry`). The result message walks the model
- * through the plan-mode workflow, including the plan file path when the host
- * provides one. Bound at Agent scope.
+ * `auto_approved` outcome (`telemetry`). Plan mode is a short-lived overlay
+ * that may nest inside active Research Mode; the tool does not consult
+ * Research state. The result message walks the model through the plan-mode
+ * workflow, including the plan file path when the host provides one. Bound at
+ * Agent scope.
  */
 
 import type { ToolExecution } from '#/tool/toolContract';

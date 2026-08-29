@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ContentPart, ToolCall } from '@moonshot-ai/kimi-code-sdk';
-import type { ContextMessage, PromptOrigin } from '@moonshot-ai/kimi-code-sdk';
+import type { ContentPart, ToolCall } from '@bhjia-phys/hakimi-sdk';
+import type { ContextMessage, PromptOrigin } from '@bhjia-phys/hakimi-sdk';
 
 import {
   buildExportMarkdown,

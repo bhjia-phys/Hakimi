@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { registerExportCommand } from '#/cli/sub/export';
 import { createKimiCodeHostIdentity } from '#/cli/version';
-import { createKimiHarness, log } from '@moonshot-ai/kimi-code-sdk';
+import { createKimiHarness, log } from '@bhjia-phys/hakimi-sdk';
 import { __resetRootLoggerForTest } from '../../../../packages/agent-core/src/logging/logger';
 
 const SESSION_LOG = 'logs/kimi-code.log';

@@ -15,7 +15,7 @@ import type {
   GoalSnapshot,
   ResearchStatusSnapshot,
   Session,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ApprovalPanelComponent } from '#/tui/components/dialogs/approval-panel';

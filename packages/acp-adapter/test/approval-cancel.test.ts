@@ -50,7 +50,7 @@ import type {
   Event,
   KimiHarness,
   Session,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 
 import { APPROVE_ONCE_OPTION_ID } from '../src/approval';
 import { AcpServer } from '../src/server';

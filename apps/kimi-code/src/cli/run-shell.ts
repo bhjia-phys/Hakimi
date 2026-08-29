@@ -10,7 +10,7 @@ import {
   type KimiHarness,
   type KimiHarnessOptions,
   type TelemetryClient,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import {
   setCrashPhase,
   setTelemetryContext,

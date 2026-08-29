@@ -20,7 +20,7 @@ import type {
   KimiHarness,
   Session,
   ToolInputDisplay,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import { describe, expect, it } from 'vitest';
 
 import {

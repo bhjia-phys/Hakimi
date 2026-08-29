@@ -1,4 +1,4 @@
-import type { QuestionHandler, QuestionRequest, QuestionResult } from '@moonshot-ai/kimi-code-sdk';
+import type { QuestionHandler, QuestionRequest, QuestionResult } from '@bhjia-phys/hakimi-sdk';
 
 import type {
   QuestionPanelData,

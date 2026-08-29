@@ -99,7 +99,7 @@
         "@moonshot-ai/kosong"
         "@moonshot-ai/migration-legacy"
         "@moonshot-ai/minidb"
-        "@moonshot-ai/kimi-code-sdk"
+        "@bhjia-phys/hakimi-sdk"
         "@moonshot-ai/kimi-code-oauth"
         "@moonshot-ai/klient"
         "@moonshot-ai/pi-tui"

@@ -18,7 +18,6 @@ export const AitpResearchErrors = {
     AITP_MODE_ALREADY_ACTIVE: 'aitp.mode_already_active',
     AITP_MODE_FLAG_DISABLED: 'aitp.mode_flag_disabled',
     AITP_MODE_NOT_MAIN_AGENT: 'aitp.mode_not_main_agent',
-    AITP_MODE_PLAN_CONFLICT: 'aitp.mode_plan_conflict',
     AITP_ADAPTER_NOT_READY: 'aitp.adapter_not_ready',
     AITP_ADAPTER_DEGRADED: 'aitp.adapter_degraded',
     AITP_ADAPTER_TIMEOUT: 'aitp.adapter_timeout',
@@ -69,12 +68,6 @@ export const AitpResearchErrors = {
       retryable: false,
       public: true,
       action: 'Run AITP/Research tools on the main agent only.',
-    },
-    'aitp.mode_plan_conflict': {
-      title: 'Plan mode and Research Mode are mutually exclusive',
-      retryable: false,
-      public: true,
-      action: 'Exit the active mode before entering the other.',
     },
     'aitp.adapter_not_ready': {
       title: 'AITP adapter is not ready',

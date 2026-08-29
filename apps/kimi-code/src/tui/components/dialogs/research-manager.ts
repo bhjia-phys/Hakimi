@@ -18,7 +18,7 @@ import {
   visibleWidth,
   type Focusable,
 } from '@moonshot-ai/pi-tui';
-import type { ResearchStatusSnapshot } from '@moonshot-ai/kimi-code-sdk';
+import type { ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
 import chalk from 'chalk';
 
 import { CURRENT_MARK, SELECT_POINTER } from '#/tui/constant/symbols';

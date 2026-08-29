@@ -153,6 +153,7 @@ export const aitpMaintenanceDegradedReasonSchema = z.enum([
   'enter_failed',
   'check_unavailable',
   'stale_generation',
+  'workstream_unbound',
 ]);
 export const aitpMaintenanceWarningSummarySchema = z.object({
   level: z.literal('warning'),
@@ -185,11 +186,20 @@ export const aitpMaintenanceNextActionSchema = z.object({
   createdAt: z.number().optional(),
   source: z.string(),
 }).strict();
+export const researchProgramTopicSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  goalText: z.string(),
+  goalSource: z.string(),
+}).strict();
+export type ResearchProgramTopic = z.infer<typeof researchProgramTopicSchema>;
+
 export const aitpMaintenanceReceiptSchema = z.object({
   status: aitpMaintenanceStatusSchema,
   refreshedAt: z.number(),
   memoryStatus: aitpMaintenanceMemoryStatusSchema,
   workstream: z.string().optional(),
+  topic: researchProgramTopicSchema.optional(),
   latestWorkingNoteAt: z.number().optional(),
   activeNewerThanWorkingNote: z.boolean().nullable(),
   unresolvedFailureCount: z.number().int().nonnegative(),
@@ -317,18 +327,23 @@ export const researchSchedulerStateSchema = z.enum([
   'cancelled',
   'unknown',
 ]);
+
+const researchStringListSchema = z.array(z.string().max(500)).max(50);
+const researchShortTextSchema = z.string().max(2000);
+const researchLongTextSchema = z.string().max(8000);
+
 export const researchRunStateSchema = z.object({
   actionId: z.string(),
-  campaign: z.string(),
-  jobId: z.string(),
-  sourcePin: z.string().optional(),
-  binaryPin: z.string().optional(),
+  campaign: z.string().min(1).max(500),
+  jobId: z.string().min(1).max(200),
+  sourcePin: z.string().max(500).optional(),
+  binaryPin: z.string().max(500).optional(),
   stage: researchRunStageSchema,
   schedulerState: researchSchedulerStateSchema,
   lastObservedAt: z.number(),
   nextCheckAt: z.number().optional(),
   terminalState: z.enum(['completed', 'failed', 'cancelled']).optional(),
-  artifactRefs: z.array(z.string()),
+  artifactRefs: researchStringListSchema,
 }).strict();
 export const researchEvidencePacketSchema = z.object({
   packet_id: z.string().min(1).max(200),
@@ -354,10 +369,10 @@ export const researchActionSpecSchema = z.object({
   questionId: z.string().optional(),
   lineSlug: z.string().optional(),
   kind: researchActionKindSchema,
-  purpose: z.string(),
-  expectedEvidence: z.array(z.string()),
-  stopCondition: z.string(),
-  allowedToolKinds: z.array(z.string()),
+  purpose: researchLongTextSchema,
+  expectedEvidence: researchStringListSchema,
+  stopCondition: researchShortTextSchema,
+  allowedToolKinds: researchStringListSchema,
   retryOfEntryId: z.string().optional(),
   status: researchActionStatusSchema,
   createdAt: z.number(),
@@ -367,32 +382,32 @@ export const researchActionSpecSchema = z.object({
 });
 
 export const researchProgressDetailSchema = z.object({
-  assumptions: z.array(z.string()).optional(),
-  derivation: z.string().optional(),
-  tests: z.array(z.string()).optional(),
-  observations: z.array(z.string()).optional(),
-  sources: z.array(z.string()).optional(),
-  limitations: z.array(z.string()).optional(),
-  detailHint: z.string().optional(),
-  artifactRefs: z.array(z.string()).optional(),
-});
+  assumptions: researchStringListSchema.optional(),
+  derivation: researchLongTextSchema.optional(),
+  tests: researchStringListSchema.optional(),
+  observations: researchStringListSchema.optional(),
+  sources: researchStringListSchema.optional(),
+  limitations: researchStringListSchema.optional(),
+  detailHint: researchShortTextSchema.optional(),
+  artifactRefs: researchStringListSchema.optional(),
+}).strict();
 
 export const researchProgressReportSchema = z.object({
-  headline: z.string(),
-  question: z.string().optional(),
-  motivation: z.string(),
-  workPerformed: z.string(),
-  result: z.string(),
-  mainlineImpact: z.string(),
-  uncertainties: z.array(z.string()),
-  nextAction: z.string().optional(),
+  headline: researchShortTextSchema,
+  question: researchShortTextSchema.optional(),
+  motivation: researchLongTextSchema,
+  workPerformed: researchLongTextSchema,
+  result: researchLongTextSchema,
+  mainlineImpact: researchLongTextSchema,
+  uncertainties: researchStringListSchema,
+  nextAction: researchShortTextSchema.optional(),
   phaseChange: z
     .object({
       from: researchPhaseSchema,
       to: researchPhaseSchema,
     })
     .optional(),
-  humanDecision: z.string().optional(),
+  humanDecision: researchShortTextSchema.optional(),
   detail: researchProgressDetailSchema.optional(),
   recordedAt: z.number(),
 });
@@ -410,11 +425,65 @@ export const researchHumanGateSchema = z.object({
   kind: researchHumanGateKindSchema,
   actionId: z.string().optional(),
   questionId: z.string().optional(),
-  prompt: z.string(),
+  prompt: researchLongTextSchema,
   resolvedAt: z.number().optional(),
-  resolution: z.string().optional(),
+  resolution: researchShortTextSchema.optional(),
   createdAt: z.number(),
 });
+
+export const researchProgramSchema = z.object({
+  topicId: z.string(),
+  title: z.string(),
+  goalText: z.string(),
+  goalSource: z.string(),
+  establishedAt: z.number(),
+}).strict();
+export type ResearchProgram = z.infer<typeof researchProgramSchema>;
+
+export const researchPeriodSchema = z.object({
+  id: z.string(),
+  lineSlug: z.string(),
+  startedAt: z.number(),
+  endedAt: z.number().optional(),
+  loopCount: z.number().int().nonnegative(),
+  currentQuestionId: z.string().optional(),
+  summary: z.string().optional(),
+}).strict();
+export type ResearchPeriod = z.infer<typeof researchPeriodSchema>;
+
+export const researchStatusProjectionSchema = z.object({
+  currentLineSlug: z.string().optional(),
+  currentQuestionId: z.string().optional(),
+  currentActionId: z.string().optional(),
+  phase: researchPhaseSchema,
+  nextStep: z.string().optional(),
+  health: z.enum(['ok', 'attention', 'degraded', 'blocked']),
+  attention: z.array(z.string()),
+}).strict();
+export type ResearchStatusProjection = z.infer<typeof researchStatusProjectionSchema>;
+
+export const researchPlanResolutionSchema = z.object({
+  planId: z.string().min(1).max(200),
+  planRevision: z.number().int().nonnegative(),
+  outcome: z.literal('approved'),
+  selectedLabel: z.string().min(1).max(80).optional(),
+}).strict();
+export const researchPlanSchema = z.object({
+  planId: z.string().min(1).max(200),
+  researchRevision: z.number().int().nonnegative(),
+  programId: z.string().min(1).max(200).optional(),
+  periodId: z.string().min(1).max(200).optional(),
+  lineSlug: z.string().min(1).max(200).optional(),
+  questionId: z.string().min(1).max(200).optional(),
+  lineRevision: z.number().int().positive().optional(),
+  questionRevision: z.number().int().positive().optional(),
+  objective: z.string().min(1).max(8000),
+  steps: z.array(z.string().min(1).max(2000)).max(100),
+  expectedEvidence: z.array(z.string().min(1).max(2000)).max(100),
+  stopCondition: z.string().min(1).max(2000),
+  status: z.enum(['draft', 'finalized', 'discarded']),
+  resolution: researchPlanResolutionSchema.optional(),
+}).strict();
 
 export const researchStatusSnapshotSchema = z.object({
   mode: aitpModePhaseSchema,
@@ -441,6 +510,10 @@ export const researchStatusSnapshotSchema = z.object({
   latestProgress: researchProgressReportSchema.optional(),
   recentStateChange: researchStateChangeSchema.optional(),
   humanGate: researchHumanGateSchema.optional(),
+  program: researchProgramSchema.optional(),
+  period: researchPeriodSchema.optional(),
+  researchPlan: researchPlanSchema.optional(),
+  status: researchStatusProjectionSchema.optional(),
   revision: z.number(),
 });
 export type ResearchStatusSnapshot = z.infer<typeof researchStatusSnapshotSchema>;
@@ -561,38 +634,85 @@ export const researchCommandSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('resolve_decision'),
     gateId: z.string(),
-    resolution: z.string(),
+    resolution: researchShortTextSchema,
     nextPhase: researchPhaseSchema,
   }),
   z.object({
     kind: z.literal('review_evidence'),
     packet: researchEvidencePacketSchema,
-    expectedRevision: z.number(),
+    expectedRevision: z.number().int().nonnegative(),
   }),
   z.object({
     kind: z.literal('observe_run'),
     actionId: z.string(),
-    expectedRevision: z.number(),
-    campaign: z.string(),
-    jobId: z.string(),
-    sourcePin: z.string().optional(),
-    binaryPin: z.string().optional(),
+    expectedRevision: z.number().int().nonnegative(),
+    campaign: z.string().min(1).max(500),
+    jobId: z.string().min(1).max(200),
+    sourcePin: z.string().max(500).optional(),
+    binaryPin: z.string().max(500).optional(),
     stage: researchRunStageSchema,
     schedulerState: researchSchedulerStateSchema,
     nextCheckAt: z.number().optional(),
     terminalState: z.enum(['completed', 'failed', 'cancelled']).optional(),
-    artifactRefs: z.array(z.string()).default([]),
-  }),
+    artifactRefs: researchStringListSchema.default([]),
+  }).strict(),
   z.object({
     kind: z.literal('acknowledge_alert'),
     fingerprint: z.string(),
   }),
+  z.object({
+    kind: z.literal('begin_action'),
+    actionId: z.string().optional(),
+    questionId: z.string().optional(),
+    lineSlug: z.string().optional(),
+    actionKind: researchActionKindSchema,
+    purpose: researchLongTextSchema,
+    expectedEvidence: researchStringListSchema.optional(),
+    stopCondition: researchShortTextSchema,
+    allowedToolKinds: researchStringListSchema.optional(),
+    retryOfEntryId: z.string().optional(),
+    requiresHumanApproval: z.boolean().optional(),
+  }).strict(),
+  z.object({ kind: z.literal('start_action'), actionId: z.string() }).strict(),
+  z.object({
+    kind: z.literal('complete_action'),
+    actionId: z.string(),
+    status: z.enum(['completed', 'abandoned']),
+  }).strict(),
+  z.object({
+    kind: z.literal('conclude_action'),
+    actionId: z.string(),
+    status: z.enum(['completed', 'abandoned']),
+    headline: researchShortTextSchema,
+    question: researchShortTextSchema.optional(),
+    motivation: researchLongTextSchema,
+    workPerformed: researchLongTextSchema,
+    result: researchLongTextSchema,
+    mainlineImpact: researchLongTextSchema,
+    uncertainties: researchStringListSchema.optional(),
+    nextAction: researchShortTextSchema.optional(),
+    humanDecision: researchShortTextSchema.optional(),
+    detail: researchProgressDetailSchema.optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('prepare_plan'),
+    planId: z.string().min(1).max(200).optional(),
+    lineSlug: z.string().min(1).max(200).optional(),
+    questionId: z.string().min(1).max(200).optional(),
+    objective: z.string().min(1).max(8000),
+    steps: z.array(z.string().min(1).max(2000)).max(100),
+    expectedEvidence: z.array(z.string().min(1).max(2000)).max(100),
+    stopCondition: z.string().min(1).max(2000),
+    usePlanMode: z.boolean().optional(),
+  }).strict(),
+  z.object({ kind: z.literal('finalize_plan') }).strict(),
+  z.object({ kind: z.literal('discard_plan') }).strict(),
 ]);
 export type ResearchCommand = z.infer<typeof researchCommandSchema>;
 
 export const researchCommandRequestSchema = z.object({
   command: researchCommandSchema,
-});
+}).strict();
 export type ResearchCommandRequest = z.infer<typeof researchCommandRequestSchema>;
 
 export const researchCommandResponseSchema = z.object({

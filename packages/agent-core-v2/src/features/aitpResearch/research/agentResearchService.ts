@@ -4,9 +4,11 @@
  * Manages the Research state through wire dispatches on the checkpointed
  * `ResearchModel` (questions, lines, focus, pending checkpoint, alerts, and
  * the scientific state layer — phase / action / progress / state change /
- * human gate) and the non-checkpointed `ResearchCursorModel` (latest
- * committed cursor plus an ordered history of every committed
- * checkpoint/Entry). Deterministic lifecycle alerts are reconciled from question, mode,
+ * human gate). Committed AITP facts — the latest committed cursor, the
+ * ordered commit history, and the global revision — are read and written
+ * exclusively through the non-checkpointed external-fact facade
+ * (`IAitpExternalFactService`), never by touching `ResearchCursorModel`
+ * directly. Deterministic lifecycle alerts are reconciled from question, mode,
  * checkpoint, and maintenance state; alert records are fingerprinted,
  * replayable, and acknowledgement-aware. Line and question mutations carry
  * optimistic-concurrency revisions. Human steering commands carry
@@ -35,24 +37,43 @@
  * `research.updated` event carrying the full `ResearchStatusSnapshot` after
  * every direct mutation; the snapshot includes the Session coordinator's safe
  * current-state maintenance receipt when the mode is active and a read-only
- * Goal status/budget projection. Additionally subscribes to `aitp_mode.updated`
+ * Goal status/budget projection. The snapshot also projects the layered
+ * Program / Period / Status state: the topic-bound `program` is formed only
+ * from a real AITP `enter` topic observed through a maintenance receipt
+ * (never fabricated, never adopted automatically), the auditable `period`
+ * window is started/ended only at the clear semantic points (mode enter,
+ * line switch via `aitp_mode.updated`, mode exit, and each admitted loop
+ * boundary through `noteLoopBoundary` — ordinary turns never write period
+ * records), and the workstream-isolated `status` projection is a pure
+ * derived read. Additionally subscribes to `aitp_mode.updated`
  * (fired by each mode op's `toEvent` and by undo / cold restore) and
  * `goal.updated`, so mode, loop, undo, degraded, and Goal status/budget
  * transitions all produce a complete `research.updated` snapshot push. These
  * subscriptions only read state and publish Research facts, so they cannot
- * form an event cycle. Registers an `onBeforeExecuteTool` veto that blocks
- * `UpdateGoal(complete)` while Research has a pending checkpoint, degraded
- * mode, or unresolved human gate, and vetoes AITP mutation tools on subagents.
- * Does not own continuation — Goal is the sole continuation owner. Bound at
- * Agent scope.
+ * form an event cycle. Contributes a `GoalCompletionGuardContribution` that
+ * blocks goal completion while Research has a pending checkpoint, degraded
+ * mode, or unresolved human gate (only when the mode is active; otherwise it
+ * allows), and a `GoalContinuationParticipantContribution` that holds the
+ * goal's automatic continuation while the mode is active and the research
+ * loop is paused, the mode is degraded, or a human gate is unresolved —
+ * otherwise it abstains, leaving the continuation decision to Goal. Also
+ * registers an `onBeforeExecuteTool` veto that blocks AITP mutation tools on
+ * subagents. Goal is the sole continuation owner. Bound at Agent scope.
  */
 
 import { randomUUID } from 'node:crypto';
 
 import { Service } from '#/_base/di/service';
+import { Emitter } from '#/_base/event';
+import { currentConstruction } from '#/_base/di/fiber';
 import { IAgentGoalService } from '#/agent/goal/goal';
+import {
+  GoalCompletionGuardContribution,
+  GoalContinuationParticipantContribution,
+} from '#/agent/goal/goalContribution';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentToolExecutorService } from '#/agent/toolExecutor/toolExecutor';
+import { IAgentPlanService } from '#/features/plan/plan';
 import { IEventBus } from '#/app/event/eventBus';
 import { IWireService } from '#/wire/wire';
 import { denyToolExecution } from '#/agent/toolExecutor/beforeToolExecuteEvent';
@@ -64,6 +85,7 @@ import type {
   HumanSteeringCommand,
   ResearchActionSpec,
   AitpCheckReport,
+  AitpModePhase,
   ResearchCheckpoint,
   ResearchCheckpointCheckReceipt,
   ResearchCheckpointReceipt,
@@ -81,12 +103,16 @@ import type {
   ResearchStatusSnapshot,
   ResearchEffectiveNextStep,
   ResearchAlert,
+  ResearchProgram,
+  ResearchPeriod,
+  ResearchPlan,
+  ResearchStatusHealth,
+  ResearchStatusProjection,
   AitpMaintenanceReceipt,
 } from '#/features/aitpResearch/types';
 import {
   AitpModeModel,
   ResearchModel,
-  ResearchCursorModel,
   aitpModeSetLine,
   researchCreateLine,
   researchUpdateLine,
@@ -97,13 +123,13 @@ import {
   researchSteer,
   researchProposeCheckpoint,
   researchBindCheckpointReceipt,
-  researchCommitCheckpoint,
   researchAcknowledgeCheckpoint,
   researchReopenQuestion,
   researchUpsertAlert,
   researchClearAlert,
   researchAcknowledgeAlert,
   researchPlanAction,
+  researchBeginAction,
   researchBindCheckpointEntry,
   researchStartAction,
   researchCompleteAction,
@@ -112,10 +138,15 @@ import {
   researchSetPhase,
   researchRequestHumanDecision,
   researchResolveHumanDecision,
+  researchSetProgram,
+  researchStartPeriod,
+  researchUpdatePeriod,
+  researchEndPeriod,
   type ResearchActionSpecRecord,
   type ResearchRunStateRecord,
   type ResearchQuestionRecord,
   type ResearchLineRecord,
+  type ResearchFocusRecord,
   type ResearchCheckpointRecord,
   type ResearchHumanGateRecord,
   type ResearchProgressReportRecord,
@@ -123,6 +154,14 @@ import {
   type ResearchWorkingState,
 } from '#/features/aitpResearch/aitpResearchOps';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
+import {
+  ResearchPlanModel,
+  researchPlanDraft,
+  researchPlanFinalize,
+  researchPlanDiscard,
+} from '#/features/aitpResearch/researchPlanOps';
+import { IAitpExternalFactService } from './externalFact';
+import { createExternalFactFacade, toWireCheckpointReceipt } from './externalFactService';
 import { IDurableCommitService } from './durableCommit';
 import type { ResearchEvidencePacket, ResearchEvidenceReview } from './evidencePacket';
 import {
@@ -140,6 +179,7 @@ import {
   type ResearchActionConclusion,
   type CreateQuestionInput,
   type ObserveResearchRunInput,
+  type PrepareResearchPlanInput,
   IAgentResearchService,
   type PlanActionInput,
   type ProposeCheckpointInput,
@@ -203,6 +243,12 @@ function now(): number {
 export class AgentResearchService extends Service implements IAgentResearchService {
   declare readonly _serviceBrand: undefined;
 
+  private readonly externalFact: IAitpExternalFactService;
+  private readonly continuationRetryEmitter = this._register(
+    new Emitter<string>('research-goal-continuation-retry'),
+  );
+  private researchPlanMutationTail: Promise<void> = Promise.resolve();
+
   constructor(
     @IWireService private readonly wire: IWireService,
     @IAgentScopeContext private readonly scopeCtx: IAgentScopeContext,
@@ -213,26 +259,51 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     @IAgentGoalService private readonly goal: IAgentGoalService,
     @ISessionAitpLifecycleCoordinator private readonly coordinator?: ISessionAitpLifecycleCoordinator,
     @IDurableCommitService private readonly durable?: IDurableCommitService,
+    @IAitpExternalFactService externalFact?: IAitpExternalFactService,
+    @IAgentPlanService private readonly plan?: IAgentPlanService,
   ) {
     super();
+    // Manual construction (tests) may omit the facade; fall back to the
+    // wire-backed projection so the cursor boundary is always enforced.
+    this.externalFact = externalFact ?? createExternalFactFacade(this.wire);
+    // The completion guard and continuation participant are collection records
+    // and can only be provided through a bound unit runtime. Container
+    // construction (which binds the runtime and flushes the buffered op)
+    // provides them; manual `new` construction (used by unit tests) skips the
+    // registration so the service stays constructible without a container.
+    if (currentConstruction() !== undefined) {
+      this._register(
+        this.provide(GoalCompletionGuardContribution, {
+          guard: (input) => this.guardGoalCompletion(input),
+        }),
+      );
+      this._register(
+        this.provide(GoalContinuationParticipantContribution, {
+          decide: (input) => this.decideGoalContinuation(input),
+          onDidRequestRetry: this.continuationRetryEmitter.event,
+        }),
+      );
+    }
     this._register(
       toolExecutor.onBeforeExecuteTool((event) => this.guardToolExecution(event)),
     );
     if (this.coordinator !== undefined) {
       this._register(
         this.coordinator.onDidUpdate(() => {
+          this.reconcileProgram(this.coordinator?.snapshot());
           this.publishResearchUpdated();
         }),
       );
     }
     this._register(
       this.eventBus.subscribe('aitp_mode.updated', () => {
+        this.reconcilePeriodLifecycle();
         this.publishResearchUpdated();
       }),
     );
     this._register(
       this.eventBus.subscribe('goal.updated', () => {
-        this.publishResearchUpdated();
+        this.publishResearchUpdated(false);
       }),
     );
     this._register(
@@ -250,7 +321,8 @@ export class AgentResearchService extends Service implements IAgentResearchServi
 
   getSnapshot(): ResearchStatusSnapshot {
     const state = this.wire.getModel(ResearchModel).current;
-    const cursor = this.wire.getModel(ResearchCursorModel);
+    const cursor = this.externalFact.getCommittedCursor();
+    const commitHistory = this.externalFact.getCommitHistory();
     const questions = Object.values(state.questions).map(toQuestion);
     const lines = Object.values(state.lines).map(toLine);
     const currentQuestion = state.focus
@@ -265,6 +337,15 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     const currentAction = state.currentAction === null ? undefined : toActionSpec(state.currentAction);
     const latestProgress = state.latestProgress === null ? undefined : toProgressReport(state.latestProgress);
     const humanGate = state.humanGate === null ? undefined : toHumanGate(state.humanGate);
+    const effectiveNextStep = deriveEffectiveNextStep({
+      phase: state.phase,
+      currentAction,
+      currentRun: state.currentRun === null ? undefined : toRunState(state.currentRun),
+      latestProgress,
+      currentQuestion,
+      humanGate,
+      maintenance: aitpMaintenance,
+    });
 
     return {
       mode: this.mode.phase,
@@ -284,29 +365,37 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       activeQuestionCount: questions.filter((q) => q.workflow === 'active').length,
       blockedQuestionCount: questions.filter((q) => q.workflow === 'blocked').length,
       alerts: state.alerts.map(toAlert),
-      effectiveNextStep: deriveEffectiveNextStep({
-        phase: state.phase,
-        currentAction,
-        currentRun: state.currentRun === null ? undefined : toRunState(state.currentRun),
-        latestProgress,
-        currentQuestion,
-        humanGate,
-        maintenance: aitpMaintenance,
-      }),
+      effectiveNextStep,
       goalSummary: this.getGoalSummary(),
       aitpHealth: this.mode.health ?? { phase: 'inactive' },
       aitpMaintenance,
       pendingCheckpoint: state.pendingCheckpoint === null
         ? undefined
         : toCheckpoint(state.pendingCheckpoint),
-      latestCommittedCheckpoint: cursor.cursor ?? undefined,
-      committedCheckpointHistory: cursor.history,
+      latestCommittedCheckpoint: cursor ?? undefined,
+      committedCheckpointHistory: commitHistory,
       phase: state.phase,
       currentAction,
       currentRun: state.currentRun === null ? undefined : toRunState(state.currentRun),
       latestProgress,
       recentStateChange: state.recentStateChange === null ? undefined : toStateChange(state.recentStateChange),
       humanGate,
+      program: state.program ?? undefined,
+      period: state.period ?? undefined,
+      researchPlan: this.getResearchPlan() ?? undefined,
+      status: this.mode.isActive
+        ? deriveStatusProjection({
+            modePhase: this.mode.phase,
+            phase: state.phase,
+            currentLineSlug,
+            focus: state.focus,
+            questions: state.questions,
+            currentAction,
+            effectiveNextStep,
+            humanGate,
+            alerts: state.alerts,
+          })
+        : undefined,
       revision: state.revision,
     };
   }
@@ -325,7 +414,229 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   }
 
   getCommittedCursor(): ResearchCommittedCursor | null {
-    return this.wire.getModel(ResearchCursorModel).cursor;
+    return this.externalFact.getCommittedCursor();
+  }
+
+  getProgram(): ResearchProgram | null {
+    return this.wire.getModel(ResearchModel).current.program;
+  }
+
+  getPeriod(): ResearchPeriod | null {
+    return this.wire.getModel(ResearchModel).current.period;
+  }
+
+  getResearchPlan(): ResearchPlan | null {
+    return this.wire.getModel(ResearchPlanModel).current;
+  }
+
+  async prepareResearchPlan(input: PrepareResearchPlanInput): Promise<ResearchPlan> {
+    return this.serializeResearchPlanMutation(() => this.prepareResearchPlanUnsafe(input));
+  }
+
+  private async prepareResearchPlanUnsafe(input: PrepareResearchPlanInput): Promise<ResearchPlan> {
+    this.assertMutationAllowed();
+    const state = this.wire.getModel(ResearchModel).current;
+    const modeState = this.wire.getModel(AitpModeModel).current;
+    const existing = this.wire.getModel(ResearchPlanModel).current;
+    const questionId = input.questionId ?? state.focus?.questionId;
+    const question = questionId === undefined ? undefined : state.questions[questionId];
+    if (questionId !== undefined && question === undefined) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_QUESTION_NOT_FOUND,
+        `Question ${questionId} not found`,
+      );
+    }
+    const lineSlug = input.lineSlug ?? question?.lineSlug ?? modeState.currentLineSlug;
+    const line = lineSlug === undefined ? undefined : state.lines[lineSlug];
+    if (lineSlug !== undefined && line === undefined) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_LINE_NOT_FOUND,
+        `Line ${lineSlug} not found`,
+      );
+    }
+    if (question !== undefined && lineSlug !== undefined && question.lineSlug !== lineSlug) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_LINE_NOT_FOUND,
+        `Line ${lineSlug} does not own question ${question.id}`,
+      );
+    }
+    if (
+      modeState.currentLineSlug !== undefined &&
+      lineSlug !== undefined &&
+      modeState.currentLineSlug !== lineSlug
+    ) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        `Research line is stale. Current line is ${modeState.currentLineSlug}, got ${lineSlug}.`,
+      );
+    }
+    if (state.period !== null && lineSlug !== undefined && state.period.lineSlug !== lineSlug) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        `Research period is bound to line ${state.period.lineSlug}, got ${lineSlug}.`,
+      );
+    }
+
+    const planId = input.planId ?? (existing?.status === 'draft' ? existing.planId : randomUUID());
+    const draftInput = {
+      planId,
+      researchRevision: state.revision,
+      programId: state.program?.topicId,
+      periodId: state.period?.id,
+      lineSlug,
+      questionId,
+      lineRevision: line?.revision,
+      questionRevision: question?.revision,
+      objective: input.objective,
+      steps: [...input.steps],
+      expectedEvidence: [...input.expectedEvidence],
+      stopCondition: input.stopCondition,
+      status: 'draft' as const,
+    };
+    if (input.usePlanMode === true) {
+      if (this.plan === undefined) {
+        throw new AitpResearchError(
+          AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+          'Plan mode bridge is unavailable in this Research host.',
+        );
+      }
+      await this.plan.enter(planId, true);
+      try {
+        this.assertResearchPlanFresh(draftInput);
+      } catch (error) {
+        const entered = await this.plan.status().catch(() => null);
+        if (entered?.id === planId) this.plan.cancel(planId);
+        throw error;
+      }
+    }
+
+    this.wire.dispatch(researchPlanDraft({
+      ...draftInput,
+      steps: [...draftInput.steps],
+      expectedEvidence: [...draftInput.expectedEvidence],
+    }));
+    this.publishResearchUpdated();
+    const draft = this.getResearchPlan();
+    if (draft === null || draft.status !== 'draft') {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        `ResearchPlan ${planId} could not become a draft`,
+      );
+    }
+    return draft;
+  }
+
+  async finalizeResearchPlan(): Promise<ResearchPlan> {
+    return this.serializeResearchPlanMutation(() => this.finalizeResearchPlanUnsafe());
+  }
+
+  private async finalizeResearchPlanUnsafe(): Promise<ResearchPlan> {
+    this.assertMutationAllowed();
+    const draft = this.getResearchPlan();
+    if (draft === null || draft.status !== 'draft') {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        'No pending ResearchPlan draft is available to finalize.',
+      );
+    }
+    const plan = this.plan;
+    if (plan === undefined) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        'Plan mode bridge is unavailable in this Research host.',
+      );
+    }
+    if (await plan.status() !== null) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        'Exit ordinary Plan mode before finalizing the ResearchPlan.',
+      );
+    }
+    const resolution = plan.getResolution?.() ?? null;
+    if (resolution === null || resolution.outcome !== 'approved') {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        'An approved ordinary Plan resolution is required before finalizing the ResearchPlan.',
+      );
+    }
+    if (resolution.planId !== draft.planId) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        `Plan resolution ${resolution.planId} does not match ResearchPlan ${draft.planId}.`,
+      );
+    }
+    this.assertResearchPlanFresh(draft);
+    const finalized = {
+      ...draft,
+      steps: [...draft.steps],
+      expectedEvidence: [...draft.expectedEvidence],
+      status: 'finalized' as const,
+      resolution: {
+        planId: resolution.planId,
+        planRevision: resolution.planRevision,
+        outcome: 'approved' as const,
+        selectedLabel: resolution.selectedLabel,
+      },
+    };
+    this.wire.dispatch(researchPlanFinalize({
+      ...finalized,
+      steps: [...finalized.steps],
+      expectedEvidence: [...finalized.expectedEvidence],
+    }));
+    this.publishResearchUpdated();
+    return finalized;
+  }
+
+  discardResearchPlan(): ResearchPlan | null {
+    this.assertStateMutationAllowed();
+    const current = this.getResearchPlan();
+    if (current === null || current.status === 'discarded') return current;
+    const discarded = {
+      ...current,
+      steps: [...current.steps],
+      expectedEvidence: [...current.expectedEvidence],
+      status: 'discarded' as const,
+      resolution: undefined,
+    };
+    this.wire.dispatch(researchPlanDiscard({
+      ...discarded,
+      steps: [...discarded.steps],
+      expectedEvidence: [...discarded.expectedEvidence],
+    }));
+    this.publishResearchUpdated();
+    return this.getResearchPlan();
+  }
+
+  noteLoopBoundary(): void {
+    if (this.scopeCtx.agentId !== MAIN_AGENT_ID) return;
+    const modeState = this.wire.getModel(AitpModeModel).current;
+    if (!this.mode.isActive || modeState.currentLineSlug === undefined) return;
+    const state = this.wire.getModel(ResearchModel).current;
+    const line = modeState.currentLineSlug;
+    const open = state.period;
+    if (open === null || open.lineSlug !== line || open.endedAt !== undefined) {
+      this.wire.dispatch(
+        researchStartPeriod({ id: randomUUID(), lineSlug: line, startedAt: now() }),
+      );
+    } else {
+      const focusQuestion = state.focus === null
+        ? undefined
+        : state.questions[state.focus.questionId];
+      this.wire.dispatch(
+        researchUpdatePeriod({
+          id: open.id,
+          loopCount: open.loopCount + 1,
+          currentQuestionId:
+            focusQuestion !== undefined && focusQuestion.lineSlug === line
+              ? focusQuestion.id
+              : null,
+          summary: state.latestProgress?.headline ?? null,
+        }),
+      );
+    }
+    if (this.wire.getModel(ResearchModel).current.revision !== state.revision) {
+      this.publishResearchUpdated();
+    }
   }
 
   getScientificProgress(level: ResearchProgressLevel): ResearchScientificSnapshot {
@@ -380,6 +691,12 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
         `Terminal scheduler state ${input.schedulerState} requires an explicit terminal state.`,
+      );
+    }
+    if (state.phase !== 'action_executing' || state.currentAction.status !== 'in_progress') {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        `Run observation requires an in-progress action in the action_executing phase.`,
       );
     }
     const observedAt = now();
@@ -453,9 +770,6 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       researchRevision: state.revision,
       questionId,
       lineSlug,
-      targetConfirmed: true,
-      assessmentChanged: false,
-      nextOperations: ['RecordResearchProgress', 'UpdateResearchQuestion'],
     };
   }
 
@@ -621,6 +935,24 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     }
     const currentLineSlug = this.wire.getModel(AitpModeModel).current.currentLineSlug;
     const lineChanged = currentLineSlug !== question.lineSlug;
+    if (lineChanged) {
+      this.wire.dispatch(
+        researchSwitchLine({
+          lineSlug: question.lineSlug,
+          expectedRevision: state.revision,
+        }),
+      );
+      const switched = this.wire.getModel(ResearchModel).current;
+      this.wire.dispatch(
+        researchSetFocus({
+          questionId,
+          boundedAction: focusBoundedAction,
+          expectedRevision: switched.revision,
+        }),
+        aitpModeSetLine({ lineSlug: question.lineSlug }),
+      );
+      return;
+    }
     this.wire.dispatch(
       researchSetFocus({
         questionId,
@@ -628,10 +960,6 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         expectedRevision: state.revision,
       }),
     );
-    if (lineChanged) {
-      this.wire.dispatch(aitpModeSetLine({ lineSlug: question.lineSlug }));
-      return;
-    }
     this.publishResearchUpdated();
   }
 
@@ -943,9 +1271,8 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   async commitCheckpoint(input: CommitCheckpointInput): Promise<void> {
     this.assertMutationAllowed();
     const current = this.wire.getModel(ResearchModel).current;
-    const cursorModel = this.wire.getModel(ResearchCursorModel);
-    const currentCursor = cursorModel.cursor;
-    const committedHistory = cursorModel.history;
+    const currentCursor = this.externalFact.getCommittedCursor();
+    const committedHistory = this.externalFact.getCommitHistory();
 
     // Same checkpoint + same Entry is idempotent, even if it is not the latest.
     const duplicateCommit = committedHistory.find(
@@ -1044,7 +1371,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       );
     }
     const afterShow = this.wire.getModel(ResearchModel).current;
-    const afterShowCursor = this.wire.getModel(ResearchCursorModel).cursor;
+    const afterShowCursor = this.externalFact.getCommittedCursor();
     const afterShowPending = afterShow.pendingCheckpoint;
     const showAlreadyCommitted = afterShowCursor?.checkpointId === input.checkpointId &&
       afterShowCursor.entryId === input.entryId;
@@ -1105,7 +1432,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     }
 
     const after = this.wire.getModel(ResearchModel).current;
-    const afterCursor = this.wire.getModel(ResearchCursorModel).cursor;
+    const afterCursor = this.externalFact.getCommittedCursor();
     const afterPending = after.pendingCheckpoint;
     if (afterCursor?.checkpointId === input.checkpointId && afterCursor.entryId === input.entryId) {
       if (afterPending?.checkpointId === input.checkpointId) {
@@ -1146,19 +1473,19 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       );
     }
     const committedAt = Date.now();
+    this.externalFact.commitExternalFact({
+      checkpointId: input.checkpointId,
+      entryId: input.entryId,
+      receipt: committedReceipt,
+      committedAt,
+    });
     this.wire.dispatch(
-      researchCommitCheckpoint({
-        checkpointId: input.checkpointId,
-        entryId: input.entryId,
-        receipt: toWireCheckpointReceipt(committedReceipt),
-        committedAt,
-      }),
       researchAcknowledgeCheckpoint({
         checkpointId: input.checkpointId,
         entryId: input.entryId,
       }),
     );
-    const committedCursor = this.wire.getModel(ResearchCursorModel).cursor;
+    const committedCursor = this.externalFact.getCommittedCursor();
     const remainingPending = this.wire.getModel(ResearchModel).current.pendingCheckpoint;
     if (
       committedCursor?.checkpointId !== input.checkpointId ||
@@ -1173,9 +1500,10 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this.publishResearchUpdated();
   }
 
-  planAction(input: PlanActionInput): ResearchActionSpec {
-    this.assertMutationAllowed();
-    const state = this.wire.getModel(ResearchModel).current;
+  private assertActionCanBePlanned(
+    input: PlanActionInput,
+    state: ResearchWorkingState,
+  ): { readonly lineSlug?: string } {
     if (!PLAN_ACTION_PHASES.includes(state.phase)) {
       const allowed = allowedNextPhases(state.phase).join(', ');
       throw new AitpResearchError(
@@ -1189,24 +1517,52 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         `Cannot plan a new action while action ${state.currentAction!.actionId} is still ${state.currentAction!.status}. Complete or abandon it before planning a new action.`,
       );
     }
-    if (input.questionId !== undefined && state.questions[input.questionId] === undefined) {
+    if (isUnresolvedHumanGate(state.humanGate)) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_GATE_PENDING,
+        `Human gate ${state.humanGate.gateId} is unresolved; resolve it before planning or beginning an action.`,
+      );
+    }
+    const question = input.questionId === undefined ? undefined : state.questions[input.questionId];
+    if (input.questionId !== undefined && question === undefined) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_QUESTION_NOT_FOUND,
         `Question ${input.questionId} not found`,
       );
     }
-    if (input.lineSlug !== undefined && state.lines[input.lineSlug] === undefined) {
+    const modeLine = this.wire.getModel(AitpModeModel).current.currentLineSlug;
+    const lineSlug = input.lineSlug ?? question?.lineSlug ?? modeLine;
+    if (lineSlug !== undefined && state.lines[lineSlug] === undefined) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_LINE_NOT_FOUND,
-        `Line ${input.lineSlug} not found`,
+        `Line ${lineSlug} not found`,
       );
     }
+    if (question !== undefined && lineSlug !== undefined && question.lineSlug !== lineSlug) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_LINE_NOT_FOUND,
+        `Line ${lineSlug} does not own question ${question.id}`,
+      );
+    }
+    if (modeLine !== undefined && lineSlug !== modeLine) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        `Research action is bound to line ${lineSlug}, but current line is ${modeLine}. Switch lines before continuing.`,
+      );
+    }
+    return { lineSlug };
+  }
+
+  planAction(input: PlanActionInput): ResearchActionSpec {
+    this.assertMutationAllowed();
+    const state = this.wire.getModel(ResearchModel).current;
+    const ownership = this.assertActionCanBePlanned(input, state);
     const actionId = input.actionId ?? randomUUID();
     this.wire.dispatch(
       researchPlanAction({
         actionId,
         questionId: input.questionId,
-        lineSlug: input.lineSlug,
+        lineSlug: ownership.lineSlug,
         kind: input.kind,
         purpose: input.purpose,
         expectedEvidence: input.expectedEvidence !== undefined ? [...input.expectedEvidence] : [],
@@ -1229,8 +1585,11 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   }
 
   planAndStartAction(input: PlanActionInput): ResearchActionSpec {
-    const action = this.planAction(input);
-    if (action.requiresHumanApproval) {
+    if (input.requiresHumanApproval === true) {
+      this.assertMutationAllowed();
+      const state = this.wire.getModel(ResearchModel).current;
+      this.assertActionCanBePlanned(input, state);
+      const action = this.planAction(input);
       this.requestHumanDecision({
         kind: 'approval',
         actionId: action.actionId,
@@ -1239,8 +1598,38 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       });
       return this.getSnapshot().currentAction ?? action;
     }
-    this.startAction(action.actionId);
-    return this.getSnapshot().currentAction ?? action;
+
+    // The normal BeginResearchAction path is one bounded state transition:
+    // planning and entering execution cannot leave a phantom planned action
+    // between two separate wire dispatches.
+    this.assertMutationAllowed();
+    const state = this.wire.getModel(ResearchModel).current;
+    const ownership = this.assertActionCanBePlanned(input, state);
+    const actionId = input.actionId ?? randomUUID();
+    this.wire.dispatch(
+      researchBeginAction({
+        actionId,
+        questionId: input.questionId,
+        lineSlug: ownership.lineSlug,
+        kind: input.kind,
+        purpose: input.purpose,
+        expectedEvidence: input.expectedEvidence !== undefined ? [...input.expectedEvidence] : [],
+        stopCondition: input.stopCondition,
+        allowedToolKinds: input.allowedToolKinds !== undefined ? [...input.allowedToolKinds] : [],
+        retryOfEntryId: input.retryOfEntryId,
+        requiresHumanApproval: false,
+        createdAt: Date.now(),
+      }),
+    );
+    const action = this.wire.getModel(ResearchModel).current.currentAction;
+    if (action === null || action.actionId !== actionId || action.status !== 'in_progress') {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        `Failed to begin action ${actionId}; inspect the current Research status before retrying`,
+      );
+    }
+    this.publishResearchUpdated();
+    return toActionSpec(action);
   }
 
   startAction(actionId: string): void {
@@ -1536,6 +1925,15 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         `Invalid human-gate recovery phase: awaiting_human → ${input.nextPhase}`,
       );
     }
+    if (
+      input.nextPhase === 'action_executing' &&
+      (state.currentAction === null || state.currentAction.status !== 'in_progress')
+    ) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        'Cannot resolve a human gate to action_executing without an in-progress action.',
+      );
+    }
 
     const changedAt = Date.now();
     this.wire.dispatch(
@@ -1593,7 +1991,9 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         classification: 'active_blocker',
         source: 'adapter',
         state: 'active',
-        message: 'AITP Research Mode is degraded; restore a ready adapter before continuing.',
+        message: this.mode.maintenanceDegradedReason === 'workstream_unbound'
+          ? 'AITP Research Mode is degraded because no research line is bound; set or switch to a research line before continuing.'
+          : 'AITP Research Mode is degraded; restore a ready adapter before continuing.',
         createdAt: now(),
       });
     } else if (this.mode.phase === 'ready') {
@@ -1758,10 +2158,62 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this.reconcileAlerts();
   }
 
+  /**
+   * Forms the topic-bound program from a maintenance receipt's safe topic
+   * fields. Never fabricates: without a topic the existing program is left
+   * untouched, and a differing topic id replaces the program outright.
+   */
+  private reconcileProgram(receipt: AitpMaintenanceReceipt | undefined): void {
+    if (!this.mode.isActive || receipt === undefined || receipt.topic === undefined) return;
+    const state = this.wire.getModel(ResearchModel).current;
+    const program = state.program;
+    if (
+      program !== null &&
+      program.topicId === receipt.topic.id &&
+      program.title === receipt.topic.title &&
+      program.goalText === receipt.topic.goalText &&
+      program.goalSource === receipt.topic.goalSource
+    ) return;
+    this.wire.dispatch(
+      researchSetProgram({
+        topicId: receipt.topic.id,
+        title: receipt.topic.title,
+        goalText: receipt.topic.goalText,
+        goalSource: receipt.topic.goalSource,
+        establishedAt: program?.topicId === receipt.topic.id ? program.establishedAt : now(),
+      }),
+    );
+  }
+
+  /**
+   * Keeps the open period aligned with the mode's current line at the clear
+   * semantic points (mode enter / exit / line switch, all signalled by
+   * `aitp_mode.updated`): starts a period for a newly bound line (archiving
+   * the previous one), and closes the open period when the mode exits or no
+   * line is bound. Idempotent — replays and repeated signals are no-ops.
+   */
+  private reconcilePeriodLifecycle(): void {
+    const state = this.wire.getModel(ResearchModel).current;
+    const modeState = this.wire.getModel(AitpModeModel).current;
+    const open = state.period;
+    if (!this.mode.isActive || modeState.currentLineSlug === undefined) {
+      if (open !== null && open.endedAt === undefined) {
+        this.wire.dispatch(researchEndPeriod({ endedAt: now() }));
+      }
+      return;
+    }
+    const line = modeState.currentLineSlug;
+    if (open === null || open.lineSlug !== line || open.endedAt !== undefined) {
+      this.wire.dispatch(
+        researchStartPeriod({ id: randomUUID(), lineSlug: line, startedAt: now() }),
+      );
+    }
+  }
+
   private reconcileCommittedCheckpoint(): void {
     const pending = this.wire.getModel(ResearchModel).current.pendingCheckpoint;
     if (pending === null) return;
-    const commits = this.wire.getModel(ResearchCursorModel).history;
+    const commits = this.externalFact.getCommitHistory();
     const matched = commits.find(
       (commit) =>
         commit.checkpointId === pending.checkpointId &&
@@ -1774,6 +2226,12 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         entryId: matched.entryId,
       }),
     );
+  }
+
+  private serializeResearchPlanMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.researchPlanMutationTail.then(operation);
+    this.researchPlanMutationTail = run.then(() => undefined, () => undefined);
+    return run;
   }
 
   private assertMainAgent(): void {
@@ -1795,6 +2253,55 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this.mode.assertResearchMutationAllowed({ allowPaused: true });
   }
 
+  private assertResearchPlanFresh(plan: ResearchPlan): void {
+    const state = this.wire.getModel(ResearchModel).current;
+    const modeState = this.wire.getModel(AitpModeModel).current;
+    if (state.revision !== plan.researchRevision) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        `ResearchPlan revision is stale. Expected ${plan.researchRevision}, got ${state.revision}.`,
+      );
+    }
+    if (state.program?.topicId !== plan.programId) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        'ResearchPlan is bound to a stale Research Program.',
+      );
+    }
+    if (state.period?.id !== plan.periodId) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        'ResearchPlan is bound to a stale Research Period.',
+      );
+    }
+    if (modeState.currentLineSlug !== plan.lineSlug) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        'ResearchPlan is bound to a stale Research line.',
+      );
+    }
+    const line = plan.lineSlug === undefined ? undefined : state.lines[plan.lineSlug];
+    if (line?.revision !== plan.lineRevision) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        'ResearchPlan line revision is stale.',
+      );
+    }
+    const question = plan.questionId === undefined ? undefined : state.questions[plan.questionId];
+    if (question?.revision !== plan.questionRevision) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        'ResearchPlan question revision is stale.',
+      );
+    }
+    if (question !== undefined && question.lineSlug !== plan.lineSlug) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        'ResearchPlan question is bound to a stale line.',
+      );
+    }
+  }
+
   private getGoalSummary(): ResearchStatusSnapshot['goalSummary'] {
     if (this.scopeCtx.agentId !== MAIN_AGENT_ID) return undefined;
     const goal = this.goal.getGoal().goal;
@@ -1805,9 +2312,16 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       : { status: goal.status, remainingTurns };
   }
 
-  private publishResearchUpdated(): void {
+  private publishResearchUpdated(notifyGoal = true): void {
     this.reconcile();
     this.eventBus.publish({ type: 'research.updated', snapshot: this.getSnapshot() });
+    if (notifyGoal) this.requestGoalContinuationRetry();
+  }
+
+  private requestGoalContinuationRetry(): void {
+    if (this.scopeCtx.agentId !== MAIN_AGENT_ID) return;
+    const goal = this.goal.getGoal().goal;
+    if (goal !== null) this.continuationRetryEmitter.fire(goal.goalId);
   }
 
   private async guardToolExecution(event: BeforeToolExecuteEvent): Promise<void> {
@@ -1817,44 +2331,78 @@ export class AgentResearchService extends Service implements IAgentResearchServi
           'AITP/Research mutation tools are only available on the main agent. Use typed packets to return results.',
         ),
       );
-      return;
-    }
-
-    if (event.toolCall.name === 'UpdateGoal') {
-      const args = event.args;
-      if (isPlainRecord(args) && args['status'] === 'complete' && this.mode.isActive) {
-        const pending = this.getPendingCheckpoint();
-        if (pending !== null) {
-          event.veto(
-            denyToolExecution(
-              'Goal completion is blocked: a research checkpoint is pending commit. Commit or discard it before completing the goal.',
-            ),
-          );
-          return;
-        }
-        if (this.mode.phase === 'degraded') {
-          event.veto(
-            denyToolExecution(
-              'Goal completion is blocked: Research Mode is degraded. Restore a ready Research Mode state before completing the goal.',
-            ),
-          );
-          return;
-        }
-        const humanGate = this.wire.getModel(ResearchModel).current.humanGate;
-        if (humanGate !== null && humanGate.resolvedAt === undefined) {
-          event.veto(
-            denyToolExecution(
-              'Goal completion is blocked: a Research human gate is unresolved. Resolve the gate before completing the goal.',
-            ),
-          );
-        }
-      }
     }
   }
-}
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  private guardGoalCompletion(
+    _input: import('#/agent/goal/goalContribution').GoalCompletionGuardInput,
+  ): import('#/agent/goal/goalContribution').GoalCompletionGuardResult {
+    if (!this.mode.isActive) return { allow: true };
+    const pending = this.getPendingCheckpoint();
+    if (pending !== null) {
+      return {
+        allow: false,
+        owner: 'aitpResearch',
+        code: 'research.checkpoint.pending',
+        reason:
+          'Goal completion is blocked: a research checkpoint is pending commit. Commit or discard it before completing the goal.',
+        nextStep: 'CommitResearchCheckpoint',
+      };
+    }
+    if (this.mode.phase === 'degraded') {
+      return {
+        allow: false,
+        owner: 'aitpResearch',
+        code: 'research.mode.degraded',
+        reason:
+          'Goal completion is blocked: Research Mode is degraded. Restore a ready Research Mode state before completing the goal.',
+        nextStep: 'EnterAITPMode',
+      };
+    }
+    const humanGate = this.wire.getModel(ResearchModel).current.humanGate;
+    if (humanGate !== null && humanGate.resolvedAt === undefined) {
+      return {
+        allow: false,
+        owner: 'aitpResearch',
+        code: 'research.human-gate.unresolved',
+        reason:
+          'Goal completion is blocked: a Research human gate is unresolved. Resolve the gate before completing the goal.',
+        nextStep: 'ResolveResearchDecision',
+      };
+    }
+    return { allow: true };
+  }
+
+  private decideGoalContinuation(
+    _input: import('#/agent/goal/goalContribution').GoalContinuationInput,
+  ): import('#/agent/goal/goalContribution').GoalContinuationDecisionResult {
+    // The participant only weighs in while Research Mode is active; an
+    // inactive mode leaves the automatic continuation decision to Goal.
+    if (!this.mode.isActive) return { decision: 'abstain' };
+    if (this.mode.loopStatus !== 'active') {
+      return {
+        decision: 'hold',
+        owner: 'aitpResearch',
+        reason: 'The research loop is paused. Resume the research loop before continuing the goal automatically.',
+      };
+    }
+    if (this.mode.phase === 'degraded') {
+      return {
+        decision: 'hold',
+        owner: 'aitpResearch',
+        reason: 'Research Mode is degraded. Restore a ready Research Mode state before continuing the goal automatically.',
+      };
+    }
+    const humanGate = this.wire.getModel(ResearchModel).current.humanGate;
+    if (humanGate !== null && humanGate.resolvedAt === undefined) {
+      return {
+        decision: 'hold',
+        owner: 'aitpResearch',
+        reason: 'A Research human gate is unresolved. Resolve the gate before continuing the goal automatically.',
+      };
+    }
+    return { decision: 'abstain' };
+  }
 }
 
 function toCheckpointCheckReceipt(
@@ -1884,53 +2432,6 @@ function toCheckpointCheckReceipt(
       ? undefined
       : errorFindingFingerprints.filter((fingerprint) => baselineErrors.has(fingerprint)),
     checkedAt: Date.now(),
-  };
-}
-
-function toWireCheckpointReceipt(receipt: ResearchCheckpointReceipt) {
-  return {
-    prepare: receipt.prepare === undefined
-      ? undefined
-      : receipt.prepare.status === 'prepared'
-        ? {
-            ...receipt.prepare,
-            workstreams: receipt.prepare.workstreams === undefined
-              ? undefined
-              : [...receipt.prepare.workstreams],
-          }
-        : {
-            ...receipt.prepare,
-            workstreams: receipt.prepare.workstreams === undefined
-              ? undefined
-              : [...receipt.prepare.workstreams],
-          },
-    save: receipt.save,
-    preSaveCheck: receipt.preSaveCheck === undefined
-      ? undefined
-      : {
-          ...receipt.preSaveCheck,
-          findingFingerprints: [...receipt.preSaveCheck.findingFingerprints],
-          errorFindingFingerprints: [...receipt.preSaveCheck.errorFindingFingerprints],
-          newErrorFindingFingerprints: receipt.preSaveCheck.newErrorFindingFingerprints === undefined
-            ? undefined
-            : [...receipt.preSaveCheck.newErrorFindingFingerprints],
-          preExistingErrorFindingFingerprints: receipt.preSaveCheck.preExistingErrorFindingFingerprints === undefined
-            ? undefined
-            : [...receipt.preSaveCheck.preExistingErrorFindingFingerprints],
-        },
-    postSaveCheck: receipt.postSaveCheck === undefined
-      ? undefined
-      : {
-          ...receipt.postSaveCheck,
-          findingFingerprints: [...receipt.postSaveCheck.findingFingerprints],
-          errorFindingFingerprints: [...receipt.postSaveCheck.errorFindingFingerprints],
-          newErrorFindingFingerprints: receipt.postSaveCheck.newErrorFindingFingerprints === undefined
-            ? undefined
-            : [...receipt.postSaveCheck.newErrorFindingFingerprints],
-          preExistingErrorFindingFingerprints: receipt.postSaveCheck.preExistingErrorFindingFingerprints === undefined
-            ? undefined
-            : [...receipt.postSaveCheck.preExistingErrorFindingFingerprints],
-        },
   };
 }
 
@@ -2231,4 +2732,57 @@ function deriveEffectiveNextStep(input: {
   }
 
   return undefined;
+}
+
+function deriveStatusProjection(input: {
+  readonly modePhase: AitpModePhase;
+  readonly phase: ResearchPhase;
+  readonly currentLineSlug?: string;
+  readonly focus: ResearchFocusRecord | null;
+  readonly questions: Readonly<Record<string, ResearchQuestionRecord>>;
+  readonly currentAction?: ResearchActionSpec;
+  readonly effectiveNextStep?: ResearchEffectiveNextStep;
+  readonly humanGate?: ResearchHumanGate;
+  readonly alerts: readonly ResearchAlert[];
+}): ResearchStatusProjection {
+  const focusQuestion = input.focus === null
+    ? undefined
+    : input.questions[input.focus.questionId];
+  const focusOutsideWorkstream = focusQuestion !== undefined &&
+    input.currentLineSlug !== undefined &&
+    focusQuestion.lineSlug !== input.currentLineSlug;
+  const currentQuestionId = focusOutsideWorkstream ? undefined : focusQuestion?.id;
+  const actionMatchesWorkstream = input.currentAction !== undefined && (
+    input.currentAction.lineSlug === undefined ||
+    input.currentAction.lineSlug === input.currentLineSlug ||
+    (currentQuestionId !== undefined && input.currentAction.questionId === currentQuestionId)
+  );
+  const attentionAlerts = input.alerts
+    .filter((alert) =>
+      (alert.state ?? (alert.acknowledgedAt === undefined ? 'active' : 'acknowledged')) === 'active')
+    .filter((alert) => alert.lineSlug === undefined || alert.lineSlug === input.currentLineSlug);
+  const hasBlocker = attentionAlerts.some((alert) =>
+    (alert.classification ?? (alert.kind === 'blocked' ? 'active_blocker' : 'warning')) ===
+    'active_blocker');
+  const humanGateUnresolved = input.humanGate !== undefined && input.humanGate.resolvedAt === undefined;
+  const focusBlocked =
+    focusQuestion !== undefined && !focusOutsideWorkstream && focusQuestion.workflow === 'blocked';
+  let health: ResearchStatusHealth = 'ok';
+  if (humanGateUnresolved || hasBlocker || focusBlocked) {
+    health = 'blocked';
+  } else if (input.modePhase === 'degraded') {
+    health = 'degraded';
+  } else if (attentionAlerts.length > 0) {
+    health = 'attention';
+  }
+  const stepFromOutside = focusOutsideWorkstream && input.effectiveNextStep?.source === 'question';
+  return {
+    currentLineSlug: input.currentLineSlug,
+    currentQuestionId,
+    currentActionId: actionMatchesWorkstream ? input.currentAction?.actionId : undefined,
+    phase: input.phase,
+    nextStep: stepFromOutside ? undefined : input.effectiveNextStep?.text,
+    health,
+    attention: attentionAlerts.map((alert) => alert.message),
+  };
 }

@@ -10,7 +10,7 @@ export default defineConfig({
     neverBundle: [
       '@agentclientprotocol/sdk',
       '@moonshot-ai/agent-core',
-      '@moonshot-ai/kimi-code-sdk',
+      '@bhjia-phys/hakimi-sdk',
       '@moonshot-ai/kosong',
       '@moonshot-ai/kaos',
     ],

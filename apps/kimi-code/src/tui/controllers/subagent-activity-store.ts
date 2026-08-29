@@ -18,7 +18,7 @@
  * Pure logic — no TUI state, no components — so it is unit-testable.
  */
 
-import type { Event } from '@moonshot-ai/kimi-code-sdk';
+import type { Event } from '@bhjia-phys/hakimi-sdk';
 
 import {
   MAX_SUBAGENT_ACTIVITY_STEPS,

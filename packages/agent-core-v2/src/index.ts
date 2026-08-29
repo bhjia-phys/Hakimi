@@ -345,6 +345,7 @@ import '#/agent/tools/goal/update-goal/updateGoalTool';
 export * from '#/agent/goal/goalDeadlineScheduler';
 import '#/agent/goal/goalDeadlineSchedulerService';
 export * from '#/agent/goal/goal';
+export * from '#/agent/goal/goalContribution';
 export * from '#/agent/goal/goalService';
 export * from '#/agent/goal/types';
 export * from '#/features/tower/tower';
@@ -712,19 +713,26 @@ export * from '#/agent/userTool/userToolService';
 export * from '#/agent/skillVisibility/skillVisibility';
 import '#/agent/skillVisibility/skillVisibilityService';
 
+// Research domain — protocol-independent pure contracts
+export * from '#/features/research/types';
+export * from '#/features/research/evidencePacket';
+
 // AITP Research Mode feature
 import '#/features/aitpResearch/flag';
 import '#/features/aitpResearch/errors';
 export { AitpResearchErrors } from '#/features/aitpResearch/errors';
 export * from '#/features/aitpResearch/types';
 export * from '#/features/aitpResearch/aitpResearchOps';
+export * from '#/features/aitpResearch/researchPlanOps';
 export * from '#/features/aitpResearch/adapter/sessionAitpAdapter';
 export * from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
 export * from '#/features/aitpResearch/mode/agentAitpMode';
 export * from '#/features/aitpResearch/research/agentResearch';
 export * from '#/features/aitpResearch/research/durableCommit';
+export * from '#/features/aitpResearch/research/externalFact';
 export * from '#/features/aitpResearch/research/evidencePacket';
 import '#/features/aitpResearch/research/durableCommitService';
+import '#/features/aitpResearch/research/externalFactService';
 export * from '#/features/aitpResearch/injection/aitpResearchInjectionContract';
 export * from '#/features/aitpResearch/tools/aitpModeTools';
 import '#/features/aitpResearch/tools/aitpModeToolsImpl';

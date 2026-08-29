@@ -42,11 +42,11 @@ describe('research transition authority', () => {
     expect(allowedNextPhases('nope' as never)).toEqual([]);
   });
 
-  it('the plan-action phase precondition is a subset of phases that can reach action_planned', () => {
-    for (const phase of PLAN_ACTION_PHASES) {
-      // Every planning phase either already is action_planned or can transition into it.
-      expect(phase === 'action_planned' || isPhaseTransitionValid(phase, 'action_planned')).toBe(true);
-    }
+  it('keeps plan-action phases aligned with the transition table', () => {
+    const phasesThatCanPlan = ALL_PHASES.filter(
+      (phase) => phase === 'action_planned' || isPhaseTransitionValid(phase, 'action_planned'),
+    );
+    expect(PLAN_ACTION_PHASES.toSorted()).toEqual(phasesThatCanPlan.toSorted());
   });
 
   it('isUnresolvedHumanGate is true only for an outstanding gate', () => {

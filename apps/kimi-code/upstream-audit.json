@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/MoonshotAI/kimi-code.git",
+  "checks": [
+    {
+      "checkedAt": "2026-08-29",
+      "upstreamRef": "refs/heads/main",
+      "upstreamCommit": "961927739ef34819d67d76fa5870cbe4ba7a01ff",
+      "localTrackingRef": "refs/remotes/upstream/main",
+      "localTrackingCommit": "44a6c70e66762ea9e122f8dceae16dc759086a7c",
+      "scope": "Recent upstream commits and Tower selective-adoption review"
+    }
+  ]
+}

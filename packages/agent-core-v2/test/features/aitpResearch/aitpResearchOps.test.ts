@@ -32,12 +32,18 @@ import {
   researchClearAlert,
   researchAcknowledgeAlert,
   researchPlanAction,
+  researchBeginAction,
   researchStartAction,
   researchCompleteAction,
+  researchObserveRun,
   researchRecordProgress,
   researchSetPhase,
   researchRequestHumanDecision,
   researchResolveHumanDecision,
+  researchSetProgram,
+  researchStartPeriod,
+  researchUpdatePeriod,
+  researchEndPeriod,
 } from '#/features/aitpResearch/aitpResearchOps';
 import { AppendLogStore } from '#/persistence/backends/node-fs/appendLogStore';
 import { InMemoryStorageService } from '#/persistence/backends/memory/inMemoryStorageService';
@@ -46,6 +52,7 @@ import { IFileSystemStorageService } from '#/persistence/interface/storage';
 import { IWireService } from '#/wire/wire';
 
 import { registerTestAgentWire, testWireScope } from '../../wire/stubs';
+import { createExternalFactFacade } from '#/features/aitpResearch/research/externalFactService';
 
 const SCOPE = 'wire';
 const KEY = 'aitp-research-test';
@@ -636,12 +643,44 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(state.currentAction!.kind).toBe('experiment');
     });
 
+    it('beginAction transitions idle to action_executing while preserving question ownership', () => {
+      wire.dispatch(researchCreateLine({ slug: 'main', title: 'Main', createdAt: 100 }));
+      wire.dispatch(researchCreateQuestion({ id: 'q1', lineSlug: 'main', wording: 'Q1', priority: 0, neededEvidence: [] }));
+      wire.dispatch(researchSetFocus({ questionId: 'q1', expectedRevision: 2 }));
+      expect(wire.getModel(ResearchModel).current.phase).toBe('idle');
+
+      wire.dispatch(researchBeginAction({
+        actionId: 'a1', questionId: 'q1', lineSlug: 'main', kind: 'experiment',
+        purpose: 'test hypothesis', expectedEvidence: ['measurement'],
+        stopCondition: 'p < 0.05', allowedToolKinds: ['bash'], requiresHumanApproval: false,
+        createdAt: 300,
+      }));
+
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.phase).toBe('action_executing');
+      expect(state.currentAction).toMatchObject({
+        actionId: 'a1', questionId: 'q1', lineSlug: 'main', status: 'in_progress',
+      });
+      expect(state.focus?.questionId).toBe('q1');
+    });
+
     it('planAction is a no-op from an invalid phase', () => {
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'existing', kind: 'experiment', purpose: 'existing action', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 200,
+      }));
+      wire.dispatch(researchStartAction({ actionId: 'existing', startedAt: 300 }));
+      wire.dispatch(researchCompleteAction({ actionId: 'existing', status: 'completed', completedAt: 400 }));
+      const before = wire.getModel(ResearchModel).current;
+
       wire.dispatch(researchPlanAction({
         actionId: 'a1', kind: 'experiment', purpose: 'x', expectedEvidence: [],
-        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 100,
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 500,
       }));
-      expect(wire.getModel(ResearchModel).current.currentAction).toBeNull();
+
+      expect(wire.getModel(ResearchModel).current).toBe(before);
+      expect(before.phase).toBe('evaluating');
     });
 
     it('planAction is a no-op when questionId is missing', () => {
@@ -865,6 +904,89 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(state.phase).toBe('action_planned');
     });
 
+    it('planning and begin are replay no-ops from idle while a human gate is unresolved', () => {
+      wire.dispatch(researchRequestHumanDecision({
+        gateId: 'g1', kind: 'decision', prompt: 'choose a direction', createdAt: 100,
+      }));
+      wire.dispatch(researchSetPhase({ phase: 'idle', changedAt: 150 }));
+      const before = wire.getModel(ResearchModel).current;
+      expect(before.phase).toBe('idle');
+      expect(before.humanGate?.resolvedAt).toBeUndefined();
+
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', kind: 'experiment', purpose: 'blocked plan', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 200,
+      }));
+      wire.dispatch(researchBeginAction({
+        actionId: 'a2', kind: 'experiment', purpose: 'blocked begin', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 300,
+      }));
+
+      expect(wire.getModel(ResearchModel).current).toBe(before);
+    });
+
+    it('rejects action question/line mismatches during replay', () => {
+      wire.dispatch(researchCreateLine({ slug: 'main', title: 'Main', createdAt: 1 }));
+      wire.dispatch(researchCreateLine({ slug: 'alt', title: 'Alt', createdAt: 2 }));
+      wire.dispatch(researchCreateQuestion({ id: 'q1', lineSlug: 'main', wording: 'Q1', priority: 0, neededEvidence: [] }));
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 3 }));
+      const before = wire.getModel(ResearchModel).current;
+
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', questionId: 'q1', lineSlug: 'alt', kind: 'experiment', purpose: 'wrong owner',
+        expectedEvidence: [], stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 4,
+      }));
+
+      expect(wire.getModel(ResearchModel).current).toBe(before);
+    });
+
+    it('clears scientific foreground state when switching lines', () => {
+      wire.dispatch(researchCreateLine({ slug: 'main', title: 'Main', createdAt: 1 }));
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', kind: 'experiment', purpose: 'first', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 200,
+      }));
+      wire.dispatch(researchStartAction({ actionId: 'a1', startedAt: 300 }));
+      wire.dispatch(researchObserveRun({
+        actionId: 'a1', campaign: 'c', jobId: 'j', stage: 'running', schedulerState: 'running',
+        lastObservedAt: 400, artifactRefs: [],
+      }));
+      wire.dispatch(researchSwitchLine({ lineSlug: 'main', expectedRevision: 0 }));
+
+      expect(wire.getModel(ResearchModel).current).toMatchObject({
+        phase: 'idle', currentAction: null, currentRun: null, latestProgress: null,
+        recentStateChange: null, humanGate: null, focus: null,
+      });
+    });
+
+    it('resolve to action_executing is a replay no-op without an in-progress action', () => {
+      wire.dispatch(researchRequestHumanDecision({
+        gateId: 'g1', kind: 'decision', prompt: 'choose a direction', createdAt: 100,
+      }));
+      const before = wire.getModel(ResearchModel).current;
+      wire.dispatch(researchResolveHumanDecision({
+        gateId: 'g1', resolution: 'run it', nextPhase: 'action_executing', changedAt: 200,
+      }));
+
+      expect(wire.getModel(ResearchModel).current).toBe(before);
+    });
+
+    it('observeRun is a replay no-op outside an executing in-progress action', () => {
+      wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
+      wire.dispatch(researchPlanAction({
+        actionId: 'a1', kind: 'experiment', purpose: 'first', expectedEvidence: [],
+        stopCondition: 'done', allowedToolKinds: [], requiresHumanApproval: false, createdAt: 200,
+      }));
+      const before = wire.getModel(ResearchModel).current;
+      wire.dispatch(researchObserveRun({
+        actionId: 'a1', campaign: 'c', jobId: 'j', stage: 'running', schedulerState: 'running',
+        lastObservedAt: 300, artifactRefs: [],
+      }));
+
+      expect(wire.getModel(ResearchModel).current).toBe(before);
+    });
+
     it('planAction remains allowed once no foreground action is live', () => {
       wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
       wire.dispatch(researchPlanAction({
@@ -1000,6 +1122,51 @@ describe('aitpResearch ops (wire-backed)', () => {
       ]);
       expect(cursor.revision).toBe(2);
     });
+
+    it('external-fact facade commits and reads idempotently without touching ResearchModel', () => {
+      const facts = createExternalFactFacade(wire);
+      const receipt = {
+        prepare: {
+          status: 'prepared' as const,
+          id: 'e1',
+          path: '.aitp/local/drafts/e1.md',
+          idempotencyKey: 'key1',
+        },
+        save: {
+          status: 'saved' as const,
+          draftPath: '.aitp/local/drafts/e1.md',
+          path: '.aitp/topic/entries/entry-e1.md',
+        },
+      };
+      facts.commitExternalFact({ checkpointId: 'cp1', entryId: 'e1', committedAt: 2000, receipt });
+      // Repeated commit with the same checkpoint + entry is idempotent.
+      facts.commitExternalFact({ checkpointId: 'cp1', entryId: 'e1', committedAt: 3000, receipt });
+      // A same-checkpoint different-entry commit is a no-op.
+      facts.commitExternalFact({ checkpointId: 'cp1', entryId: 'e2', committedAt: 4000 });
+
+      expect(facts.getCommittedCursor()).toEqual({
+        checkpointId: 'cp1', entryId: 'e1', committedAt: 2000, receipt,
+      });
+      expect(facts.getCommitHistory()).toEqual([
+        { checkpointId: 'cp1', entryId: 'e1', committedAt: 2000, receipt },
+      ]);
+      expect(facts.getRevision()).toBe(1);
+      // The checkpointed working model is untouched by the external-fact facade.
+      expect(wire.getModel(ResearchModel).current.pendingCheckpoint).toBeNull();
+    });
+
+    it('external-fact facade reads are pure: repeated reads never dispatch or mutate', () => {
+      const facts = createExternalFactFacade(wire);
+      wire.dispatch(researchCommitCheckpoint({ checkpointId: 'cp1', entryId: 'e1', committedAt: 2000 }));
+      const revisionBefore = facts.getRevision();
+      const first = facts.getCommittedCursor();
+      const historyFirst = facts.getCommitHistory();
+      // Reads must be idempotent projections — no side effects, no dispatch.
+      expect(facts.getCommittedCursor()).toEqual(first);
+      expect(facts.getCommitHistory()).toEqual(historyFirst);
+      expect(facts.getRevision()).toBe(revisionBefore);
+      expect(wire.getModel(ResearchCursorModel).revision).toBe(revisionBefore);
+    });
   });
 
   describe('ResearchModel undo', () => {
@@ -1015,6 +1182,128 @@ describe('aitpResearch ops (wire-backed)', () => {
       // Undo back to the checkpoint
       wire.dispatch(contextUndo({ count: 1 }));
       expect(wire.getModel(ResearchModel).current.questions['q1']).toBeUndefined();
+    });
+  });
+
+  describe('ResearchModel program and period layers', () => {
+    it('starts with no program, no period, and an empty period history', () => {
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.program).toBeNull();
+      expect(state.period).toBeNull();
+      expect(state.periodHistory).toEqual([]);
+    });
+
+    it('set_program stores the topic-bound program and is idempotent on identical input', () => {
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
+      }));
+      let state = wire.getModel(ResearchModel).current;
+      expect(state.program).toEqual({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
+      });
+      expect(state.revision).toBe(1);
+
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
+      }));
+      state = wire.getModel(ResearchModel).current;
+      expect(state.revision).toBe(1);
+
+      // A different topic replaces the program outright (never spans topics).
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-b', title: 'Topic B', goalText: 'Prove Y', goalSource: 'TOPIC.md', establishedAt: 2000,
+      }));
+      state = wire.getModel(ResearchModel).current;
+      expect(state.program).toEqual({
+        topicId: 'topic-b', title: 'Topic B', goalText: 'Prove Y', goalSource: 'TOPIC.md', establishedAt: 2000,
+      });
+      expect(state.revision).toBe(2);
+    });
+
+    it('start_period opens a period, is a no-op for the same line, and archives on a line switch', () => {
+      wire.dispatch(researchStartPeriod({ id: 'p1', lineSlug: 'main', startedAt: 1000 }));
+      let state = wire.getModel(ResearchModel).current;
+      expect(state.period).toEqual({
+        id: 'p1', lineSlug: 'main', startedAt: 1000, loopCount: 0,
+      });
+      expect(state.periodHistory).toEqual([]);
+      expect(state.revision).toBe(1);
+
+      wire.dispatch(researchStartPeriod({ id: 'p1-dup', lineSlug: 'main', startedAt: 1500 }));
+      state = wire.getModel(ResearchModel).current;
+      expect(state.period!.id).toBe('p1');
+      expect(state.revision).toBe(1);
+
+      wire.dispatch(researchStartPeriod({ id: 'p2', lineSlug: 'alt', startedAt: 2000 }));
+      state = wire.getModel(ResearchModel).current;
+      expect(state.period).toEqual({
+        id: 'p2', lineSlug: 'alt', startedAt: 2000, loopCount: 0,
+      });
+      expect(state.periodHistory).toEqual([{
+        id: 'p1', lineSlug: 'main', startedAt: 1000, endedAt: 2000, loopCount: 0,
+      }]);
+    });
+
+    it('update_period bumps the loop count and records the current question and summary', () => {
+      wire.dispatch(researchStartPeriod({ id: 'p1', lineSlug: 'main', startedAt: 1000 }));
+      wire.dispatch(researchUpdatePeriod({ id: 'p1', loopCount: 1, currentQuestionId: 'q1', summary: 'headline' }));
+      let state = wire.getModel(ResearchModel).current;
+      expect(state.period).toMatchObject({
+        id: 'p1', loopCount: 1, currentQuestionId: 'q1', summary: 'headline',
+      });
+
+      // Partial updates keep the other fields.
+      wire.dispatch(researchUpdatePeriod({ id: 'p1', loopCount: 2 }));
+      state = wire.getModel(ResearchModel).current;
+      expect(state.period).toMatchObject({
+        id: 'p1', loopCount: 2, currentQuestionId: 'q1', summary: 'headline',
+      });
+
+      // Wrong id is a no-op.
+      wire.dispatch(researchUpdatePeriod({ id: 'other', loopCount: 9 }));
+      expect(wire.getModel(ResearchModel).current.period!.loopCount).toBe(2);
+    });
+
+    it('update_period can explicitly clear optional fields', () => {
+      wire.dispatch(researchStartPeriod({ id: 'p1', lineSlug: 'main', startedAt: 1000 }));
+      wire.dispatch(researchUpdatePeriod({ id: 'p1', currentQuestionId: 'q1', summary: 'headline' }));
+      wire.dispatch(researchUpdatePeriod({ id: 'p1', currentQuestionId: null, summary: null }));
+
+      expect(wire.getModel(ResearchModel).current.period).toMatchObject({
+        id: 'p1', currentQuestionId: undefined, summary: undefined,
+      });
+    });
+
+    it('end_period archives the open period and clears the current one', () => {
+      wire.dispatch(researchStartPeriod({ id: 'p1', lineSlug: 'main', startedAt: 1000 }));
+      wire.dispatch(researchUpdatePeriod({ id: 'p1', loopCount: 3 }));
+      wire.dispatch(researchEndPeriod({ endedAt: 4000 }));
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.period).toBeNull();
+      expect(state.periodHistory).toEqual([{
+        id: 'p1', lineSlug: 'main', startedAt: 1000, endedAt: 4000, loopCount: 3,
+      }]);
+
+      // Ending again is a no-op.
+      wire.dispatch(researchEndPeriod({ endedAt: 5000 }));
+      expect(wire.getModel(ResearchModel).current.periodHistory).toHaveLength(1);
+    });
+
+    it('undo restores the local program and period working state', () => {
+      wire.dispatch(contextAppendMessage({ message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } } }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
+      }));
+      wire.dispatch(researchStartPeriod({ id: 'p1', lineSlug: 'main', startedAt: 1000 }));
+      wire.dispatch(researchUpdatePeriod({ id: 'p1', loopCount: 1 }));
+      expect(wire.getModel(ResearchModel).current.program).not.toBeNull();
+      expect(wire.getModel(ResearchModel).current.period?.loopCount).toBe(1);
+
+      wire.dispatch(contextUndo({ count: 1 }));
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.program).toBeNull();
+      expect(state.period).toBeNull();
+      expect(state.periodHistory).toEqual([]);
     });
   });
 });

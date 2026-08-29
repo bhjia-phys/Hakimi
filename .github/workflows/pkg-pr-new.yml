@@ -1,4 +1,4 @@
-name: pkg.pr.new
+name: pkg.pr.new (Hakimi)
 
 on:
   pull_request:
@@ -13,9 +13,9 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish Kimi Code preview
+    name: Publish Hakimi preview
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'MoonshotAI' && github.event.pull_request.draft == false
+    if: github.repository == 'bhjia-phys/Hakimi' && github.event.pull_request.draft == false
 
     steps:
       - name: Checkout
@@ -36,15 +36,15 @@ jobs:
       - name: Build package dependencies
         run: pnpm run build:packages
 
-      - name: Generate Kimi Code built-in catalog
+      - name: Generate Hakimi built-in catalog
         shell: bash
         run: |
-          CATALOG_FILE="$RUNNER_TEMP/kimi-code-built-in-catalog.json"
+          CATALOG_FILE="$RUNNER_TEMP/hakimi-built-in-catalog.json"
           node apps/kimi-code/scripts/update-catalog.mjs --out "$CATALOG_FILE"
           echo "KIMI_CODE_BUILT_IN_CATALOG_FILE=$CATALOG_FILE" >> "$GITHUB_ENV"
 
-      - name: Build Kimi Code package
-        run: pnpm --filter @moonshot-ai/kimi-code run build
+      - name: Build Hakimi CLI package
+        run: pnpm --filter @bhjia-phys/hakimi run build
 
-      - name: Publish pkg.pr.new preview
-        run: pnpm exec pkg-pr-new publish --bin --commentWithSha --packageManager=pnpm,npm --no-template './apps/kimi-code'
+      - name: Publish Hakimi packages to pkg.pr.new
+        run: pnpm exec pkg-pr-new publish --bin --commentWithSha --packageManager=pnpm,npm --no-template './apps/kimi-code' './packages/node-sdk'

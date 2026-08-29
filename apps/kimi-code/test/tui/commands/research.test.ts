@@ -9,7 +9,7 @@ import {
   ResearchManagerComponent,
 } from '#/tui/components/dialogs/research-manager';
 import { setExperimentalFeatures } from '#/tui/commands/experimental-flags';
-import type { ResearchStatusSnapshot } from '@moonshot-ai/kimi-code-sdk';
+import type { ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
 
 function stripAnsi(text: string): string {
   return text.replaceAll(/\u001B\[[0-9;]*m/g, '');
@@ -62,6 +62,8 @@ function makeResearchHost(snapshot: ResearchStatusSnapshot = makeSnapshot()) {
         getSnapshotRevision: () => snapshot.mode === 'inactive' ? undefined : snapshot.revision,
         getSnapshot: () => snapshot,
       },
+      editor: { getText: vi.fn(() => '') },
+      editorReplacementMounted: false,
       transcriptContainer: { addChild: vi.fn() },
       ui: { requestRender: vi.fn() },
     },
@@ -173,10 +175,13 @@ describe('parseResearchCommand', () => {
     if (result.kind === 'error') expect(result.restoreInput).toBe(true);
   });
 
-  it('returns error for edit without questionId', () => {
+  it('returns a restorable error for edit without questionId', () => {
     const result = parseResearchCommand('edit -- new wording');
     expect(result.kind).toBe('error');
-    if (result.kind === 'error') expect(result.severity).toBe('hint');
+    if (result.kind === 'error') {
+      expect(result.severity).toBe('hint');
+      expect(result.restoreInput).toBe(true);
+    }
   });
 
   it('parses focus with questionId and bounded action', () => {
@@ -191,6 +196,22 @@ describe('parseResearchCommand', () => {
     const result = parseResearchCommand('focus q1 investigate X');
     expect(result.kind).toBe('error');
     if (result.kind === 'error') expect(result.restoreInput).toBe(true);
+  });
+
+  it('rejects tokens between the question ID and -- for every question action', () => {
+    for (const subcommand of ['edit', 'focus', 'defer', 'block', 'close', 'reopen']) {
+      const result = parseResearchCommand(`${subcommand} q1 unexpected -- text`);
+      expect(result.kind).toBe('error');
+      if (result.kind === 'error') expect(result.restoreInput).toBe(true);
+    }
+  });
+
+  it('rejects extra reason tokens without -- for question state actions', () => {
+    for (const subcommand of ['defer', 'block', 'close', 'reopen']) {
+      const result = parseResearchCommand(`${subcommand} q1 unexpected`);
+      expect(result.kind).toBe('error');
+      if (result.kind === 'error') expect(result.restoreInput).toBe(true);
+    }
   });
 
   it('parses defer with reason', () => {
@@ -249,11 +270,14 @@ describe('parseResearchCommand', () => {
     });
   });
 
-  it('returns error for defer/block/close/reopen without questionId', () => {
+  it('returns a restorable error for defer/block/close/reopen without questionId', () => {
     for (const sub of ['defer', 'block', 'close', 'reopen']) {
       const result = parseResearchCommand(sub);
       expect(result.kind).toBe('error');
-      if (result.kind === 'error') expect(result.severity).toBe('hint');
+      if (result.kind === 'error') {
+        expect(result.severity).toBe('hint');
+        expect(result.restoreInput).toBe(true);
+      }
     }
   });
 
@@ -277,6 +301,19 @@ describe('parseResearchCommand', () => {
 });
 
 describe('handleResearchCommand manager actions', () => {
+  it('restores malformed question action input without sending a command', async () => {
+    setExperimentalFeatures([{ id: 'aitp_research_mode', enabled: true }]);
+    const { host, session } = makeResearchHost();
+
+    await handleResearchCommand(host, 'defer q1 extra -- reason');
+
+    expect(host.showError).toHaveBeenCalled();
+    expect(host.restoreInputText).toHaveBeenCalledWith(
+      '/research defer q1 extra -- reason',
+    );
+    expect(session.commandResearch).not.toHaveBeenCalled();
+  });
+
   it('sends typed switch_line and update_line commands', async () => {
     setExperimentalFeatures([{ id: 'aitp_research_mode', enabled: true }]);
     const snapshot = makeSnapshot();

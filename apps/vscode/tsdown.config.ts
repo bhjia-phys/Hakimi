@@ -19,7 +19,7 @@ export default defineConfig({
   sourcemap: false,
   plugins: [rawTextPlugin()],
   alias: {
-    '@moonshot-ai/kimi-code-sdk': resolve(root, '../../packages/node-sdk/src/index.ts'),
+    '@bhjia-phys/hakimi-sdk': resolve(root, '../../packages/node-sdk/src/index.ts'),
     '@moonshot-ai/migration-legacy': resolve(root, '../../packages/migration-legacy/src/index.ts'),
     '@moonshot-ai/agent-core': resolve(root, '../../packages/agent-core/src/index.ts'),
     '@moonshot-ai/kaos': resolve(root, '../../packages/kaos/src/index.ts'),

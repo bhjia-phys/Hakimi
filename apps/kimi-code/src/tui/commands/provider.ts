@@ -13,7 +13,7 @@ import {
   SECONDARY_DERIVED_MODEL_ALIAS,
   type Catalog,
   type ThinkingEffort,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 
 import { createKimiCodeUserAgent } from '#/cli/version';
 import { fetchCatalogOrBuiltIn } from '#/utils/catalog-fetch';

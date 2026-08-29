@@ -25,7 +25,7 @@ import {
 } from '#/tui/controllers/editor-keyboard';
 import { ImageAttachmentStore } from '#/tui/utils/image-attachment-store';
 import { parseImageMeta } from '#/utils/image/image-mime';
-import { ImageLimits, type KimiHarness } from '@moonshot-ai/kimi-code-sdk';
+import { ImageLimits, type KimiHarness } from '@bhjia-phys/hakimi-sdk';
 
 // vitest hoists vi.mock/vi.hoisted above the imports above, so the mock still
 // applies to the editor-keyboard module that pulls in readClipboardMedia.

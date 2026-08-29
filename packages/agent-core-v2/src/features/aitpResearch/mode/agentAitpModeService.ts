@@ -5,18 +5,24 @@
  * (`aitp_mode.enter` / `.exit` / `.set_phase` / `.set_loop_status` /
  * `.set_line`), checks
  * the experimental flag (`flags`), enforces main-agent-only (`scopeContext`),
- * blocks entry while Plan mode is active (`planService`), activates the
- * Session-scope AITP adapter (`adapter`) on enter, runs read-only current-state
- * maintenance after a ready probe, and publishes
+ * activates the Session-scope AITP adapter (`adapter`) on enter, runs
+ * read-only current-state maintenance after a ready probe, and publishes
  * `agent.status.updated` after each op (`eventBus`). The `aitp_mode.updated`
  * signal is the sole responsibility of each op's `toEvent` — the service does
  * not manually re-publish it. Conversation undo and active-mode cold restore
  * replay silently and never trigger `toEvent`, so the service explicitly
  * publishes `aitp_mode.updated` + `agent.status.updated` once for downstream
  * consumers (e.g. `AgentResearchService`). Inactive cold restore stays silent.
- * Legacy sessions with an older persisted active-tool allowlist are repaired on
- * entry and active restore by adding the current Research tools to the profile
- * overlay. Mode state follows
+ * Current-state maintenance is scoped to the bound research line: entering
+ * without a `lineSlug` (or with an unbound line) fails closed in the
+ * coordinator (`workstream_unbound` degraded), and a later `aitp_mode.set_line`
+ * re-scopes maintenance to the new workstream. The maintenance degraded reason
+ * is exposed through `maintenanceDegradedReason`.
+ * Research Mode is a long-lived scientific context and may be active
+ * alongside an active Plan overlay; it never exits or resets because Plan
+ * mode is active. Legacy sessions with an older persisted active-tool
+ * allowlist are repaired on entry and active restore by adding the current
+ * Research tools to the profile overlay. Mode state follows
  * conversation undo through the checkpointed `AitpModeModel`. On `exit` and on
  * conversation undo / cold restore that reverts the mode to inactive, the
  * adapter is reset to its zero-I/O state. When entering with a `lineSlug`,
@@ -30,12 +36,11 @@ import { IEventBus } from '#/app/event/eventBus';
 import { IFlagService } from '#/app/flag/flag';
 import { IAgentProfileService } from '#/agent/profile/profile';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
-import { IAgentPlanService } from '#/features/plan/plan';
 import { IWireService } from '#/wire/wire';
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
 import { ISessionAitpAdapter } from '#/features/aitpResearch/adapter/sessionAitpAdapter';
 import { ISessionAitpLifecycleCoordinator } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
-import type { AitpAdapterHealth, AitpModePhase, ResearchLoopStatus } from '#/features/aitpResearch/types';
+import type { AitpAdapterHealth, AitpMaintenanceDegradedReason, AitpModePhase, ResearchLoopStatus } from '#/features/aitpResearch/types';
 import { AitpResearchError, AitpResearchErrors } from '#/features/aitpResearch/errors';
 
 import {
@@ -80,12 +85,13 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
   declare readonly _serviceBrand: undefined;
 
   private probeGeneration = 0;
+  private maintenanceReason: AitpMaintenanceDegradedReason | undefined;
+  private lastMaintenanceLine: string | undefined;
 
   constructor(
     @IWireService private readonly wire: IWireService,
     @IFlagService private readonly flags: IFlagService,
     @IAgentScopeContext private readonly scopeCtx: IAgentScopeContext,
-    @IAgentPlanService private readonly planService: IAgentPlanService,
     @ISessionAitpAdapter private readonly adapter: ISessionAitpAdapter,
     @IEventBus private readonly eventBus: IEventBus,
     @IAgentProfileService private readonly profile: IAgentProfileService,
@@ -106,6 +112,16 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
         void this.reconcileAfterRestore().then((phaseChanged) => {
           if (!phaseChanged && this.isActive) this.publishModeAndStatus();
         });
+      }),
+    );
+
+    // A line change (`aitp_mode.set_line`) re-scopes current-state maintenance
+    // to the new workstream. Refresh under the new line; an unbound line fails
+    // closed in the coordinator.
+    this._register(
+      this.eventBus.subscribe('aitp_mode.updated', () => {
+        if (!this.isActive) return;
+        this.ensureCurrentScopeRefresh();
       }),
     );
   }
@@ -131,6 +147,11 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     return this.adapter.health;
   }
 
+  /** Why the last maintenance refresh was degraded, when one is known. */
+  get maintenanceDegradedReason(): AitpMaintenanceDegradedReason | undefined {
+    return this.maintenanceReason;
+  }
+
   async enter(options: AitpModeEntryOptions): Promise<void> {
     if (!this.flags.enabled('aitp_research_mode')) {
       throw new AitpResearchError(
@@ -142,13 +163,6 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_MODE_NOT_MAIN_AGENT,
         'AITP Research Mode is only available on the main agent.',
-      );
-    }
-    const planStatus = await this.planService.status();
-    if (planStatus !== null) {
-      throw new AitpResearchError(
-        AitpResearchErrors.codes.AITP_MODE_PLAN_CONFLICT,
-        'Plan mode is active. Exit Plan mode before entering AITP Research Mode.',
       );
     }
     if (this.isActive) {
@@ -191,6 +205,8 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     this.probeGeneration += 1;
     this.coordinator?.reset();
     this.adapter.reset();
+    this.maintenanceReason = undefined;
+    this.lastMaintenanceLine = undefined;
     if (!this.isActive) return;
     this.wire.dispatch(aitpModeExit({}));
     this.publishAgentStatus();
@@ -232,6 +248,8 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
   resetAdapter(): void {
     this.coordinator?.reset();
     this.adapter.reset();
+    this.maintenanceReason = undefined;
+    this.lastMaintenanceLine = undefined;
   }
 
   async refreshHealth(): Promise<AitpAdapterHealth> {
@@ -271,12 +289,12 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     }
   }
 
-  private reconcileAfterRestore(): Promise<boolean> {
+  private async reconcileAfterRestore(): Promise<boolean> {
     const generation = ++this.probeGeneration;
     if (!this.isActive) {
       this.coordinator?.reset();
       this.adapter.reset();
-      return Promise.resolve(false);
+      return false;
     }
     this.coordinator?.reset();
     this.adapter.reset();
@@ -305,10 +323,32 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     if (this.coordinator === undefined) return 'ready';
     try {
       const receipt = await this.coordinator.refresh({ workstream, force: true });
+      this.maintenanceReason = receipt.degradedReason;
+      this.lastMaintenanceLine = workstream;
       return receipt.status;
     } catch {
+      this.maintenanceReason = undefined;
+      this.lastMaintenanceLine = workstream;
       return 'degraded';
     }
+  }
+
+  /**
+   * Re-scopes current-state maintenance to the current line. Used after a line
+   * switch; an unbound line fails closed in the coordinator. A line bound after
+   * `workstream_unbound` triggers a normal scoped refresh that recovers.
+   */
+  private ensureCurrentScopeRefresh(): void {
+    if (this.coordinator === undefined) return;
+    if (!this.adapter.isReady()) return;
+    const line = this.wire.getModel(AitpModeModel).current.currentLineSlug;
+    if (line === undefined) return;
+    if (this.lastMaintenanceLine === line && this.maintenanceReason !== 'workstream_unbound') {
+      return;
+    }
+    void this.refreshMaintenance(line).then((status) => {
+      if (this.isActive && this.phase !== status) this.setPhase(status);
+    });
   }
 
   private ensureResearchTools(): void {

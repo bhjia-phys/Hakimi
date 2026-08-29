@@ -7,7 +7,7 @@
  */
 
 import type { Component, Focusable } from '@moonshot-ai/pi-tui';
-import type { KimiHarness, Session, TokenUsage } from '@moonshot-ai/kimi-code-sdk';
+import type { KimiHarness, Session, TokenUsage } from '@bhjia-phys/hakimi-sdk';
 
 import { getCacheHintConfig, peekCacheHintConfig } from '#/utils/cache-hint-config';
 import { currentTuiConfig } from '../commands/config';

@@ -13,7 +13,7 @@ import { join } from "node:path";
 import {
   createKimiHarness,
   type KimiHarness,
-} from "@moonshot-ai/kimi-code-sdk";
+} from "@bhjia-phys/hakimi-sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("vscode", () => ({

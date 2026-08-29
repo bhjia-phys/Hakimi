@@ -1,4 +1,4 @@
-import type { PluginSummary } from '@moonshot-ai/kimi-code-sdk';
+import type { PluginSummary } from '@bhjia-phys/hakimi-sdk';
 
 import { KIMI_CODE_PLUGIN_MARKETPLACE_URL } from '#/constant/app';
 import {

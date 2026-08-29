@@ -38,11 +38,13 @@ import {
   defineCheckpointedModel,
   type Checkpointed,
 } from '#/agent/contextMemory/conversationTime';
+import type { PlanResolution, PlanResolutionOutcome } from './plan';
 
 export interface PlanState {
   readonly active: boolean;
   readonly id?: string;
   readonly revisionCount?: Readonly<Record<string, number>>;
+  readonly resolution?: PlanResolution;
 }
 
 export type PlanModelState = Checkpointed<PlanState>;
@@ -52,7 +54,7 @@ export const PlanModel = defineCheckpointedModel('plan', (): PlanState => ({ act
 export const planModeEnter = PlanModel.defineOp('plan_mode.enter', {
   schema: z.object({ id: z.string() }),
   apply: (s, p) =>
-    s.current.active && s.current.id === p.id
+    s.current.active
       ? s
       : { ...s, current: { active: true, id: p.id, revisionCount: s.current.revisionCount } },
   toEvent: () => ({ type: 'agent.status.updated' as const, planMode: true }),
@@ -64,24 +66,25 @@ declare module '#/wire/types' {
     'plan_mode.cancel': typeof planModeCancel;
     'plan_mode.exit': typeof planModeExit;
     'plan.revision': typeof planRevision;
+    'plan.resolution': typeof planResolution;
   }
 }
 
 export const planModeCancel = PlanModel.defineOp('plan_mode.cancel', {
   schema: z.object({ id: z.string().optional() }),
-  apply: (s) =>
-    s.current.active
-      ? { ...s, current: { active: false, revisionCount: s.current.revisionCount } }
-      : s,
+  apply: (s, p) =>
+    !s.current.active || (p.id !== undefined && p.id !== s.current.id)
+      ? s
+      : { ...s, current: { active: false, revisionCount: s.current.revisionCount, resolution: s.current.resolution } },
   toEvent: () => ({ type: 'agent.status.updated' as const, planMode: false }),
 });
 
 export const planModeExit = PlanModel.defineOp('plan_mode.exit', {
   schema: z.object({ id: z.string().optional() }),
-  apply: (s) =>
-    s.current.active
-      ? { ...s, current: { active: false, revisionCount: s.current.revisionCount } }
-      : s,
+  apply: (s, p) =>
+    !s.current.active || (p.id !== undefined && p.id !== s.current.id)
+      ? s
+      : { ...s, current: { active: false, revisionCount: s.current.revisionCount, resolution: s.current.resolution } },
   toEvent: () => ({ type: 'agent.status.updated' as const, planMode: false }),
 });
 
@@ -93,27 +96,36 @@ export interface PlanRevisionRecordedEvent {
   readonly bytes: number;
 }
 
+export interface PlanResolutionRecordedEvent extends PlanResolution {
+  readonly type: 'plan.resolution';
+}
+
 declare module '#/app/event/eventBus' {
   interface DomainEventMap {
     'plan.revision': PlanRevisionRecordedEvent;
+    'plan.resolution': PlanResolutionRecordedEvent;
   }
 }
 
 export const planRevision = PlanModel.defineOp('plan.revision', {
   schema: z.object({
     id: z.string(),
-    version: z.number(),
+    version: z.number().int().positive(),
     path: z.string(),
     sha256: z.string(),
     bytes: z.number(),
   }),
-  apply: (s, p) => ({
-    ...s,
-    current: {
-      ...s.current,
-      revisionCount: { ...s.current.revisionCount, [p.id]: p.version },
-    },
-  }),
+  apply: (s, p) => {
+    const currentVersion = s.current.revisionCount?.[p.id] ?? 0;
+    if (p.version <= currentVersion) return s;
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        revisionCount: { ...s.current.revisionCount, [p.id]: p.version },
+      },
+    };
+  },
   toEvent: (p) => ({
     type: 'plan.revision' as const,
     id: p.id,
@@ -121,5 +133,40 @@ export const planRevision = PlanModel.defineOp('plan.revision', {
     path: p.path,
     sha256: p.sha256,
     bytes: p.bytes,
+  }),
+});
+
+export const planResolution = PlanModel.defineOp('plan.resolution', {
+  schema: z.object({
+    planId: z.string(),
+    planRevision: z.number().int().nonnegative(),
+    outcome: z.enum([
+      'approved',
+      'auto_approved',
+      'revise',
+      'rejected',
+      'rejected_and_exited',
+      'dismissed',
+    ] satisfies readonly PlanResolutionOutcome[]),
+    selectedLabel: z.string().min(1).max(80).optional(),
+  }).strict(),
+  apply: (s, p) => {
+    if (!s.current.active || s.current.id !== p.planId) return s;
+    const current = s.current.resolution;
+    if (current !== undefined && p.planRevision <= current.planRevision) return s;
+    const resolution: PlanResolution = {
+      planId: p.planId,
+      planRevision: p.planRevision,
+      outcome: p.outcome,
+      selectedLabel: p.selectedLabel,
+    };
+    return { ...s, current: { ...s.current, resolution } };
+  },
+  toEvent: (p) => ({
+    type: 'plan.resolution' as const,
+    planId: p.planId,
+    planRevision: p.planRevision,
+    outcome: p.outcome,
+    selectedLabel: p.selectedLabel,
   }),
 });

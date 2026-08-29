@@ -40,7 +40,7 @@
     "@agentclientprotocol/sdk": "^0.23.0",
     "@moonshot-ai/agent-core": "workspace:^",
     "@moonshot-ai/kaos": "workspace:^",
-    "@moonshot-ai/kimi-code-sdk": "workspace:^"
+    "@bhjia-phys/hakimi-sdk": "workspace:^"
   },
   "devDependencies": {
     "jimp": "^1.6.1"

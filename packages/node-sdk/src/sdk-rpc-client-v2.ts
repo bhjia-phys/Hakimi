@@ -2301,6 +2301,62 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
       case 'acknowledge_alert':
         research.acknowledgeAlert(cmd.fingerprint);
         break;
+      case 'begin_action':
+        research.planAndStartAction({
+          actionId: cmd.actionId,
+          questionId: cmd.questionId,
+          lineSlug: cmd.lineSlug,
+          kind: cmd.actionKind,
+          purpose: cmd.purpose,
+          expectedEvidence: cmd.expectedEvidence,
+          stopCondition: cmd.stopCondition,
+          allowedToolKinds: cmd.allowedToolKinds,
+          retryOfEntryId: cmd.retryOfEntryId,
+          requiresHumanApproval: cmd.requiresHumanApproval,
+        });
+        break;
+      case 'start_action':
+        research.startAction(cmd.actionId);
+        break;
+      case 'complete_action':
+        research.completeAction(cmd.actionId, cmd.status);
+        break;
+      case 'conclude_action':
+        research.concludeAction({
+          actionId: cmd.actionId,
+          status: cmd.status,
+          progress: {
+            headline: cmd.headline,
+            question: cmd.question,
+            motivation: cmd.motivation,
+            workPerformed: cmd.workPerformed,
+            result: cmd.result,
+            mainlineImpact: cmd.mainlineImpact,
+            uncertainties: cmd.uncertainties,
+            nextAction: cmd.nextAction,
+            humanDecision: cmd.humanDecision,
+            detail: cmd.detail,
+          },
+        });
+        break;
+      case 'prepare_plan':
+        await research.prepareResearchPlan({
+          planId: cmd.planId,
+          lineSlug: cmd.lineSlug,
+          questionId: cmd.questionId,
+          objective: cmd.objective,
+          steps: cmd.steps,
+          expectedEvidence: cmd.expectedEvidence,
+          stopCondition: cmd.stopCondition,
+          usePlanMode: cmd.usePlanMode,
+        });
+        break;
+      case 'finalize_plan':
+        await research.finalizeResearchPlan();
+        break;
+      case 'discard_plan':
+        research.discardResearchPlan();
+        break;
     }
 
     return { snapshot: research.getSnapshot() } as ResearchCommandResponse;

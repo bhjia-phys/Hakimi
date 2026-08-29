@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ErrorCodes, KimiError } from '@moonshot-ai/kimi-code-sdk';
+import { ErrorCodes, KimiError } from '@bhjia-phys/hakimi-sdk';
 
 import { validateOptions } from '#/cli/options';
 import type { CLIOptions } from '#/cli/options';
@@ -60,9 +60,9 @@ vi.mock('@moonshot-ai/kimi-telemetry', () => ({
   shutdownTelemetry: mocks.shutdownTelemetry,
 }));
 
-vi.mock('@moonshot-ai/kimi-code-sdk', async () => {
-  const actual = await vi.importActual<typeof import('@moonshot-ai/kimi-code-sdk')>(
-    '@moonshot-ai/kimi-code-sdk',
+vi.mock('@bhjia-phys/hakimi-sdk', async () => {
+  const actual = await vi.importActual<typeof import('@bhjia-phys/hakimi-sdk')>(
+    '@bhjia-phys/hakimi-sdk',
   );
   class MockKimiHarness {
     readonly homeDir = mocks.harness.homeDir;

@@ -7,7 +7,7 @@ Part of the [Kimi Code](https://github.com/MoonshotAI/kimi-code) monorepo.
 ## Minimum usage
 
 ```ts
-import { createKimiHarness } from '@moonshot-ai/kimi-code-sdk';
+import { createKimiHarness } from '@bhjia-phys/hakimi-sdk';
 import { runAcpServer } from '@moonshot-ai/acp-adapter';
 
 const harness = await createKimiHarness();

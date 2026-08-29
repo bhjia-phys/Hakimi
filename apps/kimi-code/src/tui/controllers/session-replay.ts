@@ -6,7 +6,7 @@ import type {
   ResumedAgentState,
   Session,
   ToolCall,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 
 import { ToolCallComponent } from '../components/messages/tool-call';
 import { ReplayTurnBoundaryComponent } from '../components/messages/user-message';

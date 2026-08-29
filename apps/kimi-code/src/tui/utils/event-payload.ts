@@ -1,4 +1,4 @@
-import { isKimiError } from '@moonshot-ai/kimi-code-sdk';
+import { isKimiError } from '@bhjia-phys/hakimi-sdk';
 
 import {
   STREAMING_ARGS_FIELD_RE,

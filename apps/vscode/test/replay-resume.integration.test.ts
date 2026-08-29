@@ -14,7 +14,7 @@ import {
   type Event,
   type KimiHarness,
   type Session,
-} from "@moonshot-ai/kimi-code-sdk";
+} from "@bhjia-phys/hakimi-sdk";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {

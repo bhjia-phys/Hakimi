@@ -31,6 +31,12 @@ import {
   researchRunStageSchema,
   researchSchedulerStateSchema,
   researchRunStateSchema,
+  researchPlanSchema,
+  prepareResearchPlanInputSchema,
+  researchActionSpecSchema,
+  planActionInputSchema,
+  concludeActionInputSchema,
+  researchActionConclusionSchema,
   type AitpModeEntryOptions,
   type CommitCheckpointInput,
   type CreateQuestionInput,
@@ -43,6 +49,8 @@ import type {
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
 
 // ── input schemas (declared before use) ─────────────────────────────────────
+
+const researchWireStringListSchema = z.array(z.string().max(500)).max(50);
 
 const createQuestionInputSchema = z.object({
   id: z.string().optional(),
@@ -86,17 +94,17 @@ const commitCheckpointInputSchema = z.object({
 
 const observeResearchRunInputSchema = z.object({
   actionId: z.string(),
-  expectedRevision: z.number(),
-  campaign: z.string(),
-  jobId: z.string(),
-  sourcePin: z.string().optional(),
-  binaryPin: z.string().optional(),
+  expectedRevision: z.number().int().nonnegative(),
+  campaign: z.string().min(1).max(500),
+  jobId: z.string().min(1).max(200),
+  sourcePin: z.string().max(500).optional(),
+  binaryPin: z.string().max(500).optional(),
   stage: researchRunStageSchema,
   schedulerState: researchSchedulerStateSchema,
   nextCheckAt: z.number().optional(),
   terminalState: z.enum(['completed', 'failed', 'cancelled']).optional(),
-  artifactRefs: z.array(z.string()).optional(),
-}) satisfies z.ZodType<ObserveResearchRunInput>;
+  artifactRefs: researchWireStringListSchema.optional(),
+}).strict() satisfies z.ZodType<ObserveResearchRunInput>;
 
 const aitpModeEntryOptionsSchema = z.object({
   actor: z.enum(['user', 'model']),
@@ -125,6 +133,26 @@ export const agentResearchContract = {
   getLines: { input: z.tuple([]), output: z.array(researchLineSchema) },
   getPendingCheckpoint: { input: z.tuple([]), output: maybe(researchCheckpointSchema) },
   getCommittedCursor: { input: z.tuple([]), output: maybe(researchCommittedCursorSchema) },
+  getResearchPlan: { input: z.tuple([]), output: maybe(researchPlanSchema) },
+  planAndStartAction: {
+    input: z.tuple([planActionInputSchema]),
+    output: researchActionSpecSchema,
+  },
+  startAction: { input: z.tuple([z.string()]), output: noResult },
+  completeAction: {
+    input: z.tuple([z.string(), z.enum(['completed', 'abandoned'])]),
+    output: noResult,
+  },
+  concludeAction: {
+    input: z.tuple([concludeActionInputSchema]),
+    output: researchActionConclusionSchema,
+  },
+  prepareResearchPlan: {
+    input: z.tuple([prepareResearchPlanInputSchema]),
+    output: researchPlanSchema,
+  },
+  finalizeResearchPlan: { input: z.tuple([]), output: researchPlanSchema },
+  discardResearchPlan: { input: z.tuple([]), output: maybe(researchPlanSchema) },
   createQuestion: {
     input: z.tuple([createQuestionInputSchema]),
     output: researchQuestionSchema,

@@ -3,14 +3,16 @@
  *
  * The Agent-scope (main-only) AITP mode state machine. Manages the mode
  * lifecycle (`inactive` → `probing` → `ready` / `degraded` → `inactive`),
- * explicit user entry vs model entry, Plan mode conflict, adapter activation,
- * and context injection disclosure. The mode state is checkpointed through
- * wire so it follows conversation undo. Bound at Agent scope.
+ * explicit user entry vs model entry, adapter activation, and context
+ * injection disclosure. Research Mode is a long-lived scientific context that
+ * may be active alongside an active Plan overlay. The mode state is
+ * checkpointed through wire so it follows conversation undo. Bound at Agent
+ * scope.
  */
 
 import { createDecorator } from '#/_base/di/instantiation';
 
-import type { AitpAdapterHealth, AitpModePhase, ResearchLoopStatus } from '../types';
+import type { AitpAdapterHealth, AitpMaintenanceDegradedReason, AitpModePhase, ResearchLoopStatus } from '../types';
 
 export interface AitpModeEntryOptions {
   readonly actor: 'user' | 'model';
@@ -25,6 +27,7 @@ export interface IAgentAitpModeService {
   readonly revision: number;
   readonly isActive: boolean;
   readonly health: AitpAdapterHealth | null;
+  readonly maintenanceDegradedReason: AitpMaintenanceDegradedReason | undefined;
 
   enter(options: AitpModeEntryOptions): Promise<void>;
   exit(): Promise<void>;

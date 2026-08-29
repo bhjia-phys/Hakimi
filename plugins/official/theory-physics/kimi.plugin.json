@@ -1,0 +1,23 @@
+{
+  "$schema": "https://kimi.com/schemas/kimi.plugin.schema.json",
+  "name": "theory-physics",
+  "version": "0.1.0",
+  "description": "Domain conventions, literature, derivation, numerics, and evidence discipline for theoretical-physics research in Hakimi.",
+  "keywords": [
+    "physics",
+    "research",
+    "theory",
+    "derivation",
+    "numerics",
+    "science"
+  ],
+  "author": "bhjia-phys",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Theory Physics",
+    "shortDescription": "Theoretical-physics research discipline for the Research Loop",
+    "longDescription": "A domain pack that turns the generic Hakimi Research Loop into a theoretical-physics research workflow: physics conventions, when to consult literature, how to check a derivation, how to treat numerical and HPC evidence, and when to stop and ask the researcher.\n\nIt defines no second agent runtime and wires no external services. The pack works through the Research Loop's own tools — WebSearch/FetchURL/Read/Bash for evidence gathering and analysis, and child agents (specialists) that return typed evidence packets for the main agent to review. AITP remains an optional evidence backend; canonical writes go only through the AITP tools.",
+    "developerName": "bhjia-phys"
+  }
+}

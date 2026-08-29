@@ -39,7 +39,7 @@ import {
   type CatalogProviderEntry,
   type KimiConfig,
   type KimiHarness,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import type { Command } from 'commander';
 
 import { createKimiCodeHostIdentity, createKimiCodeUserAgent } from '#/cli/version';

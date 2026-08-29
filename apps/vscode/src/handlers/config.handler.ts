@@ -4,7 +4,7 @@ import {
   type KimiConfig as SdkKimiConfig,
   type ModelAlias,
   type ThinkingEffort,
-} from "@moonshot-ai/kimi-code-sdk";
+} from "@bhjia-phys/hakimi-sdk";
 
 import { Methods } from "../../shared/bridge";
 import type {

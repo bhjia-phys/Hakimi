@@ -20,7 +20,7 @@ import {
   type QuestionRequest,
   type QuestionResult,
   type Session,
-} from '@moonshot-ai/kimi-code-sdk';
+} from '@bhjia-phys/hakimi-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AcpSession, type TelemetryTrackFn } from '../src/session';
