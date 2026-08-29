@@ -10,9 +10,9 @@ import {
   assertSafeNativeTarget,
 } from './paths.mjs';
 
-export const NATIVE_BUILD_RECEIPT_VERSION = 1;
+export const NATIVE_BUILD_RECEIPT_VERSION = 4;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
-const COMMIT_PATTERN = /^[a-f0-9]{40}$/;
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -31,10 +31,11 @@ export async function sha256File(path) {
 function webIdentity(provenance) {
   return {
     repository: provenance.repository,
-    commit: provenance.commit,
-    brandingPatchVersion: provenance.brandingPatchVersion,
-    fileCount: provenance.bundle.fileCount,
+    toolchain: provenance.recipe.toolchain,
+    sourceSha256: provenance.source.sha256,
+    recipeSha256: provenance.recipe.sha256,
     bundleSha256: provenance.bundle.sha256,
+    brandingPatchVersion: provenance.brandingPatchVersion,
   };
 }
 
@@ -52,14 +53,20 @@ function validateReceipt(value, expectedTarget) {
   if (
     !isRecord(value.web) ||
     value.web.repository !== WEB_SOURCE_REPOSITORY ||
-    typeof value.web.commit !== 'string' ||
-    !COMMIT_PATTERN.test(value.web.commit) ||
-    !Number.isSafeInteger(value.web.brandingPatchVersion) ||
-    value.web.brandingPatchVersion < 1 ||
-    !Number.isSafeInteger(value.web.fileCount) ||
-    value.web.fileCount < 0 ||
+    !isRecord(value.web.toolchain) ||
+    typeof value.web.toolchain.node !== 'string' ||
+    !SEMVER_PATTERN.test(value.web.toolchain.node) ||
+    typeof value.web.toolchain.pnpm !== 'string' ||
+    !SEMVER_PATTERN.test(value.web.toolchain.pnpm) ||
+    value.web.toolchain.canonical !== true ||
+    typeof value.web.sourceSha256 !== 'string' ||
+    !SHA256_PATTERN.test(value.web.sourceSha256) ||
+    typeof value.web.recipeSha256 !== 'string' ||
+    !SHA256_PATTERN.test(value.web.recipeSha256) ||
     typeof value.web.bundleSha256 !== 'string' ||
-    !SHA256_PATTERN.test(value.web.bundleSha256)
+    !SHA256_PATTERN.test(value.web.bundleSha256) ||
+    !Number.isSafeInteger(value.web.brandingPatchVersion) ||
+    value.web.brandingPatchVersion < 1
   ) {
     throw new Error('Native build receipt contains invalid Web identity fields.');
   }
@@ -75,10 +82,15 @@ function validateReceipt(value, expectedTarget) {
     target: value.target,
     web: {
       repository: value.web.repository,
-      commit: value.web.commit,
-      brandingPatchVersion: value.web.brandingPatchVersion,
-      fileCount: value.web.fileCount,
+      toolchain: {
+        node: value.web.toolchain.node,
+        pnpm: value.web.toolchain.pnpm,
+        canonical: true,
+      },
+      sourceSha256: value.web.sourceSha256,
+      recipeSha256: value.web.recipeSha256,
       bundleSha256: value.web.bundleSha256,
+      brandingPatchVersion: value.web.brandingPatchVersion,
     },
     binary: { sha256: value.binary.sha256 },
   };

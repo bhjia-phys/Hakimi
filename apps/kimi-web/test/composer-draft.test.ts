@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { nextTick, ref } from 'vue';
-import { useComposerDraft } from '../src/composables/useComposerDraft';
-import { draftStorageKey } from '../src/lib/storage';
+import {
+  createComposerCommandSubmission,
+  restoreComposerCommandSubmission,
+  useComposerDraft,
+} from '../src/composables/useComposerDraft';
+import { draftStorageKey, pendingDraftStorageKey } from '../src/lib/storage';
 
 function memoryStorage(): Storage {
   const map = new Map<string, string>();
@@ -150,5 +154,67 @@ describe('useComposerDraft', () => {
     expect(text.value).toBe('');
     await nextTick();
     expect(globalThis.localStorage.getItem(draftStorageKey('s1'))).toBeNull();
+  });
+
+  it('does not overwrite text entered while a rejected command is pending', () => {
+    const { draft, text } = setup('s1');
+    text.value = '/research pause';
+    text.value = '';
+    draft.finalizeSubmissionDraft();
+    const submission = draft.captureCommandSubmission('/research pause');
+
+    text.value = 'new draft';
+    let applied = false;
+    expect(
+      restoreComposerCommandSubmission(submission, 's1', () => {
+        applied = true;
+        return true;
+      }),
+    ).toBe('pending');
+
+    expect(applied).toBe(false);
+    expect(text.value).toBe('new draft');
+    expect(globalThis.localStorage.getItem(draftStorageKey('s1'))).toBe('new draft');
+    expect(JSON.parse(globalThis.localStorage.getItem(pendingDraftStorageKey('s1'))!)).toEqual([
+      '/research pause',
+    ]);
+
+    // Once the newer draft is submitted, the rejected command becomes the next
+    // draft instead of remaining stranded behind the now-empty text.
+    text.value = '';
+    draft.finalizeSubmissionDraft();
+    expect(text.value).toBe('/research pause');
+  });
+
+  it('restores a rejected command when the hidden Composer remounts', () => {
+    const submission = createComposerCommandSubmission('/research status', 's1');
+
+    expect(
+      restoreComposerCommandSubmission(submission, 's1', () => false),
+    ).toBe('pending');
+    expect(globalThis.localStorage.getItem(draftStorageKey('s1'))).toBeNull();
+
+    const { text } = setup('s1');
+    expect(text.value).toBe('/research status');
+    expect(globalThis.localStorage.getItem(pendingDraftStorageKey('s1'))).toBeNull();
+  });
+
+  it('queues a rejected command for its submitted session after a session switch', () => {
+    const submission = createComposerCommandSubmission('/research resume', 's1');
+    let applied = false;
+
+    expect(
+      restoreComposerCommandSubmission(submission, 's2', () => {
+        applied = true;
+        return true;
+      }),
+    ).toBe('pending');
+
+    expect(applied).toBe(false);
+    expect(globalThis.localStorage.getItem(draftStorageKey('s2'))).toBeNull();
+    expect(globalThis.localStorage.getItem(pendingDraftStorageKey('s2'))).toBeNull();
+
+    const { text } = setup('s1');
+    expect(text.value).toBe('/research resume');
   });
 });

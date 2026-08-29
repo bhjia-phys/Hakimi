@@ -269,6 +269,7 @@ import type {
   ResolveHumanDecisionInput as EngineResolveHumanDecisionInput,
   UpdateLineInput as EngineUpdateLineInput,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
+import { agentResearchContract } from '../src/contract/agent/research.js';
 import {
   researchStatusSnapshotSchema,
   researchRunStateSchema,
@@ -398,6 +399,10 @@ type AssertWireToEngine<TSchema extends z.ZodType, TEngine> = [z.infer<TSchema>]
   MutableDeep<TEngine>,
 ]
   ? true
+  : never;
+
+type AssertExactly<TLeft, TRight> = [TLeft] extends [TRight]
+  ? [TRight] extends [TLeft] ? true : never
   : never;
 
 // Protocol wire shapes, derived from the engine interfaces (no direct
@@ -748,6 +753,17 @@ const _researchLineCreation: AssertWire<
 const _researchLineUpdate: AssertWire<
   typeof researchLineUpdateInputSchema,
   EngineUpdateLineInput
+> = true;
+type ProposeCheckpointContractInput = z.infer<
+  typeof agentResearchContract.proposeCheckpoint.input
+>[0];
+const _proposeCheckpointInput: AssertExactly<
+  ProposeCheckpointContractInput,
+  Parameters<IAgentResearchService['proposeCheckpoint']>[0]
+> = true;
+const _proposeCheckpointFacadeInput: AssertExactly<
+  ProposeCheckpointContractInput,
+  Parameters<AgentFacade['research']['proposeCheckpoint']>[0]
 > = true;
 const _researchAlertFingerprint: AssertWire<
   typeof researchAlertFingerprintSchema,

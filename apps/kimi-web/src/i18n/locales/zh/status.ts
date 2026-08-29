@@ -16,12 +16,15 @@ export default {
   planOn: '开',
   planOff: '关',
   planTooltip: '切换计划模式（先调研再修改）',
-  // 模式选择器（计划 / 目标 / Swarm）
+  // 模式选择器（计划 / 目标 / Swarm / Research）
   modesLabel: '模式',
   goalLabel: '目标',
   goalDesc: '持续跟踪一个目标，直到任务完成',
   swarmLabel: 'Swarm',
   swarmDesc: '并行运行多个智能体，适合大范围探索',
+  researchLabel: 'Research',
+  researchDesc: '在 Research Board 中跟踪有证据支撑的研究问题',
+  researchManage: '管理',
   modeOff: '未启用',
   goalPlaceholder: '让智能体完成什么目标？',
   goalStart: '开始',
@@ -63,4 +66,4 @@ export default {
   activityAwaitingQuestion: '等待回答',
   interrupt: '中断',
   runningShort: '进行中',
-};
+} as const;

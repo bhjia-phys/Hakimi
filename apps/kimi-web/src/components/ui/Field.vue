@@ -3,6 +3,7 @@
 <script setup lang="ts">
 defineProps<{
   label?: string;
+  controlId?: string;
   hint?: string;
   error?: string;
 }>();
@@ -10,7 +11,7 @@ defineProps<{
 
 <template>
   <div class="ui-field" :class="{ 'has-error': !!error }">
-    <label v-if="label" class="ui-field__label">{{ label }}</label>
+    <label v-if="label" class="ui-field__label" :for="controlId">{{ label }}</label>
     <slot />
     <span v-if="error" class="ui-field__error">{{ error }}</span>
     <span v-else-if="hint" class="ui-field__hint">{{ hint }}</span>

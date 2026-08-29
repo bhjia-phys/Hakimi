@@ -54,6 +54,8 @@ hakimi --session
 `--continue` 与 `--session` 互斥。
 :::
 
+在桌面 Web UI 中，对话页标题栏会在会话标题旁汇总当前 Git 工作树：分支或 detached HEAD 状态、改动文件数、ahead/behind 数、增删行数和 pull request 状态。点击工作树摘要可打开改动详情，点击 pull request 状态徽标可打开对应的 pull request。非 Git 仓库不显示该卡片；对话列变窄时，它会按优先级逐步隐藏次要指标。
+
 ## 在 TUI 中切换会话
 
 不离开当前终端也可以管理会话，以下斜杠命令仅在 Agent 空闲时可用：

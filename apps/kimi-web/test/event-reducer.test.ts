@@ -771,3 +771,53 @@ describe('reduceAppEvent toolOutput — outputText accumulation', () => {
     expect(part.outputText).toBe('http://localhost:5173/\n');
   });
 });
+
+describe('reduceAppEvent researchUpdated', () => {
+  const snapshot = {
+    mode: 'ready',
+    loopStatus: 'active',
+    phase: 'idle',
+    questions: [],
+    lines: [],
+    openQuestionCount: 0,
+    activeQuestionCount: 0,
+    blockedQuestionCount: 0,
+    alerts: [],
+    aitpHealth: { phase: 'ready' },
+    revision: 2,
+  } satisfies import('../src/api/types').ResearchStatusSnapshot;
+
+  it('stores snapshots and increments the live version monotonically', () => {
+    const state = createInitialState();
+    const once = reduceAppEvent(
+      state,
+      { type: 'researchUpdated', sessionId: 's1', snapshot },
+      { sessionId: 's1', seq: 1 },
+    );
+    const twice = reduceAppEvent(
+      once,
+      { type: 'researchUpdated', sessionId: 's1', snapshot: { ...snapshot, revision: 3 } },
+      { sessionId: 's1', seq: 2 },
+    );
+
+    expect(twice.researchBySession['s1']?.revision).toBe(3);
+    expect(twice.researchVersionBySession['s1']).toBe(2);
+  });
+
+  it('removes both Research maps when the session is deleted', () => {
+    const state = {
+      ...createInitialState(),
+      sessions: [makeSession('s1', '2026-01-01T00:00:00.000Z')],
+      researchBySession: { s1: snapshot },
+      researchVersionBySession: { s1: 4 },
+    };
+    const next = reduceAppEvent(
+      state,
+      { type: 'sessionDeleted', sessionId: 's1' },
+      { sessionId: 's1', seq: 5 },
+    );
+
+    expect(next.researchBySession['s1']).toBeUndefined();
+    expect(next.researchVersionBySession['s1']).toBeUndefined();
+  });
+});

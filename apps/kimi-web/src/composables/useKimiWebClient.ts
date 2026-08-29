@@ -43,15 +43,12 @@ import { useSoundNotification } from './client/useSoundNotification';
 import { useTaskPoller } from './client/useTaskPoller';
 import { useModelProviderState } from './client/useModelProviderState';
 import { useSideChat } from './client/useSideChat';
+import { createResearchRequestCoordinator } from './client/researchRequest';
 import {
   forgetLocalTurnState,
   SESSIONS_INITIAL_PAGE_SIZE,
   useWorkspaceState,
 } from './client/useWorkspaceState';
-
-const appearance = useAppearance();
-const notification = useNotification();
-const sound = useSoundNotification();
 import type {
   AppEvent,
   AppApprovalRequest,
@@ -73,6 +70,7 @@ import type {
   KimiEventConnection,
   KimiEventMeta,
   ProviderUsageResult,
+  ResearchStatusSnapshot,
   ThinkingLevel,
 } from '../api/types';
 import { createInitialState, reduceAppEvent, type CompactionStatus, type KimiClientState } from '../api/daemon/eventReducer';
@@ -106,6 +104,10 @@ import type {
 // ---------------------------------------------------------------------------
 // Internal reactive state (plain object wrapped in reactive())
 // ---------------------------------------------------------------------------
+
+const appearance = useAppearance();
+const notification = useNotification();
+const sound = useSoundNotification();
 
 const PERMISSION_STORAGE_KEY = STORAGE_KEYS.permission;
 const ACTIVE_WORKSPACE_KEY = STORAGE_KEYS.activeWorkspace;
@@ -284,6 +286,8 @@ interface QueuedPrompt {
 export interface ExtendedState extends KimiClientState {
   connected: boolean;
   serverVersion: string;
+  /** Effective experimental flags from `/meta`; missing fields enable nothing. */
+  experimentalFlags: Record<string, boolean>;
   /**
    * True when the connected server reports `dangerous_bypass_auth` in `/meta`,
    * meaning its bearer-token gate is disabled. The UI skips the server-token
@@ -389,6 +393,7 @@ const rawState: ExtendedState = reactive({
   ...createInitialState(),
   connected: false,
   serverVersion: '',
+  experimentalFlags: {},
   dangerousBypassAuth: false,
   backend: 'v1',
   workspaceName: 'kimi-web',
@@ -435,6 +440,7 @@ const rawState: ExtendedState = reactive({
   sessionsInitialCountByWorkspace: {},
   sessionsFullyLoaded: false,
 });
+const researchRequests = createResearchRequestCoordinator();
 
 // ---------------------------------------------------------------------------
 // Draft mode staging (no active session yet).
@@ -605,6 +611,10 @@ function forgetSession(sessionId: string): void {
   delete rawState.questionsBySession[sessionId];
   delete rawState.tasksBySession[sessionId];
   delete rawState.goalBySession[sessionId];
+  delete rawState.goalVersionBySession[sessionId];
+  delete rawState.researchBySession[sessionId];
+  delete rawState.researchVersionBySession[sessionId];
+  delete rawState.researchRequestGenerationBySession[sessionId];
   delete rawState.gitStatusBySession[sessionId];
   delete rawState.lastSeqBySession[sessionId];
   delete rawState.compactionBySession[sessionId];
@@ -719,6 +729,28 @@ async function refreshSessionGoal(sessionId: string): Promise<void> {
   rawState.goalBySession = nextGoals;
 }
 
+async function refreshSessionResearch(
+  sessionId: string,
+): Promise<ResearchStatusSnapshot | null> {
+  // The effective meta flag can flip while a sidecar or resync is queued behind
+  // a mutation. Require strict true both before queueing and before issuing I/O.
+  if (rawState.experimentalFlags['aitp_research_mode'] !== true) return null;
+  try {
+    return await researchRequests.read(
+      rawState,
+      sessionId,
+      () => {
+        if (rawState.experimentalFlags['aitp_research_mode'] !== true) {
+          return Promise.reject(new Error('Research disabled'));
+        }
+        return getKimiWebApi().getSessionResearch(sessionId);
+      },
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** Persist runtime controls to a session via POST /profile, then re-read
  *  /status. `sessionId` overrides the active session — used when creating a
  *  session and immediately persisting its draft modes, so a concurrent session
@@ -829,6 +861,9 @@ function applyEvent(event: ReturnType<typeof toAppEvent>, sessionId: string, seq
     tasksBySession: rawState.tasksBySession,
     goalBySession: rawState.goalBySession,
     goalVersionBySession: rawState.goalVersionBySession,
+    researchBySession: rawState.researchBySession,
+    researchVersionBySession: rawState.researchVersionBySession,
+    researchRequestGenerationBySession: rawState.researchRequestGenerationBySession,
     lastSeqBySession: rawState.lastSeqBySession,
     turnActiveBySession: rawState.turnActiveBySession,
     compactionBySession: rawState.compactionBySession,
@@ -846,11 +881,15 @@ function applyEvent(event: ReturnType<typeof toAppEvent>, sessionId: string, seq
   rawState.tasksBySession = next.tasksBySession;
   rawState.goalBySession = next.goalBySession;
   rawState.goalVersionBySession = next.goalVersionBySession;
+  rawState.researchBySession = next.researchBySession;
+  rawState.researchVersionBySession = next.researchVersionBySession;
+  rawState.researchRequestGenerationBySession = next.researchRequestGenerationBySession;
   rawState.lastSeqBySession = next.lastSeqBySession;
   rawState.turnActiveBySession = next.turnActiveBySession;
   rawState.compactionBySession = next.compactionBySession;
   if (event.type === 'configChanged') {
     workspaceState.applyConfig(event.config);
+    void workspaceState.refreshServerMeta(true);
   } else {
     rawState.config = next.config ?? null;
   }
@@ -1110,7 +1149,7 @@ function connectEventsIfNeeded(): void {
         // the dev proxy was moved to the other engine. Re-read authoritative
         // metadata and config: global config events currently have no client
         // replay cursor, so this closes any disconnect-window gap.
-        void workspaceState.refreshServerMeta();
+        void workspaceState.refreshServerMeta(true);
         void workspaceState.loadConfig();
       }
     },
@@ -1285,6 +1324,14 @@ function pushWarning(warning: AppWarning): void {
   rawState.warnings = [...rawState.warnings, warning];
 }
 
+function reportResearchIssue(message: string): void {
+  pushWarning({
+    severity: 'warning',
+    title: i18n.global.t('research.commandIssueTitle'),
+    message,
+  });
+}
+
 // Drop every "Realtime connection error" notice pushed by the WS onError
 // handler. Matched by severity + the localized wsTitle (the same i18n instance
 // used to push it), so other errors are left untouched.
@@ -1390,8 +1437,8 @@ async function syncSessionFromSnapshot(sessionId: string): Promise<SyncSessionRe
     // subscription was deliberately reset.
     const currentSeq = rawState.lastSeqBySession[sessionId] ?? 0;
     const knownEpoch = epochBySession[sessionId];
-    const mustApplySnapshot =
-      sessionsRequiringSnapshot.has(sessionId) || sessionsWithStaleCursor.has(sessionId);
+    const wasResync = sessionsRequiringSnapshot.has(sessionId);
+    const mustApplySnapshot = wasResync || sessionsWithStaleCursor.has(sessionId);
     if (
       !mustApplySnapshot &&
       knownEpoch !== undefined &&
@@ -1510,6 +1557,11 @@ async function syncSessionFromSnapshot(sessionId: string): Promise<SyncSessionRe
     // would update it were exactly what the resync replaced. Re-read /status
     // so the ring converges on the live value.
     if (snapUsagePlaceholder) void refreshSessionStatus(sessionId);
+    // Research is a sidecar, not part of the transcript snapshot. A resync can
+    // therefore recover the transcript while still missing a research.updated
+    // frame from the same gap; pull its authoritative snapshot after the main
+    // snapshot has committed. The helper itself gates the experimental flag.
+    if (wasResync) void refreshSessionResearch(sessionId);
     void pullSessionWarnings(sessionId);
     return 'ok';
   } catch (err) {
@@ -2023,6 +2075,16 @@ const goal = computed<AppGoal | null>(() => {
   const sid = rawState.activeSessionId;
   if (!sid) return null;
   return rawState.goalBySession[sid] ?? null;
+});
+
+const researchEnabled = computed<boolean>(
+  () => rawState.experimentalFlags['aitp_research_mode'] === true,
+);
+const research = computed<ResearchStatusSnapshot | null>(() => {
+  if (!researchEnabled.value) return null;
+  const sid = rawState.activeSessionId;
+  if (!sid) return null;
+  return rawState.researchBySession[sid] ?? null;
 });
 
 /** Current todo list of the active session (TodoList tool, latest write wins). */
@@ -2612,6 +2674,8 @@ const workspaceState = useWorkspaceState(rawState, {
   hasLoadedMessages,
   refreshSessionStatus,
   refreshSessionGoal,
+  refreshSessionResearch,
+  researchRequests,
   persistSessionProfile,
   mergedWorkspaces,
   workspacesView,
@@ -2793,6 +2857,8 @@ export function useKimiWebClient() {
     activeAppTasks,
     todos,
     goal,
+    research,
+    researchEnabled,
     swarms,
     swarmMembersByToolCallId,
     activationBadges,
@@ -2919,6 +2985,11 @@ export function useKimiWebClient() {
     toggleGoalMode: workspaceState.toggleGoalMode,
     createGoal: workspaceState.createGoal,
     controlGoal: workspaceState.controlGoal,
+    refreshResearch: workspaceState.refreshResearch,
+    refreshResearchById: workspaceState.refreshResearchById,
+    commandResearch: workspaceState.commandResearch,
+    commandResearchById: workspaceState.commandResearchById,
+    reportResearchIssue,
     enqueue: workspaceState.enqueue,
     dismissWarning: workspaceState.dismissWarning,
     renameSession: workspaceState.renameSession,

@@ -1,26 +1,13 @@
 /**
- * Hakimi web branding patch.
+ * Idempotent branding guard for the Hakimi source-built production Web bundle.
  *
- * The committed `apps/kimi-code/dist-web` bundle is built from the private
- * code-app repo (upstream `apps/web`) and is synced verbatim, so every
- * visible "Kimi Code" brand string in the browser UI is upstream's. This
- * script rewrites the user-facing brand text in the committed bundle in
- * place:
+ * `apps/kimi-web` is already Hakimi-branded. These replacements remain as a
+ * release guard against accidentally reintroducing upstream display strings in
+ * generated HTML or JavaScript. Compatibility identifiers such as `kimi-web.*`,
+ * `kimi-code` URLs, API paths, and the source favicon are deliberately untouched.
  *
- *  - `<title>Kimi Code Web</title>` → `<title>Hakimi Web</title>` in
- *    `index.html` (the SPA document is plain text);
- *  - the `"Kimi Code Web"` document-title suffix and `"Kimi Code"` UI
- *    strings inside the minified JS assets (login page, brand name,
- *    notification titles, aria-labels, empty-state copy…).
- *
- * It deliberately does NOT touch anything that is not a display string:
- * `kimi-web.*` localStorage keys, `kimi-code` identifiers / URLs, API paths,
- * or the favicon (a binary asset — the Hakimi cat-ear logo ships in the TUI,
- * not in the web bundle). The patch is idempotent: running it twice is a
- * no-op, and re-running it after the next `sync:web` re-applies the branding.
- *
- * Usage: `node apps/kimi-code/scripts/patch-web-branding.mjs`
- * Run it after every web sync and commit the result together with the bundle.
+ * `build-web-assets.mjs` applies this guard only to its staging directory and
+ * verifies that a second pass is a no-op before replacing generated dist-web.
  */
 
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -37,7 +24,7 @@ export const WEB_BRANDING_PATCH_VERSION = 1;
 function assertWebAssets(distWeb) {
   const indexHtml = join(distWeb, 'index.html');
   if (!statSync(indexHtml).isFile()) {
-    throw new Error(`dist-web/index.html not found at ${distWeb}; run the web sync first.`);
+    throw new Error(`dist-web/index.html not found at ${distWeb}; run the Web build first.`);
   }
 }
 

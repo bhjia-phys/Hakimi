@@ -70,6 +70,7 @@ export interface UpdateQuestionInput {
 }
 
 export interface ProposeCheckpointInput {
+  readonly expectedRevision: number;
   readonly questionId?: string;
   readonly lineSlug?: string;
   readonly assessment?: string;

@@ -28,6 +28,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: '/plan',       desc: 'commands.plan.desc' },
   { name: '/swarm',      desc: 'commands.swarm.desc', acceptsInput: true },
   { name: '/goal',       desc: 'commands.goal.desc', acceptsInput: true },
+  { name: '/research',   desc: 'commands.research.desc', acceptsInput: true },
   { name: '/btw',        desc: 'commands.btw.desc', acceptsInput: true },
   { name: '/auto',       desc: 'commands.auto.desc' },
   { name: '/yolo',       desc: 'commands.yolo.desc' },
@@ -52,14 +53,14 @@ export const SLASH_COMMANDS: SlashCommand[] = [
  */
 export function parseSlash(input: string): { cmd: string; arg: string } | null {
   if (!input.startsWith('/')) return null;
-  // Must start exactly at position 0 (no leading spaces)
-  const spaceIdx = input.indexOf(' ');
-  if (spaceIdx === -1) {
-    return { cmd: input, arg: '' };
-  }
+  // Split on any Unicode White_Space character, not only ASCII space. This
+  // keeps tabs/newlines/non-breaking spaces on the command path instead of
+  // letting a known slash command leak into the model as an ordinary prompt.
+  const match = /^([^\p{White_Space}]+)(?:\p{White_Space}+([\s\S]*))?$/u.exec(input);
+  if (match === null) return null;
   return {
-    cmd: input.slice(0, spaceIdx),
-    arg: input.slice(spaceIdx + 1),
+    cmd: match[1] ?? input,
+    arg: match[2] ?? '',
   };
 }
 
@@ -84,7 +85,11 @@ export function stripSkillPrefix(name: string): string {
  */
 export function buildSlashItems(
   skills: ReadonlyArray<{ name: string; description: string; source?: string }> = [],
+  options: { researchEnabled?: boolean } = {},
 ): SlashCommand[] {
+  const builtins = options.researchEnabled === true
+    ? SLASH_COMMANDS
+    : SLASH_COMMANDS.filter((command) => command.name !== '/research');
   const skillItems: SlashCommand[] = skills.map((s) => ({
     name: s.source === 'builtin' ? `/${s.name}` : `/${SKILL_COMMAND_PREFIX}${s.name}`,
     desc: s.description,
@@ -92,7 +97,7 @@ export function buildSlashItems(
     // Keep the selected skill in the composer so arguments can be appended.
     acceptsInput: true,
   }));
-  return [...SLASH_COMMANDS, ...skillItems];
+  return [...builtins, ...skillItems];
 }
 
 /**

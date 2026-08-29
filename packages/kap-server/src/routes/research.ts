@@ -248,6 +248,7 @@ async function dispatchResearchCommand(
       break;
     case 'propose_checkpoint':
       research.proposeCheckpoint({
+        expectedRevision: cmd.expectedRevision,
         questionId: cmd.questionId,
         lineSlug: cmd.lineSlug,
         assessment: cmd.assessment,

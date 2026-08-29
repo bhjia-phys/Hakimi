@@ -53,6 +53,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify committed Hakimi web assets
+        run: pnpm run build:web-assets -- --check
+
+      - name: Generate Hakimi web assets
+        run: pnpm run build:web-assets
+
       - name: Generate Hakimi built-in catalog
         shell: bash
         run: |

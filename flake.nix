@@ -2,9 +2,8 @@
   description = "Hakimi CLI";
 
   inputs = {
-    # Pinned to the 25.11 release channel because nixpkgs-unstable currently
-    # ships nodejs_24 = 24.14.1, which trips the >= 24.15.0 floor that the
-    # native SEA build enforces (see apps/kimi-code/scripts/native/build.mjs).
+    # Pinned to the 25.11 release channel so nodejs_24 satisfies the
+    # >= 24.15.0 floor enforced by the native SEA build.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
   };
 
@@ -30,6 +29,7 @@
         );
 
       minNodeVersion = "24.15.0";
+      pnpmVersion = "10.33.0";
 
       # Hardcode to Node.js 24.x; fail the evaluation if the pinned nixpkgs
       # does not offer a new enough 24.x.
@@ -47,11 +47,20 @@
             Pin a newer nixpkgs revision or update minNodeVersion in flake.nix.
           '';
 
+      # nixpkgs 25.11 currently carries pnpm 10.28.0. Override its supported
+      # derivation with the repository's exact packageManager version instead
+      # of weakening the canonical Web build preflight inside the Nix sandbox.
       pnpmFor =
         pkgs:
-        pkgs.pnpm_10.override {
+        (pkgs.pnpm_10.override {
           nodejs = nodejsFor pkgs;
-        };
+        }).overrideAttrs (_: {
+          version = pnpmVersion;
+          src = pkgs.fetchurl {
+            url = "https://registry.npmjs.org/pnpm/-/pnpm-${pnpmVersion}.tgz";
+            hash = "sha512-EFaLtKavtYyes2MNqQzJUWQXq+vT+rvmc58K55VyjaFJHp21pUTHatjrdXD1xLs9bGN7LLQb/c20f6gjyGSTGQ==";
+          };
+        });
 
       # -------------------------------------------------------------------
       # Workspace members (kept in sync with pnpm-workspace.yaml).
@@ -170,7 +179,7 @@
             nativeBuildInputs = [
               nodejs
               pnpm
-              (pkgs.pnpmConfigHook.override { inherit pnpm; })
+              pkgs.pnpmConfigHook
               pkgs.makeWrapper
             ]
             # The SEA inject step (postject) invalidates the macOS code
@@ -201,12 +210,12 @@
                     "await runVerifyStep({ requireGatekeeper: false });" \
                     "// runVerifyStep skipped in nix sandbox (sigtool lacks -dv)"
               ''}
-              # The SEA blob step (scripts/native/02-sea-blob.mjs) embeds the
-              # Kimi web assets from apps/kimi-code/dist-web and fails if that
-              # directory is missing. The bundle is committed (synced from the
-              # code-app repo) — verify it is in place before producing the
-              # native executable.
-              node apps/kimi-code/scripts/check-web-assets.mjs
+              # First prove the tracked bundle matches a clean source rebuild;
+              # only then replace it for consumption and verify the installed
+              # result. pnpmFor supplies the exact canonical pnpm version.
+              pnpm run build:web-assets -- --check
+              pnpm run build:web-assets
+              pnpm run build:web-assets -- --check
               pnpm --filter=@bhjia-phys/hakimi run build:native:sea
               runHook postBuild
             '';

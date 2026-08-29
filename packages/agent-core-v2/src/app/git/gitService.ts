@@ -52,6 +52,7 @@ export class GitService implements IGitService {
     }
 
     const result = parsePorcelain(porc.stdout, pathFilter);
+    const capturedRef = result.branch;
 
     const dirty = porc.stdout
       .split('\n')
@@ -68,7 +69,7 @@ export class GitService implements IGitService {
       }
     }
 
-    result.pullRequest = await this.readPullRequest(cwd);
+    result.pullRequest = await this.readPullRequest(cwd, capturedRef);
     return result;
   }
 
@@ -129,8 +130,12 @@ export class GitService implements IGitService {
     return findGitWorkTree(this.fs, cwd);
   }
 
-  private async readPullRequest(cwd: string): Promise<FsPullRequest | null> {
-    const cached = this.pullRequestCache.get(cwd);
+  private async readPullRequest(cwd: string, ref: string): Promise<FsPullRequest | null> {
+    if (ref === '') return null;
+
+    const canonicalCwd = await this.fs.realpath(cwd).catch(() => cwd);
+    const cacheKey = `${canonicalCwd}\0${ref}`;
+    const cached = this.pullRequestCache.get(cacheKey);
     const now = Date.now();
     if (cached !== undefined && now - cached.fetchedAt < PULL_REQUEST_TTL_MS) {
       return cached.value;
@@ -138,7 +143,7 @@ export class GitService implements IGitService {
 
     const res = await this.runCommand(
       'gh',
-      ['pr', 'view', '--json', 'number,url,state'],
+      ['pr', 'view', ref, '--json', 'number,url,state'],
       cwd,
       {
         env: { GH_NO_UPDATE_NOTIFIER: '1', GH_PROMPT_DISABLED: '1' },
@@ -146,7 +151,7 @@ export class GitService implements IGitService {
       },
     );
     const value = res.exitCode === 0 ? parsePullRequest(res.stdout) : null;
-    this.pullRequestCache.set(cwd, { value, fetchedAt: now });
+    this.pullRequestCache.set(cacheKey, { value, fetchedAt: now });
     return value;
   }
 

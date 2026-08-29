@@ -81,6 +81,7 @@ const updateQuestionInputSchema = z.object({
 const updateLineInputSchema = researchLineUpdateInputSchema satisfies z.ZodType<UpdateLineInput>;
 
 const proposeCheckpointInputSchema = z.object({
+  expectedRevision: z.number(),
   questionId: z.string().optional(),
   lineSlug: z.string().optional(),
   assessment: z.string().optional(),

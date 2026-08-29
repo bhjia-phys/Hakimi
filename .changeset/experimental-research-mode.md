@@ -3,4 +3,4 @@
 "@bhjia-phys/hakimi-sdk": minor
 ---
 
-Add experimental AITP Research Mode with a science-first progress Board, explicit action phases, human decision and alert steering, and verified AITP current-state maintenance. Run `/research on` to enter and `/research manage` to review attention items.
+Add experimental AITP Research Mode to the TUI, Web UI, and SDK with revision-safe steering, durable checkpoints, and human decision workflows. Enable `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=1`, then run `/research on` or open Research from Web Composer Modes.

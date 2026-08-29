@@ -1,29 +1,46 @@
-// Validate the committed prebuilt web bundle and its source provenance before packaging.
-//
-// The browser UI source lives in the external code-app repo. Hakimi commits only
-// the branded dist-web bundle plus web-base.json, which binds the declared source
-// identity and branding patch version to an exact file list and content hashes.
-// This is drift-detection metadata, not a signed source attestation.
+// Validate a generated production Web bundle against its in-repository source
+// and deterministic build recipe. Git metadata is deliberately excluded: the
+// source, actual canonical recipe/toolchain, and bundle digests are the complete identity.
 
 import { createHash } from 'node:crypto';
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { lstat, readFile, readdir, stat } from 'node:fs/promises';
 import { dirname, extname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { WEB_BRANDING_PATCH_VERSION } from './patch-web-branding.mjs';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const defaultRepositoryRoot = resolve(appRoot, '../..');
 const defaultTarget = resolve(appRoot, 'dist-web');
 const defaultProvenancePath = resolve(appRoot, 'web-base.json');
-export const WEB_SOURCE_REPOSITORY = 'code-app';
+export const WEB_PROVENANCE_SCHEMA_VERSION = 5;
+export const WEB_SOURCE_REPOSITORY = 'hakimi';
+export const WEB_SOURCE_PATH = 'apps/kimi-web';
+export const WEB_SOURCE_FILES = [
+  `${WEB_SOURCE_PATH}/index.html`,
+  `${WEB_SOURCE_PATH}/tsconfig.json`,
+];
+export const WEB_RECIPE_FILES = [
+  '.npmrc',
+  '.nvmrc',
+  'apps/kimi-code/scripts/build-web-assets.mjs',
+  'apps/kimi-code/scripts/check-web-assets.mjs',
+  'apps/kimi-code/scripts/patch-web-branding.mjs',
+  'apps/kimi-code/scripts/record-web-provenance.mjs',
+  'apps/kimi-web/package.json',
+  'apps/kimi-web/vite.config.ts',
+  'flake.lock',
+  'flake.nix',
+  'package.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
+];
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
-const COMMIT_PATTERN = /^[a-f0-9]{40}$/;
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const NODE_REQUIREMENT_PATTERN = /^>=\d+\.\d+\.\d+$/;
 const syncHelp =
-  'web 产物由 code-app 仓同步（见根 AGENTS.md）。请依次运行 ' +
-  '`KIMI_CODE_REPO=<此 checkout> pnpm run sync:web`、' +
-  '`node apps/kimi-code/scripts/patch-web-branding.mjs`、' +
-  '`node apps/kimi-code/scripts/record-web-provenance.mjs --repository code-app --commit <source-commit>`，' +
-  '再运行本检查并提交 dist-web 与 web-base.json。';
+  '请运行 `pnpm run build:web-assets` 重新生成 dist-web 与 web-base.json，' +
+  '或在生成后运行 `pnpm run build:web-assets -- --check` 检查产物。';
 
 function bundleError(message) {
   return new Error(`${message} ${syncHelp}`);
@@ -45,14 +62,11 @@ function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function assertSourceIdentity(repository, commit) {
+function assertSourceRepository(repository) {
   if (repository !== WEB_SOURCE_REPOSITORY) {
     throw bundleError(
       `Web provenance 无效：repository 必须是 ${JSON.stringify(WEB_SOURCE_REPOSITORY)}。`,
     );
-  }
-  if (typeof commit !== 'string' || !COMMIT_PATTERN.test(commit)) {
-    throw bundleError('Web provenance 无效：commit 必须是 40 位小写 Git SHA。');
   }
 }
 
@@ -90,6 +104,158 @@ async function walkFiles(dir, out = []) {
     }
   }
   return out;
+}
+
+async function assertSourceDirectory(dir, repositoryRoot) {
+  const path = toPosixPath(relative(repositoryRoot, dir));
+  let info;
+  try {
+    info = await lstat(dir);
+  } catch (error) {
+    throw bundleError(
+      `Web source 无效：无法检查必需的构建输入目录 ${path}：${error instanceof Error ? error.message : String(error)}。`,
+    );
+  }
+  if (info.isSymbolicLink()) {
+    throw bundleError(`Web source 无效：必需的构建输入目录 ${path} 是 symbolic link。`);
+  }
+  if (!info.isDirectory()) {
+    throw bundleError(`Web source 无效：必需的构建输入目录 ${path} 不是普通目录。`);
+  }
+}
+
+async function walkSourceFiles(dir, repositoryRoot, out = []) {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    throw bundleError(
+      `Web source 无效：无法读取必需的构建输入目录 ${dir}：${error instanceof Error ? error.message : String(error)}。`,
+    );
+  }
+  for (const entry of entries) {
+    const full = resolve(dir, entry.name);
+    const path = toPosixPath(relative(repositoryRoot, full));
+    let info;
+    try {
+      info = await lstat(full);
+    } catch (error) {
+      throw bundleError(
+        `Web source 无效：无法检查 ${path}：${error instanceof Error ? error.message : String(error)}。`,
+      );
+    }
+    if (info.isSymbolicLink()) {
+      throw bundleError(`Web source 无效：${path} 是 symbolic link，provenance 不允许链接。`);
+    }
+    if (info.isDirectory()) {
+      await walkSourceFiles(full, repositoryRoot, out);
+    } else if (info.isFile()) {
+      out.push(full);
+    } else {
+      throw bundleError(
+        `Web source 无效：${path} 不是普通文件或目录，provenance 不支持该特殊文件类型。`,
+      );
+    }
+  }
+  return out;
+}
+
+async function appendRequiredFiles(repositoryRoot, paths, files, name) {
+  for (const path of paths) {
+    const file = resolve(repositoryRoot, path);
+    let info;
+    try {
+      info = await lstat(file);
+    } catch {
+      throw bundleError(`Web ${name} 无效：必需文件 ${path} 不存在。`);
+    }
+    if (info.isSymbolicLink()) {
+      throw bundleError(`Web ${name} 无效：必需文件 ${path} 是 symbolic link。`);
+    }
+    if (!info.isFile()) {
+      throw bundleError(`Web ${name} 无效：必需文件 ${path} 不是普通文件。`);
+    }
+    files.push(file);
+  }
+}
+
+async function buildFileRecords(repositoryRoot, files) {
+  const records = [];
+  for (const file of files) {
+    const path = toPosixPath(relative(repositoryRoot, file));
+    assertRelativeBundlePath(path);
+    records.push({ path, sha256: sha256(await readFile(file)) });
+  }
+  records.sort((left, right) => compareStrings(left.path, right.path));
+  return records;
+}
+
+async function inspectWebSource(repositoryRoot) {
+  const resolvedRepositoryRoot = resolve(repositoryRoot);
+  const sourceRoot = resolve(resolvedRepositoryRoot, WEB_SOURCE_PATH);
+  const files = [];
+  for (const directory of ['public', 'src']) {
+    const path = resolve(sourceRoot, directory);
+    await assertSourceDirectory(path, resolvedRepositoryRoot);
+    await walkSourceFiles(path, resolvedRepositoryRoot, files);
+  }
+  await appendRequiredFiles(resolvedRepositoryRoot, WEB_SOURCE_FILES, files, 'source');
+
+  const records = await buildFileRecords(resolvedRepositoryRoot, files);
+  return {
+    path: WEB_SOURCE_PATH,
+    fileCount: records.length,
+    files: records,
+    sha256: sha256(`${JSON.stringify(records)}\n`),
+  };
+}
+
+export async function readWebToolchainRequirements(
+  repositoryRoot = defaultRepositoryRoot,
+) {
+  const packageText = await readFile(resolve(repositoryRoot, 'package.json'), 'utf8');
+  let packageJson;
+  try {
+    packageJson = JSON.parse(packageText);
+  } catch {
+    throw bundleError('Web recipe 无效：根 package.json 不是合法 JSON。');
+  }
+  const node = isRecord(packageJson.engines) ? packageJson.engines.node : undefined;
+  const packageManager = packageJson.packageManager;
+  const pnpm =
+    typeof packageManager === 'string' && packageManager.startsWith('pnpm@')
+      ? packageManager.slice('pnpm@'.length)
+      : '';
+  if (
+    typeof node !== 'string' ||
+    !NODE_REQUIREMENT_PATTERN.test(node) ||
+    !SEMVER_PATTERN.test(pnpm)
+  ) {
+    throw bundleError(
+      'Web recipe 无效：根 package.json 必须通过 engines.node 声明 >=x.y.z 的 Node 最低版本，并通过 packageManager 声明确定的 pnpm semver。',
+    );
+  }
+  return { node, pnpm };
+}
+
+async function inspectWebRecipe(repositoryRoot, actualToolchain) {
+  const resolvedRepositoryRoot = resolve(repositoryRoot);
+  const files = [];
+  await appendRequiredFiles(resolvedRepositoryRoot, WEB_RECIPE_FILES, files, 'recipe');
+  const [toolchainRequirements, records] = await Promise.all([
+    readWebToolchainRequirements(resolvedRepositoryRoot),
+    buildFileRecords(resolvedRepositoryRoot, files),
+  ]);
+  const toolchain = validateCanonicalToolchain(actualToolchain, toolchainRequirements);
+  return {
+    toolchainRequirements,
+    toolchain,
+    fileCount: records.length,
+    files: records,
+    sha256: sha256(
+      `${JSON.stringify({ toolchainRequirements, toolchain, files: records })}\n`,
+    ),
+  };
 }
 
 function stripHtmlComments(html) {
@@ -186,30 +352,21 @@ async function inspectWebBundle(target) {
   return { files, bundle };
 }
 
-function validateRecordedProvenance(value) {
-  if (!isRecord(value)) {
-    throw bundleError('Web provenance 无效：web-base.json 必须是 JSON object。');
+function validateFileManifest(value, name, digestPayload = (records) => records) {
+  if (!isRecord(value) || !Array.isArray(value.files)) {
+    throw bundleError(`Web provenance 无效：${name} 必须包含 files 清单。`);
   }
-  assertSourceIdentity(value.repository, value.commit);
-  if (value.brandingPatchVersion !== WEB_BRANDING_PATCH_VERSION) {
-    throw bundleError(
-      `Web provenance 无效：brandingPatchVersion 应为 ${WEB_BRANDING_PATCH_VERSION}，实际为 ${JSON.stringify(value.brandingPatchVersion)}。`,
-    );
+  if (!Number.isSafeInteger(value.fileCount) || value.fileCount < 0) {
+    throw bundleError(`Web provenance 无效：${name}.fileCount 必须是非负整数。`);
   }
-  if (!isRecord(value.bundle) || !Array.isArray(value.bundle.files)) {
-    throw bundleError('Web provenance 无效：bundle 必须包含 files 清单。');
-  }
-  if (!Number.isSafeInteger(value.bundle.fileCount) || value.bundle.fileCount < 0) {
-    throw bundleError('Web provenance 无效：bundle.fileCount 必须是非负整数。');
-  }
-  if (value.bundle.fileCount !== value.bundle.files.length) {
-    throw bundleError('Web provenance 无效：bundle.fileCount 与 files 清单长度不一致。');
+  if (value.fileCount !== value.files.length) {
+    throw bundleError(`Web provenance 无效：${name}.fileCount 与 files 清单长度不一致。`);
   }
 
   const records = [];
-  for (const entry of value.bundle.files) {
+  for (const entry of value.files) {
     if (!isRecord(entry)) {
-      throw bundleError('Web provenance 无效：bundle.files 的每一项必须是 object。');
+      throw bundleError(`Web provenance 无效：${name}.files 的每一项必须是 object。`);
     }
     assertRelativeBundlePath(entry.path);
     if (typeof entry.sha256 !== 'string' || !SHA256_PATTERN.test(entry.sha256)) {
@@ -219,28 +376,147 @@ function validateRecordedProvenance(value) {
   }
   const sorted = [...records].sort((left, right) => compareStrings(left.path, right.path));
   if (JSON.stringify(records) !== JSON.stringify(sorted)) {
-    throw bundleError('Web provenance 无效：bundle.files 必须按 path 排序。');
+    throw bundleError(`Web provenance 无效：${name}.files 必须按 path 排序。`);
   }
   if (new Set(records.map((entry) => entry.path)).size !== records.length) {
-    throw bundleError('Web provenance 无效：bundle.files 包含重复路径。');
+    throw bundleError(`Web provenance 无效：${name}.files 包含重复路径。`);
   }
-  if (typeof value.bundle.sha256 !== 'string' || !SHA256_PATTERN.test(value.bundle.sha256)) {
-    throw bundleError('Web provenance 无效：bundle.sha256 必须是 64 位小写摘要。');
+  if (typeof value.sha256 !== 'string' || !SHA256_PATTERN.test(value.sha256)) {
+    throw bundleError(`Web provenance 无效：${name}.sha256 必须是 64 位小写摘要。`);
   }
-  const recordedDigest = sha256(`${JSON.stringify(records)}\n`);
-  if (value.bundle.sha256 !== recordedDigest) {
-    throw bundleError('Web provenance 无效：bundle.sha256 与记录的文件清单不一致。');
+  const recordedDigest = sha256(`${JSON.stringify(digestPayload(records))}\n`);
+  if (value.sha256 !== recordedDigest) {
+    throw bundleError(`Web provenance 无效：${name}.sha256 与记录的文件清单不一致。`);
   }
+  return { fileCount: value.fileCount, files: records, sha256: value.sha256 };
+}
+
+function validateToolchainRequirements(value) {
+  if (
+    !isRecord(value) ||
+    typeof value.node !== 'string' ||
+    !NODE_REQUIREMENT_PATTERN.test(value.node) ||
+    typeof value.pnpm !== 'string' ||
+    !SEMVER_PATTERN.test(value.pnpm)
+  ) {
+    throw bundleError(
+      'Web provenance 无效：recipe.toolchainRequirements 必须包含 >=x.y.z 的 Node 最低版本和确定的 pnpm semver。',
+    );
+  }
+  return { node: value.node, pnpm: value.pnpm };
+}
+
+function parseSemver(value) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(value);
+  if (match === null) return undefined;
+  return {
+    numbers: match.slice(1, 4).map(Number),
+    prerelease: match[4] !== undefined,
+  };
+}
+
+function nodeVersionMeetsRequirement(version, requirement) {
+  const actual = parseSemver(version);
+  const minimum = parseSemver(requirement.slice('>='.length));
+  if (actual === undefined || minimum === undefined) return false;
+  for (let index = 0; index < actual.numbers.length; index += 1) {
+    if (actual.numbers[index] > minimum.numbers[index]) return true;
+    if (actual.numbers[index] < minimum.numbers[index]) return false;
+  }
+  return !actual.prerelease;
+}
+
+function validateCanonicalToolchain(value, requirements) {
+  if (
+    !isRecord(value) ||
+    typeof value.node !== 'string' ||
+    !SEMVER_PATTERN.test(value.node) ||
+    typeof value.pnpm !== 'string' ||
+    !SEMVER_PATTERN.test(value.pnpm) ||
+    value.canonical !== true
+  ) {
+    throw bundleError(
+      'Web provenance 无效：recipe.toolchain 必须包含实际 Node/pnpm semver 且 canonical 必须为 true。',
+    );
+  }
+  if (!nodeVersionMeetsRequirement(value.node, requirements.node)) {
+    throw bundleError(
+      `Web provenance 无效：recipe.toolchain.node ${value.node} 不满足 ${requirements.node}。`,
+    );
+  }
+  if (value.pnpm !== requirements.pnpm) {
+    throw bundleError(
+      `Web provenance 无效：recipe.toolchain.pnpm 必须是 ${requirements.pnpm}，实际为 ${value.pnpm}。`,
+    );
+  }
+  return { node: value.node, pnpm: value.pnpm, canonical: true };
+}
+
+function validateRecipe(value) {
+  if (!isRecord(value)) {
+    throw bundleError('Web provenance 无效：recipe 必须是 object。');
+  }
+  const toolchainRequirements = validateToolchainRequirements(value.toolchainRequirements);
+  const toolchain = validateCanonicalToolchain(value.toolchain, toolchainRequirements);
+  const manifest = validateFileManifest(value, 'recipe', (files) => ({
+    toolchainRequirements,
+    toolchain,
+    files,
+  }));
+  const paths = manifest.files.map((entry) => entry.path);
+  if (JSON.stringify(paths) !== JSON.stringify(WEB_RECIPE_FILES)) {
+    throw bundleError('Web provenance 无效：recipe.files 必须精确覆盖 canonical build recipe。');
+  }
+  return { toolchainRequirements, toolchain, ...manifest };
+}
+
+function validateRecordedProvenance(value) {
+  if (!isRecord(value)) {
+    throw bundleError('Web provenance 无效：web-base.json 必须是 JSON object。');
+  }
+  if (value.schemaVersion !== WEB_PROVENANCE_SCHEMA_VERSION) {
+    throw bundleError(
+      `Web provenance 无效：schemaVersion 必须是 ${WEB_PROVENANCE_SCHEMA_VERSION}。`,
+    );
+  }
+  assertSourceRepository(value.repository);
+  if (!isRecord(value.source) || value.source.path !== WEB_SOURCE_PATH) {
+    throw bundleError(
+      `Web provenance 无效：source.path 必须是 ${JSON.stringify(WEB_SOURCE_PATH)}。`,
+    );
+  }
+  const source = validateFileManifest(value.source, 'source');
+  for (const entry of source.files) {
+    if (!entry.path.startsWith(`${WEB_SOURCE_PATH}/`)) {
+      throw bundleError(`Web provenance 无效：source 文件 ${entry.path} 不属于 ${WEB_SOURCE_PATH}。`);
+    }
+  }
+  const requiredSourceFiles = [
+    ...WEB_SOURCE_FILES,
+    `${WEB_SOURCE_PATH}/public/boot.js`,
+    `${WEB_SOURCE_PATH}/src/main.ts`,
+  ];
+  const recordedSourcePaths = new Set(source.files.map((entry) => entry.path));
+  for (const path of requiredSourceFiles) {
+    if (!recordedSourcePaths.has(path)) {
+      throw bundleError(`Web provenance 无效：source 清单缺少必需构建输入 ${path}。`);
+    }
+  }
+  const recipe = validateRecipe(value.recipe);
+  if (value.brandingPatchVersion !== WEB_BRANDING_PATCH_VERSION) {
+    throw bundleError(
+      `Web provenance 无效：brandingPatchVersion 应为 ${WEB_BRANDING_PATCH_VERSION}，实际为 ${JSON.stringify(value.brandingPatchVersion)}。`,
+    );
+  }
+  const bundle = validateFileManifest(value.bundle, 'bundle');
 
   return {
+    schemaVersion: value.schemaVersion,
     repository: value.repository,
-    commit: value.commit,
+    source: { path: value.source.path, ...source },
+    recipe,
     brandingPatchVersion: value.brandingPatchVersion,
-    bundle: {
-      fileCount: value.bundle.fileCount,
-      files: records,
-      sha256: value.bundle.sha256,
-    },
+    bundle,
   };
 }
 
@@ -261,62 +537,109 @@ async function readRecordedProvenance(provenancePath) {
   }
 }
 
-export async function buildWebProvenance({ target = defaultTarget, repository, commit }) {
-  assertSourceIdentity(repository, commit);
-  const { bundle } = await inspectWebBundle(target);
+export async function buildWebProvenance({
+  target = defaultTarget,
+  repositoryRoot = defaultRepositoryRoot,
+  toolchain,
+} = {}) {
+  const [{ bundle }, source, recipe] = await Promise.all([
+    inspectWebBundle(target),
+    inspectWebSource(repositoryRoot),
+    inspectWebRecipe(repositoryRoot, toolchain),
+  ]);
   return {
-    repository,
-    commit,
+    schemaVersion: WEB_PROVENANCE_SCHEMA_VERSION,
+    repository: WEB_SOURCE_REPOSITORY,
+    source,
+    recipe,
     brandingPatchVersion: WEB_BRANDING_PATCH_VERSION,
     bundle,
   };
 }
 
-async function inspectAgainstProvenance(target, provenance) {
-  const { files, bundle } = await inspectWebBundle(target);
-  if (provenance.bundle.fileCount !== bundle.fileCount) {
+function assertManifestMatches(name, recorded, actual) {
+  const prefix =
+    name === 'source'
+      ? 'Web source 已漂移'
+      : name === 'recipe'
+        ? 'Web recipe 已漂移'
+        : 'Web provenance 已过期';
+  if (recorded.fileCount !== actual.fileCount) {
     throw bundleError(
-      `Web provenance 已过期：记录 ${provenance.bundle.fileCount} 个文件，当前 bundle 有 ${bundle.fileCount} 个文件。`,
+      `${prefix}：记录 ${recorded.fileCount} 个文件，当前 ${name} 有 ${actual.fileCount} 个文件。`,
     );
   }
-  for (let index = 0; index < bundle.files.length; index += 1) {
-    const recorded = provenance.bundle.files[index];
-    const actual = bundle.files[index];
-    if (recorded.path !== actual.path) {
+  for (let index = 0; index < actual.files.length; index += 1) {
+    const recordedFile = recorded.files[index];
+    const actualFile = actual.files[index];
+    if (recordedFile.path !== actualFile.path) {
       throw bundleError(
-        `Web provenance 已过期：文件清单不一致（记录 ${recorded.path}，当前 ${actual.path}）。`,
+        `${prefix}：文件清单不一致（记录 ${recordedFile.path}，当前 ${actualFile.path}）。`,
       );
     }
-    if (recorded.sha256 !== actual.sha256) {
-      throw bundleError(`Web provenance 已过期：${actual.path} 的 sha256 不匹配。`);
+    if (recordedFile.sha256 !== actualFile.sha256) {
+      throw bundleError(`${prefix}：${actualFile.path} 的 sha256 不匹配。`);
     }
   }
-  if (provenance.bundle.sha256 !== bundle.sha256) {
-    throw bundleError('Web provenance 已过期：bundle.sha256 与当前 bundle 不匹配。');
+  if (recorded.sha256 !== actual.sha256) {
+    throw bundleError(`${prefix}：${name}.sha256 与当前 ${name} 不匹配。`);
   }
-  return { files, bundle, provenance };
 }
 
-export async function verifyWebAssetsAgainstProvenance(target, provenance) {
-  return inspectAgainstProvenance(target, validateRecordedProvenance(provenance));
+async function inspectAgainstProvenance(
+  target,
+  provenance,
+  {
+    repositoryRoot = defaultRepositoryRoot,
+    verifySource = true,
+    verifyRecipe = true,
+  } = {},
+) {
+  let source = provenance.source;
+  if (verifySource) {
+    source = await inspectWebSource(repositoryRoot);
+    assertManifestMatches('source', provenance.source, source);
+  }
+  let recipe = provenance.recipe;
+  if (verifyRecipe) {
+    recipe = await inspectWebRecipe(repositoryRoot, provenance.recipe.toolchain);
+    if (
+      JSON.stringify(provenance.recipe.toolchainRequirements) !==
+      JSON.stringify(recipe.toolchainRequirements)
+    ) {
+      throw bundleError('Web recipe 已漂移：toolchain requirements 不匹配。');
+    }
+    assertManifestMatches('recipe', provenance.recipe, recipe);
+  }
+  const { files, bundle } = await inspectWebBundle(target);
+  assertManifestMatches('bundle', provenance.bundle, bundle);
+  return { files, source, recipe, bundle, provenance };
+}
+
+export async function verifyWebAssetsAgainstProvenance(target, provenance, options) {
+  return inspectAgainstProvenance(target, validateRecordedProvenance(provenance), options);
 }
 
 export async function verifyWebAssets(
   target = defaultTarget,
   provenancePath = defaultProvenancePath,
+  repositoryRoot = defaultRepositoryRoot,
 ) {
   const provenance = await readRecordedProvenance(provenancePath);
-  return inspectAgainstProvenance(target, provenance);
+  return inspectAgainstProvenance(target, provenance, { repositoryRoot });
 }
 
 export async function assertWebAssets(
   target = defaultTarget,
   provenancePath = defaultProvenancePath,
+  repositoryRoot = defaultRepositoryRoot,
 ) {
-  return (await verifyWebAssets(target, provenancePath)).files;
+  return (await verifyWebAssets(target, provenancePath, repositoryRoot)).files;
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const files = await assertWebAssets();
-  console.log(`Web assets OK: ${defaultTarget} (${files.length} files, provenance verified)`);
+  const { files, provenance } = await verifyWebAssets();
+  console.log(
+    `Web assets OK: ${defaultTarget} (${files.length} files, source ${provenance.source.sha256}, recipe ${provenance.recipe.sha256}, provenance verified)`,
+  );
 }

@@ -27,6 +27,7 @@ import type {
   QuestionItem,
   QuestionOption,
   QuestionResponse,
+  ResearchStatusSnapshot,
 } from '../types';
 
 import type {
@@ -46,6 +47,7 @@ import type {
   WireQuestionOption,
   WireQuestionRequest,
   WireQuestionResponse,
+  WireResearchStatusSnapshot,
   WireSession,
   WireSessionUsage,
   WireWorkspace,
@@ -462,6 +464,32 @@ export function toAppGoal(snapshot: unknown): AppGoal | null {
   };
 }
 
+function cloneResearchValue<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneResearchValue(item)) as T;
+  }
+  if (value !== null && typeof value === 'object') {
+    const clone: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      clone[key] = cloneResearchValue(child);
+    }
+    return clone as T;
+  }
+  return value;
+}
+
+export function toAppResearchSnapshot(
+  snapshot: WireResearchStatusSnapshot,
+): ResearchStatusSnapshot {
+  // Research REST and WS payloads are already camelCase. Deep-clone the complete
+  // JSON-safe protocol object so nested receipts/progress never share mutable
+  // wire references, while the bidirectional assignments keep the local wire and
+  // app mirrors structurally aligned at compile time.
+  const appSnapshot: ResearchStatusSnapshot = cloneResearchValue(snapshot);
+  const wireSnapshot: WireResearchStatusSnapshot = appSnapshot;
+  return wireSnapshot;
+}
+
 /**
  * Map a WireEvent to an AppEvent.
  *
@@ -562,6 +590,13 @@ export function toAppEvent(wire: WireEvent): AppEvent {
         goal: goal?.status === 'complete' ? null : goal,
       };
     }
+
+    case 'event.research.updated':
+      return {
+        type: 'researchUpdated',
+        sessionId: w.session_id,
+        snapshot: toAppResearchSnapshot(w.payload.snapshot),
+      };
 
     // ----- Message lifecycle -----
     case 'event.message.created':

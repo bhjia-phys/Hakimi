@@ -15,7 +15,7 @@ This repository uses VitePress for the documentation site. Most user-facing page
 
 ## Source of truth
 
-- **Changelog page**: The English version (`docs/en/release-notes/changelog.md`) is the source of truth; the Chinese changelog should be translated from it. The changelog is currently generated manually by a skill that syncs from the CLI package's `CHANGELOG.md` after each release.
+- **Changelog page**: The English version (`docs/en/release-notes/changelog.md`) is the source of truth; the Chinese changelog should be translated from it. After a Hakimi release succeeds, maintainers explicitly run `docs/scripts/sync-changelog.mjs` to sync English from the `@bhjia-phys/hakimi` changelog at `apps/kimi-code/CHANGELOG.md`, then use the `sync-changelog` skill to curate the increment and translate it into Chinese. Canonical GitHub releases/tags use `hakimi-v<version>`. The first source `0.13.0` block is Hakimi's stop-marker/baseline and is never backfilled into docs. Only the following blocks, beginning with Kimi Code `0.36.1`, are the preserved upstream archive; neither the marker nor the archive blocks are sync candidates. The script is never an automatic pre-release step.
 - **All other pages**: `docs/en/` and `docs/zh/` are mirrored pairs with the same paths, headings, and section structure. Edit whichever locale you are working in, and update the other locale in the same change.
 
 Keep both locales in sync before release. Machine-assisted translation is fine; review the locale you changed and its mirror for accuracy, terminology, and broken links.
@@ -323,4 +323,4 @@ Before shipping, verify these values match the rest of the docs:
 
 ## Changelog syncing
 
-See `sync-changelog` skill for the changelog generation workflow.
+Run `node docs/scripts/sync-changelog.mjs --dry-run` to validate a post-release English sync without writing, or omit `--dry-run` after every pending release has its canonical `hakimi-v<version>` tag. The script reads only the `@bhjia-phys/hakimi` source at `apps/kimi-code/CHANGELOG.md`, writes only the English docs changelog, stops at the first source `0.13.0`, and fails closed if the boundary, tag, tagged content, or date cannot be verified. Keep both changelog page headers branded as Hakimi and explicitly describe the version blocks beginning with Kimi Code `0.36.1` as a preserved upstream archive. Then follow the `sync-changelog` skill for curation, Chinese translation, review, and PR workflow.

@@ -1140,4 +1140,16 @@ describe('research facade routing', () => {
     } as never)).rejects.toMatchObject({ phase: 'input' });
     expect(channel.calls).toHaveLength(0);
   });
+
+  it('rejects checkpoint proposals without expectedRevision before crossing the channel', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const agent = klient.session('s1').agent('main');
+
+    await expect(agent.research.proposeCheckpoint({} as never)).rejects.toMatchObject({
+      phase: 'input',
+      procedure: 'agentResearchService.proposeCheckpoint',
+    });
+    expect(channel.calls).toHaveLength(0);
+  });
 });

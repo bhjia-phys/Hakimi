@@ -4,7 +4,7 @@ outline: 2
 
 # Changelog
 
-This page documents the changes in each Kimi Code CLI release.
+This page documents Hakimi releases. Releases beginning with Kimi Code 0.36.1 are preserved upstream history and are not part of Hakimi's independent release line.
 
 ## 0.36.1 (2026-08-14)
 

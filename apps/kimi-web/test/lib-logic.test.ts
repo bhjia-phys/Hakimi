@@ -5,6 +5,7 @@ import {
   parseFilePathLinkCandidate,
 } from '../src/lib/filePathLinks';
 import { parseDiff } from '../src/lib/parseDiff';
+import { researchProgressSummaries } from '../src/lib/researchProgress';
 import { buildDiffLines } from '../src/lib/diffLines';
 import { buildEditDiffLines } from '../src/lib/toolDiff';
 import { createCoalescedAsyncRunner } from '../src/lib/snapshotSync';
@@ -867,5 +868,33 @@ describe('keepLiveSubagents', () => {
     const [merged] = keepLiveSubagents(rest, [live]);
     expect(merged?.outputPreview).toBe('final result');
     expect(merged?.outputBytes).toBe(200);
+  });
+});
+
+describe('researchProgressSummaries', () => {
+  const progress = {
+    headline: 'Experiment completed',
+    motivation: 'Test the candidate explanation',
+    workPerformed: 'Ran the bounded experiment',
+    result: 'The candidate matched the observation',
+    mainlineImpact: 'Promotes the candidate to the main line',
+    uncertainties: ['Finite-size effects remain', 'Independent replication pending'],
+    recordedAt: 1,
+  };
+
+  it('surfaces work, mainline impact, and joined uncertainties', () => {
+    expect(researchProgressSummaries(progress)).toEqual([
+      { kind: 'workPerformed', text: 'Ran the bounded experiment' },
+      { kind: 'mainlineImpact', text: 'Promotes the candidate to the main line' },
+      {
+        kind: 'uncertainties',
+        text: 'Finite-size effects remain · Independent replication pending',
+      },
+    ]);
+  });
+
+  it('omits an empty uncertainties summary', () => {
+    expect(researchProgressSummaries({ ...progress, uncertainties: [' ', ''] }))
+      .not.toContainEqual(expect.objectContaining({ kind: 'uncertainties' }));
   });
 });

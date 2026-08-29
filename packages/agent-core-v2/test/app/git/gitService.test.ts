@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { PassThrough } from 'node:stream';
 import { dirname, join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DisposableStore } from '#/_base/di/lifecycle';
 import { createServices, type TestInstantiationService } from '#/_base/di/test';
@@ -14,7 +15,7 @@ import { ErrorCodes } from '#/errors';
 import { HostFileSystem } from '#/os/backends/node-local/hostFsService';
 import { HostProcessService } from '#/os/backends/node-local/hostProcessService';
 import { IHostFileSystem } from '#/os/interface/hostFileSystem';
-import { IHostProcessService } from '#/os/interface/hostProcess';
+import { IHostProcessService, type IHostProcess } from '#/os/interface/hostProcess';
 import { IRuntimeResolver, IWorkspaceInstanceManager, type WorkspaceInstanceChange } from '#/workspace/workspaceInstance/workspaceInstanceManager';
 import { Event } from '#/_base/event';
 import type { Runtime } from '#/runtime/runtime';
@@ -30,11 +31,91 @@ function git(cwd: string, ...args: string[]): string {
     .trim();
 }
 
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T | PromiseLike<T>) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function processWithOutput(stdoutText: string, wait: Promise<number>): IHostProcess {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  stdout.end(stdoutText);
+  stderr.end('');
+  return {
+    _serviceBrand: undefined,
+    stdin,
+    stdout,
+    stderr,
+    pid: 1,
+    exitCode: null,
+    wait: () => wait,
+    kill: async () => {},
+    dispose: () => {
+      stdin.destroy();
+      stdout.destroy();
+      stderr.destroy();
+    },
+  };
+}
+
+function stubGhResponses(
+  process: HostProcessService,
+  responses: readonly string[],
+): string[] {
+  const calls: string[] = [];
+  const realSpawn = process.spawn.bind(process);
+  vi.spyOn(process, 'spawn').mockImplementation(async (command, args, options) => {
+    if (command !== 'gh') return realSpawn(command, args, options);
+    const response = responses[calls.length] ?? '';
+    calls.push(options?.cwd ?? '');
+    return processWithOutput(response, Promise.resolve(0));
+  });
+  return calls;
+}
+
+interface DeferredGhCall {
+  readonly cwd: string;
+  readonly args: readonly string[];
+  readonly resolve: (exitCode: number) => void;
+}
+
+function stubDeferredGhResponses(
+  process: HostProcessService,
+  responses: readonly string[],
+): { readonly calls: DeferredGhCall[]; readonly started: readonly Promise<void>[] } {
+  const calls: DeferredGhCall[] = [];
+  const gates = responses.map(() => deferred<number>());
+  const startedSignals = responses.map(() => deferred<void>());
+  const realSpawn = process.spawn.bind(process);
+  vi.spyOn(process, 'spawn').mockImplementation(async (command, args, options) => {
+    if (command !== 'gh') return realSpawn(command, args, options);
+    const index = calls.length;
+    const response = responses[index] ?? '';
+    const gate = gates[index] ?? deferred<number>();
+    calls.push({
+      cwd: options?.cwd ?? '',
+      args: [...(args ?? [])],
+      resolve: gate.resolve,
+    });
+    startedSignals[index]?.resolve(undefined);
+    return processWithOutput(response, gate.promise);
+  });
+  return { calls, started: startedSignals.map(({ promise }) => promise) };
+}
+
 describe('GitService', () => {
   let repo: string;
   let disposables: DisposableStore;
   let ix: TestInstantiationService;
   let service: IGitService;
+  let hostProcess: HostProcessService;
 
   beforeEach(() => {
     repo = mkdtempSync(join(tmpdir(), 'git-service-'));
@@ -43,8 +124,8 @@ describe('GitService', () => {
     git(repo, 'config', 'user.name', 'Test');
     git(repo, 'config', 'commit.gpgsign', 'false');
     disposables = new DisposableStore();
-    const process = new HostProcessService();
-    const runtime = { process } as unknown as Runtime;
+    hostProcess = new HostProcessService();
+    const runtime = { process: hostProcess } as unknown as Runtime;
     ix = createServices(disposables, {
       additionalServices: (reg) => {
         reg.define(IHostProcessService, HostProcessService);
@@ -65,6 +146,7 @@ describe('GitService', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     disposables.dispose();
     rmSync(repo, { recursive: true, force: true });
   });
@@ -122,6 +204,151 @@ describe('GitService', () => {
         else process.env['GIT_CEILING_DIRECTORIES'] = savedCeiling;
         rmSync(notRepo, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe('pull request cache', () => {
+    it('reuses a same-branch result across canonical cwd aliases within TTL', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'hello\n');
+      commitAll('init');
+      const pullRequest = {
+        number: 12,
+        state: 'open',
+        url: 'https://github.com/example/repo/pull/12',
+      };
+      const ghCalls = stubGhResponses(hostProcess, [JSON.stringify({ ...pullRequest, state: 'OPEN' })]);
+
+      const first = await service.status(repo);
+      const second = await service.status(`${repo}/.`);
+
+      expect(first.pullRequest).toEqual(pullRequest);
+      expect(second.pullRequest).toEqual(pullRequest);
+      expect(ghCalls).toHaveLength(1);
+    });
+
+    it('refreshes the pull request when the current branch changes within TTL', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'hello\n');
+      commitAll('init');
+      const firstPullRequest = {
+        number: 12,
+        state: 'open',
+        url: 'https://github.com/example/repo/pull/12',
+      };
+      const secondPullRequest = {
+        number: 13,
+        state: 'open',
+        url: 'https://github.com/example/repo/pull/13',
+      };
+      const ghCalls = stubGhResponses(hostProcess, [
+        JSON.stringify({ ...firstPullRequest, state: 'OPEN' }),
+        JSON.stringify({ ...secondPullRequest, state: 'OPEN' }),
+      ]);
+
+      const first = await service.status(repo);
+      git(repo, 'checkout', '-b', 'branch-b');
+      const second = await service.status(repo);
+
+      expect(first.pullRequest).toEqual(firstPullRequest);
+      expect(second.pullRequest).toEqual(secondPullRequest);
+      expect(ghCalls).toHaveLength(2);
+    });
+
+    it('queries the captured branch when the worktree changes before gh starts', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'hello\n');
+      commitAll('init');
+      const branchA = git(repo, 'branch', '--show-current');
+      const firstPullRequest = {
+        number: 12,
+        state: 'open',
+        url: 'https://github.com/example/repo/pull/12',
+      };
+      const secondPullRequest = {
+        number: 13,
+        state: 'open',
+        url: 'https://github.com/example/repo/pull/13',
+      };
+      const gh = stubDeferredGhResponses(hostProcess, [
+        JSON.stringify({ ...firstPullRequest, state: 'OPEN' }),
+        JSON.stringify({ ...secondPullRequest, state: 'OPEN' }),
+      ]);
+      const realpathStarted = deferred<void>();
+      const releaseRealpath = deferred<string>();
+      vi.spyOn(HostFileSystem.prototype, 'realpath').mockImplementationOnce(async () => {
+        realpathStarted.resolve(undefined);
+        return releaseRealpath.promise;
+      });
+
+      const firstPromise = service.status(repo);
+      await realpathStarted.promise;
+      git(repo, 'checkout', '-b', 'branch-b');
+      releaseRealpath.resolve(repo);
+      await gh.started[0]!;
+      const firstArgs = gh.calls[0]?.args;
+      gh.calls[0]!.resolve(0);
+      const first = await firstPromise;
+
+      const secondPromise = service.status(repo);
+      await gh.started[1]!;
+      const secondArgs = gh.calls[1]?.args;
+      gh.calls[1]!.resolve(0);
+      const second = await secondPromise;
+
+      expect(first.branch).toBe(branchA);
+      expect(first.pullRequest).toEqual(firstPullRequest);
+      expect(firstArgs).toEqual(['pr', 'view', branchA, '--json', 'number,url,state']);
+      expect(second.branch).toBe('branch-b');
+      expect(second.pullRequest).toEqual(secondPullRequest);
+      expect(secondArgs).toEqual(['pr', 'view', 'branch-b', '--json', 'number,url,state']);
+      expect(gh.calls).toHaveLength(2);
+    });
+
+    it('does not query a pull request for detached HEAD', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'hello\n');
+      commitAll('init');
+      git(repo, 'checkout', '--detach', 'HEAD');
+      const ghCalls = stubGhResponses(hostProcess, []);
+
+      const result = await service.status(repo);
+
+      expect(result.branch).toBe('');
+      expect(result.pullRequest).toBeNull();
+      expect(ghCalls).toHaveLength(0);
+    });
+
+    it('does not let a late result from the old branch poison the new branch cache', async () => {
+      writeFileSync(join(repo, 'a.txt'), 'hello\n');
+      commitAll('init');
+      const firstPullRequest = {
+        number: 12,
+        state: 'open',
+        url: 'https://github.com/example/repo/pull/12',
+      };
+      const secondPullRequest = {
+        number: 13,
+        state: 'open',
+        url: 'https://github.com/example/repo/pull/13',
+      };
+      const gh = stubDeferredGhResponses(hostProcess, [
+        JSON.stringify({ ...firstPullRequest, state: 'OPEN' }),
+        JSON.stringify({ ...secondPullRequest, state: 'OPEN' }),
+      ]);
+
+      const firstPromise = service.status(repo);
+      await gh.started[0];
+      git(repo, 'checkout', '-b', 'branch-b');
+      const secondPromise = service.status(repo);
+      await gh.started[1];
+
+      gh.calls[1]!.resolve(0);
+      const second = await secondPromise;
+      gh.calls[0]!.resolve(0);
+      const first = await firstPromise;
+      const afterLateResult = await service.status(repo);
+
+      expect(first.pullRequest).toEqual(firstPullRequest);
+      expect(second.pullRequest).toEqual(secondPullRequest);
+      expect(afterLateResult.pullRequest).toEqual(secondPullRequest);
+      expect(gh.calls).toHaveLength(2);
     });
   });
 

@@ -34,6 +34,8 @@ import type {
   PromptSubmission,
   PromptSubmitResult,
   QuestionResponse,
+  ResearchCommand,
+  ResearchStatusSnapshot,
 } from '../types';
 import { createAgentProjector } from './agentEventProjector';
 import { DaemonHttpClient } from './http';
@@ -48,6 +50,7 @@ import {
   toAppProvider,
   toAppProviderUsageResult,
   toAppQuestionRequest,
+  toAppResearchSnapshot,
   toAppSession,
   toAppTask,
   toWireApprovalResponse,
@@ -78,6 +81,8 @@ import type {
   WireProvider,
   WireProviderRefreshResult,
   WireProviderUsageResponse,
+  WireResearchCommandResponse,
+  WireResearchStatusSnapshot,
   WireSession,
   WireSessionAbortResult,
   WireSessionWarning,
@@ -152,6 +157,8 @@ interface WireMeta {
   capabilities: Record<string, boolean>;
   open_in_apps?: string[];
   dangerous_bypass_auth?: boolean;
+  /** Effective flag state; older servers omit it and therefore enable nothing. */
+  experimental_flags?: Record<string, boolean>;
   /** Engine generation serving the API; older (v1) servers omit the field. */
   backend?: 'v1' | 'v2';
 }
@@ -327,6 +334,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
     capabilities: Record<string, boolean>;
     openInApps: string[];
     dangerousBypassAuth: boolean;
+    experimentalFlags: Record<string, boolean>;
     /** Engine generation: 'v2' = kap-server / agent-core-v2; absent ⇒ 'v1'. */
     backend: 'v1' | 'v2';
   }> {
@@ -338,6 +346,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
       capabilities: data.capabilities,
       openInApps: Array.isArray(data.open_in_apps) ? data.open_in_apps : [],
       dangerousBypassAuth: data.dangerous_bypass_auth === true,
+      experimentalFlags: data.experimental_flags ?? {},
       backend: data.backend === 'v2' ? 'v2' : 'v1',
     };
   }
@@ -474,6 +483,24 @@ export class DaemonKimiWebApi implements KimiWebApi {
       `/sessions/${encodeURIComponent(sessionId)}/goal`,
     );
     return toAppGoal(data);
+  }
+
+  async getSessionResearch(sessionId: string): Promise<ResearchStatusSnapshot> {
+    const data = await this.http.get<WireResearchStatusSnapshot>(
+      `/sessions/${encodeURIComponent(sessionId)}/research`,
+    );
+    return toAppResearchSnapshot(data);
+  }
+
+  async commandSessionResearch(
+    sessionId: string,
+    command: ResearchCommand,
+  ): Promise<ResearchStatusSnapshot> {
+    const data = await this.http.post<WireResearchCommandResponse>(
+      `/sessions/${encodeURIComponent(sessionId)}/research/command`,
+      { command },
+    );
+    return toAppResearchSnapshot(data.snapshot);
   }
 
   async getSessionWarnings(sessionId: string): Promise<WireSessionWarning[]> {
