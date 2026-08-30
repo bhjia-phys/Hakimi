@@ -47,9 +47,9 @@ A question becomes research only when an action can change what should be believ
 
 ## Theory-physics discipline
 
-The optional `theory-physics` domain pack supplies a research discipline, not an oracle. It guides when to consult literature, check a derivation, seek numerical or HPC evidence, ask for a human decision, and report science before process.
+The optional `theory-physics` domain pack is the upper-layer handbook for sustained theoretical-physics research. It routes a request from Research Mode admission, through Line / Question / Focus and a stage Goal, to one bounded Research Action; only durable scientific deltas or reusable-method candidates are handed to the external `using-aitp` or `distilling-methods` skills on demand.
 
-It is not a literature database, a physics-correctness service, a scheduler, or a background autonomous loop. The researcher remains responsible for conventions, significance, and final scientific judgment.
+An ordinary one-off physics answer does not need Research Mode. The pack is a discipline, not an oracle: it is not a literature database, physics-correctness service, scheduler, second runtime, ledger, or background autonomous loop. The researcher remains responsible for conventions, significance, and final scientific judgment; AITP remains the protocol authority.
 
 ## Evidence before confidence
 
@@ -59,9 +59,9 @@ Human review and reproducible verification are part of the research loop, not a 
 
 ## Research Mode and AITP
 
-Research Mode is discoverable by default, but every new session starts inactive. It probes AITP only after an explicit `/research on` or an equivalent Web Research entry; inactive sessions perform zero AITP I/O. Entering Research Mode does not schedule model turns—Goal alone owns cross-turn continuation.
+Research Mode is discoverable by default, but every new session starts inactive. For sustained work, `theory-physics` can guide the model to call `EnterAITPMode`, wait for authoritative probe status, align the current topic and Goal, and perform a bounded action; inactive sessions perform zero AITP I/O. Entering Research Mode does not schedule model turns—Goal alone owns cross-turn continuation, while Plan is only a short-lived action overlay.
 
-[AITP](docs/aitp/) is an optional external durable-evidence ledger, used through its CLI and files. It is not a second Hakimi runtime or database. When AITP is unavailable, Research Mode reports a degraded state and blocks durable writes, checkpoints, and completion of an active Research Goal. Detailed compatibility and operating boundaries are maintained in the [AITP documentation](docs/aitp/).
+[AITP](docs/aitp/) is an optional external durable-evidence ledger, used through its CLI and files. It is not a second Hakimi runtime or database. The external `using-aitp` and `distilling-methods` skills remain protocol-authoritative and on-demand; Hakimi does not auto-initialize/adopt/backfill workspaces, add `/research goal`, or provide the planned H6b coordinator. When AITP is unavailable, Research Mode reports a degraded state and blocks durable writes, checkpoints, and completion of an active Research Goal. Detailed compatibility and operating boundaries are maintained in the [AITP documentation](docs/aitp/).
 
 ## Install from source
 

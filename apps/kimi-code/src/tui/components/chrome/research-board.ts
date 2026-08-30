@@ -9,7 +9,7 @@
  */
 
 import type { Component } from '@moonshot-ai/pi-tui';
-import { truncateToWidth, visibleWidth } from '@moonshot-ai/pi-tui';
+import { visibleWidth, wrapTextWithAnsi } from '@moonshot-ai/pi-tui';
 import type { ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
 import chalk from 'chalk';
 
@@ -18,8 +18,6 @@ import { currentTheme } from '#/tui/theme';
 import type { ColorPalette } from '#/tui/theme/colors';
 import type { TodoItem } from './todo-panel';
 
-const MAX_COMPACT_ROWS = 14;
-const MAX_EXPANDED_ROWS = 36;
 const MAX_LINE_SUMMARIES = 4;
 const MAX_ACTION_ROWS = 4;
 const MAX_ALERT_ROWS = 2;
@@ -33,6 +31,7 @@ type ResearchLine = ResearchStatusSnapshot['lines'][number];
 type ResearchRunState = NonNullable<ResearchStatusSnapshot['currentRun']>;
 type ResearchPlan = NonNullable<ResearchStatusSnapshot['researchPlan']>;
 type ResearchAlert = ResearchStatusSnapshot['alerts'][number];
+type ResearchGoalSummary = NonNullable<ResearchStatusSnapshot['goalSummary']>;
 type AitpMaintenanceReceipt = NonNullable<ResearchStatusSnapshot['aitpMaintenance']>;
 
 /** Phase labels shown to the user, with human-friendly spacing. */
@@ -105,34 +104,19 @@ export class ResearchBoardComponent implements Component {
 
     const safeWidth = Math.max(0, width);
     const colors = currentTheme.palette;
+    if (safeWidth === 0) return [''];
+    if (safeWidth === 1) return [renderHeader(snap, colors, safeWidth)];
     const lines: string[] = [
       chalk.hex(colors.border)('─'.repeat(safeWidth)),
       renderHeader(snap, colors, safeWidth),
     ];
 
     const contentRows = this.expanded
-      ? buildExpandedRows(snap, this.todos, colors, safeWidth)
+      ? buildExpandedRows(snap, this.todos, colors)
       : buildCompactRows(snap, this.todos, colors);
-    const maxRows = this.expanded ? MAX_EXPANDED_ROWS : MAX_COMPACT_ROWS;
-    // Reserve the border, header, hint, and (when needed) one overflow row
-    // before selecting body content. This keeps the total height bounded even
-    // when the snapshot contains many alerts, lines, or Todo actions.
-    const bodyBudget = Math.max(0, maxRows - 3);
-    const needsOverflow = contentRows.length > bodyBudget;
-    const visibleBudget = needsOverflow ? Math.max(0, bodyBudget - 1) : bodyBudget;
-    const visibleRows = contentRows.slice(0, visibleBudget);
-    const overflow = contentRows.length - visibleRows.length;
-
-    for (const row of visibleRows) {
-      lines.push(truncateToWidth(row, safeWidth, '…'));
-    }
-    if (overflow > 0) {
-      lines.push(
-        truncateToWidth(`  … +${String(overflow)} more`, safeWidth, '…'),
-      );
-    }
-    const hint = this.expanded ? '  ctrl+o to collapse' : '  ctrl+o to expand';
-    lines.push(truncateToWidth(chalk.hex(colors.textMuted)(hint), safeWidth, '…'));
+    // Semantic sections choose their own bounded collections while every selected
+    // narrative is wrapped in full. Never slice physical rows after wrapping.
+    lines.push(...contentRows.flatMap((row) => wrapBoardRow(row, safeWidth)));
     return lines;
   }
 }
@@ -142,14 +126,17 @@ function renderHeader(
   colors: ColorPalette,
   width: number,
 ): string {
+  if (width <= 0) return '';
   const mode = formatModeLabel(snap.mode, snap.loopStatus, colors);
   const line = normalizeSummary(snap.currentLineSlug) || 'none';
   const health = formatHealthLabel(snap, colors);
-  return truncateToWidth(
-    `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · line: ${chalk.hex(colors.text)(line)} · AITP: ${health}`,
-    width,
-    '…',
-  );
+  const full = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · line: ${chalk.hex(colors.text)(line)} · AITP: ${health}`;
+  if (visibleWidth(full) <= width) return full;
+  const compact = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · AITP: ${health}`;
+  if (visibleWidth(compact) <= width) return compact;
+  const minimal = `  ${chalk.hex(colors.primary).bold('Research')} ${mode}`;
+  if (visibleWidth(minimal) <= width) return minimal;
+  return width >= 1 ? chalk.hex(colors.primary).bold('R') : '';
 }
 
 function formatModeLabel(
@@ -172,6 +159,49 @@ function formatHealthLabel(
   if (phase === 'degraded') return chalk.hex(colors.warning)(phase);
   if (phase === 'ready') return chalk.hex(colors.success)(phase);
   return chalk.hex(colors.textMuted)(phase);
+}
+
+const ANSI_ESCAPE = /\u001B\[[0-?]*[ -/]*[@-~]/u;
+
+function stripAnsi(value: string): string {
+  return value.replaceAll(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '');
+}
+
+/** Wrap one logical board row without repeating its label on continuation lines. */
+function wrapBoardRow(row: string, width: number): string[] {
+  if (width <= 0) return [];
+  const plain = stripAnsi(row);
+  const labelEnd = plain.indexOf(': ');
+  if (labelEnd < 0) return wrapTextWithAnsi(row, width);
+  const prefixWidth = visibleWidth(plain.slice(0, labelEnd + 2));
+  if (prefixWidth >= width - 1) {
+    const [prefix, value] = splitAnsiAtVisibleWidth(row, prefixWidth);
+    return [...wrapTextWithAnsi(prefix.trimEnd(), width), ...wrapTextWithAnsi(value.trimStart(), width)];
+  }
+  const [prefix, value] = splitAnsiAtVisibleWidth(row, prefixWidth);
+  const wrapped = wrapTextWithAnsi(value.trimStart(), Math.max(1, width - prefixWidth));
+  if (wrapped.length === 0) return [prefix];
+  const continuation = ' '.repeat(Math.min(prefixWidth, Math.max(0, width - 1)));
+  return [prefix + wrapped[0]!, ...wrapped.slice(1).map((line) => continuation + line)];
+}
+
+function splitAnsiAtVisibleWidth(value: string, targetWidth: number): [string, string] {
+  let visible = 0;
+  let index = 0;
+  const tokenPattern = /\u001B\[[0-?]*[ -/]*[@-~]|[\s\S]/gu;
+  for (const match of value.matchAll(tokenPattern)) {
+    const token = match[0]!;
+    if (ANSI_ESCAPE.test(token)) {
+      index += token.length;
+      continue;
+    }
+    const tokenWidth = visibleWidth(token);
+    if (visible + tokenWidth > targetWidth) break;
+    visible += tokenWidth;
+    index += token.length;
+    if (visible >= targetWidth) break;
+  }
+  return [value.slice(0, index), value.slice(index)];
 }
 
 function normalizeSummary(value: string | undefined): string {
@@ -221,7 +251,12 @@ function renderAttentionRows(
   const alert = alerts[0];
   if (alert !== undefined) {
     rows.push(
-      `  ${chalk.hex(colors.warning)('Attention:')} ${chalk.hex(colors.textMuted)(formatAlertSummary(alerts, colors))} · ${chalk.hex(colors.text)(normalizeSummary(alert.message))}`,
+      `  ${chalk.hex(colors.warning)('! Attention:')} ${chalk.hex(colors.textMuted)(formatAlertSummary(alerts, colors))} · ${chalk.hex(colors.text)(normalizeSummary(alert.message))}`,
+    );
+  }
+  if (snap.aitpMaintenance?.degradedReason !== undefined) {
+    rows.push(
+      `  ${chalk.hex(colors.warning)('! Attention:')} ${chalk.hex(colors.text)(`AITP maintenance degraded: ${snap.aitpMaintenance.degradedReason.replaceAll('_', ' ')}`)}`,
     );
   }
   // Pending checkpoint is engineering audit info — only show in expanded view.
@@ -258,12 +293,38 @@ function renderResearchCounts(
   return `  ${chalk.hex(colors.textDim)('Research:')} ${chalk.hex(colors.textMuted)(`${String(snap.openQuestionCount)} open · ${String(snap.activeQuestionCount)} active · ${String(snap.blockedQuestionCount)} blocked${other}`)}`;
 }
 
+function renderGoalRows(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+  expanded: boolean,
+): string[] {
+  const goal = snap.goalSummary;
+  if (goal === undefined) return [];
+  const rows = [
+    `  ${chalk.hex(colors.primary)('◆')} ${chalk.hex(colors.textStrong).bold('Milestone:')} ${chalk.hex(colors.text)(normalizeSummary(goal.objective))}`,
+    `    ${chalk.hex(colors.textDim)('Goal status:')} ${chalk.hex(colors.text)(goal.status)}${goal.remainingTurns === undefined ? '' : ` · ${chalk.hex(colors.textMuted)(`${String(goal.remainingTurns)} turns remaining`)}`}`,
+  ];
+  if (expanded) {
+    if (goal.completionCriterion !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Completion criterion:')} ${chalk.hex(colors.text)(normalizeSummary(goal.completionCriterion))}`);
+    }
+    if (goal.terminalReason !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Terminal reason:')} ${chalk.hex(colors.text)(normalizeSummary(goal.terminalReason))}`);
+    }
+    if (goal.waitingFor !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Waiting for:')} ${chalk.hex(colors.text)(`${goal.waitingFor.policy} of ${goal.waitingFor.taskIds.length} task${goal.waitingFor.taskIds.length === 1 ? '' : 's'}`)}`);
+    }
+  }
+  return rows;
+}
+
 function buildCompactRows(
   snap: ResearchStatusSnapshot,
   todos: readonly TodoItem[],
   colors: ColorPalette,
 ): string[] {
   const rows: string[] = [];
+  rows.push(...renderGoalRows(snap, colors, false));
   const question = snap.currentFocus === undefined ? undefined : snap.currentQuestion;
   const currentLine = findCurrentLine(snap);
 
@@ -335,18 +396,18 @@ function buildExpandedRows(
   snap: ResearchStatusSnapshot,
   todos: readonly TodoItem[],
   colors: ColorPalette,
-  width: number,
 ): string[] {
   const rows: string[] = [
+    ...renderGoalRows(snap, colors, true),
     `  ${chalk.hex(colors.textStrong).bold('Lines')} ${chalk.hex(colors.textMuted)(`(${String(snap.lines.length)})`)}`,
   ];
   const lines = orderedLines(snap);
   for (const line of lines.slice(0, MAX_LINE_SUMMARIES)) {
-    rows.push(renderLineSummary(line, snap, colors, width));
+    rows.push(renderLineSummary(line, snap, colors));
   }
   if (lines.length > MAX_LINE_SUMMARIES) {
     rows.push(
-      `    ${chalk.hex(colors.textMuted)(`… +${String(lines.length - MAX_LINE_SUMMARIES)} more lines`)}`,
+      `    ${chalk.hex(colors.textMuted)(`${String(lines.length - MAX_LINE_SUMMARIES)} additional lines`)}`,
     );
   }
 
@@ -388,7 +449,7 @@ function buildExpandedRows(
     }
     if (todos.length > MAX_ACTION_ROWS) {
       rows.push(
-        `    ${chalk.hex(colors.textMuted)(`… +${String(todos.length - MAX_ACTION_ROWS)} more Todo actions`)}`,
+        `    ${chalk.hex(colors.textMuted)(`${String(todos.length - MAX_ACTION_ROWS)} additional Todo actions`)}`,
       );
     }
   }
@@ -430,7 +491,7 @@ function buildExpandedRows(
     }
     if (alerts.length > MAX_ALERT_ROWS) {
       rows.push(
-        `    ${chalk.hex(colors.textMuted)(`… +${String(alerts.length - MAX_ALERT_ROWS)} more alerts`)}`,
+        `    ${chalk.hex(colors.textMuted)(`${String(alerts.length - MAX_ALERT_ROWS)} additional alerts`)}`,
       );
     }
   }
@@ -472,7 +533,6 @@ function renderLineSummary(
   line: ResearchLine,
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
-  width: number,
 ): string {
   const questions = snap.questions.filter((question) => question.lineSlug === line.slug);
   const open = questions.filter((question) => question.workflow === 'open').length;
@@ -486,11 +546,7 @@ function renderLineSummary(
   const details = chalk.hex(colors.textMuted)(
     `(${normalizeSummary(line.slug)}) · ${line.status} · ${String(questions.length)} questions: ${String(open)} open/${String(active)} active/${String(blocked)} blocked`,
   );
-  const body = `    ${title} ${details}`;
-  if (marker.length === 0) return truncateToWidth(body, width, '…');
-  const markerBudget = visibleWidth(marker);
-  const bodyBudget = Math.max(1, width - markerBudget);
-  return truncateToWidth(body, bodyBudget, '…') + marker;
+  return `    ${title} ${details}${marker}`;
 }
 
 function selectTodoAction(todos: readonly TodoItem[]): TodoItem | undefined {
@@ -724,7 +780,7 @@ function renderExpandedScientificRows(
       const shown = progress.uncertainties.slice(0, MAX_UNCERTAINTY_ROWS);
       const joined = shown.map((u) => normalizeSummary(u)).join(' · ');
       const suffix = progress.uncertainties.length > MAX_UNCERTAINTY_ROWS
-        ? ` · +${String(progress.uncertainties.length - MAX_UNCERTAINTY_ROWS)} more`
+        ? ` · ${String(progress.uncertainties.length - MAX_UNCERTAINTY_ROWS)} additional uncertainties`
         : '';
       rows.push(
         `    ${chalk.hex(colors.textDim)('Uncertainties:')} ${chalk.hex(colors.warning)(joined)}${chalk.hex(colors.textMuted)(suffix)}`,
@@ -845,6 +901,9 @@ function renderExpandedMaintenanceRows(
     `  ${chalk.hex(colors.textStrong).bold('AITP maintenance handoff')}`,
     `    ${chalk.hex(colors.textMuted)('Structural consistency only; not a physical conclusion and does not resolve historical failures.')}`,
     `    ${chalk.hex(colors.textDim)('Status:')} ${renderMaintenanceStatus(maintenance.status, colors)}`,
+    ...(maintenance.degradedReason === undefined
+      ? []
+      : [`    ${chalk.hex(colors.textDim)('Degraded reason:')} ${chalk.hex(colors.warning)(maintenance.degradedReason.replaceAll('_', ' '))}`]),
     `    ${chalk.hex(colors.textDim)('Memory:')} ${chalk.hex(colors.text)(formatMaintenanceMemoryStatus(maintenance.memoryStatus))}`,
     `    ${chalk.hex(colors.textDim)('Working Note:')} ${renderWorkingNoteFreshness(maintenance, colors)}`,
     `    ${chalk.hex(colors.textDim)('Historical unresolved failures:')} ${chalk.hex(maintenance.unresolvedFailureCount > 0 ? colors.warning : colors.text)(String(maintenance.unresolvedFailureCount))}`,
@@ -861,7 +920,7 @@ function renderExpandedMaintenanceRows(
   }
   if (maintenance.unresolvedFailures.length > MAX_MAINTENANCE_CODES) {
     rows.push(
-      `      ${chalk.hex(colors.textMuted)(`… +${String(maintenance.unresolvedFailures.length - MAX_MAINTENANCE_CODES)} more historical failures`)}`,
+      `      ${chalk.hex(colors.textMuted)(`${String(maintenance.unresolvedFailures.length - MAX_MAINTENANCE_CODES)} additional historical failures`)}`,
     );
   }
 
@@ -941,7 +1000,7 @@ function formatMaintenanceCodes(codes: readonly string[]): string | undefined {
   if (normalized.length === 0) return undefined;
   const shown = normalized.slice(0, MAX_MAINTENANCE_CODES).join(', ');
   const suffix = normalized.length > MAX_MAINTENANCE_CODES
-    ? ` · +${String(normalized.length - MAX_MAINTENANCE_CODES)} more`
+    ? ` · ${String(normalized.length - MAX_MAINTENANCE_CODES)} additional codes`
     : '';
   return `${shown}${suffix}`;
 }

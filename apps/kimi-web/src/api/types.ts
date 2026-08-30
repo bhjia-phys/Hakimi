@@ -440,7 +440,8 @@ export type AitpMaintenanceDegradedReason =
   | 'adapter_degraded'
   | 'enter_failed'
   | 'check_unavailable'
-  | 'stale_generation';
+  | 'stale_generation'
+  | 'workstream_unbound';
 export type ResearchPhase =
   | 'idle'
   | 'orienting'
@@ -743,8 +744,17 @@ export interface ResearchHumanGate {
 }
 
 export interface ResearchGoalSummary {
-  status: string;
+  /** The current Goal milestone, distinct from the ResearchPlan objective. */
+  objective: string;
+  completionCriterion?: string;
+  status: 'active' | 'paused' | 'blocked' | 'complete';
+  turnBudget?: number;
   remainingTurns?: number;
+  terminalReason?: string;
+  waitingFor?: {
+    taskIds: string[];
+    policy: 'any' | 'all';
+  };
 }
 
 export interface ResearchStatusSnapshot {

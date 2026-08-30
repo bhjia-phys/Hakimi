@@ -293,6 +293,19 @@ export interface ResearchScientificSnapshot {
   readonly humanGate?: ResearchHumanGate;
 }
 
+export interface ResearchGoalSummary {
+  readonly objective: string;
+  readonly completionCriterion?: string;
+  readonly status: 'active' | 'paused' | 'blocked' | 'complete';
+  readonly turnBudget?: number;
+  readonly remainingTurns?: number;
+  readonly terminalReason?: string;
+  readonly waitingFor?: {
+    readonly taskIds: readonly string[];
+    readonly policy: 'any' | 'all';
+  };
+}
+
 export interface ResearchStatusSnapshot {
   readonly mode: AitpModePhase;
   readonly loopStatus: ResearchLoopStatus;
@@ -306,7 +319,7 @@ export interface ResearchStatusSnapshot {
   readonly blockedQuestionCount: number;
   readonly alerts: readonly ResearchAlert[];
   readonly effectiveNextStep?: ResearchEffectiveNextStep;
-  readonly goalSummary?: { readonly status: string; readonly remainingTurns?: number };
+  readonly goalSummary?: ResearchGoalSummary;
   readonly aitpHealth: AitpAdapterHealth;
   readonly aitpMaintenance?: AitpMaintenanceReceipt;
   readonly pendingCheckpoint?: ResearchCheckpoint;

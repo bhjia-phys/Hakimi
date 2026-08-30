@@ -275,9 +275,17 @@ export const researchCheckpointSchema = z.object({
 });
 
 export const researchGoalSummarySchema = z.object({
-  status: z.string(),
+  objective: z.string(),
+  completionCriterion: z.string().optional(),
+  status: z.enum(['active', 'paused', 'blocked', 'complete']),
+  turnBudget: z.number().optional(),
   remainingTurns: z.number().optional(),
-});
+  terminalReason: z.string().optional(),
+  waitingFor: z.object({
+    taskIds: z.array(z.string()),
+    policy: z.enum(['any', 'all']),
+  }).strict().optional(),
+}).strict();
 
 // ── Research Loop scientific state layer ────────────────────────────────────
 

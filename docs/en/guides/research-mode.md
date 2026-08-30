@@ -16,7 +16,9 @@ Research Mode has three hard prerequisites. Hakimi checks them only after explic
 
 When all three are satisfied, the adapter enters the `ready` phase and the supported AITP read/write tool surface becomes available to the agent. The adapter does not expose, call, or parse the upstream `backfill-0.1` success envelope, and it does not implement `sha256-once:` or `check-policy` semantics.
 
-For theoretical-physics work, the bundled `theory-physics` plugin is an optional domain pack. It adds physics-specific routing and reporting discipline to the generic Research Loop — when to search literature, how to check a derivation, how to separate scheduler evidence from physical conclusions, and when to request a human decision. It does not add another runtime, autonomous loop, literature database, HPC observer, or AITP schema.
+For theoretical-physics work, the bundled `theory-physics` plugin is an optional domain pack and the single upper-layer handbook for sustained work. It can be discovered while Research Mode is inactive and routes a sustained request through Research Mode admission, current Line / Question / Focus and stage Goal alignment, one bounded Research Action, and on-demand AITP delegation. An ordinary one-off physics answer does not need Research Mode.
+
+The external `aitp-research-protocol` plugin remains the protocol authority. Its `using-aitp` and `distilling-methods` skills stay independent and active-only: durable scientific deltas are delegated to `using-aitp`, while potentially reusable methods are delegated to `distilling-methods` only when that plugin is installed, Research Mode is active, and the skill is currently visible. Otherwise retain the method candidate and evidence without claiming distillation or publication. Hakimi does not copy their CLI, schema, method-card, trial, or approval rules; it does not automatically write Topic Goals, `resolves`, or method cards. After `EnterAITPMode`, use `GetResearchStatus`; if it remains `probing`, wait for `ready` or `degraded` without busy polling or using a bare CLI.
 
 ## Entering Research Mode
 
@@ -145,7 +147,7 @@ Example:
 
 ## Save, show, and check barrier
 
-`EnterAITPMode` is always discoverable as the explicit entry tool. Once the mode is active, the remaining Research and AITP tools are exposed according to adapter health:
+`EnterAITPMode` is always discoverable as the explicit entry tool. Use `GetResearchStatus` for the authoritative snapshot after entry; if it remains `probing`, wait for `ready` or `degraded` without repeated calls or busy polling. Once the mode is active, the remaining Research and AITP tools are exposed according to adapter health. The `theory-physics` skill does not persist ordinary turn progress: it hands off only a durable delta to the external AITP skill, and it loads `distilling-methods` only when the external plugin is installed, Research Mode is active, and that skill is currently visible. Otherwise retain the method candidate and evidence without claiming distillation or publication. Current-topic state is read only for the selected Line / Question; unrelated lines contribute only already-distilled methods.
 
 - **Read tools** (`aitp_enter`, `aitp_list`, `aitp_show`, `aitp_check`) — available when the adapter is `ready` **or** `degraded`. The agent can still browse the ledger and run health checks in degraded mode.
 - **Write tools** (`aitp_record_prepare`, `aitp_record_save`, `aitp_note_prepare`, `aitp_note_save`) — available **only** when the adapter is `ready`. Write operations use a single-flight guard: a concurrent mutation is rejected until the current one settles.
@@ -176,8 +178,10 @@ In degraded mode:
 
 Research Mode has several hard exclusions:
 
-- **Plan overlay**: Research Mode is a long-lived scientific context. Plan mode is a short-lived, nestable overlay that may be active alongside it; entering or exiting Plan mode does not exit or reset Research Mode.
+- **Plan overlay**: Research Mode is a long-lived scientific context. Plan mode is a short-lived, nestable overlay that may be active alongside it; entering or exiting Plan mode does not exit or reset Research Mode. A Plan is not a second Goal and does not own continuation.
+- **Research hierarchy**: A large topic belongs to the Research Line / Question / AITP context. A Goal is the current stage milestone and cross-turn continuation owner; a Plan is only a short-term overlay inside one Research Action.
 - **Main agent only**: AITP and Research mutation tools are only available on the main agent. Subagents cannot use them — they must return results to the main agent via typed packets.
+- **No automatic recovery or coordinator**: Hakimi does not implement core auto-recovery, workspace auto-init/adopt/backfill, a `/research goal` command, or the native H6b coordinator; H6b method distillation remains planned/unavailable. The theory-physics skill does not add these behaviors or a background loop.
 - **Conversation undo**: Research working state (questions, focus, lines) follows conversation undo through the checkpointed model. The committed AITP cursor does **not** — once a checkpoint is committed to AITP, conversation undo cannot retract that external fact.
 
 ## Next steps

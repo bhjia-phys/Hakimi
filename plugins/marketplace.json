@@ -14,8 +14,8 @@
       "id": "theory-physics",
       "tier": "official",
       "displayName": "Theory Physics",
-      "version": "0.1.0",
-      "description": "Theoretical-physics research discipline for the Research Loop.",
+      "version": "0.1.1",
+      "description": "Upper-layer routing handbook for sustained theoretical-physics research.",
       "keywords": ["physics", "research", "derivation", "numerics", "literature"],
       "source": "./official/theory-physics"
     },

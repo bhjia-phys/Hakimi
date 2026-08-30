@@ -109,6 +109,7 @@ import type {
   ResearchStatusHealth,
   ResearchStatusProjection,
   AitpMaintenanceReceipt,
+  ResearchGoalSummary,
 } from '#/features/aitpResearch/types';
 import {
   AitpModeModel,
@@ -2308,14 +2309,22 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     }
   }
 
-  private getGoalSummary(): ResearchStatusSnapshot['goalSummary'] {
+  private getGoalSummary(): ResearchGoalSummary | undefined {
     if (this.scopeCtx.agentId !== MAIN_AGENT_ID) return undefined;
     const goal = this.goal.getGoal().goal;
     if (goal === null) return undefined;
-    const remainingTurns = goal.budget.remainingTurns;
-    return remainingTurns === null
-      ? { status: goal.status }
-      : { status: goal.status, remainingTurns };
+    const turnBudget = goal.budget.turnBudget;
+    return {
+      objective: goal.objective,
+      completionCriterion: goal.completionCriterion,
+      status: goal.status,
+      turnBudget: turnBudget === null ? undefined : turnBudget,
+      remainingTurns: goal.budget.remainingTurns === null ? undefined : goal.budget.remainingTurns,
+      terminalReason: goal.terminalReason,
+      waitingFor: goal.waitingFor === undefined
+        ? undefined
+        : { taskIds: [...goal.waitingFor.taskIds], policy: goal.waitingFor.policy },
+    };
   }
 
   private publishResearchUpdated(notifyGoal = true): void {

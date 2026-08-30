@@ -47,9 +47,9 @@ Hakimi 不是一次性回答机器。它以有界的工作追问一个理论物�
 
 ## 理论物理研究规程
 
-可选的 `theory-physics` domain pack 提供研究规程，而不是物理预言机。它指导何时查阅文献、检查推导、寻求数值或 HPC 证据、请求人工决策，以及如何让科学结论先于过程汇报。
+可选的 `theory-physics` domain pack 是持续理论物理研究的上层使用手册。它将请求从 Research Mode admission 路由到当前 Line / Question / Focus 与阶段 Goal，再进入一个有界 Research Action；只有 durable scientific delta 或可复用方法候选，才会按需转交外部的 `using-aitp` 或 `distilling-methods` skill。
 
-它不是文献库、物理正确性服务、调度器或后台自主 loop。研究者仍然负责物理约定、重要性判断和最终的科学结论。
+普通的一次性物理问答不需要 Research Mode。这个 pack 提供的是规程而不是物理预言机：它不是文献库、物理正确性服务、调度器、第二套 runtime、账本或后台自主 loop。研究者仍然负责物理约定、重要性判断和最终的科学结论；AITP 仍是协议 authority。
 
 ## 先有证据，再谈确信
 
@@ -59,9 +59,9 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 
 ## Research Mode 与 AITP
 
-Research Mode 默认可发现，但每个新 session 都从 inactive 开始。只有显式执行 `/research on` 或通过等价的 Web Research 入口后，它才会探测 AITP；inactive session 的 AITP I/O 为零。进入 Research Mode 不会调度模型轮次，跨 turn continuation 仅由 Goal 负责。
+Research Mode 默认可发现，但每个新 session 都从 inactive 开始。对于持续工作，`theory-physics` 可以指导模型调用 `EnterAITPMode`、等待 authoritative probe status、对齐当前课题与 Goal，并执行有界行动；inactive session 的 AITP I/O 为零。进入 Research Mode 不会调度模型轮次，跨 turn continuation 仅由 Goal 负责，Plan 只是行动内短期 overlay。
 
-[AITP](docs/aitp/) 是可选的外部持久证据账本，通过其 CLI 与文件使用；它不是 Hakimi 的第二套 runtime 或数据库。AITP 不可用时，Research Mode 会明确显示 degraded，并阻止 durable write、checkpoint 和 active Research Goal completion。详细兼容性与运行边界见 [AITP 文档](docs/aitp/)。
+[AITP](docs/aitp/) 是可选的外部持久证据账本，通过其 CLI 与文件使用；它不是 Hakimi 的第二套 runtime 或数据库。外部的 `using-aitp` 与 `distilling-methods` skill 仍保持协议 authority 且按需调用；Hakimi 不会自动初始化/adopt/backfill workspace，不增加 `/research goal`，也没有计划中的 H6b coordinator。AITP 不可用时，Research Mode 会明确显示 degraded，并阻止 durable write、checkpoint 和 active Research Goal completion。详细兼容性与运行边界见 [AITP 文档](docs/aitp/)。
 
 ## 从源码安装
 

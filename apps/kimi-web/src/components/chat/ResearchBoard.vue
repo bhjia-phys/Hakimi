@@ -80,6 +80,7 @@ const nextAction = computed(
           variant="ghost"
           size="sm"
           :aria-expanded="expanded"
+          aria-controls="research-board-details"
           @click="expanded = !expanded"
         >
           {{ expanded ? t('research.collapse') : t('research.expand') }}
@@ -91,6 +92,47 @@ const nextAction = computed(
     </template>
 
     <div class="research-summary">
+      <section v-if="snapshot.goalSummary" class="research-priority" aria-labelledby="research-milestone-heading">
+        <h4 id="research-milestone-heading">{{ t('research.milestone') }}</h4>
+        <p class="research-narrative">{{ snapshot.goalSummary.objective }}</p>
+        <div class="research-summary-row">
+          <span class="research-label">{{ t('research.goalStatus') }}</span>
+          <Badge size="sm" :variant="snapshot.goalSummary.status === 'blocked' ? 'warning' : snapshot.goalSummary.status === 'complete' ? 'success' : 'neutral'">
+            {{ t(`research.goalStatusValue.${snapshot.goalSummary.status}`) }}
+          </Badge>
+          <span v-if="snapshot.goalSummary.remainingTurns !== undefined">{{ t('research.remainingTurns', { count: snapshot.goalSummary.remainingTurns }) }}</span>
+        </div>
+        <p v-if="snapshot.goalSummary.completionCriterion" class="research-narrative research-muted">{{ snapshot.goalSummary.completionCriterion }}</p>
+        <template v-if="expanded">
+          <p v-if="snapshot.goalSummary.turnBudget !== undefined" class="research-narrative research-muted">
+            {{ t('research.turnBudget', { count: snapshot.goalSummary.turnBudget }) }}
+          </p>
+          <p v-if="snapshot.goalSummary.terminalReason" class="research-narrative">
+            <strong>{{ t('research.terminalReason') }}:</strong> {{ snapshot.goalSummary.terminalReason }}
+          </p>
+          <p v-if="snapshot.goalSummary.waitingFor" class="research-narrative">
+            <strong>{{ t('research.waitingFor') }}:</strong>
+            {{ t('research.waitingForTasks', { policy: t(`research.waitPolicy.${snapshot.goalSummary.waitingFor.policy}`), count: snapshot.goalSummary.waitingFor.taskIds.length }) }}
+          </p>
+        </template>
+      </section>
+
+      <section v-if="activeHumanGate || activeAlerts.length > 0 || snapshot.aitpMaintenance?.degradedReason" aria-labelledby="research-attention-heading">
+        <h4 id="research-attention-heading">{{ t('research.attention') }}</h4>
+        <Banner v-if="activeHumanGate" variant="warning">
+          <strong>{{ t('research.humanGate') }}</strong>
+          <span>{{ activeHumanGate.prompt }}</span>
+        </Banner>
+        <Banner v-if="snapshot.aitpMaintenance?.degradedReason" variant="warning">
+          <strong>{{ t('research.degradedReason') }}</strong>
+          <span>{{ t(`research.degradedReasonValue.${snapshot.aitpMaintenance.degradedReason}`) }}</span>
+        </Banner>
+        <Banner v-for="alert in activeAlerts" :key="alert.fingerprint" variant="warning">
+          <strong>{{ t(`research.alertKind.${alert.kind}`) }}</strong>
+          <span>{{ alert.message }}</span>
+        </Banner>
+      </section>
+
       <div class="research-priority">
         <div class="research-summary-row">
           <span class="research-label">{{ t('research.scientificPhase') }}</span>
@@ -131,28 +173,17 @@ const nextAction = computed(
           </Badge>
           <span>{{ nextAction }}</span>
         </div>
-        <Banner v-if="activeHumanGate" variant="warning">
-          <strong>{{ t('research.humanGate') }}</strong>
-          <span>{{ activeHumanGate.prompt }}</span>
-        </Banner>
-        <Banner
-          v-for="alert in activeAlerts"
-          :key="alert.fingerprint"
-          variant="warning"
-        >
-          <strong>{{ t(`research.alertKind.${alert.kind}`) }}</strong>
-          <span>{{ alert.message }}</span>
-        </Banner>
       </div>
-      <div class="research-summary-row">
-        <span class="research-label">{{ t('research.currentLine') }}</span>
-        <strong>{{ currentLine?.title ?? snapshot.currentLineSlug ?? t('research.none') }}</strong>
-        <code v-if="snapshot.currentLineSlug">{{ snapshot.currentLineSlug }}</code>
-      </div>
-      <div class="research-summary-row">
-        <span class="research-label">{{ t('research.focus') }}</span>
-        <span>{{ focusedQuestion?.wording ?? t('research.none') }}</span>
-      </div>
+      <section aria-labelledby="research-focus-heading">
+        <h4 id="research-focus-heading">{{ t('research.focus') }}</h4>
+        <div class="research-summary-row">
+          <span class="research-label">{{ t('research.currentLine') }}</span>
+          <strong>{{ currentLine?.title ?? snapshot.currentLineSlug ?? t('research.none') }}</strong>
+          <code v-if="snapshot.currentLineSlug">{{ snapshot.currentLineSlug }}</code>
+        </div>
+        <p class="research-narrative">{{ focusedQuestion?.wording ?? t('research.none') }}</p>
+        <p v-if="focusedQuestion?.assessment" class="research-narrative research-muted">{{ focusedQuestion.assessment }}</p>
+      </section>
       <div class="research-counts">
         <Badge size="sm">{{ t('research.counts.open', { count: snapshot.openQuestionCount }) }}</Badge>
         <Badge size="sm" variant="info">{{ t('research.counts.active', { count: snapshot.activeQuestionCount }) }}</Badge>
@@ -165,7 +196,8 @@ const nextAction = computed(
       </div>
     </div>
 
-    <div v-if="expanded" class="research-details">
+    <div v-if="expanded" id="research-board-details" class="research-details" aria-labelledby="research-board-details-heading">
+      <h3 id="research-board-details-heading" class="sr-only">{{ t('research.details') }}</h3>
       <section>
         <h4>{{ t('research.lines') }}</h4>
         <div v-if="snapshot.lines.length === 0" class="research-empty">{{ t('research.noLines') }}</div>
@@ -284,11 +316,25 @@ const nextAction = computed(
   color: var(--color-text);
   font-size: var(--text-sm);
 }
-.research-summary-row > :not(.research-label) {
+.research-summary-row > :not(.research-label),
+.research-narrative,
+.research-item p,
+.research-item-head strong,
+.research-details code {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.research-narrative {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+.research-board :deep(.ui-banner__text) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 .research-label {
   flex: none;
@@ -342,9 +388,22 @@ h4 {
 .research-checkpoints > div { display: flex; align-items: center; gap: var(--space-2); }
 .research-health { color: var(--color-text-muted); font-size: var(--text-sm); }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (max-width: 640px) {
   .research-head { flex-wrap: wrap; }
   .research-spacer { display: none; }
+  .research-summary-row { align-items: stretch; flex-direction: column; gap: var(--space-1); }
   .research-details { grid-template-columns: 1fr; }
 }
 </style>

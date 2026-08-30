@@ -317,9 +317,17 @@ export const researchCheckpointSchema = z.object({
 export type ResearchCheckpoint = z.infer<typeof researchCheckpointSchema>;
 
 export const researchGoalSummarySchema = z.object({
-  status: z.string(),
+  objective: z.string(),
+  completionCriterion: z.string().optional(),
+  status: z.enum(['active', 'paused', 'blocked', 'complete']),
+  turnBudget: z.number().optional(),
   remainingTurns: z.number().optional(),
-});
+  terminalReason: z.string().optional(),
+  waitingFor: z.object({
+    taskIds: z.array(z.string()),
+    policy: z.enum(['any', 'all']),
+  }).strict().optional(),
+}).strict();
 export type ResearchGoalSummary = z.infer<typeof researchGoalSummarySchema>;
 
 // ── Research Loop scientific state layer ────────────────────────────────────

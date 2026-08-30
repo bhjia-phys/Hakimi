@@ -327,7 +327,7 @@ describe('ResearchBoardComponent', () => {
     const output = board.render(100).map(stripAnsi).join('\n');
     expect(output).toContain('Active action');
     expect(output).toContain('Todo progress: 1/3 done');
-    expect(output).toContain('ctrl+o to expand');
+    expect(output).not.toContain('…');
   });
 
   it('expanded mode shows bounded multi-line research detail', () => {
@@ -391,8 +391,7 @@ describe('ResearchBoardComponent', () => {
     expect(output).toContain('Pending checkpoint: pending-1');
     expect(output).toContain('entry-1');
     expect(output).toContain('refresh evidence');
-    expect(output).toContain('ctrl+o to collapse');
-    expect(board.render(120).length).toBeLessThanOrEqual(36);
+    expect(output).not.toContain('…');
   });
 
   it('truncates lines to width for narrow terminals', () => {
@@ -517,7 +516,7 @@ describe('ResearchBoardComponent', () => {
     expect(line5).toBeLessThan(line1);
   });
 
-  it('keeps compact and expanded output within the complete row budget', () => {
+  it('limits collections by item count without clipping selected narrative sections', () => {
     const lines = Array.from({ length: 12 }, (_, index) => ({
       slug: `line-${index}`,
       title: `Line ${index}`,
@@ -538,9 +537,11 @@ describe('ResearchBoardComponent', () => {
       status: 'pending' as const,
     })));
     board.setSnapshot(makeSnapshot({ lines, alerts }));
-    expect(board.render(100).length).toBeLessThanOrEqual(14);
     board.setExpanded(true);
-    expect(board.render(100).length).toBeLessThanOrEqual(36);
+    const output = board.render(100).map(stripAnsi).join('\n');
+    expect(output).toContain('8 additional lines');
+    expect(output).toContain('6 additional Todo actions');
+    expect(output).toContain('8 additional alerts');
   });
 
   it('collapses summaries and respects CJK width in narrow terminals', () => {
@@ -803,7 +804,7 @@ describe('ResearchBoardComponent', () => {
     expect(output).toContain('Which branch to pursue?');
   });
 
-  it('expanded respects row budget with full scientific detail', () => {
+  it('expanded renders all selected scientific detail without a physical row cap', () => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(
       makeSnapshot({
@@ -852,7 +853,10 @@ describe('ResearchBoardComponent', () => {
       }),
     );
     board.setExpanded(true);
-    expect(board.render(100).length).toBeLessThanOrEqual(36);
+    const output = board.render(100).map(stripAnsi).join('\n');
+    expect(output).toContain('Result confirmed');
+    expect(output).toContain('Confirms main hypothesis');
+    expect(output).toContain('Approve publication?');
   });
 
   it('compact shows one derived stale Working Note next step', () => {
@@ -1031,6 +1035,53 @@ describe('ResearchBoardComponent', () => {
     expect(output).toContain('active blocker · A current decision blocks the next experiment.');
     expect(output).toContain('historical unresolved · An earlier failed attempt remains open.');
     expect(output).toContain('entry failure-entry-2 · workstream magnetic-symmetry');
+  });
+
+  it('renders a complete Goal milestone with zero remaining turns and maintenance reason', () => {
+    const board = new ResearchBoardComponent();
+    board.setSnapshot(makeSnapshot({
+      goalSummary: {
+        objective: 'Determine the long-range mechanism for the crystalline response without dropping the final qualification.',
+        completionCriterion: 'A converged result agrees with the stated uncertainty bound.',
+        status: 'blocked',
+        turnBudget: 4,
+        remainingTurns: 0,
+        terminalReason: 'The current evidence is insufficient.',
+        waitingFor: { taskIds: ['task-a', 'task-b'], policy: 'all' },
+      },
+      aitpMaintenance: makeMaintenance({ status: 'degraded', degradedReason: 'stale_generation' }),
+    }));
+    const output = board.render(48).map(stripAnsi).join('\\n');
+    expect(output).toContain('Determine the long-range');
+    expect(output).toContain('mechanism for the crystalline');
+    expect(output).toContain('0 turns remaining');
+    expect(output).toContain('AITP maintenance degraded: stale');
+    expect(output).toContain('generation');
+    expect(output).not.toContain('…');
+    for (const row of board.render(48)) expect(visibleWidth(stripAnsi(row))).toBeLessThanOrEqual(48);
+  });
+
+  it('keeps a long selected objective complete beyond the old compact budget', () => {
+    const board = new ResearchBoardComponent();
+    const objective = Array.from({ length: 30 }, (_, index) => `objective-${index}`).join(' ');
+    board.setSnapshot(makeSnapshot({ goalSummary: { objective, status: 'active' } }));
+    const output = board.render(40).map(stripAnsi).join('\n');
+    for (let index = 0; index < 30; index++) {
+      expect(output).toContain(`objective-${index}`);
+    }
+    expect(output).not.toContain('…');
+  });
+
+  it('keeps zero and one-width renders within their requested width', () => {
+    const board = new ResearchBoardComponent();
+    board.setSnapshot(makeSnapshot({
+      goalSummary: { objective: '中文🧪目标', status: 'paused', remainingTurns: 0 },
+    }));
+    for (const width of [0, 1]) {
+      for (const row of board.render(width)) {
+        expect(visibleWidth(stripAnsi(row))).toBeLessThanOrEqual(width);
+      }
+    }
   });
 
   it('compact does not expose maintenance audit fields or check counts JSON', () => {

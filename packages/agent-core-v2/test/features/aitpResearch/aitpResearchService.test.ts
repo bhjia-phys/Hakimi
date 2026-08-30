@@ -1298,7 +1298,12 @@ describe('Goal display projection', () => {
         makeStubGoalService(makeGoalSnapshot(status)),
       );
 
-      expect(svc.getSnapshot().goalSummary).toEqual({ status, remainingTurns: 3 });
+      expect(svc.getSnapshot().goalSummary).toEqual({
+        objective: 'Test goal',
+        status,
+        turnBudget: 3,
+        remainingTurns: 3,
+      });
     },
   );
 
@@ -1314,7 +1319,37 @@ describe('Goal display projection', () => {
       makeStubGoalService(makeGoalSnapshot('active', null)),
     );
 
-    expect(svc.getSnapshot().goalSummary).toEqual({ status: 'active' });
+    expect(svc.getSnapshot().goalSummary).toEqual({
+      objective: 'Test goal',
+      status: 'active',
+    });
+  });
+
+  it('projects Goal completion, terminal, waiting, and exhausted-turn facts', async () => {
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(
+      wire,
+      makeScopeCtx(),
+      eventBus,
+      makeStubModeSvc({ isActive: true }),
+      makeStubAdapter(),
+      makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('blocked', 0, {
+        completionCriterion: 'Obtain a converged solution.',
+        terminalReason: 'The available evidence is contradictory.',
+        waitingFor: { taskIds: ['task-1', 'task-2'], policy: 'all' },
+      })),
+    );
+
+    expect(svc.getSnapshot().goalSummary).toEqual({
+      objective: 'Test goal',
+      completionCriterion: 'Obtain a converged solution.',
+      status: 'blocked',
+      turnBudget: 0,
+      remainingTurns: 0,
+      terminalReason: 'The available evidence is contradictory.',
+      waitingFor: { taskIds: ['task-1', 'task-2'], policy: 'all' },
+    });
   });
 
   it('publishes a complete Research snapshot when Goal status or budget changes', async () => {
@@ -1339,7 +1374,12 @@ describe('Goal display projection', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       mode: 'ready',
-      goalSummary: { status: 'paused', remainingTurns: 2 },
+      goalSummary: {
+        objective: 'Test goal',
+        status: 'paused',
+        turnBudget: 2,
+        remainingTurns: 2,
+      },
       questions: [],
       lines: [],
       alerts: [],
@@ -2328,6 +2368,7 @@ function makeToolExecutorStub() {
 function makeGoalSnapshot(
   status: GoalStatus,
   remainingTurns: number | null = 3,
+  extras: Partial<GoalSnapshot> = {},
 ): GoalSnapshot {
   return {
     goalId: 'goal-1',
@@ -2348,6 +2389,7 @@ function makeGoalSnapshot(
       wallClockBudgetReached: false,
       overBudget: remainingTurns === 0,
     },
+    ...extras,
   };
 }
 

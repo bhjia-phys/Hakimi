@@ -204,7 +204,8 @@ export type WireAitpMaintenanceDegradedReason =
   | 'adapter_degraded'
   | 'enter_failed'
   | 'check_unavailable'
-  | 'stale_generation';
+  | 'stale_generation'
+  | 'workstream_unbound';
 export type WireResearchPhase =
   | 'idle'
   | 'orienting'
@@ -513,7 +514,16 @@ export interface WireResearchStatusSnapshot {
   blockedQuestionCount: number;
   alerts: WireResearchAlert[];
   effectiveNextStep?: WireResearchEffectiveNextStep;
-  goalSummary?: { status: string; remainingTurns?: number };
+  goalSummary?: {
+    /** The current Goal milestone, distinct from the ResearchPlan objective. */
+    objective: string;
+    completionCriterion?: string;
+    status: 'active' | 'paused' | 'blocked' | 'complete';
+    turnBudget?: number;
+    remainingTurns?: number;
+    terminalReason?: string;
+    waitingFor?: { taskIds: string[]; policy: 'any' | 'all' };
+  };
   aitpHealth: WireAitpAdapterHealth;
   aitpMaintenance?: WireAitpMaintenanceReceipt;
   pendingCheckpoint?: WireResearchCheckpoint;

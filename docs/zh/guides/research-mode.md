@@ -16,7 +16,9 @@
 
 当三项条件全部满足时，适配器进入 `ready` 阶段，受支持的 AITP 读写工具面对 Agent 可用。适配器不暴露、不调用、不解析 upstream 的 `backfill-0.1` 成功 envelope，也不实现 `sha256-once:` 或 `check-policy` 语义。
 
-对于理论物理研究，仓库内置的 `theory-physics` plugin 是可选的 domain pack。它为通用 Research Loop 增加物理领域的行动路由和报告规范——什么时候查文献、如何检查推导、如何区分调度器证据与物理结论，以及什么时候请求人类决策。它不增加第二个 runtime、自动后台 loop、文献数据库、HPC observer 或 AITP schema。
+对于理论物理研究，仓库内置的 `theory-physics` plugin 是可选的 domain pack，也是持续科研的唯一上层使用手册。即使 Research Mode 处于 inactive，它也可以被发现，并将持续请求路由为：进入 Research Mode、对齐当前 Line / Question / Focus 与阶段 Goal、执行一个有界 Research Action，再按需转交 AITP。普通的一次性物理问答不需要进入 Research Mode。
+
+外部的 `aitp-research-protocol` plugin 仍是协议 authority。它的 `using-aitp` 与 `distilling-methods` skill 保持独立且仅在 active 时可用：durable scientific delta 转交 `using-aitp`；只有在该 plugin 已安装、Research Mode active 且该 Skill 当前可见时，才按需转交 `distilling-methods`。否则只保留 method candidate 与证据，不得声称已完成蒸馏或发布。Hakimi 不复制它们的 CLI、schema、method-card、trial 或 approval 规则；不会自动写 Topic Goal、`resolves` 或 method card。调用 `EnterAITPMode` 后使用 `GetResearchStatus`；如果仍为 `probing`，应等待其收敛为 `ready` 或 `degraded`，不得忙轮询或改用裸 CLI。
 
 ## 进入研究模式
 
@@ -145,7 +147,7 @@ Board 为只读。变更请使用 `/research manage` 或直接 `/research` 子�
 
 ## 保存、查看与检查屏障
 
-`EnterAITPMode` 始终默认可发现，是显式进入模式的工具。模式 active 后，其余 Research 和 AITP 工具再按适配器健康状态分层开放：
+`EnterAITPMode` 始终默认可发现，是显式进入模式的工具。进入后使用 `GetResearchStatus` 读取 authoritative snapshot；如果仍为 `probing`，应等待其收敛为 `ready` 或 `degraded`，不得重复调用、忙轮询或改用裸 CLI。模式 active 后，其余 Research 和 AITP 工具再按适配器健康状态分层开放。`theory-physics` skill 不会持久化普通 turn progress：只有 durable delta 才转交外部 AITP skill，只有在外部 plugin 已安装、Research Mode active 且 `distilling-methods` 当前可见时，才按需加载蒸馏指导。否则只保留 method candidate 与证据，不得声称已完成蒸馏或发布。当前只读取所选 Line / Question 的状态；无关研究线只贡献已蒸馏的方法。
 
 - **读工具**（`aitp_enter`、`aitp_list`、`aitp_show`、`aitp_check`）— 适配器为 `ready` **或** `degraded` 时可用。降级模式下 Agent 仍可浏览账本和运行健康检查。
 - **写工具**（`aitp_record_prepare`、`aitp_record_save`、`aitp_note_prepare`、`aitp_note_save`）— **仅**在适配器为 `ready` 时可用。写操作使用单飞保护：当前变更未完成前，并发的变更请求会被拒绝。
@@ -176,8 +178,10 @@ Web Manager 的 Checkpoint 表单保留这一边界。**Propose** 只创建 pend
 
 研究模式有以下硬性排除：
 
-- **Plan overlay**：研究模式是长生命周期的科研上下文。Plan 模式是短生命周期、可嵌套的 overlay，可以与研究模式同时 active；进入或退出 Plan 模式不会退出或重置研究模式。
+- **Plan overlay**：研究模式是长生命周期的科研上下文。Plan 模式是短生命周期、可嵌套的 overlay，可以与研究模式同时 active；进入或退出 Plan 模式不会退出或重置研究模式。Plan 不是第二个 Goal，也不负责 continuation。
+- **Research 层级**：大课题属于 Research Line / Question / AITP 上下文。Goal 是当前阶段的 milestone 和跨 turn continuation owner；Plan 只是一个 Research Action 内的短期 overlay。
 - **仅限主 Agent**：AITP 和 Research 变更工具仅在主 Agent 上可用。子 Agent 无法使用——必须通过类型化数据包将结果返回给主 Agent。
+- **不提供自动恢复或 coordinator**：Hakimi 尚未实现 core auto-recovery、workspace auto-init/adopt/backfill、`/research goal` 命令或 native H6b coordinator；H6b method distillation 仍为 planned/unavailable。theory-physics skill 不增加这些行为或后台 loop。
 - **会话撤销**：研究工作状态（问题、焦点、研究线）通过检查点模型跟随会话撤销。已提交的 AITP 游标**不**跟随——一旦检查点提交到 AITP，会话撤销无法撤回这一外部事实。
 
 ## 下一步
