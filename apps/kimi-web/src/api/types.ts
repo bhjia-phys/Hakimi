@@ -356,6 +356,11 @@ export interface AppTask {
 
 export type AppGoalStatus = 'active' | 'paused' | 'blocked' | 'complete';
 
+export interface AppGoalWaitLease {
+  taskIds: string[];
+  policy: 'any' | 'all';
+}
+
 export interface AppGoal {
   goalId: string;
   objective: string;
@@ -364,6 +369,7 @@ export interface AppGoal {
   turnsUsed: number;
   tokensUsed: number;
   wallClockMs: number;
+  waitingFor?: AppGoalWaitLease;
   terminalReason?: string;
   budget: {
     tokenBudget: number | null;

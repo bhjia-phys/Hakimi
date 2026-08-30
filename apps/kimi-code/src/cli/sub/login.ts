@@ -21,7 +21,7 @@ export function registerLoginCommand(parent: Command): void {
     )
     .option(
       '--enable-experimental',
-      'Enable the experimental ChatGPT OAuth provider before login.',
+      'Deprecated compatibility option; has no effect.',
       false,
     )
     .option('--no-open', 'Print the device URL without opening a browser.')
@@ -32,7 +32,6 @@ export function registerLoginCommand(parent: Command): void {
         open?: boolean;
       }) => {
         await runLoginFlow(options.provider, {
-          enableExperimental: options.enableExperimental === true,
           openBrowser: options.open !== false,
         });
       },

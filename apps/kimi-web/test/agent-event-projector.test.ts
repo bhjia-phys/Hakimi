@@ -185,6 +185,33 @@ describe('classifyFrame cron.fired', () => {
   });
 });
 
+describe('goal.updated', () => {
+  it('preserves a background-task wait lease in the projected goal', () => {
+    const projector = createAgentProjector();
+    const events = projector.project(
+      'goal.updated',
+      {
+        snapshot: {
+          goalId: 'goal_1',
+          objective: 'finish the work',
+          status: 'active',
+          waitingFor: { taskIds: ['task_1', 'task_2'], policy: 'any' },
+        },
+      },
+      's1',
+    );
+
+    expect(events).toContainEqual({
+      type: 'goalUpdated',
+      sessionId: 's1',
+      goal: expect.objectContaining({
+        goalId: 'goal_1',
+        waitingFor: { taskIds: ['task_1', 'task_2'], policy: 'any' },
+      }),
+    });
+  });
+});
+
 // Session busy has a single source: the daemon's event.session.work_changed
 // (mapped by toAppEvent). The raw turn stream must NOT project a second
 // sessionWorkChanged per transition — when it did, every turn end fired

@@ -640,9 +640,6 @@ describe('KimiTUI startup', () => {
       });
       const harness = makeHarness(session, {
         listSessions: vi.fn(async () => [{ id: session.id }]),
-        getExperimentalFeatures: vi.fn(async () => [
-          { id: 'aitp_research_mode', enabled: true },
-        ]),
       });
       const driver = makeDriver(harness, makeStartupInput({ continue: true }));
 
@@ -1948,7 +1945,7 @@ describe('KimiTUI startup', () => {
     });
   });
 
-  it('routes the experimental ChatGPT platform through the OpenAI Codex OAuth provider', async () => {
+  it('routes the ChatGPT platform through the OpenAI Codex OAuth provider', async () => {
     const session = makeSession();
     const harness = makeHarness(session, {
       auth: {

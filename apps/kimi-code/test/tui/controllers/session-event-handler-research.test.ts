@@ -59,6 +59,7 @@ function makeHost() {
     restoreEditor: vi.fn(),
     restoreInputText: vi.fn(),
     appendTranscriptEntry: vi.fn(),
+    refreshSkillCommands: vi.fn(async () => {}),
     sendNormalUserInput: vi.fn(),
     sendQueuedMessage: vi.fn(),
     shiftQueuedMessage: vi.fn(),
@@ -82,7 +83,7 @@ describe('SessionEventHandler research events', () => {
     expect(researchController.hydrate).not.toHaveBeenCalled();
   });
 
-  it('aitp_mode.updated does not trigger a getResearch pull-back', () => {
+  it('aitp_mode.updated refreshes current-session skills without hydrating research', () => {
     const { host, researchController } = makeHost();
     const handler = new SessionEventHandler(host);
     handler.handleEvent(
@@ -90,7 +91,8 @@ describe('SessionEventHandler research events', () => {
       vi.fn(),
     );
     // The live board is only driven by research.updated full snapshots — the
-    // mode-toggle event must not fire an async getResearch hydrate.
+    // mode-toggle event refreshes slash commands, not an async getResearch hydrate.
+    expect(host.refreshSkillCommands).toHaveBeenCalledWith(host.session);
     expect(researchController.hydrate).not.toHaveBeenCalled();
     expect(researchController.setSnapshot).not.toHaveBeenCalled();
   });

@@ -24,6 +24,7 @@ import { IAgentStateService } from '#/agent/state/agentState';
 import { AgentStateService } from '#/agent/state/agentStateService';
 import { USER_PROMPT_ORIGIN } from '#/agent/contextMemory/types';
 import { IAgentGoalService } from '#/agent/goal/goal';
+import { IAgentTaskService } from '#/agent/task/task';
 import {
   GoalCompletionGuardContribution,
   GoalContinuationParticipantContribution,
@@ -65,6 +66,7 @@ import type { ResolvedToolExecutionHookContext } from '#/agent/toolExecutor/tool
 import { IAgentToolRegistryService } from '#/agent/toolRegistry/toolRegistry';
 import { IAgentUsageService } from '#/agent/usage/usage';
 import type { WireRecord } from '#/wire/record';
+import { taskTerminated } from '#/agent/task/taskOps';
 import { type DomainEvent, IEventBus } from '#/app/event/eventBus';
 import { APIConnectionError, APIStatusError } from '#/kosong/contract/errors';
 import type { ToolCall } from '#/kosong/contract/message';
@@ -158,6 +160,10 @@ function deferred(): { readonly promise: Promise<void>; readonly resolve: () => 
     resolve = resolvePromise;
   });
   return { promise, resolve };
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 4; i += 1) await Promise.resolve();
 }
 
 function waitForAbort(signal: AbortSignal): Promise<never> {
@@ -1820,6 +1826,7 @@ describe('AgentGoalService agent eligibility', () => {
     ['createGoal', (goals: IAgentGoalService) => goals.createGoal({ objective: 'work' })],
     ['pauseGoal', (goals: IAgentGoalService) => goals.pauseGoal()],
     ['resumeGoal', (goals: IAgentGoalService) => goals.resumeGoal()],
+    ['waitForTasks', (goals: IAgentGoalService) => goals.waitForTasks({ taskIds: ['task-1'] })],
     ['setBudgetLimits', (goals: IAgentGoalService) =>
       goals.setBudgetLimits({ budgetLimits: { turnBudget: 1 } })],
     ['cancelGoal', (goals: IAgentGoalService) => goals.cancelGoal()],
@@ -2287,7 +2294,7 @@ describe('AgentGoalService mid-turn budget stop', () => {
       ctx.mockNextResponse({ type: 'text', text: 'Answering the prompt normally.' });
       await ctx.rpc.prompt({ input: [{ type: 'text', text: 'hello' }] });
       const events = await ctx.untilTurnEnd();
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flushMicrotasks();
 
       expect(ctx.llmCalls).toHaveLength(1);
       expect(events).toContainEqual(
@@ -2485,6 +2492,7 @@ describe('AgentGoalService goal contribution seams', () => {
       readonly turnsUsed: number;
     }) => GoalContinuationDecisionResult | Promise<GoalContinuationDecisionResult>)[];
     readonly retryEmitters?: readonly Emitter<string>[];
+    readonly taskService?: IAgentTaskService;
   }
 
   class GoalContributionProvider extends Service {
@@ -2515,6 +2523,36 @@ describe('AgentGoalService goal contribution seams', () => {
     );
   }
 
+  type WaitTaskStatus = 'running' | 'completed' | 'failed' | 'timed_out' | 'killed' | 'lost';
+
+  function mutableTaskService(
+    initial: Readonly<Record<string, { readonly status: WaitTaskStatus; readonly detached?: boolean }>>,
+  ): { readonly service: IAgentTaskService; readonly setStatus: (taskId: string, status: WaitTaskStatus) => void } {
+    const tasks = new Map(Object.entries(initial));
+    return {
+      service: {
+        _serviceBrand: undefined,
+        getTask: (taskId: string) => {
+          const task = tasks.get(taskId);
+          return task === undefined
+            ? undefined
+            : ({
+                taskId,
+                status: task.status,
+                detached: task.detached ?? true,
+                endedAt: task.status === 'running' ? null : 1,
+              } as never);
+        },
+        list: () => [],
+      } as unknown as IAgentTaskService,
+      setStatus: (taskId, status) => {
+        const task = tasks.get(taskId);
+        if (task === undefined) throw new Error(`Unknown test task ${taskId}`);
+        tasks.set(taskId, { ...task, status });
+      },
+    };
+  }
+
   let ctx: TestAgentContext | undefined;
 
   afterEach(async () => {
@@ -2535,6 +2573,7 @@ describe('AgentGoalService goal contribution seams', () => {
       contributionProviderServices(input),
       appService(IGoalDeadlineScheduler, clock),
       agentService(IAgentLoopService, loopService),
+      ...(input.taskService === undefined ? [] : [agentService(IAgentTaskService, input.taskService)]),
       permissionModeServices('auto'),
     );
     // The provider is a plain seed (not in the scoped registry), so force its
@@ -2689,6 +2728,313 @@ describe('AgentGoalService goal contribution seams', () => {
   });
 
   describe('continuation participants', () => {
+    it('suspends on a running background task and wakes once on termination', async () => {
+      const tasks = mutableTaskService({
+        'task-1': { status: 'running' },
+      });
+      const { ctx: agent, goals, loopService } = await createSeamedAgent({
+        taskService: tasks.service,
+      });
+      const eventBus = agent.get(IEventBus);
+      await goals.createGoal({ objective: 'finish after the background task' });
+      const turn = makeTurn(70);
+      eventBus.publish({
+        type: 'turn.started',
+        turnId: turn.id,
+        origin: USER_PROMPT_ORIGIN,
+      });
+      await loopService.hooks.onWillBeginStep.run({
+        turnId: turn.id,
+        step: 1,
+        firstStepOfTurn: true,
+        signal: turn.signal,
+      });
+
+      const waiting = await goals.waitForTasks({ taskIds: ['task-1'], policy: 'any' });
+      expect(waiting.waitingFor).toEqual({ taskIds: ['task-1'], policy: 'any' });
+      let clearCount = 0;
+      eventBus.subscribe('goal.updated', (event) => {
+        if (event.snapshot?.goalId === waiting.goalId && event.snapshot.waitingFor === undefined) {
+          clearCount += 1;
+        }
+      });
+      endTurn(eventBus, turn);
+      await flushMicrotasks();
+      expect(loopService.launches).toEqual([]);
+
+      tasks.setStatus('task-1', 'completed');
+      agent.wire.dispatch(taskTerminated({ info: { taskId: 'task-1' } as never }));
+      await flushMicrotasks();
+      expect(loopService.launches).toHaveLength(1);
+      expect(goals.getGoal().goal?.waitingFor).toBeUndefined();
+
+      eventBus.publish({
+        type: 'task.terminated',
+        info: { taskId: 'task-1' } as never,
+      });
+      await flushMicrotasks();
+      expect(clearCount).toBe(1);
+      expect(loopService.launches).toHaveLength(1);
+    });
+
+    it('pauses safely when a wait wake enqueue throws synchronously', async () => {
+      const tasks = mutableTaskService({
+        'task-1': { status: 'running' },
+      });
+      const { ctx: agent, goals, loopService } = await createSeamedAgent({
+        taskService: tasks.service,
+      });
+      const eventBus = agent.get(IEventBus);
+      await goals.createGoal({ objective: 'pause after a failed wait wake' });
+      await goals.waitForTasks({ taskIds: ['task-1'] });
+      const turn = makeTurn(73);
+      eventBus.publish({
+        type: 'turn.started',
+        turnId: turn.id,
+        origin: USER_PROMPT_ORIGIN,
+      });
+      await loopService.hooks.onWillBeginStep.run({
+        turnId: turn.id,
+        step: 1,
+        firstStepOfTurn: true,
+        signal: turn.signal,
+      });
+      endTurn(eventBus, turn);
+      await flushMicrotasks();
+
+      vi.spyOn(loopService, 'enqueue').mockImplementation(() => {
+        throw new Error('wait wake enqueue exploded');
+      });
+      const unhandled: unknown[] = [];
+      const onUnhandled = (error: unknown): void => {
+        unhandled.push(error);
+      };
+      process.on('unhandledRejection', onUnhandled);
+      try {
+        tasks.setStatus('task-1', 'completed');
+        eventBus.publish({
+          type: 'task.terminated',
+          info: { taskId: 'task-1' } as never,
+        });
+        await flushMicrotasks();
+      } finally {
+        process.off('unhandledRejection', onUnhandled);
+      }
+
+      expect(goals.getGoal().goal).toMatchObject({
+        status: 'paused',
+        terminalReason: 'Paused after goal continuation failure: wait wake enqueue exploded',
+      });
+      expect(unhandled).toEqual([]);
+    });
+
+    it('pauses safely when a held continuation retry enqueue throws synchronously', async () => {
+      const retry = new Emitter<string>();
+      let decisions = 0;
+      const { goals, loopService, turn } = await startGoalWithTurn({
+        participants: [() => {
+          decisions += 1;
+          return decisions === 1 ? { decision: 'hold', reason: 'wait' } : { decision: 'abstain' };
+        }],
+        retryEmitters: [retry],
+      });
+      const goalId = goals.getGoal().goal!.goalId;
+
+      endTurn(ctx!.get(IEventBus), turn);
+      await flushMicrotasks();
+      expect(loopService.launches).toEqual([]);
+
+      vi.spyOn(loopService, 'enqueue').mockImplementation(() => {
+        throw new Error('held retry enqueue exploded');
+      });
+      const unhandled: unknown[] = [];
+      const onUnhandled = (error: unknown): void => {
+        unhandled.push(error);
+      };
+      process.on('unhandledRejection', onUnhandled);
+      try {
+        retry.fire(goalId);
+        await flushMicrotasks();
+      } finally {
+        process.off('unhandledRejection', onUnhandled);
+      }
+
+      expect(goals.getGoal().goal).toMatchObject({
+        status: 'paused',
+        terminalReason: 'Paused after goal continuation failure: held retry enqueue exploded',
+      });
+      expect(unhandled).toEqual([]);
+    });
+
+    it('waits for all selected tasks and ignores unrelated termination events', async () => {
+      const tasks = mutableTaskService({
+        'task-1': { status: 'running' },
+        'task-2': { status: 'running' },
+      });
+      const { ctx: agent, goals, loopService } = await createSeamedAgent({
+        taskService: tasks.service,
+      });
+      const eventBus = agent.get(IEventBus);
+      await goals.createGoal({ objective: 'finish after every background task' });
+      const waiting = await goals.waitForTasks({
+        taskIds: ['task-1', 'task-2'],
+        policy: 'all',
+      });
+
+      eventBus.publish({
+        type: 'task.terminated',
+        info: { taskId: 'unrelated-task' } as never,
+      });
+      await flushMicrotasks();
+      expect(goals.getGoal().goal?.waitingFor).toEqual({
+        taskIds: ['task-1', 'task-2'],
+        policy: 'all',
+      });
+
+      tasks.setStatus('task-1', 'completed');
+      eventBus.publish({
+        type: 'task.terminated',
+        info: { taskId: 'task-1' } as never,
+      });
+      await flushMicrotasks();
+      expect(goals.getGoal().goal?.waitingFor).toEqual(waiting.waitingFor);
+      expect(loopService.launches).toEqual([]);
+
+      tasks.setStatus('task-2', 'failed');
+      eventBus.publish({
+        type: 'task.terminated',
+        info: { taskId: 'task-2' } as never,
+      });
+      await flushMicrotasks();
+      expect(goals.getGoal().goal?.waitingFor).toBeUndefined();
+      expect(loopService.launches).toHaveLength(1);
+    });
+
+    it('rejects malformed, unknown, foreground, and oversized wait leases', async () => {
+      const tasks = mutableTaskService({
+        background: { status: 'running' },
+        foreground: { status: 'running', detached: false },
+      });
+      const { goals } = await createSeamedAgent({ taskService: tasks.service });
+      await goals.createGoal({ objective: 'validate waits' });
+
+      const invalidInputs: readonly unknown[] = [
+        { taskIds: [] },
+        { taskIds: [''] },
+        { taskIds: ['unknown'] },
+        { taskIds: ['foreground'] },
+        { taskIds: Array.from({ length: 33 }, (_, index) => `task-${index}`) },
+        { taskIds: ['background'], policy: 'never' },
+      ];
+      for (const input of invalidInputs) {
+        await expect(goals.waitForTasks(input as never)).rejects.toMatchObject({
+          code: ErrorCodes.GOAL_STATUS_INVALID,
+        });
+      }
+      expect(goals.getGoal().goal?.waitingFor).toBeUndefined();
+    });
+
+    it.each([
+      { action: 'cancels', replace: false },
+      { action: 'replaces', replace: true },
+    ])('drops a queued wake when the goal $action before it runs', async ({ replace }) => {
+      const tasks = mutableTaskService({ 'task-1': { status: 'running' } });
+      const { ctx: agent, goals, loopService } = await createSeamedAgent({
+        taskService: tasks.service,
+      });
+      const eventBus = agent.get(IEventBus);
+      await goals.createGoal({ objective: 'old task' });
+      await goals.waitForTasks({ taskIds: ['task-1'] });
+      tasks.setStatus('task-1', 'completed');
+      eventBus.publish({
+        type: 'task.terminated',
+        info: { taskId: 'task-1' } as never,
+      });
+
+      if (replace) {
+        await goals.createGoal({ objective: 'new task', replace: true });
+      } else {
+        await goals.cancelGoal();
+      }
+      await flushMicrotasks();
+
+      expect(loopService.launches).toEqual([]);
+      expect(goals.getGoal().goal?.objective).toBe(replace ? 'new task' : undefined);
+    });
+
+    it('invalidates a pending continuation when a new wait lease is created', async () => {
+      const tasks = mutableTaskService({ 'task-1': { status: 'running' } });
+      let resolveDecision!: (decision: GoalContinuationDecisionResult) => void;
+      const decision = new Promise<GoalContinuationDecisionResult>((resolve) => {
+        resolveDecision = resolve;
+      });
+      const { goals, loopService, turn } = await startGoalWithTurn({
+        taskService: tasks.service,
+        participants: [() => decision],
+      });
+      endTurn(ctx!.get(IEventBus), turn);
+      await flushMicrotasks();
+
+      const waiting = await goals.waitForTasks({ taskIds: ['task-1'] });
+      resolveDecision({ decision: 'continue' });
+      await flushMicrotasks();
+
+      expect(waiting.waitingFor).toEqual({ taskIds: ['task-1'], policy: 'any' });
+      expect(goals.getGoal().goal?.waitingFor).toEqual(waiting.waitingFor);
+      expect(loopService.launches).toEqual([]);
+    });
+
+    it('invalidates a held continuation when a new wait lease is created', async () => {
+      const tasks = mutableTaskService({ 'task-1': { status: 'running' } });
+      const retry = new Emitter<string>();
+      const { goals, loopService, turn } = await startGoalWithTurn({
+        taskService: tasks.service,
+        participants: [() => ({ decision: 'hold', reason: 'wait' })],
+        retryEmitters: [retry],
+      });
+      const goalId = goals.getGoal().goal!.goalId;
+      endTurn(ctx!.get(IEventBus), turn);
+      await flushMicrotasks();
+      expect(loopService.launches).toEqual([]);
+
+      const waiting = await goals.waitForTasks({ taskIds: ['task-1'] });
+      retry.fire(goalId);
+      await flushMicrotasks();
+
+      expect(waiting.waitingFor).toEqual({ taskIds: ['task-1'], policy: 'any' });
+      expect(loopService.launches).toEqual([]);
+    });
+
+    it('does not charge wall-clock budget while waiting for a background task', async () => {
+      const tasks = mutableTaskService({ 'task-1': { status: 'running' } });
+      const { ctx: agent, goals, loopService, clock } = await createSeamedAgent({
+        taskService: tasks.service,
+      });
+      const eventBus = agent.get(IEventBus);
+      await goals.createGoal({ objective: 'wait without charging time' });
+      await goals.setBudgetLimits({ budgetLimits: { wallClockBudgetMs: 100 } });
+      clock.advanceBy(25);
+
+      const waiting = await goals.waitForTasks({ taskIds: ['task-1'] });
+      expect(waiting.wallClockMs).toBe(25);
+      clock.advanceBy(1_000);
+      expect(goals.getGoal().goal).toMatchObject({
+        status: 'active',
+        wallClockMs: 25,
+        waitingFor: { taskIds: ['task-1'], policy: 'any' },
+      });
+
+      tasks.setStatus('task-1', 'completed');
+      eventBus.publish({
+        type: 'task.terminated',
+        info: { taskId: 'task-1' } as never,
+      });
+      await flushMicrotasks();
+      expect(loopService.launches).toHaveLength(1);
+      clock.advanceBy(10);
+      expect(goals.getGoal().goal?.wallClockMs).toBe(35);
+    });
+
     async function startGoalWithTurn(
       input: GoalContributionProviderInput,
     ): Promise<{
@@ -2755,7 +3101,7 @@ describe('AgentGoalService goal contribution seams', () => {
 
       endTurn(ctx!.get(IEventBus), turn);
 
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flushMicrotasks();
       expect(loopService.launches).toEqual([]);
       expect(loopService.hasPendingRequests()).toBe(false);
       expect(goals.getGoal().goal).toMatchObject({ status: 'active' });
@@ -2784,7 +3130,7 @@ describe('AgentGoalService goal contribution seams', () => {
 
       endTurn(ctx!.get(IEventBus), turn);
 
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flushMicrotasks();
       expect(calls).toEqual(['first']);
       expect(loopService.launches).toEqual([]);
       expect(goals.getGoal().goal?.status).toBe('active');
@@ -2838,7 +3184,7 @@ describe('AgentGoalService goal contribution seams', () => {
         await goals.cancelGoal();
       }
       resolveDecision({ decision: 'abstain' });
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flushMicrotasks();
 
       expect(loopService.launches).toEqual([]);
       expect(goals.getGoal().goal?.objective).toBe(replace ? 'replacement' : undefined);
@@ -2857,7 +3203,7 @@ describe('AgentGoalService goal contribution seams', () => {
       const goalId = goals.getGoal().goal!.goalId;
 
       endTurn(ctx!.get(IEventBus), turn);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flushMicrotasks();
       expect(loopService.launches).toEqual([]);
 
       retry.fire(goalId);
@@ -2874,10 +3220,10 @@ describe('AgentGoalService goal contribution seams', () => {
       const goalId = goals.getGoal().goal!.goalId;
 
       endTurn(ctx!.get(IEventBus), turn);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flushMicrotasks();
       await goals.cancelGoal();
       retry.fire(goalId);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flushMicrotasks();
 
       expect(loopService.launches).toEqual([]);
     });
@@ -2888,7 +3234,7 @@ describe('AgentGoalService goal contribution seams', () => {
       });
 
       endTurn(ctx!.get(IEventBus), turn);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flushMicrotasks();
       expect(loopService.launches).toEqual([]);
 
       const resumed = await goals.resumeGoal({ continueIfPaused: true });
@@ -3109,7 +3455,7 @@ describe('AITP Research goal contribution integration', () => {
     expect(mode.loopStatus).toBe('paused');
     endTurn(ctx!.get(IEventBus), turn);
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     expect(loopService.launches).toEqual([]);
     expect(loopService.hasPendingRequests()).toBe(false);
     expect(goals.getGoal().goal).toMatchObject({ status: 'active' });
@@ -3164,7 +3510,7 @@ describe('AITP Research goal contribution integration', () => {
     expect(mode.isActive).toBe(true);
     endTurn(ctx!.get(IEventBus), turn);
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     expect(loopService.launches).toEqual([]);
     expect(loopService.hasPendingRequests()).toBe(false);
     expect(goals.getGoal().goal).toMatchObject({ status: 'active' });
@@ -3210,7 +3556,7 @@ describe('AITP Research goal contribution integration', () => {
 
     endTurn(ctx!.get(IEventBus), turn);
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     expect(loopService.launches).toEqual([]);
     expect(loopService.hasPendingRequests()).toBe(false);
     expect(goals.getGoal().goal).toMatchObject({ status: 'active' });
@@ -3236,7 +3582,7 @@ describe('AITP Research goal contribution integration', () => {
     });
     research.steer({ kind: 'pause_loop', expectedRevision: 0 });
     endTurn(ctx!.get(IEventBus), heldTurn);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     expect(loopService.launches).toEqual([]);
     expect(goals.getGoal().goal?.status).toBe('active');
 
@@ -3290,7 +3636,7 @@ describe('AITP Research goal contribution integration', () => {
     });
     const gate = research.requestHumanDecision({ kind: 'decision', prompt: 'Choose' });
     endTurn(ctx!.get(IEventBus), heldTurn);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     expect(loopService.launches).toEqual([]);
 
     research.resolveHumanDecision({
@@ -3322,7 +3668,7 @@ describe('AITP Research goal contribution integration', () => {
     });
     mode.setPhase('degraded');
     endTurn(ctx!.get(IEventBus), turn);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     expect(loopService.launches).toEqual([]);
 
     mode.setPhase('ready');

@@ -1027,7 +1027,7 @@ describe('ProviderManager prompt cache key', () => {
   });
 });
 
-describe('ProviderManager experimental provider gates', () => {
+describe('ProviderManager managed ChatGPT provider', () => {
   const config: KimiConfig = {
     defaultModel: 'openai-codex/gpt-5.5',
     providers: {
@@ -1046,22 +1046,8 @@ describe('ProviderManager experimental provider gates', () => {
     },
   };
 
-  it('blocks the managed ChatGPT provider when the experiment is disabled', () => {
-    const manager = new ProviderManager({
-      config,
-      isExperimentalFeatureEnabled: () => false,
-    });
-
-    expect(() => manager.resolveProviderConfig('openai-codex/gpt-5.5')).toThrow(
-      /openai-codex-oauth.*disabled|disabled.*openai-codex-oauth/i,
-    );
-  });
-
-  it('allows the managed ChatGPT provider when the experiment is enabled', () => {
-    const manager = new ProviderManager({
-      config,
-      isExperimentalFeatureEnabled: (id) => id === 'openai-codex-oauth',
-    });
+  it('allows the managed ChatGPT provider without an experimental gate', () => {
+    const manager = new ProviderManager({ config });
 
     expect(manager.resolveProviderConfig('openai-codex/gpt-5.5')).toMatchObject({
       providerName: 'managed:openai-codex',

@@ -179,6 +179,12 @@ export type PromptOrigin =
 
 export type GoalStatus = 'active' | 'paused' | 'blocked' | 'complete';
 export type GoalActor = 'user' | 'model' | 'runtime' | 'system';
+export type GoalWaitPolicy = 'any' | 'all';
+
+export interface GoalWaitLease {
+  readonly taskIds: readonly string[];
+  readonly policy: GoalWaitPolicy;
+}
 
 export interface GoalBudgetLimits {
   readonly tokenBudget?: number;
@@ -208,6 +214,7 @@ export interface GoalSnapshot {
   readonly tokensUsed: number;
   readonly wallClockMs: number;
   readonly budget: GoalBudgetReport;
+  readonly waitingFor?: GoalWaitLease;
   readonly terminalReason?: string;
 }
 
@@ -1228,6 +1235,13 @@ export const goalBudgetReportSchema = z.object({
   overBudget: z.boolean(),
 }) satisfies z.ZodType<GoalBudgetReport>;
 
+export const goalWaitLeaseSchema = z
+  .object({
+    taskIds: z.array(z.string().min(1)).min(1).max(32),
+    policy: z.enum(['any', 'all']),
+  })
+  .strict() satisfies z.ZodType<GoalWaitLease>;
+
 export const goalSnapshotSchema = z.object({
   goalId: z.string(),
   objective: z.string(),
@@ -1237,6 +1251,7 @@ export const goalSnapshotSchema = z.object({
   tokensUsed: z.number(),
   wallClockMs: z.number(),
   budget: goalBudgetReportSchema,
+  waitingFor: goalWaitLeaseSchema.optional(),
   terminalReason: z.string().optional(),
 }) satisfies z.ZodType<GoalSnapshot>;
 

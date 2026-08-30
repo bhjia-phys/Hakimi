@@ -116,7 +116,7 @@ hakimi
 
 ## 运行时开关
 
-控制遥测、后台任务、plugin marketplace 等子系统行为的开关变量：
+控制遥测、后台任务、plugin marketplace 等子系统行为的开关变量。旧版 `[experimental]` 下的 `openai-codex-oauth` 和 `aitp_research_mode` 仅作为不生效的兼容性输入保留，不再控制已经正式开放的 Codex OAuth 或 Research Mode 入口：
 
 | 环境变量 | 用途 | 合法值 |
 | --- | --- | --- |
@@ -134,8 +134,8 @@ hakimi
 | `KIMI_CODE_BUILTIN_PRODUCT_SKILLS` | 是否向模型提供介绍 Hakimi 自身的内置 Skills，优先级高于 `config.toml` 的 `builtin_product_skills`（默认开启） | 真值：`1`/`true`/`yes`/`on`；假值：`0`/`false`/`no`/`off` |
 | `KIMI_CODE_TUI_FULL_SCREEN` | 启用实验性的 fullscreen alternate-screen 界面：可滚动的 transcript 视口、鼠标选择文本、可点击链接、Ctrl-Shift-F 搜索 | `1` 开启；其他值保持常规内联界面 |
 | `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL` | 当没有 active canonical `[subagent]` preset 时，为 Agent、AgentSwarm 和 Tower worker 启用已废弃 `[secondary_model]` 的 best-effort fallback；不再增加逐次派生的 `model` 参数，也不改变 `/preset` 路由。master `KIMI_CODE_EXPERIMENTAL_FLAG=1` 也会启用本功能 | 真值：`1`/`true`/`yes`/`on`；假值：`0`/`false`/`no`/`off` |
-| `KIMI_CODE_EXPERIMENTAL_OPENAI_CODEX_OAUTH` | 启用 ChatGPT / OpenAI Codex OAuth 登录及其自动生成的模型；master `KIMI_CODE_EXPERIMENTAL_FLAG=1` 也会启用本功能 | 真值：`1`/`true`/`yes`/`on`；假值：`0`/`false`/`no`/`off` |
-| `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` | 启用实验性 AITP Research Mode：开放 `/research` 命令和 `EnterAITPMode` 能力，但模式本身仍需用 `/research on`（或模型入口路径）显式进入。**默认关闭**；启动前设置 `=1` 才会开放 Research 入口（master `KIMI_CODE_EXPERIMENTAL_FLAG=1` 也会启用本功能），设置 `=0` 可保持隐藏 | 真值：`1`/`true`/`yes`/`on`；假值：`0`/`false`/`no`/`off` |
+| `KIMI_CODE_EXPERIMENTAL_OPENAI_CODEX_OAUTH` | 已废弃的兼容变量；对 ChatGPT / OpenAI Codex OAuth 登录和自动生成的模型不起作用。master `KIMI_CODE_EXPERIMENTAL_FLAG=1` 也不会改变这一点 | 接受真值，但不产生作用 |
+| `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` | 已废弃的兼容变量；对 AITP Research Mode 的发现或进入不起作用。master `KIMI_CODE_EXPERIMENTAL_FLAG=1` 也不会改变这一点 | 接受真值，但不产生作用 |
 | `KIMI_MCP_STARTUP_TIMEOUT_MS` | 所有 MCP server 的全局默认连接超时（毫秒）；优先级高于 `config.toml` 的 `[mcp] startup_timeout_ms`，但低于 `mcp.json` 中单个 server 的 `startupTimeoutMs`（默认 `30000`） | `1` 到 `2147483647` 的整数；非法值被忽略 |
 | `KIMI_MCP_TOOL_TIMEOUT_MS` | 所有 MCP server 的全局默认单次工具调用超时（毫秒）；优先级高于 `config.toml` 的 `[mcp] tool_timeout_ms`，但低于 `mcp.json` 中单个 server 的 `toolTimeoutMs`（默认 `60000`） | `1` 到 `2147483647` 的整数；非法值被忽略 |
 | `KIMI_LOOP_MAX_STEPS_PER_TURN` | Agent 单轮最大步数；优先级高于 `config.toml` 的 `[loop_control] max_steps_per_turn`（不设或 `0` 表示无上限） | 非负整数；非法值被忽略 |
@@ -145,7 +145,7 @@ hakimi
 | `KIMI_WEB_SEARCH_API_KEY` | 网页搜索（`WebSearch`）服务的 API 密钥；设置后同时替换配置中的 API 密钥和 OAuth 凭据 | 非空字符串；空白值被忽略 |
 | `KIMI_WEB_FETCH_BASE_URL` | 网页抓取（`FetchURL`）服务的 API URL；优先级高于 `[services.moonshot_fetch] base_url`。文件中持久化的凭据和自定义 header 不会发送到环境变量指定的端点。环境变量和配置都没有指定端点时，已登录用户会先尝试 Kimi OAuth 托管抓取服务，再回退到本地直接请求 | 非空字符串；空白值被忽略 |
 | `KIMI_WEB_FETCH_API_KEY` | 网页抓取（`FetchURL`）服务的 API 密钥；设置后同时替换配置中的 API 密钥和 OAuth 凭据 | 非空字符串；空白值被忽略 |
-| `KIMI_CODE_EXPERIMENTAL_FLAG` | 在当前进程启用所有已注册的实验功能；不用于选择 Agent 引擎 | `1`、`true`、`yes`、`on` |
+| `KIMI_CODE_EXPERIMENTAL_FLAG` | 在当前进程启用其余已注册的实验功能；不用于选择 Agent 引擎，也不会启用已经正式开放的 Codex OAuth 或 AITP Research Mode 入口 | `1`、`true`、`yes`、`on` |
 | `KIMI_CODE_LEGACY_FLAG` | 让 `hakimi`、`hakimi -p`、`hakimi doctor`、`hakimi acp`、`hakimi export` 和 `hakimi provider` 使用旧版 `agent-core` 引擎；这些命令默认使用 `agent-core-v2` | `1`、`true`、`yes`、`on` |
 | `KIMI_SHELL_PATH` | Windows 上覆盖 Git Bash 路径（自动探测失败时使用） | 绝对路径 |
 | `KIMI_MODEL_MAX_COMPLETION_TOKENS` | 单步 LLM 请求的 `max_completion_tokens` 硬上限，仅对 `kimi` 供应商生效 | 正整数；`0` 或负数禁用 clamp |

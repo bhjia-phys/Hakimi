@@ -285,13 +285,55 @@ describe('contract schemas', () => {
       },
       { op: 'todo.upsert', todo: { todoId: 'todo', items: [{ title: 'x', status: 'done' }] } },
       promptOp,
-      { op: 'meta.merge', meta: { goal: { objective: 'x', status: 'active' } } },
+      {
+        op: 'meta.merge',
+        meta: {
+          goal: {
+            objective: 'x',
+            status: 'active',
+            waitingFor: { taskIds: ['task-1'], policy: 'any' },
+          },
+        },
+      },
       { op: 'meta.merge', meta: { goal: null } },
       { op: 'items.remove', ids: ['t1'] },
     ];
     for (const op of ops) {
       expect(transcriptOperationSchema.parse(op)).toBeDefined();
     }
+  });
+
+  it('validates Goal wait leases as bounded strict objects', () => {
+    const valid = {
+      op: 'meta.merge',
+      meta: {
+        goal: {
+          objective: 'x',
+          status: 'active',
+          waitingFor: { taskIds: ['task-1'], policy: 'all' },
+        },
+      },
+    } as const;
+    expect(transcriptOperationSchema.parse(valid)).toEqual(valid);
+    expect(() =>
+      transcriptOperationSchema.parse({
+        ...valid,
+        meta: {
+          goal: {
+            ...valid.meta.goal,
+            waitingFor: { ...valid.meta.goal.waitingFor, extra: true },
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      transcriptOperationSchema.parse({
+        ...valid,
+        meta: {
+          goal: { ...valid.meta.goal, waitingFor: { taskIds: [], policy: 'any' } },
+        },
+      }),
+    ).toThrow();
   });
 
   it('roundtrips the beforeItem in-segment anchor on standalone upserts', () => {
@@ -927,6 +969,40 @@ describe('foldWireRecordFacts (cold facts)', () => {
       ).toHaveLength(expectedGoalMarkers);
     },
   );
+
+  it('preserves, ignores malformed, and clears Goal wait leases during cold fold', () => {
+    const lease = { taskIds: ['task-1'], policy: 'any' } as const;
+    const create = { type: 'goal.create', objective: 'wait', time: 1000 };
+    const waiting = { type: 'goal.update', waitingFor: lease, time: 2000 };
+    const base = groupMessagesIntoSnapshot([]);
+
+    const retained = foldWireRecordFacts(
+      [create, waiting, { type: 'goal.update', tokensUsed: 4, time: 3000 }],
+      base,
+    );
+    expect(retained.meta.goal).toMatchObject({
+      status: 'active',
+      budgetUsed: 4,
+      waitingFor: lease,
+    });
+
+    const malformed = foldWireRecordFacts(
+      [
+        create,
+        waiting,
+        { type: 'goal.update', waitingFor: { taskIds: [], policy: 'any' }, time: 3000 },
+      ],
+      base,
+    );
+    expect(malformed.meta.goal).toMatchObject({ status: 'active', waitingFor: lease });
+
+    const cleared = foldWireRecordFacts(
+      [create, waiting, { type: 'goal.update', waitingFor: null, time: 3000 }],
+      base,
+    );
+    expect(cleared.meta.goal?.waitingFor).toBeUndefined();
+    expect(cleared.meta.goal?.status).toBe('paused');
+  });
 
   it('folds a record carrying a stable mutation into one canonical goal marker', () => {
     // The same mutation arriving in two records (e.g. the live op record plus

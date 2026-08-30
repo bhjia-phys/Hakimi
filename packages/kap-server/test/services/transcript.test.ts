@@ -1131,6 +1131,7 @@ describe('AgentTranscriptProjector', () => {
       tokensUsed: 1234,
       wallClockMs: 5000,
       budget: { tokenBudget: 50000 },
+      waitingFor: { taskIds: ['task-1'], policy: 'any' },
     };
     const ops = projector.map(ev({ type: 'goal.updated', snapshot, change: { kind: 'lifecycle' } }));
     tx.apply(ops);
@@ -1141,9 +1142,18 @@ describe('AgentTranscriptProjector', () => {
       completionCriterion: 'tests green',
       budgetUsed: 1234,
       budgetLimit: 50000,
+      waitingFor: { taskIds: ['task-1'], policy: 'any' },
     });
     const marker = tx.getItems().find((item) => item.kind === 'marker');
     expect(marker).toMatchObject({ marker: 'goal', payload: { snapshot } });
+
+    // A live whole-goal snapshot without a lease clears the previous lease.
+    tx.apply(
+      projector.map(
+        ev({ type: 'goal.updated', snapshot: { ...snapshot, waitingFor: undefined } }),
+      ),
+    );
+    expect(tx.getMeta().goal?.waitingFor).toBeUndefined();
 
     const clearedOps = projector.map(ev({ type: 'goal.updated', snapshot: null }));
     expect(clearedOps[0]).toEqual({ op: 'meta.merge', meta: { goal: null } });

@@ -12,6 +12,7 @@ import type {
   GoalBudgetLimits,
   GoalSnapshot,
   GoalToolResult,
+  GoalWaitLease,
 } from './types';
 
 export interface GoalReasonInput {
@@ -23,6 +24,11 @@ export interface ResumeGoalInput extends GoalReasonInput {
   readonly continueIfBlocked?: boolean;
 }
 
+export interface WaitForTasksInput extends GoalReasonInput {
+  readonly taskIds: readonly string[];
+  readonly policy?: GoalWaitLease['policy'];
+}
+
 export interface IAgentGoalService {
   readonly _serviceBrand: undefined;
 
@@ -32,6 +38,7 @@ export interface IAgentGoalService {
   createGoal(input: CreateGoalInput, actor?: GoalActor): Promise<GoalSnapshot>;
   pauseGoal(input?: GoalReasonInput, actor?: GoalActor): Promise<GoalSnapshot>;
   resumeGoal(input?: ResumeGoalInput, actor?: GoalActor): Promise<GoalSnapshot>;
+  waitForTasks(input: WaitForTasksInput, actor?: GoalActor): Promise<GoalSnapshot>;
   cancelGoal(input?: GoalReasonInput, actor?: GoalActor): Promise<GoalSnapshot>;
   setBudgetLimits(
     input: { readonly budgetLimits: GoalBudgetLimits },

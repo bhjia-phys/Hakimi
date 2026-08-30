@@ -8,12 +8,10 @@
  * the Session-scope `ISessionAitpAdapter` and current-state maintenance
  * coordinator, the mode/Research/AITP adapter
  * tools through the `features` base-class seams, and the AITP skill
- * visibility filter. The `aitp_research_mode` flag (`features/aitpResearch/flag`)
- * and the `aitpResearch.*` / `research.*` wire vocabulary
- * (`features/aitpResearch/aitpResearchOps`) stay on their static
- * import=register channels. `EnterAITPMode` is permanently registered but
- * flag-gated through its `when` predicate; all other tools are active-only
- * (their `when` checks `mode.isActive`). The active overlay exposes the
+ * visibility filter. The `aitpResearch.*` / `research.*` wire vocabulary
+ * (`features/aitpResearch/aitpResearchOps`) stays on its static import=register
+ * channel. `EnterAITPMode` is always registered; all other tools are
+ * active-only (their `when` checks `mode.isActive`). The active overlay exposes the
  * semantic Begin/Conclude action path while retaining lower-level recovery
  * tools only where needed. Registered into the feature table at import.
  */
@@ -21,11 +19,9 @@
 import { Feature } from '#/features/feature';
 import { registerFeature } from '#/features/featureRegistry';
 import { LifecycleScope } from '#/app/scopes';
-import { IFlagService } from '#/app/flag/flag';
 import type { ServicesAccessor } from '#/_base/di/instantiation';
 import { SkillVisibilityContribution } from '#/agent/skillVisibility/skillVisibility';
 
-import './flag';
 import { ISessionAitpAdapter } from './adapter/sessionAitpAdapter';
 import { SessionAitpAdapterService } from './adapter/sessionAitpAdapterService';
 import { ISessionAitpLifecycleCoordinator } from './coordinator/sessionAitpLifecycleCoordinator';
@@ -40,6 +36,8 @@ import { IAitpExternalFactService } from './research/externalFact';
 import { AitpExternalFactService } from './research/externalFactService';
 import { AitpResearchInjection } from './injection/aitpResearchInjection';
 import { IAitpResearchInjection } from './injection/aitpResearchInjectionContract';
+import { AitpSkillVisibilityInjection } from './injection/aitpSkillVisibilityInjection';
+import { IAitpSkillVisibilityInjection } from './injection/aitpSkillVisibilityInjectionContract';
 import { IResearchLoopCoordinator, ResearchLoopCoordinator } from './loop/researchLoopCoordinator';
 import { IResearchTurnAdmission, ResearchTurnAdmission } from './loop/researchTurnAdmission';
 
@@ -107,10 +105,6 @@ import {
 
 const AITP_PLUGIN_ID = 'aitp-research-protocol';
 
-function isAitpResearchModeEnabled(accessor: ServicesAccessor): boolean {
-  return accessor.get(IFlagService).enabled('aitp_research_mode');
-}
-
 function isAitpModeActive(accessor: ServicesAccessor): boolean {
   return accessor.get(IAgentAitpModeService).isActive;
 }
@@ -134,13 +128,13 @@ export class AitpResearchFeature extends Feature {
     this.contributeAgentService(IAgentResearchService, AgentResearchService);
 
     this.contributeAgentService(IAitpResearchInjection, AitpResearchInjection);
+    this.contributeAgentService(IAitpSkillVisibilityInjection, AitpSkillVisibilityInjection);
     this.contributeAgentService(IResearchTurnAdmission, ResearchTurnAdmission);
     this.contributeAgentService(IResearchLoopCoordinator, ResearchLoopCoordinator);
 
     this.contributeTool(IEnterAITPModeTool, EnterAITPModeTool, {
       name: 'EnterAITPMode',
       domain: 'aitpResearch',
-      when: (accessor) => isAitpResearchModeEnabled(accessor),
     });
 
     this.contributeTool(IExitAITPModeTool, ExitAITPModeTool, {
@@ -283,12 +277,16 @@ export class AitpResearchFeature extends Feature {
         }
         return true;
       },
+      isVisibleInFrozenListing(skill) {
+        return skill.plugin?.id !== AITP_PLUGIN_ID;
+      },
       describeHidden(skill, accessor) {
         if (skill.plugin?.id === AITP_PLUGIN_ID && !accessor.get(IAgentAitpModeService).isActive) {
           return 'AITP Research Mode is not active. Call EnterAITPMode first.';
         }
         return undefined;
       },
+      onDidChange: (accessor) => accessor.get(IAgentAitpModeService).onDidChange,
     });
   }
 }

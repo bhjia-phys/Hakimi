@@ -8,7 +8,6 @@ import {
   ResearchEditDialogComponent,
   ResearchManagerComponent,
 } from '#/tui/components/dialogs/research-manager';
-import { setExperimentalFeatures } from '#/tui/commands/experimental-flags';
 import type { ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
 
 function stripAnsi(text: string): string {
@@ -302,7 +301,6 @@ describe('parseResearchCommand', () => {
 
 describe('handleResearchCommand manager actions', () => {
   it('restores malformed question action input without sending a command', async () => {
-    setExperimentalFeatures([{ id: 'aitp_research_mode', enabled: true }]);
     const { host, session } = makeResearchHost();
 
     await handleResearchCommand(host, 'defer q1 extra -- reason');
@@ -315,7 +313,6 @@ describe('handleResearchCommand manager actions', () => {
   });
 
   it('sends typed switch_line and update_line commands', async () => {
-    setExperimentalFeatures([{ id: 'aitp_research_mode', enabled: true }]);
     const snapshot = makeSnapshot();
     const commandResearch = vi.fn(async () => ({ snapshot }));
     const mounted = vi.fn();
@@ -380,7 +377,6 @@ describe('handleResearchCommand manager actions', () => {
   });
 
   it('sends boundedAction with the typed manager focus command', async () => {
-    setExperimentalFeatures([{ id: 'aitp_research_mode', enabled: true }]);
     const question = {
       id: 'q1',
       lineSlug: 'line-a',
@@ -417,7 +413,6 @@ describe('handleResearchCommand manager actions', () => {
   });
 
   it('opens attention by default and routes human decisions and alerts through the controller', async () => {
-    setExperimentalFeatures([{ id: 'aitp_research_mode', enabled: true }]);
     const gate = {
       gateId: 'gate-1',
       kind: 'decision' as const,
@@ -462,7 +457,6 @@ describe('handleResearchCommand manager actions', () => {
   });
 
   it('returns from question editing to the same manager layer on cancel and save', async () => {
-    setExperimentalFeatures([{ id: 'aitp_research_mode', enabled: true }]);
     const question = {
       id: 'q1',
       lineSlug: 'line-a',
@@ -532,7 +526,6 @@ describe('handleResearchCommand manager actions', () => {
   });
 
   it('does not send mutations while the snapshot is inactive', async () => {
-    setExperimentalFeatures([{ id: 'aitp_research_mode', enabled: true }]);
     const { host, session } = makeResearchHost(makeSnapshot({ mode: 'inactive' }));
     await handleResearchCommand(host, 'pause');
     await handleResearchCommand(host, 'off');
@@ -541,7 +534,6 @@ describe('handleResearchCommand manager actions', () => {
   });
 
   it('recognizes an inactive code-shaped error without KimiError instanceof', async () => {
-    setExperimentalFeatures([{ id: 'aitp_research_mode', enabled: true }]);
     const { host, session } = makeResearchHost();
     session.commandResearch.mockRejectedValueOnce(
       Object.assign(new Error('inactive'), { code: 'aitp.mode_inactive' }),
@@ -552,7 +544,6 @@ describe('handleResearchCommand manager actions', () => {
   });
 
   it('refreshes the manager for a code-shaped stale revision error', async () => {
-    setExperimentalFeatures([{ id: 'aitp_research_mode', enabled: true }]);
     const { host, session, mounted } = makeResearchHost();
     session.commandResearch.mockRejectedValueOnce(
       Object.assign(new Error('stale'), { code: 'research.revision_stale' }),
@@ -569,7 +560,6 @@ describe('handleResearchCommand manager actions', () => {
   });
 
   it('does not show success when a command response is superseded', async () => {
-    setExperimentalFeatures([{ id: 'aitp_research_mode', enabled: true }]);
     const { host, session, researchController } = makeResearchHost();
     let resolveCommand!: (response: { snapshot: ResearchStatusSnapshot }) => void;
     session.commandResearch.mockImplementationOnce(

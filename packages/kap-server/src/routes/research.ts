@@ -347,11 +347,10 @@ async function dispatchResearchCommand(
   }
 }
 
-/** Engine error codes that are client-actionable (flag disabled, revision
- * stale, not found, plan conflict, ...). Mapped onto VALIDATION_FAILED — the
- * same 4xx envelope used for `validation.failed` / `request.invalid`. */
+/** Engine error codes that are client-actionable (revision stale, not
+ * found, plan conflict, ...). Mapped onto VALIDATION_FAILED — the same 4xx
+ * envelope used for `validation.failed` / `request.invalid`. */
 const RESEARCH_CLIENT_ERRORS: ReadonlySet<string> = new Set([
-  'aitp.mode_flag_disabled',
   'aitp.mode_already_active',
   'aitp.mode_inactive',
   'aitp.mode_not_main_agent',

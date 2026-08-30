@@ -172,6 +172,14 @@ export const goalBudgetReportSchema = z.object({
   overBudget: z.boolean(),
 });
 
+/** `GoalWaitLease` from the engine's `agent/goal/types`. */
+export const goalWaitLeaseSchema = z
+  .object({
+    taskIds: z.array(z.string().min(1)).min(1).max(32),
+    policy: z.enum(['any', 'all']),
+  })
+  .strict();
+
 /** `GoalSnapshot` from the engine's `agent/goal/types`. */
 export const goalSnapshotSchema = z.object({
   goalId: z.string(),
@@ -182,6 +190,7 @@ export const goalSnapshotSchema = z.object({
   tokensUsed: z.number(),
   wallClockMs: z.number(),
   budget: goalBudgetReportSchema,
+  waitingFor: goalWaitLeaseSchema.optional(),
   terminalReason: z.string().optional(),
 });
 

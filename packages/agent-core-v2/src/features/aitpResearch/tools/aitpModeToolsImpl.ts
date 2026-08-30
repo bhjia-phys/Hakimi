@@ -1,7 +1,7 @@
 /**
  * `aitpResearch` domain — `EnterAITPModeTool` / `ExitAITPModeTool` implementations.
  *
- * `EnterAITPMode` checks the flag, main-agent-only, then delegates to
+ * `EnterAITPMode` checks main-agent-only, then delegates to
  * `IAgentAitpModeService.enter`; its interaction posture is decided by the
  * normal permission-policy chain. Research Mode is a long-lived scientific
  * context and may nest under an active Plan overlay. `ExitAITPMode` delegates
@@ -13,7 +13,6 @@ import { toInputJsonSchema } from '#/tool/input-schema';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
-import { IFlagService } from '#/app/flag/flag';
 
 import {
   IEnterAITPModeTool,
@@ -50,7 +49,6 @@ export class EnterAITPModeTool implements IEnterAITPModeTool {
   constructor(
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
     @IAgentScopeContext private readonly scopeCtx: IAgentScopeContext,
-    @IFlagService private readonly flags: IFlagService,
   ) {}
 
   resolveExecution(args: EnterAITPModeInput): ToolExecution {
@@ -58,12 +56,6 @@ export class EnterAITPModeTool implements IEnterAITPModeTool {
       description: 'Requesting to enter AITP Research Mode',
       approvalRule: this.name,
       execute: async () => {
-        if (!this.flags.enabled('aitp_research_mode')) {
-          return {
-            isError: true,
-            output: 'AITP Research Mode is not enabled. Set KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=true.',
-          };
-        }
         if (this.scopeCtx.agentId !== MAIN_AGENT_ID) {
           return {
             isError: true,

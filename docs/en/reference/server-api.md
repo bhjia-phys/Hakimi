@@ -140,11 +140,13 @@ Endpoints are grouped by resource below. A `:{action}` suffix in a path is the a
 | `POST /api/v1/sessions/{session_id}/children` | Create a child session (fork with a tag) |
 | `GET /api/v1/sessions/{session_id}/status` | Realtime status rollup |
 | `GET /api/v1/sessions/{session_id}/goal` | Current goal snapshot (`null` when none) |
-| `GET /api/v1/sessions/{session_id}/research` | Current AITP research-mode snapshot (experimental; requires `aitp_research_mode` flag) |
-| `POST /api/v1/sessions/{session_id}/research/command` | Submit a research steering command (experimental; requires `aitp_research_mode` flag) |
+| `GET /api/v1/sessions/{session_id}/research` | Read the current AITP Research Mode snapshot; available by default and returns an `inactive` local snapshot without AITP I/O before entry |
+| `POST /api/v1/sessions/{session_id}/research/command` | Submit a research steering command; `enter_mode` is available by default and is the explicit operation that probes AITP and can run `enter` → `check` maintenance |
 | `GET /api/v1/sessions/{session_id}/warnings` | Session-level warnings |
 | `POST /api/v1/sessions/{session_id}/export` | Export the session with diagnostics (zip stream, not enveloped) |
 | `GET /api/v1/sessions/{session_id}/snapshot` | Full snapshot for client rebuilds (with `as_of_seq` and `epoch`) |
+
+The SDK exposes the same behavior through `Session.getResearch()` and `Session.commandResearch()`. `getResearch()` is a local inactive read until an explicit `enter_mode` command is sent; it never logs into OAuth or probes AITP. `commandResearch({ kind: 'enter_mode', actor: 'user' | 'model' })` is discoverable by default and returns the post-command snapshot. Graduation changes discovery and gating only: the REST/SDK wire shapes, AITP transport schemas, and checkpoint save+show+check barrier remain unchanged.
 
 ### Messages and transcript
 

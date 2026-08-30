@@ -3,6 +3,7 @@ import { createControlledPromise } from '@antfu/utils';
 
 import { SyncDescriptor } from '#/_base/di/descriptors';
 import { DisposableStore } from '#/_base/di/lifecycle';
+import { Event } from '#/_base/event';
 import { createServices, type TestInstantiationService } from '#/_base/di/test';
 import type { ContextMessage } from '#/agent/contextMemory/types';
 import { IAgentPromptService } from '#/agent/prompt/prompt';
@@ -73,7 +74,9 @@ function fakeTurn(): Turn {
 function stubVisibility(): IAgentSkillVisibilityService {
   return {
     _serviceBrand: undefined,
+    onDidChange: Event.None as import('#/_base/event').Event<void>,
     isSkillVisible: () => true,
+    isSkillVisibleInFrozenListing: () => true,
     hiddenReason: () => undefined,
     filterVisible: (skills) => skills,
   };

@@ -115,6 +115,11 @@ export interface WireSessionRuntimeStatus {
 
 // GET /sessions/{id}/goal — camelCase, same shape as the `goal.updated` event
 // payload. The endpoint returns null when no goal is active.
+export interface WireGoalWaitLease {
+  taskIds: string[];
+  policy: 'any' | 'all';
+}
+
 export interface WireGoalSnapshot {
   goalId: string;
   objective: string;
@@ -123,6 +128,7 @@ export interface WireGoalSnapshot {
   turnsUsed: number;
   tokensUsed: number;
   wallClockMs: number;
+  waitingFor?: WireGoalWaitLease;
   terminalReason?: string;
   budget: {
     tokenBudget: number | null;

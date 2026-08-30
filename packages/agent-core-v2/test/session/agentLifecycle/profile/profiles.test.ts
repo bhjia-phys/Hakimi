@@ -2,8 +2,8 @@
  * Scenario: the builtin agent profile contributions.
  *
  * Pins the code-defined profiles registered at module load: the default
- * `agent` profile carries the Tower entry plus the complete dynamically gated
- * AITP Research tool surface and declares no `subagents` allowlist. The
+ * `agent` profile carries the Tower entry plus the complete AITP Research
+ * tool surface (active-only except for entry) and declares no `subagents` allowlist. The
  * `tower-worker` profile is contributed by the
  * tower Feature instead — see test/features/tower/workerProfile.test.ts. Run
  * with `pnpm --filter @moonshot-ai/agent-core-v2 exec vitest run

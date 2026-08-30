@@ -6,8 +6,8 @@
  * Declares the current goal as `GoalState | null` (initial `null`); `GoalState`
  * holds the persistent, replayable fields — identity, objective, status,
  * `turnsUsed` / `tokensUsed`, the accumulated `wallClockMs`, the current
- * active interval's epoch-ms `wallClockResumedAt`, `budgetLimits`, and
- * `terminalReason`. The persistence contract charges an active interval from
+ * active interval's epoch-ms `wallClockResumedAt`, `budgetLimits`, an optional
+ * background-task wait lease, and `terminalReason`. The persistence contract charges an active interval from
  * its persisted create/resume anchor through the first recovery clock read,
  * then folds that interval into `wallClockMs` while recovery pauses the goal.
  * This intentionally includes unobservable crash downtime: a monotonic clock
@@ -22,8 +22,8 @@
  * reference-equality gate stays quiet. The `goal.updated` fact is
  * published live to `IEventBus` by the service (declared here via
  * interface-merge); `wire.restore` rebuilds the Model silently and the
- * service's `wire.hooks.onDidRestore`
- * forces a replayed `active` goal back to `paused`.
+ * service's ordered `wire.hooks.onDidRestore` barrier normalizes replayed
+ * state, preserving a wait lease whose tasks are still pending.
  */
 
 import { z } from 'zod';
@@ -36,6 +36,7 @@ import type {
   GoalMutationRef,
   GoalSnapshot,
   GoalStatus,
+  GoalWaitLease,
 } from './types';
 
 export interface GoalState {
@@ -48,6 +49,7 @@ export interface GoalState {
   readonly wallClockMs: number;
   readonly wallClockResumedAt?: number;
   readonly budgetLimits: GoalBudgetLimits;
+  readonly waitingFor?: GoalWaitLease;
   readonly terminalReason?: string;
 }
 
@@ -86,6 +88,13 @@ const GoalBudgetLimitsSchema = z
     tokenBudget: z.number().finite().nonnegative().optional(),
     turnBudget: z.number().finite().nonnegative().optional(),
     wallClockBudgetMs: z.number().finite().nonnegative().optional(),
+  })
+  .strict();
+
+const GoalWaitLeaseSchema = z
+  .object({
+    taskIds: z.array(z.string().min(1)).min(1).max(32),
+    policy: z.enum(['any', 'all']),
   })
   .strict();
 
@@ -144,7 +153,9 @@ export const updateGoal = GoalModel.defineOp('goal.update', {
       tokensUsed: z.number().finite().nonnegative().optional(),
       wallClockMs: z.number().finite().nonnegative().optional(),
       wallClockResumedAt: z.number().finite().nonnegative().optional(),
+      clearWallClockResumedAt: z.boolean().optional(),
       budgetLimits: GoalBudgetLimitsSchema.optional(),
+      waitingFor: GoalWaitLeaseSchema.nullable().optional(),
       actor: GoalActorSchema.optional(),
       mutation: GoalMutationSchema.optional(),
     })
@@ -158,7 +169,8 @@ export const updateGoal = GoalModel.defineOp('goal.update', {
         status: p.status,
         terminalReason: p.status === 'active' ? undefined : p.reason,
         wallClockResumedAt:
-          p.status === 'active' ? p.wallClockResumedAt : undefined,
+          p.status === 'active' ? p.wallClockResumedAt ?? undefined : undefined,
+        waitingFor: undefined,
       };
     }
     if (p.turnsUsed !== undefined && p.turnsUsed !== s.turnsUsed) {
@@ -177,8 +189,14 @@ export const updateGoal = GoalModel.defineOp('goal.update', {
     ) {
       next = { ...(next ?? s), wallClockResumedAt: p.wallClockResumedAt };
     }
+    if (p.clearWallClockResumedAt === true && (p.status ?? s.status) === 'active') {
+      next = { ...(next ?? s), wallClockResumedAt: undefined };
+    }
     if (p.budgetLimits !== undefined && p.budgetLimits !== s.budgetLimits) {
       next = { ...(next ?? s), budgetLimits: p.budgetLimits };
+    }
+    if (p.waitingFor !== undefined && p.waitingFor !== s.waitingFor) {
+      next = { ...(next ?? s), waitingFor: p.waitingFor ?? undefined };
     }
     return next ?? s;
   },

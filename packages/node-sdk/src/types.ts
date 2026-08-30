@@ -41,9 +41,7 @@ export type {
   GoalChange,
   GoalChangeStats,
   GetCronTasksResult,
-  GoalSnapshot,
   GoalStatus,
-  GoalToolResult,
   GlobalMcpServerAuthState,
   GlobalMcpServerAuthStatus,
   KimiConfig,
@@ -76,6 +74,13 @@ export type {
   GlobalMcpServerConfig as McpServerConfig,
   GlobalMcpServerTestResult as McpTestResult,
 } from '@moonshot-ai/agent-core';
+
+export type {
+  GoalSnapshot,
+  GoalToolResult,
+  GoalWaitLease,
+  GoalWaitPolicy,
+} from '@moonshot-ai/agent-core-v2/agent/goal/types';
 
 export type { KimiHostIdentity, OAuthRefreshOutcome };
 export type { TelemetryClient, TelemetryContextPatch, TelemetryProperties };
@@ -128,6 +133,7 @@ export interface WorkspaceTrustInfo {
 
 export interface CreateGoalInput {
   readonly objective: string;
+  readonly completionCriterion?: string;
   readonly replace?: boolean;
 }
 

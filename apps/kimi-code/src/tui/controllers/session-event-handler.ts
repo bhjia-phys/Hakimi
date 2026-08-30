@@ -115,6 +115,7 @@ export interface SessionEventHost {
   restoreEditor(): void;
   restoreInputText(text: string): void;
   appendTranscriptEntry(entry: TranscriptEntry): void;
+  refreshSkillCommands(session?: Pick<Session, 'listSkills'>): Promise<void>;
   handleShellOutput(event: { commandId: string; update: { kind: string; text?: string } }): void;
   handleShellStarted(event: { commandId: string; taskId: string }): void;
   sendNormalUserInput(text: string): void;
@@ -294,7 +295,11 @@ export class SessionEventHandler {
       case 'session.meta.updated': this.handleSessionMetaChanged(event); break;
       case 'goal.updated': this.handleGoalUpdated(event); break;
       case 'research.updated': this.handleResearchUpdated(event, sourceSession); break;
-      case 'aitp_mode.updated': break;
+      case 'aitp_mode.updated': {
+        const session = sourceSession ?? this.host.session;
+        if (session !== undefined) void this.host.refreshSkillCommands(session);
+        break;
+      }
       case 'skill.activated': this.handleSkillActivated(event); break;
       case 'plugin_command.activated': this.handlePluginCommandActivated(event); break;
       case 'error': this.handleSessionError(event); break;

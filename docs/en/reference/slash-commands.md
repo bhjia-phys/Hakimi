@@ -12,7 +12,7 @@ Some commands are only available in the idle state. Executing these commands whi
 
 | Command | Alias | Description | Always available |
 | --- | --- | --- | --- |
-| `/login` | — | Select an account or platform and log in: Kimi Code uses OAuth, Kimi Platform uses an API key, and experimental ChatGPT OAuth appears after enabling `openai-codex-oauth` in `/experiments` | No |
+| `/login` | — | Select an account or platform and log in: Kimi Code uses OAuth, Kimi Platform uses an API key, and ChatGPT / OpenAI Codex uses OAuth | No |
 | `/logout` | — | Clear credentials for the currently selected account | No |
 | `/provider` | — | Open the interactive provider manager to view, add, and remove configured providers. See [Platforms & Models — `/provider` and provider management](../configuration/providers.md#provider-—-interactive-provider-management) | Yes |
 | `/model` | — | Switch the LLM model used in the current session | Yes |
@@ -55,7 +55,7 @@ Some commands are only available in the idle state. Executing these commands whi
 | `/swarm on\|off` | — | Turn swarm mode on or off without sending a prompt. | Yes |
 | `/swarm <task>` | — | Turn swarm mode on, then send `<task>` as a normal prompt. If the turn completes normally, swarm mode turns off automatically. In `manual` permission mode, Hakimi asks whether to switch to `auto` or `yolo` before starting. | No |
 | `/goal [...]` | — | Start or manage an autonomous goal | See below |
-| `/research [...]` | — | Control experimental AITP Research Mode (`aitp_research_mode` flag, default off) | See below |
+| `/research [...]` | — | Control AITP Research Mode; the command is discoverable by default and the mode starts inactive | See below |
 
 ::: warning
 `/yolo` skips approval for regular tool calls. Please make sure you understand the potential risks before enabling it. Plan mode exit approval is not bypassed by `/yolo`; `Bash` inside Plan mode is still subject to the regular `/yolo` allow rules.
@@ -99,13 +99,11 @@ hakimi -p "/goal Fix the failing checkout test"
 
 Prompt mode exits with code `0` when the goal completes, `3` when it blocks, and `6` when it pauses. Other `/goal` subcommands, including `next`, are TUI controls and are not handled by `hakimi -p`.
 
-## Experimental Research Mode
+## Research Mode
 
-`/research` controls the experimental AITP Research Mode — a joint research capability backed by the AITP evidence ledger. It is gated behind the `aitp_research_mode` experimental flag (env `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`, default off; set it to `1` before launch to expose the command). The flag being on only makes the surface available — `/research` and the `EnterAITPMode` capability exist, but the mode stays inactive with zero AITP I/O until you enter it explicitly with `/research on` (or the model `EnterAITPMode` entry path with its approval gate). When the flag is off (set `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=0` or toggle it in `/experiments`), the command is not available, all AITP tools and skills are hidden, and zero AITP I/O occurs.
+`/research` controls AITP Research Mode, a joint research capability backed by the AITP evidence ledger. The command and the model-facing `EnterAITPMode` capability are discoverable by default, but the runtime starts `inactive`. Inactive `getResearch` reads, session hydration, and status checks use the local snapshot only: they do not probe AITP, perform AITP I/O, expose the Research Board, or expose the other Research/AITP tools and plugin skill. Use `/research on` or let the model call `EnterAITPMode` to enter explicitly; only then does Hakimi probe the adapter and, after a ready probe, run the read-only `enter` → `check` maintenance cycle.
 
-::: warning
-Research Mode is experimental. It runs an autonomous research loop that may take many turns. When entering from `manual` or `yolo` permission mode, a prompt asks whether to switch to `auto` or `yolo` first — the loop may stop and wait for approvals under `manual` mode.
-:::
+The old `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` environment variable, `[experimental].aitp_research_mode`, and `KIMI_CODE_EXPERIMENTAL_FLAG` are inert for this graduated surface. The deprecated flag inputs do not hide or enable `/research`; they remain only for compatibility. When entering from `manual` or `yolo` permission mode, a prompt asks whether to switch to `auto` or `yolo` first — the loop may stop and wait for approvals under `manual` mode.
 
 The grammar mirrors `/goal`: reserved subcommands are only honored as the first token; free text after `--` separates arguments from user input.
 
@@ -136,7 +134,7 @@ All mutating commands carry the latest snapshot `revision` as `expectedRevision`
 
 The Research Board appears in the live chrome area when Research Mode is active. It shows the current line, focus question or candidate questions, assessment, bounded action, Todo Actions progress, checkpoint state, and prioritized alerts — not the full portfolio. Press `Ctrl-O` to expand or collapse the board in place; in Research Mode the Todo list is projected into the board instead of replacing it. The board is read-only; all edits go through `/research manage` or the direct steering commands.
 
-When AITP is not installed, not initialized, or its `check` returns exit 2, the mode shows `degraded` and blocks question closure, Goal completion, and session closeout until the adapter recovers or the user explicitly chooses to proceed without persistence. Research Mode does not automatically run `init`, `init --adopt`, `inventory`, or `backfill --apply`; `backfill` is not exposed as a model tool in this experimental slice.
+When AITP is not installed, not initialized, or its `check` returns exit 2 after an explicit entry, the mode shows `degraded` and blocks question closure, Goal completion, and session closeout until the adapter recovers or the user explicitly chooses to proceed without persistence. Research Mode does not automatically run `init`, `init --adopt`, `inventory`, or `backfill --apply`; `backfill` is not exposed as a model tool. The Research and AITP tools other than `EnterAITPMode`, and the AITP plugin skill, remain active-only.
 
 ## Information & Status
 

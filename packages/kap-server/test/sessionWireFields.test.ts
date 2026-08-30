@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { goalWaitLeaseSchema } from '../src/protocol/goal';
+import { goalWaitLeaseSchema as eventGoalWaitLeaseSchema } from '../src/protocol/events-zod';
 import { toWireSession, type SessionFacts, type SessionWireFields } from '../src/routes/sessions';
 
 const fields: SessionWireFields = {
@@ -48,5 +50,25 @@ describe('toWireSession last_turn_reason', () => {
       { ...coldFacts, live: true },
     );
     expect(wire.last_turn_reason).toBeUndefined();
+  });
+});
+
+describe('goal wait lease schemas', () => {
+  it('keeps REST and event contracts strict and bounded', () => {
+    const schemas = [goalWaitLeaseSchema, eventGoalWaitLeaseSchema];
+    const valid = { taskIds: ['task-1'], policy: 'any' as const };
+
+    for (const schema of schemas) {
+      expect(schema.parse(valid)).toEqual(valid);
+      expect(schema.safeParse({ taskIds: [], policy: 'any' }).success).toBe(false);
+      expect(schema.safeParse({ taskIds: [''], policy: 'any' }).success).toBe(false);
+      expect(
+        schema.safeParse({
+          taskIds: Array.from({ length: 33 }, (_, index) => `task-${index}`),
+          policy: 'all',
+        }).success,
+      ).toBe(false);
+      expect(schema.safeParse({ ...valid, extra: true }).success).toBe(false);
+    }
   });
 });

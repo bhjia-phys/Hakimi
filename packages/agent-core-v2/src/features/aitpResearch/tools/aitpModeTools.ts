@@ -2,8 +2,8 @@
  * `aitpResearch` domain — `IEnterAITPModeTool` / `IExitAITPModeTool` contracts.
  *
  * The mode entry/exit tools the model calls. `EnterAITPMode` is permanently
- * registered but flag-gated through the `when` predicate; `ExitAITPMode` is
- * active-only. Bound at Agent scope.
+ * registered as the explicit mode-entry tool; `ExitAITPMode` is active-only.
+ * Bound at Agent scope.
  */
 
 import { z } from 'zod';

@@ -58,7 +58,7 @@ hakimi -p "Summarize the test failures in this repository."
 hakimi -c
 ```
 
-进入交互式会话后，使用 `/login` 配置可用的 provider。Hakimi 默认将配置、会话、日志和缓存保存在 `~/.hakimi` 下；设置 `HAKIMI_HOME` 可改用其他数据目录。
+进入交互式会话后，使用 `/login` 配置可用的 provider，包括 Kimi Code OAuth 或 ChatGPT / OpenAI Codex OAuth。Codex 登录会生成 `openai-codex/gpt-5.6-sol`、`openai-codex/gpt-5.6-terra` 和 `openai-codex/gpt-5.6-luna` 模型别名。登录必须显式触发，Hakimi 不会在启动时自动开始 OAuth 登录。Hakimi 默认将配置、会话、日志和缓存保存在 `~/.hakimi` 下；设置 `HAKIMI_HOME` 可改用其他数据目录。
 
 Windows 用户首次启动前请安装 [Git for Windows](https://gitforwindows.org/)。Hakimi 使用随 Git for Windows 提供的 Git Bash shell；如果 Git Bash 安装在其他位置，请将 `KIMI_SHELL_PATH` 设置为 `bash.exe` 的绝对路径。
 
@@ -73,19 +73,19 @@ Windows 用户首次启动前请安装 [Git for Windows](https://gitforwindows.o
 
 可用命令和设置会随开发版本演进。[使用手册](docs/zh/guides/getting-started.md)与[配置指南](docs/zh/configuration/config-files.md)是权威的起点。
 
-## 实验性科研功能
+## 科研功能
 
 Hakimi 的 Research Loop 围绕结构化状态、证据、falsifier 和决策组织实验性科研工作流。它可以在有界行动之间保留紧凑的科研过程轨迹，并向用户展示科研状态。它不会把 raw hidden chain-of-thought 暴露为科研记录，也不会仅凭 agent 的回答推断科学结论有效。
 
 可选的 `theory-physics` domain pack 增加面向物理的路由、推导检查、数值/HPC 证据边界和 science-first reporting。它不增加第二套 runtime、ledger、文献库或 scheduler observer。
 
-AITP Research Mode 默认关闭，是通过 AITP CLI 与文件进行的 opt-in 集成。当前 Hakimi 兼容性状态为：**H0–H4 已实现、H5 部分实现、H6 不可用**。已在一次性 scratch store 中用 managed AITP 0.8.0 CLI 完成真实子进程 smoke test；完整的跨平台及 failure-matrix conformance suite 仍待完成。维护中的兼容性细节见 [`docs/aitp/`](docs/aitp/)。
+AITP Research Mode 默认可发现。新建 session 初始为 `inactive`，hydration 会保留已持久化的 mode。inactive hydration 以及 `GET` / SDK 快照读取不会探测 AITP 或发生 AITP I/O；持久化为 active 的 session 在 cold restore 后仍保持 active，并重新探测 adapter 执行只读维护。只有显式执行 `/research on`、调用 `EnterAITPMode` 或发送等价的 `enter_mode` 请求后，才会显示 Research Board 并开放其他 Research/AITP 工具。当前 Hakimi 兼容性状态为：**H0–H4 implemented-in-code、H5 部分集成、H6b method distillation planned/unavailable**。已在一次性 scratch store 中用 managed AITP 0.8.0 CLI 完成真实子进程 smoke test；完整的跨平台及 failure-matrix conformance 仍待完成。Hakimi 不读取或解析 `backfill-0.1` 成功 envelope。维护中的兼容性细节见 [`docs/aitp/`](docs/aitp/)。
 
 ## 当前状态与限制
 
 - Hakimi 是可从源码构建的开发版本。
 - 核心终端工作流——交互式会话、工具、provider 和项目操作——可用。
-- Research Loop、`theory-physics` pack 和 AITP Research Mode 均为实验性功能，可能继续变化。
+- Research Loop 和 `theory-physics` pack 仍是实验性功能，可能继续变化；AITP Research Mode 已正式开放，但其 AITP 兼容性边界详见 [`docs/aitp/`](docs/aitp/)。
 - 目前没有公开 npm 包或 release installer；请使用上面的源码构建路径。
 - Hakimi 不取代人工审阅、可复现实验或专家科研验证。
 

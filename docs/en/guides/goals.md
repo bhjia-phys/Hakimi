@@ -104,6 +104,8 @@ A goal can stop in three ways:
 
 Write stop conditions into the objective. `/goal` does not have a separate stop-limit flag.
 
+When healthy detached background tasks are the only remaining dependency, the agent can call `UpdateGoal` with `waitFor` instead of polling with `TaskOutput`. `waitFor` accepts an `active` goal, 1–32 non-empty detached task IDs, and an `any` or `all` policy. Hakimi keeps the goal active but suspends automatic continuation turns and does not start a model turn; waiting does not consume goal turns or active wall-clock budget. When the selected policy is satisfied by a terminal task event, including `lost`, Hakimi clears the lease and wakes at most one continuation. On session restore, an active goal with a valid wait lease stays active while its selected background tasks are still pending, and restore does not start a continuation. A missing task reference fails closed and pauses the goal; a task already restored as terminal, including `lost`, clears the lease and schedules the same single wake.
+
 ## Manage goals in the web UI
 
 The web UI shows the current goal in a strip below the conversation. Select the strip to expand or collapse its details. When a token budget is configured, the header shows its progress; goals without a token budget do not show a progress bar.

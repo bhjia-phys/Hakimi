@@ -228,12 +228,20 @@ export const transcriptTaskSchema = z.object({
   usage: stepUsageSchema.optional(),
 });
 
+export const goalWaitLeaseSchema = z
+  .object({
+    taskIds: z.array(z.string().min(1)).min(1).max(32),
+    policy: z.enum(['any', 'all']),
+  })
+  .strict();
+
 export const goalMetaSchema = z.object({
   objective: z.string(),
   status: z.enum(['active', 'paused', 'blocked', 'complete']),
   completionCriterion: z.string().optional(),
   budgetUsed: z.number().optional(),
   budgetLimit: z.number().optional(),
+  waitingFor: goalWaitLeaseSchema.optional(),
 });
 
 export const modesMetaSchema = z.object({

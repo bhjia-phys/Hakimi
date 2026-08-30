@@ -12,6 +12,13 @@ export interface GoalBudgetLimits {
   readonly wallClockBudgetMs?: number;
 }
 
+export type GoalWaitPolicy = 'any' | 'all';
+
+export interface GoalWaitLease {
+  readonly taskIds: readonly string[];
+  readonly policy: GoalWaitPolicy;
+}
+
 export interface GoalBudgetReport {
   readonly tokenBudget: number | null;
   readonly turnBudget: number | null;
@@ -34,6 +41,7 @@ export interface GoalSnapshot {
   readonly tokensUsed: number;
   readonly wallClockMs: number;
   readonly budget: GoalBudgetReport;
+  readonly waitingFor?: GoalWaitLease;
   readonly terminalReason?: string;
 }
 

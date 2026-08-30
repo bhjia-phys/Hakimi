@@ -5,7 +5,9 @@
  * `contextInjector`, reconciling the desired instructions against the latest
  * surviving render reported by the injector (`lastInjection`) and unwrapped
  * through `systemReminder`. The rendered guidance is frozen through a durable
- * `wire` snapshot until an explicit reload. The session-start refresh on
+ * `wire` snapshot until an explicit reload, except that active-only visibility
+ * changes mark it for the next safe injection boundary; hidden skills are
+ * skipped silently. The session-start refresh on
  * plugin-source catalog changes fires only for an explicit plugin reload: a
  * mutation-driven reload (install / enable / disable / remove) skips it — the
  * live session keeps the guidance it started with — and instead appends a `plugin_change`
@@ -37,6 +39,7 @@ import {
 import { IAgentContextMemoryService } from '#/agent/contextMemory/contextMemory';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentStateService } from '#/agent/state/agentState';
+import { IAgentSkillVisibilityService } from '#/agent/skillVisibility/skillVisibility';
 import {
   IAgentSystemReminderService,
   systemReminderContent,
@@ -98,6 +101,8 @@ export class AgentPluginService extends Service implements IAgentPluginService {
   // re-scan completes asynchronously, so the count is always positive by the
   // time a mutation-driven catalog change arrives.
   private pendingMutationCatalogChanges = 0;
+  private pluginReloadGeneration = 0;
+  private mutationReloadGeneration: number | undefined;
 
   constructor(
     @IAgentScopeContext private readonly scopeContext: IAgentScopeContext,
@@ -110,6 +115,7 @@ export class AgentPluginService extends Service implements IAgentPluginService {
     @ILogService private readonly log: ILogService,
     @IAgentStateService private readonly states: IAgentStateService,
     @IWireService private readonly wire: IWireService,
+    @IAgentSkillVisibilityService private readonly skillVisibility: IAgentSkillVisibilityService,
   ) {
     super();
     if (scopeContext.agentId !== MAIN_AGENT_ID) return;
@@ -120,14 +126,24 @@ export class AgentPluginService extends Service implements IAgentPluginService {
       ),
     );
     this._register(
+      this.plugins.onDidReload(() => {
+        const generation = ++this.pluginReloadGeneration;
+        queueMicrotask(() => {
+          if (generation !== this.pluginReloadGeneration) return;
+          if (this.mutationReloadGeneration === generation) return;
+          // An explicit reload supersedes any mutation reload whose catalog
+          // rescan failed before it could emit a source change.
+          this.pendingMutationCatalogChanges = 0;
+        });
+      }),
+    );
+    this._register(
       this.skillCatalog.onDidChange((sourceId) => {
         if (sourceId !== PLUGIN_SKILL_SOURCE_ID) return;
         if (this.pendingMutationCatalogChanges > 0) {
           // Mutation-driven reload: the live session keeps the session-start
           // guidance it started with — the plugin_change reminder is the only
-          // notice it gets. A failed mutation reload produces no catalog
-          // change, so a later explicit-reload refresh may be skipped once;
-          // that only keeps the frozen guidance longer, which is safe.
+          // notice it gets.
           this.pendingMutationCatalogChanges--;
           return;
         }
@@ -135,7 +151,13 @@ export class AgentPluginService extends Service implements IAgentPluginService {
       }),
     );
     this._register(
+      this.skillVisibility.onDidChange(() => {
+        this.refreshPending = true;
+      }),
+    );
+    this._register(
       this.plugins.onDidMutate(({ mutation }) => {
+        this.mutationReloadGeneration = this.pluginReloadGeneration;
         this.pendingMutationCatalogChanges++;
         this.reminders.appendSystemReminder(renderPluginChangeReminder(mutation), {
           kind: 'injection',
@@ -170,6 +192,7 @@ export class AgentPluginService extends Service implements IAgentPluginService {
       log: this.log,
       sessionId: this.sessionContext.sessionId,
       warnedSkills: this.warnedMissingSessionStartSkills,
+      visibility: this.skillVisibility,
     });
   }
 
@@ -239,12 +262,13 @@ interface RenderPluginSessionStartReminderInput {
   readonly log?: { warn(message: string, payload?: unknown): void };
   readonly sessionId?: string;
   readonly warnedSkills: Set<string>;
+  readonly visibility: IAgentSkillVisibilityService;
 }
 
 function renderPluginSessionStartReminder(
   input: RenderPluginSessionStartReminderInput,
 ): string | undefined {
-  const { sessionStarts, catalog, log, sessionId, warnedSkills } = input;
+  const { sessionStarts, catalog, log, sessionId, warnedSkills, visibility } = input;
   if (sessionStarts.length === 0) return undefined;
   if (catalog === undefined) return undefined;
   const blocks: string[] = [];
@@ -261,6 +285,7 @@ function renderPluginSessionStartReminder(
       }
       continue;
     }
+    if (!visibility.isSkillVisible(skill)) continue;
     blocks.push(
       renderSessionStartBlock(sessionStart, skill, catalog.renderSkillPrompt(skill, '', { sessionId })),
     );

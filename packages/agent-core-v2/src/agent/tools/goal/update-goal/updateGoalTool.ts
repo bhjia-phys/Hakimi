@@ -43,14 +43,22 @@ export class UpdateGoalTool implements IUpdateGoalTool {
         output: 'Invalid goal status. Use `active`, `complete`, or `blocked`.',
       };
     }
+    if (args.waitFor !== undefined && args.status !== 'active') {
+      return {
+        isError: true,
+        output: 'Goal wait requires status `active`.',
+      };
+    }
 
     const status = args.status;
     const currentGoal = this.goal.getGoal().goal;
     const goalIsActive = currentGoal?.status === 'active';
 
     return {
-      description: `Setting goal status: ${status}`,
-      stopBatchAfterThis: status !== 'active' && goalIsActive,
+      description: args.waitFor === undefined
+        ? `Setting goal status: ${status}`
+        : `Waiting for background task${args.waitFor.taskIds.length === 1 ? '' : 's'} before continuing the goal`,
+      stopBatchAfterThis: args.waitFor !== undefined || (status !== 'active' && goalIsActive),
       approvalRule: this.name,
       execute: async ({ turnId }) => {
         const goalAtExecution = this.goal.getGoal().goal;
@@ -62,6 +70,19 @@ export class UpdateGoalTool implements IUpdateGoalTool {
           !this.goal.isGoalToolTarget(turnId, goalAtExecution.goalId)
         ) {
           return { output: changedGoalOutput(status) };
+        }
+        if (args.waitFor !== undefined) {
+          const waiting = await this.goal.waitForTasks({
+            taskIds: args.waitFor.taskIds,
+            policy: args.waitFor.policy,
+          }, 'model');
+          if (waiting.waitingFor === undefined) {
+            return { output: 'Goal wait skipped: the selected tasks are already complete.' };
+          }
+          return {
+            output: `Goal suspended until ${args.waitFor.policy === 'all' ? 'all' : 'any'} selected background task${args.waitFor.taskIds.length === 1 ? '' : 's'} reaches a terminal state.`,
+            stopTurn: true,
+          };
         }
         if (status === 'active') {
           await this.goal.resumeGoal({}, 'model');

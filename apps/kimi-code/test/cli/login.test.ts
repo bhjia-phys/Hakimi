@@ -184,10 +184,7 @@ describe('hakimi login', () => {
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
-  it('enables and routes ChatGPT OAuth through the managed OpenAI Codex provider', async () => {
-    mockGetExperimentalFeatures.mockResolvedValue([
-      { id: 'openai-codex-oauth', enabled: true },
-    ]);
+  it('routes ChatGPT OAuth without querying or writing experimental config', async () => {
     mockLogin.mockResolvedValue({ providerName: 'managed:openai-codex', ok: true });
     const program = new Command('hakimi').exitOverride();
     registerLoginCommand(program);
@@ -203,10 +200,9 @@ describe('hakimi login', () => {
       ]),
     ).rejects.toThrow(ExitCalled);
 
-    expect(mockEnsureConfigFile).toHaveBeenCalledOnce();
-    expect(mockSetConfig).toHaveBeenCalledWith({
-      experimental: { 'openai-codex-oauth': true },
-    });
+    expect(mockGetExperimentalFeatures).not.toHaveBeenCalled();
+    expect(mockEnsureConfigFile).not.toHaveBeenCalled();
+    expect(mockSetConfig).not.toHaveBeenCalled();
     expect(mockLogin).toHaveBeenCalledWith(
       'managed:openai-codex',
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
@@ -214,24 +210,30 @@ describe('hakimi login', () => {
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
-  it('explains how to enable ChatGPT OAuth while the experiment is disabled', async () => {
+  it('accepts the deprecated experimental option as a no-op', async () => {
+    mockLogin.mockResolvedValue({ providerName: 'managed:openai-codex', ok: true });
     const program = new Command('hakimi').exitOverride();
     registerLoginCommand(program);
 
     await expect(
-      program.parseAsync(['node', 'hakimi', 'login', '--provider', 'chatgpt']),
+      program.parseAsync([
+        'node',
+        'hakimi',
+        'login',
+        '--provider',
+        'chatgpt',
+        '--enable-experimental',
+      ]),
     ).rejects.toThrow(ExitCalled);
 
-    expect(mockLogin).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
-    const written = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
-    expect(written).toContain('openai-codex-oauth = true');
+    expect(mockLogin).toHaveBeenCalledOnce();
+    expect(mockGetExperimentalFeatures).not.toHaveBeenCalled();
+    expect(mockEnsureConfigFile).not.toHaveBeenCalled();
+    expect(mockSetConfig).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
   it('supports headless ChatGPT OAuth without opening a browser', async () => {
-    mockGetExperimentalFeatures.mockResolvedValue([
-      { id: 'openai-codex-oauth', enabled: true },
-    ]);
     mockLogin.mockImplementation(
       async (
         _providerName: string | undefined,

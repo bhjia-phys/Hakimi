@@ -146,6 +146,8 @@ export type {
   GoalBudgetReport,
   GoalSnapshot,
   GoalStatus,
+  GoalWaitLease,
+  GoalWaitPolicy,
 } from '@moonshot-ai/agent-core-v2/agent/goal/types';
 export type {
   GoalReasonInput,

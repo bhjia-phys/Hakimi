@@ -19,6 +19,7 @@
 import type {
   AppEvent,
   AppGoal,
+  AppGoalWaitLease,
   AppInFlightTurn,
   AppMessage,
   AppMessageContent,
@@ -170,6 +171,31 @@ function nullableNumberField(source: Record<string, unknown>, key: string): numb
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function goalWaitLease(source: Record<string, unknown>): AppGoalWaitLease | undefined {
+  const raw = source['waitingFor'] ?? source['waiting_for'];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const wait = raw as Record<string, unknown>;
+  const keys = Object.keys(wait);
+  if (
+    keys.some((key) => key !== 'taskIds' && key !== 'task_ids' && key !== 'policy') ||
+    ('taskIds' in wait && 'task_ids' in wait)
+  ) {
+    return undefined;
+  }
+  const taskIds = wait['taskIds'] ?? wait['task_ids'];
+  if (
+    !Array.isArray(taskIds) ||
+    taskIds.length === 0 ||
+    taskIds.length > 32 ||
+    !taskIds.every((taskId) => typeof taskId === 'string' && taskId.length > 0)
+  ) {
+    return undefined;
+  }
+  const policy = wait['policy'];
+  if (policy !== 'any' && policy !== 'all') return undefined;
+  return { taskIds: taskIds as string[], policy };
+}
+
 function mapGoalSnapshot(snapshot: unknown): AppGoal | null {
   if (!snapshot || typeof snapshot !== 'object') return null;
   const s = snapshot as Record<string, unknown>;
@@ -187,6 +213,7 @@ function mapGoalSnapshot(snapshot: unknown): AppGoal | null {
     turnsUsed: numberField(s, 'turnsUsed') ?? numberField(s, 'turns_used') ?? 0,
     tokensUsed: numberField(s, 'tokensUsed') ?? numberField(s, 'tokens_used') ?? 0,
     wallClockMs: numberField(s, 'wallClockMs') ?? numberField(s, 'wall_clock_ms') ?? 0,
+    waitingFor: goalWaitLease(s),
     terminalReason: stringField(s, 'terminalReason') ?? stringField(s, 'terminal_reason'),
     budget: {
       tokenBudget: nullableNumberField(budget, 'tokenBudget') ?? nullableNumberField(budget, 'token_budget'),

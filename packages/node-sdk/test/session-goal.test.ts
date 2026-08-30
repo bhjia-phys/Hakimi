@@ -22,11 +22,13 @@ describe('Session goal methods', () => {
     const { session, rpc } = makeSession();
     await session.createGoal({
       objective: 'Ship feature X',
+      completionCriterion: 'All tests pass',
       replace: true,
     });
     expect(rpc.createGoal).toHaveBeenCalledWith({
       sessionId: 'ses_goal',
       objective: 'Ship feature X',
+      completionCriterion: 'All tests pass',
       replace: true,
     });
   });

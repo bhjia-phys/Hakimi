@@ -182,6 +182,26 @@ describe('FlagResolver', () => {
       configValue: true,
     });
   });
+
+  it.each(['0', '1'])('keeps graduated legacy inputs inert (%s)', (value) => {
+    const resolver = new FlagResolver(
+      {
+        KIMI_CODE_EXPERIMENTAL_OPENAI_CODEX_OAUTH: value,
+        KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE: value,
+      },
+      FLAG_DEFINITIONS,
+      {
+        'openai-codex-oauth': value === '1',
+        aitp_research_mode: value === '1',
+      } as never,
+    );
+
+    expect(resolver.explain('openai-codex-oauth' as FlagId)).toBeUndefined();
+    expect(resolver.explain('aitp_research_mode' as FlagId)).toBeUndefined();
+    expect(resolver.snapshot()).not.toHaveProperty('openai-codex-oauth');
+    expect(resolver.snapshot()).not.toHaveProperty('aitp_research_mode');
+    expect(resolver.enabled('tool-select')).toBe(false);
+  });
 });
 
 describe('FLAG_DEFINITIONS invariants', () => {

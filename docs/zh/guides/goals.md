@@ -104,6 +104,8 @@ Hakimi 会保存该目标，把它作为下一条用户消息发送，并进入�
 
 停止条件需要写在目标本身里。`/goal` 没有单独用于描述停止限制的语法。
 
+如果健康的 detached 后台任务是唯一剩余依赖，Agent 可以使用 `UpdateGoal` 的 `waitFor`，而不是反复调用 `TaskOutput`。`waitFor` 只接受状态为 `active` 的目标、1–32 个非空 detached 任务 ID，以及 `any` 或 `all` 策略。Hakimi 会保持目标为「活跃（`active`）」但暂停自动 continuation 轮次，也不会启动模型轮次；等待期间不会消耗目标轮次或 active wall-clock 预算。当所选策略被某个终态任务事件满足时（包括 `lost`），Hakimi 会清除 lease，最多唤醒一次 continuation。恢复 session 时，如果有效的 wait lease 所选后台任务仍在等待，目标会保持 active，恢复也不会启动 continuation。如果任务引用缺失，恢复会 fail-closed 并将目标暂停；如果任务在恢复时已经是终态（包括 `lost`），则会清除 lease 并安排同样的一次唤醒。
+
 ## 在 Web 界面中管理目标
 
 Web 界面会在对话下方显示当前目标条。点击目标条可以展开或收起详细信息。配置 token 预算时，标题栏会显示预算进度；没有配置 token 预算的目标不会显示进度条。

@@ -11,6 +11,7 @@ import {
   assistantDeltaEventSchema,
   eventSchema,
   goalMutationSchema,
+  goalWaitLeaseSchema,
   shellCompletedEventSchema,
   toolCallStartedEventSchema,
 } from '../events';
@@ -151,6 +152,20 @@ describe('events / display re-exports', () => {
       mutation: { ...mutation, at: 0 },
     });
     expect((atZero as { mutation?: { at: number } }).mutation?.at).toBe(0);
+  });
+
+  it('validates bounded strict goal wait leases', () => {
+    const valid = { taskIds: ['task-1'], policy: 'any' as const };
+    expect(goalWaitLeaseSchema.parse(valid)).toEqual(valid);
+    expect(goalWaitLeaseSchema.safeParse({ taskIds: [], policy: 'any' }).success).toBe(false);
+    expect(goalWaitLeaseSchema.safeParse({ taskIds: [''], policy: 'any' }).success).toBe(false);
+    expect(
+      goalWaitLeaseSchema.safeParse({
+        taskIds: Array.from({ length: 33 }, (_, index) => `task-${index}`),
+        policy: 'all',
+      }).success,
+    ).toBe(false);
+    expect(goalWaitLeaseSchema.safeParse({ ...valid, extra: true }).success).toBe(false);
   });
 
   it('rejects goal.updated mutations whose `at` leaves the valid Date range', () => {

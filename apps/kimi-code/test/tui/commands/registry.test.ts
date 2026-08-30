@@ -220,10 +220,10 @@ describe('built-in slash command registry', () => {
     expect(resolveSlashCommandAvailability(command!, '')).toBe('always');
   });
 
-  it('registers research with experimental flag and subcommand-aware availability', () => {
+  it('registers research without an experimental gate and with subcommand-aware availability', () => {
     const research = findBuiltInSlashCommand('research');
     expect(research).toBeDefined();
-    expect((research as KimiSlashCommand).experimentalFlag).toBe('aitp_research_mode');
+    expect((research as KimiSlashCommand).experimentalFlag).toBeUndefined();
     // status / pause / resume are always available
     expect(resolveSlashCommandAvailability(research!, '')).toBe('always');
     expect(resolveSlashCommandAvailability(research!, 'status')).toBe('always');

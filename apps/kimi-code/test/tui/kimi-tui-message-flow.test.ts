@@ -15,6 +15,7 @@ import type {
   GoalSnapshot,
   ResearchStatusSnapshot,
   Session,
+  SkillSummary,
 } from '@bhjia-phys/hakimi-sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -122,6 +123,7 @@ interface MessageDriver {
   streamingUI: StreamingUIController;
   sessionReplay: SessionReplayRenderer;
   pluginCommandMap: Map<string, string>;
+  skillCommandMap: Map<string, string>;
   sessionEventHandler: {
     startSubscription(): void;
     handleEvent(event: Event, sendQueued: (item: QueuedMessage) => void): void;
@@ -598,6 +600,159 @@ describe('KimiTUI message flow', () => {
     });
     expect(harness.createSession).toHaveBeenCalledTimes(1);
     expect(driver.getCurrentSessionId()).toBe('ses-lazy');
+  });
+
+  function deferred<T>(): {
+    readonly promise: Promise<T>;
+    resolve(value: T): void;
+  } {
+    let resolve: (value: T) => void = () => {};
+    const promise = new Promise<T>((resolvePromise) => {
+      resolve = resolvePromise;
+    });
+    return { promise, resolve };
+  }
+
+  function testSkill(name: string): SkillSummary {
+    return {
+      name,
+      description: `${name} skill`,
+      path: `/tmp/${name}`,
+      source: 'user',
+    };
+  }
+
+  it('ignores a stale workspace skill result after a newer refresh wins', async () => {
+    const stale = deferred<readonly SkillSummary[]>();
+    const current = deferred<readonly SkillSummary[]>();
+    const listWorkspaceSkills = vi
+      .fn<() => Promise<readonly SkillSummary[]>>()
+      .mockReturnValueOnce(stale.promise)
+      .mockReturnValueOnce(current.promise);
+    const startupInput: KimiTUIStartupInput = {
+      ...makeStartupInput(),
+      engineV2: true,
+      cliOptions: { ...makeStartupInput().cliOptions, model: 'k2' },
+    };
+    const { driver } = await makeDriver(
+      makeSession({ id: 'ses-lazy' }),
+      { listWorkspaceSkills },
+      startupInput,
+    );
+    const refreshSkillCommands = (
+      driver as unknown as { refreshSkillCommands(session?: unknown): Promise<void> }
+    ).refreshSkillCommands.bind(driver);
+    const staleRefresh = refreshSkillCommands();
+    const currentRefresh = refreshSkillCommands();
+
+    current.resolve([testSkill('current')]);
+    await currentRefresh;
+    expect(driver.skillCommandMap.has('skill:current')).toBe(true);
+
+    stale.resolve([testSkill('stale')]);
+    await staleRefresh;
+    expect(driver.skillCommandMap.has('skill:current')).toBe(true);
+    expect(driver.skillCommandMap.has('skill:stale')).toBe(false);
+  });
+
+  it('ignores a stale active session result after a newer refresh makes the list inactive', async () => {
+    const stale = deferred<readonly SkillSummary[]>();
+    const current = deferred<readonly SkillSummary[]>();
+    const session = makeSession({
+      listSkills: vi
+        .fn<() => Promise<readonly SkillSummary[]>>()
+        .mockReturnValueOnce(stale.promise)
+        .mockReturnValueOnce(current.promise),
+    });
+    const { driver } = await makeDriver(session);
+    const refreshSkillCommands = (
+      driver as unknown as { refreshSkillCommands(session?: unknown): Promise<void> }
+    ).refreshSkillCommands.bind(driver);
+    const staleRefresh = refreshSkillCommands(session);
+    const currentRefresh = refreshSkillCommands(session);
+
+    current.resolve([]);
+    await currentRefresh;
+    expect(driver.skillCommandMap.size).toBe(0);
+
+    stale.resolve([testSkill('stale')]);
+    await staleRefresh;
+    expect(driver.skillCommandMap.size).toBe(0);
+    expect(driver.skillCommandMap.has('skill:stale')).toBe(false);
+  });
+
+  it('ignores a workspace result after the current session identity changes', async () => {
+    const pending = deferred<readonly SkillSummary[]>();
+    const startupInput: KimiTUIStartupInput = {
+      ...makeStartupInput(),
+      engineV2: true,
+      cliOptions: { ...makeStartupInput().cliOptions, model: 'k2' },
+    };
+    const { driver } = await makeDriver(
+      makeSession({ id: 'ses-lazy' }),
+      { listWorkspaceSkills: vi.fn(() => pending.promise) },
+      startupInput,
+    );
+    const refreshSkillCommands = (
+      driver as unknown as { refreshSkillCommands(session?: unknown): Promise<void> }
+    ).refreshSkillCommands.bind(driver);
+    const staleRefresh = refreshSkillCommands();
+
+    await (
+      driver as unknown as { setSession(session: unknown): Promise<void> }
+    ).setSession(makeSession({ id: 'ses-new' }));
+    pending.resolve([testSkill('stale')]);
+    await staleRefresh;
+
+    expect(driver.skillCommandMap.has('skill:stale')).toBe(false);
+  });
+
+  it('ignores a skill result after the TUI is aborted', async () => {
+    const pending = deferred<readonly SkillSummary[]>();
+    const startupInput: KimiTUIStartupInput = {
+      ...makeStartupInput(),
+      engineV2: true,
+      cliOptions: { ...makeStartupInput().cliOptions, model: 'k2' },
+    };
+    const { driver } = await makeDriver(
+      makeSession({ id: 'ses-lazy' }),
+      { listWorkspaceSkills: vi.fn(() => pending.promise) },
+      startupInput,
+    );
+    const refreshSkillCommands = (
+      driver as unknown as { refreshSkillCommands(session?: unknown): Promise<void> }
+    ).refreshSkillCommands.bind(driver);
+    const staleRefresh = refreshSkillCommands();
+    (driver as unknown as { aborted: boolean }).aborted = true;
+
+    pending.resolve([testSkill('stale')]);
+    await staleRefresh;
+
+    expect(driver.skillCommandMap.has('skill:stale')).toBe(false);
+  });
+
+  it('ignores a workspace skill result released after session runtime reset', async () => {
+    const pending = deferred<readonly SkillSummary[]>();
+    const startupInput: KimiTUIStartupInput = {
+      ...makeStartupInput(),
+      engineV2: true,
+      cliOptions: { ...makeStartupInput().cliOptions, model: 'k2' },
+    };
+    const { driver } = await makeDriver(
+      makeSession({ id: 'ses-lazy' }),
+      { listWorkspaceSkills: vi.fn(() => pending.promise) },
+      startupInput,
+    );
+    const refreshSkillCommands = (
+      driver as unknown as { refreshSkillCommands(session?: unknown): Promise<void> }
+    ).refreshSkillCommands.bind(driver);
+    const staleRefresh = refreshSkillCommands();
+
+    (driver as unknown as { resetSessionRuntime(): void }).resetSessionRuntime();
+    pending.resolve([testSkill('stale')]);
+    await staleRefresh;
+
+    expect(driver.skillCommandMap.has('skill:stale')).toBe(false);
   });
 
   it('submits inline skill tokens with the prompt as one grouped submission (v2 engine)', async () => {

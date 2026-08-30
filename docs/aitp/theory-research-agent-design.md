@@ -1,12 +1,12 @@
 # AITP × Hakimi 理论物理科研 Agent 设计备忘录
 
-> 状态：Hakimi adapter 的 H0–H4 已实现，H5 仅部分集成；`KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 默认关闭。这个 Hakimi 产品 flag 不是 AITP 协议状态，也不是 H6 可用性信号；H6 native method-distillation orchestration 仍 planned/unavailable。
+> 状态：Hakimi adapter 的 H0–H4 已实现，H5 仅部分集成；Research Mode 已正式可发现，runtime 默认 inactive。旧的 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 仅作为 inert 兼容输入保留，不控制 Research Mode 入口。这个 Hakimi 产品 flag 不是 AITP 协议状态，也不是 H6b 可用性信号；H6b native method-distillation orchestration 仍 planned/unavailable。
 >
 > 本文件是 Hakimi 侧的设计交接材料，不是 AITP canonical Entry 或 Note。当前 Hakimi 仓库没有初始化 `.aitp` store；不能自动 `init --adopt`，也不能绕过 AITP 的 `record/note prepare|save` 写入伪账本。待在已初始化的 AITP Topic workspace 中继续工作时，应把本备忘录压缩为真实的 `decision` 或 `working Note`，并按 AITP pin 规则保存。
 >
-> **已实现范围（实验性切片）：** Hakimi adapter 的 H0–H4（strict contract discovery、Python probe、`enter`/`list`/`show`/`check`、scoped `--workstream`、`record`/`note prepare|save` 写入门控持久化）以及 Research state（Question/Line/Focus、三轴问题模型、revision-based human steering、pending checkpoint 与 save+show+check barrier、Goal complete guard）、mode/loop/Question/Focus/checkpoint 的单一完整 snapshot push、active step 的语义状态维护 guidance、protocol/node-sdk/kap-server/klient 公开表面、TUI `/research` Board/manager 与 stale-hydrate 防护已实现。H5 仅部分集成：adapter 只把 check finding code 作为 opaque string 投影，不暴露、不调用、不解析 `backfill-0.1` 成功 envelope，也不实现 `sha256-once:`/`check-policy` 语义。`/research on` 只激活 capability 和 Board，不调度模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。flag 关闭时所有 AITP 工具、skill 和 Research Board 隐藏，零 AITP I/O。不自动 init/adopt/inventory/backfill apply；backfill 不作为模型工具暴露。
+> **已实现范围：** Hakimi adapter 的 H0–H4（strict contract discovery、Python probe、`enter`/`list`/`show`/`check`、scoped `--workstream`、`record`/`note prepare|save` 写入门控持久化）以及 Research state（Question/Line/Focus、三轴问题模型、revision-based human steering、pending checkpoint 与 save+show+check barrier、Goal complete guard）、mode/loop/Question/Focus/checkpoint 的单一完整 snapshot push、active step 的语义状态维护 guidance、protocol/node-sdk/kap-server/klient 公开表面、TUI `/research` Board/manager 与 stale-hydrate 防护已实现。H5 仅部分集成：adapter 只把 check finding code 作为 opaque string 投影，不暴露、不调用、不解析 `backfill-0.1` 成功 envelope，也不实现 `sha256-once:`/`check-policy` 语义。`/research on` 只激活 capability 和 Board，不调度模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。新 session 初始为 inactive，inactive hydration/GET/snapshot 读取零 AITP I/O；持久化为 active 的 session 在 cold restore 后仍保持 active，并重新 probe adapter、执行只读 `enter` → `check` maintenance。active、admitted 的 Goal continuation turn 在 Research state 发生变化后的 turn end 也执行只读 maintenance。不自动 init/adopt/inventory/backfill apply；backfill 不作为模型工具暴露。
 >
-> **未实现：** typed AITP question/line registry、literature/compute/Portfolio 支持、H6 native method-distillation orchestration。
+> **未实现：** typed AITP question/line registry、literature/compute/Portfolio 支持、H6b native method-distillation orchestration。
 
 ## 1. 总决策
 
@@ -22,7 +22,7 @@ AITP 不是 Hakimi 的常驻行为，而是一个显式的、可恢复的科研 
 
 这里需要区分“架构分离”和“科研可靠性分离”：Research Loop 与 AITP adapter 是两个可测试、可替换的内部服务，但完整的 `AITP Research Mode` 不允许把 AITP 当作可有可无的旁路。没有 AITP 时可以进行有限的 exploratory work，却不能把它称为完整可靠的研究模式，也不能关闭关键问题、宣布正式 result 或完成阶段交接。
 
-需要区分两个开关：实验性 Feature flag 决定该能力是否可用，**默认关闭**（设置为 `=1` 或在 `/experiments` 中开启）；runtime mode 决定当前 main Agent 是否已经选择启用联合科研能力。permission `auto` 只决定模型发起的 mode-entry 工具是否免除一次用户确认，不能授予模型 human authority、改变研究目标或批准高风险动作。flag 开启仅开放 `/research` 与 `EnterAITPMode` 入口；进入模式仍需 `/research on` 或模型入口，inactive 状态零 AITP I/O，不自动 init/adopt/inventory/backfill。
+Research Mode 不由实验性 Feature flag 门控：入口默认可发现，runtime mode 决定当前 main Agent 是否已经选择启用联合科研能力。每个新 session 初始为 inactive，hydration 保留已持久化的 mode；inactive hydration、GET 和 snapshot 读取不发生 AITP I/O。持久化为 active 的 session 在 cold restore 后仍保持 active，并重新 probe adapter、执行只读 `enter` → `check` maintenance。旧的 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 与 master flag 对该入口均为 inert 兼容输入，不会隐藏或启用 Research Mode。permission `auto` 只决定模型发起的 mode-entry 工具是否免除一次用户确认，不能授予模型 human authority、改变研究目标或批准高风险动作。H6b 若未来需要独立 gate，必须使用独立的 Feature flag，不能冒充当前 Research Mode flag；进入模式仍需 `/research on` 或模型入口，不自动 init/adopt/inventory/backfill。
 
 ## 2. 真相分层与边界
 
@@ -43,7 +43,7 @@ AITP mode 是 Agent-scope 的 main-agent capability state，采用可回放、�
 - active/probing：已请求联合科研模式，但还没有通过 AITP `enter/check`；只能进行入口准备和低风险 exploratory work，不能提交可靠 checkpoint。
 - active/ready：Research Loop 和 AITP adapter 同时可用，进入完整可靠的科研模式；关键阶段转换必须经过 AITP commit barrier。
 - active/degraded：Research Loop 可以保留当前问题、继续本地 Question/Line mutation 和生成临时 artifact，但不得把持久化失败伪装成成功。AITP writes 与 active Research Mode 的 Goal completion 被阻止；未解决 human gate 也阻止 Goal completion。需要 durable checkpoint 或可靠 closure 时应 pause/blocked，直到 AITP 恢复或研究者明确选择降级处理；当前没有 automatic session-closeout。
-- explicit user entry：通过 `/aitp on`、typed facade 或等价用户入口直接进入，不重复询问。
+- explicit user entry：通过 `/research on`、typed facade 或等价用户入口直接进入，不重复询问。
 - model entry：模型只能调用 `EnterAITPMode`；`auto` permission 可自动通过 entry gate，其他 permission posture 要求用户确认。这里的确认是 capability entry review，不等同于 AITP `authority: human` decision。
 - mode exit：撤销新 AITP 操作 admission、回收动态工具和 Research activation lease，不删除已经保存的 AITP 记录，也不自动取消或完成 Goal。
 - restore/undo：inactive restore 必须零 AITP I/O；active restore 不重复询问，但重新探测 adapter 并重建工具。conversation undo 只回滚 Hakimi mode/Research state，不回滚外部 AITP Entry/Note。
@@ -80,7 +80,7 @@ Goal 负责 objective、completion criterion、总预算、pause/resume/cancel �
   → continue / ask / pause / complete / blocked
 ```
 
-以下 commit-barrier 列表是联合 Research Loop 的设计目标，不是当前 Hakimi adapter 已自动提供的生命周期：Research Loop 不需要每个 step 都写 AITP，但在关闭或回答一个主问题、改变研究阶段、接受或放弃核心假设、记录重要文献判断、完成重要 run、形成阶段性结论、Goal complete、计划中的 session closeout，以及任何需要下一 session 依赖的事实时，都应完成 AITP 提交并验证。当前状态维护只在 mode entry 与 active undo/cold restore 后只读执行 `enter` → `check`，没有 session-end automatic closeout。提交未知或验证失败时，不能继续宣称该边界已经完成；应进入 `pause`/`blocked` 或明确的 `uncommitted exploratory` 状态。
+以下 commit-barrier 列表是联合 Research Loop 的设计目标，不是当前 Hakimi adapter 已自动提供的生命周期：Research Loop 不需要每个 step 都写 AITP，但在关闭或回答一个主问题、改变研究阶段、接受或放弃核心假设、记录重要文献判断、完成重要 run、形成阶段性结论、Goal complete、计划中的 session closeout，以及任何需要下一 session 依赖的事实时，都应完成 AITP 提交并验证。当前状态维护会在 mode entry、active undo/cold restore（均在 ready probe 后），以及 active、admitted 的 Goal continuation turn 在 Research state 发生变化后的 turn end，只读执行 `enter` → `check`；没有 session-end automatic closeout。提交未知或验证失败时，不能继续宣称该边界已经完成；应进入 `pause`/`blocked` 或明确的 `uncommitted exploratory` 状态。
 
 如果新证据不能改变下一动作、问题优先级或停止判断，当前过程只是 workflow 或日志，不是真正的科研 loop。反过来，如果状态改变了却没有经过 AITP commit barrier，当前结果只能算临时探索，不能算可靠的科研阶段结论。
 
@@ -117,7 +117,7 @@ AITP 不可用、旧版本、未初始化或 `check` exit 2 时，Agent 可以�
   → Skill/tool routing
 ```
 
-H6/C6 只负责编排和人机交互，不拥有 procedure matching、科学正确性、ledger semantics 或自动发布权。当前 H6 仍 planned/unavailable。
+H6b/C6 只负责编排和人机交互，不拥有 procedure matching、科学正确性、ledger semantics 或自动发布权。当前 H6b 仍 planned/unavailable；未来若需要 gate，必须独立于当前 Research Mode flag。
 
 ## 4. 最小领域 contract
 
@@ -140,9 +140,9 @@ H6/C6 只负责编排和人机交互，不拥有 procedure matching、科学正�
 
 ### 5.2 AITP 读写
 
-当前实现只在联合 AITP Research Mode active、ready probe 通过后的 mode entry，以及 active undo/cold restore 后运行只读 `enter` → `check`；这不是 session-end automatic closeout。inactive session 必须 zero-write、zero-probe。`check` exit 0/1 解析报告，exit 2 fail closed。`show` 用于精确打开依赖记录，`list` 用于类型/时间/workstream 投影，不能把它们当作语义搜索。
+当前实现会在联合 AITP Research Mode active 且 ready probe 通过后的 mode entry、active undo/cold restore 后，以及 active、admitted 的 Goal continuation turn 在 Research state 发生变化后的 turn end，运行只读 `enter` → `check`；这不是 session-end automatic closeout。inactive session 必须 zero-write、zero-probe。`check` exit 0/1 解析报告，exit 2 fail closed。`show` 用于精确打开依赖记录，`list` 用于类型/时间/workstream 投影，不能把它们当作语义搜索。
 
-可靠模式的设计目标是让 AITP 成为研究状态的 commit barrier：真实 run、重要 result、failure/反例、source assessment、decision、阶段切换、问题关闭或 reopen、Goal complete 和计划中的 closeout 都应经过 prepare/save/check 验证。当前 Hakimi adapter 只提供已实现的显式 write gate 与 entry/restore 只读维护，不提供 session-end automatic closeout；普通 tool call、每个子 Agent 的中间意见、重复检查和没有改变状态的重述保持零写入。adapter 暂时不可用时可以保留低风险临时 artifact，但不得把未提交状态宣传为 durable result。
+可靠模式的设计目标是让 AITP 成为研究状态的 commit barrier：真实 run、重要 result、failure/反例、source assessment、decision、阶段切换、问题关闭或 reopen、Goal complete 和计划中的 closeout 都应经过 prepare/save/check 验证。当前 Hakimi adapter 只提供已实现的显式 write gate，以及 entry、active undo/cold restore 和 admitted Goal continuation turn end 的只读维护；不提供 session-end automatic closeout；普通 tool call、每个子 Agent 的中间意见、重复检查和没有改变状态的重述保持零写入。adapter 暂时不可用时可以保留低风险临时 artifact，但不得把未提交状态宣传为 durable result。
 
 四条以上相互依赖的 durable Entries 形成结论链、当前 working Note 已落后、研究阶段发生切换或下一 session 需要重建复杂推理时，写 working Note。只有假设、推导、检查和开放缺口已经相对稳定时，才写 theory Note。
 
@@ -435,14 +435,14 @@ Board 默认只显示 current Line；其他 active/waiting/blocked Lines 用摘�
 ## 10. 实施顺序
 
 1. **P0 contract freeze**：冻结联合 AITP Research Mode、entry/exit/degraded 语义、Research Frame、Question、Artifact、Checkpoint、AITP commit barrier、stop predicates、D↔C persistence bridge 和 main-agent human gate。
-2. **P1 mode shell**：实现 experimental flag、`AITPModeModel`、`EnterAITPMode`/`ExitAITPMode`、permission entry gate、Plan 冲突、restore/undo、context disclosure；本阶段验证 inactive 路径完全不做 AITP I/O。
+2. **P1 mode shell**：实现 `AITPModeModel`、`EnterAITPMode`/`ExitAITPMode`、permission entry gate、可与 Plan overlay 并存、restore/undo、context disclosure；本阶段验证 inactive 路径完全不做 AITP I/O。
 3. **P2 read-only adapter + visibility**：接入 contract probe、`enter/check/list/show`、active-only Research/AITP tools、Skill visibility gate、dynamic registration/disposal、stale generation guard；mode 进入后先完成 AITP health gate，再开放完整 Research Loop。
 4. **P3 Research Loop core**：实现 Frame、Question、Artifact、Checkpoint、bounded action、typed specialist packets、Goal linkage 和 cold/undo replay；每个 durable boundary 都产生 AITP commit request，不允许无账本地推进正式阶段。
 5. **P4 canonical write gate**：接入 `record/note prepare/save`、idempotency/reconcile、mutation single-flight、exit drain 与 H4 的 scoped check；H5 的 backfill/`sha256-once:`/policy 语义仍属于 AITP upstream，当前 Hakimi 只做 finding-code opaque projection，不暴露或调用 backfill；严格禁止 direct canonical file write。
 6. **P5 理论与文献 workflow**：arXiv/INSPIRE/Crossref provider、本地 raw/metadata/FTS、PDF/TEI provenance、LiteratureEvidencePacket、derivation verification 和 Note/Entry 写入门。
 7. **P6 Compute backend**：local → SSH → Slurm；每层都要求 manifest、reconcile、幂等和 cold resume，并在 run/result durable boundary 接入 AITP。
 8. **P7 真实使用评估**：对比普通 Goal-only、无 AITP 的 exploratory loop 和完整 AITP Research Mode，测量 evidence-driven next action、falsifier coverage、重复动作、premature complete、blind retry、恢复收敛和不必要提问。
-9. **P8 H6 method distillation**：只有 H0–H4 已稳定、H5 adapter contract extension 完成且真实使用证明 native coordinator 有必要后才实现；当前 H6 仍 planned/unavailable。
+9. **P8 H6b method distillation**：只有 H0–H4 已稳定、H5 adapter contract extension 完成且真实使用证明 native coordinator 有必要后才实现；当前 H6b 仍 planned/unavailable，未来 gate 独立于当前 Research Mode flag。
 
 ## 11. 开放问题
 

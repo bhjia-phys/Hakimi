@@ -52,6 +52,7 @@ const WIRE_GOAL = {
   turnsUsed: 1,
   tokensUsed: 0,
   wallClockMs: 0,
+  waitingFor: { taskIds: ['task_1', 'task_2'], policy: 'all' },
   budget: {
     tokenBudget: null,
     turnBudget: null,
@@ -191,6 +192,7 @@ describe('DaemonKimiWebApi.getSessionGoal', () => {
     expect(goal?.objective).toBe('fix all lint warnings');
     expect(goal?.status).toBe('active');
     expect(goal?.turnsUsed).toBe(1);
+    expect(goal?.waitingFor).toEqual({ taskIds: ['task_1', 'task_2'], policy: 'all' });
   });
 
   it('maps null to null (no active goal)', async () => {

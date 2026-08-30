@@ -168,6 +168,7 @@ import {
   IAgentPluginCommandService,
   IAgentProfileService,
   IAgentSkillService,
+  IAgentSkillVisibilityService,
   IAgentSwarmService,
   IAgentTaskService,
   IAgentTokenCountingService,
@@ -575,8 +576,9 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
 
   /**
    * Through the workspace handler's `IWorkspaceSkillCatalog` — the engine's
-   * own merged view (builtin / user / explicit / extra / workspace-root /
-   * plugin), so the session-less list matches what a session would serve.
+   * own merged prospective catalog (builtin / user / explicit / extra /
+   * workspace-root / plugin). This intentionally stays raw: a live session's
+   * `listSkills` applies the main-agent availability projection separately.
    * `handlerFor` is create-or-get: session creation materializes the handler
    * anyway.
    */
@@ -1570,18 +1572,22 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
   }
 
   /**
-   * Through the session scope (`ISessionSkillCatalog`) — no klient facade
-   * exists. Same merged view v1's `Session.listSkills` serves (builtin +
-   * user + project + plugin skills through the same `summarizeSkill`
-   * mapping), with the same snapshot-vs-live caveat as `listPluginCommands`:
-   * v1 loads the registry once at session creation while the v2 catalog
-   * re-merges on source changes mid-session; the two agree for any session
-   * created after the last skill change.
+   * Through the session scope (`ISessionSkillCatalog`) plus the main agent's
+   * visibility projection — no klient facade exists. The session result is the
+   * current main-agent availability view: inactive-only feature skills are
+   * omitted while ordinary skills remain visible. Ensuring the agent scope does
+   * not bind a profile or resolve a model. The workspace counterpart above is
+   * deliberately a prospective raw catalog for a session that does not exist.
    */
   override async listSkills(input: SessionIdRpcInput): Promise<readonly SkillSummary[]> {
-    const catalog = this.requireLiveSession(input.sessionId).accessor.get(ISessionSkillCatalog);
+    const session = this.requireLiveSession(input.sessionId);
+    const catalog = session.accessor.get(ISessionSkillCatalog);
     await catalog.ready;
-    return catalog.catalog.listSkills().map(summarizeSkill);
+    const main = await ensureMainAgent(session);
+    const visible = main.accessor
+      .get(IAgentSkillVisibilityService)
+      .filterVisible(catalog.catalog.listSkills());
+    return visible.map(summarizeSkill);
   }
 
   // -----------------------------------------------------------------------
@@ -2120,7 +2126,11 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     const agent = await this.agentScope(input.sessionId);
     return agent.accessor
       .get(IAgentGoalService)
-      .createGoal({ objective: input.objective, replace: input.replace });
+      .createGoal({
+        objective: input.objective,
+        completionCriterion: input.completionCriterion,
+        replace: input.replace,
+      });
   }
 
   override async getGoal(input: SessionIdRpcInput): Promise<GoalToolResult> {

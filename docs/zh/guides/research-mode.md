@@ -1,14 +1,14 @@
 # 研究模式
 
-研究模式（Research Mode）是一项实验性功能，让 Hakimi 成为以 [AITP](https://github.com/bhjia-phys/AITP-Research-Protocol) 证据账本为支撑的联合研究伙伴。Agent 不再是回答一个问题就忘记，而是维护一个实时的研究问题看板，通过有界行动自主推进，并将持久检查点写入 AITP——同时你始终可以通过斜杠命令和研究面板完全掌控方向。
+研究模式（Research Mode）让 Hakimi 成为以 [AITP](https://github.com/bhjia-phys/AITP-Research-Protocol) 证据账本为支撑的联合研究伙伴。Agent 不再是回答一个问题就忘记，而是维护一个实时的研究问题看板，通过有界行动自主推进，并将持久检查点写入 AITP——同时你始终可以通过斜杠命令和研究面板完全掌控方向。
 
-::: warning 实验性
-研究模式由 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`（`aitp_research_mode`）实验性标志控制，**默认关闭**。这个 default-off flag 是 Hakimi 的产品设置，不是 AITP 协议状态信号，也不是 H6 可用性信号。其界面、行为和工具名称可能在版本间变化。关于实验性标志的工作方式，参见[环境变量](../configuration/env-vars.md#runtime-switches)。
+::: warning 注意
+研究模式默认可发现，但运行时初始为 `inactive`。只有显式进入后才会探测 AITP 或显示 Research Board。AITP 集成仍受 [AITP 交接文档](../../aitp/README.md) 中的兼容性边界约束，包括 H5 仅部分集成以及 H6 method distillation 的 planned/unavailable 状态。
 :::
 
 ## 前置条件
 
-研究模式有三个硬性前置条件。任何一项不满足时，模式会进入降级状态（见下文），持久化操作将被阻止。
+研究模式有三个硬性前置条件。Hakimi 只会在显式进入后检查它们；任何一项不满足时，active 模式会进入降级状态（见下文），持久化操作将被阻止。
 
 - **Python 3.11 或更高版本** — AITP 适配器通过 Python 启动 AITP CLI。进入模式时适配器会探测可用的 Python；如果未找到兼容版本，模式将降级。
 - **已安装 AITP 插件** — 会话技能目录中必须能发现 `aitp-research-protocol` 插件。适配器会解析插件根目录，读取其 `aitp.contract.json` 和 `kimi.plugin.json`，并验证合约版本。插件缺失或版本不兼容将导致降级。
@@ -18,19 +18,15 @@
 
 对于理论物理研究，仓库内置的 `theory-physics` plugin 是可选的 domain pack。它为通用 Research Loop 增加物理领域的行动路由和报告规范——什么时候查文献、如何检查推导、如何区分调度器证据与物理结论，以及什么时候请求人类决策。它不增加第二个 runtime、自动后台 loop、文献数据库、HPC observer 或 AITP schema。
 
-## 启用研究模式
+## 进入研究模式
 
-`KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`（`aitp_research_mode`）标志默认关闭。启动前将其设置为 `1`，才能让 `/research` 命令和 `EnterAITPMode` 能力对 Agent 可用。这个 flag 只是 Hakimi 的产品决策，不报告 AITP 协议阶段，也不表示 H6 可用。标志只是开放入口——它**不会**进入研究模式、探测 AITP、显示研究面板或开放 AITP plugin skill 和研究工具。inactive 状态下零 AITP I/O，绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`。你仍需显式进入模式（通过 `/research on` 或模型 `EnterAITPMode` 入口路径）才能激活 AITP 适配器，并让后续研究轮次使用这些科研能力。
+Research Mode 不需要选择性启用开关。`/research` 命令和 `EnterAITPMode` 能力默认可发现。每个新建 session 初始都为 `inactive`，而 hydration 会保留已持久化的 mode。inactive 状态的恢复加载、`getResearch` 和 GET/快照读取只使用本地快照：不会发生 AITP I/O，不会探测 workspace，Research Board 也保持隐藏。持久化为 active 的 session 在 cold restore 后仍保持 active；cold restore 会重新探测适配器并执行只读的 `enter` → `check` 维护周期。其他 Research/AITP 工具以及 AITP plugin skill 仍仅在 active 状态下可见。
 
-```sh
-KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=1 hakimi
-```
-
-如需完全隐藏 Research 入口，启动前设置 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=0`，或在 TUI 中通过 `/experiments` 交互式关闭。标志关闭时，`/research` 命令不会出现在自动补全中，所有 AITP 工具和技能对模型不可见，且不会发生任何 AITP I/O。
+旧的 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 环境变量、`[experimental].aitp_research_mode` 和 `KIMI_CODE_EXPERIMENTAL_FLAG` 对这个正式开放的能力均不生效，不会隐藏或启用入口；总开关对其他实验功能仍然有效。要从 inactive session 激活 AITP 支撑的能力，请用 `/research on` 显式进入，或让模型调用 `EnterAITPMode`。active conversation undo 和 cold restore 也会重新探测适配器，并在探测就绪后执行只读的 `enter` → `check` 维护周期。Research Mode 绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`。
 
 ## 启动与停止
 
-使用 `/research on` 进入研究模式。Hakimi 会激活 AITP 适配器、探测 workspace 并显示研究面板。该命令本身不会创建研究问题，也不会调度模型轮次；进入后请提交研究问题、继续已有 Goal，或者让模型在处理科研请求时调用 `EnterAITPMode`。你也可以在进入时选择特定研究线：
+使用 `/research on` 进入研究模式。Hakimi 会激活 AITP 适配器、探测 workspace，并在探测就绪后执行只读的 `enter` → `check` 周期，然后显示 Research Board。该命令本身不会创建研究问题，也不会调度模型轮次；进入后请提交研究问题、继续已有 Goal，或者让模型在处理科研请求时调用 `EnterAITPMode`。你也可以在进入时选择特定研究线：
 
 ```
 /research on
@@ -63,7 +59,7 @@ KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=1 hakimi
 
 maintenance receipt 和上下文注入只暴露安全摘要：Working Note age、active state 是否更新、未解决 failure 数、next action、warning code，以及 check 的状态、计数和 finding code。完整 Research snapshot/API 响应或展开的 Board 仍可能包含 checkpoint、revision 和 adapter health 字段；这些 projection 不等同于 maintenance receipt 或上下文注入。
 
-合法的 check findings（包括 error finding）会保持模式为 `ready`；只有 `enter`/`check` 周期不可用或无效时才会显示 `degraded`。error finding 仍可按照具体 checkpoint 的保存屏障阻止该 checkpoint 提交。这项维护是只读的：不会自动运行 `init`、adopt 或执行 backfill，也不会自动写入 semantic handoff、Entry 或 Note。它只在进入模式以及 active undo/cold restore 后运行，不是 session-end automatic closeout。
+合法的 check findings（包括 error finding）会保持模式为 `ready`；只有 `enter`/`check` 周期不可用或无效时才会显示 `degraded`。error finding 仍可按照具体 checkpoint 的保存屏障阻止该 checkpoint 提交。这项维护是只读的：不会自动运行 `init`、adopt 或执行 backfill，也不会自动写入 semantic handoff、Entry 或 Note。它会在进入模式、active undo/cold restore 后，以及 active、admitted 的 Goal continuation turn 在 turn end 发生 Research state 变化时运行，不是 session-end automatic closeout。
 
 ## 暂停与恢复
 
@@ -91,7 +87,7 @@ maintenance receipt 和上下文注入只暴露安全摘要：Working Note age�
 
 Todo **Actions** 保留为辅助信息，不再是紧凑 Board 的主叙事。模式、循环、问题、焦点和检查点发生变化时，core 会向 TUI 推送一个完整快照，因此面板无需轮询即可立即更新；冷会话读取也不能覆盖更新的实时快照。
 
-面板跟踪的是语义化科研状态，而不是原始活动日志。普通工具调用和 AITP `list` / `show` / `check` 读取本身不会改变面板。研究模式激活后，Agent 会在每个步骤收到状态维护规则：实质性工作前先创建 Question，设置焦点，用 `BeginResearchAction` 开始一个有界行动，并在完成后用 `ConcludeResearchAction` 说明实际物理工作、结果、测试或推导、限制、对主线的影响和下一步。`ConcludeResearchAction` 不提交或轮询 HPC 任务、不写入 AITP，也不会自动改变问题的 assessment。`PlanResearchAction`、`CompleteResearchAction`、`SetResearchPhase` 和 `RecordResearchProgress` 保留为较低层的恢复或维护工具，不是正常行动路径。只有在新证据、失败或持续无进展改变判断或下一动作时才调用 `UpdateResearchQuestion`。这是语义 guidance，不保证 candidate confirmation 会在 runtime guard 中保护每一次 focus 调用。如果没有发生这类语义转换，面板保持不变是预期行为。
+面板跟踪的是语义化科研状态，而不是原始活动日志。普通工具调用和 AITP `list` / `show` / `check` 读取本身不会改变面板。研究模式激活后，Agent 会优先选择足够简单的解释或实验，并先获取成本最低但有决定性的证据，再升级到远程、长时间运行或多分支工作。只有简单 probe 无法判定问题时，才升级到远程、长时间运行或多分支工作。实质性工作前先创建 Question，设置焦点，用 `BeginResearchAction` 开始一个有界行动，并在完成后用 `ConcludeResearchAction` 说明实际物理工作、结果、测试或推导、限制、对主线的影响和下一步。`ConcludeResearchAction` 不提交或轮询 HPC 任务、不写入 AITP，也不会自动改变问题的 assessment。`PlanResearchAction`、`CompleteResearchAction`、`SetResearchPhase` 和 `RecordResearchProgress` 保留为较低层的恢复或维护工具，不是正常行动路径。只有在新证据、失败或持续无进展改变判断或下一动作时才调用 `UpdateResearchQuestion`。这是语义 guidance，不保证 candidate confirmation 会在 runtime guard 中保护每一次 focus 调用。如果没有发生这类语义转换，面板保持不变是预期行为。
 
 Research Mode 会把当前会话的 `TodoList` 投影为面板中的 **Actions**。Todo 状态仍与 Research Question 和 AITP 账本分离：完成一个 action 本身不会改变 epistemic 状态，也不会自动创建 AITP Entry。按 `Ctrl-O` 可以在原位置展开 Board；展开视图会补充 derivation、tests、sources、checkpoint 细节和当前 scheduler observation，同时保留当前研究线摘要、assessment、alerts 和有界 Actions 列表，再按一次 `Ctrl-O` 折叠。普通非研究模式下，`Ctrl-T` 仍用于展开独立的 Todo 面板。
 
@@ -139,7 +135,7 @@ Agent 提出候选问题供你确认时，可以先把它们登记为开放的 w
 
 ## 保存、查看与检查屏障
 
-Agent 可用的 AITP 工具面按适配器健康状态分为两层：
+`EnterAITPMode` 始终默认可发现，是显式进入模式的工具。模式 active 后，其余 Research 和 AITP 工具再按适配器健康状态分层开放：
 
 - **读工具**（`aitp_enter`、`aitp_list`、`aitp_show`、`aitp_check`）— 适配器为 `ready` **或** `degraded` 时可用。降级模式下 Agent 仍可浏览账本和运行健康检查。
 - **写工具**（`aitp_record_prepare`、`aitp_record_save`、`aitp_note_prepare`、`aitp_note_save`）— **仅**在适配器为 `ready` 时可用。写操作使用单飞保护：当前变更未完成前，并发的变更请求会被拒绝。
@@ -170,12 +166,12 @@ Agent 可用的 AITP 工具面按适配器健康状态分为两层：
 
 研究模式有以下硬性排除：
 
-- **Plan 模式冲突**：Plan 模式与研究模式在所有入口（包括直接 API 入口）上互斥。进入一个前必须退出另一个。如果旧会话恢复会让二者同时激活，Plan 模式优先，Hakimi 会在 probe AITP 或注入 Research guidance 前退出研究模式。
+- **Plan overlay**：研究模式是长生命周期的科研上下文。Plan 模式是短生命周期、可嵌套的 overlay，可以与研究模式同时 active；进入或退出 Plan 模式不会退出或重置研究模式。
 - **仅限主 Agent**：AITP 和 Research 变更工具仅在主 Agent 上可用。子 Agent 无法使用——必须通过类型化数据包将结果返回给主 Agent。
 - **会话撤销**：研究工作状态（问题、焦点、研究线）通过检查点模型跟随会话撤销。已提交的 AITP 游标**不**跟随——一旦检查点提交到 AITP，会话撤销无法撤回这一外部事实。
 
 ## 下一步
 
-- [斜杠命令参考](../reference/slash-commands.md#experimental-research-mode) — 完整的 `/research` 命令语法
+- [斜杠命令参考](../reference/slash-commands.md#research-mode) — 完整的 `/research` 命令语法
 - [会话与上下文](./sessions.md) — 会话撤销如何与研究状态交互
 - [使用目标模式](./goals.md) — 另一种特殊模式；研究模式降级时 Goal 完成会被阻止

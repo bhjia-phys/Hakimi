@@ -116,7 +116,7 @@ If `KIMI_MODEL_NAME` is set but a required variable is missing, startup fails im
 
 ## Runtime switches
 
-Switches that control the behavior of subsystems such as telemetry, background tasks, and the plugin marketplace:
+Switches that control the behavior of subsystems such as telemetry, background tasks, and the plugin marketplace. The legacy `[experimental]` keys `openai-codex-oauth` and `aitp_research_mode` are retained only as inert compatibility inputs; they do not gate the graduated Codex OAuth or Research Mode surfaces.
 
 | Variable | Purpose | Valid values |
 | --- | --- | --- |
@@ -134,8 +134,8 @@ Switches that control the behavior of subsystems such as telemetry, background t
 | `KIMI_CODE_BUILTIN_PRODUCT_SKILLS` | Whether the built-in skills documenting Hakimi itself are offered to the model; takes higher priority than `builtin_product_skills` in `config.toml` (default enabled) | Truthy: `1`/`true`/`yes`/`on`; falsy: `0`/`false`/`no`/`off` |
 | `KIMI_CODE_TUI_FULL_SCREEN` | Enable the experimental fullscreen alternate-screen UI: scrollable transcript viewport, mouse text selection, clickable links, and Ctrl-Shift-F transcript search | `1` enables it; anything else keeps the regular inline UI |
 | `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL` | Enable the deprecated `[secondary_model]` best-effort fallback for Agent, AgentSwarm, and Tower workers when no canonical `[subagent]` preset is active; it no longer adds a per-spawn `model` parameter or changes `/preset` routing. The master `KIMI_CODE_EXPERIMENTAL_FLAG=1` also enables it | Truthy: `1`/`true`/`yes`/`on`; falsy: `0`/`false`/`no`/`off` |
-| `KIMI_CODE_EXPERIMENTAL_OPENAI_CODEX_OAUTH` | Enable ChatGPT / OpenAI Codex OAuth login and its generated models; the master `KIMI_CODE_EXPERIMENTAL_FLAG=1` also enables it | Truthy: `1`/`true`/`yes`/`on`; falsy: `0`/`false`/`no`/`off` |
-| `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` | Enable experimental AITP Research Mode: exposes the `/research` command and the `EnterAITPMode` capability, but the mode is only entered explicitly with `/research on` (or the model entry path). **Defaults to off**; set `=1` to expose the Research surface (the master `KIMI_CODE_EXPERIMENTAL_FLAG=1` also enables it), or set `=0` to keep it hidden | Truthy: `1`/`true`/`yes`/`on`; falsy: `0`/`false`/`no`/`off` |
+| `KIMI_CODE_EXPERIMENTAL_OPENAI_CODEX_OAUTH` | Deprecated compatibility variable; inert no-op for ChatGPT / OpenAI Codex OAuth login and generated models. The master `KIMI_CODE_EXPERIMENTAL_FLAG=1` does not change this | Truthy values are accepted but have no effect |
+| `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` | Deprecated compatibility variable; inert no-op for AITP Research Mode discovery or entry. The master `KIMI_CODE_EXPERIMENTAL_FLAG=1` does not change this | Truthy values are accepted but have no effect |
 | `KIMI_MCP_STARTUP_TIMEOUT_MS` | Global default connection timeout (ms) for all MCP servers; takes higher priority than `[mcp] startup_timeout_ms` in `config.toml`, but a per-server `startupTimeoutMs` in `mcp.json` still wins (default `30000`) | Integer from `1` to `2147483647`; invalid values are ignored |
 | `KIMI_MCP_TOOL_TIMEOUT_MS` | Global default single tool-call timeout (ms) for all MCP servers; takes higher priority than `[mcp] tool_timeout_ms` in `config.toml`, but a per-server `toolTimeoutMs` in `mcp.json` still wins (default `60000`) | Integer from `1` to `2147483647`; invalid values are ignored |
 | `KIMI_LOOP_MAX_STEPS_PER_TURN` | Maximum Agent steps per turn; takes higher priority than `[loop_control] max_steps_per_turn` in `config.toml` (unset or `0` means unlimited) | Non-negative integer; invalid values are ignored |
@@ -145,7 +145,7 @@ Switches that control the behavior of subsystems such as telemetry, background t
 | `KIMI_WEB_SEARCH_API_KEY` | API key of the web search (`WebSearch`) service; replaces both the configured API key and OAuth credential when set | Non-blank string; blank values are ignored |
 | `KIMI_WEB_FETCH_BASE_URL` | API URL of the web fetch (`FetchURL`) service; takes higher priority than `[services.moonshot_fetch] base_url`. Persisted credentials and custom headers are not forwarded to an env-selected endpoint. Without an env or config endpoint, signed-in users try the managed Kimi OAuth fetch service before direct local requests | Non-blank string; blank values are ignored |
 | `KIMI_WEB_FETCH_API_KEY` | API key of the web fetch (`FetchURL`) service; replaces both the configured API key and OAuth credential when set | Non-blank string; blank values are ignored |
-| `KIMI_CODE_EXPERIMENTAL_FLAG` | Enable all registered experimental features for this process; it does not select the agent engine | `1`, `true`, `yes`, `on` |
+| `KIMI_CODE_EXPERIMENTAL_FLAG` | Enable all remaining registered experimental features for this process; it does not select the agent engine and does not enable the graduated Codex OAuth or AITP Research Mode surfaces | `1`, `true`, `yes`, `on` |
 | `KIMI_CODE_LEGACY_FLAG` | Use the legacy `agent-core` engine for `hakimi`, `hakimi -p`, `hakimi doctor`, `hakimi acp`, `hakimi export`, and `hakimi provider`; these commands use `agent-core-v2` by default | `1`, `true`, `yes`, `on` |
 | `KIMI_SHELL_PATH` | Override the Git Bash path on Windows (used when auto-detection fails) | Absolute path |
 | `KIMI_MODEL_MAX_COMPLETION_TOKENS` | Hard cap on `max_completion_tokens` per LLM step; applies to the `kimi` provider only | Positive integer; `0` or negative disables clamping |

@@ -157,7 +157,6 @@ export * from '#/app/config/config';
 export * from '#/app/config/configService';
 export * from '#/app/config/configSectionContributions';
 import '#/app/kosongConfig/configSection';
-import '#/app/kosongConfig/flag';
 export * from '#/kosong/provider/provider';
 export * from '#/kosong/provider/providerService';
 export * from '#/kosong/provider/providerDefinition';
@@ -190,7 +189,6 @@ export {
 } from '#/app/kosongConfig/configSection';
 export * from '#/app/kosongConfig/kosongConfig';
 export * from '#/app/kosongConfig/kosongConfigService';
-export * from '#/app/kosongConfig/flag';
 export * from '#/kosong/model/modelOAuth';
 export * from '#/app/kosongConfig/oauthTokenAdapter';
 export * from '#/app/kosongConfig/hostRequestHeadersAdapter';
@@ -718,7 +716,6 @@ export * from '#/features/research/types';
 export * from '#/features/research/evidencePacket';
 
 // AITP Research Mode feature
-import '#/features/aitpResearch/flag';
 import '#/features/aitpResearch/errors';
 export { AitpResearchErrors } from '#/features/aitpResearch/errors';
 export * from '#/features/aitpResearch/types';

@@ -58,7 +58,7 @@ hakimi -p "Summarize the test failures in this repository."
 hakimi -c
 ```
 
-Inside an interactive session, use `/login` to configure an available provider. Hakimi keeps configuration, sessions, logs, and caches under `~/.hakimi` by default. Set `HAKIMI_HOME` to use a different data directory.
+Inside an interactive session, use `/login` to configure an available provider, including Kimi Code OAuth or ChatGPT / OpenAI Codex OAuth. Codex login provisions the `openai-codex/gpt-5.6-sol`, `openai-codex/gpt-5.6-terra`, and `openai-codex/gpt-5.6-luna` model aliases. Login is explicit; Hakimi never starts OAuth login at startup. Hakimi keeps configuration, sessions, logs, and caches under `~/.hakimi` by default. Set `HAKIMI_HOME` to use a different data directory.
 
 On Windows, install [Git for Windows](https://gitforwindows.org/) before first launch. Hakimi uses the Git Bash shell bundled with Git for Windows; if Git Bash is installed elsewhere, set `KIMI_SHELL_PATH` to the absolute path of `bash.exe`.
 
@@ -73,19 +73,19 @@ On Windows, install [Git for Windows](https://gitforwindows.org/) before first l
 
 The available commands and settings evolve with the development build. The [user manual](docs/en/guides/getting-started.md) and [configuration guide](docs/en/configuration/config-files.md) are the authoritative starting points.
 
-## Experimental research features
+## Research features
 
 Hakimi's Research Loop organizes an experimental research workflow around structured state, evidence, falsifiers, and decisions. It can keep a compact research process trajectory across bounded actions and present research status to the user. It does not expose raw hidden chain-of-thought as a research record, and it does not infer scientific validity from an agent response alone.
 
 The optional `theory-physics` domain pack adds physics-oriented routing, derivation checks, numerical/HPC evidence boundaries, and science-first reporting. It does not add a second runtime, ledger, literature database, or scheduler observer.
 
-AITP Research Mode is off by default and is an opt-in integration through the AITP CLI and files. Its current Hakimi compatibility status is **H0–H4 implemented, H5 partial, and H6 unavailable**. A live subprocess smoke test has exercised the managed AITP 0.8.0 CLI in a disposable scratch store; the complete cross-platform and failure-matrix conformance suite is still pending. See [`docs/aitp/`](docs/aitp/) for the maintained compatibility details.
+AITP Research Mode is discoverable by default. New sessions start `inactive`; hydration preserves the persisted mode. Inactive hydration and `GET`/SDK snapshot reads do not probe AITP or perform AITP I/O, while a persisted active session remains active after cold restore and re-probes the adapter for read-only maintenance. The Research Board and the other Research/AITP tools remain hidden until explicit `/research on`, `EnterAITPMode`, or an equivalent `enter_mode` request. Its current Hakimi compatibility status is **H0–H4 implemented-in-code, H5 partial, and H6b method distillation planned/unavailable**. A live subprocess smoke test has exercised the managed AITP 0.8.0 CLI in a disposable scratch store; complete cross-platform and failure-matrix conformance remains pending. Hakimi does not read or parse a `backfill-0.1` success envelope. See [`docs/aitp/`](docs/aitp/) for the maintained compatibility details.
 
 ## Current status and limitations
 
 - Hakimi is a development version that can be built from source.
 - Core terminal workflows—interactive sessions, tools, providers, and project work—are usable.
-- Research Loop, the `theory-physics` pack, and AITP Research Mode are experimental and may change.
+- Research Loop and the `theory-physics` pack remain experimental and may change; AITP Research Mode is a graduated surface, while its AITP compatibility boundaries remain explicit in [`docs/aitp/`](docs/aitp/).
 - There is no public npm package or release installer yet; use the source build path above.
 - Hakimi does not replace human review, reproducible experiments, or expert scientific validation.
 

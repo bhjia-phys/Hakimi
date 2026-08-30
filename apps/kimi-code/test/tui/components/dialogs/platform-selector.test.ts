@@ -20,12 +20,11 @@ describe('PlatformSelectorComponent', () => {
     expect(output).toContain('Kimi for Coding (OAuth)');
     expect(output).toContain('kimi-code/kimi-for-coding');
     expect(output).not.toContain('Kimi Platform (OAuth)');
-    expect(output).not.toContain('ChatGPT / OpenAI Codex');
+    expect(output).toContain('ChatGPT / OpenAI Codex (OAuth)');
   });
 
-  it('shows the experimental ChatGPT OAuth path only when requested by the host', () => {
+  it('shows the ChatGPT OAuth path by default', () => {
     const selector = new PlatformSelectorComponent({
-      includeOpenAICodex: true,
       onSelect: vi.fn(),
       onCancel: vi.fn(),
     });

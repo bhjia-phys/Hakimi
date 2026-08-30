@@ -46,6 +46,7 @@ import type {
   GoalSnapshot,
   GoalStatus,
   GoalToolResult,
+  GoalWaitLease,
 } from '@moonshot-ai/agent-core-v2/agent/goal/types';
 import type {
   AssistantDeltaEvent,
@@ -262,6 +263,13 @@ export const goalBudgetReportSchema = z.object({
   overBudget: z.boolean(),
 }) satisfies z.ZodType<GoalBudgetReport>;
 
+export const goalWaitLeaseSchema = z
+  .object({
+    taskIds: z.array(z.string().min(1)).min(1).max(32),
+    policy: z.enum(['any', 'all']),
+  })
+  .strict() satisfies z.ZodType<GoalWaitLease>;
+
 export const goalSnapshotSchema = z.object({
   goalId: z.string(),
   objective: z.string(),
@@ -271,6 +279,7 @@ export const goalSnapshotSchema = z.object({
   tokensUsed: z.number(),
   wallClockMs: z.number(),
   budget: goalBudgetReportSchema,
+  waitingFor: goalWaitLeaseSchema.optional(),
   terminalReason: z.string().optional(),
 }) satisfies z.ZodType<GoalSnapshot>;
 

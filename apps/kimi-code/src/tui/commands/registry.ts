@@ -351,7 +351,6 @@ export const BUILTIN_SLASH_COMMANDS = [
     argumentHint:
       '[status|on|off|pause|resume|manage|edit|focus|defer|block|close|reopen|line] | <questionId>',
     completeArgs: researchArgumentCompletions,
-    experimentalFlag: 'aitp_research_mode',
     // status / pause / resume are safe while streaming; on / off / manage /
     // question actions start or steer a turn and so are idle-only.
     availability: (args) => {

@@ -18,12 +18,10 @@ import { FeedbackInputDialogComponent, type FeedbackInputDialogResult } from '..
 import { ModelSelectorComponent } from '../components/dialogs/model-selector';
 import { PlatformSelectorComponent } from '../components/dialogs/platform-selector';
 import type { SlashCommandHost } from './dispatch';
-import { isExperimentalFlagEnabled } from './experimental-flags';
 
 export function promptPlatformSelection(host: SlashCommandHost): Promise<string | undefined> {
   return new Promise((resolve) => {
     const selector = new PlatformSelectorComponent({
-      includeOpenAICodex: isExperimentalFlagEnabled('openai-codex-oauth'),
       onSelect: (platformId) => {
         host.restoreEditor();
         resolve(platformId);

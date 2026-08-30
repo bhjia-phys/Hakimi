@@ -745,7 +745,9 @@ export function skillServices(
     agentService(IAgentSkillService, new SyncDescriptor(AgentSkillService)),
     agentService(IAgentSkillVisibilityService, {
       _serviceBrand: undefined,
+      onDidChange: Event.None as Event<void>,
       isSkillVisible: () => true,
+      isSkillVisibleInFrozenListing: () => true,
       hiddenReason: () => undefined,
       filterVisible: (skills: readonly SkillDefinition[]) => skills,
     }),
@@ -1357,7 +1359,9 @@ export class AgentTestContext {
             reg.defineDescriptor(IAgentSkillService, new SyncDescriptor(AgentSkillService));
             reg.defineInstance(IAgentSkillVisibilityService, {
               _serviceBrand: undefined,
+              onDidChange: Event.None as Event<void>,
               isSkillVisible: () => true,
+              isSkillVisibleInFrozenListing: () => true,
               hiddenReason: () => undefined,
               filterVisible: (skills: readonly SkillDefinition[]) => skills,
             });

@@ -1099,6 +1099,7 @@ export class AgentTranscriptProjector {
       completionCriterion?: string;
       tokensUsed: number;
       budget: { tokenBudget: number | null };
+      waitingFor?: { readonly taskIds: readonly string[]; readonly policy: 'any' | 'all' };
     } | null;
     mutation?: GoalMutationLike;
   }): TranscriptOperation[] {
@@ -1116,6 +1117,7 @@ export class AgentTranscriptProjector {
                 completionCriterion: snapshot.completionCriterion,
                 budgetUsed: snapshot.tokensUsed,
                 budgetLimit: snapshot.budget.tokenBudget ?? undefined,
+                waitingFor: snapshot.waitingFor,
               },
       },
     });

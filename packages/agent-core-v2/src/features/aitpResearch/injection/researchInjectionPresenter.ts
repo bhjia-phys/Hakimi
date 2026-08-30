@@ -253,6 +253,9 @@ function renderHumanGateBlock(gate: ResearchHumanGate): string {
 
 function appendGuidance(lines: string[]): void {
   lines.push(
+    '- Prefer the simplest sufficient explanation or experiment and the cheapest decisive evidence first; do not escalate to remote, long-running, or multi-branch work until a smaller local check shows it is necessary.',
+  );
+  lines.push(
     '- Every bounded research action: declare it with BeginResearchAction (purpose, expected evidence, stop condition), perform only that work, then ConcludeResearchAction with the physical result and next step.',
   );
   lines.push(

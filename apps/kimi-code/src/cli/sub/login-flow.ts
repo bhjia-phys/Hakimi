@@ -11,7 +11,6 @@ import { createKimiCodeHostIdentity } from '#/cli/version';
 import { openUrl } from '#/utils/open-url';
 
 export interface LoginFlowOptions {
-  readonly enableExperimental?: boolean;
   readonly openBrowser?: boolean;
 }
 
@@ -32,37 +31,6 @@ export async function runLoginFlow(
       `Unknown login provider "${requestedProvider}". Use "kimi-code" or "openai-codex".\n`,
     );
     process.exit(1);
-  }
-  if (openAICodex) {
-    if (options.enableExperimental === true) {
-      try {
-        await harness.ensureConfigFile();
-        await harness.setConfig({
-          experimental: { 'openai-codex-oauth': true },
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        process.stderr.write(`Could not enable ChatGPT OAuth: ${message}\n`);
-        process.exit(1);
-      }
-    }
-    const features = await harness.getExperimentalFeatures();
-    const enabled = features.some(
-      (feature) => feature.id === 'openai-codex-oauth' && feature.enabled,
-    );
-    if (!enabled) {
-      process.stderr.write(
-        [
-          'ChatGPT / OpenAI Codex OAuth is experimental and currently disabled.',
-          'Enable it in config.toml with:',
-          '[experimental]',
-          'openai-codex-oauth = true',
-          'Or run: hakimi login --provider openai-codex --enable-experimental',
-          '',
-        ].join('\n'),
-      );
-      process.exit(1);
-    }
   }
   const providerName = openAICodex ? OPENAI_CODEX_PROVIDER_NAME : undefined;
   const providerLabel = openAICodex ? 'ChatGPT / OpenAI Codex' : 'Kimi-for-Coding';

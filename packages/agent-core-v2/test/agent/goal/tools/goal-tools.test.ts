@@ -14,6 +14,7 @@ import {
 } from '#/tool/args-validator';
 import { USER_PROMPT_ORIGIN } from '#/agent/contextMemory/types';
 import { IAgentGoalService } from '#/agent/goal/goal';
+import { IAgentTaskService } from '#/agent/task/task';
 import { CreateGoalTool } from '#/agent/tools/goal/create-goal/createGoalTool';
 import { GetGoalTool } from '#/agent/tools/goal/get-goal/getGoalTool';
 import { SetGoalBudgetTool } from '#/agent/tools/goal/set-goal-budget/setGoalBudgetTool';
@@ -41,6 +42,15 @@ import { stubAgentSwarm } from '../stubs';
 
 const signal = new AbortController().signal;
 
+const runningDetachedTaskService = {
+  _serviceBrand: undefined,
+  getTask: (taskId: string) =>
+    taskId === 'task-1'
+      ? { taskId, kind: 'process', status: 'running', detached: true, endedAt: null }
+      : undefined,
+  list: () => [],
+} as unknown as IAgentTaskService;
+
 describe('goal tools', () => {
   let ctx: TestAgentContext;
   let goals: IAgentGoalService;
@@ -55,6 +65,7 @@ describe('goal tools', () => {
     ctx = createTestAgent(
       agentService(IAgentLoopService, loopService),
       agentService(IAgentSwarmService, stubAgentSwarm()),
+      agentService(IAgentTaskService, runningDetachedTaskService),
       permissionModeServices('auto'),
     );
     goals = ctx.get(IAgentGoalService);
@@ -257,6 +268,89 @@ describe('goal tools', () => {
     for (const status of ['paused', 'impossible', 'cancelled', '']) {
       expect(UpdateGoalToolInputSchema.safeParse({ status }).success).toBe(false);
     }
+    expect(UpdateGoalToolInputSchema.safeParse({
+      status: 'active',
+      waitFor: { taskIds: ['task-1'], policy: 'any' },
+    }).success).toBe(true);
+    expect(UpdateGoalToolInputSchema.safeParse({
+      status: 'active',
+      waitFor: { taskIds: [], policy: 'any' },
+    }).success).toBe(false);
+    for (const status of ['complete', 'blocked']) {
+      expect(UpdateGoalToolInputSchema.safeParse({
+        status,
+        waitFor: { taskIds: ['task-1'], policy: 'any' },
+      }).success).toBe(false);
+    }
+    expect(UpdateGoalToolInputSchema.safeParse({
+      status: 'active',
+      waitFor: { taskIds: ['task-1'], policy: 'any', extra: true },
+    }).success).toBe(false);
+    expect(UpdateGoalToolInputSchema.safeParse({
+      status: 'active',
+      waitFor: { taskIds: Array.from({ length: 33 }, (_, index) => `task-${index}`), policy: 'all' },
+    }).success).toBe(false);
+  });
+
+  it('rejects waitFor on a non-active status even when runtime args bypass validation', () => {
+    const execution = updateGoalTool.resolveExecution({
+      status: 'complete',
+      waitFor: { taskIds: ['task-1'], policy: 'any' },
+    } as never);
+
+    expect(execution).toEqual({
+      isError: true,
+      output: 'Goal wait requires status `active`.',
+    });
+  });
+
+  it('executes UpdateGoal.waitFor through the registered tool and executor', async () => {
+    await goals.createGoal({ objective: 'wait for background work' });
+    const registered = ctx.get(IAgentToolRegistryService).resolve('UpdateGoal');
+    if (registered === undefined) throw new Error('UpdateGoal should be registered');
+
+    const resolved = await registered.resolveExecution({
+      status: 'active',
+      waitFor: { taskIds: ['task-1'], policy: 'any' },
+    });
+    if (resolved.isError === true) throw new Error('UpdateGoal wait should be runnable');
+    expect(resolved.stopBatchAfterThis).toBe(true);
+
+    const waitingResults = await executeGoalCalls(
+      [
+        goalToolCall('call_wait', 'UpdateGoal', {
+          status: 'active',
+          waitFor: { taskIds: ['task-1'], policy: 'any' },
+        }),
+      ],
+      0,
+    );
+    expect(waitingResults[0]?.result).toMatchObject({
+      stopTurn: true,
+      stopBatchAfterThis: true,
+    });
+    expect(goals.getGoal().goal).toMatchObject({
+      status: 'active',
+      waitingFor: { taskIds: ['task-1'], policy: 'any' },
+    });
+
+    const conflictResults = await executeGoalCalls(
+      [
+        goalToolCall('call_conflict', 'UpdateGoal', {
+          status: 'complete',
+          waitFor: { taskIds: ['task-1'], policy: 'any' },
+        }),
+      ],
+      0,
+    );
+    expect(conflictResults[0]?.result).toMatchObject({
+      isError: true,
+      output: 'Goal wait requires status `active`.',
+    });
+    expect(goals.getGoal().goal).toMatchObject({
+      status: 'active',
+      waitingFor: { taskIds: ['task-1'], policy: 'any' },
+    });
   });
 
   it('UpdateGoal forbids model-driven goal pauses', async () => {

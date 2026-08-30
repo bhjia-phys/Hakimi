@@ -537,6 +537,28 @@ describe('agent goal routing', () => {
     await expect(agent.goal.get()).rejects.toBeInstanceOf(KlientValidationError);
   });
 
+  it('validates bounded strict wait leases in goal output payloads', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const agent = klient.session('s1').agent('main');
+    const waiting = { ...GOAL_SNAPSHOT, waitingFor: { taskIds: ['task-1'], policy: 'all' as const } };
+
+    channel.results.set('agentGoalService.getGoal', { goal: waiting });
+    await expect(agent.goal.get()).resolves.toEqual(waiting);
+
+    for (const waitFor of [
+      { taskIds: [], policy: 'any' },
+      { taskIds: [''], policy: 'any' },
+      { taskIds: Array.from({ length: 33 }, (_, index) => `task-${index}`), policy: 'all' },
+      { taskIds: ['task-1'], policy: 'any', extra: true },
+    ]) {
+      channel.results.set('agentGoalService.getGoal', {
+        goal: { ...GOAL_SNAPSHOT, waitingFor: waitFor },
+      });
+      await expect(agent.goal.get()).rejects.toBeInstanceOf(KlientValidationError);
+    }
+  });
+
   it('forwards goal.updated stream events and validates payloads', async () => {
     const channel = new FakeChannel();
     const klient = createKlientFromChannel(channel);

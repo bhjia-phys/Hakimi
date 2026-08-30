@@ -37,7 +37,12 @@
 
 import type { TranscriptInteraction } from '../model/interaction';
 import type { TranscriptItem, TranscriptMarker, TranscriptTaskRef } from '../model/item';
-import type { GoalMeta, GoalStatus, TranscriptMeta } from '../model/meta';
+import type {
+  GoalMeta,
+  GoalStatus,
+  GoalWaitLease,
+  TranscriptMeta,
+} from '../model/meta';
 import type { TranscriptTask } from '../model/task';
 import type { TodoItem, TranscriptTodo } from '../model/todo';
 import type { TranscriptTurn } from '../model/turn';
@@ -68,6 +73,7 @@ interface GoalPayload {
   readonly status?: unknown;
   readonly tokensUsed?: unknown;
   readonly budgetLimits?: { readonly tokenBudget?: unknown };
+  readonly waitingFor?: unknown;
 }
 
 /** `task.started` / `task.terminated` `info` (`AgentTaskInfo`). */
@@ -167,6 +173,27 @@ const TASK_STATES = new Set<TranscriptTask['state']>([
 ]);
 
 const GOAL_STATUSES = new Set<GoalStatus>(['active', 'paused', 'blocked', 'complete']);
+
+/**
+ * Read the bounded wait lease shape carried by a Goal fact. Invalid values are
+ * ignored so a malformed historical record cannot abort the cold rebuild.
+ */
+function readGoalWaitLease(raw: unknown): GoalWaitLease | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const value = raw as Record<string, unknown>;
+  if (Object.keys(value).some((key) => key !== 'taskIds' && key !== 'policy')) return undefined;
+  const taskIds = value['taskIds'];
+  if (
+    !Array.isArray(taskIds) ||
+    taskIds.length === 0 ||
+    taskIds.length > 32 ||
+    taskIds.some((taskId) => typeof taskId !== 'string' || taskId.length === 0)
+  ) {
+    return undefined;
+  }
+  if (value['policy'] !== 'any' && value['policy'] !== 'all') return undefined;
+  return { taskIds, policy: value['policy'] };
+}
 
 /** Interaction terminal state — mirrors the live path's `mapInteractionEndState`. */
 function mapInteractionEndState(
@@ -382,6 +409,7 @@ export function foldWireRecordFacts(
         goalTouched = true;
         if (goal !== undefined) {
           const tokenBudget = payload.budgetLimits?.tokenBudget;
+          const waitingFor = readGoalWaitLease(payload.waitingFor);
           goal = {
             ...goal,
             status:
@@ -392,6 +420,8 @@ export function foldWireRecordFacts(
             budgetUsed:
               typeof payload.tokensUsed === 'number' ? payload.tokensUsed : goal.budgetUsed,
             budgetLimit: typeof tokenBudget === 'number' ? tokenBudget : goal.budgetLimit,
+            // An omitted or malformed lease is not a mutation; `null` clears it.
+            waitingFor: payload.waitingFor === null ? undefined : (waitingFor ?? goal.waitingFor),
           };
         }
         pushMarker('goal', record);
@@ -568,7 +598,9 @@ export function foldWireRecordFacts(
         })
       : base.items;
 
-  if (goal?.status === 'active') goal = { ...goal, status: 'paused' };
+  if (goal?.status === 'active' && goal.waitingFor === undefined) {
+    goal = { ...goal, status: 'paused' };
+  }
   const modesTouched = planActive !== undefined || swarmActive !== undefined;
   const meta: TranscriptMeta = {
     ...base.meta,

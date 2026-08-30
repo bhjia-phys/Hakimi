@@ -377,11 +377,13 @@ interface GoalUpdatePayload {
   tokensUsed?: number;
   wallClockMs?: number;
   wallClockResumedAt?: number;
+  clearWallClockResumedAt?: boolean;
   budgetLimits?: {
     tokenBudget?: number;
     turnBudget?: number;
     wallClockBudgetMs?: number;
   };
+  waitingFor?: object | null;
   actor?: 'user' | 'model' | 'runtime' | 'system';
   mutation?: {
     id: string;

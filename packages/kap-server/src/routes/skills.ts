@@ -19,8 +19,9 @@
  * `IWorkspaceService.get` (`40410` when unknown); the root is then scanned by
  * composing the same five sources the per-session catalog merges — builtin /
  * user / extra / project(workDir) / plugin — through the shared `ISkillDiscovery`,
- * `skillRoots` and `InMemorySkillCatalog` primitives, so the result matches the
- * session listing for the same cwd. The composition is intentionally edge-side:
+ * `skillRoots` and `InMemorySkillCatalog` primitives. This is a prospective raw
+ * catalog; the live session list applies the main-agent availability projection.
+ * The composition is intentionally edge-side:
  * `InMemorySkillCatalog` is not a scoped service and the `skillRoots` helpers
  * are exported for exactly this purpose.
  *
@@ -35,7 +36,9 @@
  *
  * **Scope split**: v1 resolves a single `ISkillService` for every verb. v2
  * splits the domain, so the route borrows different scoped services per verb:
- *   - session list → `ISessionSkillCatalog` (Session scope) — `catalog.listSkills()`.
+ *   - session list → `ISessionSkillCatalog` (Session scope) projected through
+ *                    the main agent's `IAgentSkillVisibilityService` (current
+ *                    availability; no profile/model materialization).
  *   - workspace list → no session: resolves `IWorkspaceService` (App scope)
  *     for the root, then composes the skill scan at the edge (see above).
  *   - activate     → `IAgentSkillService` (Agent scope, on the `main` agent) —
@@ -82,6 +85,7 @@ import {
   ErrorCodes,
   EXTRA_SKILL_DIRS_SECTION,
   IAgentSkillService,
+  IAgentSkillVisibilityService,
   IBootstrapService,
   IConfigService,
   IFileService,
@@ -212,7 +216,11 @@ export function registerSkillsRoutes(app: SkillsRouteHost, core: Scope): void {
       }
       const catalog = resolved.handle.accessor.get(ISessionSkillCatalog);
       await catalog.ready;
-      const skills = catalog.catalog.listSkills().map(toProtocolSkill);
+      const main = await ensureMainAgent(resolved.handle);
+      const visible = main.accessor
+        .get(IAgentSkillVisibilityService)
+        .filterVisible(catalog.catalog.listSkills());
+      const skills = visible.map(toProtocolSkill);
       reply.send(okEnvelope({ skills }, req.id));
     },
   );
@@ -304,29 +312,31 @@ export function registerSkillsRoutes(app: SkillsRouteHost, core: Scope): void {
       }
 
       try {
+        // Resolve and authorize the skill before the side-effecting attachment
+        // pipeline. Unknown, hidden, or non-user-activatable skills must fail
+        // without reading or materializing upload bytes. activate() re-validates
+        // the same contract inside the engine as a second authorization check.
+        const agent = await ensureMainAgent(resolved.handle);
+        const catalog = resolved.handle.accessor.get(ISessionSkillCatalog);
+        await catalog.ready;
+        const skill = catalog.catalog.getSkill(parsed.id);
+        if (skill === undefined || !agent.accessor.get(IAgentSkillVisibilityService).isSkillVisible(skill)) {
+          throw new Error2(ErrorCodes.SKILL_NOT_FOUND, `Skill "${parsed.id}" was not found`);
+        }
+        if (!isUserActivatableSkillType(skill.metadata.type)) {
+          throw new Error2(
+            ErrorCodes.SKILL_TYPE_UNSUPPORTED,
+            `Skill "${skill.name}" cannot be activated by the user`,
+          );
+        }
+
         // Attachments run through the same edge pipeline as prompt uploads
-        // (validate → materialize → convert) BEFORE the activation starts, so
+        // (validate → materialize → convert) before the activation starts, so
         // a bad file_id or an unreadable upload rejects the request without
         // launching a skill turn.
         const attachments = req.body.attachments ?? [];
         const attachmentParts: ContentPart[] = [];
         if (attachments.length > 0) {
-          // Validate the skill BEFORE materializing anything: an unknown or
-          // non-user-activatable name must fail without streaming upload bytes
-          // into the session/cache dirs. activate() re-validates on its own —
-          // this is only the edge fail-fast for the side-effecting pipeline.
-          const catalog = resolved.handle.accessor.get(ISessionSkillCatalog);
-          await catalog.ready;
-          const skill = catalog.catalog.getSkill(parsed.id);
-          if (skill === undefined) {
-            throw new Error2(ErrorCodes.SKILL_NOT_FOUND, `Skill "${parsed.id}" was not found`);
-          }
-          if (!isUserActivatableSkillType(skill.metadata.type)) {
-            throw new Error2(
-              ErrorCodes.SKILL_TYPE_UNSUPPORTED,
-              `Skill "${skill.name}" cannot be activated by the user`,
-            );
-          }
           await assertPromptFileRefs(attachments, core.accessor.get(IFileService));
           const telemetry = core.accessor.get(ITelemetryService).withContext({ sessionId: session_id });
           const sessionDir = resolved.handle.accessor.get(ISessionContext).sessionDir;
@@ -342,7 +352,6 @@ export function registerSkillsRoutes(app: SkillsRouteHost, core: Scope): void {
           );
           attachmentParts.push(...contentToCoreParts(resolvedContent));
         }
-        const agent = await ensureMainAgent(resolved.handle);
         // The engine applies the prompt-metadata update itself (main agent
         // only), so a first `/<skill>` message titles the session (same as
         // routes/prompts.ts).
@@ -351,8 +360,8 @@ export function registerSkillsRoutes(app: SkillsRouteHost, core: Scope): void {
           .activate({ name: parsed.id, args: req.body.args, content: attachmentParts });
         requestLog(req)?.info({ session_id, skill_name: parsed.id }, 'skill activated');
         reply.send(okEnvelope({ activated: true, skill_name: parsed.id }, req.id));
-      } catch (err) {
-        sendMappedError(reply, req.id, err);
+      } catch (error) {
+        sendMappedError(reply, req.id, error);
       }
     },
   );
@@ -364,9 +373,9 @@ export function registerSkillsRoutes(app: SkillsRouteHost, core: Scope): void {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace skill scan — session-less composition of the four skill sources
-// (see header). Mirrors `SessionSkillCatalogService`'s ordered merge so the
-// listing matches a session created in the same cwd.
+// Workspace skill scan — session-less composition of the five skill sources
+// (see header). Mirrors `SessionSkillCatalogService`'s ordered merge for the
+// raw prospective catalog; a live session may further project availability.
 // ---------------------------------------------------------------------------
 
 /**

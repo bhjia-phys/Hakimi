@@ -3,7 +3,7 @@ import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DisposableStore } from '#/_base/di/lifecycle';
-import { Emitter } from '#/_base/event';
+import { Emitter, Event } from '#/_base/event';
 import { SyncDescriptor } from '#/_base/di/descriptors';
 import { createServices, TestInstantiationService } from '#/_base/di/test';
 import { ILogService } from '#/_base/log/log';
@@ -42,7 +42,6 @@ import {
 } from '#/features/aitpResearch/aitpResearchOps';
 import { PlanModel, planModeEnter, planModeExit, planResolution } from '#/features/plan/planOps';
 import { ResearchPlanModel } from '#/features/aitpResearch/researchPlanOps';
-import { aitpResearchModeFlag } from '#/features/aitpResearch/flag';
 import { AitpResearchErrors } from '#/features/aitpResearch/errors';
 import {
   parseResearchEvidencePacket,
@@ -96,12 +95,6 @@ function runnableExecution(execution: ToolExecution): RunnableToolExecution {
   if (!('execute' in execution)) throw new Error('Expected runnable tool execution');
   return execution;
 }
-
-describe('AITP Research flag', () => {
-  it('keeps the capability opt-in by default without entering the mode', () => {
-    expect(aitpResearchModeFlag.default).toBe(false);
-  });
-});
 
 let disposables: DisposableStore;
 let wire: IWireService;
@@ -433,6 +426,7 @@ function makeStubModeSvc(opts?: {
   const phase = opts?.phase ?? (isActive ? 'ready' : 'inactive');
   return {
     _serviceBrand: undefined as undefined,
+    onDidChange: Event.None as import('#/_base/event').Event<void>,
     _setPhaseCalls: [] as string[],
     isActive,
     phase,
@@ -1588,7 +1582,6 @@ describe('exit resets adapter', () => {
     const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
     const modeSvc = new AgentAitpModeService(
       wire,
-      { enabled: () => true } as never,
       makeScopeCtx(),
       adapter,
       eventBus,
@@ -1598,6 +1591,51 @@ describe('exit resets adapter', () => {
     await modeSvc.exit();
     expect(wire.getModel(AitpModeModel).current.phase).toBe('inactive');
     expect(adapter.health.phase).toBe('inactive');
+  });
+
+  it('rejects setPhase(inactive) without dispatching or resetting the adapter', async () => {
+    const adapter = makeStubAdapter();
+    const modeSvc = await buildRealModeService(adapter);
+    const dispatch = vi.spyOn(wire, 'dispatch');
+    const reset = vi.spyOn(adapter, 'reset');
+    let changes = 0;
+    const subscription = modeSvc.onDidChange(() => changes++);
+
+    let thrown: unknown;
+    try {
+      modeSvc.setPhase('inactive');
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
+      code: AitpResearchErrors.codes.RESEARCH_PHASE_TRANSITION_INVALID,
+    });
+    expect(thrown).toHaveProperty(
+      'message',
+      expect.stringContaining('Use exit()'),
+    );
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(reset).not.toHaveBeenCalled();
+    expect(changes).toBe(0);
+    expect(modeSvc.phase).toBe('inactive');
+    subscription.dispose();
+  });
+});
+
+describe('mode visibility changes', () => {
+  it('emits only for inactive/active transitions', async () => {
+    const modeSvc = await buildRealModeService();
+    let changes = 0;
+    const subscription = modeSvc.onDidChange?.(() => changes++);
+
+    await modeSvc.enter({ actor: 'user' });
+    expect(changes).toBe(1);
+    await modeSvc.exit();
+    expect(changes).toBe(2);
+    await modeSvc.exit();
+    expect(changes).toBe(2);
+    subscription?.dispose();
   });
 });
 
@@ -1664,9 +1702,8 @@ describe('undo/cold restore reconcile', () => {
     adapter._setHealth({ phase: 'ready', contractVersion: '0.1' });
 
     const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
-    new AgentAitpModeService(
+    const modeService = new AgentAitpModeService(
       wire,
-      { enabled: () => true } as never,
       makeScopeCtx(),
       adapter,
       eventBus,
@@ -1675,6 +1712,7 @@ describe('undo/cold restore reconcile', () => {
 
     wire.dispatch(contextUndo({ count: 1 }));
     eventBus.publish({ type: 'context.undone', turns: 1 });
+    expect(modeService.isActive).toBe(false);
     expect(wire.getModel(AitpModeModel).current.phase).toBe('inactive');
     expect(adapter.health.phase).toBe('inactive');
   });
@@ -1686,7 +1724,6 @@ describe('undo/cold restore reconcile', () => {
     const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
     const modeSvc = new AgentAitpModeService(
       wire,
-      { enabled: () => true } as never,
       makeScopeCtx(),
       adapter,
       eventBus,
@@ -2200,6 +2237,8 @@ describe('injection active guidance', () => {
     const output = providers.call(0, { isNewTurn: true });
     expect(output).toBeDefined();
     expect(output).toContain('Research state guidance');
+    expect(output).toContain('simplest sufficient explanation');
+    expect(output).toContain('cheapest decisive evidence');
     expect(output).toContain('BeginResearchAction');
     expect(output).toContain('ConcludeResearchAction');
     expect(output).toContain('ProposeResearchCheckpoint');
@@ -2361,7 +2400,6 @@ async function buildRealModeService(
   const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
   return new AgentAitpModeService(
     wire,
-    { enabled: () => true } as never,
     makeScopeCtx(),
     adapter ?? makeStubAdapter(),
     eventBus,
@@ -5479,7 +5517,6 @@ describe('Research maintenance lifecycle projection', () => {
     const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
     const modeSvc = new AgentAitpModeService(
       wire,
-      { enabled: () => true } as never,
       makeScopeCtx(),
       adapter,
       eventBus,
@@ -5508,7 +5545,6 @@ describe('Research maintenance lifecycle projection', () => {
     const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
     const modeSvc = new AgentAitpModeService(
       wire,
-      { enabled: () => true } as never,
       makeScopeCtx(),
       adapter,
       eventBus,
@@ -5554,7 +5590,6 @@ describe('Research maintenance lifecycle projection', () => {
     const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
     const modeSvc = new AgentAitpModeService(
       wire,
-      { enabled: () => true } as never,
       makeScopeCtx(),
       adapter,
       eventBus,
@@ -5606,7 +5641,6 @@ describe('Research maintenance lifecycle projection', () => {
     const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
     const modeSvc = new AgentAitpModeService(
       wire,
-      { enabled: () => true } as never,
       makeScopeCtx(),
       adapter,
       eventBus,
@@ -5648,7 +5682,6 @@ describe('Research maintenance lifecycle projection', () => {
     const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
     const modeSvc = new AgentAitpModeService(
       wire,
-      { enabled: () => true } as never,
       makeScopeCtx(),
       adapter,
       eventBus,

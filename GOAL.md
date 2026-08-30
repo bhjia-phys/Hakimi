@@ -12,7 +12,7 @@
 
 ### 目标状态
 
-同一个 main agent 同时最多只有一个当前 goal。goal 不是普通聊天文本，而是 runtime 持有的结构化状态，至少包含目标、可选完成标准、当前状态、停止原因和运行统计。
+同一个 main agent 同时最多只有一个当前 goal。goal 不是普通聊天文本，而是 runtime 持有的结构化状态，至少包含目标、可选完成标准、当前状态、停止原因和运行统计；如果唯一剩余依赖是后台任务，还可以持久化一个 task wait lease。`UpdateGoal.waitFor` 只接受 `active` goal、1–32 个非空 detached 后台 task ID，以及 `any` 或 `all` 策略。
 
 状态分为四类：
 
@@ -37,8 +37,9 @@ goal driver 的职责是把一个 active goal 推进成连续的普通 turn：
 - 普通 turn 中如果模型创建了 goal，或把 paused/blocked goal 恢复成 active，当前 turn 结束后 goal driver 接管继续执行。
 - driver 每次只运行一个普通 turn。
 - 每个 turn 结束后读取 goal 状态。
-- goal 仍是 `active` 时，runtime 自动追加 continuation prompt 并启动下一轮。
+- goal 仍是 `active` 时，runtime 自动追加 continuation prompt 并启动下一轮；如果 goal 持有 task wait lease，则在依赖终态事件前不启动新模型轮次。
 - goal 变成 `paused`、`blocked` 或被清除时，driver 停止。
+- task wait lease 的 `any` / `all` 策略被所选 detached task 的终态事件满足后（包括 `lost`），只清除 lease 并唤醒一次 continuation；等待期间不启动模型轮次，也不计入 goal turns 或 active wall-clock budget。
 
 模型如果不调用状态更新工具，且 goal 仍是 active，runtime 会继续下一轮。模型不能只靠自然语言说“完成了”来结束 goal，必须给出结构化状态信号。
 
@@ -112,7 +113,7 @@ goal mode 把技术运行失败视为可恢复停车：
 
 goal 的创建、更新、完成、阻塞、清除应写入可恢复记录。session 恢复时，runtime 用记录重建 goal。
 
-恢复时如果发现 goal 原来是 active，不应自动继续跑，而是降级为 paused。因为旧进程中的 active turn 不可能还活着，自动继续会造成重启后偷偷消耗资源。
+恢复时如果发现 goal 原来是 active，不应自动继续跑，而是降级为 paused。因为旧进程中的 active turn 不可能还活着，自动继续会造成重启后偷偷消耗资源。但如果 active goal 持有有效的 task wait lease，且所等待的后台 task 仍未进入终态，则保留 active 和 lease；恢复屏障完成后不自动启动 continuation，等 task 终态事件清除 lease，再至多唤醒一次 continuation。若 wait lease 缺失，或 lease 引用了不存在的 task，恢复必须 fail-closed，将 goal 暂停，不能把不完整的 lease 当作可继续等待。若恢复时 task 已被恢复为终态（包括 `lost`），则立即清除 lease 并安排一次 continuation。
 
 paused 和 blocked 原样保留。complete 理论上不长期存在，因为完成后会清除。
 
@@ -130,7 +131,7 @@ goal 统计包括：
 - token 数。
 - active wall-clock 时间。
 
-统计只在 goal 是 `active` 时增长。paused 和 blocked 期间不继续计数。
+统计只在 goal 是 `active` 且没有 task wait lease 时增长。paused、blocked 和等待健康后台任务期间不继续计数。
 
 turn 统计在每个 goal turn 准备运行时增加，因此模型在某一轮里标记 complete 时，这一轮也计入最终统计。
 

@@ -1032,7 +1032,7 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
     try {
       await this.skillCatalog.ready;
       const listing = this.skillCatalog.catalog.getModelSkillListing((skill) =>
-        this.skillVisibility.isSkillVisible(skill),
+        this.skillVisibility.isSkillVisibleInFrozenListing(skill),
       );
       // Freeze only on success — a not-yet-ready catalog must not pin an
       // empty listing for the agent's lifetime.

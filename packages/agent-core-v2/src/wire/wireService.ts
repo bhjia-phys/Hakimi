@@ -133,6 +133,10 @@ export class WireService extends Service implements IWireService {
     return this.ensureModel(model).state as DeepReadonly<S>;
   }
 
+  isRestoring(): boolean {
+    return this.restorePhase === 'restoring';
+  }
+
   dispatch(...ops: Op[]): void {
     if (ops.length === 0) return;
     if (this.dispatching) {
@@ -228,8 +232,9 @@ export class WireService extends Service implements IWireService {
       }
 
       await this.rehydrateModels();
-      this.restorePhase = 'ready';
-      await this.hooks.onDidRestore.run({});
+      await this.hooks.onDidRestore.run({}, async () => {
+        this.restorePhase = 'ready';
+      });
     } catch (error) {
       this.restorePhase = 'failed';
       throw error;

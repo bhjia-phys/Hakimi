@@ -137,21 +137,21 @@ hakimi -p "List changed files" --output-format stream-json
 
 ### `hakimi login`
 
-通过 device-code 流程登录 Kimi Code OAuth 或实验性的 ChatGPT / OpenAI Codex OAuth，无需进入 TUI。命令会将验证地址和用户码打印到 stderr，然后轮询直到浏览器侧完成授权。生成的 token 写入与 TUI `/login` 相同的本地位置，下次启动时会自动加载。
+通过 device-code 流程登录 Kimi Code OAuth 或 ChatGPT / OpenAI Codex OAuth，无需进入 TUI。OAuth 登录只会在你显式运行此命令（或调用对应 API 登录）时开始；启动、读取登录状态和读取缓存 token 都不会启动登录流程。命令会将验证地址和用户码打印到 stderr，然后轮询直到浏览器侧完成授权。生成的 token 写入与 TUI `/login` 相同的本地位置，下次启动时会自动加载。
 
 ```sh
 hakimi login
-hakimi login --provider openai-codex --enable-experimental
-hakimi login --provider openai-codex --enable-experimental --no-open
+hakimi login --provider openai-codex
+hakimi login --provider openai-codex --no-open
 ```
 
 | 选项 | 说明 |
 | --- | --- |
 | `--provider <provider>` | 选择 `kimi-code`（默认）或 `openai-codex`；也接受别名 `chatgpt`。 |
-| `--enable-experimental` | 在开始 ChatGPT 登录前持久启用 `openai-codex-oauth`。 |
+| `--enable-experimental` | 已废弃的兼容选项，不产生任何作用。 |
 | `--no-open` | 打印设备授权地址和用户码，不尝试打开浏览器。 |
 
-ChatGPT OAuth 默认关闭。请先通过 `/experiments` 启用，或使用 `--enable-experimental`。轮询期间随时按 `Ctrl-C` 可取消登录；取消或失败时退出码为 `1`，成功为 `0`。
+ChatGPT / OpenAI Codex OAuth 无需实验性开关即可使用。登录后会生成 `openai-codex/gpt-5.6-sol`、`openai-codex/gpt-5.6-terra` 和 `openai-codex/gpt-5.6-luna` 模型别名。OAuth 网络活动只会由显式登录，或需要鉴权的 API/token request 触发；Hakimi 绝不会仅因为启动就登录。轮询期间随时按 `Ctrl-C` 可取消登录；取消或失败时退出码为 `1`，成功为 `0`。
 
 ### `hakimi acp`
 

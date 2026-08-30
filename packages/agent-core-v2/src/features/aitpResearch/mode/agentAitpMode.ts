@@ -11,6 +11,7 @@
  */
 
 import { createDecorator } from '#/_base/di/instantiation';
+import type { Event } from '#/_base/event';
 
 import type { AitpAdapterHealth, AitpMaintenanceDegradedReason, AitpModePhase, ResearchLoopStatus } from '../types';
 
@@ -21,6 +22,7 @@ export interface AitpModeEntryOptions {
 
 export interface IAgentAitpModeService {
   readonly _serviceBrand: undefined;
+  readonly onDidChange: Event<void>;
 
   readonly phase: AitpModePhase;
   readonly loopStatus: ResearchLoopStatus;

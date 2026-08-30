@@ -12,8 +12,8 @@ export interface KimiSlashCommand<Name extends string = string> extends SlashCom
   readonly hidden?: boolean;
   /** When set, the command is omitted unless this flag is enabled. Accepts any
    *  string so v2-engine flags (registered dynamically via
-   *  `registerFlagDefinition`, e.g. `aitp_research_mode`) can gate commands
-   *  without a static `FlagId` entry in the v1 catalog. */
+   *  `registerFlagDefinition`) can gate commands without a static `FlagId` entry
+   *  in the v1 catalog. */
   readonly experimentalFlag?: string;
   /**
    * Generic argument autocompletion. `argumentPrefix` is the text typed after

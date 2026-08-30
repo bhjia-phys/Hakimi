@@ -137,21 +137,21 @@ In `stream-json` mode, regular replies produce an Assistant message; when the mo
 
 ### `hakimi login`
 
-Log in to Kimi Code OAuth or the experimental ChatGPT / OpenAI Codex OAuth provider via a device-code flow, without entering the TUI. The command prints the verification URL and user code to stderr, then polls until browser-side authorization is complete. The generated token is written to the same local location as TUI `/login` and is loaded automatically on the next launch.
+Log in to Kimi Code OAuth or the ChatGPT / OpenAI Codex OAuth provider via a device-code flow, without entering the TUI. OAuth login starts only when you explicitly run this command (or call the corresponding API login); startup, auth status, and cached-token reads never start a login flow. The command prints the verification URL and user code to stderr, then polls until browser-side authorization is complete. The generated token is written to the same local location as TUI `/login` and is loaded automatically on the next launch.
 
 ```sh
 hakimi login
-hakimi login --provider openai-codex --enable-experimental
-hakimi login --provider openai-codex --enable-experimental --no-open
+hakimi login --provider openai-codex
+hakimi login --provider openai-codex --no-open
 ```
 
 | Option | Description |
 | --- | --- |
 | `--provider <provider>` | Select `kimi-code` (default) or `openai-codex`; `chatgpt` is accepted as an alias. |
-| `--enable-experimental` | Persistently enable `openai-codex-oauth` before starting ChatGPT login. |
+| `--enable-experimental` | Deprecated compatibility option; has no effect. |
 | `--no-open` | Print the device URL and user code without attempting to open a browser. |
 
-ChatGPT OAuth is disabled by default. Enable it first through `/experiments` or use `--enable-experimental`. Press `Ctrl-C` at any time during polling to cancel; the exit code is `1` on cancellation or failure, and `0` on success.
+ChatGPT / OpenAI Codex OAuth is available without an experimental switch. Its generated model aliases are `openai-codex/gpt-5.6-sol`, `openai-codex/gpt-5.6-terra`, and `openai-codex/gpt-5.6-luna`. OAuth network activity occurs only through an explicit login or an API/token request that needs authentication; Hakimi never logs in merely because it starts. Press `Ctrl-C` at any time during polling to cancel; the exit code is `1` on cancellation or failure, and `0` on success.
 
 ### `hakimi acp`
 

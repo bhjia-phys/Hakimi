@@ -12,7 +12,7 @@
 
 | 命令 | 别名 | 说明 | 随时可用 |
 | --- | --- | --- | --- |
-| `/login` | — | 选择账号或平台并登录：Kimi Code 使用 OAuth，Kimi Platform 使用 API 密钥；在 `/experiments` 中启用 `openai-codex-oauth` 后还会显示实验性的 ChatGPT OAuth | 否 |
+| `/login` | — | 选择账号或平台并登录：Kimi Code 使用 OAuth，Kimi Platform 使用 API 密钥，ChatGPT / OpenAI Codex 使用 OAuth | 否 |
 | `/logout` | — | 清除当前所选账号的凭据 | 否 |
 | `/provider` | — | 打开交互式供应商管理器，查看、添加和删除已配置的供应商。详见[平台与模型 — `/provider` 与供应商管理](../configuration/providers.md#provider-—-交互式供应商管理) | 是 |
 | `/model` | — | 切换当前会话使用的 LLM 模型 | 是 |
@@ -55,7 +55,7 @@
 | `/swarm on\|off` | — | 开启或关闭 swarm mode，但不发送提示词。 | 是 |
 | `/swarm <task>` | — | 先开启 swarm mode，再把 `<task>` 作为普通提示词发送。如果该轮次正常完成，swarm mode 会自动关闭。若当前是 `manual` 权限模式，启动前会提示是否切换到 `auto` 或 `yolo`。 | 否 |
 | `/goal [...]` | — | 开始或管理目标模式 | 见下文 |
-| `/research [...]` | — | 控制实验性 AITP Research Mode（`aitp_research_mode` flag，默认关闭） | 见下文 |
+| `/research [...]` | — | 控制 AITP Research Mode；命令默认可发现，模式初始为 inactive | 见下文 |
 
 ::: warning 注意
 `/yolo` 会跳过普通工具调用的审批确认，使用前请确保了解可能的风险。Plan 模式的退出审批不会被 `/yolo` 跳过；Plan 模式下的 `Bash` 也按 `/yolo` 的普通放行规则处理。
@@ -99,13 +99,11 @@ hakimi -p "/goal 修复 checkout 测试失败"
 
 Prompt 模式在目标完成时以退出码 `0` 退出，在目标阻塞时以 `3` 退出，在目标暂停时以 `6` 退出。其它 `/goal` 子命令，包括 `next`，都是 TUI 控制命令，不由 `hakimi -p` 处理。
 
-## 实验性 Research Mode
+## Research Mode
 
-`/research` 控制实验性 AITP Research Mode——由 AITP 证据账本支撑的联合科研能力。它受 `aitp_research_mode` 实验 flag 门控（环境变量 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`，默认关闭；启动前设置为 `1` 才会开放该命令）。flag 开启只是开放入口——`/research` 命令和 `EnterAITPMode` 能力存在，但模式保持 inactive，零 AITP I/O，直到你显式用 `/research on`（或模型 `EnterAITPMode` 入口路径及其审批 gate）进入；绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`。flag 关闭时——设置 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=0` 或在 `/experiments` 中切换——该命令不可用，所有 AITP 工具和 skill 隐藏，零 AITP I/O。
+`/research` 控制 AITP Research Mode——由 AITP 证据账本支撑的联合科研能力。该命令和面向模型的 `EnterAITPMode` 能力默认可发现，但运行时初始为 `inactive`。inactive 状态下的 `getResearch` 读取、会话恢复加载和状态检查只使用本地快照：不会探测 AITP，不发生 AITP I/O，不显示 Research Board，也不会向模型暴露其他 Research/AITP 工具和 plugin skill。使用 `/research on`，或让模型调用 `EnterAITPMode`，才能显式进入；此时 Hakimi 才探测适配器，并在探测就绪后执行只读的 `enter` → `check` 维护周期。
 
-::: warning 注意
-Research Mode 是实验性功能。它会运行一个可能持续多个轮次的自治研究循环。从 `manual` 或 `yolo` 权限模式进入时，会先提示是否切换到 `auto` 或 `yolo`——在 `manual` 模式下循环可能会因等待审批而暂停。
-:::
+旧的 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 环境变量、`[experimental].aitp_research_mode` 和 `KIMI_CODE_EXPERIMENTAL_FLAG` 对这个正式开放的入口均不生效。旧开关输入仅为兼容保留，不会隐藏或启用 `/research`。从 `manual` 或 `yolo` 权限模式进入时，会提示是否先切换到 `auto` 或 `yolo`——在 `manual` 模式下循环可能因等待审批而暂停。
 
 语法与 `/goal` 一致：保留子命令仅作为第一个 token 时生效；`--` 之后的自由文本作为参数输入。
 
@@ -136,7 +134,7 @@ Research Mode 是实验性功能。它会运行一个可能持续多个轮次的
 
 Research Mode 激活时，Research Board 会出现在 live chrome 区域。它展示当前研究线、焦点问题或候选问题、assessment、有界行动、Todo Actions 进度、检查点状态和按优先级排列的 alerts——不展示完整 portfolio。按 `Ctrl-O` 可在原位置展开或折叠；在 Research Mode 下，Todo 列表会投影到 Board 中，而不会取代它。Board 是只读的；所有编辑通过 `/research manage` 或直接的研究引导命令进行。
 
-当 AITP 未安装、未初始化或其 `check` 返回 exit 2 时，模式显示 `degraded`，并阻止问题关闭、Goal 完成和 session closeout，直到 adapter 恢复或用户明确选择在无持久化的情况下继续。Research Mode 不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`；本轮实验性切片不把 `backfill` 暴露为模型工具。
+显式进入后，如果 AITP 未安装、未初始化或其 `check` 返回 exit 2，模式显示 `degraded`，并阻止问题关闭、Goal 完成和 session closeout，直到 adapter 恢复或用户明确选择在无持久化的情况下继续。Research Mode 不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`；`backfill` 不作为模型工具暴露。除 `EnterAITPMode` 外的 Research/AITP 工具以及 AITP plugin skill 仍仅在 active 状态下可见。
 
 ## 信息与状态
 

@@ -2,7 +2,7 @@
 
 > Hakimi is a truth-seeking research agent built on the Kimi Code runtime.
 
-Hakimi keeps the terminal loop, tools, sessions, skills, MCP, subagents, permissions, and Kimi OAuth integration, while providing its own `hakimi` command, cat-ear spacecraft identity, `~/.hakimi` data home, release channel, provider defaults, and experimental AITP-backed Research Mode. Its data-home resolution order is `HAKIMI_HOME` > `KIMI_CODE_HOME` > `~/.hakimi`.
+Hakimi keeps the terminal loop, tools, sessions, skills, MCP, subagents, permissions, and Kimi OAuth integration, while providing its own `hakimi` command, cat-ear spacecraft identity, `~/.hakimi` data home, release channel, provider defaults, and AITP-backed Research Mode. Its data-home resolution order is `HAKIMI_HOME` > `KIMI_CODE_HOME` > `~/.hakimi`.
 
 ## Install from this repository
 
@@ -33,7 +33,7 @@ cd /path/to/your/project
 hakimi
 ```
 
-Use `/login` in the TUI to authenticate with Kimi Code OAuth or a Kimi Platform API key. Common entry points include:
+Use `/login` in the TUI to authenticate with Kimi Code OAuth, a Kimi Platform API key, or a ChatGPT / OpenAI Codex OAuth account. Codex login provisions the `openai-codex/gpt-5.6-sol`, `openai-codex/gpt-5.6-terra`, and `openai-codex/gpt-5.6-luna` model aliases; OAuth login is always explicit and never starts at launch. Common entry points include:
 
 ```text
 /help              Show commands and keyboard shortcuts
@@ -45,9 +45,9 @@ Use `/login` in the TUI to authenticate with Kimi Code OAuth or a Kimi Platform 
 
 Use `hakimi -p "<instruction>"` for a non-interactive run and `hakimi -c` to resume the latest session.
 
-## Experimental Research Mode
+## Research Mode
 
-Research Mode requires Python 3.11 or later, the `aitp-research-protocol` plugin, and an initialized AITP workspace. The `aitp_research_mode` experimental flag is disabled by default; set `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=1` before launch to make `/research` and the `EnterAITPMode` capability available. Launch Hakimi, then enter the mode from the TUI:
+Research Mode and the `EnterAITPMode` capability are discoverable by default. New sessions start `inactive`, while hydration preserves the persisted mode. Inactive hydration and GET/snapshot reads do not probe AITP or perform AITP I/O; a persisted active session remains active after cold restore, re-probes AITP, and reruns the read-only `enter` → `check` maintenance cycle. The Research Board plus other Research/AITP tools remain hidden until explicit entry. After `/research on` or `EnterAITPMode`, the adapter probes AITP and, after a ready probe, performs the read-only `enter` → `check` cycle. Entry requires Python 3.11 or later, the `aitp-research-protocol` plugin, and an initialized AITP workspace:
 
 ```sh
 cd /path/to/initialized-aitp-workspace

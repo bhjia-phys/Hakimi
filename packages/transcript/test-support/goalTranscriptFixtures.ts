@@ -8,6 +8,7 @@ export interface GoalTranscriptEventFixture {
     readonly completionCriterion?: string;
     readonly tokensUsed: number;
     readonly budget: { readonly tokenBudget: number | null };
+    readonly waitingFor?: { readonly taskIds: readonly string[]; readonly policy: 'any' | 'all' };
   } | null;
   readonly change?: Record<string, unknown>;
 }
@@ -29,6 +30,9 @@ const active = {
   budget: { tokenBudget: null },
 } as const;
 
+const waitLease = { taskIds: ['task-1'], policy: 'any' } as const;
+const activeWaiting = { ...active, waitingFor: waitLease } as const;
+
 export const goalTranscriptScenarios: readonly GoalTranscriptScenario[] = [
   {
     name: 'create then blocked',
@@ -47,6 +51,27 @@ export const goalTranscriptScenarios: readonly GoalTranscriptScenario[] = [
       budgetUsed: 12,
     },
     expectedGoalMarkers: 2,
+  },
+  {
+    name: 'active wait lease survives cold restore',
+    records: [
+      { type: 'goal.create', objective: 'ship it', completionCriterion: 'tests green', time: 1000 },
+      { type: 'goal.update', waitingFor: waitLease, time: 2000 },
+      { type: 'goal.update', tokensUsed: 3, time: 3000 },
+    ],
+    events: [
+      { snapshot: active },
+      { snapshot: activeWaiting },
+      { snapshot: { ...activeWaiting, tokensUsed: 3 } },
+    ],
+    expectedGoal: {
+      objective: 'ship it',
+      status: 'active',
+      completionCriterion: 'tests green',
+      budgetUsed: 3,
+      waitingFor: waitLease,
+    },
+    expectedGoalMarkers: 3,
   },
   {
     name: 'complete then clear',

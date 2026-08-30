@@ -338,6 +338,7 @@ export class KimiTUI {
   private readonly questionController = new QuestionController();
   private readonly reverseRpcDisposers: Array<() => void> = [];
   private skillCommands: readonly KimiSlashCommand[] = [];
+  private skillCommandsRefreshGeneration = 0;
   readonly skillCommandMap = new Map<string, string>();
   private pluginCommands: readonly KimiSlashCommand[] = [];
   readonly pluginCommandMap = new Map<string, string>();
@@ -524,19 +525,29 @@ export class KimiTUI {
   }
 
   async refreshSkillCommands(session?: SkillListSession): Promise<void> {
+    const generation = ++this.skillCommandsRefreshGeneration;
+    const expectedSession = this.session;
+    const isCurrentRefresh = (): boolean =>
+      generation === this.skillCommandsRefreshGeneration &&
+      !this.aborted &&
+      (session === undefined ? this.session === expectedSession : this.session === session);
+
     if (session === undefined) {
       // v2 engine: skills live on the workspace handler, not the session, so
-      // they are available before the first (lazy) session is created — the
-      // workspace catalog is the same merged view a session would serve.
+      // they are available before the first (lazy) session is created. This is
+      // the prospective raw workspace catalog; an active session uses its own
+      // main-agent availability projection below.
       if (this.engineV2) {
         try {
           const skills = await this.harness.listWorkspaceSkills(this.state.appState.workDir);
+          if (!isCurrentRefresh()) return;
           this.applySkillCommands(skills);
           return;
         } catch {
           return;
         }
       }
+      if (!isCurrentRefresh()) return;
       this.skillCommands = [];
       this.skillCommandMap.clear();
       this.setupAutocomplete();
@@ -549,6 +560,7 @@ export class KimiTUI {
     } catch {
       return;
     }
+    if (!isCurrentRefresh()) return;
     this.applySkillCommands(skills);
   }
 
@@ -2300,6 +2312,7 @@ export class KimiTUI {
   }
 
   resetSessionRuntime(): void {
+    this.skillCommandsRefreshGeneration += 1;
     this.aborted = false;
     this.cacheHint.resetRuntime();
     this.streamingUI.discardPending();

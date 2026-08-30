@@ -217,6 +217,23 @@ describe('WireService', () => {
     expect((await readRecords(log2, SCOPE, 'replay')).slice(1)).toEqual(records);
   });
 
+  it('keeps the restoring phase active until the restore hook terminal', async () => {
+    let restoringDuringHook = false;
+    let readyAfterHook = false;
+    wire.hooks.onDidRestore.register('phase-observer', async (_ctx, next) => {
+      restoringDuringHook = wire.isRestoring();
+      await next();
+      readyAfterHook = !wire.isRestoring();
+    });
+
+    expect(wire.isRestoring()).toBe(false);
+    await wire.restore();
+
+    expect(restoringDuringHook).toBe(true);
+    expect(readyAfterHook).toBe(true);
+    expect(wire.isRestoring()).toBe(false);
+  });
+
   it('fails restore when an onDidRestore hook fails', async () => {
     const expected = new Error('restore participant failed');
     disposables.add(

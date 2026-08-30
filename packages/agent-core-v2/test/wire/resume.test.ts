@@ -14,7 +14,10 @@ import {
   type WireRecord,
   type PromptOrigin,
 } from '#/index';
+import { GoalModel } from '#/agent/goal/goalOps';
+import { SubagentTask } from '#/agent/tools/agent/subagent-task';
 import { IAgentTaskService } from '#/agent/task/task';
+import { IAgentLoopService } from '#/agent/loop/loop';
 import { IAgentPlanService } from '#/features/plan/plan';
 import { IAgentPromptService } from '#/agent/prompt/prompt';
 import { TurnModel } from '#/agent/loop/turnOps';
@@ -23,10 +26,12 @@ import {
   createAgentTaskPersistence,
   type TaskServiceTestManager,
 } from '../agent/task/stubs';
+import { stubLoopWithHooks } from '../agent/loop/stubs';
 import { createFakeHostFs, createFakeProcessRunner } from '../tools/fixtures/fake-exec';
 import {
   DEFAULT_TEST_SYSTEM_PROMPT,
   InMemoryWireRecordPersistence,
+  agentService,
   execEnvServices,
   homeDirServices,
   testAgent,
@@ -415,7 +420,7 @@ describe('Agent resume', () => {
     expect(ctx.llmInputs()).toMatchInlineSnapshot(`
       call 1:
         system: <system-prompt>
-        tools: Agent, AgentSwarm, AskUserQuestion, Bash, CreateGoal, Edit, EnterPlanMode, ExitPlanMode, FetchURL, GetGoal, GetProviderUsage, Glob, Grep, Read, SetGoalBudget, SetSubagentPreset, Skill, TaskList, TaskOutput, TaskStop, TodoList, TowerFinding, TowerInbox, TowerInit, TowerMerge, TowerMission, TowerPlan, TowerReview, TowerSend, TowerSpawn, TowerStatus, TowerTeardown, UpdateGoal, WebSearch, Write
+        tools: Agent, AgentSwarm, AskUserQuestion, Bash, CreateGoal, Edit, EnterAITPMode, EnterPlanMode, ExitPlanMode, FetchURL, GetGoal, GetProviderUsage, Glob, Grep, Read, SetGoalBudget, SetSubagentPreset, Skill, TaskList, TaskOutput, TaskStop, TodoList, TowerFinding, TowerInbox, TowerInit, TowerMerge, TowerMission, TowerPlan, TowerReview, TowerSend, TowerSpawn, TowerStatus, TowerTeardown, UpdateGoal, WebSearch, Write
         messages:
           user: text "Historical prompt before skill"
           assistant: []  calls call_resume_write:Write { "path": "result.txt" }, call_resume_skill:Skill { "skill": "review" }
@@ -707,6 +712,158 @@ describe('Agent resume', () => {
     await ctx.restorePersisted();
 
     expect(ctx.context.get()).toHaveLength(0);
+  });
+
+  it('turns a running restored task ghost into lost and releases its wait lease', async () => {
+    const persistence = new RecordingAgentPersistence([
+      resumeConfigRecord(),
+      {
+        type: 'task.started',
+        info: {
+          kind: 'process',
+          taskId: 'agent-lost0000',
+          description: 'background work',
+          status: 'running',
+          detached: true,
+          startedAt: 1,
+          endedAt: null,
+        },
+      },
+      {
+        type: 'goal.create',
+        goalId: 'goal-wait',
+        objective: 'finish after the task',
+      },
+      {
+        type: 'goal.update',
+        waitingFor: { taskIds: ['agent-lost0000'], policy: 'any' },
+        wallClockMs: 25,
+        clearWallClockResumedAt: true,
+      },
+    ] as unknown as WireRecord[]);
+    const loopService = stubLoopWithHooks();
+    const ctx = testAgent(
+      agentService(IAgentLoopService, loopService),
+      { persistence, autoConfigure: false },
+    );
+    const goals = ctx.get(IAgentGoalService);
+
+    await ctx.restorePersisted();
+
+    expect(ctx.get(IAgentTaskService).getTask('agent-lost0000')).toMatchObject({
+      status: 'lost',
+      detached: true,
+    });
+    const goal = goals.getGoal().goal;
+    expect(goal).toMatchObject({
+      goalId: 'goal-wait',
+      status: 'active',
+    });
+    expect(goal?.wallClockMs).toBeGreaterThanOrEqual(25);
+    expect(ctx.get(IWireService).getModel(GoalModel)).toMatchObject({
+      goalId: 'goal-wait',
+      status: 'active',
+      wallClockMs: 25,
+      waitingFor: undefined,
+    });
+    expect(goal?.waitingFor).toBeUndefined();
+    expect(persistence.appended).toContainEqual(expect.objectContaining({
+      type: 'task.terminated',
+    }));
+    expect(persistence.appended).toContainEqual(expect.objectContaining({
+      type: 'goal.update',
+      waitingFor: null,
+    }));
+    expect(loopService.launches).toHaveLength(1);
+  });
+
+  it('replays a waiting goal while its live task remains process-owned and wakes once after settlement', async () => {
+    let resolveCompletion!: (value: { result: string }) => void;
+    const completion = new Promise<{ result: string }>((resolve) => {
+      resolveCompletion = resolve;
+    });
+    const task = new SubagentTask(
+      {
+        agentId: 'live-resume-child',
+        profileName: 'coder',
+        completion,
+      },
+      'live background work',
+      new AbortController(),
+    );
+    const loopService = stubLoopWithHooks();
+    const ctx = testAgent(
+      agentService(IAgentLoopService, loopService),
+      { autoConfigure: false },
+    );
+    const taskService = ctx.get(IAgentTaskService);
+    const goals = ctx.get(IAgentGoalService);
+    const taskId = taskService.registerTask(task);
+
+    try {
+      await goals.createGoal({ objective: 'finish after the live task' });
+      const waiting = await goals.waitForTasks({ taskIds: [taskId], policy: 'any' });
+      expect(waiting.waitingFor).toEqual({ taskIds: [taskId], policy: 'any' });
+
+      await ctx.wire.restore();
+
+      expect(taskService.getTask(taskId)).toMatchObject({ status: 'running', detached: true });
+      expect(goals.getGoal().goal).toMatchObject({
+        status: 'active',
+        waitingFor: { taskIds: [taskId], policy: 'any' },
+      });
+      expect(loopService.launches).toEqual([]);
+
+      resolveCompletion({ result: 'background done' });
+      await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
+      expect(taskService.getTask(taskId)).toMatchObject({ status: 'completed' });
+      expect(goals.getGoal().goal?.waitingFor).toBeUndefined();
+      expect(loopService.launches).toHaveLength(1);
+    } finally {
+      resolveCompletion({ result: 'background done' });
+      await ctx.dispose();
+    }
+  });
+
+  it('pauses a restored goal whose wait lease references no task', async () => {
+    const persistence = new RecordingAgentPersistence([
+      resumeConfigRecord(),
+      {
+        type: 'goal.create',
+        goalId: 'goal-missing-task',
+        objective: 'finish after the missing task',
+      },
+      {
+        type: 'goal.update',
+        waitingFor: { taskIds: ['agent-missing0'], policy: 'any' },
+        wallClockMs: 25,
+        clearWallClockResumedAt: true,
+      },
+    ] as unknown as WireRecord[]);
+    const loopService = stubLoopWithHooks();
+    const ctx = testAgent(
+      agentService(IAgentLoopService, loopService),
+      { persistence, autoConfigure: false },
+    );
+
+    try {
+      await ctx.restorePersisted();
+
+      expect(ctx.get(IAgentGoalService).getGoal().goal).toMatchObject({
+        goalId: 'goal-missing-task',
+        status: 'paused',
+        terminalReason: 'Paused after invalid background-task wait lease',
+        waitingFor: undefined,
+      });
+      expect(loopService.launches).toEqual([]);
+      expect(persistence.appended).toContainEqual(expect.objectContaining({
+        type: 'goal.update',
+        status: 'paused',
+        reason: 'Paused after invalid background-task wait lease',
+      }));
+    } finally {
+      await ctx.dispose();
+    }
   });
 
   it('restores an envelope-less active interval into a budget-reached paused goal', async () => {

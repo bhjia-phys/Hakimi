@@ -21,8 +21,27 @@ export const UpdateGoalToolInputSchema = z
       .describe(
         'The lifecycle status to set for the current goal. Use `blocked` for impossible, unsafe, or contradictory objectives, or after the same non-terminal blocking condition repeats for at least 3 consecutive goal turns.',
       ),
+    waitFor: z
+      .object({
+        taskIds: z.array(z.string().min(1)).min(1).max(32),
+        policy: z.enum(['any', 'all']).default('any'),
+      })
+      .strict()
+      .optional()
+      .describe(
+        'Suspend automatic goal continuations until the selected background tasks reach terminal states. Use this instead of polling TaskOutput; completion notifications wake the goal automatically.',
+      ),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.waitFor !== undefined && value.status !== 'active') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['waitFor'],
+        message: 'waitFor requires status "active".',
+      });
+    }
+  });
 
 export type UpdateGoalToolInput = z.infer<typeof UpdateGoalToolInputSchema>;
 

@@ -9,10 +9,7 @@
 
 import type { Session, ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
 
-import { isExperimentalFlagEnabled } from '../commands/experimental-flags';
 import type { TUIState } from '../tui-state';
-
-const RESEARCH_FLAG = 'aitp_research_mode';
 
 export interface ResearchRequestToken {
   readonly session: Session;
@@ -78,12 +75,10 @@ export class ResearchController {
   }
 
   /**
-   * Hydrate the board when a session is started, resumed, or replaced. Only
-   * fires when the experimental flag is enabled; an `inactive` snapshot hides
-   * the board without probing AITP.
+   * Hydrate the board when a session is started, resumed, or replaced. An
+   * `inactive` snapshot hides the board without probing AITP.
    */
   async hydrate(session: Session): Promise<void> {
-    if (!isExperimentalFlagEnabled(RESEARCH_FLAG)) return;
     const token = this.beginRequest(session);
     if (token === undefined) return;
     let snapshot: ResearchStatusSnapshot;

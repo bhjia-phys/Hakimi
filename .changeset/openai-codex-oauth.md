@@ -1,5 +1,6 @@
 ---
 "@bhjia-phys/hakimi": minor
+"@bhjia-phys/hakimi-sdk": minor
 ---
 
-Add experimental ChatGPT subscription login through OpenAI Codex OAuth. Enable `openai-codex-oauth` in `/experiments`, then run `/login`.
+Add ChatGPT subscription login through OpenAI Codex OAuth. Run `/login` and choose OpenAI Codex.

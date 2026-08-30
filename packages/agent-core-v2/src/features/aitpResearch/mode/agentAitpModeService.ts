@@ -3,8 +3,7 @@
  *
  * Manages the AITP Research Mode lifecycle through wire dispatches
  * (`aitp_mode.enter` / `.exit` / `.set_phase` / `.set_loop_status` /
- * `.set_line`), checks
- * the experimental flag (`flags`), enforces main-agent-only (`scopeContext`),
+ * `.set_line`), enforces main-agent-only (`scopeContext`),
  * activates the Session-scope AITP adapter (`adapter`) on enter, runs
  * read-only current-state maintenance after a ready probe, and publishes
  * `agent.status.updated` after each op (`eventBus`). The `aitp_mode.updated`
@@ -12,7 +11,8 @@
  * not manually re-publish it. Conversation undo and active-mode cold restore
  * replay silently and never trigger `toEvent`, so the service explicitly
  * publishes `aitp_mode.updated` + `agent.status.updated` once for downstream
- * consumers (e.g. `AgentResearchService`). Inactive cold restore stays silent.
+ * consumers (e.g. `AgentResearchService`). Its `onDidChange` event is limited
+ * to active/inactive visibility transitions. Inactive cold restore stays silent.
  * Current-state maintenance is scoped to the bound research line: entering
  * without a `lineSlug` (or with an unbound line) fails closed in the
  * coordinator (`workstream_unbound` degraded), and a later `aitp_mode.set_line`
@@ -32,8 +32,8 @@
  */
 
 import { Service } from '#/_base/di/service';
+import { Emitter } from '#/_base/event';
 import { IEventBus } from '#/app/event/eventBus';
-import { IFlagService } from '#/app/flag/flag';
 import { IAgentProfileService } from '#/agent/profile/profile';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IWireService } from '#/wire/wire';
@@ -84,13 +84,15 @@ const RESEARCH_MODE_TOOL_NAMES = [
 export class AgentAitpModeService extends Service implements IAgentAitpModeService {
   declare readonly _serviceBrand: undefined;
 
+  private readonly onDidChangeEmitter = this._register(new Emitter<void>());
+  readonly onDidChange = this.onDidChangeEmitter.event;
+  private lastVisibilityActive = false;
   private probeGeneration = 0;
   private maintenanceReason: AitpMaintenanceDegradedReason | undefined;
   private lastMaintenanceLine: string | undefined;
 
   constructor(
     @IWireService private readonly wire: IWireService,
-    @IFlagService private readonly flags: IFlagService,
     @IAgentScopeContext private readonly scopeCtx: IAgentScopeContext,
     @ISessionAitpAdapter private readonly adapter: ISessionAitpAdapter,
     @IEventBus private readonly eventBus: IEventBus,
@@ -98,10 +100,12 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     @ISessionAitpLifecycleCoordinator private readonly coordinator?: ISessionAitpLifecycleCoordinator,
   ) {
     super();
+    this.lastVisibilityActive = this.isActive;
 
     this._register(
       this.wire.hooks.onDidRestore.register('aitpMode', async (_ctx, next) => {
         const phaseChanged = await this.reconcileAfterRestore();
+        this.publishVisibilityChangeIfNeeded();
         if (!phaseChanged && this.isActive) this.publishModeAndStatus();
         await next();
       }),
@@ -110,6 +114,7 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     this._register(
       this.eventBus.subscribe('context.undone', () => {
         void this.reconcileAfterRestore().then((phaseChanged) => {
+          this.publishVisibilityChangeIfNeeded();
           if (!phaseChanged && this.isActive) this.publishModeAndStatus();
         });
       }),
@@ -153,12 +158,6 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
   }
 
   async enter(options: AitpModeEntryOptions): Promise<void> {
-    if (!this.flags.enabled('aitp_research_mode')) {
-      throw new AitpResearchError(
-        AitpResearchErrors.codes.AITP_MODE_FLAG_DISABLED,
-        'AITP Research Mode is not enabled. Set KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=true.',
-      );
-    }
     if (this.scopeCtx.agentId !== MAIN_AGENT_ID) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_MODE_NOT_MAIN_AGENT,
@@ -185,6 +184,7 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
 
     this.ensureResearchTools();
     this.wire.dispatch(aitpModeEnter({ actor: options.actor, lineSlug: options.lineSlug }));
+    this.publishVisibilityChangeIfNeeded();
     this.publishAgentStatus();
 
     try {
@@ -209,16 +209,23 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     this.lastMaintenanceLine = undefined;
     if (!this.isActive) return;
     this.wire.dispatch(aitpModeExit({}));
+    this.publishVisibilityChangeIfNeeded();
     this.publishAgentStatus();
   }
 
   setPhase(phase: AitpModePhase): void {
+    if (phase === 'inactive') {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_PHASE_TRANSITION_INVALID,
+        'Use exit() to leave AITP Research Mode; setPhase("inactive") is invalid.',
+      );
+    }
     this.wire.dispatch(aitpModeSetPhase({ phase }));
     this.publishAgentStatus();
   }
 
   assertResearchMutationAllowed(options?: { readonly allowPaused?: boolean }): void {
-    this.assertFlagAndAgent();
+    this.assertMainAgent();
     if (!this.isActive) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_MODE_INACTIVE,
@@ -257,13 +264,7 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     return this.adapter.probe();
   }
 
-  private assertFlagAndAgent(): void {
-    if (!this.flags.enabled('aitp_research_mode')) {
-      throw new AitpResearchError(
-        AitpResearchErrors.codes.AITP_MODE_FLAG_DISABLED,
-        'AITP Research Mode is not enabled. Set KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE=true.',
-      );
-    }
+  private assertMainAgent(): void {
     if (this.scopeCtx.agentId !== MAIN_AGENT_ID) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_MODE_NOT_MAIN_AGENT,
@@ -273,7 +274,7 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
   }
 
   private assertModeCommandAllowed(expectedRevision: number): void {
-    this.assertFlagAndAgent();
+    this.assertMainAgent();
     const researchRevision = this.wire.getModel(ResearchModel).current.revision;
     if (expectedRevision !== 0 && expectedRevision !== researchRevision) {
       throw new AitpResearchError(
@@ -358,6 +359,13 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
 
   private isProbeCurrent(generation: number): boolean {
     return generation === this.probeGeneration && this.isActive;
+  }
+
+  private publishVisibilityChangeIfNeeded(): void {
+    const active = this.isActive;
+    if (active === this.lastVisibilityActive) return;
+    this.lastVisibilityActive = active;
+    this.onDidChangeEmitter.fire();
   }
 
   private publishAgentStatus(): void {

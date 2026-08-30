@@ -17,7 +17,7 @@ import {
   resolveKimiCodeOAuthRef,
   resolveKimiTokenStorageName,
 } from '@moonshot-ai/kimi-code-oauth';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createKimiHarnessV2,
@@ -73,12 +73,16 @@ vi.mock('@moonshot-ai/agent-core-v2/_base/execEnv/environmentProbe', async (impo
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  // The read-model mirror/query-store close asynchronously on dispose; await
-  // the drains so the rm below never races their final flush (ENOTEMPTY).
-  await drainSessionIndexMirror();
-  await drainQueryStoreDisposals();
-  for (const dir of tempDirs.splice(0)) {
-    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  try {
+    // The read-model mirror/query-store close asynchronously on dispose; await
+    // the drains so the rm below never races their final flush (ENOTEMPTY).
+    await drainSessionIndexMirror();
+    await drainQueryStoreDisposals();
+    for (const dir of tempDirs.splice(0)) {
+      await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  } finally {
+    vi.unstubAllEnvs();
   }
 });
 
@@ -137,6 +141,27 @@ describe('SDKRpcClientV2 (agent-core-v2 wiring)', () => {
       expect(binding.workspaceId.length).toBeGreaterThan(0);
       await expect(session.switchRuntime('missing-runtime')).rejects.toThrow(/missing-runtime/);
       expect(await session.getRuntime()).toEqual(binding);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('round-trips completionCriterion through the v2 goal RPC', async () => {
+    const { harness } = await makeHarness();
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-work-'));
+    tempDirs.push(workDir);
+    try {
+      const session = await harness.createSession({ id: 'ses_goal_criterion', workDir });
+      await expect(
+        session.createGoal({
+          objective: 'finish the bounded task',
+          completionCriterion: 'the verification command passes',
+        }),
+      ).resolves.toMatchObject({
+        objective: 'finish the bounded task',
+        completionCriterion: 'the verification command passes',
+        status: 'active',
+      });
     } finally {
       await harness.close();
     }
@@ -510,6 +535,9 @@ describe('SDKRpcClientV2 (agent-core-v2 wiring)', () => {
       const features = await harness.getExperimentalFeatures();
       expect(Array.isArray(features)).toBe(true);
       expect(features.length).toBeGreaterThan(0);
+      expect(features.map((feature) => feature.id)).not.toEqual(
+        expect.arrayContaining(['openai-codex-oauth', 'aitp_research_mode']),
+      );
       for (const feature of features) {
         expect(typeof feature.id).toBe('string');
         expect(typeof feature.title).toBe('string');
@@ -517,6 +545,31 @@ describe('SDKRpcClientV2 (agent-core-v2 wiring)', () => {
         expect(typeof feature.enabled).toBe('boolean');
         expect(typeof feature.defaultEnabled).toBe('boolean');
       }
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('keeps graduated legacy inputs inert in the v2 catalog', async () => {
+    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_FLAG', '1');
+    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_OPENAI_CODEX_OAUTH', '0');
+    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '0');
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-legacy-flags-'));
+    tempDirs.push(homeDir);
+    await writeFile(
+      join(homeDir, 'config.toml'),
+      '[experimental]\nopenai-codex-oauth = false\naitp_research_mode = true\n',
+      'utf8',
+    );
+    const harness = createKimiHarnessV2({ homeDir, identity: TEST_IDENTITY });
+
+    try {
+      const features = await harness.getExperimentalFeatures();
+      const ids = features.map((feature) => feature.id);
+      expect(ids).not.toContain('openai-codex-oauth');
+      expect(ids).not.toContain('aitp_research_mode');
+      expect(features.length).toBeGreaterThan(0);
+      expect(features.every((feature) => feature.enabled)).toBe(true);
     } finally {
       await harness.close();
     }
@@ -1356,14 +1409,6 @@ describe('removeProviderFromConfig', () => {
 });
 
 describe('SDKRpcClientV2 AITP Research Mode', () => {
-  beforeEach(() => {
-    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
   it('getResearch returns an inactive snapshot without triggering AITP I/O', async () => {
     const { harness } = await makeHarness();
     const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-'));
@@ -1669,18 +1714,15 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
     }
   });
 
-  it('commandResearch enter_mode surfaces the flag-disabled code when explicitly disabled', async () => {
+  it('commandResearch enter_mode is available without an experimental flag', async () => {
     vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '0');
     const { harness } = await makeHarness();
     const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-enter-'));
     tempDirs.push(workDir);
     const session = await harness.createSession({ id: 'ses_research_enter', workDir });
     try {
-      await expect(
-        session.commandResearch({ kind: 'enter_mode', actor: 'user' }),
-      ).rejects.toMatchObject({
-        code: 'aitp.mode_flag_disabled',
-      });
+      const entered = await session.commandResearch({ kind: 'enter_mode', actor: 'user' });
+      expect(entered.snapshot.mode).not.toBe('inactive');
     } finally {
       await harness.close();
       vi.unstubAllEnvs();

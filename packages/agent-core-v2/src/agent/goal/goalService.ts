@@ -4,8 +4,9 @@
  * Owns the main-agent goal lifecycle; persists the goal in the `wire`
  * `GoalModel` (`GoalState | null`) through the `goal.create` / `goal.update` /
  * `goal.clear` Ops (`wire.dispatch`), reads it through `wire.getModel`,
- * publishes `goal.updated` live to `IEventBus`, and forces a replayed `active`
- * goal back to `paused` via `wire.hooks.onDidRestore`. The accumulated
+ * publishes `goal.updated` live to `IEventBus`, and normalizes replayed state
+ * after the ordered restore barrier: a valid task wait lease stays active while
+ * an ordinary replayed `active` goal is moved to `paused`. The accumulated
  * `wallClockMs` lives in the Model (set from each Op payload, never by
  * `Date.now()` inside `apply`); the active interval's epoch-ms
  * `wallClockResumedAt` anchor is
@@ -19,8 +20,10 @@
  * `markComplete` consults the completion guards before dispatching the
  * completion (a deny rejects the call with a coded error), and the automatic
  * continuation launch consults the continuation participants before enqueueing
- * (a hold skips the enqueue and leaves the goal active). Accounts live
- * turn usage through `usage`, observes terminal goal tool results through
+ * (a hold skips the enqueue and leaves the goal active). A structured wait
+ * lease can suspend continuations on background task terminal events without
+ * charging active wall-clock time; it is persisted and wakes at most one turn.
+ * Accounts live turn usage through `usage`, observes terminal goal tool results through
  * `toolExecutor`, appends one-time reminder events through `systemReminder`, reports
  * telemetry through `telemetry`, and checks main-agent eligibility through
  * `scopeContext`. Measures time and arms hard deadlines through `goal`'s
@@ -75,6 +78,8 @@ import { IAgentToolApprovalService } from '#/agent/toolApproval/toolApproval';
 import { IAgentToolExecutorService } from '#/agent/toolExecutor/toolExecutor';
 import type { BeforeToolExecuteEvent } from '#/agent/toolExecutor/toolHooks';
 import { IAgentUsageService, type UsageRecordedContext } from '#/agent/usage/usage';
+import { IAgentTaskService } from '#/agent/task/task';
+import { TERMINAL_STATUSES } from '#/agent/task/types';
 import type { GoalBudgetProperties } from '#/app/telemetry/events';
 import { ITelemetryService } from '#/app/telemetry/telemetry';
 import { IConfigService } from '#/app/config/config';
@@ -88,7 +93,7 @@ import { IWireService } from '#/wire/wire';
 import { defineModel } from '#/wire/model';
 import { IEventBus } from '#/app/event/eventBus';
 
-import { IAgentGoalService, type GoalReasonInput, type ResumeGoalInput } from './goal';
+import { IAgentGoalService, type GoalReasonInput, type ResumeGoalInput, type WaitForTasksInput } from './goal';
 import { IGoalDeadlineScheduler } from './goalDeadlineScheduler';
 import {
   GoalCompletionGuardContribution,
@@ -109,9 +114,11 @@ import type {
   GoalSnapshot,
   GoalStatus,
   GoalToolResult,
+  GoalWaitLease,
 } from './types';
 
 const MAX_GOAL_OBJECTIVE_LENGTH = 4000;
+const MAX_GOAL_WAIT_TASKS = 32;
 
 const MAX_GOAL_COMPLETION_CRITERION_LENGTH = MAX_GOAL_OBJECTIVE_LENGTH;
 
@@ -136,6 +143,7 @@ const GOAL_PROVIDER_API_PAUSE_PREFIX = 'Paused after provider API error';
 const GOAL_MODEL_CONFIG_PAUSE_PREFIX = 'Paused after model configuration error';
 const GOAL_RUNTIME_PAUSE_PREFIX = 'Paused after runtime error';
 const GOAL_CONTINUATION_FAILURE_PAUSE_PREFIX = 'Paused after goal continuation failure';
+const GOAL_INVALID_WAIT_LEASE_PAUSE_REASON = 'Paused after invalid background-task wait lease';
 const GOAL_PROVIDER_FILTERED_PAUSE_REASON = 'Paused after provider safety policy block';
 const GOAL_BUDGET_BLOCK_PREFIX = 'Blocked after goal budget reached';
 const LLM_NOT_SET_MESSAGE = 'LLM not set, send "/login" to login';
@@ -198,6 +206,12 @@ interface GoalForkNoticeState {
 }
 
 type ContinuationReservationPhase = 'deciding' | 'held' | 'enqueued';
+
+interface WaitingWake {
+  readonly goalId: string;
+  readonly generation: number;
+  scheduled: boolean;
+}
 
 interface PendingContinuation {
   readonly goalId: string;
@@ -302,6 +316,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
   >();
   private pendingContinuation?: PendingContinuation;
   private continuationGeneration = 0;
+  private waitingWake?: WaitingWake;
 
   constructor(
     @IWireService private readonly wire: IWireService,
@@ -310,6 +325,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     @ITelemetryService private readonly telemetry: ITelemetryService,
     @IAgentContextInjectorService injector: IAgentContextInjectorService,
     @IAgentLoopService private readonly loopService: IAgentLoopService,
+    @IAgentTaskService private readonly tasks: IAgentTaskService,
     @IAgentToolExecutorService toolExecutor: IAgentToolExecutorService,
     @IAgentToolApprovalService private readonly toolApproval: IAgentToolApprovalService,
     @IAgentPermissionModeService private readonly permissionMode: IAgentPermissionModeService,
@@ -336,6 +352,14 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     this.states.register(goalLiveWallClockStartedAtKey);
     this.states.register(goalResumeContinuationKey);
     if (!this.isSupportedAgent) return;
+    this._register(
+      this.eventBus.subscribe('task.terminated', ({ info }) => {
+        if (this.wire.isRestoring()) return;
+        queueMicrotask(() => {
+          this.handleTaskTerminated(info.taskId);
+        });
+      }),
+    );
     for (const participant of this.continuationParticipants.items) {
       this.bindContinuationRetry(participant);
     }
@@ -360,8 +384,8 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     );
     this._register(
       this.wire.hooks.onDidRestore.register('goal', async (_ctx, next) => {
-        this.normalizeAfterReplay();
         await next();
+        this.normalizeAfterReplay();
       }),
     );
     this._register(
@@ -619,7 +643,23 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
   async resumeGoal(input: ResumeGoalInput = {}, actor: GoalActor = 'user'): Promise<GoalSnapshot> {
     this.assertSupportedAgent();
     const state = this.requireState();
-    if (state.status === 'active') return this.toSnapshot(state);
+    if (state.status === 'active') {
+      if (state.waitingFor === undefined) return this.toSnapshot(state);
+      this.invalidateContinuation();
+      const mutation = this.newGoalMutation('update', state.goalId, state.status);
+      this.wire.dispatch(updateGoal({
+        waitingFor: null,
+        wallClockResumedAt: Date.now(),
+        actor,
+        mutation,
+      }));
+      this.liveWallClockStartedAt = this.deadlineScheduler.now();
+      const resumed = this.requireState();
+      this.refreshWallClockDeadline(resumed);
+      this.emitGoalUpdated(this.toSnapshot(resumed), undefined, mutation);
+      this.scheduleWaitingWake();
+      return this.toSnapshot(resumed);
+    }
     if (state.status !== 'paused' && state.status !== 'blocked') {
       throw new Error2(
         ErrorCodes.GOAL_NOT_RESUMABLE,
@@ -646,6 +686,68 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       this.resumeContinuation = { turnId: this.liveTurnId, goalId: state.goalId };
     }
     return snapshot;
+  }
+
+  async waitForTasks(
+    input: WaitForTasksInput,
+    actor: GoalActor = 'model',
+  ): Promise<GoalSnapshot> {
+    this.assertSupportedAgent();
+    const state = this.requireState();
+    if (state.status !== 'active') {
+      throw new Error2(
+        ErrorCodes.GOAL_STATUS_INVALID,
+        `Cannot wait for tasks while the goal is ${state.status}.`,
+      );
+    }
+    const rawTaskIds: unknown = input?.taskIds;
+    if (
+      !Array.isArray(rawTaskIds) ||
+      rawTaskIds.length === 0 ||
+      rawTaskIds.length > MAX_GOAL_WAIT_TASKS ||
+      rawTaskIds.some((taskId) => typeof taskId !== 'string' || taskId.length === 0)
+    ) {
+      throw new Error2(
+        ErrorCodes.GOAL_STATUS_INVALID,
+        `Waiting requires 1-${MAX_GOAL_WAIT_TASKS} non-empty task IDs.`,
+      );
+    }
+    const policy = input?.policy ?? 'any';
+    if (policy !== 'any' && policy !== 'all') {
+      throw new Error2(ErrorCodes.GOAL_STATUS_INVALID, 'Waiting policy must be "any" or "all".');
+    }
+    const taskIds = [...new Set(rawTaskIds as string[])];
+    for (const taskId of taskIds) {
+      const task = this.tasks.getTask(taskId);
+      if (task === undefined) {
+        throw new Error2(
+          ErrorCodes.GOAL_STATUS_INVALID,
+          `Cannot wait for unknown task "${taskId}".`,
+        );
+      }
+      if (task.detached === false) {
+        throw new Error2(
+          ErrorCodes.GOAL_STATUS_INVALID,
+          `Cannot wait for foreground task "${taskId}".`,
+        );
+      }
+    }
+    const waitingFor = { taskIds, policy } satisfies GoalWaitLease;
+    if (this.isWaitSatisfied(waitingFor)) return this.toSnapshot(state);
+    this.invalidateContinuation();
+    const mutation = this.newGoalMutation('update', state.goalId, state.status);
+    this.wire.dispatch(updateGoal({
+      waitingFor,
+      wallClockMs: this.settleWallClock(state),
+      clearWallClockResumedAt: true,
+      actor,
+      mutation,
+    }));
+    this.wallClockDeadline.clear();
+    this.liveWallClockStartedAt = undefined;
+    const next = this.requireState();
+    this.emitGoalUpdated(this.toSnapshot(next), undefined, mutation);
+    return this.toSnapshot(next);
   }
 
   async setBudgetLimits(
@@ -816,6 +918,81 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     return this.toSnapshot(next);
   }
 
+  private handleTaskTerminated(taskId: string): void {
+    if (this.wire.isRestoring()) return;
+    const state = this.goalState;
+    const waitingFor = state?.waitingFor;
+    if (state === null || state?.status !== 'active' || waitingFor === undefined) return;
+    if (!waitingFor.taskIds.includes(taskId) || !this.isWaitSatisfied(waitingFor)) return;
+
+    const mutation = this.newGoalMutation('update', state.goalId, state.status);
+    this.wire.dispatch(updateGoal({
+      waitingFor: null,
+      wallClockResumedAt: Date.now(),
+      actor: 'runtime',
+      mutation,
+    }));
+    this.liveWallClockStartedAt = this.deadlineScheduler.now();
+    const next = this.requireState();
+    this.refreshWallClockDeadline(next);
+    this.emitGoalUpdated(this.toSnapshot(next), undefined, mutation);
+    this.scheduleWaitingWake();
+  }
+
+  private isWaitSatisfied(waitingFor: GoalWaitLease): boolean {
+    const terminal = waitingFor.taskIds.map((taskId) => {
+      const task = this.tasks.getTask(taskId);
+      return task !== undefined && TERMINAL_STATUSES.has(task.status);
+    });
+    return waitingFor.policy === 'all' ? terminal.every(Boolean) : terminal.some(Boolean);
+  }
+
+  private scheduleWaitingWake(): void {
+    const state = this.goalState;
+    if (state === null || state.status !== 'active' || state.waitingFor !== undefined) return;
+    const pending = this.waitingWake;
+    if (
+      pending?.goalId === state.goalId &&
+      pending.generation === this.continuationGeneration
+    ) {
+      if (pending.scheduled || this.wire.isRestoring()) return;
+      pending.scheduled = true;
+      this.enqueueWaitingWake(pending);
+      return;
+    }
+
+    const wake: WaitingWake = {
+      goalId: state.goalId,
+      generation: this.continuationGeneration,
+      scheduled: false,
+    };
+    this.waitingWake = wake;
+    if (this.wire.isRestoring()) return;
+    wake.scheduled = true;
+    this.enqueueWaitingWake(wake);
+  }
+
+  private enqueueWaitingWake(wake: WaitingWake): void {
+    queueMicrotask(() => {
+      if (this.waitingWake !== wake) return;
+      wake.scheduled = false;
+      if (!this.canLaunchContinuation(wake.goalId, wake.generation)) {
+        if (
+          this.continuationGeneration !== wake.generation ||
+          !this.isActiveGoal(wake.goalId) ||
+          this.goalState?.waitingFor !== undefined
+        ) {
+          this.waitingWake = undefined;
+        }
+        return;
+      }
+      this.waitingWake = undefined;
+      void Promise.resolve().then(() => this.launchContinuationTurn(wake.goalId)).catch((error) =>
+        this.settleGoalAfterContinuationFailure(error, wake.goalId),
+      );
+    });
+  }
+
   private handleTurnLaunched(turnId: number, origin: TurnStartedEvent['origin']): void {
     this.liveTurnId = turnId;
     this.goalTurnTargets.delete(turnId);
@@ -942,7 +1119,10 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       await this.launchContinuationTurn(resumeContinuation.goalId);
       return;
     }
-    if (goalId === undefined || lifecycleGoalId === undefined) return;
+    if (goalId === undefined || lifecycleGoalId === undefined) {
+      this.scheduleWaitingWake();
+      return;
+    }
     const stepCapped = isMaxStepsTurnFailure(result);
     if (
       !stepCapped &&
@@ -958,6 +1138,11 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     const state = this.goalState;
     if (state === null || state.status !== 'active' || state.goalId !== lifecycleGoalId) return;
     if (this.blockIfBudgetReached(state) !== null) return;
+    if (state.waitingFor !== undefined) return;
+    if (this.waitingWake !== undefined) {
+      this.scheduleWaitingWake();
+      return;
+    }
     await this.launchContinuationTurn(lifecycleGoalId, stepCapped);
   }
 
@@ -1019,7 +1204,14 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
   }
 
   private launchContinuationTurn(goalId: string, stepCapped = false): void | Promise<void> {
-    if (!this.isActiveGoal(goalId)) return;
+    const state = this.goalState;
+    if (
+      this.wire.isRestoring() ||
+      state?.status !== 'active' ||
+      state.goalId !== goalId ||
+      state.waitingFor !== undefined
+    ) return;
+    this.waitingWake = undefined;
     const existing = this.pendingContinuation;
     if (existing !== undefined) {
       if (existing.phase !== 'held' || existing.goalId !== goalId) return;
@@ -1117,7 +1309,9 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     if (this.continuationRetrySubscriptions.has(participant)) return;
     const onDidRequestRetry = participant.onDidRequestRetry;
     if (onDidRequestRetry === undefined) return;
-    const subscription = onDidRequestRetry((goalId) => this.retryHeldContinuation(goalId));
+    const subscription = onDidRequestRetry((goalId) => {
+      this.retryHeldContinuation(goalId);
+    });
     this.continuationRetrySubscriptions.set(participant, subscription);
     this._register(subscription);
   }
@@ -1125,13 +1319,17 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
   private retryHeldContinuation(goalId: string): void {
     const pending = this.pendingContinuation;
     if (pending?.goalId !== goalId || pending.phase !== 'held') return;
-    if (!this.isActiveGoal(goalId)) {
+    if (
+      !this.isActiveGoal(goalId) ||
+      this.goalState?.waitingFor !== undefined ||
+      this.wire.isRestoring()
+    ) {
       this.invalidateContinuation();
       return;
     }
     if (!this.isLoopReadyForContinuation()) return;
     this.pendingContinuation = undefined;
-    void Promise.resolve(this.launchContinuationTurn(goalId, pending.stepCapped)).catch((error) =>
+    void Promise.resolve().then(() => this.launchContinuationTurn(goalId, pending.stepCapped)).catch((error) =>
       this.settleGoalAfterContinuationFailure(error, goalId),
     );
   }
@@ -1156,7 +1354,12 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     };
   }
 
-  private canLaunchContinuation(): boolean {
+  private canLaunchContinuation(goalId?: string, generation?: number): boolean {
+    const state = this.goalState;
+    if (state?.status !== 'active' || state.waitingFor !== undefined) return false;
+    if (goalId !== undefined && state.goalId !== goalId) return false;
+    if (generation !== undefined && this.continuationGeneration !== generation) return false;
+    if (this.wire.isRestoring()) return false;
     if (this.liveTurnId !== undefined || this.pendingContinuation !== undefined) return false;
     return this.isLoopReadyForContinuation();
   }
@@ -1169,7 +1372,8 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
   private isCurrentContinuation(pending: PendingContinuation): boolean {
     return this.pendingContinuation === pending &&
       pending.generation === this.continuationGeneration &&
-      this.isActiveGoal(pending.goalId);
+      this.isActiveGoal(pending.goalId) &&
+      this.goalState?.waitingFor === undefined;
   }
 
   private isActiveGoal(goalId: string): boolean {
@@ -1207,10 +1411,11 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     preserveLiveContinuation = false,
     reason?: unknown,
   ): void {
+    this.waitingWake = undefined;
     const pending = this.pendingContinuation;
     if (preserveLiveContinuation && pending?.turnId === this.liveTurnId) return;
     this.continuationGeneration += 1;
-    this.cancelPendingContinuation(false, reason);
+    this.cancelPendingContinuation(preserveLiveContinuation, reason);
   }
 
   private normalizeAfterReplay(): void {
@@ -1225,6 +1430,23 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       return;
     }
     if (state.status !== 'active') return;
+    if (state.waitingFor !== undefined) {
+      const waitingFor = state.waitingFor;
+      if (waitingFor.taskIds.some((taskId) => this.tasks.getTask(taskId) === undefined)) {
+        this.applyLifecycle(
+          state,
+          'paused',
+          GOAL_INVALID_WAIT_LEASE_PAUSE_REASON,
+          'runtime',
+        );
+        return;
+      }
+      const taskId = waitingFor.taskIds[0];
+      if (taskId !== undefined && this.isWaitSatisfied(waitingFor)) {
+        this.handleTaskTerminated(taskId);
+      }
+      return;
+    }
 
     const reason = 'Paused after agent resume';
     const mutation = this.newGoalMutation('update', state.goalId, 'paused');
@@ -1389,6 +1611,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       tokensUsed: state.tokensUsed,
       wallClockMs,
       budget: computeBudgetReport(state, wallClockMs),
+      waitingFor: state.waitingFor,
       terminalReason: state.terminalReason,
     };
   }

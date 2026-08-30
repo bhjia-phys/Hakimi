@@ -1,11 +1,10 @@
 import { Container, type TUI } from '@moonshot-ai/pi-tui';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ResearchController } from '#/tui/controllers/research-controller';
 import { StreamingUIController } from '#/tui/controllers/streaming-ui';
 import { ResearchBoardComponent } from '#/tui/components/chrome/research-board';
 import { TodoPanelComponent } from '#/tui/components/chrome/todo-panel';
-import { setExperimentalFeatures } from '#/tui/commands/experimental-flags';
 import type { ResearchStatusSnapshot, Session } from '@bhjia-phys/hakimi-sdk';
 import type { TUIState } from '#/tui/tui-state';
 
@@ -97,12 +96,6 @@ function makeHost(): {
   return { host, todoPanelContainer, todoPanel, researchBoard, ui, getResearchSession };
 }
 describe('ResearchController', () => {
-  beforeEach(() => {
-    setExperimentalFeatures([
-      { id: 'aitp_research_mode', enabled: true },
-    ]);
-  });
-
   it('setSnapshot updates the board and sets researchMode true when mode is ready', () => {
     const { host, researchBoard } = makeHost();
     const controller = new ResearchController(host);
@@ -229,17 +222,18 @@ describe('ResearchController', () => {
     expect(todoPanelContainer.children.length).toBe(0);
   });
 
-  it('hydrate does not call getResearch when flag is off', async () => {
-    setExperimentalFeatures([]);
-    const { host } = makeHost();
+  it('hydrates an inactive snapshot without probing and keeps the Board hidden', async () => {
+    const { host, researchBoard } = makeHost();
     const controller = new ResearchController(host);
-    const getResearch = vi.fn();
+    const getResearch = vi.fn(async () => makeSnapshot({ mode: 'inactive' }));
     const session = { getResearch } as unknown as Parameters<ResearchController['hydrate']>[0];
     await controller.hydrate(session);
-    expect(getResearch).not.toHaveBeenCalled();
+    expect(getResearch).toHaveBeenCalledOnce();
+    expect(researchBoard.isVisible()).toBe(false);
+    expect(host.state.researchBoard.getSnapshot()?.mode).toBe('inactive');
   });
 
-  it('hydrate calls getResearch and updates board when flag is on', async () => {
+  it('hydrate updates the board from an active snapshot', async () => {
     const { host, researchBoard } = makeHost();
     const controller = new ResearchController(host);
     const snapshot = makeSnapshot({ mode: 'ready' });

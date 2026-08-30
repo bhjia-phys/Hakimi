@@ -33,10 +33,7 @@ import {
 import { StatusMessageComponent } from '../components/messages/status-message';
 import { formatErrorMessage } from '../utils/event-payload';
 import { canRestoreSubmittedInput } from './resolve';
-import { isExperimentalFlagEnabled } from './experimental-flags';
 import type { SlashCommandHost } from './dispatch';
-
-const RESEARCH_FLAG = 'aitp_research_mode';
 const MAX_REASON_LENGTH = 2000;
 
 type ResearchCommandHost = Pick<
@@ -269,16 +266,6 @@ export async function handleResearchCommand(
   host: SlashCommandHost,
   args: string,
 ): Promise<void> {
-  // Flag gate: when the experimental flag is off, the command is not
-  // available. This is a defense-in-depth check — the registry already
-  // filters it out of the slash list and autocomplete.
-  if (!isExperimentalFlagEnabled(RESEARCH_FLAG)) {
-    host.showError(
-      'Research Mode is experimental. Enable it with `/experiments`.',
-    );
-    return;
-  }
-
   const parsed = parseResearchCommand(args);
   switch (parsed.kind) {
     case 'error':

@@ -11,12 +11,20 @@ import type { StepUsage } from './turn';
 
 export type GoalStatus = 'active' | 'paused' | 'blocked' | 'complete';
 
+export type GoalWaitPolicy = 'any' | 'all';
+
+export interface GoalWaitLease {
+  readonly taskIds: readonly string[];
+  readonly policy: GoalWaitPolicy;
+}
+
 export interface GoalMeta {
   readonly objective: string;
   readonly status: GoalStatus;
   readonly completionCriterion?: string;
   readonly budgetUsed?: number;
   readonly budgetLimit?: number;
+  readonly waitingFor?: GoalWaitLease;
 }
 
 /** Mode badges (plan mode, swarm mode) mirrored at session level. */

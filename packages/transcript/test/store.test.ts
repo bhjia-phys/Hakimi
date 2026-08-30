@@ -667,14 +667,30 @@ describe('AgentTranscript', () => {
     expect(task?.outputTail).toBe('line1\n');
   });
 
-  it('meta.merge merges goal/modes shallowly', () => {
+  it('meta.merge replaces Goal wholesale and shallow-merges other meta keys', () => {
     const tx = new AgentTranscript('main');
     tx.apply([
-      { op: 'meta.merge', meta: { goal: { objective: 'ship it', status: 'active' } } },
+      {
+        op: 'meta.merge',
+        meta: {
+          goal: {
+            objective: 'ship it',
+            status: 'active',
+            waitingFor: { taskIds: ['task-1'], policy: 'any' },
+          },
+        },
+      },
       { op: 'meta.merge', meta: { modes: { plan: { reviewPath: '/p' } } } },
     ]);
-    expect(tx.getMeta().goal?.status).toBe('active');
+    expect(tx.getMeta().goal).toMatchObject({
+      status: 'active',
+      waitingFor: { taskIds: ['task-1'], policy: 'any' },
+    });
     expect(tx.getMeta().modes?.plan?.reviewPath).toBe('/p');
+
+    // A fresh whole Goal snapshot without a lease clears the old lease.
+    tx.apply([{ op: 'meta.merge', meta: { goal: { objective: 'ship it', status: 'active' } } }]);
+    expect(tx.getMeta().goal).toEqual({ objective: 'ship it', status: 'active' });
   });
 
   it('meta.merge clears Goal on null and keeps it when absent', () => {

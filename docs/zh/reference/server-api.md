@@ -140,11 +140,13 @@ HTTP 状态码几乎总是 200，业务结果以 `code` 为准。例外情况：
 | `POST /api/v1/sessions/{session_id}/children` | 创建子会话（fork 并打标） |
 | `GET /api/v1/sessions/{session_id}/status` | 实时状态汇总 |
 | `GET /api/v1/sessions/{session_id}/goal` | 当前目标快照（无则 `null`） |
-| `GET /api/v1/sessions/{session_id}/research` | 当前 AITP 研究模式快照（实验性；需开启 `aitp_research_mode` flag） |
-| `POST /api/v1/sessions/{session_id}/research/command` | 提交研究 steering 命令（实验性；需开启 `aitp_research_mode` flag） |
+| `GET /api/v1/sessions/{session_id}/research` | 读取当前 AITP Research Mode 快照；默认可用，进入前返回 `inactive` 本地快照且不发生 AITP I/O |
+| `POST /api/v1/sessions/{session_id}/research/command` | 提交研究 steering 命令；`enter_mode` 默认可用，是显式探测 AITP 并执行 `enter` → `check` 维护周期的操作 |
 | `GET /api/v1/sessions/{session_id}/warnings` | 会话级告警 |
 | `POST /api/v1/sessions/{session_id}/export` | 导出会话与诊断信息（zip 流，不走信封） |
 | `GET /api/v1/sessions/{session_id}/snapshot` | 客户端重建用全量快照（含 `as_of_seq` 与 `epoch`） |
+
+SDK 通过 `Session.getResearch()` 和 `Session.commandResearch()` 暴露相同语义。显式发送 `enter_mode` 前，`getResearch()` 只读取本地的 inactive 快照，不会登录 OAuth，也不会探测 AITP。`commandResearch({ kind: 'enter_mode', actor: 'user' | 'model' })` 默认可发现，并返回命令执行后的快照。本次毕业只改变发现性与门控：REST/SDK 的 Wire 数据结构、AITP 传输层 schema（结构定义）以及 checkpoint 的 `save` + `show` + `check` 屏障均保持不变。
 
 ### 消息与转录
 

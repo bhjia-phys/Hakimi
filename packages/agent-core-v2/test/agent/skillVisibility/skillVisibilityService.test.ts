@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DisposableStore } from '#/_base/di/lifecycle';
+import { Emitter, type Event } from '#/_base/event';
 import { Service } from '#/_base/di/service';
 import { SyncDescriptor } from '#/_base/di/descriptors';
 import { createServices } from '#/_base/di/test';
@@ -25,7 +26,11 @@ function makeSkill(name: string, pluginId?: string): SkillDefinition {
   };
 }
 
-const ITestModeService = createDecorator<{ readonly _serviceBrand: undefined; readonly isActive: boolean }>('testModeService');
+const ITestModeService = createDecorator<{
+  readonly _serviceBrand: undefined;
+  readonly isActive: boolean;
+  readonly onDidChange: Event<void>;
+}>('testModeService');
 
 describe('AgentSkillVisibilityService', () => {
   let disposables: DisposableStore;
@@ -45,6 +50,7 @@ describe('AgentSkillVisibilityService', () => {
     const svc = ix.get(IAgentSkillVisibilityService);
     const skill = makeSkill('test');
     expect(svc.isSkillVisible(skill)).toBe(true);
+    expect(svc.isSkillVisibleInFrozenListing(skill)).toBe(true);
     expect(svc.hiddenReason(skill)).toBeUndefined();
   });
 
@@ -76,9 +82,14 @@ describe('AgentSkillVisibilityService', () => {
   });
 
   it('dynamic filter reads runtime state through accessor (mode inactive → hidden, mode active → visible)', () => {
+    const modeChange = new Emitter<void>();
     const ix = createServices(disposables, {
       additionalServices: (reg) => {
-        reg.defineInstance(ITestModeService, { _serviceBrand: undefined, isActive: false });
+        reg.defineInstance(ITestModeService, {
+          _serviceBrand: undefined,
+          isActive: false,
+          onDidChange: modeChange.event,
+        });
         reg.define(IAgentSkillVisibilityService, AgentSkillVisibilityService);
       },
     });
@@ -99,6 +110,7 @@ describe('AgentSkillVisibilityService', () => {
             }
             return undefined;
           },
+          onDidChange: (accessor) => accessor.get(ITestModeService).onDidChange,
         });
       }
     }
@@ -109,12 +121,53 @@ describe('AgentSkillVisibilityService', () => {
     const normalSkill = makeSkill('normal');
 
     expect(svc.isSkillVisible(aitpSkill)).toBe(false);
+    expect(svc.isSkillVisibleInFrozenListing(aitpSkill)).toBe(false);
     expect(svc.isSkillVisible(normalSkill)).toBe(true);
+    expect(svc.isSkillVisibleInFrozenListing(normalSkill)).toBe(true);
     expect(svc.hiddenReason(aitpSkill)).toBe('AITP Research Mode is not active.');
 
-    (ix.get(ITestModeService) as { isActive: boolean }).isActive = true;
+    let changes = 0;
+    const changeSubscription = svc.onDidChange(() => changes++);
+    const mode = ix.get(ITestModeService) as { isActive: boolean };
+    mode.isActive = true;
+    modeChange.fire();
+    expect(changes).toBe(1);
     expect(svc.isSkillVisible(aitpSkill)).toBe(true);
     expect(svc.hiddenReason(aitpSkill)).toBeUndefined();
+
+    mode.isActive = false;
+    modeChange.fire();
+    expect(changes).toBe(2);
+    expect(svc.filterVisible([aitpSkill, normalSkill])).toEqual([normalSkill]);
+    changeSubscription.dispose();
+  });
+
+  it('uses a frozen-listing callback without changing current visibility', () => {
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.define(IAgentSkillVisibilityService, AgentSkillVisibilityService);
+      },
+    });
+
+    class FrozenListingFilterProvider extends Service {
+      declare readonly _serviceBrand: undefined;
+      constructor() {
+        super();
+        this.provide(SkillVisibilityContribution, {
+          id: 'frozen-listing-filter',
+          isVisible: (skill: SkillDefinition, _accessor: ServicesAccessor) => skill.name !== 'hidden',
+          isVisibleInFrozenListing: (skill: SkillDefinition, _accessor: ServicesAccessor) => skill.name !== 'frozen-hidden',
+          describeHidden: () => undefined,
+        });
+      }
+    }
+    disposables.add(ix.createInstance(FrozenListingFilterProvider));
+
+    const svc = ix.get(IAgentSkillVisibilityService);
+    expect(svc.isSkillVisible(makeSkill('hidden'))).toBe(false);
+    expect(svc.isSkillVisibleInFrozenListing(makeSkill('hidden'))).toBe(true);
+    expect(svc.isSkillVisible(makeSkill('frozen-hidden'))).toBe(true);
+    expect(svc.isSkillVisibleInFrozenListing(makeSkill('frozen-hidden'))).toBe(false);
   });
 
   it('filterVisible returns only visible skills', () => {

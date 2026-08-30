@@ -7,6 +7,10 @@
  * test/agent/plugin/agentPlugin.test.ts`.
  */
 
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { SyncDescriptor } from '#/_base/di/descriptors';
@@ -16,19 +20,25 @@ import { AgentPluginService } from '#/agent/plugin/agentPluginService';
 import { USER_PROMPT_ORIGIN } from '#/agent/contextMemory/types';
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { IEventBus } from '#/app/event/eventBus';
+import { IBootstrapService } from '#/app/bootstrap/bootstrap';
 import { IPluginService } from '#/app/plugin/plugin';
+import { PluginService } from '#/app/plugin/pluginService';
 import type {
   EnabledPluginSessionStart,
   PluginMutationSummary,
   ReloadSummary,
 } from '#/app/plugin/types';
+import { ISkillDiscovery } from '#/app/skillCatalog/skillDiscovery';
 import { InMemorySkillCatalog } from '#/app/skillCatalog/registry';
+import { IProviderService } from '#/kosong/provider/provider';
 import { summarizeSkill } from '#/app/skillCatalog/types';
 import type { SkillDefinition } from '#/app/skillCatalog/types';
 import { ISessionSkillCatalog } from '#/session/sessionSkillCatalog/skillCatalog';
 
 import { agentService, appService, createTestAgent, skillServices, type TestAgentContext } from '../../harness';
+import { stubBootstrap } from '../../app/bootstrap/stubs';
 import { stubPluginService } from '../../app/plugin/stubs';
+import { stubProviderService } from '../../app/provider/stubs';
 
 function pluginSkill(): SkillDefinition {
   return {
@@ -61,6 +71,10 @@ async function runInjectionBoundary(ctx: TestAgentContext): Promise<void> {
     firstStepOfTurn: true,
     signal: new AbortController().signal,
   });
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 4; i += 1) await Promise.resolve();
 }
 
 describe('AgentPluginService plugin session-start wiring', () => {
@@ -388,6 +402,94 @@ describe('AgentPluginService plugin-change reminder', () => {
     reloadEmitter.dispose();
   });
 
+  it('clears a stale mutation marker before an explicit reload catalog change', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'kimi-agent-plugin-home-'));
+    try {
+      const pluginRoot = join(home, 'demo-plugin');
+      await mkdir(join(home, 'plugins'), { recursive: true });
+      await mkdir(pluginRoot, { recursive: true });
+      await writeFile(
+        join(pluginRoot, 'kimi.plugin.json'),
+        JSON.stringify({ name: 'demo', sessionStart: { skill: 'demo-skill' } }),
+        'utf8',
+      );
+      await writeFile(
+        join(home, 'plugins', 'installed.json'),
+        JSON.stringify({
+          version: 1,
+          plugins: [
+            {
+              id: 'demo',
+              root: pluginRoot,
+              source: 'local-path',
+              enabled: true,
+              installedAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+              originalSource: pluginRoot,
+            },
+          ],
+        }),
+        'utf8',
+      );
+
+      const catalog = new InMemorySkillCatalog();
+      catalog.register(pluginSkill());
+      const sinkChange = new Emitter<string>();
+      ctx = createTestAgent(
+        { autoConfigure: true },
+        appService(IBootstrapService, stubBootstrap(home)),
+        appService(
+          IProviderService,
+          stubProviderService({
+            'test-provider': {
+              type: 'kimi',
+              apiKey: 'test-key',
+              baseUrl: 'https://api.example.test/v1',
+              modelSource: 'static',
+            },
+          }),
+        ),
+        appService(ISkillDiscovery, {
+          _serviceBrand: undefined,
+          discover: async () => ({
+            skills: [],
+            skipped: [],
+            scannedRoots: [],
+            scannedDirectories: [],
+          }),
+        }),
+        appService(IPluginService, new SyncDescriptor(PluginService)),
+        skillServices(skillCatalogWithChange(catalog, sinkChange)),
+        agentService(IAgentPluginService, new SyncDescriptor(AgentPluginService)),
+      );
+      const plugins = ctx.get(IPluginService);
+      ctx.get(IAgentPluginService);
+      await runInjectionBoundary(ctx);
+      expect(findPluginSessionStartMessages(ctx)).toHaveLength(1);
+
+      // A real mutation emits both reload and mutation notifications. The
+      // catalog source is deliberately quiet, so the mutation marker remains
+      // pending until the explicit reload below supersedes it.
+      await plugins.setPluginEnabled({ id: 'demo', enabled: false });
+      await plugins.reloadPlugins();
+
+      sinkChange.fire('plugin');
+      await runInjectionBoundary(ctx);
+
+      expect(findPluginSessionStartMessages(ctx)).toHaveLength(2);
+      expect(messageText(findPluginSessionStartMessages(ctx).at(-1)!)).toContain(
+        'There are currently no active plugin session starts.',
+      );
+      sinkChange.dispose();
+    } finally {
+      if (ctx !== undefined) {
+        await ctx.dispose();
+        ctx = undefined;
+      }
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   function skillCatalogWithChange(catalog: InMemorySkillCatalog, change: Emitter<string>) {
     const skillCatalog: ISessionSkillCatalog = {
       _serviceBrand: undefined,
@@ -481,7 +583,7 @@ describe('AgentPluginService plugin-change reminder', () => {
     fireMutation(mutateEmitter, 'demo');
     sinkChange.fire('plugin');
     sinkChange.fire('plugin');
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
 
     expect(findPluginChangeMessages(ctx)).toHaveLength(2);
     expect(findPluginSessionStartMessages(ctx)).toHaveLength(1);

@@ -7,6 +7,7 @@ import type {
   AppConfig,
   AppEvent,
   AppGoal,
+  AppGoalWaitLease,
   AppModel,
   AppProvider,
   FsEntry,
@@ -430,6 +431,31 @@ function recordNullableNumber(source: Record<string, unknown>, key: string): num
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function recordGoalWaitLease(source: Record<string, unknown>): AppGoalWaitLease | undefined {
+  const raw = source['waitingFor'] ?? source['waiting_for'];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const wait = raw as Record<string, unknown>;
+  const keys = Object.keys(wait);
+  if (
+    keys.some((key) => key !== 'taskIds' && key !== 'task_ids' && key !== 'policy') ||
+    ('taskIds' in wait && 'task_ids' in wait)
+  ) {
+    return undefined;
+  }
+  const taskIds = wait['taskIds'] ?? wait['task_ids'];
+  if (
+    !Array.isArray(taskIds) ||
+    taskIds.length === 0 ||
+    taskIds.length > 32 ||
+    !taskIds.every((taskId) => typeof taskId === 'string' && taskId.length > 0)
+  ) {
+    return undefined;
+  }
+  const policy = wait['policy'];
+  if (policy !== 'any' && policy !== 'all') return undefined;
+  return { taskIds: taskIds as string[], policy };
+}
+
 export function toAppGoal(snapshot: unknown): AppGoal | null {
   if (!snapshot || typeof snapshot !== 'object') return null;
   const source = snapshot as Record<string, unknown>;
@@ -449,6 +475,7 @@ export function toAppGoal(snapshot: unknown): AppGoal | null {
     turnsUsed: recordNumber(source, 'turnsUsed') ?? recordNumber(source, 'turns_used') ?? 0,
     tokensUsed: recordNumber(source, 'tokensUsed') ?? recordNumber(source, 'tokens_used') ?? 0,
     wallClockMs: recordNumber(source, 'wallClockMs') ?? recordNumber(source, 'wall_clock_ms') ?? 0,
+    waitingFor: recordGoalWaitLease(source),
     terminalReason: recordString(source, 'terminalReason') ?? recordString(source, 'terminal_reason'),
     budget: {
       tokenBudget: recordNullableNumber(budget, 'tokenBudget') ?? recordNullableNumber(budget, 'token_budget'),

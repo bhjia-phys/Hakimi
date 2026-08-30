@@ -6,6 +6,7 @@ import {
   FileTokenStorage,
   KIMI_CODE_PROVIDER_NAME,
   KimiOAuthToolkit,
+  OpenAICodexOAuthToolkit,
   OPENAI_CODEX_PROVIDER_NAME,
   OAuthConnectionError,
   OAuthError,
@@ -87,6 +88,20 @@ describe('KimiHarness.auth', () => {
         originator: 'hakimi',
       },
     });
+  });
+
+  it('does not start Codex OAuth while reading status', async () => {
+    const loginSpy = vi.spyOn(OpenAICodexOAuthToolkit.prototype, 'login');
+    const harness = createKimiHarness({ homeDir, identity: TEST_IDENTITY });
+
+    try {
+      await expect(harness.auth.status(OPENAI_CODEX_PROVIDER_NAME)).resolves.toEqual({
+        providers: [{ providerName: OPENAI_CODEX_PROVIDER_NAME, hasToken: false }],
+      });
+      expect(loginSpy).not.toHaveBeenCalled();
+    } finally {
+      loginSpy.mockRestore();
+    }
   });
 
   it('maps missing runtime OAuth tokens to login-required errors', async () => {

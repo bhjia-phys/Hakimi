@@ -17,6 +17,13 @@ export const goalBudgetReportSchema = z.object({
 });
 export type GoalBudgetReport = z.infer<typeof goalBudgetReportSchema>;
 
+export const goalWaitLeaseSchema = z
+  .object({
+    taskIds: z.array(z.string().min(1)).min(1).max(32),
+    policy: z.enum(['any', 'all']),
+  })
+  .strict();
+
 export const goalSnapshotSchema = z.object({
   goalId: z.string(),
   objective: z.string(),
@@ -26,6 +33,7 @@ export const goalSnapshotSchema = z.object({
   tokensUsed: z.number(),
   wallClockMs: z.number(),
   budget: goalBudgetReportSchema,
+  waitingFor: goalWaitLeaseSchema.optional(),
   terminalReason: z.string().optional(),
 });
 export type GoalSnapshotWire = z.infer<typeof goalSnapshotSchema>;

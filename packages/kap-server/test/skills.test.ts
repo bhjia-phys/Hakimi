@@ -6,7 +6,7 @@
  *   - GET  on an unknown session                          → 40401 "does not exist"
  *   - GET  on a persisted-but-not-activated session        → 40401 "not activated ..."
  *   - GET  /api/v1/workspaces/{wid}/skills                → skills[] (no session)
- *   - GET  workspace listing == session listing (same cwd) → parity
+ *   - GET  workspace listing is the prospective raw catalog (same cwd)
  *   - GET  on an unknown workspace                        → 40410
  *   - POST /api/v1/sessions/{sid}/skills/{name}:activate   → {activated:true, skill_name}
  *   - POST :activate an unknown skill                      → 40415
@@ -18,7 +18,8 @@
  * immediately; the "not activated" branch is exercised by archiving the session
  * (it stays in the index but leaves the live map). Workspace skills are scanned
  * session-less from the workspace root via the edge composition in
- * `routes/skills.ts`, which must match the session listing for the same cwd.
+ * `routes/skills.ts`; this raw catalog can be broader than the session's
+ * current main-agent availability projection.
  */
 
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -27,6 +28,7 @@ import { join } from 'node:path';
 
 import {
   IAgentLifecycleService,
+  IPluginService,
   getLiveSessionById,
 } from '@moonshot-ai/agent-core-v2';
 import {
@@ -375,6 +377,55 @@ describe('server-v2 /api/v1 skills', () => {
       expect(body.code).toBe(40415);
 
       // The rejected activation left no materialized attachments on disk.
+      const sessionTree = await readdir(join(home as string, 'sessions'), { recursive: true });
+      expect(sessionTree.filter((entry) => entry.includes('attachments'))).toEqual([]);
+    });
+
+    it('rejects an inactive AITP skill with attachments before materializing them (40415)', async () => {
+      const pluginRoot = join(home as string, 'aitp-plugin-source');
+      await mkdir(join(pluginRoot, 'skills', 'aitp'), { recursive: true });
+      await writeFile(
+        join(pluginRoot, 'kimi.plugin.json'),
+        JSON.stringify({ name: 'aitp-research-protocol', version: '0.8.0', skills: './skills' }),
+      );
+      await writeFile(
+        join(pluginRoot, 'skills', 'aitp', 'SKILL.md'),
+        '---\nname: aitp\ndescription: AITP test skill\n---\n\nAITP body\n',
+      );
+      await server!.core.accessor.get(IPluginService).installPlugin({ source: pluginRoot });
+
+      const id = await createSession();
+      await createMainAgent(id);
+      const workspaceId = await registerWorkspace(home as string);
+      const workspace = await getJson<{ skills: SkillWire[] }>(
+        `/api/v1/workspaces/${workspaceId}/skills`,
+      );
+      expect(workspace.body.data.skills.some((candidate) => candidate.name === 'aitp')).toBe(true);
+
+      const session = await getJson<{ skills: SkillWire[] }>(`/api/v1/sessions/${id}/skills`);
+      expect(session.body.data.skills.some((candidate) => candidate.name === 'aitp')).toBe(false);
+
+      const noteBytes = Buffer.from('must not be materialized for a hidden skill');
+      const form = new FormData();
+      form.set('file', new Blob([noteBytes], { type: 'text/plain' }), 'note.txt');
+      const uploadRes = await fetch(`${base}/api/v1/files`, {
+        method: 'POST',
+        headers: authHeaders(server as RunningServer),
+        body: form,
+      } as never);
+      const uploaded = (await uploadRes.json()) as Envelope<{ id: string }>;
+      expect(uploaded.code).toBe(0);
+
+      const activation = await postJson<null>(
+        `/api/v1/sessions/${id}/skills/aitp:activate`,
+        {
+          attachments: [
+            { type: 'file', file_id: uploaded.data.id, name: 'note.txt', media_type: 'text/plain', size: noteBytes.length },
+          ],
+        },
+      );
+      expect(activation.body.code).toBe(40415);
+
       const sessionTree = await readdir(join(home as string, 'sessions'), { recursive: true });
       expect(sessionTree.filter((entry) => entry.includes('attachments'))).toEqual([]);
     });

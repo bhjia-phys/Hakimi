@@ -2,11 +2,10 @@
  * Scenario: AITP Research Mode REST routes (`/sessions/{id}/research` and
  * `/sessions/{id}/research/command`).
  * Responsibilities: verify GET returns an inactive snapshot without AITP I/O,
- * invalid body rejection, stale-revision POST mapping, enter_mode flag-gated
- * error mapping, and session-not-found.
- * Wiring: real kap-server on a temp home; the default-on AITP flag is explicitly
- * disabled so the flag-off path remains covered without AITP I/O — enter_mode
- * surfaces a coded 40001, and GET returns an inactive snapshot.
+ * invalid body rejection, stale-revision POST mapping, enter_mode availability,
+ * and session-not-found.
+ * Wiring: real kap-server on a temp home; inactive hydration remains free of
+ * AITP I/O, while explicit enter_mode performs the activation path.
  * Run: `pnpm --filter @moonshot-ai/kap-server exec vitest run test/research.test.ts`.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -84,7 +83,6 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
   let base: string;
 
   beforeEach(async () => {
-    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '0');
     home = await mkdtemp(join(tmpdir(), 'kimi-server-v2-research-'));
     workDir = await mkdtemp(join(tmpdir(), 'kimi-server-v2-research-work-'));
     server = await startServer({
@@ -235,23 +233,19 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
     expect(body.code).toBe(40001);
   });
 
-  it('POST enter_mode maps flag-disabled to VALIDATION_FAILED, not INTERNAL_ERROR', async () => {
+  it('POST enter_mode is available without an experimental flag', async () => {
     const sessionId = await createSession();
-    const { status, body } = await postJson<ResearchSnapshot>(
+    const { status, body } = await postJson<{ snapshot: ResearchSnapshot }>(
       `/api/v1/sessions/${sessionId}/research/command`,
       { command: { kind: 'enter_mode', actor: 'user' } },
     );
     expect(status).toBe(200);
-    // This test explicitly disables the default-on flag, so enter_mode throws
-    // aitp.mode_flag_disabled. The route maps this to VALIDATION_FAILED (40001),
-    // not INTERNAL_ERROR (50001).
-    expect(body.code).toBe(40001);
-    expect(body.msg).toMatch(/AITP Research Mode is not enabled/i);
+    expect(body.code).toBe(0);
+    expect(body.data.snapshot.mode).not.toBe('inactive');
   });
 
   it('POST resolves human decisions, acknowledges alerts, and maps attention errors', async () => {
     await server!.close();
-    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
     server = await startServer({
       hostIdentity: TEST_HOST_IDENTITY,
       host: '127.0.0.1',
@@ -389,7 +383,6 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
 
   it('POST pause_loop and resume_loop return the real loopStatus snapshot', async () => {
     await server!.close();
-    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
     server = await startServer({
       hostIdentity: TEST_HOST_IDENTITY,
       host: '127.0.0.1',
@@ -461,7 +454,6 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
 
   it('POST dispatches an action-bound run observation to the research service', async () => {
     await server!.close();
-    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
     server = await startServer({
       hostIdentity: TEST_HOST_IDENTITY,
       host: '127.0.0.1',
@@ -519,7 +511,6 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
 
   it('POST runs a bounded action lifecycle through the high-level commands', async () => {
     await server!.close();
-    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
     server = await startServer({
       hostIdentity: TEST_HOST_IDENTITY,
       host: '127.0.0.1',
@@ -587,7 +578,6 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
 
   it('POST prepares and discards a ResearchPlan through the public command surface', async () => {
     await server!.close();
-    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
     server = await startServer({
       hostIdentity: TEST_HOST_IDENTITY,
       host: '127.0.0.1',
@@ -631,7 +621,6 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
 
   it('POST maps pending gates and missing human approval to VALIDATION_FAILED envelopes', async () => {
     await server!.close();
-    vi.stubEnv('KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE', '1');
     server = await startServer({
       hostIdentity: TEST_HOST_IDENTITY,
       host: '127.0.0.1',

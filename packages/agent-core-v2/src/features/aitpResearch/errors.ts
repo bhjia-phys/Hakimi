@@ -16,7 +16,6 @@ export const AitpResearchErrors = {
   codes: {
     AITP_MODE_INACTIVE: 'aitp.mode_inactive',
     AITP_MODE_ALREADY_ACTIVE: 'aitp.mode_already_active',
-    AITP_MODE_FLAG_DISABLED: 'aitp.mode_flag_disabled',
     AITP_MODE_NOT_MAIN_AGENT: 'aitp.mode_not_main_agent',
     AITP_ADAPTER_NOT_READY: 'aitp.adapter_not_ready',
     AITP_ADAPTER_DEGRADED: 'aitp.adapter_degraded',
@@ -56,12 +55,6 @@ export const AitpResearchErrors = {
       retryable: false,
       public: true,
       action: 'Use ExitAITPMode to exit before re-entering.',
-    },
-    'aitp.mode_flag_disabled': {
-      title: 'AITP Research Mode is not enabled',
-      retryable: false,
-      public: true,
-      action: 'Enable the experimental flag KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE.',
     },
     'aitp.mode_not_main_agent': {
       title: 'AITP Research Mode is only available on the main agent',

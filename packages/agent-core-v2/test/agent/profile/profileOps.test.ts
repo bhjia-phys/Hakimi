@@ -224,7 +224,9 @@ function buildHost(key: string): {
   });
   host.stub(IAgentSkillVisibilityService, {
     _serviceBrand: undefined,
+    onDidChange: Event.None as Event<void>,
     isSkillVisible: () => true,
+    isSkillVisibleInFrozenListing: () => true,
     hiddenReason: () => undefined,
     filterVisible: (skills: readonly SkillDefinition[]) => skills,
   });

@@ -28,6 +28,7 @@ export interface IWireService {
   seal(): Promise<void>;
   restore(): Promise<void>;
   flush(): Promise<void>;
+  isRestoring(): boolean;
 
   getModel<S>(model: ModelDef<S>): DeepReadonly<S>;
 }
