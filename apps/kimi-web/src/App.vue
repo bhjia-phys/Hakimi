@@ -775,7 +775,7 @@ async function handleResearchSlash(
     return 'rejected';
   }
 
-  // The menu is hidden while the flag is off, but a hand-typed command still
+  // The menu is hidden on a legacy backend, but a hand-typed command still
   // arrives here so it cannot leak into the model as an ordinary prompt.
   if (!client.researchEnabled.value) {
     reportResearchIssue('disabled');

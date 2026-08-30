@@ -578,7 +578,7 @@ describe('coalesceAppRenderEvents (lossless stream grouping)', () => {
 });
 
 describe('useKimiWebClient (resync integration)', () => {
-  it('flushes queued deltas around an authoritative snapshot before live streaming resumes', async () => {
+  it('flushes queued deltas and gates graduated Research only by backend generation', async () => {
     vi.stubGlobal('WebSocket', class {});
 
     const sessionId = 'session-1';
@@ -650,6 +650,12 @@ describe('useKimiWebClient (resync integration)', () => {
     const initialResearch = researchSnapshot(1);
     const recoveredResearch = researchSnapshot(2);
     const getSessionResearch = vi.fn(async () => initialResearch);
+    let resolveResearchCommand!: (value: ResearchStatusSnapshot) => void;
+    const commandSessionResearch = vi.fn(
+      () => new Promise<ResearchStatusSnapshot>((resolve) => {
+        resolveResearchCommand = resolve;
+      }),
+    );
 
     let handlers: KimiEventHandlers | undefined;
     let resolveSnapshotRequest!: () => void;
@@ -698,7 +704,7 @@ describe('useKimiWebClient (resync integration)', () => {
       capabilities: {},
       openInApps: [],
       dangerousBypassAuth: false,
-      experimentalFlags: { aitp_research_mode: true },
+      experimentalFlags: {},
       backend: 'v2' as const,
     }));
     const api: Partial<KimiWebApi> = {
@@ -724,6 +730,7 @@ describe('useKimiWebClient (resync integration)', () => {
       listSessions: vi.fn(async () => ({ items: [session], hasMore: false })),
       getSessionSnapshot,
       getSessionResearch,
+      commandSessionResearch,
       getSessionStatus: vi.fn(async () => ({
         model: 'model-1',
         thinkingEffort: 'high',
@@ -818,7 +825,7 @@ describe('useKimiWebClient (resync integration)', () => {
       handlers!.onConnectionChange(true);
       expect(client.researchEnabled.value).toBe(false);
       await vi.waitFor(() => expect(getMeta).toHaveBeenCalledTimes(1));
-      expect(client.researchEnabled.value).toBe(false);
+      await vi.waitFor(() => expect(client.researchEnabled.value).toBe(true));
 
       handlers!.onEvent(
         {
@@ -832,12 +839,54 @@ describe('useKimiWebClient (resync integration)', () => {
         },
         { sessionId: '__global__', seq: 1 },
       );
-      await vi.waitFor(() => expect(client.researchEnabled.value).toBe(false));
+      await vi.waitFor(() => expect(client.researchEnabled.value).toBe(true));
       getSessionResearch.mockClear();
 
       handlers!.onResync(sessionId, 22, 'epoch-3');
       await vi.waitFor(() => {
         expect(connection.seedSnapshot).toHaveBeenCalledTimes(3);
+      });
+      await vi.waitFor(() => {
+        expect(getSessionResearch).toHaveBeenCalledWith(sessionId);
+        expect(client.research.value).toEqual(recoveredResearch);
+      });
+
+      const command = client.commandResearchById(sessionId, { kind: 'exit_mode' });
+      await vi.waitFor(() => expect(commandSessionResearch).toHaveBeenCalledOnce());
+      getSessionResearch.mockClear();
+      const queuedRefresh = client.refreshResearchById(sessionId);
+      await Promise.resolve();
+      expect(getSessionResearch).not.toHaveBeenCalled();
+
+      // A legacy v1 backend still lacks Research routes. Even a stale true
+      // legacy flag cannot expose the UI or issue a queued sidecar request.
+      getMeta.mockResolvedValue({
+        serverVersion: '0.0.0',
+        serverId: 'server-1',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        capabilities: {},
+        openInApps: [],
+        dangerousBypassAuth: false,
+        experimentalFlags: { aitp_research_mode: true },
+        backend: 'v1',
+      });
+      getMeta.mockClear();
+      handlers!.onConnectionChange(false);
+      handlers!.onConnectionChange(true);
+      expect(client.researchEnabled.value).toBe(false);
+      await vi.waitFor(() => expect(getMeta).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(client.researchEnabled.value).toBe(false));
+      expect(client.research.value).toBeNull();
+
+      resolveResearchCommand(recoveredResearch);
+      await expect(command).resolves.toBe(recoveredResearch);
+      await expect(queuedRefresh).resolves.toBeNull();
+      expect(getSessionResearch).not.toHaveBeenCalled();
+
+      getSessionResearch.mockClear();
+      handlers!.onResync(sessionId, 22, 'epoch-4');
+      await vi.waitFor(() => {
+        expect(connection.seedSnapshot).toHaveBeenCalledTimes(4);
       });
       await Promise.resolve();
       expect(getSessionResearch).not.toHaveBeenCalled();

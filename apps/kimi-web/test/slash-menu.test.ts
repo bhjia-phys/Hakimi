@@ -424,13 +424,13 @@ describe('Research slash command', () => {
     });
   });
 
-  it('shows /research only when the effective flag is true', () => {
+  it('shows /research when the connected backend supports Research', () => {
     const { slash } = setup('/res', [], true);
     slash.update();
     expect(slash.items.value.map((item) => item.name)).toContain('/research');
   });
 
-  it.each([undefined, false])('hides /research when the effective flag is %s', (enabled) => {
+  it.each([undefined, false])('hides /research when backend availability is %s', (enabled) => {
     const { slash } = setup('/res', [], enabled);
     slash.update();
     expect(slash.items.value.map((item) => item.name)).not.toContain('/research');

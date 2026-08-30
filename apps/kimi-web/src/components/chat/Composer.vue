@@ -355,9 +355,9 @@ function handleSubmit(): void {
   // resolves to its prefixed menu entry (`/skill:deploy`), mirroring the TUI.
   if (trimmed) {
     const parsed = parseSlash(trimmed);
-    // Keep a hand-typed `/research` on the command path even when the feature is
-    // hidden from the menu; App owns the flag guard and must never send it as a
-    // normal prompt.
+    // Keep a hand-typed `/research` on the command path even when Research is
+    // unavailable and hidden from the menu; App owns the backend guard and must
+    // never send it as a normal prompt.
     const known = parsed
       ? parsed.cmd === '/research' || buildSlashItems(props.skills, {
           researchEnabled: props.researchEnabled,

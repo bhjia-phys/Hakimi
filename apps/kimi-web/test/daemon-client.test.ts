@@ -503,8 +503,8 @@ describe('DaemonKimiWebApi.getMeta experimental flags', () => {
 
   it.each([
     ['missing', {}, {}],
-    ['false', { experimental_flags: { aitp_research_mode: false } }, { aitp_research_mode: false }],
-    ['true', { experimental_flags: { aitp_research_mode: true } }, { aitp_research_mode: true }],
+    ['false', { experimental_flags: { 'tool-select': false } }, { 'tool-select': false }],
+    ['true', { experimental_flags: { 'tool-select': true } }, { 'tool-select': true }],
   ] as const)('maps %s experimental_flags without falling open', async (_case, extra, expected) => {
     vi.mocked(fetch).mockResolvedValue(envelope({
       server_version: '1.0.0',

@@ -910,11 +910,16 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
    * auth bypass, effective experimental flags, backend engine). Called on first
    * load and on every WS (re)connect. Config changes pass `failClosedFlags` so
    * persisted config never masquerades as effective flag state while this read
-   * is pending or unavailable.
+   * is pending or unavailable. Reconnects also pass `failClosedBackend` because
+   * the endpoint may now belong to a legacy server without v2-only routes.
    */
-  async function refreshServerMeta(failClosedFlags = false): Promise<void> {
+  async function refreshServerMeta(
+    failClosedFlags = false,
+    failClosedBackend = false,
+  ): Promise<void> {
     const requestId = ++serverMetaRequestId;
     if (failClosedFlags) rawState.experimentalFlags = {};
+    if (failClosedBackend) rawState.backend = 'v1';
     const m = await getKimiWebApi()
       .getMeta()
       .catch(() => null);
@@ -2352,7 +2357,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   async function refreshResearchById(
     sessionId: string,
   ): Promise<ResearchStatusSnapshot | null> {
-    if (rawState.experimentalFlags['aitp_research_mode'] !== true) return null;
+    if (rawState.backend !== 'v2') return null;
     return refreshSessionResearch(sessionId);
   }
 
@@ -2366,7 +2371,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     sessionId: string,
     command: ResearchCommand,
   ): Promise<ResearchStatusSnapshot | null> {
-    if (rawState.experimentalFlags['aitp_research_mode'] !== true) return null;
+    if (rawState.backend !== 'v2') return null;
     try {
       // The coordinator serializes same-session POSTs and blocks sidecar GETs
       // behind the full mutation queue. The resolved value is exactly the
@@ -2375,8 +2380,8 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         rawState,
         sessionId,
         () => {
-          if (rawState.experimentalFlags['aitp_research_mode'] !== true) {
-            return Promise.reject(new Error('Research disabled'));
+          if (rawState.backend !== 'v2') {
+            return Promise.reject(new Error('Research unavailable on legacy backend'));
           }
           return getKimiWebApi().commandSessionResearch(sessionId, command);
         },

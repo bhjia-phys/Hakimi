@@ -297,8 +297,8 @@ export interface ExtendedState extends KimiClientState {
   /**
    * Engine generation of the connected server: `'v2'` = kap-server /
    * agent-core-v2, `'v1'` = an older (legacy) server binary. Read from `/meta`
-   * (`backend` field; older servers omit it ⇒ v1). Drives the dev-mode
-   * backend badge in the Sidebar.
+   * (`backend` field; older servers omit it ⇒ v1). Drives backend capability
+   * guards and the dev-mode backend badge in the Sidebar.
    */
   backend: 'v1' | 'v2';
   workspaceName: string;
@@ -732,16 +732,17 @@ async function refreshSessionGoal(sessionId: string): Promise<void> {
 async function refreshSessionResearch(
   sessionId: string,
 ): Promise<ResearchStatusSnapshot | null> {
-  // The effective meta flag can flip while a sidecar or resync is queued behind
-  // a mutation. Require strict true both before queueing and before issuing I/O.
-  if (rawState.experimentalFlags['aitp_research_mode'] !== true) return null;
+  // Research routes exist only on the v2 backend. Re-check the generation both
+  // before queueing and before issuing I/O because a dev-proxy backend switch
+  // can land while this read is waiting behind a mutation.
+  if (rawState.backend !== 'v2') return null;
   try {
     return await researchRequests.read(
       rawState,
       sessionId,
       () => {
-        if (rawState.experimentalFlags['aitp_research_mode'] !== true) {
-          return Promise.reject(new Error('Research disabled'));
+        if (rawState.backend !== 'v2') {
+          return Promise.reject(new Error('Research unavailable on legacy backend'));
         }
         return getKimiWebApi().getSessionResearch(sessionId);
       },
@@ -1149,7 +1150,7 @@ function connectEventsIfNeeded(): void {
         // the dev proxy was moved to the other engine. Re-read authoritative
         // metadata and config: global config events currently have no client
         // replay cursor, so this closes any disconnect-window gap.
-        void workspaceState.refreshServerMeta(true);
+        void workspaceState.refreshServerMeta(true, true);
         void workspaceState.loadConfig();
       }
     },
@@ -2077,9 +2078,7 @@ const goal = computed<AppGoal | null>(() => {
   return rawState.goalBySession[sid] ?? null;
 });
 
-const researchEnabled = computed<boolean>(
-  () => rawState.experimentalFlags['aitp_research_mode'] === true,
-);
+const researchEnabled = computed<boolean>(() => rawState.backend === 'v2');
 const research = computed<ResearchStatusSnapshot | null>(() => {
   if (!researchEnabled.value) return null;
   const sid = rawState.activeSessionId;
