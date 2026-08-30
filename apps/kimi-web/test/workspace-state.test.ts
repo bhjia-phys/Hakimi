@@ -5,12 +5,23 @@
 
 import { computed, ref, type Ref } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppApprovalRequest, AppQuestionRequest, AppSession, AppTask } from '../src/api/types';
+import type {
+  AppApprovalRequest,
+  AppQuestionRequest,
+  AppSession,
+  AppTask,
+  ResearchStatusSnapshot,
+} from '../src/api/types';
 import { DaemonApiError } from '../src/api/errors';
-import { createInitialState } from '../src/api/daemon/eventReducer';
+import { createInitialState, reduceAppEvent } from '../src/api/daemon/eventReducer';
 import { mergeWorkspaces } from '../src/lib/mergeWorkspaces';
 import { loadWorkspaceNameOverrides, saveWorkspaceNameOverrides } from '../src/lib/storage';
 import { useWorkspaceState, forgetLocalTurnState, type UseWorkspaceStateDeps } from '../src/composables/client/useWorkspaceState';
+import {
+  applyResearchResponseIfCurrent,
+  beginResearchRequest,
+  createResearchRequestCoordinator,
+} from '../src/composables/client/researchRequest';
 import type { ExtendedState } from '../src/composables/useKimiWebClient';
 import { clearTrace, traceKeyEvent } from '../src/debug/trace';
 
@@ -34,6 +45,9 @@ const apiMock = vi.hoisted(() => ({
   getHealth: vi.fn(),
   getMeta: vi.fn(),
   getProviderUsage: vi.fn(),
+  getGitStatus: vi.fn(),
+  getSessionResearch: vi.fn(),
+  commandSessionResearch: vi.fn(),
   listSessions: vi.fn(),
   listWorkspaces: vi.fn(),
 }));
@@ -79,6 +93,7 @@ function createState(): ExtendedState {
     activeSessionId: 'sess_1',
     connected: true,
     serverVersion: '',
+    experimentalFlags: { aitp_research_mode: true },
     dangerousBypassAuth: false,
     backend: 'v1',
     workspaceName: 'kimi-web',
@@ -147,6 +162,8 @@ function createDeps(): UseWorkspaceStateDeps {
     hasLoadedMessages: vi.fn(),
     refreshSessionStatus: vi.fn(),
     refreshSessionGoal: vi.fn(),
+    refreshSessionResearch: vi.fn(),
+    researchRequests: createResearchRequestCoordinator(),
     persistSessionProfile: vi.fn().mockResolvedValue(true),
     mergedWorkspaces: computed(() => []),
     workspacesView: computed(() => []),
@@ -1147,6 +1164,16 @@ describe('useWorkspaceState — startSessionAndOpenSideChat', () => {
 });
 
 describe('useWorkspaceState — config reconciliation', () => {
+  beforeEach(() => {
+    apiMock.getMeta.mockReset().mockResolvedValue({
+      serverVersion: '1.0.0',
+      openInApps: [],
+      dangerousBypassAuth: false,
+      experimentalFlags: { aitp_research_mode: true },
+      backend: 'v2',
+    });
+  });
+
   it('updates config and the derived default model together', async () => {
     apiMock.getConfig.mockReset().mockResolvedValue({
       providers: {},
@@ -1242,6 +1269,36 @@ describe('useWorkspaceState — config reconciliation', () => {
     expect(state.defaultModel).toBe('provider/authoritative');
   });
 
+  it('fails closed and re-reads flags after a lost experimental POST response', async () => {
+    let rejectPost: ((error: Error) => void) | undefined;
+    apiMock.setConfig.mockReset().mockReturnValue(
+      new Promise((_, reject) => {
+        rejectPost = reject;
+      }),
+    );
+    apiMock.getConfig.mockReset().mockResolvedValue({
+      providers: {},
+      experimental: { aitp_research_mode: false },
+    });
+    apiMock.getMeta.mockResolvedValue({
+      serverVersion: '1.0.0',
+      openInApps: [],
+      dangerousBypassAuth: false,
+      experimentalFlags: { aitp_research_mode: false },
+      backend: 'v2',
+    });
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    const update = ws.updateConfig({ experimental: { aitp_research_mode: false } });
+    expect(state.experimentalFlags).toEqual({});
+    rejectPost?.(new Error('response lost'));
+
+    await expect(update).resolves.toBe(false);
+    expect(state.experimentalFlags['aitp_research_mode']).toBe(false);
+    expect(apiMock.getMeta).toHaveBeenCalledTimes(1);
+  });
+
   it('does not let an older POST response overwrite a live config event', async () => {
     const stale = { providers: {}, defaultModel: 'provider/stale' };
     let resolveStale: ((value: typeof stale) => void) | undefined;
@@ -1292,6 +1349,29 @@ describe('useWorkspaceState — config reconciliation', () => {
     expect(state.config).toEqual({ providers: {}, defaultModel: 'provider/newer' });
     expect(state.defaultModel).toBe('provider/newer');
   });
+
+  it('re-reads effective meta flags after a config write instead of trusting config', async () => {
+    apiMock.setConfig.mockReset().mockResolvedValue({
+      providers: {},
+      experimental: { aitp_research_mode: true },
+    });
+    apiMock.getMeta.mockResolvedValue({
+      serverVersion: '1.0.0',
+      openInApps: [],
+      dangerousBypassAuth: false,
+      experimentalFlags: { aitp_research_mode: false },
+      backend: 'v2',
+    });
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    await expect(ws.updateConfig({ experimental: { aitp_research_mode: true } })).resolves.toBe(true);
+
+    expect(state.config?.experimental?.['aitp_research_mode']).toBe(true);
+    expect(state.experimentalFlags['aitp_research_mode']).toBe(false);
+    await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBeNull();
+    expect(apiMock.commandSessionResearch).not.toHaveBeenCalled();
+  });
 });
 
 describe('useWorkspaceState — provider usage requests', () => {
@@ -1320,6 +1400,149 @@ describe('useWorkspaceState — provider usage requests', () => {
     await first;
     expect(state.providerUsage).toEqual(newer);
     expect(state.providerUsageError).toBeNull();
+  });
+});
+
+describe('useWorkspaceState — git status requests', () => {
+  beforeEach(() => {
+    apiMock.getGitStatus.mockReset();
+  });
+
+  it('applies only the newest success when overlapping requests resolve out of order', async () => {
+    const older = {
+      branch: 'older',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 1,
+      deletions: 0,
+      pullRequest: null,
+    };
+    const newer = {
+      branch: 'newer',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 2,
+      deletions: 0,
+      pullRequest: null,
+    };
+    let resolveOlder: ((value: typeof older) => void) | undefined;
+    apiMock.getGitStatus
+      .mockImplementationOnce(() => new Promise<typeof older>((resolve) => {
+        resolveOlder = resolve;
+      }))
+      .mockResolvedValueOnce(newer);
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    const first = ws.loadGitStatus('sess_1');
+    const second = ws.loadGitStatus('sess_1');
+    await second;
+    expect(state.gitStatusBySession).toEqual({ sess_1: newer });
+
+    resolveOlder?.(older);
+    await first;
+    expect(state.gitStatusBySession).toEqual({ sess_1: newer });
+  });
+
+  it('clears an existing status when the newest request fails', async () => {
+    const older = {
+      branch: 'older',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 1,
+      deletions: 0,
+      pullRequest: null,
+    };
+    let resolveOlder: ((value: typeof older) => void) | undefined;
+    apiMock.getGitStatus
+      .mockImplementationOnce(() => new Promise<typeof older>((resolve) => {
+        resolveOlder = resolve;
+      }))
+      .mockRejectedValueOnce(new Error('latest status unavailable'));
+    const state = createState();
+    state.gitStatusBySession = { sess_1: older };
+    const ws = useWorkspaceState(state, createDeps());
+
+    const first = ws.loadGitStatus('sess_1');
+    const second = ws.loadGitStatus('sess_1');
+    await second;
+    expect(state.gitStatusBySession).toEqual({});
+
+    resolveOlder?.(older);
+    await first;
+    expect(state.gitStatusBySession).toEqual({});
+  });
+
+  it('keeps a newer success when an older request fails later', async () => {
+    const newer = {
+      branch: 'newer',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 2,
+      deletions: 0,
+      pullRequest: null,
+    };
+    let rejectOlder: ((reason?: unknown) => void) | undefined;
+    apiMock.getGitStatus
+      .mockImplementationOnce(() => new Promise<typeof newer>((_resolve, reject) => {
+        rejectOlder = reject;
+      }))
+      .mockResolvedValueOnce(newer);
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    const first = ws.loadGitStatus('sess_1');
+    const second = ws.loadGitStatus('sess_1');
+    await second;
+    expect(state.gitStatusBySession).toEqual({ sess_1: newer });
+
+    rejectOlder?.(new Error('older status unavailable'));
+    await first;
+    expect(state.gitStatusBySession).toEqual({ sess_1: newer });
+  });
+
+  it('keeps request tokens independent across sessions', async () => {
+    const firstStatus = {
+      branch: 'first',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 1,
+      deletions: 0,
+      pullRequest: null,
+    };
+    const secondStatus = {
+      branch: 'second',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 2,
+      deletions: 0,
+      pullRequest: null,
+    };
+    let resolveFirst: ((value: typeof firstStatus) => void) | undefined;
+    apiMock.getGitStatus
+      .mockImplementationOnce(() => new Promise<typeof firstStatus>((resolve) => {
+        resolveFirst = resolve;
+      }))
+      .mockResolvedValueOnce(secondStatus);
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    const first = ws.loadGitStatus('sess_1');
+    const second = ws.loadGitStatus('sess_2');
+    await second;
+    resolveFirst?.(firstStatus);
+    await first;
+
+    expect(state.gitStatusBySession).toEqual({
+      sess_1: firstStatus,
+      sess_2: secondStatus,
+    });
   });
 });
 
@@ -1792,14 +2015,16 @@ describe('useWorkspaceState — refreshServerMeta', () => {
     apiMock.getMeta.mockReset();
   });
 
-  it('applies the meta payload including the v2 backend marker', async () => {
+  it('applies the meta payload including effective flags and the v2 backend marker', async () => {
     apiMock.getMeta.mockResolvedValue({
       serverVersion: '9.9.9',
       openInApps: ['finder'],
       dangerousBypassAuth: true,
+      experimentalFlags: { aitp_research_mode: true },
       backend: 'v2',
     });
     const state = createState();
+    state.experimentalFlags = {};
     const ws = useWorkspaceState(state, createDeps());
 
     await ws.refreshServerMeta();
@@ -1807,17 +2032,21 @@ describe('useWorkspaceState — refreshServerMeta', () => {
     expect(state.serverVersion).toBe('9.9.9');
     expect(state.availableOpenInApps).toEqual(['finder']);
     expect(state.dangerousBypassAuth).toBe(true);
+    expect(state.experimentalFlags).toEqual({ aitp_research_mode: true });
     expect(state.backend).toBe('v2');
   });
 
-  it('keeps the previous meta when /meta fails', async () => {
+  it('keeps previous meta on an ordinary failure but fails flags closed for config reconciliation', async () => {
     apiMock.getMeta.mockRejectedValue(new Error('connection refused'));
     const state = createState();
     state.backend = 'v2';
     const ws = useWorkspaceState(state, createDeps());
 
     await ws.refreshServerMeta();
+    expect(state.experimentalFlags).toEqual({ aitp_research_mode: true });
 
+    await ws.refreshServerMeta(true);
+    expect(state.experimentalFlags).toEqual({});
     expect(state.backend).toBe('v2');
     expect(state.serverVersion).toBe('');
   });
@@ -2366,5 +2595,315 @@ describe('useWorkspaceState — upsertWorkspacePreserveOrder hidden roots', () =
     ws.upsertWorkspacePreserveOrder(workspace('wd_y', '/home/foo', 'foo'));
 
     expect(state.hiddenWorkspaceRoots).toEqual(['/home/Foo']);
+  });
+});
+
+describe('useWorkspaceState — Research', () => {
+  function snapshot(revision: number): ResearchStatusSnapshot {
+    return {
+      mode: 'ready',
+      loopStatus: 'active',
+      phase: 'idle',
+      currentLineSlug: 'line-a',
+      questions: [],
+      lines: [],
+      openQuestionCount: 0,
+      activeQuestionCount: 0,
+      blockedQuestionCount: 0,
+      alerts: [],
+      aitpHealth: { phase: 'ready' },
+      revision,
+    };
+  }
+
+  beforeEach(() => {
+    apiMock.getSessionResearch.mockReset();
+    apiMock.commandSessionResearch.mockReset();
+  });
+
+  it('keeps an explicit refresh bound to its submitted session after the active session changes', async () => {
+    const nextSnapshot = snapshot(2);
+    let resolveRefresh!: (value: typeof nextSnapshot) => void;
+    const refreshSessionResearch = vi.fn(
+      () => new Promise<typeof nextSnapshot>((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+    const state = createState();
+    const deps = createDeps();
+    deps.refreshSessionResearch = refreshSessionResearch;
+    const ws = useWorkspaceState(state, deps);
+
+    const refresh = ws.refreshResearchById('sess_1');
+    state.activeSessionId = 'sess_2';
+    resolveRefresh(nextSnapshot);
+
+    await expect(refresh).resolves.toBe(nextSnapshot);
+    expect(refreshSessionResearch).toHaveBeenCalledOnce();
+    expect(refreshSessionResearch).toHaveBeenCalledWith('sess_1');
+  });
+
+  it('sends an explicit command only to its submitted session', async () => {
+    const nextSnapshot = snapshot(2);
+    apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
+    const state = createState();
+    state.activeSessionId = 'sess_2';
+    const ws = useWorkspaceState(state, createDeps());
+    const command = { kind: 'pause_loop', expectedRevision: 1 } as const;
+
+    const result = await ws.commandResearchById('sess_1', command);
+
+    expect(result).toBe(nextSnapshot);
+    expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
+    expect(apiMock.commandSessionResearch).toHaveBeenCalledWith('sess_1', command);
+  });
+
+  it('commits a successful command snapshot when no live event raced it', async () => {
+    const nextSnapshot = snapshot(2);
+    apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
+    const state = createState();
+    const deps = createDeps();
+    const ws = useWorkspaceState(state, deps);
+    const command = { kind: 'switch_line', lineSlug: 'line-a', expectedRevision: 1 } as const;
+
+    const result = await ws.commandResearch(command);
+
+    expect(apiMock.commandSessionResearch).toHaveBeenCalledWith('sess_1', command);
+    expect(result).toBe(nextSnapshot);
+    expect(state.researchBySession['sess_1']).toBe(nextSnapshot);
+    expect(deps.pushOperationFailure).not.toHaveBeenCalled();
+  });
+
+  it('serializes same-session Research POSTs and returns each authoritative response', async () => {
+    const firstSnapshot = snapshot(2);
+    const secondSnapshot = snapshot(3);
+    let resolveFirst!: (value: typeof firstSnapshot) => void;
+    apiMock.commandSessionResearch
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFirst = resolve;
+      }))
+      .mockResolvedValueOnce(secondSnapshot);
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    const first = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
+    await vi.waitFor(() => expect(apiMock.commandSessionResearch).toHaveBeenCalledTimes(1));
+    const second = ws.commandResearch({ kind: 'resume_loop', expectedRevision: 2 });
+    await Promise.resolve();
+    expect(apiMock.commandSessionResearch).toHaveBeenCalledTimes(1);
+
+    resolveFirst(firstSnapshot);
+    await expect(first).resolves.toBe(firstSnapshot);
+    await vi.waitFor(() => expect(apiMock.commandSessionResearch).toHaveBeenCalledTimes(2));
+    await expect(second).resolves.toBe(secondSnapshot);
+    expect(state.researchBySession['sess_1']).toBe(secondSnapshot);
+  });
+
+  it('returns the live authoritative snapshot when it wins a command response race', async () => {
+    const responseSnapshot = snapshot(2);
+    const liveSnapshot = snapshot(3);
+    let resolveCommand!: (value: typeof responseSnapshot) => void;
+    apiMock.commandSessionResearch.mockImplementationOnce(
+      () => new Promise<typeof responseSnapshot>((resolve) => {
+        resolveCommand = resolve;
+      }),
+    );
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    const command = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
+    await vi.waitFor(() => expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce());
+    state.researchVersionBySession = { sess_1: 1 };
+    state.researchBySession = { sess_1: liveSnapshot };
+    resolveCommand(responseSnapshot);
+
+    await expect(command).resolves.toBe(liveSnapshot);
+    expect(state.researchBySession['sess_1']).toBe(liveSnapshot);
+  });
+
+  it('waits a read requested during a mutation until the mutation settles', async () => {
+    const coordinator = createResearchRequestCoordinator();
+    const state = createInitialState();
+    const mutationSnapshot = snapshot(2);
+    const readSnapshot = snapshot(3);
+    let resolveMutation!: (value: typeof mutationSnapshot) => void;
+    const mutationRequest = vi.fn(() => new Promise<typeof mutationSnapshot>((resolve) => {
+      resolveMutation = resolve;
+    }));
+    const readRequest = vi.fn(async () => readSnapshot);
+
+    const mutation = coordinator.mutate(state, 'sess_1', mutationRequest);
+    await vi.waitFor(() => expect(mutationRequest).toHaveBeenCalledOnce());
+    const read = coordinator.read(state, 'sess_1', readRequest);
+    await Promise.resolve();
+    expect(readRequest).not.toHaveBeenCalled();
+
+    resolveMutation(mutationSnapshot);
+    await expect(mutation).resolves.toBe(mutationSnapshot);
+    await expect(read).resolves.toBe(readSnapshot);
+    expect(readRequest).toHaveBeenCalledOnce();
+    expect(state.researchBySession['sess_1']).toBe(readSnapshot);
+  });
+
+  it('waits an in-flight read for the mutation that invalidated it', async () => {
+    const coordinator = createResearchRequestCoordinator();
+    const state = createInitialState();
+    const staleSnapshot = snapshot(2);
+    const mutationSnapshot = snapshot(3);
+    let resolveRead!: (value: typeof staleSnapshot) => void;
+    let resolveMutation!: (value: typeof mutationSnapshot) => void;
+    const readRequest = vi.fn(() => new Promise<typeof staleSnapshot>((resolve) => {
+      resolveRead = resolve;
+    }));
+    const mutationRequest = vi.fn(() => new Promise<typeof mutationSnapshot>((resolve) => {
+      resolveMutation = resolve;
+    }));
+
+    const read = coordinator.read(state, 'sess_1', readRequest);
+    await vi.waitFor(() => expect(readRequest).toHaveBeenCalledOnce());
+    const mutation = coordinator.mutate(state, 'sess_1', mutationRequest);
+    await vi.waitFor(() => expect(mutationRequest).toHaveBeenCalledOnce());
+    let readSettled = false;
+    const readResult = read.then((value) => {
+      readSettled = true;
+      return value;
+    });
+
+    resolveRead(staleSnapshot);
+    await Promise.resolve();
+    expect(readSettled).toBe(false);
+
+    resolveMutation(mutationSnapshot);
+    await expect(mutation).resolves.toBe(mutationSnapshot);
+    await expect(readResult).resolves.toBe(mutationSnapshot);
+    expect(state.researchBySession['sess_1']).toBe(mutationSnapshot);
+  });
+
+  it('refetches after an invalidated read when its mutation fails without state', async () => {
+    const coordinator = createResearchRequestCoordinator();
+    const state = createInitialState();
+    const staleSnapshot = snapshot(2);
+    const authoritativeSnapshot = snapshot(4);
+    let resolveRead!: (value: typeof staleSnapshot) => void;
+    let rejectMutation!: (reason?: unknown) => void;
+    const readRequest = vi.fn()
+      .mockImplementationOnce(() => new Promise<typeof staleSnapshot>((resolve) => {
+        resolveRead = resolve;
+      }))
+      .mockResolvedValueOnce(authoritativeSnapshot);
+    const mutationRequest = vi.fn(() => new Promise<typeof authoritativeSnapshot>((_resolve, reject) => {
+      rejectMutation = reject;
+    }));
+
+    const read = coordinator.read(state, 'sess_1', readRequest);
+    await vi.waitFor(() => expect(readRequest).toHaveBeenCalledOnce());
+    const mutation = coordinator.mutate(state, 'sess_1', mutationRequest);
+    await vi.waitFor(() => expect(mutationRequest).toHaveBeenCalledOnce());
+
+    resolveRead(staleSnapshot);
+    const error = new Error('mutation failed');
+    rejectMutation(error);
+    await expect(mutation).rejects.toBe(error);
+    await expect(read).resolves.toBe(authoritativeSnapshot);
+    expect(readRequest).toHaveBeenCalledTimes(2);
+    expect(state.researchBySession['sess_1']).toBe(authoritativeSnapshot);
+  });
+
+  it('refreshes authoritative state before surfacing a validation failure', async () => {
+    const error = new DaemonApiError({ code: 40001, msg: 'stale revision', requestId: 'req_1' });
+    apiMock.commandSessionResearch.mockRejectedValue(error);
+    const deps = createDeps();
+    const ws = useWorkspaceState(createState(), deps);
+
+    const result = await ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
+
+    expect(result).toBeNull();
+    expect(deps.refreshSessionResearch).toHaveBeenCalledWith('sess_1');
+    expect(deps.pushOperationFailure).toHaveBeenCalledWith(
+      'commandResearch',
+      error,
+      { sessionId: 'sess_1' },
+    );
+  });
+
+  it.each([
+    ['missing', {}, { aitp_research_mode: true }],
+    ['false', { aitp_research_mode: false }, { aitp_research_mode: true }],
+  ] as const)('blocks commands when the effective meta flag is %s despite config', async (_case, flags, config) => {
+    const state = createState();
+    state.experimentalFlags = flags;
+    state.config = { providers: {}, experimental: config };
+    const ws = useWorkspaceState(state, createDeps());
+
+    await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBeNull();
+    expect(apiMock.commandSessionResearch).not.toHaveBeenCalled();
+  });
+
+  it('allows commands only when meta is true even if persisted config is false', async () => {
+    const nextSnapshot = snapshot(2);
+    apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
+    const state = createState();
+    state.experimentalFlags = { aitp_research_mode: true };
+    state.config = { providers: {}, experimental: { aitp_research_mode: false } };
+    const ws = useWorkspaceState(state, createDeps());
+
+    await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBe(nextSnapshot);
+    expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
+  });
+
+  it('does not start a Research sidecar refresh unless the effective flag is true', async () => {
+    const state = createState();
+    state.experimentalFlags = { aitp_research_mode: false };
+    state.config = { providers: {}, experimental: { aitp_research_mode: true } };
+    const deps = createDeps();
+    const ws = useWorkspaceState(state, deps);
+
+    await ws.refreshResearch();
+
+    expect(deps.refreshSessionResearch).not.toHaveBeenCalled();
+    expect(apiMock.getSessionResearch).not.toHaveBeenCalled();
+  });
+
+  it('does not let a cold read overwrite a newer live Research event', () => {
+    const initial = createInitialState();
+    const token = beginResearchRequest(initial, 'sess_1');
+    const liveSnapshot = snapshot(3);
+    const live = reduceAppEvent(
+      initial,
+      { type: 'researchUpdated', sessionId: 'sess_1', snapshot: liveSnapshot },
+      { sessionId: 'sess_1', seq: 1 },
+    );
+
+    const applied = applyResearchResponseIfCurrent(live, 'sess_1', token, snapshot(2));
+
+    expect(applied).toBe(false);
+    expect(live.researchBySession['sess_1']).toBe(liveSnapshot);
+    expect(live.researchVersionBySession['sess_1']).toBe(1);
+  });
+
+  it('does not let an older read response overwrite a newer mutation response', () => {
+    const state = createInitialState();
+    const readToken = beginResearchRequest(state, 'sess_1');
+    const mutationToken = beginResearchRequest(state, 'sess_1');
+    const mutationSnapshot = snapshot(3);
+
+    expect(applyResearchResponseIfCurrent(state, 'sess_1', mutationToken, mutationSnapshot)).toBe(true);
+    expect(applyResearchResponseIfCurrent(state, 'sess_1', readToken, snapshot(2))).toBe(false);
+    expect(state.researchBySession['sess_1']).toBe(mutationSnapshot);
+  });
+
+  it('does not let an older mutation response overwrite a newer mutation response', () => {
+    const state = createInitialState();
+    const firstMutationToken = beginResearchRequest(state, 'sess_1');
+    const secondMutationToken = beginResearchRequest(state, 'sess_1');
+    const secondMutationSnapshot = snapshot(4);
+
+    expect(
+      applyResearchResponseIfCurrent(state, 'sess_1', secondMutationToken, secondMutationSnapshot),
+    ).toBe(true);
+    expect(
+      applyResearchResponseIfCurrent(state, 'sess_1', firstMutationToken, snapshot(3)),
+    ).toBe(false);
+    expect(state.researchBySession['sess_1']).toBe(secondMutationSnapshot);
   });
 });

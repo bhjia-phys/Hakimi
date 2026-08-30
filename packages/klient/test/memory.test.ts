@@ -176,6 +176,21 @@ describe('memory dispatcher contract allowlist', () => {
     }
   });
 
+  it('rejects a checkpoint proposal without expectedRevision at memory boundary', async () => {
+    const ctx = await setup();
+    try {
+      await expect(
+        ctx.dispatcher.call(ctx.agentScope, 'agentResearchService', 'proposeCheckpoint', [{}]),
+      ).rejects.toMatchObject({
+        name: 'RPCError',
+        code: 40001,
+        message: expect.stringContaining('input validation failed'),
+      });
+    } finally {
+      await teardown(ctx);
+    }
+  });
+
   it('rejects call/stream type mismatches', async () => {
     const ctx = await setup();
     try {

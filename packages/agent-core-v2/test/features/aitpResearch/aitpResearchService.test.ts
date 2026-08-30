@@ -862,7 +862,7 @@ describe('commitCheckpoint barrier', () => {
 
     wire.dispatch(researchCreateLine({ slug: 'main', title: 'Main', createdAt: 1 }));
     const question = svc.createQuestion({ lineSlug: 'main', wording: 'Q1' });
-    const checkpoint = svc.proposeCheckpoint({ questionId: question.id });
+    const checkpoint = svc.proposeCheckpoint({ expectedRevision: 0, questionId: question.id });
     bindCompleteCheckpointReceipt(checkpoint.checkpointId);
     wire.dispatch(contextAppendMessage({ message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } } }));
 
@@ -888,7 +888,7 @@ describe('commitCheckpoint barrier', () => {
 
     wire.dispatch(researchCreateLine({ slug: 'main', title: 'Main', createdAt: 1 }));
     const question = svc.createQuestion({ lineSlug: 'main', wording: 'Q1' });
-    const checkpoint = svc.proposeCheckpoint({ questionId: question.id });
+    const checkpoint = svc.proposeCheckpoint({ expectedRevision: 0, questionId: question.id });
     bindCompleteCheckpointReceipt(checkpoint.checkpointId);
     wire.dispatch(contextAppendMessage({ message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } } }));
 
@@ -946,8 +946,8 @@ describe('commitCheckpoint barrier', () => {
     const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
     const svc = new AgentResearchService(wire, makeScopeCtx(), eventBus, makeStubModeSvc(), adapter, makeToolExecutorStub(), makeStubGoalService());
 
-    const first = svc.proposeCheckpoint({});
-    expect(() => svc.proposeCheckpoint({})).toThrow('already pending');
+    const first = svc.proposeCheckpoint({ expectedRevision: 0 });
+    expect(() => svc.proposeCheckpoint({ expectedRevision: 0 })).toThrow('already pending');
     expect(wire.getModel(ResearchModel).current.pendingCheckpoint?.checkpointId).toBe(first.checkpointId);
   });
 
@@ -1048,7 +1048,7 @@ describe('commitCheckpoint barrier', () => {
 
     // Second, independent checkpoint: a new proposal is accepted after commit,
     // bound to a different AITP entry, and appended to the history.
-    const second = svc.proposeCheckpoint({});
+    const second = svc.proposeCheckpoint({ expectedRevision: 0 });
     bindCompleteCheckpointReceipt(second.checkpointId, 'e2');
     await svc.commitCheckpoint({ checkpointId: second.checkpointId, entryId: 'e2' });
 
@@ -1086,7 +1086,7 @@ describe('commitCheckpoint barrier', () => {
     const svc = new AgentResearchService(wire, makeScopeCtx(), eventBus, modeSvc, adapter, makeToolExecutorStub(), makeStubGoalService());
     svc.createLine({ slug: 'main', title: 'Main' });
     const question = svc.createQuestion({ lineSlug: 'main', wording: 'Q1' });
-    const checkpoint = svc.proposeCheckpoint({ questionId: question.id });
+    const checkpoint = svc.proposeCheckpoint({ expectedRevision: 0, questionId: question.id });
     bindCompleteCheckpointReceipt(checkpoint.checkpointId);
 
     const commitPromise = svc.commitCheckpoint({ checkpointId: checkpoint.checkpointId, entryId: 'e1' });
@@ -1421,7 +1421,7 @@ describe('public research mutation guards', () => {
       () => svc.steer({ kind: 'defer_question', questionId: 'q1', expectedRevision: 0 }),
       () => svc.steer({ kind: 'pause_loop', expectedRevision: 0 }),
       () => svc.reopenQuestion('q1'),
-      () => svc.proposeCheckpoint({}),
+      () => svc.proposeCheckpoint({ expectedRevision: 0 }),
     ];
 
     for (const mutation of mutations) {
@@ -1456,7 +1456,7 @@ describe('public research mutation guards', () => {
     modeSvc.pauseLoop(svc.getSnapshot().revision);
 
     expect(() => svc.setFocus(question.id)).toThrow('Research loop is paused');
-    expect(() => svc.proposeCheckpoint({ questionId: question.id })).toThrow(
+    expect(() => svc.proposeCheckpoint({ expectedRevision: 0, questionId: question.id })).toThrow(
       'Research loop is paused',
     );
 
@@ -1514,9 +1514,47 @@ describe('public research mutation guards', () => {
     svc.createLine({ slug: 'alt', title: 'Alternative' });
     const question = svc.createQuestion({ lineSlug: 'main', wording: 'Q1' });
 
-    expect(() => svc.proposeCheckpoint({ questionId: question.id, lineSlug: 'alt' })).toThrow(
+    expect(() => svc.proposeCheckpoint({ expectedRevision: 0, questionId: question.id, lineSlug: 'alt' })).toThrow(
       `Line alt does not own question ${question.id}`,
     );
+    expect(svc.getPendingCheckpoint()).toBeNull();
+  });
+
+  it('accepts the zero expected revision sentinel after Research advances', async () => {
+    const modeSvc = await buildRealModeService();
+    const svc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    svc.createLine({ slug: 'main', title: 'Main' });
+
+    expect(svc.getSnapshot().revision).toBeGreaterThan(0);
+    const checkpoint = svc.proposeCheckpoint({ expectedRevision: 0, lineSlug: 'main' });
+
+    expect(svc.getPendingCheckpoint()).toMatchObject({
+      checkpointId: checkpoint.checkpointId,
+      lineSlug: 'main',
+    });
+  });
+
+  it('rejects a stale checkpoint proposal without creating pending state', async () => {
+    const modeSvc = await buildRealModeService();
+    const svc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    svc.createLine({ slug: 'main', title: 'Main' });
+    const expectedRevision = svc.getSnapshot().revision;
+    expect(expectedRevision).toBeGreaterThan(0);
+
+    svc.createLine({ slug: 'alt', title: 'Alternative' });
+    expect(svc.getSnapshot().revision).toBeGreaterThan(expectedRevision);
+
+    let staleError: unknown;
+    try {
+      svc.proposeCheckpoint({ expectedRevision, lineSlug: 'main' });
+    } catch (error) {
+      staleError = error;
+    }
+    expect(staleError).toMatchObject({
+      code: AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+    });
     expect(svc.getPendingCheckpoint()).toBeNull();
   });
 
@@ -2893,7 +2931,7 @@ describe('checkpoint receipt tool integration', () => {
       makeToolExecutorStub(),
       makeStubGoalService(),
     );
-    const checkpoint = researchSvc.proposeCheckpoint({});
+    const checkpoint = researchSvc.proposeCheckpoint({ expectedRevision: 0 });
     const recordPrepareSpy = vi.spyOn(adapter, 'recordPrepare');
     const checkSpy = vi.spyOn(adapter, 'check');
     const recordSaveSpy = vi.spyOn(adapter, 'recordSave');
@@ -2972,7 +3010,7 @@ describe('checkpoint receipt tool integration', () => {
       makeToolExecutorStub(),
       makeStubGoalService(),
     );
-    const checkpoint = researchSvc.proposeCheckpoint({});
+    const checkpoint = researchSvc.proposeCheckpoint({ expectedRevision: 0 });
     checkpointIdempotencyKey = checkpoint.idempotencyKey;
     const { AitpRecordPrepareTool } = await import('#/features/aitpResearch/tools/aitpAdapterTools');
     await runnableExecution(new AitpRecordPrepareTool(adapter, modeSvc, researchSvc).resolveExecution({
@@ -5823,7 +5861,7 @@ describe('Research lifecycle alerts', () => {
     const modeSvc = await buildRealModeService(adapter);
     const researchSvc = await buildRealResearchService(modeSvc, adapter);
     await modeSvc.enter({ actor: 'user' });
-    const checkpoint = researchSvc.proposeCheckpoint({});
+    const checkpoint = researchSvc.proposeCheckpoint({ expectedRevision: 0 });
     bindCompleteCheckpointReceipt(checkpoint.checkpointId);
 
     await expect(researchSvc.commitCheckpoint({ checkpointId: checkpoint.checkpointId, entryId: 'e1' })).rejects.toThrow();

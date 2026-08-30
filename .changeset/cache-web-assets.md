@@ -2,4 +2,4 @@
 "@bhjia-phys/hakimi": patch
 ---
 
-web: Reject incomplete, unbranded, or unprovenanced Web bundles, snapshot verified assets for SEA, and require receipt-bound native binaries during packaging.
+Build the bundled Web UI from tracked source with schema v5 provenance and receipt-bound native packaging.

@@ -2271,6 +2271,7 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
         break;
       case 'propose_checkpoint':
         research.proposeCheckpoint({
+          expectedRevision: cmd.expectedRevision,
           questionId: cmd.questionId,
           lineSlug: cmd.lineSlug,
           assessment: cmd.assessment,

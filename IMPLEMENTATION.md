@@ -6,7 +6,7 @@
 
 | 轨道 | 名称 | 主要 owner | 主要交付边界 |
 |---|---|---|---|
-| A | Web | Hakimi in-repo source owner；过渡期继续接收 code-app production bundle | `apps/kimi-web`、桌面/浏览器 Web、Tower graph editor/live monitor、parity 与 `dist-web` provenance |
+| A | Web | Hakimi in-repo production source owner | `apps/kimi-web`、桌面/浏览器 Web、Tower graph editor/live monitor，以及 schema v5 `dist-web` provenance |
 | B | 手机远程 | 远程产品与部署 owner | responsive Web/PWA 手机 shell、`kap-server` 远程部署、安全与恢复交互 |
 | C | AITP 集成 | AITP adapter owner | CLI + files 的可选 adapter、H0–H4 implemented、H5 partial 的 upstream/adapter 边界、planned H6b native distillation orchestration，以及 gated workflow adapter nodes |
 | D | 内置 Hakimi Research Loop | Hakimi research domain owner | Research Frame、Question Board、physics insight、结构化 trace 与 research-cycle template |
@@ -25,7 +25,7 @@
 - v2 当前真实 `LifecycleScope` 固定为 `App → Session → Agent`，定义在 `packages/agent-core-v2/src/app/scopes.ts`；代码中尚无 `Workspace` tier。Workspace 资源目前由 `Program`/`WorkspaceInstance` 与 session lifecycle 手工装配，四层 `App → Workspace → Session → Agent` 是待 F 轨单独核对和实现的目标架构，不能由 C 轨或普通 Feature 先行假定。
 - Goal 仍由 `packages/agent-core-v2/src/agent/goal/` 的 Agent-scope `IAgentGoalService` 拥有；`src/features/plan/` 是现有 Feature 抽取，不代表 Goal 已迁到 `GoalFeature`。
 - 调用路径是并列的：TUI → `packages/node-sdk` / 进程内 v2，native print → `apps/kimi-code/src/cli/v2/run-v2-print.ts` 直接使用 v2，Web → `packages/kap-server` REST/WS。`packages/transcript` 与 `packages/klient` 提供可复用 contract/facade，不构成强制线性层链。
-- Web source 已从上游最后公开快照 `e7d5a0aee74e7f116cca0273c416ece9139a78a0` 恢复到 `apps/kimi-web`，作为 Hakimi 的 source-shadow workspace；在 parity/cutover gate 通过前，生产仍使用带 `web-base.json` provenance 的外部 code-app `apps/kimi-code/dist-web`，两者不得静默互相覆盖。
+- Web production source cutover 已完成：`apps/kimi-web` 是唯一可编辑的 production source；`apps/kimi-code/dist-web` 与 schema v5 `web-base.json` 是被 Git 跟踪的派生发布产物。源码变更后，`pnpm run build:web-assets` 从完整 source tree 按 canonical recipe/toolchain 构建并原子替换二者，提交后再用 `pnpm run build:web-assets -- --check` 做 clean rebuild、bundle 逐字节核验与 source/recipe identity 核验；CI、release、native、direct package build/prepack 与 Nix 都执行同一严格 toolchain preflight。生成物不得手工编辑或局部替换；v4 native receipt 直接绑定实际 toolchain、source/recipe/bundle identity 与最终 binary sha256。
 - 手机首期是 responsive Web/PWA remote shell，不承诺 native app。生产远程只使用 `kap-server` `/api/v1` REST/WS + transcript；不得复活 generic `/api/v2` RPC、debug reflection 或 daemon。
 - AITP 仍严格是 CLI + files。Hakimi 不复制 AITP runtime、parser、validator、canonical ledger 或 daemon，不创建 SDK/API/MCP server、vector service 或第二套 ledger；C 是可选 adapter，D 不依赖 C。
 - DeepSeek Harness（deepseek-harness `main`）是参考上游，不是 merge upstream：只按机制移植（epoch 请求头、session 日志派生请求、缓存纪律、压缩设计、真 API 缓存 e2e），每项带 hakimi 自己的 contract/type/test 证据并过 F gate；DeepSeek 专属 wire 语义只存在于 kosong adapter/provider 层，核心与 GPT/Kimi 路径保持 dialect-free。
@@ -115,13 +115,13 @@ P1 gate：klient/SDK/REST/TUI/native print/tool exposure 通过同一 contract�
 - **P2.2 Codex OAuth：** 已完成并毕业。Codex OAuth provider、auth service、token adapter、provider resolution 以及 CLI/TUI 登录入口默认可用；旧的 `openai-codex-oauth` canonical flag、环境变量和配置输入仅作为 inert 兼容输入保留，不再控制该能力。相关测试覆盖 login、provision、resolution、status/logout。
 - **P2.3 local web-search policy：** 由 v2 `webSearchService.ts` 与 `providers/local-web-search.ts` 统一 explicit config → managed OAuth → local fallback、endpoint、result cap 和 abort；v1 provider 只作 adapter，fixture 覆盖 credentials、HTTP/error、abort 和 tool error。
 - **P2.4 session mirror：** 分开验收 v2 同一 home 的 derived read-model（metadata → mirror、evict-before-delete、drain）与 v1 `~/.kimi-code` 文件/symlink compatibility mirror；若启用跨 engine sharing，只增加单一 lifecycle adapter，不把 mirror 当 canonical store。
-- **P2.5 Web provenance：** A 固化 `sync:web → branding patch → provenance check → native manifest/checksum`，记录 source repository/commit、patch/version、文件清单和 sha256；`dist-web` 缺失或 provenance 不完整时 packaging 失败。
+- **P2.5 Web provenance（已完成）：** A 以 `pnpm run build:web-assets` 固化 clean source build → branding patch → schema v5 provenance/verification → atomic bundle cutover；`source` 绑定完整 `apps/kimi-web` tree，`recipe` 同时绑定 canonical build files、Node/pnpm 要求与实际 canonical Node/pnpm，`bundle` 绑定 `dist-web` 文件清单，三者各有 sha256。`dist-web`/`web-base.json` 作为派生发布产物纳入 Git；源码变更后必须整体重新生成并一并提交。`pnpm run build:web-assets -- --check` 必须逐字节复现 tracked bundle 及全部 source/recipe-file identity；只有 recorded 与 rebuilt 两端都满足同一 canonical 要求、pnpm 精确相同且其余 identity 完全一致时，才允许实际 Node 版本不同。CI、release、native、direct package build/prepack 与 Nix 都执行严格 toolchain preflight；Nix 通过 derivation override 提供精确 pnpm 10.33.0，并按 tracked clean check → regenerate → installed check 的顺序构建，不存在 bypass。native snapshot 再验证 bundle，v4 receipt 直接绑定实际 toolchain、source/recipe/bundle identity、branding patch 与 binary sha256。任一输入、摘要或 receipt 不匹配时 packaging 失败。回滚只允许恢复旧 canonical tag 的 source/recipe，再生成完整 bundle/provenance 与 native receipt；不得单独替换 `dist-web`。
 
 每项都要有 parity/negative fixture、typecheck、static boundary 和 release evidence；P2 不通过删除 Goal、复制 runtime 或引入第二套 owner 来解决冲突。
 
 ### 1.5 F4：P3 可编排 Tower workflow runtime
 
-P3 把当前固定的 Tower worker/reviewer 协议演进为可复用、可校验、可恢复、可观察的 workflow runtime。它是 F 负责的共享基础能力，不新增第八轨：E 负责跨 surface UX，A 在外部 code-app 中实现 Web 可视化，D 提供科研模板，C 只提供可选 AITP adapter node。P3 不改变 AITP、Research、Goal、transcript 或 UI 的 owner，也不让 Tower 成为第二套 research memory、ledger、session lifecycle 或 model router。
+P3 把当前固定的 Tower worker/reviewer 协议演进为可复用、可校验、可恢复、可观察的 workflow runtime。它是 F 负责的共享基础能力，不新增第八轨：E 负责跨 surface UX，A 在 `apps/kimi-web` 中实现 Web 可视化，D 提供科研模板，C 只提供可选 AITP adapter node。P3 不改变 AITP、Research、Goal、transcript 或 UI 的 owner，也不让 Tower 成为第二套 research memory、ledger、session lifecycle 或 model router。
 
 #### 1.5.1 产品合同与分层
 
@@ -191,7 +191,7 @@ E 定义跨 surface information architecture：
 - TUI 第一阶段提供 workflow template 选择、参数预览、静态 validation、run 启动、compact status、节点失败/blocked 原因和 `/tower status|teardown` 兼容入口；不在终端内先造完整图编辑器。
 - Web 可视化提供 node/edge canvas、node inspector、scope/dependency/review/retry 编辑、preset overlay、resolved model/Thinking（只读）、运行时间线、agent/branch/worktree、finding/review round、token/时间预算和 merge-gate reason。
 - 编辑态只修改 versioned template draft；运行态只消费 engine projection。UI 不能直接写 `.tower/`、计算 authoritative ready set、绕过 validator、替代 merge gate 或把本地 graph state 当作恢复来源。
-- Web source 仍由外部 code-app/A owner 实现；本仓只同步并 branding-patch `dist-web`，每次可视化交付都必须带 source commit、bundle provenance、contract fixture 和 accessibility evidence。
+- Web source 由 A 在 `apps/kimi-web` 实现；每次可视化交付都必须通过 canonical build 生成 `dist-web`，携带 schema v5 source/recipe/bundle provenance、contract fixture 和 accessibility evidence。
 
 #### 1.5.6 跨轨模板与边界
 
@@ -205,7 +205,7 @@ A/E 不定义 node business schema；G 可以通过 preset 提供 DeepSeek-orien
 - **P3.1 schema/named routes/compiler：** 冻结 template/run-state version、目录与 migration，交付 node/edge/artifact/run-policy schema、role/route registry、static validator、named Tower routes、Tower-owned detached-task adapter 和 deterministic compiler；首版只支持静态 DAG。
 - **P3.2 resumable runtime：** 交付 `.tower/runs/<run-id>/` snapshot/journal、run/node 状态机、幂等 pause/resume/cancel、crash/cold resume、dependency wake-up、条件 gate、bounded retry/redirect、fan-out/fan-in、受校验 dynamic expansion 和 usage/budget accounting。
 - **P3.3 public contracts/TUI：** 交付 klient、SDK、REST/WS/transcript conformance、TUI template/validate/run/status/pause/resume/cancel 流程、旧 peer/degraded contract 和 `/tower` backward compatibility。
-- **P3.4 visual editor/monitor：** 外部 code-app Web owner 实现 template graph editor 和 live monitor source，E 冻结跨 surface interaction/accessibility contract，A 负责 bundle sync、branding、provenance 与 packaging；覆盖 preset overlay、keyboard/focus/screen reader/contrast、窄屏和 reconnect/catch-up。
+- **P3.4 visual editor/monitor：** A 在 `apps/kimi-web` 实现 template graph editor 和 live monitor source，E 冻结跨 surface interaction/accessibility contract，A 同时负责 canonical build、branding、schema v5 provenance 与 packaging；覆盖 preset overlay、keyboard/focus/screen reader/contrast、窄屏和 reconnect/catch-up。
 - **P3.5 templates/evaluation/release：** 发布工程模板，D 在 flag 下提供 research-cycle，C 在 capability gate 后提供可选 AITP node。评估开始前必须提交 versioned manifest，固定 template/version、至少 12 个 pinned scenario（四类模板各至少 3 个）、每个 scenario 3 次重复、baseline、active preset/model catalog snapshot、seed、tool/provider version、硬件/网络条件、artifact rubric 和原始 event/usage 记录；工程 baseline 是当前固定 `/tower`，research baseline 是不使用 P3 orchestration 的同版本 D loop。
 
 P3.5 default-on gate 同时满足才通过：所有 schema/scope/review/merge/recovery/security case 100% 通过且零重复 spawn/review/merge、零越界写入；至少 90% run 无计划外人工干预完成且不低于 baseline；同 preset 下 median wall-clock 不高于 baseline 115%、median token 不高于 120%，Git conflict rate 不高于 baseline；盲评 artifact rubric 均值不低于 baseline且无 critical evidence/provenance/falsifier 缺失，research-cycle 另需 D owner 明确签字。阈值如需调整，必须在运行 trial 前经平台评审修改 manifest，不能看结果后追认；任一 mandatory gate 未过则保持 experimental/default-off，并记录失败与下一轮假设。
@@ -218,20 +218,20 @@ P3 gate 证据还至少包括：versioned golden fixtures；compiler 对同一 t
 
 ### 2.1 owner 与边界
 
-Hakimi 在 `apps/kimi-web` 拥有从最后公开上游快照恢复的 Web source、页面和组件；过渡期 production 仍使用外部 code-app 构建并提交的 `apps/kimi-code/dist-web`。A 同时负责 source parity、bundle provenance、branding、serving 和 packaging；source-shadow build 在 cutover gate 前不得覆盖 production bundle。A 只消费 `/api/v1` REST/WS + transcript、klient/SDK、F 的 session/permission/config/workflow contract 及 D/E/C 的公开 projection，不 import v2 internals、AITP runtime 或 B 部署实现。Tower graph editor 和 live monitor 的 Web source 归 A（in-repo `apps/kimi-web`）；A 不实现 workflow validator、ready-set、preset resolver 或 merge gate。
+Hakimi 在 `apps/kimi-web` 拥有唯一可编辑的 production Web source、页面和组件；`apps/kimi-code/dist-web` 与 `web-base.json` 是由 canonical command 生成并纳入 Git 的派生 package artifacts，不是第二个 source。A 同时负责 source、schema v5 provenance、branding、serving 和 packaging，但只消费 `/api/v1` REST/WS + transcript、klient/SDK、F 的 session/permission/config/workflow contract 及 D/E/C 的公开 projection，不 import v2 internals、AITP runtime 或 B 部署实现。Tower graph editor 和 live monitor 的 Web source 归 A；A 不实现 workflow validator、ready-set、preset resolver 或 merge gate。
 
 ### 2.2 阶段交付
 
-- **A0 source/contract baseline：** 以 `e7d5a0aee74e7f116cca0273c416ece9139a78a0` 恢复 in-repo source，冻结历史 REST/WS fixture，并验证当前 kap-server 的 health/meta/session/snapshot/legacy WS 基线；同时与 code-app owner 冻结 artifact 输入、branding patch、提交边界。
-- **A1 source-shadow Web shell：** 在不替换 production `dist-web` 的前提下交付可 build/test/dev 的 Hakimi Web，逐项补齐 session、transcript 和公开 Goal/Research/config projection；不复制业务 schema。
-- **A2 provenance/packaging：** 过渡期保持 external sync、branding、provenance、native snapshot/receipt 可重放；cutover 时迁移为 in-repo source-tree provenance，缺 source identity、清单或 hash 时失败。
-- **A3 product integration/parity：** 接入 approval/question、reconnect、Goal/preset/provider usage、transcript v2 和可选 domain status；旧 peer、冷 session、缺失能力显示 degraded。
-- **A4 release/cutover：** contract/UX parity 后才允许 source build 生成 production `dist-web`，并归档 provenance、serving/security、native integrity 和 artifact evidence。
-- **A5 Tower visualization：** 在 F/P3.3 typed projection 和 E 的 interaction contract 冻结后，在 `apps/kimi-web` 交付 workflow graph editor、template validation/result display、preset overlay 和 live execution timeline；Hakimi 同步 patched bundle 与 source commit/provenance。编辑态只提交 versioned template draft，运行态只显示 authoritative projection，断线按 sequence/cursor catch-up。
+- **A0 source/contract baseline（已完成）：** 以 `e7d5a0aee74e7f116cca0273c416ece9139a78a0` 恢复 in-repo source，冻结历史 REST/WS fixture，并验证 kap-server 的 health/meta/session/snapshot/legacy WS 基线。
+- **A1 production Web shell（已完成）：** `apps/kimi-web` 可 build/test/dev，并已成为 production source；session、transcript 和公开 Goal/Research/config projection 通过公共 contract 接入，不复制业务 schema。
+- **A2 provenance/packaging（已完成）：** `pnpm run build:web-assets` 在 clean staging 中构建、branding patch、生成并验证 schema v5 source/recipe/toolchain/bundle provenance，再原子替换 tracked `dist-web` 与 `web-base.json`；源码变更后必须整体重新生成并一并提交，`-- --check` 不写产物，验证 clean rebuild 的 bundle 字节与全部 source/recipe identity，仅允许两个 canonical 构建之间的实际 Node 版本不同。native snapshot 与 v4 receipt 继续验证并直接绑定 actual toolchain、同一 identity 与 binary sha256。
+- **A3 product integration/parity（现有 production baseline 已完成）：** approval/question、reconnect、Goal/preset/provider usage、transcript v2 和 Research H0–H5 domain status 已接入；旧 peer、冷 session、缺失能力显示 degraded。
+- **A4 release/cutover（已完成）：** production source 已切换到 `apps/kimi-web`。CI、release 与 native 先校验 tracked bundle 再生成；direct package build/prepack 与 Nix 从源码生成并验证 bundle 后交给后续 packaging。回滚从旧 canonical tag 恢复 source/recipe 后重建完整 bundle/provenance 与 native receipt，禁止只回退 `dist-web`。
+- **A5 Tower visualization（planned，unavailable）：** 在 F/P3.3 typed projection 和 E 的 interaction contract 冻结后，在 `apps/kimi-web` 交付 workflow graph editor、template validation/result display、preset overlay 和 live execution timeline。编辑态只提交 versioned template draft，运行态只显示 authoritative projection，断线按 sequence/cursor catch-up。
 
 ### 2.3 依赖与验收
 
-A 依赖 F0/F1/F2 的公开 contract、SDK/klient、transcript 和 release gate；消费 B 的 remote contract，但不消费部署内部实现。验收必须证明 source-shadow 与 production bundle 边界明确、`dist-web` provenance 可重放、Web 能处理 live/backfill/cold transcript 与 degraded state，并通过 import-boundary/static check；未达到 parity 时不得执行 production cutover。
+A 依赖 F0/F1/F2 的公开 contract、SDK/klient、transcript 和 release gate；消费 B 的 remote contract，但不消费部署内部实现。持续验收必须证明 clean source build 可从无生成物状态创建 `dist-web`/`web-base.json`，随后 clean rebuild 与 generated outputs 逐字节一致，native receipt identity 完整，Web live/backfill/cold transcript 与 degraded state 收敛，并通过 import-boundary/static check；source、recipe、bundle、provenance 或 receipt 任一不匹配都停止 packaging。
 
 ---
 
@@ -239,7 +239,7 @@ A 依赖 F0/F1/F2 的公开 contract、SDK/klient、transcript 和 release gate�
 
 ### 3.1 owner 与边界
 
-B 拥有手机 viewport 的 responsive layout、PWA manifest/install shell、触摸交互、网络状态、远程 approval/question 和部署安全。Web source 由 A 的 in-repo `apps/kimi-web` 交付；过渡期 production bundle 仍沿用 external provenance。B 负责 `kap-server` 生产 deployment boundary，包括 TLS、reverse proxy、认证授权、速率/来源限制、健康检查和安全日志。生产 client 只可用 `/api/v1` REST/WS + transcript；`/api/v1/debug/*` 即使保留也只能 loopback/dev-only。
+B 拥有手机 viewport 的 responsive layout、PWA manifest/install shell、触摸交互、网络状态、远程 approval/question 和部署安全。Web source 由 A 的 `apps/kimi-web` 交付，并沿用同一 canonical production build 与 schema v5 provenance；source cutover 不表示手机远程或 standalone 部署已完成。B 负责 `kap-server` 生产 deployment boundary，包括 TLS、reverse proxy、认证授权、速率/来源限制、健康检查和安全日志。生产 client 只可用 `/api/v1` REST/WS + transcript；`/api/v1/debug/*` 即使保留也只能 loopback/dev-only。
 
 ### 3.2 阶段交付
 
@@ -329,7 +329,7 @@ TUI 遵守 `apps/kimi-code/src/tui` 的 coordinator/controller/component/reverse
 - **E2 Web/mobile settings：** A/B 消费同一 typed settings/status contract，只改变布局、输入方式和信息密度，不改变字段、默认值、校验或 wire semantics。
 - **E3 domain status：** 展示 Research Frame/Board/checkpoint、AITP capability/not_initialized/gate、remote auth/connection/pending/catch-up，并可追溯到 event/REST/WS。
 - **E4 parity/accessibility：** 验证 locale、keyboard/focus、screen reader、contrast、touch target、窄屏和错误/加载/空状态。
-- **E5 Tower workflow UX：** P3.3 先交付 TUI template list/parameters/validate/run/status/pause/resume/cancel 与 compact node diagnostics；P3.4 再与 A/code-app 交付 Web node/edge editor、scope/dependency/review/retry inspector、preset overlay、agent/branch/worktree、finding/review round、budget/usage 和 execution timeline。编辑和运行状态必须视觉区分，旧 peer、未知 node kind、缺失 route、断线/catch-up 和只读 mobile 均有明确 degraded UX。
+- **E5 Tower workflow UX：** P3.3 先交付 TUI template list/parameters/validate/run/status/pause/resume/cancel 与 compact node diagnostics；P3.4 再由 A 在 `apps/kimi-web` 交付 Web node/edge editor、scope/dependency/review/retry inspector、preset overlay、agent/branch/worktree、finding/review round、budget/usage 和 execution timeline。编辑和运行状态必须视觉区分，旧 peer、未知 node kind、缺失 route、断线/catch-up 和只读 mobile 均有明确 degraded UX。
 
 E 依赖 F 的 config registry、manifest、klient/SDK、events、permission、transcript 和 P3 workflow projection，消费 A–D projection；UI 不能为业务 schema、默认值、校验、Goal/Research/AITP parser、workflow compiler/runtime、transcript reducer 或 reconnect state machine 建第二实现。验收包括 memory/IPC/REST/WS conformance、live/backfill/cold graph parity、import boundary、keyboard/screen-reader graph navigation，以及 C 未安装、D off、B 未连接、A artifact 缺失、F contract 旧版本时的明确 degraded state。
 
@@ -349,7 +349,7 @@ F 还拥有 CLI/TUI/native print 基础、upstream intake、release/CI、securit
 - **F1 core correctness：** 按 §1.2 完成 prompt→Goal blocked、explicit profile 单一 ownership、`/prompts` dead fields 和 transcript consistency。
 - **F2 public boundaries：** 按 §1.3 完成 klient、SDK/TUI/REST forwarding、resume、native print 和 dynamic tool exposure。
 - **F3 overlay：** 按 §1.4 完成 P2.1–P2.4，并消费 A 的 P2.5 provenance；保持 provider/model/auth/tools/session/SDK/transcript/permission 的 v2 parity、legacy adapter 和 error/degraded semantics。
-- **F4 Tower workflow runtime：** 按 §1.5 完成 P3.0–P3.5：先把当前行为提取为 planned `default` workflow fixture，再交付 versioned template、named routes、validator/compiler、可恢复 DAG、typed projection、TUI surface、Web 可视化 contract 和评估模板。P3.4 由外部 code-app Web owner 实现 source，E 拥有 interaction/accessibility contract，A 拥有 bundle sync/provenance/packaging，F 只拥有 engine/public contract 与 release gate。
+- **F4 Tower workflow runtime：** 按 §1.5 完成 P3.0–P3.5：先把当前行为提取为 planned `default` workflow fixture，再交付 versioned template、named routes、validator/compiler、可恢复 DAG、typed projection、TUI surface、Web 可视化 contract 和评估模板。P3.4 由 A 在 `apps/kimi-web` 实现 source，E 拥有 interaction/accessibility contract，A 拥有 canonical build/schema v5 provenance/packaging，F 只拥有 engine/public contract 与 release gate。
 - **F5 continuous sync：** 每个窗口运行 contract/type/test/static import/security/performance checks，分类吸收 provider、auth、tools、session、transcript、permission、CLI/TUI、protocol 变化，避免重新引入 v1 default、raw escape hatch、no-op fields、第二 model router、第二 workflow owner 或重复 runtime。
 - **F6 release/CI：** 维护 build、typecheck、unit/integration/e2e、bundle/native packaging、provenance、security scan、性能、observability、release 和 rollback；A–E/G artifact 以及 P3 compiler/recovery/projection/visualization evidence 必须进入可重放 evidence。
 - **F7 final `GoalFeature` evaluation：** P0/P1/P2/P3 前 Goal 保持在 `packages/agent-core-v2/src/agent/goal/`；只有 Feature seams 能单一承载 contract、tool、wire/persistence、telemetry、permission、transcript 和 facade，且无第二 owner，才写迁移方案并单独评审。
@@ -396,8 +396,8 @@ G 依赖 F 的 contract freeze 与公共边界、E 的 provider 设置面；以 
 - Tower scope/dependency/review/merge gate 可被 prompt 绕过、crash/resume 后重复 spawn/review/merge、preset 切换改变 graph/artifact contract、或 visual state 与 authoritative projection 不一致时，停止 P3 发布并补 compiler/recovery/conformance evidence。
 - 安全边界依赖 debug reflection、generic `/api/v2`、daemon、未认证 proxy 或手机本地 canonical store 时，停止远程发布并回到 B0/F0。
 - DeepSeek 专属 wire 语义泄漏进核心层、DSH 机制移植缺少 hakimi 自身测试、或 intake 未记录 DSH HEAD/决策时，停止吸收并回到 G0/F0。
-- 发现 D 依赖 C、E 拥有业务 schema/workflow runtime、A 的 source-shadow 在 parity/provenance gate 前覆盖 production `dist-web`、任何轨道 deep import 或 `GOAL.md` 出现 diff 时，停止合并并修正边界。
+- 发现 D 依赖 C、E 拥有业务 schema/workflow runtime、`dist-web` 被手工编辑/局部替换或 source/recipe/bundle/provenance/native receipt identity 不一致、任何轨道 deep import 或 `GOAL.md` 出现 diff 时，停止合并并修正边界。
 
 ### 9.3 最终不变量
 
-七轨可以并行，但共享 contract/gate 与 Tower workflow runtime 不单独成轨；默认 runtime 是 v2，v1 仅 legacy compatibility/rollback；`[subagent]` preset 是唯一正式 model route 控制面，workflow 只引用语义 route；唯一 control tower 和 tool-enforced scope/review/merge gate 不可绕过；template 与 `.tower/` runtime state 分离；Web source 由本仓 `apps/kimi-web` 拥有，过渡期 production 继续使用带 provenance 的 external `dist-web`，达到 parity 后才迁移 source-tree provenance 并 cutover；手机首期只有 responsive Web/PWA；生产远程只有 `/api/v1` REST/WS + transcript；AITP 只有可选 CLI + files adapter；D 不依赖 C；E 不拥有业务 schema 或 workflow runtime；Goal 能力保留，`GoalFeature` 只能在 P0–P3 后最后单独评估；DeepSeek 专属 wire 语义只在 adapter 层，GPT/Kimi 路径保持 dialect-free；**研究层实现以 hakimi v2 为唯一默认场，DSH 仅为机制参考上游、不承载研究资产，DSH 重新入选需走平台评审**。所有轨道都必须通过公开 contract、event、config contribution、klient/SDK、REST/WS 或明确 adapter 集成。
+七轨可以并行，但共享 contract/gate 与 Tower workflow runtime 不单独成轨；默认 runtime 是 v2，v1 仅 legacy compatibility/rollback；`[subagent]` preset 是唯一正式 model route 控制面，workflow 只引用语义 route；唯一 control tower 和 tool-enforced scope/review/merge gate 不可绕过；template 与 `.tower/` runtime state 分离；`apps/kimi-web` 是唯一 Web production source，`dist-web` 只能由 canonical command 生成并由 schema v5 source/recipe/bundle provenance 与 native receipt 绑定，回滚必须恢复整套 identity；手机首期只有 responsive Web/PWA；production source cutover 不表示手机远程或 standalone 部署已完成；生产远程只有 `/api/v1` REST/WS + transcript；AITP 只有可选 CLI + files adapter；D 不依赖 C；E 不拥有业务 schema 或 workflow runtime；Goal 能力保留，`GoalFeature` 只能在 P0–P3 后最后单独评估；DeepSeek 专属 wire 语义只在 adapter 层，GPT/Kimi 路径保持 dialect-free；**研究层实现以 hakimi v2 为唯一默认场，DSH 仅为机制参考上游、不承载研究资产，DSH 重新入选需走平台评审**。所有轨道都必须通过公开 contract、event、config contribution、klient/SDK、REST/WS 或明确 adapter 集成。

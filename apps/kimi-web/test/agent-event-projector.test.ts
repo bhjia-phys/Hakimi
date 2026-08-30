@@ -607,3 +607,36 @@ describe('background subagent task registration', () => {
     ]);
   });
 });
+
+describe('research.updated projection', () => {
+  const snapshot = {
+    mode: 'ready',
+    loopStatus: 'active',
+    phase: 'idle',
+    questions: [],
+    lines: [],
+    openQuestionCount: 0,
+    activeQuestionCount: 0,
+    blockedQuestionCount: 0,
+    alerts: [],
+    aitpHealth: { phase: 'ready' },
+    revision: 3,
+  } satisfies import('../src/api/types').ResearchStatusSnapshot;
+
+  it('projects the raw agent event to a typed Research update', () => {
+    const projector = createAgentProjector();
+    expect(projector.project('research.updated', { snapshot }, 's1')).toEqual([
+      { type: 'researchUpdated', sessionId: 's1', snapshot },
+    ]);
+  });
+
+  it('keeps raw and protocol-prefixed frames on their distinct routes', () => {
+    expect(classifyFrame('research.updated', { snapshot })).toEqual({
+      route: 'agent',
+      agentType: 'research.updated',
+    });
+    expect(classifyFrame('event.research.updated', { snapshot })).toEqual({
+      route: 'protocol',
+    });
+  });
+});

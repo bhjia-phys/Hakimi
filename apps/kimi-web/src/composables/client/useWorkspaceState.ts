@@ -26,6 +26,8 @@ import type {
   KimiEventConnection,
   ProviderUsageResult,
   QuestionResponse,
+  ResearchCommand,
+  ResearchStatusSnapshot,
 } from '../../api/types';
 import {
   loadWorkspaceNameOverrides,
@@ -47,6 +49,7 @@ import type {
 } from '../../types';
 import type { ExtendedState, PromptAttachment } from '../useKimiWebClient';
 import type { UseModelProviderState } from './useModelProviderState';
+import type { ResearchRequestCoordinator } from './researchRequest';
 import type { UseSideChat } from './useSideChat';
 import type { UseTaskPoller } from './useTaskPoller';
 
@@ -57,6 +60,7 @@ const MESSAGES_PAGE_SIZE = 50;
 export const SESSIONS_INITIAL_PAGE_SIZE = 5;
 const PROMPT_NOT_FOUND_CODE = 40402;
 const WORKSPACE_NOT_FOUND_CODE = 40410;
+const VALIDATION_FAILED_CODE = 40001;
 // Shared "already resolved" conflict (40902). The daemon reuses it for both
 // approvals and questions when a second client races the resolve, so a
 // duplicate submit is reported as a conflict even though the desired end
@@ -240,6 +244,8 @@ export interface UseWorkspaceStateDeps {
   hasLoadedMessages: (sessionId: string) => boolean;
   refreshSessionStatus: (sessionId: string) => Promise<void>;
   refreshSessionGoal: (sessionId: string) => Promise<void>;
+  refreshSessionResearch: (sessionId: string) => Promise<ResearchStatusSnapshot | null>;
+  researchRequests: ResearchRequestCoordinator;
   /** Persist profile fields to the daemon. Resolves false (after surfacing the
    *  failure itself) when the daemon rejected the patch — awaited callers that
    *  order strictly after the profile must NOT proceed on false. */
@@ -295,6 +301,8 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     hasLoadedMessages,
     refreshSessionStatus,
     refreshSessionGoal,
+    refreshSessionResearch,
+    researchRequests,
     persistSessionProfile,
     mergedWorkspaces,
     workspacesView,
@@ -318,6 +326,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   } = deps;
   let exportInFlight = false;
   let providerUsageRequestId = 0;
+  const gitStatusRequestIds = new Map<string, number>();
 
   async function loadOlderMessages(sessionId: string): Promise<void> {
     if (rawState.messagesLoadingMoreBySession[sessionId]) return;
@@ -366,6 +375,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     void loadGitStatus(sessionId);
     void refreshSessionStatus(sessionId);
     void refreshSessionGoal(sessionId);
+    void refreshSessionResearch(sessionId);
     if (!Object.prototype.hasOwnProperty.call(modelProvider.skillsBySession.value, sessionId)) {
       void modelProvider.loadSkillsForSession(sessionId);
     }
@@ -405,15 +415,21 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
 
   /** Load git status for a session — defensive, never throws */
   async function loadGitStatus(sessionId: string): Promise<void> {
+    const requestId = (gitStatusRequestIds.get(sessionId) ?? 0) + 1;
+    gitStatusRequestIds.set(sessionId, requestId);
     try {
       const api = getKimiWebApi();
       const result = await api.getGitStatus(sessionId);
+      if (gitStatusRequestIds.get(sessionId) !== requestId) return;
       rawState.gitStatusBySession = {
         ...rawState.gitStatusBySession,
         [sessionId]: result,
       };
     } catch {
-      // Stale/old sessions may 404 — leave undefined, no crash
+      if (gitStatusRequestIds.get(sessionId) !== requestId) return;
+      const next = { ...rawState.gitStatusBySession };
+      delete next[sessionId];
+      rawState.gitStatusBySession = next;
     }
   }
 
@@ -478,6 +494,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   // Config events, POST responses, and reconnect GETs share one commit path.
   // A revision protects live updates from older HTTP responses; request ids also
   // prevent overlapping GETs or POSTs from landing out of order.
+  let serverMetaRequestId = 0;
   let configRevision = 0;
   let configRequestId = 0;
   let configMutationRequestId = 0;
@@ -513,10 +530,12 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   /** Update global config via POST /api/v1/config. */
   async function updateConfig(patch: Partial<AppConfig>): Promise<boolean> {
     const requestId = ++configMutationRequestId;
+    const changesExperimental = Object.prototype.hasOwnProperty.call(patch, 'experimental');
     // A user mutation outranks any reconnect GET that began before it.
     configRequestId += 1;
     configMutationsInFlight += 1;
     const revisionAtRequest = configRevision;
+    if (changesExperimental) rawState.experimentalFlags = {};
     try {
       const api = getKimiWebApi();
       const next = await api.setConfig(patch);
@@ -529,6 +548,10 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       pushOperationFailure('setConfig', err);
       return false;
     } finally {
+      // Config is only an input to flag resolution. Always re-read /meta after
+      // the POST settles, including response-loss failures, so env/master
+      // overrides and server defaults remain authoritative.
+      await refreshServerMeta(changesExperimental);
       configMutationsInFlight -= 1;
       if (configMutationsInFlight === 0 && reconcileConfigAfterMutationFailure) {
         reconcileConfigAfterMutationFailure = false;
@@ -883,19 +906,23 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   }
 
   /**
-   * Re-read GET /meta and apply the server-self fields (version, open-in
-   * apps, auth bypass, backend engine). Called on first load and on every WS
-   * (re)connect — the latter keeps the values truthful across backend
-   * restarts and dev-proxy backend switches.
+   * Re-read GET /meta and apply the server-self fields (version, open-in apps,
+   * auth bypass, effective experimental flags, backend engine). Called on first
+   * load and on every WS (re)connect. Config changes pass `failClosedFlags` so
+   * persisted config never masquerades as effective flag state while this read
+   * is pending or unavailable.
    */
-  async function refreshServerMeta(): Promise<void> {
+  async function refreshServerMeta(failClosedFlags = false): Promise<void> {
+    const requestId = ++serverMetaRequestId;
+    if (failClosedFlags) rawState.experimentalFlags = {};
     const m = await getKimiWebApi()
       .getMeta()
       .catch(() => null);
-    if (m === null) return;
+    if (m === null || requestId !== serverMetaRequestId) return;
     rawState.serverVersion = m.serverVersion;
     rawState.availableOpenInApps = m.openInApps;
     rawState.dangerousBypassAuth = m.dangerousBypassAuth;
+    rawState.experimentalFlags = m.experimentalFlags;
     rawState.backend = m.backend;
   }
 
@@ -2322,6 +2349,57 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       });
   }
 
+  async function refreshResearchById(
+    sessionId: string,
+  ): Promise<ResearchStatusSnapshot | null> {
+    if (rawState.experimentalFlags['aitp_research_mode'] !== true) return null;
+    return refreshSessionResearch(sessionId);
+  }
+
+  async function refreshResearch(): Promise<void> {
+    const sessionId = rawState.activeSessionId;
+    if (!sessionId) return;
+    await refreshResearchById(sessionId);
+  }
+
+  async function commandResearchById(
+    sessionId: string,
+    command: ResearchCommand,
+  ): Promise<ResearchStatusSnapshot | null> {
+    if (rawState.experimentalFlags['aitp_research_mode'] !== true) return null;
+    try {
+      // The coordinator serializes same-session POSTs and blocks sidecar GETs
+      // behind the full mutation queue. The resolved value is exactly the
+      // authoritative snapshot that won the response/live-event race.
+      return await researchRequests.mutate(
+        rawState,
+        sessionId,
+        () => {
+          if (rawState.experimentalFlags['aitp_research_mode'] !== true) {
+            return Promise.reject(new Error('Research disabled'));
+          }
+          return getKimiWebApi().commandSessionResearch(sessionId, command);
+        },
+      );
+    } catch (err) {
+      if (isDaemonApiError(err) && err.code === VALIDATION_FAILED_CODE) {
+        // Validation includes stale expectedRevision. Re-read the same session;
+        // an active-session switch must never redirect this recovery request.
+        await refreshSessionResearch(sessionId);
+      }
+      pushOperationFailure('commandResearch', err, { sessionId });
+      return null;
+    }
+  }
+
+  async function commandResearch(
+    command: ResearchCommand,
+  ): Promise<ResearchStatusSnapshot | null> {
+    const sessionId = rawState.activeSessionId;
+    if (!sessionId) return null;
+    return commandResearchById(sessionId, command);
+  }
+
   /** Persist and apply a new permission mode. Approval decisions are owned by
    *  the daemon (auto/yolo are resolved server-side), so any pending approvals
    *  are left for the user to answer explicitly. */
@@ -2881,6 +2959,10 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     toggleGoalMode,
     createGoal,
     controlGoal,
+    refreshResearch,
+    refreshResearchById,
+    commandResearch,
+    commandResearchById,
     setPermission,
     dismissWarning,
     renameSession,

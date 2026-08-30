@@ -458,10 +458,11 @@ describe('researchCommandRequestSchema', () => {
     expect(parsed.command).toMatchObject({ boundedAction: 'run the next experiment', expectedRevision: 3 });
   });
 
-  it('preserves both questionId and lineSlug on a related checkpoint command', () => {
+  it('requires expectedRevision and preserves the checkpoint target', () => {
     const parsed = researchCommandRequestSchema.parse({
       command: {
         kind: 'propose_checkpoint',
+        expectedRevision: 5,
         questionId: 'q1',
         lineSlug: 'main',
         assessment: 'supported mechanism',
@@ -469,11 +470,15 @@ describe('researchCommandRequestSchema', () => {
       },
     });
     expect(parsed.command).toMatchObject({
+      expectedRevision: 5,
       questionId: 'q1',
       lineSlug: 'main',
       assessment: 'supported mechanism',
       nextAction: 'commit the result',
     });
+    expect(() => researchCommandRequestSchema.parse({
+      command: { kind: 'propose_checkpoint' },
+    })).toThrow();
   });
 
   it('accepts a commit_checkpoint command', () => {

@@ -101,28 +101,32 @@ Prompt mode exits with code `0` when the goal completes, `3` when it blocks, and
 
 ## Research Mode
 
-`/research` controls AITP Research Mode, a joint research capability backed by the AITP evidence ledger. The command and the model-facing `EnterAITPMode` capability are discoverable by default, but the runtime starts `inactive`. Inactive `getResearch` reads, session hydration, and status checks use the local snapshot only: they do not probe AITP, perform AITP I/O, expose the Research Board, or expose the other Research/AITP tools and plugin skill. Use `/research on` or let the model call `EnterAITPMode` to enter explicitly; only then does Hakimi probe the adapter and, after a ready probe, run the read-only `enter` → `check` maintenance cycle.
+`/research` controls AITP Research Mode, a joint research capability backed by the AITP evidence ledger in both TUI and Web. The command, the Web **Modes** entry, and the model-facing `EnterAITPMode` capability are discoverable by default, but the runtime starts `inactive`. Inactive `getResearch` reads, session hydration, and status checks use the local snapshot only: they do not probe AITP, perform AITP I/O, expose the Research Board, or expose the other Research/AITP tools and plugin skill. Use `/research on`, select **Research** in Web, or let the model call `EnterAITPMode` to enter explicitly; only then does Hakimi probe the adapter and, after a ready probe, run the read-only `enter` → `check` maintenance cycle.
 
 The old `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` environment variable, `[experimental].aitp_research_mode`, and `KIMI_CODE_EXPERIMENTAL_FLAG` are inert for this graduated surface. The deprecated flag inputs do not hide or enable `/research`; they remain only for compatibility. When entering from `manual` or `yolo` permission mode, a prompt asks whether to switch to `auto` or `yolo` first — the loop may stop and wait for approvals under `manual` mode.
 
-The grammar mirrors `/goal`: reserved subcommands are only honored as the first token; free text after `--` separates arguments from user input.
+::: warning
+`/research on` activates the adapter and Board but does not schedule a model turn or start an independent multi-turn loop. Goal remains the sole cross-turn continuation owner, and research turns in `manual` permission mode may wait for approvals.
+:::
 
-| Command | Action | Availability |
+The grammar is the same in TUI and Web: reserved subcommands are honored only as the first token, and `--` separates arguments from free text. Web routes a typed `/research` through the Research endpoint rather than sending it as a model prompt.
+
+| Command | Action | Surfaces / availability |
 | --- | --- | --- |
-| `/research` or `/research status` | Display the current research snapshot: mode, loop status, current line, focus question, and AITP health | Always available |
-| `/research on` | Enter Research Mode (user-initiated). In `manual` or `yolo` mode, prompts for permission mode choice first | Idle only |
-| `/research on -- <line slug>` | Enter Research Mode and switch to a specific research line | Idle only |
-| `/research off` | Exit Research Mode; revokes AITP tool admissions and hides the Research Board. Already-saved AITP records are not deleted | Idle only |
-| `/research pause` | Pause the research loop without exiting AITP mode | Always available |
-| `/research resume` | Resume a paused research loop | Always available |
-| `/research manage` | Open the line-first Research Manager: select a Research Line, press <kbd>Enter</kbd> to inspect its questions, <kbd>S</kbd> to switch, <kbd>P</kbd> to pause/resume, <kbd>E</kbd> to edit, <kbd>B</kbd> to block, <kbd>C</kbd> to complete/close, <kbd>R</kbd> to reopen, and <kbd>Esc</kbd> to move back or cancel | Idle only |
-| `/research edit <questionId> -- <new wording>` | Replace a question's wording using the current snapshot revision | Idle only |
-| `/research focus <questionId> -- <bounded action>` | Set the current focus question and its next bounded action | Idle only |
-| `/research defer <questionId> [-- <reason>]` | Defer a question (workflow disposition change; reason optional) | Idle only |
-| `/research block <questionId> [-- <reason>]` | Block a question | Idle only |
-| `/research close <questionId> [-- <reason>]` | Close a question | Idle only |
-| `/research reopen <questionId> [-- <reason>]` | Reopen a previously closed question | Idle only |
-| `/research line <slug>` | Switch the current research line | Idle only |
+| `/research` or `/research status` | Refresh the current snapshot. TUI prints mode, loop, line, focus, and AITP health; Web expands the refreshed Board | TUI and Web; always available |
+| `/research on` | Enter Research Mode. TUI prompts for a permission-mode choice when entering from `manual` or `yolo`; Web uses the current session permission mode | TUI and Web; idle only |
+| `/research on -- <line slug>` | Enter Research Mode and switch to a specific research line | TUI and Web; idle only |
+| `/research off` | Exit Research Mode, revoke AITP tool admissions, and hide the Board; saved AITP records remain | TUI and Web; idle only |
+| `/research pause` | Pause the research loop without exiting AITP mode | TUI and Web; always available |
+| `/research resume` | Resume a paused research loop | TUI and Web; always available |
+| `/research manage` | Open the line-first Manager. TUI uses keyboard navigation and action keys; Web provides Line, Question, Science, and Checkpoint sections, including human-decision, alert, evidence-review, and external-run controls | TUI and Web; idle only |
+| `/research edit <questionId> -- <new wording>` | Replace a question's wording using the current snapshot revision | TUI and Web; idle only |
+| `/research focus <questionId> -- <bounded action>` | Set the current focus question and its next bounded action | TUI and Web; idle only |
+| `/research defer <questionId> [-- <reason>]` | Defer a question (workflow disposition change; reason optional) | TUI and Web; idle only |
+| `/research block <questionId> [-- <reason>]` | Block a question | TUI and Web; idle only |
+| `/research close <questionId> [-- <reason>]` | Close a question | TUI and Web; idle only |
+| `/research reopen <questionId> [-- <reason>]` | Reopen a previously closed question | TUI and Web; idle only |
+| `/research line <slug>` | Switch the current research line | TUI and Web; idle only |
 
 Subcommands (`on`, `off`, `pause`, `resume`, `manage`, `status`, `edit`, `focus`, `defer`, `block`, `close`, `reopen`, `line`) are only honored as the first token. If your text needs to start with one of those words, use `--`:
 
@@ -130,11 +134,15 @@ Subcommands (`on`, `off`, `pause`, `resume`, `manage`, `status`, `edit`, `focus`
 /research focus q-17 -- on the boundary zero mode
 ```
 
-All mutating commands carry the latest snapshot `revision` as `expectedRevision` for optimistic concurrency. If the agent has modified the question since you last saw it, the command returns a `research_stale_revision` error and the manager refreshes so you can retry.
+While the main turn or context compaction is running, both surfaces accept only `/research status`, `/research pause`, and `/research resume`; Web does not open the Manager or accept Manager mutations until the current operation ends.
 
-The Research Board appears in the live chrome area when Research Mode is active. It shows the current line, focus question or candidate questions, assessment, bounded action, Todo Actions progress, checkpoint state, and prioritized alerts — not the full portfolio. Press `Ctrl-O` to expand or collapse the board in place; in Research Mode the Todo list is projected into the board instead of replacing it. The board is read-only; all edits go through `/research manage` or the direct steering commands.
+Revisioned mutations carry the draft's captured snapshot or entity `revision` as `expectedRevision`; a stale revision fails without applying the mutation. Other mutations do not carry `expectedRevision` and instead rely on captured target or pending-checkpoint identity and server-side state constraints. TUI refreshes the Board; Web re-reads the same session's authoritative snapshot and preserves a dirty form with a stale warning so you can refresh and retry.
 
-When AITP is not installed, not initialized, or its `check` returns exit 2 after an explicit entry, the mode shows `degraded` and blocks question closure, Goal completion, and session closeout until the adapter recovers or the user explicitly chooses to proceed without persistence. Research Mode does not automatically run `init`, `init --adopt`, `inventory`, or `backfill --apply`; `backfill` is not exposed as a model tool. The Research and AITP tools other than `EnterAITPMode`, and the AITP plugin skill, remain active-only.
+The read-only Research Board appears above the input area in both surfaces and shows `probing`, `ready`, or `degraded` health, current line and focus, question counts, alerts, and checkpoint state. TUI additionally projects Todo Actions and uses `Ctrl-O` to expand or collapse the Board. Web uses **Expand**, **Collapse**, and **Manage** buttons plus forms; the TUI shortcuts do not apply there.
+
+Web checkpoint controls do not write AITP. **Commit** requires a pending checkpoint and an explicit existing AITP `entryId`; Web only links that ID through the Research endpoint and never invokes `record`/`note` or writes canonical ledger files.
+
+When AITP is not installed, not initialized, or its `check` returns exit 2 after an explicit entry, both surfaces show `degraded`. Read tools remain available, but AITP write tools, checkpoint commits, question closure, active Research Mode Goal completion, and session closeout are blocked until the adapter recovers or the user explicitly chooses to proceed without persistence; unresolved human-gate decisions also block Goal completion. Local Question/Line mutations may still occur, but they are not durable AITP writes. Research Mode performs no automatic session closeout and never auto-runs `init`, `init --adopt`, `inventory`, or `backfill --apply`; `backfill` is not exposed as a model tool. The Research and AITP tools other than `EnterAITPMode`, and the AITP plugin skill, remain active-only.
 
 ## Information & Status
 

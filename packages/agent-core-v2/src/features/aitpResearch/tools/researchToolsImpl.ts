@@ -396,6 +396,7 @@ export class ProposeResearchCheckpointTool implements IProposeResearchCheckpoint
         const inactive = requireActive(this.mode);
         if (inactive !== undefined) return errorResult(inactive);
         const checkpoint = this.research.proposeCheckpoint({
+          expectedRevision: 0,
           questionId: args.question_id,
           lineSlug: args.line_slug,
           assessment: args.assessment,

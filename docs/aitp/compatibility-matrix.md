@@ -44,6 +44,8 @@ method-distillation orchestration 未实现，H6b 为 **planned，unavailable**�
 当前状态维护已接通：进入模式、active undo/cold restore（均在 ready probe 后），以及 active、admitted 的 Goal continuation turn 在 Research state 发生变化后的 turn end，都会只读执行 `enter` → `check`，不是 session-end automatic closeout。maintenance receipt 和 context injection 只暴露安全摘要；完整 Research snapshot/API 或 expanded Board 仍可能包含 checkpoint、revision 和 adapter health 字段。合法的 check findings（包括 error finding）保持 ready；只有周期不可用或无效时显示 degraded。error finding 仍可按具体 checkpoint 的保存屏障阻止提交。该周期不自动 init/adopt/backfill，不自动写 semantic handoff、Entry 或 Note；Session-scope coordinator 仅负责这项维护，不改变 H6b native method-distillation orchestration 仍为 planned/unavailable 的状态。Checkpoint receipt 会绑定具体 Entry、prepare/save receipt 和 pre-save finding baseline；commit 前复核 `show` 与 scoped `check`，只阻止新增或无法归因的 error。alerts 使用稳定 fingerprint，区分 active blocker、historical unresolved、superseded retry 和 warning，清除记录保留但不再注入。alerts 和 generic human gate 已实现，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard，`ResolveResearchDecision` 不会自动写入 AITP decision Entry。degraded active Research Mode 会阻止 AITP writes 和 Goal completion，未解决 human gate 也会阻止 Goal completion，但本地 Question/Line mutation 仍可能发生，当前没有 automatic session-closeout。Research Loop 的 public contract 还同步了 main-agent-only、zero-write 的 typed evidence review，以及绑定当前 action 的显式 run observation；正常有界行动使用 `BeginResearchAction` → 科研工作 → `ConcludeResearchAction`，该 observation 不提交或轮询 scheduler，不创建 campaign 聚合实体，也不把 RUNNING 当作科学结论。
 §1/§2/§3/§5/§6 已更新到当前状态；§4/§7 保留历史 baseline 证据。
 
+**Hakimi 侧更新（2026-08-28）：** Web 的实验性 Research UI 已接通：composer 中的 `/research` 走 Research command endpoint；live Board 展示 `probing`/`ready`/`degraded`、scientific phase、latest progress、current action/run、effective next step、human gate、active alerts 与 checkpoint；line-first Manager 的 Science 区可 resolve decision、acknowledge alert、review evidence 和 observe run，并在 stale revision 后刷新同一 session 的 authoritative snapshot。checkpoint commit 必须显式提供已有 AITP `entryId`，Web 不直接写 AITP。Web production source cutover 也已完成，`apps/kimi-web` 是唯一可编辑的 source；`dist-web` 与 `web-base.json` 是由 canonical build 生成并纳入 Git 的派生发布产物，受 schema v5 source/recipe-files/actual-toolchain/bundle provenance 约束，v4 native receipt 直接绑定 toolchain 与 binary hash。**本次未访问外部 AITP checkout**，因此 AITP HEAD `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290`、0.8.0、CLI/schema/gate 与 154 tests 仍沿用最后核验事实，不作新的外部兼容性声明；H5 仍仅部分集成，H6 仍是 **planned，unavailable**。
+
 ## 1. Command matrix (Hakimi view)
 
 | Command | AITP stage | Status | Hakimi may call | Blocked on | Future feature-detect |
@@ -212,6 +214,7 @@ Hakimi 侧（并行）：
 - H5 **部分集成，conformance-pending**：AITP upstream 已 shipped `backfill-0.1` 和
   `sha256-once:`/policy 语义；Hakimi 只把 check finding code 投影为 opaque string，
   不暴露、不调用、不解析 backfill 成功 envelope，也不实现这些语义。
+- Web UI **implemented-in-code**：`/research`、live Board、line-first Manager、`probing`/`degraded`、live/request stale 防护和显式 `entryId` checkpoint linking 已接通；Web 不调用 AITP write CLI，也不写 canonical files。
 - H6b：**planned，unavailable**。native method-distillation orchestration：
   Session-scope coordinator、candidate/proposal lifecycle、human question +
   decision write、crash/resume。前置：H0–H5 全部落地 + reviewed

@@ -9,7 +9,8 @@ import { buildSlashItems, parseSlash, SKILL_COMMAND_PREFIX } from '../../lib/sla
 import { formatTokens } from '../../lib/formatTokens';
 import type { FileItem } from './MentionMenu.vue';
 import type { ActivationBadges, ConversationStatus, PermissionMode, QueuedPromptView } from '../../types';
-import type { AppGoal, AppModel, AppSkill, ThinkingLevel } from '../../api/types';
+import type { AppGoal, AppModel, AppSkill, ResearchStatusSnapshot, ThinkingLevel } from '../../api/types';
+import { researchComposerEntryState } from '../../lib/researchCommand';
 import {
   commitLevel,
   effectiveThinkingLevel,
@@ -21,7 +22,10 @@ import {
 import { useInputHistory } from '../../composables/useInputHistory';
 import { useSlashMenu } from '../../composables/useSlashMenu';
 import { useMentionMenu } from '../../composables/useMentionMenu';
-import { useComposerDraft } from '../../composables/useComposerDraft';
+import {
+  useComposerDraft,
+  type ComposerCommandEvent,
+} from '../../composables/useComposerDraft';
 import { useAttachmentUpload, type Attachment } from '../../composables/useAttachmentUpload';
 import { openFileAttachment } from '../../lib/openFileAttachment';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
@@ -54,6 +58,8 @@ const props = withDefaults(defineProps<{
   planMode?: boolean;
   swarmMode?: boolean;
   goalMode?: boolean;
+  researchEnabled?: boolean;
+  research?: ResearchStatusSnapshot | null;
   goal?: AppGoal | null;
   activationBadges?: ActivationBadges;
   /** Available models for the quick-switch dropdown. */
@@ -67,6 +73,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   running: false,
   starting: false,
+  researchEnabled: false,
   queued: () => [],
   searchFiles: undefined,
   uploadImage: undefined,
@@ -90,7 +97,7 @@ const emit = defineEmits<{
   /** Steer the composer text (+ any queued prompts, merged by the parent)
       into the RUNNING turn — TUI ctrl+s. */
   steer: [payload: { text: string; attachments: PromptAttachment[] }];
-  command: [cmd: string];
+  command: [command: ComposerCommandEvent];
   interrupt: [];
   setPermission: [mode: PermissionMode];
   setThinking: [level: ThinkingLevel];
@@ -101,6 +108,8 @@ const emit = defineEmits<{
   createGoal: [objective: string];
   controlGoal: [action: 'pause' | 'resume' | 'cancel'];
   focusGoal: [];
+  startResearch: [];
+  manageResearch: [];
   focusSwarm: [];
   compact: [];
   pickModel: [];
@@ -112,7 +121,14 @@ const { t, locale } = useI18n();
 // ---------------------------------------------------------------------------
 // Textarea + per-session draft persistence — see useComposerDraft.
 // ---------------------------------------------------------------------------
-const { text, textareaRef, autosize, loadForEdit, clearDraft } = useComposerDraft({
+const {
+  text,
+  textareaRef,
+  autosize,
+  loadForEdit,
+  finalizeSubmissionDraft,
+  captureCommandSubmission,
+} = useComposerDraft({
   sessionId: () => props.sessionId,
 });
 
@@ -205,9 +221,10 @@ const {
   textareaRef,
   autosize,
   skills: () => props.skills,
+  researchEnabled: () => props.researchEnabled,
   emitCommand: (cmd) => emit('command', cmd),
   historyPush: (entry) => history.push(entry),
-  clearDraft,
+  clearDraft: finalizeSubmissionDraft,
 });
 
 // ---------------------------------------------------------------------------
@@ -338,17 +355,25 @@ function handleSubmit(): void {
   // resolves to its prefixed menu entry (`/skill:deploy`), mirroring the TUI.
   if (trimmed) {
     const parsed = parseSlash(trimmed);
+    // Keep a hand-typed `/research` on the command path even when the feature is
+    // hidden from the menu; App owns the flag guard and must never send it as a
+    // normal prompt.
     const known = parsed
-      ? buildSlashItems(props.skills).some(
+      ? parsed.cmd === '/research' || buildSlashItems(props.skills, {
+          researchEnabled: props.researchEnabled,
+        }).some(
           (item) => item.name === parsed.cmd || item.name === `/${SKILL_COMMAND_PREFIX}${parsed.cmd.slice(1)}`,
         )
       : false;
     if (parsed && known) {
       text.value = '';
-      clearDraft();
+      finalizeSubmissionDraft();
+      const submission = captureCommandSubmission(trimmed);
       slashOpen.value = false;
       collapseAndRefit();
-      emit('command', parsed.arg ? `${parsed.cmd} ${parsed.arg}` : parsed.cmd);
+      // Preserve spelling, session, and the post-clear draft generation so App
+      // can restore a rejected command without clobbering newer input.
+      emit('command', submission);
       return;
     }
   }
@@ -363,7 +388,7 @@ function handleSubmit(): void {
   clearAfterSubmit();
 
   text.value = '';
-  clearDraft();
+  finalizeSubmissionDraft();
   slashOpen.value = false;
   mentionOpen.value = false;
   collapseAndRefit();
@@ -390,7 +415,7 @@ function handleSteer(): void {
   clearAfterSubmit();
   history.push(trimmed);
   text.value = '';
-  clearDraft();
+  finalizeSubmissionDraft();
   slashOpen.value = false;
   mentionOpen.value = false;
   collapseAndRefit();
@@ -674,20 +699,40 @@ const goalActive = computed(() => goalStatus.value !== null && goalStatus.value 
 const goalArmed = computed(() => goalActive.value || props.goalMode === true);
 const goalCanPause = computed(() => goalStatus.value === 'active');
 const goalCanResume = computed(() => goalStatus.value === 'paused' || goalStatus.value === 'blocked');
+const researchEntryAction = computed(() =>
+  researchComposerEntryState(props.researchEnabled, props.research?.mode),
+);
+const researchVisible = computed(() => researchEntryAction.value !== 'hidden');
+const researchActive = computed(() => researchEntryAction.value === 'manage');
+const planBlockedByResearch = computed(() => researchActive.value && !planOn.value);
+function activateResearchEntry(): void {
+  const action = researchEntryAction.value;
+  if (action === 'hidden') return;
+  closeModesAndFocus();
+  if (action === 'start') emit('startResearch');
+  else emit('manageResearch');
+}
 
-// Modes selector (plan / goal / swarm) — the popover that replaces the bare
-// "plan" pill. Plan/Swarm are real client toggles; goal reflects agent-driven
-// state and focuses its card when active.
+// Modes selector (plan / goal / swarm / research) — the popover that replaces
+// the bare "plan" pill. Plan/Swarm are real client toggles; Goal and Research
+// reflect server state and focus their lifecycle surfaces when active.
 const modesOpen = ref(false);
 const modesRef = ref<HTMLElement | null>(null);
+const modesTriggerRef = ref<HTMLButtonElement | null>(null);
 const modesMenuRef = ref<HTMLElement | null>(null);
 // The menu is position:fixed (so no composer stacking context can paint over
 // it); these coords anchor it just above the pill, computed on open.
 const modesMenuStyle = ref<Record<string, string>>({});
-const anyModeActive = computed(() => planOn.value || swarmOn.value || goalArmed.value);
+const anyModeActive = computed(
+  () => planOn.value || swarmOn.value || goalArmed.value || researchActive.value,
+);
 function closeModes(): void {
   modesOpen.value = false;
   document.removeEventListener('mousedown', onModesDocClick);
+}
+function closeModesAndFocus(): void {
+  closeModes();
+  modesTriggerRef.value?.focus();
 }
 function onModesDocClick(e: MouseEvent): void {
   const t = e.target as Node;
@@ -718,7 +763,12 @@ const PERM_MODES: { mode: PermissionMode; color: string; labelKey: string; descK
   { mode: 'yolo', color: 'var(--color-warning)', labelKey: 'status.permissionYolo', descKey: 'status.permissionYoloDesc' },
   { mode: 'auto', color: 'var(--color-danger)', labelKey: 'status.permissionAuto', descKey: 'status.permissionAutoDesc' },
 ];
-const MODE_DESC_KEYS = ['status.planDesc', 'status.swarmDesc', 'status.goalDesc'] as const;
+const MODE_DESC_KEYS = [
+  'status.planDesc',
+  'status.swarmDesc',
+  'status.goalDesc',
+  'status.researchDesc',
+] as const;
 
 const menuMeasureRef = ref<HTMLElement | null>(null);
 const permissionDescriptionWidth = ref('');
@@ -995,23 +1045,44 @@ function selectModel(modelId: string): void {
             </button>
           </div>
 
-          <!-- Modes selector (plan / goal / swarm) — replaces the plan pill. -->
-          <div v-if="status" ref="modesRef" class="modes">
+          <!-- Modes selector (plan / goal / swarm / research) — replaces the plan pill. -->
+          <div
+            v-if="status"
+            ref="modesRef"
+            class="modes"
+            @keydown.esc.stop.prevent="closeModesAndFocus"
+          >
             <button
+              ref="modesTriggerRef"
               type="button"
               class="mode-pill"
               :class="{ on: anyModeActive, open: modesOpen }"
+              :aria-expanded="modesOpen"
+              aria-controls="composer-modes-popup"
               @click.stop="toggleModes"
             >
               <span class="mode-label">{{ t('status.modesLabel') }}</span>
               <span v-if="planOn" class="mode-tag">{{ t('status.planLabel') }}</span>
               <span v-if="swarmOn" class="mode-tag">{{ t('status.swarmLabel') }}</span>
               <span v-if="goalArmed" class="mode-tag">{{ t('status.goalLabel') }}</span>
+              <span v-if="researchActive" class="mode-tag">{{ t('status.researchLabel') }}</span>
             </button>
 
-            <div v-if="modesOpen" ref="modesMenuRef" class="modes-menu" :style="modesMenuInlineStyle" role="menu">
+            <div
+              v-if="modesOpen"
+              id="composer-modes-popup"
+              ref="modesMenuRef"
+              class="modes-menu"
+              :style="modesMenuInlineStyle"
+            >
               <!-- Plan — functional client toggle -->
-              <button type="button" class="mode-row" :class="{ on: planOn }" role="menuitem" @click="emit('togglePlan')">
+              <button
+                type="button"
+                class="mode-row"
+                :class="{ on: planOn }"
+                :disabled="planBlockedByResearch"
+                @click="emit('togglePlan')"
+              >
                 <span class="mode-row-icon"><Icon name="file-edit" size="sm" /></span>
                 <span class="mode-row-info">
                   <span class="mode-row-name">{{ t('status.planLabel') }}</span>
@@ -1020,7 +1091,7 @@ function selectModel(modelId: string): void {
                 <span class="mode-switch" :class="{ on: planOn }"><span class="mode-knob" /></span>
               </button>
               <!-- Swarm — functional client toggle -->
-              <button type="button" class="mode-row" :class="{ on: swarmOn }" role="menuitem" @click="emit('toggleSwarm')">
+              <button type="button" class="mode-row" :class="{ on: swarmOn }" @click="emit('toggleSwarm')">
                 <span class="mode-row-icon"><Icon name="sparkles" size="sm" /></span>
                 <span class="mode-row-info">
                   <span class="mode-row-name">{{ t('status.swarmLabel') }}</span>
@@ -1029,11 +1100,10 @@ function selectModel(modelId: string): void {
                 <span class="mode-switch" :class="{ on: swarmOn }"><span class="mode-knob" /></span>
               </button>
               <!-- Goal — lifecycle controls when active; switch is on when active or armed. -->
-              <div class="mode-row mode-row-goal" :class="{ on: goalActive || props.goalMode }">
+              <div class="mode-row mode-row-lifecycle" :class="{ on: goalActive || props.goalMode }">
                 <button
                   type="button"
                   class="mode-row-main"
-                  role="menuitem"
                   @click="goalActive ? emit('focusGoal') : emit('toggleGoal')"
                 >
                   <span class="mode-row-icon"><Icon name="target" size="sm" /></span>
@@ -1072,6 +1142,36 @@ function selectModel(modelId: string): void {
                   >
                     <Icon name="close" size="sm" />
                     <span>{{ t('status.goalCancel') }}</span>
+                  </Button>
+                </div>
+              </div>
+              <!-- Research — inactive starts the capability; active opens Manager. -->
+              <div
+                v-if="researchVisible"
+                class="mode-row mode-row-lifecycle"
+                :class="{ on: researchActive }"
+              >
+                <button
+                  type="button"
+                  class="mode-row-main"
+                  @click="activateResearchEntry"
+                >
+                  <span class="mode-row-icon"><Icon name="search" size="sm" /></span>
+                  <span class="mode-row-info">
+                    <span class="mode-row-name">{{ t('status.researchLabel') }}</span>
+                    <span class="mode-row-desc">{{ t('status.researchDesc') }}</span>
+                  </span>
+                  <span v-if="!researchActive" class="mode-switch"><span class="mode-knob" /></span>
+                </button>
+                <div v-if="researchActive" class="mode-row-actions">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    class="mode-row-action"
+                    @click="activateResearchEntry"
+                  >
+                    <Icon name="search" size="sm" />
+                    <span>{{ t('status.researchManage') }}</span>
                   </Button>
                 </div>
               </div>
@@ -1898,10 +1998,9 @@ function selectModel(modelId: string): void {
   line-height: var(--leading-normal);
 }
 
-/* Toggle pills (Thinking / Plan) */
-/* Modes selector (plan / goal / swarm) — replaces the old plan pill + badges.
-   z-index lifts the whole control (incl. its upward-opening menu) above the
-   composer input row, which otherwise paints over the menu. */
+/* Modes selector (plan / goal / swarm / research) — replaces the old plan
+   pill + badges. z-index lifts the whole control (incl. its upward-opening
+   popover) above the composer input row, which otherwise paints over it. */
 .modes { position: relative; display: inline-flex; z-index: var(--z-sticky); }
 .mode-pill {
   display: inline-flex;
@@ -1920,6 +2019,7 @@ function selectModel(modelId: string): void {
   transition: background 0.1s, color 0.15s;
 }
 .mode-pill:hover { background: var(--color-surface-sunken); }
+.mode-pill:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
 .mode-pill.on { background: var(--color-accent-soft); color: var(--color-accent-hover); }
 .mode-pill.open { background: var(--color-accent-soft); }
 .mode-label { flex: none; }
@@ -2038,7 +2138,7 @@ function selectModel(modelId: string): void {
 }
 .mode-switch.on .mode-knob { transform: translateX(15px); }
 
-.mode-row-goal {
+.mode-row-lifecycle {
   --mode-row-icon-col: 14px;
   --mode-row-col-gap: 7px;
   --mode-row-pad-x: 7px;
@@ -2049,8 +2149,8 @@ function selectModel(modelId: string): void {
   padding: 0;
   gap: 0;
 }
-.mode-row-goal:hover { background: transparent; }
-.mode-row-goal.on {
+.mode-row-lifecycle:hover { background: transparent; }
+.mode-row-lifecycle.on {
   background: var(--color-accent-soft);
 }
 .mode-row-main {
@@ -2069,7 +2169,8 @@ function selectModel(modelId: string): void {
   text-align: left;
 }
 .mode-row-main:hover { background: var(--color-surface-sunken); }
-.mode-row-goal.on .mode-row-main .mode-row-name { color: var(--color-accent-hover); }
+.mode-row-main:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
+.mode-row-lifecycle.on .mode-row-main .mode-row-name { color: var(--color-accent-hover); }
 .mode-row-actions {
   display: flex;
   flex-wrap: wrap;

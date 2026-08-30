@@ -1115,6 +1115,12 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   proposeCheckpoint(input: ProposeCheckpointInput): ResearchCheckpoint {
     this.assertMutationAllowed();
     const state = this.wire.getModel(ResearchModel).current;
+    if (input.expectedRevision !== 0 && input.expectedRevision !== state.revision) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        `Research revision is stale. Expected ${input.expectedRevision}, got ${state.revision}.`,
+      );
+    }
     if (state.pendingCheckpoint !== null) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,

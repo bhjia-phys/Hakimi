@@ -1,17 +1,18 @@
 <!-- apps/kimi-web/src/components/chat/ChatHeader.vue -->
-<!-- Thin context bar above the chat: workspace / session name, git branch +
-     status, "open in editor", and a ⋮ more-menu that bundles copy-all plus
-     the same session actions available from the sidebar session row. -->
+<!-- Thin context bar above the chat: workspace / session name, a compact Git
+     summary, and a ⋮ more-menu that bundles copy-all plus the same session
+     actions available from the sidebar session row. -->
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref } from 'vue';
+import { nextTick, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import { isMacosDesktop } from '../../lib/desktopFlag';
+import Icon from '../ui/Icon.vue';
+import IconButton from '../ui/IconButton.vue';
 import Menu from '../ui/Menu.vue';
 import MenuItem from '../ui/MenuItem.vue';
-import IconButton from '../ui/IconButton.vue';
-import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
+import GitSummaryCard from './GitSummaryCard.vue';
 
 const { t } = useI18n();
 
@@ -44,31 +45,6 @@ const emit = defineEmits<{
   archiveSession: [id: string];
   exportSession: [id: string];
 }>();
-
-const ahead = computed(() => props.ahead ?? 0);
-const behind = computed(() => props.behind ?? 0);
-const adds = computed(() => props.gitDiffStats?.totalAdditions ?? 0);
-const dels = computed(() => props.gitDiffStats?.totalDeletions ?? 0);
-const hasLineStats = computed(() => adds.value > 0 || dels.value > 0);
-const PR_STATE_LABEL_KEYS: Record<string, string> = {
-  open: 'header.prStatusOpen',
-  closed: 'header.prStatusClosed',
-  merged: 'header.prStatusMerged',
-  draft: 'header.prStatusDraft',
-};
-
-function normalizedPrState(state: string): string {
-  return state.trim().toLowerCase().replaceAll('_', '-');
-}
-
-function prStateClass(state: string): string {
-  const stateClass = normalizedPrState(state);
-  return PR_STATE_LABEL_KEYS[stateClass] ? `pr-${stateClass}` : 'pr-unknown';
-}
-
-function prStateLabel(state: string): string {
-  return t(PR_STATE_LABEL_KEYS[normalizedPrState(state)] ?? 'header.prStatusUnknown');
-}
 
 // ---------------------------------------------------------------------------
 // More-menu (kebab dropdown)
@@ -294,44 +270,20 @@ function startArchive(): void {
       </template>
     </Menu>
 
-    <div class="ch-spacer" />
-
-    <!-- Git branch + status — plain text with semantic colors. Renders for any
-         git repo, even a detached HEAD (empty branch → "detached" label), so the
-         diff counter below is never hidden just because there's no branch name. -->
-    <button
-      v-if="isGitRepo"
-      type="button"
-      class="ch-git"
-      @click="emit('openChanges')"
-    >
-      <span
-        class="ch-branch"
-        :class="{ 'ch-detached': !branch }"
-      >
-        {{ branch || t('header.detached') }}
-      </span>
-      <span v-if="ahead > 0 || behind > 0" class="ch-pill ch-sync-pill">
-        <span v-if="ahead > 0" class="ch-ahead">↑{{ ahead }}</span>
-        <span v-if="behind > 0" class="ch-behind">↓{{ behind }}</span>
-      </span>
-      <span v-if="hasLineStats" class="ch-pill ch-diff-pill">
-        <span v-if="adds > 0" class="ch-add">+{{ adds }}</span>
-        <span v-if="dels > 0" class="ch-del">-{{ dels }}</span>
-      </span>
-    </button>
-
-    <!-- GitHub PR status -->
-    <button
-      v-if="pr"
-      type="button"
-      class="ch-pill ch-pr"
-      :class="prStateClass(pr.state)"
-      @click="pr && emit('openPr', pr.url)"
-    >
-      <Icon name="git-pull-request" size="sm" />
-      <span>PR #{{ pr.number }} · {{ prStateLabel(pr.state) }}</span>
-    </button>
+    <div class="ch-git-region">
+      <!-- Compact Git summary. Detached HEAD remains visible; non-repositories do not. -->
+      <GitSummaryCard
+        v-if="isGitRepo"
+        :branch="branch"
+        :ahead="ahead"
+        :behind="behind"
+        :changes-count="changesCount"
+        :git-diff-stats="gitDiffStats"
+        :pr="pr"
+        @open-changes="emit('openChanges')"
+        @open-pr="emit('openPr', $event)"
+      />
+    </div>
 
   </header>
 </template>
@@ -382,77 +334,17 @@ function startArchive(): void {
   outline: none;
 }
 
-.ch-git {
+.ch-git-region {
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 4px;
-  border: none;
-  background: transparent;
-  padding: 0;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: calc(var(--ui-font-size) - 2px);
-  flex: 0 1 auto;
-  max-width: none;
-  min-width: 0;
-  cursor: pointer;
+  justify-content: flex-end;
+  container-type: inline-size;
 }
-.ch-git:hover .ch-branch { color: var(--color-text); }
-.ch-branch {
-  color: var(--dim);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-right: 4px;
-}
-.ch-detached { color: var(--muted); font-style: italic; }
-.ch-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  font-size: calc(var(--ui-font-size) - 3px);
-}
-.ch-sync-pill { border-color: var(--line); }
-.ch-diff-pill { border-color: color-mix(in srgb, var(--color-success) 20%, var(--line)); }
-.ch-ahead { color: var(--color-warning); flex: none; }
-.ch-behind { color: var(--color-accent-hover); flex: none; }
-.ch-add { color: var(--color-success); flex: none; }
-.ch-del { color: var(--color-danger); flex: none; }
-.ch-spacer { flex: 1; min-width: 0; }
 
 /* Overflow "…" trigger — IconButton (md). The "open" state keeps the
    sunken highlight while the menu is showing. */
 .ch-act-more.open { background: var(--color-surface-sunken); color: var(--color-text); }
-
-/* GitHub PR badge — semantic state colors aligned with GitHub
-   (open=green, merged=purple, closed=red, draft=gray). */
-.ch-pr {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 9px;
-  flex: none;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-full);
-  background: var(--color-surface-sunken);
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  font-weight: 500;
-  cursor: pointer;
-}
-.ch-pr svg { flex: none; }
-.ch-pr.pr-open { color: var(--color-success); border-color: var(--color-success-bd); background: var(--color-success-soft); }
-.ch-pr.pr-merged { color: var(--color-done); border-color: var(--color-done-bd); background: var(--color-done-soft); }
-.ch-pr.pr-closed { color: var(--color-danger); border-color: var(--color-danger-bd); background: var(--color-danger-soft); }
-.ch-pr.pr-draft { color: var(--color-text-muted); border-color: var(--color-line-strong); background: var(--color-surface-sunken); }
-.ch-pr.pr-unknown { color: var(--color-text-muted); border-color: var(--color-line-strong); background: var(--color-surface-sunken); }
-.ch-pr:hover { border-color: var(--color-line-strong); }
 
 /* Fixed more-menu, anchored to the kebab trigger. Surface / items come from
    the Menu + MenuItem primitives; only positioning stays here. */
@@ -463,7 +355,21 @@ function startArchive(): void {
   z-index: var(--z-dropdown);
 }
 
-/* On a narrow conversation column, the action labels collapse to icons. */
+/* The conversation column can be much narrower than the viewport when side
+   panels are open, so container width drives desktop-header degradation. */
+@container (max-width: 640px) {
+  .chat-header {
+    gap: var(--space-2);
+    padding-inline: var(--space-3);
+  }
+  .ch-id { max-width: 34%; }
+}
+@container (max-width: 480px) {
+  .chat-header { padding-inline: var(--space-2); }
+  .ch-id { display: none; }
+}
+
+/* On a narrow viewport, the action labels collapse to icons. */
 @media (max-width: 980px) {
   .ch-act-label { display: none; }
 }

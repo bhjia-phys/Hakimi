@@ -16,12 +16,15 @@ export default {
   planOn: 'on',
   planOff: 'off',
   planTooltip: 'Toggle plan mode (research before editing)',
-  // Mode selector (Plan / Goal / Swarm)
+  // Mode selector (Plan / Goal / Swarm / Research)
   modesLabel: 'Mode',
   goalLabel: 'Goal',
   goalDesc: 'Track one objective until it is complete',
   swarmLabel: 'Swarm',
   swarmDesc: 'Run parallel agents for broader exploration',
+  researchLabel: 'Research',
+  researchDesc: 'Track evidence-backed questions on the Research Board',
+  researchManage: 'Manage',
   modeOff: 'Off',
   goalPlaceholder: 'What should the agent achieve?',
   goalStart: 'Start',

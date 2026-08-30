@@ -1611,6 +1611,32 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
     }
   });
 
+  it('commandResearch forwards stale checkpoint revisions without creating pending state', async () => {
+    const { harness } = await makeHarness();
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-checkpoint-'));
+    tempDirs.push(workDir);
+    const session = await harness.createSession({ id: 'ses_research_checkpoint', workDir });
+    try {
+      const entered = await session.commandResearch({ kind: 'enter_mode', actor: 'user' });
+      const expectedRevision = entered.snapshot.revision;
+      const advanced = await session.commandResearch({
+        kind: 'create_line',
+        slug: 'main',
+        title: 'Main line',
+      });
+      expect(advanced.snapshot.revision).toBeGreaterThan(expectedRevision);
+
+      await expect(session.commandResearch({
+        kind: 'propose_checkpoint',
+        expectedRevision,
+        lineSlug: 'main',
+      })).rejects.toMatchObject({ code: 'research.revision_stale' });
+      expect((await session.getResearch()).pendingCheckpoint).toBeUndefined();
+    } finally {
+      await harness.close();
+    }
+  });
+
   it('commandResearch returns the post-mutation snapshot for synchronous mutations', async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-sync-home-'));
     const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-sync-work-'));
