@@ -155,7 +155,18 @@ const WIRE_RESEARCH = {
       lineSlug: 'sources',
     },
   },
-  goalSummary: { status: 'active', remainingTurns: 8 },
+  goalSummary: {
+    objective: 'Finish the current Goal milestone',
+    status: 'active',
+    remainingTurns: 8,
+  },
+  program: {
+    topicId: 'topic-example',
+    title: 'Example research program',
+    goalText: 'Establish the bounded research result.',
+    goalSource: 'aitp-enter',
+    establishedAt: 1_700_000_000_550,
+  },
   aitpHealth: {
     phase: 'ready',
     contractVersion: '1.0',
@@ -531,6 +542,8 @@ describe('DaemonKimiWebApi Research', () => {
     expect(snapshot).not.toBe(WIRE_RESEARCH);
     expect(snapshot.currentAction).not.toBe(WIRE_RESEARCH.currentAction);
     expect(snapshot.aitpMaintenance).not.toBe(WIRE_RESEARCH.aitpMaintenance);
+    expect(snapshot.program).toEqual(WIRE_RESEARCH.program);
+    expect(snapshot.program).not.toBe(WIRE_RESEARCH.program);
   });
 
   it('posts the typed command and maps the returned snapshot', async () => {

@@ -1375,6 +1375,17 @@ describe('AgentGoalService core workflow hooks', () => {
     expect(loopService.launches).toHaveLength(1);
   });
 
+  it('starts one continuation when an explicit continue follows a lifecycle-only resume', async () => {
+    await goals.createGoal({ objective: 'finish the task' });
+    await goals.markBlocked({ reason: 'need credentials' });
+    await goals.resumeGoal();
+
+    const resumed = await goals.resumeGoal({ continueIfBlocked: true });
+
+    expect(resumed.status).toBe('active');
+    expect(loopService.launches).toHaveLength(1);
+  });
+
   it('starts a continuation after an opted paused resume waits for a cancelled turn', async () => {
     await startLiveContinuation();
     const enqueue = vi.mocked(loopService.enqueue);
@@ -3164,6 +3175,33 @@ describe('AgentGoalService goal contribution seams', () => {
       await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
     });
 
+    it('retries when a participant releases during an asynchronous continuation decision', async () => {
+      const retry = new Emitter<string>();
+      let resolveDecision!: (decision: GoalContinuationDecisionResult) => void;
+      const firstDecision = new Promise<GoalContinuationDecisionResult>((resolve) => {
+        resolveDecision = resolve;
+      });
+      let decisions = 0;
+      const { goals, loopService, turn } = await startGoalWithTurn({
+        participants: [() => {
+          decisions += 1;
+          return decisions === 1 ? firstDecision : { decision: 'abstain' };
+        }],
+        retryEmitters: [retry],
+      });
+      const goalId = goals.getGoal().goal!.goalId;
+
+      endTurn(ctx!.get(IEventBus), turn);
+      await flushMicrotasks();
+      retry.fire(goalId);
+      resolveDecision({ decision: 'hold', reason: 'released while deciding' });
+
+      await vi.waitFor(() => {
+        expect(loopService.launches).toHaveLength(1);
+      });
+      expect(decisions).toBe(2);
+    });
+
     it.each([
       { action: 'cancels', replace: false },
       { action: 'replaces', replace: true },
@@ -3255,6 +3293,29 @@ describe('AgentGoalService goal contribution seams', () => {
  * human gate is unresolved, abstaining otherwise (the Goal default wins).
  */
 describe('AITP Research goal contribution integration', () => {
+  function mutablePermissionMode(initialMode: PermissionMode): IAgentPermissionModeService {
+    let mode = initialMode;
+    const changed = new Emitter<{
+      readonly mode: PermissionMode;
+      readonly previousMode: PermissionMode;
+    }>();
+    const service: IAgentPermissionModeService = {
+      _serviceBrand: undefined,
+      get mode() {
+        return mode;
+      },
+      setMode: (nextMode) => {
+        const previousMode = mode;
+        if (nextMode === previousMode) return;
+        mode = nextMode;
+        changed.fire({ mode: nextMode, previousMode });
+      },
+      setModeAndBroadcast: (nextMode) => service.setMode(nextMode),
+      onDidChangeMode: changed.event,
+    };
+    return service;
+  }
+
   function makeReadyAdapter(): ISessionAitpAdapter {
     return {
       _serviceBrand: undefined,
@@ -3349,6 +3410,7 @@ describe('AITP Research goal contribution integration', () => {
     enabled: boolean,
     loopService?: StubLoop,
     useRealPlanService = false,
+    permissionMode: PermissionMode | IAgentPermissionModeService = 'auto',
   ): Promise<{
     goals: IAgentGoalService;
     mode: IAgentAitpModeService;
@@ -3357,7 +3419,9 @@ describe('AITP Research goal contribution integration', () => {
     ctx = createTestAgent(
       ...researchResearchAgent(enabled, useRealPlanService),
       ...(loopService === undefined ? [] : [agentService(IAgentLoopService, loopService)]),
-      permissionModeServices('auto'),
+      typeof permissionMode === 'string'
+        ? permissionModeServices(permissionMode)
+        : agentService(IAgentPermissionModeService, permissionMode),
     );
     const goals = ctx.get(IAgentGoalService);
     const mode = ctx.get(IAgentAitpModeService);
@@ -3646,6 +3710,62 @@ describe('AITP Research goal contribution integration', () => {
     });
 
     await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
+    expect(goals.getGoal().goal?.status).toBe('active');
+  });
+
+  it('releases exactly one held continuation when auto adopts a matching action approval', async () => {
+    const loopService = stubLoopWithHooks();
+    const permissionMode = mutablePermissionMode('manual');
+    const { goals, mode, research } = await createResearchGoalAgent(
+      true,
+      loopService,
+      false,
+      permissionMode,
+    );
+    await mode.enter({ actor: 'user' });
+    await goals.createGoal({ objective: 'finish the task' });
+
+    const heldTurn = makeTurn(81);
+    ctx!.get(IEventBus).publish({
+      type: 'turn.started',
+      turnId: heldTurn.id,
+      origin: USER_PROMPT_ORIGIN,
+    });
+    await loopService.hooks.onWillBeginStep.run({
+      turnId: heldTurn.id,
+      step: 1,
+      firstStepOfTurn: true,
+      signal: heldTurn.signal,
+    });
+    const action = research.planAction({
+      kind: 'simulation',
+      purpose: 'run the bounded remote diagnostic',
+      stopCondition: 'the diagnostic artifact is available',
+      requiresHumanApproval: true,
+    });
+    research.requestHumanDecision({
+      kind: 'approval',
+      actionId: action.actionId,
+      prompt: 'Approve the bounded remote diagnostic',
+    });
+    endTurn(ctx!.get(IEventBus), heldTurn);
+    await flushMicrotasks();
+    expect(loopService.launches).toEqual([]);
+
+    permissionMode.setMode('auto');
+
+    expect(research.getSnapshot()).toMatchObject({
+      phase: 'action_executing',
+      currentAction: { actionId: action.actionId, status: 'in_progress' },
+      humanGate: {
+        actionId: action.actionId,
+        resolution: expect.stringContaining('Standing auto permission applied'),
+        resolvedAt: expect.any(Number),
+      },
+    });
+    await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
+    await flushMicrotasks();
+    expect(loopService.launches).toHaveLength(1);
     expect(goals.getGoal().goal?.status).toBe('active');
   });
 

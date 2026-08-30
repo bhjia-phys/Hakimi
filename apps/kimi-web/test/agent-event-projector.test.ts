@@ -620,12 +620,20 @@ describe('research.updated projection', () => {
     blockedQuestionCount: 0,
     alerts: [],
     aitpHealth: { phase: 'ready' },
+    program: {
+      topicId: 'topic-example',
+      title: 'Example research program',
+      goalText: 'Establish the bounded research result.',
+      goalSource: 'aitp-enter',
+      establishedAt: 1_700_000_000_000,
+    },
     revision: 3,
   } satisfies import('../src/api/types').ResearchStatusSnapshot;
 
   it('projects the raw agent event to a typed Research update', () => {
     const projector = createAgentProjector();
-    expect(projector.project('research.updated', { snapshot }, 's1')).toEqual([
+    const events = projector.project('research.updated', { snapshot }, 's1');
+    expect(events).toEqual([
       { type: 'researchUpdated', sessionId: 's1', snapshot },
     ]);
   });

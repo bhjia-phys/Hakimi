@@ -46,6 +46,8 @@ method-distillation orchestration 未实现，H6b 为 **planned，unavailable**�
 
 **Hakimi 侧更新（2026-08-28）：** Web 的实验性 Research UI 已接通：composer 中的 `/research` 走 Research command endpoint；live Board 展示 `probing`/`ready`/`degraded`、scientific phase、latest progress、current action/run、effective next step、human gate、active alerts 与 checkpoint；line-first Manager 的 Science 区可 resolve decision、acknowledge alert、review evidence 和 observe run，并在 stale revision 后刷新同一 session 的 authoritative snapshot。checkpoint commit 必须显式提供已有 AITP `entryId`，Web 不直接写 AITP。Web production source cutover 也已完成，`apps/kimi-web` 是唯一可编辑的 source；`dist-web` 与 `web-base.json` 是由 canonical build 生成并纳入 Git 的派生发布产物，受 schema v5 source/recipe-files/actual-toolchain/bundle provenance 约束，v4 native receipt 直接绑定 toolchain 与 binary hash。**本次未访问外部 AITP checkout**，因此 AITP HEAD `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290`、0.8.0、CLI/schema/gate 与 154 tests 仍沿用最后核验事实，不作新的外部兼容性声明；H5 仍仅部分集成，H6 仍是 **planned，unavailable**。
 
+**Hakimi 侧更新（2026-08-30）：** Research Board 与模型上下文现在分开显示 AITP Topic 的 `Research goal` 和驱动当前阶段的 `Goal milestone`。`auto` 权限模式下，常规且任务范围内的 Research Action 不再创建第二层 durable approval gate；工具执行仍由统一 permission policy 负责。恢复时仅会继续与当前 planned action 精确绑定的旧 approval gate，并记录可审计的 standing-auto resolution；action-less、review 和 decision gate 仍保持 human-owned。默认 v2 引擎上的 `/goal resume` 现在直接请求 Goal driver 排入 continuation，不再伪造 User 消息，且可唤醒旧客户端留下的 active-but-idle Goal；legacy rollback 保留原兼容路径。这些都是 Hakimi Research/Goal 运行时与 UX 修正；本次已重新核对 AITP HEAD 和 `--help`，但不修改 AITP CLI、schema、stage 或 H5/H6b 状态。
+
 ## 1. Command matrix (Hakimi view)
 
 | Command | AITP stage | Status | Hakimi may call | Blocked on | Future feature-detect |

@@ -218,6 +218,7 @@ interface PendingContinuation {
   readonly generation: number;
   readonly stepCapped: boolean;
   phase: ContinuationReservationPhase;
+  retryRequested: boolean;
   receipt?: EnqueueReceipt;
   turnId?: number;
 }
@@ -644,7 +645,24 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     this.assertSupportedAgent();
     const state = this.requireState();
     if (state.status === 'active') {
-      if (state.waitingFor === undefined) return this.toSnapshot(state);
+      if (state.waitingFor === undefined) {
+        const snapshot = this.toSnapshot(state);
+        const shouldContinue =
+          actor === 'user' &&
+          (input.continueIfPaused === true || input.continueIfBlocked === true);
+        if (!shouldContinue) return snapshot;
+        const budgetBlocked = this.blockIfBudgetReached(state);
+        if (budgetBlocked !== null) return budgetBlocked;
+        if (this.canLaunchContinuation()) {
+          try {
+            await this.launchContinuationTurn(state.goalId);
+          } catch (error) {
+            await this.settleGoalAfterContinuationFailure(error, state.goalId);
+            throw error;
+          }
+        }
+        return snapshot;
+      }
       this.invalidateContinuation();
       const mutation = this.newGoalMutation('update', state.goalId, state.status);
       this.wire.dispatch(updateGoal({
@@ -1223,6 +1241,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       generation: ++this.continuationGeneration,
       stepCapped,
       phase: 'deciding',
+      retryRequested: false,
     };
     this.pendingContinuation = pending;
 
@@ -1287,7 +1306,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
         (isHeld) => {
           if (!this.isCurrentContinuation(pending)) return;
           if (isHeld) {
-            pending.phase = 'held';
+            this.markContinuationHeld(pending);
           } else {
             enqueue();
           }
@@ -1299,7 +1318,7 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       );
     }
     if (held) {
-      pending.phase = 'held';
+      this.markContinuationHeld(pending);
     } else {
       enqueue();
     }
@@ -1318,7 +1337,12 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
 
   private retryHeldContinuation(goalId: string): void {
     const pending = this.pendingContinuation;
-    if (pending?.goalId !== goalId || pending.phase !== 'held') return;
+    if (pending?.goalId !== goalId) return;
+    if (pending.phase === 'deciding') {
+      pending.retryRequested = true;
+      return;
+    }
+    if (pending.phase !== 'held') return;
     if (
       !this.isActiveGoal(goalId) ||
       this.goalState?.waitingFor !== undefined ||
@@ -1332,6 +1356,11 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     void Promise.resolve().then(() => this.launchContinuationTurn(goalId, pending.stepCapped)).catch((error) =>
       this.settleGoalAfterContinuationFailure(error, goalId),
     );
+  }
+
+  private markContinuationHeld(pending: PendingContinuation): void {
+    pending.phase = 'held';
+    if (pending.retryRequested) this.retryHeldContinuation(pending.goalId);
   }
 
   private holdContinuation(goalId: string, index = 0): boolean | Promise<boolean> {

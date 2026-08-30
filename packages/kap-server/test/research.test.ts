@@ -21,6 +21,7 @@ import {
 } from '@moonshot-ai/agent-core-v2';
 
 import { type RunningServer, startServer } from '../src/start';
+import { agentEventSchema } from '../src/protocol/events-zod';
 import { TEST_HOST_IDENTITY } from './helpers/hostIdentity';
 import { authHeaders } from './helpers/auth';
 
@@ -75,6 +76,39 @@ interface ResearchSnapshot {
   };
   revision: number;
 }
+
+const RESEARCH_EVENT_SNAPSHOT = {
+  mode: 'ready',
+  loopStatus: 'active',
+  questions: [],
+  lines: [],
+  openQuestionCount: 0,
+  activeQuestionCount: 0,
+  blockedQuestionCount: 0,
+  alerts: [],
+  aitpHealth: { phase: 'ready' },
+  phase: 'idle',
+  program: {
+    topicId: 'topic-example',
+    title: 'Example research program',
+    goalText: 'Establish the bounded research result.',
+    goalSource: 'aitp-enter',
+    establishedAt: 1_700_000_000_000,
+  },
+  revision: 1,
+};
+
+describe('Research agent event schemas', () => {
+  it('parses a research.updated snapshot including its Research program', () => {
+    const event = { type: 'research.updated', snapshot: RESEARCH_EVENT_SNAPSHOT };
+    expect(agentEventSchema.parse(event)).toEqual(event);
+  });
+
+  it('parses an aitp_mode.updated invalidation event', () => {
+    const event = { type: 'aitp_mode.updated' };
+    expect(agentEventSchema.parse(event)).toEqual(event);
+  });
+});
 
 describe('server-v2 /api/v1/sessions/{sid}/research', () => {
   let server: RunningServer | undefined;

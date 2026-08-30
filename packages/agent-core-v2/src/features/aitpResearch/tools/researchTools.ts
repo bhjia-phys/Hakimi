@@ -208,7 +208,9 @@ export const PlanResearchActionInputSchema = z
     stop_condition: z.string().min(1).max(2000),
     allowed_tool_kinds: z.array(z.string().max(100)).max(20).default([]),
     retry_of_entry_id: z.string().optional(),
-    requires_human_approval: z.boolean().default(false),
+    requires_human_approval: z.boolean().default(false).describe(
+      'Outside auto mode, use true only for a genuinely non-delegable human decision. Routine in-scope work, including remote tool execution covered by the active permission mode, must use false; auto mode is fully autonomous and normalizes this field to false.',
+    ),
   })
   .strict();
 export type PlanResearchActionInput = z.infer<typeof PlanResearchActionInputSchema>;
@@ -358,8 +360,12 @@ export const IObserveResearchRunTool =
 
 export const RequestResearchDecisionInputSchema = z
   .object({
-    kind: z.enum(['approval', 'review', 'decision']),
-    prompt: z.string().min(10).max(8000),
+    kind: z.enum(['approval', 'review', 'decision']).describe(
+      'Classify the human input needed when the active permission mode allows questions. Auto mode creates no new Research human gate and requires a reasonable in-scope default instead.',
+    ),
+    prompt: z.string().min(10).max(8000).describe(
+      'Outside auto mode, ask only for a real scientific or protocol decision, never for routine in-scope or remote tool execution.',
+    ),
     action_id: z.string().max(200).optional(),
     question_id: z.string().max(200).optional(),
   })

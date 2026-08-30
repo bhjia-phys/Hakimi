@@ -8,6 +8,11 @@ import { SyncDescriptor } from '#/_base/di/descriptors';
 import { createServices, TestInstantiationService } from '#/_base/di/test';
 import { ILogService } from '#/_base/log/log';
 import type { IAgentGoalService } from '#/agent/goal/goal';
+import type {
+  IAgentPermissionModeService,
+  PermissionModeChangedContext,
+} from '#/agent/permissionMode/permissionMode';
+import type { PermissionMode } from '#/agent/permissionPolicy/types';
 import type { IAgentPlanService } from '#/features/plan/plan';
 import type { GoalSnapshot, GoalStatus } from '#/agent/goal/types';
 import { contextAppendMessage, contextUndo } from '#/agent/contextMemory/contextOps';
@@ -60,7 +65,10 @@ import type {
   AitpMaintenanceReceipt,
   ResearchStatusSnapshot,
 } from '#/features/aitpResearch/types';
-import { renderResearchInjection } from '#/features/aitpResearch/injection/researchInjectionPresenter';
+import {
+  renderResearchInjection,
+  resolveResearchVerbosity,
+} from '#/features/aitpResearch/injection/researchInjectionPresenter';
 import { IHostFileSystem } from '#/os/interface/hostFileSystem';
 import { IHostProcessService, type IHostProcess } from '#/os/interface/hostProcess';
 import type { AgentResearchService } from '#/features/aitpResearch/research/agentResearchService';
@@ -74,6 +82,7 @@ import { ISessionSkillCatalog } from '#/session/sessionSkillCatalog/skillCatalog
 import { IWireService } from '#/wire/wire';
 
 import { stubLog } from '../../_base/log/stubs';
+import { stubPermissionModeService } from '../../agent/permissionMode/stubs';
 import { stubSkill } from '../../app/skillCatalog/stubs';
 import { registerTestAgentWire, testWireScope } from '../../wire/stubs';
 
@@ -415,6 +424,32 @@ describe('AITP adapter mutation single-flight', () => {
 
 function makeScopeCtx(agentId = MAIN_AGENT_ID) {
   return makeAgentScopeContext({ agentId, agentScope: '' });
+}
+
+function makeMutablePermissionMode(initial: PermissionMode): {
+  readonly service: IAgentPermissionModeService;
+  readonly setMode: (mode: PermissionMode) => void;
+} {
+  let mode = initial;
+  const changed = disposables.add(new Emitter<PermissionModeChangedContext>());
+  const setMode = (next: PermissionMode): void => {
+    const previousMode = mode;
+    if (next === previousMode) return;
+    mode = next;
+    changed.fire({ mode: next, previousMode });
+  };
+  return {
+    service: {
+      _serviceBrand: undefined,
+      get mode() {
+        return mode;
+      },
+      setMode,
+      setModeAndBroadcast: setMode,
+      onDidChangeMode: changed.event,
+    },
+    setMode,
+  };
 }
 
 function makeStubModeSvc(opts?: {
@@ -2490,6 +2525,7 @@ async function buildRealModeService(
 async function buildRealResearchService(
   modeSvc: Awaited<ReturnType<typeof buildRealModeService>>,
   adapter?: ReturnType<typeof makeStubAdapter>,
+  permissionMode?: IAgentPermissionModeService,
 ) {
   const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
   return new AgentResearchService(
@@ -2500,6 +2536,11 @@ async function buildRealResearchService(
     adapter ?? makeStubAdapter(),
     makeToolExecutorStub(),
     makeStubGoalService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    permissionMode,
   );
 }
 
@@ -3715,6 +3756,198 @@ describe('Research Loop scientific state', () => {
     expect(svc.getSnapshot().phase).toBe('awaiting_human');
   });
 
+  it('starts a matching approval-gated action when permission mode switches to auto', async () => {
+    const modeSvc = await buildRealModeService();
+    const permissionMode = makeMutablePermissionMode('manual');
+    const svc = await buildRealResearchService(modeSvc, undefined, permissionMode.service);
+    await modeSvc.enter({ actor: 'user' });
+    const action = svc.planAction({
+      kind: 'simulation',
+      purpose: 'run the bounded remote diagnostic',
+      stopCondition: 'the diagnostic artifact is available',
+      requiresHumanApproval: true,
+    });
+    svc.requestHumanDecision({
+      kind: 'approval',
+      actionId: action.actionId,
+      prompt: 'Approve the bounded remote diagnostic',
+    });
+
+    permissionMode.setMode('auto');
+
+    expect(svc.getSnapshot()).toMatchObject({
+      phase: 'action_executing',
+      currentAction: { actionId: action.actionId, status: 'in_progress' },
+      humanGate: {
+        actionId: action.actionId,
+        resolution: expect.stringContaining('Standing auto permission applied'),
+        resolvedAt: expect.any(Number),
+      },
+    });
+  });
+
+  it('does not start a matching approval-gated action while the Research loop is paused', async () => {
+    const modeSvc = await buildRealModeService();
+    const permissionMode = makeMutablePermissionMode('manual');
+    const svc = await buildRealResearchService(modeSvc, undefined, permissionMode.service);
+    await modeSvc.enter({ actor: 'user' });
+    const action = svc.planAction({
+      kind: 'simulation',
+      purpose: 'run the bounded remote diagnostic after the loop resumes',
+      stopCondition: 'the diagnostic artifact is available',
+      requiresHumanApproval: true,
+    });
+    const gate = svc.requestHumanDecision({
+      kind: 'approval',
+      actionId: action.actionId,
+      prompt: 'Approve the bounded remote diagnostic',
+    });
+    modeSvc.pauseLoop(svc.getSnapshot().revision);
+
+    permissionMode.setMode('auto');
+
+    expect(svc.getSnapshot()).toMatchObject({
+      loopStatus: 'paused',
+      phase: 'awaiting_human',
+      currentAction: { actionId: action.actionId, status: 'planned' },
+      humanGate: { gateId: gate.gateId },
+    });
+    expect(svc.getSnapshot().humanGate?.resolvedAt).toBeUndefined();
+
+    modeSvc.resumeLoop(svc.getSnapshot().revision);
+    expect(svc.getSnapshot()).toMatchObject({
+      loopStatus: 'active',
+      phase: 'action_executing',
+      currentAction: { actionId: action.actionId, status: 'in_progress' },
+      humanGate: {
+        gateId: gate.gateId,
+        resolution: expect.stringContaining('Standing auto permission applied'),
+        resolvedAt: expect.any(Number),
+      },
+    });
+  });
+
+  it.each([
+    { kind: 'decision' as const, prompt: 'Choose between the competing physical interpretations' },
+    { kind: 'approval' as const, prompt: 'Approve an action-less protocol exception' },
+  ])('keeps an action-less $kind gate unresolved when permission mode switches to auto', async ({ kind, prompt }) => {
+    const modeSvc = await buildRealModeService();
+    const permissionMode = makeMutablePermissionMode('manual');
+    const svc = await buildRealResearchService(modeSvc, undefined, permissionMode.service);
+    await modeSvc.enter({ actor: 'user' });
+    svc.setPhase('orienting');
+    const gate = svc.requestHumanDecision({
+      kind,
+      prompt,
+    });
+
+    permissionMode.setMode('auto');
+
+    expect(svc.getSnapshot()).toMatchObject({
+      phase: 'awaiting_human',
+      humanGate: { gateId: gate.gateId },
+    });
+    expect(svc.getSnapshot().humanGate?.resolvedAt).toBeUndefined();
+  });
+
+  it('keeps an action-linked review gate unresolved when permission mode switches to auto', async () => {
+    const modeSvc = await buildRealModeService();
+    const permissionMode = makeMutablePermissionMode('manual');
+    const svc = await buildRealResearchService(modeSvc, undefined, permissionMode.service);
+    await modeSvc.enter({ actor: 'user' });
+    const action = svc.planAction({
+      kind: 'data_analysis',
+      purpose: 'review the competing physical interpretations',
+      stopCondition: 'the review records a choice',
+      requiresHumanApproval: true,
+    });
+    const gate = svc.requestHumanDecision({
+      kind: 'review',
+      actionId: action.actionId,
+      prompt: 'Review the competing physical interpretations',
+    });
+
+    permissionMode.setMode('auto');
+
+    expect(svc.getSnapshot()).toMatchObject({
+      phase: 'awaiting_human',
+      currentAction: { actionId: action.actionId, status: 'planned' },
+      humanGate: { gateId: gate.gateId, kind: 'review' },
+    });
+    expect(svc.getSnapshot().humanGate?.resolvedAt).toBeUndefined();
+  });
+
+  it('recovers a matching approval-gated action after an auto-mode cold restore', async () => {
+    const modeSvc = await buildRealModeService();
+    await modeSvc.enter({ actor: 'user' });
+    const legacySvc = await buildRealResearchService(modeSvc);
+    const action = legacySvc.planAction({
+      kind: 'experiment',
+      purpose: 'run the legacy bounded diagnostic',
+      stopCondition: 'the legacy diagnostic completes',
+      requiresHumanApproval: true,
+    });
+    legacySvc.requestHumanDecision({
+      kind: 'approval',
+      actionId: action.actionId,
+      prompt: 'Approve the legacy bounded diagnostic',
+    });
+    legacySvc.dispose();
+    await wire.flush();
+
+    const restoredSvc = await buildRealResearchService(
+      modeSvc,
+      undefined,
+      stubPermissionModeService(() => 'auto'),
+    );
+    await wire.restore();
+
+    expect(restoredSvc.getSnapshot()).toMatchObject({
+      phase: 'action_executing',
+      currentAction: { actionId: action.actionId, status: 'in_progress' },
+      humanGate: {
+        actionId: action.actionId,
+        resolution: expect.stringContaining('Standing auto permission applied'),
+        resolvedAt: expect.any(Number),
+      },
+    });
+  });
+
+  it('keeps a matching approval gate unresolved after an auto-mode paused restore', async () => {
+    const modeSvc = await buildRealModeService();
+    await modeSvc.enter({ actor: 'user' });
+    const legacySvc = await buildRealResearchService(modeSvc);
+    const action = legacySvc.planAction({
+      kind: 'experiment',
+      purpose: 'run the restored diagnostic only after the loop resumes',
+      stopCondition: 'the restored diagnostic completes',
+      requiresHumanApproval: true,
+    });
+    const gate = legacySvc.requestHumanDecision({
+      kind: 'approval',
+      actionId: action.actionId,
+      prompt: 'Approve the restored diagnostic',
+    });
+    modeSvc.pauseLoop(legacySvc.getSnapshot().revision);
+    legacySvc.dispose();
+    await wire.flush();
+
+    const restoredSvc = await buildRealResearchService(
+      modeSvc,
+      undefined,
+      stubPermissionModeService(() => 'auto'),
+    );
+    await wire.restore();
+
+    expect(restoredSvc.getSnapshot()).toMatchObject({
+      loopStatus: 'paused',
+      phase: 'awaiting_human',
+      currentAction: { actionId: action.actionId, status: 'planned' },
+      humanGate: { gateId: gate.gateId },
+    });
+    expect(restoredSvc.getSnapshot().humanGate?.resolvedAt).toBeUndefined();
+  });
+
   it('resolveHumanDecision restores a valid phase and keeps the resolved gate', async () => {
     const modeSvc = await buildRealModeService();
     const svc = await buildRealResearchService(modeSvc);
@@ -4065,14 +4298,16 @@ describe('Research Loop tool implementations', () => {
     ) => T,
     researchSvc: import('#/features/aitpResearch/research/agentResearch').IAgentResearchService,
     modeSvc: import('#/features/aitpResearch/mode/agentAitpMode').IAgentAitpModeService,
+    permissionMode?: IAgentPermissionModeService,
   ): Promise<T> {
     const mod = await import('#/features/aitpResearch/tools/researchToolsImpl');
     const ToolCls = (mod as unknown as Record<string, new (
       research: import('#/features/aitpResearch/research/agentResearch').IAgentResearchService,
       mode: import('#/features/aitpResearch/mode/agentAitpMode').IAgentAitpModeService,
+      permissionMode?: IAgentPermissionModeService,
     ) => T>)[cls.name];
     if (ToolCls === undefined) throw new Error(`Tool ${cls.name} not found`);
-    return new ToolCls(researchSvc, modeSvc);
+    return new ToolCls(researchSvc, modeSvc, permissionMode);
   }
 
   it('PlanResearchAction returns scientific language output and action id', async () => {
@@ -4120,6 +4355,60 @@ describe('Research Loop tool implementations', () => {
     expect(researchSvc.getSnapshot().phase).toBe('action_executing');
     expect(result.output).toContain('Started simulation action');
     expect(result.output).toMatch(/Action ID: [0-9a-f-]{36}/);
+  });
+
+  it('PlanResearchAction normalizes a requested approval to false in auto mode', async () => {
+    const { modeSvc, researchSvc } = await buildToolHarness();
+    researchSvc.setPhase('orienting');
+    const tool = await makeTool(
+      (await import('#/features/aitpResearch/tools/researchToolsImpl')).PlanResearchActionTool,
+      researchSvc,
+      modeSvc,
+      stubPermissionModeService(() => 'auto'),
+    );
+
+    const result = await runnableExecution(tool.resolveExecution({
+      kind: 'simulation',
+      purpose: 'Plan the routine remote diagnostic inside the requested scope',
+      expected_evidence: ['diagnostic output'],
+      stop_condition: 'the diagnostic output is available',
+      allowed_tool_kinds: ['Bash'],
+      requires_human_approval: true,
+    })).execute({ turnId: 1, toolCallId: 'tc-auto-plan', signal: new AbortController().signal });
+
+    expect(result.isError).toBeFalsy();
+    expect(researchSvc.getSnapshot()).toMatchObject({
+      phase: 'action_planned',
+      currentAction: { status: 'planned', requiresHumanApproval: false },
+    });
+    expect(researchSvc.getSnapshot().humanGate).toBeUndefined();
+  });
+
+  it('BeginResearchAction starts instead of gating a routine action in auto mode', async () => {
+    const { modeSvc, researchSvc } = await buildToolHarness();
+    researchSvc.setPhase('orienting');
+    const tool = await makeTool(
+      (await import('#/features/aitpResearch/tools/researchToolsImpl')).BeginResearchActionTool,
+      researchSvc,
+      modeSvc,
+      stubPermissionModeService(() => 'auto'),
+    );
+
+    const result = await runnableExecution(tool.resolveExecution({
+      kind: 'simulation',
+      purpose: 'Run the routine remote diagnostic inside the requested scope',
+      expected_evidence: ['diagnostic output'],
+      stop_condition: 'the diagnostic output is available',
+      allowed_tool_kinds: ['Bash'],
+      requires_human_approval: true,
+    })).execute({ turnId: 1, toolCallId: 'tc-auto-begin', signal: new AbortController().signal });
+
+    expect(result.isError).toBeFalsy();
+    expect(researchSvc.getSnapshot()).toMatchObject({
+      phase: 'action_executing',
+      currentAction: { status: 'in_progress', requiresHumanApproval: false },
+    });
+    expect(researchSvc.getSnapshot().humanGate).toBeUndefined();
   });
 
   it('ConcludeResearchAction reports physical work first and completes the loop in one call', async () => {
@@ -4276,6 +4565,29 @@ describe('Research Loop tool implementations', () => {
     expect(output).toContain('awaiting');
   });
 
+  it('RequestResearchDecision does not create a durable gate in auto mode', async () => {
+    const { modeSvc, researchSvc } = await buildToolHarness();
+    researchSvc.setPhase('orienting');
+    const tool = await makeTool(
+      (await import('#/features/aitpResearch/tools/researchToolsImpl')).RequestResearchDecisionTool,
+      researchSvc,
+      modeSvc,
+      stubPermissionModeService(() => 'auto'),
+    );
+
+    const result = await runnableExecution(tool.resolveExecution({
+      kind: 'approval',
+      prompt: 'Approve submitting the routine remote diagnostic?',
+    })).execute({ turnId: 1, toolCallId: 'tc-auto-request', signal: new AbortController().signal });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.output).toContain('no durable Research human gate was created');
+    expect(result.output).toContain('make a reasonable in-scope default, and continue');
+    expect(result.output).toContain('not a per-action human approval');
+    expect(researchSvc.getSnapshot().phase).toBe('orienting');
+    expect(researchSvc.getSnapshot().humanGate).toBeUndefined();
+  });
+
   it('ResolveResearchDecision reports the human decision and restored phase', async () => {
     const { modeSvc, researchSvc } = await buildToolHarness();
     researchSvc.setPhase('orienting');
@@ -4325,6 +4637,92 @@ describe('Research Loop tool implementations', () => {
 // ---------------------------------------------------------------------------
 
 describe('injection Brief/Detail and scientific content', () => {
+  it('brief distinguishes the Research goal from the Goal milestone on a new turn', async () => {
+    const modeSvc = await buildRealModeService();
+    const researchSvc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    const snapshot: ResearchStatusSnapshot = {
+      ...researchSvc.getSnapshot(),
+      program: {
+        topicId: 'topic-example',
+        title: 'Example research program',
+        goalText: 'Establish the bounded research result.',
+        goalSource: '.aitp/topic/TOPIC.md',
+        establishedAt: 1,
+      },
+      goalSummary: {
+        objective: 'Validate the next bounded overlap diagnostic.',
+        status: 'active',
+      },
+    };
+
+    const output = renderResearchInjection(snapshot, 'brief').content;
+
+    expect(output).toContain(
+      'Research goal: Establish the bounded research result.',
+    );
+    expect(output).toContain('Goal milestone: Validate the next bounded overlap diagnostic.');
+  });
+
+  it('requests a new brief when the Research goal changes within a turn', async () => {
+    const modeSvc = await buildRealModeService();
+    const researchSvc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    const before: ResearchStatusSnapshot = {
+      ...researchSvc.getSnapshot(),
+      program: {
+        topicId: 'topic-example',
+        title: 'Example research program',
+        goalText: 'Establish the bounded research result.',
+        goalSource: '.aitp/topic/TOPIC.md',
+        establishedAt: 1,
+      },
+    };
+    const disclosure = renderResearchInjection(before, 'brief').disclosure;
+    const after: ResearchStatusSnapshot = {
+      ...before,
+      program: {
+        ...before.program!,
+        goalText: 'Establish and validate the bounded research result.',
+      },
+    };
+
+    const verbosity = resolveResearchVerbosity(
+      { isNewTurn: false, lastDisclosure: disclosure },
+      after,
+    );
+
+    expect(verbosity).toBe('brief');
+  });
+
+  it('requests a new brief when the Goal milestone changes within a turn', async () => {
+    const modeSvc = await buildRealModeService();
+    const researchSvc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    const before: ResearchStatusSnapshot = {
+      ...researchSvc.getSnapshot(),
+      goalSummary: {
+        objective: 'Validate the overlap diagnostic.',
+        status: 'active',
+      },
+    };
+    const disclosure = renderResearchInjection(before, 'brief').disclosure;
+    const after: ResearchStatusSnapshot = {
+      ...before,
+      goalSummary: {
+        objective: 'Validate the reciprocal-space reference.',
+        status: 'active',
+      },
+    };
+
+    const verbosity = resolveResearchVerbosity(
+      { isNewTurn: false, lastDisclosure: disclosure },
+      after,
+    );
+
+    expect(verbosity).toBe('brief');
+  });
+
   it('brief on new turn contains full guidance and scientific state', async () => {
     const modeSvc = await buildRealModeService();
     const researchSvc = await buildRealResearchService(modeSvc);

@@ -8,15 +8,16 @@
  * against the previous `InjectionDisclosure`, whether a turn needs a Brief
  * re-statement, a Delta update, or nothing (no semantic change → undefined, so
  * no duplicate text is appended). Brief mode (new turn, prior disclosure
- * missing, or a semantic change in phase / progress / action / run / next step
- * / attention) emits a trimmed scientific summary — current question, phase,
- * action and run digest, latest physical progress digest, the single effective
- * next step, the pending human gate, and only the attention the model must
- * handle. Delta mode (a deferred refresh with only an attention change) emits
- * just that attention. The disclosure carries the snapshot revision, phase,
- * progress timestamp, and action / run / next-step / attention fingerprints so
- * the next step can deduplicate reliably. No AITP entry / hash / revision /
- * checkpoint id, receipt, checkpoint history, or finding detail leaks.
+ * missing, or a semantic change in program / Goal milestone / phase / progress
+ * / action / run / next step / attention) emits a trimmed scientific summary
+ * — the durable Research goal, the Goal-mode execution milestone, current
+ * question, phase, action and run digest, latest physical progress digest, the
+ * single effective next step, the pending human gate, and only the attention
+ * the model must handle. Delta mode (a deferred refresh with only an attention
+ * change) emits just that attention. The disclosure carries semantic
+ * fingerprints so the next step can deduplicate reliably. No AITP entry / hash
+ * / revision / checkpoint id, receipt, checkpoint history, or finding detail
+ * leaks.
  * Scope-agnostic.
  */
 
@@ -39,6 +40,8 @@ export interface InjectionDisclosure {
   readonly snapshotRevision: number;
   readonly phase: string;
   readonly progressRecordedAt?: number;
+  readonly programFingerprint?: string;
+  readonly goalSummaryFingerprint?: string;
   readonly currentQuestionFingerprint?: string;
   readonly currentActionId?: string;
   readonly currentRunFingerprint?: string;
@@ -56,6 +59,8 @@ export function renderResearchInjection(
     snapshotRevision: snapshot.revision,
     phase: snapshot.phase,
     progressRecordedAt: snapshot.latestProgress?.recordedAt,
+    programFingerprint: programFingerprint(snapshot),
+    goalSummaryFingerprint: goalSummaryFingerprint(snapshot),
     currentQuestionFingerprint: currentQuestionFingerprint(snapshot),
     currentActionId: snapshot.currentAction?.actionId,
     currentRunFingerprint: runFingerprint(snapshot.currentRun),
@@ -89,6 +94,8 @@ export function resolveResearchVerbosity(
   if (last === undefined) return 'brief';
   if (snapshot.phase !== last.phase) return 'brief';
   if (snapshot.latestProgress?.recordedAt !== last.progressRecordedAt) return 'brief';
+  if (programFingerprint(snapshot) !== last.programFingerprint) return 'brief';
+  if (goalSummaryFingerprint(snapshot) !== last.goalSummaryFingerprint) return 'brief';
   if (currentQuestionFingerprint(snapshot) !== last.currentQuestionFingerprint) return 'brief';
   if (snapshot.currentAction?.actionId !== last.currentActionId) return 'brief';
   if (runFingerprint(snapshot.currentRun) !== last.currentRunFingerprint) return 'brief';
@@ -102,7 +109,15 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
   const lines: string[] = [
     '## AITP Research Mode',
     `Phase: ${snapshot.phase} · Loop: ${snapshot.loopStatus}`,
+    snapshot.program === undefined
+      ? 'Research goal: not established'
+      : `Research goal: ${snapshot.program.goalText}`,
   ];
+
+  if (snapshot.goalSummary !== undefined) {
+    lines.push(`Goal milestone: ${snapshot.goalSummary.objective}`);
+    lines.push(`  status: ${snapshot.goalSummary.status}`);
+  }
 
   const currentQuestion = snapshot.currentQuestion ?? snapshot.questions.find((question) =>
     question.lineSlug === snapshot.currentLineSlug &&
@@ -259,7 +274,7 @@ function appendGuidance(lines: string[]): void {
     '- Every bounded research action: declare it with BeginResearchAction (purpose, expected evidence, stop condition), perform only that work, then ConcludeResearchAction with the physical result and next step.',
   );
   lines.push(
-    '- Update Research state only on a semantic change; resolve pending human gates with RequestResearchDecision, and read AITP entries through aitp_show (never Read the Markdown file directly).',
+    '- Update Research state only on a semantic change; resolve pending human gates with ResolveResearchDecision, and read AITP entries through aitp_show (never Read the Markdown file directly).',
   );
   lines.push(
     '- Follow the using-aitp skill before any current-state maintenance read; this summary is read-only and never auto-writes AITP.',
@@ -290,6 +305,21 @@ function currentQuestionFingerprint(snapshot: ResearchStatusSnapshot): string | 
     workflow: question.workflow,
     epistemic: question.epistemic,
   });
+}
+
+function programFingerprint(snapshot: ResearchStatusSnapshot): string | undefined {
+  if (snapshot.program === undefined) return undefined;
+  return stableJson({
+    topicId: snapshot.program.topicId,
+    title: snapshot.program.title,
+    goalText: snapshot.program.goalText,
+    goalSource: snapshot.program.goalSource,
+  });
+}
+
+function goalSummaryFingerprint(snapshot: ResearchStatusSnapshot): string | undefined {
+  if (snapshot.goalSummary === undefined) return undefined;
+  return stableJson(snapshot.goalSummary);
 }
 
 function runFingerprint(run: ResearchRunState | undefined): string | undefined {

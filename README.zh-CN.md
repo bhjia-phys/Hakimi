@@ -59,7 +59,7 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 
 ## Research Mode 与 AITP
 
-Research Mode 默认可发现，但每个新 session 都从 inactive 开始。对于持续工作，`theory-physics` 可以指导模型调用 `EnterAITPMode`、等待 authoritative probe status、对齐当前课题与 Goal，并执行有界行动；inactive session 的 AITP I/O 为零。进入 Research Mode 不会调度模型轮次，跨 turn continuation 仅由 Goal 负责，Plan 只是行动内短期 overlay。
+Research Mode 默认可发现，但每个新 session 都从 inactive 开始。对于持续工作，`theory-physics` 可以指导模型调用 `EnterAITPMode`、等待 authoritative probe status、对齐当前课题与 Goal，并执行有界行动；inactive session 的 AITP I/O 为零。Research Board 和模型上下文会区分 durable AITP Topic 的 **Research goal** 与当前 **Goal milestone**。进入 Research Mode 不会调度模型轮次，跨 turn continuation 仅由 Goal 负责，Plan 只是行动内短期 overlay。在 `auto` 权限模式下，常规且任务范围内的 Research Action 使用统一的工具权限策略，不会再创建第二层 durable approval gate；旧 session 留下的 matching action approval 会以可审计的 standing auto authorization 继续执行。
 
 [AITP](docs/aitp/) 是可选的外部持久证据账本，通过其 CLI 与文件使用；它不是 Hakimi 的第二套 runtime 或数据库。外部的 `using-aitp` 与 `distilling-methods` skill 仍保持协议 authority 且按需调用；Hakimi 不会自动初始化/adopt/backfill workspace，不增加 `/research goal`，也没有计划中的 H6b coordinator。AITP 不可用时，Research Mode 会明确显示 degraded，并阻止 durable write、checkpoint 和 active Research Goal completion。详细兼容性与运行边界见 [AITP 文档](docs/aitp/)。
 

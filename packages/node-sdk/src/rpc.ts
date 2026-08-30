@@ -56,6 +56,7 @@ import type {
   ResearchCommand,
   ResearchCommandResponse,
   ResearchStatusSnapshot,
+  ResumeGoalInput,
   SessionPlan,
   SessionStatus,
   SessionUsage,
@@ -795,7 +796,7 @@ export abstract class SDKRpcClientBase {
     });
   }
 
-  async resumeGoal(input: SessionIdRpcInput): Promise<GoalSnapshot> {
+  async resumeGoal(input: SessionIdRpcInput & ResumeGoalInput): Promise<GoalSnapshot> {
     const rpc = await this.getRpc();
     return rpc.resumeGoal({
       sessionId: input.sessionId,

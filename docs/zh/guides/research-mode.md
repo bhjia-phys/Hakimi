@@ -39,6 +39,8 @@ Research Mode 不需要选择性启用开关。`/research` 命令和 `EnterAITPM
 
 仅 TUI 在从 `manual` 或 `yolo` 权限模式进入时显示键盘提示，询问是否切换到 `auto` 或 `yolo`。Web 使用 session 当前的权限模式；如需更改，请先通过 Web 控件设置。两个 surface 都不会启动独立后台循环，在 `manual` 下研究轮次仍可能等待审批；跨轮次的自主 continuation 只由已有 Goal 负责。
 
+在 `auto` 下，模型发起的有界 Research Action 不会另行创建 durable approval gate：`requires_human_approval` 会被关闭，`RequestResearchDecision` 也不会创建新的 gate；模型必须在任务范围内采用合理默认值并继续。真正的 `Bash`、远程操作或其他操作仍经过统一的工具权限策略。恢复 session 或切换到 `auto` 时，只有在 Research Loop 处于 active 状态，Hakimi 才会把与当前 planned action 绑定的 unresolved approval 视为已有的 auto 授权并启动该 action；历史 review 或 scientific-decision gate 不会被自动解决，因为其中没有可直接采用的决定。
+
 ### Web 手动检查
 
 1. 从 inactive 且 session 空闲的状态打开 **Modes** 并选择 **Research**。确认 Board 出现并先进入 `probing`，随后进入 `ready` 或 `degraded`，且没有调度模型响应。
@@ -89,19 +91,22 @@ maintenance receipt 和上下文注入只暴露安全摘要：Working Note age�
 
 ## 研究面板
 
-研究模式激活后，**研究面板**（Research Board）会同时出现在 TUI 和 Web 的输入区上方。默认紧凑 Board 采用 **science-first** 叙事：先讲清科研进展，再展示辅助任务状态。它突出显示：
+研究模式激活后，**研究面板**（Research Board）会同时出现在 TUI 和 Web 的输入区上方。默认紧凑 Board 只保留一眼就需要判断的信息：
 
-- 当前 scientific phase 和最近一次 state transition
-- latest progress，包括已完成的物理工作及其 insight 或 result
-- 这些结果对 mainline 的影响和当前 uncertainty
-- 当前有界行动与已记录的 external-run observation
-- effective next step，以及 unresolved human gate 或 active alert
+- **Research goal**：来自当前 AITP Topic 的持久目标；尚无对应 Topic 时明确显示「尚未建立」
+- **Attention**：只显示一个未解决的人工门禁、当前阻塞、维护问题或适配器错误；存在更多项目时显示数量，没有需关注项目时隐藏整行
+- **Now**：只显示一个当前工作单元，依次从活跃 run 或 action、最新 progress、焦点问题、状态变化或当前研究线中选择
+- **Next**：只显示一个带来源的 effective next step；缺失时明确提示尚未记录
+
+TUI 还会用一行保留独立的 **Goal milestone**，因为它负责跨轮次 continuation。紧凑态的长叙事会按终端可用宽度或 Web 两行截断；展开 Board 后会恢复完整文本。
 
 phase badge 会显示 `probing`、`ready` 或 `degraded`。模式、循环、问题、焦点和检查点变化会向两个 surface 发布一个完整快照。TUI 会拒绝 stale cold hydration；Web 会串行处理同一 session 的 mutation，并阻止较旧的 HTTP response 覆盖更新的 live WebSocket update。
 
-面板跟踪的是语义化科研状态，而不是原始活动日志。普通工具调用和 AITP `list` / `show` / `check` 读取本身不会改变面板。研究模式激活后，Agent 会优先选择足够简单的解释或实验，并先获取成本最低但有决定性的证据，再升级到远程、长时间运行或多分支工作。只有简单 probe 无法判定问题时，才升级到远程、长时间运行或多分支工作。实质性工作前先创建 Question，设置焦点，用 `BeginResearchAction` 开始一个有界行动，并在完成后用 `ConcludeResearchAction` 说明实际物理工作、结果、测试或推导、限制、对主线的影响和下一步。`ConcludeResearchAction` 不提交或轮询 HPC 任务、不写入 AITP，也不会自动改变问题的 assessment。`PlanResearchAction`、`CompleteResearchAction`、`SetResearchPhase` 和 `RecordResearchProgress` 保留为较低层的恢复或维护工具，不是正常行动路径。只有在新证据、失败或持续无进展改变判断或下一动作时才调用 `UpdateResearchQuestion`。这是语义 guidance，不保证 candidate confirmation 会在 runtime guard 中保护每一次 focus 调用。如果没有发生这类语义转换，面板保持不变是预期行为。
+面板跟踪的是语义化科研状态，而不是原始活动日志。普通工具调用和 AITP `list` / `show` / `check` 读取本身不会改变面板。研究模式激活后，Agent 会优先选择足够简单的解释或实验，并先获取成本最低但有决定性的证据，再升级到远程、长时间运行或多分支工作。一旦简单 probe 证明更大的 action 确有必要，就应当继续执行；如果当前权限模式已经授权，不应再虚构一道额外的 human approval。Agent 必须在实质性工作前先创建 Question，设置焦点，用 `BeginResearchAction` 开始一个有界行动，并在完成后用 `ConcludeResearchAction` 说明实际物理工作、结果、测试或推导、限制、对主线的影响和下一步。`ConcludeResearchAction` 不提交或轮询 HPC 任务、不写入 AITP，也不会自动改变问题的 assessment。`PlanResearchAction`、`CompleteResearchAction`、`SetResearchPhase` 和 `RecordResearchProgress` 保留为较低层的恢复或维护工具，不是正常行动路径。只有在新证据、失败或持续无进展改变判断或下一动作时才调用 `UpdateResearchQuestion`。这是语义 guidance，不保证 candidate confirmation 会在 runtime guard 中保护每一次 focus 调用。如果没有发生这类语义转换，面板保持不变是预期行为。
 
-TUI 还会把当前 session 的 `TodoList` 投影为 Board 中的 **Actions**。Todo 状态仍与 Research Question 和 AITP ledger 分离：完成一个 action 不会改变 epistemic 状态，也不会创建 AITP Entry。在 TUI 中按 `Ctrl-O` 可展开 derivation、tests、sources、问题计数、checkpoint、alerts、scheduler observation 和 Actions；`Ctrl-T` 仍是非研究模式下的 Todo 快捷键。在 Web 中点击 Board 上的 **Expand** 或 **Collapse**；Web 使用按钮和表单，不使用这些 TUI 键盘快捷键。
+展开后的 Board 会把完整科研记录分为研究方向、当前工作、研究地图、证据与不确定性，以及操作或持久化信息。它会保留完整的 period、有界 Research Plan 和 status projection；所有可用的 Research Line、Question、alert、证据引用、不确定性、checkpoint、run 详情和 AITP 维护项目也都会完整展示，不会静默用「另有若干项」取代剩余集合。
+
+TUI 还会把当前 session 的 `TodoList` 投影到展开态的 **External Todo actions** 中。Todo 状态仍与 Research Question 和 AITP ledger 分离：完成一个 action 不会改变 epistemic 状态，也不会创建 AITP Entry。在 TUI 中按 `Ctrl-O` 可展开或折叠 Board；`Ctrl-T` 仍是非研究模式下的 Todo 快捷键。在 Web 中点击 Board 上的 **Expand** 或 **Collapse**；Web 使用按钮和表单，不使用这些 TUI 键盘快捷键。
 
 对于子代理工作，主代理可以审查严格类型的 evidence packet，其中包含 claim、evidence、assumptions、tests、sources、artifacts、limitations 和 confidence。审查 packet 本身是 zero-write：不会修改 assessment、epistemic state 或 AITP。主代理仍必须解释物理含义，并显式记录由此产生的 progress 或 question 变化。
 

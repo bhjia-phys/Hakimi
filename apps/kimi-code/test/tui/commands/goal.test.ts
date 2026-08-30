@@ -84,6 +84,7 @@ function makeHost(
     hasSession?: boolean;
     streaming?: boolean;
     permissionMode?: 'manual' | 'auto' | 'yolo';
+    engineV2?: boolean;
   } = {},
 ) {
   const session = {
@@ -112,6 +113,7 @@ function makeHost(
       ui: { requestRender: vi.fn() },
       theme: { palette: getBuiltInPalette('dark') },
     },
+    engineV2: overrides.engineV2 ?? true,
     session: hasSession ? session : undefined,
     skillCommandMap: new Map<string, string>(),
     requireSession: () => session,
@@ -709,12 +711,24 @@ describe('handleGoalCommand', () => {
     expect(s.cancel).toHaveBeenCalledOnce();
   });
 
-  it('/goal resume calls resumeGoal and sends a resume input', async () => {
+  it('/goal resume requests a core-owned continuation without sending user input', async () => {
     await handleGoalCommand(host, 'resume');
-    expect(session.resumeGoal).toHaveBeenCalledOnce();
+    expect(session.resumeGoal).toHaveBeenCalledWith({
+      continueIfPaused: true,
+      continueIfBlocked: true,
+    });
     expect(host.track).toHaveBeenCalledWith('goal_resume');
     expect(host.showStatus).not.toHaveBeenCalledWith('Goal resumed.');
-    expect(host.sendNormalUserInput).toHaveBeenCalledWith('Resume the active goal.');
+    expect(host.sendNormalUserInput).not.toHaveBeenCalled();
+  });
+
+  it('/goal resume preserves the synthetic input fallback on the legacy engine', async () => {
+    const { host: legacyHost, session: legacySession } = makeHost({ engineV2: false });
+
+    await handleGoalCommand(legacyHost, 'resume');
+
+    expect(legacySession.resumeGoal).toHaveBeenCalledWith();
+    expect(legacyHost.sendNormalUserInput).toHaveBeenCalledWith('Resume the active goal.');
   });
 
   it('/goal cancel calls cancelGoal and does not send input', async () => {

@@ -12,6 +12,7 @@
 
 import type { ToolExecution } from '#/tool/toolContract';
 import { toInputJsonSchema } from '#/tool/input-schema';
+import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
 import { IAgentResearchService } from '#/features/aitpResearch/research/agentResearch';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import { AitpResearchError } from '#/features/aitpResearch/errors';
@@ -88,6 +89,13 @@ function requireActive(mode: IAgentAitpModeService): string | undefined {
 
 function errorResult(message: string) {
   return { isError: true as const, output: message };
+}
+
+function useAutoStandingApproval(
+  permissionMode: IAgentPermissionModeService | undefined,
+  requested: boolean,
+): boolean {
+  return permissionMode?.mode === 'auto' ? false : requested;
 }
 
 function nextStepMeaning(phase: SetResearchPhaseInput['phase']): string {
@@ -452,6 +460,7 @@ export class PlanResearchActionTool implements IPlanResearchActionTool {
   constructor(
     @IAgentResearchService private readonly research: IAgentResearchService,
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+    @IAgentPermissionModeService private readonly permissionMode?: IAgentPermissionModeService,
   ) {}
 
   resolveExecution(args: PlanResearchActionInput): ToolExecution {
@@ -471,7 +480,10 @@ export class PlanResearchActionTool implements IPlanResearchActionTool {
             stopCondition: args.stop_condition,
             allowedToolKinds: args.allowed_tool_kinds,
             retryOfEntryId: args.retry_of_entry_id,
-            requiresHumanApproval: args.requires_human_approval,
+            requiresHumanApproval: useAutoStandingApproval(
+              this.permissionMode,
+              args.requires_human_approval,
+            ),
           });
           const lines: string[] = [
             `Planned ${action.kind} action.`,
@@ -500,12 +512,13 @@ export class PlanResearchActionTool implements IPlanResearchActionTool {
 export class BeginResearchActionTool implements IBeginResearchActionTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'BeginResearchAction' as const;
-  readonly description = 'Plan and begin one bounded research action atomically, stopping at a human approval gate when required.';
+  readonly description = 'Plan and begin one bounded research action atomically. Human gates are only for non-delegable scientific or protocol decisions; routine in-scope and remote tool actions follow the active permission mode.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(BeginResearchActionInputSchema);
 
   constructor(
     @IAgentResearchService private readonly research: IAgentResearchService,
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+    @IAgentPermissionModeService private readonly permissionMode?: IAgentPermissionModeService,
   ) {}
 
   resolveExecution(args: BeginResearchActionInput): ToolExecution {
@@ -525,7 +538,10 @@ export class BeginResearchActionTool implements IBeginResearchActionTool {
             stopCondition: args.stop_condition,
             allowedToolKinds: args.allowed_tool_kinds,
             retryOfEntryId: args.retry_of_entry_id,
-            requiresHumanApproval: args.requires_human_approval,
+            requiresHumanApproval: useAutoStandingApproval(
+              this.permissionMode,
+              args.requires_human_approval,
+            ),
           });
           const snapshot = this.research.getSnapshot();
           const lines: string[] = [
@@ -916,12 +932,13 @@ export class ResolveResearchDecisionTool implements IResolveResearchDecisionTool
 export class RequestResearchDecisionTool implements IRequestResearchDecisionTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'RequestResearchDecision' as const;
-  readonly description = 'Request a human decision (approval, review, or decision) and enter the awaiting-human phase.';
+  readonly description = 'When the permission mode allows questions, request a non-delegable human scientific or protocol decision and enter the awaiting-human phase. Auto mode creates no new gate and requires a reasonable in-scope default. Never use this for routine in-scope or remote tool actions.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(RequestResearchDecisionInputSchema);
 
   constructor(
     @IAgentResearchService private readonly research: IAgentResearchService,
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+    @IAgentPermissionModeService private readonly permissionMode?: IAgentPermissionModeService,
   ) {}
 
   resolveExecution(args: RequestResearchDecisionInput): ToolExecution {
@@ -931,6 +948,15 @@ export class RequestResearchDecisionTool implements IRequestResearchDecisionTool
       execute: async () => {
         const inactive = requireActive(this.mode);
         if (inactive !== undefined) return errorResult(inactive);
+        if (this.permissionMode?.mode === 'auto') {
+          return {
+            output: [
+              'Auto permission mode is fully autonomous; no durable Research human gate was created.',
+              'Use the standing auto permission for routine in-scope work, including remote tool execution, make a reasonable in-scope default, and continue.',
+              'This is an auto-mode routing decision, not a per-action human approval.',
+            ].join('\n'),
+          };
+        }
         try {
           const gate = this.research.requestHumanDecision({
             kind: args.kind,

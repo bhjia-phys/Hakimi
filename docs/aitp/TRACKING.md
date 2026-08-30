@@ -72,3 +72,7 @@
   adapter-contract extension 冻结 marker discovery/exact-card trial/
   decision receipt semantics。
 - 正式 Hakimi contract：等 M4 后 AITP versioned JSON + extended golden fixtures。
+
+2026-08-30 audit：重新核对 AITP HEAD `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290`；其工作树已有用户未提交变化，本次在其基础上最小同步并完整保留。双方 handoff 已按 Hakimi 2026-08-29 状态对齐；未改 AITP CLI/schema/stage，M2–M4 仍为 blocked 设计选项，Method card 的 Skill/Note 层与 Hakimi/external adapter 的平台执行边界保持不变。
+
+2026-08-30 Research/Goal continuation 修正：Board 和模型注入现在区分 AITP Topic `Research goal` 与当前 `Goal milestone`；`auto` 下的常规 scope 内 Research Action 不再创建独立 approval gate，旧 action-linked approval 在恢复时以 standing auto authorization 记录并继续，review/decision gate 不自动解决；默认 v2 引擎上的 `/goal resume` 直接唤醒 Goal driver，不再注入合成 User 消息，legacy rollback 保留原兼容路径。本次未改 AITP CLI/schema/stage/H5/H6b 状态。

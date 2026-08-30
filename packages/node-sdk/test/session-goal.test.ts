@@ -45,10 +45,14 @@ describe('Session goal methods', () => {
     expect(rpc.pauseGoal).toHaveBeenCalledWith({ sessionId: 'ses_goal' });
   });
 
-  it('resumeGoal forwards sessionId', async () => {
+  it('resumeGoal forwards explicit continuation options with sessionId', async () => {
     const { session, rpc } = makeSession();
-    await session.resumeGoal();
-    expect(rpc.resumeGoal).toHaveBeenCalledWith({ sessionId: 'ses_goal' });
+    await session.resumeGoal({ continueIfPaused: true, continueIfBlocked: true });
+    expect(rpc.resumeGoal).toHaveBeenCalledWith({
+      sessionId: 'ses_goal',
+      continueIfPaused: true,
+      continueIfBlocked: true,
+    });
   });
 
   it('cancelGoal forwards sessionId', async () => {

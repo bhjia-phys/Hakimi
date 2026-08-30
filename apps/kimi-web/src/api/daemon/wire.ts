@@ -326,11 +326,19 @@ export interface WireAitpMaintenanceNextAction {
   source: string;
 }
 
+export interface WireResearchProgramTopic {
+  id: string;
+  title: string;
+  goalText: string;
+  goalSource: string;
+}
+
 export interface WireAitpMaintenanceReceipt {
   status: WireAitpMaintenanceStatus;
   refreshedAt: number;
   memoryStatus: WireAitpMaintenanceMemoryStatus;
   workstream?: string;
+  topic?: WireResearchProgramTopic;
   latestWorkingNoteAt?: number;
   activeNewerThanWorkingNote: boolean | null;
   unresolvedFailureCount: number;
@@ -501,6 +509,58 @@ export interface WireResearchHumanGate {
   createdAt: number;
 }
 
+export interface WireResearchProgram {
+  topicId: string;
+  title: string;
+  goalText: string;
+  goalSource: string;
+  establishedAt: number;
+}
+
+export interface WireResearchPeriod {
+  id: string;
+  lineSlug: string;
+  startedAt: number;
+  endedAt?: number;
+  loopCount: number;
+  currentQuestionId?: string;
+  summary?: string;
+}
+
+export interface WireResearchStatusProjection {
+  currentLineSlug?: string;
+  currentQuestionId?: string;
+  currentActionId?: string;
+  phase: WireResearchPhase;
+  nextStep?: string;
+  health: 'ok' | 'attention' | 'degraded' | 'blocked';
+  attention: string[];
+}
+
+export interface WireResearchPlanResolution {
+  planId: string;
+  planRevision: number;
+  outcome: 'approved';
+  selectedLabel?: string;
+}
+
+export interface WireResearchPlan {
+  planId: string;
+  researchRevision: number;
+  programId?: string;
+  periodId?: string;
+  lineSlug?: string;
+  questionId?: string;
+  lineRevision?: number;
+  questionRevision?: number;
+  objective: string;
+  steps: string[];
+  expectedEvidence: string[];
+  stopCondition: string;
+  status: 'draft' | 'finalized' | 'discarded';
+  resolution?: WireResearchPlanResolution;
+}
+
 export interface WireResearchStatusSnapshot {
   mode: WireResearchModePhase;
   loopStatus: WireResearchLoopStatus;
@@ -535,6 +595,10 @@ export interface WireResearchStatusSnapshot {
   latestProgress?: WireResearchProgressReport;
   recentStateChange?: WireResearchStateChange;
   humanGate?: WireResearchHumanGate;
+  program?: WireResearchProgram;
+  period?: WireResearchPeriod;
+  researchPlan?: WireResearchPlan;
+  status?: WireResearchStatusProjection;
   revision: number;
 }
 

@@ -2,9 +2,9 @@
  * Scenario: v2 wiring — the harness talks to the in-process agent-core-v2
  * engine (klient memory transport) instead of the v1 KimiCore RPC pair.
  * Responsibilities: v2-client behaviors the v1↔v2 parity gate does not
- * compare (engine telemetry forwarding, host request headers, the Windows
- * Git Bash probe, workspace trust, the config write cascade, deleteSession,
- * foldAgentWireReplay).
+ * compare (goal continuation, engine telemetry forwarding, host request
+ * headers, the Windows Git Bash probe, workspace trust, the config write
+ * cascade, deleteSession, foldAgentWireReplay).
  * Wiring: real v2 engine bootstrapped on a temp KIMI_CODE_HOME; remote provider calls are stubbed.
  * Run: pnpm exec vitest run test/sdk-rpc-client-v2.test.ts
  */
@@ -162,6 +162,40 @@ describe('SDKRpcClientV2 (agent-core-v2 wiring)', () => {
         completionCriterion: 'the verification command passes',
         status: 'active',
       });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('starts a goal continuation when resume explicitly opts in', async () => {
+    const { harness } = await makeHarness();
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-work-'));
+    tempDirs.push(workDir);
+    try {
+      const session = await harness.createSession({ id: 'ses_goal_resume', workDir });
+      const events: Event[] = [];
+      const unsubscribe = session.onEvent((event) => {
+        events.push(event);
+      });
+      try {
+        await session.createGoal({ objective: 'finish the bounded task' });
+        await session.pauseGoal();
+
+        await session.resumeGoal({ continueIfPaused: true });
+
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            type: 'turn.started',
+            sessionId: session.id,
+            origin: expect.objectContaining({
+              kind: 'system_trigger',
+              name: 'goal_continuation',
+            }),
+          }),
+        );
+      } finally {
+        unsubscribe();
+      }
     } finally {
       await harness.close();
     }

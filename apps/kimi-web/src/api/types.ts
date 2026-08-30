@@ -568,11 +568,19 @@ export interface AitpMaintenanceNextAction {
   source: string;
 }
 
+export interface ResearchProgramTopic {
+  id: string;
+  title: string;
+  goalText: string;
+  goalSource: string;
+}
+
 export interface AitpMaintenanceReceipt {
   status: AitpMaintenanceStatus;
   refreshedAt: number;
   memoryStatus: AitpMaintenanceMemoryStatus;
   workstream?: string;
+  topic?: ResearchProgramTopic;
   latestWorkingNoteAt?: number;
   activeNewerThanWorkingNote: boolean | null;
   unresolvedFailureCount: number;
@@ -757,6 +765,58 @@ export interface ResearchGoalSummary {
   };
 }
 
+export interface ResearchProgram {
+  topicId: string;
+  title: string;
+  goalText: string;
+  goalSource: string;
+  establishedAt: number;
+}
+
+export interface ResearchPeriod {
+  id: string;
+  lineSlug: string;
+  startedAt: number;
+  endedAt?: number;
+  loopCount: number;
+  currentQuestionId?: string;
+  summary?: string;
+}
+
+export interface ResearchStatusProjection {
+  currentLineSlug?: string;
+  currentQuestionId?: string;
+  currentActionId?: string;
+  phase: ResearchPhase;
+  nextStep?: string;
+  health: 'ok' | 'attention' | 'degraded' | 'blocked';
+  attention: string[];
+}
+
+export interface ResearchPlanResolution {
+  planId: string;
+  planRevision: number;
+  outcome: 'approved';
+  selectedLabel?: string;
+}
+
+export interface ResearchPlan {
+  planId: string;
+  researchRevision: number;
+  programId?: string;
+  periodId?: string;
+  lineSlug?: string;
+  questionId?: string;
+  lineRevision?: number;
+  questionRevision?: number;
+  objective: string;
+  steps: string[];
+  expectedEvidence: string[];
+  stopCondition: string;
+  status: 'draft' | 'finalized' | 'discarded';
+  resolution?: ResearchPlanResolution;
+}
+
 export interface ResearchStatusSnapshot {
   mode: ResearchModePhase;
   loopStatus: ResearchLoopStatus;
@@ -782,6 +842,10 @@ export interface ResearchStatusSnapshot {
   latestProgress?: ResearchProgressReport;
   recentStateChange?: ResearchStateChange;
   humanGate?: ResearchHumanGate;
+  program?: ResearchProgram;
+  period?: ResearchPeriod;
+  researchPlan?: ResearchPlan;
+  status?: ResearchStatusProjection;
   revision: number;
 }
 

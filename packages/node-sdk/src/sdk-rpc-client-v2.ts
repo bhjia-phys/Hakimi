@@ -300,6 +300,7 @@ import type {
   ResearchCommand,
   ResearchCommandResponse,
   ResearchStatusSnapshot,
+  ResumeGoalInput,
   SessionPlan,
   SessionStatus,
   SessionSummary,
@@ -2143,9 +2144,12 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     return agent.accessor.get(IAgentGoalService).pauseGoal();
   }
 
-  override async resumeGoal(input: SessionIdRpcInput): Promise<GoalSnapshot> {
+  override async resumeGoal(input: SessionIdRpcInput & ResumeGoalInput): Promise<GoalSnapshot> {
     const agent = await this.agentScope(input.sessionId);
-    return agent.accessor.get(IAgentGoalService).resumeGoal();
+    return agent.accessor.get(IAgentGoalService).resumeGoal({
+      continueIfPaused: input.continueIfPaused,
+      continueIfBlocked: input.continueIfBlocked,
+    });
   }
 
   override async cancelGoal(input: SessionIdRpcInput): Promise<GoalSnapshot> {

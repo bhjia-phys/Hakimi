@@ -67,6 +67,7 @@ import { Service } from '#/_base/di/service';
 import { Emitter } from '#/_base/event';
 import { currentConstruction } from '#/_base/di/fiber';
 import { IAgentGoalService } from '#/agent/goal/goal';
+import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
 import {
   GoalCompletionGuardContribution,
   GoalContinuationParticipantContribution,
@@ -241,6 +242,9 @@ function now(): number {
   return Date.now();
 }
 
+const AUTO_PERMISSION_MODE_STANDING_APPROVAL =
+  'Standing auto permission applied: no new human response was required for this action approval.';
+
 export class AgentResearchService extends Service implements IAgentResearchService {
   declare readonly _serviceBrand: undefined;
 
@@ -262,6 +266,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     @IDurableCommitService private readonly durable?: IDurableCommitService,
     @IAitpExternalFactService externalFact?: IAitpExternalFactService,
     @IAgentPlanService private readonly plan?: IAgentPlanService,
+    @IAgentPermissionModeService private readonly permissionMode?: IAgentPermissionModeService,
   ) {
     super();
     // Manual construction (tests) may omit the facade; fall back to the
@@ -299,9 +304,18 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this._register(
       this.eventBus.subscribe('aitp_mode.updated', () => {
         this.reconcilePeriodLifecycle();
-        this.publishResearchUpdated();
+        if (!this.resumeActionWithAutoStandingApproval()) {
+          this.publishResearchUpdated();
+        }
       }),
     );
+    if (this.permissionMode !== undefined) {
+      this._register(
+        this.permissionMode.onDidChangeMode(({ mode }) => {
+          if (mode === 'auto') this.resumeActionWithAutoStandingApproval();
+        }),
+      );
+    }
     this._register(
       this.eventBus.subscribe('goal.updated', () => {
         this.publishResearchUpdated(false);
@@ -310,7 +324,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this._register(
       this.wire.hooks.onDidRestore.register('researchReconcile', async (_ctx, next) => {
         await next();
-        this.reconcile();
+        if (!this.resumeActionWithAutoStandingApproval()) this.reconcile();
       }),
     );
     this._register(
@@ -1899,7 +1913,9 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         createdAt,
       }),
     );
-    this.publishResearchUpdated();
+    if (!this.resumeActionWithAutoStandingApproval()) {
+      this.publishResearchUpdated();
+    }
     const record = this.wire.getModel(ResearchModel).current.humanGate;
     if (record === null || record.gateId !== gateId) {
       throw new AitpResearchError(
@@ -1908,6 +1924,44 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       );
     }
     return toHumanGate(record);
+  }
+
+  private resumeActionWithAutoStandingApproval(): boolean {
+    if (
+      this.permissionMode?.mode !== 'auto' ||
+      this.scopeCtx.agentId !== MAIN_AGENT_ID ||
+      !this.mode.isActive ||
+      this.mode.loopStatus !== 'active' ||
+      this.wire.isRestoring()
+    ) return false;
+
+    const state = this.wire.getModel(ResearchModel).current;
+    const gate = state.humanGate;
+    const action = state.currentAction;
+    if (
+      state.phase !== 'awaiting_human' ||
+      gate === null ||
+      gate.resolvedAt !== undefined ||
+      gate.kind !== 'approval' ||
+      gate.actionId === undefined ||
+      action === null ||
+      action.actionId !== gate.actionId ||
+      action.status !== 'planned' ||
+      !action.requiresHumanApproval
+    ) return false;
+
+    const changedAt = now();
+    this.wire.dispatch(
+      researchResolveHumanDecision({
+        gateId: gate.gateId,
+        resolution: AUTO_PERMISSION_MODE_STANDING_APPROVAL,
+        nextPhase: 'action_planned',
+        changedAt,
+      }),
+      researchStartAction({ actionId: action.actionId, startedAt: changedAt }),
+    );
+    this.publishResearchUpdated();
+    return true;
   }
 
   resolveHumanDecision(input: ResolveHumanDecisionInput): ResearchHumanGate {
