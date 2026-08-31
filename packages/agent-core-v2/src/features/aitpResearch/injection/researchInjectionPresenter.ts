@@ -42,6 +42,7 @@ export interface InjectionDisclosure {
   readonly progressRecordedAt?: number;
   readonly programFingerprint?: string;
   readonly goalSummaryFingerprint?: string;
+  readonly goalAlignmentFingerprint?: string;
   readonly currentQuestionFingerprint?: string;
   readonly currentActionId?: string;
   readonly currentRunFingerprint?: string;
@@ -61,6 +62,7 @@ export function renderResearchInjection(
     progressRecordedAt: snapshot.latestProgress?.recordedAt,
     programFingerprint: programFingerprint(snapshot),
     goalSummaryFingerprint: goalSummaryFingerprint(snapshot),
+    goalAlignmentFingerprint: goalAlignmentFingerprint(snapshot),
     currentQuestionFingerprint: currentQuestionFingerprint(snapshot),
     currentActionId: snapshot.currentAction?.actionId,
     currentRunFingerprint: runFingerprint(snapshot.currentRun),
@@ -96,6 +98,7 @@ export function resolveResearchVerbosity(
   if (snapshot.latestProgress?.recordedAt !== last.progressRecordedAt) return 'brief';
   if (programFingerprint(snapshot) !== last.programFingerprint) return 'brief';
   if (goalSummaryFingerprint(snapshot) !== last.goalSummaryFingerprint) return 'brief';
+  if (goalAlignmentFingerprint(snapshot) !== last.goalAlignmentFingerprint) return 'brief';
   if (currentQuestionFingerprint(snapshot) !== last.currentQuestionFingerprint) return 'brief';
   if (snapshot.currentAction?.actionId !== last.currentActionId) return 'brief';
   if (runFingerprint(snapshot.currentRun) !== last.currentRunFingerprint) return 'brief';
@@ -110,14 +113,24 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
     '## AITP Research Mode',
     `Phase: ${snapshot.phase} · Loop: ${snapshot.loopStatus}`,
     snapshot.program === undefined
-      ? 'Research goal: not established'
-      : `Research goal: ${snapshot.program.goalText}`,
+      ? 'AITP Research Goal (observed): not established'
+      : `AITP Research Goal (observed): ${snapshot.program.goalText}`,
   ];
 
+  if (snapshot.program !== undefined) {
+    lines.push(`  AITP Research Goal source: ${snapshot.program.goalSource}`);
+  }
+
   if (snapshot.goalSummary !== undefined) {
-    lines.push(`Goal milestone: ${snapshot.goalSummary.objective}`);
+    lines.push(`Hakimi Goal: ${snapshot.goalSummary.objective}`);
     lines.push(`  status: ${snapshot.goalSummary.status}`);
   }
+
+  if (snapshot.goalAlignment !== undefined) {
+    lines.push(`Goal alignment: ${snapshot.goalAlignment.status} — ${snapshot.goalAlignment.reason}`);
+  }
+
+  lines.push('Local Research Loop: current line/question and bounded action state.');
 
   const currentQuestion = snapshot.currentQuestion ?? snapshot.questions.find((question) =>
     question.lineSlug === snapshot.currentLineSlug &&
@@ -320,6 +333,16 @@ function programFingerprint(snapshot: ResearchStatusSnapshot): string | undefine
 function goalSummaryFingerprint(snapshot: ResearchStatusSnapshot): string | undefined {
   if (snapshot.goalSummary === undefined) return undefined;
   return stableJson(snapshot.goalSummary);
+}
+
+function goalAlignmentFingerprint(snapshot: ResearchStatusSnapshot): string | undefined {
+  const alignment = snapshot.goalAlignment;
+  if (alignment === undefined) return undefined;
+  return stableJson({
+    status: alignment.status,
+    reason: alignment.reason,
+    binding: alignment.binding,
+  });
 }
 
 function runFingerprint(run: ResearchRunState | undefined): string | undefined {

@@ -35,6 +35,8 @@ import type {
   ResearchProgressLevel,
   ResearchProgressReport,
   ResearchProgram,
+  ResearchGoalAlignment,
+  ResearchGoalAlignmentRelation,
   ResearchPeriod,
   ResearchQuestion,
   ResearchScientificSnapshot,
@@ -154,6 +156,21 @@ export interface PrepareResearchPlanInput {
   readonly usePlanMode?: boolean;
 }
 
+export interface ConfirmGoalAlignmentInput {
+  readonly relation: ResearchGoalAlignmentRelation;
+  readonly expectedRevision: number;
+  readonly goalId: string;
+  readonly topicId: string;
+  readonly observedRevision: number;
+}
+
+export interface ClearGoalAlignmentInput {
+  readonly expectedRevision: number;
+  readonly goalId: string;
+  readonly topicId: string;
+  readonly observedRevision: number;
+}
+
 export interface ObserveResearchRunInput {
   readonly actionId: string;
   readonly expectedRevision: number;
@@ -177,6 +194,9 @@ export interface IAgentResearchService {
   getPendingCheckpoint(): ResearchCheckpoint | null;
   getCommittedCursor(): ResearchCommittedCursor | null;
   getProgram(): ResearchProgram | null;
+  getGoalAlignment(): ResearchGoalAlignment;
+  confirmGoalAlignment(input: ConfirmGoalAlignmentInput): void;
+  clearGoalAlignment(input: ClearGoalAlignmentInput): void;
   getPeriod(): ResearchPeriod | null;
   getScientificProgress(level: ResearchProgressLevel): ResearchScientificSnapshot;
   getResearchPlan(): ResearchPlan | null;

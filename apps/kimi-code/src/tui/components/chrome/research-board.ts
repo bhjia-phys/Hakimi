@@ -288,11 +288,11 @@ function renderResearchGoalRows(
 ): string[] {
   if (snap.program !== undefined) {
     return [
-      `  ${chalk.hex(colors.primary)('◎')} ${chalk.hex(colors.textStrong).bold('Research goal:')} ${chalk.hex(colors.text)(normalizeSummary(snap.program.goalText))}`,
+      `  ${chalk.hex(colors.primary)('◎')} ${chalk.hex(colors.textStrong).bold('AITP Research Goal (observed):')} ${chalk.hex(colors.text)(normalizeSummary(snap.program.goalText))}`,
     ];
   }
   return [
-    `  ${chalk.hex(colors.primary)('◎')} ${chalk.hex(colors.textStrong).bold('Research goal:')} ${chalk.hex(colors.textMuted)('not established')}`,
+    `  ${chalk.hex(colors.primary)('◎')} ${chalk.hex(colors.textStrong).bold('AITP Research Goal (observed):')} ${chalk.hex(colors.textMuted)('not established')}`,
   ];
 }
 
@@ -318,7 +318,23 @@ function renderCompactAttention(
   const moreSuffix = (count: number): string =>
     count > 0 ? ` · +${String(count)} more` : '';
   const gate = snap.humanGate;
-  if (gate !== undefined && gate.resolvedAt === undefined) {
+  const hasUnresolvedGate = gate !== undefined && gate.resolvedAt === undefined;
+  const alignment = snap.goalAlignment;
+  if (
+    snap.goalSummary?.status === 'active'
+    && alignment !== undefined
+    && alignment.status !== 'aligned'
+  ) {
+    const status = alignment.status.replaceAll('_', ' ');
+    const reason = normalizeSummary(alignment.reason);
+    const message = `Goal alignment: ${status}${reason.length === 0 ? '' : ` · ${reason}`}`;
+    const additional = alerts.length
+      + Number(hasUnresolvedGate)
+      + Number(hasMaintenanceIssue)
+      + Number(hasAdapterError);
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(message)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
+  }
+  if (hasUnresolvedGate) {
     const label = gate.kind === 'approval'
       ? 'Approval needed'
       : gate.kind === 'review'
@@ -394,6 +410,9 @@ function buildCompactRows(
   colors: ColorPalette,
 ): string[] {
   const rows = renderResearchGoalRows(snap, colors);
+  if (snap.goalAlignment?.status === 'aligned') {
+    rows.push(`  ${chalk.hex(colors.primary)('↔')} ${chalk.hex(colors.textDim)('Alignment:')} ${chalk.hex(colors.success)(snap.goalAlignment.status.replaceAll('_', ' '))}`);
+  }
   const milestone = renderCompactGoalMilestone(snap, colors);
   if (milestone !== undefined) rows.push(milestone);
   const attention = renderCompactAttention(snap, colors);
@@ -419,6 +438,10 @@ function buildExpandedRows(
     renderSectionHeading('Direction', colors),
     `  ${chalk.hex(colors.textDim)('Snapshot revision:')} ${chalk.hex(colors.textMuted)(String(snap.revision))}`,
     ...renderResearchGoalRows(snap, colors),
+    ...(snap.goalAlignment === undefined ? [] : [
+      `  ${chalk.hex(colors.textDim)('Goal alignment:')} ${chalk.hex(snap.goalAlignment.status === 'aligned' ? colors.success : snap.goalAlignment.status === 'unavailable' ? colors.textMuted : colors.warning)(snap.goalAlignment.status.replaceAll('_', ' '))}`,
+      `    ${chalk.hex(colors.textDim)('Alignment reason:')} ${chalk.hex(colors.text)(normalizeSummary(snap.goalAlignment.reason))}`,
+    ]),
     ...renderGoalRows(snap, colors, true),
   ];
   if (snap.program !== undefined) {

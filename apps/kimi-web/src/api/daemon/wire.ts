@@ -515,6 +515,21 @@ export interface WireResearchProgram {
   goalText: string;
   goalSource: string;
   establishedAt: number;
+  observedRevision: number;
+}
+
+export interface WireResearchGoalProgramBinding {
+  relation: 'same_program_goal' | 'goal_parent_of_program' | 'goal_milestone_in_program' | 'unrelated';
+  goalId: string;
+  topicId: string;
+  observedRevision: number;
+  confirmedAt: number;
+}
+
+export interface WireResearchGoalAlignment {
+  status: 'unavailable' | 'confirmation_required' | 'aligned' | 'stale' | 'conflict';
+  reason: string;
+  binding?: WireResearchGoalProgramBinding;
 }
 
 export interface WireResearchPeriod {
@@ -576,6 +591,7 @@ export interface WireResearchStatusSnapshot {
   effectiveNextStep?: WireResearchEffectiveNextStep;
   goalSummary?: {
     /** The current Goal milestone, distinct from the ResearchPlan objective. */
+    goalId?: string;
     objective: string;
     completionCriterion?: string;
     status: 'active' | 'paused' | 'blocked' | 'complete';
@@ -584,6 +600,7 @@ export interface WireResearchStatusSnapshot {
     terminalReason?: string;
     waitingFor?: { taskIds: string[]; policy: 'any' | 'all' };
   };
+  goalAlignment?: WireResearchGoalAlignment;
   aitpHealth: WireAitpAdapterHealth;
   aitpMaintenance?: WireAitpMaintenanceReceipt;
   pendingCheckpoint?: WireResearchCheckpoint;
@@ -619,6 +636,8 @@ export type WireResearchCommand =
   | { kind: 'update_line'; lineSlug: string; expectedRevision: number; title?: string; objective?: string; status?: WireResearchLineStatus; assessment?: string; reason?: string }
   | { kind: 'propose_checkpoint'; expectedRevision: number; questionId?: string; lineSlug?: string; assessment?: string; nextAction?: string }
   | { kind: 'commit_checkpoint'; checkpointId: string; entryId: string }
+  | { kind: 'confirm_goal_alignment'; relation: 'same_program_goal' | 'goal_parent_of_program' | 'goal_milestone_in_program' | 'unrelated'; expectedRevision: number; goalId: string; topicId: string; observedRevision: number }
+  | { kind: 'clear_goal_alignment'; expectedRevision: number; goalId: string; topicId: string; observedRevision: number }
   | { kind: 'resolve_decision'; gateId: string; resolution: string; nextPhase: WireResearchPhase }
   | { kind: 'review_evidence'; packet: WireResearchEvidencePacket; expectedRevision: number }
   | {

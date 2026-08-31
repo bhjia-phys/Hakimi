@@ -212,6 +212,22 @@ describe('Research slash command', () => {
     mode: 'inactive',
     aitpHealth: { phase: 'inactive' },
   };
+  const alignmentSnapshot: ResearchStatusSnapshot = {
+    ...snapshot,
+    goalSummary: {
+      goalId: 'goal-1',
+      objective: 'Finish the Goal',
+      status: 'active',
+    },
+    program: {
+      topicId: 'topic-1',
+      title: 'Observed topic',
+      goalText: 'Resolve the bounded problem',
+      goalSource: 'TOPIC.md',
+      establishedAt: 1,
+      observedRevision: 4,
+    },
+  };
 
   it('hides the Composer entry when disabled and starts from missing or inactive state', () => {
     expect(researchComposerEntryState(false, undefined)).toBe('hidden');
@@ -443,6 +459,10 @@ describe('Research slash command', () => {
     expect(parseResearchSlashCommand('pause')).toEqual({ kind: 'pause' });
     expect(parseResearchSlashCommand('resume')).toEqual({ kind: 'resume' });
     expect(parseResearchSlashCommand('manage')).toEqual({ kind: 'manage' });
+    expect(parseResearchSlashCommand('align same_program_goal')).toEqual({
+      kind: 'align', relation: 'same_program_goal',
+    });
+    expect(parseResearchSlashCommand('align clear')).toEqual({ kind: 'clear_alignment' });
     expect(parseResearchSlashCommand('line line-b')).toEqual({ kind: 'line', lineSlug: 'line-b' });
     expect(parseResearchSlashCommand('edit q_1 -- New wording')).toEqual({
       kind: 'edit', questionId: 'q_1', wording: 'New wording',
@@ -472,6 +492,8 @@ describe('Research slash command', () => {
     ['on', false],
     ['off', false],
     ['manage', false],
+    ['align same_program_goal', false],
+    ['align clear', false],
     ['line line-b', false],
     ['edit q_1 -- New wording', false],
     ['focus q_1 -- Read', false],
@@ -538,6 +560,38 @@ describe('Research slash command', () => {
     expect(
       researchCommandResolutionError(parseResearchSlashCommand('line missing-line'), snapshot),
     ).toBe('line_not_found');
+    expect(
+      researchCommandResolutionError(parseResearchSlashCommand('align same_program_goal'), snapshot),
+    ).toBe('goal_alignment_unavailable');
+    expect(
+      researchCommandResolutionError(parseResearchSlashCommand('align same_program_goal'), alignmentSnapshot),
+    ).toBeNull();
+  });
+
+  it('uses the authoritative snapshot revision and identities for Goal alignment commands', () => {
+    expect(researchSlashNeedsSnapshot(parseResearchSlashCommand('align same_program_goal'))).toBe(true);
+    expect(researchSlashNeedsSnapshot(parseResearchSlashCommand('align clear'))).toBe(true);
+    expect(researchCommandFromSlash(
+      parseResearchSlashCommand('align goal_parent_of_program'),
+      alignmentSnapshot,
+    )).toEqual({
+      kind: 'confirm_goal_alignment',
+      relation: 'goal_parent_of_program',
+      expectedRevision: 13,
+      goalId: 'goal-1',
+      topicId: 'topic-1',
+      observedRevision: 4,
+    });
+    expect(researchCommandFromSlash(
+      parseResearchSlashCommand('align clear'),
+      alignmentSnapshot,
+    )).toEqual({
+      kind: 'clear_goal_alignment',
+      expectedRevision: 13,
+      goalId: 'goal-1',
+      topicId: 'topic-1',
+      observedRevision: 4,
+    });
   });
 
   it('uses question revision for edits and snapshot revision for steering', () => {

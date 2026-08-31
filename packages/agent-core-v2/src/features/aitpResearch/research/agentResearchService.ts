@@ -48,15 +48,18 @@
  * derived read. Additionally subscribes to `aitp_mode.updated`
  * (fired by each mode op's `toEvent` and by undo / cold restore) and
  * `goal.updated`, so mode, loop, undo, degraded, and Goal status/budget
- * transitions all produce a complete `research.updated` snapshot push. These
- * subscriptions only read state and publish Research facts, so they cannot
- * form an event cycle. Contributes a `GoalCompletionGuardContribution` that
+ * transitions all produce a complete `research.updated` snapshot push. On an
+ * inactive→active edge, the mode subscription first clears any checkpointed
+ * Program/Goal binding from the prior lifecycle; later maintenance can then
+ * establish only the current AITP topic. Other subscription work only reads
+ * state and publishes Research facts, so it cannot form an event cycle.
+ * Contributes a `GoalCompletionGuardContribution` that
  * blocks goal completion while Research has a pending checkpoint, degraded
- * mode, or unresolved human gate (only when the mode is active; otherwise it
- * allows), and a `GoalContinuationParticipantContribution` that holds the
- * goal's automatic continuation while the mode is active and the research
- * loop is paused, the mode is degraded, or a human gate is unresolved —
- * otherwise it abstains, leaving the continuation decision to Goal. Also
+ * mode, an unresolved human gate, or an unconfirmed/stale/conflicting explicit
+ * Goal-to-Program binding (only when the mode is active; otherwise it allows),
+ * and a `GoalContinuationParticipantContribution` that holds the goal's
+ * automatic continuation for those same active-mode conditions — otherwise it
+ * abstains, leaving the continuation decision to Goal. Also
  * registers an `onBeforeExecuteTool` veto that blocks AITP mutation tools on
  * subagents. Goal is the sole continuation owner. Bound at Agent scope.
  */
@@ -105,6 +108,7 @@ import type {
   ResearchEffectiveNextStep,
   ResearchAlert,
   ResearchProgram,
+  ResearchGoalAlignment,
   ResearchPeriod,
   ResearchPlan,
   ResearchStatusHealth,
@@ -141,6 +145,8 @@ import {
   researchRequestHumanDecision,
   researchResolveHumanDecision,
   researchSetProgram,
+  researchConfirmGoalAlignment,
+  researchClearGoalAlignment,
   researchStartPeriod,
   researchUpdatePeriod,
   researchEndPeriod,
@@ -176,6 +182,8 @@ import {
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
 
 import {
+  type ClearGoalAlignmentInput,
+  type ConfirmGoalAlignmentInput,
   type CommitCheckpointInput,
   type ConcludeResearchActionInput,
   type ResearchActionConclusion,
@@ -253,6 +261,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     new Emitter<string>('research-goal-continuation-retry'),
   );
   private researchPlanMutationTail: Promise<void> = Promise.resolve();
+  private lastModeActive: boolean;
 
   constructor(
     @IWireService private readonly wire: IWireService,
@@ -269,6 +278,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     @IAgentPermissionModeService private readonly permissionMode?: IAgentPermissionModeService,
   ) {
     super();
+    this.lastModeActive = this.mode.isActive;
     // Manual construction (tests) may omit the facade; fall back to the
     // wire-backed projection so the cursor boundary is always enforced.
     this.externalFact = externalFact ?? createExternalFactFacade(this.wire);
@@ -303,6 +313,14 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     }
     this._register(
       this.eventBus.subscribe('aitp_mode.updated', () => {
+        const modeActive = this.mode.isActive;
+        if (!this.lastModeActive && modeActive) {
+          const state = this.wire.getModel(ResearchModel).current;
+          if (state.program !== null || state.goalProgramBinding !== null) {
+            this.wire.dispatch(researchSetProgram({ clear: true }));
+          }
+        }
+        this.lastModeActive = modeActive;
         this.reconcilePeriodLifecycle();
         if (!this.resumeActionWithAutoStandingApproval()) {
           this.publishResearchUpdated();
@@ -352,6 +370,9 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     const currentAction = state.currentAction === null ? undefined : toActionSpec(state.currentAction);
     const latestProgress = state.latestProgress === null ? undefined : toProgressReport(state.latestProgress);
     const humanGate = state.humanGate === null ? undefined : toHumanGate(state.humanGate);
+    const goalSummary = this.getGoalSummary();
+    const activeGoal = goalSummary?.status === 'active';
+    const goalAlignment = this.getGoalAlignment();
     const effectiveNextStep = deriveEffectiveNextStep({
       phase: state.phase,
       currentAction,
@@ -359,6 +380,8 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       latestProgress,
       currentQuestion,
       humanGate,
+      goalAlignment,
+      activeGoal,
       maintenance: aitpMaintenance,
     });
 
@@ -381,7 +404,8 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       blockedQuestionCount: questions.filter((q) => q.workflow === 'blocked').length,
       alerts: state.alerts.map(toAlert),
       effectiveNextStep,
-      goalSummary: this.getGoalSummary(),
+      goalSummary,
+      goalAlignment,
       aitpHealth: this.mode.health ?? { phase: 'inactive' },
       aitpMaintenance,
       pendingCheckpoint: state.pendingCheckpoint === null
@@ -395,7 +419,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       latestProgress,
       recentStateChange: state.recentStateChange === null ? undefined : toStateChange(state.recentStateChange),
       humanGate,
-      program: state.program ?? undefined,
+      program: this.getProgram() ?? undefined,
       period: state.period ?? undefined,
       researchPlan: this.getResearchPlan() ?? undefined,
       status: this.mode.isActive
@@ -408,6 +432,9 @@ export class AgentResearchService extends Service implements IAgentResearchServi
             currentAction,
             effectiveNextStep,
             humanGate,
+            goalAlignment,
+            activeGoal,
+            maintenance: aitpMaintenance,
             alerts: state.alerts,
           })
         : undefined,
@@ -433,7 +460,84 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   }
 
   getProgram(): ResearchProgram | null {
-    return this.wire.getModel(ResearchModel).current.program;
+    const program = this.wire.getModel(ResearchModel).current.program;
+    return program === null ? null : { ...program, observedRevision: program.observedRevision ?? 1 };
+  }
+
+  getGoalAlignment(): ResearchGoalAlignment {
+    const goal = this.scopeCtx.agentId === MAIN_AGENT_ID ? this.goal.getGoal().goal : null;
+    const program = this.getProgram();
+    const binding = this.wire.getModel(ResearchModel).current.goalProgramBinding ?? null;
+    if (goal === null || program === null) {
+      return {
+        status: 'unavailable',
+        reason: goal === null ? 'Hakimi Goal is unavailable.' : 'AITP Research Goal has not been observed.',
+        binding: binding ?? undefined,
+      };
+    }
+    if (binding === null) {
+      return {
+        status: 'confirmation_required',
+        reason: 'Confirm the explicit relationship between the Hakimi Goal and the observed AITP Research Goal.',
+      };
+    }
+    if (binding.goalId !== goal.goalId || binding.topicId !== program.topicId) {
+      return {
+        status: 'stale',
+        reason: 'The confirmed Goal or observed AITP topic changed; confirm the relationship again.',
+        binding,
+      };
+    }
+    if (binding.observedRevision !== program.observedRevision) {
+      return {
+        status: 'stale',
+        reason: 'The observed AITP Research Goal changed; confirm the relationship again.',
+        binding,
+      };
+    }
+    if (binding.relation === 'unrelated') {
+      return {
+        status: 'conflict',
+        reason: 'The confirmed relationship says the Hakimi Goal is unrelated to the observed AITP Research Goal.',
+        binding,
+      };
+    }
+    return {
+      status: 'aligned',
+      reason: `Confirmed as ${binding.relation}.`,
+      binding,
+    };
+  }
+
+  confirmGoalAlignment(input: ConfirmGoalAlignmentInput): void {
+    this.assertStateMutationAllowed();
+    if (!this.matchesCurrentGoalProgram(input)) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        'Goal alignment confirmation is stale. Refresh the Research snapshot and retry.',
+      );
+    }
+    this.wire.dispatch(researchConfirmGoalAlignment({
+      relation: input.relation,
+      expectedRevision: input.expectedRevision,
+      goalId: input.goalId,
+      topicId: input.topicId,
+      observedRevision: input.observedRevision,
+      confirmedAt: now(),
+    }));
+    this.publishResearchUpdated();
+  }
+
+  clearGoalAlignment(input: ClearGoalAlignmentInput): void {
+    this.assertStateMutationAllowed();
+    if (!this.matchesCurrentGoalProgram(input)) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        'Goal alignment clear request is stale. Refresh the Research snapshot and retry.',
+      );
+    }
+    this.wire.dispatch(researchClearGoalAlignment(input));
+    this.publishResearchUpdated();
   }
 
   getPeriod(): ResearchPeriod | null {
@@ -2221,12 +2325,22 @@ export class AgentResearchService extends Service implements IAgentResearchServi
 
   /**
    * Forms the topic-bound program from a maintenance receipt's safe topic
-   * fields. Never fabricates: without a topic the existing program is left
-   * untouched, and a differing topic id replaces the program outright.
+   * fields. A receipt without a topic is authoritative absence of the current
+   * AITP program, including when the receipt is degraded, so it clears both the
+   * program and its Goal binding.
    */
   private reconcileProgram(receipt: AitpMaintenanceReceipt | undefined): void {
-    if (!this.mode.isActive || receipt === undefined || receipt.topic === undefined) return;
+    if (!this.mode.isActive || receipt === undefined) return;
     const state = this.wire.getModel(ResearchModel).current;
+    if (
+      (receipt.status === 'ready' && receipt.memoryStatus === 'not_established')
+      || receipt.topic === undefined
+    ) {
+      if (state.program !== null || state.goalProgramBinding !== null) {
+        this.wire.dispatch(researchSetProgram({ clear: true }));
+      }
+      return;
+    }
     const program = state.program;
     if (
       program !== null &&
@@ -2235,13 +2349,15 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       program.goalText === receipt.topic.goalText &&
       program.goalSource === receipt.topic.goalSource
     ) return;
+    const sameTopic = program?.topicId === receipt.topic.id;
     this.wire.dispatch(
       researchSetProgram({
         topicId: receipt.topic.id,
         title: receipt.topic.title,
         goalText: receipt.topic.goalText,
         goalSource: receipt.topic.goalSource,
-        establishedAt: program?.topicId === receipt.topic.id ? program.establishedAt : now(),
+        establishedAt: sameTopic ? program!.establishedAt : now(),
+        observedRevision: sameTopic ? (program!.observedRevision ?? 1) + 1 : 1,
       }),
     );
   }
@@ -2314,6 +2430,22 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this.mode.assertResearchMutationAllowed({ allowPaused: true });
   }
 
+  private matchesCurrentGoalProgram(input: {
+    readonly expectedRevision: number;
+    readonly goalId: string;
+    readonly topicId: string;
+    readonly observedRevision: number;
+  }): boolean {
+    const goal = this.goal.getGoal().goal;
+    const program = this.getProgram();
+    return (
+      this.wire.getModel(ResearchModel).current.revision === input.expectedRevision &&
+      goal?.goalId === input.goalId &&
+      program?.topicId === input.topicId &&
+      program.observedRevision === input.observedRevision
+    );
+  }
+
   private assertResearchPlanFresh(plan: ResearchPlan): void {
     const state = this.wire.getModel(ResearchModel).current;
     const modeState = this.wire.getModel(AitpModeModel).current;
@@ -2369,6 +2501,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     if (goal === null) return undefined;
     const turnBudget = goal.budget.turnBudget;
     return {
+      goalId: goal.goalId,
       objective: goal.objective,
       completionCriterion: goal.completionCriterion,
       status: goal.status,
@@ -2404,7 +2537,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   }
 
   private guardGoalCompletion(
-    _input: import('#/agent/goal/goalContribution').GoalCompletionGuardInput,
+    input: import('#/agent/goal/goalContribution').GoalCompletionGuardInput,
   ): import('#/agent/goal/goalContribution').GoalCompletionGuardResult {
     if (!this.mode.isActive) return { allow: true };
     const pending = this.getPendingCheckpoint();
@@ -2439,11 +2572,22 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         nextStep: 'ResolveResearchDecision',
       };
     }
+    const goal = this.goal.getGoal().goal;
+    const alignment = this.getGoalAlignment();
+    if (isAlignmentBlocking(alignment, goal?.status === 'active' && goal.goalId === input.goalId)) {
+      return {
+        allow: false,
+        owner: 'aitpResearch',
+        code: `research.goal-alignment.${alignment.status}`,
+        reason: `Goal completion is blocked: ${alignment.reason}`,
+        nextStep: 'ConfirmGoalAlignment',
+      };
+    }
     return { allow: true };
   }
 
   private decideGoalContinuation(
-    _input: import('#/agent/goal/goalContribution').GoalContinuationInput,
+    input: import('#/agent/goal/goalContribution').GoalContinuationInput,
   ): import('#/agent/goal/goalContribution').GoalContinuationDecisionResult {
     // The participant only weighs in while Research Mode is active; an
     // inactive mode leaves the automatic continuation decision to Goal.
@@ -2468,6 +2612,15 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         decision: 'hold',
         owner: 'aitpResearch',
         reason: 'A Research human gate is unresolved. Resolve the gate before continuing the goal automatically.',
+      };
+    }
+    const goal = this.goal.getGoal().goal;
+    const alignment = this.getGoalAlignment();
+    if (isAlignmentBlocking(alignment, goal?.status === 'active' && goal.goalId === input.goalId)) {
+      return {
+        decision: 'hold',
+        owner: 'aitpResearch',
+        reason: `Goal continuation is held: ${alignment.reason}`,
       };
     }
     return { decision: 'abstain' };
@@ -2659,6 +2812,23 @@ function toAlert(alert: ResearchAlert): ResearchAlert {
   };
 }
 
+function isAlignmentBlocking(
+  alignment: ResearchGoalAlignment,
+  activeGoal: boolean,
+): boolean {
+  if (!activeGoal) return false;
+  return alignment.status === 'unavailable'
+    || alignment.status === 'confirmation_required'
+    || alignment.status === 'stale'
+    || alignment.status === 'conflict';
+}
+
+function goalAlignmentBlockerText(alignment: ResearchGoalAlignment): string {
+  return alignment.status === 'unavailable'
+    ? 'No current AITP Research Goal was observed; refresh AITP state before using /research align.'
+    : `Goal alignment is ${alignment.status}; use /research align or refresh AITP state before continuing.`;
+}
+
 function deriveEffectiveNextStep(input: {
   readonly phase: ResearchPhase;
   readonly currentAction?: ResearchActionSpec;
@@ -2666,8 +2836,23 @@ function deriveEffectiveNextStep(input: {
   readonly latestProgress?: ResearchProgressReport;
   readonly currentQuestion?: ResearchQuestion;
   readonly humanGate?: ResearchHumanGate;
+  readonly goalAlignment?: ResearchGoalAlignment;
+  readonly activeGoal?: boolean;
   readonly maintenance?: AitpMaintenanceReceipt;
 }): ResearchEffectiveNextStep | undefined {
+  const alignment = input.goalAlignment;
+  if (alignment !== undefined && isAlignmentBlocking(alignment, input.activeGoal === true)) {
+    return {
+      text: goalAlignmentBlockerText(alignment),
+      source: 'aitp_maintenance',
+      freshness: 'blocked',
+      observedAt: input.maintenance?.refreshedAt ?? now(),
+      derivedFrom: {
+        lineSlug: input.maintenance?.workstream,
+      },
+    };
+  }
+
   const gate = input.humanGate;
   if (gate !== undefined && gate.resolvedAt === undefined) {
     return {
@@ -2812,6 +2997,9 @@ function deriveStatusProjection(input: {
   readonly currentAction?: ResearchActionSpec;
   readonly effectiveNextStep?: ResearchEffectiveNextStep;
   readonly humanGate?: ResearchHumanGate;
+  readonly goalAlignment?: ResearchGoalAlignment;
+  readonly activeGoal?: boolean;
+  readonly maintenance?: AitpMaintenanceReceipt;
   readonly alerts: readonly ResearchAlert[];
 }): ResearchStatusProjection {
   const focusQuestion = input.focus === null
@@ -2834,10 +3022,12 @@ function deriveStatusProjection(input: {
     (alert.classification ?? (alert.kind === 'blocked' ? 'active_blocker' : 'warning')) ===
     'active_blocker');
   const humanGateUnresolved = input.humanGate !== undefined && input.humanGate.resolvedAt === undefined;
+  const alignmentBlocked = input.goalAlignment !== undefined &&
+    isAlignmentBlocking(input.goalAlignment, input.activeGoal === true);
   const focusBlocked =
     focusQuestion !== undefined && !focusOutsideWorkstream && focusQuestion.workflow === 'blocked';
   let health: ResearchStatusHealth = 'ok';
-  if (humanGateUnresolved || hasBlocker || focusBlocked) {
+  if (alignmentBlocked || humanGateUnresolved || hasBlocker || focusBlocked) {
     health = 'blocked';
   } else if (input.modePhase === 'degraded') {
     health = 'degraded';
@@ -2845,6 +3035,9 @@ function deriveStatusProjection(input: {
     health = 'attention';
   }
   const stepFromOutside = focusOutsideWorkstream && input.effectiveNextStep?.source === 'question';
+  const attention = alignmentBlocked && input.goalAlignment !== undefined
+    ? [goalAlignmentBlockerText(input.goalAlignment), ...attentionAlerts.map((alert) => alert.message)]
+    : attentionAlerts.map((alert) => alert.message);
   return {
     currentLineSlug: input.currentLineSlug,
     currentQuestionId,
@@ -2852,6 +3045,6 @@ function deriveStatusProjection(input: {
     phase: input.phase,
     nextStep: stepFromOutside ? undefined : input.effectiveNextStep?.text,
     health,
-    attention: attentionAlerts.map((alert) => alert.message),
+    attention,
   };
 }

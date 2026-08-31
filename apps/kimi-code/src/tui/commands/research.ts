@@ -53,6 +53,11 @@ type ResearchCommandHost = Pick<
   | 'researchController'
 >;
 
+type ResearchGoalAlignmentRelation = Extract<
+  ResearchCommand,
+  { readonly kind: 'confirm_goal_alignment' }
+>['relation'];
+
 export type ParsedResearchCommand =
   | { readonly kind: 'status' }
   | { readonly kind: 'on'; readonly lineSlug?: string }
@@ -60,6 +65,8 @@ export type ParsedResearchCommand =
   | { readonly kind: 'pause' }
   | { readonly kind: 'resume' }
   | { readonly kind: 'manage' }
+  | { readonly kind: 'align'; readonly relation: ResearchGoalAlignmentRelation }
+  | { readonly kind: 'clear_alignment' }
   | {
       readonly kind: 'edit';
       readonly questionId: string;
@@ -116,13 +123,20 @@ const QUESTION_ACTION_SUBCOMMANDS = new Set([
   'reopen',
 ]);
 
+const GOAL_ALIGNMENT_RELATIONS = new Set<ResearchGoalAlignmentRelation>([
+  'same_program_goal',
+  'goal_parent_of_program',
+  'goal_milestone_in_program',
+  'unrelated',
+]);
+
 /**
  * Parses the deterministic `/research` command grammar.
  *
- * Reserved subcommands (`on`/`off`/`pause`/`resume`/`manage`/`status`/`edit`/
- * `focus`/`defer`/`block`/`close`/`reopen`/`line`) are only honored as the
- * first token. Free text after `--` separates the subcommand arguments from
- * the user's free-form input (wording, bounded action, reason).
+ * Reserved subcommands (`on`/`off`/`pause`/`resume`/`manage`/`status`/`align`/
+ * `edit`/`focus`/`defer`/`block`/`close`/`reopen`/`line`) are only honored as
+ * the first token. Free text after `--` separates the subcommand arguments
+ * from the user's free-form input (wording, bounded action, reason).
  */
 export function parseResearchCommand(rawArgs: string): ParsedResearchCommand {
   const args = rawArgs.trim();
@@ -133,6 +147,28 @@ export function parseResearchCommand(rawArgs: string): ParsedResearchCommand {
 
   if (first !== undefined && CONTROL_SUBCOMMANDS.has(first) && tokens.length === 1) {
     return { kind: first as 'on' | 'off' | 'pause' | 'resume' | 'manage' };
+  }
+
+  if (first === 'align') {
+    if (tokens.length !== 2) {
+      return {
+        kind: 'error',
+        severity: 'hint',
+        restoreInput: true,
+        message: 'Use `/research align <relation>` or `/research align clear`.',
+      };
+    }
+    const relation = tokens[1];
+    if (relation === 'clear') return { kind: 'clear_alignment' };
+    if (relation !== undefined && GOAL_ALIGNMENT_RELATIONS.has(relation as ResearchGoalAlignmentRelation)) {
+      return { kind: 'align', relation: relation as ResearchGoalAlignmentRelation };
+    }
+    return {
+      kind: 'error',
+      severity: 'hint',
+      restoreInput: true,
+      message: 'Relation must be same_program_goal, goal_parent_of_program, goal_milestone_in_program, unrelated, or clear.',
+    };
   }
 
   // `on` with optional `-- <line slug>`
@@ -292,6 +328,12 @@ export async function handleResearchCommand(
     case 'manage':
       await showResearchManager(host);
       return;
+    case 'align':
+      await alignResearchGoals(host, parsed.relation);
+      return;
+    case 'clear_alignment':
+      await alignResearchGoals(host);
+      return;
     case 'edit':
       await showResearchEditDialog(host, parsed.questionId, parsed.wording);
       return;
@@ -345,6 +387,67 @@ async function showResearchStatus(host: SlashCommandHost): Promise<void> {
     ),
   );
   host.state.ui.requestRender();
+}
+
+async function alignResearchGoals(
+  host: ResearchCommandHost,
+  relation?: ResearchGoalAlignmentRelation,
+): Promise<void> {
+  const session = host.requireSession();
+  const token = beginResearchRequest(host, session);
+  if (token === undefined) return;
+  let snapshot: ResearchStatusSnapshot;
+  try {
+    snapshot = await session.getResearch();
+  } catch (error) {
+    if (!isResearchRequestCurrent(host, token)) return;
+    host.showError(`Failed to read research state: ${formatErrorMessage(error)}`);
+    return;
+  }
+  if (!host.researchController.applySnapshot(token, snapshot)) return;
+  if (snapshot.mode === 'inactive') {
+    host.showStatus('No active research mode. Use `/research on` first.');
+    return;
+  }
+  const program = snapshot.program;
+  const goalId = snapshot.goalSummary?.goalId;
+  if (program === undefined || goalId === undefined) {
+    host.showStatus('Goal alignment requires both a Hakimi Goal and an observed AITP Research Goal.');
+    return;
+  }
+  const expectedRevision = snapshot.revision;
+  const command: ResearchCommand = relation === undefined
+    ? {
+        kind: 'clear_goal_alignment',
+        expectedRevision,
+        goalId,
+        topicId: program.topicId,
+        observedRevision: program.observedRevision,
+      }
+    : {
+        kind: 'confirm_goal_alignment',
+        relation,
+        expectedRevision,
+        goalId,
+        topicId: program.topicId,
+        observedRevision: program.observedRevision,
+      };
+  try {
+    const response = await session.commandResearch(command);
+    if (!applyResearchResponse(host, token, response)) return;
+  } catch (error) {
+    if (!isResearchRequestCurrent(host, token)) return;
+    host.showError(`Failed to update Goal alignment: ${formatErrorMessage(error)}`);
+    return;
+  }
+  host.track(relation === undefined ? 'research_align_clear' : 'research_align', {
+    relation: relation ?? 'clear',
+  });
+  host.showStatus(
+    relation === undefined
+      ? 'Goal-to-AITP alignment cleared.'
+      : `Goal-to-AITP alignment confirmed as ${relation}.`,
+  );
 }
 
 async function enterResearchMode(

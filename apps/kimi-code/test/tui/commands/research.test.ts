@@ -92,6 +92,20 @@ describe('parseResearchCommand', () => {
     expect(parseResearchCommand('status')).toEqual({ kind: 'status' });
   });
 
+  it('parses explicit Goal alignment confirmation and clearing', () => {
+    expect(parseResearchCommand('align goal_parent_of_program')).toEqual({
+      kind: 'align',
+      relation: 'goal_parent_of_program',
+    });
+    expect(parseResearchCommand('align clear')).toEqual({ kind: 'clear_alignment' });
+  });
+
+  it('rejects Goal alignment without an explicit relation', () => {
+    const result = parseResearchCommand('align');
+    expect(result.kind).toBe('error');
+    if (result.kind === 'error') expect(result.restoreInput).toBe(true);
+  });
+
   it('parses on without line slug', () => {
     expect(parseResearchCommand('on')).toEqual({ kind: 'on' });
   });
@@ -300,6 +314,40 @@ describe('parseResearchCommand', () => {
 });
 
 describe('handleResearchCommand manager actions', () => {
+  it('sends explicit Goal alignment commands with checkpoint identities', async () => {
+    const snapshot = makeSnapshot({
+      goalSummary: { goalId: 'goal-1', objective: 'Parent goal', status: 'active' },
+      program: {
+        topicId: 'topic-1',
+        title: 'Observed topic',
+        goalText: 'Bounded research goal',
+        goalSource: 'aitp-enter',
+        establishedAt: 1,
+        observedRevision: 3,
+      },
+    });
+    const { host, session } = makeResearchHost(snapshot);
+
+    await handleResearchCommand(host, 'align goal_parent_of_program');
+    expect(session.commandResearch).toHaveBeenNthCalledWith(1, {
+      kind: 'confirm_goal_alignment',
+      relation: 'goal_parent_of_program',
+      expectedRevision: snapshot.revision,
+      goalId: 'goal-1',
+      topicId: 'topic-1',
+      observedRevision: 3,
+    });
+
+    await handleResearchCommand(host, 'align clear');
+    expect(session.commandResearch).toHaveBeenNthCalledWith(2, {
+      kind: 'clear_goal_alignment',
+      expectedRevision: snapshot.revision,
+      goalId: 'goal-1',
+      topicId: 'topic-1',
+      observedRevision: 3,
+    });
+  });
+
   it('restores malformed question action input without sending a command', async () => {
     const { host, session } = makeResearchHost();
 

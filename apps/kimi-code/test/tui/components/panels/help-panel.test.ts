@@ -18,7 +18,10 @@ function strip(text: string): string {
 describe('HelpPanelComponent', () => {
   it('renders keyboard shortcuts + slash commands sections', () => {
     const panel = new HelpPanelComponent({
-      commands: [cmd('exit', 'Exit', ['quit', 'q'])],
+      commands: [
+        cmd('exit', 'Exit', ['quit', 'q']),
+        cmd('research', 'Manage AITP Research Mode'),
+      ],
       onClose: () => {},
     });
     const out = strip(panel.render(80).join('\n'));
@@ -30,6 +33,8 @@ describe('HelpPanelComponent', () => {
     expect(out).toMatch(/Slash commands/);
     expect(out).toMatch(/\/exit \(\/quit, \/q\)/);
     expect(out).toMatch(/Exit/);
+    expect(out).toMatch(/\/research/);
+    expect(out).toMatch(/Manage AITP Research Mode/);
   });
 
   it('sorts unprefixed commands before skill commands and by name within each group', () => {

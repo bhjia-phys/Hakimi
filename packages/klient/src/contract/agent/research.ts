@@ -44,6 +44,8 @@ import {
   type UpdateQuestionInput,
 } from './researchSchemas.js';
 import type {
+  ClearGoalAlignmentInput,
+  ConfirmGoalAlignmentInput,
   ObserveResearchRunInput,
   UpdateLineInput,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
@@ -93,6 +95,21 @@ const commitCheckpointInputSchema = z.object({
   entryId: z.string(),
 }) satisfies z.ZodType<CommitCheckpointInput>;
 
+const confirmGoalAlignmentInputSchema = z.object({
+  relation: z.enum(['same_program_goal', 'goal_parent_of_program', 'goal_milestone_in_program', 'unrelated']),
+  expectedRevision: z.number().int().nonnegative(),
+  goalId: z.string(),
+  topicId: z.string(),
+  observedRevision: z.number().int().positive(),
+}).strict() satisfies z.ZodType<ConfirmGoalAlignmentInput>;
+
+const clearGoalAlignmentInputSchema = z.object({
+  expectedRevision: z.number().int().nonnegative(),
+  goalId: z.string(),
+  topicId: z.string(),
+  observedRevision: z.number().int().positive(),
+}).strict() satisfies z.ZodType<ClearGoalAlignmentInput>;
+
 const observeResearchRunInputSchema = z.object({
   actionId: z.string(),
   expectedRevision: z.number().int().nonnegative(),
@@ -135,6 +152,8 @@ export const agentResearchContract = {
   getPendingCheckpoint: { input: z.tuple([]), output: maybe(researchCheckpointSchema) },
   getCommittedCursor: { input: z.tuple([]), output: maybe(researchCommittedCursorSchema) },
   getResearchPlan: { input: z.tuple([]), output: maybe(researchPlanSchema) },
+  confirmGoalAlignment: { input: z.tuple([confirmGoalAlignmentInputSchema]), output: noResult },
+  clearGoalAlignment: { input: z.tuple([clearGoalAlignmentInputSchema]), output: noResult },
   planAndStartAction: {
     input: z.tuple([planActionInputSchema]),
     output: researchActionSpecSchema,

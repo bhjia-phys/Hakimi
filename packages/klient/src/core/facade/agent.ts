@@ -51,7 +51,9 @@ import type {
   ResearchEvidenceReview,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/evidencePacket';
 import type {
+  ClearGoalAlignmentInput,
   CommitCheckpointInput,
+  ConfirmGoalAlignmentInput,
   ConcludeResearchActionInput,
   ResearchActionConclusion,
   CreateQuestionInput,
@@ -175,6 +177,8 @@ export interface ResearchFacade {
   getPendingCheckpoint(): Promise<ResearchCheckpoint | undefined>;
   getCommittedCursor(): Promise<ResearchCommittedCursor | undefined>;
   getResearchPlan(): Promise<ResearchPlan | undefined>;
+  confirmGoalAlignment(input: ConfirmGoalAlignmentInput): Promise<void>;
+  clearGoalAlignment(input: ClearGoalAlignmentInput): Promise<void>;
   prepareResearchPlan(input: PrepareResearchPlanInput): Promise<ResearchPlan>;
   finalizeResearchPlan(): Promise<ResearchPlan>;
   discardResearchPlan(): Promise<ResearchPlan | undefined>;
@@ -303,6 +307,10 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
         >,
       getResearchPlan: () =>
         call(scope, 'agentResearchService', 'getResearchPlan', []) as Promise<ResearchPlan | undefined>,
+      confirmGoalAlignment: (input) =>
+        call(scope, 'agentResearchService', 'confirmGoalAlignment', [input]) as Promise<void>,
+      clearGoalAlignment: (input) =>
+        call(scope, 'agentResearchService', 'clearGoalAlignment', [input]) as Promise<void>,
       prepareResearchPlan: (input) =>
         call(scope, 'agentResearchService', 'prepareResearchPlan', [input]) as Promise<ResearchPlan>,
       finalizeResearchPlan: () =>

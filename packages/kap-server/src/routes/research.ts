@@ -345,6 +345,23 @@ async function dispatchResearchCommand(
     case 'discard_plan':
       research.discardResearchPlan();
       break;
+    case 'confirm_goal_alignment':
+      research.confirmGoalAlignment({
+        relation: cmd.relation,
+        expectedRevision: cmd.expectedRevision,
+        goalId: cmd.goalId,
+        topicId: cmd.topicId,
+        observedRevision: cmd.observedRevision,
+      });
+      break;
+    case 'clear_goal_alignment':
+      research.clearGoalAlignment({
+        expectedRevision: cmd.expectedRevision,
+        goalId: cmd.goalId,
+        topicId: cmd.topicId,
+        observedRevision: cmd.observedRevision,
+      });
+      break;
   }
 }
 
@@ -369,6 +386,9 @@ const RESEARCH_CLIENT_ERRORS: ReadonlySet<string> = new Set([
   'research.human_approval_required',
   'research.human_gate_not_found',
   'research.human_gate_already_resolved',
+  'research.goal-alignment.confirmation_required',
+  'research.goal-alignment.stale',
+  'research.goal-alignment.conflict',
 ]);
 
 function sendResearchError(

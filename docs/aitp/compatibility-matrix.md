@@ -48,6 +48,8 @@ method-distillation orchestration 未实现，H6b 为 **planned，unavailable**�
 
 **Hakimi 侧更新（2026-08-30）：** Research Board 与模型上下文现在分开显示 AITP Topic 的 `Research goal` 和驱动当前阶段的 `Goal milestone`。`auto` 权限模式下，常规且任务范围内的 Research Action 不再创建第二层 durable approval gate；工具执行仍由统一 permission policy 负责。恢复时仅会继续与当前 planned action 精确绑定的旧 approval gate，并记录可审计的 standing-auto resolution；action-less、review 和 decision gate 仍保持 human-owned。默认 v2 引擎上的 `/goal resume` 现在直接请求 Goal driver 排入 continuation，不再伪造 User 消息，且可唤醒旧客户端留下的 active-but-idle Goal；legacy rollback 保留原兼容路径。这些都是 Hakimi Research/Goal 运行时与 UX 修正；本次已重新核对 AITP HEAD 和 `--help`，但不修改 AITP CLI、schema、stage 或 H5/H6b 状态。
 
+**Hakimi 侧更新（2026-08-30，Goal↔AITP Program alignment）：** Hakimi Goal、observed AITP Program（其顶层 Research Goal 只由 `enter` 观测）与 Local Research Loop 现在在 Board 和模型上下文中明确区分；Hakimi 不写 AITP Topic 或 `TOPIC.md`。用户可用 `/research align same_program_goal|goal_parent_of_program|goal_milestone_in_program|unrelated|clear` 创建或清除只在 Hakimi 内 checkpointed 的显式 binding。该 binding 不从文本相似度推断，要求当前同时存在 Goal 与 observed Program，使用 snapshot optimistic concurrency，且绝不写 AITP：无 binding 是 `confirmation_required`，Goal、Topic 或 Program observation 的变更使其 `stale`，只有 `unrelated` 是明确 `conflict`。在 active Research Mode 中，这三种状态阻止 Goal completion 与 automatic continuation；inactive Goal 不受影响。**本次只读复核外部 AITP checkout：HEAD 仍为 `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290`，工作树已有用户未提交修改，当前 shell 中 `aitp --help` 不可用；未修改外部 checkout，也未更新对方 `docs/hakimi/` handoff。** 因此不形成新的 CLI/schema/stage 兼容性声明，也不改变 H5 部分集成或 H6b **planned，unavailable** 的状态。
+
 ## 1. Command matrix (Hakimi view)
 
 | Command | AITP stage | Status | Hakimi may call | Blocked on | Future feature-detect |

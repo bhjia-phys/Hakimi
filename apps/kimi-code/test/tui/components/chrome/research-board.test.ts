@@ -504,8 +504,8 @@ describe('ResearchBoardComponent', () => {
     );
     const rows = board.render(160).map(stripAnsi);
     const indexOf = (text: string): number => rows.findIndex((row) => row.includes(text));
-    expect(indexOf('Research goal:')).toBeLessThan(indexOf('Attention:'));
-    expect(indexOf('Research goal:')).toBeLessThan(indexOf('Milestone:'));
+    expect(indexOf('AITP Research Goal (observed):')).toBeLessThan(indexOf('Attention:'));
+    expect(indexOf('AITP Research Goal (observed):')).toBeLessThan(indexOf('Milestone:'));
     expect(indexOf('Milestone:')).toBeLessThan(indexOf('Attention:'));
     expect(indexOf('Attention:')).toBeLessThan(indexOf('Now:'));
     expect(indexOf('Now:')).toBeLessThan(indexOf('Next:'));
@@ -513,6 +513,52 @@ describe('ResearchBoardComponent', () => {
     expect(rows.join('\n')).not.toContain('Current line candidate');
     expect(rows.join('\n')).not.toContain('Todo after research');
   });
+
+  it.each(['unavailable', 'confirmation_required', 'stale', 'conflict'] as const)(
+    'prioritizes active Goal alignment blocker (%s) in compact Attention',
+    (status) => {
+      const board = new ResearchBoardComponent();
+      board.setSnapshot(makeSnapshot({
+        goalSummary: { objective: 'Finish the current stage', status: 'active' },
+        goalAlignment: {
+          status,
+          reason: `alignment ${status} needs review`,
+        },
+        humanGate: {
+          gateId: 'gate-alignment',
+          kind: 'approval',
+          prompt: 'Approve the next experiment',
+          createdAt: 1,
+        },
+        alerts: [{
+          fingerprint: 'active-alert',
+          kind: 'blocked',
+          message: 'another active alert',
+          createdAt: 2,
+        }],
+        aitpMaintenance: makeMaintenance({
+          status: 'degraded',
+          degradedReason: 'stale_generation',
+        }),
+        aitpHealth: { phase: 'degraded', lastError: 'adapter probe failed' },
+      }));
+
+      const rows = board.render(160).map(stripAnsi);
+      const attentionIndex = rows.findIndex((row) => row.includes('Attention:'));
+      expect(attentionIndex).toBeGreaterThanOrEqual(0);
+      expect(rows[attentionIndex]).toContain(`Goal alignment: ${status.replaceAll('_', ' ')}`);
+      expect(rows[attentionIndex]).toContain(`alignment ${status} needs review`);
+      expect(rows[attentionIndex]).toContain('+4 more');
+      expect(rows[attentionIndex]).not.toContain('Approval needed');
+      expect(rows[attentionIndex]).not.toContain('another active alert');
+      expect(rows.join('\n')).not.toContain('Alignment:');
+      expect(rows.slice(2)).toHaveLength(5);
+
+      for (const row of board.render(48)) {
+        expect(visibleWidth(stripAnsi(row))).toBeLessThanOrEqual(48);
+      }
+    },
+  );
 
   it('puts the current line first in expanded summaries even when it is fifth', () => {
     const lines = Array.from({ length: 5 }, (_, index) => ({
@@ -1228,14 +1274,32 @@ describe('ResearchBoardComponent', () => {
         goalText: 'Establish a reproducible result with bounded uncertainty.',
         goalSource: 'aitp-enter',
         establishedAt: 1_700_000_000_000,
+        observedRevision: 1,
+      },
+      goalAlignment: {
+        status: 'aligned',
+        reason: 'Confirmed as goal_parent_of_program.',
+        binding: {
+          relation: 'goal_parent_of_program',
+          goalId: 'goal-example',
+          topicId: 'topic-example',
+          observedRevision: 1,
+          confirmedAt: 1_700_000_000_001,
+        },
       },
     }));
 
-    for (const expanded of [false, true]) {
-      board.setExpanded(expanded);
-      const output = board.render(100).map(stripAnsi).join('\n');
-      expect(output).toContain('Research goal: Establish a reproducible result with bounded uncertainty.');
-    }
+    board.setExpanded(false);
+    const compactOutput = board.render(100).map(stripAnsi).join('\n');
+    expect(compactOutput).toContain('AITP Research Goal (observed): Establish a reproducible result with bounded uncertainty.');
+    expect(compactOutput).toContain('Alignment: aligned');
+
+    board.setExpanded(true);
+    const expandedOutput = board.render(100).map(stripAnsi).join('\n');
+    expect(expandedOutput).toContain('AITP Research Goal (observed): Establish a reproducible result with bounded uncertainty.');
+    expect(expandedOutput).toContain('Goal alignment: aligned');
+    expect(expandedOutput).toContain('Alignment reason: Confirmed as goal_parent_of_program.');
+    expect(expandedOutput).toContain('Program provenance:');
   });
 
   it('keeps the Research goal slot visible when no program is established', () => {
@@ -1244,12 +1308,12 @@ describe('ResearchBoardComponent', () => {
       aitpMaintenance: makeMaintenance({ memoryStatus: 'not_established' }),
     }));
     expect(board.render(100).map(stripAnsi).join('\n')).toContain(
-      'Research goal: not established',
+      'AITP Research Goal (observed): not established',
     );
 
     board.setSnapshot(makeSnapshot());
     expect(board.render(100).map(stripAnsi).join('\n')).toContain(
-      'Research goal: not established',
+      'AITP Research Goal (observed): not established',
     );
   });
 

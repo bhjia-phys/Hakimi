@@ -575,6 +575,30 @@ export interface ResearchProgramTopic {
   goalSource: string;
 }
 
+export type ResearchGoalAlignmentRelation =
+  | 'same_program_goal'
+  | 'goal_parent_of_program'
+  | 'goal_milestone_in_program'
+  | 'unrelated';
+export type ResearchGoalAlignmentStatus =
+  | 'unavailable'
+  | 'confirmation_required'
+  | 'aligned'
+  | 'stale'
+  | 'conflict';
+export interface ResearchGoalProgramBinding {
+  relation: ResearchGoalAlignmentRelation;
+  goalId: string;
+  topicId: string;
+  observedRevision: number;
+  confirmedAt: number;
+}
+export interface ResearchGoalAlignment {
+  status: ResearchGoalAlignmentStatus;
+  reason: string;
+  binding?: ResearchGoalProgramBinding;
+}
+
 export interface AitpMaintenanceReceipt {
   status: AitpMaintenanceStatus;
   refreshedAt: number;
@@ -753,6 +777,7 @@ export interface ResearchHumanGate {
 
 export interface ResearchGoalSummary {
   /** The current Goal milestone, distinct from the ResearchPlan objective. */
+  goalId?: string;
   objective: string;
   completionCriterion?: string;
   status: 'active' | 'paused' | 'blocked' | 'complete';
@@ -771,6 +796,7 @@ export interface ResearchProgram {
   goalText: string;
   goalSource: string;
   establishedAt: number;
+  observedRevision: number;
 }
 
 export interface ResearchPeriod {
@@ -831,6 +857,7 @@ export interface ResearchStatusSnapshot {
   alerts: ResearchAlert[];
   effectiveNextStep?: ResearchEffectiveNextStep;
   goalSummary?: ResearchGoalSummary;
+  goalAlignment?: ResearchGoalAlignment;
   aitpHealth: ResearchAdapterHealth;
   aitpMaintenance?: AitpMaintenanceReceipt;
   pendingCheckpoint?: ResearchCheckpoint;
@@ -913,6 +940,8 @@ export type ResearchCommand =
       nextAction?: string;
     }
   | { kind: 'commit_checkpoint'; checkpointId: string; entryId: string }
+  | { kind: 'confirm_goal_alignment'; relation: ResearchGoalAlignmentRelation; expectedRevision: number; goalId: string; topicId: string; observedRevision: number }
+  | { kind: 'clear_goal_alignment'; expectedRevision: number; goalId: string; topicId: string; observedRevision: number }
   | { kind: 'resolve_decision'; gateId: string; resolution: string; nextPhase: ResearchPhase }
   | { kind: 'review_evidence'; packet: ResearchEvidencePacket; expectedRevision: number }
   | {

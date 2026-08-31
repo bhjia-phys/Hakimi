@@ -20,6 +20,9 @@ import type {
   ResearchPhase,
   ResearchProgram,
   ResearchProgramTopic,
+  ResearchGoalAlignment,
+  ResearchGoalAlignmentRelation,
+  ResearchGoalProgramBinding,
   ResearchPeriod,
   ResearchRunStage,
   ResearchSchedulerState,
@@ -197,6 +200,9 @@ export type {
   ResearchSchedulerState,
   ResearchProgramTopic,
   ResearchProgram,
+  ResearchGoalAlignment,
+  ResearchGoalAlignmentRelation,
+  ResearchGoalProgramBinding,
   ResearchPeriod,
   ResearchStatusHealth,
   ResearchStatusProjection,
@@ -294,6 +300,7 @@ export interface ResearchScientificSnapshot {
 }
 
 export interface ResearchGoalSummary {
+  readonly goalId?: string;
   readonly objective: string;
   readonly completionCriterion?: string;
   readonly status: 'active' | 'paused' | 'blocked' | 'complete';
@@ -320,6 +327,7 @@ export interface ResearchStatusSnapshot {
   readonly alerts: readonly ResearchAlert[];
   readonly effectiveNextStep?: ResearchEffectiveNextStep;
   readonly goalSummary?: ResearchGoalSummary;
+  readonly goalAlignment?: ResearchGoalAlignment;
   readonly aitpHealth: AitpAdapterHealth;
   readonly aitpMaintenance?: AitpMaintenanceReceipt;
   readonly pendingCheckpoint?: ResearchCheckpoint;

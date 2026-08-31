@@ -25,10 +25,12 @@
  *   `research.complete_action` / `research.record_progress` /
  *   `research.set_phase` / `research.request_human_decision` /
  *   `research.resolve_human_decision`, and the local layered-state ops
- *   `research.set_program` / `research.start_period` /
+ *   `research.set_program` / `research.confirm_goal_alignment` /
+ *   `research.clear_goal_alignment` / `research.start_period` /
  *   `research.update_period` / `research.end_period` (the topic-bound
- *   program and the auditable period window; created/updated only at clear
- *   semantic points by `AgentResearchService`) mutate it. Alert production is
+ *   program, explicit Goal-to-Program binding, and auditable period window;
+ *   created/updated only at clear semantic points by `AgentResearchService`)
+ *   mutate it. Alert production is
  *   owned by
  *   `AgentResearchService`, while these alert ops provide replayable state
  *   transitions.
@@ -81,6 +83,7 @@ import type {
   ResearchHumanGateKind,
   ResearchPhase,
   ResearchProgram,
+  ResearchGoalProgramBinding,
   ResearchPeriod,
   ResearchStatusSnapshot,
 } from './types';
@@ -227,6 +230,7 @@ export interface ResearchWorkingState {
   readonly recentStateChange: ResearchStateChangeRecord | null;
   readonly humanGate: ResearchHumanGateRecord | null;
   readonly program: ResearchProgramRecord | null;
+  readonly goalProgramBinding?: ResearchGoalProgramBindingRecord | null;
   readonly period: ResearchPeriodRecord | null;
   readonly periodHistory: readonly ResearchPeriodRecord[];
 }
@@ -341,7 +345,12 @@ export interface ResearchHumanGateRecord {
   readonly createdAt: number;
 }
 
-export interface ResearchProgramRecord extends ResearchProgram {}
+export interface ResearchProgramRecord extends Omit<ResearchProgram, 'observedRevision'> {
+  /** Absent only in a replayed record written before observedRevision existed. */
+  readonly observedRevision?: number;
+}
+
+export interface ResearchGoalProgramBindingRecord extends ResearchGoalProgramBinding {}
 
 export interface ResearchPeriodRecord extends ResearchPeriod {}
 
@@ -363,6 +372,7 @@ export const ResearchModel = defineCheckpointedModel<ResearchWorkingState>(
     recentStateChange: null,
     humanGate: null,
     program: null,
+    goalProgramBinding: null,
     period: null,
     periodHistory: [],
   }),
@@ -454,6 +464,8 @@ declare module '#/wire/types' {
     'research.request_human_decision': typeof researchRequestHumanDecision;
     'research.resolve_human_decision': typeof researchResolveHumanDecision;
     'research.set_program': typeof researchSetProgram;
+    'research.confirm_goal_alignment': typeof researchConfirmGoalAlignment;
+    'research.clear_goal_alignment': typeof researchClearGoalAlignment;
     'research.start_period': typeof researchStartPeriod;
     'research.update_period': typeof researchUpdatePeriod;
     'research.end_period': typeof researchEndPeriod;
@@ -1399,22 +1411,47 @@ export const researchResolveHumanDecision = ResearchModel.defineOp('research.res
 });
 
 export const researchSetProgram = ResearchModel.defineOp('research.set_program', {
-  schema: z.object({
-    topicId: z.string().min(1).max(200),
-    title: z.string().min(1).max(500),
-    goalText: z.string().max(8000),
-    goalSource: z.string().max(500),
-    establishedAt: z.number(),
-  }),
+  schema: z.union([
+    z.object({
+      topicId: z.string().min(1).max(200),
+      title: z.string().min(1).max(500),
+      goalText: z.string().max(8000),
+      goalSource: z.string().max(500),
+      establishedAt: z.number(),
+      observedRevision: z.number().int().positive().optional(),
+    }).strict(),
+    z.object({ clear: z.literal(true) }).strict(),
+  ]),
   apply: (s, p) => {
+    if ('clear' in p) {
+      if (s.current.program === null && s.current.goalProgramBinding === null) return s;
+      return {
+        ...s,
+        current: {
+          ...s.current,
+          program: null,
+          goalProgramBinding: null,
+          revision: s.current.revision + 1,
+        },
+      };
+    }
     const program = s.current.program;
+    const priorObservedRevision = program?.observedRevision ?? 1;
+    const sameTopic = program?.topicId === p.topicId;
+    const contentsChanged = sameTopic && (
+      program.title !== p.title ||
+      program.goalText !== p.goalText ||
+      program.goalSource !== p.goalSource
+    );
+    const observedRevision = p.observedRevision ?? (
+      sameTopic ? priorObservedRevision + (contentsChanged ? 1 : 0) : 1
+    );
     if (
       program !== null &&
-      program.topicId === p.topicId &&
-      program.title === p.title &&
-      program.goalText === p.goalText &&
-      program.goalSource === p.goalSource &&
-      program.establishedAt === p.establishedAt
+      sameTopic &&
+      !contentsChanged &&
+      program.establishedAt === p.establishedAt &&
+      priorObservedRevision === observedRevision
     ) return s;
     const next: ResearchProgramRecord = {
       topicId: p.topicId,
@@ -1422,12 +1459,98 @@ export const researchSetProgram = ResearchModel.defineOp('research.set_program',
       goalText: p.goalText,
       goalSource: p.goalSource,
       establishedAt: p.establishedAt,
+      observedRevision,
     };
     return {
       ...s,
       current: {
         ...s.current,
         program: next,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+const ResearchGoalAlignmentRelationSchema = z.enum([
+  'same_program_goal',
+  'goal_parent_of_program',
+  'goal_milestone_in_program',
+  'unrelated',
+]);
+
+const ResearchGoalAlignmentBindingSchema = z.object({
+  relation: ResearchGoalAlignmentRelationSchema,
+  goalId: z.string().min(1).max(200),
+  topicId: z.string().min(1).max(200),
+  observedRevision: z.number().int().positive(),
+  confirmedAt: z.number(),
+}).strict();
+
+const ResearchGoalAlignmentMutationSchema = ResearchGoalAlignmentBindingSchema.extend({
+  expectedRevision: z.number().int().nonnegative(),
+}).strict();
+
+export const researchConfirmGoalAlignment = ResearchModel.defineOp('research.confirm_goal_alignment', {
+  schema: ResearchGoalAlignmentMutationSchema,
+  apply: (s, p) => {
+    const program = s.current.program;
+    if (
+      s.current.revision !== p.expectedRevision ||
+      program === null ||
+      program.topicId !== p.topicId ||
+      (program.observedRevision ?? 1) !== p.observedRevision
+    ) return s;
+    const binding: ResearchGoalProgramBindingRecord = {
+      relation: p.relation,
+      goalId: p.goalId,
+      topicId: p.topicId,
+      observedRevision: p.observedRevision,
+      confirmedAt: p.confirmedAt,
+    };
+    const current = s.current.goalProgramBinding;
+    if (
+      current !== undefined &&
+      current !== null &&
+      current.relation === binding.relation &&
+      current.goalId === binding.goalId &&
+      current.topicId === binding.topicId &&
+      current.observedRevision === binding.observedRevision &&
+      current.confirmedAt === binding.confirmedAt
+    ) return s;
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        goalProgramBinding: binding,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchClearGoalAlignment = ResearchModel.defineOp('research.clear_goal_alignment', {
+  schema: z.object({
+    expectedRevision: z.number().int().nonnegative(),
+    goalId: z.string().min(1).max(200),
+    topicId: z.string().min(1).max(200),
+    observedRevision: z.number().int().positive(),
+  }).strict(),
+  apply: (s, p) => {
+    const program = s.current.program;
+    if (
+      s.current.revision !== p.expectedRevision ||
+      program === null ||
+      program.topicId !== p.topicId ||
+      (program.observedRevision ?? 1) !== p.observedRevision ||
+      s.current.goalProgramBinding === undefined ||
+      s.current.goalProgramBinding === null
+    ) return s;
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        goalProgramBinding: null,
         revision: s.current.revision + 1,
       },
     };

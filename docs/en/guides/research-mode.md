@@ -16,7 +16,7 @@ Research Mode has three hard prerequisites. Hakimi checks them only after explic
 
 When all three are satisfied, the adapter enters the `ready` phase and the supported AITP read/write tool surface becomes available to the agent. The adapter does not expose, call, or parse the upstream `backfill-0.1` success envelope, and it does not implement `sha256-once:` or `check-policy` semantics.
 
-For theoretical-physics work, the bundled `theory-physics` plugin is an optional domain pack and the single upper-layer handbook for sustained work. It can be discovered while Research Mode is inactive and routes a sustained request through Research Mode admission, current Line / Question / Focus and stage Goal alignment, one bounded Research Action, and on-demand AITP delegation. An ordinary one-off physics answer does not need Research Mode.
+For theoretical-physics work, the bundled `theory-physics` plugin is an optional domain pack and the single upper-layer handbook for sustained work. It can be discovered while Research Mode is inactive and routes a sustained request through Research Mode admission, the current Line / Question / Focus, an explicitly confirmed Goal–Program relationship when one is needed, one bounded Research Action, and on-demand AITP delegation. An ordinary one-off physics answer does not need Research Mode.
 
 The external `aitp-research-protocol` plugin remains the protocol authority. Its `using-aitp` and `distilling-methods` skills stay independent and active-only: durable scientific deltas are delegated to `using-aitp`, while potentially reusable methods are delegated to `distilling-methods` only when that plugin is installed, Research Mode is active, and the skill is currently visible. Otherwise retain the method candidate and evidence without claiming distillation or publication. Hakimi does not copy their CLI, schema, method-card, trial, or approval rules; it does not automatically write Topic Goals, `resolves`, or method cards. After `EnterAITPMode`, use `GetResearchStatus`; if it remains `probing`, wait for `ready` or `degraded` without busy polling or using a bare CLI.
 
@@ -93,12 +93,12 @@ The paused state is included in the snapshot injected into subsequent model step
 
 When Research Mode is active, a **Research Board** appears above the input area in both TUI and Web. The default compact Board is deliberately limited to the decisions needed at a glance:
 
-- **Research goal**: the durable goal from the current AITP Topic, or an explicit "not established" state
-- **Attention**: one unresolved human gate, current blocker, maintenance problem, or adapter error, plus a count when more items exist; the row is absent when nothing needs attention
+- **Research goal**: the top-level goal observed from the current AITP Program, or an explicit "not established" state
+- **Attention**: an active Goal–Program alignment blocker, unresolved human gate, current blocker, maintenance problem, or adapter error, plus a count when more items exist; alignment blockers take priority, and the row is absent when nothing needs attention
 - **Now**: one current unit of work, selected from an active run or action, latest progress, focused question, state change, or current line
 - **Next**: one effective next step with its source, or an explicit missing-next state
 
-TUI also keeps the separate **Goal milestone** in one compact line because it owns cross-turn continuation. Long compact narratives are clipped to the available terminal width or two Web lines; expanding the Board restores the complete text.
+TUI also keeps the separate **Goal milestone** in one compact line because it owns cross-turn continuation, and displays the local Goal–Program alignment status separately. Long compact narratives are clipped to the available terminal width or two Web lines; expanding the Board restores the complete text.
 
 The phase badge exposes `probing`, `ready`, or `degraded`. Mode, loop, question, focus, and checkpoint changes publish one complete snapshot to both surfaces. TUI rejects stale cold hydration; Web serializes same-session mutations and prevents an older HTTP response from overwriting a newer live WebSocket update.
 
@@ -115,6 +115,23 @@ For HPC work, the loop can record an explicit observation bound to the current R
 When the agent proposes candidate questions for confirmation, it may register them as open working state so they appear on the board. The intended behavior is to wait for confirmation before setting one as Focus or persisting a durable AITP decision, but candidate confirmation is not a runtime-enforced guard on `SetResearchFocus`. Alerts and a generic human gate are implemented; `ResolveResearchDecision` resolves runtime state but does not automatically write an AITP `decision` Entry. A Hakimi Research Line and an AITP workstream are separate namespaces: if their slugs differ, the agent may read the existing workstream but must not silently create an alias or use the Research Line slug for persistence.
 
 The Board is read-only. Use `/research manage` or a direct `/research` subcommand for changes. Both managers are line-first, but their controls differ. When an unresolved gate or active alert exists, the TUI opens an **Attention view** first: press `R` to enter a resolution and choose the phase to resume, `A` to acknowledge the alert, or `L` to return to the lines. In Attention view, `R` means resolution rather than reopen. After attention items are cleared, TUI selects a Research Line and opens its questions with keyboard commands. Web shows a clickable line list beside Line, Question, Science, and Checkpoint sections; **Science** can resolve the current human decision with an explicit next phase, acknowledge active alerts, review a typed evidence packet, or record an observation for the current external run. These controls update Hakimi Research working state through the Research endpoint and do not write the AITP ledger.
+
+## Goal–Program alignment
+
+The Hakimi Goal, the observed AITP Program, and the Local Research Loop are distinct records. The Program's top-level AITP Research Goal is observed only through `enter`; Hakimi never writes an AITP Topic or `TOPIC.md`.
+
+Before an active Research Goal can complete or continue automatically, explicitly confirm its relationship to the observed Program. The checkpointed binding exists only in Hakimi and is never inferred from text similarity:
+
+| Relation | Meaning |
+| --- | --- |
+| `same_program_goal` | The Hakimi Goal and observed Program express the same goal. |
+| `goal_parent_of_program` | The Hakimi Goal is broader and the observed Program is one of its children. |
+| `goal_milestone_in_program` | The Hakimi Goal is a milestone within the observed Program. |
+| `unrelated` | The Goal and observed Program are explicitly unrelated. This is the only explicit conflict. |
+
+Without a binding, the status is `confirmation_required`. If the active Goal has no observed AITP Program, the status is `unavailable`; this also blocks completion and automatic continuation until the Program is observed again. A change to the Hakimi Goal, AITP Topic, or observed Program revision makes an existing binding `stale`; only `unrelated` makes it `conflict`. In active Research Mode, `unavailable`, `confirmation_required`, `stale`, and `conflict` block Goal completion and automatic continuation. An inactive Goal is unaffected.
+
+The command requires both a current Hakimi Goal and an observed AITP Program. It uses the captured Research snapshot revision for optimistic concurrency, so a stale snapshot must be refreshed before retrying. The TUI and Web Board can confirm or clear the binding; neither operation writes AITP.
 
 ## Steering the research
 
@@ -143,6 +160,8 @@ For precise control without opening the manager:
 | `/research close <questionId> [-- <reason>]` | Close a question |
 | `/research reopen <questionId> [-- <reason>]` | Reopen a previously closed question |
 | `/research line <slug>` | Switch the current research line |
+| `/research align same_program_goal\|goal_parent_of_program\|goal_milestone_in_program\|unrelated` | Explicitly confirm the local Goal–Program relation |
+| `/research align clear` | Clear the local Goal–Program binding |
 
 Example:
 

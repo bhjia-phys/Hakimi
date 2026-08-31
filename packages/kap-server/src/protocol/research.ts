@@ -275,6 +275,7 @@ export const researchCheckpointSchema = z.object({
 });
 
 export const researchGoalSummarySchema = z.object({
+  goalId: z.string().optional(),
   objective: z.string(),
   completionCriterion: z.string().optional(),
   status: z.enum(['active', 'paused', 'blocked', 'complete']),
@@ -445,8 +446,22 @@ export const researchProgramSchema = z.object({
   goalText: z.string(),
   goalSource: z.string(),
   establishedAt: z.number(),
+  observedRevision: z.number().int().positive(),
 }).strict();
 export type ResearchProgram = z.infer<typeof researchProgramSchema>;
+
+export const researchGoalAlignmentSchema = z.object({
+  status: z.enum(['unavailable', 'confirmation_required', 'aligned', 'stale', 'conflict']),
+  reason: z.string(),
+  binding: z.object({
+    relation: z.enum(['same_program_goal', 'goal_parent_of_program', 'goal_milestone_in_program', 'unrelated']),
+    goalId: z.string(),
+    topicId: z.string(),
+    observedRevision: z.number().int().positive(),
+    confirmedAt: z.number(),
+  }).strict().optional(),
+}).strict();
+export type ResearchGoalAlignment = z.infer<typeof researchGoalAlignmentSchema>;
 
 export const researchPeriodSchema = z.object({
   id: z.string(),
@@ -507,6 +522,7 @@ export const researchStatusSnapshotSchema = z.object({
   alerts: z.array(researchAlertSchema),
   effectiveNextStep: researchEffectiveNextStepSchema.optional(),
   goalSummary: researchGoalSummarySchema.optional(),
+  goalAlignment: researchGoalAlignmentSchema.optional(),
   aitpHealth: aitpAdapterHealthSchema,
   aitpMaintenance: aitpMaintenanceReceiptSchema.optional(),
   pendingCheckpoint: researchCheckpointSchema.optional(),
@@ -716,6 +732,21 @@ export const researchCommandSchema = z.discriminatedUnion('kind', [
   }).strict(),
   z.object({ kind: z.literal('finalize_plan') }).strict(),
   z.object({ kind: z.literal('discard_plan') }).strict(),
+  z.object({
+    kind: z.literal('confirm_goal_alignment'),
+    relation: z.enum(['same_program_goal', 'goal_parent_of_program', 'goal_milestone_in_program', 'unrelated']),
+    expectedRevision: z.number().int().nonnegative(),
+    goalId: z.string(),
+    topicId: z.string(),
+    observedRevision: z.number().int().positive(),
+  }).strict(),
+  z.object({
+    kind: z.literal('clear_goal_alignment'),
+    expectedRevision: z.number().int().nonnegative(),
+    goalId: z.string(),
+    topicId: z.string(),
+    observedRevision: z.number().int().positive(),
+  }).strict(),
 ]);
 export type ResearchCommand = z.infer<typeof researchCommandSchema>;
 

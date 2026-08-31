@@ -76,6 +76,35 @@ export interface ResearchProgram {
   readonly goalText: string;
   readonly goalSource: string;
   readonly establishedAt: number;
+  /** Revision of the observed topic contents; resets when topicId changes. */
+  readonly observedRevision: number;
+}
+
+export type ResearchGoalAlignmentRelation =
+  | 'same_program_goal'
+  | 'goal_parent_of_program'
+  | 'goal_milestone_in_program'
+  | 'unrelated';
+
+export type ResearchGoalAlignmentStatus =
+  | 'unavailable'
+  | 'confirmation_required'
+  | 'aligned'
+  | 'stale'
+  | 'conflict';
+
+export interface ResearchGoalProgramBinding {
+  readonly relation: ResearchGoalAlignmentRelation;
+  readonly goalId: string;
+  readonly topicId: string;
+  readonly observedRevision: number;
+  readonly confirmedAt: number;
+}
+
+export interface ResearchGoalAlignment {
+  readonly status: ResearchGoalAlignmentStatus;
+  readonly reason: string;
+  readonly binding?: ResearchGoalProgramBinding;
 }
 
 /**

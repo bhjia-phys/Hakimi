@@ -16,7 +16,7 @@
 
 当三项条件全部满足时，适配器进入 `ready` 阶段，受支持的 AITP 读写工具面对 Agent 可用。适配器不暴露、不调用、不解析 upstream 的 `backfill-0.1` 成功 envelope，也不实现 `sha256-once:` 或 `check-policy` 语义。
 
-对于理论物理研究，仓库内置的 `theory-physics` plugin 是可选的 domain pack，也是持续科研的唯一上层使用手册。即使 Research Mode 处于 inactive，它也可以被发现，并将持续请求路由为：进入 Research Mode、对齐当前 Line / Question / Focus 与阶段 Goal、执行一个有界 Research Action，再按需转交 AITP。普通的一次性物理问答不需要进入 Research Mode。
+对于理论物理研究，仓库内置的 `theory-physics` plugin 是可选的 domain pack，也是持续科研的唯一上层使用手册。即使 Research Mode 处于 inactive，它也可以被发现，并将持续请求路由为：进入 Research Mode、处理当前 Line / Question / Focus、在需要时显式确认 Goal↔Program 关系、执行一个有界 Research Action，再按需转交 AITP。普通的一次性物理问答不需要进入 Research Mode。
 
 外部的 `aitp-research-protocol` plugin 仍是协议 authority。它的 `using-aitp` 与 `distilling-methods` skill 保持独立且仅在 active 时可用：durable scientific delta 转交 `using-aitp`；只有在该 plugin 已安装、Research Mode active 且该 Skill 当前可见时，才按需转交 `distilling-methods`。否则只保留 method candidate 与证据，不得声称已完成蒸馏或发布。Hakimi 不复制它们的 CLI、schema、method-card、trial 或 approval 规则；不会自动写 Topic Goal、`resolves` 或 method card。调用 `EnterAITPMode` 后使用 `GetResearchStatus`；如果仍为 `probing`，应等待其收敛为 `ready` 或 `degraded`，不得忙轮询或改用裸 CLI。
 
@@ -93,12 +93,12 @@ maintenance receipt 和上下文注入只暴露安全摘要：Working Note age�
 
 研究模式激活后，**研究面板**（Research Board）会同时出现在 TUI 和 Web 的输入区上方。默认紧凑 Board 只保留一眼就需要判断的信息：
 
-- **Research goal**：来自当前 AITP Topic 的持久目标；尚无对应 Topic 时明确显示「尚未建立」
-- **Attention**：只显示一个未解决的人工门禁、当前阻塞、维护问题或适配器错误；存在更多项目时显示数量，没有需关注项目时隐藏整行
+- **Research goal**：从当前 AITP Program 观测到的顶层目标；尚未建立时明确显示「尚未建立」
+- **Attention**：优先显示 active Goal–Program 对齐阻塞，其次显示一个未解决的人工门禁、当前阻塞、维护问题或适配器错误；存在更多项目时显示数量，没有需关注项目时隐藏整行
 - **Now**：只显示一个当前工作单元，依次从活跃 run 或 action、最新 progress、焦点问题、状态变化或当前研究线中选择
 - **Next**：只显示一个带来源的 effective next step；缺失时明确提示尚未记录
 
-TUI 还会用一行保留独立的 **Goal milestone**，因为它负责跨轮次 continuation。紧凑态的长叙事会按终端可用宽度或 Web 两行截断；展开 Board 后会恢复完整文本。
+TUI 还会用一行保留独立的 **Goal milestone**，因为它负责跨轮次 continuation，并单独显示本地 Goal–Program alignment 状态。紧凑态的长叙事会按终端可用宽度或 Web 两行截断；展开 Board 后会恢复完整文本。
 
 phase badge 会显示 `probing`、`ready` 或 `degraded`。模式、循环、问题、焦点和检查点变化会向两个 surface 发布一个完整快照。TUI 会拒绝 stale cold hydration；Web 会串行处理同一 session 的 mutation，并阻止较旧的 HTTP response 覆盖更新的 live WebSocket update。
 
@@ -115,6 +115,23 @@ TUI 还会把当前 session 的 `TodoList` 投影到展开态的 **External Todo
 Agent 提出候选问题供你确认时，可以先把它们登记为开放 working state，使其出现在 Board 上。预期行为是在确认前不把候选设为 Focus、不持久化为 AITP decision，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard。alerts 和 generic human gate 已实现；`ResolveResearchDecision` 只解析 runtime state，不会自动写入 AITP `decision` Entry。Hakimi Research Line 与 AITP workstream 属于不同命名空间：如果两者 slug 不同，Agent 可以读取已有 workstream，但不得静默创建 alias，也不得直接用 Research Line slug 进行持久化。
 
 Board 为只读。变更请使用 `/research manage` 或直接 `/research` 子命令。两个 Manager 都以研究线为第一层，但控件不同。如果存在 unresolved gate 或 active alert，TUI 会先打开 **Attention view**：按 `R` 输入 resolution 并选择要恢复的 phase，按 `A` acknowledge alert，按 `L` 返回 lines；这里的 `R` 表示 resolution，不是 reopen。清除 attention 项目后，TUI 先选择 Research Line，再用键盘命令打开问题。Web 在可点击研究线列表旁提供 Line、Question、Science 和 Checkpoint 区；**Science** 可用显式 next phase 解决当前 human decision、acknowledge active alert、review typed evidence packet，或记录当前 external run 的 observation。这些控件通过 Research endpoint 更新 Hakimi Research working state，不写入 AITP ledger。
+
+## Goal–Program 对齐
+
+Hakimi Goal、observed AITP Program 和 Local Research Loop 是彼此独立的记录。Program 的顶层 AITP Research Goal 只通过 `enter` 观测；Hakimi 从不写 AITP Topic 或 `TOPIC.md`。
+
+active Research Goal 要完成或自动继续前，必须显式确认它与 observed Program 的关系。该 binding 只在 Hakimi 中 checkpointed，绝不根据文本相似度推断：
+
+| 关系 | 含义 |
+| --- | --- |
+| `same_program_goal` | Hakimi Goal 与 observed Program 表达同一目标。 |
+| `goal_parent_of_program` | Hakimi Goal 更宽泛，observed Program 是其子项之一。 |
+| `goal_milestone_in_program` | Hakimi Goal 是 observed Program 内的一个 milestone。 |
+| `unrelated` | Goal 与 observed Program 被显式确认为无关；这是唯一的明确 conflict。 |
+
+没有 binding 时状态为 `confirmation_required`。如果 active Goal 尚未观测到 AITP Program，状态为 `unavailable`；在再次观测到 Program 前，这同样会阻止 Goal completion 与 automatic continuation。Hakimi Goal、AITP Topic 或 observed Program revision 变更时，已有 binding 变为 `stale`；只有 `unrelated` 会形成 `conflict`。在 active Research Mode 中，`unavailable`、`confirmation_required`、`stale` 和 `conflict` 都会阻止 Goal completion 与 automatic continuation；inactive Goal 不受影响。
+
+该命令要求当前同时存在 Hakimi Goal 和 observed AITP Program。它使用捕获的 Research snapshot revision 实现乐观并发，因此 stale snapshot 必须刷新后再试。TUI 和 Web Board 都可以确认或清除 binding；这两种操作都绝不写入 AITP。
 
 ## 研究方向引导
 
@@ -143,6 +160,8 @@ Board 为只读。变更请使用 `/research manage` 或直接 `/research` 子�
 | `/research close <questionId> [-- <原因>]` | 关闭一个问题 |
 | `/research reopen <questionId> [-- <原因>]` | 重新打开已关闭的问题 |
 | `/research line <slug>` | 切换当前研究线 |
+| `/research align same_program_goal\|goal_parent_of_program\|goal_milestone_in_program\|unrelated` | 显式确认本地 Goal–Program 关系 |
+| `/research align clear` | 清除本地 Goal–Program binding |
 
 示例：
 

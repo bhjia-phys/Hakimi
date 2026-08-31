@@ -59,9 +59,9 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 
 ## Research Mode 与 AITP
 
-Research Mode 默认可发现，但每个新 session 都从 inactive 开始。对于持续工作，`theory-physics` 可以指导模型调用 `EnterAITPMode`、等待 authoritative probe status、对齐当前课题与 Goal，并执行有界行动；inactive session 的 AITP I/O 为零。Research Board 和模型上下文会区分 durable AITP Topic 的 **Research goal** 与当前 **Goal milestone**。进入 Research Mode 不会调度模型轮次，跨 turn continuation 仅由 Goal 负责，Plan 只是行动内短期 overlay。在 `auto` 权限模式下，常规且任务范围内的 Research Action 使用统一的工具权限策略，不会再创建第二层 durable approval gate；旧 session 留下的 matching action approval 会以可审计的 standing auto authorization 继续执行。
+Research Mode 默认可发现，但每个新 session 都从 inactive 开始。对于持续工作，`theory-physics` 可以指导模型调用 `EnterAITPMode`、等待 authoritative probe status，并执行有界行动；inactive session 的 AITP I/O 为零。Research Board 和模型上下文会明确区分 Hakimi Goal、observed AITP Program（含其顶层 **Research goal**）和 Local Research Loop。Hakimi 只通过 AITP `enter` 观测该顶层目标，从不写 `TOPIC.md` 或 AITP Topic。Goal↔Program alignment 是仅在本地 checkpointed、由用户显式确认的 binding，不会根据文本相似度推断。在 active Research Mode 中，缺少 binding、binding stale 或明确 conflict 都会阻止 Goal completion 和 automatic continuation；inactive Goal 不受影响。进入 Research Mode 不会调度模型轮次，跨 turn continuation 仅由 Goal 负责，Plan 只是行动内短期 overlay。在 `auto` 权限模式下，常规且任务范围内的 Research Action 使用统一的工具权限策略，不会再创建第二层 durable approval gate；旧 session 留下的 matching action approval 会以可审计的 standing auto authorization 继续执行。
 
-[AITP](docs/aitp/) 是可选的外部持久证据账本，通过其 CLI 与文件使用；它不是 Hakimi 的第二套 runtime 或数据库。外部的 `using-aitp` 与 `distilling-methods` skill 仍保持协议 authority 且按需调用；Hakimi 不会自动初始化/adopt/backfill workspace，不增加 `/research goal`，也没有计划中的 H6b coordinator。AITP 不可用时，Research Mode 会明确显示 degraded，并阻止 durable write、checkpoint 和 active Research Goal completion。详细兼容性与运行边界见 [AITP 文档](docs/aitp/)。
+[AITP](docs/aitp/) 是可选的外部持久证据账本，通过其 CLI 与文件使用；它不是 Hakimi 的第二套 runtime 或数据库。外部的 `using-aitp` 与 `distilling-methods` skill 仍保持协议 authority 且按需调用；Hakimi 不会自动初始化/adopt/backfill workspace，不增加 `/research goal`，也没有计划中的 H6b coordinator。本地 alignment binding 绝不写入 AITP。AITP 不可用时，Research Mode 会明确显示 degraded，并阻止 durable write、checkpoint 和 active Research Goal completion。详细兼容性与运行边界见 [AITP 文档](docs/aitp/)。
 
 ## 从源码安装
 

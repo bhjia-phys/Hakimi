@@ -1,5 +1,6 @@
 import type {
   ResearchCommand,
+  ResearchGoalAlignmentRelation,
   ResearchStatusSnapshot,
 } from '../api/types';
 
@@ -130,6 +131,12 @@ const CONTROL_SUBCOMMANDS = new Set([
   'resume',
   'manage',
 ]);
+const GOAL_ALIGNMENT_RELATIONS = new Set<ResearchGoalAlignmentRelation>([
+  'same_program_goal',
+  'goal_parent_of_program',
+  'goal_milestone_in_program',
+  'unrelated',
+]);
 const QUESTION_SUBCOMMANDS = new Set([
   'edit',
   'focus',
@@ -146,7 +153,8 @@ export type ResearchSlashErrorCode =
   | 'missing_question'
   | 'missing_separator'
   | 'missing_text'
-  | 'text_too_long';
+  | 'text_too_long'
+  | 'invalid_alignment';
 
 export type ParsedResearchSlashCommand =
   | { kind: 'status' }
@@ -155,6 +163,8 @@ export type ParsedResearchSlashCommand =
   | { kind: 'pause' }
   | { kind: 'resume' }
   | { kind: 'manage' }
+  | { kind: 'align'; relation: ResearchGoalAlignmentRelation }
+  | { kind: 'clear_alignment' }
   | { kind: 'line'; lineSlug: string }
   | { kind: 'edit'; questionId: string; wording: string }
   | { kind: 'focus'; questionId: string; boundedAction: string }
@@ -187,6 +197,15 @@ export function parseResearchSlashCommand(rawArgs: string): ParsedResearchSlashC
 
   if (first !== undefined && CONTROL_SUBCOMMANDS.has(first) && tokens.length === 1) {
     return { kind: first as 'on' | 'off' | 'pause' | 'resume' | 'manage' };
+  }
+
+  if (first === 'align') {
+    if (tokens.length !== 2) return { kind: 'error', code: 'invalid_alignment' };
+    const relation = tokens[1];
+    if (relation === 'clear') return { kind: 'clear_alignment' };
+    return GOAL_ALIGNMENT_RELATIONS.has(relation as ResearchGoalAlignmentRelation)
+      ? { kind: 'align', relation: relation as ResearchGoalAlignmentRelation }
+      : { kind: 'error', code: 'invalid_alignment' };
   }
 
   if (first === 'on') {
@@ -258,13 +277,16 @@ function parseQuestionCommand(
 export type ResearchSlashResolutionError =
   | 'snapshot_unavailable'
   | 'question_not_found'
-  | 'line_not_found';
+  | 'line_not_found'
+  | 'goal_alignment_unavailable';
 
 export function researchSlashNeedsSnapshot(parsed: ParsedResearchSlashCommand): boolean {
   switch (parsed.kind) {
     case 'pause':
     case 'resume':
     case 'line':
+    case 'align':
+    case 'clear_alignment':
     case 'edit':
     case 'focus':
     case 'defer':
@@ -287,6 +309,12 @@ export function researchCommandResolutionError(
 ): ResearchSlashResolutionError | null {
   if (!researchSlashNeedsSnapshot(parsed)) return null;
   if (snapshot === null) return 'snapshot_unavailable';
+
+  if (parsed.kind === 'align' || parsed.kind === 'clear_alignment') {
+    return snapshot.goalSummary?.goalId !== undefined && snapshot.program !== undefined
+      ? null
+      : 'goal_alignment_unavailable';
+  }
 
   if (parsed.kind === 'line') {
     return snapshot.lines.some((line) => line.slug === parsed.lineSlug) ? null : 'line_not_found';
@@ -356,6 +384,33 @@ export function researchCommandFromSlash(
     case 'status':
     case 'manage':
       return null;
+    case 'align': {
+      const goal = snapshot?.goalSummary;
+      const program = snapshot?.program;
+      return goal?.goalId === undefined || program === undefined
+        ? null
+        : {
+            kind: 'confirm_goal_alignment',
+            relation: parsed.relation,
+            expectedRevision: snapshot!.revision,
+            goalId: goal.goalId,
+            topicId: program.topicId,
+            observedRevision: program.observedRevision,
+          };
+    }
+    case 'clear_alignment': {
+      const goal = snapshot?.goalSummary;
+      const program = snapshot?.program;
+      return goal?.goalId === undefined || program === undefined
+        ? null
+        : {
+            kind: 'clear_goal_alignment',
+            expectedRevision: snapshot!.revision,
+            goalId: goal.goalId,
+            topicId: program.topicId,
+            observedRevision: program.observedRevision,
+          };
+    }
     case 'on':
       return { kind: 'enter_mode', actor: 'user', lineSlug: parsed.lineSlug };
     case 'off':

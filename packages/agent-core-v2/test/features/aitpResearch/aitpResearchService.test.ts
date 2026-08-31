@@ -44,6 +44,7 @@ import {
   researchCommitCheckpoint,
   researchAcknowledgeCheckpoint,
   researchCreateLine,
+  researchSetProgram,
 } from '#/features/aitpResearch/aitpResearchOps';
 import { PlanModel, planModeEnter, planModeExit, planResolution } from '#/features/plan/planOps';
 import { ResearchPlanModel } from '#/features/aitpResearch/researchPlanOps';
@@ -1333,7 +1334,8 @@ describe('Goal display projection', () => {
         makeStubGoalService(makeGoalSnapshot(status)),
       );
 
-      expect(svc.getSnapshot().goalSummary).toEqual({
+      expect(svc.getSnapshot().goalSummary).toMatchObject({
+        goalId: 'goal-1',
         objective: 'Test goal',
         status,
         turnBudget: 3,
@@ -1354,7 +1356,8 @@ describe('Goal display projection', () => {
       makeStubGoalService(makeGoalSnapshot('active', null)),
     );
 
-    expect(svc.getSnapshot().goalSummary).toEqual({
+    expect(svc.getSnapshot().goalSummary).toMatchObject({
+      goalId: 'goal-1',
       objective: 'Test goal',
       status: 'active',
     });
@@ -1376,7 +1379,8 @@ describe('Goal display projection', () => {
       })),
     );
 
-    expect(svc.getSnapshot().goalSummary).toEqual({
+    expect(svc.getSnapshot().goalSummary).toMatchObject({
+      goalId: 'goal-1',
       objective: 'Test goal',
       completionCriterion: 'Obtain a converged solution.',
       status: 'blocked',
@@ -1385,6 +1389,70 @@ describe('Goal display projection', () => {
       terminalReason: 'The available evidence is contradictory.',
       waitingFor: { taskIds: ['task-1', 'task-2'], policy: 'all' },
     });
+  });
+
+  it('requires explicit confirmation even when Goal and Program text match', async () => {
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    wire.dispatch(researchSetProgram({
+      topicId: 'topic-1', title: 'Topic', goalText: 'Test goal', goalSource: 'enter', establishedAt: 1,
+    }));
+    const svc = new AgentResearchService(
+      wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true }), makeStubAdapter(), makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('active')),
+    );
+    expect(svc.getSnapshot().goalAlignment).toMatchObject({ status: 'confirmation_required' });
+  });
+
+  it('confirms explicitly different Goal and Program text, then detects goal and topic staleness', async () => {
+    let currentGoal: GoalSnapshot | null = makeGoalSnapshot('active', 3, { objective: 'Deliver the parent project goal.' });
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    wire.dispatch(researchSetProgram({
+      topicId: 'topic-1', title: 'Topic', goalText: 'Prove the bounded subproblem.', goalSource: 'enter', establishedAt: 1,
+    }));
+    const svc = new AgentResearchService(
+      wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true }), makeStubAdapter(), makeToolExecutorStub(),
+      makeStubGoalService(() => currentGoal),
+    );
+    const before = svc.getSnapshot();
+    expect(() => svc.confirmGoalAlignment({
+      relation: 'goal_parent_of_program', expectedRevision: before.revision + 1, goalId: 'goal-1', topicId: 'topic-1', observedRevision: 1,
+    })).toThrow('Goal alignment confirmation is stale');
+    svc.confirmGoalAlignment({
+      relation: 'goal_parent_of_program', expectedRevision: before.revision, goalId: 'goal-1', topicId: 'topic-1', observedRevision: 1,
+    });
+    expect(svc.getSnapshot().goalAlignment).toMatchObject({ status: 'aligned', binding: { goalId: 'goal-1', observedRevision: 1 } });
+
+    currentGoal = makeGoalSnapshot('active', 3, { goalId: 'goal-2', objective: 'A replacement Goal.' });
+    expect(svc.getSnapshot().goalAlignment).toMatchObject({ status: 'stale' });
+
+    currentGoal = makeGoalSnapshot('active', 3, { objective: 'Deliver the parent project goal.' });
+    wire.dispatch(researchSetProgram({
+      topicId: 'topic-2', title: 'Other topic', goalText: 'A different bounded subproblem.', goalSource: 'enter', establishedAt: 2,
+    }));
+    expect(svc.getSnapshot().goalAlignment).toMatchObject({ status: 'stale' });
+  });
+
+  it('clears a binding only against the current Goal and Program revision', async () => {
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    wire.dispatch(researchSetProgram({
+      topicId: 'topic-1', title: 'Topic', goalText: 'AITP goal', goalSource: 'enter', establishedAt: 1,
+    }));
+    const svc = new AgentResearchService(
+      wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true }), makeStubAdapter(), makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('active')),
+    );
+    const before = svc.getSnapshot();
+    svc.confirmGoalAlignment({
+      relation: 'same_program_goal', expectedRevision: before.revision, goalId: 'goal-1', topicId: 'topic-1', observedRevision: 1,
+    });
+    const confirmed = svc.getSnapshot();
+    expect(() => svc.clearGoalAlignment({
+      expectedRevision: confirmed.revision, goalId: 'goal-1', topicId: 'topic-1', observedRevision: 2,
+    })).toThrow('Goal alignment clear request is stale');
+    svc.clearGoalAlignment({
+      expectedRevision: confirmed.revision, goalId: 'goal-1', topicId: 'topic-1', observedRevision: 1,
+    });
+    expect(svc.getSnapshot().goalAlignment).toMatchObject({ status: 'confirmation_required' });
   });
 
   it('publishes a complete Research snapshot when Goal status or budget changes', async () => {
@@ -2011,6 +2079,30 @@ describe('goal completion guard and subagent veto', () => {
     expect(result).toEqual({ allow: true });
   });
 
+  it('denies completion for unconfirmed, stale, and conflicting active Goal-to-Program alignment', async () => {
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    wire.dispatch(researchSetProgram({
+      topicId: 'topic-1', title: 'Topic', goalText: 'AITP goal', goalSource: 'enter', establishedAt: 1,
+    }));
+    const svc = new AgentResearchService(
+      wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true }), makeStubAdapter(), makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('active')),
+    );
+    const input = { goalId: 'goal-1', objective: 'work', actor: 'model' as const };
+    expect(await guardOf(svc)(input)).toMatchObject({ code: 'research.goal-alignment.confirmation_required' });
+
+    const before = svc.getSnapshot();
+    svc.confirmGoalAlignment({
+      relation: 'unrelated', expectedRevision: before.revision, goalId: 'goal-1', topicId: 'topic-1', observedRevision: 1,
+    });
+    expect(await guardOf(svc)(input)).toMatchObject({ code: 'research.goal-alignment.conflict' });
+
+    wire.dispatch(researchSetProgram({
+      topicId: 'topic-1', title: 'Topic', goalText: 'Changed AITP goal', goalSource: 'enter', establishedAt: 1,
+    }));
+    expect(await guardOf(svc)(input)).toMatchObject({ code: 'research.goal-alignment.stale' });
+  });
+
   it('allows completion when no pending checkpoint', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
 
@@ -2140,6 +2232,30 @@ describe('goal completion guard and subagent veto', () => {
 
     expect(result).toMatchObject({ decision: 'hold', owner: 'aitpResearch' });
     if (result.decision === 'hold') expect(result.reason).toContain('human gate');
+  });
+
+  it('holds goal continuation for unconfirmed, stale, and conflicting active Goal-to-Program alignment', async () => {
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    wire.dispatch(researchSetProgram({
+      topicId: 'topic-1', title: 'Topic', goalText: 'AITP goal', goalSource: 'enter', establishedAt: 1,
+    }));
+    const svc = new AgentResearchService(
+      wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true }), makeStubAdapter(), makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('active')),
+    );
+    const input = { goalId: 'goal-1', objective: 'work', turnsUsed: 1 };
+    expect(await decideOf(svc)(input)).toMatchObject({ decision: 'hold' });
+
+    const before = svc.getSnapshot();
+    svc.confirmGoalAlignment({
+      relation: 'unrelated', expectedRevision: before.revision, goalId: 'goal-1', topicId: 'topic-1', observedRevision: 1,
+    });
+    expect(await decideOf(svc)(input)).toMatchObject({ decision: 'hold', reason: expect.stringContaining('unrelated') });
+
+    wire.dispatch(researchSetProgram({
+      topicId: 'topic-1', title: 'Topic', goalText: 'Changed AITP goal', goalSource: 'enter', establishedAt: 1,
+    }));
+    expect(await decideOf(svc)(input)).toMatchObject({ decision: 'hold', reason: expect.stringContaining('changed') });
   });
 
   it('abstains from goal continuation after the human gate is resolved', async () => {
@@ -4649,8 +4765,10 @@ describe('injection Brief/Detail and scientific content', () => {
         goalText: 'Establish the bounded research result.',
         goalSource: '.aitp/topic/TOPIC.md',
         establishedAt: 1,
+        observedRevision: 1,
       },
       goalSummary: {
+        goalId: 'goal-1',
         objective: 'Validate the next bounded overlap diagnostic.',
         status: 'active',
       },
@@ -4659,9 +4777,38 @@ describe('injection Brief/Detail and scientific content', () => {
     const output = renderResearchInjection(snapshot, 'brief').content;
 
     expect(output).toContain(
-      'Research goal: Establish the bounded research result.',
+      'AITP Research Goal (observed): Establish the bounded research result.',
     );
-    expect(output).toContain('Goal milestone: Validate the next bounded overlap diagnostic.');
+    expect(output).toContain('Hakimi Goal: Validate the next bounded overlap diagnostic.');
+    expect(output).toContain('Local Research Loop: current line/question and bounded action state.');
+    expect(output).not.toContain('Confirmed as');
+  });
+
+  it('requests a new brief when Goal alignment changes within a turn', async () => {
+    const modeSvc = await buildRealModeService();
+    const researchSvc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    const before: ResearchStatusSnapshot = {
+      ...researchSvc.getSnapshot(),
+      goalAlignment: {
+        status: 'confirmation_required',
+        reason: 'Confirm the explicit relationship.',
+      },
+    };
+    const disclosure = renderResearchInjection(before, 'brief').disclosure;
+    const after: ResearchStatusSnapshot = {
+      ...before,
+      goalAlignment: {
+        status: 'aligned',
+        reason: 'Confirmed as goal_parent_of_program.',
+        binding: {
+          relation: 'goal_parent_of_program', goalId: 'goal-1', topicId: 'topic-1', observedRevision: 1, confirmedAt: 1,
+        },
+      },
+    };
+
+    expect(resolveResearchVerbosity({ isNewTurn: false, lastDisclosure: disclosure }, after)).toBe('brief');
+    expect(renderResearchInjection(before, 'brief').content).toContain('Goal alignment: confirmation_required');
   });
 
   it('requests a new brief when the Research goal changes within a turn', async () => {
@@ -4676,6 +4823,7 @@ describe('injection Brief/Detail and scientific content', () => {
         goalText: 'Establish the bounded research result.',
         goalSource: '.aitp/topic/TOPIC.md',
         establishedAt: 1,
+        observedRevision: 1,
       },
     };
     const disclosure = renderResearchInjection(before, 'brief').disclosure;
@@ -4702,6 +4850,7 @@ describe('injection Brief/Detail and scientific content', () => {
     const before: ResearchStatusSnapshot = {
       ...researchSvc.getSnapshot(),
       goalSummary: {
+        goalId: 'goal-1',
         objective: 'Validate the overlap diagnostic.',
         status: 'active',
       },
@@ -4710,6 +4859,7 @@ describe('injection Brief/Detail and scientific content', () => {
     const after: ResearchStatusSnapshot = {
       ...before,
       goalSummary: {
+        goalId: 'goal-1',
         objective: 'Validate the reciprocal-space reference.',
         status: 'active',
       },
@@ -4789,12 +4939,7 @@ describe('injection Brief/Detail and scientific content', () => {
     // change → the provider returns undefined instead of appending anything.
     const sameTurn = providers.call(0, {
       isNewTurn: false,
-      lastDisclosure: {
-        verbosity: 'brief',
-        snapshotRevision: researchSvc.getSnapshot().revision,
-        phase: researchSvc.getSnapshot().phase,
-        progressRecordedAt: undefined,
-      },
+      lastDisclosure: renderResearchInjection(researchSvc.getSnapshot(), 'brief').disclosure,
     });
     expect(sameTurn).toBeUndefined();
   });
@@ -5567,6 +5712,96 @@ describe('Research Program and Period layers', () => {
       topic: { id: 'topic-b', title: 'Topic B', goalText: 'Prove Y', goalSource: 'TOPIC.md' },
     }));
     expect(svc.getSnapshot().program).toMatchObject({ topicId: 'topic-b', title: 'Topic B' });
+  });
+
+  it('clears an existing program and Goal binding when maintenance loses its topic', async () => {
+    const modeSvc = await buildRealModeService();
+    const stub = makeCoordinatorStub();
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(
+      wire,
+      makeScopeCtx(),
+      eventBus,
+      modeSvc,
+      makeStubAdapter(),
+      makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('active')),
+      stub.coordinator,
+    );
+    await modeSvc.enter({ actor: 'user', lineSlug: 'main' });
+
+    const topic = { id: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md' };
+    stub.emit(maintenanceReceipt({ topic }));
+    const observed = svc.getSnapshot();
+    expect(observed.program).toMatchObject({ topicId: 'topic-a', observedRevision: 1 });
+    svc.confirmGoalAlignment({
+      relation: 'same_program_goal',
+      expectedRevision: observed.revision,
+      goalId: 'goal-1',
+      topicId: 'topic-a',
+      observedRevision: 1,
+    });
+    expect(svc.getSnapshot().goalAlignment).toMatchObject({ status: 'aligned' });
+
+    stub.emit(maintenanceReceipt({ status: 'degraded' }));
+
+    const snapshot = svc.getSnapshot();
+    expect(snapshot.program).toBeUndefined();
+    expect(snapshot.goalAlignment).toMatchObject({ status: 'unavailable' });
+    expect(snapshot.goalAlignment?.binding).toBeUndefined();
+    expect(snapshot.effectiveNextStep).toMatchObject({ freshness: 'blocked' });
+    expect(snapshot.status).toMatchObject({ health: 'blocked' });
+    expect(snapshot.status?.attention[0]).toContain('No current AITP Research Goal was observed');
+  });
+
+  it('clears the checkpointed program and Goal binding before a degraded re-entry settles', async () => {
+    const adapter = makeStubAdapter();
+    let probeCount = 0;
+    vi.spyOn(adapter, 'probe').mockImplementation(async () => {
+      const health: AitpAdapterHealth = probeCount++ === 0
+        ? { phase: 'ready', contractVersion: '0.1' }
+        : { phase: 'degraded', lastError: 'probe unavailable' };
+      adapter._setHealth(health);
+      return health;
+    });
+    const modeSvc = await buildRealModeService(adapter);
+    const stub = makeCoordinatorStub();
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(
+      wire,
+      makeScopeCtx(),
+      eventBus,
+      modeSvc,
+      adapter,
+      makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('active')),
+      stub.coordinator,
+    );
+
+    await modeSvc.enter({ actor: 'user', lineSlug: 'main' });
+    const topic = { id: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md' };
+    stub.emit(maintenanceReceipt({ topic }));
+    const observed = svc.getSnapshot();
+    svc.confirmGoalAlignment({
+      relation: 'same_program_goal',
+      expectedRevision: observed.revision,
+      goalId: 'goal-1',
+      topicId: 'topic-a',
+      observedRevision: 1,
+    });
+    expect(svc.getSnapshot().goalAlignment).toMatchObject({ status: 'aligned' });
+
+    await modeSvc.exit();
+    expect(svc.getProgram()).toMatchObject({ topicId: 'topic-a' });
+    expect(wire.getModel(ResearchModel).current.goalProgramBinding).not.toBeNull();
+
+    await modeSvc.enter({ actor: 'user', lineSlug: 'main' });
+
+    expect(probeCount).toBe(2);
+    expect(modeSvc.phase).toBe('degraded');
+    expect(svc.getProgram()).toBeNull();
+    expect(wire.getModel(ResearchModel).current.goalProgramBinding).toBeNull();
+    expect(svc.getSnapshot().goalAlignment).toMatchObject({ status: 'unavailable' });
   });
 
   it('line switch archives the old period with its focus intact and opens a fresh one', async () => {

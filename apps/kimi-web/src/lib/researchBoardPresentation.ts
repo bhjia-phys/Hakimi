@@ -18,6 +18,10 @@ export interface ResearchBoardGoalSlot {
 
 type ResearchBoardAttentionValue =
   | {
+      source: 'alignment';
+      text: string;
+    }
+  | {
       source: 'human_gate';
       text: string;
     }
@@ -106,6 +110,14 @@ function attentionSlot(
   snapshot: ResearchStatusSnapshot,
 ): ResearchBoardAttentionSlot | undefined {
   const candidates: ResearchBoardAttentionValue[] = [];
+  const goalAlignment = snapshot.goalAlignment;
+  if (
+    snapshot.goalSummary?.status === 'active'
+    && goalAlignment !== undefined
+    && goalAlignment.status !== 'aligned'
+  ) {
+    candidates.push({ source: 'alignment', text: goalAlignment.reason });
+  }
   const humanGateText = snapshot.humanGate?.resolvedAt === undefined
     ? presentText(snapshot.humanGate?.prompt)
     : undefined;

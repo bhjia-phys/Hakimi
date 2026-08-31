@@ -2167,10 +2167,10 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
    * `IAgentAitpModeService`; focus, line, and question lifecycle commands use
    * their dedicated Research methods. The engine enforces the
    * `expectedRevision` optimistic-concurrency guard, and defer/block/close
-   * remain human steering operations.
+   * remain human steering operations. Goal alignment is only changed through
+   * explicit commands carrying the observed Goal / Program identities;
    * `create_question` / `create_line` / `update_line` use their dedicated
-   * service methods;
-   * checkpoints use `proposeCheckpoint` / `commitCheckpoint`.
+   * service methods; checkpoints use `proposeCheckpoint` / `commitCheckpoint`.
    */
   override async getResearch(input: SessionIdRpcInput): Promise<ResearchStatusSnapshot> {
     const agent = await this.agentScope(input.sessionId);
@@ -2371,6 +2371,23 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
         break;
       case 'discard_plan':
         research.discardResearchPlan();
+        break;
+      case 'confirm_goal_alignment':
+        research.confirmGoalAlignment({
+          relation: cmd.relation,
+          expectedRevision: cmd.expectedRevision,
+          goalId: cmd.goalId,
+          topicId: cmd.topicId,
+          observedRevision: cmd.observedRevision,
+        });
+        break;
+      case 'clear_goal_alignment':
+        research.clearGoalAlignment({
+          expectedRevision: cmd.expectedRevision,
+          goalId: cmd.goalId,
+          topicId: cmd.topicId,
+          observedRevision: cmd.observedRevision,
+        });
         break;
     }
 

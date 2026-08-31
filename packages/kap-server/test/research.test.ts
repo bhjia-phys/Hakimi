@@ -94,6 +94,7 @@ const RESEARCH_EVENT_SNAPSHOT = {
     goalText: 'Establish the bounded research result.',
     goalSource: 'aitp-enter',
     establishedAt: 1_700_000_000_000,
+    observedRevision: 1,
   },
   revision: 1,
 };

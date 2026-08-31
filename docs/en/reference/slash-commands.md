@@ -127,8 +127,10 @@ The grammar is the same in TUI and Web: reserved subcommands are honored only as
 | `/research close <questionId> [-- <reason>]` | Close a question | TUI and Web; idle only |
 | `/research reopen <questionId> [-- <reason>]` | Reopen a previously closed question | TUI and Web; idle only |
 | `/research line <slug>` | Switch the current research line | TUI and Web; idle only |
+| `/research align same_program_goal\|goal_parent_of_program\|goal_milestone_in_program\|unrelated` | Explicitly confirm the local, checkpointed relationship between the current Hakimi Goal and observed AITP Program. It requires both records and never writes AITP; `unrelated` is an explicit conflict | TUI and Web; idle only |
+| `/research align clear` | Clear the local Goal–Program binding; the next active-Research-Mode completion or automatic continuation requires confirmation again | TUI and Web; idle only |
 
-Subcommands (`on`, `off`, `pause`, `resume`, `manage`, `status`, `edit`, `focus`, `defer`, `block`, `close`, `reopen`, `line`) are only honored as the first token. If your text needs to start with one of those words, use `--`:
+Subcommands (`on`, `off`, `pause`, `resume`, `manage`, `status`, `align`, `edit`, `focus`, `defer`, `block`, `close`, `reopen`, `line`) are only honored as the first token. If your text needs to start with one of those words, use `--`:
 
 ```sh
 /research focus q-17 -- on the boundary zero mode
@@ -138,11 +140,11 @@ While the main turn or context compaction is running, both surfaces accept only 
 
 Revisioned mutations carry the draft's captured snapshot or entity `revision` as `expectedRevision`; a stale revision fails without applying the mutation. Other mutations do not carry `expectedRevision` and instead rely on captured target or pending-checkpoint identity and server-side state constraints. TUI refreshes the Board; Web re-reads the same session's authoritative snapshot and preserves a dirty form with a stale warning so you can refresh and retry.
 
-The read-only Research Board appears above the input area in both surfaces and shows `probing`, `ready`, or `degraded` health, current line and focus, question counts, alerts, and checkpoint state. TUI additionally projects Todo Actions and uses `Ctrl-O` to expand or collapse the Board. Web uses **Expand**, **Collapse**, and **Manage** buttons plus forms; the TUI shortcuts do not apply there.
+The read-only Research Board appears above the input area in both surfaces and shows `probing`, `ready`, or `degraded` health, current line and focus, question counts, alerts, checkpoint state, and active Goal–Program alignment blockers. TUI additionally projects Todo Actions and uses `Ctrl-O` to expand or collapse the Board. Web uses **Expand**, **Collapse**, and **Manage** buttons plus forms; the TUI shortcuts do not apply there.
 
 Web checkpoint controls do not write AITP. **Commit** requires a pending checkpoint and an explicit existing AITP `entryId`; Web only links that ID through the Research endpoint and never invokes `record`/`note` or writes canonical ledger files.
 
-When AITP is not installed, not initialized, or its `check` returns exit 2 after an explicit entry, both surfaces show `degraded`. Read tools remain available, but AITP write tools, checkpoint commits, question closure, active Research Mode Goal completion, and session closeout are blocked until the adapter recovers or the user explicitly chooses to proceed without persistence; unresolved human-gate decisions also block Goal completion. Local Question/Line mutations may still occur, but they are not durable AITP writes. Research Mode performs no automatic session closeout and never auto-runs `init`, `init --adopt`, `inventory`, or `backfill --apply`; `backfill` is not exposed as a model tool. The Research and AITP tools other than `EnterAITPMode`, and the AITP plugin skill, remain active-only.
+When AITP is not installed, not initialized, or its `check` returns exit 2 after an explicit entry, both surfaces show `degraded`. Read tools remain available, but AITP write tools, checkpoint commits, question closure, active Research Mode Goal completion, and session closeout are blocked until the adapter recovers or the user explicitly chooses to proceed without persistence; an unobserved Program or unresolved Goal–Program alignment also blocks active Goal completion and automatic continuation. Local Question/Line mutations may still occur, but they are not durable AITP writes. Research Mode performs no automatic session closeout and never auto-runs `init`, `init --adopt`, `inventory`, or `backfill --apply`; `backfill` is not exposed as a model tool. The Research and AITP tools other than `EnterAITPMode`, and the AITP plugin skill, remain active-only.
 
 ## Information & Status
 

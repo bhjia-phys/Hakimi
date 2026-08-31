@@ -6,7 +6,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ActivationBadges, ApprovalBlock, ConversationStatus, PermissionMode, QueuedPromptView, TaskItem, TodoView, UIQuestion } from '../../types';
-import type { AppGoal, AppModel, AppSkill, QuestionResponse, ResearchStatusSnapshot, ThinkingLevel } from '../../api/types';
+import type { AppGoal, AppModel, AppSkill, QuestionResponse, ResearchGoalAlignmentRelation, ResearchStatusSnapshot, ThinkingLevel } from '../../api/types';
 import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import type { ComposerCommandEvent } from '../../composables/useComposerDraft';
@@ -77,6 +77,8 @@ const emit = defineEmits<{
   focusGoal: [];
   startResearch: [];
   manageResearch: [];
+  alignResearch: [relation: ResearchGoalAlignmentRelation];
+  clearResearchAlignment: [];
   focusSwarm: [];
   compact: [];
   pickModel: [];
@@ -225,6 +227,8 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       :snapshot="research"
       :force-expanded="researchExpandSignal"
       @manage="emit('manageResearch')"
+      @align="emit('alignResearch', $event)"
+      @clear-alignment="emit('clearResearchAlignment')"
     />
     <div v-if="hasDockWork" ref="workbarRef" class="dock-workbar">
       <Pill

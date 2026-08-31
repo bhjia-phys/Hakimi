@@ -8,6 +8,7 @@ import type {
   ResearchModePhase,
   ResearchQuestion,
   ResearchRunState,
+  ResearchGoalAlignmentRelation,
   ResearchStatusSnapshot,
 } from '../../api/types';
 import {
@@ -29,7 +30,11 @@ const props = defineProps<{
   snapshot: ResearchStatusSnapshot;
   forceExpanded?: number;
 }>();
-const emit = defineEmits<{ manage: [] }>();
+const emit = defineEmits<{
+  manage: [];
+  align: [relation: ResearchGoalAlignmentRelation];
+  clearAlignment: [];
+}>();
 const { locale, t } = useI18n();
 const expanded = ref(false);
 const instanceId = useId();
@@ -123,6 +128,7 @@ const attentionText = computed(() => {
 });
 const attentionTitle = computed(() => {
   const slot = attentionSlot.value;
+  if (slot?.source === 'alignment') return t('research.goalAlignment');
   if (slot?.source === 'human_gate') return t('research.humanGate');
   if (slot?.source === 'maintenance') return t('research.degradedReason');
   if (slot?.source === 'alert') return t('research.alertKind.' + slot.alertKind);
@@ -400,6 +406,10 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
           <div v-if="snapshot.goalSummary" class="research-field">
             <dt>{{ t('research.milestone') }}</dt>
             <dd>
+              <span>
+                <strong>{{ t('research.goalId') }}:</strong>
+                <code>{{ snapshot.goalSummary.goalId ?? t('research.none') }}</code>
+              </span>
               <span>{{ snapshot.goalSummary.objective }}</span>
               <span class="research-inline-meta">
                 <Badge
@@ -435,6 +445,36 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
                 <code v-for="taskId in snapshot.goalSummary.waitingFor.taskIds" :key="taskId">
                   {{ taskId }}
                 </code>
+              </span>
+            </dd>
+          </div>
+          <div v-if="snapshot.goalAlignment" class="research-field">
+            <dt>{{ t('research.goalAlignment') }}</dt>
+            <dd>
+              <span class="research-inline-meta">
+                <Badge size="sm" :variant="snapshot.goalAlignment.status === 'aligned' ? 'success' : snapshot.goalAlignment.status === 'unavailable' ? 'neutral' : 'warning'">
+                  {{ t('research.alignmentStatus.' + snapshot.goalAlignment.status) }}
+                </Badge>
+                <span>{{ snapshot.goalAlignment.reason }}</span>
+              </span>
+              <span v-if="snapshot.goalAlignment.binding" class="research-inline-meta research-muted">
+                <span>{{ t('research.goalId') }} <code>{{ snapshot.goalAlignment.binding.goalId }}</code></span>
+                <span>{{ t('research.topicId') }} <code>{{ snapshot.goalAlignment.binding.topicId }}</code></span>
+                <span>{{ t('research.observedRevision', { count: snapshot.goalAlignment.binding.observedRevision }) }}</span>
+              </span>
+              <span v-if="snapshot.program && snapshot.goalSummary?.goalId" class="research-inline-meta">
+                <Button
+                  v-if="snapshot.goalAlignment.status !== 'aligned' && snapshot.goalAlignment.status !== 'unavailable'"
+                  variant="secondary"
+                  size="sm"
+                  @click="emit('align', 'same_program_goal')"
+                >{{ t('research.confirmAlignment') }}</Button>
+                <Button
+                  v-if="snapshot.goalAlignment.binding"
+                  variant="ghost"
+                  size="sm"
+                  @click="emit('clearAlignment')"
+                >{{ t('research.clearAlignment') }}</Button>
               </span>
             </dd>
           </div>

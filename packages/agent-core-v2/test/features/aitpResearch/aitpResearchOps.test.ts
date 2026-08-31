@@ -41,6 +41,8 @@ import {
   researchRequestHumanDecision,
   researchResolveHumanDecision,
   researchSetProgram,
+  researchConfirmGoalAlignment,
+  researchClearGoalAlignment,
   researchStartPeriod,
   researchUpdatePeriod,
   researchEndPeriod,
@@ -1193,31 +1195,69 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(state.periodHistory).toEqual([]);
     });
 
-    it('set_program stores the topic-bound program and is idempotent on identical input', () => {
+    it('sets observedRevision to 1, increments it for same-topic observations, and resets it for a new topic', () => {
       wire.dispatch(researchSetProgram({
         topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
       }));
       let state = wire.getModel(ResearchModel).current;
       expect(state.program).toEqual({
-        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000, observedRevision: 1,
       });
       expect(state.revision).toBe(1);
 
       wire.dispatch(researchSetProgram({
         topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
       }));
-      state = wire.getModel(ResearchModel).current;
-      expect(state.revision).toBe(1);
+      expect(wire.getModel(ResearchModel).current.revision).toBe(1);
 
-      // A different topic replaces the program outright (never spans topics).
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X rigorously', goalSource: 'TOPIC.md', establishedAt: 1000,
+      }));
+      state = wire.getModel(ResearchModel).current;
+      expect(state.program?.observedRevision).toBe(2);
+
       wire.dispatch(researchSetProgram({
         topicId: 'topic-b', title: 'Topic B', goalText: 'Prove Y', goalSource: 'TOPIC.md', establishedAt: 2000,
       }));
       state = wire.getModel(ResearchModel).current;
       expect(state.program).toEqual({
-        topicId: 'topic-b', title: 'Topic B', goalText: 'Prove Y', goalSource: 'TOPIC.md', establishedAt: 2000,
+        topicId: 'topic-b', title: 'Topic B', goalText: 'Prove Y', goalSource: 'TOPIC.md', establishedAt: 2000, observedRevision: 1,
       });
-      expect(state.revision).toBe(2);
+      expect(state.revision).toBe(3);
+    });
+
+    it('keeps explicit Goal-to-Program confirmation checkpointed and clearable', () => {
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
+      }));
+      wire.dispatch(researchConfirmGoalAlignment({
+        relation: 'goal_parent_of_program',
+        expectedRevision: 1,
+        goalId: 'goal-1',
+        topicId: 'topic-a',
+        observedRevision: 1,
+        confirmedAt: 1000,
+      }));
+      expect(wire.getModel(ResearchModel).current.goalProgramBinding).toEqual({
+        relation: 'goal_parent_of_program', goalId: 'goal-1', topicId: 'topic-a', observedRevision: 1, confirmedAt: 1000,
+      });
+
+      const revision = wire.getModel(ResearchModel).current.revision;
+      wire.dispatch(researchClearGoalAlignment({
+        expectedRevision: revision, goalId: 'goal-1', topicId: 'topic-a', observedRevision: 1,
+      }));
+      expect(wire.getModel(ResearchModel).current.goalProgramBinding).toBeNull();
+    });
+
+    it('keeps legacy replay without a binding and ignores stale alignment ops', () => {
+      expect(wire.getModel(ResearchModel).current.goalProgramBinding).toBeNull();
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
+      }));
+      wire.dispatch(researchConfirmGoalAlignment({
+        relation: 'same_program_goal', expectedRevision: 0, goalId: 'goal-1', topicId: 'topic-a', observedRevision: 1, confirmedAt: 1000,
+      }));
+      expect(wire.getModel(ResearchModel).current.goalProgramBinding).toBeNull();
     });
 
     it('start_period opens a period, is a no-op for the same line, and archives on a line switch', () => {

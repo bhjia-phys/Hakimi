@@ -904,7 +904,8 @@ describe('research.updated event schema', () => {
       activeQuestionCount: 0,
       blockedQuestionCount: 0,
       alerts: [],
-      goalSummary: { status: 'active', remainingTurns: 3 },
+      goalSummary: { objective: 'Test goal', status: 'active', remainingTurns: 3 },
+      goalAlignment: { status: 'unavailable' as const, reason: 'No observed AITP Research Goal.' },
       aitpHealth: { phase: 'ready' as const, contractVersion: '0.1' },
       pendingCheckpoint: {
         checkpointId: 'cp1',
@@ -1068,6 +1069,49 @@ describe('research facade routing', () => {
       method: 'switchLine',
       args: ['alt', 7],
     });
+  });
+
+  it('routes explicit Goal alignment confirmation and clearing through the research service', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    channel.result = undefined;
+
+    const agent = klient.session('s1').agent('main');
+    await agent.research.confirmGoalAlignment({
+      relation: 'goal_parent_of_program',
+      expectedRevision: 7,
+      goalId: 'goal-1',
+      topicId: 'topic-1',
+      observedRevision: 3,
+    });
+    await agent.research.clearGoalAlignment({
+      expectedRevision: 8,
+      goalId: 'goal-1',
+      topicId: 'topic-1',
+      observedRevision: 3,
+    });
+
+    expect(channel.calls.map((call) => ({ method: call.method, args: call.args }))).toEqual([
+      {
+        method: 'confirmGoalAlignment',
+        args: [{
+          relation: 'goal_parent_of_program',
+          expectedRevision: 7,
+          goalId: 'goal-1',
+          topicId: 'topic-1',
+          observedRevision: 3,
+        }],
+      },
+      {
+        method: 'clearGoalAlignment',
+        args: [{
+          expectedRevision: 8,
+          goalId: 'goal-1',
+          topicId: 'topic-1',
+          observedRevision: 3,
+        }],
+      },
+    ]);
   });
 
   it('routes human gate resolution and alert acknowledgement through the research service', async () => {

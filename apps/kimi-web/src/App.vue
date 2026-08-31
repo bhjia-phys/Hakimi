@@ -48,7 +48,12 @@ import { openDialogCount } from './composables/dialogStack';
 import type { SwarmMember } from './composables/swarmGroups';
 import ServerAuthDialog from './components/ServerAuthDialog.vue';
 import { initServerAuth, onAuthRequired } from './api/daemon/serverAuth';
-import type { AppConfig, SubagentModelConfig, ThinkingLevel } from './api/types';
+import type {
+  AppConfig,
+  ResearchGoalAlignmentRelation,
+  SubagentModelConfig,
+  ThinkingLevel,
+} from './api/types';
 import {
   researchManagerMutationAllowed,
   researchManagerSessionIsCurrent,
@@ -850,6 +855,58 @@ async function handleResearchSlash(
   );
 }
 
+async function handleResearchAlignment(
+  relation?: ResearchGoalAlignmentRelation,
+): Promise<void> {
+  const sessionId = client.activeSessionId.value;
+  if (sessionId === undefined) {
+    reportResearchIssue('snapshot_unavailable');
+    return;
+  }
+  if (!client.researchEnabled.value) {
+    reportResearchIssue('disabled');
+    return;
+  }
+  if (researchIdleOnlyBusy.value) {
+    reportResearchIssue('busy');
+    return;
+  }
+
+  const snapshot = await client.refreshResearchById(sessionId);
+  if (!researchSlashSessionIsCurrent(sessionId, client.activeSessionId.value)) return;
+  if (!client.researchEnabled.value) {
+    reportResearchIssue('disabled');
+    return;
+  }
+  if (researchIdleOnlyBusy.value) {
+    reportResearchIssue('busy');
+    return;
+  }
+  if (snapshot === null) {
+    reportResearchIssue('snapshot_unavailable');
+    return;
+  }
+
+  const parsed = relation === undefined
+    ? { kind: 'clear_alignment' as const }
+    : { kind: 'align' as const, relation };
+  const resolutionError = researchCommandResolutionError(parsed, snapshot);
+  if (resolutionError !== null) {
+    reportResearchIssue(resolutionError);
+    return;
+  }
+  const command = researchCommandFromSlash(parsed, snapshot);
+  if (command === null) {
+    reportResearchIssue('unresolved');
+    return;
+  }
+  await submitResearchSlashCommand(
+    sessionId,
+    () => client.activeSessionId.value,
+    () => client.commandResearchById(sessionId, command),
+  );
+}
+
 function restoreResearchSlashInput(
   submission: ComposerCommandSubmission,
   outcome: ResearchSlashExecutionOutcome,
@@ -1223,6 +1280,8 @@ function openPr(url: string): void {
       @control-goal="client.controlGoal($event)"
       @start-research="handleStartResearch"
       @manage-research="openResearchManager"
+      @align-research="(relation) => handleResearchAlignment(relation)"
+      @clear-research-alignment="() => handleResearchAlignment()"
       @refresh-git-status="client.activeSessionId.value && client.loadGitStatus(client.activeSessionId.value)"
       @rename-session="(id, title) => client.renameSession(id, title)"
       @fork-session="(id) => client.forkSession(id)"

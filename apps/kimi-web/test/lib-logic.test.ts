@@ -1118,6 +1118,40 @@ describe('research board compact presentation', () => {
     });
   });
 
+  it('prioritizes an active Goal alignment blocker over gates and alerts', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      goalSummary: {
+        goalId: 'goal_1',
+        objective: 'Finish the milestone',
+        status: 'active',
+      },
+      goalAlignment: {
+        status: 'confirmation_required',
+        reason: 'Confirm the Goal and observed Research Program relationship.',
+      },
+      humanGate: {
+        gateId: 'gate_1',
+        kind: 'approval',
+        prompt: 'Approve the bounded experiment',
+        createdAt: 1,
+      },
+      alerts: [{
+        fingerprint: 'alert_1',
+        kind: 'blocked',
+        state: 'active',
+        message: 'The evidence is blocked',
+        createdAt: 1,
+      }],
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
+      kind: 'attention',
+      source: 'alignment',
+      text: 'Confirm the Goal and observed Research Program relationship.',
+      additionalCount: 2,
+    });
+  });
+
   it('uses the first active alert when higher-priority attention is absent', () => {
     const slots = buildResearchBoardCompactSlots(snapshot({
       alerts: [

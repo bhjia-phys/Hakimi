@@ -21,7 +21,7 @@
 // owning model offloads inline media to blob storage), cross-reducers
 // (foreign models that also reduce this record on dispatch and replay).
 
-// Index (90 record types)
+// Index (92 record types)
 //   aitp_mode.enter                    aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   aitp_mode.exit                     aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   aitp_mode.set_line                 aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
@@ -68,8 +68,10 @@
 //   research.bind_checkpoint_entry     research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.bind_checkpoint_receipt   research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.clear_alert               research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.clear_goal_alignment      research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.commit_checkpoint         researchCursor              persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.complete_action           research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.confirm_goal_alignment    research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.create_line               research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.create_question           research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.end_period                research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
@@ -745,6 +747,18 @@ interface ResearchClearAlertPayload {
 }
 
 /**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchClearGoalAlignmentPayload {
+  _name: 'research.clear_goal_alignment';
+  expectedRevision: number;
+  goalId: string;
+  topicId: string;
+  observedRevision: number;
+}
+
+/**
  * model: researchCursor · persisted
  * owner: src/features/aitpResearch/aitpResearchOps.ts
  */
@@ -793,6 +807,20 @@ interface ResearchCompleteActionPayload {
   actionId: string;
   status: 'completed' | 'abandoned';
   completedAt: number;
+}
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
+interface ResearchConfirmGoalAlignmentPayload {
+  _name: 'research.confirm_goal_alignment';
+  relation: 'same_program_goal' | 'goal_parent_of_program' | 'goal_milestone_in_program' | 'unrelated';
+  goalId: string;
+  topicId: string;
+  observedRevision: number;
+  confirmedAt: number;
+  expectedRevision: number;
 }
 
 /**
@@ -987,6 +1015,7 @@ interface ResearchSetProgramPayload {
   goalText: string;
   goalSource: string;
   establishedAt: number;
+  observedRevision?: number;
 }
 
 /**
@@ -1429,8 +1458,10 @@ interface WirePayloadMap {
   "research.bind_checkpoint_entry": ResearchBindCheckpointEntryPayload;
   "research.bind_checkpoint_receipt": ResearchBindCheckpointReceiptPayload;
   "research.clear_alert": ResearchClearAlertPayload;
+  "research.clear_goal_alignment": ResearchClearGoalAlignmentPayload;
   "research.commit_checkpoint": ResearchCommitCheckpointPayload;
   "research.complete_action": ResearchCompleteActionPayload;
+  "research.confirm_goal_alignment": ResearchConfirmGoalAlignmentPayload;
   "research.create_line": ResearchCreateLinePayload;
   "research.create_question": ResearchCreateQuestionPayload;
   "research.end_period": ResearchEndPeriodPayload;

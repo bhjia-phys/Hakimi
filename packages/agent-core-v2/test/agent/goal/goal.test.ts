@@ -54,6 +54,7 @@ import { IFlagService } from '#/app/flag/flag';
 import { EventBusService } from '#/app/event/eventBusService';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import { IAgentResearchService } from '#/features/aitpResearch/research/agentResearch';
+import { researchSetProgram } from '#/features/aitpResearch/aitpResearchOps';
 import { AitpResearchErrors } from '#/features/aitpResearch/errors';
 import { ISessionAitpAdapter } from '#/features/aitpResearch/adapter/sessionAitpAdapter';
 import { ISessionAitpLifecycleCoordinator } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
@@ -3202,6 +3203,30 @@ describe('AgentGoalService goal contribution seams', () => {
       expect(decisions).toBe(2);
     });
 
+    it('clears a rejected initial async decision after a lifecycle transition', async () => {
+      let rejectDecision!: (error: unknown) => void;
+      const firstDecision = new Promise<GoalContinuationDecisionResult>((_resolve, reject) => {
+        rejectDecision = reject;
+      });
+      let decisions = 0;
+      const { goals, loopService, turn } = await startGoalWithTurn({
+        participants: [() => {
+          decisions += 1;
+          return decisions === 1 ? firstDecision : { decision: 'abstain' };
+        }],
+      });
+
+      endTurn(ctx!.get(IEventBus), turn);
+      await flushMicrotasks();
+      await goals.markBlocked({ reason: 'block while deciding' });
+      rejectDecision(new Error('initial decision exploded'));
+      await flushMicrotasks();
+
+      await goals.resumeGoal({ continueIfBlocked: true });
+      await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
+      expect(decisions).toBe(2);
+    });
+
     it.each([
       { action: 'cancels', replace: false },
       { action: 'replaces', replace: true },
@@ -3247,6 +3272,48 @@ describe('AgentGoalService goal contribution seams', () => {
       retry.fire(goalId);
       await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
       expect(decisions).toBe(2);
+    });
+
+    it('re-evaluates every participant on retry and keeps a later hold', async () => {
+      const firstRetry = new Emitter<string>();
+      const secondRetry = new Emitter<string>();
+      let firstDecisions = 0;
+      let secondDecisions = 0;
+      const { goals, loopService, turn } = await startGoalWithTurn({
+        participants: [
+          () => {
+            firstDecisions += 1;
+            return firstDecisions === 1
+              ? { decision: 'hold', reason: 'first participant waits' }
+              : { decision: 'abstain' };
+          },
+          () => {
+            secondDecisions += 1;
+            return secondDecisions === 1
+              ? { decision: 'hold', reason: 'second participant waits' }
+              : { decision: 'abstain' };
+          },
+        ],
+        retryEmitters: [firstRetry, secondRetry],
+      });
+      const goalId = goals.getGoal().goal!.goalId;
+
+      endTurn(ctx!.get(IEventBus), turn);
+      await flushMicrotasks();
+      expect(loopService.launches).toEqual([]);
+      expect(firstDecisions).toBe(1);
+      expect(secondDecisions).toBe(0);
+
+      firstRetry.fire(goalId);
+      await flushMicrotasks();
+      expect(loopService.launches).toEqual([]);
+      expect(firstDecisions).toBe(2);
+      expect(secondDecisions).toBe(1);
+
+      secondRetry.fire(goalId);
+      await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
+      expect(firstDecisions).toBe(3);
+      expect(secondDecisions).toBe(2);
     });
 
     it('drops a held continuation when the goal is cancelled before a retry notification', async () => {
@@ -3429,10 +3496,38 @@ describe('AITP Research goal contribution integration', () => {
     return { goals, mode, research };
   }
 
+  function observeResearchProgram(): void {
+    ctx!.wire.dispatch(researchSetProgram({
+      topicId: 'topic-1',
+      title: 'Observed Research Topic',
+      goalText: 'Complete the bounded research work.',
+      goalSource: 'aitp.enter',
+      establishedAt: 1,
+    }));
+  }
+
+  function confirmResearchGoalAlignment(
+    research: IAgentResearchService,
+    goals: IAgentGoalService,
+  ): void {
+    const goal = goals.getGoal().goal;
+    const program = research.getProgram();
+    if (goal === null || program === null) throw new Error('expected a Goal and Research Program');
+    research.confirmGoalAlignment({
+      relation: 'same_program_goal',
+      expectedRevision: research.getSnapshot().revision,
+      goalId: goal.goalId,
+      topicId: program.topicId,
+      observedRevision: program.observedRevision,
+    });
+  }
+
   it('denies markComplete when the mode is active with an unresolved human gate', async () => {
     const { goals, mode, research } = await createResearchGoalAgent(true);
     await mode.enter({ actor: 'user' });
+    observeResearchProgram();
     await goals.createGoal({ objective: 'work' });
+    confirmResearchGoalAlignment(research, goals);
     const gate = research.requestHumanDecision({ kind: 'decision', prompt: 'Choose' });
 
     await expect(goals.markComplete({}, 'model')).rejects.toMatchObject({
@@ -3455,7 +3550,9 @@ describe('AITP Research goal contribution integration', () => {
   it('rejects markComplete through the UpdateGoal tool path too', async () => {
     const { goals, mode, research } = await createResearchGoalAgent(true);
     await mode.enter({ actor: 'user' });
+    observeResearchProgram();
     await goals.createGoal({ objective: 'work' });
+    confirmResearchGoalAlignment(research, goals);
     research.requestHumanDecision({ kind: 'decision', prompt: 'Choose' });
 
     const tool = new UpdateGoalTool(goals);
@@ -3485,6 +3582,49 @@ describe('AITP Research goal contribution integration', () => {
     expect(goals.getGoal().goal).toBeNull();
   });
 
+  it('denies completion and holds continuation when an active Goal has no Research Program', async () => {
+    const loopService = stubLoopWithHooks();
+    const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
+    await mode.enter({ actor: 'user' });
+    await goals.createGoal({ objective: 'finish the task' });
+
+    await expect(goals.markComplete({}, 'model')).rejects.toMatchObject({
+      code: ErrorCodes.GOAL_STATUS_INVALID,
+      message: 'Goal completion is blocked: AITP Research Goal has not been observed.',
+      details: {
+        code: 'research.goal-alignment.unavailable',
+        owner: 'aitpResearch',
+        nextStep: 'ConfirmGoalAlignment',
+      },
+    });
+
+    const turn = makeTurn(78);
+    ctx!.get(IEventBus).publish({
+      type: 'turn.started',
+      turnId: turn.id,
+      origin: USER_PROMPT_ORIGIN,
+    });
+    await loopService.hooks.onWillBeginStep.run({
+      turnId: turn.id,
+      step: 1,
+      firstStepOfTurn: true,
+      signal: turn.signal,
+    });
+    endTurn(ctx!.get(IEventBus), turn);
+    await flushMicrotasks();
+
+    expect(loopService.launches).toEqual([]);
+    expect(research.getSnapshot().goalAlignment).toMatchObject({ status: 'unavailable' });
+    expect(research.getSnapshot().effectiveNextStep).toMatchObject({
+      source: 'aitp_maintenance',
+      freshness: 'blocked',
+    });
+    expect(research.getSnapshot().status).toMatchObject({
+      health: 'blocked',
+      attention: [expect.stringContaining('No current AITP Research Goal')],
+    });
+  });
+
   it('allows direct Plan entry while Research Mode is active and keeps Research state intact', async () => {
     const { mode } = await createResearchGoalAgent(true, undefined, true);
     await mode.enter({ actor: 'user' });
@@ -3501,7 +3641,9 @@ describe('AITP Research goal contribution integration', () => {
     const loopService = stubLoopWithHooks();
     const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
     await mode.enter({ actor: 'user' });
+    observeResearchProgram();
     await goals.createGoal({ objective: 'finish the task' });
+    confirmResearchGoalAlignment(research, goals);
     const turn = makeTurn(71);
     ctx!.get(IEventBus).publish({
       type: 'turn.started',
@@ -3529,7 +3671,9 @@ describe('AITP Research goal contribution integration', () => {
     const loopService = stubLoopWithHooks();
     const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
     await mode.enter({ actor: 'user' });
+    observeResearchProgram();
     await goals.createGoal({ objective: 'finish the task' });
+    confirmResearchGoalAlignment(research, goals);
     const turn = makeTurn(72);
     ctx!.get(IEventBus).publish({
       type: 'turn.started',
@@ -3553,9 +3697,11 @@ describe('AITP Research goal contribution integration', () => {
 
   it('holds the goal continuation while an active Plan nests under Research Mode', async () => {
     const loopService = stubLoopWithHooks();
-    const { goals, mode } = await createResearchGoalAgent(true, loopService, true);
+    const { goals, mode, research } = await createResearchGoalAgent(true, loopService, true);
     await mode.enter({ actor: 'user' });
+    observeResearchProgram();
     await goals.createGoal({ objective: 'finish the task' });
+    confirmResearchGoalAlignment(research, goals);
     const plan = ctx!.get(IAgentPlanService);
     const turn = makeTurn(75);
     ctx!.get(IEventBus).publish({
@@ -3602,7 +3748,9 @@ describe('AITP Research goal contribution integration', () => {
     const loopService = stubLoopWithHooks();
     const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
     await mode.enter({ actor: 'user' });
+    observeResearchProgram();
     await goals.createGoal({ objective: 'finish the task' });
+    confirmResearchGoalAlignment(research, goals);
     const turn = makeTurn(73);
     ctx!.get(IEventBus).publish({
       type: 'turn.started',
@@ -3630,7 +3778,9 @@ describe('AITP Research goal contribution integration', () => {
     const loopService = stubLoopWithHooks();
     const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
     await mode.enter({ actor: 'user' });
+    observeResearchProgram();
     await goals.createGoal({ objective: 'finish the task' });
+    confirmResearchGoalAlignment(research, goals);
 
     const heldTurn = makeTurn(74);
     ctx!.get(IEventBus).publish({
@@ -3684,7 +3834,9 @@ describe('AITP Research goal contribution integration', () => {
     const loopService = stubLoopWithHooks();
     const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
     await mode.enter({ actor: 'user' });
+    observeResearchProgram();
     await goals.createGoal({ objective: 'finish the task' });
+    confirmResearchGoalAlignment(research, goals);
 
     const heldTurn = makeTurn(77);
     ctx!.get(IEventBus).publish({
@@ -3723,7 +3875,9 @@ describe('AITP Research goal contribution integration', () => {
       permissionMode,
     );
     await mode.enter({ actor: 'user' });
+    observeResearchProgram();
     await goals.createGoal({ objective: 'finish the task' });
+    confirmResearchGoalAlignment(research, goals);
 
     const heldTurn = makeTurn(81);
     ctx!.get(IEventBus).publish({
@@ -3771,9 +3925,11 @@ describe('AITP Research goal contribution integration', () => {
 
   it('releases a held goal continuation when Research recovers from degraded mode', async () => {
     const loopService = stubLoopWithHooks();
-    const { goals, mode } = await createResearchGoalAgent(true, loopService);
+    const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
     await mode.enter({ actor: 'user' });
+    observeResearchProgram();
     await goals.createGoal({ objective: 'finish the task' });
+    confirmResearchGoalAlignment(research, goals);
     const turn = makeTurn(80);
     ctx!.get(IEventBus).publish({
       type: 'turn.started',
@@ -3801,7 +3957,9 @@ describe('AITP Research goal contribution integration', () => {
     const loopService = stubLoopWithHooks();
     const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
     await mode.enter({ actor: 'user' });
+    observeResearchProgram();
     await goals.createGoal({ objective: 'finish the task' });
+    confirmResearchGoalAlignment(research, goals);
     const turn = makeTurn(79);
     ctx!.get(IEventBus).publish({
       type: 'turn.started',

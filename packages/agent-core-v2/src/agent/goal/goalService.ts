@@ -50,6 +50,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { TurnEndedEvent, TurnStartedEvent } from '#/agent/loop/turnEvents';
 import { Disposable, MutableDisposable, type IDisposable } from '#/_base/di/lifecycle';
+import { isPromiseLike } from '#/_base/lifecycle/disposer';
 import { type CollectionView } from '#/_base/di/collection';
 import { LifecycleScope } from '#/app/scopes';
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
@@ -1245,83 +1246,102 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     };
     this.pendingContinuation = pending;
 
-    const enqueue = (): void => {
-      if (!this.isCurrentContinuation(pending)) return;
-      const message: ContextMessage = {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: pending.stepCapped ? GOAL_STEP_CAP_CONTINUATION_PROMPT : GOAL_CONTINUATION_PROMPT,
-          },
-        ],
-        toolCalls: [],
-        origin: {
-          kind: 'system_trigger',
-          name: 'goal_continuation',
-          goalId: pending.goalId,
-        },
-      };
-      const request = new MessageStepRequest(message, {
-        kind: 'goal_continuation',
-        admission: 'newTurn',
-        turnIntent: {
-          kind: 'goal_continuation',
-          owner: 'goal',
-          goalId: pending.goalId,
-        },
-      });
-      pending.phase = 'enqueued';
-      let receipt: EnqueueReceipt;
-      try {
-        receipt = this.loopService.enqueue(request);
-        pending.receipt = receipt;
-      } catch (error) {
-        if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
-        throw error;
-      }
-      void receipt.assigned
-        .then(({ turn }) => {
-          if (!this.isCurrentContinuation(pending)) return;
-          pending.turnId = turn.id;
-          if (!this.goalDrivenTurns.has(turn.id)) {
-            this.pendingContinuationGoals.set(turn.id, pending.goalId);
-          }
-          return turn.result;
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (pending.turnId !== undefined) this.pendingContinuationGoals.delete(pending.turnId);
-          if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
-        });
-    };
-
     if (this.continuationParticipants.records.length === 0) {
-      enqueue();
+      this.enqueueContinuation(pending);
       return;
     }
-    const held = this.holdContinuation(goalId);
-    if (held instanceof Promise) {
-      return held.then(
-        (isHeld) => {
-          if (!this.isCurrentContinuation(pending)) return;
-          if (isHeld) {
-            this.markContinuationHeld(pending);
-          } else {
-            enqueue();
-          }
+    const decision = this.decideContinuation(pending);
+    if (!isPromiseLike(decision)) return;
+    return Promise.resolve(decision).catch((error) => {
+      if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
+      throw error;
+    });
+  }
+
+  private enqueueContinuation(pending: PendingContinuation): void {
+    if (!this.isCurrentContinuation(pending)) return;
+    const message: ContextMessage = {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: pending.stepCapped ? GOAL_STEP_CAP_CONTINUATION_PROMPT : GOAL_CONTINUATION_PROMPT,
         },
-        (error) => {
-          if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
-          throw error;
-        },
-      );
+      ],
+      toolCalls: [],
+      origin: {
+        kind: 'system_trigger',
+        name: 'goal_continuation',
+        goalId: pending.goalId,
+      },
+    };
+    const request = new MessageStepRequest(message, {
+      kind: 'goal_continuation',
+      admission: 'newTurn',
+      turnIntent: {
+        kind: 'goal_continuation',
+        owner: 'goal',
+        goalId: pending.goalId,
+      },
+    });
+    pending.phase = 'enqueued';
+    let receipt: EnqueueReceipt;
+    try {
+      receipt = this.loopService.enqueue(request);
+    } catch (error) {
+      if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
+      throw error;
     }
-    if (held) {
-      this.markContinuationHeld(pending);
-    } else {
-      enqueue();
+    pending.receipt = receipt;
+    void receipt.assigned
+      .then(({ turn }) => {
+        if (!this.isCurrentContinuation(pending)) return;
+        pending.turnId = turn.id;
+        if (!this.goalDrivenTurns.has(turn.id)) {
+          this.pendingContinuationGoals.set(turn.id, pending.goalId);
+        }
+        return turn.result;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (pending.turnId !== undefined) this.pendingContinuationGoals.delete(pending.turnId);
+        if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
+      });
+  }
+
+  private decideContinuation(pending: PendingContinuation): void | Promise<void> {
+    if (!this.isCurrentContinuation(pending)) return;
+    const settle = (isHeld: boolean): void => {
+      if (!this.isCurrentContinuation(pending)) return;
+      if (isHeld) {
+        this.markContinuationHeld(pending);
+        return;
+      }
+      if (pending.retryRequested) {
+        pending.retryRequested = false;
+        this.scheduleContinuationDecision(pending);
+        return;
+      }
+      this.enqueueContinuation(pending);
+    };
+
+    const result = this.holdContinuation(pending.goalId);
+    if (isPromiseLike(result)) {
+      return Promise.resolve(result as PromiseLike<boolean>).then(settle);
     }
+    settle(result);
+  }
+
+  private scheduleContinuationDecision(pending: PendingContinuation): void {
+    void Promise.resolve()
+      .then(() => this.decideContinuation(pending))
+      .catch((error) => this.failContinuationDecision(pending, error));
+  }
+
+  private failContinuationDecision(pending: PendingContinuation, error: unknown): void {
+    if (this.pendingContinuation !== pending && pending.phase !== 'enqueued') return;
+    if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
+    void this.settleGoalAfterContinuationFailure(error, pending.goalId);
   }
 
   private bindContinuationRetry(participant: GoalContinuationParticipantContribution): void {
@@ -1352,10 +1372,10 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       return;
     }
     if (!this.isLoopReadyForContinuation()) return;
-    this.pendingContinuation = undefined;
-    void Promise.resolve().then(() => this.launchContinuationTurn(goalId, pending.stepCapped)).catch((error) =>
-      this.settleGoalAfterContinuationFailure(error, goalId),
-    );
+
+    pending.phase = 'deciding';
+    pending.retryRequested = false;
+    this.scheduleContinuationDecision(pending);
   }
 
   private markContinuationHeld(pending: PendingContinuation): void {
@@ -1371,7 +1391,9 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       if (decision.decision === 'abstain') return this.holdContinuation(goalId, index + 1);
       return decision.decision === 'hold';
     };
-    return result instanceof Promise ? result.then(resolve) : resolve(result);
+    return isPromiseLike(result)
+      ? Promise.resolve(result as PromiseLike<GoalContinuationDecisionResult>).then(resolve)
+      : resolve(result);
   }
 
   private toContinuationInput(goalId: string): GoalContinuationInput {

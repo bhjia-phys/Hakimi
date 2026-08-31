@@ -60,6 +60,7 @@ const RESEARCH_ARG_COMPLETIONS: readonly ArgCompletionSpec[] = [
   { value: 'pause', description: 'Pause the research loop' },
   { value: 'resume', description: 'Resume the research loop' },
   { value: 'manage', description: 'Open the question manager' },
+  { value: 'align', description: 'Confirm or clear Goal-to-AITP alignment' },
   { value: 'edit', description: 'Edit a question' },
   { value: 'focus', description: 'Set focus on a question' },
   { value: 'defer', description: 'Defer a question' },
@@ -349,10 +350,10 @@ export const BUILTIN_SLASH_COMMANDS = [
     description: 'Manage AITP Research Mode',
     priority: 80,
     argumentHint:
-      '[status|on|off|pause|resume|manage|edit|focus|defer|block|close|reopen|line] | <questionId>',
+      '[status|on|off|pause|resume|manage|align <relation>|edit|focus|defer|block|close|reopen|line] | <questionId>',
     completeArgs: researchArgumentCompletions,
     // status / pause / resume are safe while streaming; on / off / manage /
-    // question actions start or steer a turn and so are idle-only.
+    // alignment / question actions start or steer a turn and so are idle-only.
     availability: (args) => {
       const trimmed = args.trim();
       return trimmed === '' || trimmed === 'status' || trimmed === 'pause' || trimmed === 'resume'
