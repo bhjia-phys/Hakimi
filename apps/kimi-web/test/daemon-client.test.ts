@@ -70,7 +70,31 @@ const WIRE_GOAL = {
 const WIRE_RESEARCH = {
   mode: 'ready',
   loopStatus: 'active',
+  planningPolicy: 'collaborative',
   currentLineSlug: 'sources',
+  currentWorkstreamBinding: {
+    lineSlug: 'sources',
+    status: 'bound',
+    reason: 'Explicit confirmation matches the observed Topic revision.',
+    binding: {
+      confirmationId: 'confirmation-sources-1',
+      lineSlug: 'sources',
+      workstream: 'primary-sources',
+      topicId: 'topic-example',
+      observedRevision: 5,
+      confirmedBy: 'user',
+      confirmedAt: 1_700_000_000_560,
+    },
+  },
+  lineWorkstreamBindings: [{
+    confirmationId: 'confirmation-sources-1',
+    lineSlug: 'sources',
+    workstream: 'primary-sources',
+    topicId: 'topic-example',
+    observedRevision: 5,
+    confirmedBy: 'user',
+    confirmedAt: 1_700_000_000_560,
+  }],
   currentFocus: { questionId: 'q_1', boundedAction: 'Read the primary source', revision: 3 },
   currentQuestion: {
     id: 'q_1',
@@ -166,6 +190,7 @@ const WIRE_RESEARCH = {
     goalText: 'Establish the bounded research result.',
     goalSource: 'aitp-enter',
     establishedAt: 1_700_000_000_550,
+    observedRevision: 5,
   },
   aitpHealth: {
     phase: 'ready',
@@ -213,6 +238,23 @@ const WIRE_RESEARCH = {
     questionId: 'q_1',
     questionRevision: 7,
     lineSlug: 'sources',
+    workstreamBinding: {
+      confirmationId: 'confirmation-sources-1',
+      lineSlug: 'sources',
+      workstream: 'primary-sources',
+      topicId: 'topic-example',
+      observedRevision: 5,
+      confirmedBy: 'user',
+      confirmedAt: 1_700_000_000_560,
+    },
+    commitCandidate: {
+      sourceActionId: 'action_1',
+      progressRecordedAt: 1_700_000_000_570,
+      entryKind: 'source',
+      authority: 'source',
+      provenance: 'source_assessment',
+      rationale: 'The assessed primary source changes the durable evidence state.',
+    },
     assessment: 'Primary source located',
     nextAction: 'Commit the ledger entry',
     idempotencyKey: 'idem_1',
@@ -544,6 +586,8 @@ describe('DaemonKimiWebApi Research', () => {
     expect(snapshot.aitpMaintenance).not.toBe(WIRE_RESEARCH.aitpMaintenance);
     expect(snapshot.program).toEqual(WIRE_RESEARCH.program);
     expect(snapshot.program).not.toBe(WIRE_RESEARCH.program);
+    expect(snapshot.currentWorkstreamBinding).toEqual(WIRE_RESEARCH.currentWorkstreamBinding);
+    expect(snapshot.currentWorkstreamBinding).not.toBe(WIRE_RESEARCH.currentWorkstreamBinding);
   });
 
   it('posts the typed command and maps the returned snapshot', async () => {
@@ -592,6 +636,18 @@ describe('DaemonKimiWebApi Research', () => {
       artifactRefs: ['artifact://run.log'],
     },
     { kind: 'acknowledge_alert', fingerprint: 'alert-active' },
+    {
+      kind: 'confirm_line_workstream_binding',
+      lineSlug: 'sources',
+      workstream: 'primary-sources',
+      expectedRevision: 11,
+    },
+    {
+      kind: 'clear_line_workstream_binding',
+      lineSlug: 'sources',
+      expectedConfirmationId: 'confirmation-sources-1',
+      expectedRevision: 11,
+    },
   ] satisfies ResearchCommand[])('posts the $kind Research Manager command unchanged', async (command) => {
     vi.mocked(fetch).mockResolvedValue(envelope({ snapshot: WIRE_RESEARCH }));
 

@@ -1,12 +1,17 @@
 # Native method-distillation orchestration (planned, unavailable)
 
 > **Status: planned, unavailable.** This document describes a future Hakimi
-> native Feature for orchestrating AITP method-distillation. No code exists;
-> no directory is created. The committed AITP 0.8 Skill-only amendment defines
-> the marker/card/trial/decision rules in the AITP Skill layer; this document
-> describes how a future Hakimi native coordinator would
-> schedule, interact, and recover around those rules. Nothing here is
-> available, and no capability described here may be claimed as shipped.
+> native Feature for persistent AITP method-distillation orchestration. No H6b
+> coordinator, durable state, retry ledger, or recovery implementation exists.
+> The committed AITP 0.8 Skill-only amendment defines the
+> marker/card/trial/decision rules in the AITP Skill layer; this document
+> describes how a future Hakimi native coordinator would schedule, interact,
+> and recover around those rules. The separately shipped S7 slice only loads
+> the exact external Skill once, in the same turn after a new checkpoint
+> commit, for the touched Entry. S8 adds only a monotonic observational receipt
+> for the latest exact checkpoint/Entry to the existing Research snapshot. The
+> best-effort handoff and receipt are not any persistent orchestration capability
+> described here and make no exactly-once or crash-recovery claim.
 
 ## 1. Background and relationship to AITP 0.8
 

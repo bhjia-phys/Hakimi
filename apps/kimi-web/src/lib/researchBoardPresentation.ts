@@ -4,6 +4,8 @@ import type {
   ResearchAlert,
   ResearchAlertClassification,
   ResearchAlertKind,
+  ResearchLineWorkstreamAlignment,
+  ResearchLineWorkstreamBindingStatus,
   ResearchNextStepFreshness,
   ResearchNextStepSource,
   ResearchRunStage,
@@ -11,9 +13,65 @@ import type {
   ResearchStatusSnapshot,
 } from '../api/types';
 
+export interface ResearchWorkstreamBindingPresentation {
+  lineSlug: string;
+  status: ResearchLineWorkstreamBindingStatus;
+  reason: string;
+  workstream?: string;
+  topicId?: string;
+  observedRevision?: number;
+  confirmedBy?: 'user' | 'main_agent';
+  confirmedAt?: number;
+  variant: 'neutral' | 'success' | 'warning' | 'danger';
+}
+
+export function presentResearchWorkstreamBinding(
+  alignment: ResearchLineWorkstreamAlignment | undefined,
+): ResearchWorkstreamBindingPresentation | undefined {
+  if (alignment === undefined) return undefined;
+  const variant = alignment.status === 'bound'
+    ? 'success'
+    : alignment.status === 'conflict'
+      ? 'danger'
+      : alignment.status === 'stale'
+        ? 'warning'
+        : 'neutral';
+  return {
+    lineSlug: alignment.lineSlug,
+    status: alignment.status,
+    reason: alignment.reason,
+    workstream: alignment.binding?.workstream,
+    topicId: alignment.binding?.topicId,
+    observedRevision: alignment.binding?.observedRevision,
+    confirmedBy: alignment.binding?.confirmedBy,
+    confirmedAt: alignment.binding?.confirmedAt,
+    variant,
+  };
+}
+
 export interface ResearchBoardGoalSlot {
   kind: 'goal';
   text: string;
+}
+
+export interface ResearchBoardProjectSlot {
+  kind: 'project';
+  goalText?: string;
+  goalStatus?: NonNullable<ResearchStatusSnapshot['goalSummary']>['status'];
+  planStatus?: NonNullable<ResearchStatusSnapshot['researchPlanV2']>['status'];
+  milestone?: string;
+  line?: string;
+  question?: string;
+  questionWorkflow?: NonNullable<ResearchStatusSnapshot['currentQuestion']>['workflow'];
+  questionEpistemic?: NonNullable<ResearchStatusSnapshot['currentQuestion']>['epistemic'];
+}
+
+export interface ResearchBoardLoopSlot {
+  kind: 'loop';
+  phase: ResearchStatusSnapshot['phase'];
+  loopCount?: number;
+  actionStatus?: ResearchActionStatus | 'recovery_required';
+  aitpState: 'ready' | 'degraded' | 'blocked' | 'pending_commit' | 'unavailable';
 }
 
 type ResearchBoardAttentionValue =
@@ -36,6 +94,14 @@ type ResearchBoardAttentionValue =
     }
   | {
       source: 'adapter';
+      text: string;
+    }
+  | {
+      source: 'distillation';
+      text: string;
+    }
+  | {
+      source: 'action_recovery';
       text: string;
     };
 
@@ -66,21 +132,27 @@ export type ResearchBoardNowSlot =
 
 export interface ResearchBoardNextSlot {
   kind: 'next';
-  source: ResearchNextStepSource | 'progress' | 'focus';
+  source: ResearchNextStepSource | 'progress' | 'focus' | 'action_recovery';
   text: string;
   freshness?: ResearchNextStepFreshness;
 }
 
 export type ResearchBoardCompactSlot =
   | ResearchBoardGoalSlot
+  | ResearchBoardProjectSlot
+  | ResearchBoardLoopSlot
   | ResearchBoardAttentionSlot
   | ResearchBoardNowSlot
   | ResearchBoardNextSlot;
 
 export interface ResearchBoardExpandedRecord {
+  planningPolicy: ResearchStatusSnapshot['planningPolicy'];
   period: ResearchStatusSnapshot['period'];
   plan: ResearchStatusSnapshot['researchPlan'];
+  actionPlan: ResearchStatusSnapshot['actionPlan'];
+  researchPlanV2: ResearchStatusSnapshot['researchPlanV2'];
   status: ResearchStatusSnapshot['status'];
+  distillationAttention: ResearchStatusSnapshot['distillationAttention'];
 }
 
 function presentText(value: string | undefined): string | undefined {
@@ -106,23 +178,103 @@ function goalSlot(snapshot: ResearchStatusSnapshot): ResearchBoardGoalSlot | und
   return text === undefined ? undefined : { kind: 'goal', text };
 }
 
+function actionNeedsRecovery(snapshot: ResearchStatusSnapshot): boolean {
+  const action = snapshot.currentAction;
+  if (action === undefined || (action.status !== 'planned' && action.status !== 'in_progress')) {
+    return false;
+  }
+  const gate = snapshot.humanGate;
+  const gateOwnsAction = snapshot.phase === 'awaiting_human'
+    && gate !== undefined
+    && gate.resolvedAt === undefined
+    && (gate.actionId === undefined || gate.actionId === action.actionId);
+  if (gateOwnsAction) return false;
+  return action.status === 'planned'
+    ? snapshot.phase !== 'action_planned'
+    : snapshot.phase !== 'action_executing';
+}
+
+function projectSlot(snapshot: ResearchStatusSnapshot): ResearchBoardProjectSlot {
+  const goal = snapshot.researchGoal ?? snapshot.goalSummary;
+  const plan = snapshot.researchPlanV2;
+  const milestone = plan?.milestones.find((candidate) =>
+    candidate.milestoneId === plan.currentMilestoneId);
+  const line = snapshot.lines.find((candidate) => candidate.slug === snapshot.currentLineSlug);
+  const question = focusedQuestion(snapshot);
+  return {
+    kind: 'project',
+    goalText: presentText(goal?.objective),
+    goalStatus: goal?.status,
+    planStatus: plan?.status,
+    milestone: presentText(milestone?.title) ?? presentText(plan?.currentMilestoneId),
+    line: presentText(line?.title) ?? presentText(snapshot.currentLineSlug),
+    question: presentText(question?.wording),
+    questionWorkflow: question?.workflow,
+    questionEpistemic: question?.epistemic,
+  };
+}
+
+function loopSlot(snapshot: ResearchStatusSnapshot): ResearchBoardLoopSlot {
+  const blockedByGoal = snapshot.researchGoal?.persistenceGuards.some(
+    (guard) => guard.status === 'blocked',
+  ) ?? false;
+  const bindingBlocked = snapshot.currentLineSlug !== undefined
+    && snapshot.currentWorkstreamBinding?.status !== 'bound';
+  const aitpState = snapshot.pendingCheckpoint !== undefined
+    ? 'pending_commit'
+    : blockedByGoal || bindingBlocked
+      ? 'blocked'
+      : snapshot.aitpMaintenance?.degradedReason !== undefined
+          || snapshot.aitpHealth.phase === 'degraded'
+        ? 'degraded'
+        : snapshot.aitpHealth.phase === 'ready'
+          ? 'ready'
+          : 'unavailable';
+  const action = snapshot.currentAction;
+  return {
+    kind: 'loop',
+    phase: snapshot.phase,
+    loopCount: snapshot.period?.loopCount,
+    actionStatus: actionNeedsRecovery(snapshot)
+      ? 'recovery_required'
+      : action?.status === 'planned' || action?.status === 'in_progress'
+        ? action.status
+        : undefined,
+    aitpState,
+  };
+}
+
 function attentionSlot(
   snapshot: ResearchStatusSnapshot,
 ): ResearchBoardAttentionSlot | undefined {
   const candidates: ResearchBoardAttentionValue[] = [];
   const goalAlignment = snapshot.goalAlignment;
   if (
-    snapshot.goalSummary?.status === 'active'
+    (snapshot.researchGoal?.status ?? snapshot.goalSummary?.status) === 'active'
     && goalAlignment !== undefined
     && goalAlignment.status !== 'aligned'
   ) {
     candidates.push({ source: 'alignment', text: goalAlignment.reason });
+  }
+  if (actionNeedsRecovery(snapshot)) {
+    const action = snapshot.currentAction!;
+    candidates.push({
+      source: 'action_recovery',
+      text: `Action ${action.actionId} is ${action.status} while the Research phase is ${snapshot.phase}; conclude or abandon it before starting another action.`,
+    });
   }
   const humanGateText = snapshot.humanGate?.resolvedAt === undefined
     ? presentText(snapshot.humanGate?.prompt)
     : undefined;
   if (humanGateText !== undefined) {
     candidates.push({ source: 'human_gate', text: humanGateText });
+  }
+  const distillation = snapshot.distillationAttention;
+  if (distillation?.status === 'handoff_unavailable') {
+    candidates.push({
+      source: 'distillation',
+      text: `Entry ${distillation.entryId}: ${distillation.reason}`,
+    });
   }
 
   const activeAlerts = snapshot.alerts
@@ -197,7 +349,8 @@ function runIsActive(
 }
 
 function nowSlot(snapshot: ResearchStatusSnapshot): ResearchBoardNowSlot | undefined {
-  const run = [snapshot.currentRun, snapshot.currentAction?.run]
+  const actionRecoveryRequired = actionNeedsRecovery(snapshot);
+  const run = (actionRecoveryRequired ? [] : [snapshot.currentRun, snapshot.currentAction?.run])
     .find((candidate) => candidate !== undefined && runIsActive(candidate));
   if (run !== undefined) {
     return {
@@ -211,7 +364,7 @@ function nowSlot(snapshot: ResearchStatusSnapshot): ResearchBoardNowSlot | undef
 
   const action = snapshot.currentAction;
   const actionText = presentText(action?.purpose);
-  if (actionText !== undefined
+  if (!actionRecoveryRequired && actionText !== undefined
     && (action?.status === 'planned' || action?.status === 'in_progress')) {
     return {
       kind: 'now',
@@ -247,6 +400,14 @@ function nowSlot(snapshot: ResearchStatusSnapshot): ResearchBoardNowSlot | undef
 }
 
 function nextSlot(snapshot: ResearchStatusSnapshot): ResearchBoardNextSlot | undefined {
+  if (actionNeedsRecovery(snapshot)) {
+    return {
+      kind: 'next',
+      source: 'action_recovery',
+      text: `Conclude or abandon action ${snapshot.currentAction!.actionId} before starting another action.`,
+      freshness: 'blocked',
+    };
+  }
   const effectiveNextStep = snapshot.effectiveNextStep;
   const effectiveText = presentText(effectiveNextStep?.text);
   if (effectiveText !== undefined && effectiveNextStep !== undefined) {
@@ -279,6 +440,8 @@ export function buildResearchBoardCompactSlots(
 ): ResearchBoardCompactSlot[] {
   return [
     goalSlot(snapshot),
+    projectSlot(snapshot),
+    loopSlot(snapshot),
     attentionSlot(snapshot),
     nowSlot(snapshot),
     nextSlot(snapshot),
@@ -294,8 +457,12 @@ export function selectResearchBoardExpandedRecord(
   snapshot: ResearchStatusSnapshot,
 ): ResearchBoardExpandedRecord {
   return {
+    planningPolicy: snapshot.planningPolicy,
     period: snapshot.period,
     plan: snapshot.researchPlan,
+    actionPlan: snapshot.actionPlan,
+    researchPlanV2: snapshot.researchPlanV2,
     status: snapshot.status,
+    distillationAttention: snapshot.distillationAttention,
   };
 }

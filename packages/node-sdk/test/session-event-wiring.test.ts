@@ -162,6 +162,28 @@ describe('SessionEventWiring status snapshot fold', () => {
 });
 
 describe('SessionEventWiring research / aitp_mode event forwarding', () => {
+  it('drops the internal revision signal and keeps forwarding the public Research snapshot', () => {
+    const agent = new FakeAgentHandle('main');
+    const { sink, events } = collectingSink();
+    const wiring = new SessionEventWiring(makeSession([agent]), sink);
+    try {
+      agent.bus.emit({ type: 'research.revision_advanced', notifyGoal: true });
+      expect(events).toEqual([]);
+      agent.bus.emit({
+        type: 'research.updated',
+        snapshot: { mode: 'ready', revision: 7 },
+      });
+    } finally {
+      wiring.dispose();
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'research.updated',
+      snapshot: { mode: 'ready', revision: 7 },
+    });
+  });
+
   it('forwards research.updated with the full snapshot payload', () => {
     const agent = new FakeAgentHandle('main');
     const { sink, events } = collectingSink();
@@ -172,12 +194,80 @@ describe('SessionEventWiring research / aitp_mode event forwarding', () => {
         snapshot: {
           mode: 'ready',
           loopStatus: 'active',
+          currentLineSlug: 'main',
+          currentWorkstreamBinding: {
+            lineSlug: 'main',
+            status: 'bound',
+            reason: 'Explicitly confirmed.',
+            binding: {
+              confirmationId: 'confirmation-main-1',
+              lineSlug: 'main',
+              workstream: 'verified-inputs',
+              topicId: 'topic-1',
+              observedRevision: 1,
+              confirmedBy: 'user',
+              confirmedAt: 1,
+            },
+          },
+          lineWorkstreamBindings: [{
+            confirmationId: 'confirmation-main-1',
+            lineSlug: 'main',
+            workstream: 'verified-inputs',
+            topicId: 'topic-1',
+            observedRevision: 1,
+            confirmedBy: 'user',
+            confirmedAt: 1,
+          }],
           questions: [],
           lines: [],
           openQuestionCount: 0,
           activeQuestionCount: 0,
           blockedQuestionCount: 0,
           alerts: [],
+          researchGoal: {
+            schema: 'hakimi/research-goal-0.1',
+            goalId: 'goal-1',
+            objective: 'Validate the bounded stage.',
+            scope: { programTopicId: 'topic-1', lineSlug: 'main', questionId: 'q1' },
+            nonGoals: [],
+            budget: {
+              tokenBudget: null,
+              turnBudget: 3,
+              wallClockBudgetMs: null,
+              remainingTokens: null,
+              remainingTurns: 2,
+              remainingWallClockMs: null,
+              tokenBudgetReached: false,
+              turnBudgetReached: false,
+              wallClockBudgetReached: false,
+              overBudget: false,
+            },
+            stopConditions: [],
+            status: 'active',
+            programRelation: {
+              status: 'aligned',
+              reason: 'Confirmed as goal_parent_of_program.',
+            },
+            humanGates: [],
+            persistenceGuards: [{
+              code: 'research.mode.ready',
+              status: 'clear',
+              reason: 'Research Mode is ready.',
+            }],
+            researchRevision: 3,
+          },
+          latestCommittedCheckpoint: {
+            checkpointId: 'cp-distill',
+            entryId: 'entry-distill',
+            committedAt: 2,
+          },
+          distillationAttention: {
+            schema: 'hakimi/research-distillation-attention-0.1',
+            status: 'review_requested',
+            checkpointId: 'cp-distill',
+            entryId: 'entry-distill',
+            recordedAt: 3,
+          },
           aitpHealth: { phase: 'ready' },
           revision: 3,
         },
@@ -191,6 +281,22 @@ describe('SessionEventWiring research / aitp_mode event forwarding', () => {
       type: 'research.updated',
       sessionId: 's1',
       agentId: 'main',
+      snapshot: {
+        currentWorkstreamBinding: {
+          status: 'bound',
+          binding: { workstream: 'verified-inputs' },
+        },
+        lineWorkstreamBindings: [{ workstream: 'verified-inputs' }],
+        researchGoal: {
+          schema: 'hakimi/research-goal-0.1',
+          goalId: 'goal-1',
+        },
+        distillationAttention: {
+          status: 'review_requested',
+          checkpointId: 'cp-distill',
+          entryId: 'entry-distill',
+        },
+      },
     });
     // The snapshot payload must survive the translation intact.
     expect((events[0] as { snapshot?: { revision?: number } }).snapshot?.revision).toBe(3);

@@ -24,6 +24,7 @@ import chalk from 'chalk';
 import { CURRENT_MARK, SELECT_POINTER } from '#/tui/constant/symbols';
 import { currentTheme } from '#/tui/theme';
 import { isPrintableChar, printableChar } from '#/tui/utils/printable-key';
+import { projectLineWorkstreamAlignment } from '#/tui/utils/research-workstream-binding';
 import { SearchableList } from '#/tui/utils/searchable-list';
 
 const ELLIPSIS = '…';
@@ -45,6 +46,7 @@ type ResearchQuestion = NonNullable<ResearchStatusSnapshot['currentQuestion']>;
 type ResearchLine = ResearchStatusSnapshot['lines'][number];
 type ResearchAlert = ResearchStatusSnapshot['alerts'][number];
 type ResearchHumanGate = NonNullable<ResearchStatusSnapshot['humanGate']>;
+type ResearchPlanV2 = NonNullable<ResearchStatusSnapshot['researchPlanV2']>;
 type ResearchRecoveryPhase = Extract<
   ResearchStatusSnapshot['phase'],
   'idle' | 'gap_analysis' | 'action_planned' | 'action_executing' | 'evaluating'
@@ -124,13 +126,35 @@ export type ResearchManagerAction =
       readonly lineSlug: string;
       readonly expectedRevision: number;
       readonly status: LineStatus;
+    }
+  | {
+      readonly kind: 'activate_plan_v2' | 'complete_plan_v2' | 'discard_plan_v2';
+      readonly planId: string;
+      readonly expectedRevision: number;
+    }
+  | {
+      readonly kind: 'set_planning_policy';
+      readonly policy: ResearchStatusSnapshot['planningPolicy'];
+      readonly expectedRevision: number;
+    }
+  | {
+      readonly kind: 'confirm_line_workstream_binding';
+      readonly lineSlug: string;
+      readonly workstream: string;
+      readonly expectedRevision: number;
+    }
+  | {
+      readonly kind: 'clear_line_workstream_binding';
+      readonly lineSlug: string;
+      readonly expectedConfirmationId: string;
+      readonly expectedRevision: number;
     };
 
 export interface ResearchManagerOptions {
   readonly snapshot: ResearchStatusSnapshot;
   readonly selectedQuestionId?: string;
   readonly selectedLineSlug?: string;
-  readonly initialView?: 'attention' | 'lines' | 'questions';
+  readonly initialView?: 'attention' | 'lines' | 'questions' | 'plan';
   readonly pageSize?: number;
   readonly onAction: (
     action: ResearchManagerAction,
@@ -143,7 +167,7 @@ export class ResearchManagerComponent extends Container implements Focusable {
 
   private readonly opts: ResearchManagerOptions;
   private snapshot: ResearchStatusSnapshot;
-  private view: 'attention' | 'lines' | 'questions' = 'lines';
+  private view: 'attention' | 'lines' | 'questions' | 'plan' | 'binding' = 'lines';
   private attentionMode: 'list' | 'resolution' | 'phase' = 'list';
   private selectedLineSlug: string | undefined;
   private lineList: SearchableList<ResearchLine>;
@@ -151,6 +175,9 @@ export class ResearchManagerComponent extends Container implements Focusable {
   private attentionList: SearchableList<ResearchAttentionItem>;
   private readonly phaseList: SearchableList<ResearchRecoveryPhase>;
   private readonly resolutionInput = new Input();
+  private readonly workstreamInput = new Input();
+  private bindingLineSlug: string | undefined;
+  private bindingError: string | undefined;
   private resolutionGateId: string | undefined;
   private resolutionError: string | undefined;
   private busy = false;
@@ -174,6 +201,7 @@ export class ResearchManagerComponent extends Container implements Focusable {
       searchable: false,
     });
     this.resolutionInput.onSubmit = (value) => this.submitResolution(value);
+    this.workstreamInput.onSubmit = (value) => this.submitWorkstreamBinding(value);
   }
 
   handleInput(data: string): void {
@@ -182,15 +210,30 @@ export class ResearchManagerComponent extends Container implements Focusable {
       this.handleAttentionInput(data);
       return;
     }
+    if (this.view === 'binding') {
+      this.handleWorkstreamBindingInput(data);
+      return;
+    }
 
     if (matchesKey(data, Key.escape)) {
-      if (this.view === 'questions') {
+      if (this.view === 'questions' || this.view === 'plan') {
         this.view = 'lines';
         this.lineList = this.createLineList(this.selectedLineSlug);
         this.invalidate();
       } else {
         this.opts.onCancel();
       }
+      return;
+    }
+
+    const decoded = printableChar(data).toLowerCase();
+    if (decoded === 'v') {
+      this.view = 'plan';
+      this.invalidate();
+      return;
+    }
+    if (this.view === 'plan') {
+      this.handlePlanInput(decoded);
       return;
     }
 
@@ -257,6 +300,11 @@ export class ResearchManagerComponent extends Container implements Focusable {
       this.invalidate();
       return;
     }
+    if (decoded === 'v') {
+      this.view = 'plan';
+      this.invalidate();
+      return;
+    }
     const selected = this.attentionList.selected();
     if (selected?.kind === 'gate' && decoded === 'r') {
       this.beginResolution();
@@ -275,6 +323,8 @@ export class ResearchManagerComponent extends Container implements Focusable {
   override render(width: number): string[] {
     const safeWidth = Math.max(0, width);
     if (this.view === 'attention') return this.renderAttention(safeWidth);
+    if (this.view === 'plan') return this.renderPlan(safeWidth);
+    if (this.view === 'binding') return this.renderWorkstreamBinding(safeWidth);
 
     const lines: string[] = [
       currentTheme.fg('primary', '─'.repeat(safeWidth)),
@@ -378,6 +428,73 @@ export class ResearchManagerComponent extends Container implements Focusable {
     return lines.map((line) => truncateToWidth(line, width, ELLIPSIS));
   }
 
+  private renderPlan(width: number): string[] {
+    const plan = this.snapshot.researchPlanV2;
+    const lines = [
+      currentTheme.fg('primary', '─'.repeat(width)),
+      currentTheme.boldFg('primary', ' Multi-loop Research Plan'),
+      currentTheme.fg('textMuted', ` ${planHint(plan?.status)}`),
+      '',
+      `${currentTheme.fg('textDim', '  Planning policy:')} ${currentTheme.fg('primary', this.snapshot.planningPolicy)}`,
+      '',
+    ];
+    if (plan === undefined) {
+      lines.push(currentTheme.fg('textMuted', '  No multi-loop Research Plan. Prepare one with the Research Plan tool.'));
+    } else {
+      lines.push(
+        `${currentTheme.fg('textDim', '  Plan:')} ${currentTheme.fg('text', collapseSummary(plan.planId))} · ${currentTheme.fg('textMuted', `${plan.status} · revision ${String(plan.revision)}`)}`,
+        `${currentTheme.fg('textDim', '  Objective:')} ${currentTheme.fg('text', collapseSummary(plan.objective))}`,
+        `${currentTheme.fg('textDim', '  Current milestone:')} ${currentTheme.fg('primary', collapseSummary(plan.currentMilestoneId))}`,
+        '',
+      );
+      for (const milestone of plan.milestones) {
+        const selected = milestone.milestoneId === plan.currentMilestoneId;
+        const marker = selected ? CURRENT_MARK : ' ';
+        lines.push(
+          `${currentTheme.fg(selected ? 'primary' : 'textDim', `  ${marker} `)}${currentTheme.fg('text', collapseSummary(milestone.title))} · ${currentTheme.fg('textMuted', collapseSummary(milestone.completionCriterion))}`,
+        );
+      }
+    }
+    lines.push('', currentTheme.fg('primary', '─'.repeat(width)));
+    return lines.map((line) => truncateToWidth(line, width, ELLIPSIS));
+  }
+
+  private handlePlanInput(decoded: string): void {
+    const plan = this.snapshot.researchPlanV2;
+    if (decoded === 'p') {
+      void this.applyAction({
+        kind: 'set_planning_policy',
+        policy: this.snapshot.planningPolicy === 'collaborative' ? 'dreaming' : 'collaborative',
+        expectedRevision: this.snapshot.revision,
+      });
+      return;
+    }
+    if (plan === undefined) return;
+    if (decoded === 'a' && plan.status === 'draft') {
+      void this.applyAction({
+        kind: 'activate_plan_v2',
+        planId: plan.planId,
+        expectedRevision: plan.revision,
+      });
+      return;
+    }
+    if (decoded === 'c' && plan.status === 'active') {
+      void this.applyAction({
+        kind: 'complete_plan_v2',
+        planId: plan.planId,
+        expectedRevision: plan.revision,
+      });
+      return;
+    }
+    if (decoded === 'd' && (plan.status === 'draft' || plan.status === 'active')) {
+      void this.applyAction({
+        kind: 'discard_plan_v2',
+        planId: plan.planId,
+        expectedRevision: plan.revision,
+      });
+    }
+  }
+
   private beginResolution(): void {
     const selected = this.attentionList.selected();
     const gate = selected?.kind === 'gate' ? selected.gate : this.unresolvedHumanGate();
@@ -443,8 +560,28 @@ export class ResearchManagerComponent extends Container implements Focusable {
     }
 
     const decoded = printableChar(data).toLowerCase();
+    if (decoded === 'v') {
+      this.view = 'plan';
+      this.invalidate();
+      return;
+    }
     if (decoded === 'e') {
       this.invokeAction({ kind: 'edit_line', lineSlug: selected.slug });
+      return;
+    }
+    if (decoded === 'w') {
+      this.beginWorkstreamBinding(selected);
+      return;
+    }
+    if (decoded === 'x') {
+      const binding = projectLineWorkstreamAlignment(this.snapshot, selected.slug).binding;
+      if (binding === undefined) return;
+      void this.applyAction({
+        kind: 'clear_line_workstream_binding',
+        lineSlug: selected.slug,
+        expectedConfirmationId: binding.confirmationId,
+        expectedRevision: this.snapshot.revision,
+      });
       return;
     }
     if (decoded === 's') {
@@ -541,8 +678,9 @@ export class ResearchManagerComponent extends Container implements Focusable {
     const blocked = questions.filter((question) => question.workflow === 'blocked').length;
     const pointer = selected ? `${SELECT_POINTER} ` : '  ';
     const prefix = currentTheme.fg(selected ? 'primary' : 'textDim', `  ${pointer}`);
-    const main = `${collapseSummary(line.title)} · ${collapseSummary(line.slug)} · ${line.status}`;
-    const counts = `questions ${String(questions.length)} (${String(open)} open · ${String(active)} active · ${String(blocked)} blocked)`;
+    const alignment = projectLineWorkstreamAlignment(this.snapshot, line.slug);
+    const main = `${collapseSummary(line.title)} · ${collapseSummary(line.slug)} · ${line.status} · AITP ${alignment.status}${alignment.binding === undefined ? '' : `:${alignment.binding.workstream}`}`;
+    const counts = `questions ${String(questions.length)} (${String(open)}/${String(active)}/${String(blocked)} open/active/blocked)`;
     const assessment = line.assessment === undefined ? '' : ` · assessment: ${collapseSummary(line.assessment)}`;
     const text = selected
       ? currentTheme.boldFg('primary', main)
@@ -604,7 +742,10 @@ export class ResearchManagerComponent extends Container implements Focusable {
     );
   }
 
-  private async applyAction(action: ResearchManagerAction): Promise<void> {
+  private async applyAction(
+    action: ResearchManagerAction,
+    propagateError = false,
+  ): Promise<void> {
     this.busy = true;
     const selectedLineSlug = this.selectedLineSlug;
     const selectedQuestionId = this.selectedQuestion()?.id;
@@ -622,6 +763,8 @@ export class ResearchManagerComponent extends Container implements Focusable {
           if (this.attentionList.view().items.length === 0) this.view = 'lines';
         }
       }
+    } catch (error) {
+      if (propagateError) throw error;
     } finally {
       this.busy = false;
       this.invalidate();
@@ -653,14 +796,103 @@ export class ResearchManagerComponent extends Container implements Focusable {
       searchable: false,
     });
   }
+
+  private beginWorkstreamBinding(line: ResearchLine): void {
+    const existing = projectLineWorkstreamAlignment(this.snapshot, line.slug).binding;
+    this.bindingLineSlug = line.slug;
+    this.bindingError = undefined;
+    this.workstreamInput.setValue(existing?.workstream ?? '');
+    this.view = 'binding';
+    this.invalidate();
+  }
+
+  private handleWorkstreamBindingInput(data: string): void {
+    if (
+      matchesKey(data, Key.escape) ||
+      matchesKey(data, Key.ctrl('c')) ||
+      matchesKey(data, Key.ctrl('d'))
+    ) {
+      this.view = 'lines';
+      this.bindingError = undefined;
+      this.invalidate();
+      return;
+    }
+    this.workstreamInput.handleInput(data);
+    this.bindingError = undefined;
+    this.invalidate();
+  }
+
+  private submitWorkstreamBinding(value: string): void {
+    const workstream = value.trim();
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/u.test(workstream)) {
+      this.bindingError = 'Use a lowercase AITP workstream slug (letters, digits, hyphens; max 63).';
+      this.invalidate();
+      return;
+    }
+    if (this.bindingLineSlug === undefined || this.snapshot.program === undefined) {
+      this.bindingError = 'A current observed AITP Topic and selected Research Line are required.';
+      this.invalidate();
+      return;
+    }
+    const lineSlug = this.bindingLineSlug;
+    void this.applyAction({
+      kind: 'confirm_line_workstream_binding',
+      lineSlug,
+      workstream,
+      expectedRevision: this.snapshot.revision,
+    }, true).then(
+      () => {
+        this.view = 'lines';
+        this.bindingError = undefined;
+        this.invalidate();
+      },
+      (error: unknown) => {
+        this.bindingError = formatDialogError(error);
+        this.invalidate();
+      },
+    );
+  }
+
+  private renderWorkstreamBinding(width: number): string[] {
+    const line = this.snapshot.lines.find((item) => item.slug === this.bindingLineSlug);
+    const program = this.snapshot.program;
+    const lines = [
+      currentTheme.fg('primary', '─'.repeat(width)),
+      currentTheme.boldFg('primary', ' Confirm AITP workstream binding'),
+      currentTheme.fg('textMuted', ' Enter confirm · Esc cancel'),
+      '',
+      `${currentTheme.fg('textDim', '  Research Line:')} ${currentTheme.fg('text', collapseSummary(line?.title ?? this.bindingLineSlug))}`,
+      `${currentTheme.fg('textDim', '  Observed Topic:')} ${program === undefined ? currentTheme.fg('warning', 'unavailable') : currentTheme.fg('text', `${collapseSummary(program.topicId)} · ${collapseSummary(program.title)} · revision ${String(program.observedRevision)}`)}`,
+      '',
+    ];
+    this.workstreamInput.focused = this.focused;
+    const inputWidth = Math.max(1, width - 4);
+    const inputLine = this.workstreamInput.render(inputWidth)[0] ?? '> ';
+    lines.push(`${currentTheme.fg('textDim', '  Workstream:')} ${inputLine}`);
+    if (this.bindingError !== undefined) {
+      lines.push(currentTheme.fg('error', `  ${this.bindingError}`));
+    }
+    lines.push(
+      '',
+      currentTheme.fg('textMuted', '  This is an explicit local confirmation. Matching slugs never imply membership.'),
+      currentTheme.fg('primary', '─'.repeat(width)),
+    );
+    return lines.map((item) => truncateToWidth(item, width, ELLIPSIS));
+  }
 }
 
 function lineHint(): string {
-  return '↑↓ navigate · PgUp/PgDn page · Enter questions · S switch · P pause/resume · B block · C complete · R reopen · E edit · Esc cancel';
+  return '↑↓ navigate · Enter questions · W bind AITP · X clear binding · V plan · S switch · P pause/resume · B block · C complete · R reopen · E edit · Esc cancel';
 }
 
 function questionHint(): string {
-  return '↑↓ navigate · PgUp/PgDn page · E edit · F focus · D defer · B block · C close · R reopen · Esc cancel';
+  return '↑↓ navigate · PgUp/PgDn page · V plan · E edit · F focus · D defer · B block · C close · R reopen · Esc cancel';
+}
+
+function planHint(status: ResearchPlanV2['status'] | undefined): string {
+  if (status === 'draft') return 'P switch policy · A activate · D discard · Esc lines';
+  if (status === 'active') return 'P switch policy · C complete · D discard · Esc lines';
+  return 'P switch policy · Esc lines';
 }
 
 function phaseLabel(phase: ResearchRecoveryPhase): string {
@@ -676,7 +908,7 @@ function phaseLabel(phase: ResearchRecoveryPhase): string {
 function attentionHint(mode: 'list' | 'resolution' | 'phase'): string {
   if (mode === 'resolution') return 'Type a resolution · Enter continue · Esc back';
   if (mode === 'phase') return '↑↓ choose recovery phase · Enter apply · Esc back';
-  return '↑↓ navigate · R resolve decision · A acknowledge alert · L research lines · Esc cancel';
+  return '↑↓ navigate · R resolve decision · A acknowledge alert · L research lines · V plan · Esc cancel';
 }
 
 function renderAttentionItem(item: ResearchAttentionItem, selected: boolean): string {

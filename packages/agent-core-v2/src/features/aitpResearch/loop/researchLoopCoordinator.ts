@@ -5,14 +5,13 @@
  * `IEventBus`, `IAgentAitpModeService`, `IAgentResearchService`, and the
  * Session-scope AITP lifecycle coordinator. It advances an admitted idle active
  * loop to orienting at turn start, notes the admitted loop boundary on the
- * research period (one loop-count increment per admitted turn; ordinary turns
- * abstain), and refreshes the read-only AITP current-state
- * projection after admitted turns that changed research state. Admission is
- * required: only a Goal-owned continuation lease with the
- * `system_trigger` / `goal_continuation` origin while Research Mode is active
- * and the loop is running proceeds; ordinary user / system / subagent / cron
- * turns abstain. It never judges results, completes actions, writes AITP
- * records, or enqueues continuations; Goal owns continuation. Subagent
+ * research period (one loop-count increment per interactive or autonomous
+ * Research iteration), and refreshes the read-only AITP current-state
+ * projection after admitted turns that changed research state. Typed main-agent
+ * user turns carry an interactive lease; post-guard Goal continuations carry an
+ * autonomous lease. System / subagent / cron / unclassified turns abstain. It
+ * never judges results, completes actions, writes AITP records, or enqueues
+ * continuations; the Goal engine remains the sole continuation owner. Subagent
  * instances remain inert. Bound at Agent scope.
  */
 
@@ -22,9 +21,14 @@ import { IEventBus } from '#/app/event/eventBus';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import type { TurnEndedEvent, TurnStartedEvent } from '#/agent/loop/turnEvents';
 import { ISessionAitpLifecycleCoordinator } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
+import { AitpResearchError, AitpResearchErrors } from '#/features/aitpResearch/errors';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import { IAgentResearchService } from '#/features/aitpResearch/research/agentResearch';
 import { IResearchTurnAdmission } from '#/features/aitpResearch/loop/researchTurnAdmission';
+import {
+  isMaintenanceReceiptAligned,
+  sameLineWorkstreamBinding,
+} from '#/features/aitpResearch/research/workstreamBinding';
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
 
 export interface IResearchLoopCoordinator {
@@ -73,9 +77,6 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
       return;
     }
 
-    // An admitted turn start is the loop boundary: the period's loop counter
-    // advances once here (never for ordinary turns), before the revision
-    // bookkeeping, so the boundary itself is not treated as research change.
     this.research.noteLoopBoundary();
 
     const snapshot = this.research.getSnapshot();
@@ -102,10 +103,62 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
     this.turnStartRevision = null;
     this.turnStartActionId = null;
     if (!researchChanged) return;
+    if (snapshot.currentLineSlug === undefined) return;
+    void this.refreshTurnEndMaintenance(snapshot.currentLineSlug);
+  }
 
-    void this.maintenance.refresh({
-      workstream: snapshot.currentLineSlug,
-      force: true,
-    }).catch(() => undefined);
+  private async refreshTurnEndMaintenance(lineSlug: string): Promise<void> {
+    const maintenance = this.maintenance;
+    if (maintenance === undefined) return;
+    try {
+      const binding = await this.mode.reconcileCurrentTopicBinding(lineSlug);
+      if (binding === undefined || !this.mode.isActive) return;
+      const snapshot = this.research.getSnapshot();
+      if (
+        snapshot.currentLineSlug !== binding.lineSlug ||
+        snapshot.currentWorkstreamBinding?.status !== 'bound' ||
+        snapshot.currentWorkstreamBinding.binding?.workstream !== binding.workstream ||
+        snapshot.currentWorkstreamBinding.binding.topicId !== binding.topicId ||
+        snapshot.currentWorkstreamBinding.binding.observedRevision !== binding.observedRevision
+      ) return;
+      const receipt = await maintenance.refresh({
+        workstream: binding.workstream,
+        force: true,
+      });
+      if (receipt.degradedReason === 'stale_generation') return;
+      const after = this.research.getSnapshot();
+      const currentBinding = after.currentWorkstreamBinding?.status === 'bound'
+        ? after.currentWorkstreamBinding.binding
+        : undefined;
+      if (
+        !this.mode.isActive ||
+        after.currentLineSlug !== binding.lineSlug ||
+        currentBinding === undefined ||
+        !sameLineWorkstreamBinding(currentBinding, binding) ||
+        after.program === undefined ||
+        !isMaintenanceReceiptAligned({
+          receipt,
+          binding: currentBinding,
+          program: after.program,
+        })
+      ) {
+        maintenance.reset();
+        if (
+          this.mode.isActive &&
+          this.research.getSnapshot().currentLineSlug === lineSlug
+        ) this.mode.setPhase('degraded');
+        return;
+      }
+      if (this.mode.phase !== receipt.status) this.mode.setPhase(receipt.status);
+    } catch (error) {
+      if (
+        error instanceof AitpResearchError &&
+        error.code === AitpResearchErrors.codes.AITP_ADAPTER_OPERATION_CANCELLED
+      ) return;
+      if (
+        this.mode.isActive &&
+        this.research.getSnapshot().currentLineSlug === lineSlug
+      ) this.mode.setPhase('degraded');
+    }
   }
 }

@@ -43,6 +43,16 @@ import type {
   ResearchStateChange,
   ResearchStatusSnapshot,
   ResearchPlan,
+  ResearchPlanV2,
+  ResearchPlanV2Milestone,
+  ResearchPlanV2DecisionPoint,
+  ResearchPlanningPolicy,
+  ResearchLineWorkstreamAlignment,
+  ResearchLineWorkstreamBinding,
+  AitpEntryKind,
+  AitpAuthority,
+  ResearchCommitProvenance,
+  ResearchDurableCommitCandidate,
 } from '../types';
 
 export interface CreateQuestionInput {
@@ -84,6 +94,10 @@ export interface CommitCheckpointInput {
   readonly entryId: string;
 }
 
+export interface CommitCheckpointResult {
+  readonly status: 'committed' | 'already_committed';
+}
+
 export interface PlanActionInput {
   readonly actionId?: string;
   readonly questionId?: string;
@@ -95,6 +109,12 @@ export interface PlanActionInput {
   readonly allowedToolKinds?: readonly string[];
   readonly retryOfEntryId?: string;
   readonly requiresHumanApproval?: boolean;
+  readonly planningLevel?: 'simple' | 'planned';
+  readonly researchPlanId?: string;
+  readonly researchPlanRevision?: number;
+  readonly milestoneId?: string;
+  readonly actionPlanId?: string;
+  readonly actionPlanRevision?: number;
 }
 
 export interface RecordProgressInput {
@@ -123,12 +143,25 @@ export interface RecordProgressInput {
 export interface ConcludeResearchActionInput {
   readonly actionId: string;
   readonly status: 'completed' | 'abandoned';
-  readonly progress: Omit<RecordProgressInput, 'phaseChange'>;
+  readonly progress: Omit<RecordProgressInput, 'phaseChange' | 'humanDecision'>;
+  readonly durability:
+    | {
+        readonly status: 'no_durable_delta';
+        readonly rationale: string;
+      }
+    | {
+        readonly status: 'durable_delta';
+        readonly entryKind: AitpEntryKind;
+        readonly authority: AitpAuthority;
+        readonly provenance: ResearchCommitProvenance;
+        readonly rationale: string;
+      };
 }
 
 export interface ResearchActionConclusion {
   readonly action: ResearchActionSpec;
   readonly progress: ResearchProgressReport;
+  readonly commitCandidate?: ResearchDurableCommitCandidate;
 }
 
 export interface RequestHumanDecisionInput {
@@ -156,6 +189,25 @@ export interface PrepareResearchPlanInput {
   readonly usePlanMode?: boolean;
 }
 
+export interface PrepareResearchPlanV2Input {
+  readonly planId?: string;
+  readonly expectedRevision?: number;
+  readonly objective: string;
+  readonly completionCriterion?: string;
+  readonly milestones: readonly ResearchPlanV2Milestone[];
+  readonly evidenceRequirements: readonly string[];
+  readonly decisionPoints: readonly ResearchPlanV2DecisionPoint[];
+  readonly assumptions: readonly string[];
+  readonly currentMilestoneId: string;
+  readonly stopConditions: readonly string[];
+  readonly replanConditions: readonly string[];
+}
+
+export interface TransitionResearchPlanV2Input {
+  readonly planId: string;
+  readonly expectedRevision: number;
+}
+
 export interface ConfirmGoalAlignmentInput {
   readonly relation: ResearchGoalAlignmentRelation;
   readonly expectedRevision: number;
@@ -169,6 +221,19 @@ export interface ClearGoalAlignmentInput {
   readonly goalId: string;
   readonly topicId: string;
   readonly observedRevision: number;
+}
+
+export interface ConfirmLineWorkstreamBindingInput {
+  readonly lineSlug: string;
+  readonly workstream: string;
+  readonly expectedRevision: number;
+  readonly confirmedBy: 'user' | 'main_agent';
+}
+
+export interface ClearLineWorkstreamBindingInput {
+  readonly lineSlug: string;
+  readonly expectedRevision: number;
+  readonly expectedConfirmationId: string;
 }
 
 export interface ObserveResearchRunInput {
@@ -197,12 +262,25 @@ export interface IAgentResearchService {
   getGoalAlignment(): ResearchGoalAlignment;
   confirmGoalAlignment(input: ConfirmGoalAlignmentInput): void;
   clearGoalAlignment(input: ClearGoalAlignmentInput): void;
+  getLineWorkstreamAlignment(lineSlug: string): ResearchLineWorkstreamAlignment;
+  getCurrentWorkstreamAlignment(): ResearchLineWorkstreamAlignment | undefined;
+  confirmLineWorkstreamBinding(
+    input: ConfirmLineWorkstreamBindingInput,
+  ): Promise<ResearchLineWorkstreamBinding>;
+  clearLineWorkstreamBinding(input: ClearLineWorkstreamBindingInput): void;
   getPeriod(): ResearchPeriod | null;
   getScientificProgress(level: ResearchProgressLevel): ResearchScientificSnapshot;
   getResearchPlan(): ResearchPlan | null;
+  getResearchPlanV2(): ResearchPlanV2 | null;
+  getPlanningPolicy(): ResearchPlanningPolicy;
+  setPlanningPolicy(policy: ResearchPlanningPolicy, expectedRevision: number): void;
   prepareResearchPlan(input: PrepareResearchPlanInput): Promise<ResearchPlan>;
   finalizeResearchPlan(): Promise<ResearchPlan>;
   discardResearchPlan(): ResearchPlan | null;
+  prepareResearchPlanV2(input: PrepareResearchPlanV2Input): ResearchPlanV2;
+  activateResearchPlanV2(input: TransitionResearchPlanV2Input): ResearchPlanV2;
+  completeResearchPlanV2(input: TransitionResearchPlanV2Input): ResearchPlanV2;
+  discardResearchPlanV2(input: TransitionResearchPlanV2Input): ResearchPlanV2;
   noteLoopBoundary(): void;
   reviewEvidencePacket(packet: ResearchEvidencePacket, expectedRevision: number): ResearchEvidenceReview;
   observeRun(input: ObserveResearchRunInput): ResearchRunState;
@@ -218,8 +296,11 @@ export interface IAgentResearchService {
   acknowledgeAlert(fingerprint: string): void;
 
   proposeCheckpoint(input: ProposeCheckpointInput): ResearchCheckpoint;
-  bindPendingCheckpointReceipt(receipt: ResearchCheckpointReceipt): ResearchCheckpoint;
-  commitCheckpoint(input: CommitCheckpointInput): Promise<void>;
+  bindPendingCheckpointReceipt(
+    receipt: ResearchCheckpointReceipt,
+    expectedCheckpointId?: string,
+  ): ResearchCheckpoint;
+  commitCheckpoint(input: CommitCheckpointInput): Promise<CommitCheckpointResult>;
 
   planAction(input: PlanActionInput): ResearchActionSpec;
   planAndStartAction(input: PlanActionInput): ResearchActionSpec;

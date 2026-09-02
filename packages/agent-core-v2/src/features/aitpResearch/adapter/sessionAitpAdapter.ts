@@ -2,7 +2,7 @@
  * `aitpResearch` domain — `ISessionAitpAdapter` contract.
  *
  * The Session-scope adapter that bridges Hakimi to the external AITP CLI
- * (plugin 0.8, adapter-contract-0.1). Strictly consumes the AITP CLI surface
+ * (plugin 0.8/0.9, adapter-contract-0.1/0.2). Strictly consumes the AITP CLI surface
  * (`enter`, `list`, `show`, `check`, `record/note prepare/save`); never calls
  * `init`, `inventory`, or `backfill --apply`; never writes canonical AITP
  * files directly. Bound at Session scope.
@@ -59,6 +59,8 @@ export interface AitpAdapterRecordPrepareOptions extends AitpAdapterOperationOpt
 
 export interface AitpAdapterRecordSaveOptions extends AitpAdapterOperationOptions {
   readonly draftPath: string;
+  readonly expectedTopic?: string;
+  readonly exactWorkstream?: string;
 }
 
 export interface AitpAdapterNotePrepareOptions extends AitpAdapterOperationOptions {

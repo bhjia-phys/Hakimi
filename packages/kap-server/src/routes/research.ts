@@ -301,6 +301,12 @@ async function dispatchResearchCommand(
         allowedToolKinds: cmd.allowedToolKinds,
         retryOfEntryId: cmd.retryOfEntryId,
         requiresHumanApproval: cmd.requiresHumanApproval,
+        planningLevel: cmd.planningLevel,
+        researchPlanId: cmd.researchPlanId,
+        researchPlanRevision: cmd.researchPlanRevision,
+        milestoneId: cmd.milestoneId,
+        actionPlanId: cmd.actionPlanId,
+        actionPlanRevision: cmd.actionPlanRevision,
       });
       break;
     case 'start_action':
@@ -322,9 +328,9 @@ async function dispatchResearchCommand(
           mainlineImpact: cmd.mainlineImpact,
           uncertainties: cmd.uncertainties,
           nextAction: cmd.nextAction,
-          humanDecision: cmd.humanDecision,
           detail: cmd.detail,
         },
+        durability: cmd.durability,
       });
       break;
     case 'prepare_plan':
@@ -344,6 +350,57 @@ async function dispatchResearchCommand(
       break;
     case 'discard_plan':
       research.discardResearchPlan();
+      break;
+    case 'confirm_line_workstream_binding':
+      await research.confirmLineWorkstreamBinding({
+        lineSlug: cmd.lineSlug,
+        workstream: cmd.workstream,
+        expectedRevision: cmd.expectedRevision,
+        confirmedBy: 'user',
+      });
+      break;
+    case 'clear_line_workstream_binding':
+      research.clearLineWorkstreamBinding({
+        lineSlug: cmd.lineSlug,
+        expectedConfirmationId: cmd.expectedConfirmationId,
+        expectedRevision: cmd.expectedRevision,
+      });
+      break;
+    case 'set_planning_policy':
+      research.setPlanningPolicy(cmd.policy, cmd.expectedRevision);
+      break;
+    case 'prepare_plan_v2':
+      research.prepareResearchPlanV2({
+        planId: cmd.planId,
+        expectedRevision: cmd.expectedRevision,
+        objective: cmd.objective,
+        completionCriterion: cmd.completionCriterion,
+        milestones: cmd.milestones,
+        evidenceRequirements: cmd.evidenceRequirements,
+        decisionPoints: cmd.decisionPoints,
+        assumptions: cmd.assumptions,
+        currentMilestoneId: cmd.currentMilestoneId,
+        stopConditions: cmd.stopConditions,
+        replanConditions: cmd.replanConditions,
+      });
+      break;
+    case 'activate_plan_v2':
+      research.activateResearchPlanV2({
+        planId: cmd.planId,
+        expectedRevision: cmd.expectedRevision,
+      });
+      break;
+    case 'complete_plan_v2':
+      research.completeResearchPlanV2({
+        planId: cmd.planId,
+        expectedRevision: cmd.expectedRevision,
+      });
+      break;
+    case 'discard_plan_v2':
+      research.discardResearchPlanV2({
+        planId: cmd.planId,
+        expectedRevision: cmd.expectedRevision,
+      });
       break;
     case 'confirm_goal_alignment':
       research.confirmGoalAlignment({

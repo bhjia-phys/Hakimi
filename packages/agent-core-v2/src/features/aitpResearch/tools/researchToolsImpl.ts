@@ -7,7 +7,9 @@
  * `BeginResearchAction` and `ConcludeResearchAction`; atomic operations kept in
  * this module support approval recovery and maintenance. Research outputs lead
  * with what was done, the result, the mainline impact, and the next step rather
- * than raw ids or revisions. Bound at Agent scope.
+ * than raw ids or revisions. Successful first-time checkpoint commits hand one
+ * touched Entry to the external distillation Skill through the stateless
+ * `aitpResearch` handoff capability. Bound at Agent scope.
  */
 
 import type { ToolExecution } from '#/tool/toolContract';
@@ -16,9 +18,12 @@ import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMo
 import { IAgentResearchService } from '#/features/aitpResearch/research/agentResearch';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import { AitpResearchError } from '#/features/aitpResearch/errors';
+import { IAitpDistillationHandoffService } from '#/features/aitpResearch/research/distillationHandoff';
 
 import {
   ICommitResearchCheckpointTool,
+  IConfirmResearchWorkstreamBindingTool,
+  IClearResearchWorkstreamBindingTool,
   ICompleteResearchActionTool,
   IConcludeResearchActionTool,
   ICreateResearchLineTool,
@@ -43,6 +48,8 @@ import {
   IUpdateResearchLineTool,
   IUpdateResearchQuestionTool,
   CommitResearchCheckpointInputSchema,
+  ConfirmResearchWorkstreamBindingInputSchema,
+  ClearResearchWorkstreamBindingInputSchema,
   CompleteResearchActionInputSchema,
   ConcludeResearchActionInputSchema,
   CreateResearchLineInputSchema,
@@ -61,6 +68,8 @@ import {
   UpdateResearchLineInputSchema,
   UpdateResearchQuestionInputSchema,
   type CommitResearchCheckpointInput,
+  type ConfirmResearchWorkstreamBindingInput,
+  type ClearResearchWorkstreamBindingInput,
   type CompleteResearchActionInput,
   type ConcludeResearchActionToolInput,
   type CreateResearchLineInput,
@@ -282,6 +291,83 @@ export class UpdateResearchLineTool implements IUpdateResearchLineTool {
   }
 }
 
+export class ConfirmResearchWorkstreamBindingTool
+  implements IConfirmResearchWorkstreamBindingTool {
+  declare readonly _serviceBrand: undefined;
+  readonly name = 'ConfirmResearchWorkstreamBinding' as const;
+  readonly description = 'Explicitly confirm that one local Research Line uses one AITP workstream in the currently observed Topic. Never infer this mapping from matching slugs, paths, or IDs.';
+  readonly parameters: Record<string, unknown> = toInputJsonSchema(
+    ConfirmResearchWorkstreamBindingInputSchema,
+  );
+
+  constructor(
+    @IAgentResearchService private readonly research: IAgentResearchService,
+    @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+  ) {}
+
+  resolveExecution(args: ConfirmResearchWorkstreamBindingInput): ToolExecution {
+    return {
+      description: `Confirming explicit AITP workstream binding for ${args.line_slug}`,
+      approvalRule: this.name,
+      execute: async () => {
+        const inactive = requireActive(this.mode);
+        if (inactive !== undefined) return errorResult(inactive);
+        try {
+          const binding = await this.research.confirmLineWorkstreamBinding({
+            lineSlug: args.line_slug,
+            workstream: args.workstream,
+            expectedRevision: args.expected_revision,
+            confirmedBy: 'main_agent',
+          });
+          return {
+            output: `Confirmed Research Line ${binding.lineSlug} → AITP workstream ${binding.workstream} for Topic ${binding.topicId} revision ${binding.observedRevision}.`,
+          };
+        } catch (error) {
+          if (error instanceof AitpResearchError) return errorResult(error.message);
+          throw error;
+        }
+      },
+    };
+  }
+}
+
+export class ClearResearchWorkstreamBindingTool
+  implements IClearResearchWorkstreamBindingTool {
+  declare readonly _serviceBrand: undefined;
+  readonly name = 'ClearResearchWorkstreamBinding' as const;
+  readonly description = 'Clear one explicit local Line-to-workstream confirmation before a deliberate rebind. This never edits AITP.';
+  readonly parameters: Record<string, unknown> = toInputJsonSchema(
+    ClearResearchWorkstreamBindingInputSchema,
+  );
+
+  constructor(
+    @IAgentResearchService private readonly research: IAgentResearchService,
+    @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+  ) {}
+
+  resolveExecution(args: ClearResearchWorkstreamBindingInput): ToolExecution {
+    return {
+      description: `Clearing AITP workstream binding for ${args.line_slug}`,
+      approvalRule: this.name,
+      execute: async () => {
+        const inactive = requireActive(this.mode);
+        if (inactive !== undefined) return errorResult(inactive);
+        try {
+          this.research.clearLineWorkstreamBinding({
+            lineSlug: args.line_slug,
+            expectedRevision: args.expected_revision,
+            expectedConfirmationId: args.expected_confirmation_id,
+          });
+          return { output: `Cleared the explicit AITP workstream binding for Research Line ${args.line_slug}.` };
+        } catch (error) {
+          if (error instanceof AitpResearchError) return errorResult(error.message);
+          throw error;
+        }
+      },
+    };
+  }
+}
+
 export class UpdateResearchQuestionTool implements IUpdateResearchQuestionTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'UpdateResearchQuestion' as const;
@@ -427,6 +513,8 @@ export class CommitResearchCheckpointTool implements ICommitResearchCheckpointTo
   constructor(
     @IAgentResearchService private readonly research: IAgentResearchService,
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+    @IAitpDistillationHandoffService
+    private readonly distillation?: IAitpDistillationHandoffService,
   ) {}
 
   resolveExecution(args: CommitResearchCheckpointInput): ToolExecution {
@@ -437,11 +525,33 @@ export class CommitResearchCheckpointTool implements ICommitResearchCheckpointTo
         const inactive = requireActive(this.mode);
         if (inactive !== undefined) return errorResult(inactive);
         try {
-          await this.research.commitCheckpoint({
+          const committed = await this.research.commitCheckpoint({
             checkpointId: args.checkpoint_id,
             entryId: args.entry_id,
           });
-          return { output: `Checkpoint ${args.checkpoint_id} committed.` };
+          if (committed.status === 'already_committed') {
+            return {
+              output: `Checkpoint ${args.checkpoint_id} was already committed. Distillation handoff: no-op for this duplicate commit.`,
+            };
+          }
+          if (this.distillation === undefined) {
+            return {
+              output: `Checkpoint ${args.checkpoint_id} committed. Distillation handoff: unavailable and non-blocking.`,
+            };
+          }
+          const handoff = await this.distillation.prepare({
+            checkpointId: args.checkpoint_id,
+            entryId: args.entry_id,
+          });
+          if (handoff.status === 'unavailable') {
+            return {
+              output: `Checkpoint ${args.checkpoint_id} committed. Distillation handoff: unavailable and non-blocking. ${handoff.reason}`,
+            };
+          }
+          return {
+            output: `Checkpoint ${args.checkpoint_id} committed. Distillation handoff: one bounded review scheduled for touched Entry ${args.entry_id}; the external Skill may no-op when its trigger does not hold.`,
+            delivery: handoff.delivery,
+          };
         } catch (error) {
           if (error instanceof AitpResearchError) return errorResult(error.message);
           throw error;
@@ -480,6 +590,12 @@ export class PlanResearchActionTool implements IPlanResearchActionTool {
             stopCondition: args.stop_condition,
             allowedToolKinds: args.allowed_tool_kinds,
             retryOfEntryId: args.retry_of_entry_id,
+            planningLevel: args.planning_level ?? 'simple',
+            researchPlanId: args.research_plan_id,
+            researchPlanRevision: args.research_plan_revision,
+            milestoneId: args.milestone_id,
+            actionPlanId: args.action_plan_id,
+            actionPlanRevision: args.action_plan_revision,
             requiresHumanApproval: useAutoStandingApproval(
               this.permissionMode,
               args.requires_human_approval,
@@ -538,6 +654,12 @@ export class BeginResearchActionTool implements IBeginResearchActionTool {
             stopCondition: args.stop_condition,
             allowedToolKinds: args.allowed_tool_kinds,
             retryOfEntryId: args.retry_of_entry_id,
+            planningLevel: args.planning_level ?? 'simple',
+            researchPlanId: args.research_plan_id,
+            researchPlanRevision: args.research_plan_revision,
+            milestoneId: args.milestone_id,
+            actionPlanId: args.action_plan_id,
+            actionPlanRevision: args.action_plan_revision,
             requiresHumanApproval: useAutoStandingApproval(
               this.permissionMode,
               args.requires_human_approval,
@@ -556,6 +678,7 @@ export class BeginResearchActionTool implements IBeginResearchActionTool {
             lines.push('Human approval is required before execution; no scientific work has been marked as started.');
           } else {
             lines.push('Mainline impact: the bounded action is now the active research step.');
+            lines.push('Before executing a potentially reusable procedure, follow the using-aitp Skill to retrieve applicable Method cards by their generic marker and inspect their pinned basis.');
             lines.push('Next step: perform the planned work and collect the expected evidence.');
           }
           return { output: lines.join('\n') };
@@ -655,7 +778,7 @@ export class CompleteResearchActionTool implements ICompleteResearchActionTool {
 export class ConcludeResearchActionTool implements IConcludeResearchActionTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'ConcludeResearchAction' as const;
-  readonly description = 'Conclude one bounded research action and record what was done, the result, and its scientific impact in one step.';
+  readonly description = 'Conclude one bounded research action, record its scientific impact once, and assess whether it produced a durable delta. A durable assessment emits one pending AITP commit candidate; no durable delta performs no AITP action.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(ConcludeResearchActionInputSchema);
 
   constructor(
@@ -683,7 +806,6 @@ export class ConcludeResearchActionTool implements IConcludeResearchActionTool {
               mainlineImpact: args.mainline_impact,
               uncertainties: args.uncertainties,
               nextAction: args.next_action,
-              humanDecision: args.human_decision,
               detail: args.detail === undefined ? undefined : {
                 assumptions: args.detail.assumptions,
                 derivation: args.detail.derivation,
@@ -695,6 +817,18 @@ export class ConcludeResearchActionTool implements IConcludeResearchActionTool {
                 artifactRefs: args.detail.artifact_refs,
               },
             },
+            durability: args.durability.status === 'no_durable_delta'
+              ? {
+                  status: 'no_durable_delta',
+                  rationale: args.durability.rationale,
+                }
+              : {
+                  status: 'durable_delta',
+                  entryKind: args.durability.entry_kind,
+                  authority: args.durability.authority,
+                  provenance: args.durability.provenance,
+                  rationale: args.durability.rationale,
+                },
           });
           const progress = conclusion.progress;
           const lines: string[] = [
@@ -720,6 +854,21 @@ export class ConcludeResearchActionTool implements IConcludeResearchActionTool {
           if (progress.nextAction !== undefined) lines.push(`Next step: ${progress.nextAction}`);
           lines.push(`Action ${conclusion.action.actionId} is ${conclusion.action.status}; Research phase is state_updated.`);
           lines.push('Assessment and epistemic state were not changed automatically; update the Research question only if the scientific interpretation changed.');
+          const candidate = conclusion.commitCandidate;
+          if (candidate === undefined) {
+            lines.push(`Durability: no durable delta (${args.durability.rationale}).`);
+            lines.push('AITP action: none. Do not call AITP persistence or method-card review for this conclusion.');
+          } else {
+            const checkpoint = this.research.getPendingCheckpoint();
+            const workstream = checkpoint?.workstreamBinding?.workstream;
+            lines.push(`Durability: assessed durable candidate (${candidate.rationale}).`);
+            lines.push(`Pending checkpoint: ${checkpoint?.checkpointId ?? 'unavailable'}.`);
+            lines.push(
+              `Continue in this turn when possible: call aitp_record_prepare with kind=${candidate.entryKind}, authority=${candidate.authority}, ${candidate.authority === 'agent' ? 'created_by=agent:main, ' : ''}workstreams=[${workstream ?? 'captured-workstream'}], checkpoint_id=${checkpoint?.checkpointId ?? 'pending-checkpoint'}; fill the draft with the assessed evidence; call aitp_record_save with the same checkpoint_id; then call CommitResearchCheckpoint with the saved Entry ID.`,
+            );
+            lines.push('If this Entry records potentially reusable execution evidence, load and follow the external distilling-methods Skill before filling it; that Skill alone decides whether the Entry exact-pins a retrieved card or carries an observation marker.');
+            lines.push('Do not call RecordResearchProgress again for this conclusion. Keep human assertions or decisions in a separate human-authority Entry from agent/tool/source verification.');
+          }
           return { output: lines.join('\n') };
         } catch (error) {
           if (error instanceof AitpResearchError) return errorResult(error.message);

@@ -9,6 +9,7 @@ import { researchProgressSummaries } from '../src/lib/researchProgress';
 import {
   buildResearchBoardCompactSlots,
   presentResearchAlertClassification,
+  presentResearchWorkstreamBinding,
   selectResearchBoardExpandedRecord,
 } from '../src/lib/researchBoardPresentation';
 import { buildDiffLines } from '../src/lib/diffLines';
@@ -922,6 +923,8 @@ describe('research board compact presentation', () => {
     return {
       mode: 'ready',
       loopStatus: 'active',
+      planningPolicy: 'collaborative',
+      lineWorkstreamBindings: [],
       questions: [],
       lines: [],
       openQuestionCount: 0,
@@ -1012,7 +1015,47 @@ describe('research board compact presentation', () => {
     };
   }
 
-  it('keeps the compact projection within its four fixed semantic slots when every slot is available', () => {
+  it.each([
+    ['unbound', 'neutral'],
+    ['unavailable', 'neutral'],
+    ['bound', 'success'],
+    ['stale', 'warning'],
+    ['conflict', 'danger'],
+  ] as const)('presents a %s current Line/workstream alignment without inference', (status, variant) => {
+    const binding = status === 'bound' || status === 'stale' || status === 'conflict'
+      ? {
+          confirmationId: 'confirmation-main-1',
+          lineSlug: 'main',
+          workstream: 'verified-workstream',
+          topicId: 'topic_1',
+          observedRevision: 2,
+          confirmedBy: 'user' as const,
+          confirmedAt: 3,
+        }
+      : undefined;
+    expect(presentResearchWorkstreamBinding({
+      lineSlug: 'main',
+      status,
+      reason: `server:${status}`,
+      binding,
+    })).toEqual({
+      lineSlug: 'main',
+      status,
+      reason: `server:${status}`,
+      workstream: binding?.workstream,
+      topicId: binding?.topicId,
+      observedRevision: binding?.observedRevision,
+      confirmedBy: binding?.confirmedBy,
+      confirmedAt: binding?.confirmedAt,
+      variant,
+    });
+  });
+
+  it('does not synthesize a current binding when the server omitted alignment state', () => {
+    expect(presentResearchWorkstreamBinding(undefined)).toBeUndefined();
+  });
+
+  it('keeps the compact projection within its six fixed semantic slots when every slot is available', () => {
     const slots = buildResearchBoardCompactSlots(snapshot({
       program: {
         topicId: 'topic_1',
@@ -1032,10 +1075,78 @@ describe('research board compact presentation', () => {
 
     expect(slots.map((slot) => slot.kind)).toEqual([
       'goal',
+      'project',
+      'loop',
       'attention',
       'now',
       'next',
     ]);
+  });
+
+  it('projects the Goal, current Plan milestone, Line, Question, loop, and AITP state', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      goalSummary: {
+        goalId: 'goal_1',
+        objective: 'Validate the bounded result',
+        status: 'active',
+      },
+      researchPlanV2: {
+        schema: 'hakimi/research-plan-0.2',
+        planId: 'plan_1',
+        revision: 2,
+        goalId: 'goal_1',
+        programId: 'topic_1',
+        programObservedRevision: 1,
+        goalRelation: 'goal_milestone_in_program',
+        objective: 'Run the multi-loop validation',
+        milestones: [{
+          milestoneId: 'm1',
+          title: 'Validate the first bounded comparison',
+          objective: 'Compare the fixed cases',
+          completionCriterion: 'The comparison is checked',
+          evidenceRequirements: [],
+        }],
+        evidenceRequirements: [],
+        decisionPoints: [],
+        assumptions: [],
+        currentMilestoneId: 'm1',
+        stopConditions: [],
+        replanConditions: [],
+        status: 'active',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      currentLineSlug: 'main',
+      lines: [{
+        slug: 'main', title: 'Main line', status: 'active', createdAt: 1, revision: 1,
+      }],
+      currentQuestion: question({ wording: 'Does the first comparison pass?' }),
+      period: {
+        id: 'period_1', lineSlug: 'main', startedAt: 1, loopCount: 6,
+      },
+      currentWorkstreamBinding: {
+        lineSlug: 'main', status: 'unbound', reason: 'Explicit confirmation is required.',
+      },
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'project')).toMatchObject({
+      kind: 'project',
+      goalText: 'Validate the bounded result',
+      goalStatus: 'active',
+      planStatus: 'active',
+      milestone: 'Validate the first bounded comparison',
+      line: 'Main line',
+      question: 'Does the first comparison pass?',
+      questionWorkflow: 'active',
+      questionEpistemic: 'candidate',
+    });
+    expect(slots.find((slot) => slot.kind === 'loop')).toEqual({
+      kind: 'loop',
+      phase: 'idle',
+      loopCount: 6,
+      actionStatus: undefined,
+      aitpState: 'blocked',
+    });
   });
 
   it('omits the goal slot when only a Goal milestone exists', () => {
@@ -1283,15 +1394,37 @@ describe('research board compact presentation', () => {
     });
   });
 
+  it('surfaces an unavailable distillation handoff and preserves its expanded receipt', () => {
+    const distillationAttention = {
+      schema: 'hakimi/research-distillation-attention-0.1' as const,
+      status: 'handoff_unavailable' as const,
+      checkpointId: 'cp-distill',
+      entryId: 'entry-distill',
+      reason: 'The external Skill is hidden.',
+      recordedAt: 1000,
+    };
+    const input = snapshot({ distillationAttention });
+    expect(buildResearchBoardCompactSlots(input).find((slot) => slot.kind === 'attention'))
+      .toEqual({
+        kind: 'attention',
+        source: 'distillation',
+        text: 'Entry entry-distill: The external Skill is hidden.',
+        additionalCount: 0,
+      });
+    expect(selectResearchBoardExpandedRecord(input).distillationAttention)
+      .toEqual(distillationAttention);
+  });
+
   it('uses an active run for now when lower-priority current state exists', () => {
     const slots = buildResearchBoardCompactSlots(snapshot({
+      phase: 'action_executing',
       currentRun: run({
         campaign: 'spectrum_scan',
         jobId: 'job_42',
         stage: 'queued',
         schedulerState: 'pending',
       }),
-      currentAction: action({ status: 'planned' }),
+      currentAction: action({ status: 'in_progress' }),
       latestProgress: progress(),
     }));
 
@@ -1306,6 +1439,7 @@ describe('research board compact presentation', () => {
 
   it('uses the current action for now when the current run is terminal', () => {
     const slots = buildResearchBoardCompactSlots(snapshot({
+      phase: 'action_planned',
       currentRun: run({
         stage: 'completed',
         schedulerState: 'completed',
@@ -1336,6 +1470,45 @@ describe('research board compact presentation', () => {
       kind: 'now',
       source: 'progress',
       text: 'The candidate survived the test',
+    });
+  });
+
+  it('surfaces and bypasses a stale live action whose phase already moved on', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      phase: 'gap_analysis',
+      currentAction: action({
+        actionId: 'action_stale',
+        purpose: 'Commit an obsolete file set',
+        status: 'in_progress',
+        createdAt: 10,
+      }),
+      latestProgress: progress({
+        headline: 'The newer reciprocal-space cause is localized',
+        recordedAt: 20,
+      }),
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'loop')).toMatchObject({
+      kind: 'loop',
+      phase: 'gap_analysis',
+      actionStatus: 'recovery_required',
+    });
+    expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
+      kind: 'attention',
+      source: 'action_recovery',
+      text: expect.stringContaining('action_stale is in_progress while the Research phase is gap_analysis'),
+      additionalCount: 0,
+    });
+    expect(slots.find((slot) => slot.kind === 'now')).toEqual({
+      kind: 'now',
+      source: 'progress',
+      text: 'The newer reciprocal-space cause is localized',
+    });
+    expect(slots.find((slot) => slot.kind === 'next')).toEqual({
+      kind: 'next',
+      source: 'action_recovery',
+      text: 'Conclude or abandon action action_stale before starting another action.',
+      freshness: 'blocked',
     });
   });
 
@@ -1478,7 +1651,7 @@ describe('research board compact presentation', () => {
     });
   });
 
-  it('preserves the complete period, plan, and status records for the expanded board', () => {
+  it('preserves the complete period, both plan layers, and status for the expanded board', () => {
     const input = snapshot({
       period: {
         id: 'period_1',
@@ -1510,6 +1683,42 @@ describe('research board compact presentation', () => {
           selectedLabel: 'Preferred route',
         },
       },
+      actionPlan: {
+        planId: 'plan_1',
+        researchRevision: 4,
+        objective: 'Resolve the bounded uncertainty',
+        steps: ['Collect evidence', 'Evaluate the result', 'Record the conclusion'],
+        expectedEvidence: ['Primary observation', 'Independent check'],
+        stopCondition: 'The conclusion meets the stated criterion',
+        status: 'finalized',
+      },
+      researchPlanV2: {
+        schema: 'hakimi/research-plan-0.2',
+        planId: 'research_plan_1',
+        revision: 2,
+        goalId: 'goal_1',
+        programId: 'program_1',
+        programObservedRevision: 1,
+        goalRelation: 'goal_milestone_in_program',
+        objective: 'Validate the current milestone',
+        completionCriterion: 'The evidence passes validation',
+        milestones: [{
+          milestoneId: 'milestone_1',
+          title: 'Validate evidence',
+          objective: 'Run one bounded check',
+          completionCriterion: 'The check passes',
+          evidenceRequirements: ['Primary observation'],
+        }],
+        evidenceRequirements: ['Reproducible result'],
+        decisionPoints: [],
+        assumptions: [],
+        currentMilestoneId: 'milestone_1',
+        stopConditions: ['Stop on failed validation'],
+        replanConditions: ['Replan on Program drift'],
+        status: 'active',
+        createdAt: 1,
+        updatedAt: 2,
+      },
       status: {
         currentLineSlug: 'main',
         currentQuestionId: 'question_1',
@@ -1524,12 +1733,17 @@ describe('research board compact presentation', () => {
     const record = selectResearchBoardExpandedRecord(input);
 
     expect(record).toEqual({
+      planningPolicy: input.planningPolicy,
       period: input.period,
       plan: input.researchPlan,
+      actionPlan: input.actionPlan,
+      researchPlanV2: input.researchPlanV2,
       status: input.status,
     });
     expect(record.plan?.steps).toHaveLength(3);
     expect(record.plan?.expectedEvidence).toHaveLength(2);
+    expect(record.researchPlanV2?.milestones).toHaveLength(1);
+    expect(record.planningPolicy).toBe('collaborative');
     expect(record.status?.attention).toHaveLength(2);
   });
 });

@@ -262,6 +262,10 @@ export class AgentPlanService extends Service implements IAgentPlanService {
     return this.wire.getModel(PlanModel).current.resolution ?? null;
   }
 
+  getRevision(id: string): number {
+    return this.wire.getModel(PlanModel).current.revisionCount?.[id] ?? 0;
+  }
+
   recordResolution(outcome: PlanResolutionOutcome, selectedLabel?: string): void {
     const state = this.wire.getModel(PlanModel).current;
     if (!state.active || state.id === undefined) {

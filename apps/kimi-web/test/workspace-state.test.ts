@@ -2628,6 +2628,8 @@ describe('useWorkspaceState — Research', () => {
     return {
       mode: 'ready',
       loopStatus: 'active',
+      planningPolicy: 'collaborative',
+      lineWorkstreamBindings: [],
       phase: 'idle',
       currentLineSlug: 'line-a',
       questions: [],

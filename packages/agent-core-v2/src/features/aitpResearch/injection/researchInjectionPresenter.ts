@@ -8,9 +8,9 @@
  * against the previous `InjectionDisclosure`, whether a turn needs a Brief
  * re-statement, a Delta update, or nothing (no semantic change → undefined, so
  * no duplicate text is appended). Brief mode (new turn, prior disclosure
- * missing, or a semantic change in program / Goal milestone / phase / progress
+ * missing, or a semantic change in program / Research Goal / phase / progress
  * / action / run / next step / attention) emits a trimmed scientific summary
- * — the durable Research goal, the Goal-mode execution milestone, current
+ * — the durable AITP goal, the Hakimi Research Goal projection, current
  * question, phase, action and run digest, latest physical progress digest, the
  * single effective next step, the pending human gate, and only the attention
  * the model must handle. Delta mode (a deferred refresh with only an attention
@@ -30,6 +30,7 @@ import type {
   ResearchProgressReport,
   ResearchRunState,
   ResearchPlan,
+  ResearchPlanV2,
   ResearchStatusSnapshot,
 } from '../types';
 
@@ -43,10 +44,13 @@ export interface InjectionDisclosure {
   readonly programFingerprint?: string;
   readonly goalSummaryFingerprint?: string;
   readonly goalAlignmentFingerprint?: string;
+  readonly workstreamBindingFingerprint?: string;
   readonly currentQuestionFingerprint?: string;
   readonly currentActionId?: string;
   readonly currentRunFingerprint?: string;
   readonly researchPlanFingerprint?: string;
+  readonly researchPlanV2Fingerprint?: string;
+  readonly planningPolicy: ResearchStatusSnapshot['planningPolicy'];
   readonly nextStepFingerprint?: string;
   readonly attentionFingerprint?: string;
 }
@@ -63,10 +67,13 @@ export function renderResearchInjection(
     programFingerprint: programFingerprint(snapshot),
     goalSummaryFingerprint: goalSummaryFingerprint(snapshot),
     goalAlignmentFingerprint: goalAlignmentFingerprint(snapshot),
+    workstreamBindingFingerprint: workstreamBindingFingerprint(snapshot),
     currentQuestionFingerprint: currentQuestionFingerprint(snapshot),
     currentActionId: snapshot.currentAction?.actionId,
     currentRunFingerprint: runFingerprint(snapshot.currentRun),
     researchPlanFingerprint: researchPlanFingerprint(snapshot.researchPlan),
+    researchPlanV2Fingerprint: researchPlanV2Fingerprint(snapshot.researchPlanV2),
+    planningPolicy: snapshot.planningPolicy,
     nextStepFingerprint: nextStepFingerprint(snapshot.effectiveNextStep),
     attentionFingerprint: attentionFingerprint(snapshot),
   };
@@ -99,10 +106,13 @@ export function resolveResearchVerbosity(
   if (programFingerprint(snapshot) !== last.programFingerprint) return 'brief';
   if (goalSummaryFingerprint(snapshot) !== last.goalSummaryFingerprint) return 'brief';
   if (goalAlignmentFingerprint(snapshot) !== last.goalAlignmentFingerprint) return 'brief';
+  if (workstreamBindingFingerprint(snapshot) !== last.workstreamBindingFingerprint) return 'brief';
   if (currentQuestionFingerprint(snapshot) !== last.currentQuestionFingerprint) return 'brief';
   if (snapshot.currentAction?.actionId !== last.currentActionId) return 'brief';
   if (runFingerprint(snapshot.currentRun) !== last.currentRunFingerprint) return 'brief';
   if (researchPlanFingerprint(snapshot.researchPlan) !== last.researchPlanFingerprint) return 'brief';
+  if (researchPlanV2Fingerprint(snapshot.researchPlanV2) !== last.researchPlanV2Fingerprint) return 'brief';
+  if (snapshot.planningPolicy !== last.planningPolicy) return 'brief';
   if (nextStepFingerprint(snapshot.effectiveNextStep) !== last.nextStepFingerprint) return 'brief';
   if (attentionFingerprint(snapshot) !== last.attentionFingerprint) return 'delta';
   return undefined;
@@ -112,6 +122,7 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
   const lines: string[] = [
     '## AITP Research Mode',
     `Phase: ${snapshot.phase} · Loop: ${snapshot.loopStatus}`,
+    `Planning policy: ${snapshot.planningPolicy}`,
     snapshot.program === undefined
       ? 'AITP Research Goal (observed): not established'
       : `AITP Research Goal (observed): ${snapshot.program.goalText}`,
@@ -121,13 +132,42 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
     lines.push(`  AITP Research Goal source: ${snapshot.program.goalSource}`);
   }
 
-  if (snapshot.goalSummary !== undefined) {
-    lines.push(`Hakimi Goal: ${snapshot.goalSummary.objective}`);
-    lines.push(`  status: ${snapshot.goalSummary.status}`);
+  const researchGoal = snapshot.researchGoal ?? snapshot.goalSummary;
+  if (researchGoal !== undefined) {
+    lines.push(`Hakimi Research Goal: ${researchGoal.objective}`);
+    lines.push(`  status: ${researchGoal.status}`);
+  }
+
+  if (snapshot.researchGoal !== undefined) {
+    const scope = [
+      snapshot.researchGoal.scope.programTopicId === undefined
+        ? undefined
+        : `program ${snapshot.researchGoal.scope.programTopicId}`,
+      snapshot.researchGoal.scope.lineSlug === undefined
+        ? undefined
+        : `line ${snapshot.researchGoal.scope.lineSlug}`,
+      snapshot.researchGoal.scope.questionId === undefined
+        ? undefined
+        : `question ${snapshot.researchGoal.scope.questionId}`,
+    ].filter((item): item is string => item !== undefined);
+    if (scope.length > 0) lines.push(`  scope: ${scope.join(' · ')}`);
+    const blockers = snapshot.researchGoal.persistenceGuards.filter((guard) =>
+      guard.status === 'blocked',
+    );
+    if (blockers.length > 0) {
+      lines.push(`  persistence blockers: ${blockers.map((guard) => guard.reason).join(' · ')}`);
+    }
   }
 
   if (snapshot.goalAlignment !== undefined) {
     lines.push(`Goal alignment: ${snapshot.goalAlignment.status} — ${snapshot.goalAlignment.reason}`);
+  }
+  if (snapshot.currentWorkstreamBinding !== undefined) {
+    const binding = snapshot.currentWorkstreamBinding.binding;
+    lines.push(
+      `AITP workstream binding: ${snapshot.currentWorkstreamBinding.status}` +
+      (binding === undefined ? '' : ` — ${binding.workstream}`),
+    );
   }
 
   lines.push('Local Research Loop: current line/question and bounded action state.');
@@ -145,6 +185,9 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
 
   if (snapshot.currentAction !== undefined) {
     lines.push(renderActionLine(snapshot.currentAction));
+  }
+  if (snapshot.researchPlanV2 !== undefined) {
+    lines.push(renderResearchPlanV2Digest(snapshot.researchPlanV2));
   }
   if (snapshot.researchPlan !== undefined) {
     lines.push(renderResearchPlanDigest(snapshot.researchPlan));
@@ -173,7 +216,7 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
 
   lines.push('');
   lines.push('### Research state guidance');
-  appendGuidance(lines);
+  appendGuidance(lines, snapshot.planningPolicy);
 
   return lines.join('\n');
 }
@@ -196,11 +239,25 @@ function appendAttention(lines: string[], snapshot: ResearchStatusSnapshot): voi
     }
   }
 
+  const binding = snapshot.currentWorkstreamBinding;
+  if (snapshot.currentLineSlug !== undefined && binding?.status !== 'bound') {
+    lines.push(
+      `AITP scoped persistence: blocked — ${binding?.reason ?? 'the current Research Line has no explicit workstream confirmation.'}`,
+    );
+  }
+
+  const candidate = snapshot.pendingCheckpoint?.commitCandidate;
+  if (candidate !== undefined) {
+    lines.push(
+      `Durable commit candidate: ${candidate.entryKind} / ${candidate.authority} / ${candidate.provenance}. Continue the existing prepare, fill, save, show/check, and checkpoint barrier; do not record the conclusion again.`,
+    );
+  }
+
   const receipt = snapshot.aitpMaintenance;
   if (receipt === undefined) return;
   if (receipt.status === 'degraded') {
     lines.push(receipt.degradedReason === 'workstream_unbound'
-      ? 'AITP maintenance: degraded — no research line is bound. Set or switch to a research line to scope current-state maintenance.'
+      ? 'AITP maintenance: degraded — no explicit Line-to-workstream binding is available.'
       : 'AITP maintenance: degraded — restore a ready adapter before continuing.');
     return;
   }
@@ -246,10 +303,23 @@ function renderResearchPlanDigest(plan: ResearchPlan): string {
   const steps = plan.steps.length === 0 ? 'no steps' : plan.steps.join('; ');
   const evidence = plan.expectedEvidence.length === 0 ? 'no expected evidence listed' : plan.expectedEvidence.join('; ');
   return [
-    `Research plan (${plan.status}): ${plan.objective}`,
+    `Action plan (${plan.status}): ${plan.objective}`,
     `  Steps: ${steps}`,
     `  Expected evidence: ${evidence}`,
     `  Stop condition: ${plan.stopCondition}`,
+  ].join('\n');
+}
+
+function renderResearchPlanV2Digest(plan: ResearchPlanV2): string {
+  const milestone = plan.milestones.find((candidate) =>
+    candidate.milestoneId === plan.currentMilestoneId,
+  );
+  return [
+    `Research Plan v2 (${plan.status}, version ${plan.revision}): ${plan.objective}`,
+    `  Current milestone: ${milestone?.title ?? plan.currentMilestoneId}`,
+    `  Milestone evidence: ${milestone?.evidenceRequirements.join('; ') || 'none listed'}`,
+    `  Stop conditions: ${plan.stopConditions.join('; ')}`,
+    `  Replan conditions: ${plan.replanConditions.join('; ')}`,
   ].join('\n');
 }
 
@@ -279,21 +349,39 @@ function renderHumanGateBlock(gate: ResearchHumanGate): string {
   return lines.join('\n');
 }
 
-function appendGuidance(lines: string[]): void {
+function appendGuidance(
+  lines: string[],
+  planningPolicy: ResearchStatusSnapshot['planningPolicy'],
+): void {
+  if (planningPolicy === 'collaborative') {
+    lines.push(
+      '- Planning policy is collaborative. Before preparing or revising Research Plan v2, ask through AskUserQuestion only when a consequential unknown cannot be resolved from the active Goal, current Research state, prior human direction, or checked evidence and the answer would materially change the plan. A dismissed, empty, or ambiguous answer is a no-op: do not revise or activate the plan and do not invent an assumption; wait for clear direction.',
+    );
+  } else {
+    lines.push(
+      '- Planning policy is dreaming. For unresolved choices, select only reversible, low-cost, in-scope defaults and record every chosen default in Research Plan v2 assumptions. Never dream through expensive or irreversible work, tool permissions, scientific-convention ambiguity, Goal or scope changes, or an AITP/human gate; stop for the appropriate human decision.',
+    );
+  }
+  lines.push(
+    '- Treat the active Goal objective, completion criterion, scope, confirmed Program relation, current Plan decisions, and prior explicit human direction as already supplied. Never ask the user to restate or re-approve them; continue autonomously when they determine a reversible, low-cost, in-scope next step.',
+  );
   lines.push(
     '- Prefer the simplest sufficient explanation or experiment and the cheapest decisive evidence first; do not escalate to remote, long-running, or multi-branch work until a smaller local check shows it is necessary.',
   );
   lines.push(
-    '- Every bounded research action: declare it with BeginResearchAction (purpose, expected evidence, stop condition), perform only that work, then ConcludeResearchAction with the physical result and next step.',
+    '- Every bounded research action: declare it with BeginResearchAction (purpose, expected evidence, stop condition), perform only that work, then call ConcludeResearchAction once with the physical result, next step, and one explicit durability assessment. Do not repeat the same conclusion through RecordResearchProgress.',
+  );
+  lines.push(
+    '- Use planning_level=simple only for a reversible one-step action. A non-trivial action must use planning_level=planned and bind the active Research Plan version, current milestone, and finalized local Action Plan version.',
   );
   lines.push(
     '- Update Research state only on a semantic change; resolve pending human gates with ResolveResearchDecision, and read AITP entries through aitp_show (never Read the Markdown file directly).',
   );
   lines.push(
-    '- Follow the using-aitp skill before any current-state maintenance read; this summary is read-only and never auto-writes AITP.',
+    '- Follow the using-aitp Skill before current-state maintenance and before executing a potentially covered procedure: retrieve applicable Method cards by their generic marker and inspect their pinned basis. This summary is read-only and never auto-writes AITP.',
   );
   lines.push(
-    '- At a durable scientific milestone, ProposeResearchCheckpoint then CommitResearchCheckpoint; reserve checkpoints for milestones, not every turn.',
+    '- A no_durable_delta conclusion is a strict no-op for AITP. A durable_delta conclusion already emits one pending candidate: continue in the same turn when possible with candidate-exact aitp_record_prepare, model-authored draft fill, aitp_record_save, and CommitResearchCheckpoint. For reusable execution evidence, load and follow the external distilling-methods Skill before filling the Entry; that Skill alone decides exact-card trial pins, observation-marker eligibility, triggers, revisions, and human gates. A first successful commit schedules one same-turn best-effort review of only the touched Entry; a duplicate commit or unavailable Skill is a non-blocking no-op. Keep human assertions/decisions in their own human-authority Entry, separate from agent/tool/source verification. Use ProposeResearchCheckpoint only for recovery or a durable boundary outside the normal conclude path.',
   );
 }
 
@@ -330,9 +418,21 @@ function programFingerprint(snapshot: ResearchStatusSnapshot): string | undefine
   });
 }
 
+function workstreamBindingFingerprint(snapshot: ResearchStatusSnapshot): string | undefined {
+  const alignment = snapshot.currentWorkstreamBinding;
+  if (alignment === undefined) return undefined;
+  return stableJson({
+    lineSlug: alignment.lineSlug,
+    status: alignment.status,
+    reason: alignment.reason,
+    binding: alignment.binding,
+  });
+}
+
 function goalSummaryFingerprint(snapshot: ResearchStatusSnapshot): string | undefined {
-  if (snapshot.goalSummary === undefined) return undefined;
-  return stableJson(snapshot.goalSummary);
+  const goal = snapshot.researchGoal ?? snapshot.goalSummary;
+  if (goal === undefined) return undefined;
+  return stableJson(goal);
 }
 
 function goalAlignmentFingerprint(snapshot: ResearchStatusSnapshot): string | undefined {
@@ -366,6 +466,16 @@ function researchPlanFingerprint(plan: ResearchPlan | undefined): string | undef
     expectedEvidence: plan.expectedEvidence,
     stopCondition: plan.stopCondition,
     resolution: plan.resolution,
+  });
+}
+
+function researchPlanV2Fingerprint(plan: ResearchPlanV2 | undefined): string | undefined {
+  if (plan === undefined) return undefined;
+  return stableJson({
+    planId: plan.planId,
+    revision: plan.revision,
+    status: plan.status,
+    currentMilestoneId: plan.currentMilestoneId,
   });
 }
 

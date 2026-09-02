@@ -14,11 +14,14 @@ import type {
 import {
   buildResearchBoardCompactSlots,
   presentResearchAlertClassification,
+  presentResearchWorkstreamBinding,
   selectResearchBoardExpandedRecord,
   type ResearchBoardAttentionSlot,
   type ResearchBoardGoalSlot,
+  type ResearchBoardLoopSlot,
   type ResearchBoardNextSlot,
   type ResearchBoardNowSlot,
+  type ResearchBoardProjectSlot,
 } from '../../lib/researchBoardPresentation';
 import Badge from '../ui/Badge.vue';
 import Banner from '../ui/Banner.vue';
@@ -40,6 +43,23 @@ const expanded = ref(false);
 const instanceId = useId();
 const detailsId = instanceId + '-research-details';
 const detailsHeadingId = instanceId + '-research-details-heading';
+const displayGoal = computed(() => {
+  const goal = props.snapshot.researchGoal;
+  if (goal === undefined) return props.snapshot.goalSummary;
+  return {
+    goalId: goal.goalId,
+    objective: goal.objective,
+    completionCriterion: goal.completionCriterion,
+    status: goal.status,
+    turnBudget: goal.budget.turnBudget ?? undefined,
+    remainingTurns: goal.budget.remainingTurns ?? undefined,
+    terminalReason: goal.terminalReason,
+    waitingFor: goal.waitingFor,
+  };
+});
+const researchGoalBlockers = computed(() =>
+  props.snapshot.researchGoal?.persistenceGuards.filter((guard) => guard.status === 'blocked') ?? [],
+);
 
 watch(
   () => props.forceExpanded,
@@ -61,6 +81,12 @@ const expandedRecord = computed(() => selectResearchBoardExpandedRecord(props.sn
 const goalSlot = computed(() =>
   compactSlots.value.find((slot): slot is ResearchBoardGoalSlot => slot.kind === 'goal'),
 );
+const projectSlot = computed(() =>
+  compactSlots.value.find((slot): slot is ResearchBoardProjectSlot => slot.kind === 'project'),
+);
+const loopSlot = computed(() =>
+  compactSlots.value.find((slot): slot is ResearchBoardLoopSlot => slot.kind === 'loop'),
+);
 const attentionSlot = computed(() =>
   compactSlots.value.find(
     (slot): slot is ResearchBoardAttentionSlot => slot.kind === 'attention',
@@ -75,6 +101,9 @@ const nextSlot = computed(() =>
 
 const currentLine = computed(() =>
   props.snapshot.lines.find((line) => line.slug === props.snapshot.currentLineSlug),
+);
+const currentWorkstreamPresentation = computed(() =>
+  presentResearchWorkstreamBinding(props.snapshot.currentWorkstreamBinding),
 );
 const focusedQuestion = computed<ResearchQuestion | undefined>(() => {
   const id = props.snapshot.currentFocus?.questionId;
@@ -129,10 +158,44 @@ const attentionText = computed(() => {
 const attentionTitle = computed(() => {
   const slot = attentionSlot.value;
   if (slot?.source === 'alignment') return t('research.goalAlignment');
+  if (slot?.source === 'action_recovery') return t('research.actionRecoveryRequired');
   if (slot?.source === 'human_gate') return t('research.humanGate');
+  if (slot?.source === 'distillation') return t('research.methodReviewHandoff');
   if (slot?.source === 'maintenance') return t('research.degradedReason');
   if (slot?.source === 'alert') return t('research.alertKind.' + slot.alertKind);
   return t('research.adapterHealth');
+});
+const projectSummary = computed(() => {
+  const slot = projectSlot.value;
+  if (slot === undefined) return t('research.projectNotEstablished');
+  return [
+    slot.goalText ?? t('research.hakimiGoalNotEstablished'),
+    slot.milestone === undefined
+      ? t('research.planNotEstablished')
+      : t('research.milestoneSummary', { milestone: slot.milestone }),
+    slot.line === undefined
+      ? t('research.lineNotSelected')
+      : t('research.lineSummary', { line: slot.line }),
+    slot.question === undefined
+      ? t('research.questionNotFocused')
+      : t('research.questionStageSummary', {
+          workflow: t('research.workflow.' + slot.questionWorkflow),
+          epistemic: t('research.epistemic.' + slot.questionEpistemic),
+        }),
+  ].join(' · ');
+});
+const loopSummary = computed(() => {
+  const slot = loopSlot.value;
+  if (slot === undefined) return t('research.loopNotEstablished');
+  const loop = slot.loopCount === undefined
+    ? t('research.periodNotEstablished')
+    : t('research.loopCount', { count: slot.loopCount });
+  const action = slot.actionStatus === undefined
+    ? t('research.noLiveAction')
+    : slot.actionStatus === 'recovery_required'
+      ? t('research.actionRecoveryRequired')
+      : t('research.actionStatus.' + slot.actionStatus);
+  return `${loop} · ${action}`;
 });
 const maintenanceFreshness = computed(() => {
   const maintenance = props.snapshot.aitpMaintenance;
@@ -270,9 +333,19 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
             {{ t('research.loop.' + snapshot.loopStatus) }}
           </Badge>
         </div>
-        <code v-if="snapshot.currentLineSlug" class="research-head-line">
-          {{ snapshot.currentLineSlug }}
-        </code>
+        <div v-if="snapshot.currentLineSlug" class="research-head-scope">
+          <code class="research-head-line">{{ snapshot.currentLineSlug }}</code>
+          <Badge
+            v-if="currentWorkstreamPresentation"
+            size="sm"
+            :variant="currentWorkstreamPresentation.variant"
+          >
+            {{ t('research.workstreamBindingStatus.' + currentWorkstreamPresentation.status) }}
+          </Badge>
+          <code v-if="currentWorkstreamPresentation?.workstream" class="research-head-workstream">
+            {{ currentWorkstreamPresentation.workstream }}
+          </code>
+        </div>
         <div class="research-actions">
           <Button variant="ghost" size="sm" @click="emit('manage')">
             {{ t('research.manage') }}
@@ -293,10 +366,47 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
 
     <div v-show="!expanded" class="research-compact" :aria-label="t('research.compactSummary')">
       <div class="research-compact-row research-compact-goal">
-        <span class="research-slot-label">{{ t('research.researchGoal') }}</span>
+        <span class="research-slot-label">{{ t('research.aitpResearchGoal') }}</span>
         <strong class="research-slot-value research-goal-value">
           {{ goalSlot?.text ?? t('research.researchGoalNotEstablished') }}
         </strong>
+      </div>
+
+      <div class="research-compact-row">
+        <span class="research-slot-label">{{ t('research.projectStage') }}</span>
+        <span class="research-slot-value">
+          <Badge
+            v-if="projectSlot?.goalStatus"
+            size="sm"
+            :variant="projectSlot.goalStatus === 'blocked' ? 'warning' : projectSlot.goalStatus === 'complete' ? 'success' : 'neutral'"
+          >
+            {{ t('research.goalStatusValue.' + projectSlot.goalStatus) }}
+          </Badge>
+          <span class="research-slot-copy">{{ projectSummary }}</span>
+        </span>
+        <Badge
+          size="sm"
+          :variant="projectSlot?.planStatus === 'active' ? 'info' : projectSlot?.planStatus === 'completed' ? 'success' : 'neutral'"
+        >
+          {{ projectSlot?.planStatus ? t('research.planStatus.' + projectSlot.planStatus) : t('research.planNotEstablished') }}
+        </Badge>
+      </div>
+
+      <div class="research-compact-row">
+        <span class="research-slot-label">{{ t('research.loopStage') }}</span>
+        <span class="research-slot-value">
+          <Badge size="sm" variant="info">
+            {{ t('research.sciencePhase.' + snapshot.phase) }}
+          </Badge>
+          <span class="research-slot-copy">{{ loopSummary }}</span>
+        </span>
+        <Badge
+          v-if="loopSlot"
+          size="sm"
+          :variant="loopSlot.aitpState === 'ready' ? 'success' : loopSlot.aitpState === 'unavailable' ? 'neutral' : 'warning'"
+        >
+          {{ t('research.aitpPersistenceState.' + loopSlot.aitpState) }}
+        </Badge>
       </div>
 
       <Banner v-if="attentionSlot" class="research-compact-attention" variant="warning">
@@ -403,48 +513,61 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
               <span v-if="expandedRecord.period.summary">{{ expandedRecord.period.summary }}</span>
             </dd>
           </div>
-          <div v-if="snapshot.goalSummary" class="research-field">
-            <dt>{{ t('research.milestone') }}</dt>
+          <div v-if="displayGoal" class="research-field">
+            <dt>{{ snapshot.researchGoal ? t('research.hakimiResearchGoal') : t('research.milestone') }}</dt>
             <dd>
               <span>
                 <strong>{{ t('research.goalId') }}:</strong>
-                <code>{{ snapshot.goalSummary.goalId ?? t('research.none') }}</code>
+                <code>{{ displayGoal.goalId ?? t('research.none') }}</code>
               </span>
-              <span>{{ snapshot.goalSummary.objective }}</span>
+              <span>{{ displayGoal.objective }}</span>
               <span class="research-inline-meta">
                 <Badge
                   size="sm"
-                  :variant="snapshot.goalSummary.status === 'blocked' ? 'warning' : snapshot.goalSummary.status === 'complete' ? 'success' : 'neutral'"
+                  :variant="displayGoal.status === 'blocked' ? 'warning' : displayGoal.status === 'complete' ? 'success' : 'neutral'"
                 >
-                  {{ t('research.goalStatusValue.' + snapshot.goalSummary.status) }}
+                  {{ t('research.goalStatusValue.' + displayGoal.status) }}
                 </Badge>
-                <span v-if="snapshot.goalSummary.remainingTurns !== undefined">
-                  {{ t('research.remainingTurns', { count: snapshot.goalSummary.remainingTurns }) }}
+                <span v-if="displayGoal.remainingTurns !== undefined">
+                  {{ t('research.remainingTurns', { count: displayGoal.remainingTurns }) }}
                 </span>
-                <span v-if="snapshot.goalSummary.turnBudget !== undefined">
-                  {{ t('research.turnBudget', { count: snapshot.goalSummary.turnBudget }) }}
+                <span v-if="displayGoal.turnBudget !== undefined">
+                  {{ t('research.turnBudget', { count: displayGoal.turnBudget }) }}
                 </span>
               </span>
-              <span v-if="snapshot.goalSummary.completionCriterion">
+              <span v-if="displayGoal.completionCriterion">
                 <strong>{{ t('research.completionCriterion') }}:</strong>
-                {{ snapshot.goalSummary.completionCriterion }}
+                {{ displayGoal.completionCriterion }}
               </span>
-              <span v-if="snapshot.goalSummary.terminalReason">
+              <span v-if="displayGoal.terminalReason">
                 <strong>{{ t('research.terminalReason') }}:</strong>
-                {{ snapshot.goalSummary.terminalReason }}
+                {{ displayGoal.terminalReason }}
               </span>
-              <span v-if="snapshot.goalSummary.waitingFor">
+              <span v-if="displayGoal.waitingFor">
                 <strong>{{ t('research.waitingFor') }}:</strong>
                 {{ t('research.waitingForTasks', {
-                  policy: t('research.waitPolicy.' + snapshot.goalSummary.waitingFor.policy),
-                  count: snapshot.goalSummary.waitingFor.taskIds.length,
+                  policy: t('research.waitPolicy.' + displayGoal.waitingFor.policy),
+                  count: displayGoal.waitingFor.taskIds.length,
                 }) }}
               </span>
-              <span v-if="snapshot.goalSummary.waitingFor?.taskIds.length" class="research-inline-meta">
+              <span v-if="displayGoal.waitingFor?.taskIds.length" class="research-inline-meta">
                 <strong>{{ t('research.waitingTaskIds') }}:</strong>
-                <code v-for="taskId in snapshot.goalSummary.waitingFor.taskIds" :key="taskId">
+                <code v-for="taskId in displayGoal.waitingFor.taskIds" :key="taskId">
                   {{ taskId }}
                 </code>
+              </span>
+              <span v-if="snapshot.researchGoal" class="research-inline-meta">
+                <strong>{{ t('research.goalScope') }}:</strong>
+                <code v-if="snapshot.researchGoal.scope.programTopicId">{{ snapshot.researchGoal.scope.programTopicId }}</code>
+                <code v-if="snapshot.researchGoal.scope.lineSlug">{{ snapshot.researchGoal.scope.lineSlug }}</code>
+                <code v-if="snapshot.researchGoal.scope.questionId">{{ snapshot.researchGoal.scope.questionId }}</code>
+                <span v-if="!snapshot.researchGoal.scope.programTopicId && !snapshot.researchGoal.scope.lineSlug && !snapshot.researchGoal.scope.questionId">
+                  {{ t('research.none') }}
+                </span>
+              </span>
+              <span v-if="researchGoalBlockers.length" class="research-inline-meta">
+                <strong>{{ t('research.persistenceGuards') }}:</strong>
+                <span v-for="guard in researchGoalBlockers" :key="guard.code">{{ guard.reason }}</span>
               </span>
             </dd>
           </div>
@@ -462,7 +585,7 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
                 <span>{{ t('research.topicId') }} <code>{{ snapshot.goalAlignment.binding.topicId }}</code></span>
                 <span>{{ t('research.observedRevision', { count: snapshot.goalAlignment.binding.observedRevision }) }}</span>
               </span>
-              <span v-if="snapshot.program && snapshot.goalSummary?.goalId" class="research-inline-meta">
+              <span v-if="snapshot.program && (snapshot.researchGoal?.goalId ?? snapshot.goalSummary?.goalId)" class="research-inline-meta">
                 <Button
                   v-if="snapshot.goalAlignment.status !== 'aligned' && snapshot.goalAlignment.status !== 'unavailable'"
                   variant="secondary"
@@ -500,6 +623,37 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
               <span v-if="snapshot.currentFocus" class="research-inline-meta research-muted">
                 <span>{{ t('research.questionId') }} <code>{{ snapshot.currentFocus.questionId }}</code></span>
                 <span>{{ t('research.revision', { count: snapshot.currentFocus.revision }) }}</span>
+              </span>
+            </dd>
+          </div>
+          <div v-if="currentWorkstreamPresentation" class="research-field">
+            <dt>{{ t('research.workstreamBinding') }}</dt>
+            <dd>
+              <span class="research-inline-meta">
+                <Badge size="sm" :variant="currentWorkstreamPresentation.variant">
+                  {{ t('research.workstreamBindingStatus.' + currentWorkstreamPresentation.status) }}
+                </Badge>
+                <code v-if="currentWorkstreamPresentation.workstream">
+                  {{ currentWorkstreamPresentation.workstream }}
+                </code>
+              </span>
+              <span>{{ currentWorkstreamPresentation.reason }}</span>
+              <span
+                v-if="currentWorkstreamPresentation.topicId"
+                class="research-inline-meta research-muted"
+              >
+                <span>
+                  {{ t('research.topicId') }} <code>{{ currentWorkstreamPresentation.topicId }}</code>
+                </span>
+                <span v-if="currentWorkstreamPresentation.observedRevision !== undefined">
+                  {{ t('research.observedRevision', { count: currentWorkstreamPresentation.observedRevision }) }}
+                </span>
+                <span v-if="currentWorkstreamPresentation.confirmedBy">
+                  {{ t('research.confirmedBy.' + currentWorkstreamPresentation.confirmedBy) }}
+                </span>
+                <span v-if="currentWorkstreamPresentation.confirmedAt !== undefined">
+                  {{ formatTimestamp(currentWorkstreamPresentation.confirmedAt) }}
+                </span>
               </span>
             </dd>
           </div>
@@ -578,6 +732,32 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
               </span>
             </dd>
           </div>
+          <div v-if="expandedRecord.distillationAttention" class="research-field">
+            <dt>{{ t('research.methodReviewHandoff') }}</dt>
+            <dd>
+              <span class="research-inline-meta">
+                <Badge
+                  size="sm"
+                  :variant="expandedRecord.distillationAttention.status === 'review_requested' ? 'success' : 'warning'"
+                >
+                  {{ t('research.distillationAttentionStatus.' + expandedRecord.distillationAttention.status) }}
+                </Badge>
+                <span>{{ formatTimestamp(expandedRecord.distillationAttention.recordedAt) }}</span>
+              </span>
+              <span>
+                <strong>{{ t('research.entryId') }}:</strong>
+                <code>{{ expandedRecord.distillationAttention.entryId }}</code>
+              </span>
+              <span>
+                <strong>{{ t('research.checkpointId') }}:</strong>
+                <code>{{ expandedRecord.distillationAttention.checkpointId }}</code>
+              </span>
+              <span v-if="expandedRecord.distillationAttention.status === 'handoff_unavailable'">
+                <strong>{{ t('research.reason') }}:</strong>
+                {{ expandedRecord.distillationAttention.reason }}
+              </span>
+            </dd>
+          </div>
         </dl>
       </section>
 
@@ -590,6 +770,13 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
           <Badge size="sm" variant="info">{{ t('research.sciencePhase.' + snapshot.phase) }}</Badge>
         </div>
         <dl class="research-fields">
+          <div class="research-field">
+            <dt>{{ t('research.planningPolicy') }}</dt>
+            <dd>
+              <Badge size="sm">{{ t('research.planningPolicyValue.' + expandedRecord.planningPolicy) }}</Badge>
+              <span>{{ t('research.planningPolicyDescription.' + expandedRecord.planningPolicy) }}</span>
+            </dd>
+          </div>
           <div v-if="snapshot.recentStateChange" class="research-field">
             <dt>{{ t('research.recentChange') }}</dt>
             <dd>
@@ -672,6 +859,18 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
                 <strong>{{ t('research.requiresApproval') }}:</strong>
                 {{ snapshot.currentAction.requiresHumanApproval ? t('research.yes') : t('research.no') }}
               </span>
+              <span v-if="snapshot.currentAction.researchPlanBinding">
+                <strong>{{ t('research.researchPlanBinding') }}:</strong>
+                <code>{{ snapshot.currentAction.researchPlanBinding.planId }}</code>
+                · {{ t('research.planRevision', { count: snapshot.currentAction.researchPlanBinding.planRevision }) }}
+                · {{ snapshot.currentAction.researchPlanBinding.milestoneId }}
+              </span>
+              <span v-if="snapshot.currentAction.actionPlanBinding">
+                <strong>{{ t('research.actionPlanBinding') }}:</strong>
+                <code>{{ snapshot.currentAction.actionPlanBinding.planId }}</code>
+                · {{ t('research.planRevision', { count: snapshot.currentAction.actionPlanBinding.planRevision }) }}
+                · {{ t('research.actionPlanKind.' + snapshot.currentAction.actionPlanBinding.kind) }}
+              </span>
               <span v-if="snapshot.currentAction.retryOfEntryId">
                 <strong>{{ t('research.retryOf') }}:</strong>
                 <code>{{ snapshot.currentAction.retryOfEntryId }}</code>
@@ -684,8 +883,42 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
               </span>
             </dd>
           </div>
+          <div v-if="expandedRecord.researchPlanV2" class="research-field research-feature-field">
+            <dt>{{ t('research.researchPlanV2') }}</dt>
+            <dd>
+              <span class="research-inline-meta">
+                <code>{{ expandedRecord.researchPlanV2.planId }}</code>
+                <Badge size="sm">{{ t('research.planStatus.' + expandedRecord.researchPlanV2.status) }}</Badge>
+                <span>{{ t('research.planRevision', { count: expandedRecord.researchPlanV2.revision }) }}</span>
+              </span>
+              <strong>{{ expandedRecord.researchPlanV2.objective }}</strong>
+              <span class="research-inline-meta research-plan-refs">
+                <span>{{ t('research.goalId') }} <code>{{ expandedRecord.researchPlanV2.goalId }}</code></span>
+                <span>{{ t('research.programId') }} <code>{{ expandedRecord.researchPlanV2.programId }}</code></span>
+                <span>{{ t('research.currentMilestone') }} <code>{{ expandedRecord.researchPlanV2.currentMilestoneId }}</code></span>
+              </span>
+              <div>
+                <strong>{{ t('research.milestones') }}:</strong>
+                <ol class="research-record-list">
+                  <li
+                    v-for="milestone in expandedRecord.researchPlanV2.milestones"
+                    :key="milestone.milestoneId"
+                  >
+                    <strong>{{ milestone.title }}</strong> — {{ milestone.objective }}
+                    <span class="research-muted">{{ milestone.completionCriterion }}</span>
+                  </li>
+                </ol>
+              </div>
+              <span><strong>{{ t('research.stopConditions') }}:</strong> {{ expandedRecord.researchPlanV2.stopConditions.join(' · ') }}</span>
+              <span><strong>{{ t('research.replanConditions') }}:</strong> {{ expandedRecord.researchPlanV2.replanConditions.join(' · ') }}</span>
+              <span v-if="expandedRecord.researchPlanV2.assumptions.length > 0">
+                <strong>{{ t('research.assumptions') }}:</strong>
+                {{ expandedRecord.researchPlanV2.assumptions.join(' · ') }}
+              </span>
+            </dd>
+          </div>
           <div v-if="expandedRecord.plan" class="research-field research-feature-field">
-            <dt>{{ t('research.researchPlan') }}</dt>
+            <dt>{{ t('research.actionPlan') }}</dt>
             <dd>
               <span class="research-inline-meta">
                 <code>{{ expandedRecord.plan.planId }}</code>
@@ -1080,6 +1313,18 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
                     </span>
                   </span>
                   <span v-if="snapshot.pendingCheckpoint.assessment">{{ snapshot.pendingCheckpoint.assessment }}</span>
+                  <template v-if="snapshot.pendingCheckpoint.commitCandidate">
+                    <span>
+                      <strong>{{ t('research.commitCandidate') }}:</strong>
+                      <code>{{ snapshot.pendingCheckpoint.commitCandidate.entryKind }}</code>
+                      · <code>{{ snapshot.pendingCheckpoint.commitCandidate.authority }}</code>
+                      · <code>{{ snapshot.pendingCheckpoint.commitCandidate.provenance }}</code>
+                    </span>
+                    <span>
+                      <strong>{{ t('research.candidateRationale') }}:</strong>
+                      {{ snapshot.pendingCheckpoint.commitCandidate.rationale }}
+                    </span>
+                  </template>
                   <span v-if="snapshot.pendingCheckpoint.nextAction">
                     <strong>{{ t('research.nextAction') }}:</strong>
                     {{ snapshot.pendingCheckpoint.nextAction }}
@@ -1274,6 +1519,7 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
 }
 
 .research-identity,
+.research-head-scope,
 .research-actions,
 .research-inline-meta,
 .research-counts,
@@ -1286,6 +1532,11 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
   gap: var(--space-2);
 }
 
+.research-head-scope {
+  overflow: hidden;
+  flex-wrap: nowrap;
+}
+
 .research-title {
   color: var(--color-text);
   font-weight: var(--weight-semibold);
@@ -1296,6 +1547,14 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.research-head-workstream {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-faint);
 }
 
 .research-actions {
@@ -1624,6 +1883,16 @@ code {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
+  .research-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .research-head-scope {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
   .research-head-line {
     display: none;
   }
@@ -1649,6 +1918,10 @@ code {
 
   .research-identity {
     flex: 1 1 100%;
+  }
+
+  .research-head-scope {
+    width: 100%;
   }
 
   .research-actions {

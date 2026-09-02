@@ -752,7 +752,7 @@ export function hasUnresolvedResearchAttention(snapshot: ResearchStatusSnapshot)
 interface ResearchManagerView {
   readonly selectedLineSlug?: string;
   readonly selectedQuestionId?: string;
-  readonly initialView?: 'attention' | 'lines' | 'questions';
+  readonly initialView?: 'attention' | 'lines' | 'questions' | 'plan';
 }
 
 async function showResearchManager(
@@ -789,8 +789,10 @@ async function showResearchManager(
         try {
           return await handleResearchManagerAction(host, action);
         } catch (error) {
-          host.showError(`Failed to update research: ${formatErrorMessage(error)}`);
-          return undefined;
+          if (action.kind !== 'confirm_line_workstream_binding') {
+            host.showError(`Failed to update research: ${formatErrorMessage(error)}`);
+          }
+          throw error;
         }
       },
       onCancel: () => {
@@ -822,6 +824,14 @@ function managerViewForAction(
 ): ResearchManagerView {
   if (action.kind === 'resolve_human_decision' || action.kind === 'acknowledge_alert') {
     return { initialView: 'attention' };
+  }
+  if (
+    action.kind === 'activate_plan_v2' ||
+    action.kind === 'complete_plan_v2' ||
+    action.kind === 'discard_plan_v2' ||
+    action.kind === 'set_planning_policy'
+  ) {
+    return { initialView: 'plan' };
   }
   if ('questionId' in action) {
     const question = host.state.researchBoard.getSnapshot()?.questions.find(
@@ -913,6 +923,54 @@ async function handleResearchManagerActionCore(
         status: action.status,
         assessment: undefined,
         reason: undefined,
+      });
+      if (!applyResearchResponse(host, token, response)) return;
+      return response.snapshot;
+    }
+    case 'activate_plan_v2':
+    case 'complete_plan_v2':
+    case 'discard_plan_v2': {
+      const token = beginResearchRequest(host, session);
+      if (token === undefined) return;
+      const response = await session.commandResearch({
+        kind: action.kind,
+        planId: action.planId,
+        expectedRevision: action.expectedRevision,
+      });
+      if (!applyResearchResponse(host, token, response)) return;
+      return response.snapshot;
+    }
+    case 'set_planning_policy': {
+      const token = beginResearchRequest(host, session);
+      if (token === undefined) return;
+      const response = await session.commandResearch({
+        kind: 'set_planning_policy',
+        policy: action.policy,
+        expectedRevision: action.expectedRevision,
+      });
+      if (!applyResearchResponse(host, token, response)) return;
+      return response.snapshot;
+    }
+    case 'confirm_line_workstream_binding': {
+      const token = beginResearchRequest(host, session);
+      if (token === undefined) return;
+      const response = await session.commandResearch({
+        kind: 'confirm_line_workstream_binding',
+        lineSlug: action.lineSlug,
+        workstream: action.workstream,
+        expectedRevision: action.expectedRevision,
+      });
+      if (!applyResearchResponse(host, token, response)) return;
+      return response.snapshot;
+    }
+    case 'clear_line_workstream_binding': {
+      const token = beginResearchRequest(host, session);
+      if (token === undefined) return;
+      const response = await session.commandResearch({
+        kind: 'clear_line_workstream_binding',
+        lineSlug: action.lineSlug,
+        expectedConfirmationId: action.expectedConfirmationId,
+        expectedRevision: action.expectedRevision,
       });
       if (!applyResearchResponse(host, token, response)) return;
       return response.snapshot;

@@ -23,12 +23,20 @@ import type {
   ResearchGoalAlignment,
   ResearchGoalAlignmentRelation,
   ResearchGoalProgramBinding,
+  ResearchLineWorkstreamAlignment,
+  ResearchLineWorkstreamBinding,
   ResearchPeriod,
   ResearchRunStage,
   ResearchSchedulerState,
   ResearchStatusHealth,
   ResearchStatusProjection,
   ResearchPlan,
+  ResearchPlanV2,
+  ResearchPlanV2Milestone,
+  ResearchPlanV2DecisionPoint,
+  ResearchPlanV2ActionBinding,
+  ResearchActionPlanBinding,
+  ResearchPlanningPolicy,
 } from '#/features/research/types';
 
 export type AitpModePhase = 'inactive' | 'probing' | 'ready' | 'degraded';
@@ -140,12 +148,27 @@ export interface ResearchCheckpointReceipt {
   readonly postSaveCheck?: ResearchCheckpointCheckReceipt;
 }
 
+export interface ResearchDurableCommitCandidate {
+  /** The concluded action whose assessed delta this candidate represents. */
+  readonly sourceActionId: string;
+  /** Exact progress boundary emitted by the same atomic conclusion. */
+  readonly progressRecordedAt: number;
+  readonly entryKind: AitpEntryKind;
+  readonly authority: AitpAuthority;
+  readonly provenance: ResearchCommitProvenance;
+  readonly rationale: string;
+}
+
 export interface ResearchCheckpoint {
   readonly checkpointId: string;
   readonly committedEntryId?: string;
   readonly questionId?: string;
   readonly questionRevision?: number;
   readonly lineSlug?: string;
+  /** Exact confirmed binding captured when this checkpoint was proposed. */
+  readonly workstreamBinding?: ResearchLineWorkstreamBinding;
+  /** Present only for a candidate assessed by ConcludeResearchAction. */
+  readonly commitCandidate?: ResearchDurableCommitCandidate;
   readonly assessment?: string;
   readonly nextAction?: string;
   readonly idempotencyKey: string;
@@ -178,6 +201,29 @@ export interface ResearchCommittedCursor {
   readonly committedAt: number;
 }
 
+/**
+ * Latest observable Hakimi handoff receipt for one committed Entry.
+ * This reports only whether a same-turn external-Skill review was requested
+ * or unavailable; it never claims a trigger, card, trial, approval, or publish
+ * outcome.
+ */
+export type ResearchDistillationAttention =
+  | {
+      readonly schema: 'hakimi/research-distillation-attention-0.1';
+      readonly status: 'review_requested';
+      readonly checkpointId: string;
+      readonly entryId: string;
+      readonly recordedAt: number;
+    }
+  | {
+      readonly schema: 'hakimi/research-distillation-attention-0.1';
+      readonly status: 'handoff_unavailable';
+      readonly checkpointId: string;
+      readonly entryId: string;
+      readonly reason: string;
+      readonly recordedAt: number;
+    };
+
 // ---------------------------------------------------------------------------
 // Research Loop scientific state layer (Phase 1 contract)
 //
@@ -203,10 +249,18 @@ export type {
   ResearchGoalAlignment,
   ResearchGoalAlignmentRelation,
   ResearchGoalProgramBinding,
+  ResearchLineWorkstreamAlignment,
+  ResearchLineWorkstreamBinding,
   ResearchPeriod,
   ResearchStatusHealth,
   ResearchStatusProjection,
   ResearchPlan,
+  ResearchPlanV2,
+  ResearchPlanV2Milestone,
+  ResearchPlanV2DecisionPoint,
+  ResearchPlanV2ActionBinding,
+  ResearchActionPlanBinding,
+  ResearchPlanningPolicy,
 };
 
 export interface ResearchRunState {
@@ -238,6 +292,8 @@ export interface ResearchActionSpec {
   readonly createdAt: number;
   readonly completedAt?: number;
   readonly requiresHumanApproval: boolean;
+  readonly researchPlanBinding?: ResearchPlanV2ActionBinding;
+  readonly actionPlanBinding?: ResearchActionPlanBinding;
   readonly run?: ResearchRunState;
 }
 
@@ -313,10 +369,68 @@ export interface ResearchGoalSummary {
   };
 }
 
+export interface ResearchGoalScope {
+  readonly programTopicId?: string;
+  readonly lineSlug?: string;
+  readonly questionId?: string;
+}
+
+export interface ResearchGoalBudget {
+  readonly tokenBudget: number | null;
+  readonly turnBudget: number | null;
+  readonly wallClockBudgetMs: number | null;
+  readonly remainingTokens: number | null;
+  readonly remainingTurns: number | null;
+  readonly remainingWallClockMs: number | null;
+  readonly tokenBudgetReached: boolean;
+  readonly turnBudgetReached: boolean;
+  readonly wallClockBudgetReached: boolean;
+  readonly overBudget: boolean;
+}
+
+export interface ResearchGoalStopCondition {
+  readonly code: string;
+  readonly reached: boolean;
+  readonly reason: string;
+}
+
+export interface ResearchGoalPersistenceGuard {
+  readonly code: string;
+  readonly status: 'clear' | 'blocked' | 'inactive';
+  readonly reason: string;
+}
+
+/**
+ * Domain-specific projection of the one generic Goal that owns continuation.
+ * It is derived, never a second scheduler or an AITP Topic Goal.
+ */
+export interface ResearchGoalProjection {
+  readonly schema: 'hakimi/research-goal-0.1';
+  readonly goalId: string;
+  readonly objective: string;
+  readonly completionCriterion?: string;
+  readonly scope: ResearchGoalScope;
+  readonly nonGoals: readonly string[];
+  readonly budget: ResearchGoalBudget;
+  readonly stopConditions: readonly ResearchGoalStopCondition[];
+  readonly status: 'active' | 'paused' | 'blocked' | 'complete';
+  readonly terminalReason?: string;
+  readonly waitingFor?: {
+    readonly taskIds: readonly string[];
+    readonly policy: 'any' | 'all';
+  };
+  readonly programRelation: ResearchGoalAlignment;
+  readonly humanGates: readonly ResearchHumanGate[];
+  readonly persistenceGuards: readonly ResearchGoalPersistenceGuard[];
+  readonly researchRevision: number;
+}
+
 export interface ResearchStatusSnapshot {
   readonly mode: AitpModePhase;
   readonly loopStatus: ResearchLoopStatus;
   readonly currentLineSlug?: string;
+  readonly currentWorkstreamBinding?: ResearchLineWorkstreamAlignment;
+  readonly lineWorkstreamBindings: readonly ResearchLineWorkstreamBinding[];
   readonly currentFocus?: ResearchFocus;
   readonly currentQuestion?: ResearchQuestion;
   readonly questions: readonly ResearchQuestion[];
@@ -327,12 +441,14 @@ export interface ResearchStatusSnapshot {
   readonly alerts: readonly ResearchAlert[];
   readonly effectiveNextStep?: ResearchEffectiveNextStep;
   readonly goalSummary?: ResearchGoalSummary;
+  readonly researchGoal?: ResearchGoalProjection;
   readonly goalAlignment?: ResearchGoalAlignment;
   readonly aitpHealth: AitpAdapterHealth;
   readonly aitpMaintenance?: AitpMaintenanceReceipt;
   readonly pendingCheckpoint?: ResearchCheckpoint;
   readonly latestCommittedCheckpoint?: ResearchCommittedCursor;
   readonly committedCheckpointHistory?: readonly ResearchCommittedCursor[];
+  readonly distillationAttention?: ResearchDistillationAttention;
   readonly phase: ResearchPhase;
   readonly currentAction?: ResearchActionSpec;
   readonly currentRun?: ResearchRunState;
@@ -342,6 +458,9 @@ export interface ResearchStatusSnapshot {
   readonly program?: ResearchProgram;
   readonly period?: ResearchPeriod;
   readonly researchPlan?: ResearchPlan;
+  readonly actionPlan?: ResearchPlan;
+  readonly researchPlanV2?: ResearchPlanV2;
+  readonly planningPolicy: ResearchPlanningPolicy;
   readonly status?: ResearchStatusProjection;
   readonly revision: number;
 }
@@ -485,6 +604,15 @@ export type AitpEntryKind = z.infer<typeof AitpEntryKindSchema>;
 
 export const AitpAuthoritySchema = z.enum(['human', 'agent', 'source', 'tool']);
 export type AitpAuthority = z.infer<typeof AitpAuthoritySchema>;
+
+export const ResearchCommitProvenanceSchema = z.enum([
+  'agent_verification',
+  'tool_verification',
+  'source_assessment',
+  'human_assertion',
+  'human_decision',
+]);
+export type ResearchCommitProvenance = z.infer<typeof ResearchCommitProvenanceSchema>;
 
 export const AitpNoteModeSchema = z.enum(['working', 'theory']);
 export type AitpNoteMode = z.infer<typeof AitpNoteModeSchema>;

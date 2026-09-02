@@ -49,6 +49,63 @@ export interface RunResearchModeEnterOptions {
   ) => Promise<ResearchStatusSnapshot | null>;
 }
 
+export type ResearchLineWorkstreamBindingIntent =
+  | { kind: 'confirm'; lineSlug: string; workstream: string }
+  | { kind: 'clear'; lineSlug: string };
+
+const AITP_WORKSTREAM_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+/**
+ * Translate one explicit Manager intent into the public Research command.
+ *
+ * The current Program is only an availability precondition. Its Topic,
+ * revision, confirmation provenance, and timestamp remain server-owned and
+ * are intentionally absent from the command. Merely matching Line/workstream
+ * slugs never invokes this path automatically or creates a binding by itself.
+ */
+export function researchLineWorkstreamBindingCommand(
+  intent: ResearchLineWorkstreamBindingIntent,
+  snapshot: ResearchStatusSnapshot | null,
+): ResearchCommand | null {
+  if (snapshot === null || !snapshot.lines.some((line) => line.slug === intent.lineSlug)) {
+    return null;
+  }
+
+  const existing = (
+    snapshot.currentLineSlug === intent.lineSlug
+      ? snapshot.currentWorkstreamBinding?.binding
+      : undefined
+  ) ?? (snapshot.lineWorkstreamBindings ?? []).find(
+    (binding) => binding.lineSlug === intent.lineSlug,
+  );
+  if (intent.kind === 'clear') {
+    return existing === undefined
+      ? null
+      : {
+          kind: 'clear_line_workstream_binding',
+          lineSlug: intent.lineSlug,
+          expectedConfirmationId: existing.confirmationId,
+          expectedRevision: snapshot.revision,
+        };
+  }
+
+  const workstream = intent.workstream.trim();
+  if (
+    snapshot.program === undefined
+    || snapshot.aitpHealth.phase !== 'ready'
+    || existing !== undefined
+    || !AITP_WORKSTREAM_PATTERN.test(workstream)
+  ) {
+    return null;
+  }
+  return {
+    kind: 'confirm_line_workstream_binding',
+    lineSlug: intent.lineSlug,
+    workstream,
+    expectedRevision: snapshot.revision,
+  };
+}
+
 export async function runResearchModeEnter(
   options: RunResearchModeEnterOptions,
 ): Promise<ResearchEnterResult> {
@@ -311,7 +368,8 @@ export function researchCommandResolutionError(
   if (snapshot === null) return 'snapshot_unavailable';
 
   if (parsed.kind === 'align' || parsed.kind === 'clear_alignment') {
-    return snapshot.goalSummary?.goalId !== undefined && snapshot.program !== undefined
+    return (snapshot.researchGoal?.goalId ?? snapshot.goalSummary?.goalId) !== undefined
+      && snapshot.program !== undefined
       ? null
       : 'goal_alignment_unavailable';
   }
@@ -385,7 +443,7 @@ export function researchCommandFromSlash(
     case 'manage':
       return null;
     case 'align': {
-      const goal = snapshot?.goalSummary;
+      const goal = snapshot?.researchGoal ?? snapshot?.goalSummary;
       const program = snapshot?.program;
       return goal?.goalId === undefined || program === undefined
         ? null
@@ -399,7 +457,7 @@ export function researchCommandFromSlash(
           };
     }
     case 'clear_alignment': {
-      const goal = snapshot?.goalSummary;
+      const goal = snapshot?.researchGoal ?? snapshot?.goalSummary;
       const program = snapshot?.program;
       return goal?.goalId === undefined || program === undefined
         ? null

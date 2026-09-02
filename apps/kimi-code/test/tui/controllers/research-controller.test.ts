@@ -14,6 +14,7 @@ function makeSnapshot(
   return {
     mode: 'ready',
     loopStatus: 'active',
+    planningPolicy: 'collaborative',
     currentLineSlug: 'test-line',
     currentFocus: { questionId: 'q1', revision: 1 },
     currentQuestion: {
@@ -36,6 +37,7 @@ function makeSnapshot(
     activeQuestionCount: 1,
     blockedQuestionCount: 0,
     alerts: [],
+    lineWorkstreamBindings: [],
     aitpHealth: { phase: 'ready' },
     phase: 'action_executing',
     revision: 1,

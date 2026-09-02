@@ -13,7 +13,7 @@ import type {
 } from '../types';
 
 export interface DurableCommitCheckInput {
-  readonly workstreams?: readonly string[];
+  readonly workstream: string;
   readonly preSaveCheck: ResearchCheckpointCheckReceipt;
 }
 
@@ -24,7 +24,7 @@ export interface DurableCommitCheckResult {
 export interface IDurableCommitService {
   readonly _serviceBrand: undefined;
 
-  verifyEntry(entryId: string): Promise<void>;
+  verifyEntry(entryId: string, expectedWorkstream: string, expectedTopicId: string): Promise<void>;
   checkAfterSave(input: DurableCommitCheckInput): Promise<DurableCommitCheckResult>;
 }
 

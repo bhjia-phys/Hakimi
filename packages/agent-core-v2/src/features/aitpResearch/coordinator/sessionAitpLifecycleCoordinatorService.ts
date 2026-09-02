@@ -8,7 +8,8 @@
  * `adapter.enter` / `adapter.check`, so an unbound Research Mode cannot read
  * or scope the whole AITP Topic. Adapter failures and check transport or
  * contract failures become safe degraded receipts; valid check findings are
- * projected as codes and counts. `reset()` invalidates older async work so an
+ * projected as codes and counts, while an empty scoped ledger still preserves
+ * its observed Topic identity. `reset()` invalidates older async work so an
  * exit or inactive restore cannot repopulate the next lifecycle.
  */
 
@@ -177,14 +178,12 @@ export class SessionAitpLifecycleCoordinatorService
       refreshedAt: Date.now(),
       memoryStatus: entered.memory_status,
       workstream,
-      topic: entered.memory_status === 'not_established'
-        ? undefined
-        : {
-            id: entered.topic.id,
-            title: entered.topic.title,
-            goalText: entered.topic.goal.text,
-            goalSource: entered.topic.goal.source,
-          },
+      topic: {
+        id: entered.topic.id,
+        title: entered.topic.title,
+        goalText: entered.topic.goal.text,
+        goalSource: entered.topic.goal.source,
+      },
       latestWorkingNoteAt: parseTimestamp(entered.latest_working_note?.created_at),
       activeNewerThanWorkingNote: entered.counts.active_newer_than_latest_working_note === null
         ? null

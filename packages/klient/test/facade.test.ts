@@ -6,6 +6,7 @@ import type {
   KlientChannel,
   ScopeRef,
 } from '../src/core/channel.js';
+import { researchStatusSnapshotSchema } from '../src/contract/agent/researchSchemas.js';
 import { createKlientFromChannel } from '../src/core/klient.js';
 import { KlientValidationError } from '../src/core/validation.js';
 
@@ -64,6 +65,104 @@ const SUMMARY = {
   updatedAt: 2,
   archived: false,
 };
+
+describe('research contract validation', () => {
+  const baseSnapshot = {
+    mode: 'ready',
+    loopStatus: 'active',
+    planningPolicy: 'collaborative',
+    lineWorkstreamBindings: [],
+    questions: [],
+    lines: [],
+    openQuestionCount: 0,
+    activeQuestionCount: 0,
+    blockedQuestionCount: 0,
+    alerts: [],
+    aitpHealth: { phase: 'ready' },
+    phase: 'idle',
+    revision: 1,
+  };
+
+  it('rejects malformed current Line-workstream alignment invariants', () => {
+    const binding = {
+      confirmationId: 'confirmation-main-1',
+      lineSlug: 'main',
+      workstream: 'verified-inputs',
+      topicId: 'topic-1',
+      observedRevision: 1,
+      confirmedBy: 'user' as const,
+      confirmedAt: 1,
+    };
+    const { confirmationId, ...identitylessBinding } = binding;
+    expect(confirmationId).toBe('confirmation-main-1');
+    const missingBindingStatuses = ['unavailable', 'bound', 'stale', 'conflict'] as const;
+    const invalidSnapshots = [
+      ...missingBindingStatuses.map((status) => ({
+        ...baseSnapshot,
+        currentLineSlug: 'main',
+        currentWorkstreamBinding: {
+          lineSlug: 'main',
+          status,
+          reason: 'Malformed missing binding.',
+        },
+      })),
+      {
+        ...baseSnapshot,
+        currentLineSlug: 'main',
+        currentWorkstreamBinding: {
+          lineSlug: 'main',
+          status: 'unbound',
+          reason: 'Malformed unexpected binding.',
+          binding,
+        },
+      },
+      {
+        ...baseSnapshot,
+        currentLineSlug: 'main',
+        currentWorkstreamBinding: {
+          lineSlug: 'main',
+          status: 'bound',
+          reason: 'Malformed non-conflicting binding Line mismatch.',
+          binding: { ...binding, lineSlug: 'other' },
+        },
+      },
+      {
+        ...baseSnapshot,
+        currentLineSlug: 'main',
+        currentWorkstreamBinding: {
+          lineSlug: 'other',
+          status: 'unbound',
+          reason: 'Malformed current Line mismatch.',
+        },
+      },
+    ];
+
+    for (const snapshot of invalidSnapshots) {
+      expect(researchStatusSnapshotSchema.safeParse(snapshot).success).toBe(false);
+    }
+    expect(researchStatusSnapshotSchema.safeParse({
+      ...baseSnapshot,
+      currentLineSlug: 'main',
+      currentWorkstreamBinding: {
+        lineSlug: 'main',
+        status: 'bound',
+        reason: 'Identity-less binding.',
+        binding: identitylessBinding,
+      },
+      lineWorkstreamBindings: [identitylessBinding],
+    }).success).toBe(false);
+    expect(researchStatusSnapshotSchema.safeParse({
+      ...baseSnapshot,
+      currentLineSlug: 'main',
+      currentWorkstreamBinding: {
+        lineSlug: 'main',
+        status: 'conflict',
+        reason: 'The stored binding identifies another Line.',
+        binding: { ...binding, lineSlug: 'other' },
+      },
+    }).success).toBe(true);
+  });
+});
 
 describe('facade routing', () => {
   it('reshapes single-object params into positional wire args', async () => {
@@ -895,7 +994,31 @@ describe('research.updated event schema', () => {
     const snapshot = {
       mode: 'ready' as const,
       loopStatus: 'active' as const,
+      planningPolicy: 'collaborative' as const,
       currentLineSlug: 'main',
+      currentWorkstreamBinding: {
+        lineSlug: 'main',
+        status: 'bound' as const,
+        reason: 'Explicitly confirmed.',
+        binding: {
+          confirmationId: 'confirmation-main-1',
+          lineSlug: 'main',
+          workstream: 'verified-inputs',
+          topicId: 'topic-1',
+          observedRevision: 1,
+          confirmedBy: 'user' as const,
+          confirmedAt: 1,
+        },
+      },
+      lineWorkstreamBindings: [{
+        confirmationId: 'confirmation-main-1',
+        lineSlug: 'main',
+        workstream: 'verified-inputs',
+        topicId: 'topic-1',
+        observedRevision: 1,
+        confirmedBy: 'user' as const,
+        confirmedAt: 1,
+      }],
       currentFocus: { questionId: 'q1', boundedAction: 'act', revision: 1 },
       currentQuestion: question,
       questions: [question],
@@ -905,6 +1028,38 @@ describe('research.updated event schema', () => {
       blockedQuestionCount: 0,
       alerts: [],
       goalSummary: { objective: 'Test goal', status: 'active', remainingTurns: 3 },
+      researchGoal: {
+        schema: 'hakimi/research-goal-0.1' as const,
+        goalId: 'goal-1',
+        objective: 'Test the bounded Research Goal',
+        scope: { programTopicId: 'topic-1', lineSlug: 'main', questionId: 'q1' },
+        nonGoals: [],
+        budget: {
+          tokenBudget: null,
+          turnBudget: 3,
+          wallClockBudgetMs: null,
+          remainingTokens: null,
+          remainingTurns: 2,
+          remainingWallClockMs: null,
+          tokenBudgetReached: false,
+          turnBudgetReached: false,
+          wallClockBudgetReached: false,
+          overBudget: false,
+        },
+        stopConditions: [],
+        status: 'active' as const,
+        programRelation: {
+          status: 'unavailable' as const,
+          reason: 'No observed AITP Research Goal.',
+        },
+        humanGates: [],
+        persistenceGuards: [{
+          code: 'research.mode.ready',
+          status: 'clear' as const,
+          reason: 'Research Mode is ready.',
+        }],
+        researchRevision: 2,
+      },
       goalAlignment: { status: 'unavailable' as const, reason: 'No observed AITP Research Goal.' },
       aitpHealth: { phase: 'ready' as const, contractVersion: '0.1' },
       pendingCheckpoint: {
@@ -928,6 +1083,19 @@ describe('research.updated event schema', () => {
     await tick();
 
     expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      snapshot: {
+        currentWorkstreamBinding: {
+          status: 'bound',
+          binding: { workstream: 'verified-inputs' },
+        },
+        lineWorkstreamBindings: [{ workstream: 'verified-inputs' }],
+        researchGoal: {
+          schema: 'hakimi/research-goal-0.1',
+          goalId: 'goal-1',
+        },
+      },
+    });
     expect(errors).toHaveLength(4);
     expect(errors.every((error) => error instanceof KlientValidationError)).toBe(true);
   });
@@ -937,6 +1105,8 @@ describe('research facade routing', () => {
   const snapshot = {
     mode: 'inactive',
     loopStatus: 'active',
+    planningPolicy: 'collaborative',
+    lineWorkstreamBindings: [],
     questions: [],
     lines: [],
     openQuestionCount: 0,
@@ -962,6 +1132,30 @@ describe('research facade routing', () => {
       method: 'getSnapshot',
       args: [],
     });
+  });
+
+  it('routes planning-policy reads and revisioned writes through agentResearchService', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    channel.results.set('agentResearchService.getPlanningPolicy', 'collaborative');
+    channel.results.set('agentResearchService.setPlanningPolicy', undefined);
+
+    const agent = klient.session('s1').agent('main');
+    await expect(agent.research.getPlanningPolicy()).resolves.toBe('collaborative');
+    await agent.research.setPlanningPolicy('dreaming', 4);
+
+    expect(channel.calls).toEqual([
+      expect.objectContaining({
+        service: 'agentResearchService',
+        method: 'getPlanningPolicy',
+        args: [],
+      }),
+      expect.objectContaining({
+        service: 'agentResearchService',
+        method: 'setPlanningPolicy',
+        args: ['dreaming', 4],
+      }),
+    ]);
   });
 
   it('routes steer to agentResearchService.steer with the command as positional arg', async () => {
@@ -1114,6 +1308,68 @@ describe('research facade routing', () => {
     ]);
   });
 
+  it('routes Line-workstream binding with fixed user provenance and no spoofable fields', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const binding = {
+      confirmationId: 'confirmation-main-1',
+      lineSlug: 'main',
+      workstream: 'verified-inputs',
+      topicId: 'topic-1',
+      observedRevision: 2,
+      confirmedBy: 'user' as const,
+      confirmedAt: 10,
+    };
+    channel.results.set('agentResearchService.confirmLineWorkstreamBinding', binding);
+    channel.results.set('agentResearchService.clearLineWorkstreamBinding', undefined);
+
+    const agent = klient.session('s1').agent('main');
+    await expect(agent.research.clearLineWorkstreamBinding({
+      lineSlug: 'main',
+      expectedRevision: 8,
+    } as never)).rejects.toMatchObject({
+      phase: 'input',
+      procedure: 'agentResearchService.clearLineWorkstreamBinding',
+    });
+    expect(channel.calls).toHaveLength(0);
+    await expect(agent.research.confirmLineWorkstreamBinding({
+      lineSlug: 'main',
+      workstream: 'verified-inputs',
+      expectedRevision: 7,
+      confirmedBy: 'main_agent',
+      topicId: 'topic-forged',
+      observedRevision: 99,
+      confirmationId: 'confirmation-forged',
+      confirmedAt: 0,
+    } as never)).resolves.toEqual(binding);
+    await agent.research.clearLineWorkstreamBinding({
+      lineSlug: 'main',
+      expectedConfirmationId: binding.confirmationId,
+      expectedRevision: 8,
+      topicId: 'topic-forged',
+    } as never);
+
+    expect(channel.calls.map((call) => ({ method: call.method, args: call.args }))).toEqual([
+      {
+        method: 'confirmLineWorkstreamBinding',
+        args: [{
+          lineSlug: 'main',
+          workstream: 'verified-inputs',
+          expectedRevision: 7,
+          confirmedBy: 'user',
+        }],
+      },
+      {
+        method: 'clearLineWorkstreamBinding',
+        args: [{
+          lineSlug: 'main',
+          expectedConfirmationId: binding.confirmationId,
+          expectedRevision: 8,
+        }],
+      },
+    ]);
+  });
+
   it('routes human gate resolution and alert acknowledgement through the research service', async () => {
     const channel = new FakeChannel();
     const klient = createKlientFromChannel(channel);
@@ -1152,6 +1408,68 @@ describe('research facade routing', () => {
         method: 'acknowledgeAlert',
         args: ['research.alert.blocked.question.q1'],
       },
+    ]);
+  });
+
+  it('routes strict Research Plan v2 lifecycle inputs through the research service', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const plan = {
+      schema: 'hakimi/research-plan-0.2' as const,
+      planId: 'research-plan-1',
+      revision: 2,
+      goalId: 'goal-1',
+      programId: 'topic-1',
+      programObservedRevision: 1,
+      goalRelation: 'goal_milestone_in_program' as const,
+      objective: 'Validate one milestone.',
+      completionCriterion: 'The checks pass.',
+      milestones: [{
+        milestoneId: 'm1',
+        title: 'Run and validate',
+        objective: 'Run one calculation.',
+        completionCriterion: 'Validation passes.',
+        evidenceRequirements: ['Output and log'],
+      }],
+      evidenceRequirements: ['Reproducible result'],
+      decisionPoints: [],
+      assumptions: [],
+      currentMilestoneId: 'm1',
+      stopConditions: ['Stop on validation failure.'],
+      replanConditions: ['Replan on Program drift.'],
+      status: 'draft' as const,
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    for (const method of [
+      'agentResearchService.prepareResearchPlanV2',
+      'agentResearchService.activateResearchPlanV2',
+      'agentResearchService.completeResearchPlanV2',
+      'agentResearchService.discardResearchPlanV2',
+    ]) channel.results.set(method, plan);
+
+    const agent = klient.session('s1').agent('main');
+    const prepareInput = {
+      objective: plan.objective,
+      completionCriterion: plan.completionCriterion,
+      milestones: plan.milestones,
+      evidenceRequirements: plan.evidenceRequirements,
+      decisionPoints: plan.decisionPoints,
+      assumptions: plan.assumptions,
+      currentMilestoneId: plan.currentMilestoneId,
+      stopConditions: plan.stopConditions,
+      replanConditions: plan.replanConditions,
+    };
+    await agent.research.prepareResearchPlanV2(prepareInput);
+    await agent.research.activateResearchPlanV2({ planId: plan.planId, expectedRevision: 2 });
+    await agent.research.completeResearchPlanV2({ planId: plan.planId, expectedRevision: 3 });
+    await agent.research.discardResearchPlanV2({ planId: plan.planId, expectedRevision: 3 });
+
+    expect(channel.calls.map((call) => ({ method: call.method, args: call.args }))).toEqual([
+      { method: 'prepareResearchPlanV2', args: [prepareInput] },
+      { method: 'activateResearchPlanV2', args: [{ planId: plan.planId, expectedRevision: 2 }] },
+      { method: 'completeResearchPlanV2', args: [{ planId: plan.planId, expectedRevision: 3 }] },
+      { method: 'discardResearchPlanV2', args: [{ planId: plan.planId, expectedRevision: 3 }] },
     ]);
   });
 
@@ -1204,6 +1522,22 @@ describe('research facade routing', () => {
       stopCondition: 'stop',
       unexpected: true,
     } as never)).rejects.toMatchObject({ phase: 'input' });
+    await expect(agent.research.prepareResearchPlanV2({
+      objective: 'objective',
+      milestones: [{
+        milestoneId: 'm1',
+        title: 'Milestone',
+        objective: 'objective',
+        completionCriterion: 'criterion',
+        evidenceRequirements: [],
+      }],
+      evidenceRequirements: [],
+      decisionPoints: [],
+      assumptions: [],
+      currentMilestoneId: 'missing',
+      stopConditions: ['stop'],
+      replanConditions: ['replan'],
+    })).rejects.toMatchObject({ phase: 'input' });
     expect(channel.calls).toHaveLength(0);
   });
 

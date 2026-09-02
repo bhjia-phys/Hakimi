@@ -388,6 +388,7 @@ export interface AppGoal {
 
 export type ResearchModePhase = 'inactive' | 'probing' | 'ready' | 'degraded';
 export type ResearchLoopStatus = 'active' | 'paused';
+export type ResearchPlanningPolicy = 'collaborative' | 'dreaming';
 export type ResearchQuestionWorkflow =
   | 'open'
   | 'active'
@@ -486,6 +487,30 @@ export interface ResearchLine {
   status: ResearchLineStatus;
   createdAt: number;
   revision: number;
+}
+
+export interface ResearchLineWorkstreamBinding {
+  confirmationId: string;
+  lineSlug: string;
+  workstream: string;
+  topicId: string;
+  observedRevision: number;
+  confirmedBy: 'user' | 'main_agent';
+  confirmedAt: number;
+}
+
+export type ResearchLineWorkstreamBindingStatus =
+  | 'unbound'
+  | 'unavailable'
+  | 'bound'
+  | 'stale'
+  | 'conflict';
+
+export interface ResearchLineWorkstreamAlignment {
+  lineSlug: string;
+  status: ResearchLineWorkstreamBindingStatus;
+  reason: string;
+  binding?: ResearchLineWorkstreamBinding;
 }
 
 export interface ResearchQuestion {
@@ -661,6 +686,15 @@ export interface ResearchCheckpointReceipt {
   postSaveCheck?: ResearchCheckpointCheckReceipt;
 }
 
+export interface ResearchDurableCommitCandidate {
+  sourceActionId: string;
+  progressRecordedAt: number;
+  entryKind: 'observation' | 'result' | 'failure' | 'decision' | 'source' | 'code_change' | 'run' | 'closeout';
+  authority: 'human' | 'agent' | 'source' | 'tool';
+  provenance: 'agent_verification' | 'tool_verification' | 'source_assessment' | 'human_assertion' | 'human_decision';
+  rationale: string;
+}
+
 export interface ResearchCommittedCursor {
   checkpointId: string;
   entryId?: string;
@@ -674,6 +708,8 @@ export interface ResearchCheckpoint {
   questionId?: string;
   questionRevision?: number;
   lineSlug?: string;
+  workstreamBinding?: ResearchLineWorkstreamBinding;
+  commitCandidate?: ResearchDurableCommitCandidate;
   assessment?: string;
   nextAction?: string;
   idempotencyKey: string;
@@ -727,6 +763,13 @@ export interface ResearchActionSpec {
   createdAt: number;
   completedAt?: number;
   requiresHumanApproval: boolean;
+  researchPlanBinding?: { planId: string; planRevision: number; milestoneId: string };
+  actionPlanBinding?: {
+    schema: 'hakimi/action-plan-binding-0.1';
+    kind: 'minimal' | 'reviewed_plan';
+    planId: string;
+    planRevision: number;
+  };
   run?: ResearchRunState;
 }
 
@@ -790,6 +833,46 @@ export interface ResearchGoalSummary {
   };
 }
 
+export interface ResearchGoalProjection {
+  schema: 'hakimi/research-goal-0.1';
+  goalId: string;
+  objective: string;
+  completionCriterion?: string;
+  scope: {
+    programTopicId?: string;
+    lineSlug?: string;
+    questionId?: string;
+  };
+  nonGoals: string[];
+  budget: {
+    tokenBudget: number | null;
+    turnBudget: number | null;
+    wallClockBudgetMs: number | null;
+    remainingTokens: number | null;
+    remainingTurns: number | null;
+    remainingWallClockMs: number | null;
+    tokenBudgetReached: boolean;
+    turnBudgetReached: boolean;
+    wallClockBudgetReached: boolean;
+    overBudget: boolean;
+  };
+  stopConditions: Array<{ code: string; reached: boolean; reason: string }>;
+  status: 'active' | 'paused' | 'blocked' | 'complete';
+  terminalReason?: string;
+  waitingFor?: {
+    taskIds: string[];
+    policy: 'any' | 'all';
+  };
+  programRelation: ResearchGoalAlignment;
+  humanGates: ResearchHumanGate[];
+  persistenceGuards: Array<{
+    code: string;
+    status: 'clear' | 'blocked' | 'inactive';
+    reason: string;
+  }>;
+  researchRevision: number;
+}
+
 export interface ResearchProgram {
   topicId: string;
   title: string;
@@ -843,10 +926,45 @@ export interface ResearchPlan {
   resolution?: ResearchPlanResolution;
 }
 
+export interface ResearchPlanV2 {
+  schema: 'hakimi/research-plan-0.2';
+  planId: string;
+  revision: number;
+  goalId: string;
+  programId: string;
+  programObservedRevision: number;
+  goalRelation: 'same_program_goal' | 'goal_parent_of_program' | 'goal_milestone_in_program';
+  objective: string;
+  completionCriterion?: string;
+  milestones: Array<{
+    milestoneId: string;
+    title: string;
+    objective: string;
+    completionCriterion: string;
+    evidenceRequirements: string[];
+  }>;
+  evidenceRequirements: string[];
+  decisionPoints: Array<{
+    decisionId: string;
+    milestoneId: string;
+    prompt: string;
+    condition: string;
+  }>;
+  assumptions: string[];
+  currentMilestoneId: string;
+  stopConditions: string[];
+  replanConditions: string[];
+  status: 'draft' | 'active' | 'completed' | 'discarded';
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ResearchStatusSnapshot {
   mode: ResearchModePhase;
   loopStatus: ResearchLoopStatus;
   currentLineSlug?: string;
+  currentWorkstreamBinding?: ResearchLineWorkstreamAlignment;
+  lineWorkstreamBindings: ResearchLineWorkstreamBinding[];
   currentFocus?: ResearchFocus;
   currentQuestion?: ResearchQuestion;
   questions: ResearchQuestion[];
@@ -857,12 +975,14 @@ export interface ResearchStatusSnapshot {
   alerts: ResearchAlert[];
   effectiveNextStep?: ResearchEffectiveNextStep;
   goalSummary?: ResearchGoalSummary;
+  researchGoal?: ResearchGoalProjection;
   goalAlignment?: ResearchGoalAlignment;
   aitpHealth: ResearchAdapterHealth;
   aitpMaintenance?: AitpMaintenanceReceipt;
   pendingCheckpoint?: ResearchCheckpoint;
   latestCommittedCheckpoint?: ResearchCommittedCursor;
   committedCheckpointHistory?: ResearchCommittedCursor[];
+  distillationAttention?: ResearchDistillationAttention;
   phase: ResearchPhase;
   currentAction?: ResearchActionSpec;
   currentRun?: ResearchRunState;
@@ -872,9 +992,29 @@ export interface ResearchStatusSnapshot {
   program?: ResearchProgram;
   period?: ResearchPeriod;
   researchPlan?: ResearchPlan;
+  actionPlan?: ResearchPlan;
+  researchPlanV2?: ResearchPlanV2;
+  planningPolicy: ResearchPlanningPolicy;
   status?: ResearchStatusProjection;
   revision: number;
 }
+
+export type ResearchDistillationAttention =
+  | {
+      schema: 'hakimi/research-distillation-attention-0.1';
+      status: 'review_requested';
+      checkpointId: string;
+      entryId: string;
+      recordedAt: number;
+    }
+  | {
+      schema: 'hakimi/research-distillation-attention-0.1';
+      status: 'handoff_unavailable';
+      checkpointId: string;
+      entryId: string;
+      reason: string;
+      recordedAt: number;
+    };
 
 export type ResearchCommand =
   | { kind: 'enter_mode'; actor: 'user' | 'model'; lineSlug?: string }
@@ -958,7 +1098,35 @@ export type ResearchCommand =
       terminalState?: 'completed' | 'failed' | 'cancelled';
       artifactRefs: string[];
     }
-  | { kind: 'acknowledge_alert'; fingerprint: string };
+  | { kind: 'acknowledge_alert'; fingerprint: string }
+  | {
+      kind: 'confirm_line_workstream_binding';
+      lineSlug: string;
+      workstream: string;
+      expectedRevision: number;
+    }
+  | {
+      kind: 'clear_line_workstream_binding';
+      lineSlug: string;
+      expectedConfirmationId: string;
+      expectedRevision: number;
+    }
+  | { kind: 'set_planning_policy'; policy: ResearchPlanningPolicy; expectedRevision: number }
+  | {
+      kind: 'prepare_plan_v2';
+      planId?: string;
+      expectedRevision?: number;
+      objective: string;
+      completionCriterion?: string;
+      milestones: ResearchPlanV2['milestones'];
+      evidenceRequirements: string[];
+      decisionPoints: ResearchPlanV2['decisionPoints'];
+      assumptions: string[];
+      currentMilestoneId: string;
+      stopConditions: string[];
+      replanConditions: string[];
+    }
+  | { kind: 'activate_plan_v2' | 'complete_plan_v2' | 'discard_plan_v2'; planId: string; expectedRevision: number };
 
 // ---------------------------------------------------------------------------
 // Terminal

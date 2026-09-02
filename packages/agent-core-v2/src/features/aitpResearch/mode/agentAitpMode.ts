@@ -13,7 +13,13 @@
 import { createDecorator } from '#/_base/di/instantiation';
 import type { Event } from '#/_base/event';
 
-import type { AitpAdapterHealth, AitpMaintenanceDegradedReason, AitpModePhase, ResearchLoopStatus } from '../types';
+import type {
+  AitpAdapterHealth,
+  AitpMaintenanceDegradedReason,
+  AitpModePhase,
+  ResearchLineWorkstreamBinding,
+  ResearchLoopStatus,
+} from '../types';
 
 export interface AitpModeEntryOptions {
   readonly actor: 'user' | 'model';
@@ -38,6 +44,9 @@ export interface IAgentAitpModeService {
   pauseLoop(expectedRevision: number): void;
   resumeLoop(expectedRevision: number): void;
   refreshHealth(): Promise<AitpAdapterHealth>;
+  reconcileCurrentTopicBinding(
+    expectedLineSlug?: string,
+  ): Promise<ResearchLineWorkstreamBinding | undefined>;
   resetAdapter(): void;
 }
 

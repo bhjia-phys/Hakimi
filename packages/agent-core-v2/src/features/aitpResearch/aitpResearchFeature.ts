@@ -32,6 +32,8 @@ import { IAgentResearchService } from './research/agentResearch';
 import { AgentResearchService } from './research/agentResearchService';
 import { IDurableCommitService } from './research/durableCommit';
 import { DurableCommitService } from './research/durableCommitService';
+import { IAitpDistillationHandoffService } from './research/distillationHandoff';
+import { AitpDistillationHandoffService } from './research/distillationHandoffService';
 import { IAitpExternalFactService } from './research/externalFact';
 import { AitpExternalFactService } from './research/externalFactService';
 import { AitpResearchInjection } from './injection/aitpResearchInjection';
@@ -48,6 +50,8 @@ import {
 import { EnterAITPModeTool, ExitAITPModeTool } from './tools/aitpModeToolsImpl';
 import {
   ICommitResearchCheckpointTool,
+  IConfirmResearchWorkstreamBindingTool,
+  IClearResearchWorkstreamBindingTool,
   IConcludeResearchActionTool,
   ICreateResearchLineTool,
   ICreateResearchQuestionTool,
@@ -67,6 +71,8 @@ import {
 } from './tools/researchTools';
 import {
   CommitResearchCheckpointTool,
+  ConfirmResearchWorkstreamBindingTool,
+  ClearResearchWorkstreamBindingTool,
   ConcludeResearchActionTool,
   CreateResearchLineTool,
   CreateResearchQuestionTool,
@@ -84,6 +90,18 @@ import {
   UpdateResearchLineTool,
   UpdateResearchQuestionTool,
 } from './tools/researchToolsImpl';
+import {
+  IActivateResearchPlanV2Tool,
+  ICompleteResearchPlanV2Tool,
+  IDiscardResearchPlanV2Tool,
+  IPrepareResearchPlanV2Tool,
+} from './tools/researchPlanV2Tools';
+import {
+  ActivateResearchPlanV2Tool,
+  CompleteResearchPlanV2Tool,
+  DiscardResearchPlanV2Tool,
+  PrepareResearchPlanV2Tool,
+} from './tools/researchPlanV2ToolsImpl';
 import {
   IAitpCheckTool,
   IAitpEnterTool,
@@ -124,6 +142,10 @@ export class AitpResearchFeature extends Feature {
 
     this.contributeAgentService(IAgentAitpModeService, AgentAitpModeService);
     this.contributeAgentService(IDurableCommitService, DurableCommitService);
+    this.contributeAgentService(
+      IAitpDistillationHandoffService,
+      AitpDistillationHandoffService,
+    );
     this.contributeAgentService(IAitpExternalFactService, AitpExternalFactService);
     this.contributeAgentService(IAgentResearchService, AgentResearchService);
 
@@ -147,6 +169,26 @@ export class AitpResearchFeature extends Feature {
       domain: 'aitpResearch',
       when: isAitpModeActive,
     });
+    this.contributeTool(IPrepareResearchPlanV2Tool, PrepareResearchPlanV2Tool, {
+      name: 'PrepareResearchPlanV2',
+      domain: 'aitpResearch',
+      when: isAitpModeActive,
+    });
+    this.contributeTool(IActivateResearchPlanV2Tool, ActivateResearchPlanV2Tool, {
+      name: 'ActivateResearchPlanV2',
+      domain: 'aitpResearch',
+      when: isAitpModeActive,
+    });
+    this.contributeTool(ICompleteResearchPlanV2Tool, CompleteResearchPlanV2Tool, {
+      name: 'CompleteResearchPlanV2',
+      domain: 'aitpResearch',
+      when: isAitpModeActive,
+    });
+    this.contributeTool(IDiscardResearchPlanV2Tool, DiscardResearchPlanV2Tool, {
+      name: 'DiscardResearchPlanV2',
+      domain: 'aitpResearch',
+      when: isAitpModeActive,
+    });
     this.contributeTool(IAcknowledgeResearchAlertTool, AcknowledgeResearchAlertTool, {
       name: 'AcknowledgeResearchAlert',
       domain: 'aitpResearch',
@@ -167,6 +209,24 @@ export class AitpResearchFeature extends Feature {
       domain: 'aitpResearch',
       when: isAitpModeActive,
     });
+    this.contributeTool(
+      IConfirmResearchWorkstreamBindingTool,
+      ConfirmResearchWorkstreamBindingTool,
+      {
+        name: 'ConfirmResearchWorkstreamBinding',
+        domain: 'aitpResearch',
+        when: isAitpModeActive,
+      },
+    );
+    this.contributeTool(
+      IClearResearchWorkstreamBindingTool,
+      ClearResearchWorkstreamBindingTool,
+      {
+        name: 'ClearResearchWorkstreamBinding',
+        domain: 'aitpResearch',
+        when: isAitpModeActive,
+      },
+    );
     this.contributeTool(IUpdateResearchQuestionTool, UpdateResearchQuestionTool, {
       name: 'UpdateResearchQuestion',
       domain: 'aitpResearch',

@@ -31,13 +31,35 @@ export class DurableCommitService extends Service implements IDurableCommitServi
     super();
   }
 
-  async verifyEntry(entryId: string): Promise<void> {
+  async verifyEntry(
+    entryId: string,
+    expectedWorkstream: string,
+    expectedTopicId: string,
+  ): Promise<void> {
     try {
       const shown = await this.adapter.show({ id: entryId });
       if (shown.id !== entryId || shown.status !== 'active') {
         throw new AitpResearchError(
           AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
           `AITP entry ${entryId} was not returned as an active matching entry`,
+        );
+      }
+      const workstreams = shown.frontmatter['workstreams'];
+      if (
+        !Array.isArray(workstreams) ||
+        !workstreams.every((workstream): workstream is string => typeof workstream === 'string') ||
+        workstreams.length !== 1 ||
+        workstreams[0] !== expectedWorkstream
+      ) {
+        throw new AitpResearchError(
+          AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
+          `AITP entry ${entryId} does not use the exact confirmed workstream ${expectedWorkstream}`,
+        );
+      }
+      if (shown.frontmatter['topic'] !== expectedTopicId) {
+        throw new AitpResearchError(
+          AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
+          `AITP entry ${entryId} belongs to Topic ${String(shown.frontmatter['topic'])}, not captured Topic ${expectedTopicId}`,
         );
       }
     } catch (error) {
@@ -48,11 +70,7 @@ export class DurableCommitService extends Service implements IDurableCommitServi
   async checkAfterSave(input: DurableCommitCheckInput): Promise<DurableCommitCheckResult> {
     let report: AitpCheckReport;
     try {
-      report = await this.adapter.check(
-        input.workstreams?.length === 1
-          ? { workstream: input.workstreams[0] }
-          : undefined,
-      );
+      report = await this.adapter.check({ workstream: input.workstream });
     } catch (error) {
       throw this.asBarrierError(error);
     }

@@ -168,6 +168,8 @@ describe('Research slash command', () => {
   const snapshot: ResearchStatusSnapshot = {
     mode: 'ready',
     loopStatus: 'active',
+    planningPolicy: 'collaborative',
+    lineWorkstreamBindings: [],
     currentLineSlug: 'line-a',
     questions: [
       {
@@ -214,10 +216,37 @@ describe('Research slash command', () => {
   };
   const alignmentSnapshot: ResearchStatusSnapshot = {
     ...snapshot,
-    goalSummary: {
+    researchGoal: {
+      schema: 'hakimi/research-goal-0.1',
       goalId: 'goal-1',
       objective: 'Finish the Goal',
+      scope: {
+        programTopicId: 'topic-1',
+        lineSlug: 'line-a',
+        questionId: 'q_1',
+      },
+      nonGoals: [],
+      budget: {
+        tokenBudget: null,
+        turnBudget: null,
+        wallClockBudgetMs: null,
+        remainingTokens: null,
+        remainingTurns: null,
+        remainingWallClockMs: null,
+        tokenBudgetReached: false,
+        turnBudgetReached: false,
+        wallClockBudgetReached: false,
+        overBudget: false,
+      },
+      stopConditions: [],
       status: 'active',
+      programRelation: {
+        status: 'aligned',
+        reason: 'Confirmed as goal_parent_of_program.',
+      },
+      humanGates: [],
+      persistenceGuards: [],
+      researchRevision: 13,
     },
     program: {
       topicId: 'topic-1',

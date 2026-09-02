@@ -41,8 +41,57 @@ probe 后只读执行 `enter` → `check`，不调度模型 turn；Goal 仍是�
 不自动 init/adopt/inventory/backfill apply；backfill 不作为模型工具暴露。
 typed question/line registry、literature/compute/Portfolio、H6b native
 method-distillation orchestration 未实现，H6b 为 **planned，unavailable**。
-当前状态维护已接通：进入模式、active undo/cold restore（均在 ready probe 后），以及 active、admitted 的 Goal continuation turn 在 Research state 发生变化后的 turn end，都会只读执行 `enter` → `check`，不是 session-end automatic closeout。maintenance receipt 和 context injection 只暴露安全摘要；完整 Research snapshot/API 或 expanded Board 仍可能包含 checkpoint、revision 和 adapter health 字段。合法的 check findings（包括 error finding）保持 ready；只有周期不可用或无效时显示 degraded。error finding 仍可按具体 checkpoint 的保存屏障阻止提交。该周期不自动 init/adopt/backfill，不自动写 semantic handoff、Entry 或 Note；Session-scope coordinator 仅负责这项维护，不改变 H6b native method-distillation orchestration 仍为 planned/unavailable 的状态。Checkpoint receipt 会绑定具体 Entry、prepare/save receipt 和 pre-save finding baseline；commit 前复核 `show` 与 scoped `check`，只阻止新增或无法归因的 error。alerts 使用稳定 fingerprint，区分 active blocker、historical unresolved、superseded retry 和 warning，清除记录保留但不再注入。alerts 和 generic human gate 已实现，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard，`ResolveResearchDecision` 不会自动写入 AITP decision Entry。degraded active Research Mode 会阻止 AITP writes 和 Goal completion，未解决 human gate 也会阻止 Goal completion，但本地 Question/Line mutation 仍可能发生，当前没有 automatic session-closeout。Research Loop 的 public contract 还同步了 main-agent-only、zero-write 的 typed evidence review，以及绑定当前 action 的显式 run observation；正常有界行动使用 `BeginResearchAction` → 科研工作 → `ConcludeResearchAction`，该 observation 不提交或轮询 scheduler，不创建 campaign 聚合实体，也不把 RUNNING 当作科学结论。
+当前状态维护已接通：进入模式、active undo/cold restore（均在 ready probe 后），以及 active、ready、loop-running 的 admitted Research turn 在 Research state 发生变化后的 turn end，都会只读执行 `enter` → `check`，不是 session-end automatic closeout。typed main-agent user turn 使用 transient `interactive_research` lease；只有 Goal continuation participants 放行后由 Goal engine 生成的 typed continuation 使用 `autonomous_research` lease。两者都可驱动一次 Research Loop iteration；interactive lease 不 enqueue，跨 turn continuation 仍只属于 Goal。system/cron/subagent/unclassified、inactive、probing、paused、degraded turn abstain。maintenance receipt 和 context injection 只暴露安全摘要；完整 Research snapshot/API 或 expanded Board 仍可能包含 checkpoint、revision 和 adapter health 字段。合法的 check findings（包括 error finding）保持 ready；只有周期不可用或无效时显示 degraded。error finding 仍可按具体 checkpoint 的保存屏障阻止提交。该周期不自动 init/adopt/backfill，不自动写 semantic handoff、Entry 或 Note；Session-scope coordinator 仅负责这项维护，不改变 H6b native method-distillation orchestration 仍为 planned/unavailable 的状态。Checkpoint receipt 会绑定具体 Entry、prepare/save receipt 和 pre-save finding baseline；commit 前复核 `show` 与 scoped `check`，只阻止新增或无法归因的 error。alerts 使用稳定 fingerprint，区分 active blocker、historical unresolved、superseded retry 和 warning，清除记录保留但不再注入。alerts 和 generic human gate 已实现，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard，`ResolveResearchDecision` 不会自动写入 AITP decision Entry。degraded active Research Mode 会阻止 AITP writes 和 Goal completion，未解决 human gate 也会阻止 Goal completion，但本地 Question/Line mutation 仍可能发生，当前没有 automatic session-closeout。Research Loop 的 public contract 还同步了 main-agent-only、zero-write 的 typed evidence review，以及绑定当前 action 的显式 run observation；正常有界行动使用 `BeginResearchAction` → 科研工作 → `ConcludeResearchAction`，该 observation 不提交或轮询 scheduler，不创建 campaign 聚合实体，也不把 RUNNING 当作科学结论。
 §1/§2/§3/§5/§6 已更新到当前状态；§4/§7 保留历史 baseline 证据。
+
+**Hakimi 侧更新（2026-09-01，Unified Research Mode S7）：** 首次成功
+commit 一个新 checkpoint 后，Hakimi 的 Agent-scope 无状态 handoff service
+精确解析 `aitp-research-protocol:distilling-methods`，在同一轮只为 touched
+Entry 返回一次 bounded review steer。duplicate commit、Skill 缺失/隐藏/
+不可由模型调用或加载失败都是非阻塞 no-op。外部 Skill 独占相关 card 检索、
+exact-card pin/observation marker、trigger、basis/trial、revision 与两步 human
+gate 语义；Hakimi 不增加 parser、scanner、registry 或公共 snapshot 字段。
+该实现无 durable retry/recovery，crash 可漏 review，因此 H6b 仍
+**planned，unavailable**；AITP runtime/CLI/schema/adapter contract 不变。
+
+**Hakimi 侧更新（2026-09-01，Unified Research Mode S8）：** 现有公共
+Research snapshot 新增可选 `hakimi/research-distillation-attention-0.1`
+投影，只记录最新 committed checkpoint/Entry 的 `review_requested` 或
+`handoff_unavailable`。新 commit 会隐藏旧 receipt，旧 handoff 结果不能覆盖
+新的 commit revision；不可用状态进入 Board attention，requested 只在展开态
+显示 provenance。该字段不表示 trigger 命中、card/trial、review 完成、批准或
+发布，也没有公共写命令、retry ledger、scheduler 或 recovery。REST、WebSocket、
+Node SDK、klient、TUI 与 Web 同步；AITP runtime/CLI/schema/adapter contract
+未变，H6b 仍 **planned，unavailable**。
+
+**Hakimi 侧更新（2026-09-01，Unified Research Mode S9）：** 在已初始化的
+GW/LibRPA AITP workspace 中只读复核真实 ABACUS job-1097 packet，9 个
+manifest members 与 313-row class summary 一致，且用 wrong-expectation
+zero-output failure、correct recovery、byte-identical no-op retry 验证 bounded
+action。AITP 0.9 atomic save 在新 exact workstream 下创建
+`entry-a071eb42792548f685520d4492615a63`；pre/post scoped check clean、retry
+`already_saved`，同时明确 scope 外仍有 71 errors/201 warnings。一个新的
+method-observation 经 external Skill review 后因无 trigger/no card 而 no-op。
+real-derived fixture 在 protocol、REST、WebSocket、Node SDK、klient、TUI、Web
+保留相同 revision/binding/checkpoint/Entry 与 observational handoff。AITP
+runtime/CLI/schema/adapter contract 未变；无 ABACUS/MPI/remote 运行。当前
+Research maintenance public shape 不单独投影 `counts.outside_scope`；若增加需
+另行 reviewed public-schema goal，当前 `planned / unavailable`。S9 closed；
+H6b 仍 **planned，unavailable**。
+
+**Hakimi 侧更新（2026-09-01，Unified Research Mode S10）：** S0–S10 finite
+Program 已关闭。Agent Core 5,839 pass/1 skip、TUI 3,152 pass/2 skip、Web
+914、protocol 577、AITP 181，以及七包 typecheck/build、import boundary、
+generated manifest、521-file Web asset reproducibility、CLI/help/version、
+adapter contract、runtime budget 和双方 diff check 均通过。kap-server、
+klient、Node SDK 全套只复现已知的非 Research workspace-Skill、prompt-abort、
+MCP-trust 与 open-handle 基线问题；Research-only SDK RPC 13/13 通过，基线失败
+未被改写为 green。六份 Program changeset 均标记 CLI patch，SDK 聚合 major；
+全仓 CLI 仍因 committed baseline 的其他 pending minor changeset 聚合为 minor，
+未运行 `changeset version`。S9 没有验证 live crash/cold-resume replay，因此不
+冻结新 recovery contract、不声称 exactly-once；H6b 与 public
+`counts.outside_scope` 投影继续 **planned，unavailable**。AITP runtime/CLI/
+schema/contract/fixture/Skill/human-decision 语义未变。
 
 **Hakimi 侧更新（2026-08-28）：** Web 的实验性 Research UI 已接通：composer 中的 `/research` 走 Research command endpoint；live Board 展示 `probing`/`ready`/`degraded`、scientific phase、latest progress、current action/run、effective next step、human gate、active alerts 与 checkpoint；line-first Manager 的 Science 区可 resolve decision、acknowledge alert、review evidence 和 observe run，并在 stale revision 后刷新同一 session 的 authoritative snapshot。checkpoint commit 必须显式提供已有 AITP `entryId`，Web 不直接写 AITP。Web production source cutover 也已完成，`apps/kimi-web` 是唯一可编辑的 source；`dist-web` 与 `web-base.json` 是由 canonical build 生成并纳入 Git 的派生发布产物，受 schema v5 source/recipe-files/actual-toolchain/bundle provenance 约束，v4 native receipt 直接绑定 toolchain 与 binary hash。**本次未访问外部 AITP checkout**，因此 AITP HEAD `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290`、0.8.0、CLI/schema/gate 与 154 tests 仍沿用最后核验事实，不作新的外部兼容性声明；H5 仍仅部分集成，H6 仍是 **planned，unavailable**。
 
@@ -50,19 +99,29 @@ method-distillation orchestration 未实现，H6b 为 **planned，unavailable**�
 
 **Hakimi 侧更新（2026-08-30，Goal↔AITP Program alignment）：** Hakimi Goal、observed AITP Program（其顶层 Research Goal 只由 `enter` 观测）与 Local Research Loop 现在在 Board 和模型上下文中明确区分；Hakimi 不写 AITP Topic 或 `TOPIC.md`。用户可用 `/research align same_program_goal|goal_parent_of_program|goal_milestone_in_program|unrelated|clear` 创建或清除只在 Hakimi 内 checkpointed 的显式 binding。该 binding 不从文本相似度推断，要求当前同时存在 Goal 与 observed Program，使用 snapshot optimistic concurrency，且绝不写 AITP：无 binding 是 `confirmation_required`，Goal、Topic 或 Program observation 的变更使其 `stale`，只有 `unrelated` 是明确 `conflict`。在 active Research Mode 中，这三种状态阻止 Goal completion 与 automatic continuation；inactive Goal 不受影响。**本次只读复核外部 AITP checkout：HEAD 仍为 `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290`，工作树已有用户未提交修改，当前 shell 中 `aitp --help` 不可用；未修改外部 checkout，也未更新对方 `docs/hakimi/` handoff。** 因此不形成新的 CLI/schema/stage 兼容性声明，也不改变 H5 部分集成或 H6b **planned，unavailable** 的状态。
 
+**Hakimi 侧更新（2026-08-31，Unified Research Mode S1/S2）：** Research Mode 现在用 transient `interactive_research` 与 `autonomous_research` lease 区分用户驱动和 Goal 驱动的一次 loop iteration；只有既有 Goal engine 拥有 continuation。公共 Research snapshot 以 additive、optional 的 `hakimi/research-goal-0.1` 投影专门呈现当前阶段 Goal，并保留旧 `goalSummary` 兼容字段。该投影与 generic Goal 一对一，包含当前 scope、budget、派生 stop conditions、Program relation、human gates 和 persistence guards；probing/degraded、pending checkpoint、未解决 human gate 以及 `unavailable`/`confirmation_required`/`stale`/`conflict` alignment 都阻止 active Research Goal 的 automatic continuation 与 completion。REST、WebSocket、Node SDK、klient、TUI、Web 和模型注入消费同一 snapshot。没有新增 AITP CLI/schema/contract、Topic 写入或第二套 scheduler；AITP 侧 protected dirty handoff 未改，H6b 仍为 **planned，unavailable**。
+
+**Hakimi 侧更新（2026-08-31，Unified Research Mode S3）：** checkpointed `hakimi/research-plan-0.2` 作为 additive multi-loop strategy 加入 Research snapshot；旧 bounded-action `ResearchPlan` 保持原 contract，并以 additive `actionPlan` alias 明确其单 action 角色。非 trivial action 同时 exact-bind active Research Plan revision/current milestone 和 approved local Plan revision；simple reversible one-step action 使用 explicit minimal binding。stale Goal/Program/milestone/Research Plan/local Plan/Line/Question 会阻止 start 或 conclude，且 bound foreground action 存在时计划不能被服务自身修订或终止。Plan lifecycle 不写 AITP、不改变 Question 或 Goal。公开 schema/commands、REST、WebSocket、Node SDK、klient、TUI、Web 已同步；没有新增 AITP CLI/schema/contract/card semantics，H6b 继续 **planned，unavailable**。
+
+**Hakimi 侧更新（2026-08-31，Unified Research Mode S4）：** Research snapshot 新增 checkpointed、Hakimi-local 的 `collaborative | dreaming` planning policy。collaborative 只将 Research Plan 的 consequential unknown 路由到既有 `AskUserQuestion` broker，dismiss/空答/含糊答复保持 no-op；dreaming 仅采用 reversible、low-cost、in-scope 默认项，并把它们记录到 `ResearchPlanV2.assumptions`。expensive/irreversible action、tool permission、科学约定歧义、Goal/scope change 和 AITP/human decision gate 在两种策略下都不会自动回答。策略使用 Research revision optimistic concurrency，并同步模型注入、REST、WebSocket、Node SDK、klient、TUI、Web 与 Board；切换策略不写 AITP。没有新增第二套 question protocol、AITP CLI/schema/contract/card semantics 或 native H6b coordinator，H6b 继续 **planned，unavailable**。
+
+**联合更新（2026-09-01，Unified Research Mode S5.1）：** Hakimi-local、revisioned Research Line→AITP workstream 显式 binding 保持不推断、不 backfill。AITP 0.9.0 `aitp/adapter-contract-0.2` 新增成对的 `record save --expected-topic --exact-workstream` 原子前置条件；Hakimi 兼容读取 0.1/0.2，但 checkpoint-bound save 必须使用 0.2，并从 captured binding 自动传入两值。AITP 在写锁内对 current Topic 与 exact singleton draft membership compare-and-save，mismatch 不产生 canonical Entry；canonical `show` 与 scoped `check` 保留为 defense in depth。S5 strong gate 已通过；该 S5.1 slice 本身没有启动 S6，后续状态见下一段；H6b 仍 **planned，unavailable**。
+
+**Hakimi 侧更新（2026-09-01，Unified Research Mode S6）：** `ConcludeResearchAction` 现在要求一次显式 durability assessment，并在同一 Research transition 中完成 action conclusion 与唯一 progress boundary。`no_durable_delta` 不安排 S6 AITP 写入或 distillation；`durable_delta` 生成一个 additive、checkpointed `commitCandidate`，固定 source action、progress timestamp、现有 Entry kind、authority、provenance 与 rationale，并立即路由到现有 prepare/fill/save/show/scoped-check/commit barrier。相同 conclude retry 幂等返回同一 candidate；不同 retry、candidate 与 prepare intent 不一致、重复 `RecordResearchProgress`、pending checkpoint 下的 Question/Line/Research Plan/Goal formal closure 均 fail closed。candidate 已同步 REST、WebSocket、Node SDK、klient、TUI 与 Web。AITP 0.9.0 runtime、CLI、file/read schema 与 adapter-contract-0.2 均未改变；S6 本身不做 method review，后续 S7 handoff 见下文，H6b native coordinator 仍 **planned，unavailable**。
+
 ## 1. Command matrix (Hakimi view)
 
 | Command | AITP stage | Status | Hakimi may call | Blocked on | Future feature-detect |
 |---|---|---|---|---|---|
 | `init` | M0 | available | no — human decision, blank dir only | — | `--help` presence |
 | `init --adopt` | M0.6 | available | no — touches an existing tree, human decision | — | `--help` presence |
-| `enter` | M0 | available | **yes** (mode entry, active undo/cold-restore, and admitted Goal-continuation turns with Research-state changes) | — | no `schema` key; strict shape check；M1c（已 shipped；gate passed）：单次 `--workstream <slug>` 时 → `schema == "aitp/enter-0.3"`；not session-end closeout |
+| `enter` | M0 | available | **yes** (ready probe 后先无 scope 观测 Topic；只有精确 confirmed Line→workstream binding 才进入 scoped maintenance) | — | no `schema` key; strict shape check；M1c（已 shipped；gate passed）：单次 `--workstream <slug>` 时 → `schema == "aitp/enter-0.3"`；not session-end closeout |
 | `inventory <path> --name <n>` | M0.6 | available | no — operator-only, **writes** `.aitp/local/legacy/<name>-inventory.json` | — | — |
 | `record prepare\|save` | M0 | available | yes (prepare → fill → save) | — | envelope shape + `status` enum；M1c（已 shipped；gate passed）：repeatable `--workstream` 只播种 draft frontmatter（重复 slug 拒绝），envelope 不变 |
 | `note prepare\|save` | M0 | available | yes | — | envelope shape + `status` enum；M1c（已 shipped；gate passed）：repeatable `--workstream` 只播种 draft frontmatter（重复 slug 拒绝），envelope 不变 |
 | `list` | M1a | **available** (read-only) | **yes** (feature-detect schema) | —；M1a deterministic gate passed | top-level `schema == "aitp/list-0.1"`；M1c（已 shipped；gate passed）：单次 `--workstream <slug>` 时 → `schema == "aitp/list-0.2"` |
 | `show` | M1a | **available** (read-only) | **yes** (feature-detect schema) | —；M1a deterministic gate passed | top-level `schema == "aitp/show-0.1"`；malformed 记录 → exit 0 + `status:"malformed"` + `frontmatter:null` |
-| `check` | M1b-R1 (selected 2026-08-12) | **available** (read-only, zero-write) | **yes** (feature-detect schema) | —；M1b-R1 deterministic gate passed 2026-08-12 | 解析 `aitp/check-report-0.1`（exit 0/1 均带报告；exit 2 是标准错误包）；M1d（已 shipped；gate passed）：单次 `--workstream <slug>` 时 → `aitp/check-report-0.2`（admitted in-scope 计数、`by_code`/`outside_scope`；四行文本仅人阅）；无 flag ⇒ `check-report-0.1` 字节不变 |
+| `check` | M1b-R1 (selected 2026-08-12) | **available** (read-only, zero-write) | **yes** (feature-detect schema；Research maintenance/checkpoint 的 scope 只来自精确 confirmed binding) | —；M1b-R1 deterministic gate passed 2026-08-12 | 解析 `aitp/check-report-0.1`（exit 0/1 均带报告；exit 2 是标准错误包）；M1d（已 shipped；gate passed）：单次 `--workstream <slug>` 时 → `aitp/check-report-0.2`（admitted in-scope 计数、`by_code`/`outside_scope`；四行文本仅人阅）；无 flag ⇒ `check-report-0.1` 字节不变 |
 | `backfill` | M1e (2026-08-15) | **available upstream** (dry-run default; `--apply` writes metadata only) | **no — operator-only**; Hakimi adapter does not expose, call, or parse the `aitp/backfill-0.1` success envelope | —；M1e deterministic gate passed upstream | `aitp backfill workstreams --mapping … --decision <human-entry> [--apply]`；AITP upstream is dry-run-first，只 add/merge `workstreams`，需 human decision pin mapping；Hakimi does not implement this integration |
 | `lineage` | deferred candidate (Followup 2, 2026-08-12 再次 deferred) | **absent** | no | 新的 reviewed freeze revision 选中 + 自身 reviewed spec | `aitp/lineage-0.1` 仅在真正 shipped 后 |
 
@@ -86,6 +145,54 @@ method-distillation orchestration 未实现，H6b 为 **planned，unavailable**�
 
 `lite-*` schemas 是持久化文件 schema，**不是** CLI transport envelope。
 Transport envelope 在 M1a 之前保持未版本化。
+
+### 2.1 Hakimi Line→workstream binding（S5）
+
+S5 没有新增 AITP schema。Hakimi 在自己的 checkpointed Research state 中保存
+server-generated `confirmationId`、`lineSlug`、`workstream`、`topicId`、
+`observedRevision`、`confirmedBy` 和 `confirmedAt`，并根据当前 observed Program 派生
+`unbound | unavailable | bound | stale | conflict`。该记录不是 AITP
+canonical record，不能作为 workstream 存在证明，也不会修改
+Entry/Note frontmatter。
+
+- 只有无作用域 `enter` 观测到 Topic 后，user 或 main agent 才能用当前
+  Research revision 显式确认 membership。slug/text/path/ID 相同都不得推断。
+- 不同的新 binding 不得覆盖旧确认；必须先显式 clear。live action 或
+  pending checkpoint 存在时不允许修改其 binding。
+- turn-end、Line switch maintenance 及 checkpoint prepare/save 都先做无作用域
+  Topic observation，再重算精确 binding；Topic 已变化时不发出 scoped I/O。
+- checkpoint 捕获完整、精确 binding；prepare receipt、canonical `show`、scoped
+  `check` 和 commit 之间任一 tuple 变化都 fail closed。`show` 返回的 Entry
+  必须在 frontmatter 中精确匹配 captured Topic，且 `workstreams` 必须恰为
+  `[capturedWorkstream]`。
+- canonical save 与 binding stale 竞态时保留 save receipt、进入 degraded，并要求
+  undo pending proposal 后再绑定；reset/process-exit 可能使 save outcome 未知，
+  因而仍须先检查 canonical state，并只用相同 recovery identity（prepare
+  idempotency key 或 draft path）重试。
+- checkpoint save 要求 AITP 0.9.0 adapter-contract 0.2 的成对
+  expected-Topic/exact-workstream precondition，且两值只来自 captured binding。
+  edited draft 含有额外或不同 workstream、或 Topic 已变化时，AITP 在写锁内
+  fail closed 并保持 zero canonical write；Hakimi 不对 checkpoint 使用 legacy
+  no-flag save。post-save `show`/scoped `check` 继续验证 adoption。S5 strong
+  write-isolation gate 已通过。
+- S6 的 Conclude boundary 在 Hakimi 内要求 `no_durable_delta | durable_delta`
+  assessment。no-delta 不调用 S6 persistence；positive candidate 保存在 pending
+  checkpoint 并锁定 prepare 的 kind/authority/created-by intent，再复用现有 AITP
+  atomic save 与 post-save barrier。它不新增 AITP Entry/Note schema，也不执行
+  Method-card review；后续 S7 handoff 只在 commit 后调用外部 Skill，H6b 仍
+  planned/unavailable。
+- undo/cold restore 只重放记录并与新 Topic observation 比较；Line switch 只在目标
+  Line 已 `bound` 时切换 scoped maintenance。不做 infer、repair 或 backfill。
+- AITP 0.9.0 仍没有 workstream registry。空 scope 是合法结果；legacy unscoped records
+  不归入 scope；`counts.outside_scope` 是 global−scoped 的纯计数差，不是 finding
+  或 membership 证明。
+
+REST、WebSocket、Node SDK、klient、TUI 和 Web 都消费同一个 Research
+snapshot；公开 confirm command 只接受 Line、workstream 与 expected Research
+revision，confirmation provenance 由边界固定为 `user`，main-agent tool 固定为
+`main_agent`。clear 还必须回传当前 binding 的 server-owned `confirmationId`；
+公开 Research revision 是不随 undo 回退的 world-time snapshot token。外部调用者
+不能伪造 Topic、observation revision、确认者、时间或新的 confirmation identity。
 
 ## 3. Versioned transport envelope — AITP decision (2026-08-08)
 

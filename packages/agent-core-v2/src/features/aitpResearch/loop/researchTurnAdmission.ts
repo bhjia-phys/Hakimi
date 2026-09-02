@@ -1,15 +1,16 @@
 /**
  * `aitpResearch` domain — `IResearchTurnAdmission` contract + implementation.
  *
- * Tracks whether the current main-agent turn is an admitted Research turn: a
- * turn admitted for Research maintenance is one the research loop is actually
- * driving — a typed Goal-owned continuation intent while Research Mode is
- * ready and the loop is running. Ordinary user / system / subagent / cron turns are
- * not admitted and abstain from Research behavior (idle→orienting, turn-end
- * AITP maintenance, Research guidance injection). Admission is a transient
- * per-turn lease: acquired at `turn.started`, released at `turn.ended`; it is
- * never persisted, so a cold restore starts with no admitted turn and the next
- * turn recomputes it. Subagent instances stay inert. Bound at Agent scope.
+ * Tracks the current main-agent Research turn lease. A typed user intent gets
+ * an `interactive_research` lease; a typed Goal-owned continuation intent gets
+ * an `autonomous_research` lease. Both require active, ready Research Mode and
+ * a running loop. The autonomous intent is a post-guard capability produced
+ * only by the Goal continuation engine after its participants allow enqueue;
+ * admission never creates or schedules a continuation. System / subagent /
+ * cron / unclassified turns abstain. The lease is transient: acquired at
+ * `turn.started`, released at `turn.ended`, and never persisted. A cold restore
+ * starts with no lease and recomputes it at the next turn. Subagent instances
+ * stay inert. Bound at Agent scope.
  */
 
 import { Service } from '#/_base/di/service';
@@ -21,8 +22,19 @@ import type { TurnIntent } from '#/agent/loop/stepRequest';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
 
+export type ResearchTurnLease =
+  | 'none'
+  | 'interactive_research'
+  | 'autonomous_research';
+
 export interface IResearchTurnAdmission {
   readonly _serviceBrand: undefined;
+
+  /** The transient Research lease associated with the given turn. */
+  leaseForTurn(turnId: number): ResearchTurnLease;
+
+  /** The transient Research lease for the most recent live turn. */
+  currentLease(): ResearchTurnLease;
 
   /** Whether the given turn was admitted as a Research turn. */
   isTurnAdmitted(turnId: number): boolean;
@@ -35,26 +47,30 @@ export const IResearchTurnAdmission =
   createDecorator<IResearchTurnAdmission>('researchTurnAdmission');
 
 /**
- * Whether a typed Goal continuation is admitted as a Research turn. The
- * origin remains a display/transcript concern; the runtime intent is the
- * authoritative admission signal.
+ * Resolve the lease represented by a typed runtime intent. The origin remains
+ * a display/transcript concern; prompt ingress classifies a true user prompt,
+ * while the Goal engine mints its autonomous intent only after continuation
+ * participants allow enqueue.
  */
-export function isResearchAdmittedIntent(
+export function resolveResearchTurnLease(
   intent: TurnIntent | undefined,
   mode: Pick<IAgentAitpModeService, 'isActive' | 'phase' | 'loopStatus'>,
-): boolean {
-  return intent?.kind === 'goal_continuation' &&
-    intent.owner === 'goal' &&
-    mode.isActive &&
-    mode.phase === 'ready' &&
-    mode.loopStatus === 'active';
+): ResearchTurnLease {
+  if (!mode.isActive || mode.phase !== 'ready' || mode.loopStatus !== 'active') {
+    return 'none';
+  }
+  if (intent?.kind === 'user') return 'interactive_research';
+  if (intent?.kind === 'goal_continuation' && intent.owner === 'goal') {
+    return 'autonomous_research';
+  }
+  return 'none';
 }
 
 export class ResearchTurnAdmission extends Service implements IResearchTurnAdmission {
   declare readonly _serviceBrand: undefined;
 
   private admittedTurnId: number | null = null;
-  private admitted = false;
+  private lease: ResearchTurnLease = 'none';
 
   constructor(
     @IEventBus eventBus: IEventBus,
@@ -75,22 +91,30 @@ export class ResearchTurnAdmission extends Service implements IResearchTurnAdmis
     );
   }
 
+  leaseForTurn(turnId: number): ResearchTurnLease {
+    return this.admittedTurnId === turnId ? this.lease : 'none';
+  }
+
+  currentLease(): ResearchTurnLease {
+    return this.lease;
+  }
+
   isTurnAdmitted(turnId: number): boolean {
-    return this.admittedTurnId === turnId && this.admitted;
+    return this.leaseForTurn(turnId) !== 'none';
   }
 
   isCurrentResearchTurn(): boolean {
-    return this.admitted;
+    return this.lease !== 'none';
   }
 
   private onTurnStarted(event: TurnStartedEvent): void {
     this.admittedTurnId = event.turnId;
-    this.admitted = isResearchAdmittedIntent(event.intent, this.mode);
+    this.lease = resolveResearchTurnLease(event.intent, this.mode);
   }
 
   private onTurnEnded(event: TurnEndedEvent): void {
     if (this.admittedTurnId !== event.turnId) return;
     this.admittedTurnId = null;
-    this.admitted = false;
+    this.lease = 'none';
   }
 }

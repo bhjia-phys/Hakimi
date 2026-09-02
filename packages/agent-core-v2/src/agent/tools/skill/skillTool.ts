@@ -32,6 +32,7 @@ import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import { renderPrompt } from '#/_base/utils/render-prompt';
 import { toInputJsonSchema } from '#/tool/input-schema';
 import { matchesGlobRuleSubject } from '#/tool/rule-match';
+import type { SkillDefinition } from '#/app/skillCatalog/types';
 
 import {
   ISkillTool,
@@ -97,23 +98,42 @@ export async function executeModelSkill(
   queryDepth: number,
   sessionId: string,
 ): Promise<ExecutableToolResult> {
-  const currentDepth = queryDepth;
-  if (currentDepth >= MAX_SKILL_QUERY_DEPTH) {
-    throw new NestedSkillTooDeepError(MAX_SKILL_QUERY_DEPTH, args.skill);
-  }
-
   await catalog.ready;
   const skill = catalog.catalog.getSkill(args.skill);
   if (skill === undefined) {
     return errorResult(`Skill "${args.skill}" not found in the current skill listing.`);
   }
+  return executeResolvedModelSkill(
+    catalog,
+    skillService,
+    visibility,
+    skill,
+    args.args ?? '',
+    queryDepth,
+    sessionId,
+  );
+}
+
+export async function executeResolvedModelSkill(
+  catalog: ISessionSkillCatalog,
+  skillService: IAgentSkillService,
+  visibility: IAgentSkillVisibilityService,
+  skill: SkillDefinition,
+  skillArgs: string,
+  queryDepth: number,
+  sessionId: string,
+): Promise<ExecutableToolResult> {
+  const currentDepth = queryDepth;
+  if (currentDepth >= MAX_SKILL_QUERY_DEPTH) {
+    throw new NestedSkillTooDeepError(MAX_SKILL_QUERY_DEPTH, skill.name);
+  }
   if (!visibility.isSkillVisible(skill)) {
     const reason = visibility.hiddenReason(skill);
-    return errorResult(reason ?? `Skill "${args.skill}" is not available.`);
+    return errorResult(reason ?? `Skill "${skill.name}" is not available.`);
   }
   if (skill.metadata.disableModelInvocation === true) {
     return errorResult(
-      `Skill "${args.skill}" can only be triggered by the user (model invocation is disabled).`,
+      `Skill "${skill.name}" can only be triggered by the user (model invocation is disabled).`,
     );
   }
   if (!isInlineSkillType(skill.metadata.type)) {
@@ -122,7 +142,6 @@ export async function executeModelSkill(
     );
   }
 
-  const skillArgs = args.args ?? '';
   const trigger = currentDepth > 0 ? 'nested-skill' : 'model-tool';
   const origin: SkillActivationOrigin = {
     kind: 'skill_activation',

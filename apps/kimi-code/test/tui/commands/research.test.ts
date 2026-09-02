@@ -28,6 +28,7 @@ function makeSnapshot(
   return {
     mode: 'ready',
     loopStatus: 'active',
+    planningPolicy: 'collaborative',
     currentLineSlug: 'line-a',
     questions: [],
     lines: [line],
@@ -35,6 +36,7 @@ function makeSnapshot(
     activeQuestionCount: 0,
     blockedQuestionCount: 0,
     alerts: [],
+    lineWorkstreamBindings: [],
     aitpHealth: { phase: 'ready' },
     phase: 'action_executing',
     revision: 8,
@@ -422,6 +424,148 @@ describe('handleResearchCommand manager actions', () => {
       assessment: undefined,
       reason: undefined,
     });
+  });
+
+  it('routes explicit workstream confirmation and clearing without provenance fields', async () => {
+    const program = {
+      topicId: 'topic-1',
+      title: 'Observed Topic',
+      goalText: 'Validate one result.',
+      goalSource: 'aitp-enter',
+      establishedAt: 1,
+      observedRevision: 3,
+    };
+    const snapshot = makeSnapshot({ program, revision: 12 });
+    const { host, session, mounted } = makeResearchHost(snapshot);
+
+    await handleResearchCommand(host, 'manage');
+    const manager = mounted.mock.calls[0]?.[0] as ResearchManagerComponent;
+    manager.handleInput('w');
+    for (const character of 'abacus-rpa') manager.handleInput(character);
+    manager.handleInput('\r');
+    await vi.waitFor(() => expect(session.commandResearch).toHaveBeenCalledOnce());
+    expect(session.commandResearch).toHaveBeenCalledWith({
+      kind: 'confirm_line_workstream_binding',
+      lineSlug: 'line-a',
+      workstream: 'abacus-rpa',
+      expectedRevision: 12,
+    });
+
+    const binding = {
+      confirmationId: 'confirmation-line-a-1',
+      lineSlug: 'line-a',
+      workstream: 'abacus-rpa',
+      topicId: 'topic-1',
+      observedRevision: 3,
+      confirmedBy: 'user' as const,
+      confirmedAt: 2,
+    };
+    const boundSnapshot = makeSnapshot({
+      program,
+      revision: 13,
+      lineWorkstreamBindings: [binding],
+    });
+    const bound = makeResearchHost(boundSnapshot);
+    await handleResearchCommand(bound.host, 'manage');
+    const boundManager = bound.mounted.mock.calls[0]?.[0] as ResearchManagerComponent;
+    boundManager.handleInput('x');
+    await vi.waitFor(() => expect(bound.session.commandResearch).toHaveBeenCalledOnce());
+    expect(bound.session.commandResearch).toHaveBeenCalledWith({
+      kind: 'clear_line_workstream_binding',
+      lineSlug: 'line-a',
+      expectedConfirmationId: binding.confirmationId,
+      expectedRevision: 13,
+    });
+  });
+
+  it('keeps a failed workstream confirmation editable in the binding dialog', async () => {
+    const snapshot = makeSnapshot({
+      program: {
+        topicId: 'topic-1',
+        title: 'Observed Topic',
+        goalText: 'Validate one result.',
+        goalSource: 'aitp-enter',
+        establishedAt: 1,
+        observedRevision: 3,
+      },
+    });
+    const { host, session, mounted } = makeResearchHost(snapshot);
+    session.commandResearch.mockRejectedValueOnce(new Error('adapter not ready'));
+
+    await handleResearchCommand(host, 'manage');
+    const manager = mounted.mock.calls[0]?.[0] as ResearchManagerComponent;
+    manager.handleInput('w');
+    for (const character of 'abacus-rpa') manager.handleInput(character);
+    manager.handleInput('\r');
+
+    await vi.waitFor(() => {
+      expect(manager.render(100).map(stripAnsi).join('\n')).toContain('adapter not ready');
+    });
+    const output = manager.render(100).map(stripAnsi).join('\n');
+    expect(output).toContain('Confirm AITP workstream binding');
+    expect(output).toContain('abacus-rpa');
+    expect(host.showError).not.toHaveBeenCalled();
+  });
+
+  it('keeps Research Plan v2 lifecycle commands in the plan manager view', async () => {
+    const snapshot = makeSnapshot({
+      researchPlanV2: {
+        schema: 'hakimi/research-plan-0.2',
+        planId: 'research-plan-1',
+        revision: 2,
+        goalId: 'goal-1',
+        programId: 'topic-1',
+        programObservedRevision: 1,
+        goalRelation: 'goal_milestone_in_program',
+        objective: 'Validate one milestone.',
+        completionCriterion: 'The checks pass.',
+        milestones: [{
+          milestoneId: 'm1',
+          title: 'Run and validate',
+          objective: 'Run one calculation.',
+          completionCriterion: 'Validation passes.',
+          evidenceRequirements: ['Output and log'],
+        }],
+        evidenceRequirements: ['Reproducible result'],
+        decisionPoints: [],
+        assumptions: [],
+        currentMilestoneId: 'm1',
+        stopConditions: ['Stop on validation failure.'],
+        replanConditions: ['Replan on Program drift.'],
+        status: 'draft',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    });
+    const { host, session, mounted } = makeResearchHost(snapshot);
+    await handleResearchCommand(host, 'manage');
+    const manager = mounted.mock.calls[0]?.[0] as ResearchManagerComponent;
+    manager.handleInput('v');
+    manager.handleInput('a');
+    await vi.waitFor(() => expect(session.commandResearch).toHaveBeenCalledOnce());
+    expect(session.commandResearch).toHaveBeenCalledWith({
+      kind: 'activate_plan_v2',
+      planId: 'research-plan-1',
+      expectedRevision: 2,
+    });
+    expect(mounted).toHaveBeenCalledOnce();
+    expect(manager.render(100).map(stripAnsi).join('\n')).toContain('Multi-loop Research Plan');
+  });
+
+  it('routes planning policy changes through the revisioned Research command', async () => {
+    const snapshot = makeSnapshot({ planningPolicy: 'collaborative', revision: 12 });
+    const { host, session, mounted } = makeResearchHost(snapshot);
+    await handleResearchCommand(host, 'manage');
+    const manager = mounted.mock.calls[0]?.[0] as ResearchManagerComponent;
+    manager.handleInput('v');
+    manager.handleInput('p');
+    await vi.waitFor(() => expect(session.commandResearch).toHaveBeenCalledOnce());
+    expect(session.commandResearch).toHaveBeenCalledWith({
+      kind: 'set_planning_policy',
+      policy: 'dreaming',
+      expectedRevision: 12,
+    });
+    expect(mounted).toHaveBeenCalledOnce();
   });
 
   it('sends boundedAction with the typed manager focus command', async () => {

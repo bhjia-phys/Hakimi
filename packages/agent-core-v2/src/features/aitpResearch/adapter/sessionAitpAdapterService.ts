@@ -7,7 +7,8 @@
  * `aitp.contract.json` + `kimi.plugin.json` through `IHostFileSystem`, probes
  * Python through the `AitpLauncher`, and exposes the AITP CLI surface (`enter`
  * / `list` / `show` / `check` / `record/note prepare/save`). Strictly consumes
- * the AITP 0.8 adapter contract; never calls `init`, `inventory`, or
+ * the AITP 0.8/0.9 adapter contracts; the 0.9 contract adds atomic scoped
+ * `record save` preconditions. Never calls `init`, `inventory`, or
  * `backfill --apply`; never writes canonical AITP files directly.
  * `not_initialized` workspaces become `degraded` — the adapter does not
  * auto-init or adopt. Mutations are single-flight: a concurrent mutation is
@@ -55,8 +56,10 @@ const AITP_PLUGIN_ID = 'aitp-research-protocol';
 const AITP_SKILL_NAME = 'aitp';
 const CONTRACT_FILE = 'aitp.contract.json';
 const MANIFEST_FILE = 'kimi.plugin.json';
-const SUPPORTED_CONTRACT_SCHEMA = 'aitp/adapter-contract-0.1';
-const SUPPORTED_CONTRACT_VERSION = '0.1';
+const SUPPORTED_CONTRACTS: ReadonlyMap<string, string> = new Map([
+  ['aitp/adapter-contract-0.1', '0.1'],
+  ['aitp/adapter-contract-0.2', '0.2'],
+] as const);
 
 interface ContractFile {
   readonly schema?: unknown;
@@ -197,8 +200,19 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
   }
 
   async recordSave(options: AitpAdapterRecordSaveOptions): Promise<AitpRecordSaveResult> {
+    const usesAtomicScope = options.expectedTopic !== undefined || options.exactWorkstream !== undefined;
+    if (usesAtomicScope && this.contractIdentity?.contractVersion !== '0.2') {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_ADAPTER_CONTRACT_UNKNOWN,
+        'Checkpoint-bound record save requires AITP adapter-contract-0.2.',
+      );
+    }
     return this.singleFlight(options, (launcher, signal) =>
-      launcher.recordSave(options.draftPath, { signal }),
+      launcher.recordSave({
+        draftPath: options.draftPath,
+        expectedTopic: options.expectedTopic,
+        exactWorkstream: options.exactWorkstream,
+      }, { signal }),
     );
   }
 
@@ -251,7 +265,14 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
       }
 
       this.contractIdentity = identity;
-      this.launcher = candidate;
+      // Pin the interpreter selected by the successful compatibility probe.
+      // Commands can now reach their OS spawn without a second asynchronous
+      // Python search opening a gate-to-mutation phase-change window.
+      this.launcher = new AitpLauncher(this.hostProcess, {
+        launcherScript: identity.launcherPath,
+        cwd: this.sessionCtx.cwd,
+        pythonPath: python,
+      });
       this.healthState = {
         phase: 'ready',
         contractVersion: identity.contractVersion,
@@ -309,10 +330,10 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
     this.mutationInFlight = true;
     try {
       const result = await operation(launcher, signal);
-      this.assertCurrent(lifecycle);
+      this.assertMutationCurrent(lifecycle);
       return result.data;
     } catch (error) {
-      this.assertCurrent(lifecycle);
+      this.assertMutationCurrent(lifecycle);
       if (isOperationCancelled(error)) throw error;
       throw error;
     } finally {
@@ -332,6 +353,15 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_ADAPTER_OPERATION_CANCELLED,
         'AITP operation was invalidated by Research Mode reset or exit.',
+      );
+    }
+  }
+
+  private assertMutationCurrent(operation: LifecycleOperation): void {
+    if (operation.generation !== this.lifecycleGeneration || operation.signal.aborted) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_ADAPTER_OPERATION_CANCELLED,
+        'AITP mutation was invalidated by Research Mode reset or exit and may have completed externally. Inspect canonical AITP state before retrying with the same recovery identity (prepare idempotency key or draft path).',
       );
     }
   }
@@ -407,7 +437,10 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
       return null;
     }
 
-    if (contract.schema !== SUPPORTED_CONTRACT_SCHEMA) return null;
+    const contractVersion = typeof contract.schema === 'string'
+      ? SUPPORTED_CONTRACTS.get(contract.schema)
+      : undefined;
+    if (contractVersion === undefined) return null;
     if (
       contract.plugin?.name !== AITP_PLUGIN_ID ||
       typeof contract.plugin.version !== 'string' ||
@@ -429,7 +462,7 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
     if (!launcherPath.startsWith(`${pluginRoot}/`)) return null;
 
     return {
-      contractVersion: SUPPORTED_CONTRACT_VERSION,
+      contractVersion,
       pluginVersion: contract.plugin.version,
       launcherPath,
       pluginRoot,

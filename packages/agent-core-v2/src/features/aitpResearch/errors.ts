@@ -118,15 +118,15 @@ export const AitpResearchErrors = {
     },
     'aitp.adapter_operation_cancelled': {
       title: 'The AITP operation was cancelled',
-      retryable: true,
+      retryable: false,
       public: true,
-      action: 'Retry the operation after the current Research lifecycle is ready.',
+      action: 'Inspect canonical AITP state before retrying with the same recovery identity (prepare key or draft path).',
     },
     'aitp.checkpoint_pending': {
       title: 'Research checkpoint is pending commit',
       retryable: false,
       public: true,
-      action: 'Commit or discard the pending checkpoint before proceeding.',
+      action: 'Commit the pending checkpoint or undo its proposal before proceeding.',
     },
     'aitp.checkpoint_degraded': {
       title: 'Research checkpoint is degraded',

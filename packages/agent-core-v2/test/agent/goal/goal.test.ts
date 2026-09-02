@@ -3422,7 +3422,18 @@ describe('AITP Research goal contribution integration', () => {
         _serviceBrand: undefined,
         snapshot: () => undefined,
         onDidUpdate: () => ({ dispose: () => {} }),
-        refresh: async () => ({ status: 'ready' }),
+        refresh: async (options?: { readonly workstream?: string }) => ({
+          status: 'ready',
+          refreshedAt: 1,
+          memoryStatus: 'available',
+          workstream: options?.workstream,
+          topic: { id: 't', title: 'T', goalText: 'g', goalSource: 's' },
+          activeNewerThanWorkingNote: false,
+          unresolvedFailureCount: 0,
+          unresolvedFailures: [],
+          warningSummaries: [],
+          check: { status: 'clean', errors: 0, warnings: 0, findingCodes: [] },
+        }),
         reset: () => {},
       } as never),
       agentService(IEventBus, new EventBusService()),
@@ -3498,10 +3509,10 @@ describe('AITP Research goal contribution integration', () => {
 
   function observeResearchProgram(): void {
     ctx!.wire.dispatch(researchSetProgram({
-      topicId: 'topic-1',
-      title: 'Observed Research Topic',
-      goalText: 'Complete the bounded research work.',
-      goalSource: 'aitp.enter',
+      topicId: 't',
+      title: 'T',
+      goalText: 'g',
+      goalSource: 's',
       establishedAt: 1,
     }));
   }
@@ -3522,12 +3533,26 @@ describe('AITP Research goal contribution integration', () => {
     });
   }
 
+  async function confirmResearchWorkstreamBinding(
+    research: IAgentResearchService,
+  ): Promise<void> {
+    research.createLine({ slug: 'main', title: 'Main' });
+    research.switchLine('main');
+    await research.confirmLineWorkstreamBinding({
+      lineSlug: 'main',
+      workstream: 'main',
+      expectedRevision: research.getSnapshot().revision,
+      confirmedBy: 'main_agent',
+    });
+  }
+
   it('denies markComplete when the mode is active with an unresolved human gate', async () => {
     const { goals, mode, research } = await createResearchGoalAgent(true);
     await mode.enter({ actor: 'user' });
     observeResearchProgram();
     await goals.createGoal({ objective: 'work' });
     confirmResearchGoalAlignment(research, goals);
+    await confirmResearchWorkstreamBinding(research);
     const gate = research.requestHumanDecision({ kind: 'decision', prompt: 'Choose' });
 
     await expect(goals.markComplete({}, 'model')).rejects.toMatchObject({
@@ -3586,6 +3611,7 @@ describe('AITP Research goal contribution integration', () => {
     const loopService = stubLoopWithHooks();
     const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
     await mode.enter({ actor: 'user' });
+    ctx!.wire.dispatch(researchSetProgram({ clear: true }));
     await goals.createGoal({ objective: 'finish the task' });
 
     await expect(goals.markComplete({}, 'model')).rejects.toMatchObject({
@@ -3983,7 +4009,10 @@ describe('AITP Research goal contribution integration', () => {
     );
     expect(mode.loopStatus).toBe('paused');
 
-    research.steer({ kind: 'resume_loop', expectedRevision: researchRevision });
+    research.steer({
+      kind: 'resume_loop',
+      expectedRevision: research.getSnapshot().revision,
+    });
     expect(mode.loopStatus).toBe('active');
     endTurn(ctx!.get(IEventBus), turn);
 

@@ -16,12 +16,17 @@ import chalk from 'chalk';
 import { CURRENT_MARK } from '#/tui/constant/symbols';
 import { currentTheme } from '#/tui/theme';
 import type { ColorPalette } from '#/tui/theme/colors';
+import {
+  projectLineWorkstreamAlignment,
+  type ResearchLineWorkstreamAlignment,
+} from '#/tui/utils/research-workstream-binding';
 import type { TodoItem } from './todo-panel';
 
 /** Extract sub-types from the snapshot shape (the SDK only re-exports the snapshot). */
 type ResearchQuestion = NonNullable<ResearchStatusSnapshot['currentQuestion']>;
 type ResearchLine = ResearchStatusSnapshot['lines'][number];
 type ResearchPlan = NonNullable<ResearchStatusSnapshot['researchPlan']>;
+type ResearchPlanV2 = NonNullable<ResearchStatusSnapshot['researchPlanV2']>;
 type ResearchAlert = ResearchStatusSnapshot['alerts'][number];
 type AitpMaintenanceReceipt = NonNullable<ResearchStatusSnapshot['aitpMaintenance']>;
 type ResearchCheckpointReceipt = NonNullable<NonNullable<ResearchStatusSnapshot['pendingCheckpoint']>['receipt']>;
@@ -258,15 +263,20 @@ function renderGoalRows(
   colors: ColorPalette,
   expanded: boolean,
 ): string[] {
-  const goal = snap.goalSummary;
+  const researchGoal = snap.researchGoal;
+  const goal = researchGoal ?? snap.goalSummary;
   if (goal === undefined) return [];
+  const remainingTurns = researchGoal?.budget.remainingTurns
+    ?? snap.goalSummary?.remainingTurns;
+  const turnBudget = researchGoal?.budget.turnBudget
+    ?? snap.goalSummary?.turnBudget;
   const rows = [
-    `  ${chalk.hex(colors.primary)('◆')} ${chalk.hex(colors.textStrong).bold('Goal milestone:')} ${chalk.hex(colors.text)(normalizeSummary(goal.objective))}`,
-    `    ${chalk.hex(colors.textDim)('Goal status:')} ${chalk.hex(colors.text)(goal.status)}${goal.remainingTurns === undefined ? '' : ` · ${chalk.hex(colors.textMuted)(`${String(goal.remainingTurns)} turns remaining`)}`}`,
+    `  ${chalk.hex(colors.primary)('◆')} ${chalk.hex(colors.textStrong).bold(researchGoal === undefined ? 'Goal milestone:' : 'Hakimi Research Goal:')} ${chalk.hex(colors.text)(normalizeSummary(goal.objective))}`,
+    `    ${chalk.hex(colors.textDim)('Goal status:')} ${chalk.hex(colors.text)(goal.status)}${remainingTurns === undefined || remainingTurns === null ? '' : ` · ${chalk.hex(colors.textMuted)(`${String(remainingTurns)} turns remaining`)}`}`,
   ];
   if (expanded) {
-    if (goal.turnBudget !== undefined) {
-      rows.push(`    ${chalk.hex(colors.textDim)('Turn budget:')} ${chalk.hex(colors.textMuted)(String(goal.turnBudget))}`);
+    if (turnBudget !== undefined && turnBudget !== null) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Turn budget:')} ${chalk.hex(colors.textMuted)(String(turnBudget))}`);
     }
     if (goal.completionCriterion !== undefined) {
       rows.push(`    ${chalk.hex(colors.textDim)('Completion criterion:')} ${chalk.hex(colors.text)(normalizeSummary(goal.completionCriterion))}`);
@@ -277,6 +287,25 @@ function renderGoalRows(
     if (goal.waitingFor !== undefined) {
       rows.push(`    ${chalk.hex(colors.textDim)('Waiting for:')} ${chalk.hex(colors.text)(`${goal.waitingFor.policy} of ${goal.waitingFor.taskIds.length} task${goal.waitingFor.taskIds.length === 1 ? '' : 's'}`)}`);
       rows.push(...renderNamedList('Waiting task IDs', goal.waitingFor.taskIds, colors, true));
+    }
+    if (researchGoal !== undefined) {
+      const scope = [
+        researchGoal.scope.programTopicId === undefined ? undefined : `program ${researchGoal.scope.programTopicId}`,
+        researchGoal.scope.lineSlug === undefined ? undefined : `line ${researchGoal.scope.lineSlug}`,
+        researchGoal.scope.questionId === undefined ? undefined : `question ${researchGoal.scope.questionId}`,
+      ].filter((item): item is string => item !== undefined);
+      if (scope.length > 0) {
+        rows.push(`    ${chalk.hex(colors.textDim)('Research scope:')} ${chalk.hex(colors.text)(scope.join(' · '))}`);
+      }
+      rows.push(...renderNamedList('Non-goals', researchGoal.nonGoals, colors, true));
+      rows.push(...renderNamedList(
+        'Persistence blockers',
+        researchGoal.persistenceGuards
+          .filter((guard) => guard.status === 'blocked')
+          .map((guard) => guard.reason),
+        colors,
+        true,
+      ));
     }
   }
   return rows;
@@ -296,16 +325,84 @@ function renderResearchGoalRows(
   ];
 }
 
-function renderCompactGoalMilestone(
+function actionNeedsRecovery(snap: ResearchStatusSnapshot): boolean {
+  const action = snap.currentAction;
+  if (action === undefined || (action.status !== 'planned' && action.status !== 'in_progress')) {
+    return false;
+  }
+  const gate = snap.humanGate;
+  const gateOwnsAction = snap.phase === 'awaiting_human'
+    && gate !== undefined
+    && gate.resolvedAt === undefined
+    && (gate.actionId === undefined || gate.actionId === action.actionId);
+  if (gateOwnsAction) return false;
+  return action.status === 'planned'
+    ? snap.phase !== 'action_planned'
+    : snap.phase !== 'action_executing';
+}
+
+function compactAitpState(snap: ResearchStatusSnapshot): string {
+  if (snap.pendingCheckpoint !== undefined) return 'pending commit';
+  const blockedByGoal = snap.researchGoal?.persistenceGuards.some(
+    (guard) => guard.status === 'blocked',
+  ) ?? false;
+  const bindingBlocked = snap.currentLineSlug !== undefined
+    && snap.currentWorkstreamBinding?.status !== 'bound';
+  if (blockedByGoal || bindingBlocked) return 'blocked';
+  if (snap.aitpMaintenance?.degradedReason !== undefined || snap.aitpHealth.phase === 'degraded') {
+    return 'degraded';
+  }
+  return snap.aitpHealth.phase === 'ready' ? 'ready' : 'unavailable';
+}
+
+function renderCompactProjectStage(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
-): string | undefined {
-  const goal = snap.goalSummary;
-  if (goal === undefined) return undefined;
-  const remaining = goal.remainingTurns === undefined
+): string {
+  const goal = snap.researchGoal ?? snap.goalSummary;
+  const plan = snap.researchPlanV2;
+  const milestone = plan?.milestones.find((candidate) =>
+    candidate.milestoneId === plan.currentMilestoneId);
+  const line = findCurrentLine(snap);
+  const question = snap.currentQuestion;
+  const remainingTurns = snap.researchGoal?.budget.remainingTurns
+    ?? snap.goalSummary?.remainingTurns;
+  const remaining = remainingTurns === undefined || remainingTurns === null
     ? ''
-    : ` · ${String(goal.remainingTurns)} turn${goal.remainingTurns === 1 ? '' : 's'} left`;
-  return `  ${chalk.hex(colors.primary)('◆')} ${chalk.hex(colors.textDim)('Milestone:')} ${chalk.hex(goal.status === 'blocked' ? colors.warning : colors.textMuted)(`${goal.status}${remaining}`)} · ${chalk.hex(colors.text)(normalizeSummary(goal.objective))}`;
+    : ` · ${String(remainingTurns)} turn${remainingTurns === 1 ? '' : 's'} left`;
+  const parts = [
+    goal === undefined
+      ? 'Goal not established'
+      : `Goal ${goal.status}${remaining} · ${normalizeSummary(goal.objective)}`,
+    plan === undefined
+      ? 'Plan not established'
+      : `Plan ${plan.status} · ${normalizeSummary(milestone?.title ?? plan.currentMilestoneId)}`,
+    line === undefined && snap.currentLineSlug === undefined
+      ? 'Line not selected'
+      : `Line ${normalizeSummary(line?.title ?? snap.currentLineSlug)}`,
+    question === undefined
+      ? 'Question not focused'
+      : `Question ${question.workflow}/${question.epistemic}`,
+  ];
+  return `  ${chalk.hex(colors.primary)('◆')} ${chalk.hex(colors.textDim)('Project stage:')} ${chalk.hex(goal?.status === 'blocked' ? colors.warning : colors.text)(parts.join(' · '))}`;
+}
+
+function renderCompactLoopStage(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string {
+  const action = snap.currentAction;
+  const actionState = actionNeedsRecovery(snap)
+    ? 'action recovery required'
+    : action?.status === 'planned' || action?.status === 'in_progress'
+      ? `action ${action.status.replaceAll('_', ' ')}`
+      : 'no live action';
+  const loop = snap.period === undefined
+    ? 'period not established'
+    : `loop ${String(snap.period.loopCount)}`;
+  const aitp = compactAitpState(snap);
+  const warning = actionNeedsRecovery(snap) || aitp === 'blocked' || aitp === 'degraded';
+  return `  ${chalk.hex(warning ? colors.warning : colors.primary)('↻')} ${chalk.hex(colors.textDim)('Loop stage:')} ${renderPhase(snap.phase, colors)} · ${chalk.hex(colors.text)(`${loop} · ${actionState}`)} · ${chalk.hex(aitp === 'ready' ? colors.success : aitp === 'unavailable' ? colors.textMuted : colors.warning)(`AITP ${aitp}`)}`;
 }
 
 function renderCompactAttention(
@@ -315,13 +412,15 @@ function renderCompactAttention(
   const alerts = orderedAlerts(snap.alerts);
   const hasMaintenanceIssue = snap.aitpMaintenance?.degradedReason !== undefined;
   const hasAdapterError = snap.aitpHealth.lastError !== undefined;
+  const hasDistillationIssue = snap.distillationAttention?.status === 'handoff_unavailable';
+  const hasActionRecovery = actionNeedsRecovery(snap);
   const moreSuffix = (count: number): string =>
     count > 0 ? ` · +${String(count)} more` : '';
   const gate = snap.humanGate;
   const hasUnresolvedGate = gate !== undefined && gate.resolvedAt === undefined;
   const alignment = snap.goalAlignment;
   if (
-    snap.goalSummary?.status === 'active'
+    (snap.researchGoal?.status ?? snap.goalSummary?.status) === 'active'
     && alignment !== undefined
     && alignment.status !== 'aligned'
   ) {
@@ -331,7 +430,9 @@ function renderCompactAttention(
     const additional = alerts.length
       + Number(hasUnresolvedGate)
       + Number(hasMaintenanceIssue)
-      + Number(hasAdapterError);
+      + Number(hasAdapterError)
+      + Number(hasDistillationIssue)
+      + Number(hasActionRecovery);
     return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(message)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
   }
   if (hasUnresolvedGate) {
@@ -340,27 +441,42 @@ function renderCompactAttention(
       : gate.kind === 'review'
         ? 'Review needed'
         : 'Decision needed';
-    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError);
+    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue) + Number(hasActionRecovery);
     return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(label)} · ${chalk.hex(colors.text)(normalizeSummary(gate.prompt))}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
+  }
+
+  if (hasActionRecovery) {
+    const action = snap.currentAction!;
+    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue);
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)('Action/phase recovery required')} · ${chalk.hex(colors.text)(`Action ${normalizeSummary(action.actionId)} is ${action.status} while phase is ${snap.phase}; conclude or abandon it before starting another action.`)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
+  }
+
+  if (snap.distillationAttention?.status === 'handoff_unavailable') {
+    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError);
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.text)(`Method review handoff unavailable for Entry ${normalizeSummary(snap.distillationAttention.entryId)}: ${normalizeSummary(snap.distillationAttention.reason)}`)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
   }
 
   const blocker = alerts.find((alert) => alertClassification(alert) === 'active_blocker');
   if (blocker !== undefined) {
-    const suffix = moreSuffix(alerts.length - 1 + Number(hasMaintenanceIssue) + Number(hasAdapterError));
+    const suffix = moreSuffix(alerts.length - 1 + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue));
     return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.text)(normalizeSummary(blocker.message))}${chalk.hex(colors.textMuted)(suffix)}`;
   }
 
   if (snap.aitpMaintenance?.degradedReason !== undefined) {
-    const suffix = moreSuffix(alerts.length + Number(hasAdapterError));
+    const suffix = moreSuffix(alerts.length + Number(hasAdapterError) + Number(hasDistillationIssue));
     return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.text)(`AITP maintenance degraded: ${snap.aitpMaintenance.degradedReason.replaceAll('_', ' ')}`)}${chalk.hex(colors.textMuted)(suffix)}`;
   }
   const alert = alerts[0];
   if (alert !== undefined) {
-    const suffix = moreSuffix(alerts.length - 1 + Number(hasAdapterError));
+    const suffix = moreSuffix(alerts.length - 1 + Number(hasAdapterError) + Number(hasDistillationIssue));
     return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.text)(normalizeSummary(alert.message))}${chalk.hex(colors.textMuted)(suffix)}`;
   }
   if (snap.aitpHealth.lastError !== undefined) {
     return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.text)(normalizeSummary(snap.aitpHealth.lastError))}`;
+  }
+  const workstream = snap.currentWorkstreamBinding;
+  if (snap.currentLineSlug !== undefined && workstream?.status !== 'bound') {
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)('Scoped AITP persistence unavailable')} · ${chalk.hex(colors.text)(normalizeSummary(workstream?.reason) || 'Confirm an explicit Line-to-workstream binding.')}`;
   }
   return undefined;
 }
@@ -371,11 +487,12 @@ function renderCompactNow(
 ): string {
   const run = snap.currentRun;
   let summary: string | undefined;
-  if (run !== undefined && (run.schedulerState === 'pending' || run.schedulerState === 'running')) {
+  const actionRecoveryRequired = actionNeedsRecovery(snap);
+  if (!actionRecoveryRequired && run !== undefined && (run.schedulerState === 'pending' || run.schedulerState === 'running')) {
     summary = `job ${normalizeSummary(run.jobId)} · ${run.schedulerState} / ${run.stage}`;
   }
   const action = snap.currentAction;
-  if (summary === undefined && action !== undefined && (action.status === 'planned' || action.status === 'in_progress')) {
+  if (!actionRecoveryRequired && summary === undefined && action !== undefined && (action.status === 'planned' || action.status === 'in_progress')) {
     summary = `${normalizeSummary(action.purpose)} · ${action.status.replaceAll('_', ' ')}`;
   }
   summary ??= normalizeSummary(snap.latestProgress?.headline) || undefined;
@@ -388,6 +505,9 @@ function renderCompactNow(
 }
 
 function selectNextAction(snap: ResearchStatusSnapshot): string | undefined {
+  if (actionNeedsRecovery(snap)) {
+    return `Conclude or abandon action ${snap.currentAction!.actionId} before starting another action.`;
+  }
   return normalizeSummary(snap.effectiveNextStep?.text)
     || normalizeSummary(snap.latestProgress?.nextAction)
     || normalizeSummary(snap.currentQuestion?.nextBoundedAction)
@@ -400,7 +520,8 @@ function renderCompactNext(
   colors: ColorPalette,
 ): string {
   const next = selectNextAction(snap);
-  const warning = snap.effectiveNextStep?.freshness === 'blocked'
+  const warning = actionNeedsRecovery(snap)
+    || snap.effectiveNextStep?.freshness === 'blocked'
     || snap.effectiveNextStep?.freshness === 'stale';
   return `  ${chalk.hex(warning ? colors.warning : colors.primary)('→')} ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(warning ? colors.warning : next === undefined ? colors.textMuted : colors.text)(next ?? 'not recorded')}`;
 }
@@ -413,8 +534,10 @@ function buildCompactRows(
   if (snap.goalAlignment?.status === 'aligned') {
     rows.push(`  ${chalk.hex(colors.primary)('↔')} ${chalk.hex(colors.textDim)('Alignment:')} ${chalk.hex(colors.success)(snap.goalAlignment.status.replaceAll('_', ' '))}`);
   }
-  const milestone = renderCompactGoalMilestone(snap, colors);
-  if (milestone !== undefined) rows.push(milestone);
+  if (snap.currentWorkstreamBinding?.status === 'bound') {
+    rows.push(`  ${chalk.hex(colors.primary)('⇢')} ${chalk.hex(colors.textDim)('Workstream:')} ${chalk.hex(colors.success)(snap.currentWorkstreamBinding.binding!.workstream)}`);
+  }
+  rows.push(renderCompactProjectStage(snap, colors), renderCompactLoopStage(snap, colors));
   const attention = renderCompactAttention(snap, colors);
   if (attention !== undefined) rows.push(attention);
   rows.push(renderCompactNow(snap, colors), renderCompactNext(snap, colors));
@@ -466,6 +589,16 @@ function buildExpandedRows(
     `  ${chalk.hex(colors.textDim)('Current line:')} ${chalk.hex(colors.text)(normalizeSummary(currentLine?.title ?? snap.currentLineSlug) || 'none')}${snap.currentLineSlug === undefined ? '' : ` · ${chalk.hex(colors.textMuted)(normalizeSummary(snap.currentLineSlug))}`}`,
     `  ${chalk.hex(colors.textStrong).bold('Current question:')} ${chalk.hex(colors.text)(normalizeSummary(current?.wording ?? snap.currentFocus?.questionId ?? 'none'))}`,
   );
+  if (snap.currentWorkstreamBinding !== undefined) {
+    const alignment = snap.currentWorkstreamBinding;
+    const binding = alignment.binding;
+    rows.push(
+      `  ${chalk.hex(colors.textDim)('AITP workstream:')} ${chalk.hex(alignment.status === 'bound' ? colors.success : colors.warning)(binding?.workstream ?? alignment.status)} · ${chalk.hex(colors.textMuted)(alignment.reason)}`,
+    );
+    if (binding !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Binding provenance:')} ${chalk.hex(colors.textMuted)(`Topic ${binding.topicId} revision ${String(binding.observedRevision)} · ${binding.confirmedBy} · ${formatRunTimestamp(binding.confirmedAt)}`)}`);
+    }
+  }
   rows.push(renderAssessment(snap, current, colors));
   if (snap.currentFocus !== undefined) {
     rows.push(`  ${chalk.hex(colors.textDim)('Focus provenance:')} ${chalk.hex(colors.textMuted)(`question ${normalizeSummary(snap.currentFocus.questionId)} · revision ${String(snap.currentFocus.revision)}${snap.currentFocus.boundedAction === undefined ? '' : ` · bounded action ${normalizeSummary(snap.currentFocus.boundedAction)}`}`)}`);
@@ -490,6 +623,9 @@ function buildExpandedRows(
 
   rows.push('', renderSectionHeading('Current work', colors));
   rows.push(...renderExpandedScientificRows(snap, colors));
+  if (snap.researchPlanV2 !== undefined) {
+    rows.push(...renderExpandedResearchPlanV2Rows(snap.researchPlanV2, colors));
+  }
   if (snap.researchPlan !== undefined) {
     rows.push(...renderExpandedPlanRows(snap.researchPlan, colors));
   }
@@ -520,6 +656,16 @@ function buildExpandedRows(
   rows.push(...renderExpandedEvidenceRows(snap, colors));
 
   rows.push('', renderSectionHeading('Operations & provenance', colors));
+  if (snap.distillationAttention !== undefined) {
+    const attention = snap.distillationAttention;
+    const status = attention.status === 'review_requested'
+      ? 'review requested'
+      : `handoff unavailable · ${normalizeSummary(attention.reason)}`;
+    rows.push(
+      `  ${chalk.hex(colors.textStrong).bold('Method review handoff')} ${chalk.hex(attention.status === 'review_requested' ? colors.success : colors.warning)(status)}`,
+      `    ${chalk.hex(colors.textDim)('Receipt:')} ${chalk.hex(colors.textMuted)(`checkpoint ${normalizeSummary(attention.checkpointId)} · Entry ${normalizeSummary(attention.entryId)} · ${formatRunTimestamp(attention.recordedAt)}`)}`,
+    );
+  }
   rows.push(...renderExpandedAttentionRows(snap, colors));
   const progress = formatTodoProgress(todos);
   rows.push(
@@ -578,8 +724,26 @@ function renderExpandedLineRows(
   if (line.assessment !== undefined) {
     rows.push(`      ${chalk.hex(colors.textDim)('Assessment:')} ${chalk.hex(colors.text)(normalizeSummary(line.assessment))}`);
   }
+  const alignment = projectLineWorkstreamAlignment(snap, line.slug);
+  if (alignment.binding !== undefined) {
+    rows.push(`      ${chalk.hex(colors.textDim)('AITP workstream:')} ${chalk.hex(workstreamAlignmentColor(alignment, colors))(`${alignment.binding.workstream} · ${alignment.status}`)}`);
+  } else {
+    rows.push(`      ${chalk.hex(colors.textDim)('AITP workstream:')} ${chalk.hex(workstreamAlignmentColor(alignment, colors))(alignment.status)}`);
+  }
   rows.push(`      ${chalk.hex(colors.textDim)('Provenance:')} ${chalk.hex(colors.textMuted)(`revision ${String(line.revision)} · created ${formatRunTimestamp(line.createdAt)}`)}`);
   return rows;
+}
+
+function workstreamAlignmentColor(
+  alignment: ResearchLineWorkstreamAlignment,
+  colors: ColorPalette,
+): string {
+  if (alignment.status === 'bound') return colors.success;
+  if (alignment.status === 'conflict') return colors.error;
+  if (alignment.status === 'stale' || alignment.status === 'unavailable') {
+    return colors.warning;
+  }
+  return colors.textMuted;
 }
 
 function orderedQuestions(snap: ResearchStatusSnapshot): readonly ResearchQuestion[] {
@@ -812,6 +976,13 @@ function renderExpandedCheckpointRows(
     if (pending.assessment !== undefined) {
       rows.push(`      ${chalk.hex(colors.textDim)('Assessment:')} ${chalk.hex(colors.text)(normalizeSummary(pending.assessment))}`);
     }
+    if (pending.commitCandidate !== undefined) {
+      const candidate = pending.commitCandidate;
+      rows.push(
+        `      ${chalk.hex(colors.textDim)('Commit candidate:')} ${chalk.hex(colors.text)(`${candidate.entryKind} · ${candidate.authority} · ${candidate.provenance}`)}`,
+        `      ${chalk.hex(colors.textDim)('Candidate rationale:')} ${chalk.hex(colors.text)(normalizeSummary(candidate.rationale))}`,
+      );
+    }
     if (pending.nextAction !== undefined) {
       rows.push(`      ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(colors.text)(normalizeSummary(pending.nextAction))}`);
     }
@@ -939,7 +1110,7 @@ function renderExpandedPlanRows(
   colors: ColorPalette,
 ): string[] {
   const rows = [
-    `  ${chalk.hex(colors.textStrong).bold('Research plan')} · ${chalk.hex(colors.textMuted)(plan.status)}`,
+    `  ${chalk.hex(colors.textStrong).bold('Action plan')} · ${chalk.hex(colors.textMuted)(plan.status)}`,
     `    ${chalk.hex(colors.textDim)('Plan provenance:')} ${chalk.hex(colors.textMuted)(`${normalizeSummary(plan.planId)} · research revision ${String(plan.researchRevision)}`)}`,
     `    ${chalk.hex(colors.textDim)('Objective:')} ${chalk.hex(colors.text)(normalizeSummary(plan.objective))}`,
     `    ${chalk.hex(colors.textDim)('Stop condition:')} ${chalk.hex(colors.text)(normalizeSummary(plan.stopCondition))}`,
@@ -969,6 +1140,29 @@ function renderExpandedPlanRows(
   return rows;
 }
 
+function renderExpandedResearchPlanV2Rows(
+  plan: ResearchPlanV2,
+  colors: ColorPalette,
+): string[] {
+  const rows = [
+    `  ${chalk.hex(colors.textStrong).bold('Multi-loop Research Plan')} · ${chalk.hex(colors.textMuted)(`${plan.status} · revision ${String(plan.revision)}`)}`,
+    `    ${chalk.hex(colors.textDim)('Plan:')} ${chalk.hex(colors.textMuted)(normalizeSummary(plan.planId))}`,
+    `    ${chalk.hex(colors.textDim)('Objective:')} ${chalk.hex(colors.text)(normalizeSummary(plan.objective))}`,
+    `    ${chalk.hex(colors.textDim)('Bindings:')} ${chalk.hex(colors.textMuted)(`goal ${normalizeSummary(plan.goalId)} · program ${normalizeSummary(plan.programId)}@${String(plan.programObservedRevision)} · ${plan.goalRelation}`)}`,
+    `    ${chalk.hex(colors.textDim)('Current milestone:')} ${chalk.hex(colors.text)(normalizeSummary(plan.currentMilestoneId))}`,
+  ];
+  for (const milestone of plan.milestones) {
+    const marker = milestone.milestoneId === plan.currentMilestoneId ? CURRENT_MARK : ' ';
+    rows.push(
+      `    ${chalk.hex(milestone.milestoneId === plan.currentMilestoneId ? colors.primary : colors.textDim)(marker)} ${chalk.hex(colors.text)(normalizeSummary(milestone.title))} · ${chalk.hex(colors.textMuted)(normalizeSummary(milestone.completionCriterion))}`,
+    );
+  }
+  rows.push(...renderNamedList('Stop conditions', plan.stopConditions, colors));
+  rows.push(...renderNamedList('Replan conditions', plan.replanConditions, colors));
+  rows.push(...renderNamedList('Assumptions', plan.assumptions, colors, true));
+  return rows;
+}
+
 function formatRunTimestamp(timestamp: number): string {
   if (!Number.isFinite(timestamp)) return 'unknown';
   const date = new Date(timestamp);
@@ -982,6 +1176,7 @@ function renderExpandedScientificRows(
 ): string[] {
   const rows: string[] = [
     `  ${chalk.hex(colors.textDim)('Phase:')} ${renderPhase(snap.phase, colors)}`,
+    `  ${chalk.hex(colors.textDim)('Planning policy:')} ${chalk.hex(colors.primary)(snap.planningPolicy)}`,
   ];
   const change = snap.recentStateChange;
   if (change !== undefined) {
@@ -1057,6 +1252,16 @@ function renderExpandedScientificRows(
     rows.push(
       `    ${chalk.hex(colors.textDim)('Human approval:')} ${chalk.hex(action.requiresHumanApproval ? colors.warning : colors.textMuted)(action.requiresHumanApproval ? 'required' : 'not required')}`,
     );
+    if (action.researchPlanBinding !== undefined) {
+      rows.push(
+        `    ${chalk.hex(colors.textDim)('Research Plan binding:')} ${chalk.hex(colors.textMuted)(`${normalizeSummary(action.researchPlanBinding.planId)}@${String(action.researchPlanBinding.planRevision)} · milestone ${normalizeSummary(action.researchPlanBinding.milestoneId)}`)}`,
+      );
+    }
+    if (action.actionPlanBinding !== undefined) {
+      rows.push(
+        `    ${chalk.hex(colors.textDim)('Action Plan binding:')} ${chalk.hex(colors.textMuted)(`${normalizeSummary(action.actionPlanBinding.planId)}@${String(action.actionPlanBinding.planRevision)} · ${action.actionPlanBinding.kind}`)}`,
+      );
+    }
     if (action.retryOfEntryId !== undefined) {
       rows.push(`    ${chalk.hex(colors.textDim)('Retry of:')} ${chalk.hex(colors.textMuted)(normalizeSummary(action.retryOfEntryId))}`);
     }

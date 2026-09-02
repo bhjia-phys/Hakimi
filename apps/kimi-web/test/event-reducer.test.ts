@@ -776,6 +776,8 @@ describe('reduceAppEvent researchUpdated', () => {
   const snapshot = {
     mode: 'ready',
     loopStatus: 'active',
+    planningPolicy: 'collaborative',
+    lineWorkstreamBindings: [],
     phase: 'idle',
     questions: [],
     lines: [],

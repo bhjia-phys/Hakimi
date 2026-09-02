@@ -1712,6 +1712,157 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
     }
   });
 
+  it('commandResearch forwards Research Plan v2 and planned-action bindings exactly', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-plan-home-'));
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-plan-work-'));
+    tempDirs.push(homeDir, workDir);
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+    const summary = await client.createSession({ id: 'ses_research_plan_v2', workDir });
+    const session = new Session({
+      id: summary.id,
+      workDir: summary.workDir,
+      summary,
+      rpc: client,
+    });
+    try {
+      await session.commandResearch({ kind: 'enter_mode', actor: 'user' });
+      const liveSession = getLiveSessionById(client.engineAccessor, session.id);
+      const agent = await ensureMainAgent(liveSession!);
+      const research = agent.accessor.get(IAgentResearchService);
+      const setPolicy = vi.spyOn(research, 'setPlanningPolicy').mockReturnValue(undefined);
+      const prepare = vi.spyOn(research, 'prepareResearchPlanV2').mockReturnValue({} as never);
+      const activate = vi.spyOn(research, 'activateResearchPlanV2').mockReturnValue({} as never);
+      const planAndStart = vi.spyOn(research, 'planAndStartAction').mockReturnValue({} as never);
+      const prepareInput = {
+        objective: 'Validate one milestone.',
+        completionCriterion: 'The checks pass.',
+        milestones: [{
+          milestoneId: 'm1',
+          title: 'Run and validate',
+          objective: 'Run one calculation.',
+          completionCriterion: 'Validation passes.',
+          evidenceRequirements: ['Output and log'],
+        }],
+        evidenceRequirements: ['Reproducible result'],
+        decisionPoints: [],
+        assumptions: [],
+        currentMilestoneId: 'm1',
+        stopConditions: ['Stop on validation failure.'],
+        replanConditions: ['Replan on Program drift.'],
+      };
+
+      await session.commandResearch({
+        kind: 'set_planning_policy',
+        policy: 'dreaming',
+        expectedRevision: 0,
+      });
+      await session.commandResearch({ kind: 'prepare_plan_v2', ...prepareInput });
+      await session.commandResearch({
+        kind: 'activate_plan_v2',
+        planId: 'research-plan-1',
+        expectedRevision: 1,
+      });
+      await session.commandResearch({
+        kind: 'begin_action',
+        actionKind: 'simulation',
+        purpose: 'Run the reviewed calculation.',
+        stopCondition: 'Stop after validation.',
+        planningLevel: 'planned',
+        researchPlanId: 'research-plan-1',
+        researchPlanRevision: 2,
+        milestoneId: 'm1',
+        actionPlanId: 'action-plan-1',
+        actionPlanRevision: 1,
+      });
+
+      expect(setPolicy).toHaveBeenCalledWith('dreaming', 0);
+      expect(prepare).toHaveBeenCalledWith({
+        planId: undefined,
+        expectedRevision: undefined,
+        ...prepareInput,
+      });
+      expect(activate).toHaveBeenCalledWith({
+        planId: 'research-plan-1',
+        expectedRevision: 1,
+      });
+      expect(planAndStart).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'simulation',
+        planningLevel: 'planned',
+        researchPlanId: 'research-plan-1',
+        researchPlanRevision: 2,
+        milestoneId: 'm1',
+        actionPlanId: 'action-plan-1',
+        actionPlanRevision: 1,
+      }));
+    } finally {
+      await session.close();
+      await client.close();
+    }
+  });
+
+  it('commandResearch fixes external Line-workstream confirmation provenance to user', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-workstream-home-'));
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-workstream-work-'));
+    tempDirs.push(homeDir, workDir);
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+    const summary = await client.createSession({ id: 'ses_workstream_binding', workDir });
+    const session = new Session({
+      id: summary.id,
+      workDir: summary.workDir,
+      summary,
+      rpc: client,
+    });
+    try {
+      const liveSession = getLiveSessionById(client.engineAccessor, session.id);
+      const agent = await ensureMainAgent(liveSession!);
+      const research = agent.accessor.get(IAgentResearchService);
+      const binding = {
+        confirmationId: 'confirmation-main-1',
+        lineSlug: 'main',
+        workstream: 'verified-inputs',
+        topicId: 'topic-1',
+        observedRevision: 1,
+        confirmedBy: 'user' as const,
+        confirmedAt: 1,
+      };
+      const confirm = vi
+        .spyOn(research, 'confirmLineWorkstreamBinding')
+        .mockResolvedValue(binding);
+      const clear = vi.spyOn(research, 'clearLineWorkstreamBinding').mockReturnValue(undefined);
+
+      await session.commandResearch({
+        kind: 'confirm_line_workstream_binding',
+        lineSlug: 'main',
+        workstream: 'verified-inputs',
+        expectedRevision: 0,
+        confirmedBy: 'main_agent',
+        topicId: 'topic-forged',
+        observedRevision: 99,
+      } as never);
+      await session.commandResearch({
+        kind: 'clear_line_workstream_binding',
+        lineSlug: 'main',
+        expectedConfirmationId: binding.confirmationId,
+        expectedRevision: 0,
+      });
+
+      expect(confirm).toHaveBeenCalledWith({
+        lineSlug: 'main',
+        workstream: 'verified-inputs',
+        expectedRevision: 0,
+        confirmedBy: 'user',
+      });
+      expect(clear).toHaveBeenCalledWith({
+        lineSlug: 'main',
+        expectedConfirmationId: binding.confirmationId,
+        expectedRevision: 0,
+      });
+    } finally {
+      await session.close();
+      await client.close();
+    }
+  });
+
   it('commandResearch propagates synchronous mutation errors', async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-error-home-'));
     const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-error-work-'));
@@ -1754,6 +1905,10 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
     const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-loop-'));
     tempDirs.push(workDir);
     const session = await harness.createSession({ id: 'ses_research_loop', workDir });
+    const researchEvents: Event[] = [];
+    const unsubscribe = session.onEvent((event) => {
+      if (event.type === 'research.updated') researchEvents.push(event);
+    });
     try {
       const entered = await session.commandResearch({ kind: 'enter_mode', actor: 'user' });
       expect(entered.snapshot.mode).not.toBe('inactive');
@@ -1761,14 +1916,36 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
       const revision = entered.snapshot.revision;
       const paused = await session.commandResearch({ kind: 'pause_loop', expectedRevision: revision });
       expect(paused.snapshot.loopStatus).toBe('paused');
+      expect(paused.snapshot.revision).toBeGreaterThan(revision);
+      const pausedEvent = researchEvents.findLast((event) =>
+        event.type === 'research.updated' && event.snapshot.loopStatus === 'paused');
+      expect(pausedEvent).toMatchObject({
+        type: 'research.updated',
+        snapshot: { revision: paused.snapshot.revision, loopStatus: 'paused' },
+      });
+      await expect(session.getResearch()).resolves.toMatchObject({
+        revision: paused.snapshot.revision,
+        loopStatus: 'paused',
+      });
 
       await expect(
-        session.commandResearch({ kind: 'resume_loop', expectedRevision: revision + 1 }),
+        session.commandResearch({ kind: 'resume_loop', expectedRevision: revision }),
       ).rejects.toMatchObject({ code: 'research.revision_stale' });
 
-      const resumed = await session.commandResearch({ kind: 'resume_loop', expectedRevision: revision });
+      const resumed = await session.commandResearch({
+        kind: 'resume_loop',
+        expectedRevision: paused.snapshot.revision,
+      });
       expect(resumed.snapshot.loopStatus).toBe('active');
+      expect(resumed.snapshot.revision).toBeGreaterThan(paused.snapshot.revision);
+      const resumedEvent = researchEvents.findLast((event) =>
+        event.type === 'research.updated' && event.snapshot.loopStatus === 'active');
+      expect(resumedEvent).toMatchObject({
+        type: 'research.updated',
+        snapshot: { revision: resumed.snapshot.revision, loopStatus: 'active' },
+      });
     } finally {
+      unsubscribe();
       await session.close();
       await harness.close();
     }
