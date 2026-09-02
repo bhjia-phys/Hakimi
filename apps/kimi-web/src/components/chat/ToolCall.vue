@@ -1,7 +1,9 @@
 <!-- apps/kimi-web/src/components/chat/ToolCall.vue -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, provide } from 'vue';
+import type { TurnProgressSnapshot } from '../../lib/turnProgress';
 import type { FilePreviewRequest, ToolCall, ToolMedia, WebPreviewTarget } from '../../types';
+import { toolProgressKey } from './toolProgressContext';
 import { resolveToolRenderer } from './tool-calls/toolRegistry';
 
 const props = withDefaults(
@@ -10,8 +12,9 @@ const props = withDefaults(
     mobile?: boolean;
     stackPosition?: 'single' | 'first' | 'middle' | 'last';
     toolDiffPanel?: boolean;
+    turnProgress?: TurnProgressSnapshot | null;
   }>(),
-  { mobile: false, stackPosition: 'single', toolDiffPanel: false },
+  { mobile: false, stackPosition: 'single', toolDiffPanel: false, turnProgress: null },
 );
 
 const emit = defineEmits<{
@@ -23,6 +26,8 @@ const emit = defineEmits<{
 }>();
 
 const Renderer = computed(() => resolveToolRenderer(props.tool));
+const scopedTurnProgress = computed(() => props.turnProgress);
+provide(toolProgressKey, scopedTurnProgress);
 </script>
 
 <template>

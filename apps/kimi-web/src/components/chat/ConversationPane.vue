@@ -2,8 +2,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type ComponentPublicInstance } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { ActivationBadges, ApprovalBlock, ChatTurn, ConversationStatus, FilePreviewRequest, PermissionMode, QueuedPromptView, TaskItem, TodoView, ToolMedia, TurnAttachment, UIQuestion, WebPreviewTarget, WorkspaceView } from '../../types';
-import type { AppGoal, AppModel, AppSkill, QuestionResponse, ResearchStatusSnapshot, ThinkingLevel } from '../../api/types';
+import type { ActivationBadges, ApprovalBlock, ChatTurn, ConnectionState, ConversationStatus, FilePreviewRequest, PermissionMode, QueuedPromptView, TaskItem, TodoView, ToolMedia, TurnAttachment, UIQuestion, WebPreviewTarget, WorkspaceView } from '../../types';
+import type { AppGoal, AppModel, AppSkill, AppTurnProgress, AutoSubagentPresetStatus, QuestionResponse, ResearchStatusSnapshot, ThinkingLevel } from '../../api/types';
 import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import type { ComposerCommandEvent } from '../../composables/useComposerDraft';
@@ -22,6 +22,10 @@ import {
   shouldShowEmptyConversation,
 } from '../../lib/conversationVisibility';
 import { safeRemove, STORAGE_KEYS } from '../../lib/storage';
+import {
+  resolveAgentTaskForDetail,
+  resolveExactAgentTask,
+} from '../../lib/agentTaskResolver';
 
 const { t } = useI18n();
 
@@ -54,6 +58,8 @@ const props = defineProps<{
   /** MAIN agent turn in flight — the conversation's streaming state (streaming
    *  reveal, turn-end scroll settle). Background-only work does NOT set this. */
   turnActive?: boolean;
+  /** Heuristic inputs for the active main turn's long-running progress. */
+  turnProgress?: AppTurnProgress | null;
   queued?: QueuedPromptView[];
   searchFiles?: (q: string) => Promise<FileItem[]>;
   uploadImage?: (file: Blob, name?: string) => Promise<{ fileId: string; name: string; mediaType: string } | null>;
@@ -70,6 +76,7 @@ const props = defineProps<{
   fastMoon?: boolean;
   /** Mobile shell: compact chrome. */
   mobile?: boolean;
+  connection?: ConnectionState;
   /** True while switching sessions and the turns array is not yet loaded. */
   sessionLoading?: boolean;
   /** Live compaction state of the active session (non-null while running). */
@@ -100,8 +107,25 @@ const props = defineProps<{
   activeWorkspaceId?: string | null;
   /** Active session title, shown in the chat header. */
   sessionTitle?: string;
+  /** Active subagent preset selector shown by the chat-header routing button. */
+  subagentPreset?: string;
+  /** Sorted configured preset names offered by the chat-header routing menu. */
+  subagentPresetNames?: string[];
+  /** True while the selected preset is being persisted and applied. */
+  subagentPresetSaving?: boolean;
+  /** `autoPreset.manualLock`: a manually activated preset paused automatic
+   *  switching (chat-header lock badge + resume-auto action). */
+  subagentPresetLocked?: boolean;
+  /** Latest process-global automatic routing evaluation, when supported. */
+  autoSubagentPresetStatus?: AutoSubagentPresetStatus;
   /** GitHub PR for the current branch, when known (shown in the chat header). */
   pr?: { number: number; state: string; url: string } | null;
+  /** Remote-share control available (chat-header entry + badge). */
+  remoteShareEnabled?: boolean;
+  /** An all-session Web share is active (chat-header badge). */
+  remoteShareActive?: boolean;
+  /** ISO expiry of the active share (chat-header badge tooltip). */
+  remoteShareExpiresAt?: string;
   /** Conversation outline: proportional bubbles, viewport indicator, hover tooltip. */
   conversationToc?: boolean;
 }>();
@@ -148,6 +172,10 @@ const emit = defineEmits<{
   selectWorkspace: [workspaceId: string];
   /** Empty-composer workspace picker: create a new workspace. */
   addWorkspace: [];
+  /** Chat header: manually activate a configured subagent preset. */
+  activatePreset: [preset: string];
+  /** Chat header: resume automatic preset switching (clears the manual lock). */
+  resumeAutoPreset: [];
   /** Chat header: open the GitHub PR in a new tab. */
   openPr: [url: string];
   /** Chat header / session row: rename current session. */
@@ -158,6 +186,8 @@ const emit = defineEmits<{
   archiveSession: [id: string];
   /** Chat header: export current session. */
   exportSession: [id: string];
+  /** Chat header: open the remote-control share dialog. */
+  openRemoteShare: [];
 }>();
 
 // Empty-composer workspace picker.
@@ -245,22 +275,15 @@ const subagentTasks = computed(() =>
 const bashRunning = computed(() => bashTasks.value.filter((t) => t.state === 'run').length);
 const subagentRunning = computed(() => subagentTasks.value.filter((t) => t.state === 'run').length);
 
-// Let AgentTool cards know whether their spawning tool-call has a matching live
-// or background subagent task, so the "Open detail" button can be hidden when
-// the task is gone (e.g. a completed foreground subagent after a page refresh).
-function resolveAgentTaskId(toolCallId: string): string | undefined {
-  const tasks = props.tasks;
-  const task =
-    tasks.find((tk) => tk.id === toolCallId) ?? tasks.find((tk) => tk.parentToolCallId === toolCallId);
-  if (task) return task.id;
-  // A subagent task synthesized from a text delta (client subscribed after the
-  // spawn, so the lifecycle parentToolCallId was missed) has no parentToolCallId.
-  // When exactly one such unmapped subagent task exists, attribute it to this
-  // Agent tool call so the Open-detail button stays reachable.
-  const unmapped = tasks.filter((tk) => tk.kind === 'subagent' && !tk.parentToolCallId);
-  if (unmapped.length === 1) return unmapped[0]!.id;
-  return undefined;
+// Identity metadata requires an exact task/tool-call link. Detail availability
+// alone may use the legacy unique-unmapped fallback for late subscriptions.
+function resolveAgentTask(toolCallId: string): TaskItem | undefined {
+  return resolveExactAgentTask(props.tasks, toolCallId);
 }
+function resolveAgentTaskId(toolCallId: string): string | undefined {
+  return resolveAgentTaskForDetail(props.tasks, toolCallId)?.id;
+}
+provide('resolveAgentTask', resolveAgentTask);
 provide('resolveAgentTaskId', resolveAgentTaskId);
 provide('pinScroll', pinScrollFor);
 const todoDoneCount = computed(() => (props.todos ?? []).filter((td) => td.status === 'done').length);
@@ -1261,19 +1284,34 @@ function focusComposer(): void {
   (dockedComposerRef.value ?? emptyComposerRef.value)?.focus();
 }
 
-defineExpose({ loadComposerForEdit, focusComposer });
+/** Copy the full conversation as Markdown — the mobile settings sheet forwards
+ *  these to the desktop kebab actions (ChatPane owns the clipboard logic). */
+function copyConversation(): void {
+  chatPaneRef.value?.copyConversation();
+}
+function copyFinalSummary(): void {
+  chatPaneRef.value?.copyFinalSummary();
+}
+
+defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSummary });
 </script>
 
 <template>
   <section class="con" :class="{ mobile }">
-    <!-- Chat context header: workspace/session, git status, open-in-editor,
-         copy-all, PR. Hidden for the empty-composer (no session context yet). -->
+    <!-- Chat context header: workspace/session, git status, connection status,
+         open-in-editor, copy-all, PR. -->
     <ChatHeader
       v-if="!mobile && !(turns.length === 0 && !sessionLoading)"
       :session-id="sessionId"
+      :connection="connection"
       :workspace-name="workspaceName"
       :workspace-root="workspaceRoot"
       :session-title="sessionTitle"
+      :subagent-preset="subagentPreset"
+      :subagent-preset-names="subagentPresetNames"
+      :subagent-preset-saving="subagentPresetSaving"
+      :subagent-preset-locked="subagentPresetLocked"
+      :auto-subagent-preset-status="autoSubagentPresetStatus"
       :branch="gitInfo?.branch"
       :ahead="gitInfo?.ahead"
       :behind="gitInfo?.behind"
@@ -1282,6 +1320,11 @@ defineExpose({ loadComposerForEdit, focusComposer });
       :is-git-repo="!!gitInfo"
       :pr="pr"
       :copied="copyConversationCopied"
+      :remote-share-enabled="remoteShareEnabled"
+      :remote-share-active="remoteShareActive"
+      :remote-share-expires-at="remoteShareExpiresAt"
+      @activate-preset="emit('activatePreset', $event)"
+      @resume-auto-preset="emit('resumeAutoPreset')"
       @open-changes="emit('openChanges')"
       @copy-all="chatPaneRef?.copyConversation()"
       @copy-final-summary="chatPaneRef?.copyFinalSummary()"
@@ -1290,6 +1333,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
       @fork-session="(id) => emit('forkSession', id)"
       @archive-session="(id) => emit('archiveSession', id)"
       @export-session="(id) => emit('exportSession', id)"
+      @open-remote-share="emit('openRemoteShare')"
     />
 
     <!-- Conversation outline: right edge rail of vertical bars (one per user
@@ -1437,8 +1481,10 @@ defineExpose({ loadComposerForEdit, focusComposer });
               ref="chatPaneRef"
               :key="fileReloadKey ?? 'no-session'"
               :turns="turns"
+              :tasks="tasks"
               :approvals="approvals"
               :turn-active="turnActive"
+              :turn-progress="turnProgress"
               :working="working"
               :fast-moon="fastMoon"
               :session-loading="sessionLoading"

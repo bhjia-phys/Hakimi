@@ -11,6 +11,9 @@ import type { SwarmResult, SwarmResultSubagent } from './parseSwarmResult';
 export interface SwarmCardRow {
   id: string;
   name: string;
+  subagentType?: string;
+  model?: string;
+  thinkingEffort?: string;
   activity: string;
   phase: AppSubagentPhase;
   body: string;
@@ -82,6 +85,9 @@ export function buildSwarmCardRows(members: SwarmMember[], result: SwarmResult |
   const memberRows = members.map((m) => ({
     id: m.id,
     name: m.name,
+    subagentType: m.subagentType,
+    model: m.model,
+    thinkingEffort: m.thinkingEffort,
     activity: swarmMemberActivity(m),
     phase: m.phase,
     body: swarmMemberBody(m),

@@ -16,7 +16,7 @@ Some commands are only available in the idle state. Executing these commands whi
 | `/logout` | — | Clear credentials for the currently selected account | No |
 | `/provider` | — | Open the interactive provider manager to view, add, and remove configured providers. See [Platforms & Models — `/provider` and provider management](../configuration/providers.md#provider-—-interactive-provider-management) | Yes |
 | `/model` | — | Switch the LLM model used in the current session | Yes |
-| `/preset` | — | Configure and activate canonical `main`, Agent, AgentSwarm, and Tower model routes through `[subagent]` | No |
+| `/preset` | — | Configure and activate canonical `main`, Agent, AgentSwarm, and Tower routes. Manual choices are locked; run `/preset auto` to resume automatic selection | No |
 | `/secondary-model` | `/subagent-model` | Deprecated compatibility command. It is hidden from completion and help; typing it only shows a migration notice. Use `/preset` instead | Yes |
 | `/settings` | `/config` | Open the settings panel inside the TUI | Yes |
 | `/experiments` | `/experimental` | Open the experimental feature panel | Yes |
@@ -43,6 +43,7 @@ Some commands are only available in the idle state. Executing these commands whi
 | `/copy` | — | Copy the last assistant message to the clipboard | No |
 | `/add-dir [<path>]` | — | Add an extra workspace directory to the current session. Run without a path (or with `list`) to list configured directories. When adding, choose whether to remember the directory for the project in `.kimi-code/local.toml` | No |
 | `/web` | — | Open the current session in the web UI: pick a running server to connect to, or start a new foreground server after the TUI exits. See [`hakimi web`](./kimi-command.md#hakimi-web) | Yes |
+| `/remote` | — | Hand off the current TUI session to a foreground Cloudflare Quick Tunnel. The link opens that session first, then provides full Web access to all workspaces and sessions. Plain `/remote` uses an 8h TTL; advanced use can add `--ttl <duration>` (maximum 24h) or `--cloudflared <absolute-path>`. Hakimi Web can start a share from its visible conversation-header button without a handoff. See [Remote control from another device](../guides/sessions.md#remote-control-from-another-device) | No |
 
 ## Modes & Run Control
 

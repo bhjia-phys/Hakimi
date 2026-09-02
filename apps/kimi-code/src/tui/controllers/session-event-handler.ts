@@ -75,6 +75,7 @@ import type { ColorToken } from '#/tui/theme';
 import { errorReportHintLine } from '../constant/feedback';
 import { formatStepDebugTiming } from '#/utils/usage/debug-timing';
 import { nextTranscriptId } from '../utils/transcript-id';
+import type { ActivityProgressController } from './activity-progress';
 import type { BtwPanelController } from './btw-panel';
 import type { ResearchController } from './research-controller';
 import { isPluginMcpToolName, PluginUpdateNotifier } from './plugin-update-notifier';
@@ -97,6 +98,7 @@ export interface SessionEventHost {
   session: Session | undefined;
   aborted: boolean;
   sessionEventUnsubscribe: (() => void) | undefined;
+  readonly activityProgress: ActivityProgressController;
   readonly streamingUI: StreamingUIController;
 
   requireSession(): Session;
@@ -174,6 +176,7 @@ export class SessionEventHandler {
   private stepRetryAttemptTimer: ReturnType<typeof setTimeout> | undefined;
 
   resetRuntimeState(): void {
+    this.host.activityProgress.reset();
     this.backgroundTasks.clear();
     this.backgroundTaskTranscriptedTerminal.clear();
     this.subAgentEventHandler.resetRuntimeState();
@@ -216,14 +219,13 @@ export class SessionEventHandler {
     const mcpOAuthOpener = new McpOAuthAuthorizationUrlOpener(openUrl);
     const { sessionId } = host.state.appState;
     host.sessionEventUnsubscribe = session.onEvent((event) => {
-      if (host.aborted) return;
+      if (host.aborted || host.session !== session) return;
       if (event.sessionId !== sessionId) return;
       if (event.type === 'tool.progress') {
         mcpOAuthOpener.handleToolProgress(event);
       }
-      // Keep the Session object that owns the subscription alongside the event.
-      // A stale callback can still run after unsubscribe, and session ids may be
-      // reused by a reload; Research validates this object identity itself.
+      // Keep the owning Session alongside async event handlers after the
+      // object-identity guard above; session ids may be reused by a reload.
       this.handleEvent(event, sendQueued, session);
     });
     void this.syncMcpServerStatusSnapshot(session);
@@ -336,6 +338,7 @@ export class SessionEventHandler {
   // ---------------------------------------------------------------------------
 
   private handleTurnBegin(event: TurnStartedEvent): void {
+    this.host.activityProgress.start(event.turnId);
     this.currentTurnHasAssistantText = false;
     if (event.origin?.kind === 'plugin_command') {
       this.pluginCommandTurns.set(String(event.turnId), event.origin.pluginId);
@@ -374,6 +377,7 @@ export class SessionEventHandler {
 
   private handleTurnEnd(event: TurnEndedEvent, sendQueued: (item: QueuedMessage) => void): void {
     this.host.streamingUI.flushNow();
+    this.host.activityProgress.reset(event.turnId);
     this.clearStepRetry();
     if (event.reason === 'cancelled') {
       this.markActiveAgentSwarmsCancelled();
@@ -418,6 +422,7 @@ export class SessionEventHandler {
   }
 
   private handleStepBegin(event: TurnStepStartedEvent): void {
+    this.host.activityProgress.noteStep(event.turnId);
     this.host.streamingUI.flushNow();
     this.host.streamingUI.setStep(event.step);
     this.host.streamingUI.resetToolUi();
@@ -622,6 +627,7 @@ export class SessionEventHandler {
   }
 
   private handleToolCall(event: ToolCallStartedEvent): void {
+    this.host.activityProgress.noteToolCall(event.turnId, event.toolCallId);
     const { streamingUI } = this.host;
     streamingUI.flushNow();
     const { turnId, step } = streamingUI.getTurnContext();
@@ -685,6 +691,7 @@ export class SessionEventHandler {
   }
 
   private handleToolResult(event: ToolResultEvent): void {
+    this.host.activityProgress.noteToolResult(event.turnId, event.toolCallId);
     const { streamingUI } = this.host;
     streamingUI.flushNow();
     this.clearStepRetry();

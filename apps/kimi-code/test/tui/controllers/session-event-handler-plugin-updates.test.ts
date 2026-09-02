@@ -37,6 +37,13 @@ function makeHost() {
     session: {},
     aborted: false,
     sessionEventUnsubscribe: undefined,
+    activityProgress: {
+      start: vi.fn(),
+      noteStep: vi.fn(),
+      noteToolCall: vi.fn(),
+      noteToolResult: vi.fn(),
+      reset: vi.fn(),
+    },
     streamingUI,
     requireSession: vi.fn(() => ({})),
     setAppState: vi.fn(),

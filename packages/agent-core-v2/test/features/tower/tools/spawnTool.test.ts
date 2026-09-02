@@ -40,8 +40,13 @@ import {
   DEFAULT_SUBAGENT_TIMEOUT_MS,
   SECONDARY_MODEL_SECTION,
   SUBAGENT_SECTION,
+  type SubagentRouteRequest,
 } from '#/session/subagent/configSection';
 import { SECONDARY_MODEL_FLAG_ID } from '#/session/subagent/flag';
+import {
+  IAutoSubagentPresetService,
+  type AutoSubagentPresetContext,
+} from '#/app/autoSubagentPreset/autoSubagentPreset';
 import {
   ISessionSubagentService,
   type AgentRunHandle,
@@ -50,6 +55,7 @@ import type { ExecutableToolResult } from '#/tool/toolContract';
 
 import { StubConfigService } from '../../../kosong/stubs';
 import { executeTool } from '../../../tools/fixtures/execute-tool';
+import { stubAutoSubagentPreset } from '../../../app/autoSubagentPreset/stubs';
 
 const execFileAsync = promisify(execFile);
 const signal = new AbortController().signal;
@@ -128,7 +134,12 @@ describe('TowerSpawnTool', () => {
     );
     runAgent = vi.fn(
       async (agentId: string) =>
-        ({ agentId, turn: undefined, completion: completion.promise }) as unknown as AgentRunHandle,
+        ({
+          agentId,
+          turn: undefined,
+          timingEvidence: () => ({ llmRequestCount: 0, firstTokenLatencySampleCount: 0 }),
+          completion: completion.promise,
+        }) as unknown as AgentRunHandle,
     );
     registerTask = vi.fn(() => 'task-1');
 
@@ -177,6 +188,7 @@ describe('TowerSpawnTool', () => {
       enabled: (id: string) => id === SECONDARY_MODEL_FLAG_ID && secondaryFlagOn,
     } as unknown as IFlagService);
     ix.stub(IModelCatalog, { get: () => ({}) } as unknown as IModelCatalog);
+    ix.stub(IAutoSubagentPresetService, stubAutoSubagentPreset());
     ix.set(ITowerSpawnTool, new SyncDescriptor(TowerSpawnTool));
   });
 
@@ -240,6 +252,32 @@ describe('TowerSpawnTool', () => {
     expect(mission?.status).toBe('planned');
     expect(mission?.owner).toBeUndefined();
     expect(state.roster.agents).toHaveLength(0);
+  });
+
+  it('asks the automatic preset decider before resolving the worker binding', async () => {
+    const evaluate = vi.fn(
+      async (request: SubagentRouteRequest, _context: AutoSubagentPresetContext) => ({
+      request,
+      reason: 'stubbed',
+    }));
+    ix.stub(IAutoSubagentPresetService, stubAutoSubagentPreset(evaluate));
+
+    const result = await execute(WORKER_ARGS);
+
+    expect(result.isError).toBeUndefined();
+    expect(evaluate).toHaveBeenCalledTimes(1);
+    expect(evaluate.mock.calls[0]![0]).toMatchObject({
+      route: 'tower_worker',
+      caller: { modelAlias: 'kimi-code' },
+    });
+    expect(evaluate.mock.calls[0]![1]).toMatchObject({
+      sessionId: 'session-spawn-test',
+      signal: expect.any(AbortSignal),
+    });
+    expect(createAgent).toHaveBeenCalledWith({
+      binding: { profile: 'tower-worker', model: 'kimi-code', thinking: 'off' },
+      labels: { parentAgentId: 'main' },
+    });
   });
 
   it('spawns a detached tower-worker, registers the roster entry, and releases the slot on settle', async () => {

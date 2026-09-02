@@ -25,6 +25,7 @@ function createState(tasks: AppTask[]): ExtendedState {
   return {
     ...createInitialState(),
     activeSessionId: 'sess_1',
+    remoteSessionId: null,
     tasksBySession: { sess_1: tasks },
   } as unknown as ExtendedState;
 }
@@ -117,5 +118,32 @@ describe('useTaskPoller terminal-output backfill', () => {
     await poller.loadTasksForSession('sess_1');
     expect(apiMock.getTask).toHaveBeenCalledTimes(2);
     expect(state.tasksBySession['sess_1']?.[0]?.outputPreview).toBe('final result');
+  });
+
+  it('polls running-task output in remote mode like any other session', async () => {
+    // The `?remote=1` marker no longer restricts task output: remote entries
+    // get the same 1-second REST output polling as local windows.
+    vi.useFakeTimers();
+    try {
+      const state = createState([subagent('task-running')]);
+      state.remoteSessionId = 'sess_1';
+      apiMock.listTasks.mockResolvedValue([subagent('task-running')]);
+      apiMock.getTask.mockResolvedValue(
+        subagent('task-running', { outputPreview: 'tail', outputBytes: 1024 }),
+      );
+
+      useTaskPoller(state, computed(() => []));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(apiMock.listTasks).toHaveBeenCalledWith('sess_1');
+      expect(apiMock.getTask).toHaveBeenCalledWith(
+        'sess_1',
+        'task-running',
+        expect.objectContaining({ withOutput: true }),
+      );
+      expect(state.tasksBySession['sess_1']?.some((t) => t.outputPreview === 'tail')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

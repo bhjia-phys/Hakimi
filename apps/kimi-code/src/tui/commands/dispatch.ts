@@ -1,6 +1,6 @@
 import type { Component, Focusable } from '@moonshot-ai/pi-tui';
 import type { DeviceAuthorization } from '@moonshot-ai/kimi-code-oauth';
-import type { KimiHarness, Session } from '@bhjia-phys/hakimi-sdk';
+import type { KimiConfig, KimiHarness, Session } from '@bhjia-phys/hakimi-sdk';
 
 import { PRODUCT_NAME } from '#/constant/app';
 import type { ColorToken, ThemeName } from '#/tui/theme';
@@ -72,6 +72,7 @@ import {
   handleInitCommand,
   handleTitleCommand,
 } from './session';
+import { handleRemoteCommand } from './remote';
 import { handleSwarmCommand } from './swarm';
 import { handleUndoCommand } from './undo';
 import { handleWebCommand } from './web';
@@ -112,6 +113,7 @@ export {
   handleInitCommand,
   handleTitleCommand,
 } from './session';
+export { handleRemoteCommand } from './remote';
 export { handleUndoCommand } from './undo';
 export { handleWebCommand } from './web';
 
@@ -157,6 +159,13 @@ export interface SlashCommandHost {
    * it while still session-less.
    */
   hydrateLazyConfigDefaults(): Promise<void>;
+  /**
+   * Converge `appState.subagentPreset` with the config's effective subagent
+   * preset. Callers already holding a fresh config pass it through to avoid
+   * a second read. Never shows a status line, so manual preset changes
+   * produce no automatic notification.
+   */
+  syncSubagentPresetFromConfig(config?: KimiConfig): Promise<void>;
 
   // Session
   requireSession(): Session;
@@ -618,6 +627,9 @@ async function handleBuiltInSlashCommand(
       return;
     case 'web':
       await handleWebCommand(host);
+      return;
+    case 'remote':
+      await handleRemoteCommand(host, args);
       return;
     default:
       host.showError(`Unknown slash command: /${String(name)}`);

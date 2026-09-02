@@ -133,7 +133,7 @@ In `stream-json` mode, regular replies produce an Assistant message; when the mo
 
 ## Subcommands
 
-`hakimi` provides the following subcommands: `login` (non-interactive login), `acp` (ACP IDE mode), `web` (run the local REST/WebSocket/web service in the foreground and open the web UI), `doctor` (validate configuration files), `export` (export a session), `migrate` (migrate legacy data), `upgrade` (check for updates), and `provider` (manage providers).
+`hakimi` provides the following subcommands: `login` (non-interactive login), `acp` (ACP IDE mode), `web` (run the local REST/WebSocket/web service in the foreground and open the web UI), `remote` (manage persistent personal remote access), `doctor` (validate configuration files), `export` (export a session), `migrate` (migrate legacy data), `upgrade` (check for updates), and `provider` (manage providers).
 
 ### `hakimi login`
 
@@ -202,6 +202,34 @@ Deprecated — only stops a server started by a version before 0.28.0. Those ver
 #### `hakimi web rotate-token`
 
 Generate a new persistent bearer token (written to `~/.hakimi/server.token`); the previous token stops working immediately. The token is shared by the whole home directory, so every running instance picks the new one up on its next auth check — no restart needed.
+
+### `hakimi remote`
+
+Manage long-running personal remote access on Linux through a free Cloudflare Quick Tunnel. The command starts an authenticated full Web listener for all workspaces and sessions, including configuration, providers, OAuth, plugins, files, and complete Agent, Bash, tool, and task output. PTY terminals, debug endpoints, server shutdown, and nested remote-control routes remain unavailable through this listener. It does not require a Cloudflare account, domain, VPS, public IP address, or inbound router port.
+
+Install the official [`cloudflared` binary](https://developers.cloudflare.com/tunnel/downloads/) first, then start the service:
+
+```sh
+hakimi remote start
+```
+
+The first start creates a private fixed control token under `~/.hakimi/remote/`, installs a `systemd --user` service, enables it for future Linux user sessions, and prints the current public URL and QR code. If `cloudflared` is not on `PATH`, pass its absolute path on the first start:
+
+```sh
+hakimi remote start --cloudflared /absolute/path/to/cloudflared
+```
+
+Use the management commands after that:
+
+| Command | Description |
+| --- | --- |
+| `hakimi remote start` | Create or reuse the private configuration, enable the user service, and print the current URL and QR code |
+| `hakimi remote status` | Show whether the service is active and healthy, plus its current URL, QR code, process ID, and local port |
+| `hakimi remote stop` | Disable and stop the user service while keeping the fixed token for the next start |
+
+There is no TTL while this service is running. The control token remains the same across starts, but the free `*.trycloudflare.com` hostname normally changes whenever `cloudflared`, the user service, or the computer restarts. Run `hakimi remote status` on the host computer to obtain the replacement link. Cloudflare provides no SLA or uptime guarantee for Quick Tunnels.
+
+This background manager currently requires Linux with a working `systemd --user` session. In Hakimi Web, open **Remote control** and select **Persistent** to view, start, or stop the same service. The TUI `/remote` command remains a separate temporary handoff: its link opens the selected session first, then provides the same full remote Web access.
 
 ### `hakimi doctor`
 

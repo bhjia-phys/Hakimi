@@ -78,13 +78,19 @@ import {
 import type {
   ConfigWarningItem,
   DiUnitChangedEvent,
+  Event,
   SessionCreatedEvent,
   SessionMetaUpdatedEvent,
-  Event,
+  SubagentPresetChangedEvent,
 } from './events';
 import { isVolatileEventType } from './events';
 import { z } from 'zod';
-import { configResponseSchema, type ConfigResponse } from '../../../protocol/rest-config';
+import {
+  autoSubagentPresetReasonCodeSchema,
+  configResponseSchema,
+  projectSubagentPresetEvaluatedPayload,
+  type ConfigResponse,
+} from '../../../protocol/rest-config';
 import type { SessionCursor } from '../../../protocol/ws-control';
 import type { InFlightTurn, SnapshotSubagent } from '../../../protocol/rest-snapshot';
 import {
@@ -883,6 +889,49 @@ export class SessionEventBroadcaster {
       );
       return;
     }
+    if (event.type === 'event.subagent.preset_evaluated') {
+      const payload = projectSubagentPresetEvaluatedPayload(event.payload);
+      if (payload === undefined) return;
+      const sessionId = payload.sessionId;
+      // Evaluations are process-global facts about one real session. Keep them
+      // durable under that session's journal and globally fan them out, matching
+      // the committed-switch path below. `status` was validated and projected
+      // field-by-field, so unknown publisher fields cannot reach the wire.
+      void this.dispatchSessionEvent(sessionId, {
+        type: 'event.subagent.preset_evaluated',
+        ...payload.status,
+        agentId: 'main',
+        sessionId,
+      } as Event).catch((error: unknown) =>
+        this.logDispatchError(sessionId, 'event.subagent.preset_evaluated', error),
+      );
+      return;
+    }
+    if (event.type === 'event.subagent.preset_changed') {
+      const payload = subagentPresetChangedPayload(event.payload);
+      if (payload === undefined) return;
+      const sessionId = payload.sessionId;
+      // The engine's automatic preset selector published a committed switch —
+      // project it onto the flat v1 `SubagentPresetChangedEvent` frame and route
+      // it through the REAL session's durable journal. `isGlobalEvent` still
+      // fans the dispatch out to every connection, so non-subscribed clients
+      // stay in sync.
+      void this.dispatchSessionEvent(sessionId, {
+        type: 'event.subagent.preset_changed',
+        previous_preset: payload.previousPreset,
+        current_preset: payload.currentPreset,
+        reason_code: payload.reasonCode,
+        profile_name: payload.profileName,
+        evaluated_at: payload.evaluatedAt,
+        previous_score: payload.previousScore,
+        current_score: payload.currentScore,
+        agentId: 'main',
+        sessionId,
+      } as Event).catch((error: unknown) =>
+        this.logDispatchError(sessionId, 'event.subagent.preset_changed', error),
+      );
+      return;
+    }
     if (event.type === 'session.meta.updated') {
       const payload = sessionMetaUpdatedPayload(event.payload);
       if (payload === undefined) return;
@@ -952,10 +1001,9 @@ export class SessionEventBroadcaster {
     if (event.type === 'event.config.changed') {
       const payload = configChangedPayload(event.payload);
       if (payload === undefined) return;
-      // Global fan-out of config mutations: both producers — the POST /config
-      // route (`routes/config.ts`, in-route publish after a set) and the
-      // external-reload bridge (`start.ts`, merged one-event-per-reload) —
-      // publish the same `{ changedFields, config }` payload on IEventService;
+      // Global fan-out of config mutations: the process-wide bridge in
+      // `start.ts` batches effective REST, internal-tool, and external-reload
+      // changes into one `{ changedFields, config }` IEventService payload;
       // project it field-by-field onto the flat v1 `ConfigChangedEvent` frame
       // (the `changedFields` snake_case-or-camelCase values pass through as
       // published; the FIELD NAME on the wire stays `changedFields`, which the
@@ -1429,6 +1477,8 @@ function legacyTaskEvent(event: DomainEvent, agentId: string, sessionId: string)
 function isGlobalEvent(type: string): boolean {
   return (
     type === 'session.meta.updated' ||
+    type === 'event.subagent.preset_evaluated' ||
+    type === 'event.subagent.preset_changed' ||
     type.startsWith('event.session.') ||
     type.startsWith('event.workspace.') ||
     type.startsWith('event.config.') ||
@@ -1683,6 +1733,40 @@ function sessionMetaUpdatedSessionId(payload: unknown): string | undefined {
   return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : undefined;
 }
 
+const subagentPresetChangedCorePayloadSchema = z.object({
+  sessionId: z.string().min(1),
+  previousPreset: z.string().min(1).optional(),
+  currentPreset: z.string().min(1),
+  reasonCode: autoSubagentPresetReasonCodeSchema,
+  profileName: z.string().min(1).optional(),
+  evaluatedAt: z.number().finite().nonnegative(),
+  previousScore: z.number().finite().optional(),
+  currentScore: z.number().finite().optional(),
+});
+
+/**
+ * Validate the expanded `event.subagent.preset_changed` fact. Malformed fields
+ * drop the fact; unknown fields are tolerated for forward compatibility but
+ * stripped by Zod before the explicit snake_case wire projection above.
+ */
+function subagentPresetChangedPayload(
+  payload: unknown,
+):
+  | {
+    sessionId: string;
+    previousPreset?: string;
+    currentPreset: string;
+    reasonCode: SubagentPresetChangedEvent['reason_code'];
+    profileName?: string;
+    evaluatedAt: number;
+    previousScore?: number;
+    currentScore?: number;
+  }
+  | undefined {
+  const parsed = subagentPresetChangedCorePayloadSchema.safeParse(payload);
+  return parsed.success ? parsed.data : undefined;
+}
+
 const DI_UNIT_STATES: ReadonlySet<string> = new Set([
   'Pending',
   'Activating',
@@ -1797,9 +1881,9 @@ const configChangedPayloadSchema = z.object({
 
 /**
  * Validate the `event.config.changed` payload published on the core
- * `IEventService` (`{ changedFields, config }` — shared by the POST /config
- * route and the external-reload bridge in `start.ts`). The frame is projected
- * field-by-field onto the flat v1 `ConfigChangedEvent`; no payload field is
+ * `IEventService` (`{ changedFields, config }` from the process-wide config
+ * bridge in `start.ts`). The frame is projected field-by-field onto the flat
+ * v1 `ConfigChangedEvent`; no payload field is
  * spread into the envelope. Malformed payloads — a non-array / non-string
  * `changedFields`, or a `config` object that fails the `configResponseSchema`
  * parse — are dropped, never forwarded.

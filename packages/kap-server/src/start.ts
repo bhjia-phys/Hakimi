@@ -29,6 +29,7 @@ import {
   type Scope,
   type ScopeSeed,
 } from '@moonshot-ai/agent-core-v2';
+import { IFlagService } from '@moonshot-ai/agent-core-v2/app/flag/flag';
 import { deepEqual } from '@moonshot-ai/agent-core-v2/app/config/configPure';
 import {
   createKimiDefaultHeaders,
@@ -52,21 +53,19 @@ import {
   type ServerLogLevel,
 } from './services/pinoLoggerService';
 import { join } from 'node:path';
-import type { Socket } from 'node:net';
-import type { IncomingMessage } from 'node:http';
-import type { Duplex } from 'node:stream';
 
 import {
   ConnectionRegistry,
   type IConnectionRegistry,
 } from './transport/ws/connectionRegistry';
-import { extractWsBearerToken } from './transport/ws/bearerProtocol';
 import { SessionEventBroadcaster } from './transport/ws/v1/sessionEventBroadcaster';
 import type { ConfigWarningItem } from './transport/ws/v1/events';
 import { FsWatchBridge } from './transport/ws/v1/fsWatchBridge';
-import { registerWsV1, WS_PATH as WS_PATH_V1 } from './transport/ws/v1/registerWsV1';
+import { registerWsV1 } from './transport/ws/v1/registerWsV1';
+import { createWsUpgradeHandler } from './transport/ws/upgrade';
 import { getServerVersion } from './version';
 import { classify } from './security/bindClassify';
+import { projectRemoteResponseEnvelope } from './security/remoteResponseProjection';
 import {
   createHostCheck,
   isHostCheckDisabled,
@@ -75,6 +74,13 @@ import {
 import { createOriginHook, isOriginAllowed, parseCorsOrigins } from './middleware/origin';
 import { createSecurityHeadersHook } from './middleware/securityHeaders';
 import { createAuthHook } from './middleware/auth';
+import { createRemoteAccessHook, type RemoteAccessOptions } from './middleware/remoteAccess';
+import { createRemoteShareEdgeFactory } from './remoteShare/edge';
+import {
+  REMOTE_SHARE_FLAG_ID,
+  type IRemoteShareController,
+} from './remoteShare/contract';
+import { type IRemotePersistentController } from './remotePersistent/contract';
 import { GuiStoreService } from './services/guiStore/guiStoreService';
 import {
   initializeServerTelemetry,
@@ -132,6 +138,29 @@ export interface ServerStartOptions {
   readonly insecureNoTls?: boolean;
   readonly allowRemoteShutdown?: boolean;
   readonly allowRemoteTerminals?: boolean;
+  /** Restrict HTTP and WebSocket access to one session, or Web's all-session scope. */
+  readonly remoteAccess?: RemoteAccessOptions;
+  /**
+   * Host-provided remote-share controller: when present (and the
+   * `remote_control` feature flag is enabled) the main listener mounts the
+   * `/api/v1/remote-share` control routes and, on `close()`, calls
+   * `controller.close()` BEFORE any app/core teardown so the host tunnel and
+   * edge listener are reclaimed first. Without a controller no control route
+   * exists and ordinary server behavior is unchanged. The controller is never
+   * created here — the host owns it via `createRemoteShareController`.
+   */
+  readonly remoteShareController?: IRemoteShareController;
+  /**
+   * Host-provided long-lived remote-control controller: when present (and the
+   * `remote_control` feature flag is enabled) the main listener mounts the
+   * `/api/v1/remote-persistent` control routes (status/start/stop of the
+   * host's `hakimi remote` systemd user service). The controller owns every
+   * outside-world side effect (systemd, files); it is never invoked by
+   * `close()` because it holds no in-process resource — the systemd service is
+   * independent of this server. The standalone `remote serve` process must NOT
+   * pass one, so these routes are absent from its listener.
+   */
+  readonly remotePersistentController?: IRemotePersistentController;
   readonly authTokenService?: IAuthTokenService;
   readonly disableAuth?: boolean;
   /**
@@ -196,6 +225,39 @@ const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 58627;
 
 export async function startServer(opts: ServerStartOptions): Promise<RunningServer> {
+  if (opts.remoteAccess !== undefined) {
+    if (opts.disableAuth === true) {
+      throw new Error('Remote access requires bearer-token authentication; disableAuth is forbidden.');
+    }
+    if (opts.disableHostCheck === true || isHostCheckDisabled()) {
+      throw new Error('Remote access requires Host validation; disabling the Host check is forbidden.');
+    }
+  }
+  if (opts.remoteShareController !== undefined) {
+    if (opts.disableAuth === true) {
+      throw new Error(
+        'Remote share control requires bearer-token authentication; disableAuth is forbidden.',
+      );
+    }
+    if (opts.disableHostCheck === true || isHostCheckDisabled()) {
+      throw new Error(
+        'Remote share control requires Host validation; disabling the Host check is forbidden.',
+      );
+    }
+  }
+  if (opts.remotePersistentController !== undefined) {
+    if (opts.disableAuth === true) {
+      throw new Error(
+        'Remote persistent control requires bearer-token authentication; disableAuth is forbidden.',
+      );
+    }
+    if (opts.disableHostCheck === true || isHostCheckDisabled()) {
+      throw new Error(
+        'Remote persistent control requires Host validation; disabling the Host check is forbidden.',
+      );
+    }
+  }
+
   const host = opts.host ?? DEFAULT_HOST;
   const port = opts.port ?? DEFAULT_PORT;
   const homeDir = resolveKimiHome(opts.homeDir);
@@ -216,7 +278,17 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
     startedAt: Date.now(),
     serverVersion,
   });
-  const exposureClass = classify(host, { bindClass: opts.bindClass });
+  // A loopback listener reached through a public tunnel still needs the public
+  // hardening profile even though the kernel bind itself is local-only. The
+  // restricted `remoteAccess` mode forces it; so does an explicit
+  // `bindClass: 'public'` — the CLI remote listeners bind loopback yet carry a
+  // public cloudflared tunnel, so they must keep the full public profile
+  // (security headers, auth-failure limiter, TLS gate, disabled
+  // shutdown/terminals/debug unless explicitly re-enabled).
+  const exposureClass =
+    opts.remoteAccess === undefined && opts.bindClass !== 'public'
+      ? classify(host, { bindClass: opts.bindClass })
+      : 'public';
   if (exposureClass !== 'loopback' && opts.insecureNoTls !== true) {
     await registration.release();
     throw new Error(
@@ -347,15 +419,29 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
     disableRequestLogging: true,
     genReqId: (req) => resolveRequestId(req.headers),
   }) as unknown as FastifyInstance;
-  registerRequestLogging(app);
+  registerRequestLogging(app, {
+    // Remote URLs can carry foreign ids or prompt/task lookup keys. Keep the
+    // normal server's access-log shape unchanged, but never persist a remote
+    // URL: the restricted `remoteAccess` mode and the CLI remote listeners'
+    // explicit `bindClass: 'public'` are the tunnel-exposed surfaces.
+    redactUrl:
+      opts.remoteAccess === undefined && opts.bindClass !== 'public'
+        ? undefined
+        : () => true,
+  });
   // Validation is performed by the route-level Zod preHandlers (defineRoute),
   // not by Fastify's AJV layer — keep both compilers as pass-throughs.
   app.setValidatorCompiler(() => () => true);
   app.setSerializerCompiler(() => (data) => JSON.stringify(data));
   installErrorHandler(app);
+  const remoteTunnelHosts = opts.remoteAccess === undefined ? [] : ['.trycloudflare.com'];
   const hostCheck = createHostCheck({
     boundHost: host,
-    extra: [...parseAllowedHosts(process.env), ...(opts.allowedHosts ?? [])],
+    extra: [
+      ...parseAllowedHosts(process.env),
+      ...(opts.allowedHosts ?? []),
+      ...remoteTunnelHosts,
+    ],
     disable: opts.disableHostCheck ?? isHostCheckDisabled(),
   });
   const allowedOrigins = opts.corsOrigins ?? parseCorsOrigins();
@@ -378,15 +464,37 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
       'DANGEROUS: bearer-token auth is DISABLED (--dangerous-bypass-auth) — every REST and WebSocket route accepts unauthenticated requests',
     );
   }
+  if (opts.remoteAccess !== undefined) {
+    // Authentication stays the outer gate. A valid daemon credential is then
+    // narrowed to the explicitly shared session before any route handler runs.
+    app.addHook('onRequest', createRemoteAccessHook(opts.remoteAccess));
+    // Route-specific error mappers predate remote sharing and may attach stack
+    // traces or provider details. Apply one final fail-closed envelope boundary.
+    app.addHook('preSerialization', (_req, _reply, payload, done) => {
+      done(null, projectRemoteResponseEnvelope(payload));
+    });
+  }
   if (exposureClass !== 'loopback') {
     app.addHook('onSend', createSecurityHeadersHook({ tls: false }));
   }
 
   const close = async (): Promise<void> => {
-    // Tear down the config-reload bridge FIRST: from this point no more
-    // `event.config.changed` may be published, even by a microtask queued
-    // before close began (it would race a closing broadcaster).
-    disposeConfigReloadBridge();
+    // Reclaim the host tunnel / remote edge FIRST: it shares this process's
+    // Core and broadcaster, so it must disappear before any shared teardown.
+    if (opts.remoteShareController !== undefined) {
+      try {
+        await opts.remoteShareController.close();
+      } catch (error) {
+        logger.warn(
+          { err: error instanceof Error ? error.message : String(error) },
+          'remote share controller close failed; continuing server cleanup',
+        );
+      }
+    }
+    // Tear down the config-change bridge FIRST: from this point no more
+    // `event.config.changed` may be published by a pending batch while the
+    // broadcaster is closing.
+    disposeConfigChangeBridge();
     await app.close();
     configWarningSubscription.dispose();
     pluginChangeSubscription.dispose();
@@ -462,48 +570,42 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
   };
   const configWarningSubscription = configService.onDidChangeDiagnostics(publishConfigWarnings);
 
-  // Bridge external config-file reloads to the same `event.config.changed`
-  // global WS event as POST /config (see `routes/config.ts`), so every client
-  // converges without polling. `IConfigService` fires `onDidChangeConfiguration`
-  // once per domain, synchronously inside a single reload commit, so the
-  // changed domains of one synchronous reload are merged via a microtask into a
-  // single event. Only `source === 'reload'` is bridged: the initial `load` is
-  // not a change (no client is connected yet), and REST `set` publishes its own
-  // event in the route — relaying it here would double-publish. A reload
-  // reports every registered domain, so unchanged domains (whose delivered
-  // value deep-equals the previous one — the same rule `onDidSectionChange`
-  // applies) are dropped instead of flooding `changedFields`. `changedFields`
-  // carries the touched domain keys in the same snake_case style as the
-  // `config` payload and the set route's changedFields.
-  let reloadBridgeDisposed = false;
-  let reloadBatch: readonly string[] | undefined;
-  let reloadFlushScheduled = false;
-  const configReloadSubscription = configService.onDidChangeConfiguration((change) => {
-    if (change.source !== 'reload') return;
+  // Bridge every effective config mutation to one `event.config.changed`
+  // global WS event so REST writes, internal tools, and external file reloads
+  // converge without polling. `load` is only initialization and is ignored;
+  // deep-equal effective values are not observable changes. A zero-delay task
+  // coalesces sequential async `set` calls (including User + Memory alignment)
+  // and synchronous multi-domain reload commits into one final, secret-free
+  // snapshot with de-duplicated snake_case domain names.
+  let configBridgeDisposed = false;
+  let configChangeBatch: Set<string> | undefined;
+  let configFlushTimer: ReturnType<typeof setTimeout> | undefined;
+  const configChangeSubscription = configService.onDidChangeConfiguration((change) => {
+    if (change.source !== 'set' && change.source !== 'reload') return;
     if (deepEqual(change.value, change.previousValue)) return;
-    reloadBatch =
-      reloadBatch === undefined ? [change.domain] : [...reloadBatch, change.domain];
-    if (reloadFlushScheduled) return;
-    reloadFlushScheduled = true;
-    queueMicrotask(() => {
-      reloadFlushScheduled = false;
-      const changedFields = reloadBatch;
-      reloadBatch = undefined;
-      // A close that landed before the microtask runs must not publish into a
-      // half-torn-down broadcaster.
-      if (changedFields === undefined || reloadBridgeDisposed) return;
+    configChangeBatch ??= new Set<string>();
+    configChangeBatch.add(change.domain);
+    if (configFlushTimer !== undefined) return;
+    configFlushTimer = setTimeout(() => {
+      configFlushTimer = undefined;
+      const changedDomains = configChangeBatch;
+      configChangeBatch = undefined;
+      if (changedDomains === undefined || configBridgeDisposed) return;
       core.accessor.get(IEventService).publish({
         type: 'event.config.changed',
         payload: {
-          changedFields: changedFields.map(camelToSnake),
+          changedFields: [...changedDomains].map(camelToSnake),
           config: toConfigResponse(configService.getAll()),
         },
       });
-    });
+    }, 0);
   });
-  const disposeConfigReloadBridge = (): void => {
-    reloadBridgeDisposed = true;
-    configReloadSubscription.dispose();
+  const disposeConfigChangeBridge = (): void => {
+    configBridgeDisposed = true;
+    configChangeSubscription.dispose();
+    if (configFlushTimer !== undefined) clearTimeout(configFlushTimer);
+    configFlushTimer = undefined;
+    configChangeBatch = undefined;
   };
 
   // Fan plugin/capability lifecycle facts out as global WS events so every
@@ -560,6 +662,8 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
           { name: 'terminals', description: 'PTY terminal sessions' },
           { name: 'fs', description: 'Filesystem operations' },
           { name: 'files', description: 'File upload & download' },
+          { name: 'remote-share', description: 'Temporary remote Web control' },
+          { name: 'remote-persistent', description: 'Long-lived remote Web control' },
         ],
       },
       transformObject: (documentObject) => {
@@ -575,6 +679,67 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
   // be registered before any routes it should document.
   await registerOpenApi();
 
+  // Remote-control surface: mounted only when the host supplied a controller
+  // AND the default-on `remote_control` feature flag is on. The gate applies
+  // to BOTH remote surfaces (temporary share + long-lived persistent service)
+  // — a controller without the flag (or a flag without a controller) must
+  // behave exactly like an ordinary server.
+  const remoteControlEnabled = core.accessor.get(IFlagService).enabled(REMOTE_SHARE_FLAG_ID);
+  if (
+    (opts.remoteShareController !== undefined || opts.remotePersistentController !== undefined) &&
+    !remoteControlEnabled
+  ) {
+    logger.warn(
+      { flag: REMOTE_SHARE_FLAG_ID },
+      'remote control controller(s) provided but the remote_control experimental flag is off; control routes are not registered (enable KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL or the [experimental] config section)',
+    );
+  }
+  // Plugin marketplace catalog URL for the `/plugins/marketplace` route —
+  // resolved once so the main listener and the remote edge report the same
+  // catalog identity.
+  const pluginMarketplaceUrl =
+    opts.pluginMarketplaceUrl ??
+    process.env['KIMI_CODE_PLUGIN_MARKETPLACE_URL'] ??
+    KIMI_CODE_PLUGIN_MARKETPLACE_URL;
+  const pluginMarketplaceIsDefault =
+    opts.pluginMarketplaceUrl === undefined &&
+    (process.env['KIMI_CODE_PLUGIN_MARKETPLACE_URL'] === undefined ||
+      // The dev marketplace server (scripts/dev.mjs) serves this repo's own
+      // catalog and marks itself — it still counts as the default.
+      process.env['KIMI_CODE_PLUGIN_MARKETPLACE_FROM_DEV_SERVER'] === '1');
+  const remoteShare =
+    opts.remoteShareController !== undefined && remoteControlEnabled
+      ? {
+          controller: opts.remoteShareController,
+          edgeFactory: createRemoteShareEdgeFactory({
+            core,
+            serverVersion,
+            hostIdentity: opts.hostIdentity,
+            transcriptService,
+            broadcaster,
+            fsWatchBridge,
+            guiStore,
+            logger,
+            webAssetsDir: opts.webAssetsDir,
+            pluginMarketplaceUrl,
+            pluginMarketplaceIsDefault,
+            // The edge is a tunnel-exposed surface: keep the standalone
+            // `kimi remote` policy — no PTY terminals, no shutdown route (and
+            // no debug RPC, which the edge never plumbs). `onShutdown` stays
+            // unreachable while the shutdown route is not registered.
+            enableShutdown: false,
+            enableTerminals: false,
+            onShutdown: () => {
+              // Unreachable: the edge never registers the shutdown route.
+            },
+          }),
+        }
+      : undefined;
+  const remotePersistent =
+    opts.remotePersistentController !== undefined && remoteControlEnabled
+      ? { controller: opts.remotePersistentController }
+      : undefined;
+
   await registerApiV1Routes(app, core, {
     serverVersion,
     hostIdentity: opts.hostIdentity,
@@ -582,22 +747,17 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
     enableShutdown,
     enableTerminals,
     guiStore,
-    pluginMarketplaceUrl:
-      opts.pluginMarketplaceUrl ??
-      process.env['KIMI_CODE_PLUGIN_MARKETPLACE_URL'] ??
-      KIMI_CODE_PLUGIN_MARKETPLACE_URL,
-    pluginMarketplaceIsDefault:
-      opts.pluginMarketplaceUrl === undefined &&
-      (process.env['KIMI_CODE_PLUGIN_MARKETPLACE_URL'] === undefined ||
-        // The dev marketplace server (scripts/dev.mjs) serves this repo's own
-        // catalog and marks itself — it still counts as the default.
-        process.env['KIMI_CODE_PLUGIN_MARKETPLACE_FROM_DEV_SERVER'] === '1'),
     onShutdown: () => {
       void close().catch((err: unknown) => logger.error({ err }, 'server close failed'));
     },
     connectionRegistry,
     broadcaster,
     transcriptService,
+    remoteAccess: opts.remoteAccess,
+    remoteShare,
+    remotePersistent,
+    pluginMarketplaceUrl,
+    pluginMarketplaceIsDefault,
     dangerousBypassAuth: opts.disableAuth === true,
   });
 
@@ -611,86 +771,17 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
     broadcaster,
     fsWatchBridge,
     logger,
+    remoteAccess: opts.remoteAccess,
   });
 
-  const handleUpgrade = async (
-    req: IncomingMessage,
-    socket: Duplex,
-    head: Buffer,
-  ): Promise<void> => {
-    const url = req.url ?? '';
-    const isV1 = url === WS_PATH_V1 || url.startsWith(`${WS_PATH_V1}?`);
-    if (!isV1) {
-      socket.destroy();
-      return;
-    }
-
-    // Host / Origin checks (mirror the HTTP `onRequest` hooks). The raw
-    // `upgrade` event bypasses Fastify's hooks, so enforce them explicitly
-    // here — and BEFORE token validation, matching v1's wsGatewayService.
-    // Origin is present-only: a missing Origin is treated as a non-browser
-    // client and allowed.
-    if (!hostCheck.isAllowed(req.headers.host)) {
-      logger.warn(
-        { remoteAddress: req.socket.remoteAddress, path: url, reason: 'host_not_allowed' },
-        'ws upgrade rejected',
-      );
-      (socket as Socket).write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
-      (socket as Socket).destroy();
-      return;
-    }
-    if (!isOriginAllowed(req.headers.origin, req.headers.host, allowedOrigins)) {
-      logger.warn(
-        { remoteAddress: req.socket.remoteAddress, path: url, reason: 'origin_not_allowed' },
-        'ws upgrade rejected',
-      );
-      (socket as Socket).write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
-      (socket as Socket).destroy();
-      return;
-    }
-
-    if (opts.disableAuth !== true) {
-      const authHeader = req.headers.authorization;
-      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : null;
-      const protocolToken = extractWsBearerToken(req.headers['sec-websocket-protocol']);
-      const candidate = bearerToken !== null && bearerToken.length > 0 ? bearerToken : protocolToken;
-      // Require a valid credential at the upgrade: a token-less (or invalid)
-      // upgrade is rejected with 401 for `/api/v1/ws`.
-      let ok = false;
-      if (candidate !== null) {
-        try {
-          ok = await validateCredential(candidate);
-        } catch (error) {
-          logger.warn(
-            {
-              err: error,
-              remoteAddress: req.socket.remoteAddress,
-              path: url,
-              reason: 'credential_validation_error',
-            },
-            'ws upgrade rejected',
-          );
-          ok = false;
-        }
-      }
-      if (!ok) {
-        logger.warn(
-          {
-            remoteAddress: req.socket.remoteAddress,
-            path: url,
-            reason: candidate === null ? 'missing_credential' : 'invalid_credential',
-          },
-          'ws upgrade rejected',
-        );
-        (socket as Socket).write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
-        (socket as Socket).destroy();
-        return;
-      }
-    }
-
-    (socket as Socket).setNoDelay(true);
-    wssV1.handleUpgrade(req, socket, head, (ws) => wssV1.emit('connection', ws, req));
-  };
+  const handleUpgrade = createWsUpgradeHandler({
+    wss: wssV1,
+    logger,
+    hostAllowed: (host) => hostCheck.isAllowed(host),
+    originAllowed: (origin, host) => isOriginAllowed(origin, host, allowedOrigins),
+    validateCredential,
+    requireAuth: opts.disableAuth !== true,
+  });
   app.server.on('upgrade', (req, socket, head) => {
     void handleUpgrade(req, socket, head).catch((error: unknown) =>
       logger.error({ err: error }, 'ws upgrade handler failed'),

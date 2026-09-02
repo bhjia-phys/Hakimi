@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createKimiConfigRpc, createKimiHarness, KimiError } from '#/index';
+import { createKimiConfigRpc, createKimiHarness, createKimiHarnessV2, KimiError } from '#/index';
 
 import {
   parseConfigString,
@@ -325,6 +325,65 @@ describe('KimiHarness config API', () => {
     const harness = createKimiHarness({ homeDir, identity: TEST_IDENTITY });
 
     await expect(harness.getConfig()).resolves.toEqual({ providers: {} });
+    await expect(harness.getAutoSubagentPresetStatus()).resolves.toBeUndefined();
+  });
+
+  it('routes generic v2 setConfig subagent.preset through manual activation and merges siblings', async () => {
+    const homeDir = await makeTempDir();
+    const configPath = join(homeDir, 'config.toml');
+    await writeFile(
+      configPath,
+      [
+        '[providers.example]',
+        'type = "openai"',
+        'base_url = "https://api.example.test/v1"',
+        'api_key = "YOUR_API_KEY"',
+        '',
+        '[models.example]',
+        'provider = "example"',
+        'model = "example-model"',
+        'max_context_size = 128000',
+        '',
+        '[subagent]',
+        'timeout_ms = 999',
+        '',
+        '[subagent.agents.reviewer]',
+        'thinking_effort = "low"',
+        '',
+        '[subagent.presets.kimi-heavy.coder]',
+        'model = "example"',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const harness = createKimiHarnessV2({ homeDir, identity: TEST_IDENTITY });
+
+    try {
+      const config = await harness.setConfig({
+        subagent: {
+          preset: 'kimi-heavy',
+          timeoutMs: 1234,
+          agents: { coder: { thinkingEffort: 'high' } },
+        },
+      });
+      const subagent = config.subagent as typeof config.subagent & {
+        autoPreset?: { manualLock?: boolean };
+      };
+      expect(subagent).toMatchObject({
+        preset: 'kimi-heavy',
+        timeoutMs: 1234,
+        autoPreset: { manualLock: true },
+        agents: {
+          reviewer: { thinkingEffort: 'low' },
+          coder: { thinkingEffort: 'high' },
+        },
+      });
+      await expect(readFile(configPath, 'utf8')).resolves.toMatch(
+        /preset = "kimi-heavy"[\s\S]*manual_lock = true/,
+      );
+    } finally {
+      await harness.close();
+    }
   });
 
   it('returns experimental feature metadata without graduated capabilities', async () => {

@@ -56,6 +56,47 @@ const PROMPT_TOML = [
   '',
 ].join('\n');
 
+// Same stub provider WITHOUT `default_model`. Session create now applies
+// `agent_config` and, when no model is requested, falls back to the configured
+// default model (v1 parity) — that eagerly creates+binds the main agent. Tests
+// asserting the agent stays unbound after create / after a rejected prompt must
+// run against this config so the create binds nothing.
+const STUB_MODELS_ONLY_TOML = [
+  '[providers.stub]',
+  'type = "openai"',
+  'base_url = "http://127.0.0.1:9999"',
+  'api_key = "stub"',
+  '',
+  '[models.stub]',
+  'provider = "stub"',
+  'model = "stub"',
+  'max_context_size = 1000',
+  '',
+].join('\n');
+
+// Default_model rig with step retry disabled: once create binds the default
+// model, a submitted prompt really runs against the (unreachable) stub
+// provider; `max_attempts_per_step = 1` turns the connection failure into an
+// immediate settle instead of ~10 backoff retries, so a test can
+// deterministically reach the settled state it asserts.
+const PROMPT_TOML_NO_STEP_RETRY = [
+  'default_model = "stub"',
+  '',
+  '[providers.stub]',
+  'type = "openai"',
+  'base_url = "http://127.0.0.1:9999"',
+  'api_key = "stub"',
+  '',
+  '[models.stub]',
+  'provider = "stub"',
+  'model = "stub"',
+  'max_context_size = 1000',
+  '',
+  '[loop_control]',
+  'max_attempts_per_step = 1',
+  '',
+].join('\n');
+
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const CRC32_TABLE = makeCrc32Table();
 
@@ -192,6 +233,26 @@ describe('server-v2 /api/v1 prompts', () => {
     await session.accessor.get(IAgentLifecycleService).create({ agentId: 'main' });
   }
 
+  /** Restart the server with a custom config.toml (same home dir). */
+  async function restartWithToml(toml: string): Promise<void> {
+    await server?.close();
+    server = undefined;
+    await writeFile(join(home as string, 'config.toml'), toml, 'utf-8');
+    server = await startServer({
+      hostIdentity: TEST_HOST_IDENTITY,
+      host: '127.0.0.1',
+      port: 0,
+      homeDir: home,
+      logLevel: 'silent',
+    });
+    base = `http://127.0.0.1:${server.port}`;
+  }
+
+  /** Restart the server so `default_model` is NOT configured (same home dir). */
+  function restartWithoutDefaultModel(): Promise<void> {
+    return restartWithToml(STUB_MODELS_ONLY_TOML);
+  }
+
   it('submits a prompt and lists it as active', async () => {
     const id = await createSession(home as string);
     await createMainAgent(id);
@@ -298,6 +359,9 @@ describe('server-v2 /api/v1 prompts', () => {
     ['goal_objective', 'ship the feature'],
     ['goal_control', 'pause'],
   ])('rejects the deprecated no-op prompt field %s before mutating the session', async (field, value) => {
+    // No default_model: create stays unbound, so the lazy-agent assertion
+    // below still proves the REJECTED prompt created nothing.
+    await restartWithoutDefaultModel();
     const id = await createSession(home as string);
     const session = getLiveSessionById(server!.core.accessor, id);
 
@@ -312,6 +376,9 @@ describe('server-v2 /api/v1 prompts', () => {
   });
 
   it('rejects a stale file reference without creating the agent or mutating the model', async () => {
+    // No default_model: create stays unbound, so the lazy-agent assertion
+    // below still proves the REJECTED request created nothing.
+    await restartWithoutDefaultModel();
     const id = await createSession(home as string);
     const session = getLiveSessionById(server!.core.accessor, id);
 
@@ -329,6 +396,9 @@ describe('server-v2 /api/v1 prompts', () => {
   });
 
   it('rejects a mis-kinded file reference without creating the agent', async () => {
+    // No default_model: create stays unbound, so the lazy-agent assertion
+    // below still proves the REJECTED request created nothing.
+    await restartWithoutDefaultModel();
     const id = await createSession(home as string);
     const session = getLiveSessionById(server!.core.accessor, id);
 
@@ -699,6 +769,11 @@ describe('server-v2 /api/v1 prompts', () => {
   });
 
   it('returns 40402 when aborting a prompt that already settled', async () => {
+    // With `default_model` configured, create binds the main agent, so the
+    // turn actually runs and settles only when the stub provider (nothing
+    // listens on 127.0.0.1:9999) rejects the request — `max_attempts_per_step
+    // = 1` makes that settlement immediate instead of ~10 backoff retries.
+    await restartWithToml(PROMPT_TOML_NO_STEP_RETRY);
     const id = await createSession(home as string);
     await createMainAgent(id);
 
@@ -706,6 +781,19 @@ describe('server-v2 /api/v1 prompts', () => {
       content: [{ type: 'text', text: 'hello' }],
     });
     const promptId = submitted.body.data.prompt_id;
+
+    await expect
+      .poll(
+        async () => {
+          const list = await call<{ active: PromptItemWire | null }>(
+            'GET',
+            `/api/v1/sessions/${id}/prompts`,
+          );
+          return list.body.data.active;
+        },
+        { interval: 50, timeout: 3000 },
+      )
+      .toBeNull();
 
     const aborted = await call<{ aborted: boolean }>(
       'POST',
@@ -815,9 +903,12 @@ describe('server-v2 /api/v1 prompts', () => {
     expect(body.msg).toContain('agent_does_not_exist');
   });
 
-  it('binds a discovered custom agent profile on the first prompt', async () => {
+  it('rejects first-prompt selection of a discovered custom profile once create bound the default', async () => {
     // A user-level agent file under $KIMI_CODE_HOME/agents is discovered into
-    // the session profile catalog and selectable by name.
+    // the session profile catalog and selectable by name. With `default_model`
+    // configured, create now binds the default profile + model (v1 parity), so
+    // the first prompt cannot switch to the discovered one — a bound agent
+    // never switches profiles.
     await mkdir(join(home as string, 'agents'), { recursive: true });
     await writeFile(
       join(home as string, 'agents', 'route-reviewer.md'),
@@ -835,22 +926,25 @@ describe('server-v2 /api/v1 prompts', () => {
     const id = await createSession(home as string);
     await createMainAgent(id);
 
-    // No `model` — the profile bind falls back to the configured default_model.
     const submitted = await call<PromptItemWire>('POST', `/api/v1/sessions/${id}/prompts`, {
       content: [{ type: 'text', text: 'hello' }],
       profile: 'route-reviewer',
+      model: 'stub',
     });
-    expect(submitted.body.code).toBe(0);
+    expect(submitted.body.code).toBe(40001);
+    expect(submitted.body.msg).toContain('already bound');
 
+    // The create-time bind survives the rejected prompt untouched.
     const session = getLiveSessionById(server!.core.accessor, id);
     if (session === undefined) throw new Error(`session ${id} not found`);
     const main = session.accessor.get(IAgentLifecycleService).get('main');
-    expect(main?.accessor.get(IAgentProfileService).data().profileName).toBe('route-reviewer');
+    expect(main?.accessor.get(IAgentProfileService).data().profileName).toBe('agent');
+    expect(main?.accessor.get(IAgentProfileService).getModel()).toBe('stub');
 
-    // Repeating the same profile on a later prompt is a no-op, not an error.
+    // Repeating the same (default) profile on a later prompt stays a no-op.
     const again = await call<PromptItemWire>('POST', `/api/v1/sessions/${id}/prompts`, {
       content: [{ type: 'text', text: 'again' }],
-      profile: 'route-reviewer',
+      profile: 'agent',
     });
     expect(again.body.code).toBe(0);
   });
@@ -960,13 +1054,17 @@ describe('server-v2 /api/v1 prompts', () => {
   });
 
   it('rejects disabled_tools before the agent profile is bound', async () => {
+    // The main agent is bound at create by the default model, so exercise the
+    // unbound-profile rejection through a side agent the prompt can still
+    // target (`agent_id`) — a denylist cannot be computed before bind.
     const id = await createSession(home as string);
-    await createMainAgent(id);
+    const session = getLiveSessionById(server!.core.accessor, id);
+    if (session === undefined) throw new Error(`session ${id} not found`);
+    await session.accessor.get(IAgentLifecycleService).create({ agentId: 'side' });
 
-    // No profile/model: the agent stays unbound, and a session denylist cannot
-    // be computed before bind (a later bind would silently overwrite it).
     const { body } = await call<null>('POST', `/api/v1/sessions/${id}/prompts`, {
       content: [{ type: 'text', text: 'hello' }],
+      agent_id: 'side',
       disabled_tools: ['Bash'],
     });
     expect(body.code).toBe(40001);

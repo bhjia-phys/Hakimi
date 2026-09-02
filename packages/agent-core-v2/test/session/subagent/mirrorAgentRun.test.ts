@@ -38,6 +38,7 @@ import {
   type AgentRunFinishedEvent,
   type AgentRunHandle,
   type AgentRunStartedEvent,
+  type AgentRunTimingEvidence,
   type AgentTaskHooks,
   ISessionSubagentService,
 } from '#/session/subagent/subagent';
@@ -48,6 +49,10 @@ class FakeBus implements IEventBus {
   declare readonly _serviceBrand: undefined;
   readonly published: DomainEvent[] = [];
   private readonly handlers = new Set<{ type?: string; fn: (event: DomainEvent) => void }>();
+
+  get listenerCount(): number {
+    return this.handlers.size;
+  }
 
   publish(event: DomainEvent): void {
     this.published.push(event);
@@ -66,7 +71,10 @@ class FakeBus implements IEventBus {
   }
 }
 
-function fakeChildHandle(total: () => TokenUsage | undefined): IAgentScopeHandle {
+function fakeChildHandle(
+  total: () => TokenUsage | undefined,
+  eventBus: IEventBus,
+): IAgentScopeHandle {
   const profile: IAgentProfileService = {
     _serviceBrand: undefined,
     data: () => ({ modelAlias: 'child-model', profileName: 'explore' }),
@@ -90,6 +98,7 @@ function fakeChildHandle(total: () => TokenUsage | undefined): IAgentScopeHandle
         if (token === IAgentProfileService) return profile;
         if (token === IAgentTokenCountingService) return tokens;
         if (token === IAgentUsageService) return usage;
+        if (token === IEventBus) return eventBus;
         return undefined;
       },
     },
@@ -99,17 +108,23 @@ function fakeChildHandle(total: () => TokenUsage | undefined): IAgentScopeHandle
 
 function runHandle(
   completion: Promise<{ summary: string; usage?: TokenUsage; runUsage?: TokenUsage }>,
+  timing: AgentRunTimingEvidence = {
+    llmRequestCount: 0,
+    firstTokenLatencySampleCount: 0,
+  },
 ): AgentRunHandle {
   return {
     agentId: 'agent-child',
-    turn: {} as Turn,
+    turn: { id: 1 } as Turn,
     baseline: { ...ZERO },
+    timingEvidence: () => timing,
     completion,
   };
 }
 
 function setup(options: { total?: () => TokenUsage | undefined } = {}): {
   bus: FakeBus;
+  childBus: FakeBus;
   requester: IAgentScopeHandle;
   hooks: Hooks<AgentTaskHooks>;
   cancel: ReturnType<typeof vi.fn>;
@@ -118,6 +133,7 @@ function setup(options: { total?: () => TokenUsage | undefined } = {}): {
   finishedEvents: AgentRunFinishedEvent[];
 } {
   const bus = new FakeBus();
+  const childBus = new FakeBus();
   const hooks = createHooks<AgentTaskHooks, keyof AgentTaskHooks>(['onWillStartAgentTask']);
   const stopped = vi.fn();
   const startedEvents: AgentRunStartedEvent[] = [];
@@ -134,7 +150,7 @@ function setup(options: { total?: () => TokenUsage | undefined } = {}): {
     notifyAgentRunFinished: (event) => finishedEvents.push(event),
   };
   const lifecycle = {
-    get: () => fakeChildHandle(options.total ?? (() => undefined)),
+    get: () => fakeChildHandle(options.total ?? (() => undefined), childBus),
     list: () => [],
   } as unknown as IAgentLifecycleService;
   const cancel = vi.fn();
@@ -151,7 +167,7 @@ function setup(options: { total?: () => TokenUsage | undefined } = {}): {
     },
     dispose: () => {},
   } as unknown as IAgentScopeHandle;
-  return { bus, requester, hooks, cancel, stopped, startedEvents, finishedEvents };
+  return { bus, childBus, requester, hooks, cancel, stopped, startedEvents, finishedEvents };
 }
 
 function singleStarted(startedEvents: AgentRunStartedEvent[]): AgentRunStartedEvent {
@@ -162,6 +178,20 @@ function singleStarted(startedEvents: AgentRunStartedEvent[]): AgentRunStartedEv
 function singleFinished(finishedEvents: AgentRunFinishedEvent[]): AgentRunFinishedEvent {
   expect(finishedEvents).toHaveLength(1);
   return finishedEvents[0]!;
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+  readonly reject: (reason: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 describe('mirrorAgentRun run lifecycle', () => {
@@ -204,6 +234,112 @@ describe('mirrorAgentRun run lifecycle', () => {
     expect(bus.published.some((event) => 'runId' in event)).toBe(false);
     expect(outcome.usage).toEqual(cumulative);
     expect('runUsage' in outcome).toBe(false);
+  });
+
+  it('records timing evidence when the child run completed before mirroring began', async () => {
+    const { childBus, requester, finishedEvents } = setup();
+    const run = runHandle(
+      Promise.resolve({ summary: 'done' }),
+      {
+        llmRequestCount: 3,
+        firstTokenLatencySampleCount: 2,
+        averageFirstTokenLatencyMs: 200,
+      },
+    );
+
+    await run.completion;
+    await mirrorAgentRun(requester, run, {
+      profileName: 'explore',
+      signal: new AbortController().signal,
+    });
+
+    expect(singleFinished(finishedEvents)).toMatchObject({
+      llmRequestCount: 3,
+      firstTokenLatencySampleCount: 2,
+      averageFirstTokenLatencyMs: 200,
+    });
+    expect(childBus.listenerCount).toBe(0);
+  });
+
+  it('records partial timing samples separately from total requests', async () => {
+    const { requester, finishedEvents } = setup();
+    await mirrorAgentRun(
+      requester,
+      runHandle(
+        Promise.resolve({ summary: 'done' }),
+        {
+          llmRequestCount: 4,
+          firstTokenLatencySampleCount: 1,
+          averageFirstTokenLatencyMs: 120,
+        },
+      ),
+      { profileName: 'explore', signal: new AbortController().signal },
+    );
+
+    expect(singleFinished(finishedEvents)).toMatchObject({
+      llmRequestCount: 4,
+      firstTokenLatencySampleCount: 1,
+      averageFirstTokenLatencyMs: 120,
+    });
+  });
+
+  it('records requests without timing while leaving the latency aggregate absent', async () => {
+    const { requester, finishedEvents } = setup();
+    await mirrorAgentRun(
+      requester,
+      runHandle(Promise.resolve({ summary: 'done' }), {
+        llmRequestCount: 1,
+        firstTokenLatencySampleCount: 0,
+      }),
+      { profileName: 'explore', signal: new AbortController().signal },
+    );
+
+    const finished = singleFinished(finishedEvents);
+    expect(finished.llmRequestCount).toBe(1);
+    expect(finished.firstTokenLatencySampleCount).toBeUndefined();
+    expect(finished.averageFirstTokenLatencyMs).toBeUndefined();
+  });
+
+  it('keeps aggregate timing evidence on failed and cancelled runs', async () => {
+    const failedCompletion = deferred<{ summary: string }>();
+    const failedSetup = setup();
+    const failed = mirrorAgentRun(
+      failedSetup.requester,
+      runHandle(failedCompletion.promise, {
+        llmRequestCount: 2,
+        firstTokenLatencySampleCount: 1,
+        averageFirstTokenLatencyMs: 120,
+      }),
+      { profileName: 'explore', signal: new AbortController().signal },
+    );
+    failedCompletion.reject(new APIProviderRateLimitError('limited', 'req-metrics'));
+    await expect(failed).rejects.toThrow('limited');
+    expect(singleFinished(failedSetup.finishedEvents)).toMatchObject({
+      status: 'failed',
+      llmRequestCount: 2,
+      firstTokenLatencySampleCount: 1,
+      averageFirstTokenLatencyMs: 120,
+    });
+
+    const cancelledCompletion = deferred<{ summary: string }>();
+    const cancelledSetup = setup();
+    const cancelled = mirrorAgentRun(
+      cancelledSetup.requester,
+      runHandle(cancelledCompletion.promise, {
+        llmRequestCount: 1,
+        firstTokenLatencySampleCount: 1,
+        averageFirstTokenLatencyMs: 80,
+      }),
+      { profileName: 'explore', signal: new AbortController().signal },
+    );
+    cancelledCompletion.reject(abortError('Aborted'));
+    await expect(cancelled).rejects.toThrow('Aborted');
+    expect(singleFinished(cancelledSetup.finishedEvents)).toMatchObject({
+      status: 'cancelled',
+      llmRequestCount: 1,
+      firstTokenLatencySampleCount: 1,
+      averageFirstTokenLatencyMs: 80,
+    });
   });
 
   it('assigns a unique runId per mirror', async () => {

@@ -8,8 +8,12 @@
  *   env override (precedence: env > config.toml > 2h default). While the env
  *   var is set, `stripEnvBoundFields` restores the env-free raw value before
  *   persistence, so the override never leaks into `config.toml`. The section
- *   also owns the canonical route tables (`preset`, `agents`, `presets`). The
- *   shared resolver applies `preset.<profile> > agents.<profile> > caller` for
+ *   also owns the canonical route tables (`preset`, `agents`, `presets`) and
+ *   the nested `auto_preset` tuning table (snake_case on disk, camelCase in
+ *   memory, including the `manual_lock` flag stamped by a manual preset
+ *   selection so the App-scope automatic preset decider defers to it) consumed
+ *   by the App-scope automatic preset decider. The shared
+ *   resolver applies `preset.<profile> > agents.<profile> > caller` for
  *   Agent, `preset.swarm > preset.<profile> > agents.swarm > agents.<profile> >
  *   caller` for AgentSwarm, and the dedicated `tower_worker` /
  *   `tower_reviewer` route followed by caller for Tower. Fresh spawns and
@@ -95,6 +99,107 @@ export interface SubagentBindingResolution {
   readonly thinkingSource: SubagentBindingSource;
 }
 
+export const DEFAULT_AUTO_PRESET_QUOTA_FLOOR_PERCENT = 25;
+export const DEFAULT_AUTO_PRESET_SWITCH_MARGIN_PERCENT = 10;
+export const DEFAULT_AUTO_PRESET_LOCAL_USAGE_WINDOW_MS = 60 * 60 * 1000;
+export const DEFAULT_AUTO_PRESET_LOCAL_USAGE_WEIGHT_PERCENT = 10;
+export const DEFAULT_AUTO_PRESET_PRIORITY_WEIGHT_PERCENT = 20;
+export const DEFAULT_AUTO_PRESET_RELIABILITY_WEIGHT_PERCENT = 20;
+export const DEFAULT_AUTO_PRESET_LATENCY_WEIGHT_PERCENT = 10;
+export const DEFAULT_AUTO_PRESET_SWITCH_COOLDOWN_MS = 10 * 60 * 1000;
+export const DEFAULT_AUTO_PRESET_CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3;
+export const DEFAULT_AUTO_PRESET_CIRCUIT_BREAKER_COOLDOWN_MS = 15 * 60 * 1000;
+export const DEFAULT_AUTO_PRESET_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+export const DEFAULT_AUTO_PRESET_QUERY_TIMEOUT_MS = 5 * 1000;
+
+export const SubagentAutoPresetConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  manualLock: z.boolean().default(false),
+  candidates: z
+    .array(z.string())
+    .optional()
+    .refine(
+      (candidates) =>
+        candidates === undefined ||
+        (candidates.every((name) => name.trim().length > 0) &&
+          new Set(candidates).size === candidates.length),
+      'auto_preset.candidates must be a unique list of non-empty preset names',
+    ),
+  quotaFloorPercent: z.number().min(0).max(100).default(DEFAULT_AUTO_PRESET_QUOTA_FLOOR_PERCENT),
+  switchMarginPercent: z.number().min(0).max(100).default(DEFAULT_AUTO_PRESET_SWITCH_MARGIN_PERCENT),
+  localUsageWindowMs: z.number().int().positive().default(DEFAULT_AUTO_PRESET_LOCAL_USAGE_WINDOW_MS),
+  localUsageWeightPercent: z
+    .number()
+    .min(0)
+    .max(100)
+    .default(DEFAULT_AUTO_PRESET_LOCAL_USAGE_WEIGHT_PERCENT),
+  priorityWeightPercent: z
+    .number()
+    .min(0)
+    .max(100)
+    .default(DEFAULT_AUTO_PRESET_PRIORITY_WEIGHT_PERCENT),
+  reliabilityWeightPercent: z
+    .number()
+    .min(0)
+    .max(100)
+    .default(DEFAULT_AUTO_PRESET_RELIABILITY_WEIGHT_PERCENT),
+  latencyWeightPercent: z
+    .number()
+    .min(0)
+    .max(100)
+    .default(DEFAULT_AUTO_PRESET_LATENCY_WEIGHT_PERCENT),
+  switchCooldownMs: z.number().int().min(0).default(DEFAULT_AUTO_PRESET_SWITCH_COOLDOWN_MS),
+  circuitBreakerFailureThreshold: z
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_AUTO_PRESET_CIRCUIT_BREAKER_FAILURE_THRESHOLD),
+  circuitBreakerCooldownMs: z
+    .number()
+    .int()
+    .min(0)
+    .default(DEFAULT_AUTO_PRESET_CIRCUIT_BREAKER_COOLDOWN_MS),
+  refreshIntervalMs: z.number().int().positive().default(DEFAULT_AUTO_PRESET_REFRESH_INTERVAL_MS),
+  queryTimeoutMs: z.number().int().positive().default(DEFAULT_AUTO_PRESET_QUERY_TIMEOUT_MS),
+  allowExtraUsage: z.boolean().default(false),
+});
+
+export type SubagentAutoPresetConfig = z.infer<typeof SubagentAutoPresetConfigSchema>;
+
+export function resolveSubagentAutoPresetConfig(
+  subagent: SubagentConfig | undefined,
+): SubagentAutoPresetConfig {
+  const autoPreset = subagent?.autoPreset;
+  return {
+    enabled: autoPreset?.enabled ?? false,
+    manualLock: autoPreset?.manualLock ?? false,
+    candidates: autoPreset?.candidates,
+    quotaFloorPercent: autoPreset?.quotaFloorPercent ?? DEFAULT_AUTO_PRESET_QUOTA_FLOOR_PERCENT,
+    switchMarginPercent:
+      autoPreset?.switchMarginPercent ?? DEFAULT_AUTO_PRESET_SWITCH_MARGIN_PERCENT,
+    localUsageWindowMs:
+      autoPreset?.localUsageWindowMs ?? DEFAULT_AUTO_PRESET_LOCAL_USAGE_WINDOW_MS,
+    localUsageWeightPercent:
+      autoPreset?.localUsageWeightPercent ?? DEFAULT_AUTO_PRESET_LOCAL_USAGE_WEIGHT_PERCENT,
+    priorityWeightPercent:
+      autoPreset?.priorityWeightPercent ?? DEFAULT_AUTO_PRESET_PRIORITY_WEIGHT_PERCENT,
+    reliabilityWeightPercent:
+      autoPreset?.reliabilityWeightPercent ?? DEFAULT_AUTO_PRESET_RELIABILITY_WEIGHT_PERCENT,
+    latencyWeightPercent:
+      autoPreset?.latencyWeightPercent ?? DEFAULT_AUTO_PRESET_LATENCY_WEIGHT_PERCENT,
+    switchCooldownMs:
+      autoPreset?.switchCooldownMs ?? DEFAULT_AUTO_PRESET_SWITCH_COOLDOWN_MS,
+    circuitBreakerFailureThreshold:
+      autoPreset?.circuitBreakerFailureThreshold ??
+      DEFAULT_AUTO_PRESET_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    circuitBreakerCooldownMs:
+      autoPreset?.circuitBreakerCooldownMs ?? DEFAULT_AUTO_PRESET_CIRCUIT_BREAKER_COOLDOWN_MS,
+    refreshIntervalMs: autoPreset?.refreshIntervalMs ?? DEFAULT_AUTO_PRESET_REFRESH_INTERVAL_MS,
+    queryTimeoutMs: autoPreset?.queryTimeoutMs ?? DEFAULT_AUTO_PRESET_QUERY_TIMEOUT_MS,
+    allowExtraUsage: autoPreset?.allowExtraUsage ?? false,
+  };
+}
+
 export const SubagentModelConfigSchema = z.object({
   model: z.string().optional(),
   thinkingEffort: z.string().optional(),
@@ -107,6 +212,7 @@ export const SubagentConfigSchema = z.object({
   presets: z
     .record(z.string(), z.record(z.string(), SubagentModelConfigSchema))
     .optional(),
+  autoPreset: SubagentAutoPresetConfigSchema.optional(),
 });
 
 export type SubagentConfig = z.infer<typeof SubagentConfigSchema>;
@@ -164,6 +270,9 @@ export const subagentFromToml = (rawSnake: unknown): unknown => {
     }
     out['presets'] = presets;
   }
+  if (isPlainObject(rawSnake['auto_preset'])) {
+    out['autoPreset'] = transformPlainObject(rawSnake['auto_preset']);
+  }
   return out;
 };
 
@@ -190,6 +299,16 @@ export const subagentToToml = (value: unknown, rawSnake: unknown): unknown => {
     out['presets'] = presets;
   } else {
     setDefined(out, 'presets', value['presets']);
+  }
+  if (isPlainObject(value['autoPreset'])) {
+    const rawAutoPreset = isPlainObject(rawSnake) ? rawSnake['auto_preset'] : undefined;
+    const converted = cloneRecord(rawAutoPreset);
+    for (const [key, field] of Object.entries(value['autoPreset'])) {
+      setDefined(converted, camelToSnake(key), field);
+    }
+    out['auto_preset'] = converted;
+  } else {
+    setDefined(out, 'auto_preset', value['autoPreset']);
   }
   return out;
 };
@@ -407,18 +526,18 @@ export function assertValidSubagentModelConfig(
   if (subagent === undefined) return;
 
   for (const [profileName, entry] of Object.entries(subagent.agents ?? {})) {
-    assertCanonicalEntry(entry, `agents.${profileName}`, modelCatalog);
+    assertCanonicalSubagentModelEntry(entry, `agents.${profileName}`, modelCatalog);
   }
 
   const active = activeSubagentPreset(subagent);
   const preset = requireActivePreset(subagent, active);
   if (preset === undefined) return;
   for (const [routeName, entry] of Object.entries(preset)) {
-    assertCanonicalEntry(entry, `presets.${active}.${routeName}`, modelCatalog);
+    assertCanonicalSubagentModelEntry(entry, `presets.${active}.${routeName}`, modelCatalog);
   }
 }
 
-function assertCanonicalEntry(
+export function assertCanonicalSubagentModelEntry(
   entry: SubagentModelConfig,
   routeName: string,
   modelCatalog: IModelCatalog,
@@ -469,9 +588,25 @@ export function resolveSubagentBinding(
   request: SubagentRouteRequest,
 ): SubagentBindingResolution {
   const subagent = readSubagentConfig(config);
-  const active = activeSubagentPreset(subagent);
-  requireActivePreset(subagent, active);
-  const entries = routeEntries(subagent, active, request.route, request.profileName);
+  return resolveSubagentBindingForPreset(
+    config,
+    flags,
+    modelCatalog,
+    activeSubagentPreset(subagent),
+    request,
+  );
+}
+
+export function resolveSubagentBindingForPreset(
+  config: IConfigService,
+  flags: IFlagService,
+  modelCatalog: IModelCatalog,
+  preset: string | undefined,
+  request: SubagentRouteRequest,
+): SubagentBindingResolution {
+  const subagent = readSubagentConfig(config);
+  requireActivePreset(subagent, preset);
+  const entries = routeEntries(subagent, preset, request.route, request.profileName);
   const modelCandidate = firstConfiguredEntry(entries, 'model');
   const thinkingCandidate = firstConfiguredEntry(entries, 'thinkingEffort');
 
@@ -482,7 +617,7 @@ export function resolveSubagentBinding(
     modelSource = modelCandidate.source;
     validateCanonicalModelAlias(model, modelCandidate.routeName, modelCatalog);
   } else if (
-    active === undefined &&
+    preset === undefined &&
     request.modelPreference !== 'primary' &&
     request.route !== SUBAGENT_PRESET_TOWER_REVIEWER_ROUTE &&
     flags.enabled(SECONDARY_MODEL_FLAG_ID)

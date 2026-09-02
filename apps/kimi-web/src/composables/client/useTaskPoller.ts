@@ -15,7 +15,7 @@ const TASK_OUTPUT_FINAL_BYTES = 32 * 1024;
 export interface UseTaskPoller {
   /** 1-second clock that ticks while an active app task is running. */
   taskClock: Readonly<Ref<number>>;
-  /** One-off load of the task list for a session, plus terminal-output backfill. */
+  /** One-off load of the task list and terminal output for a session. */
   loadTasksForSession: (sessionId: string) => Promise<void>;
 }
 
@@ -37,7 +37,7 @@ export function useTaskPoller(
         [sessionId]: keepLiveSubagents(taskList, rawState.tasksBySession[sessionId] ?? []),
       };
       // Completed tasks may have real terminal output that never streamed over
-      // WS. Fetch it once now so the rows are expandable when the session opens.
+      // WS, so always fetch a final snapshot.
       await fetchTerminalTaskOutputs(sessionId, taskList);
     } catch {
       // Tasks are side data; old/stale sessions may fail without blocking messages.
@@ -242,7 +242,9 @@ export function useTaskPoller(
   watch(
     () => {
       const sid = rawState.activeSessionId;
-      if (!sid) return { sid: undefined as string | undefined, hasRunning: false };
+      if (!sid) {
+        return { sid: undefined as string | undefined, hasRunning: false };
+      }
       const tasks = rawState.tasksBySession[sid] ?? [];
       return { sid, hasRunning: tasks.some((t) => t.status === 'running') };
     },

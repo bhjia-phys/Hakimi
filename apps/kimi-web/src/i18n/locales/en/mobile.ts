@@ -19,4 +19,9 @@ export default {
   archivedSessions: 'Archived sessions',
   archivedSessionsSub: 'Browse and restore archived sessions',
   archivedBack: 'Back',
+  /** Session-actions group: desktop ChatHeader kebab entries exposed on mobile. */
+  groupSessionActions: 'Session actions',
+  gitSummary: 'Git summary',
+  subagentPreset: 'Subagent preset',
+  presetBack: 'Back',
 } as const;

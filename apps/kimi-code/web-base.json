@@ -3,7 +3,7 @@
   "repository": "hakimi",
   "source": {
     "path": "apps/kimi-web",
-    "fileCount": 281,
+    "fileCount": 293,
     "files": [
       {
         "path": "apps/kimi-web/index.html",
@@ -19,7 +19,7 @@
       },
       {
         "path": "apps/kimi-web/src/App.vue",
-        "sha256": "de94c556227d9c5923a099f626e87988c6ac216234f727ba9794cd843ade865b"
+        "sha256": "b95e83019aa9ce9d2ad65e429a42d398af7af7729a89d391dcd72ecc49d8f698"
       },
       {
         "path": "apps/kimi-web/src/api/config.ts",
@@ -27,23 +27,23 @@
       },
       {
         "path": "apps/kimi-web/src/api/daemon/agentEventProjector.ts",
-        "sha256": "15fa0a8355223a90d30cbeabff31f461cf0efb816e9b7030e1add36ffb4dc14f"
+        "sha256": "2bbfa2fdaf5a1962e6eaac35486ea0d45c56403e6ae927088d08345deb18b77c"
       },
       {
         "path": "apps/kimi-web/src/api/daemon/client.ts",
-        "sha256": "89dcd8d8e85bd7681768a15fc720e7eb0b9ad7df85866695408d8ae70534e9e0"
+        "sha256": "c98582c86325204e1a19012fc9f2afd064a5834bfe57e18cecb33d27f1fe7661"
       },
       {
         "path": "apps/kimi-web/src/api/daemon/eventReducer.ts",
-        "sha256": "b51a9a480d8186e1bfa91eebd91298fcda329b72ab31222c4e800ec579c34c90"
+        "sha256": "b2962c7a9877b0fc0e7900f2070f7eab84a7f779a4fdbbbc7bed9a0242bc14c2"
       },
       {
         "path": "apps/kimi-web/src/api/daemon/http.ts",
-        "sha256": "2fc380718378857719b787f716e2d9726f4763b2213336f480e75a55ae9aa8cb"
+        "sha256": "b006794235a504fcc6fc54c1279526b8cee19e2292d191d8d4edf5afe33e1286"
       },
       {
         "path": "apps/kimi-web/src/api/daemon/mappers.ts",
-        "sha256": "75774f06946bf30cc68cdec07107767ebaadb342653ccaeeb704d0803cc05aa6"
+        "sha256": "cd1262cb8eb1fd13a9b4d0d2a005aa42f914853ead96e578f716ebe40cbfa54b"
       },
       {
         "path": "apps/kimi-web/src/api/daemon/serverAuth.ts",
@@ -51,7 +51,7 @@
       },
       {
         "path": "apps/kimi-web/src/api/daemon/wire.ts",
-        "sha256": "a3cd07bc9c6d69c872aea22241e3e4abfe6031f235851a7aa1511cd7b235ad55"
+        "sha256": "a7ba8e521854759d9106a4f0c76a249ff198390012cdc26fc4de4ba8593e94df"
       },
       {
         "path": "apps/kimi-web/src/api/daemon/ws.ts",
@@ -63,7 +63,7 @@
       },
       {
         "path": "apps/kimi-web/src/api/errors.ts",
-        "sha256": "99fe1552fe17c4fce65a99af3b20665ff0c0804bc3843af2b135646196afff12"
+        "sha256": "a13f9928aa8d66943bf1fc637853656aa8e4242c8744530f1a5d7f2ae4f16049"
       },
       {
         "path": "apps/kimi-web/src/api/index.ts",
@@ -71,7 +71,7 @@
       },
       {
         "path": "apps/kimi-web/src/api/types.ts",
-        "sha256": "3481b91fe5e1a866d1075b9ee59e1a6cd922d667146a45c6abc6285be2965097"
+        "sha256": "fece0b44057bf9648180b8d882ea7cf6a06c07e855df8ca0d624e1a880773578"
       },
       {
         "path": "apps/kimi-web/src/components/FilePreview.vue",
@@ -99,7 +99,7 @@
       },
       {
         "path": "apps/kimi-web/src/components/Sidebar.vue",
-        "sha256": "511ae86dcd30c20e76f4339853ebbc8eca9ab04d7f3e5bdef92257094ad54e05"
+        "sha256": "76e4ea97695b6a715c550cec559ae1e88febc678ed82d239298ac78507443f9a"
       },
       {
         "path": "apps/kimi-web/src/components/Terminal.vue",
@@ -123,7 +123,7 @@
       },
       {
         "path": "apps/kimi-web/src/components/chat/AgentDetailPanel.vue",
-        "sha256": "cfb952538776d6126c2a351f8c9c86e4c8b431ca0ccdd11bd83bb05313d943c0"
+        "sha256": "4f52633cbec839fdf5dfdd9c7af6e60133126543b1524ec1510c55aebce02f09"
       },
       {
         "path": "apps/kimi-web/src/components/chat/ApprovalCard.vue",
@@ -135,7 +135,7 @@
       },
       {
         "path": "apps/kimi-web/src/components/chat/AttachmentChip.vue",
-        "sha256": "f5828e6b2b72a496260890a5b5b8f2d5bc5ede1c36ccddcef33fea54a39b34b5"
+        "sha256": "737b13d30c0ca8689ca935d21bc5db64eab090fb5847d53c34b5c92552cda3c2"
       },
       {
         "path": "apps/kimi-web/src/components/chat/AuthMedia.vue",
@@ -143,23 +143,23 @@
       },
       {
         "path": "apps/kimi-web/src/components/chat/ChatDock.vue",
-        "sha256": "225727f64bc88cfbf7180a30e6ce0b77621ffc542fb250cbe080d727ae61dc5f"
+        "sha256": "a0bee5d6f7f1bef298bfa33fec3725fe3ae107720464ea3279c679fc6a1c0da5"
       },
       {
         "path": "apps/kimi-web/src/components/chat/ChatHeader.vue",
-        "sha256": "b98d80dcb9056d096a95b0a77bd61575792ed87faa51ea873dd3968e69e2b2ad"
+        "sha256": "10cb89891c1cd75c16d15d76b9244369336135afe9ec5c6e4d788ea97bf785f3"
       },
       {
         "path": "apps/kimi-web/src/components/chat/ChatPane.vue",
-        "sha256": "6278e8f085c82e7d1a0d2c84d0edea2acc2cb81013ec6388a96474e711ae09d2"
+        "sha256": "44b1dfda74770aa28011f49909f419f99621c05d94fd2054b1da135275ff67f0"
       },
       {
         "path": "apps/kimi-web/src/components/chat/Composer.vue",
-        "sha256": "4375f8fadc2f10baf42064caa3286a13595d6ae23eefe27c61fe5178530f7bc9"
+        "sha256": "43d0f73588417f65e59b7d7a8ba294d7cb8cdf1053a801d29afec0db0e11bb22"
       },
       {
         "path": "apps/kimi-web/src/components/chat/ConversationPane.vue",
-        "sha256": "aa3754f64791c9b8d3c176de710fe0bb67a4aabe05700762faf201fd197048d0"
+        "sha256": "b91fe96fa1b363d9bacfe0886ce3e30f742a4001141f0efd709d9386c24bbd2c"
       },
       {
         "path": "apps/kimi-web/src/components/chat/ConversationToc.vue",
@@ -227,7 +227,7 @@
       },
       {
         "path": "apps/kimi-web/src/components/chat/TasksPane.vue",
-        "sha256": "ad217ecbd04965cdd4392169aa35da1e85096f7153a89ea12f54dfc4a307d178"
+        "sha256": "8e54d06f6cf22bb428ff065cac58cdf77f4a07c4813253f8770ef7a43a0690ad"
       },
       {
         "path": "apps/kimi-web/src/components/chat/ThinkingBlock.vue",
@@ -243,7 +243,7 @@
       },
       {
         "path": "apps/kimi-web/src/components/chat/ToolCall.vue",
-        "sha256": "2e3dd165088aa69464447eced29f673d31d7446844e1b1db6ff4d99d13aba265"
+        "sha256": "85a60b454de054febd21286736574fa438bdc52f987c070b5be392ce43d846c1"
       },
       {
         "path": "apps/kimi-web/src/components/chat/ToolDiffPanel.vue",
@@ -251,11 +251,15 @@
       },
       {
         "path": "apps/kimi-web/src/components/chat/ToolGroup.vue",
-        "sha256": "1706a253a40946c2c4ab9783fdd98de12aa2ea76eab030aa170e8cc8344ff863"
+        "sha256": "8dd6aaf40ce67ff2ea712e9c5e8437c442af3efefdc3f16ec5c8d89411ae9223"
       },
       {
         "path": "apps/kimi-web/src/components/chat/ToolRow.vue",
-        "sha256": "d1956d298d01f48228acddfad18a98343ad81d6130b16bab84086e2c443ab545"
+        "sha256": "adcc804b6d6914af4f821cb9b0ca16a2f607142930148d4986a320e713a3ef22"
+      },
+      {
+        "path": "apps/kimi-web/src/components/chat/TurnProgressBar.vue",
+        "sha256": "2e82ab9efb64aa1719fdba47f3c4d9518701981c7030b205050a674eaa8243a6"
       },
       {
         "path": "apps/kimi-web/src/components/chat/WebPreviewCard.vue",
@@ -263,7 +267,7 @@
       },
       {
         "path": "apps/kimi-web/src/components/chat/tool-calls/AgentTool.vue",
-        "sha256": "fe292ecb0bd9cf09ed9f0c63c8343110dd153e31c39f2b94c17ff780b0a3065e"
+        "sha256": "84397d31ba5cb774091ad37ac9e3df2aaf7f4d8772655fe5e14ce4aa1480efb0"
       },
       {
         "path": "apps/kimi-web/src/components/chat/tool-calls/AskUserTool.vue",
@@ -287,7 +291,7 @@
       },
       {
         "path": "apps/kimi-web/src/components/chat/tool-calls/SwarmTool.vue",
-        "sha256": "3f6fe1f6f7570f0265b17345f93f06e7b6f7d93542d013d1b4399cbbd1c6bf8c"
+        "sha256": "52e079380581bdf0a6ff870329f46b8078aa50820f8abb6cdaab55243ead8743"
       },
       {
         "path": "apps/kimi-web/src/components/chat/tool-calls/ToolOutputBlock.vue",
@@ -300,6 +304,10 @@
       {
         "path": "apps/kimi-web/src/components/chat/tool-calls/toolRegistry.ts",
         "sha256": "079cea7fed223f560f8f58130644b3d6ae6bab8e2f27c64fcd5253a602ee744b"
+      },
+      {
+        "path": "apps/kimi-web/src/components/chat/toolProgressContext.ts",
+        "sha256": "d9d1928abffb7132e3b6b37b1fa00d83fe1c9496b02b2472a9346a50fc6be300"
       },
       {
         "path": "apps/kimi-web/src/components/chatTurnRendering.ts",
@@ -326,6 +334,10 @@
         "sha256": "bfa00082e070b12bf2cfae030767e6f7201e9443edc26f1f9f63491d0ae82441"
       },
       {
+        "path": "apps/kimi-web/src/components/dialogs/RemoteShareDialog.vue",
+        "sha256": "7af2e64b3e08f708f931f9004724b1059f85a6b9f681cff2492011a365d36d49"
+      },
+      {
         "path": "apps/kimi-web/src/components/dialogs/ResearchManagerDialog.vue",
         "sha256": "03e2486e8e91710c31e8685e1888a72791e2451ed6dfbc1d158b94e8bfb2f48c"
       },
@@ -335,7 +347,7 @@
       },
       {
         "path": "apps/kimi-web/src/components/mobile/MobileSettingsSheet.vue",
-        "sha256": "bc56eadc349c83fe54d7cf003f6aa6eaa3fc258d6953872e2b98d103e61c4ba0"
+        "sha256": "20fdfce80fcb651e9bd9cca7ca891c3d2336753d9fe215537b3969930daaac0f"
       },
       {
         "path": "apps/kimi-web/src/components/mobile/MobileSwitcherSheet.vue",
@@ -343,7 +355,7 @@
       },
       {
         "path": "apps/kimi-web/src/components/mobile/MobileTopBar.vue",
-        "sha256": "841706f035f94fee4f786aae9ba94626d8301346b99990f6a4d2de973aedc029"
+        "sha256": "039dcbc0ca9755dd557994031890b711c6ebc5e060822f2174691bc5764abb1b"
       },
       {
         "path": "apps/kimi-web/src/components/settings/LanguageSwitcher.vue",
@@ -355,7 +367,7 @@
       },
       {
         "path": "apps/kimi-web/src/components/settings/Onboarding.vue",
-        "sha256": "09df967b8e301be56596f1c23c888f66803802f802a9f801010adfeb685d72fe"
+        "sha256": "ef921b7635e802f1e6548acee084b0460888d004e937694e12ba2188fe9d3a36"
       },
       {
         "path": "apps/kimi-web/src/components/settings/ProviderManager.vue",
@@ -371,7 +383,7 @@
       },
       {
         "path": "apps/kimi-web/src/components/settings/SettingsDialog.vue",
-        "sha256": "e6cf33d81e685f22b9cd5ddf15ae031c95f3aae67c599662292fb552eaec0567"
+        "sha256": "42cd30f4abeee6c339b7b6900a0aac0b378b6a1f7fddbf948b0591063a821afa"
       },
       {
         "path": "apps/kimi-web/src/components/ui/AuthStateIcon.vue",
@@ -451,7 +463,7 @@
       },
       {
         "path": "apps/kimi-web/src/components/ui/MenuItem.vue",
-        "sha256": "3dca21672c0238e5e3fc8d1f3f98aaa91fdf68e735a511c26e8eb0f00a58cf3e"
+        "sha256": "7af025ebbf35f6d3fdce2c232575a8b71cb806930f5a76c295a4f148ad03688e"
       },
       {
         "path": "apps/kimi-web/src/components/ui/MoonSpinner.vue",
@@ -543,11 +555,11 @@
       },
       {
         "path": "apps/kimi-web/src/composables/client/useTaskPoller.ts",
-        "sha256": "9bf2ddf44f3a91b6347f59218103c72342115035e294edbae86d46d6c937c921"
+        "sha256": "ad5642f2e7f210c0bc11ddb647b09a6bec3c600f27d8620028b7e09596ba9635"
       },
       {
         "path": "apps/kimi-web/src/composables/client/useWorkspaceState.ts",
-        "sha256": "06d06f4cc219d6e685ed98312fbc15e0fe4f11de3813541b3778fa83283da810"
+        "sha256": "162023a9b5432d95a3a210885bd1c824747a9f52ff8d8cdeecea5b3a2fa38c2d"
       },
       {
         "path": "apps/kimi-web/src/composables/dialogStack.ts",
@@ -559,11 +571,11 @@
       },
       {
         "path": "apps/kimi-web/src/composables/messagesToTurns.ts",
-        "sha256": "a3a2625f667c7cb717cd5f801804cbb9e5191d6dec5ce720090bdc7fd68f8a99"
+        "sha256": "67b1d002d8075a23a6875839e26846c553c6cb0ff8aaf370f49cf3dba8ff5993"
       },
       {
         "path": "apps/kimi-web/src/composables/swarmGroups.ts",
-        "sha256": "b926fe512807645cba50a52363be52e80c23de885baf555a63a967d833714865"
+        "sha256": "ac40de869c863e22bbc91fb7d2022f266a9504d3ade5154eb89be326a04c08f3"
       },
       {
         "path": "apps/kimi-web/src/composables/useAttachmentUpload.ts",
@@ -607,7 +619,7 @@
       },
       {
         "path": "apps/kimi-web/src/composables/useKimiWebClient.ts",
-        "sha256": "6ccd74e96eb2bcc4f32dab9b3bbc1200358352943f88f7d8b550905f4c87bf53"
+        "sha256": "30b6701075fb921fd4b98a5f077ec5c32416064262db759683dfa0a2dc5c79c1"
       },
       {
         "path": "apps/kimi-web/src/composables/useMentionMenu.ts",
@@ -616,6 +628,14 @@
       {
         "path": "apps/kimi-web/src/composables/usePageTitle.ts",
         "sha256": "45548ec41afb1ff75d03936e33dd89734f87dbf6749816013820c2fdc1370915"
+      },
+      {
+        "path": "apps/kimi-web/src/composables/useRemotePersistent.ts",
+        "sha256": "0c2839038b04938316a0988c71222381032d0f1362662a92fe2787298720d173"
+      },
+      {
+        "path": "apps/kimi-web/src/composables/useRemoteShare.ts",
+        "sha256": "0313415f04d503fb4df5714b5a4af308842cfd6033277c2f8aeeeff0c3d733db"
       },
       {
         "path": "apps/kimi-web/src/composables/useResizable.ts",
@@ -632,6 +652,10 @@
       {
         "path": "apps/kimi-web/src/composables/useTerminal.ts",
         "sha256": "71b8a7a436949ebdc5fed486c7e0120073dce6cdcb3fbf22cd8ad1c4470c6e98"
+      },
+      {
+        "path": "apps/kimi-web/src/composables/useTurnProgress.ts",
+        "sha256": "53f7621b882b0ba3e32c72d36df4e0ee2a64a4542ee23bdc38042bf119296065"
       },
       {
         "path": "apps/kimi-web/src/composables/useViewportWidth.ts",
@@ -683,7 +707,7 @@
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/en/conversation.ts",
-        "sha256": "26924c7f009b62a7bdb97f61c2d654de7ec9b1d69a1d3817e8651462db22debb"
+        "sha256": "0be2f97b02b1ae05c88950cc68a224d072b32961a6db87ae7b70da77f1ed6646"
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/en/diff.ts",
@@ -699,7 +723,7 @@
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/en/header.ts",
-        "sha256": "b24e67dec67a1391a494d1cf77be13daa8f40c89867449807b1df96161f70807"
+        "sha256": "f66e6b856be97a113f6af6def1920c62741d85e9a428c5b6af3b52c922ad842d"
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/en/layout.ts",
@@ -715,7 +739,7 @@
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/en/mobile.ts",
-        "sha256": "9b1b0f105cf7e57fdfc01d6e55d4595d307daa3452954977796ab44c5263a499"
+        "sha256": "8deef3f5bd948c092d7bd59c5afd6dac6c302be8576536bde8fe63e0ef4dfc31"
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/en/model.ts",
@@ -734,6 +758,10 @@
         "sha256": "480c9c5717230ce0827ab7464322ea3075b582b3e3d80e1cbf3c36c6fd41438d"
       },
       {
+        "path": "apps/kimi-web/src/i18n/locales/en/remoteShare.ts",
+        "sha256": "e0e21cbfe8c3b9111b72777688c986faf5f51471acc729b235ed0e0c45ca170b"
+      },
+      {
         "path": "apps/kimi-web/src/i18n/locales/en/research.ts",
         "sha256": "0725bca1914e4cac22caf338537764f81c3d08c86befc6912dbe8541cca29c52"
       },
@@ -743,7 +771,7 @@
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/en/settings.ts",
-        "sha256": "b38fb2efc6134891df2d66d2b89fae358d32980a74caa4699b0ba67138d12c25"
+        "sha256": "dac24dba3012cc3c9344098e13e7c8b77a42a7b4295a0a2ceab3ced1fdc7c4d7"
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/en/sideChat.ts",
@@ -759,7 +787,7 @@
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/en/tasks.ts",
-        "sha256": "8ac566ddba748e49d31d59a6649fd3cadfc6983239f1c7456f51c54d3e2045db"
+        "sha256": "fca576fd76b6e43c7989401bd1e5cca374fcc14bed234e0d2069edfbe28fb27c"
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/en/theme.ts",
@@ -787,7 +815,7 @@
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/index.ts",
-        "sha256": "fa1df8012672e90577252804ee2f03d5593d14aa72c0a1484723c66e1559666e"
+        "sha256": "ddc07a7c5342872b22a4b57dc39a88a794c7521610d5efe92d8deed3fba9f8ca"
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/zh/app.ts",
@@ -815,7 +843,7 @@
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/zh/conversation.ts",
-        "sha256": "a46f7a5b134d02555a2ee8f99ffe171c5d7f516ced83cdda270dbf9d131c61ec"
+        "sha256": "fdcc772a4f7dcfbe39987cd12bc9e6394e0f8f71aa8c7dcb52f71fbe81c99872"
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/zh/diff.ts",
@@ -831,7 +859,7 @@
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/zh/header.ts",
-        "sha256": "a9e347e43041188230d8287c02297c0e4d7a29b27418fdcc64018f605b09b252"
+        "sha256": "49cc027a2702b84e9fc01b5f7868363b0a6fb47b45f733b6ec03e54213819111"
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/zh/layout.ts",
@@ -847,7 +875,7 @@
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/zh/mobile.ts",
-        "sha256": "3df6320a73fcc422ce7651447899ae1fe7a59eb08766811b5a706d4d3b32eb32"
+        "sha256": "56555a91e55979bad20275dcdbad962fb6fdac91b0d81e906f2f7a8c160b9ed6"
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/zh/model.ts",
@@ -866,6 +894,10 @@
         "sha256": "0deae75944caa72a1eb219468606a00b59363cb99aa8186c4cf2e7deb71729ba"
       },
       {
+        "path": "apps/kimi-web/src/i18n/locales/zh/remoteShare.ts",
+        "sha256": "f912eeb7c7e91a386226a47c18a90d3378333b2ae97b3ce81a9b09e4eb521d66"
+      },
+      {
         "path": "apps/kimi-web/src/i18n/locales/zh/research.ts",
         "sha256": "48a842cea92f517284a80ce2ece96a95684c3c662ac0c38d917f5e0329ef413d"
       },
@@ -875,7 +907,7 @@
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/zh/settings.ts",
-        "sha256": "be96ffebcdfd3755f6f9298c5ee140304e0d4159f7bb913fdece59150f981c35"
+        "sha256": "b370369b4e686f5c934bebbdaa1a9bb22eb9d56e78bcb0046a4edc3ead3309cb"
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/zh/sideChat.ts",
@@ -891,7 +923,7 @@
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/zh/tasks.ts",
-        "sha256": "fb0cdf74b7f7abb725ea622085e794558acdd91c4e8fd2e6db7c70274a991258"
+        "sha256": "9800897eaf8bf428d174ea07c26f18c2169a024ec2e0ab07b93dcbffd2c1b89a"
       },
       {
         "path": "apps/kimi-web/src/i18n/locales/zh/theme.ts",
@@ -940,6 +972,10 @@
       {
         "path": "apps/kimi-web/src/icons/kimi/setting.svg",
         "sha256": "1b3d546a958b89325350419691ff2d1227bb35309e0a4c6087c331f8510ef0d8"
+      },
+      {
+        "path": "apps/kimi-web/src/lib/agentTaskResolver.ts",
+        "sha256": "a9d4e9d19d2ac57fe0131d38189edd7b9e613b3062158bd5f22fe91939d0c05a"
       },
       {
         "path": "apps/kimi-web/src/lib/clipboard.ts",
@@ -1030,6 +1066,10 @@
         "sha256": "2c0c8a0f2e58cb3b94624375f086717b2f6371ba415d5e39547105ea8b35516c"
       },
       {
+        "path": "apps/kimi-web/src/lib/remoteShareQr.ts",
+        "sha256": "27fcb001c4590a87109a2a9cbd81081315cd157dd0df173a60231bd6d95e6a17"
+      },
+      {
         "path": "apps/kimi-web/src/lib/researchCommand.ts",
         "sha256": "ffd11a26fdea1c64a8490bc0dc2eeca72787f6f3532a9a323ca78065a6809c0c"
       },
@@ -1055,7 +1095,7 @@
       },
       {
         "path": "apps/kimi-web/src/lib/sessionRoute.ts",
-        "sha256": "9bec1516fba85be911d6d0bff0784d44077aea209ad2213ab63ac34733379745"
+        "sha256": "9acd12e10369f41dd7cf9007d3c6b6104e15fff3ce46614db7f7bd03a255cee5"
       },
       {
         "path": "apps/kimi-web/src/lib/slashCommands.ts",
@@ -1075,15 +1115,15 @@
       },
       {
         "path": "apps/kimi-web/src/lib/subagentPreset.ts",
-        "sha256": "a3aba5e3a0fe5ba9170c5b496339ba590222c951d081aef999f1cfe4029bf756"
+        "sha256": "d46d7b589d7f6c3928c11d4bde324c61c5010b37a7a034a06f9a29bca470e780"
       },
       {
         "path": "apps/kimi-web/src/lib/swarmCardRows.ts",
-        "sha256": "5396501f5033235a25fe180b161245c7e15499ffe4910b92d2f8797a30b8eca3"
+        "sha256": "cf0785d86dc656c3918abd5c417e6d2f1ed2b6edd14d9e81d0ed359f9b1a1bad"
       },
       {
         "path": "apps/kimi-web/src/lib/taskMerge.ts",
-        "sha256": "cc3649fdcba6d49de200962386185c9a3a7faf03efc1ebe311a52d2e407691ed"
+        "sha256": "069692e6bcb6bd23f0da76a3521827179e4697da956c0c76c5125de0ee597be2"
       },
       {
         "path": "apps/kimi-web/src/lib/toolDiff.ts",
@@ -1092,6 +1132,10 @@
       {
         "path": "apps/kimi-web/src/lib/toolMeta.ts",
         "sha256": "b826752d66b675a896e0fa3888ecbe74ff6f1388fc9f88ad01b4768651f80bb3"
+      },
+      {
+        "path": "apps/kimi-web/src/lib/turnProgress.ts",
+        "sha256": "5aef93e4fc3527351bfb24805f2ba66c20f73008e74ae320fc9e343472606f23"
       },
       {
         "path": "apps/kimi-web/src/lib/turnWebPreview.ts",
@@ -1114,23 +1158,27 @@
         "sha256": "0f63934dec1e8442d5393353b1076a20c43af0213f271b5625c2d467b31d1ed2"
       },
       {
+        "path": "apps/kimi-web/src/qrcode.d.ts",
+        "sha256": "679e40d0051e8c6da83c5e873ded0d5e687536757699bb91c7515436515894e0"
+      },
+      {
         "path": "apps/kimi-web/src/style.css",
-        "sha256": "4d8c28b4a62ed381910cb8931dc513899b359cbdf4b8edc146a5075fe4c74c6b"
+        "sha256": "ebf11b38027306a50a489425bdf67bd62226a408622f43d13724e4336935c9a3"
       },
       {
         "path": "apps/kimi-web/src/types.ts",
-        "sha256": "0f214f2c5e110f2cc4299b68f0be2eb10994b6f9b6a974fcdd7b087644e2c9f3"
+        "sha256": "446b21c7cb9070f07b8049046b7cc6d4044d98d78cee1a1f6f58c9c5ac5863a6"
       },
       {
         "path": "apps/kimi-web/src/views/DesignSystemView.vue",
-        "sha256": "84a25a20014a6d57e2de0f88d24ddf9410f5bf02412dafe1c377a7b60646dfab"
+        "sha256": "3e2f597185784a865fdd83894313e7f344c861e5cbc5a7b8ee57f8aa21cd6760"
       },
       {
         "path": "apps/kimi-web/tsconfig.json",
         "sha256": "bf91ac301f761434eb3689bf94d2ec2fc486b1af8a0bbba944a7aaac445f1dec"
       }
     ],
-    "sha256": "d75b1ff9deb6bfe961045e22a51063795e3feda2bc0473e5cb0da46de92e43e2"
+    "sha256": "6fce34d8d8f996325534ceae9386cfbe7b5e0a51305bea1dda22cae7e03d44a3"
   },
   "recipe": {
     "toolchainRequirements": {
@@ -1138,7 +1186,7 @@
       "pnpm": "10.33.0"
     },
     "toolchain": {
-      "node": "24.18.0",
+      "node": "24.16.0",
       "pnpm": "10.33.0",
       "canonical": true
     },
@@ -1170,7 +1218,7 @@
       },
       {
         "path": "apps/kimi-web/package.json",
-        "sha256": "740da2c67ab0cb78671d6f2f5ea6a30aeb8ab534dfaa78d15800cd44718a45a5"
+        "sha256": "51b3784923364a669f04b544a6294e211b3cfd8d7c2f3cb225b11dcb88fa96bf"
       },
       {
         "path": "apps/kimi-web/vite.config.ts",
@@ -1190,30 +1238,30 @@
       },
       {
         "path": "pnpm-lock.yaml",
-        "sha256": "7217da3f2428e31eef18c842fc7d4663fe7b0151c89f343c1fcbbbedd776e3c2"
+        "sha256": "130c161f05162ab9cabcad0e92e2391352b65f6c08bed614714dfa958f637a20"
       },
       {
         "path": "pnpm-workspace.yaml",
         "sha256": "6b1650f1828ba578ffde5180f443e5d40461777abcfca7cb64f225c8a535404f"
       }
     ],
-    "sha256": "6cd8ef40cee7488a90acf797920a826dfbfbd15f7d2c703fc83c08dbe2c98000"
+    "sha256": "c19dd98230252cf2baa46e10a8d87cb0e6482249ada94fe385bc90647d226af2"
   },
   "brandingPatchVersion": 1,
   "bundle": {
     "fileCount": 521,
     "files": [
       {
-        "path": "assets/CodeBlockNode-CAdsYQLT.js",
-        "sha256": "0169fbdb1ffa063d99d0ddcc6d6a398118df284e7d72094b01499bd190470dbd"
+        "path": "assets/CodeBlockNode-BEfPHxc0.js",
+        "sha256": "72de6ab089c355228934f306581f8d11bbf56233ab6bfa333d3200f54080fb1a"
       },
       {
-        "path": "assets/DesignSystemView-C8OsT7Ig.js",
-        "sha256": "abb87e2082ae5c7d6b1bfcfc027ab2067a8cabfb7c26c880bb78e9dc60b37e43"
+        "path": "assets/DesignSystemView-5Q9qqFb_.css",
+        "sha256": "2af706f69a8c62d9e9c3cbf2b9f3a0eb194a906ae268328d3806d917f2fbd060"
       },
       {
-        "path": "assets/DesignSystemView-CxoTZ_LU.css",
-        "sha256": "12368889b096f5d4a3f14e0467b82d2bb1436bd6e3d7209a64bb9f7af59a5995"
+        "path": "assets/DesignSystemView-BqbQ8Nyr.js",
+        "sha256": "b73779777450fe499d467f726c2e9448c3a0b8d8bd20293a8e7df605c326ca74"
       },
       {
         "path": "assets/KaTeX_AMS-Regular-BQhdFMY1.woff2",
@@ -1452,8 +1500,8 @@
         "sha256": "f01f3e87d9c6a61c0c081ceb577abd864eb00a612f7ac1620dd6915fad2ef5aa"
       },
       {
-        "path": "assets/Tooltip-BF3Cs_mV.js",
-        "sha256": "ff3f7d9c86e0dd5c3323743d254dddab501b30d4de268b90ad9ec884e0718a14"
+        "path": "assets/Tooltip-hIXOTPVR.js",
+        "sha256": "b89699a0c6c01f41028a80e48c68e687e7343fa8b3cb9b5c0601e2db976153c0"
       },
       {
         "path": "assets/abap-BdImnpbu.js",
@@ -1508,20 +1556,20 @@
         "sha256": "f3c7f066af4d1907c2249c7089ae8b763d88ad2f25e88f867f20e3dbb256cffb"
       },
       {
-        "path": "assets/arc-C8nkBWBI.js",
-        "sha256": "1579df9d4a1c9b8952580429ed136bf35b9454da049ad6d92d708b30b6aa89f4"
+        "path": "assets/arc-ChpsoHeu.js",
+        "sha256": "42ea956895cc8f216bc17b45c0a6539c3b51ee538af9d84357df31cca9b237ea"
       },
       {
         "path": "assets/arc-Doj0wRZ0.js",
         "sha256": "f8f6b77b6e82987865718ea2a963b2e56107a5f4437506f09b4f7c7d7e15fed0"
       },
       {
-        "path": "assets/architectureDiagram-3BPJPVTR-B6LFeEEh.js",
-        "sha256": "d29b0f6c7811176bae0d76af0dcd56c736a1604dd5e972d08786b57598cf7657"
-      },
-      {
         "path": "assets/architectureDiagram-3BPJPVTR-CQ09RrbH.js",
         "sha256": "954ec65302836cc8206dc13d16316ecf9a07e572ecceb3756608ba3c93729db7"
+      },
+      {
+        "path": "assets/architectureDiagram-3BPJPVTR-gLc19U-D.js",
+        "sha256": "e2c24593c367cc4efa36cd81c86f20ae46117a67d9aace07c074120c51dfa22f"
       },
       {
         "path": "assets/asciidoc-CSVQ5wI8.js",
@@ -1588,12 +1636,12 @@
         "sha256": "8fdb121d61e1429b61600d41b8fcec48946174c72353e4316e77c39c3dab1363"
       },
       {
-        "path": "assets/blockDiagram-GPEHLZMM-CAtDjkJt.js",
-        "sha256": "b8feaab194d271f04fd3483587239f923bf945ce3e84b312ba3438d61a39561a"
+        "path": "assets/blockDiagram-GPEHLZMM-BRRxv6Nr.js",
+        "sha256": "7384663804f8734ffca72eb670b7c274a2769929afd555ee46e64d47e86e1aa9"
       },
       {
-        "path": "assets/blockDiagram-GPEHLZMM-GtGapOqQ.js",
-        "sha256": "4dc998a2f166ad00d769cdaebe76248ad0ce40ccf3e3e97e50b245413d99a114"
+        "path": "assets/blockDiagram-GPEHLZMM-CAtDjkJt.js",
+        "sha256": "b8feaab194d271f04fd3483587239f923bf945ce3e84b312ba3438d61a39561a"
       },
       {
         "path": "assets/bsl-DlhNcFeZ.js",
@@ -1608,8 +1656,8 @@
         "sha256": "467fcff92b5f23370ec946832136c846c3dbe31b7af2cd3682f012e4f48a02c5"
       },
       {
-        "path": "assets/c4Diagram-AAUBKEIU-DP5UPK4y.js",
-        "sha256": "8b9101ac2ab8533549cb4dbae1cb9da91db120daaaf142eda7dbfe174ad5f325"
+        "path": "assets/c4Diagram-AAUBKEIU-DNex1RLE.js",
+        "sha256": "8eff2e57f7d2fa0c8a4b2c32242f90a3b858b017a265d49bee47acc3917873c2"
       },
       {
         "path": "assets/c4Diagram-AAUBKEIU-DtzacMnD.js",
@@ -1640,8 +1688,8 @@
         "sha256": "efcbf0856a38b2a1c57cf545593de5327a6713418b157da1017fdc21a7003f4d"
       },
       {
-        "path": "assets/channel-C5SXjBwF.js",
-        "sha256": "996754e8590c1e2e17da48e9c570cc124f5167bfc3deaf173092ee286be27c72"
+        "path": "assets/channel-ANmD3WNJ.js",
+        "sha256": "b82e45d5317082ef0a4acc2390db0c52890620cbca3a20dee0b174ecc7d48f02"
       },
       {
         "path": "assets/channel-DNkUo9e6.js",
@@ -1652,16 +1700,16 @@
         "sha256": "4269e5ccebef4bd885e69f27b71fb68d995ca6171738ed7315335acdc041176f"
       },
       {
-        "path": "assets/chunk-2J33WTMH-CnFl6thm.js",
-        "sha256": "a79e3be9550f9e6266586d2fd3921059f37e8bdef2c961270d67ccdb8ef54dd4"
+        "path": "assets/chunk-2J33WTMH-BaqWbIyQ.js",
+        "sha256": "67228574f011bb152e3e2b8ea3427b4d57cde2e2ccd0909e341bf387d83064a1"
       },
       {
         "path": "assets/chunk-2J33WTMH-w4sdiKFO.js",
         "sha256": "2da85c821a4e43d05f15afafb12acc5bcc73bb7418629eb5a39f13702864f73a"
       },
       {
-        "path": "assets/chunk-4BX2VUAB-GhIAhyRO.js",
-        "sha256": "ea169483cb6596a59f2ccfa9d1f6a5c95b5d6661478296699ad36deaef1c163f"
+        "path": "assets/chunk-4BX2VUAB-BhS58nWm.js",
+        "sha256": "f5bcd316bc8aace07a6bccd953664016ffb4200769d2b4cc78c36ac152eab36c"
       },
       {
         "path": "assets/chunk-4BX2VUAB-WqrE2gaw.js",
@@ -1672,20 +1720,20 @@
         "sha256": "d6da6f0abc1300aae1497dfa7a92a4659e3aa112e5c358d1c889a56802cff951"
       },
       {
-        "path": "assets/chunk-55IACEB6-Ccb06bf1.js",
-        "sha256": "faa3b01e88192718452af32982da3c253fdf2459aa9e3f9c68bf45fe9cb5211b"
+        "path": "assets/chunk-55IACEB6-BION99SF.js",
+        "sha256": "5e1910cae034f64e958cb8be095729f3a55a6bfea6f6a74afc168def1b0a80f5"
       },
       {
-        "path": "assets/chunk-727SXJPM-DBeFn3Zj.js",
-        "sha256": "6de91746d5d9dfe87f1195fe25b887af132ebcfa4f96e682e5463f234fa59391"
+        "path": "assets/chunk-727SXJPM-DXev55u8.js",
+        "sha256": "3e32fccfb726a6441ca307c52578429c464a18a37406146000ff12c205d929da"
       },
       {
         "path": "assets/chunk-727SXJPM-Dn5wkDO_.js",
         "sha256": "0ded319d015ade8b56a1ace87a0bfe414131ce24597b376b18594f747ce14e2f"
       },
       {
-        "path": "assets/chunk-AQP2D5EJ-BA-gMsUM.js",
-        "sha256": "8a33ca0f5768b1de72ee02113aadbf4ae2f27902ab30c14988be57edb5c34320"
+        "path": "assets/chunk-AQP2D5EJ-D96ipka4.js",
+        "sha256": "318276d8d0b21041ebec0ee78550e58cbdffc074c958f0815663bd90fe94dd9d"
       },
       {
         "path": "assets/chunk-AQP2D5EJ-FS8-f8lF.js",
@@ -1696,20 +1744,20 @@
         "sha256": "55293de3bb023961591b2b6bae255ac8103b13a14f088b629b7920003034132b"
       },
       {
-        "path": "assets/chunk-FMBD7UC4-BuhXJs3P.js",
-        "sha256": "7474731f646dc8470f99e0bcdec45166d72ca77e99286deac987f4561cc43bee"
+        "path": "assets/chunk-FMBD7UC4-Df1UHUtn.js",
+        "sha256": "dd71cccaf62e4c389096b2f807d0243c289dcb73d848e52adc52e4517b7f43af"
       },
       {
         "path": "assets/chunk-ND2GUHAM-C4-rwdcv.js",
         "sha256": "ce8d5eeb5182460f549636a2629f02ad23ff888561ae74603f7c4ed48accaa40"
       },
       {
-        "path": "assets/chunk-ND2GUHAM-LBhhq_cd.js",
-        "sha256": "2fa9d62dbd39f1ee3d5aeb5bfcbffa3a50b7e18e5163f90dbe5ec254d0d237f4"
+        "path": "assets/chunk-ND2GUHAM-Cutf3S-Z.js",
+        "sha256": "18a599f5f0bd5873b56f2f6b71c45437b7d706d430aab208b51c69facb75eb82"
       },
       {
-        "path": "assets/chunk-QZHKN3VN-BRTv8bKw.js",
-        "sha256": "0ea24d1a9fb5ae58a6f001e4b421a6b9d34163904c4b9a8077761f8108702119"
+        "path": "assets/chunk-QZHKN3VN-BkwkS9M5.js",
+        "sha256": "273825ac21b9857e93a1ac7ec5de8e823f9dc324e96726e13e06185e647c2bd7"
       },
       {
         "path": "assets/chunk-QZHKN3VN-_Rz9_NuS.js",
@@ -1724,16 +1772,16 @@
         "sha256": "cc3195a8b57574dcdd547ccd3ba407c4ccd950bf4a583d7ea4d9e502888ab2aa"
       },
       {
-        "path": "assets/classDiagram-4FO5ZUOK-DdbAYyJ3.js",
-        "sha256": "0d0d62f51baa4d39bae918d77e296394d108f2cdc0032e8808657afb4dbc2655"
+        "path": "assets/classDiagram-4FO5ZUOK-BpAUVn92.js",
+        "sha256": "b5c9cb15446d072ce23a6b47f78a65facb08a9e20006452bbe8aae140c41f246"
       },
       {
         "path": "assets/classDiagram-v2-Q7XG4LA2-B1ZO8EbE.js",
         "sha256": "cc3195a8b57574dcdd547ccd3ba407c4ccd950bf4a583d7ea4d9e502888ab2aa"
       },
       {
-        "path": "assets/classDiagram-v2-Q7XG4LA2-DdbAYyJ3.js",
-        "sha256": "0d0d62f51baa4d39bae918d77e296394d108f2cdc0032e8808657afb4dbc2655"
+        "path": "assets/classDiagram-v2-Q7XG4LA2-BpAUVn92.js",
+        "sha256": "b5c9cb15446d072ce23a6b47f78a65facb08a9e20006452bbe8aae140c41f246"
       },
       {
         "path": "assets/clojure-P80f7IUj.js",
@@ -1768,12 +1816,12 @@
         "sha256": "0beffc40a3f6beae1448824d4633b9c7841253b7d2df5ad29e4e80ebc5ee358a"
       },
       {
-        "path": "assets/cose-bilkent-S5V4N54A-B3Okwh56.js",
-        "sha256": "e4b2be3ccbd2a4d66b0ff102edf887cda0be793210cdac8a5d1f55bdcc3794dc"
-      },
-      {
         "path": "assets/cose-bilkent-S5V4N54A-Bi19n8m-.js",
         "sha256": "da320942f27fc5c5e364cd46131944004b656033ed764007dc485162aaaefa6e"
+      },
+      {
+        "path": "assets/cose-bilkent-S5V4N54A-C34SfVQ_.js",
+        "sha256": "4914cb7fc6de9dfbd301847802082038372df2f47b0cabc153fd67bb184bf5dd"
       },
       {
         "path": "assets/cpp-BMRokrvK.js",
@@ -1820,8 +1868,8 @@
         "sha256": "010c86bc13399658c39d8248efb0eb6c867dd7580f19068005d91f43f8c5b56d"
       },
       {
-        "path": "assets/dagre-BM42HDAG-DwvurCNV.js",
-        "sha256": "5d48be3f052b75d585210fdeb69bdacfe936a24a8e8d4f4812ae08e496653336"
+        "path": "assets/dagre-BM42HDAG-Dz-TYIjL.js",
+        "sha256": "c6f64a8e36857d85b79c381ed3f56163635147ca96995ddc14b8b805ade509c1"
       },
       {
         "path": "assets/dark-plus-C3mMm8J8.js",
@@ -1848,16 +1896,16 @@
         "sha256": "fbbe32cc99e0e74b11e742aaae97dfaf0a7b553719ec179638313cc8a8039cbe"
       },
       {
+        "path": "assets/diagram-2AECGRRQ-BNgMDRKX.js",
+        "sha256": "c7c70c278fd3c9930200fe92c9b2398c9c0e911639cfa69736ceddea96506770"
+      },
+      {
         "path": "assets/diagram-2AECGRRQ-DQTst0OH.js",
         "sha256": "1c61377995a7e37bf4e3b86cfa3528550e50aed2a57dc756cbed8ad9cf077539"
       },
       {
-        "path": "assets/diagram-2AECGRRQ-HO9Jnd8-.js",
-        "sha256": "36cb6e852f43172813f8bc7de36695d27cb0b02545bb44f022ae0a37c6a8b7fc"
-      },
-      {
-        "path": "assets/diagram-5GNKFQAL-CUGJwmyx.js",
-        "sha256": "cc471e231dcb08f329b4a165d7a99fe877b91598147659abf3382bb34a51250e"
+        "path": "assets/diagram-5GNKFQAL-CH_hIdGw.js",
+        "sha256": "9d3016e8e083dc3751347633789188fe92220767e861355a1329b5963c4641b8"
       },
       {
         "path": "assets/diagram-5GNKFQAL-DoE6q7H1.js",
@@ -1868,24 +1916,24 @@
         "sha256": "4785a8f93968084e69d1a32f35dbffac792f77be511fc897fb8498301abf1199"
       },
       {
-        "path": "assets/diagram-KO2AKTUF-DKuD3m4m.js",
-        "sha256": "3182c7d58dde90be9f5bcc2db2889a91099a77b50c8a120d34e09c5b30ccffa0"
+        "path": "assets/diagram-KO2AKTUF-CTylyBXf.js",
+        "sha256": "6298cc3f143990c00c629658c9a1ec855597eb311f2268f4425917c93898a4e8"
       },
       {
-        "path": "assets/diagram-LMA3HP47-C48bxnfw.js",
-        "sha256": "d8bd7de081ac7aa1d78b1f041dd2c64077cb43e249d8b1efe5be8392f0fb0872"
+        "path": "assets/diagram-LMA3HP47-FSXxfiLJ.js",
+        "sha256": "2bcbeaa9c7680c185306f0d40dfbe1a0f74479cd14de3b5735df6d8abf804687"
       },
       {
         "path": "assets/diagram-LMA3HP47-He5zlyMt.js",
         "sha256": "d8c3b7f4959bf9b2a75ac0009935e1a7a7b4d322097588bdc865e44788e37bf2"
       },
       {
-        "path": "assets/diagram-OG6HWLK6-CVbrU6mz.js",
-        "sha256": "6bea301f1b123797104fba40dffbf41fec7e331014f8a233fd659c76942581c4"
-      },
-      {
         "path": "assets/diagram-OG6HWLK6-DRyxjFMa.js",
         "sha256": "be410b8ed38166a283eb3e72539b50b5a30f3307239d4112f3f252424e41b94d"
+      },
+      {
+        "path": "assets/diagram-OG6HWLK6-Dn4u1zCl.js",
+        "sha256": "0f550651e53dcc823c3d0db80340e08e71d9b96a1b89a01882079d3fd3aebfab"
       },
       {
         "path": "assets/diff-D97Zzqfu.js",
@@ -1928,8 +1976,8 @@
         "sha256": "3781ad56dc7351e3002090ecb5da37a5da738b922592e397f8a9d000afa9641f"
       },
       {
-        "path": "assets/erDiagram-TEJ5UH35-B2Q1Bx3p.js",
-        "sha256": "5ca7d104efa45e1a3e79ed334fb7b8e3e7f829e0642f629be6c83136995b6c06"
+        "path": "assets/erDiagram-TEJ5UH35-CtjKYzIz.js",
+        "sha256": "1bfe8ebdd2187a598beec57d823e332eab95f829d7811294071a00e388e691b6"
       },
       {
         "path": "assets/erDiagram-TEJ5UH35-yd6SOv_7.js",
@@ -1968,12 +2016,12 @@
         "sha256": "8d8f729e5fd7df82f9f3c85c3963cf1e74206e65af0e58af7135af4eae6ac738"
       },
       {
-        "path": "assets/flowDiagram-I6XJVG4X-CUhRBq6Z.js",
-        "sha256": "1a5457dc62b0699e6aa20c55071c6a3071b75932ccacc8cc2c66c618c1e38bb8"
-      },
-      {
         "path": "assets/flowDiagram-I6XJVG4X-DkYNQv0R.js",
         "sha256": "e43c39bb0ce56109d144aab79b334cb283aee1bcf450a5fc53422d9c6c760f5e"
+      },
+      {
+        "path": "assets/flowDiagram-I6XJVG4X-jzRAMMMx.js",
+        "sha256": "63b24b0b3f68fd702325e5300c54217e40d1e409ac7a638ef85b9f233b7bfd2d"
       },
       {
         "path": "assets/fluent-C4IJs8-o.js",
@@ -1996,8 +2044,8 @@
         "sha256": "19bb79f7e90e92c29017aa655af79ed189138a29e1e6c3b197cc3c29d7f96297"
       },
       {
-        "path": "assets/ganttDiagram-6RSMTGT7-Dxe_cZ26.js",
-        "sha256": "1dbf0ead52c1b7db7ed929401042deba9235ccb6ffc4883ff88d2866d1a0ee70"
+        "path": "assets/ganttDiagram-6RSMTGT7-Dwnbrey8.js",
+        "sha256": "bc3d641a539cbb2bab706e045496e3771b5a415d2bf7d6d8542e14fd0609f490"
       },
       {
         "path": "assets/gdresource-TyuKm33G.js",
@@ -2028,8 +2076,8 @@
         "sha256": "88402cafff4897e7d7931bdb17acfcad0916e1f54353e578e876b21055ccbef9"
       },
       {
-        "path": "assets/gitGraphDiagram-PVQCEYII-C6j1fPTH.js",
-        "sha256": "87ba70e1a78f6acf98e81ebe33fb663833ae7d050d8200083fc4028a530b3d9c"
+        "path": "assets/gitGraphDiagram-PVQCEYII-C3OTLc6P.js",
+        "sha256": "86eb67e6b4fde961d944db4ba4e6864ebc72f835713250cccdf080adfb9297e3"
       },
       {
         "path": "assets/gitGraphDiagram-PVQCEYII-DMbTATyw.js",
@@ -2204,52 +2252,52 @@
         "sha256": "73402caea94e54100c970c652577abf4995f79310e7528744b46a37227057e35"
       },
       {
-        "path": "assets/index-D5DhsIQx.js",
-        "sha256": "5cb947b72ec6a7cd1db3bf6bf2c27f10b5c809dc882f647ea9c7d71216d532d3"
+        "path": "assets/index-B4kfUDNP.js",
+        "sha256": "e2a9997e9ff31dce321b284486e425f9982fb73db09e80c2c9ec719ad107ed06"
       },
       {
-        "path": "assets/index-DKhMT6MI.css",
-        "sha256": "71ea46418af86f50250db6c95ba488e537ad03bd89475936057892db67358b00"
+        "path": "assets/index-C7vpWK47.js",
+        "sha256": "40ad72edf5009a7dee1b698d8c5bfae04f3901cd10a3c4a00332f9f7f4715e32"
       },
       {
-        "path": "assets/index-D_J7S_5Y.js",
-        "sha256": "9d6ff8bce0c30d91e815bdb43bde603fed0e687a163ee6422cbcf3102355de75"
+        "path": "assets/index-Cu2N0NOF.js",
+        "sha256": "24891d82966b97eb3ac697d9ab27de76a88661697fccebec4977bdc99b703c51"
       },
       {
-        "path": "assets/index-UF6CsKJk.js",
-        "sha256": "8e989afaebadb0ca8b151ab32360486356361e0f99043aab897acdc300b75e38"
+        "path": "assets/index-De1hyddr.css",
+        "sha256": "6a8a056a93a4907ff642eb01a6f9a61cba4c70333320973c772df78148ed0182"
       },
       {
-        "path": "assets/index10-DisWEdOq.js",
-        "sha256": "d44cc2f4c3151bc48a227f6a8930a7326a7eef5eab331bfafa40a04091a6216d"
+        "path": "assets/index10-Gs7dz9ET.js",
+        "sha256": "3f86b76cf173abee95c2a735193942c95078484f0f458934a9ba990cecda2c84"
       },
       {
-        "path": "assets/index11-Dnns8Luo.js",
-        "sha256": "c2e78e378929535f2bb30d16f57a4ea0a8985734d99b1ac590719f1345911c4f"
+        "path": "assets/index11-CCirhaUu.js",
+        "sha256": "33c2262fbaeb952e448c0dd496735fbce09b47f9567bff4ded4e27726be9bfe9"
       },
       {
-        "path": "assets/index5-HATjCBnb.js",
-        "sha256": "d41e8cbfde844fc5817d22917d512ef69ae714ea1a059aaed56fa5d452f4da06"
+        "path": "assets/index5-CAsZdDEh.js",
+        "sha256": "0ab9d4162c92deeb7c5e8c409bcd6e262ba251d6ff979e93be4ca06afbf8f2d4"
       },
       {
-        "path": "assets/index6-Dj_aVSIl.js",
-        "sha256": "4dd96794abd3eace4ea78ef74b6b6a8f2a371ea7d37197e5b5f14c3991727752"
+        "path": "assets/index6-CHsD2cfx.js",
+        "sha256": "c84548062c6c62568b9bdc480f94573c67b93db3530ec1b97b67c37686b519be"
       },
       {
-        "path": "assets/index7-Bqaj5CLb.js",
-        "sha256": "9c87b27434cc5f9bc2e839475548bce1e15926c7b9c00a89ebdf908547b4be9f"
+        "path": "assets/index7-BKoGiwES.js",
+        "sha256": "bcaa82e21dd1dfac27e0c3c9e734b19270acb1848ccf15caf92c54a8524940d8"
       },
       {
-        "path": "assets/index8-jhMWILQf.js",
-        "sha256": "a2b94c04c74c6e07074f3f4bce5134f77eb2dbf70f8d62b2f685bcd3036aec39"
+        "path": "assets/index8-C8IdUPtc.js",
+        "sha256": "36123013e3841e283b723c851a00f884a6f1882327b1e1f00ac32572008c6d57"
       },
       {
         "path": "assets/infoDiagram-5YYISTIA-2JF3XEdD.js",
         "sha256": "606da24080ac5810e8e31f855f3d54065ee25188853b9bb2174ee2884d9fc52a"
       },
       {
-        "path": "assets/infoDiagram-5YYISTIA-eR7euu8w.js",
-        "sha256": "6a806d3e4e33da09d9c4006882fcf2a075d1f7b583fd6c47fcf9c24f9c40415c"
+        "path": "assets/infoDiagram-5YYISTIA-CNam01VM.js",
+        "sha256": "ac1eef1632ab78d797d5dc46a98fcd1cbfbd5c6b77b71c0ea91273baf5a7277a"
       },
       {
         "path": "assets/ini-BEwlwnbL.js",
@@ -2320,8 +2368,8 @@
         "sha256": "fb0d577b89713fd53f7c2108d6d67a387d80dcae0848cee4c0ee2655e5dbda1a"
       },
       {
-        "path": "assets/ishikawaDiagram-YF4QCWOH-gSWa83J-.js",
-        "sha256": "765211334be9c0123552e9cca0099c47f7b08d1ce1d02e3a8f1b4c8e63bbead5"
+        "path": "assets/ishikawaDiagram-YF4QCWOH-Cgz33P4d.js",
+        "sha256": "054e9d3193755fa3526cd3ff60d9cc4444f7cfeb1a0eb0294bb18e0410095c7f"
       },
       {
         "path": "assets/java-CylS5w8V.js",
@@ -2360,8 +2408,8 @@
         "sha256": "3d09bd59c47dffe52f1eee5bd2371ecc2c8340daac0400872472affdf0c95392"
       },
       {
-        "path": "assets/journeyDiagram-JHISSGLW-CJvivzvM.js",
-        "sha256": "e00c9ede55aa3fefd69e2a477e36f3b388623b1a40c6a999e1ec38942e7c4232"
+        "path": "assets/journeyDiagram-JHISSGLW-BeasYBZl.js",
+        "sha256": "4bab30fa7fead7419603f8b5a5350d2cbe0c427ab7fa01ec087e289e01f66b78"
       },
       {
         "path": "assets/journeyDiagram-JHISSGLW-yctdo4bX.js",
@@ -2420,8 +2468,8 @@
         "sha256": "b866d713b717041a2265ba9d00186dc4b6f390b5a4bf78641abf59e6abed1d90"
       },
       {
-        "path": "assets/kanban-definition-UN3LZRKU-b8h6YUEl.js",
-        "sha256": "70fe1788bb75a6ff4b1233023c31c1d229571c47f52b89ca561151756d64b1c6"
+        "path": "assets/kanban-definition-UN3LZRKU-Dlgdyu4T.js",
+        "sha256": "54c5db8d6088d12258eb565c36d9ae32fc78f8964da13e0e8c09a7e1a44fcab4"
       },
       {
         "path": "assets/katex-DnlPpQZa.js",
@@ -2480,8 +2528,8 @@
         "sha256": "1fe4bf3f49cb117834ac150a43010ed4153ea7bd8cd24bea8b854373858bca6a"
       },
       {
-        "path": "assets/linear-C-9IqFqA.js",
-        "sha256": "3577a2d22a0d0435535bee29dd0887036f34fb4c9aea9e21d9ef23fed6812b91"
+        "path": "assets/linear-scgOcDBD.js",
+        "sha256": "6fe526e4523643e910458833a3c40b70a7313ce47c6fd12cc8874e42180bd64d"
       },
       {
         "path": "assets/liquid-C0sCDyMI.js",
@@ -2556,8 +2604,8 @@
         "sha256": "82f6b9a2ce0fadf1bf76a24d14b621412f28535d2786b60ea65cd656a1ef8576"
       },
       {
-        "path": "assets/mermaid.core-O92BlRoh.js",
-        "sha256": "5d86a59b2953a4c2e51340f38700b9d3aec1b54ceb5180188af49ed3c067d6dd"
+        "path": "assets/mermaid.core-DhPcHhWx.js",
+        "sha256": "00837d18289c9e682f3cb93b6dfae13a854d9f4c3d4dcfec6e02e6b86a8b6455"
       },
       {
         "path": "assets/mermaidParser.worker-Dx4jPi9z.js",
@@ -2580,8 +2628,8 @@
         "sha256": "4b00881831040c66efc3f23d8e6911ab0486f929a4168f35247910b88f504ec5"
       },
       {
-        "path": "assets/mindmap-definition-RKZ34NQL-DXVsNM08.js",
-        "sha256": "f5c06ef692f24eaa4c466c2ab16f26018111978731289d5b7a91d71a4ad749b5"
+        "path": "assets/mindmap-definition-RKZ34NQL-C1LOaRPY.js",
+        "sha256": "fa4e032e98f7eb47359d78e886b3c029d23c6a8627f28f56bf5939c094b6e9fc"
       },
       {
         "path": "assets/mipsasm-CKIfxQSi.js",
@@ -2700,8 +2748,8 @@
         "sha256": "9dfb0a9539e977eedf48162ac7b1f0513dd4974642fa08a4077e71d6b52571af"
       },
       {
-        "path": "assets/pieDiagram-4H26LBE5-izwgrcAS.js",
-        "sha256": "267d39507136f79a627a4ef7753fc2d34c20e366a9c9ae918c44962b6cc62c0b"
+        "path": "assets/pieDiagram-4H26LBE5-D-AWdNGZ.js",
+        "sha256": "e26b1228f1f8bbf191740d299510dd3c5e3912a458bd7be247f681be54c99a7b"
       },
       {
         "path": "assets/pierre-dark-CyvmCCZW.js",
@@ -2820,8 +2868,8 @@
         "sha256": "24a87ea2b74ac3f815e14d173752f42380cd4ad6faabba3b0737c66c83d7e8c3"
       },
       {
-        "path": "assets/quadrantDiagram-W4KKPZXB-B2YdCnh-.js",
-        "sha256": "032b0c2c0f76e1425399dafd9f07e561d3b42c59abcaf8b828c8b63e620972dd"
+        "path": "assets/quadrantDiagram-W4KKPZXB-94PcnjJo.js",
+        "sha256": "872a6823af94f0db0b14bb6107bcbbbd63b63612d1dd153b06b3d3626048cad5"
       },
       {
         "path": "assets/quadrantDiagram-W4KKPZXB-BmT_qM09.js",
@@ -2864,12 +2912,12 @@
         "sha256": "5e46343461aedbfdd92b75bcc78bf3f40b0383490f4e139874221766c4c73158"
       },
       {
-        "path": "assets/requirementDiagram-4Y6WPE33-CRJGGXd9.js",
-        "sha256": "a954e8a329b094fecdfe627e7392fde301c59a3fd58f5305267fec8fc13353c1"
-      },
-      {
         "path": "assets/requirementDiagram-4Y6WPE33-CZrxH1Y2.js",
         "sha256": "2b78e9afbdfb294ef624763eabe503998551064a09d69c7d52a10b2559327913"
+      },
+      {
+        "path": "assets/requirementDiagram-4Y6WPE33-oe5Hz5AX.js",
+        "sha256": "240f1cf5f9e8d8664ff0495509240290774c360285833e0d9c34dcb0a248ba3c"
       },
       {
         "path": "assets/riscv-BM1_JUlF.js",
@@ -2912,8 +2960,8 @@
         "sha256": "5d867c3d7076b74a532192a675dd058bf921ebcdf95b1226046439eee9cbb8bb"
       },
       {
-        "path": "assets/sankeyDiagram-5OEKKPKP-DSMzgQUz.js",
-        "sha256": "1e52936350de88843c815096ff5280f3b48af37a34896cb5212f71746b037bbc"
+        "path": "assets/sankeyDiagram-5OEKKPKP-C_vgvE4r.js",
+        "sha256": "33702f7477b09deab127a7b0b65ed55a2a7c4d2fd150d8b745f114ccecd06448"
       },
       {
         "path": "assets/sankeyDiagram-5OEKKPKP-De_o7hDr.js",
@@ -2944,8 +2992,8 @@
         "sha256": "09bba6eb98cb1660429de423a032b8ecc9e943af9b2ae4dc798fe665b2f4de19"
       },
       {
-        "path": "assets/sequenceDiagram-3UESZ5HK-Ctg8Jw0n.js",
-        "sha256": "ef5721e014f03b42cc308bc9dd83c5b0b77240e7b01ce7ff0cfae307bcacdd19"
+        "path": "assets/sequenceDiagram-3UESZ5HK-B034dtAn.js",
+        "sha256": "edbf4becff5f5a56ea69e185ddb3d393e264b48f197e503ca8f6bf19a4cf439d"
       },
       {
         "path": "assets/sequenceDiagram-3UESZ5HK-VAxffBe7.js",
@@ -3020,20 +3068,20 @@
         "sha256": "c1088b99636bbb8fcc125b1ff81b737bdf2f28d610ec6b66e7db8bafcd851e7b"
       },
       {
-        "path": "assets/stateDiagram-AJRCARHV-B18OKP1x.js",
-        "sha256": "855421703cbabade7df56719c361506aca3b45ddfd976f6450415b682acc4972"
+        "path": "assets/stateDiagram-AJRCARHV-BUWEXYQ7.js",
+        "sha256": "f0134059374912ee4215a33c1e692aaa6eac82dfb073b24357c51691e73fa687"
       },
       {
         "path": "assets/stateDiagram-AJRCARHV-nDExQydZ.js",
         "sha256": "70794fc8df2f93554eb753800a950c0e14cac5519926d4f593f97f3423ee5366"
       },
       {
-        "path": "assets/stateDiagram-v2-BHNVJYJU-BzwD_BIl.js",
-        "sha256": "5a947e49ca5680e87d61ae2209008a8882eb9cab40d0c84ff221075decc65819"
+        "path": "assets/stateDiagram-v2-BHNVJYJU-B6by7RYL.js",
+        "sha256": "a643289d58185ccb298868f3d61f0ef61777c4f5cc8b19ec7dd3b84faa14b901"
       },
       {
-        "path": "assets/stateDiagram-v2-BHNVJYJU-DBqkbTN4.js",
-        "sha256": "0579cd7f438f2e94d99fd98840c8e8fb24d0b0857e99a9c4054566ad0356b856"
+        "path": "assets/stateDiagram-v2-BHNVJYJU-BzwD_BIl.js",
+        "sha256": "5a947e49ca5680e87d61ae2209008a8882eb9cab40d0c84ff221075decc65819"
       },
       {
         "path": "assets/stylus-BEDo0Tqx.js",
@@ -3088,12 +3136,12 @@
         "sha256": "7ed401f4a81fc4d476c64370bcdb5320b2628c597fd55f3a6c211fd2ac9305ac"
       },
       {
-        "path": "assets/timeline-definition-PNZ67QCA-CwNGR_Qt.js",
-        "sha256": "ccaa4e5d82db98b3bf53658b2187a17f72f79c9f602cd520f205d02b2c225758"
-      },
-      {
         "path": "assets/timeline-definition-PNZ67QCA-DsVZdrZa.js",
         "sha256": "36f85a93bce59569361421ab3ad60c9f7b6c0f81c5e0ca239358b61578c1d03a"
+      },
+      {
+        "path": "assets/timeline-definition-PNZ67QCA-t26gAyP9.js",
+        "sha256": "e6a33fb72df01466b8cdae5c14dad9b665f477cad249509f33a233f764a05785"
       },
       {
         "path": "assets/tokyo-night-hegEt444.js",
@@ -3152,8 +3200,8 @@
         "sha256": "fe107a486a8736ad6e24ae5cb35390bfca3a42876b0664ffcee7c623e9f134ea"
       },
       {
-        "path": "assets/vennDiagram-CIIHVFJN-BRN2pssj.js",
-        "sha256": "e87f158def73182c7f845932a1fba05159ab417bb7501c8d8af47fde66948c0c"
+        "path": "assets/vennDiagram-CIIHVFJN-DkldK8PS.js",
+        "sha256": "3ac500cc93ce945478719363c77617fd4ce962accc3c43d1f4bbd567147814ab"
       },
       {
         "path": "assets/verilog-nZwndyjY.js",
@@ -3196,28 +3244,28 @@
         "sha256": "afa7f4368fcaa78d83c5a184c2905effd031a31b5ef776352e62e219414a6496"
       },
       {
-        "path": "assets/vue.runtime.esm-bundler-CYIbEz-O.js",
-        "sha256": "95546b5455d6216d3b11d95254509e88941f6886bc03d5df7935c8ce58cc6ebb"
+        "path": "assets/vue.runtime.esm-bundler-QI3AaJf2.js",
+        "sha256": "cea13f62ae5aa0271b95955d9169596110631fcb5413864a07c25c924870159c"
       },
       {
         "path": "assets/vyper-CDx5xZoG.js",
         "sha256": "ff66f70ed9d0a15a77389cfc35cef85ff1f4932bef9e508f9a19b1c87d7f46e9"
       },
       {
-        "path": "assets/wardley-L42UT6IY-3Ma-4rLW.js",
-        "sha256": "7add484080098b01c051217ea9e254a25714d7b69d81fc3a3dc59945b5192392"
-      },
-      {
         "path": "assets/wardley-L42UT6IY-BJFn8eDD.js",
         "sha256": "b242e9e8b07a6c4b684b07a22c8636d08a1a8c06c1270038bdbe30f6093deeda"
       },
       {
-        "path": "assets/wardleyDiagram-YWT4CUSO-CcwUeC8E.js",
-        "sha256": "364e1fd5bff2abca46cd28e7027344d9aed27e30067c25469b923fce5fead971"
+        "path": "assets/wardley-L42UT6IY-BUrjKkEa.js",
+        "sha256": "18a8fe1858021318e29ef53e51ee254128c3ca1565aa1b10c96a40ee76613520"
       },
       {
         "path": "assets/wardleyDiagram-YWT4CUSO-DCiyDQNB.js",
         "sha256": "942d3633fa8af719af9b708848eed2b96f04de2fdcb2ad76da31d3e15f55443c"
+      },
+      {
+        "path": "assets/wardleyDiagram-YWT4CUSO-NGFovzm8.js",
+        "sha256": "54996d7914a4f2f56c964232993241919938fbd56129c0d2a496fe73fb3aa6c0"
       },
       {
         "path": "assets/wasm-CG6Dc4jp.js",
@@ -3256,12 +3304,12 @@
         "sha256": "b47bbb39b319947a57525dc114ec30eb2e697bf451be75f0b79850866f6811be"
       },
       {
-        "path": "assets/xychartDiagram-2RQKCTM6-DVXWpJ6M.js",
-        "sha256": "383015da982f19273a6c6799d7809a8c2f9c2afc67b655891b9c035de2730d5b"
-      },
-      {
         "path": "assets/xychartDiagram-2RQKCTM6-Db_VoDBV.js",
         "sha256": "5497102aa81a6d17175344e2b081bbeefd47253034e0093ce0d44df871dce9a7"
+      },
+      {
+        "path": "assets/xychartDiagram-2RQKCTM6-WJY4LjDi.js",
+        "sha256": "b6aaed5a18e18a53f97acaca58e410ca44143d4af0fae41ba19a7ec9b8ae18ce"
       },
       {
         "path": "assets/yaml-Buea-lGh.js",
@@ -3285,9 +3333,9 @@
       },
       {
         "path": "index.html",
-        "sha256": "ed7248861afdff1f5d1bc61e0c4f6fc30140dbb5577fb968adc4757da82ac6cc"
+        "sha256": "6e0494a2a653f840ae4586ecb554ef7a6f2f3972c3e7eb3925abfbd3c5f772eb"
       }
     ],
-    "sha256": "f850cbf7ab42b815017869af38df6d47645572c0366a8946ba835ef36103b236"
+    "sha256": "38749ebb0076ac636d695f2623881590042e8f43277df820c39c0748815100ed"
   }
 }

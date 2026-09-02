@@ -527,25 +527,26 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     }
   }
 
-  /** Update global config via POST /api/v1/config. */
-  async function updateConfig(patch: Partial<AppConfig>): Promise<boolean> {
+  async function commitConfigMutation(
+    operation: string,
+    request: () => Promise<AppConfig>,
+    changesExperimental: boolean,
+  ): Promise<boolean> {
     const requestId = ++configMutationRequestId;
-    const changesExperimental = Object.prototype.hasOwnProperty.call(patch, 'experimental');
     // A user mutation outranks any reconnect GET that began before it.
     configRequestId += 1;
     configMutationsInFlight += 1;
     const revisionAtRequest = configRevision;
     if (changesExperimental) rawState.experimentalFlags = {};
     try {
-      const api = getKimiWebApi();
-      const next = await api.setConfig(patch);
+      const next = await request();
       if (requestId === configMutationRequestId && revisionAtRequest === configRevision) {
         applyConfig(next);
       }
       return true;
-    } catch (err) {
+    } catch (error) {
       reconcileConfigAfterMutationFailure = true;
-      pushOperationFailure('setConfig', err);
+      pushOperationFailure(operation, error);
       return false;
     } finally {
       // Config is only an input to flag resolution. Always re-read /meta after
@@ -558,6 +559,24 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         await loadConfig();
       }
     }
+  }
+
+  /** Update global config via POST /api/v1/config. */
+  async function updateConfig(patch: Partial<AppConfig>): Promise<boolean> {
+    const changesExperimental = Object.prototype.hasOwnProperty.call(patch, 'experimental');
+    return commitConfigMutation(
+      'setConfig',
+      () => getKimiWebApi().setConfig(patch),
+      changesExperimental,
+    );
+  }
+
+  async function activateSubagentPreset(preset: string): Promise<boolean> {
+    return commitConfigMutation(
+      'activateSubagentPreset',
+      async () => (await getKimiWebApi().activateSubagentPreset(preset)).config,
+      false,
+    );
   }
 
   /** Query provider usage on demand; only the latest overlapping request may commit state. */
@@ -926,11 +945,16 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     rawState.backend = m.backend;
   }
 
-  async function load(): Promise<void> {
+  async function load(options?: { remoteSessionId?: string }): Promise<void> {
     const startedAt = Date.now();
     let traceStatus = 'accepted';
     traceKeyEvent('app:load:start');
     rawState.loading = true;
+    // The `?remote=1` origin marker records where this client was entered from.
+    // It no longer restricts the loaded surface — remote sessions boot exactly
+    // like local ones — and is only consulted when writing session URLs (see
+    // writeSessionUrl) so in-app switches keep the marker across reloads.
+    rawState.remoteSessionId = options?.remoteSessionId ?? null;
     // The very first load gates on /auth before anything else: a transient
     // failure there (daemon still booting, network blip, 5xx) must NOT be read
     // as "not signed in" — that bounced users to /login until a manual refresh.
@@ -946,7 +970,6 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         return;
       }
       const api = getKimiWebApi();
-      // Parallel: health + meta + models
       await Promise.all([
         api.getHealth().catch(() => null),
         refreshServerMeta(),
@@ -959,6 +982,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       if (!firstLoad) await checkAuth();
       await loadConfig();
       ensureEventConnection();
+
       // Usage queries may reach external provider endpoints; prefetch without
       // delaying workspace/session startup. The settings panel can refresh again.
       void refreshProviderUsage();
@@ -1416,8 +1440,8 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   function writeSessionUrl(sessionId: string | undefined, mode: SessionUrlMode): void {
     if (mode === 'none') return;
     if (typeof window === 'undefined' || !window.history) return;
-    const target = sessionUrl(sessionId);
-    if (window.location.pathname === target) return;
+    const target = sessionUrl(sessionId, rawState.remoteSessionId !== null);
+    if (`${window.location.pathname}${window.location.search}` === target) return;
     try {
       if (mode === 'push') window.history.pushState(null, '', target);
       else window.history.replaceState(null, '', target);
@@ -2908,6 +2932,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     loadConfig,
     applyConfig,
     updateConfig,
+    activateSubagentPreset,
     refreshProviderUsage,
     listAllSessionsGlobal,
     load,

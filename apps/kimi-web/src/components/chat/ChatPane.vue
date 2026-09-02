@@ -2,7 +2,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { ChatTurn, ApprovalBlock, FilePreviewRequest, ToolMedia, QueuedPromptView, TurnAttachment, TurnPreviewTarget, ArtifactPreviewTarget, WebPreviewTarget } from '../../types';
+import type { AppTurnProgress } from '../../api/types';
+import type { ChatTurn, ApprovalBlock, FilePreviewRequest, ToolMedia, QueuedPromptView, TurnAttachment, TurnPreviewTarget, ArtifactPreviewTarget, WebPreviewTarget, TaskItem } from '../../types';
 import ToolCall from './ToolCall.vue';
 import ToolGroup from './ToolGroup.vue';
 import ArtifactPreviewCard from './ArtifactPreviewCard.vue';
@@ -19,7 +20,13 @@ import Spinner from '../ui/Spinner.vue';
 import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import { useConfirmDialog } from '../../composables/useConfirmDialog';
+import { useTurnProgress } from '../../composables/useTurnProgress';
 import { copyTextToClipboard } from '../../lib/clipboard';
+import {
+  activeTurnProgressToolId,
+  hasActiveForegroundAgentSwarm,
+  type TurnProgressSnapshot,
+} from '../../lib/turnProgress';
 import { openFileAttachment } from '../../lib/openFileAttachment';
 import { findTurnPreviewTarget } from '../../lib/turnWebPreview';
 import {
@@ -31,6 +38,7 @@ import {
   turnFinalText,
   turnToMarkdown,
 } from '../chatTurnRendering';
+import { subagentPresetChangedLabel, type SubagentPresetT } from '../../lib/subagentPreset';
 
 const { t } = useI18n();
 const { confirm } = useConfirmDialog();
@@ -57,6 +65,8 @@ onUnmounted(() => {
 const props = withDefaults(
   defineProps<{
     turns: ChatTurn[];
+    /** Active-session tasks used to preserve AgentSwarm progress ownership. */
+    tasks?: TaskItem[];
     approvals?: { approvalId: string; block: ApprovalBlock; agentName?: string }[];
     /**
      * True while the MAIN agent has a turn in flight (not merely "session
@@ -65,6 +75,8 @@ const props = withDefaults(
      * the smooth typewriter/fade reveal; all other turns render statically.
      */
     turnActive?: boolean;
+    /** Reducer-owned heuristic inputs for the active MAIN turn. */
+    turnProgress?: AppTurnProgress | null;
     /**
      * The main conversation has an unfinished prompt (submitted, or a main
      * turn in flight). Renders the moon-spinner placeholder at the end of the
@@ -128,8 +140,10 @@ const props = withDefaults(
      */
   }>(),
   {
+    tasks: () => [],
     approvals: () => [],
     turnActive: false,
+    turnProgress: null,
     working: false,
     fastMoon: false,
     compaction: null,
@@ -198,12 +212,35 @@ const streamingTurnId = computed<string | null>(() => {
   return last.role === 'assistant' ? last.id : null;
 });
 
-// Trailing "working" moon: shown while the main conversation has an unfinished
-// prompt. `working` is the union of the optimistic submit window and the main
-// turn's liveness (restored from the snapshot's inFlightTurn after a refresh);
-// background agents and BTW side chats never show here — the moon belongs to
-// the main conversation only.
-const showWorking = computed(() => props.working);
+// Trailing generic activity belongs only to the main conversation. A live
+// foreground AgentSwarm card owns its own progress, so hide this placeholder and
+// stop its frame timer until the swarm settles; elapsed still follows wall time.
+const foregroundSwarmProgressActive = computed(() =>
+  hasActiveForegroundAgentSwarm(props.turns, props.turnActive, props.tasks),
+);
+const activeTurnProgress = computed(() =>
+  props.working ? props.turnProgress : null,
+);
+const turnProgressSnapshot = useTurnProgress(
+  activeTurnProgress,
+  foregroundSwarmProgressActive,
+);
+const showWorking = computed(
+  () => props.working && !foregroundSwarmProgressActive.value,
+);
+
+// After the 8s reveal, route the generic turn estimate into the latest running
+// tool card. A bounded snapshot can omit the request trigger, so tool ownership
+// derives from the latest assistant turn rather than requiring its user message.
+const activeToolProgress = computed<{
+  toolCallId: string;
+  progress: TurnProgressSnapshot;
+} | null>(() => {
+  const progress = turnProgressSnapshot.value;
+  if (progress === null) return null;
+  const toolCallId = activeTurnProgressToolId(props.turns, props.turnActive);
+  return toolCallId === null ? null : { toolCallId, progress };
+});
 
 const emit = defineEmits<{
   openFile: [target: FilePreviewRequest];
@@ -327,6 +364,12 @@ function compactionDividerLabel(turn: ChatTurn): string {
   return base;
 }
 
+/** Divider label for an automatic subagent-preset switch — resolved from the
+ *  marker's from/to values at render time so the current locale always applies. */
+function subagentPresetDividerLabel(turn: ChatTurn): string {
+  return subagentPresetChangedLabel(turn.subagentPreset, t as unknown as SubagentPresetT);
+}
+
 // Per-turn copy button state (keyed by turn id)
 const copiedTurn = ref<string | null>(null);
 
@@ -388,7 +431,7 @@ function copyConversation(): void {
   if (props.turns.length === 0) return;
   const lines: string[] = [];
   for (const turn of props.turns) {
-    if (turn.role === 'compaction' || turn.role === 'cron') continue; // dividers / cron notices don't copy
+    if (turn.role === 'compaction' || turn.role === 'cron' || turn.role === 'subagentPreset') continue; // dividers / notices don't copy
     const roleLabel = turn.role === 'user' ? 'User' : 'Assistant';
     const content = turnToMarkdown(turn);
     if (content.trim()) {
@@ -652,8 +695,8 @@ function webPreviewTarget(turn: ChatTurn): WebPreviewTarget | null {
         </div>
       </template>
 
-      <!-- Compaction divider — prior turns stay untouched; summary opens in
-           the right-side panel on click. -->
+      <!-- Compaction divider — prior turns stay untouched; the full shell may
+           open its summary in the side panel. -->
       <div v-else-if="turn.role === 'compaction'" class="compact-divider turn-anchor" :data-turn-id="turn.id" role="separator">
         <span class="cd-line" aria-hidden="true" />
         <button
@@ -673,23 +716,57 @@ function webPreviewTarget(turn: ChatTurn): WebPreviewTarget | null {
            a lightweight in-transcript notice rather than a user bubble. -->
       <CronNotice v-else-if="turn.role === 'cron'" :text="turn.text" :cron="turn.cron" :turn-id="turn.id" :created-at="turn.createdAt" />
 
+      <!-- Subagent preset switch — a lightweight status separator (never an
+           assistant bubble) marking where the auto-preset runtime switched
+           the session's active subagent preset. The label comes from the
+           marker's from/to values via the current i18n locale. -->
+      <div v-else-if="turn.role === 'subagentPreset'" class="preset-divider turn-anchor" :data-turn-id="turn.id" role="separator">
+        <span class="cd-line" aria-hidden="true" />
+        <span class="cd-label">{{ subagentPresetDividerLabel(turn) }}</span>
+        <span class="cd-line" aria-hidden="true" />
+      </div>
+
       <!-- Assistant turn → left-aligned, no name/role label. -->
       <div v-else class="a-msg turn-anchor" :data-turn-id="turn.id">
         <template v-for="(blk, bi) in assistantRenderBlocks(turn)" :key="renderBlockKey(blk, bi)">
-          <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile :streaming="isStreamingRenderBlock(turn, blk)" @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })" />
-          <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="(target) => emit('openFile', target)" /></div>
+          <ThinkingBlock
+            v-if="blk.kind === 'thinking'"
+            :text="blk.thinking"
+            mobile
+            :streaming="isStreamingRenderBlock(turn, blk)"
+            @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })"
+          />
+          <div v-else-if="blk.kind === 'text' && blk.text" class="msg">
+            <Markdown
+              :text="blk.text"
+              :streaming="isStreamingRenderBlock(turn, blk)"
+              :open-file="(target) => emit('openFile', target)"
+            />
+          </div>
           <ToolGroup
             v-else-if="blk.kind === 'tool-stack'"
             :tools="blk.tools"
             mobile
             :tool-diff-panel="toolDiffPanel"
+            :active-turn-progress="activeToolProgress"
             @open-media="emit('openMedia', $event)"
             @open-file="emit('openFile', $event)"
             @open-tool-diff="emit('openToolDiff', $event)"
             @open-agent="emit('openAgent', $event)"
             @open-preview="emit('openPreview', $event)"
           />
-          <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" @open-preview="emit('openPreview', $event)" />
+          <ToolCall
+            v-else-if="blk.kind === 'tool'"
+            :tool="blk.tool"
+            mobile
+            :tool-diff-panel="toolDiffPanel"
+            :turn-progress="activeToolProgress?.toolCallId === blk.tool.id ? activeToolProgress.progress : null"
+            @open-media="emit('openMedia', $event)"
+            @open-file="emit('openFile', $event)"
+            @open-tool-diff="emit('openToolDiff', $event)"
+            @open-agent="emit('openAgent', $event)"
+            @open-preview="emit('openPreview', $event)"
+          />
         </template>
         <!-- Standalone preview card: the turn's ONE preview target — an
              artifact (written/edited previewable file, or produced image/video
@@ -729,9 +806,9 @@ function webPreviewTarget(turn: ChatTurn): WebPreviewTarget | null {
     <!-- Compaction in progress — body-sized moon activity notice -->
     <ActivityNotice v-if="compaction" :label="t('conversation.compacting')" />
 
-    <!-- Working placeholder — moon spinner while the conversation has an
-         unfinished prompt (covers a page refresh mid-stream, where the
-         optimistic submit flag was lost but the main turn is still in flight). -->
+    <!-- Generic main-turn activity remains moon-only. After eight active seconds,
+         progress moves into the currently running tool card. A foreground
+         AgentSwarm card owns its own progress and hides this block. -->
     <div v-if="showWorking" class="sending-placeholder">
       <MoonSpinner :fast="fastMoon" />
     </div>
@@ -881,6 +958,7 @@ function webPreviewTarget(turn: ChatTurn): WebPreviewTarget | null {
 .chat > .u-turn,
 .chat > .a-msg,
 .chat > .compact-divider,
+.chat > .preset-divider,
 .chat > .cron-notice,
 .chat > .sending-placeholder,
 .chat > :deep(.activity-notice) {
@@ -892,6 +970,7 @@ function webPreviewTarget(turn: ChatTurn): WebPreviewTarget | null {
 .chat > .u-turn:first-child,
 .chat > .a-msg:first-child,
 .chat > .compact-divider:first-child,
+.chat > .preset-divider:first-child,
 .chat > .cron-notice:first-child,
 .chat > .sending-placeholder:first-child,
 .chat > :deep(.activity-notice:first-child) {
@@ -991,8 +1070,11 @@ function webPreviewTarget(turn: ChatTurn): WebPreviewTarget | null {
 
 /* Compaction divider — a full-width separator marking where the daemon
    compacted the context. Prior turns above it are untouched; clicking the
-   label opens the summary in the right-side panel. */
-.compact-divider {
+   label opens the summary in the right-side panel. The subagent-preset
+   divider shares the same line—label—line pattern (design-system §04 status
+   separators); it only differs in label text and has no click action. */
+.compact-divider,
+.preset-divider {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1000,7 +1082,8 @@ function webPreviewTarget(turn: ChatTurn): WebPreviewTarget | null {
   width: 100%;
   margin: var(--chat-section-gap) 0 0;
 }
-.chat > .compact-divider:first-child {
+.chat > .compact-divider:first-child,
+.chat > .preset-divider:first-child {
   margin-top: 0;
 }
 .cd-line {
@@ -1176,8 +1259,13 @@ function webPreviewTarget(turn: ChatTurn): WebPreviewTarget | null {
 
 /* Sending placeholder */
 .sending-placeholder {
-  align-self: flex-start;
-  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) 0;
 }
 
 /* Skill activation card (replaces raw <skill-loaded> XML) */

@@ -835,11 +835,11 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
-/* ---- Hakimi logo (sidebar header): lively eyes — glance left/right + the
-   occasional blink. The two bars are mask cutouts, so animating them moves /
+/* ---- Hakimi cat logo: lively pupils — glance left/right + the occasional
+   blink. The two cat-eye shapes are mask cutouts, so animating them moves /
    squishes the transparent holes (adapts to whatever's behind the logo). The
-   look (6s) and blink (5.4s) run on different periods so they drift in and out
-   of sync, which reads as more organic. ---- */
+   look and blink run on different periods so they drift in and out of sync,
+   which reads as more organic. ---- */
 .ch-eyes {
   animation: kimi-eye-look 16s ease-in-out infinite;
 }

@@ -8,6 +8,7 @@ import { registerDoctorCommand } from './sub/doctor';
 import { registerExportCommand } from './sub/export';
 import { registerLoginCommand } from './sub/login';
 import { registerProviderCommand } from './sub/provider';
+import { registerRemoteCommands } from './sub/remote';
 import { registerVisCommand } from './sub/vis';
 import { registerWebCommand } from './sub/web';
 
@@ -120,6 +121,11 @@ export function createProgram(
   registerProviderCommand(program);
   registerAcpCommand(program);
   registerWebCommand(program);
+  // Persistent all-sessions tunnel (`remote start|status|stop` + hidden
+  // `serve`). The single-session `/remote` takeover stays TUI-only: it shuts
+  // the active harness down before starting kap-server, so a second process
+  // can never own the same session.
+  registerRemoteCommands(program);
   registerLoginCommand(program);
   registerDoctorCommand(program);
   registerVisCommand(program);

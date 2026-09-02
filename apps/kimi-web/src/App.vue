@@ -18,6 +18,7 @@ import LoginDialog from './components/dialogs/LoginDialog.vue';
 import ResearchManagerDialog from './components/dialogs/ResearchManagerDialog.vue';
 import SettingsDialog from './components/settings/SettingsDialog.vue';
 import AddWorkspaceDialog from './components/dialogs/AddWorkspaceDialog.vue';
+import RemoteShareDialog from './components/dialogs/RemoteShareDialog.vue';
 import ConfirmDialogHost from './components/dialogs/ConfirmDialogHost.vue';
 import StatusPanel from './components/chat/StatusPanel.vue';
 import WarningToasts from './components/WarningToasts.vue';
@@ -30,6 +31,8 @@ import DebugPanel from './debug/DebugPanel.vue';
 import { isTraceEnabled } from './debug/trace';
 import { useKimiWebClient } from './composables/useKimiWebClient';
 import { useConfirmDialog } from './composables/useConfirmDialog';
+import { useRemoteShare } from './composables/useRemoteShare';
+import { useRemotePersistent } from './composables/useRemotePersistent';
 import type { PromptAttachment } from './composables/useKimiWebClient';
 import {
   createComposerCommandSubmission,
@@ -48,7 +51,7 @@ import { openDialogCount } from './composables/dialogStack';
 import type { SwarmMember } from './composables/swarmGroups';
 import ServerAuthDialog from './components/ServerAuthDialog.vue';
 import { initServerAuth, onAuthRequired } from './api/daemon/serverAuth';
-import type { AppConfig, SubagentModelConfig, ThinkingLevel } from './api/types';
+import type { AppConfig, ThinkingLevel } from './api/types';
 import {
   researchManagerMutationAllowed,
   researchManagerSessionIsCurrent,
@@ -56,6 +59,11 @@ import {
   type ResearchManagerCommandRequest,
 } from './lib/researchManagerCommand';
 import { commitLevel, effectiveThinkingLevel, segmentsFor } from './lib/modelThinking';
+import {
+  mainRouteForPreset,
+  subagentPresetManualLock,
+  subagentPresetResumeAutoPatch,
+} from './lib/subagentPreset';
 import {
   isResearchIdleOnlyBusy,
   parseResearchSlashCommand,
@@ -77,6 +85,11 @@ import IconButton from './components/ui/IconButton.vue';
 import Icon from './components/ui/Icon.vue';
 import InternalBuildBanner from './components/InternalBuildBanner.vue';
 import { isMacosDesktop } from './lib/desktopFlag';
+import { readRemoteSessionIdFromLocation } from './lib/sessionRoute';
+
+const remoteSessionId =
+  typeof window === 'undefined' ? undefined : readRemoteSessionIdFromLocation(window.location);
+const remoteMode = remoteSessionId !== undefined;
 
 // Hydrate the server-transport credential (fragment token or localStorage)
 // BEFORE the client connects, so the first REST/WS calls already carry it.
@@ -123,9 +136,9 @@ const activeSessionTitle = computed<string>(() => {
   return client.sessions.value.find((s) => s.id === id)?.title ?? '';
 });
 
-// Number of sessions in the active workspace (mobile top-bar sub-line).
-const activeWorkspaceSessionCount = computed<number>(
-  () => client.visibleWorkspace.value?.sessionCount ?? 0,
+// Changed-file count for the active session (mobile settings git row).
+const activeSessionChangesCount = computed<number>(() =>
+  client.gitInfo.value ? client.changes.value?.length ?? 0 : 0,
 );
 
 // running: true when activity is not idle
@@ -134,7 +147,10 @@ const running = computed(() => client.activity.value !== 'idle');
 // Auth readiness gates the main app. Once the first load finishes and auth is
 // still missing, show a full-page login entry instead of an in-app banner.
 const authLogoRef = ref<SVGSVGElement | null>(null);
-const { showAuthGate, blinkAuthLogo } = useAuthGate({ client, authLogoRef });
+const { showAuthGate, blinkAuthLogo } = useAuthGate({
+  client,
+  authLogoRef,
+});
 
 
 // Static page title (app name only). The session title and workspace name are
@@ -207,7 +223,7 @@ onMounted(() => {
     // previous mode is stale — drop it so the token prompt can show.
     client.clearDangerousBypassAuth();
   });
-  void client.load();
+  void client.load(remoteSessionId === undefined ? undefined : { remoteSessionId });
   loadSidebarCollapsed();
   setAppHeight();
   window.visualViewport?.addEventListener('resize', syncAppHeight);
@@ -387,6 +403,42 @@ watch(
   },
 );
 
+// ---------------------------------------------------------------------------
+// Remote control — default-on `remote_control` feature flag. Both remote
+// surfaces (the temporary Web share and the long-lived `hakimi remote`
+// systemd service) hang off the same gate and the same dialog. The gate
+// excludes remote viewers so a share can never be shared again; the chat
+// header and mobile top bar hide their entry when the flag is off.
+// ---------------------------------------------------------------------------
+const showRemoteShare = ref(false);
+const remoteControlEnabled = computed(
+  () =>
+    !remoteMode &&
+    !client.dangerousBypassAuth.value &&
+    client.experimentalFlags.value['remote_control'] === true,
+);
+const remoteShare = useRemoteShare({
+  enabled: () => remoteControlEnabled.value,
+  getSessionId: () => client.activeSessionId.value,
+  dialogOpen: () => showRemoteShare.value,
+});
+const remoteShareActive = computed(() => remoteShare.status.value?.active === true);
+const remoteShareExpiresAt = computed(() => remoteShare.status.value?.expiresAt ?? undefined);
+const remotePersistent = useRemotePersistent({
+  enabled: () => remoteControlEnabled.value,
+  dialogOpen: () => showRemoteShare.value,
+});
+// The selected session is only the share's initial landing point. Close the
+// dialog on local session switches so an open start form never becomes stale.
+watch(client.activeSessionId, () => {
+  showRemoteShare.value = false;
+});
+function closeRemoteShare(): void {
+  showRemoteShare.value = false;
+  remoteShare.clearError();
+  remotePersistent.clearError();
+}
+
 type SubmitPayload = {
   text: string;
   attachments: PromptAttachment[];
@@ -422,6 +474,12 @@ const modelsUnavailable = ref(false);
 const providersLoading = ref(false);
 const providersUnavailable = ref(false);
 const configSaving = ref(false);
+const subagentPresetNames = computed(() =>
+  Object.keys(client.config.value?.subagent?.presets ?? {}).toSorted((a, b) => a.localeCompare(b)),
+);
+/** `autoPreset.manualLock` — a manually activated preset paused automatic
+ *  switching; drives the header lock badge and the settings lock row. */
+const subagentPresetLocked = computed(() => subagentPresetManualLock(client.config.value));
 
 async function openModelPicker(): Promise<void> {
   modelsLoading.value = true;
@@ -533,18 +591,38 @@ async function handleUpdateConfig(patch: Partial<AppConfig>): Promise<boolean> {
   }
 }
 
-async function handleActivatePreset(payload: {
-  patch: Partial<AppConfig>;
-  main?: SubagentModelConfig;
-}): Promise<void> {
+async function handleActivatePreset(preset: string): Promise<void> {
+  const config = client.config.value;
+  const currentPreset = config?.subagent?.preset?.trim() ?? '';
+  if (
+    !config ||
+    configSaving.value ||
+    (preset === currentPreset && subagentPresetLocked.value)
+  ) {
+    return;
+  }
   const targetSessionId = client.activeSessionId.value ?? null;
   configSaving.value = true;
   try {
-    if (!(await client.updateConfig(payload.patch))) return;
+    if (!(await client.activateSubagentPreset(preset))) return;
     await client.checkAuth();
-    if (payload.main !== undefined) {
-      await client.applyPresetMainRoute(payload.main, targetSessionId);
+    const activeConfig = client.config.value;
+    const main = activeConfig === null ? undefined : mainRouteForPreset(activeConfig, preset);
+    if (main !== undefined) {
+      await client.applyPresetMainRoute(main, targetSessionId);
     }
+  } finally {
+    configSaving.value = false;
+  }
+}
+
+/** Resume automatic switching: minimal patch that clears only the manual lock —
+ *  the active preset and the auto gates stay exactly as configured. */
+async function handleResumeAutoPreset(): Promise<void> {
+  if (configSaving.value) return;
+  configSaving.value = true;
+  try {
+    await client.updateConfig(subagentPresetResumeAutoPatch());
   } finally {
     configSaving.value = false;
   }
@@ -1065,12 +1143,12 @@ function openPr(url: string): void {
             <mask id="authKimiEyes" maskUnits="userSpaceOnUse">
               <rect x="0" y="0" width="32" height="22" fill="#fff" />
               <g class="ch-eyes" fill="#000">
-                <rect class="ch-eye" x="11.8" y="7" width="2.8" height="8" rx="1.4" />
-                <rect class="ch-eye" x="17.4" y="7" width="2.8" height="8" rx="1.4" />
+                <path class="ch-eye" d="M13.2 7.5C14.6 9.1 14.8 13.7 13.2 16.5C11.6 13.7 11.8 9.1 13.2 7.5Z" />
+                <path class="ch-eye" d="M18.8 7.5C20.2 9.1 20.4 13.7 18.8 16.5C17.2 13.7 17.4 9.1 18.8 7.5Z" />
               </g>
             </mask>
           </defs>
-          <rect x="1" y="1" width="30" height="20" rx="6" fill="var(--logo)" mask="url(#authKimiEyes)" />
+          <path d="M2 8L4 2L10 5C12 4 20 4 22 5L28 2L30 8V15C30 19 26 21 16 21C6 21 2 19 2 15V8Z" fill="var(--logo)" mask="url(#authKimiEyes)" />
         </svg>
         <div class="auth-page-copy">
           <h1>{{ t('app.authPageTitle') }}</h1>
@@ -1140,19 +1218,22 @@ function openPr(url: string): void {
 
     <!-- Mobile navigation: slim top bar (switcher + settings sheets). -->
     <MobileTopBar
-      v-else
+      v-if="isMobile"
       :workspace="client.visibleWorkspace.value"
       :session-title="activeSessionTitle"
       :running="running"
-      :branch="client.status.value.branch"
-      :session-count="activeWorkspaceSessionCount"
+      :connection="client.connection.value"
+      :remote-share-enabled="remoteControlEnabled"
+      :remote-share-active="remoteShareActive"
       @open-switcher="showMobileSwitcher = true"
       @open-settings="showMobileSettings = true"
+      @open-remote-share="showRemoteShare = true"
     />
 
     <ConversationPane
       ref="conversationPaneRef"
       :mobile="isMobile"
+      :connection="client.connection.value"
       :turns="client.turns.value"
       :session-id="client.activeSessionId.value"
       :approvals="client.pendingApprovals.value"
@@ -1178,6 +1259,7 @@ function openPr(url: string): void {
       :pending-approval-actions="client.pendingApprovalActions"
       :running="running"
       :turn-active="client.turnActive.value"
+      :turn-progress="client.turnProgress.value"
       :queued="client.queued.value"
       :search-files="client.searchFiles"
       :upload-image="client.uploadImage"
@@ -1194,15 +1276,26 @@ function openPr(url: string): void {
       :workspace-name="client.visibleWorkspace.value?.name"
       :workspace-root="client.visibleWorkspace.value?.root ?? client.status.value.cwd"
       :git-diff-stats="client.gitDiffStats.value"
+      :subagent-preset="client.config.value?.subagent?.preset"
+      :subagent-preset-names="subagentPresetNames"
+      :subagent-preset-saving="configSaving"
+      :subagent-preset-locked="subagentPresetLocked"
+      :auto-subagent-preset-status="client.autoSubagentPresetStatus.value"
       :workspaces="client.workspacesView.value"
       :active-workspace-id="client.activeWorkspaceId.value"
       :session-title="activeSessionTitle"
       :pr="client.activePullRequest.value"
       :conversation-toc="client.conversationToc.value"
+      :remote-share-enabled="remoteControlEnabled"
+      :remote-share-active="remoteShareActive"
+      :remote-share-expires-at="remoteShareExpiresAt"
+      @activate-preset="handleActivatePreset($event)"
+      @resume-auto-preset="handleResumeAutoPreset"
       @open-changes="openDiffDetail()"
       @select-workspace="handleCreateSessionInWorkspace($event)"
       @add-workspace="showAddWorkspace = true"
       @open-pr="openPr"
+      @open-remote-share="showRemoteShare = true"
       @submit="handleSubmit($event)"
       @steer="client.steerPrompt($event.text, $event.attachments)"
       @approval="(approvalId, response) => client.respondApproval(approvalId, response)"
@@ -1386,9 +1479,11 @@ function openPr(url: string): void {
       :sound="client.soundOnComplete.value"
       :conversation-toc="client.conversationToc.value"
       :config="client.config.value"
+      :auto-subagent-preset-status="client.autoSubagentPresetStatus.value"
       :models="client.models.value"
       :config-saving="configSaving"
       :server-version="client.serverVersion.value"
+      :experimental-flags="client.experimentalFlags.value"
       :backend="client.backend.value"
       @set-color-scheme="client.setColorScheme($event)"
       @set-accent="client.setAccent($event)"
@@ -1451,6 +1546,31 @@ function openPr(url: string): void {
       @close="handleCloseAddWorkspace"
     />
 
+    <!-- Remote-control overlay (experimental `remote_control` flag): both the
+         temporary share and the long-lived persistent service share this
+         dialog. The composables poll while this is open or a service is
+         active. -->
+    <RemoteShareDialog
+      v-if="remoteControlEnabled && showRemoteShare"
+      :status="remoteShare.status.value"
+      :refreshing="remoteShare.refreshing.value"
+      :starting="remoteShare.starting.value"
+      :stopping="remoteShare.stopping.value"
+      :error="remoteShare.error.value"
+      :persistent-status="remotePersistent.status.value"
+      :persistent-refreshing="remotePersistent.refreshing.value"
+      :persistent-starting="remotePersistent.starting.value"
+      :persistent-stopping="remotePersistent.stopping.value"
+      :persistent-error="remotePersistent.error.value"
+      @start="(ttlSeconds) => void remoteShare.start(ttlSeconds)"
+      @stop="() => void remoteShare.stop()"
+      @refresh="() => void remoteShare.refresh()"
+      @persistent-start="() => void remotePersistent.start()"
+      @persistent-stop="() => void remotePersistent.stop()"
+      @persistent-refresh="() => void remotePersistent.refresh()"
+      @close="closeRemoteShare"
+    />
+
     <!-- Global connecting splash on first load (until the daemon round-trips) -->
     <Transition name="gload-fade">
       <GlobalLoading v-if="!client.initialized.value" :issue="client.connectIssue.value" />
@@ -1508,6 +1628,14 @@ function openPr(url: string): void {
       :auth-ready="client.authReady.value"
       :conversation-toc="client.conversationToc.value"
       :server-version="client.serverVersion.value"
+      :session-id="client.activeSessionId.value"
+      :git-info="client.gitInfo.value"
+      :changes-count="activeSessionChangesCount"
+      :pr="client.activePullRequest.value"
+      :subagent-preset="client.config.value?.subagent?.preset"
+      :subagent-preset-names="subagentPresetNames"
+      :subagent-preset-saving="configSaving"
+      :subagent-preset-locked="subagentPresetLocked"
       @pick-model="openModelPicker()"
       @set-thinking="client.setThinking($event)"
       @toggle-plan="handleTogglePlanMode"
@@ -1516,6 +1644,14 @@ function openPr(url: string): void {
       @set-color-scheme="client.setColorScheme($event)"
       @set-ui-font-size="client.setUiFontSize($event)"
       @set-conversation-toc="client.setConversationToc($event)"
+      @copy-all="conversationPaneRef?.copyConversation()"
+      @copy-final-summary="conversationPaneRef?.copyFinalSummary()"
+      @fork-session="(id) => client.forkSession(id)"
+      @export-session="(id) => client.exportSession(id)"
+      @activate-preset="handleActivatePreset($event)"
+      @resume-auto-preset="handleResumeAutoPreset"
+      @open-changes="openDiffDetail()"
+      @open-pr="openPr"
       @login="() => { showMobileSettings = false; openLogin(); }"
       @logout="client.logout"
     />

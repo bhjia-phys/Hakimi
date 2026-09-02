@@ -7,12 +7,16 @@ import { traceKeyEvent } from '../../debug/trace';
 import type {
   AppConfig,
   AppGoal,
+  AppInFlightTurn,
+  AutoSubagentPresetStatus,
   AppMessage,
   AppMessageRole,
   AppModel,
   AppProvider,
   ProviderRefreshResult,
   ProviderUsageResult,
+  AppRemotePersistentStatus,
+  AppRemoteShareStatus,
   AppSession,
   AppSkill,
   AppSessionCursor,
@@ -41,6 +45,7 @@ import { createAgentProjector } from './agentEventProjector';
 import { DaemonHttpClient } from './http';
 import {
   toAppApprovalRequest,
+  toAppAutoSubagentPresetStatus,
   toAppConfig,
   toAppEvent,
   toAppFsEntry,
@@ -50,6 +55,8 @@ import {
   toAppProvider,
   toAppProviderUsageResult,
   toAppQuestionRequest,
+  toAppRemotePersistentStatus,
+  toAppRemoteShareStatus,
   toAppResearchSnapshot,
   toAppSession,
   toAppTask,
@@ -81,6 +88,10 @@ import type {
   WireProvider,
   WireProviderRefreshResult,
   WireProviderUsageResponse,
+  WireRemotePersistentStatus,
+  WireRemoteShareStatus,
+  WireAutoSubagentPresetStatusResponse,
+  WireSubagentPresetActivation,
   WireResearchCommandResponse,
   WireResearchStatusSnapshot,
   WireSession,
@@ -92,6 +103,7 @@ import type {
   WireWorkspace,
   WireLogoutResult,
 } from './wire';
+import { isDaemonApiError } from '../errors';
 import { DaemonEventSocket } from './ws';
 
 function safeExportFileName(contentDisposition: string | undefined, fallback: string): string {
@@ -139,6 +151,20 @@ function errorTraceMetadata(err: unknown): Record<string, string | number | unde
     phase: typeof value.phase === 'string' ? value.phase : undefined,
     httpStatus: typeof value.status === 'number' ? value.status : undefined,
   };
+}
+
+function isRouteNotFoundError(error: unknown): boolean {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { status?: unknown }).status === 404
+  ) {
+    return true;
+  }
+  return (
+    isDaemonApiError(error) &&
+    (error.code === 404 || Math.trunc(error.code / 100) === 404)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -299,9 +325,63 @@ function isCompactionReason(reason: string): boolean {
   return reason === 'auto_compact' || reason === 'manual_compact';
 }
 
+/** Recover the observable progress baseline from the current prompt's durable
+ * snapshot messages. The snapshot has no explicit turn-start/count fields, so
+ * prompt creation time is the closest authoritative elapsed baseline and each
+ * assistant message represents one observed step, including the current partial. */
+export function deriveTurnProgressSeed(
+  messages: AppMessage[],
+  promptId: string | undefined,
+  runningToolCallIds: string[],
+): NonNullable<AppInFlightTurn['progress']> {
+  const lastUserIndex = messages.findLastIndex((message) => message.role === 'user');
+  const fallbackPromptMessages = lastUserIndex === -1 ? [] : messages.slice(lastUserIndex);
+  const matchingPromptMessages =
+    promptId === undefined ? [] : messages.filter((message) => message.promptId === promptId);
+  const promptMessages =
+    matchingPromptMessages.length > 0 ? matchingPromptMessages : fallbackPromptMessages;
+  const toolCallIds = new Set(runningToolCallIds);
+  const completedToolCallIds = new Set<string>();
+  const timestamps: number[] = [];
+  let durableStepCount = 0;
+
+  for (const message of promptMessages) {
+    const timestamp = Date.parse(message.createdAt);
+    if (Number.isFinite(timestamp)) timestamps.push(timestamp);
+    if (message.role === 'assistant') durableStepCount += 1;
+    for (const part of message.content) {
+      if (part.type === 'toolUse') toolCallIds.add(part.toolCallId);
+      if (part.type === 'toolResult') {
+        toolCallIds.add(part.toolCallId);
+        completedToolCallIds.add(part.toolCallId);
+      }
+    }
+  }
+
+  // The live context snapshot already contains the current partial assistant
+  // opened by step.begin. Only synthesize step 1 when no assistant has reached
+  // the bounded message page yet.
+  const stepCount = Math.max(1, durableStepCount);
+  return {
+    startedAt: timestamps.length > 0 ? Math.min(...timestamps) : Date.now(),
+    stepCount,
+    stepNumbers: Array.from({ length: stepCount }, (_, index) => index + 1),
+    toolCallIds: [...toolCallIds],
+    completedToolCallIds: [...completedToolCallIds],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // DaemonKimiWebApi
 // ---------------------------------------------------------------------------
+
+/**
+ * Persistent service startup may spend up to 30s waiting for `state.json`
+ * after systemd work. Keep the browser transport deadline comfortably above
+ * that server-side bound so the response, not the client abort, decides the
+ * outcome.
+ */
+export const REMOTE_PERSISTENT_START_TIMEOUT_MS = 90_000;
 
 export class DaemonKimiWebApi implements KimiWebApi {
   private readonly http: DaemonHttpClient;
@@ -563,29 +643,37 @@ export class DaemonKimiWebApi implements KimiWebApi {
       const data = await this.http.get<WireSessionSnapshot>(
         `/sessions/${encodeURIComponent(sessionId)}/snapshot`,
       );
+      // Snapshot messages are already chronological ascending.
+      const messages = data.messages.items.map(toAppMessage);
+      let inFlightTurn: AppInFlightTurn | null = null;
+      if (data.in_flight_turn !== null) {
+        const runningTools = data.in_flight_turn.running_tools.map((tool) => ({
+          toolCallId: tool.tool_call_id,
+          name: tool.name,
+          args: tool.args,
+          description: tool.description,
+          lastProgress: tool.last_progress,
+        }));
+        inFlightTurn = {
+          turnId: data.in_flight_turn.turn_id,
+          assistantText: data.in_flight_turn.assistant_text,
+          thinkingText: data.in_flight_turn.thinking_text,
+          runningTools,
+          progress: deriveTurnProgressSeed(
+            messages,
+            data.in_flight_turn.current_prompt_id,
+            runningTools.map((tool) => tool.toolCallId),
+          ),
+          promptId: data.in_flight_turn.current_prompt_id,
+        };
+      }
       const snapshot: AppSessionSnapshot = {
         asOfSeq: data.as_of_seq,
         epoch: data.epoch,
         session: toAppSession(data.session),
-        // Snapshot messages are already chronological ascending.
-        messages: data.messages.items.map(toAppMessage),
+        messages,
         hasMoreMessages: data.messages.has_more,
-        inFlightTurn:
-          data.in_flight_turn === null
-            ? null
-            : {
-                turnId: data.in_flight_turn.turn_id,
-                assistantText: data.in_flight_turn.assistant_text,
-                thinkingText: data.in_flight_turn.thinking_text,
-                runningTools: data.in_flight_turn.running_tools.map((t) => ({
-                  toolCallId: t.tool_call_id,
-                  name: t.name,
-                  args: t.args,
-                  description: t.description,
-                  lastProgress: t.last_progress,
-                })),
-                promptId: data.in_flight_turn.current_prompt_id,
-              },
+        inFlightTurn,
         pendingApprovals: data.pending_approvals.map(toAppApprovalRequest),
         pendingQuestions: data.pending_questions.map(toAppQuestionRequest),
         // Older servers omit the roster entirely; treat as an empty roster.
@@ -1288,6 +1376,20 @@ export class DaemonKimiWebApi implements KimiWebApi {
     return toAppConfig(data);
   }
 
+  async getAutoSubagentPresetStatus(): Promise<AutoSubagentPresetStatus | undefined> {
+    try {
+      const data = await this.http.get<WireAutoSubagentPresetStatusResponse>(
+        '/config/subagent-preset/status',
+      );
+      return data === null ? undefined : toAppAutoSubagentPresetStatus(data);
+    } catch (error) {
+      // Older daemons do not expose this read-only endpoint. Route-level 404s
+      // are a capability miss, not a user-visible connection failure.
+      if (isRouteNotFoundError(error)) return undefined;
+      throw error;
+    }
+  }
+
   async setConfig(patch: Partial<AppConfig>): Promise<AppConfig> {
     const wirePatch: Record<string, unknown> = {};
     const keyMap: Record<keyof AppConfig, string> = {
@@ -1323,11 +1425,79 @@ export class DaemonKimiWebApi implements KimiWebApi {
     return toAppConfig(data);
   }
 
+  async activateSubagentPreset(
+    preset: string,
+  ): Promise<{ config: AppConfig; warning?: string }> {
+    try {
+      const data = await this.http.post<WireSubagentPresetActivation>(
+        '/config/subagent-preset/activate',
+        { preset },
+      );
+      return { config: toAppConfig(data.config), warning: data.warning };
+    } catch (error) {
+      if (!isRouteNotFoundError(error)) throw error;
+      return { config: await this.setConfig({ subagent: { preset } }) };
+    }
+  }
+
   async getProviderUsage(providerId?: string): Promise<ProviderUsageResult[]> {
     const data = await this.http.get<WireProviderUsageResponse>('/provider-usage', {
       provider: providerId,
     });
     return data.providers.map(toAppProviderUsageResult);
+  }
+
+  // -------------------------------------------------------------------------
+  // Remote share — experimental `remote_control` flag gates the control
+  // routes on the main listener. GET and `:start`/`:stop` return the same
+  // browser-facing shape. The credential appears only inside the full control
+  // URL's fragment; there is no separate token field.
+  // -------------------------------------------------------------------------
+
+  async getRemoteShare(): Promise<AppRemoteShareStatus> {
+    const data = await this.http.get<WireRemoteShareStatus>('/remote-share');
+    return toAppRemoteShareStatus(data);
+  }
+
+  async startRemoteShare(
+    sessionId: string,
+    ttlSeconds?: number,
+  ): Promise<AppRemoteShareStatus> {
+    const body: Record<string, unknown> = { session_id: sessionId };
+    if (ttlSeconds !== undefined) body['ttl'] = ttlSeconds;
+    const data = await this.http.post<WireRemoteShareStatus>('/remote-share:start', body);
+    return toAppRemoteShareStatus(data);
+  }
+
+  async stopRemoteShare(): Promise<AppRemoteShareStatus> {
+    const data = await this.http.post<WireRemoteShareStatus>('/remote-share:stop', {});
+    return toAppRemoteShareStatus(data);
+  }
+
+  // -------------------------------------------------------------------------
+  // Long-lived remote control — the persistent `hakimi remote` systemd user
+  // service (no TTL, fixed token). GET and `:start`/`:stop` return the same
+  // browser-facing shape; the credential appears only inside the full control
+  // URL's fragment.
+  // -------------------------------------------------------------------------
+
+  async getRemotePersistent(): Promise<AppRemotePersistentStatus> {
+    const data = await this.http.get<WireRemotePersistentStatus>('/remote-persistent');
+    return toAppRemotePersistentStatus(data);
+  }
+
+  async startRemotePersistent(): Promise<AppRemotePersistentStatus> {
+    const data = await this.http.post<WireRemotePersistentStatus>(
+      '/remote-persistent:start',
+      {},
+      { timeoutMs: REMOTE_PERSISTENT_START_TIMEOUT_MS },
+    );
+    return toAppRemotePersistentStatus(data);
+  }
+
+  async stopRemotePersistent(): Promise<AppRemotePersistentStatus> {
+    const data = await this.http.post<WireRemotePersistentStatus>('/remote-persistent:stop', {});
+    return toAppRemotePersistentStatus(data);
   }
 
   // -------------------------------------------------------------------------
@@ -1466,8 +1636,8 @@ export class DaemonKimiWebApi implements KimiWebApi {
       // Raw agent-core frames — client-side projection path (real daemon)
       // -----------------------------------------------------------------------
       onRawAgentEvent: (frame) => {
-        const { type, seq, session_id: sessionId, payload, offset } = frame;
-        const appEvents = projector.project(type, payload, sessionId, { offset });
+        const { type, seq, session_id: sessionId, timestamp, payload, offset } = frame;
+        const appEvents = projector.project(type, payload, sessionId, { timestamp, offset });
         for (const appEvent of appEvents) {
           const turnId = (payload as { turnId?: unknown } | null)?.turnId;
           const stream =
@@ -1534,9 +1704,13 @@ export class DaemonKimiWebApi implements KimiWebApi {
         // resulting AppEvent (the partially-streamed assistant message) flows
         // through the SAME onEvent path as live events, so the rendering layer
         // needs no special handling; session status comes from the snapshot's
-        // authoritative session record. When there is no in-flight turn we
-        // only reset, so stale turn state can't leak into the freshly-loaded
-        // message list.
+        // authoritative session record. Reset reducer-owned progress at every
+        // snapshot watermark before restoring the optional live turn; this also
+        // permits a recreated session epoch whose turn ids restarted lower.
+        handlers.onEvent(
+          { type: 'turnProgress', sessionId, update: { kind: 'reset' } },
+          { sessionId, seq: snapshot.asOfSeq },
+        );
         if (snapshot.inFlightTurn === null) {
           projector.reset(sessionId);
           return;

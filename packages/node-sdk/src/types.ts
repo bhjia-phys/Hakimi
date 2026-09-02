@@ -380,3 +380,120 @@ export interface AddAdditionalDirResult {
 export type ResumedSessionState = Pick<ResumeSessionResult, 'sessionMetadata' | 'agents' | 'warning'>;
 
 export interface ResumedSessionSummary extends SessionSummary, ResumedSessionState { }
+
+export type AutoSubagentPresetReasonCode =
+  | 'cancelled'
+  | 'flag_disabled'
+  | 'auto_preset_disabled'
+  | 'manual_lock'
+  | 'caller_model_unavailable'
+  | 'no_candidates'
+  | 'explicit_preset'
+  | 'no_quota_evidence'
+  | 'no_healthy_candidate'
+  | 'current_optimal'
+  | 'score_margin_not_met'
+  | 'switch_cooldown'
+  | 'current_unhealthy'
+  | 'circuit_breaker_escape'
+  | 'higher_score'
+  | 'manual_override'
+  | 'preset_changed_during_evaluation'
+  | 'routing_config_changed'
+  | 'evaluation_failed'
+  | 'activation_failed'
+  | 'activation_no_effect';
+
+export type AutoSubagentPresetCandidateAvailability =
+  | 'healthy'
+  | 'route_unresolved'
+  | 'quota_unknown'
+  | 'quota_below_floor'
+  | 'circuit_open';
+
+export type AutoSubagentPresetEvidenceScope = 'profile' | 'provider' | 'none';
+
+export interface AutoSubagentPresetScoreContributions {
+  readonly quotaRemaining?: number;
+  readonly priorityBonus: number;
+  readonly resetBonus: number;
+  readonly routeFitBonus: number;
+  readonly tokenPenalty: number;
+  readonly reliabilityPenalty: number;
+  readonly latencyPenalty: number;
+}
+
+export interface AutoSubagentPresetLocalEvidence {
+  readonly scope: AutoSubagentPresetEvidenceScope;
+  readonly sampleCount: number;
+  readonly failureCount: number;
+  readonly adjustedFailureRate: number;
+  readonly tokenCount: number;
+  readonly averageFirstTokenLatencyMs?: number;
+  readonly firstTokenLatencySampleCount: number;
+  readonly llmRequestCount: number;
+}
+
+export interface AutoSubagentPresetCandidateScore {
+  readonly preset: string;
+  readonly provider?: string;
+  readonly availability: AutoSubagentPresetCandidateAvailability;
+  readonly selectable: boolean;
+  readonly score?: number;
+  readonly quotaRemainingPercent?: number;
+  readonly quotaResetAt?: number;
+  readonly circuitBreakerOpenUntil?: number;
+  readonly contributions: AutoSubagentPresetScoreContributions;
+  readonly localEvidence: AutoSubagentPresetLocalEvidence;
+}
+
+export interface AutoSubagentPresetPolicySnapshot {
+  readonly quotaFloorPercent: number;
+  readonly switchMarginPercent: number;
+  readonly localUsageWindowMs: number;
+  readonly localUsageWeightPercent: number;
+  readonly priorityWeightPercent: number;
+  readonly reliabilityWeightPercent: number;
+  readonly latencyWeightPercent: number;
+  readonly switchCooldownMs: number;
+  readonly circuitBreakerFailureThreshold: number;
+  readonly circuitBreakerCooldownMs: number;
+}
+
+/** Latest process-global automatic subagent-preset evaluation (v2 only). */
+export interface AutoSubagentPresetStatus {
+  readonly evaluatedAt: number;
+  readonly route: 'agent' | 'swarm' | 'tower_worker' | 'tower_reviewer';
+  readonly profileName?: string;
+  readonly reasonCode: AutoSubagentPresetReasonCode;
+  /** Preset that was active when this evaluation began. */
+  readonly currentPreset?: string;
+  readonly selectedPreset?: string;
+  /** Preset activated by this evaluation, when it switched routing. */
+  readonly activatedPreset?: string;
+  readonly currentScore?: number;
+  readonly selectedScore?: number;
+  readonly switchCooldownUntil?: number;
+  readonly candidates: readonly AutoSubagentPresetCandidateScore[];
+  readonly policy: AutoSubagentPresetPolicySnapshot;
+}
+
+/** One automatic subagent-preset evaluation notification (v2 engine only). */
+export interface SubagentPresetEvaluatedEvent extends AutoSubagentPresetStatus {
+  readonly sessionId: string;
+}
+
+/** Automatic subagent-preset switch notification (v2 engine only). */
+export interface SubagentPresetChangedEvent {
+  /** The session whose `[subagent].preset` was switched by the automatic selector. */
+  readonly sessionId: string;
+  /** The preset active before the switch (absent for a first automatic choice). */
+  readonly previousPreset?: string;
+  /** The newly activated preset. */
+  readonly currentPreset: string;
+  readonly reasonCode: AutoSubagentPresetReasonCode;
+  readonly profileName?: string;
+  readonly evaluatedAt: number;
+  readonly previousScore?: number;
+  readonly currentScore?: number;
+}

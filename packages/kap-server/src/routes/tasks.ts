@@ -59,6 +59,7 @@ import { z } from 'zod';
 import { errEnvelope, okEnvelope } from '../envelope';
 import { requestLog } from '../lib/requestLog';
 import { defineRoute } from '../middleware/defineRoute';
+import { projectRemoteTask } from '../security/remoteResponseProjection';
 import { ensureMainAgent } from '../transport/mainAgent';
 import { parseActionSuffix } from './action-suffix';
 
@@ -99,7 +100,16 @@ const detailsSchema = z.array(z.object({ path: z.string(), message: z.string() }
 
 // --- Registration -----------------------------------------------------------
 
-export function registerTasksRoutes(app: TasksRouteHost, core: Scope): void {
+export interface RegisterTasksRoutesOptions {
+  /** undefined = local; string = one-session remote; null = all-session remote. */
+  readonly remoteSessionId?: string | null;
+}
+
+export function registerTasksRoutes(
+  app: TasksRouteHost,
+  core: Scope,
+  options: RegisterTasksRoutesOptions = {},
+): void {
   // GET /sessions/{session_id}/tasks ------------------------------------
   const listRoute = defineRoute(
     {
@@ -129,8 +139,10 @@ export function registerTasksRoutes(app: TasksRouteHost, core: Scope): void {
         toWireTask(session_id, info),
       );
       const query = req.query as { status?: TaskStatus };
+      const filtered =
+        query.status !== undefined ? all.filter((task) => task.status === query.status) : all;
       const items =
-        query.status !== undefined ? all.filter((t) => t.status === query.status) : all;
+        options.remoteSessionId === undefined ? filtered : filtered.map(projectRemoteTask);
       reply.send(okEnvelope({ items }, req.id));
     },
   );
@@ -383,6 +395,9 @@ function toWireTask(
   }
   if (info.kind === 'agent' && info.parentToolCallId !== undefined) {
     base.parent_tool_call_id = info.parentToolCallId;
+  }
+  if (info.kind === 'agent' && info.detached !== undefined) {
+    base.run_in_background = info.detached;
   }
   if (output !== undefined) {
     base.output_preview = output.preview;

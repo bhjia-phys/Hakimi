@@ -1,35 +1,38 @@
 /**
  * `/config` route handlers — server-v2 port.
  *
- * Implements the v1 `/api/v1/config` wire contract on top of `agent-core-v2`'s
- * section-registry `IConfigService`:
- *   GET  /config   — global Kimi configuration, secrets redacted
- *   POST /config   — update global configuration (merge semantics)
+ * Implements the v1 `/api/v1/config` wire contract plus the v2 automatic-preset
+ * runtime status boundary on top of `agent-core-v2`'s section registry and
+ * canonical preset services:
+ *   GET  /config                            — global configuration, secrets redacted
+ *   GET  /config/subagent-preset/status     — latest process-local automatic evaluation
+ *   POST /config                            — update configuration (merge semantics)
+ *   POST /config/subagent-preset/activate   — validate and serialize manual routing changes
  *
- * **Wire fidelity**: reuses the local `protocol/rest-config` `configResponseSchema` /
- * `patchConfigRequestSchema` verbatim, so the request/response shape is
- * byte-for-byte compatible with v1's `routes/config.ts`. v2's `IConfigService`
- * is a per-domain registry (`get(domain)` / `set(domain, patch)`) and does not
- * expose a whole-config view or redaction, so this route is the edge facade
- * that:
+ * **Wire fidelity**: reuses the local `protocol/rest-config` schemas and explicit
+ * projectors. v2's `IConfigService` is a per-domain registry (`get(domain)` /
+ * `set(domain, patch)`) and does not expose a whole-config view or redaction, so
+ * this route is the edge facade that:
  *   - projects `getAll()` (camelCase resolved config) into the snake_case
  *     `ConfigResponse`, projecting providers to `has_api_key`, recursively
  *     removing credential fields elsewhere, and omitting the arbitrary `raw`
  *     domain so REST/WS/journal outputs share one safe view;
+ *   - projects the App-scope evaluator's in-memory status field-by-field without
+ *     adding it to `/config` or persisting it to `config.toml`;
  *   - splits v1's flat multi-domain `POST /config` patch into per-domain
- *     `IConfigService.set(domain, value)` calls (snake_case → camelCase);
- *   - republishes the change as a v2 `DomainEvent` on `IEventService`.
+ *     `IConfigService.set(domain, value)` calls (snake_case → camelCase), except
+ *     an own `[subagent].preset` field, which is committed last through the
+ *     shared manual activation boundary while the remaining fields still merge.
  *
- * **Event shape**: v2's `DomainEvent` is `{ type, payload }`, and the Core
- * `events` WS stream forwards it as-is. The config-changed notification is
- * therefore emitted as `{ type: 'event.config.changed', payload: { changedFields,
- * config } }` rather than v1's flat `{ type, changedFields, config }`. The HTTP
- * response (the schema contract) is unaffected.
+ * The process-wide config bridge in `start.ts` observes config writes alongside
+ * internal tool writes and external reloads, then publishes the secret-free
+ * `event.config.changed` snapshot. Runtime status never enters that bridge.
  */
 
 import {
+  IAutoSubagentPresetService,
   IConfigService,
-  IEventService,
+  ISubagentPresetActivationService,
   type Scope,
 } from '@moonshot-ai/agent-core-v2';
 
@@ -37,7 +40,14 @@ import { errEnvelope, okEnvelope } from '../envelope';
 import { requestLog } from '../lib/requestLog';
 import { defineRoute } from '../middleware/defineRoute';
 import { ErrorCode } from '../protocol/error-codes';
-import { configResponseSchema, patchConfigRequestSchema } from '../protocol/rest-config';
+import {
+  configResponseSchema,
+  patchConfigRequestSchema,
+  projectSubagentPresetStatus,
+  subagentPresetActivationRequestSchema,
+  subagentPresetActivationResponseSchema,
+  subagentPresetStatusResponseSchema,
+} from '../protocol/rest-config';
 import type { ConfigResponse } from '../protocol/rest-config';
 
 type ProviderResponse = ConfigResponse['providers'][string];
@@ -78,6 +88,71 @@ export function registerConfigRoutes(app: ConfigRouteHost, core: Scope): void {
   );
   app.get(getRoute.path, getRoute.options, getRoute.handler as Parameters<ConfigRouteHost['get']>[2]);
 
+  const presetStatusRoute = defineRoute(
+    {
+      method: 'GET',
+      path: '/config/subagent-preset/status',
+      success: { data: subagentPresetStatusResponseSchema },
+      description: 'Get the latest process-local automatic subagent-preset evaluation',
+      tags: ['config'],
+    },
+    (req, reply) => {
+      const status = core.accessor.get(IAutoSubagentPresetService).status();
+      reply.send(okEnvelope(projectSubagentPresetStatus(status) ?? null, req.id));
+    },
+  );
+  app.get(
+    presetStatusRoute.path,
+    presetStatusRoute.options,
+    presetStatusRoute.handler as Parameters<ConfigRouteHost['get']>[2],
+  );
+
+  const activatePresetRoute = defineRoute(
+    {
+      method: 'POST',
+      path: '/config/subagent-preset/activate',
+      body: subagentPresetActivationRequestSchema,
+      success: { data: subagentPresetActivationResponseSchema },
+      errors: {
+        [ErrorCode.VALIDATION_FAILED]: {},
+      },
+      description: 'Validate and activate a subagent routing preset; empty selects base routing',
+      tags: ['config'],
+    },
+    async (req, reply) => {
+      try {
+        const { preset } = subagentPresetActivationRequestSchema.parse(req.body);
+        const config = core.accessor.get(IConfigService);
+        await config.ready;
+        const result = await core.accessor.get(ISubagentPresetActivationService).activate(preset);
+        if (result.kind !== 'activated') {
+          requestLog(req)?.warn({ preset, kind: result.kind }, 'subagent preset activation rejected');
+          reply.send(errEnvelope(ErrorCode.VALIDATION_FAILED, result.message, req.id));
+          return;
+        }
+        requestLog(req)?.info({ preset }, 'subagent preset activated');
+        reply.send(
+          okEnvelope(
+            {
+              config: toConfigResponse(config.getAll()),
+              warning: result.warning,
+            },
+            req.id,
+          ),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        requestLog(req)?.error({ err: error }, 'subagent preset activation failed');
+        reply.send(errEnvelope(ErrorCode.VALIDATION_FAILED, message, req.id));
+      }
+    },
+  );
+  app.post(
+    activatePresetRoute.path,
+    activatePresetRoute.options,
+    activatePresetRoute.handler as Parameters<ConfigRouteHost['post']>[2],
+  );
+
   const setRoute = defineRoute(
     {
       method: 'POST',
@@ -102,18 +177,29 @@ export function registerConfigRoutes(app: ConfigRouteHost, core: Scope): void {
           camelPatch['defaultPermissionMode'] = 'yolo';
         }
         delete camelPatch['yolo'];
+        let manualPreset: string | undefined;
+        const subagentPatch = camelPatch['subagent'];
+        if (isPlainObject(subagentPatch) && Object.hasOwn(subagentPatch, 'preset')) {
+          if (typeof subagentPatch['preset'] !== 'string') {
+            throw new TypeError('subagent.preset must be a string');
+          }
+          manualPreset = subagentPatch['preset'];
+          delete subagentPatch['preset'];
+          if (Object.keys(subagentPatch).length === 0) delete camelPatch['subagent'];
+        }
         for (const domain of Object.keys(camelPatch)) {
           await config.set(domain, camelPatch[domain]);
         }
+        if (manualPreset !== undefined) {
+          const result = await core.accessor
+            .get(ISubagentPresetActivationService)
+            .activate(manualPreset);
+          if (result.kind !== 'activated') throw new Error(result.message);
+        }
         const response = toConfigResponse(config.getAll());
         const changedFields = Object.keys(req.body as Record<string, unknown>);
-        core.accessor.get(IEventService).publish({
-          type: 'event.config.changed',
-          payload: {
-            changedFields,
-            config: response,
-          },
-        });
+        // The process-wide config bridge publishes the corresponding
+        // `event.config.changed` after all domain writes settle.
         // Only the changed field *names* — values may carry secrets.
         requestLog(req)?.info({ changedFields }, 'config updated');
         reply.send(okEnvelope(response, req.id));
@@ -134,7 +220,7 @@ export function registerConfigRoutes(app: ConfigRouteHost, core: Scope): void {
 // because no finite redaction policy can make unknown values safe over REST,
 // WS, or the durable global event journal. Credential-bearing passthrough
 // domains use explicit public projections; remaining fixed-schema domains are
-// recursively scrubbed. External reload events reuse this exact projection.
+// recursively scrubbed. The process-wide config bridge reuses this projection.
 // ---------------------------------------------------------------------------
 
 const PUBLIC_CONFIG_DOMAINS = new Set([

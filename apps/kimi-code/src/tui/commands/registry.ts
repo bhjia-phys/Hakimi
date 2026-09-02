@@ -473,6 +473,13 @@ export const BUILTIN_SLASH_COMMANDS = [
     availability: 'always',
   },
   {
+    name: 'remote',
+    aliases: [],
+    description: 'Temporarily control the current session from another device',
+    priority: 40,
+    availability: 'idle-only',
+  },
+  {
     name: 'exit',
     aliases: ['quit', 'q'],
     description: 'Exit the application',

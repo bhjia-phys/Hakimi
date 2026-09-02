@@ -16,6 +16,13 @@
  */
 import type { Event } from '@moonshot-ai/agent-core';
 import type { DomainEvent } from '@moonshot-ai/agent-core-v2';
+import { z } from 'zod';
+
+import type {
+  AutoSubagentPresetStatus,
+  SubagentPresetChangedEvent,
+  SubagentPresetEvaluatedEvent,
+} from '#/types';
 
 /**
  * DomainEvent types the v1 SDK event stream never carries:
@@ -86,4 +93,135 @@ export function translateGlobalEvent(event: {
     return undefined;
   }
   return { type: event.type, ...event.payload } as unknown as Event;
+}
+
+const autoSubagentPresetReasonCodeSchema = z.enum([
+  'cancelled',
+  'flag_disabled',
+  'auto_preset_disabled',
+  'manual_lock',
+  'caller_model_unavailable',
+  'no_candidates',
+  'explicit_preset',
+  'no_quota_evidence',
+  'no_healthy_candidate',
+  'current_optimal',
+  'score_margin_not_met',
+  'switch_cooldown',
+  'current_unhealthy',
+  'circuit_breaker_escape',
+  'higher_score',
+  'manual_override',
+  'preset_changed_during_evaluation',
+  'routing_config_changed',
+  'evaluation_failed',
+  'activation_failed',
+  'activation_no_effect',
+]);
+const finiteNumberSchema = z.number().finite();
+const nonNegativeNumberSchema = finiteNumberSchema.nonnegative();
+const nonNegativeIntegerSchema = nonNegativeNumberSchema.int();
+const rateSchema = nonNegativeNumberSchema.max(1);
+const percentSchema = nonNegativeNumberSchema.max(100);
+const nonEmptyStringSchema = z.string().min(1);
+
+const autoSubagentPresetStatusSchema = z.object({
+  evaluatedAt: nonNegativeNumberSchema,
+  route: z.enum(['agent', 'swarm', 'tower_worker', 'tower_reviewer']),
+  profileName: nonEmptyStringSchema.optional(),
+  reasonCode: autoSubagentPresetReasonCodeSchema,
+  currentPreset: nonEmptyStringSchema.optional(),
+  selectedPreset: nonEmptyStringSchema.optional(),
+  activatedPreset: nonEmptyStringSchema.optional(),
+  currentScore: finiteNumberSchema.optional(),
+  selectedScore: finiteNumberSchema.optional(),
+  switchCooldownUntil: nonNegativeNumberSchema.optional(),
+  candidates: z.array(
+    z.object({
+      preset: nonEmptyStringSchema,
+      provider: nonEmptyStringSchema.optional(),
+      availability: z.enum([
+        'healthy',
+        'route_unresolved',
+        'quota_unknown',
+        'quota_below_floor',
+        'circuit_open',
+      ]),
+      selectable: z.boolean(),
+      score: finiteNumberSchema.optional(),
+      quotaRemainingPercent: percentSchema.optional(),
+      quotaResetAt: nonNegativeNumberSchema.optional(),
+      circuitBreakerOpenUntil: nonNegativeNumberSchema.optional(),
+      contributions: z.object({
+        quotaRemaining: percentSchema.optional(),
+        priorityBonus: nonNegativeNumberSchema,
+        resetBonus: nonNegativeNumberSchema,
+        routeFitBonus: nonNegativeNumberSchema,
+        tokenPenalty: nonNegativeNumberSchema,
+        reliabilityPenalty: nonNegativeNumberSchema,
+        latencyPenalty: nonNegativeNumberSchema,
+      }),
+      localEvidence: z.object({
+        scope: z.enum(['profile', 'provider', 'none']),
+        sampleCount: nonNegativeIntegerSchema,
+        failureCount: nonNegativeIntegerSchema,
+        adjustedFailureRate: rateSchema,
+        tokenCount: nonNegativeIntegerSchema,
+        averageFirstTokenLatencyMs: nonNegativeNumberSchema.optional(),
+        firstTokenLatencySampleCount: nonNegativeIntegerSchema,
+        llmRequestCount: nonNegativeIntegerSchema,
+      }),
+    }),
+  ),
+  policy: z.object({
+    quotaFloorPercent: percentSchema,
+    switchMarginPercent: percentSchema,
+    localUsageWindowMs: nonNegativeNumberSchema,
+    localUsageWeightPercent: percentSchema,
+    priorityWeightPercent: percentSchema,
+    reliabilityWeightPercent: percentSchema,
+    latencyWeightPercent: percentSchema,
+    switchCooldownMs: nonNegativeNumberSchema,
+    circuitBreakerFailureThreshold: nonNegativeIntegerSchema,
+    circuitBreakerCooldownMs: nonNegativeNumberSchema,
+  }),
+});
+
+/** Strictly map a v2 status snapshot; malformed values return `undefined`. */
+export function translateSubagentPresetStatus(payload: unknown): AutoSubagentPresetStatus | undefined {
+  const parsed = autoSubagentPresetStatusSchema.safeParse(payload);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** Strictly map one `event.subagent.preset_evaluated` fact. */
+export function translateSubagentPresetEvaluated(
+  payload: unknown,
+): SubagentPresetEvaluatedEvent | undefined {
+  const parsed = autoSubagentPresetStatusSchema
+    .extend({ sessionId: nonEmptyStringSchema })
+    .safeParse(payload);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/**
+ * Strictly map the expanded `event.subagent.preset_changed` core fact. Unknown
+ * fields are stripped for forward compatibility; malformed known fields drop
+ * the fact. The v2-only fact never enters the legacy `onEvent` stream.
+ */
+export function translateSubagentPresetChanged(
+  payload: unknown,
+): SubagentPresetChangedEvent | undefined {
+  const parsed = z
+    .object({
+      sessionId: nonEmptyStringSchema,
+      previousPreset: nonEmptyStringSchema.optional(),
+      currentPreset: nonEmptyStringSchema,
+      reasonCode: autoSubagentPresetReasonCodeSchema,
+      profileName: nonEmptyStringSchema.optional(),
+      evaluatedAt: nonNegativeNumberSchema,
+      previousScore: finiteNumberSchema.optional(),
+      currentScore: finiteNumberSchema.optional(),
+    })
+    .safeParse(payload);
+  return parsed.success ? parsed.data : undefined;
 }

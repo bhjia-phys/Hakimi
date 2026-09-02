@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { AppMessage, AppMessageContent } from '../src/api/types';
+import type { AppMessage, AppMessageContent, AppTask } from '../src/api/types';
+import { SUBAGENT_PRESET_MARKER_METADATA_KEY } from '../src/api/types';
 import { latestTodos } from '../src/composables/latestTodos';
-import { messagesToTurns } from '../src/composables/messagesToTurns';
+import { messagesToTurns, toAgentMember } from '../src/composables/messagesToTurns';
 import { isPlayableMediaUrl } from '../src/composables/useFilePreview';
+import { toUiTask } from '../src/composables/useKimiWebClient';
+import {
+  resolveAgentTaskForDetail,
+  resolveExactAgentTask,
+} from '../src/lib/agentTaskResolver';
 
 function message(
   id: string,
@@ -115,6 +121,67 @@ describe('messagesToTurns', () => {
     );
 
     expect(turns).toMatchObject([{ role: 'compaction', text: 'summary' }]);
+  });
+
+  it('renders subagent-preset markers as lightweight status turns (never assistant bubbles)', () => {
+    const turns = messagesToTurns(
+      [
+        message('u1', 'user', [{ type: 'text', text: 'hello' }]),
+        message('m1', 'assistant', [], {
+          metadata: {
+            [SUBAGENT_PRESET_MARKER_METADATA_KEY]: {
+              from: 'balanced',
+              to: 'kimi-heavy',
+              reasonCode: 'higher_score',
+              profileName: 'reviewer',
+              evaluatedAt: 1_750_000_000_000,
+              previousScore: 58.5,
+              currentScore: 76.25,
+            },
+          },
+        }),
+        message('u2', 'user', [{ type: 'text', text: 'again' }]),
+      ],
+      [],
+      undefined,
+      false,
+    );
+
+    expect(turns).toHaveLength(3);
+    expect(turns[1]).toMatchObject({
+      role: 'subagentPreset',
+      id: 'm1',
+      subagentPreset: {
+        from: 'balanced',
+        to: 'kimi-heavy',
+        reasonCode: 'higher_score',
+        profileName: 'reviewer',
+        evaluatedAt: 1_750_000_000_000,
+        previousScore: 58.5,
+        currentScore: 76.25,
+      },
+    });
+    expect(turns[1]?.role).not.toBe('assistant');
+    // The marker flushes any pending assistant group before it.
+    expect(turns.map((t) => t.role)).toEqual(['user', 'subagentPreset', 'user']);
+  });
+
+  it('passes an absent from through the status turn', () => {
+    const turns = messagesToTurns(
+      [
+        message('m1', 'assistant', [], {
+          metadata: { [SUBAGENT_PRESET_MARKER_METADATA_KEY]: { to: 'balanced' } },
+        }),
+      ],
+      [],
+      undefined,
+      false,
+    );
+
+    expect(turns[0]).toMatchObject({
+      role: 'subagentPreset',
+      subagentPreset: { from: undefined, to: 'balanced' },
+    });
   });
 
   it('renders a live multi-member swarm inline as a tool card', () => {
@@ -858,6 +925,57 @@ describe('messagesToTurns cron', () => {
     // No prompt ids anywhere (REST-shaped): the cron still becomes its own
     // turn, and the cron-triggered reply does not merge into the first answer.
     expect(turns.map((t) => t.role)).toEqual(['user', 'assistant', 'cron', 'assistant']);
+  });
+});
+
+describe('subagent task view models', () => {
+  it('preserves role, model, and thinking effort in AgentMember and TaskItem', () => {
+    const task: AppTask = {
+      id: 'agent-1',
+      sessionId: 'session-1',
+      kind: 'subagent',
+      description: 'Review the change',
+      status: 'running',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      subagentType: 'reviewer',
+      model: 'runtime-model',
+      thinkingEffort: 'high',
+    };
+
+    expect(toAgentMember(task)).toMatchObject({
+      id: 'agent-1',
+      subagentType: 'reviewer',
+      model: 'runtime-model',
+      thinkingEffort: 'high',
+    });
+    expect(toUiTask(task)).toMatchObject({
+      id: 'agent-1',
+      kind: 'subagent',
+      subagentType: 'reviewer',
+      model: 'runtime-model',
+      thinkingEffort: 'high',
+    });
+  });
+
+  it('never assigns one unmapped task metadata to either of two Agent cards', () => {
+    const unmapped = toUiTask({
+      id: 'agent-unmapped',
+      sessionId: 'session-1',
+      kind: 'subagent',
+      description: 'Late task',
+      status: 'running',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      subagentType: 'reviewer',
+      model: 'runtime-model',
+    });
+    const tasks = [unmapped];
+
+    expect(resolveExactAgentTask(tasks, 'call-a')).toBeUndefined();
+    expect(resolveExactAgentTask(tasks, 'call-b')).toBeUndefined();
+    // The heuristic remains available only to keep each card's Open action
+    // reachable; AgentTool's role/model resolver never consumes this result.
+    expect(resolveAgentTaskForDetail(tasks, 'call-a')?.id).toBe('agent-unmapped');
+    expect(resolveAgentTaskForDetail(tasks, 'call-b')?.id).toBe('agent-unmapped');
   });
 });
 

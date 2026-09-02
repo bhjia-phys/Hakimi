@@ -13,13 +13,21 @@ import { IAgentProfileService, type ProfileData } from '#/agent/profile/profile'
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { IAgentUserToolService } from '#/agent/userTool/userTool';
 import { IEventBus, type DomainEvent } from '#/app/event/eventBus';
+import {
+  IAutoSubagentPresetService,
+  type AutoSubagentPresetContext,
+  type AutoSubagentPresetEvaluation,
+} from '#/app/autoSubagentPreset/autoSubagentPreset';
 import { IConfigService } from '#/app/config/config';
 import { IFlagService } from '#/app/flag/flag';
 import {
   normalizeAgentProfile,
   type AgentProfile,
 } from '#/app/agentProfileCatalog/agentProfileCatalog';
-import { SUBAGENT_SECTION } from '#/session/subagent/configSection';
+import {
+  SUBAGENT_SECTION,
+  type SubagentRouteRequest,
+} from '#/session/subagent/configSection';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
 import { APIProviderRateLimitError } from '#/kosong/contract/errors';
 import { IModelCatalog, type Model } from '#/kosong/model/catalog';
@@ -61,6 +69,7 @@ import { ConfigErrors } from '#/app/config/errors';
 import { SessionSwarmService } from '#/features/swarm/session/sessionSwarmService';
 
 import { stubLog } from '../../_base/log/stubs';
+import { stubAutoSubagentPreset } from '../../app/autoSubagentPreset/stubs';
 import { stubFlag } from '../../app/flag/stubs';
 import { StubConfigService } from '../../kosong/stubs';
 
@@ -888,6 +897,12 @@ describe('SessionSwarmService metadata compatibility', () => {
   let eventBus: IEventBus;
   let config: StubConfigService;
   let exploreProfile: AgentProfile;
+  let autoPresetEvaluate: Mock<
+    (
+      request: SubagentRouteRequest,
+      context: AutoSubagentPresetContext,
+    ) => Promise<AutoSubagentPresetEvaluation>
+  >;
   let resolverAcquire: Mock<(binding: unknown, required: unknown) => void>;
 
   beforeEach(() => {
@@ -983,6 +998,14 @@ describe('SessionSwarmService metadata compatibility', () => {
         return { id: alias } as Model;
       },
     } as IModelCatalog);
+    autoPresetEvaluate = vi.fn(async (request: SubagentRouteRequest) => ({
+      request,
+      reason: 'stubbed',
+    }));
+    ix.stub(
+      IAutoSubagentPresetService,
+      stubAutoSubagentPreset(autoPresetEvaluate),
+    );
     ix.set(ISessionSwarmService, new SyncDescriptor(SessionSwarmService));
   });
 
@@ -1203,6 +1226,68 @@ describe('SessionSwarmService metadata compatibility', () => {
       { kind: 'prompt', prompt: 'Continue' },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+    expect(autoPresetEvaluate).toHaveBeenCalledWith(
+      expect.objectContaining({ route: 'swarm', profileName: 'explore' }),
+      expect.objectContaining({ sessionId: 's1', signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it('evaluates every rebindable child profile in a resume-only batch', async () => {
+    agents['agent-explore'] = { labels: { parentAgentId: 'main' } };
+    agents['agent-coder'] = { labels: { parentAgentId: 'main' } };
+    handles.set(
+      'agent-explore',
+      agentHandle('agent-explore', lifecycle, eventBus, {
+        profileName: 'explore',
+        modelAlias: 'stale-explore',
+      }),
+    );
+    handles.set(
+      'agent-coder',
+      agentHandle('agent-coder', lifecycle, eventBus, {
+        profileName: 'coder',
+        modelAlias: 'stale-coder',
+      }),
+    );
+    const service = ix.get(ISessionSwarmService);
+
+    await service.run({
+      callerAgentId: 'main',
+      tasks: [resumeSessionTask('agent-explore'), resumeSessionTask('agent-coder')],
+    });
+
+    expect(autoPresetEvaluate).toHaveBeenCalledTimes(2);
+    expect(autoPresetEvaluate.mock.calls.map(([request]) => request.profileName).toSorted()).toEqual([
+      'coder',
+      'explore',
+    ]);
+    expect(autoPresetEvaluate.mock.calls.map(([request]) => request.route)).toEqual([
+      'swarm',
+      'swarm',
+    ]);
+  });
+
+  it('evaluates the actual resumed child profile in a mixed spawn/resume batch', async () => {
+    agents['agent-existing'] = { labels: { parentAgentId: 'main' } };
+    handles.set(
+      'agent-existing',
+      agentHandle('agent-existing', lifecycle, eventBus, {
+        profileName: 'explore',
+        modelAlias: 'stale-model',
+      }),
+    );
+    const service = ix.get(ISessionSwarmService);
+
+    await service.run({
+      callerAgentId: 'main',
+      tasks: [resumeSessionTask('agent-existing'), spawnSessionTask('src/new.ts')],
+    });
+
+    expect(autoPresetEvaluate).toHaveBeenCalledTimes(1);
+    expect(autoPresetEvaluate).toHaveBeenCalledWith(
+      expect.objectContaining({ route: 'swarm', profileName: 'explore' }),
+      expect.objectContaining({ sessionId: 's1', signal: expect.any(AbortSignal) }),
+    );
   });
 
   it('applies the swarm preset precedence before resuming and emits the updated binding', async () => {
@@ -1293,6 +1378,7 @@ describe('SessionSwarmService metadata compatibility', () => {
         thinkingEffort: 'medium',
       }),
     );
+    expect(autoPresetEvaluate).not.toHaveBeenCalled();
   });
 
   it('fails a swarm resume with a dangling agents route model before running or emitting', async () => {
@@ -1422,13 +1508,25 @@ describe('SessionSwarmService metadata compatibility', () => {
           return {
             agentId,
             turn: {} as never,
+            timingEvidence: () => ({
+              llmRequestCount: 0,
+              firstTokenLatencySampleCount: 0,
+            }),
             completion:
               retryRuns === 1
                 ? rateLimited
                 : Promise.resolve({ summary: 'recovered summary' }),
           };
         }
-        return { agentId, turn: {} as never, completion: blocker };
+        return {
+          agentId,
+          turn: {} as never,
+          timingEvidence: () => ({
+            llmRequestCount: 0,
+            firstTokenLatencySampleCount: 0,
+          }),
+          completion: blocker,
+        };
       });
       const service = ix.get(ISessionSwarmService);
 
@@ -1579,6 +1677,7 @@ function subagentStub(): ISessionSubagentService {
       agentId,
       turn: {} as never,
       baseline: { inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0 },
+      timingEvidence: () => ({ llmRequestCount: 0, firstTokenLatencySampleCount: 0 }),
       completion: Promise.resolve({ summary: 'child summary' }),
     })),
     notifyAgentTaskStopped: () => {},

@@ -13,6 +13,7 @@ import type {
   AppConfig,
   AppEvent,
   AppGoal,
+  AutoSubagentPresetStatus,
   AppMessage,
   AppMessageContent,
   AppNotice,
@@ -21,10 +22,12 @@ import type {
   AppQuestionRequest,
   AppSession,
   AppTask,
+  AppTurnProgress,
   CompactionMarkerMetadata,
   ResearchStatusSnapshot,
+  SubagentPresetMarkerMetadata,
 } from '../types';
-import { COMPACTION_MARKER_METADATA_KEY } from '../types';
+import { COMPACTION_MARKER_METADATA_KEY, SUBAGENT_PRESET_MARKER_METADATA_KEY } from '../types';
 import { i18n } from '../../i18n';
 
 const OPTIMISTIC_USER_MESSAGE_METADATA_KEY = 'kimiWeb.optimisticUserMessage';
@@ -81,8 +84,13 @@ export interface KimiClientState {
    *  (main-only) inFlightTurn. Half of the working moon; subagent turns never
    *  reach the events that set this. */
   turnActiveBySession: Record<string, boolean>;
+  /** Event-count inputs and start time for the long-turn heuristic progress.
+   *  Inactive terminal entries reject late events from an older turn. */
+  turnProgressBySession: Record<string, AppTurnProgress>;
   compactionBySession: Record<string, CompactionStatus>;
   config?: AppConfig | null;
+  /** Latest process-global automatic routing evaluation, when supported. */
+  autoSubagentPresetStatus?: AutoSubagentPresetStatus;
   warnings: AppWarning[];
 }
 
@@ -102,6 +110,7 @@ export function createInitialState(): KimiClientState {
     researchRequestGenerationBySession: {},
     lastSeqBySession: {},
     turnActiveBySession: {},
+    turnProgressBySession: {},
     compactionBySession: {},
     warnings: [],
   };
@@ -133,6 +142,7 @@ function cloneState(s: KimiClientState): KimiClientState {
     researchRequestGenerationBySession: { ...s.researchRequestGenerationBySession },
     lastSeqBySession: { ...s.lastSeqBySession },
     turnActiveBySession: { ...s.turnActiveBySession },
+    turnProgressBySession: { ...s.turnProgressBySession },
     compactionBySession: { ...s.compactionBySession },
     warnings: [...s.warnings],
   };
@@ -372,6 +382,7 @@ export function reduceAppEvent(
       delete next.questionsBySession[id];
       delete next.lastSeqBySession[id];
       delete next.turnActiveBySession[id];
+      delete next.turnProgressBySession[id];
       if (next.activeSessionId === id) {
         next.activeSessionId = undefined;
       }
@@ -397,6 +408,10 @@ export function reduceAppEvent(
         next.turnActiveBySession[event.sessionId] = true;
       } else if (event.mainTurnActive === false || !event.busy) {
         delete next.turnActiveBySession[event.sessionId];
+        const progress = next.turnProgressBySession[event.sessionId];
+        if (progress?.active) {
+          next.turnProgressBySession[event.sessionId] = { ...progress, active: false };
+        }
       }
       break;
     }
@@ -681,8 +696,41 @@ export function reduceAppEvent(
           swarmIndex: event.task.swarmIndex ?? previous.swarmIndex,
           parentToolCallId: event.task.parentToolCallId ?? previous.parentToolCallId,
           subagentType: event.task.subagentType ?? previous.subagentType,
+          agentId: event.task.agentId ?? previous.agentId,
+          model: event.task.model ?? previous.model,
+          thinkingEffort: event.task.thinkingEffort ?? previous.thinkingEffort,
           runInBackground: event.task.runInBackground ?? previous.runInBackground,
-          backgroundTaskId: event.task.backgroundTaskId ?? previous.backgroundTaskId,
+          backgroundTaskId: event.resetBackgroundTaskId
+            ? event.task.backgroundTaskId
+            : event.task.backgroundTaskId ?? previous.backgroundTaskId,
+        };
+        next.tasksBySession[sid] = patched;
+      }
+      break;
+    }
+
+    // -------------------------------------------------------------------------
+    case 'taskMetadataUpdated': {
+      const sid = event.sessionId;
+      const list = next.tasksBySession[sid] ?? [];
+      let idx = list.findIndex((task) => task.id === event.taskId);
+      if (idx === -1) {
+        const runningAgentMatches = list.flatMap((task, index) =>
+          task.kind === 'subagent' &&
+          task.status === 'running' &&
+          task.agentId === event.taskId
+            ? [index]
+            : [],
+        );
+        if (runningAgentMatches.length === 1) idx = runningAgentMatches[0]!;
+      }
+      if (idx !== -1) {
+        const patched = [...list];
+        const previous = list[idx]!;
+        patched[idx] = {
+          ...previous,
+          model: event.model ?? previous.model,
+          thinkingEffort: event.thinkingEffort ?? previous.thinkingEffort,
         };
         next.tasksBySession[sid] = patched;
       }
@@ -760,6 +808,70 @@ export function reduceAppEvent(
     }
 
     // -------------------------------------------------------------------------
+    // Every automatic evaluation replaces the process-global diagnostics
+    // snapshot. REST reconciliation on connect writes the same field through
+    // useKimiWebClient; this event keeps it live between reconnects.
+    case 'subagentPresetEvaluated': {
+      next.autoSubagentPresetStatus = event.status;
+      if (next.config && event.status.activatedPreset !== undefined) {
+        next.config = {
+          ...next.config,
+          subagent: { ...next.config.subagent, preset: event.status.activatedPreset },
+        };
+      }
+      break;
+    }
+
+    // -------------------------------------------------------------------------
+    // The auto-preset runtime switched the session's active subagent preset.
+    // Two effects:
+    //  1. Atomically patch the loaded config's `subagent.preset` (never
+    //     fabricate a full AppConfig when none was loaded — the badge reads
+    //     `config?.subagent?.preset` and must stay silent until a real config
+    //     arrives from GET /config or event.config.changed).
+    //  2. Append a live "preset switched" divider to the loaded target
+    //     session's in-memory transcript. The marker id comes from the wire seq,
+    //     while structured explanation fields stay language-neutral until render.
+    case 'subagentPresetChanged': {
+      if (next.config) {
+        next.config = {
+          ...next.config,
+          subagent: { ...next.config.subagent, preset: event.currentPreset },
+        };
+      }
+      const sid = event.sessionId;
+      if (Object.prototype.hasOwnProperty.call(next.messagesBySession, sid)) {
+        const msgs = next.messagesBySession[sid] ?? [];
+        const markerId = `subagent_preset_${sid}_${meta.seq}`;
+        if (!msgs.some((m) => m.id === markerId)) {
+          const marker: SubagentPresetMarkerMetadata = {
+            from: event.previousPreset,
+            to: event.currentPreset,
+          };
+          if (event.reasonCode !== undefined) marker.reasonCode = event.reasonCode;
+          if (event.profileName !== undefined) marker.profileName = event.profileName;
+          if (event.evaluatedAt !== undefined) marker.evaluatedAt = event.evaluatedAt;
+          if (event.previousScore !== undefined) marker.previousScore = event.previousScore;
+          if (event.currentScore !== undefined) marker.currentScore = event.currentScore;
+          next.messagesBySession[sid] = [
+            ...msgs,
+            {
+              id: markerId,
+              sessionId: sid,
+              role: 'assistant',
+              content: [],
+              createdAt: new Date().toISOString(),
+              metadata: {
+                [SUBAGENT_PRESET_MARKER_METADATA_KEY]: marker,
+              },
+            },
+          ];
+        }
+      }
+      break;
+    }
+
+    // -------------------------------------------------------------------------
     // Provider-model catalog refresh result. The daemon already persisted the
     // new catalog; the web picks it up on the next explicit model/provider load
     // (model picker, session switch). Advance seq silently.
@@ -792,6 +904,93 @@ export function reduceAppEvent(
         next.turnActiveBySession[event.sessionId] = true;
       } else {
         delete next.turnActiveBySession[event.sessionId];
+        const progress = next.turnProgressBySession[event.sessionId];
+        if (progress?.active) {
+          next.turnProgressBySession[event.sessionId] = { ...progress, active: false };
+        }
+      }
+      break;
+    }
+
+    case 'turnProgress': {
+      const sid = event.sessionId;
+      const update = event.update;
+      const current = next.turnProgressBySession[sid];
+
+      if (update.kind === 'reset') {
+        delete next.turnProgressBySession[sid];
+        break;
+      }
+
+      if (update.kind === 'start') {
+        if (
+          current !== undefined &&
+          (
+            update.turnId < current.turnId ||
+            (!update.replace && update.turnId === current.turnId)
+          )
+        ) {
+          break;
+        }
+        const completedToolCallIds = [...new Set(update.completedToolCallIds ?? [])];
+        const toolCallIds = [
+          ...new Set([...(update.toolCallIds ?? []), ...completedToolCallIds]),
+        ];
+        const fallbackStepCount = Math.max(0, Math.floor(update.stepCount ?? 0));
+        const stepNumbers = [
+          ...new Set(
+            update.stepNumbers ??
+              Array.from({ length: fallbackStepCount }, (_, index) => index + 1),
+          ),
+        ].filter((step) => Number.isInteger(step) && step > 0);
+        next.turnProgressBySession[sid] = {
+          turnId: update.turnId,
+          active: true,
+          startedAt: update.startedAt,
+          stepCount: stepNumbers.length,
+          stepNumbers,
+          toolCallIds,
+          completedToolCallIds,
+        };
+        break;
+      }
+
+      if (
+        current === undefined ||
+        !current.active ||
+        current.turnId !== update.turnId
+      ) {
+        break;
+      }
+
+      if (update.kind === 'step') {
+        if (!current.stepNumbers.includes(update.step)) {
+          const stepNumbers = [...current.stepNumbers, update.step];
+          next.turnProgressBySession[sid] = {
+            ...current,
+            stepCount: stepNumbers.length,
+            stepNumbers,
+          };
+        }
+      } else if (update.kind === 'toolCall') {
+        if (!current.toolCallIds.includes(update.toolCallId)) {
+          next.turnProgressBySession[sid] = {
+            ...current,
+            toolCallIds: [...current.toolCallIds, update.toolCallId],
+          };
+        }
+      } else if (update.kind === 'toolResult') {
+        next.turnProgressBySession[sid] = {
+          ...current,
+          toolCallIds: current.toolCallIds.includes(update.toolCallId)
+            ? current.toolCallIds
+            : [...current.toolCallIds, update.toolCallId],
+          completedToolCallIds: current.completedToolCallIds.includes(update.toolCallId)
+            ? current.completedToolCallIds
+            : [...current.completedToolCallIds, update.toolCallId],
+        };
+      } else {
+        next.turnProgressBySession[sid] = { ...current, active: false };
       }
       break;
     }

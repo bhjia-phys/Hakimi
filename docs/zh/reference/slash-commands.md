@@ -16,7 +16,7 @@
 | `/logout` | — | 清除当前所选账号的凭据 | 否 |
 | `/provider` | — | 打开交互式供应商管理器，查看、添加和删除已配置的供应商。详见[平台与模型 — `/provider` 与供应商管理](../configuration/providers.md#provider-—-交互式供应商管理) | 是 |
 | `/model` | — | 切换当前会话使用的 LLM 模型 | 是 |
-| `/preset` | — | 通过 `[subagent]` 配置并激活 canonical 的 `main`、Agent、AgentSwarm 和 Tower 模型路由 | 否 |
+| `/preset` | — | 配置并激活 canonical 的 `main`、Agent、AgentSwarm 和 Tower 路由；人工选择会被锁定，运行 `/preset auto` 可恢复自动切换 | 否 |
 | `/secondary-model` | `/subagent-model` | 已废弃的兼容命令。它不会出现在补全和帮助中；输入后只显示迁移提示。请改用 `/preset` | 是 |
 | `/settings` | `/config` | 打开 TUI 内的设置面板 | 是 |
 | `/experiments` | `/experimental` | 打开实验功能面板 | 是 |
@@ -43,6 +43,7 @@
 | `/copy` | — | 将最后一条 AI 回复复制到剪贴板 | 否 |
 | `/add-dir [<path>]` | — | 为当前会话添加额外的工作目录。不带路径（或传入 `list`）运行时列出已配置的目录。添加时可选择是否将目录记入项目的 `.kimi-code/local.toml` | 否 |
 | `/web` | — | 在 web UI 中打开当前会话：选择一个运行中的实例进行连接，或在 TUI 退出后新开一个前台服务器。参见 [`hakimi web`](./kimi-command.md#hakimi-web) | 是 |
+| `/remote` | — | 把当前 TUI 会话 handoff 给前台 Cloudflare Quick Tunnel。链接会先打开该会话，随后提供对所有工作区和会话的完整 Web 访问。直接运行 `/remote` 使用 8 小时 TTL；高级用法可附加 `--ttl <duration>`（最长 24 小时）或 `--cloudflared <absolute-path>`。Hakimi Web 无需 handoff，可从对话标题栏中始终可见的按钮启动分享。见[从其他设备远程控制](../guides/sessions.md#从其他设备远程控制) | 否 |
 
 ## 模式与运行控制
 

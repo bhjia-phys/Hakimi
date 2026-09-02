@@ -9,8 +9,14 @@
 // TOOL-role messages fold their toolResult content into the preceding assistant
 // group rather than becoming separate turns.
 
-import type { AppMessage, AppApprovalRequest, AppTask, CompactionMarkerMetadata } from '../api/types';
-import { COMPACTION_MARKER_METADATA_KEY } from '../api/types';
+import type {
+  AppMessage,
+  AppApprovalRequest,
+  AppTask,
+  CompactionMarkerMetadata,
+  SubagentPresetMarkerMetadata,
+} from '../api/types';
+import { COMPACTION_MARKER_METADATA_KEY, SUBAGENT_PRESET_MARKER_METADATA_KEY } from '../api/types';
 import type { AgentMember, ApprovalBlock, ChatTurn, CronTurnData, DiffLine, ToolCall, ToolMedia, TurnAttachment, TurnBlock } from '../types';
 
 const READ_MEDIA_TOOL_RE = /^read[_-]?media(?:file)?$/i;
@@ -252,6 +258,8 @@ export function toAgentMember(task: AppTask): AgentMember {
     toolCallId: task.parentToolCallId,
     name: task.description,
     subagentType: task.subagentType,
+    model: task.model,
+    thinkingEffort: task.thinkingEffort,
     phase:
       task.subagentPhase ??
       (task.status === 'completed' ? 'completed' : task.status === 'failed' ? 'failed' : 'working'),
@@ -778,6 +786,32 @@ export function messagesToTurns(
 
   for (const msg of messages) {
     if (msg.role === 'system') continue;
+
+    // Subagent-preset markers become a lightweight status separator — never a
+    // chat bubble and never a fake assistant reply. Structured reason fields stay
+    // language-neutral in history; the label is resolved at render time via i18n.
+    const presetMarker = msg.metadata?.[SUBAGENT_PRESET_MARKER_METADATA_KEY] as
+      | SubagentPresetMarkerMetadata
+      | undefined;
+    if (presetMarker) {
+      flushGroup();
+      turns.push({
+        id: msg.id,
+        role: 'subagentPreset',
+        no, // not displayed — dividers have no gutter number
+        text: '',
+        subagentPreset: {
+          from: presetMarker.from,
+          to: presetMarker.to,
+          reasonCode: presetMarker.reasonCode,
+          profileName: presetMarker.profileName,
+          evaluatedAt: presetMarker.evaluatedAt,
+          previousScore: presetMarker.previousScore,
+          currentScore: presetMarker.currentScore,
+        },
+      });
+      continue;
+    }
 
     // Compaction summaries become a divider turn — never a chat bubble. The
     // snapshot variant carries no token stats (marker metadata is client-side).

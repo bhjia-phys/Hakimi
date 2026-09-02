@@ -29,8 +29,11 @@
  * one started and (when the process survives) one finished event —
  * completed / failed / cancelled — regardless of abort or rate-limit
  * suppression of the UI signals, so a crash after started alone is the only
- * incomplete run. An ordinary start-hook failure counts as `failed`; only
- * aborts (`signal.aborted` or an abort-shaped error) are `cancelled`.
+ * incomplete run. The run handle provides request count and first-token
+ * latency evidence collected across its initial and summary-continuation turns
+ * before the mirror can observe it, so early steps cannot race the ledger.
+ * An ordinary start-hook failure counts as `failed`; only aborts
+ * (`signal.aborted` or an abort-shaped error) are `cancelled`.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -158,7 +161,8 @@ export async function mirrorAgentRun(
   const agentLifecycle = requester.accessor.get(IAgentLifecycleService);
   const runId = randomUUID();
   const startedAt = Date.now();
-  const childProfile = agentLifecycle?.get(run.agentId)?.accessor.get(IAgentProfileService);
+  const child = agentLifecycle?.get(run.agentId);
+  const childProfile = child?.accessor.get(IAgentProfileService);
   let finished = false;
   const finish = (
     status: AgentRunStatus,
@@ -171,6 +175,7 @@ export async function mirrorAgentRun(
     if (finished) return;
     finished = true;
     const endedAt = Date.now();
+    const timing = run.timingEvidence();
     subagents?.notifyAgentRunFinished({
       runId,
       status,
@@ -179,6 +184,12 @@ export async function mirrorAgentRun(
       durationMs: Math.max(0, endedAt - startedAt),
       usage: outcome.usage,
       contextTokens: outcome.contextTokens,
+      averageFirstTokenLatencyMs: timing.averageFirstTokenLatencyMs,
+      firstTokenLatencySampleCount:
+        timing.firstTokenLatencySampleCount === 0
+          ? undefined
+          : timing.firstTokenLatencySampleCount,
+      llmRequestCount: timing.llmRequestCount === 0 ? undefined : timing.llmRequestCount,
       errorCode: outcome.errorCode,
     });
   };

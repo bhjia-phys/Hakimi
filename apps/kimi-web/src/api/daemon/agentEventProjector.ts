@@ -129,6 +129,11 @@ interface SessionState {
   // spawned metadata here so later updates can replace the full AppTask.
   subagentMeta: Map<string, AppTask>;
 
+  // A status frame can race ahead of both subagent.spawned and BTW side-channel
+  // registration. Cache only inert runtime metadata until a spawn confirms that
+  // the agent really is a visible subagent task.
+  pendingAgentMetadata: Map<string, Pick<AppTask, 'model' | 'thinkingEffort'>>;
+
   // Bubble cleared by turn.step.retrying, to be reused by the retried
   // step.started (same turn) instead of stacking a new bubble.
   retryReuseMsgId: string | undefined;
@@ -152,6 +157,7 @@ function createSessionState(): SessionState {
     model: '',
     messages: [],
     subagentMeta: new Map(),
+    pendingAgentMetadata: new Map(),
     retryReuseMsgId: undefined,
   };
 }
@@ -308,6 +314,45 @@ function projectSubagentProgress(
   // agentDelta events; don't pollute the main task output with generic step
   // placeholders like "Started a step".
   if (sideChannelAgents.has(subagentId) && rawType === 'turn.step.started') return [];
+
+  // A status frame is not proof that the agent is a visible subagent: BTW can
+  // emit it before the client marks the side-channel id. Keep projector metadata
+  // inert until spawn, but emit an existing-only reducer patch so a task already
+  // seeded from a snapshot can refresh without creating a ghost row.
+  if (rawType === 'agent.status.updated') {
+    if (sideChannelAgents.has(subagentId)) return [];
+    const model = stringField(payload, 'model');
+    const thinkingEffort = stringField(payload, 'thinkingEffort');
+    const nextModel = model && model.length > 0 ? model : undefined;
+    const nextThinkingEffort =
+      thinkingEffort && thinkingEffort.length > 0 ? thinkingEffort : undefined;
+    if (nextModel === undefined && nextThinkingEffort === undefined) return [];
+
+    const previous = state.subagentMeta.get(subagentId);
+    if (previous === undefined) {
+      const pending = state.pendingAgentMetadata.get(subagentId);
+      state.pendingAgentMetadata.set(subagentId, {
+        model: nextModel ?? pending?.model,
+        thinkingEffort: nextThinkingEffort ?? pending?.thinkingEffort,
+      });
+    } else {
+      patchSubagent(state, sessionId, subagentId, {
+        agentId: previous.agentId ?? subagentId,
+        model: nextModel ?? previous.model,
+        thinkingEffort: nextThinkingEffort ?? previous.thinkingEffort,
+      });
+    }
+
+    return [
+      {
+        type: 'taskMetadataUpdated',
+        sessionId,
+        taskId: subagentId,
+        model: nextModel,
+        thinkingEffort: nextThinkingEffort,
+      },
+    ];
+  }
 
   // The subagent's own streamed text: forward each delta as a `text`-kind
   // progress chunk so the reducer concatenates it into `AppTask.text`, letting
@@ -515,6 +560,8 @@ function buildUsageSnapshot(state: SessionState): AppSessionUsage {
 // ---------------------------------------------------------------------------
 
 export interface ProjectMeta {
+  /** Raw wire frame timestamp, including for durable replayed events. */
+  timestamp?: string;
   /**
    * Wire-level pre-append stream offset on volatile text-delta frames (v2
    * sync protocol). Used to skip duplicate deltas and detect gaps after a
@@ -571,6 +618,9 @@ export function createAgentProjector(): AgentProjector {
 
   function markSideChannelAgent(agentId: string): void {
     sideChannelAgents.add(agentId);
+    for (const state of sessions.values()) {
+      state.pendingAgentMetadata.delete(agentId);
+    }
   }
 
   function bindNextPromptId(sessionId: string, promptId: string): void {
@@ -616,7 +666,24 @@ export function createAgentProjector(): AgentProjector {
     s.turnTextLen = turn.assistantText.length;
     s.turnThinkLen = turn.thinkingText.length;
 
-    return [{ type: 'messageCreated', message: cloneMessage(msg) }];
+    const progress = turn.progress;
+    return [
+      {
+        type: 'turnProgress',
+        sessionId,
+        update: {
+          kind: 'start',
+          turnId: turn.turnId,
+          startedAt: progress?.startedAt ?? Date.now(),
+          stepCount: progress?.stepCount ?? 1,
+          stepNumbers: progress?.stepNumbers ?? [1],
+          toolCallIds: progress?.toolCallIds ?? turn.runningTools.map((tool) => tool.toolCallId),
+          completedToolCallIds: progress?.completedToolCallIds,
+          replace: true,
+        },
+      },
+      { type: 'messageCreated', message: cloneMessage(msg) },
+    ];
   }
 
   function project(
@@ -740,6 +807,7 @@ export function createAgentProjector(): AgentProjector {
         // transition); projecting a second busy flip per turn from the raw
         // stream made every turn-end consumer fire twice.
         const turnId: number = p?.turnId;
+        const frameStartedAt = Date.parse(meta?.timestamp ?? '');
         const existingPromptId = s.currentPromptId ?? ulid('pr_');
         s.currentPromptId = existingPromptId;
         if (turnId !== undefined) {
@@ -748,15 +816,35 @@ export function createAgentProjector(): AgentProjector {
         // Fresh turn → fresh step stream offsets.
         s.turnTextLen = 0;
         s.turnThinkLen = 0;
-        // Main-conversation liveness (the moon) keys off the main agent's turn
-        // boundary directly — only main-agent frames reach this switch arm.
+        // Main-conversation liveness (the moon) and heuristic progress key off
+        // the main agent's turn boundary directly — only main-agent frames reach
+        // this switch arm.
         out.push({ type: 'turnActiveChanged', sessionId, active: true });
+        if (typeof turnId === 'number') {
+          out.push({
+            type: 'turnProgress',
+            sessionId,
+            update: {
+              kind: 'start',
+              turnId,
+              startedAt: Number.isFinite(frameStartedAt) ? frameStartedAt : Date.now(),
+            },
+          });
+        }
         break;
       }
 
       // -----------------------------------------------------------------------
       case 'turn.step.started': {
         const turnId: number = p?.turnId;
+        const step: number = p?.step;
+        if (typeof turnId === 'number' && Number.isInteger(step) && step > 0) {
+          out.push({
+            type: 'turnProgress',
+            sessionId,
+            update: { kind: 'step', turnId, step },
+          });
+        }
         let promptId = s.turnPromptId.get(turnId) ?? s.currentPromptId;
         if (!promptId) {
           // Joined mid-turn (reconnect/resync wiped the binding): synthesize a
@@ -870,10 +958,17 @@ export function createAgentProjector(): AgentProjector {
       case 'tool.call.started': {
         const msgId = s.currentAssistantMsgId;
         const turnId: number = p?.turnId;
+        const toolCallId: string = p?.toolCallId;
+        if (typeof turnId === 'number' && typeof toolCallId === 'string' && toolCallId.length > 0) {
+          out.push({
+            type: 'turnProgress',
+            sessionId,
+            update: { kind: 'toolCall', turnId, toolCallId },
+          });
+        }
         const promptId = s.turnPromptId.get(turnId) ?? s.currentPromptId;
         if (!msgId || !promptId) break;
 
-        const toolCallId: string = p?.toolCallId;
         // Real daemon field name is 'name' per event-projector.ts
         const toolName: string = p?.name ?? p?.toolName ?? '';
         const args = p?.args ?? p?.input ?? {};
@@ -934,6 +1029,13 @@ export function createAgentProjector(): AgentProjector {
         }
 
         const toolCallId: string = p?.toolCallId;
+        if (typeof turnId === 'number' && typeof toolCallId === 'string' && toolCallId.length > 0) {
+          out.push({
+            type: 'turnProgress',
+            sessionId,
+            update: { kind: 'toolResult', turnId, toolCallId },
+          });
+        }
         const output = p?.output;
         const isError: boolean = p?.isError ?? false;
 
@@ -1019,6 +1121,14 @@ export function createAgentProjector(): AgentProjector {
         // fire (observed: moon stuck when a turn ends with background tasks
         // still running, where no work_changed(busy:false) fallback exists).
         out.push({ type: 'turnActiveChanged', sessionId, active: false, reason: p?.reason });
+        const turnId: number = p?.turnId;
+        if (typeof turnId === 'number') {
+          out.push({
+            type: 'turnProgress',
+            sessionId,
+            update: { kind: 'end', turnId },
+          });
+        }
 
         if (msgId) {
           finishAssistantMessage(s, msgId);
@@ -1125,6 +1235,8 @@ export function createAgentProjector(): AgentProjector {
       // -----------------------------------------------------------------------
       case 'subagent.spawned': {
         const taskId = typeof p?.subagentId === 'string' && p.subagentId.length > 0 ? p.subagentId : ulid('task_');
+        const pending = s.pendingAgentMetadata.get(taskId);
+        s.pendingAgentMetadata.delete(taskId);
         const task: AppTask = {
           id: taskId,
           sessionId,
@@ -1132,6 +1244,18 @@ export function createAgentProjector(): AgentProjector {
           description: typeof p?.description === 'string' ? p.description : p?.subagentName ?? 'Sub Agent',
           status: 'running',
           createdAt: new Date().toISOString(),
+          agentId:
+            typeof p?.subagentId === 'string' && p.subagentId.length > 0
+              ? p.subagentId
+              : undefined,
+          model:
+            pending?.model ??
+            (typeof p?.model === 'string' && p.model.length > 0 ? p.model : undefined),
+          thinkingEffort:
+            pending?.thinkingEffort ??
+            (typeof p?.thinkingEffort === 'string' && p.thinkingEffort.length > 0
+              ? p.thinkingEffort
+              : undefined),
           subagentPhase: 'queued',
           subagentType: typeof p?.subagentName === 'string' ? p.subagentName : undefined,
           parentToolCallId: typeof p?.parentToolCallId === 'string' ? p.parentToolCallId : undefined,
@@ -1143,6 +1267,7 @@ export function createAgentProjector(): AgentProjector {
           type: 'taskCreated',
           sessionId,
           task,
+          resetBackgroundTaskId: true,
         });
         break;
       }
@@ -1237,6 +1362,7 @@ export function createAgentProjector(): AgentProjector {
       // Tasks (e.g. a detached Bash command). Real daemon shape:
       // payload.info = { taskId, description, status, startedAt(ms), endedAt,
       // kind:'process', command, pid, exitCode }.
+      case 'background.task.started':
       case 'task.started': {
         const info = (p?.info ?? {}) as Record<string, unknown>;
         const startedAt =
@@ -1313,6 +1439,7 @@ export function createAgentProjector(): AgentProjector {
         });
         break;
       }
+      case 'background.task.terminated':
       case 'task.terminated': {
         const info = (p?.info ?? {}) as Record<string, unknown>;
         const failed =

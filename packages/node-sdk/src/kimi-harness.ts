@@ -12,6 +12,7 @@ import type { KimiAuthFacade } from '#/auth';
 import type { SDKRpcClientBase } from '#/rpc';
 import type {
   AuthenticateMcpServerOptions,
+  AutoSubagentPresetStatus,
   CapabilityStatus,
   ConfigDiagnostics,
   CreateSessionOptions,
@@ -38,10 +39,13 @@ import type {
   SessionSummary,
   SessionSummaryPage,
   SkillSummary,
+  SubagentPresetChangedEvent,
+  SubagentPresetEvaluatedEvent,
   TelemetryClient,
   TelemetryContextPatch,
   TelemetryProperties,
   TestMcpServerOptions,
+  Unsubscribe,
   WorkspaceTrustInfo,
 } from '#/types';
 
@@ -426,6 +430,16 @@ export class KimiHarness {
     return this.rpc.setConfig(patch);
   }
 
+  /** Latest automatic preset evaluation; `undefined` on v1 or before the first v2 evaluation. */
+  async getAutoSubagentPresetStatus(): Promise<AutoSubagentPresetStatus | undefined> {
+    return this.rpc.getAutoSubagentPresetStatus();
+  }
+
+  /** Persist a human preset choice and pin it against automatic switching on v2. */
+  async activateSubagentPreset(preset: string): Promise<KimiConfig> {
+    return this.rpc.activateSubagentPreset(preset);
+  }
+
   async removeProvider(providerId: string): Promise<KimiConfig> {
     return this.rpc.removeProvider(providerId);
   }
@@ -504,6 +518,20 @@ export class KimiHarness {
   async close(): Promise<void> {
     await Promise.all(Array.from(this.activeSessions.values(), (session) => session.close()));
     await this.closeImpl();
+  }
+
+  /** Subscribe to automatic preset evaluations (v2 only; inert on v1). */
+  onSubagentPresetEvaluated(
+    listener: (event: SubagentPresetEvaluatedEvent) => void,
+  ): Unsubscribe {
+    return this.rpc.onSubagentPresetEvaluated(listener);
+  }
+
+  /** Subscribe to committed automatic preset switches (v2 only; inert on v1). */
+  onSubagentPresetChanged(
+    listener: (event: SubagentPresetChangedEvent) => void,
+  ): Unsubscribe {
+    return this.rpc.onSubagentPresetChanged(listener);
   }
 
   private trackSessionEvent(eventSessionId: string, event: string): void {

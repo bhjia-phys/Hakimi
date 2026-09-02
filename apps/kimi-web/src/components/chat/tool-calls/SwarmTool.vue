@@ -17,6 +17,7 @@ import type { SwarmMember } from '../../../composables/swarmGroups';
 import { toolLabel } from '../../../lib/toolMeta';
 import { parseSwarmResult } from '../../../lib/parseSwarmResult';
 import { buildSwarmCardRows, type SwarmCardRow } from '../../../lib/swarmCardRows';
+import Badge from '../../ui/Badge.vue';
 import Icon from '../../ui/Icon.vue';
 import StatusDot from '../../ui/StatusDot.vue';
 import Tooltip from '../../ui/Tooltip.vue';
@@ -214,6 +215,16 @@ function phaseLabel(phase: AppSubagentPhase): string {
             <Tooltip :text="row.name">
               <span class="mname">{{ row.name }}</span>
             </Tooltip>
+            <Tooltip v-if="row.subagentType" :text="`${t('tasks.role')}: ${row.subagentType}`">
+              <Badge variant="neutral" size="sm" class="member-identity" :title="row.subagentType">
+                <span class="member-identity-text">{{ t('tasks.role') }}: {{ row.subagentType }}</span>
+              </Badge>
+            </Tooltip>
+            <Tooltip v-if="row.model" :text="`${t('tasks.model')}: ${row.model}`">
+              <Badge variant="neutral" size="sm" class="member-identity member-model" :title="row.model">
+                <span class="member-identity-text">{{ t('tasks.model') }}: {{ row.model }}</span>
+              </Badge>
+            </Tooltip>
             <Tooltip v-if="row.activity" :text="row.activity">
               <span class="mact">{{ row.activity }}</span>
             </Tooltip>
@@ -404,7 +415,8 @@ function phaseLabel(phase: AppSubagentPhase): string {
   gap: 8px;
   width: 100%;
   min-height: 32px;
-  padding: 0 11px;
+  padding: 4px 11px;
+  flex-wrap: wrap;
   border: none;
   background: transparent;
   color: var(--color-text);
@@ -428,12 +440,29 @@ function phaseLabel(phase: AppSubagentPhase): string {
 .mname {
   flex: none;
   min-width: 0;
-  max-width: 46%;
+  max-width: 32%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: var(--weight-medium);
   color: var(--color-text);
+}
+.member-identity {
+  flex: none;
+  min-width: 0;
+  max-width: 112px;
+  overflow: hidden;
+}
+.member-model {
+  max-width: 144px;
+}
+.member-identity-text {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mact {
   flex: 1;

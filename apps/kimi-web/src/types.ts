@@ -1,5 +1,7 @@
 // apps/kimi-web/src/types.ts
 
+import type { AutoSubagentPresetReasonCode } from './api/types';
+
 /** File content loaded for preview (text or base64-encoded binary). */
 export interface FileData {
   path: string;
@@ -126,6 +128,8 @@ export interface AgentMember {
   toolCallId?: string;
   name: string;
   subagentType?: string;
+  model?: string;
+  thinkingEffort?: string;
   phase: AgentPhase;
   status: 'running' | 'completed' | 'failed' | 'cancelled';
   /** The prompt/task the subagent was given (from the Agent tool input). */
@@ -188,7 +192,7 @@ export type ApprovalBlock =
     }
   | { kind: 'generic'; summary: string };
 
-export type TurnRole = 'user' | 'assistant' | 'compaction' | 'cron';
+export type TurnRole = 'user' | 'assistant' | 'compaction' | 'cron' | 'subagentPreset';
 
 export interface FilePreviewRequest {
   path: string;
@@ -290,6 +294,19 @@ export interface ChatTurn {
       prior turns and renders this as a separator line; `text` holds the
       LLM-generated summary, opened in the right-side panel on click. */
   compaction?: { trigger?: 'manual' | 'auto'; tokensBefore?: number; tokensAfter?: number };
+  /** Subagent-preset switch divider data (role 'subagentPreset'): the auto-
+      preset runtime switched the session's active preset. Rendered as a
+      lightweight status separator; the label is derived at render time from
+      these values via i18n (the marker never bakes in a display language). */
+  subagentPreset?: {
+    from?: string;
+    to: string;
+    reasonCode?: AutoSubagentPresetReasonCode;
+    profileName?: string;
+    evaluatedAt?: number;
+    previousScore?: number;
+    currentScore?: number;
+  };
   /** ISO timestamp when the message was created (used for the user bubble timestamp). */
   createdAt?: string;
   /** Client-side measured duration from turn.started to turn.ended (ms). */
@@ -325,6 +342,9 @@ export interface TaskItem {
   timing: string;
   meta?: string;
   output?: string[];
+  subagentType?: string;
+  model?: string;
+  thinkingEffort?: string;
   /** Background subagents only — the dock lists these; foreground subagents
    *  render inline as the `Agent` tool card instead. */
   runInBackground?: boolean;

@@ -6,23 +6,53 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useKimiWebClient } from '../../composables/useKimiWebClient';
-import type { AppSession } from '../../api/types';
 import { useDialogFocus } from '../../composables/useDialogFocus';
 import LanguageSwitcher from './LanguageSwitcher.vue';
 import { serverEndpointLabel } from '../../api/config';
 import { downloadTraceLog, isTraceEnabled } from '../../debug/trace';
-import { configPatchForPreset, mainRouteForPreset } from '../../lib/subagentPreset';
+import {
+  autoSubagentPresetEnabled,
+  autoSubagentPresetFlagOverridden,
+  autoSubagentPresetPatch,
+  autoSubagentPresetSupported,
+  formatSubagentPresetDuration,
+  formatSubagentPresetScore,
+  mainRouteForPreset,
+  subagentPresetAvailabilityLabel,
+  subagentPresetCandidateBreakdown,
+  subagentPresetCandidatesOrder,
+  subagentPresetCurrentEvaluation,
+  subagentPresetCandidatesPatch,
+  subagentPresetEvidenceLabel,
+  subagentPresetManualLock,
+  subagentPresetReasonLabel,
+  subagentPresetRemainingLabel,
+  subagentPresetResumeAutoPatch,
+  type SubagentPresetT,
+} from '../../lib/subagentPreset';
 import type { Accent, ColorScheme } from '../../composables/useKimiWebClient';
-import type { AppConfig, AppModel, SubagentModelConfig } from '../../api/types';
+import type {
+  AppConfig,
+  AppModel,
+  AppSession,
+  AutoSubagentPresetCandidateScore,
+  AutoSubagentPresetPolicySnapshot,
+  AutoSubagentPresetStatus,
+} from '../../api/types';
 import Dialog from '../ui/Dialog.vue';
 import Switch from '../ui/Switch.vue';
 import Button from '../ui/Button.vue';
+import Banner from '../ui/Banner.vue';
+import Card from '../ui/Card.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
 import Select from '../ui/Select.vue';
 import Tooltip from '../ui/Tooltip.vue';
+import Badge from '../ui/Badge.vue';
+import Icon from '../ui/Icon.vue';
+import IconButton from '../ui/IconButton.vue';
 import ProviderUsagePanel from './ProviderUsagePanel.vue';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const props = defineProps<{
   colorScheme: ColorScheme;
@@ -44,12 +74,16 @@ const props = defineProps<{
   conversationToc?: boolean;
   /** Global daemon config from GET /api/v1/config. Secrets are redacted server-side. */
   config?: AppConfig | null;
+  /** Latest process-global automatic routing evaluation, when supported. */
+  autoSubagentPresetStatus?: AutoSubagentPresetStatus;
   /** Models from the daemon catalog, used to label default-model choices. */
   models?: AppModel[];
-  /** True while POST /api/v1/config is saving. */
+  /** True while a config or preset activation request is saving. */
   configSaving?: boolean;
   /** Server version reported by GET /api/v1/meta. */
   serverVersion?: string;
+  /** Effective experimental flags reported by GET /api/v1/meta. */
+  experimentalFlags?: Record<string, boolean>;
   /** Backend engine generation from GET /api/v1/meta ('v1' legacy, 'v2' kap-server). */
   backend?: 'v1' | 'v2';
 }>();
@@ -68,7 +102,7 @@ const emit = defineEmits<{
   openOnboarding: [];
   openProviders: [];
   updateConfig: [patch: Partial<AppConfig>];
-  activatePreset: [payload: { patch: Partial<AppConfig>; main?: SubagentModelConfig }];
+  activatePreset: [preset: string];
   close: [];
 }>();
 
@@ -105,8 +139,18 @@ useDialogFocus(dialogRef);
 function handleKeydown(e: KeyboardEvent): void {
   if (e.key === 'Escape') emit('close');
 }
-onMounted(() => document.addEventListener('keydown', handleKeydown));
-onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
+const schedulerNow = ref(Date.now());
+let schedulerClock: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  document.addEventListener('keydown', handleKeydown);
+  schedulerClock = setInterval(() => {
+    schedulerNow.value = Date.now();
+  }, 1000);
+});
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown);
+  if (schedulerClock !== undefined) clearInterval(schedulerClock);
+});
 
 function exportLog(): void {
   downloadTraceLog();
@@ -153,6 +197,178 @@ const modelGroups = computed<Array<{ provider: string; options: ModelOption[] }>
 const subagentPresetNames = computed<string[]>(() =>
   Object.keys(props.config?.subagent?.presets ?? {}).toSorted((a, b) => a.localeCompare(b)),
 );
+
+const automaticPresetSwitchingSupported = ref(false);
+let automaticPresetSupportServer = '';
+watch(
+  [() => props.backend, () => props.serverVersion, () => props.experimentalFlags],
+  ([backend, serverVersion, experimentalFlags]) => {
+    const server = `${backend ?? ''}:${serverVersion ?? ''}`;
+    if (server !== automaticPresetSupportServer) {
+      automaticPresetSwitchingSupported.value = false;
+      automaticPresetSupportServer = server;
+    }
+    if (backend !== 'v2') {
+      automaticPresetSwitchingSupported.value = false;
+    } else if (autoSubagentPresetSupported(experimentalFlags ?? {})) {
+      automaticPresetSwitchingSupported.value = true;
+    }
+  },
+  { immediate: true },
+);
+const automaticPresetSwitching = computed(() =>
+  autoSubagentPresetEnabled(props.config, props.experimentalFlags ?? {}),
+);
+const automaticPresetSwitchingOverridden = computed(() =>
+  autoSubagentPresetFlagOverridden(props.config, props.experimentalFlags ?? {}),
+);
+
+/** `autoPreset.manualLock`: a manually activated preset paused automatic
+ *  switching; the lock row offers the resume-auto action. */
+const presetManualLocked = computed(() => subagentPresetManualLock(props.config));
+
+/** Presets in the declaration order of `subagent.presets` — the order used as
+ *  the automatic-switching candidate fallback when no subset is configured. */
+const presetDeclarationOrder = computed<string[]>(() =>
+  Object.keys(props.config?.subagent?.presets ?? {}),
+);
+/** Effective candidate priority: the configured subset as-is, or every preset
+ *  in declaration order when none is configured. */
+const presetCandidatesOrder = computed<string[]>(() =>
+  subagentPresetCandidatesOrder(props.config, presetDeclarationOrder.value),
+);
+/** Declared presets not already in the priority list, offered by the add
+ *  selector. When none is configured the fallback already covers all presets,
+ *  so this is empty and there is nothing to add. */
+const addablePresets = computed<string[]>(() =>
+  presetDeclarationOrder.value.filter((name) => !presetCandidatesOrder.value.includes(name)),
+);
+
+const schedulerReason = computed(() => {
+  const status = props.autoSubagentPresetStatus;
+  return status === undefined
+    ? ''
+    : subagentPresetReasonLabel(status.reasonCode, t as unknown as SubagentPresetT);
+});
+const schedulerEvaluationContext = computed(() => {
+  const status = props.autoSubagentPresetStatus;
+  if (status === undefined) return '';
+  return t('settings.smartRoutingEvaluationContext', {
+    route: status.route,
+    profile: status.profileName ?? t('header.subagentPresetNoData'),
+    time: new Date(status.evaluatedAt).toLocaleString(locale.value),
+  });
+});
+const schedulerCurrent = computed(() => {
+  const status = props.autoSubagentPresetStatus;
+  if (status === undefined) return '';
+  const current = subagentPresetCurrentEvaluation(
+    status,
+    props.config?.subagent?.preset,
+  );
+  return t('settings.smartRoutingActiveSelection', {
+    current: current.preset ?? t('header.subagentPresetNoData'),
+    score: formatSubagentPresetScore(current.score, t as unknown as SubagentPresetT),
+  });
+});
+const schedulerSelection = computed(() => {
+  const status = props.autoSubagentPresetStatus;
+  if (status === undefined) return '';
+  return t('settings.smartRoutingCurrentSelection', {
+    previous: status.currentPreset ?? t('header.subagentPresetNoData'),
+    selected: status.selectedPreset ?? t('header.subagentPresetNoData'),
+  });
+});
+const schedulerCooldown = computed(() =>
+  subagentPresetRemainingLabel(
+    props.autoSubagentPresetStatus?.switchCooldownUntil,
+    schedulerNow.value,
+    'cooldown',
+    t as unknown as SubagentPresetT,
+  ),
+);
+
+function schedulerCandidateScore(candidate: AutoSubagentPresetCandidateScore): string {
+  return formatSubagentPresetScore(candidate.score, t as unknown as SubagentPresetT);
+}
+
+function schedulerCandidateStatus(candidate: AutoSubagentPresetCandidateScore): string {
+  return (
+    subagentPresetRemainingLabel(
+      candidate.circuitBreakerOpenUntil,
+      schedulerNow.value,
+      'circuit',
+      t as unknown as SubagentPresetT,
+    ) ?? subagentPresetAvailabilityLabel(candidate.availability, t as unknown as SubagentPresetT)
+  );
+}
+
+function schedulerCandidateStatusVariant(
+  candidate: AutoSubagentPresetCandidateScore,
+): 'success' | 'warning' | 'danger' | 'neutral' {
+  if (candidate.availability === 'healthy') return 'success';
+  if (candidate.availability === 'circuit_open') return 'danger';
+  if (candidate.availability === 'quota_below_floor') return 'warning';
+  return 'neutral';
+}
+
+function schedulerCandidateBreakdown(candidate: AutoSubagentPresetCandidateScore): string {
+  return subagentPresetCandidateBreakdown(candidate, t as unknown as SubagentPresetT);
+}
+
+function schedulerCandidateEvidence(candidate: AutoSubagentPresetCandidateScore): string {
+  return t('settings.smartRoutingEvidence', {
+    evidence: subagentPresetEvidenceLabel(candidate, t as unknown as SubagentPresetT),
+    failures: candidate.localEvidence.failureCount,
+    tokens: candidate.localEvidence.tokenCount.toLocaleString(locale.value),
+  });
+}
+
+const schedulerPolicy = computed<Partial<AutoSubagentPresetPolicySnapshot>>(() => {
+  if (props.autoSubagentPresetStatus !== undefined) return props.autoSubagentPresetStatus.policy;
+  const autoPreset = props.config?.subagent?.autoPreset;
+  return {
+    quotaFloorPercent: autoPreset?.quotaFloorPercent,
+    switchMarginPercent: autoPreset?.switchMarginPercent,
+    localUsageWindowMs: autoPreset?.localUsageWindowMs,
+    localUsageWeightPercent: autoPreset?.localUsageWeightPercent,
+    priorityWeightPercent: autoPreset?.priorityWeightPercent,
+    reliabilityWeightPercent: autoPreset?.reliabilityWeightPercent,
+    latencyWeightPercent: autoPreset?.latencyWeightPercent,
+    switchCooldownMs: autoPreset?.switchCooldownMs,
+    circuitBreakerFailureThreshold: autoPreset?.circuitBreakerFailureThreshold,
+    circuitBreakerCooldownMs: autoPreset?.circuitBreakerCooldownMs,
+  };
+});
+const schedulerPolicyKeys: Array<keyof AutoSubagentPresetPolicySnapshot> = [
+  'quotaFloorPercent',
+  'switchMarginPercent',
+  'localUsageWindowMs',
+  'localUsageWeightPercent',
+  'priorityWeightPercent',
+  'reliabilityWeightPercent',
+  'latencyWeightPercent',
+  'switchCooldownMs',
+  'circuitBreakerFailureThreshold',
+  'circuitBreakerCooldownMs',
+];
+const schedulerPolicyEntries = computed(() =>
+  schedulerPolicyKeys.flatMap((key) => {
+    const value = schedulerPolicy.value[key];
+    return value === undefined ? [] : [{ key, value }];
+  }),
+);
+
+function schedulerPolicyValue(
+  key: keyof AutoSubagentPresetPolicySnapshot,
+  value: number,
+): string {
+  if (key.endsWith('Ms')) {
+    return formatSubagentPresetDuration(value, t as unknown as SubagentPresetT);
+  }
+  if (key.endsWith('Percent')) return `${value}%`;
+  return String(value);
+}
 
 const effectiveSubagentRoutes = computed(() => {
   const subagent = props.config?.subagent;
@@ -208,10 +424,44 @@ function setDefaultPermissionMode(mode: 'manual' | 'auto' | 'yolo'): void {
 function setSubagentPreset(preset: string): void {
   const config = props.config;
   if (!config || preset === (config.subagent?.preset ?? '')) return;
-  emit('activatePreset', {
-    patch: configPatchForPreset(config, preset),
-    main: mainRouteForPreset(config, preset),
-  });
+  emit('activatePreset', preset);
+}
+
+function setAutomaticPresetSwitching(enabled: boolean): void {
+  if (enabled === automaticPresetSwitching.value) return;
+  emit('updateConfig', autoSubagentPresetPatch(enabled));
+}
+
+/** Resume automatic switching: minimal patch clearing only the manual lock —
+ *  the active preset and the auto gates stay exactly as configured. */
+function resumeAutoPreset(): void {
+  if (props.configSaving) return;
+  emit('updateConfig', subagentPresetResumeAutoPatch());
+}
+
+/** Candidate-priority edits persist only `subagent.autoPreset.candidates`;
+ *  every control is disabled while a config write is in flight. */
+function addPresetCandidate(name: string): void {
+  if (props.configSaving || !name) return;
+  emit('updateConfig', subagentPresetCandidatesPatch([...presetCandidatesOrder.value, name]));
+}
+
+function removePresetCandidate(name: string): void {
+  if (props.configSaving) return;
+  emit(
+    'updateConfig',
+    subagentPresetCandidatesPatch(presetCandidatesOrder.value.filter((n) => n !== name)),
+  );
+}
+
+function movePresetCandidate(name: string, direction: -1 | 1): void {
+  if (props.configSaving) return;
+  const list = [...presetCandidatesOrder.value];
+  const index = list.indexOf(name);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= list.length) return;
+  [list[index]!, list[target]!] = [list[target]!, list[index]!];
+  emit('updateConfig', subagentPresetCandidatesPatch(list));
 }
 
 function toggleConfigBoolean(key: 'defaultPlanMode' | 'mergeAllAvailableSkills'): void {
@@ -550,6 +800,228 @@ function archiveTime(iso: string): string {
                 </div>
               </div>
 
+              <div v-if="automaticPresetSwitchingSupported" class="row">
+                <span class="rlabel">
+                  {{ t('settings.automaticPresetSwitching') }}
+                  <span class="hint">
+                    {{
+                      t(
+                        automaticPresetSwitchingOverridden
+                          ? 'settings.automaticPresetSwitchingOverriddenHint'
+                          : 'settings.automaticPresetSwitchingHint',
+                      )
+                    }}
+                  </span>
+                </span>
+                <Switch
+                  :model-value="automaticPresetSwitching"
+                  :disabled="configSaving"
+                  :label="t('settings.automaticPresetSwitching')"
+                  @update:model-value="setAutomaticPresetSwitching"
+                />
+              </div>
+
+              <div v-if="config.subagent && presetManualLocked" class="row">
+                <span class="rlabel">
+                  {{ t('settings.presetManualLock') }}
+                  <span class="hint">{{ t('settings.presetManualLockHint') }}</span>
+                </span>
+                <span class="row-actions">
+                  <Badge variant="warning" dot>
+                    {{ t('settings.presetManualLocked') }}
+                  </Badge>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    :disabled="configSaving"
+                    @click="resumeAutoPreset"
+                  >
+                    {{ t('settings.presetResumeAuto') }}
+                  </Button>
+                </span>
+              </div>
+
+              <div v-if="automaticPresetSwitchingSupported && config.subagent" class="row candidates-row">
+                <span class="rlabel">
+                  {{ t('settings.presetCandidates') }}
+                  <span class="hint">{{ t('settings.presetCandidatesHint') }}</span>
+                </span>
+                <div class="candidate-editor">
+                  <ol v-if="presetCandidatesOrder.length > 0" class="candidate-list">
+                    <li
+                      v-for="(name, index) in presetCandidatesOrder"
+                      :key="name"
+                      class="candidate-row"
+                    >
+                      <span class="candidate-index">{{ index + 1 }}</span>
+                      <span class="candidate-name">{{ name }}</span>
+                      <span class="candidate-actions">
+                        <IconButton
+                          size="sm"
+                          :disabled="configSaving || index === 0"
+                          :label="t('settings.presetCandidatesMoveUp')"
+                          @click="movePresetCandidate(name, -1)"
+                        >
+                          <Icon name="arrow-up" size="md" />
+                        </IconButton>
+                        <IconButton
+                          size="sm"
+                          :disabled="configSaving || index === presetCandidatesOrder.length - 1"
+                          :label="t('settings.presetCandidatesMoveDown')"
+                          @click="movePresetCandidate(name, 1)"
+                        >
+                          <Icon name="arrow-down" size="md" />
+                        </IconButton>
+                        <IconButton
+                          size="sm"
+                          :disabled="configSaving"
+                          :label="t('settings.presetCandidatesRemove')"
+                          @click="removePresetCandidate(name)"
+                        >
+                          <Icon name="minus" size="md" />
+                        </IconButton>
+                      </span>
+                    </li>
+                  </ol>
+                  <Select
+                    v-if="addablePresets.length > 0"
+                    size="sm"
+                    :model-value="''"
+                    :disabled="configSaving"
+                    :aria-label="t('settings.presetCandidatesAdd')"
+                    @update:model-value="addPresetCandidate($event as string)"
+                  >
+                    <option value="" disabled>
+                      {{ t('settings.presetCandidatesAddPlaceholder') }}
+                    </option>
+                    <option v-for="name in addablePresets" :key="name" :value="name">
+                      {{ name }}
+                    </option>
+                  </Select>
+                  <span v-else-if="presetCandidatesOrder.length === 0" class="candidate-empty">
+                    {{ t('settings.presetCandidatesNone') }}
+                  </span>
+                </div>
+              </div>
+
+              <Card
+                v-if="automaticPresetSwitchingSupported && config.subagent"
+                class="scheduler-card"
+              >
+                <template #head>
+                  <Icon name="sparkles" size="sm" />
+                  <span>{{ t('settings.smartRoutingStatus') }}</span>
+                  <Badge v-if="presetManualLocked" variant="warning" size="sm" dot>
+                    {{ t('settings.presetManualLocked') }}
+                  </Badge>
+                </template>
+                <p class="scheduler-hint">{{ t('settings.smartRoutingStatusHint') }}</p>
+
+                <div class="scheduler-section">
+                  <span class="scheduler-label">{{ t('settings.smartRoutingCandidateOrder') }}</span>
+                  <div class="scheduler-order">
+                    <Badge
+                      v-for="(name, index) in presetCandidatesOrder"
+                      :key="name"
+                      size="sm"
+                    >
+                      {{ index + 1 }} · {{ name }}
+                    </Badge>
+                    <span v-if="presetCandidatesOrder.length === 0" class="candidate-empty">
+                      {{ t('settings.smartRoutingCandidateOrderEmpty') }}
+                    </span>
+                  </div>
+                </div>
+
+                <Banner v-if="presetManualLocked" variant="warning">
+                  {{ t('settings.smartRoutingManualLock') }}
+                </Banner>
+                <template v-else-if="autoSubagentPresetStatus">
+                  <div class="scheduler-section scheduler-decision">
+                    <span class="scheduler-label">{{ t('settings.smartRoutingLatestDecision') }}</span>
+                    <strong>{{ schedulerReason }}</strong>
+                    <span>{{ schedulerEvaluationContext }}</span>
+                    <span>{{ schedulerCurrent }}</span>
+                    <span>{{ schedulerSelection }}</span>
+                    <Badge v-if="schedulerCooldown" variant="warning" size="sm">
+                      {{ schedulerCooldown }}
+                    </Badge>
+                  </div>
+
+                  <div class="scheduler-section">
+                    <span class="scheduler-label">{{ t('settings.smartRoutingCandidates') }}</span>
+                    <div class="scheduler-candidates">
+                      <div
+                        v-for="candidate in autoSubagentPresetStatus.candidates"
+                        :key="candidate.preset"
+                        class="scheduler-candidate"
+                      >
+                        <div class="scheduler-candidate-head">
+                          <span class="scheduler-candidate-name">{{ candidate.preset }}</span>
+                          <Badge size="sm">{{ schedulerCandidateScore(candidate) }}</Badge>
+                          <Badge
+                            :variant="schedulerCandidateStatusVariant(candidate)"
+                            size="sm"
+                            dot
+                          >
+                            {{ schedulerCandidateStatus(candidate) }}
+                          </Badge>
+                        </div>
+                        <span v-if="candidate.provider" class="scheduler-meta">
+                          {{ t('settings.smartRoutingProvider', { provider: candidate.provider }) }}
+                        </span>
+                        <span class="scheduler-breakdown">
+                          {{ schedulerCandidateBreakdown(candidate) }}
+                        </span>
+                        <span class="scheduler-meta">
+                          {{ schedulerCandidateEvidence(candidate) }}
+                        </span>
+                        <span
+                          v-if="candidate.quotaRemainingPercent !== undefined"
+                          class="scheduler-meta"
+                        >
+                          {{
+                            t('settings.smartRoutingQuota', {
+                              percent: candidate.quotaRemainingPercent.toFixed(1),
+                            })
+                          }}
+                        </span>
+                        <span
+                          v-if="candidate.localEvidence.averageFirstTokenLatencyMs !== undefined"
+                          class="scheduler-meta"
+                        >
+                          {{
+                            t('settings.smartRoutingLatency', {
+                              latency: candidate.localEvidence.averageFirstTokenLatencyMs.toFixed(0),
+                            })
+                          }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <Banner v-else>
+                  {{ t('settings.smartRoutingNoEvaluation') }}
+                </Banner>
+
+                <div class="scheduler-section">
+                  <span class="scheduler-label">{{ t('settings.smartRoutingPolicy') }}</span>
+                  <div v-if="schedulerPolicyEntries.length > 0" class="scheduler-policy">
+                    <div
+                      v-for="entry in schedulerPolicyEntries"
+                      :key="entry.key"
+                      class="scheduler-policy-row"
+                    >
+                      <span>{{ t(`settings.smartRoutingPolicyLabels.${entry.key}`) }}</span>
+                      <code>{{ schedulerPolicyValue(entry.key, entry.value) }}</code>
+                    </div>
+                  </div>
+                  <span v-else class="candidate-empty">
+                    {{ t('settings.smartRoutingPolicyEmpty') }}
+                  </span>
+                </div>
+              </Card>
+
               <div v-if="config.subagent" class="route-summary">
                 <div class="route-summary-title">{{ t('settings.effectiveRoutes') }}</div>
                 <div class="route-summary-row">
@@ -854,6 +1326,169 @@ function archiveTime(iso: string): string {
 
 .select-wrap { min-width: 220px; max-width: min(320px, 50vw); flex: none; }
 
+/* Lock row + candidate-priority editor (Agent tab, automatic preset area). */
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+.candidates-row { align-items: flex-start; }
+.candidate-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: none;
+  width: min(340px, 50vw);
+}
+.candidate-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.candidate-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: 2px var(--space-2) 2px var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+.candidate-index {
+  flex: none;
+  min-width: 18px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+  text-align: right;
+}
+.candidate-name {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text);
+}
+.candidate-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.candidate-empty {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-text-faint);
+}
+
+.scheduler-card {
+  margin: var(--space-3) 0;
+}
+.scheduler-hint {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-faint);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+.scheduler-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.scheduler-label {
+  color: var(--color-text-faint);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.scheduler-order {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.scheduler-decision {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.scheduler-decision strong {
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+.scheduler-candidates {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.scheduler-candidate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+}
+.scheduler-candidate-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.scheduler-candidate-name {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scheduler-breakdown {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
+}
+.scheduler-meta {
+  color: var(--color-text-faint);
+  font-size: var(--text-xs);
+}
+.scheduler-policy {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-1) var(--space-3);
+}
+.scheduler-policy-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-block: var(--space-1);
+  border-bottom: 1px solid var(--color-line);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.scheduler-policy-row code {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+}
+
 .route-summary {
   display: flex;
   flex-direction: column;
@@ -907,6 +1542,10 @@ function archiveTime(iso: string): string {
     flex-direction: column;
   }
   .select-wrap {
+    width: 100%;
+    max-width: none;
+  }
+  .candidate-editor {
     width: 100%;
     max-width: none;
   }

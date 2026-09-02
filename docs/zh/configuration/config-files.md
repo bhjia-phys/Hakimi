@@ -227,7 +227,7 @@ model = "provider/fast"
 
 这些路由 key 的含义是固定的：
 
-- `main`：激活 preset 时应用的 main agent 模型和 Thinking 设置。TUI 的 `/preset` 命令会让全局 `default_model` 和 `thinking` 与这条路由保持同步。
+- `main`：激活 preset 时应用的 main agent 模型和 Thinking 设置。TUI 的 `/preset` 命令会让全局 `default_model` 和 `thinking` 与这条路由保持同步；Hakimi Web 聊天 header 中的 Preset 按钮则会把它应用到当前会话或正在编辑的草稿。
 - `explore`、`plan`、`coder` 以及其他 profile 名称：所选 subagent profile 使用的 Agent 路由。
 - `swarm`：AgentSwarm 的默认路由；swarm 选定的 profile 仍可贡献自己的 profile 路由。
 - `tower_worker`：Tower worker 任务使用的模型。
@@ -240,6 +240,64 @@ Agent 和 AgentSwarm 不再接受逐次派生的 `model` 参数。请通过这�
 ### 超时
 
 `timeout_ms` 设置单个 subagent 任务的最长墙钟时间（默认 `7200000`，即 2 小时）。设置为 `0` 表示无超时。环境变量 `KIMI_SUBAGENT_TIMEOUT_MS` 优先于配置值；在 print 模式（`hakimi -p`）下，未显式设置时默认为 `0`。超过 `2147483647`（约 24.8 天）的值会被运行时钳制。
+
+### 自动切换 preset
+
+引擎可以在相关 subagent binding 解析前评估已配置的 preset，并选择评分最高的健康候选。`candidates` 仍表示每位用户保存在本机的优先顺序，但不再是严格的回退链：列表位置只贡献优先级加分；如果较低位置的 preset 在配额、本地可靠性、首 token 延迟、token 用量或路由 / 模型匹配度上明显更好，它可以越级胜出。该行为是实验性的，默认关闭：需要同时启用 `auto_subagent_preset` 实验 flag（见[环境变量](../configuration/env-vars.md#运行时开关)）并在此节设置 `auto_preset.enabled`。在 Hakimi Web 中，**设置 > Agent > 自动切换 Preset** 会同时控制这两个必要设置，并允许编辑本地顺序；会话空闲时不会轮询或修改 preset。该开关显示实际运行状态，因此环境设置或 master flag 覆盖后，显示值可能与已保存值不同。
+
+```toml
+[subagent]
+preset = "balanced"
+
+[subagent.auto_preset]
+enabled = true
+manual_lock = false
+candidates = ["balanced", "kimi-heavy"]
+quota_floor_percent = 25
+switch_margin_percent = 10
+local_usage_window_ms = 3600000
+local_usage_weight_percent = 10
+priority_weight_percent = 20
+reliability_weight_percent = 20
+latency_weight_percent = 10
+switch_cooldown_ms = 600000
+circuit_breaker_failure_threshold = 3
+circuit_breaker_cooldown_ms = 900000
+refresh_interval_ms = 300000
+query_timeout_ms = 5000
+allow_extra_usage = false
+```
+
+`auto_preset` 字段说明：
+
+- `enabled`：打开自动评估；默认 `false`。此外还必须启用实验 flag，评估才会运行。
+- `manual_lock`：保留当前人工选择并跳过自动评估；默认 `false`。手动激活 preset 会把它设为 `true`；**恢复自动切换**或 `/preset auto` 只会清除该锁，不改变 active preset。
+- `candidates`：参与评估的 preset 名称列表，按偏好从高到低排列。列表位置提供线性优先级加分，而不是绝对顺序。缺省时所有已配置 preset 按文件顺序参与；显式空数组会暂停自动切换。
+- `quota_floor_percent`：候选被视为健康所需的最低 provider 剩余配额（`25`）。此外还要求路由可解析、有配额证据且熔断器关闭；评分加分不能把低于 floor 的候选救活。
+- `switch_margin_percent`：当前 preset 健康时，最高分候选必须领先多少分才允许普通切换（`10`）。
+- `local_usage_window_ms`：统计本地运行证据的回溯窗口（`3600000`，即 1 小时）。
+- `local_usage_weight_percent`：归一化本地 token 用量的最大惩罚（`10`）。
+- `priority_weight_percent`：最大优先级加分（`20`）。有多个候选时，从第一名线性递减到最后一名的零分；只有一个候选时，它获得完整加分。
+- `reliability_weight_percent`：按置信度修正后的本地失败率最大惩罚（`20`）。
+- `latency_weight_percent`：按置信度修正并归一化的首 token 延迟最大惩罚（`10`）。
+- `switch_cooldown_ms`：自动切换成功后的进程内冷却时间（`600000`，即 10 分钟）。它会阻止普通评分切换，但不会阻止从不健康的当前 preset 逃生。
+- `circuit_breaker_failure_threshold`：连续多少次本地运行失败后打开 provider 熔断器（`3`）。取消的运行不计入，后续成功可提前关闭熔断器。
+- `circuit_breaker_cooldown_ms`：熔断器打开后，从最近一次失败起保持不可选的时间（`900000`，即 15 分钟）。
+- `refresh_interval_ms`：provider 配额答案在两次派生之间的缓存时长（`300000`，即 5 分钟）；subagent 运行结束时缓存会立即失效。
+- `query_timeout_ms`：单个 provider 配额查询的超时（`5000`）。
+- `allow_extra_usage`：为 `true` 时，余额为正的 Kimi Extra Usage 钱包可在 plan 配额耗尽时补足：provider 的有效剩余百分比取 plan 窗口最低剩余与钱包剩余份额的较大者。Extra Usage 永远不会被自动消耗；默认 `false` 完全不考虑钱包。钱包提供有效配额时，plan reset 时间视为未知，因此没有 reset 加分。
+
+评估时，每个候选都会以自己作为 active preset 来解析路由，最终模型的 provider 决定使用哪份配额与本地证据。provider 剩余百分比取所有有效用量窗口中最紧张的一项。固定评分公式为 `剩余配额 + 优先级加分 + reset 加分 + 路由 / 模型匹配加分 − token 惩罚 − 可靠性惩罚 − 延迟惩罚`。未来 24 小时内的有效 reset 最多加 2 分；模型来自 preset 专用路由时加 2 分；已知模型能力与请求的 Thinking 设置相符时加 1 分。模型能力未知时不扣分。
+
+本地证据会优先采用当前请求 profile 的历史；该 profile 少于 3 个样本时，回退到同一 provider 的全部近期运行。失败率与首 token 延迟在样本较少时会降低置信度，直到 5 个运行样本或 LLM 请求才使用完整权重；取消的运行不算可靠性失败。token 用量按最繁忙的候选 provider 归一化，延迟按有 timing 证据的最慢候选归一化。因此，只要加权证据足以抵消较少的优先级加分，低优先级 preset 就可以越级。
+
+候选只有在路由可解析、有不低于 `quota_floor_percent` 的配额证据且熔断器关闭时才可选。评分最高的可选候选胜出；同分时尽量保持当前 preset，否则按候选顺序。当前 preset 不在 `candidates` 中时，会被视为显式选择并保持不变。当前 preset 健康时，胜出者必须领先至少 `switch_margin_percent`，并且切换冷却已经结束。当前 preset 不健康或已熔断时，即使仍在冷却期也可立即逃生。没有健康候选时保持当前 preset。daemon 重启后会从本地运行台账重建熔断状态；仅存在于进程内的切换冷却会清零。
+
+手动使用 `/preset`、Web Preset 选择器或 `SetSubagentPreset` 时，会原子地保存 preset 并设置 `manual_lock = true`，手动选择基础路由也一样。该锁只保存在本机，并且 daemon 重启后仍然有效；锁定期间，自动评估会在查询 provider 用量前直接返回。可在 Web header 或 **设置 > Agent** 中选择**恢复自动切换**，也可在 TUI 中运行 `/preset auto`，只清除手动锁。当前 preset 会继续生效，直到下一次相关派生或 resume 触发评估。
+
+自动激活是 best-effort 且 fail-open：证据不足、查询失败、路由模型无法解析或持久化失败都不会阻塞派生或 resume。它只写 `[subagent].preset`——绝不触碰 main/default model、全局 Thinking 或手动锁，也不产生审批请求。评估发生在新的 `Agent` 派生、允许重绑定的 `Agent` resume、`AgentSwarm` 新 item 使用的路由、仅 resume 与混合 `AgentSwarm` 批次中每个允许重绑定的 child，以及 Tower worker/reviewer 派生解析 binding 之前；保留 binding 的 profile 会跳过评估。人工激活与自动激活共享同一个串行写入边界，因此自动评估进行期间出现的人工选择最终胜出。
+
+评分器固定、仅在本机运行且结果可复现：它不会训练模型，不会上传 prompt、路径、错误消息或其他用户内容，也不会在空闲时轮询。交互式 TUI footer 和 Web 聊天 header 会显示 active preset。Hakimi Web 的 Preset 菜单与 **设置 > Agent** 还会展示最近一次结构化原因、触发 profile 和时间、候选评分拆解、配额、冷却、熔断状态以及缺失证据。每次自动切换成功后，触发切换的会话会增加一条带本地化原因的状态标记。程序化客户端可从 [`GET /api/v1/config/subagent-preset/status`](../reference/server-api.md#配置) 读取最近一次进程级全局判断，并订阅该页说明的 evaluated / changed 事件。路由优先级和派生覆盖范围见 [Agent 与 subagent](../customization/agents.md#subagent-模型路由)。
 
 ### 已废弃的 `[secondary_model]`
 
@@ -463,8 +521,8 @@ MCP server 的声明配置写在 `~/.hakimi/mcp.json` 或项目内 `.kimi-code/m
 | `[notifications].enabled` | `boolean` | `true` | 是否发送桌面通知 |
 | `[notifications].notification_condition` | `string` | `unfocused` | 何时通知：`unfocused`（仅终端失去焦点时）或 `always`（总是） |
 | `[upgrade].auto_install` | `boolean` | `true` | 是否自动安装新版本 |
-| `[status_line].items` | `string[]` | `[]` | 底部状态栏第一行展示哪些内置槽位及其顺序：`mode`、`goal`、`model`、`tasks`、`cwd`、`git`、`tips`。缺省保持默认布局；未知 id 跳过并告警 |
-| `[status_line].command` | `string` | `""` | 自定义状态栏命令。其 stdout 第一行替换状态栏第一行，stdin 会收到 JSON 快照（model、cwd、git 分支、permission 模式、plan 模式、上下文用量、session id、版本）。运行上限 300ms、每秒最多一次；失败时回退内置布局 |
+| `[status_line].items` | `string[]` | `[]` | 底部状态栏第一行展示哪些内置槽位及其顺序：`mode`、`goal`、`model`、`preset`、`tasks`、`cwd`、`git`、`tips`。缺省保持默认布局；未知 id 跳过并告警 |
+| `[status_line].command` | `string` | `""` | 自定义状态栏命令。其 stdout 第一行替换状态栏第一行，stdin 会收到 JSON 快照（model、subagent preset、cwd、git 分支、permission 模式、plan 模式、上下文用量、session id、版本）。运行上限 300ms、每秒最多一次；失败时回退内置布局 |
 
 ```toml
 # ~/.hakimi/tui.toml
@@ -484,7 +542,7 @@ notification_condition = "unfocused" # "unfocused" | "always"
 auto_install = true
 
 # [status_line]
-# items = ["mode", "goal", "model", "tasks", "cwd", "git", "tips"]
+# items = ["mode", "goal", "model", "preset", "tasks", "cwd", "git", "tips"]
 # command = "~/.hakimi/statusline.sh"
 ```
 

@@ -12,10 +12,14 @@
  *
  * Spawn bindings are resolved through the canonical `[subagent]` route table:
  * the active preset takes precedence, followed by `agents`, then the caller's
- * binding. The legacy `[secondary_model]` section is consulted only as a
- * compatibility fallback when no preset is active. On resume, ordinary
- * profiles reconcile the same route before the run and event snapshot, while
- * profiles that own their binding preserve it.
+ * binding. Before resolving, the tool asks the App-scope automatic preset
+ * decider (`autoSubagentPreset`) to evaluate the soon-to-spawn route — for
+ * fresh spawns and rebindable resumes alike — so the decider may activate a
+ * better `[subagent]` preset ahead of the resolve; the decision is fail-open
+ * and only writes `[subagent].preset`. The legacy `[secondary_model]` section
+ * is consulted only as a compatibility fallback when no preset is active. On
+ * resume, ordinary profiles reconcile the same route before the run and event
+ * snapshot, while profiles that own their binding preserve it.
  *
  * Registered via the module-level `registerAgentToolService(ISubagentTool,
  * SubagentTool)` at the bottom of this file — the same "import = register"
@@ -83,7 +87,9 @@ import { isSubagentMeta, subagentLabels, subagentParentAgentId } from '#/session
 import { IAgentRuntimeService } from '#/agent/runtimeBinding/agentRuntime';
 import type { Runtime } from '#/runtime/runtime';
 import { ISessionMetadata } from '#/session/sessionMetadata/sessionMetadata';
+import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import { ISessionWorkspaceContext } from '#/session/workspaceContext/workspaceContext';
+import { IAutoSubagentPresetService } from '#/app/autoSubagentPreset/autoSubagentPreset';
 
 import { emitAgentRunSpawned, mirrorAgentRun } from '#/session/subagent/mirrorAgentRun';
 import { ISessionSubagentService } from '#/session/subagent/subagent';
@@ -133,11 +139,13 @@ export class SubagentTool implements ISubagentTool {
     @ISessionWorkspaceContext private readonly workspace: ISessionWorkspaceContext,
     @IAgentRuntimeService private readonly runtime: IAgentRuntimeService,
     @ISessionMetadata private readonly sessionMetadata: ISessionMetadata,
+    @ISessionContext private readonly sessionContext: ISessionContext,
     @ILogService private readonly log: ILogService,
     @IAgentPermissionModeService private readonly permissionMode: IAgentPermissionModeService,
     @IConfigService private readonly config: IConfigService,
     @IFlagService private readonly flags: IFlagService,
     @IModelCatalog private readonly modelCatalog: IModelCatalog,
+    @IAutoSubagentPresetService private readonly autoPreset: IAutoSubagentPresetService,
     @AgentToolContribution private readonly contributions: CollectionView<AgentToolContribution>,
   ) {
     this.callerAgentId = scopeContext.agentId;
@@ -265,12 +273,32 @@ export class SubagentTool implements ISubagentTool {
       }
       await this.ensureOwnedIdleSubagent(resumeAgentId, target);
       agentId = target.id;
+      const targetProfileService = target.accessor.get(IAgentProfileService);
+      const targetProfileName = targetProfileService.data().profileName;
+      await this.catalog.ready;
+      const targetProfile =
+        targetProfileName === undefined ? undefined : this.catalog.get(targetProfileName);
+      const own = this.profile.data();
+      if (
+        own.modelAlias !== undefined &&
+        targetProfile?.preserveBindingOnResume !== true
+      ) {
+        await this.autoPreset.evaluate(
+          {
+            route: 'agent',
+            profileName: targetProfileName,
+            modelPreference: targetProfile?.modelPreference,
+            caller: { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel },
+          },
+          { sessionId: this.sessionContext.sessionId, signal: controller.signal },
+        );
+      }
       const resumed = await refreshSubagentBindingOnResume(
         this.config,
         this.flags,
         this.catalog,
         this.modelCatalog,
-        target.accessor.get(IAgentProfileService),
+        targetProfileService,
         this.profile.data(),
         'agent',
       );
@@ -301,6 +329,18 @@ export class SubagentTool implements ISubagentTool {
           details: { agentId: this.callerAgentId },
         });
       }
+      await this.autoPreset.evaluate(
+        {
+          route: 'agent',
+          profileName: profile.name,
+          modelPreference: profile.modelPreference,
+          caller: {
+            modelAlias: own.modelAlias,
+            thinkingLevel: own.thinkingLevel,
+          },
+        },
+        { sessionId: this.sessionContext.sessionId, signal: controller.signal },
+      );
       const binding = resolveSubagentBinding(this.config, this.flags, this.modelCatalog, {
         route: 'agent',
         profileName: profile.name,

@@ -11,6 +11,7 @@
 import type { Scope } from '@moonshot-ai/agent-core-v2';
 import { WebSocketServer } from 'ws';
 
+import type { RemoteAccessOptions } from '../../../middleware/remoteAccess';
 import type { CredentialValidator } from '../../../services/auth/credentials';
 import { type IConnectionRegistry } from '../connectionRegistry';
 import type { SessionEventBroadcaster } from './sessionEventBroadcaster';
@@ -28,6 +29,7 @@ export interface RegisterWsV1Options {
   readonly broadcaster: SessionEventBroadcaster;
   readonly fsWatchBridge: FsWatchBridge;
   readonly logger?: JournalLogger;
+  readonly remoteAccess?: RemoteAccessOptions;
   readonly maxBufferSize?: number;
   readonly flushIntervalMs?: number;
   readonly maxBatchSize?: number;
@@ -51,6 +53,7 @@ export function registerWsV1(core: Scope, opts: RegisterWsV1Options): WebSocketS
       remoteAddress: req.socket.remoteAddress ?? null,
       userAgent: req.headers['user-agent'] ?? null,
       logger: opts.logger,
+      remoteAccess: opts.remoteAccess,
       maxBufferSize: opts.maxBufferSize,
       flushIntervalMs: opts.flushIntervalMs,
       maxBatchSize: opts.maxBatchSize,

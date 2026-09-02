@@ -56,7 +56,6 @@ import {
   ToolResultBuilder,
 } from '#/tool/result-builder';
 import { registerAgentToolService } from '#/agent/toolRegistry/toolContribution';
-import { toInputJsonSchema } from '#/tool/input-schema';
 import { literalRulePattern, matchesGlobRuleSubject } from '#/tool/rule-match';
 import { renderPrompt } from '#/_base/utils/render-prompt';
 import { userCancellationReason } from '#/_base/utils/abort';
@@ -64,7 +63,7 @@ import bashDescriptionTemplate from './bash.md?raw';
 import { ProcessTask } from './process-task';
 import {
   type BashInput,
-  BashInputSchema,
+  BashInputParameters,
   DEFAULT_BACKGROUND_TIMEOUT_S,
   DEFAULT_TIMEOUT_S,
   IBashTool,
@@ -128,7 +127,7 @@ function withoutAutoBackgroundOnTimeout(description: string): string {
 export class BashTool implements IBashTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'Bash' as const;
-  readonly parameters: Record<string, unknown> = toInputJsonSchema(BashInputSchema);
+  readonly parameters: Record<string, unknown> = BashInputParameters;
 
   constructor(
     @IAgentRuntimeService private readonly runtime: IAgentRuntimeService,

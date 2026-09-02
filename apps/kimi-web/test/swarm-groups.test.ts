@@ -13,6 +13,9 @@ function subagentTask(
     swarmIndex?: number;
     status?: AppTask['status'];
     subagentPhase?: AppTask['subagentPhase'];
+    subagentType?: string;
+    model?: string;
+    thinkingEffort?: string;
     text?: string;
     outputLines?: string[];
   } = {},
@@ -26,6 +29,9 @@ function subagentTask(
     createdAt: '2026-01-01T00:00:00.000Z',
     parentToolCallId,
     swarmIndex: opts.swarmIndex,
+    subagentType: opts.subagentType,
+    model: opts.model,
+    thinkingEffort: opts.thinkingEffort,
     text: opts.text,
     outputLines: opts.outputLines,
     subagentPhase: opts.subagentPhase ?? 'working',
@@ -113,6 +119,21 @@ describe('swarmMembersByToolCall', () => {
     const rows = map.get('swarm-1') ?? [];
     expect(rows[0]).toMatchObject({ id: 'a', text: 'Hello, world!' });
     expect(rows[1]).toMatchObject({ id: 'b', outputLines: ['tool line'] });
+  });
+
+  it('preserves role, model, and thinking effort from AppTask', () => {
+    const map = swarmMembersByToolCall([
+      subagentTask('a', 'swarm-1', {
+        subagentType: 'reviewer',
+        model: 'runtime-model',
+        thinkingEffort: 'high',
+      }),
+    ]);
+    expect(map.get('swarm-1')?.[0]).toMatchObject({
+      subagentType: 'reviewer',
+      model: 'runtime-model',
+      thinkingEffort: 'high',
+    });
   });
 });
 

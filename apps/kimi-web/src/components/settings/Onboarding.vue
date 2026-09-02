@@ -40,12 +40,12 @@ function finish(): void {
             <mask id="obKimiEyes" maskUnits="userSpaceOnUse">
               <rect x="0" y="0" width="32" height="22" fill="#fff" />
               <g class="ob-eyes" fill="#000">
-                <rect class="ob-eye" x="11.8" y="7" width="2.8" height="8" rx="1.4" />
-                <rect class="ob-eye" x="17.4" y="7" width="2.8" height="8" rx="1.4" />
+                <path class="ob-eye" d="M13.2 7.5C14.6 9.1 14.8 13.7 13.2 16.5C11.6 13.7 11.8 9.1 13.2 7.5Z" />
+                <path class="ob-eye" d="M18.8 7.5C20.2 9.1 20.4 13.7 18.8 16.5C17.2 13.7 17.4 9.1 18.8 7.5Z" />
               </g>
             </mask>
           </defs>
-          <rect x="1" y="1" width="30" height="20" rx="6" fill="var(--color-accent)" mask="url(#obKimiEyes)" />
+          <path d="M2 8L4 2L10 5C12 4 20 4 22 5L28 2L30 8V15C30 19 26 21 16 21C6 21 2 19 2 15V8Z" fill="var(--color-accent)" mask="url(#obKimiEyes)" />
         </svg>
         <div class="ob-brand-text">
           <div class="ob-title">{{ t('onboarding.title') }}</div>

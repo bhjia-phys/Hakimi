@@ -32,10 +32,12 @@ const props = withDefaults(
     error?: boolean;
     /** Composer: show a remove button. */
     removable?: boolean;
+    /** Whether the primary chip can open or download its attachment. */
+    interactive?: boolean;
     /** Accessible label for the remove button. */
     removeLabel?: string;
   }>(),
-  { uploading: false, error: false, removable: false },
+  { uploading: false, error: false, removable: false, interactive: true },
 );
 
 const emit = defineEmits<{
@@ -85,7 +87,14 @@ const title = computed(() => {
     :title="title"
     :data-kind="kind"
   >
-    <button type="button" class="att-activate" :aria-label="title" @click="emit('activate')">
+    <component
+      :is="interactive ? 'button' : 'span'"
+      :type="interactive ? 'button' : undefined"
+      class="att-activate"
+      :class="{ 'is-static': !interactive }"
+      :aria-label="interactive ? title : undefined"
+      @click="interactive && emit('activate')"
+    >
       <span class="att-tile">
         <AuthMedia
           v-if="kind === 'image' && url"
@@ -102,7 +111,7 @@ const title = computed(() => {
       <span class="att-name">{{ displayName }}</span>
       <Spinner v-if="uploading" size="sm" :label="t('composer.uploading')" />
       <span v-else-if="error" class="att-err"><Icon name="info" size="sm" /></span>
-    </button>
+    </component>
     <Tooltip v-if="removable" :text="removeLabel ?? t('composer.remove')">
       <button type="button" class="att-rm" :aria-label="removeLabel ?? t('composer.remove')" @click="emit('remove')">
         <Icon name="close" size="sm" />
@@ -138,6 +147,9 @@ const title = computed(() => {
   color: inherit;
   font: inherit;
   cursor: pointer;
+}
+.att-activate.is-static {
+  cursor: default;
 }
 .att-activate:focus-visible {
   outline: none;

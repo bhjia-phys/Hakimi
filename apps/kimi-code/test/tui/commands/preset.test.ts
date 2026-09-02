@@ -84,7 +84,45 @@ function makeHost(
   };
   const harness = {
     getConfig: vi.fn(async () => config),
-    setConfig: vi.fn(async () => config),
+    activateSubagentPreset: vi.fn(async (preset: string) => {
+      const currentSubagent = config.subagent as Record<string, unknown> | undefined;
+      const currentAutoPreset = currentSubagent?.['autoPreset'] as
+        | Record<string, unknown>
+        | undefined;
+      return {
+        ...config,
+        subagent: {
+          ...currentSubagent,
+          preset,
+          autoPreset: { ...currentAutoPreset, manualLock: true },
+        },
+      };
+    }),
+    setConfig: vi.fn(async (patch: {
+      subagent?: { preset?: string; autoPreset?: { manualLock?: boolean } };
+    }) => {
+      // Return the config the engine would keep after the patch: the written
+      // preset becomes the effective one (the manual-sync path consumes it).
+      const next = { ...config };
+      const currentSubagent = config.subagent as Record<string, unknown> | undefined;
+      if (patch.subagent !== undefined) {
+        const currentAutoPreset = currentSubagent?.['autoPreset'] as
+          | Record<string, unknown>
+          | undefined;
+        const updatedSubagent = { ...currentSubagent };
+        if (patch.subagent.preset !== undefined) {
+          updatedSubagent['preset'] = patch.subagent.preset;
+        }
+        if (patch.subagent.autoPreset !== undefined) {
+          updatedSubagent['autoPreset'] = {
+            ...currentAutoPreset,
+            ...patch.subagent.autoPreset,
+          };
+        }
+        next.subagent = updatedSubagent;
+      }
+      return next;
+    }),
   };
   const session = {
     id: 'session_test',
@@ -116,6 +154,7 @@ function makeHost(
     showNotice: vi.fn(),
     track: vi.fn(),
     reloadCurrentSessionView: vi.fn(async () => {}),
+    syncSubagentPresetFromConfig: vi.fn(async () => {}),
   } as unknown as SlashCommandHost;
   return { host, harness, session };
 }
@@ -131,8 +170,8 @@ describe('handlePresetCommand', () => {
 
     await handlePresetCommand(host, 'deep');
 
+    expect(harness.activateSubagentPreset).toHaveBeenCalledWith('deep');
     expect(harness.setConfig).toHaveBeenCalledWith({
-      subagent: { preset: 'deep' },
       defaultModel: 'acme/main',
       thinking: { enabled: true, effort: 'high' },
     });
@@ -141,6 +180,15 @@ describe('handlePresetCommand', () => {
     expect(session.reloadSession).toHaveBeenCalledOnce();
     expect(host.reloadCurrentSessionView).toHaveBeenCalledOnce();
     expect(host.track).toHaveBeenCalledWith('subagent_preset_switch', { preset: 'deep' });
+    // The manual change converges the footer preset from the written config…
+    expect(host.syncSubagentPresetFromConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ subagent: expect.objectContaining({ preset: 'deep' }) }),
+    );
+    // …and must never produce an automatic "switched automatically" message.
+    const statusText = (host.showStatus as ReturnType<typeof vi.fn>)
+      .mock.calls.map(([value]) => String(value))
+      .join('\n');
+    expect(statusText).not.toContain('Subagent preset switched automatically');
   });
 
   it('opens preset then route pickers and saves Explore via the shared model picker', async () => {
@@ -197,13 +245,32 @@ describe('handlePresetCommand', () => {
     expect(text).toContain('Swarm default');
   });
 
-  it('clears the active preset on /preset off', async () => {
+  it('clears and manually locks base routing on /preset off', async () => {
     const { host, harness } = makeHost();
 
     await handlePresetCommand(host, 'off');
 
-    expect(harness.setConfig).toHaveBeenCalledWith({ subagent: { preset: '' } });
+    expect(harness.activateSubagentPreset).toHaveBeenCalledWith('');
+    expect(harness.setConfig).not.toHaveBeenCalled();
     expect(host.track).toHaveBeenCalledWith('subagent_preset_switch', { preset: 'off' });
+    expect(host.syncSubagentPresetFromConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ subagent: expect.objectContaining({ preset: '' }) }),
+    );
+  });
+
+  it('releases the manual lock without changing the active preset on /preset auto', async () => {
+    const { host, harness, session } = makeHost({
+      subagent: { ...SUBAGENT_CONFIG, autoPreset: { enabled: true, manualLock: true } },
+    });
+
+    await handlePresetCommand(host, 'auto');
+
+    expect(harness.setConfig).toHaveBeenCalledWith({
+      subagent: { autoPreset: { manualLock: false } },
+    });
+    expect(session.reloadSession).not.toHaveBeenCalled();
+    expect(host.syncSubagentPresetFromConfig).not.toHaveBeenCalled();
+    expect(host.track).toHaveBeenCalledWith('subagent_preset_auto_resume', {});
   });
 
   it('rejects an unknown preset name without writing config', async () => {

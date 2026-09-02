@@ -29,9 +29,24 @@ export function readSessionIdFromLocation(loc: Pick<Location, 'pathname'>): stri
   }
 }
 
-/** Build the canonical path for a session ('/' when undefined). */
-export function sessionUrl(sessionId: string | undefined): string {
-  return sessionId === undefined || sessionId.length === 0
-    ? '/'
-    : `${SESSION_PATH_PREFIX}${encodeURIComponent(sessionId)}`;
+/** Parse the initial session id only for the restricted remote mode.
+    `?remote=1` on the root path yields `''` — remote mode with no pinned
+    session, where the client opens the most recent session. An unrecognized
+    path (nested, undecodable, non-session) stays `undefined`. */
+export function readRemoteSessionIdFromLocation(
+  loc: Pick<Location, 'pathname' | 'search'>,
+): string | undefined {
+  if (new URLSearchParams(loc.search).get('remote') !== '1') return undefined;
+  if (loc.pathname === '/') return '';
+  return readSessionIdFromLocation(loc);
+}
+
+/** Build the canonical path for a session ('/' when undefined). Remote mode
+    keeps its query marker across in-app session switches and hard refreshes. */
+export function sessionUrl(sessionId: string | undefined, remote = false): string {
+  const pathname =
+    sessionId === undefined || sessionId.length === 0
+      ? '/'
+      : `${SESSION_PATH_PREFIX}${encodeURIComponent(sessionId)}`;
+  return remote ? `${pathname}?remote=1` : pathname;
 }

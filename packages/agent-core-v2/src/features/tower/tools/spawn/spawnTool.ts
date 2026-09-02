@@ -16,7 +16,10 @@
  * canonical `tower_worker` and `tower_reviewer` routes through
  * `resolveSubagentBinding`: an active preset route wins, and without a preset
  * workers may use the gated legacy fallback while reviewers inherit the
- * caller's model. The resolved model is reported in the tool output and the
+ * caller's model. Before resolving, the tool asks the App-scope automatic
+ * preset decider for the matching `tower_worker` / `tower_reviewer` route
+ * (fail-open, only writes `[subagent].preset`). The resolved model is reported
+ * in the tool output and the
  * `spawn` line of the tower activity log. The spawned agent is pinned
  * to the `auto` permission mode regardless of the tower's own mode: workers
  * and reviewers run detached and unattended, so per-call approval prompts
@@ -74,6 +77,7 @@ import {
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
 import { subagentLabels } from '#/session/agentLifecycle/subagentMetadata';
 import { ISessionContext } from '#/session/sessionContext/sessionContext';
+import { IAutoSubagentPresetService } from '#/app/autoSubagentPreset/autoSubagentPreset';
 import {
   DEFAULT_SUBAGENT_TIMEOUT_MS,
   resolveSubagentBinding,
@@ -109,6 +113,7 @@ export class TowerSpawnTool implements ITowerSpawnTool {
     @IConfigService private readonly config: IConfigService,
     @IFlagService private readonly flags: IFlagService,
     @IModelCatalog private readonly modelCatalog: IModelCatalog,
+    @IAutoSubagentPresetService private readonly autoPreset: IAutoSubagentPresetService,
   ) {
     this.callerAgentId = scopeContext.agentId;
   }
@@ -127,7 +132,7 @@ export class TowerSpawnTool implements ITowerSpawnTool {
 
   private async execution(
     args: TowerSpawnToolInput,
-    { toolCallId }: ExecutableToolContext,
+    { toolCallId, signal }: ExecutableToolContext,
   ): Promise<ExecutableToolResult> {
     try {
       if (!this.tower.isActive) {
@@ -198,11 +203,18 @@ export class TowerSpawnTool implements ITowerSpawnTool {
       try {
         const controller = new AbortController();
         const own = this.profile.data();
+        const route = args.kind === 'worker' ? 'tower_worker' : 'tower_reviewer';
+        if (own.modelAlias !== undefined) {
+          await this.autoPreset.evaluate(
+            { route, caller: { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel } },
+            { sessionId: this.sessionContext.sessionId, signal },
+          );
+        }
         const binding =
           own.modelAlias === undefined
             ? undefined
             : resolveSubagentBinding(this.config, this.flags, this.modelCatalog, {
-                route: args.kind === 'worker' ? 'tower_worker' : 'tower_reviewer',
+                route,
                 caller: {
                   modelAlias: own.modelAlias,
                   thinkingLevel: own.thinkingLevel,

@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { AgentSwarmProgressComponent } from '#/tui/components/messages/agent-swarm-progress';
+import { ACTIVITY_PROGRESS_REVEAL_DELAY_MS } from '#/tui/constant/activity-progress';
+import type { ActivityProgressController } from '#/tui/controllers/activity-progress';
 import type { SessionEventHandler } from '#/tui/controllers/session-event-handler';
 import { KimiTUI, type KimiTUIStartupInput, type TUIState } from '#/tui/kimi-tui';
 
 interface ActivityDriver {
   state: TUIState;
+  activityProgress: ActivityProgressController;
   sessionEventHandler: SessionEventHandler;
   updateActivityPane(): void;
 }
@@ -153,7 +156,7 @@ describe('updateActivityPane terminal progress', () => {
       expect(setProgress).toHaveBeenCalledTimes(1);
       expect(setProgress).toHaveBeenLastCalledWith(true);
       expect(state.activitySpinner).toBeNull();
-      expect(state.activityContainer.children).toHaveLength(0);
+      expect(state.activityContainer.render(80)).toEqual([]);
 
       state.appState.streamingPhase = 'idle';
       driver.updateActivityPane();
@@ -170,6 +173,8 @@ describe('updateActivityPane terminal progress', () => {
     vi.useFakeTimers();
     try {
       const { driver, state, setProgress } = makeDriverWithTerminalProgress();
+      driver.activityProgress.start(1);
+      vi.advanceTimersByTime(ACTIVITY_PROGRESS_REVEAL_DELAY_MS);
       const progress = startSwarmProgress(driver, state);
       state.livePane = { ...state.livePane, mode: 'tool' };
 
@@ -179,8 +184,10 @@ describe('updateActivityPane terminal progress', () => {
       expect(setProgress).toHaveBeenLastCalledWith(true);
       expect(state.activitySpinner).not.toBeNull();
       expect(state.activityContainer.children).toHaveLength(0);
+      expect(strip(state.activityContainer.render(80).join('\n'))).not.toContain('≈');
       expect(strip(progress.render(80).join('\n'))).toContain('🌑 Working...');
 
+      driver.activityProgress.dispose();
       state.activitySpinner?.instance.stop();
       driver.sessionEventHandler.clearAgentSwarmProgress();
     } finally {

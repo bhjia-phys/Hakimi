@@ -52,6 +52,7 @@ const payload: StatusLinePayload = {
   contextTokens: 1024,
   maxContextTokens: 8192,
   sessionId: 'ses-1',
+  subagentPreset: null,
   version: '1.2.3',
 };
 
@@ -132,6 +133,48 @@ describe('FooterComponent status_line items', () => {
 
     expect(plain(footer.render(120)[0]!).trim()).toBe('');
   });
+
+  it('shows the effective subagent preset badge after the model by default', () => {
+    const footer = new FooterComponent({ ...baseState, subagentPreset: 'balanced' });
+
+    const line1 = plain(footer.render(120)[0]!);
+    expect(line1).toContain('[preset: balanced]');
+    expect(line1.indexOf('kimi-k2')).toBeLessThan(line1.indexOf('[preset: balanced]'));
+  });
+
+  it('hides the preset badge while no preset is configured', () => {
+    const footer = new FooterComponent({ ...baseState });
+
+    expect(plain(footer.render(120)[0]!)).not.toContain('[preset:');
+  });
+
+  it('renders a preset-only custom status line in the configured order', () => {
+    const presetOnly = plain(
+      new FooterComponent({
+        ...baseState,
+        subagentPreset: 'kimi-heavy',
+        statusLine: { items: ['preset'], command: null },
+      }).render(120)[0]!,
+    ).trim();
+    expect(presetOnly).toBe('[preset: kimi-heavy]');
+
+    const ordered = plain(
+      new FooterComponent({
+        ...baseState,
+        subagentPreset: 'kimi-heavy',
+        statusLine: { items: ['preset', 'model'], command: null },
+      }).render(120)[0]!,
+    );
+    expect(ordered.indexOf('[preset: kimi-heavy]')).toBeLessThan(ordered.indexOf('kimi-k2'));
+  });
+
+  it('truncates the preset badge gracefully on narrow widths', () => {
+    const footer = new FooterComponent({ ...baseState, subagentPreset: 'balanced' });
+
+    const [line1, line2] = footer.render(10);
+    expect(plain(line1!).length).toBeLessThanOrEqual(10);
+    expect(plain(line2!).length).toBeLessThanOrEqual(10);
+  });
 });
 
 describe('runStatusLineCommand', () => {
@@ -143,6 +186,14 @@ describe('runStatusLineCommand', () => {
     expect(parsed.model).toBe('kimi-k2');
     expect(parsed.gitBranch).toBe('main');
     expect(parsed.cwd).toBe('/tmp/project');
+    expect(parsed.subagentPreset).toBeNull();
+  });
+
+  it('passes the effective subagent preset through the payload JSON', async () => {
+    const line = await runStatusLineCommand('cat', { ...payload, subagentPreset: 'balanced' });
+
+    expect(line).not.toBeNull();
+    expect(JSON.parse(line!).subagentPreset).toBe('balanced');
   });
 
   it('returns null on a nonzero exit', async () => {

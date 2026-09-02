@@ -142,7 +142,7 @@ Plan 模式是一种受约束的工作状态：进入后 `Write` 与 `Edit` 只�
 
 **`GetProviderUsage`** 查询已配置的受支持用量供应商（managed Kimi OAuth、官方 `api.kimi.com/coding` API-key 供应商、managed OpenAI Codex（OAuth）以及精确基址的 OpenCode Go 供应商）的用量。Kimi 路由还会报告 Extra Usage 余额（剩余美分与币种）；Codex 与 OpenCode Go 只报告速率限额或订阅配额窗口。可选参数 `provider` 指定单个供应商；省略时查询所有可识别的受支持用量供应商。没有用量接口的供应商会返回 `unsupported`，而不是猜测接口地址；失败的查询返回脱敏后的错误信息，凭据不会出现在输出中。该工具只读且默认自动放行，但仅 main agent 可以调用。
 
-**`SetSubagentPreset`** 激活一个已配置的路由预设，使下一次 [subagent 模型/精力解析](../configuration/config-files.md#subagent) 立即使用该预设的路由。参数 `preset` 传入 `[subagent.presets]` 中的名称；工具会先校验预设存在、每条路由引用的模型别名可解析，再持久化激活结果。它不会修改 main model、default model 或 thinking 配置，不会重新加载会话，成功时返回 `main_model_changed: false`。变更只影响后续的 `Agent` / `AgentSwarm` 生成。默认需要审批，如需自动切换，请在[审批规则](../configuration/config-files.md#permission)中显式放行。
+**`SetSubagentPreset`** 激活一个已配置的路由预设，使下一次 [subagent 模型/精力解析](../configuration/config-files.md#subagent) 立即使用该预设的路由。参数 `preset` 传入 `[subagent.presets]` 中的名称；工具会先校验 preset 存在、每条路由引用的模型别名可解析，再持久化 `[subagent].preset`。它不会修改 main model、default model 或 thinking 配置，不会重新加载会话，成功时返回 `main_model_changed: false`。变更会影响后续新的 `Agent`、`AgentSwarm` 和 Tower 派生，以及允许重绑定的 `Agent` 与 `AgentSwarm` resume；保留 binding 的 profile 不受影响。默认需要审批，如需让本工具自动执行，请在[审批规则](../configuration/config-files.md#permission)中显式放行。引擎的实验性自动切换 preset 功能（见[自动切换 preset](../configuration/config-files.md#自动切换-preset)）是另一套机制：它评估同一组 Agent、AgentSwarm 与 Tower 路由，不经过本工具激活 preset，也从不产生审批请求。
 
 ## 下一步
 

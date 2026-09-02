@@ -14,6 +14,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { IAgentScopeHandle } from '#/_base/di/scope';
+import type { IDisposable } from '#/_base/di/lifecycle';
+import { IEventBus, type DomainEvent } from '#/app/event/eventBus';
 import { IAgentLoopService, type Turn } from '#/agent/loop/loop';
 import { IAgentPromptService, type PromptHandle } from '#/agent/prompt/prompt';
 import { IAgentContextMemoryService } from '#/agent/contextMemory/contextMemory';
@@ -43,6 +45,25 @@ class FakeAgentHandle {
   }
 }
 
+class FakeBus implements IEventBus {
+  declare readonly _serviceBrand: undefined;
+  private readonly handlers = new Set<(event: DomainEvent) => void>();
+
+  publish(event: DomainEvent): void {
+    for (const handler of [...this.handlers]) handler(event);
+  }
+
+  subscribe(arg1: unknown, arg2?: unknown): IDisposable {
+    const handler = (typeof arg1 === 'string' ? arg2 : arg1) as (event: DomainEvent) => void;
+    const type = typeof arg1 === 'string' ? arg1 : undefined;
+    const filtered = (event: DomainEvent): void => {
+      if (type === undefined || event.type === type) handler(event);
+    };
+    this.handlers.add(filtered);
+    return { dispose: () => this.handlers.delete(filtered) };
+  }
+}
+
 function fakeTurn(id: number, result: Promise<TurnResult>): Turn {
   return {
     id,
@@ -54,12 +75,17 @@ function fakeTurn(id: number, result: Promise<TurnResult>): Turn {
 }
 
 class FakePromptService {
-  steps: Array<{ readonly method: 'enqueue' | 'retry'; readonly turn: Turn }> = [];
+  steps: Array<{
+    readonly method: 'enqueue' | 'retry';
+    readonly turn: Turn;
+    readonly beforeLaunch?: () => void;
+  }> = [];
   private index = 0;
 
   async enqueue(): Promise<PromptHandle> {
     const step = this.steps[this.index++]!;
     if (step.method !== 'enqueue') throw new Error('expected enqueue');
+    step.beforeLaunch?.();
     return {
       launched: Promise.resolve(step.turn),
       completion: Promise.resolve({ turnId: step.turn.id }),
@@ -69,6 +95,7 @@ class FakePromptService {
   async retry(): Promise<Turn | undefined> {
     const step = this.steps[this.index++]!;
     if (step.method !== 'retry') throw new Error('expected retry');
+    step.beforeLaunch?.();
     return step.turn;
   }
 }
@@ -77,6 +104,7 @@ describe('runAgentTurn usage accounting', () => {
   let total: TokenUsage;
   let handle: IAgentScopeHandle;
   let prompt: FakePromptService;
+  let eventBus: FakeBus;
   let latestSummary: string;
 
   beforeEach(() => {
@@ -84,6 +112,7 @@ describe('runAgentTurn usage accounting', () => {
     latestSummary = 'child summary';
     const loop = { cancel: () => true };
     prompt = new FakePromptService();
+    eventBus = new FakeBus();
     const memory = {
       get: () => [{ role: 'assistant', content: latestSummary } as never],
     };
@@ -98,6 +127,7 @@ describe('runAgentTurn usage accounting', () => {
       [IAgentLoopService, loop],
       [IAgentContextMemoryService, memory],
       [IAgentUsageService, usage],
+      [IEventBus, eventBus],
     ]);
     handle = new FakeAgentHandle('agent-child', services) as unknown as IAgentScopeHandle;
   });
@@ -150,11 +180,36 @@ describe('runAgentTurn usage accounting', () => {
     expect(outcome.runUsage).toEqual({ inputOther: 30, output: 10, inputCacheRead: 0, inputCacheCreation: 5 });
   });
 
-  it('covers summary-continuation turns in a single delta without double attribution', async () => {
+  it('covers continuation timing, including steps completed before each turn is tracked', async () => {
     const first = deferred<TurnResult>();
     const second = deferred<TurnResult>();
-    prompt.steps.push({ method: 'enqueue', turn: fakeTurn(1, first.promise) });
-    prompt.steps.push({ method: 'enqueue', turn: fakeTurn(2, second.promise) });
+    const continuationLaunched = deferred<void>();
+    prompt.steps.push({
+      method: 'enqueue',
+      turn: fakeTurn(1, first.promise),
+      beforeLaunch: () => {
+        eventBus.publish({
+          type: 'turn.step.completed',
+          turnId: 1,
+          step: 1,
+          llmFirstTokenLatencyMs: 100,
+        });
+        eventBus.publish({ type: 'turn.step.completed', turnId: 1, step: 2 });
+      },
+    });
+    prompt.steps.push({
+      method: 'enqueue',
+      turn: fakeTurn(2, second.promise),
+      beforeLaunch: () => {
+        eventBus.publish({
+          type: 'turn.step.completed',
+          turnId: 2,
+          step: 1,
+          llmFirstTokenLatencyMs: 300,
+        });
+        continuationLaunched.resolve();
+      },
+    });
     const policy: AgentProfileSummaryPolicy = {
       minChars: 100,
       continuationPrompt: 'please continue',
@@ -167,9 +222,10 @@ describe('runAgentTurn usage accounting', () => {
     });
 
     total = { inputOther: 80, output: 22, inputCacheRead: 5, inputCacheCreation: 3 };
+    first.resolve({ type: 'completed', steps: 2, truncated: false });
+    await continuationLaunched.promise;
     latestSummary =
       'a sufficiently long summary that satisfies the minimum length policy of the agent profile and therefore stops the continuation loop right after this attempt';
-    first.resolve({ type: 'completed', steps: 1, truncated: false });
     second.resolve({ type: 'completed', steps: 1, truncated: false });
 
     const outcome = await run.completion;
@@ -187,6 +243,11 @@ describe('runAgentTurn usage accounting', () => {
       output: 22,
       inputCacheRead: 5,
       inputCacheCreation: 3,
+    });
+    expect(run.timingEvidence()).toEqual({
+      llmRequestCount: 3,
+      firstTokenLatencySampleCount: 2,
+      averageFirstTokenLatencyMs: 200,
     });
   });
 

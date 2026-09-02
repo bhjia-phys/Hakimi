@@ -24,6 +24,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { startServer, type RunningServer } from '../src';
+import { createAsyncApiDocument } from '../src/protocol/asyncapi';
+import { agentEventSchema } from '../src/protocol/events-zod';
 import { TEST_HOST_IDENTITY } from './helpers/hostIdentity';
 import { authHeaders } from './helpers/auth';
 
@@ -103,5 +105,93 @@ describe('API surface snapshot', () => {
     meta.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]) || a[2] - b[2]);
 
     expect({ routes, meta }).toMatchSnapshot();
+  });
+});
+
+const PRESET_EVENT_TYPES = [
+  'event.subagent.preset_evaluated',
+  'event.subagent.preset_changed',
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function asyncApiPresetEventContracts(document: Record<string, unknown>): Record<string, unknown> {
+  const found = new Map<string, Record<string, unknown>>();
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const entry of value) visit(entry);
+      return;
+    }
+    if (!isRecord(value)) return;
+    const properties = value['properties'];
+    if (isRecord(properties)) {
+      const typeSchema = properties['type'];
+      const reasonCodeSchema = properties['reason_code'];
+      const discriminator = isRecord(typeSchema) ? typeSchema['const'] : undefined;
+      if (
+        typeof discriminator === 'string' &&
+        PRESET_EVENT_TYPES.includes(discriminator as (typeof PRESET_EVENT_TYPES)[number])
+      ) {
+        found.set(discriminator, {
+          required: value['required'],
+          type: typeSchema,
+          reason_code: reasonCodeSchema,
+        });
+      }
+    }
+    for (const nested of Object.values(value)) visit(nested);
+  };
+  visit(document);
+  return Object.fromEntries(
+    PRESET_EVENT_TYPES.map((type) => {
+      const contract = found.get(type);
+      if (contract === undefined) throw new Error(`AsyncAPI schema is missing ${type}`);
+      return [type, contract];
+    }),
+  );
+}
+
+describe('AsyncAPI subagent preset events', () => {
+  const policy = {
+    quota_floor_percent: 25,
+    switch_margin_percent: 10,
+    local_usage_window_ms: 3_600_000,
+    local_usage_weight_percent: 10,
+    priority_weight_percent: 20,
+    reliability_weight_percent: 20,
+    latency_weight_percent: 10,
+    switch_cooldown_ms: 30_000,
+    circuit_breaker_failure_threshold: 3,
+    circuit_breaker_cooldown_ms: 60_000,
+  };
+
+  it('parses both explicit preset event variants and rejects unknown reason codes', () => {
+    const evaluated = {
+      type: 'event.subagent.preset_evaluated',
+      evaluated_at: 1_750_000_000_000,
+      route: 'agent',
+      reason_code: 'current_optimal',
+      candidates: [],
+      policy,
+    };
+    const changed = {
+      type: 'event.subagent.preset_changed',
+      previous_preset: 'balanced',
+      current_preset: 'kimi-heavy',
+      reason_code: 'higher_score',
+      evaluated_at: 1_750_000_000_000,
+    };
+
+    expect(agentEventSchema.parse(evaluated)).toEqual(evaluated);
+    expect(agentEventSchema.parse(changed)).toEqual(changed);
+    expect(
+      agentEventSchema.safeParse({ ...changed, reason_code: 'future_reason' }).success,
+    ).toBe(false);
+  });
+
+  it('publishes both discriminators and the complete reason enum in AsyncAPI', () => {
+    expect(asyncApiPresetEventContracts(createAsyncApiDocument())).toMatchSnapshot();
   });
 });

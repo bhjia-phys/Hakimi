@@ -5,20 +5,23 @@
  * JSON vs sanitized failures; preset validation, atomic activation, and the
  * guarantee that the main model / default model / thinking never change;
  * main-agent-only gating via the tool contribution table.
- * Wiring: tools are instantiated directly with stubbed collaborators; the
- * binding proof uses the real `resolveSubagentBinding` against a stub config.
+ * Wiring: `SetSubagentPreset` and its App-scope activation writer are resolved
+ * by interface through `TestInstantiationService`; the binding proof uses the
+ * real `resolveSubagentBinding` against a stub config.
  * Run: `pnpm --filter @moonshot-ai/agent-core-v2 exec vitest run test/agent/tools/providerUsageTools.test.ts`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { SyncDescriptor } from '#/_base/di/descriptors';
 import type { ServicesAccessor } from '#/_base/di/instantiation';
+import { TestInstantiationService } from '#/_base/di/test';
 import { IOAuthService } from '#/app/auth/auth';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { getAgentToolContributions } from '#/agent/toolRegistry/toolContribution';
 import {
   ConfigTarget,
   type ConfigInspectValue,
-  type IConfigService,
+  IConfigService,
 } from '#/app/config/config';
 import { IProviderUsageService, type ProviderUsageResult } from '#/app/providerUsage/providerUsage';
 import {
@@ -34,13 +37,17 @@ import {
 } from '#/session/subagent/configSection';
 
 import { GetProviderUsageTool } from '#/agent/tools/provider-usage/providerUsageTool';
+import { ISetSubagentPresetTool } from '#/agent/tools/subagent-preset/subagent-preset';
 import { SetSubagentPresetTool } from '#/agent/tools/subagent-preset/subagentPresetTool';
 import { getAgentProfileContributions } from '#/app/agentProfileCatalog/contribution';
+import { ISubagentPresetActivationService } from '#/session/subagent/presetActivation';
+import { SubagentPresetActivationService } from '#/session/subagent/presetActivationService';
 import '#/session/agentLifecycle/profile/profiles';
 import { stubFlag } from '../../app/flag/stubs';
 import { StubConfigService } from '../../kosong/stubs';
 
 const signal = new AbortController().signal;
+const toolContainers: TestInstantiationService[] = [];
 
 function stubModelCatalog(valid: readonly string[]): IModelCatalog {
   return {
@@ -169,6 +176,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 afterEach(() => {
+  for (const container of toolContainers.splice(0)) container.dispose();
   vi.restoreAllMocks();
 });
 
@@ -312,7 +320,16 @@ describe('GetProviderUsageTool', () => {
 
 describe('SetSubagentPresetTool', () => {
   function createTool(config: IConfigService): SetSubagentPresetTool {
-    return new SetSubagentPresetTool(config, stubModelCatalog(['kimi-for-coding', 'kimi-latest-heavy']));
+    const ix = new TestInstantiationService();
+    toolContainers.push(ix);
+    ix.stub(IConfigService, config);
+    ix.stub(IModelCatalog, stubModelCatalog(['kimi-for-coding', 'kimi-latest-heavy']));
+    ix.set(
+      ISubagentPresetActivationService,
+      new SyncDescriptor(SubagentPresetActivationService),
+    );
+    ix.set(ISetSubagentPresetTool, new SyncDescriptor(SetSubagentPresetTool));
+    return ix.get(ISetSubagentPresetTool) as SetSubagentPresetTool;
   }
 
   it('rejects an unknown preset and lists the available ones', async () => {
@@ -463,7 +480,16 @@ describe('subagent preset routing takes effect immediately', () => {
     const before = resolveSubagentBinding(config, flag, modelCatalog, routing);
     expect(before.model).toBe('kimi-for-coding');
 
-    const tool = new SetSubagentPresetTool(config, modelCatalog);
+    const ix = new TestInstantiationService();
+    toolContainers.push(ix);
+    ix.stub(IConfigService, config);
+    ix.stub(IModelCatalog, modelCatalog);
+    ix.set(
+      ISubagentPresetActivationService,
+      new SyncDescriptor(SubagentPresetActivationService),
+    );
+    ix.set(ISetSubagentPresetTool, new SyncDescriptor(SetSubagentPresetTool));
+    const tool = ix.get(ISetSubagentPresetTool) as SetSubagentPresetTool;
     const execution = tool.resolveExecution({ preset: 'kimi-heavy' });
     if (execution.isError === true) throw new Error('execution should not be an error');
     await execution.execute({ turnId: 0, toolCallId: 'call_preset', signal });

@@ -46,6 +46,8 @@ import {
   type ParsedServerOptions,
   type ServerCliOptions,
 } from './shared';
+import { webRemoteShareController } from './remote-share';
+import { webRemotePersistentController } from './remote-persistent';
 import { resolveWslNatHost } from './wsl-network';
 
 const WEB_ASSETS_DIR = 'dist-web';
@@ -301,6 +303,16 @@ async function runServerInProcess(
     logLevel: options.logLevel,
     logger,
     debugEndpoints: options.debugEndpoints,
+    // Host-owned Web remote control is unavailable when authentication is
+    // deliberately bypassed: its control routes must never be exposed without
+    // bearer auth. Otherwise construct the lazy controllers at boot; neither
+    // resolves cloudflared/systemd until the user starts or queries a service.
+    remoteShareController: options.dangerousBypassAuth
+      ? undefined
+      : webRemoteShareController({ env: process.env, logger }),
+    remotePersistentController: options.dangerousBypassAuth
+      ? undefined
+      : webRemotePersistentController({ logger }),
     insecureNoTls: options.insecureNoTls,
     allowRemoteShutdown: options.allowRemoteShutdown,
     allowRemoteTerminals: options.allowRemoteTerminals,

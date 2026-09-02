@@ -30,6 +30,7 @@ export { handleReloadCommand, handleReloadTuiCommand } from './reload';
 export { handleGoalCommand, parseGoalCommand, goalObjectiveLengthWarning } from './goal';
 export { goalArgumentCompletions, researchArgumentCompletions } from './registry';
 export { handleResearchCommand, parseResearchCommand } from './research';
+export { handleRemoteCommand, parseRemoteSlashArgs } from './remote';
 export { handleForkCommand, handleInitCommand, handleTitleCommand } from './session';
 export { handleUndoCommand } from './undo';
 export { handleWebCommand } from './web';

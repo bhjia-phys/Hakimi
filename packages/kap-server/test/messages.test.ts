@@ -3,16 +3,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  IAgentBlobService,
   IAgentContextMemoryService,
   IAgentLifecycleService,
   IWireService,
   getLiveSessionById,
   IModelCatalog,
+  ISessionMetadata,
+  resumeSessionById,
   type ContextMessage,
   type ScopeSeed,
 } from '@moonshot-ai/agent-core-v2';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { SessionSnapshotResponse } from '../src/protocol/rest-snapshot';
+import { projectRemoteSnapshot } from '../src/security/remoteResponseProjection';
 import { type RunningServer, startServer } from '../src/start';
 import { TEST_HOST_IDENTITY } from './helpers/hostIdentity';
 import { authHeaders } from './helpers/auth';
@@ -79,7 +84,7 @@ describe('server-v2 /api/v1/sessions/{sid}/messages', () => {
     await boot();
   });
 
-  async function boot(): Promise<void> {
+  async function boot(remoteSessionId?: string): Promise<void> {
     server = await startServer({
       hostIdentity: TEST_HOST_IDENTITY,
       host: '127.0.0.1',
@@ -87,6 +92,9 @@ describe('server-v2 /api/v1/sessions/{sid}/messages', () => {
       homeDir: home as string,
       logLevel: 'silent',
       seeds,
+      remoteAccess:
+        remoteSessionId === undefined ? undefined : { sessionId: remoteSessionId },
+      insecureNoTls: remoteSessionId === undefined ? undefined : true,
     });
     base = `http://127.0.0.1:${server.port}`;
   }
@@ -293,6 +301,227 @@ describe('server-v2 /api/v1/sessions/{sid}/messages', () => {
     expect(body.data.items.every((m) => m.role === 'user')).toBe(true);
     expect(body.data.items).toHaveLength(2);
     expect(body.data.items.every((m) => MSG_ID.test(m.id))).toBe(true);
+  });
+
+  it('serves media-free messages and snapshots remotely without rehydrating blobs', async () => {
+    const id = await createSession();
+    const session = getLiveSessionById(server!.core.accessor, id);
+    if (session === undefined) throw new Error(`session ${id} not found`);
+    await session.accessor.get(ISessionMetadata).update({
+      custom: {
+        note: '/srv/remote-private/metadata-note.txt',
+        secret: 'SESSION_METADATA_SECRET',
+      },
+    });
+    const agent = await session.accessor.get(IAgentLifecycleService).create({ agentId: 'main' });
+    const blobService = agent.accessor.get(IAgentBlobService);
+    const inlineMedia = `data:image/png;base64,${'A'.repeat(6_000)}`;
+    const offloaded = await blobService.offloadParts([
+      { type: 'image_url', imageUrl: { url: inlineMedia } },
+    ]);
+    const blobUrl = (offloaded[0] as { imageUrl: { url: string } }).imageUrl.url;
+    expect(blobUrl).toMatch(/^blobref:/);
+
+    agent.accessor.get(IAgentContextMemoryService).append(
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'remote text keeps /home/example/readme.txt readable' },
+          offloaded[0]!,
+          {
+            type: 'video_url',
+            videoUrl: { url: 'https://media.example.test/private.mp4', id: 'file_remote_secret' },
+          },
+          { type: 'audio_url', audioUrl: { url: blobUrl } },
+        ],
+        toolCalls: [],
+      },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'assistant keeps C:\\Users\\Example\\notes.txt readable' },
+          { type: 'think', think: 'thinking keeps /opt/example/plan.md readable' },
+        ],
+        toolCalls: [
+          {
+            type: 'function',
+            id: 'call-media',
+            name: 'ReadMediaFile',
+            arguments: JSON.stringify({
+              file_id: 'file_remote_secret',
+              path: '/srv/remote-private/private.png',
+            }),
+          },
+          {
+            type: 'function',
+            id: 'call-write',
+            name: 'Write',
+            arguments: JSON.stringify({
+              path: '/srv/remote-private/write.txt',
+              content: 'WRITE_CONTENT_SECRET',
+            }),
+          },
+          {
+            type: 'function',
+            id: 'call-edit',
+            name: 'Edit',
+            arguments: JSON.stringify({
+              path: '/srv/remote-private/edit.txt',
+              before: 'EDIT_BEFORE_SECRET',
+              after: 'EDIT_AFTER_SECRET',
+              old_string: 'EDIT_OLD_SECRET',
+              new_string: 'EDIT_NEW_SECRET',
+            }),
+          },
+          {
+            type: 'function',
+            id: 'call-generic',
+            name: 'CustomTool',
+            arguments: JSON.stringify({
+              prompt: 'GENERIC_PROMPT_SECRET',
+              args: { token: 'GENERIC_TOKEN_SECRET' },
+              detail: 'GENERIC_DETAIL_SECRET',
+            }),
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        content: [
+          { type: 'text', text: 'tool output from /srv/remote-private/output.log' },
+          offloaded[0]!,
+        ],
+        toolCalls: [],
+        toolCallId: 'call-media',
+      },
+    );
+    await agent.accessor.get(IWireService).flush();
+
+    const normalList = await getJson<PageWire>(`/api/v1/sessions/${id}/messages?page_size=100`);
+    const normalUser = normalList.body.data.items.find((message) => message.role === 'user');
+    if (normalUser === undefined) throw new Error('normal user message not found');
+    const normalListJson = JSON.stringify(normalList.body.data);
+    expect(normalListJson).toContain('data:image/png;base64,');
+    expect(normalListJson).toContain('file_remote_secret');
+    expect(normalListJson).toContain('https://media.example.test/private.mp4');
+    expect(normalListJson).toContain('/home/example/readme.txt');
+    expect(normalListJson).toContain('C:\\\\Users\\\\Example\\\\notes.txt');
+    expect(normalListJson).toContain('/opt/example/plan.md');
+    expect(normalListJson).toContain('/srv/remote-private/private.png');
+    for (const secret of [
+      'WRITE_CONTENT_SECRET',
+      'EDIT_BEFORE_SECRET',
+      'EDIT_AFTER_SECRET',
+      'EDIT_OLD_SECRET',
+      'EDIT_NEW_SECRET',
+      'GENERIC_PROMPT_SECRET',
+      'GENERIC_TOKEN_SECRET',
+      'GENERIC_DETAIL_SECRET',
+    ]) {
+      expect(normalListJson).toContain(secret);
+    }
+
+    const normalSnapshot = await getJson<{
+      session: { metadata: Record<string, unknown> };
+      messages: PageWire;
+    }>(`/api/v1/sessions/${id}/snapshot`);
+    expect(JSON.stringify(normalSnapshot.body.data)).toContain('data:image/png;base64,');
+    expect(normalSnapshot.body.data.session.metadata['cwd']).toBe(home);
+
+    const projectedInFlight = projectRemoteSnapshot({
+      ...(normalSnapshot.body.data as unknown as SessionSnapshotResponse),
+      in_flight_turn: {
+        turn_id: 1,
+        assistant_text: 'in-flight assistant keeps /home/example/live.txt readable',
+        thinking_text: 'in-flight thinking keeps C:\\Users\\Example\\live.txt readable',
+        running_tools: [
+          {
+            tool_call_id: 'call-live',
+            name: 'Read',
+            args: { path: '/srv/remote-private/live.txt' },
+            description: 'Read /srv/remote-private/live.txt RUNNING_TOOL_DESCRIPTION_SECRET',
+            display: { kind: 'file_io', path: '/srv/remote-private/live.txt' },
+            last_progress: {
+              kind: 'stdout',
+              text: 'private output /srv/remote-private/live.txt',
+            },
+          },
+        ],
+      },
+    });
+    expect(projectedInFlight.in_flight_turn).toMatchObject({
+      assistant_text: 'in-flight assistant keeps /home/example/live.txt readable',
+      thinking_text: 'in-flight thinking keeps C:\\Users\\Example\\live.txt readable',
+      running_tools: [
+        {
+          tool_call_id: 'call-live',
+          name: 'Read',
+          last_progress: { kind: 'stdout' },
+        },
+      ],
+    });
+    const projectedInFlightJson = JSON.stringify(projectedInFlight.in_flight_turn);
+    expect(projectedInFlightJson).not.toContain('/srv/remote-private');
+    expect(projectedInFlightJson).not.toContain('RUNNING_TOOL_DESCRIPTION_SECRET');
+
+    await server!.close();
+    server = undefined;
+    await boot(id);
+
+    const resumed = await resumeSessionById(server!.core.accessor, id);
+    if (resumed === undefined) throw new Error(`session ${id} failed to resume`);
+    const agents = resumed.accessor.get(IAgentLifecycleService);
+    const remoteAgent = agents.get('main') ?? (await agents.create({ agentId: 'main' }));
+    const loadParts = vi.spyOn(remoteAgent.accessor.get(IAgentBlobService), 'loadParts');
+
+    const remoteList = await getJson<PageWire>(`/api/v1/sessions/${id}/messages?page_size=100`);
+    const remoteSingle = await getJson<MessageWire>(
+      `/api/v1/sessions/${id}/messages/${normalUser.id}`,
+    );
+    const remoteSnapshot = await getJson<{
+      session: { metadata: Record<string, unknown> };
+      messages: PageWire;
+    }>(`/api/v1/sessions/${id}/snapshot`);
+
+    expect(remoteList.body.code).toBe(0);
+    expect(remoteSingle.body.code).toBe(0);
+    expect(remoteSnapshot.body.code).toBe(0);
+    expect(loadParts).not.toHaveBeenCalled();
+
+    const remoteJson = JSON.stringify({
+      list: remoteList.body.data,
+      single: remoteSingle.body.data,
+      snapshot: remoteSnapshot.body.data,
+    });
+    expect(remoteJson).toContain('/home/example/readme.txt');
+    expect(remoteJson).toContain('C:\\\\Users\\\\Example\\\\notes.txt');
+    expect(remoteJson).toContain('/opt/example/plan.md');
+    expect(remoteJson).not.toContain('tool output from');
+    expect(remoteJson).not.toContain('data:');
+    expect(remoteJson).not.toContain('blobref:');
+    expect(remoteJson).not.toContain('file_remote_secret');
+    expect(remoteJson).not.toContain('media.example.test');
+    expect(remoteJson).not.toContain('/srv/remote-private');
+    expect(remoteJson).not.toContain(home as string);
+    for (const secret of [
+      'WRITE_CONTENT_SECRET',
+      'EDIT_BEFORE_SECRET',
+      'EDIT_AFTER_SECRET',
+      'EDIT_OLD_SECRET',
+      'EDIT_NEW_SECRET',
+      'GENERIC_PROMPT_SECRET',
+      'GENERIC_TOKEN_SECRET',
+      'GENERIC_DETAIL_SECRET',
+      'SESSION_METADATA_SECRET',
+    ]) {
+      expect(remoteJson).not.toContain(secret);
+    }
+    expect(remoteSnapshot.body.data.session.metadata).toEqual({ cwd: '.' });
+    expect(
+      remoteList.body.data.items.flatMap((message) => message.content).some((part) =>
+        ['image', 'video', 'file'].includes(part.type),
+      ),
+    ).toBe(false);
   });
 
   // Regression for the cold-session gap: a persisted (non-live) session must

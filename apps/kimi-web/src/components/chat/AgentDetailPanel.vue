@@ -10,6 +10,7 @@ import { useI18n } from 'vue-i18n';
 import type { AgentMember } from '../../types';
 import Badge from '../ui/Badge.vue';
 import PanelHeader from '../ui/PanelHeader.vue';
+import Tooltip from '../ui/Tooltip.vue';
 
 const props = defineProps<{ member: AgentMember }>();
 
@@ -112,12 +113,22 @@ watch(
       :title="t('common.preview')"
       :subtitle="member.name"
       :close-label="t('thinking.close')"
+      wrap
       @close="emit('close')"
     >
+      <Tooltip v-if="member.subagentType" :text="`${t('tasks.role')}: ${member.subagentType}`">
+        <Badge variant="neutral" size="sm" class="ap-identity" :title="member.subagentType">
+          <span class="ap-identity-text">{{ t('tasks.role') }}: {{ member.subagentType }}</span>
+        </Badge>
+      </Tooltip>
+      <Tooltip v-if="member.model" :text="`${t('tasks.model')}: ${member.model}`">
+        <Badge variant="neutral" size="sm" class="ap-identity ap-model" :title="member.model">
+          <span class="ap-identity-text">{{ t('tasks.model') }}: {{ member.model }}</span>
+        </Badge>
+      </Tooltip>
       <Badge variant="neutral" size="sm" class="ap-phase">{{ phaseLabel(member.phase) }}</Badge>
     </PanelHeader>
     <div ref="bodyEl" class="ap-body">
-      <div v-if="member.subagentType" class="ap-type">{{ member.subagentType }}</div>
       <div v-if="member.suspendedReason" class="ap-reason">{{ member.suspendedReason }}</div>
       <div v-if="member.prompt" class="ap-field">
         <span class="ap-field-label">Task</span>
@@ -167,6 +178,23 @@ watch(
   background: var(--color-bg);
 }
 .ap-phase { flex: none; }
+.ap-identity {
+  flex: none;
+  min-width: 0;
+  max-width: 132px;
+  overflow: hidden;
+}
+.ap-model {
+  max-width: 176px;
+}
+.ap-identity-text {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .ap-body {
   flex: 1;
@@ -175,11 +203,6 @@ watch(
   padding: 12px 14px;
   font: var(--text-base)/var(--leading-normal) var(--font-ui);
   color: var(--color-text-muted);
-}
-.ap-type {
-  font: var(--text-xs) var(--font-mono);
-  color: var(--color-text-muted);
-  margin-bottom: 8px;
 }
 .ap-reason {
   color: var(--color-warning);

@@ -33,7 +33,16 @@ import {
   usagePercentFromRatio,
 } from '#/utils/usage/usage-format';
 
-const DEFAULT_STATUS_LINE_ITEMS = ['mode', 'goal', 'research', 'model', 'tasks', 'cwd', 'git'] as const;
+const DEFAULT_STATUS_LINE_ITEMS = [
+  'mode',
+  'goal',
+  'research',
+  'model',
+  'preset',
+  'tasks',
+  'cwd',
+  'git',
+] as const;
 
 const MAX_CWD_SEGMENTS = 3;
 const GOAL_TIMER_INTERVAL_MS = 1_000;
@@ -398,6 +407,7 @@ export class FooterComponent implements Component {
       goal: [],
       research: [],
       model: [],
+      preset: [],
       tasks: [],
       cwd: [],
       git: [],
@@ -446,6 +456,13 @@ export class FooterComponent implements Component {
       slots['model'] = [renderedModelLabel];
     }
 
+    // Effective subagent preset (config-driven). Absent while unset, so the
+    // default layout simply skips the slot for plain base routing.
+    const preset = state.subagentPreset?.trim();
+    if (preset !== undefined && preset.length > 0) {
+      slots['preset'] = [chalk.hex(colors.textMuted)(`[preset: ${preset}]`)];
+    }
+
     // Background-task badges. `bash-*` tasks (shell processes) and `agent-*`
     // tasks (background subagents) stay separate so the user can tell them
     // apart at a glance.
@@ -485,6 +502,7 @@ export class FooterComponent implements Component {
       contextTokens: state.contextTokens,
       maxContextTokens: state.maxContextTokens,
       sessionId: state.sessionId,
+      subagentPreset: state.subagentPreset ?? null,
       version: state.version,
     };
   }

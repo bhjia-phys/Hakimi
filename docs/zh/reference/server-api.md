@@ -108,7 +108,23 @@ HTTP 状态码几乎总是 200，业务结果以 `code` 为准。例外情况：
 | 方法与路径 | 说明 |
 | --- | --- |
 | `GET /api/v1/config` | 读取全局配置（密钥字段脱敏） |
+| `GET /api/v1/config/subagent-preset/status` | 读取最近一次进程内自动 preset 评估；首次评估前 `data` 为 `null` |
+| `POST /api/v1/config/subagent-preset/activate` | 手动激活已配置的 preset，或用空字符串选择基础路由 |
 | `POST /api/v1/config` | 合并式更新配置，并广播 `event.config.changed` |
+
+手动激活接受只含 `preset` 字段的 JSON 请求：
+
+```json
+{
+  "preset": "balanced"
+}
+```
+
+preset 名称必须存在于当前配置中。使用 `{ "preset": "" }` 可清除选择器并回到基础路由。成功响应返回权威的脱敏配置及可选 `warning`，同时把这次选择记录为手动锁定；恢复该锁定前，自动切换会保持暂停。客户端应优先调用此专用端点，因为激活操作会与自动选择串行执行，并由该边界维护手动锁定与 `revision` 契约。当前 daemon 也接受通用 `POST /api/v1/config` `patch` 中自有的 `subagent.preset` 字段：服务会先从普通合并式更新中取出该字段，再把它安全转入同一个手动激活边界，其余字段仍保留原有合并语义。兼容客户端仅在旧 daemon 对专用端点返回路由级 `404` 后使用通用形式；在这类旧 daemon 上，它仍保留 legacy 配置更新行为。
+
+自动 preset 状态是进程级全局快照，因为 `[subagent].preset` 本身是全局配置。它包含 `evaluated_at`、触发评估的 `route` / `profile_name`、结构化 `reason_code`、评估前 / 选中 / 已激活的 preset 与评分、`switch_cooldown_until`、候选列表和实际生效的策略。每个候选包含可用状态、配额与 reset 证据、熔断截止时间、评分贡献，以及样本数、首 token 延迟等聚合本地证据。所有时间均为 epoch 毫秒。
+
+该运行时快照不会进入 `GET /api/v1/config`，也不会写入 `config.toml`；其中不含 prompt、路径、错误文本或其他自由格式的用户内容。SDK 对应接口是 `KimiHarness.getAutoSubagentPresetStatus()`；使用 v1 引擎或 v2 首次评估前返回 `undefined`。`onSubagentPresetEvaluated()` 与 `onSubagentPresetChanged()` 提供对应的类型化事件流；两者在 v1 上均不产生事件。
 
 ### 模型与供应商
 
@@ -306,7 +322,7 @@ PTY 终端接口，仅 loopback 绑定时挂载。
 
 事件帧形状为 `{ "type", "seq", "epoch"?, "volatile"?, "offset"?, "session_id"?, "timestamp", "payload" }`，`type` 即事件类型。按投递范围分两类：
 
-- **全局事件**：发送到每个已建立连接，无需订阅——`session.meta.updated`、`event.session.created`、`event.session.work_changed`、`event.session.status_changed`、`event.workspace.*`、`event.config.*`。
+- **全局事件**：发送到每个已建立连接，无需订阅——`session.meta.updated`、`event.session.created`、`event.session.work_changed`、`event.session.status_changed`、`event.workspace.*`、`event.config.*`、`event.subagent.preset_evaluated` 和 `event.subagent.preset_changed`。
 - **会话事件**：只发给订阅了该会话的连接，受 `agent_filter` 过滤。主要事件族：
 
 | 事件族 | 主要事件 |
@@ -318,6 +334,15 @@ PTY 终端接口，仅 loopback 绑定时挂载。
 | subagent | `subagent.spawned` / `started` / `suspended` / `completed` / `failed` |
 | 后台 | `task.started` / `terminated`、`shell.started` / `output` / `completed` |
 | 其他 | `compaction.*`、`skill.activated`、`goal.updated`、`prompt.*`、`error`、`warning` |
+
+自动 preset 判断通过两个持久全局事件发布。两者都会 fan-out 到所有连接，但信封中的 `session_id` 是实际触发评估的会话，并且事件写入该会话的 journal，因此使用游标回放时不会丢失判断历史：
+
+| 事件 | payload |
+| --- | --- |
+| `event.subagent.preset_evaluated` | 与 `GET /api/v1/config/subagent-preset/status` 返回值相同的 snake_case 状态：判断时间与原因、路由 / profile、评估前 / 选中 / 已激活的 preset 与评分、冷却、候选评分拆解、本地证据和策略 |
+| `event.subagent.preset_changed` | 已提交自动切换的 `previous_preset?`、`current_preset`、`reason_code`、`profile_name?`、`evaluated_at`、`previous_score?` 与 `current_score?` |
+
+`reason_code` 是结构化、可本地化的 code，而不是自由文本；它可以区分 `current_optimal`、`score_margin_not_met`、`switch_cooldown`、`current_unhealthy`、`circuit_breaker_escape`、`higher_score` 以及人工 / 配置并发竞争等结果。完整枚举以运行中服务发布的 OpenAPI / AsyncAPI schema 为准。这些 payload 只包含路由标识与聚合数字证据，不含 prompt、路径或错误消息。
 
 事件另分持久与易失两种：持久事件带严格递增的 `seq`，落盘并可回放；易失事件（各 `*.delta`、`tool.progress`、`shell.*` 等）标 `volatile: true`，不回放。消费易失文本流时用 `offset`（该轮次内的累计字符偏移）与本地已累积文本比对：小于本地长度说明是重复帧，大于说明有缺漏、需走快照恢复。
 

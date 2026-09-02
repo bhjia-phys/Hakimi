@@ -63,6 +63,8 @@ import en_webPreview from './en/webPreview';
 import zh_webPreview from './zh/webPreview';
 import en_artifactPreview from './en/artifactPreview';
 import zh_artifactPreview from './zh/artifactPreview';
+import en_remoteShare from './en/remoteShare';
+import zh_remoteShare from './zh/remoteShare';
 
 export const messages = {
   en: {
@@ -98,6 +100,7 @@ export const messages = {
     sideChat: en_sideChat,
     webPreview: en_webPreview,
     artifactPreview: en_artifactPreview,
+    remoteShare: en_remoteShare,
   },
   zh: {
     common: zh_common,
@@ -132,6 +135,7 @@ export const messages = {
     sideChat: zh_sideChat,
     webPreview: zh_webPreview,
     artifactPreview: zh_artifactPreview,
+    remoteShare: zh_remoteShare,
   },
 } as const;
 

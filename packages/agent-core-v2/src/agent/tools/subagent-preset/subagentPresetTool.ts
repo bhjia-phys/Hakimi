@@ -2,34 +2,31 @@
  * `tools` domain — `ISetSubagentPresetTool` implementation (the
  * `SetSubagentPreset` tool).
  *
- * Activates a configured `[subagent]` routing preset: validates that the
- * preset exists, that its name is non-empty, and that every route model alias
- * resolves through `IModelCatalog`, then persists the active preset through
- * `IConfigService.set(SUBAGENT_SECTION, { preset })`. Validation runs again
- * immediately before and after the write so a concurrent config change cannot
- * silently apply a preset that was deleted or whose route models were broken
- * (TOCTOU guard). Print/headless mode overlays the whole subagent section in
- * `ConfigTarget.Memory` (`applyPrintModeConfigDefaults`), so when a memory
- * overlay exists the same `{ preset }` patch is applied there too — only the
- * preset key, never clobbering overlaid values such as the timeout — and the
- * effective (overlay-merged) preset is verified to equal the request. The
- * next `Agent` / `AgentSwarm` spawn reads the routing live, so no session
- * reload is needed. Never touches the main or default model, global thinking,
- * or the TUI preset manager; the result reports `main_model_changed: false`.
- * Registered for the main agent only, mirroring v1's `agent.type === 'main'`
- * gate. Bound at Agent scope.
+ * Validates a configured routing preset through `config` and `modelCatalog`,
+ * then delegates activation to the shared App-scope preset writer. The writer
+ * serializes manual and automatic selection, revalidates against live config,
+ * atomically commits the preset with a persistent manual lock, and best-effort
+ * aligns an existing Memory overlay. The result never reports cancellation
+ * after the User-layer commit starts, never changes the main/default model or
+ * global thinking, and reports
+ * `main_model_changed: false`. Registered for the main agent only. Bound at
+ * Agent scope.
  */
 
 import { toInputJsonSchema } from '#/tool/input-schema';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { registerAgentToolService } from '#/agent/toolRegistry/toolContribution';
-import { ConfigTarget, IConfigService } from '#/app/config/config';
+import { IConfigService } from '#/app/config/config';
 import { IModelCatalog } from '#/kosong/model/catalog';
 import {
   SUBAGENT_SECTION,
   type SubagentConfig,
   type SubagentModelConfig,
 } from '#/session/subagent/configSection';
+import {
+  ISubagentPresetActivationService,
+  validateSubagentPreset,
+} from '#/session/subagent/presetActivation';
 import {
   ToolAccesses,
   type ExecutableToolContext,
@@ -53,10 +50,12 @@ export class SetSubagentPresetTool implements ISetSubagentPresetTool {
   constructor(
     @IConfigService private readonly config: IConfigService,
     @IModelCatalog private readonly modelCatalog: IModelCatalog,
+    @ISubagentPresetActivationService
+    private readonly activation: ISubagentPresetActivationService,
   ) {}
 
   resolveExecution(args: SetSubagentPresetInput): ToolExecution {
-    const invalid = this.validatePreset(args.preset);
+    const invalid = validateSubagentPreset(this.config, this.modelCatalog, args.preset);
     if (invalid !== undefined) {
       return { isError: true, output: invalid };
     }
@@ -68,62 +67,23 @@ export class SetSubagentPresetTool implements ISetSubagentPresetTool {
     };
   }
 
-  private validatePreset(preset: string): string | undefined {
-    const subagent = this.config.get<SubagentConfig | undefined>(SUBAGENT_SECTION);
-    const presets = subagent?.presets ?? {};
-    if (Object.keys(presets).length === 0) {
-      return 'No [subagent].presets are configured.';
-    }
-    if (!Object.hasOwn(presets, preset)) {
-      return `Invalid subagent preset "${preset}". Available presets: ${Object.keys(presets).join(', ')}.`;
-    }
-    const routes = presets[preset]!;
-    for (const [profile, route] of Object.entries(routes)) {
-      if (route.model === undefined) continue;
-      try {
-        this.modelCatalog.get(route.model);
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        return `Subagent preset "${preset}" route "${profile}" model "${route.model}" could not be resolved: ${reason}`;
-      }
-    }
-    return undefined;
-  }
-
   private async execution(
     args: SetSubagentPresetInput,
     { signal }: ExecutableToolContext,
   ): Promise<ExecutableToolResult> {
-    if (signal.aborted) return { isError: true, output: 'Preset activation cancelled.' };
-    // TOCTOU guard: the effective config may have changed since validation in
-    // resolveExecution — re-validate against the live state before writing.
-    const preInvalid = this.validatePreset(args.preset);
-    if (preInvalid !== undefined) {
-      return { isError: true, output: preInvalid };
-    }
-    try {
-      await this.config.set(SUBAGENT_SECTION, { preset: args.preset }, ConfigTarget.User);
-      if (this.config.inspect<SubagentConfig>(SUBAGENT_SECTION).memoryValue !== undefined) {
-        await this.config.set(SUBAGENT_SECTION, { preset: args.preset }, ConfigTarget.Memory);
-      }
-    } catch {
-      if (signal.aborted) return { isError: true, output: 'Preset activation cancelled.' };
-      return { isError: true, output: 'Failed to activate subagent preset.' };
-    }
-    if (signal.aborted) return { isError: true, output: 'Preset activation cancelled.' };
-    // Post-write verification: the effective (overlay-merged) config must
-    // still carry a valid preset of the requested name.
-    const postInvalid = this.validatePreset(args.preset);
-    if (postInvalid !== undefined) {
-      return { isError: true, output: postInvalid };
-    }
-    if (this.config.get<SubagentConfig | undefined>(SUBAGENT_SECTION)?.preset !== args.preset) {
-      return { isError: true, output: 'Subagent preset activation was not applied.' };
+    const result = await this.activation.activate(args.preset, signal);
+    if (result.kind !== 'activated') {
+      return { isError: true, output: result.message };
     }
     const routes = this.readRoutes(args.preset);
     return {
       output: JSON.stringify(
-        { preset: args.preset, routes, main_model_changed: false },
+        {
+          preset: args.preset,
+          routes,
+          main_model_changed: false,
+          warning: result.warning,
+        },
         null,
         2,
       ),

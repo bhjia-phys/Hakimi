@@ -13,6 +13,7 @@ import { mergeSnapshotMessages } from '../src/lib/snapshotMessages';
 import { keepLiveSubagents, mergeSnapshotSubagents } from '../src/lib/taskMerge';
 import { normalizeToolName, toolSummary } from '../src/lib/toolMeta';
 import { collapsePrompt, humanizeCron } from '../src/lib/cronHumanize';
+import { readRemoteSessionIdFromLocation, sessionUrl } from '../src/lib/sessionRoute';
 import {
   currentValidatedWorkspacePath,
   isWorkspacePathInput,
@@ -45,6 +46,42 @@ import {
   traceToJsonl,
   traceWsIn,
 } from '../src/debug/trace';
+
+describe('remote session route', () => {
+  it('requires remote=1; root yields the empty all-sessions id, exact paths yield the id', () => {
+    expect(
+      readRemoteSessionIdFromLocation({ pathname: '/sessions/sess_1', search: '?remote=1' }),
+    ).toBe('sess_1');
+    expect(
+      readRemoteSessionIdFromLocation({ pathname: '/sessions/a%20b', search: '?remote=1' }),
+    ).toBe('a b');
+    // The persistent all-sessions root link: remote mode with no pinned
+    // session — the client opens the most recent session as a fallback.
+    expect(
+      readRemoteSessionIdFromLocation({ pathname: '/', search: '?remote=1' }),
+    ).toBe('');
+    expect(
+      readRemoteSessionIdFromLocation({ pathname: '/sessions/sess_1', search: '' }),
+    ).toBeUndefined();
+    expect(
+      readRemoteSessionIdFromLocation({ pathname: '/sessions/sess_1', search: '?remote=0' }),
+    ).toBeUndefined();
+    expect(
+      readRemoteSessionIdFromLocation({ pathname: '/sessions/sess_1/nested', search: '?remote=1' }),
+    ).toBeUndefined();
+    expect(
+      readRemoteSessionIdFromLocation({ pathname: '/sessions/%E0%A4%A', search: '?remote=1' }),
+    ).toBeUndefined();
+  });
+
+  it('keeps the remote marker when switching sessions', () => {
+    expect(sessionUrl('sess_2', true)).toBe('/sessions/sess_2?remote=1');
+    expect(sessionUrl('a b', true)).toBe('/sessions/a%20b?remote=1');
+    expect(sessionUrl(undefined, true)).toBe('/?remote=1');
+    expect(sessionUrl('sess_2')).toBe('/sessions/sess_2');
+    expect(sessionUrl(undefined)).toBe('/');
+  });
+});
 
 // The trace tests exercise its exported recording/serialization contract:
 // session exports receive only bounded, explicitly selected metadata.
@@ -800,6 +837,110 @@ describe('keepLiveSubagents', () => {
     expect(merged[0]?.outputLines).toEqual(['step 1']);
     expect(merged[0]?.text).toBe('partial');
     expect(merged[0]?.backgroundTaskId).toBe('task-9');
+  });
+
+  it('links by REST agent id while keeping live identity values and filling gaps', () => {
+    const live = subagent('agent-1', {
+      model: 'runtime-model',
+    });
+    const rest = [
+      subagent('task-9', {
+        agentId: 'agent-1',
+        model: 'stale-rest-model',
+        thinkingEffort: 'high',
+        subagentType: 'reviewer',
+      }),
+    ];
+
+    const [merged] = keepLiveSubagents(rest, [live]);
+    expect(merged).toMatchObject({
+      id: 'agent-1',
+      backgroundTaskId: 'task-9',
+      agentId: 'agent-1',
+      model: 'runtime-model',
+      thinkingEffort: 'high',
+      subagentType: 'reviewer',
+    });
+  });
+
+  it('chooses the unique running resume when one agent has old and new REST tasks', () => {
+    const live = subagent('agent-1', { agentId: 'agent-1' });
+    const rest = [
+      subagent('task-old', {
+        agentId: 'agent-1',
+        status: 'completed',
+        completedAt: '2026-01-01T00:01:00.000Z',
+      }),
+      subagent('task-new', {
+        agentId: 'agent-1',
+        status: 'running',
+        createdAt: '2026-01-01T00:02:00.000Z',
+      }),
+    ];
+
+    const merged = keepLiveSubagents(rest, [live]);
+    expect(merged.map((task) => task.id)).toEqual(['task-old', 'agent-1']);
+    expect(merged.at(-1)).toMatchObject({
+      id: 'agent-1',
+      status: 'running',
+      backgroundTaskId: 'task-new',
+    });
+  });
+
+  it('uses the parent tool call to disambiguate terminal resumes for one agent', () => {
+    const live = subagent('agent-1', {
+      agentId: 'agent-1',
+      parentToolCallId: 'call-new',
+    });
+    const rest = [
+      subagent('task-old', {
+        agentId: 'agent-1',
+        parentToolCallId: 'call-old',
+        status: 'completed',
+      }),
+      subagent('task-new', {
+        agentId: 'agent-1',
+        parentToolCallId: 'call-new',
+        status: 'completed',
+      }),
+    ];
+
+    const merged = keepLiveSubagents(rest, [live]);
+    expect(merged.map((task) => task.id)).toEqual(['task-old', 'agent-1']);
+    expect(merged.at(-1)).toMatchObject({
+      id: 'agent-1',
+      backgroundTaskId: 'task-new',
+    });
+  });
+
+  it('does not fold a single candidate with a different explicit parent tool call', () => {
+    const live = subagent('agent-1', {
+      agentId: 'agent-1',
+      parentToolCallId: 'call-new',
+    });
+    const rest = [
+      subagent('task-old', {
+        agentId: 'agent-1',
+        parentToolCallId: 'call-old',
+        status: 'running',
+      }),
+    ];
+
+    const merged = keepLiveSubagents(rest, [live]);
+    expect(merged.map((task) => task.id)).toEqual(['task-old', 'agent-1']);
+    expect(merged.at(-1)?.backgroundTaskId).toBeUndefined();
+  });
+
+  it('does not fold an ambiguous set of multiple running resumes', () => {
+    const live = subagent('agent-1', { agentId: 'agent-1' });
+    const rest = [
+      subagent('task-a', { agentId: 'agent-1', status: 'running' }),
+      subagent('task-b', { agentId: 'agent-1', status: 'running' }),
+    ];
+
+    const merged = keepLiveSubagents(rest, [live]);
+    expect(merged.map((task) => task.id)).toEqual(['task-a', 'task-b', 'agent-1']);
+    expect(merged.at(-1)?.backgroundTaskId).toBeUndefined();
   });
 
   it('lets REST complete a live row whose finish event was missed', () => {

@@ -198,6 +198,124 @@ export interface CompactionMarkerMetadata {
   tokensAfter?: number;
 }
 
+/**
+ * Metadata key of the client-side marker appended on `subagent.preset_changed`.
+ * The transcript keeps all prior messages; the marker renders as a lightweight
+ * "preset switched automatically" status separator (role 'subagentPreset').
+ * It records the previous/current preset VALUES only — the display language is
+ * resolved at render time via i18n, never baked into the marker — and is keyed
+ * `sessionId + wire seq` so an event replay after reconnect can't duplicate it.
+ */
+export type AutoSubagentPresetReasonCode =
+  | 'cancelled'
+  | 'flag_disabled'
+  | 'auto_preset_disabled'
+  | 'manual_lock'
+  | 'caller_model_unavailable'
+  | 'no_candidates'
+  | 'explicit_preset'
+  | 'no_quota_evidence'
+  | 'no_healthy_candidate'
+  | 'current_optimal'
+  | 'score_margin_not_met'
+  | 'switch_cooldown'
+  | 'current_unhealthy'
+  | 'circuit_breaker_escape'
+  | 'higher_score'
+  | 'manual_override'
+  | 'preset_changed_during_evaluation'
+  | 'routing_config_changed'
+  | 'evaluation_failed'
+  | 'activation_failed'
+  | 'activation_no_effect';
+
+export type AutoSubagentPresetCandidateAvailability =
+  | 'healthy'
+  | 'route_unresolved'
+  | 'quota_unknown'
+  | 'quota_below_floor'
+  | 'circuit_open';
+
+export interface AutoSubagentPresetScoreContributions {
+  quotaRemaining?: number;
+  priorityBonus: number;
+  resetBonus: number;
+  routeFitBonus: number;
+  tokenPenalty: number;
+  reliabilityPenalty: number;
+  latencyPenalty: number;
+}
+
+export interface AutoSubagentPresetLocalEvidence {
+  scope: 'profile' | 'provider' | 'none';
+  sampleCount: number;
+  failureCount: number;
+  adjustedFailureRate: number;
+  tokenCount: number;
+  averageFirstTokenLatencyMs?: number;
+  firstTokenLatencySampleCount: number;
+  llmRequestCount: number;
+}
+
+export interface AutoSubagentPresetCandidateScore {
+  preset: string;
+  provider?: string;
+  availability: AutoSubagentPresetCandidateAvailability;
+  selectable: boolean;
+  score?: number;
+  quotaRemainingPercent?: number;
+  quotaResetAt?: number;
+  circuitBreakerOpenUntil?: number;
+  contributions: AutoSubagentPresetScoreContributions;
+  localEvidence: AutoSubagentPresetLocalEvidence;
+}
+
+export interface AutoSubagentPresetPolicySnapshot {
+  quotaFloorPercent: number;
+  switchMarginPercent: number;
+  localUsageWindowMs: number;
+  localUsageWeightPercent: number;
+  priorityWeightPercent: number;
+  reliabilityWeightPercent: number;
+  latencyWeightPercent: number;
+  switchCooldownMs: number;
+  circuitBreakerFailureThreshold: number;
+  circuitBreakerCooldownMs: number;
+}
+
+/** Latest process-global automatic subagent-preset evaluation (v2 only). */
+export interface AutoSubagentPresetStatus {
+  evaluatedAt: number;
+  route: 'agent' | 'swarm' | 'tower_worker' | 'tower_reviewer';
+  profileName?: string;
+  reasonCode: AutoSubagentPresetReasonCode;
+  /** Preset that was active when this evaluation began. */
+  currentPreset?: string;
+  selectedPreset?: string;
+  /** Preset activated by this evaluation, when it switched routing. */
+  activatedPreset?: string;
+  currentScore?: number;
+  selectedScore?: number;
+  switchCooldownUntil?: number;
+  candidates: AutoSubagentPresetCandidateScore[];
+  policy: AutoSubagentPresetPolicySnapshot;
+}
+
+export const SUBAGENT_PRESET_MARKER_METADATA_KEY = 'kimiWeb.subagentPreset';
+
+export interface SubagentPresetMarkerMetadata {
+  /** Preset active before the switch; absent when the server reports none. */
+  from?: string;
+  /** Preset the session switched to. */
+  to: string;
+  /** Structured explanation fields remain localizable at render time. */
+  reasonCode?: AutoSubagentPresetReasonCode;
+  profileName?: string;
+  evaluatedAt?: number;
+  previousScore?: number;
+  currentScore?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Prompt
 // ---------------------------------------------------------------------------
@@ -333,6 +451,9 @@ export interface AppTask {
    *  the event reducer from `taskProgress` chunks of kind `text`. Grows in the
    *  right-side detail panel like a thinking block. */
   text?: string;
+  agentId?: string;
+  model?: string;
+  thinkingEffort?: string;
   subagentPhase?: AppSubagentPhase;
   subagentType?: string;
   parentToolCallId?: string;
@@ -901,6 +1022,39 @@ export interface FsEntry {
 // Events (app-facing, camelCase)
 // ---------------------------------------------------------------------------
 
+/** Reducer-owned heuristic progress for one MAIN-agent turn. Step numbers and
+ *  tool id arrays are unique event identities, not display history; subagent/
+ *  side-channel events never enter this state. Terminal entries stay inactive
+ *  long enough to reject late events from the same or an older turn. */
+export interface AppTurnProgress {
+  turnId: number;
+  active: boolean;
+  startedAt: number;
+  stepCount: number;
+  /** One-based step numbers already observed, used to make durable replay idempotent. */
+  stepNumbers: number[];
+  toolCallIds: string[];
+  completedToolCallIds: string[];
+}
+
+export type AppTurnProgressUpdate =
+  | {
+      kind: 'start';
+      turnId: number;
+      startedAt: number;
+      stepCount?: number;
+      stepNumbers?: number[];
+      toolCallIds?: string[];
+      completedToolCallIds?: string[];
+      /** Snapshot seeding replaces an equal-id live entry at its watermark. */
+      replace?: boolean;
+    }
+  | { kind: 'step'; turnId: number; step: number }
+  | { kind: 'toolCall'; turnId: number; toolCallId: string }
+  | { kind: 'toolResult'; turnId: number; toolCallId: string }
+  | { kind: 'end'; turnId: number }
+  | { kind: 'reset' };
+
 export type AppEvent =
   | { type: 'sessionCreated'; session: AppSession }
   | { type: 'workspaceCreated'; workspace: AppWorkspace }
@@ -937,7 +1091,20 @@ export type AppEvent =
   | { type: 'questionRequested'; sessionId: string; question: AppQuestionRequest }
   | { type: 'questionAnswered'; sessionId: string; questionId: string; resolvedAt: string }
   | { type: 'questionDismissed'; sessionId: string; questionId: string; dismissedAt: string }
-  | { type: 'taskCreated'; sessionId: string; task: AppTask }
+  | {
+      type: 'taskCreated';
+      sessionId: string;
+      task: AppTask;
+      /** A confirmed new subagent generation must not inherit an older detached run id. */
+      resetBackgroundTaskId?: boolean;
+    }
+  | {
+      type: 'taskMetadataUpdated';
+      sessionId: string;
+      taskId: string;
+      model?: string;
+      thinkingEffort?: string;
+    }
   | {
       type: 'taskProgress';
       sessionId: string;
@@ -966,8 +1133,27 @@ export type AppEvent =
   // background subagent or BTW side chat keeps the session busy but must not
   // light up the main conversation's moon. `reason` rides on deactivation.
   | { type: 'turnActiveChanged'; sessionId: string; active: boolean; reason?: string }
+  | { type: 'turnProgress'; sessionId: string; update: AppTurnProgressUpdate }
   | { type: 'goalUpdated'; sessionId: string; goal: AppGoal | null }
   | { type: 'researchUpdated'; sessionId: string; snapshot: ResearchStatusSnapshot }
+  | {
+      type: 'subagentPresetEvaluated';
+      sessionId: string;
+      status: AutoSubagentPresetStatus;
+    }
+  | {
+      type: 'subagentPresetChanged';
+      sessionId: string;
+      /** Preset active before the switch; absent when the server reports none. */
+      previousPreset?: string;
+      currentPreset: string;
+      /** Expanded fields are optional so older daemons keep their existing marker UI. */
+      reasonCode?: AutoSubagentPresetReasonCode;
+      profileName?: string;
+      evaluatedAt?: number;
+      previousScore?: number;
+      currentScore?: number;
+    }
   | { type: 'configChanged'; changedFields: string[]; config: AppConfig }
   | {
       type: 'modelCatalogChanged';
@@ -1001,6 +1187,15 @@ export interface AppInFlightTurn {
   assistantText: string;
   thinkingText: string;
   runningTools: AppInFlightToolCall[];
+  /** Client-derived progress seed from the current prompt's snapshot messages.
+   *  The wire snapshot does not carry a dedicated turn-start timestamp/counts. */
+  progress?: {
+    startedAt: number;
+    stepCount: number;
+    stepNumbers: number[];
+    toolCallIds: string[];
+    completedToolCallIds: string[];
+  };
   /** Authoritative daemon prompt_id for the active prompt, if known. */
   promptId?: string;
 }
@@ -1154,11 +1349,35 @@ export interface SubagentModelConfig {
   thinkingEffort?: string;
 }
 
+export interface SubagentAutoPresetConfig {
+  enabled?: boolean;
+  /** Set by the server when a preset was manually activated. While true, the
+   *  auto-preset runtime keeps the manual choice; the UI shows the persistent
+   *  "manual lock" state and offers a resume-auto action that clears only this
+   *  field (never the active preset or the auto-switching gates). */
+  manualLock?: boolean;
+  candidates?: string[];
+  quotaFloorPercent?: number;
+  switchMarginPercent?: number;
+  localUsageWindowMs?: number;
+  localUsageWeightPercent?: number;
+  priorityWeightPercent?: number;
+  reliabilityWeightPercent?: number;
+  latencyWeightPercent?: number;
+  switchCooldownMs?: number;
+  circuitBreakerFailureThreshold?: number;
+  circuitBreakerCooldownMs?: number;
+  refreshIntervalMs?: number;
+  queryTimeoutMs?: number;
+  allowExtraUsage?: boolean;
+}
+
 export interface SubagentConfig {
   timeoutMs?: number;
   preset?: string;
   agents?: Record<string, SubagentModelConfig>;
   presets?: Record<string, Record<string, SubagentModelConfig>>;
+  autoPreset?: SubagentAutoPresetConfig;
 }
 
 export interface SecondaryModelConfig {
@@ -1243,6 +1462,45 @@ export interface AppSkill {
   description: string;
   /** Skill source (e.g. 'builtin' | 'project' | 'plugin') for grouping/labels. */
   source: string;
+}
+
+// ---------------------------------------------------------------------------
+// Remote share
+// ---------------------------------------------------------------------------
+
+/**
+ * Browser-facing remote-share state (`GET /api/v1/remote-share` / `:start` /
+ * `:stop`). The complete control URL carries the credential in its fragment;
+ * the response never exposes a separate token field.
+ */
+export interface AppRemoteShareStatus {
+  active: boolean;
+  sessionId: string | null;
+  host: string | null;
+  port: number | null;
+  url: string | null;
+  ttlSeconds: number | null;
+  startedAt: string | null;
+  expiresAt: string | null;
+}
+
+/**
+ * Browser-facing long-lived remote-control state (`GET /api/v1/remote-persistent`
+ * / `:start` / `:stop`) — the persistent `hakimi remote` systemd user service.
+ * The complete control URL carries the fixed credential in its fragment; the
+ * response never exposes a separate token field.
+ */
+export interface AppRemotePersistentStatus {
+  active: boolean;
+  /** Projected systemd unit state: active/inactive/failed/... or unsupported. */
+  state: string;
+  health: 'ok' | 'down' | 'stale' | 'unknown';
+  origin: string | null;
+  url: string | null;
+  port: number | null;
+  startedAt: string | null;
+  systemdAvailable: boolean;
+  message: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1349,8 +1607,30 @@ export interface KimiWebApi {
   // Config — REAL endpoints
   getConfig(): Promise<AppConfig>;
   setConfig(patch: Partial<AppConfig>): Promise<AppConfig>;
+  /** Latest process-global automatic routing evaluation; absent on old daemons or before first run. */
+  getAutoSubagentPresetStatus(): Promise<AutoSubagentPresetStatus | undefined>;
+  /** Validate and serialize a manual preset choice; empty selects base routing. */
+  activateSubagentPreset(preset: string): Promise<{ config: AppConfig; warning?: string }>;
   /** Query current plan limits and Extra Usage without exposing provider credentials. */
   getProviderUsage(providerId?: string): Promise<ProviderUsageResult[]>;
+
+  // Remote share — gated by the `remote_control` experimental flag; the host
+  // UI only calls these from non-remote mode.
+  getRemoteShare(): Promise<AppRemoteShareStatus>;
+  /** Start a share with `sessionId` as its initial landing point and an optional
+   *  TTL (the client offers 30m/1h/8h/24h presets, 8h default). */
+  startRemoteShare(sessionId: string, ttlSeconds?: number): Promise<AppRemoteShareStatus>;
+  /** Stop the active share (idempotent; returns the inactive status). */
+  stopRemoteShare(): Promise<AppRemoteShareStatus>;
+
+  // Long-lived remote control — the persistent `hakimi remote` systemd user
+  // service (no TTL, fixed token). Same `remote_control` flag gate and only
+  // reachable from non-remote mode.
+  getRemotePersistent(): Promise<AppRemotePersistentStatus>;
+  /** Start the persistent systemd user service (idempotent; returns fresh status). */
+  startRemotePersistent(): Promise<AppRemotePersistentStatus>;
+  /** Stop the persistent systemd user service (idempotent; returns fresh status). */
+  stopRemotePersistent(): Promise<AppRemotePersistentStatus>;
 
   // Auth — REAL endpoints
   getAuth(): Promise<{

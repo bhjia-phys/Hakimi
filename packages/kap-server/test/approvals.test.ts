@@ -2,7 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { ISessionApprovalService, getLiveSessionById } from '@moonshot-ai/agent-core-v2';
+import {
+  ISessionApprovalService,
+  getLiveSessionById,
+  resumeSessionById,
+} from '@moonshot-ai/agent-core-v2';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { type RunningServer, startServer } from '../src/start';
@@ -45,15 +49,22 @@ describe('server-v2 /api/v1/sessions/{sid}/approvals', () => {
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'kimi-server-v2-approvals-'));
+    await boot();
+  });
+
+  async function boot(remoteSessionId?: string): Promise<void> {
     server = await startServer({
       hostIdentity: TEST_HOST_IDENTITY,
       host: '127.0.0.1',
       port: 0,
-      homeDir: home,
+      homeDir: home as string,
       logLevel: 'silent',
+      remoteAccess:
+        remoteSessionId === undefined ? undefined : { sessionId: remoteSessionId },
+      insecureNoTls: remoteSessionId === undefined ? undefined : true,
     });
     base = `http://127.0.0.1:${server.port}`;
-  });
+  }
 
   afterEach(async () => {
     if (server !== undefined) {
@@ -126,6 +137,58 @@ describe('server-v2 /api/v1/sessions/{sid}/approvals', () => {
     expect(item.tool_input_display).toEqual({ kind: 'command', command: 'echo hi' });
     expect(Number.isNaN(Date.parse(item.created_at))).toBe(false);
     expect(Number.isNaN(Date.parse(item.expires_at))).toBe(false);
+  });
+
+  it('replaces remote approval action and arbitrary tool input with safe labels', async () => {
+    const sid = await createSession();
+    await server!.close();
+    server = undefined;
+    await boot(sid);
+
+    const resumed = await resumeSessionById(server!.core.accessor, sid);
+    if (resumed === undefined) throw new Error(`session ${sid} failed to resume`);
+    resumed.accessor.get(ISessionApprovalService).enqueue({
+      toolCallId: 'tc-remote',
+      toolName: 'Bash',
+      action: 'Running: cat /srv/remote-private/approval.txt ACTION_SECRET',
+      display: {
+        kind: 'command',
+        command: 'cat /srv/remote-private/approval.txt',
+        cwd: '/srv/remote-private',
+        content: 'WRITE_SECRET',
+        before: 'BEFORE_SECRET',
+        after: 'AFTER_SECRET',
+        old_string: 'OLD_SECRET',
+        new_string: 'NEW_SECRET',
+        prompt: 'PROMPT_SECRET',
+        args: { token: 'TOKEN_SECRET' },
+        detail: 'DETAIL_SECRET',
+      } as never,
+    });
+
+    const { body } = await getJson<ListWire>(`/api/v1/sessions/${sid}/approvals?status=pending`);
+    expect(body.code).toBe(0);
+    expect(body.data.items).toHaveLength(1);
+    expect(body.data.items[0]).toMatchObject({
+      tool_call_id: 'tc-remote',
+      action: 'Review tool request',
+      tool_input_display: '[details omitted]',
+    });
+    const serialized = JSON.stringify(body.data);
+    for (const secret of [
+      'ACTION_SECRET',
+      'WRITE_SECRET',
+      'BEFORE_SECRET',
+      'AFTER_SECRET',
+      'OLD_SECRET',
+      'NEW_SECRET',
+      'PROMPT_SECRET',
+      'TOKEN_SECRET',
+      'DETAIL_SECRET',
+      '/srv/remote-private',
+    ]) {
+      expect(serialized).not.toContain(secret);
+    }
   });
 
   it('resolves a pending approval', async () => {

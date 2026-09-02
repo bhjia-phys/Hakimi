@@ -24,11 +24,12 @@ import { InMemoryStorageService } from '#/persistence/backends/memory/inMemorySt
 
 import {
   AGENT_RUN_USAGE_LOG_KEY,
+  type AgentRunUsageEntry,
   type AgentRunUsageFinishedRecord,
   type AgentRunUsageStartedRecord,
   IAgentRunUsageService,
 } from '#/app/agentRunUsage/agentRunUsage';
-import { AgentRunUsageService } from '#/app/agentRunUsage/agentRunUsageService';
+import { AgentRunUsageService, MAX_LIVE_STARTED_RUNS } from '#/app/agentRunUsage/agentRunUsageService';
 
 const SCOPE = 'store';
 const ZERO = { inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0 };
@@ -109,7 +110,13 @@ describe('AgentRunUsageService (App ledger)', () => {
 
   it('round-trips started + finished records and folds them by runId', async () => {
     service.appendStarted(started('run-1', 1000));
-    service.appendFinished(finished('run-1', 1000, { errorCode: undefined, usage: undefined }));
+    service.appendFinished(finished('run-1', 1000, {
+      errorCode: undefined,
+      usage: undefined,
+      averageFirstTokenLatencyMs: 250,
+      firstTokenLatencySampleCount: 3,
+      llmRequestCount: 4,
+    }));
 
     const entries = await service.read();
     expect(entries).toHaveLength(1);
@@ -118,6 +125,21 @@ describe('AgentRunUsageService (App ledger)', () => {
     expect(entries[0]?.started.preset).toBe('balanced');
     expect(entries[0]?.finished?.status).toBe('completed');
     expect(entries[0]?.finished?.durationMs).toBe(1000);
+    expect(entries[0]?.finished?.averageFirstTokenLatencyMs).toBe(250);
+    expect(entries[0]?.finished?.firstTokenLatencySampleCount).toBe(3);
+    expect(entries[0]?.finished?.llmRequestCount).toBe(4);
+  });
+
+  it('continues to read v1 finished records that omit aggregate latency fields', async () => {
+    service.appendStarted(started('legacy-run', 1000));
+    service.appendFinished(finished('legacy-run', 1000));
+
+    const entries = await service.read();
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.finished?.averageFirstTokenLatencyMs).toBeUndefined();
+    expect(entries[0]?.finished?.firstTokenLatencySampleCount).toBeUndefined();
+    expect(entries[0]?.finished?.llmRequestCount).toBeUndefined();
   });
 
   it('preserves started-only incomplete runs', async () => {
@@ -176,6 +198,12 @@ describe('AgentRunUsageService (App ledger)', () => {
       () => finished('run-1', 1000, { durationMs: -1 }),
       () => finished('run-1', 1000, { endedAt: Number.NaN }),
       () => finished('run-1', 1000, { contextTokens: -3 }),
+      () => finished('run-1', 1000, { averageFirstTokenLatencyMs: -1 }),
+      () => finished('run-1', 1000, { averageFirstTokenLatencyMs: Number.NaN }),
+      () => finished('run-1', 1000, { firstTokenLatencySampleCount: -1 }),
+      () => finished('run-1', 1000, { firstTokenLatencySampleCount: 1.5 }),
+      () => finished('run-1', 1000, { llmRequestCount: -1 }),
+      () => finished('run-1', 1000, { llmRequestCount: 1.5 }),
       () => finished('run-1', 1000, { usage: { inputOther: -1, output: 0, inputCacheRead: 0, inputCacheCreation: 0 } }),
       () => finished('run-1', 1000, { usage: { inputOther: Number.POSITIVE_INFINITY, output: 0, inputCacheRead: 0, inputCacheCreation: 0 } }),
       () => finished('', 1000, {}),
@@ -221,6 +249,64 @@ describe('AgentRunUsageService (App ledger)', () => {
     svc.appendStarted(started('run-x', 1000));
     svc.appendFinished(finished('run-x', 1000));
     expect(captured.some((message) => message.includes('agent-run usage ledger flush failed'))).toBe(true);
+  });
+
+  it('fires the completion event once per live runId and never for orphans', async () => {
+    const seen: AgentRunUsageEntry[] = [];
+    disposables.add(service.onDidFinishRun((entry) => seen.push(entry)));
+
+    service.appendStarted(started('run-1', 1000));
+    service.appendFinished(finished('run-1', 1000));
+    // A duplicate finished for the same runId must not fire again.
+    service.appendFinished(finished('run-1', 1000, { status: 'cancelled' }));
+    // A finished without a matching live started is an orphan and stays silent.
+    service.appendFinished(finished('orphan', 1000));
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.started.runId).toBe('run-1');
+    expect(seen[0]?.finished?.status).toBe('completed');
+  });
+
+  it('fires the completion event only after both sides of a run are seen', async () => {
+    const seen: AgentRunUsageEntry[] = [];
+    disposables.add(service.onDidFinishRun((entry) => seen.push(entry)));
+
+    // Started-only: no event yet.
+    service.appendStarted(started('run-2', 1000));
+    expect(seen).toHaveLength(0);
+
+    service.appendFinished(finished('run-2', 1000));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.started.runId).toBe('run-2');
+  });
+
+  it('drops the live started state on completion so repeats stay silent', async () => {
+    const seen: AgentRunUsageEntry[] = [];
+    disposables.add(service.onDidFinishRun((entry) => seen.push(entry)));
+
+    service.appendStarted(started('run-3', 1000));
+    service.appendFinished(finished('run-3', 1000));
+    service.appendFinished(finished('run-3', 1000, { status: 'cancelled' }));
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.finished?.status).toBe('completed');
+  });
+
+  it('caps the live started state so an evicted runId no longer fires', async () => {
+    const seen: AgentRunUsageEntry[] = [];
+    disposables.add(service.onDidFinishRun((entry) => seen.push(entry)));
+
+    for (let i = 0; i <= MAX_LIVE_STARTED_RUNS; i += 1) {
+      service.appendStarted(started(`cap-${i}`, 1000));
+    }
+    // The first started was evicted by the capacity cap; its finish is an
+    // orphan and stays silent, while the ledger still retains every record.
+    service.appendFinished(finished('cap-0', 1000));
+    const entries = await service.read();
+    expect(entries).toHaveLength(MAX_LIVE_STARTED_RUNS + 1);
+
+    service.appendFinished(finished(`cap-${MAX_LIVE_STARTED_RUNS}`, 1000));
+    expect(seen.map((entry) => entry.started.runId)).toEqual([`cap-${MAX_LIVE_STARTED_RUNS}`]);
   });
 
   it('iterate yields validated records only', async () => {

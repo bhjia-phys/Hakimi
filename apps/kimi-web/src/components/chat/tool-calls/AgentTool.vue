@@ -6,8 +6,10 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
+import type { FilePreviewRequest, TaskItem, ToolCall, ToolMedia } from '../../../types';
 import { toolGlyph, toolLabel } from '../../../lib/toolMeta';
+import Badge from '../../ui/Badge.vue';
+import Tooltip from '../../ui/Tooltip.vue';
 import ToolRow from '../ToolRow.vue';
 
 const { t } = useI18n();
@@ -52,23 +54,30 @@ function parseAgentInput(arg: string): AgentInput {
 
 const input = computed(() => parseAgentInput(props.tool.arg));
 const hasOutput = computed(() => !!props.tool.output && props.tool.output.length > 0);
-const canExpand = computed(
-  () => Boolean(input.value.prompt) || Boolean(input.value.subagentType) || hasOutput.value,
-);
+const canExpand = computed(() => Boolean(input.value.prompt) || hasOutput.value);
 const open = ref(props.tool.defaultExpanded === true && canExpand.value);
 
 const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
 const label = computed(() => toolLabel(props.tool.name));
 const glyph = computed(() => toolGlyph(props.tool.name));
-const summary = computed(() => input.value.description || input.value.subagentType || '');
+
+// The task resolver reads ConversationPane's reactive TaskItem list, so status
+// events update the badges in place. Role can fall back to the immutable tool
+// argument; model never does — only the runtime task is authoritative.
+const resolveAgentTask = inject<(toolCallId: string) => TaskItem | undefined>('resolveAgentTask');
+const resolveAgentTaskId = inject<(toolCallId: string) => string | undefined>('resolveAgentTaskId');
+const task = computed(() => resolveAgentTask?.(props.tool.id));
+const role = computed(() => task.value?.subagentType || input.value.subagentType);
+const model = computed(() => task.value?.model);
+const summary = computed(() => input.value.description || role.value || '');
 
 // Hide the "Open detail" button when no live/background subagent task matches
 // this tool call (e.g. a completed foreground subagent after a page refresh) —
 // otherwise the button emits into a panel that silently no-ops.
-const resolveAgentTaskId = inject<(toolCallId: string) => string | undefined>('resolveAgentTaskId');
 const canOpenAgent = computed(() => {
-  if (!resolveAgentTaskId) return true;
-  return resolveAgentTaskId(props.tool.id) !== undefined;
+  if (resolveAgentTaskId) return resolveAgentTaskId(props.tool.id) !== undefined;
+  if (resolveAgentTask) return task.value !== undefined;
+  return true;
 });
 
 function toggle(): void {
@@ -101,7 +110,20 @@ watch(
         {{ t('tasks.openDetail') }}
       </button>
     </template>
-    <div v-if="input.subagentType" class="at-type">{{ input.subagentType }}</div>
+    <template v-if="role || model" #metadata>
+      <div class="at-metadata">
+        <Tooltip v-if="role" :text="`${t('tasks.role')}: ${role}`">
+          <Badge variant="neutral" size="sm" class="at-identity at-role" :title="role">
+            <span class="at-identity-text">{{ t('tasks.role') }}: {{ role }}</span>
+          </Badge>
+        </Tooltip>
+        <Tooltip v-if="model" :text="`${t('tasks.model')}: ${model}`">
+          <Badge variant="neutral" size="sm" class="at-identity at-model" :title="model">
+            <span class="at-identity-text">{{ t('tasks.model') }}: {{ model }}</span>
+          </Badge>
+        </Tooltip>
+      </div>
+    </template>
     <div v-if="input.prompt" class="at-task">{{ input.prompt }}</div>
     <div v-if="hasOutput" class="bb-code">
       <div v-for="(line, i) in tool.output ?? []" :key="i">{{ line }}</div>
@@ -110,6 +132,31 @@ watch(
 </template>
 
 <style scoped>
+.at-metadata {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+}
+.at-identity {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+}
+.at-model {
+  max-width: 240px;
+}
+.at-identity-text {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .at-open {
   flex: none;
   background: none;
@@ -124,10 +171,11 @@ watch(
   color: var(--color-text);
   background: var(--color-surface-sunken);
 }
-.at-type {
-  font: var(--text-xs) var(--font-mono);
-  color: var(--color-text-muted);
-  margin-bottom: 6px;
+@media (max-width: 375px) {
+  .at-identity,
+  .at-model {
+    max-width: 100%;
+  }
 }
 .at-task {
   color: var(--color-text);

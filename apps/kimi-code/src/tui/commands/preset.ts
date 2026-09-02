@@ -30,11 +30,16 @@ import type { SlashCommandHost } from './dispatch';
 const APPLY_PRESET = '__apply_preset__';
 const CLEAR_PRESET = '__clear_preset__';
 const CREATE_PRESET = '__create_preset__';
+const RESUME_AUTOMATIC = '__resume_automatic__';
 const BUILTIN_SUBAGENT_PROFILES = ['explore', 'plan', 'coder'] as const;
+
+interface SubagentAutoPresetView {
+  readonly manualLock?: boolean;
+}
 
 /**
  * `/preset` opens the visual preset manager. `/preset <name>` and
- * `/preset off|status` retain their original non-interactive behavior, while
+ * `/preset auto|off|status` retain their non-interactive behavior, while
  * `/preset edit <name>` opens an existing or new preset directly.
  */
 export async function handlePresetCommand(host: SlashCommandHost, args: string): Promise<void> {
@@ -43,6 +48,10 @@ export async function handlePresetCommand(host: SlashCommandHost, args: string):
 
   if (lower === 'status') {
     await showPresetStatus(host);
+    return;
+  }
+  if (lower === 'auto') {
+    await resumeAutomaticPreset(host);
     return;
   }
   if (lower === 'off') {
@@ -83,12 +92,20 @@ async function showPresetPicker(host: SlashCommandHost): Promise<void> {
   const config = await loadConfig(host, 'Failed to load presets');
   if (config === undefined) return;
   const active = activeSubagentPreset(config.subagent);
+  const manualLocked = subagentAutoPreset(config)?.manualLock === true;
   const names = Object.keys(config.subagent?.presets ?? {}).toSorted();
   const options: ChoiceOption[] = names.map((name) => ({
     value: name,
     label: name,
     description: presetSummary(config, name),
   }));
+  if (manualLocked) {
+    options.push({
+      value: RESUME_AUTOMATIC,
+      label: 'Resume automatic selection',
+      description: 'Release the manual lock; the next subagent spawn may switch presets.',
+    });
+  }
   options.push({
     value: CREATE_PRESET,
     label: 'Create new preset',
@@ -116,6 +133,10 @@ async function showPresetPicker(host: SlashCommandHost): Promise<void> {
       searchable: names.length > 6,
       onSelect: (value) => {
         host.restoreEditor();
+        if (value === RESUME_AUTOMATIC) {
+          void resumeAutomaticPreset(host);
+          return;
+        }
         if (value === CREATE_PRESET) {
           showPresetNameInput(host, names, config);
           return;
@@ -311,16 +332,20 @@ async function switchPreset(
       return;
     }
 
-    const patch: KimiConfigPatch = { subagent: { preset: name ?? '' } };
-    if (main?.model !== undefined) patch.defaultModel = main.model;
+    const updated = await host.harness.activateSubagentPreset(name ?? '');
+    const mainPatch: KimiConfigPatch = {};
+    if (main?.model !== undefined) mainPatch.defaultModel = main.model;
     if (main?.thinkingEffort !== undefined) {
-      patch.thinking = thinkingConfigForPreset(main.thinkingEffort);
+      mainPatch.thinking = thinkingConfigForPreset(main.thinkingEffort);
     }
-    await host.harness.setConfig(patch);
+    if (Object.keys(mainPatch).length > 0) await host.harness.setConfig(mainPatch);
+    // Converge the footer preset from the written config (no extra read);
+    // this is a manual change, so it must not produce an automatic message.
+    await host.syncSubagentPresetFromConfig(updated);
 
     const message = name === undefined
-      ? 'Agent preset cleared; subagents use base routing / the parent model.'
-      : `Agent preset "${name}" activated.`;
+      ? 'Agent preset cleared and manually locked to base routing.'
+      : `Agent preset "${name}" activated and manually locked.`;
     if (host.session !== undefined) {
       if (main?.model !== undefined && main.model !== host.state.appState.model) {
         await host.session.setModel(main.model);
@@ -345,11 +370,27 @@ async function switchPreset(
   }
 }
 
+async function resumeAutomaticPreset(host: SlashCommandHost): Promise<void> {
+  try {
+    await host.harness.setConfig({
+      subagent: { autoPreset: { manualLock: false } },
+    } as unknown as KimiConfigPatch);
+    host.showStatus(
+      'Automatic preset selection resumed; the current preset stays active until the next evaluation.',
+      'success',
+    );
+    host.track('subagent_preset_auto_resume', {});
+  } catch (error) {
+    host.showError(`Failed to resume automatic preset selection: ${formatErrorMessage(error)}`);
+  }
+}
+
 async function showPresetStatus(host: SlashCommandHost): Promise<void> {
   const config = await loadConfig(host, 'Failed to load preset status');
   if (config === undefined) return;
   const subagent = config.subagent;
   const active = activeSubagentPreset(subagent);
+  const manualLocked = subagentAutoPreset(config)?.manualLock === true;
   const presetNames = Object.keys(subagent?.presets ?? {});
   const profileNames = (active === undefined
     ? Object.keys(subagent?.agents ?? {})
@@ -392,6 +433,9 @@ async function showPresetStatus(host: SlashCommandHost): Promise<void> {
     active === undefined
       ? 'Active agent preset: none (using base routing / parent model)'
       : `Active agent preset: ${active}`,
+    manualLocked
+      ? 'Selection mode: manually locked (run /preset auto to resume automatic selection)'
+      : 'Selection mode: automatic selection may evaluate before subagent spawns',
     presetNames.length === 0
       ? 'Defined presets: none'
       : `Defined presets: ${presetNames.map((name) => (name === active ? `${name} *` : name)).join(', ')}`,
@@ -445,6 +489,12 @@ async function loadConfig(
     host.showError(`${failureLabel}: ${formatErrorMessage(error)}`);
     return undefined;
   }
+}
+
+function subagentAutoPreset(config: KimiConfig): SubagentAutoPresetView | undefined {
+  return (config.subagent as typeof config.subagent & {
+    readonly autoPreset?: SubagentAutoPresetView;
+  } | undefined)?.autoPreset;
 }
 
 function routeOption(

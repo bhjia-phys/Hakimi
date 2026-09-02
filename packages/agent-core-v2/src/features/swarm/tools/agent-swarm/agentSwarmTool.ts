@@ -10,8 +10,11 @@
  * resolves the canonical `[subagent]` preset/agents route up front via
  * `resolveSubagentBinding` and threads that binding through the swarm tasks;
  * otherwise the service keeps its own "no model bound" check and inherit-caller
- * fallback. Swarm mode is
- * entered through `IAgentSwarmService`; the caller's agent id comes from
+ * fallback. A swarm with new items asks the App-scope automatic preset decider
+ * once before resolving, so the new tasks start on a freshly chosen preset.
+ * The Session-scoped coordinator separately evaluates every resumed child's
+ * actual rebindable profile, including resume-only and mixed batches. Swarm
+ * mode is entered through `IAgentSwarmService`; the caller's agent id comes from
  * `IAgentScopeContext`. Pure tool — owns no scoped state. Bound at Agent
  * scope — contributed by `SwarmFeature` (`features/swarm/swarmFeature`).
  */
@@ -35,7 +38,9 @@ import {
   subagentTypeNotAllowedMessage,
 } from '#/app/agentProfileCatalog/profile-shared';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
+import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import { IAgentSwarmService } from '#/features/swarm/agent/swarm';
+import { IAutoSubagentPresetService } from '#/app/autoSubagentPreset/autoSubagentPreset';
 import {
   resolveSubagentBinding,
   resolveSubagentTimeoutMs,
@@ -96,6 +101,8 @@ export class AgentSwarmTool implements IAgentSwarmTool {
     @IModelCatalog private readonly modelCatalog: IModelCatalog,
     @ISessionAgentProfileCatalog private readonly catalog: ISessionAgentProfileCatalog,
     @IAgentProfileService private readonly profile: IAgentProfileService,
+    @ISessionContext private readonly sessionContext: ISessionContext,
+    @IAutoSubagentPresetService private readonly autoPreset: IAutoSubagentPresetService,
   ) {
     this.callerAgentId = scopeContext.agentId;
   }
@@ -162,6 +169,18 @@ export class AgentSwarmTool implements IAgentSwarmTool {
         });
       }
       if (own.modelAlias !== undefined) {
+        await this.autoPreset.evaluate(
+          {
+            route: 'swarm',
+            profileName,
+            modelPreference: targetProfile.modelPreference,
+            caller: {
+              modelAlias: own.modelAlias,
+              thinkingLevel: own.thinkingLevel,
+            },
+          },
+          { sessionId: this.sessionContext.sessionId, signal },
+        );
         const resolved = resolveSubagentBinding(this.config, this.flags, this.modelCatalog, {
           route: 'swarm',
           profileName,

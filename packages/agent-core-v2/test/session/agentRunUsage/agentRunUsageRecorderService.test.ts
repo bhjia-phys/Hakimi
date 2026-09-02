@@ -73,6 +73,7 @@ class FakeSubagentService implements ISessionSubagentService {
 class FakeUsageService implements IAgentRunUsageService {
   declare readonly _serviceBrand: undefined;
   readonly appended: AgentRunUsageRecord[] = [];
+  readonly onDidFinishRun = Event.None as Event<AgentRunUsageEntry>;
 
   appendStarted(record: AgentRunUsageStartedRecord): void {
     this.appended.push(record);
@@ -167,6 +168,9 @@ describe('IAgentRunUsageRecorderService (Session scope)', () => {
       status: 'completed',
       usage: { inputOther: 10, output: 5, inputCacheRead: 2, inputCacheCreation: 1 },
       contextTokens: 4000,
+      averageFirstTokenLatencyMs: 240,
+      firstTokenLatencySampleCount: 2,
+      llmRequestCount: 3,
     });
 
     expect(usage.appended).toHaveLength(2);
@@ -192,6 +196,9 @@ describe('IAgentRunUsageRecorderService (Session scope)', () => {
       endedAt: 2000,
       durationMs: 1000,
       contextTokens: 4000,
+      averageFirstTokenLatencyMs: 240,
+      firstTokenLatencySampleCount: 2,
+      llmRequestCount: 3,
       version: 1,
     });
     expect((usage.appended[1] as AgentRunUsageFinishedRecord).usage).toEqual({

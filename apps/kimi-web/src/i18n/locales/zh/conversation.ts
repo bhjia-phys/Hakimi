@@ -9,6 +9,12 @@ export default {
   addWorkspace: '添加工作区',
   moreWorkspaces: '更多工作区 ({count})',
   compacting: '正在压缩上下文…',
+  turnProgress: {
+    label: '回合预估进度',
+    value: '约 {percent}%，已用 {elapsed}，调用 {count} 个工具',
+    elapsed: '已用 {elapsed}',
+    tools: '{count} 个工具',
+  },
   compactedPlain: '上下文已压缩',
   compactedAuto: '已自动压缩上下文',
   compactedTokens: '（{before} → {after} tokens）',
@@ -16,6 +22,12 @@ export default {
   summaryTitle: '压缩摘要',
   manuallyAborted: '您已手动终止',
   activatedSkill: '已激活技能: {name}',
+  /** Status separator for an automatic subagent-preset switch (from → to). */
+  subagentPresetAutoSwitched: 'Subagent 预设已自动切换：{from} → {to}',
+  /** Status separator for a switch with no reported previous preset. */
+  subagentPresetAutoSet: 'Subagent 预设已自动切换：{preset}',
+  subagentPresetReasonWithProfile: '{profile} 角色：{reason}',
+  subagentPresetSwitchWithReason: '{switch} · {reason}',
   undo: '撤销',
   undoTooltip: '撤销对话不会回滚代码',
   undoConfirm: '撤销上一条消息？',
