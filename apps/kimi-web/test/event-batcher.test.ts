@@ -810,7 +810,7 @@ describe('useKimiWebClient (resync integration)', () => {
         openInApps: [],
         dangerousBypassAuth: false,
         experimentalFlags: { aitp_research_mode: false },
-        backend: 'v2',
+        backend: 'v1',
       });
       expect(client.researchEnabled.value).toBe(true);
       getMeta.mockClear();
@@ -820,6 +820,22 @@ describe('useKimiWebClient (resync integration)', () => {
       await vi.waitFor(() => expect(getMeta).toHaveBeenCalledTimes(1));
       expect(client.researchEnabled.value).toBe(false);
 
+      getSessionResearch.mockClear();
+      handlers!.onResync(sessionId, 22, 'epoch-3');
+      await vi.waitFor(() => expect(connection.seedSnapshot).toHaveBeenCalledTimes(3));
+      await Promise.resolve();
+      expect(getSessionResearch).not.toHaveBeenCalled();
+
+      getMeta.mockResolvedValue({
+        serverVersion: '0.0.0',
+        serverId: 'server-1',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        capabilities: {},
+        openInApps: [],
+        dangerousBypassAuth: false,
+        experimentalFlags: { aitp_research_mode: false },
+        backend: 'v2',
+      });
       handlers!.onEvent(
         {
           type: 'configChanged',
@@ -832,15 +848,14 @@ describe('useKimiWebClient (resync integration)', () => {
         },
         { sessionId: '__global__', seq: 1 },
       );
-      await vi.waitFor(() => expect(client.researchEnabled.value).toBe(false));
+      await vi.waitFor(() => expect(client.researchEnabled.value).toBe(true));
       getSessionResearch.mockClear();
 
-      handlers!.onResync(sessionId, 22, 'epoch-3');
+      handlers!.onResync(sessionId, 22, 'epoch-4');
       await vi.waitFor(() => {
-        expect(connection.seedSnapshot).toHaveBeenCalledTimes(3);
+        expect(connection.seedSnapshot).toHaveBeenCalledTimes(4);
+        expect(getSessionResearch).toHaveBeenCalledWith(sessionId);
       });
-      await Promise.resolve();
-      expect(getSessionResearch).not.toHaveBeenCalled();
     } finally {
       connection.close();
       vi.unstubAllGlobals();

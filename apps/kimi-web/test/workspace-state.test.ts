@@ -1369,7 +1369,7 @@ describe('useWorkspaceState — config reconciliation', () => {
     expect(state.defaultModel).toBe('provider/newer');
   });
 
-  it('re-reads effective meta flags after a config write instead of trusting config', async () => {
+  it('re-reads effective meta flags without treating the retired Research flag as a gate', async () => {
     apiMock.setConfig.mockReset().mockResolvedValue({
       providers: {},
       experimental: { aitp_research_mode: true },
@@ -1388,8 +1388,8 @@ describe('useWorkspaceState — config reconciliation', () => {
 
     expect(state.config?.experimental?.['aitp_research_mode']).toBe(true);
     expect(state.experimentalFlags['aitp_research_mode']).toBe(false);
-    await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBeNull();
-    expect(apiMock.commandSessionResearch).not.toHaveBeenCalled();
+    await ws.commandResearch({ kind: 'exit_mode' });
+    expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
   });
 });
 
@@ -1612,6 +1612,13 @@ describe('useWorkspaceState — first-load auth gate', () => {
       ready: true,
       defaultModel: 'kimi-code',
       managedProvider: null,
+    });
+    apiMock.getMeta.mockResolvedValue({
+      serverVersion: '0.0.0',
+      openInApps: [],
+      dangerousBypassAuth: false,
+      experimentalFlags: {},
+      backend: 'v2',
     });
     apiMock.listSessions.mockResolvedValue({
       items: [remoteSession, otherSession],
@@ -2859,6 +2866,12 @@ describe('useWorkspaceState — Research', () => {
     };
   }
 
+  function createResearchState(): ExtendedState {
+    const state = createState();
+    state.backend = 'v2';
+    return state;
+  }
+
   beforeEach(() => {
     apiMock.getSessionResearch.mockReset();
     apiMock.commandSessionResearch.mockReset();
@@ -2872,7 +2885,7 @@ describe('useWorkspaceState — Research', () => {
         resolveRefresh = resolve;
       }),
     );
-    const state = createState();
+    const state = createResearchState();
     const deps = createDeps();
     deps.refreshSessionResearch = refreshSessionResearch;
     const ws = useWorkspaceState(state, deps);
@@ -2889,7 +2902,7 @@ describe('useWorkspaceState — Research', () => {
   it('sends an explicit command only to its submitted session', async () => {
     const nextSnapshot = snapshot(2);
     apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
-    const state = createState();
+    const state = createResearchState();
     state.activeSessionId = 'sess_2';
     const ws = useWorkspaceState(state, createDeps());
     const command = { kind: 'pause_loop', expectedRevision: 1 } as const;
@@ -2904,7 +2917,7 @@ describe('useWorkspaceState — Research', () => {
   it('commits a successful command snapshot when no live event raced it', async () => {
     const nextSnapshot = snapshot(2);
     apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
-    const state = createState();
+    const state = createResearchState();
     const deps = createDeps();
     const ws = useWorkspaceState(state, deps);
     const command = { kind: 'switch_line', lineSlug: 'line-a', expectedRevision: 1 } as const;
@@ -2926,7 +2939,7 @@ describe('useWorkspaceState — Research', () => {
         resolveFirst = resolve;
       }))
       .mockResolvedValueOnce(secondSnapshot);
-    const state = createState();
+    const state = createResearchState();
     const ws = useWorkspaceState(state, createDeps());
 
     const first = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
@@ -2951,7 +2964,7 @@ describe('useWorkspaceState — Research', () => {
         resolveCommand = resolve;
       }),
     );
-    const state = createState();
+    const state = createResearchState();
     const ws = useWorkspaceState(state, createDeps());
 
     const command = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
@@ -3056,7 +3069,7 @@ describe('useWorkspaceState — Research', () => {
     const error = new DaemonApiError({ code: 40001, msg: 'stale revision', requestId: 'req_1' });
     apiMock.commandSessionResearch.mockRejectedValue(error);
     const deps = createDeps();
-    const ws = useWorkspaceState(createState(), deps);
+    const ws = useWorkspaceState(createResearchState(), deps);
 
     const result = await ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
 
@@ -3072,20 +3085,22 @@ describe('useWorkspaceState — Research', () => {
   it.each([
     ['missing', {}, { aitp_research_mode: true }],
     ['false', { aitp_research_mode: false }, { aitp_research_mode: true }],
-  ] as const)('blocks commands when the effective meta flag is %s despite config', async (_case, flags, config) => {
-    const state = createState();
+  ] as const)('ignores the inert legacy Research flag when it is %s', async (_case, flags, config) => {
+    const nextSnapshot = snapshot(2);
+    apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
+    const state = createResearchState();
     state.experimentalFlags = flags;
     state.config = { providers: {}, experimental: config };
     const ws = useWorkspaceState(state, createDeps());
 
-    await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBeNull();
-    expect(apiMock.commandSessionResearch).not.toHaveBeenCalled();
+    await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBe(nextSnapshot);
+    expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
   });
 
-  it('allows commands only when meta is true even if persisted config is false', async () => {
+  it('allows commands when the inert persisted Research flag is false', async () => {
     const nextSnapshot = snapshot(2);
     apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
-    const state = createState();
+    const state = createResearchState();
     state.experimentalFlags = { aitp_research_mode: true };
     state.config = { providers: {}, experimental: { aitp_research_mode: false } };
     const ws = useWorkspaceState(state, createDeps());
@@ -3094,8 +3109,8 @@ describe('useWorkspaceState — Research', () => {
     expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
   });
 
-  it('does not start a Research sidecar refresh unless the effective flag is true', async () => {
-    const state = createState();
+  it('refreshes the Research sidecar regardless of the inert legacy flag', async () => {
+    const state = createResearchState();
     state.experimentalFlags = { aitp_research_mode: false };
     state.config = { providers: {}, experimental: { aitp_research_mode: true } };
     const deps = createDeps();
@@ -3103,8 +3118,43 @@ describe('useWorkspaceState — Research', () => {
 
     await ws.refreshResearch();
 
+    expect(deps.refreshSessionResearch).toHaveBeenCalledWith('sess_1');
+  });
+
+  it('does not call Research endpoints on the legacy v1 backend', async () => {
+    const deps = createDeps();
+    const ws = useWorkspaceState(createState(), deps);
+
+    await ws.refreshResearch();
+    await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBeNull();
+
     expect(deps.refreshSessionResearch).not.toHaveBeenCalled();
-    expect(apiMock.getSessionResearch).not.toHaveBeenCalled();
+    expect(apiMock.commandSessionResearch).not.toHaveBeenCalled();
+    expect(deps.pushOperationFailure).not.toHaveBeenCalled();
+  });
+
+  it('drops a queued Research command after the backend switches to legacy v1', async () => {
+    const firstSnapshot = snapshot(2);
+    let resolveFirst!: (value: typeof firstSnapshot) => void;
+    apiMock.commandSessionResearch.mockImplementationOnce(
+      () => new Promise<typeof firstSnapshot>((resolve) => {
+        resolveFirst = resolve;
+      }),
+    );
+    const state = createResearchState();
+    const deps = createDeps();
+    const ws = useWorkspaceState(state, deps);
+
+    const first = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
+    await vi.waitFor(() => expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce());
+    const queued = ws.commandResearch({ kind: 'resume_loop', expectedRevision: 2 });
+    state.backend = 'v1';
+    resolveFirst(firstSnapshot);
+
+    await expect(first).resolves.toBe(firstSnapshot);
+    await expect(queued).resolves.toBeNull();
+    expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
+    expect(deps.pushOperationFailure).not.toHaveBeenCalled();
   });
 
   it('does not let a cold read overwrite a newer live Research event', () => {

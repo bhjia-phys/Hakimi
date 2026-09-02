@@ -741,20 +741,14 @@ async function refreshSessionGoal(sessionId: string): Promise<void> {
 async function refreshSessionResearch(
   sessionId: string,
 ): Promise<ResearchStatusSnapshot | null> {
-  // The effective meta flag can flip while a sidecar or resync is queued behind
-  // a mutation. Require strict true both before queueing and before issuing I/O.
-  if (rawState.experimentalFlags['aitp_research_mode'] !== true) return null;
+  if (rawState.backend !== 'v2') return null;
   try {
-    return await researchRequests.read(
-      rawState,
-      sessionId,
-      () => {
-        if (rawState.experimentalFlags['aitp_research_mode'] !== true) {
-          return Promise.reject(new Error('Research disabled'));
-        }
-        return getKimiWebApi().getSessionResearch(sessionId);
-      },
-    );
+    return await researchRequests.read(rawState, sessionId, () => {
+      if (rawState.backend !== 'v2') {
+        return Promise.reject(new Error('Research unavailable'));
+      }
+      return getKimiWebApi().getSessionResearch(sessionId);
+    });
   } catch {
     return null;
   }
@@ -1183,7 +1177,9 @@ function connectEventsIfNeeded(): void {
         // the dev proxy was moved to the other engine. Re-read authoritative
         // metadata and config plus auto-preset status: these process-global
         // facts have no client replay cursor, so this closes the gap after both
-        // the first handshake and every reconnect.
+        // the first handshake and every reconnect. Fail closed to the legacy
+        // capability set until this connection's metadata has been confirmed.
+        rawState.backend = 'v1';
         void workspaceState.refreshServerMeta(true);
         void workspaceState.loadConfig();
         void refreshAutoSubagentPresetStatus();
@@ -1596,7 +1592,7 @@ async function syncSessionFromSnapshot(sessionId: string): Promise<SyncSessionRe
     // Research is a sidecar, not part of the transcript snapshot. A resync can
     // therefore recover the transcript while still missing a research.updated
     // frame from the same gap; pull its authoritative snapshot after the main
-    // snapshot has committed. The helper itself gates the experimental flag.
+    // snapshot has committed.
     if (wasResync) void refreshSessionResearch(sessionId);
     void pullSessionWarnings(sessionId);
     return 'ok';
@@ -2123,9 +2119,8 @@ const goal = computed<AppGoal | null>(() => {
   return rawState.goalBySession[sid] ?? null;
 });
 
-const researchEnabled = computed<boolean>(
-  () => rawState.experimentalFlags['aitp_research_mode'] === true,
-);
+// Research Mode graduated from its experimental flag and is available on v2.
+const researchEnabled = computed<boolean>(() => rawState.backend === 'v2');
 const research = computed<ResearchStatusSnapshot | null>(() => {
   if (!researchEnabled.value) return null;
   const sid = rawState.activeSessionId;

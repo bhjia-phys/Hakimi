@@ -61,6 +61,7 @@ export const SESSIONS_INITIAL_PAGE_SIZE = 5;
 const PROMPT_NOT_FOUND_CODE = 40402;
 const WORKSPACE_NOT_FOUND_CODE = 40410;
 const VALIDATION_FAILED_CODE = 40001;
+const RESEARCH_UNAVAILABLE = Symbol('research-unavailable');
 // Shared "already resolved" conflict (40902). The daemon reuses it for both
 // approvals and questions when a second client races the resolve, so a
 // duplicate submit is reported as a conflict even though the desired end
@@ -375,7 +376,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     void loadGitStatus(sessionId);
     void refreshSessionStatus(sessionId);
     void refreshSessionGoal(sessionId);
-    void refreshSessionResearch(sessionId);
+    if (rawState.backend === 'v2') void refreshSessionResearch(sessionId);
     if (!Object.prototype.hasOwnProperty.call(modelProvider.skillsBySession.value, sessionId)) {
       void modelProvider.loadSkillsForSession(sessionId);
     }
@@ -2376,7 +2377,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   async function refreshResearchById(
     sessionId: string,
   ): Promise<ResearchStatusSnapshot | null> {
-    if (rawState.experimentalFlags['aitp_research_mode'] !== true) return null;
+    if (rawState.backend !== 'v2') return null;
     return refreshSessionResearch(sessionId);
   }
 
@@ -2390,26 +2391,21 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     sessionId: string,
     command: ResearchCommand,
   ): Promise<ResearchStatusSnapshot | null> {
-    if (rawState.experimentalFlags['aitp_research_mode'] !== true) return null;
+    if (rawState.backend !== 'v2') return null;
     try {
       // The coordinator serializes same-session POSTs and blocks sidecar GETs
       // behind the full mutation queue. The resolved value is exactly the
       // authoritative snapshot that won the response/live-event race.
-      return await researchRequests.mutate(
-        rawState,
-        sessionId,
-        () => {
-          if (rawState.experimentalFlags['aitp_research_mode'] !== true) {
-            return Promise.reject(new Error('Research disabled'));
-          }
-          return getKimiWebApi().commandSessionResearch(sessionId, command);
-        },
-      );
+      return await researchRequests.mutate(rawState, sessionId, () => {
+        if (rawState.backend !== 'v2') return Promise.reject(RESEARCH_UNAVAILABLE);
+        return getKimiWebApi().commandSessionResearch(sessionId, command);
+      });
     } catch (err) {
+      if (err === RESEARCH_UNAVAILABLE) return null;
       if (isDaemonApiError(err) && err.code === VALIDATION_FAILED_CODE) {
         // Validation includes stale expectedRevision. Re-read the same session;
         // an active-session switch must never redirect this recovery request.
-        await refreshSessionResearch(sessionId);
+        await refreshResearchById(sessionId);
       }
       pushOperationFailure('commandResearch', err, { sessionId });
       return null;
