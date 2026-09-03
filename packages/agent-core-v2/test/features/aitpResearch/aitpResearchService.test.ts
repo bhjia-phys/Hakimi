@@ -2617,6 +2617,44 @@ describe('Goal display projection', () => {
     });
   });
 
+  it('classifies a pending checkpoint from an older question revision as historical', async () => {
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(
+      wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true, phase: 'ready' }), makeStubAdapter(), makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('active')),
+    );
+    svc.createLine({ slug: 'main', title: 'Main' });
+    const question = svc.createQuestion({ lineSlug: 'main', wording: 'Which bounded result survives?' });
+    svc.setFocus(question.id);
+    wire.dispatch(researchProposeCheckpoint({
+      checkpointId: 'checkpoint-historical',
+      questionId: question.id,
+      lineSlug: 'main',
+      idempotencyKey: 'checkpoint-historical-key',
+      createdAt: 3,
+    }));
+    svc.updateQuestion({ questionId: question.id, assessment: 'Newer evidence supersedes the proposal.' });
+
+    const snapshot = svc.getSnapshot();
+    expect(snapshot.pendingCheckpoint).toMatchObject({
+      checkpointId: 'checkpoint-historical',
+      questionRevision: 2,
+    });
+    expect(snapshot.currentQuestion?.revision).toBe(3);
+    expect(snapshot.effectiveNextStep).toMatchObject({
+      source: 'aitp_maintenance',
+      freshness: 'blocked',
+      text: expect.stringContaining('Historical checkpoint checkpoint-historical'),
+    });
+    expect(snapshot.effectiveNextStep?.text).toContain('do not commit it as current evidence');
+    expect(snapshot.researchGoal?.persistenceGuards.find(
+      (guard) => guard.code === 'research.checkpoint.pending',
+    )?.reason).toContain('current revision is 3');
+    expect(snapshot.status?.attention.filter((message) =>
+      message.includes('Historical checkpoint checkpoint-historical'))).toHaveLength(1);
+
+  });
+
   it('confirms explicitly different Goal and Program text, then detects goal and topic staleness', async () => {
     let currentGoal: GoalSnapshot | null = makeGoalSnapshot('active', 3, { objective: 'Deliver the parent project goal.' });
     const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
@@ -8703,7 +8741,6 @@ describe('injection Brief/Detail and scientific content', () => {
     const modeSvc = await buildRealModeService();
     const researchSvc = await buildRealResearchService(modeSvc);
     await modeSvc.enter({ actor: 'user' });
-    researchSvc.setPhase('action_planned');
 
     const { AitpResearchInjection } = await import('#/features/aitpResearch/injection/aitpResearchInjection');
     const providers = captureProviders();
@@ -8973,6 +9010,32 @@ describe('ResearchLoopCoordinator', () => {
 
     turnStarted(1, GOAL_CONTINUATION_ORIGIN);
     expect(researchSvc.getSnapshot().revision).toBe(revisionAfterFirst);
+  });
+
+  it('reconciles stranded action structure before the admitted turn is projected', async () => {
+    const { researchSvc } = await buildCoordinatorHarness();
+    researchSvc.setPhase('orienting');
+    researchSvc.setPhase('gap_analysis');
+    const action = researchSvc.planAndStartAction({
+      actionId: 'action-before-answer',
+      kind: 'other',
+      purpose: 'Classify the bounded legacy state',
+      stopCondition: 'The current action is resolved from evidence.',
+    });
+    const restored = wire.getModel(ResearchModel).current as unknown as {
+      phase: 'gap_analysis';
+    };
+    restored.phase = 'gap_analysis';
+
+    turnStarted(1, GOAL_CONTINUATION_ORIGIN);
+
+    expect(researchSvc.getSnapshot()).toMatchObject({
+      phase: 'action_executing',
+      currentAction: { actionId: action.actionId, status: 'in_progress' },
+      recentStateChange: {
+        summary: expect.stringContaining('[research-action-recovery]'),
+      },
+    });
   });
 
   it('turn.ended refreshes maintenance without changing or completing the action', async () => {

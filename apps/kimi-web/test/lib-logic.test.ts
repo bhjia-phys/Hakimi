@@ -8,7 +8,9 @@ import { parseDiff } from '../src/lib/parseDiff';
 import { researchProgressSummaries } from '../src/lib/researchProgress';
 import {
   buildResearchBoardCompactSlots,
+  isResearchCheckpointHistorical,
   presentResearchAlertClassification,
+  presentResearchAitpAdapterCapabilities,
   presentResearchWorkstreamBinding,
   selectResearchBoardExpandedRecord,
 } from '../src/lib/researchBoardPresentation';
@@ -1467,8 +1469,57 @@ describe('research board compact presentation', () => {
       source: 'goal_continuation',
       owner: 'aitpResearch',
       text: 'A research checkpoint is pending commit.',
-      additionalCount: 2,
+      additionalCount: 1,
     });
+  });
+
+  it('labels older-revision checkpoints as historical and preserves the core cleanup step', () => {
+    const currentQuestion = question({
+      id: 'question_current',
+      lineSlug: 'main',
+      revision: 3,
+    });
+    const input = snapshot({
+      currentLineSlug: 'main',
+      currentQuestion,
+      currentFocus: { questionId: currentQuestion.id, revision: 3 },
+      questions: [currentQuestion],
+      pendingCheckpoint: {
+        checkpointId: 'checkpoint_historical',
+        questionId: currentQuestion.id,
+        questionRevision: 2,
+        lineSlug: 'main',
+        idempotencyKey: 'checkpoint_historical_key',
+        persistence: 'pending_commit',
+        createdAt: 2,
+      },
+      effectiveNextStep: {
+        text: 'Historical checkpoint checkpoint_historical was proposed for question revision 2, but the current revision is 3; do not commit it as current evidence. Explicitly undo its proposal before automatic continuation.',
+        source: 'aitp_maintenance',
+        freshness: 'blocked',
+        observedAt: 2,
+        derivedFrom: { questionId: currentQuestion.id, lineSlug: 'main' },
+      },
+    });
+
+    expect(isResearchCheckpointHistorical(input)).toBe(true);
+    expect(buildResearchBoardCompactSlots(input).find((slot) => slot.kind === 'attention'))
+      .toMatchObject({
+        source: 'checkpoint',
+        text: expect.stringContaining('do not commit it as current evidence'),
+      });
+  });
+
+  it('separates AITP read readiness from atomic checkpoint-write capability', () => {
+    expect(presentResearchAitpAdapterCapabilities(snapshot({
+      aitpHealth: { phase: 'ready', contractVersion: '0.1' },
+    }))).toEqual({ read: 'ready', checkpointWrite: 'unavailable' });
+    expect(presentResearchAitpAdapterCapabilities(snapshot({
+      aitpHealth: { phase: 'ready', contractVersion: '0.2' },
+    }))).toEqual({ read: 'ready', checkpointWrite: 'ready' });
+    expect(presentResearchAitpAdapterCapabilities(snapshot({
+      aitpHealth: { phase: 'degraded', contractVersion: '0.2' },
+    }))).toEqual({ read: 'degraded_available', checkpointWrite: 'unavailable' });
   });
 
   it('prioritizes an unresolved human gate over Goal alignment and alerts', () => {

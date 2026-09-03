@@ -138,6 +138,16 @@ checkpoint、Goal–Program alignment，最后才是普通 question 或 maintena
 条原子投影；TUI 和 Web 不再把本地覆盖的文字与另一条 Next 的 metadata
 拼在一起。
 
+每个被准入的 Research turn 都会在模型上下文注入前，由共享 coordinator
+执行一次确定性的本地对账。它只能修复可机械判定的 Line、Action/phase、
+period、已提交 cursor 和 alert 结构；不会额外运行一次 AITP maintenance、
+推断科研结论、完成或放弃 Action，也不会替用户处理 checkpoint。若 pending
+checkpoint 捕获的 Question revision 早于当前 revision，Board 会把它标为历史
+提案并明确禁止作为当前证据提交；在显式 undo 该提案前，它仍会 hold 自动
+continuation。紧凑 Board 对同一阻塞原因只计数一次，完整记录仍保留在展开态
+各自所属的区域中。展开态 adapter health 还会把读取就绪与
+adapter-contract-0.2 的 scoped checkpoint 写入能力分开显示。
+
 模式、循环、问题、焦点和检查点变化会向两个 surface 发布一个完整快照。TUI 会拒绝 stale cold hydration；Web 会串行处理同一 session 的 mutation，并阻止较旧的 HTTP response 覆盖更新的 live WebSocket update。
 
 切换 Line 是显式的 cycle boundary。存在 foreground Action/Run、pending

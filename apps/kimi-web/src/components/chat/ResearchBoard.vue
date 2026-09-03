@@ -13,7 +13,9 @@ import type {
 } from '../../api/types';
 import {
   buildResearchBoardCompactSlots,
+  isResearchCheckpointHistorical,
   presentResearchAlertClassification,
+  presentResearchAitpAdapterCapabilities,
   presentResearchWorkstreamBinding,
   selectResearchBoardExpandedRecord,
   type ResearchBoardAttentionSlot,
@@ -59,6 +61,20 @@ const displayGoal = computed(() => {
 const researchGoalBlockers = computed(() =>
   props.snapshot.researchGoal?.persistenceGuards.filter((guard) => guard.status === 'blocked') ?? [],
 );
+const adapterCapabilities = computed(() =>
+  presentResearchAitpAdapterCapabilities(props.snapshot),
+);
+const pendingCheckpointHistorical = computed(() =>
+  isResearchCheckpointHistorical(props.snapshot),
+);
+const pendingCheckpointQuestion = computed(() => {
+  const questionId = props.snapshot.pendingCheckpoint?.questionId;
+  if (questionId === undefined) return undefined;
+  return props.snapshot.questions.find((question) => question.id === questionId)
+    ?? (props.snapshot.currentQuestion?.id === questionId
+      ? props.snapshot.currentQuestion
+      : undefined);
+});
 
 watch(
   () => props.forceExpanded,
@@ -326,6 +342,15 @@ function checkpointReceiptLines(
 
 function isFocusedQuestion(question: ResearchQuestion): boolean {
   return question.id === focusedQuestion.value?.id;
+}
+
+function lineAssessmentLabel(lineSlug: string, assessment: string): string {
+  const questionAssessment = lineSlug === props.snapshot.currentLineSlug
+    ? focusedQuestion.value?.assessment?.trim()
+    : undefined;
+  return questionAssessment !== undefined && questionAssessment !== assessment.trim()
+    ? t('research.lineLevelContext')
+    : t('research.assessment');
 }
 </script>
 
@@ -608,7 +633,7 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
               </span>
               <span v-if="researchGoalBlockers.length" class="research-inline-meta">
                 <strong>{{ t('research.persistenceGuards') }}:</strong>
-                <span v-for="guard in researchGoalBlockers" :key="guard.code">{{ guard.reason }}</span>
+                <span>{{ t('research.blockedGuardCount', { count: researchGoalBlockers.length }) }}</span>
               </span>
             </dd>
           </div>
@@ -759,17 +784,6 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
               <span v-if="expandedRecord.status.currentActionId">
                 <strong>{{ t('research.actionId') }}:</strong>
                 <code>{{ expandedRecord.status.currentActionId }}</code>
-              </span>
-              <span v-if="expandedRecord.status.nextStep">
-                <strong>{{ t('research.nextAction') }}:</strong>
-                {{ expandedRecord.status.nextStep }}
-              </span>
-              <span
-                v-for="(attention, index) in expandedRecord.status.attention"
-                :key="index"
-              >
-                <strong>{{ t('research.attention') }}:</strong>
-                {{ attention }}
               </span>
             </dd>
           </div>
@@ -1172,7 +1186,10 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
                 <code>{{ line.slug }}</code>
               </div>
               <p v-if="line.objective"><strong>{{ t('research.objective') }}:</strong> {{ line.objective }}</p>
-              <p v-if="line.assessment" class="research-muted">{{ line.assessment }}</p>
+              <p v-if="line.assessment" class="research-muted">
+                <strong>{{ lineAssessmentLabel(line.slug, line.assessment) }}:</strong>
+                {{ line.assessment }}
+              </p>
               <p class="research-muted">
                 {{ t('research.revision', { count: line.revision }) }}
                 · {{ t('research.createdAt') }} {{ formatTimestamp(line.createdAt) }}
@@ -1329,11 +1346,19 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
             <h5>{{ t('research.checkpoints') }}</h5>
             <dl class="research-fields">
               <div class="research-field">
-                <dt>{{ t('research.pendingCheckpoint') }}</dt>
+                <dt>{{ pendingCheckpointHistorical ? t('research.historicalCheckpoint') : t('research.pendingCheckpoint') }}</dt>
                 <dd v-if="snapshot.pendingCheckpoint">
                   <span class="research-inline-meta">
                     <code>{{ snapshot.pendingCheckpoint.checkpointId }}</code>
-                    <Badge size="sm">{{ t('research.persistence.' + snapshot.pendingCheckpoint.persistence) }}</Badge>
+                    <Badge size="sm" :variant="pendingCheckpointHistorical ? 'warning' : 'neutral'">
+                      {{ t('research.persistence.' + snapshot.pendingCheckpoint.persistence) }}
+                    </Badge>
+                  </span>
+                  <span v-if="pendingCheckpointHistorical" class="research-muted">
+                    {{ t('research.historicalCheckpointWarning', {
+                      captured: snapshot.pendingCheckpoint.questionRevision,
+                      current: pendingCheckpointQuestion?.revision,
+                    }) }}
                   </span>
                   <span v-if="snapshot.pendingCheckpoint.committedEntryId">
                     <strong>{{ t('research.committedEntryId') }}:</strong>
@@ -1440,6 +1465,22 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
                       {{ t('research.phase.' + snapshot.aitpHealth.phase) }}
                     </Badge>
                     <span v-if="snapshot.aitpHealth.notInitialized">{{ t('research.notInitialized') }}</span>
+                  </span>
+                  <span class="research-inline-meta">
+                    <strong>{{ t('research.adapterReadCapability') }}:</strong>
+                    <Badge size="sm" :variant="adapterCapabilities.read === 'ready' ? 'success' : 'warning'">
+                      {{ t('research.capabilityStatus.' + adapterCapabilities.read) }}
+                    </Badge>
+                    <strong>{{ t('research.adapterCheckpointWriteCapability') }}:</strong>
+                    <Badge size="sm" :variant="adapterCapabilities.checkpointWrite === 'ready' ? 'success' : 'warning'">
+                      {{ t('research.capabilityStatus.' + adapterCapabilities.checkpointWrite) }}
+                    </Badge>
+                  </span>
+                  <span
+                    v-if="snapshot.aitpHealth.phase === 'ready' && adapterCapabilities.checkpointWrite === 'unavailable'"
+                    class="research-muted"
+                  >
+                    {{ t('research.checkpointWriteRequiresContract') }}
                   </span>
                   <span v-if="snapshot.aitpHealth.contractVersion">{{ t('research.contractVersion') }} {{ snapshot.aitpHealth.contractVersion }}</span>
                   <span v-if="snapshot.aitpHealth.pluginVersion">{{ t('research.pluginVersion') }} {{ snapshot.aitpHealth.pluginVersion }}</span>

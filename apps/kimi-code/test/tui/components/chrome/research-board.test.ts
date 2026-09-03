@@ -1657,8 +1657,7 @@ describe('ResearchBoardComponent', () => {
     expect(expandedOutput).toContain('Goal status: active · continuation held');
     expect(expandedOutput).toContain('Continuation: held by aitpResearch · A research checkpoint is pending commit.');
     expect(expandedOutput).toContain('Research scope: program topic-example · line test-line · question q1');
-    expect(expandedOutput).toContain('Persistence blockers:');
-    expect(expandedOutput).toContain('A research checkpoint is pending commit.');
+    expect(expandedOutput).toContain('Persistence guards: 1 blocked');
   });
 
   it('labels an active legacy Goal without continuation instead of inventing a state', () => {
@@ -1679,6 +1678,84 @@ describe('ResearchBoardComponent', () => {
     board.setExpanded(true);
     const expanded = board.render(160).map(stripAnsi).join('\n');
     expect(expanded).toContain('Continuation: unavailable (legacy snapshot)');
+  });
+
+  it('labels an older-revision checkpoint as historical and unsafe to commit', () => {
+    const board = new ResearchBoardComponent();
+    const currentQuestion = {
+      ...makeSnapshot().currentQuestion!,
+      revision: 3,
+    };
+    board.setSnapshot(makeSnapshot({
+      currentQuestion,
+      questions: [currentQuestion],
+      pendingCheckpoint: {
+        checkpointId: 'checkpoint-historical',
+        questionId: currentQuestion.id,
+        questionRevision: 2,
+        lineSlug: currentQuestion.lineSlug,
+        idempotencyKey: 'checkpoint-historical-key',
+        persistence: 'pending_commit',
+        createdAt: 2,
+      },
+      effectiveNextStep: {
+        text: 'Historical checkpoint checkpoint-historical was proposed for question revision 2, but the current revision is 3; do not commit it as current evidence. Explicitly undo its proposal before automatic continuation.',
+        source: 'aitp_maintenance',
+        freshness: 'blocked',
+        observedAt: 2,
+        derivedFrom: { questionId: currentQuestion.id, lineSlug: currentQuestion.lineSlug },
+      },
+    }));
+
+    const compact = board.render(220).map(stripAnsi).join('\n');
+    expect(compact).toContain('Historical checkpoint requires cleanup');
+    expect(compact).toContain('do not commit it as current evidence');
+
+    board.setExpanded(true);
+    const expanded = board.render(220).map(stripAnsi).join('\n');
+    expect(expanded).toContain('Historical pending: checkpoint-historical');
+    expect(expanded).toContain('captured question revision 2; current revision 3');
+  });
+
+  it('separates AITP read readiness from scoped checkpoint-write capability', () => {
+    const board = new ResearchBoardComponent();
+    board.setSnapshot(makeSnapshot({
+      aitpHealth: { phase: 'ready', contractVersion: '0.1', pluginVersion: '0.8.0' },
+    }));
+    board.setExpanded(true);
+
+    const oldContract = board.render(180).map(stripAnsi).join('\n');
+    expect(oldContract).toContain('AITP adapter · read ready · checkpoint write unavailable');
+    expect(oldContract).toContain('contract 0.1');
+
+    board.setSnapshot(makeSnapshot({
+      aitpHealth: { phase: 'ready', contractVersion: '0.2', pluginVersion: '0.9.0' },
+    }));
+    const atomicContract = board.render(180).map(stripAnsi).join('\n');
+    expect(atomicContract).toContain('AITP adapter · read ready · checkpoint write ready');
+  });
+
+  it('labels a distinct Line assessment as broader context for the current Question', () => {
+    const board = new ResearchBoardComponent();
+    board.setSnapshot(makeSnapshot({
+      lines: [{
+        slug: 'test-line',
+        title: 'Current Line',
+        assessment: 'Earlier line-wide summary.',
+        status: 'active',
+        createdAt: 1,
+        revision: 2,
+      }],
+      currentQuestion: {
+        ...makeSnapshot().currentQuestion!,
+        assessment: 'Current focused-question assessment.',
+      },
+    }));
+    board.setExpanded(true);
+
+    const output = board.render(180).map(stripAnsi).join('\n');
+    expect(output).toContain('Assessment: Current focused-question assessment.');
+    expect(output).toContain('Line-level context: Earlier line-wide summary.');
   });
 
   it('keeps another Line action, run, gate, and next step out of compact output', () => {

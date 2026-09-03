@@ -25,7 +25,10 @@
  * `reconcile()` lifecycle hook, invoked only on a direct mutation (via
  * `publishResearchUpdated`), a maintenance receipt update
  * (`coordinator.onDidUpdate`), a commit barrier, a wire restore, or a
- * conversation undo (`context.undone`). The
+ * conversation undo (`context.undone`), or the admitted Research turn boundary
+ * immediately before context injection. The turn-boundary pass only repairs
+ * mechanically determined structure; it never infers scientific completion,
+ * abandons an action, resolves a checkpoint, or writes AITP. The
  * scientific state layer (plan/start/complete/record/set-phase/request/resolve-gate)
  * and typed subagent evidence review performs pre-dispatch validation (throws on invalid transitions, missing
  * actions, wrong action status, or mismatched gates) while the wire ops themselves are no-ops
@@ -1200,10 +1203,16 @@ export class AgentResearchService extends Service implements IAgentResearchServi
 
   noteLoopBoundary(): void {
     if (this.scopeCtx.agentId !== MAIN_AGENT_ID) return;
-    const modeState = this.wire.getModel(AitpModeModel).current;
-    if (!this.mode.isActive || modeState.currentLineSlug === undefined) return;
+    if (!this.mode.isActive) return;
+    const beforeRevision = this.wire.getModel(ResearchModel).current.revision;
+    // This is the shared pre-answer reconciliation point for every admitted
+    // Research turn. Keep it deterministic and local: external AITP refreshes
+    // remain at lifecycle boundaries and changed turn ends.
+    this.reconcile();
+    const reconciledModeState = this.wire.getModel(AitpModeModel).current;
+    if (reconciledModeState.currentLineSlug === undefined) return;
     const state = this.wire.getModel(ResearchModel).current;
-    const line = modeState.currentLineSlug;
+    const line = reconciledModeState.currentLineSlug;
     const open = state.period;
     if (open === null || open.lineSlug !== line || open.endedAt !== undefined) {
       this.wire.dispatch(
@@ -1225,7 +1234,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         }),
       );
     }
-    if (this.wire.getModel(ResearchModel).current.revision !== state.revision) {
+    if (this.wire.getModel(ResearchModel).current.revision !== beforeRevision) {
       this.publishResearchUpdated();
     }
   }
@@ -3796,13 +3805,22 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     if (!this.mode.isActive) return { allow: true };
     const pending = this.getPendingCheckpoint();
     if (pending !== null) {
+      const questions = this.getQuestions();
+      const historical = isHistoricalCheckpoint(pending, questions);
+      const checkpointBlocker = historical
+        ? pendingCheckpointBlockerText(
+            pending,
+            checkpointQuestionFor(pending, questions),
+          )
+        : 'a research checkpoint is pending commit. Commit it or undo its proposal before completing the goal.';
       return {
         allow: false,
         owner: 'aitpResearch',
         code: 'research.checkpoint.pending',
-        reason:
-          'Goal completion is blocked: a research checkpoint is pending commit. Commit it or undo its proposal before completing the goal.',
-        nextStep: 'CommitResearchCheckpoint',
+        reason: `Goal completion is blocked: ${checkpointBlocker}`,
+        nextStep: historical
+          ? 'Undo'
+          : 'CommitResearchCheckpoint',
       };
     }
     if (this.mode.phase === 'degraded') {
@@ -3892,11 +3910,16 @@ export class AgentResearchService extends Service implements IAgentResearchServi
           `Research Mode is ${this.mode.phase}. Wait for a ready Research Mode state before continuing the goal automatically.`,
       };
     }
-    if (this.getPendingCheckpoint() !== null) {
+    const pending = this.getPendingCheckpoint();
+    if (pending !== null) {
+      const questions = this.getQuestions();
+      const checkpointQuestion = checkpointQuestionFor(pending, questions);
       return {
         decision: 'hold',
         owner: 'aitpResearch',
-        reason: 'A research checkpoint is pending commit. Commit it or undo its proposal before continuing the goal automatically.',
+        reason: isHistoricalCheckpoint(pending, questions)
+          ? pendingCheckpointBlockerText(pending, checkpointQuestion)
+          : 'A research checkpoint is pending commit. Commit it or undo its proposal before continuing the goal automatically.',
       };
     }
     const humanGate = this.wire.getModel(ResearchModel).current.humanGate;
@@ -4273,6 +4296,12 @@ function deriveResearchGoalProjection(
   },
 ): ResearchGoalProjection {
   const applicability = input.modeActive ? undefined : 'Research Mode is inactive.';
+  const pendingCheckpoint = input.state.pendingCheckpoint === null
+    ? undefined
+    : toCheckpoint(input.state.pendingCheckpoint);
+  const checkpointQuestion = pendingCheckpoint?.questionId === undefined
+    ? undefined
+    : input.state.questions[pendingCheckpoint.questionId];
   const persistenceGuards: ResearchGoalProjection['persistenceGuards'] = [
     {
       code: 'research.checkpoint.pending',
@@ -4282,9 +4311,9 @@ function deriveResearchGoalProjection(
           ? 'clear'
           : 'blocked',
       reason: applicability
-        ?? (input.state.pendingCheckpoint === null
+        ?? (pendingCheckpoint === undefined
           ? 'No research checkpoint is pending commit.'
-          : 'A research checkpoint is pending commit.'),
+          : pendingCheckpointBlockerText(pendingCheckpoint, checkpointQuestion)),
     },
     {
       code: `research.mode.${input.modePhase}`,
@@ -4554,7 +4583,38 @@ function actionRecoveryStep(input: {
   };
 }
 
-function pendingCheckpointBlockerText(checkpoint: ResearchCheckpoint): string {
+type CheckpointQuestionRevision = Pick<ResearchQuestion, 'id' | 'revision'>;
+
+function checkpointQuestionFor(
+  checkpoint: ResearchCheckpoint,
+  questions: readonly CheckpointQuestionRevision[],
+): CheckpointQuestionRevision | undefined {
+  if (checkpoint.questionId === undefined) return undefined;
+  return questions.find((question) => question.id === checkpoint.questionId);
+}
+
+function isHistoricalCheckpoint(
+  checkpoint: ResearchCheckpoint,
+  questions: readonly CheckpointQuestionRevision[],
+): boolean {
+  const question = checkpointQuestionFor(checkpoint, questions);
+  return checkpoint.questionRevision !== undefined &&
+    question !== undefined &&
+    checkpoint.questionRevision !== question.revision;
+}
+
+function pendingCheckpointBlockerText(
+  checkpoint: ResearchCheckpoint,
+  question?: CheckpointQuestionRevision,
+): string {
+  if (
+    checkpoint.questionRevision !== undefined &&
+    question !== undefined &&
+    question.id === checkpoint.questionId &&
+    checkpoint.questionRevision !== question.revision
+  ) {
+    return `Historical checkpoint ${checkpoint.checkpointId} was proposed for question revision ${String(checkpoint.questionRevision)}, but the current revision is ${String(question.revision)}; do not commit it as current evidence. Explicitly undo its proposal before automatic continuation.`;
+  }
   return `Checkpoint ${checkpoint.checkpointId} is pending durable commit; commit it or undo its proposal before automatic continuation.`;
 }
 
@@ -4658,7 +4718,7 @@ function deriveEffectiveNextStep(input: {
   const checkpoint = input.pendingCheckpoint;
   if (checkpoint !== undefined) {
     return {
-      text: pendingCheckpointBlockerText(checkpoint),
+      text: pendingCheckpointBlockerText(checkpoint, input.currentQuestion),
       source: 'aitp_maintenance',
       freshness: 'blocked',
       observedAt: checkpoint.createdAt,
@@ -4805,19 +4865,22 @@ function deriveStatusProjection(input: {
     ? [input.effectiveNextStep.text]
     : [];
   const checkpointAttention = checkpointBlocked && input.pendingCheckpoint !== undefined
-    ? [pendingCheckpointBlockerText(input.pendingCheckpoint)]
+    ? [pendingCheckpointBlockerText(
+        input.pendingCheckpoint,
+        checkpointQuestionFor(input.pendingCheckpoint, Object.values(input.questions)),
+      )]
     : [];
   const alignmentAttention = alignmentBlocked && input.goalAlignment !== undefined
     ? [goalAlignmentBlockerText(input.goalAlignment)]
     : [];
-  const attention = [
+  const attention = deduplicateAttention([
     ...recoveryAttention,
     ...checkpointAttention,
     ...alignmentAttention,
     ...bindingAttention,
     ...distillationAttentionText(input.distillationAttention),
     ...attentionAlerts.map((alert) => alert.message),
-  ];
+  ]);
   return {
     currentLineSlug: input.currentLineSlug,
     currentQuestionId,
@@ -4827,6 +4890,16 @@ function deriveStatusProjection(input: {
     health,
     attention,
   };
+}
+
+function deduplicateAttention(messages: readonly string[]): readonly string[] {
+  const seen = new Set<string>();
+  return messages.filter((message) => {
+    const identity = message.replaceAll(/\s+/gu, ' ').trim().toLocaleLowerCase('en-US');
+    if (identity.length === 0 || seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
 }
 
 function distillationAttentionText(

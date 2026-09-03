@@ -142,6 +142,19 @@ text, source, freshness, timestamp, and provenance are one atomic projection;
 TUI and Web do not combine a locally overridden text with metadata from a
 different next step.
 
+Immediately before context injection for every admitted Research turn, the
+shared coordinator runs one deterministic local reconciliation pass. It can
+repair only mechanically determined Line, Action/phase, period, committed-cursor,
+and alert structure; it does not run another AITP maintenance cycle, infer a
+scientific outcome, complete or abandon an Action, or resolve a checkpoint. A
+pending checkpoint whose captured Question revision is older than the current
+Question is shown as historical and unsafe to commit as current evidence. It
+continues to hold autonomous continuation until its proposal is explicitly
+undone. Duplicate blocker causes are counted once in the compact Board, while
+their full records remain in the owning expanded sections. Expanded adapter
+health reports read readiness separately from adapter-contract-0.2 scoped
+checkpoint-write capability.
+
 Mode, loop, question, focus, and checkpoint changes publish one complete snapshot to both surfaces. TUI rejects stale cold hydration; Web serializes same-session mutations and prevents an older HTTP response from overwriting a newer live WebSocket update.
 
 Line changes are an explicit cycle boundary. Hakimi rejects a switch while a

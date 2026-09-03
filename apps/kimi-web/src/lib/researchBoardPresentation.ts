@@ -177,6 +177,41 @@ export interface ResearchBoardExpandedRecord {
   distillationAttention: ResearchStatusSnapshot['distillationAttention'];
 }
 
+export interface ResearchAitpAdapterCapabilities {
+  read: 'ready' | 'degraded_available' | 'unavailable';
+  checkpointWrite: 'ready' | 'unavailable';
+}
+
+export function presentResearchAitpAdapterCapabilities(
+  snapshot: ResearchStatusSnapshot,
+): ResearchAitpAdapterCapabilities {
+  return {
+    read: snapshot.aitpHealth.phase === 'ready'
+      ? 'ready'
+      : snapshot.aitpHealth.phase === 'degraded'
+        ? 'degraded_available'
+        : 'unavailable',
+    checkpointWrite:
+      snapshot.aitpHealth.phase === 'ready' && snapshot.aitpHealth.contractVersion === '0.2'
+        ? 'ready'
+        : 'unavailable',
+  };
+}
+
+export function isResearchCheckpointHistorical(
+  snapshot: ResearchStatusSnapshot,
+): boolean {
+  const checkpoint = snapshot.pendingCheckpoint;
+  if (checkpoint?.questionId === undefined || checkpoint.questionRevision === undefined) {
+    return false;
+  }
+  const question = snapshot.questions.find((candidate) => candidate.id === checkpoint.questionId)
+    ?? (snapshot.currentQuestion?.id === checkpoint.questionId
+      ? snapshot.currentQuestion
+      : undefined);
+  return question !== undefined && question.revision !== checkpoint.questionRevision;
+}
+
 function presentText(value: string | undefined): string | undefined {
   const text = value?.trim();
   return text === '' ? undefined : text;
@@ -323,38 +358,69 @@ function attentionSlot(
   snapshot: ResearchStatusSnapshot,
 ): ResearchBoardAttentionSlot | undefined {
   const candidates: ResearchBoardAttentionValue[] = [];
+  const causeKeys = new Set<string>();
+  const messages = new Set<string>();
+  const pushCandidate = (candidate: ResearchBoardAttentionValue, causeKey: string): void => {
+    const message = candidate.text.trim().replaceAll(/\s+/gu, ' ').toLocaleLowerCase('en-US');
+    if (causeKeys.has(causeKey) || messages.has(message)) return;
+    causeKeys.add(causeKey);
+    messages.add(message);
+    candidates.push(candidate);
+  };
   const continuationGoal = snapshot.researchGoal ?? snapshot.goalSummary;
   const continuation = continuationGoal?.continuation;
   if (continuationGoal?.status === 'active' && continuation?.state === 'held') {
-    const text = presentText(continuation.reason) ?? 'Automatic continuation is held.';
-    candidates.push({
+    const recordedText = presentText(continuation.reason) ?? 'Automatic continuation is held.';
+    const checkpoint = snapshot.pendingCheckpoint;
+    const projected = currentEffectiveNextStep(snapshot);
+    const text = checkpoint !== undefined &&
+        isResearchCheckpointHistorical(snapshot) &&
+        /checkpoint/iu.test(recordedText) &&
+        projected?.source === 'aitp_maintenance' &&
+        projected.text.includes(checkpoint.checkpointId)
+      ? projected.text
+      : recordedText;
+    const causeKey = snapshot.pendingCheckpoint !== undefined && /checkpoint/iu.test(text)
+      ? 'checkpoint'
+      : snapshot.goalAlignment?.status !== 'aligned' && /alignment|program/iu.test(text)
+        ? 'alignment'
+        : 'goal_continuation';
+    pushCandidate({
       source: 'goal_continuation',
       text,
       ...(continuation.owner === undefined ? {} : { owner: continuation.owner }),
-    });
+    }, causeKey);
   }
   const humanGate = currentHumanGate(snapshot);
   const humanGateText = humanGate?.resolvedAt === undefined
     ? presentText(humanGate?.prompt)
     : undefined;
   if (humanGateText !== undefined) {
-    candidates.push({ source: 'human_gate', text: humanGateText });
+    pushCandidate({ source: 'human_gate', text: humanGateText }, 'human_gate');
   }
   if (actionNeedsRecovery(snapshot)) {
     const action = currentAction(snapshot)!;
     const projected = currentEffectiveNextStep(snapshot);
-    candidates.push({
+    pushCandidate({
       source: 'action_recovery',
       text: projected?.source === 'research_action' && projected.freshness === 'blocked'
         ? projected.text
         : `Action ${action.actionId} is ${action.status} while the Research phase is ${snapshot.phase}; conclude or abandon it before starting another action.`,
-    });
+    }, 'action_recovery');
   }
   if (snapshot.pendingCheckpoint !== undefined) {
-    candidates.push({
+    const projected = currentEffectiveNextStep(snapshot);
+    const historical = isResearchCheckpointHistorical(snapshot);
+    pushCandidate({
       source: 'checkpoint',
-      text: `Checkpoint ${snapshot.pendingCheckpoint.checkpointId} must be committed or its proposal undone before automatic continuation.`,
-    });
+      text: projected?.source === 'aitp_maintenance' &&
+          projected.freshness === 'blocked' &&
+          projected.text.includes(snapshot.pendingCheckpoint.checkpointId)
+        ? projected.text
+        : historical
+          ? `Historical checkpoint ${snapshot.pendingCheckpoint.checkpointId} belongs to an older question revision; do not commit it as current evidence. Explicitly undo its proposal before automatic continuation.`
+          : `Checkpoint ${snapshot.pendingCheckpoint.checkpointId} must be committed or its proposal undone before automatic continuation.`,
+    }, 'checkpoint');
   }
   const goalAlignment = snapshot.goalAlignment;
   if (
@@ -362,14 +428,14 @@ function attentionSlot(
     && goalAlignment !== undefined
     && goalAlignment.status !== 'aligned'
   ) {
-    candidates.push({ source: 'alignment', text: goalAlignment.reason });
+    pushCandidate({ source: 'alignment', text: goalAlignment.reason }, 'alignment');
   }
   const distillation = snapshot.distillationAttention;
   if (distillation?.status === 'handoff_unavailable') {
-    candidates.push({
+    pushCandidate({
       source: 'distillation',
       text: `Entry ${distillation.entryId}: ${distillation.reason}`,
-    });
+    }, 'distillation');
   }
 
   const activeAlerts = snapshot.alerts
@@ -395,37 +461,55 @@ function attentionSlot(
   for (const alert of currentBlockers) {
     const text = presentText(alert.message);
     if (text !== undefined) {
-      candidates.push({ source: 'alert', text, alertKind: alert.kind });
+      pushCandidate(
+        { source: 'alert', text, alertKind: alert.kind },
+        `alert:${alert.fingerprint}`,
+      );
     }
   }
 
   const degradedReason = snapshot.aitpMaintenance?.degradedReason;
   if (degradedReason !== undefined) {
-    candidates.push({ source: 'maintenance', text: degradedReason });
+    pushCandidate({ source: 'maintenance', text: degradedReason }, `maintenance:${degradedReason}`);
   }
 
   for (const alert of activeAlerts) {
     if (presentResearchAlertClassification(alert) === 'active_blocker') continue;
     const text = presentText(alert.message);
     if (text !== undefined) {
-      candidates.push({ source: 'alert', text, alertKind: alert.kind });
+      pushCandidate(
+        { source: 'alert', text, alertKind: alert.kind },
+        `alert:${alert.fingerprint}`,
+      );
     }
   }
 
   const adapterError = presentText(snapshot.aitpHealth.lastError);
   if (adapterError !== undefined) {
-    candidates.push({ source: 'adapter', text: adapterError });
+    pushCandidate({ source: 'adapter', text: adapterError }, 'adapter_error');
+  }
+
+  if (
+    snapshot.pendingCheckpoint !== undefined &&
+    snapshot.aitpHealth.phase === 'ready' &&
+    snapshot.aitpHealth.contractVersion !== undefined &&
+    snapshot.aitpHealth.contractVersion !== '0.2'
+  ) {
+    pushCandidate({
+      source: 'adapter',
+      text: `AITP reads are ready, but checkpoint writes are unavailable with adapter contract ${snapshot.aitpHealth.contractVersion}; contract 0.2 is required.`,
+    }, 'adapter_checkpoint_write');
   }
 
   if (
     snapshot.currentLineSlug !== undefined
     && snapshot.currentWorkstreamBinding?.status !== 'bound'
   ) {
-    candidates.push({
+    pushCandidate({
       source: 'workstream',
       text: snapshot.currentWorkstreamBinding?.reason
         ?? 'Confirm an explicit Line-to-workstream binding before scoped persistence.',
-    });
+    }, 'workstream');
   }
 
   const [primary] = candidates;

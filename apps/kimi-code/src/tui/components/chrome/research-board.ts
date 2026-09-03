@@ -178,8 +178,15 @@ function formatHealthLabel(
   colors: ColorPalette,
 ): string {
   const phase = snap.aitpHealth.phase;
-  if (phase === 'degraded') return chalk.hex(colors.warning)(phase);
-  if (phase === 'ready') return chalk.hex(colors.success)(phase);
+  if (phase === 'degraded') {
+    return `${chalk.hex(colors.warning)('degraded')} · ${chalk.hex(colors.warning)('read available')} · ${chalk.hex(colors.warning)('checkpoint write unavailable')}`;
+  }
+  if (phase === 'ready') {
+    const checkpointWrite = snap.aitpHealth.contractVersion === '0.2'
+      ? chalk.hex(colors.success)('checkpoint write ready')
+      : chalk.hex(colors.warning)('checkpoint write unavailable');
+    return `${chalk.hex(colors.success)('read ready')} · ${checkpointWrite}`;
+  }
   return chalk.hex(colors.textMuted)(phase);
 }
 
@@ -228,6 +235,31 @@ function splitAnsiAtVisibleWidth(value: string, targetWidth: number): [string, s
 
 function normalizeSummary(value: string | undefined): string {
   return (value ?? '').replaceAll(/\s+/gu, ' ').trim();
+}
+
+function historicalPendingCheckpoint(snap: ResearchStatusSnapshot): boolean {
+  const checkpoint = snap.pendingCheckpoint;
+  if (checkpoint?.questionId === undefined || checkpoint.questionRevision === undefined) {
+    return false;
+  }
+  const question = snap.questions.find((candidate) => candidate.id === checkpoint.questionId)
+    ?? (snap.currentQuestion?.id === checkpoint.questionId ? snap.currentQuestion : undefined);
+  return question !== undefined && question.revision !== checkpoint.questionRevision;
+}
+
+function pendingCheckpointAttentionText(snap: ResearchStatusSnapshot): string | undefined {
+  const checkpoint = snap.pendingCheckpoint;
+  if (checkpoint === undefined) return undefined;
+  const projected = currentLineEffectiveNextStep(snap);
+  if (
+    projected?.source === 'aitp_maintenance' &&
+    projected.freshness === 'blocked' &&
+    projected.text.includes(checkpoint.checkpointId)
+  ) return projected.text;
+  if (historicalPendingCheckpoint(snap)) {
+    return `Historical checkpoint ${checkpoint.checkpointId} belongs to an older question revision; do not commit it as current evidence. Explicitly undo its proposal before automatic continuation.`;
+  }
+  return `Checkpoint ${checkpoint.checkpointId} must be committed or its proposal undone before automatic continuation.`;
 }
 
 function candidateQuestions(
@@ -332,10 +364,15 @@ function renderGoalRows(
       }
       rows.push(...renderNamedList('Non-goals', researchGoal.nonGoals, colors, true));
       rows.push(...renderNamedList(
-        'Persistence blockers',
-        researchGoal.persistenceGuards
-          .filter((guard) => guard.status === 'blocked')
-          .map((guard) => guard.reason),
+        'Persistence guards',
+        (() => {
+          const count = researchGoal.persistenceGuards.filter(
+            (guard) => guard.status === 'blocked',
+          ).length;
+          return count === 0
+            ? []
+            : [`${String(count)} blocked · details are shown by their owning sections below`];
+        })(),
         colors,
         true,
       ));
@@ -543,14 +580,19 @@ function renderCompactAttention(
   const hasHeldContinuation = goal?.status === 'active' && continuation?.state === 'held';
   if (hasHeldContinuation) {
     const owner = continuation.owner ?? 'Goal continuation';
-    const reason = normalizeSummary(continuation.reason) || 'Automatic continuation is held.';
+    const recordedReason = normalizeSummary(continuation.reason) || 'Automatic continuation is held.';
+    const reason = historicalPendingCheckpoint(snap) && /checkpoint/iu.test(recordedReason)
+      ? pendingCheckpointAttentionText(snap)!
+      : recordedReason;
+    const coversCheckpoint = hasPendingCheckpoint && /checkpoint/iu.test(reason);
+    const coversAlignment = hasBlockingAlignment && /alignment|program/iu.test(reason);
     const additional = alerts.length
       + Number(hasMaintenanceIssue)
       + Number(hasAdapterError)
       + Number(hasDistillationIssue)
       + Number(hasActionRecovery)
-      + Number(hasPendingCheckpoint)
-      + Number(hasBlockingAlignment);
+      + Number(hasPendingCheckpoint && !coversCheckpoint)
+      + Number(hasBlockingAlignment && !coversAlignment);
     return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(`Continuation held by ${owner}`)} · ${chalk.hex(colors.text)(reason)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
   }
   if (hasUnresolvedGate) {
@@ -574,9 +616,11 @@ function renderCompactAttention(
   }
 
   if (hasPendingCheckpoint) {
-    const checkpoint = snap.pendingCheckpoint;
     const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue) + Number(hasBlockingAlignment);
-    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)('Checkpoint pending commit')} · ${chalk.hex(colors.text)(`Checkpoint ${normalizeSummary(checkpoint.checkpointId)} must be committed or its proposal undone before automatic continuation.`)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
+    const label = historicalPendingCheckpoint(snap)
+      ? 'Historical checkpoint requires cleanup'
+      : 'Checkpoint pending commit';
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(label)} · ${chalk.hex(colors.text)(pendingCheckpointAttentionText(snap)!)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
   }
 
   if (hasBlockingAlignment) {
@@ -766,9 +810,6 @@ function buildExpandedRows(
     if (statusRefs.length > 0) {
       rows.push(`    ${chalk.hex(colors.textDim)('Status references:')} ${chalk.hex(colors.textMuted)(statusRefs.join(' · '))}`);
     }
-    if (snap.status.nextStep !== undefined) {
-      rows.push(`    ${chalk.hex(colors.textDim)('Status next:')} ${chalk.hex(colors.text)(normalizeSummary(snap.status.nextStep))}`);
-    }
   }
 
   rows.push('', renderSectionHeading('Current work', colors));
@@ -872,7 +913,14 @@ function renderExpandedLineRows(
     rows.push(`      ${chalk.hex(colors.textDim)('Objective:')} ${chalk.hex(colors.text)(normalizeSummary(line.objective))}`);
   }
   if (line.assessment !== undefined) {
-    rows.push(`      ${chalk.hex(colors.textDim)('Assessment:')} ${chalk.hex(colors.text)(normalizeSummary(line.assessment))}`);
+    const questionAssessment = line.slug === snap.currentLineSlug
+      ? normalizeSummary(snap.currentQuestion?.assessment)
+      : '';
+    const label = questionAssessment.length > 0 &&
+        questionAssessment !== normalizeSummary(line.assessment)
+      ? 'Line-level context:'
+      : 'Assessment:';
+    rows.push(`      ${chalk.hex(colors.textDim)(label)} ${chalk.hex(colors.text)(normalizeSummary(line.assessment))}`);
   }
   const alignment = projectLineWorkstreamAlignment(snap, line.slug);
   if (alignment.binding !== undefined) {
@@ -1015,10 +1063,6 @@ function renderExpandedAttentionRows(
     ].filter((value): value is string => value !== undefined);
     rows.push(`    ${chalk.hex(colors.textDim)('Gate provenance:')} ${chalk.hex(colors.textMuted)(gateRefs.join(' · '))}`);
   }
-  if (snap.status?.attention !== undefined) {
-    rows.push(...renderNamedList('Derived attention', snap.status.attention, colors, false, colors.warning));
-  }
-
   const alerts = snap.alerts
     .filter((alert) => alert.lineSlug === undefined || alert.lineSlug === snap.currentLineSlug)
     .toSorted((a, b) => {
@@ -1117,7 +1161,8 @@ function renderExpandedCheckpointRows(
   const rows = [`  ${chalk.hex(colors.textStrong).bold('Checkpoints')}`];
   const pending = snap.pendingCheckpoint;
   if (pending !== undefined) {
-    rows.push(`    ${chalk.hex(colors.warning)('Pending:')} ${chalk.hex(colors.text)(normalizeSummary(pending.checkpointId))} · ${chalk.hex(colors.textMuted)(pending.persistence)}`);
+    const historical = historicalPendingCheckpoint(snap);
+    rows.push(`    ${chalk.hex(colors.warning)(historical ? 'Historical pending:' : 'Pending:')} ${chalk.hex(colors.text)(normalizeSummary(pending.checkpointId))} · ${chalk.hex(colors.textMuted)(pending.persistence)}`);
     const refs = [
       pending.committedEntryId === undefined ? undefined : `committed entry ${normalizeSummary(pending.committedEntryId)}`,
       pending.questionId === undefined ? undefined : `question ${normalizeSummary(pending.questionId)}`,
@@ -1125,6 +1170,11 @@ function renderExpandedCheckpointRows(
       pending.lineSlug === undefined ? undefined : `line ${normalizeSummary(pending.lineSlug)}`,
     ].filter((value): value is string => value !== undefined);
     if (refs.length > 0) rows.push(`      ${chalk.hex(colors.textDim)('References:')} ${chalk.hex(colors.textMuted)(refs.join(' · '))}`);
+    if (historical) {
+      const question = snap.questions.find((candidate) => candidate.id === pending.questionId)
+        ?? (snap.currentQuestion?.id === pending.questionId ? snap.currentQuestion : undefined);
+      rows.push(`      ${chalk.hex(colors.warning)('Freshness:')} ${chalk.hex(colors.text)(`captured question revision ${String(pending.questionRevision)}; current revision ${String(question!.revision)}. It cannot be committed as current evidence.`)}`);
+    }
     if (pending.assessment !== undefined) {
       rows.push(`      ${chalk.hex(colors.textDim)('Assessment:')} ${chalk.hex(colors.text)(normalizeSummary(pending.assessment))}`);
     }
