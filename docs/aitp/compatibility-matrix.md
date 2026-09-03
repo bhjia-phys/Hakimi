@@ -93,6 +93,45 @@ MCP-trust 与 open-handle 基线问题；Research-only SDK RPC 13/13 通过，�
 `counts.outside_scope` 投影继续 **planned，unavailable**。AITP runtime/CLI/
 schema/contract/fixture/Skill/human-decision 语义未变。
 
+**Hakimi 侧更新（2026-09-02，Goal continuation observability O1）：**
+default v2 Goal snapshot 新增可选、派生且不持久化的 continuation 投影：
+`idle`、`deciding`、`enqueued`、`running`、`held`、`waiting`。`held` 保留
+现有 continuation participant 的 owner/reason；generic Goal 条与 Research
+Board 显示 `active · continuation held`，从而不再把 active lifecycle 与
+当前无模型 turn 或 Research policy hold 混为 paused。REST、WebSocket、Node
+SDK、klient、TUI、Web 与 transcript metadata 已同步，旧客户端缺少该字段时
+安全降级。该投影不改变 Goal continuation/budget/lifecycle owner，不持久化新
+wire op，不改变 Research Loop、Plan、checkpoint、AITP CLI/schema/adapter
+contract、Skill 或 human-decision 语义；AITP checkout 只读复核，H6b 与 Board
+`outside_scope` projection 仍为 **planned，unavailable**。
+
+**Hakimi 侧更新（2026-09-03，Research Board/state consistency O2）：**
+compact TUI/Web Board 统一为 `Project / Current cycle / Attention / Next`；
+legacy `period.loopCount` 只显示为 Research turn 数，已有 phase 仅做五节点
+display mapping，不新增 public enum/schema。current Line 之外的 focus、action
+和 alert 不进入当前 compact/expanded attention；健康 AITP/alignment/workstream
+只保留在 expanded audit。Line switch 在 live Action/Run、pending checkpoint、
+unresolved human gate 或 non-idle phase 下拒绝并给出单一恢复指令，安全切换会
+先归档旧 period 的 focus/progress 摘要。reconciliation 仍只处理 deterministic
+Hakimi-local state，不推断 AITP workstream、不写 ledger、不改变 interactive
+Research 无 Goal准入或 Goal-only autonomous continuation。无 REST/WS/SDK/klient
+public contract、AITP CLI/schema/adapter-contract 0.2/fixture/Skill/human-decision
+变化；H6b 与 `outside_scope` projection 仍为 **planned，unavailable**。
+
+**Hakimi 侧更新（2026-09-03，Research replay/recovery O3）：** 使用真实
+0.21 wire 形状派生的匿名单 Line 与双 Line JSONL fixture 补足 cold replay。
+旧 Goal 没有可选 continuation 时继续可读，并由 TUI/Web Board 明确显示为
+legacy unavailable；已知当前状态原样保留，未来未知 continuation enum fail
+closed。双 Line replay 中 compact Board、模型注入、Action/Run、gate、alert、
+Next 与 continuation attention 严格按 current Line 投影，其他 Line 仍只在展开
+管理面可见。对于旧 archive 中 phase 与 live Action 的唯一可确定结构冲突，
+Hakimi 会幂等恢复 Action 所属 phase、保留 Action 与 human resolution、阻止
+Goal completion，并 hold autonomous continuation；下一次 interactive Research
+turn 收到 evidence-first 恢复指引，不会触发纯记账提问。`completed` 与
+`abandoned` 的科学选择仍不自动推断。没有新增 public schema/REST mutation/
+AITP CLI、runtime、adapter contract、ledger write 或 human-decision 语义；H6b
+与 `outside_scope` projection 仍为 **planned，unavailable**。
+
 **Hakimi 侧更新（2026-08-28）：** Web 的实验性 Research UI 已接通：composer 中的 `/research` 走 Research command endpoint；live Board 展示 `probing`/`ready`/`degraded`、scientific phase、latest progress、current action/run、effective next step、human gate、active alerts 与 checkpoint；line-first Manager 的 Science 区可 resolve decision、acknowledge alert、review evidence 和 observe run，并在 stale revision 后刷新同一 session 的 authoritative snapshot。checkpoint commit 必须显式提供已有 AITP `entryId`，Web 不直接写 AITP。Web production source cutover 也已完成，`apps/kimi-web` 是唯一可编辑的 source；`dist-web` 与 `web-base.json` 是由 canonical build 生成并纳入 Git 的派生发布产物，受 schema v5 source/recipe-files/actual-toolchain/bundle provenance 约束，v4 native receipt 直接绑定 toolchain 与 binary hash。**本次未访问外部 AITP checkout**，因此 AITP HEAD `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290`、0.8.0、CLI/schema/gate 与 154 tests 仍沿用最后核验事实，不作新的外部兼容性声明；H5 仍仅部分集成，H6 仍是 **planned，unavailable**。
 
 **Hakimi 侧更新（2026-08-30）：** Research Board 与模型上下文现在分开显示 AITP Topic 的 `Research goal` 和驱动当前阶段的 `Goal milestone`。`auto` 权限模式下，常规且任务范围内的 Research Action 不再创建第二层 durable approval gate；工具执行仍由统一 permission policy 负责。恢复时仅会继续与当前 planned action 精确绑定的旧 approval gate，并记录可审计的 standing-auto resolution；action-less、review 和 decision gate 仍保持 human-owned。默认 v2 引擎上的 `/goal resume` 现在直接请求 Goal driver 排入 continuation，不再伪造 User 消息，且可唤醒旧客户端留下的 active-but-idle Goal；legacy rollback 保留原兼容路径。这些都是 Hakimi Research/Goal 运行时与 UX 修正；本次已重新核对 AITP HEAD 和 `--help`，但不修改 AITP CLI、schema、stage 或 H5/H6b 状态。

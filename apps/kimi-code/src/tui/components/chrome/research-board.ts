@@ -32,6 +32,7 @@ type AitpMaintenanceReceipt = NonNullable<ResearchStatusSnapshot['aitpMaintenanc
 type ResearchCheckpointReceipt = NonNullable<NonNullable<ResearchStatusSnapshot['pendingCheckpoint']>['receipt']>;
 type ResearchCheckpointCheckReceipt = NonNullable<ResearchCheckpointReceipt['preSaveCheck']>;
 type ResearchRunState = NonNullable<ResearchStatusSnapshot['currentRun']>;
+type ResearchEffectiveNextStep = NonNullable<ResearchStatusSnapshot['effectiveNextStep']>;
 
 /** Phase labels shown to the user, with human-friendly spacing. */
 const PHASE_LABELS: Record<ResearchStatusSnapshot['phase'], string> = {
@@ -131,16 +132,18 @@ function renderHeader(
 ): string {
   if (width <= 0) return '';
   const mode = formatModeLabel(snap.mode, snap.loopStatus, colors);
+  const workflow = formatWorkflowHealthLabel(snap, colors);
   const phase = renderPhase(snap.phase, colors);
   const line = normalizeSummary(snap.currentLineSlug) || 'none';
-  const health = formatHealthLabel(snap, colors);
-  const alerts = orderedAlerts(snap.alerts);
+  const alerts = currentLineAlerts(snap);
   const alertSummary = alerts.length === 0
     ? ''
     : ` · ${chalk.hex(colors.warning)(`${String(alerts.length)} alert${alerts.length === 1 ? '' : 's'}`)}`;
-  const full = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${phase} · ${chalk.hex(colors.text)(line)} · AITP ${health}${alertSummary}`;
+  const full = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${workflow} · ${chalk.hex(colors.primary)(cycleStage(snap))} · ${chalk.hex(colors.text)(line)}${alertSummary}`;
   if (visibleWidth(full) <= width) return full;
-  const compact = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${phase}${alertSummary}`;
+  const scoped = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${workflow} · ${chalk.hex(colors.text)(line)}${alertSummary}`;
+  if (visibleWidth(scoped) <= width) return scoped;
+  const compact = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${workflow} · ${phase}${alertSummary}`;
   if (visibleWidth(compact) <= width) return compact;
   const minimal = `  ${chalk.hex(colors.primary).bold('Research')} ${mode}`;
   if (visibleWidth(minimal) <= width) return minimal;
@@ -153,10 +156,21 @@ function formatModeLabel(
   colors: ColorPalette,
 ): string {
   const loopText = loopStatus === 'paused' ? ' paused' : '';
-  const text = `${mode}${loopText}`;
+  const text = `mode ${mode}${loopText}`;
   if (mode === 'degraded') return chalk.hex(colors.warning)(text);
   if (loopStatus === 'paused') return chalk.hex(colors.textMuted)(text);
   return chalk.hex(colors.success)(text);
+}
+
+function formatWorkflowHealthLabel(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string {
+  const health = snap.status?.health ?? 'unknown';
+  const text = `workflow ${health}`;
+  if (health === 'blocked' || health === 'degraded') return chalk.hex(colors.warning)(text);
+  if (health === 'ok') return chalk.hex(colors.success)(text);
+  return chalk.hex(colors.textMuted)(text);
 }
 
 function formatHealthLabel(
@@ -249,6 +263,12 @@ function orderedAlerts(
     .toSorted((a, b) => rank(a) - rank(b));
 }
 
+function currentLineAlerts(snap: ResearchStatusSnapshot): readonly ResearchAlert[] {
+  return orderedAlerts(snap.alerts).filter(
+    (alert) => alert.lineSlug === undefined || alert.lineSlug === snap.currentLineSlug,
+  );
+}
+
 function renderResearchCounts(
   snap: ResearchStatusSnapshot,
   otherCandidateCount: number,
@@ -270,9 +290,15 @@ function renderGoalRows(
     ?? snap.goalSummary?.remainingTurns;
   const turnBudget = researchGoal?.budget.turnBudget
     ?? snap.goalSummary?.turnBudget;
+  const continuation = goal.continuation;
+  const continuationSuffix = goal.status === 'active' && continuation?.state === 'held'
+    ? ' · continuation held'
+    : goal.status === 'active' && continuation === undefined
+      ? ' · continuation unavailable (legacy snapshot)'
+    : '';
   const rows = [
     `  ${chalk.hex(colors.primary)('◆')} ${chalk.hex(colors.textStrong).bold(researchGoal === undefined ? 'Goal milestone:' : 'Hakimi Research Goal:')} ${chalk.hex(colors.text)(normalizeSummary(goal.objective))}`,
-    `    ${chalk.hex(colors.textDim)('Goal status:')} ${chalk.hex(colors.text)(goal.status)}${remainingTurns === undefined || remainingTurns === null ? '' : ` · ${chalk.hex(colors.textMuted)(`${String(remainingTurns)} turns remaining`)}`}`,
+    `    ${chalk.hex(colors.textDim)('Goal status:')} ${chalk.hex(continuation?.state === 'held' ? colors.warning : colors.text)(`${goal.status}${continuationSuffix}`)}${remainingTurns === undefined || remainingTurns === null ? '' : ` · ${chalk.hex(colors.textMuted)(`${String(remainingTurns)} turns remaining`)}`}`,
   ];
   if (expanded) {
     if (turnBudget !== undefined && turnBudget !== null) {
@@ -287,6 +313,13 @@ function renderGoalRows(
     if (goal.waitingFor !== undefined) {
       rows.push(`    ${chalk.hex(colors.textDim)('Waiting for:')} ${chalk.hex(colors.text)(`${goal.waitingFor.policy} of ${goal.waitingFor.taskIds.length} task${goal.waitingFor.taskIds.length === 1 ? '' : 's'}`)}`);
       rows.push(...renderNamedList('Waiting task IDs', goal.waitingFor.taskIds, colors, true));
+    }
+    if (continuation !== undefined && continuation.state !== 'idle') {
+      const owner = continuation.owner === undefined ? '' : ` by ${continuation.owner}`;
+      const reason = continuation.reason === undefined ? '' : ` · ${normalizeSummary(continuation.reason)}`;
+      rows.push(`    ${chalk.hex(colors.textDim)('Continuation:')} ${chalk.hex(continuation.state === 'held' ? colors.warning : colors.text)(`${continuation.state}${owner}`)}${chalk.hex(colors.textMuted)(reason)}`);
+    } else if (goal.status === 'active' && continuation === undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Continuation:')} ${chalk.hex(colors.textMuted)('unavailable (legacy snapshot)')}`);
     }
     if (researchGoal !== undefined) {
       const scope = [
@@ -326,33 +359,106 @@ function renderResearchGoalRows(
 }
 
 function actionNeedsRecovery(snap: ResearchStatusSnapshot): boolean {
-  const action = snap.currentAction;
+  const action = currentLineAction(snap);
   if (action === undefined || (action.status !== 'planned' && action.status !== 'in_progress')) {
     return false;
   }
-  const gate = snap.humanGate;
-  const gateOwnsAction = snap.phase === 'awaiting_human'
-    && gate !== undefined
-    && gate.resolvedAt === undefined
-    && (gate.actionId === undefined || gate.actionId === action.actionId);
-  if (gateOwnsAction) return false;
+  const gate = currentLineHumanGate(snap);
+  if (gate !== undefined && gate.resolvedAt === undefined) return false;
+  if (
+    snap.effectiveNextStep?.source === 'research_action' &&
+    snap.effectiveNextStep.freshness === 'blocked' &&
+    snap.effectiveNextStep.derivedFrom.actionId === action.actionId
+  ) return true;
   return action.status === 'planned'
     ? snap.phase !== 'action_planned'
     : snap.phase !== 'action_executing';
 }
 
-function compactAitpState(snap: ResearchStatusSnapshot): string {
-  if (snap.pendingCheckpoint !== undefined) return 'pending commit';
-  const blockedByGoal = snap.researchGoal?.persistenceGuards.some(
-    (guard) => guard.status === 'blocked',
-  ) ?? false;
-  const bindingBlocked = snap.currentLineSlug !== undefined
-    && snap.currentWorkstreamBinding?.status !== 'bound';
-  if (blockedByGoal || bindingBlocked) return 'blocked';
-  if (snap.aitpMaintenance?.degradedReason !== undefined || snap.aitpHealth.phase === 'degraded') {
-    return 'degraded';
+function currentLineAction(
+  snap: ResearchStatusSnapshot,
+): ResearchStatusSnapshot['currentAction'] {
+  const action = snap.currentAction;
+  if (action === undefined) return undefined;
+  const question = action.questionId === undefined
+    ? undefined
+    : snap.questions.find((candidate) => candidate.id === action.questionId);
+  if (
+    action.lineSlug !== undefined &&
+    question !== undefined &&
+    action.lineSlug !== question.lineSlug
+  ) return undefined;
+  const lineSlug = action.lineSlug ?? question?.lineSlug;
+  if (snap.currentLineSlug === undefined) {
+    return lineSlug === undefined && snap.lines.length <= 1 ? action : undefined;
   }
-  return snap.aitpHealth.phase === 'ready' ? 'ready' : 'unavailable';
+  if (lineSlug !== undefined) return lineSlug === snap.currentLineSlug ? action : undefined;
+  return snap.lines.length === 0 ||
+    (snap.lines.length === 1 && snap.lines[0]?.slug === snap.currentLineSlug)
+    ? action
+    : undefined;
+}
+
+function currentLineRun(snap: ResearchStatusSnapshot) {
+  const action = currentLineAction(snap);
+  if (action === undefined) return snap.lines.length <= 1 ? snap.currentRun : undefined;
+  if (action.run?.actionId === action.actionId) return action.run;
+  return snap.currentRun?.actionId === action.actionId ? snap.currentRun : undefined;
+}
+
+function currentLineHumanGate(snap: ResearchStatusSnapshot) {
+  const gate = snap.humanGate;
+  if (gate === undefined) return undefined;
+  const action = currentLineAction(snap);
+  if (gate.actionId !== undefined && gate.actionId !== action?.actionId) return undefined;
+  if (gate.questionId !== undefined) {
+    const question = snap.questions.find((candidate) => candidate.id === gate.questionId);
+    if (question === undefined || question.lineSlug !== snap.currentLineSlug) return undefined;
+  }
+  return gate;
+}
+
+function cycleStage(snap: ResearchStatusSnapshot): string {
+  switch (snap.phase) {
+    case 'orienting':
+    case 'gap_analysis':
+      return 'frame / hypothesis';
+    case 'action_planned':
+    case 'action_executing':
+      return 'test / action';
+    case 'evaluating':
+      return 'evaluate';
+    case 'state_updated':
+    case 'checkpoint_pending':
+      return 'record';
+    case 'awaiting_human':
+      if (snap.pendingCheckpoint !== undefined) return 'record';
+      return currentLineAction(snap) === undefined ? 'frame / hypothesis' : 'test / action';
+    case 'idle':
+      return 'next / ready';
+  }
+}
+
+function compactCurrentWork(snap: ResearchStatusSnapshot): string {
+  const actionRecoveryRequired = actionNeedsRecovery(snap);
+  const action = currentLineAction(snap);
+  const run = currentLineRun(snap);
+  if (
+    !actionRecoveryRequired && run !== undefined &&
+    (run.schedulerState === 'pending' || run.schedulerState === 'running')
+  ) {
+    return `job ${normalizeSummary(run.jobId)} · ${run.schedulerState} / ${run.stage}`;
+  }
+  if (
+    !actionRecoveryRequired && action !== undefined &&
+    (action.status === 'planned' || action.status === 'in_progress')
+  ) {
+    return `${normalizeSummary(action.purpose)} · ${action.status.replaceAll('_', ' ')}`;
+  }
+  return normalizeSummary(snap.latestProgress?.headline)
+    || normalizeSummary(snap.currentQuestion?.wording)
+    || normalizeSummary(snap.recentStateChange?.summary)
+    || 'no current work recorded';
 }
 
 function renderCompactProjectStage(
@@ -365,15 +471,16 @@ function renderCompactProjectStage(
     candidate.milestoneId === plan.currentMilestoneId);
   const line = findCurrentLine(snap);
   const question = snap.currentQuestion;
-  const remainingTurns = snap.researchGoal?.budget.remainingTurns
-    ?? snap.goalSummary?.remainingTurns;
-  const remaining = remainingTurns === undefined || remainingTurns === null
-    ? ''
-    : ` · ${String(remainingTurns)} turn${remainingTurns === 1 ? '' : 's'} left`;
+  const continuation = goal?.continuation;
+  const continuationSuffix = goal?.status === 'active' && continuation?.state === 'held'
+    ? ' · continuation held'
+    : goal?.status === 'active' && continuation === undefined
+      ? ' · continuation unavailable (legacy snapshot)'
+    : '';
   const parts = [
     goal === undefined
-      ? 'Goal not established'
-      : `Goal ${goal.status}${remaining} · ${normalizeSummary(goal.objective)}`,
+      ? 'interactive Research · no Goal'
+      : `Goal ${goal.status}${continuationSuffix}`,
     plan === undefined
       ? 'Plan not established'
       : `Plan ${plan.status} · ${normalizeSummary(milestone?.title ?? plan.currentMilestoneId)}`,
@@ -382,58 +489,69 @@ function renderCompactProjectStage(
       : `Line ${normalizeSummary(line?.title ?? snap.currentLineSlug)}`,
     question === undefined
       ? 'Question not focused'
-      : `Question ${question.workflow}/${question.epistemic}`,
+      : `Question ${question.workflow}/${question.epistemic}: ${normalizeSummary(question.wording)}`,
   ];
-  return `  ${chalk.hex(colors.primary)('◆')} ${chalk.hex(colors.textDim)('Project stage:')} ${chalk.hex(goal?.status === 'blocked' ? colors.warning : colors.text)(parts.join(' · '))}`;
+  return `  ${chalk.hex(colors.primary)('◆')} ${chalk.hex(colors.textDim)('Project:')} ${chalk.hex(goal?.status === 'blocked' ? colors.warning : colors.text)(parts.join(' · '))}`;
 }
 
-function renderCompactLoopStage(
+function renderCompactCurrentCycle(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
 ): string {
-  const action = snap.currentAction;
+  const action = currentLineAction(snap);
   const actionState = actionNeedsRecovery(snap)
     ? 'action recovery required'
     : action?.status === 'planned' || action?.status === 'in_progress'
       ? `action ${action.status.replaceAll('_', ' ')}`
       : 'no live action';
-  const loop = snap.period === undefined
+  const turns = snap.period === undefined
     ? 'period not established'
-    : `loop ${String(snap.period.loopCount)}`;
-  const aitp = compactAitpState(snap);
-  const warning = actionNeedsRecovery(snap) || aitp === 'blocked' || aitp === 'degraded';
-  return `  ${chalk.hex(warning ? colors.warning : colors.primary)('↻')} ${chalk.hex(colors.textDim)('Loop stage:')} ${renderPhase(snap.phase, colors)} · ${chalk.hex(colors.text)(`${loop} · ${actionState}`)} · ${chalk.hex(aitp === 'ready' ? colors.success : aitp === 'unavailable' ? colors.textMuted : colors.warning)(`AITP ${aitp}`)}`;
+    : `${String(snap.period.loopCount)} Research turns`;
+  const goal = snap.researchGoal ?? snap.goalSummary;
+  const continuation = goal?.continuation?.state;
+  const continuationLabel = goal?.status === 'active' && continuation === undefined
+    ? ' · continuation unavailable (legacy snapshot)'
+    : continuation === undefined || continuation === 'idle'
+      ? ''
+      : ` · continuation ${continuation}`;
+  const mode = `${snap.mode}${snap.loopStatus === 'paused' ? ' · paused' : ''} · ${snap.planningPolicy}${continuationLabel}`;
+  const warning = actionNeedsRecovery(snap) || snap.loopStatus === 'paused' || continuation === 'held';
+  return `  ${chalk.hex(warning ? colors.warning : colors.primary)('↻')} ${chalk.hex(colors.textDim)('Current cycle:')} ${chalk.hex(colors.primary)(cycleStage(snap))} · ${chalk.hex(colors.text)(`${turns} · ${actionState} · ${compactCurrentWork(snap)}`)} · ${chalk.hex(warning ? colors.warning : colors.textMuted)(mode)}`;
 }
 
 function renderCompactAttention(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
 ): string | undefined {
-  const alerts = orderedAlerts(snap.alerts);
+  const alerts = currentLineAlerts(snap);
   const hasMaintenanceIssue = snap.aitpMaintenance?.degradedReason !== undefined;
   const hasAdapterError = snap.aitpHealth.lastError !== undefined;
   const hasDistillationIssue = snap.distillationAttention?.status === 'handoff_unavailable';
   const hasActionRecovery = actionNeedsRecovery(snap);
+  const hasPendingCheckpoint = snap.pendingCheckpoint !== undefined;
   const moreSuffix = (count: number): string =>
     count > 0 ? ` · +${String(count)} more` : '';
-  const gate = snap.humanGate;
+  const gate = currentLineHumanGate(snap);
   const hasUnresolvedGate = gate !== undefined && gate.resolvedAt === undefined;
   const alignment = snap.goalAlignment;
-  if (
+  const hasBlockingAlignment =
     (snap.researchGoal?.status ?? snap.goalSummary?.status) === 'active'
     && alignment !== undefined
-    && alignment.status !== 'aligned'
-  ) {
-    const status = alignment.status.replaceAll('_', ' ');
-    const reason = normalizeSummary(alignment.reason);
-    const message = `Goal alignment: ${status}${reason.length === 0 ? '' : ` · ${reason}`}`;
+    && alignment.status !== 'aligned';
+  const goal = snap.researchGoal ?? snap.goalSummary;
+  const continuation = goal?.continuation;
+  const hasHeldContinuation = goal?.status === 'active' && continuation?.state === 'held';
+  if (hasHeldContinuation) {
+    const owner = continuation.owner ?? 'Goal continuation';
+    const reason = normalizeSummary(continuation.reason) || 'Automatic continuation is held.';
     const additional = alerts.length
-      + Number(hasUnresolvedGate)
       + Number(hasMaintenanceIssue)
       + Number(hasAdapterError)
       + Number(hasDistillationIssue)
-      + Number(hasActionRecovery);
-    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(message)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
+      + Number(hasActionRecovery)
+      + Number(hasPendingCheckpoint)
+      + Number(hasBlockingAlignment);
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(`Continuation held by ${owner}`)} · ${chalk.hex(colors.text)(reason)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
   }
   if (hasUnresolvedGate) {
     const label = gate.kind === 'approval'
@@ -441,14 +559,35 @@ function renderCompactAttention(
       : gate.kind === 'review'
         ? 'Review needed'
         : 'Decision needed';
-    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue) + Number(hasActionRecovery);
+    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue) + Number(hasActionRecovery) + Number(hasPendingCheckpoint) + Number(hasBlockingAlignment);
     return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(label)} · ${chalk.hex(colors.text)(normalizeSummary(gate.prompt))}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
   }
 
   if (hasActionRecovery) {
-    const action = snap.currentAction!;
-    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue);
-    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)('Action/phase recovery required')} · ${chalk.hex(colors.text)(`Action ${normalizeSummary(action.actionId)} is ${action.status} while phase is ${snap.phase}; conclude or abandon it before starting another action.`)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
+    const action = currentLineAction(snap)!;
+    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue) + Number(hasPendingCheckpoint) + Number(hasBlockingAlignment);
+    const projected = currentLineEffectiveNextStep(snap);
+    const message = projected?.source === 'research_action' && projected.freshness === 'blocked'
+      ? projected.text
+      : `Action ${normalizeSummary(action.actionId)} is ${action.status} while phase is ${snap.phase}; conclude or abandon it before starting another action.`;
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)('Action/phase recovery required')}${chalk.hex(colors.textMuted)(moreSuffix(additional))} · ${chalk.hex(colors.text)(message)}`;
+  }
+
+  if (hasPendingCheckpoint) {
+    const checkpoint = snap.pendingCheckpoint;
+    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue) + Number(hasBlockingAlignment);
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)('Checkpoint pending commit')} · ${chalk.hex(colors.text)(`Checkpoint ${normalizeSummary(checkpoint.checkpointId)} must be committed or its proposal undone before automatic continuation.`)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
+  }
+
+  if (hasBlockingAlignment) {
+    const status = alignment.status.replaceAll('_', ' ');
+    const reason = normalizeSummary(alignment.reason);
+    const message = `Goal alignment: ${status}${reason.length === 0 ? '' : ` · ${reason}`}`;
+    const additional = alerts.length
+      + Number(hasMaintenanceIssue)
+      + Number(hasAdapterError)
+      + Number(hasDistillationIssue);
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(message)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
   }
 
   if (snap.distillationAttention?.status === 'handoff_unavailable') {
@@ -481,34 +620,51 @@ function renderCompactAttention(
   return undefined;
 }
 
-function renderCompactNow(
+function currentLineEffectiveNextStep(
   snap: ResearchStatusSnapshot,
-  colors: ColorPalette,
-): string {
-  const run = snap.currentRun;
-  let summary: string | undefined;
-  const actionRecoveryRequired = actionNeedsRecovery(snap);
-  if (!actionRecoveryRequired && run !== undefined && (run.schedulerState === 'pending' || run.schedulerState === 'running')) {
-    summary = `job ${normalizeSummary(run.jobId)} · ${run.schedulerState} / ${run.stage}`;
+): ResearchEffectiveNextStep | undefined {
+  const step = snap.effectiveNextStep;
+  if (step === undefined) return undefined;
+  const derived = step.derivedFrom;
+  if (derived.lineSlug !== undefined && derived.lineSlug !== snap.currentLineSlug) return undefined;
+  if (derived.questionId !== undefined) {
+    const question = snap.questions.find((candidate) => candidate.id === derived.questionId);
+    if (question === undefined || question.lineSlug !== snap.currentLineSlug) return undefined;
   }
-  const action = snap.currentAction;
-  if (!actionRecoveryRequired && summary === undefined && action !== undefined && (action.status === 'planned' || action.status === 'in_progress')) {
-    summary = `${normalizeSummary(action.purpose)} · ${action.status.replaceAll('_', ' ')}`;
+  if (derived.actionId !== undefined && currentLineAction(snap)?.actionId !== derived.actionId) {
+    return undefined;
   }
-  summary ??= normalizeSummary(snap.latestProgress?.headline) || undefined;
-  summary ??= normalizeSummary(snap.currentQuestion?.wording) || undefined;
-  summary ??= normalizeSummary(snap.recentStateChange?.summary) || undefined;
-  const line = findCurrentLine(snap);
-  summary ??= normalizeSummary(line?.assessment ?? line?.objective ?? line?.title) || undefined;
-  summary ??= 'no current work recorded';
-  return `  ${chalk.hex(colors.primary)('●')} ${chalk.hex(colors.textDim)('Now:')} ${renderPhase(snap.phase, colors)} · ${chalk.hex(colors.text)(summary)}`;
+  return step;
+}
+
+function selectEffectiveNextStep(
+  snap: ResearchStatusSnapshot,
+): ResearchEffectiveNextStep | undefined {
+  if (actionNeedsRecovery(snap)) {
+    const action = currentLineAction(snap)!;
+    const projected = currentLineEffectiveNextStep(snap);
+    if (
+      projected?.source === 'research_action' &&
+      projected.freshness === 'blocked' &&
+      projected.derivedFrom.actionId === action.actionId
+    ) return projected;
+    return {
+      text: `Recover action ${action.actionId}: it is ${action.status} while the Research phase is ${snap.phase}; conclude or abandon it before starting another action.`,
+      source: 'research_action',
+      freshness: 'blocked',
+      observedAt: action.createdAt,
+      derivedFrom: {
+        actionId: action.actionId,
+        questionId: action.questionId,
+        lineSlug: action.lineSlug,
+      },
+    };
+  }
+  return currentLineEffectiveNextStep(snap);
 }
 
 function selectNextAction(snap: ResearchStatusSnapshot): string | undefined {
-  if (actionNeedsRecovery(snap)) {
-    return `Conclude or abandon action ${snap.currentAction!.actionId} before starting another action.`;
-  }
-  return normalizeSummary(snap.effectiveNextStep?.text)
+  return normalizeSummary(selectEffectiveNextStep(snap)?.text)
     || normalizeSummary(snap.latestProgress?.nextAction)
     || normalizeSummary(snap.currentQuestion?.nextBoundedAction)
     || normalizeSummary(snap.currentFocus?.boundedAction)
@@ -520,9 +676,10 @@ function renderCompactNext(
   colors: ColorPalette,
 ): string {
   const next = selectNextAction(snap);
+  const effective = selectEffectiveNextStep(snap);
   const warning = actionNeedsRecovery(snap)
-    || snap.effectiveNextStep?.freshness === 'blocked'
-    || snap.effectiveNextStep?.freshness === 'stale';
+    || effective?.freshness === 'blocked'
+    || effective?.freshness === 'stale';
   return `  ${chalk.hex(warning ? colors.warning : colors.primary)('→')} ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(warning ? colors.warning : next === undefined ? colors.textMuted : colors.text)(next ?? 'not recorded')}`;
 }
 
@@ -530,17 +687,10 @@ function buildCompactRows(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
 ): string[] {
-  const rows = renderResearchGoalRows(snap, colors);
-  if (snap.goalAlignment?.status === 'aligned') {
-    rows.push(`  ${chalk.hex(colors.primary)('↔')} ${chalk.hex(colors.textDim)('Alignment:')} ${chalk.hex(colors.success)(snap.goalAlignment.status.replaceAll('_', ' '))}`);
-  }
-  if (snap.currentWorkstreamBinding?.status === 'bound') {
-    rows.push(`  ${chalk.hex(colors.primary)('⇢')} ${chalk.hex(colors.textDim)('Workstream:')} ${chalk.hex(colors.success)(snap.currentWorkstreamBinding.binding!.workstream)}`);
-  }
-  rows.push(renderCompactProjectStage(snap, colors), renderCompactLoopStage(snap, colors));
+  const rows = [renderCompactProjectStage(snap, colors), renderCompactCurrentCycle(snap, colors)];
   const attention = renderCompactAttention(snap, colors);
   if (attention !== undefined) rows.push(attention);
-  rows.push(renderCompactNow(snap, colors), renderCompactNext(snap, colors));
+  rows.push(renderCompactNext(snap, colors));
   return rows;
 }
 
@@ -575,7 +725,7 @@ function buildExpandedRows(
   }
   if (snap.period !== undefined) {
     rows.push(
-      `  ${chalk.hex(colors.textDim)('Research period:')} ${chalk.hex(colors.text)(normalizeSummary(snap.period.id))} · ${chalk.hex(colors.textMuted)(`${normalizeSummary(snap.period.lineSlug)} · ${String(snap.period.loopCount)} loops${snap.period.endedAt === undefined ? ' · active' : ' · ended'}`)}`,
+      `  ${chalk.hex(colors.textDim)('Research period:')} ${chalk.hex(colors.text)(normalizeSummary(snap.period.id))} · ${chalk.hex(colors.textMuted)(`${normalizeSummary(snap.period.lineSlug)} · ${String(snap.period.loopCount)} Research turns${snap.period.endedAt === undefined ? ' · active' : ' · ended'}`)}`,
       `    ${chalk.hex(colors.textDim)('Period timing:')} ${chalk.hex(colors.textMuted)(`${formatRunTimestamp(snap.period.startedAt)}${snap.period.endedAt === undefined ? '' : ` → ${formatRunTimestamp(snap.period.endedAt)}`}`)}`,
     );
     if (snap.period.currentQuestionId !== undefined) {
@@ -692,14 +842,14 @@ function renderExpandedNext(
   colors: ColorPalette,
 ): string[] {
   const next = selectNextAction(snap) ?? (normalizeSummary(currentLine?.objective) || 'not recorded');
-  const source = snap.effectiveNextStep === undefined
+  const effective = selectEffectiveNextStep(snap);
+  const source = effective === undefined
     ? ''
-    : ` · ${snap.effectiveNextStep.source.replaceAll('_', ' ')} / ${snap.effectiveNextStep.freshness}`;
-  const color = snap.effectiveNextStep?.freshness === 'blocked' || snap.effectiveNextStep?.freshness === 'stale'
+    : ` · ${effective.source.replaceAll('_', ' ')} / ${effective.freshness}`;
+  const color = effective?.freshness === 'blocked' || effective?.freshness === 'stale'
     ? colors.warning
     : colors.text;
   const rows = [`  ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(color)(next)}${chalk.hex(colors.textMuted)(source)}`];
-  const effective = snap.effectiveNextStep;
   if (effective !== undefined) {
     const derived = [
       effective.derivedFrom.actionId === undefined ? undefined : `action ${normalizeSummary(effective.derivedFrom.actionId)}`,
@@ -869,7 +1019,9 @@ function renderExpandedAttentionRows(
     rows.push(...renderNamedList('Derived attention', snap.status.attention, colors, false, colors.warning));
   }
 
-  const alerts = snap.alerts.toSorted((a, b) => {
+  const alerts = snap.alerts
+    .filter((alert) => alert.lineSlug === undefined || alert.lineSlug === snap.currentLineSlug)
+    .toSorted((a, b) => {
     const aActive = a.state === undefined || a.state === 'active';
     const bActive = b.state === undefined || b.state === 'active';
     if (aActive !== bActive) return aActive ? -1 : 1;

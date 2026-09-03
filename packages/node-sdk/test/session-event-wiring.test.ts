@@ -244,6 +244,11 @@ describe('SessionEventWiring research / aitp_mode event forwarding', () => {
             },
             stopConditions: [],
             status: 'active',
+            continuation: {
+              state: 'held',
+              owner: 'research',
+              reason: 'A research checkpoint is pending commit.',
+            },
             programRelation: {
               status: 'aligned',
               reason: 'Confirmed as goal_parent_of_program.',
@@ -290,6 +295,11 @@ describe('SessionEventWiring research / aitp_mode event forwarding', () => {
         researchGoal: {
           schema: 'hakimi/research-goal-0.1',
           goalId: 'goal-1',
+          continuation: {
+            state: 'held',
+            owner: 'research',
+            reason: 'A research checkpoint is pending commit.',
+          },
         },
         distillationAttention: {
           status: 'review_requested',
@@ -300,6 +310,44 @@ describe('SessionEventWiring research / aitp_mode event forwarding', () => {
     });
     // The snapshot payload must survive the translation intact.
     expect((events[0] as { snapshot?: { revision?: number } }).snapshot?.revision).toBe(3);
+  });
+
+  it('forwards a legacy Research Goal without inventing continuation state', () => {
+    const agent = new FakeAgentHandle('main');
+    const { sink, events } = collectingSink();
+    const wiring = new SessionEventWiring(makeSession([agent]), sink);
+    try {
+      agent.bus.emit({
+        type: 'research.updated',
+        snapshot: {
+          researchGoal: {
+            schema: 'hakimi/research-goal-0.1',
+            goalId: 'legacy-goal',
+            objective: 'Resume one bounded legacy milestone.',
+            status: 'active',
+          },
+          revision: 2,
+        },
+      });
+    } finally {
+      wiring.dispose();
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'research.updated',
+      sessionId: 's1',
+      agentId: 'main',
+      snapshot: {
+        researchGoal: {
+          goalId: 'legacy-goal',
+          status: 'active',
+        },
+      },
+    });
+    expect((events[0] as {
+      snapshot?: { researchGoal?: { continuation?: unknown } };
+    }).snapshot?.researchGoal?.continuation).toBeUndefined();
   });
 
   it('forwards aitp_mode.updated as a bare signal', () => {

@@ -93,18 +93,78 @@ The paused state is included in the snapshot injected into subsequent model step
 
 ## The Research Board
 
+Research Mode and Goal are related, but they do not own the same lifecycle:
+
+| Layer | Responsibility | Does not own |
+| --- | --- | --- |
+| Generic Goal engine | Objective status, completion, budget, waiting, and cross-turn automatic continuation | Scientific phase, Line, Question, evidence, or AITP records |
+| Hakimi Research Goal | One-to-one scientific projection of the current generic Goal, including Research scope and persistence guards | A second lifecycle, budget, scheduler, or continuation queue |
+| Research Mode | Admission of interactive Research turns and the long-lived Research working state | Automatic creation of a Goal or autonomous turns |
+| Research Plan v2 | Goal- and Program-bound multi-loop milestones and evidence strategy | Goal completion or turn continuation |
+| Local Action Plan | The detailed TODO and reviewed choices for one bounded Research Action | The multi-loop strategy or scientific truth |
+| Research Loop / Action | One admitted turn and its normal `BeginResearchAction → work → ConcludeResearchAction` unit | Canonical AITP persistence |
+| AITP Program and ledger | Observed Topic goal, canonical Entry/Note evidence, workstreams, and human decisions | Hakimi Goal lifecycle, tool execution, or Board state |
+
+Consequently, an active, ready, unpaused Research Mode admits an interactive
+user turn even when no Goal exists. A Goal is required only for autonomous
+cross-turn continuation. When one exists, Research Goal projects it rather
+than replacing it, and Goal–Program alignment guards automatic continuation
+and completion without suppressing the current bounded action's recovery.
+
 When Research Mode is active, a **Research Board** appears above the input area in both TUI and Web. The default compact Board is deliberately limited to the decisions needed at a glance:
 
-- **AITP goal**: the top-level goal observed from the current AITP Program, or an explicit "not established" state
-- **Project stage**: the active Hakimi Research Goal, multi-loop Research Plan status and current milestone, current Line, and focused Question workflow/epistemic state; a missing Plan, Line, or Question is explicit
-- **Loop stage**: the current scientific phase and period loop count, live action status, and AITP persistence state (`ready`, `degraded`, `blocked`, `pending commit`, or `unavailable`)
-- **Attention**: an active Goal–Program alignment blocker, action/phase recovery requirement, unresolved human gate, unavailable method-review handoff, current blocker, maintenance problem, or adapter error, plus a count when more items exist; alignment blockers take priority, and the row is absent when nothing needs attention
-- **Now**: one current unit of work, selected from a coherent active run or action, latest progress, focused question, state change, or current line; an action whose live status conflicts with the current phase is never presented as current work
+- **Project**: Goal lifecycle/continuation when a Goal exists, otherwise an explicit interactive-without-Goal state; the current Research Plan milestone, Line, and focused Question workflow/epistemic state live here
+- **Current cycle**: one display-only scientific stage (`Frame / hypothesis`, `Test / action`, `Evaluate`, `Record`, or `Next / ready`), the current action or run/progress summary, Research mode and planning policy, and the legacy `period.loopCount` labelled accurately as **Research turns**, not completed scientific cycles
+- **Attention**: an exact Goal continuation hold, unresolved human gate, action/phase recovery requirement, pending checkpoint, active Goal–Program alignment or Line-workstream blocker, unavailable method-review handoff, current-Line alert, maintenance problem, or adapter error, plus a count when more items exist; healthy AITP, alignment, workstream, and provenance facts stay collapsed, and alerts owned by another Line never appear as current attention
 - **Next**: one effective next step with its source, or an explicit missing-next state
 
-The **Hakimi Research Goal** shown in Project stage is an additive `hakimi/research-goal-0.1` projection of the one generic Goal that owns cross-turn continuation, not a second scheduler or an AITP Topic Goal. The expanded Board shows its current Program/Line/Question scope, budget, completion criterion, and persistence blockers. The legacy `goalSummary` remains a compatibility fallback. Long compact narratives are clipped to the available terminal width or two Web lines; expanding the Board restores the complete text.
+The **Hakimi Research Goal** shown in Project is an additive `hakimi/research-goal-0.1` projection of the one generic Goal that owns cross-turn continuation, not a second scheduler or an AITP Topic Goal. The expanded Board remains the audit surface for the complete Goal and observed AITP Program goal, Program/Line/Question scope, plans, evidence, checkpoints, and provenance. The legacy `goalSummary` remains a compatibility fallback. Long compact narratives are clipped to the available terminal width or two Web lines; expanding the Board restores the complete text.
 
-The phase badge exposes `probing`, `ready`, or `degraded`. Mode, loop, question, focus, and checkpoint changes publish one complete snapshot to both surfaces. TUI rejects stale cold hydration; Web serializes same-session mutations and prevents an older HTTP response from overwriting a newer live WebSocket update.
+Goal lifecycle and continuation are separate. `active` means the objective is
+still eligible to progress; it does not prove that another model turn is
+running or queued. The optional continuation projection distinguishes `idle`,
+`deciding`, `enqueued`, `running`, `held`, and task `waiting`. A held Goal is
+rendered as `active · continuation held`, with the participant owner and exact
+reason in the expanded Board and Attention row; it is not relabelled as
+`paused`. The projection is derived runtime state, so explicit retry, a new
+user turn, lifecycle changes, waiting, cancellation, replay, and resume clear
+or recompute stale hold details.
+
+The compact header separates **mode** readiness, **workflow** health, the
+display-only scientific stage, and the current Line. Adapter/AITP health is
+shown only when it needs Attention or in the expanded audit surface. Therefore
+`mode ready · workflow blocked` is coherent: Research Mode is operational, but
+the current Research state requires recovery. The
+effective Next projection uses the same priority as Attention: unresolved
+human gate, mismatched live action, coherent run/action, pending checkpoint,
+Goal–Program alignment, then ordinary question or maintenance guidance. Its
+text, source, freshness, timestamp, and provenance are one atomic projection;
+TUI and Web do not combine a locally overridden text with metadata from a
+different next step.
+
+Mode, loop, question, focus, and checkpoint changes publish one complete snapshot to both surfaces. TUI rejects stale cold hydration; Web serializes same-session mutations and prevents an older HTTP response from overwriting a newer live WebSocket update.
+
+Line changes are an explicit cycle boundary. Hakimi rejects a switch while a
+foreground Action or Run, pending checkpoint, unresolved human gate, or
+non-idle scientific phase remains. The error gives one recovery instruction;
+after the cycle is resolved, the old period archives its focused Question and
+latest progress summary before the new Line opens. Hakimi may reconcile only
+deterministic local references and receipts. It never guesses AITP workstream
+membership, rewrites AITP state, or repairs scientific meaning automatically.
+
+Cold replay applies the same boundary. A legacy single-Line snapshot may omit
+the optional Goal continuation field; the Board labels it as unavailable
+rather than inventing `held`, `running`, or completion. In a multi-Line
+snapshot, only the selected Line can supply compact Question, Action, Run,
+gate, alert, continuation attention, and Next state. If replay finds a live
+Action stranded outside its mechanically owned phase, Hakimi restores that
+phase idempotently while preserving the Action and any recorded human
+resolution. It then blocks Goal completion, holds autonomous continuation, and
+routes the next interactive Research turn to inspect the recorded evidence and
+finish or abandon the same Action. Hakimi never chooses `completed` versus
+`abandoned` from UI structure alone and does not ask the user merely to repair
+bookkeeping; a real scientific or authorization ambiguity can still require a
+human decision.
 
 The board tracks semantic research state, not raw activity. Ordinary tool calls and AITP `list` / `show` / `check` reads do not change it by themselves. During an active research turn, the agent is instructed to prefer the simplest sufficient explanation or experiment and the cheapest decisive evidence first, before escalating to remote, long-running, or multi-branch work. Escalate once a simple probe establishes that the larger action is necessary; do not invent an additional human approval after that evidence when the permission mode already authorizes execution. The agent must create a question before substantive work, set its focus, begin one bounded action with `BeginResearchAction`, and conclude that action with `ConcludeResearchAction` after reporting the physical work, result, tests or derivation, limitations, mainline impact, next step, and one explicit durability assessment. A `no_durable_delta` conclusion records the single Research progress boundary and schedules no S6 persistence or distillation I/O; independent session-boundary `enter` / `check` maintenance may still run. A `durable_delta` conclusion creates exactly one typed pending commit candidate and routes it through the existing same-turn `record prepare` → model-authored draft fill → atomic `record save` → canonical `show` → scoped `check` → checkpoint commit barrier. The first successful commit then returns one same-turn steer containing the exact external `distilling-methods` Skill and only the touched Entry/checkpoint context. The Skill may no-op; a duplicate commit or unavailable handoff does not repeat or roll back the durable commit. `ConcludeResearchAction` itself does not submit or poll HPC jobs, directly write canonical `.aitp` files, or change a question's assessment automatically. Do not repeat the same conclusion with `RecordResearchProgress`. Human assertions and decisions must use their own human-attributed candidate and Entry rather than being merged into agent, tool, or source verification. `PlanResearchAction`, `CompleteResearchAction`, `SetResearchPhase`, `RecordResearchProgress`, and manual checkpoint proposal remain lower-level recovery or maintenance tools rather than the normal action path. While an action is planned or in progress, standalone phase/progress mutation is rejected; this prevents a live action from being stranded outside its owning phase. A legacy in-progress action already stranded by older state can still be completed or concluded, unless an unresolved human gate owns the pause. The agent should call `UpdateResearchQuestion` only when evidence, failure, or sustained no-progress changes the assessment or next action. This is semantic guidance, not a runtime guarantee that candidate confirmation will guard every focus call. If no such semantic transition occurred, an unchanged board is expected.
 

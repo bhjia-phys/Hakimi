@@ -150,8 +150,9 @@ export interface ResearchGoalAlignment {
 
 /**
  * One continuous, line-bound research window. `endedAt` is set once the window
- * closes (line switch or mode exit); the loop counter and the current
- * question/summary are updated only at admitted loop boundaries.
+ * closes (line switch or mode exit); the legacy-named `loopCount` field counts
+ * admitted Research turns, while the current question/summary are updated only
+ * at those turn boundaries.
  */
 export interface ResearchPeriod {
   readonly id: string;

@@ -14,6 +14,7 @@
 
 import { z } from 'zod';
 import type { HumanGateKind } from '#/agent/humanGate/humanGate';
+import type { GoalContinuationSnapshot } from '#/agent/goal/types';
 import type {
   ResearchActionKind,
   ResearchActionStatus,
@@ -367,6 +368,7 @@ export interface ResearchGoalSummary {
     readonly taskIds: readonly string[];
     readonly policy: 'any' | 'all';
   };
+  readonly continuation?: GoalContinuationSnapshot;
 }
 
 export interface ResearchGoalScope {
@@ -418,6 +420,11 @@ export interface ResearchGoalProjection {
   readonly waitingFor?: {
     readonly taskIds: readonly string[];
     readonly policy: 'any' | 'all';
+  };
+  readonly continuation?: {
+    readonly state: 'idle' | 'deciding' | 'enqueued' | 'running' | 'held' | 'waiting';
+    readonly owner?: string;
+    readonly reason?: string;
   };
   readonly programRelation: ResearchGoalAlignment;
   readonly humanGates: readonly ResearchHumanGate[];

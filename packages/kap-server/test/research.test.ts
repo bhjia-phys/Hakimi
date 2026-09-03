@@ -158,6 +158,11 @@ const RESEARCH_EVENT_SNAPSHOT = {
       reason: 'The Goal turn budget remains available.',
     }],
     status: 'active',
+    continuation: {
+      state: 'held',
+      owner: 'aitpResearch',
+      reason: 'A recovered Research action requires evidence-based resolution.',
+    },
     programRelation: {
       status: 'aligned',
       reason: 'Confirmed as goal_parent_of_program.',
@@ -193,12 +198,38 @@ describe('Research agent event schemas', () => {
       snapshot: {
         currentWorkstreamBinding: { status: 'bound' },
         lineWorkstreamBindings: [{ workstream: 'verified-inputs' }],
+        researchGoal: {
+          continuation: {
+            state: 'held',
+            owner: 'aitpResearch',
+          },
+        },
         distillationAttention: {
           status: 'review_requested',
           entryId: 'entry-distill',
         },
       },
     });
+  });
+
+  it('accepts an old snapshot without continuation and rejects an unknown future state', () => {
+    const { continuation: _continuation, ...legacyResearchGoal } =
+      RESEARCH_EVENT_SNAPSHOT.researchGoal;
+    expect(_continuation.state).toBe('held');
+    expect(agentEventSchema.safeParse({
+      type: 'research.updated',
+      snapshot: { ...RESEARCH_EVENT_SNAPSHOT, researchGoal: legacyResearchGoal },
+    }).success).toBe(true);
+    expect(agentEventSchema.safeParse({
+      type: 'research.updated',
+      snapshot: {
+        ...RESEARCH_EVENT_SNAPSHOT,
+        researchGoal: {
+          ...RESEARCH_EVENT_SNAPSHOT.researchGoal,
+          continuation: { state: 'future_continuation_state' },
+        },
+      },
+    }).success).toBe(false);
   });
 
   it('rejects malformed current Line-workstream alignment invariants', () => {

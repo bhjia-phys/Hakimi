@@ -361,6 +361,12 @@ export interface AppGoalWaitLease {
   policy: 'any' | 'all';
 }
 
+export interface AppGoalContinuation {
+  state: 'idle' | 'deciding' | 'enqueued' | 'running' | 'held' | 'waiting';
+  owner?: string;
+  reason?: string;
+}
+
 export interface AppGoal {
   goalId: string;
   objective: string;
@@ -370,6 +376,7 @@ export interface AppGoal {
   tokensUsed: number;
   wallClockMs: number;
   waitingFor?: AppGoalWaitLease;
+  continuation?: AppGoalContinuation;
   terminalReason?: string;
   budget: {
     tokenBudget: number | null;
@@ -831,6 +838,7 @@ export interface ResearchGoalSummary {
     taskIds: string[];
     policy: 'any' | 'all';
   };
+  continuation?: AppGoalContinuation;
 }
 
 export interface ResearchGoalProjection {
@@ -863,6 +871,7 @@ export interface ResearchGoalProjection {
     taskIds: string[];
     policy: 'any' | 'all';
   };
+  continuation?: AppGoalContinuation;
   programRelation: ResearchGoalAlignment;
   humanGates: ResearchHumanGate[];
   persistenceGuards: Array<{

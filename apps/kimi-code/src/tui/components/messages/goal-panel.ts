@@ -123,9 +123,12 @@ export class GoalStatusMessageComponent implements Component {
   }
 }
 
-/** Box title, e.g. ` Goal · active `. */
+/** Box title, e.g. ` Goal · active · continuation held `. */
 export function goalPanelTitle(goal: GoalSnapshot): string {
-  return ` Goal · ${goal.status} `;
+  const continuation = goal.status === 'active' && goal.continuation?.state === 'held'
+    ? ' · continuation held'
+    : '';
+  return ` Goal · ${goal.status}${continuation} `;
 }
 
 export function buildGoalReportLines(goal: GoalSnapshot, wrapWidth: number = WRAP_WIDTH): string[] {
@@ -163,6 +166,18 @@ export function buildGoalReportLines(goal: GoalSnapshot, wrapWidth: number = WRA
         'Status',
         currentTheme.fg(statusColor, goal.status) +
           (reason !== undefined ? muted(` — ${reason}`) : ''),
+      ),
+    );
+  }
+  if (goal.status === 'active' && goal.continuation !== undefined && goal.continuation.state !== 'idle') {
+    const continuation = goal.continuation;
+    const owner = continuation.owner === undefined ? '' : ` by ${continuation.owner}`;
+    const reasonText = continuation.reason === undefined ? '' : ` — ${continuation.reason}`;
+    const color = continuation.state === 'held' ? 'warning' : 'primary';
+    lines.push(
+      row(
+        'Continue',
+        currentTheme.fg(color, `${continuation.state}${owner}`) + muted(reasonText),
       ),
     );
   }

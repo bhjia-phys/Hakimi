@@ -358,6 +358,12 @@ export const researchCheckpointSchema = z.object({
   createdAt: z.number(),
 });
 
+const goalContinuationSnapshotSchema = z.object({
+  state: z.enum(['idle', 'deciding', 'enqueued', 'running', 'held', 'waiting']),
+  owner: z.string().optional(),
+  reason: z.string().optional(),
+}).strict();
+
 export const researchGoalSummarySchema = z.object({
   goalId: z.string().optional(),
   objective: z.string(),
@@ -370,6 +376,7 @@ export const researchGoalSummarySchema = z.object({
     taskIds: z.array(z.string()),
     policy: z.enum(['any', 'all']),
   }).strict().optional(),
+  continuation: goalContinuationSnapshotSchema.optional(),
 }).strict();
 
 // ── Research Loop scientific state layer ────────────────────────────────────
@@ -595,6 +602,7 @@ export const researchGoalProjectionSchema = z.object({
     taskIds: z.array(z.string()),
     policy: z.enum(['any', 'all']),
   }).strict().optional(),
+  continuation: goalContinuationSnapshotSchema.optional(),
   programRelation: researchGoalAlignmentSchema,
   humanGates: z.array(researchHumanGateSchema),
   persistenceGuards: z.array(z.object({

@@ -1,0 +1,14 @@
+{"type":"metadata","protocol_version":"1.5","created_at":1786973772805}
+{"type":"goal.create","goalId":"legacy-goal","objective":"Resolve the active bounded validation without mixing research lines.","completionCriterion":"Conclude the active action from checked evidence.","wallClockResumedAt":1786978988911,"time":1786978988922}
+{"type":"aitp_mode.enter","actor":"user","time":1787571990097}
+{"type":"aitp_mode.set_phase","phase":"ready","time":1787571990257}
+{"type":"research.create_line","slug":"active-line","title":"Active validation line","objective":"Resolve the active diagnostic.","createdAt":1787635979345,"time":1787635979345}
+{"type":"research.create_line","slug":"other-line","title":"Independent archived line","objective":"Keep unrelated evidence isolated.","createdAt":1787635979346,"time":1787635979346}
+{"type":"research.create_question","id":"question-active","lineSlug":"active-line","wording":"Did the active diagnostic reach its stop condition?","assessment":"The action needs evidence-based resolution.","priority":10,"neededEvidence":["diagnostic output"],"time":1787635987517}
+{"type":"research.create_question","id":"question-other","lineSlug":"other-line","wording":"What is the unrelated line status?","assessment":"This must not enter the active compact view.","priority":1,"neededEvidence":["other-line evidence"],"time":1787635987518}
+{"type":"research.set_focus","questionId":"question-active","boundedAction":"Inspect the diagnostic evidence and conclude once.","expectedRevision":4,"time":1787635995090}
+{"type":"aitp_mode.set_line","lineSlug":"active-line","time":1787635995090}
+{"type":"research.begin_action","actionId":"action-active","questionId":"question-active","lineSlug":"active-line","kind":"experiment","purpose":"Run the active-line diagnostic.","expectedEvidence":["diagnostic output"],"stopCondition":"The diagnostic has a terminal checked result.","allowedToolKinds":["Bash","Read"],"requiresHumanApproval":false,"createdAt":1787636000000,"time":1787636000000}
+{"type":"research.request_human_decision","gateId":"gate-active","kind":"decision","actionId":"action-active","questionId":"question-active","prompt":"Choose the evidence interpretation.","createdAt":1787636000100,"time":1787636000100}
+{"type":"research.resolve_human_decision","gateId":"gate-active","resolution":"Use the checked diagnostic evidence.","nextPhase":"gap_analysis","changedAt":1787636000200,"time":1787636000200}
+{"type":"aitp_mode.set_line","lineSlug":"other-line","time":1787636000300}

@@ -17,10 +17,8 @@ import {
   presentResearchWorkstreamBinding,
   selectResearchBoardExpandedRecord,
   type ResearchBoardAttentionSlot,
-  type ResearchBoardGoalSlot,
-  type ResearchBoardLoopSlot,
+  type ResearchBoardCycleSlot,
   type ResearchBoardNextSlot,
-  type ResearchBoardNowSlot,
   type ResearchBoardProjectSlot,
 } from '../../lib/researchBoardPresentation';
 import Badge from '../ui/Badge.vue';
@@ -55,6 +53,7 @@ const displayGoal = computed(() => {
     remainingTurns: goal.budget.remainingTurns ?? undefined,
     terminalReason: goal.terminalReason,
     waitingFor: goal.waitingFor,
+    continuation: goal.continuation,
   };
 });
 const researchGoalBlockers = computed(() =>
@@ -75,25 +74,26 @@ const phaseVariant = computed<'neutral' | 'info' | 'success' | 'warning'>(() => 
   if (phase === 'probing') return 'info';
   return 'neutral';
 });
+const workflowVariant = computed<'neutral' | 'info' | 'success' | 'warning'>(() => {
+  const health = props.snapshot.status?.health;
+  if (health === 'ok') return 'success';
+  if (health === 'blocked' || health === 'degraded') return 'warning';
+  if (health === 'attention') return 'info';
+  return 'neutral';
+});
 
 const compactSlots = computed(() => buildResearchBoardCompactSlots(props.snapshot));
 const expandedRecord = computed(() => selectResearchBoardExpandedRecord(props.snapshot));
-const goalSlot = computed(() =>
-  compactSlots.value.find((slot): slot is ResearchBoardGoalSlot => slot.kind === 'goal'),
-);
 const projectSlot = computed(() =>
   compactSlots.value.find((slot): slot is ResearchBoardProjectSlot => slot.kind === 'project'),
 );
-const loopSlot = computed(() =>
-  compactSlots.value.find((slot): slot is ResearchBoardLoopSlot => slot.kind === 'loop'),
+const cycleSlot = computed(() =>
+  compactSlots.value.find((slot): slot is ResearchBoardCycleSlot => slot.kind === 'cycle'),
 );
 const attentionSlot = computed(() =>
   compactSlots.value.find(
     (slot): slot is ResearchBoardAttentionSlot => slot.kind === 'attention',
   ),
-);
-const nowSlot = computed(() =>
-  compactSlots.value.find((slot): slot is ResearchBoardNowSlot => slot.kind === 'now'),
 );
 const nextSlot = computed(() =>
   compactSlots.value.find((slot): slot is ResearchBoardNextSlot => slot.kind === 'next'),
@@ -107,9 +107,11 @@ const currentWorkstreamPresentation = computed(() =>
 );
 const focusedQuestion = computed<ResearchQuestion | undefined>(() => {
   const id = props.snapshot.currentFocus?.questionId;
-  if (id === undefined) return props.snapshot.currentQuestion;
-  return props.snapshot.questions.find((question) => question.id === id)
-    ?? props.snapshot.currentQuestion;
+  const question = id === undefined
+    ? props.snapshot.currentQuestion
+    : props.snapshot.questions.find((candidate) => candidate.id === id)
+      ?? props.snapshot.currentQuestion;
+  return question?.lineSlug === props.snapshot.currentLineSlug ? question : undefined;
 });
 const orderedLines = computed(() => {
   const current = currentLine.value;
@@ -131,7 +133,10 @@ const orderedQuestions = computed(() => {
   ];
 });
 const orderedAlerts = computed(() =>
-  props.snapshot.alerts.toSorted((a, b) => {
+  props.snapshot.alerts
+    .filter((alert) =>
+      alert.lineSlug === undefined || alert.lineSlug === props.snapshot.currentLineSlug)
+    .toSorted((a, b) => {
     const activeRank = (alert: ResearchAlert): number =>
       alert.state === undefined || alert.state === 'active' ? 0 : 1;
     return activeRank(a) - activeRank(b) || a.createdAt - b.createdAt;
@@ -157,8 +162,15 @@ const attentionText = computed(() => {
 });
 const attentionTitle = computed(() => {
   const slot = attentionSlot.value;
+  if (slot?.source === 'goal_continuation') {
+    return slot.owner === undefined
+      ? t('research.continuationHeld')
+      : t('research.continuationHeldBy', { owner: slot.owner });
+  }
   if (slot?.source === 'alignment') return t('research.goalAlignment');
   if (slot?.source === 'action_recovery') return t('research.actionRecoveryRequired');
+  if (slot?.source === 'checkpoint') return t('research.pendingCheckpoint');
+  if (slot?.source === 'workstream') return t('research.workstreamBinding');
   if (slot?.source === 'human_gate') return t('research.humanGate');
   if (slot?.source === 'distillation') return t('research.methodReviewHandoff');
   if (slot?.source === 'maintenance') return t('research.degradedReason');
@@ -169,7 +181,9 @@ const projectSummary = computed(() => {
   const slot = projectSlot.value;
   if (slot === undefined) return t('research.projectNotEstablished');
   return [
-    slot.goalText ?? t('research.hakimiGoalNotEstablished'),
+    slot.goalStatus === undefined
+      ? t('research.interactiveWithoutGoal')
+      : t('research.goalSummary', { status: t('research.goalStatusValue.' + slot.goalStatus) }),
     slot.milestone === undefined
       ? t('research.planNotEstablished')
       : t('research.milestoneSummary', { milestone: slot.milestone }),
@@ -184,18 +198,19 @@ const projectSummary = computed(() => {
         }),
   ].join(' · ');
 });
-const loopSummary = computed(() => {
-  const slot = loopSlot.value;
-  if (slot === undefined) return t('research.loopNotEstablished');
-  const loop = slot.loopCount === undefined
+const cycleSummary = computed(() => {
+  const slot = cycleSlot.value;
+  if (slot === undefined) return t('research.cycleNotEstablished');
+  const turns = slot.researchTurns === undefined
     ? t('research.periodNotEstablished')
-    : t('research.loopCount', { count: slot.loopCount });
+    : t('research.researchTurns', { count: slot.researchTurns });
   const action = slot.actionStatus === undefined
     ? t('research.noLiveAction')
     : slot.actionStatus === 'recovery_required'
       ? t('research.actionRecoveryRequired')
       : t('research.actionStatus.' + slot.actionStatus);
-  return `${loop} · ${action}`;
+  const current = slot.current?.text ?? t('research.nowNotRecorded');
+  return `${turns} · ${action} · ${current}`;
 });
 const maintenanceFreshness = computed(() => {
   const maintenance = props.snapshot.aitpMaintenance;
@@ -327,7 +342,10 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
           <Icon name="target" size="md" />
           <span class="research-title">{{ t('research.title') }}</span>
           <Badge :variant="phaseVariant" size="sm" dot>
-            {{ t('research.phase.' + snapshot.mode) }}
+            {{ t('research.modeStatus', { status: t('research.phase.' + snapshot.mode) }) }}
+          </Badge>
+          <Badge v-if="snapshot.status" :variant="workflowVariant" size="sm">
+            {{ t('research.workflowStatus', { status: t('research.statusHealth.' + snapshot.status.health) }) }}
           </Badge>
           <Badge :variant="snapshot.loopStatus === 'paused' ? 'warning' : 'neutral'" size="sm">
             {{ t('research.loop.' + snapshot.loopStatus) }}
@@ -365,22 +383,23 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
     </template>
 
     <div v-show="!expanded" class="research-compact" :aria-label="t('research.compactSummary')">
-      <div class="research-compact-row research-compact-goal">
-        <span class="research-slot-label">{{ t('research.aitpResearchGoal') }}</span>
-        <strong class="research-slot-value research-goal-value">
-          {{ goalSlot?.text ?? t('research.researchGoalNotEstablished') }}
-        </strong>
-      </div>
-
       <div class="research-compact-row">
-        <span class="research-slot-label">{{ t('research.projectStage') }}</span>
+        <span class="research-slot-label">{{ t('research.project') }}</span>
         <span class="research-slot-value">
           <Badge
             v-if="projectSlot?.goalStatus"
             size="sm"
-            :variant="projectSlot.goalStatus === 'blocked' ? 'warning' : projectSlot.goalStatus === 'complete' ? 'success' : 'neutral'"
+            :variant="projectSlot.goalStatus === 'blocked' || projectSlot.goalContinuationState === 'held' ? 'warning' : projectSlot.goalStatus === 'complete' ? 'success' : 'neutral'"
           >
             {{ t('research.goalStatusValue.' + projectSlot.goalStatus) }}
+            <template v-if="projectSlot.goalContinuationState === 'held'">
+              · {{ t('research.continuationHeld') }}
+            </template>
+            <template
+              v-else-if="projectSlot.goalStatus === 'active' && projectSlot.goalContinuationAvailable === false"
+            >
+              · {{ t('research.continuationLegacyUnavailable') }}
+            </template>
           </Badge>
           <span class="research-slot-copy">{{ projectSummary }}</span>
         </span>
@@ -393,19 +412,30 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
       </div>
 
       <div class="research-compact-row">
-        <span class="research-slot-label">{{ t('research.loopStage') }}</span>
+        <span class="research-slot-label">{{ t('research.currentCycle') }}</span>
         <span class="research-slot-value">
           <Badge size="sm" variant="info">
-            {{ t('research.sciencePhase.' + snapshot.phase) }}
+            {{ cycleSlot ? t('research.cycleStage.' + cycleSlot.stage) : t('research.cycleNotEstablished') }}
           </Badge>
-          <span class="research-slot-copy">{{ loopSummary }}</span>
+          <span class="research-slot-copy">{{ cycleSummary }}</span>
         </span>
         <Badge
-          v-if="loopSlot"
+          v-if="cycleSlot"
           size="sm"
-          :variant="loopSlot.aitpState === 'ready' ? 'success' : loopSlot.aitpState === 'unavailable' ? 'neutral' : 'warning'"
+          :variant="cycleSlot.loopStatus === 'paused' || cycleSlot.continuationState === 'held' ? 'warning' : 'neutral'"
         >
-          {{ t('research.aitpPersistenceState.' + loopSlot.aitpState) }}
+          {{ t('research.modeValue', {
+            mode: t('research.phase.' + cycleSlot.mode),
+            policy: t('research.planningPolicyValue.' + cycleSlot.planningPolicy),
+          }) }}
+          <template
+            v-if="projectSlot?.goalStatus === 'active' && cycleSlot.continuationAvailable === false"
+          >
+            · {{ t('research.continuationLegacyUnavailable') }}
+          </template>
+          <template v-else-if="cycleSlot.continuationState === 'held'">
+            · {{ t('research.continuationHeld') }}
+          </template>
         </Badge>
       </div>
 
@@ -419,23 +449,6 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
           {{ t('research.moreAttention', { count: attentionSlot.additionalCount }) }}
         </Badge>
       </Banner>
-
-      <div class="research-compact-row">
-        <span class="research-slot-label">{{ t('research.now') }}</span>
-        <span class="research-slot-value">
-          <Badge size="sm" variant="info">
-            {{ t('research.sciencePhase.' + snapshot.phase) }}
-          </Badge>
-          <span v-if="nowSlot" class="research-slot-copy">{{ nowSlot.text }}</span>
-          <span v-else class="research-slot-copy research-muted">{{ t('research.nowNotRecorded') }}</span>
-        </span>
-        <Badge v-if="nowSlot?.source === 'run'" size="sm">
-          {{ t('research.runStage.' + nowSlot.stage) }}
-        </Badge>
-        <Badge v-else-if="nowSlot?.source === 'action'" size="sm">
-          {{ t('research.actionStatus.' + nowSlot.status) }}
-        </Badge>
-      </div>
 
       <div class="research-compact-row">
         <span class="research-slot-label">{{ t('research.nextAction') }}</span>
@@ -556,6 +569,34 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
                   {{ taskId }}
                 </code>
               </span>
+              <span
+                v-if="displayGoal.continuation && displayGoal.continuation.state !== 'idle'"
+                class="research-inline-meta"
+              >
+                <strong>{{ t('research.continuation') }}:</strong>
+                <Badge
+                  size="sm"
+                  :variant="displayGoal.continuation.state === 'held' ? 'warning' : 'neutral'"
+                >
+                  {{ t('research.continuationState.' + displayGoal.continuation.state) }}
+                </Badge>
+                <code v-if="displayGoal.continuation.owner">
+                  {{ displayGoal.continuation.owner }}
+                </code>
+              </span>
+              <span v-if="displayGoal.continuation?.reason">
+                <strong>{{ t('research.continuationReason') }}:</strong>
+                {{ displayGoal.continuation.reason }}
+              </span>
+              <span
+                v-if="displayGoal.status === 'active' && displayGoal.continuation === undefined"
+                class="research-inline-meta"
+              >
+                <strong>{{ t('research.continuation') }}:</strong>
+                <Badge size="sm" variant="neutral">
+                  {{ t('research.continuationLegacyUnavailable') }}
+                </Badge>
+              </span>
               <span v-if="snapshot.researchGoal" class="research-inline-meta">
                 <strong>{{ t('research.goalScope') }}:</strong>
                 <code v-if="snapshot.researchGoal.scope.programTopicId">{{ snapshot.researchGoal.scope.programTopicId }}</code>
@@ -661,35 +702,35 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
             <dt>{{ t('research.nextAction') }}</dt>
             <dd>
               <span>{{ nextSlot?.text ?? t('research.nextNotRecorded') }}</span>
-              <span v-if="snapshot.effectiveNextStep" class="research-inline-meta">
+              <span v-if="nextSlot?.freshness" class="research-inline-meta">
                 <Badge
                   size="sm"
-                  :variant="snapshot.effectiveNextStep.freshness === 'current' ? 'success' : 'warning'"
+                  :variant="nextSlot.freshness === 'current' ? 'success' : 'warning'"
                 >
-                  {{ t('research.nextStepSource.' + snapshot.effectiveNextStep.source) }}
+                  {{ t('research.nextStepSource.' + nextSlot.source) }}
                 </Badge>
-                <span>{{ t('research.freshness.' + snapshot.effectiveNextStep.freshness) }}</span>
+                <span>{{ t('research.freshness.' + nextSlot.freshness) }}</span>
               </span>
-              <template v-if="snapshot.effectiveNextStep">
+              <template v-if="nextSlot?.observedAt !== undefined">
                 <span class="research-muted">
-                  {{ t('research.observedAt') }}: {{ formatTimestamp(snapshot.effectiveNextStep.observedAt) }}
+                  {{ t('research.observedAt') }}: {{ formatTimestamp(nextSlot.observedAt) }}
                 </span>
                 <span
-                  v-if="Object.values(snapshot.effectiveNextStep.derivedFrom).some(Boolean)"
+                  v-if="nextSlot.derivedFrom && Object.values(nextSlot.derivedFrom).some(Boolean)"
                   class="research-inline-meta research-muted"
                 >
                   <strong>{{ t('research.derivedFrom') }}:</strong>
-                  <span v-if="snapshot.effectiveNextStep.derivedFrom.actionId">
-                    {{ t('research.actionId') }} <code>{{ snapshot.effectiveNextStep.derivedFrom.actionId }}</code>
+                  <span v-if="nextSlot.derivedFrom.actionId">
+                    {{ t('research.actionId') }} <code>{{ nextSlot.derivedFrom.actionId }}</code>
                   </span>
-                  <span v-if="snapshot.effectiveNextStep.derivedFrom.entryId">
-                    {{ t('research.entryId') }} <code>{{ snapshot.effectiveNextStep.derivedFrom.entryId }}</code>
+                  <span v-if="nextSlot.derivedFrom.entryId">
+                    {{ t('research.entryId') }} <code>{{ nextSlot.derivedFrom.entryId }}</code>
                   </span>
-                  <span v-if="snapshot.effectiveNextStep.derivedFrom.questionId">
-                    {{ t('research.questionId') }} <code>{{ snapshot.effectiveNextStep.derivedFrom.questionId }}</code>
+                  <span v-if="nextSlot.derivedFrom.questionId">
+                    {{ t('research.questionId') }} <code>{{ nextSlot.derivedFrom.questionId }}</code>
                   </span>
-                  <span v-if="snapshot.effectiveNextStep.derivedFrom.lineSlug">
-                    {{ t('research.lineId') }} <code>{{ snapshot.effectiveNextStep.derivedFrom.lineSlug }}</code>
+                  <span v-if="nextSlot.derivedFrom.lineSlug">
+                    {{ t('research.lineId') }} <code>{{ nextSlot.derivedFrom.lineSlug }}</code>
                   </span>
                 </span>
               </template>
@@ -1581,10 +1622,6 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
   border-top: 1px solid var(--color-line);
 }
 
-.research-compact-goal {
-  padding-block: var(--space-4);
-}
-
 .research-slot-label,
 .research-section-kicker {
   color: var(--color-text-faint);
@@ -1613,15 +1650,6 @@ function isFocusedQuestion(question: ResearchQuestion): boolean {
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-}
-
-.research-goal-value {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  font-size: var(--text-base);
-  font-weight: var(--weight-medium);
 }
 
 .research-compact-attention {

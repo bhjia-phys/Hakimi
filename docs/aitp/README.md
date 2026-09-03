@@ -36,6 +36,33 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   H6b/C6 native method-distillation orchestration 是 **planned，
   unavailable**。`lineage`/`lite-entry-0.2`/
   `run-pointer-0.1` 仍 deferred，M2–M4 blocked。
+  2026-09-02 的 Hakimi-only O1 进一步给 generic Goal snapshot 增加可选、
+  派生且不持久化的 continuation 投影：`idle`、`deciding`、`enqueued`、
+  `running`、`held`、`waiting`。Research snapshot 只透传同一投影；`held`
+  保留现有 continuation participant 的 owner/reason，Goal 条与 Research Board
+  明确显示 `active · continuation held`。这没有新增第二套 lifecycle、
+  scheduler、AITP 写入、CLI/schema/adapter contract 或 human-decision 语义。
+  2026-09-03 的 Hakimi-only O2 把 TUI/Web 紧凑 Research Board 收敛为
+  `Project / Current cycle / Attention / Next` 四个位置，并把 legacy
+  `period.loopCount` 只解释为 Research turn 数。现有 scientific phase 仅在
+  UI 映射为 `Frame/Hypothesis → Test/Action → Evaluate → Record → Next/Ready`，
+  没有新增 wire/schema 状态。健康的 AITP、alignment、workstream 与 provenance
+  折叠到展开审计面；compact/expanded 当前 attention 都按 current Line 隔离。
+  Line switch 在 live Action/Run、pending checkpoint、unresolved human gate 或
+  non-idle phase 下 fail closed，并在安全切换前把旧 period 的 focus/progress
+  摘要归档。统一 reconciliation 只修复 deterministic Hakimi-local period、
+  committed-checkpoint acknowledgement 和 stale alert；不推断 workstream、
+  不写 AITP，也不改变 Goal continuation owner。AITP checkout 本次只读，
+  CLI/schema/adapter-contract 0.2/fixtures/Skill/human-decision 均不变。
+  同日 Hakimi-only O3 增加真实 0.21 形状的匿名 replay fixtures：旧单 Line
+  archive 缺少可选 continuation 时明确投影为 unavailable；双 Line archive
+  中 compact Board、模型注入、gate、alert、Next 与 continuation attention
+  只消费当前 Line。旧 live Action 若脱离唯一确定的所属 phase，reconcile 会
+  幂等恢复该结构但保留 Action 与 human resolution；Goal completion 被阻止，
+  autonomous continuation 被 hold，下一次 interactive Research turn 只被引导
+  根据已有证据完成或放弃同一 Action。Hakimi 不从 UI 推断科学结果、不自动
+  complete/abandon，也不为纯记账问题询问用户；这没有新增 AITP 或 public
+  transport contract。
   alerts 和 generic human gate 已实现，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard，`ResolveResearchDecision` 不会自动写入 AITP decision Entry。degraded active Research Mode 会阻止 AITP writes 和 Goal completion；未解决 human gate 也会阻止 Goal completion，但本地 Question/Line mutation 仍可能发生，当前没有 automatic session-closeout。
   Hakimi 的本地 parser/contract 测试使用已 commit 的官方 AITP 0.8.0 golden fixtures：`enter.json`、`enter-after-save.json`、`list.json`、`show.json`、`check.json`、`check-workstream.json`；这些 read fixtures 在 S5.1 中保持逐字节不变，并已重新验证可由 AITP 0.9.0 消费。此外，2026-08-29 已在一次性 scratch store 中用 managed AITP 0.8.0 CLI 完成真实子进程 smoke test，覆盖作用域 `enter`/`check`、`record` 与 `note` prepare/save、`show`/`list`、重复 prepare 复用和最终 clean check；0.9.0 atomic-save 异常矩阵由当前 AITP/Hakimi deterministic suites 覆盖，完整跨平台 conformance 仍待补齐。
 - 完整兼容矩阵、假设核对与决策：

@@ -2764,9 +2764,14 @@ describe('AgentGoalService goal contribution seams', () => {
 
       const waiting = await goals.waitForTasks({ taskIds: ['task-1'], policy: 'any' });
       expect(waiting.waitingFor).toEqual({ taskIds: ['task-1'], policy: 'any' });
+      expect(waiting.continuation).toEqual({ state: 'waiting' });
       let clearCount = 0;
       eventBus.subscribe('goal.updated', (event) => {
-        if (event.snapshot?.goalId === waiting.goalId && event.snapshot.waitingFor === undefined) {
+        if (
+          event.snapshot?.goalId === waiting.goalId &&
+          event.snapshot.waitingFor === undefined &&
+          event.change?.kind !== 'continuation'
+        ) {
           clearCount += 1;
         }
       });
@@ -3086,7 +3091,10 @@ describe('AgentGoalService goal contribution seams', () => {
 
       await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
       expect(loopService.hasPendingRequests()).toBe(true);
-      expect(goals.getGoal().goal?.status).toBe('active');
+      expect(goals.getGoal().goal).toMatchObject({
+        status: 'active',
+        continuation: { state: 'enqueued' },
+      });
     });
 
     it('continues when a participant votes continue', async () => {
@@ -3097,7 +3105,10 @@ describe('AgentGoalService goal contribution seams', () => {
       endTurn(ctx!.get(IEventBus), turn);
 
       await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
-      expect(goals.getGoal().goal?.status).toBe('active');
+      expect(goals.getGoal().goal).toMatchObject({
+        status: 'active',
+        continuation: { state: 'enqueued' },
+      });
     });
 
     it('holds the continuation when a participant votes hold', async () => {
@@ -3116,7 +3127,14 @@ describe('AgentGoalService goal contribution seams', () => {
       await flushMicrotasks();
       expect(loopService.launches).toEqual([]);
       expect(loopService.hasPendingRequests()).toBe(false);
-      expect(goals.getGoal().goal).toMatchObject({ status: 'active' });
+      expect(goals.getGoal().goal).toMatchObject({
+        status: 'active',
+        continuation: {
+          state: 'held',
+          owner: 'aitp-research',
+          reason: 'awaiting research gate',
+        },
+      });
       expect(seen).toHaveLength(1);
       expect(seen[0]).toMatch(/^hold:[0-9a-f-]+:1$/);
     });
@@ -3153,11 +3171,12 @@ describe('AgentGoalService goal contribution seams', () => {
       const decision = new Promise<GoalContinuationDecisionResult>((resolve) => {
         resolveDecision = resolve;
       });
-      const { loopService, turn } = await startGoalWithTurn({
+      const { goals, loopService, turn } = await startGoalWithTurn({
         participants: [() => decision],
       });
 
       endTurn(ctx!.get(IEventBus), turn);
+      expect(goals.getGoal().goal?.continuation).toEqual({ state: 'deciding' });
       const secondTurn = makeTurn(72);
       ctx!.get(IEventBus).publish({
         type: 'turn.started',
@@ -3191,7 +3210,6 @@ describe('AgentGoalService goal contribution seams', () => {
         retryEmitters: [retry],
       });
       const goalId = goals.getGoal().goal!.goalId;
-
       endTurn(ctx!.get(IEventBus), turn);
       await flushMicrotasks();
       retry.fire(goalId);
@@ -3264,6 +3282,12 @@ describe('AgentGoalService goal contribution seams', () => {
         retryEmitters: [retry],
       });
       const goalId = goals.getGoal().goal!.goalId;
+      const continuationStates: string[] = [];
+      ctx!.get(IEventBus).subscribe('goal.updated', (event) => {
+        if (event.change?.kind === 'continuation' && event.snapshot?.continuation !== undefined) {
+          continuationStates.push(event.snapshot.continuation.state);
+        }
+      });
 
       endTurn(ctx!.get(IEventBus), turn);
       await flushMicrotasks();
@@ -3272,6 +3296,76 @@ describe('AgentGoalService goal contribution seams', () => {
       retry.fire(goalId);
       await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
       expect(decisions).toBe(2);
+      expect(continuationStates).toContain('enqueued');
+    });
+
+    it('re-evaluates a held continuation when an active Goal is explicitly resumed', async () => {
+      let decisions = 0;
+      const { goals, loopService, turn } = await startGoalWithTurn({
+        participants: [() => {
+          decisions += 1;
+          return decisions === 1
+            ? { decision: 'hold', owner: 'research', reason: 'pending checkpoint' }
+            : { decision: 'abstain' };
+        }],
+      });
+
+      endTurn(ctx!.get(IEventBus), turn);
+      await flushMicrotasks();
+      expect(goals.getGoal().goal?.continuation).toMatchObject({
+        state: 'held',
+        owner: 'research',
+      });
+
+      const resumed = await goals.resumeGoal({ continueIfBlocked: true });
+      expect(resumed.continuation?.state).not.toBe('held');
+      await vi.waitFor(() => expect(loopService.launches).toHaveLength(1));
+      expect(decisions).toBe(2);
+    });
+
+    it('replaces a held projection with a new user turn and re-evaluates after it ends', async () => {
+      let decisions = 0;
+      const { goals, loopService, turn } = await startGoalWithTurn({
+        participants: [() => {
+          decisions += 1;
+          return {
+            decision: 'hold',
+            owner: decisions === 1 ? 'first-owner' : 'second-owner',
+            reason: decisions === 1 ? 'first reason' : 'second reason',
+          };
+        }],
+      });
+      const eventBus = ctx!.get(IEventBus);
+      endTurn(eventBus, turn);
+      await flushMicrotasks();
+      expect(goals.getGoal().goal?.continuation).toEqual({
+        state: 'held',
+        owner: 'first-owner',
+        reason: 'first reason',
+      });
+
+      const userTurn = makeTurn(74);
+      eventBus.publish({
+        type: 'turn.started',
+        turnId: userTurn.id,
+        origin: USER_PROMPT_ORIGIN,
+      });
+      await loopService.hooks.onWillBeginStep.run({
+        turnId: userTurn.id,
+        step: 1,
+        firstStepOfTurn: true,
+        signal: userTurn.signal,
+      });
+      expect(goals.getGoal().goal?.continuation).toEqual({ state: 'running' });
+
+      endTurn(eventBus, userTurn);
+      await flushMicrotasks();
+      expect(decisions).toBe(2);
+      expect(goals.getGoal().goal?.continuation).toEqual({
+        state: 'held',
+        owner: 'second-owner',
+        reason: 'second reason',
+      });
     });
 
     it('re-evaluates every participant on retry and keeps a later hold', async () => {
@@ -3690,7 +3784,14 @@ describe('AITP Research goal contribution integration', () => {
     await flushMicrotasks();
     expect(loopService.launches).toEqual([]);
     expect(loopService.hasPendingRequests()).toBe(false);
-    expect(goals.getGoal().goal).toMatchObject({ status: 'active' });
+    expect(goals.getGoal().goal).toMatchObject({
+      status: 'active',
+      continuation: {
+        state: 'held',
+        owner: 'aitpResearch',
+        reason: expect.stringContaining('research loop is paused'),
+      },
+    });
   });
 
   it('resumes the goal continuation when the research loop is active and no gate is pending', async () => {

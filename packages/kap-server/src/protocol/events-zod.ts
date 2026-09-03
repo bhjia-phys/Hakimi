@@ -271,6 +271,12 @@ export const goalWaitLeaseSchema = z
   })
   .strict() satisfies z.ZodType<GoalWaitLease>;
 
+export const goalContinuationSnapshotSchema = z.object({
+  state: z.enum(['idle', 'deciding', 'enqueued', 'running', 'held', 'waiting']),
+  owner: z.string().optional(),
+  reason: z.string().optional(),
+});
+
 export const goalSnapshotSchema = z.object({
   goalId: z.string(),
   objective: z.string(),
@@ -281,6 +287,7 @@ export const goalSnapshotSchema = z.object({
   wallClockMs: z.number(),
   budget: goalBudgetReportSchema,
   waitingFor: goalWaitLeaseSchema.optional(),
+  continuation: goalContinuationSnapshotSchema.optional(),
   terminalReason: z.string().optional(),
 }) satisfies z.ZodType<GoalSnapshot>;
 
@@ -294,7 +301,11 @@ export const goalChangeStatsSchema = z.object({
   wallClockMs: z.number(),
 }) satisfies z.ZodType<GoalChangeStats>;
 
-export const goalChangeKindSchema = z.enum(['lifecycle', 'completion']) satisfies z.ZodType<GoalChangeKind>;
+export const goalChangeKindSchema = z.enum([
+  'lifecycle',
+  'completion',
+  'continuation',
+]) satisfies z.ZodType<GoalChangeKind>;
 
 export const goalChangeSchema = z.object({
   kind: goalChangeKindSchema,

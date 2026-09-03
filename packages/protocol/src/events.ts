@@ -205,6 +205,20 @@ export interface GoalBudgetReport {
   readonly overBudget: boolean;
 }
 
+export type GoalContinuationState =
+  | 'idle'
+  | 'deciding'
+  | 'enqueued'
+  | 'running'
+  | 'held'
+  | 'waiting';
+
+export interface GoalContinuationSnapshot {
+  readonly state: GoalContinuationState;
+  readonly owner?: string;
+  readonly reason?: string;
+}
+
 export interface GoalSnapshot {
   readonly goalId: string;
   readonly objective: string;
@@ -215,6 +229,7 @@ export interface GoalSnapshot {
   readonly wallClockMs: number;
   readonly budget: GoalBudgetReport;
   readonly waitingFor?: GoalWaitLease;
+  readonly continuation?: GoalContinuationSnapshot;
   readonly terminalReason?: string;
 }
 
@@ -228,7 +243,7 @@ export interface GoalChangeStats {
   readonly wallClockMs: number;
 }
 
-export type GoalChangeKind = 'lifecycle' | 'completion';
+export type GoalChangeKind = 'lifecycle' | 'completion' | 'continuation';
 
 export interface GoalChange {
   readonly kind: GoalChangeKind;
@@ -1242,6 +1257,21 @@ export const goalWaitLeaseSchema = z
   })
   .strict() satisfies z.ZodType<GoalWaitLease>;
 
+export const goalContinuationStateSchema = z.enum([
+  'idle',
+  'deciding',
+  'enqueued',
+  'running',
+  'held',
+  'waiting',
+]) satisfies z.ZodType<GoalContinuationState>;
+
+export const goalContinuationSnapshotSchema = z.object({
+  state: goalContinuationStateSchema,
+  owner: z.string().optional(),
+  reason: z.string().optional(),
+}) satisfies z.ZodType<GoalContinuationSnapshot>;
+
 export const goalSnapshotSchema = z.object({
   goalId: z.string(),
   objective: z.string(),
@@ -1252,6 +1282,7 @@ export const goalSnapshotSchema = z.object({
   wallClockMs: z.number(),
   budget: goalBudgetReportSchema,
   waitingFor: goalWaitLeaseSchema.optional(),
+  continuation: goalContinuationSnapshotSchema.optional(),
   terminalReason: z.string().optional(),
 }) satisfies z.ZodType<GoalSnapshot>;
 
@@ -1265,7 +1296,11 @@ export const goalChangeStatsSchema = z.object({
   wallClockMs: z.number(),
 }) satisfies z.ZodType<GoalChangeStats>;
 
-export const goalChangeKindSchema = z.enum(['lifecycle', 'completion']) satisfies z.ZodType<GoalChangeKind>;
+export const goalChangeKindSchema = z.enum([
+  'lifecycle',
+  'completion',
+  'continuation',
+]) satisfies z.ZodType<GoalChangeKind>;
 
 export const goalChangeSchema = z.object({
   kind: goalChangeKindSchema,

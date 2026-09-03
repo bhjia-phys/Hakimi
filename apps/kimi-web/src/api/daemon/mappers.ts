@@ -458,6 +458,35 @@ function recordGoalWaitLease(source: Record<string, unknown>): AppGoalWaitLease 
   return { taskIds: taskIds as string[], policy };
 }
 
+function recordGoalContinuation(source: Record<string, unknown>): AppGoal['continuation'] {
+  const raw = source['continuation'];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const continuation = raw as Record<string, unknown>;
+  if (Object.keys(continuation).some((key) => key !== 'state' && key !== 'owner' && key !== 'reason')) {
+    return undefined;
+  }
+  const state = continuation['state'];
+  if (
+    state !== 'idle' &&
+    state !== 'deciding' &&
+    state !== 'enqueued' &&
+    state !== 'running' &&
+    state !== 'held' &&
+    state !== 'waiting'
+  ) {
+    return undefined;
+  }
+  const owner = continuation['owner'];
+  const reason = continuation['reason'];
+  if (owner !== undefined && typeof owner !== 'string') return undefined;
+  if (reason !== undefined && typeof reason !== 'string') return undefined;
+  return {
+    state,
+    ...(owner === undefined ? {} : { owner }),
+    ...(reason === undefined ? {} : { reason }),
+  };
+}
+
 export function toAppGoal(snapshot: unknown): AppGoal | null {
   if (!snapshot || typeof snapshot !== 'object') return null;
   const source = snapshot as Record<string, unknown>;
@@ -478,6 +507,7 @@ export function toAppGoal(snapshot: unknown): AppGoal | null {
     tokensUsed: recordNumber(source, 'tokensUsed') ?? recordNumber(source, 'tokens_used') ?? 0,
     wallClockMs: recordNumber(source, 'wallClockMs') ?? recordNumber(source, 'wall_clock_ms') ?? 0,
     waitingFor: recordGoalWaitLease(source),
+    continuation: recordGoalContinuation(source),
     terminalReason: recordString(source, 'terminalReason') ?? recordString(source, 'terminal_reason'),
     budget: {
       tokenBudget: recordNullableNumber(budget, 'tokenBudget') ?? recordNullableNumber(budget, 'token_budget'),

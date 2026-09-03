@@ -4,9 +4,9 @@
  * Drives deterministic turn-boundary maintenance for the main agent through
  * `IEventBus`, `IAgentAitpModeService`, `IAgentResearchService`, and the
  * Session-scope AITP lifecycle coordinator. It advances an admitted idle active
- * loop to orienting at turn start, notes the admitted loop boundary on the
- * research period (one loop-count increment per interactive or autonomous
- * Research iteration), and refreshes the read-only AITP current-state
+ * loop to orienting at turn start, notes the admitted turn boundary on the
+ * research period (one `loopCount` increment per interactive or autonomous
+ * Research turn), and refreshes the read-only AITP current-state
  * projection after admitted turns that changed research state. Typed main-agent
  * user turns carry an interactive lease; post-guard Goal continuations carry an
  * autonomous lease. System / subagent / cron / unclassified turns abstain. It

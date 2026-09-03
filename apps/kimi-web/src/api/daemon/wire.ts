@@ -120,6 +120,12 @@ export interface WireGoalWaitLease {
   policy: 'any' | 'all';
 }
 
+export interface WireGoalContinuation {
+  state: 'idle' | 'deciding' | 'enqueued' | 'running' | 'held' | 'waiting';
+  owner?: string;
+  reason?: string;
+}
+
 export interface WireGoalSnapshot {
   goalId: string;
   objective: string;
@@ -129,6 +135,7 @@ export interface WireGoalSnapshot {
   tokensUsed: number;
   wallClockMs: number;
   waitingFor?: WireGoalWaitLease;
+  continuation?: WireGoalContinuation;
   terminalReason?: string;
   budget: {
     tokenBudget: number | null;
@@ -679,6 +686,7 @@ export interface WireResearchGoalProjection {
   status: 'active' | 'paused' | 'blocked' | 'complete';
   terminalReason?: string;
   waitingFor?: { taskIds: string[]; policy: 'any' | 'all' };
+  continuation?: WireGoalContinuation;
   programRelation: WireResearchGoalAlignment;
   humanGates: WireResearchHumanGate[];
   persistenceGuards: Array<{

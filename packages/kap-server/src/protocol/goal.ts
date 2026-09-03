@@ -24,6 +24,12 @@ export const goalWaitLeaseSchema = z
   })
   .strict();
 
+export const goalContinuationSnapshotSchema = z.object({
+  state: z.enum(['idle', 'deciding', 'enqueued', 'running', 'held', 'waiting']),
+  owner: z.string().optional(),
+  reason: z.string().optional(),
+});
+
 export const goalSnapshotSchema = z.object({
   goalId: z.string(),
   objective: z.string(),
@@ -34,6 +40,7 @@ export const goalSnapshotSchema = z.object({
   wallClockMs: z.number(),
   budget: goalBudgetReportSchema,
   waitingFor: goalWaitLeaseSchema.optional(),
+  continuation: goalContinuationSnapshotSchema.optional(),
   terminalReason: z.string().optional(),
 });
 export type GoalSnapshotWire = z.infer<typeof goalSnapshotSchema>;

@@ -106,6 +106,17 @@ gate. Policy state, injection, revisioned commands, Board, and Manager controls
 are aligned across REST, WebSocket, Node SDK, klient, TUI, and Web; changing the
 policy has no AITP side effect.
 
+The 2026-09-03 Hakimi-only O2 follow-up does not reopen S0-S10. It reduces the
+compact Board to Project, Current cycle, Attention, and Next; labels the
+legacy period counter as Research turns; maps the existing phase enum to five
+display stages; filters current attention by Line; and rejects unsafe Line
+switches until live cycle-owned state is resolved. Safe switches archive the
+old period focus and progress summary. The deterministic reconciliation path
+may repair only Hakimi-local period/checkpoint/alert state. It never infers a
+workstream, writes AITP, changes scientific meaning, requires a Goal for an
+interactive turn, or changes Goal-owned autonomous continuation. No public
+transport, SDK, AITP contract, fixture, or human-decision semantic changed.
+
 S5 added a Hakimi-local, revisioned, explicit Research Line→AITP workstream
 binding. A binding records a server-owned opaque confirmation identity, the
 observed Topic and its Hakimi observation revision, plus explicit `user` or
@@ -271,6 +282,26 @@ TUI and Web commands mutate the underlying Research models; neither surface
 writes AITP or owns a parallel board model. Every public contract change lands
 across protocol, kap-server, Node SDK, klient, TUI, Web, fixtures, docs, and
 changesets in the same stage.
+
+Mode capability and workflow health are separate projections. `mode ready`
+means an interactive Research turn may be admitted, while `workflow blocked`
+means a current invariant requires recovery; `adapter ready` only states that
+the AITP capability is available. The canonical effective-next priority is an
+unresolved human gate, a live action whose status conflicts with the phase, a
+coherent run/action, a pending checkpoint, Goal–Program alignment, and only
+then ordinary question or maintenance guidance. Text, source, freshness,
+timestamp, and provenance are projected together. Presentation clients may
+retain a compatibility fallback for old snapshots, but must never pair its
+text with metadata from another effective next step.
+
+The generic Goal and both Research Goal projections also expose one optional,
+derived continuation view: `idle`, `deciding`, `enqueued`, `running`, `held`,
+or task `waiting`. A hold carries the deciding participant's owner and reason.
+This view is not a second lifecycle or persisted Research state: it exists so
+REST, WebSocket, SDK, klient, TUI, and Web can distinguish an active objective
+from an actually progressing continuation. Presentation renders it as
+`active · continuation held`, and an observed hold outranks inferred Research
+blockers in Board Attention.
 
 ## Stage S0: freeze the implementation contract
 

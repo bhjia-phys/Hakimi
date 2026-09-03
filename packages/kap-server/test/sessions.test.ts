@@ -732,11 +732,16 @@ describe('server-v2 /api/v1/sessions', () => {
       agent_config: { goal_objective: 'fix all lint warnings' },
     });
 
-    const after = await getJson<{ objective: string; status: string } | null>(
+    const after = await getJson<{
+      objective: string;
+      status: string;
+      continuation?: { state: string };
+    } | null>(
       `/api/v1/sessions/${id}/goal`,
     );
     expect(after.body.data?.objective).toBe('fix all lint warnings');
     expect(after.body.data?.status).toBe('active');
+    expect(after.body.data?.continuation).toEqual({ state: 'idle' });
   });
 
   it('starts one continuation when the Web profile resumes a blocked goal', async () => {

@@ -196,6 +196,35 @@ function goalWaitLease(source: Record<string, unknown>): AppGoalWaitLease | unde
   return { taskIds: taskIds as string[], policy };
 }
 
+function goalContinuation(source: Record<string, unknown>): AppGoal['continuation'] {
+  const raw = source['continuation'];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const continuation = raw as Record<string, unknown>;
+  if (Object.keys(continuation).some((key) => key !== 'state' && key !== 'owner' && key !== 'reason')) {
+    return undefined;
+  }
+  const state = continuation['state'];
+  if (
+    state !== 'idle' &&
+    state !== 'deciding' &&
+    state !== 'enqueued' &&
+    state !== 'running' &&
+    state !== 'held' &&
+    state !== 'waiting'
+  ) {
+    return undefined;
+  }
+  const owner = continuation['owner'];
+  const reason = continuation['reason'];
+  if (owner !== undefined && typeof owner !== 'string') return undefined;
+  if (reason !== undefined && typeof reason !== 'string') return undefined;
+  return {
+    state,
+    ...(owner === undefined ? {} : { owner }),
+    ...(reason === undefined ? {} : { reason }),
+  };
+}
+
 function mapGoalSnapshot(snapshot: unknown): AppGoal | null {
   if (!snapshot || typeof snapshot !== 'object') return null;
   const s = snapshot as Record<string, unknown>;
@@ -214,6 +243,7 @@ function mapGoalSnapshot(snapshot: unknown): AppGoal | null {
     tokensUsed: numberField(s, 'tokensUsed') ?? numberField(s, 'tokens_used') ?? 0,
     wallClockMs: numberField(s, 'wallClockMs') ?? numberField(s, 'wall_clock_ms') ?? 0,
     waitingFor: goalWaitLease(s),
+    continuation: goalContinuation(s),
     terminalReason: stringField(s, 'terminalReason') ?? stringField(s, 'terminal_reason'),
     budget: {
       tokenBudget: nullableNumberField(budget, 'tokenBudget') ?? nullableNumberField(budget, 'token_budget'),

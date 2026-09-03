@@ -1,0 +1,9 @@
+{"type":"metadata","protocol_version":"1.5","created_at":1786973772805}
+{"type":"goal.create","goalId":"legacy-goal","objective":"Validate one bounded scientific workflow from pinned inputs.","completionCriterion":"Record the checked result and its evidence boundary.","wallClockResumedAt":1786978988911,"time":1786978988922}
+{"type":"goal.update","tokensUsed":512,"time":1786979003163}
+{"type":"aitp_mode.enter","actor":"user","time":1787571990097}
+{"type":"aitp_mode.set_phase","phase":"ready","time":1787571990257}
+{"type":"research.create_line","slug":"primary-line","title":"Primary validation line","objective":"Test the bounded hypothesis.","createdAt":1787635979345,"time":1787635979345}
+{"type":"research.create_question","id":"question-primary","lineSlug":"primary-line","wording":"Does the pinned workflow pass its decisive check?","assessment":"Evidence is not yet complete.","priority":10,"neededEvidence":["one checked result"],"time":1787635987517}
+{"type":"research.set_focus","questionId":"question-primary","boundedAction":"Run the smallest decisive check.","expectedRevision":2,"time":1787635995090}
+{"type":"aitp_mode.set_line","lineSlug":"primary-line","time":1787635995090}

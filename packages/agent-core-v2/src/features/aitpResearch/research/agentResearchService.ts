@@ -42,8 +42,8 @@
  * from a real AITP `enter` topic observed through a maintenance receipt
  * (never fabricated, never adopted automatically), the auditable `period`
  * window is started/ended only at the clear semantic points (mode enter,
- * line switch via `aitp_mode.updated`, mode exit, and each admitted loop
- * boundary through `noteLoopBoundary` — ordinary turns never write period
+ * line switch via `aitp_mode.updated`, mode exit, and each admitted Research
+ * turn boundary through `noteLoopBoundary` — ordinary turns never write period
  * records), and the workstream-isolated `status` projection is a pure
  * derived read. Additionally subscribes to `aitp_mode.updated`
  * (fired by each mode op's `toEvent` and by undo / cold restore) and
@@ -198,10 +198,13 @@ import {
 import type { ResearchEvidencePacket, ResearchEvidenceReview } from './evidencePacket';
 import {
   PLAN_ACTION_PHASES,
+  RESEARCH_ACTION_RECOVERY_PREFIX,
   allowedNextPhases,
+  isRecoveredLiveAction,
   isLiveForegroundAction,
   isPhaseTransitionValid,
   isUnresolvedHumanGate,
+  researchActionOwnedPhase,
 } from '#/features/aitpResearch/transitions/researchTransitionAuthority';
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
 
@@ -383,7 +386,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
           }
         }
         this.lastModeActive = modeActive;
-        this.reconcilePeriodLifecycle();
+        this.reconcile();
         if (!this.resumeActionWithAutoStandingApproval()) {
           this.publishResearchUpdated();
         }
@@ -436,11 +439,14 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       : undefined;
     const questions = Object.values(state.questions).map(toQuestion);
     const lines = Object.values(state.lines).map(toLine);
-    const currentQuestion = state.focus
-      ? questions.find((q) => q.id === state.focus!.questionId)
-      : undefined;
     const currentLineSlug = this.mode.isActive
       ? this.wire.getModel(AitpModeModel).current.currentLineSlug
+      : undefined;
+    const focusedQuestion = state.focus
+      ? questions.find((q) => q.id === state.focus!.questionId)
+      : undefined;
+    const currentQuestion = focusedQuestion?.lineSlug === currentLineSlug
+      ? focusedQuestion
       : undefined;
     const storedLineWorkstreamBindings = state.lineWorkstreamBindings ?? {};
     const lineWorkstreamBindings = lines.flatMap((line) => {
@@ -452,24 +458,43 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       : this.getLineWorkstreamAlignment(currentLineSlug);
     const aitpMaintenance = this.currentMaintenanceReceipt();
     const currentAction = state.currentAction === null ? undefined : toActionSpec(state.currentAction);
+    const currentRun = state.currentRun === null ? undefined : toRunState(state.currentRun);
+    const scopedCurrentAction = currentLineAction({
+      action: currentAction,
+      currentLineSlug,
+      questions,
+      lines,
+    });
+    const scopedCurrentRun = currentLineRun(scopedCurrentAction, currentRun);
     const latestProgress = state.latestProgress === null ? undefined : toProgressReport(state.latestProgress);
     const humanGate = state.humanGate === null ? undefined : toHumanGate(state.humanGate);
+    const scopedHumanGate = currentLineHumanGate({
+      gate: humanGate,
+      rawAction: currentAction,
+      scopedAction: scopedCurrentAction,
+      currentLineSlug,
+      questions,
+    });
     const goalSummary = this.getGoalSummary();
     const activeGoal = goalSummary?.status === 'active';
     const goalAlignment = this.getGoalAlignment();
     const researchGoal = this.getResearchGoalProjection({
       state,
       currentLineSlug,
-      humanGate,
+      humanGate: scopedHumanGate,
       goalAlignment,
     });
     const effectiveNextStep = deriveEffectiveNextStep({
       phase: state.phase,
-      currentAction,
-      currentRun: state.currentRun === null ? undefined : toRunState(state.currentRun),
+      currentAction: scopedCurrentAction,
+      currentRun: scopedCurrentRun,
+      pendingCheckpoint: state.pendingCheckpoint === null ? undefined : toCheckpoint(state.pendingCheckpoint),
       latestProgress,
       currentQuestion,
-      humanGate,
+      humanGate: scopedHumanGate,
+      recentStateChange: state.recentStateChange === null
+        ? undefined
+        : toStateChange(state.recentStateChange),
       goalAlignment,
       activeGoal,
       maintenance: aitpMaintenance,
@@ -482,7 +507,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       currentLineSlug,
       currentWorkstreamBinding,
       lineWorkstreamBindings,
-      currentFocus: state.focus
+      currentFocus: state.focus !== null && currentQuestion !== undefined
         ? {
             questionId: state.focus.questionId,
             boundedAction: state.focus.boundedAction,
@@ -510,7 +535,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       distillationAttention,
       phase: state.phase,
       currentAction,
-      currentRun: state.currentRun === null ? undefined : toRunState(state.currentRun),
+      currentRun,
       latestProgress,
       recentStateChange: state.recentStateChange === null ? undefined : toStateChange(state.recentStateChange),
       humanGate,
@@ -527,9 +552,10 @@ export class AgentResearchService extends Service implements IAgentResearchServi
             currentLineSlug,
             focus: state.focus,
             questions: state.questions,
-            currentAction,
+            currentAction: scopedCurrentAction,
             effectiveNextStep,
-            humanGate,
+            pendingCheckpoint: state.pendingCheckpoint === null ? undefined : toCheckpoint(state.pendingCheckpoint),
+            humanGate: scopedHumanGate,
             goalAlignment,
             workstreamAlignment: currentWorkstreamBinding,
             activeGoal,
@@ -1521,10 +1547,13 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     const currentLineSlug = this.wire.getModel(AitpModeModel).current.currentLineSlug;
     const lineChanged = currentLineSlug !== question.lineSlug;
     if (lineChanged) {
+      this.assertLineSwitchSafe(state, question.lineSlug);
+      this.archiveCurrentCycleForLineSwitch(state);
+      const current = this.wire.getModel(ResearchModel).current;
       this.wire.dispatch(
         researchSwitchLine({
           lineSlug: question.lineSlug,
-          expectedRevision: state.revision,
+          expectedRevision: current.revision,
         }),
       );
       const switched = this.wire.getModel(ResearchModel).current;
@@ -1572,10 +1601,15 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       : state.questions[state.focus.questionId];
     const focusBelongsElsewhere = focusQuestion !== undefined && focusQuestion.lineSlug !== lineSlug;
     if (!lineChanged && !focusBelongsElsewhere) return;
+    if (lineChanged) {
+      this.assertLineSwitchSafe(state, lineSlug);
+      this.archiveCurrentCycleForLineSwitch(state);
+    }
+    const current = this.wire.getModel(ResearchModel).current;
     this.wire.dispatch(
       researchSwitchLine({
         lineSlug,
-        expectedRevision: state.revision,
+        expectedRevision: current.revision,
       }),
     );
     if (lineChanged) {
@@ -2948,6 +2982,13 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         `Invalid human-gate recovery phase: awaiting_human → ${input.nextPhase}`,
       );
     }
+    const actionOwnedPhase = researchActionOwnedPhase(state.currentAction);
+    if (actionOwnedPhase !== undefined && input.nextPhase !== actionOwnedPhase) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        `Action ${state.currentAction!.actionId} is ${state.currentAction!.status}; resolve its gate to ${actionOwnedPhase} so the live action remains structurally owned.`,
+      );
+    }
     if (
       input.nextPhase === 'action_executing' &&
       (state.currentAction === null || state.currentAction.status !== 'in_progress')
@@ -3224,8 +3265,102 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   }
 
   private reconcile(): void {
+    this.reconcileResearchStructure();
+    this.reconcilePeriodLifecycle();
     this.reconcileCommittedCheckpoint();
     this.reconcileAlerts();
+  }
+
+  /**
+   * Repairs only state-machine facts that have one mechanically determined
+   * answer. It never infers a scientific outcome: a recovered live action
+   * remains live and is marked for evidence-based resolution on the next
+   * Research turn.
+   */
+  private reconcileResearchStructure(): void {
+    let state = this.wire.getModel(ResearchModel).current;
+    const modeState = this.wire.getModel(AitpModeModel).current;
+    const foregroundLine = deterministicForegroundLine(state);
+    if (
+      this.mode.isActive &&
+      foregroundLine !== undefined &&
+      modeState.currentLineSlug !== foregroundLine
+    ) {
+      this.wire.dispatch(aitpModeSetLine({ lineSlug: foregroundLine }));
+      state = this.wire.getModel(ResearchModel).current;
+    }
+
+    if (isUnresolvedHumanGate(state.humanGate)) return;
+    const actionOwnedPhase = researchActionOwnedPhase(state.currentAction);
+    if (actionOwnedPhase !== undefined) {
+      if (state.phase === actionOwnedPhase) return;
+      this.wire.dispatch(researchSetPhase({
+        phase: actionOwnedPhase,
+        reason: `${RESEARCH_ACTION_RECOVERY_PREFIX} Action ${state.currentAction!.actionId} remained ${state.currentAction!.status} while phase was ${state.phase}; scientific completion or abandonment remains unresolved.`,
+        changedAt: now(),
+      }));
+      return;
+    }
+
+    if (state.phase !== 'action_planned' && state.phase !== 'action_executing') return;
+    const terminalAction = state.currentAction?.status === 'completed' ||
+      state.currentAction?.status === 'abandoned';
+    const phase = state.phase === 'action_executing' && terminalAction
+      ? 'evaluating'
+      : 'idle';
+    this.wire.dispatch(researchSetPhase({
+      phase,
+      reason: `Recovered orphan Research phase ${state.phase}: no live foreground action owns it.`,
+      changedAt: now(),
+    }));
+  }
+
+  private assertLineSwitchSafe(state: ResearchWorkingState, nextLineSlug: string): void {
+    const pending = state.pendingCheckpoint;
+    if (pending !== null) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Cannot switch to Research Line ${nextLineSlug} while checkpoint ${pending.checkpointId} is pending. Commit it or undo its proposal before switching lines.`,
+      );
+    }
+    if (isLiveForegroundAction(state.currentAction)) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        `Cannot switch to Research Line ${nextLineSlug} while action ${state.currentAction!.actionId} is ${state.currentAction!.status}. Conclude or abandon the action before switching lines.`,
+      );
+    }
+    if (isLiveResearchRun(state.currentRun) || isLiveResearchRun(state.currentAction?.run)) {
+      const run = isLiveResearchRun(state.currentRun) ? state.currentRun : state.currentAction!.run!;
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        `Cannot switch to Research Line ${nextLineSlug} while run ${run.jobId} is unresolved. Finish or cancel the run and conclude its Research action before switching lines.`,
+      );
+    }
+    if (isUnresolvedHumanGate(state.humanGate)) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_GATE_PENDING,
+        `Cannot switch to Research Line ${nextLineSlug} while human gate ${state.humanGate.gateId} is unresolved. Resolve the gate before switching lines.`,
+      );
+    }
+    if (state.phase !== 'idle') {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_PHASE_TRANSITION_INVALID,
+        `Cannot switch to Research Line ${nextLineSlug} while the current Research phase is ${state.phase}. Return the current cycle to idle through a valid transition before switching lines.`,
+      );
+    }
+  }
+
+  private archiveCurrentCycleForLineSwitch(state: ResearchWorkingState): void {
+    const period = state.period;
+    if (period === null || period.endedAt !== undefined) return;
+    const question = state.focus === null ? undefined : state.questions[state.focus.questionId];
+    const currentQuestionId = question?.lineSlug === period.lineSlug ? question.id : null;
+    const summary = state.latestProgress?.headline ?? period.summary ?? null;
+    this.wire.dispatch(researchUpdatePeriod({
+      id: period.id,
+      currentQuestionId,
+      summary,
+    }));
   }
 
   /**
@@ -3597,6 +3732,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       waitingFor: goal.waitingFor === undefined
         ? undefined
         : { taskIds: [...goal.waitingFor.taskIds], policy: goal.waitingFor.policy },
+      continuation: goal.continuation,
     };
   }
 
@@ -3700,6 +3836,17 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         nextStep: 'ResolveResearchDecision',
       };
     }
+    const researchState = this.wire.getModel(ResearchModel).current;
+    const liveAction = researchState.currentAction;
+    if (liveAction !== null && isLiveForegroundAction(liveAction)) {
+      return {
+        allow: false,
+        owner: 'aitpResearch',
+        code: 'research.action.live',
+        reason: `Goal completion is blocked: Research action ${liveAction.actionId} is still ${liveAction.status}. Resolve it from evidence before completing the goal.`,
+        nextStep: 'ConcludeResearchAction',
+      };
+    }
     const goal = this.goal.getGoal().goal;
     const alignment = this.getGoalAlignment();
     if (isAlignmentBlocking(alignment, goal?.status === 'active' && goal.goalId === input.goalId)) {
@@ -3760,6 +3907,17 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         reason: 'A Research human gate is unresolved. Resolve the gate before continuing the goal automatically.',
       };
     }
+    const researchState = this.wire.getModel(ResearchModel).current;
+    if (isRecoveredLiveAction({
+      action: researchState.currentAction,
+      recentStateChange: researchState.recentStateChange,
+    })) {
+      return {
+        decision: 'hold',
+        owner: 'aitpResearch',
+        reason: `Research action ${researchState.currentAction!.actionId} was recovered from a stranded action/phase state. Resolve it from recorded evidence on the next Research turn; do not start another action or ask for a bookkeeping-only decision.`,
+      };
+    }
     const goal = this.goal.getGoal().goal;
     const alignment = this.getGoalAlignment();
     if (isAlignmentBlocking(alignment, goal?.status === 'active' && goal.goalId === input.goalId)) {
@@ -3809,6 +3967,14 @@ function checkpointQuestionRevisionMatches(
 ): boolean {
   if (checkpoint.questionId === undefined || checkpoint.questionRevision === undefined) return true;
   return state.questions[checkpoint.questionId]?.revision === checkpoint.questionRevision;
+}
+
+function isLiveResearchRun(
+  run: ResearchRunStateRecord | null | undefined,
+): run is ResearchRunStateRecord {
+  if (run === null || run === undefined || run.terminalState !== undefined) return false;
+  if (['completed', 'failed', 'cancelled'].includes(run.schedulerState)) return false;
+  return run.stage !== 'completed' && run.stage !== 'failed';
 }
 
 function assertDurableCommitProvenance(
@@ -4231,6 +4397,7 @@ function deriveResearchGoalProjection(
     waitingFor: goal.waitingFor === undefined
       ? undefined
       : { taskIds: [...goal.waitingFor.taskIds], policy: goal.waitingFor.policy },
+    continuation: goal.continuation,
     programRelation: input.goalAlignment,
     humanGates: input.humanGate === undefined ? [] : [input.humanGate],
     persistenceGuards,
@@ -4244,31 +4411,167 @@ function goalAlignmentBlockerText(alignment: ResearchGoalAlignment): string {
     : `Goal alignment is ${alignment.status}; use /research align or refresh AITP state before continuing.`;
 }
 
+function actionLineFromWorkingState(
+  state: ResearchWorkingState,
+  action: ResearchActionSpecRecord | null,
+): string | undefined {
+  if (action === null) return undefined;
+  const explicit = action.lineSlug !== undefined && state.lines[action.lineSlug] !== undefined
+    ? action.lineSlug
+    : undefined;
+  const question = action.questionId === undefined ? undefined : state.questions[action.questionId];
+  const fromQuestion = question !== undefined && state.lines[question.lineSlug] !== undefined
+    ? question.lineSlug
+    : undefined;
+  if (explicit !== undefined && fromQuestion !== undefined && explicit !== fromQuestion) {
+    return undefined;
+  }
+  if (explicit !== undefined || fromQuestion !== undefined) return explicit ?? fromQuestion;
+  const lineSlugs = Object.keys(state.lines);
+  return lineSlugs.length === 1 ? lineSlugs[0] : undefined;
+}
+
+function deterministicForegroundLine(state: ResearchWorkingState): string | undefined {
+  const candidates = new Set<string>();
+  if (isLiveForegroundAction(state.currentAction)) {
+    const actionLine = actionLineFromWorkingState(state, state.currentAction);
+    if (actionLine !== undefined) candidates.add(actionLine);
+  }
+  if (isUnresolvedHumanGate(state.humanGate)) {
+    const gateAction = state.humanGate.actionId === state.currentAction?.actionId
+      ? state.currentAction
+      : null;
+    const actionLine = actionLineFromWorkingState(state, gateAction);
+    const question = state.humanGate.questionId === undefined
+      ? undefined
+      : state.questions[state.humanGate.questionId];
+    if (actionLine !== undefined) candidates.add(actionLine);
+    if (question !== undefined && state.lines[question.lineSlug] !== undefined) {
+      candidates.add(question.lineSlug);
+    }
+  }
+  const checkpointLine = state.pendingCheckpoint?.lineSlug;
+  if (checkpointLine !== undefined && state.lines[checkpointLine] !== undefined) {
+    candidates.add(checkpointLine);
+  }
+  return candidates.size === 1 ? [...candidates][0] : undefined;
+}
+
+function currentLineAction(input: {
+  readonly action?: ResearchActionSpec;
+  readonly currentLineSlug?: string;
+  readonly questions: readonly ResearchQuestion[];
+  readonly lines: readonly ResearchLine[];
+}): ResearchActionSpec | undefined {
+  const { action, currentLineSlug } = input;
+  if (action === undefined) return undefined;
+  const explicit = action.lineSlug;
+  const question = action.questionId === undefined
+    ? undefined
+    : input.questions.find((candidate) => candidate.id === action.questionId);
+  if (explicit !== undefined && question !== undefined && explicit !== question.lineSlug) {
+    return undefined;
+  }
+  const lineSlug = explicit ?? question?.lineSlug;
+  if (currentLineSlug === undefined) {
+    return lineSlug === undefined && input.lines.length <= 1 ? action : undefined;
+  }
+  if (lineSlug !== undefined) return lineSlug === currentLineSlug ? action : undefined;
+  return input.lines.length === 0 || (input.lines.length === 1 && input.lines[0]?.slug === currentLineSlug)
+    ? action
+    : undefined;
+}
+
+function currentLineRun(
+  action: ResearchActionSpec | undefined,
+  run: ResearchRunState | undefined,
+): ResearchRunState | undefined {
+  if (action === undefined) return undefined;
+  if (action.run?.actionId === action.actionId) return action.run;
+  return run?.actionId === action.actionId ? run : undefined;
+}
+
+function currentLineHumanGate(input: {
+  readonly gate?: ResearchHumanGate;
+  readonly rawAction?: ResearchActionSpec;
+  readonly scopedAction?: ResearchActionSpec;
+  readonly currentLineSlug?: string;
+  readonly questions: readonly ResearchQuestion[];
+}): ResearchHumanGate | undefined {
+  const { gate } = input;
+  if (gate === undefined) return undefined;
+  if (gate.actionId !== undefined) {
+    if (input.rawAction?.actionId !== gate.actionId) return undefined;
+    if (input.scopedAction?.actionId !== gate.actionId) return undefined;
+  }
+  if (gate.questionId !== undefined) {
+    const question = input.questions.find((candidate) => candidate.id === gate.questionId);
+    if (question === undefined || question.lineSlug !== input.currentLineSlug) return undefined;
+  }
+  return gate;
+}
+
+function actionRecoveryStep(input: {
+  readonly phase: ResearchPhase;
+  readonly currentAction?: ResearchActionSpec;
+  readonly humanGate?: ResearchHumanGate;
+  readonly recentStateChange?: ResearchStateChange;
+}): ResearchEffectiveNextStep | undefined {
+  const action = input.currentAction;
+  if (action === undefined || (action.status !== 'planned' && action.status !== 'in_progress')) {
+    return undefined;
+  }
+  if (input.humanGate !== undefined && input.humanGate.resolvedAt === undefined) {
+    return undefined;
+  }
+  if (isRecoveredLiveAction({ action, recentStateChange: input.recentStateChange })) {
+    return {
+      text: `Resolve recovered action ${action.actionId} from its recorded evidence: continue only the missing in-scope work, then call ConcludeResearchAction once with completed or abandoned. Do not start another action or ask the user merely to repair bookkeeping.`,
+      source: 'research_action',
+      freshness: 'blocked',
+      observedAt: input.recentStateChange?.changedAt ?? action.createdAt,
+      derivedFrom: {
+        actionId: action.actionId,
+        questionId: action.questionId,
+        lineSlug: action.lineSlug,
+      },
+    };
+  }
+  const phaseMatches = action.status === 'planned'
+    ? input.phase === 'action_planned'
+    : input.phase === 'action_executing';
+  if (phaseMatches) return undefined;
+  return {
+    text: `Recover action ${action.actionId}: it is ${action.status} while the Research phase is ${input.phase}; conclude or abandon it before starting another action.`,
+    source: 'research_action',
+    freshness: 'blocked',
+    observedAt: action.createdAt,
+    derivedFrom: {
+      actionId: action.actionId,
+      questionId: action.questionId,
+      lineSlug: action.lineSlug,
+    },
+  };
+}
+
+function pendingCheckpointBlockerText(checkpoint: ResearchCheckpoint): string {
+  return `Checkpoint ${checkpoint.checkpointId} is pending durable commit; commit it or undo its proposal before automatic continuation.`;
+}
+
 function deriveEffectiveNextStep(input: {
   readonly phase: ResearchPhase;
   readonly currentAction?: ResearchActionSpec;
   readonly currentRun?: ResearchRunState;
+  readonly pendingCheckpoint?: ResearchCheckpoint;
   readonly latestProgress?: ResearchProgressReport;
   readonly currentQuestion?: ResearchQuestion;
   readonly humanGate?: ResearchHumanGate;
+  readonly recentStateChange?: ResearchStateChange;
   readonly goalAlignment?: ResearchGoalAlignment;
   readonly activeGoal?: boolean;
   readonly maintenance?: AitpMaintenanceReceipt;
   readonly currentLineSlug?: string;
 }): ResearchEffectiveNextStep | undefined {
-  const alignment = input.goalAlignment;
-  if (alignment !== undefined && isAlignmentBlocking(alignment, input.activeGoal === true)) {
-    return {
-      text: goalAlignmentBlockerText(alignment),
-      source: 'aitp_maintenance',
-      freshness: 'blocked',
-      observedAt: input.maintenance?.refreshedAt ?? now(),
-      derivedFrom: {
-        lineSlug: input.currentLineSlug,
-      },
-    };
-  }
-
   const gate = input.humanGate;
   if (gate !== undefined && gate.resolvedAt === undefined) {
     return {
@@ -4282,6 +4585,9 @@ function deriveEffectiveNextStep(input: {
       },
     };
   }
+
+  const recovery = actionRecoveryStep(input);
+  if (recovery !== undefined) return recovery;
 
   const run = input.currentRun;
   if (run !== undefined && (run.schedulerState === 'pending' || run.schedulerState === 'running')) {
@@ -4349,6 +4655,33 @@ function deriveEffectiveNextStep(input: {
     }
   }
 
+  const checkpoint = input.pendingCheckpoint;
+  if (checkpoint !== undefined) {
+    return {
+      text: pendingCheckpointBlockerText(checkpoint),
+      source: 'aitp_maintenance',
+      freshness: 'blocked',
+      observedAt: checkpoint.createdAt,
+      derivedFrom: {
+        questionId: checkpoint.questionId,
+        lineSlug: checkpoint.lineSlug,
+      },
+    };
+  }
+
+  const alignment = input.goalAlignment;
+  if (alignment !== undefined && isAlignmentBlocking(alignment, input.activeGoal === true)) {
+    return {
+      text: goalAlignmentBlockerText(alignment),
+      source: 'aitp_maintenance',
+      freshness: 'blocked',
+      observedAt: input.maintenance?.refreshedAt ?? now(),
+      derivedFrom: {
+        lineSlug: input.currentLineSlug,
+      },
+    };
+  }
+
   if (input.latestProgress?.nextAction !== undefined) {
     return {
       text: input.latestProgress.nextAction,
@@ -4412,6 +4745,7 @@ function deriveStatusProjection(input: {
   readonly questions: Readonly<Record<string, ResearchQuestionRecord>>;
   readonly currentAction?: ResearchActionSpec;
   readonly effectiveNextStep?: ResearchEffectiveNextStep;
+  readonly pendingCheckpoint?: ResearchCheckpoint;
   readonly humanGate?: ResearchHumanGate;
   readonly goalAlignment?: ResearchGoalAlignment;
   readonly workstreamAlignment?: ResearchLineWorkstreamAlignment;
@@ -4443,10 +4777,16 @@ function deriveStatusProjection(input: {
   const distillationUnavailable = input.distillationAttention?.status === 'handoff_unavailable';
   const alignmentBlocked = input.goalAlignment !== undefined &&
     isAlignmentBlocking(input.goalAlignment, input.activeGoal === true);
+  const actionRecoveryBlocked = input.effectiveNextStep?.source === 'research_action' &&
+    input.effectiveNextStep.freshness === 'blocked';
+  const checkpointBlocked = input.pendingCheckpoint !== undefined;
   const focusBlocked =
     focusQuestion !== undefined && !focusOutsideWorkstream && focusQuestion.workflow === 'blocked';
   let health: ResearchStatusHealth = 'ok';
-  if (alignmentBlocked || humanGateUnresolved || hasBlocker || focusBlocked) {
+  if (
+    actionRecoveryBlocked || checkpointBlocked || alignmentBlocked ||
+    humanGateUnresolved || hasBlocker || focusBlocked
+  ) {
     health = 'blocked';
   } else if (input.modePhase === 'degraded') {
     health = 'degraded';
@@ -4461,9 +4801,23 @@ function deriveStatusProjection(input: {
   const bindingAttention = input.currentLineSlug !== undefined && input.workstreamAlignment?.status !== 'bound'
     ? [`Scoped AITP persistence is unavailable: ${input.workstreamAlignment?.reason ?? 'confirm an explicit workstream binding.'}`]
     : [];
-  const attention = alignmentBlocked && input.goalAlignment !== undefined
-    ? [goalAlignmentBlockerText(input.goalAlignment), ...bindingAttention, ...distillationAttentionText(input.distillationAttention), ...attentionAlerts.map((alert) => alert.message)]
-    : [...bindingAttention, ...distillationAttentionText(input.distillationAttention), ...attentionAlerts.map((alert) => alert.message)];
+  const recoveryAttention = actionRecoveryBlocked && input.effectiveNextStep !== undefined
+    ? [input.effectiveNextStep.text]
+    : [];
+  const checkpointAttention = checkpointBlocked && input.pendingCheckpoint !== undefined
+    ? [pendingCheckpointBlockerText(input.pendingCheckpoint)]
+    : [];
+  const alignmentAttention = alignmentBlocked && input.goalAlignment !== undefined
+    ? [goalAlignmentBlockerText(input.goalAlignment)]
+    : [];
+  const attention = [
+    ...recoveryAttention,
+    ...checkpointAttention,
+    ...alignmentAttention,
+    ...bindingAttention,
+    ...distillationAttentionText(input.distillationAttention),
+    ...attentionAlerts.map((alert) => alert.message),
+  ];
   return {
     currentLineSlug: input.currentLineSlug,
     currentQuestionId,

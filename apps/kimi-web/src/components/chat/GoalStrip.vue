@@ -39,6 +39,10 @@ function goalStatusLabel(status: AppGoal['status']): string {
   }
 }
 
+function continuationLabel(state: NonNullable<AppGoal['continuation']>['state']): string {
+  return t('status.goalContinuationState.' + state);
+}
+
 function formatMs(ms: number): string {
   const sec = Math.max(0, Math.round(ms / 1000));
   const min = Math.floor(sec / 60);
@@ -69,10 +73,15 @@ async function onCancel(): Promise<void> {
         <span class="goal-kicker">{{ t('status.goalLabel') }}</span>
         <span class="goal-objective" :class="{ 'expanded-hidden': expanded }">{{ goal.objective }}</span>
         <Badge
-          :variant="goal.status === 'active' ? 'success' : goal.status === 'blocked' ? 'danger' : goal.status === 'paused' ? 'warning' : 'neutral'"
+          :variant="goal.continuation?.state === 'held' ? 'warning' : goal.status === 'active' ? 'success' : goal.status === 'blocked' ? 'danger' : goal.status === 'paused' ? 'warning' : 'neutral'"
           size="sm"
           class="goal-status"
-        >{{ goalStatusLabel(goal.status) }}</Badge>
+        >
+          {{ goalStatusLabel(goal.status) }}
+          <template v-if="goal.status === 'active' && goal.continuation?.state === 'held'">
+            · {{ t('status.goalContinuationHeld') }}
+          </template>
+        </Badge>
         <span v-if="goal.budget.tokenBudget !== null" class="goal-progress" aria-hidden="true">
           <span class="goal-progress-fill" :style="{ width: `${tokenPct}%` }"></span>
         </span>
@@ -85,6 +94,19 @@ async function onCancel(): Promise<void> {
       <div v-if="goal.completionCriterion" class="goal-criterion">
         <span>Done when</span>
         <p>{{ goal.completionCriterion }}</p>
+      </div>
+      <div
+        v-if="goal.status === 'active' && goal.continuation && goal.continuation.state !== 'idle'"
+        class="goal-continuation"
+      >
+        <Badge
+          size="sm"
+          :variant="goal.continuation.state === 'held' ? 'warning' : 'neutral'"
+        >
+          {{ continuationLabel(goal.continuation.state) }}
+        </Badge>
+        <code v-if="goal.continuation.owner">{{ goal.continuation.owner }}</code>
+        <span v-if="goal.continuation.reason">{{ goal.continuation.reason }}</span>
       </div>
     </template>
 
@@ -269,6 +291,20 @@ async function onCancel(): Promise<void> {
   color: var(--color-text-muted);
   font: var(--text-xs)/var(--leading-normal) var(--font-ui);
   text-transform: none;
+}
+.goal-continuation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  color: var(--color-text-muted);
+  font: var(--text-xs)/var(--leading-normal) var(--font-ui);
+}
+.goal-continuation code {
+  color: var(--color-text-muted);
+  font: inherit;
+  font-family: var(--font-mono);
 }
 .goal-footer {
   display: flex;

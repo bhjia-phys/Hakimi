@@ -152,6 +152,48 @@ describe('events / display re-exports', () => {
       mutation: { ...mutation, at: 0 },
     });
     expect((atZero as { mutation?: { at: number } }).mutation?.at).toBe(0);
+
+    const withContinuation = eventSchema.parse({
+      type: 'goal.updated',
+      agentId: 'main',
+      sessionId: 'sess_1',
+      snapshot: {
+        goalId: 'g1',
+        objective: 'ship it',
+        status: 'active',
+        turnsUsed: 1,
+        tokensUsed: 10,
+        wallClockMs: 100,
+        budget: {
+          tokenBudget: null,
+          turnBudget: null,
+          wallClockBudgetMs: null,
+          remainingTokens: null,
+          remainingTurns: null,
+          remainingWallClockMs: null,
+          tokenBudgetReached: false,
+          turnBudgetReached: false,
+          wallClockBudgetReached: false,
+          overBudget: false,
+        },
+        continuation: {
+          state: 'held',
+          owner: 'research',
+          reason: 'A research checkpoint is pending commit.',
+        },
+      },
+      change: { kind: 'continuation' },
+    });
+    expect(withContinuation).toMatchObject({
+      snapshot: {
+        continuation: {
+          state: 'held',
+          owner: 'research',
+          reason: 'A research checkpoint is pending commit.',
+        },
+      },
+      change: { kind: 'continuation' },
+    });
   });
 
   it('validates bounded strict goal wait leases', () => {

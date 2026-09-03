@@ -5,6 +5,49 @@
 
 import { describe, expect, it } from 'vitest';
 import { classifyFrame, createAgentProjector, subagentProgressText } from '../src/api/daemon/agentEventProjector';
+import { toAppGoal } from '../src/api/daemon/mappers';
+
+describe('toAppGoal continuation projection', () => {
+  const snapshot = {
+    goalId: 'goal_1',
+    objective: 'Finish O1',
+    status: 'active',
+    turnsUsed: 1,
+    tokensUsed: 10,
+    wallClockMs: 100,
+    budget: {},
+  };
+
+  it('preserves a known held continuation with its owner and reason', () => {
+    expect(toAppGoal({
+      ...snapshot,
+      continuation: {
+        state: 'held',
+        owner: 'research',
+        reason: 'A research checkpoint is pending commit.',
+      },
+    })?.continuation).toEqual({
+      state: 'held',
+      owner: 'research',
+      reason: 'A research checkpoint is pending commit.',
+    });
+  });
+
+  it('preserves a legacy Goal while leaving missing continuation unavailable', () => {
+    expect(toAppGoal(snapshot)).toMatchObject({
+      goalId: 'goal_1',
+      status: 'active',
+      continuation: undefined,
+    });
+  });
+
+  it('drops an unknown continuation without dropping the Goal', () => {
+    expect(toAppGoal({
+      ...snapshot,
+      continuation: { state: 'future_state' },
+    })).toMatchObject({ goalId: 'goal_1', continuation: undefined });
+  });
+});
 
 describe('subagentProgressText', () => {
   it('drops turn.step.started as noise', () => {
@@ -196,6 +239,11 @@ describe('goal.updated', () => {
           objective: 'finish the work',
           status: 'active',
           waitingFor: { taskIds: ['task_1', 'task_2'], policy: 'any' },
+          continuation: {
+            state: 'held',
+            owner: 'aitpResearch',
+            reason: 'A research checkpoint is pending commit.',
+          },
         },
       },
       's1',
@@ -207,7 +255,34 @@ describe('goal.updated', () => {
       goal: expect.objectContaining({
         goalId: 'goal_1',
         waitingFor: { taskIds: ['task_1', 'task_2'], policy: 'any' },
+        continuation: {
+          state: 'held',
+          owner: 'aitpResearch',
+          reason: 'A research checkpoint is pending commit.',
+        },
       }),
+    });
+  });
+
+  it('degrades an unknown continuation projection without dropping the Goal', () => {
+    const projector = createAgentProjector();
+    const events = projector.project(
+      'goal.updated',
+      {
+        snapshot: {
+          goalId: 'goal_1',
+          objective: 'finish the work',
+          status: 'active',
+          continuation: { state: 'future_state' },
+        },
+      },
+      's1',
+    );
+
+    expect(events).toContainEqual({
+      type: 'goalUpdated',
+      sessionId: 's1',
+      goal: expect.objectContaining({ goalId: 'goal_1', continuation: undefined }),
     });
   });
 });

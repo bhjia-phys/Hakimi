@@ -83,6 +83,37 @@ describe('research contract validation', () => {
     revision: 1,
   };
 
+  it('accepts legacy missing continuation, preserves current state, and rejects unknown state', () => {
+    const goalSummary = {
+      goalId: 'goal-1',
+      objective: 'Validate one bounded result.',
+      status: 'active' as const,
+    };
+    expect(researchStatusSnapshotSchema.parse({
+      ...baseSnapshot,
+      goalSummary,
+    }).goalSummary?.continuation).toBeUndefined();
+    expect(researchStatusSnapshotSchema.parse({
+      ...baseSnapshot,
+      goalSummary: {
+        ...goalSummary,
+        continuation: {
+          state: 'held',
+          owner: 'aitpResearch',
+          reason: 'Resolve the recovered action from evidence.',
+        },
+      },
+    }).goalSummary?.continuation).toEqual({
+      state: 'held',
+      owner: 'aitpResearch',
+      reason: 'Resolve the recovered action from evidence.',
+    });
+    expect(researchStatusSnapshotSchema.safeParse({
+      ...baseSnapshot,
+      goalSummary: { ...goalSummary, continuation: { state: 'future_state' } },
+    }).success).toBe(false);
+  });
+
   it('rejects malformed current Line-workstream alignment invariants', () => {
     const binding = {
       confirmationId: 'confirmation-main-1',
@@ -675,8 +706,15 @@ describe('agent goal routing', () => {
 
     const updated = {
       type: 'goal.updated',
-      snapshot: GOAL_SNAPSHOT,
-      change: { kind: 'lifecycle', status: 'active', actor: 'user' },
+      snapshot: {
+        ...GOAL_SNAPSHOT,
+        continuation: {
+          state: 'held',
+          owner: 'research',
+          reason: 'A research checkpoint is pending commit.',
+        },
+      },
+      change: { kind: 'continuation' },
       mutation: { id: 'm1', at: 1, kind: 'create', goalId: 'g1', status: 'active' },
     };
     const cleared = {

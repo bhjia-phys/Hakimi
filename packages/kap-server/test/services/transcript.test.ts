@@ -1162,6 +1162,33 @@ describe('AgentTranscriptProjector', () => {
     expect(clearedOps.at(-1)?.op).toBe('marker.upsert');
   });
 
+  it('projects continuation state into Goal meta without adding transcript noise', () => {
+    const projector = new AgentTranscriptProjector('main');
+    const tx = new AgentTranscript('main');
+    const snapshot = {
+      goalId: 'g1',
+      objective: 'ship it',
+      status: 'active',
+      turnsUsed: 3,
+      tokensUsed: 1234,
+      wallClockMs: 5000,
+      budget: { tokenBudget: 50000 },
+      continuation: {
+        state: 'held' as const,
+        owner: 'research',
+        reason: 'A research checkpoint is pending commit.',
+      },
+    };
+
+    const ops = projector.map(
+      ev({ type: 'goal.updated', snapshot, change: { kind: 'continuation' } }),
+    );
+    tx.apply(ops);
+
+    expect(tx.getMeta().goal?.continuation).toEqual(snapshot.continuation);
+    expect(ops.some((op) => op.op === 'marker.upsert')).toBe(false);
+  });
+
   it('projects a stable goal mutation marker the cold fold reproduces and dedupes', () => {
     const projector = new AgentTranscriptProjector('main');
     const tx = new AgentTranscript('main');

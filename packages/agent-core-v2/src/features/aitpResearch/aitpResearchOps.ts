@@ -114,9 +114,11 @@ import {
 } from './types';
 import {
   PLAN_ACTION_PHASES,
+  RESEARCH_ACTION_RECOVERY_PREFIX,
   isLiveForegroundAction,
   isPhaseTransitionValid,
   isUnresolvedHumanGate,
+  researchActionOwnedPhase,
 } from './transitions/researchTransitionAuthority';
 
 export interface AitpModeState {
@@ -1383,9 +1385,11 @@ export const researchSetPhase = ResearchModel.defineOp('research.set_phase', {
     changedAt: z.number(),
   }),
   apply: (s, p) => {
-    if (isLiveForegroundAction(s.current.currentAction)) return s;
+    const actionOwnedPhase = researchActionOwnedPhase(s.current.currentAction);
+    const isStructuralRecovery = actionOwnedPhase !== undefined && p.phase === actionOwnedPhase;
+    if (actionOwnedPhase !== undefined && !isStructuralRecovery) return s;
     if (s.current.phase === p.phase) return s;
-    if (!isPhaseTransitionValid(s.current.phase, p.phase)) return s;
+    if (!isStructuralRecovery && !isPhaseTransitionValid(s.current.phase, p.phase)) return s;
     const stateChange: ResearchStateChangeRecord = {
       beforePhase: s.current.phase,
       afterPhase: p.phase,
@@ -1447,6 +1451,7 @@ export const researchResolveHumanDecision = ResearchModel.defineOp('research.res
   }),
   apply: (s, p) => {
     const gate = s.current.humanGate;
+    const actionOwnedPhase = researchActionOwnedPhase(s.current.currentAction);
     if (
       s.current.phase !== 'awaiting_human' ||
       gate === null ||
@@ -1457,18 +1462,28 @@ export const researchResolveHumanDecision = ResearchModel.defineOp('research.res
         (s.current.currentAction === null || s.current.currentAction.status !== 'in_progress'))
     ) return s;
 
+    // Old journals could resolve a gate to a framing phase while retaining a
+    // live foreground action. Preserve the recorded human resolution, but let
+    // that action keep its structural phase. This is deterministic replay
+    // repair only; it never decides whether the action scientifically
+    // completed or should be abandoned.
+    const nextPhase = actionOwnedPhase ?? p.nextPhase;
+    const recoveredLiveAction = actionOwnedPhase !== undefined && p.nextPhase !== actionOwnedPhase;
+
     const stateChange: ResearchStateChangeRecord = {
       beforePhase: 'awaiting_human',
-      afterPhase: p.nextPhase,
+      afterPhase: nextPhase,
       actionId: s.current.currentAction?.actionId,
-      summary: p.resolution,
+      summary: recoveredLiveAction
+        ? `${RESEARCH_ACTION_RECOVERY_PREFIX} ${p.resolution}`
+        : p.resolution,
       changedAt: p.changedAt,
     };
     return {
       ...s,
       current: {
         ...s.current,
-        phase: p.nextPhase,
+        phase: nextPhase,
         humanGate: {
           ...gate,
           resolvedAt: p.changedAt,

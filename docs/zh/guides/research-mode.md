@@ -93,18 +93,70 @@ maintenance receipt 和上下文注入只暴露安全摘要：Working Note age�
 
 ## 研究面板
 
+Research Mode 与 Goal 相互关联，但不拥有同一套生命周期：
+
+| 层级 | 负责 | 不负责 |
+| --- | --- | --- |
+| generic Goal engine | objective 状态、completion、budget、waiting，以及跨 turn 自动 continuation | 科研 phase、Line、Question、evidence 或 AITP records |
+| Hakimi Research Goal | 当前 generic Goal 的一对一科研投影，包括 Research scope 与 persistence guards | 第二套生命周期、预算、scheduler 或 continuation queue |
+| Research Mode | interactive Research turn 的准入与长期 Research working state | 自动创建 Goal 或自动产生 autonomous turn |
+| Research Plan v2 | 绑定 Goal 与 Program 的多轮 milestones 和证据策略 | Goal completion 或 turn continuation |
+| local Action Plan | 单个 bounded Research Action 的细节 TODO 与 reviewed choices | 多轮 strategy 或 scientific truth |
+| Research Loop / Action | 一次 admitted turn 及其正常的 `BeginResearchAction → 实际工作 → ConcludeResearchAction` 单元 | canonical AITP persistence |
+| AITP Program 与 ledger | observed Topic goal、canonical Entry/Note evidence、workstreams 与 human decisions | Hakimi Goal 生命周期、工具执行或 Board 状态 |
+
+因此，Research Mode 只要 active、ready 且未暂停，即使没有 Goal，也会
+让用户的交互 turn 进入 Research Loop。只有跨 turn 自动 continuation 才
+要求 Goal。存在 Goal 时，Research Goal 只是它的科研投影而不是替代品；
+Goal–Program alignment 约束自动续跑和完成，但不能遮住当前 bounded
+action 的恢复工作。
+
 研究模式激活后，**研究面板**（Research Board）会同时出现在 TUI 和 Web 的输入区上方。默认紧凑 Board 只保留一眼就需要判断的信息：
 
-- **AITP goal**：从当前 AITP Program 观测到的顶层目标；尚未建立时明确显示「尚未建立」
-- **Project stage**：显示 active Hakimi Research Goal、多轮 Research Plan 状态与当前里程碑、当前 Line，以及焦点 Question 的 workflow/epistemic 状态；Plan、Line 或 Question 缺失时明确显示
-- **Loop stage**：显示当前 scientific phase、period loop 次数、live action 状态，以及 AITP 持久化状态（`ready`、`degraded`、`blocked`、`pending commit` 或 `unavailable`）
-- **Attention**：优先显示 active Goal–Program 对齐阻塞，其次显示 action/phase 恢复要求、未解决的人工门禁、method-review handoff 不可用、当前阻塞、维护问题或适配器错误；存在更多项目时显示数量，没有需关注项目时隐藏整行
-- **Now**：只显示一个当前工作单元，依次从状态一致的活跃 run 或 action、最新 progress、焦点问题、状态变化或当前研究线中选择；live status 与 phase 冲突的 action 不再冒充当前工作
+- **Project**：存在 Goal 时显示其 lifecycle/continuation；没有 Goal 时明确显示交互式 Research；当前 Research Plan 里程碑、Line 和焦点 Question 的 workflow/epistemic 状态都只在这里出现
+- **Current cycle**：显示一个仅用于呈现的科研节点（`问题框定 / 假设`、`检验 / 行动`、`评估`、`记录` 或 `下一步 / 就绪`）、当前 action/run/progress 摘要、Research mode、规划策略，并把旧字段 `period.loopCount` 准确标为 **Research turn 数**，不再称作已完成的科学循环数
+- **Attention**：依次显示精确的 Goal continuation hold、未解决人工门禁、action/phase 恢复要求、pending checkpoint、active Goal–Program 或 Line–workstream 阻塞、method-review handoff 不可用、当前 Line 的 alert、维护问题或适配器错误；健康的 AITP、alignment、workstream 和 provenance 默认折叠，其他 Line 的 alert 绝不冒充当前 attention
 - **Next**：只显示一个带来源的 effective next step；缺失时明确提示尚未记录
 
-Project stage 中的 **Hakimi Research Goal** 是唯一负责跨轮次 continuation 的 generic Goal 的 additive `hakimi/research-goal-0.1` 投影，不是第二套 scheduler，也不是 AITP Topic Goal。展开 Board 会显示其当前 Program/Line/Question scope、budget、completion criterion 和 persistence blockers；旧 `goalSummary` 继续作为兼容 fallback。紧凑态的长叙事会按终端可用宽度或 Web 两行截断；展开 Board 后会恢复完整文本。
+Project 中的 **Hakimi Research Goal** 是唯一负责跨轮次 continuation 的 generic Goal 的 additive `hakimi/research-goal-0.1` 投影，不是第二套 scheduler，也不是 AITP Topic Goal。展开 Board 仍是完整审计面：显示完整 Goal 与 observed AITP Program goal、Program/Line/Question scope、两层计划、证据、checkpoint 和 provenance；旧 `goalSummary` 继续作为兼容 fallback。紧凑态的长叙事会按终端可用宽度或 Web 两行截断；展开 Board 后会恢复完整文本。
 
-phase badge 会显示 `probing`、`ready` 或 `degraded`。模式、循环、问题、焦点和检查点变化会向两个 surface 发布一个完整快照。TUI 会拒绝 stale cold hydration；Web 会串行处理同一 session 的 mutation，并阻止较旧的 HTTP response 覆盖更新的 live WebSocket update。
+Goal lifecycle 与 continuation 是两个维度。`active` 表示 objective 仍可
+推进，不代表另一个模型 turn 已经运行或进入队列。可选的 continuation 投影
+区分 `idle`、`deciding`、`enqueued`、`running`、`held` 和 task
+`waiting`。被 hold 的 Goal 显示为 `active · continuation held`，展开 Board
+和 Attention 行同时给出 participant owner 与精确 reason，不能改写成
+`paused`。该字段是 runtime 派生状态；显式 retry、用户新 turn、生命周期
+变化、waiting、cancel、replay 与 resume 都会清除或重新计算 stale hold。
+
+紧凑 header 会分开显示 **mode** readiness、**workflow** health、仅用于
+呈现的科研节点和当前 Line。adapter/AITP 健康只在需要 Attention 时或展开
+审计面中显示。因此 `mode ready · workflow blocked` 是一致状态：Research
+Mode 能工作，但当前 Research state 必须先恢复。effective Next 与 Attention 使用同一优先级：未解决
+human gate、失配 live action、状态一致的 run/action、pending
+checkpoint、Goal–Program alignment，最后才是普通 question 或 maintenance
+指引。Next 的文字、source、freshness、timestamp 与 provenance 属于同一
+条原子投影；TUI 和 Web 不再把本地覆盖的文字与另一条 Next 的 metadata
+拼在一起。
+
+模式、循环、问题、焦点和检查点变化会向两个 surface 发布一个完整快照。TUI 会拒绝 stale cold hydration；Web 会串行处理同一 session 的 mutation，并阻止较旧的 HTTP response 覆盖更新的 live WebSocket update。
+
+切换 Line 是显式的 cycle boundary。存在 foreground Action/Run、pending
+checkpoint、未解决 human gate 或非 `idle` scientific phase 时，Hakimi 会
+拒绝切线并只给出一条恢复指令；cycle 解决后，旧 period 会先归档焦点 Question
+和最新 progress 摘要，再打开新 Line。Hakimi 只会 reconcile 可确定、保持语义
+不变的本地引用和 receipt；不会猜测 AITP workstream membership、写 AITP
+状态或自动修补科学含义。
+
+cold replay 也遵守同一边界。旧的单 Line snapshot 可以缺少可选的 Goal
+continuation 字段；Board 会把它标为 unavailable，而不是臆造 `held`、
+`running` 或完成状态。在多 Line snapshot 中，只有当前选中的 Line 可以提供紧凑
+Question、Action、Run、gate、alert、continuation attention 与 Next 状态。如果
+replay 发现 live Action 脱离了它唯一可确定的所属 phase，Hakimi 会幂等恢复该
+phase，同时保留 Action 和已经记录的 human resolution；随后阻止 Goal completion、
+hold autonomous continuation，并把下一次 interactive Research turn 定向到检查
+已有证据以及完成或放弃同一个 Action。Hakimi 绝不会仅从 UI 结构推断
+`completed` 或 `abandoned`，也不会只为修复记账而询问用户；真实的科学或授权
+歧义仍可进入 human decision。
 
 面板跟踪的是语义化科研状态，而不是原始活动日志。普通工具调用和 AITP `list` / `show` / `check` 读取本身不会改变面板。研究模式激活后，Agent 会优先选择足够简单的解释或实验，并先获取成本最低但有决定性的证据，再升级到远程、长时间运行或多分支工作。一旦简单 probe 证明更大的 action 确有必要，就应当继续执行；如果当前权限模式已经授权，不应再虚构一道额外的 human approval。Agent 必须在实质性工作前先创建 Question，设置焦点，用 `BeginResearchAction` 开始一个有界行动，并在完成后用 `ConcludeResearchAction` 说明实际物理工作、结果、测试或推导、限制、对主线的影响、下一步和一次显式 durability assessment。`no_durable_delta` 只记录一次 Research progress 边界，不安排 S6 persistence 或 distillation I/O；独立的 session-boundary `enter` / `check` maintenance 仍可运行。`durable_delta` 只生成一个 typed pending commit candidate，并在同一轮路由到现有 `record prepare` → 模型填写 draft → atomic `record save` → canonical `show` → scoped `check` → checkpoint commit barrier。首次成功 commit 随后返回一个 same-turn steer，只包含精确的外部 `distilling-methods` Skill 与 touched Entry/checkpoint 上下文。Skill 可以 no-op；重复 commit 或 handoff 不可用不会重复执行，也不会回滚已成功的 durable commit。`ConcludeResearchAction` 本身不提交或轮询 HPC 任务、不直接写 canonical `.aitp` 文件，也不会自动改变问题的 assessment。不得再用 `RecordResearchProgress` 重复同一结论。human assertion/decision 必须使用独立的 human-attributed candidate 与 Entry，不得与 agent/tool/source verification 合并。`PlanResearchAction`、`CompleteResearchAction`、`SetResearchPhase`、`RecordResearchProgress` 和手工 checkpoint proposal 保留为较低层的恢复或维护工具，不是正常行动路径。当 action 仍为 planned 或 in progress 时，独立 phase/progress mutation 会被拒绝，避免 live action 离开所属阶段后被卡死；若旧版本已经留下 phase 漂移的 in-progress action，只要没有未解决 human gate 占有暂停状态，仍可 complete 或 conclude 以恢复循环。只有在新证据、失败或持续无进展改变判断或下一动作时才调用 `UpdateResearchQuestion`。这是语义 guidance，不保证 candidate confirmation 会在 runtime guard 中保护每一次 focus 调用。如果没有发生这类语义转换，面板保持不变是预期行为。
 

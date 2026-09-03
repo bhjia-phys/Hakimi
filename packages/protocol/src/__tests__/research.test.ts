@@ -176,6 +176,11 @@ describe('researchStatusSnapshotSchema', () => {
         reason: 'The Goal turn budget remains available.',
       }],
       status: 'active' as const,
+      continuation: {
+        state: 'held' as const,
+        owner: 'research',
+        reason: 'A research checkpoint is pending commit.',
+      },
       programRelation: {
         status: 'aligned' as const,
         reason: 'Confirmed as goal_parent_of_program.',
@@ -192,6 +197,19 @@ describe('researchStatusSnapshotSchema', () => {
       ...validSnapshot,
       researchGoal,
     }).researchGoal).toEqual(researchGoal);
+    const { continuation: _continuation, ...legacyResearchGoal } = researchGoal;
+    expect(_continuation.state).toBe('held');
+    expect(researchStatusSnapshotSchema.parse({
+      ...validSnapshot,
+      researchGoal: legacyResearchGoal,
+    }).researchGoal?.continuation).toBeUndefined();
+    expect(() => researchStatusSnapshotSchema.parse({
+      ...validSnapshot,
+      researchGoal: {
+        ...researchGoal,
+        continuation: { state: 'future_continuation_state' },
+      },
+    })).toThrow();
     expect(() => researchStatusSnapshotSchema.parse({
       ...validSnapshot,
       researchGoal: { ...researchGoal, unknown: true },

@@ -60,6 +60,11 @@ interface GoalSnapshotWire {
   tokensUsed: number;
   wallClockMs: number;
   budget: unknown;
+  continuation?: {
+    state: 'idle' | 'deciding' | 'enqueued' | 'running' | 'held' | 'waiting';
+    owner?: string;
+    reason?: string;
+  };
   terminalReason?: string;
 }
 
@@ -482,6 +487,7 @@ describe('server-v2 /api/v1/debug RPC', () => {
     expect(created.body.data).toMatchObject({
       objective: 'finish the migration',
       status: 'active',
+      continuation: { state: 'idle' },
     });
 
     const read = await call<GoalToolResultWire>(
@@ -492,6 +498,7 @@ describe('server-v2 /api/v1/debug RPC', () => {
     expect(read.body.data.goal).toMatchObject({
       objective: 'finish the migration',
       status: 'active',
+      continuation: { state: 'idle' },
     });
 
     const paused = await call<GoalSnapshotWire>(

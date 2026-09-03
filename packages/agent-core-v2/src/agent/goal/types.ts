@@ -32,6 +32,20 @@ export interface GoalBudgetReport {
   readonly overBudget: boolean;
 }
 
+export type GoalContinuationState =
+  | 'idle'
+  | 'deciding'
+  | 'enqueued'
+  | 'running'
+  | 'held'
+  | 'waiting';
+
+export interface GoalContinuationSnapshot {
+  readonly state: GoalContinuationState;
+  readonly owner?: string;
+  readonly reason?: string;
+}
+
 export interface GoalSnapshot {
   readonly goalId: string;
   readonly objective: string;
@@ -42,6 +56,7 @@ export interface GoalSnapshot {
   readonly wallClockMs: number;
   readonly budget: GoalBudgetReport;
   readonly waitingFor?: GoalWaitLease;
+  readonly continuation?: GoalContinuationSnapshot;
   readonly terminalReason?: string;
 }
 
@@ -55,7 +70,7 @@ export interface GoalChangeStats {
   readonly wallClockMs: number;
 }
 
-export type GoalChangeKind = 'lifecycle' | 'completion';
+export type GoalChangeKind = 'lifecycle' | 'completion' | 'continuation';
 
 export interface GoalChange {
   readonly kind: GoalChangeKind;

@@ -59,6 +59,8 @@ export function renderResearchInjection(
   snapshot: ResearchStatusSnapshot,
   verbosity: InjectionVerbosity,
 ): { readonly content: string; readonly disclosure: InjectionDisclosure } {
+  const action = currentLineAction(snapshot);
+  const run = currentLineRun(snapshot, action);
   const disclosure: InjectionDisclosure = {
     verbosity,
     snapshotRevision: snapshot.revision,
@@ -69,8 +71,8 @@ export function renderResearchInjection(
     goalAlignmentFingerprint: goalAlignmentFingerprint(snapshot),
     workstreamBindingFingerprint: workstreamBindingFingerprint(snapshot),
     currentQuestionFingerprint: currentQuestionFingerprint(snapshot),
-    currentActionId: snapshot.currentAction?.actionId,
-    currentRunFingerprint: runFingerprint(snapshot.currentRun),
+    currentActionId: action?.actionId,
+    currentRunFingerprint: runFingerprint(run),
     researchPlanFingerprint: researchPlanFingerprint(snapshot.researchPlan),
     researchPlanV2Fingerprint: researchPlanV2Fingerprint(snapshot.researchPlanV2),
     planningPolicy: snapshot.planningPolicy,
@@ -100,6 +102,8 @@ export function resolveResearchVerbosity(
 ): InjectionVerbosity | undefined {
   if (context.isNewTurn) return 'brief';
   const last = context.lastDisclosure;
+  const action = currentLineAction(snapshot);
+  const run = currentLineRun(snapshot, action);
   if (last === undefined) return 'brief';
   if (snapshot.phase !== last.phase) return 'brief';
   if (snapshot.latestProgress?.recordedAt !== last.progressRecordedAt) return 'brief';
@@ -108,8 +112,8 @@ export function resolveResearchVerbosity(
   if (goalAlignmentFingerprint(snapshot) !== last.goalAlignmentFingerprint) return 'brief';
   if (workstreamBindingFingerprint(snapshot) !== last.workstreamBindingFingerprint) return 'brief';
   if (currentQuestionFingerprint(snapshot) !== last.currentQuestionFingerprint) return 'brief';
-  if (snapshot.currentAction?.actionId !== last.currentActionId) return 'brief';
-  if (runFingerprint(snapshot.currentRun) !== last.currentRunFingerprint) return 'brief';
+  if (action?.actionId !== last.currentActionId) return 'brief';
+  if (runFingerprint(run) !== last.currentRunFingerprint) return 'brief';
   if (researchPlanFingerprint(snapshot.researchPlan) !== last.researchPlanFingerprint) return 'brief';
   if (researchPlanV2Fingerprint(snapshot.researchPlanV2) !== last.researchPlanV2Fingerprint) return 'brief';
   if (snapshot.planningPolicy !== last.planningPolicy) return 'brief';
@@ -118,7 +122,54 @@ export function resolveResearchVerbosity(
   return undefined;
 }
 
+function currentLineAction(snapshot: ResearchStatusSnapshot): ResearchActionSpec | undefined {
+  const action = snapshot.currentAction;
+  if (action === undefined) return undefined;
+  const question = action.questionId === undefined
+    ? undefined
+    : snapshot.questions.find((candidate) => candidate.id === action.questionId);
+  if (
+    action.lineSlug !== undefined &&
+    question !== undefined &&
+    action.lineSlug !== question.lineSlug
+  ) return undefined;
+  const lineSlug = action.lineSlug ?? question?.lineSlug;
+  if (snapshot.currentLineSlug === undefined) {
+    return lineSlug === undefined && snapshot.lines.length <= 1 ? action : undefined;
+  }
+  if (lineSlug !== undefined) return lineSlug === snapshot.currentLineSlug ? action : undefined;
+  return snapshot.lines.length === 0 ||
+    (snapshot.lines.length === 1 && snapshot.lines[0]?.slug === snapshot.currentLineSlug)
+    ? action
+    : undefined;
+}
+
+function currentLineRun(
+  snapshot: ResearchStatusSnapshot,
+  action: ResearchActionSpec | undefined,
+): ResearchRunState | undefined {
+  if (action === undefined) return snapshot.lines.length <= 1 ? snapshot.currentRun : undefined;
+  if (action.run?.actionId === action.actionId) return action.run;
+  return snapshot.currentRun?.actionId === action.actionId ? snapshot.currentRun : undefined;
+}
+
+function currentLineHumanGate(
+  snapshot: ResearchStatusSnapshot,
+  action: ResearchActionSpec | undefined,
+): ResearchHumanGate | undefined {
+  const gate = snapshot.humanGate;
+  if (gate === undefined) return undefined;
+  if (gate.actionId !== undefined && gate.actionId !== action?.actionId) return undefined;
+  if (gate.questionId !== undefined) {
+    const question = snapshot.questions.find((candidate) => candidate.id === gate.questionId);
+    if (question === undefined || question.lineSlug !== snapshot.currentLineSlug) return undefined;
+  }
+  return gate;
+}
+
 function renderBrief(snapshot: ResearchStatusSnapshot): string {
+  const action = currentLineAction(snapshot);
+  const run = currentLineRun(snapshot, action);
   const lines: string[] = [
     '## AITP Research Mode',
     `Phase: ${snapshot.phase} · Loop: ${snapshot.loopStatus}`,
@@ -183,8 +234,8 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
     );
   }
 
-  if (snapshot.currentAction !== undefined) {
-    lines.push(renderActionLine(snapshot.currentAction));
+  if (action !== undefined) {
+    lines.push(renderActionLine(action));
   }
   if (snapshot.researchPlanV2 !== undefined) {
     lines.push(renderResearchPlanV2Digest(snapshot.researchPlanV2));
@@ -192,15 +243,15 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
   if (snapshot.researchPlan !== undefined) {
     lines.push(renderResearchPlanDigest(snapshot.researchPlan));
   }
-  if (snapshot.currentRun !== undefined) {
-    lines.push(renderRunDigest(snapshot.currentRun));
+  if (run !== undefined) {
+    lines.push(renderRunDigest(run));
   }
 
   if (snapshot.latestProgress !== undefined) {
     lines.push(renderProgressDigest(snapshot.latestProgress));
   }
 
-  const humanGate = snapshot.humanGate;
+  const humanGate = currentLineHumanGate(snapshot, action);
   if (humanGate?.resolvedAt === undefined) {
     if (humanGate !== undefined) lines.push(renderHumanGateBlock(humanGate));
   } else {
@@ -216,7 +267,7 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
 
   lines.push('');
   lines.push('### Research state guidance');
-  appendGuidance(lines, snapshot.planningPolicy);
+  appendGuidance(lines, snapshot, action);
 
   return lines.join('\n');
 }
@@ -231,7 +282,7 @@ function renderDelta(snapshot: ResearchStatusSnapshot): string {
 }
 
 function appendAttention(lines: string[], snapshot: ResearchStatusSnapshot): void {
-  const alerts = activeAlerts(snapshot.alerts);
+  const alerts = activeAlerts(snapshot.alerts, snapshot.currentLineSlug);
   if (alerts.length > 0) {
     lines.push('Attention:');
     for (const alert of alerts.slice(0, 3)) {
@@ -351,8 +402,20 @@ function renderHumanGateBlock(gate: ResearchHumanGate): string {
 
 function appendGuidance(
   lines: string[],
-  planningPolicy: ResearchStatusSnapshot['planningPolicy'],
+  snapshot: ResearchStatusSnapshot,
+  action: ResearchActionSpec | undefined,
 ): void {
+  const planningPolicy = snapshot.planningPolicy;
+  if (
+    action !== undefined &&
+    snapshot.effectiveNextStep?.source === 'research_action' &&
+    snapshot.effectiveNextStep.freshness === 'blocked' &&
+    snapshot.effectiveNextStep.derivedFrom.actionId === action.actionId
+  ) {
+    lines.push(
+      `- Recovery owns this turn: inspect the already-recorded evidence for action ${action.actionId}, continue only missing in-scope work, then call ConcludeResearchAction once with completed or abandoned. Do not start another action and do not ask the user merely to repair Research bookkeeping; ask only if a genuinely scientific or authorization decision remains.`,
+    );
+  }
   if (planningPolicy === 'collaborative') {
     lines.push(
       '- Planning policy is collaborative. Before preparing or revising Research Plan v2, ask through AskUserQuestion only when a consequential unknown cannot be resolved from the active Goal, current Research state, prior human direction, or checked evidence and the answer would materially change the plan. A dismissed, empty, or ambiguous answer is a no-op: do not revise or activate the plan and do not invent an assumption; wait for clear direction.',
@@ -385,12 +448,16 @@ function appendGuidance(
   );
 }
 
-function activeAlerts(alerts: readonly ResearchAlert[]): readonly ResearchAlert[] {
+function activeAlerts(
+  alerts: readonly ResearchAlert[],
+  currentLineSlug?: string,
+): readonly ResearchAlert[] {
   return alerts.filter((alert) =>
     alert.state !== 'acknowledged' &&
     alert.state !== 'cleared' &&
     alert.state !== 'superseded' &&
-    alert.acknowledgedAt === undefined,
+    alert.acknowledgedAt === undefined &&
+    (alert.lineSlug === undefined || alert.lineSlug === currentLineSlug),
   );
 }
 
@@ -489,7 +556,7 @@ function nextStepFingerprint(nextStep: ResearchEffectiveNextStep | undefined): s
 }
 
 function attentionFingerprint(snapshot: ResearchStatusSnapshot): string | undefined {
-  const alerts = activeAlerts(snapshot.alerts).map((alert) => ({
+  const alerts = activeAlerts(snapshot.alerts, snapshot.currentLineSlug).map((alert) => ({
     kind: alert.kind,
     message: alert.message,
   }));
