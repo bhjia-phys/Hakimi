@@ -67,8 +67,13 @@ method-card rules, trial rules, or approval rules.
 Do not automatically write a Topic Goal, add `resolves`, publish a method card,
 or turn a local Goal into an AITP record. Durable delta is the threshold for
 `using-aitp`; reusable-method candidacy is the threshold for
-`distilling-methods`. Native H6b method-distillation coordination remains
-planned/unavailable. A resolved human gate alone is not a handoff.
+`distilling-methods`. After the first successful commit of a new checkpoint,
+Hakimi can make one same-turn, best-effort handoff of only the touched Entry to
+that external Skill; duplicate commits or an unavailable Skill are non-blocking
+no-ops. This bounded handoff owns no trigger, card, trial, approval, publication,
+retry, scheduler, or exactly-once state. A full native H6b coordinator with
+durable scheduling and recovery remains planned/unavailable. A resolved human
+gate alone is not a handoff.
 
 ## The bounded Research Action loop
 

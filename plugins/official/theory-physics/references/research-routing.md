@@ -25,7 +25,11 @@ After `EnterAITPMode`, use `GetResearchStatus` for the authoritative snapshot.
 If it is `probing`, wait for `ready` or `degraded` without repeated calls or busy
 polling. Do not write AITP or bypass the adapter with a bare CLI command.
 Ordinary reads, probes, and inconclusive turn progress stay in local Research
-state. Native H6b method-distillation coordination remains planned/unavailable;
-this route does not implement it. Do not promote an engineering observation into
-a scientific conclusion without a completed analyzer or an explicit physical
+state. After the first successful commit of a new checkpoint, Hakimi may make
+one same-turn, best-effort handoff of only the touched Entry to the external
+`distilling-methods` Skill; duplicate commits or an unavailable Skill are
+non-blocking no-ops. This is not the still-planned native H6b coordinator: it
+has no durable scheduler, retry, or exactly-once recovery and owns none of the
+Skill's semantic gates. Do not promote an engineering observation into a
+scientific conclusion without a completed analyzer or an explicit physical
 interpretation.
