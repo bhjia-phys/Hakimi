@@ -14,7 +14,7 @@
       "id": "theory-physics",
       "tier": "official",
       "displayName": "Theory Physics",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "description": "Upper-layer routing handbook for sustained theoretical-physics research.",
       "keywords": ["physics", "research", "derivation", "numerics", "literature"],
       "source": "./official/theory-physics"
