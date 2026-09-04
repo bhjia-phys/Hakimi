@@ -1017,7 +1017,7 @@ export class ReviewResearchEvidenceTool implements IReviewResearchEvidenceTool {
               `Evidence: ${review.packet.evidence}`,
               `Confidence: ${review.packet.confidence}.`,
               'No assessment, epistemic state, or AITP record was changed.',
-              'Main-agent synthesis required: decide whether to call RecordResearchProgress and/or UpdateResearchQuestion with the physical interpretation.',
+              'Main-agent synthesis required: interpret the evidence. For a live action, use ConcludeResearchAction once; do not duplicate an existing conclusion through RecordResearchProgress.',
               `Research revision remains ${review.researchRevision}.`,
             ].join('\n'),
           };

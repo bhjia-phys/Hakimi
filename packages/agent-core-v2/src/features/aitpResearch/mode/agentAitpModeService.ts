@@ -28,7 +28,8 @@
  * adapter is reset to its zero-I/O state. When entering with a `lineSlug`,
  * the line is created before `aitp_mode.enter` so its first mode event carries
  * a complete line-and-mode snapshot. Bound at Agent scope — contributed into every Agent
- * scope by `AitpResearchFeature`.
+ * scope by `AitpResearchFeature`. Only the main agent installs lifecycle
+ * subscriptions: a child's restore must not reset the shared Session adapter.
  */
 
 import { Service } from '#/_base/di/service';
@@ -83,10 +84,13 @@ const RESEARCH_MODE_TOOL_NAMES = [
   'SetResearchFocus',
   'ProposeResearchCheckpoint',
   'CommitResearchCheckpoint',
+  'DiscardHistoricalResearchCheckpoint',
   'BeginResearchAction',
   'StartResearchAction',
   'ConcludeResearchAction',
   'RecordResearchProgress',
+  'ReviewResearchEvidence',
+  'ObserveResearchRun',
   'RequestResearchDecision',
   'ResolveResearchDecision',
   'aitp_enter',
@@ -119,6 +123,7 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     @ISessionAitpLifecycleCoordinator private readonly coordinator?: ISessionAitpLifecycleCoordinator,
   ) {
     super();
+    if (this.scopeCtx.agentId !== MAIN_AGENT_ID) return;
     this.lastVisibilityActive = this.isActive;
     this.lastModeLineSlug = this.wire.getModel(AitpModeModel).current.currentLineSlug;
 

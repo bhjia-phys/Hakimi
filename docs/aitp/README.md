@@ -1,5 +1,15 @@
 # AITP integration handoff
 
+The installed G5 operator audit exposed two Hakimi lifecycle defects: the
+Research tool-overlay repair omitted evidence review, run observation and
+historical-checkpoint discard, while a child agent's inactive restore reset
+the Session-shared AITP adapter. The mode now restores those existing tools
+and installs lifecycle subscriptions only on the main agent. The real audit
+correctly refused an identity-mismatched executable but could not commit its
+failure checkpoint on the previous build. Regression and installed replay
+status is tracked in the collaborator program §19.14; no AITP CLI, contract,
+schema, ledger or human-decision rule changes with this repair.
+
 2026-09-05 development addition: Theory Physics 0.2.0 supplies one optional
 `calculation-operator` agent profile through the existing plugin loader. It
 returns the existing typed child packet; the main agent retains scientific

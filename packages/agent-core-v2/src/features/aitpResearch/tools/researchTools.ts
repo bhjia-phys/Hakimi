@@ -105,7 +105,9 @@ export const IUpdateResearchLineTool =
 export const ConfirmResearchWorkstreamBindingInputSchema = z.object({
   line_slug: z.string().min(1).max(200),
   workstream: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
-  expected_revision: z.number().int().nonnegative(),
+  expected_revision: z.number().int().nonnegative().describe(
+    'Current top-level Research snapshot revision from GetResearchStatus, not the Line or Program revision.',
+  ),
 }).strict();
 export type ConfirmResearchWorkstreamBindingInput = z.infer<
   typeof ConfirmResearchWorkstreamBindingInputSchema
@@ -438,7 +440,9 @@ export const IConcludeResearchActionTool =
 
 export const ReviewResearchEvidenceInputSchema = z.object({
   packet: ResearchEvidencePacketSchema,
-  expected_revision: z.number().int().nonnegative(),
+  expected_revision: z.number().int().nonnegative().describe(
+    'Current top-level Research snapshot revision from GetResearchStatus, not the Question or Line revision.',
+  ),
 }).strict();
 export type ReviewResearchEvidenceInput = z.infer<typeof ReviewResearchEvidenceInputSchema>;
 

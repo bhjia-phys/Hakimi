@@ -21,6 +21,7 @@ import type { GoalSnapshot, GoalStatus } from '#/agent/goal/types';
 import { GoalModel } from '#/agent/goal/goalOps';
 import { contextAppendMessage, contextUndo } from '#/agent/contextMemory/contextOps';
 import { IAgentScopeContext, makeAgentScopeContext } from '#/agent/scopeContext/scopeContext';
+import { IAgentProfileService } from '#/agent/profile/profile';
 import { BeforeToolExecuteEventImpl } from '#/agent/toolExecutor/beforeToolExecuteEvent';
 import { AgentToolExecutorService } from '#/agent/toolExecutor/toolExecutorService';
 import { IAgentToolExecutorService } from '#/agent/toolExecutor/toolExecutor';
@@ -3415,6 +3416,9 @@ describe('legacy Research tool compatibility', () => {
         'ConcludeResearchAction',
         'ResolveResearchDecision',
         'AcknowledgeResearchAlert',
+        'ReviewResearchEvidence',
+        'ObserveResearchRun',
+        'DiscardHistoricalResearchCheckpoint',
       ]),
     );
     expect(toolNames).not.toEqual(expect.arrayContaining([
@@ -3442,6 +3446,9 @@ describe('legacy Research tool compatibility', () => {
         'ConcludeResearchAction',
         'ResolveResearchDecision',
         'AcknowledgeResearchAlert',
+        'ReviewResearchEvidence',
+        'ObserveResearchRun',
+        'DiscardHistoricalResearchCheckpoint',
       ]),
     );
     expect(toolNames).not.toEqual(expect.arrayContaining([
@@ -3453,6 +3460,51 @@ describe('legacy Research tool compatibility', () => {
 });
 
 describe('undo/cold restore reconcile', () => {
+  it.each(['inactive', 'ready'] as const)(
+    'does not reset the session adapter when a %s child mode restores or undoes',
+    async (phase) => {
+      const adapter = makeStubAdapter();
+      adapter._setHealth({ phase: 'ready', contractVersion: '0.2', pluginVersion: '0.9.0' });
+      const health = adapter.health;
+      const reset = vi.spyOn(adapter, 'reset');
+      const probe = vi.spyOn(adapter, 'probe');
+      const resetMaintenance = vi.fn();
+      const childWire = buildWire(`operator-${phase}`);
+      if (phase === 'ready') {
+        childWire.dispatch(aitpModeEnter({ actor: 'user' }));
+        childWire.dispatch(aitpModeSetPhase({ phase: 'ready' }));
+      }
+      const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
+      const addActiveTool = vi.fn();
+      const ix = createServices(disposables, {
+        additionalServices: (reg) => {
+          reg.defineInstance(IWireService, childWire);
+          reg.defineInstance(IAgentScopeContext, makeScopeCtx('operator-1'));
+          reg.defineInstance(ISessionAitpAdapter, adapter);
+          reg.definePartialInstance(ISessionAitpLifecycleCoordinator, { reset: resetMaintenance });
+          reg.defineInstance(IEventBus, eventBus);
+          reg.defineInstance(IAgentProfileService, makeProfileServiceStub(addActiveTool));
+          reg.define(IAgentAitpModeService, AgentAitpModeService);
+        },
+      });
+      const child = ix.get(IAgentAitpModeService);
+      const modeEvents = vi.fn();
+      disposables.add(eventBus.subscribe('aitp_mode.updated', modeEvents));
+
+      await childWire.restore();
+      eventBus.publish({ type: 'context.undone', turns: 1 });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(reset).not.toHaveBeenCalled();
+      expect(resetMaintenance).not.toHaveBeenCalled();
+      expect(probe).not.toHaveBeenCalled();
+      expect(adapter.health).toBe(health);
+      expect(modeEvents).not.toHaveBeenCalled();
+      expect(addActiveTool).not.toHaveBeenCalled();
+      await expect(child.enter({ actor: 'model' })).rejects.toThrow('only available on the main agent');
+    },
+  );
+
   it('keeps an inactive cold restore silent with the initial public revision', async () => {
     const adapter = makeStubAdapter();
     const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');

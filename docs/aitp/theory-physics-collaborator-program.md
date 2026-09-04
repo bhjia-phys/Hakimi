@@ -847,7 +847,7 @@ C1–C5 的审查是必做项，但代码实现不是无条件必做项。只有
 | G2 Goal/Plan 协作 | 进行中；local-only reviewed Action Plan 路径已修复并测试 | 继续无 Goal 探索、按需计划、外部等待和无进展重规划的真实情景验收 |
 | G3 定向检索 | 进行中；Note/marker 回读、post-commit 来源归属及 bounded Note Action 恢复已定向测试，整体模型行为未验收 | 按问题和当前 Line 检索；真实课题验收从所选证据重新 prepare，而不是复活旧 attention 权限 |
 | G4 人类指导与蒸馏 | 进行中；六类 provenance 保存链与一次 handoff 回归通过，修复了 saved Entry 与 candidate 的身份漂移漏检 | 四类真实正反情景 + touched Entry 路径；结构测试不证明人类内容已经验证，卡片不足条件时不伪造 trial |
-| G5 计算 operator | 进行中；Theory Physics 0.2.0 已加入一个既有 agent-profile 扩展点的 calculation-operator，安装/发现路径已测试 | 真实 ABACUS/LibRPA 工程步骤及 failure/workaround 验收，不以 profile/loader 测试声称科研可用 |
+| G5 计算 operator | 进行中；0.2.0 安装版实际委派/只读失败诊断已执行，发现工具 overlay 缺项和 child restore 重置共享 adapter，见 §19.14 | 交付修复并重放 review/persistence；计算 replay 与 failure/workaround 验收仍未闭合 |
 | G6 阶段综合 | 进行中；已有证据的 bounded Note Action 路径及冷恢复已定向测试，真实综合内容未验收 | 使用已有 Note contract，生成可回溯的阶段总结，区分论文材料与发表 |
 | G7 真实课题运行 | 已完成安装版自然只读调查与 cold restore 复测，修复两个实际启动缺陷；未执行新科学里程碑 | 在确认的 Topic/workstream 下执行有限科学检验和必要记录，继续 §19.2 的其他真实情景 |
 | C1–C5 | 本次需求审查 no-op，依据见 §19.13；不宣布未来能力可用 | G7 后续若出现新自然需求再审查，不凭重复回合或已有 roadmap 扩大范围 |
@@ -1030,3 +1030,17 @@ core/CLI typecheck、core import guard（1,297 files）、四个改动代码文�
 | C5 AITP M2/M3/M4、新 surface | 已发现的入口/恢复故障都在 Hakimi；现有 AITP contract 足够修复，没有新增协议的自然需求与单独授权 | no-op；不改 AITP schema/CLI/human semantics，不启动未来阶段 |
 
 总 Goal 保持 active，G1–G7 行为验收没有整体关闭。接下来的唯一最小 Action 是在上述归属确认后，使用安装版 Hakimi 做一个预声明的实际小检验及必要 evidence 记录；若未确认，不开始需要该归属的记录或自动 Goal continuation，不重复只读调查消耗回合。
+
+### 19.14 G5 实际 operator 失败诊断与共享生命周期修复
+
+在等待 Heisenberg 归属确认期间，推进独立 G5 验收，不把自动 continuation 当作确认。准备计算 replay 时发现旧 H2O 回归 provenance 中的 binary SHA 与现有 binary 不同，当前环境 `ldd` 另有八项缺失库。因此停止该数值重放，不把旧 oracle 转移到新字节，不更改科研源文件、运行环境或远程任务。这是身份冲突/环境未就绪，不是新的 QSGW 物理失败结论。
+
+随后在官方 AITP CLI 初始化的独立临时 Topic 中，用已安装代码 `d8178d5a8`、Theory Physics 0.2.0 和本地已配置的 `openai-codex/gpt-5.6-sol` 执行一次有限模型验收（显式模型选择不修改账号配置）。主 agent 24 次工具调用、6 分 15 秒；测试 Line/workstream 显式设置只作用于临时 Topic，不修改真实课题归属。`BeginResearchAction` 先成功，下一 batch 才委派唯一前台 `calculation-operator`。子 agent wire 记录确认四次串行调用：Read 指定 provenance、一次 sha256sum、一次 ldd、Write 唯一测试 evidence packet。它正确报告 NO-GO、未执行 binary、未伪称科学通过。
+
+验收失败在主 agent 的回传链，而非上述诊断：实际 LLM tool snapshot 从 30 增至 60 个工具后仍没有 `ReviewResearchEvidence`、`ObserveResearchRun` 和 `DiscardHistoricalResearchCheckpoint`，并非仅凭模型抱怨判断。主 agent 形成一个 pending failure candidate 后，AITP 工具报告 not ready，尽管 Research mode 仍 ready；没有 canonical Entry，也没有绕过 adapter 写入。子 agent 恢复 inactive mode 调用了 Session-shared adapter/coordinator reset，是独立于前两次启动 bug 的生命周期归属缺陷。
+
+本次最小修复在 Hakimi：为 mode 的旧 allowlist 补齐三个已实现工具；只有 main agent 安装 AITP 生命周期订阅，child restore/undo 不再取消 session adapter/maintenance。绑定与 review 工具说明明确 expected revision 是顶层 Research snapshot revision；review 回包不再引导活跃 Action 另写重复进度。没有新增工具/schema、改变 adapter contract、放松 canonical 写屏障或 human decision，也没有设置新的环境开关。Skill reference 的普通 Read 仍要求 Action 归属；本轮首次被拒后在 Begin 成功后正常读取，不通过全面放行 Read 修复。
+
+两个 tool-overlay 用例和 inactive/ready child restore/undo 两个用例先在旧实现上失败，修复后通过；Research service/policy 共 547 项通过，core typecheck/import guard 通过，四个相关文件 type-aware lint 零 error，87 条既有 warning 均不在修改行；AITP 官方 contract/atomic-save 21 项通过。私有提示、原始工具结果与失败状态保留在 gitignored `.tmp/research-acceptance-20260905/operator-failure-r1/` 和独立临时测试 store，不提交私人会话。
+
+安装版修复 replay 尚待进行；本次不能关闭 G5/G4/G7。下一唯一最小 Action：交付修复后，在同一临时会话恢复原 pending failure，验证正式 review/prepare/save/commit，再用一次新的有归属子任务验证 adapter 不再失效；成功持久化仍不等于完成真实 calculation replay 或 Heisenberg 科学里程碑。
