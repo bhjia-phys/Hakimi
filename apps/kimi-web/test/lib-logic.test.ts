@@ -1205,11 +1205,37 @@ describe('research board compact presentation', () => {
     ['action_planned', 'test_action'],
     ['action_executing', 'test_action'],
     ['evaluating', 'evaluate'],
-    ['state_updated', 'record'],
+    ['state_updated', 'next_ready'],
     ['checkpoint_pending', 'record'],
   ] as const)('maps phase %s to the compact scientific stage %s', (phase, stage) => {
     const slots = buildResearchBoardCompactSlots(snapshot({ phase }));
     expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({ stage });
+  });
+
+  it('shows record after a conclusion only while a checkpoint actually needs persistence', () => {
+    const pendingCheckpoint = {
+      checkpointId: 'pending-result',
+      idempotencyKey: 'pending-result-key',
+      persistence: 'pending_commit' as const,
+      createdAt: 2,
+    };
+    const state = snapshot({ phase: 'state_updated', pendingCheckpoint });
+    const pending = buildResearchBoardCompactSlots(state);
+    expect(pending.find((slot) => slot.kind === 'cycle')).toMatchObject({ stage: 'record' });
+    expect(state.pendingCheckpoint).toEqual(pendingCheckpoint);
+
+    const settled = buildResearchBoardCompactSlots(snapshot({ phase: 'state_updated' }));
+    expect(settled.find((slot) => slot.kind === 'cycle')).toMatchObject({ stage: 'next_ready' });
+  });
+
+  it('shows an explicit Goal wait without interpreting it as a failed scientific action', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      goalSummary: {
+        objective: 'Observe the bounded calculation', status: 'active',
+        continuation: { state: 'waiting', reason: 'Waiting for the task result' },
+      },
+    }));
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({ stage: 'waiting' });
   });
 
   it('keeps another Line alert out of compact Attention', () => {
@@ -1417,6 +1443,7 @@ describe('research board compact presentation', () => {
 
     expect(slots.find((slot) => slot.kind === 'project')).toMatchObject({
       kind: 'project',
+      goalObjective: 'Validate the bounded result',
       goalStatus: 'active',
       planStatus: 'active',
       milestone: 'Validate the first bounded comparison',
@@ -1727,12 +1754,13 @@ describe('research board compact presentation', () => {
     });
   });
 
-  it('prioritizes a current warning over a historical unresolved alert', () => {
-    const slots = buildResearchBoardCompactSlots(snapshot({
+  it.each(['historical_unresolved', 'superseded_by_retry'] as const)(
+    'keeps %s history without counting it as current attention', (classification) => {
+    const state = snapshot({
       alerts: [{
         fingerprint: 'alert_historical',
         kind: 'blocked',
-        classification: 'historical_unresolved',
+        classification,
         state: 'active',
         message: 'An earlier attempt remains unresolved',
         createdAt: 1,
@@ -1744,15 +1772,18 @@ describe('research board compact presentation', () => {
         message: 'The current evidence needs review',
         createdAt: 2,
       }],
-    }));
+    });
+    const slots = buildResearchBoardCompactSlots(state);
 
     expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
       kind: 'attention',
       source: 'alert',
       alertKind: 'contradiction',
       text: 'The current evidence needs review',
-      additionalCount: 1,
+      additionalCount: 0,
     });
+    expect(state.alerts[0]?.state).toBe('active');
+    expect(state.alerts[0]?.classification).toBe(classification);
   });
 
   it('treats a legacy unclassified blocked alert as current attention', () => {
@@ -1782,7 +1813,7 @@ describe('research board compact presentation', () => {
       source: 'alert',
       alertKind: 'blocked',
       text: 'The current experiment is blocked',
-      additionalCount: 2,
+      additionalCount: 1,
     });
   });
 

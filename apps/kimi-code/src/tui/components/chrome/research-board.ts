@@ -134,18 +134,26 @@ function renderHeader(
   const mode = formatModeLabel(snap.mode, snap.loopStatus, colors);
   const workflow = formatWorkflowHealthLabel(snap, colors);
   const phase = renderPhase(snap.phase, colors);
+  const goal = snap.researchGoal ?? snap.goalSummary;
+  const continuation = goal?.continuation;
+  const goalLabel = goal === undefined ? '' : ` · Goal ${goal.status}` +
+    (goal.status === 'active' && continuation?.state === 'held'
+      ? ' · continuation held'
+      : goal.status === 'active' && continuation === undefined
+        ? ' · continuation unavailable (legacy snapshot)'
+        : '');
   const line = normalizeSummary(snap.currentLineSlug) || 'none';
   const alerts = currentLineAlerts(snap);
   const alertSummary = alerts.length === 0
     ? ''
     : ` · ${chalk.hex(colors.warning)(`${String(alerts.length)} alert${alerts.length === 1 ? '' : 's'}`)}`;
-  const full = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${workflow} · ${chalk.hex(colors.primary)(cycleStage(snap))} · ${chalk.hex(colors.text)(line)}${alertSummary}`;
+  const full = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${workflow}${goalLabel} · ${snap.planningPolicy} · ${chalk.hex(colors.text)(line)}${alertSummary}`;
   if (visibleWidth(full) <= width) return full;
-  const scoped = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${workflow} · ${chalk.hex(colors.text)(line)}${alertSummary}`;
+  const scoped = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${workflow}${goalLabel} · ${chalk.hex(colors.text)(line)}${alertSummary}`;
   if (visibleWidth(scoped) <= width) return scoped;
-  const compact = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${workflow} · ${phase}${alertSummary}`;
+  const compact = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode}${goalLabel} · ${phase}${alertSummary}`;
   if (visibleWidth(compact) <= width) return compact;
-  const minimal = `  ${chalk.hex(colors.primary).bold('Research')} ${mode}`;
+  const minimal = `  ${chalk.hex(colors.primary).bold('Research')} ${mode}${goal === undefined ? '' : ` · Goal ${goal.status}`}`;
   if (visibleWidth(minimal) <= width) return minimal;
   return width >= 1 ? chalk.hex(colors.primary).bold('R') : '';
 }
@@ -297,7 +305,9 @@ function orderedAlerts(
 
 function currentLineAlerts(snap: ResearchStatusSnapshot): readonly ResearchAlert[] {
   return orderedAlerts(snap.alerts).filter(
-    (alert) => alert.lineSlug === undefined || alert.lineSlug === snap.currentLineSlug,
+    (alert) => (alert.lineSlug === undefined || alert.lineSlug === snap.currentLineSlug)
+      && alertClassification(alert) !== 'historical_unresolved'
+      && alertClassification(alert) !== 'superseded_by_retry',
   );
 }
 
@@ -456,6 +466,8 @@ function currentLineHumanGate(snap: ResearchStatusSnapshot) {
 }
 
 function cycleStage(snap: ResearchStatusSnapshot): string {
+  const goal = snap.researchGoal ?? snap.goalSummary;
+  if (goal?.status === 'active' && goal.continuation?.state === 'waiting') return 'waiting';
   switch (snap.phase) {
     case 'orienting':
     case 'gap_analysis':
@@ -466,6 +478,7 @@ function cycleStage(snap: ResearchStatusSnapshot): string {
     case 'evaluating':
       return 'evaluate';
     case 'state_updated':
+      return snap.pendingCheckpoint === undefined ? 'next / ready' : 'record';
     case 'checkpoint_pending':
       return 'record';
     case 'awaiting_human':
@@ -508,26 +521,17 @@ function renderCompactProjectStage(
     candidate.milestoneId === plan.currentMilestoneId);
   const line = findCurrentLine(snap);
   const question = snap.currentQuestion;
-  const continuation = goal?.continuation;
-  const continuationSuffix = goal?.status === 'active' && continuation?.state === 'held'
-    ? ' · continuation held'
-    : goal?.status === 'active' && continuation === undefined
-      ? ' · continuation unavailable (legacy snapshot)'
-    : '';
   const parts = [
-    goal === undefined
-      ? 'interactive Research · no Goal'
-      : `Goal ${goal.status}${continuationSuffix}`,
-    plan === undefined
-      ? 'Plan not established'
-      : `Plan ${plan.status} · ${normalizeSummary(milestone?.title ?? plan.currentMilestoneId)}`,
     line === undefined && snap.currentLineSlug === undefined
-      ? 'Line not selected'
-      : `Line ${normalizeSummary(line?.title ?? snap.currentLineSlug)}`,
-    question === undefined
-      ? 'Question not focused'
-      : `Question ${question.workflow}/${question.epistemic}: ${normalizeSummary(question.wording)}`,
-  ];
+      ? undefined
+      : normalizeSummary(line?.title ?? snap.currentLineSlug),
+    milestone === undefined
+      ? normalizeSummary(goal?.objective) || normalizeSummary(question?.wording) || 'exploring the question'
+      : `Milestone: ${normalizeSummary(milestone.title)}`,
+    question === undefined ? undefined : `${question.workflow}/${question.epistemic}`,
+    goal === undefined ? 'interactive · no Goal' : undefined,
+    plan === undefined ? undefined : `Plan ${plan.status}`,
+  ].filter((part) => part !== undefined);
   return `  ${chalk.hex(colors.primary)('◆')} ${chalk.hex(colors.textDim)('Project:')} ${chalk.hex(goal?.status === 'blocked' ? colors.warning : colors.text)(parts.join(' · '))}`;
 }
 
@@ -541,9 +545,6 @@ function renderCompactCurrentCycle(
     : action?.status === 'planned' || action?.status === 'in_progress'
       ? `action ${action.status.replaceAll('_', ' ')}`
       : 'no live action';
-  const turns = snap.period === undefined
-    ? 'period not established'
-    : `${String(snap.period.loopCount)} Research turns`;
   const goal = snap.researchGoal ?? snap.goalSummary;
   const continuation = goal?.continuation?.state;
   const continuationLabel = goal?.status === 'active' && continuation === undefined
@@ -553,7 +554,7 @@ function renderCompactCurrentCycle(
       : ` · continuation ${continuation}`;
   const mode = `${snap.mode}${snap.loopStatus === 'paused' ? ' · paused' : ''} · ${snap.planningPolicy}${continuationLabel}`;
   const warning = actionNeedsRecovery(snap) || snap.loopStatus === 'paused' || continuation === 'held';
-  return `  ${chalk.hex(warning ? colors.warning : colors.primary)('↻')} ${chalk.hex(colors.textDim)('Current cycle:')} ${chalk.hex(colors.primary)(cycleStage(snap))} · ${chalk.hex(colors.text)(`${turns} · ${actionState} · ${compactCurrentWork(snap)}`)} · ${chalk.hex(warning ? colors.warning : colors.textMuted)(mode)}`;
+  return `  ${chalk.hex(warning ? colors.warning : colors.primary)('↻')} ${chalk.hex(colors.textDim)('Current cycle:')} ${chalk.hex(colors.primary)(cycleStage(snap))} · ${chalk.hex(colors.text)(compactCurrentWork(snap))} · ${chalk.hex(warning ? colors.warning : colors.textMuted)(`${mode} · ${actionState}`)}`;
 }
 
 function renderCompactAttention(

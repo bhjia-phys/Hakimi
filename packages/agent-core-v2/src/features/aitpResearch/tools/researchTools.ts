@@ -273,7 +273,9 @@ export const PlanResearchActionInputSchema = z
         'Executor-authoritative capabilities in active Research Mode: workspace_read, workspace_write, web_search, web_fetch, shell, task, subagent, or scheduler. Use tool:<exact-tool-name> for one otherwise unclassified plugin or MCP tool. Descriptive labels such as simulation do not grant tool execution.',
       ),
     retry_of_entry_id: z.string().optional(),
-    planning_level: z.enum(['simple', 'planned']).optional(),
+    planning_level: z.enum(['simple', 'planned']).optional().describe(
+      'Simple actions use a minimal bounded plan. Planned actions require a finalized local Action Plan; also bind the current Research Plan and milestone when a non-terminal Research Plan exists. A Goal is not required for local exploration.',
+    ),
     research_plan_id: z.string().min(1).max(200).optional(),
     research_plan_revision: z.number().int().positive().optional(),
     milestone_id: z.string().min(1).max(200).optional(),
@@ -286,19 +288,25 @@ export const PlanResearchActionInputSchema = z
   .strict()
   .superRefine((input, ctx) => {
     if (input.planning_level !== 'planned') return;
-    for (const key of [
-      'research_plan_id',
-      'research_plan_revision',
-      'milestone_id',
-      'action_plan_id',
-      'action_plan_revision',
-    ] as const) {
+    for (const key of ['action_plan_id', 'action_plan_revision'] as const) {
       if (input[key] === undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: [key],
           message: `${key} is required for a planned action.`,
         });
+      }
+    }
+    const parentKeys = ['research_plan_id', 'research_plan_revision', 'milestone_id'] as const;
+    if (parentKeys.some((key) => input[key] !== undefined)) {
+      for (const key of parentKeys) {
+        if (input[key] === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: 'Research Plan ID, revision, and milestone must be provided together.',
+          });
+        }
       }
     }
   });

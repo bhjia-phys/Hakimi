@@ -47,7 +47,7 @@ Hakimi 不是一次性回答机器。它以有界的工作追问一个理论物�
 
 ## 理论物理研究规程
 
-可选的 `theory-physics` domain pack 是持续理论物理研究的上层使用手册。它将请求从 Research Mode admission 路由到当前 Line / Question / Focus 与阶段 Goal，再进入一个有界 Research Action；只有 durable scientific delta 或可复用方法候选，才会按需转交外部的 `using-aitp` 或 `distilling-methods` skill。
+可选的 `theory-physics` domain pack 是持续理论物理研究的上层使用手册。它支持先讨论未知、回读相关记录，再通过有归属的文献或推导工作形成候选。一个科学 loop 可以跨多个 bounded Action 和 turn；Goal 可选，reviewed local plan 服务复杂 Action，Research Plan 指导里程碑策略。读取既有 AITP 知识不要求先产生 durable delta。持久记录与条件性方法 review 仍遵循外部 `using-aitp` 和 `distilling-methods` skill，不在 Hakimi 复制第二套协议。
 
 普通的一次性物理问答不需要 Research Mode。这个 pack 提供的是规程而不是物理预言机：它不是文献库、物理正确性服务、调度器、第二套 runtime、账本或后台自主 loop。研究者仍然负责物理约定、重要性判断和最终的科学结论；AITP 仍是协议 authority。
 
@@ -61,7 +61,9 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 
 Research Mode 默认可发现，但每个新 session 都从 inactive 开始。对于持续工作，`theory-physics` 可以指导模型调用 `EnterAITPMode`、等待 authoritative probe status，并执行有界行动；inactive session 的 AITP I/O 为零。Research Board 和模型上下文会明确区分 Hakimi Goal、observed AITP Program（含其顶层 **Research goal**）和 Local Research Loop。Hakimi 只通过 AITP `enter` 观测该顶层目标，从不写 `TOPIC.md` 或 AITP Topic。Goal↔Program alignment 是仅在本地 checkpointed、由用户显式确认的 binding，不会根据文本相似度推断。在 active Research Mode 中，缺少 binding、binding stale 或明确 conflict 都会阻止 Goal completion 和 automatic continuation；inactive Goal 不受影响。进入 Research Mode 不会调度模型轮次，跨 turn continuation 仅由 Goal 负责，Plan 只是行动内短期 overlay；没有 Goal 时交互式 Research 仍可正常工作。TUI/Web 的紧凑 Board 统一为 Project、Current cycle、Attention、Next 四个位置，并把旧 period counter 准确标为 Research turn 数；健康 AITP 与 provenance 折叠到展开详情。存在 live Action/Run、checkpoint、human gate 或非 idle cycle 时会拒绝切换 Line，其他 Line 的 alert 也不会冒充当前 attention。默认 Goal engine 还会公开派生的 `idle`/`deciding`/`enqueued`/`running`/`held`/`waiting` continuation 状态，因此被 Research policy hold 的 active Goal 会显示为 `active · continuation held` 及其 owner/reason，而不会与 paused Goal 混淆。缺少该可选字段的旧 snapshot 会标为 unavailable，多 Line Board 状态则始终按当前选中 Line 隔离。每个 admitted Research turn 都会在注入模型上下文前执行一次确定性本地 reconciliation，因此可机械判定的 Line/Action/phase/period/cursor 漂移会在回答前修复；这不会额外跑一轮 AITP maintenance，也不推断科学结果。historical checkpoint 只有在 Hakimi 能够证明它没有 save receipt、committed Entry 或 committed-history 痕迹，且其捕获的 Question 或 Program binding 已 stale 时才会自动丢弃；任何含糊状态都保持 blocked，等待显式恢复。replay 只修复可确定的 Action/phase 结构：同一个 Action 保持 live、阻止 Goal completion，并在下一次 interactive Research turn 中根据证据解决，不会被自动完成或自动放弃。
 
-上段的 “Plan” 特指短期 Action-local Plan/Todo；带 revision 的 Research Plan 是跨多轮、可随证据演化的科学策略，但同样不拥有 continuation，也不能完成 Goal。
+上段的 “Plan” 特指短期 Action-local Plan/Todo；带 revision 的 Research Plan 是跨多轮、可随证据演化的科学策略，但同样不拥有 continuation，也不能完成 Goal。经审阅的 local Action Plan 可以独立执行，不强制创建 Goal 或完整 Research Plan；如果已有 draft/active Research Plan，planned action 仍须同时绑定其 active milestone 和经审阅的小计划，缺项或过期 binding 继续拒绝执行。
+
+紧凑 Board 优先显示当前研究线、科学目标或里程碑，以及正在做的工作。turn 计数和明确分类的历史失败保留在展开审计中，不冒充科学进展或当前阻塞。Action 结论没有待保存 checkpoint 时显示“下一步／就绪”，Goal 明确等待时显示“等待”。Research 上下文不再仅因预算计数或内部 revision 变化重复整段提示，但范围、完成条件、续跑和预算上限等实质变化仍会刷新。这些显示修复只是[合作者总体规划](docs/aitp/theory-physics-collaborator-program.md)的一部分，不代表整个科研工作流已经验收。
 
 Research 协作策略与工具权限模式相互正交。`collaborative` 只在会改变 Research Plan 的关键不确定性上询问研究者。`dreaming` 表示一旦 Goal、scope 和 completion criterion 已明确，Hakimi 就记录 reversible、low-cost、in-scope 的默认假设，并让 Goal 拥有的 continuation 在不逐步确认的情况下继续推进课题。两者在改变 Goal/scope、会影响结论的科学约定歧义、昂贵或不可逆操作，以及 AITP/其他 human decision 处都仍会停下。`auto` 只决定常规工具风险确认；因此 Goal + `dreaming` + `auto` 可以在已约定的科学与操作边界内自动推进，但不会获得新的科学决策权。
 
@@ -70,6 +72,16 @@ Research Mode 一旦 active，Action 归属就由 Tool Executor 强制执行，�
 Research Line 与 AITP workstream 也是两个不同的 identity。Hakimi 观测到当前 Topic 后，必须由用户或 main agent 显式确认一条带 revision 的本地 Line→workstream binding；slug、文本、路径或 ID 相同都不表示 membership。每次确认都有 server-owned opaque identity，clear 必须同时比较该 identity 与不随 undo 回退的 public Research revision。`unbound`、`unavailable`、`stale` 或 `conflict` 的 Line 仍可做低风险本地探索，但 scoped maintenance 和 Hakimi checkpoint adoption 必须使用精确的 confirmed binding。Hakimi 会在 scoped maintenance 与 checkpoint write 前重新做无作用域 Topic observation，post-save commit barrier 同时校验 captured Topic 与唯一一个 captured workstream。checkpoint-bound save 要求 AITP 0.9.0 adapter-contract 0.2：Hakimi 会把 captured Topic 与 exact singleton workstream 传给 atomic `record save`，因此 mismatch 不产生 canonical Entry；post-save `show` 和 scoped `check` 继续作为 defense in depth。重新绑定前必须先显式清除；undo 或 cold restore 会重新校验已保存的 Topic 与 observed revision，不会自动修复 binding。REST、WebSocket、Node SDK、klient、TUI 和 Web 投影同一个 binding status 与 typed durable-candidate state。
 
 [AITP](docs/aitp/) 是可选的外部持久证据账本，通过其 CLI 与文件使用；它不是 Hakimi 的第二套 runtime 或数据库。`ConcludeResearchAction` 之后，Hakimi 可以把一个 assessed durable delta 路由到现有 prepare/fill/save/show/checkpoint 路径；no-delta 结论不会安排 persistence 或 distillation，human assertion/decision 也始终与 agent/tool/source verification 分开。一个新 checkpoint 首次成功 commit 后，Hakimi 会在同一轮把且只把本次 touched Entry best-effort 交给精确的外部 `distilling-methods` Skill 做一次有界 review。重复 commit 或 Skill 不可用是非阻塞 no-op；是否满足既有 trigger 只由外部 Skill 判断。Research snapshot 只会显示最新精确 handoff 已请求或不可用，不会声称 trigger、card、trial、review 完成、批准或发布。Hakimi 不自行解析 marker、创建或 revision card、approval 或 publish，也不会自动初始化/adopt/backfill workspace，不增加 `/research goal` 或 workstream registry，并且仍没有计划中的 native H6b coordinator。Hakimi 本地的 Goal–Program 与 Line–workstream binding 绝不写入 AITP。AITP 不可用时，Research Mode 会明确显示 degraded，并阻止 durable write、checkpoint 和 active Research Goal completion。详细兼容性与运行边界见 [AITP 文档](docs/aitp/)。
+
+提交后 Note review 保留经过验证的来源 Line/Topic/workstream confirmation，并在 Note 工具真正执行时再次核验。切线、重新绑定、失去 ready、undo 或 restore 都不能沿用旧 draft 的写权限；只有恢复出的 review marker 时仍只读。阶段综合或中断的 review 可以通过新的 bounded Note Action 继续：host 在准备和保存新草稿前，通过 canonical Entry 回读核验所选 Question 的证据，不要求伪造新的科研 delta。这是本地归属保护，不等同于 AITP Entry 的原子 compare-and-save，也不新增自动卡片批准、发布或蒸馏协调器。
+
+AITP degraded 时，用户指导的 Research 回合仍可在 fresh bounded Action 内做临时探索，正常 scope 和权限检查不变；自动 Goal 工作、AITP 写入和 Goal 完成仍被 hold。已确认记录归属的新结果或失败保留为本地 pending candidate 等待恢复，不会悄悄改成 no-delta。这修复了“允许创建本地科研行动，却拒绝其全部工作工具”的冲突。
+
+同一用户回合内打开 Research Mode 后，入口收敛即开始 Research context 和一次本地 boundary，无需再发提示。暂停或退出会撤销准入，模式恢复不会赋予自动 Goal continuation。
+
+可选 Theory Physics 插件包含 `calculation-operator` agent profile，用于限定范围的编译、输入、数值计算和后处理。主 agent 给出科学检验与范围，审查现有 typed evidence packet，并独占 Research/AITP mutation。这个角色不同于 `/preset` 的模型路由池；不安装 runner 或 scheduler，也不提供 OS 级隔离。真实科研验收单独记录在合作者计划中。
+
+checkpoint 屏障还会在接纳前将已保存 Entry 的 kind、authority 和 creator 与已结束 Action 的候选对照。不一致时保留实际记录和 receipt 供审查，checkpoint 保持 pending，不触发提交后的蒸馏 handoff。这是保存后的身份核对，不是内容语义验证，也不是保存前 authority 的原子保证。
 
 ## 从源码安装
 

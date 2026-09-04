@@ -51,6 +51,7 @@ export function presentResearchWorkstreamBinding(
 
 export interface ResearchBoardProjectSlot {
   kind: 'project';
+  goalObjective?: string;
   goalStatus?: NonNullable<ResearchStatusSnapshot['goalSummary']>['status'];
   goalContinuationState?: NonNullable<
     NonNullable<ResearchStatusSnapshot['researchGoal']>['continuation']
@@ -69,6 +70,7 @@ export type ResearchBoardCycleStage =
   | 'test_action'
   | 'evaluate'
   | 'record'
+  | 'waiting'
   | 'next_ready';
 
 export interface ResearchBoardCycleSlot {
@@ -299,6 +301,7 @@ function projectSlot(snapshot: ResearchStatusSnapshot): ResearchBoardProjectSlot
   const question = focusedQuestion(snapshot);
   return {
     kind: 'project',
+    goalObjective: presentText(goal?.objective),
     goalStatus: goal?.status,
     goalContinuationState: goal?.continuation?.state,
     goalContinuationAvailable: goal === undefined ? undefined : goal.continuation !== undefined,
@@ -312,6 +315,8 @@ function projectSlot(snapshot: ResearchStatusSnapshot): ResearchBoardProjectSlot
 }
 
 function cycleStage(snapshot: ResearchStatusSnapshot): ResearchBoardCycleStage {
+  const goal = snapshot.researchGoal ?? snapshot.goalSummary;
+  if (goal?.status === 'active' && goal.continuation?.state === 'waiting') return 'waiting';
   switch (snapshot.phase) {
     case 'orienting':
     case 'gap_analysis':
@@ -322,6 +327,7 @@ function cycleStage(snapshot: ResearchStatusSnapshot): ResearchBoardCycleStage {
     case 'evaluating':
       return 'evaluate';
     case 'state_updated':
+      return snapshot.pendingCheckpoint === undefined ? 'next_ready' : 'record';
     case 'checkpoint_pending':
       return 'record';
     case 'awaiting_human':
@@ -442,6 +448,9 @@ function attentionSlot(
     .filter((alert) =>
       (alert.state === undefined || alert.state === 'active')
       && alert.acknowledgedAt === undefined)
+    .filter((alert) =>
+      presentResearchAlertClassification(alert) !== 'historical_unresolved'
+      && presentResearchAlertClassification(alert) !== 'superseded_by_retry')
     .filter((alert) =>
       alert.lineSlug === undefined || alert.lineSlug === snapshot.currentLineSlug)
     .toSorted((left, right) => {

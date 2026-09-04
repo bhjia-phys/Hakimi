@@ -20,6 +20,12 @@
 
 外部的 `aitp-research-protocol` plugin 仍是协议 authority。它的 `using-aitp` 与 `distilling-methods` skill 保持独立且仅在 active 时可用：durable scientific delta 转交 `using-aitp`；只有在该 plugin 已安装、Research Mode active 且该 Skill 当前可见时，才按需转交 `distilling-methods`。一个新 checkpoint 首次成功 commit 后，Hakimi 会加载该 plugin 的精确 Skill，对且只对 touched Entry 做一次有界 review；重复 commit、Skill 缺失或隐藏都是非阻塞 no-op。可选的 `hakimi/research-distillation-attention-0.1` snapshot receipt 只会为最新精确 committed checkpoint/Entry 显示 `review_requested` 或 `handoff_unavailable`；它不表示 Skill 发现 trigger、创建 card/trial、完成 review、批准或发布。否则只保留 method candidate 与证据，不得声称已完成蒸馏或发布。Hakimi 不复制它们的 CLI、schema、marker、method-card、trial、trigger 或 approval 规则；不会自动写 Topic Goal、`resolves` 或 method card。调用 `EnterAITPMode` 后使用 `GetResearchStatus`；如果仍为 `probing`，应等待其收敛为 `ready` 或 `degraded`，不得忙轮询或改用裸 CLI。
 
+提交后的 Note 写入绑定成功 checkpoint commit 捕获的精确 Line/Topic/workstream confirmation。executor 检查准入，Note 工具在真正执行时再次核验归属，并在 Note I/O 前重新观测 Topic；只有 prepare 返回的精确本地 Note draft 可以编辑和保存。Note I/O 未返回时暂不允许本地切线或重新绑定；undo、restore、失去 ready、新 committed cursor 或 confirmation 改变都会撤销旧权限，迟到结果不能恢复权限。如果归属变化后 adapter 报告已经保存，错误仍保留报告的产物路径，应检查该产物而不是假定已回滚或盲目重试；在归属未变时，验证失败保留原 draft 供修正重试。
+
+review context 是临时的：恢复出的 attention、重读证据或重复 commit 都不能恢复旧 draft 权限。确有价值的中断 review 或阶段综合可以开始新的 Question-bound Action，将所选 canonical Entry IDs 放在 `evidenceRefs`/`falsifierRefs` 中，并同时授予 `tool:aitp_note_prepare`、`tool:aitp_note_save`。host 在 prepare 和 save 前只通过 `aitp_show` 核验这些 Entry：必须在 captured Topic 中 active，且显式属于当前 workstream；Action、Question、Line 和已有 plan binding 必须仍 fresh，Note prepare 只指向该 workstream。冷恢复后需要重新 prepare，不能沿用旧草稿权限，也不要求先伪造新的科研 delta。已记录知识仍可读取，不可用的蒸馏不是 Goal continuation gate；这些本地核验不判断综合内容，也不提供持久化 review 调度。AITP 0.9 的原子 Topic/exact-workstream save 只适用于 Entry，不适用于 Note；Hakimi 不解析 Note frontmatter、不提供 Note membership 的原子保证或 OS-level sandbox，仍须遵守 AITP Skill 的验证和 human decision 规则。
+
+对已经明确的工程小步骤，可选 Theory Physics 插件提供 `calculation-operator` profile。让主 agent 委派这个有界检验；它必须先建立带 subagent capability 的 Action。operator 返回 typed evidence packet；只有主 agent 解释证据、结束 Action 并通过 AITP 记录。`/preset` 单独选择模型路由。这是受限工具的角色提示，不是新 runner、继承的逐命令 Action policy 或 OS sandbox；真实计算/retry 验收仍在合作者计划中单独跟踪。
+
 ## 进入研究模式
 
 Research Mode 不需要选择性启用开关。`/research` 命令和 `EnterAITPMode` 能力默认可发现。每个新建 session 初始都为 `inactive`，而 hydration 会保留已持久化的 mode。inactive 状态的恢复加载、`getResearch` 和 GET/快照读取只使用本地快照：不会发生 AITP I/O，不会探测 workspace，Research Board 也保持隐藏。持久化为 active 的 session 在 cold restore 后仍保持 active；cold restore 会重新探测适配器并执行只读的 `enter` → `check` 维护周期。其他 Research/AITP 工具以及 AITP plugin skill 仍仅在 active 状态下可见。
@@ -39,11 +45,13 @@ Research Mode 不需要选择性启用开关。`/research` 命令和 `EnterAITPM
 
 仅 TUI 在从 `manual` 或 `yolo` 权限模式进入时显示键盘提示，询问是否切换到 `auto` 或 `yolo`。Web 使用 session 当前的权限模式；如需更改，请先通过 Web 控件设置。两个 surface 都不会启动独立后台循环，在 `manual` 下研究轮次仍可能等待审批；跨轮次的自主 continuation 只由已有 Goal 负责。
 
-当 Research Mode 为 active、`ready` 且未暂停时，每个经过 typed ingress 的 main-agent 用户 prompt 都会获得 transient `interactive_research` lease，并携带 Research context 进入一次 Research Loop iteration；它不会 enqueue 下一轮。只有现有 Research continuation guards 放行后，由 Goal engine 排入的 Goal-owned continuation 才会获得独立的 `autonomous_research` lease。system、cron、subagent、unclassified、inactive、probing、paused 和 degraded turn 都 abstain。两类 lease 都只存在于 runtime，不持久化，也不加入公开 wire schema。
+当 Research Mode 为 active 且未暂停时，每个经过 typed ingress 的 main-agent 用户 prompt 在 `ready` 或 `degraded` 下都会获得 transient `interactive_research` lease，携带 Research context 进入一次 Research turn；degraded 探索属于临时工作，不表示 AITP 状态已重新核验或保存，也不会 enqueue 下一轮。只有在 `ready` 且现有 Research continuation guards 放行后，由 Goal engine 排入的 Goal-owned continuation 才获得独立的 `autonomous_research` lease；自主回合中途发生 degraded 时，后续 Action 工作也被 hold。system、cron、subagent、unclassified、inactive、probing 和 paused turn 仍 abstain。两类 lease 都只存在于 runtime，不持久化，也不加入公开 wire schema。
 
 在 `auto` 下，模型发起的有界 Research Action 不会另行创建常规执行审批 gate：`requires_human_approval` 会被关闭，普通工具风险提示也可能被抑制。但 `auto` 不替人做科学判断。真正不可委托的科学或协议选择仍使用 `RequestResearchDecision`，它在所有权限模式下都会创建 durable human gate。恢复 session 或切换到 `auto` 时，只有在 Research Loop active 的前提下，Hakimi 才把与当前 planned action 绑定的 unresolved approval 视为已有的 auto 执行授权并启动该 action；历史 review、无 action 的 approval 和 scientific-decision gate 永远不会被自动解决。
 
 ### Web 手动检查
+
+模型在 typed 用户回合内打开 Research Mode 时，入口收敛后即可准入，无需用户再发一条消息。同一回合只做一次本地 Research boundary，adapter readiness 变化不会重复计数；退出或暂停会撤销准入，下一次正常 step-head injection 读取当前状态。mode update 不会创建或恢复 Goal continuation lease。
 
 1. 从 inactive 且 session 空闲的状态打开 **Modes** 并选择 **Research**。确认 Board 出现并先进入 `probing`，随后进入 `ready` 或 `degraded`，且没有调度模型响应。
 2. 再次打开 **Modes**，点击 active 的 **Research** 行或 **管理**。确认打开 Research Manager，而不是退出研究模式。
@@ -105,7 +113,7 @@ Research Mode 与 Goal 相互关联，但不拥有同一套生命周期：
 | Research Loop / Action | 一次 admitted turn 及其正常的 `BeginResearchAction → 实际工作 → ConcludeResearchAction` 单元 | canonical AITP persistence |
 | AITP Program 与 ledger | observed Topic goal、canonical Entry/Note evidence、workstreams 与 human decisions | Hakimi Goal 生命周期、工具执行或 Board 状态 |
 
-因此，Research Mode 只要 active、ready 且未暂停，即使没有 Goal，也会
+因此，Research Mode 只要 active、ready 或 degraded 且未暂停，即使没有 Goal，也会
 让用户的交互 turn 进入 Research Loop。只有跨 turn 自动 continuation 才
 要求 Goal。存在 Goal 时，Research Goal 只是它的科研投影而不是替代品；
 Goal–Program alignment 约束自动续跑和完成，但不能遮住当前 bounded
@@ -268,7 +276,9 @@ Research Mode active 时，Research Action 归属直接成为 admitted Research 
 
 启用后，状态/控制工具和严格限定的恢复工具可以在没有 active Action 时运行。新的科研工作则必须具有处于 `action_executing` 的 `in_progress` Action、fresh 的 Line/Question/Plan binding、没有 unresolved human gate，并取得与 `allowed_tool_kinds` 匹配的 capability。已知 capability 为 `workspace_read`、`workspace_write`、`web_search`、`web_fetch`、`shell`、`task`、`subagent` 和 `scheduler`；其他未知 plugin/MCP 工具必须取得精确的 `tool:<小写工具名>` 授权，否则默认拒绝。同一个 tool-call batch 中的 `BeginResearchAction` 与工作工具会被拒绝，避免 Begin 失败时未归属的工作先行执行。
 
-Action 以 durable delta 结束后，checkpoint 持久化使用另一条只绑定 pending checkpoint、精确 AITP Topic/workstream 与精确 draft path 的窄 lease。Note/Method-card 持久化同样只使用成功 `note prepare` 返回的精确 draft path，并在 save、退出模式、undo 或 cold restore 后撤销。直接访问 canonical `.aitp/topic` 文件仍被拒绝；canonical write 仍只能经过 AITP adapter 与 CLI contract。
+回读已有知识是一项严格限定的只读例外，不是开展新的 Action 工作。模式为 `ready` 时，`Read` 可以读取一个精确的 workspace-relative `.aitp/topic/notes/note-<id>.md`；AITP `show` 只支持 Entry，不支持 Note。`Grep` 可以在 `.aitp/topic/notes/` 下发现通用 `^> method-card:` 标记，或在 `.aitp/topic/entries/` 下发现 `^> method-observation:`；两者也可在 `.aitp/topic/` 下检索，但仅允许 `files_with_matches` 输出。这些读取无需 live Action，包括 commit 后以及 Goal/loop 暂停时。它们不授予一般搜索、跨工作区的绝对 Note 路径、Entry 文件读取、shell 或写权限。适用性和依据仍由 Skill 检查；标记数量不是证据，runtime 不会主动扫描。
+
+Action 以 durable delta 结束后，checkpoint 持久化使用另一条只绑定 pending checkpoint、精确 AITP Topic/workstream 与精确 draft path 的窄 lease。Note/Method-card 持久化同样只使用成功 `note prepare` 返回的精确 draft path，并在 save、退出模式、undo 或 cold restore 后撤销。其他直接访问 canonical `.aitp/topic` 文件仍被拒绝；canonical write 仍只能经过 AITP adapter 与 CLI contract。
 
 这属于 Tool Executor policy，不是操作系统级 sandbox。获准的 `shell` capability 本身仍很宽，host 的常规 command approval 和文件系统/网络隔离才是更底层的安全边界。该策略阻止标准模型工具调用绕过 Research Action 归属，但不声称能够隔离已被攻陷的 subprocess 或外部程序。
 
@@ -294,9 +304,10 @@ Web Manager 的 Checkpoint 表单保留这一边界。**Propose** 只创建 pend
 
 降级模式下：
 
+- **用户指导的临时探索**可在一个 fresh bounded Action 内使用其已授予工具，仍受普通权限、人类决策、pending checkpoint、scope/plan freshness 和单一 live Action 约束。普通 adapter warning 不再表示所有科研都被阻断。
 - **读工具**仍可用——Agent 仍可列出和查看 AITP 条目。
 - **写工具和 checkpoint commit** 被阻止——`record_save`、`note_save` 和 pending checkpoint commit 均无法执行。
-- **AITP writes 和 active Research Mode 的 Goal 完成被阻止**——未解决的 human gate 也会阻止 Goal 完成。本地 Question/Line mutation 仍可能发生，但不是持久化的 AITP write。
+- **AITP 写入、自动 Goal 工作和完成仍被阻止**。无新证据的结论只更新本地 progress；真实新结果或失败在已有明确 Line/workstream binding 时可保留为 pending durable candidate，恢复后继续同一 candidate，不能改写成 `no_durable_delta` 来绕过保存。缺少有效 binding 时，durable Conclude 会拒绝且不完成 Action；应把证据保留在对话/工作区，明确记录归属后再重试。当前没有未绑定结果的自动持久化，也不推断 binding。
 - 研究模式不会执行 automatic session-closeout。它**不会**自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`，适配器也不暴露、不调用、不解析 upstream 的 `backfill-0.1` 成功 envelope。用户必须手动初始化 workspace 或解决 AITP 健康问题。
 
 ## 排除与限制

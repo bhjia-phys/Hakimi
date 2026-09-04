@@ -1,5 +1,20 @@
 # AITP integration handoff
 
+2026-09-05 development addition: Theory Physics 0.2.0 supplies one optional
+`calculation-operator` agent profile through the existing plugin loader. It
+returns the existing typed child packet; the main agent retains scientific
+review, Research state and official AITP persistence. No AITP contract, CLI,
+schema, formal distillation Skill or protected AITP checkout file is changed.
+Plugin installation/discovery tests are distinct from pending real scientific
+acceptance. Shell/file task boundaries are not OS-level isolation.
+
+The same G4 audit found and fixed a candidate-identity gap: canonical `show`
+must match the candidate's Entry kind, authority and expected creator as well
+as its captured scope before checkpoint acceptance. A mismatch keeps the
+actual saved Entry/receipt pending and does not trigger post-commit review.
+This adds no canonical write or pre-save authority guarantee; AITP's existing
+atomic save flags still cover only exact Topic/workstream.
+
 Cross-repository handoff 的单一入口：Hakimi（agent 编排、工具调用、交互体验）
 与 AITP（协议、持久化、证据权威）。本目录是 Hakimi 侧基线；AITP 侧的对应
 交接文档位于 AITP 仓库的 `docs/hakimi/`。任何 Hakimi 开发会话在构建或修改
@@ -30,7 +45,7 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   checkpoint 的单一完整 snapshot push、active step 的语义状态维护 guidance、
   protocol/node-sdk/kap-server/klient 公开表面、TUI `/research` Board/manager
   与 stale-hydrate 防护均已实现。`/research` 与 `EnterAITPMode` 默认可发现；新 session 初始为 inactive，hydration 保留已持久化的 mode。inactive hydration/REST GET/SDK snapshot 读取只使用本地快照，不探测 AITP、不发生 AITP I/O，Board 和其他 Research/AITP 工具、plugin skill 保持隐藏；持久化为 active 的 session 在 cold restore 后仍保持 active，并重新 probe adapter、执行只读 `enter` → `check` maintenance。inactive session 只有显式 `/research` toggle、模型入口或 `enter_mode` 才会启动 probe；active undo/cold restore 也会重新 probe，ready probe 后只读执行 `enter` → `check`，不调度模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。旧 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`、`[experimental].aitp_research_mode` 与 master flag 对该能力均 inert no-op；backfill 不作为模型工具暴露。
-  当前状态维护也已接通：进入模式、active undo/cold restore（均在 ready probe 后），以及 active、ready、loop-running 的 admitted Research turn 在 Research state 发生变化后的 turn end，都会只读执行 `enter` → `check`，不是 session-end automatic closeout。main-agent user prompt 由 prompt ingress 获得 transient `interactive_research` lease；只有 Goal engine 在现有 Research continuation guards 放行后生成的 typed continuation 才获得 `autonomous_research` lease。两者都进入 Research Loop 并接收 Research context；interactive lease 从不 enqueue continuation，Goal 仍是唯一 continuation owner。system/cron/subagent/unclassified、inactive、probing、paused 或 degraded turn abstain。maintenance receipt 和 context injection 只暴露安全摘要；完整 Research snapshot/API 或 expanded Board 仍可能包含 checkpoint、revision 和 adapter health 字段。合法的 check findings（包括 error finding）保持 ready；只有周期不可用或无效时显示 degraded。error finding 仍可按具体 checkpoint 的保存屏障阻止提交；不会自动 init/adopt/backfill，也不会自动写 semantic handoff、Entry 或 Note。该 coordinator 不是 H6b native method-distillation orchestration。Checkpoint 还会保留 prepare/save/check receipt、具体 Entry ID 和 pre-save finding baseline；commit 前用 `show` + scoped `check` 验证，旧 error 只作为可审计 warning，新 error 才阻止提交。Research alerts 使用稳定 fingerprint，并区分 active blocker、historical unresolved、superseded retry 和 warning；清除记录保留在 snapshot 中但不再注入模型。Research Loop 还实现 typed child evidence packet 的 main-agent-only review（review 本身 zero-write）和绑定当前 action 的显式 run observation；正常有界行动路径是 `BeginResearchAction` → 科研工作 → `ConcludeResearchAction`。Conclude 在一个 Research transition 中记录物理工作、结果、测试或推导、限制、主线影响、下一步和一次 main-agent durability assessment；`no_durable_delta` 不安排 S6 写入，`durable_delta` 只生成一个带现有 Entry kind、authority、provenance 与 rationale 的 pending commit candidate。它不提交/轮询 HPC、不创建 campaign 实体，也不把 RUNNING 当作科学结论。S7 已增加首次成功 checkpoint commit 后的一次无状态 same-turn handoff：只把 touched Entry 和 checkpoint 交给精确的外部 `distilling-methods` Skill；duplicate/unavailable 均为非阻塞 no-op。
+  当前状态维护也已接通：进入模式、active undo/cold restore（均在 ready probe 后），以及 active、ready、loop-running 的 admitted Research turn 在 Research state 发生变化后的 turn end，都会只读执行 `enter` → `check`，不是 session-end automatic closeout。main-agent user prompt 由 prompt ingress 获得 transient `interactive_research` lease；只有 Goal engine 在现有 Research continuation guards 放行后生成的 typed continuation 才获得 `autonomous_research` lease。两者都进入 Research Loop 并接收 Research context；interactive lease 从不 enqueue continuation，Goal 仍是唯一 continuation owner。用户 typed turn 在 degraded 下也可获得 interactive lease，保留本地 reconciliation、provisional Action 与 Board 更新；自动 Goal 准入及中途降级后的后续 Action 工作仍被 hold。system/cron/subagent/unclassified、inactive、probing、paused turn abstain。maintenance receipt 和 context injection 只暴露安全摘要；完整 Research snapshot/API 或 expanded Board 仍可能包含 checkpoint、revision 和 adapter health 字段。合法的 check findings（包括 error finding）保持 ready；只有周期不可用或无效时显示 degraded。error finding 仍可按具体 checkpoint 的保存屏障阻止提交；不会自动 init/adopt/backfill，也不会自动写 semantic handoff、Entry 或 Note。该 coordinator 不是 H6b native method-distillation orchestration。Checkpoint 还会保留 prepare/save/check receipt、具体 Entry ID 和 pre-save finding baseline；commit 前用 `show` + scoped `check` 验证，旧 error 只作为可审计 warning，新 error 才阻止提交。Research alerts 使用稳定 fingerprint，并区分 active blocker、historical unresolved、superseded retry 和 warning；清除记录保留在 snapshot 中但不再注入模型。Research Loop 还实现 typed child evidence packet 的 main-agent-only review（review 本身 zero-write）和绑定当前 action 的显式 run observation；正常有界行动路径是 `BeginResearchAction` → 科研工作 → `ConcludeResearchAction`。Conclude 在一个 Research transition 中记录物理工作、结果、测试或推导、限制、主线影响、下一步和一次 main-agent durability assessment；`no_durable_delta` 不安排 S6 写入，`durable_delta` 只生成一个带现有 Entry kind、authority、provenance 与 rationale 的 pending commit candidate。它不提交/轮询 HPC、不创建 campaign 实体，也不把 RUNNING 当作科学结论。S7 已增加首次成功 checkpoint commit 后的一次无状态 same-turn handoff：只把 touched Entry 和 checkpoint 交给精确的外部 `distilling-methods` Skill；duplicate/unavailable 均为非阻塞 no-op。
   S5 还移除了 Research Line slug 自动成为 AITP workstream 的假设。Hakimi 只在无作用域 `enter` 观测当前 Topic 后，接受用户或 main agent 显式确认的本地、带 revision 的 Line→workstream binding；绝不从 slug、文本、路径或 ID 推断。每次确认带 server-owned `confirmationId`，clear 同时校验不回退的 public revision 与 exact identity。`unbound`/`unavailable`/`stale`/`conflict` Line 可继续低风险本地探索，但不能做 scoped durable checkpoint。maintenance 与 checkpoint prepare/save 都先重新观测 Topic 再校验精确 confirmed binding；canonical `show` 只接受 captured Topic 与唯一 captured workstream。S5.1 现以 AITP 0.9.0 `aitp/adapter-contract-0.2` 关闭原强写入隔离缺口：checkpoint save 自动传入 captured Topic 与 exact singleton workstream，由 AITP 在写锁内 compare-and-save；mismatch 零 canonical write，post-save `show`/scoped `check` 保持 defense in depth。save 与本地 binding 竞态仍保留 receipt 并 degraded，reset/exit mutation race仍需 canonical recovery。绑定状态已同步 snapshot、REST、WebSocket、SDK、klient、TUI 和 Web；S5 strong gate 已通过。
   S6 将上述 barrier 接到正常 Conclude 边界：`no_durable_delta` 保持零 S6 persistence/distillation I/O；`durable_delta` 以 additive `commitCandidate` 固定 source action、progress boundary、Entry kind、authority、provenance 和 rationale，并立即复用 prepare/fill/save/show/scoped-check/commit 路径。相同 retry 返回同一 pending candidate，不同 retry、provenance mismatch、重复 progress 与 pending 时的 Question/Line/Plan/Goal formal closure 均 fail closed。candidate 通过 REST、WebSocket、Node SDK、klient、TUI 与 Web 同步；AITP runtime/CLI/schema/adapter contract 不变。S7 conditional distillation handoff 已实现，但 H6b native coordinator 仍未实现。
   H6b/C6 native method-distillation orchestration 是 **planned，
@@ -74,6 +89,25 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   fresh active Action 与其 runtime capability；Begin 与 work 必须分两个 batch，
   post-action checkpoint draft 使用独立的窄 persistence lease。该策略不是
   OS-level sandbox，`shell` 仍受通用 permission/host sandbox 约束。
+  后续 G3 修复了已有 Note 的读取死路：AITP `show` 只读 Entry，因此 mode
+  ready 时，精确 workspace-relative `.aitp/topic/notes/note-<id>.md` 的
+  `Read` 和只返回文件名的通用 Method-card/observation marker `Grep` 属于
+  recorded-knowledge inspection，无需 live Action；新科研工作和 canonical
+  write 仍按原策略。此例外不解析 AITP、不判定 trigger、不主动扫描，也不
+  授予绝对跨工作区路径或任意读写。`theory-physics` 0.1.3 同步无 Goal 探索、
+  科学 loop/Action/turn 分工及按需检索指导；整体模型行为仍待真实课题验收。
+  G3 后续修复把 post-commit Note 的临时写归属固定到成功 commit 的精确
+  Line/Topic/workstream confirmation，在工具实际执行和 fresh Topic observation
+  后复核；切线、rebind、失去 ready、undo/restore 或 newer cursor 撤销旧权限，
+  迟到 prepare 不能重新授权。Note I/O 未完成时阻止本地切线/rebind；迟到 save
+  返回的真实路径保留在错误中，不声称 rollback。没有复制 AITP parser 或增加
+  transport 字段。G3/G6 后续支持 fresh Question-bound Note Action：所选
+  evidenceRefs/falsifierRefs 经官方 show 核验为当前 Topic/workstream 的 active
+  Entries，Action 同时授权两个 Note tools，才能 prepare/save；冷恢复不能复用
+  旧 draft 权限，必须 fresh prepare。该路径支持已有成果整理，无需制造新科学
+  delta，不恢复旧 cursor/attention 权限，也不新增 review scheduler。
+  `theory-physics` 0.1.4 提供按需使用指导，真实课题端到端行为仍待验收。
+  AITP Note 原子 Topic/exact-workstream save 仍 unavailable，不借用 Entry 的保证。
   `collaborative | dreaming` 是 Research planning policy，`auto` 是正交的工具
   风险 permission；Goal 仍是唯一跨 turn continuation owner。AITP checkout
   只读，0.9.0 CLI/schema/adapter-contract 0.2/Skill/human-decision 均不变。
@@ -86,7 +120,15 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
 - Native method-distillation orchestration 设计：
   [`method-distillation-orchestration.md`](method-distillation-orchestration.md)
   （描述仍未实现的 native H6b；S7 的无状态同轮 Skill handoff 不属于该 coordinator）。
-- 面向研究者的最终形态、完整 Research Loop、职责边界、当前缺口和后续单阶段
+- G1 入口修复：typed 用户回合从 inactive/probing 进入 ready/degraded 后，直接衔接 interactive admission 和一次本地 boundary，不需要第二条用户提示。pause/exit 撤销准入；mode 恢复从不创建或恢复 autonomous Goal lease。沿用现有 mode event 与 step-head injection，没有新 wire schema、额外 AITP 检查或 continuation owner。
+- 2026-09-05 的 G1 显示修复只改变 Hakimi 投影：紧凑 Board 优先显示科学目标或
+  milestone 和当前工作，turn 计数留在 expanded；已分类的历史失败不再占据当前
+  Attention，但原始记录和未分类的真实 blocker 保留。无 pending checkpoint 的
+  `state_updated` 显示 Next/Ready，显式 Goal wait 显示 Waiting。模型提示过滤相同
+  历史噪声，不再因 remaining-budget/researchRevision 变化重复 brief；目标、范围、
+  completion criterion、continuation 和预算上限变化仍披露。无新增 AITP I/O、
+  public phase/schema、状态 mutation 或科学判断；真实课题行为验收仍待完成。
+- 面向研究者的最终形态、完整 Research Loop、职责边界、当前缺口和完整交付
   Goal：[`theory-physics-collaborator-program.md`](theory-physics-collaborator-program.md)。
   这是前向总体规划，不改变已经关闭的 S0–S10 状态，也不把 planned 能力写成
   已实现事实。
@@ -99,9 +141,10 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   guards；generic Goal 仍是唯一 continuation/budget engine，AITP Topic Goal
   仍只读观测。旧 `goalSummary` 在兼容期继续保留。S3 新增 checkpointed
   `hakimi/research-plan-0.2` 多轮计划，并把旧 bounded-action `ResearchPlan`
-  作为 additive `actionPlan` alias 显式保留：非 trivial action 必须同时绑定
-  active Research Plan milestone 和 approved local Plan revision，simple
-  one-step action 使用 immutable minimal-plan binding；任一 binding stale 时
+  作为 additive `actionPlan` alias 显式保留。G2 的后续修正允许 reviewed local
+  Action Plan 独立执行，不强制创建 Goal 或完整 Research Plan；已有 draft/active
+  Research Plan 时仍须绑定 active milestone，且 parent ID/revision/milestone
+  必须全部提供。simple 小型可逆 action 使用 immutable minimal-plan binding；任一 binding stale 时
   start/conclude fail closed。Plan lifecycle 不会关闭 Question、写 AITP 或完成
   Goal；REST、WebSocket、SDK、klient、TUI 与 Web 使用同一版本化投影。
   S4 又增加 checkpointed、Hakimi-local 的 `collaborative | dreaming`

@@ -361,6 +361,14 @@ describe('Research agent event schemas', () => {
 });
 
 describe('research command protocol', () => {
+  it('preserves a reviewed local-only Action Plan on the command boundary', () => {
+    const input = {
+      kind: 'begin_action', actionKind: 'derivation', purpose: 'Compare two conventions.',
+      stopCondition: 'Stop after one limiting-case comparison.', planningLevel: 'planned',
+      actionPlanId: 'local-plan', actionPlanRevision: 1,
+    };
+    expect(researchCommandSchema.parse(input)).toEqual(input);
+  });
   it('accepts only the five legal awaiting_human exit targets', () => {
     for (const nextPhase of ['idle', 'gap_analysis', 'action_planned', 'action_executing', 'evaluating']) {
       expect(researchCommandSchema.parse({

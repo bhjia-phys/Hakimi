@@ -8,7 +8,9 @@
  * research period (one `loopCount` increment per interactive or autonomous
  * Research turn), and refreshes the read-only AITP current-state
  * projection after admitted turns that changed research state. Typed main-agent
- * user turns carry an interactive lease; post-guard Goal continuations carry an
+ * user turns carry an interactive lease; entry during a live user turn performs
+ * the same local boundary once when admission becomes available, before the next
+ * ordinary context-injection step. Post-guard Goal continuations carry an
  * autonomous lease. System / subagent / cron / unclassified turns abstain. It
  * never judges results, completes actions, writes AITP records, or enqueues
  * continuations; the Goal engine remains the sole continuation owner. Subagent
@@ -44,6 +46,7 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
   private lastTurnId: number | null = null;
   private turnStartRevision: number | null = null;
   private turnStartActionId: string | null = null;
+  private boundaryNoted = false;
 
   constructor(
     @IEventBus eventBus: IEventBus,
@@ -65,18 +68,23 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
         this.onTurnEnded(e);
       }),
     );
+    this._register(eventBus.subscribe('aitp_mode.updated', () => {
+      this.noteAdmittedBoundary();
+    }));
   }
 
   private onTurnStarted(event: TurnStartedEvent): void {
     if (this.lastTurnId === event.turnId) return;
     this.lastTurnId = event.turnId;
+    this.boundaryNoted = false;
+    this.turnStartRevision = null;
+    this.turnStartActionId = null;
+    this.noteAdmittedBoundary();
+  }
 
-    if (!this.admission.isTurnAdmitted(event.turnId)) {
-      this.turnStartRevision = null;
-      this.turnStartActionId = null;
-      return;
-    }
-
+  private noteAdmittedBoundary(): void {
+    if (this.lastTurnId === null || this.boundaryNoted || !this.admission.isTurnAdmitted(this.lastTurnId)) return;
+    this.boundaryNoted = true;
     this.research.noteLoopBoundary();
 
     const snapshot = this.research.getSnapshot();
@@ -94,6 +102,7 @@ export class ResearchLoopCoordinator extends Service implements IResearchLoopCoo
 
   private onTurnEnded(event: TurnEndedEvent): void {
     if (this.lastTurnId !== event.turnId) return;
+    this.lastTurnId = null;
     if (!this.mode.isActive || this.mode.loopStatus !== 'active') return;
     if (this.maintenance === undefined || this.turnStartRevision === null) return;
 

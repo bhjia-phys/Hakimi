@@ -7,7 +7,7 @@ export default {
     degraded: '降级',
   },
   loop: {
-    active: '循环运行中',
+    active: '循环已启用',
     paused: '循环已暂停',
   },
   planningPolicy: '规划策略',
@@ -62,6 +62,7 @@ export default {
     test_action: '检验 / 行动',
     evaluate: '评估',
     record: '记录',
+    waiting: '等待',
     next_ready: '下一步 / 就绪',
   },
   noLiveAction: '没有进行中的行动',

@@ -3,7 +3,7 @@ name: theory-physics
 description: |
   Use this skill when starting or continuing sustained theoretical-physics
   research: decide whether Research Mode is warranted, align the question with
-  the current Research Line and Goal, run bounded scientific actions, and route
+  the current Research Line and optional Goal, run bounded scientific actions, and route
   durable evidence or reusable methods to the authoritative AITP skills.
 ---
 
@@ -33,20 +33,38 @@ For sustained work, follow this order:
    polling loop. While status is pending or unavailable, do not call AITP write
    tools or fall back to a bare CLI invocation outside the adapter. Report the
    real degraded boundary if probing cannot complete.
-3. Align the request with the current Research Line, Question, Focus, and
-   stage Goal. A large topic belongs to the Line/Question/AITP context; a Goal
-   is the current verifiable milestone, not a replacement for the topic.
-   If Goal and Focus disagree, narrow the boundary before doing work.
+3. Align the request with the current Research Line, Question, and Focus. A
+   Goal is optional: normal conversation can investigate and plan without one.
+   When a Goal exists, it is a verifiable milestone, not a replacement for the
+   topic. If Goal and Focus disagree, clarify the boundary before doing work.
 4. Read only the current topic's state. For an unrelated line, consume only
    already-distilled reusable methods; do not inject the other topic's full
-   state. Resume an existing line/workstream only from a persisted binding or
-   an exact match, never from a guessed semantic alias.
+   state. Resume a line/workstream only from its current explicitly confirmed
+   binding; identical slugs are not confirmation. Do not infer Goal–Program
+   alignment or transfer a different line's conclusions into this one.
 5. Use one bounded Research Action for the next scientific step, then close it
    before choosing another.
 
-Goal owns continuation across turns. Plan mode is a short-lived overlay inside
-one complex Research Action; entering or leaving Plan mode does not enter,
-exit, or reset Research Mode.
+Goal alone owns automatic continuation, budgets, waits, and lifecycle. A paused
+Goal stops automatic continuation, not ordinary conversation. Research Mode
+provides research discipline with or without a Goal; it is not a second Goal
+engine. A scientific loop may span several bounded Actions and turns.
+
+Research Plan describes revisable milestone strategy under an aligned Goal.
+Use it when the project needs that scale, not as a prerequisite for inquiry.
+Plan mode prepares/reviews a local multi-step plan before a complex Action;
+that local plan can exist without a Goal or Research Plan. Bind to a current
+parent milestone when one exists. For a small reversible probe, begin a simple
+bounded Action without a formal plan. TodoList tracks execution detail, not
+scientific evidence. None of these overlays enters or resets Research Mode.
+
+`collaborative` and `dreaming` guide how much to consult the researcher about
+scientific uncertainty. Collaborative discussion should resolve consequential
+choices, not interrupt every minor assumption. With a clear Goal, dreaming
+continues within the agreed scope using explicit, revisable assumptions. Both
+still stop for new authority or a consequential ambiguous decision. `auto`
+controls tool approvals separately; it does not approve scientific claims,
+Goal alignment, publication, or an expansion of the agreed scope.
 
 ## AITP delegation boundary
 
@@ -60,14 +78,15 @@ method-card rules, trial rules, or approval rules.
 | Situation | Route |
 | --- | --- |
 | Reads, calculations, probes, or turn progress without scientific durability | Keep it in local Research state; do not write AITP. |
-| An exact canonical Entry is needed | Delegate to `using-aitp`. |
+| Prior evidence, a working Note, or a relevant Method card may answer the present uncertainty | Load `using-aitp` on demand and inspect only relevant records and their basis; no durable delta is required to read. |
 | A verified derivation, result, failure, source, decision, run, or closeout has durable value | Delegate to `using-aitp`, then associate the resulting durable checkpoint through the normal barrier. |
 | A method appears reusable across questions or lines, and the external plugin is installed, Research Mode is active, and `distilling-methods` is visible | Load `distilling-methods` on demand for protocol guidance; otherwise retain the candidate and evidence locally without claiming distillation or publication. |
 
 Do not automatically write a Topic Goal, add `resolves`, publish a method card,
 or turn a local Goal into an AITP record. Durable delta is the threshold for
-`using-aitp`; reusable-method candidacy is the threshold for
-`distilling-methods`. After the first successful commit of a new checkpoint,
+new research records, not for retrieving existing knowledge. Reusable-method
+candidacy warrants consulting `distilling-methods`, whose own triggers decide
+whether to do anything. After the first successful commit of a new checkpoint,
 Hakimi can make one same-turn, best-effort handoff of only the touched Entry to
 that external Skill; duplicate commits or an unavailable Skill are non-blocking
 no-ops. This bounded handoff owns no trigger, card, trial, approval, publication,
@@ -75,16 +94,30 @@ retry, scheduler, or exactly-once state. A full native H6b coordinator with
 durable scheduling and recovery remains planned/unavailable. A resolved human
 gate alone is not a handoff.
 
-## The bounded Research Action loop
+## The scientific loop and bounded Actions
 
-For each substantive slice, keep the boundary explicit:
+Start from the physical uncertainty, not from a phase checklist. Before a
+candidate explanation is clear, discuss the question, inspect relevant AITP
+records, or run an owned literature/derivation Action to identify conventions,
+alternatives, and a useful benchmark. Its expected evidence can be a narrowed
+question or a falsifiable candidate; do not invent a hypothesis in advance.
 
-1. State the current physical Question, its Focus, and the falsifier or
-   discriminating observation. Confirm that the action advances the stage Goal.
+Once candidates are clear, choose the smallest discriminating test, consult
+applicable existing methods, and plan to the complexity of that test. Evaluate
+support, counterevidence, and limitations before deciding to refine the
+candidate, ask the researcher, wait, or close the milestone. Negative evidence
+can advance the project. Several Actions may serve one scientific loop.
+
+For each substantive work slice, keep the boundary explicit:
+
+1. State the uncertainty being reduced and the expected discriminating evidence
+   or useful clarification. If there is a Goal, relate the slice to it.
 2. Choose one bounded action: literature review, derivation, numerical test,
    data analysis, or code investigation. State the expected evidence and stop
    condition with `BeginResearchAction`.
-3. Do only that action. Use `WebSearch`/`FetchURL` for literature, `Read` for
+3. Begin must succeed before work, in an earlier tool batch. If refused, read
+   the reported blocker and recover it; do not continue through generic tools.
+   Do only that action. Use `WebSearch`/`FetchURL` for literature, `Read` for
    local evidence, and `Bash` for reproducible calculations or tests. Delegate
    independent checks to subagents only when their output can return as a
    typed evidence packet.
@@ -96,6 +129,14 @@ For each substantive slice, keep the boundary explicit:
    step. Change the Question only when evidence, failure, or sustained
    no-progress changes its assessment or next bounded action.
 
+Do not repeat the same conclusion with `RecordResearchProgress` after Conclude.
+`state_updated` is a conclusion boundary, not a card trigger or a demand to
+write. Preserve a meaningful negative result, verified human guidance, or a
+reproducible failure when it changes what the next researcher should do;
+success/failure and durable/no-delta are separate judgments. Treat a human's
+technical suggestion as attributed guidance until a source, derivation, or
+test verifies it; the speaker's confidence is not validation.
+
 For a long external task, use action-bound observations with
 `ObserveResearchRun`. When a healthy detached background task is the only
 dependency, call `UpdateGoal` with `status: active` and
@@ -104,6 +145,14 @@ policy is satisfied and the task reaches a terminal state. Do not repeatedly
 call `TaskOutput` to poll. Running is never scientific success. One completed
 action is not a reason to invent a new persistence record: delegate only when
 the result has durable scientific value.
+
+There is currently one foreground Action/run per session. Waiting does not
+authorize a second independent Action: reflection or recorded-knowledge
+inspection may continue, but new searches, edits, or calculations must belong
+to the live Action's purpose and capabilities. Do not disguise unrelated work
+as monitoring. If another inquiry is needed, first resolve the foreground
+ownership through the supported lifecycle; parallel scientific loops remain
+unavailable.
 
 Do not call a tool merely to make the Board look busy. A read, search, or test
 is research evidence only after the main agent explains what it means for the
@@ -166,6 +215,15 @@ Subagents are independent critics or specialists, not owners of Research
 state. Ask them for a bounded claim, evidence, assumptions, tests, sources,
 artifacts, limitations, and confidence. Review their typed packet as the main
 agent; packet review is zero-write until the physical meaning is understood.
+Delegate a bounded engineering task when it genuinely saves the main agent's
+attention, with exact input/method references and an expected observation.
+Tools perform provenance checks; the main agent evaluates their scientific
+meaning. Do not delegate away a failed verification or pretend a dedicated
+calculation-operator profile is installed before it actually appears in the
+available agent types. For a bounded compilation, input, calculation or
+postprocessing delegation, read `../../references/calculation-delegation.md`.
+The optional `calculation-operator` role in this pack uses existing tools and
+returns the existing evidence packet; it owns neither a ledger nor a Goal.
 
 Ask the human when the choice changes the research question, selects between
 competing physical interpretations, commits an expensive or irreversible
@@ -185,5 +243,26 @@ file, job, test, or derivation proves more than its evidence supports.
 
 Use AITP only through the exposed adapter and the delegated external skills.
 `aitp_show` remains the canonical route for an exact Entry when `using-aitp`
-requires it; do not substitute direct Markdown parsing. Ordinary progress stays
-local until it crosses the durable-delta boundary.
+requires it; do not substitute direct Markdown parsing. AITP `show` does not
+read Notes: use `Read` on the exact workspace-relative
+`.aitp/topic/notes/note-<id>.md`. Generic `Grep` discovery of
+`^> method-card:` or `^> method-observation:` under `.aitp/topic/`, with file
+names as output, is also read-only recorded-knowledge inspection; neither
+requires a live Action. General searches, workspace reads/writes, and shell
+work still do. Canonical writes always use AITP save, never Edit/Write/Bash.
+
+Retrieve because a present question needs the material, not at every phase.
+The host already owns turn-boundary reconciliation and scoped maintenance;
+do not add a second enter/check loop, repeated scans, or mandatory Notes. Keep
+historical warnings in context; resolve safe structural drift without making
+scientific decisions. Report an actual blocking condition once with its next
+recovery step, rather than making the researcher maintain the Board.
+
+Within an owned Action, consult `../../references/research-routing.md` for
+scenario guidance and `../../references/evidence-reporting.md` for closeout.
+Stage Notes and paper materials should synthesize recorded evidence rather
+than replace it. For a stage Note or a useful review interrupted by session
+restore, follow the bounded Note Action route in the evidence-reporting
+reference. A restored review marker does not restore old draft permission;
+neither it nor a completed phase demands a Note. Ordinary progress stays local
+until it has durable value.

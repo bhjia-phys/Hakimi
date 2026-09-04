@@ -8,7 +8,7 @@ import { Emitter, Event } from '#/_base/event';
 import { SyncDescriptor } from '#/_base/di/descriptors';
 import { createServices, TestInstantiationService } from '#/_base/di/test';
 import { ILogService } from '#/_base/log/log';
-import type { IAgentGoalService } from '#/agent/goal/goal';
+import { IAgentGoalService } from '#/agent/goal/goal';
 import { IAgentSkillService } from '#/agent/skill/skill';
 import { IAgentSkillVisibilityService } from '#/agent/skillVisibility/skillVisibility';
 import type {
@@ -16,20 +16,21 @@ import type {
   PermissionModeChangedContext,
 } from '#/agent/permissionMode/permissionMode';
 import type { PermissionMode } from '#/agent/permissionPolicy/types';
-import type { IAgentPlanService } from '#/features/plan/plan';
+import { IAgentPlanService } from '#/features/plan/plan';
 import type { GoalSnapshot, GoalStatus } from '#/agent/goal/types';
 import { GoalModel } from '#/agent/goal/goalOps';
 import { contextAppendMessage, contextUndo } from '#/agent/contextMemory/contextOps';
 import { IAgentScopeContext, makeAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { BeforeToolExecuteEventImpl } from '#/agent/toolExecutor/beforeToolExecuteEvent';
 import { AgentToolExecutorService } from '#/agent/toolExecutor/toolExecutorService';
+import { IAgentToolExecutorService } from '#/agent/toolExecutor/toolExecutor';
 import { AgentStateService } from '#/agent/state/agentStateService';
+import { IAgentStateService } from '#/agent/state/agentState';
 import { AgentToolRegistryService } from '#/agent/toolRegistry/toolRegistryService';
-import type {
-  ResolvedToolExecutionHookContext,
-  ToolDidExecuteContext,
-} from '#/agent/toolExecutor/toolHooks';
-import { noopTelemetryService } from '#/app/telemetry/telemetry';
+import { IAgentToolRegistryService } from '#/agent/toolRegistry/toolRegistry';
+import { IAgentToolResultTruncationService } from '#/agent/toolResultTruncation/toolResultTruncation';
+import type { ResolvedToolExecutionHookContext } from '#/agent/toolExecutor/toolHooks';
+import { ITelemetryService, noopTelemetryService } from '#/app/telemetry/telemetry';
 import type { ExecutableTool } from '#/tool/toolContract';
 import { ToolAccesses } from '#/tool/toolContract';
 import type { TurnStartedEvent } from '#/agent/loop/turnEvents';
@@ -40,12 +41,15 @@ import { InMemorySkillCatalog } from '#/app/skillCatalog/registry';
 import { SessionAitpAdapterService } from '#/features/aitpResearch/adapter/sessionAitpAdapterService';
 import { ISessionAitpAdapter } from '#/features/aitpResearch/adapter/sessionAitpAdapter';
 import { SessionAitpLifecycleCoordinatorService } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinatorService';
+import { ISessionAitpLifecycleCoordinator } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
 import { IDurableCommitService } from '#/features/aitpResearch/research/durableCommit';
 import { DurableCommitService } from '#/features/aitpResearch/research/durableCommitService';
 import { IAitpDistillationHandoffService } from '#/features/aitpResearch/research/distillationHandoff';
 import { AitpDistillationHandoffService } from '#/features/aitpResearch/research/distillationHandoffService';
 import { createExternalFactFacade } from '#/features/aitpResearch/research/externalFactService';
-import type { IAitpExternalFactService } from '#/features/aitpResearch/research/externalFact';
+import { IAitpExternalFactService } from '#/features/aitpResearch/research/externalFact';
+import { IResearchTurnAdmission } from '#/features/aitpResearch/loop/researchTurnAdmission';
+import { IResearchLoopCoordinator } from '#/features/aitpResearch/loop/researchLoopCoordinator';
 import {
   AitpModeModel,
   ResearchModel,
@@ -102,6 +106,7 @@ import type { AgentResearchService } from '#/features/aitpResearch/research/agen
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import {
   ICommitResearchCheckpointTool,
+  BeginResearchActionInputSchema,
   ResolveResearchDecisionInputSchema,
 } from '#/features/aitpResearch/tools/researchTools';
 import { CommitResearchCheckpointTool } from '#/features/aitpResearch/tools/researchToolsImpl';
@@ -890,21 +895,23 @@ function makeVetoEvent(
   return new BeforeToolExecuteEventImpl(makeToolHookContext(toolName, args, batchToolNames));
 }
 
-function makeDidToolContext(
-  toolName: string,
-  args: unknown,
-  output: string,
-): ToolDidExecuteContext {
-  const context = makeToolHookContext(toolName, args);
-  return {
-    turnId: context.turnId,
-    signal: context.signal,
-    toolCall: context.toolCall,
-    toolCalls: context.toolCalls,
-    args,
-    outcome: 'executed',
-    result: { output },
-  };
+async function buildNoteTools(
+  adapter: ISessionAitpAdapter,
+  mode: IAgentAitpModeService,
+  research: IAgentResearchService,
+) {
+  const { IAitpNotePrepareTool, AitpNotePrepareTool, IAitpNoteSaveTool, AitpNoteSaveTool } =
+    await import('#/features/aitpResearch/tools/aitpAdapterTools');
+  const ix = createServices(disposables, {
+    additionalServices: (reg) => {
+      reg.defineInstance(ISessionAitpAdapter, adapter);
+      reg.defineInstance(IAgentAitpModeService, mode);
+      reg.defineInstance(IAgentResearchService, research);
+      reg.define(IAitpNotePrepareTool, AitpNotePrepareTool);
+      reg.define(IAitpNoteSaveTool, AitpNoteSaveTool);
+    },
+  });
+  return { prepare: ix.get(IAitpNotePrepareTool), save: ix.get(IAitpNoteSaveTool) };
 }
 
 describe('AITP adapter zero-I/O when inactive', () => {
@@ -3875,6 +3882,8 @@ describe('goal completion guard and subagent veto', () => {
     readonly phase?: AitpAdapterHealth['phase'];
     readonly loopStatus?: import('#/features/aitpResearch/types').ResearchLoopStatus;
     readonly goal?: GoalSnapshot | null;
+    readonly adapter?: ISessionAitpAdapter;
+    readonly durableVerifier?: boolean;
   }) {
     const executor = stubToolExecutorEvents();
     const isActive = opts?.isActive ?? true;
@@ -3892,40 +3901,30 @@ describe('goal completion guard and subagent veto', () => {
       isCurrentResearchTurn: () => lease !== 'none',
     } as import('#/features/aitpResearch/loop/researchTurnAdmission').IResearchTurnAdmission;
     const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
-    const svc = new AgentResearchService(
-      wire,
-      makeScopeCtx(),
-      eventBus,
-      modeSvc,
-      makeStubAdapter(),
-      executor.executor,
-      makeStubGoalService(opts?.goal),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      admission,
-    );
-    return { executor, modeSvc, svc };
+    const adapter = opts?.adapter ?? makeStubAdapter();
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.defineInstance(IWireService, wire);
+        reg.defineInstance(IAgentScopeContext, makeScopeCtx());
+        reg.defineInstance(IEventBus, eventBus);
+        reg.defineInstance(IAgentAitpModeService, modeSvc);
+        reg.defineInstance(ISessionAitpAdapter, adapter);
+        reg.defineInstance(IAgentToolExecutorService, executor.executor);
+        reg.defineInstance(IAgentGoalService, makeStubGoalService(opts?.goal));
+        reg.defineInstance(IAitpExternalFactService, createExternalFactFacade(wire));
+        reg.defineInstance(IResearchTurnAdmission, admission);
+        if (opts?.durableVerifier === true) reg.define(IDurableCommitService, DurableCommitService);
+        reg.define(IAgentResearchService, AgentResearchService);
+      },
+    });
+    const svc = ix.get(IAgentResearchService) as AgentResearchService;
+    return { executor, modeSvc, svc, adapter, ix };
   }
 
-  async function buildResearchSandboxWithProductionExecutor() {
-    const registry = new AgentToolRegistryService();
-    const executor = new AgentToolExecutorService(
-      registry,
-      eventBus,
-      noopTelemetryService,
-      {
-        _serviceBrand: undefined,
-        truncateForModel: async (input) => input.result,
-      },
-      new AgentStateService(),
-      stubLog(),
-    );
+  async function buildResearchSandboxWithProductionExecutor(phase: AitpAdapterHealth['phase'] = 'ready') {
     const modeSvc = makeStubModeSvc({
       isActive: true,
-      phase: 'ready',
+      phase,
       loopStatus: 'active',
     });
     const admission = {
@@ -3936,22 +3935,29 @@ describe('goal completion guard and subagent veto', () => {
       isCurrentResearchTurn: () => true,
     } as import('#/features/aitpResearch/loop/researchTurnAdmission').IResearchTurnAdmission;
     const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
-    const svc = new AgentResearchService(
-      wire,
-      makeScopeCtx(),
-      eventBus,
-      modeSvc,
-      makeStubAdapter(),
-      executor,
-      makeStubGoalService(),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      admission,
-    );
-    return { executor, registry, svc };
+    const adapter = makeStubAdapter();
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.defineInstance(IWireService, wire);
+        reg.defineInstance(IAgentScopeContext, makeScopeCtx());
+        reg.defineInstance(IEventBus, eventBus);
+        reg.defineInstance(IAgentAitpModeService, modeSvc);
+        reg.defineInstance(ISessionAitpAdapter, adapter);
+        reg.defineInstance(IAgentGoalService, makeStubGoalService());
+        reg.defineInstance(IResearchTurnAdmission, admission);
+        reg.defineInstance(ITelemetryService, noopTelemetryService);
+        reg.defineInstance(ILogService, stubLog());
+        reg.definePartialInstance(IAgentToolResultTruncationService, { truncateForModel: async (input) => input.result });
+        reg.define(IAgentToolRegistryService, AgentToolRegistryService);
+        reg.define(IAgentStateService, AgentStateService);
+        reg.define(IAgentToolExecutorService, AgentToolExecutorService);
+        reg.define(IAgentResearchService, AgentResearchService);
+      },
+    });
+    return {
+      executor: ix.get(IAgentToolExecutorService), registry: ix.get(IAgentToolRegistryService),
+      svc: ix.get(IAgentResearchService) as AgentResearchService, adapter, modeSvc,
+    };
   }
 
   async function beginSandboxAction(
@@ -3972,6 +3978,606 @@ describe('goal completion guard and subagent veto', () => {
     });
   }
 
+  async function commitReviewCheckpoint(svc: IAgentResearchService) {
+    proposeBoundCheckpoint({ checkpointId: 'checkpoint-review', idempotencyKey: 'key-review', createdAt: 10 });
+    bindCompleteCheckpointReceipt('checkpoint-review');
+    await expect(svc.commitCheckpoint({ checkpointId: 'checkpoint-review', entryId: 'e1' }))
+      .resolves.toEqual({ status: 'committed' });
+    wire.dispatch(researchRecordDistillationAttention({
+      status: 'review_requested', checkpointId: 'checkpoint-review', entryId: 'e1',
+      recordedAt: 20, commitRevision: wire.getModel(ResearchCursorModel).revision,
+    }));
+  }
+
+  it.each([
+    { name: 'unverified human suggestion', entryKind: 'observation', authority: 'human', provenance: 'human_assertion' },
+    { name: 'checked human workaround', entryKind: 'result', authority: 'agent', provenance: 'agent_verification' },
+    { name: 'refuted human conjecture', entryKind: 'result', authority: 'agent', provenance: 'agent_verification' },
+    { name: 'one reproducible failure', entryKind: 'failure', authority: 'tool', provenance: 'tool_verification' },
+    { name: 'source evidence', entryKind: 'source', authority: 'source', provenance: 'source_assessment' },
+    { name: 'explicit human decision', entryKind: 'decision', authority: 'human', provenance: 'human_decision' },
+  ] as const)('keeps $name provenance through the durable barrier and hands off only once', async (example) => {
+    const adapter = makeStubAdapter({
+      show: async ({ id }) => ({
+        schema: 'aitp/show-0.1', root: '/workspace', id, status: 'active',
+        source: `.aitp/topic/entries/${id}.md`, legacy_derived: false,
+        frontmatter: {
+          topic: 't1', workstreams: ['aitp-main'], kind: example.entryKind,
+          authority: example.authority,
+          created_by: example.authority === 'agent' ? 'agent:main' : undefined,
+        },
+        body: `Fixture: ${example.name}. Attribution and validation are separate.`,
+      }),
+    });
+    adapter._setHealth({ phase: 'ready' });
+    const prepareSpy = vi.spyOn(adapter, 'recordPrepare');
+    const saveSpy = vi.spyOn(adapter, 'recordSave');
+    const noteSpy = vi.spyOn(adapter, 'notePrepare');
+    const { svc, modeSvc } = await buildResearchSandboxHarness({ adapter });
+    seedCurrentConfirmedWorkstream();
+    const question = svc.createQuestion({ lineSlug: 'main', wording: 'What evidence supports or refutes the suggestion?' });
+    svc.setPhase('gap_analysis');
+    const action = svc.planAndStartAction({
+      lineSlug: 'main', questionId: question.id, kind: 'other',
+      purpose: `Inspect one ${example.name} fixture.`,
+      stopCondition: 'Attribution and the bounded observation have been captured.',
+    });
+    const conclusion = svc.concludeAction({
+      actionId: action.actionId, status: 'completed',
+      progress: {
+        headline: `Recorded ${example.name}`,
+        motivation: 'Separate attribution from verification.',
+        workPerformed: 'Exercised fixture provenance; this is not a real scientific run.',
+        result: example.name,
+        mainlineImpact: 'Preserve the evidence category without claiming publication or card validation.',
+      },
+      durability: {
+        status: 'durable_delta', entryKind: example.entryKind, authority: example.authority,
+        provenance: example.provenance, rationale: 'The fixture records one attributable durable observation.',
+      },
+    });
+    const checkpointId = svc.getPendingCheckpoint()!.checkpointId;
+    const handoff = vi.fn(async () => {
+      expect(svc.getPendingCheckpoint()).toBeNull();
+      expect(svc.getCommittedCursor()?.receipt?.postSaveCheck?.status).toBe('clean');
+      return { status: 'unavailable' as const, reason: 'Fixture has no external Skill.' };
+    });
+    const { IAitpRecordPrepareTool, AitpRecordPrepareTool, IAitpRecordSaveTool, AitpRecordSaveTool } =
+      await import('#/features/aitpResearch/tools/aitpAdapterTools');
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.defineInstance(ISessionAitpAdapter, adapter);
+        reg.defineInstance(IAgentAitpModeService, modeSvc);
+        reg.defineInstance(IAgentResearchService, svc);
+        reg.definePartialInstance(IAitpDistillationHandoffService, { prepare: handoff });
+        reg.define(IAitpRecordPrepareTool, AitpRecordPrepareTool);
+        reg.define(IAitpRecordSaveTool, AitpRecordSaveTool);
+        reg.define(ICommitResearchCheckpointTool, CommitResearchCheckpointTool);
+      },
+    });
+    const context = { turnId: 1, toolCallId: 'tc-provenance', signal: new AbortController().signal };
+    const commit = async () => runnableExecution(await ix.get(ICommitResearchCheckpointTool).resolveExecution({
+      checkpoint_id: checkpointId, entry_id: 'entry-test',
+    })).execute(context);
+    expect((await commit()).isError).toBe(true);
+    expect(handoff).not.toHaveBeenCalled();
+    const createdBy = example.authority === 'agent' ? 'agent:main' : undefined;
+    const prepared = await runnableExecution(await ix.get(IAitpRecordPrepareTool).resolveExecution({
+      kind: example.entryKind, authority: example.authority, created_by: createdBy,
+      workstreams: ['aitp-main'], checkpoint_id: checkpointId,
+    })).execute(context);
+    expect(prepared.isError).toBeFalsy();
+    expect(prepareSpy).toHaveBeenCalledWith(expect.objectContaining({
+      kind: example.entryKind, authority: example.authority, createdBy,
+    }));
+    const saved = await runnableExecution(await ix.get(IAitpRecordSaveTool).resolveExecution({
+      draft_path: '.aitp/local/drafts/entry-test.md', checkpoint_id: checkpointId,
+    })).execute(context);
+    expect(saved.isError).toBeFalsy();
+    expect(saveSpy).toHaveBeenCalledWith(expect.objectContaining({
+      expectedTopic: 't1', exactWorkstream: 'aitp-main',
+    }));
+    expect(handoff).not.toHaveBeenCalled();
+    expect((await commit()).isError).toBeFalsy();
+    expect((await commit()).isError).toBeFalsy();
+    expect(handoff).toHaveBeenCalledExactlyOnceWith({ checkpointId, entryId: 'entry-test' });
+    expect(svc.getSnapshot().latestProgress).toEqual(conclusion.progress);
+    expect(noteSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { kind: 'decision', authority: 'agent', created_by: 'agent:main' },
+    { kind: 'result', authority: 'human', created_by: 'agent:main' },
+    { kind: 'result', authority: 'agent', created_by: 'agent:child' },
+    { kind: 'result', authority: undefined, created_by: 'agent:main' },
+  ].flatMap((frontmatter) => [true, false].map((durableVerifier) => ({ frontmatter, durableVerifier }))))(
+    'keeps saved candidate drift pending with durableVerifier=$durableVerifier and $frontmatter',
+    async ({ frontmatter, durableVerifier }) => {
+      const adapter = makeStubAdapter({
+        show: async ({ id }) => ({
+          schema: 'aitp/show-0.1', root: '/workspace', id, status: 'active',
+          source: `.aitp/topic/entries/entry-${id}.md`, legacy_derived: false,
+          frontmatter: { topic: 't1', workstreams: ['aitp-main'], ...frontmatter }, body: '',
+        }),
+      });
+      const { svc } = await buildResearchSandboxHarness({ adapter, durableVerifier });
+      seedCurrentConfirmedWorkstream();
+      svc.setPhase('gap_analysis');
+      const action = svc.planAndStartAction({
+        lineSlug: 'main', kind: 'other', purpose: 'Check one attributable fixture result.',
+        stopCondition: 'The fixture result has been attributed.',
+      });
+      svc.concludeAction({
+        actionId: action.actionId, status: 'completed',
+        progress: {
+          headline: 'Fixture result attributed', motivation: 'Test candidate provenance.',
+          workPerformed: 'Inspected a fixture.', result: 'One bounded fixture result.',
+          mainlineImpact: 'Test only; no physical claim.',
+        },
+        durability: {
+          status: 'durable_delta', entryKind: 'result', authority: 'agent',
+          provenance: 'agent_verification', rationale: 'A fixture needs an attributable record.',
+        },
+      });
+      const checkpointId = svc.getPendingCheckpoint()!.checkpointId;
+      bindCompleteCheckpointReceipt(checkpointId);
+      const receipt = svc.getPendingCheckpoint()!.receipt;
+      const save = vi.spyOn(adapter, 'recordSave');
+      await expect(svc.commitCheckpoint({ checkpointId, entryId: 'e1' }))
+        .rejects.toThrow('does not match the assessed candidate');
+      expect(svc.getCommittedCursor()).toBeNull();
+      expect(svc.getPendingCheckpoint()).toMatchObject({ checkpointId, committedEntryId: 'e1', receipt });
+      expect(save).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not let a committed review prepare a Note for a different current Line', async () => {
+    const { svc, executor } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    seedCurrentConfirmedWorkstream({ lineSlug: 'other', workstream: 'aitp-other' });
+    const result = await executor.fireBeforeExecute(makeToolHookContext('aitp_note_prepare', {
+      mode: 'theory', title: 'Method card: old review', created_by: 'agent:main', workstreams: ['aitp-other'],
+    }));
+    expect(result?.veto?.output).toContain('current post-commit');
+  });
+
+  const reviewNoteInput = {
+    mode: 'theory' as const,
+    title: 'Method card: scoped review',
+    createdBy: 'agent:main',
+    workstreams: ['aitp-main'],
+  };
+  const reviewNoteToolArgs = {
+    mode: 'theory' as const,
+    title: reviewNoteInput.title,
+    created_by: reviewNoteInput.createdBy,
+    workstreams: reviewNoteInput.workstreams,
+  };
+
+  function beginEvidenceNoteAction(svc: AgentResearchService, input?: {
+    readonly evidenceRefs?: readonly string[];
+    readonly falsifierRefs?: readonly string[];
+    readonly allowedToolKinds?: readonly string[];
+  }) {
+    seedCurrentConfirmedWorkstream();
+    const question = svc.createQuestion({ lineSlug: 'main', wording: 'What has the finite-size evidence established, and what remains open?' });
+    svc.updateQuestion({
+      questionId: question.id, evidenceRefs: input?.evidenceRefs ?? ['e1'], falsifierRefs: input?.falsifierRefs,
+    });
+    svc.setFocus(question.id, 'Synthesize verified records, without a new scientific claim.');
+    return svc.planAndStartAction({
+      questionId: question.id, kind: 'other', purpose: 'Write a scoped stage Note from the selected recorded evidence.',
+      expectedEvidence: ['An AITP Note with pinned basis refs and explicit unresolved questions.'],
+      stopCondition: 'The Note is saved or the selected evidence cannot be verified.',
+      allowedToolKinds: input?.allowedToolKinds ?? ['tool:aitp_note_prepare', 'tool:aitp_note_save'],
+    });
+  }
+
+  it('organizes legacy committed evidence in a fresh bounded Note Action without manufacturing a new Entry', async () => {
+    const adapter = makeStubAdapter();
+    adapter._setHealth({ phase: 'ready', contractVersion: '0.2', pluginVersion: '0.9.0' });
+    const { svc, executor, modeSvc } = await buildResearchSandboxHarness({ adapter });
+    wire.dispatch(researchCommitCheckpoint({ checkpointId: 'legacy-cp', entryId: 'e1', committedAt: 1 }));
+    const cursor = svc.getCommittedCursor();
+    const action = beginEvidenceNoteAction(svc);
+    const shown = vi.spyOn(adapter, 'show');
+    const record = vi.spyOn(adapter, 'recordPrepare');
+    const tools = await buildNoteTools(adapter, modeSvc, svc);
+    const executionContext = { turnId: 1, toolCallId: 'stage-note', signal: new AbortController().signal };
+    expect(await executor.fireBeforeExecute(makeToolHookContext('aitp_note_prepare', reviewNoteToolArgs))).toBeUndefined();
+    const prepared = await runnableExecution(await tools.prepare.resolveExecution(reviewNoteToolArgs)).execute(executionContext);
+    expect(prepared.isError).not.toBe(true);
+    expect(shown).toHaveBeenCalledWith(expect.objectContaining({ id: 'e1' }));
+    expect(await executor.fireBeforeExecute(makeToolHookContext('Edit', { path: '.aitp/local/drafts/note-test.md' }))).toBeUndefined();
+    const saved = await runnableExecution(await tools.save.resolveExecution({ draft_path: '.aitp/local/drafts/note-test.md' })).execute(executionContext);
+    expect(saved.isError).not.toBe(true);
+    expect(shown).toHaveBeenCalledTimes(2);
+    expect((await executor.fireBeforeExecute(makeToolHookContext('Edit', { path: '.aitp/local/drafts/note-test.md' })))?.veto).toBeDefined();
+    expect(svc.getCommittedCursor()).toEqual(cursor);
+    expect(svc.getSnapshot().currentAction?.actionId).toBe(action.actionId);
+    expect(svc.getSnapshot().pendingCheckpoint).toBeUndefined();
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('revalidates source Entries after cold restore instead of restoring old Note draft permission', async () => {
+    const records: WireRecord[] = [];
+    const openWire = () => {
+      eventBus = new EventBusService();
+      const ix = disposables.add(new TestInstantiationService());
+      return registerTestAgentWire(ix, testWireScope(SCOPE, 'note-recovery'), {
+        log: recordingWireLog(records), eventBus,
+      });
+    };
+    wire = openWire();
+    const original = await buildResearchSandboxHarness();
+    const { svc, adapter } = original;
+    beginEvidenceNoteAction(svc);
+    const shown = vi.spyOn(adapter, 'show');
+    await svc.prepareReviewNote(reviewNoteInput);
+    await wire.flush();
+    const before = svc.getSnapshot();
+    original.ix.dispose();
+    wire = openWire();
+    const restored = await buildResearchSandboxHarness({ adapter });
+    await wire.restore();
+    expect(restored.svc.getSnapshot().questions).toEqual(before.questions);
+    expect(restored.svc.getSnapshot().currentAction).toEqual(before.currentAction);
+    expect((await restored.executor.fireBeforeExecute(makeToolHookContext('Edit', { path: '.aitp/local/drafts/note-test.md' })))?.veto).toBeDefined();
+    await expect(restored.svc.saveReviewNote({ draftPath: '.aitp/local/drafts/note-test.md' })).rejects.toThrow('no current post-commit');
+    expect(await restored.executor.fireBeforeExecute(makeToolHookContext('aitp_note_prepare', reviewNoteToolArgs))).toBeUndefined();
+    await expect(restored.svc.prepareReviewNote(reviewNoteInput)).resolves.toMatchObject({ status: 'prepared' });
+    expect(shown).toHaveBeenCalledTimes(2);
+    await expect(restored.svc.saveReviewNote({ draftPath: '.aitp/local/drafts/note-test.md' })).resolves.toMatchObject({ status: 'saved' });
+  });
+
+  it.each([
+    { evidenceRefs: [] },
+    { allowedToolKinds: ['workspace_write'] },
+    { allowedToolKinds: ['tool:aitp_note_prepare'] },
+  ])('does not grant Note persistence for an incomplete Action contract: %j', async (input) => {
+    const { svc, adapter } = await buildResearchSandboxHarness();
+    beginEvidenceNoteAction(svc, input);
+    const prepare = vi.spyOn(adapter, 'notePrepare');
+    await expect(svc.prepareReviewNote(reviewNoteInput)).rejects.toThrow('bounded Note Action');
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { id: 'different-entry' },
+    { status: 'superseded' as const },
+    { frontmatter: { topic: 'different-topic', workstreams: ['aitp-main'] } },
+    { frontmatter: { topic: 't1', workstreams: ['other-line'] } },
+    { frontmatter: { topic: 't1' } },
+  ])('rejects unverifiable or out-of-scope Note basis without preparing a draft: %j', async (change) => {
+    const { svc, adapter } = await buildResearchSandboxHarness();
+    beginEvidenceNoteAction(svc);
+    const source = await adapter.show({ id: 'e1' });
+    if (source.status === 'malformed') throw new Error('Expected the active source fixture');
+    vi.spyOn(adapter, 'show').mockResolvedValue({ ...source, ...change });
+    const prepare = vi.spyOn(adapter, 'notePrepare');
+    await expect(svc.prepareReviewNote(reviewNoteInput)).rejects.toThrow('Note basis Entry e1 is not active');
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it('checks each selected basis and falsifier once, without scanning unrelated ledger records', async () => {
+    const { svc, adapter } = await buildResearchSandboxHarness();
+    beginEvidenceNoteAction(svc, { evidenceRefs: ['e1', 'e1'], falsifierRefs: ['counterexample'] });
+    const source = await adapter.show({ id: 'e1' });
+    const shown = vi.spyOn(adapter, 'show').mockImplementation(async ({ id }) => ({ ...source, id }));
+    const list = vi.spyOn(adapter, 'list');
+    const check = vi.spyOn(adapter, 'check');
+    await svc.prepareReviewNote(reviewNoteInput);
+    expect(shown.mock.calls.map(([input]) => input.id)).toEqual(['e1', 'counterexample']);
+    expect(list).not.toHaveBeenCalled();
+    expect(check).not.toHaveBeenCalled();
+  });
+
+  it('does not convert a failed canonical read into Note write permission', async () => {
+    const { svc, adapter, executor } = await buildResearchSandboxHarness();
+    beginEvidenceNoteAction(svc);
+    vi.spyOn(adapter, 'show').mockRejectedValue(new Error('canonical source unavailable'));
+    const prepare = vi.spyOn(adapter, 'notePrepare');
+    await expect(svc.prepareReviewNote(reviewNoteInput)).rejects.toThrow('canonical source unavailable');
+    expect(prepare).not.toHaveBeenCalled();
+    expect((await executor.fireBeforeExecute(makeToolHookContext('Edit', { path: '.aitp/local/drafts/note-test.md' })))?.veto).toBeDefined();
+  });
+
+  it('executes owned Note tools through the production executor but rejects unowned and same-batch writes', async () => {
+    const { svc, adapter, modeSvc, executor, registry } = await buildResearchSandboxWithProductionExecutor();
+    adapter._setHealth({ phase: 'ready', contractVersion: '0.2', pluginVersion: '0.9.0' });
+    const tools = await buildNoteTools(adapter, modeSvc, svc);
+    registry.register(tools.prepare);
+    registry.register(tools.save);
+    const prepare = vi.spyOn(adapter, 'notePrepare');
+    const save = vi.spyOn(adapter, 'noteSave');
+    const execute = async (calls: { name: string; args: unknown }[]) => {
+      const results = [];
+      for await (const item of executor.execute(calls.map(({ name, args }, index) => ({
+        type: 'function' as const, id: `note-${index}`, name, arguments: JSON.stringify(args),
+      })), { turnId: 1, signal: new AbortController().signal })) results.push(item.result);
+      return results;
+    };
+    expect(await execute([{ name: 'aitp_note_prepare', args: reviewNoteToolArgs }]))
+      .toEqual([expect.objectContaining({ isError: true })]);
+    expect(prepare).not.toHaveBeenCalled();
+    beginEvidenceNoteAction(svc);
+    await execute([
+      { name: 'BeginResearchAction', args: {} },
+      { name: 'aitp_note_prepare', args: reviewNoteToolArgs },
+    ]);
+    expect(prepare).not.toHaveBeenCalled();
+    const prepared = await execute([{ name: 'aitp_note_prepare', args: reviewNoteToolArgs }]);
+    expect(prepared[0]?.isError).not.toBe(true);
+    expect(prepare).toHaveBeenCalledOnce();
+    const saved = await execute([{ name: 'aitp_note_save', args: { draft_path: '.aitp/local/drafts/note-test.md' } }]);
+    expect(saved[0]?.isError).not.toBe(true);
+    expect(save).toHaveBeenCalledOnce();
+  });
+
+  it.each(['gate', 'paused', 'degraded', 'concluded'] as const)(
+    'revokes a Note Action draft when its execution scope becomes %s', async (change) => {
+      const { svc, adapter, modeSvc, executor } = await buildResearchSandboxHarness();
+      const action = beginEvidenceNoteAction(svc);
+      await svc.prepareReviewNote(reviewNoteInput);
+      const save = vi.spyOn(adapter, 'noteSave');
+      if (change === 'gate') svc.requestHumanDecision({ kind: 'review', prompt: 'Choose between conflicting interpretations.' });
+      if (change === 'paused') modeSvc.loopStatus = 'paused';
+      if (change === 'degraded') modeSvc.phase = 'degraded';
+      if (change === 'concluded') svc.concludeAction({
+        actionId: action.actionId, status: 'abandoned',
+        progress: {
+          headline: 'Synthesis deferred', motivation: 'Summarize existing evidence.', workPerformed: 'Prepared a draft only.',
+          result: 'No Note was saved.', mainlineImpact: 'Canonical evidence is unchanged.',
+        },
+        durability: { status: 'no_durable_delta', rationale: 'No new scientific finding or saved synthesis.' },
+      });
+      await expect(svc.saveReviewNote({ draftPath: '.aitp/local/drafts/note-test.md' })).rejects.toThrow();
+      expect(save).not.toHaveBeenCalled();
+      expect((await executor.fireBeforeExecute(makeToolHookContext('Edit', { path: '.aitp/local/drafts/note-test.md' })))?.veto).toBeDefined();
+    },
+  );
+
+  it('rejects Note save when its selected evidence was superseded after prepare', async () => {
+    const { svc, adapter } = await buildResearchSandboxHarness();
+    beginEvidenceNoteAction(svc);
+    await svc.prepareReviewNote(reviewNoteInput);
+    const source = await adapter.show({ id: 'e1' });
+    if (source.status === 'malformed') throw new Error('Expected the active source fixture');
+    vi.spyOn(adapter, 'show').mockResolvedValue({ ...source, status: 'superseded' });
+    const save = vi.spyOn(adapter, 'noteSave');
+    await expect(svc.saveReviewNote({ draftPath: '.aitp/local/drafts/note-test.md' })).rejects.toThrow('not active');
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('revokes Note ownership when the source Question changes during canonical inspection', async () => {
+    const { svc, adapter, executor } = await buildResearchSandboxHarness();
+    const action = beginEvidenceNoteAction(svc);
+    const source = await adapter.show({ id: 'e1' });
+    vi.spyOn(adapter, 'show').mockImplementation(async () => {
+      svc.updateQuestion({ questionId: action.questionId!, assessment: 'The selected scientific interpretation changed.' });
+      return source;
+    });
+    const prepare = vi.spyOn(adapter, 'notePrepare');
+    await expect(svc.prepareReviewNote(reviewNoteInput)).rejects.toThrow('scope changed');
+    expect(prepare).not.toHaveBeenCalled();
+    expect((await executor.fireBeforeExecute(makeToolHookContext('Edit', { path: '.aitp/local/drafts/note-test.md' })))?.veto).toBeDefined();
+  });
+
+  it('does not infer Note ownership from a restored cursor and review marker', async () => {
+    const { svc, adapter } = await buildResearchSandboxHarness();
+    seedCurrentConfirmedWorkstream();
+    wire.dispatch(researchCommitCheckpoint({ checkpointId: 'restored', entryId: 'e1', committedAt: 1 }));
+    wire.dispatch(researchRecordDistillationAttention({
+      status: 'review_requested', checkpointId: 'restored', entryId: 'e1', recordedAt: 2, commitRevision: 1,
+    }));
+    const prepare = vi.spyOn(adapter, 'notePrepare');
+    await expect(svc.prepareReviewNote(reviewNoteInput)).rejects.toThrow('no current post-commit');
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it('does not resurrect a Note review after switching away and back to its original Line', async () => {
+    const { svc, executor } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    await svc.prepareReviewNote(reviewNoteInput);
+    svc.createLine({ slug: 'other', title: 'Other question' });
+    svc.switchLine('other');
+    svc.switchLine('main');
+    const edit = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
+      path: '.aitp/local/drafts/note-test.md',
+    }));
+    expect(edit?.veto?.output).toContain('not owned');
+    await expect(svc.prepareReviewNote(reviewNoteInput)).rejects.toThrow('no current post-commit');
+  });
+
+  it('revokes a Note draft on conversation undo without relying on a restore callback', async () => {
+    const { svc, executor } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    await svc.prepareReviewNote(reviewNoteInput);
+    eventBus.publish({ type: 'context.undone', turns: 1 });
+    const edit = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
+      path: '.aitp/local/drafts/note-test.md',
+    }));
+    expect(edit?.veto?.output).toContain('not owned');
+    await expect(svc.saveReviewNote({ draftPath: '.aitp/local/drafts/note-test.md' }))
+      .rejects.toThrow('no current post-commit');
+  });
+
+  it('revokes a Note review when the same Line is explicitly rebound, even to the same workstream', async () => {
+    const adapter = makeStubAdapter();
+    adapter._setHealth({ phase: 'ready', contractVersion: '0.2', pluginVersion: '0.9.0' });
+    const { svc } = await buildResearchSandboxHarness({ adapter });
+    await commitReviewCheckpoint(svc);
+    const original = svc.getCurrentWorkstreamAlignment()!.binding!;
+    svc.clearLineWorkstreamBinding({
+      lineSlug: 'main', expectedRevision: svc.getSnapshot().revision, expectedConfirmationId: original.confirmationId,
+    });
+    const rebound = await svc.confirmLineWorkstreamBinding({
+      lineSlug: 'main', workstream: original.workstream, expectedRevision: svc.getSnapshot().revision, confirmedBy: 'user',
+    });
+    expect(rebound.confirmationId).not.toBe(original.confirmationId);
+    await expect(svc.prepareReviewNote(reviewNoteInput)).rejects.toThrow('no current post-commit');
+  });
+
+  it('does not resurrect Note review permission after a degraded-to-ready transition', async () => {
+    const { svc, modeSvc } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    modeSvc.phase = 'degraded';
+    eventBus.publish({ type: 'aitp_mode.updated' });
+    modeSvc.phase = 'ready';
+    eventBus.publish({ type: 'aitp_mode.updated' });
+    await expect(svc.prepareReviewNote(reviewNoteInput)).rejects.toThrow('no current post-commit');
+  });
+
+  it('revokes a prepared Note when a different checkpoint becomes the committed cursor', async () => {
+    const { svc, executor } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    await svc.prepareReviewNote(reviewNoteInput);
+    wire.dispatch(researchCommitCheckpoint({ checkpointId: 'new-cursor', entryId: 'e2', committedAt: 40 }));
+    const edit = await executor.fireBeforeExecute(makeToolHookContext('Edit', { path: '.aitp/local/drafts/note-test.md' }));
+    expect(edit?.veto?.output).toContain('not owned');
+  });
+
+  it('does not retain a Note draft when a cancelled prepare still reports success', async () => {
+    const { svc, adapter, executor } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    const controller = new AbortController();
+    const prepared = await adapter.notePrepare(reviewNoteInput);
+    vi.spyOn(adapter, 'notePrepare').mockImplementation(async () => {
+      controller.abort();
+      return prepared;
+    });
+    await expect(svc.prepareReviewNote({ ...reviewNoteInput, signal: controller.signal }))
+      .rejects.toMatchObject({ name: 'AbortError' });
+    const edit = await executor.fireBeforeExecute(makeToolHookContext('Edit', { path: prepared.path }));
+    expect(edit?.veto?.output).toContain('not owned');
+  });
+
+  it.each(['prepare', 'save'] as const)('rechecks Note %s ownership at actual execution after an allowed preflight', async (operation) => {
+    const adapter = makeStubAdapter();
+    adapter._setHealth({ phase: 'ready', contractVersion: '0.2', pluginVersion: '0.9.0' });
+    const { svc, executor, modeSvc } = await buildResearchSandboxHarness({ adapter });
+    await commitReviewCheckpoint(svc);
+    if (operation === 'save') await svc.prepareReviewNote(reviewNoteInput);
+    const tools = await buildNoteTools(adapter, modeSvc, svc);
+    const args = operation === 'prepare' ? reviewNoteToolArgs : { draft_path: '.aitp/local/drafts/note-test.md' };
+    expect(await executor.fireBeforeExecute(makeToolHookContext(`aitp_note_${operation}`, args))).toBeUndefined();
+    const execution = operation === 'prepare'
+      ? tools.prepare.resolveExecution(reviewNoteToolArgs)
+      : tools.save.resolveExecution({ draft_path: '.aitp/local/drafts/note-test.md' });
+    svc.createLine({ slug: 'other', title: 'Other question' });
+    svc.switchLine('other');
+    const prepare = vi.spyOn(adapter, 'notePrepare');
+    const save = vi.spyOn(adapter, 'noteSave');
+    const result = await runnableExecution(await execution).execute({
+      signal: new AbortController().signal, turnId: 1, toolCallId: 'queued-note',
+    });
+    expect(result).toMatchObject({ isError: true });
+    expect(result.output).toContain('no current post-commit');
+    expect(prepare).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('executes Note tools for the unchanged post-commit scope without creating another Action', async () => {
+    const adapter = makeStubAdapter();
+    adapter._setHealth({ phase: 'ready', contractVersion: '0.2', pluginVersion: '0.9.0' });
+    const { svc, executor, modeSvc } = await buildResearchSandboxHarness({ adapter });
+    await commitReviewCheckpoint(svc);
+    const tools = await buildNoteTools(adapter, modeSvc, svc);
+    const prepare = vi.spyOn(adapter, 'notePrepare');
+    const save = vi.spyOn(adapter, 'noteSave');
+    const executionContext = { turnId: 1, toolCallId: 'review-note', signal: new AbortController().signal };
+    const prepared = await runnableExecution(await tools.prepare.resolveExecution(reviewNoteToolArgs)).execute(executionContext);
+    expect(prepared.isError).not.toBe(true);
+    expect(JSON.parse(prepared.output as string)).toMatchObject({ status: 'prepared', path: '.aitp/local/drafts/note-test.md' });
+    expect(await executor.fireBeforeExecute(makeToolHookContext('Edit', {
+      path: '.aitp/local/drafts/note-test.md',
+    }))).toBeUndefined();
+    const saved = await runnableExecution(await tools.save.resolveExecution({
+      draft_path: '.aitp/local/drafts/note-test.md',
+    })).execute(executionContext);
+    expect(saved.isError).not.toBe(true);
+    expect(JSON.parse(saved.output as string)).toMatchObject({ status: 'saved' });
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(save).toHaveBeenCalledOnce();
+    expect(wire.getModel(ResearchModel).current.currentAction).toBeNull();
+    expect(wire.getModel(ResearchModel).current.pendingCheckpoint).toBeNull();
+  });
+
+  it('rejects a freshly observed Topic mismatch before Note I/O', async () => {
+    const { svc, modeSvc, adapter } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    const original = svc.getCurrentWorkstreamAlignment()!.binding!;
+    modeSvc.reconcileCurrentTopicBinding = vi.fn(async () => ({ ...original, topicId: 'different-topic' }));
+    const prepare = vi.spyOn(adapter, 'notePrepare');
+    await expect(svc.prepareReviewNote(reviewNoteInput)).rejects.toThrow('scope changed before AITP Note I/O');
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it('does not grant a draft lease from a Note prepare that returns after undo', async () => {
+    const { svc, adapter, executor } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    let release!: (value: AitpNotePrepareResult) => void;
+    const prepare = vi.spyOn(adapter, 'notePrepare').mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    const operation = svc.prepareReviewNote(reviewNoteInput);
+    const result = expect(operation).rejects.toThrow('No draft permission remains and no rollback is claimed');
+    await vi.waitFor(() => { expect(prepare).toHaveBeenCalledOnce(); });
+    eventBus.publish({ type: 'context.undone', turns: 1 });
+    release({ status: 'prepared', id: 'note-late', path: '.aitp/local/drafts/note-late.md', save_command: 'aitp note save .aitp/local/drafts/note-late.md' });
+    await result;
+    const edit = await executor.fireBeforeExecute(makeToolHookContext('Edit', { path: '.aitp/local/drafts/note-late.md' }));
+    expect(edit?.veto?.output).toContain('not owned');
+  });
+
+  it('serializes Note persistence with local Line changes but permits them after I/O finishes', async () => {
+    const { svc, adapter } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    svc.createLine({ slug: 'other', title: 'Other' });
+    let release!: (value: AitpNotePrepareResult) => void;
+    const prepare = vi.spyOn(adapter, 'notePrepare').mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    const operation = svc.prepareReviewNote(reviewNoteInput);
+    await vi.waitFor(() => { expect(prepare).toHaveBeenCalledOnce(); });
+    expect(() => { svc.switchLine('other'); }).toThrow('persistence operation is in flight');
+    expect(() => {
+      svc.clearLineWorkstreamBinding({
+        lineSlug: 'main', expectedRevision: svc.getSnapshot().revision,
+        expectedConfirmationId: svc.getCurrentWorkstreamAlignment()!.binding!.confirmationId,
+      });
+    }).toThrow('persistence operation is in flight');
+    await expect(svc.prepareReviewNote(reviewNoteInput)).rejects.toThrow('another Note persistence operation is in flight');
+    release({ status: 'prepared', id: 'note-test', path: '.aitp/local/drafts/note-test.md', save_command: 'aitp note save .aitp/local/drafts/note-test.md' });
+    await operation;
+    expect(() => { svc.switchLine('other'); }).not.toThrow();
+  });
+
+  it('retains a failed Note save for an exact retry in the unchanged scope', async () => {
+    const { svc, adapter, executor } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    await svc.prepareReviewNote(reviewNoteInput);
+    const save = vi.spyOn(adapter, 'noteSave').mockRejectedValueOnce(new Error('validation failed'));
+    await expect(svc.saveReviewNote({ draftPath: '.aitp/local/drafts/note-test.md' })).rejects.toThrow('validation failed');
+    expect(await executor.fireBeforeExecute(makeToolHookContext('Edit', {
+      path: '.aitp/local/drafts/note-test.md',
+    }))).toBeUndefined();
+    await expect(svc.saveReviewNote({ draftPath: '.aitp/local/drafts/note-test.md' })).resolves.toMatchObject({ status: 'saved' });
+    expect(save).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a late Note save honestly without restoring its write permission', async () => {
+    const { svc, adapter } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    await svc.prepareReviewNote(reviewNoteInput);
+    let release!: (value: AitpNoteSaveResult) => void;
+    const save = vi.spyOn(adapter, 'noteSave').mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    const operation = svc.saveReviewNote({ draftPath: '.aitp/local/drafts/note-test.md' });
+    const result = expect(operation).rejects.toThrow('"status":"saved","path":".aitp/topic/notes/note-test.md"');
+    await vi.waitFor(() => { expect(save).toHaveBeenCalledOnce(); });
+    eventBus.publish({ type: 'context.undone', turns: 1 });
+    release({ status: 'saved', path: '.aitp/topic/notes/note-test.md' });
+    await result;
+    await expect(svc.saveReviewNote({ draftPath: '.aitp/local/drafts/note-test.md' })).rejects.toThrow('no current post-commit');
+    expect(save).toHaveBeenCalledOnce();
+  });
+
   it('hard-vetoes WebSearch through the executor when no ResearchAction owns it', async () => {
     const { executor } = await buildResearchSandboxHarness();
 
@@ -3981,10 +4587,10 @@ describe('goal completion guard and subagent veto', () => {
     expect(decision?.veto?.output).toContain('no in-progress ResearchAction');
   });
 
-  it('prevents production executor callbacks for unowned web, workspace, and shell work', async () => {
+  it('executes narrow recorded-knowledge inspection but prevents unowned web, workspace, and shell callbacks', async () => {
     const { executor, registry } = await buildResearchSandboxWithProductionExecutor();
     const calls: string[] = [];
-    for (const name of ['WebSearch', 'Read', 'Bash']) {
+    for (const name of ['WebSearch', 'Read', 'Bash', 'Grep', 'Edit', 'Write']) {
       const tool: ExecutableTool<Record<string, unknown>> = {
         name,
         description: `Count executions of ${name}.`,
@@ -4019,6 +4625,31 @@ describe('goal completion guard and subagent veto', () => {
     expect(results).toEqual(expect.arrayContaining([
       expect.objectContaining({ isError: true, output: expect.stringContaining('no in-progress ResearchAction') }),
     ]));
+
+    const inspectionResults = [];
+    const inspectionCalls = [
+      { name: 'Read', args: { path: '.aitp/topic/notes/note-card.md' } },
+      { name: 'Grep', args: { path: '.aitp/topic/', pattern: '^> method-card:' } },
+      { name: 'Read', args: { path: 'new-results.dat' } },
+      { name: 'Read', args: { path: '/other/.aitp/topic/notes/note-card.md' } },
+      { name: 'Grep', args: { path: '.aitp/topic/', pattern: '.*' } },
+      { name: 'Edit', args: { path: '.aitp/topic/notes/note-card.md' } },
+      { name: 'Write', args: { path: '.aitp/topic/notes/note-card.md' } },
+    ];
+    for await (const result of executor.execute(
+      inspectionCalls.map(({ name, args }, index) => ({
+        type: 'function' as const,
+        id: `inspection-${index}`,
+        name,
+        arguments: JSON.stringify(args),
+      })),
+      { turnId: 1, signal: new AbortController().signal },
+    )) {
+      inspectionResults.push(result.result);
+    }
+    expect(calls.toSorted()).toEqual(['Grep', 'Read']);
+    expect(inspectionResults.filter((result) => result.isError !== true)).toHaveLength(2);
+    expect(inspectionResults.filter((result) => result.isError === true)).toHaveLength(5);
   });
 
   it('recovers the exported stale-checkpoint and human-gate shape before denying unowned web work', async () => {
@@ -4221,13 +4852,26 @@ describe('goal completion guard and subagent veto', () => {
   it.each([
     { label: 'no Research turn lease', opts: { lease: 'none' as const }, message: 'no Research lease' },
     { label: 'paused Research Loop', opts: { loopStatus: 'paused' as const }, message: 'Research Loop is paused' },
-    { label: 'degraded AITP mode', opts: { phase: 'degraded' as const }, message: 'AITP Research Mode is degraded' },
+    { label: 'degraded AITP mode without an Action', opts: { phase: 'degraded' as const }, message: 'no in-progress ResearchAction' },
   ])('revokes action work for $label', async ({ opts, message }) => {
     const { executor } = await buildResearchSandboxHarness(opts);
 
     const decision = await executor.fireBeforeExecute(makeToolHookContext('Read', { path: '/workspace/result.dat' }));
 
     expect(decision?.veto?.output).toContain(message);
+    const noteRead = await executor.fireBeforeExecute(makeToolHookContext('Read', {
+      path: '.aitp/topic/notes/note-card.md',
+    }));
+    const markerLookup = await executor.fireBeforeExecute(makeToolHookContext('Grep', {
+      path: '.aitp/topic/', pattern: '^> method-card:',
+    }));
+    if (opts.phase === 'degraded') {
+      expect(noteRead?.veto?.output).toContain('AITP Research Mode is degraded');
+      expect(markerLookup?.veto?.output).toContain('no in-progress ResearchAction');
+    } else {
+      expect(noteRead).toBeUndefined();
+      expect(markerLookup).toBeUndefined();
+    }
   });
 
   it('never treats direct canonical AITP file access as action work', async () => {
@@ -4244,6 +4888,155 @@ describe('goal completion guard and subagent veto', () => {
       path: '.aitp/local/../topic/entries/entry-test.md',
     }));
     expect(traversal?.veto?.output).toContain('canonical AITP files must be accessed through AITP tools');
+    const noteRead = await executor.fireBeforeExecute(makeToolHookContext('Read', {
+      path: '.aitp/topic/notes/note-card.md',
+    }));
+    expect(noteRead).toBeUndefined();
+  });
+
+  it('allows bounded interactive exploration while AITP is degraded without allowing persistence', async () => {
+    const { svc, executor, adapter } = await buildResearchSandboxHarness({ phase: 'degraded' });
+    const action = await beginSandboxAction(svc, ['workspace_read', 'workspace_write', 'web_search', 'web_fetch', 'shell']);
+    const prepare = vi.spyOn(adapter, 'recordPrepare');
+    const save = vi.spyOn(adapter, 'recordSave');
+    for (const [name, args] of [
+      ['Read', { path: 'analysis/hamiltonian.py' }],
+      ['Grep', { path: 'analysis', pattern: 'commutator' }],
+      ['WebSearch', { query: 'finite spin chain conserved charge' }],
+      ['FetchURL', { url: 'https://example.com/paper' }],
+      ['Write', { path: 'scratch/derivation.md', content: 'Provisional derivation' }],
+      ['Bash', { command: 'python analysis/small_chain.py' }],
+    ] as const) {
+      expect(await executor.fireBeforeExecute(makeToolHookContext(name, args))).toBeUndefined();
+    }
+    for (const [name, args] of [
+      ['aitp_record_prepare', { kind: 'result' }],
+      ['aitp_record_save', { draft_path: '.aitp/local/drafts/entry-test.md' }],
+      ['aitp_note_prepare', { mode: 'theory', title: 'Note', created_by: 'agent:main' }],
+      ['aitp_note_save', { draft_path: '.aitp/local/drafts/note-test.md' }],
+      ['CommitResearchCheckpoint', { checkpoint_id: 'pending', entry_id: 'e1' }],
+      ['Write', { path: '.aitp/topic/entries/entry-forged.md', content: 'result' }],
+    ] as const) {
+      const denied = await executor.fireBeforeExecute(makeToolHookContext(name, args));
+      expect(denied?.veto?.output).toContain('degraded');
+    }
+    expect(svc.getSnapshot()).toMatchObject({ mode: 'degraded', currentAction: { actionId: action.actionId, status: 'in_progress' } });
+    expect(prepare).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('holds already-admitted autonomous work when AITP degrades during the turn', async () => {
+    const { svc, executor, modeSvc } = await buildResearchSandboxHarness({ lease: 'autonomous_research' });
+    await beginSandboxAction(svc, ['web_search']);
+    const context = makeToolHookContext('WebSearch', { query: 'finite spin chain' });
+    expect(await executor.fireBeforeExecute(context)).toBeUndefined();
+    modeSvc.phase = 'degraded';
+    expect((await executor.fireBeforeExecute(context))?.veto?.output).toContain('Automatic Goal work is held');
+  });
+
+  it('executes only Action-owned provisional callbacks through the production executor', async () => {
+    const { svc, executor, registry } = await buildResearchSandboxWithProductionExecutor('degraded');
+    const search = vi.fn(async () => ({ output: 'One candidate source found.' }));
+    const save = vi.fn(async () => ({ output: 'This must never execute.' }));
+    for (const [name, execute] of [['WebSearch', search], ['aitp_record_save', save]] as const) {
+      registry.register({
+        name, description: name, parameters: { type: 'object' },
+        resolveExecution: () => ({ approvalRule: name, accesses: ToolAccesses.all(), execute }),
+      });
+    }
+    const executeBatch = async (id: string) => {
+      const results = [];
+      for await (const result of executor.execute(
+        ['WebSearch', 'aitp_record_save'].map((name) => ({ type: 'function' as const, id: `${id}-${name}`, name, arguments: '{}' })),
+        { turnId: 1, signal: new AbortController().signal },
+      )) results.push(result.result);
+      return results;
+    };
+    expect(await executeBatch('unowned')).toEqual([
+      expect.objectContaining({ isError: true }), expect.objectContaining({ isError: true }),
+    ]);
+    expect(search).not.toHaveBeenCalled();
+    await beginSandboxAction(svc, ['web_search']);
+    const results = await executeBatch('owned');
+    expect(results.filter((result) => result.isError !== true)).toHaveLength(1);
+    expect(search).toHaveBeenCalledOnce();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('still enforces action permissions and freshness during degraded exploration', async () => {
+    const { svc, executor } = await buildResearchSandboxHarness({ phase: 'degraded' });
+    const action = await beginSandboxAction(svc, ['workspace_read']);
+    expect((await executor.fireBeforeExecute(makeToolHookContext('WebSearch', { query: 'new work' })))?.veto?.output)
+      .toContain('does not grant capability web_search');
+    const question = svc.getQuestions().find((candidate) => candidate.id === action.questionId)!;
+    svc.updateQuestion({ questionId: question.id, expectedRevision: question.revision, assessment: 'The candidate changed.' });
+    expect((await executor.fireBeforeExecute(makeToolHookContext('Read', { path: 'analysis/result.dat' })))?.veto?.output)
+      .toContain('cannot prove a fresh Research Question revision');
+  });
+
+  it.each(['no_durable_delta', 'durable_delta'] as const)(
+    'retains a degraded interactive conclusion as %s without canonical writes', async (durabilityStatus) => {
+      const { svc, executor, adapter, modeSvc } = await buildResearchSandboxHarness({ phase: 'degraded' });
+      seedCurrentConfirmedWorkstream();
+      const question = svc.createQuestion({ lineSlug: 'main', wording: 'Does the finite-size check reproduce the observation?' });
+      const action = svc.planAndStartAction({
+        questionId: question.id, lineSlug: 'main', kind: 'experiment',
+        purpose: 'Run one bounded check.', expectedEvidence: ['One measured residual'],
+        stopCondition: 'The residual is measured or the calculation fails.', allowedToolKinds: ['shell'],
+      });
+      const prepare = vi.spyOn(adapter, 'recordPrepare');
+      const save = vi.spyOn(adapter, 'recordSave');
+      const input = {
+        actionId: action.actionId, status: 'completed' as const,
+        progress: {
+          headline: 'Bounded check evaluated', motivation: 'Distinguish the candidate from the benchmark.',
+          workPerformed: 'Evaluated the finite-size residual.', result: 'The residual rejects this candidate.',
+          mainlineImpact: 'Revise the candidate, without a general no-go claim.', nextAction: 'Review the finite-size limitation.',
+          detail: { observations: ['Finite-size residual exceeds the declared tolerance.'] },
+        },
+        durability: durabilityStatus === 'no_durable_delta'
+          ? { status: 'no_durable_delta' as const, rationale: 'This reproduces the already recorded check.' }
+          : { status: 'durable_delta' as const, entryKind: 'failure' as const, authority: 'agent' as const,
+            provenance: 'agent_verification' as const, rationale: 'This new counterexample changes the candidate assessment.' },
+      };
+      const conclusion = svc.concludeAction(input);
+      const after = svc.getSnapshot();
+      expect(after.currentAction?.status).toBe('completed');
+      expect(after.latestProgress?.result).toBe(input.progress.result);
+      expect(svc.concludeAction(input)).toEqual(conclusion);
+      expect(svc.getSnapshot()).toEqual(after);
+      if (durabilityStatus === 'durable_delta') {
+        expect(after.pendingCheckpoint?.commitCandidate).toMatchObject({ entryKind: 'failure', sourceActionId: action.actionId });
+        const context = makeToolHookContext('aitp_record_prepare', {
+          checkpoint_id: after.pendingCheckpoint!.checkpointId, kind: 'failure', created_by: 'agent:main', workstreams: ['aitp-main'],
+        });
+        expect((await executor.fireBeforeExecute(context))?.veto?.output).toContain('degraded');
+        modeSvc.phase = 'ready';
+        expect(await executor.fireBeforeExecute(context)).toBeUndefined();
+        expect(svc.getSnapshot().pendingCheckpoint?.checkpointId).toBe(after.pendingCheckpoint!.checkpointId);
+      } else {
+        expect(after.pendingCheckpoint).toBeUndefined();
+      }
+      expect(prepare).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects an unbound durable conclusion without completing or discarding its Action', async () => {
+    const { svc } = await buildResearchSandboxHarness({ phase: 'degraded' });
+    const action = await beginSandboxAction(svc, ['shell']);
+    const before = svc.getSnapshot();
+    expect(() => svc.concludeAction({
+      actionId: action.actionId, status: 'completed',
+      progress: {
+        headline: 'New counterexample', motivation: 'Check the conjecture.', workPerformed: 'Measured a residual.',
+        result: 'The candidate fails.', mainlineImpact: 'Revise this candidate.', nextAction: 'Confirm record ownership.',
+      },
+      durability: { status: 'durable_delta', entryKind: 'failure', authority: 'agent', provenance: 'agent_verification', rationale: 'New evidence.' },
+    })).toThrow(/workstream/i);
+    expect(svc.getSnapshot()).toEqual(before);
+    expect(svc.getSnapshot().currentAction?.status).toBe('in_progress');
+    expect(svc.getSnapshot().pendingCheckpoint).toBeUndefined();
   });
 
   it('limits post-action checkpoint persistence to the captured checkpoint and prepared draft', async () => {
@@ -4304,7 +5097,7 @@ describe('goal completion guard and subagent veto', () => {
   });
 
   it('limits Note persistence to the current post-commit distillation handoff', async () => {
-    const { executor } = await buildResearchSandboxHarness();
+    const { executor, svc } = await buildResearchSandboxHarness();
     const beforeHandoff = await executor.fireBeforeExecute(makeToolHookContext('aitp_note_prepare', {
       mode: 'theory',
       title: 'Method card: test',
@@ -4313,19 +5106,24 @@ describe('goal completion guard and subagent veto', () => {
     }));
     expect(beforeHandoff?.veto?.output).toContain('no current post-commit distillation handoff');
 
-    seedCurrentConfirmedWorkstream({ workstream: 'aitp-main' });
-    wire.dispatch(researchCommitCheckpoint({
-      checkpointId: 'checkpoint-committed',
-      entryId: 'entry-committed',
-      committedAt: 20,
-    }));
-    wire.dispatch(researchRecordDistillationAttention({
-      status: 'review_requested',
-      checkpointId: 'checkpoint-committed',
-      entryId: 'entry-committed',
-      recordedAt: 21,
-      commitRevision: 1,
-    }));
+    await commitReviewCheckpoint(svc);
+
+    expect(wire.getModel(ResearchModel).current.currentAction).toBeNull();
+    for (const [name, args] of [
+      ['Read', { path: '.aitp/topic/notes/note-card.md' }],
+      ['Grep', { path: '.aitp/topic/', pattern: '^> method-card:' }],
+      ['Grep', { path: '.aitp/topic/entries/', pattern: '^> method-observation:' }],
+    ] as const) {
+      expect(await executor.fireBeforeExecute(makeToolHookContext(name, args))).toBeUndefined();
+    }
+    for (const [name, args] of [
+      ['WebSearch', { query: 'new research' }],
+      ['Read', { path: 'new-results.dat' }],
+      ['Grep', { path: 'src', pattern: 'Hamiltonian' }],
+    ] as const) {
+      const denied = await executor.fireBeforeExecute(makeToolHookContext(name, args));
+      expect(denied?.veto?.output).toContain('no in-progress ResearchAction');
+    }
 
     const prepare = await executor.fireBeforeExecute(makeToolHookContext('aitp_note_prepare', {
       mode: 'theory',
@@ -4342,21 +5140,9 @@ describe('goal completion guard and subagent veto', () => {
       created_by: 'agent:main',
       workstreams: ['other'],
     }));
-    await executor.didExecuteSlot.run(makeDidToolContext(
-      'aitp_note_prepare',
-      {
-        mode: 'theory',
-        title: 'Method card: test',
-        created_by: 'agent:main',
-        workstreams: ['aitp-main'],
-      },
-      JSON.stringify({
-        status: 'prepared',
-        id: 'note-test',
-        path: '.aitp/local/drafts/note-test.md',
-        save_command: 'aitp note save .aitp/local/drafts/note-test.md',
-      }),
-    ));
+    await svc.prepareReviewNote({
+      mode: 'theory', title: 'Method card: test', createdBy: 'agent:main', workstreams: ['aitp-main'],
+    });
     const draftEdit = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
       path: '.aitp/local/drafts/note-test.md',
     }));
@@ -4374,11 +5160,7 @@ describe('goal completion guard and subagent veto', () => {
     expect(otherDraftEdit?.veto?.output).toContain('not owned by the current checkpoint or distillation handoff');
     expect(save).toBeUndefined();
 
-    await executor.didExecuteSlot.run(makeDidToolContext(
-      'aitp_note_save',
-      { draft_path: '.aitp/local/drafts/note-test.md' },
-      JSON.stringify({ status: 'saved', path: '.aitp/topic/notes/note-test.md' }),
-    ));
+    await svc.saveReviewNote({ draftPath: '.aitp/local/drafts/note-test.md' });
     const repeatedSave = await executor.fireBeforeExecute(makeToolHookContext('aitp_note_save', {
       draft_path: '.aitp/local/drafts/note-test.md',
     }));
@@ -4386,38 +5168,16 @@ describe('goal completion guard and subagent veto', () => {
   });
 
   it('does not retain a transient distillation draft lease across cold restore', async () => {
-    const { executor } = await buildResearchSandboxHarness();
-    seedCurrentConfirmedWorkstream({ workstream: 'aitp-main' });
-    wire.dispatch(researchCommitCheckpoint({
-      checkpointId: 'checkpoint-restored-distillation',
-      entryId: 'entry-restored-distillation',
-      committedAt: 30,
-    }));
-    wire.dispatch(researchRecordDistillationAttention({
-      status: 'review_requested',
-      checkpointId: 'checkpoint-restored-distillation',
-      entryId: 'entry-restored-distillation',
-      recordedAt: 31,
-      commitRevision: 1,
-    }));
-    const prepareArgs = {
+    const { executor, svc } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    await svc.prepareReviewNote({
       mode: 'theory',
       title: 'Method card: restored lease test',
-      created_by: 'agent:main',
+      createdBy: 'agent:main',
       workstreams: ['aitp-main'],
-    };
-    await executor.didExecuteSlot.run(makeDidToolContext(
-      'aitp_note_prepare',
-      prepareArgs,
-      JSON.stringify({
-        status: 'prepared',
-        id: 'note-restored-lease',
-        path: '.aitp/local/drafts/note-restored-lease.md',
-        save_command: 'aitp note save .aitp/local/drafts/note-restored-lease.md',
-      }),
-    ));
+    });
     const beforeRestore = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
-      path: '.aitp/local/drafts/note-restored-lease.md',
+      path: '.aitp/local/drafts/note-test.md',
     }));
     expect(beforeRestore).toBeUndefined();
 
@@ -4425,43 +5185,19 @@ describe('goal completion guard and subagent veto', () => {
     await wire.restore();
 
     const afterRestore = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
-      path: '.aitp/local/drafts/note-restored-lease.md',
+      path: '.aitp/local/drafts/note-test.md',
     }));
     expect(afterRestore?.veto?.output).toContain('not owned by the current checkpoint or distillation handoff');
   });
 
   it('does not retain a transient distillation draft lease across mode exit and re-entry', async () => {
-    const { executor, modeSvc } = await buildResearchSandboxHarness();
-    seedCurrentConfirmedWorkstream({ workstream: 'aitp-main' });
-    wire.dispatch(researchCommitCheckpoint({
-      checkpointId: 'checkpoint-mode-exit-distillation',
-      entryId: 'entry-mode-exit-distillation',
-      committedAt: 40,
-    }));
-    wire.dispatch(researchRecordDistillationAttention({
-      status: 'review_requested',
-      checkpointId: 'checkpoint-mode-exit-distillation',
-      entryId: 'entry-mode-exit-distillation',
-      recordedAt: 41,
-      commitRevision: 1,
-    }));
-    await executor.didExecuteSlot.run(makeDidToolContext(
-      'aitp_note_prepare',
-      {
-        mode: 'theory',
-        title: 'Method card: mode exit lease test',
-        created_by: 'agent:main',
-        workstreams: ['aitp-main'],
-      },
-      JSON.stringify({
-        status: 'prepared',
-        id: 'note-mode-exit-lease',
-        path: '.aitp/local/drafts/note-mode-exit-lease.md',
-        save_command: 'aitp note save .aitp/local/drafts/note-mode-exit-lease.md',
-      }),
-    ));
+    const { executor, modeSvc, svc } = await buildResearchSandboxHarness();
+    await commitReviewCheckpoint(svc);
+    await svc.prepareReviewNote({
+      mode: 'theory', title: 'Method card: mode exit lease test', createdBy: 'agent:main', workstreams: ['aitp-main'],
+    });
     const beforeExit = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
-      path: '.aitp/local/drafts/note-mode-exit-lease.md',
+      path: '.aitp/local/drafts/note-test.md',
     }));
     expect(beforeExit).toBeUndefined();
 
@@ -4471,7 +5207,7 @@ describe('goal completion guard and subagent veto', () => {
     eventBus.publish({ type: 'aitp_mode.updated' });
 
     const afterReentry = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
-      path: '.aitp/local/drafts/note-mode-exit-lease.md',
+      path: '.aitp/local/drafts/note-test.md',
     }));
     expect(afterReentry?.veto?.output).toContain('not owned by the current checkpoint or distillation handoff');
   });
@@ -5780,9 +6516,8 @@ describe('checkpoint adapter exact binding', () => {
     const {
       AitpRecordPrepareTool,
       AitpRecordSaveTool,
-      AitpNotePrepareTool,
-      AitpNoteSaveTool,
     } = await import('#/features/aitpResearch/tools/aitpAdapterTools');
+    const noteTools = await buildNoteTools(adapter, mode, research);
 
     const results = await Promise.all([
       runnableExecution(new AitpRecordPrepareTool(adapter, mode, research).resolveExecution({
@@ -5792,12 +6527,12 @@ describe('checkpoint adapter exact binding', () => {
       runnableExecution(new AitpRecordSaveTool(adapter, mode, research).resolveExecution({
         draft_path: '.aitp/local/drafts/entry-a.md',
       })).execute(executionContext),
-      runnableExecution(new AitpNotePrepareTool(adapter, mode).resolveExecution({
+      runnableExecution(await noteTools.prepare.resolveExecution({
         mode: 'working',
         title: 'Working state',
         created_by: 'agent:main',
       })).execute(executionContext),
-      runnableExecution(new AitpNoteSaveTool(adapter, mode).resolveExecution({
+      runnableExecution(await noteTools.save.resolveExecution({
         draft_path: '.aitp/local/drafts/note-a.md',
       })).execute(executionContext),
     ]);
@@ -5875,9 +6610,13 @@ describe('checkpoint adapter exact binding', () => {
       waitForAbort(signal));
     const noteSave = vi.spyOn(adapter, 'noteSave').mockImplementation(({ signal }) =>
       waitForAbort(signal));
-    const { AitpRecordSaveTool, AitpNoteSaveTool } = await import(
+    const { AitpRecordSaveTool } = await import(
       '#/features/aitpResearch/tools/aitpAdapterTools'
     );
+    const noteTools = await buildNoteTools(adapter, mode, {
+      ...research,
+      saveReviewNote: (input) => adapter.noteSave(input),
+    });
 
     const recordController = new AbortController();
     const recordExecution = runnableExecution(new AitpRecordSaveTool(
@@ -5896,9 +6635,9 @@ describe('checkpoint adapter exact binding', () => {
     });
 
     const noteController = new AbortController();
-    const noteExecution = runnableExecution(new AitpNoteSaveTool(
-      adapter, mode,
-    ).resolveExecution({ draft_path: '.aitp/local/drafts/note-test.md' })).execute({
+    const noteExecution = runnableExecution(await noteTools.save.resolveExecution({
+      draft_path: '.aitp/local/drafts/note-test.md',
+    })).execute({
       ...executionContext,
       signal: noteController.signal,
     });
@@ -7780,7 +8519,10 @@ describe('Research Loop scientific state', () => {
         status: 'active',
         source: `.aitp/topic/entries/entry-${id}.md`,
         legacy_derived: false,
-        frontmatter: { topic: 't1', workstreams: ['verified-work'] },
+        frontmatter: {
+          topic: 't1', workstreams: ['verified-work'],
+          kind: 'result', authority: 'agent', created_by: 'agent:main',
+        },
         body: 'Verified result.',
       }),
       recordPrepare: async () => ({
@@ -7794,8 +8536,30 @@ describe('Research Loop scientific state', () => {
         path: '.aitp/topic/entries/entry-entry-durable.md',
       }),
     });
-    const modeSvc = await buildRealModeService(adapter);
-    const svc = await buildRealResearchService(modeSvc, adapter);
+    const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const { IAgentProfileService } = await import('#/agent/profile/profile');
+    const { IAitpRecordPrepareTool, AitpRecordPrepareTool, IAitpRecordSaveTool, AitpRecordSaveTool } =
+      await import('#/features/aitpResearch/tools/aitpAdapterTools');
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.defineInstance(IWireService, wire);
+        reg.defineInstance(IAgentScopeContext, makeScopeCtx());
+        reg.defineInstance(IEventBus, eventBus);
+        reg.defineInstance(IAgentProfileService, makeProfileServiceStub());
+        reg.defineInstance(ISessionAitpAdapter, adapter);
+        reg.defineInstance(IAgentToolExecutorService, makeToolExecutorStub());
+        reg.defineInstance(IAgentGoalService, makeStubGoalService());
+        reg.define(IAgentAitpModeService, AgentAitpModeService);
+        reg.define(IAgentResearchService, AgentResearchService);
+        reg.define(IDurableCommitService, DurableCommitService);
+        reg.define(IAitpRecordPrepareTool, AitpRecordPrepareTool);
+        reg.define(IAitpRecordSaveTool, AitpRecordSaveTool);
+        reg.define(ICommitResearchCheckpointTool, CommitResearchCheckpointTool);
+      },
+    });
+    const modeSvc = ix.get(IAgentAitpModeService);
+    const svc = ix.get(IAgentResearchService);
     await modeSvc.enter({ actor: 'user' });
     seedCurrentConfirmedWorkstream({ lineSlug: 'main', workstream: 'verified-work' });
     svc.setPhase('gap_analysis');
@@ -7824,16 +8588,9 @@ describe('Research Loop scientific state', () => {
       },
     });
     const checkpointId = svc.getPendingCheckpoint()!.checkpointId;
-    const {
-      AitpRecordPrepareTool,
-      AitpRecordSaveTool,
-    } = await import('#/features/aitpResearch/tools/aitpAdapterTools');
-    const { CommitResearchCheckpointTool } = await import('#/features/aitpResearch/tools/researchToolsImpl');
     const context = { turnId: 1, toolCallId: 'tc-s6-barrier', signal: new AbortController().signal };
 
-    const prepared = await runnableExecution(new AitpRecordPrepareTool(
-      adapter, modeSvc, svc,
-    ).resolveExecution({
+    const prepared = await runnableExecution(await ix.get(IAitpRecordPrepareTool).resolveExecution({
       kind: 'result',
       authority: 'agent',
       created_by: 'agent:main',
@@ -7841,16 +8598,13 @@ describe('Research Loop scientific state', () => {
       checkpoint_id: checkpointId,
     })).execute(context);
     expect(prepared.isError).toBeFalsy();
-    const saved = await runnableExecution(new AitpRecordSaveTool(
-      adapter, modeSvc, svc,
-    ).resolveExecution({
+    const saved = await runnableExecution(await ix.get(IAitpRecordSaveTool).resolveExecution({
       draft_path: '.aitp/local/drafts/entry-durable.md',
       checkpoint_id: checkpointId,
     })).execute(context);
     expect(saved.isError).toBeFalsy();
-    const committed = await runnableExecution(new CommitResearchCheckpointTool(
-      svc, modeSvc,
-    ).resolveExecution({ checkpoint_id: checkpointId, entry_id: 'entry-durable' })).execute(context);
+    const committed = await runnableExecution(await ix.get(ICommitResearchCheckpointTool)
+      .resolveExecution({ checkpoint_id: checkpointId, entry_id: 'entry-durable' })).execute(context);
 
     expect(committed.isError).toBeFalsy();
     expect(svc.getPendingCheckpoint()).toBeNull();
@@ -9789,21 +10543,18 @@ describe('ResearchLoopCoordinator', () => {
       reset: vi.fn(),
     };
     const { ResearchTurnAdmission } = await import('#/features/aitpResearch/loop/researchTurnAdmission');
-    const admission = new ResearchTurnAdmission(
-      eventBus,
-      scopeCtx,
-      modeSvc,
-    );
-    disposables.add(admission);
-    const coordinator = new ResearchLoopCoordinator(
-      eventBus,
-      researchSvc,
-      modeSvc,
-      scopeCtx,
-      admission,
-      maintenance as never,
-    );
-    disposables.add(coordinator);
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.defineInstance(IEventBus, eventBus);
+        reg.defineInstance(IAgentScopeContext, scopeCtx);
+        reg.defineInstance(IAgentAitpModeService, modeSvc);
+        reg.defineInstance(IAgentResearchService, researchSvc);
+        reg.defineInstance(ISessionAitpLifecycleCoordinator, maintenance);
+        reg.define(IResearchTurnAdmission, ResearchTurnAdmission);
+        reg.define(IResearchLoopCoordinator, ResearchLoopCoordinator);
+      },
+    });
+    const coordinator = ix.get(IResearchLoopCoordinator);
     return { modeSvc, researchSvc, coordinator, adapter, maintenance };
   }
 
@@ -9833,12 +10584,56 @@ describe('ResearchLoopCoordinator', () => {
     expect(researchSvc.getSnapshot().phase).toBe('orienting');
   });
 
+  it('updates the local period and Board for degraded user exploration without canonical writes', async () => {
+    const { modeSvc, researchSvc, adapter, maintenance } = await buildCoordinatorHarness();
+    adapter._setHealth({ phase: 'degraded', lastError: 'Adapter temporarily unavailable' });
+    modeSvc.setPhase('degraded');
+    const prepare = vi.spyOn(adapter, 'recordPrepare');
+    const save = vi.spyOn(adapter, 'recordSave');
+    turnStarted(1);
+    expect(researchSvc.getSnapshot()).toMatchObject({
+      mode: 'degraded', phase: 'orienting', period: { loopCount: 1 }, status: { health: 'degraded' },
+    });
+    researchSvc.setPhase('gap_analysis');
+    researchSvc.planAndStartAction({
+      kind: 'derivation', purpose: 'Check a local symmetry identity.',
+      expectedEvidence: ['One equality or counterexample'], stopCondition: 'The identity is checked.',
+      allowedToolKinds: ['workspace_read'],
+    });
+    expect(researchSvc.getSnapshot()).toMatchObject({
+      mode: 'degraded', phase: 'action_executing', status: { health: 'degraded' },
+    });
+    turnEnded(1);
+    await Promise.resolve();
+    expect(prepare).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(maintenance.refresh).not.toHaveBeenCalled();
+    turnStarted(2, GOAL_CONTINUATION_ORIGIN);
+    expect(researchSvc.getSnapshot().period?.loopCount).toBe(1);
+  });
+
   it('does not advance when mode is inactive', async () => {
     const { researchSvc } = await buildCoordinatorHarness({ enterMode: false });
 
     turnStarted(1);
 
     expect(researchSvc.getSnapshot().phase).toBe('idle');
+  });
+
+  it('performs one local boundary when Research Mode is entered within the user turn', async () => {
+    const { modeSvc, researchSvc } = await buildCoordinatorHarness({ enterMode: false });
+    turnStarted(1);
+    await modeSvc.enter({ actor: 'model', lineSlug: 'main' });
+    expect(researchSvc.getSnapshot().phase).toBe('orienting');
+    const period = researchSvc.getPeriod();
+    expect(period).not.toBeNull();
+    modeSvc.setPhase('degraded');
+    modeSvc.setPhase('ready');
+    expect(researchSvc.getPeriod()).toEqual(period);
+    turnEnded(1);
+    modeSvc.setPhase('degraded');
+    modeSvc.setPhase('ready');
+    expect(researchSvc.getPeriod()).toEqual(period);
   });
 
   it('does not advance when loop is paused', async () => {
@@ -10187,12 +10982,15 @@ describe('ResearchTurnAdmission', () => {
       modeSvc.pauseLoop(wire.getModel(ResearchModel).current.revision);
     }
     const { ResearchTurnAdmission } = await import('#/features/aitpResearch/loop/researchTurnAdmission');
-    const admission = new ResearchTurnAdmission(
-      eventBus,
-      makeAgentScopeContext({ agentId: opts?.agentId ?? MAIN_AGENT_ID, agentScope: '' }),
-      modeSvc,
-    );
-    disposables.add(admission);
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.defineInstance(IEventBus, eventBus);
+        reg.defineInstance(IAgentScopeContext, makeAgentScopeContext({ agentId: opts?.agentId ?? MAIN_AGENT_ID, agentScope: '' }));
+        reg.defineInstance(IAgentAitpModeService, modeSvc);
+        reg.define(IResearchTurnAdmission, ResearchTurnAdmission);
+      },
+    });
+    const admission = ix.get(IResearchTurnAdmission);
     return { modeSvc, admission };
   }
 
@@ -10248,6 +11046,61 @@ describe('ResearchTurnAdmission', () => {
     expect(admission.isCurrentResearchTurn()).toBe(false);
   });
 
+  it('admits the same typed user turn after Research Mode entry settles', async () => {
+    const { admission, modeSvc } = await buildAdmissionHarness({ enterMode: false });
+    startTurn(1);
+    expect(admission.currentLease()).toBe('none');
+    await modeSvc.enter({ actor: 'model', lineSlug: 'main' });
+    expect(admission.leaseForTurn(1)).toBe('interactive_research');
+    await modeSvc.exit();
+    expect(admission.currentLease()).toBe('none');
+    await modeSvc.enter({ actor: 'model', lineSlug: 'main' });
+    expect(admission.leaseForTurn(1)).toBe('interactive_research');
+    endTurn(1);
+    modeSvc.setPhase('degraded');
+    modeSvc.setPhase('ready');
+    expect(admission.currentLease()).toBe('none');
+  });
+
+  it('does not mint an autonomous lease after entry or revive it after degraded recovery', async () => {
+    const { admission, modeSvc } = await buildAdmissionHarness({ enterMode: false });
+    startTurn(1, GOAL_CONTINUATION_ORIGIN);
+    await modeSvc.enter({ actor: 'model', lineSlug: 'main' });
+    expect(admission.currentLease()).toBe('none');
+    endTurn(1);
+    startTurn(2, GOAL_CONTINUATION_ORIGIN);
+    expect(admission.currentLease()).toBe('autonomous_research');
+    modeSvc.setPhase('degraded');
+    expect(admission.currentLease()).toBe('none');
+    modeSvc.setPhase('ready');
+    expect(admission.currentLease()).toBe('none');
+  });
+
+  it.each([
+    { origin: { kind: 'user' as const }, typed: false },
+    { origin: { kind: 'system_trigger' as const, name: 'maintenance' }, typed: true },
+  ])('does not turn non-Research ingress into a lease after mode entry: $origin', async ({ origin, typed }) => {
+    const { admission, modeSvc } = await buildAdmissionHarness({ enterMode: false });
+    startTurn(1, origin, typed);
+    await modeSvc.enter({ actor: 'model', lineSlug: 'main' });
+    expect(admission.currentLease()).toBe('none');
+  });
+
+  it('waits for probing to settle and obeys loop pause within the same user turn', async () => {
+    const { admission, modeSvc } = await buildAdmissionHarness();
+    modeSvc.setPhase('probing');
+    startTurn(1);
+    expect(admission.currentLease()).toBe('none');
+    modeSvc.setPhase('degraded');
+    expect(admission.currentLease()).toBe('interactive_research');
+    modeSvc.pauseLoop(wire.getModel(ResearchModel).current.revision);
+    expect(admission.currentLease()).toBe('none');
+    modeSvc.setPhase('ready');
+    expect(admission.currentLease()).toBe('none');
+    modeSvc.resumeLoop(wire.getModel(ResearchModel).current.revision);
+    expect(admission.currentLease()).toBe('interactive_research');
+  });
+
   it('does not admit when the loop is paused', async () => {
     const { admission } = await buildAdmissionHarness({ pauseLoop: true });
     startTurn(1, GOAL_CONTINUATION_ORIGIN);
@@ -10259,6 +11112,16 @@ describe('ResearchTurnAdmission', () => {
     modeSvc.setPhase('degraded');
     startTurn(1, GOAL_CONTINUATION_ORIGIN);
     expect(admission.isCurrentResearchTurn()).toBe(false);
+  });
+
+  it('admits user-directed provisional exploration while degraded but not a new Goal continuation', async () => {
+    const { modeSvc, admission } = await buildAdmissionHarness();
+    modeSvc.setPhase('degraded');
+    startTurn(1);
+    expect(admission.currentLease()).toBe('interactive_research');
+    endTurn(1);
+    startTurn(2, GOAL_CONTINUATION_ORIGIN);
+    expect(admission.currentLease()).toBe('none');
   });
 
   it('does not admit while the adapter is still probing', async () => {
@@ -12202,7 +13065,7 @@ describe('ResearchPlan bridge', () => {
   }
 
   async function finalizeReviewedActionPlan(
-    service: AgentResearchService,
+    service: IAgentResearchService,
     plan: IAgentPlanService,
     questionId: string,
   ) {
@@ -12225,6 +13088,185 @@ describe('ResearchPlan bridge', () => {
     plan.exit();
     return service.finalizeResearchPlan();
   }
+
+  async function setupActionPlanOnly(goal?: GoalSnapshot | null) {
+    wire.dispatch(aitpModeEnter({ actor: 'user', lineSlug: 'main' }));
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const { IAgentPermissionModeService } = await import('#/agent/permissionMode/permissionMode');
+    const { IResearchTurnAdmission } = await import('#/features/aitpResearch/loop/researchTurnAdmission');
+    const plan = planService();
+    const executor = stubToolExecutorEvents();
+    const ix = createServices(disposables, {
+      strict: true,
+      additionalServices: (reg) => {
+        reg.defineInstance(IWireService, wire);
+        reg.defineInstance(IAgentScopeContext, makeScopeCtx());
+        reg.defineInstance(IEventBus, eventBus);
+        reg.defineInstance(IAgentAitpModeService, makeStubModeSvc({ isActive: true }));
+        reg.defineInstance(ISessionAitpAdapter, makeStubAdapter());
+        reg.defineInstance(IAgentToolExecutorService, executor.executor);
+        reg.defineInstance(IAgentGoalService, makeStubGoalService(goal));
+        reg.definePartialInstance(ISessionAitpLifecycleCoordinator, {
+          onDidUpdate: () => ({ dispose: () => {} }),
+          snapshot: () => undefined,
+        });
+        reg.definePartialInstance(IDurableCommitService, {});
+        reg.defineInstance(IAitpExternalFactService, createExternalFactFacade(wire));
+        reg.defineInstance(IAgentPlanService, plan);
+        reg.defineInstance(IAgentPermissionModeService, stubPermissionModeService(() => 'auto'));
+        reg.definePartialInstance(IResearchTurnAdmission, {
+          leaseForTurn: (turnId) => turnId === 1 ? 'interactive_research' : 'none',
+        });
+        reg.define(IAgentResearchService, AgentResearchService);
+      },
+    });
+    const service = ix.get(IAgentResearchService);
+    service.createLine({ slug: 'main', title: 'Main' });
+    const question = service.createQuestion({ lineSlug: 'main', wording: 'Which convention matches the limiting case?' });
+    service.setFocus(question.id);
+    const actionPlan = await finalizeReviewedActionPlan(service, plan, question.id);
+    const input = {
+      questionId: question.id,
+      lineSlug: 'main',
+      kind: 'derivation' as const,
+      purpose: 'Compare two conventions against the limiting case.',
+      expectedEvidence: ['An independently checked limiting case'],
+      stopCondition: 'Stop after comparing the two conventions.',
+      planningLevel: 'planned' as const,
+      actionPlanId: actionPlan.planId,
+      actionPlanRevision: actionPlan.resolution!.planRevision,
+    };
+    return { service, plan, question, actionPlan, input, executor };
+  }
+
+  it('executes a reviewed local Action Plan without inventing a Goal or Research Plan', async () => {
+    const { service, actionPlan, input } = await setupActionPlanOnly();
+    const action = service.planAndStartAction(input);
+    expect(action.status).toBe('in_progress');
+    expect(action.researchPlanBinding).toBeUndefined();
+    expect(action.actionPlanBinding).toMatchObject({
+      kind: 'reviewed_plan', planId: actionPlan.planId, planRevision: 1,
+    });
+    service.concludeAction({
+      actionId: action.actionId,
+      status: 'completed',
+      progress: {
+        headline: 'The two conventions agree in the already documented limit.',
+        motivation: 'Check the existing convention before broader exploration.',
+        workPerformed: 'Compared the two equivalent local expressions.',
+        result: 'The existing limit is reproduced; no new claim was established.',
+        mainlineImpact: 'Continue the open question with the existing convention.',
+      },
+      durability: { status: 'no_durable_delta', rationale: 'This check only reproduces existing evidence.' },
+    });
+    expect(service.getSnapshot()).toMatchObject({ currentAction: { status: 'completed' } });
+    expect(service.getResearchPlanV2()).toBeNull();
+    expect(service.getSnapshot().researchGoal).toBeUndefined();
+    expect(service.getPendingCheckpoint()).toBeNull();
+  });
+
+  it.each(['researchPlanId', 'researchPlanRevision', 'milestoneId'] as const)(
+    'rejects a partial optional parent binding containing only %s before starting work',
+    async (field) => {
+      const { service, input } = await setupActionPlanOnly();
+      expect(() => service.planAndStartAction({
+        ...input,
+        [field]: field === 'researchPlanRevision' ? 1 : 'parent',
+      })).toThrow('together');
+      expect(service.getSnapshot().currentAction).toBeUndefined();
+    },
+  );
+
+  it('retains local Plan revision freshness without a parent Research Plan', async () => {
+    const { service, actionPlan, input } = await setupActionPlanOnly();
+    const action = service.planAction(input);
+    wire.dispatch(planRevision({
+      id: actionPlan.planId, version: 2, path: 'plan/revision-2.md', sha256: 'b'.repeat(64), bytes: 1,
+    }));
+    expect(() => { service.startAction(action.actionId); }).toThrow('stale local Action Plan revision');
+    expect(service.getSnapshot().currentAction?.status).toBe('planned');
+  });
+
+  it('retains Question freshness without a parent Research Plan', async () => {
+    const { service, question, input } = await setupActionPlanOnly();
+    const action = service.planAction(input);
+    service.updateQuestion({ questionId: question.id, assessment: 'A new source changes the comparison.' });
+    expect(() => { service.startAction(action.actionId); }).toThrow('stale Research context');
+    expect(service.getSnapshot().currentAction?.status).toBe('planned');
+  });
+
+  it('enforces capabilities and plan freshness on tools owned by a local-only reviewed action', async () => {
+    const { service, input, actionPlan, executor } = await setupActionPlanOnly();
+    service.planAndStartAction({ ...input, allowedToolKinds: ['workspace_read'] });
+    const read = await executor.fireBeforeExecute(makeToolHookContext('Read', { path: 'derivation.md' }));
+    expect(read?.veto).toBeUndefined();
+    const denied = await executor.fireBeforeExecute(makeToolHookContext('WebSearch', { query: 'new work' }));
+    expect(denied?.veto?.output).toContain('does not grant capability web_search');
+    wire.dispatch(planRevision({
+      id: actionPlan.planId, version: 2, path: 'plan/revision-2.md', sha256: 'b'.repeat(64), bytes: 1,
+    }));
+    const stale = await executor.fireBeforeExecute(makeToolHookContext('Read', { path: 'derivation.md' }));
+    expect(stale?.veto?.output).toContain('stale local Action Plan revision');
+  });
+
+  it.each(['active', 'paused'] as const)('does not force a full Research Plan merely because a Goal is %s', async (status) => {
+    const { service, input } = await setupActionPlanOnly(makeGoalSnapshot(status, 3));
+    expect(service.planAndStartAction(input).status).toBe('in_progress');
+    expect(service.getResearchPlanV2()).toBeNull();
+    expect(service.getSnapshot().researchGoal?.status).toBe(status);
+  });
+
+  it('does not omit a still-active Research Plan when executing a reviewed local plan', async () => {
+    const { service, plan, question } = await setupResearchPlanV2();
+    const actionPlan = await finalizeReviewedActionPlan(service, plan, question.id);
+    expect(() => service.planAndStartAction({
+      questionId: question.id, lineSlug: 'main', kind: 'derivation',
+      purpose: 'A non-trivial action under the existing Research Plan.',
+      expectedEvidence: ['One checked equality'], stopCondition: 'Stop at the comparison.',
+      planningLevel: 'planned', actionPlanId: actionPlan.planId, actionPlanRevision: 1,
+    })).toThrow('current Research Plan');
+    expect(service.getSnapshot().currentAction).toBeUndefined();
+  });
+
+  it.each(['draft', 'completed', 'discarded'] as const)('handles a %s parent without silently binding or bypassing it', async (status) => {
+    const { service, plan, question, active } = await setupResearchPlanV2();
+    wire.dispatch(researchPutPlanV2({
+      ...active,
+      status,
+      revision: active.revision + 1,
+      updatedAt: active.updatedAt + 1,
+      milestones: active.milestones.map((milestone) => ({ ...milestone, evidenceRequirements: [...milestone.evidenceRequirements] })),
+      evidenceRequirements: [...active.evidenceRequirements],
+      decisionPoints: active.decisionPoints.map((decision) => ({ ...decision })),
+      assumptions: [...active.assumptions], stopConditions: [...active.stopConditions], replanConditions: [...active.replanConditions],
+    }));
+    expect(service.getResearchPlanV2()?.status).toBe(status);
+    const actionPlan = await finalizeReviewedActionPlan(service, plan, question.id);
+    const input = {
+      questionId: question.id, lineSlug: 'main', kind: 'derivation' as const,
+      purpose: 'Review the next bounded comparison.', stopCondition: 'Stop after the comparison.',
+      planningLevel: 'planned' as const, actionPlanId: actionPlan.planId, actionPlanRevision: 1,
+    };
+    if (status === 'draft') {
+      expect(() => service.planAndStartAction(input)).toThrow('current Research Plan');
+    } else {
+      const action = service.planAndStartAction(input);
+      expect(action.status).toBe('in_progress');
+      expect(action.researchPlanBinding).toBeUndefined();
+      expect(service.getResearchPlanV2()?.status).toBe(status);
+    }
+  });
+
+  it('accepts a local-only reviewed plan at the model tool boundary without accepting partial parent bindings', () => {
+    const input = {
+      kind: 'derivation', purpose: 'Compare the two candidate conventions.',
+      expected_evidence: ['One checked limit'], stop_condition: 'Stop after the comparison.',
+      planning_level: 'planned', action_plan_id: 'local-plan', action_plan_revision: 1,
+    };
+    expect(BeginResearchActionInputSchema.safeParse(input).success).toBe(true);
+    expect(BeginResearchActionInputSchema.safeParse({ ...input, milestone_id: 'm1' }).success).toBe(false);
+    expect(BeginResearchActionInputSchema.safeParse({ ...input, action_plan_revision: undefined }).success).toBe(false);
+  });
 
   it('persists planning policy with optimistic concurrency and keeps same-policy writes idempotent', async () => {
     const modeSvc = await buildRealModeService();

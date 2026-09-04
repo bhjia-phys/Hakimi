@@ -3,13 +3,18 @@
  *
  * Tracks the current main-agent Research turn lease. A typed user intent gets
  * an `interactive_research` lease; a typed Goal-owned continuation intent gets
- * an `autonomous_research` lease. Both require active, ready Research Mode and
- * a running loop. The autonomous intent is a post-guard capability produced
- * only by the Goal continuation engine after its participants allow enqueue;
+ * an `autonomous_research` lease. User-directed provisional exploration also
+ * runs with degraded AITP; autonomous admission still requires ready mode.
+ * Both require active Research Mode and a running loop. The autonomous intent
+ * is a post-guard capability produced only by the Goal continuation engine
+ * after its participants allow enqueue;
  * admission never creates or schedules a continuation. System / subagent /
- * cron / unclassified turns abstain. The lease is transient: acquired at
- * `turn.started`, released at `turn.ended`, and never persisted. A cold restore
- * starts with no lease and recomputes it at the next turn. Subagent instances
+ * cron / unclassified turns abstain. The lease is transient: a live typed user
+ * turn can acquire it after mode entry settles without another prompt. Mode
+ * changes revoke an autonomous lease but never mint or revive one; only a new
+ * guarded Goal turn can do that. Leases are released at `turn.ended` and never
+ * persisted. A cold restore starts with no lease and recomputes it at the next
+ * turn. Subagent instances
  * stay inert. Bound at Agent scope.
  */
 
@@ -56,10 +61,13 @@ export function resolveResearchTurnLease(
   intent: TurnIntent | undefined,
   mode: Pick<IAgentAitpModeService, 'isActive' | 'phase' | 'loopStatus'>,
 ): ResearchTurnLease {
-  if (!mode.isActive || mode.phase !== 'ready' || mode.loopStatus !== 'active') {
+  if (!mode.isActive || mode.loopStatus !== 'active') {
     return 'none';
   }
-  if (intent?.kind === 'user') return 'interactive_research';
+  if (intent?.kind === 'user' && (mode.phase === 'ready' || mode.phase === 'degraded')) {
+    return 'interactive_research';
+  }
+  if (mode.phase !== 'ready') return 'none';
   if (intent?.kind === 'goal_continuation' && intent.owner === 'goal') {
     return 'autonomous_research';
   }
@@ -71,6 +79,7 @@ export class ResearchTurnAdmission extends Service implements IResearchTurnAdmis
 
   private admittedTurnId: number | null = null;
   private lease: ResearchTurnLease = 'none';
+  private userTurn = false;
 
   constructor(
     @IEventBus eventBus: IEventBus,
@@ -89,6 +98,14 @@ export class ResearchTurnAdmission extends Service implements IResearchTurnAdmis
         this.onTurnEnded(event);
       }),
     );
+    this._register(eventBus.subscribe('aitp_mode.updated', () => {
+      if (this.admittedTurnId === null) return;
+      if (this.userTurn) {
+        this.lease = resolveResearchTurnLease({ kind: 'user' }, this.mode);
+      } else if (!this.mode.isActive || this.mode.phase !== 'ready' || this.mode.loopStatus !== 'active') {
+        this.lease = 'none';
+      }
+    }));
   }
 
   leaseForTurn(turnId: number): ResearchTurnLease {
@@ -109,6 +126,7 @@ export class ResearchTurnAdmission extends Service implements IResearchTurnAdmis
 
   private onTurnStarted(event: TurnStartedEvent): void {
     this.admittedTurnId = event.turnId;
+    this.userTurn = event.intent?.kind === 'user';
     this.lease = resolveResearchTurnLease(event.intent, this.mode);
   }
 
@@ -116,5 +134,6 @@ export class ResearchTurnAdmission extends Service implements IResearchTurnAdmis
     if (this.admittedTurnId !== event.turnId) return;
     this.admittedTurnId = null;
     this.lease = 'none';
+    this.userTurn = false;
   }
 }

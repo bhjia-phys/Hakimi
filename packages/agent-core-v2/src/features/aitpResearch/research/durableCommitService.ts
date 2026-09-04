@@ -1,7 +1,7 @@
 /**
  * `aitpResearch` domain — durable checkpoint verification implementation.
  *
- * Verifies that a saved AITP Entry is the expected active Entry and compares
+ * Returns the scoped active AITP Entry for candidate identity checks and compares
  * the post-save check with the pre-save baseline, allowing unchanged legacy
  * errors while rejecting newly introduced errors. It performs no Research wire
  * mutations; the Research service decides whether the verified receipt may
@@ -13,6 +13,7 @@ import { AitpResearchError, AitpResearchErrors } from '../errors';
 import { ISessionAitpAdapter } from '../adapter/sessionAitpAdapter';
 import type {
   AitpCheckReport,
+  AitpShowResult,
   ResearchCheckpointCheckReceipt,
 } from '../types';
 
@@ -35,7 +36,7 @@ export class DurableCommitService extends Service implements IDurableCommitServi
     entryId: string,
     expectedWorkstream: string,
     expectedTopicId: string,
-  ): Promise<void> {
+  ): Promise<AitpShowResult> {
     try {
       const shown = await this.adapter.show({ id: entryId });
       if (shown.id !== entryId || shown.status !== 'active') {
@@ -62,6 +63,7 @@ export class DurableCommitService extends Service implements IDurableCommitServi
           `AITP entry ${entryId} belongs to Topic ${String(shown.frontmatter['topic'])}, not captured Topic ${expectedTopicId}`,
         );
       }
+      return shown;
     } catch (error) {
       throw this.asBarrierError(error);
     }

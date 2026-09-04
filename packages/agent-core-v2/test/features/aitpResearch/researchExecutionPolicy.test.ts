@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   classifyResearchTool,
+  isResearchRecordInspection,
   researchCapabilityGranted,
 } from '#/features/aitpResearch/research/researchExecutionPolicy';
 
@@ -44,6 +45,41 @@ describe('Research execution capability policy', () => {
     if (classified.kind !== 'work') throw new Error('Expected work classification');
     expect(researchCapabilityGranted(['workspace_read'], 'mcp__papers__lookup', classified.capability)).toBe(false);
     expect(researchCapabilityGranted(['tool:mcp__papers__lookup'], 'mcp__papers__lookup', classified.capability)).toBe(true);
+  });
+
+  it.each([
+    ['Read', { path: '.aitp/topic/notes/note-abc123.md' }],
+    ['Read', { path: './.aitp/topic/notes/note-with-id.md', limit: 80 }],
+    ['Grep', { path: '.aitp/topic/', pattern: '^> method-card:' }],
+    ['Grep', { path: './.aitp/topic/notes', pattern: '^> method-card:', output_mode: 'files_with_matches' }],
+    ['Grep', { path: '.aitp/topic', pattern: '^> method-observation:' }],
+    ['Grep', { path: '.aitp/topic/entries/', pattern: '^> method-observation:' }],
+  ])('permits only narrow recorded-knowledge inspection: %s %j', (toolName, args) => {
+    expect(isResearchRecordInspection(toolName, args)).toBe(true);
+  });
+
+  it.each([
+    ['Read', undefined],
+    ['Read', { path: '/other/.aitp/topic/notes/note-abc.md' }],
+    ['Read', { path: '../.aitp/topic/notes/note-abc.md' }],
+    ['Read', { path: '.aitp/local/../topic/notes/note-abc.md' }],
+    ['Read', { path: '.aitp/topic/notes/note-../../secret.md' }],
+    ['Read', { path: '.aitp/topic/entries/entry-abc.md' }],
+    ['Read', { path: '.aitp/topic/TOPIC.md' }],
+    ['Read', { path: 'paper.md' }],
+    ['Edit', { path: '.aitp/topic/notes/note-abc.md' }],
+    ['Write', { path: '.aitp/topic/notes/note-abc.md' }],
+    ['Bash', { command: 'rg "^> method-card:" .aitp/topic/' }],
+    ['Grep', { pattern: '^> method-card:' }],
+    ['Grep', { path: '/other/.aitp/topic', pattern: '^> method-card:' }],
+    ['Grep', { path: '.aitp/topic', pattern: '.*' }],
+    ['Grep', { path: '.aitp/topic', pattern: '^> method-card:', output_mode: 'content' }],
+    ['Grep', { path: '.aitp/topic', pattern: '^> method-card:', output_mode: 'count_matches' }],
+    ['Grep', { path: '.aitp/topic/entries', pattern: '^> method-card:' }],
+    ['Grep', { path: '.aitp/topic/notes', pattern: '^> method-observation:' }],
+    ['mcp__fs__read', { path: '.aitp/topic/notes/note-abc.md' }],
+  ])('does not expand inspection into other work: %s %j', (toolName, args) => {
+    expect(isResearchRecordInspection(toolName, args)).toBe(false);
   });
 
   it('accepts canonical capabilities, legacy tool aliases, and exact tool grants only', () => {

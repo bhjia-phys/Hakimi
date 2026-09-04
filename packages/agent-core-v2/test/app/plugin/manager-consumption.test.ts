@@ -12,10 +12,15 @@ import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PluginManager } from '#/app/plugin/manager';
+import { discoverFileSkills } from '#/app/skillCatalog/fileSkillDiscovery';
+import { HostFileSystem } from '#/os/backends/node-local/hostFsService';
+import { discoverAgentFiles } from '#/workspace/workspaceAgentProfileLoader/internal/agentFileDiscovery';
+import { agentProfileFromFile } from '#/workspace/workspaceAgentProfileLoader/internal/agentProfileFromFile';
 
 import { stubSkill } from '../skillCatalog/stubs';
 
@@ -164,6 +169,67 @@ describe('PluginManager consumption plane', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+  });
+
+  it('installs the official theory-physics handbook with discoverable skill and intact references', async () => {
+    const home = await makeKimiHome();
+    const source = fileURLToPath(new URL('../../../../../plugins/official/theory-physics/', import.meta.url));
+    try {
+      const manager = new PluginManager({ kimiHomeDir: home });
+      await manager.load();
+      await manager.install(source);
+      const installed = await managedPluginRoot(manager, 'theory-physics');
+      expect(installed).not.toBe(await realpath(source));
+      const manifest = JSON.parse(await readFile(path.join(installed, 'kimi.plugin.json'), 'utf8'));
+      const marketplace = JSON.parse(await readFile(path.resolve(source, '../../marketplace.json'), 'utf8'));
+      expect(marketplace.plugins.find((entry: { id: string }) => entry.id === 'theory-physics')?.version)
+        .toBe(manifest.version);
+
+      const discovered = await discoverFileSkills(manager.pluginSkillRoots());
+      expect(discovered.skipped).toEqual([]);
+      expect(discovered.skills).toHaveLength(1);
+      const skill = discovered.skills[0]!;
+      expect(skill.name).toBe('theory-physics');
+      expect(skill.content).toContain('A scientific loop may span several bounded Actions and turns.');
+      const files = [
+        'skills/theory-physics/SKILL.md',
+        'references/research-routing.md',
+        'references/evidence-reporting.md',
+        'references/calculation-delegation.md',
+        'agents/calculation-operator.md',
+      ];
+      for (const file of files) {
+        expect(await readFile(path.join(installed, file), 'utf8'))
+          .toBe(await readFile(path.join(source, file), 'utf8'));
+      }
+      for (const reference of ['research-routing.md', 'evidence-reporting.md', 'calculation-delegation.md']) {
+        const relativePath = `../../references/${reference}`;
+        expect(skill.content).toContain(relativePath);
+        await expect(readFile(path.resolve(path.dirname(skill.path), relativePath), 'utf8'))
+          .resolves.toBe(await readFile(path.join(source, 'references', reference), 'utf8'));
+      }
+      const agents = await discoverAgentFiles(new HostFileSystem(), manager.pluginAgentRoots());
+      expect(agents.skipped).toEqual([]);
+      expect(agents.agents).toHaveLength(1);
+      const operator = agents.agents[0]!;
+      expect(operator.name).toBe('calculation-operator');
+      expect(operator.source).toBe('plugin');
+      expect(operator.path).toBe(path.join(installed, 'agents/calculation-operator.md'));
+      const profile = agentProfileFromFile(operator, () => ({
+        text: 'base prompt',
+        environment: { cwd: installed, date: { disclosed: false } },
+      }));
+      expect(profile.tools).toEqual(['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write']);
+      expect(profile.subagents).toEqual([]);
+      expect(profile.modelPreference).toBeUndefined();
+      await manager.setEnabled('theory-physics', false);
+      expect(manager.pluginAgentRoots()).toEqual([]);
+      await manager.setEnabled('theory-physics', true);
+      expect((await discoverAgentFiles(new HostFileSystem(), manager.pluginAgentRoots())).agents)
+        .toEqual(agents.agents);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 
   it('pluginSkillRoots() returns only enabled plugins skills paths', async () => {

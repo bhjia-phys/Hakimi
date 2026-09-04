@@ -1901,6 +1901,24 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
         actionPlanId: 'action-plan-1',
         actionPlanRevision: 1,
       }));
+      await session.commandResearch({
+        kind: 'begin_action',
+        actionKind: 'derivation',
+        purpose: 'Compare two conventions using a reviewed local plan.',
+        stopCondition: 'Stop after the limiting-case comparison.',
+        planningLevel: 'planned',
+        actionPlanId: 'local-plan',
+        actionPlanRevision: 1,
+      });
+      expect(planAndStart).toHaveBeenLastCalledWith(expect.objectContaining({
+        kind: 'derivation',
+        planningLevel: 'planned',
+        researchPlanId: undefined,
+        researchPlanRevision: undefined,
+        milestoneId: undefined,
+        actionPlanId: 'local-plan',
+        actionPlanRevision: 1,
+      }));
     } finally {
       await session.close();
       await client.close();

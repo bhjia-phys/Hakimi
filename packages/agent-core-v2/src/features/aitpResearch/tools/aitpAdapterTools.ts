@@ -10,7 +10,9 @@
  * are validated against the canonical regex; workstream arrays reject
  * empty and duplicate elements. Checkpoint-bound record saves derive the
  * AITP 0.9 atomic Topic/exact-workstream preconditions from the captured
- * binding rather than accepting model-supplied expectations. String parameters reject whitespace-only input.
+ * binding rather than accepting model-supplied expectations. Note tools use the
+ * Research service's execution-time source scope and draft ownership checks;
+ * they do not promise AITP Note atomic compare-and-save. String parameters reject whitespace-only input.
  * Bound at Agent scope.
  */
 
@@ -718,6 +720,7 @@ export class AitpNotePrepareTool implements IAitpNotePrepareTool {
   constructor(
     @ISessionAitpAdapter private readonly adapter: ISessionAitpAdapter,
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+    @IAgentResearchService private readonly research: IAgentResearchService,
   ) {}
 
   resolveExecution(args: AitpNotePrepareInput): ToolExecution {
@@ -730,7 +733,7 @@ export class AitpNotePrepareTool implements IAitpNotePrepareTool {
         const werr = requireReadyStrict(this.mode, this.adapter);
         if (werr !== undefined) return errorResult(werr);
         try {
-          const result = await this.adapter.notePrepare({
+          const result = await this.research.prepareReviewNote({
             mode: args.mode,
             title: args.title,
             createdBy: args.created_by,
@@ -764,6 +767,7 @@ export class AitpNoteSaveTool implements IAitpNoteSaveTool {
   constructor(
     @ISessionAitpAdapter private readonly adapter: ISessionAitpAdapter,
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+    @IAgentResearchService private readonly research: IAgentResearchService,
   ) {}
 
   resolveExecution(args: AitpNoteSaveInput): ToolExecution {
@@ -776,7 +780,7 @@ export class AitpNoteSaveTool implements IAitpNoteSaveTool {
         const werr = requireReadyStrict(this.mode, this.adapter);
         if (werr !== undefined) return errorResult(werr);
         try {
-          const result = await this.adapter.noteSave({
+          const result = await this.research.saveReviewNote({
             draftPath: args.draft_path,
             signal,
           });

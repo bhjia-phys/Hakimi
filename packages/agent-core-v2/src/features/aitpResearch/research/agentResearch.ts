@@ -10,11 +10,18 @@
  * boundaries), and the `ResearchStatusSnapshot`. Research working
  * state follows conversation undo through the checkpointed `ResearchModel`;
  * the committed cursor does not — once a checkpoint is committed to AITP,
- * conversation undo cannot retract that external fact. Bound at Agent scope.
+ * conversation undo cannot retract that external fact. Note I/O requires live
+ * verified-commit ownership or a fresh bounded Action with verified canonical
+ * basis Entries; restored cursors alone confer no draft permission.
+ * Bound at Agent scope.
  */
 
 import { createDecorator } from '#/_base/di/instantiation';
 import type { AwaitingHumanExitPhase } from '#/features/research/types';
+import type {
+  AitpAdapterNotePrepareOptions,
+  AitpAdapterNoteSaveOptions,
+} from '../adapter/sessionAitpAdapter';
 
 import type { ResearchEvidencePacket, ResearchEvidenceReview } from './evidencePacket';
 import type {
@@ -54,6 +61,8 @@ import type {
   AitpAuthority,
   ResearchCommitProvenance,
   ResearchDurableCommitCandidate,
+  AitpNotePrepareResult,
+  AitpNoteSaveResult,
 } from '../types';
 
 export interface CreateQuestionInput {
@@ -308,6 +317,8 @@ export interface IAgentResearchService {
   ): ResearchCheckpoint;
   discardHistoricalCheckpoint(input: DiscardHistoricalCheckpointInput): ResearchCheckpoint;
   commitCheckpoint(input: CommitCheckpointInput): Promise<CommitCheckpointResult>;
+  prepareReviewNote(input: AitpAdapterNotePrepareOptions): Promise<AitpNotePrepareResult>;
+  saveReviewNote(input: AitpAdapterNoteSaveOptions): Promise<AitpNoteSaveResult>;
 
   planAction(input: PlanActionInput): ResearchActionSpec;
   planAndStartAction(input: PlanActionInput): ResearchActionSpec;

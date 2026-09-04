@@ -66,7 +66,15 @@
  * registers an `onBeforeExecuteTool` veto that blocks AITP mutation tools on
  * subagents and makes action capability ownership executor-authoritative for
  * main-agent work tools while Research Mode is active. Goal is the sole
- * continuation owner. Bound at Agent scope.
+ * continuation owner. Post-commit Note I/O rechecks an ephemeral context captured
+ * from the verified checkpoint's exact Line/Topic/workstream confirmation at
+ * actual tool execution. Only its prepared draft gets local edit/save access;
+ * scope changes, mode unavailability, undo and restore revoke that context.
+ * Local Line rebinding waits for in-flight Note I/O. This is not an atomic AITP
+ * Note compare-and-save contract or a recoverable distillation coordinator.
+ * Degraded AITP permits provisional action-scoped work on admitted turns but
+ * never grants canonical persistence, autonomous admission or Goal completion.
+ * Bound at Agent scope.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -87,11 +95,12 @@ import { IAgentPlanService } from '#/features/plan/plan';
 import { IEventBus } from '#/app/event/eventBus';
 import { IWireService } from '#/wire/wire';
 import { denyToolExecution } from '#/agent/toolExecutor/beforeToolExecuteEvent';
-import type {
-  BeforeToolExecuteEvent,
-  ToolDidExecuteContext,
-} from '#/agent/toolExecutor/toolHooks';
-import { ISessionAitpAdapter } from '#/features/aitpResearch/adapter/sessionAitpAdapter';
+import type { BeforeToolExecuteEvent } from '#/agent/toolExecutor/toolHooks';
+import {
+  ISessionAitpAdapter,
+  type AitpAdapterNotePrepareOptions,
+  type AitpAdapterNoteSaveOptions,
+} from '#/features/aitpResearch/adapter/sessionAitpAdapter';
 import { ISessionAitpLifecycleCoordinator } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
 import { AitpResearchError, AitpResearchErrors } from '#/features/aitpResearch/errors';
 import { IResearchTurnAdmission } from '#/features/aitpResearch/loop/researchTurnAdmission';
@@ -99,6 +108,7 @@ import type {
   HumanSteeringCommand,
   ResearchActionSpec,
   AitpCheckReport,
+  AitpShowResult,
   AitpModePhase,
   ResearchCheckpoint,
   ResearchCheckpointCheckReceipt,
@@ -134,6 +144,8 @@ import type {
   ResearchLineWorkstreamBinding,
   ResearchDurableCommitCandidate,
   ResearchDistillationAttention,
+  AitpNotePrepareResult,
+  AitpNoteSaveResult,
 } from '#/features/aitpResearch/types';
 import type { GoalSnapshot } from '#/agent/goal/types';
 import {
@@ -220,6 +232,7 @@ import {
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
 import {
   classifyResearchTool,
+  isResearchRecordInspection,
   researchCapabilityGranted,
   type ResearchExecutionCapability,
 } from './researchExecutionPolicy';
@@ -321,6 +334,13 @@ function isCompatiblePrepareReceiptTransition(
 const AUTO_PERMISSION_MODE_STANDING_APPROVAL =
   'Standing auto permission applied: no new human response was required for this action approval.';
 
+interface ResearchNoteReviewContext {
+  readonly owner:
+    | { readonly kind: 'checkpoint'; readonly checkpointId: string; readonly entryId: string }
+    | { readonly kind: 'action'; readonly actionId: string; readonly entryIds: readonly string[] };
+  readonly workstreamBinding: ResearchLineWorkstreamBinding;
+}
+
 export class AgentResearchService extends Service implements IAgentResearchService {
   declare readonly _serviceBrand: undefined;
 
@@ -331,9 +351,10 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   private researchPlanMutationTail: Promise<void> = Promise.resolve();
   private lastModeActive: boolean;
   private reservedResearchRevision = 0;
+  private noteReviewContext?: ResearchNoteReviewContext;
+  private notePersistenceInFlight = false;
   private distillationDraftLease?: {
-    readonly checkpointId: string;
-    readonly entryId: string;
+    readonly context: ResearchNoteReviewContext;
     readonly path: string;
   };
 
@@ -380,23 +401,16 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         this.guardToolExecution(event);
       }),
     );
-    if (toolExecutor.hooks?.onDidExecuteTool !== undefined) {
-      this._register(toolExecutor.hooks.onDidExecuteTool.register(
-        'aitp-research-distillation-draft-lease',
-        async (ctx, next) => {
-          await next();
-          this.updateDistillationDraftLease(ctx);
-        },
-      ));
-    }
     this._register(
       this.eventBus.subscribe('research.revision_advanced', ({ notifyGoal }) => {
+        this.revokeStaleNoteReview();
         this.eventBus.publish({ type: 'research.updated', snapshot: this.getSnapshot() });
         if (notifyGoal) this.requestGoalContinuationRetry();
       }),
     );
     this._register(
       this.eventBus.subscribe('research.distillation_attention_updated', () => {
+        this.revokeStaleNoteReview();
         this.publishResearchUpdated(false);
       }),
     );
@@ -414,7 +428,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this._register(
       this.eventBus.subscribe('aitp_mode.updated', () => {
         const modeActive = this.mode.isActive;
-        if (!modeActive) this.distillationDraftLease = undefined;
+        this.revokeStaleNoteReview();
         if (!this.lastModeActive && modeActive && !this.wire.isRestoring()) {
           const state = this.wire.getModel(ResearchModel).current;
           if (state.program !== null || state.goalProgramBinding !== null) {
@@ -443,12 +457,13 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this._register(
       this.wire.hooks.onDidRestore.register('researchReconcile', async (_ctx, next) => {
         await next();
-        this.distillationDraftLease = undefined;
+        this.clearNoteReview();
         if (!this.resumeActionWithAutoStandingApproval()) this.reconcile();
       }),
     );
     this._register(
       this.eventBus.subscribe('context.undone', () => {
+        this.clearNoteReview();
         // Undo has already restored the checkpointed mode model. Capture that
         // baseline before the mode service's asynchronous fresh observation
         // publishes, so an inactive -> active replay is not mistaken for a
@@ -2132,10 +2147,11 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     }
     await this.reconcileCheckpointWorkstreamForCommit(pending);
     try {
+      let shown: AitpShowResult;
       if (this.durable !== undefined) {
-        await this.durable.verifyEntry(input.entryId, checkpointWorkstream, checkpointTopicId);
+        shown = await this.durable.verifyEntry(input.entryId, checkpointWorkstream, checkpointTopicId);
       } else {
-        const shown = await this.adapter.show({ id: input.entryId });
+        shown = await this.adapter.show({ id: input.entryId });
         const workstreams = shown.frontmatter?.['workstreams'];
         if (
           shown.id !== input.entryId ||
@@ -2151,6 +2167,18 @@ export class AgentResearchService extends Service implements IAgentResearchServi
             `AITP entry ${input.entryId} was not returned as an active matching entry for Topic ${checkpointTopicId} and workstream ${checkpointWorkstream}`,
           );
         }
+      }
+      const candidate = pending.commitCandidate;
+      if (
+        candidate !== undefined &&
+        (shown.frontmatter?.['kind'] !== candidate.entryKind ||
+          shown.frontmatter?.['authority'] !== candidate.authority ||
+          shown.frontmatter?.['created_by'] !== (candidate.authority === 'agent' ? 'agent:main' : undefined))
+      ) {
+        throw new AitpResearchError(
+          AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
+          `Saved AITP entry ${input.entryId} does not match the assessed candidate kind, authority, and creator. The saved Entry and receipt are retained; review the actual record before recovery.`,
+        );
       }
     } catch (error) {
       this.markCommitBarrierFailed(pending, error);
@@ -2303,8 +2331,107 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         `Checkpoint ${input.checkpointId} could not be committed without overwriting state`,
       );
     }
+    this.clearNoteReview();
+    if (afterPending.workstreamBinding !== undefined) {
+      this.noteReviewContext = {
+        owner: { kind: 'checkpoint', checkpointId: input.checkpointId, entryId: input.entryId },
+        workstreamBinding: { ...afterPending.workstreamBinding },
+      };
+    }
     this.publishResearchUpdated();
     return { status: 'committed' };
+  }
+
+  async prepareReviewNote(input: AitpAdapterNotePrepareOptions): Promise<AitpNotePrepareResult> {
+    const args = { workstreams: input.workstreams };
+    return this.persistReviewNote('aitp_note_prepare', args, input.signal, async (context) => {
+      const result = await this.adapter.notePrepare(input);
+      const path = normalizeResearchPath(result.path);
+      this.assertNoteReviewUnchanged(context, result);
+      if (path === undefined || !/^\.aitp\/local\/drafts\/note-[A-Za-z0-9_-]+\.md$/.test(path)) {
+        throw new AitpResearchError(
+          AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
+          `AITP Note prepare returned an unsupported draft path; no draft permission was granted: ${result.path}`,
+        );
+      }
+      this.distillationDraftLease = { context, path };
+      return result;
+    });
+  }
+
+  async saveReviewNote(input: AitpAdapterNoteSaveOptions): Promise<AitpNoteSaveResult> {
+    return this.persistReviewNote('aitp_note_save', { draft_path: input.draftPath }, input.signal, async (context) => {
+      const result = await this.adapter.noteSave(input);
+      this.distillationDraftLease = undefined;
+      this.assertNoteReviewUnchanged(context, result);
+      return result;
+    });
+  }
+
+  private async persistReviewNote<T>(
+    toolName: string,
+    args: unknown,
+    signal: AbortSignal | undefined,
+    execute: (context: ResearchNoteReviewContext) => Promise<T>,
+  ): Promise<T> {
+    this.assertMainAgent();
+    signal?.throwIfAborted();
+    const blocker = this.distillationPersistenceBlockerFor(toolName, args);
+    const context = this.currentNoteReviewContext()
+      ?? (toolName === 'aitp_note_prepare' ? this.actionNoteReviewCandidate() : undefined);
+    if (blocker !== undefined || context === undefined) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        blocker ?? 'No current verified handoff or bounded Note Action owns this Note.',
+      );
+    }
+    this.noteReviewContext = context;
+    this.notePersistenceInFlight = true;
+    try {
+      const observed = await this.mode.reconcileCurrentTopicBinding(context.workstreamBinding.lineSlug);
+      signal?.throwIfAborted();
+      if (!sameLineWorkstreamBinding(observed, context.workstreamBinding)) this.clearNoteReview();
+      this.assertNoteReviewUnchanged(context);
+      if (context.owner.kind === 'action') {
+        for (const entryId of context.owner.entryIds) {
+          const shown = await this.adapter.show({ id: entryId, signal });
+          signal?.throwIfAborted();
+          this.assertNoteReviewUnchanged(context);
+          const workstreams = shown.frontmatter?.['workstreams'];
+          if (
+            shown.id !== entryId || shown.status !== 'active' ||
+            shown.frontmatter?.['topic'] !== context.workstreamBinding.topicId ||
+            !Array.isArray(workstreams) ||
+            !workstreams.includes(context.workstreamBinding.workstream)
+          ) {
+            throw new AitpResearchError(
+              AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
+              `Note basis Entry ${entryId} is not active in the captured Topic/workstream. Reassess the selected evidence before preparing or saving this Note.`,
+            );
+          }
+        }
+      }
+      const result = await execute(context);
+      signal?.throwIfAborted();
+      return result;
+    } finally {
+      if (signal?.aborted === true) this.clearNoteReview();
+      this.notePersistenceInFlight = false;
+    }
+  }
+
+  private assertNoteReviewUnchanged(
+    context: ResearchNoteReviewContext,
+    result?: AitpNotePrepareResult | AitpNoteSaveResult,
+  ): void {
+    if (this.currentNoteReviewContext() === context) return;
+    this.clearNoteReview();
+    throw new AitpResearchError(
+      AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
+      result === undefined
+        ? 'The Note review scope changed before AITP Note I/O; no write permission remains. Recorded evidence is still available for inspection.'
+        : `The Note review scope changed during AITP Note I/O. The adapter reported ${JSON.stringify(result)}; inspect that artifact before retrying. No draft permission remains and no rollback is claimed.`,
+    );
   }
 
   private assertActionCanBePlanned(
@@ -2392,31 +2519,48 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       };
     }
     if (
-      input.researchPlanId === undefined ||
-      input.researchPlanRevision === undefined ||
-      input.milestoneId === undefined ||
       input.actionPlanId === undefined ||
       input.actionPlanRevision === undefined
     ) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
-        'A planned Research action requires Research Plan, milestone, and reviewed Action Plan revisions.',
+        'A planned Research action requires a reviewed Action Plan ID and revision.',
       );
     }
-    const researchPlan = this.requireResearchPlanV2(
-      input.researchPlanId,
-      input.researchPlanRevision,
-    );
-    if (
-      researchPlan.status !== 'active' ||
-      researchPlan.currentMilestoneId !== input.milestoneId
-    ) {
+    const parentProvided = input.researchPlanId !== undefined ||
+      input.researchPlanRevision !== undefined || input.milestoneId !== undefined;
+    const currentParent = this.getResearchPlanV2();
+    let researchPlanBinding: ResearchPlanV2ActionBinding | undefined;
+    if (parentProvided) {
+      if (
+        input.researchPlanId === undefined ||
+        input.researchPlanRevision === undefined ||
+        input.milestoneId === undefined
+      ) {
+        throw new AitpResearchError(
+          AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+          'Research Plan ID, revision, and milestone must be provided together.',
+        );
+      }
+      const researchPlan = this.requireResearchPlanV2(input.researchPlanId, input.researchPlanRevision);
+      if (researchPlan.status !== 'active' || researchPlan.currentMilestoneId !== input.milestoneId) {
+        throw new AitpResearchError(
+          AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+          `Research Plan ${researchPlan.planId} is not active on milestone ${input.milestoneId}.`,
+        );
+      }
+      this.assertResearchPlanV2BindingFresh(researchPlan);
+      researchPlanBinding = {
+        planId: researchPlan.planId,
+        planRevision: researchPlan.revision,
+        milestoneId: researchPlan.currentMilestoneId,
+      };
+    } else if (currentParent !== null && currentParent.status !== 'completed' && currentParent.status !== 'discarded') {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
-        `Research Plan ${researchPlan.planId} is not active on milestone ${input.milestoneId}.`,
+        'The current Research Plan must be active and explicitly bound to its current milestone before a planned action can begin.',
       );
     }
-    this.assertResearchPlanV2BindingFresh(researchPlan);
     const actionPlan = this.getResearchPlan();
     if (
       actionPlan === null ||
@@ -2448,11 +2592,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       );
     }
     return {
-      researchPlanBinding: {
-        planId: researchPlan.planId,
-        planRevision: researchPlan.revision,
-        milestoneId: researchPlan.currentMilestoneId,
-      },
+      researchPlanBinding,
       actionPlanBinding: {
         schema: 'hakimi/action-plan-binding-0.1',
         kind: 'reviewed_plan',
@@ -3129,12 +3269,12 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       desired.set(ALERT_FINGERPRINTS.degraded, {
         fingerprint: ALERT_FINGERPRINTS.degraded,
         kind: 'degraded',
-        classification: 'active_blocker',
+        classification: 'warning',
         source: 'adapter',
         state: 'active',
         message: this.mode.maintenanceDegradedReason === 'workstream_unbound'
-          ? 'AITP Research Mode is degraded because no research line is bound; set or switch to a research line before continuing.'
-          : 'AITP Research Mode is degraded; restore a ready adapter before continuing.',
+          ? 'AITP scoped persistence is unavailable without an explicit Line/workstream binding. User-directed bounded exploration remains provisional.'
+          : 'AITP persistence, automatic Goal continuation and completion are unavailable until the adapter is ready. User-directed bounded exploration remains provisional.',
         createdAt: now(),
       });
     } else if (this.mode.phase === 'ready') {
@@ -3307,7 +3447,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         classification: 'active_blocker',
         source: 'adapter',
         state: 'active',
-        message: 'AITP Research Mode is degraded; restore a ready adapter before continuing.',
+        message: 'AITP persistence, automatic Goal continuation and completion are unavailable until the adapter is ready. User-directed bounded exploration remains provisional.',
         createdAt: now(),
       }),
     );
@@ -3476,6 +3616,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   }
 
   private assertLineSwitchSafe(state: ResearchWorkingState, nextLineSlug: string): void {
+    this.assertNoNotePersistenceInFlight();
     const pending = state.pendingCheckpoint;
     if (pending !== null) {
       throw new AitpResearchError(
@@ -3595,6 +3736,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     state: ResearchWorkingState,
     lineSlug: string,
   ): void {
+    this.assertNoNotePersistenceInFlight();
     if (state.pendingCheckpoint?.lineSlug === lineSlug) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
@@ -3967,6 +4109,11 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       return;
     }
 
+    if (
+      this.mode.phase === 'ready' &&
+      isResearchRecordInspection(event.toolCall.name, event.args)
+    ) return;
+
     const checkpointDraft = this.checkpointDraftAccess(event);
     if (checkpointDraft === true) return;
     if (typeof checkpointDraft === 'string') {
@@ -3985,33 +4132,50 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     event: BeforeToolExecuteEvent,
     capability: ResearchExecutionCapability | `tool:${string}`,
   ): string | undefined {
-    if (this.mode.phase !== 'ready') {
-      return `Research action policy denied ${event.toolCall.name}: AITP Research Mode is ${this.mode.phase}; only status or recovery tools may run.`;
+    return this.actionScopeBlocker(
+      event.toolCall.name,
+      capability,
+      this.turnAdmission?.leaseForTurn(event.turnId),
+      event.toolCalls.some((call) => call.name === 'BeginResearchAction'),
+    );
+  }
+
+  private actionScopeBlocker(
+    toolName: string,
+    capability: ResearchExecutionCapability | `tool:${string}`,
+    lease: import('#/features/aitpResearch/loop/researchTurnAdmission').ResearchTurnLease | undefined,
+    beginsInBatch = false,
+  ): string | undefined {
+    if (this.mode.phase !== 'ready' && this.mode.phase !== 'degraded') {
+      return `Research action policy denied ${toolName}: AITP Research Mode is ${this.mode.phase}; only status or recovery tools may run.`;
     }
     if (this.mode.loopStatus !== 'active') {
-      return `Research action policy denied ${event.toolCall.name}: the Research Loop is paused.`;
+      return `Research action policy denied ${toolName}: the Research Loop is paused.`;
     }
-    if (this.turnAdmission?.leaseForTurn(event.turnId) === 'none' || this.turnAdmission === undefined) {
-      return `Research action policy denied ${event.toolCall.name}: this turn has no Research lease.`;
+    if (lease === 'none' || lease === undefined) {
+      return `Research action policy denied ${toolName}: this turn has no Research lease.`;
+    }
+    if (this.mode.phase === 'degraded' && lease !== 'interactive_research') {
+      return `Research action policy denied ${toolName}: AITP is degraded; only user-directed provisional exploration may run. Automatic Goal work is held.`;
     }
 
     const state = this.wire.getModel(ResearchModel).current;
     if (isUnresolvedHumanGate(state.humanGate)) {
-      return `Research action policy denied ${event.toolCall.name}: human gate ${state.humanGate.gateId} is unresolved.`;
+      return `Research action policy denied ${toolName}: human gate ${state.humanGate.gateId} is unresolved.`;
     }
-    if (event.toolCalls.some((call) => call.name === 'BeginResearchAction')) {
-      return `Research action policy denied ${event.toolCall.name}: BeginResearchAction and research work cannot share one tool batch. Begin the action first, then run its tools in the next batch.`;
+    if (beginsInBatch) {
+      return `Research action policy denied ${toolName}: BeginResearchAction and research work cannot share one tool batch. Begin the action first, then run its tools in the next batch.`;
     }
     const action = state.currentAction;
     if (action === null || action.status !== 'in_progress') {
-      return `Research action policy denied ${event.toolCall.name}: no in-progress ResearchAction owns this work. Begin one bounded action first.`;
+      return `Research action policy denied ${toolName}: no in-progress ResearchAction owns this work. Begin one bounded action first.`;
     }
     if (state.phase !== 'action_executing') {
-      return `Research action policy denied ${event.toolCall.name}: action ${action.actionId} is in progress but the Research phase is ${state.phase}.`;
+      return `Research action policy denied ${toolName}: action ${action.actionId} is in progress but the Research phase is ${state.phase}.`;
     }
     const currentLineSlug = this.wire.getModel(AitpModeModel).current.currentLineSlug;
     if (action.lineSlug !== undefined && action.lineSlug !== currentLineSlug) {
-      return `Research action policy denied ${event.toolCall.name}: action ${action.actionId} belongs to Research Line ${action.lineSlug}, not the current line ${currentLineSlug ?? 'none'}.`;
+      return `Research action policy denied ${toolName}: action ${action.actionId} belongs to Research Line ${action.lineSlug}, not the current line ${currentLineSlug ?? 'none'}.`;
     }
     const question = action.questionId === undefined
       ? undefined
@@ -4021,28 +4185,28 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       (question === undefined ||
         (action.lineSlug !== undefined && question.lineSlug !== action.lineSlug))
     ) {
-      return `Research action policy denied ${event.toolCall.name}: action ${action.actionId} has a stale Question or Line binding.`;
+      return `Research action policy denied ${toolName}: action ${action.actionId} has a stale Question or Line binding.`;
     }
     const line = action.lineSlug === undefined ? undefined : state.lines[action.lineSlug];
     if (
       action.lineSlug !== undefined &&
       (action.lineRevision === undefined || line?.revision !== action.lineRevision)
     ) {
-      return `Research action policy denied ${event.toolCall.name}: action ${action.actionId} cannot prove a fresh Research Line revision.`;
+      return `Research action policy denied ${toolName}: action ${action.actionId} cannot prove a fresh Research Line revision.`;
     }
     if (
       action.questionId !== undefined &&
       (action.questionRevision === undefined || question?.revision !== action.questionRevision)
     ) {
-      return `Research action policy denied ${event.toolCall.name}: action ${action.actionId} cannot prove a fresh Research Question revision.`;
+      return `Research action policy denied ${toolName}: action ${action.actionId} cannot prove a fresh Research Question revision.`;
     }
     try {
       this.assertActionPlanBindingsFresh(action);
     } catch (error) {
-      return `Research action policy denied ${event.toolCall.name}: ${error instanceof Error ? error.message : String(error)}`;
+      return `Research action policy denied ${toolName}: ${error instanceof Error ? error.message : String(error)}`;
     }
-    if (!researchCapabilityGranted(action.allowedToolKinds, event.toolCall.name, capability)) {
-      return `Research action policy denied ${event.toolCall.name}: action ${action.actionId} does not grant capability ${capability}. Start a correctly scoped action rather than widening it after execution begins.`;
+    if (!researchCapabilityGranted(action.allowedToolKinds, toolName, capability)) {
+      return `Research action policy denied ${toolName}: action ${action.actionId} does not grant capability ${capability}. Start a correctly scoped action rather than widening it after execution begins.`;
     }
     return undefined;
   }
@@ -4098,7 +4262,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       return `Research persistence denied ${event.toolCall.name}: AITP Research Mode is ${this.mode.phase}.`;
     }
     if (isCanonicalAitpPath(path)) {
-      return `Research persistence denied ${event.toolCall.name}: canonical AITP files must be accessed through AITP tools, never directly.`;
+      return `Research persistence denied ${event.toolCall.name}: canonical AITP files must be accessed through AITP tools, except Read of a workspace-relative .aitp/topic/notes/note-*.md. Read Entries with aitp_show; all canonical writes require AITP save.`;
     }
 
     const state = this.wire.getModel(ResearchModel).current;
@@ -4119,12 +4283,12 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       }
     }
 
-    const distillation = this.wire.getModel(ResearchDistillationModel).attention;
+    const context = this.currentNoteReviewContext();
     const lease = this.distillationDraftLease;
     if (
-      distillation?.status === 'review_requested' &&
-      lease?.checkpointId === distillation.checkpointId &&
-      lease.entryId === distillation.entryId &&
+      context !== undefined &&
+      lease?.context === context &&
+      !this.notePersistenceInFlight &&
       lease.path === path &&
       isLocalAitpDraftPath(path)
     ) {
@@ -4134,73 +4298,123 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   }
 
   private distillationPersistenceBlocker(event: BeforeToolExecuteEvent): string | undefined {
+    if (this.mode.phase !== 'ready') return this.distillationPersistenceBlockerFor(event.toolCall.name, event.args);
+    if (event.toolCalls.some((call) => call.name === 'BeginResearchAction')) {
+      return 'BeginResearchAction and Note persistence cannot share one tool batch. Begin the Action first.';
+    }
+    if (this.wire.getModel(ResearchModel).current.currentAction?.status === 'in_progress') {
+      const blocker = this.actionWorkBlocker(event, `tool:${event.toolCall.name.toLowerCase()}`);
+      if (blocker !== undefined) return blocker;
+    }
+    return this.distillationPersistenceBlockerFor(event.toolCall.name, event.args);
+  }
+
+  private distillationPersistenceBlockerFor(toolName: string, args: unknown): string | undefined {
     if (this.mode.phase !== 'ready') {
-      return `Research distillation persistence denied ${event.toolCall.name}: AITP Research Mode is ${this.mode.phase}.`;
+      return `Research distillation persistence denied ${toolName}: AITP Research Mode is ${this.mode.phase}.`;
     }
-    const attention = this.wire.getModel(ResearchDistillationModel).attention;
-    const cursor = this.externalFact.getCommittedCursor();
-    if (
-      attention?.status !== 'review_requested' ||
-      cursor?.checkpointId !== attention.checkpointId ||
-      cursor.entryId !== attention.entryId
-    ) {
-      return `Research distillation persistence denied ${event.toolCall.name}: no current post-commit distillation handoff owns this Note.`;
+    if (this.notePersistenceInFlight) {
+      return `Research distillation persistence denied ${toolName}: another Note persistence operation is in flight; wait for its result.`;
     }
-    if (event.toolCall.name === 'aitp_note_save') {
-      const draftPath = normalizeResearchPath(stringArg(event.args, 'draft_path'));
+    const context = this.currentNoteReviewContext()
+      ?? (toolName === 'aitp_note_prepare' ? this.actionNoteReviewCandidate() : undefined);
+    if (context === undefined) {
+      return `Research Note persistence denied ${toolName}: no current post-commit distillation handoff or bounded Note Action owns this Note. To organize existing evidence after restore, start one fresh Question-bound Action with canonical Entry IDs in evidenceRefs/falsifierRefs and exact tool:aitp_note_prepare and tool:aitp_note_save grants. Old attention never restores draft permission.`;
+    }
+    if (toolName === 'aitp_note_save') {
+      const draftPath = normalizeResearchPath(stringArg(args, 'draft_path'));
       const lease = this.distillationDraftLease;
       return draftPath !== undefined &&
         isLocalAitpDraftPath(draftPath) &&
-        lease?.checkpointId === attention.checkpointId &&
-        lease.entryId === attention.entryId &&
+        lease?.context === context &&
         lease.path === draftPath
         ? undefined
-        : `Research distillation persistence denied ${event.toolCall.name}: save only the exact draft returned by aitp_note_prepare for the current handoff.`;
+        : `Research distillation persistence denied ${toolName}: save only the exact draft returned by aitp_note_prepare for the current handoff.`;
     }
-    const alignment = this.getCurrentWorkstreamAlignment();
-    const workstreams = arrayStringArg(event.args, 'workstreams');
+    const workstreams = arrayStringArg(args, 'workstreams');
     if (
-      alignment?.status !== 'bound' ||
-      alignment.binding === undefined ||
       workstreams.length !== 1 ||
-      workstreams[0] !== alignment.binding.workstream
+      workstreams[0] !== context.workstreamBinding.workstream
     ) {
-      return `Research distillation persistence denied ${event.toolCall.name}: the Note must target exactly the current explicitly bound AITP workstream.`;
+      return `Research Note persistence denied ${toolName}: the Note must target exactly the current explicitly bound AITP workstream captured by its owner.`;
     }
     return undefined;
   }
 
-  private updateDistillationDraftLease(ctx: ToolDidExecuteContext): void {
+  private clearNoteReview(): void {
+    this.noteReviewContext = undefined;
+    this.distillationDraftLease = undefined;
+  }
+
+  private revokeStaleNoteReview(): void {
+    const context = this.noteReviewContext;
+    if (context === undefined) return;
+    const alignment = this.getCurrentWorkstreamAlignment();
     if (
-      this.scopeCtx.agentId !== MAIN_AGENT_ID ||
-      !this.mode.isActive
-    ) return;
-    if (ctx.toolCall.name === 'aitp_note_save') {
-      if (ctx.outcome === 'executed' && ctx.result.isError !== true) {
-        const path = normalizeResearchPath(stringArg(ctx.args, 'draft_path'));
-        if (path === this.distillationDraftLease?.path) this.distillationDraftLease = undefined;
-      }
+      !this.mode.isActive ||
+      this.mode.phase !== 'ready' ||
+      alignment?.status !== 'bound' ||
+      !sameLineWorkstreamBinding(alignment.binding, context.workstreamBinding)
+    ) {
+      this.clearNoteReview();
       return;
     }
-    if (
-      ctx.toolCall.name !== 'aitp_note_prepare' ||
-      ctx.outcome !== 'executed' ||
-      ctx.result.isError === true
-    ) return;
-    const attention = this.wire.getModel(ResearchDistillationModel).attention;
+    const owner = context.owner;
+    if (owner.kind === 'action') {
+      const candidate = this.actionNoteReviewCandidate();
+      if (candidate?.owner.kind !== 'action' || candidate.owner.actionId !== owner.actionId) this.clearNoteReview();
+      return;
+    }
     const cursor = this.externalFact.getCommittedCursor();
+    const state = this.wire.getModel(ResearchModel).current;
+    const attention = this.wire.getModel(ResearchDistillationModel).attention;
     if (
+      isLiveForegroundAction(state.currentAction) ||
+      cursor?.checkpointId !== owner.checkpointId || cursor.entryId !== owner.entryId ||
+      (attention?.checkpointId === owner.checkpointId &&
+        attention.entryId === owner.entryId && attention.status !== 'review_requested')
+    ) this.clearNoteReview();
+  }
+
+  private currentNoteReviewContext(): ResearchNoteReviewContext | undefined {
+    this.revokeStaleNoteReview();
+    const context = this.noteReviewContext;
+    if (context?.owner.kind === 'action') return context;
+    const attention = this.wire.getModel(ResearchDistillationModel).attention;
+    if (
+      context === undefined ||
       attention?.status !== 'review_requested' ||
-      cursor?.checkpointId !== attention.checkpointId ||
-      cursor.entryId !== attention.entryId
-    ) return;
-    const path = notePrepareResultPath(ctx.result.output);
-    if (path === undefined || !isLocalAitpDraftPath(path)) return;
-    this.distillationDraftLease = {
-      checkpointId: attention.checkpointId,
-      entryId: attention.entryId,
-      path,
+      context.owner.checkpointId !== attention.checkpointId ||
+      context.owner.entryId !== attention.entryId
+    ) return undefined;
+    return context;
+  }
+
+  private actionNoteReviewCandidate(): ResearchNoteReviewContext | undefined {
+    if (!this.mode.isActive || this.mode.phase !== 'ready') return undefined;
+    for (const toolName of ['aitp_note_prepare', 'aitp_note_save']) {
+      if (this.actionScopeBlocker(toolName, `tool:${toolName}`, this.turnAdmission?.currentLease()) !== undefined) return undefined;
+    }
+    const state = this.wire.getModel(ResearchModel).current;
+    if (state.pendingCheckpoint !== null) return undefined;
+    const action = state.currentAction;
+    const question = action?.questionId === undefined ? undefined : state.questions[action.questionId];
+    const alignment = this.getCurrentWorkstreamAlignment();
+    if (action === null || question === undefined || alignment?.status !== 'bound' || alignment.binding === undefined) return undefined;
+    const entryIds = [...new Set([...question.evidenceRefs, ...question.falsifierRefs])];
+    if (entryIds.length === 0) return undefined;
+    return {
+      owner: { kind: 'action', actionId: action.actionId, entryIds },
+      workstreamBinding: { ...alignment.binding },
     };
+  }
+
+  private assertNoNotePersistenceInFlight(): void {
+    if (!this.notePersistenceInFlight) return;
+    throw new AitpResearchError(
+      AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+      'A Note persistence operation is in flight; wait for its result before changing Research Line ownership.',
+    );
   }
 
   private guardGoalCompletion(
@@ -5007,19 +5221,6 @@ function normalizeResearchPath(path: string | undefined): string | undefined {
   if (path === undefined) return undefined;
   const normalized = posix.normalize(path.replaceAll('\\', '/'));
   return normalized.startsWith('./') ? normalized.slice(2) : normalized;
-}
-
-function notePrepareResultPath(output: unknown): string | undefined {
-  if (typeof output !== 'string') return undefined;
-  try {
-    const result = JSON.parse(output) as unknown;
-    if (result === null || typeof result !== 'object' || Array.isArray(result)) return undefined;
-    const record = result as Record<string, unknown>;
-    if (record['status'] !== 'prepared' || typeof record['path'] !== 'string') return undefined;
-    return normalizeResearchPath(record['path']);
-  } catch {
-    return undefined;
-  }
 }
 
 function isAitpPath(path: string): boolean {

@@ -7,7 +7,7 @@ export default {
     degraded: 'Degraded',
   },
   loop: {
-    active: 'Loop active',
+    active: 'Loop enabled',
     paused: 'Loop paused',
   },
   planningPolicy: 'Planning policy',
@@ -62,6 +62,7 @@ export default {
     test_action: 'Test / action',
     evaluate: 'Evaluate',
     record: 'Record',
+    waiting: 'Waiting',
     next_ready: 'Next / ready',
   },
   noLiveAction: 'No live action',

@@ -9,6 +9,7 @@
 import { createDecorator } from '#/_base/di/instantiation';
 
 import type {
+  AitpShowResult,
   ResearchCheckpointCheckReceipt,
 } from '../types';
 
@@ -24,7 +25,7 @@ export interface DurableCommitCheckResult {
 export interface IDurableCommitService {
   readonly _serviceBrand: undefined;
 
-  verifyEntry(entryId: string, expectedWorkstream: string, expectedTopicId: string): Promise<void>;
+  verifyEntry(entryId: string, expectedWorkstream: string, expectedTopicId: string): Promise<AitpShowResult>;
   checkAfterSave(input: DurableCommitCheckInput): Promise<DurableCommitCheckResult>;
 }
 

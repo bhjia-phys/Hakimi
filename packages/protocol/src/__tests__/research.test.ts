@@ -751,6 +751,14 @@ describe('aitpModeUpdatedEventSchema', () => {
 });
 
 describe('researchCommandRequestSchema', () => {
+  it('preserves a reviewed local-only Action Plan without manufacturing a parent binding', () => {
+    const input = {
+      kind: 'begin_action', actionKind: 'derivation', purpose: 'Compare two conventions.',
+      stopCondition: 'Stop after one limiting-case comparison.', planningLevel: 'planned',
+      actionPlanId: 'local-plan', actionPlanRevision: 1,
+    };
+    expect(researchCommandRequestSchema.parse({ command: input })).toEqual({ command: input });
+  });
   it('accepts an enter_mode command', () => {
     const parsed = researchCommandRequestSchema.parse({
       command: { kind: 'enter_mode', actor: 'user' },

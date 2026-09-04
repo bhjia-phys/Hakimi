@@ -187,6 +187,13 @@ function renderBrief(snapshot: ResearchStatusSnapshot): string {
   if (researchGoal !== undefined) {
     lines.push(`Hakimi Research Goal: ${researchGoal.objective}`);
     lines.push(`  status: ${researchGoal.status}`);
+    if (researchGoal.completionCriterion !== undefined) {
+      lines.push(`  Completion criterion: ${researchGoal.completionCriterion}`);
+    }
+    if (researchGoal.continuation !== undefined) {
+      lines.push(`  Continuation: ${researchGoal.continuation.state}` +
+        (researchGoal.continuation.reason === undefined ? '' : ` — ${researchGoal.continuation.reason}`));
+    }
   }
 
   if (snapshot.researchGoal !== undefined) {
@@ -300,8 +307,15 @@ function appendAttention(lines: string[], snapshot: ResearchStatusSnapshot): voi
   const candidate = snapshot.pendingCheckpoint?.commitCandidate;
   if (candidate !== undefined) {
     lines.push(
-      `Durable commit candidate: ${candidate.entryKind} / ${candidate.authority} / ${candidate.provenance}. Continue the existing prepare, fill, save, show/check, and checkpoint barrier; do not record the conclusion again.`,
+      `Durable commit candidate: ${candidate.entryKind} / ${candidate.authority} / ${candidate.provenance}. ` +
+      (snapshot.mode === 'degraded'
+        ? 'Retained locally, not yet committed to AITP. Resume this candidate after AITP is ready; do not repeat the conclusion or relabel it no_durable_delta.'
+        : 'Continue the existing prepare, fill, save, show/check, and checkpoint barrier; do not record the conclusion again.'),
     );
+  }
+
+  if (snapshot.mode === 'degraded') {
+    lines.push('Provisional research: user-directed bounded Actions may continue with their existing scope and tool permissions. AITP writes, automatic Goal continuation and completion remain blocked; do not claim recorded state is freshly verified or turn adapter repair into a repeated prerequisite for exploration.');
   }
 
   const receipt = snapshot.aitpMaintenance;
@@ -309,7 +323,7 @@ function appendAttention(lines: string[], snapshot: ResearchStatusSnapshot): voi
   if (receipt.status === 'degraded') {
     lines.push(receipt.degradedReason === 'workstream_unbound'
       ? 'AITP maintenance: degraded — no explicit Line-to-workstream binding is available.'
-      : 'AITP maintenance: degraded — restore a ready adapter before continuing.');
+      : 'AITP maintenance: degraded — restore a ready adapter before canonical persistence or automatic Goal continuation.');
     return;
   }
   const issues = maintenanceIssues(receipt);
@@ -326,7 +340,7 @@ function maintenanceIssues(receipt: AitpMaintenanceReceipt): readonly string[] {
     issues.push('Active entries are newer than the latest Working Note; review current state before following the previous handoff.');
   }
   if (receipt.unresolvedFailureCount > 0) {
-    issues.push(`${receipt.unresolvedFailureCount} unresolved failure(s).`);
+    issues.push(`${receipt.unresolvedFailureCount} unresolved failure(s). Historical context, not a current blocker unless separately classified as active.`);
   }
   if (receipt.nextAction !== undefined) {
     issues.push(`Next AITP action: ${receipt.nextAction}`);
@@ -441,7 +455,7 @@ function appendGuidance(
     '- In active Research Mode, allowed_tool_kinds is a runtime capability grant, not prose: use only workspace_read, workspace_write, web_search, web_fetch, shell, task, subagent, scheduler, or tool:<exact-tool-name>. BeginResearchAction and work tools must be in separate tool batches.',
   );
   lines.push(
-    '- Use planning_level=simple only for a reversible one-step action. A non-trivial action must use planning_level=planned and bind the active Research Plan version, current milestone, and finalized local Action Plan version.',
+    '- Use planning_level=simple for a small reversible action whose purpose, expected evidence, and stop condition are sufficient. Use planning_level=planned for work needing a reviewed multi-step local Action Plan. Bind its finalized version; if a non-terminal Research Plan exists, also bind its active version and current milestone. Local exploration needs no Goal or full Research Plan; do not invent either just to perform a bounded inquiry.',
   );
   lines.push(
     '- Update Research state only on a semantic change; resolve pending human gates with ResolveResearchDecision, and read AITP entries through aitp_show (never Read the Markdown file directly).',
@@ -463,6 +477,8 @@ function activeAlerts(
     alert.state !== 'cleared' &&
     alert.state !== 'superseded' &&
     alert.acknowledgedAt === undefined &&
+    alert.classification !== 'historical_unresolved' &&
+    alert.classification !== 'superseded_by_retry' &&
     (alert.lineSlug === undefined || alert.lineSlug === currentLineSlug),
   );
 }
@@ -505,7 +521,32 @@ function workstreamBindingFingerprint(snapshot: ResearchStatusSnapshot): string 
 function goalSummaryFingerprint(snapshot: ResearchStatusSnapshot): string | undefined {
   const goal = snapshot.researchGoal ?? snapshot.goalSummary;
   if (goal === undefined) return undefined;
-  return stableJson(goal);
+  const projection = snapshot.researchGoal;
+  return stableJson({
+    goalId: goal.goalId,
+    objective: goal.objective,
+    completionCriterion: goal.completionCriterion,
+    status: goal.status,
+    terminalReason: goal.terminalReason,
+    waitingFor: goal.waitingFor,
+    continuation: goal.continuation,
+    scope: projection?.scope,
+    nonGoals: projection?.nonGoals,
+    budget: projection === undefined ? undefined : {
+      tokenBudget: projection.budget.tokenBudget,
+      turnBudget: projection.budget.turnBudget,
+      wallClockBudgetMs: projection.budget.wallClockBudgetMs,
+      tokenBudgetReached: projection.budget.tokenBudgetReached,
+      turnBudgetReached: projection.budget.turnBudgetReached,
+      wallClockBudgetReached: projection.budget.wallClockBudgetReached,
+      overBudget: projection.budget.overBudget,
+    },
+    turnBudget: projection === undefined ? snapshot.goalSummary?.turnBudget : undefined,
+    stopConditions: projection?.stopConditions,
+    programRelation: projection?.programRelation,
+    humanGates: projection?.humanGates,
+    persistenceGuards: projection?.persistenceGuards,
+  });
 }
 
 function goalAlignmentFingerprint(snapshot: ResearchStatusSnapshot): string | undefined {
@@ -567,11 +608,12 @@ function attentionFingerprint(snapshot: ResearchStatusSnapshot): string | undefi
     message: alert.message,
   }));
   const receipt = snapshot.aitpMaintenance;
-  const degraded = receipt?.status === 'degraded';
+  const degraded = snapshot.mode === 'degraded' || receipt?.status === 'degraded';
   const issues = receipt === undefined ? [] : maintenanceIssues(receipt);
   if (alerts.length === 0 && !degraded && issues.length === 0) return undefined;
   return stableJson({
     alerts,
+    degraded,
     maintenance: receipt === undefined ? undefined : {
       status: receipt.status,
       issues,

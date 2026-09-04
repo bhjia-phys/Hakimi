@@ -1158,6 +1158,30 @@ describe('human decision input validation', () => {
 });
 
 describe('research facade routing', () => {
+  it('routes a reviewed local-only Action Plan without adding a Goal or parent plan', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    const input = {
+      kind: 'derivation' as const, purpose: 'Compare two conventions.',
+      stopCondition: 'Stop after one limiting-case comparison.', planningLevel: 'planned' as const,
+      actionPlanId: 'local-plan', actionPlanRevision: 1,
+    };
+    channel.result = {
+      actionId: 'action-1', kind: 'derivation', purpose: input.purpose,
+      expectedEvidence: [], stopCondition: input.stopCondition, allowedToolKinds: [],
+      requiresHumanApproval: false, status: 'in_progress', createdAt: 1, startedAt: 2,
+      actionPlanBinding: {
+        schema: 'hakimi/action-plan-binding-0.1', kind: 'reviewed_plan', planId: 'local-plan', planRevision: 1,
+      },
+    };
+    const action = await klient.session('s1').agent('main').research.planAndStartAction(input);
+    expect(channel.calls).toEqual([expect.objectContaining({
+      service: 'agentResearchService', method: 'planAndStartAction', args: [input],
+    })]);
+    expect(action.actionPlanBinding?.planId).toBe('local-plan');
+    expect(action.researchPlanBinding).toBeUndefined();
+  });
+
   const snapshot = {
     mode: 'inactive',
     loopStatus: 'active',

@@ -197,36 +197,25 @@ const projectSummary = computed(() => {
   const slot = projectSlot.value;
   if (slot === undefined) return t('research.projectNotEstablished');
   return [
-    slot.goalStatus === undefined
-      ? t('research.interactiveWithoutGoal')
-      : t('research.goalSummary', { status: t('research.goalStatusValue.' + slot.goalStatus) }),
+    slot.line,
     slot.milestone === undefined
-      ? t('research.planNotEstablished')
+      ? slot.goalObjective ?? slot.question ?? t('research.interactiveWithoutGoal')
       : t('research.milestoneSummary', { milestone: slot.milestone }),
-    slot.line === undefined
-      ? t('research.lineNotSelected')
-      : t('research.lineSummary', { line: slot.line }),
-    slot.question === undefined
-      ? t('research.questionNotFocused')
-      : t('research.questionStageSummary', {
+    slot.question === undefined ? undefined : t('research.questionStageSummary', {
           workflow: t('research.workflow.' + slot.questionWorkflow),
           epistemic: t('research.epistemic.' + slot.questionEpistemic),
         }),
-  ].join(' · ');
+  ].filter((part) => part !== undefined).join(' · ');
 });
 const cycleSummary = computed(() => {
   const slot = cycleSlot.value;
   if (slot === undefined) return t('research.cycleNotEstablished');
-  const turns = slot.researchTurns === undefined
-    ? t('research.periodNotEstablished')
-    : t('research.researchTurns', { count: slot.researchTurns });
-  const action = slot.actionStatus === undefined
-    ? t('research.noLiveAction')
+  const action = slot.actionStatus === undefined ? undefined
     : slot.actionStatus === 'recovery_required'
       ? t('research.actionRecoveryRequired')
       : t('research.actionStatus.' + slot.actionStatus);
   const current = slot.current?.text ?? t('research.nowNotRecorded');
-  return `${turns} · ${action} · ${current}`;
+  return [current, action].filter((part) => part !== undefined).join(' · ');
 });
 const maintenanceFreshness = computed(() => {
   const maintenance = props.snapshot.aitpMaintenance;
@@ -376,7 +365,7 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
             {{ t('research.loop.' + snapshot.loopStatus) }}
           </Badge>
         </div>
-        <div v-if="snapshot.currentLineSlug" class="research-head-scope">
+        <div v-if="expanded && snapshot.currentLineSlug" class="research-head-scope">
           <code class="research-head-line">{{ snapshot.currentLineSlug }}</code>
           <Badge
             v-if="currentWorkstreamPresentation"
@@ -411,12 +400,13 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
       <div class="research-compact-row">
         <span class="research-slot-label">{{ t('research.project') }}</span>
         <span class="research-slot-value">
+          <span class="research-slot-copy">{{ projectSummary }}</span>
           <Badge
             v-if="projectSlot?.goalStatus"
             size="sm"
             :variant="projectSlot.goalStatus === 'blocked' || projectSlot.goalContinuationState === 'held' ? 'warning' : projectSlot.goalStatus === 'complete' ? 'success' : 'neutral'"
           >
-            {{ t('research.goalStatusValue.' + projectSlot.goalStatus) }}
+            {{ t('research.goalSummary', { status: t('research.goalStatusValue.' + projectSlot.goalStatus) }) }}
             <template v-if="projectSlot.goalContinuationState === 'held'">
               · {{ t('research.continuationHeld') }}
             </template>
@@ -426,13 +416,13 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
               · {{ t('research.continuationLegacyUnavailable') }}
             </template>
           </Badge>
-          <span class="research-slot-copy">{{ projectSummary }}</span>
         </span>
         <Badge
+          v-if="projectSlot?.planStatus"
           size="sm"
           :variant="projectSlot?.planStatus === 'active' ? 'info' : projectSlot?.planStatus === 'completed' ? 'success' : 'neutral'"
         >
-          {{ projectSlot?.planStatus ? t('research.planStatus.' + projectSlot.planStatus) : t('research.planNotEstablished') }}
+          {{ t('research.planStatus.' + projectSlot.planStatus) }}
         </Badge>
       </div>
 
@@ -449,18 +439,7 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
           size="sm"
           :variant="cycleSlot.loopStatus === 'paused' || cycleSlot.continuationState === 'held' ? 'warning' : 'neutral'"
         >
-          {{ t('research.modeValue', {
-            mode: t('research.phase.' + cycleSlot.mode),
-            policy: t('research.planningPolicyValue.' + cycleSlot.planningPolicy),
-          }) }}
-          <template
-            v-if="projectSlot?.goalStatus === 'active' && cycleSlot.continuationAvailable === false"
-          >
-            · {{ t('research.continuationLegacyUnavailable') }}
-          </template>
-          <template v-else-if="cycleSlot.continuationState === 'held'">
-            · {{ t('research.continuationHeld') }}
-          </template>
+          {{ t('research.planningPolicyValue.' + cycleSlot.planningPolicy) }}
         </Badge>
       </div>
 

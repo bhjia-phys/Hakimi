@@ -260,12 +260,63 @@ describe('ResearchBoardComponent', () => {
     ['action_planned', 'test / action'],
     ['action_executing', 'test / action'],
     ['evaluating', 'evaluate'],
-    ['state_updated', 'record'],
+    ['state_updated', 'next / ready'],
     ['checkpoint_pending', 'record'],
   ] as const)('maps phase %s to compact stage %s', (phase, stage) => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(makeSnapshot({ phase }));
     expect(board.render(180).map(stripAnsi).join('\n')).toContain(`Current cycle: ${stage}`);
+  });
+
+  it('shows record after a conclusion only while a checkpoint actually needs persistence', () => {
+    const board = new ResearchBoardComponent();
+    const pendingCheckpoint = {
+      checkpointId: 'pending-result',
+      idempotencyKey: 'pending-result-key',
+      persistence: 'pending_commit' as const,
+      createdAt: 2,
+    };
+    const snapshot = makeSnapshot({ phase: 'state_updated', pendingCheckpoint });
+    board.setSnapshot(snapshot);
+    expect(board.render(180).map(stripAnsi).join('\n')).toContain('Current cycle: record');
+    expect(snapshot.pendingCheckpoint).toEqual(pendingCheckpoint);
+
+    board.setSnapshot(makeSnapshot({ phase: 'state_updated' }));
+    expect(board.render(180).map(stripAnsi).join('\n')).toContain('Current cycle: next / ready');
+  });
+
+  it('keeps the scientific purpose visible before bookkeeping at a narrow terminal width', () => {
+    const board = new ResearchBoardComponent();
+    board.setSnapshot(makeSnapshot({
+      phase: 'action_executing',
+      goalSummary: {
+        objective: 'Test symmetry obstruction', status: 'active',
+        continuation: { state: 'running' },
+      },
+      period: { id: 'many-turns', lineSlug: 'test-line', startedAt: 1, loopCount: 1000 },
+      currentAction: {
+        actionId: 'small-test', lineSlug: 'test-line', kind: 'derivation',
+        purpose: 'Check the L=6 commutator', expectedEvidence: ['Exact residual'],
+        stopCondition: 'One small-system result', allowedToolKinds: ['shell'],
+        requiresHumanApproval: false, status: 'in_progress', createdAt: 1,
+      },
+    }));
+    const output = board.render(80).map(stripAnsi).join('\n');
+    expect(output).toContain('Test symmetry obstruction');
+    expect(output).toContain('Check the L=6 commutator');
+    expect(output).not.toContain('1000 Research turns');
+    expect(output).not.toContain('Plan not established');
+  });
+
+  it('shows an explicit Goal wait without interpreting it as a failed scientific action', () => {
+    const board = new ResearchBoardComponent();
+    board.setSnapshot(makeSnapshot({
+      goalSummary: {
+        objective: 'Observe the bounded calculation', status: 'active',
+        continuation: { state: 'waiting', reason: 'Waiting for the task result' },
+      },
+    }));
+    expect(board.render(140).map(stripAnsi).join('\n')).toContain('Current cycle: waiting');
   });
 
   it('keeps another Line alert out of compact and expanded current attention', () => {
@@ -971,10 +1022,11 @@ describe('ResearchBoardComponent', () => {
 
     const output = board.render(180).map(stripAnsi).join('\n');
     expect(output).toContain('mode ready · workflow blocked');
-    expect(output).toContain('Project: Goal active');
-    expect(output).not.toContain('Validate the current bounded QSGW comparison.');
-    expect(output).toContain('Plan not established');
-    expect(output).toContain('Current cycle: frame / hypothesis · 6 Research turns · action recovery required');
+    expect(output).toContain('Validate the current bounded QSGW comparison.');
+    expect(output).toContain('Goal active');
+    expect(output).not.toContain('Plan not established');
+    expect(output).not.toContain('6 Research turns');
+    expect(output).toContain('Current cycle: frame / hypothesis · The newer reciprocal-space cause is localized');
     expect(output).toContain('Action/phase recovery required');
     expect(output).toContain('+2 more');
     expect(output).toContain('The newer reciprocal-space cause is localized');
@@ -1350,14 +1402,15 @@ describe('ResearchBoardComponent', () => {
     expect(output).not.toContain('refresh the Working Note');
   });
 
-  it('compact surfaces historical failures as attention without audit identifiers', () => {
+  it.each(['historical_unresolved', 'superseded_by_retry'] as const)(
+    'keeps %s failures in audit without presenting them as current attention', (classification) => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(
       makeSnapshot({
         alerts: [{
           fingerprint: 'research.alert.blocked.aitp-failure.failure-1',
           kind: 'blocked',
-          classification: 'historical_unresolved',
+          classification,
           source: 'aitp_failure',
           state: 'active',
           message: 'A historical failed attempt still needs review.',
@@ -1374,10 +1427,15 @@ describe('ResearchBoardComponent', () => {
       }),
     );
     const output = board.render(120).map(stripAnsi).join('\n');
-    expect(output).toContain('A historical failed attempt still needs review.');
+    expect(output).not.toContain('A historical failed attempt still needs review.');
     expect(output).not.toContain('failure-1');
     expect(output).not.toContain('audit-workstream');
     expect(output).not.toContain('inspect the failure handoff');
+    board.setExpanded(true);
+    const audit = board.render(160).map(stripAnsi).join('\n');
+    expect(audit).toContain('A historical failed attempt still needs review.');
+    expect(board.getSnapshot()?.alerts[0]?.state).toBe('active');
+    expect(board.getSnapshot()?.alerts[0]?.classification).toBe(classification);
   });
 
   it('compact shows only the primary attention item and counts the hidden remainder', () => {
@@ -1433,7 +1491,8 @@ describe('ResearchBoardComponent', () => {
 
     const output = board.render(120).map(stripAnsi).join('\n');
 
-    expect(output).toContain('Attention: The current evidence needs review. · +1 more');
+    expect(output).toContain('Attention: The current evidence needs review.');
+    expect(output).not.toContain('+1 more');
     expect(output).not.toContain('An earlier attempt remains unresolved.');
   });
 
@@ -1647,8 +1706,8 @@ describe('ResearchBoardComponent', () => {
     }));
 
     const compactOutput = board.render(120).map(stripAnsi).join('\n');
-    expect(compactOutput).toContain('Project: Goal active · continuation held');
-    expect(compactOutput).not.toContain('Validate the bounded response.');
+    expect(compactOutput).toContain('Validate the bounded response.');
+    expect(compactOutput).toContain('Goal active · continuation held');
     expect(compactOutput).toContain('Continuation held by aitpResearch · A research checkpoint is pending commit.');
 
     board.setExpanded(true);
@@ -2050,7 +2109,7 @@ describe('ResearchBoardComponent', () => {
       }),
     );
     const output = board.render(140).map(stripAnsi).join('\n');
-    expect(output).toContain('A historical failed attempt needs review.');
+    expect(output).not.toContain('A historical failed attempt needs review.');
     expect(output).not.toContain('1700123456789');
     expect(output).not.toContain('audit-workstream');
     expect(output).not.toContain('audit-entry-id');

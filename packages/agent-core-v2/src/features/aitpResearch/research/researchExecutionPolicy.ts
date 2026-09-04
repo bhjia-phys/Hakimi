@@ -4,7 +4,8 @@
  * The executor guard consumes this vocabulary. Known control tools do not do
  * scientific work, checkpoint persistence has its own narrow lease, known
  * work tools map to one capability, and every unknown tool requires an exact
- * `tool:<name>` grant. Scope-agnostic.
+ * `tool:<name>` grant. Exact workspace-relative Note reads and generic marker
+ * discovery inspect recorded knowledge without granting action work. Scope-agnostic.
  */
 
 export type ResearchExecutionCapability =
@@ -139,6 +140,28 @@ export function classifyResearchTool(toolName: string): ResearchToolClassificati
   return capability === undefined
     ? { kind: 'work', capability: `tool:${toolName.toLocaleLowerCase('en-US')}` }
     : { kind: 'work', capability };
+}
+
+export function isResearchRecordInspection(toolName: string, args: unknown): boolean {
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) return false;
+  const input = args as Record<string, unknown>;
+  if (typeof input['path'] !== 'string') return false;
+  const path = input['path'].replace(/^\.\//, '');
+  if (toolName === 'Read') {
+    return /^\.aitp\/topic\/notes\/note-[a-zA-Z0-9_-]+\.md$/.test(path);
+  }
+  if (
+    toolName !== 'Grep' ||
+    (input['output_mode'] !== undefined && input['output_mode'] !== 'files_with_matches')
+  ) return false;
+  const root = path.replace(/\/$/, '');
+  if (input['pattern'] === '^> method-card:') {
+    return root === '.aitp/topic' || root === '.aitp/topic/notes';
+  }
+  if (input['pattern'] === '^> method-observation:') {
+    return root === '.aitp/topic' || root === '.aitp/topic/entries';
+  }
+  return false;
 }
 
 export function researchCapabilityGranted(
