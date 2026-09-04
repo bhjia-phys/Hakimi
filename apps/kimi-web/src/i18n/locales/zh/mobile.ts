@@ -19,4 +19,9 @@ export default {
   archivedSessions: '已归档会话',
   archivedSessionsSub: '查看并恢复已归档会话',
   archivedBack: '返回',
+  /** Session-actions group: desktop ChatHeader kebab entries exposed on mobile. */
+  groupSessionActions: '会话操作',
+  gitSummary: 'Git 摘要',
+  subagentPreset: '子代理预设',
+  presetBack: '返回',
 } as const;

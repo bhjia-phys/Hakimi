@@ -89,6 +89,9 @@ export class AgentRunUsageRecorderService extends Disposable implements IAgentRu
       durationMs: event.durationMs,
       usage: event.usage,
       contextTokens: event.contextTokens,
+      averageFirstTokenLatencyMs: event.averageFirstTokenLatencyMs,
+      firstTokenLatencySampleCount: event.firstTokenLatencySampleCount,
+      llmRequestCount: event.llmRequestCount,
       errorCode: event.errorCode,
     };
     this.usage.appendFinished(record);

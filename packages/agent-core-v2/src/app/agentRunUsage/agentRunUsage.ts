@@ -5,16 +5,20 @@
  * run-usage log, the schema/version validation guards used when reading it
  * back (unknown versions and malformed records are skipped), the fold that
  * joins records by `runId` while preserving started-only incomplete runs, and
- * the `IAgentRunUsageService` that appends records and exposes read-only
- * iteration plus the folded read. Records carry token usage, duration, role,
- * model alias, thinking effort, the active `[subagent]` preset, and result
- * status only — never prompts, summaries, tool arguments, paths, error
- * messages, or user content — and `costUsd` is intentionally left out until a
- * trusted pricing table exists. Validation rejects empty identity strings and
- * non-finite or negative durations/token counts. Bound at App scope.
+ * the `IAgentRunUsageService` that appends records, exposes read-only
+ * iteration plus the folded read, and announces newly completed live runs
+ * through `onDidFinishRun`. Records carry token usage, duration, role,
+ * model alias, thinking effort, the active `[subagent]` preset, result status,
+ * and optional aggregate LLM request count / first-token latency only — never
+ * prompts, summaries, tool arguments, paths, error messages, or user content —
+ * and `costUsd` is intentionally left out until a trusted pricing table exists.
+ * Validation rejects empty identity strings and non-finite or negative
+ * durations/token counts while continuing to accept older v1 records that omit
+ * the optional aggregate fields. Bound at App scope.
  */
 
 import type { TokenUsage } from '#/kosong/contract/usage';
+import type { Event } from '#/_base/event';
 
 import { createDecorator, type ServiceIdentifier } from '#/_base/di/instantiation';
 
@@ -48,6 +52,9 @@ export interface AgentRunUsageFinishedRecord {
   readonly durationMs: number;
   readonly usage?: TokenUsage;
   readonly contextTokens?: number;
+  readonly averageFirstTokenLatencyMs?: number;
+  readonly firstTokenLatencySampleCount?: number;
+  readonly llmRequestCount?: number;
   readonly errorCode?: string;
 }
 
@@ -61,6 +68,7 @@ export interface AgentRunUsageEntry {
 export interface IAgentRunUsageService {
   readonly _serviceBrand: undefined;
 
+  readonly onDidFinishRun: Event<AgentRunUsageEntry>;
   appendStarted(record: AgentRunUsageStartedRecord): void;
   appendFinished(record: AgentRunUsageFinishedRecord): void;
   iterate(): AsyncIterable<AgentRunUsageRecord>;
@@ -142,6 +150,24 @@ function parseFinished(record: Record<string, unknown>): AgentRunUsageFinishedRe
   if (record['contextTokens'] !== undefined && !isNonNegativeNumber(record['contextTokens'])) {
     return undefined;
   }
+  if (
+    record['averageFirstTokenLatencyMs'] !== undefined &&
+    !isNonNegativeNumber(record['averageFirstTokenLatencyMs'])
+  ) {
+    return undefined;
+  }
+  if (
+    record['firstTokenLatencySampleCount'] !== undefined &&
+    !isNonNegativeInteger(record['firstTokenLatencySampleCount'])
+  ) {
+    return undefined;
+  }
+  if (
+    record['llmRequestCount'] !== undefined &&
+    !isNonNegativeInteger(record['llmRequestCount'])
+  ) {
+    return undefined;
+  }
   if (!isOptionalNonEmptyString(record['errorCode'])) return undefined;
   return {
     version: 1,
@@ -153,6 +179,9 @@ function parseFinished(record: Record<string, unknown>): AgentRunUsageFinishedRe
     durationMs: record['durationMs'],
     usage: record['usage'],
     contextTokens: record['contextTokens'],
+    averageFirstTokenLatencyMs: record['averageFirstTokenLatencyMs'],
+    firstTokenLatencySampleCount: record['firstTokenLatencySampleCount'],
+    llmRequestCount: record['llmRequestCount'],
     errorCode: record['errorCode'],
   };
 }
@@ -171,6 +200,10 @@ function isOptionalNonEmptyString(value: unknown): value is string | undefined {
 
 function isNonNegativeNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return isNonNegativeNumber(value) && Number.isInteger(value);
 }
 
 function isOptionalUsage(value: unknown): value is TokenUsage | undefined {

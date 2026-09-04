@@ -22,6 +22,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApprovalPanelComponent } from '#/tui/components/dialogs/approval-panel';
 import { EffortSelectorComponent } from '#/tui/components/dialogs/effort-selector';
 import { KIMI_CODE_PLUGIN_MARKETPLACE_URL } from '#/constant/app';
+import { ACTIVITY_PROGRESS_REVEAL_DELAY_MS } from '#/tui/constant/activity-progress';
 import { MOON_SPINNER_FRAMES } from '#/tui/constant/rendering';
 import {
   AgentSwarmProgressComponent,
@@ -49,6 +50,7 @@ import {
   PluginsPanelComponent,
 } from '#/tui/components/dialogs/plugins-selector';
 import { KimiTUI, type KimiTUIStartupInput, type TUIState } from '#/tui/kimi-tui';
+import type { ActivityProgressController } from '#/tui/controllers/activity-progress';
 import type { SessionReplayRenderer } from '#/tui/controllers/session-replay';
 import type { StreamingUIController } from '#/tui/controllers/streaming-ui';
 import { handleFeedbackCommand } from '#/tui/commands/info';
@@ -120,6 +122,7 @@ function stripSgr(text: string): string {
 
 interface MessageDriver {
   state: TUIState;
+  activityProgress: ActivityProgressController;
   streamingUI: StreamingUIController;
   sessionReplay: SessionReplayRenderer;
   pluginCommandMap: Map<string, string>;
@@ -2776,6 +2779,34 @@ command = "vim"
     expect(transcript).toContain('MCP server "local-tools" connected');
     expect(transcript).toContain('2 tools (stdio)');
     expect(transcript).toContain('MCP server "remote-tools" failed: connection refused');
+  });
+
+  it('drops events from a stale session subscription with a reused session id', async () => {
+    vi.useFakeTimers();
+    try {
+      let staleListener: ((event: Event) => void) | undefined;
+      const staleSession = makeSession({
+        onEvent: vi.fn((listener: (event: Event) => void) => {
+          staleListener = listener;
+          return vi.fn();
+        }),
+      });
+      const { driver } = await makeDriver(staleSession);
+      driver.sessionEventHandler.startSubscription();
+
+      (driver as unknown as { session: unknown }).session = makeSession();
+      staleListener?.({
+        type: 'turn.started',
+        agentId: 'main',
+        sessionId: 'ses-1',
+        turnId: 100,
+      } as Event);
+
+      expect(driver.activityProgress.snapshot()).toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('deduplicates identical MCP status updates while allowing reconnect transitions', async () => {
@@ -7621,6 +7652,93 @@ command = "vim"
     driver.streamingUI.onThinkingEnd();
 
     expect(stripSgr(renderTranscript(driver))).toContain('visible reasoning');
+  });
+
+  it('drives delayed activity progress from foreground turn, step, and tool events', async () => {
+    const { driver } = await makeDriver();
+    const sendQueued = vi.fn();
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      driver.sessionEventHandler.handleEvent(
+        {
+          type: 'turn.started',
+          agentId: 'main',
+          sessionId: 'ses-1',
+          turnId: 1,
+        } as Event,
+        sendQueued,
+      );
+
+      expect(stripSgr(renderActivity(driver))).not.toContain('≈');
+      expect(driver.activityProgress.snapshot()).toBeUndefined();
+
+      vi.advanceTimersByTime(ACTIVITY_PROGRESS_REVEAL_DELAY_MS);
+      const revealed = driver.activityProgress.snapshot()!;
+      expect(stripSgr(renderActivity(driver))).toContain('≈');
+      expect(stripSgr(renderActivity(driver))).toContain('0 tools');
+
+      driver.sessionEventHandler.handleEvent(
+        {
+          type: 'turn.step.started',
+          agentId: 'main',
+          sessionId: 'ses-1',
+          turnId: 1,
+          step: 1,
+        } as Event,
+        sendQueued,
+      );
+      const afterStep = driver.activityProgress.snapshot()!;
+      expect(afterStep.percent).toBeGreaterThan(revealed.percent);
+
+      driver.sessionEventHandler.handleEvent(
+        {
+          type: 'tool.call.started',
+          agentId: 'main',
+          sessionId: 'ses-1',
+          turnId: 1,
+          toolCallId: 'call-read',
+          name: 'Read',
+          args: { path: 'src/index.ts' },
+        } as Event,
+        sendQueued,
+      );
+      const afterCall = driver.activityProgress.snapshot()!;
+      expect(afterCall.percent).toBeGreaterThan(afterStep.percent);
+      expect(afterCall.toolCallCount).toBe(1);
+
+      driver.sessionEventHandler.handleEvent(
+        {
+          type: 'tool.result',
+          agentId: 'main',
+          sessionId: 'ses-1',
+          turnId: 1,
+          toolCallId: 'call-read',
+          output: 'ok',
+          isError: false,
+        } as Event,
+        sendQueued,
+      );
+      expect(driver.activityProgress.snapshot()!.percent).toBeGreaterThan(afterCall.percent);
+      expect(stripSgr(renderActivity(driver))).toContain('1 tool');
+
+      driver.sessionEventHandler.handleEvent(
+        {
+          type: 'turn.ended',
+          agentId: 'main',
+          sessionId: 'ses-1',
+          turnId: 1,
+          reason: 'completed',
+        } as Event,
+        sendQueued,
+      );
+      expect(driver.activityProgress.snapshot()).toBeUndefined();
+      expect(stripSgr(renderActivity(driver))).not.toContain('≈');
+    } finally {
+      driver.activityProgress.dispose();
+      driver.state.activitySpinner?.instance.stop();
+      vi.useRealTimers();
+    }
   });
 
   it('keeps the waiting moon spinner while reasoning streams only empty (encrypted) thinking deltas', async () => {

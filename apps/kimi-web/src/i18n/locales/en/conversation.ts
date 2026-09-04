@@ -9,6 +9,12 @@ export default {
   addWorkspace: 'New workspace',
   moreWorkspaces: 'More workspaces ({count})',
   compacting: 'Compacting context…',
+  turnProgress: {
+    label: 'Approximate turn progress',
+    value: 'Approximately {percent}%, {elapsed} elapsed, {count} tools',
+    elapsed: '{elapsed} elapsed',
+    tools: '{count} tools',
+  },
   compactedPlain: 'Context compacted',
   compactedAuto: 'Context auto-compacted',
   compactedTokens: ' ({before} → {after} tokens)',
@@ -16,6 +22,12 @@ export default {
   summaryTitle: 'Compaction summary',
   manuallyAborted: 'Manually stopped',
   activatedSkill: 'Activated skill: {name}',
+  /** Status separator for an automatic subagent-preset switch (from → to). */
+  subagentPresetAutoSwitched: 'Subagent preset switched automatically: {from} → {to}',
+  /** Status separator for a switch with no reported previous preset. */
+  subagentPresetAutoSet: 'Subagent preset switched automatically: {preset}',
+  subagentPresetReasonWithProfile: '{reason} for {profile}',
+  subagentPresetSwitchWithReason: '{switch} · {reason}',
   undo: 'Undo',
   undoTooltip: 'Undoing the conversation will not roll back code changes',
   undoConfirm: 'Undo last message?',

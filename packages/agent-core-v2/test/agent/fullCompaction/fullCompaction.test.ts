@@ -668,7 +668,7 @@ describe('FullCompaction', () => {
       event: 'compaction_finished',
       properties: expect.objectContaining({
         source: 'manual',
-        tokens_before: 18_535,
+        tokens_before: 18_617,
         retry_count: 1,
         trace_id: 'trace-compact-1',
       }),
@@ -1051,7 +1051,7 @@ describe('FullCompaction', () => {
       properties: expect.objectContaining({
         agent_id: 'main',
         source: 'manual',
-        tokens_before: 18_535,
+        tokens_before: 18_617,
         duration_ms: expect.any(Number),
         round: 1,
         retry_count: 0,
@@ -1276,7 +1276,7 @@ describe('FullCompaction', () => {
       event: 'compaction_failed',
       properties: expect.objectContaining({
         source: 'manual',
-        tokens_before: 18_535,
+        tokens_before: 18_617,
         duration_ms: expect.any(Number),
         retry_count: 4,
         error_type: 'APIConnectionError',
@@ -1474,9 +1474,9 @@ describe('FullCompaction', () => {
 
   it('auto-compacts very large context in one full-history round when the summarizer accepts it', async () => {
     // The window must stay above the harness's fixed request overhead
-    // (system prompt + tools, ~17k): the post-compaction size is reported on
+    // (system prompt + tools, ~18.7k): the post-compaction size is reported on
     // the full-request basis, so a smaller window could never be satisfied.
-    const maxContextTokens = 22_000;
+    const maxContextTokens = 24_000;
     const ctx = testAgent();
     ctx.configure({
       provider: CATALOGUED_PROVIDER,

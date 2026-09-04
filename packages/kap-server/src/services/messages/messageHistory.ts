@@ -75,12 +75,18 @@ export interface PageResponse<T> {
   has_more: boolean;
 }
 
+export interface MessageReadOptions {
+  /** Disable blob-store reads when the caller will serve a media-free view. */
+  readonly rehydrateMedia?: boolean;
+}
+
 export async function listMessages(
   core: Scope,
   sessionId: string,
   query: MessageListQuery,
+  options: MessageReadOptions = {},
 ): Promise<PageResponse<Message>> {
-  const all = await loadMessages(core, sessionId);
+  const all = await loadMessages(core, sessionId, options);
   const desc = [...all].reverse();
 
   let pivotIndex = -1;
@@ -113,8 +119,9 @@ export async function getMessage(
   core: Scope,
   sessionId: string,
   messageId: string,
+  options: MessageReadOptions = {},
 ): Promise<Message> {
-  const all = await loadMessages(core, sessionId);
+  const all = await loadMessages(core, sessionId, options);
   const entry = all.find((m) => m.id === messageId);
   if (entry === undefined) {
     throw new MessageNotFoundError(sessionId, messageId);
@@ -122,7 +129,11 @@ export async function getMessage(
   return entry;
 }
 
-async function loadMessages(core: Scope, sessionId: string): Promise<Message[]> {
+async function loadMessages(
+  core: Scope,
+  sessionId: string,
+  options: MessageReadOptions,
+): Promise<Message[]> {
   const summary = await core.accessor.get(ISessionIndex).get(sessionId);
   if (summary === undefined) {
     throw new SessionNotFoundError(sessionId);
@@ -132,26 +143,29 @@ async function loadMessages(core: Scope, sessionId: string): Promise<Message[]> 
   if (session === undefined) return [];
   const agent = await ensureMainAgent(session);
 
-  return loadMessageHistory(core, agent, sessionId, summary.createdAt);
+  return loadMessageHistory(core, agent, sessionId, summary.createdAt, options);
 }
 
 /**
  * One agent's full, ascending, projected message history: the persisted
  * journal (flushed first) folded by the transcript reducer, the unflushed
- * live tail merged in, blob references rehydrated, and timestamps clamped
- * strictly increasing. Shared by the `messages` routes and the `snapshot`
- * route so all history-serving surfaces agree.
+ * live tail merged in, blob references rehydrated by default, and timestamps
+ * clamped strictly increasing. Shared by the `messages` routes and the
+ * `snapshot` route so all history-serving surfaces agree. Remote response
+ * callers disable rehydration before applying their media-free projection.
  */
 export async function loadMessageHistory(
   core: Scope,
   agent: IAgentScopeHandle,
   sessionId: string,
   sessionCreatedAtMs: number,
+  options: MessageReadOptions = {},
 ): Promise<Message[]> {
   const transcript = await readTranscript(core, agent);
   const contextMessages = agent.accessor.get(IAgentContextMemoryService).get();
   const merged = mergeLiveTail(transcript, contextMessages);
-  const entries = await rehydrate(agent, merged.messages);
+  const entries =
+    options.rehydrateMedia === false ? merged.messages : await rehydrate(agent, merged.messages);
 
   let previousMs = Number.NEGATIVE_INFINITY;
   return entries.map((msg, index) => {

@@ -1,13 +1,13 @@
 <!-- apps/kimi-web/src/components/mobile/MobileTopBar.vue -->
-<!-- Mobile title bar (50px): a 28px dark workspace square, a tappable middle -->
-<!-- zone showing the mono `workspace / session ⌄` path with a status sub-line -->
-<!-- (● running · branch · N sessions), and a trailing sliders button. Tapping -->
-<!-- the middle opens the switcher sheet; the sliders open the settings sheet. -->
-<!-- Terminal Pro styling, no emoji. -->
+<!-- Mobile title bar (50px): an explicit session-list button plus a tappable -->
+<!-- middle zone showing `workspace / session ⌄` with a status sub-line -->
+<!-- containing only running/idle and connection state to stay readable at 320px. -->
+<!-- Either list entry opens the switcher sheet; sliders opens settings. -->
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { WorkspaceView } from '../../types';
+import type { ConnectionState, WorkspaceView } from '../../types';
+import Badge from '../ui/Badge.vue';
 import IconButton from '../ui/IconButton.vue';
 import Icon from '../ui/Icon.vue';
 
@@ -15,43 +15,60 @@ const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
-    /** Active workspace (for the chip glyph + name). */
+    /** Active workspace name shown in the switcher trigger. */
     workspace: WorkspaceView | null;
     /** Active session title (the right, bold side of the mono path). */
     sessionTitle?: string;
     /** True when the active session is doing work (drives the status dot/text). */
     running?: boolean;
-    /** Current git branch (sub-line). */
-    branch?: string;
-    /** Number of sessions in the active workspace (sub-line). */
-    sessionCount?: number;
+    connection?: ConnectionState;
+    /** Whether local Web can start or manage a remote share. */
+    remoteShareEnabled?: boolean;
+    /** Whether a remote share is currently active. */
+    remoteShareActive?: boolean;
   }>(),
-  { workspace: null, sessionTitle: '', running: false, branch: '', sessionCount: 0 },
+  {
+    workspace: null,
+    sessionTitle: '',
+    running: false,
+    connection: 'disconnected',
+    remoteShareEnabled: false,
+    remoteShareActive: false,
+  },
 );
 
 const emit = defineEmits<{
   openSwitcher: [];
   openSettings: [];
+  openRemoteShare: [];
 }>();
-
-/** First letter of the workspace name for the square glyph. */
-const chip = computed<string>(() => {
-  const w = props.workspace;
-  const src = (w?.name || w?.root || '').trim();
-  const ch = src.charAt(0);
-  return ch ? ch.toUpperCase() : 'K';
-});
 
 const wsName = computed<string>(() => props.workspace?.name ?? t('workspace.noWorkspace'));
 
 const statusText = computed<string>(() =>
   props.running ? t('mobile.running') : t('mobile.idle'),
 );
+const connectionText = computed<string>(() => {
+  if (props.connection === 'connected') return t('status.connectionConnected');
+  if (props.connection === 'connecting') return t('status.connectionConnecting');
+  return t('status.connectionDisconnected');
+});
+const connectionVariant = computed<'success' | 'warning' | 'danger'>(() => {
+  if (props.connection === 'connected') return 'success';
+  if (props.connection === 'connecting') return 'warning';
+  return 'danger';
+});
 </script>
 
 <template>
   <div class="topbar">
-    <span class="wsq">{{ chip }}</span>
+    <IconButton
+      size="lg"
+      :label="t('mobile.openSwitcher')"
+      @click="emit('openSwitcher')"
+    >
+      <Icon name="list" size="lg" />
+    </IconButton>
 
     <button
       type="button"
@@ -67,13 +84,24 @@ const statusText = computed<string>(() =>
         </template>
         <span class="cv">⌄</span>
       </span>
-      <span class="tb-sub">
+      <span class="tb-sub" role="status" aria-live="polite">
         <span class="rd" :class="{ on: running }" />
         <span>{{ statusText }}</span>
-        <template v-if="branch"> · {{ branch }}</template>
-        <template v-if="sessionCount > 0"> · {{ t('mobile.sessionCount', { n: sessionCount }) }}</template>
+        <Badge :variant="connectionVariant" size="sm" dot>{{ connectionText }}</Badge>
       </span>
     </button>
+
+    <IconButton
+      v-if="remoteShareEnabled"
+      size="lg"
+      :label="remoteShareActive ? t('remoteShare.badgeActiveTitle') : t('remoteShare.menuEntry')"
+      @click="emit('openRemoteShare')"
+    >
+      <span class="remote-share-icon">
+        <Icon name="globe" size="lg" />
+        <span v-if="remoteShareActive" class="remote-share-dot" aria-hidden="true" />
+      </span>
+    </IconButton>
 
     <IconButton
       size="lg"
@@ -98,22 +126,6 @@ const statusText = computed<string>(() =>
   border-bottom: 1px solid var(--color-line);
   background: var(--color-bg);
   font-family: var(--font-ui);
-}
-
-/* Workspace square */
-.wsq {
-  flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-md);
-  background: var(--color-text);
-  color: var(--color-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-weight: var(--weight-medium);
-  font-size: var(--ui-font-size-sm);
 }
 
 /* Middle tappable zone */
@@ -170,6 +182,24 @@ const statusText = computed<string>(() =>
   background: var(--color-text-faint);
 }
 .tb-sub .rd.on { background: var(--color-success); }
+/* The connection badge never shrinks below its pill — let the preceding text
+   clip first. */
+.tb-sub :deep(.ui-badge) { flex: none; }
+
+.remote-share-icon {
+  position: relative;
+  display: inline-flex;
+}
+.remote-share-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--color-bg);
+  border-radius: var(--radius-full);
+  background: var(--color-success);
+}
 
 .topbar .tb-path { font-family: var(--sans); }
 </style>

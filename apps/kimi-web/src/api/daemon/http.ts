@@ -175,8 +175,19 @@ export class DaemonHttpClient {
     });
   }
 
-  async post<T>(path: string, body?: unknown, opts?: { allowCodes?: number[] }): Promise<T> {
-    return this.request<T>('POST', path, body, undefined, opts?.allowCodes);
+  async post<T>(
+    path: string,
+    body?: unknown,
+    opts?: { allowCodes?: number[]; timeoutMs?: number },
+  ): Promise<T> {
+    return this.request<T>(
+      'POST',
+      path,
+      body,
+      undefined,
+      opts?.allowCodes,
+      opts?.timeoutMs,
+    );
   }
 
   /** POST JSON and receive a raw ZIP. The request trace accepts a separate
@@ -424,6 +435,7 @@ export class DaemonHttpClient {
     body?: unknown,
     query?: Record<string, string | number | boolean | undefined>,
     allowCodes: number[] = [],
+    timeoutMs = REQUEST_TIMEOUT_MS,
   ): Promise<T> {
     // Build URL, appending query string (omit undefined values)
     let url = buildRestUrl(this.origin, path);
@@ -458,7 +470,7 @@ export class DaemonHttpClient {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
-        signal: timeoutSignal(),
+        signal: timeoutSignal(timeoutMs),
       });
     } catch (err) {
       traceRestFailure({ method, path, requestId, phase: 'fetch', durationMs: Date.now() - startedAt, error: err });
@@ -470,7 +482,7 @@ export class DaemonHttpClient {
         url,
         requestId,
         phase: 'fetch',
-        timeoutMs: REQUEST_TIMEOUT_MS,
+        timeoutMs,
         timestamp: Date.now(),
         durationMs: Date.now() - startedAt,
       });
@@ -491,7 +503,7 @@ export class DaemonHttpClient {
         url,
         requestId,
         phase: 'parse',
-        timeoutMs: REQUEST_TIMEOUT_MS,
+        timeoutMs,
         status: response.status,
         statusText: response.statusText,
         contentType: response.headers.get('content-type') ?? undefined,
@@ -501,27 +513,46 @@ export class DaemonHttpClient {
       });
     }
 
+    const rawEnvelope = envelope as WireEnvelope<T> & { message?: unknown };
+    const envelopeCode = typeof rawEnvelope.code === 'number' ? rawEnvelope.code : undefined;
+    const envelopeMessage =
+      typeof rawEnvelope.msg === 'string'
+        ? rawEnvelope.msg
+        : typeof rawEnvelope.message === 'string'
+          ? rawEnvelope.message
+          : response.statusText;
+    const envelopeRequestId =
+      typeof rawEnvelope.request_id === 'string' ? rawEnvelope.request_id : requestId;
+    const effectiveCode = envelopeCode ?? response.status;
+
     traceRestResponse({
       method,
       path,
       requestId,
       status: response.status,
       durationMs: Date.now() - startedAt,
-      code: envelope.code,
-      msg: envelope.msg,
-      envelopeRequestId: envelope.request_id,
-      data: envelope.data,
+      code: effectiveCode,
+      msg: envelopeMessage,
+      envelopeRequestId: rawEnvelope.request_id,
+      data: rawEnvelope.data,
     });
 
-    this.checkAuthRequired(response, envelope.code);
+    this.checkAuthRequired(response, envelopeCode ?? 0);
 
-    // Unwrap: code 0 = success; allowed non-zero = return data; else throw
-    if (envelope.code !== 0 && !allowCodes.includes(envelope.code)) {
+    // Unwrap: code 0 = success; allowed non-zero = return data; else throw.
+    // Fastify's default 404 body is not a daemon envelope, so HTTP status is
+    // the authoritative fallback when `code` is absent.
+    if (
+      !response.ok ||
+      envelopeCode === undefined ||
+      (envelopeCode !== 0 && !allowCodes.includes(envelopeCode))
+    ) {
       throw new DaemonApiError({
-        code: envelope.code,
-        msg: envelope.msg,
-        requestId: envelope.request_id,
-        details: envelope.details,
+        code: effectiveCode,
+        msg: envelopeMessage,
+        requestId: envelopeRequestId,
+        details: rawEnvelope.details,
+        status: response.status,
         timestamp: Date.now(),
         durationMs: Date.now() - startedAt,
       });

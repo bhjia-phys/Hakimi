@@ -578,7 +578,11 @@ describe('CLI options parsing', () => {
         () => {},
       );
       const commandNames: string[] = program.commands
-        .filter((command) => !command.name().startsWith('__'))
+        .filter(
+          (command) =>
+            !command.name().startsWith('__') &&
+            (command as typeof command & { _hidden?: boolean })._hidden !== true,
+        )
         .map((command) => command.name());
       expect(commandNames).toEqual([
         'export',
@@ -586,6 +590,7 @@ describe('CLI options parsing', () => {
         'acp',
         'web',
         'server',
+        'remote',
         'login',
         'doctor',
         'vis',

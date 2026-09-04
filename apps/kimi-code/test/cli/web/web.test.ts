@@ -19,6 +19,17 @@ import { registerWebCommand } from '#/cli/sub/web';
 import type { LegacyKillDeps } from '#/cli/sub/web/legacy-kill';
 import type { WebCommandDeps } from '#/cli/sub/web/run';
 import type { ParsedServerOptions } from '#/cli/sub/web/shared';
+import { webRemotePersistentController } from '#/cli/sub/web/remote-persistent';
+import {
+  readPrivateJsonFile,
+  remoteConfigPath,
+  remoteStatePath,
+  RemoteConfigSchema,
+  writePrivateJsonFile,
+  type RemoteControlDeps,
+  type SystemctlRunner,
+} from '#/cli/sub/remote/index';
+import { REMOTE_PERSISTENT_UNSUPPORTED_CODE } from '@moonshot-ai/kap-server';
 import {
   parseDefaultRouteInterface,
   resolveWslNatHost,
@@ -1113,5 +1124,264 @@ describe('filterDisplayAddresses', () => {
       { address: '10.0.0.1', family: 'IPv4' },
       { address: '2001:db8::1', family: 'IPv6' },
     ]);
+  });
+});
+
+describe('web runner remote-share controller assembly', () => {
+  it('always supplies an inert controller without resolving cloudflared at boot', async () => {
+    const { webRemoteShareController } = await import('#/cli/sub/web/remote-share');
+    expect(webRemoteShareController({ env: {} })).toBeDefined();
+    expect(
+      webRemoteShareController({ env: { KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL: '0' } }),
+    ).toBeDefined();
+    expect(
+      webRemoteShareController({ env: { KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL: 'no' } }),
+    ).toBeDefined();
+  });
+
+  it('builds an inert RemoteShareManager when the remote-control switch is on', async () => {
+    const { webRemoteShareController } = await import('#/cli/sub/web/remote-share');
+    const controller = webRemoteShareController({
+      env: { KIMI_CODE_EXPERIMENTAL_REMOTE_CONTROL: '1' },
+    });
+    expect(controller).toBeDefined();
+    expect(typeof controller!.status).toBe('function');
+    expect(typeof controller!.start).toBe('function');
+    expect(typeof controller!.stop).toBe('function');
+    expect(typeof controller!.close).toBe('function');
+    expect(controller!.status()).toEqual({
+      active: false,
+      session_id: null,
+      host: null,
+      port: null,
+      url: null,
+      ttl_seconds: null,
+      started_at: null,
+      expires_at: null,
+    });
+  });
+});
+
+describe('web runner remote-persistent controller', () => {
+  const FIXED_TOKEN = 'abc-123-'.padEnd(43, 'x');
+
+  /** Default: the unit is not installed yet (like a fresh machine). */
+  const NOT_FOUND_UNIT =
+    'LoadState=not-found\nActiveState=inactive\nSubState=dead\nMainPID=0\n';
+  const ACTIVE_UNIT =
+    'LoadState=loaded\nActiveState=active\nSubState=running\nMainPID=4242\n';
+
+  function makeRunner(
+    calls: string[],
+    opts?: { available?: boolean; unit?: string; stateful?: boolean },
+  ): SystemctlRunner {
+    // For stateful runners the unit flips with `enable --now` / `disable --now`.
+    let running = false;
+    return (vi.fn(async (args: string[]) => {
+      calls.push(args.join(' '));
+      if (args[0] === 'is-system-running') {
+        const available = opts?.available ?? true;
+        if (!available) return { code: 4, stdout: 'offline', stderr: '' };
+        return { code: 0, stdout: 'running', stderr: '' };
+      }
+      if (args[0] === 'enable') {
+        running = true;
+        return { code: 0, stdout: '', stderr: '' };
+      }
+      if (args[0] === 'disable') {
+        running = false;
+        return { code: 0, stdout: '', stderr: '' };
+      }
+      if (args[0] === 'show') {
+        const unit = opts?.unit ?? (opts?.stateful === true && running ? ACTIVE_UNIT : NOT_FOUND_UNIT);
+        return { code: 0, stdout: unit, stderr: '' };
+      }
+      return { code: 0, stdout: '', stderr: '' };
+    }) as unknown) as SystemctlRunner;
+  }
+
+  function writeActiveState(home: string): void {
+    writePrivateJsonFile(remoteConfigPath(home), {
+      version: 1,
+      homeDir: home,
+      cloudflaredPath: '/opt/cloudflared',
+      token: FIXED_TOKEN,
+    });
+    writePrivateJsonFile(remoteStatePath(home), {
+      version: 1,
+      pid: 4242,
+      port: 61234,
+      origin: 'https://name.trycloudflare.com',
+      startedAt: Date.now(),
+    });
+  }
+
+  function baseDeps(home: string, unitPath: string, runner: SystemctlRunner): RemoteControlDeps {
+    return {
+      platform: 'linux',
+      homeDir: home,
+      runner,
+      resolveCloudflaredPath: (explicit) => explicit ?? '/opt/cloudflared',
+      resolveLaunchVector: () => ['/usr/bin/hakimi-native'],
+      unitPath,
+      generateToken: () => FIXED_TOKEN,
+      probeHealth: async () => true,
+      statePollMs: 40,
+      stdout: { write() { return true; } },
+    };
+  }
+
+  it('constructs an inert controller and reports structured unsupported status on non-Linux', async () => {
+    const controller = webRemotePersistentController({
+      deps: { platform: 'darwin' },
+    });
+    expect(controller).toBeDefined();
+    // Defining status/start/stop but no side effects happened at construction.
+    const status = await controller.status();
+    expect(status).toMatchObject({
+      active: false,
+      state: 'unsupported',
+      health: 'unknown',
+      systemd_available: false,
+    });
+    await expect(controller.start()).rejects.toMatchObject({
+      name: 'RemotePersistentError',
+      code: REMOTE_PERSISTENT_UNSUPPORTED_CODE,
+    });
+    await expect(controller.stop()).rejects.toMatchObject({
+      name: 'RemotePersistentError',
+      code: REMOTE_PERSISTENT_UNSUPPORTED_CODE,
+    });
+  });
+
+  it('maps an active service to the browser status with the full control URL', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'hakimi-web-persistent-'));
+    try {
+      writeActiveState(home);
+      const calls: string[] = [];
+      const controller = webRemotePersistentController({
+        deps: {
+          platform: 'linux',
+          homeDir: home,
+          runner: makeRunner(calls, { unit: ACTIVE_UNIT }),
+          probeHealth: async () => true,
+        },
+      });
+      const status = await controller.status();
+      expect(status).toEqual({
+        active: true,
+        state: 'active',
+        health: 'ok',
+        origin: 'https://name.trycloudflare.com',
+        url: `https://name.trycloudflare.com/?remote=1#token=${FIXED_TOKEN}`,
+        port: 61234,
+        started_at: expect.any(String) as unknown as string,
+        systemd_available: true,
+        message: null,
+      });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('reports an unstarted service as inactive + not-installed message', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'hakimi-web-persistent-'));
+    try {
+      const calls: string[] = [];
+      const controller = webRemotePersistentController({
+        deps: { platform: 'linux', homeDir: home, runner: makeRunner(calls), probeHealth: async () => true },
+      });
+      const status = await controller.status();
+      expect(status).toMatchObject({
+        active: false,
+        state: 'inactive',
+        systemd_available: true,
+        origin: null,
+        url: null,
+      });
+      expect(status.message).toContain('not installed yet');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps systemd availability true when config/state reading fails', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'hakimi-web-persistent-'));
+    try {
+      const calls: string[] = [];
+      const controller = webRemotePersistentController({
+        deps: {
+          platform: 'linux',
+          homeDir: home,
+          runner: makeRunner(calls),
+          readConfigFile: () => {
+            throw new Error('config is malformed');
+          },
+        },
+      });
+
+      const status = await controller.status();
+
+      expect(status).toMatchObject({
+        active: false,
+        state: 'unknown',
+        health: 'unknown',
+        systemd_available: true,
+      });
+      expect(status.message).toContain('Unable to read the persistent remote state');
+      expect(status.message).toContain('config is malformed');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('start/stop drive systemctl enable/disable and return fresh status without stdout', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'hakimi-web-persistent-'));
+    const unitPath = join(home, 'hakimi-remote.service');
+    try {
+      // Pre-publish the (future) serve state so the fresh start's poll accepts
+      // it immediately (MainPID matches the runner's `show`).
+      writePrivateJsonFile(remoteStatePath(home), {
+        version: 1,
+        pid: 4242,
+        port: 61234,
+        origin: 'https://name.trycloudflare.com',
+        startedAt: Date.now(),
+      });
+      const calls: string[] = [];
+      const deps = baseDeps(home, unitPath, makeRunner(calls, { stateful: true }));
+      const controller = webRemotePersistentController({ deps });
+
+      const started = await controller.start();
+      expect(started).toMatchObject({ active: true, state: 'active', health: 'ok' });
+      expect(started.url).toBe(`https://name.trycloudflare.com/?remote=1#token=${FIXED_TOKEN}`);
+      const config = readPrivateJsonFile(remoteConfigPath(home), RemoteConfigSchema);
+      expect(config?.token).toBe(FIXED_TOKEN);
+      expect(calls).toContain('enable --now hakimi-remote.service');
+
+      const stopped = await controller.stop();
+      expect(stopped).toMatchObject({ active: false, state: 'inactive' });
+      expect(calls).toContain('disable --now hakimi-remote.service');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('maps a missing systemd user session to the unsupported code', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'hakimi-web-persistent-'));
+    try {
+      const calls: string[] = [];
+      const controller = webRemotePersistentController({
+        deps: { platform: 'linux', homeDir: home, runner: makeRunner(calls, { available: false }) },
+      });
+      const status = await controller.status();
+      expect(status.systemd_available).toBe(false);
+      await expect(controller.start()).rejects.toMatchObject({
+        name: 'RemotePersistentError',
+        code: REMOTE_PERSISTENT_UNSUPPORTED_CODE,
+      });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

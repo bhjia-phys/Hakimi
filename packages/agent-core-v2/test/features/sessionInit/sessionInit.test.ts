@@ -67,6 +67,10 @@ describe('SessionInitService', () => {
       run: vi.fn(async (agentId: string) => ({
         agentId,
         turn: {},
+        timingEvidence: () => ({
+          llmRequestCount: 0,
+          firstTokenLatencySampleCount: 0,
+        }),
         completion: runCompletion,
       })),
     };
@@ -198,6 +202,10 @@ describe('SessionInitService', () => {
     run.mockImplementationOnce((agentId: string) => ({
       agentId,
       turn: {},
+      timingEvidence: () => ({
+        llmRequestCount: 0,
+        firstTokenLatencySampleCount: 0,
+      }),
       completion: Promise.reject(new Error('coder exploded')),
     }));
     const svc = ix.get(ISessionInitService);
@@ -224,6 +232,10 @@ describe('SessionInitService', () => {
     run.mockImplementationOnce((agentId: string, _req: unknown, opts: { signal: AbortSignal }) => ({
       agentId,
       turn: {},
+      timingEvidence: () => ({
+        llmRequestCount: 0,
+        firstTokenLatencySampleCount: 0,
+      }),
       completion: new Promise<{ summary: string }>((_resolve, reject) => {
         opts.signal.addEventListener('abort', () => reject(opts.signal.reason));
       }),

@@ -1,15 +1,21 @@
 <!-- apps/kimi-web/src/components/ui/MenuItem.vue -->
-<!-- Design-system §03 Menu item: supports active / danger / disabled / separator. -->
+<!-- Design-system §03 Menu item: active/danger/disabled/separator plus optional radio semantics. -->
 <script setup lang="ts">
+import { ref } from 'vue';
+
 withDefaults(defineProps<{
   active?: boolean;
   danger?: boolean;
   disabled?: boolean;
   separator?: boolean;
+  role?: 'menuitem' | 'menuitemradio';
+  ariaChecked?: boolean;
   /** md (desktop) · lg (touch / mobile, ≥44px row). */
   size?: 'md' | 'lg';
-}>(), { size: 'md' });
+}>(), { role: 'menuitem', size: 'md' });
 
+const el = ref<HTMLButtonElement>();
+defineExpose({ el });
 defineEmits<{ click: [event: MouseEvent] }>();
 </script>
 
@@ -17,10 +23,12 @@ defineEmits<{ click: [event: MouseEvent] }>();
   <div v-if="separator" class="ui-menu-sep" role="separator" />
   <button
     v-else
+    ref="el"
     class="ui-menu-item"
     :class="[`ui-menu-item--${size}`, { 'is-active': active, 'is-danger': danger }]"
     type="button"
-    role="menuitem"
+    :role="role"
+    :aria-checked="role === 'menuitemradio' ? ariaChecked : undefined"
     :disabled="disabled"
     @click="$emit('click', $event)"
   >

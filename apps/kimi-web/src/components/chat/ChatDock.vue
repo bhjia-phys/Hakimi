@@ -171,8 +171,8 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
   <div ref="dockRef" class="chat-dock" :class="[mobile ? 'align-mobile' : 'align-center']" @click.stop>
     <Transition name="dock-panel">
       <div
-        ref="workPanelRef"
         v-if="dockPanel"
+        ref="workPanelRef"
         class="dock-work-panel"
         @click.stop
       >
@@ -230,7 +230,11 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       @align="emit('alignResearch', $event)"
       @clear-alignment="emit('clearResearchAlignment')"
     />
-    <div v-if="hasDockWork" ref="workbarRef" class="dock-workbar">
+    <div
+      v-if="hasDockWork"
+      ref="workbarRef"
+      class="dock-workbar"
+    >
       <Pill
         v-if="bashTasks.length > 0"
         :active="dockPanel === 'bash'"

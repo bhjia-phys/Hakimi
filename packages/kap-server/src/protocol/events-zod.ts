@@ -1,10 +1,10 @@
 /**
  * Zod schema half of the v1 event catalog (`packages/protocol/src/events.ts`),
- * ported verbatim for byte-level AsyncAPI/JSON-Schema compatibility. Interface
- * declarations and the deprecated volatile-event helpers are intentionally not
- * ported; `satisfies z.ZodType<T>` clauses are kept only where `T` is
- * importable from an agent-core-v2 leaf path and dropped elsewhere (dropped
- * clauses do not affect the emitted JSON Schema).
+ * ported for byte-level AsyncAPI/JSON-Schema compatibility and extended with
+ * transport-owned v2 event variants. Interface declarations and the deprecated
+ * volatile-event helpers are intentionally not ported; `satisfies z.ZodType<T>`
+ * clauses are kept only where `T` is importable from an agent-core-v2 leaf path
+ * and dropped elsewhere (dropped clauses do not affect the emitted JSON Schema).
  */
 import { z } from 'zod';
 
@@ -92,7 +92,11 @@ import type { SubagentSuspendedEvent } from '@moonshot-ai/agent-core-v2/features
 import type { ToolUpdate } from '@moonshot-ai/agent-core-v2/tool/toolContract';
 
 import { ToolInputDisplaySchema } from './display';
-import { configResponseSchema } from './rest-config';
+import {
+  autoSubagentPresetReasonCodeSchema,
+  configResponseSchema,
+  subagentPresetStatusSchema,
+} from './rest-config';
 import { researchStatusSnapshotSchema } from './research';
 import { sessionPendingInteractionSchema, sessionSchema } from './session';
 import { workspaceSchema } from './workspace';
@@ -666,6 +670,21 @@ export const sessionStatusChangedEventSchema = z.object({
   current_prompt_id: z.string().min(1).optional(),
 });
 
+export const subagentPresetEvaluatedEventSchema = subagentPresetStatusSchema.extend({
+  type: z.literal('event.subagent.preset_evaluated'),
+});
+
+export const subagentPresetChangedEventSchema = z.object({
+  type: z.literal('event.subagent.preset_changed'),
+  previous_preset: z.string().min(1).optional(),
+  current_preset: z.string().min(1),
+  reason_code: autoSubagentPresetReasonCodeSchema,
+  profile_name: z.string().min(1).optional(),
+  evaluated_at: z.number().finite().nonnegative(),
+  previous_score: z.number().finite().optional(),
+  current_score: z.number().finite().optional(),
+});
+
 export const configChangedEventSchema = z.object({
   type: z.literal('event.config.changed'),
   changedFields: z.array(z.string()),
@@ -1044,6 +1063,8 @@ export const agentEventSchema = z.discriminatedUnion('type', [
   workspaceDeletedEventSchema,
   sessionWorkChangedEventSchema,
   sessionStatusChangedEventSchema,
+  subagentPresetEvaluatedEventSchema,
+  subagentPresetChangedEventSchema,
   diUnitChangedEventSchema,
   pluginChangedEventSchema,
   capabilityChangedEventSchema,

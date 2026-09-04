@@ -88,6 +88,7 @@ import '#/session/subagent/configSection';
 import {
   assertValidSubagentModelConfig,
   DEFAULT_SUBAGENT_TIMEOUT_MS,
+  resolveSubagentAutoPresetConfig,
   resolveSubagentBinding,
   resolveSubagentTimeoutMs,
   SECONDARY_MODEL_SECTION,
@@ -1828,6 +1829,184 @@ describe('subagent config section', () => {
 
     env[SUBAGENT_TIMEOUT_ENV] = '7000';
     expect(resolveSubagentTimeoutMs(config)).toBe(7000);
+
+    disposables.dispose();
+  });
+
+  it('round-trips [subagent] auto_preset with snake_case keys and fills defaults', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      [
+        '[subagent]',
+        'preset = "balanced"',
+        '',
+        '[subagent.auto_preset]',
+        'enabled = true',
+        'quota_floor_percent = 30',
+        'local_usage_weight_percent = 5',
+        'candidates = ["kimi-heavy", "balanced"]',
+        '',
+      ].join('\n'),
+    );
+
+    expect(config.get<SubagentConfig>(SUBAGENT_SECTION).autoPreset).toEqual({
+      enabled: true,
+      manualLock: false,
+      candidates: ['kimi-heavy', 'balanced'],
+      quotaFloorPercent: 30,
+      switchMarginPercent: 10,
+      localUsageWindowMs: 3_600_000,
+      localUsageWeightPercent: 5,
+      priorityWeightPercent: 20,
+      reliabilityWeightPercent: 20,
+      latencyWeightPercent: 10,
+      switchCooldownMs: 600_000,
+      circuitBreakerFailureThreshold: 3,
+      circuitBreakerCooldownMs: 900_000,
+      refreshIntervalMs: 300_000,
+      queryTimeoutMs: 5_000,
+      allowExtraUsage: false,
+    });
+    expect(
+      resolveSubagentAutoPresetConfig(config.get<SubagentConfig>(SUBAGENT_SECTION)),
+    ).toEqual({
+      enabled: true,
+      manualLock: false,
+      candidates: ['kimi-heavy', 'balanced'],
+      quotaFloorPercent: 30,
+      switchMarginPercent: 10,
+      localUsageWindowMs: 3_600_000,
+      localUsageWeightPercent: 5,
+      priorityWeightPercent: 20,
+      reliabilityWeightPercent: 20,
+      latencyWeightPercent: 10,
+      switchCooldownMs: 600_000,
+      circuitBreakerFailureThreshold: 3,
+      circuitBreakerCooldownMs: 900_000,
+      refreshIntervalMs: 300_000,
+      queryTimeoutMs: 5_000,
+      allowExtraUsage: false,
+    });
+
+    disposables.dispose();
+  });
+
+  it('persists auto_preset patches as snake_case and keeps the round-trip lossless', async () => {
+    const { config, disposables, storage } = await createConfig(
+      {},
+      [
+        '[subagent]',
+        'preset = "balanced"',
+        '',
+        '[subagent.auto_preset]',
+        'enabled = false',
+        'query_timeout_ms = 9000',
+        '',
+      ].join('\n'),
+    );
+
+    await config.set(SUBAGENT_SECTION, { autoPreset: { enabled: true, quotaFloorPercent: 40 } });
+
+    const onDisk = new TextDecoder().decode(await storage.read('', 'config.toml'));
+    expect(onDisk).toContain('enabled = true');
+    expect(onDisk).toContain('quota_floor_percent = 40');
+    expect(onDisk).toContain('query_timeout_ms = 9000');
+    expect(onDisk).toContain('preset = "balanced"');
+
+    await config.reload();
+    expect(config.get<SubagentConfig>(SUBAGENT_SECTION).autoPreset).toMatchObject({
+      enabled: true,
+      quotaFloorPercent: 40,
+      queryTimeoutMs: 9000,
+    });
+
+    disposables.dispose();
+  });
+
+  it('preserves unknown future auto_preset keys when persisting a patch', async () => {
+    const { config, disposables, storage } = await createConfig(
+      {},
+      [
+        '[subagent]',
+        'preset = "balanced"',
+        '',
+        '[subagent.auto_preset]',
+        'enabled = false',
+        'query_timeout_ms = 9000',
+        'future_setting = "keep-me"',
+        '',
+      ].join('\n'),
+    );
+
+    await config.set(SUBAGENT_SECTION, { autoPreset: { enabled: true } });
+
+    const onDisk = new TextDecoder().decode(await storage.read('', 'config.toml'));
+    expect(onDisk).toContain('enabled = true');
+    expect(onDisk).toContain('query_timeout_ms = 9000');
+    expect(onDisk).toContain('future_setting = "keep-me"');
+
+    disposables.dispose();
+  });
+
+  it('rejects invalid auto_preset weights, cooldowns, thresholds, and candidates', async () => {
+    const malformed = [
+      '[subagent]\npreset = "balanced"\n\n[subagent.auto_preset]\nenabled = true\nquota_floor_percent = 120\n',
+      '[subagent]\npreset = "balanced"\n\n[subagent.auto_preset]\nenabled = true\nlocal_usage_weight_percent = -1\n',
+      '[subagent]\npreset = "balanced"\n\n[subagent.auto_preset]\nenabled = true\npriority_weight_percent = 101\n',
+      '[subagent]\npreset = "balanced"\n\n[subagent.auto_preset]\nenabled = true\nreliability_weight_percent = -1\n',
+      '[subagent]\npreset = "balanced"\n\n[subagent.auto_preset]\nenabled = true\nlatency_weight_percent = 101\n',
+      '[subagent]\npreset = "balanced"\n\n[subagent.auto_preset]\nenabled = true\nswitch_cooldown_ms = -1\n',
+      '[subagent]\npreset = "balanced"\n\n[subagent.auto_preset]\nenabled = true\ncircuit_breaker_failure_threshold = 0\n',
+      '[subagent]\npreset = "balanced"\n\n[subagent.auto_preset]\nenabled = true\ncircuit_breaker_cooldown_ms = -1\n',
+      '[subagent]\npreset = "balanced"\n\n[subagent.auto_preset]\nenabled = true\ncandidates = ["kimi-heavy", "kimi-heavy"]\n',
+      '[subagent]\npreset = "balanced"\n\n[subagent.auto_preset]\nenabled = true\ncandidates = ["", "balanced"]\n',
+    ];
+    for (const toml of malformed) {
+      const { config, disposables } = await createConfig({}, toml);
+      let caught: unknown;
+      try {
+        resolveSubagentBinding(config, secondaryModelFlags(), modelCatalogFor(), {
+          route: 'agent',
+          profileName: 'explore',
+          caller: { modelAlias: 'provider/main', thinkingLevel: 'medium' },
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(isError2(caught)).toBe(true);
+      expect((caught as Error2).code).toBe(ErrorCodes.CONFIG_INVALID);
+      expect((caught as Error2).message).toContain('[subagent] is invalid');
+      disposables.dispose();
+    }
+  });
+
+  it('round-trips auto_preset manual_lock as snake_case and updates it through a patch', async () => {
+    const { config, disposables, storage } = await createConfig(
+      {},
+      [
+        '[subagent]',
+        'preset = "balanced"',
+        '',
+        '[subagent.auto_preset]',
+        'enabled = true',
+        'manual_lock = true',
+        '',
+      ].join('\n'),
+    );
+
+    expect(config.get<SubagentConfig>(SUBAGENT_SECTION).autoPreset).toMatchObject({
+      enabled: true,
+      manualLock: true,
+    });
+    expect(
+      resolveSubagentAutoPresetConfig(config.get<SubagentConfig>(SUBAGENT_SECTION)),
+    ).toMatchObject({ enabled: true, manualLock: true });
+
+    await config.set(SUBAGENT_SECTION, { autoPreset: { manualLock: false } });
+
+    const onDisk = new TextDecoder().decode(await storage.read('', 'config.toml'));
+    expect(onDisk).toContain('manual_lock = false');
+    expect(onDisk).toContain('enabled = true');
 
     disposables.dispose();
   });

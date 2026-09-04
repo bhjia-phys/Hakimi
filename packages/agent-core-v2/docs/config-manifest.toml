@@ -385,6 +385,24 @@ timeout_ms = 7200000
 # agents: record<string, object>
 # presets: record<string, record<string, object>>
 
+# [subagent.auto_preset]
+  # enabled: boolean (default: false)
+  # manual_lock: boolean (default: false)
+  # candidates: string[]
+  # quota_floor_percent: number (default: 25)
+  # switch_margin_percent: number (default: 10)
+  # local_usage_window_ms: integer (default: 3600000)
+  # local_usage_weight_percent: number (default: 10)
+  # priority_weight_percent: number (default: 20)
+  # reliability_weight_percent: number (default: 20)
+  # latency_weight_percent: number (default: 10)
+  # switch_cooldown_ms: integer (default: 600000)
+  # circuit_breaker_failure_threshold: integer (default: 3)
+  # circuit_breaker_cooldown_ms: integer (default: 900000)
+  # refresh_interval_ms: integer (default: 300000)
+  # query_timeout_ms: integer (default: 5000)
+  # allow_extra_usage: boolean (default: false)
+
 # ##########################################################################
 # task
 #   owner: src/agent/task/configSection.ts

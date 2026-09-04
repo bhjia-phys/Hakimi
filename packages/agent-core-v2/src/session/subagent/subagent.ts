@@ -13,7 +13,8 @@
  * wire. The external-hook commands are translated from the hook slot and the
  * stop event. A run's completion reports the agent's cumulative `usage` (the
  * legacy wire semantics) plus the per-run `runUsage` delta reserved for the
- * internal ledger. Session-scoped — one instance per session.
+ * internal ledger; its timing snapshot covers the initial and any summary-
+ * continuation turns. Session-scoped — one instance per session.
  */
 
 import { createDecorator, type ServiceIdentifier } from '#/_base/di/instantiation';
@@ -39,10 +40,17 @@ export interface AgentRunCompletion {
   readonly runUsage?: TokenUsage;
 }
 
+export interface AgentRunTimingEvidence {
+  readonly llmRequestCount: number;
+  readonly firstTokenLatencySampleCount: number;
+  readonly averageFirstTokenLatencyMs?: number;
+}
+
 export interface AgentRunHandle {
   readonly agentId: string;
   readonly turn: Turn;
   readonly baseline: TokenUsage;
+  readonly timingEvidence: () => AgentRunTimingEvidence;
   readonly completion: Promise<AgentRunCompletion>;
 }
 
@@ -81,6 +89,9 @@ export interface AgentRunFinishedEvent {
   readonly durationMs: number;
   readonly usage?: TokenUsage;
   readonly contextTokens?: number;
+  readonly averageFirstTokenLatencyMs?: number;
+  readonly firstTokenLatencySampleCount?: number;
+  readonly llmRequestCount?: number;
   readonly errorCode?: string;
 }
 

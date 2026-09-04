@@ -8,6 +8,7 @@ import type { TaskItem } from '../../types';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import Badge from '../ui/Badge.vue';
 import Icon from '../ui/Icon.vue';
+import Tooltip from '../ui/Tooltip.vue';
 import StatusGlyph, { type StatusGlyphStatus } from './StatusGlyph.vue';
 
 defineProps<{ tasks: TaskItem[] }>();
@@ -92,7 +93,19 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
           <div class="tp-main" :role="isClickable(task) ? 'button' : undefined" @click="handleClick(task)">
             <StatusGlyph :status="glyphStatus(task.state)" />
             <span class="tp-name">{{ task.name }}</span>
-            <Badge variant="neutral" size="sm">{{ task.kind }}</Badge>
+            <template v-if="task.kind === 'subagent'">
+              <Tooltip v-if="task.subagentType" :text="`${t('tasks.role')}: ${task.subagentType}`">
+                <Badge variant="neutral" size="sm" class="tp-identity" :title="task.subagentType">
+                  <span class="tp-identity-text">{{ t('tasks.role') }}: {{ task.subagentType }}</span>
+                </Badge>
+              </Tooltip>
+              <Tooltip v-if="task.model" :text="`${t('tasks.model')}: ${task.model}`">
+                <Badge variant="neutral" size="sm" class="tp-identity tp-model" :title="task.model">
+                  <span class="tp-identity-text">{{ t('tasks.model') }}: {{ task.model }}</span>
+                </Badge>
+              </Tooltip>
+            </template>
+            <Badge v-else variant="neutral" size="sm">{{ task.kind }}</Badge>
             <span class="tp-time">{{ task.timing }}</span>
             <button
               v-if="task.state === 'run'"
@@ -216,6 +229,23 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.tp-identity {
+  flex: none;
+  min-width: 0;
+  max-width: 132px;
+  overflow: hidden;
+}
+.tp-model {
+  max-width: 176px;
+}
+.tp-identity-text {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .tp-time {
   flex: none;
@@ -317,6 +347,8 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
   .taskspane { padding: 14px 14px 16px; }
   .tp-main { flex-wrap: wrap; row-gap: 4px; }
   .tp-name { font-size: var(--ui-font-size-sm); }
+  .tp-identity { max-width: 104px; }
+  .tp-model { max-width: 128px; }
   .tp-stop {
     min-height: 32px;
     display: inline-flex;

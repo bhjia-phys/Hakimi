@@ -9,6 +9,9 @@ function member(
   name: string,
   opts: {
     phase?: AppSubagentPhase;
+    subagentType?: string;
+    model?: string;
+    thinkingEffort?: string;
     text?: string;
     outputLines?: string[];
     summary?: string;
@@ -19,6 +22,9 @@ function member(
     id,
     name,
     phase: opts.phase ?? 'working',
+    subagentType: opts.subagentType,
+    model: opts.model,
+    thinkingEffort: opts.thinkingEffort,
     text: opts.text,
     outputLines: opts.outputLines,
     summary: opts.summary,
@@ -64,7 +70,32 @@ describe('buildSwarmCardRows', () => {
       [member('a', '子任务 A', { text: 'streaming' })],
       null,
     );
-    expect(rows).toEqual([{ id: 'a', name: '子任务 A', activity: 'streaming', phase: 'working', body: 'streaming' }]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: 'a',
+      name: '子任务 A',
+      activity: 'streaming',
+      phase: 'working',
+      body: 'streaming',
+    });
+  });
+
+  it('preserves live member role, model, and thinking effort', () => {
+    const [row] = buildSwarmCardRows(
+      [
+        member('a', '子任务 A', {
+          subagentType: 'reviewer',
+          model: 'runtime-model',
+          thinkingEffort: 'high',
+        }),
+      ],
+      null,
+    );
+    expect(row).toMatchObject({
+      subagentType: 'reviewer',
+      model: 'runtime-model',
+      thinkingEffort: 'high',
+    });
   });
 
   it('builds rows from result subagents when no members are present', () => {
@@ -77,6 +108,7 @@ describe('buildSwarmCardRows', () => {
     );
     expect(rows.map((r) => r.name)).toEqual(['A', 'B']);
     expect(rows.map((r) => r.phase)).toEqual(['completed', 'failed']);
+    expect(rows.every((r) => r.subagentType === undefined && r.model === undefined)).toBe(true);
   });
 
   it('appends result-only aborted not_started rows on top of live members', () => {

@@ -7,15 +7,18 @@
  * is moved to the background instead of being killed, and background tasks
  * report completion automatically in a later turn.
  *
- * Owns the `BashInput` / `BashOutput` zod schemas, the foreground/background
- * timeout constants the schema descriptions and validation share with the
- * implementation, and the Agent-scope service identifier. Bound at Agent
- * scope.
+ * Owns the `BashInput` / `BashOutput` zod schemas and their
+ * `BashInputParameters` JSON Schema rendering (the model-facing contract and
+ * the preflight tool-argument validation both consume it), the
+ * foreground/background timeout constants the schema descriptions and
+ * validation share with the implementation, and the Agent-scope service
+ * identifier. Bound at Agent scope.
  */
 
 import { z } from 'zod';
 
 import { createDecorator } from '#/_base/di/instantiation';
+import { toInputJsonSchema } from '#/tool/input-schema';
 import { type AgentTool } from '#/tool/toolContract';
 
 export const DEFAULT_TIMEOUT_S = 60;
@@ -77,7 +80,35 @@ export const BashInputSchema = z
         message: `timeout must be ≤ ${String(cap)}s (${isBackground ? 'background' : 'foreground'})`,
       });
     }
+  })
+  .superRefine((val, ctx) => {
+    if (val.run_in_background !== true) return;
+    const hasDescription = typeof val.description === 'string' && val.description.trim().length > 0;
+    if (!hasDescription) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['description'],
+        message: 'description is required when run_in_background is true.',
+      });
+    }
   });
+
+export const BashInputParameters: Record<string, unknown> = {
+  ...toInputJsonSchema(BashInputSchema),
+  if: {
+    required: ['run_in_background'],
+    properties: {
+      run_in_background: { const: true },
+    },
+  },
+  // eslint-disable-next-line eslint-plugin-unicorn(no-thenable) — JSON Schema draft-07 `if`/`then` keywords, not a promise thenable
+  ['then']: {
+    required: ['description'],
+    properties: {
+      description: { pattern: '\\S' },
+    },
+  },
+};
 
 export const BashOutputSchema = z.object({
   exitCode: z.number().int(),

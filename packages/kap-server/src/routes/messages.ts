@@ -31,6 +31,7 @@ import {
   MessageNotFoundError,
   SessionNotFoundError,
 } from '../services/messages/messageHistory';
+import { projectRemoteMessage } from '../security/remoteResponseProjection';
 
 interface MessageRouteHost {
   get(
@@ -41,6 +42,11 @@ interface MessageRouteHost {
       reply: { send(payload: unknown): unknown },
     ) => Promise<void> | void,
   ): unknown;
+}
+
+export interface MessagesRouteOptions {
+  /** undefined = local; string = one-session remote; null = all-session remote. */
+  readonly remoteSessionId?: string | null;
 }
 
 // --- Query coercion ---------------------------------------------------------
@@ -83,7 +89,14 @@ const detailsSchema = z.array(z.object({ path: z.string(), message: z.string() }
 
 // --- Registration -----------------------------------------------------------
 
-export function registerMessagesRoutes(app: MessageRouteHost, core: Scope): void {
+export function registerMessagesRoutes(
+  app: MessageRouteHost,
+  core: Scope,
+  options: MessagesRouteOptions = {},
+): void {
+  const remote = options.remoteSessionId !== undefined;
+  const readOptions = { rehydrateMedia: !remote };
+
   // GET /sessions/{session_id}/messages --------------------------------
   const listRoute = defineRoute(
     {
@@ -102,8 +115,9 @@ export function registerMessagesRoutes(app: MessageRouteHost, core: Scope): void
     async (req, reply) => {
       try {
         const { session_id } = req.params;
-        const page = await listMessages(core, session_id, req.query);
-        reply.send(okEnvelope(page, req.id));
+        const page = await listMessages(core, session_id, req.query, readOptions);
+        const data = remote ? { ...page, items: page.items.map(projectRemoteMessage) } : page;
+        reply.send(okEnvelope(data, req.id));
       } catch (err) {
         sendMappedError(reply, req, err);
       }
@@ -133,8 +147,8 @@ export function registerMessagesRoutes(app: MessageRouteHost, core: Scope): void
     async (req, reply) => {
       try {
         const { session_id, message_id } = req.params;
-        const message = await getMessage(core, session_id, message_id);
-        reply.send(okEnvelope(message, req.id));
+        const message = await getMessage(core, session_id, message_id, readOptions);
+        reply.send(okEnvelope(remote ? projectRemoteMessage(message) : message, req.id));
       } catch (err) {
         sendMappedError(reply, req, err);
       }

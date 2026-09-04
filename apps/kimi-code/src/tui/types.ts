@@ -79,6 +79,9 @@ export interface AppState {
   upgrade: UpgradePreferences;
   /** Footer status line customization from tui.toml; absent means the default layout. */
   statusLine?: StatusLineConfig;
+  /** Effective subagent preset (`activeSubagentPreset(config.subagent)`);
+   * undefined when no preset is configured (base routing / parent model). */
+  subagentPreset?: string;
   availableModels: Record<string, ModelAlias>;
   availableProviders: Record<string, ProviderConfig>;
   sessionTitle: string | null;

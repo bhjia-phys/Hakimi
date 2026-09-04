@@ -2,8 +2,22 @@ import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { IEventService, type GlobalEvent } from '@moonshot-ai/agent-core-v2';
-import { configResponseSchema, type ConfigResponse } from '../src/protocol/rest-config';
+import {
+  IAutoSubagentPresetService,
+  IConfigService,
+  IEventService,
+  ISubagentPresetActivationService,
+  type AutoSubagentPresetStatus,
+  type GlobalEvent,
+} from '@moonshot-ai/agent-core-v2';
+import { ErrorCode } from '../src/protocol/error-codes';
+import {
+  configResponseSchema,
+  subagentPresetActivationResponseSchema,
+  subagentPresetStatusResponseSchema,
+  type ConfigResponse,
+  type SubagentPresetActivationResponse,
+} from '../src/protocol/rest-config';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 
@@ -17,6 +31,61 @@ interface Envelope<T> {
   data: T;
   request_id: string;
 }
+
+const AUTO_PRESET_STATUS_FIXTURE = {
+  evaluatedAt: 1_750_000_000_000,
+  route: 'agent',
+  profileName: 'reviewer',
+  reasonCode: 'higher_score',
+  currentPreset: 'balanced',
+  selectedPreset: 'kimi-heavy',
+  activatedPreset: 'kimi-heavy',
+  currentScore: 58.5,
+  selectedScore: 76.25,
+  switchCooldownUntil: 1_750_000_030_000,
+  candidates: [
+    {
+      preset: 'kimi-heavy',
+      provider: 'provider-a',
+      availability: 'healthy',
+      selectable: true,
+      score: 76.25,
+      quotaRemainingPercent: 80,
+      quotaResetAt: 1_750_003_600_000,
+      contributions: {
+        quotaRemaining: 80,
+        priorityBonus: 8,
+        resetBonus: 1,
+        routeFitBonus: 2,
+        tokenPenalty: 3,
+        reliabilityPenalty: 7.5,
+        latencyPenalty: 4.25,
+      },
+      localEvidence: {
+        scope: 'profile',
+        sampleCount: 8,
+        failureCount: 1,
+        adjustedFailureRate: 0.15,
+        tokenCount: 42_000,
+        averageFirstTokenLatencyMs: 320,
+        firstTokenLatencySampleCount: 9,
+        llmRequestCount: 12,
+      },
+    },
+  ],
+  policy: {
+    quotaFloorPercent: 10,
+    switchMarginPercent: 5,
+    localUsageWindowMs: 86_400_000,
+    localUsageWeightPercent: 10,
+    priorityWeightPercent: 20,
+    reliabilityWeightPercent: 15,
+    latencyWeightPercent: 10,
+    switchCooldownMs: 30_000,
+    circuitBreakerFailureThreshold: 3,
+    circuitBreakerCooldownMs: 60_000,
+  },
+} satisfies AutoSubagentPresetStatus;
 
 describe('server-v2 /api/v1/config', () => {
   let server: RunningServer | undefined;
@@ -71,6 +140,21 @@ describe('server-v2 /api/v1/config', () => {
     const body = (await res.json()) as Envelope<ConfigResponse>;
     expect(body.code).toBe(0);
     return configResponseSchema.parse(body.data);
+  }
+
+  async function activateSubagentPreset(preset: string): Promise<Envelope<unknown>> {
+    const res = await authedFetch(
+      server as RunningServer,
+      base,
+      '/api/v1/config/subagent-preset/activate',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ preset }),
+      },
+    );
+    expect(res.status).toBe(200);
+    return (await res.json()) as Envelope<unknown>;
   }
 
   /** Resolve when a matching `event.config.changed` is published on IEventService. */
@@ -303,33 +387,288 @@ describe('server-v2 /api/v1/config', () => {
     expect(body.code).toBe(0);
   });
 
-  it('POST { subagent } round-trips the active preset and nested route tables', async () => {
+  it('POST { subagent.preset } uses manual activation while merging the remaining route fields', async () => {
     await boot();
+    const activation = (server as RunningServer).core.accessor.get(
+      ISubagentPresetActivationService,
+    );
+
     const cfg = await patchConfig({
       subagent: {
         preset: 'research',
-        agents: { main: { model: 'provider/base', thinking_effort: 'low' } },
+        timeout_ms: 1234,
+        agents: { main: { thinking_effort: 'low' } },
         presets: {
           research: {
-            main: { model: 'provider/research', thinking_effort: 'high' },
-            swarm: { model: 'provider/swarm' },
+            main: { thinking_effort: 'high' },
+            swarm: { thinking_effort: 'medium' },
           },
         },
       },
     });
+
     expect(cfg.subagent).toMatchObject({
       preset: 'research',
-      agents: { main: { model: 'provider/base', thinkingEffort: 'low' } },
+      timeoutMs: 1234,
+      autoPreset: { manualLock: true },
+      agents: { main: { thinkingEffort: 'low' } },
       presets: {
         research: {
-          main: { model: 'provider/research', thinkingEffort: 'high' },
-          swarm: { model: 'provider/swarm' },
+          main: { thinkingEffort: 'high' },
+          swarm: { thinkingEffort: 'medium' },
         },
       },
     });
-
+    expect(activation.manualRevision).toBe(1);
     const after = await getConfig();
     expect(after.subagent).toEqual(cfg.subagent);
+  });
+
+  it('lets a generic POST manual preset win after a competing automatic transaction', async () => {
+    await boot(
+      '[subagent]\npreset = "balanced"\n\n[subagent.presets.balanced.reviewer]\nthinking_effort = "high"\n\n[subagent.presets.deep.reviewer]\nthinking_effort = "max"\n',
+    );
+    const running = server as RunningServer;
+    const activation = running.core.accessor.get(ISubagentPresetActivationService);
+    let automaticEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      automaticEntered = resolve;
+    });
+    let releaseAutomatic!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseAutomatic = resolve;
+    });
+    const automatic = activation.runExclusive(async (transaction) => {
+      automaticEntered();
+      await gate;
+      return transaction.activate('balanced');
+    });
+    await entered;
+
+    const manual = patchConfig({
+      subagent: { preset: 'deep', timeout_ms: 4321 },
+    });
+    await vi.waitFor(() => {
+      expect(
+        running.core.accessor.get(IConfigService).get<{ timeoutMs?: number }>('subagent')
+          .timeoutMs,
+      ).toBe(4321);
+    });
+    releaseAutomatic();
+    const [automaticResult, manualConfig] = await Promise.all([automatic, manual]);
+
+    expect(automaticResult.kind).toBe('activated');
+    expect(manualConfig.subagent).toMatchObject({
+      preset: 'deep',
+      timeoutMs: 4321,
+      autoPreset: { manualLock: true },
+    });
+    expect(activation.manualRevision).toBe(1);
+    expect((await getConfig()).subagent).toEqual(manualConfig.subagent);
+  });
+
+  it('deep-merges the Web automatic-preset gates without replacing routes or other flags', async () => {
+    await boot(
+      '[experimental]\nexisting_flag = true\n\n[subagent]\npreset = "balanced"\n\n[subagent.presets.balanced.agent]\nmodel = "provider/base"\n',
+    );
+
+    const cfg = await patchConfig({
+      experimental: { auto_subagent_preset: true },
+      subagent: { autoPreset: { enabled: true } },
+    });
+
+    expect(cfg.experimental).toEqual({ existing_flag: true, auto_subagent_preset: true });
+    expect(cfg.subagent).toMatchObject({
+      preset: 'balanced',
+      autoPreset: { enabled: true },
+      presets: { balanced: { agent: { model: 'provider/base' } } },
+    });
+  });
+
+  it('returns the latest automatic-preset status without persisting or leaking extra fields', async () => {
+    await boot('[subagent]\npreset = "balanced"\n');
+    const configPath = join(home as string, 'config.toml');
+    const configBefore = await readFile(configPath, 'utf8');
+
+    const emptyResponse = await authedFetch(
+      server as RunningServer,
+      base,
+      '/api/v1/config/subagent-preset/status',
+    );
+    expect(emptyResponse.status).toBe(200);
+    const emptyBody = (await emptyResponse.json()) as Envelope<unknown>;
+    expect(emptyBody.code).toBe(0);
+    expect(subagentPresetStatusResponseSchema.parse(emptyBody.data)).toBeNull();
+
+    const secret = 'RUNTIME_STATUS_SECRET_SENTINEL';
+    const runtimeStatus = {
+      ...AUTO_PRESET_STATUS_FIXTURE,
+      internalCredential: secret,
+    } as AutoSubagentPresetStatus;
+    vi.spyOn(
+      (server as RunningServer).core.accessor.get(IAutoSubagentPresetService),
+      'status',
+    ).mockReturnValue(runtimeStatus);
+
+    const response = await authedFetch(
+      server as RunningServer,
+      base,
+      '/api/v1/config/subagent-preset/status',
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Envelope<unknown>;
+    expect(body.code).toBe(0);
+    expect(JSON.stringify(body)).not.toContain(secret);
+    expect(subagentPresetStatusResponseSchema.parse(body.data)).toEqual({
+      evaluated_at: 1_750_000_000_000,
+      route: 'agent',
+      profile_name: 'reviewer',
+      reason_code: 'higher_score',
+      current_preset: 'balanced',
+      selected_preset: 'kimi-heavy',
+      activated_preset: 'kimi-heavy',
+      current_score: 58.5,
+      selected_score: 76.25,
+      switch_cooldown_until: 1_750_000_030_000,
+      candidates: [
+        {
+          preset: 'kimi-heavy',
+          provider: 'provider-a',
+          availability: 'healthy',
+          selectable: true,
+          score: 76.25,
+          quota_remaining_percent: 80,
+          quota_reset_at: 1_750_003_600_000,
+          contributions: {
+            quota_remaining: 80,
+            priority_bonus: 8,
+            reset_bonus: 1,
+            route_fit_bonus: 2,
+            token_penalty: 3,
+            reliability_penalty: 7.5,
+            latency_penalty: 4.25,
+          },
+          local_evidence: {
+            scope: 'profile',
+            sample_count: 8,
+            failure_count: 1,
+            adjusted_failure_rate: 0.15,
+            token_count: 42_000,
+            average_first_token_latency_ms: 320,
+            first_token_latency_sample_count: 9,
+            llm_request_count: 12,
+          },
+        },
+      ],
+      policy: {
+        quota_floor_percent: 10,
+        switch_margin_percent: 5,
+        local_usage_window_ms: 86_400_000,
+        local_usage_weight_percent: 10,
+        priority_weight_percent: 20,
+        reliability_weight_percent: 15,
+        latency_weight_percent: 10,
+        switch_cooldown_ms: 30_000,
+        circuit_breaker_failure_threshold: 3,
+        circuit_breaker_cooldown_ms: 60_000,
+      },
+    });
+
+    const configResponse = await authedFetch(server as RunningServer, base, '/api/v1/config');
+    const configBody = (await configResponse.json()) as Envelope<Record<string, unknown>>;
+    expect(configBody.data['subagent_preset_status']).toBeUndefined();
+    expect(configBody.data['status']).toBeUndefined();
+    expect(JSON.stringify(configBody)).not.toContain(secret);
+    await expect(readFile(configPath, 'utf8')).resolves.toBe(configBefore);
+  });
+
+  it('rejects invalid count, rate, percent, and contribution values at the REST projector', async () => {
+    await boot();
+    const candidate = AUTO_PRESET_STATUS_FIXTURE.candidates[0]!;
+    const invalidStatuses = [
+      {
+        ...AUTO_PRESET_STATUS_FIXTURE,
+        candidates: [{
+          ...candidate,
+          localEvidence: { ...candidate.localEvidence, firstTokenLatencySampleCount: 1.5 },
+        }],
+      },
+      {
+        ...AUTO_PRESET_STATUS_FIXTURE,
+        candidates: [{
+          ...candidate,
+          localEvidence: { ...candidate.localEvidence, adjustedFailureRate: 1.01 },
+        }],
+      },
+      {
+        ...AUTO_PRESET_STATUS_FIXTURE,
+        candidates: [{ ...candidate, quotaRemainingPercent: 101 }],
+      },
+      {
+        ...AUTO_PRESET_STATUS_FIXTURE,
+        policy: { ...AUTO_PRESET_STATUS_FIXTURE.policy, latencyWeightPercent: 101 },
+      },
+      {
+        ...AUTO_PRESET_STATUS_FIXTURE,
+        candidates: [{
+          ...candidate,
+          contributions: { ...candidate.contributions, tokenPenalty: -1 },
+        }],
+      },
+    ];
+    const status = vi.spyOn(
+      (server as RunningServer).core.accessor.get(IAutoSubagentPresetService),
+      'status',
+    );
+
+    for (const invalid of invalidStatuses) {
+      status.mockReturnValueOnce(invalid as unknown as AutoSubagentPresetStatus);
+      const response = await authedFetch(
+        server as RunningServer,
+        base,
+        '/api/v1/config/subagent-preset/status',
+      );
+      const body = (await response.json()) as Envelope<unknown>;
+      expect(body.code).toBe(0);
+      expect(body.data).toBeNull();
+    }
+  });
+
+  it('activates and clears a preset through the shared manual activation boundary', async () => {
+    await boot(
+      '[subagent]\npreset = "balanced"\n\n[subagent.presets.balanced.reviewer]\nthinking_effort = "high"\n\n[subagent.presets.deep.reviewer]\nthinking_effort = "max"\n',
+    );
+    const activation = (server as RunningServer).core.accessor.get(
+      ISubagentPresetActivationService,
+    );
+
+    const activated = await activateSubagentPreset('deep');
+    expect(activated.code).toBe(0);
+    const activatedData = subagentPresetActivationResponseSchema.parse(
+      activated.data,
+    ) satisfies SubagentPresetActivationResponse;
+    expect(activatedData.config.subagent).toMatchObject({ preset: 'deep' });
+    expect(activation.manualRevision).toBe(1);
+
+    const cleared = await activateSubagentPreset('');
+    expect(cleared.code).toBe(0);
+    const clearedData = subagentPresetActivationResponseSchema.parse(
+      cleared.data,
+    ) satisfies SubagentPresetActivationResponse;
+    expect(clearedData.config.subagent).toMatchObject({ preset: '' });
+    expect(activation.manualRevision).toBe(2);
+  });
+
+  it('rejects an invalid preset route before changing the active selector', async () => {
+    await boot(
+      '[subagent]\npreset = "balanced"\n\n[subagent.presets.balanced.reviewer]\nthinking_effort = "high"\n\n[subagent.presets.broken.reviewer]\nmodel = "missing/model"\n',
+    );
+
+    const rejected = await activateSubagentPreset('broken');
+
+    expect(rejected.code).toBe(ErrorCode.VALIDATION_FAILED);
+    expect(rejected.msg).toContain('could not be resolved');
+    expect((await getConfig()).subagent).toMatchObject({ preset: 'balanced' });
   });
 
   it('external config-file reload publishes ONE merged configChanged event', async () => {
@@ -499,6 +838,36 @@ describe('server-v2 config changed → WS global fan-out (real connection)', () 
 
       // Settle past the file-watcher debounce: the set's own file write must
       // not echo as a second frame (that reload is a no-op).
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(frames.filter((f) => f['type'] === 'event.config.changed')).toHaveLength(1);
+    } finally {
+      ws.close();
+    }
+  });
+
+  it('internal config set reaches an established WS connection exactly once', async () => {
+    await boot();
+    const ws = await connect();
+    const frames = collectFrames(ws);
+    try {
+      await (server as RunningServer).core.accessor.get(IConfigService).set('subagent', {
+        preset: 'codex-heavy',
+        presets: { 'codex-heavy': { agent: { model: 'provider/gpt' } } },
+      });
+
+      const frame = await waitForFrame(frames, (f) => f['type'] === 'event.config.changed');
+      expect(frame).toMatchObject({
+        type: 'event.config.changed',
+        session_id: '__global__',
+        payload: {
+          type: 'event.config.changed',
+          changedFields: ['subagent'],
+          config: expect.objectContaining({
+            subagent: expect.objectContaining({ preset: 'codex-heavy' }),
+          }),
+        },
+      });
+
       await new Promise((resolve) => setTimeout(resolve, 500));
       expect(frames.filter((f) => f['type'] === 'event.config.changed')).toHaveLength(1);
     } finally {

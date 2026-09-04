@@ -55,6 +55,7 @@ import {
 } from '../lib/promptMedia';
 import { requestLog } from '../lib/requestLog';
 import { defineRoute } from '../middleware/defineRoute';
+import { projectRemotePromptSubmission } from '../security/remoteResponseProjection';
 import { ensureMainAgent, MAIN_AGENT_ID } from '../transport/mainAgent';
 import { parseActionSuffix } from './action-suffix';
 import { applySessionAgentConfig } from './sessionAgentConfig';
@@ -81,6 +82,11 @@ interface PromptRouteHost {
       reply: PromptRouteReply,
     ) => Promise<void> | void,
   ): unknown;
+}
+
+interface PromptRoutesOptions {
+  /** undefined = local; string = one-session remote; null = all-session remote. */
+  readonly remoteSessionId?: string | null;
 }
 
 const sessionIdParamSchema = z.object({
@@ -168,7 +174,11 @@ async function applyProfileSelection(
 }
 
 
-export function registerPromptsRoutes(app: PromptRouteHost, core: Scope): void {
+export function registerPromptsRoutes(
+  app: PromptRouteHost,
+  core: Scope,
+  options: PromptRoutesOptions = {},
+): void {
   const listRoute = defineRoute(
     {
       method: 'GET',
@@ -214,12 +224,16 @@ export function registerPromptsRoutes(app: PromptRouteHost, core: Scope): void {
     },
     async (req, reply) => {
       const { session_id } = req.params;
+      const submission =
+        options.remoteSessionId === undefined
+          ? req.body
+          : projectRemotePromptSubmission(req.body);
       try {
         // Fail fast on stale file references before anything is resolved or
         // mutated: a bad `file_id` must not create the agent, register `main`
         // in session metadata, or touch the session's controls.
-        await assertPromptFileRefs(req.body.content, core.accessor.get(IFileService));
-        const resolved = await resolvePrompt(core, session_id, req.body.agent_id);
+        await assertPromptFileRefs(submission.content, core.accessor.get(IFileService));
+        const resolved = await resolvePrompt(core, session_id, submission.agent_id);
         await resolved.auth.ensureReady();
 
         // Media resolution runs BEFORE any control mutation, so a failed
@@ -230,7 +244,7 @@ export function registerPromptsRoutes(app: PromptRouteHost, core: Scope): void {
         // time, so the edge no longer uploads.
         const telemetry = core.accessor.get(ITelemetryService).withContext({ sessionId: session_id });
         const resolvedContent = await resolvePromptMediaFiles(
-          req.body.content,
+          submission.content,
           core.accessor.get(IFileService),
           core.accessor.get(IBootstrapService).cacheDir,
           {
@@ -250,24 +264,25 @@ export function registerPromptsRoutes(app: PromptRouteHost, core: Scope): void {
 
         // Media prepared successfully — only now do the overrides bind.
         let thinkingConsumed = false;
-        if (req.body.profile !== undefined) {
+        if (submission.profile !== undefined) {
           thinkingConsumed =
             (await applyProfileSelection(
               resolved.profile,
-              req.body.profile,
-              req.body.model,
-              req.body.thinking,
-            )) && req.body.thinking !== undefined;
+              submission.profile,
+              submission.model,
+              submission.thinking,
+            )) && submission.thinking !== undefined;
         }
-        if (req.body.model !== undefined) await resolved.profile.setModel(req.body.model);
-        if (req.body.thinking !== undefined && !thinkingConsumed)
-          resolved.profile.setThinking(req.body.thinking);
-        if (req.body.permission_mode !== undefined) resolved.permissionMode.setMode(req.body.permission_mode);
-        if (req.body.disabled_tools !== undefined) {
+        if (submission.model !== undefined) await resolved.profile.setModel(submission.model);
+        if (submission.thinking !== undefined && !thinkingConsumed)
+          resolved.profile.setThinking(submission.thinking);
+        if (submission.permission_mode !== undefined)
+          resolved.permissionMode.setMode(submission.permission_mode);
+        if (submission.disabled_tools !== undefined) {
           // A session denylist before bind throws `profile.not_bound` — map it
           // onto 40001 like the profile-selection errors above.
           try {
-            await resolved.toolPolicy.setSessionDisabledTools(req.body.disabled_tools);
+            await resolved.toolPolicy.setSessionDisabledTools(submission.disabled_tools);
           } catch (error) {
             if (error instanceof ProfileError) {
               throw new Error2(ErrorCodes.REQUEST_INVALID, error.message);
@@ -275,10 +290,10 @@ export function registerPromptsRoutes(app: PromptRouteHost, core: Scope): void {
             throw error;
           }
         }
-        if (req.body.plan_mode !== undefined || req.body.swarm_mode !== undefined) {
+        if (submission.plan_mode !== undefined || submission.swarm_mode !== undefined) {
           await applySessionAgentConfig(core, session_id, {
-            plan_mode: req.body.plan_mode,
-            swarm_mode: req.body.swarm_mode,
+            plan_mode: submission.plan_mode,
+            swarm_mode: submission.swarm_mode,
           });
           reply.header('Deprecation', '@1786406400');
           reply.header(

@@ -15,7 +15,12 @@
  * extracts it without parsing the whole body — large payloads stay cheap.
  */
 
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+
+export interface RequestLoggingOptions {
+  /** Hide attacker-controlled URLs for security-boundary denials. */
+  readonly redactUrl?: (req: FastifyRequest) => boolean;
+}
 
 /**
  * Pull the envelope `code` out of a serialized JSON response body.
@@ -43,7 +48,10 @@ export function extractEnvelopeCode(payload: unknown): number | undefined {
  * logger, `req`, `responseTime`, `msg: 'request completed'`) but swaps
  * `res.statusCode` for the envelope `code`.
  */
-export function registerRequestLogging(app: FastifyInstance): void {
+export function registerRequestLogging(
+  app: FastifyInstance,
+  options: RequestLoggingOptions = {},
+): void {
   // Per-request stash from `onSend` (payload known) to `onResponse` (timing
   // known). Keyed by reply object so entries are GC'd with the request.
   const codes = new WeakMap<FastifyReply, number>();
@@ -57,13 +65,14 @@ export function registerRequestLogging(app: FastifyInstance): void {
   });
 
   app.addHook('onResponse', (req, reply, done) => {
+    const redactRequestTarget = options.redactUrl?.(req) === true;
     req.log.info(
       {
         req: {
           method: req.method,
-          url: req.url,
+          url: redactRequestTarget ? '[redacted]' : req.url,
           version: req.headers['accept-version'],
-          host: req.host,
+          host: redactRequestTarget ? '[redacted]' : req.host,
           remoteAddress: req.ip,
           remotePort: req.socket === undefined ? undefined : req.socket.remotePort,
         },

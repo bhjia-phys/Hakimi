@@ -1,13 +1,12 @@
 /**
- * `subagent` domain — registers the deprecated `secondary-model` fallback flag
- * into `flag`.
+ * `subagent` domain — registers the subagent feature flags into `flag`.
  *
- * Enables best-effort legacy `[secondary_model]` aliases for Agent,
- * AgentSwarm, and Tower workers when no canonical preset is active. It does
- * not add a model choice to the agent-facing tool schemas or make legacy pool
- * validation a startup blocker. Off by default; enable via
- * `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL`, the master
- * `KIMI_CODE_EXPERIMENTAL_FLAG`, or the `[experimental]` config section.
+ * Two flags: the deprecated `secondary-model` fallback flag, which enables
+ * best-effort legacy `[secondary_model]` aliases for Agent, AgentSwarm, and
+ * Tower workers when no canonical preset is active (off by default), and the
+ * `auto_subagent_preset` flag that gates the engine's automatic subagent-preset
+ * switching (off by default; also requires `enabled = true` under
+ * `[subagent.auto_preset]`).
  */
 
 import { type FlagDefinitionInput, registerFlagDefinition } from '#/app/flag/flagRegistry';
@@ -26,3 +25,18 @@ export const secondaryModelFlag: FlagDefinitionInput = {
 };
 
 registerFlagDefinition(secondaryModelFlag);
+
+export const AUTO_SUBAGENT_PRESET_FLAG_ID = 'auto_subagent_preset';
+export const AUTO_SUBAGENT_PRESET_FLAG_ENV = 'KIMI_CODE_EXPERIMENTAL_AUTO_SUBAGENT_PRESET';
+
+export const autoSubagentPresetFlag: FlagDefinitionInput = {
+  id: AUTO_SUBAGENT_PRESET_FLAG_ID,
+  title: 'Automatic subagent preset switching',
+  description:
+    'Let the engine evaluate provider usage and per-subagent token usage before relevant Agent, AgentSwarm, or Tower spawns and rebindable resumes, then automatically activate the best configured `[subagent].preset`. Requires `enabled = true` under `[subagent.auto_preset]`; the decision only writes `[subagent].preset` and never blocks a spawn or resume.',
+  env: AUTO_SUBAGENT_PRESET_FLAG_ENV,
+  default: false,
+  surface: 'core',
+};
+
+registerFlagDefinition(autoSubagentPresetFlag);

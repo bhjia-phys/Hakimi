@@ -17,6 +17,8 @@ export default {
   emptyTodo: '暂无待办事项',
   openTab: '查看全部后台任务',
   openDetail: '查看',
+  role: '角色',
+  model: '模型',
   collapse: '折叠',
   expand: '展开',
 } as const;

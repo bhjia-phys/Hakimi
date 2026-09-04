@@ -84,6 +84,7 @@ import {
   IAgentFullCompactionService,
   IAgentLoopService,
   IAuthSummaryService,
+  IConfigService,
   ISessionActivityView,
   ISessionBtwService,
   ISessionContext,
@@ -137,6 +138,7 @@ import { z } from 'zod';
 import { errEnvelope, okEnvelope } from '../envelope';
 import { requestLog } from '../lib/requestLog';
 import { defineRoute } from '../middleware/defineRoute';
+import { projectRemoteSession } from '../security/remoteResponseProjection';
 import { ensureMainAgent } from '../transport/mainAgent';
 import { parseActionSuffix } from './action-suffix';
 import { applySessionAgentConfig } from './sessionAgentConfig';
@@ -256,7 +258,16 @@ const sessionActionRequestSchema = z.preprocess(
 
 const detailsSchema = z.array(z.object({ path: z.string(), message: z.string() }));
 
-export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void {
+export interface RegisterSessionsRoutesOptions {
+  /** undefined = local; string = one-session remote; null = all-session remote. */
+  readonly remoteSessionId?: string | null;
+}
+
+export function registerSessionsRoutes(
+  app: SessionRouteHost,
+  core: Scope,
+  options: RegisterSessionsRoutesOptions = {},
+): void {
   const createRoute = defineRoute(
     {
       method: 'POST',
@@ -332,6 +343,20 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
         if (typeof body.title === 'string') {
           await handle.accessor.get(ISessionMetadata).setTitle(body.title);
         }
+        // Apply the caller's `agent_config` (previously dropped here) through
+        // the same dispatch as `POST /sessions/{id}/profile`, and fall back to
+        // the configured default model when no model was requested — v1 baked
+        // `options.model ?? config.defaultModel` into the main agent at create
+        // (packages/agent-core/src/rpc/core-impl.ts), so a bare create followed
+        // by a model-less prompt stayed runnable. When neither yields a model,
+        // bind nothing (the unbound draft state) — no new error path.
+        const agentConfig = body.agent_config;
+        const config = core.accessor.get(IConfigService);
+        await config.ready;
+        const model = agentConfig?.model ?? config.get<string>('defaultModel');
+        if (agentConfig !== undefined || (model !== undefined && model !== '')) {
+          await applySessionAgentConfig(core, handle.id, { ...agentConfig, model });
+        }
         const meta = await handle.accessor.get(ISessionMetadata).read();
         const session = toWireSession(
           { ...meta, workspaceId: touched.id },
@@ -369,6 +394,12 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
     },
     async (req, reply) => {
       const raw = req.query;
+      if (typeof options.remoteSessionId === 'string') {
+        const items = await projectRemoteSessionList(core, options.remoteSessionId, raw);
+        reply.send(okEnvelope({ items, has_more: false }, req.id));
+        return;
+      }
+      const remote = options.remoteSessionId === null;
       const archivedOnly = raw.archived_only === true;
 
       const workspaces = await core.accessor.get(IWorkspaceService).list();
@@ -477,10 +508,11 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
           toWireSession(summary, cwd, resolveSessionFacts(core, summary.id)),
         );
         // v1 filters ordinary lists by the busy fact post-page.
-        const items =
+        const filtered =
           raw.busy !== undefined
             ? projected.filter((session) => session.busy === raw.busy)
             : projected;
+        const items = remote ? filtered.map(projectRemoteSession) : filtered;
         reply.send(okEnvelope({ items, has_more: false }, req.id));
         return;
       }
@@ -492,10 +524,11 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
       );
       // v1 filters ordinary lists by the busy fact post-page; `archived_only`
       // already applied it during the drain above.
-      const items =
+      const filtered =
         raw.busy !== undefined && !archivedOnly
           ? projected.filter((session) => session.busy === raw.busy)
           : projected;
+      const items = remote ? filtered.map(projectRemoteSession) : filtered;
       reply.send(okEnvelope({ items, has_more: hasMore }, req.id));
     },
   );
@@ -541,8 +574,12 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
         );
         return;
       }
+      const session = toWireSession(summary, cwd, resolveSessionFacts(core, session_id));
       reply.send(
-        okEnvelope(toWireSession(summary, cwd, resolveSessionFacts(core, session_id)), req.id),
+        okEnvelope(
+          options.remoteSessionId === undefined ? session : projectRemoteSession(session),
+          req.id,
+        ),
       );
     },
   );
@@ -1140,6 +1177,34 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
     sessionWarningsRoute.options,
     sessionWarningsRoute.handler as Parameters<SessionRouteHost['get']>[2],
   );
+}
+
+/**
+ * Remote shares expose one stable list row without walking the global index.
+ * Query filters may hide that row, but no cursor/workspace probe can cause a
+ * different session to enter the response.
+ */
+async function projectRemoteSessionList(
+  core: Scope,
+  sessionId: string,
+  query: z.infer<typeof sessionsListQueryCoercion>,
+): Promise<Session[]> {
+  if (query.before_id !== undefined || query.after_id !== undefined) return [];
+
+  const summary = await core.accessor.get(ISessionIndex).get(sessionId);
+  if (summary === undefined) return [];
+  if (query.archived_only === true && !summary.archived) return [];
+  if (query.archived_only !== true && query.include_archive !== true && summary.archived) return [];
+  if (query.workspace_id !== undefined && query.workspace_id !== summary.workspaceId) return [];
+  if (query.exclude_empty === true && (summary.lastPrompt ?? '').length === 0) return [];
+
+  const cwd =
+    summary.cwd ?? (await core.accessor.get(IWorkspaceService).get(summary.workspaceId))?.root;
+  if (cwd === undefined) return [];
+
+  const facts = resolveSessionFacts(core, sessionId);
+  if (query.busy !== undefined && facts.busy !== query.busy) return [];
+  return [projectRemoteSession(toWireSession(summary, cwd, facts))];
 }
 
 // ---------------------------------------------------------------------------

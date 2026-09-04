@@ -202,6 +202,15 @@ command = "~/.kimi-code/statusline.sh"
     });
   });
 
+  it('accepts the preset status_line item', () => {
+    const config = parseTuiConfig(`
+[status_line]
+items = ["model", "preset", "cwd"]
+`);
+
+    expect(config.statusLine?.items).toEqual(['model', 'preset', 'cwd']);
+  });
+
   it('skips unknown items with a warning instead of failing the whole file', () => {
     const config = parseTuiConfig(`
 [status_line]
@@ -241,6 +250,7 @@ command = "   "
     expect(text).toContain('[status_line]');
     expect(text).toContain('items');
     expect(text).toContain('command');
+    expect(text).toContain('"preset"');
   });
 });
 

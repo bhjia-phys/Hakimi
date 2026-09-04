@@ -62,6 +62,10 @@ exports[`API surface snapshot > matches the documented v2 route table and meta e
     ],
     [
       "GET",
+      "/api/v1/config/subagent-preset/status",
+    ],
+    [
+      "GET",
       "/api/v1/connections",
     ],
     [
@@ -310,6 +314,10 @@ exports[`API surface snapshot > matches the documented v2 route table and meta e
     ],
     [
       "POST",
+      "/api/v1/config/subagent-preset/activate",
+    ],
+    [
+      "POST",
       "/api/v1/debug/{service}/{method}",
     ],
     [
@@ -477,5 +485,88 @@ exports[`API surface snapshot > matches the documented v2 route table and meta e
       "/api/v1/providers/{provider_id}",
     ],
   ],
+}
+`;
+
+exports[`AsyncAPI subagent preset events > publishes both discriminators and the complete reason enum in AsyncAPI 1`] = `
+{
+  "event.subagent.preset_changed": {
+    "reason_code": {
+      "enum": [
+        "cancelled",
+        "flag_disabled",
+        "auto_preset_disabled",
+        "manual_lock",
+        "caller_model_unavailable",
+        "no_candidates",
+        "explicit_preset",
+        "no_quota_evidence",
+        "no_healthy_candidate",
+        "current_optimal",
+        "score_margin_not_met",
+        "switch_cooldown",
+        "current_unhealthy",
+        "circuit_breaker_escape",
+        "higher_score",
+        "manual_override",
+        "preset_changed_during_evaluation",
+        "routing_config_changed",
+        "evaluation_failed",
+        "activation_failed",
+        "activation_no_effect",
+      ],
+      "type": "string",
+    },
+    "required": [
+      "type",
+      "current_preset",
+      "reason_code",
+      "evaluated_at",
+    ],
+    "type": {
+      "const": "event.subagent.preset_changed",
+      "type": "string",
+    },
+  },
+  "event.subagent.preset_evaluated": {
+    "reason_code": {
+      "enum": [
+        "cancelled",
+        "flag_disabled",
+        "auto_preset_disabled",
+        "manual_lock",
+        "caller_model_unavailable",
+        "no_candidates",
+        "explicit_preset",
+        "no_quota_evidence",
+        "no_healthy_candidate",
+        "current_optimal",
+        "score_margin_not_met",
+        "switch_cooldown",
+        "current_unhealthy",
+        "circuit_breaker_escape",
+        "higher_score",
+        "manual_override",
+        "preset_changed_during_evaluation",
+        "routing_config_changed",
+        "evaluation_failed",
+        "activation_failed",
+        "activation_no_effect",
+      ],
+      "type": "string",
+    },
+    "required": [
+      "evaluated_at",
+      "route",
+      "reason_code",
+      "candidates",
+      "policy",
+      "type",
+    ],
+    "type": {
+      "const": "event.subagent.preset_evaluated",
+      "type": "string",
+    },
+  },
 }
 `;

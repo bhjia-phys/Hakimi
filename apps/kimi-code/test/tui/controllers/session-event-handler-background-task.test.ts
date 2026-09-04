@@ -130,6 +130,13 @@ function makeSessionEventHost() {
     session: { id: 's1' },
     aborted: false,
     sessionEventUnsubscribe: undefined,
+    activityProgress: {
+      start: vi.fn(),
+      noteStep: vi.fn(),
+      noteToolCall: vi.fn(),
+      noteToolResult: vi.fn(),
+      reset: vi.fn(),
+    },
     streamingUI: makeStreamingUIStub(),
     requireSession: vi.fn(),
     setAppState: vi.fn(),

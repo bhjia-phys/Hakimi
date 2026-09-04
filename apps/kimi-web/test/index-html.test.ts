@@ -22,6 +22,22 @@ const chatHeader = readFileSync(
   fileURLToPath(new URL('../src/components/chat/ChatHeader.vue', import.meta.url)),
   'utf-8',
 );
+const settingsDialog = readFileSync(
+  fileURLToPath(new URL('../src/components/settings/SettingsDialog.vue', import.meta.url)),
+  'utf-8',
+);
+const appView = readFileSync(
+  fileURLToPath(new URL('../src/App.vue', import.meta.url)),
+  'utf-8',
+);
+const conversationPane = readFileSync(
+  fileURLToPath(new URL('../src/components/chat/ConversationPane.vue', import.meta.url)),
+  'utf-8',
+);
+const webClient = readFileSync(
+  fileURLToPath(new URL('../src/composables/useKimiWebClient.ts', import.meta.url)),
+  'utf-8',
+);
 
 describe('index.html CSP hygiene', () => {
   it('has no <script> tag without a src attribute', () => {
@@ -76,5 +92,60 @@ describe('ChatHeader Git summary container', () => {
     expect(regionStyle).toContain('min-width: 0;');
     expect(regionStyle).toContain('justify-content: flex-end;');
     expect(regionStyle).toContain('container-type: inline-size;');
+  });
+});
+
+describe('ChatHeader Preset selector', () => {
+  it('uses the design-system button and menu for manual routing changes', () => {
+    expect(chatHeader).toContain('class="ch-preset-button"');
+    expect(chatHeader).toContain('aria-haspopup="menu"');
+    expect(chatHeader).toContain('class="ch-preset-menu"');
+    expect(chatHeader).toContain('@click="choosePreset(\'\')"');
+    expect(chatHeader).toContain('v-for="preset in subagentPresetNames"');
+    expect(chatHeader).toContain('role="menuitemradio"');
+    expect(chatHeader).toContain('@keydown="onPresetMenuKeydown"');
+    expect(chatHeader).toContain("document.addEventListener('keydown', onMenuEscape, true)");
+    expect(chatHeader).toContain('max-height: calc(100vh - (2 * var(--space-4)));');
+    expect(chatHeader).toContain("emit('activatePreset', preset)");
+    expect(chatHeader).toContain('v-if="subagentPresetLocked" class="ch-preset-diagnostics is-locked"');
+    expect(chatHeader).toContain('v-else-if="presetDiagnosticsVisible"');
+    expect(chatHeader).toContain('presetCandidateSummaryFor(preset)');
+    // Streaming auto-scroll must not dismiss an open Preset menu; only the
+    // menu's own scroll region and a viewport resize may.
+    expect(chatHeader).toContain("if (e.type === 'scroll') return;");
+    expect(chatHeader).not.toContain('ch-preset-badge');
+  });
+
+  it('receives the latest status through App and ConversationPane', () => {
+    expect(appView).toContain(':auto-subagent-preset-status="client.autoSubagentPresetStatus.value"');
+    expect(conversationPane).toContain(':auto-subagent-preset-status="autoSubagentPresetStatus"');
+    expect(chatHeader).toContain('autoSubagentPresetStatus?: AutoSubagentPresetStatus');
+  });
+});
+
+describe('Settings Agent automatic Preset switch', () => {
+  it('uses one design-system switch for both runtime gates', () => {
+    expect(settingsDialog).toContain('v-if="automaticPresetSwitchingSupported"');
+    expect(settingsDialog).toContain(':model-value="automaticPresetSwitching"');
+    expect(settingsDialog).toContain(':disabled="configSaving"');
+    expect(settingsDialog).toContain('@update:model-value="setAutomaticPresetSwitching"');
+    expect(settingsDialog).toContain("emit('updateConfig', autoSubagentPresetPatch(enabled))");
+  });
+
+  it('uses design-system primitives for read-only scheduler diagnostics', () => {
+    expect(settingsDialog).toContain('<Card');
+    expect(settingsDialog).toContain("t('settings.smartRoutingStatus')");
+    expect(settingsDialog).toContain('<Banner v-if="presetManualLocked" variant="warning">');
+    expect(settingsDialog).toContain('v-for="candidate in autoSubagentPresetStatus.candidates"');
+    expect(settingsDialog).toContain('schedulerPolicyEntries');
+  });
+});
+
+describe('automatic Preset status reconciliation', () => {
+  it('re-reads the process-global snapshot after every successful connection', () => {
+    expect(webClient).toContain('async function refreshAutoSubagentPresetStatus()');
+    expect(webClient).toMatch(
+      /if \(connected\)[\s\S]*?void refreshAutoSubagentPresetStatus\(\)/,
+    );
   });
 });

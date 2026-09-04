@@ -227,7 +227,7 @@ model = "provider/fast"
 
 The route keys have fixed meanings:
 
-- `main`: the main-agent model and Thinking setting applied when a preset is activated. The TUI's `/preset` command keeps the global `default_model` and `thinking` values in sync with this route.
+- `main`: the main-agent model and Thinking setting applied when a preset is activated. The TUI's `/preset` command keeps the global `default_model` and `thinking` values in sync with this route; Hakimi Web's chat-header Preset button applies it to the active session or current draft.
 - `explore`, `plan`, `coder`, and other profile names: Agent routes for the selected subagent profile.
 - `swarm`: the default AgentSwarm route; a swarm's selected profile can still contribute its profile route.
 - `tower_worker`: the model for Tower worker tasks.
@@ -240,6 +240,64 @@ Agent and AgentSwarm do not accept a per-spawn `model` parameter. Choose the mod
 ### Timeout
 
 `timeout_ms` sets the maximum wall-clock time for one subagent task (`7200000` by default, or 2 hours). Set it to `0` for no timeout. `KIMI_SUBAGENT_TIMEOUT_MS` takes priority over the config value; in print mode (`hakimi -p`) the default is `0` unless explicitly set. Values above `2147483647` (about 24.8 days) are clamped by the runtime.
+
+### Automatic preset switching
+
+The engine can evaluate configured presets immediately before a relevant subagent binding and choose the highest-scoring healthy candidate. `candidates` remains the user's local priority order, but it is no longer a strict fallback chain: position contributes a priority bonus, so a lower-listed preset can overtake when its quota, local reliability, first-token latency, token usage, or route/model fit is materially better. The behavior is experimental and off by default: enable the `auto_subagent_preset` experimental flag ([environment variables](../configuration/env-vars.md#runtime-switches)) and set `auto_preset.enabled` in this section. In Hakimi Web, **Settings > Agent > Automatic preset switching** controls both required settings and lets you edit the local order; it does not poll or change the preset while the session is idle. The switch shows the effective runtime state, so an environment or master-flag override can keep it different from the saved value.
+
+```toml
+[subagent]
+preset = "balanced"
+
+[subagent.auto_preset]
+enabled = true
+manual_lock = false
+candidates = ["balanced", "kimi-heavy"]
+quota_floor_percent = 25
+switch_margin_percent = 10
+local_usage_window_ms = 3600000
+local_usage_weight_percent = 10
+priority_weight_percent = 20
+reliability_weight_percent = 20
+latency_weight_percent = 10
+switch_cooldown_ms = 600000
+circuit_breaker_failure_threshold = 3
+circuit_breaker_cooldown_ms = 900000
+refresh_interval_ms = 300000
+query_timeout_ms = 5000
+allow_extra_usage = false
+```
+
+The `auto_preset` fields are:
+
+- `enabled`: turn the automatic evaluation on; `false` by default. The experimental flag must also be enabled for the evaluation to run.
+- `manual_lock`: preserve the current manual choice and skip automatic evaluation; `false` by default. Manual preset activation sets it to `true`; **Resume automatic selection** or `/preset auto` clears it without changing the active preset.
+- `candidates`: the preset names to consider, ordered from most to least preferred. Position supplies a linear priority bonus rather than an absolute ordering. When omitted, every configured preset is a candidate in file order; an explicit empty array pauses automatic switching.
+- `quota_floor_percent`: the minimum provider remaining quota for a candidate to be healthy (`25`). A route must also resolve, have quota evidence, and have a closed circuit breaker; score bonuses cannot rescue a candidate below the floor.
+- `switch_margin_percent`: how far the best candidate's score must lead a healthy current preset before a normal switch (`10`).
+- `local_usage_window_ms`: how far back local run evidence is counted (`3600000`, one hour).
+- `local_usage_weight_percent`: the maximum normalized local token-usage penalty (`10`).
+- `priority_weight_percent`: the maximum priority bonus (`20`). With multiple candidates it decreases linearly from the first candidate to zero at the last; a single candidate receives the full bonus.
+- `reliability_weight_percent`: the maximum penalty from the confidence-adjusted local failure rate (`20`).
+- `latency_weight_percent`: the maximum penalty from confidence-adjusted, normalized time to first token (`10`).
+- `switch_cooldown_ms`: process-local cooldown after a successful automatic switch (`600000`, ten minutes). It blocks ordinary score-based switching, not escape from an unhealthy current preset.
+- `circuit_breaker_failure_threshold`: consecutive failed local runs that open a provider circuit (`3`). Cancelled runs do not count, and a later success closes the circuit early.
+- `circuit_breaker_cooldown_ms`: how long an open circuit remains unavailable after the latest failure (`900000`, fifteen minutes).
+- `refresh_interval_ms`: how long provider quota answers are cached between spawns (`300000`, five minutes); a finished subagent run invalidates the cache immediately.
+- `query_timeout_ms`: per-provider quota query timeout (`5000`).
+- `allow_extra_usage`: when `true`, a positive Kimi Extra Usage wallet balance covers a depleted plan quota: the provider's effective remaining percent is the larger of the lowest plan-window remaining and the wallet's remaining share. Extra Usage is never spent automatically; the default `false` never counts the wallet. When the wallet supplies the effective quota, the plan reset time is unknown and contributes no reset bonus.
+
+For every candidate, the route is resolved as if that candidate were active, and the final model's provider determines the quota and local evidence. The provider's remaining percent is the tightest valid usage window. The deterministic score is `quota remaining + priority bonus + reset bonus + route/model-fit bonus − token penalty − reliability penalty − latency penalty`. A valid reset within the next 24 hours contributes up to 2 points; a model resolved from a preset-specific route contributes 2 points, and a known model capability matching the requested Thinking setting contributes 1. Unknown model capability is not penalized.
+
+Local evidence prefers runs for the requested profile once at least three samples exist, otherwise it falls back to all recent runs for that provider. Failure and first-token-latency penalties are reduced for small samples until five samples or LLM requests provide full confidence; cancelled runs do not count as reliability failures. Token usage is normalized against the busiest candidate provider, and latency against the slowest candidate with timing evidence. A lower-priority preset can therefore win when the weighted evidence exceeds its smaller priority bonus.
+
+A candidate is selectable only when its route resolves, quota evidence exists at or above `quota_floor_percent`, and its circuit breaker is closed. The highest-scoring selectable candidate wins; ties keep the current preset when possible, then follow candidate order. A current preset outside `candidates` is treated as explicit and preserved. A healthy current preset changes only when the winner leads by at least `switch_margin_percent` and the switch cooldown has expired. An unhealthy or circuit-open current preset may escape immediately despite the cooldown. If no candidate is healthy, the current preset is preserved. The circuit state is reconstructed from the local run ledger after restart, while the process-local switch cooldown resets.
+
+A manual `/preset`, Web Preset selection, or `SetSubagentPreset` call atomically saves the preset and sets `manual_lock = true`, including a manual choice of base routing. The lock is local and survives daemon restarts; automatic evaluation returns before querying provider usage while it is set. Use **Resume automatic selection** in the Web header or **Settings > Agent**, or run `/preset auto` in the TUI, to clear only the lock. The current preset remains active until the next relevant spawn or resume triggers evaluation.
+
+Automatic activation is best-effort and fail-open: missing evidence, a failed query, an unresolvable route model, or a failed persist never blocks the spawn or resume. It writes only `[subagent].preset` — the main/default model, global Thinking, and manual lock are never touched — and requests no approval. It runs before binding resolution for fresh `Agent` spawns, rebindable `Agent` resumes, the new-item route of an `AgentSwarm` call, every rebindable resumed child in resume-only and mixed `AgentSwarm` batches, and Tower worker/reviewer spawns. Profiles that preserve their binding skip evaluation. Manual activation shares the same serialized write boundary, so a human selection made while an automatic evaluation is in flight wins.
+
+The scorer is fixed, local, and reproducible: it does not train a model, upload prompts, paths, error messages, or other user content, or run as an idle poll. The interactive TUI footer and Web chat header show the active preset. Hakimi Web also presents the latest structured reason, triggering profile and time, candidate score breakdowns, quota, cooldown, circuit-breaker state, and missing evidence under the Preset menu and **Settings > Agent**. A successful automatic switch adds a localized reason marker to the triggering session. Programmatic clients can read the latest process-global decision from [`GET /api/v1/config/subagent-preset/status`](../reference/server-api.md#config) and follow the evaluated and changed events described there. See [Agents and sub-agents](../customization/agents.md#subagent-model-routing) for route precedence and spawn coverage.
 
 ### Deprecated `[secondary_model]`
 
@@ -463,8 +521,8 @@ Alongside `config.toml`, the CLI keeps terminal-UI and client preferences in a c
 | `[notifications].enabled` | `boolean` | `true` | Whether desktop notifications are sent |
 | `[notifications].notification_condition` | `string` | `unfocused` | When to notify: `unfocused` (only when the terminal is not focused) or `always` |
 | `[upgrade].auto_install` | `boolean` | `true` | Whether new versions are installed automatically |
-| `[status_line].items` | `string[]` | `[]` | Built-in slots to show on the first footer line and their order: `mode`, `goal`, `model`, `tasks`, `cwd`, `git`, `tips`. Unset keeps the default layout; unknown ids are skipped with a warning |
-| `[status_line].command` | `string` | `""` | Custom status line command. Its first stdout line replaces the first footer line, with a JSON snapshot (model, cwd, git branch, permission mode, plan mode, context usage, session id, version) passed on stdin. Runs are capped at 300ms and throttled to once per second; failures fall back to the built-in layout |
+| `[status_line].items` | `string[]` | `[]` | Built-in slots to show on the first footer line and their order: `mode`, `goal`, `model`, `preset`, `tasks`, `cwd`, `git`, `tips`. Unset keeps the default layout; unknown ids are skipped with a warning |
+| `[status_line].command` | `string` | `""` | Custom status line command. Its first stdout line replaces the first footer line, with a JSON snapshot (model, subagent preset, cwd, git branch, permission mode, plan mode, context usage, session id, version) passed on stdin. Runs are capped at 300ms and throttled to once per second; failures fall back to the built-in layout |
 
 ```toml
 # ~/.hakimi/tui.toml
@@ -484,7 +542,7 @@ notification_condition = "unfocused" # "unfocused" | "always"
 auto_install = true
 
 # [status_line]
-# items = ["mode", "goal", "model", "tasks", "cwd", "git", "tips"]
+# items = ["mode", "goal", "model", "preset", "tasks", "cwd", "git", "tips"]
 # command = "~/.hakimi/statusline.sh"
 ```
 

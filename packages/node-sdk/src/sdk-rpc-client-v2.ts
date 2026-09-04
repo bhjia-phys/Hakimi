@@ -101,6 +101,11 @@
  *   13 of the bus types (no `shell.*`, no `turn.step.*`, ...). The one
  *   v1-visible fact on the process-global `IEventService`
  *   (`session.meta.updated`) is forwarded from a constructor subscription.
+ * - `getAutoSubagentPresetStatus` reads the App-scope evaluator's latest
+ *   snapshot; `onSubagentPresetEvaluated` / `onSubagentPresetChanged` use the
+ *   base class's narrow channels, fed by a constructor subscription that
+ *   strictly maps both v2-only facts from the process-global `IEventService`
+ *   (see `src/v2/event-mapper.ts`). None enter the legacy `Event` stream.
  * - `setApprovalHandler` / `setQuestionHandler` → the base class registries,
  *   driven by the same session wiring: v1's push callbacks
  *   (`requestApproval` / `requestQuestion` / `toolCall`) are fed from the v2
@@ -178,6 +183,7 @@ import {
   BUILTIN_AGENT_PROFILE_SOURCE_ID,
   IAgentToolPolicyService,
   IAgentToolRegistryService,
+  IAutoSubagentPresetService,
   IBootstrapService,
   IConfigService,
   IEventService,
@@ -198,6 +204,7 @@ import {
   ISessionSkillCatalog,
   ISessionAgentProfileCatalog,
   ISessionWorkspaceContext,
+  ISubagentPresetActivationService,
   ITelemetryService,
   IWorkspaceAliases,
   ISessionActivityView,
@@ -223,6 +230,8 @@ import {
   resolveLoggingConfig,
   resolvePrintBackgroundMode,
   subagentAllowlistFor,
+  SUBAGENT_PRESET_CHANGED_EVENT_TYPE,
+  SUBAGENT_PRESET_EVALUATED_EVENT_TYPE,
   summarizeSkill,
   type IAgentScopeHandle,
   type IDisposable,
@@ -262,6 +271,7 @@ import type {
   AddAdditionalDirResult,
   AgentCommandInfo,
   AgentRuntimeBinding,
+  AutoSubagentPresetStatus,
   BackgroundTaskInfo,
   CapabilityStatus,
   CompactOptions,
@@ -315,7 +325,12 @@ import {
   planProviderRemoval,
   resolvedConfigToKimiConfig,
 } from '#/v2/config-mapper';
-import { translateGlobalEvent } from '#/v2/event-mapper';
+import {
+  translateGlobalEvent,
+  translateSubagentPresetChanged,
+  translateSubagentPresetEvaluated,
+  translateSubagentPresetStatus,
+} from '#/v2/event-mapper';
 import { assertImportFits, buildImportContextMessage } from '#/v2/import-context';
 import { foldAgentWireReplay } from '#/v2/resume-replay';
 import {
@@ -485,6 +500,20 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
       this.app.accessor.get(IEventService).subscribe((event) => {
         const translated = translateGlobalEvent(event);
         if (translated !== undefined) this.receiveEvent(translated);
+      }),
+      // Automatic subagent-preset evaluations and switches are v2-only facts
+      // on the same process-global service. Strict mappers feed dedicated narrow
+      // channels; neither fact enters the legacy `onEvent` stream.
+      this.app.accessor.get(IEventService).subscribe((event) => {
+        if (event.type === SUBAGENT_PRESET_EVALUATED_EVENT_TYPE) {
+          const translated = translateSubagentPresetEvaluated(event.payload);
+          if (translated !== undefined) this.receiveSubagentPresetEvaluated(translated);
+          return;
+        }
+        if (event.type === SUBAGENT_PRESET_CHANGED_EVENT_TYPE) {
+          const translated = translateSubagentPresetChanged(event.payload);
+          if (translated !== undefined) this.receiveSubagentPresetChanged(translated);
+        }
       }),
       // A session closed without going through this client (archive, an
       // engine-initiated close) drops its wiring with the scope. Close events
@@ -661,14 +690,61 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
    * A v1 patch is one deep-merge over the whole document; v2 deep-merges
    * per domain with the same plain-object-recursive / array-replace
    * semantics, so the patch fans out one `config.set` per top-level field.
+   * An own `[subagent].preset` field is committed last through the shared
+   * manual activation boundary; the rest of `[subagent]` still merges normally.
    * Unknown-to-v2 fields (`yolo`, `planMode`, `telemetry`, ...) persist as
    * unregistered pass-through domains, like v1's schema keeping them.
    */
   override async setConfig(patch: KimiConfigPatch): Promise<KimiConfig> {
     await this.configReady;
+    const subagentPatch = patch.subagent;
+    const hasManualPreset =
+      subagentPatch !== undefined && Object.hasOwn(subagentPatch, 'preset');
+    let manualPreset: string | undefined;
+    if (hasManualPreset) {
+      if (typeof subagentPatch.preset !== 'string') {
+        throw new KimiError(ErrorCodes.CONFIG_INVALID, 'subagent.preset must be a string');
+      }
+      manualPreset = subagentPatch.preset;
+    }
     for (const [domain, domainPatch] of Object.entries(patch)) {
       if (domainPatch === undefined) continue;
+      if (domain === 'subagent' && hasManualPreset) {
+        const { preset: _preset, ...remainingSubagentPatch } = domainPatch as Record<
+          string,
+          unknown
+        >;
+        if (Object.keys(remainingSubagentPatch).length === 0) continue;
+        await this.klient.global.config.set({
+          domain,
+          patch: remainingSubagentPatch,
+        });
+        continue;
+      }
       await this.klient.global.config.set({ domain, patch: domainPatch });
+    }
+    if (hasManualPreset && manualPreset !== undefined) {
+      const result = await this.engineAccessor
+        .get(ISubagentPresetActivationService)
+        .activate(manualPreset);
+      if (result.kind !== 'activated') {
+        throw new KimiError(ErrorCodes.CONFIG_INVALID, result.message);
+      }
+    }
+    return this.getConfig();
+  }
+
+  override async getAutoSubagentPresetStatus(): Promise<AutoSubagentPresetStatus | undefined> {
+    return translateSubagentPresetStatus(
+      this.engineAccessor.get(IAutoSubagentPresetService).status(),
+    );
+  }
+
+  override async activateSubagentPreset(preset: string): Promise<KimiConfig> {
+    await this.configReady;
+    const result = await this.engineAccessor.get(ISubagentPresetActivationService).activate(preset);
+    if (result.kind !== 'activated') {
+      throw new KimiError(ErrorCodes.CONFIG_INVALID, result.message);
     }
     return this.getConfig();
   }

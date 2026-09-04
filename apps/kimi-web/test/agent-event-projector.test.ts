@@ -6,6 +6,8 @@
 import { describe, expect, it } from 'vitest';
 import { classifyFrame, createAgentProjector, subagentProgressText } from '../src/api/daemon/agentEventProjector';
 import { toAppGoal } from '../src/api/daemon/mappers';
+import { createInitialState, reduceAppEvent } from '../src/api/daemon/eventReducer';
+import type { AppTask } from '../src/api/types';
 
 describe('toAppGoal continuation projection', () => {
   const snapshot = {
@@ -88,6 +90,26 @@ describe('subagentProgressText', () => {
   });
 });
 
+describe('process-global automatic preset facts', () => {
+  it('leaves projected event.subagent facts to the strict wire mapper', () => {
+    const projector = createAgentProjector();
+    expect(
+      projector.project(
+        'event.subagent.preset_evaluated',
+        { reason_code: 'higher_score' },
+        's1',
+      ),
+    ).toEqual([]);
+    expect(
+      projector.project(
+        'event.subagent.preset_changed',
+        { current_preset: 'balanced' },
+        's1',
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe('subagent streaming text', () => {
   it('forwards a subagent assistant.delta as a text-kind taskProgress', () => {
     const projector = createAgentProjector();
@@ -106,6 +128,215 @@ describe('subagent streaming text', () => {
     const projector = createAgentProjector();
     const events = projector.project('assistant.delta', { agentId: 'sub-1', delta: '' }, 's1');
     expect(events).toEqual([]);
+  });
+});
+
+describe('subagent runtime identity projection', () => {
+  it('stores spawn-time role, model, and thinking effort', () => {
+    const projector = createAgentProjector();
+    const events = projector.project(
+      'subagent.spawned',
+      {
+        subagentId: 'sub-1',
+        subagentName: 'reviewer',
+        description: 'Review the change',
+        model: 'spawn-model',
+        thinkingEffort: 'medium',
+      },
+      's1',
+    );
+
+    expect(events).toEqual([
+      {
+        type: 'taskCreated',
+        sessionId: 's1',
+        task: expect.objectContaining({
+          id: 'sub-1',
+          agentId: 'sub-1',
+          subagentType: 'reviewer',
+          model: 'spawn-model',
+          thinkingEffort: 'medium',
+        }),
+        resetBackgroundTaskId: true,
+      },
+    ]);
+  });
+
+  it('patches a spawned subagent when status reports newer runtime values', () => {
+    const projector = createAgentProjector();
+    projector.project(
+      'subagent.spawned',
+      {
+        subagentId: 'sub-1',
+        subagentName: 'reviewer',
+        model: 'spawn-model',
+        thinkingEffort: 'medium',
+      },
+      's1',
+    );
+
+    const events = projector.project(
+      'agent.status.updated',
+      { agentId: 'sub-1', model: 'runtime-model', thinkingEffort: 'high' },
+      's1',
+    );
+
+    expect(events).toEqual([
+      {
+        type: 'taskMetadataUpdated',
+        sessionId: 's1',
+        taskId: 'sub-1',
+        model: 'runtime-model',
+        thinkingEffort: 'high',
+      },
+    ]);
+  });
+
+  it('holds status metadata until subagent.spawned confirms the task', () => {
+    const projector = createAgentProjector();
+    expect(
+      projector.project(
+        'agent.status.updated',
+        { agentId: 'sub-1', model: 'runtime-model', thinkingEffort: 'high' },
+        's1',
+      ),
+    ).toEqual([
+      {
+        type: 'taskMetadataUpdated',
+        sessionId: 's1',
+        taskId: 'sub-1',
+        model: 'runtime-model',
+        thinkingEffort: 'high',
+      },
+    ]);
+
+    const events = projector.project(
+      'subagent.spawned',
+      {
+        subagentId: 'sub-1',
+        subagentName: 'reviewer',
+        model: 'spawn-model',
+        thinkingEffort: 'medium',
+      },
+      's1',
+    );
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'taskCreated',
+        task: expect.objectContaining({
+          model: 'runtime-model',
+          thinkingEffort: 'high',
+        }),
+        resetBackgroundTaskId: true,
+      }),
+    ]);
+  });
+
+  it('updates a roster-seeded task after the projector resets', () => {
+    const projector = createAgentProjector();
+    projector.project(
+      'subagent.spawned',
+      { subagentId: 'sub-1', model: 'spawn-model', thinkingEffort: 'medium' },
+      's1',
+    );
+    projector.reset('s1');
+
+    const rosterTask: AppTask = {
+      id: 'sub-1',
+      sessionId: 's1',
+      kind: 'subagent',
+      description: 'Review the change',
+      status: 'running',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      model: 'snapshot-model',
+      thinkingEffort: 'medium',
+    };
+    let state = createInitialState();
+    state = {
+      ...state,
+      tasksBySession: { s1: [rosterTask] },
+    };
+    const events = projector.project(
+      'agent.status.updated',
+      { agentId: 'sub-1', model: 'runtime-model', thinkingEffort: 'high' },
+      's1',
+    );
+    for (const [index, event] of events.entries()) {
+      state = reduceAppEvent(state, event, { sessionId: 's1', seq: index + 1 });
+    }
+
+    expect(state.tasksBySession.s1).toEqual([
+      expect.objectContaining({
+        id: 'sub-1',
+        model: 'runtime-model',
+        thinkingEffort: 'high',
+      }),
+    ]);
+  });
+
+  it('does not create a visible task for an unknown agent status', () => {
+    const projector = createAgentProjector();
+    const events = projector.project(
+      'agent.status.updated',
+      { agentId: 'unknown-agent', model: 'runtime-model', thinkingEffort: 'high' },
+      's1',
+    );
+    expect(events).toEqual([
+      {
+        type: 'taskMetadataUpdated',
+        sessionId: 's1',
+        taskId: 'unknown-agent',
+        model: 'runtime-model',
+        thinkingEffort: 'high',
+      },
+    ]);
+
+    let state = createInitialState();
+    for (const [index, event] of events.entries()) {
+      state = reduceAppEvent(state, event, { sessionId: 's1', seq: index + 1 });
+    }
+    expect(state.tasksBySession.s1 ?? []).toEqual([]);
+  });
+
+  it('does not create a ghost task when status wins the BTW mark race', () => {
+    const projector = createAgentProjector();
+    const early = projector.project(
+      'agent.status.updated',
+      { agentId: 'btw-1', model: 'side-model', thinkingEffort: 'low' },
+      's1',
+    );
+    expect(early).toEqual([
+      {
+        type: 'taskMetadataUpdated',
+        sessionId: 's1',
+        taskId: 'btw-1',
+        model: 'side-model',
+        thinkingEffort: 'low',
+      },
+    ]);
+    let state = createInitialState();
+    for (const [index, event] of early.entries()) {
+      state = reduceAppEvent(state, event, { sessionId: 's1', seq: index + 1 });
+    }
+    expect(state.tasksBySession.s1 ?? []).toEqual([]);
+
+    projector.markSideChannelAgent('btw-1');
+    const later = projector.project(
+      'agent.status.updated',
+      { agentId: 'btw-1', model: 'side-model-2', thinkingEffort: 'high' },
+      's1',
+    );
+    expect(later).toEqual([]);
+    expect(
+      projector.project('assistant.delta', { agentId: 'btw-1', delta: 'hello' }, 's1'),
+    ).toEqual([
+      {
+        type: 'agentDelta',
+        sessionId: 's1',
+        agentId: 'btw-1',
+        delta: { text: 'hello' },
+      },
+    ]);
   });
 });
 
@@ -314,15 +545,36 @@ describe('session status single-sourcing', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'sessionUsageUpdated' }));
   });
 
-  it('seedInFlight returns only the seeded message — status comes from the snapshot', () => {
+  it('seedInFlight restores the partial message and heuristic progress inputs', () => {
     const projector = createAgentProjector();
     const events = projector.seedInFlight('s1', {
-      turnId: 1,
+      turnId: 7,
       assistantText: 'partial',
       thinkingText: '',
-      runningTools: [],
+      runningTools: [{ toolCallId: 'tool-running', name: 'Bash' }],
+      progress: {
+        startedAt: 123,
+        stepCount: 3,
+        stepNumbers: [1, 2, 3],
+        toolCallIds: ['tool-done', 'tool-running'],
+        completedToolCallIds: ['tool-done'],
+      },
     });
     expect(events.some((e) => e.type === 'sessionWorkChanged')).toBe(false);
+    expect(events).toContainEqual({
+      type: 'turnProgress',
+      sessionId: 's1',
+      update: {
+        kind: 'start',
+        turnId: 7,
+        startedAt: 123,
+        stepCount: 3,
+        stepNumbers: [1, 2, 3],
+        toolCallIds: ['tool-done', 'tool-running'],
+        completedToolCallIds: ['tool-done'],
+        replace: true,
+      },
+    });
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'messageCreated',
@@ -356,6 +608,80 @@ describe('main-turn liveness projection', () => {
     const started = projector.project('turn.started', { agentId: 'agent-2', turnId: 1 }, 's1');
     const ended = projector.project('turn.ended', { agentId: 'agent-2', turnId: 1, reason: 'completed' }, 's1');
     expect([...started, ...ended].some((e) => e.type === 'turnActiveChanged')).toBe(false);
+    expect([...started, ...ended].some((e) => e.type === 'turnProgress')).toBe(false);
+  });
+});
+
+describe('main-turn heuristic progress projection', () => {
+  it('projects the CLI-parity activity inputs from main turn events', () => {
+    const projector = createAgentProjector();
+    expect(
+      projector.project(
+        'turn.started',
+        { agentId: 'main', turnId: 3 },
+        's1',
+        { timestamp: '2026-01-01T00:00:00.000Z' },
+      ),
+    ).toContainEqual({
+      type: 'turnProgress',
+      sessionId: 's1',
+      update: {
+        kind: 'start',
+        turnId: 3,
+        startedAt: Date.parse('2026-01-01T00:00:00.000Z'),
+      },
+    });
+
+    expect(
+      projector.project('turn.step.started', { agentId: 'main', turnId: 3, step: 1 }, 's1'),
+    ).toContainEqual({
+      type: 'turnProgress',
+      sessionId: 's1',
+      update: { kind: 'step', turnId: 3, step: 1 },
+    });
+    expect(
+      projector.project(
+        'tool.call.started',
+        { agentId: 'main', turnId: 3, toolCallId: 'tool-1', name: 'Read' },
+        's1',
+      ),
+    ).toContainEqual({
+      type: 'turnProgress',
+      sessionId: 's1',
+      update: { kind: 'toolCall', turnId: 3, toolCallId: 'tool-1' },
+    });
+    expect(
+      projector.project(
+        'tool.result',
+        { agentId: 'main', turnId: 3, toolCallId: 'tool-1', output: 'ok' },
+        's1',
+      ),
+    ).toContainEqual({
+      type: 'turnProgress',
+      sessionId: 's1',
+      update: { kind: 'toolResult', turnId: 3, toolCallId: 'tool-1' },
+    });
+    expect(
+      projector.project('turn.ended', { agentId: 'main', turnId: 3 }, 's1'),
+    ).toContainEqual({
+      type: 'turnProgress',
+      sessionId: 's1',
+      update: { kind: 'end', turnId: 3 },
+    });
+  });
+
+  it('falls back to the current time when the raw frame timestamp is invalid', () => {
+    const projector = createAgentProjector();
+    const before = Date.now();
+    const event = projector
+      .project('turn.started', { agentId: 'main', turnId: 4 }, 's1', { timestamp: 'invalid' })
+      .find((candidate) => candidate.type === 'turnProgress');
+    const after = Date.now();
+    if (event?.type !== 'turnProgress' || event.update.kind !== 'start') {
+      throw new Error('expected turn progress start');
+    }
+    expect(event.update.startedAt).toBeGreaterThanOrEqual(before);
+    expect(event.update.startedAt).toBeLessThanOrEqual(after);
   });
 });
 
@@ -678,6 +1004,71 @@ describe('background subagent task registration', () => {
         type: 'taskCreated',
         sessionId: 's1',
         task: expect.objectContaining({ id: 'task-1', kind: 'bash', command: 'npm test' }),
+      },
+    ]);
+  });
+
+  it('projects background.task aliases for detached bash and Agent rows', () => {
+    const projector = createAgentProjector();
+    const bashStarted = projector.project(
+      'background.task.started',
+      {
+        info: {
+          taskId: 'task-bash',
+          kind: 'process',
+          detached: true,
+          description: 'Run checks',
+          command: 'pnpm test',
+          startedAt: 1767225600000,
+        },
+      },
+      's1',
+    );
+    expect(bashStarted).toContainEqual(
+      expect.objectContaining({
+        type: 'taskCreated',
+        task: expect.objectContaining({ id: 'task-bash', kind: 'bash' }),
+      }),
+    );
+
+    const agentStarted = projector.project(
+      'background.task.started',
+      {
+        info: {
+          taskId: 'task-agent',
+          kind: 'agent',
+          detached: true,
+          agentId: 'agent-2',
+          description: 'Review changes',
+          startedAt: 1767225600000,
+        },
+      },
+      's1',
+    );
+    expect(agentStarted).toContainEqual(
+      expect.objectContaining({
+        type: 'taskCreated',
+        task: expect.objectContaining({
+          id: 'agent-2',
+          kind: 'subagent',
+          backgroundTaskId: 'task-agent',
+          runInBackground: true,
+        }),
+      }),
+    );
+
+    expect(
+      projector.project(
+        'background.task.terminated',
+        { info: { taskId: 'task-bash', status: 'completed', exitCode: 0 } },
+        's1',
+      ),
+    ).toEqual([
+      {
+        type: 'taskCompleted',
+        sessionId: 's1',
+        taskId: 'task-bash',
+        status: 'completed',
       },
     ]);
   });

@@ -40,7 +40,9 @@ const apiMock = vi.hoisted(() => ({
   cancelTask: vi.fn(),
   getAuth: vi.fn(),
   getConfig: vi.fn(),
+  getSession: vi.fn(),
   setConfig: vi.fn(),
+  activateSubagentPreset: vi.fn(),
   getFsHome: vi.fn(),
   getHealth: vi.fn(),
   getMeta: vi.fn(),
@@ -57,6 +59,7 @@ vi.mock('../src/api', () => ({
 }));
 
 beforeEach(() => {
+  apiMock.activateSubagentPreset.mockReset();
   apiMock.getProviderUsage.mockReset().mockResolvedValue([]);
 });
 
@@ -92,6 +95,7 @@ function createState(): ExtendedState {
     sessions: [createSession()],
     activeSessionId: 'sess_1',
     connected: true,
+    remoteSessionId: null,
     serverVersion: '',
     experimentalFlags: {},
     dangerousBypassAuth: false,
@@ -1188,6 +1192,21 @@ describe('useWorkspaceState — config reconciliation', () => {
     expect(state.defaultModel).toBe('provider/fresh');
   });
 
+  it('commits a serialized manual preset activation through the config mutation funnel', async () => {
+    apiMock.activateSubagentPreset.mockResolvedValue({
+      config: {
+        providers: {},
+        subagent: { preset: 'codex-heavy', presets: { 'codex-heavy': {} } },
+      },
+    });
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    expect(await ws.activateSubagentPreset('codex-heavy')).toBe(true);
+    expect(apiMock.activateSubagentPreset).toHaveBeenCalledWith('codex-heavy');
+    expect(state.config).toMatchObject({ subagent: { preset: 'codex-heavy' } });
+  });
+
   it('does not let an older reconnect GET overwrite a live config event', async () => {
     const stale = { providers: {}, defaultModel: 'provider/stale' };
     let resolveStale: ((value: typeof stale) => void) | undefined;
@@ -1350,7 +1369,7 @@ describe('useWorkspaceState — config reconciliation', () => {
     expect(state.defaultModel).toBe('provider/newer');
   });
 
-  it('re-reads effective meta flags after a config write instead of trusting config', async () => {
+  it('re-reads effective meta flags without treating the retired Research flag as a gate', async () => {
     apiMock.setConfig.mockReset().mockResolvedValue({
       providers: {},
       experimental: { 'tool-select': true },
@@ -1367,8 +1386,10 @@ describe('useWorkspaceState — config reconciliation', () => {
 
     await expect(ws.updateConfig({ experimental: { 'tool-select': true } })).resolves.toBe(true);
 
-    expect(state.config?.experimental?.['tool-select']).toBe(true);
+expect(state.config?.experimental?.['tool-select']).toBe(true);
     expect(state.experimentalFlags['tool-select']).toBe(false);
+    await ws.commandResearch({ kind: 'exit_mode' });
+    expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
   });
 });
 
@@ -1555,6 +1576,8 @@ describe('useWorkspaceState — first-load auth gate', () => {
       backend: 'v1',
     });
     apiMock.getConfig.mockReset().mockResolvedValue({});
+    apiMock.getSession.mockReset();
+    apiMock.getGitStatus.mockReset();
     apiMock.listWorkspaces.mockReset().mockResolvedValue([]);
     apiMock.getFsHome.mockReset().mockResolvedValue({ home: '', recentRoots: [] });
     apiMock.listSessions.mockReset().mockResolvedValue({ items: [], hasMore: false });
@@ -1571,6 +1594,235 @@ describe('useWorkspaceState — first-load auth gate', () => {
       connectIssue,
     } as unknown as UseWorkspaceStateDeps;
   }
+
+  it('loads the full standard surface for a remote entry and keeps the URL marker', async () => {
+    const initialized = ref(false);
+    const state = createState();
+    const remoteSession = {
+      ...createSession(),
+      id: 'sess_remote',
+      title: 'Remote session',
+    };
+    const otherSession = {
+      ...createSession(),
+      id: 'sess_other',
+      title: 'Other session',
+    };
+    apiMock.getAuth.mockResolvedValue({
+      ready: true,
+      defaultModel: 'kimi-code',
+      managedProvider: null,
+    });
+    apiMock.getMeta.mockResolvedValue({
+      serverVersion: '0.0.0',
+      openInApps: [],
+      dangerousBypassAuth: false,
+      experimentalFlags: {},
+      backend: 'v2',
+    });
+    apiMock.listSessions.mockResolvedValue({
+      items: [remoteSession, otherSession],
+      hasMore: false,
+    });
+    const deps = {
+      ...createLoadDeps(initialized, ref(null)),
+      taskPoller: { loadTasksForSession: vi.fn() },
+      modelProvider: {
+        loadModels: vi.fn().mockResolvedValue(undefined),
+        loadSkillsForSession: vi.fn(),
+        skillsBySession: ref({}),
+      },
+      setSessions: vi.fn((next: AppSession[]) => {
+        state.sessions = next;
+      }),
+      setActiveSessionId: vi.fn((id: string | undefined) => {
+        state.activeSessionId = id;
+      }),
+      syncSessionFromSnapshot: vi.fn().mockResolvedValue('ok'),
+      reopenSession: vi.fn().mockResolvedValue('ok'),
+      hasLoadedMessages: vi.fn(() => false),
+      refreshSessionStatus: vi.fn(),
+      refreshSessionGoal: vi.fn(),
+      refreshSessionResearch: vi.fn(),
+      workspaceIdForSession: vi.fn(() => 'wd_remote'),
+    } as unknown as UseWorkspaceStateDeps;
+    state.activeSessionId = undefined; // selection falls to load()'s auto-select
+    const ws = useWorkspaceState(state, deps);
+
+    await ws.load({ remoteSessionId: 'sess_remote' });
+
+    // A remote entry boots through the EXACT same config/model/workspace/session
+    // path as a local window; `?remote=1` only survives for URL writing.
+    expect(apiMock.getAuth).toHaveBeenCalledOnce();
+    expect(apiMock.getHealth).toHaveBeenCalledOnce();
+    expect(apiMock.getMeta).toHaveBeenCalledOnce();
+    expect(apiMock.getConfig).toHaveBeenCalledOnce();
+    expect(deps.modelProvider.loadModels).toHaveBeenCalledOnce();
+    expect(apiMock.getSession).not.toHaveBeenCalled();
+    expect(apiMock.listSessions).toHaveBeenCalledWith({
+      pageSize: 100,
+      beforeId: undefined,
+      excludeEmpty: true,
+    });
+    expect(apiMock.listWorkspaces).toHaveBeenCalledOnce();
+    expect(apiMock.getFsHome).toHaveBeenCalledOnce();
+    expect(apiMock.getProviderUsage).toHaveBeenCalledOnce();
+    expect(deps.ensureEventConnection).toHaveBeenCalledOnce();
+    expect(deps.syncSessionFromSnapshot).toHaveBeenCalledWith('sess_remote');
+    expect(state.remoteSessionId).toBe('sess_remote');
+    expect(state.activeSessionId).toBe('sess_remote');
+    expect(state.sessions).toEqual([remoteSession, otherSession]);
+    expect(initialized.value).toBe(true);
+
+    // Full sidecars, same as a local selection.
+    expect(apiMock.getGitStatus).toHaveBeenCalledWith('sess_remote');
+    expect(deps.taskPoller.loadTasksForSession).toHaveBeenCalledWith('sess_remote');
+    expect(deps.refreshSessionStatus).toHaveBeenCalledWith('sess_remote');
+    expect(deps.refreshSessionGoal).toHaveBeenCalledWith('sess_remote');
+    expect(deps.refreshSessionResearch).toHaveBeenCalledWith('sess_remote');
+    expect(deps.modelProvider.loadSkillsForSession).toHaveBeenCalledWith('sess_remote');
+  });
+
+  it('opens the most recent session from the all-sessions root remote link (empty initial id)', async () => {
+    const initialized = ref(false);
+    const state = createState();
+    const mostRecent = {
+      ...createSession(),
+      id: 'sess_most_recent',
+      title: 'Most recent session',
+    };
+    const older = {
+      ...createSession(),
+      id: 'sess_older',
+      title: 'Older session',
+    };
+    apiMock.getAuth.mockResolvedValue({
+      ready: true,
+      defaultModel: 'kimi-code',
+      managedProvider: null,
+    });
+    apiMock.listSessions.mockResolvedValue({
+      items: [mostRecent, older],
+      hasMore: false,
+    });
+    const deps = {
+      ...createLoadDeps(initialized, ref(null)),
+      taskPoller: { loadTasksForSession: vi.fn() },
+      modelProvider: {
+        loadModels: vi.fn().mockResolvedValue(undefined),
+        loadSkillsForSession: vi.fn(),
+        skillsBySession: ref({}),
+      },
+      setSessions: vi.fn((next: AppSession[]) => {
+        state.sessions = next;
+      }),
+      setActiveSessionId: vi.fn((id: string | undefined) => {
+        state.activeSessionId = id;
+      }),
+      syncSessionFromSnapshot: vi.fn().mockResolvedValue('ok'),
+      reopenSession: vi.fn().mockResolvedValue('ok'),
+      hasLoadedMessages: vi.fn(() => false),
+      refreshSessionStatus: vi.fn(),
+      refreshSessionGoal: vi.fn(),
+      refreshSessionResearch: vi.fn(),
+      workspaceIdForSession: vi.fn(() => 'wd_remote'),
+    } as unknown as UseWorkspaceStateDeps;
+    state.activeSessionId = undefined; // selection falls to load()'s auto-select
+    const ws = useWorkspaceState(state, deps);
+
+    await ws.load({ remoteSessionId: '' });
+
+    // The empty initial id keeps the remote marker active (URL writing), while
+    // the load itself is the standard one: auto-select the most recent session.
+    expect(state.remoteSessionId).toBe('');
+    expect(state.sessions).toEqual([mostRecent, older]);
+    expect(deps.syncSessionFromSnapshot).toHaveBeenCalledWith('sess_most_recent');
+    expect(state.activeSessionId).toBe('sess_most_recent');
+    expect(deps.taskPoller.loadTasksForSession).toHaveBeenCalledWith('sess_most_recent');
+    expect(deps.refreshSessionStatus).toHaveBeenCalledWith('sess_most_recent');
+    // Same standard surface as any other load: config/models/workspaces/usage.
+    expect(apiMock.getConfig).toHaveBeenCalledOnce();
+    expect(deps.modelProvider.loadModels).toHaveBeenCalledOnce();
+    expect(apiMock.listWorkspaces).toHaveBeenCalledOnce();
+    expect(apiMock.getProviderUsage).toHaveBeenCalledOnce();
+  });
+
+  it('fetches a pinned remote deep-link session the projected list omits', async () => {
+    const initialized = ref(false);
+    const state = createState();
+    const listed = {
+      ...createSession(),
+      id: 'sess_listed',
+      title: 'Listed session',
+    };
+    const pinned = {
+      ...createSession(),
+      id: 'sess_pinned_archive',
+      title: 'Pinned archived session',
+    };
+    apiMock.getAuth.mockResolvedValue({
+      ready: true,
+      defaultModel: 'kimi-code',
+      managedProvider: null,
+    });
+    apiMock.listSessions.mockResolvedValue({
+      items: [listed],
+      hasMore: false,
+    });
+    apiMock.getSession.mockResolvedValue(pinned);
+    const deps = {
+      ...createLoadDeps(initialized, ref(null)),
+      taskPoller: { loadTasksForSession: vi.fn() },
+      modelProvider: {
+        loadModels: vi.fn().mockResolvedValue(undefined),
+        loadSkillsForSession: vi.fn(),
+        skillsBySession: ref({}),
+      },
+      setSessions: vi.fn((next: AppSession[]) => {
+        state.sessions = next;
+      }),
+      appendSession: vi.fn((session: AppSession) => {
+        state.sessions = [...state.sessions, session];
+      }),
+      setActiveSessionId: vi.fn((id: string | undefined) => {
+        state.activeSessionId = id;
+      }),
+      syncSessionFromSnapshot: vi.fn().mockResolvedValue('ok'),
+      reopenSession: vi.fn().mockResolvedValue('ok'),
+      hasLoadedMessages: vi.fn(() => false),
+      refreshSessionStatus: vi.fn(),
+      refreshSessionGoal: vi.fn(),
+      refreshSessionResearch: vi.fn(),
+      workspaceIdForSession: vi.fn(() => 'wd_remote'),
+    } as unknown as UseWorkspaceStateDeps;
+    state.activeSessionId = undefined; // selection falls to load()'s deep-link branch
+    const ws = useWorkspaceState(state, deps);
+
+    // The remote deep link lives in the URL (`/sessions/<id>?remote=1`), which
+    // the standard load path reads exactly like a local deep link.
+    vi.stubGlobal('window', {
+      location: { pathname: '/sessions/sess_pinned_archive', search: '?remote=1' },
+      history: { pushState: vi.fn(), replaceState: vi.fn() },
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    try {
+      await ws.load({ remoteSessionId: 'sess_pinned_archive' });
+
+      // The pinned session is fetched directly, appended to the loaded list,
+      // and becomes the active session — no silent fallback to `sess_listed`.
+      expect(apiMock.getSession).toHaveBeenCalledWith('sess_pinned_archive');
+      expect(state.sessions.map((session) => session.id)).toEqual([
+        'sess_listed',
+        'sess_pinned_archive',
+      ]);
+      expect(deps.syncSessionFromSnapshot).toHaveBeenCalledWith('sess_pinned_archive');
+      expect(state.activeSessionId).toBe('sess_pinned_archive');
+      expect(state.remoteSessionId).toBe('sess_pinned_archive');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it('prefetches provider usage after first-load server auth succeeds', async () => {
     const initialized = ref(false);
@@ -2643,6 +2895,12 @@ describe('useWorkspaceState — Research', () => {
     };
   }
 
+  function createResearchState(): ExtendedState {
+    const state = createState();
+    state.backend = 'v2';
+    return state;
+  }
+
   beforeEach(() => {
     apiMock.getSessionResearch.mockReset();
     apiMock.commandSessionResearch.mockReset();
@@ -2656,7 +2914,7 @@ describe('useWorkspaceState — Research', () => {
         resolveRefresh = resolve;
       }),
     );
-    const state = createState();
+    const state = createResearchState();
     const deps = createDeps();
     deps.refreshSessionResearch = refreshSessionResearch;
     const ws = useWorkspaceState(state, deps);
@@ -2673,7 +2931,7 @@ describe('useWorkspaceState — Research', () => {
   it('sends an explicit command only to its submitted session', async () => {
     const nextSnapshot = snapshot(2);
     apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
-    const state = createState();
+    const state = createResearchState();
     state.activeSessionId = 'sess_2';
     const ws = useWorkspaceState(state, createDeps());
     const command = { kind: 'pause_loop', expectedRevision: 1 } as const;
@@ -2688,7 +2946,7 @@ describe('useWorkspaceState — Research', () => {
   it('commits a successful command snapshot when no live event raced it', async () => {
     const nextSnapshot = snapshot(2);
     apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
-    const state = createState();
+    const state = createResearchState();
     const deps = createDeps();
     const ws = useWorkspaceState(state, deps);
     const command = { kind: 'switch_line', lineSlug: 'line-a', expectedRevision: 1 } as const;
@@ -2710,7 +2968,7 @@ describe('useWorkspaceState — Research', () => {
         resolveFirst = resolve;
       }))
       .mockResolvedValueOnce(secondSnapshot);
-    const state = createState();
+    const state = createResearchState();
     const ws = useWorkspaceState(state, createDeps());
 
     const first = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
@@ -2758,7 +3016,7 @@ describe('useWorkspaceState — Research', () => {
         resolveCommand = resolve;
       }),
     );
-    const state = createState();
+    const state = createResearchState();
     const ws = useWorkspaceState(state, createDeps());
 
     const command = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
@@ -2863,7 +3121,7 @@ describe('useWorkspaceState — Research', () => {
     const error = new DaemonApiError({ code: 40001, msg: 'stale revision', requestId: 'req_1' });
     apiMock.commandSessionResearch.mockRejectedValue(error);
     const deps = createDeps();
-    const ws = useWorkspaceState(createState(), deps);
+    const ws = useWorkspaceState(createResearchState(), deps);
 
     const result = await ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
 
@@ -2883,7 +3141,7 @@ describe('useWorkspaceState — Research', () => {
   ] as const)('allows commands on v2 when the legacy meta flag is %s', async (_case, flags, config) => {
     const nextSnapshot = snapshot(2);
     apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
-    const state = createState();
+    const state = createResearchState();
     state.experimentalFlags = flags;
     state.config = { providers: {}, experimental: config };
     const ws = useWorkspaceState(state, createDeps());
@@ -2907,7 +3165,7 @@ describe('useWorkspaceState — Research', () => {
   });
 
   it('starts a Research sidecar refresh on v2 when the legacy flag is false', async () => {
-    const state = createState();
+    const state = createResearchState();
     state.experimentalFlags = { aitp_research_mode: false };
     state.config = { providers: {}, experimental: { aitp_research_mode: true } };
     const deps = createDeps();
@@ -2918,7 +3176,7 @@ describe('useWorkspaceState — Research', () => {
     expect(deps.refreshSessionResearch).toHaveBeenCalledWith('sess_1');
   });
 
-  it('does not start a Research sidecar refresh on v1 even when the legacy flag is true', async () => {
+  it('does not call Research endpoints on the legacy v1 backend', async () => {
     const state = createState();
     state.backend = 'v1';
     state.experimentalFlags = { aitp_research_mode: true };
@@ -2926,9 +3184,35 @@ describe('useWorkspaceState — Research', () => {
     const ws = useWorkspaceState(state, deps);
 
     await ws.refreshResearch();
+    await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBeNull();
 
     expect(deps.refreshSessionResearch).not.toHaveBeenCalled();
-    expect(apiMock.getSessionResearch).not.toHaveBeenCalled();
+    expect(apiMock.commandSessionResearch).not.toHaveBeenCalled();
+    expect(deps.pushOperationFailure).not.toHaveBeenCalled();
+  });
+
+  it('drops a queued Research command after the backend switches to legacy v1', async () => {
+    const firstSnapshot = snapshot(2);
+    let resolveFirst!: (value: typeof firstSnapshot) => void;
+    apiMock.commandSessionResearch.mockImplementationOnce(
+      () => new Promise<typeof firstSnapshot>((resolve) => {
+        resolveFirst = resolve;
+      }),
+    );
+    const state = createResearchState();
+    const deps = createDeps();
+    const ws = useWorkspaceState(state, deps);
+
+    const first = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
+    await vi.waitFor(() => expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce());
+    const queued = ws.commandResearch({ kind: 'resume_loop', expectedRevision: 2 });
+    state.backend = 'v1';
+    resolveFirst(firstSnapshot);
+
+    await expect(first).resolves.toBe(firstSnapshot);
+    await expect(queued).resolves.toBeNull();
+    expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
+    expect(deps.pushOperationFailure).not.toHaveBeenCalled();
   });
 
   it('does not let a cold read overwrite a newer live Research event', () => {

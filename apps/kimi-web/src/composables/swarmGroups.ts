@@ -4,6 +4,8 @@ export interface SwarmMember {
   id: string;
   name: string;
   subagentType?: string;
+  model?: string;
+  thinkingEffort?: string;
   phase: AppSubagentPhase;
   summary?: string;
   outputLines?: string[];
@@ -53,6 +55,8 @@ export function buildSwarmGroups(tasks: AppTask[]): SwarmGroup[] {
       id: task.id,
       name: task.description,
       subagentType: task.subagentType,
+      model: task.model,
+      thinkingEffort: task.thinkingEffort,
       phase: phaseForTask(task),
       summary: task.outputPreview,
       outputLines: task.outputLines,
@@ -108,6 +112,8 @@ export function swarmMembersByToolCall(tasks: AppTask[]): Map<string, SwarmMembe
       id: task.id,
       name: task.description,
       subagentType: task.subagentType,
+      model: task.model,
+      thinkingEffort: task.thinkingEffort,
       phase: phaseForTask(task),
       summary: task.outputPreview,
       outputLines: task.outputLines,

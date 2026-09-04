@@ -1018,6 +1018,9 @@ export interface WireTask {
   completed_at?: string;
   output_preview?: string;
   output_bytes?: number;
+  agent_id?: string;
+  model?: string;
+  thinking_effort?: string;
   subagent_phase?: 'queued' | 'working' | 'suspended' | 'completed' | 'failed';
   subagent_type?: string;
   parent_tool_call_id?: string;
@@ -1096,11 +1099,31 @@ export interface WireSubagentModelConfig {
   thinkingEffort?: string;
 }
 
+export interface WireSubagentAutoPresetConfig {
+  enabled?: boolean;
+  manualLock?: boolean;
+  candidates?: string[];
+  quotaFloorPercent?: number;
+  switchMarginPercent?: number;
+  localUsageWindowMs?: number;
+  localUsageWeightPercent?: number;
+  priorityWeightPercent?: number;
+  reliabilityWeightPercent?: number;
+  latencyWeightPercent?: number;
+  switchCooldownMs?: number;
+  circuitBreakerFailureThreshold?: number;
+  circuitBreakerCooldownMs?: number;
+  refreshIntervalMs?: number;
+  queryTimeoutMs?: number;
+  allowExtraUsage?: boolean;
+}
+
 export interface WireSubagentConfig {
   timeoutMs?: number;
   preset?: string;
   agents?: Record<string, WireSubagentModelConfig>;
   presets?: Record<string, Record<string, WireSubagentModelConfig>>;
+  autoPreset?: WireSubagentAutoPresetConfig;
 }
 
 export interface WireSecondaryModelConfig {
@@ -1142,6 +1165,99 @@ export interface WireConfig {
   experimental?: Record<string, boolean>;
   telemetry?: boolean;
   raw?: Record<string, unknown>;
+}
+
+export type WireAutoSubagentPresetReasonCode =
+  | 'cancelled'
+  | 'flag_disabled'
+  | 'auto_preset_disabled'
+  | 'manual_lock'
+  | 'caller_model_unavailable'
+  | 'no_candidates'
+  | 'explicit_preset'
+  | 'no_quota_evidence'
+  | 'no_healthy_candidate'
+  | 'current_optimal'
+  | 'score_margin_not_met'
+  | 'switch_cooldown'
+  | 'current_unhealthy'
+  | 'circuit_breaker_escape'
+  | 'higher_score'
+  | 'manual_override'
+  | 'preset_changed_during_evaluation'
+  | 'routing_config_changed'
+  | 'evaluation_failed'
+  | 'activation_failed'
+  | 'activation_no_effect';
+
+export interface WireAutoSubagentPresetCandidateScore {
+  preset: string;
+  provider?: string;
+  availability:
+    | 'healthy'
+    | 'route_unresolved'
+    | 'quota_unknown'
+    | 'quota_below_floor'
+    | 'circuit_open';
+  selectable: boolean;
+  score?: number;
+  quota_remaining_percent?: number;
+  quota_reset_at?: number;
+  circuit_breaker_open_until?: number;
+  contributions: {
+    quota_remaining?: number;
+    priority_bonus: number;
+    reset_bonus: number;
+    route_fit_bonus: number;
+    token_penalty: number;
+    reliability_penalty: number;
+    latency_penalty: number;
+  };
+  local_evidence: {
+    scope: 'profile' | 'provider' | 'none';
+    sample_count: number;
+    failure_count: number;
+    adjusted_failure_rate: number;
+    token_count: number;
+    average_first_token_latency_ms?: number;
+    first_token_latency_sample_count: number;
+    llm_request_count: number;
+  };
+}
+
+export interface WireAutoSubagentPresetStatus {
+  evaluated_at: number;
+  route: 'agent' | 'swarm' | 'tower_worker' | 'tower_reviewer';
+  profile_name?: string;
+  reason_code: WireAutoSubagentPresetReasonCode;
+  /** Preset active when this evaluation began. */
+  current_preset?: string;
+  selected_preset?: string;
+  /** Preset activated by this evaluation, when routing changed. */
+  activated_preset?: string;
+  current_score?: number;
+  selected_score?: number;
+  switch_cooldown_until?: number;
+  candidates: WireAutoSubagentPresetCandidateScore[];
+  policy: {
+    quota_floor_percent: number;
+    switch_margin_percent: number;
+    local_usage_window_ms: number;
+    local_usage_weight_percent: number;
+    priority_weight_percent: number;
+    reliability_weight_percent: number;
+    latency_weight_percent: number;
+    switch_cooldown_ms: number;
+    circuit_breaker_failure_threshold: number;
+    circuit_breaker_cooldown_ms: number;
+  };
+}
+
+export type WireAutoSubagentPresetStatusResponse = WireAutoSubagentPresetStatus | null;
+
+export interface WireSubagentPresetActivation {
+  config: WireConfig;
+  warning?: string;
 }
 
 export interface WireProviderUsageRow {
@@ -1254,6 +1370,43 @@ export interface WireFileMeta {
   size: number;
   created_at: string;
   expires_at?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Remote share wire DTOs — GET /api/v1/remote-share, POST :start / :stop.
+// Browser-facing status only: the full control URL carries the credential in
+// its fragment, while the response exposes no separate token field.
+// ---------------------------------------------------------------------------
+
+export interface WireRemoteShareStatus {
+  active: boolean;
+  session_id: string | null;
+  host: string | null;
+  port: number | null;
+  url: string | null;
+  ttl_seconds: number | null;
+  started_at: string | null;
+  expires_at: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Remote persistent wire DTOs — GET /api/v1/remote-persistent, POST
+// :start / :stop (the long-lived `hakimi remote` systemd user service).
+// Browser-facing status only: the credential appears only inside the full
+// control URL's fragment, never as a separate token field.
+// ---------------------------------------------------------------------------
+
+export interface WireRemotePersistentStatus {
+  active: boolean;
+  /** Projected systemd unit state: active/inactive/failed/... or unsupported. */
+  state: string;
+  health: 'ok' | 'down' | 'stale' | 'unknown';
+  origin: string | null;
+  url: string | null;
+  port: number | null;
+  started_at: string | null;
+  systemd_available: boolean;
+  message: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1481,6 +1634,24 @@ type WireEventAssistantDelta = WireEventBase<'event.assistant.delta', {
   content_index: number;
   delta: { text?: string; thinking?: string };
 }>;
+
+// Subagent preset — the evaluator publishes every structured decision, then a
+// second event when it actually switches the process-global active preset.
+type WireEventSubagentPresetEvaluated = WireEventBase<
+  'event.subagent.preset_evaluated',
+  WireAutoSubagentPresetStatus
+>;
+type WireEventSubagentPresetChanged = WireEventBase<'event.subagent.preset_changed', {
+  /** Preset active before the switch; absent when none was configured. */
+  previous_preset?: string;
+  current_preset: string;
+  /** Optional only for compatibility with older daemons that emitted from/to alone. */
+  reason_code?: WireAutoSubagentPresetReasonCode;
+  profile_name?: string;
+  evaluated_at?: number;
+  previous_score?: number;
+  current_score?: number;
+}>;
 // No-op-but-known streaming events (advance lastSeq, no UI change)
 type WireEventAssistantToolUseStarted = WireEventBase<'event.assistant.tool_use_started', {
   message_id: string;
@@ -1618,6 +1789,9 @@ export type WireEvent =
   | WireEventAssistantToolUseDelta
   | WireEventAssistantToolUseCompleted
   | WireEventAssistantCompleted
+  // Subagent preset
+  | WireEventSubagentPresetEvaluated
+  | WireEventSubagentPresetChanged
   // Tool execution
   | WireEventToolStarted
   | WireEventToolOutput

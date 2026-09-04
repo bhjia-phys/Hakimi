@@ -26,10 +26,19 @@ import {
   removeProviderFromConfig,
   SDKRpcClientV2,
   Session,
+  type AutoSubagentPresetStatus,
   type Event,
   type KimiConfig,
+  type SubagentPresetChangedEvent,
+  type SubagentPresetEvaluatedEvent,
+  type Unsubscribe,
 } from '#/index';
 import { foldAgentWireReplay } from '#/v2/resume-replay';
+import {
+  translateSubagentPresetChanged,
+  translateSubagentPresetEvaluated,
+  translateSubagentPresetStatus,
+} from '#/v2/event-mapper';
 import {
   drainQueryStoreDisposals,
   drainSessionIndexMirror,
@@ -38,11 +47,15 @@ import {
   IAppendLogStore,
   ensureMainAgent,
   getLiveSessionById,
+  IAutoSubagentPresetService,
+  IEventService,
   IHostRequestHeaders,
   ISessionIndex,
   ISessionIndexMirror,
   ISessionManager,
   OsProcessErrors,
+  SUBAGENT_PRESET_CHANGED_EVENT_TYPE,
+  SUBAGENT_PRESET_EVALUATED_EVENT_TYPE,
 } from '@moonshot-ai/agent-core-v2';
 
 import { McpOAuthService } from '../../agent-core/src/mcp/oauth/service';
@@ -52,6 +65,61 @@ import { startMcpAuthStatusServer } from './mcp-auth-status-server';
 import { recordingTelemetry, type TelemetryRecord } from './telemetry';
 
 const hostEnvProbe = vi.hoisted(() => ({ failWithMissingShell: false }));
+
+const AUTO_PRESET_STATUS_FIXTURE = {
+  evaluatedAt: 1_750_000_000_000,
+  route: 'agent',
+  profileName: 'reviewer',
+  reasonCode: 'higher_score',
+  currentPreset: 'balanced',
+  selectedPreset: 'kimi-heavy',
+  activatedPreset: 'kimi-heavy',
+  currentScore: 58.5,
+  selectedScore: 76.25,
+  switchCooldownUntil: 1_750_000_030_000,
+  candidates: [
+    {
+      preset: 'kimi-heavy',
+      provider: 'provider-a',
+      availability: 'healthy',
+      selectable: true,
+      score: 76.25,
+      quotaRemainingPercent: 80,
+      quotaResetAt: 1_750_003_600_000,
+      contributions: {
+        quotaRemaining: 80,
+        priorityBonus: 8,
+        resetBonus: 1,
+        routeFitBonus: 2,
+        tokenPenalty: 3,
+        reliabilityPenalty: 7.5,
+        latencyPenalty: 4.25,
+      },
+      localEvidence: {
+        scope: 'profile',
+        sampleCount: 8,
+        failureCount: 1,
+        adjustedFailureRate: 0.15,
+        tokenCount: 42_000,
+        averageFirstTokenLatencyMs: 320,
+        firstTokenLatencySampleCount: 9,
+        llmRequestCount: 12,
+      },
+    },
+  ],
+  policy: {
+    quotaFloorPercent: 10,
+    switchMarginPercent: 5,
+    localUsageWindowMs: 86_400_000,
+    localUsageWeightPercent: 10,
+    priorityWeightPercent: 20,
+    reliabilityWeightPercent: 15,
+    latencyWeightPercent: 10,
+    switchCooldownMs: 30_000,
+    circuitBreakerFailureThreshold: 3,
+    circuitBreakerCooldownMs: 60_000,
+  },
+} satisfies AutoSubagentPresetStatus;
 
 vi.mock('@moonshot-ai/agent-core-v2/_base/execEnv/environmentProbe', async (importOriginal) => {
   const actual = await importOriginal<
@@ -206,11 +274,10 @@ describe('SDKRpcClientV2 (agent-core-v2 wiring)', () => {
     const workDir = await makeProjectRoot();
     const id = 'ses_missing_preset';
     try {
-      await harness.setConfig({ subagent: { preset: 'missing', presets: {} } });
+      await expect(
+        harness.setConfig({ subagent: { preset: 'missing', presets: {} } }),
+      ).rejects.toMatchObject({ code: ErrorCodes.CONFIG_INVALID });
 
-      await expect(harness.createSession({ id, workDir })).rejects.toMatchObject({
-        code: ErrorCodes.CONFIG_INVALID,
-      });
       expect(harness.getSession(id)).toBeUndefined();
       expect(await sessionDirExists(homeDir, id)).toBe(false);
     } finally {
@@ -223,11 +290,10 @@ describe('SDKRpcClientV2 (agent-core-v2 wiring)', () => {
     const workDir = await makeProjectRoot();
     const id = 'ses_prototype_preset';
     try {
-      await harness.setConfig({ subagent: { preset: 'toString', presets: {} } });
-
-      await expect(harness.createSession({ id, workDir })).rejects.toMatchObject({
+      await expect(
+        harness.setConfig({ subagent: { preset: 'toString', presets: {} } }),
+      ).rejects.toMatchObject({
         code: ErrorCodes.CONFIG_INVALID,
-        message: expect.stringContaining('does not name a configured preset'),
       });
       expect(harness.getSession(id)).toBeUndefined();
       expect(await sessionDirExists(homeDir, id)).toBe(false);
@@ -963,8 +1029,7 @@ key = "${titleOAuthRef.key}"
 
   it('serves listWorkspaceSkills through the engineAccessor escape hatch', async () => {
     const { harness, homeDir } = await makeHarness();
-    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-work-'));
-    tempDirs.push(workDir);
+    const workDir = await makeProjectRoot();
     await writeSkill(join(homeDir, 'skills', 'demo-user-skill'), 'demo-user-skill');
     await writeSkill(join(workDir, '.kimi-code', 'skills', 'demo-project-skill'), 'demo-project-skill');
     try {
@@ -1166,8 +1231,7 @@ key = "${titleOAuthRef.key}"
 describe('SDKRpcClientV2 workspace trust', () => {
   it('reports an untrusted workspace with the project MCP servers it gates', async () => {
     const { harness } = await makeHarness();
-    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-work-'));
-    tempDirs.push(workDir);
+    const workDir = await makeProjectRoot();
     await writeFile(
       join(workDir, '.mcp.json'),
       JSON.stringify({
@@ -2001,6 +2065,228 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
       });
     } finally {
       await harness.close();
+    }
+  });
+
+  it('queries the latest automatic-preset status and strips unknown fields', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-'));
+    tempDirs.push(homeDir);
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+    try {
+      await expect(client.getAutoSubagentPresetStatus()).resolves.toBeUndefined();
+      vi.spyOn(client.engineAccessor.get(IAutoSubagentPresetService), 'status').mockReturnValue({
+        ...AUTO_PRESET_STATUS_FIXTURE,
+        privateData: 'drop-me',
+      } as AutoSubagentPresetStatus);
+
+      await expect(client.getAutoSubagentPresetStatus()).resolves.toEqual(
+        AUTO_PRESET_STATUS_FIXTURE,
+      );
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('strictly maps automatic-preset evaluations and switches onto narrow channels', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-'));
+    tempDirs.push(homeDir);
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+    try {
+      const events = client.engineAccessor.get(IEventService);
+      const evaluatedEvents: SubagentPresetEvaluatedEvent[] = [];
+      const changedEvents: SubagentPresetChangedEvent[] = [];
+      const v1Events: Event[] = [];
+      const unsubscribeEvaluated: Unsubscribe = client.onSubagentPresetEvaluated((event) => {
+        evaluatedEvents.push(event);
+      });
+      const unsubscribeChanged: Unsubscribe = client.onSubagentPresetChanged((event) => {
+        changedEvents.push(event);
+      });
+      const unsubscribeV1 = client.onEvent((event) => {
+        v1Events.push(event);
+      });
+
+      events.publish({
+        type: SUBAGENT_PRESET_EVALUATED_EVENT_TYPE,
+        payload: { sessionId: 's1', ...AUTO_PRESET_STATUS_FIXTURE, privateData: 'drop-me' },
+      });
+      expect(evaluatedEvents).toEqual([
+        { sessionId: 's1', ...AUTO_PRESET_STATUS_FIXTURE },
+      ]);
+
+      events.publish({
+        type: SUBAGENT_PRESET_CHANGED_EVENT_TYPE,
+        payload: {
+          sessionId: 's1',
+          previousPreset: 'balanced',
+          currentPreset: 'kimi-heavy',
+          reasonCode: 'higher_score',
+          profileName: 'reviewer',
+          evaluatedAt: 1_750_000_000_000,
+          previousScore: 58.5,
+          currentScore: 76.25,
+          privateData: 'drop-me',
+        },
+      });
+      expect(changedEvents).toEqual([
+        {
+          sessionId: 's1',
+          previousPreset: 'balanced',
+          currentPreset: 'kimi-heavy',
+          reasonCode: 'higher_score',
+          profileName: 'reviewer',
+          evaluatedAt: 1_750_000_000_000,
+          previousScore: 58.5,
+          currentScore: 76.25,
+        },
+      ]);
+
+      // Malformed payloads are dropped independently on both narrow channels.
+      events.publish({ type: SUBAGENT_PRESET_EVALUATED_EVENT_TYPE, payload: null });
+      events.publish({
+        type: SUBAGENT_PRESET_EVALUATED_EVENT_TYPE,
+        payload: { sessionId: 's2', ...AUTO_PRESET_STATUS_FIXTURE, reasonCode: 'unknown' },
+      });
+      events.publish({ type: SUBAGENT_PRESET_CHANGED_EVENT_TYPE, payload: null });
+      events.publish({
+        type: SUBAGENT_PRESET_CHANGED_EVENT_TYPE,
+        payload: { sessionId: 's2', currentPreset: 'balanced' },
+      });
+      expect(evaluatedEvents).toHaveLength(1);
+      expect(changedEvents).toHaveLength(1);
+
+      // Neither v2 fact leaks into the legacy Event stream.
+      expect(
+        v1Events.some((event) =>
+          [SUBAGENT_PRESET_EVALUATED_EVENT_TYPE, SUBAGENT_PRESET_CHANGED_EVENT_TYPE].includes(
+            (event as { readonly type: string }).type,
+          ),
+        ),
+      ).toBe(false);
+
+      unsubscribeEvaluated();
+      unsubscribeChanged();
+      unsubscribeV1();
+      events.publish({
+        type: SUBAGENT_PRESET_EVALUATED_EVENT_TYPE,
+        payload: { sessionId: 's3', ...AUTO_PRESET_STATUS_FIXTURE },
+      });
+      events.publish({
+        type: SUBAGENT_PRESET_CHANGED_EVENT_TYPE,
+        payload: {
+          sessionId: 's3',
+          currentPreset: 'balanced',
+          reasonCode: 'higher_score',
+          evaluatedAt: 3,
+        },
+      });
+      expect(evaluatedEvents).toHaveLength(1);
+      expect(changedEvents).toHaveLength(1);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('validates automatic-preset status and event payloads field-by-field', () => {
+    expect(translateSubagentPresetStatus({
+      ...AUTO_PRESET_STATUS_FIXTURE,
+      privateData: 'drop-me',
+    })).toEqual(AUTO_PRESET_STATUS_FIXTURE);
+    expect(translateSubagentPresetEvaluated({
+      sessionId: 's1',
+      ...AUTO_PRESET_STATUS_FIXTURE,
+      privateData: 'drop-me',
+    })).toEqual({ sessionId: 's1', ...AUTO_PRESET_STATUS_FIXTURE });
+    expect(
+      translateSubagentPresetChanged({
+        sessionId: 's1',
+        previousPreset: 'balanced',
+        currentPreset: 'kimi-heavy',
+        reasonCode: 'higher_score',
+        profileName: 'reviewer',
+        evaluatedAt: 1_750_000_000_000,
+        previousScore: 58.5,
+        currentScore: 76.25,
+        privateData: 'drop-me',
+      }),
+    ).toEqual({
+      sessionId: 's1',
+      previousPreset: 'balanced',
+      currentPreset: 'kimi-heavy',
+      reasonCode: 'higher_score',
+      profileName: 'reviewer',
+      evaluatedAt: 1_750_000_000_000,
+      previousScore: 58.5,
+      currentScore: 76.25,
+    });
+
+    const candidate = AUTO_PRESET_STATUS_FIXTURE.candidates[0]!;
+    for (const malformed of [
+      null,
+      'nope',
+      {},
+      { ...AUTO_PRESET_STATUS_FIXTURE, reasonCode: 'unknown' },
+      { ...AUTO_PRESET_STATUS_FIXTURE, evaluatedAt: Number.POSITIVE_INFINITY },
+      { ...AUTO_PRESET_STATUS_FIXTURE, candidates: [{ preset: 'broken' }] },
+      {
+        ...AUTO_PRESET_STATUS_FIXTURE,
+        candidates: [{
+          ...candidate,
+          localEvidence: { ...candidate.localEvidence, firstTokenLatencySampleCount: 1.5 },
+        }],
+      },
+      {
+        ...AUTO_PRESET_STATUS_FIXTURE,
+        candidates: [{
+          ...candidate,
+          localEvidence: { ...candidate.localEvidence, adjustedFailureRate: 1.01 },
+        }],
+      },
+      {
+        ...AUTO_PRESET_STATUS_FIXTURE,
+        candidates: [{ ...candidate, quotaRemainingPercent: 101 }],
+      },
+      {
+        ...AUTO_PRESET_STATUS_FIXTURE,
+        policy: { ...AUTO_PRESET_STATUS_FIXTURE.policy, quotaFloorPercent: 101 },
+      },
+      {
+        ...AUTO_PRESET_STATUS_FIXTURE,
+        candidates: [{
+          ...candidate,
+          contributions: { ...candidate.contributions, priorityBonus: -1 },
+        }],
+      },
+    ]) {
+      expect(translateSubagentPresetStatus(malformed)).toBeUndefined();
+    }
+    for (const malformed of [
+      null,
+      { ...AUTO_PRESET_STATUS_FIXTURE },
+      { sessionId: '', ...AUTO_PRESET_STATUS_FIXTURE },
+      { sessionId: 's1', ...AUTO_PRESET_STATUS_FIXTURE, policy: {} },
+    ]) {
+      expect(translateSubagentPresetEvaluated(malformed)).toBeUndefined();
+    }
+    for (const malformed of [
+      null,
+      {},
+      { sessionId: 's1', currentPreset: 'kimi-heavy' },
+      {
+        sessionId: 's1',
+        currentPreset: 'kimi-heavy',
+        reasonCode: 'unknown',
+        evaluatedAt: 1,
+      },
+      {
+        sessionId: 's1',
+        previousPreset: 42,
+        currentPreset: 'kimi-heavy',
+        reasonCode: 'higher_score',
+        evaluatedAt: 1,
+      },
+    ]) {
+      expect(translateSubagentPresetChanged(malformed)).toBeUndefined();
     }
   });
 });

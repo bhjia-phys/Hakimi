@@ -5,7 +5,8 @@
  * — the same path `messages` and `:undo` use — and the message page comes from
  * the shared full-transcript loader (`services/messages/messageHistory`), so
  * this endpoint and `GET /sessions/{sid}/messages` serve the same history:
- * full across compactions, media rehydrated.
+ * full across compactions, with media rehydrated only for ordinary local mode.
+ * Remote shares skip blob reads and serve the common media-free projection.
  *
  * **Error mapping**: `SnapshotNotFoundError` → 40401; everything else falls
  * through to the global error handler (→ 50001).
@@ -32,6 +33,7 @@ import {
   type InFlightTurn,
   type SessionSnapshotResponse,
 } from '../protocol/rest-snapshot';
+import { projectRemoteSnapshot } from '../security/remoteResponseProjection';
 import { loadMessageHistory } from '../services/messages/messageHistory';
 import { type SessionEventBroadcaster } from '../transport/ws/v1/sessionEventBroadcaster';
 import { toWireApproval } from './approvals';
@@ -67,10 +69,13 @@ interface SnapshotRouteHost {
 export interface SnapshotRouteDeps {
   readonly core: Scope;
   readonly broadcaster: SessionEventBroadcaster;
+  /** undefined = local; string = one-session remote; null = all-session remote. */
+  readonly remoteSessionId?: string | null;
 }
 
 export function registerSnapshotRoutes(app: SnapshotRouteHost, deps: SnapshotRouteDeps): void {
   const { core, broadcaster } = deps;
+  const remote = deps.remoteSessionId !== undefined;
 
   const route = defineRoute(
     {
@@ -89,7 +94,7 @@ export function registerSnapshotRoutes(app: SnapshotRouteHost, deps: SnapshotRou
     async (req, reply) => {
       const { session_id } = req.params;
       try {
-        const data = await assembleSnapshot(core, broadcaster, session_id);
+        const data = await assembleSnapshot(core, broadcaster, session_id, remote);
         reply.send(okEnvelope(data, req.id));
       } catch (err) {
         if (err instanceof SnapshotNotFoundError) {
@@ -107,6 +112,7 @@ async function assembleSnapshot(
   core: Scope,
   broadcaster: SessionEventBroadcaster,
   sessionId: string,
+  remote: boolean,
 ): Promise<SessionSnapshotResponse> {
   // Resolve the live handle, loading the session from disk when it is cold
   // (created by a previous process or by v1). `resume` returns `undefined`
@@ -134,9 +140,12 @@ async function assembleSnapshot(
   );
 
   // Messages — most recent page of the main agent's full history, from the
-  // loader shared with the `messages` routes.
+  // loader shared with the `messages` routes. Remote reads never touch the blob
+  // store; their final response view drops the unresolved media references.
   const main = await ensureMainAgent(handle);
-  const all = await loadMessageHistory(core, main, sessionId, meta.createdAt);
+  const all = await loadMessageHistory(core, main, sessionId, meta.createdAt, {
+    rehydrateMedia: !remote,
+  });
   const hasMore = all.length > SNAPSHOT_MESSAGE_PAGE_SIZE;
   const items = all.slice(-SNAPSHOT_MESSAGE_PAGE_SIZE);
 
@@ -152,7 +161,7 @@ async function assembleSnapshot(
     .listPending('question')
     .map((i) => toWireQuestion(i, sessionId));
 
-  return {
+  const snapshot: SessionSnapshotResponse = {
     as_of_seq: snapState.seq,
     epoch: snapState.epoch,
     session,
@@ -162,6 +171,7 @@ async function assembleSnapshot(
     pending_approvals: pendingApprovals,
     pending_questions: pendingQuestions,
   };
+  return remote ? projectRemoteSnapshot(snapshot) : snapshot;
 }
 
 function readCurrentPromptId(main: IAgentScopeHandle | undefined): string | undefined {

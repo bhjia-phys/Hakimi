@@ -15,7 +15,7 @@ import type { MessageContent } from '../../../protocol/message';
 import type { PermissionMode } from '@moonshot-ai/agent-core-v2/agent/permissionPolicy/types';
 import type { UsageStatus } from '@moonshot-ai/agent-core-v2/agent/usage/usage';
 import type { AgentPhase } from '../../../services/legacyStatus/legacyStatus';
-import type { ConfigResponse } from '../../../protocol/rest-config';
+import type { ConfigResponse, SubagentPresetStatus } from '../../../protocol/rest-config';
 import type { Session, SessionPendingInteraction } from '../../../protocol/session';
 import type { Workspace } from '../../../protocol/workspace';
 
@@ -45,6 +45,35 @@ export interface SessionMetaUpdatedEvent {
   readonly type: 'session.meta.updated';
   readonly title?: string;
   readonly patch?: Record<string, unknown>;
+}
+
+/**
+ * One automatic subagent-preset evaluation, projected field-by-field from the
+ * engine's process-global fact. It uses the same status shape as the REST pull
+ * boundary and routes through the originating session's durable journal while
+ * still fanning out globally.
+ */
+export interface SubagentPresetEvaluatedEvent extends SubagentPresetStatus {
+  readonly type: 'event.subagent.preset_evaluated';
+}
+
+/**
+ * Automatic subagent-preset switch, published by the engine's process-global
+ * `IEventService` (`event.subagent.preset_changed`) when the automatic
+ * selector commits a switch. Session-scoped on the wire: the envelope carries
+ * the real `session_id` (recovered from the core payload), while
+ * `isGlobalEvent` still fans the frame out to every connection.
+ */
+export interface SubagentPresetChangedEvent {
+  readonly type: 'event.subagent.preset_changed';
+  /** The preset active before the switch (absent for a first automatic choice). */
+  readonly previous_preset?: string;
+  readonly current_preset: string;
+  readonly reason_code: SubagentPresetStatus['reason_code'];
+  readonly profile_name?: string;
+  readonly evaluated_at: number;
+  readonly previous_score?: number;
+  readonly current_score?: number;
 }
 
 export interface SessionCreatedEvent {
@@ -226,6 +255,8 @@ export type AgentEvent =
   | AgentCreatedEvent
   | AgentDisposedEvent
   | SessionMetaUpdatedEvent
+  | SubagentPresetEvaluatedEvent
+  | SubagentPresetChangedEvent
   | SessionCreatedEvent
   | WorkspaceCreatedEvent
   | WorkspaceUpdatedEvent

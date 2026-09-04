@@ -108,7 +108,23 @@ Endpoints are grouped by resource below. A `:{action}` suffix in a path is the a
 | Method and path | Description |
 | --- | --- |
 | `GET /api/v1/config` | Read the global config (secret fields redacted) |
+| `GET /api/v1/config/subagent-preset/status` | Read the latest process-local automatic preset evaluation; `data` is `null` before the first evaluation |
+| `POST /api/v1/config/subagent-preset/activate` | Manually activate a configured preset, or select base routing with an empty string |
 | `POST /api/v1/config` | Merge-patch the config; broadcasts `event.config.changed` |
+
+Manual activation accepts a JSON request with one `preset` field:
+
+```json
+{
+  "preset": "balanced"
+}
+```
+
+The preset name must exist in the current config. Use `{ "preset": "" }` to clear the selector and return to base routing. A successful response returns the authoritative redacted config plus an optional warning, records the choice as a manual lock, and pauses automatic switching until that lock is resumed. Clients should prefer this dedicated endpoint because activation is serialized with automatic selection and owns the manual-lock/revision contract. Current daemons also accept an own `subagent.preset` field in a generic `POST /api/v1/config` patch: they remove that field from the ordinary merge patch and route it through the same manual activation boundary, while all remaining fields keep their normal merge behavior. Compatibility clients use that generic form only after an older daemon returns a route-level `404` for the dedicated endpoint; on those older daemons it retains the legacy config-patch behavior.
+
+The automatic-preset status is one process-global snapshot because `[subagent].preset` is global. It reports `evaluated_at`, the triggering `route` / `profile_name`, a structured `reason_code`, pre-evaluation / selected / activated presets and scores, `switch_cooldown_until`, candidate rows, and the effective policy. Each candidate includes availability, quota and reset evidence, circuit-breaker deadline, score contributions, and aggregate local evidence such as sample counts and first-token latency. All times are epoch milliseconds.
+
+This runtime snapshot is not included in `GET /api/v1/config`, is never written to `config.toml`, and contains no prompt, path, error text, or other free-form user content. The SDK equivalent is `KimiHarness.getAutoSubagentPresetStatus()`, which returns `undefined` on the v1 engine or before the first v2 evaluation. Use `onSubagentPresetEvaluated()` and `onSubagentPresetChanged()` for the corresponding typed event streams; both subscriptions are inert on v1.
 
 ### Models and providers
 
@@ -306,7 +322,7 @@ Clients send JSON frames `{ "type", "id"?, "payload" }`; every request frame get
 
 Event frames look like `{ "type", "seq", "epoch"?, "volatile"?, "offset"?, "session_id"?, "timestamp", "payload" }`, where `type` is the event type itself. Two delivery scopes:
 
-- **Global events**: sent to every established connection, no subscription needed — `session.meta.updated`, `event.session.created`, `event.session.work_changed`, `event.session.status_changed`, `event.workspace.*`, `event.config.*`.
+- **Global events**: sent to every established connection, no subscription needed — `session.meta.updated`, `event.session.created`, `event.session.work_changed`, `event.session.status_changed`, `event.workspace.*`, `event.config.*`, `event.subagent.preset_evaluated`, and `event.subagent.preset_changed`.
 - **Session events**: sent only to connections subscribed to that session, subject to `agent_filter`. Main families:
 
 | Family | Main events |
@@ -318,6 +334,15 @@ Event frames look like `{ "type", "seq", "epoch"?, "volatile"?, "offset"?, "sess
 | Subagents | `subagent.spawned` / `started` / `suspended` / `completed` / `failed` |
 | Background | `task.started` / `terminated`, `shell.started` / `output` / `completed` |
 | Misc | `compaction.*`, `skill.activated`, `goal.updated`, `prompt.*`, `error`, `warning` |
+
+Automatic preset decisions use two durable global events. Both are globally fanned out but carry the real originating `session_id` in the envelope and are journaled under that session, so cursor replay preserves the decision history:
+
+| Event | Payload |
+| --- | --- |
+| `event.subagent.preset_evaluated` | The same snake-case status shape returned by `GET /api/v1/config/subagent-preset/status`: decision time and reason, route/profile, pre-evaluation/selected/activated presets and scores, cooldown, candidate score breakdowns, local evidence, and policy |
+| `event.subagent.preset_changed` | `previous_preset?`, `current_preset`, `reason_code`, `profile_name?`, `evaluated_at`, `previous_score?`, and `current_score?` for a committed automatic switch |
+
+`reason_code` is structured and localizable rather than free text; it distinguishes outcomes such as `current_optimal`, `score_margin_not_met`, `switch_cooldown`, `current_unhealthy`, `circuit_breaker_escape`, `higher_score`, and manual/config races. The complete enum is published in the live OpenAPI / AsyncAPI schema. These payloads contain only routing identifiers and aggregate numeric evidence, not prompts, paths, or error messages.
 
 Events also split into durable and volatile: durable events carry a strictly increasing `seq`, are journaled, and can be replayed; volatile events (the `*.delta` family, `tool.progress`, `shell.*`, and similar) are marked `volatile: true` and never replayed. When consuming a volatile text stream, compare `offset` (the cumulative character offset within the turn) against your locally accumulated text: below the local length means a duplicate frame; above means a gap that needs snapshot recovery.
 

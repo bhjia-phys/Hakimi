@@ -156,6 +156,8 @@
                   ./build
                   ./.npmrc
                   ./.nvmrc
+                  ./flake.lock
+                  ./flake.nix
                   ./package.json
                   ./pnpm-lock.yaml
                   ./pnpm-workspace.yaml
@@ -173,7 +175,7 @@
               inherit (finalAttrs) pname version src pnpmWorkspaces;
               inherit pnpm;
               fetcherVersion = 3;
-              hash = "sha256-nLBodmemodafj/7Uu4ORRrb2QuX8rAenCFmUhkOHDJI=";
+              hash = "sha256-ErjlsRKHvjzKaiClrgjy82IqsyLa6nKr1ei+j31RhjQ=";
             };
 
             nativeBuildInputs = [

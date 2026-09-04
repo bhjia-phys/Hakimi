@@ -37,6 +37,12 @@ import {
 import { ulid } from 'ulid';
 import type { RawData, WebSocket } from 'ws';
 
+import {
+  REMOTE_ACCESS_FORBIDDEN_CODE,
+  REMOTE_ACCESS_FORBIDDEN_MESSAGE,
+  type RemoteAccessOptions,
+} from '../../../middleware/remoteAccess';
+import { projectRemoteWsEnvelope } from '../../../security/remoteResponseProjection';
 import type { CredentialValidator } from '../../../services/auth/credentials';
 import type { IConnectionRegistry } from '../connectionRegistry';
 import {
@@ -105,6 +111,7 @@ export interface WsConnectionV1Options {
   readonly remoteAddress: string | null;
   readonly userAgent: string | null;
   readonly logger?: JournalLogger;
+  readonly remoteAccess?: RemoteAccessOptions;
   readonly maxBufferSize?: number;
   /** Delay before buffered subscription events are flushed. */
   readonly flushIntervalMs?: number;
@@ -126,6 +133,8 @@ export class WsConnectionV1 implements BroadcastTarget {
   private readonly broadcaster: SessionEventBroadcaster;
   private readonly fsWatchBridge?: FsWatchBridge;
   private readonly validateCredential?: CredentialValidator;
+  /** undefined = local, string = one-session remote, null = all-session Web remote. */
+  private readonly remoteSessionId?: string | null;
   private readonly maxBufferSize: number;
   private readonly flushIntervalMs: number;
   private readonly maxBatchSize: number;
@@ -166,6 +175,7 @@ export class WsConnectionV1 implements BroadcastTarget {
     this.broadcaster = opts.broadcaster;
     this.fsWatchBridge = opts.fsWatchBridge;
     this.validateCredential = opts.validateCredential;
+    this.remoteSessionId = opts.remoteAccess?.sessionId;
     this.logger = opts.logger;
     this.maxBufferSize = opts.maxBufferSize ?? DEFAULT_MAX_BUFFER_SIZE;
     this.flushIntervalMs = opts.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
@@ -207,8 +217,21 @@ export class WsConnectionV1 implements BroadcastTarget {
 
   /** BroadcastTarget — buffer subscription traffic; public traffic is a FIFO barrier. */
   send(envelope: EventEnvelope, delivery: BroadcastDelivery = 'subscription'): void {
-    if (delivery === 'immediate') this.sendImmediateFrame(envelope);
-    else this.sendSubscribedFrame(envelope);
+    // The broadcaster's global union intentionally reaches every normal client.
+    // A remote share always drops process-global (`__global__`) events here. A
+    // single-session share also drops foreign sessions; an all-session Web share
+    // may subscribe to any real session. Every admitted frame then crosses the
+    // same output/progress projection boundary.
+    let outbound = envelope;
+    if (this.remoteSessionId !== undefined) {
+      if (envelope.session_id === '__global__') return;
+      if (this.remoteSessionId !== null && envelope.session_id !== this.remoteSessionId) return;
+      const projected = projectRemoteWsEnvelope(envelope);
+      if (projected === undefined) return;
+      outbound = projected;
+    }
+    if (delivery === 'immediate') this.sendImmediateFrame(outbound);
+    else this.sendSubscribedFrame(outbound);
   }
 
   private onMessage(data: RawData): void {
@@ -276,13 +299,14 @@ export class WsConnectionV1 implements BroadcastTarget {
 
   private async onClientHello(frame: InboundFrame): Promise<void> {
     if (!(await this.authorize(frame))) return;
-    this.gotClientHello = true;
 
     // Handshake only. The inline subscription fields are legacy compatibility
     // — they are forwarded to the same attach path `subscribe` uses; new
     // clients send just `client_id` here and subscribe separately.
     const payload = frame.payload ?? {};
     const subscriptions = asStringArray(payload['subscriptions']);
+    if (this.rejectRemoteSessions(frame, subscriptions)) return;
+    this.gotClientHello = true;
     const cursors = payload['cursors'] as Record<string, SessionCursor> | undefined;
     const agentFilter = parseAgentFilter(payload['agent_filter']);
 
@@ -290,7 +314,9 @@ export class WsConnectionV1 implements BroadcastTarget {
     // consumes it, so the broadcaster gates that fan-out to connections whose
     // hello declares this client id (see `addDiEventTarget`). Both kimi-inspect
     // sockets (activity + transcript) send `client_id: 'kimi-inspect'`.
-    if (payload['client_id'] === 'kimi-inspect') this.broadcaster.addDiEventTarget(this);
+    if (this.remoteSessionId === undefined && payload['client_id'] === 'kimi-inspect') {
+      this.broadcaster.addDiEventTarget(this);
+    }
 
     const accepted: string[] = [];
     const resyncRequired: string[] = [];
@@ -321,6 +347,7 @@ export class WsConnectionV1 implements BroadcastTarget {
   private async onSubscribe(frame: InboundFrame): Promise<void> {
     const payload = frame.payload ?? {};
     const sessionIds = asStringArray(payload['session_ids']);
+    if (this.rejectRemoteSessions(frame, sessionIds)) return;
     const cursors = payload['cursors'] as Record<string, SessionCursor> | undefined;
     const agentFilter = parseAgentFilter(payload['agent_filter']);
 
@@ -367,6 +394,7 @@ export class WsConnectionV1 implements BroadcastTarget {
       return;
     }
     const sid = parsed.data.session_id;
+    if (this.rejectRemoteSessions(frame, [sid])) return;
 
     const accepted: string[] = [];
     const notFound: string[] = [];
@@ -407,6 +435,7 @@ export class WsConnectionV1 implements BroadcastTarget {
       return;
     }
     const sid = parsed.data.session_id;
+    if (this.rejectRemoteSessions(frame, [sid])) return;
     const agentIds = parsed.data.agent_ids;
 
     const existing = this.subscriptions.get(sid);
@@ -431,6 +460,7 @@ export class WsConnectionV1 implements BroadcastTarget {
   private async onUnsubscribe(frame: InboundFrame): Promise<void> {
     const payload = frame.payload ?? {};
     const sessionIds = asStringArray(payload['session_ids']);
+    if (this.rejectRemoteSessions(frame, sessionIds)) return;
     for (const sid of sessionIds) {
       this.broadcaster.unsubscribe(sid, this);
       this.subscriptions.delete(sid);
@@ -445,6 +475,7 @@ export class WsConnectionV1 implements BroadcastTarget {
   }
 
   private async onWatchFs(frame: InboundFrame, isAdd: boolean): Promise<void> {
+    if (this.rejectRemoteOperation(frame)) return;
     const payload = frame.payload ?? {};
     const sessionId = typeof payload['session_id'] === 'string' ? payload['session_id'] : '';
     const runtimeId =
@@ -537,9 +568,36 @@ export class WsConnectionV1 implements BroadcastTarget {
       );
       resyncRequired.push(sid);
     } else {
-      for (const { envelope } of result.events) this.sendSubscribedFrame(envelope);
+      // Replay must cross the same per-connection remote projection as live
+      // fan-out; writing directly to the buffer would bypass that boundary.
+      for (const { envelope } of result.events) this.send(envelope);
     }
     serverCursors[sid] = { seq: result.currentSeq, epoch: result.epoch };
+  }
+
+  private rejectRemoteSessions(frame: InboundFrame, sessionIds: readonly string[]): boolean {
+    const allowed =
+      this.remoteSessionId === undefined ||
+      sessionIds.every(
+        (sessionId) =>
+          sessionId !== '__global__' &&
+          (this.remoteSessionId === null || sessionId === this.remoteSessionId),
+      );
+    if (allowed) return false;
+    this.sendRemoteForbidden(frame);
+    return true;
+  }
+
+  private rejectRemoteOperation(frame: InboundFrame): boolean {
+    if (this.remoteSessionId === undefined) return false;
+    this.sendRemoteForbidden(frame);
+    return true;
+  }
+
+  private sendRemoteForbidden(frame: InboundFrame): void {
+    this.sendImmediateFrame(
+      buildAck(frame.id ?? '', REMOTE_ACCESS_FORBIDDEN_CODE, REMOTE_ACCESS_FORBIDDEN_MESSAGE, {}),
+    );
   }
 
   private async authorize(frame: InboundFrame): Promise<boolean> {

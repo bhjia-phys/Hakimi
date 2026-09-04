@@ -22,7 +22,9 @@ import {
 import BottomSheet from '../dialogs/BottomSheet.vue';
 import LanguageSwitcher from '../settings/LanguageSwitcher.vue';
 import { formatTokens } from '../../lib/formatTokens';
+import { copyTextToClipboard } from '../../lib/clipboard';
 import Button from '../ui/Button.vue';
+import Icon from '../ui/Icon.vue';
 import Input from '../ui/Input.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
 
@@ -43,6 +45,23 @@ const props = withDefaults(
     serverVersion?: string;
     /** Available models — used to derive the current model's thinking segments. */
     models?: AppModel[];
+    /** Current session id — required for the fork/export/copy-session-id rows. */
+    sessionId?: string;
+    /** Git status of the active session — drives the git row (→ open Diff). */
+    gitInfo?: { branch: string; ahead: number; behind: number } | null;
+    /** Number of changed files in the active session (matches the desktop Git card). */
+    changesCount?: number;
+    /** GitHub PR for the current branch, when known (opens in a new tab). */
+    pr?: { number: number; state: string; url: string } | null;
+    /** Active subagent preset (desktop ChatHeader routing button). */
+    subagentPreset?: string;
+    /** Sorted configured preset names offered by the preset sub-view. */
+    subagentPresetNames?: string[];
+    /** True while a preset/config write is in flight. */
+    subagentPresetSaving?: boolean;
+    /** `autoPreset.manualLock`: a manually activated preset paused automatic
+     *  switching (lock note + resume-auto action in the preset sub-view). */
+    subagentPresetLocked?: boolean;
   }>(),
   {
     colorScheme: 'system',
@@ -50,6 +69,14 @@ const props = withDefaults(
     authReady: false,
     serverVersion: '',
     models: () => [],
+    sessionId: undefined,
+    gitInfo: null,
+    changesCount: 0,
+    pr: null,
+    subagentPreset: '',
+    subagentPresetNames: () => [],
+    subagentPresetSaving: false,
+    subagentPresetLocked: false,
   },
 );
 
@@ -65,6 +92,15 @@ const emit = defineEmits<{
   setConversationToc: [on: boolean];
   login: [];
   logout: [];
+  /** Session-actions rows — the desktop ChatHeader kebab entries on mobile. */
+  copyAll: [];
+  copyFinalSummary: [];
+  forkSession: [id: string];
+  exportSession: [id: string];
+  activatePreset: [preset: string];
+  resumeAutoPreset: [];
+  openChanges: [];
+  openPr: [url: string];
 }>();
 
 function onColorScheme(v: string): void {
@@ -147,13 +183,100 @@ function onLogout(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Session actions — the desktop ChatHeader kebab entries, exposed as rows.
+// Copy-session-id is handled locally (clipboard); the copy-all / copy-final-
+// summary / fork / export intents are emitted to App, which owns the wire work.
+// ---------------------------------------------------------------------------
+const copiedId = ref(false);
+let copiedIdTimer: ReturnType<typeof setTimeout> | null = null;
+
+function copySessionId(): void {
+  if (!props.sessionId) return;
+  void copyTextToClipboard(props.sessionId).then((ok) => {
+    if (!ok) return;
+    copiedId.value = true;
+    if (copiedIdTimer !== null) clearTimeout(copiedIdTimer);
+    copiedIdTimer = setTimeout(() => {
+      copiedId.value = false;
+      copiedIdTimer = null;
+    }, 1200);
+  });
+}
+
+function forkSession(): void {
+  if (!props.sessionId) return;
+  emit('forkSession', props.sessionId);
+  emit('update:modelValue', false);
+}
+
+function exportSession(): void {
+  if (!props.sessionId) return;
+  emit('exportSession', props.sessionId);
+  emit('update:modelValue', false);
+}
+
+function onOpenChanges(): void {
+  emit('openChanges');
+  emit('update:modelValue', false);
+}
+
+// ---------------------------------------------------------------------------
+// Subagent preset sub-view — mirrors the desktop ChatHeader routing menu in a
+// small list: Base routing + every configured preset (radio rows), plus the
+// resume-automatic action while a manual choice holds the lock.
+// ---------------------------------------------------------------------------
+const normalizedPreset = computed(() => props.subagentPreset?.trim() ?? '');
+const gitSub = computed<string>(() => {
+  const info = props.gitInfo;
+  if (!info) return '';
+  const parts = [info.branch || t('header.detached')];
+  if (info.ahead > 0) parts.push(t('header.ahead', { n: info.ahead }));
+  if (info.behind > 0) parts.push(t('header.behind', { n: info.behind }));
+  if (props.changesCount > 0) parts.push(t('header.changed', { n: props.changesCount }));
+  return parts.join(' · ');
+});
+const PR_STATE_LABEL_KEYS: Record<string, string> = {
+  open: 'header.prStatusOpen',
+  closed: 'header.prStatusClosed',
+  merged: 'header.prStatusMerged',
+  draft: 'header.prStatusDraft',
+};
+const prState = computed(() =>
+  props.pr?.state.trim().toLowerCase().replaceAll('_', '-') ?? 'unknown',
+);
+const prStateLabel = computed(() =>
+  t(PR_STATE_LABEL_KEYS[prState.value] ?? 'header.prStatusUnknown'),
+);
+
+function openPreset(): void {
+  view.value = 'preset';
+}
+
+function choosePreset(preset: string): void {
+  if (props.subagentPresetSaving) return;
+  if (preset === normalizedPreset.value && props.subagentPresetLocked) return;
+  emit('activatePreset', preset);
+  backToMain();
+}
+
+function onResumeAutoPreset(): void {
+  if (props.subagentPresetSaving) return;
+  emit('resumeAutoPreset');
+  backToMain();
+}
+
+function onOpenPr(): void {
+  if (props.pr) emit('openPr', props.pr.url);
+}
+
+// ---------------------------------------------------------------------------
 // Archived-sessions sub-view — mirrors the desktop Settings "Archived" tab so
 // the mobile archive confirmation (which points users to Settings to restore)
 // is true here too. Loads all archived sessions once when the view opens;
 // search + sort run client-side over the full set.
 // ---------------------------------------------------------------------------
 const client = useKimiWebClient();
-type SheetView = 'main' | 'archived';
+type SheetView = 'main' | 'archived' | 'preset';
 const view = ref<SheetView>('main');
 
 const archivedItems = ref<AppSession[]>([]);
@@ -318,6 +441,78 @@ watch(
       </span>
     </div>
 
+    <div class="group-title">{{ t('mobile.groupSessionActions') }}</div>
+
+    <!-- Copy conversation / final summary / session id — the desktop kebab's
+         copy entries. Copy-all + copy-final-summary bubble up to App (which
+         owns ChatPane's clipboard logic); the session id copies here. -->
+    <button type="button" class="srow" @click="emit('copyAll')">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('header.copyAll') }}</span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+
+    <button type="button" class="srow" @click="emit('copyFinalSummary')">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('header.copyFinalSummary') }}</span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+
+    <button v-if="sessionId" type="button" class="srow" @click="copySessionId">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('header.copySessionId') }}</span>
+      </span>
+      <span v-if="copiedId" class="preset-check"><Icon name="check" size="sm" /></span>
+      <span v-else class="chev">›</span>
+    </button>
+
+    <button v-if="sessionId" type="button" class="srow" @click="forkSession">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('header.forkSession') }}</span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+
+    <button v-if="sessionId" type="button" class="srow" @click="exportSession">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('header.exportSession') }}</span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+
+    <!-- Subagent preset → sub-view (state + switch), the mobile counterpart of
+         the desktop ChatHeader routing button. -->
+    <button type="button" class="srow" @click="openPreset">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('mobile.subagentPreset') }}</span>
+        <span class="srow-sub">
+          {{ normalizedPreset || t('header.subagentPresetBaseOption') }}
+          <template v-if="subagentPresetLocked"> · {{ t('header.subagentPresetLocked') }}</template>
+        </span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+
+    <!-- Git summary → opens the Diff detail (branch · ahead/behind · changed). -->
+    <button v-if="gitInfo" type="button" class="srow" @click="onOpenChanges">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('mobile.gitSummary') }}</span>
+        <span class="srow-sub">{{ gitSub }}</span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+
+    <!-- Pull request → opens the PR in a new tab. -->
+    <button v-if="pr" type="button" class="srow" @click="onOpenPr">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('header.openPr') }}</span>
+        <span class="srow-sub">#{{ pr.number }} · {{ prStateLabel }}</span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+
     <div class="group-title">{{ t('mobile.groupApp') }}</div>
 
     <!-- Archived sessions → opens the archived restore sub-view -->
@@ -400,7 +595,7 @@ watch(
     </div>
     </template>
 
-    <template v-else>
+    <template v-else-if="view === 'archived'">
       <!-- Archived sessions sub-view -->
       <div class="arch-subhead">
         <button type="button" class="arch-back" @click="backToMain">
@@ -444,6 +639,60 @@ watch(
       <div v-else class="arch-empty">
         {{ archivedItems.length === 0 ? t('settings.archivedEmpty') : t('settings.archivedNoMatch') }}
       </div>
+    </template>
+
+    <template v-else-if="view === 'preset'">
+      <!-- Subagent preset sub-view: Base routing + configured presets (radio
+           rows), plus resume-automatic while a manual choice holds the lock. -->
+      <div class="arch-subhead">
+        <button type="button" class="arch-back" @click="backToMain">
+          <span class="chev back">‹</span> {{ t('mobile.presetBack') }}
+        </button>
+        <span v-if="subagentPresetLocked" class="preset-lock-note">
+          {{ t('header.subagentPresetLocked') }}
+        </span>
+      </div>
+
+      <div class="group-title">{{ t('mobile.subagentPreset') }}</div>
+
+      <button
+        type="button"
+        class="srow preset-row"
+        :class="{ on: normalizedPreset === '' }"
+        :disabled="subagentPresetSaving"
+        @click="choosePreset('')"
+      >
+        <span class="srow-main">
+          <span class="srow-label">{{ t('header.subagentPresetBaseOption') }}</span>
+        </span>
+        <span v-if="normalizedPreset === ''" class="preset-check"><Icon name="check" size="sm" /></span>
+      </button>
+      <button
+        v-for="preset in subagentPresetNames"
+        :key="preset"
+        type="button"
+        class="srow preset-row"
+        :class="{ on: normalizedPreset === preset }"
+        :disabled="subagentPresetSaving"
+        @click="choosePreset(preset)"
+      >
+        <span class="srow-main">
+          <span class="srow-label">{{ preset }}</span>
+        </span>
+        <span v-if="normalizedPreset === preset" class="preset-check"><Icon name="check" size="sm" /></span>
+      </button>
+
+      <button
+        v-if="subagentPresetLocked"
+        type="button"
+        class="srow preset-row"
+        :disabled="subagentPresetSaving"
+        @click="onResumeAutoPreset"
+      >
+        <span class="srow-main">
+          <span class="srow-label">{{ t('header.subagentPresetResumeAuto') }}</span>
+        </span>
+      </button>
     </template>
   </BottomSheet>
 </template>
@@ -700,6 +949,36 @@ watch(
 .arch-empty {
   padding: var(--space-6) var(--space-4);
   text-align: center;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-text-faint);
+}
+
+/* Preset sub-view rows: radio rows (check mark on the active preset), disabled
+   while a preset/config write is in flight. */
+.preset-row.on {
+  background: var(--color-accent-soft);
+}
+.preset-row.on .srow-label {
+  color: var(--color-accent-hover);
+  font-weight: 500;
+}
+.preset-row:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.preset-check {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent-hover);
+}
+.preset-lock-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   font-family: var(--font-ui);
   font-size: var(--text-sm);
   color: var(--color-text-faint);

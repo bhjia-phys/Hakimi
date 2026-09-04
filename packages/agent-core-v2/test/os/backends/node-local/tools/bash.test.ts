@@ -38,6 +38,7 @@ import { stubWorkspaceContext } from '../../../../session/workspaceContext/stub-
 import type { IAgentToolPolicyService } from '#/agent/toolPolicy/toolPolicy';
 import { type ISessionContext, makeSessionContext } from '#/session/sessionContext/sessionContext';
 import type { IHostProcess, IHostProcessService } from '#/os/interface/hostProcess';
+import { compileToolArgsValidator, validateToolArgs } from '#/tool/args-validator';
 import { type BashInput, BashInputSchema } from '#/agent/tools/os/bash/bash';
 import { BashTool } from '#/agent/tools/os/bash/bashTool';
 import type { ExecutableToolContext, ExecutableToolResult, ToolExecution } from '#/tool/toolContract';
@@ -806,6 +807,74 @@ describe('BashTool', () => {
         disable_timeout: true,
       }).success,
     ).toBe(true);
+  });
+
+  describe('BashInputSchema background description requirement', () => {
+    it('rejects a background command without a non-blank description at the schema layer', () => {
+      const missing = BashInputSchema.safeParse({
+        command: 'sleep 1',
+        run_in_background: true,
+      });
+      expect(missing.success).toBe(false);
+      if (!missing.success) {
+        expect(missing.error.issues.map((issue) => issue.path)).toEqual([['description']]);
+      }
+
+      const blank = BashInputSchema.safeParse({
+        command: 'sleep 1',
+        run_in_background: true,
+        description: '   ',
+      });
+      expect(blank.success).toBe(false);
+      if (!blank.success) {
+        expect(blank.error.issues.map((issue) => issue.path)).toEqual([['description']]);
+      }
+    });
+
+    it('accepts a background command with a non-blank description', () => {
+      expect(
+        BashInputSchema.safeParse({
+          command: 'sleep 1',
+          run_in_background: true,
+          description: 'watch files',
+        }).success,
+      ).toBe(true);
+    });
+
+    it('does not require description when run_in_background is omitted or false', () => {
+      expect(BashInputSchema.safeParse({ command: 'sleep 1' }).success).toBe(true);
+      expect(
+        BashInputSchema.safeParse({ command: 'sleep 1', run_in_background: false }).success,
+      ).toBe(true);
+    });
+
+    it('rejects a background command missing description through the preflight parameters schema', () => {
+      const { runner } = createTestRunner(processWithOutput());
+      const tool = bashTool(runner);
+      const validator = compileToolArgsValidator(tool.parameters);
+
+      expect(
+        validateToolArgs(validator, { command: 'sleep 1', run_in_background: true }),
+      ).toContain('description');
+      expect(
+        validateToolArgs(validator, {
+          command: 'sleep 1',
+          run_in_background: true,
+          description: '   ',
+        }),
+      ).toContain('description');
+      expect(
+        validateToolArgs(validator, {
+          command: 'sleep 1',
+          run_in_background: true,
+          description: 'watch files',
+        }),
+      ).toBeNull();
+      expect(validateToolArgs(validator, { command: 'sleep 1' })).toBeNull();
+      expect(
+        validateToolArgs(validator, { command: 'sleep 1', run_in_background: false }),
+      ).toBeNull();
+    });
   });
 
   it('describes the cwd, command, run_in_background, description, and disable_timeout parameters', () => {
@@ -1819,6 +1888,7 @@ describe('BashTool background mode', () => {
     expect(result).toMatchObject({ isError: true });
     expect(result.output).toContain('description is required');
     expect(exec).not.toHaveBeenCalled();
+    expect(service.list(false)).toHaveLength(0);
   });
 });
 

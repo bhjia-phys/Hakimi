@@ -433,6 +433,7 @@ describe('KimiTUI startup', () => {
         defaultPermissionMode: 'auto',
         defaultPlanMode: true,
         thinking: { enabled: true, effort: 'high' },
+        subagent: { preset: 'balanced' },
       })),
     });
     const driver = makeDriver(harness, { ...makeStartupInput(), engineV2: true });
@@ -447,6 +448,7 @@ describe('KimiTUI startup', () => {
       permissionMode: 'auto',
       planMode: true,
       thinkingEffort: 'high',
+      subagentPreset: 'balanced',
     });
   });
 
@@ -932,6 +934,46 @@ describe('KimiTUI startup', () => {
     await driver.closeSession('test close');
 
     expect(driver.state.appState.goal).toBeNull();
+  });
+
+  it('syncs the effective subagent preset from config on a live startup session', async () => {
+    const harness = makeHarness(makeSession(), {
+      getConfig: vi.fn(async () => ({
+        models: { k2: { model: 'moonshot-v1', maxContextSize: 100 } },
+        subagent: { preset: 'kimi-heavy' },
+      })),
+    });
+    const driver = makeDriver(harness, makeStartupInput());
+
+    await expect(driver.init()).resolves.toBe(false);
+
+    expect(harness.createSession).toHaveBeenCalledOnce();
+    expect(driver.state.appState.subagentPreset).toBe('kimi-heavy');
+  });
+
+  it('converges the subagent preset when syncRuntimeState re-runs (session switch/reload path)', async () => {
+    let preset: string | undefined = 'balanced';
+    const session = makeSession();
+    const harness = makeHarness(session, {
+      getConfig: vi.fn(async () => ({
+        models: { k2: { model: 'moonshot-v1', maxContextSize: 100 } },
+        subagent: preset === undefined ? {} : { preset },
+      })),
+    });
+    const driver = makeDriver(harness, makeStartupInput());
+
+    await expect(driver.init()).resolves.toBe(false);
+    expect(driver.state.appState.subagentPreset).toBe('balanced');
+
+    // A later session switch / reload re-runs syncRuntimeState; an externally
+    // rotated preset must converge (no automatic status message — the sync is
+    // a silent appState update regardless of the trigger).
+    preset = 'deepseek-heavy';
+    await (
+      driver as unknown as { syncRuntimeState(session: unknown): Promise<void> }
+    ).syncRuntimeState(session);
+
+    expect(driver.state.appState.subagentPreset).toBe('deepseek-heavy');
   });
 
   it('passes the CLI model override when creating a fresh startup session', async () => {
@@ -2500,6 +2542,110 @@ describe('KimiTUI startup', () => {
       replayTurnLimit: REPLAY_FETCH_TURN_LIMIT,
     });
     expect(driver.state.appState.sessionId).toBe('ses-target');
+  });
+});
+
+describe('KimiTUI subagent preset changes', () => {
+  type PresetChangeEvent = {
+    sessionId: string;
+    previousPreset?: string;
+    currentPreset: string;
+  };
+  type StartDriver = {
+    state: TUIState;
+    start(): Promise<void>;
+    stop(): Promise<void>;
+  };
+
+  function makeEventDriver() {
+    const session = makeSession({ id: 'ses-1' });
+    const unsubscribe = vi.fn();
+    const onSubagentPresetChanged = vi.fn<(listener: (event: PresetChangeEvent) => void) => () => void>(
+      () => unsubscribe,
+    );
+    const harness = makeHarness(session, { onSubagentPresetChanged });
+    const driver = makeDriver(harness, makeStartupInput()) as unknown as StartDriver;
+    // Real TTY I/O and network are off-limits in tests — stub them like the
+    // existing start() tests do, plus the banner fetch.
+    vi.spyOn(driver.state.ui, 'start').mockImplementation(() => {});
+    vi.spyOn(driver.state.ui, 'stop').mockImplementation(() => {});
+    vi.spyOn(driver.state.terminal, 'write').mockImplementation(() => {});
+    vi.spyOn(driver.state.terminal, 'setTitle').mockImplementation(() => {});
+    vi.spyOn(driver.state.terminal, 'drainInput').mockImplementation(async () => {});
+    return { session, unsubscribe, onSubagentPresetChanged, harness, driver };
+  }
+
+  it('updates the footer preset and a status line for the current session only', async () => {
+    const { session, unsubscribe, onSubagentPresetChanged, driver } = makeEventDriver();
+    const bannerLoad = vi.spyOn(BannerProvider.prototype, 'load').mockResolvedValue(null);
+    try {
+      await driver.start();
+      expect(onSubagentPresetChanged).toHaveBeenCalledOnce();
+
+      const listener = onSubagentPresetChanged.mock.calls[0]![0];
+      // Matches the active session: footer value + a transcript status line.
+      listener({ sessionId: 'ses-1', previousPreset: 'balanced', currentPreset: 'kimi-heavy' });
+      expect(driver.state.appState.subagentPreset).toBe('kimi-heavy');
+      const transcript = driver.state.transcriptContainer.render(160).join('\n');
+      expect(transcript).toContain('Subagent preset switched automatically: balanced → kimi-heavy');
+
+      // A switch belonging to another session only moves the footer value —
+      // it must not add a second status line to this transcript.
+      const entriesBefore = driver.state.transcriptContainer.children.length;
+      listener({ sessionId: 'ses-other', previousPreset: 'kimi-heavy', currentPreset: 'deepseek-heavy' });
+      expect(driver.state.appState.subagentPreset).toBe('deepseek-heavy');
+      expect(driver.state.transcriptContainer.children.length).toBe(entriesBefore);
+      expect(driver.state.transcriptContainer.render(160).join('\n')).not.toContain(
+        'Subagent preset switched automatically: kimi-heavy → deepseek-heavy',
+      );
+
+      // An unknown previous preset is rendered with a clear placeholder.
+      listener({ sessionId: 'ses-1', currentPreset: 'codex-heavy' });
+      expect(driver.state.appState.subagentPreset).toBe('codex-heavy');
+      expect(driver.state.transcriptContainer.render(160).join('\n')).toContain(
+        'Subagent preset switched automatically: unset → codex-heavy',
+      );
+
+      await driver.stop();
+    } finally {
+      bannerLoad.mockRestore();
+    }
+
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the footer preset badge visible after an automatic switch in another session', async () => {
+    const { onSubagentPresetChanged, driver } = makeEventDriver();
+    const bannerLoad = vi.spyOn(BannerProvider.prototype, 'load').mockResolvedValue(null);
+    try {
+      await driver.start();
+      const listener = onSubagentPresetChanged.mock.calls[0]![0];
+      listener({ sessionId: 'ses-other', currentPreset: 'balanced' });
+      expect(driver.state.footer.render(120)[0]).toContain('[preset: balanced]');
+      await driver.stop();
+    } finally {
+      bannerLoad.mockRestore();
+    }
+  });
+
+  it('tolerates a harness without the narrow preset-change event', async () => {
+    // Hosts whose SDK predates `onSubagentPresetChanged` must not crash:
+    // start() skips the subscription and the config-driven sync still runs.
+    const harness = makeHarness(makeSession());
+    const driver = makeDriver(harness, makeStartupInput()) as unknown as StartDriver;
+    vi.spyOn(driver.state.ui, 'start').mockImplementation(() => {});
+    vi.spyOn(driver.state.ui, 'stop').mockImplementation(() => {});
+    vi.spyOn(driver.state.terminal, 'write').mockImplementation(() => {});
+    vi.spyOn(driver.state.terminal, 'setTitle').mockImplementation(() => {});
+    vi.spyOn(driver.state.terminal, 'drainInput').mockImplementation(async () => {});
+    const bannerLoad = vi.spyOn(BannerProvider.prototype, 'load').mockResolvedValue(null);
+    try {
+      await driver.start();
+      expect(harness.createSession).toHaveBeenCalledOnce();
+      await driver.stop();
+    } finally {
+      bannerLoad.mockRestore();
+    }
   });
 });
 

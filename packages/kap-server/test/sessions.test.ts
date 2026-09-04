@@ -22,6 +22,7 @@ import {
   IAgentConversationUndoService,
   IAgentGoalService,
   IAgentLifecycleService,
+  IAgentProfileService,
   IEventBus,
   IEventService,
   MAIN_AGENT_ID,
@@ -88,6 +89,21 @@ function goalContinuationStarts(events: readonly DomainEvent[]): readonly Domain
   );
 }
 
+// A resolvable stub model with NO default_model (test A) / with a
+// default_model (test B). Mirrors the prompts-suite fixture.
+const STUB_MODEL_TOML = [
+  '[providers.stub]',
+  'type = "openai"',
+  'base_url = "http://127.0.0.1:9999"',
+  'api_key = "stub"',
+  '',
+  '[models.stub]',
+  'provider = "stub"',
+  'model = "stub"',
+  'max_context_size = 1000',
+  '',
+].join('\n');
+
 describe('server-v2 /api/v1/sessions', () => {
   let server: RunningServer | undefined;
   let home: string | undefined;
@@ -149,6 +165,29 @@ describe('server-v2 /api/v1/sessions', () => {
       headers: authHeaders(server as RunningServer),
     } as never);
     return { status: res.status, body: (await res.json()) as Envelope<T> };
+  }
+
+  /** Restart the server with a custom config.toml (same home dir). */
+  async function restartWithConfig(toml: string): Promise<void> {
+    await server?.close();
+    server = undefined;
+    await writeFile(join(home as string, 'config.toml'), toml, 'utf-8');
+    server = await startServer({
+      hostIdentity: TEST_HOST_IDENTITY,
+      host: '127.0.0.1',
+      port: 0,
+      homeDir: home,
+      logLevel: 'silent',
+      debugEndpoints: true,
+    });
+    base = `http://127.0.0.1:${server.port}`;
+  }
+
+  /** Read the bound model of the (live) main agent, or `''` when unbound. */
+  function mainAgentModel(sessionId: string): string {
+    const session = getLiveSessionById((server as RunningServer).core.accessor, sessionId);
+    const agent = session?.accessor.get(IAgentLifecycleService).get(MAIN_AGENT_ID);
+    return agent?.accessor.get(IAgentProfileService).getModel() ?? '';
   }
 
   it('downloads a ZIP with the supplied Web log and cleans up its temporary directory', async () => {
@@ -329,6 +368,57 @@ describe('server-v2 /api/v1/sessions', () => {
   async function createBlockedGoalRig() {
     return createStoppedGoalRig('blocked');
   }
+
+  it('applies agent_config.model from create onto the session main agent', async () => {
+    // A resolvable stub model WITHOUT a default_model — the model can only
+    // come from the create payload's agent_config.
+    await restartWithConfig(STUB_MODEL_TOML);
+    const { status, body } = await postJson<SessionWire>('/api/v1/sessions', {
+      metadata: { cwd: home as string },
+      agent_config: { model: 'stub' },
+    });
+    expect(status).toBe(200);
+    expect(body.code).toBe(0);
+    // The profile/status surface reflects the bound model, so a subsequent
+    // model-less prompt no longer dies with model.not_configured.
+    const profile = await getJson<{ model?: string }>(
+      `/api/v1/sessions/${body.data.id}/status`,
+    );
+    expect(profile.body.code).toBe(0);
+    expect(profile.body.data.model).toBe('stub');
+    expect(mainAgentModel(body.data.id)).toBe('stub');
+  });
+
+  it('binds the configured default model when create omits model', async () => {
+    await restartWithConfig(`default_model = "stub"\n\n${STUB_MODEL_TOML}`);
+    const { status, body } = await postJson<SessionWire>('/api/v1/sessions', {
+      metadata: { cwd: home as string },
+    });
+    expect(status).toBe(200);
+    expect(body.code).toBe(0);
+    const profile = await getJson<{ model?: string }>(
+      `/api/v1/sessions/${body.data.id}/status`,
+    );
+    expect(profile.body.code).toBe(0);
+    expect(profile.body.data.model).toBe('stub');
+    expect(mainAgentModel(body.data.id)).toBe('stub');
+  });
+
+  it('keeps a model-less create unbound when no default model is configured', async () => {
+    const { status, body } = await postJson<SessionWire>('/api/v1/sessions', {
+      metadata: { cwd: home as string },
+    });
+    expect(status).toBe(200);
+    expect(body.code).toBe(0);
+    expect(body.data.agent_config).toEqual({ model: '' });
+    const profile = await getJson<{ model?: string }>(
+      `/api/v1/sessions/${body.data.id}/status`,
+    );
+    expect(profile.body.code).toBe(0);
+    expect(profile.body.data.model).toBeUndefined();
+    // The main agent is created by the status read itself and stays unbound.
+    expect(mainAgentModel(body.data.id)).toBe('');
+  });
 
   it('creates a session from metadata.cwd', async () => {
     const cwd = home as string;

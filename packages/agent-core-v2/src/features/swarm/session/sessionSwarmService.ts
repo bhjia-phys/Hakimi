@@ -13,9 +13,10 @@
  * `binding` resolved by the caller; without
  * one, spawns inherit the caller agent's model and thinking level. Spawn
  * bindings are resolved through the model catalog before lifecycle allocation.
- * Resume and retry reconcile active `[subagent]` field overrides before the
- * run and event snapshot, except for profiles that explicitly preserve their
- * binding. Bound at Session scope — contributed into every
+ * Resume and retry ask `autoSubagentPreset` to evaluate each actual child
+ * profile before reconciling active `[subagent]` field overrides and emitting
+ * the run snapshot; profiles that explicitly preserve their binding skip both
+ * evaluation and rebinding. Bound at Session scope — contributed into every
  * Session scope by `SwarmFeature` (`features/swarm/swarmFeature`).
  */
 
@@ -28,6 +29,7 @@ import { IAgentProfileService } from '#/agent/profile/profile';
 import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { IAgentUserToolService } from '#/agent/userTool/userTool';
+import { IAutoSubagentPresetService } from '#/app/autoSubagentPreset/autoSubagentPreset';
 import { IConfigService } from '#/app/config/config';
 import { IFlagService } from '#/app/flag/flag';
 import { IEventBus } from '#/app/event/eventBus';
@@ -95,6 +97,7 @@ export class SessionSwarmService implements ISessionSwarmService {
     @IRuntimeResolver private readonly runtimeResolver: IRuntimeResolver,
     @ILogService private readonly log: ILogService,
     @IModelCatalog private readonly modelCatalog: IModelCatalog,
+    @IAutoSubagentPresetService private readonly autoPreset: IAutoSubagentPresetService,
   ) {}
 
   async getSwarmItem(args: {
@@ -220,13 +223,38 @@ export class SessionSwarmService implements ISessionSwarmService {
     const caller = this.requireHandle(callerAgentId, 'Caller agent');
     const child = this.requireHandle(agentId, 'Agent instance');
     this.requireIdleSubagent(agentId, child);
+    await this.catalog.ready;
+    const childProfileService = child.accessor.get(IAgentProfileService);
+    const childData = childProfileService.data();
+    const childProfile =
+      childData.profileName === undefined ? undefined : this.catalog.get(childData.profileName);
+    const callerData = caller.accessor.get(IAgentProfileService).data();
+    if (
+      childData.profileName !== undefined &&
+      childData.modelAlias !== undefined &&
+      callerData.modelAlias !== undefined &&
+      childProfile?.preserveBindingOnResume !== true
+    ) {
+      await this.autoPreset.evaluate(
+        {
+          route: 'swarm',
+          profileName: childData.profileName,
+          modelPreference: childProfile?.modelPreference,
+          caller: {
+            modelAlias: callerData.modelAlias,
+            thinkingLevel: callerData.thinkingLevel,
+          },
+        },
+        { sessionId: this.sessionContext.sessionId, signal: options.signal },
+      );
+    }
     const resumed = await refreshSubagentBindingOnResume(
       this.config,
       this.flags,
       this.catalog,
       this.modelCatalog,
-      child.accessor.get(IAgentProfileService),
-      caller.accessor.get(IAgentProfileService).data(),
+      childProfileService,
+      callerData,
       'swarm',
     );
     const profileName = resumed.profileName ?? RESUMED_PROFILE_FALLBACK;

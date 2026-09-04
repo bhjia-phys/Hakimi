@@ -2,18 +2,20 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { DeviceAuthorization } from '@moonshot-ai/kimi-code-oauth';
-import { effectiveModelAlias, log } from '@bhjia-phys/hakimi-sdk';
+import { activeSubagentPreset, effectiveModelAlias, log } from '@bhjia-phys/hakimi-sdk';
 import type {
   ApprovalRequest,
   ApprovalResponse,
   BackgroundTaskInfo,
   CreateSessionOptions,
+  KimiConfig,
   KimiHarness,
   PermissionMode,
   PluginCommandDef,
   PromptPart,
   Session,
   SkillSummary,
+  SubagentPresetChangedEvent,
   TokenUsage,
   WorkspaceTrustInfo,
 } from '@bhjia-phys/hakimi-sdk';
@@ -114,6 +116,7 @@ import {
 } from './constant/kimi-tui';
 import { CHROME_GUTTER } from './constant/rendering';
 import { MAX_TERMINAL_TITLE_LENGTH } from './constant/terminal';
+import { ActivityProgressController } from './controllers/activity-progress';
 import { AuthFlowController } from './controllers/auth-flow';
 import { BtwPanelController } from './controllers/btw-panel';
 import { ClipboardImageHintController } from './controllers/clipboard-image-hint';
@@ -349,6 +352,9 @@ export class KimiTUI {
   private fdPath: string | null = null;
   private fdDownloadStarted = false;
   sessionEventUnsubscribe: (() => void) | undefined;
+  /** Harness-level narrow-event subscription for automatic subagent-preset
+   *  switches; installed on start(), removed on stop(). */
+  private subagentPresetUnsubscribe: (() => void) | undefined;
   cancelInFlight: (() => void) | undefined;
   deferUserMessages = false;
   aborted = false;
@@ -376,6 +382,7 @@ export class KimiTUI {
     string,
     { entry: TranscriptEntry; component: ShellRunComponent; taskId?: string }
   >();
+  readonly activityProgress: ActivityProgressController;
   readonly streamingUI: StreamingUIController;
   readonly authFlow: AuthFlowController;
   readonly btwPanelController: BtwPanelController;
@@ -461,6 +468,9 @@ export class KimiTUI {
         },
       }),
     );
+    this.activityProgress = new ActivityProgressController(() => {
+      this.state.ui.requestRender();
+    });
     this.streamingUI = new StreamingUIController(this);
     this.authFlow = new AuthFlowController(this);
     this.btwPanelController = new BtwPanelController(this);
@@ -620,6 +630,10 @@ export class KimiTUI {
     startupTrace('tui:start');
     // Signal handlers must be installed before raw mode to avoid EIO loops.
     this.registerSignalHandlers();
+    // Global (harness-level) subscription for automatic subagent-preset
+    // switches — independent of any single session, so it outlives session
+    // switches and only stops with the TUI itself.
+    this.subagentPresetUnsubscribe = this.subscribeSubagentPresetChanges();
     // Outer try rolls back signal listeners on startup failure.
     try {
       // The workspace trust gate must run before anything else in startup —
@@ -677,6 +691,8 @@ export class KimiTUI {
         throw error;
       }
     } catch (error) {
+      this.subagentPresetUnsubscribe?.();
+      this.subagentPresetUnsubscribe = undefined;
       this.unregisterSignalHandlers();
       throw error;
     }
@@ -996,11 +1012,14 @@ export class KimiTUI {
     // stop() returns (or leak when stop() runs without process.exit).
     this.tasksBrowserController.close();
     this.btwPanelController.clear();
+    this.activityProgress.dispose();
     this.stopActivitySpinner();
     this.streamingUI.disposeActiveCompactionBlock();
     this.streamingUI.resetToolUi();
     this.disposeTranscriptChildren();
     this.editorKeyboard.dispose();
+    this.subagentPresetUnsubscribe?.();
+    this.subagentPresetUnsubscribe = undefined;
     this.state.footer.dispose();
     for (const dispose of this.reverseRpcDisposers) {
       dispose();
@@ -1031,6 +1050,27 @@ export class KimiTUI {
     if (this.onExit) {
       await this.onExit(exitCode);
     }
+  }
+
+  /** Subscribe once to the SDK's app-global automatic preset-switch channel. */
+  private subscribeSubagentPresetChanges(): (() => void) | undefined {
+    if (typeof this.harness.onSubagentPresetChanged !== 'function') return undefined;
+    return this.harness.onSubagentPresetChanged((event) => {
+      this.handleSubagentPresetChanged(event);
+    });
+  }
+
+  private handleSubagentPresetChanged(event: SubagentPresetChangedEvent): void {
+    if (this.aborted) return;
+    // Always converge the footer value: the preset is config-global, so an
+    // automatic switch in any session changes the effective preset here too.
+    this.setAppState({ subagentPreset: event.currentPreset });
+    // Only surface a status line for the session the switch belongs to — a
+    // switch in another (background) session must not spam this transcript.
+    if (this.state.appState.sessionId !== event.sessionId) return;
+    const previous = event.previousPreset?.trim();
+    const from = previous === undefined || previous.length === 0 ? 'unset' : previous;
+    this.showStatus(`Subagent preset switched automatically: ${from} → ${event.currentPreset}`);
   }
 
   // SIGHUP / dead-terminal EIO → emergencyTerminalExit (no cleanup, avoids
@@ -1977,6 +2017,9 @@ export class KimiTUI {
       patch.agentProfile = startup.agentProfile;
       patch.agentFiles = startup.agentFiles?.length ? [...startup.agentFiles] : undefined;
     }
+    // The effective subagent preset converges with the other engine defaults
+    // while no session exists (the lazy-created session reads it from config).
+    patch.subagentPreset = activeSubagentPreset(config.subagent);
     this.setAppState(patch);
   }
 
@@ -2122,7 +2165,20 @@ export class KimiTUI {
       sessionTitle: session.summary?.title ?? null,
       goal: goalResult.goal,
     });
+    await this.syncSubagentPresetFromConfig();
     this.syncAdditionalDirs(session);
+  }
+
+  /**
+   * Converge the footer's subagent preset from config (the effective value
+   * the engine applies — `activeSubagentPreset`). Callers that already hold
+   * a fresh config (lazy hydration, `/preset`) pass it through to avoid a
+   * duplicate read. Only updates appState — never shows a status line, so a
+   * manual preset change (config-driven) produces no automatic notification.
+   */
+  async syncSubagentPresetFromConfig(config?: KimiConfig): Promise<void> {
+    const resolved = config ?? (await this.harness.getConfig());
+    this.setAppState({ subagentPreset: activeSubagentPreset(resolved.subagent) });
   }
 
   // Apply --auto/--yolo/--plan startup flags to a resumed session. The resumed
@@ -2173,6 +2229,7 @@ export class KimiTUI {
 
   private unloadCurrentSession(reason: string): Session | undefined {
     const previous = this.session;
+    this.activityProgress.reset();
     this.sessionEventUnsubscribe?.();
     this.sessionEventUnsubscribe = undefined;
     this.clearReverseRpcPanels();
@@ -3031,6 +3088,13 @@ export class KimiTUI {
     }
     this.syncTerminalProgress(this.shouldShowTerminalProgress(effectiveMode));
     const placeSpinnerInAgentSwarm = this.shouldPlaceActivitySpinnerInAgentSwarm(effectiveMode);
+    this.activityProgress.setVisible(
+      !placeSpinnerInAgentSwarm &&
+        (effectiveMode === 'waiting' ||
+          effectiveMode === 'thinking' ||
+          effectiveMode === 'composing' ||
+          effectiveMode === 'tool'),
+    );
     // Carry the retry state in the mode key so an incoming/cleared
     // `turn.step.retrying` rebuilds the waiting pane with fresh label and
     // detail instead of hitting the cached-pane early return below.
@@ -3069,6 +3133,7 @@ export class KimiTUI {
             spinner,
             tip: stepRetry === null ? this.currentLoadingTip?.tip : undefined,
             detail: stepRetry === null ? undefined : formatStepRetryDetail(stepRetry),
+            progress: () => this.activityProgress.snapshot(),
           }),
         );
         break;
@@ -3076,6 +3141,12 @@ export class KimiTUI {
       case 'thinking': {
         this.stopActivitySpinner();
         this.syncAgentSwarmActivitySpinner(undefined);
+        this.state.activityContainer.addChild(
+          new ActivityPaneComponent({
+            mode: 'thinking',
+            progress: () => this.activityProgress.snapshot(),
+          }),
+        );
         break;
       }
       case 'composing': {
@@ -3088,6 +3159,7 @@ export class KimiTUI {
             mode: 'composing',
             spinner,
             tip: this.currentLoadingTip?.tip,
+            progress: () => this.activityProgress.snapshot(),
           }),
         );
         break;
@@ -3101,6 +3173,7 @@ export class KimiTUI {
             mode: 'tool',
             spinner,
             tip: this.currentLoadingTip?.tip,
+            progress: () => this.activityProgress.snapshot(),
           }),
         );
         break;

@@ -1,9 +1,11 @@
 <!-- apps/kimi-web/src/components/chat/ToolRow.vue -->
 <script setup lang="ts">
-import { inject, nextTick, ref } from 'vue';
+import { computed, inject, nextTick, ref } from 'vue';
 import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import StatusDot from '../ui/StatusDot.vue';
+import TurnProgressBar from './TurnProgressBar.vue';
+import { toolProgressKey } from './toolProgressContext';
 
 withDefaults(
   defineProps<{
@@ -32,6 +34,8 @@ withDefaults(
 const emit = defineEmits<{ toggle: [] }>();
 
 const pinScroll = inject<(el: HTMLElement, ms?: number) => void>('pinScroll', () => {});
+const providedTurnProgress = inject(toolProgressKey);
+const turnProgress = computed(() => providedTurnProgress?.value ?? null);
 const bhEl = ref<HTMLElement | null>(null);
 
 function onHeadClick(): void {
@@ -72,6 +76,12 @@ function onHeadClick(): void {
         <span v-if="time" class="tm">{{ time }}</span>
       </span>
       <Icon v-if="expandable" class="car" :name="open ? 'chevron-down' : 'chevron-right'" size="sm" />
+    </div>
+    <div v-if="turnProgress" class="bh-progress">
+      <TurnProgressBar :progress="turnProgress" />
+    </div>
+    <div v-if="$slots.metadata" class="bh-meta">
+      <slot name="metadata" />
     </div>
     <div class="bb" :class="{ open }" :inert="!open">
       <div class="bb-pad">
@@ -167,6 +177,16 @@ function onHeadClick(): void {
 }
 .tm {
   color: var(--color-text-faint);
+}
+.bh-progress {
+  padding: 0 var(--space-3);
+  border-top: 1px solid var(--color-line);
+  background: var(--color-surface);
+}
+.bh-meta {
+  min-width: 0;
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  background: var(--color-surface);
 }
 :slotted(.chip) {
   color: var(--color-text-muted);

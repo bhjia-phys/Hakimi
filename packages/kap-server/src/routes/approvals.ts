@@ -50,6 +50,7 @@ import { z } from 'zod';
 import { errEnvelope, okEnvelope } from '../envelope';
 import { requestLog } from '../lib/requestLog';
 import { defineRoute } from '../middleware/defineRoute';
+import { projectRemoteApproval } from '../security/remoteResponseProjection';
 
 interface ApprovalRouteHost {
   get(
@@ -84,7 +85,16 @@ const detailsSchema = z.array(z.object({ path: z.string(), message: z.string() }
 /** Stable, derived expiry horizon: v2 approvals do not expire. */
 const APPROVAL_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
-export function registerApprovalsRoutes(app: ApprovalRouteHost, core: Scope): void {
+export interface RegisterApprovalsRoutesOptions {
+  /** undefined = local; string = one-session remote; null = all-session remote. */
+  readonly remoteSessionId?: string | null;
+}
+
+export function registerApprovalsRoutes(
+  app: ApprovalRouteHost,
+  core: Scope,
+  options: RegisterApprovalsRoutesOptions = {},
+): void {
   const listRoute = defineRoute(
     {
       method: 'GET',
@@ -109,7 +119,12 @@ export function registerApprovalsRoutes(app: ApprovalRouteHost, core: Scope): vo
         return;
       }
       const pending = handle.accessor.get(ISessionInteractionService).listPending('approval');
-      const items = pending.map((i) => toWireApproval(i, session_id));
+      const items = pending.map((interaction) => {
+        const approval = toWireApproval(interaction, session_id);
+        return options.remoteSessionId === undefined
+          ? approval
+          : projectRemoteApproval(approval);
+      });
       reply.send(okEnvelope({ items }, req.id));
     },
   );

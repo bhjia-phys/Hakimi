@@ -12,7 +12,9 @@
  * delta as `runUsage`, which the internal usage ledger consumes — so
  * resumed/retried agents never re-attribute prior history while the external
  * contract stays cumulative. `runUsageSince` derives the delta for a run that
- * ended in failure or cancellation.
+ * ended in failure or cancellation. A listener installed before turn launch
+ * aggregates request/first-token timing evidence across the initial and any
+ * summary-continuation turns into the handle's race-free snapshot.
  *
  * The lifecycle is imperative — the caller awaits the returned `completion`
  * promise. Turn hooks are not used because there is exactly one observer (the
@@ -32,8 +34,14 @@ import { IAgentPromptService } from '#/agent/prompt/prompt';
 import { IAgentLoopService, type Turn, type TurnResult } from '#/agent/loop/loop';
 import { IAgentUsageService } from '#/agent/usage/usage';
 import type { AgentProfileSummaryPolicy } from '#/app/agentProfileCatalog/agentProfileCatalog';
+import { IEventBus } from '#/app/event/eventBus';
 
-import type { AgentRunCompletion, AgentRunHandle, AgentRunRequest } from './subagent';
+import type {
+  AgentRunCompletion,
+  AgentRunHandle,
+  AgentRunRequest,
+  AgentRunTimingEvidence,
+} from './subagent';
 
 export const AGENT_RUN_PROMPT_ORIGIN: PromptOrigin = {
   kind: 'system_trigger',
@@ -55,26 +63,99 @@ export async function runAgentTurn(
   options: RunAgentTurnOptions,
 ): Promise<AgentRunHandle> {
   options.signal.throwIfAborted();
+  const timing = createRunTimingCollector(target);
   const usage = target.accessor.get(IAgentUsageService);
   const baseline = usage?.status().total ?? emptyUsage();
   const promptService = target.accessor.get(IAgentPromptService);
-  const turn =
-    request.kind === 'prompt'
-      ? await (await promptService.enqueue({ message: {
-          role: 'user',
-          content: [{ type: 'text', text: request.prompt }],
-          toolCalls: [],
-          origin: AGENT_RUN_PROMPT_ORIGIN,
-        } })).launched
-      : await promptService.retry();
-  if (turn === undefined) throw new Error2(ErrorCodes.INTERNAL, 'Agent turn could not be started');
+  let turn: Turn | undefined;
+  try {
+    turn =
+      request.kind === 'prompt'
+        ? await (await promptService.enqueue({ message: {
+            role: 'user',
+            content: [{ type: 'text', text: request.prompt }],
+            toolCalls: [],
+            origin: AGENT_RUN_PROMPT_ORIGIN,
+          } })).launched
+        : await promptService.retry();
+  } catch (error) {
+    timing.dispose();
+    throw error;
+  }
+  if (turn === undefined) {
+    timing.dispose();
+    throw new Error2(ErrorCodes.INTERNAL, 'Agent turn could not be started');
+  }
+  timing.track(turn.id);
 
   if (options.onReady !== undefined) {
     void turn.ready.then(() => options.onReady?.()).catch(() => {});
   }
 
-  const completion = awaitRun(target, turn, options, baseline);
-  return { agentId: target.id, turn, baseline, completion };
+  const completion = awaitRun(target, turn, options, baseline, timing.track).finally(() =>
+    timing.dispose(),
+  );
+  return {
+    agentId: target.id,
+    turn,
+    baseline,
+    timingEvidence: timing.snapshot,
+    completion,
+  };
+}
+
+interface MutableTurnTiming {
+  requestCount: number;
+  latencySampleCount: number;
+  firstTokenLatencyTotalMs: number;
+}
+
+function createRunTimingCollector(target: IAgentScopeHandle): {
+  readonly track: (turnId: number) => void;
+  readonly snapshot: () => AgentRunTimingEvidence;
+  readonly dispose: () => void;
+} {
+  const tracked = new Set<number>();
+  const observed = new Map<number, MutableTurnTiming>();
+  const subscription = target.accessor.get(IEventBus)?.subscribe(
+    'turn.step.completed',
+    (event) => {
+      let timing = observed.get(event.turnId);
+      if (timing === undefined) {
+        timing = { requestCount: 0, latencySampleCount: 0, firstTokenLatencyTotalMs: 0 };
+        observed.set(event.turnId, timing);
+      }
+      timing.requestCount += 1;
+      const latency = event.llmFirstTokenLatencyMs;
+      if (latency === undefined || !Number.isFinite(latency) || latency < 0) return;
+      timing.latencySampleCount += 1;
+      timing.firstTokenLatencyTotalMs += latency;
+    },
+  );
+  return {
+    track: (turnId) => tracked.add(turnId),
+    snapshot: () => {
+      let llmRequestCount = 0;
+      let firstTokenLatencySampleCount = 0;
+      let firstTokenLatencyTotalMs = 0;
+      for (const turnId of tracked) {
+        const timing = observed.get(turnId);
+        if (timing === undefined) continue;
+        llmRequestCount += timing.requestCount;
+        firstTokenLatencySampleCount += timing.latencySampleCount;
+        firstTokenLatencyTotalMs += timing.firstTokenLatencyTotalMs;
+      }
+      return {
+        llmRequestCount,
+        firstTokenLatencySampleCount,
+        averageFirstTokenLatencyMs:
+          firstTokenLatencySampleCount === 0
+            ? undefined
+            : firstTokenLatencyTotalMs / firstTokenLatencySampleCount,
+      };
+    },
+    dispose: () => subscription?.dispose(),
+  };
 }
 
 export function runUsageSince(
@@ -91,6 +172,7 @@ async function awaitRun(
   turn: Turn,
   options: RunAgentTurnOptions,
   baseline: TokenUsage,
+  trackTurn: (turnId: number) => void,
 ): Promise<AgentRunCompletion> {
   const controller = new AbortController();
   const unlink = linkAbortSignal(options.signal, controller);
@@ -108,6 +190,7 @@ async function awaitRun(
       options.summaryPolicy,
       (t) => {
         turnRef = t;
+        trackTurn(t.id);
       },
       cancelTurn,
     );

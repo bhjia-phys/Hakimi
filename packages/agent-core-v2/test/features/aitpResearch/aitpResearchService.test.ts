@@ -8106,7 +8106,9 @@ describe('Research Loop tool implementations', () => {
     })).execute({ turnId: 1, toolCallId: 'tc-durable-end', signal: new AbortController().signal });
 
     expect(result.isError).toBeFalsy();
-    const output = String(result.output);
+    expect(typeof result.output).toBe('string');
+    if (typeof result.output !== 'string') throw new Error('Expected text tool output');
+    const output = result.output;
     const checkpoint = researchSvc.getPendingCheckpoint()!;
     expect(output).toContain(`Pending checkpoint: ${checkpoint.checkpointId}`);
     expect(output).toContain('kind=result, authority=agent, created_by=agent:main');

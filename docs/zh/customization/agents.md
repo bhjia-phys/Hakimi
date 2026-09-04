@@ -127,6 +127,12 @@ canonical 路由 key 中，`main` 表示激活 preset 时应用的 main agent �
 
 `Agent` 和 `AgentSwarm` 工具 schema 不再暴露 `model` 参数。适用时使用 `subagent_type` 选择 profile，再由 canonical 路由确定模型。新派生和 resume 使用同一个 resolver，因此普通路由修改会影响之后的恢复，而保留的 binding 不会被改写。legacy `[secondary_model]` 仅保留显式配置/API 兼容读写和受 flag 控制的 best-effort fallback，不会替代 canonical 路由。
 
+Hakimi Web 会在 `Agent` 卡片、详情面板、后台任务行和实时 `AgentSwarm` member 行中显示每个已确认 subagent 的 profile 角色与实际绑定模型。旧历史缺少这些元数据时，界面会保持空缺，而不会猜测。
+
+启用实验性自动切换 preset 后（`[subagent.auto_preset]`，见[配置文件](../configuration/config-files.md#自动切换-preset)），候选顺序表示加权的本地偏好，而不是严格的回退链。引擎会把 provider 配额与 reset 时间、最近的本地 profile/provider 可靠性、首 token 延迟、token 用量以及路由 / 模型匹配度合并评分，再选择得分最高的健康候选；证据明显更好时，列表中较低位置的 preset 可以越级。路由或配额证据缺失、配额低于 floor、熔断器打开都会使候选不可选；当前 preset 健康时，胜出者还必须跨过评分余量并等待切换冷却结束，而当前 preset 不健康时可以立即逃生。
+
+评估发生在新的 `Agent` 派生、每个允许重绑定的 `Agent` resume、`AgentSwarm` 调用中新 item 使用的路由和每个允许重绑定的 resumed child，以及 Tower worker/reviewer 派生之前。设置了 `preserveBindingOnResume` 的 profile 会同时跳过评估与重绑定。评分器固定且只在本机运行：它保持 fail-open，不训练模型、不上传用户内容，也不会在空闲时后台轮询。在 Hakimi Web 中，聊天 header 的 Preset 菜单与 **设置 > Agent** 会展示最近原因、候选评分、配额、缺失证据、冷却、熔断状态、手动锁定和恢复自动入口。手动选择基础路由或任一 preset 后，该选择会持久化并锁定，不再被自动策略改写，直到用户恢复自动切换；TUI 中可用 `/preset auto` 解除同一把锁。每次自动切换成功后，触发切换的会话还会增加一条带本地化原因的状态标记。
+
 ### 选择 main agent
 
 两个 CLI flag 用于选择驱动新会话的 Agent，在 print 模式（`hakimi -p`）和交互式 TUI 中均可使用：

@@ -61,6 +61,7 @@ export const SESSIONS_INITIAL_PAGE_SIZE = 5;
 const PROMPT_NOT_FOUND_CODE = 40402;
 const WORKSPACE_NOT_FOUND_CODE = 40410;
 const VALIDATION_FAILED_CODE = 40001;
+const RESEARCH_UNAVAILABLE = Symbol('research-unavailable');
 // Shared "already resolved" conflict (40902). The daemon reuses it for both
 // approvals and questions when a second client races the resolve, so a
 // duplicate submit is reported as a conflict even though the desired end
@@ -375,7 +376,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     void loadGitStatus(sessionId);
     void refreshSessionStatus(sessionId);
     void refreshSessionGoal(sessionId);
-    void refreshSessionResearch(sessionId);
+    if (rawState.backend === 'v2') void refreshSessionResearch(sessionId);
     if (!Object.prototype.hasOwnProperty.call(modelProvider.skillsBySession.value, sessionId)) {
       void modelProvider.loadSkillsForSession(sessionId);
     }
@@ -527,25 +528,26 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     }
   }
 
-  /** Update global config via POST /api/v1/config. */
-  async function updateConfig(patch: Partial<AppConfig>): Promise<boolean> {
+  async function commitConfigMutation(
+    operation: string,
+    request: () => Promise<AppConfig>,
+    changesExperimental: boolean,
+  ): Promise<boolean> {
     const requestId = ++configMutationRequestId;
-    const changesExperimental = Object.prototype.hasOwnProperty.call(patch, 'experimental');
     // A user mutation outranks any reconnect GET that began before it.
     configRequestId += 1;
     configMutationsInFlight += 1;
     const revisionAtRequest = configRevision;
     if (changesExperimental) rawState.experimentalFlags = {};
     try {
-      const api = getKimiWebApi();
-      const next = await api.setConfig(patch);
+      const next = await request();
       if (requestId === configMutationRequestId && revisionAtRequest === configRevision) {
         applyConfig(next);
       }
       return true;
-    } catch (err) {
+    } catch (error) {
       reconcileConfigAfterMutationFailure = true;
-      pushOperationFailure('setConfig', err);
+      pushOperationFailure(operation, error);
       return false;
     } finally {
       // Config is only an input to flag resolution. Always re-read /meta after
@@ -558,6 +560,24 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         await loadConfig();
       }
     }
+  }
+
+  /** Update global config via POST /api/v1/config. */
+  async function updateConfig(patch: Partial<AppConfig>): Promise<boolean> {
+    const changesExperimental = Object.prototype.hasOwnProperty.call(patch, 'experimental');
+    return commitConfigMutation(
+      'setConfig',
+      () => getKimiWebApi().setConfig(patch),
+      changesExperimental,
+    );
+  }
+
+  async function activateSubagentPreset(preset: string): Promise<boolean> {
+    return commitConfigMutation(
+      'activateSubagentPreset',
+      async () => (await getKimiWebApi().activateSubagentPreset(preset)).config,
+      false,
+    );
   }
 
   /** Query provider usage on demand; only the latest overlapping request may commit state. */
@@ -931,11 +951,16 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     rawState.backend = m.backend;
   }
 
-  async function load(): Promise<void> {
+  async function load(options?: { remoteSessionId?: string }): Promise<void> {
     const startedAt = Date.now();
     let traceStatus = 'accepted';
     traceKeyEvent('app:load:start');
     rawState.loading = true;
+    // The `?remote=1` origin marker records where this client was entered from.
+    // It no longer restricts the loaded surface — remote sessions boot exactly
+    // like local ones — and is only consulted when writing session URLs (see
+    // writeSessionUrl) so in-app switches keep the marker across reloads.
+    rawState.remoteSessionId = options?.remoteSessionId ?? null;
     // The very first load gates on /auth before anything else: a transient
     // failure there (daemon still booting, network blip, 5xx) must NOT be read
     // as "not signed in" — that bounced users to /login until a manual refresh.
@@ -951,7 +976,6 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         return;
       }
       const api = getKimiWebApi();
-      // Parallel: health + meta + models
       await Promise.all([
         api.getHealth().catch(() => null),
         refreshServerMeta(),
@@ -964,6 +988,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       if (!firstLoad) await checkAuth();
       await loadConfig();
       ensureEventConnection();
+
       // Usage queries may reach external provider endpoints; prefetch without
       // delaying workspace/session startup. The settings panel can refresh again.
       void refreshProviderUsage();
@@ -1421,8 +1446,8 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   function writeSessionUrl(sessionId: string | undefined, mode: SessionUrlMode): void {
     if (mode === 'none') return;
     if (typeof window === 'undefined' || !window.history) return;
-    const target = sessionUrl(sessionId);
-    if (window.location.pathname === target) return;
+    const target = sessionUrl(sessionId, rawState.remoteSessionId !== null);
+    if (`${window.location.pathname}${window.location.search}` === target) return;
     try {
       if (mode === 'push') window.history.pushState(null, '', target);
       else window.history.replaceState(null, '', target);
@@ -2376,21 +2401,16 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       // The coordinator serializes same-session POSTs and blocks sidecar GETs
       // behind the full mutation queue. The resolved value is exactly the
       // authoritative snapshot that won the response/live-event race.
-      return await researchRequests.mutate(
-        rawState,
-        sessionId,
-        () => {
-          if (rawState.backend !== 'v2') {
-            return Promise.reject(new Error('Research unavailable on legacy backend'));
-          }
-          return getKimiWebApi().commandSessionResearch(sessionId, command);
-        },
-      );
+      return await researchRequests.mutate(rawState, sessionId, () => {
+        if (rawState.backend !== 'v2') return Promise.reject(RESEARCH_UNAVAILABLE);
+        return getKimiWebApi().commandSessionResearch(sessionId, command);
+      });
     } catch (err) {
+      if (err === RESEARCH_UNAVAILABLE) return null;
       if (isDaemonApiError(err) && err.code === VALIDATION_FAILED_CODE) {
         // Validation includes stale expectedRevision. Re-read the same session;
         // an active-session switch must never redirect this recovery request.
-        await refreshSessionResearch(sessionId);
+        await refreshResearchById(sessionId);
       }
       pushOperationFailure('commandResearch', err, { sessionId });
       return null;
@@ -2913,6 +2933,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     loadConfig,
     applyConfig,
     updateConfig,
+    activateSubagentPreset,
     refreshProviderUsage,
     listAllSessionsGlobal,
     load,

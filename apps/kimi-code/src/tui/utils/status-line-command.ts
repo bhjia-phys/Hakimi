@@ -24,6 +24,8 @@ export interface StatusLinePayload {
   contextTokens: number;
   maxContextTokens: number;
   sessionId: string;
+  /** Effective subagent preset; null when no preset is configured. */
+  subagentPreset: string | null;
   version: string;
 }
 

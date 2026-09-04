@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialState, reduceAppEvent } from '../src/api/daemon/eventReducer';
-import type { AppMessage, AppSession, AppTask } from '../src/api/types';
+import type {
+  AppConfig,
+  AppMessage,
+  AppSession,
+  AppTask,
+  AutoSubagentPresetStatus,
+} from '../src/api/types';
+import { SUBAGENT_PRESET_MARKER_METADATA_KEY } from '../src/api/types';
 import { i18n } from '../src/i18n';
 
 function makeSession(id: string, updatedAt: string): AppSession {
@@ -79,6 +86,172 @@ describe('reduceAppEvent turnActiveChanged', () => {
     };
     const next = reduceAppEvent(state, { type: 'sessionDeleted', sessionId: 's1' }, { sessionId: 's1', seq: 1 });
     expect(next.turnActiveBySession['s1']).toBeUndefined();
+  });
+});
+
+describe('reduceAppEvent turnProgress', () => {
+  it('counts unique main-turn activity and ignores stale or terminal updates', () => {
+    let state = createInitialState();
+    state = reduceAppEvent(
+      state,
+      {
+        type: 'turnProgress',
+        sessionId: 's1',
+        update: { kind: 'start', turnId: 2, startedAt: 1_000 },
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+    for (const seq of [2, 2]) {
+      state = reduceAppEvent(
+        state,
+        {
+          type: 'turnProgress',
+          sessionId: 's1',
+          update: { kind: 'step', turnId: 2, step: 1 },
+        },
+        { sessionId: 's1', seq },
+      );
+    }
+    for (const seq of [3, 4]) {
+      state = reduceAppEvent(
+        state,
+        {
+          type: 'turnProgress',
+          sessionId: 's1',
+          update: { kind: 'toolCall', turnId: 2, toolCallId: 'tool-1' },
+        },
+        { sessionId: 's1', seq },
+      );
+    }
+    state = reduceAppEvent(
+      state,
+      {
+        type: 'turnProgress',
+        sessionId: 's1',
+        update: { kind: 'toolResult', turnId: 2, toolCallId: 'tool-2' },
+      },
+      { sessionId: 's1', seq: 5 },
+    );
+    state = reduceAppEvent(
+      state,
+      {
+        type: 'turnProgress',
+        sessionId: 's1',
+        update: { kind: 'step', turnId: 1, step: 1 },
+      },
+      { sessionId: 's1', seq: 6 },
+    );
+
+    expect(state.turnProgressBySession.s1).toEqual({
+      turnId: 2,
+      active: true,
+      startedAt: 1_000,
+      stepCount: 1,
+      stepNumbers: [1],
+      toolCallIds: ['tool-1', 'tool-2'],
+      completedToolCallIds: ['tool-2'],
+    });
+
+    state = reduceAppEvent(
+      state,
+      { type: 'turnProgress', sessionId: 's1', update: { kind: 'end', turnId: 2 } },
+      { sessionId: 's1', seq: 7 },
+    );
+    state = reduceAppEvent(
+      state,
+      { type: 'turnProgress', sessionId: 's1', update: { kind: 'step', turnId: 2, step: 1 } },
+      { sessionId: 's1', seq: 8 },
+    );
+    state = reduceAppEvent(
+      state,
+      {
+        type: 'turnProgress',
+        sessionId: 's1',
+        update: { kind: 'start', turnId: 1, startedAt: 2_000 },
+      },
+      { sessionId: 's1', seq: 9 },
+    );
+    expect(state.turnProgressBySession.s1).toMatchObject({
+      turnId: 2,
+      active: false,
+      stepCount: 1,
+    });
+  });
+
+  it('lets an authoritative snapshot replace an equal turn and reset a terminal session', () => {
+    const live = reduceAppEvent(
+      createInitialState(),
+      {
+        type: 'turnProgress',
+        sessionId: 's1',
+        update: { kind: 'start', turnId: 4, startedAt: 100 },
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+    const seeded = reduceAppEvent(
+      live,
+      {
+        type: 'turnProgress',
+        sessionId: 's1',
+        update: {
+          kind: 'start',
+          turnId: 4,
+          startedAt: 50,
+          stepCount: 3,
+          toolCallIds: ['a', 'b'],
+          completedToolCallIds: ['a'],
+          replace: true,
+        },
+      },
+      { sessionId: 's1', seq: 2 },
+    );
+    const replayed = reduceAppEvent(
+      seeded,
+      {
+        type: 'turnProgress',
+        sessionId: 's1',
+        update: { kind: 'step', turnId: 4, step: 3 },
+      },
+      { sessionId: 's1', seq: 2 },
+    );
+    expect(replayed.turnProgressBySession.s1).toMatchObject({
+      turnId: 4,
+      active: true,
+      startedAt: 50,
+      stepCount: 3,
+      stepNumbers: [1, 2, 3],
+      toolCallIds: ['a', 'b'],
+      completedToolCallIds: ['a'],
+    });
+
+    const reset = reduceAppEvent(
+      replayed,
+      { type: 'turnProgress', sessionId: 's1', update: { kind: 'reset' } },
+      { sessionId: 's1', seq: 3 },
+    );
+    expect(reset.turnProgressBySession.s1).toBeUndefined();
+  });
+
+  it('keeps sessions isolated and drops progress when its session is deleted', () => {
+    let state = createInitialState();
+    for (const [seq, sessionId] of ['s1', 's2'].entries()) {
+      state = reduceAppEvent(
+        state,
+        {
+          type: 'turnProgress',
+          sessionId,
+          update: { kind: 'start', turnId: 1, startedAt: seq },
+        },
+        { sessionId, seq: seq + 1 },
+      );
+    }
+    const next = reduceAppEvent(
+      state,
+      { type: 'sessionDeleted', sessionId: 's1' },
+      { sessionId: 's1', seq: 3 },
+    );
+    expect(next.turnProgressBySession.s1).toBeUndefined();
+    expect(next.turnProgressBySession.s2?.active).toBe(true);
   });
 });
 
@@ -347,6 +520,151 @@ describe('reduceAppEvent messageCreated', () => {
   });
 });
 
+describe('reduceAppEvent taskMetadataUpdated', () => {
+  it('patches runtime metadata on an existing task without clearing omitted fields', () => {
+    const state = {
+      ...createInitialState(),
+      tasksBySession: {
+        s1: [
+          {
+            ...makeSubagentTask('t1', 's1'),
+            model: 'snapshot-model',
+            thinkingEffort: 'medium',
+          },
+        ],
+      },
+    };
+    const next = reduceAppEvent(
+      state,
+      {
+        type: 'taskMetadataUpdated',
+        sessionId: 's1',
+        taskId: 't1',
+        model: 'runtime-model',
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+
+    expect(next.tasksBySession.s1?.[0]).toMatchObject({
+      model: 'runtime-model',
+      thinkingEffort: 'medium',
+    });
+  });
+
+  it('patches a uniquely running REST task by its agent id', () => {
+    const state = {
+      ...createInitialState(),
+      tasksBySession: {
+        s1: [
+          {
+            ...makeSubagentTask('task-9', 's1'),
+            agentId: 'sub-1',
+            status: 'running' as const,
+            model: 'snapshot-model',
+          },
+        ],
+      },
+    };
+    const next = reduceAppEvent(
+      state,
+      {
+        type: 'taskMetadataUpdated',
+        sessionId: 's1',
+        taskId: 'sub-1',
+        model: 'runtime-model',
+        thinkingEffort: 'high',
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+
+    expect(next.tasksBySession.s1?.[0]).toMatchObject({
+      id: 'task-9',
+      agentId: 'sub-1',
+      model: 'runtime-model',
+      thinkingEffort: 'high',
+    });
+  });
+
+  it('does not patch a terminal task through the agent-id fallback', () => {
+    const state = {
+      ...createInitialState(),
+      tasksBySession: {
+        s1: [
+          {
+            ...makeSubagentTask('task-9', 's1'),
+            agentId: 'sub-1',
+            status: 'completed' as const,
+            model: 'snapshot-model',
+          },
+        ],
+      },
+    };
+    const next = reduceAppEvent(
+      state,
+      {
+        type: 'taskMetadataUpdated',
+        sessionId: 's1',
+        taskId: 'sub-1',
+        model: 'runtime-model',
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+
+    expect(next.tasksBySession.s1?.[0]?.model).toBe('snapshot-model');
+  });
+
+  it('does not patch ambiguous running tasks through the agent-id fallback', () => {
+    const state = {
+      ...createInitialState(),
+      tasksBySession: {
+        s1: [
+          {
+            ...makeSubagentTask('task-8', 's1'),
+            agentId: 'sub-1',
+            status: 'running' as const,
+            model: 'model-8',
+          },
+          {
+            ...makeSubagentTask('task-9', 's1'),
+            agentId: 'sub-1',
+            status: 'running' as const,
+            model: 'model-9',
+          },
+        ],
+      },
+    };
+    const next = reduceAppEvent(
+      state,
+      {
+        type: 'taskMetadataUpdated',
+        sessionId: 's1',
+        taskId: 'sub-1',
+        model: 'runtime-model',
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+
+    expect(next.tasksBySession.s1?.map((task) => task.model)).toEqual(['model-8', 'model-9']);
+  });
+
+  it('does not create a task when the metadata target is unknown', () => {
+    const state = createInitialState();
+    const next = reduceAppEvent(
+      state,
+      {
+        type: 'taskMetadataUpdated',
+        sessionId: 's1',
+        taskId: 'unknown-agent',
+        model: 'runtime-model',
+        thinkingEffort: 'high',
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+
+    expect(next.tasksBySession.s1).toBeUndefined();
+  });
+});
+
 describe('reduceAppEvent taskProgress', () => {
   it('accumulates the full progress output without truncating to a fixed window', () => {
     const state = {
@@ -452,6 +770,9 @@ describe('reduceAppEvent taskProgress', () => {
             parentToolCallId: 'call-1',
             swarmIndex: 2,
             subagentType: 'explore',
+            agentId: 'agent-1',
+            model: 'runtime-model',
+            thinkingEffort: 'high',
             runInBackground: true,
             outputLines: ['old line'],
             text: 'partial',
@@ -468,10 +789,68 @@ describe('reduceAppEvent taskProgress', () => {
       parentToolCallId: 'call-1',
       swarmIndex: 2,
       subagentType: 'explore',
+      agentId: 'agent-1',
+      model: 'runtime-model',
+      thinkingEffort: 'high',
       runInBackground: true,
       outputLines: ['old line'],
       text: 'partial',
     });
+  });
+
+  it('lets explicit incoming identity metadata replace older values', () => {
+    const state = {
+      ...createInitialState(),
+      tasksBySession: {
+        's1': [
+          {
+            ...makeSubagentTask('t1', 's1'),
+            agentId: 'agent-old',
+            model: 'model-old',
+            thinkingEffort: 'low',
+          },
+        ],
+      },
+    };
+    const next = reduceAppEvent(
+      state,
+      {
+        type: 'taskCreated',
+        sessionId: 's1',
+        task: {
+          ...makeSubagentTask('t1', 's1'),
+          agentId: 'agent-new',
+          model: 'model-new',
+          thinkingEffort: 'high',
+        },
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(next.tasksBySession['s1']?.[0]).toMatchObject({
+      agentId: 'agent-new',
+      model: 'model-new',
+      thinkingEffort: 'high',
+    });
+  });
+
+  it('clears an older background task id for a confirmed new spawn generation', () => {
+    const state = {
+      ...createInitialState(),
+      tasksBySession: {
+        's1': [{ ...makeSubagentTask('t1', 's1'), backgroundTaskId: 'task-old' }],
+      },
+    };
+    const next = reduceAppEvent(
+      state,
+      {
+        type: 'taskCreated',
+        sessionId: 's1',
+        task: makeSubagentTask('t1', 's1'),
+        resetBackgroundTaskId: true,
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(next.tasksBySession['s1']?.[0]?.backgroundTaskId).toBeUndefined();
   });
 
   it('keeps the roster-seeded description when a re-projected task carries the placeholder', () => {
@@ -821,5 +1200,220 @@ describe('reduceAppEvent researchUpdated', () => {
 
     expect(next.researchBySession['s1']).toBeUndefined();
     expect(next.researchVersionBySession['s1']).toBeUndefined();
+  });
+});
+
+describe('reduceAppEvent automatic subagent preset state', () => {
+  const config: AppConfig = {
+    providers: {},
+    subagent: { preset: 'balanced', agents: { coder: { model: 'base/coder' } } },
+  };
+  const status: AutoSubagentPresetStatus = {
+    evaluatedAt: 1_750_000_000_000,
+    route: 'agent',
+    profileName: 'reviewer',
+    reasonCode: 'higher_score',
+    currentPreset: 'balanced',
+    selectedPreset: 'kimi-heavy',
+    currentScore: 58.5,
+    selectedScore: 76.25,
+    candidates: [],
+    policy: {
+      quotaFloorPercent: 10,
+      switchMarginPercent: 5,
+      localUsageWindowMs: 86_400_000,
+      localUsageWeightPercent: 10,
+      priorityWeightPercent: 20,
+      reliabilityWeightPercent: 15,
+      latencyWeightPercent: 10,
+      switchCooldownMs: 30_000,
+      circuitBreakerFailureThreshold: 3,
+      circuitBreakerCooldownMs: 60_000,
+    },
+  };
+
+  it('replaces the process-global status on every evaluated event', () => {
+    const state = createInitialState();
+    const next = reduceAppEvent(
+      state,
+      { type: 'subagentPresetEvaluated', sessionId: 's1', status },
+      { sessionId: 's1', seq: 6 },
+    );
+
+    expect(next.autoSubagentPresetStatus).toBe(status);
+    expect(state.autoSubagentPresetStatus).toBeUndefined();
+  });
+
+  it('immediately aligns loaded config with the preset activated by an evaluation', () => {
+    const state = { ...createInitialState(), config };
+    const switched = { ...status, activatedPreset: 'kimi-heavy' };
+    const next = reduceAppEvent(
+      state,
+      { type: 'subagentPresetEvaluated', sessionId: 's1', status: switched },
+      { sessionId: 's1', seq: 6 },
+    );
+
+    expect(next.autoSubagentPresetStatus).toBe(switched);
+    expect(next.config?.subagent?.preset).toBe('kimi-heavy');
+    expect(config.subagent?.preset).toBe('balanced');
+  });
+
+  it('atomically patches the loaded config subagent.preset without mutating the previous config', () => {
+    const state = { ...createInitialState(), config };
+    const next = reduceAppEvent(
+      state,
+      { type: 'subagentPresetChanged', sessionId: 's1', previousPreset: 'balanced', currentPreset: 'kimi-heavy' },
+      { sessionId: 's1', seq: 7 },
+    );
+
+    expect(next.config).toEqual({ ...config, subagent: { ...config.subagent, preset: 'kimi-heavy' } });
+    // Original config object untouched — the reducer is pure.
+    expect(config.subagent?.preset).toBe('balanced');
+  });
+
+  it('does not fabricate a config when none was loaded', () => {
+    const state = createInitialState();
+    expect(state.config).toBeUndefined();
+    const next = reduceAppEvent(
+      state,
+      { type: 'subagentPresetChanged', sessionId: 's1', previousPreset: 'balanced', currentPreset: 'kimi-heavy' },
+      { sessionId: 's1', seq: 7 },
+    );
+    expect(next.config).toBeUndefined();
+  });
+
+  it('appends an idempotent from/to marker to the loaded target session transcript', () => {
+    const state = {
+      ...createInitialState(),
+      config,
+      messagesBySession: {
+        s1: [makeMessage('s1', '2026-01-01T00:00:00.000Z')],
+        s2: [makeMessage('s2', '2026-01-01T00:00:00.000Z')],
+      },
+    };
+    const event = {
+      type: 'subagentPresetChanged' as const,
+      sessionId: 's1',
+      previousPreset: 'balanced',
+      currentPreset: 'kimi-heavy',
+      reasonCode: 'higher_score' as const,
+      profileName: 'reviewer',
+      evaluatedAt: 1_750_000_000_000,
+      previousScore: 58.5,
+      currentScore: 76.25,
+    };
+    const once = reduceAppEvent(state, event, { sessionId: 's1', seq: 9 });
+    const twice = reduceAppEvent(once, event, { sessionId: 's1', seq: 9 }); // replay
+
+    const msgs = twice.messagesBySession['s1']!;
+    expect(msgs).toHaveLength(2); // original + marker; replay did NOT duplicate
+    const marker = msgs[1]!;
+    expect(marker.id).toBe('subagent_preset_s1_9');
+    expect(marker.role).toBe('assistant'); // transcript role — rendered as a status divider
+    expect(marker.content).toEqual([]);
+    expect(marker.metadata?.[SUBAGENT_PRESET_MARKER_METADATA_KEY]).toEqual({
+      from: 'balanced',
+      to: 'kimi-heavy',
+      reasonCode: 'higher_score',
+      profileName: 'reviewer',
+      evaluatedAt: 1_750_000_000_000,
+      previousScore: 58.5,
+      currentScore: 76.25,
+    });
+    // Unrelated session transcript untouched.
+    expect(twice.messagesBySession['s2']).toHaveLength(1);
+  });
+
+  it('does not append a marker to a session whose messages were never loaded', () => {
+    const state = { ...createInitialState(), config };
+    const next = reduceAppEvent(
+      state,
+      { type: 'subagentPresetChanged', sessionId: 's1', previousPreset: 'balanced', currentPreset: 'kimi-heavy' },
+      { sessionId: 's1', seq: 4 },
+    );
+    expect(next.messagesBySession['s1']).toBeUndefined();
+  });
+
+  it('keys idempotency by sessionId + seq: same seq on another session appends there', () => {
+    const state = {
+      ...createInitialState(),
+      messagesBySession: {
+        s1: [makeMessage('s1', '2026-01-01T00:00:00.000Z')],
+        s2: [makeMessage('s2', '2026-01-01T00:00:00.000Z')],
+      },
+    };
+    const evt1 = {
+      type: 'subagentPresetChanged' as const,
+      sessionId: 's1',
+      previousPreset: 'balanced',
+      currentPreset: 'kimi-heavy',
+    };
+    const evt2 = {
+      type: 'subagentPresetChanged' as const,
+      sessionId: 's2',
+      previousPreset: 'kimi-heavy',
+      currentPreset: 'deepseek-heavy',
+    };
+    const a = reduceAppEvent(state, evt1, { sessionId: 's1', seq: 5 });
+    const b = reduceAppEvent(a, evt2, { sessionId: 's2', seq: 5 }); // same wire seq, other session
+
+    expect(b.messagesBySession['s1']!.map((m) => m.id)).toEqual([
+      'msg_2026-01-01T00:00:00.000Z',
+      'subagent_preset_s1_5',
+    ]);
+    expect(b.messagesBySession['s2']!.map((m) => m.id)).toEqual([
+      'msg_2026-01-01T00:00:00.000Z',
+      'subagent_preset_s2_5',
+    ]);
+    expect(b.messagesBySession['s2']![1]!.metadata?.[SUBAGENT_PRESET_MARKER_METADATA_KEY]).toEqual({
+      from: 'kimi-heavy',
+      to: 'deepseek-heavy',
+    });
+  });
+
+  it('appends another marker when the same session advances to a new seq', () => {
+    const state = {
+      ...createInitialState(),
+      messagesBySession: { s1: [makeMessage('s1', '2026-01-01T00:00:00.000Z')] },
+    };
+    const evt = (previous: string, current: string, seq: number) =>
+      ({
+        type: 'subagentPresetChanged' as const,
+        sessionId: 's1',
+        previousPreset: previous,
+        currentPreset: current,
+      }) as const;
+    const a = reduceAppEvent(state, evt('a', 'b', 1), { sessionId: 's1', seq: 1 });
+    const b = reduceAppEvent(a, evt('b', 'c', 2), { sessionId: 's1', seq: 2 });
+
+    expect(b.messagesBySession['s1']!.map((m) => m.id)).toEqual([
+      'msg_2026-01-01T00:00:00.000Z',
+      'subagent_preset_s1_1',
+      'subagent_preset_s1_2',
+    ]);
+    expect(b.messagesBySession['s1']![1]!.metadata?.[SUBAGENT_PRESET_MARKER_METADATA_KEY]).toEqual({
+      from: 'a',
+      to: 'b',
+    });
+    expect(b.messagesBySession['s1']![2]!.metadata?.[SUBAGENT_PRESET_MARKER_METADATA_KEY]).toEqual({
+      from: 'b',
+      to: 'c',
+    });
+  });
+
+  it('records an absent previous preset as an undefined from', () => {
+    const state = {
+      ...createInitialState(),
+      messagesBySession: { s1: [makeMessage('s1', '2026-01-01T00:00:00.000Z')] },
+    };
+    const next = reduceAppEvent(
+      state,
+      { type: 'subagentPresetChanged', sessionId: 's1', currentPreset: 'balanced' },
+      { sessionId: 's1', seq: 3 },
+    );
+    expect(next.messagesBySession['s1']![1]!.metadata?.[SUBAGENT_PRESET_MARKER_METADATA_KEY]).toEqual({
+      from: undefined,
+      to: 'balanced',
+    });
   });
 });

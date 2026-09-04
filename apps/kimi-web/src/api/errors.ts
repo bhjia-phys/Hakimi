@@ -5,6 +5,7 @@ export class DaemonApiError extends Error {
   readonly code: number;
   readonly requestId: string;
   readonly details: unknown;
+  readonly status?: number;
   /** Epoch ms when the failure was surfaced. */
   readonly timestamp?: number;
   /** Round-trip time from request start to the error envelope, in ms. */
@@ -15,6 +16,7 @@ export class DaemonApiError extends Error {
     msg: string;
     requestId: string;
     details?: unknown;
+    status?: number;
     timestamp?: number;
     durationMs?: number;
   }) {
@@ -23,6 +25,7 @@ export class DaemonApiError extends Error {
     this.code = input.code;
     this.requestId = input.requestId;
     this.details = input.details;
+    this.status = input.status;
     this.timestamp = input.timestamp;
     this.durationMs = input.durationMs;
   }

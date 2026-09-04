@@ -1061,6 +1061,218 @@ describe('SessionEventBroadcaster', () => {
     expect(s1View.envelopes[0]!.volatile).toBeUndefined();
   });
 
+  it('broadcasts event.subagent.preset_changed under the real session id, durably journalled, and replays it', async () => {
+    // Regression: the automatic preset selector publishes its committed switch
+    // on the process-global IEventService; the frame must be addressed to the
+    // REAL session (the core payload carries the originating sessionId) so
+    // clients can match it to a sidebar row — stamping `session_id =
+    // '__global__'` would orphan it. `isGlobalEvent` still fans the dispatch
+    // out to every connection, and the frame is durable in that session's
+    // journal, so a replay recovers it.
+    sessions.set('s1', new FakeLifecycle());
+    sessions.set('s2', new FakeLifecycle());
+
+    const s1View = collectingTarget();
+    const s2View = collectingTarget();
+    await bc.subscribe('s1', s1View.target);
+    await bc.subscribe('s2', s2View.target);
+
+    eventBus.emit({
+      type: 'event.subagent.preset_changed',
+      payload: {
+        sessionId: 's1',
+        previousPreset: 'balanced',
+        currentPreset: 'kimi-heavy',
+        reasonCode: 'higher_score',
+        profileName: 'reviewer',
+        evaluatedAt: 1_750_000_000_000,
+        previousScore: 58.5,
+        currentScore: 76.25,
+      },
+    });
+
+    await vi.waitFor(() => expect(s1View.envelopes).toHaveLength(1));
+    await vi.waitFor(() => expect(s2View.envelopes).toHaveLength(1));
+
+    const frame = s1View.envelopes[0]!;
+    expect(frame).toMatchObject({
+      type: 'event.subagent.preset_changed',
+      session_id: 's1',
+      payload: {
+        type: 'event.subagent.preset_changed',
+        previous_preset: 'balanced',
+        current_preset: 'kimi-heavy',
+        reason_code: 'higher_score',
+        profile_name: 'reviewer',
+        evaluated_at: 1_750_000_000_000,
+        previous_score: 58.5,
+        current_score: 76.25,
+        agentId: 'main',
+        sessionId: 's1',
+      },
+    });
+    expect(frame.session_id).not.toBe('__global__');
+    // Fanned out to the non-subscriber under the same real session id.
+    expect(s2View.envelopes[0]!.session_id).toBe('s1');
+    expect(frame.volatile).toBeUndefined(); // durable — journaled, replayable
+
+    // Durable replay: the switch is recoverable from the session's journal
+    // with its original seq and the real session id.
+    const replay = await bc.getBufferedSince('s1', { seq: 0 });
+    expect(replay.resyncRequired).toBe(false);
+    const journaled = replay.events.find(
+      (entry) => entry.envelope.type === 'event.subagent.preset_changed',
+    )!;
+    expect(journaled.envelope.session_id).toBe('s1');
+    expect(journaled.seq).toBe(frame.seq);
+  });
+
+  it('strictly projects event.subagent.preset_evaluated through the real session journal and global fan-out', async () => {
+    sessions.set('s1', new FakeLifecycle());
+    sessions.set('s2', new FakeLifecycle());
+
+    const s1View = collectingTarget();
+    const s2View = collectingTarget();
+    await bc.subscribe('s1', s1View.target);
+    await bc.subscribe('s2', s2View.target);
+
+    eventBus.emit({
+      type: 'event.subagent.preset_evaluated',
+      payload: {
+        sessionId: 's1',
+        evaluatedAt: 1_750_000_000_000,
+        route: 'agent',
+        profileName: 'reviewer',
+        reasonCode: 'higher_score',
+        currentPreset: 'balanced',
+        selectedPreset: 'kimi-heavy',
+        activatedPreset: 'kimi-heavy',
+        currentScore: 58.5,
+        selectedScore: 76.25,
+        switchCooldownUntil: 1_750_000_030_000,
+        candidates: [
+          {
+            preset: 'kimi-heavy',
+            provider: 'provider-a',
+            availability: 'healthy',
+            selectable: true,
+            score: 76.25,
+            quotaRemainingPercent: 80,
+            quotaResetAt: 1_750_003_600_000,
+            contributions: {
+              quotaRemaining: 80,
+              priorityBonus: 8,
+              resetBonus: 1,
+              routeFitBonus: 2,
+              tokenPenalty: 3,
+              reliabilityPenalty: 7.5,
+              latencyPenalty: 4.25,
+            },
+            localEvidence: {
+              scope: 'profile',
+              sampleCount: 8,
+              failureCount: 1,
+              adjustedFailureRate: 0.15,
+              tokenCount: 42_000,
+              averageFirstTokenLatencyMs: 320,
+              firstTokenLatencySampleCount: 9,
+              llmRequestCount: 12,
+            },
+            privateData: 'drop-me',
+          },
+        ],
+        policy: {
+          quotaFloorPercent: 10,
+          switchMarginPercent: 5,
+          localUsageWindowMs: 86_400_000,
+          localUsageWeightPercent: 10,
+          priorityWeightPercent: 20,
+          reliabilityWeightPercent: 15,
+          latencyWeightPercent: 10,
+          switchCooldownMs: 30_000,
+          circuitBreakerFailureThreshold: 3,
+          circuitBreakerCooldownMs: 60_000,
+        },
+        privateData: 'drop-me',
+      },
+    });
+
+    await vi.waitFor(() => expect(s1View.envelopes).toHaveLength(1));
+    await vi.waitFor(() => expect(s2View.envelopes).toHaveLength(1));
+    const frame = s1View.envelopes[0]!;
+    expect(frame).toMatchObject({
+      type: 'event.subagent.preset_evaluated',
+      session_id: 's1',
+      payload: {
+        type: 'event.subagent.preset_evaluated',
+        evaluated_at: 1_750_000_000_000,
+        route: 'agent',
+        profile_name: 'reviewer',
+        reason_code: 'higher_score',
+        current_preset: 'balanced',
+        selected_preset: 'kimi-heavy',
+        activated_preset: 'kimi-heavy',
+        current_score: 58.5,
+        selected_score: 76.25,
+        switch_cooldown_until: 1_750_000_030_000,
+        candidates: [
+          {
+            preset: 'kimi-heavy',
+            provider: 'provider-a',
+            availability: 'healthy',
+            selectable: true,
+            score: 76.25,
+            quota_remaining_percent: 80,
+            quota_reset_at: 1_750_003_600_000,
+            contributions: {
+              quota_remaining: 80,
+              priority_bonus: 8,
+              reset_bonus: 1,
+              route_fit_bonus: 2,
+              token_penalty: 3,
+              reliability_penalty: 7.5,
+              latency_penalty: 4.25,
+            },
+            local_evidence: {
+              scope: 'profile',
+              sample_count: 8,
+              failure_count: 1,
+              adjusted_failure_rate: 0.15,
+              token_count: 42_000,
+              average_first_token_latency_ms: 320,
+              first_token_latency_sample_count: 9,
+              llm_request_count: 12,
+            },
+          },
+        ],
+        policy: {
+          quota_floor_percent: 10,
+          switch_margin_percent: 5,
+          local_usage_window_ms: 86_400_000,
+          local_usage_weight_percent: 10,
+          priority_weight_percent: 20,
+          reliability_weight_percent: 15,
+          latency_weight_percent: 10,
+          switch_cooldown_ms: 30_000,
+          circuit_breaker_failure_threshold: 3,
+          circuit_breaker_cooldown_ms: 60_000,
+        },
+        agentId: 'main',
+        sessionId: 's1',
+      },
+    });
+    expect(JSON.stringify(frame)).not.toContain('privateData');
+    expect(s2View.envelopes[0]!.session_id).toBe('s1');
+    expect(frame.volatile).toBeUndefined();
+
+    const replay = await bc.getBufferedSince('s1', { seq: 0 });
+    const journaled = replay.events.find(
+      (entry) => entry.envelope.type === 'event.subagent.preset_evaluated',
+    )!;
+    expect(journaled.envelope.session_id).toBe('s1');
+    expect(journaled.seq).toBe(frame.seq);
+  });
+
   it('gates event.di.unit_changed to connections opted into the DI debug feed', async () => {
     // The engine's DI debug feed (agent-core-v2's IDebugCascadeService) has no
     // owning session: it routes through the global state ('__global__'
@@ -1134,6 +1346,230 @@ describe('SessionEventBroadcaster', () => {
         session_id: 's1',
       });
       expect(globalView.deliveries).toEqual(['immediate']);
+    });
+
+    it('delivers event.subagent.preset_changed to a global-only target under the real session id', async () => {
+      sessions.set('s1', new FakeLifecycle());
+
+      const globalView = collectingTarget();
+      bc.addGlobalTarget(globalView.target);
+
+      // A first automatic choice carries no previous preset.
+      eventBus.emit({
+        type: 'event.subagent.preset_changed',
+        payload: {
+          sessionId: 's1',
+          currentPreset: 'deepseek-heavy',
+          reasonCode: 'current_unhealthy',
+          evaluatedAt: 1_750_000_000_000,
+        },
+      });
+
+      await vi.waitFor(() => expect(globalView.envelopes).toHaveLength(1));
+      expect(globalView.envelopes[0]).toMatchObject({
+        type: 'event.subagent.preset_changed',
+        // Real session id, not the '__global__' watermark: the originating
+        // session id travels on the core payload and is recovered at the edge.
+        session_id: 's1',
+        payload: {
+          previous_preset: undefined,
+          current_preset: 'deepseek-heavy',
+          reason_code: 'current_unhealthy',
+          evaluated_at: 1_750_000_000_000,
+          agentId: 'main',
+          sessionId: 's1',
+        },
+      });
+      expect(globalView.deliveries).toEqual(['immediate']);
+      expect(globalView.envelopes[0]!.volatile).toBeUndefined(); // durable
+    });
+
+    it('drops malformed event.subagent.preset_changed payloads', async () => {
+      sessions.set('s1', new FakeLifecycle());
+
+      const globalView = collectingTarget();
+      bc.addGlobalTarget(globalView.target);
+
+      eventBus.emit({ type: 'event.subagent.preset_changed', payload: null });
+      eventBus.emit({
+        type: 'event.subagent.preset_changed',
+        payload: { currentPreset: 'kimi-heavy' },
+      });
+      eventBus.emit({
+        type: 'event.subagent.preset_changed',
+        payload: { sessionId: '', currentPreset: 'kimi-heavy' },
+      });
+      eventBus.emit({ type: 'event.subagent.preset_changed', payload: { sessionId: 's1' } });
+      eventBus.emit({
+        type: 'event.subagent.preset_changed',
+        payload: {
+          sessionId: 's1',
+          previousPreset: 42,
+          currentPreset: 'kimi-heavy',
+          reasonCode: 'higher_score',
+          evaluatedAt: 1,
+        },
+      });
+      eventBus.emit({
+        type: 'event.subagent.preset_changed',
+        payload: {
+          sessionId: 's1',
+          currentPreset: 'kimi-heavy',
+          reasonCode: 'unknown_reason',
+          evaluatedAt: 1,
+        },
+      });
+      // Unknown extra fields are tolerated (the publisher may grow payloads
+      // forward-compatibly), but only the validated fields reach the frame.
+      eventBus.emit({
+        type: 'event.subagent.preset_changed',
+        payload: {
+          sessionId: 's1',
+          currentPreset: 'kimi-heavy',
+          reasonCode: 'higher_score',
+          evaluatedAt: 1,
+          evicted: 'x',
+        },
+      });
+
+      // A valid frame right after proves the malformed ones were dropped, not
+      // merely slow.
+      eventBus.emit({
+        type: 'event.subagent.preset_changed',
+        payload: {
+          sessionId: 's1',
+          previousPreset: 'balanced',
+          currentPreset: 'kimi-heavy',
+          reasonCode: 'higher_score',
+          profileName: 'reviewer',
+          evaluatedAt: 2,
+          previousScore: 50,
+          currentScore: 70,
+        },
+      });
+
+      await vi.waitFor(() => expect(globalView.envelopes).toHaveLength(2));
+      // The forward-compat frame carried an extra payload field — it must not
+      // leak into the wire frame (agentId/sessionId are stamped at the edge).
+      const tolerant = globalView.envelopes[0]!;
+      expect(tolerant).toMatchObject({
+        type: 'event.subagent.preset_changed',
+        session_id: 's1',
+        payload: {
+          current_preset: 'kimi-heavy',
+          reason_code: 'higher_score',
+          evaluated_at: 1,
+        },
+      });
+      expect((tolerant.payload as Record<string, unknown>)['evicted']).toBeUndefined();
+      expect((tolerant.payload as Record<string, unknown>)['agentId']).toBe('main');
+      const valid = globalView.envelopes[1]!;
+      expect(valid).toMatchObject({
+        type: 'event.subagent.preset_changed',
+        session_id: 's1',
+        payload: {
+          previous_preset: 'balanced',
+          current_preset: 'kimi-heavy',
+          reason_code: 'higher_score',
+          profile_name: 'reviewer',
+          evaluated_at: 2,
+          previous_score: 50,
+          current_score: 70,
+        },
+      });
+    });
+
+    it('drops malformed event.subagent.preset_evaluated payloads and strips extras', async () => {
+      sessions.set('s1', new FakeLifecycle());
+      const globalView = collectingTarget();
+      bc.addGlobalTarget(globalView.target);
+
+      eventBus.emit({ type: 'event.subagent.preset_evaluated', payload: null });
+      eventBus.emit({
+        type: 'event.subagent.preset_evaluated',
+        payload: {
+          sessionId: 's1',
+          evaluatedAt: 1,
+          route: 'unknown',
+          reasonCode: 'higher_score',
+          candidates: [],
+          policy: {},
+        },
+      });
+      eventBus.emit({
+        type: 'event.subagent.preset_evaluated',
+        payload: {
+          sessionId: 's1',
+          evaluatedAt: 1,
+          route: 'agent',
+          reasonCode: 'higher_score',
+          candidates: [],
+          policy: {
+            quotaFloorPercent: 10,
+            switchMarginPercent: 5,
+            localUsageWindowMs: 100,
+            localUsageWeightPercent: 10,
+            priorityWeightPercent: 20,
+            reliabilityWeightPercent: 15,
+            latencyWeightPercent: 10,
+            switchCooldownMs: 30,
+            circuitBreakerFailureThreshold: 3,
+          },
+        },
+      });
+      eventBus.emit({
+        type: 'event.subagent.preset_evaluated',
+        payload: {
+          sessionId: 's1',
+          evaluatedAt: 1,
+          route: 'agent',
+          reasonCode: 'higher_score',
+          candidates: [],
+          policy: {
+            quotaFloorPercent: 101,
+            switchMarginPercent: 5,
+            localUsageWindowMs: 100,
+            localUsageWeightPercent: 10,
+            priorityWeightPercent: 20,
+            reliabilityWeightPercent: 15,
+            latencyWeightPercent: 10,
+            switchCooldownMs: 30,
+            circuitBreakerFailureThreshold: 3,
+            circuitBreakerCooldownMs: 60,
+          },
+        },
+      });
+      eventBus.emit({
+        type: 'event.subagent.preset_evaluated',
+        payload: {
+          sessionId: 's1',
+          evaluatedAt: 2,
+          route: 'agent',
+          reasonCode: 'current_optimal',
+          candidates: [],
+          policy: {
+            quotaFloorPercent: 10,
+            switchMarginPercent: 5,
+            localUsageWindowMs: 100,
+            localUsageWeightPercent: 10,
+            priorityWeightPercent: 20,
+            reliabilityWeightPercent: 15,
+            latencyWeightPercent: 10,
+            switchCooldownMs: 30,
+            circuitBreakerFailureThreshold: 3,
+            circuitBreakerCooldownMs: 60,
+          },
+          evicted: 'x',
+        },
+      });
+
+      await vi.waitFor(() => expect(globalView.envelopes).toHaveLength(1));
+      expect(globalView.envelopes[0]).toMatchObject({
+        type: 'event.subagent.preset_evaluated',
+        session_id: 's1',
+        payload: { evaluated_at: 2, reason_code: 'current_optimal' },
+      });
+      expect(JSON.stringify(globalView.envelopes[0])).not.toContain('evicted');
     });
 
     it('delivers work_changed to a global-only target while a subscriber drives the session', async () => {

@@ -28,6 +28,7 @@ import type {
   AddAdditionalDirResult,
   AgentCommandInfo,
   AgentRuntimeBinding,
+  AutoSubagentPresetStatus,
   BackgroundTaskInfo,
   ConfigDiagnostics,
   CreateSessionOptions,
@@ -68,6 +69,8 @@ import type {
   SessionSummary,
   SessionSummaryPage,
   SkillSummary,
+  SubagentPresetChangedEvent,
+  SubagentPresetEvaluatedEvent,
   PluginCommandDef,
   Unsubscribe,
   WorkspaceTrustInfo,
@@ -155,6 +158,14 @@ type ResolvedCoreAPI = RPCMethods<CoreAPI>;
 export abstract class SDKRpcClientBase {
   private readonly interactiveAgentScope = new AsyncLocalStorage<string>();
   private readonly eventListeners = new Set<(event: Event) => void>();
+  /** v2-only automatic preset evaluations, separate from the legacy `Event` stream. */
+  private readonly subagentPresetEvaluatedListeners = new Set<
+    (event: SubagentPresetEvaluatedEvent) => void
+  >();
+  /** v2-only committed automatic preset switches. */
+  private readonly subagentPresetChangedListeners = new Set<
+    (event: SubagentPresetChangedEvent) => void
+  >();
   private readonly approvalHandlers = new Map<string, ApprovalHandler>();
   private readonly questionHandlers = new Map<string, QuestionHandler>();
 
@@ -314,6 +325,23 @@ export abstract class SDKRpcClientBase {
   async setConfig(input: KimiConfigPatch): Promise<KimiConfig> {
     const rpc = await this.getRpc();
     return rpc.setKimiConfig(input);
+  }
+
+  /**
+   * Latest process-global automatic preset evaluation. The v1 engine and older
+   * services have no evaluator, so the compatibility result is `undefined`.
+   */
+  async getAutoSubagentPresetStatus(): Promise<AutoSubagentPresetStatus | undefined> {
+    return undefined;
+  }
+
+  /**
+   * Activate a preset through the engine's manual-selection boundary. The v1
+   * engine has no automatic selection lock, so its compatibility path is the
+   * ordinary preset config write; the v2 client overrides this atomically.
+   */
+  async activateSubagentPreset(preset: string): Promise<KimiConfig> {
+    return this.setConfig({ subagent: { preset } });
   }
 
   async removeProvider(providerId: string): Promise<KimiConfig> {
@@ -965,6 +993,39 @@ export abstract class SDKRpcClientBase {
 
   receiveEvent(event: Event): void {
     for (const listener of this.eventListeners) {
+      listener(event);
+    }
+  }
+
+  /**
+   * Subscribe to automatic subagent-preset evaluations. v1 listeners remain
+   * inert because the legacy engine has no corresponding fact.
+   */
+  onSubagentPresetEvaluated(
+    listener: (event: SubagentPresetEvaluatedEvent) => void,
+  ): Unsubscribe {
+    this.subagentPresetEvaluatedListeners.add(listener);
+    return () => {
+      this.subagentPresetEvaluatedListeners.delete(listener);
+    };
+  }
+
+  receiveSubagentPresetEvaluated(event: SubagentPresetEvaluatedEvent): void {
+    for (const listener of this.subagentPresetEvaluatedListeners) {
+      listener(event);
+    }
+  }
+
+  /** Subscribe to committed automatic subagent-preset switches (v2 only). */
+  onSubagentPresetChanged(listener: (event: SubagentPresetChangedEvent) => void): Unsubscribe {
+    this.subagentPresetChangedListeners.add(listener);
+    return () => {
+      this.subagentPresetChangedListeners.delete(listener);
+    };
+  }
+
+  receiveSubagentPresetChanged(event: SubagentPresetChangedEvent): void {
+    for (const listener of this.subagentPresetChangedListeners) {
       listener(event);
     }
   }

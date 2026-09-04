@@ -7,10 +7,12 @@ import {
   IAgentTaskService,
   getLiveSessionById,
   IModelCatalog,
+  resumeSessionById,
   type AgentTask,
 } from '@moonshot-ai/agent-core-v2';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { projectRemoteTask } from '../src/security/remoteResponseProjection';
 import { type RunningServer, startServer } from '../src/start';
 import { TEST_HOST_IDENTITY } from './helpers/hostIdentity';
 import { authHeaders } from './helpers/auth';
@@ -35,9 +37,12 @@ interface TaskWire {
   completed_at?: string;
   output_preview?: string;
   output_bytes?: number;
+  model?: string;
+  thinking_effort?: string;
   agent_id?: string;
   subagent_type?: string;
   parent_tool_call_id?: string;
+  run_in_background?: boolean;
 }
 
 interface ListWire {
@@ -48,12 +53,13 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
   let server: RunningServer | undefined;
   let home: string | undefined;
   let base: string;
+  let modelCatalog: IModelCatalog;
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'kimi-server-v2-tasks-'));
     // Seed a stub IModelCatalog so the agent scope can instantiate if a
     // transitive service needs it; IAgentTaskService itself does not.
-    const modelCatalog: IModelCatalog = {
+    modelCatalog = {
       _serviceBrand: undefined,
       get: () => {
         throw new Error('modelCatalog.get not exercised in this test');
@@ -77,16 +83,23 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
         throw new Error('modelCatalog.setDefaultModel not exercised in this test');
       },
     };
+    await boot();
+  });
+
+  async function boot(remoteSessionId?: string): Promise<void> {
     server = await startServer({
       hostIdentity: TEST_HOST_IDENTITY,
       host: '127.0.0.1',
       port: 0,
-      homeDir: home,
+      homeDir: home as string,
       logLevel: 'silent',
       seeds: [[IModelCatalog, modelCatalog]],
+      remoteAccess:
+        remoteSessionId === undefined ? undefined : { sessionId: remoteSessionId },
+      insecureNoTls: remoteSessionId === undefined ? undefined : true,
     });
     base = `http://127.0.0.1:${server.port}`;
-  });
+  }
 
   afterEach(async () => {
     if (server !== undefined) {
@@ -143,18 +156,23 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 
-  function fakeTask(kind: 'process' | 'agent' | 'question', output?: string): AgentTask {
+  function fakeTask(
+    kind: 'process' | 'agent' | 'question',
+    output?: string,
+    command = 'echo hi',
+    description = `fake ${kind} task`,
+  ): AgentTask {
     return {
       idPrefix: 'test',
       kind,
-      description: `fake ${kind} task`,
+      description,
       start: (sink) => {
         if (output !== undefined) sink.appendOutput(output);
       },
       toInfo: (base) => {
         switch (kind) {
           case 'process':
-            return { ...base, kind: 'process', command: 'echo hi', pid: 0, exitCode: null };
+            return { ...base, kind: 'process', command, pid: 0, exitCode: null };
           case 'agent':
             return {
               ...base,
@@ -171,6 +189,41 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
       },
     };
   }
+
+  it('keeps only remote status and stop-control task fields', () => {
+    expect(
+      projectRemoteTask({
+        id: 'task-remote',
+        session_id: 'session-remote',
+        kind: 'subagent',
+        description: 'remote task',
+        status: 'running',
+        command: 'cat /srv/remote-private/task.log',
+        created_at: '2026-01-01T00:00:00.000Z',
+        started_at: '2026-01-01T00:00:01.000Z',
+        output_preview: 'private output',
+        output_bytes: 14,
+        model: 'provider/private-model',
+        thinking_effort: 'high',
+        agent_id: 'sub-1',
+        subagent_type: 'explore',
+        parent_tool_call_id: 'call-parent',
+        run_in_background: true,
+      }),
+    ).toEqual({
+      id: 'task-remote',
+      session_id: 'session-remote',
+      kind: 'subagent',
+      description: 'remote task',
+      status: 'running',
+      created_at: '2026-01-01T00:00:00.000Z',
+      started_at: '2026-01-01T00:00:01.000Z',
+      agent_id: 'sub-1',
+      subagent_type: 'explore',
+      parent_tool_call_id: 'call-parent',
+      run_in_background: true,
+    });
+  });
 
   it('returns an empty list when the session has no main agent (gap G10)', async () => {
     const id = await createSession();
@@ -191,7 +244,7 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
     const id = await createSession();
     const tasks = await mainAgentTasks(id);
     const processId = tasks.registerTask(fakeTask('process'));
-    const agentId = tasks.registerTask(fakeTask('agent'));
+    const agentId = tasks.registerTask(fakeTask('agent'), { detached: true });
     const questionId = tasks.registerTask(fakeTask('question'));
     await flush();
 
@@ -221,6 +274,7 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
       agent_id: 'sub-1',
       subagent_type: 'explore',
       parent_tool_call_id: 'call-parent-1',
+      run_in_background: true,
     });
     expect(byId.get(agentId)?.command).toBeUndefined();
 
@@ -236,6 +290,60 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
     expect(byId.get(questionId)?.subagent_type).toBeUndefined();
     expect(byId.get(processId)?.parent_tool_call_id).toBeUndefined();
     expect(byId.get(questionId)?.parent_tool_call_id).toBeUndefined();
+    expect(byId.get(processId)?.run_in_background).toBeUndefined();
+    expect(byId.get(questionId)?.run_in_background).toBeUndefined();
+  });
+
+  it('projects remote task lists to status and stop-control fields', async () => {
+    const id = await createSession();
+
+    await server!.close();
+    server = undefined;
+    await boot(id);
+    const resumed = await resumeSessionById(server!.core.accessor, id);
+    if (resumed === undefined) throw new Error(`session ${id} failed to resume`);
+
+    const tasks = await mainAgentTasks(id);
+    const processId = tasks.registerTask(
+      fakeTask(
+        'process',
+        'private output from /srv/remote-private/task.log',
+        'cat /srv/remote-private/task.log',
+        'Running: cat /srv/remote-private/task.log TASK_DESCRIPTION_SECRET',
+      ),
+    );
+    const agentId = tasks.registerTask(fakeTask('agent'), { detached: true });
+    await flush();
+
+    const { body } = await getJson<ListWire>(`/api/v1/sessions/${id}/tasks`);
+    expect(body.code).toBe(0);
+    const byId = new Map(body.data.items.map((task) => [task.id, task]));
+    expect(byId.get(processId)).toMatchObject({
+      id: processId,
+      session_id: id,
+      kind: 'bash',
+      description: 'Running shell task',
+      status: 'running',
+      created_at: expect.any(String),
+      started_at: expect.any(String),
+    });
+    expect(byId.get(agentId)).toMatchObject({
+      id: agentId,
+      session_id: id,
+      kind: 'subagent',
+      status: 'running',
+      agent_id: 'sub-1',
+      subagent_type: 'explore',
+      parent_tool_call_id: 'call-parent-1',
+      run_in_background: true,
+    });
+    const serialized = JSON.stringify(body.data);
+    expect(serialized).not.toContain('command');
+    expect(serialized).not.toContain('output_preview');
+    expect(serialized).not.toContain('output_bytes');
+    expect(serialized).not.toContain('/srv/remote-private');
+    expect(serialized).not.toContain('TASK_DESCRIPTION_SECRET');
+    expect(serialized).not.toContain('pid');
   });
 
   it('filters the list by wire status', async () => {

@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import type { TurnProgressSnapshot } from '../../lib/turnProgress';
 import ToolCall from './ToolCall.vue';
 import { toolStackKey, toolStackPosition } from '../chatTurnRendering';
 import type { ToolStackItem } from '../chatTurnRendering';
@@ -14,8 +15,9 @@ const props = withDefaults(
     tools: ToolStackItem[];
     mobile?: boolean;
     toolDiffPanel?: boolean;
+    activeTurnProgress?: { toolCallId: string; progress: TurnProgressSnapshot } | null;
   }>(),
-  { mobile: false, toolDiffPanel: false },
+  { mobile: false, toolDiffPanel: false, activeTurnProgress: null },
 );
 
 const emit = defineEmits<{
@@ -79,6 +81,7 @@ function onHeadClick(): void {
           :mobile="mobile"
           :stack-position="toolStackPosition(si, tools.length)"
           :tool-diff-panel="toolDiffPanel"
+          :turn-progress="activeTurnProgress?.toolCallId === item.tool.id ? activeTurnProgress.progress : null"
           @open-media="emit('openMedia', $event)"
           @open-file="emit('openFile', $event)"
           @open-tool-diff="emit('openToolDiff', $event)"

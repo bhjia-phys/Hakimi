@@ -17,6 +17,8 @@ export default {
   emptyTodo: 'No todos yet',
   openTab: 'Open the tasks tab',
   openDetail: 'Open',
+  role: 'Role',
+  model: 'Model',
   collapse: 'Collapse',
   expand: 'Expand',
 } as const;
