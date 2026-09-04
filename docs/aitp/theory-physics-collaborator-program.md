@@ -849,8 +849,8 @@ C1–C5 的审查是必做项，但代码实现不是无条件必做项。只有
 | G4 人类指导与蒸馏 | 进行中；六类 provenance 保存链与一次 handoff 回归通过，修复了 saved Entry 与 candidate 的身份漂移漏检 | 四类真实正反情景 + touched Entry 路径；结构测试不证明人类内容已经验证，卡片不足条件时不伪造 trial |
 | G5 计算 operator | 进行中；Theory Physics 0.2.0 已加入一个既有 agent-profile 扩展点的 calculation-operator，安装/发现路径已测试 | 真实 ABACUS/LibRPA 工程步骤及 failure/workaround 验收，不以 profile/loader 测试声称科研可用 |
 | G6 阶段综合 | 进行中；已有证据的 bounded Note Action 路径及冷恢复已定向测试，真实综合内容未验收 | 使用已有 Note contract，生成可回溯的阶段总结，区分论文材料与发表 |
-| G7 真实课题运行 | 未执行新科学里程碑 | 安装交付版本，在目标课题完成 §19.2 的真实测试并修复相关关键缺陷 |
-| C1–C5 | 待需求审查 | 实现必须有对应 trigger；无 trigger 记录理由，不扩大固定串行交付 |
+| G7 真实课题运行 | 已完成安装版自然只读调查与 cold restore 复测，修复两个实际启动缺陷；未执行新科学里程碑 | 在确认的 Topic/workstream 下执行有限科学检验和必要记录，继续 §19.2 的其他真实情景 |
+| C1–C5 | 本次需求审查 no-op，依据见 §19.13；不宣布未来能力可用 | G7 后续若出现新自然需求再审查，不凭重复回合或已有 roadmap 扩大范围 |
 
 ### 19.2 真实课题验收办法
 
@@ -1010,3 +1010,23 @@ core/CLI typecheck、core import guard（1,297 files）、四个改动代码文�
 最小修复复用 `ISessionSkillCatalog.ready` 和既有 abortable helper：发现前等待 catalog，退出/reset 立即取消等待，等待后复核 lifecycle generation；不会自动 retry、增加 check、放宽 contract 或新建服务。两个 red 用例分别复现过早 degraded 和忽略 catalog 初始化失败；另一个测试覆盖取消旧 wait、无 Python spawn、后续新 probe 独立成功。Research service 文件 507 项通过；core typecheck/import guard 通过，原有 86 条 lint warning 保留，没有修改无关代码。初版测试误用了当前 TS lib 不含的 Promise.withResolvers，已改为现有 Promise/deferred 写法，未改编译配置。
 
 最终定向验证为 core bootstrap/Research service 共 521 项通过，AITP 官方 contract/atomic-save 21 项通过；lint JSON 与 diff hunks 对照确认 86 条 warning 均不在改动行。docs build、changeset status 与 diff check 通过。修复版尚待交付与真实 cold-restore 复测。G7 仍未完成新科学 milestone；Goal/Plan、受归属保护的 Entry/Note、operator 和其他真实情景验收继续保留。下一唯一最小 Action：安装本次修复并复测同一会话 cold restore，之后执行预声明的低成本 near-HS 诊断，而不是重复只读调查。
+
+### 19.13 冷恢复实测通过与当前条件性需求审查
+
+`d8178d5a8` 已推送并从干净 detached worktree 单 worker 构建、pack、安装；安装 main bundle、search worker 与 Web provenance 逐字节匹配，doctor 通过。CLI 仍显示 0.21.0（未消费 changesets），已有运行中的用户进程没有被终止或假装热更新。原 Hakimi 的 156 个 dirty paths、AITP 的 20 个 dirty paths 均保留。
+
+`native-readiness-r6` 直接恢复 r4/r5 的同一个真实会话，使用同一条临时选择的已配置模型路径：51 秒内完成 GetResearchStatus、Skill、aitp_show 三次工具调用。mode ready、health ok、AITP 0.9.0/contract 0.2；上轮 degraded alert 自动变为 cleared，当前 attention 为空，已完成 Action 及其下一项诊断建议保留，Program 仍是正确 Heisenberg Topic。未手改 session state、Board、科研数据或 canonical ledger。首次入口目录错误和本次 cold-restore 时序缺陷在对应实际路径上均已修复；这不证明所有恢复情景或总体科研能力已验收。
+
+本次没有新的科研计算、验证结果、Entry、Note、card 或 trial。自然模型报告的候选诊断不得升级为已验证结果。下一科学 milestone 仍限定为低成本 near-HS convention/primitive-operator/bridge 诊断，不宣布 L=7/8 witness 已认证；记录前须明确 Goal 是现有 Program 的 milestone，并把验收 Line 显式绑定到现有 `symmetry-operator-search`。已请求一次人工语义确认；没有用 auto 权限、模型猜测或同名 slug 冒充确认。
+
+当前 C1–C5 审查如下。这里关闭的是本次需求审查，不是新增功能；后续 G7 的新证据可以重新触发有界评审。
+
+| 项目 | 本次证据判断 | 处置 |
+|---|---|---|
+| C1 H6b recovery coordinator | 新故障发生在 contract discovery，尚未进入 checkpoint commit，更没有 committed 后丢失 Skill handoff 的复现 | no-op；现有 service 修复即可，H6b 仍 planned/unavailable |
+| C2 更多 operator presets | 当前只有同一个课题的连续调查与启动复测，没有分别达到两次独立需求；重复模型回合不计独立方法经验 | no-op；只保留已交付的薄 calculation-operator，真实 G5 操作验收仍待完成 |
+| C3 论文 workflow | 本轮无新 validated stage report，课题 L=7/8 仍 unresolved，没有本轮论文撰写/发布决定 | no-op；G6 的阶段 Note 不等于正式论文 workflow，更不授权署名或发布 |
+| C4 并行科学 loops | 当前只验证串行读侧与恢复，尚未通过完整串行科学闭环，也无并行假设节省时间的实测 | no-op；仍 planned/unavailable，不以子工具批次当多 loop |
+| C5 AITP M2/M3/M4、新 surface | 已发现的入口/恢复故障都在 Hakimi；现有 AITP contract 足够修复，没有新增协议的自然需求与单独授权 | no-op；不改 AITP schema/CLI/human semantics，不启动未来阶段 |
+
+总 Goal 保持 active，G1–G7 行为验收没有整体关闭。接下来的唯一最小 Action 是在上述归属确认后，使用安装版 Hakimi 做一个预声明的实际小检验及必要 evidence 记录；若未确认，不开始需要该归属的记录或自动 Goal continuation，不重复只读调查消耗回合。
