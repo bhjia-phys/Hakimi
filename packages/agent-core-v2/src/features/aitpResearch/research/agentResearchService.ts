@@ -225,6 +225,7 @@ import {
   allowedNextPhases,
   isRecoveredLiveAction,
   isLiveForegroundAction,
+  isLiveResearchRun,
   isPhaseTransitionValid,
   isUnresolvedHumanGate,
   researchActionOwnedPhase,
@@ -2438,6 +2439,18 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     input: PlanActionInput,
     state: ResearchWorkingState,
   ): { readonly lineSlug?: string } {
+    if (state.pendingCheckpoint !== null) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${state.pendingCheckpoint.checkpointId} is pending; finish its persistence or safely discard a historical proposal before beginning another action.`,
+      );
+    }
+    if (isLiveResearchRun(state.currentRun) || isLiveResearchRun(state.currentAction?.run)) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        'An unresolved run is still attached to the foreground work. Inspect the current action/run before replacement; a concluded action does not prove the run has finished.',
+      );
+    }
     if (!PLAN_ACTION_PHASES.includes(state.phase)) {
       const allowed = allowedNextPhases(state.phase).join(', ');
       throw new AitpResearchError(
@@ -4608,14 +4621,6 @@ function checkpointQuestionRevisionMatches(
 ): boolean {
   if (checkpoint.questionId === undefined || checkpoint.questionRevision === undefined) return true;
   return state.questions[checkpoint.questionId]?.revision === checkpoint.questionRevision;
-}
-
-function isLiveResearchRun(
-  run: ResearchRunStateRecord | null | undefined,
-): run is ResearchRunStateRecord {
-  if (run === null || run === undefined || run.terminalState !== undefined) return false;
-  if (['completed', 'failed', 'cancelled'].includes(run.schedulerState)) return false;
-  return run.stage !== 'completed' && run.stage !== 'failed';
 }
 
 function assertDurableCommitProvenance(

@@ -4,8 +4,8 @@
  *
  * Single source of truth for the valid Research phase transitions plus the
  * "at most one unresolved human gate" and "at most one foreground current
- * action" predicates. Both the wire ops (replay-safe no-op on violation) and
- * the live service validation (throw a coded error on violation) consult this
+ * action" and unresolved-run predicates. Both the wire ops (replay-safe no-op
+ * on violation) and live service validation (coded errors) consult this
  * authority, so the phase policy can never drift between replay and live
  * paths. Protocol-independent: it depends only on the `research` types, never
  * on AITP. No DI, no mutable state — pure tables and predicates.
@@ -16,6 +16,8 @@ import type {
   AwaitingHumanExitPhase,
   ResearchActionStatus,
   ResearchPhase,
+  ResearchRunStage,
+  ResearchSchedulerState,
 } from '../types';
 
 export const RESEARCH_ACTION_RECOVERY_PREFIX = '[research-action-recovery]';
@@ -40,7 +42,7 @@ export const RESEARCH_PHASE_TRANSITIONS: Readonly<Record<ResearchPhase, readonly
   action_planned: ['action_executing', 'idle', 'awaiting_human'],
   action_executing: ['evaluating', 'idle', 'awaiting_human'],
   evaluating: ['state_updated', 'idle', 'awaiting_human'],
-  state_updated: ['checkpoint_pending', 'gap_analysis', 'idle', 'awaiting_human'],
+  state_updated: ['checkpoint_pending', 'gap_analysis', 'action_planned', 'idle', 'awaiting_human'],
   checkpoint_pending: ['idle', 'gap_analysis', 'awaiting_human'],
   awaiting_human: AWAITING_HUMAN_EXIT_PHASES,
 };
@@ -50,6 +52,7 @@ export const PLAN_ACTION_PHASES: readonly ResearchPhase[] = [
   'idle',
   'orienting',
   'gap_analysis',
+  'state_updated',
   'action_planned',
   'awaiting_human',
 ];
@@ -78,6 +81,16 @@ export function isLiveForegroundAction(
     action !== undefined &&
     (action.status === 'planned' || action.status === 'in_progress')
   );
+}
+
+export function isLiveResearchRun<TRun extends {
+  readonly terminalState?: 'completed' | 'failed' | 'cancelled';
+  readonly schedulerState: ResearchSchedulerState;
+  readonly stage: ResearchRunStage;
+}>(run: TRun | null | undefined): run is TRun {
+  if (run === null || run === undefined || run.terminalState !== undefined) return false;
+  if (['completed', 'failed', 'cancelled'].includes(run.schedulerState)) return false;
+  return run.stage !== 'completed' && run.stage !== 'failed';
 }
 
 /** The phase owned by a live foreground action, if one exists. */

@@ -118,6 +118,7 @@ import {
   PLAN_ACTION_PHASES,
   RESEARCH_ACTION_RECOVERY_PREFIX,
   isLiveForegroundAction,
+  isLiveResearchRun,
   isPhaseTransitionValid,
   isUnresolvedHumanGate,
   researchActionOwnedPhase,
@@ -1210,6 +1211,8 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
   }),
   apply: (s, p) => {
     if (!PLAN_ACTION_PHASES.includes(s.current.phase)) return s;
+    if (s.current.pendingCheckpoint !== null) return s;
+    if (isLiveResearchRun(s.current.currentRun) || isLiveResearchRun(s.current.currentAction?.run)) return s;
     if (isLiveForegroundAction(s.current.currentAction)) return s;
     if (isUnresolvedHumanGate(s.current.humanGate)) return s;
     const question = p.questionId === undefined ? undefined : s.current.questions[p.questionId];
@@ -1273,6 +1276,8 @@ export const researchBeginAction = ResearchModel.defineOp('research.begin_action
   }),
   apply: (s, p) => {
     if (!PLAN_ACTION_PHASES.includes(s.current.phase)) return s;
+    if (s.current.pendingCheckpoint !== null) return s;
+    if (isLiveResearchRun(s.current.currentRun) || isLiveResearchRun(s.current.currentAction?.run)) return s;
     if (isLiveForegroundAction(s.current.currentAction)) return s;
     if (isUnresolvedHumanGate(s.current.humanGate)) return s;
     const question = p.questionId === undefined ? undefined : s.current.questions[p.questionId];

@@ -8273,6 +8273,86 @@ describe('Research Loop scientific state', () => {
     });
   });
 
+  it.each(['completed', 'abandoned'] as const)(
+    'begins the next action directly after a %s no-delta conclusion', async (status) => {
+      const modeSvc = await buildRealModeService();
+      const svc = await buildRealResearchService(modeSvc);
+      await modeSvc.enter({ actor: 'user', lineSlug: 'main' });
+      svc.createLine({ slug: 'main', title: 'Main' });
+      const question = svc.createQuestion({ lineSlug: 'main', wording: 'Which explanation survives?' });
+      const input = {
+        questionId: question.id, kind: 'derivation' as const,
+        purpose: 'Check one limiting case.', stopCondition: 'The limiting case is classified.',
+      };
+      const previous = svc.planAndStartAction(input);
+      svc.concludeAction({
+        actionId: previous.actionId, status,
+        progress: {
+          headline: 'Existing limiting case checked', motivation: 'Choose the next discriminating test.',
+          workPerformed: 'Revisited the recorded limiting case.', result: 'No new result.',
+          mainlineImpact: 'A different candidate needs a bounded check.',
+        },
+        durability: { status: 'no_durable_delta', rationale: 'Only existing evidence was reviewed.' },
+      });
+      const before = svc.getSnapshot();
+      expect(before.phase).toBe('state_updated');
+      expect(() => svc.planAndStartAction({
+        ...input, planningLevel: 'planned', actionPlanId: 'missing-plan', actionPlanRevision: 1,
+      })).toThrow();
+      expect(svc.getSnapshot()).toEqual(before);
+
+      const next = svc.planAndStartAction({ ...input, purpose: 'Check the next candidate.' });
+
+      expect(next.actionId).not.toBe(previous.actionId);
+      expect(svc.getSnapshot()).toMatchObject({
+        phase: 'action_executing',
+        currentAction: { actionId: next.actionId, questionId: question.id, status: 'in_progress' },
+        latestProgress: before.latestProgress,
+      });
+      expect(wire.getModel(ResearchModel).current.revision).toBe(before.revision + 1);
+      expect(svc.getPendingCheckpoint()).toBeNull();
+    },
+  );
+
+  it('keeps explicit approval when beginning after a conclusion boundary', async () => {
+    const modeSvc = await buildRealModeService();
+    const svc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    Object.assign(wire.getModel(ResearchModel).current, { phase: 'state_updated' });
+    const action = svc.planAndStartAction({
+      kind: 'experiment', purpose: 'Run a human-reviewed test.', stopCondition: 'One result.',
+      requiresHumanApproval: true,
+    });
+    expect(action.status).toBe('planned');
+    expect(svc.getSnapshot()).toMatchObject({
+      phase: 'awaiting_human', humanGate: { actionId: action.actionId, kind: 'approval' },
+    });
+    expect(svc.getSnapshot().humanGate?.resolvedAt).toBeUndefined();
+  });
+
+  it.each(['pending', 'gate', 'run', 'action-run'] as const)(
+    'does not replace a concluded action with an unresolved %s', async (blocker) => {
+      const modeSvc = await buildRealModeService();
+      const svc = await buildRealResearchService(modeSvc);
+      await modeSvc.enter({ actor: 'user' });
+      const run = { jobId: 'job-pending', schedulerState: 'running', stage: 'running', updatedAt: 1 };
+      Object.assign(wire.getModel(ResearchModel).current, {
+        phase: 'state_updated',
+        pendingCheckpoint: blocker === 'pending' ? { checkpointId: 'cp-pending' } : null,
+        humanGate: blocker === 'gate' ? { gateId: 'human-pending', kind: 'approval' } : null,
+        currentRun: blocker === 'run' ? run : null,
+        currentAction: blocker === 'action-run'
+          ? { actionId: 'old-action', status: 'completed', run } : null,
+      });
+      const before = structuredClone(wire.getModel(ResearchModel).current);
+      for (const begin of [false, true]) {
+        const input = { kind: 'derivation' as const, purpose: 'Next test', stopCondition: 'One result.' };
+        expect(() => begin ? svc.planAndStartAction(input) : svc.planAction(input)).toThrow();
+        expect(wire.getModel(ResearchModel).current).toEqual(before);
+      }
+    },
+  );
+
   it('planAction rejects missing question/line', async () => {
     const modeSvc = await buildRealModeService();
     const svc = await buildRealResearchService(modeSvc);
@@ -8724,6 +8804,12 @@ describe('Research Loop scientific state', () => {
       },
     });
     expect(conclusion.commitCandidate?.progressRecordedAt).toBe(conclusion.progress.recordedAt);
+    expect(svc.getSnapshot().phase).toBe('state_updated');
+    expect(svc.planAndStartAction({
+      lineSlug: 'main', kind: 'derivation', purpose: 'Interpret the next limiting case.',
+      stopCondition: 'The next bounded test has a classified outcome.',
+    }).status).toBe('in_progress');
+    expect(svc.getCommittedCursor()?.entryId).toBe('entry-durable');
   });
 
   it('rejects inconsistent candidate provenance without concluding the action', async () => {

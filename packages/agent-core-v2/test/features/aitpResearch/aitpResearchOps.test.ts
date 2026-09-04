@@ -1030,6 +1030,52 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(state.focus?.questionId).toBe('q1');
     });
 
+    it.each(['plan', 'begin'] as const)('%s accepts a settled conclusion without an extra phase op', (kind) => {
+      wire.dispatch(researchBeginAction({
+        actionId: 'previous', kind: 'derivation', purpose: 'Check a limiting case.',
+        expectedEvidence: [], stopCondition: 'Classify the check.', allowedToolKinds: [],
+        requiresHumanApproval: false, createdAt: 100,
+      }));
+      wire.dispatch(researchCompleteAction({ actionId: 'previous', status: 'completed', completedAt: 200 }));
+      wire.dispatch(researchSetPhase({ phase: 'state_updated', changedAt: 300 }));
+      const before = wire.getModel(ResearchModel).current;
+      const payload = {
+        actionId: 'next', kind: 'derivation' as const, purpose: 'Check the next limiting case.',
+        expectedEvidence: [], stopCondition: 'Classify the next check.', allowedToolKinds: [],
+        requiresHumanApproval: false as const, createdAt: 400,
+      };
+      wire.dispatch(kind === 'plan' ? researchPlanAction(payload) : researchBeginAction(payload));
+      expect(wire.getModel(ResearchModel).current).toMatchObject({
+        phase: kind === 'plan' ? 'action_planned' : 'action_executing',
+        revision: before.revision + 1,
+        currentAction: { actionId: 'next', status: kind === 'plan' ? 'planned' : 'in_progress' },
+      });
+    });
+
+    it.each(['pending', 'gate', 'run', 'action-run', 'action'] as const)(
+      'plan/begin preserves a restored conclusion boundary blocked by %s', (blocker) => {
+        const run = { jobId: 'job-pending', schedulerState: 'unknown', stage: 'unknown', updatedAt: 1 };
+        Object.assign(wire.getModel(ResearchModel).current, {
+          phase: 'state_updated',
+          pendingCheckpoint: blocker === 'pending' ? { checkpointId: 'cp-pending' } : null,
+          humanGate: blocker === 'gate' ? { gateId: 'human-pending', kind: 'approval' } : null,
+          currentRun: blocker === 'run' ? run : null,
+          currentAction: blocker === 'action-run' ? { actionId: 'old-action', status: 'completed', run }
+            : blocker === 'action' ? { actionId: 'live-action', status: 'in_progress' } : null,
+        });
+        const before = wire.getModel(ResearchModel).current;
+        const payload = {
+          actionId: 'next', kind: 'derivation' as const, purpose: 'Check the next limiting case.',
+          expectedEvidence: [], stopCondition: 'Classify the next check.', allowedToolKinds: [],
+          requiresHumanApproval: false as const, createdAt: 400,
+        };
+        wire.dispatch(researchPlanAction(payload));
+        expect(wire.getModel(ResearchModel).current).toBe(before);
+        wire.dispatch(researchBeginAction(payload));
+        expect(wire.getModel(ResearchModel).current).toBe(before);
+      },
+    );
+
     it('planAction is a no-op from an invalid phase', () => {
       wire.dispatch(researchSetPhase({ phase: 'gap_analysis', changedAt: 100 }));
       wire.dispatch(researchPlanAction({

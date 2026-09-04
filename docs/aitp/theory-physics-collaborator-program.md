@@ -1044,3 +1044,15 @@ core/CLI typecheck、core import guard（1,297 files）、四个改动代码文�
 两个 tool-overlay 用例和 inactive/ready child restore/undo 两个用例先在旧实现上失败，修复后通过；Research service/policy 共 547 项通过，core typecheck/import guard 通过，四个相关文件 type-aware lint 零 error，87 条既有 warning 均不在修改行；AITP 官方 contract/atomic-save 21 项通过。私有提示、原始工具结果与失败状态保留在 gitignored `.tmp/research-acceptance-20260905/operator-failure-r1/` 和独立临时测试 store，不提交私人会话。
 
 安装版修复 replay 尚待进行；本次不能关闭 G5/G4/G7。下一唯一最小 Action：交付修复后，在同一临时会话恢复原 pending failure，验证正式 review/prepare/save/commit，再用一次新的有归属子任务验证 adapter 不再失效；成功持久化仍不等于完成真实 calculation replay 或 Heisenberg 科学里程碑。
+
+### 19.15 原 checkpoint 恢复通过，下一动作衔接缺陷复现
+
+§19.14 修复已作为 `4d036b633` 提交、推送至当前 feature branch，并从该 commit 的干净 worktree 构建安装；CLI 仍显示 0.21.0，changeset 未消费，不能冒称发布新版本。安装包 main 字节与干净构建一致。Theory Physics 0.2.0 和 AITP 0.9.0/contract-0.2 未被本次安装修改。
+
+同一临时测试会话的 `operator-recovery-r2` 使用真实配置模型，10 次工具调用、约 2 分 58 秒，成功完成 GetResearchStatus → ReviewResearchEvidence → prepare → Read/Edit draft → save → show → scoped check → CommitResearchCheckpoint → status。原 pending candidate 成为一条 agent-authority failure Entry，pending 清除，正式 CLI 独立核验一个 Entry、零 Note，当前 scope 零 errors/warnings。原 operator 的 NO-GO 没有被改写成科学成功；旧回合缺少 review 的事实仍有说明。本次真实 artifact pin 由测试控制方补给模型，因此不计作 operator 自动 artifact pinning 的验收；没有重复 failure、card、trial 或 human decision。
+
+随后 `operator-child-replay-r3` 原计划验证新 child 不再 reset adapter，但在委派前就复现另一个问题：checkpoint 已提交，phase 仍为 `state_updated`，Begin 连续失败；改 Focus 无效，重复 RecordResearchProgress 被正确拒绝，改 Question 的 next action 也无法解除。控制方在约两分钟、8 个工具调用后中断自有测试进程（exit 130），保留原始记录，没有继续无意义重试，也没有启动 child 或新计算。因此 r2 证明恢复持久化成功，不足以证明修复后正常 child 委派已实测通过。
+
+最小修复让已有 plan/begin 接受一个已收束的 `state_updated` 边界；service 与 wire reducer 都阻止未决 checkpoint、live action/run 或 human gate 被替换，计划与 scope 校验仍在唯一 Begin 路径中先完成。普通 Begin 仍一次原子 dispatch，不额外写 phase/progress、不修改旧结论、不自动放弃或批准。无 delta、已提交 checkpoint、显式 approval、失败零 mutation 与 replay 用例中六个正向用例先在旧实现失败；修复后 service/ops/policy 共 656 项通过，typecheck/import guard 通过。
+
+本修复安装版复测尚待完成。总 Goal 保持 active：G5 数值计算 replay、G7 Heisenberg 新科学里程碑，以及相关真实场景均不能由上述临时失败诊断替代。下一唯一最小 Action：交付本次动作衔接修复，重放同一临时会话的 bounded child 回读，验证 Begin、委派后 adapter、review/show 和 no-delta Conclude，确认没有新增 canonical 记录。
