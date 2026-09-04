@@ -5,7 +5,10 @@ through review and official prepare/save/show/check/commit, but then exposed
 a settled-action deadlock: `BeginResearchAction` rejected `state_updated`
 even after commit. Explicit plan/begin now accepts that boundary while both
 live validation and replay retain pending-checkpoint, live-action/run and
-human-gate guards. No AITP schema or decision semantics change; real installed
+human-gate guards. Installed replay on `810f3ced0` now passes next Begin,
+one bounded foreground operator read, parent adapter readiness, formal
+review/canonical show and no-delta conclusion with zero new canonical writes.
+No AITP schema or decision semantics change; real installed
 replay evidence and outstanding scientific acceptance are in §19.15 of the
 collaborator program. The protected AITP checkout remains untouched.
 

@@ -847,7 +847,7 @@ C1–C5 的审查是必做项，但代码实现不是无条件必做项。只有
 | G2 Goal/Plan 协作 | 进行中；local-only reviewed Action Plan 路径已修复并测试 | 继续无 Goal 探索、按需计划、外部等待和无进展重规划的真实情景验收 |
 | G3 定向检索 | 进行中；Note/marker 回读、post-commit 来源归属及 bounded Note Action 恢复已定向测试，整体模型行为未验收 | 按问题和当前 Line 检索；真实课题验收从所选证据重新 prepare，而不是复活旧 attention 权限 |
 | G4 人类指导与蒸馏 | 进行中；六类 provenance 保存链与一次 handoff 回归通过，修复了 saved Entry 与 candidate 的身份漂移漏检 | 四类真实正反情景 + touched Entry 路径；结构测试不证明人类内容已经验证，卡片不足条件时不伪造 trial |
-| G5 计算 operator | 进行中；0.2.0 安装版实际委派/只读失败诊断已执行，发现工具 overlay 缺项和 child restore 重置共享 adapter，见 §19.14 | 交付修复并重放 review/persistence；计算 replay 与 failure/workaround 验收仍未闭合 |
+| G5 计算 operator | 进行中；0.2.0 的真实失败诊断、原 checkpoint 恢复与修复后的 bounded child 回读均已执行；三项实际 lifecycle 缺陷已修复，见 §19.14–19.15 | 正常计算 replay 与 failure/workaround 验收仍未闭合，不以回读或 harness 成功替代 |
 | G6 阶段综合 | 进行中；已有证据的 bounded Note Action 路径及冷恢复已定向测试，真实综合内容未验收 | 使用已有 Note contract，生成可回溯的阶段总结，区分论文材料与发表 |
 | G7 真实课题运行 | 已完成安装版自然只读调查与 cold restore 复测，修复两个实际启动缺陷；未执行新科学里程碑 | 在确认的 Topic/workstream 下执行有限科学检验和必要记录，继续 §19.2 的其他真实情景 |
 | C1–C5 | 本次需求审查 no-op，依据见 §19.13；不宣布未来能力可用 | G7 后续若出现新自然需求再审查，不凭重复回合或已有 roadmap 扩大范围 |
@@ -1056,3 +1056,9 @@ core/CLI typecheck、core import guard（1,297 files）、四个改动代码文�
 最小修复让已有 plan/begin 接受一个已收束的 `state_updated` 边界；service 与 wire reducer 都阻止未决 checkpoint、live action/run 或 human gate 被替换，计划与 scope 校验仍在唯一 Begin 路径中先完成。普通 Begin 仍一次原子 dispatch，不额外写 phase/progress、不修改旧结论、不自动放弃或批准。无 delta、已提交 checkpoint、显式 approval、失败零 mutation 与 replay 用例中六个正向用例先在旧实现失败；修复后 service/ops/policy 共 656 项通过，typecheck/import guard 通过。
 
 本修复安装版复测尚待完成。总 Goal 保持 active：G5 数值计算 replay、G7 Heisenberg 新科学里程碑，以及相关真实场景均不能由上述临时失败诊断替代。下一唯一最小 Action：交付本次动作衔接修复，重放同一临时会话的 bounded child 回读，验证 Begin、委派后 adapter、review/show 和 no-delta Conclude，确认没有新增 canonical 记录。
+
+上述动作衔接修复已于同日提交并推送为 `810f3ced0`，从干净 worktree 串行构建、打包并本地安装。最终定向 tests 为 662 项，AITP 官方 contract/atomic-save 21 项通过；docs build、typecheck、import guard 和 diff check 通过，type-aware lint 的 87 条既有 warning 均未落在修改行。系统 Python 缺 pytest，随后使用 AITP 既有 `.venv/bin/python -m pytest` 正常完成，没有安装额外依赖或改环境。安装的 main 与构建产物同为 SHA-256 `d7754430e76c8cca63402c53065954bf1851b49a1eeaa305f6ca2e5b54ee1012`；Web provenance 521 files 验证通过，doctor 通过，CLI 仍为 0.21.0。没有 OOM；保留已有 node-pty install-script 被阻止、TSDoc/TypeScript 版本和 Web chunk warnings，不改配置掩盖它们。
+
+`operator-child-replay-r4` 复用 r3 的同一提示和同一会话，真实模型用 8 次主工具调用、约 2 分 50 秒、exit 0 完成：status → 激活既有 Question 的 workflow（不改归属）→ Begin → 一个前台 calculation-operator → status → ReviewResearchEvidence → aitp_show → Conclude。直接核对 main/child wire：主工具零错误，一个原子 begin、一次 complete/progress；child 只有一次指定文件 Read，零 Research mutation。委派前后 mode 与 aitpHealth 都 ready；没有额外 SetPhase、Focus 修改或 RecordResearchProgress 工具调用。临时 store 仍恰好一条旧 failure Entry、零 Note，旧 Entry hash 不变，未产生 pending candidate、marker、card、trial 或 human decision。这关闭了本次 next-Begin 死锁与 child-reset 的安装版复现，不等于完成正常 ABACUS/LibRPA 数值 replay，也不证明更强科研能力或 OS isolation。
+
+总 Goal 仍 active。下一真实课题 Action 仍为已提出的有限 near-HS convention/primitive-spin/bridge 诊断；正式 Goal–Program 与验收 Line→`symmetry-operator-search` 的语义确认尚未收到，不以自动 continuation 冒充。原始 Hakimi HEAD `892733a005` 的 156 个 dirty paths、AITP HEAD `eae1bce5eb` 的 20 个 dirty paths 均保留，真实 Heisenberg/GW 科研文件与 ledger 没有被本轮测试修改。
