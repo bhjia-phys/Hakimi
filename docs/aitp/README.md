@@ -121,6 +121,7 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   [`method-distillation-orchestration.md`](method-distillation-orchestration.md)
   （描述仍未实现的 native H6b；S7 的无状态同轮 Skill handoff 不属于该 coordinator）。
 - G1 入口修复：typed 用户回合从 inactive/probing 进入 ready/degraded 后，直接衔接 interactive admission 和一次本地 boundary，不需要第二条用户提示。pause/exit 撤销准入；mode 恢复从不创建或恢复 autonomous Goal lease。沿用现有 mode event 与 step-head injection，没有新 wire schema、额外 AITP 检查或 continuation owner。
+- G7 首次安装版真实运行发现原生 v2 默认使用旧 `.kimi-code` home，而 SDK/安装检查使用 `.hakimi`，造成 AITP contract discovery 失败。已统一为显式 home → `HAKIMI_HOME` → `KIMI_CODE_HOME` → `.hakimi`；没有修改 adapter、AITP CLI/contract 或用户目录内容，也没有把源码显式 home 的成功 probe 当作安装版复测。原运行仅有 provisional read-only Action，不计为科学 milestone；完整证据与复测状态见总体规划 §19.11。
 - 2026-09-05 的 G1 显示修复只改变 Hakimi 投影：紧凑 Board 优先显示科学目标或
   milestone 和当前工作，turn 计数留在 expanded；已分类的历史失败不再占据当前
   Attention，但原始记录和未分类的真实 blocker 保留。无 pending checkpoint 的

@@ -46,6 +46,22 @@ describe('BootstrapService (scoped)', () => {
     host.dispose();
   });
 
+  it('uses one Hakimi root for native session storage and configuration', () => {
+    const host = createScopedTestHost(bootstrapSeed({
+      env: { HAKIMI_HOME: '/hakimi', KIMI_CODE_HOME: '/legacy' },
+      osHomeDir: '/user',
+      clientIdentity: stubClientIdentity,
+    }));
+    try {
+      const svc = host.app.accessor.get(IBootstrapService);
+      expect(svc.homeDir).toBe('/hakimi');
+      expect(svc.configPath).toBe('/hakimi/config.toml');
+      expect(svc.sessionsDir).toBe('/hakimi/sessions');
+    } finally {
+      host.dispose();
+    }
+  });
+
   it('getEnv reads from the seeded env bag', () => {
     const host = createScopedTestHost(
       bootstrapSeed({ env: { FOO: 'bar' }, clientIdentity: stubClientIdentity }),
@@ -58,7 +74,7 @@ describe('BootstrapService (scoped)', () => {
 });
 
 describe('resolveBootstrapOptions', () => {
-  it('prefers explicit homeDir over KIMI_CODE_HOME over osHomeDir', () => {
+  it('preserves explicit and legacy overrides while defaulting to the Hakimi home', () => {
     expect(
       resolveBootstrapOptions({ homeDir: '/a', osHomeDir: '/b', env: {}, clientIdentity: stubClientIdentity })
         .homeDir,
@@ -72,7 +88,7 @@ describe('resolveBootstrapOptions', () => {
     ).toBe('/c');
     expect(
       resolveBootstrapOptions({ osHomeDir: '/b', env: {}, clientIdentity: stubClientIdentity }).homeDir,
-    ).toBe('/b/.kimi-code');
+    ).toBe('/b/.hakimi');
   });
 
   it('passes through an explicit clientIdentity', () => {

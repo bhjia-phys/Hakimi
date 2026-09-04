@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { resolveKimiHome as resolveSdkHome } from '@bhjia-phys/hakimi-sdk';
+import { resolveKimiHome as resolveNativeHome } from '@moonshot-ai/agent-core-v2';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -25,6 +27,17 @@ afterEach(() => {
 });
 
 describe('getDataDir', () => {
+  it.each([
+    {},
+    { HAKIMI_HOME: '/hakimi' },
+    { KIMI_CODE_HOME: '/legacy' },
+    { HAKIMI_HOME: '/hakimi', KIMI_CODE_HOME: '/legacy' },
+  ])('agrees with SDK and native print/session roots for %j', (env) => {
+    Object.assign(process.env, env);
+    expect(resolveNativeHome()).toBe(getDataDir());
+    expect(resolveNativeHome()).toBe(resolveSdkHome());
+  });
+
   it('returns ~/.hakimi when no home env var is set', () => {
     expect(getDataDir()).toBe(join(homedir(), '.hakimi'));
   });

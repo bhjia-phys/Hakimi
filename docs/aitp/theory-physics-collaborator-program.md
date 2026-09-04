@@ -984,3 +984,17 @@ G5 只新增一个 Theory Physics `calculation-operator` agent profile，manifes
 原 Hakimi HEAD `892733a`（156 dirty paths）与 AITP HEAD `eae1bce`（20 dirty paths）本轮未修改；所有新增开发仍在隔离 HEAD `93c5954` 上，尚未 commit/push/重装。Heisenberg 与 GW_librpa 科研文件没有修改。总 Goal active；G4/G5 工程进展不关闭 G4/G5 的真实行为验收，更不关闭 G7。
 
 下一唯一最小 Action：审查并交付当前可测试的隔离版本，以其正式安装包开始真实 operator 计算/失败重放；遇到输出缺陷再做有证据的修复。随后完成 G4 的真实情景、C1–C5 需求审查与 G7 的真实 Heisenberg milestone，不再用扩充 mock 数量代替模型运行。
+
+### 19.11 G7 首次真实运行与启动目录修复
+
+G1–G6 的当前工程切片已作为 `4c242d626` 提交并推送到隔离 feature branch，未合入 main。干净 detached worktree 使用 frozen lockfile、单 package worker 与 3 GiB Node heap 构建、pack、全局安装；安装 CLI 仍显示 0.21.0，main bundle、search worker、Web provenance 与该干净构建逐字节相同。官方 Theory Physics 0.2.0 经 PluginManager 安装，六个受管文件与源文件相同。原 Hakimi/AITP dirty changes 保留，没有提交科研文件。
+
+第一条安装版真实模型提示在指定 Heisenberg 项目只读恢复 L=7/8 near-HS certifier 问题，无 Goal、计算、网络、子 agent 或科研文件写入。5 分 23 秒内完成 23 次工具调用和一个 bounded Action；无归属 Bash 被 executor 拒绝，开始 Action 后可进行 provisional workspace exploration。未重复调用 RecordResearchProgress。AITP adapter 却报告找不到 compatible contract，canonical 读取未完成，模型没有调用已安装 Theory Physics Skill；因此不是完整 Research Loop 验收通过。模型随后关于距离归一化与 log basis 的诊断没有实际计算支持，不能写为物理结果。
+
+根因由实际路径核验确认：native print 和 v2 SDK 使用 core-v2 的 home resolver，默认落到 `.kimi-code` 且忽略 `HAKIMI_HOME`；CLI/SDK 公共 resolver、插件安装和诊断使用 `.hakimi`。首次真实会话确实创建于旧 home；源码诊断显式指定正确 home 时，AITP 0.9.0/contract 0.2 在 catalog ready 前后均能成功 probe。不能把故障归因为尚未复现的 catalog-readiness race，也不添加无依据的 retry。
+
+修复只统一 core-v2 的 home 优先级：显式参数、`HAKIMI_HOME`、兼容的 `KIMI_CODE_HOME`、默认 `.hakimi`。不复制配置、迁移插件、混合 session index 或覆盖旧会话；旧 home 中的会话仍可通过明确目录覆盖访问。四个 red assertions 先复现，修复后 core bootstrap/Research service 共 518 项通过；CLI 路径与 native print 共 41 项通过，含 SDK/native/CLI resolver 对照。新增一个 CLI patch changeset；无 AITP runtime/CLI/schema/human-decision 或公开 wire 变化。
+
+core/CLI typecheck、core import guard（1,297 files）、四个改动代码文件的 type-aware lint（零 warning/error）、changeset status 和 diff check 均通过；docs build 通过，保留旧 ES2024/chunk-size warnings。修复后的默认-home源码启动实际 probe 到 AITP 0.9.0/contract 0.2，并发现受管 Theory Physics Skill；这是启动诊断，不冒充安装版模型复测。
+
+首次原始提示、工具输出与结果留在隔离 worktree 的 gitignored `.tmp/research-acceptance-20260905/natural-orient-r2/`；不提交私人会话或把工作日志当科研 evidence。修复版的正式安装与真实复测尚待完成，G7 继续 active。下一唯一最小 Action：交付修复版并从正确 home 重跑真实只读恢复，确认 AITP 与领域 Skill 可用后，再预声明一个低成本判别性科学检验；随后完成其计算/评价、必要 Entry/Note 和 Goal/恢复观察。
