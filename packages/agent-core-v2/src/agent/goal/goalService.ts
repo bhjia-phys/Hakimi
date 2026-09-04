@@ -50,6 +50,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { TurnEndedEvent, TurnStartedEvent } from '#/agent/loop/turnEvents';
 import { Disposable, MutableDisposable, type IDisposable } from '#/_base/di/lifecycle';
+import { isPromiseLike } from '#/_base/lifecycle/disposer';
 import { type CollectionView } from '#/_base/di/collection';
 import { LifecycleScope } from '#/app/scopes';
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
@@ -100,6 +101,7 @@ import {
   GoalContinuationParticipantContribution,
   type GoalCompletionGuardInput,
   type GoalContinuationDecisionResult,
+  type GoalContinuationHold,
   type GoalContinuationInput,
 } from './goalContribution';
 import { clearGoal, createGoal, GoalModel, updateGoal, type GoalState } from './goalOps';
@@ -110,6 +112,7 @@ import type {
   GoalBudgetReport,
   GoalChange,
   GoalChangeStats,
+  GoalContinuationSnapshot,
   GoalMutationRef,
   GoalSnapshot,
   GoalStatus,
@@ -218,6 +221,8 @@ interface PendingContinuation {
   readonly generation: number;
   readonly stepCapped: boolean;
   phase: ContinuationReservationPhase;
+  retryRequested: boolean;
+  hold?: GoalContinuationHold;
   receipt?: EnqueueReceipt;
   turnId?: number;
 }
@@ -644,7 +649,29 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     this.assertSupportedAgent();
     const state = this.requireState();
     if (state.status === 'active') {
-      if (state.waitingFor === undefined) return this.toSnapshot(state);
+      if (state.waitingFor === undefined) {
+        const snapshot = this.toSnapshot(state);
+        const shouldContinue =
+          actor === 'user' &&
+          (input.continueIfPaused === true || input.continueIfBlocked === true);
+        if (!shouldContinue) return snapshot;
+        const budgetBlocked = this.blockIfBudgetReached(state);
+        if (budgetBlocked !== null) return budgetBlocked;
+        const pending = this.pendingContinuation;
+        if (pending?.goalId === state.goalId && pending.phase === 'held') {
+          this.retryHeldContinuation(state.goalId);
+          return this.toSnapshot(this.requireState());
+        }
+        if (this.canLaunchContinuation()) {
+          try {
+            await this.launchContinuationTurn(state.goalId);
+          } catch (error) {
+            await this.settleGoalAfterContinuationFailure(error, state.goalId);
+            throw error;
+          }
+        }
+        return this.toSnapshot(this.requireState());
+      }
       this.invalidateContinuation();
       const mutation = this.newGoalMutation('update', state.goalId, state.status);
       this.wire.dispatch(updateGoal({
@@ -995,6 +1022,10 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
 
   private handleTurnLaunched(turnId: number, origin: TurnStartedEvent['origin']): void {
     this.liveTurnId = turnId;
+    const held = this.pendingContinuation;
+    if (held?.phase === 'held' && !isGoalContinuationOrigin(origin)) {
+      this.invalidateContinuation();
+    }
     this.goalTurnTargets.delete(turnId);
     this.exhaustedTurnBudgetGoals.delete(turnId);
     if (!this.goalDrivenTurns.has(turnId)) {
@@ -1011,6 +1042,10 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     this.pendingContinuationGoals.delete(turnId);
     this.goalOutcomeToolResultTurns.delete(turnId);
     this.goalOutcomeContinuationTurns.delete(turnId);
+    const state = this.goalState;
+    if (state?.status === 'active' && this.goalDrivenTurns.get(turnId) === state.goalId) {
+      this.emitContinuationUpdated();
+    }
   }
 
   private adoptStarterTurn(actor: GoalActor): void {
@@ -1223,86 +1258,123 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       generation: ++this.continuationGeneration,
       stepCapped,
       phase: 'deciding',
+      retryRequested: false,
     };
     this.pendingContinuation = pending;
-
-    const enqueue = (): void => {
-      if (!this.isCurrentContinuation(pending)) return;
-      const message: ContextMessage = {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: pending.stepCapped ? GOAL_STEP_CAP_CONTINUATION_PROMPT : GOAL_CONTINUATION_PROMPT,
-          },
-        ],
-        toolCalls: [],
-        origin: {
-          kind: 'system_trigger',
-          name: 'goal_continuation',
-          goalId: pending.goalId,
-        },
-      };
-      const request = new MessageStepRequest(message, {
-        kind: 'goal_continuation',
-        admission: 'newTurn',
-        turnIntent: {
-          kind: 'goal_continuation',
-          owner: 'goal',
-          goalId: pending.goalId,
-        },
-      });
-      pending.phase = 'enqueued';
-      let receipt: EnqueueReceipt;
-      try {
-        receipt = this.loopService.enqueue(request);
-        pending.receipt = receipt;
-      } catch (error) {
-        if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
-        throw error;
-      }
-      void receipt.assigned
-        .then(({ turn }) => {
-          if (!this.isCurrentContinuation(pending)) return;
-          pending.turnId = turn.id;
-          if (!this.goalDrivenTurns.has(turn.id)) {
-            this.pendingContinuationGoals.set(turn.id, pending.goalId);
-          }
-          return turn.result;
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (pending.turnId !== undefined) this.pendingContinuationGoals.delete(pending.turnId);
-          if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
-        });
-    };
+    this.emitContinuationUpdated();
 
     if (this.continuationParticipants.records.length === 0) {
-      enqueue();
+      this.enqueueContinuation(pending);
       return;
     }
-    const held = this.holdContinuation(goalId);
-    if (held instanceof Promise) {
-      return held.then(
-        (isHeld) => {
-          if (!this.isCurrentContinuation(pending)) return;
-          if (isHeld) {
-            pending.phase = 'held';
-          } else {
-            enqueue();
-          }
+    const decision = this.decideContinuation(pending);
+    if (!isPromiseLike(decision)) return;
+    return Promise.resolve(decision).catch((error) => {
+      if (this.pendingContinuation === pending) {
+        this.pendingContinuation = undefined;
+        this.emitContinuationUpdated();
+      }
+      throw error;
+    });
+  }
+
+  private enqueueContinuation(pending: PendingContinuation): void {
+    if (!this.isCurrentContinuation(pending)) return;
+    const message: ContextMessage = {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: pending.stepCapped ? GOAL_STEP_CAP_CONTINUATION_PROMPT : GOAL_CONTINUATION_PROMPT,
         },
-        (error) => {
-          if (this.pendingContinuation === pending) this.pendingContinuation = undefined;
-          throw error;
-        },
-      );
+      ],
+      toolCalls: [],
+      origin: {
+        kind: 'system_trigger',
+        name: 'goal_continuation',
+        goalId: pending.goalId,
+      },
+    };
+    const request = new MessageStepRequest(message, {
+      kind: 'goal_continuation',
+      admission: 'newTurn',
+      turnIntent: {
+        kind: 'goal_continuation',
+        owner: 'goal',
+        goalId: pending.goalId,
+      },
+    });
+    pending.phase = 'enqueued';
+    pending.hold = undefined;
+    let receipt: EnqueueReceipt;
+    try {
+      receipt = this.loopService.enqueue(request);
+    } catch (error) {
+      if (this.pendingContinuation === pending) {
+        this.pendingContinuation = undefined;
+        this.emitContinuationUpdated();
+      }
+      throw error;
     }
-    if (held) {
-      pending.phase = 'held';
-    } else {
-      enqueue();
+    pending.receipt = receipt;
+    this.emitContinuationUpdated();
+    void receipt.assigned
+      .then(({ turn }) => {
+        if (!this.isCurrentContinuation(pending)) return;
+        pending.turnId = turn.id;
+        if (!this.goalDrivenTurns.has(turn.id)) {
+          this.pendingContinuationGoals.set(turn.id, pending.goalId);
+        }
+        return turn.result;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (pending.turnId !== undefined) this.pendingContinuationGoals.delete(pending.turnId);
+        if (this.pendingContinuation === pending) {
+          this.pendingContinuation = undefined;
+          this.emitContinuationUpdated();
+        }
+      });
+  }
+
+  private decideContinuation(pending: PendingContinuation): void | Promise<void> {
+    if (!this.isCurrentContinuation(pending)) return;
+    const settle = (hold: GoalContinuationHold | undefined): void => {
+      if (!this.isCurrentContinuation(pending)) return;
+      if (hold !== undefined) {
+        this.markContinuationHeld(pending, hold);
+        return;
+      }
+      if (pending.retryRequested) {
+        pending.retryRequested = false;
+        this.scheduleContinuationDecision(pending);
+        return;
+      }
+      this.enqueueContinuation(pending);
+    };
+
+    const result = this.holdContinuation(pending.goalId);
+    if (isPromiseLike(result)) {
+      return Promise.resolve(
+        result as PromiseLike<GoalContinuationHold | undefined>,
+      ).then(settle);
     }
+    settle(result);
+  }
+
+  private scheduleContinuationDecision(pending: PendingContinuation): void {
+    void Promise.resolve()
+      .then(() => this.decideContinuation(pending))
+      .catch((error) => this.failContinuationDecision(pending, error));
+  }
+
+  private failContinuationDecision(pending: PendingContinuation, error: unknown): void {
+    if (this.pendingContinuation !== pending && pending.phase !== 'enqueued') return;
+    if (this.pendingContinuation === pending) {
+      this.pendingContinuation = undefined;
+      this.emitContinuationUpdated();
+    }
+    void this.settleGoalAfterContinuationFailure(error, pending.goalId);
   }
 
   private bindContinuationRetry(participant: GoalContinuationParticipantContribution): void {
@@ -1318,7 +1390,12 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
 
   private retryHeldContinuation(goalId: string): void {
     const pending = this.pendingContinuation;
-    if (pending?.goalId !== goalId || pending.phase !== 'held') return;
+    if (pending?.goalId !== goalId) return;
+    if (pending.phase === 'deciding') {
+      pending.retryRequested = true;
+      return;
+    }
+    if (pending.phase !== 'held') return;
     if (
       !this.isActiveGoal(goalId) ||
       this.goalState?.waitingFor !== undefined ||
@@ -1328,21 +1405,42 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       return;
     }
     if (!this.isLoopReadyForContinuation()) return;
-    this.pendingContinuation = undefined;
-    void Promise.resolve().then(() => this.launchContinuationTurn(goalId, pending.stepCapped)).catch((error) =>
-      this.settleGoalAfterContinuationFailure(error, goalId),
-    );
+
+    pending.phase = 'deciding';
+    pending.retryRequested = false;
+    pending.hold = undefined;
+    this.emitContinuationUpdated();
+    this.scheduleContinuationDecision(pending);
   }
 
-  private holdContinuation(goalId: string, index = 0): boolean | Promise<boolean> {
+  private markContinuationHeld(
+    pending: PendingContinuation,
+    hold: GoalContinuationHold,
+  ): void {
+    pending.phase = 'held';
+    pending.hold = hold;
+    this.emitContinuationUpdated();
+    if (pending.retryRequested) this.retryHeldContinuation(pending.goalId);
+  }
+
+  private holdContinuation(
+    goalId: string,
+    index = 0,
+  ): GoalContinuationHold | undefined | Promise<GoalContinuationHold | undefined> {
     const record = this.continuationParticipants.records[index];
-    if (record === undefined) return false;
+    if (record === undefined) return undefined;
     const result = record.value.decide(this.toContinuationInput(goalId));
-    const resolve = (decision: GoalContinuationDecisionResult): boolean | Promise<boolean> => {
+    const resolve = (
+      decision: GoalContinuationDecisionResult,
+    ): GoalContinuationHold | undefined | Promise<GoalContinuationHold | undefined> => {
       if (decision.decision === 'abstain') return this.holdContinuation(goalId, index + 1);
-      return decision.decision === 'hold';
+      return decision.decision === 'hold'
+        ? { owner: decision.owner, reason: decision.reason }
+        : undefined;
     };
-    return result instanceof Promise ? result.then(resolve) : resolve(result);
+    return isPromiseLike(result)
+      ? Promise.resolve(result as PromiseLike<GoalContinuationDecisionResult>).then(resolve)
+      : resolve(result);
   }
 
   private toContinuationInput(goalId: string): GoalContinuationInput {
@@ -1566,6 +1664,12 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
     this.eventBus.publish({ type: 'goal.updated', snapshot, change, mutation });
   }
 
+  private emitContinuationUpdated(): void {
+    const state = this.goalState;
+    if (state === null) return;
+    this.emitGoalUpdated(this.toSnapshot(state), { kind: 'continuation' });
+  }
+
   private settleWallClock(state: GoalState): number {
     if (state.status === 'active' && this.liveWallClockStartedAt !== undefined) {
       return (
@@ -1612,8 +1716,30 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
       wallClockMs,
       budget: computeBudgetReport(state, wallClockMs),
       waitingFor: state.waitingFor,
+      continuation: this.toContinuationSnapshot(state),
       terminalReason: state.terminalReason,
     };
+  }
+
+  private toContinuationSnapshot(state: GoalState): GoalContinuationSnapshot {
+    if (state.status !== 'active') return { state: 'idle' };
+    if (state.waitingFor !== undefined) return { state: 'waiting' };
+    if (
+      this.liveTurnId !== undefined &&
+      this.goalDrivenTurns.get(this.liveTurnId) === state.goalId
+    ) {
+      return { state: 'running' };
+    }
+    const pending = this.pendingContinuation;
+    if (pending?.goalId !== state.goalId) return { state: 'idle' };
+    if (pending.phase === 'held') {
+      return {
+        state: 'held',
+        owner: pending.hold?.owner,
+        reason: pending.hold?.reason,
+      };
+    }
+    return { state: pending.phase };
   }
 
   private blockIfBudgetReached(state: GoalState): GoalSnapshot | null {

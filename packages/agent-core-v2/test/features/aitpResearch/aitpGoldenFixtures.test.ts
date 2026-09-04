@@ -2,8 +2,9 @@
  * `aitpResearch` tests — official AITP golden fixture conformance.
  *
  * Exercises the Hakimi transport parsers against the committed AITP 0.8.0
- * golden payloads without invoking a live CLI or depending on an external
- * checkout.
+ * golden payloads, whose unchanged transport schemas were reverified for the
+ * AITP 0.9.0 atomic-save release, without invoking a live CLI or depending on
+ * an external checkout.
  */
 
 import { createHash } from 'node:crypto';
@@ -48,6 +49,9 @@ describe('official AITP 0.8.0 golden fixture conformance', () => {
       sourcePath: 'tests/ledger/fixtures/golden',
       aitpCommit: 'eae1bce5eba367a5f6db6ba73ff0912dd3a5e290',
       pluginVersion: '0.8.0',
+      verifiedAgainstPluginVersion: '0.9.0',
+      verifiedAgainstContractSchema: 'aitp/adapter-contract-0.2',
+      payloadSchemasUnchanged: true,
     });
     expect(AITP_GOLDEN_FIXTURE_METADATA.files.map(({ name }) => name)).toEqual(FIXTURE_NAMES);
     expect(readdirSync(FIXTURE_DIR).filter((name) => name.endsWith('.json')).sort()).toEqual(

@@ -1100,7 +1100,13 @@ export class AgentTranscriptProjector {
       tokensUsed: number;
       budget: { tokenBudget: number | null };
       waitingFor?: { readonly taskIds: readonly string[]; readonly policy: 'any' | 'all' };
+      continuation?: {
+        readonly state: 'idle' | 'deciding' | 'enqueued' | 'running' | 'held' | 'waiting';
+        readonly owner?: string;
+        readonly reason?: string;
+      };
     } | null;
+    change?: { readonly kind: string };
     mutation?: GoalMutationLike;
   }): TranscriptOperation[] {
     const ops: TranscriptOperation[] = [];
@@ -1118,9 +1124,11 @@ export class AgentTranscriptProjector {
                 budgetUsed: snapshot.tokensUsed,
                 budgetLimit: snapshot.budget.tokenBudget ?? undefined,
                 waitingFor: snapshot.waitingFor,
+                continuation: snapshot.continuation,
               },
       },
     });
+    if (event.change?.kind === 'continuation') return ops;
     ops.push(
       event.mutation === undefined
         ? this.markerOp('goal', restOf(event))

@@ -21,6 +21,7 @@ import {
 } from '@moonshot-ai/agent-core-v2';
 
 import { type RunningServer, startServer } from '../src/start';
+import { agentEventSchema } from '../src/protocol/events-zod';
 import { TEST_HOST_IDENTITY } from './helpers/hostIdentity';
 import { authHeaders } from './helpers/auth';
 
@@ -41,6 +42,8 @@ interface ResearchAlert {
 interface ResearchSnapshot {
   mode: string;
   loopStatus: string;
+  planningPolicy: 'collaborative' | 'dreaming';
+  lineWorkstreamBindings: Array<{ lineSlug: string; workstream: string }>;
   questions: Array<{ id: string }>;
   lines: Array<{ slug: string }>;
   openQuestionCount: number;
@@ -75,6 +78,286 @@ interface ResearchSnapshot {
   };
   revision: number;
 }
+
+const RESEARCH_EVENT_SNAPSHOT = {
+  mode: 'ready',
+  loopStatus: 'active',
+  planningPolicy: 'collaborative',
+  currentLineSlug: 'main',
+  currentWorkstreamBinding: {
+    lineSlug: 'main',
+    status: 'bound',
+    reason: 'Explicitly confirmed.',
+    binding: {
+      confirmationId: 'confirmation-main-1',
+      lineSlug: 'main',
+      workstream: 'verified-inputs',
+      topicId: 'topic-example',
+      observedRevision: 1,
+      confirmedBy: 'user',
+      confirmedAt: 1_700_000_000_000,
+    },
+  },
+  lineWorkstreamBindings: [{
+    confirmationId: 'confirmation-main-1',
+    lineSlug: 'main',
+    workstream: 'verified-inputs',
+    topicId: 'topic-example',
+    observedRevision: 1,
+    confirmedBy: 'user',
+    confirmedAt: 1_700_000_000_000,
+  }],
+  questions: [],
+  lines: [{
+    slug: 'main',
+    title: 'Main line',
+    status: 'active',
+    createdAt: 1_700_000_000_000,
+    revision: 1,
+  }],
+  openQuestionCount: 0,
+  activeQuestionCount: 0,
+  blockedQuestionCount: 0,
+  alerts: [],
+  aitpHealth: { phase: 'ready' },
+  phase: 'idle',
+  program: {
+    topicId: 'topic-example',
+    title: 'Example research program',
+    goalText: 'Establish the bounded research result.',
+    goalSource: 'aitp-enter',
+    establishedAt: 1_700_000_000_000,
+    observedRevision: 1,
+  },
+  researchGoal: {
+    schema: 'hakimi/research-goal-0.1',
+    goalId: 'goal-example',
+    objective: 'Validate the current bounded stage.',
+    completionCriterion: 'The stage passes its declared checks.',
+    scope: {
+      programTopicId: 'topic-example',
+      lineSlug: 'main',
+      questionId: 'q1',
+    },
+    nonGoals: [],
+    budget: {
+      tokenBudget: null,
+      turnBudget: 3,
+      wallClockBudgetMs: null,
+      remainingTokens: null,
+      remainingTurns: 2,
+      remainingWallClockMs: null,
+      tokenBudgetReached: false,
+      turnBudgetReached: false,
+      wallClockBudgetReached: false,
+      overBudget: false,
+    },
+    stopConditions: [{
+      code: 'goal.budget.turns',
+      reached: false,
+      reason: 'The Goal turn budget remains available.',
+    }],
+    status: 'active',
+    continuation: {
+      state: 'held',
+      owner: 'aitpResearch',
+      reason: 'A recovered Research action requires evidence-based resolution.',
+    },
+    programRelation: {
+      status: 'aligned',
+      reason: 'Confirmed as goal_parent_of_program.',
+    },
+    humanGates: [],
+    persistenceGuards: [{
+      code: 'research.mode.ready',
+      status: 'clear',
+      reason: 'Research Mode is ready.',
+    }],
+    researchRevision: 1,
+  },
+  latestCommittedCheckpoint: {
+    checkpointId: 'cp-distill',
+    entryId: 'entry-distill',
+    committedAt: 1_700_000_000_001,
+  },
+  distillationAttention: {
+    schema: 'hakimi/research-distillation-attention-0.1',
+    status: 'review_requested',
+    checkpointId: 'cp-distill',
+    entryId: 'entry-distill',
+    recordedAt: 1_700_000_000_002,
+  },
+  revision: 1,
+};
+
+describe('Research agent event schemas', () => {
+  it('parses a research.updated snapshot including its Research program', () => {
+    const event = { type: 'research.updated', snapshot: RESEARCH_EVENT_SNAPSHOT };
+    expect(agentEventSchema.parse(event)).toEqual(event);
+    expect(agentEventSchema.parse(event)).toMatchObject({
+      snapshot: {
+        currentWorkstreamBinding: { status: 'bound' },
+        lineWorkstreamBindings: [{ workstream: 'verified-inputs' }],
+        researchGoal: {
+          continuation: {
+            state: 'held',
+            owner: 'aitpResearch',
+          },
+        },
+        distillationAttention: {
+          status: 'review_requested',
+          entryId: 'entry-distill',
+        },
+      },
+    });
+  });
+
+  it('accepts an old snapshot without continuation and rejects an unknown future state', () => {
+    const { continuation: _continuation, ...legacyResearchGoal } =
+      RESEARCH_EVENT_SNAPSHOT.researchGoal;
+    expect(_continuation.state).toBe('held');
+    expect(agentEventSchema.safeParse({
+      type: 'research.updated',
+      snapshot: { ...RESEARCH_EVENT_SNAPSHOT, researchGoal: legacyResearchGoal },
+    }).success).toBe(true);
+    expect(agentEventSchema.safeParse({
+      type: 'research.updated',
+      snapshot: {
+        ...RESEARCH_EVENT_SNAPSHOT,
+        researchGoal: {
+          ...RESEARCH_EVENT_SNAPSHOT.researchGoal,
+          continuation: { state: 'future_continuation_state' },
+        },
+      },
+    }).success).toBe(false);
+  });
+
+  it('rejects malformed current Line-workstream alignment invariants', () => {
+    const binding = RESEARCH_EVENT_SNAPSHOT.currentWorkstreamBinding.binding;
+    const { confirmationId: _confirmationId, ...identitylessBinding } = binding;
+    expect(_confirmationId).toBe('confirmation-main-1');
+    const missingBindingStatuses = ['unavailable', 'bound', 'stale', 'conflict'] as const;
+    const invalidAlignments = [
+      ...missingBindingStatuses.map((status) => ({
+        lineSlug: 'main',
+        status,
+        reason: 'Malformed missing binding.',
+      })),
+      {
+        lineSlug: 'main',
+        status: 'unbound',
+        reason: 'Malformed unexpected binding.',
+        binding,
+      },
+      {
+        lineSlug: 'main',
+        status: 'bound',
+        reason: 'Malformed non-conflicting binding Line mismatch.',
+        binding: { ...binding, lineSlug: 'other' },
+      },
+      {
+        lineSlug: 'other',
+        status: 'unbound',
+        reason: 'Malformed current Line mismatch.',
+      },
+    ];
+
+    for (const currentWorkstreamBinding of invalidAlignments) {
+      expect(agentEventSchema.safeParse({
+        type: 'research.updated',
+        snapshot: { ...RESEARCH_EVENT_SNAPSHOT, currentWorkstreamBinding },
+      }).success).toBe(false);
+    }
+    expect(agentEventSchema.safeParse({
+      type: 'research.updated',
+      snapshot: {
+        ...RESEARCH_EVENT_SNAPSHOT,
+        currentWorkstreamBinding: {
+          ...RESEARCH_EVENT_SNAPSHOT.currentWorkstreamBinding,
+          binding: identitylessBinding,
+        },
+        lineWorkstreamBindings: [identitylessBinding],
+      },
+    }).success).toBe(false);
+    expect(agentEventSchema.safeParse({
+      type: 'research.updated',
+      snapshot: {
+        ...RESEARCH_EVENT_SNAPSHOT,
+        currentWorkstreamBinding: {
+          lineSlug: 'main',
+          status: 'conflict',
+          reason: 'The stored binding identifies another Line.',
+          binding: { ...binding, lineSlug: 'other' },
+        },
+      },
+    }).success).toBe(true);
+  });
+
+  it('parses an aitp_mode.updated invalidation event', () => {
+    const event = { type: 'aitp_mode.updated' };
+    expect(agentEventSchema.parse(event)).toEqual(event);
+  });
+
+  it('parses Research Plan v2 and exact action-plan bindings in the event snapshot', () => {
+    const researchPlanV2 = {
+      schema: 'hakimi/research-plan-0.2',
+      planId: 'research-plan-1',
+      revision: 2,
+      goalId: 'goal-example',
+      programId: 'topic-example',
+      programObservedRevision: 1,
+      goalRelation: 'goal_milestone_in_program',
+      objective: 'Validate one milestone.',
+      completionCriterion: 'The checks pass.',
+      milestones: [{
+        milestoneId: 'm1',
+        title: 'Run and validate',
+        objective: 'Run one calculation.',
+        completionCriterion: 'Validation passes.',
+        evidenceRequirements: ['Output and log'],
+      }],
+      evidenceRequirements: ['Reproducible result'],
+      decisionPoints: [],
+      assumptions: [],
+      currentMilestoneId: 'm1',
+      stopConditions: ['Stop on validation failure.'],
+      replanConditions: ['Replan on Program drift.'],
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const event = {
+      type: 'research.updated',
+      snapshot: {
+        ...RESEARCH_EVENT_SNAPSHOT,
+        researchPlanV2,
+        currentAction: {
+          actionId: 'action-1',
+          kind: 'simulation',
+          purpose: 'Run the reviewed calculation.',
+          expectedEvidence: ['Output and log'],
+          stopCondition: 'Stop after validation.',
+          allowedToolKinds: [],
+          status: 'planned',
+          createdAt: 3,
+          requiresHumanApproval: false,
+          researchPlanBinding: {
+            planId: 'research-plan-1',
+            planRevision: 2,
+            milestoneId: 'm1',
+          },
+          actionPlanBinding: {
+            schema: 'hakimi/action-plan-binding-0.1',
+            kind: 'reviewed_plan',
+            planId: 'action-plan-1',
+            planRevision: 1,
+          },
+        },
+      },
+    };
+    expect(agentEventSchema.parse(event)).toEqual(event);
+  });
+});
 
 describe('server-v2 /api/v1/sessions/{sid}/research', () => {
   let server: RunningServer | undefined;
@@ -210,6 +493,185 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
     );
     expect(oversizedAction.body.code).toBe(40001);
     expect(oversizedAction.body.details).toBeDefined();
+  });
+
+  it('POST validates Research Plan v2 references before dispatch', async () => {
+    const sessionId = await createSession();
+    const invalid = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'prepare_plan_v2',
+          objective: 'Validate one milestone.',
+          milestones: [{
+            milestoneId: 'm1',
+            title: 'Milestone',
+            objective: 'Run one calculation.',
+            completionCriterion: 'Validation passes.',
+            evidenceRequirements: [],
+          }],
+          evidenceRequirements: [],
+          decisionPoints: [],
+          assumptions: [],
+          currentMilestoneId: 'missing',
+          stopConditions: ['Stop on failure.'],
+          replanConditions: ['Replan on drift.'],
+        },
+      },
+    );
+    expect(invalid.body.code).toBe(40001);
+    expect(invalid.body.details).toBeDefined();
+  });
+
+  it('POST dispatches Research Plan v2 transitions to the engine', async () => {
+    const sessionId = await createSession();
+    const entered = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'enter_mode', actor: 'user' } },
+    );
+    expect(entered.body.code).toBe(0);
+    const transitioned = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'activate_plan_v2',
+          planId: 'missing-plan',
+          expectedRevision: 1,
+        },
+      },
+    );
+    expect(transitioned.body.code).toBe(40001);
+    expect(transitioned.body.msg).toMatch(/stale or unavailable/i);
+  });
+
+  it('POST changes the planning policy with snapshot revision concurrency', async () => {
+    const sessionId = await createSession();
+    const entered = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'enter_mode', actor: 'user' } },
+    );
+    const changed = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'set_planning_policy',
+          policy: 'dreaming',
+          expectedRevision: entered.body.data!.snapshot.revision,
+        },
+      },
+    );
+    expect(changed.body.code).toBe(0);
+    expect(changed.body.data?.snapshot.planningPolicy).toBe('dreaming');
+
+    const stale = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'set_planning_policy',
+          policy: 'collaborative',
+          expectedRevision: entered.body.data!.snapshot.revision,
+        },
+      },
+    );
+    expect(stale.body.code).toBe(40001);
+  });
+
+  it('POST binds and clears a Line workstream with fixed user provenance', async () => {
+    const sessionId = await createSession();
+    const liveSession = await resumeSessionById(server!.core.accessor, sessionId);
+    const agent = await ensureMainAgent(liveSession!);
+    const research = agent.accessor.get(IAgentResearchService);
+    const binding = {
+      confirmationId: 'confirmation-main-1',
+      lineSlug: 'main',
+      workstream: 'verified-inputs',
+      topicId: 'topic-1',
+      observedRevision: 1,
+      confirmedBy: 'user' as const,
+      confirmedAt: 1,
+    };
+    const confirm = vi.spyOn(research, 'confirmLineWorkstreamBinding').mockResolvedValue(binding);
+    const clear = vi.spyOn(research, 'clearLineWorkstreamBinding').mockReturnValue(undefined);
+
+    const forged = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'confirm_line_workstream_binding',
+          lineSlug: 'main',
+          workstream: 'verified-inputs',
+          expectedRevision: 0,
+          confirmedBy: 'main_agent',
+        },
+      },
+    );
+    expect(forged.body.code).toBe(40001);
+    expect(confirm).not.toHaveBeenCalled();
+
+    const confirmed = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'confirm_line_workstream_binding',
+          lineSlug: 'main',
+          workstream: 'verified-inputs',
+          expectedRevision: 0,
+        },
+      },
+    );
+    expect(confirmed.body.code).toBe(0);
+    expect(confirm).toHaveBeenCalledWith({
+      lineSlug: 'main',
+      workstream: 'verified-inputs',
+      expectedRevision: 0,
+      confirmedBy: 'user',
+    });
+
+    const missingConfirmation = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'clear_line_workstream_binding',
+          lineSlug: 'main',
+          expectedRevision: 0,
+        },
+      },
+    );
+    expect(missingConfirmation.body.code).toBe(40001);
+    expect(clear).not.toHaveBeenCalled();
+
+    const forgedClear = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'clear_line_workstream_binding',
+          lineSlug: 'main',
+          expectedConfirmationId: binding.confirmationId,
+          expectedRevision: 0,
+          topicId: 'topic-forged',
+        },
+      },
+    );
+    expect(forgedClear.body.code).toBe(40001);
+    expect(clear).not.toHaveBeenCalled();
+
+    const cleared = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'clear_line_workstream_binding',
+          lineSlug: 'main',
+          expectedConfirmationId: binding.confirmationId,
+          expectedRevision: 0,
+        },
+      },
+    );
+    expect(cleared.body.code).toBe(0);
+    expect(clear).toHaveBeenCalledWith({
+      lineSlug: 'main',
+      expectedConfirmationId: binding.confirmationId,
+      expectedRevision: 0,
+    });
   });
 
   it('POST rejects update_line without its expected revision', async () => {
@@ -419,19 +881,28 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
     );
     expect(paused.body.code).toBe(0);
     expect(paused.body.data.snapshot.loopStatus).toBe('paused');
+    expect(paused.body.data.snapshot.revision).toBeGreaterThan(revision);
 
     const stale = await postJson<{ snapshot: ResearchSnapshot }>(
       `/api/v1/sessions/${sessionId}/research/command`,
-      { command: { kind: 'resume_loop', expectedRevision: revision + 1 } },
+      { command: { kind: 'resume_loop', expectedRevision: revision } },
     );
     expect(stale.body.code).toBe(40001);
 
     const resumed = await postJson<{ snapshot: ResearchSnapshot }>(
       `/api/v1/sessions/${sessionId}/research/command`,
-      { command: { kind: 'resume_loop', expectedRevision: revision } },
+      {
+        command: {
+          kind: 'resume_loop',
+          expectedRevision: paused.body.data.snapshot.revision,
+        },
+      },
     );
     expect(resumed.body.code).toBe(0);
     expect(resumed.body.data.snapshot.loopStatus).toBe('active');
+    expect(resumed.body.data.snapshot.revision).toBeGreaterThan(
+      paused.body.data.snapshot.revision,
+    );
   });
 
   it('POST pause_loop with stale revision maps to VALIDATION_FAILED', async () => {
@@ -621,6 +1092,10 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
           result: 'The identity holds for the chosen representation.',
           mainlineImpact: 'The result supports the current symmetry hypothesis.',
           nextAction: 'Compare the identity with the numerical evidence.',
+          durability: {
+            status: 'no_durable_delta',
+            rationale: 'This public-route regression does not exercise AITP persistence.',
+          },
         },
       },
     );

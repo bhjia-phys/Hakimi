@@ -97,6 +97,7 @@ import {
   configResponseSchema,
   subagentPresetStatusSchema,
 } from './rest-config';
+import { researchStatusSnapshotSchema } from './research';
 import { sessionPendingInteractionSchema, sessionSchema } from './session';
 import { workspaceSchema } from './workspace';
 
@@ -274,6 +275,12 @@ export const goalWaitLeaseSchema = z
   })
   .strict() satisfies z.ZodType<GoalWaitLease>;
 
+export const goalContinuationSnapshotSchema = z.object({
+  state: z.enum(['idle', 'deciding', 'enqueued', 'running', 'held', 'waiting']),
+  owner: z.string().optional(),
+  reason: z.string().optional(),
+});
+
 export const goalSnapshotSchema = z.object({
   goalId: z.string(),
   objective: z.string(),
@@ -284,6 +291,7 @@ export const goalSnapshotSchema = z.object({
   wallClockMs: z.number(),
   budget: goalBudgetReportSchema,
   waitingFor: goalWaitLeaseSchema.optional(),
+  continuation: goalContinuationSnapshotSchema.optional(),
   terminalReason: z.string().optional(),
 }) satisfies z.ZodType<GoalSnapshot>;
 
@@ -297,7 +305,11 @@ export const goalChangeStatsSchema = z.object({
   wallClockMs: z.number(),
 }) satisfies z.ZodType<GoalChangeStats>;
 
-export const goalChangeKindSchema = z.enum(['lifecycle', 'completion']) satisfies z.ZodType<GoalChangeKind>;
+export const goalChangeKindSchema = z.enum([
+  'lifecycle',
+  'completion',
+  'continuation',
+]) satisfies z.ZodType<GoalChangeKind>;
 
 export const goalChangeSchema = z.object({
   kind: goalChangeKindSchema,
@@ -720,6 +732,15 @@ export const goalUpdatedEventSchema = z.object({
   mutation: goalMutationSchema.optional(),
 });
 
+export const researchUpdatedEventSchema = z.object({
+  type: z.literal('research.updated'),
+  snapshot: researchStatusSnapshotSchema,
+});
+
+export const aitpModeUpdatedEventSchema = z.object({
+  type: z.literal('aitp_mode.updated'),
+});
+
 export const skillActivatedEventSchema = z.object({
   type: z.literal('skill.activated'),
   activationId: z.string(),
@@ -1048,6 +1069,8 @@ export const agentEventSchema = z.discriminatedUnion('type', [
   pluginChangedEventSchema,
   capabilityChangedEventSchema,
   goalUpdatedEventSchema,
+  researchUpdatedEventSchema,
+  aitpModeUpdatedEventSchema,
   skillActivatedEventSchema,
   pluginCommandActivatedEventSchema,
   turnStartedEventSchema,

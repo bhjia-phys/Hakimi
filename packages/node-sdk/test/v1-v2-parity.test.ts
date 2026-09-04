@@ -323,7 +323,10 @@ const KNOWN_DIFFS = {
   // even a same-moment read differs by execution time) — both deleted;
   // everything else (objective, status, counters, the full budget report,
   // terminalReason) compares in full. Id non-emptiness is asserted at the
-  // call sites.
+  // call sites. V2 additionally exposes a live derived `continuation` view;
+  // the frozen v1 runtime has no continuation-participant seam, so parity
+  // projects that additive observation out. Optional fields whose value is
+  // `undefined` are normalized to their JSON-wire absence.
   createGoal: (snapshot: GoalSnapshot | null): unknown => projectGoalSnapshot(snapshot),
   getGoal: (result: GoalToolResult): unknown => projectGoalSnapshot(result.goal),
   pauseGoal: (snapshot: GoalSnapshot | null): unknown => projectGoalSnapshot(snapshot),
@@ -381,9 +384,12 @@ const KNOWN_DIFFS = {
 /** See the KNOWN_DIFFS goal note above for what this projects and why. */
 function projectGoalSnapshot(snapshot: GoalSnapshot | null): unknown {
   if (snapshot === null) return null;
-  const projected: Record<string, unknown> = { ...snapshot };
+  const projected: Record<string, unknown> = Object.fromEntries(
+    Object.entries(snapshot).filter(([, value]) => value !== undefined),
+  );
   delete projected['goalId'];
   delete projected['wallClockMs'];
+  delete projected['continuation'];
   return projected;
 }
 

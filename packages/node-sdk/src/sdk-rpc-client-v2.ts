@@ -310,6 +310,7 @@ import type {
   ResearchCommand,
   ResearchCommandResponse,
   ResearchStatusSnapshot,
+  ResumeGoalInput,
   SessionPlan,
   SessionStatus,
   SessionSummary,
@@ -2219,9 +2220,12 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
     return agent.accessor.get(IAgentGoalService).pauseGoal();
   }
 
-  override async resumeGoal(input: SessionIdRpcInput): Promise<GoalSnapshot> {
+  override async resumeGoal(input: SessionIdRpcInput & ResumeGoalInput): Promise<GoalSnapshot> {
     const agent = await this.agentScope(input.sessionId);
-    return agent.accessor.get(IAgentGoalService).resumeGoal();
+    return agent.accessor.get(IAgentGoalService).resumeGoal({
+      continueIfPaused: input.continueIfPaused,
+      continueIfBlocked: input.continueIfBlocked,
+    });
   }
 
   override async cancelGoal(input: SessionIdRpcInput): Promise<GoalSnapshot> {
@@ -2239,10 +2243,10 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
    * `IAgentAitpModeService`; focus, line, and question lifecycle commands use
    * their dedicated Research methods. The engine enforces the
    * `expectedRevision` optimistic-concurrency guard, and defer/block/close
-   * remain human steering operations.
+   * remain human steering operations. Goal alignment is only changed through
+   * explicit commands carrying the observed Goal / Program identities;
    * `create_question` / `create_line` / `update_line` use their dedicated
-   * service methods;
-   * checkpoints use `proposeCheckpoint` / `commitCheckpoint`.
+   * service methods; checkpoints use `proposeCheckpoint` / `commitCheckpoint`.
    */
   override async getResearch(input: SessionIdRpcInput): Promise<ResearchStatusSnapshot> {
     const agent = await this.agentScope(input.sessionId);
@@ -2400,6 +2404,12 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
           allowedToolKinds: cmd.allowedToolKinds,
           retryOfEntryId: cmd.retryOfEntryId,
           requiresHumanApproval: cmd.requiresHumanApproval,
+          planningLevel: cmd.planningLevel,
+          researchPlanId: cmd.researchPlanId,
+          researchPlanRevision: cmd.researchPlanRevision,
+          milestoneId: cmd.milestoneId,
+          actionPlanId: cmd.actionPlanId,
+          actionPlanRevision: cmd.actionPlanRevision,
         });
         break;
       case 'start_action':
@@ -2421,9 +2431,9 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
             mainlineImpact: cmd.mainlineImpact,
             uncertainties: cmd.uncertainties,
             nextAction: cmd.nextAction,
-            humanDecision: cmd.humanDecision,
             detail: cmd.detail,
           },
+          durability: cmd.durability,
         });
         break;
       case 'prepare_plan':
@@ -2443,6 +2453,74 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
         break;
       case 'discard_plan':
         research.discardResearchPlan();
+        break;
+      case 'confirm_line_workstream_binding':
+        await research.confirmLineWorkstreamBinding({
+          lineSlug: cmd.lineSlug,
+          workstream: cmd.workstream,
+          expectedRevision: cmd.expectedRevision,
+          confirmedBy: 'user',
+        });
+        break;
+      case 'clear_line_workstream_binding':
+        research.clearLineWorkstreamBinding({
+          lineSlug: cmd.lineSlug,
+          expectedConfirmationId: cmd.expectedConfirmationId,
+          expectedRevision: cmd.expectedRevision,
+        });
+        break;
+      case 'set_planning_policy':
+        research.setPlanningPolicy(cmd.policy, cmd.expectedRevision);
+        break;
+      case 'prepare_plan_v2':
+        research.prepareResearchPlanV2({
+          planId: cmd.planId,
+          expectedRevision: cmd.expectedRevision,
+          objective: cmd.objective,
+          completionCriterion: cmd.completionCriterion,
+          milestones: cmd.milestones,
+          evidenceRequirements: cmd.evidenceRequirements,
+          decisionPoints: cmd.decisionPoints,
+          assumptions: cmd.assumptions,
+          currentMilestoneId: cmd.currentMilestoneId,
+          stopConditions: cmd.stopConditions,
+          replanConditions: cmd.replanConditions,
+        });
+        break;
+      case 'activate_plan_v2':
+        research.activateResearchPlanV2({
+          planId: cmd.planId,
+          expectedRevision: cmd.expectedRevision,
+        });
+        break;
+      case 'complete_plan_v2':
+        research.completeResearchPlanV2({
+          planId: cmd.planId,
+          expectedRevision: cmd.expectedRevision,
+        });
+        break;
+      case 'discard_plan_v2':
+        research.discardResearchPlanV2({
+          planId: cmd.planId,
+          expectedRevision: cmd.expectedRevision,
+        });
+        break;
+      case 'confirm_goal_alignment':
+        research.confirmGoalAlignment({
+          relation: cmd.relation,
+          expectedRevision: cmd.expectedRevision,
+          goalId: cmd.goalId,
+          topicId: cmd.topicId,
+          observedRevision: cmd.observedRevision,
+        });
+        break;
+      case 'clear_goal_alignment':
+        research.clearGoalAlignment({
+          expectedRevision: cmd.expectedRevision,
+          goalId: cmd.goalId,
+          topicId: cmd.topicId,
+          observedRevision: cmd.observedRevision,
+        });
         break;
     }
 

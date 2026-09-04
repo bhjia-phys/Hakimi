@@ -1,8 +1,8 @@
 {
   "$schema": "https://kimi.com/schemas/kimi.plugin.schema.json",
   "name": "theory-physics",
-  "version": "0.1.0",
-  "description": "Domain conventions, literature, derivation, numerics, and evidence discipline for theoretical-physics research in Hakimi.",
+  "version": "0.1.2",
+  "description": "Upper-layer routing and evidence discipline for sustained theoretical-physics research in Hakimi, from Research Mode admission through bounded actions and on-demand AITP delegation.",
   "keywords": [
     "physics",
     "research",

@@ -17,6 +17,7 @@ import { IAgentFullCompactionService } from '#/agent/fullCompaction/fullCompacti
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { IAgentPromptService } from '#/agent/prompt/prompt';
 import { AgentPromptService } from '#/agent/prompt/promptService';
+import { PromptStepRequest, SteerStepRequest } from '#/agent/prompt/promptStepRequests';
 import { IAgentScopeContext, makeAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentSystemReminderService } from '#/agent/systemReminder/systemReminder';
 import { AgentSystemReminderService } from '#/agent/systemReminder/systemReminderService';
@@ -76,6 +77,31 @@ function harness() {
 }
 
 describe('AgentPromptService', () => {
+  it('classifies user prompt ingress with a runtime-only user turn intent', () => {
+    const reminders = {} as IAgentSystemReminderService;
+    const prompt = new PromptStepRequest(message('research question'), [], reminders);
+    const steer = new SteerStepRequest(
+      message('follow-up'),
+      [],
+      reminders,
+      () => {},
+      () => {},
+      'activeOrNewTurn',
+    );
+    const injection = new SteerStepRequest(
+      { ...message('internal'), origin: { kind: 'injection', variant: 'test' } },
+      [],
+      reminders,
+      () => {},
+      () => {},
+      'activeOrNewTurn',
+    );
+
+    expect(prompt.turnSeed.intent).toEqual({ kind: 'user' });
+    expect(steer.turnSeed.intent).toEqual({ kind: 'user' });
+    expect(injection.turnSeed.intent).toBeUndefined();
+  });
+
   it('assigns stable identity and launches an idle prompt', async () => {
     const { prompt } = harness();
     const handle = await prompt.enqueue({ id: 'prompt-1', message: message('hello') });

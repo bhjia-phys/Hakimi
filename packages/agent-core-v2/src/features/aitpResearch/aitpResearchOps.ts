@@ -1,11 +1,11 @@
 /**
  * `aitpResearch` domain — wire Models and Ops for the AITP Research Mode.
  *
- * Two models back the Research Mode state:
+ * Four models back the Research Mode state:
  *
  * - `AitpModeModel` (checkpointed): holds the mode phase (`inactive` /
  *   `probing` / `ready` / `degraded`), loop status, and the monotonically
- *   increasing revision. It follows conversation undo so entering/exiting
+ *   conversation-local revision. It follows conversation undo so entering/exiting
  *   mode and selecting a line can be undone. The `aitp_mode.enter` /
  *   `aitp_mode.exit` / `aitp_mode.set_phase` / `aitp_mode.set_loop_status` /
  *   `aitp_mode.set_line` ops mutate it.
@@ -25,26 +25,36 @@
  *   `research.complete_action` / `research.record_progress` /
  *   `research.set_phase` / `research.request_human_decision` /
  *   `research.resolve_human_decision`, and the local layered-state ops
- *   `research.set_program` / `research.start_period` /
+ *   `research.set_program` / `research.confirm_goal_alignment` /
+ *   `research.clear_goal_alignment` / `research.start_period` /
  *   `research.update_period` / `research.end_period` (the topic-bound
- *   program and the auditable period window; created/updated only at clear
- *   semantic points by `AgentResearchService`) mutate it. Alert production is
+ *   program, explicit Goal-to-Program binding, and auditable period window;
+ *   created/updated only at clear semantic points by `AgentResearchService`)
+ *   mutate it. Alert production is
  *   owned by
  *   `AgentResearchService`, while these alert ops provide replayable state
  *   transitions.
  *
+ * - `ResearchRevisionModel` (non-checkpointed): holds the world-time public
+ *   optimistic-concurrency token. `research.advance_revision` applies an
+ *   absolute token reserved by the Research service before signalling a
+ *   complete `research.updated` snapshot. It never rewinds on conversation
+ *   undo and is independent of conversation-local working-state revisions.
+ *
  * - `ResearchCursorModel` (non-checkpointed): holds the committed cursor
  *   (latest commit), an ordered `history` of every committed checkpoint/Entry,
- *   and the global research revision. It does NOT follow conversation undo:
+ *   and a commit-sequence revision. It does NOT follow conversation undo:
  *   once a checkpoint is committed to AITP, undoing the conversation cannot
  *   retract that external fact. The `research.commit_checkpoint` op appends a
  *   new commit to both `cursor` and `history` (idempotent on a repeated
  *   checkpoint/Entry); `research.ack_checkpoint` reconciles the checkpointed
  *   working state.
  *
- * Research ops do NOT declare `toEvent`: the `AgentResearchService`
- * explicitly publishes a `research.updated` event carrying the full
- * `ResearchStatusSnapshot` after each direct mutation. Additionally,
+ * Checkpointed Research working-state ops do not declare `toEvent`.
+ * `research.advance_revision` signals only after its absolute world-time
+ * token has applied, and `AgentResearchService` then publishes a
+ * `research.updated` event carrying the full `ResearchStatusSnapshot`.
+ * Additionally,
  * `AgentResearchService` subscribes to `aitp_mode.updated` and publishes a
  * `research.updated` snapshot on every mode signal, so mode, loop, undo, and
  * degraded transitions all produce a complete snapshot push. Aitp-mode ops
@@ -65,6 +75,11 @@ import {
   type Checkpointed,
 } from '#/agent/contextMemory/conversationTime';
 import { defineModel } from '#/wire/model';
+import {
+  ResearchActionPlanBindingSchema,
+  ResearchLineWorkstreamBindingSchema,
+  ResearchPlanV2ActionBindingSchema,
+} from '#/features/research/types';
 
 import type {
   AitpModePhase,
@@ -77,18 +92,33 @@ import type {
   ResearchRunState,
   ResearchAlert,
   ResearchCheckpointReceipt,
+  ResearchDurableCommitCandidate,
   ResearchCommittedCursor,
+  ResearchDistillationAttention,
   ResearchHumanGateKind,
   ResearchPhase,
   ResearchProgram,
+  ResearchGoalProgramBinding,
+  ResearchLineWorkstreamBinding,
   ResearchPeriod,
+  ResearchPlanV2,
+  ResearchPlanV2ActionBinding,
+  ResearchActionPlanBinding,
+  ResearchPlanningPolicy,
   ResearchStatusSnapshot,
 } from './types';
 import {
+  AitpAuthoritySchema,
+  AitpEntryKindSchema,
+  ResearchCommitProvenanceSchema,
+} from './types';
+import {
   PLAN_ACTION_PHASES,
+  RESEARCH_ACTION_RECOVERY_PREFIX,
   isLiveForegroundAction,
   isPhaseTransitionValid,
   isUnresolvedHumanGate,
+  researchActionOwnedPhase,
 } from './transitions/researchTransitionAuthority';
 
 export interface AitpModeState {
@@ -164,6 +194,10 @@ export const aitpModeSetPhase = AitpModeModel.defineOp('aitp_mode.set_phase', {
     phase: AitpModePhaseSchema,
   }),
   apply: (s, p) => {
+    // A late persisted phase update must not revive a mode that already
+    // exited. The service guard covers live calls; this reducer guard also
+    // covers cold replay of old or interrupted journals.
+    if (s.current.phase === 'inactive') return s;
     if (s.current.phase === p.phase) return s;
     return {
       ...s,
@@ -227,8 +261,15 @@ export interface ResearchWorkingState {
   readonly recentStateChange: ResearchStateChangeRecord | null;
   readonly humanGate: ResearchHumanGateRecord | null;
   readonly program: ResearchProgramRecord | null;
+  readonly programObservationAnchor?: ResearchProgramRecord | null;
+  readonly programObservationRevision?: number;
+  readonly goalProgramBinding?: ResearchGoalProgramBindingRecord | null;
   readonly period: ResearchPeriodRecord | null;
   readonly periodHistory: readonly ResearchPeriodRecord[];
+  readonly researchPlanV2: ResearchPlanV2 | null;
+  readonly planningPolicy: ResearchPlanningPolicy;
+  /** Absent only in checkpoints written before explicit Line binding existed. */
+  readonly lineWorkstreamBindings?: Readonly<Record<string, ResearchLineWorkstreamBindingRecord>>;
 }
 
 export interface ResearchQuestionRecord {
@@ -269,6 +310,8 @@ export interface ResearchCheckpointRecord {
   readonly questionId?: string;
   readonly questionRevision?: number;
   readonly lineSlug?: string;
+  readonly workstreamBinding?: ResearchLineWorkstreamBindingRecord;
+  readonly commitCandidate?: ResearchDurableCommitCandidate;
   readonly assessment?: string;
   readonly nextAction?: string;
   readonly idempotencyKey: string;
@@ -293,6 +336,8 @@ export interface ResearchActionSpecRecord {
   readonly createdAt: number;
   readonly completedAt?: number;
   readonly requiresHumanApproval: boolean;
+  readonly researchPlanBinding?: ResearchPlanV2ActionBinding;
+  readonly actionPlanBinding?: ResearchActionPlanBinding;
   readonly run?: ResearchRunStateRecord;
 }
 
@@ -341,7 +386,14 @@ export interface ResearchHumanGateRecord {
   readonly createdAt: number;
 }
 
-export interface ResearchProgramRecord extends ResearchProgram {}
+export interface ResearchProgramRecord extends Omit<ResearchProgram, 'observedRevision'> {
+  /** Absent only in a replayed record written before observedRevision existed. */
+  readonly observedRevision?: number;
+}
+
+export interface ResearchGoalProgramBindingRecord extends ResearchGoalProgramBinding {}
+
+export interface ResearchLineWorkstreamBindingRecord extends ResearchLineWorkstreamBinding {}
 
 export interface ResearchPeriodRecord extends ResearchPeriod {}
 
@@ -363,8 +415,14 @@ export const ResearchModel = defineCheckpointedModel<ResearchWorkingState>(
     recentStateChange: null,
     humanGate: null,
     program: null,
+    programObservationAnchor: null,
+    programObservationRevision: 0,
+    goalProgramBinding: null,
     period: null,
     periodHistory: [],
+    researchPlanV2: null,
+    planningPolicy: 'collaborative',
+    lineWorkstreamBindings: {},
   }),
 );
 
@@ -427,6 +485,15 @@ const ResearchCheckpointReceiptSchema = z.object({
   postSaveCheck: ResearchCheckpointCheckReceiptSchema.optional(),
 }).strict();
 
+const ResearchDurableCommitCandidateSchema = z.object({
+  sourceActionId: z.string(),
+  progressRecordedAt: z.number(),
+  entryKind: AitpEntryKindSchema,
+  authority: AitpAuthoritySchema,
+  provenance: ResearchCommitProvenanceSchema,
+  rationale: LongTextSchema,
+}).strict();
+
 declare module '#/wire/types' {
   interface PersistedOpMap {
     'research.create_line': typeof researchCreateLine;
@@ -437,8 +504,10 @@ declare module '#/wire/types' {
     'research.switch_line': typeof researchSwitchLine;
     'research.steer': typeof researchSteer;
     'research.propose_checkpoint': typeof researchProposeCheckpoint;
+    'research.bind_checkpoint_entry': typeof researchBindCheckpointEntry;
     'research.bind_checkpoint_receipt': typeof researchBindCheckpointReceipt;
     'research.commit_checkpoint': typeof researchCommitCheckpoint;
+    'research.record_distillation_attention': typeof researchRecordDistillationAttention;
     'research.ack_checkpoint': typeof researchAcknowledgeCheckpoint;
     'research.reopen_question': typeof researchReopenQuestion;
     'research.upsert_alert': typeof researchUpsertAlert;
@@ -454,9 +523,12 @@ declare module '#/wire/types' {
     'research.request_human_decision': typeof researchRequestHumanDecision;
     'research.resolve_human_decision': typeof researchResolveHumanDecision;
     'research.set_program': typeof researchSetProgram;
+    'research.confirm_goal_alignment': typeof researchConfirmGoalAlignment;
+    'research.clear_goal_alignment': typeof researchClearGoalAlignment;
     'research.start_period': typeof researchStartPeriod;
     'research.update_period': typeof researchUpdatePeriod;
     'research.end_period': typeof researchEndPeriod;
+    'research.advance_revision': typeof researchAdvanceRevision;
   }
 }
 
@@ -739,6 +811,8 @@ export const researchProposeCheckpoint = ResearchModel.defineOp('research.propos
     committedEntryId: z.string().optional(),
     questionId: z.string().optional(),
     lineSlug: z.string().optional(),
+    workstreamBinding: ResearchLineWorkstreamBindingSchema.optional(),
+    commitCandidate: ResearchDurableCommitCandidateSchema.optional(),
     assessment: z.string().optional(),
     nextAction: z.string().optional(),
     idempotencyKey: z.string(),
@@ -761,6 +835,8 @@ export const researchProposeCheckpoint = ResearchModel.defineOp('research.propos
         ? undefined
         : question.revision + (question.persistence === 'pending_commit' ? 0 : 1),
       lineSlug: p.lineSlug,
+      workstreamBinding: p.workstreamBinding,
+      commitCandidate: p.commitCandidate,
       assessment: p.assessment,
       nextAction: p.nextAction,
       idempotencyKey: p.idempotencyKey,
@@ -1037,6 +1113,8 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
     allowedToolKinds: StringListSchema,
     retryOfEntryId: z.string().optional(),
     requiresHumanApproval: z.boolean(),
+    researchPlanBinding: ResearchPlanV2ActionBindingSchema.optional(),
+    actionPlanBinding: ResearchActionPlanBindingSchema.optional(),
     createdAt: z.number(),
   }),
   apply: (s, p) => {
@@ -1060,6 +1138,8 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
       status: 'planned',
       createdAt: p.createdAt,
       requiresHumanApproval: p.requiresHumanApproval,
+      researchPlanBinding: p.researchPlanBinding,
+      actionPlanBinding: p.actionPlanBinding,
     };
     return {
       ...s,
@@ -1092,6 +1172,8 @@ export const researchBeginAction = ResearchModel.defineOp('research.begin_action
     allowedToolKinds: StringListSchema,
     retryOfEntryId: z.string().optional(),
     requiresHumanApproval: z.literal(false),
+    researchPlanBinding: ResearchPlanV2ActionBindingSchema.optional(),
+    actionPlanBinding: ResearchActionPlanBindingSchema.optional(),
     createdAt: z.number(),
   }),
   apply: (s, p) => {
@@ -1115,6 +1197,8 @@ export const researchBeginAction = ResearchModel.defineOp('research.begin_action
       status: 'in_progress',
       createdAt: p.createdAt,
       requiresHumanApproval: false,
+      researchPlanBinding: p.researchPlanBinding,
+      actionPlanBinding: p.actionPlanBinding,
     };
     return {
       ...s,
@@ -1160,7 +1244,6 @@ export const researchCompleteAction = ResearchModel.defineOp('research.complete_
   apply: (s, p) => {
     const action = s.current.currentAction;
     if (action === null || action.actionId !== p.actionId) return s;
-    if (s.current.phase !== 'action_executing') return s;
     if (action.status !== 'in_progress') return s;
     return {
       ...s,
@@ -1255,6 +1338,7 @@ export const researchRecordProgress = ResearchModel.defineOp('research.record_pr
     recordedAt: z.number(),
   }),
   apply: (s, p) => {
+    if (isLiveForegroundAction(s.current.currentAction)) return s;
     const phase = p.phaseChange !== undefined
       ? (isPhaseTransitionValid(p.phaseChange.from, p.phaseChange.to) ? p.phaseChange.to : s.current.phase)
       : s.current.phase;
@@ -1301,8 +1385,11 @@ export const researchSetPhase = ResearchModel.defineOp('research.set_phase', {
     changedAt: z.number(),
   }),
   apply: (s, p) => {
+    const actionOwnedPhase = researchActionOwnedPhase(s.current.currentAction);
+    const isStructuralRecovery = actionOwnedPhase !== undefined && p.phase === actionOwnedPhase;
+    if (actionOwnedPhase !== undefined && !isStructuralRecovery) return s;
     if (s.current.phase === p.phase) return s;
-    if (!isPhaseTransitionValid(s.current.phase, p.phase)) return s;
+    if (!isStructuralRecovery && !isPhaseTransitionValid(s.current.phase, p.phase)) return s;
     const stateChange: ResearchStateChangeRecord = {
       beforePhase: s.current.phase,
       afterPhase: p.phase,
@@ -1364,6 +1451,7 @@ export const researchResolveHumanDecision = ResearchModel.defineOp('research.res
   }),
   apply: (s, p) => {
     const gate = s.current.humanGate;
+    const actionOwnedPhase = researchActionOwnedPhase(s.current.currentAction);
     if (
       s.current.phase !== 'awaiting_human' ||
       gate === null ||
@@ -1374,18 +1462,28 @@ export const researchResolveHumanDecision = ResearchModel.defineOp('research.res
         (s.current.currentAction === null || s.current.currentAction.status !== 'in_progress'))
     ) return s;
 
+    // Old journals could resolve a gate to a framing phase while retaining a
+    // live foreground action. Preserve the recorded human resolution, but let
+    // that action keep its structural phase. This is deterministic replay
+    // repair only; it never decides whether the action scientifically
+    // completed or should be abandoned.
+    const nextPhase = actionOwnedPhase ?? p.nextPhase;
+    const recoveredLiveAction = actionOwnedPhase !== undefined && p.nextPhase !== actionOwnedPhase;
+
     const stateChange: ResearchStateChangeRecord = {
       beforePhase: 'awaiting_human',
-      afterPhase: p.nextPhase,
+      afterPhase: nextPhase,
       actionId: s.current.currentAction?.actionId,
-      summary: p.resolution,
+      summary: recoveredLiveAction
+        ? `${RESEARCH_ACTION_RECOVERY_PREFIX} ${p.resolution}`
+        : p.resolution,
       changedAt: p.changedAt,
     };
     return {
       ...s,
       current: {
         ...s.current,
-        phase: p.nextPhase,
+        phase: nextPhase,
         humanGate: {
           ...gate,
           resolvedAt: p.changedAt,
@@ -1399,35 +1497,160 @@ export const researchResolveHumanDecision = ResearchModel.defineOp('research.res
 });
 
 export const researchSetProgram = ResearchModel.defineOp('research.set_program', {
-  schema: z.object({
-    topicId: z.string().min(1).max(200),
-    title: z.string().min(1).max(500),
-    goalText: z.string().max(8000),
-    goalSource: z.string().max(500),
-    establishedAt: z.number(),
-  }),
+  schema: z.union([
+    z.object({
+      topicId: z.string().min(1).max(200),
+      title: z.string().min(1).max(500),
+      goalText: z.string().max(8000),
+      goalSource: z.string().max(500),
+      establishedAt: z.number(),
+      observedRevision: z.number().int().positive().optional(),
+    }).strict(),
+    z.object({ clear: z.literal(true) }).strict(),
+  ]),
   apply: (s, p) => {
+    if ('clear' in p) {
+      if (s.current.program === null && s.current.goalProgramBinding === null) return s;
+      const anchor = s.current.program ?? s.current.programObservationAnchor ?? null;
+      const observationRevision = Math.max(
+        s.current.programObservationRevision ?? 0,
+        s.current.program?.observedRevision ?? 0,
+        s.current.programObservationAnchor?.observedRevision ?? 0,
+      );
+      return {
+        ...s,
+        current: {
+          ...s.current,
+          program: null,
+          programObservationAnchor: anchor,
+          programObservationRevision: observationRevision,
+          goalProgramBinding: null,
+          revision: s.current.revision + 1,
+        },
+      };
+    }
     const program = s.current.program;
+    const anchor = program ?? s.current.programObservationAnchor ?? null;
+    const observationRevision = Math.max(
+      s.current.programObservationRevision ?? 0,
+      program?.observedRevision ?? 0,
+      s.current.programObservationAnchor?.observedRevision ?? 0,
+    );
+    const sameObservation = anchor !== null &&
+      anchor.topicId === p.topicId &&
+      anchor.title === p.title &&
+      anchor.goalText === p.goalText &&
+      anchor.goalSource === p.goalSource;
+    const observedRevision = sameObservation
+      ? Math.max(observationRevision, anchor.observedRevision ?? 1, p.observedRevision ?? 0, 1)
+      : Math.max(observationRevision + 1, p.observedRevision ?? 0, 1);
+    const establishedAt = sameObservation ? anchor.establishedAt : p.establishedAt;
     if (
       program !== null &&
-      program.topicId === p.topicId &&
-      program.title === p.title &&
-      program.goalText === p.goalText &&
-      program.goalSource === p.goalSource &&
-      program.establishedAt === p.establishedAt
+      sameObservation &&
+      program.establishedAt === establishedAt &&
+      (program.observedRevision ?? 1) === observedRevision
     ) return s;
     const next: ResearchProgramRecord = {
       topicId: p.topicId,
       title: p.title,
       goalText: p.goalText,
       goalSource: p.goalSource,
-      establishedAt: p.establishedAt,
+      establishedAt,
+      observedRevision,
     };
     return {
       ...s,
       current: {
         ...s.current,
         program: next,
+        programObservationAnchor: next,
+        programObservationRevision: observedRevision,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+const ResearchGoalAlignmentRelationSchema = z.enum([
+  'same_program_goal',
+  'goal_parent_of_program',
+  'goal_milestone_in_program',
+  'unrelated',
+]);
+
+const ResearchGoalAlignmentBindingSchema = z.object({
+  relation: ResearchGoalAlignmentRelationSchema,
+  goalId: z.string().min(1).max(200),
+  topicId: z.string().min(1).max(200),
+  observedRevision: z.number().int().positive(),
+  confirmedAt: z.number(),
+}).strict();
+
+const ResearchGoalAlignmentMutationSchema = ResearchGoalAlignmentBindingSchema.extend({
+  expectedRevision: z.number().int().nonnegative(),
+}).strict();
+
+export const researchConfirmGoalAlignment = ResearchModel.defineOp('research.confirm_goal_alignment', {
+  schema: ResearchGoalAlignmentMutationSchema,
+  apply: (s, p) => {
+    const program = s.current.program;
+    if (
+      s.current.revision !== p.expectedRevision ||
+      program === null ||
+      program.topicId !== p.topicId ||
+      (program.observedRevision ?? 1) !== p.observedRevision
+    ) return s;
+    const binding: ResearchGoalProgramBindingRecord = {
+      relation: p.relation,
+      goalId: p.goalId,
+      topicId: p.topicId,
+      observedRevision: p.observedRevision,
+      confirmedAt: p.confirmedAt,
+    };
+    const current = s.current.goalProgramBinding;
+    if (
+      current !== undefined &&
+      current !== null &&
+      current.relation === binding.relation &&
+      current.goalId === binding.goalId &&
+      current.topicId === binding.topicId &&
+      current.observedRevision === binding.observedRevision &&
+      current.confirmedAt === binding.confirmedAt
+    ) return s;
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        goalProgramBinding: binding,
+        revision: s.current.revision + 1,
+      },
+    };
+  },
+});
+
+export const researchClearGoalAlignment = ResearchModel.defineOp('research.clear_goal_alignment', {
+  schema: z.object({
+    expectedRevision: z.number().int().nonnegative(),
+    goalId: z.string().min(1).max(200),
+    topicId: z.string().min(1).max(200),
+    observedRevision: z.number().int().positive(),
+  }).strict(),
+  apply: (s, p) => {
+    const program = s.current.program;
+    if (
+      s.current.revision !== p.expectedRevision ||
+      program === null ||
+      program.topicId !== p.topicId ||
+      (program.observedRevision ?? 1) !== p.observedRevision ||
+      s.current.goalProgramBinding === undefined ||
+      s.current.goalProgramBinding === null
+    ) return s;
+    return {
+      ...s,
+      current: {
+        ...s.current,
+        goalProgramBinding: null,
         revision: s.current.revision + 1,
       },
     };
@@ -1575,6 +1798,65 @@ export const researchCommitCheckpoint = ResearchCursorModel.defineOp('research.c
   },
 });
 
+export interface ResearchDistillationState {
+  readonly attention: ResearchDistillationAttention | null;
+  readonly commitRevision: number;
+}
+
+/**
+ * Non-checkpointed observation of the latest post-commit Skill handoff.
+ * It follows the irreversible tool-side request rather than conversation undo,
+ * but owns no scheduler, retry, or Method-card state.
+ */
+export const ResearchDistillationModel = defineModel<ResearchDistillationState>(
+  'researchDistillation',
+  () => ({ attention: null, commitRevision: 0 }),
+);
+
+export const researchRecordDistillationAttention = ResearchDistillationModel.defineOp(
+  'research.record_distillation_attention',
+  {
+    schema: z.discriminatedUnion('status', [
+      z.object({
+        status: z.literal('review_requested'),
+        checkpointId: z.string(),
+        entryId: z.string(),
+        recordedAt: z.number(),
+        commitRevision: z.number().int().positive(),
+      }).strict(),
+      z.object({
+        status: z.literal('handoff_unavailable'),
+        checkpointId: z.string(),
+        entryId: z.string(),
+        reason: ShortTextSchema,
+        recordedAt: z.number(),
+        commitRevision: z.number().int().positive(),
+      }).strict(),
+    ]),
+    apply: (state, payload) => {
+      if (payload.commitRevision <= state.commitRevision) return state;
+      const attention: ResearchDistillationAttention = payload.status === 'review_requested'
+        ? {
+            schema: 'hakimi/research-distillation-attention-0.1',
+            status: payload.status,
+            checkpointId: payload.checkpointId,
+            entryId: payload.entryId,
+            recordedAt: payload.recordedAt,
+          }
+        : {
+            schema: 'hakimi/research-distillation-attention-0.1',
+            status: payload.status,
+            checkpointId: payload.checkpointId,
+            entryId: payload.entryId,
+            reason: payload.reason,
+            recordedAt: payload.recordedAt,
+      };
+      return { attention, commitRevision: payload.commitRevision };
+    },
+    toEvent: () => ({ type: 'research.distillation_attention_updated' as const }),
+  },
+);
+
 export const researchAcknowledgeCheckpoint = ResearchModel.defineOp('research.ack_checkpoint', {
   schema: z.object({
     checkpointId: z.string(),
@@ -1609,6 +1891,32 @@ export const researchAcknowledgeCheckpoint = ResearchModel.defineOp('research.ac
   },
 });
 
+export interface ResearchRevisionState {
+  readonly revision: number;
+}
+
+export const ResearchRevisionModel = defineModel<ResearchRevisionState>(
+  'researchRevision',
+  () => ({ revision: 0 }),
+);
+
+export const researchAdvanceRevision = ResearchRevisionModel.defineOp(
+  'research.advance_revision',
+  {
+    schema: z.object({
+      nextRevision: z.number().int().nonnegative(),
+      notifyGoal: z.boolean(),
+    }).strict(),
+    apply: (state, { nextRevision }) => ({
+      revision: Math.max(state.revision, nextRevision),
+    }),
+    toEvent: ({ notifyGoal }) => ({
+      type: 'research.revision_advanced' as const,
+      notifyGoal,
+    }),
+  },
+);
+
 function sameCheckpointReceipt(
   left: ResearchCheckpointReceipt | undefined,
   right: ResearchCheckpointReceipt,
@@ -1619,6 +1927,8 @@ function sameCheckpointReceipt(
 declare module '#/app/event/eventBus' {
   interface DomainEventMap {
     'aitp_mode.updated': void;
+    'research.distillation_attention_updated': void;
+    'research.revision_advanced': { readonly notifyGoal: boolean };
     'research.updated': { readonly snapshot: ResearchStatusSnapshot };
   }
 }

@@ -20,6 +20,7 @@ import {
   researchCheckpointSchema,
   researchLineCreationInputSchema,
   researchLineSchema,
+  researchLineWorkstreamBindingSchema,
   researchLineUpdateInputSchema,
   researchQuestionSchema,
   researchStatusSnapshotSchema,
@@ -33,6 +34,10 @@ import {
   researchRunStateSchema,
   researchPlanSchema,
   prepareResearchPlanInputSchema,
+  researchPlanV2Schema,
+  prepareResearchPlanV2InputSchema,
+  transitionResearchPlanV2InputSchema,
+  researchPlanningPolicySchema,
   researchActionSpecSchema,
   planActionInputSchema,
   concludeActionInputSchema,
@@ -44,6 +49,10 @@ import {
   type UpdateQuestionInput,
 } from './researchSchemas.js';
 import type {
+  ClearLineWorkstreamBindingInput,
+  ClearGoalAlignmentInput,
+  ConfirmLineWorkstreamBindingInput,
+  ConfirmGoalAlignmentInput,
   ObserveResearchRunInput,
   UpdateLineInput,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
@@ -93,6 +102,34 @@ const commitCheckpointInputSchema = z.object({
   entryId: z.string(),
 }) satisfies z.ZodType<CommitCheckpointInput>;
 
+const confirmGoalAlignmentInputSchema = z.object({
+  relation: z.enum(['same_program_goal', 'goal_parent_of_program', 'goal_milestone_in_program', 'unrelated']),
+  expectedRevision: z.number().int().nonnegative(),
+  goalId: z.string(),
+  topicId: z.string(),
+  observedRevision: z.number().int().positive(),
+}).strict() satisfies z.ZodType<ConfirmGoalAlignmentInput>;
+
+const clearGoalAlignmentInputSchema = z.object({
+  expectedRevision: z.number().int().nonnegative(),
+  goalId: z.string(),
+  topicId: z.string(),
+  observedRevision: z.number().int().positive(),
+}).strict() satisfies z.ZodType<ClearGoalAlignmentInput>;
+
+const confirmLineWorkstreamBindingInputSchema = z.object({
+  lineSlug: z.string().min(1).max(200),
+  workstream: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+  expectedRevision: z.number().int().nonnegative(),
+  confirmedBy: z.literal('user'),
+}).strict() satisfies z.ZodType<ConfirmLineWorkstreamBindingInput>;
+
+const clearLineWorkstreamBindingInputSchema = z.object({
+  lineSlug: z.string().min(1).max(200),
+  expectedConfirmationId: z.string().min(1).max(200),
+  expectedRevision: z.number().int().nonnegative(),
+}).strict() satisfies z.ZodType<ClearLineWorkstreamBindingInput>;
+
 const observeResearchRunInputSchema = z.object({
   actionId: z.string(),
   expectedRevision: z.number().int().nonnegative(),
@@ -135,6 +172,22 @@ export const agentResearchContract = {
   getPendingCheckpoint: { input: z.tuple([]), output: maybe(researchCheckpointSchema) },
   getCommittedCursor: { input: z.tuple([]), output: maybe(researchCommittedCursorSchema) },
   getResearchPlan: { input: z.tuple([]), output: maybe(researchPlanSchema) },
+  getResearchPlanV2: { input: z.tuple([]), output: maybe(researchPlanV2Schema) },
+  getPlanningPolicy: { input: z.tuple([]), output: researchPlanningPolicySchema },
+  setPlanningPolicy: {
+    input: z.tuple([researchPlanningPolicySchema, z.number().int().nonnegative()]),
+    output: noResult,
+  },
+  confirmGoalAlignment: { input: z.tuple([confirmGoalAlignmentInputSchema]), output: noResult },
+  clearGoalAlignment: { input: z.tuple([clearGoalAlignmentInputSchema]), output: noResult },
+  confirmLineWorkstreamBinding: {
+    input: z.tuple([confirmLineWorkstreamBindingInputSchema]),
+    output: researchLineWorkstreamBindingSchema,
+  },
+  clearLineWorkstreamBinding: {
+    input: z.tuple([clearLineWorkstreamBindingInputSchema]),
+    output: noResult,
+  },
   planAndStartAction: {
     input: z.tuple([planActionInputSchema]),
     output: researchActionSpecSchema,
@@ -154,6 +207,22 @@ export const agentResearchContract = {
   },
   finalizeResearchPlan: { input: z.tuple([]), output: researchPlanSchema },
   discardResearchPlan: { input: z.tuple([]), output: maybe(researchPlanSchema) },
+  prepareResearchPlanV2: {
+    input: z.tuple([prepareResearchPlanV2InputSchema]),
+    output: researchPlanV2Schema,
+  },
+  activateResearchPlanV2: {
+    input: z.tuple([transitionResearchPlanV2InputSchema]),
+    output: researchPlanV2Schema,
+  },
+  completeResearchPlanV2: {
+    input: z.tuple([transitionResearchPlanV2InputSchema]),
+    output: researchPlanV2Schema,
+  },
+  discardResearchPlanV2: {
+    input: z.tuple([transitionResearchPlanV2InputSchema]),
+    output: researchPlanV2Schema,
+  },
   createQuestion: {
     input: z.tuple([createQuestionInputSchema]),
     output: researchQuestionSchema,

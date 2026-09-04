@@ -180,6 +180,13 @@ export const goalWaitLeaseSchema = z
   })
   .strict();
 
+/** Live, derived Goal continuation state. */
+export const goalContinuationSnapshotSchema = z.object({
+  state: z.enum(['idle', 'deciding', 'enqueued', 'running', 'held', 'waiting']),
+  owner: z.string().optional(),
+  reason: z.string().optional(),
+});
+
 /** `GoalSnapshot` from the engine's `agent/goal/types`. */
 export const goalSnapshotSchema = z.object({
   goalId: z.string(),
@@ -191,6 +198,7 @@ export const goalSnapshotSchema = z.object({
   wallClockMs: z.number(),
   budget: goalBudgetReportSchema,
   waitingFor: goalWaitLeaseSchema.optional(),
+  continuation: goalContinuationSnapshotSchema.optional(),
   terminalReason: z.string().optional(),
 });
 

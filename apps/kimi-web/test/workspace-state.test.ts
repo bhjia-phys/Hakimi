@@ -97,9 +97,9 @@ function createState(): ExtendedState {
     connected: true,
     remoteSessionId: null,
     serverVersion: '',
-    experimentalFlags: { aitp_research_mode: true },
+    experimentalFlags: {},
     dangerousBypassAuth: false,
-    backend: 'v1',
+    backend: 'v2',
     workspaceName: 'kimi-web',
     connection: 'connected',
     permission: 'manual',
@@ -1173,7 +1173,7 @@ describe('useWorkspaceState — config reconciliation', () => {
       serverVersion: '1.0.0',
       openInApps: [],
       dangerousBypassAuth: false,
-      experimentalFlags: { aitp_research_mode: true },
+      experimentalFlags: { 'tool-select': true },
       backend: 'v2',
     });
   });
@@ -1297,24 +1297,24 @@ describe('useWorkspaceState — config reconciliation', () => {
     );
     apiMock.getConfig.mockReset().mockResolvedValue({
       providers: {},
-      experimental: { aitp_research_mode: false },
+      experimental: { 'tool-select': false },
     });
     apiMock.getMeta.mockResolvedValue({
       serverVersion: '1.0.0',
       openInApps: [],
       dangerousBypassAuth: false,
-      experimentalFlags: { aitp_research_mode: false },
+      experimentalFlags: { 'tool-select': false },
       backend: 'v2',
     });
     const state = createState();
     const ws = useWorkspaceState(state, createDeps());
 
-    const update = ws.updateConfig({ experimental: { aitp_research_mode: false } });
+    const update = ws.updateConfig({ experimental: { 'tool-select': false } });
     expect(state.experimentalFlags).toEqual({});
     rejectPost?.(new Error('response lost'));
 
     await expect(update).resolves.toBe(false);
-    expect(state.experimentalFlags['aitp_research_mode']).toBe(false);
+    expect(state.experimentalFlags['tool-select']).toBe(false);
     expect(apiMock.getMeta).toHaveBeenCalledTimes(1);
   });
 
@@ -1372,22 +1372,22 @@ describe('useWorkspaceState — config reconciliation', () => {
   it('re-reads effective meta flags without treating the retired Research flag as a gate', async () => {
     apiMock.setConfig.mockReset().mockResolvedValue({
       providers: {},
-      experimental: { aitp_research_mode: true },
+      experimental: { 'tool-select': true },
     });
     apiMock.getMeta.mockResolvedValue({
       serverVersion: '1.0.0',
       openInApps: [],
       dangerousBypassAuth: false,
-      experimentalFlags: { aitp_research_mode: false },
+      experimentalFlags: { 'tool-select': false },
       backend: 'v2',
     });
     const state = createState();
     const ws = useWorkspaceState(state, createDeps());
 
-    await expect(ws.updateConfig({ experimental: { aitp_research_mode: true } })).resolves.toBe(true);
+    await expect(ws.updateConfig({ experimental: { 'tool-select': true } })).resolves.toBe(true);
 
-    expect(state.config?.experimental?.['aitp_research_mode']).toBe(true);
-    expect(state.experimentalFlags['aitp_research_mode']).toBe(false);
+expect(state.config?.experimental?.['tool-select']).toBe(true);
+    expect(state.experimentalFlags['tool-select']).toBe(false);
     await ws.commandResearch({ kind: 'exit_mode' });
     expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
   });
@@ -2270,7 +2270,7 @@ describe('useWorkspaceState — refreshServerMeta', () => {
       serverVersion: '9.9.9',
       openInApps: ['finder'],
       dangerousBypassAuth: true,
-      experimentalFlags: { aitp_research_mode: true },
+      experimentalFlags: { 'tool-select': true },
       backend: 'v2',
     });
     const state = createState();
@@ -2282,7 +2282,7 @@ describe('useWorkspaceState — refreshServerMeta', () => {
     expect(state.serverVersion).toBe('9.9.9');
     expect(state.availableOpenInApps).toEqual(['finder']);
     expect(state.dangerousBypassAuth).toBe(true);
-    expect(state.experimentalFlags).toEqual({ aitp_research_mode: true });
+    expect(state.experimentalFlags).toEqual({ 'tool-select': true });
     expect(state.backend).toBe('v2');
   });
 
@@ -2290,15 +2290,42 @@ describe('useWorkspaceState — refreshServerMeta', () => {
     apiMock.getMeta.mockRejectedValue(new Error('connection refused'));
     const state = createState();
     state.backend = 'v2';
+    state.experimentalFlags = { 'tool-select': true };
     const ws = useWorkspaceState(state, createDeps());
 
     await ws.refreshServerMeta();
-    expect(state.experimentalFlags).toEqual({ aitp_research_mode: true });
+    expect(state.experimentalFlags).toEqual({ 'tool-select': true });
 
     await ws.refreshServerMeta(true);
     expect(state.experimentalFlags).toEqual({});
     expect(state.backend).toBe('v2');
     expect(state.serverVersion).toBe('');
+  });
+
+  it('fails backend availability closed while reconnect meta is pending', async () => {
+    const meta = {
+      serverVersion: '9.9.9',
+      openInApps: [],
+      dangerousBypassAuth: false,
+      experimentalFlags: { 'tool-select': true },
+      backend: 'v2' as const,
+    };
+    let resolveMeta!: (value: typeof meta) => void;
+    apiMock.getMeta.mockReturnValue(new Promise((resolve) => {
+      resolveMeta = resolve;
+    }));
+    const state = createState();
+    state.experimentalFlags = { 'tool-select': true };
+    const ws = useWorkspaceState(state, createDeps());
+
+    const refresh = ws.refreshServerMeta(true, true);
+    expect(state.experimentalFlags).toEqual({});
+    expect(state.backend).toBe('v1');
+
+    resolveMeta(meta);
+    await refresh;
+    expect(state.experimentalFlags).toEqual({ 'tool-select': true });
+    expect(state.backend).toBe('v2');
   });
 });
 
@@ -2853,6 +2880,8 @@ describe('useWorkspaceState — Research', () => {
     return {
       mode: 'ready',
       loopStatus: 'active',
+      planningPolicy: 'collaborative',
+      lineWorkstreamBindings: [],
       phase: 'idle',
       currentLineSlug: 'line-a',
       questions: [],
@@ -2953,6 +2982,29 @@ describe('useWorkspaceState — Research', () => {
     await vi.waitFor(() => expect(apiMock.commandSessionResearch).toHaveBeenCalledTimes(2));
     await expect(second).resolves.toBe(secondSnapshot);
     expect(state.researchBySession['sess_1']).toBe(secondSnapshot);
+  });
+
+  it('does not issue a queued Research POST after the backend switches to v1', async () => {
+    const firstSnapshot = snapshot(2);
+    let resolveFirst!: (value: typeof firstSnapshot) => void;
+    apiMock.commandSessionResearch.mockImplementationOnce(
+      () => new Promise<typeof firstSnapshot>((resolve) => {
+        resolveFirst = resolve;
+      }),
+    );
+    const state = createState();
+    const ws = useWorkspaceState(state, createDeps());
+
+    const first = ws.commandResearch({ kind: 'pause_loop', expectedRevision: 1 });
+    await vi.waitFor(() => expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce());
+    const queued = ws.commandResearch({ kind: 'resume_loop', expectedRevision: 2 });
+    await Promise.resolve();
+    state.backend = 'v1';
+
+    resolveFirst(firstSnapshot);
+    await expect(first).resolves.toBe(firstSnapshot);
+    await expect(queued).resolves.toBeNull();
+    expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
   });
 
   it('returns the live authoritative snapshot when it wins a command response race', async () => {
@@ -3085,7 +3137,8 @@ describe('useWorkspaceState — Research', () => {
   it.each([
     ['missing', {}, { aitp_research_mode: true }],
     ['false', { aitp_research_mode: false }, { aitp_research_mode: true }],
-  ] as const)('ignores the inert legacy Research flag when it is %s', async (_case, flags, config) => {
+    ['true', { aitp_research_mode: true }, { aitp_research_mode: false }],
+  ] as const)('allows commands on v2 when the legacy meta flag is %s', async (_case, flags, config) => {
     const nextSnapshot = snapshot(2);
     apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
     const state = createResearchState();
@@ -3097,19 +3150,21 @@ describe('useWorkspaceState — Research', () => {
     expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
   });
 
-  it('allows commands when the inert persisted Research flag is false', async () => {
-    const nextSnapshot = snapshot(2);
-    apiMock.commandSessionResearch.mockResolvedValue(nextSnapshot);
-    const state = createResearchState();
-    state.experimentalFlags = { aitp_research_mode: true };
-    state.config = { providers: {}, experimental: { aitp_research_mode: false } };
+  it.each([
+    ['missing', {}],
+    ['false', { aitp_research_mode: false }],
+    ['true', { aitp_research_mode: true }],
+  ] as const)('blocks commands on v1 when the legacy meta flag is %s', async (_case, flags) => {
+    const state = createState();
+    state.backend = 'v1';
+    state.experimentalFlags = flags;
     const ws = useWorkspaceState(state, createDeps());
 
-    await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBe(nextSnapshot);
-    expect(apiMock.commandSessionResearch).toHaveBeenCalledOnce();
+    await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBeNull();
+    expect(apiMock.commandSessionResearch).not.toHaveBeenCalled();
   });
 
-  it('refreshes the Research sidecar regardless of the inert legacy flag', async () => {
+  it('starts a Research sidecar refresh on v2 when the legacy flag is false', async () => {
     const state = createResearchState();
     state.experimentalFlags = { aitp_research_mode: false };
     state.config = { providers: {}, experimental: { aitp_research_mode: true } };
@@ -3122,8 +3177,11 @@ describe('useWorkspaceState — Research', () => {
   });
 
   it('does not call Research endpoints on the legacy v1 backend', async () => {
+    const state = createState();
+    state.backend = 'v1';
+    state.experimentalFlags = { aitp_research_mode: true };
     const deps = createDeps();
-    const ws = useWorkspaceState(createState(), deps);
+    const ws = useWorkspaceState(state, deps);
 
     await ws.refreshResearch();
     await expect(ws.commandResearch({ kind: 'exit_mode' })).resolves.toBeNull();

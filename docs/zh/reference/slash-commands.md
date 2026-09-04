@@ -128,8 +128,10 @@ TUI 与 Web 使用相同语法：保留子命令仅作为第一个 token 时生�
 | `/research close <questionId> [-- <原因>]` | 关闭问题 | TUI 与 Web；仅空闲时 |
 | `/research reopen <questionId> [-- <原因>]` | 重新打开已关闭的问题 | TUI 与 Web；仅空闲时 |
 | `/research line <slug>` | 切换当前研究线 | TUI 与 Web；仅空闲时 |
+| `/research align same_program_goal\|goal_parent_of_program\|goal_milestone_in_program\|unrelated` | 显式确认当前 Hakimi Goal 与 observed AITP Program 的本地 checkpointed 关系。它要求两者同时存在，绝不写 AITP；`unrelated` 是明确 conflict | TUI 和 Web；仅空闲时 |
+| `/research align clear` | 清除本地 Goal–Program binding；下一次 active Research Mode 的 Goal completion 或 automatic continuation 将再次要求确认 | TUI 和 Web；仅空闲时 |
 
-子命令（`on`、`off`、`pause`、`resume`、`manage`、`status`、`edit`、`focus`、`defer`、`block`、`close`、`reopen`、`line`）仅作为第一个 token 时生效。如果文本需要以这些词开头，请加 `--`：
+子命令（`on`、`off`、`pause`、`resume`、`manage`、`status`、`align`、`edit`、`focus`、`defer`、`block`、`close`、`reopen`、`line`）仅作为第一个 token 时生效。如果文本需要以这些词开头，请加 `--`：
 
 ```sh
 /research focus q-17 -- on the boundary zero mode
@@ -139,11 +141,11 @@ TUI 与 Web 使用相同语法：保留子命令仅作为第一个 token 时生�
 
 带 revision 的 mutation 会携带草稿捕获的 snapshot 或 entity `revision` 作为 `expectedRevision`；stale revision 会失败且不应用变更。其他 mutation 不携带 `expectedRevision`，而是依赖捕获的 target 或 pending-checkpoint identity，以及服务端状态约束。TUI 会刷新 Board；Web 会重新读取同一 session 的 authoritative snapshot，并在表单 dirty 时保留草稿、显示 stale warning，供你刷新后重试。
 
-只读 Research Board 会在两个 surface 的输入区上方显示 `probing`、`ready` 或 `degraded` 健康状态，以及当前研究线与焦点、问题计数、alerts 和 checkpoint。TUI 还会投影 Todo Actions，并用 `Ctrl-O` 展开或折叠 Board。Web 使用 **Expand**、**Collapse** 和 **Manage** 按钮及表单；TUI 快捷键不适用于 Web。
+只读 Research Board 会在两个 surface 的输入区上方显示 `probing`、`ready` 或 `degraded` 健康状态，以及当前研究线与焦点、问题计数、alerts、checkpoint 和 active Goal–Program 对齐阻塞。TUI 还会投影 Todo Actions，并用 `Ctrl-O` 展开或折叠 Board。Web 使用 **Expand**、**Collapse** 和 **Manage** 按钮及表单；TUI 快捷键不适用于 Web。
 
 Web 的 checkpoint 控件不写 AITP。只有存在 pending checkpoint 且显式填写已有 AITP `entryId` 时，**Commit** 才可用；Web 只通过 Research endpoint 关联该 ID，不会调用 `record`/`note` 或写 canonical ledger 文件。
 
-显式进入后，如果 AITP 未安装、未初始化或其 `check` 返回 exit 2，两个 surface 都会显示 `degraded`。读工具仍可用，但 AITP 写工具、checkpoint commit、问题关闭、active Research Mode 的 Goal 完成和 session closeout 都会被阻止，直到 adapter 恢复或用户明确选择在无持久化的情况下继续；未解决的 human-gate decision 也会阻止 Goal 完成。本地 Question/Line mutation 仍可能发生，但不是持久化的 AITP write。Research Mode 不执行 automatic session closeout，也绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`；`backfill` 不作为模型工具暴露。除 `EnterAITPMode` 外的 Research/AITP 工具以及 AITP plugin skill 仍仅在 active 状态下可见。
+显式进入后，如果 AITP 未安装、未初始化或其 `check` 返回 exit 2，两个 surface 都会显示 `degraded`。读工具仍可用，但 AITP 写工具、checkpoint commit、问题关闭、active Research Mode 的 Goal 完成和 session closeout 都会被阻止，直到 adapter 恢复或用户明确选择在无持久化的情况下继续；未观测到 Program 或未解决的 Goal–Program 对齐也会阻止 active Goal 完成与 automatic continuation。本地 Question/Line mutation 仍可能发生，但不是持久化的 AITP write。Research Mode 不执行 automatic session closeout，也绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`；`backfill` 不作为模型工具暴露。除 `EnterAITPMode` 外的 Research/AITP 工具以及 AITP plugin skill 仍仅在 active 状态下可见。
 
 ## 信息与状态
 

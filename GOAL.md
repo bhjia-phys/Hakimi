@@ -23,6 +23,20 @@
 
 没有 `cancelled` 状态。取消就是清除 goal，并提醒模型忽略之前关于该目标的 active reminder。
 
+### 自治推进状态
+
+Goal 生命周期与自治推进不是同一个维度。`active` 表示目标仍可推进，不等于
+模型此刻正在运行。公开 snapshot 通过可选的派生 `continuation` 投影区分
+`idle`、`deciding`、`enqueued`、`running`、`held` 和 `waiting`；旧客户端可
+忽略该字段。
+
+`held` 表示某个 continuation participant 暂时阻止下一轮，snapshot 同时保留
+该 participant 的 `owner` 和 `reason`，UI 必须显示为 `active · continuation
+held`，不能误报成 `paused`。`waiting` 来自持久化的 task wait lease；其他
+continuation 状态均为 runtime 派生事实，不写入 Goal model。显式重试、用户新
+turn、生命周期变化、wait/cancel、replay 或 resume 都必须清除或重新计算旧
+hold，不能继续展示已经失效的原因。
+
 ### 创建和替换
 
 创建 goal 时，runtime 需要校验目标不能为空、不能过长。已有 active、paused 或 blocked goal 时，默认拒绝创建新 goal，防止静默覆盖。只有用户或调用方明确要求替换时，才先清除旧 goal，再创建新 goal。
@@ -227,7 +241,6 @@ goal ID 不应暴露给模型，因为它只是 runtime/UI 内部标识，没有
 
 ### UI 和会话语义
 
-goal 创建、暂停、恢复、阻塞、完成、清除都应发出 goal updated 事件。lifecycle 变化和 completion 变化应区分。completion 是一次终局事件，然后 snapshot 变 null。blocked/paused 保留 snapshot，UI 可以继续展示可恢复 goal。
+goal 创建、暂停、恢复、阻塞、完成、清除都应发出 goal updated 事件。lifecycle、completion 和派生 continuation 变化应区分；continuation-only 更新不应制造新的 transcript marker。completion 是一次终局事件，然后 snapshot 变 null。blocked/paused 保留 snapshot，UI 可以继续展示可恢复 goal；active Goal 的 UI 还应独立展示 continuation 是否正在运行、排队、等待或被 hold。
 
 session 恢复时，active goal 会变 paused，避免重启后自动继续。fork session 时不继承 goal，并提醒模型不要继续源 session 的目标。
-

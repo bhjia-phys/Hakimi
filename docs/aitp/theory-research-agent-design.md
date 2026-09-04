@@ -4,7 +4,13 @@
 >
 > 本文件是 Hakimi 侧的设计交接材料，不是 AITP canonical Entry 或 Note。当前 Hakimi 仓库没有初始化 `.aitp` store；不能自动 `init --adopt`，也不能绕过 AITP 的 `record/note prepare|save` 写入伪账本。待在已初始化的 AITP Topic workspace 中继续工作时，应把本备忘录压缩为真实的 `decision` 或 `working Note`，并按 AITP pin 规则保存。
 >
-> **已实现范围：** Hakimi adapter 的 H0–H4（strict contract discovery、Python probe、`enter`/`list`/`show`/`check`、scoped `--workstream`、`record`/`note prepare|save` 写入门控持久化）以及 Research state（Question/Line/Focus、三轴问题模型、revision-based human steering、pending checkpoint 与 save+show+check barrier、Goal complete guard）、mode/loop/Question/Focus/checkpoint 的单一完整 snapshot push、active step 的语义状态维护 guidance、protocol/node-sdk/kap-server/klient 公开表面、TUI `/research` Board/manager 与 stale-hydrate 防护已实现。H5 仅部分集成：adapter 只把 check finding code 作为 opaque string 投影，不暴露、不调用、不解析 `backfill-0.1` 成功 envelope，也不实现 `sha256-once:`/`check-policy` 语义。`/research on` 只激活 capability 和 Board，不调度模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。新 session 初始为 inactive，inactive hydration/GET/snapshot 读取零 AITP I/O；持久化为 active 的 session 在 cold restore 后仍保持 active，并重新 probe adapter、执行只读 `enter` → `check` maintenance。active、admitted 的 Goal continuation turn 在 Research state 发生变化后的 turn end 也执行只读 maintenance。不自动 init/adopt/inventory/backfill apply；backfill 不作为模型工具暴露。
+> **已实现范围：** Hakimi adapter 的 H0–H4（strict contract discovery、Python probe、`enter`/`list`/`show`/`check`、scoped `--workstream`、`record`/`note prepare|save` 写入门控持久化）以及 Research state（Question/Line/Focus、三轴问题模型、revision-based human steering、pending checkpoint 与 save+show+check barrier、Goal complete guard）、mode/loop/Question/Focus/checkpoint 的单一完整 snapshot push、active step 的语义状态维护 guidance、protocol/node-sdk/kap-server/klient 公开表面、TUI `/research` Board/manager 与 stale-hydrate 防护已实现。H5 仅部分集成：adapter 只把 check finding code 作为 opaque string 投影，不暴露、不调用、不解析 `backfill-0.1` 成功 envelope，也不实现 `sha256-once:`/`check-policy` 语义。`/research on` 只激活 capability 和 Board，不调度模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。active、ready、loop-running 时，typed main-agent user prompt 获得 transient interactive Research lease；只有现有 continuation guards 放行后由 Goal engine 生成的 typed continuation 获得 autonomous lease。新 session 初始为 inactive，inactive hydration/GET/snapshot 读取零 AITP I/O；持久化为 active 的 session 在 cold restore 后仍保持 active，并重新 probe adapter、执行只读 `enter` → `check` maintenance。两类 admitted turn 在 Research state 发生变化后的 turn end 都执行只读 maintenance。不自动 init/adopt/inventory/backfill apply；backfill 不作为模型工具暴露。
+>
+> **S5 strong gate 已通过（S5.1）：** Research Line 与 AITP workstream 通过 Hakimi-local、revisioned 的显式 binding 连接；绝不从 slug、text、path 或 ID 推断。AITP 0.9.0 adapter-contract 0.2 提供成对 atomic expected-Topic/exact-workstream `record save` 前置条件，Hakimi 从 captured binding 自动传入；mismatch 不产生 canonical Entry，post-save `show`/scoped `check` 继续作为 defense in depth。不新增 file/read schema、backfill 或 registry。
+>
+> **S6 implementation 已落地：** `ConcludeResearchAction` 同时完成 action conclusion、唯一 progress boundary 与 main-agent durability assessment。no-delta 不安排 S6 write/review；durable delta 生成一个 typed pending candidate，并复用现有 prepare/fill/atomic-save/show/scoped-check/commit barrier。相同 retry 幂等，不同 retry、重复 progress、provenance mismatch 和 pending durability 下的 formal closure fail closed；public snapshot/REST/WS/SDK/klient/TUI/Web 同步 candidate。AITP runtime/schema/contract 不变。
+>
+> **S7 bounded handoff 已落地：** 首次成功 commit 一个新 checkpoint 后，Agent-scope 无状态 service 会精确解析 `aitp-research-protocol:distilling-methods`，并在同一轮只把 touched Entry/checkpoint 交给外部 Skill 做一次 best-effort review。duplicate commit、Skill 缺失/隐藏/不可由模型调用或加载失败都非阻塞 no-op。Hakimi 不解析 marker、不判断 trigger、不自行创建/revision card、approval 或 publication，也不持久化 retry/coordinator state；crash 可能漏 review，因此 native H6b 与 exactly-once recovery 仍未实现。
 >
 > **未实现：** typed AITP question/line registry、literature/compute/Portfolio 支持、H6b native method-distillation orchestration。
 
@@ -48,7 +54,35 @@ AITP mode 是 Agent-scope 的 main-agent capability state，采用可回放、�
 - mode exit：撤销新 AITP 操作 admission、回收动态工具和 Research activation lease，不删除已经保存的 AITP 记录，也不自动取消或完成 Goal。
 - restore/undo：inactive restore 必须零 AITP I/O；active restore 不重复询问，但重新探测 adapter 并重建工具。conversation undo 只回滚 Hakimi mode/Research state，不回滚外部 AITP Entry/Note。
 
-AITP mode 不自动创建 Goal，也不自动创建 Research Frame，但它激活的是**AITP-backed Research capability**，而不是一组彼此无关的工具。交互式研究可以没有 Goal；需要跨 turn 自治 continuation 时才绑定现有 Goal。普通软件 turn 即使 mode 仍 active，也应让 Research Loop abstain，不把代码变更或普通 tool call 自动写入 AITP。
+AITP mode 不自动创建 Goal，也不自动创建 Research Frame，但它激活的是**AITP-backed Research capability**，而不是一组彼此无关的工具。active、ready 且 loop running 时，main-agent user prompt 会作为一次 interactive Research Loop iteration；交互式研究可以没有 Goal，也不会自行 enqueue 下一轮。需要跨 turn 自治 continuation 时才绑定现有 Goal，并由 Goal engine 在现有 guards 放行后发放 autonomous lease。system/cron/subagent/unclassified turn 以及 inactive、probing、paused、degraded 状态 abstain；普通 tool call 仍不会自动写入 AITP。
+
+Research snapshot 通过 optional `hakimi/research-goal-0.1` 把当前 generic Goal 投影成 Hakimi Research Goal；两者共享同一个 `goalId`，不增加 Goal model、scheduler 或 AITP Topic 写入。投影包含 objective、completion criterion、当前 Program/Line/Question scope、完整 budget、派生 stop conditions、Program relation、human gates 与 persistence guards。当前 generic Goal 没有结构化 non-goals 或独立用户 stop-condition 字段，所以 `nonGoals` 保持空数组，stop conditions 只反映可证实的 runtime guards。`goalSummary` 在兼容期保留。active Research Mode 下，adapter 尚在 probing 或已经 degraded、存在 pending checkpoint、unresolved human gate 或未 aligned Program relation 时，Goal completion 与 automatic continuation 都 fail closed；这不妨碍没有 Goal 的 interactive Research turn。
+
+规划分成两个 checkpointed 层级。`hakimi/research-plan-0.2` 是绑定当前 Goal、observed Program revision 与 current milestone 的多轮 strategy，记录 milestones、evidence requirements、decision points、assumptions 和 stop/replan conditions。旧 `ResearchPlan` 仍是单个 bounded action 的 reviewed local Plan，在兼容期同时以 `actionPlan` alias 投影，绝不静默改义。非 trivial action 必须捕获两层 exact revision；simple reversible one-step action 仍捕获 explicit minimal binding。任何绑定 stale 都阻止 action start/conclude；foreground action 活跃时不能由本地服务修订或终止其绑定计划。完成计划不关闭 Question、不写 AITP、也不完成 Goal。
+
+多轮计划另有一个与 driver 正交、checkpointed 的 Hakimi-local planning policy。默认 `collaborative` 只在 consequential unknown 会改变 Research Plan 时使用现有 `AskUserQuestion` broker；dismiss、空答或含糊答复不能触发 plan revision。`dreaming` 允许 Agent 对 reversible、low-cost、in-scope 项作默认判断，但必须把每项默认判断写进 `ResearchPlanV2.assumptions`。昂贵或不可逆动作、tool permission、科学约定歧义、Goal/scope 修改以及 AITP/human decision gate 始终停止等待人类；policy 不能成为自动回答 human gate 的后门。切换 policy 只推进 Hakimi Research revision，不写 AITP；真正的 durable direction change 仍走既有 human-decision persistence 路径。
+
+### 2.2 Research Line→AITP workstream 绑定
+
+Research Line 是 Hakimi 的 orchestration identity，AITP workstream 是 Entry/Note
+frontmatter 中的 explicit membership tag。两者不共用 namespace，即使 slug 相同
+也不得视为同一对象。ready probe 后，Hakimi 先用无 scope `enter` 只观测
+Topic；然后只接受 user 或 main agent 基于该 Topic observation 显式确认的
+Line→workstream binding。文本、path、ID 或 matching slug 都不是证据。
+
+Binding 存在 Hakimi checkpointed Research state，捕获 Line、workstream、Topic ID、
+observed revision、confirmation authority 和时间。不同 binding 不能就地覆盖；必须
+先显式 clear，且 live action 或 pending checkpoint 期间不能修改。undo/cold
+restore 重放记录后与新观测比较：无记录为 `unbound`，无 Topic 为
+`unavailable`，Topic 不同为 `conflict`，observed revision 改变为 `stale`，
+只有精确匹配才是 `bound`。恢复路径不 infer、repair 或 backfill。
+
+`unbound`/`unavailable`/`stale`/`conflict` Line 可做低风险本地探索，但不能
+做 scoped durable claim。maintenance 只使用当前 `bound` workstream；checkpoint 还会
+捕获完整 binding，并在 prepare receipt、canonical `show`、scoped `check` 与
+commit 之间反复比对。`show` 中的 canonical Entry 必须显式包含该 workstream。
+这一层不创建 AITP registry、Line schema、alias catalog 或 automatic backfill；空 scope 和
+legacy unscoped records 仍按 AITP 0.8 原契约解释。
 
 Skill visibility 必须和 tool visibility 一致：普通模式不能通过 `SkillTool` 间接调用 AITP Skill；显式 `/skill:aitp` 应解释为用户主动进入联合科研模式，而不是绕过 mode gate。
 
@@ -80,7 +114,7 @@ Goal 负责 objective、completion criterion、总预算、pause/resume/cancel �
   → continue / ask / pause / complete / blocked
 ```
 
-以下 commit-barrier 列表是联合 Research Loop 的设计目标，不是当前 Hakimi adapter 已自动提供的生命周期：Research Loop 不需要每个 step 都写 AITP，但在关闭或回答一个主问题、改变研究阶段、接受或放弃核心假设、记录重要文献判断、完成重要 run、形成阶段性结论、Goal complete、计划中的 session closeout，以及任何需要下一 session 依赖的事实时，都应完成 AITP 提交并验证。当前状态维护会在 mode entry、active undo/cold restore（均在 ready probe 后），以及 active、admitted 的 Goal continuation turn 在 Research state 发生变化后的 turn end，只读执行 `enter` → `check`；没有 session-end automatic closeout。提交未知或验证失败时，不能继续宣称该边界已经完成；应进入 `pause`/`blocked` 或明确的 `uncommitted exploratory` 状态。
+以下 commit-barrier 列表是联合 Research Loop 的设计目标，不是当前 Hakimi adapter 已自动提供的生命周期：Research Loop 不需要每个 step 都写 AITP，但在关闭或回答一个主问题、改变研究阶段、接受或放弃核心假设、记录重要文献判断、完成重要 run、形成阶段性结论、Goal complete、计划中的 session closeout，以及任何需要下一 session 依赖的事实时，都应完成 AITP 提交并验证。当前状态维护会在 mode entry、active undo/cold restore（均在 ready probe 后），以及 admitted interactive/autonomous Research turn 在 Research state 发生变化后的 turn end，先无 scope 观测 Topic，再只为当前 exact confirmed Line→workstream binding 只读执行 scoped `enter` → `check`；没有 binding 时不作 scoped maintenance claim，也没有 session-end automatic closeout。提交未知或验证失败时，不能继续宣称该边界已经完成；应进入 `pause`/`blocked` 或明确的 `uncommitted exploratory` 状态。
 
 如果新证据不能改变下一动作、问题优先级或停止判断，当前过程只是 workflow 或日志，不是真正的科研 loop。反过来，如果状态改变了却没有经过 AITP commit barrier，当前结果只能算临时探索，不能算可靠的科研阶段结论。
 
@@ -140,9 +174,9 @@ H6b/C6 只负责编排和人机交互，不拥有 procedure matching、科学正
 
 ### 5.2 AITP 读写
 
-当前实现会在联合 AITP Research Mode active 且 ready probe 通过后的 mode entry、active undo/cold restore 后，以及 active、admitted 的 Goal continuation turn 在 Research state 发生变化后的 turn end，运行只读 `enter` → `check`；这不是 session-end automatic closeout。inactive session 必须 zero-write、zero-probe。`check` exit 0/1 解析报告，exit 2 fail closed。`show` 用于精确打开依赖记录，`list` 用于类型/时间/workstream 投影，不能把它们当作语义搜索。
+当前实现会在联合 AITP Research Mode active 且 ready probe 通过后的 mode entry、active undo/cold restore 后，以及 admitted interactive/autonomous Research turn 在 Research state 发生变化后的 turn end，先用无 scope `enter` 只观测 Topic，再只为当前 exact confirmed Line→workstream binding 运行 scoped 只读 `enter` → `check`；这不是 session-end automatic closeout。inactive session 必须 zero-write、zero-probe。`check` exit 0/1 解析报告，exit 2 fail closed。`show` 用于精确打开依赖记录，`list` 用于类型/时间/workstream 投影，不能把它们当作语义搜索。
 
-可靠模式的设计目标是让 AITP 成为研究状态的 commit barrier：真实 run、重要 result、failure/反例、source assessment、decision、阶段切换、问题关闭或 reopen、Goal complete 和计划中的 closeout 都应经过 prepare/save/check 验证。当前 Hakimi adapter 只提供已实现的显式 write gate，以及 entry、active undo/cold restore 和 admitted Goal continuation turn end 的只读维护；不提供 session-end automatic closeout；普通 tool call、每个子 Agent 的中间意见、重复检查和没有改变状态的重述保持零写入。adapter 暂时不可用时可以保留低风险临时 artifact，但不得把未提交状态宣传为 durable result。
+可靠模式的设计目标是让 AITP 成为研究状态的 commit barrier：真实 run、重要 result、failure/反例、source assessment、decision、阶段切换、问题关闭或 reopen、Goal complete 和计划中的 closeout 都应经过 prepare/save/check 验证。当前 Hakimi adapter 只提供已实现的显式 write gate，以及 entry、active undo/cold restore 和 admitted interactive/autonomous turn end 的受 binding 限制的只读维护；不提供 session-end automatic closeout；普通 tool call、每个子 Agent 的中间意见、重复检查和没有改变状态的重述保持零写入。adapter 暂时不可用或 Line 未正确绑定时可以保留低风险临时 artifact，但不得把未提交状态宣传为 durable result。
 
 四条以上相互依赖的 durable Entries 形成结论链、当前 working Note 已落后、研究阶段发生切换或下一 session 需要重建复杂推理时，写 working Note。只有假设、推导、检查和开放缺口已经相对稳定时，才写 theory Note。
 
@@ -234,15 +268,15 @@ ComputeBackend:
 推荐映射：
 
 - 一个独立、长期、具有自身 completion criterion 的 `ResearchProgram` 对应一个 AITP Topic；`STORE.toml`/`TOPIC.md` 保持 Topic identity 和大方向研究目标。
-- 同一 Topic 内的 `ResearchLine` 对应显式 workstream；跨线 artifact 在同一 Entry/Note 上列出多个 `workstreams`。
+- 同一 Topic 内的 `ResearchLine` 只能通过 Hakimi-local、revisioned、显式确认的 binding 指向一个 workstream；Line slug 本身不是 workstream identity。跨线 artifact 只能在真实 membership 已分别确认时，在同一 Entry/Note 上列出多个 `workstreams`。
 - `ResearchQuestion` 不能长期只存在于 Hakimi wire、working Note 的自由文本或把 `failure` 伪装成 question；它需要 AITP 的 typed open-item contract，至少支持稳定 question ID、workstream membership、结构化 closure 和 reopen。
 - `ResearchFocus`/bounded action 是短期调度状态，保留在 Hakimi；只有其结果、失败、决策和 commit checkpoint 进入 AITP。
 - 多个独立但相关的 Program 使用多个 sibling Topic store；workspace-level `topics.toml` 只保存 portable Topic identity，machine-local root mapping 与跨 Topic links 另行处理。不能在一个祖先 store 下嵌套第二个 store。
 - Research Portfolio、跨 Program priority、资源调度和 current focus 保留在 Hakimi；AITP 只保存被研究者确认的大方向、跨 Topic 关系和每个 Topic 的 durable evidence。
 
-### 9.1 建议的最小 AITP 协议增量
+### 9.1 未授权的未来 AITP 协议选项
 
-客观按最终效果，现有 workstreams 仅是无 registry 的 membership tag，不足以恢复多支线科研状态；现有 Entry kinds 也没有 `question`。建议修改 AITP，但保持增量最小：
+客观按最终效果，现有 workstreams 仅是无 registry 的 membership tag，不足以恢复多支线科研状态；现有 Entry kinds 也没有 `question`。下列项目只是需要新的 natural-demand evidence、AITP review 和独立 goal 的未来选项，当前全部 `planned / unavailable`。S5 没有授权、实现或预留任何一项：
 
 1. **Research-line descriptor**：增加一个 versioned、plain-text canonical descriptor surface，为每个 workstream 保存 slug、title、objective、status、parent Topic、dependencies、completion criterion 和创建/确认 provenance。优先采用 `.aitp/topic/lines/<slug>.md` 或语义等价的 append/revision-safe descriptor，不把调度、priority score、current focus 写入 AITP。旧 store 无 `lines/` 时保持兼容；record membership 仍以 frontmatter `workstreams` 为准。
 2. **Typed question/open-item**：基于重新评审后的 `aitp/lite-entry-0.2` 或更小独立 slice，加入 `question` kind、单目标 typed `resolution`、`answered|cancelled|invalidated` closure 和 resolver supersession 后 reopen。必要时再加入 `based_on`；不要一次引入完整通用 research graph。
@@ -256,10 +290,10 @@ ComputeBackend:
 
 在 AITP 新 contract shipped 前，Hakimi 可以用现有 Topic + workstreams + Entries/Notes 做兼容纵切片，但必须诚实标记限制：
 
-- Topic = 一个 Program；workstream slug = 一个 provisional Line identity。
-- line objective/status 暂由一条 human `decision` Entry和 scoped working Note保存，Hakimi从明确的 canonical IDs 恢复，不从任意 prose 猜测。
+- Topic = 一个 Program；workstream slug 仍是 AITP membership tag，不是 provisional Line identity。Hakimi 只保存已显式确认的 Line→workstream binding。
+- line objective/status 仍保存在 Hakimi Research state。如果该方向本身产生了真实 durable decision 或 working-state delta，再通过普通 AITP Entry/Note 流程保存；不为了创建 binding 而制造记录。
 - open question 暂存为 scoped working Note 的 `Open Questions`，但不能获得稳定 question lifecycle、typed resolution 或精确 reopen，因此不作为最终 contract。
-- current focus 只在 Hakimi wire；每次 durable line switch 写 decision/closeout，并以 workstream scoped `enter/check` 验证。
+- current focus 只在 Hakimi wire；Line switch 本身不写 decision/closeout。只有当前 Line 已有 exact confirmed binding 时才以该 workstream 运行 scoped `enter/check`；真实 durable direction change 另行走正常 AITP decision/closeout 判断。
 - 多 Program 使用 sibling stores和手工 `topics.toml`；在 M3 未 shipped 前，只用普通 pinned citations，不伪造 cross-topic link runtime。
 
 这条过渡路径用于验证真实需求和 UI/loop 语义，不应固化为对 Markdown body 的 ad-hoc parser。

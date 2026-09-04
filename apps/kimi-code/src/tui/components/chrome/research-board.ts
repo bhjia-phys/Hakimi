@@ -9,31 +9,30 @@
  */
 
 import type { Component } from '@moonshot-ai/pi-tui';
-import { truncateToWidth, visibleWidth } from '@moonshot-ai/pi-tui';
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@moonshot-ai/pi-tui';
 import type { ResearchStatusSnapshot } from '@bhjia-phys/hakimi-sdk';
 import chalk from 'chalk';
 
 import { CURRENT_MARK } from '#/tui/constant/symbols';
 import { currentTheme } from '#/tui/theme';
 import type { ColorPalette } from '#/tui/theme/colors';
+import {
+  projectLineWorkstreamAlignment,
+  type ResearchLineWorkstreamAlignment,
+} from '#/tui/utils/research-workstream-binding';
 import type { TodoItem } from './todo-panel';
-
-const MAX_COMPACT_ROWS = 14;
-const MAX_EXPANDED_ROWS = 36;
-const MAX_LINE_SUMMARIES = 4;
-const MAX_ACTION_ROWS = 4;
-const MAX_ALERT_ROWS = 2;
-const MAX_PROGRESS_DETAIL_ROWS = 6;
-const MAX_UNCERTAINTY_ROWS = 2;
-const MAX_MAINTENANCE_CODES = 3;
 
 /** Extract sub-types from the snapshot shape (the SDK only re-exports the snapshot). */
 type ResearchQuestion = NonNullable<ResearchStatusSnapshot['currentQuestion']>;
 type ResearchLine = ResearchStatusSnapshot['lines'][number];
-type ResearchRunState = NonNullable<ResearchStatusSnapshot['currentRun']>;
 type ResearchPlan = NonNullable<ResearchStatusSnapshot['researchPlan']>;
+type ResearchPlanV2 = NonNullable<ResearchStatusSnapshot['researchPlanV2']>;
 type ResearchAlert = ResearchStatusSnapshot['alerts'][number];
 type AitpMaintenanceReceipt = NonNullable<ResearchStatusSnapshot['aitpMaintenance']>;
+type ResearchCheckpointReceipt = NonNullable<NonNullable<ResearchStatusSnapshot['pendingCheckpoint']>['receipt']>;
+type ResearchCheckpointCheckReceipt = NonNullable<ResearchCheckpointReceipt['preSaveCheck']>;
+type ResearchRunState = NonNullable<ResearchStatusSnapshot['currentRun']>;
+type ResearchEffectiveNextStep = NonNullable<ResearchStatusSnapshot['effectiveNextStep']>;
 
 /** Phase labels shown to the user, with human-friendly spacing. */
 const PHASE_LABELS: Record<ResearchStatusSnapshot['phase'], string> = {
@@ -105,34 +104,23 @@ export class ResearchBoardComponent implements Component {
 
     const safeWidth = Math.max(0, width);
     const colors = currentTheme.palette;
+    if (safeWidth === 0) return [''];
+    if (safeWidth === 1) return [renderHeader(snap, colors, safeWidth)];
     const lines: string[] = [
       chalk.hex(colors.border)('─'.repeat(safeWidth)),
       renderHeader(snap, colors, safeWidth),
     ];
 
     const contentRows = this.expanded
-      ? buildExpandedRows(snap, this.todos, colors, safeWidth)
-      : buildCompactRows(snap, this.todos, colors);
-    const maxRows = this.expanded ? MAX_EXPANDED_ROWS : MAX_COMPACT_ROWS;
-    // Reserve the border, header, hint, and (when needed) one overflow row
-    // before selecting body content. This keeps the total height bounded even
-    // when the snapshot contains many alerts, lines, or Todo actions.
-    const bodyBudget = Math.max(0, maxRows - 3);
-    const needsOverflow = contentRows.length > bodyBudget;
-    const visibleBudget = needsOverflow ? Math.max(0, bodyBudget - 1) : bodyBudget;
-    const visibleRows = contentRows.slice(0, visibleBudget);
-    const overflow = contentRows.length - visibleRows.length;
-
-    for (const row of visibleRows) {
-      lines.push(truncateToWidth(row, safeWidth, '…'));
+      ? buildExpandedRows(snap, this.todos, colors)
+      : buildCompactRows(snap, colors);
+    if (this.expanded) {
+      lines.push(...contentRows.flatMap((row) => row.length === 0 ? [''] : wrapBoardRow(row, safeWidth)));
+    } else {
+      // Collapsed is a glanceable status instrument: one physical line per
+      // semantic slot. Full narratives remain available in expanded mode.
+      lines.push(...contentRows.map((row) => truncateToWidth(row, safeWidth, '…')));
     }
-    if (overflow > 0) {
-      lines.push(
-        truncateToWidth(`  … +${String(overflow)} more`, safeWidth, '…'),
-      );
-    }
-    const hint = this.expanded ? '  ctrl+o to collapse' : '  ctrl+o to expand';
-    lines.push(truncateToWidth(chalk.hex(colors.textMuted)(hint), safeWidth, '…'));
     return lines;
   }
 }
@@ -142,14 +130,24 @@ function renderHeader(
   colors: ColorPalette,
   width: number,
 ): string {
+  if (width <= 0) return '';
   const mode = formatModeLabel(snap.mode, snap.loopStatus, colors);
+  const workflow = formatWorkflowHealthLabel(snap, colors);
+  const phase = renderPhase(snap.phase, colors);
   const line = normalizeSummary(snap.currentLineSlug) || 'none';
-  const health = formatHealthLabel(snap, colors);
-  return truncateToWidth(
-    `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · line: ${chalk.hex(colors.text)(line)} · AITP: ${health}`,
-    width,
-    '…',
-  );
+  const alerts = currentLineAlerts(snap);
+  const alertSummary = alerts.length === 0
+    ? ''
+    : ` · ${chalk.hex(colors.warning)(`${String(alerts.length)} alert${alerts.length === 1 ? '' : 's'}`)}`;
+  const full = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${workflow} · ${chalk.hex(colors.primary)(cycleStage(snap))} · ${chalk.hex(colors.text)(line)}${alertSummary}`;
+  if (visibleWidth(full) <= width) return full;
+  const scoped = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${workflow} · ${chalk.hex(colors.text)(line)}${alertSummary}`;
+  if (visibleWidth(scoped) <= width) return scoped;
+  const compact = `  ${chalk.hex(colors.primary).bold('Research')}  ${mode} · ${workflow} · ${phase}${alertSummary}`;
+  if (visibleWidth(compact) <= width) return compact;
+  const minimal = `  ${chalk.hex(colors.primary).bold('Research')} ${mode}`;
+  if (visibleWidth(minimal) <= width) return minimal;
+  return width >= 1 ? chalk.hex(colors.primary).bold('R') : '';
 }
 
 function formatModeLabel(
@@ -158,10 +156,21 @@ function formatModeLabel(
   colors: ColorPalette,
 ): string {
   const loopText = loopStatus === 'paused' ? ' paused' : '';
-  const text = `${mode}${loopText}`;
+  const text = `mode ${mode}${loopText}`;
   if (mode === 'degraded') return chalk.hex(colors.warning)(text);
   if (loopStatus === 'paused') return chalk.hex(colors.textMuted)(text);
   return chalk.hex(colors.success)(text);
+}
+
+function formatWorkflowHealthLabel(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string {
+  const health = snap.status?.health ?? 'unknown';
+  const text = `workflow ${health}`;
+  if (health === 'blocked' || health === 'degraded') return chalk.hex(colors.warning)(text);
+  if (health === 'ok') return chalk.hex(colors.success)(text);
+  return chalk.hex(colors.textMuted)(text);
 }
 
 function formatHealthLabel(
@@ -169,13 +178,88 @@ function formatHealthLabel(
   colors: ColorPalette,
 ): string {
   const phase = snap.aitpHealth.phase;
-  if (phase === 'degraded') return chalk.hex(colors.warning)(phase);
-  if (phase === 'ready') return chalk.hex(colors.success)(phase);
+  if (phase === 'degraded') {
+    return `${chalk.hex(colors.warning)('degraded')} · ${chalk.hex(colors.warning)('read available')} · ${chalk.hex(colors.warning)('checkpoint write unavailable')}`;
+  }
+  if (phase === 'ready') {
+    const checkpointWrite = snap.aitpHealth.contractVersion === '0.2'
+      ? chalk.hex(colors.success)('checkpoint write ready')
+      : chalk.hex(colors.warning)('checkpoint write unavailable');
+    return `${chalk.hex(colors.success)('read ready')} · ${checkpointWrite}`;
+  }
   return chalk.hex(colors.textMuted)(phase);
+}
+
+const ANSI_ESCAPE = /\u001B\[[0-?]*[ -/]*[@-~]/u;
+
+function stripAnsi(value: string): string {
+  return value.replaceAll(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '');
+}
+
+/** Wrap one logical board row without repeating its label on continuation lines. */
+function wrapBoardRow(row: string, width: number): string[] {
+  if (width <= 0) return [];
+  const plain = stripAnsi(row);
+  const labelEnd = plain.indexOf(': ');
+  if (labelEnd < 0) return wrapTextWithAnsi(row, width);
+  const prefixWidth = visibleWidth(plain.slice(0, labelEnd + 2));
+  if (prefixWidth >= width - 1) {
+    const [prefix, value] = splitAnsiAtVisibleWidth(row, prefixWidth);
+    return [...wrapTextWithAnsi(prefix.trimEnd(), width), ...wrapTextWithAnsi(value.trimStart(), width)];
+  }
+  const [prefix, value] = splitAnsiAtVisibleWidth(row, prefixWidth);
+  const wrapped = wrapTextWithAnsi(value.trimStart(), Math.max(1, width - prefixWidth));
+  if (wrapped.length === 0) return [prefix];
+  const continuation = ' '.repeat(Math.min(prefixWidth, Math.max(0, width - 1)));
+  return [prefix + wrapped[0]!, ...wrapped.slice(1).map((line) => continuation + line)];
+}
+
+function splitAnsiAtVisibleWidth(value: string, targetWidth: number): [string, string] {
+  let visible = 0;
+  let index = 0;
+  const tokenPattern = /\u001B\[[0-?]*[ -/]*[@-~]|[\s\S]/gu;
+  for (const match of value.matchAll(tokenPattern)) {
+    const token = match[0];
+    if (ANSI_ESCAPE.test(token)) {
+      index += token.length;
+      continue;
+    }
+    const tokenWidth = visibleWidth(token);
+    if (visible + tokenWidth > targetWidth) break;
+    visible += tokenWidth;
+    index += token.length;
+    if (visible >= targetWidth) break;
+  }
+  return [value.slice(0, index), value.slice(index)];
 }
 
 function normalizeSummary(value: string | undefined): string {
   return (value ?? '').replaceAll(/\s+/gu, ' ').trim();
+}
+
+function historicalPendingCheckpoint(snap: ResearchStatusSnapshot): boolean {
+  const checkpoint = snap.pendingCheckpoint;
+  if (checkpoint?.questionId === undefined || checkpoint.questionRevision === undefined) {
+    return false;
+  }
+  const question = snap.questions.find((candidate) => candidate.id === checkpoint.questionId)
+    ?? (snap.currentQuestion?.id === checkpoint.questionId ? snap.currentQuestion : undefined);
+  return question !== undefined && question.revision !== checkpoint.questionRevision;
+}
+
+function pendingCheckpointAttentionText(snap: ResearchStatusSnapshot): string | undefined {
+  const checkpoint = snap.pendingCheckpoint;
+  if (checkpoint === undefined) return undefined;
+  const projected = currentLineEffectiveNextStep(snap);
+  if (
+    projected?.source === 'aitp_maintenance' &&
+    projected.freshness === 'blocked' &&
+    projected.text.includes(checkpoint.checkpointId)
+  ) return projected.text;
+  if (historicalPendingCheckpoint(snap)) {
+    return `Historical checkpoint ${checkpoint.checkpointId} belongs to an older question revision; do not commit it as current evidence. Explicitly undo its proposal before automatic continuation.`;
+  }
+  return `Checkpoint ${checkpoint.checkpointId} must be committed or its proposal undone before automatic continuation.`;
 }
 
 function candidateQuestions(
@@ -201,9 +285,9 @@ function orderedAlerts(
   const rank = (alert: ResearchAlert): number => {
     switch (alertClassification(alert)) {
       case 'active_blocker': return 0;
-      case 'historical_unresolved': return 1;
-      case 'superseded_by_retry': return 2;
-      case 'warning': return 3;
+      case 'warning': return 1;
+      case 'historical_unresolved': return 2;
+      case 'superseded_by_retry': return 3;
     }
   };
   return alerts
@@ -211,42 +295,10 @@ function orderedAlerts(
     .toSorted((a, b) => rank(a) - rank(b));
 }
 
-function renderAttentionRows(
-  snap: ResearchStatusSnapshot,
-  colors: ColorPalette,
-  expanded = false,
-): string[] {
-  const rows: string[] = [];
-  const alerts = orderedAlerts(snap.alerts);
-  const alert = alerts[0];
-  if (alert !== undefined) {
-    rows.push(
-      `  ${chalk.hex(colors.warning)('Attention:')} ${chalk.hex(colors.textMuted)(formatAlertSummary(alerts, colors))} · ${chalk.hex(colors.text)(normalizeSummary(alert.message))}`,
-    );
-  }
-  // Pending checkpoint is engineering audit info — only show in expanded view.
-  if (expanded && snap.pendingCheckpoint !== undefined) {
-    rows.push(
-      `  ${chalk.hex(colors.warning)('Pending checkpoint:')} ${chalk.hex(colors.text)(normalizeSummary(snap.pendingCheckpoint.checkpointId))}${formatCheckpointDetails(snap.pendingCheckpoint, colors)}`,
-    );
-  }
-  return rows;
-}
-
-function renderCandidateSummary(
-  candidates: readonly ResearchQuestion[],
-  label: string,
-  colors: ColorPalette,
-): string {
-  if (candidates.length === 0) {
-    return `  ${chalk.hex(colors.textDim)(label + ':')} ${chalk.hex(colors.textMuted)('0')}`;
-  }
-  const preview = candidates
-    .slice(0, 3)
-    .map((question) => `${normalizeSummary(question.id)}: ${normalizeSummary(question.wording)}`)
-    .join(' · ');
-  const suffix = candidates.length > 3 ? ` · +${String(candidates.length - 3)} more` : '';
-  return `  ${chalk.hex(colors.textStrong).bold(`${label} (${String(candidates.length)}):`)} ${chalk.hex(colors.text)(preview)}${chalk.hex(colors.textMuted)(suffix)}`;
+function currentLineAlerts(snap: ResearchStatusSnapshot): readonly ResearchAlert[] {
+  return orderedAlerts(snap.alerts).filter(
+    (alert) => alert.lineSlug === undefined || alert.lineSlug === snap.currentLineSlug,
+  );
 }
 
 function renderResearchCounts(
@@ -258,70 +310,431 @@ function renderResearchCounts(
   return `  ${chalk.hex(colors.textDim)('Research:')} ${chalk.hex(colors.textMuted)(`${String(snap.openQuestionCount)} open · ${String(snap.activeQuestionCount)} active · ${String(snap.blockedQuestionCount)} blocked${other}`)}`;
 }
 
-function buildCompactRows(
+function renderGoalRows(
   snap: ResearchStatusSnapshot,
-  todos: readonly TodoItem[],
+  colors: ColorPalette,
+  expanded: boolean,
+): string[] {
+  const researchGoal = snap.researchGoal;
+  const goal = researchGoal ?? snap.goalSummary;
+  if (goal === undefined) return [];
+  const remainingTurns = researchGoal?.budget.remainingTurns
+    ?? snap.goalSummary?.remainingTurns;
+  const turnBudget = researchGoal?.budget.turnBudget
+    ?? snap.goalSummary?.turnBudget;
+  const continuation = goal.continuation;
+  const continuationSuffix = goal.status === 'active' && continuation?.state === 'held'
+    ? ' · continuation held'
+    : goal.status === 'active' && continuation === undefined
+      ? ' · continuation unavailable (legacy snapshot)'
+    : '';
+  const rows = [
+    `  ${chalk.hex(colors.primary)('◆')} ${chalk.hex(colors.textStrong).bold(researchGoal === undefined ? 'Goal milestone:' : 'Hakimi Research Goal:')} ${chalk.hex(colors.text)(normalizeSummary(goal.objective))}`,
+    `    ${chalk.hex(colors.textDim)('Goal status:')} ${chalk.hex(continuation?.state === 'held' ? colors.warning : colors.text)(`${goal.status}${continuationSuffix}`)}${remainingTurns === undefined || remainingTurns === null ? '' : ` · ${chalk.hex(colors.textMuted)(`${String(remainingTurns)} turns remaining`)}`}`,
+  ];
+  if (expanded) {
+    if (turnBudget !== undefined && turnBudget !== null) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Turn budget:')} ${chalk.hex(colors.textMuted)(String(turnBudget))}`);
+    }
+    if (goal.completionCriterion !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Completion criterion:')} ${chalk.hex(colors.text)(normalizeSummary(goal.completionCriterion))}`);
+    }
+    if (goal.terminalReason !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Terminal reason:')} ${chalk.hex(colors.text)(normalizeSummary(goal.terminalReason))}`);
+    }
+    if (goal.waitingFor !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Waiting for:')} ${chalk.hex(colors.text)(`${goal.waitingFor.policy} of ${goal.waitingFor.taskIds.length} task${goal.waitingFor.taskIds.length === 1 ? '' : 's'}`)}`);
+      rows.push(...renderNamedList('Waiting task IDs', goal.waitingFor.taskIds, colors, true));
+    }
+    if (continuation !== undefined && continuation.state !== 'idle') {
+      const owner = continuation.owner === undefined ? '' : ` by ${continuation.owner}`;
+      const reason = continuation.reason === undefined ? '' : ` · ${normalizeSummary(continuation.reason)}`;
+      rows.push(`    ${chalk.hex(colors.textDim)('Continuation:')} ${chalk.hex(continuation.state === 'held' ? colors.warning : colors.text)(`${continuation.state}${owner}`)}${chalk.hex(colors.textMuted)(reason)}`);
+    } else if (goal.status === 'active' && continuation === undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Continuation:')} ${chalk.hex(colors.textMuted)('unavailable (legacy snapshot)')}`);
+    }
+    if (researchGoal !== undefined) {
+      const scope = [
+        researchGoal.scope.programTopicId === undefined ? undefined : `program ${researchGoal.scope.programTopicId}`,
+        researchGoal.scope.lineSlug === undefined ? undefined : `line ${researchGoal.scope.lineSlug}`,
+        researchGoal.scope.questionId === undefined ? undefined : `question ${researchGoal.scope.questionId}`,
+      ].filter((item): item is string => item !== undefined);
+      if (scope.length > 0) {
+        rows.push(`    ${chalk.hex(colors.textDim)('Research scope:')} ${chalk.hex(colors.text)(scope.join(' · '))}`);
+      }
+      rows.push(...renderNamedList('Non-goals', researchGoal.nonGoals, colors, true));
+      rows.push(...renderNamedList(
+        'Persistence guards',
+        (() => {
+          const count = researchGoal.persistenceGuards.filter(
+            (guard) => guard.status === 'blocked',
+          ).length;
+          return count === 0
+            ? []
+            : [`${String(count)} blocked · details are shown by their owning sections below`];
+        })(),
+        colors,
+        true,
+      ));
+    }
+  }
+  return rows;
+}
+
+function renderResearchGoalRows(
+  snap: ResearchStatusSnapshot,
   colors: ColorPalette,
 ): string[] {
-  const rows: string[] = [];
-  const question = snap.currentFocus === undefined ? undefined : snap.currentQuestion;
-  const currentLine = findCurrentLine(snap);
+  if (snap.program !== undefined) {
+    return [
+      `  ${chalk.hex(colors.primary)('◎')} ${chalk.hex(colors.textStrong).bold('AITP Research Goal (observed):')} ${chalk.hex(colors.text)(normalizeSummary(snap.program.goalText))}`,
+    ];
+  }
+  return [
+    `  ${chalk.hex(colors.primary)('◎')} ${chalk.hex(colors.textStrong).bold('AITP Research Goal (observed):')} ${chalk.hex(colors.textMuted)('not established')}`,
+  ];
+}
 
-  // Human gate / blocked / stale takes top priority — most actionable info.
-  const gateRow = renderHumanGateRow(snap, colors);
-  if (gateRow !== undefined) rows.push(gateRow);
+function actionNeedsRecovery(snap: ResearchStatusSnapshot): boolean {
+  const action = currentLineAction(snap);
+  if (action === undefined || (action.status !== 'planned' && action.status !== 'in_progress')) {
+    return false;
+  }
+  const gate = currentLineHumanGate(snap);
+  if (gate !== undefined && gate.resolvedAt === undefined) return false;
+  if (
+    snap.effectiveNextStep?.source === 'research_action' &&
+    snap.effectiveNextStep.freshness === 'blocked' &&
+    snap.effectiveNextStep.derivedFrom.actionId === action.actionId
+  ) return true;
+  return action.status === 'planned'
+    ? snap.phase !== 'action_planned'
+    : snap.phase !== 'action_executing';
+}
 
-  if (question !== undefined) {
-    rows.push(renderFocus(question, colors));
-    rows.push(renderAssessment(snap, question, colors));
-  } else if (snap.currentFocus !== undefined) {
-    rows.push(
-      `  ${chalk.hex(colors.primary)('◉')} ${chalk.hex(colors.textDim)('Focus: no active question')}`,
-    );
-  } else if (currentLine?.assessment !== undefined) {
-    rows.push(renderAssessment(snap, undefined, colors));
+function currentLineAction(
+  snap: ResearchStatusSnapshot,
+): ResearchStatusSnapshot['currentAction'] {
+  const action = snap.currentAction;
+  if (action === undefined) return undefined;
+  const question = action.questionId === undefined
+    ? undefined
+    : snap.questions.find((candidate) => candidate.id === action.questionId);
+  if (
+    action.lineSlug !== undefined &&
+    question !== undefined &&
+    action.lineSlug !== question.lineSlug
+  ) return undefined;
+  const lineSlug = action.lineSlug ?? question?.lineSlug;
+  if (snap.currentLineSlug === undefined) {
+    return lineSlug === undefined && snap.lines.length <= 1 ? action : undefined;
+  }
+  if (lineSlug !== undefined) return lineSlug === snap.currentLineSlug ? action : undefined;
+  return snap.lines.length === 0 ||
+    (snap.lines.length === 1 && snap.lines[0]?.slug === snap.currentLineSlug)
+    ? action
+    : undefined;
+}
+
+function currentLineRun(snap: ResearchStatusSnapshot) {
+  const action = currentLineAction(snap);
+  if (action === undefined) return snap.lines.length <= 1 ? snap.currentRun : undefined;
+  if (action.run?.actionId === action.actionId) return action.run;
+  return snap.currentRun?.actionId === action.actionId ? snap.currentRun : undefined;
+}
+
+function currentLineHumanGate(snap: ResearchStatusSnapshot) {
+  const gate = snap.humanGate;
+  if (gate === undefined) return undefined;
+  const action = currentLineAction(snap);
+  if (gate.actionId !== undefined && gate.actionId !== action?.actionId) return undefined;
+  if (gate.questionId !== undefined) {
+    const question = snap.questions.find((candidate) => candidate.id === gate.questionId);
+    if (question === undefined || question.lineSlug !== snap.currentLineSlug) return undefined;
+  }
+  return gate;
+}
+
+function cycleStage(snap: ResearchStatusSnapshot): string {
+  switch (snap.phase) {
+    case 'orienting':
+    case 'gap_analysis':
+      return 'frame / hypothesis';
+    case 'action_planned':
+    case 'action_executing':
+      return 'test / action';
+    case 'evaluating':
+      return 'evaluate';
+    case 'state_updated':
+    case 'checkpoint_pending':
+      return 'record';
+    case 'awaiting_human':
+      if (snap.pendingCheckpoint !== undefined) return 'record';
+      return currentLineAction(snap) === undefined ? 'frame / hypothesis' : 'test / action';
+    case 'idle':
+      return 'next / ready';
+  }
+}
+
+function compactCurrentWork(snap: ResearchStatusSnapshot): string {
+  const actionRecoveryRequired = actionNeedsRecovery(snap);
+  const action = currentLineAction(snap);
+  const run = currentLineRun(snap);
+  if (
+    !actionRecoveryRequired && run !== undefined &&
+    (run.schedulerState === 'pending' || run.schedulerState === 'running')
+  ) {
+    return `job ${normalizeSummary(run.jobId)} · ${run.schedulerState} / ${run.stage}`;
+  }
+  if (
+    !actionRecoveryRequired && action !== undefined &&
+    (action.status === 'planned' || action.status === 'in_progress')
+  ) {
+    return `${normalizeSummary(action.purpose)} · ${action.status.replaceAll('_', ' ')}`;
+  }
+  return normalizeSummary(snap.latestProgress?.headline)
+    || normalizeSummary(snap.currentQuestion?.wording)
+    || normalizeSummary(snap.recentStateChange?.summary)
+    || 'no current work recorded';
+}
+
+function renderCompactProjectStage(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string {
+  const goal = snap.researchGoal ?? snap.goalSummary;
+  const plan = snap.researchPlanV2;
+  const milestone = plan?.milestones.find((candidate) =>
+    candidate.milestoneId === plan.currentMilestoneId);
+  const line = findCurrentLine(snap);
+  const question = snap.currentQuestion;
+  const continuation = goal?.continuation;
+  const continuationSuffix = goal?.status === 'active' && continuation?.state === 'held'
+    ? ' · continuation held'
+    : goal?.status === 'active' && continuation === undefined
+      ? ' · continuation unavailable (legacy snapshot)'
+    : '';
+  const parts = [
+    goal === undefined
+      ? 'interactive Research · no Goal'
+      : `Goal ${goal.status}${continuationSuffix}`,
+    plan === undefined
+      ? 'Plan not established'
+      : `Plan ${plan.status} · ${normalizeSummary(milestone?.title ?? plan.currentMilestoneId)}`,
+    line === undefined && snap.currentLineSlug === undefined
+      ? 'Line not selected'
+      : `Line ${normalizeSummary(line?.title ?? snap.currentLineSlug)}`,
+    question === undefined
+      ? 'Question not focused'
+      : `Question ${question.workflow}/${question.epistemic}: ${normalizeSummary(question.wording)}`,
+  ];
+  return `  ${chalk.hex(colors.primary)('◆')} ${chalk.hex(colors.textDim)('Project:')} ${chalk.hex(goal?.status === 'blocked' ? colors.warning : colors.text)(parts.join(' · '))}`;
+}
+
+function renderCompactCurrentCycle(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string {
+  const action = currentLineAction(snap);
+  const actionState = actionNeedsRecovery(snap)
+    ? 'action recovery required'
+    : action?.status === 'planned' || action?.status === 'in_progress'
+      ? `action ${action.status.replaceAll('_', ' ')}`
+      : 'no live action';
+  const turns = snap.period === undefined
+    ? 'period not established'
+    : `${String(snap.period.loopCount)} Research turns`;
+  const goal = snap.researchGoal ?? snap.goalSummary;
+  const continuation = goal?.continuation?.state;
+  const continuationLabel = goal?.status === 'active' && continuation === undefined
+    ? ' · continuation unavailable (legacy snapshot)'
+    : continuation === undefined || continuation === 'idle'
+      ? ''
+      : ` · continuation ${continuation}`;
+  const mode = `${snap.mode}${snap.loopStatus === 'paused' ? ' · paused' : ''} · ${snap.planningPolicy}${continuationLabel}`;
+  const warning = actionNeedsRecovery(snap) || snap.loopStatus === 'paused' || continuation === 'held';
+  return `  ${chalk.hex(warning ? colors.warning : colors.primary)('↻')} ${chalk.hex(colors.textDim)('Current cycle:')} ${chalk.hex(colors.primary)(cycleStage(snap))} · ${chalk.hex(colors.text)(`${turns} · ${actionState} · ${compactCurrentWork(snap)}`)} · ${chalk.hex(warning ? colors.warning : colors.textMuted)(mode)}`;
+}
+
+function renderCompactAttention(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string | undefined {
+  const alerts = currentLineAlerts(snap);
+  const hasMaintenanceIssue = snap.aitpMaintenance?.degradedReason !== undefined;
+  const hasAdapterError = snap.aitpHealth.lastError !== undefined;
+  const hasDistillationIssue = snap.distillationAttention?.status === 'handoff_unavailable';
+  const hasActionRecovery = actionNeedsRecovery(snap);
+  const hasPendingCheckpoint = snap.pendingCheckpoint !== undefined;
+  const moreSuffix = (count: number): string =>
+    count > 0 ? ` · +${String(count)} more` : '';
+  const gate = currentLineHumanGate(snap);
+  const hasUnresolvedGate = gate !== undefined && gate.resolvedAt === undefined;
+  const alignment = snap.goalAlignment;
+  const hasBlockingAlignment =
+    (snap.researchGoal?.status ?? snap.goalSummary?.status) === 'active'
+    && alignment !== undefined
+    && alignment.status !== 'aligned';
+  const goal = snap.researchGoal ?? snap.goalSummary;
+  const continuation = goal?.continuation;
+  const hasHeldContinuation = goal?.status === 'active' && continuation?.state === 'held';
+  if (hasHeldContinuation) {
+    const owner = continuation.owner ?? 'Goal continuation';
+    const recordedReason = normalizeSummary(continuation.reason) || 'Automatic continuation is held.';
+    const reason = historicalPendingCheckpoint(snap) && /checkpoint/iu.test(recordedReason)
+      ? pendingCheckpointAttentionText(snap)!
+      : recordedReason;
+    const coversCheckpoint = hasPendingCheckpoint && /checkpoint/iu.test(reason);
+    const coversAlignment = hasBlockingAlignment && /alignment|program/iu.test(reason);
+    const additional = alerts.length
+      + Number(hasMaintenanceIssue)
+      + Number(hasAdapterError)
+      + Number(hasDistillationIssue)
+      + Number(hasActionRecovery)
+      + Number(hasPendingCheckpoint && !coversCheckpoint)
+      + Number(hasBlockingAlignment && !coversAlignment);
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(`Continuation held by ${owner}`)} · ${chalk.hex(colors.text)(reason)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
+  }
+  if (hasUnresolvedGate) {
+    const label = gate.kind === 'approval'
+      ? 'Approval needed'
+      : gate.kind === 'review'
+        ? 'Review needed'
+        : 'Decision needed';
+    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue) + Number(hasActionRecovery) + Number(hasPendingCheckpoint) + Number(hasBlockingAlignment);
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(label)} · ${chalk.hex(colors.text)(normalizeSummary(gate.prompt))}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
   }
 
-  rows.push(...renderAttentionRows(snap, colors));
-
-  // Scientific progress summary (phase, headline, impact).
-  rows.push(...renderCompactScientificRows(snap, colors));
-  if (snap.researchPlan !== undefined) {
-    rows.push(renderCompactPlanRow(snap.researchPlan, colors));
+  if (hasActionRecovery) {
+    const action = currentLineAction(snap)!;
+    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue) + Number(hasPendingCheckpoint) + Number(hasBlockingAlignment);
+    const projected = currentLineEffectiveNextStep(snap);
+    const message = projected?.source === 'research_action' && projected.freshness === 'blocked'
+      ? projected.text
+      : `Action ${normalizeSummary(action.actionId)} is ${action.status} while phase is ${snap.phase}; conclude or abandon it before starting another action.`;
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)('Action/phase recovery required')}${chalk.hex(colors.textMuted)(moreSuffix(additional))} · ${chalk.hex(colors.text)(message)}`;
   }
-  if (snap.currentRun !== undefined) {
-    rows.push(renderCompactRunRow(snap.currentRun, colors));
-  }
-  const effectiveNextStep = renderEffectiveNextStep(snap, colors);
-  if (effectiveNextStep !== undefined) rows.push(effectiveNextStep);
 
-  const candidates = candidateQuestions(snap);
-  const currentCandidates = snap.currentLineSlug === undefined
-    ? []
-    : candidates.filter((candidate) => candidate.lineSlug === snap.currentLineSlug);
-  const otherCandidateCount = candidates.length - currentCandidates.length;
-  if (currentCandidates.length > 0) {
-    rows.push(renderCandidateSummary(currentCandidates, 'Candidates (current line)', colors));
-  } else if (question === undefined) {
-    rows.push(renderCandidateSummary(candidates, 'Candidates', colors));
+  if (hasPendingCheckpoint) {
+    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue) + Number(hasBlockingAlignment);
+    const label = historicalPendingCheckpoint(snap)
+      ? 'Historical checkpoint requires cleanup'
+      : 'Checkpoint pending commit';
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(label)} · ${chalk.hex(colors.text)(pendingCheckpointAttentionText(snap)!)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
   }
-  rows.push(renderResearchCounts(snap, otherCandidateCount, colors));
 
-  const action = selectTodoAction(todos);
-  if (action !== undefined) {
-    rows.push(renderTodoAction(action, colors, '  ', 'Todo:'));
-  } else {
-    rows.push(`  ${chalk.hex(colors.textDim)('Todo:')} ${chalk.hex(colors.textMuted)('none recorded')}`);
+  if (hasBlockingAlignment) {
+    const status = alignment.status.replaceAll('_', ' ');
+    const reason = normalizeSummary(alignment.reason);
+    const message = `Goal alignment: ${status}${reason.length === 0 ? '' : ` · ${reason}`}`;
+    const additional = alerts.length
+      + Number(hasMaintenanceIssue)
+      + Number(hasAdapterError)
+      + Number(hasDistillationIssue);
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)(message)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
   }
-  rows.push(renderTodoProgress(todos, colors));
-  // Checkpoint engineering IDs moved to expanded view only — compact stays
-  // focused on scientific progress, not audit plumbing.
 
+  if (snap.distillationAttention?.status === 'handoff_unavailable') {
+    const additional = alerts.length + Number(hasMaintenanceIssue) + Number(hasAdapterError);
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.text)(`Method review handoff unavailable for Entry ${normalizeSummary(snap.distillationAttention.entryId)}: ${normalizeSummary(snap.distillationAttention.reason)}`)}${chalk.hex(colors.textMuted)(moreSuffix(additional))}`;
+  }
+
+  const blocker = alerts.find((alert) => alertClassification(alert) === 'active_blocker');
+  if (blocker !== undefined) {
+    const suffix = moreSuffix(alerts.length - 1 + Number(hasMaintenanceIssue) + Number(hasAdapterError) + Number(hasDistillationIssue));
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.text)(normalizeSummary(blocker.message))}${chalk.hex(colors.textMuted)(suffix)}`;
+  }
+
+  if (snap.aitpMaintenance?.degradedReason !== undefined) {
+    const suffix = moreSuffix(alerts.length + Number(hasAdapterError) + Number(hasDistillationIssue));
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.text)(`AITP maintenance degraded: ${snap.aitpMaintenance.degradedReason.replaceAll('_', ' ')}`)}${chalk.hex(colors.textMuted)(suffix)}`;
+  }
+  const alert = alerts[0];
+  if (alert !== undefined) {
+    const suffix = moreSuffix(alerts.length - 1 + Number(hasAdapterError) + Number(hasDistillationIssue));
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.text)(normalizeSummary(alert.message))}${chalk.hex(colors.textMuted)(suffix)}`;
+  }
   if (snap.aitpHealth.lastError !== undefined) {
-    rows.push(
-      `  ${chalk.hex(colors.warning)('AITP error:')} ${chalk.hex(colors.textMuted)(normalizeSummary(snap.aitpHealth.lastError))}`,
-    );
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.text)(normalizeSummary(snap.aitpHealth.lastError))}`;
   }
+  const workstream = snap.currentWorkstreamBinding;
+  if (snap.currentLineSlug !== undefined && workstream?.status !== 'bound') {
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.warning)('Scoped AITP persistence unavailable')} · ${chalk.hex(colors.text)(normalizeSummary(workstream?.reason) || 'Confirm an explicit Line-to-workstream binding.')}`;
+  }
+  return undefined;
+}
+
+function currentLineEffectiveNextStep(
+  snap: ResearchStatusSnapshot,
+): ResearchEffectiveNextStep | undefined {
+  const step = snap.effectiveNextStep;
+  if (step === undefined) return undefined;
+  const derived = step.derivedFrom;
+  if (derived.lineSlug !== undefined && derived.lineSlug !== snap.currentLineSlug) return undefined;
+  if (derived.questionId !== undefined) {
+    const question = snap.questions.find((candidate) => candidate.id === derived.questionId);
+    if (question === undefined || question.lineSlug !== snap.currentLineSlug) return undefined;
+  }
+  if (derived.actionId !== undefined && currentLineAction(snap)?.actionId !== derived.actionId) {
+    return undefined;
+  }
+  return step;
+}
+
+function selectEffectiveNextStep(
+  snap: ResearchStatusSnapshot,
+): ResearchEffectiveNextStep | undefined {
+  if (actionNeedsRecovery(snap)) {
+    const action = currentLineAction(snap)!;
+    const projected = currentLineEffectiveNextStep(snap);
+    if (
+      projected?.source === 'research_action' &&
+      projected.freshness === 'blocked' &&
+      projected.derivedFrom.actionId === action.actionId
+    ) return projected;
+    return {
+      text: `Recover action ${action.actionId}: it is ${action.status} while the Research phase is ${snap.phase}; conclude or abandon it before starting another action.`,
+      source: 'research_action',
+      freshness: 'blocked',
+      observedAt: action.createdAt,
+      derivedFrom: {
+        actionId: action.actionId,
+        questionId: action.questionId,
+        lineSlug: action.lineSlug,
+      },
+    };
+  }
+  return currentLineEffectiveNextStep(snap);
+}
+
+function selectNextAction(snap: ResearchStatusSnapshot): string | undefined {
+  return normalizeSummary(selectEffectiveNextStep(snap)?.text)
+    || normalizeSummary(snap.latestProgress?.nextAction)
+    || normalizeSummary(snap.currentQuestion?.nextBoundedAction)
+    || normalizeSummary(snap.currentFocus?.boundedAction)
+    || undefined;
+}
+
+function renderCompactNext(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string {
+  const next = selectNextAction(snap);
+  const effective = selectEffectiveNextStep(snap);
+  const warning = actionNeedsRecovery(snap)
+    || effective?.freshness === 'blocked'
+    || effective?.freshness === 'stale';
+  return `  ${chalk.hex(warning ? colors.warning : colors.primary)('→')} ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(warning ? colors.warning : next === undefined ? colors.textMuted : colors.text)(next ?? 'not recorded')}`;
+}
+
+function buildCompactRows(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string[] {
+  const rows = [renderCompactProjectStage(snap, colors), renderCompactCurrentCycle(snap, colors)];
+  const attention = renderCompactAttention(snap, colors);
+  if (attention !== undefined) rows.push(attention);
+  rows.push(renderCompactNext(snap, colors));
   return rows;
 }
 
@@ -335,121 +748,492 @@ function buildExpandedRows(
   snap: ResearchStatusSnapshot,
   todos: readonly TodoItem[],
   colors: ColorPalette,
-  width: number,
 ): string[] {
-  const rows: string[] = [
-    `  ${chalk.hex(colors.textStrong).bold('Lines')} ${chalk.hex(colors.textMuted)(`(${String(snap.lines.length)})`)}`,
-  ];
-  const lines = orderedLines(snap);
-  for (const line of lines.slice(0, MAX_LINE_SUMMARIES)) {
-    rows.push(renderLineSummary(line, snap, colors, width));
-  }
-  if (lines.length > MAX_LINE_SUMMARIES) {
-    rows.push(
-      `    ${chalk.hex(colors.textMuted)(`… +${String(lines.length - MAX_LINE_SUMMARIES)} more lines`)}`,
-    );
-  }
-
   const current = snap.currentQuestion;
   const currentLine = findCurrentLine(snap);
+  const rows: string[] = [
+    renderSectionHeading('Direction', colors),
+    `  ${chalk.hex(colors.textDim)('Snapshot revision:')} ${chalk.hex(colors.textMuted)(String(snap.revision))}`,
+    ...renderResearchGoalRows(snap, colors),
+    ...(snap.goalAlignment === undefined ? [] : [
+      `  ${chalk.hex(colors.textDim)('Goal alignment:')} ${chalk.hex(snap.goalAlignment.status === 'aligned' ? colors.success : snap.goalAlignment.status === 'unavailable' ? colors.textMuted : colors.warning)(snap.goalAlignment.status.replaceAll('_', ' '))}`,
+      `    ${chalk.hex(colors.textDim)('Alignment reason:')} ${chalk.hex(colors.text)(normalizeSummary(snap.goalAlignment.reason))}`,
+    ]),
+    ...renderGoalRows(snap, colors, true),
+  ];
+  if (snap.program !== undefined) {
+    rows.push(
+      `    ${chalk.hex(colors.textDim)('Program:')} ${chalk.hex(colors.text)(normalizeSummary(snap.program.title))} · ${chalk.hex(colors.textMuted)(`source ${normalizeSummary(snap.program.goalSource)}`)}`,
+      `    ${chalk.hex(colors.textDim)('Program provenance:')} ${chalk.hex(colors.textMuted)(`topic ${normalizeSummary(snap.program.topicId)} · established ${formatRunTimestamp(snap.program.establishedAt)}`)}`,
+    );
+  }
+  if (snap.period !== undefined) {
+    rows.push(
+      `  ${chalk.hex(colors.textDim)('Research period:')} ${chalk.hex(colors.text)(normalizeSummary(snap.period.id))} · ${chalk.hex(colors.textMuted)(`${normalizeSummary(snap.period.lineSlug)} · ${String(snap.period.loopCount)} Research turns${snap.period.endedAt === undefined ? ' · active' : ' · ended'}`)}`,
+      `    ${chalk.hex(colors.textDim)('Period timing:')} ${chalk.hex(colors.textMuted)(`${formatRunTimestamp(snap.period.startedAt)}${snap.period.endedAt === undefined ? '' : ` → ${formatRunTimestamp(snap.period.endedAt)}`}`)}`,
+    );
+    if (snap.period.currentQuestionId !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Period question:')} ${chalk.hex(colors.textMuted)(normalizeSummary(snap.period.currentQuestionId))}`);
+    }
+    if (snap.period.summary !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Period summary:')} ${chalk.hex(colors.text)(normalizeSummary(snap.period.summary))}`);
+    }
+  }
   rows.push(
-    `  ${chalk.hex(colors.textStrong).bold('Current:')} ${chalk.hex(colors.text)(normalizeSummary(current?.wording ?? snap.currentFocus?.questionId ?? 'none'))}`,
+    `  ${chalk.hex(colors.textDim)('Current line:')} ${chalk.hex(colors.text)(normalizeSummary(currentLine?.title ?? snap.currentLineSlug) || 'none')}${snap.currentLineSlug === undefined ? '' : ` · ${chalk.hex(colors.textMuted)(normalizeSummary(snap.currentLineSlug))}`}`,
+    `  ${chalk.hex(colors.textStrong).bold('Current question:')} ${chalk.hex(colors.text)(normalizeSummary(current?.wording ?? snap.currentFocus?.questionId ?? 'none'))}`,
   );
+  if (snap.currentWorkstreamBinding !== undefined) {
+    const alignment = snap.currentWorkstreamBinding;
+    const binding = alignment.binding;
+    rows.push(
+      `  ${chalk.hex(colors.textDim)('AITP workstream:')} ${chalk.hex(alignment.status === 'bound' ? colors.success : colors.warning)(binding?.workstream ?? alignment.status)} · ${chalk.hex(colors.textMuted)(alignment.reason)}`,
+    );
+    if (binding !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Binding provenance:')} ${chalk.hex(colors.textMuted)(`Topic ${binding.topicId} revision ${String(binding.observedRevision)} · ${binding.confirmedBy} · ${formatRunTimestamp(binding.confirmedAt)}`)}`);
+    }
+  }
   rows.push(renderAssessment(snap, current, colors));
+  if (snap.currentFocus !== undefined) {
+    rows.push(`  ${chalk.hex(colors.textDim)('Focus provenance:')} ${chalk.hex(colors.textMuted)(`question ${normalizeSummary(snap.currentFocus.questionId)} · revision ${String(snap.currentFocus.revision)}${snap.currentFocus.boundedAction === undefined ? '' : ` · bounded action ${normalizeSummary(snap.currentFocus.boundedAction)}`}`)}`);
+  }
+  rows.push(...renderExpandedNext(snap, currentLine, colors));
+  if (snap.status !== undefined) {
+    rows.push(
+      `  ${chalk.hex(colors.textDim)('Research status:')} ${chalk.hex(snap.status.health === 'ok' ? colors.success : snap.status.health === 'blocked' ? colors.error : colors.warning)(snap.status.health)} · ${renderPhase(snap.status.phase, colors)} · ${chalk.hex(colors.textMuted)(`revision ${String(snap.revision)}`)}`,
+    );
+    const statusRefs = [
+      snap.status.currentLineSlug === undefined ? undefined : `line ${normalizeSummary(snap.status.currentLineSlug)}`,
+      snap.status.currentQuestionId === undefined ? undefined : `question ${normalizeSummary(snap.status.currentQuestionId)}`,
+      snap.status.currentActionId === undefined ? undefined : `action ${normalizeSummary(snap.status.currentActionId)}`,
+    ].filter((value): value is string => value !== undefined);
+    if (statusRefs.length > 0) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Status references:')} ${chalk.hex(colors.textMuted)(statusRefs.join(' · '))}`);
+    }
+  }
 
-  const effectiveNextStep = renderEffectiveNextStep(snap, colors);
-  rows.push(
-    effectiveNextStep ?? `  ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(colors.text)(normalizeSummary(currentLine?.objective) || 'none')}`,
-  );
-  rows.push(...renderAttentionRows(snap, colors, true));
-
-  // Scientific progress detail: phase, progress report, current action, gate.
+  rows.push('', renderSectionHeading('Current work', colors));
   rows.push(...renderExpandedScientificRows(snap, colors));
+  if (snap.researchPlanV2 !== undefined) {
+    rows.push(...renderExpandedResearchPlanV2Rows(snap.researchPlanV2, colors));
+  }
   if (snap.researchPlan !== undefined) {
     rows.push(...renderExpandedPlanRows(snap.researchPlan, colors));
   }
-  rows.push(...renderExpandedMaintenanceRows(snap, colors));
 
+  rows.push('', renderSectionHeading('Research map', colors));
   rows.push(renderResearchCounts(
     snap,
     Math.max(0, candidateQuestions(snap).length - candidateQuestions(snap).filter((q) => q.lineSlug === snap.currentLineSlug).length),
     colors,
   ));
+  rows.push(`  ${chalk.hex(colors.textStrong).bold('Lines')} ${chalk.hex(colors.textMuted)(`(${String(snap.lines.length)})`)}`);
+  const lines = orderedLines(snap);
+  if (lines.length === 0) {
+    rows.push(`    ${chalk.hex(colors.textMuted)('No research lines.')}`);
+  } else {
+    for (const line of lines) rows.push(...renderExpandedLineRows(line, snap, colors));
+  }
+  rows.push(`  ${chalk.hex(colors.textStrong).bold('Questions')} ${chalk.hex(colors.textMuted)(`(${String(snap.questions.length)})`)}`);
+  if (snap.questions.length === 0) {
+    rows.push(`    ${chalk.hex(colors.textMuted)('No research questions.')}`);
+  } else {
+    for (const question of orderedQuestions(snap)) {
+      rows.push(...renderExpandedQuestionRows(question, snap, colors));
+    }
+  }
 
+  rows.push('', renderSectionHeading('Evidence & uncertainty', colors));
+  rows.push(...renderExpandedEvidenceRows(snap, colors));
+
+  rows.push('', renderSectionHeading('Operations & provenance', colors));
+  if (snap.distillationAttention !== undefined) {
+    const attention = snap.distillationAttention;
+    const status = attention.status === 'review_requested'
+      ? 'review requested'
+      : `handoff unavailable · ${normalizeSummary(attention.reason)}`;
+    rows.push(
+      `  ${chalk.hex(colors.textStrong).bold('Method review handoff')} ${chalk.hex(attention.status === 'review_requested' ? colors.success : colors.warning)(status)}`,
+      `    ${chalk.hex(colors.textDim)('Receipt:')} ${chalk.hex(colors.textMuted)(`checkpoint ${normalizeSummary(attention.checkpointId)} · Entry ${normalizeSummary(attention.entryId)} · ${formatRunTimestamp(attention.recordedAt)}`)}`,
+    );
+  }
+  rows.push(...renderExpandedAttentionRows(snap, colors));
   const progress = formatTodoProgress(todos);
   rows.push(
-    `  ${chalk.hex(colors.textStrong).bold('Todo actions')} ${chalk.hex(colors.textMuted)(`(${progress})`)}`,
+    `  ${chalk.hex(colors.textStrong).bold('External Todo actions')} ${chalk.hex(colors.textMuted)(`(${progress})`)}`,
   );
   if (todos.length === 0) {
     rows.push(`    ${chalk.hex(colors.textMuted)('No Todo actions.')}`);
   } else {
-    for (const todo of todos.slice(0, MAX_ACTION_ROWS)) {
-      rows.push(renderTodoAction(todo, colors, '    ', 'Todo:'));
-    }
-    if (todos.length > MAX_ACTION_ROWS) {
-      rows.push(
-        `    ${chalk.hex(colors.textMuted)(`… +${String(todos.length - MAX_ACTION_ROWS)} more Todo actions`)}`,
-      );
-    }
+    for (const todo of todos) rows.push(renderTodoAction(todo, colors, '    ', 'Todo:'));
   }
+  rows.push(...renderExpandedCheckpointRows(snap, colors));
+  rows.push(...renderExpandedAdapterHealthRows(snap, colors));
+  rows.push(...renderExpandedMaintenanceRows(snap, colors));
+  return rows;
+}
 
-  if (current !== undefined) {
-    rows.push(
-      `  ${chalk.hex(colors.textDim)('Evidence:')} ${chalk.hex(colors.textMuted)(`${String(current.neededEvidence.length)} needed · ${String(current.evidenceRefs.length)} found · ${String(current.falsifierRefs.length)} falsifiers`)}`,
-    );
-  } else {
-    rows.push(`  ${chalk.hex(colors.textDim)('Evidence:')} ${chalk.hex(colors.textMuted)('none selected')}`);
-  }
+function renderSectionHeading(label: string, colors: ColorPalette): string {
+  return `  ${chalk.hex(colors.primary)('▸')} ${chalk.hex(colors.textStrong).bold(label)}`;
+}
 
-  // Checkpoint details live in expanded view only (engineering audit info).
-  const checkpoint = formatCompactCheckpoint(snap, colors);
-  if (checkpoint !== undefined) rows.push(checkpoint);
-
-  const alerts = orderedAlerts(snap.alerts);
-  if (alerts.length === 0) {
-    rows.push(`  ${chalk.hex(colors.textDim)('Alerts:')} ${chalk.hex(colors.textMuted)('none')}`);
-  } else {
-    rows.push(`  ${chalk.hex(colors.warning)('Alerts:')} ${formatAlertSummary(alerts, colors)}`);
-    for (const alert of alerts.slice(0, MAX_ALERT_ROWS)) {
-      const classification = alertClassification(alert);
-      const label = classification === 'active_blocker'
-        ? 'active blocker'
-        : classification.replaceAll('_', ' ');
-      const color = classification === 'active_blocker' ? colors.error : colors.warning;
-      rows.push(
-        `    ${chalk.hex(color)(classification === 'active_blocker' ? '!' : '◇')} ${chalk.hex(color)(label)} · ${chalk.hex(colors.textMuted)(normalizeSummary(alert.message))}`,
-      );
-      const association = [
-        alert.relatedEntryId === undefined ? undefined : `entry ${alert.relatedEntryId}`,
-        alert.workstream === undefined ? undefined : `workstream ${alert.workstream}`,
-        alert.retryOfEntryId === undefined ? undefined : `retry of ${alert.retryOfEntryId}`,
-      ].filter((value) => value !== undefined).join(' · ');
-      if (association.length > 0) {
-        rows.push(`      ${chalk.hex(colors.textMuted)(association)}`);
-      }
-    }
-    if (alerts.length > MAX_ALERT_ROWS) {
-      rows.push(
-        `    ${chalk.hex(colors.textMuted)(`… +${String(alerts.length - MAX_ALERT_ROWS)} more alerts`)}`,
-      );
-    }
-  }
-  const acknowledgedCount = snap.alerts.filter(
-    (alert) => alert.state === 'acknowledged' || alert.acknowledgedAt !== undefined,
-  ).length;
-  if (acknowledgedCount > 0) {
-    rows.push(
-      `  ${chalk.hex(colors.textDim)('acknowledged alerts:')} ${chalk.hex(colors.textMuted)(String(acknowledgedCount))}`,
-    );
+function renderExpandedNext(
+  snap: ResearchStatusSnapshot,
+  currentLine: ResearchLine | undefined,
+  colors: ColorPalette,
+): string[] {
+  const next = selectNextAction(snap) ?? (normalizeSummary(currentLine?.objective) || 'not recorded');
+  const effective = selectEffectiveNextStep(snap);
+  const source = effective === undefined
+    ? ''
+    : ` · ${effective.source.replaceAll('_', ' ')} / ${effective.freshness}`;
+  const color = effective?.freshness === 'blocked' || effective?.freshness === 'stale'
+    ? colors.warning
+    : colors.text;
+  const rows = [`  ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(color)(next)}${chalk.hex(colors.textMuted)(source)}`];
+  if (effective !== undefined) {
+    const derived = [
+      effective.derivedFrom.actionId === undefined ? undefined : `action ${normalizeSummary(effective.derivedFrom.actionId)}`,
+      effective.derivedFrom.entryId === undefined ? undefined : `entry ${normalizeSummary(effective.derivedFrom.entryId)}`,
+      effective.derivedFrom.questionId === undefined ? undefined : `question ${normalizeSummary(effective.derivedFrom.questionId)}`,
+      effective.derivedFrom.lineSlug === undefined ? undefined : `line ${normalizeSummary(effective.derivedFrom.lineSlug)}`,
+    ].filter((value): value is string => value !== undefined);
+    rows.push(`    ${chalk.hex(colors.textDim)('Next provenance:')} ${chalk.hex(colors.textMuted)(`${formatRunTimestamp(effective.observedAt)}${derived.length === 0 ? '' : ` · ${derived.join(' · ')}`}`)}`);
   }
   return rows;
 }
 
-function renderFocus(question: ResearchQuestion, colors: ColorPalette): string {
-  const tags = chalk.hex(colors.textMuted)(
-    ` [${question.workflow}/${question.epistemic}/${question.persistence}]`,
+function renderExpandedLineRows(
+  line: ResearchLine,
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string[] {
+  const rows = [renderLineSummary(line, snap, colors)];
+  if (line.objective !== undefined) {
+    rows.push(`      ${chalk.hex(colors.textDim)('Objective:')} ${chalk.hex(colors.text)(normalizeSummary(line.objective))}`);
+  }
+  if (line.assessment !== undefined) {
+    const questionAssessment = line.slug === snap.currentLineSlug
+      ? normalizeSummary(snap.currentQuestion?.assessment)
+      : '';
+    const label = questionAssessment.length > 0 &&
+        questionAssessment !== normalizeSummary(line.assessment)
+      ? 'Line-level context:'
+      : 'Assessment:';
+    rows.push(`      ${chalk.hex(colors.textDim)(label)} ${chalk.hex(colors.text)(normalizeSummary(line.assessment))}`);
+  }
+  const alignment = projectLineWorkstreamAlignment(snap, line.slug);
+  if (alignment.binding !== undefined) {
+    rows.push(`      ${chalk.hex(colors.textDim)('AITP workstream:')} ${chalk.hex(workstreamAlignmentColor(alignment, colors))(`${alignment.binding.workstream} · ${alignment.status}`)}`);
+  } else {
+    rows.push(`      ${chalk.hex(colors.textDim)('AITP workstream:')} ${chalk.hex(workstreamAlignmentColor(alignment, colors))(alignment.status)}`);
+  }
+  rows.push(`      ${chalk.hex(colors.textDim)('Provenance:')} ${chalk.hex(colors.textMuted)(`revision ${String(line.revision)} · created ${formatRunTimestamp(line.createdAt)}`)}`);
+  return rows;
+}
+
+function workstreamAlignmentColor(
+  alignment: ResearchLineWorkstreamAlignment,
+  colors: ColorPalette,
+): string {
+  if (alignment.status === 'bound') return colors.success;
+  if (alignment.status === 'conflict') return colors.error;
+  if (alignment.status === 'stale' || alignment.status === 'unavailable') {
+    return colors.warning;
+  }
+  return colors.textMuted;
+}
+
+function orderedQuestions(snap: ResearchStatusSnapshot): readonly ResearchQuestion[] {
+  const currentId = snap.currentFocus?.questionId ?? snap.currentQuestion?.id;
+  if (currentId === undefined) return snap.questions;
+  const current = snap.questions.find((question) => question.id === currentId);
+  if (current === undefined) return snap.questions;
+  return [current, ...snap.questions.filter((question) => question.id !== currentId)];
+}
+
+function renderExpandedQuestionRows(
+  question: ResearchQuestion,
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string[] {
+  const current = question.id === (snap.currentFocus?.questionId ?? snap.currentQuestion?.id);
+  const marker = current ? chalk.hex(colors.primary)('●') : chalk.hex(colors.textDim)('○');
+  const rows = [
+    `    ${marker} ${chalk.hex(current ? colors.textStrong : colors.text)(normalizeSummary(question.wording))} ${chalk.hex(colors.textMuted)(`(${normalizeSummary(question.id)}) · ${question.workflow}/${question.epistemic}/${question.persistence} · priority ${String(question.priority)}`)}`,
+  ];
+  if (question.assessment !== undefined) {
+    rows.push(`      ${chalk.hex(colors.textDim)('Assessment:')} ${chalk.hex(colors.text)(normalizeSummary(question.assessment))}`);
+  }
+  if (question.neededEvidence.length > 0) {
+    rows.push(`      ${chalk.hex(colors.textDim)('Needed evidence:')} ${chalk.hex(colors.text)(question.neededEvidence.map(normalizeSummary).join(' · '))}`);
+  }
+  if (question.evidenceRefs.length > 0) {
+    rows.push(`      ${chalk.hex(colors.textDim)('Evidence refs:')} ${chalk.hex(colors.textMuted)(question.evidenceRefs.map(normalizeSummary).join(' · '))}`);
+  }
+  if (question.falsifierRefs.length > 0) {
+    rows.push(`      ${chalk.hex(colors.textDim)('Falsifier refs:')} ${chalk.hex(colors.textMuted)(question.falsifierRefs.map(normalizeSummary).join(' · '))}`);
+  }
+  if (question.nextBoundedAction !== undefined) {
+    rows.push(`      ${chalk.hex(colors.textDim)('Bounded next action:')} ${chalk.hex(colors.text)(normalizeSummary(question.nextBoundedAction))}`);
+  }
+  rows.push(`      ${chalk.hex(colors.textDim)('Provenance:')} ${chalk.hex(colors.textMuted)(`line ${normalizeSummary(question.lineSlug)} · revision ${String(question.revision)}`)}`);
+  return rows;
+}
+
+function renderExpandedEvidenceRows(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string[] {
+  const rows: string[] = [];
+  const current = snap.currentQuestion;
+  if (current === undefined) {
+    rows.push(`  ${chalk.hex(colors.textDim)('Focused-question evidence:')} ${chalk.hex(colors.textMuted)('none selected')}`);
+  } else {
+    rows.push(
+      `  ${chalk.hex(colors.textStrong).bold('Focused-question evidence')} ${chalk.hex(colors.textMuted)(`${String(current.neededEvidence.length)} needed · ${String(current.evidenceRefs.length)} found · ${String(current.falsifierRefs.length)} falsifiers`)}`,
+    );
+    rows.push(...renderNamedList('Needed evidence', current.neededEvidence, colors));
+    rows.push(...renderNamedList('Evidence refs', current.evidenceRefs, colors, true));
+    rows.push(...renderNamedList('Falsifier refs', current.falsifierRefs, colors, true));
+  }
+
+  const progress = snap.latestProgress;
+  if (progress === undefined) {
+    rows.push(`  ${chalk.hex(colors.textDim)('Progress evidence:')} ${chalk.hex(colors.textMuted)('No progress recorded for this cycle.')}`);
+    return rows;
+  }
+  rows.push(`  ${chalk.hex(colors.textStrong).bold('Progress evidence')}`);
+  rows.push(...renderNamedList('Uncertainties', progress.uncertainties, colors, false, colors.warning));
+  const detail = progress.detail;
+  if (detail === undefined) {
+    rows.push(`    ${chalk.hex(colors.textMuted)('No detailed evidence packet recorded.')}`);
+    return rows;
+  }
+  rows.push(...renderNamedList('Assumptions', detail.assumptions ?? [], colors));
+  if (detail.derivation !== undefined) {
+    rows.push(`    ${chalk.hex(colors.textDim)('Derivation:')} ${chalk.hex(colors.text)(normalizeSummary(detail.derivation))}`);
+  }
+  rows.push(...renderNamedList('Tests', detail.tests ?? [], colors));
+  rows.push(...renderNamedList('Observations', detail.observations ?? [], colors));
+  rows.push(...renderNamedList('Sources', detail.sources ?? [], colors, true));
+  rows.push(...renderNamedList('Limitations', detail.limitations ?? [], colors, false, colors.warning));
+  rows.push(...renderNamedList('Artifacts', detail.artifactRefs ?? [], colors, true));
+  if (detail.detailHint !== undefined) {
+    rows.push(`    ${chalk.hex(colors.textDim)('Detail hint:')} ${chalk.hex(colors.textMuted)(normalizeSummary(detail.detailHint))}`);
+  }
+  return rows;
+}
+
+function renderNamedList(
+  label: string,
+  values: readonly string[],
+  colors: ColorPalette,
+  muted = false,
+  valueColor?: string,
+): string[] {
+  const normalized = values.map(normalizeSummary).filter((value) => value.length > 0);
+  if (normalized.length === 0) return [];
+  const color = valueColor ?? (muted ? colors.textMuted : colors.text);
+  return [
+    `    ${chalk.hex(colors.textDim)(`${label}:`)} ${chalk.hex(color)(normalized.join(' · '))}`,
+  ];
+}
+
+function renderExpandedAttentionRows(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string[] {
+  const rows: string[] = [];
+  const gate = snap.humanGate;
+  if (gate !== undefined) {
+    const state = gate.resolvedAt === undefined ? 'open' : 'resolved';
+    rows.push(
+      `  ${chalk.hex(gate.resolvedAt === undefined ? colors.warning : colors.success).bold('Human gate:')} ${chalk.hex(colors.text)(normalizeSummary(gate.prompt))} · ${chalk.hex(colors.textMuted)(`${gate.kind} / ${state}`)}`,
+    );
+    if (gate.resolution !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Resolution:')} ${chalk.hex(colors.text)(normalizeSummary(gate.resolution))}`);
+    }
+    const gateRefs = [
+      `gate ${normalizeSummary(gate.gateId)}`,
+      gate.actionId === undefined ? undefined : `action ${normalizeSummary(gate.actionId)}`,
+      gate.questionId === undefined ? undefined : `question ${normalizeSummary(gate.questionId)}`,
+      `created ${formatRunTimestamp(gate.createdAt)}`,
+      gate.resolvedAt === undefined ? undefined : `resolved ${formatRunTimestamp(gate.resolvedAt)}`,
+    ].filter((value): value is string => value !== undefined);
+    rows.push(`    ${chalk.hex(colors.textDim)('Gate provenance:')} ${chalk.hex(colors.textMuted)(gateRefs.join(' · '))}`);
+  }
+  const alerts = snap.alerts
+    .filter((alert) => alert.lineSlug === undefined || alert.lineSlug === snap.currentLineSlug)
+    .toSorted((a, b) => {
+    const aActive = a.state === undefined || a.state === 'active';
+    const bActive = b.state === undefined || b.state === 'active';
+    if (aActive !== bActive) return aActive ? -1 : 1;
+    return a.createdAt - b.createdAt;
+  });
+  rows.push(`  ${chalk.hex(colors.textStrong).bold('Alerts')} ${chalk.hex(colors.textMuted)(`(${String(alerts.length)})`)}`);
+  if (alerts.length === 0) {
+    rows.push(`    ${chalk.hex(colors.textMuted)('No alerts.')}`);
+  }
+  for (const alert of alerts) {
+    const classification = alertClassification(alert);
+    const state = alert.state ?? (alert.acknowledgedAt === undefined ? 'active' : 'acknowledged');
+    const label = classification === 'active_blocker'
+      ? 'active blocker'
+      : classification.replaceAll('_', ' ');
+    const color = classification === 'active_blocker' && state === 'active' ? colors.error : colors.warning;
+    rows.push(
+      `    ${chalk.hex(color)(classification === 'active_blocker' ? '!' : '◇')} ${chalk.hex(color)(label)} · ${chalk.hex(colors.text)(normalizeSummary(alert.message))} · ${chalk.hex(colors.textMuted)(state)}`,
+    );
+    const association = [
+      `fingerprint ${normalizeSummary(alert.fingerprint)}`,
+      `kind ${alert.kind}`,
+      alert.source === undefined ? undefined : `source ${alert.source}`,
+      alert.reason === undefined ? undefined : `reason ${normalizeSummary(alert.reason)}`,
+      alert.questionId === undefined ? undefined : `question ${normalizeSummary(alert.questionId)}`,
+      alert.lineSlug === undefined ? undefined : `line ${normalizeSummary(alert.lineSlug)}`,
+      alert.relatedEntryId === undefined ? undefined : `entry ${normalizeSummary(alert.relatedEntryId)}`,
+      alert.workstream === undefined ? undefined : `workstream ${normalizeSummary(alert.workstream)}`,
+      alert.retryOfEntryId === undefined ? undefined : `retry of ${normalizeSummary(alert.retryOfEntryId)}`,
+      `created ${formatRunTimestamp(alert.createdAt)}`,
+      alert.acknowledgedAt === undefined ? undefined : `acknowledged ${formatRunTimestamp(alert.acknowledgedAt)}`,
+    ].filter((value): value is string => value !== undefined).join(' · ');
+    if (association.length > 0) rows.push(`      ${chalk.hex(colors.textMuted)(association)}`);
+  }
+  return rows;
+}
+
+function renderCheckpointCheckReceiptRows(
+  label: string,
+  check: ResearchCheckpointCheckReceipt | undefined,
+  colors: ColorPalette,
+  indent: string,
+): string[] {
+  if (check === undefined) return [];
+  const rows = [
+    `${indent}${chalk.hex(colors.textDim)(`${label}:`)} ${chalk.hex(check.status === 'clean' ? colors.success : colors.warning)(`${check.status} · errors ${String(check.errors)} · warnings ${String(check.warnings)} · ${formatRunTimestamp(check.checkedAt)}`)}`,
+  ];
+  const append = (name: string, values: readonly string[] | undefined): void => {
+    if (values === undefined || values.length === 0) return;
+    rows.push(`${indent}  ${chalk.hex(colors.textDim)(`${name}:`)} ${chalk.hex(colors.textMuted)(values.map(normalizeSummary).join(' · '))}`);
+  };
+  append('Finding fingerprints', check.findingFingerprints);
+  append('Error fingerprints', check.errorFindingFingerprints);
+  append('New error fingerprints', check.newErrorFindingFingerprints);
+  append('Pre-existing error fingerprints', check.preExistingErrorFindingFingerprints);
+  return rows;
+}
+
+function renderCheckpointReceiptRows(
+  receipt: ResearchCheckpointReceipt | undefined,
+  colors: ColorPalette,
+  indent = '      ',
+): string[] {
+  if (receipt === undefined) return [];
+  const rows: string[] = [];
+  const prepare = receipt.prepare;
+  if (prepare !== undefined) {
+    rows.push(`${indent}${chalk.hex(colors.textDim)('Prepare receipt:')} ${chalk.hex(colors.text)(prepare.status)} · ${chalk.hex(colors.textMuted)(`path ${normalizeSummary(prepare.path)}`)}`);
+    const prepareRefs = [
+      prepare.id === undefined ? undefined : `id ${normalizeSummary(prepare.id)}`,
+      prepare.idempotencyKey === undefined ? undefined : `idempotency ${normalizeSummary(prepare.idempotencyKey)}`,
+      prepare.workstreams === undefined || prepare.workstreams.length === 0
+        ? undefined
+        : `workstreams ${prepare.workstreams.map(normalizeSummary).join(' · ')}`,
+    ].filter((value): value is string => value !== undefined);
+    if (prepareRefs.length > 0) rows.push(`${indent}  ${chalk.hex(colors.textMuted)(prepareRefs.join(' · '))}`);
+  }
+  const save = receipt.save;
+  if (save !== undefined) {
+    rows.push(`${indent}${chalk.hex(colors.textDim)('Save receipt:')} ${chalk.hex(colors.text)(save.status)} · ${chalk.hex(colors.textMuted)(`draft ${normalizeSummary(save.draftPath)} · path ${normalizeSummary(save.path)}${save.source === undefined ? '' : ` · source ${save.source}`}`)}`);
+  }
+  rows.push(
+    ...renderCheckpointCheckReceiptRows('Pre-save check', receipt.preSaveCheck, colors, indent),
+    ...renderCheckpointCheckReceiptRows('Post-save check', receipt.postSaveCheck, colors, indent),
   );
-  return `  ${chalk.hex(colors.primary)('◉')} ${chalk.hex(colors.textStrong).bold('Focus:')} ${chalk.hex(colors.text)(normalizeSummary(question.wording))}${tags}`;
+  return rows;
+}
+
+function renderExpandedCheckpointRows(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string[] {
+  const rows = [`  ${chalk.hex(colors.textStrong).bold('Checkpoints')}`];
+  const pending = snap.pendingCheckpoint;
+  if (pending !== undefined) {
+    const historical = historicalPendingCheckpoint(snap);
+    rows.push(`    ${chalk.hex(colors.warning)(historical ? 'Historical pending:' : 'Pending:')} ${chalk.hex(colors.text)(normalizeSummary(pending.checkpointId))} · ${chalk.hex(colors.textMuted)(pending.persistence)}`);
+    const refs = [
+      pending.committedEntryId === undefined ? undefined : `committed entry ${normalizeSummary(pending.committedEntryId)}`,
+      pending.questionId === undefined ? undefined : `question ${normalizeSummary(pending.questionId)}`,
+      pending.questionRevision === undefined ? undefined : `question revision ${String(pending.questionRevision)}`,
+      pending.lineSlug === undefined ? undefined : `line ${normalizeSummary(pending.lineSlug)}`,
+    ].filter((value): value is string => value !== undefined);
+    if (refs.length > 0) rows.push(`      ${chalk.hex(colors.textDim)('References:')} ${chalk.hex(colors.textMuted)(refs.join(' · '))}`);
+    if (historical) {
+      const question = snap.questions.find((candidate) => candidate.id === pending.questionId)
+        ?? (snap.currentQuestion?.id === pending.questionId ? snap.currentQuestion : undefined);
+      rows.push(`      ${chalk.hex(colors.warning)('Freshness:')} ${chalk.hex(colors.text)(`captured question revision ${String(pending.questionRevision)}; current revision ${String(question!.revision)}. It cannot be committed as current evidence.`)}`);
+    }
+    if (pending.assessment !== undefined) {
+      rows.push(`      ${chalk.hex(colors.textDim)('Assessment:')} ${chalk.hex(colors.text)(normalizeSummary(pending.assessment))}`);
+    }
+    if (pending.commitCandidate !== undefined) {
+      const candidate = pending.commitCandidate;
+      rows.push(
+        `      ${chalk.hex(colors.textDim)('Commit candidate:')} ${chalk.hex(colors.text)(`${candidate.entryKind} · ${candidate.authority} · ${candidate.provenance}`)}`,
+        `      ${chalk.hex(colors.textDim)('Candidate rationale:')} ${chalk.hex(colors.text)(normalizeSummary(candidate.rationale))}`,
+      );
+    }
+    if (pending.nextAction !== undefined) {
+      rows.push(`      ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(colors.text)(normalizeSummary(pending.nextAction))}`);
+    }
+    rows.push(
+      `      ${chalk.hex(colors.textDim)('Idempotency key:')} ${chalk.hex(colors.textMuted)(normalizeSummary(pending.idempotencyKey))}`,
+      `      ${chalk.hex(colors.textDim)('Created:')} ${chalk.hex(colors.textMuted)(formatRunTimestamp(pending.createdAt))}`,
+      ...renderCheckpointReceiptRows(pending.receipt, colors),
+    );
+  }
+  const committed = snap.latestCommittedCheckpoint;
+  if (committed !== undefined) {
+    rows.push(`    ${chalk.hex(colors.success)('✓ Latest committed:')} ${chalk.hex(colors.text)(normalizeSummary(committed.checkpointId))}${committed.entryId === undefined ? '' : ` · ${chalk.hex(colors.textMuted)(`entry ${normalizeSummary(committed.entryId)}`)}`} · ${chalk.hex(colors.textMuted)(formatRunTimestamp(committed.committedAt))}`);
+    rows.push(...renderCheckpointReceiptRows(committed.receipt, colors));
+  }
+  const history = snap.committedCheckpointHistory ?? [];
+  if (history.length > 0) {
+    rows.push(`    ${chalk.hex(colors.textDim)('Committed history:')}`);
+    for (const checkpoint of history) {
+      const entry = checkpoint.entryId === undefined
+        ? ''
+        : ` · ${chalk.hex(colors.textMuted)(`entry ${normalizeSummary(checkpoint.entryId)}`)}`;
+      rows.push(`      ${chalk.hex(colors.text)(normalizeSummary(checkpoint.checkpointId))}${entry} · ${chalk.hex(colors.textMuted)(formatRunTimestamp(checkpoint.committedAt))}`);
+      rows.push(...renderCheckpointReceiptRows(checkpoint.receipt, colors, '        '));
+    }
+  }
+  if (pending === undefined && committed === undefined && history.length === 0) {
+    rows.push(`    ${chalk.hex(colors.textMuted)('No checkpoints.')}`);
+  }
+  return rows;
+}
+
+function renderExpandedAdapterHealthRows(
+  snap: ResearchStatusSnapshot,
+  colors: ColorPalette,
+): string[] {
+  const health = snap.aitpHealth;
+  const rows = [
+    `  ${chalk.hex(colors.textStrong).bold('AITP adapter')} · ${formatHealthLabel(snap, colors)}`,
+  ];
+  const versions = [
+    health.contractVersion === undefined ? undefined : `contract ${normalizeSummary(health.contractVersion)}`,
+    health.pluginVersion === undefined ? undefined : `plugin ${normalizeSummary(health.pluginVersion)}`,
+    health.pythonVersion === undefined ? undefined : `Python ${normalizeSummary(health.pythonVersion)}`,
+  ].filter((value): value is string => value !== undefined);
+  if (versions.length > 0) rows.push(`    ${chalk.hex(colors.textDim)('Versions:')} ${chalk.hex(colors.textMuted)(versions.join(' · '))}`);
+  if (health.notInitialized === true) rows.push(`    ${chalk.hex(colors.warning)('Adapter is not initialized.')}`);
+  if (health.lastCheckAt !== undefined) rows.push(`    ${chalk.hex(colors.textDim)('Last check:')} ${chalk.hex(colors.textMuted)(formatRunTimestamp(health.lastCheckAt))}`);
+  if (health.lastError !== undefined) rows.push(`    ${chalk.hex(colors.warning)('Last error:')} ${chalk.hex(colors.text)(normalizeSummary(health.lastError))}`);
+  return rows;
 }
 
 function renderAssessment(
@@ -472,7 +1256,6 @@ function renderLineSummary(
   line: ResearchLine,
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
-  width: number,
 ): string {
   const questions = snap.questions.filter((question) => question.lineSlug === line.slug);
   const open = questions.filter((question) => question.workflow === 'open').length;
@@ -486,16 +1269,7 @@ function renderLineSummary(
   const details = chalk.hex(colors.textMuted)(
     `(${normalizeSummary(line.slug)}) · ${line.status} · ${String(questions.length)} questions: ${String(open)} open/${String(active)} active/${String(blocked)} blocked`,
   );
-  const body = `    ${title} ${details}`;
-  if (marker.length === 0) return truncateToWidth(body, width, '…');
-  const markerBudget = visibleWidth(marker);
-  const bodyBudget = Math.max(1, width - markerBudget);
-  return truncateToWidth(body, bodyBudget, '…') + marker;
-}
-
-function selectTodoAction(todos: readonly TodoItem[]): TodoItem | undefined {
-  return todos.find((todo) => todo.status === 'in_progress') ??
-    todos.find((todo) => todo.status === 'pending');
+  return `    ${title} ${details}${marker}`;
 }
 
 function renderTodoAction(
@@ -518,52 +1292,6 @@ function formatTodoProgress(todos: readonly TodoItem[]): string {
   return `${String(done)}/${String(todos.length)} done`;
 }
 
-function renderTodoProgress(todos: readonly TodoItem[], colors: ColorPalette): string {
-  return `  ${chalk.hex(colors.textDim)('Todo progress:')} ${chalk.hex(colors.textMuted)(formatTodoProgress(todos))}`;
-}
-
-function formatCompactCheckpoint(
-  snap: ResearchStatusSnapshot,
-  colors: ColorPalette,
-): string | undefined {
-  const parts: string[] = [];
-  if (snap.pendingCheckpoint !== undefined) {
-    parts.push(
-      `${chalk.hex(colors.warning)('pending')} ${chalk.hex(colors.text)(normalizeSummary(snap.pendingCheckpoint.checkpointId))}`,
-    );
-  }
-  if (snap.latestCommittedCheckpoint !== undefined) {
-    const checkpoint = snap.latestCommittedCheckpoint;
-    parts.push(
-      `${chalk.hex(colors.success)('✓ committed')} ${chalk.hex(colors.text)(normalizeSummary(checkpoint.entryId ?? checkpoint.checkpointId))}`,
-    );
-  }
-  return parts.length === 0 ? undefined : `  ${chalk.hex(colors.textDim)('checkpoint:')} ${parts.join(' · ')}`;
-}
-
-function formatCheckpointDetails(
-  checkpoint: ResearchStatusSnapshot['pendingCheckpoint'],
-  colors: ColorPalette,
-): string {
-  if (checkpoint === undefined) return '';
-  const details = [checkpoint.assessment, checkpoint.nextAction]
-    .map((value) => normalizeSummary(value))
-    .filter((value) => value.length > 0);
-  return details.length === 0
-    ? ''
-    : ` · ${chalk.hex(colors.textMuted)(details.join(' · '))}`;
-}
-
-export function formatAlertSummary(
-  alerts: readonly ResearchAlert[],
-  colors: ColorPalette,
-): string {
-  if (alerts.length === 0) return '';
-  return chalk.hex(colors.warning)(
-    `${alerts.length} alert${alerts.length === 1 ? '' : 's'}`,
-  );
-}
-
 // ── Scientific progress formatters ──────────────────────────────────────────
 
 /** Human-readable phase label with a color matching its semantic. */
@@ -579,76 +1307,62 @@ function renderPhase(
   return chalk.hex(colors.text)(label);
 }
 
-/**
- * Compact scientific summary: phase, progress headline (or "本轮没有记录进展"),
- * and one-line mainline impact. The effective next step is rendered separately
- * so competing question/progress/AITP handoffs cannot appear as three commands.
- */
-function renderCompactScientificRows(
-  snap: ResearchStatusSnapshot,
-  colors: ColorPalette,
-): string[] {
-  const rows: string[] = [
-    `  ${chalk.hex(colors.textDim)('Phase:')} ${renderPhase(snap.phase, colors)}`,
-  ];
-
-  const progress = snap.latestProgress;
-  const headline = progress !== undefined ? normalizeSummary(progress.headline) : '';
-  rows.push(
-    `  ${chalk.hex(colors.textDim)('Progress:')} ${chalk.hex(headline.length === 0 ? colors.textMuted : colors.text)(headline || '本轮没有记录进展')}`,
-  );
-
-  if (progress !== undefined) {
-    const impact = normalizeSummary(progress.mainlineImpact);
-    if (impact.length > 0) {
-      rows.push(
-        `  ${chalk.hex(colors.textDim)('Impact:')} ${chalk.hex(colors.text)(impact)}`,
-      );
-    }
-  }
-
-  return rows;
-}
-
-function renderCompactPlanRow(
-  plan: ResearchPlan,
-  colors: ColorPalette,
-): string {
-  const stepCount = `${String(plan.steps.length)} step${plan.steps.length === 1 ? '' : 's'}`;
-  return `  ${chalk.hex(colors.textDim)('Plan:')} ${chalk.hex(colors.text)(normalizeSummary(plan.objective))} · ${chalk.hex(colors.textMuted)(`${plan.status} · ${stepCount}`)}`;
-}
-
 function renderExpandedPlanRows(
   plan: ResearchPlan,
   colors: ColorPalette,
 ): string[] {
   const rows = [
-    `  ${chalk.hex(colors.textStrong).bold('Research plan')} · ${chalk.hex(colors.textMuted)(plan.status)}`,
+    `  ${chalk.hex(colors.textStrong).bold('Action plan')} · ${chalk.hex(colors.textMuted)(plan.status)}`,
+    `    ${chalk.hex(colors.textDim)('Plan provenance:')} ${chalk.hex(colors.textMuted)(`${normalizeSummary(plan.planId)} · research revision ${String(plan.researchRevision)}`)}`,
     `    ${chalk.hex(colors.textDim)('Objective:')} ${chalk.hex(colors.text)(normalizeSummary(plan.objective))}`,
     `    ${chalk.hex(colors.textDim)('Stop condition:')} ${chalk.hex(colors.text)(normalizeSummary(plan.stopCondition))}`,
   ];
+  const refs = [
+    plan.programId === undefined ? undefined : `program ${normalizeSummary(plan.programId)}`,
+    plan.periodId === undefined ? undefined : `period ${normalizeSummary(plan.periodId)}`,
+    plan.lineSlug === undefined ? undefined : `line ${normalizeSummary(plan.lineSlug)}`,
+    plan.questionId === undefined ? undefined : `question ${normalizeSummary(plan.questionId)}`,
+    plan.lineRevision === undefined ? undefined : `line revision ${String(plan.lineRevision)}`,
+    plan.questionRevision === undefined ? undefined : `question revision ${String(plan.questionRevision)}`,
+  ].filter((value): value is string => value !== undefined);
+  if (refs.length > 0) {
+    rows.push(`    ${chalk.hex(colors.textDim)('Plan references:')} ${chalk.hex(colors.textMuted)(refs.join(' · '))}`);
+  }
   for (const [index, step] of plan.steps.entries()) {
     rows.push(`    ${chalk.hex(colors.textDim)(`${String(index + 1)}.`)} ${chalk.hex(colors.text)(normalizeSummary(step))}`);
   }
   if (plan.expectedEvidence.length > 0) {
     rows.push(`    ${chalk.hex(colors.textDim)('Expected evidence:')} ${chalk.hex(colors.text)(plan.expectedEvidence.map(normalizeSummary).join(' · '))}`);
   }
+  if (plan.resolution !== undefined) {
+    rows.push(
+      `    ${chalk.hex(colors.textDim)('Resolution:')} ${chalk.hex(colors.text)(plan.resolution.outcome)} · ${chalk.hex(colors.textMuted)(`${normalizeSummary(plan.resolution.planId)} revision ${String(plan.resolution.planRevision)}${plan.resolution.selectedLabel === undefined ? '' : ` · ${normalizeSummary(plan.resolution.selectedLabel)}`}`)}`,
+    );
+  }
   return rows;
 }
 
-function renderCompactRunRow(
-  run: ResearchRunState,
+function renderExpandedResearchPlanV2Rows(
+  plan: ResearchPlanV2,
   colors: ColorPalette,
-): string {
-  const nextCheck = run.nextCheckAt === undefined
-    ? ''
-    : ` · next check ${formatRunTimestamp(run.nextCheckAt)}`;
-  const stateColor = run.schedulerState === 'failed' || run.schedulerState === 'cancelled'
-    ? colors.warning
-    : run.schedulerState === 'completed'
-      ? colors.success
-      : colors.text;
-  return `  ${chalk.hex(colors.textDim)('Run:')} ${chalk.hex(colors.text)(`job ${normalizeSummary(run.jobId)}`)} · ${chalk.hex(stateColor)(`${run.schedulerState} / ${run.stage}`)}${chalk.hex(colors.textMuted)(nextCheck)}`;
+): string[] {
+  const rows = [
+    `  ${chalk.hex(colors.textStrong).bold('Multi-loop Research Plan')} · ${chalk.hex(colors.textMuted)(`${plan.status} · revision ${String(plan.revision)}`)}`,
+    `    ${chalk.hex(colors.textDim)('Plan:')} ${chalk.hex(colors.textMuted)(normalizeSummary(plan.planId))}`,
+    `    ${chalk.hex(colors.textDim)('Objective:')} ${chalk.hex(colors.text)(normalizeSummary(plan.objective))}`,
+    `    ${chalk.hex(colors.textDim)('Bindings:')} ${chalk.hex(colors.textMuted)(`goal ${normalizeSummary(plan.goalId)} · program ${normalizeSummary(plan.programId)}@${String(plan.programObservedRevision)} · ${plan.goalRelation}`)}`,
+    `    ${chalk.hex(colors.textDim)('Current milestone:')} ${chalk.hex(colors.text)(normalizeSummary(plan.currentMilestoneId))}`,
+  ];
+  for (const milestone of plan.milestones) {
+    const marker = milestone.milestoneId === plan.currentMilestoneId ? CURRENT_MARK : ' ';
+    rows.push(
+      `    ${chalk.hex(milestone.milestoneId === plan.currentMilestoneId ? colors.primary : colors.textDim)(marker)} ${chalk.hex(colors.text)(normalizeSummary(milestone.title))} · ${chalk.hex(colors.textMuted)(normalizeSummary(milestone.completionCriterion))}`,
+    );
+  }
+  rows.push(...renderNamedList('Stop conditions', plan.stopConditions, colors));
+  rows.push(...renderNamedList('Replan conditions', plan.replanConditions, colors));
+  rows.push(...renderNamedList('Assumptions', plan.assumptions, colors, true));
+  return rows;
 }
 
 function formatRunTimestamp(timestamp: number): string {
@@ -657,77 +1371,40 @@ function formatRunTimestamp(timestamp: number): string {
   return Number.isNaN(date.getTime()) ? 'unknown' : date.toISOString();
 }
 
-/** Render the single derived next step after scientific progress. */
-function renderEffectiveNextStep(
-  snap: ResearchStatusSnapshot,
-  colors: ColorPalette,
-): string | undefined {
-  const next = snap.effectiveNextStep;
-  if (next === undefined) return undefined;
-  const label = next.freshness === 'blocked' ? 'Blocked' : 'Next';
-  const color = next.freshness === 'blocked' || next.freshness === 'stale'
-    ? colors.warning
-    : colors.text;
-  return `  ${chalk.hex(colors.textDim)(`${label}:`)} ${chalk.hex(color)(normalizeSummary(next.text))}`;
-}
-
-function renderHumanGateRow(
-  snap: ResearchStatusSnapshot,
-  colors: ColorPalette,
-): string | undefined {
-  const gate = snap.humanGate;
-  if (gate === undefined || gate.resolvedAt !== undefined) return undefined;
-  const kindLabel = gate.kind === 'approval'
-    ? 'Approval needed'
-    : gate.kind === 'review'
-      ? 'Review needed'
-      : 'Decision needed';
-  return `  ${chalk.hex(colors.warning).bold('⏸ ' + kindLabel + ':')} ${chalk.hex(colors.text)(normalizeSummary(gate.prompt))}`;
-}
-
-/**
- * Expanded scientific detail: full progress report fields (motivation,
- * workPerformed, result, mainlineImpact, uncertainties, phaseChange),
- * current action spec (purpose, expected evidence, stop condition), and
- * the human gate prompt.
- */
+/** Expanded scientific detail without the disclosure caps used by compact mode. */
 function renderExpandedScientificRows(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
 ): string[] {
   const rows: string[] = [
     `  ${chalk.hex(colors.textDim)('Phase:')} ${renderPhase(snap.phase, colors)}`,
+    `  ${chalk.hex(colors.textDim)('Planning policy:')} ${chalk.hex(colors.primary)(snap.planningPolicy)}`,
   ];
+  const change = snap.recentStateChange;
+  if (change !== undefined) {
+    rows.push(
+      `  ${chalk.hex(colors.textDim)('Recent change:')} ${chalk.hex(colors.text)(normalizeSummary(change.summary))} · ${chalk.hex(colors.textMuted)(`${PHASE_LABELS[change.beforePhase]} → ${PHASE_LABELS[change.afterPhase]} · ${formatRunTimestamp(change.changedAt)}`)}`,
+    );
+    if (change.actionId !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Change action:')} ${chalk.hex(colors.textMuted)(normalizeSummary(change.actionId))}`);
+    }
+  }
 
-  // ── Progress detail ──
   const progress = snap.latestProgress;
   if (progress !== undefined) {
-    rows.push(
-      `  ${chalk.hex(colors.textStrong).bold('Latest progress')}`,
-    );
+    rows.push(`  ${chalk.hex(colors.textStrong).bold('Latest progress')}`);
     const fields: Array<[string, string]> = [
       ['Headline', normalizeSummary(progress.headline)],
+      ['Question', normalizeSummary(progress.question)],
       ['Motivation', normalizeSummary(progress.motivation)],
       ['Work', normalizeSummary(progress.workPerformed)],
       ['Result', normalizeSummary(progress.result)],
       ['Impact', normalizeSummary(progress.mainlineImpact)],
     ];
-    let added = 0;
     for (const [label, value] of fields) {
-      if (value.length === 0 || added >= MAX_PROGRESS_DETAIL_ROWS) break;
+      if (value.length === 0) continue;
       rows.push(
         `    ${chalk.hex(colors.textDim)(label + ':')} ${chalk.hex(colors.text)(value)}`,
-      );
-      added++;
-    }
-    if (progress.uncertainties.length > 0) {
-      const shown = progress.uncertainties.slice(0, MAX_UNCERTAINTY_ROWS);
-      const joined = shown.map((u) => normalizeSummary(u)).join(' · ');
-      const suffix = progress.uncertainties.length > MAX_UNCERTAINTY_ROWS
-        ? ` · +${String(progress.uncertainties.length - MAX_UNCERTAINTY_ROWS)} more`
-        : '';
-      rows.push(
-        `    ${chalk.hex(colors.textDim)('Uncertainties:')} ${chalk.hex(colors.warning)(joined)}${chalk.hex(colors.textMuted)(suffix)}`,
       );
     }
     if (progress.phaseChange !== undefined) {
@@ -743,47 +1420,69 @@ function renderExpandedScientificRows(
         `    ${chalk.hex(colors.textDim)('Next:')} ${chalk.hex(colors.text)(nextAction)}`,
       );
     }
+    if (progress.humanDecision !== undefined) {
+      rows.push(
+        `    ${chalk.hex(colors.textDim)('Human decision:')} ${chalk.hex(colors.text)(normalizeSummary(progress.humanDecision))}`,
+      );
+    }
+    rows.push(
+      `    ${chalk.hex(colors.textDim)('Recorded:')} ${chalk.hex(colors.textMuted)(formatRunTimestamp(progress.recordedAt))}`,
+    );
   } else {
     rows.push(
-      `  ${chalk.hex(colors.textDim)('Progress:')} ${chalk.hex(colors.textMuted)('本轮没有记录进展')}`,
+      `  ${chalk.hex(colors.textDim)('Progress:')} ${chalk.hex(colors.textMuted)('No progress recorded for this cycle.')}`,
     );
   }
 
-  // ── Current action detail ──
   const action = snap.currentAction;
   if (action !== undefined) {
+    rows.push(`  ${chalk.hex(colors.textStrong).bold('Current action')}`);
     rows.push(
-      `  ${chalk.hex(colors.textStrong).bold('Current action')}`,
+      `    ${chalk.hex(colors.textDim)('Action:')} ${chalk.hex(colors.text)(normalizeSummary(action.actionId))} · ${chalk.hex(colors.textMuted)(`${action.kind} / ${action.status}`)}`,
     );
+    rows.push(`    ${chalk.hex(colors.textDim)('Purpose:')} ${chalk.hex(colors.text)(normalizeSummary(action.purpose))}`);
+    const actionRefs = [
+      action.questionId === undefined ? undefined : `question ${normalizeSummary(action.questionId)}`,
+      action.lineSlug === undefined ? undefined : `line ${normalizeSummary(action.lineSlug)}`,
+    ].filter((value): value is string => value !== undefined);
+    if (actionRefs.length > 0) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Action references:')} ${chalk.hex(colors.textMuted)(actionRefs.join(' · '))}`);
+    }
+    rows.push(...renderNamedList('Expected evidence', action.expectedEvidence, colors));
+    rows.push(`    ${chalk.hex(colors.textDim)('Stop condition:')} ${chalk.hex(colors.text)(normalizeSummary(action.stopCondition))}`);
+    rows.push(...renderNamedList('Allowed tools', action.allowedToolKinds, colors, true));
     rows.push(
-      `    ${chalk.hex(colors.textDim)('Kind:')} ${chalk.hex(colors.text)(action.kind)} · ${chalk.hex(colors.textMuted)(action.status)}`,
+      `    ${chalk.hex(colors.textDim)('Human approval:')} ${chalk.hex(action.requiresHumanApproval ? colors.warning : colors.textMuted)(action.requiresHumanApproval ? 'required' : 'not required')}`,
     );
-    const purpose = normalizeSummary(action.purpose);
-    if (purpose.length > 0) {
+    if (action.researchPlanBinding !== undefined) {
       rows.push(
-        `    ${chalk.hex(colors.textDim)('Purpose:')} ${chalk.hex(colors.text)(purpose)}`,
+        `    ${chalk.hex(colors.textDim)('Research Plan binding:')} ${chalk.hex(colors.textMuted)(`${normalizeSummary(action.researchPlanBinding.planId)}@${String(action.researchPlanBinding.planRevision)} · milestone ${normalizeSummary(action.researchPlanBinding.milestoneId)}`)}`,
       );
     }
-    if (action.expectedEvidence.length > 0) {
-      const joined = action.expectedEvidence.map((e) => normalizeSummary(e)).join(' · ');
+    if (action.actionPlanBinding !== undefined) {
       rows.push(
-        `    ${chalk.hex(colors.textDim)('Expected evidence:')} ${chalk.hex(colors.text)(joined)}`,
+        `    ${chalk.hex(colors.textDim)('Action Plan binding:')} ${chalk.hex(colors.textMuted)(`${normalizeSummary(action.actionPlanBinding.planId)}@${String(action.actionPlanBinding.planRevision)} · ${action.actionPlanBinding.kind}`)}`,
       );
     }
-    const stop = normalizeSummary(action.stopCondition);
-    if (stop.length > 0) {
-      rows.push(
-        `    ${chalk.hex(colors.textDim)('Stop condition:')} ${chalk.hex(colors.text)(stop)}`,
-      );
+    if (action.retryOfEntryId !== undefined) {
+      rows.push(`    ${chalk.hex(colors.textDim)('Retry of:')} ${chalk.hex(colors.textMuted)(normalizeSummary(action.retryOfEntryId))}`);
     }
+    rows.push(
+      `    ${chalk.hex(colors.textDim)('Created:')} ${chalk.hex(colors.textMuted)(formatRunTimestamp(action.createdAt))}${action.completedAt === undefined ? '' : ` · ${chalk.hex(colors.textDim)('Completed:')} ${chalk.hex(colors.textMuted)(formatRunTimestamp(action.completedAt))}`}`,
+    );
   }
 
-  // ── Current scheduler observation ──
-  const run = snap.currentRun;
-  if (run !== undefined) {
+  const runs = [snap.currentRun, action?.run]
+    .filter((run): run is ResearchRunState => run !== undefined)
+    .filter((run, index, all) => all.findIndex((candidate) =>
+      candidate.actionId === run.actionId
+      && candidate.campaign === run.campaign
+      && candidate.jobId === run.jobId) === index);
+  for (const run of runs) {
     rows.push(`  ${chalk.hex(colors.textStrong).bold('Current run')}`);
     rows.push(
       `    ${chalk.hex(colors.textDim)('Campaign:')} ${chalk.hex(colors.text)(normalizeSummary(run.campaign))} · ${chalk.hex(colors.textDim)('Job:')} ${chalk.hex(colors.text)(normalizeSummary(run.jobId))}`,
+      `    ${chalk.hex(colors.textDim)('Action ID:')} ${chalk.hex(colors.textMuted)(normalizeSummary(run.actionId))}`,
     );
     rows.push(
       `    ${chalk.hex(colors.textDim)('Scheduler:')} ${chalk.hex(colors.text)(run.schedulerState)} · ${chalk.hex(colors.textDim)('Stage:')} ${chalk.hex(colors.text)(run.stage)}`,
@@ -796,36 +1495,12 @@ function renderExpandedScientificRows(
         `    ${chalk.hex(colors.textDim)('Terminal:')} ${chalk.hex(colors.text)(run.terminalState)}`,
       );
     }
-    if (run.sourcePin !== undefined || run.binaryPin !== undefined) {
-      rows.push(
-        `    ${chalk.hex(colors.textDim)('Pins:')} ${chalk.hex(colors.textMuted)([run.sourcePin, run.binaryPin].filter((pin): pin is string => pin !== undefined).join(' · '))}`,
-      );
-    }
+    if (run.sourcePin !== undefined) rows.push(`    ${chalk.hex(colors.textDim)('Source pin:')} ${chalk.hex(colors.textMuted)(normalizeSummary(run.sourcePin))}`);
+    if (run.binaryPin !== undefined) rows.push(`    ${chalk.hex(colors.textDim)('Binary pin:')} ${chalk.hex(colors.textMuted)(normalizeSummary(run.binaryPin))}`);
     if (run.artifactRefs.length > 0) {
       rows.push(
         `    ${chalk.hex(colors.textDim)('Artifacts:')} ${chalk.hex(colors.textMuted)(run.artifactRefs.map(normalizeSummary).join(' · '))}`,
       );
-    }
-  }
-
-  // ── Human gate ──
-  const gate = snap.humanGate;
-  if (gate !== undefined && gate.resolvedAt === undefined) {
-    const kindLabel = gate.kind === 'approval'
-      ? 'Approval needed'
-      : gate.kind === 'review'
-        ? 'Review needed'
-        : 'Decision needed';
-    rows.push(
-      `  ${chalk.hex(colors.warning).bold('⏸ ' + kindLabel + ':')} ${chalk.hex(colors.text)(normalizeSummary(gate.prompt))}`,
-    );
-    if (gate.resolution !== undefined) {
-      const resolution = normalizeSummary(gate.resolution);
-      if (resolution.length > 0) {
-        rows.push(
-          `    ${chalk.hex(colors.textDim)('Resolution:')} ${chalk.hex(colors.textMuted)(resolution)}`,
-        );
-      }
     }
   }
 
@@ -845,26 +1520,40 @@ function renderExpandedMaintenanceRows(
     `  ${chalk.hex(colors.textStrong).bold('AITP maintenance handoff')}`,
     `    ${chalk.hex(colors.textMuted)('Structural consistency only; not a physical conclusion and does not resolve historical failures.')}`,
     `    ${chalk.hex(colors.textDim)('Status:')} ${renderMaintenanceStatus(maintenance.status, colors)}`,
+    ...(maintenance.degradedReason === undefined
+      ? []
+      : [`    ${chalk.hex(colors.textDim)('Degraded reason:')} ${chalk.hex(colors.warning)(maintenance.degradedReason.replaceAll('_', ' '))}`]),
     `    ${chalk.hex(colors.textDim)('Memory:')} ${chalk.hex(colors.text)(formatMaintenanceMemoryStatus(maintenance.memoryStatus))}`,
+    `    ${chalk.hex(colors.textDim)('Refreshed:')} ${chalk.hex(colors.textMuted)(formatRunTimestamp(maintenance.refreshedAt))}`,
     `    ${chalk.hex(colors.textDim)('Working Note:')} ${renderWorkingNoteFreshness(maintenance, colors)}`,
     `    ${chalk.hex(colors.textDim)('Historical unresolved failures:')} ${chalk.hex(maintenance.unresolvedFailureCount > 0 ? colors.warning : colors.text)(String(maintenance.unresolvedFailureCount))}`,
     `    ${chalk.hex(colors.textDim)('Recorded handoff next:')} ${chalk.hex(colors.text)(normalizeSummary(maintenance.nextAction) || 'none recorded')}`,
     `    ${chalk.hex(colors.textDim)('Structural check:')} ${renderMaintenanceCheck(maintenance.check, colors)}`,
   ];
 
-  for (const failure of maintenance.unresolvedFailures.slice(0, MAX_MAINTENANCE_CODES)) {
+  if (maintenance.workstream !== undefined) {
+    rows.push(`    ${chalk.hex(colors.textDim)('Workstream:')} ${chalk.hex(colors.textMuted)(normalizeSummary(maintenance.workstream))}`);
+  }
+  if (maintenance.topic !== undefined) {
+    rows.push(
+      `    ${chalk.hex(colors.textDim)('Topic:')} ${chalk.hex(colors.text)(normalizeSummary(maintenance.topic.title))} · ${chalk.hex(colors.textMuted)(`${normalizeSummary(maintenance.topic.id)} · ${normalizeSummary(maintenance.topic.goalText)} · source ${normalizeSummary(maintenance.topic.goalSource)}`)}`,
+    );
+  }
+  if (maintenance.nextActionDetails !== undefined) {
+    const details = maintenance.nextActionDetails;
+    rows.push(
+      `    ${chalk.hex(colors.textDim)('Next-action provenance:')} ${chalk.hex(colors.text)(normalizeSummary(details.text))} · ${chalk.hex(colors.textMuted)(`${normalizeSummary(details.entryId)} · ${details.authority} · ${normalizeSummary(details.source)}${details.createdAt === undefined ? '' : ` · ${formatRunTimestamp(details.createdAt)}`}`)}`,
+    );
+  }
+
+  for (const failure of maintenance.unresolvedFailures) {
     const workstream = normalizeSummary(failure.workstream);
     const scope = workstream.length === 0 ? '' : ` · workstream ${workstream}`;
     rows.push(
       `      ${chalk.hex(colors.warning)('◇')} ${chalk.hex(colors.text)(failure.entryId)}${chalk.hex(colors.textMuted)(scope)} — ${chalk.hex(colors.textMuted)(normalizeSummary(failure.summary))}`,
+      `        ${chalk.hex(colors.textDim)('Failure provenance:')} ${chalk.hex(colors.textMuted)(`${failure.kind} · ${failure.authority} · ${normalizeSummary(failure.source)}${failure.createdAt === undefined ? '' : ` · ${formatRunTimestamp(failure.createdAt)}`}`)}`,
     );
   }
-  if (maintenance.unresolvedFailures.length > MAX_MAINTENANCE_CODES) {
-    rows.push(
-      `      ${chalk.hex(colors.textMuted)(`… +${String(maintenance.unresolvedFailures.length - MAX_MAINTENANCE_CODES)} more historical failures`)}`,
-    );
-  }
-
   const warningCodes = formatMaintenanceCodes(
     maintenance.warningSummaries.map((warning) => warning.code),
   );
@@ -903,7 +1592,7 @@ function renderWorkingNoteFreshness(
 ): string {
   const date = maintenance.latestWorkingNoteAt === undefined
     ? undefined
-    : formatMaintenanceDate(maintenance.latestWorkingNoteAt);
+    : formatRunTimestamp(maintenance.latestWorkingNoteAt);
   const suffix = date === undefined ? '' : ` · latest ${date}`;
 
   if (maintenance.activeNewerThanWorkingNote === true) {
@@ -918,13 +1607,6 @@ function renderWorkingNoteFreshness(
   return chalk.hex(colors.textMuted)(`freshness unknown${suffix}`);
 }
 
-function formatMaintenanceDate(timestamp: number): string | undefined {
-  if (!Number.isFinite(timestamp)) return undefined;
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return undefined;
-  return date.toISOString().slice(0, 10);
-}
-
 function renderMaintenanceCheck(
   check: AitpMaintenanceReceipt['check'],
   colors: ColorPalette,
@@ -932,16 +1614,12 @@ function renderMaintenanceCheck(
   const counts = check.counts;
   const summary = counts === undefined
     ? check.status
-    : `${check.status} · errors ${String(counts.errors)} · warnings ${String(counts.warnings)}`;
+    : `${check.status} · entries ${String(counts.entries)} · notes ${String(counts.notes)} · errors ${String(counts.errors)} · warnings ${String(counts.warnings)}`;
   return chalk.hex(check.status === 'clean' ? colors.success : colors.warning)(summary);
 }
 
 function formatMaintenanceCodes(codes: readonly string[]): string | undefined {
   const normalized = codes.map(normalizeSummary).filter((code) => code.length > 0);
   if (normalized.length === 0) return undefined;
-  const shown = normalized.slice(0, MAX_MAINTENANCE_CODES).join(', ');
-  const suffix = normalized.length > MAX_MAINTENANCE_CODES
-    ? ` · +${String(normalized.length - MAX_MAINTENANCE_CODES)} more`
-    : '';
-  return `${shown}${suffix}`;
+  return normalized.join(', ');
 }

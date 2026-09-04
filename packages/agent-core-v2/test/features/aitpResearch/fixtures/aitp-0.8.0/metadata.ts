@@ -3,6 +3,9 @@ export const AITP_GOLDEN_FIXTURE_METADATA = {
   sourcePath: 'tests/ledger/fixtures/golden',
   aitpCommit: 'eae1bce5eba367a5f6db6ba73ff0912dd3a5e290',
   pluginVersion: '0.8.0',
+  verifiedAgainstPluginVersion: '0.9.0',
+  verifiedAgainstContractSchema: 'aitp/adapter-contract-0.2',
+  payloadSchemasUnchanged: true,
   files: [
     {
       name: 'enter.json',

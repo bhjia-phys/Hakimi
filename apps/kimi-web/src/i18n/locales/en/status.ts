@@ -38,6 +38,15 @@ export default {
   goalStatusPaused: 'Paused',
   goalStatusBlocked: 'Blocked',
   goalStatusComplete: 'Complete',
+  goalContinuationHeld: 'continuation held',
+  goalContinuationState: {
+    idle: 'Idle',
+    deciding: 'Deciding continuation',
+    enqueued: 'Continuation enqueued',
+    running: 'Continuation running',
+    held: 'Continuation held',
+    waiting: 'Waiting for tasks',
+  },
   modeNotSupported: 'Not supported',
   // Thinking selector
   thinkingLabel: 'thinking',

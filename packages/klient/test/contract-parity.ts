@@ -244,6 +244,7 @@ import type {
   ResearchRunState as EngineResearchRunState,
   ResearchQuestion as EngineResearchQuestion,
   ResearchLine as EngineResearchLine,
+  ResearchLineWorkstreamBinding as EngineResearchLineWorkstreamBinding,
   ResearchFocus as EngineResearchFocus,
   ResearchAlert as EngineResearchAlert,
   ResearchCheckpoint as EngineResearchCheckpoint,
@@ -257,6 +258,7 @@ import type {
   ResearchStateChange as EngineResearchStateChange,
   ResearchHumanGate as EngineResearchHumanGate,
   ResearchPlan as EngineResearchPlan,
+  ResearchPlanV2 as EngineResearchPlanV2,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/types';
 import type {
   ResearchEvidencePacket as EngineResearchEvidencePacket,
@@ -264,8 +266,12 @@ import type {
 import type {
   IAgentResearchService,
   ConcludeResearchActionInput as EngineConcludeResearchActionInput,
+  ClearLineWorkstreamBindingInput as EngineClearLineWorkstreamBindingInput,
+  ConfirmLineWorkstreamBindingInput as EngineConfirmLineWorkstreamBindingInput,
   PlanActionInput as EnginePlanActionInput,
   PrepareResearchPlanInput as EnginePrepareResearchPlanInput,
+  PrepareResearchPlanV2Input as EnginePrepareResearchPlanV2Input,
+  TransitionResearchPlanV2Input as EngineTransitionResearchPlanV2Input,
   ResolveHumanDecisionInput as EngineResolveHumanDecisionInput,
   UpdateLineInput as EngineUpdateLineInput,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/agentResearch';
@@ -276,6 +282,7 @@ import {
   researchEvidencePacketSchema,
   researchQuestionSchema,
   researchLineSchema,
+  researchLineWorkstreamBindingSchema,
   researchFocusSchema,
   researchAlertSchema,
   researchCheckpointSchema,
@@ -296,6 +303,9 @@ import {
   researchActionConclusionSchema,
   researchPlanSchema,
   prepareResearchPlanInputSchema,
+  researchPlanV2Schema,
+  prepareResearchPlanV2InputSchema,
+  transitionResearchPlanV2InputSchema,
 } from '../src/contract/agent/researchSchemas.js';
 import {
   createChildSessionOptionsSchema,
@@ -731,6 +741,10 @@ const _researchEvidencePacket: AssertWire<
 const _researchQuestion: AssertEngineToWire<typeof researchQuestionSchema, EngineResearchQuestion> =
   true;
 const _researchLine: AssertEngineToWire<typeof researchLineSchema, EngineResearchLine> = true;
+const _researchLineWorkstreamBinding: AssertWire<
+  typeof researchLineWorkstreamBindingSchema,
+  EngineResearchLineWorkstreamBinding
+> = true;
 const _researchFocus: AssertWire<typeof researchFocusSchema, EngineResearchFocus> = true;
 const _researchAlert: AssertWire<typeof researchAlertSchema, EngineResearchAlert> = true;
 const _researchCheckpoint: AssertWire<typeof researchCheckpointSchema, EngineResearchCheckpoint> =
@@ -764,6 +778,32 @@ const _proposeCheckpointInput: AssertExactly<
 const _proposeCheckpointFacadeInput: AssertExactly<
   ProposeCheckpointContractInput,
   Parameters<AgentFacade['research']['proposeCheckpoint']>[0]
+> = true;
+type ConfirmLineWorkstreamContractInput = z.infer<
+  typeof agentResearchContract.confirmLineWorkstreamBinding.input
+>[0];
+type ConfirmLineWorkstreamUserInput = Omit<
+  EngineConfirmLineWorkstreamBindingInput,
+  'confirmedBy'
+> & { readonly confirmedBy: 'user' };
+const _confirmLineWorkstreamContractInput: AssertExactly<
+  ConfirmLineWorkstreamContractInput,
+  MutableDeep<ConfirmLineWorkstreamUserInput>
+> = true;
+const _confirmLineWorkstreamFacadeInput: AssertExactly<
+  Parameters<AgentFacade['research']['confirmLineWorkstreamBinding']>[0],
+  Omit<EngineConfirmLineWorkstreamBindingInput, 'confirmedBy'>
+> = true;
+type ClearLineWorkstreamContractInput = z.infer<
+  typeof agentResearchContract.clearLineWorkstreamBinding.input
+>[0];
+const _clearLineWorkstreamContractInput: AssertExactly<
+  ClearLineWorkstreamContractInput,
+  MutableDeep<EngineClearLineWorkstreamBindingInput>
+> = true;
+const _clearLineWorkstreamFacadeInput: AssertExactly<
+  Parameters<AgentFacade['research']['clearLineWorkstreamBinding']>[0],
+  EngineClearLineWorkstreamBindingInput
 > = true;
 const _researchAlertFingerprint: AssertWire<
   typeof researchAlertFingerprintSchema,
@@ -799,6 +839,18 @@ const _researchPlan: AssertEngineToWire<
 const _prepareResearchPlanInput: AssertEngineToWire<
   typeof prepareResearchPlanInputSchema,
   EnginePrepareResearchPlanInput
+> = true;
+const _researchPlanV2: AssertEngineToWire<
+  typeof researchPlanV2Schema,
+  EngineResearchPlanV2
+> = true;
+const _prepareResearchPlanV2Input: AssertEngineToWire<
+  typeof prepareResearchPlanV2InputSchema,
+  EnginePrepareResearchPlanV2Input
+> = true;
+const _transitionResearchPlanV2Input: AssertEngineToWire<
+  typeof transitionResearchPlanV2InputSchema,
+  EngineTransitionResearchPlanV2Input
 > = true;
 const _researchProgressReport: AssertEngineToWire<
   typeof researchProgressReportSchema,

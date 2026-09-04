@@ -3,7 +3,7 @@
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type ComponentPublicInstance } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ActivationBadges, ApprovalBlock, ChatTurn, ConnectionState, ConversationStatus, FilePreviewRequest, PermissionMode, QueuedPromptView, TaskItem, TodoView, ToolMedia, TurnAttachment, UIQuestion, WebPreviewTarget, WorkspaceView } from '../../types';
-import type { AppGoal, AppModel, AppSkill, AppTurnProgress, AutoSubagentPresetStatus, QuestionResponse, ResearchStatusSnapshot, ThinkingLevel } from '../../api/types';
+import type { AppGoal, AppModel, AppSkill, AppTurnProgress, AutoSubagentPresetStatus, QuestionResponse, ResearchGoalAlignmentRelation, ResearchStatusSnapshot, ThinkingLevel } from '../../api/types';
 import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import type { ComposerCommandEvent } from '../../composables/useComposerDraft';
@@ -151,6 +151,8 @@ const emit = defineEmits<{
   controlGoal: [action: 'pause' | 'resume' | 'cancel'];
   startResearch: [];
   manageResearch: [];
+  alignResearch: [relation: ResearchGoalAlignmentRelation];
+  clearResearchAlignment: [];
   compact: [];
   pickModel: [];
   selectModel: [modelId: string];
@@ -1430,6 +1432,8 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
               :snapshot="research"
               :force-expanded="researchExpandSignal"
               @manage="emit('manageResearch')"
+              @align="emit('alignResearch', $event)"
+              @clear-alignment="emit('clearResearchAlignment')"
             />
             <Composer
               ref="emptyComposerRef"
@@ -1559,6 +1563,8 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
         @control-goal="emit('controlGoal', $event)"
         @start-research="emit('startResearch')"
         @manage-research="emit('manageResearch')"
+        @align-research="emit('alignResearch', $event)"
+        @clear-research-alignment="emit('clearResearchAlignment')"
         @submit="handleComposerSubmit"
         @steer="emit('steer', $event)"
         @command="emit('command', $event)"

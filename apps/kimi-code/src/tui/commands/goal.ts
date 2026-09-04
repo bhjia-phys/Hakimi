@@ -29,7 +29,7 @@ import { canRestoreSubmittedInput } from './resolve';
 import type { SlashCommandHost } from './dispatch';
 
 const MAX_GOAL_OBJECTIVE_LENGTH = 4000;
-const RESUME_GOAL_INPUT = 'Resume the active goal.';
+const LEGACY_RESUME_GOAL_INPUT = 'Resume the active goal.';
 const START_NEXT_GOAL_NOW_MESSAGE = 'No active goal. Starting this goal now.';
 
 type GoalCommandHost = Pick<
@@ -514,7 +514,14 @@ async function resumeGoal(host: SlashCommandHost): Promise<void> {
   }
 
   try {
-    await host.requireSession().resumeGoal();
+    if (host.engineV2) {
+      await host.requireSession().resumeGoal({
+        continueIfPaused: true,
+        continueIfBlocked: true,
+      });
+    } else {
+      await host.requireSession().resumeGoal();
+    }
   } catch (error) {
     if (isKimiError(error) && error.code === ErrorCodes.GOAL_NOT_FOUND) {
       host.showStatus('No goal to resume.');
@@ -524,7 +531,7 @@ async function resumeGoal(host: SlashCommandHost): Promise<void> {
     return;
   }
   host.track('goal_resume');
-  host.sendNormalUserInput(RESUME_GOAL_INPUT);
+  if (!host.engineV2) host.sendNormalUserInput(LEGACY_RESUME_GOAL_INPUT);
 }
 
 async function cancelGoal(host: SlashCommandHost): Promise<void> {

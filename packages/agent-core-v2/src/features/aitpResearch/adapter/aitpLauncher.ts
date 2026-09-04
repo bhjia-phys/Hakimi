@@ -54,6 +54,11 @@ const MAX_STDERR_BYTES = 200_000;
 
 type AllowedExits = readonly number[];
 
+interface ScopedResponse {
+  readonly schema: string;
+  readonly workstream?: string;
+}
+
 type ProcessWaitOutcome =
   | { readonly kind: 'exit'; readonly exitCode: number }
   | { readonly kind: 'wait_error'; readonly error: unknown };
@@ -72,6 +77,21 @@ type TerminationReason =
   | { readonly kind: 'timeout' }
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'output_limit'; readonly stream: 'stdout' | 'stderr'; readonly limitBytes: number };
+
+function assertScopeCorrelation(
+  response: ScopedResponse,
+  requestedWorkstream: string | undefined,
+  globalSchema: string,
+  scopedSchema: string,
+): void {
+  const expectedSchema = requestedWorkstream === undefined ? globalSchema : scopedSchema;
+  if (response.schema !== expectedSchema) {
+    throw new Error(`expected ${expectedSchema}, received ${response.schema}`);
+  }
+  if (requestedWorkstream !== undefined && response.workstream !== requestedWorkstream) {
+    throw new Error(`expected workstream ${requestedWorkstream}`);
+  }
+}
 
 function observeOutput(
   stream: IHostProcess['stdout'],
@@ -222,7 +242,11 @@ export class AitpLauncher {
     const args = ['enter', '--json'];
     if (recent !== undefined) args.push('--recent', String(recent));
     if (workstream !== undefined) args.push('--workstream', workstream);
-    return this.runValidated(args, [0], parseEnterResult, options?.signal);
+    return this.runValidated(args, [0], (raw) => {
+      const result = parseEnterResult(raw);
+      assertScopeCorrelation(result, workstream, 'aitp/enter-0.2', 'aitp/enter-0.3');
+      return result;
+    }, options?.signal);
   }
 
   async list(
@@ -235,7 +259,11 @@ export class AitpLauncher {
     if (workstream !== undefined) args.push('--workstream', workstream);
     if (kind !== undefined) args.push('--kind', kind);
     if (since !== undefined) args.push('--since', since);
-    return this.runValidated(args, [0], parseListResult, options?.signal);
+    return this.runValidated(args, [0], (raw) => {
+      const result = parseListResult(raw);
+      assertScopeCorrelation(result, workstream, 'aitp/list-0.1', 'aitp/list-0.2');
+      return result;
+    }, options?.signal);
   }
 
   async show(id: string, options?: { readonly signal?: AbortSignal }): Promise<AitpLaunchResult<AitpShowResult>> {
@@ -245,7 +273,11 @@ export class AitpLauncher {
   async check(workstream?: string, options?: { readonly signal?: AbortSignal }): Promise<AitpLaunchResult<AitpCheckReport>> {
     const args = ['check', '--json'];
     if (workstream !== undefined) args.push('--workstream', workstream);
-    return this.runValidated(args, [0, 1], parseCheckReport, options?.signal);
+    return this.runValidated(args, [0, 1], (raw) => {
+      const result = parseCheckReport(raw);
+      assertScopeCorrelation(result, workstream, 'aitp/check-report-0.1', 'aitp/check-report-0.2');
+      return result;
+    }, options?.signal);
   }
 
   async recordPrepare(params: {
@@ -265,8 +297,15 @@ export class AitpLauncher {
     return this.runValidated(args, [0], parseRecordPrepareResult, options?.signal);
   }
 
-  async recordSave(draftPath: string, options?: { readonly signal?: AbortSignal }): Promise<AitpLaunchResult<AitpRecordSaveResult>> {
-    return this.runValidated(['record', 'save', draftPath, '--json'], [0], parseRecordSaveResult, options?.signal);
+  async recordSave(params: {
+    readonly draftPath: string;
+    readonly expectedTopic?: string;
+    readonly exactWorkstream?: string;
+  }, options?: { readonly signal?: AbortSignal }): Promise<AitpLaunchResult<AitpRecordSaveResult>> {
+    const args = ['record', 'save', params.draftPath, '--json'];
+    if (params.expectedTopic !== undefined) args.push('--expected-topic', params.expectedTopic);
+    if (params.exactWorkstream !== undefined) args.push('--exact-workstream', params.exactWorkstream);
+    return this.runValidated(args, [0], parseRecordSaveResult, options?.signal);
   }
 
   async notePrepare(params: {
@@ -292,7 +331,7 @@ export class AitpLauncher {
     parse: (raw: unknown) => T,
     signal?: AbortSignal,
   ): Promise<AitpLaunchResult<T>> {
-    const python = await this.resolvePython(signal);
+    const python = this.options.pythonPath ?? await this.resolvePython(signal);
     const fullArgs = [this.options.launcherScript, ...args];
     const result = await this.runRaw(python, fullArgs, signal);
 

@@ -38,6 +38,15 @@ export default {
   goalStatusPaused: '已暂停',
   goalStatusBlocked: '已阻塞',
   goalStatusComplete: '已完成',
+  goalContinuationHeld: '续跑暂缓',
+  goalContinuationState: {
+    idle: '空闲',
+    deciding: '正在判定续跑',
+    enqueued: '续跑已入队',
+    running: '续跑运行中',
+    held: '续跑暂缓',
+    waiting: '等待任务',
+  },
   modeNotSupported: '暂不支持',
   // 思考强度选择
   thinkingLabel: '思考',

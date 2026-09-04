@@ -33,6 +33,7 @@ export interface IAgentPlanService {
   recordRevision(): Promise<void>;
   recordResolution?(outcome: PlanResolutionOutcome, selectedLabel?: string): void;
   getResolution?(): PlanResolution | null;
+  getRevision?(id: string): number;
   status(): Promise<PlanData>;
 }
 

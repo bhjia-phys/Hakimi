@@ -137,6 +137,13 @@ export interface CreateGoalInput {
   readonly replace?: boolean;
 }
 
+export interface ResumeGoalInput {
+  /** Ask the v2 Goal driver to launch a continuation after a paused lifecycle resumes. */
+  readonly continueIfPaused?: boolean;
+  /** Ask the v2 Goal driver to launch a continuation after a blocked lifecycle resumes. */
+  readonly continueIfBlocked?: boolean;
+}
+
 export type TextPromptPart = Extract<ContentPart, { type: 'text' }>;
 export type PromptPart = Extract<ContentPart, { type: 'text' | 'image_url' | 'video_url' }>;
 

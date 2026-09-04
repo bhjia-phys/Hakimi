@@ -1,26 +1,86 @@
 ---
 name: theory-physics
 description: |
-  Use this skill when Research Mode is being used for theoretical-physics work:
-  formulate and narrow questions, decide when to search literature, check
-  derivations, design numerical tests, interpret HPC evidence, and report
-  scientific progress without confusing engineering evidence with a physical
-  conclusion.
+  Use this skill when starting or continuing sustained theoretical-physics
+  research: decide whether Research Mode is warranted, align the question with
+  the current Research Line and Goal, run bounded scientific actions, and route
+  durable evidence or reusable methods to the authoritative AITP skills.
 ---
 
 # Theory-physics research discipline
 
-This skill is a domain pack for Hakimi's generic Research Loop. It supplies
-physics-specific judgment and routing; it does not create a second research
-runtime, a second ledger, or an autonomous background loop. The main agent
-remains responsible for interpreting evidence and changing Research state.
+This is the single upper-layer handbook for sustained theoretical-physics
+research in Hakimi. It supplies physics judgment and Research routing; it does
+not create a second runtime, ledger, protocol implementation, or autonomous
+background loop. The main agent remains responsible for interpreting evidence
+and changing local Research state.
 
-## The loop
+## Research admission
+
+Do not enter Research Mode for an ordinary, one-off physics answer that can be
+resolved in the current turn without repository evidence, durable state, or a
+stage milestone. Enter it when the work is sustained across turns, needs
+workspace or literature evidence, must preserve a research state, or advances
+a Goal.
+
+For sustained work, follow this order:
+
+1. If Research Mode is inactive, call `EnterAITPMode`. Do not invent a recovery
+   command or initialize, adopt, or backfill a workspace from this skill.
+2. Call `GetResearchStatus` to read the authoritative Research snapshot. After
+   `EnterAITPMode`, if the snapshot is still `probing`, wait for it to converge
+   to `ready` or `degraded`; do not turn this into a repeated-call or busy-
+   polling loop. While status is pending or unavailable, do not call AITP write
+   tools or fall back to a bare CLI invocation outside the adapter. Report the
+   real degraded boundary if probing cannot complete.
+3. Align the request with the current Research Line, Question, Focus, and
+   stage Goal. A large topic belongs to the Line/Question/AITP context; a Goal
+   is the current verifiable milestone, not a replacement for the topic.
+   If Goal and Focus disagree, narrow the boundary before doing work.
+4. Read only the current topic's state. For an unrelated line, consume only
+   already-distilled reusable methods; do not inject the other topic's full
+   state. Resume an existing line/workstream only from a persisted binding or
+   an exact match, never from a guessed semantic alias.
+5. Use one bounded Research Action for the next scientific step, then close it
+   before choosing another.
+
+Goal owns continuation across turns. Plan mode is a short-lived overlay inside
+one complex Research Action; entering or leaving Plan mode does not enter,
+exit, or reset Research Mode.
+
+## AITP delegation boundary
+
+The external `aitp-research-protocol` plugin owns the protocol. Its `using-aitp`
+and `distilling-methods` skills remain independent, active-only, and loaded on
+demand. Delegate to `distilling-methods` only when that plugin is installed,
+Research Mode is active, and the skill is currently visible. This skill names
+the handoff boundary but does not reproduce their CLI commands, schemas,
+method-card rules, trial rules, or approval rules.
+
+| Situation | Route |
+| --- | --- |
+| Reads, calculations, probes, or turn progress without scientific durability | Keep it in local Research state; do not write AITP. |
+| An exact canonical Entry is needed | Delegate to `using-aitp`. |
+| A verified derivation, result, failure, source, decision, run, or closeout has durable value | Delegate to `using-aitp`, then associate the resulting durable checkpoint through the normal barrier. |
+| A method appears reusable across questions or lines, and the external plugin is installed, Research Mode is active, and `distilling-methods` is visible | Load `distilling-methods` on demand for protocol guidance; otherwise retain the candidate and evidence locally without claiming distillation or publication. |
+
+Do not automatically write a Topic Goal, add `resolves`, publish a method card,
+or turn a local Goal into an AITP record. Durable delta is the threshold for
+`using-aitp`; reusable-method candidacy is the threshold for
+`distilling-methods`. After the first successful commit of a new checkpoint,
+Hakimi can make one same-turn, best-effort handoff of only the touched Entry to
+that external Skill; duplicate commits or an unavailable Skill are non-blocking
+no-ops. This bounded handoff owns no trigger, card, trial, approval, publication,
+retry, scheduler, or exactly-once state. A full native H6b coordinator with
+durable scheduling and recovery remains planned/unavailable. A resolved human
+gate alone is not a handoff.
+
+## The bounded Research Action loop
 
 For each substantive slice, keep the boundary explicit:
 
-1. State the current physical question and the falsifier or discriminating
-   observation.
+1. State the current physical Question, its Focus, and the falsifier or
+   discriminating observation. Confirm that the action advances the stage Goal.
 2. Choose one bounded action: literature review, derivation, numerical test,
    data analysis, or code investigation. State the expected evidence and stop
    condition with `BeginResearchAction`.
@@ -33,12 +93,21 @@ For each substantive slice, keep the boundary explicit:
    not a physical result.
 5. Call `ConcludeResearchAction` with the physical work performed, result,
    tests or derivation, limitations, impact on the mainline, and one next
-   step. Change the Research Question only when the evidence changes its
-   assessment or next bounded action.
+   step. Change the Question only when evidence, failure, or sustained
+   no-progress changes its assessment or next bounded action.
 
-Do not call a tool merely to make the board look busy. A read, search, or test
+For a long external task, use action-bound observations with
+`ObserveResearchRun`. When a healthy detached background task is the only
+dependency, call `UpdateGoal` with `status: active` and
+`waitFor: { taskIds, policy }`. The runtime resumes the Goal when the selected
+policy is satisfied and the task reaches a terminal state. Do not repeatedly
+call `TaskOutput` to poll. Running is never scientific success. One completed
+action is not a reason to invent a new persistence record: delegate only when
+the result has durable scientific value.
+
+Do not call a tool merely to make the Board look busy. A read, search, or test
 is research evidence only after the main agent explains what it means for the
-question.
+Question.
 
 ## Literature decisions
 
@@ -83,7 +152,7 @@ finite-size or discretization effects, symmetry and conservation constraints,
 error bars or tolerances, and comparison against a baseline. Report scheduler
 success, artifact existence, analyzer checks, and physical observables as
 separate facts. If the evidence is incomplete, conclude the action as
-inconclusive or bounded by the missing gate rather than upgrading the question
+inconclusive or bounded by the missing gate rather than upgrading the Question
 prematurely.
 
 For domain-specific calculations, the relevant analyzer should emit structured
@@ -103,20 +172,18 @@ competing physical interpretations, commits an expensive or irreversible
 external action, adopts a convention that affects the mainline, or would turn
 an ambiguous result into a durable conclusion. Resolve the gate explicitly and
 explain the physical decision in the next progress report. Do not invent an
-AITP handoff or write an Entry/Note just because a gate was resolved; use the
-normal checkpoint barrier when a durable milestone has actually been reached.
+AITP handoff or write an Entry/Note just because a gate was resolved.
 
 ## Reporting standard
 
 Human-facing updates should be science-first and progressively detailed:
-what physical question was addressed, what was done, what was learned, how it
+what physical Question was addressed, what was done, what was learned, how it
 changes the mainline, what remains uncertain, and the next bounded action.
 Keep receipt ids, hashes, paths, and transport details in the Board's expanded
 or audit view unless they are needed to reproduce a result. Never claim that a
 file, job, test, or derivation proves more than its evidence supports.
 
-Use AITP only through its exposed adapter tools. `aitp_show` is the canonical
-way to inspect an Entry; do not substitute direct Markdown parsing. Durable
-milestones go through `ProposeResearchCheckpoint` and
-`CommitResearchCheckpoint`, while ordinary turn progress stays in the local
-Research state until it has scientific durability worth recording.
+Use AITP only through the exposed adapter and the delegated external skills.
+`aitp_show` remains the canonical route for an exact Entry when `using-aitp`
+requires it; do not substitute direct Markdown parsing. Ordinary progress stays
+local until it crosses the durable-delta boundary.

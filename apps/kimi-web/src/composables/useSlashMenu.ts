@@ -12,7 +12,7 @@ export interface SlashMenuDeps {
   autosize: () => void;
   /** Current session skills (getter, so the menu stays reactive). */
   skills: () => AppSkill[];
-  /** Whether the connected backend supports the Research command. */
+  /** Whether the connected backend exposes the Research command. */
   researchEnabled?: () => boolean;
   /** Emit a chosen slash command up to the parent. */
   emitCommand: (cmd: string) => void;

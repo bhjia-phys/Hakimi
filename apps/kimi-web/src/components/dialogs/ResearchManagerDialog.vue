@@ -27,6 +27,8 @@ import {
   type ResearchManagerCommandRequest,
   type ResearchManagerDraftTarget,
 } from '../../lib/researchManagerCommand';
+import { researchLineWorkstreamBindingCommand } from '../../lib/researchCommand';
+import { presentResearchWorkstreamBinding } from '../../lib/researchBoardPresentation';
 import Badge from '../ui/Badge.vue';
 import Banner from '../ui/Banner.vue';
 import Button from '../ui/Button.vue';
@@ -45,9 +47,9 @@ const props = defineProps<{
 }>();
 const open = defineModel<boolean>('open', { required: true });
 const emit = defineEmits<{ command: [request: ResearchManagerCommandRequest] }>();
-const { t } = useI18n();
+const { locale, t } = useI18n();
 
-type Section = 'line' | 'question' | 'science' | 'checkpoint';
+type Section = 'line' | 'question' | 'plan' | 'science' | 'checkpoint';
 type EditorMode = 'create' | 'edit';
 type ResearchTerminalState = '' | 'completed' | 'failed' | 'cancelled';
 
@@ -62,6 +64,10 @@ const lineTitle = ref('');
 const lineObjective = ref('');
 const lineAssessment = ref('');
 const lineStatus = ref<ResearchLineStatus>('active');
+const workstreamInput = ref('');
+const workstreamInputDirty = ref(false);
+const workstreamBaseLineSlug = ref<string | null>(null);
+const workstreamPendingCommandId = ref<number | null>(null);
 
 const questionWording = ref('');
 const questionAssessment = ref('');
@@ -122,6 +128,7 @@ const decisionPendingCommandId = ref<number | null>(null);
 const evidencePendingCommandId = ref<number | null>(null);
 const runPendingCommandId = ref<number | null>(null);
 let resettingLine = false;
+let resettingWorkstream = false;
 let resettingQuestion = false;
 let resettingCheckpoint = false;
 let resettingDecision = false;
@@ -138,11 +145,24 @@ let nextCommandId = 0;
 const sectionOptions = computed(() => [
   { value: 'line', label: t('research.manager.sections.line') },
   { value: 'question', label: t('research.manager.sections.question') },
+  { value: 'plan', label: t('research.manager.sections.plan') },
   { value: 'science', label: t('research.manager.sections.science') },
   { value: 'checkpoint', label: t('research.manager.sections.checkpoint') },
 ]);
 const selectedLine = computed(() =>
   props.snapshot?.lines.find((line) => line.slug === selectedLineSlug.value),
+);
+const currentLine = computed(() =>
+  props.snapshot?.lines.find((line) => line.slug === props.snapshot?.currentLineSlug),
+);
+const currentWorkstreamPresentation = computed(() =>
+  presentResearchWorkstreamBinding(props.snapshot?.currentWorkstreamBinding),
+);
+const currentWorkstreamRecord = computed(() =>
+  props.snapshot?.currentWorkstreamBinding?.binding
+    ?? props.snapshot?.lineWorkstreamBindings?.find(
+      (binding) => binding.lineSlug === props.snapshot?.currentLineSlug,
+    ),
 );
 const lineQuestions = computed(() =>
   props.snapshot?.questions.filter((question) => question.lineSlug === selectedLineSlug.value) ?? [],
@@ -240,6 +260,24 @@ const runStale = computed(() => researchManagerScienceDraftIsStale(
   currentRunActionId.value,
 ));
 const modeActive = computed(() => props.snapshot !== null && props.snapshot.mode !== 'inactive');
+const canConfirmWorkstream = computed(() => {
+  const snapshot = props.snapshot;
+  const lineSlug = snapshot?.currentLineSlug;
+  return lineSlug !== undefined
+    && workstreamPendingCommandId.value === null
+    && researchLineWorkstreamBindingCommand({
+      kind: 'confirm',
+      lineSlug,
+      workstream: workstreamInput.value,
+    }, snapshot) !== null;
+});
+const canClearWorkstream = computed(() => {
+  const snapshot = props.snapshot;
+  const lineSlug = snapshot?.currentLineSlug;
+  return lineSlug !== undefined
+    && workstreamPendingCommandId.value === null
+    && researchLineWorkstreamBindingCommand({ kind: 'clear', lineSlug }, snapshot) !== null;
+});
 const canSaveLine = computed(() => lineTitle.value.trim() !== ''
   && (lineEditorMode.value === 'edit' || lineSlug.value.trim() !== '')
   && !lineStale.value);
@@ -314,6 +352,17 @@ function resetLineForm(): void {
     lineDraftVersion++;
     lineDirty.value = false;
     resettingLine = false;
+  }
+}
+
+function resetWorkstreamForm(): void {
+  resettingWorkstream = true;
+  try {
+    workstreamInput.value = currentWorkstreamRecord.value?.workstream ?? '';
+    workstreamInputDirty.value = false;
+    workstreamBaseLineSlug.value = props.snapshot?.currentLineSlug ?? null;
+  } finally {
+    resettingWorkstream = false;
   }
 }
 
@@ -439,6 +488,7 @@ function initializeManager(): void {
     selectedQuestionId.value = preferredQuestionId();
   }
   resetLineForm();
+  resetWorkstreamForm();
   resetQuestionForm();
   resetCheckpointForm();
   resetDecisionForm();
@@ -460,6 +510,12 @@ watch(
       selectedLineSlug.value = snapshot.currentLineSlug ?? snapshot.lines[0]?.slug ?? '';
     } else if (lineEditorMode.value === 'edit' && !lineDirty.value) {
       resetLineForm();
+    }
+    if (
+      workstreamBaseLineSlug.value !== (snapshot.currentLineSlug ?? null)
+      || !workstreamInputDirty.value
+    ) {
+      resetWorkstreamForm();
     }
     if (!lineQuestions.value.some((question) => question.id === selectedQuestionId.value)) {
       selectedQuestionId.value = preferredQuestionId();
@@ -525,7 +581,7 @@ function draftContext() {
   };
 }
 
-function emitManagerCommand(command: ResearchCommand): void {
+function emitManagerCommand(command: ResearchCommand): number {
   const target = researchManagerDraftTarget(command);
   const request: ResearchManagerCommandRequest = {
     id: ++nextCommandId,
@@ -542,12 +598,39 @@ function emitManagerCommand(command: ResearchCommand): void {
   else if (target?.form === 'evidence') evidencePendingCommandId.value = request.id;
   else if (target?.form === 'run') runPendingCommandId.value = request.id;
   emit('command', request);
+  return request.id;
+}
+
+function transitionResearchPlanV2(
+  kind: 'activate_plan_v2' | 'complete_plan_v2' | 'discard_plan_v2',
+): void {
+  const plan = props.snapshot?.researchPlanV2;
+  if (plan === undefined) return;
+  emitManagerCommand({
+    kind,
+    planId: plan.planId,
+    expectedRevision: plan.revision,
+  });
+}
+
+function setPlanningPolicy(policy: ResearchStatusSnapshot['planningPolicy']): void {
+  const snapshot = props.snapshot;
+  if (snapshot === null || snapshot.planningPolicy === policy) return;
+  emitManagerCommand({
+    kind: 'set_planning_policy',
+    policy,
+    expectedRevision: snapshot.revision,
+  });
 }
 
 watch(
   () => props.commandAck,
   (ack) => {
     if (ack === null || ack === undefined) return;
+    if (workstreamPendingCommandId.value === ack.id) {
+      workstreamPendingCommandId.value = null;
+      if (ack.succeeded) resetWorkstreamForm();
+    }
     if (decisionPendingCommandId.value === ack.id) decisionPendingCommandId.value = null;
     if (evidencePendingCommandId.value === ack.id) evidencePendingCommandId.value = null;
     if (runPendingCommandId.value === ack.id) runPendingCommandId.value = null;
@@ -570,6 +653,13 @@ watch(
     if (resettingLine) return;
     lineDraftVersion++;
     lineDirty.value = true;
+  },
+  { flush: 'sync' },
+);
+watch(
+  workstreamInput,
+  () => {
+    if (!resettingWorkstream) workstreamInputDirty.value = true;
   },
   { flush: 'sync' },
 );
@@ -689,6 +779,38 @@ function emitSwitchLine(): void {
     lineSlug: selectedLineSlug.value,
     expectedRevision: snapshot.revision,
   });
+}
+
+function confirmWorkstreamBinding(): void {
+  const snapshot = props.snapshot;
+  const lineSlug = snapshot?.currentLineSlug;
+  if (lineSlug === undefined) return;
+  const command = researchLineWorkstreamBindingCommand({
+    kind: 'confirm',
+    lineSlug,
+    workstream: workstreamInput.value,
+  }, snapshot);
+  if (command === null) return;
+  workstreamPendingCommandId.value = emitManagerCommand(command);
+}
+
+function clearWorkstreamBinding(): void {
+  const snapshot = props.snapshot;
+  const lineSlug = snapshot?.currentLineSlug;
+  if (lineSlug === undefined) return;
+  const command = researchLineWorkstreamBindingCommand({ kind: 'clear', lineSlug }, snapshot);
+  if (command === null) return;
+  workstreamPendingCommandId.value = emitManagerCommand(command);
+}
+
+function formatTimestamp(timestamp: number | undefined): string {
+  if (timestamp === undefined || !Number.isFinite(timestamp)) return t('research.none');
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return t('research.none');
+  return new Intl.DateTimeFormat(locale.value, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
 }
 
 function saveLine(): void {
@@ -960,6 +1082,78 @@ function acknowledgeAlert(fingerprint: string): void {
                 {{ t('research.manager.reloadDraft') }}
               </Button>
             </Banner>
+            <div v-if="snapshot" class="science-control workstream-binding-panel">
+              <div class="section-heading">
+                <div class="binding-heading-copy">
+                  <h3>{{ t('research.manager.workstreamBinding') }}</h3>
+                  <code v-if="currentLine">{{ currentLine.slug }}</code>
+                </div>
+                <Badge
+                  v-if="currentWorkstreamPresentation"
+                  size="sm"
+                  :variant="currentWorkstreamPresentation.variant"
+                >
+                  {{ t('research.workstreamBindingStatus.' + currentWorkstreamPresentation.status) }}
+                </Badge>
+              </div>
+              <Banner v-if="!currentLine" variant="info">
+                {{ t('research.manager.noCurrentLineForBinding') }}
+              </Banner>
+              <template v-else>
+                <div v-if="snapshot.program" class="binding-record">
+                  <strong>{{ t('research.manager.observedTopic') }}</strong>
+                  <span>{{ snapshot.program.title }}</span>
+                  <span class="binding-meta">
+                    <span>{{ t('research.topicId') }} <code>{{ snapshot.program.topicId }}</code></span>
+                    <span>{{ t('research.observedRevision', { count: snapshot.program.observedRevision }) }}</span>
+                  </span>
+                </div>
+                <Banner v-else variant="warning">
+                  {{ t('research.manager.topicUnavailableForBinding') }}
+                </Banner>
+                <div v-if="currentWorkstreamPresentation" class="binding-record">
+                  <strong>{{ t('research.manager.currentBinding') }}</strong>
+                  <span>{{ currentWorkstreamPresentation.reason }}</span>
+                  <span v-if="currentWorkstreamRecord" class="binding-meta">
+                    <span>{{ t('research.workstream') }} <code>{{ currentWorkstreamRecord.workstream }}</code></span>
+                    <span>{{ t('research.topicId') }} <code>{{ currentWorkstreamRecord.topicId }}</code></span>
+                    <span>{{ t('research.observedRevision', { count: currentWorkstreamRecord.observedRevision }) }}</span>
+                    <span>
+                      {{ t('research.manager.confirmedBy') }}
+                      {{ t('research.manager.confirmer.' + currentWorkstreamRecord.confirmedBy) }}
+                    </span>
+                    <span>
+                      {{ t('research.manager.confirmedAt') }}
+                      {{ formatTimestamp(currentWorkstreamRecord.confirmedAt) }}
+                    </span>
+                  </span>
+                </div>
+                <Field
+                  :label="t('research.workstream')"
+                  :hint="t('research.manager.explicitWorkstreamBindingHint')"
+                  control-id="research-manager-workstream"
+                >
+                  <Input
+                    id="research-manager-workstream"
+                    v-model="workstreamInput"
+                    :placeholder="t('research.manager.workstreamPlaceholder')"
+                    :disabled="currentWorkstreamRecord !== undefined || snapshot.program === undefined"
+                  />
+                </Field>
+                <div class="form-actions">
+                  <Button :disabled="!canConfirmWorkstream" @click="confirmWorkstreamBinding">
+                    {{ t('research.manager.confirmWorkstreamBinding') }}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    :disabled="!canClearWorkstream"
+                    @click="clearWorkstreamBinding"
+                  >
+                    {{ t('research.manager.clearWorkstreamBinding') }}
+                  </Button>
+                </div>
+              </template>
+            </div>
             <Field
               v-if="lineEditorMode === 'create'"
               :label="t('research.manager.lineSlug')"
@@ -1164,6 +1358,75 @@ function acknowledgeAlert(fingerprint: string): void {
             </template>
           </section>
 
+          <section v-else-if="section === 'plan'" class="editor-section">
+            <div class="section-heading">
+              <h3>{{ t('research.manager.researchPlanV2') }}</h3>
+              <Badge v-if="snapshot?.researchPlanV2" size="sm">
+                {{ t('research.planStatus.' + snapshot.researchPlanV2.status) }}
+              </Badge>
+            </div>
+            <div v-if="snapshot" class="science-control">
+              <h3>{{ t('research.planningPolicy') }}</h3>
+              <p class="section-note">
+                {{ t('research.planningPolicyDescription.' + snapshot.planningPolicy) }}
+              </p>
+              <div class="form-actions">
+                <Button
+                  :disabled="snapshot.planningPolicy === 'collaborative'"
+                  @click="setPlanningPolicy('collaborative')"
+                >
+                  {{ t('research.planningPolicyValue.collaborative') }}
+                </Button>
+                <Button
+                  variant="secondary"
+                  :disabled="snapshot.planningPolicy === 'dreaming'"
+                  @click="setPlanningPolicy('dreaming')"
+                >
+                  {{ t('research.planningPolicyValue.dreaming') }}
+                </Button>
+              </div>
+            </div>
+            <template v-if="snapshot?.researchPlanV2">
+              <p class="section-note"><strong>{{ snapshot.researchPlanV2.objective }}</strong></p>
+              <p class="section-note">
+                <code>{{ snapshot.researchPlanV2.planId }}</code>
+                · {{ t('research.planRevision', { count: snapshot.researchPlanV2.revision }) }}
+                · {{ t('research.currentMilestone') }}
+                <code>{{ snapshot.researchPlanV2.currentMilestoneId }}</code>
+              </p>
+              <ol class="manager-plan-list">
+                <li v-for="milestone in snapshot.researchPlanV2.milestones" :key="milestone.milestoneId">
+                  <strong>{{ milestone.title }}</strong>
+                  <span>{{ milestone.completionCriterion }}</span>
+                </li>
+              </ol>
+              <div class="form-actions">
+                <Button
+                  v-if="snapshot.researchPlanV2.status === 'draft'"
+                  @click="transitionResearchPlanV2('activate_plan_v2')"
+                >
+                  {{ t('research.manager.activatePlan') }}
+                </Button>
+                <Button
+                  v-if="snapshot.researchPlanV2.status === 'active'"
+                  @click="transitionResearchPlanV2('complete_plan_v2')"
+                >
+                  {{ t('research.manager.completePlan') }}
+                </Button>
+                <Button
+                  v-if="snapshot.researchPlanV2.status === 'draft' || snapshot.researchPlanV2.status === 'active'"
+                  variant="secondary"
+                  @click="transitionResearchPlanV2('discard_plan_v2')"
+                >
+                  {{ t('research.manager.discardPlan') }}
+                </Button>
+              </div>
+            </template>
+            <Banner v-else variant="info">
+              {{ t('research.manager.noResearchPlanV2') }}
+            </Banner>
+          </section>
+
           <section v-else-if="section === 'science'" class="editor-section">
             <div class="science-control">
               <h3>{{ t('research.manager.humanDecision') }}</h3>
@@ -1336,7 +1599,7 @@ function acknowledgeAlert(fingerprint: string): void {
             </div>
           </section>
 
-          <section v-else class="editor-section">
+          <section v-else-if="section === 'checkpoint'" class="editor-section">
             <h3>{{ t('research.manager.proposeCheckpoint') }}</h3>
             <Banner v-if="checkpointStale" variant="warning">
               <span>{{ t('research.manager.staleCheckpoint') }}</span>
@@ -1466,6 +1729,25 @@ function acknowledgeAlert(fingerprint: string): void {
   border-radius: var(--radius-md);
   background: var(--color-surface-raised);
 }
+.binding-heading-copy,
+.binding-record {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+.binding-meta {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.binding-record > span:not(.binding-meta) {
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
 h3 {
   margin: 0;
   color: var(--color-text);
@@ -1489,6 +1771,21 @@ h3 {
   border-top: 1px solid var(--color-line);
   display: grid;
   gap: var(--space-3);
+}
+.manager-plan-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--color-text);
+}
+.manager-plan-list li {
+  display: grid;
+  gap: var(--space-1);
+}
+.manager-plan-list span {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
 }
 .section-note,
 .manager-empty {

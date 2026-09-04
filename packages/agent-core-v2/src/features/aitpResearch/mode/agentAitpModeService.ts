@@ -13,11 +13,11 @@
  * publishes `aitp_mode.updated` + `agent.status.updated` once for downstream
  * consumers (e.g. `AgentResearchService`). Its `onDidChange` event is limited
  * to active/inactive visibility transitions. Inactive cold restore stays silent.
- * Current-state maintenance is scoped to the bound research line: entering
- * without a `lineSlug` (or with an unbound line) fails closed in the
- * coordinator (`workstream_unbound` degraded), and a later `aitp_mode.set_line`
- * re-scopes maintenance to the new workstream. The maintenance degraded reason
- * is exposed through `maintenanceDegradedReason`.
+ * After a ready probe, one global `enter` observes only the Topic fields needed
+ * by Hakimi's local Program. It never runs a global `check` or adopts global
+ * entries/handoff. Current-state maintenance runs only through an explicitly
+ * confirmed Line-to-workstream binding; unbound or stale Lines keep the mode
+ * ready for low-risk local exploration and perform zero scoped maintenance.
  * Research Mode is a long-lived scientific context and may be active
  * alongside an active Plan overlay; it never exits or resets because Plan
  * mode is active. Legacy sessions with an older persisted active-tool
@@ -40,7 +40,13 @@ import { IWireService } from '#/wire/wire';
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
 import { ISessionAitpAdapter } from '#/features/aitpResearch/adapter/sessionAitpAdapter';
 import { ISessionAitpLifecycleCoordinator } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
-import type { AitpAdapterHealth, AitpMaintenanceDegradedReason, AitpModePhase, ResearchLoopStatus } from '#/features/aitpResearch/types';
+import type {
+  AitpAdapterHealth,
+  AitpMaintenanceDegradedReason,
+  AitpModePhase,
+  ResearchLineWorkstreamBinding,
+  ResearchLoopStatus,
+} from '#/features/aitpResearch/types';
 import { AitpResearchError, AitpResearchErrors } from '#/features/aitpResearch/errors';
 
 import {
@@ -50,16 +56,28 @@ import {
   aitpModeSetPhase,
   aitpModeSetLoopStatus,
   ResearchModel,
+  ResearchRevisionModel,
   researchCreateLine,
+  researchSetProgram,
 } from '#/features/aitpResearch/aitpResearchOps';
+import {
+  isMaintenanceReceiptAligned,
+  sameLineWorkstreamBinding,
+} from '#/features/aitpResearch/research/workstreamBinding';
 import { type AitpModeEntryOptions, IAgentAitpModeService } from './agentAitpMode';
 
 const RESEARCH_MODE_TOOL_NAMES = [
   'ExitAITPMode',
   'GetResearchStatus',
+  'PrepareResearchPlanV2',
+  'ActivateResearchPlanV2',
+  'CompleteResearchPlanV2',
+  'DiscardResearchPlanV2',
   'AcknowledgeResearchAlert',
   'CreateResearchLine',
   'UpdateResearchLine',
+  'ConfirmResearchWorkstreamBinding',
+  'ClearResearchWorkstreamBinding',
   'CreateResearchQuestion',
   'UpdateResearchQuestion',
   'SetResearchFocus',
@@ -88,8 +106,9 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
   readonly onDidChange = this.onDidChangeEmitter.event;
   private lastVisibilityActive = false;
   private probeGeneration = 0;
+  private topicReconcileGeneration = 0;
   private maintenanceReason: AitpMaintenanceDegradedReason | undefined;
-  private lastMaintenanceLine: string | undefined;
+  private lastModeLineSlug: string | undefined;
 
   constructor(
     @IWireService private readonly wire: IWireService,
@@ -101,32 +120,41 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
   ) {
     super();
     this.lastVisibilityActive = this.isActive;
+    this.lastModeLineSlug = this.wire.getModel(AitpModeModel).current.currentLineSlug;
 
     this._register(
       this.wire.hooks.onDidRestore.register('aitpMode', async (_ctx, next) => {
         const phaseChanged = await this.reconcileAfterRestore();
         this.publishVisibilityChangeIfNeeded();
-        if (!phaseChanged && this.isActive) this.publishModeAndStatus();
+        if (this.isActive && !phaseChanged) this.publishModeAndStatus();
         await next();
       }),
     );
 
     this._register(
       this.eventBus.subscribe('context.undone', () => {
-        void this.reconcileAfterRestore().then((phaseChanged) => {
+        // An ordinary undo in a session that is already outside Research
+        // Mode has no AITP lifecycle to restore. The Research service still
+        // publishes its single global undo revision fence; avoid manufacturing
+        // a second mode/status update (and a Goal retry) here.
+        if (!this.isActive && !this.lastVisibilityActive) return;
+        void this.reconcileAfterRestore({ undoBoundary: true }).then((phaseChanged) => {
           this.publishVisibilityChangeIfNeeded();
-          if (!phaseChanged && this.isActive) this.publishModeAndStatus();
+          if (!phaseChanged) this.publishModeAndStatus();
         });
       }),
     );
 
-    // A line change (`aitp_mode.set_line`) re-scopes current-state maintenance
-    // to the new workstream. Refresh under the new line; an unbound line fails
-    // closed in the coordinator.
     this._register(
       this.eventBus.subscribe('aitp_mode.updated', () => {
-        if (!this.isActive) return;
-        this.ensureCurrentScopeRefresh();
+        if (!this.isActive) {
+          this.lastModeLineSlug = undefined;
+          return;
+        }
+        const lineSlug = this.wire.getModel(AitpModeModel).current.currentLineSlug;
+        if (lineSlug === this.lastModeLineSlug) return;
+        this.lastModeLineSlug = lineSlug;
+        this.ensureCurrentScopeRefresh(lineSlug);
       }),
     );
   }
@@ -154,7 +182,8 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
 
   /** Why the last maintenance refresh was degraded, when one is known. */
   get maintenanceDegradedReason(): AitpMaintenanceDegradedReason | undefined {
-    return this.maintenanceReason;
+    if (this.currentConfirmedWorkstream() === undefined) return undefined;
+    return this.coordinator?.snapshot()?.degradedReason ?? this.maintenanceReason;
   }
 
   async enter(options: AitpModeEntryOptions): Promise<void> {
@@ -187,6 +216,9 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     this.publishVisibilityChangeIfNeeded();
     this.publishAgentStatus();
 
+    let lineSlug: string | undefined;
+    let reconciliationStarted = false;
+    let reconcileGeneration = this.topicReconcileGeneration;
     try {
       const health = await this.adapter.probe();
       if (!this.isProbeCurrent(generation)) return;
@@ -194,10 +226,36 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
         this.setPhase('degraded');
         return;
       }
-      const maintenanceStatus = await this.refreshMaintenance(options.lineSlug);
-      if (this.isProbeCurrent(generation)) this.setPhase(maintenanceStatus);
+      // A Line can change while the mode-level adapter probe is pending. Read
+      // it only after the probe succeeds; pre-ready Line signals cannot start
+      // their own adapter reconciliation yet.
+      lineSlug = this.wire.getModel(AitpModeModel).current.currentLineSlug;
+      reconciliationStarted = true;
+      const reconciliation = this.reconcileCurrentTopicBinding(lineSlug);
+      reconcileGeneration = this.topicReconcileGeneration;
+      const binding = await reconciliation;
+      if (!this.isTopicReconcileCurrent(
+        generation,
+        reconcileGeneration,
+        lineSlug,
+      )) return;
+      const maintenanceStatus = binding === undefined
+        ? this.clearMaintenanceScope()
+        : await this.refreshMaintenance(binding);
+      if (
+        maintenanceStatus !== undefined &&
+        this.isTopicReconcileCurrent(generation, reconcileGeneration, lineSlug)
+      ) {
+        this.setPhase(maintenanceStatus);
+      }
     } catch {
-      if (this.isProbeCurrent(generation)) this.setPhase('degraded');
+      if (!this.isProbeCurrent(generation)) return;
+      if (this.topicReconcileGeneration !== reconcileGeneration) return;
+      if (
+        reconciliationStarted &&
+        !this.isTopicReconcileCurrent(generation, reconcileGeneration, lineSlug)
+      ) return;
+      this.setPhase('degraded');
     }
   }
 
@@ -206,7 +264,7 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     this.coordinator?.reset();
     this.adapter.reset();
     this.maintenanceReason = undefined;
-    this.lastMaintenanceLine = undefined;
+    this.lastModeLineSlug = undefined;
     if (!this.isActive) return;
     this.wire.dispatch(aitpModeExit({}));
     this.publishVisibilityChangeIfNeeded();
@@ -218,6 +276,12 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_PHASE_TRANSITION_INVALID,
         'Use exit() to leave AITP Research Mode; setPhase("inactive") is invalid.',
+      );
+    }
+    if (!this.isActive) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_MODE_INACTIVE,
+        'Cannot change the AITP Research Mode phase after the mode has exited.',
       );
     }
     this.wire.dispatch(aitpModeSetPhase({ phase }));
@@ -253,10 +317,11 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
   }
 
   resetAdapter(): void {
+    this.topicReconcileGeneration += 1;
     this.coordinator?.reset();
     this.adapter.reset();
     this.maintenanceReason = undefined;
-    this.lastMaintenanceLine = undefined;
+    this.lastModeLineSlug = undefined;
   }
 
   async refreshHealth(): Promise<AitpAdapterHealth> {
@@ -275,7 +340,10 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
 
   private assertModeCommandAllowed(expectedRevision: number): void {
     this.assertMainAgent();
-    const researchRevision = this.wire.getModel(ResearchModel).current.revision;
+    const worldRevision = this.wire.getModel(ResearchRevisionModel).revision;
+    const researchRevision = worldRevision > 0
+      ? worldRevision
+      : this.wire.getModel(ResearchModel).current.revision;
     if (expectedRevision !== 0 && expectedRevision !== researchRevision) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
@@ -290,7 +358,9 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     }
   }
 
-  private async reconcileAfterRestore(): Promise<boolean> {
+  private async reconcileAfterRestore(options?: {
+    readonly undoBoundary?: boolean;
+  }): Promise<boolean> {
     const generation = ++this.probeGeneration;
     if (!this.isActive) {
       this.coordinator?.reset();
@@ -300,56 +370,236 @@ export class AgentAitpModeService extends Service implements IAgentAitpModeServi
     this.coordinator?.reset();
     this.adapter.reset();
     this.ensureResearchTools();
-    return this.adapter.probe().then(
-      async (health) => {
-        if (!this.isProbeCurrent(generation)) return false;
-        const nextPhase = health.phase === 'ready'
-          ? await this.refreshMaintenance(this.wire.getModel(AitpModeModel).current.currentLineSlug)
-          : 'degraded';
-        if (!this.isProbeCurrent(generation)) return false;
-        const changed = this.phase !== nextPhase;
-        if (changed) this.setPhase(nextPhase);
-        return changed;
-      },
-      () => {
-        if (!this.isProbeCurrent(generation)) return false;
-        const changed = this.phase !== 'degraded';
-        if (changed) this.setPhase('degraded');
-        return changed;
-      },
-    );
+    let lineSlug: string | undefined;
+    let reconciliationStarted = false;
+    let reconcileGeneration = this.topicReconcileGeneration;
+    if (options?.undoBoundary === true) {
+      // `context.undone` subscribers are synchronous, while their returned
+      // promises are not awaited. Yield once so AgentResearchService can first
+      // capture the restored active/inactive baseline and advance the public
+      // world revision. This microtask still runs before UndoService resolves
+      // to its caller, closing the restored-`ready` admission window without
+      // treating an inactive -> active undo as a fresh live mode entry.
+      await Promise.resolve();
+      if (!this.isProbeCurrent(generation)) return false;
+      if (this.phase !== 'probing') this.setPhase('probing');
+    }
+    try {
+      const health = await this.adapter.probe();
+      if (!this.isProbeCurrent(generation)) return false;
+      lineSlug = this.wire.getModel(AitpModeModel).current.currentLineSlug;
+      let binding: ResearchLineWorkstreamBinding | undefined;
+      if (health.phase === 'ready') {
+        reconciliationStarted = true;
+        const reconciliation = this.reconcileCurrentTopicBinding(lineSlug);
+        reconcileGeneration = this.topicReconcileGeneration;
+        binding = await reconciliation;
+        if (!this.isTopicReconcileCurrent(
+          generation,
+          reconcileGeneration,
+          lineSlug,
+        )) return false;
+      }
+      const nextPhase = health.phase === 'ready'
+        ? binding === undefined
+          ? this.clearMaintenanceScope()
+          : await this.refreshMaintenance(binding)
+        : 'degraded';
+      if (!this.isProbeCurrent(generation)) return false;
+      if (
+        health.phase === 'ready' &&
+        !this.isTopicReconcileCurrent(generation, reconcileGeneration, lineSlug)
+      ) return false;
+      if (nextPhase === undefined) return false;
+      const changed = this.phase !== nextPhase;
+      if (changed) this.setPhase(nextPhase);
+      return changed;
+    } catch {
+      if (!this.isProbeCurrent(generation)) return false;
+      if (this.topicReconcileGeneration !== reconcileGeneration) return false;
+      if (
+        reconciliationStarted &&
+        !this.isTopicReconcileCurrent(generation, reconcileGeneration, lineSlug)
+      ) return false;
+      this.clearMaintenanceScope();
+      const changed = this.phase !== 'degraded';
+      if (changed) this.setPhase('degraded');
+      return changed;
+    }
   }
 
-  private async refreshMaintenance(workstream?: string): Promise<'ready' | 'degraded'> {
+  private async refreshMaintenance(
+    binding: ResearchLineWorkstreamBinding,
+  ): Promise<'ready' | 'degraded' | undefined> {
     if (this.coordinator === undefined) return 'ready';
     try {
-      const receipt = await this.coordinator.refresh({ workstream, force: true });
+      const receipt = await this.coordinator.refresh({
+        workstream: binding.workstream,
+        force: true,
+      });
+      if (
+        receipt.degradedReason === 'stale_generation' ||
+        !sameLineWorkstreamBinding(
+          this.currentConfirmedBinding(binding.lineSlug),
+          binding,
+        )
+      ) return undefined;
+      const program = this.wire.getModel(ResearchModel).current.program;
+      if (
+        program === null ||
+        !isMaintenanceReceiptAligned({ receipt, binding, program })
+      ) {
+        this.clearMaintenanceScope();
+        this.maintenanceReason = 'stale_generation';
+        return 'degraded';
+      }
       this.maintenanceReason = receipt.degradedReason;
-      this.lastMaintenanceLine = workstream;
       return receipt.status;
     } catch {
+      if (!sameLineWorkstreamBinding(
+        this.currentConfirmedBinding(binding.lineSlug),
+        binding,
+      )) return undefined;
       this.maintenanceReason = undefined;
-      this.lastMaintenanceLine = workstream;
       return 'degraded';
     }
   }
 
-  /**
-   * Re-scopes current-state maintenance to the current line. Used after a line
-   * switch; an unbound line fails closed in the coordinator. A line bound after
-   * `workstream_unbound` triggers a normal scoped refresh that recovers.
-   */
-  private ensureCurrentScopeRefresh(): void {
-    if (this.coordinator === undefined) return;
-    if (!this.adapter.isReady()) return;
-    const line = this.wire.getModel(AitpModeModel).current.currentLineSlug;
-    if (line === undefined) return;
-    if (this.lastMaintenanceLine === line && this.maintenanceReason !== 'workstream_unbound') {
-      return;
+  async reconcileCurrentTopicBinding(
+    expectedLineSlug?: string,
+  ): Promise<ResearchLineWorkstreamBinding | undefined> {
+    if (!this.isActive || !this.adapter.isReady()) return undefined;
+    const currentLineSlug = this.wire.getModel(AitpModeModel).current.currentLineSlug;
+    if (
+      expectedLineSlug !== undefined &&
+      currentLineSlug !== expectedLineSlug
+    ) this.throwStaleTopicReconciliation(expectedLineSlug);
+    const modeGeneration = this.probeGeneration;
+    const reconcileGeneration = ++this.topicReconcileGeneration;
+    const lineSlug = expectedLineSlug ?? currentLineSlug;
+    const entered = await this.adapter.enter();
+    if (!this.isTopicReconcileCurrent(
+      modeGeneration,
+      reconcileGeneration,
+      lineSlug,
+    )) this.throwStaleTopicReconciliation(lineSlug);
+    const state = this.wire.getModel(ResearchModel).current;
+    const current = state.program;
+    const sameTopic = current?.topicId === entered.topic.id;
+    const researchRevision = state.revision;
+    this.wire.dispatch(researchSetProgram({
+      topicId: entered.topic.id,
+      title: entered.topic.title,
+      goalText: entered.topic.goal.text,
+      goalSource: entered.topic.goal.source,
+      establishedAt: sameTopic ? current!.establishedAt : Date.now(),
+    }));
+    // The unscoped observation is the sole Program authority. Any Program
+    // revision change makes every in-flight/cached scoped receipt stale, even
+    // when the Line slug itself did not change.
+    if (this.wire.getModel(ResearchModel).current.revision !== researchRevision) {
+      this.clearMaintenanceScope();
     }
-    void this.refreshMaintenance(line).then((status) => {
-      if (this.isActive && this.phase !== status) this.setPhase(status);
-    });
+    if (!this.isTopicReconcileCurrent(
+      modeGeneration,
+      reconcileGeneration,
+      lineSlug,
+    )) this.throwStaleTopicReconciliation(lineSlug);
+    this.lastModeLineSlug = lineSlug;
+    if (this.wire.getModel(ResearchModel).current.revision !== researchRevision) {
+      this.eventBus.publish({ type: 'aitp_mode.updated' });
+    }
+    return lineSlug === undefined
+      ? undefined
+      : this.currentConfirmedBinding(lineSlug);
+  }
+
+  private currentConfirmedBinding(
+    lineSlug = this.wire.getModel(AitpModeModel).current.currentLineSlug,
+  ): ResearchLineWorkstreamBinding | undefined {
+    if (lineSlug === undefined) return undefined;
+    if (this.wire.getModel(AitpModeModel).current.currentLineSlug !== lineSlug) {
+      return undefined;
+    }
+    const state = this.wire.getModel(ResearchModel).current;
+    const binding = (state.lineWorkstreamBindings ?? {})[lineSlug];
+    if (binding === undefined || binding.lineSlug !== lineSlug) return undefined;
+    const program = state.program;
+    if (program === null) return undefined;
+    if (
+      binding.topicId !== program.topicId ||
+      binding.observedRevision !== (program.observedRevision ?? 1)
+    ) return undefined;
+    return { ...binding };
+  }
+
+  private currentConfirmedWorkstream(): string | undefined {
+    return this.currentConfirmedBinding()?.workstream;
+  }
+
+  private clearMaintenanceScope(): 'ready' {
+    this.coordinator?.reset();
+    this.maintenanceReason = undefined;
+    return 'ready';
+  }
+
+  private ensureCurrentScopeRefresh(expectedLineSlug?: string): void {
+    this.clearMaintenanceScope();
+    if (!this.adapter.isReady()) return;
+    void this.refreshReconciledMaintenance(expectedLineSlug);
+  }
+
+  private async refreshReconciledMaintenance(
+    expectedLineSlug?: string,
+  ): Promise<'ready' | 'degraded' | undefined> {
+    const modeGeneration = this.probeGeneration;
+    let reconcileGeneration = this.topicReconcileGeneration;
+    try {
+      const reconciliation = this.reconcileCurrentTopicBinding(expectedLineSlug);
+      reconcileGeneration = this.topicReconcileGeneration;
+      const binding = await reconciliation;
+      if (!this.isTopicReconcileCurrent(
+        modeGeneration,
+        reconcileGeneration,
+        expectedLineSlug,
+      )) return undefined;
+      const status = binding === undefined
+        ? this.clearMaintenanceScope()
+        : await this.refreshMaintenance(binding);
+      if (!this.isTopicReconcileCurrent(
+        modeGeneration,
+        reconcileGeneration,
+        expectedLineSlug,
+      )) return undefined;
+      if (status !== undefined && this.phase !== status) this.setPhase(status);
+      return status;
+    } catch {
+      if (!this.isTopicReconcileCurrent(
+        modeGeneration,
+        reconcileGeneration,
+        expectedLineSlug,
+      )) return undefined;
+      this.clearMaintenanceScope();
+      if (this.phase !== 'degraded') this.setPhase('degraded');
+      return 'degraded';
+    }
+  }
+
+  private isTopicReconcileCurrent(
+    modeGeneration: number,
+    reconcileGeneration: number,
+    lineSlug: string | undefined,
+  ): boolean {
+    return this.isProbeCurrent(modeGeneration) &&
+      reconcileGeneration === this.topicReconcileGeneration &&
+      this.wire.getModel(AitpModeModel).current.currentLineSlug === lineSlug;
+  }
+
+  private throwStaleTopicReconciliation(lineSlug: string | undefined): never {
+    throw new AitpResearchError(
+      AitpResearchErrors.codes.AITP_ADAPTER_OPERATION_CANCELLED,
+      `Fresh AITP Topic observation for Research Line ${lineSlug ?? '<none>'} was superseded by a newer mode or Line reconciliation.`,
+    );
   }
 
   private ensureResearchTools(): void {

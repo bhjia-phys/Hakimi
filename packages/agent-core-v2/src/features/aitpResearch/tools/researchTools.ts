@@ -13,6 +13,11 @@ import { z } from 'zod';
 import { createDecorator } from '#/_base/di/instantiation';
 import type { AgentTool } from '#/tool/toolContract';
 import { ResearchEvidencePacketSchema } from '../research/evidencePacket';
+import {
+  AitpAuthoritySchema,
+  AitpEntryKindSchema,
+  ResearchCommitProvenanceSchema,
+} from '../types';
 
 // ── GetResearchStatus ────────────────────────────────────────────────────
 
@@ -95,6 +100,38 @@ export interface IUpdateResearchLineTool extends AgentTool<UpdateResearchLineInp
 }
 export const IUpdateResearchLineTool =
   createDecorator<IUpdateResearchLineTool>('updateResearchLineTool');
+
+export const ConfirmResearchWorkstreamBindingInputSchema = z.object({
+  line_slug: z.string().min(1).max(200),
+  workstream: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+  expected_revision: z.number().int().nonnegative(),
+}).strict();
+export type ConfirmResearchWorkstreamBindingInput = z.infer<
+  typeof ConfirmResearchWorkstreamBindingInputSchema
+>;
+
+export interface IConfirmResearchWorkstreamBindingTool
+  extends AgentTool<ConfirmResearchWorkstreamBindingInput> {
+  readonly _serviceBrand: undefined;
+}
+export const IConfirmResearchWorkstreamBindingTool =
+  createDecorator<IConfirmResearchWorkstreamBindingTool>('confirmResearchWorkstreamBindingTool');
+
+export const ClearResearchWorkstreamBindingInputSchema = z.object({
+  line_slug: z.string().min(1).max(200),
+  expected_revision: z.number().int().nonnegative(),
+  expected_confirmation_id: z.string().min(1).max(200),
+}).strict();
+export type ClearResearchWorkstreamBindingInput = z.infer<
+  typeof ClearResearchWorkstreamBindingInputSchema
+>;
+
+export interface IClearResearchWorkstreamBindingTool
+  extends AgentTool<ClearResearchWorkstreamBindingInput> {
+  readonly _serviceBrand: undefined;
+}
+export const IClearResearchWorkstreamBindingTool =
+  createDecorator<IClearResearchWorkstreamBindingTool>('clearResearchWorkstreamBindingTool');
 
 // ── UpdateResearchQuestion ───────────────────────────────────────────────
 
@@ -204,13 +241,39 @@ export const PlanResearchActionInputSchema = z
     purpose: z.string().min(10).max(8000),
     question_id: z.string().optional(),
     line_slug: z.string().optional(),
-    expected_evidence: z.array(z.string().max(500)).max(50).default([]),
+    expected_evidence: z.array(z.string().min(1).max(500)).min(1).max(50),
     stop_condition: z.string().min(1).max(2000),
     allowed_tool_kinds: z.array(z.string().max(100)).max(20).default([]),
     retry_of_entry_id: z.string().optional(),
-    requires_human_approval: z.boolean().default(false),
+    planning_level: z.enum(['simple', 'planned']).optional(),
+    research_plan_id: z.string().min(1).max(200).optional(),
+    research_plan_revision: z.number().int().positive().optional(),
+    milestone_id: z.string().min(1).max(200).optional(),
+    action_plan_id: z.string().min(1).max(200).optional(),
+    action_plan_revision: z.number().int().positive().optional(),
+    requires_human_approval: z.boolean().default(false).describe(
+      'Outside auto mode, use true only for a genuinely non-delegable human decision. Routine in-scope work, including remote tool execution covered by the active permission mode, must use false; auto mode is fully autonomous and normalizes this field to false.',
+    ),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.planning_level !== 'planned') return;
+    for (const key of [
+      'research_plan_id',
+      'research_plan_revision',
+      'milestone_id',
+      'action_plan_id',
+      'action_plan_revision',
+    ] as const) {
+      if (input[key] === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `${key} is required for a planned action.`,
+        });
+      }
+    }
+  });
 export type PlanResearchActionInput = z.infer<typeof PlanResearchActionInputSchema>;
 
 export interface IPlanResearchActionTool extends AgentTool<PlanResearchActionInput> {
@@ -305,10 +368,28 @@ export const IRecordResearchProgressTool =
 
 // ── ConcludeResearchAction ────────────────────────────────────────────────
 
-export const ConcludeResearchActionInputSchema = RecordResearchProgressInputSchema.extend({
+const ResearchDurabilityAssessmentSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('no_durable_delta'),
+    rationale: z.string().min(10).max(8000),
+  }).strict(),
+  z.object({
+    status: z.literal('durable_delta'),
+    entry_kind: AitpEntryKindSchema,
+    authority: AitpAuthoritySchema,
+    provenance: ResearchCommitProvenanceSchema,
+    rationale: z.string().min(10).max(8000),
+  }).strict(),
+]);
+
+export const ConcludeResearchActionInputSchema = RecordResearchProgressInputSchema.omit({
+  phase_change: true,
+  human_decision: true,
+}).extend({
   action_id: z.string().min(1).max(200),
   status: z.enum(['completed', 'abandoned']),
-}).omit({ phase_change: true }).strict();
+  durability: ResearchDurabilityAssessmentSchema,
+}).strict();
 export type ConcludeResearchActionToolInput = z.infer<typeof ConcludeResearchActionInputSchema>;
 
 export interface IConcludeResearchActionTool extends AgentTool<ConcludeResearchActionToolInput> {
@@ -358,8 +439,12 @@ export const IObserveResearchRunTool =
 
 export const RequestResearchDecisionInputSchema = z
   .object({
-    kind: z.enum(['approval', 'review', 'decision']),
-    prompt: z.string().min(10).max(8000),
+    kind: z.enum(['approval', 'review', 'decision']).describe(
+      'Classify the human input needed when the active permission mode allows questions. Auto mode creates no new Research human gate and requires a reasonable in-scope default instead.',
+    ),
+    prompt: z.string().min(10).max(8000).describe(
+      'Outside auto mode, ask only for a real scientific or protocol decision, never for routine in-scope or remote tool execution.',
+    ),
     action_id: z.string().max(200).optional(),
     question_id: z.string().max(200).optional(),
   })

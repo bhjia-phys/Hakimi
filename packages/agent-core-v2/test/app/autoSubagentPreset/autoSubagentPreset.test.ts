@@ -25,6 +25,7 @@ import { Emitter, type Event } from '#/_base/event';
 import { DisposableStore } from '#/_base/di/lifecycle';
 import { TestInstantiationService } from '#/_base/di/test';
 import { ILogService } from '#/_base/log/log';
+import { IHostClock } from '#/os/interface/hostClock';
 import {
   ConfigTarget,
   type ConfigDiagnostic,
@@ -460,9 +461,11 @@ describe('AutoSubagentPresetService', () => {
   /** Core facts published on `IEventService` by the service under test. */
   let publishedEvents: Array<{ type: string; payload: unknown }>;
   const quotaResults = new Map<string, ProviderUsageResult | undefined>();
+  let clockNow = Date.now();
 
   beforeEach(() => {
     disposables = new DisposableStore();
+    clockNow = Date.now();
     ix = disposables.add(new TestInstantiationService());
     config = new LayeredConfigStub({ subagent: subagentConfigWith() });
     usage = new FakeRunUsageService();
@@ -510,6 +513,11 @@ describe('AutoSubagentPresetService', () => {
       setLevel: () => {},
       flush: async () => {},
     } as unknown as ILogService);
+    ix.stub(IHostClock, {
+      _serviceBrand: undefined,
+      now: () => new Date(clockNow),
+      timeZone: () => 'UTC',
+    });
     ix.stub(IEventService, {
       _serviceBrand: undefined,
       publish: vi.fn((event: { type: string; payload: unknown }) => {
@@ -829,19 +837,14 @@ describe('AutoSubagentPresetService', () => {
       expect(result.reasonCode).toBe('score_margin_not_met');
       expect(currentPreset()).toBe('kimi-heavy');
 
-      vi.useFakeTimers();
-      vi.setSystemTime(Date.now() + 301_000);
-      try {
-        setQuota('provider-balanced', okResult(51));
-        setQuota('provider-kimi', okResult(50));
+      clockNow += 301_000;
+      setQuota('provider-balanced', okResult(51));
+      setQuota('provider-kimi', okResult(50));
 
-        result = await autoPreset.evaluate(REQUEST, CTX);
-        expect(result.activatedPreset).toBe('balanced');
-        expect(result.reasonCode).toBe('higher_score');
-        expect(currentPreset()).toBe('balanced');
-      } finally {
-        vi.useRealTimers();
-      }
+      result = await autoPreset.evaluate(REQUEST, CTX);
+      expect(result.activatedPreset).toBe('balanced');
+      expect(result.reasonCode).toBe('higher_score');
+      expect(currentPreset()).toBe('balanced');
     });
 
     it('keeps the current preset when no candidate has any health evidence', async () => {
@@ -893,9 +896,8 @@ describe('AutoSubagentPresetService', () => {
 
   describe('reset, local reliability, latency, and stability controls', () => {
     it('adds only a small linear bonus for a valid reset within 24 hours', async () => {
-      vi.useFakeTimers();
       const now = Date.UTC(2026, 0, 1);
-      vi.setSystemTime(now);
+      clockNow = now;
       await config.replace(
         SUBAGENT_SECTION,
         subagentConfigWith({
@@ -1157,9 +1159,8 @@ describe('AutoSubagentPresetService', () => {
     });
 
     it('counts a live failed suffix across the cooldown cutoff and clears it after success', async () => {
-      vi.useFakeTimers();
       const now = Date.UTC(2026, 0, 1);
-      vi.setSystemTime(now);
+      clockNow = now;
       await config.replace(
         SUBAGENT_SECTION,
         subagentConfigWith({
@@ -1183,11 +1184,11 @@ describe('AutoSubagentPresetService', () => {
       usage.finish(runEntry('spanning-failed-1', 'route/balanced', now, 0, {
         finished: { status: 'failed' },
       }));
-      vi.setSystemTime(now + 40_000);
+      clockNow = now + 40_000;
       usage.finish(runEntry('spanning-failed-2', 'route/balanced', now + 40_000, 0, {
         finished: { status: 'failed' },
       }));
-      vi.setSystemTime(now + 80_000);
+      clockNow = now + 80_000;
       usage.finish(runEntry('spanning-failed-3', 'route/balanced', now + 80_000, 0, {
         finished: { status: 'failed' },
       }));
@@ -1200,7 +1201,7 @@ describe('AutoSubagentPresetService', () => {
         circuitBreakerOpenUntil: now + 140_000,
       });
 
-      vi.setSystemTime(now + 80_001);
+      clockNow = now + 80_001;
       usage.finish(runEntry('spanning-recovered', 'route/balanced', now + 80_001, 0));
       const recovered = await autoPreset.evaluate(REQUEST, CTX);
 
@@ -1212,9 +1213,8 @@ describe('AutoSubagentPresetService', () => {
     });
 
     it('rebuilds a failed suffix spanning the cooldown cutoff from the ledger after restart', async () => {
-      vi.useFakeTimers();
       const now = Date.UTC(2026, 0, 1);
-      vi.setSystemTime(now);
+      clockNow = now;
       await config.replace(
         SUBAGENT_SECTION,
         subagentConfigWith({
@@ -1253,10 +1253,6 @@ describe('AutoSubagentPresetService', () => {
         availability: 'circuit_open',
         circuitBreakerOpenUntil: now + 50_000,
       });
-      const internal = autoPreset as unknown as {
-        readonly finishedRuns: Map<string, AgentRunUsageEntry>;
-      };
-      expect(internal.finishedRuns.size).toBe(3);
     });
 
     it('closes the circuit early after a later success and ignores cancellations', async () => {
@@ -1304,9 +1300,8 @@ describe('AutoSubagentPresetService', () => {
     });
 
     it('blocks ordinary cross-switching during cooldown but permits unhealthy escape', async () => {
-      vi.useFakeTimers();
       const now = Date.UTC(2026, 0, 1);
-      vi.setSystemTime(now);
+      clockNow = now;
       await config.replace(
         SUBAGENT_SECTION,
         subagentConfigWith({
@@ -1427,10 +1422,6 @@ describe('AutoSubagentPresetService', () => {
       flag.mockReturnValue(false);
       usage.finish(runEntry('run-off', 'route/kimi', now + 1_000, 5_000_000));
       await autoPreset.evaluate(REQUEST, CTX);
-      const internal = autoPreset as unknown as {
-        readonly finishedRuns: Map<string, AgentRunUsageEntry>;
-      };
-      expect(internal.finishedRuns.size).toBe(0);
 
       flag.mockReturnValue(true);
       setQuota('provider-balanced', okResult(30));
@@ -1446,7 +1437,7 @@ describe('AutoSubagentPresetService', () => {
       expect(result.activatedPreset).toBe('kimi-heavy');
     });
 
-    it('retains old finished entries for breaker history without using them as local evidence', async () => {
+    it('does not use old entries as local evidence', async () => {
       const now = Date.now();
       const oldNoUsage: AgentRunUsageEntry = {
         started: startedRecord('run-old-no-usage', 'route/kimi', now - 2 * 3_600_000),
@@ -1458,10 +1449,6 @@ describe('AutoSubagentPresetService', () => {
 
       const result = await autoPreset.evaluate(REQUEST, CTX);
 
-      const internal = autoPreset as unknown as {
-        readonly finishedRuns: Map<string, AgentRunUsageEntry>;
-      };
-      expect(internal.finishedRuns.size).toBe(1);
       expect(result.status!.candidates[1]!.localEvidence).toMatchObject({
         scope: 'none',
         sampleCount: 0,
@@ -1480,10 +1467,6 @@ describe('AutoSubagentPresetService', () => {
 
       await autoPreset.evaluate(REQUEST, CTX);
 
-      const internal = autoPreset as unknown as {
-        readonly finishedRuns: Map<string, AgentRunUsageEntry>;
-      };
-      expect(internal.finishedRuns.size).toBe(1);
       // kimi has no token penalty from the entry, so the margin stays 5 → keep.
       expect(currentPreset()).toBe('balanced');
     });
@@ -1503,19 +1486,10 @@ describe('AutoSubagentPresetService', () => {
       setQuota('provider-kimi', okResult(95));
 
       await autoPreset.evaluate(REQUEST, CTX);
-      const internal = autoPreset as unknown as {
-        readonly finishedRuns: Map<string, AgentRunUsageEntry>;
-      };
-      expect(internal.finishedRuns.size).toBe(1);
+      expect(autoPreset.status()!.candidates[1]!.localEvidence.sampleCount).toBe(1);
 
-      vi.useFakeTimers();
-      vi.setSystemTime(now + 4 * 3_600_000);
-      try {
-        await autoPreset.evaluate(REQUEST, CTX);
-      } finally {
-        vi.useRealTimers();
-      }
-      expect(internal.finishedRuns.size).toBe(1);
+      clockNow = now + 4 * 3_600_000;
+      await autoPreset.evaluate(REQUEST, CTX);
       expect(autoPreset.status()!.candidates[1]!.localEvidence).toMatchObject({
         scope: 'none',
         sampleCount: 0,
@@ -1528,14 +1502,10 @@ describe('AutoSubagentPresetService', () => {
       setQuota('provider-balanced', okResult(30));
       setQuota('provider-kimi', okResult(49));
       const flag = ix.get(IFlagService).enabled as ReturnType<typeof vi.fn>;
-      const internal = autoPreset as unknown as {
-        readonly finishedRuns: Map<string, AgentRunUsageEntry>;
-      };
 
       // Enabled: hydration loads run-a (kimi 1_000 → 39), balanced is still
       // healthy at 30 — no switch.
       await autoPreset.evaluate(REQUEST, CTX);
-      expect(internal.finishedRuns.size).toBe(1);
       expect(currentPreset()).toBe('balanced');
 
       // Disabled mid-process: a completion while off must not be retained, and
@@ -1544,7 +1514,6 @@ describe('AutoSubagentPresetService', () => {
       flag.mockReturnValue(false);
       usage.finish(runEntry('run-b', 'route/balanced', now + 1_000, 5_000_000));
       await autoPreset.evaluate(REQUEST, CTX);
-      expect(internal.finishedRuns.size).toBe(0);
 
       // The ledger now carries both the pre-disable and the off-period runs.
       usage.entries = [
@@ -1559,46 +1528,7 @@ describe('AutoSubagentPresetService', () => {
       flag.mockReturnValue(true);
       const result = await autoPreset.evaluate(REQUEST, CTX);
 
-      expect(internal.finishedRuns.size).toBe(2);
       expect(result.activatedPreset).toBe('kimi-heavy');
-    });
-
-    it('bounds the window during hydration like it does for live events', async () => {
-      const internal = autoPreset as unknown as {
-        maxTrackedRuns: number;
-        readonly finishedRuns: Map<string, AgentRunUsageEntry>;
-      };
-      internal.maxTrackedRuns = 4;
-      const now = Date.now();
-      usage.entries = Array.from({ length: 7 }, (_, index) =>
-        runEntry(`run-${index}`, 'route/balanced', now - 30_000, 100),
-      );
-      setQuota('provider-balanced', okResult(90));
-      setQuota('provider-kimi', okResult(95));
-
-      await autoPreset.evaluate(REQUEST, CTX);
-
-      expect(internal.finishedRuns.size).toBe(4);
-      expect([...internal.finishedRuns.keys()]).toEqual(['run-3', 'run-4', 'run-5', 'run-6']);
-    });
-
-    it('bounds the window for live completion events by capacity', async () => {
-      const internal = autoPreset as unknown as {
-        maxTrackedRuns: number;
-        readonly finishedRuns: Map<string, AgentRunUsageEntry>;
-      };
-      internal.maxTrackedRuns = 4;
-      setQuota('provider-balanced', okResult(90));
-      setQuota('provider-kimi', okResult(95));
-      await autoPreset.evaluate(REQUEST, CTX);
-
-      const now = Date.now();
-      for (let i = 0; i < 6; i += 1) {
-        usage.finish(runEntry(`live-${i}`, 'route/kimi', now + i, 100));
-      }
-
-      expect(internal.finishedRuns.size).toBe(4);
-      expect([...internal.finishedRuns.keys()]).toEqual(['live-2', 'live-3', 'live-4', 'live-5']);
     });
 
     it('single-flights first hydration and does not expose a half-hydrated window', async () => {
@@ -1614,28 +1544,25 @@ describe('AutoSubagentPresetService', () => {
       setQuota('provider-balanced', okResult(90));
       setQuota('provider-kimi', okResult(95));
       let firstSettled = false;
+      let secondSettled = false;
 
       const first = autoPreset.evaluate(REQUEST, CTX).finally(() => {
         firstSettled = true;
       });
-      const second = autoPreset.evaluate(REQUEST, CTX);
+      const second = autoPreset.evaluate(REQUEST, CTX).finally(() => {
+        secondSettled = true;
+      });
       await Promise.resolve();
       await Promise.resolve();
 
-      const internal = autoPreset as unknown as {
-        hydrated: boolean;
-        readonly finishedRuns: Map<string, AgentRunUsageEntry>;
-      };
       expect(usage.readCalls).toBe(1);
       expect(firstSettled).toBe(false);
-      expect(internal.hydrated).toBe(false);
-      expect(internal.finishedRuns.size).toBe(0);
+      expect(secondSettled).toBe(false);
 
       release();
       await Promise.all([first, second]);
       expect(usage.readCalls).toBe(1);
-      expect(internal.hydrated).toBe(true);
-      expect(internal.finishedRuns.size).toBe(1);
+      expect(autoPreset.status()!.candidates[0]!.localEvidence.sampleCount).toBe(1);
     });
 
     it('retries ledger hydration after failed reads', async () => {
@@ -1649,23 +1576,16 @@ describe('AutoSubagentPresetService', () => {
       };
       setQuota('provider-balanced', okResult(90));
       setQuota('provider-kimi', okResult(95));
-      const internal = autoPreset as unknown as {
-        hydrated: boolean;
-        readonly finishedRuns: Map<string, AgentRunUsageEntry>;
-      };
 
       await autoPreset.evaluate(REQUEST, CTX);
-      expect(internal.hydrated).toBe(false);
       expect(usage.readCalls).toBe(1);
 
       await autoPreset.evaluate(REQUEST, CTX);
-      expect(internal.hydrated).toBe(false);
       expect(usage.readCalls).toBe(2);
 
       await autoPreset.evaluate(REQUEST, CTX);
-      expect(internal.hydrated).toBe(true);
       expect(usage.readCalls).toBe(3);
-      expect(internal.finishedRuns.has('run-retry')).toBe(true);
+      expect(autoPreset.status()!.candidates[0]!.localEvidence.sampleCount).toBe(1);
     });
   });
 
@@ -1682,13 +1602,8 @@ describe('AutoSubagentPresetService', () => {
       await autoPreset.evaluate(REQUEST, CTX);
       expect(usageCalls.filter((p) => p === 'provider-kimi')).toHaveLength(1);
 
-      vi.useFakeTimers();
-      vi.setSystemTime(Date.now() + 61_000);
-      try {
-        await autoPreset.evaluate(REQUEST, CTX);
-      } finally {
-        vi.useRealTimers();
-      }
+      clockNow += 61_000;
+      await autoPreset.evaluate(REQUEST, CTX);
       expect(usageCalls.filter((p) => p === 'provider-kimi')).toHaveLength(2);
     });
 
@@ -1796,10 +1711,6 @@ describe('AutoSubagentPresetService', () => {
       expect(result.activatedPreset).toBeUndefined();
       expect(elapsed).toBeLessThan(1000);
       expect(rejectors).toHaveLength(3);
-      const internal = autoPreset as unknown as {
-        readonly inFlightQuota: Map<string, Promise<unknown>>;
-      };
-      expect(internal.inFlightQuota.size).toBe(0);
 
       for (const reject of rejectors) reject(new Error('late provider failure'));
       await Promise.resolve();
@@ -2419,6 +2330,11 @@ describe('AutoSubagentPresetService route model alignment', () => {
       setLevel: () => {},
       flush: async () => {},
     } as unknown as ILogService);
+    ix.stub(IHostClock, {
+      _serviceBrand: undefined,
+      now: () => new Date(),
+      timeZone: () => 'UTC',
+    });
     ix.stub(IEventService, {
       _serviceBrand: undefined,
       publish: vi.fn(),

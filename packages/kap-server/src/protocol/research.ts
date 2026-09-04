@@ -12,6 +12,7 @@ import { z } from 'zod';
 
 export const aitpModePhaseSchema = z.enum(['inactive', 'probing', 'ready', 'degraded']);
 export const researchLoopStatusSchema = z.enum(['active', 'paused']);
+export const researchPlanningPolicySchema = z.enum(['collaborative', 'dreaming']);
 export const questionWorkflowSchema = z.enum([
   'open',
   'active',
@@ -53,6 +54,58 @@ export const researchLineSchema = z.object({
   status: researchLineStatusSchema,
   createdAt: z.number(),
   revision: z.number(),
+});
+
+export const researchLineWorkstreamBindingSchema = z.object({
+  confirmationId: z.string().min(1).max(200),
+  lineSlug: z.string().min(1).max(200),
+  workstream: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+  topicId: z.string().min(1).max(200),
+  observedRevision: z.number().int().positive(),
+  confirmedBy: z.enum(['user', 'main_agent']),
+  confirmedAt: z.number(),
+}).strict();
+
+export const researchLineWorkstreamBindingStatusSchema = z.enum([
+  'unbound',
+  'unavailable',
+  'bound',
+  'stale',
+  'conflict',
+]);
+
+export const researchLineWorkstreamAlignmentSchema = z.object({
+  lineSlug: z.string().min(1).max(200),
+  status: researchLineWorkstreamBindingStatusSchema,
+  reason: z.string(),
+  binding: researchLineWorkstreamBindingSchema.optional(),
+}).strict().superRefine((alignment, context) => {
+  if (alignment.status !== 'unbound' && alignment.binding === undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['binding'],
+      message: 'Every non-unbound Line-workstream alignment requires its stored binding.',
+    });
+  }
+  if (alignment.status === 'unbound' && alignment.binding !== undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['binding'],
+      message: 'An unbound Line-workstream alignment cannot carry a binding.',
+    });
+  }
+  if (
+    alignment.status !== 'unbound'
+    && alignment.status !== 'conflict'
+    && alignment.binding !== undefined
+    && alignment.binding.lineSlug !== alignment.lineSlug
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['binding', 'lineSlug'],
+      message: 'A non-conflicting Line-workstream alignment must carry a binding for the same Line.',
+    });
+  }
 });
 
 export const researchQuestionSchema = z.object({
@@ -260,12 +313,43 @@ export const researchCommittedCursorSchema = z.object({
   committedAt: z.number(),
 });
 
+export const researchDurableCommitCandidateSchema = z.object({
+  sourceActionId: z.string(),
+  progressRecordedAt: z.number(),
+  entryKind: z.enum([
+    'observation', 'result', 'failure', 'decision',
+    'source', 'code_change', 'run', 'closeout',
+  ]),
+  authority: z.enum(['human', 'agent', 'source', 'tool']),
+  provenance: z.enum([
+    'agent_verification', 'tool_verification', 'source_assessment',
+    'human_assertion', 'human_decision',
+  ]),
+  rationale: z.string(),
+}).strict();
+
+export const researchDurabilityAssessmentSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('no_durable_delta'),
+    rationale: z.string().max(8000),
+  }).strict(),
+  z.object({
+    status: z.literal('durable_delta'),
+    entryKind: researchDurableCommitCandidateSchema.shape.entryKind,
+    authority: researchDurableCommitCandidateSchema.shape.authority,
+    provenance: researchDurableCommitCandidateSchema.shape.provenance,
+    rationale: z.string().max(8000),
+  }).strict(),
+]);
+
 export const researchCheckpointSchema = z.object({
   checkpointId: z.string(),
   committedEntryId: z.string().optional(),
   questionId: z.string().optional(),
   questionRevision: z.number().int().nonnegative().optional(),
   lineSlug: z.string().optional(),
+  workstreamBinding: researchLineWorkstreamBindingSchema.optional(),
+  commitCandidate: researchDurableCommitCandidateSchema.optional(),
   assessment: z.string().optional(),
   nextAction: z.string().optional(),
   idempotencyKey: z.string(),
@@ -274,10 +358,26 @@ export const researchCheckpointSchema = z.object({
   createdAt: z.number(),
 });
 
+const goalContinuationSnapshotSchema = z.object({
+  state: z.enum(['idle', 'deciding', 'enqueued', 'running', 'held', 'waiting']),
+  owner: z.string().optional(),
+  reason: z.string().optional(),
+}).strict();
+
 export const researchGoalSummarySchema = z.object({
-  status: z.string(),
+  goalId: z.string().optional(),
+  objective: z.string(),
+  completionCriterion: z.string().optional(),
+  status: z.enum(['active', 'paused', 'blocked', 'complete']),
+  turnBudget: z.number().optional(),
   remainingTurns: z.number().optional(),
-});
+  terminalReason: z.string().optional(),
+  waitingFor: z.object({
+    taskIds: z.array(z.string()),
+    policy: z.enum(['any', 'all']),
+  }).strict().optional(),
+  continuation: goalContinuationSnapshotSchema.optional(),
+}).strict();
 
 // ── Research Loop scientific state layer ────────────────────────────────────
 
@@ -364,6 +464,18 @@ export const researchEvidencePacketSchema = z.object({
 
 export const researchHumanGateKindSchema = z.enum(['approval', 'review', 'decision']);
 
+export const researchPlanV2ActionBindingSchema = z.object({
+  planId: z.string().min(1).max(200),
+  planRevision: z.number().int().positive(),
+  milestoneId: z.string().min(1).max(200),
+}).strict();
+export const researchActionPlanBindingSchema = z.object({
+  schema: z.literal('hakimi/action-plan-binding-0.1'),
+  kind: z.enum(['minimal', 'reviewed_plan']),
+  planId: z.string().min(1).max(200),
+  planRevision: z.number().int().positive(),
+}).strict();
+
 export const researchActionSpecSchema = z.object({
   actionId: z.string(),
   questionId: z.string().optional(),
@@ -378,6 +490,8 @@ export const researchActionSpecSchema = z.object({
   createdAt: z.number(),
   completedAt: z.number().optional(),
   requiresHumanApproval: z.boolean(),
+  researchPlanBinding: researchPlanV2ActionBindingSchema.optional(),
+  actionPlanBinding: researchActionPlanBindingSchema.optional(),
   run: researchRunStateSchema.optional(),
 });
 
@@ -437,8 +551,67 @@ export const researchProgramSchema = z.object({
   goalText: z.string(),
   goalSource: z.string(),
   establishedAt: z.number(),
+  observedRevision: z.number().int().positive(),
 }).strict();
 export type ResearchProgram = z.infer<typeof researchProgramSchema>;
+
+export const researchGoalAlignmentSchema = z.object({
+  status: z.enum(['unavailable', 'confirmation_required', 'aligned', 'stale', 'conflict']),
+  reason: z.string(),
+  binding: z.object({
+    relation: z.enum(['same_program_goal', 'goal_parent_of_program', 'goal_milestone_in_program', 'unrelated']),
+    goalId: z.string(),
+    topicId: z.string(),
+    observedRevision: z.number().int().positive(),
+    confirmedAt: z.number(),
+  }).strict().optional(),
+}).strict();
+export type ResearchGoalAlignment = z.infer<typeof researchGoalAlignmentSchema>;
+
+export const researchGoalProjectionSchema = z.object({
+  schema: z.literal('hakimi/research-goal-0.1'),
+  goalId: z.string(),
+  objective: z.string(),
+  completionCriterion: z.string().optional(),
+  scope: z.object({
+    programTopicId: z.string().optional(),
+    lineSlug: z.string().optional(),
+    questionId: z.string().optional(),
+  }).strict(),
+  nonGoals: z.array(z.string()),
+  budget: z.object({
+    tokenBudget: z.number().nullable(),
+    turnBudget: z.number().nullable(),
+    wallClockBudgetMs: z.number().nullable(),
+    remainingTokens: z.number().nullable(),
+    remainingTurns: z.number().nullable(),
+    remainingWallClockMs: z.number().nullable(),
+    tokenBudgetReached: z.boolean(),
+    turnBudgetReached: z.boolean(),
+    wallClockBudgetReached: z.boolean(),
+    overBudget: z.boolean(),
+  }).strict(),
+  stopConditions: z.array(z.object({
+    code: z.string(),
+    reached: z.boolean(),
+    reason: z.string(),
+  }).strict()),
+  status: z.enum(['active', 'paused', 'blocked', 'complete']),
+  terminalReason: z.string().optional(),
+  waitingFor: z.object({
+    taskIds: z.array(z.string()),
+    policy: z.enum(['any', 'all']),
+  }).strict().optional(),
+  continuation: goalContinuationSnapshotSchema.optional(),
+  programRelation: researchGoalAlignmentSchema,
+  humanGates: z.array(researchHumanGateSchema),
+  persistenceGuards: z.array(z.object({
+    code: z.string(),
+    status: z.enum(['clear', 'blocked', 'inactive']),
+    reason: z.string(),
+  }).strict()),
+  researchRevision: z.number().int().nonnegative(),
+}).strict();
 
 export const researchPeriodSchema = z.object({
   id: z.string(),
@@ -485,10 +658,132 @@ export const researchPlanSchema = z.object({
   resolution: researchPlanResolutionSchema.optional(),
 }).strict();
 
+export const researchPlanV2MilestoneSchema = z.object({
+  milestoneId: z.string().min(1).max(200),
+  title: z.string().min(1).max(500),
+  objective: z.string().min(1).max(8000),
+  completionCriterion: z.string().min(1).max(4000),
+  evidenceRequirements: z.array(z.string().min(1).max(2000)).max(100),
+}).strict();
+export const researchPlanV2DecisionPointSchema = z.object({
+  decisionId: z.string().min(1).max(200),
+  milestoneId: z.string().min(1).max(200),
+  prompt: z.string().min(1).max(4000),
+  condition: z.string().min(1).max(4000),
+}).strict();
+const researchPlanV2ShapeSchema = z.object({
+  schema: z.literal('hakimi/research-plan-0.2'),
+  planId: z.string().min(1).max(200),
+  revision: z.number().int().positive(),
+  goalId: z.string().min(1).max(200),
+  programId: z.string().min(1).max(200),
+  programObservedRevision: z.number().int().positive(),
+  goalRelation: z.enum(['same_program_goal', 'goal_parent_of_program', 'goal_milestone_in_program']),
+  objective: z.string().min(1).max(8000),
+  completionCriterion: z.string().min(1).max(4000).optional(),
+  milestones: z.array(researchPlanV2MilestoneSchema).min(1).max(100),
+  evidenceRequirements: z.array(z.string().min(1).max(2000)).max(100),
+  decisionPoints: z.array(researchPlanV2DecisionPointSchema).max(100),
+  assumptions: z.array(z.string().min(1).max(2000)).max(100),
+  currentMilestoneId: z.string().min(1).max(200),
+  stopConditions: z.array(z.string().min(1).max(2000)).min(1).max(100),
+  replanConditions: z.array(z.string().min(1).max(2000)).min(1).max(100),
+  status: z.enum(['draft', 'active', 'completed', 'discarded']),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+}).strict();
+
+type ResearchPlanV2ReferenceShape = Pick<
+  z.infer<typeof researchPlanV2ShapeSchema>,
+  'milestones' | 'decisionPoints' | 'currentMilestoneId'
+>;
+
+function validateResearchPlanV2References(
+  plan: ResearchPlanV2ReferenceShape,
+  ctx: z.RefinementCtx<ResearchPlanV2ReferenceShape>,
+): void {
+  const milestoneIds = new Set<string>();
+  for (const milestone of plan.milestones) {
+    if (milestoneIds.has(milestone.milestoneId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['milestones'],
+        message: `Duplicate milestone id: ${milestone.milestoneId}`,
+      });
+    }
+    milestoneIds.add(milestone.milestoneId);
+  }
+  if (!milestoneIds.has(plan.currentMilestoneId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['currentMilestoneId'],
+      message: 'Current milestone must reference one declared milestone.',
+    });
+  }
+  const decisionIds = new Set<string>();
+  for (const decision of plan.decisionPoints) {
+    if (decisionIds.has(decision.decisionId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['decisionPoints'],
+        message: `Duplicate decision id: ${decision.decisionId}`,
+      });
+    }
+    decisionIds.add(decision.decisionId);
+    if (!milestoneIds.has(decision.milestoneId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['decisionPoints'],
+        message: `Decision ${decision.decisionId} references an unknown milestone.`,
+      });
+    }
+  }
+}
+
+export const researchPlanV2Schema = researchPlanV2ShapeSchema.superRefine(
+  validateResearchPlanV2References,
+);
+
+export const researchDistillationAttentionSchema = z.discriminatedUnion('status', [
+  z.object({
+    schema: z.literal('hakimi/research-distillation-attention-0.1'),
+    status: z.literal('review_requested'),
+    checkpointId: z.string().min(1).max(200),
+    entryId: z.string().min(1).max(200),
+    recordedAt: z.number(),
+  }).strict(),
+  z.object({
+    schema: z.literal('hakimi/research-distillation-attention-0.1'),
+    status: z.literal('handoff_unavailable'),
+    checkpointId: z.string().min(1).max(200),
+    entryId: z.string().min(1).max(200),
+    reason: z.string().min(1).max(2000),
+    recordedAt: z.number(),
+  }).strict(),
+]);
+
+const prepareResearchPlanV2CommandSchema = researchPlanV2ShapeSchema.pick({
+  objective: true,
+  completionCriterion: true,
+  milestones: true,
+  evidenceRequirements: true,
+  decisionPoints: true,
+  assumptions: true,
+  currentMilestoneId: true,
+  stopConditions: true,
+  replanConditions: true,
+}).extend({
+  kind: z.literal('prepare_plan_v2'),
+  planId: z.string().min(1).max(200).optional(),
+  expectedRevision: z.number().int().positive().optional(),
+}).strict().superRefine(validateResearchPlanV2References);
+
 export const researchStatusSnapshotSchema = z.object({
   mode: aitpModePhaseSchema,
   loopStatus: researchLoopStatusSchema,
   currentLineSlug: z.string().optional(),
+  currentWorkstreamBinding: researchLineWorkstreamAlignmentSchema.optional(),
+  lineWorkstreamBindings: z.array(researchLineWorkstreamBindingSchema),
   currentFocus: researchFocusSchema.optional(),
   currentQuestion: researchQuestionSchema.optional(),
   questions: z.array(researchQuestionSchema),
@@ -499,11 +794,14 @@ export const researchStatusSnapshotSchema = z.object({
   alerts: z.array(researchAlertSchema),
   effectiveNextStep: researchEffectiveNextStepSchema.optional(),
   goalSummary: researchGoalSummarySchema.optional(),
+  researchGoal: researchGoalProjectionSchema.optional(),
+  goalAlignment: researchGoalAlignmentSchema.optional(),
   aitpHealth: aitpAdapterHealthSchema,
   aitpMaintenance: aitpMaintenanceReceiptSchema.optional(),
   pendingCheckpoint: researchCheckpointSchema.optional(),
   latestCommittedCheckpoint: researchCommittedCursorSchema.optional(),
   committedCheckpointHistory: z.array(researchCommittedCursorSchema).optional(),
+  distillationAttention: researchDistillationAttentionSchema.optional(),
   phase: researchPhaseSchema,
   currentAction: researchActionSpecSchema.optional(),
   currentRun: researchRunStateSchema.optional(),
@@ -513,8 +811,23 @@ export const researchStatusSnapshotSchema = z.object({
   program: researchProgramSchema.optional(),
   period: researchPeriodSchema.optional(),
   researchPlan: researchPlanSchema.optional(),
+  actionPlan: researchPlanSchema.optional(),
+  researchPlanV2: researchPlanV2Schema.optional(),
+  planningPolicy: researchPlanningPolicySchema,
   status: researchStatusProjectionSchema.optional(),
   revision: z.number(),
+}).superRefine((snapshot, context) => {
+  if (
+    snapshot.currentLineSlug !== undefined
+    && snapshot.currentWorkstreamBinding !== undefined
+    && snapshot.currentLineSlug !== snapshot.currentWorkstreamBinding.lineSlug
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['currentWorkstreamBinding', 'lineSlug'],
+      message: 'The current Line-workstream alignment must identify the current Line.',
+    });
+  }
 });
 export type ResearchStatusSnapshot = z.infer<typeof researchStatusSnapshotSchema>;
 
@@ -673,6 +986,12 @@ export const researchCommandSchema = z.discriminatedUnion('kind', [
     allowedToolKinds: researchStringListSchema.optional(),
     retryOfEntryId: z.string().optional(),
     requiresHumanApproval: z.boolean().optional(),
+    planningLevel: z.enum(['simple', 'planned']).optional(),
+    researchPlanId: z.string().min(1).max(200).optional(),
+    researchPlanRevision: z.number().int().positive().optional(),
+    milestoneId: z.string().min(1).max(200).optional(),
+    actionPlanId: z.string().min(1).max(200).optional(),
+    actionPlanRevision: z.number().int().positive().optional(),
   }).strict(),
   z.object({ kind: z.literal('start_action'), actionId: z.string() }).strict(),
   z.object({
@@ -692,8 +1011,8 @@ export const researchCommandSchema = z.discriminatedUnion('kind', [
     mainlineImpact: researchLongTextSchema,
     uncertainties: researchStringListSchema.optional(),
     nextAction: researchShortTextSchema.optional(),
-    humanDecision: researchShortTextSchema.optional(),
     detail: researchProgressDetailSchema.optional(),
+    durability: researchDurabilityAssessmentSchema,
   }).strict(),
   z.object({
     kind: z.literal('prepare_plan'),
@@ -708,6 +1027,44 @@ export const researchCommandSchema = z.discriminatedUnion('kind', [
   }).strict(),
   z.object({ kind: z.literal('finalize_plan') }).strict(),
   z.object({ kind: z.literal('discard_plan') }).strict(),
+  z.object({
+    kind: z.literal('confirm_line_workstream_binding'),
+    lineSlug: z.string().min(1).max(200),
+    workstream: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+    expectedRevision: z.number().int().nonnegative(),
+  }).strict(),
+  z.object({
+    kind: z.literal('clear_line_workstream_binding'),
+    lineSlug: z.string().min(1).max(200),
+    expectedConfirmationId: z.string().min(1).max(200),
+    expectedRevision: z.number().int().nonnegative(),
+  }).strict(),
+  z.object({
+    kind: z.literal('set_planning_policy'),
+    policy: researchPlanningPolicySchema,
+    expectedRevision: z.number().int().nonnegative(),
+  }).strict(),
+  prepareResearchPlanV2CommandSchema,
+  z.object({
+    kind: z.enum(['activate_plan_v2', 'complete_plan_v2', 'discard_plan_v2']),
+    planId: z.string().min(1).max(200),
+    expectedRevision: z.number().int().positive(),
+  }).strict(),
+  z.object({
+    kind: z.literal('confirm_goal_alignment'),
+    relation: z.enum(['same_program_goal', 'goal_parent_of_program', 'goal_milestone_in_program', 'unrelated']),
+    expectedRevision: z.number().int().nonnegative(),
+    goalId: z.string(),
+    topicId: z.string(),
+    observedRevision: z.number().int().positive(),
+  }).strict(),
+  z.object({
+    kind: z.literal('clear_goal_alignment'),
+    expectedRevision: z.number().int().nonnegative(),
+    goalId: z.string(),
+    topicId: z.string(),
+    observedRevision: z.number().int().positive(),
+  }).strict(),
 ]);
 export type ResearchCommand = z.infer<typeof researchCommandSchema>;
 

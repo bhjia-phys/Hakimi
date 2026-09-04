@@ -4286,14 +4286,16 @@ command = "vim"
   it('syncs Ctrl+O expansion state to the visible Research Board', async () => {
     const { driver } = await makeDriver();
     const snapshot: ResearchStatusSnapshot = {
-      mode: 'ready',
-      loopStatus: 'active',
+          mode: 'ready',
+          loopStatus: 'active',
+          planningPolicy: 'collaborative',
       questions: [],
       lines: [],
       openQuestionCount: 0,
       activeQuestionCount: 0,
       blockedQuestionCount: 0,
       alerts: [],
+      lineWorkstreamBindings: [],
       aitpHealth: { phase: 'ready' },
       phase: 'action_executing',
       revision: 1,

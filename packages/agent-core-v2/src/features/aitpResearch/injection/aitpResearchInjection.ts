@@ -2,11 +2,11 @@
  * `aitpResearch` domain — Research Mode context injection.
  *
  * Owns the `aitp_research` context-injection provider: while AITP Research
- * Mode is active and the current turn is admitted as a Research turn (a Goal
- * research continuation), it injects a trimmed scientific Research Loop state —
+ * Mode is active and the current turn has an interactive or autonomous
+ * Research lease, it injects a trimmed scientific Research Loop state —
  * current question, phase, action and run digest, latest progress digest, the
  * single effective next step, the pending human gate, and the attention the
- * model must handle. Ordinary user / system / subagent / cron turns abstain
+ * model must handle. System / subagent / cron / unclassified turns abstain
  * (zero disclosure) even while the mode is active. Verbosity is Brief (full
  * trimmed state) on a new turn or when phase / progress / action / run / next
  * step / attention semantically changed since the last disclosure, Delta (only

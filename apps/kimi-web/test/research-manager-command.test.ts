@@ -15,7 +15,11 @@ import {
   researchRunTerminalStateIsConsistent,
   type ResearchManagerDraftContext,
 } from '../src/lib/researchManagerCommand';
-import { isResearchIdleOnlyBusy } from '../src/lib/researchCommand';
+import {
+  isResearchIdleOnlyBusy,
+  researchLineWorkstreamBindingCommand,
+} from '../src/lib/researchCommand';
+import type { ResearchStatusSnapshot } from '../src/api/types';
 
 const evidenceTargetKey = researchEvidenceDraftTargetKey({
   questionId: 'q_1',
@@ -33,6 +37,42 @@ const context: ResearchManagerDraftContext = {
   runActionId: 'action_1',
   checkpointEntryId: 'entry-1',
 };
+
+function bindingSnapshot(
+  overrides: Partial<ResearchStatusSnapshot> = {},
+): ResearchStatusSnapshot {
+  return {
+    mode: 'ready',
+    loopStatus: 'active',
+    currentLineSlug: 'line-a',
+    lineWorkstreamBindings: [],
+    questions: [],
+    lines: [{
+      slug: 'line-a',
+      title: 'Line A',
+      status: 'active',
+      createdAt: 1,
+      revision: 1,
+    }],
+    openQuestionCount: 0,
+    activeQuestionCount: 0,
+    blockedQuestionCount: 0,
+    alerts: [],
+    aitpHealth: { phase: 'ready' },
+    program: {
+      topicId: 'topic-a',
+      title: 'Topic A',
+      goalText: 'Establish the result',
+      goalSource: 'TOPIC.md',
+      establishedAt: 1,
+      observedRevision: 4,
+    },
+    phase: 'idle',
+    planningPolicy: 'collaborative',
+    revision: 7,
+    ...overrides,
+  };
+}
 
 describe('Research Manager command acknowledgements', () => {
   it('maps draft-saving commands to their precise form and target', () => {
@@ -100,8 +140,154 @@ describe('Research Manager command acknowledgements', () => {
     { kind: 'defer_question', questionId: 'q_1', expectedRevision: 1 } as const,
     { kind: 'switch_line', lineSlug: 'line-a', expectedRevision: 1 } as const,
     { kind: 'acknowledge_alert', fingerprint: 'alert_1' } as const,
+    { kind: 'activate_plan_v2', planId: 'plan_1', expectedRevision: 2 } as const,
+    { kind: 'complete_plan_v2', planId: 'plan_1', expectedRevision: 2 } as const,
+    { kind: 'discard_plan_v2', planId: 'plan_1', expectedRevision: 2 } as const,
+    { kind: 'set_planning_policy', policy: 'dreaming', expectedRevision: 3 } as const,
+    { kind: 'confirm_line_workstream_binding', lineSlug: 'line-a', workstream: 'aitp-a', expectedRevision: 3 } as const,
+    {
+      kind: 'clear_line_workstream_binding',
+      lineSlug: 'line-a',
+      expectedConfirmationId: 'confirmation-a-1',
+      expectedRevision: 3,
+    } as const,
   ])('does not associate $kind with any dirty form', (command) => {
     expect(researchManagerDraftTarget(command)).toBeNull();
+  });
+
+  it('maps explicit workstream confirmation and clearing without client-owned provenance', () => {
+    const snapshot = bindingSnapshot();
+    expect(researchLineWorkstreamBindingCommand({
+      kind: 'confirm',
+      lineSlug: 'line-a',
+      workstream: '  aitp-a  ',
+    }, snapshot)).toEqual({
+      kind: 'confirm_line_workstream_binding',
+      lineSlug: 'line-a',
+      workstream: 'aitp-a',
+      expectedRevision: 7,
+    });
+
+    const binding = {
+      confirmationId: 'confirmation-a-1',
+      lineSlug: 'line-a',
+      workstream: 'aitp-a',
+      topicId: 'topic-a',
+      observedRevision: 4,
+      confirmedBy: 'user' as const,
+      confirmedAt: 2,
+    };
+    expect(researchLineWorkstreamBindingCommand({
+      kind: 'clear',
+      lineSlug: 'line-a',
+    }, bindingSnapshot({ lineWorkstreamBindings: [binding] }))).toEqual({
+      kind: 'clear_line_workstream_binding',
+      lineSlug: 'line-a',
+      expectedConfirmationId: 'confirmation-a-1',
+      expectedRevision: 7,
+    });
+  });
+
+  it('clears a current conflict binding exposed only by the alignment recovery surface', () => {
+    const malformed = {
+      confirmationId: 'confirmation-legacy-1',
+      lineSlug: 'line-b',
+      workstream: 'legacy-workstream',
+      topicId: 'topic-a',
+      observedRevision: 4,
+      confirmedBy: 'user' as const,
+      confirmedAt: 2,
+    };
+    const snapshot = bindingSnapshot({
+      lineWorkstreamBindings: [],
+      currentWorkstreamBinding: {
+        lineSlug: 'line-a',
+        status: 'conflict',
+        reason: 'Persisted map key and embedded Line disagree.',
+        binding: malformed,
+      },
+    });
+
+    expect(researchLineWorkstreamBindingCommand({
+      kind: 'clear',
+      lineSlug: 'line-a',
+    }, snapshot)).toEqual({
+      kind: 'clear_line_workstream_binding',
+      lineSlug: 'line-a',
+      expectedConfirmationId: malformed.confirmationId,
+      expectedRevision: 7,
+    });
+    expect(researchLineWorkstreamBindingCommand({
+      kind: 'confirm',
+      lineSlug: 'line-a',
+      workstream: 'replacement',
+    }, snapshot)).toBeNull();
+  });
+
+  it('never infers a binding from matching slugs and requires clear before replacement', () => {
+    const matchingSlugs = bindingSnapshot({
+      currentLineSlug: 'same-slug',
+      lines: [{
+        slug: 'same-slug',
+        title: 'Same slug',
+        status: 'active',
+        createdAt: 1,
+        revision: 1,
+      }],
+    });
+    expect(researchLineWorkstreamBindingCommand({
+      kind: 'clear',
+      lineSlug: 'same-slug',
+    }, matchingSlugs)).toBeNull();
+    expect(researchLineWorkstreamBindingCommand({
+      kind: 'confirm',
+      lineSlug: 'same-slug',
+      workstream: 'same-slug',
+    }, matchingSlugs)).toEqual({
+      kind: 'confirm_line_workstream_binding',
+      lineSlug: 'same-slug',
+      workstream: 'same-slug',
+      expectedRevision: 7,
+    });
+
+    const existing = {
+      confirmationId: 'confirmation-old-1',
+      lineSlug: 'same-slug',
+      workstream: 'old-workstream',
+      topicId: 'topic-a',
+      observedRevision: 4,
+      confirmedBy: 'user' as const,
+      confirmedAt: 2,
+    };
+    expect(researchLineWorkstreamBindingCommand({
+      kind: 'confirm',
+      lineSlug: 'same-slug',
+      workstream: 'replacement',
+    }, { ...matchingSlugs, lineWorkstreamBindings: [existing] })).toBeNull();
+  });
+
+  it('rejects invalid workstream commands before transport', () => {
+    const snapshot = bindingSnapshot();
+    expect(researchLineWorkstreamBindingCommand({
+      kind: 'confirm',
+      lineSlug: 'line-a',
+      workstream: 'INVALID_WORKSTREAM',
+    }, snapshot)).toBeNull();
+    expect(researchLineWorkstreamBindingCommand({
+      kind: 'confirm',
+      lineSlug: 'line-a',
+      workstream: 'valid-workstream',
+    }, { ...snapshot, program: undefined })).toBeNull();
+    expect(researchLineWorkstreamBindingCommand({
+      kind: 'confirm',
+      lineSlug: 'line-a',
+      workstream: 'valid-workstream',
+    }, { ...snapshot, aitpHealth: { phase: 'degraded' } })).toBeNull();
+    expect(researchLineWorkstreamBindingCommand({
+      kind: 'confirm',
+      lineSlug: 'missing-line',
+      workstream: 'valid-workstream',
+    }, snapshot)).toBeNull();
   });
 
   it('matches acknowledgements only to the currently edited target', () => {

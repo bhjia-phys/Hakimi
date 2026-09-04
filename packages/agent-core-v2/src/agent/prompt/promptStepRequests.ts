@@ -43,7 +43,12 @@ abstract class UserMessageStepRequest extends StepRequest {
   }
 
   override get turnSeed(): TurnSeed {
-    return { input: this.message.content, origin: this.message.origin ?? USER_PROMPT_ORIGIN };
+    const origin = this.message.origin ?? USER_PROMPT_ORIGIN;
+    return {
+      input: this.message.content,
+      origin,
+      intent: origin.kind === 'user' ? { kind: 'user' } : undefined,
+    };
   }
 
   override onWillMaterialize(): void {
@@ -73,7 +78,7 @@ export class PromptStepRequest extends UserMessageStepRequest {
   }
 
   override get turnSeed(): TurnSeed {
-    return { input: this.message.content, origin: this.message.origin ?? USER_PROMPT_ORIGIN };
+    return super.turnSeed;
   }
 }
 

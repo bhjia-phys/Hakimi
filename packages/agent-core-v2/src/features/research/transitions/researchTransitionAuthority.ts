@@ -14,6 +14,8 @@
 
 import type { ResearchActionStatus, ResearchPhase } from '../types';
 
+export const RESEARCH_ACTION_RECOVERY_PREFIX = '[research-action-recovery]';
+
 /**
  * The canonical Research phase transition table. A transition is valid when
  * `to` is listed under `from`. This is the one and only copy of the policy;
@@ -64,4 +66,26 @@ export function isLiveForegroundAction(
     action !== undefined &&
     (action.status === 'planned' || action.status === 'in_progress')
   );
+}
+
+/** The phase owned by a live foreground action, if one exists. */
+export function researchActionOwnedPhase(
+  action: { readonly status: ResearchActionStatus } | null | undefined,
+): Extract<ResearchPhase, 'action_planned' | 'action_executing'> | undefined {
+  if (action?.status === 'planned') return 'action_planned';
+  if (action?.status === 'in_progress') return 'action_executing';
+  return undefined;
+}
+
+export function isRecoveredLiveAction(input: {
+  readonly action?: { readonly actionId: string; readonly status: ResearchActionStatus } | null;
+  readonly recentStateChange?: {
+    readonly actionId?: string;
+    readonly summary: string;
+  } | null;
+}): boolean {
+  const { action, recentStateChange } = input;
+  return researchActionOwnedPhase(action) !== undefined &&
+    recentStateChange?.actionId === action?.actionId &&
+    recentStateChange?.summary.startsWith(RESEARCH_ACTION_RECOVERY_PREFIX) === true;
 }

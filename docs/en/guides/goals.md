@@ -96,6 +96,8 @@ Use the same command surface to inspect or control the current goal:
 | `/goal cancel` | Remove the current goal |
 | `/goal replace <objective>` | Replace the current goal with a new objective |
 
+On the default v2 engine, `/goal resume` is a control action rather than a synthetic model prompt. It asks the Goal driver to enqueue one continuation for a paused or blocked goal. If an older client already changed the goal to `active` without starting a turn, running `/goal resume` again also kicks that idle goal; an existing pending continuation prevents duplicates. The legacy rollback engine keeps its compatibility prompt because it does not expose this driver control.
+
 A goal can stop in three ways:
 
 - **complete**: the objective is done, Hakimi clears the goal, and the agent summarizes how it completed the work
@@ -105,6 +107,8 @@ A goal can stop in three ways:
 Write stop conditions into the objective. `/goal` does not have a separate stop-limit flag.
 
 When healthy detached background tasks are the only remaining dependency, the agent can call `UpdateGoal` with `waitFor` instead of polling with `TaskOutput`. `waitFor` accepts an `active` goal, 1–32 non-empty detached task IDs, and an `any` or `all` policy. Hakimi keeps the goal active but suspends automatic continuation turns and does not start a model turn; waiting does not consume goal turns or active wall-clock budget. When the selected policy is satisfied by a terminal task event, including `lost`, Hakimi clears the lease and wakes at most one continuation. On session restore, an active goal with a valid wait lease stays active while its selected background tasks are still pending, and restore does not start a continuation. A missing task reference fails closed and pauses the goal; a task already restored as terminal, including `lost`, clears the lease and schedules the same single wake.
+
+`active` describes the Goal lifecycle; it does not claim that a model turn is running at every instant. On the default v2 engine, Goal snapshots also expose a transient continuation state: `idle`, `deciding`, `enqueued`, `running`, `held`, or `waiting`. A background-task wait lease, a paused or degraded Research Loop, or an unresolved manual Research decision can deliberately hold the next continuation. When that happens, the Goal strip and Research Board show `active · continuation held` with the responsible owner and reason instead of misreporting the Goal as paused. The continuation projection is derived runtime state and is not persisted as another lifecycle. A legacy Research snapshot with no continuation field is shown as `continuation unavailable (legacy snapshot)` rather than being guessed. A live Research Action, including one structurally recovered during replay, prevents Goal completion; recovered ambiguous work also holds autonomous continuation until an interactive Research turn resolves that same Action from evidence. Hakimi does not auto-complete or auto-abandon it. In `auto` permission mode, routine in-scope Research actions use the normal tool permission policy and do not create a second Research approval gate.
 
 ## Manage goals in the web UI
 

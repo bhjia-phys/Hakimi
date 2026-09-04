@@ -14,6 +14,8 @@ import {
 const validSnapshot = {
   mode: 'inactive',
   loopStatus: 'active',
+  planningPolicy: 'collaborative',
+  lineWorkstreamBindings: [],
   questions: [],
   lines: [],
   openQuestionCount: 0,
@@ -62,6 +64,234 @@ describe('researchStatusSnapshotSchema', () => {
     const parsed = researchStatusSnapshotSchema.parse(validSnapshot);
     expect(parsed.mode).toBe('inactive');
     expect(parsed.revision).toBe(0);
+  });
+
+  it('rejects malformed current Line-workstream alignment invariants', () => {
+    const binding = {
+      confirmationId: 'confirmation-main-1',
+      lineSlug: 'main',
+      workstream: 'verified-inputs',
+      topicId: 'topic-1',
+      observedRevision: 1,
+      confirmedBy: 'user' as const,
+      confirmedAt: 1,
+    };
+    const { confirmationId, ...identitylessBinding } = binding;
+    expect(confirmationId).toBe('confirmation-main-1');
+    const missingBindingStatuses = ['unavailable', 'bound', 'stale', 'conflict'] as const;
+    const invalidSnapshots = [
+      ...missingBindingStatuses.map((status) => ({
+        ...validSnapshot,
+        currentLineSlug: 'main',
+        currentWorkstreamBinding: {
+          lineSlug: 'main',
+          status,
+          reason: 'Malformed missing binding.',
+        },
+      })),
+      {
+        ...validSnapshot,
+        currentLineSlug: 'main',
+        currentWorkstreamBinding: {
+          lineSlug: 'main',
+          status: 'unbound',
+          reason: 'Malformed unexpected binding.',
+          binding,
+        },
+      },
+      {
+        ...validSnapshot,
+        currentLineSlug: 'main',
+        currentWorkstreamBinding: {
+          lineSlug: 'main',
+          status: 'bound',
+          reason: 'Malformed non-conflicting binding Line mismatch.',
+          binding: { ...binding, lineSlug: 'other' },
+        },
+      },
+      {
+        ...validSnapshot,
+        currentLineSlug: 'main',
+        currentWorkstreamBinding: {
+          lineSlug: 'other',
+          status: 'unbound',
+          reason: 'Malformed current Line mismatch.',
+        },
+      },
+    ];
+
+    for (const snapshot of invalidSnapshots) {
+      expect(researchStatusSnapshotSchema.safeParse(snapshot).success).toBe(false);
+    }
+    expect(researchStatusSnapshotSchema.safeParse({
+      ...validSnapshot,
+      currentLineSlug: 'main',
+      currentWorkstreamBinding: {
+        lineSlug: 'main',
+        status: 'bound',
+        reason: 'Identity-less binding.',
+        binding: identitylessBinding,
+      },
+      lineWorkstreamBindings: [identitylessBinding],
+    }).success).toBe(false);
+    expect(researchStatusSnapshotSchema.safeParse({
+      ...validSnapshot,
+      currentLineSlug: 'main',
+      currentWorkstreamBinding: {
+        lineSlug: 'main',
+        status: 'conflict',
+        reason: 'The stored binding identifies another Line.',
+        binding: { ...binding, lineSlug: 'other' },
+      },
+    }).success).toBe(true);
+  });
+
+  it('accepts the specialized Research Goal projection and rejects unknown fields', () => {
+    const researchGoal = {
+      schema: 'hakimi/research-goal-0.1' as const,
+      goalId: 'goal-1',
+      objective: 'Validate the bounded result',
+      completionCriterion: 'The result passes its convergence checks',
+      scope: {
+        programTopicId: 'topic-1',
+        lineSlug: 'main',
+        questionId: 'q1',
+      },
+      nonGoals: [],
+      budget: {
+        tokenBudget: null,
+        turnBudget: 3,
+        wallClockBudgetMs: null,
+        remainingTokens: null,
+        remainingTurns: 2,
+        remainingWallClockMs: null,
+        tokenBudgetReached: false,
+        turnBudgetReached: false,
+        wallClockBudgetReached: false,
+        overBudget: false,
+      },
+      stopConditions: [{
+        code: 'goal.budget.turns',
+        reached: false,
+        reason: 'The Goal turn budget remains available.',
+      }],
+      status: 'active' as const,
+      continuation: {
+        state: 'held' as const,
+        owner: 'research',
+        reason: 'A research checkpoint is pending commit.',
+      },
+      programRelation: {
+        status: 'aligned' as const,
+        reason: 'Confirmed as goal_parent_of_program.',
+      },
+      humanGates: [],
+      persistenceGuards: [{
+        code: 'research.mode.ready',
+        status: 'clear' as const,
+        reason: 'Research Mode is ready.',
+      }],
+      researchRevision: 4,
+    };
+    expect(researchStatusSnapshotSchema.parse({
+      ...validSnapshot,
+      researchGoal,
+    }).researchGoal).toEqual(researchGoal);
+    const { continuation: _continuation, ...legacyResearchGoal } = researchGoal;
+    expect(_continuation.state).toBe('held');
+    expect(researchStatusSnapshotSchema.parse({
+      ...validSnapshot,
+      researchGoal: legacyResearchGoal,
+    }).researchGoal?.continuation).toBeUndefined();
+    expect(() => researchStatusSnapshotSchema.parse({
+      ...validSnapshot,
+      researchGoal: {
+        ...researchGoal,
+        continuation: { state: 'future_continuation_state' },
+      },
+    })).toThrow();
+    expect(() => researchStatusSnapshotSchema.parse({
+      ...validSnapshot,
+      researchGoal: { ...researchGoal, unknown: true },
+    })).toThrow();
+  });
+
+  it('accepts Research Plan v2, Action Plan alias, and action bindings after a JSON round-trip', () => {
+    const actionPlan = {
+      planId: 'action-plan-1',
+      researchRevision: 8,
+      programId: 'topic-1',
+      lineSlug: 'main',
+      questionId: 'q1',
+      objective: 'Run one bounded calculation',
+      steps: ['Run', 'Validate'],
+      expectedEvidence: ['Output and validation log'],
+      stopCondition: 'Stop after validation',
+      status: 'finalized' as const,
+      resolution: { planId: 'action-plan-1', planRevision: 1, outcome: 'approved' as const },
+    };
+    const researchPlanV2 = {
+      schema: 'hakimi/research-plan-0.2' as const,
+      planId: 'research-plan-1',
+      revision: 2,
+      goalId: 'goal-1',
+      programId: 'topic-1',
+      programObservedRevision: 1,
+      goalRelation: 'goal_milestone_in_program' as const,
+      objective: 'Validate one program milestone',
+      completionCriterion: 'Validated evidence exists',
+      milestones: [{
+        milestoneId: 'm1',
+        title: 'Validate calculation',
+        objective: 'Run one calculation',
+        completionCriterion: 'Checks pass',
+        evidenceRequirements: ['Output and validation log'],
+      }],
+      evidenceRequirements: ['Reproducible result'],
+      decisionPoints: [{
+        decisionId: 'd1',
+        milestoneId: 'm1',
+        prompt: 'Is the result usable?',
+        condition: 'Ask on ambiguity',
+      }],
+      assumptions: ['Fixture is representative'],
+      currentMilestoneId: 'm1',
+      stopConditions: ['Stop on failed validation'],
+      replanConditions: ['Replan on Program drift'],
+      status: 'active' as const,
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const currentAction = {
+      actionId: 'action-1',
+      questionId: 'q1',
+      lineSlug: 'main',
+      kind: 'simulation' as const,
+      purpose: 'Run the reviewed calculation',
+      expectedEvidence: ['Output and validation log'],
+      stopCondition: 'Stop after validation',
+      allowedToolKinds: [],
+      status: 'in_progress' as const,
+      createdAt: 3,
+      requiresHumanApproval: false,
+      researchPlanBinding: { planId: 'research-plan-1', planRevision: 2, milestoneId: 'm1' },
+      actionPlanBinding: {
+        schema: 'hakimi/action-plan-binding-0.1' as const,
+        kind: 'reviewed_plan' as const,
+        planId: 'action-plan-1',
+        planRevision: 1,
+      },
+    };
+    const parsed = researchStatusSnapshotSchema.parse(JSON.parse(JSON.stringify({
+      ...validSnapshot,
+      researchPlan: actionPlan,
+      actionPlan,
+      researchPlanV2,
+      currentAction,
+    })));
+    expect(parsed.researchPlanV2).toEqual(researchPlanV2);
+    expect(parsed.actionPlan).toEqual(actionPlan);
+    expect(parsed.currentAction?.researchPlanBinding?.planRevision).toBe(2);
   });
 
   it('accepts active and acknowledged alert records', () => {
@@ -162,11 +392,76 @@ describe('researchStatusSnapshotSchema', () => {
     ).toThrow();
   });
 
+  it('accepts versioned distillation attention receipts and rejects incomplete unavailable receipts', () => {
+    const requested = researchStatusSnapshotSchema.parse({
+      ...validSnapshot,
+      distillationAttention: {
+        schema: 'hakimi/research-distillation-attention-0.1',
+        status: 'review_requested',
+        checkpointId: 'cp-1',
+        entryId: 'entry-1',
+        recordedAt: 1000,
+      },
+    });
+    expect(requested.distillationAttention?.status).toBe('review_requested');
+
+    const unavailable = researchStatusSnapshotSchema.parse({
+      ...validSnapshot,
+      distillationAttention: {
+        schema: 'hakimi/research-distillation-attention-0.1',
+        status: 'handoff_unavailable',
+        checkpointId: 'cp-2',
+        entryId: 'entry-2',
+        reason: 'Skill hidden',
+        recordedAt: 2000,
+      },
+    });
+    expect(unavailable.distillationAttention).toMatchObject({
+      status: 'handoff_unavailable',
+      reason: 'Skill hidden',
+    });
+
+    expect(() => researchStatusSnapshotSchema.parse({
+      ...validSnapshot,
+      distillationAttention: {
+        schema: 'hakimi/research-distillation-attention-0.1',
+        status: 'handoff_unavailable',
+        checkpointId: 'cp-3',
+        entryId: 'entry-3',
+        recordedAt: 3000,
+      },
+    })).toThrow();
+  });
+
   it('accepts a full snapshot with questions and lines', () => {
     const full = {
       mode: 'ready',
       loopStatus: 'active',
+      planningPolicy: 'dreaming',
       currentLineSlug: 'main-line',
+      currentWorkstreamBinding: {
+        lineSlug: 'main-line',
+        status: 'bound',
+        reason: 'Explicitly confirmed.',
+        binding: {
+          confirmationId: 'confirmation-main-1',
+          lineSlug: 'main-line',
+          workstream: 'verified-inputs',
+          topicId: 'topic-1',
+          observedRevision: 2,
+          confirmedBy: 'user',
+          confirmedAt: 1_700_000_000_000,
+        },
+      },
+      lineWorkstreamBindings: [{
+        confirmationId: 'confirmation-main-1',
+        lineSlug: 'main-line',
+        workstream: 'verified-inputs',
+        topicId: 'topic-1',
+        observedRevision: 2,
+        confirmedBy: 'user',
+        confirmedAt: 1_700_000_000_000,
+      }],
       currentFocus: { questionId: 'q1', boundedAction: 'run exp-A', revision: 1 },
       currentQuestion: {
         id: 'q1',
@@ -217,6 +512,23 @@ describe('researchStatusSnapshotSchema', () => {
         checkpointId: 'cp1',
         questionId: 'q1',
         lineSlug: 'main-line',
+        workstreamBinding: {
+          confirmationId: 'confirmation-main-1',
+          lineSlug: 'main-line',
+          workstream: 'verified-inputs',
+          topicId: 'topic-1',
+          observedRevision: 2,
+          confirmedBy: 'user',
+          confirmedAt: 1_700_000_000_000,
+        },
+        commitCandidate: {
+          sourceActionId: 'act-1',
+          progressRecordedAt: 2_500,
+          entryKind: 'result',
+          authority: 'agent',
+          provenance: 'agent_verification',
+          rationale: 'The checked experiment produced a durable result.',
+        },
         assessment: 'persist candidate mechanism',
         nextAction: 'run exp-A',
         idempotencyKey: 'key-1',
@@ -373,6 +685,33 @@ describe('researchUpdatedEventSchema', () => {
     const json = JSON.stringify(event);
     const parsed = researchUpdatedEventSchema.parse(JSON.parse(json));
     expect(parsed).toEqual(event);
+  });
+
+  it('preserves the complete Line-workstream binding projection', () => {
+    const binding = {
+      confirmationId: 'confirmation-main-1',
+      lineSlug: 'main-line',
+      workstream: 'verified-inputs',
+      topicId: 'topic-1',
+      observedRevision: 2,
+      confirmedBy: 'user' as const,
+      confirmedAt: 1_700_000_000_000,
+    };
+    const event = {
+      type: 'research.updated',
+      snapshot: {
+        ...validSnapshot,
+        currentLineSlug: 'main-line',
+        currentWorkstreamBinding: {
+          lineSlug: 'main-line',
+          status: 'bound',
+          reason: 'Explicitly confirmed.',
+          binding,
+        },
+        lineWorkstreamBindings: [binding],
+      },
+    };
+    expect(researchUpdatedEventSchema.parse(event)).toEqual(event);
   });
 
   it('rejects a wrong event type', () => {
@@ -655,6 +994,127 @@ describe('researchCommandRequestSchema', () => {
     })).toThrow();
     expect(() => researchCommandRequestSchema.parse({
       command: { ...action, unexpected: true },
+    })).toThrow();
+  });
+
+  it('accepts strict Research Plan v2 lifecycle and planned-action bindings', () => {
+    const prepare = {
+      kind: 'prepare_plan_v2' as const,
+      objective: 'Validate one program milestone.',
+      completionCriterion: 'The declared checks pass.',
+      milestones: [{
+        milestoneId: 'm1',
+        title: 'Run and validate',
+        objective: 'Execute one bounded calculation.',
+        completionCriterion: 'The output passes validation.',
+        evidenceRequirements: ['Input, output, and validation log'],
+      }],
+      evidenceRequirements: ['A reproducible result'],
+      decisionPoints: [{
+        decisionId: 'd1',
+        milestoneId: 'm1',
+        prompt: 'Is the result physically usable?',
+        condition: 'Ask when validation is ambiguous.',
+      }],
+      assumptions: ['The fixture is representative.'],
+      currentMilestoneId: 'm1',
+      stopConditions: ['Stop on validation failure.'],
+      replanConditions: ['Replan on Program drift.'],
+    };
+    expect(researchCommandRequestSchema.parse({ command: prepare }).command).toEqual(prepare);
+    expect(() => researchCommandRequestSchema.parse({
+      command: { ...prepare, currentMilestoneId: 'missing' },
+    })).toThrow();
+    expect(() => researchCommandRequestSchema.parse({
+      command: { ...prepare, unexpected: true },
+    })).toThrow();
+
+    for (const kind of ['activate_plan_v2', 'complete_plan_v2', 'discard_plan_v2'] as const) {
+      expect(researchCommandRequestSchema.parse({
+        command: { kind, planId: 'research-plan-1', expectedRevision: 2 },
+      }).command.kind).toBe(kind);
+    }
+    expect(() => researchCommandRequestSchema.parse({
+      command: { kind: 'activate_plan_v2', planId: 'research-plan-1' },
+    })).toThrow();
+
+    const plannedAction = {
+      kind: 'begin_action' as const,
+      actionKind: 'simulation' as const,
+      purpose: 'Run the reviewed calculation.',
+      expectedEvidence: ['Input, output, and validation log'],
+      stopCondition: 'Stop after validation.',
+      planningLevel: 'planned' as const,
+      researchPlanId: 'research-plan-1',
+      researchPlanRevision: 2,
+      milestoneId: 'm1',
+      actionPlanId: 'action-plan-1',
+      actionPlanRevision: 1,
+    };
+    expect(researchCommandRequestSchema.parse({ command: plannedAction }).command)
+      .toMatchObject(plannedAction);
+  });
+
+  it('accepts only revisioned collaborative or dreaming planning-policy commands', () => {
+    expect(researchCommandRequestSchema.parse({
+      command: {
+        kind: 'set_planning_policy',
+        policy: 'dreaming',
+        expectedRevision: 3,
+      },
+    }).command).toEqual({
+      kind: 'set_planning_policy',
+      policy: 'dreaming',
+      expectedRevision: 3,
+    });
+    expect(() => researchCommandRequestSchema.parse({
+      command: { kind: 'set_planning_policy', policy: 'automatic', expectedRevision: 3 },
+    })).toThrow();
+    expect(() => researchCommandRequestSchema.parse({
+      command: { kind: 'set_planning_policy', policy: 'collaborative' },
+    })).toThrow();
+  });
+
+  it('accepts only strict user-facing Line-to-workstream binding commands', () => {
+    const confirm = {
+      kind: 'confirm_line_workstream_binding' as const,
+      lineSlug: 'main-line',
+      workstream: 'verified-inputs',
+      expectedRevision: 3,
+    };
+    expect(researchCommandRequestSchema.parse({ command: confirm }).command).toEqual(confirm);
+    const clear = {
+      kind: 'clear_line_workstream_binding' as const,
+      lineSlug: 'main-line',
+      expectedConfirmationId: 'confirmation-main-1',
+      expectedRevision: 4,
+    };
+    expect(researchCommandRequestSchema.parse({ command: clear }).command).toEqual(clear);
+
+    for (const forged of [
+      { ...confirm, actor: 'model' },
+      { ...confirm, confirmedBy: 'main_agent' },
+      { ...confirm, topicId: 'topic-forged' },
+      { ...confirm, observedRevision: 99 },
+      { ...confirm, confirmedAt: 1 },
+    ]) {
+      expect(() => researchCommandRequestSchema.parse({ command: forged })).toThrow();
+    }
+    expect(() => researchCommandRequestSchema.parse({
+      command: { ...confirm, workstream: 'Invalid Workstream' },
+    })).toThrow();
+    expect(() => researchCommandRequestSchema.parse({
+      command: {
+        ...clear,
+        topicId: 'topic-forged',
+      },
+    })).toThrow();
+    expect(() => researchCommandRequestSchema.parse({
+      command: {
+        kind: 'clear_line_workstream_binding',
+        lineSlug: 'main-line',
+        expectedRevision: 4,
+      },
     })).toThrow();
   });
 });

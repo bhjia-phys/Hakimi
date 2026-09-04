@@ -39,11 +39,14 @@ import type {
   ResearchCommittedCursor,
   ResearchHumanGate,
   ResearchLine,
+  ResearchLineWorkstreamBinding,
   ResearchRunState,
   ResearchLineCreationInput,
   ResearchQuestion,
   ResearchActionSpec,
   ResearchPlan,
+  ResearchPlanV2,
+  ResearchPlanningPolicy,
   ResearchStatusSnapshot,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/types';
 import type {
@@ -51,13 +54,17 @@ import type {
   ResearchEvidenceReview,
 } from '@moonshot-ai/agent-core-v2/features/aitpResearch/research/evidencePacket';
 import type {
+  ClearGoalAlignmentInput,
   CommitCheckpointInput,
+  ConfirmGoalAlignmentInput,
   ConcludeResearchActionInput,
   ResearchActionConclusion,
   CreateQuestionInput,
   ObserveResearchRunInput,
   PlanActionInput,
   PrepareResearchPlanInput,
+  PrepareResearchPlanV2Input,
+  TransitionResearchPlanV2Input,
   ProposeCheckpointInput,
   ResolveHumanDecisionInput,
   UpdateLineInput,
@@ -168,6 +175,18 @@ export interface AgentFacade {
 export type ResearchSnapshot = ResearchStatusSnapshot;
 export type { HumanSteeringCommand };
 
+export interface ConfirmLineWorkstreamBindingInput {
+  readonly lineSlug: string;
+  readonly workstream: string;
+  readonly expectedRevision: number;
+}
+
+export interface ClearLineWorkstreamBindingInput {
+  readonly lineSlug: string;
+  readonly expectedConfirmationId: string;
+  readonly expectedRevision: number;
+}
+
 export interface ResearchFacade {
   getSnapshot(): Promise<ResearchSnapshot>;
   getQuestions(): Promise<readonly ResearchQuestion[]>;
@@ -175,9 +194,22 @@ export interface ResearchFacade {
   getPendingCheckpoint(): Promise<ResearchCheckpoint | undefined>;
   getCommittedCursor(): Promise<ResearchCommittedCursor | undefined>;
   getResearchPlan(): Promise<ResearchPlan | undefined>;
+  getResearchPlanV2(): Promise<ResearchPlanV2 | undefined>;
+  getPlanningPolicy(): Promise<ResearchPlanningPolicy>;
+  setPlanningPolicy(policy: ResearchPlanningPolicy, expectedRevision: number): Promise<void>;
+  confirmGoalAlignment(input: ConfirmGoalAlignmentInput): Promise<void>;
+  clearGoalAlignment(input: ClearGoalAlignmentInput): Promise<void>;
+  confirmLineWorkstreamBinding(
+    input: ConfirmLineWorkstreamBindingInput,
+  ): Promise<ResearchLineWorkstreamBinding>;
+  clearLineWorkstreamBinding(input: ClearLineWorkstreamBindingInput): Promise<void>;
   prepareResearchPlan(input: PrepareResearchPlanInput): Promise<ResearchPlan>;
   finalizeResearchPlan(): Promise<ResearchPlan>;
   discardResearchPlan(): Promise<ResearchPlan | undefined>;
+  prepareResearchPlanV2(input: PrepareResearchPlanV2Input): Promise<ResearchPlanV2>;
+  activateResearchPlanV2(input: TransitionResearchPlanV2Input): Promise<ResearchPlanV2>;
+  completeResearchPlanV2(input: TransitionResearchPlanV2Input): Promise<ResearchPlanV2>;
+  discardResearchPlanV2(input: TransitionResearchPlanV2Input): Promise<ResearchPlanV2>;
   createQuestion(input: CreateQuestionInput): Promise<ResearchQuestion>;
   createLine(input: ResearchLineCreationInput): Promise<ResearchLine>;
   updateLine(input: UpdateLineInput): Promise<ResearchLine>;
@@ -303,12 +335,43 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
         >,
       getResearchPlan: () =>
         call(scope, 'agentResearchService', 'getResearchPlan', []) as Promise<ResearchPlan | undefined>,
+      getResearchPlanV2: () =>
+        call(scope, 'agentResearchService', 'getResearchPlanV2', []) as Promise<ResearchPlanV2 | undefined>,
+      getPlanningPolicy: () =>
+        call(scope, 'agentResearchService', 'getPlanningPolicy', []) as Promise<ResearchPlanningPolicy>,
+      setPlanningPolicy: (policy, expectedRevision) =>
+        call(scope, 'agentResearchService', 'setPlanningPolicy', [policy, expectedRevision]) as Promise<void>,
+      confirmGoalAlignment: (input) =>
+        call(scope, 'agentResearchService', 'confirmGoalAlignment', [input]) as Promise<void>,
+      clearGoalAlignment: (input) =>
+        call(scope, 'agentResearchService', 'clearGoalAlignment', [input]) as Promise<void>,
+      confirmLineWorkstreamBinding: (input) =>
+        call(scope, 'agentResearchService', 'confirmLineWorkstreamBinding', [{
+          lineSlug: input.lineSlug,
+          workstream: input.workstream,
+          expectedRevision: input.expectedRevision,
+          confirmedBy: 'user',
+        }]) as Promise<ResearchLineWorkstreamBinding>,
+      clearLineWorkstreamBinding: (input) =>
+        call(scope, 'agentResearchService', 'clearLineWorkstreamBinding', [{
+          lineSlug: input.lineSlug,
+          expectedConfirmationId: input.expectedConfirmationId,
+          expectedRevision: input.expectedRevision,
+        }]) as Promise<void>,
       prepareResearchPlan: (input) =>
         call(scope, 'agentResearchService', 'prepareResearchPlan', [input]) as Promise<ResearchPlan>,
       finalizeResearchPlan: () =>
         call(scope, 'agentResearchService', 'finalizeResearchPlan', []) as Promise<ResearchPlan>,
       discardResearchPlan: () =>
         call(scope, 'agentResearchService', 'discardResearchPlan', []) as Promise<ResearchPlan | undefined>,
+      prepareResearchPlanV2: (input) =>
+        call(scope, 'agentResearchService', 'prepareResearchPlanV2', [input]) as Promise<ResearchPlanV2>,
+      activateResearchPlanV2: (input) =>
+        call(scope, 'agentResearchService', 'activateResearchPlanV2', [input]) as Promise<ResearchPlanV2>,
+      completeResearchPlanV2: (input) =>
+        call(scope, 'agentResearchService', 'completeResearchPlanV2', [input]) as Promise<ResearchPlanV2>,
+      discardResearchPlanV2: (input) =>
+        call(scope, 'agentResearchService', 'discardResearchPlanV2', [input]) as Promise<ResearchPlanV2>,
       createQuestion: (input) =>
         call(scope, 'agentResearchService', 'createQuestion', [input]) as Promise<ResearchQuestion>,
       createLine: (input) =>

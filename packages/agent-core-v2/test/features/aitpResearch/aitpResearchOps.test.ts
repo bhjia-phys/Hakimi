@@ -3,13 +3,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SyncDescriptor } from '#/_base/di/descriptors';
 import { DisposableStore } from '#/_base/di/lifecycle';
 import { TestInstantiationService } from '#/_base/di/test';
-import { contextAppendMessage, contextUndo } from '#/agent/contextMemory/contextOps';
+import {
+  contextAppendMessage,
+  contextApplyCompaction,
+  contextUndo,
+} from '#/agent/contextMemory/contextOps';
 import { IEventBus } from '#/app/event/eventBus';
 import { EventBusService } from '#/app/event/eventBusService';
 import {
   AitpModeModel,
   ResearchModel,
   ResearchCursorModel,
+  ResearchRevisionModel,
   aitpModeEnter,
   aitpModeExit,
   aitpModeSetPhase,
@@ -41,9 +46,12 @@ import {
   researchRequestHumanDecision,
   researchResolveHumanDecision,
   researchSetProgram,
+  researchConfirmGoalAlignment,
+  researchClearGoalAlignment,
   researchStartPeriod,
   researchUpdatePeriod,
   researchEndPeriod,
+  researchAdvanceRevision,
 } from '#/features/aitpResearch/aitpResearchOps';
 import { AppendLogStore } from '#/persistence/backends/node-fs/appendLogStore';
 import { InMemoryStorageService } from '#/persistence/backends/memory/inMemoryStorageService';
@@ -53,6 +61,13 @@ import { IWireService } from '#/wire/wire';
 
 import { registerTestAgentWire, testWireScope } from '../../wire/stubs';
 import { createExternalFactFacade } from '#/features/aitpResearch/research/externalFactService';
+import { researchPutPlanV2 } from '#/features/aitpResearch/researchPlanV2Ops';
+import { researchSetPlanningPolicy } from '#/features/aitpResearch/researchPlanningPolicyOps';
+import {
+  researchClearWorkstreamBinding,
+  researchConfirmWorkstreamBinding,
+} from '#/features/aitpResearch/researchWorkstreamBindingOps';
+import { deriveLineWorkstreamAlignment } from '#/features/aitpResearch/research/workstreamBinding';
 
 const SCOPE = 'wire';
 const KEY = 'aitp-research-test';
@@ -112,6 +127,22 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(state.phase).toBe('inactive');
       expect(state.revision).toBe(2);
       expect(state.entryActor).toBeUndefined();
+    });
+
+    it('cold replay does not revive an exited mode from a late persisted phase update', async () => {
+      wire.dispatch(aitpModeEnter({ actor: 'user' }));
+      wire.dispatch(aitpModeExit({}));
+      wire.dispatch(aitpModeSetPhase({ phase: 'degraded' }));
+
+      expect(wire.getModel(AitpModeModel).current).toMatchObject({
+        phase: 'inactive',
+        revision: 2,
+      });
+      await wire.restore();
+      expect(wire.getModel(AitpModeModel).current).toMatchObject({
+        phase: 'inactive',
+        entryActor: undefined,
+      });
     });
 
     it('setPhase updates phase and bumps revision', () => {
@@ -185,6 +216,7 @@ describe('aitpResearch ops (wire-backed)', () => {
       const state = wire.getModel(ResearchModel).current;
       expect(state.questions).toEqual({});
       expect(state.lines).toEqual({});
+      expect(state.lineWorkstreamBindings).toEqual({});
       expect(state.focus).toBeNull();
       expect(state.pendingCheckpoint).toBeNull();
       expect(state.revision).toBe(0);
@@ -437,10 +469,43 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(state.pendingCheckpoint!.persistence).toBe('pending_commit');
     });
 
+    it('undo removes an unsaved conclude candidate with its pending checkpoint', () => {
+      wire.dispatch(contextAppendMessage({
+        message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } },
+      }));
+      wire.dispatch(researchProposeCheckpoint({
+        checkpointId: 'cp-candidate',
+        idempotencyKey: 'key-candidate',
+        createdAt: 1000,
+        commitCandidate: {
+          sourceActionId: 'action-1',
+          progressRecordedAt: 999,
+          entryKind: 'failure',
+          authority: 'tool',
+          provenance: 'tool_verification',
+          rationale: 'The repeated tool failure is a durable delta.',
+        },
+      }));
+      expect(wire.getModel(ResearchModel).current.pendingCheckpoint?.commitCandidate)
+        .toMatchObject({ entryKind: 'failure', authority: 'tool' });
+
+      wire.dispatch(contextUndo({ count: 1 }));
+
+      expect(wire.getModel(ResearchModel).current.pendingCheckpoint).toBeNull();
+    });
+
     it('restores a pending checkpoint with its bound AITP entry and receipts', async () => {
       wire.dispatch(
         researchProposeCheckpoint({
           checkpointId: 'cp1', idempotencyKey: 'key1', createdAt: 1000,
+          commitCandidate: {
+            sourceActionId: 'action-1',
+            progressRecordedAt: 999,
+            entryKind: 'result',
+            authority: 'agent',
+            provenance: 'agent_verification',
+            rationale: 'The checked result is a durable delta.',
+          },
         }),
         researchBindCheckpointEntry({ checkpointId: 'cp1', entryId: 'e1' }),
         researchBindCheckpointReceipt({
@@ -474,6 +539,13 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(wire.getModel(ResearchModel).current.pendingCheckpoint).toMatchObject({
         checkpointId: 'cp1',
         committedEntryId: 'e1',
+        commitCandidate: {
+          sourceActionId: 'action-1',
+          progressRecordedAt: 999,
+          entryKind: 'result',
+          authority: 'agent',
+          provenance: 'agent_verification',
+        },
         receipt: {
           prepare: { status: 'prepared', id: 'e1', idempotencyKey: 'key1' },
           save: { status: 'saved', draftPath: '.aitp/local/drafts/e1.md' },
@@ -598,6 +670,225 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(wire.getModel(ResearchModel).current.lines['main']!.title).toBe('First');
       expect(wire.getModel(ResearchModel).current.lines['main']!.createdAt).toBe(100);
       expect(wire.getModel(ResearchModel).current.revision).toBe(1);
+    });
+
+    it('confirms an explicit Line-to-workstream binding against the observed Topic revision', () => {
+      wire.dispatch(researchCreateLine({ slug: 'local-line', title: 'Local line', createdAt: 1 }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 2,
+      }));
+      wire.dispatch(researchConfirmWorkstreamBinding({
+        confirmationId: 'confirmation-1',
+        lineSlug: 'local-line',
+        workstream: 'aitp-workstream',
+        topicId: 'topic-a',
+        observedRevision: 1,
+        confirmedBy: 'user',
+        confirmedAt: 3,
+        expectedRevision: 2,
+      }));
+
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.lineWorkstreamBindings).toEqual({
+        'local-line': {
+          confirmationId: 'confirmation-1',
+          lineSlug: 'local-line',
+          workstream: 'aitp-workstream',
+          topicId: 'topic-a',
+          observedRevision: 1,
+          confirmedBy: 'user',
+          confirmedAt: 3,
+        },
+      });
+      expect(state.lines['local-line']?.revision).toBe(2);
+      expect(state.revision).toBe(3);
+    });
+
+    it('rejects stale, conflicting, and implicit Line-to-workstream binding ops', () => {
+      wire.dispatch(researchCreateLine({ slug: 'local-line', title: 'Local line', createdAt: 1 }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 2,
+      }));
+      const base = {
+        confirmationId: 'confirmation-1',
+        lineSlug: 'local-line',
+        workstream: 'aitp-workstream',
+        topicId: 'topic-a',
+        observedRevision: 1,
+        confirmedBy: 'main_agent' as const,
+        confirmedAt: 3,
+      };
+
+      wire.dispatch(researchConfirmWorkstreamBinding({ ...base, expectedRevision: 1 }));
+      wire.dispatch(researchConfirmWorkstreamBinding({ ...base, topicId: 'topic-b', expectedRevision: 2 }));
+      wire.dispatch(researchConfirmWorkstreamBinding({ ...base, observedRevision: 2, expectedRevision: 2 }));
+      wire.dispatch(researchConfirmWorkstreamBinding({ ...base, lineSlug: 'missing', expectedRevision: 2 }));
+      expect(wire.getModel(ResearchModel).current.lineWorkstreamBindings).toEqual({});
+
+      wire.dispatch(researchConfirmWorkstreamBinding({ ...base, expectedRevision: 2 }));
+      const confirmedRevision = wire.getModel(ResearchModel).current.revision;
+      wire.dispatch(researchConfirmWorkstreamBinding({
+        ...base,
+        workstream: 'different-workstream',
+        expectedRevision: confirmedRevision,
+      }));
+      expect(wire.getModel(ResearchModel).current.lineWorkstreamBindings).toEqual({
+        'local-line': expect.objectContaining({ workstream: 'aitp-workstream' }),
+      });
+      expect(wire.getModel(ResearchModel).current.revision).toBe(confirmedRevision);
+    });
+
+    it('makes confirmation idempotent and requires the exact immutable binding to clear it', () => {
+      wire.dispatch(researchCreateLine({ slug: 'local-line', title: 'Local line', createdAt: 1 }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 2,
+      }));
+      const binding = {
+        confirmationId: 'confirmation-1',
+        lineSlug: 'local-line',
+        workstream: 'aitp-workstream',
+        topicId: 'topic-a',
+        observedRevision: 1,
+        confirmedBy: 'user' as const,
+        confirmedAt: 3,
+      };
+      wire.dispatch(researchConfirmWorkstreamBinding({ ...binding, expectedRevision: 2 }));
+      const confirmedRevision = wire.getModel(ResearchModel).current.revision;
+      wire.dispatch(researchConfirmWorkstreamBinding({ ...binding, expectedRevision: confirmedRevision }));
+      expect(wire.getModel(ResearchModel).current.revision).toBe(confirmedRevision);
+
+      wire.dispatch(researchClearWorkstreamBinding({
+        binding: { ...binding, confirmedAt: 4 },
+        expectedRevision: confirmedRevision,
+      }));
+      expect(wire.getModel(ResearchModel).current.lineWorkstreamBindings?.['local-line']).toEqual(binding);
+
+      wire.dispatch(researchClearWorkstreamBinding({ binding, expectedRevision: confirmedRevision }));
+      expect(wire.getModel(ResearchModel).current.lineWorkstreamBindings).toEqual({});
+      expect(wire.getModel(ResearchModel).current.revision).toBe(confirmedRevision + 1);
+    });
+
+    it('fails closed when a persisted map key and binding Line identity disagree', () => {
+      expect(deriveLineWorkstreamAlignment({
+        lineSlug: 'line-a',
+        binding: {
+          confirmationId: 'confirmation-1',
+          lineSlug: 'line-b',
+          workstream: 'ws-b',
+          topicId: 'topic-a',
+          observedRevision: 1,
+          confirmedBy: 'user',
+          confirmedAt: 3,
+        },
+        program: {
+          topicId: 'topic-a',
+          title: 'Topic A',
+          goalText: 'Prove X',
+          goalSource: 'TOPIC.md',
+          establishedAt: 2,
+          observedRevision: 1,
+        },
+      })).toMatchObject({
+        lineSlug: 'line-a',
+        status: 'conflict',
+        binding: { lineSlug: 'line-b' },
+      });
+    });
+
+    it('clears an exact legacy binding by its map-key Line when the embedded Line identity disagrees', () => {
+      wire.dispatch(researchCreateLine({ slug: 'line-a', title: 'Line A', createdAt: 1 }));
+      wire.dispatch(researchCreateLine({ slug: 'line-b', title: 'Line B', createdAt: 2 }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 3,
+      }));
+      const malformed = {
+        confirmationId: 'confirmation-legacy',
+        lineSlug: 'line-b',
+        workstream: 'ws-b',
+        topicId: 'topic-a',
+        observedRevision: 1,
+        confirmedBy: 'user' as const,
+        confirmedAt: 4,
+      };
+      const state = wire.getModel(ResearchModel).current;
+      Object.assign(state.lineWorkstreamBindings!, { 'line-a': malformed });
+      const expectedRevision = state.revision;
+      const lineRevision = state.lines['line-a']!.revision;
+
+      wire.dispatch(researchClearWorkstreamBinding({
+        binding: malformed,
+        targetLineSlug: 'line-a',
+        expectedRevision,
+      }));
+
+      const cleared = wire.getModel(ResearchModel).current;
+      expect(cleared.lineWorkstreamBindings).toEqual({});
+      expect(cleared.lines['line-a']?.revision).toBe(lineRevision + 1);
+      expect(cleared.lines['line-b']?.revision).toBe(1);
+      expect(cleared.revision).toBe(expectedRevision + 1);
+    });
+
+    it('does not revive an old binding after a cleared Topic observation changes or cycles', () => {
+      wire.dispatch(researchCreateLine({ slug: 'local-line', title: 'Local line', createdAt: 1 }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 2,
+      }));
+      const binding = {
+        confirmationId: 'confirmation-1',
+        lineSlug: 'local-line',
+        workstream: 'aitp-workstream',
+        topicId: 'topic-a',
+        observedRevision: 1,
+        confirmedBy: 'user' as const,
+        confirmedAt: 3,
+      };
+      wire.dispatch(researchConfirmWorkstreamBinding({ ...binding, expectedRevision: 2 }));
+
+      wire.dispatch(researchSetProgram({ clear: true }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 4,
+      }));
+      let state = wire.getModel(ResearchModel).current;
+      expect(state.program).toMatchObject({ observedRevision: 1, establishedAt: 2 });
+      expect(deriveLineWorkstreamAlignment({
+        lineSlug: 'local-line',
+        binding: state.lineWorkstreamBindings?.['local-line'],
+        program: state.program === null
+          ? null
+          : { ...state.program, observedRevision: state.program.observedRevision ?? 1 },
+      }).status).toBe('bound');
+
+      wire.dispatch(researchSetProgram({ clear: true }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A revised', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 5,
+      }));
+      state = wire.getModel(ResearchModel).current;
+      expect(state.program?.observedRevision).toBe(2);
+      expect(deriveLineWorkstreamAlignment({
+        lineSlug: 'local-line',
+        binding: state.lineWorkstreamBindings?.['local-line'],
+        program: state.program === null
+          ? null
+          : { ...state.program, observedRevision: state.program.observedRevision ?? 1 },
+      }).status).toBe('stale');
+
+      wire.dispatch(researchSetProgram({ clear: true }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-b', title: 'Topic B', goalText: 'Prove Y', goalSource: 'TOPIC.md', establishedAt: 6,
+      }));
+      wire.dispatch(researchSetProgram({ clear: true }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 7,
+      }));
+      state = wire.getModel(ResearchModel).current;
+      expect(state.program?.observedRevision).toBe(4);
+      expect(deriveLineWorkstreamAlignment({
+        lineSlug: 'local-line',
+        binding: state.lineWorkstreamBindings?.['local-line'],
+        program: state.program === null
+          ? null
+          : { ...state.program, observedRevision: state.program.observedRevision ?? 1 },
+      }).status).toBe('stale');
     });
   });
 
@@ -1183,6 +1474,82 @@ describe('aitpResearch ops (wire-backed)', () => {
       wire.dispatch(contextUndo({ count: 1 }));
       expect(wire.getModel(ResearchModel).current.questions['q1']).toBeUndefined();
     });
+
+    it('undo removes a later Line-to-workstream confirmation without changing the earlier Line or Topic', () => {
+      wire.dispatch(researchCreateLine({ slug: 'local-line', title: 'Local line', createdAt: 1 }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 2,
+      }));
+      wire.dispatch(contextAppendMessage({
+        message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } },
+      }));
+      wire.dispatch(researchConfirmWorkstreamBinding({
+        confirmationId: 'confirmation-1',
+        lineSlug: 'local-line',
+        workstream: 'aitp-workstream',
+        topicId: 'topic-a',
+        observedRevision: 1,
+        confirmedBy: 'user',
+        confirmedAt: 3,
+        expectedRevision: 2,
+      }));
+      expect(wire.getModel(ResearchModel).current.lineWorkstreamBindings?.['local-line']).toBeDefined();
+      const abandonedRevision = wire.getModel(ResearchModel).current.revision;
+
+      wire.dispatch(contextUndo({ count: 1 }));
+      const state = wire.getModel(ResearchModel).current;
+      expect(state.lineWorkstreamBindings).toEqual({});
+      expect(state.lines['local-line']).toBeDefined();
+      expect(state.program).toMatchObject({ topicId: 'topic-a', observedRevision: 1 });
+      expect(state.revision).toBeLessThan(abandonedRevision);
+    });
+
+    it('keeps the published Research revision clock monotonic across undo and cold replay', async () => {
+      wire.dispatch(researchAdvanceRevision({ nextRevision: 1, notifyGoal: false }));
+      wire.dispatch(contextAppendMessage({
+        message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } },
+      }));
+      wire.dispatch(researchAdvanceRevision({ nextRevision: 2, notifyGoal: false }));
+      expect(wire.getModel(ResearchRevisionModel).revision).toBe(2);
+
+      wire.dispatch(contextUndo({ count: 1 }));
+      expect(wire.getModel(ResearchRevisionModel).revision).toBe(2);
+
+      await wire.restore();
+      expect(wire.getModel(ResearchRevisionModel).revision).toBe(2);
+    });
+
+    it('floors the first post-upgrade published revision above legacy working state', () => {
+      wire.dispatch(researchCreateLine({ slug: 'legacy', title: 'Legacy', createdAt: 1 }));
+      expect(wire.getModel(ResearchModel).current.revision).toBe(1);
+      expect(wire.getModel(ResearchRevisionModel).revision).toBe(0);
+
+      wire.dispatch(researchAdvanceRevision({ nextRevision: 2, notifyGoal: false }));
+      expect(wire.getModel(ResearchRevisionModel).revision).toBe(2);
+    });
+
+    it('cold restore preserves the exact confirmed Line-to-workstream binding', async () => {
+      wire.dispatch(researchCreateLine({ slug: 'local-line', title: 'Local line', createdAt: 1 }));
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 2,
+      }));
+      const binding = {
+        confirmationId: 'confirmation-1',
+        lineSlug: 'local-line',
+        workstream: 'aitp-workstream',
+        topicId: 'topic-a',
+        observedRevision: 1,
+        confirmedBy: 'main_agent' as const,
+        confirmedAt: 3,
+      };
+      wire.dispatch(researchConfirmWorkstreamBinding({ ...binding, expectedRevision: 2 }));
+
+      await wire.restore();
+
+      expect(wire.getModel(ResearchModel).current.lineWorkstreamBindings).toEqual({
+        'local-line': binding,
+      });
+    });
   });
 
   describe('ResearchModel program and period layers', () => {
@@ -1193,31 +1560,69 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(state.periodHistory).toEqual([]);
     });
 
-    it('set_program stores the topic-bound program and is idempotent on identical input', () => {
+    it('sets observedRevision to 1 and increments it monotonically when an observation changes', () => {
       wire.dispatch(researchSetProgram({
         topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
       }));
       let state = wire.getModel(ResearchModel).current;
       expect(state.program).toEqual({
-        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000, observedRevision: 1,
       });
       expect(state.revision).toBe(1);
 
       wire.dispatch(researchSetProgram({
         topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
       }));
-      state = wire.getModel(ResearchModel).current;
-      expect(state.revision).toBe(1);
+      expect(wire.getModel(ResearchModel).current.revision).toBe(1);
 
-      // A different topic replaces the program outright (never spans topics).
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X rigorously', goalSource: 'TOPIC.md', establishedAt: 1000,
+      }));
+      state = wire.getModel(ResearchModel).current;
+      expect(state.program?.observedRevision).toBe(2);
+
       wire.dispatch(researchSetProgram({
         topicId: 'topic-b', title: 'Topic B', goalText: 'Prove Y', goalSource: 'TOPIC.md', establishedAt: 2000,
       }));
       state = wire.getModel(ResearchModel).current;
       expect(state.program).toEqual({
-        topicId: 'topic-b', title: 'Topic B', goalText: 'Prove Y', goalSource: 'TOPIC.md', establishedAt: 2000,
+        topicId: 'topic-b', title: 'Topic B', goalText: 'Prove Y', goalSource: 'TOPIC.md', establishedAt: 2000, observedRevision: 3,
       });
-      expect(state.revision).toBe(2);
+      expect(state.revision).toBe(3);
+    });
+
+    it('keeps explicit Goal-to-Program confirmation checkpointed and clearable', () => {
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
+      }));
+      wire.dispatch(researchConfirmGoalAlignment({
+        relation: 'goal_parent_of_program',
+        expectedRevision: 1,
+        goalId: 'goal-1',
+        topicId: 'topic-a',
+        observedRevision: 1,
+        confirmedAt: 1000,
+      }));
+      expect(wire.getModel(ResearchModel).current.goalProgramBinding).toEqual({
+        relation: 'goal_parent_of_program', goalId: 'goal-1', topicId: 'topic-a', observedRevision: 1, confirmedAt: 1000,
+      });
+
+      const revision = wire.getModel(ResearchModel).current.revision;
+      wire.dispatch(researchClearGoalAlignment({
+        expectedRevision: revision, goalId: 'goal-1', topicId: 'topic-a', observedRevision: 1,
+      }));
+      expect(wire.getModel(ResearchModel).current.goalProgramBinding).toBeNull();
+    });
+
+    it('keeps legacy replay without a binding and ignores stale alignment ops', () => {
+      expect(wire.getModel(ResearchModel).current.goalProgramBinding).toBeNull();
+      wire.dispatch(researchSetProgram({
+        topicId: 'topic-a', title: 'Topic A', goalText: 'Prove X', goalSource: 'TOPIC.md', establishedAt: 1000,
+      }));
+      wire.dispatch(researchConfirmGoalAlignment({
+        relation: 'same_program_goal', expectedRevision: 0, goalId: 'goal-1', topicId: 'topic-a', observedRevision: 1, confirmedAt: 1000,
+      }));
+      expect(wire.getModel(ResearchModel).current.goalProgramBinding).toBeNull();
     });
 
     it('start_period opens a period, is a no-op for the same line, and archives on a line switch', () => {
@@ -1304,6 +1709,75 @@ describe('aitpResearch ops (wire-backed)', () => {
       expect(state.program).toBeNull();
       expect(state.period).toBeNull();
       expect(state.periodHistory).toEqual([]);
+    });
+
+    it('cold restore keeps the latest monotonic Research Plan v2 revision', async () => {
+      const base = {
+        schema: 'hakimi/research-plan-0.2' as const,
+        planId: 'research-plan-1',
+        revision: 1,
+        goalId: 'goal-1',
+        programId: 'topic-1',
+        programObservedRevision: 1,
+        goalRelation: 'goal_milestone_in_program' as const,
+        objective: 'Validate one milestone.',
+        completionCriterion: 'The checks pass.',
+        milestones: [{
+          milestoneId: 'm1',
+          title: 'Run and validate',
+          objective: 'Run one calculation.',
+          completionCriterion: 'Validation passes.',
+          evidenceRequirements: ['Output and log'],
+        }],
+        evidenceRequirements: ['Reproducible result'],
+        decisionPoints: [],
+        assumptions: [],
+        currentMilestoneId: 'm1',
+        stopConditions: ['Stop on validation failure.'],
+        replanConditions: ['Replan on Program drift.'],
+        status: 'draft' as const,
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      wire.dispatch(researchPutPlanV2(base));
+      wire.dispatch(researchPutPlanV2({
+        ...base,
+        revision: 2,
+        status: 'active',
+        updatedAt: 2,
+      }));
+      wire.dispatch(researchPutPlanV2(base));
+      expect(wire.getModel(ResearchModel).current.researchPlanV2).toMatchObject({
+        planId: 'research-plan-1',
+        revision: 2,
+        status: 'active',
+      });
+
+      await wire.restore();
+      expect(wire.getModel(ResearchModel).current.researchPlanV2).toMatchObject({
+        planId: 'research-plan-1',
+        revision: 2,
+        status: 'active',
+      });
+    });
+
+    it('defaults planning to collaborative, follows undo, and survives compaction and cold restore', async () => {
+      expect(wire.getModel(ResearchModel).current.planningPolicy).toBe('collaborative');
+      wire.dispatch(contextAppendMessage({
+        message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } },
+      }));
+      wire.dispatch(researchSetPlanningPolicy('dreaming'));
+      expect(wire.getModel(ResearchModel).current.planningPolicy).toBe('dreaming');
+
+      wire.dispatch(contextUndo({ count: 1 }));
+      expect(wire.getModel(ResearchModel).current.planningPolicy).toBe('collaborative');
+
+      wire.dispatch(researchSetPlanningPolicy('dreaming'));
+      wire.dispatch(contextApplyCompaction({ summary: 'research planning context', compactedCount: 1 }));
+      expect(wire.getModel(ResearchModel).current.planningPolicy).toBe('dreaming');
+
+      await wire.restore();
+      expect(wire.getModel(ResearchModel).current.planningPolicy).toBe('dreaming');
     });
   });
 });

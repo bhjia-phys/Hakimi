@@ -9,6 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { IAgentContextMemoryService } from '#/agent/contextMemory/contextMemory';
+import { IAgentAgentsMdReminderService } from '#/agent/agentsMdReminder/agentsMdReminder';
 import { IAgentConversationUndoParticipantRegistry } from '#/agent/contextMemory/conversationUndoParticipants';
 import { contextApplyCompaction } from '#/agent/contextMemory/contextOps';
 import {
@@ -16,14 +17,28 @@ import {
   type Checkpointed,
 } from '#/agent/contextMemory/conversationTime';
 import { IAgentFullCompactionService } from '#/agent/fullCompaction/fullCompaction';
+import { IAgentProfileService } from '#/agent/profile/profile';
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { MessageStepRequest } from '#/agent/loop/stepRequest';
 import { TurnModel } from '#/agent/loop/turnOps';
 import { IAgentPlanService } from '#/features/plan/plan';
 import { PlanModel } from '#/features/plan/planOps';
+import { ISessionAitpAdapter } from '#/features/aitpResearch/adapter/sessionAitpAdapter';
+import {
+  AitpModeModel,
+  ResearchModel,
+  aitpModeEnter,
+  aitpModeSetPhase,
+  researchCreateLine,
+  researchSetProgram,
+} from '#/features/aitpResearch/aitpResearchOps';
+import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
+import { IAgentResearchService } from '#/features/aitpResearch/research/agentResearch';
+import { researchConfirmWorkstreamBinding } from '#/features/aitpResearch/researchWorkstreamBindingOps';
 import { IAgentPromptService } from '#/agent/prompt/prompt';
 import { IAgentConversationUndoService } from '#/agent/undo/undo';
 import { IEventBus } from '#/app/event/eventBus';
+import { EventBusService } from '#/app/event/eventBusService';
 import { IAgentTelemetryContextService } from '#/app/telemetry/agentTelemetryContext';
 import { ErrorCodes } from '#/errors';
 import { ISessionMetadata } from '#/session/sessionMetadata/sessionMetadata';
@@ -31,9 +46,48 @@ import { TodoModel, todoSet } from '#/session/todo/todoOps';
 import { defineModel } from '#/wire/model';
 import { IWireService } from '#/wire/wire';
 
-import { createTestAgent, execEnvServices, telemetryServices, type TestAgentContext } from '../../harness';
+import {
+  agentService,
+  createTestAgent,
+  execEnvServices,
+  telemetryServices,
+  type TestAgentContext,
+  type WireRecordPersistence,
+} from '../../harness';
 import { createFakeHostFs } from '../../tools/fixtures/fake-exec';
 import { recordingTelemetry, type TelemetryRecord } from '../../app/telemetry/stubs';
+import type { WireRecord } from '#/wire/record';
+
+function bufferedWirePersistence() {
+  const records: WireRecord[] = [];
+  const pending: WireRecord[] = [];
+  let flushCount = 0;
+  const persistence: WireRecordPersistence = {
+    records,
+    read: async function* () {
+      yield* records;
+    },
+    append: (event) => {
+      pending.push(event);
+    },
+    rewrite: (next) => {
+      records.splice(0, records.length, ...next);
+    },
+    flush: async () => {
+      flushCount += 1;
+      records.push(...pending.splice(0));
+    },
+    close: async () => {
+      records.push(...pending.splice(0));
+    },
+  };
+  return {
+    persistence,
+    records,
+    pending,
+    get flushCount() { return flushCount; },
+  };
+}
 
 describe('AgentConversationUndoService', () => {
   let ctx: TestAgentContext;
@@ -315,7 +369,7 @@ describe('AgentConversationUndoService', () => {
     try {
       await ctx.get(IAgentConversationUndoService).undo(1);
 
-      expect(order).toEqual(['flush', 'state', 'flush', 'context.undone']);
+      expect(order).toEqual(['flush', 'state', 'flush', 'context.undone', 'flush']);
     } finally {
       subscription.dispose();
       flush.mockRestore();
@@ -364,6 +418,38 @@ describe('AgentConversationUndoService', () => {
       }
     },
   );
+
+  it('rejects a failed undo-boundary flush after publishing the already durable undo', async () => {
+    setup();
+    const wire = ctx.get(IWireService);
+    const originalFlush = wire.flush.bind(wire);
+    let flushCalls = 0;
+    const storageError = new Error('undo boundary unavailable');
+    const flush = vi.spyOn(wire, 'flush').mockImplementation(async () => {
+      flushCalls += 1;
+      if (flushCalls === 3) throw storageError;
+      await originalFlush();
+    });
+    const undone: number[] = [];
+    const subscription = ctx.get(IEventBus).subscribe('context.undone', ({ turns }) => {
+      undone.push(turns);
+    });
+    ctx.appendTurnExchange('u1', 'a1');
+
+    try {
+      await expect(ctx.get(IAgentConversationUndoService).undo(1)).rejects.toBe(storageError);
+      expect(ctx.context.get()).toEqual([]);
+      expect(flushCalls).toBe(3);
+      expect(undone).toEqual([1]);
+      expect(records).toContainEqual({
+        event: 'conversation_undo',
+        properties: { agent_id: 'main', count: 1 },
+      });
+    } finally {
+      subscription.dispose();
+      flush.mockRestore();
+    }
+  });
 
   it('serializes concurrent undos through state reconciliation', async () => {
     setup();
@@ -422,6 +508,179 @@ describe('AgentConversationUndoService', () => {
       properties: { agent_id: 'main', count: 1 },
     });
     expect(ctx.context.get().map((m) => m.role)).toEqual(['user', 'assistant']);
+  });
+
+  it('closes the Research revision and admission boundary before active undo returns', async () => {
+    records = [];
+    const persisted = bufferedWirePersistence();
+    ctx = createTestAgent(
+      { persistence: persisted.persistence },
+      telemetryServices(recordingTelemetry(records)),
+      execEnvServices({ hostFs: createFakeHostFs({ mkdir: async () => {} }) }),
+      agentService(IEventBus, new EventBusService()),
+      agentService(IAgentAgentsMdReminderService, {
+        _serviceBrand: undefined,
+        seedInjected: () => {},
+      }),
+      agentService(IAgentProfileService, {
+        _serviceBrand: undefined,
+        data: () => ({
+          modelCapabilities: {},
+          thinkingLevel: 'off',
+          systemPrompt: '',
+          activeToolNames: [],
+          disallowedTools: [],
+        }),
+        update: () => {},
+        addActiveTool: () => {},
+        removeActiveTool: () => {},
+        getActiveToolNames: () => [],
+        getModelCapabilities: () => ({}),
+        resolveModelContext: () => ({
+          modelAlias: 'test-model',
+          modelCapabilities: {},
+          maxOutputSize: undefined,
+          alwaysThinking: undefined,
+          thinkingLevel: 'off',
+          reservedContextSize: undefined,
+          compactionTriggerRatio: undefined,
+        }),
+        getSystemPrompt: () => '',
+        hasProvider: () => true,
+        hasModel: () => true,
+        isRunnable: () => true,
+        refreshSystemPrompt: async () => {},
+        getEffectiveThinkingLevel: () => 'off',
+        resolveRequestParams: () => ({}),
+        getModel: () => 'test-model',
+      } as never),
+    );
+    ctx.get(IAgentContextMemoryService);
+    const wire = ctx.get(IWireService);
+    const adapter = ctx.get(ISessionAitpAdapter);
+    const mode = ctx.get(IAgentAitpModeService);
+    const research = ctx.get(IAgentResearchService);
+    let releaseProbe!: (health: { phase: 'degraded'; lastError: string }) => void;
+    const probe = vi.spyOn(adapter, 'probe').mockImplementation(() => new Promise((resolve) => {
+      releaseProbe = resolve;
+    }));
+
+    wire.dispatch(researchCreateLine({ slug: 'main', title: 'Main', createdAt: 1 }));
+    wire.dispatch(aitpModeEnter({ actor: 'user', lineSlug: 'main' }));
+    wire.dispatch(aitpModeSetPhase({ phase: 'ready' }));
+    wire.dispatch(researchSetProgram({
+      topicId: 't1',
+      title: 'Topic',
+      goalText: 'Bounded goal',
+      goalSource: '.aitp/topic/TOPIC.md',
+      establishedAt: 2,
+    }));
+    ctx.appendTurnExchange('u1', 'a1');
+    const program = wire.getModel(ResearchModel).current.program!;
+    wire.dispatch(researchConfirmWorkstreamBinding({
+      confirmationId: 'abandoned-confirmation',
+      lineSlug: 'main',
+      workstream: 'ws-main',
+      topicId: program.topicId,
+      observedRevision: program.observedRevision ?? 1,
+      confirmedBy: 'user',
+      confirmedAt: 3,
+      expectedRevision: wire.getModel(ResearchModel).current.revision,
+    }));
+    research.createQuestion({ lineSlug: 'main', wording: 'Abandoned branch question' });
+    const abandonedRevision = research.getSnapshot().revision;
+    await wire.flush();
+    const persistedBeforeUndo = persisted.records.length;
+
+    await ctx.get(IAgentConversationUndoService).undo(1);
+
+    expect(persisted.pending).toEqual([]);
+    expect(persisted.flushCount).toBeGreaterThanOrEqual(4);
+    expect(persisted.records.slice(persistedBeforeUndo)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'research.advance_revision', notifyGoal: false }),
+    ]));
+    expect(probe).toHaveBeenCalledOnce();
+    expect(wire.getModel(AitpModeModel).current.phase).toBe('probing');
+    expect(research.getSnapshot().revision).toBeGreaterThan(abandonedRevision);
+    expect(research.getLineWorkstreamAlignment('main').status).toBe('unbound');
+    expect(() => research.clearLineWorkstreamBinding({
+      lineSlug: 'main',
+      expectedRevision: abandonedRevision,
+      expectedConfirmationId: 'abandoned-confirmation',
+    })).toThrow('Research revision is stale');
+
+    releaseProbe({ phase: 'degraded', lastError: 'test probe complete' });
+    await vi.waitFor(() => expect(mode.phase).toBe('degraded'));
+  });
+
+  it('publishes one non-waking Research fence for an ordinary undo outside Research Mode', async () => {
+    records = [];
+    ctx = createTestAgent(
+      telemetryServices(recordingTelemetry(records)),
+      execEnvServices({ hostFs: createFakeHostFs({ mkdir: async () => {} }) }),
+      agentService(IEventBus, new EventBusService()),
+      agentService(IAgentAgentsMdReminderService, {
+        _serviceBrand: undefined,
+        seedInjected: () => {},
+      }),
+      agentService(IAgentProfileService, {
+        _serviceBrand: undefined,
+        data: () => ({
+          modelCapabilities: {},
+          thinkingLevel: 'off',
+          systemPrompt: '',
+          activeToolNames: [],
+          disallowedTools: [],
+        }),
+        update: () => {},
+        addActiveTool: () => {},
+        removeActiveTool: () => {},
+        getActiveToolNames: () => [],
+        getModelCapabilities: () => ({}),
+        resolveModelContext: () => ({
+          modelAlias: 'test-model',
+          modelCapabilities: {},
+          maxOutputSize: undefined,
+          alwaysThinking: undefined,
+          thinkingLevel: 'off',
+          reservedContextSize: undefined,
+          compactionTriggerRatio: undefined,
+        }),
+        getSystemPrompt: () => '',
+        hasProvider: () => true,
+        hasModel: () => true,
+        isRunnable: () => true,
+        refreshSystemPrompt: async () => {},
+        getEffectiveThinkingLevel: () => 'off',
+        resolveRequestParams: () => ({}),
+        getModel: () => 'test-model',
+      } as never),
+    );
+    ctx.get(IAgentContextMemoryService);
+    const mode = ctx.get(IAgentAitpModeService);
+    const research = ctx.get(IAgentResearchService);
+    const eventBus = ctx.get(IEventBus);
+    const revisions: boolean[] = [];
+    const researchUpdates: unknown[] = [];
+    const modeUpdates: unknown[] = [];
+    const subscriptions = [
+      eventBus.subscribe('research.revision_advanced', ({ notifyGoal }) => revisions.push(notifyGoal)),
+      eventBus.subscribe('research.updated', (event) => researchUpdates.push(event)),
+      eventBus.subscribe('aitp_mode.updated', (event) => modeUpdates.push(event)),
+    ];
+    ctx.appendTurnExchange('u1', 'a1');
+
+    try {
+      await ctx.get(IAgentConversationUndoService).undo(1);
+
+      expect(mode.phase).toBe('inactive');
+      expect(research.getSnapshot().revision).toBe(1);
+      expect(revisions).toEqual([false]);
+      expect(researchUpdates).toHaveLength(1);
+      expect(modeUpdates).toEqual([]);
+    } finally {
+      subscriptions.forEach((subscription) => subscription.dispose());
+    }
   });
 
   it('clears lastPrompt when undo removes the only prompt', async () => {

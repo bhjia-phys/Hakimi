@@ -15,6 +15,13 @@ const MAX_STDERR_BYTES = 200_000;
 const LAUNCHER_SCRIPT = '/plugin/scripts/aitp.py';
 const CWD = '/workspace';
 
+type ScopeCommand = 'enter' | 'list' | 'check';
+
+interface ScopePayloads {
+  readonly global: Record<string, unknown>;
+  readonly scoped: Record<string, unknown>;
+}
+
 const CLEAN_CHECK = {
   schema: 'aitp/check-report-0.1',
   root: '/workspace',
@@ -85,6 +92,44 @@ function expectCodedError(error: unknown, code: string): AitpResearchError {
   return error as AitpResearchError;
 }
 
+async function readAitpFixture(name: string): Promise<Record<string, unknown>> {
+  return JSON.parse(await readFile(
+    join(import.meta.dirname, 'fixtures/aitp-0.8.0', name),
+    'utf8',
+  )) as Record<string, unknown>;
+}
+
+async function scopePayloads(command: ScopeCommand): Promise<ScopePayloads> {
+  if (command === 'enter') {
+    const global = await readAitpFixture('enter.json');
+    return {
+      global,
+      scoped: { ...global, schema: 'aitp/enter-0.3', workstream: 'crpa' },
+    };
+  }
+  if (command === 'list') {
+    const global = await readAitpFixture('list.json');
+    return {
+      global,
+      scoped: { ...global, schema: 'aitp/list-0.2', workstream: 'crpa' },
+    };
+  }
+  return {
+    global: await readAitpFixture('check.json'),
+    scoped: await readAitpFixture('check-workstream.json'),
+  };
+}
+
+function runScopeCommand(
+  launcher: AitpLauncher,
+  command: ScopeCommand,
+  workstream?: string,
+): Promise<unknown> {
+  if (command === 'enter') return launcher.enter(workstream);
+  if (command === 'list') return launcher.list(workstream);
+  return launcher.check(workstream);
+}
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -149,6 +194,78 @@ describe('AitpLauncher check exit codes', () => {
     expectCodedError(error, AitpResearchErrors.codes.AITP_ADAPTER_NOT_INITIALIZED);
     expect((error as Error).message).toContain('not_initialized');
   });
+});
+
+describe('AitpLauncher request-response scope correlation', () => {
+  it.each(['enter', 'list', 'check'] as const)(
+    'accepts the global %s schema only for a global request',
+    async (command) => {
+      const payloads = await scopePayloads(command);
+      const spawn = vi.fn<IHostProcessService['spawn']>(async () =>
+        completedProcess(JSON.stringify(payloads.global)));
+      const launcher = makeLauncher(spawn, { pythonPath: 'python3' });
+
+      await expect(runScopeCommand(launcher, command)).resolves.toMatchObject({
+        data: payloads.global,
+      });
+    },
+  );
+
+  it.each(['enter', 'list', 'check'] as const)(
+    'accepts the scoped %s schema only when its workstream matches',
+    async (command) => {
+      const payloads = await scopePayloads(command);
+      const spawn = vi.fn<IHostProcessService['spawn']>(async () =>
+        completedProcess(JSON.stringify(payloads.scoped)));
+      const launcher = makeLauncher(spawn, { pythonPath: 'python3' });
+
+      await expect(runScopeCommand(launcher, command, 'crpa')).resolves.toMatchObject({
+        data: payloads.scoped,
+      });
+    },
+  );
+
+  it.each(['enter', 'list', 'check'] as const)(
+    'rejects a global %s response to a scoped request',
+    async (command) => {
+      const payloads = await scopePayloads(command);
+      const spawn = vi.fn<IHostProcessService['spawn']>(async () =>
+        completedProcess(JSON.stringify(payloads.global)));
+      const launcher = makeLauncher(spawn, { pythonPath: 'python3' });
+
+      await expect(runScopeCommand(launcher, command, 'crpa')).rejects.toMatchObject({
+        code: AitpResearchErrors.codes.AITP_ADAPTER_CONTRACT_UNKNOWN,
+      });
+    },
+  );
+
+  it.each(['enter', 'list', 'check'] as const)(
+    'rejects a scoped %s response to a global request',
+    async (command) => {
+      const payloads = await scopePayloads(command);
+      const spawn = vi.fn<IHostProcessService['spawn']>(async () =>
+        completedProcess(JSON.stringify(payloads.scoped)));
+      const launcher = makeLauncher(spawn, { pythonPath: 'python3' });
+
+      await expect(runScopeCommand(launcher, command)).rejects.toMatchObject({
+        code: AitpResearchErrors.codes.AITP_ADAPTER_CONTRACT_UNKNOWN,
+      });
+    },
+  );
+
+  it.each(['enter', 'list', 'check'] as const)(
+    'rejects a scoped %s response for a different workstream',
+    async (command) => {
+      const payloads = await scopePayloads(command);
+      const spawn = vi.fn<IHostProcessService['spawn']>(async () =>
+        completedProcess(JSON.stringify({ ...payloads.scoped, workstream: 'gw' })));
+      const launcher = makeLauncher(spawn, { pythonPath: 'python3' });
+
+      await expect(runScopeCommand(launcher, command, 'crpa')).rejects.toMatchObject({
+        code: AitpResearchErrors.codes.AITP_ADAPTER_CONTRACT_UNKNOWN,
+      });
+    },
+  );
 });
 
 describe('AitpLauncher output limits', () => {
@@ -311,10 +428,12 @@ describe('AitpLauncher contract-faithful subprocess harness', () => {
   it('passes argv without a shell and validates official enter/check payloads', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'aitp-launcher-contract-'));
     try {
-      const enterPayload = await readFile(
-        join(import.meta.dirname, 'fixtures/aitp-0.8.0/enter.json'),
-        'utf8',
-      );
+      const enterGlobalPayload = await readAitpFixture('enter.json');
+      const enterPayload = JSON.stringify({
+        ...enterGlobalPayload,
+        schema: 'aitp/enter-0.3',
+        workstream: 'crpa',
+      });
       const checkPayload = await readFile(
         join(import.meta.dirname, 'fixtures/aitp-0.8.0/check-workstream.json'),
         'utf8',
@@ -345,7 +464,11 @@ describe('AitpLauncher contract-faithful subprocess harness', () => {
 
       // The launcher script path is the first positional argument to Python;
       // the fixture process verifies the remaining command argv exactly.
-      expect(enter.data.schema).toBe('aitp/enter-0.2');
+      expect(enter.data.schema).toBe('aitp/enter-0.3');
+      if (enter.data.schema !== 'aitp/enter-0.3') {
+        throw new Error('Expected the synthetic scoped enter payload to use enter-0.3');
+      }
+      expect(enter.data.workstream).toBe('crpa');
       expect(check.data.schema).toBe('aitp/check-report-0.2');
       if (check.data.schema !== 'aitp/check-report-0.2') {
         throw new Error('Expected the scoped check fixture to use check-report-0.2');

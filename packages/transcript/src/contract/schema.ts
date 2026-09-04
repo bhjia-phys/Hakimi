@@ -242,6 +242,11 @@ export const goalMetaSchema = z.object({
   budgetUsed: z.number().optional(),
   budgetLimit: z.number().optional(),
   waitingFor: goalWaitLeaseSchema.optional(),
+  continuation: z.object({
+    state: z.enum(['idle', 'deciding', 'enqueued', 'running', 'held', 'waiting']),
+    owner: z.string().optional(),
+    reason: z.string().optional(),
+  }).optional(),
 });
 
 export const modesMetaSchema = z.object({

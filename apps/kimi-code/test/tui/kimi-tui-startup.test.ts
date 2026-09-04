@@ -160,6 +160,7 @@ function researchSnapshot(mode: 'ready' | 'degraded'): ResearchStatusSnapshot {
   return {
     mode,
     loopStatus: 'active',
+    planningPolicy: 'collaborative',
     currentLineSlug: 'line-a',
     questions: [],
     lines: [{
@@ -174,6 +175,7 @@ function researchSnapshot(mode: 'ready' | 'degraded'): ResearchStatusSnapshot {
     activeQuestionCount: 0,
     blockedQuestionCount: 0,
     alerts: [],
+    lineWorkstreamBindings: [],
     aitpHealth: { phase: mode },
     phase: 'action_executing',
     revision: 1,

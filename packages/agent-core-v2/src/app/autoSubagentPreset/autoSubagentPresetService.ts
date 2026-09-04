@@ -17,6 +17,7 @@ import { LifecycleScope } from '#/app/scopes';
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
 import { IConfigService } from '#/app/config/config';
 import { ILogService } from '#/_base/log/log';
+import { IHostClock } from '#/os/interface/hostClock';
 import { IFlagService } from '#/app/flag/flag';
 import { IEventService } from '#/app/event/event';
 import { isUnknownCapability } from '#/kosong/contract/capability';
@@ -213,6 +214,7 @@ export class AutoSubagentPresetService extends Disposable implements IAutoSubage
     private readonly activation: ISubagentPresetActivationService,
     @IEventService private readonly eventService: IEventService,
     @ILogService private readonly log: ILogService,
+    @IHostClock private readonly clock: IHostClock,
   ) {
     super();
     this._register(this.runUsage.onDidFinishRun(this.onRunFinished));
@@ -226,7 +228,7 @@ export class AutoSubagentPresetService extends Disposable implements IAutoSubage
     request: SubagentRouteRequest,
     context: AutoSubagentPresetContext,
   ): Promise<AutoSubagentPresetEvaluation> {
-    const evaluatedAt = Date.now();
+    const evaluatedAt = this.clock.now().getTime();
     try {
       return await this.evaluateInner(request, context, evaluatedAt);
     } catch {
@@ -492,7 +494,7 @@ export class AutoSubagentPresetService extends Disposable implements IAutoSubage
         return { currentPreset, reasonCode: 'routing_config_changed' };
       }
 
-      const now = Date.now();
+      const now = this.clock.now().getTime();
       const decision = this.decide(states, currentPreset, settings, now);
       if (decision.activatePreset === undefined || decision.activatePreset === currentPreset) {
         return {
@@ -524,7 +526,7 @@ export class AutoSubagentPresetService extends Disposable implements IAutoSubage
         };
       }
 
-      this.switchCooldownUntil = Date.now() + settings.switchCooldownMs;
+      this.switchCooldownUntil = this.clock.now().getTime() + settings.switchCooldownMs;
       const previousScore = scoreOf(states, currentPreset);
       const currentScore = scoreOf(states, decision.activatePreset);
       const payload: SubagentPresetChangedPayload = {
@@ -659,7 +661,7 @@ export class AutoSubagentPresetService extends Disposable implements IAutoSubage
     settings: SubagentAutoPresetConfig,
     signal: AbortSignal | undefined,
   ): Promise<ProviderUsageResult | undefined> {
-    const now = Date.now();
+    const now = this.clock.now().getTime();
     const cached = this.quotaCache.get(provider);
     if (cached !== undefined && now - cached.resolvedAt < settings.refreshIntervalMs) {
       return cached.result;
@@ -704,7 +706,7 @@ export class AutoSubagentPresetService extends Disposable implements IAutoSubage
       if (outcome.kind === 'timeout' || outcome.kind === 'caller-abort') controller.abort();
       if (outcome.kind === 'caller-abort' || isAborted(signal)) return undefined;
       const result = outcome.kind === 'result' ? outcome.result : undefined;
-      this.quotaCache.set(provider, { result, resolvedAt: Date.now() });
+      this.quotaCache.set(provider, { result, resolvedAt: this.clock.now().getTime() });
       return result;
     } finally {
       if (timeout !== undefined) clearTimeout(timeout);

@@ -3,7 +3,7 @@
 Research Mode turns Hakimi into a joint research partner backed by the [AITP](https://github.com/bhjia-phys/AITP-Research-Protocol) evidence ledger. Instead of answering a single question and forgetting, the agent maintains a live portfolio of research questions, steers itself through bounded actions, and persists durable checkpoints to AITP — all while you retain full control through `/research`, the Research Board, and the Research Manager in TUI and Web.
 
 ::: warning
-Research Mode is discoverable by default but starts `inactive`. The mode does not probe AITP or show the Research Board until you explicitly enter it. The AITP integration still has the compatibility limits described in [AITP handoff](../../aitp/README.md), including partial H5 integration and planned/unavailable H6b method distillation.
+Research Mode is discoverable by default but starts `inactive`. The mode does not probe AITP or show the Research Board until you explicitly enter it. The AITP integration still has the compatibility limits described in [AITP handoff](../../aitp/README.md), including partial H5 integration and a planned/unavailable native H6b coordinator. The shipped S7 handoff is only one same-turn best-effort Skill review after a new checkpoint commit. S8 adds an observational receipt for the latest exact checkpoint/Entry, not H6b or exactly-once recovery.
 :::
 
 ## Prerequisites
@@ -16,7 +16,9 @@ Research Mode has three hard prerequisites. Hakimi checks them only after explic
 
 When all three are satisfied, the adapter enters the `ready` phase and the supported AITP read/write tool surface becomes available to the agent. The adapter does not expose, call, or parse the upstream `backfill-0.1` success envelope, and it does not implement `sha256-once:` or `check-policy` semantics.
 
-For theoretical-physics work, the bundled `theory-physics` plugin is an optional domain pack. It adds physics-specific routing and reporting discipline to the generic Research Loop — when to search literature, how to check a derivation, how to separate scheduler evidence from physical conclusions, and when to request a human decision. It does not add another runtime, autonomous loop, literature database, HPC observer, or AITP schema.
+For theoretical-physics work, the bundled `theory-physics` plugin is an optional domain pack and the single upper-layer handbook for sustained work. It can be discovered while Research Mode is inactive and routes a sustained request through Research Mode admission, the current Line / Question / Focus, an explicitly confirmed Goal–Program relationship when one is needed, one bounded Research Action, and on-demand AITP delegation. An ordinary one-off physics answer does not need Research Mode.
+
+The external `aitp-research-protocol` plugin remains the protocol authority. Its `using-aitp` and `distilling-methods` skills stay independent and active-only: durable scientific deltas are delegated to `using-aitp`, while potentially reusable methods are delegated to `distilling-methods` only when that plugin is installed, Research Mode is active, and the skill is currently visible. After the first successful commit of a new checkpoint, Hakimi loads the exact plugin Skill for one bounded review of only the touched Entry; duplicate commits and unavailable or hidden Skills are non-blocking no-ops. The optional `hakimi/research-distillation-attention-0.1` snapshot receipt says only `review_requested` or `handoff_unavailable` for the latest exact committed checkpoint/Entry. It never means the Skill found a trigger, created a card or trial, completed review, approved, or published anything. Otherwise retain the method candidate and evidence without claiming distillation or publication. Hakimi does not copy their CLI, schema, marker, method-card, trial, trigger, or approval rules; it does not automatically write Topic Goals, `resolves`, or method cards. After `EnterAITPMode`, use `GetResearchStatus`; if it remains `probing`, wait for `ready` or `degraded` without busy polling or using a bare CLI.
 
 ## Entering Research Mode
 
@@ -36,6 +38,10 @@ You can also use `/research on` in either TUI or the Web composer. Web routes a 
 ```
 
 In TUI only, entering from `manual` or `yolo` permission mode opens a keyboard prompt asking whether to switch to `auto` or `yolo`. Web uses the session's current permission mode; change it in the Web controls before entering if needed. Neither surface starts an independent background loop, and a research turn may still wait for approval in `manual`. An active Goal remains the sole owner of autonomous continuation across turns.
+
+While Research Mode is active, `ready`, and not paused, each typed main-agent user prompt receives a transient `interactive_research` lease and enters one Research Loop iteration with Research context. It does not enqueue another turn. A Goal-owned continuation receives the separate `autonomous_research` lease only after the existing Research continuation guards allow the Goal engine to enqueue it. System, cron, subagent, unclassified, inactive, probing, paused, and degraded turns abstain. These leases are runtime-only and are not persisted or added to the public wire schema.
+
+In `auto`, a model-initiated bounded Research Action does not add a separate durable approval gate: `requires_human_approval` is normalized off, and `RequestResearchDecision` creates no new gate—the model must make a reasonable in-scope default and continue. The actual `Bash`, remote, or other operation still goes through the normal tool permission policy. On restore or when switching to `auto`, Hakimi treats only an unresolved approval tied to the currently planned action as the standing auto authorization and starts that action, provided the Research Loop is active; historical review or scientific-decision gates are not auto-resolved because they do not contain a decision to adopt.
 
 ### Web manual check
 
@@ -65,11 +71,11 @@ In TUI, this displays the mode phase, loop status, current research line, focus 
 
 ## Current-state maintenance
 
-After the adapter probe reports `ready`, entering Research Mode performs one read-only AITP cycle: `enter` followed by `check`. Active conversation undo and cold restore repeat the same cycle after their adapter probe. The cycle is per selected workstream when one is provided.
+After the adapter probe reports `ready`, Hakimi first calls unscoped `enter` and observes only the current Topic identity and revision. It does not adopt an unscoped handoff or evidence set. If the current Research Line has an exact confirmed binding for that observed Topic revision, Hakimi then runs the read-only scoped `enter` → `check` maintenance cycle for the bound workstream. Without that binding, it clears the old maintenance scope and makes no scoped maintenance claim.
 
 The maintenance receipt and context injection expose only a safe summary: Working Note age, whether active state is newer, unresolved failure count, next action, warning codes, and check status/counts/finding codes. A full Research snapshot/API response or expanded Board may still include checkpoint, revision, and adapter-health fields; those projections are not the maintenance receipt or context injection.
 
-Valid check findings, including error findings, keep the mode `ready`; only an unavailable or invalid `enter`/`check` cycle surfaces `degraded`. Error findings can still block a specific checkpoint according to its save barrier. This maintenance is read-only: it never runs `init`, adopts, or performs backfill, and it never writes a semantic handoff, Entry, or Note automatically. It runs after Research Mode entry, active undo/cold restore, and at the end of an active, admitted Goal continuation turn when the Research state changes; it is not session-end automatic closeout.
+Valid check findings, including error findings, keep the mode `ready`; only an unavailable or invalid scoped `enter`/`check` cycle surfaces `degraded`. Error findings can still block a specific checkpoint according to its save barrier. This maintenance is read-only: it never runs `init`, adopts, or performs backfill, and it never writes a semantic handoff, Entry, or Note automatically. It runs after Research Mode entry, active undo/cold restore, and at the end of an admitted interactive or autonomous Research turn when the Research state changes, but only the current exact confirmed Line-to-workstream binding can supply its scope. It is not session-end automatic closeout.
 
 ## Pausing and resuming
 
@@ -87,31 +93,152 @@ The paused state is included in the snapshot injected into subsequent model step
 
 ## The Research Board
 
-When Research Mode is active, a **Research Board** appears above the input area in both TUI and Web. The default compact Board is **science-first**: it tells the story of the research before showing supporting task state. It highlights:
+Research Mode and Goal are related, but they do not own the same lifecycle:
 
-- The scientific phase and most recent state transition
-- The latest progress, including completed physics work and its resulting insight or result
-- How that result affects the mainline and the current uncertainty
-- The current bounded action and any recorded external-run observation
-- The effective next step, plus any unresolved human gate or active alert
+| Layer | Responsibility | Does not own |
+| --- | --- | --- |
+| Generic Goal engine | Objective status, completion, budget, waiting, and cross-turn automatic continuation | Scientific phase, Line, Question, evidence, or AITP records |
+| Hakimi Research Goal | One-to-one scientific projection of the current generic Goal, including Research scope and persistence guards | A second lifecycle, budget, scheduler, or continuation queue |
+| Research Mode | Admission of interactive Research turns and the long-lived Research working state | Automatic creation of a Goal or autonomous turns |
+| Research Plan v2 | Goal- and Program-bound multi-loop milestones and evidence strategy | Goal completion or turn continuation |
+| Local Action Plan | The detailed TODO and reviewed choices for one bounded Research Action | The multi-loop strategy or scientific truth |
+| Research Loop / Action | One admitted turn and its normal `BeginResearchAction → work → ConcludeResearchAction` unit | Canonical AITP persistence |
+| AITP Program and ledger | Observed Topic goal, canonical Entry/Note evidence, workstreams, and human decisions | Hakimi Goal lifecycle, tool execution, or Board state |
 
-The phase badge exposes `probing`, `ready`, or `degraded`. Mode, loop, question, focus, and checkpoint changes publish one complete snapshot to both surfaces. TUI rejects stale cold hydration; Web serializes same-session mutations and prevents an older HTTP response from overwriting a newer live WebSocket update.
+Consequently, an active, ready, unpaused Research Mode admits an interactive
+user turn even when no Goal exists. A Goal is required only for autonomous
+cross-turn continuation. When one exists, Research Goal projects it rather
+than replacing it, and Goal–Program alignment guards automatic continuation
+and completion without suppressing the current bounded action's recovery.
 
-The board tracks semantic research state, not raw activity. Ordinary tool calls and AITP `list` / `show` / `check` reads do not change it by themselves. During an active research turn, the agent is instructed to prefer the simplest sufficient explanation or experiment and the cheapest decisive evidence first, before escalating to remote, long-running, or multi-branch work. Escalate only when a simple probe cannot decide the question. It must create a question before substantive work, set its focus, begin one bounded action with `BeginResearchAction`, and conclude that action with `ConcludeResearchAction` after reporting the physical work, result, tests or derivation, limitations, mainline impact, and next step. `ConcludeResearchAction` does not submit or poll HPC jobs, write AITP, or change a question's assessment automatically. `PlanResearchAction`, `CompleteResearchAction`, `SetResearchPhase`, and `RecordResearchProgress` remain lower-level recovery or maintenance tools rather than the normal action path. The agent should call `UpdateResearchQuestion` only when evidence, failure, or sustained no-progress changes the assessment or next action. This is semantic guidance, not a runtime guarantee that candidate confirmation will guard every focus call. If no such semantic transition occurred, an unchanged board is expected.
+When Research Mode is active, a **Research Board** appears above the input area in both TUI and Web. The default compact Board is deliberately limited to the decisions needed at a glance:
 
-TUI additionally projects the session's `TodoList` into the board as **Actions**. Todo state remains separate from Research Questions and the AITP ledger: completing an action does not change an epistemic state or create an AITP Entry. Press `Ctrl-O` in TUI to expand derivation, tests, sources, question counts, checkpoints, alerts, scheduler observations, and Actions; `Ctrl-T` remains the non-research Todo shortcut. In Web, click **Expand** or **Collapse** on the Board; Web uses buttons and forms, not these TUI keyboard shortcuts.
+- **Project**: Goal lifecycle/continuation when a Goal exists, otherwise an explicit interactive-without-Goal state; the current Research Plan milestone, Line, and focused Question workflow/epistemic state live here
+- **Current cycle**: one display-only scientific stage (`Frame / hypothesis`, `Test / action`, `Evaluate`, `Record`, or `Next / ready`), the current action or run/progress summary, Research mode and planning policy, and the legacy `period.loopCount` labelled accurately as **Research turns**, not completed scientific cycles
+- **Attention**: an exact Goal continuation hold, unresolved human gate, action/phase recovery requirement, pending checkpoint, active Goal–Program alignment or Line-workstream blocker, unavailable method-review handoff, current-Line alert, maintenance problem, or adapter error, plus a count when more items exist; healthy AITP, alignment, workstream, and provenance facts stay collapsed, and alerts owned by another Line never appear as current attention
+- **Next**: one effective next step with its source, or an explicit missing-next state
+
+The **Hakimi Research Goal** shown in Project is an additive `hakimi/research-goal-0.1` projection of the one generic Goal that owns cross-turn continuation, not a second scheduler or an AITP Topic Goal. The expanded Board remains the audit surface for the complete Goal and observed AITP Program goal, Program/Line/Question scope, plans, evidence, checkpoints, and provenance. The legacy `goalSummary` remains a compatibility fallback. Long compact narratives are clipped to the available terminal width or two Web lines; expanding the Board restores the complete text.
+
+Goal lifecycle and continuation are separate. `active` means the objective is
+still eligible to progress; it does not prove that another model turn is
+running or queued. The optional continuation projection distinguishes `idle`,
+`deciding`, `enqueued`, `running`, `held`, and task `waiting`. A held Goal is
+rendered as `active · continuation held`, with the participant owner and exact
+reason in the expanded Board and Attention row; it is not relabelled as
+`paused`. The projection is derived runtime state, so explicit retry, a new
+user turn, lifecycle changes, waiting, cancellation, replay, and resume clear
+or recompute stale hold details.
+
+The compact header separates **mode** readiness, **workflow** health, the
+display-only scientific stage, and the current Line. Adapter/AITP health is
+shown only when it needs Attention or in the expanded audit surface. Therefore
+`mode ready · workflow blocked` is coherent: Research Mode is operational, but
+the current Research state requires recovery. The
+effective Next projection uses the same priority as Attention: unresolved
+human gate, mismatched live action, coherent run/action, pending checkpoint,
+Goal–Program alignment, then ordinary question or maintenance guidance. Its
+text, source, freshness, timestamp, and provenance are one atomic projection;
+TUI and Web do not combine a locally overridden text with metadata from a
+different next step.
+
+Immediately before context injection for every admitted Research turn, the
+shared coordinator runs one deterministic local reconciliation pass. It can
+repair only mechanically determined Line, Action/phase, period, committed-cursor,
+and alert structure; it does not run another AITP maintenance cycle, infer a
+scientific outcome, complete or abandon an Action, or resolve a checkpoint. A
+pending checkpoint whose captured Question revision is older than the current
+Question is shown as historical and unsafe to commit as current evidence. It
+continues to hold autonomous continuation until its proposal is explicitly
+undone. Duplicate blocker causes are counted once in the compact Board, while
+their full records remain in the owning expanded sections. Expanded adapter
+health reports read readiness separately from adapter-contract-0.2 scoped
+checkpoint-write capability.
+
+Mode, loop, question, focus, and checkpoint changes publish one complete snapshot to both surfaces. TUI rejects stale cold hydration; Web serializes same-session mutations and prevents an older HTTP response from overwriting a newer live WebSocket update.
+
+Line changes are an explicit cycle boundary. Hakimi rejects a switch while a
+foreground Action or Run, pending checkpoint, unresolved human gate, or
+non-idle scientific phase remains. The error gives one recovery instruction;
+after the cycle is resolved, the old period archives its focused Question and
+latest progress summary before the new Line opens. Hakimi may reconcile only
+deterministic local references and receipts. It never guesses AITP workstream
+membership, rewrites AITP state, or repairs scientific meaning automatically.
+
+Cold replay applies the same boundary. A legacy single-Line snapshot may omit
+the optional Goal continuation field; the Board labels it as unavailable
+rather than inventing `held`, `running`, or completion. In a multi-Line
+snapshot, only the selected Line can supply compact Question, Action, Run,
+gate, alert, continuation attention, and Next state. If replay finds a live
+Action stranded outside its mechanically owned phase, Hakimi restores that
+phase idempotently while preserving the Action and any recorded human
+resolution. It then blocks Goal completion, holds autonomous continuation, and
+routes the next interactive Research turn to inspect the recorded evidence and
+finish or abandon the same Action. Hakimi never chooses `completed` versus
+`abandoned` from UI structure alone and does not ask the user merely to repair
+bookkeeping; a real scientific or authorization ambiguity can still require a
+human decision.
+
+The board tracks semantic research state, not raw activity. Ordinary tool calls and AITP `list` / `show` / `check` reads do not change it by themselves. During an active research turn, the agent is instructed to prefer the simplest sufficient explanation or experiment and the cheapest decisive evidence first, before escalating to remote, long-running, or multi-branch work. Escalate once a simple probe establishes that the larger action is necessary; do not invent an additional human approval after that evidence when the permission mode already authorizes execution. The agent must create a question before substantive work, set its focus, begin one bounded action with `BeginResearchAction`, and conclude that action with `ConcludeResearchAction` after reporting the physical work, result, tests or derivation, limitations, mainline impact, next step, and one explicit durability assessment. A `no_durable_delta` conclusion records the single Research progress boundary and schedules no S6 persistence or distillation I/O; independent session-boundary `enter` / `check` maintenance may still run. A `durable_delta` conclusion creates exactly one typed pending commit candidate and routes it through the existing same-turn `record prepare` → model-authored draft fill → atomic `record save` → canonical `show` → scoped `check` → checkpoint commit barrier. The first successful commit then returns one same-turn steer containing the exact external `distilling-methods` Skill and only the touched Entry/checkpoint context. The Skill may no-op; a duplicate commit or unavailable handoff does not repeat or roll back the durable commit. `ConcludeResearchAction` itself does not submit or poll HPC jobs, directly write canonical `.aitp` files, or change a question's assessment automatically. Do not repeat the same conclusion with `RecordResearchProgress`. Human assertions and decisions must use their own human-attributed candidate and Entry rather than being merged into agent, tool, or source verification. `PlanResearchAction`, `CompleteResearchAction`, `SetResearchPhase`, `RecordResearchProgress`, and manual checkpoint proposal remain lower-level recovery or maintenance tools rather than the normal action path. While an action is planned or in progress, standalone phase/progress mutation is rejected; this prevents a live action from being stranded outside its owning phase. A legacy in-progress action already stranded by older state can still be completed or concluded, unless an unresolved human gate owns the pause. The agent should call `UpdateResearchQuestion` only when evidence, failure, or sustained no-progress changes the assessment or next action. This is semantic guidance, not a runtime guarantee that candidate confirmation will guard every focus call. If no such semantic transition occurred, an unchanged board is expected.
+
+The expanded Board organizes the full research record into direction, current work, the research map, evidence and uncertainty, and operations or persistence. It preserves the complete period, multi-loop Research Plan, bounded Action Plan, and status projection, and shows every available Research Line, Question, alert, evidence reference, uncertainty, checkpoint, run detail, AITP maintenance item, and latest method-review handoff receipt without silently replacing the remainder with an "additional items" count.
+
+Planning has two explicit layers. The additive `hakimi/research-plan-0.2` record is the Goal- and Program-bound multi-loop strategy: milestones, evidence requirements, decision points, assumptions, current milestone, and stop/replan conditions. The legacy bounded `ResearchPlan` remains the reviewed local Action Plan and is also exposed as `actionPlan` during the compatibility period. A non-trivial action must capture both the active Research Plan milestone revision and the approved local Plan revision. A reversible one-step action receives an explicit minimal Action Plan binding. If either layer or its Goal/Program/Line/Question context becomes stale, the action cannot start or conclude. Completing a plan never closes a Question, writes AITP, or completes the Goal.
+
+The checkpointed planning policy is orthogonal to those layers. `collaborative` is the default and routes a consequential unknown through the existing `AskUserQuestion` UI only when it cannot be resolved from the active Goal, current Research state, prior explicit human direction, or checked evidence and its answer would materially change the Research Plan. The agent must not ask the user to restate or re-approve an existing Goal, completion criterion, scope, confirmed Program relation, or Plan decision. Dismissing the question or giving an empty or ambiguous answer leaves the Plan unchanged. `dreaming` lets the agent select only reversible, low-cost, in-scope defaults, and every such default must be recorded in the Plan's `assumptions`. Neither policy may answer or bypass an expensive or irreversible action, tool permission, ambiguous scientific convention, Goal or scope change, or AITP/human-decision gate. Changing the policy is a revisioned Hakimi-state mutation with no AITP write. The Manager's Plan view changes it, and the expanded Board displays it.
+
+TUI additionally projects the session's `TodoList` into the expanded Board as **External Todo actions**. Todo state remains separate from Research Questions and the AITP ledger: completing an action does not change an epistemic state or create an AITP Entry. Press `Ctrl-O` in TUI to expand or collapse the Board; `Ctrl-T` remains the non-research Todo shortcut. In Web, click **Expand** or **Collapse** on the Board; Web uses buttons and forms, not these TUI keyboard shortcuts.
 
 For child-agent work, the main agent can review a strict typed evidence packet containing the claim, evidence, assumptions, tests, sources, artifacts, limitations, and confidence. Reviewing a packet is deliberately zero-write: it does not alter the assessment, epistemic state, or AITP. The main agent must interpret the physics and explicitly record any resulting progress or question change.
 
 For HPC work, the loop can record an explicit observation bound to the current Research Action: campaign, job ID, stage, scheduler state, observation time, next check, and artifact references. This is not a scheduler integration: Hakimi neither submits nor polls jobs, creates a campaign entity, nor treats a `RUNNING` observation as scientific success. A terminal observation must carry an explicit terminal state.
 
-When the agent proposes candidate questions for confirmation, it may register them as open working state so they appear on the board. The intended behavior is to wait for confirmation before setting one as Focus or persisting a durable AITP decision, but candidate confirmation is not a runtime-enforced guard on `SetResearchFocus`. Alerts and a generic human gate are implemented; `ResolveResearchDecision` resolves runtime state but does not automatically write an AITP `decision` Entry. A Hakimi Research Line and an AITP workstream are separate namespaces: if their slugs differ, the agent may read the existing workstream but must not silently create an alias or use the Research Line slug for persistence.
+When the agent proposes candidate questions for confirmation, it may register them as open working state so they appear on the board. The intended behavior is to wait for confirmation before setting one as Focus or persisting a durable AITP decision, but candidate confirmation is not a runtime-enforced guard on `SetResearchFocus`. Alerts and a generic human gate are implemented; `ResolveResearchDecision` resolves runtime state but does not automatically write an AITP `decision` Entry.
 
-The Board is read-only. Use `/research manage` or a direct `/research` subcommand for changes. Both managers are line-first, but their controls differ. When an unresolved gate or active alert exists, the TUI opens an **Attention view** first: press `R` to enter a resolution and choose the phase to resume, `A` to acknowledge the alert, or `L` to return to the lines. In Attention view, `R` means resolution rather than reopen. After attention items are cleared, TUI selects a Research Line and opens its questions with keyboard commands. Web shows a clickable line list beside Line, Question, Science, and Checkpoint sections; **Science** can resolve the current human decision with an explicit next phase, acknowledge active alerts, review a typed evidence packet, or record an observation for the current external run. These controls update Hakimi Research working state through the Research endpoint and do not write the AITP ledger.
+The Board is read-only. Use `/research manage` or a direct `/research` subcommand for changes. Both managers are line-first, but their controls differ. When an unresolved gate or active alert exists, the TUI opens an **Attention view** first: press `R` to enter a resolution and choose the phase to resume, `A` to acknowledge the alert, or `L` to return to the lines. In Attention view, `R` means resolution rather than reopen. After attention items are cleared, TUI selects a Research Line and opens its questions with keyboard commands. Press `W` to confirm an AITP workstream binding, `X` to clear the existing binding, `V` to inspect the multi-loop plan, or `P` to switch the planning policy; exact-revision `A`, `C`, and `D` actions activate, complete, or discard the plan when legal. Web shows a clickable line list beside Line, Question, Science, Checkpoint, and Research Plan sections. Its Line section shows the observed Topic, binding status and provenance, and explicit confirm/clear controls; the Plan section exposes the same legal transitions and policy choices. Plan content is prepared or revised through the agent's `PrepareResearchPlanV2` tool rather than a second unversioned UI editor. **Science** can resolve the current human decision with an explicit next phase, acknowledge active alerts, review a typed evidence packet, or record an observation for the current external run. These controls update Hakimi Research working state through the Research endpoint and do not write the AITP ledger.
+
+## Line–workstream binding
+
+A Hakimi Research Line is local orchestration state; an AITP workstream is an explicit membership tag on canonical records. They are separate namespaces. After unscoped `enter` observes the current Topic, the user or main agent may confirm one revisioned local Line→workstream binding. Hakimi never infers that binding from matching slugs, prose, paths, record IDs, or any other similarity, and confirmation never writes AITP.
+
+The shared Research snapshot exposes the confirmed binding records and the current Line's derived status through REST, WebSocket, Node SDK, klient, TUI, and Web. Each record also carries a server-generated opaque `confirmationId`; a clear must echo the exact identity visible in the same snapshot and its public Research revision:
+
+| Status | Meaning |
+| --- | --- |
+| `unbound` | This Line has no explicit confirmation. |
+| `unavailable` | A saved binding exists, but no current AITP Topic is observed. |
+| `bound` | The saved Topic ID and observed revision exactly match the current Topic observation. |
+| `stale` | The Topic is the same, but its observed revision changed; confirm membership again. |
+| `conflict` | The saved binding belongs to a different Topic. |
+
+An unbound, unavailable, stale, or conflicting Line may still do low-risk local exploration. It cannot propose or commit a scoped durable checkpoint, and Hakimi does not run scoped maintenance for it. Before turn-end or Line-switch maintenance and before checkpoint prepare/save, Hakimi first repeats an unscoped Topic observation and then re-derives the exact binding; a changed Topic causes zero scoped I/O. A checkpoint captures the exact binding tuple and revalidates it across prepare, canonical `show`, scoped `check`, and commit; the shown Entry must exactly match the captured Topic and contain exactly the one captured workstream. Switching Lines changes the maintenance scope only when the destination Line has its own exact confirmed binding.
+
+Bindings are immutable confirmations. Clear an existing binding explicitly before rebinding, and refresh before retrying a stale revision or confirmation identity. A live action or pending checkpoint prevents a binding change. For checkpoint-bound saves, Hakimi requires AITP 0.9.0 adapter-contract 0.2 and automatically supplies the captured Topic and exact singleton workstream to atomic `record save`; a mismatch creates no canonical Entry. Post-save `show` and scoped `check` remain defense in depth. If canonical save succeeds while the local binding becomes stale, Hakimi retains the save receipt, enters a degraded state, and requires the pending checkpoint proposal to be undone before rebinding. A reset/exit racing a mutation can still be indeterminate: inspect canonical state and retry only with the same recovery identity. Undo and cold restore replay the stored binding and re-evaluate it against the newly observed Topic; they do not infer, repair, or backfill membership.
+
+AITP 0.9.0 still has no workstream registry, so confirmation does not prove that a workstream already has records. An empty scoped result is legal; legacy unscoped records remain outside the scope, and `counts.outside_scope` is the global-minus-scoped count difference rather than a finding or proof of membership. Hakimi does not add a registry, alias catalog, automatic backfill, or new AITP schema.
+
+## Goal–Program alignment
+
+The Hakimi Goal, the observed AITP Program, and the Local Research Loop are distinct records. The Program's top-level AITP Research Goal is observed only through `enter`; Hakimi never writes an AITP Topic or `TOPIC.md`.
+
+When a generic Goal exists, the Research snapshot projects it one-to-one as the Hakimi Research Goal, including its objective, completion criterion, current Research scope, full budget, derived stop conditions, Program relation, human gates, persistence guards, and Research revision. Interactive Research does not require a Goal. The current generic Goal contract has no structured non-goal or separately declared stop-condition input, so the projection reports an empty `nonGoals` list and derives stop conditions only from known runtime budgets and guards; it never parses goal prose to invent structure.
+
+Before an active Research Goal can complete or continue automatically, explicitly confirm its relationship to the observed Program. The checkpointed binding exists only in Hakimi and is never inferred from text similarity:
+
+| Relation | Meaning |
+| --- | --- |
+| `same_program_goal` | The Hakimi Goal and observed Program express the same goal. |
+| `goal_parent_of_program` | The Hakimi Goal is broader and the observed Program is one of its children. |
+| `goal_milestone_in_program` | The Hakimi Goal is a milestone within the observed Program. |
+| `unrelated` | The Goal and observed Program are explicitly unrelated. This is the only explicit conflict. |
+
+Without a binding, the status is `confirmation_required`. If the active Goal has no observed AITP Program, the status is `unavailable`; this also blocks completion and automatic continuation until the Program is observed again. A change to the Hakimi Goal, AITP Topic, or observed Program revision makes an existing binding `stale`; only `unrelated` makes it `conflict`. In active Research Mode, `unavailable`, `confirmation_required`, `stale`, and `conflict` block Goal completion and automatic continuation. Probing or degraded adapter state, a pending Research checkpoint, or an unresolved human gate also blocks both paths. An inactive Goal is unaffected.
+
+The command requires both a current Hakimi Goal and an observed AITP Program. It uses the captured Research snapshot revision for optimistic concurrency, so a stale snapshot must be refreshed before retrying. The TUI and Web Board can confirm or clear the binding; neither operation writes AITP.
 
 ## Steering the research
 
-Research Mode uses optimistic concurrency for revisioned mutations: those commands carry the draft's captured snapshot or entity `revision` as `expectedRevision`, and a stale revision fails without applying the mutation. Checkpoint proposals use the Research snapshot revision captured when the user edits the form, so a later change cannot create a pending checkpoint against newer state. Other mutations rely on captured target or pending-checkpoint identity and server-side state constraints. TUI refreshes the Board for a retry; Web re-reads the same session's authoritative snapshot. If a newer live revision arrives while a Web form is dirty, the Manager preserves the draft, shows a stale warning, and requires a refresh/retry rather than silently replacing the form.
+Research Mode uses optimistic concurrency for revisioned mutations. The public Research snapshot revision is a world-time publication token: it never rewinds with conversation undo, and every different published full snapshot receives a strictly newer token. Commands carry the draft's captured snapshot or entity `revision` as `expectedRevision`, and a stale revision fails without applying the mutation. Checkpoint proposals use the Research snapshot revision captured when the user edits the form, so a later change cannot create a pending checkpoint against newer state. Binding clear additionally carries the exact server-owned confirmation identity. Other mutations rely on captured target or pending-checkpoint identity and server-side state constraints. TUI refreshes the Board for a retry; Web re-reads the same session's authoritative snapshot. If a newer live revision arrives while a Web form is dirty, the Manager preserves the draft, shows a stale warning, and requires a refresh/retry rather than silently replacing the form.
 
 ### Research Manager
 
@@ -136,6 +263,8 @@ For precise control without opening the manager:
 | `/research close <questionId> [-- <reason>]` | Close a question |
 | `/research reopen <questionId> [-- <reason>]` | Reopen a previously closed question |
 | `/research line <slug>` | Switch the current research line |
+| `/research align same_program_goal\|goal_parent_of_program\|goal_milestone_in_program\|unrelated` | Explicitly confirm the local Goal–Program relation |
+| `/research align clear` | Clear the local Goal–Program binding |
 
 Example:
 
@@ -145,14 +274,14 @@ Example:
 
 ## Save, show, and check barrier
 
-`EnterAITPMode` is always discoverable as the explicit entry tool. Once the mode is active, the remaining Research and AITP tools are exposed according to adapter health:
+`EnterAITPMode` is always discoverable as the explicit entry tool. Use `GetResearchStatus` for the authoritative snapshot after entry; if it remains `probing`, wait for `ready` or `degraded` without repeated calls or busy polling. Once the mode is active, the remaining Research and AITP tools are exposed according to adapter health. The `theory-physics` skill does not persist ordinary turn progress: it hands off only a durable delta to the external AITP skill. Before filling potentially reusable execution evidence, the agent retrieves relevant cards and follows `distilling-methods` so the Entry can carry the Skill-required exact card pin or observation marker at creation. After first commit, Hakimi loads the exact AITP plugin Skill once more for a bounded touched-Entry review; the Skill alone decides whether any trigger holds. Otherwise retain the method candidate and evidence without claiming distillation or publication. Current-topic state is read only for the selected Line / Question; unrelated lines contribute only already-distilled methods.
 
 - **Read tools** (`aitp_enter`, `aitp_list`, `aitp_show`, `aitp_check`) — available when the adapter is `ready` **or** `degraded`. The agent can still browse the ledger and run health checks in degraded mode.
 - **Write tools** (`aitp_record_prepare`, `aitp_record_save`, `aitp_note_prepare`, `aitp_note_save`) — available **only** when the adapter is `ready`. Write operations use a single-flight guard: a concurrent mutation is rejected until the current one settles.
 
 This barrier means the agent cannot silently persist evidence when AITP is unhealthy. The adapter validates every versioned read response and unversioned prepare/save response against the installed AITP contract; unknown schemas, statuses, or extra transport fields fail closed instead of being accepted as research state. `aitp_record_prepare` accepts only `observation`, `result`, `failure`, `decision`, `source`, `code_change`, `run`, or `closeout`; Note preparation uses `working` or `theory` mode, and save accepts only the draft path returned by prepare.
 
-The Web Manager's Checkpoint form preserves this boundary. **Propose** creates only pending Research working state. **Commit** stays disabled until a checkpoint is pending and you enter an explicit existing AITP ledger `entryId`, obtained after the agent or official AITP CLI has completed the canonical save flow. Web sends that ID to the Research command endpoint to link the checkpoint; it never calls `record`/`note`, writes `.aitp` files, or creates a canonical Entry. Supplying an ID does not bypass the save → show → check barrier.
+The Web Manager's Checkpoint form preserves this boundary. **Propose** creates only pending Research working state and requires the current Line's exact `bound` workstream confirmation. **Commit** stays disabled until a checkpoint is pending and you enter an explicit existing AITP ledger `entryId`, obtained after the agent or official AITP CLI has completed the canonical save flow. Web sends that ID to the Research command endpoint to link the checkpoint; it never calls `record`/`note`, writes `.aitp` files, or creates a canonical Entry. The Entry and scoped check must still match the binding captured by the pending checkpoint, so supplying an ID cannot bypass the save → show → check barrier.
 
 `aitp_check` treats exit code 0 as clean and exit code 1 as a successful report containing findings. Findings remain visible without degrading the adapter. A new error finding keeps the relevant checkpoint pending, while a pre-existing error is retained as an auditable receipt warning. Finding codes are projected as opaque strings; the adapter does not implement AITP's `sha256-once:` or `check-policy` semantics. During entry/restore maintenance, valid error findings keep the Research Mode receipt `ready`; only an unavailable or invalid maintenance cycle is `degraded`. Exit code 2 is a failed command: a valid AITP JSON error or invalid check transport degrades the adapter, while an argument-parser misuse is reported as a tool error without poisoning the session. Full-text `Grep` may locate candidate records, but a complete canonical Entry must be read through `aitp_show`; a failed `aitp_show` is never replaced by direct Markdown parsing.
 
@@ -176,8 +305,10 @@ In degraded mode:
 
 Research Mode has several hard exclusions:
 
-- **Plan overlay**: Research Mode is a long-lived scientific context. Plan mode is a short-lived, nestable overlay that may be active alongside it; entering or exiting Plan mode does not exit or reset Research Mode.
+- **Plan layers**: Research Mode is a long-lived scientific context. Research Plan v2 directs multiple loop iterations; local Plan mode is a short-lived, nestable Action Plan overlay. Entering or exiting local Plan mode does not exit or reset Research Mode. Neither plan is a second Goal or continuation owner.
+- **Research hierarchy**: A large topic belongs to the Research Line / Question / AITP context. A Goal is the current bounded autonomous objective and cross-turn continuation owner; Research Plan v2 selects milestones across loops, while local Plan makes one Research Action executable.
 - **Main agent only**: AITP and Research mutation tools are only available on the main agent. Subagents cannot use them — they must return results to the main agent via typed packets.
+- **No automatic recovery or native coordinator**: Hakimi does not implement core auto-recovery, workspace auto-init/adopt/backfill, a `/research goal` command, or the native H6b coordinator; H6b remains planned/unavailable. S7 adds only a same-turn Skill handoff after the first successful commit, and S8 records only its latest observational receipt. A crash between commit and handoff can still miss that review, and no retry ledger, background loop, exactly-once guarantee, automatic approval, or publication is implied.
 - **Conversation undo**: Research working state (questions, focus, lines) follows conversation undo through the checkpointed model. The committed AITP cursor does **not** — once a checkpoint is committed to AITP, conversation undo cannot retract that external fact.
 
 ## Next steps

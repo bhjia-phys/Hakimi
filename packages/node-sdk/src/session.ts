@@ -33,6 +33,7 @@ import type {
   ResearchCommand,
   ResearchCommandResponse,
   ResearchStatusSnapshot,
+  ResumeGoalInput,
   ResumedSessionState,
   ResumedSessionSummary,
   SessionPlan,
@@ -541,9 +542,9 @@ export class Session {
     return this.rpc.pauseGoal({ sessionId: this.id });
   }
 
-  async resumeGoal(): Promise<GoalSnapshot> {
+  async resumeGoal(input: ResumeGoalInput = {}): Promise<GoalSnapshot> {
     this.ensureOpen();
-    return this.rpc.resumeGoal({ sessionId: this.id });
+    return this.rpc.resumeGoal({ sessionId: this.id, ...input });
   }
 
   async cancelGoal(): Promise<GoalSnapshot> {
@@ -563,9 +564,10 @@ export class Session {
 
   /**
    * Submit one research steering command (mode on/off, pause/resume, question
-   * create/edit, focus, line switch, reopen/defer/block/close, human decision
-   * resolve, typed evidence review, run observation, alert acknowledgement,
-   * checkpoint propose/commit). Resolves with the post-command snapshot.
+   * create/edit, focus, line switch, reopen/defer/block/close, Goal alignment,
+   * human decision resolve, typed evidence review, run observation, alert
+   * acknowledgement, checkpoint propose/commit). Resolves with the post-command
+   * snapshot.
    */
   async commandResearch(command: ResearchCommand): Promise<ResearchCommandResponse> {
     this.ensureOpen();

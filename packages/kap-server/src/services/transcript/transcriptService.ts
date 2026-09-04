@@ -534,6 +534,7 @@ export class TranscriptService {
       completionCriterion: goal.completionCriterion,
       budgetUsed: goal.tokensUsed,
       budgetLimit: goal.budget.tokenBudget ?? undefined,
+      continuation: goal.continuation,
     };
   }
 

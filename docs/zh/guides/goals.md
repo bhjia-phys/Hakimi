@@ -96,6 +96,8 @@ Hakimi 会保存该目标，把它作为下一条用户消息发送，并进入�
 | `/goal cancel` | 移除当前目标 |
 | `/goal replace <objective>` | 用新目标替换当前目标 |
 
+在默认 v2 引擎上，`/goal resume` 是控制操作，而不是一条合成的模型提示词。它会请求 Goal driver 为已暂停或已阻塞的目标排入一次 continuation。如果旧客户端已把目标改为 `active`，却没有启动轮次，再次运行 `/goal resume` 也会唤醒这个空闲目标；已存在的 pending continuation 会防止重复排队。legacy rollback 引擎不暴露这项 driver 控制，因此仍保留兼容提示词。
+
 目标有三种停止方式：
 
 - **完成（`complete`）**：目标已完成，Hakimi 会清除该目标，Agent 会总结它如何完成了这项工作
@@ -105,6 +107,8 @@ Hakimi 会保存该目标，把它作为下一条用户消息发送，并进入�
 停止条件需要写在目标本身里。`/goal` 没有单独用于描述停止限制的语法。
 
 如果健康的 detached 后台任务是唯一剩余依赖，Agent 可以使用 `UpdateGoal` 的 `waitFor`，而不是反复调用 `TaskOutput`。`waitFor` 只接受状态为 `active` 的目标、1–32 个非空 detached 任务 ID，以及 `any` 或 `all` 策略。Hakimi 会保持目标为「活跃（`active`）」但暂停自动 continuation 轮次，也不会启动模型轮次；等待期间不会消耗目标轮次或 active wall-clock 预算。当所选策略被某个终态任务事件满足时（包括 `lost`），Hakimi 会清除 lease，最多唤醒一次 continuation。恢复 session 时，如果有效的 wait lease 所选后台任务仍在等待，目标会保持 active，恢复也不会启动 continuation。如果任务引用缺失，恢复会 fail-closed 并将目标暂停；如果任务在恢复时已经是终态（包括 `lost`），则会清除 lease 并安排同样的一次唤醒。
+
+`active` 描述的是 Goal 生命周期，不表示每一刻都有模型轮次正在运行。默认 v2 引擎的 Goal snapshot 还会公开一个瞬态 continuation 状态：`idle`、`deciding`、`enqueued`、`running`、`held` 或 `waiting`。后台任务的 wait lease、已暂停或已降级的 Research Loop，以及未解决的 manual Research decision，都可以有意暂停下一次 continuation。此时 Goal 条和 Research Board 会显示 `active · continuation held` 以及负责的 owner/reason，而不会把 Goal 生命周期误报为 paused。continuation 投影只是派生的运行时状态，不会持久化为第二套生命周期。旧 Research snapshot 缺少该字段时会显示 `continuation unavailable (legacy snapshot)`，而不是猜测其状态。任何 live Research Action（包括 replay 时完成结构恢复的 Action）都会阻止 Goal completion；结果仍有歧义的恢复 Action 还会 hold autonomous continuation，直到下一次 interactive Research turn 根据证据解决同一个 Action。Hakimi 不会自动完成或自动放弃它。在 `auto` 权限模式下，常规且任务范围内的 Research Action 使用统一的工具权限策略，不会再创建第二层 Research approval gate。
 
 ## 在 Web 界面中管理目标
 

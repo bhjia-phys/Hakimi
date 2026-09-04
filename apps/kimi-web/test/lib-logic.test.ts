@@ -6,6 +6,14 @@ import {
 } from '../src/lib/filePathLinks';
 import { parseDiff } from '../src/lib/parseDiff';
 import { researchProgressSummaries } from '../src/lib/researchProgress';
+import {
+  buildResearchBoardCompactSlots,
+  isResearchCheckpointHistorical,
+  presentResearchAlertClassification,
+  presentResearchAitpAdapterCapabilities,
+  presentResearchWorkstreamBinding,
+  selectResearchBoardExpandedRecord,
+} from '../src/lib/researchBoardPresentation';
 import { buildDiffLines } from '../src/lib/diffLines';
 import { buildEditDiffLines } from '../src/lib/toolDiff';
 import { createCoalescedAsyncRunner } from '../src/lib/snapshotSync';
@@ -27,7 +35,12 @@ import {
   modelThinkingAvailability,
   segmentsFor,
 } from '../src/lib/modelThinking';
-import type { AppMessage, AppModel, AppTask } from '../src/api/types';
+import type {
+  AppMessage,
+  AppModel,
+  AppTask,
+  ResearchStatusSnapshot,
+} from '../src/api/types';
 import { resolveToolRenderer } from '../src/components/chat/tool-calls/toolRegistry';
 import AgentTool from '../src/components/chat/tool-calls/AgentTool.vue';
 import BashTool from '../src/components/chat/tool-calls/BashTool.vue';
@@ -1037,5 +1050,1138 @@ describe('researchProgressSummaries', () => {
   it('omits an empty uncertainties summary', () => {
     expect(researchProgressSummaries({ ...progress, uncertainties: [' ', ''] }))
       .not.toContainEqual(expect.objectContaining({ kind: 'uncertainties' }));
+  });
+});
+
+describe('research board compact presentation', () => {
+  type ResearchQuestion = ResearchStatusSnapshot['questions'][number];
+  type ResearchAction = NonNullable<ResearchStatusSnapshot['currentAction']>;
+  type ResearchRun = NonNullable<ResearchStatusSnapshot['currentRun']>;
+  type ResearchProgress = NonNullable<ResearchStatusSnapshot['latestProgress']>;
+  type AitpMaintenance = NonNullable<ResearchStatusSnapshot['aitpMaintenance']>;
+
+  function snapshot(
+    overrides: Partial<ResearchStatusSnapshot> = {},
+  ): ResearchStatusSnapshot {
+    return {
+      mode: 'ready',
+      loopStatus: 'active',
+      planningPolicy: 'collaborative',
+      lineWorkstreamBindings: [],
+      questions: [],
+      lines: [],
+      openQuestionCount: 0,
+      activeQuestionCount: 0,
+      blockedQuestionCount: 0,
+      alerts: [],
+      aitpHealth: { phase: 'ready' },
+      phase: 'idle',
+      revision: 1,
+      ...overrides,
+    };
+  }
+
+  function question(overrides: Partial<ResearchQuestion> = {}): ResearchQuestion {
+    return {
+      id: 'question_1',
+      lineSlug: 'main',
+      wording: 'Resolve the main uncertainty',
+      priority: 1,
+      neededEvidence: [],
+      evidenceRefs: [],
+      falsifierRefs: [],
+      workflow: 'active',
+      epistemic: 'candidate',
+      persistence: 'working',
+      revision: 1,
+      ...overrides,
+    };
+  }
+
+  function action(overrides: Partial<ResearchAction> = {}): ResearchAction {
+    return {
+      actionId: 'action_1',
+      kind: 'experiment',
+      purpose: 'Run the bounded experiment',
+      expectedEvidence: [],
+      stopCondition: 'The bounded result is available',
+      allowedToolKinds: [],
+      status: 'in_progress',
+      createdAt: 1,
+      requiresHumanApproval: false,
+      ...overrides,
+    };
+  }
+
+  function run(overrides: Partial<ResearchRun> = {}): ResearchRun {
+    return {
+      actionId: 'action_1',
+      campaign: 'campaign_1',
+      jobId: 'job_1',
+      stage: 'running',
+      schedulerState: 'running',
+      lastObservedAt: 1,
+      artifactRefs: [],
+      ...overrides,
+    };
+  }
+
+  function progress(overrides: Partial<ResearchProgress> = {}): ResearchProgress {
+    return {
+      headline: 'The experiment is being evaluated',
+      motivation: 'Resolve the main uncertainty',
+      workPerformed: 'Ran the bounded experiment',
+      result: 'The result is available',
+      mainlineImpact: 'The main line can advance',
+      uncertainties: [],
+      recordedAt: 1,
+      ...overrides,
+    };
+  }
+
+  function degradedMaintenance(
+    degradedReason: NonNullable<AitpMaintenance['degradedReason']>,
+  ): AitpMaintenance {
+    return {
+      status: 'degraded',
+      refreshedAt: 1,
+      memoryStatus: 'available',
+      activeNewerThanWorkingNote: false,
+      unresolvedFailureCount: 0,
+      unresolvedFailures: [],
+      warningSummaries: [],
+      check: {
+        status: 'findings',
+        findingCodes: [],
+      },
+      degradedReason,
+    };
+  }
+
+  it.each([
+    ['unbound', 'neutral'],
+    ['unavailable', 'neutral'],
+    ['bound', 'success'],
+    ['stale', 'warning'],
+    ['conflict', 'danger'],
+  ] as const)('presents a %s current Line/workstream alignment without inference', (status, variant) => {
+    const binding = status === 'bound' || status === 'stale' || status === 'conflict'
+      ? {
+          confirmationId: 'confirmation-main-1',
+          lineSlug: 'main',
+          workstream: 'verified-workstream',
+          topicId: 'topic_1',
+          observedRevision: 2,
+          confirmedBy: 'user' as const,
+          confirmedAt: 3,
+        }
+      : undefined;
+    expect(presentResearchWorkstreamBinding({
+      lineSlug: 'main',
+      status,
+      reason: `server:${status}`,
+      binding,
+    })).toEqual({
+      lineSlug: 'main',
+      status,
+      reason: `server:${status}`,
+      workstream: binding?.workstream,
+      topicId: binding?.topicId,
+      observedRevision: binding?.observedRevision,
+      confirmedBy: binding?.confirmedBy,
+      confirmedAt: binding?.confirmedAt,
+      variant,
+    });
+  });
+
+  it('does not synthesize a current binding when the server omitted alignment state', () => {
+    expect(presentResearchWorkstreamBinding(undefined)).toBeUndefined();
+  });
+
+  it.each([
+    ['idle', 'next_ready'],
+    ['orienting', 'frame_hypothesis'],
+    ['gap_analysis', 'frame_hypothesis'],
+    ['action_planned', 'test_action'],
+    ['action_executing', 'test_action'],
+    ['evaluating', 'evaluate'],
+    ['state_updated', 'record'],
+    ['checkpoint_pending', 'record'],
+  ] as const)('maps phase %s to the compact scientific stage %s', (phase, stage) => {
+    const slots = buildResearchBoardCompactSlots(snapshot({ phase }));
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({ stage });
+  });
+
+  it('keeps another Line alert out of compact Attention', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      currentLineSlug: 'main',
+      currentWorkstreamBinding: {
+        lineSlug: 'main',
+        status: 'bound',
+        reason: 'Explicit binding is current.',
+        binding: {
+          confirmationId: 'confirmation-main',
+          lineSlug: 'main',
+          workstream: 'main-workstream',
+          topicId: 'topic_1',
+          observedRevision: 1,
+          confirmedBy: 'user',
+          confirmedAt: 1,
+        },
+      },
+      alerts: [{
+        fingerprint: 'other-line-alert',
+        kind: 'blocked',
+        lineSlug: 'other',
+        state: 'active',
+        message: 'Other Line failure',
+        createdAt: 1,
+      }],
+    }));
+
+    expect(slots).not.toContainEqual(expect.objectContaining({ kind: 'attention' }));
+  });
+
+  it('marks missing continuation as legacy-unavailable without inventing a state', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      goalSummary: {
+        goalId: 'legacy-goal',
+        objective: 'Resume a legacy goal',
+        status: 'active',
+      },
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'project')).toMatchObject({
+      goalStatus: 'active',
+      goalContinuationAvailable: false,
+    });
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
+      continuationAvailable: false,
+    });
+    expect(slots.find((slot) => slot.kind === 'project')?.goalContinuationState)
+      .toBeUndefined();
+  });
+
+  it('keeps another Line action, run, gate, and next step out of compact slots', () => {
+    const currentQuestion = question({
+      id: 'question-main',
+      lineSlug: 'main',
+      wording: 'Current Line question',
+      nextBoundedAction: 'Run the current Line check',
+    });
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      currentLineSlug: 'main',
+      currentQuestion,
+      currentFocus: { questionId: currentQuestion.id, revision: 1 },
+      questions: [
+        currentQuestion,
+        question({ id: 'question-other', lineSlug: 'other', wording: 'Other Line question' }),
+      ],
+      lines: [
+        { slug: 'main', title: 'Main Line', status: 'active', createdAt: 1, revision: 1 },
+        { slug: 'other', title: 'Other Line', status: 'active', createdAt: 2, revision: 1 },
+      ],
+      currentWorkstreamBinding: {
+        lineSlug: 'main', status: 'bound', reason: 'Explicit current binding.',
+        binding: {
+          confirmationId: 'binding-main', lineSlug: 'main', workstream: 'main-workstream',
+          topicId: 'topic', observedRevision: 1, confirmedBy: 'user', confirmedAt: 1,
+        },
+      },
+      currentAction: action({
+        actionId: 'action-other', questionId: 'question-other', lineSlug: 'other',
+        purpose: 'Other Line action', run: run({ actionId: 'action-other', jobId: 'job-other' }),
+      }),
+      currentRun: run({ actionId: 'action-other', jobId: 'job-other' }),
+      humanGate: {
+        gateId: 'gate-other', kind: 'decision', questionId: 'question-other',
+        actionId: 'action-other', prompt: 'Other Line gate', createdAt: 3,
+      },
+      effectiveNextStep: {
+        text: 'Other Line next', source: 'research_action', freshness: 'current',
+        observedAt: 3,
+        derivedFrom: {
+          lineSlug: 'other', questionId: 'question-other', actionId: 'action-other',
+        },
+      },
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
+      actionStatus: undefined,
+      current: { source: 'question', text: 'Current Line question' },
+    });
+    expect(slots.find((slot) => slot.kind === 'attention')).toBeUndefined();
+    expect(slots.find((slot) => slot.kind === 'next')).toMatchObject({
+      source: 'question', text: 'Run the current Line check',
+    });
+    expect(JSON.stringify(slots)).not.toContain('Other Line');
+    expect(JSON.stringify(slots)).not.toContain('job-other');
+  });
+
+  it('shows a normalized recovered live action as recovery-required', () => {
+    const current = action({ actionId: 'action-recovered', lineSlug: 'main' });
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      currentLineSlug: 'main',
+      lines: [{ slug: 'main', title: 'Main', status: 'active', createdAt: 1, revision: 1 }],
+      currentAction: current,
+      phase: 'action_executing',
+      effectiveNextStep: {
+        text: 'Resolve recovered action action-recovered from its recorded evidence.',
+        source: 'research_action',
+        freshness: 'blocked',
+        observedAt: 2,
+        derivedFrom: { actionId: 'action-recovered', lineSlug: 'main' },
+      },
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
+      actionStatus: 'recovery_required',
+    });
+    expect(slots.find((slot) => slot.kind === 'attention')).toMatchObject({
+      source: 'action_recovery',
+      text: expect.stringContaining('Resolve recovered action'),
+    });
+  });
+
+  it('keeps the compact projection within its four fixed semantic slots when every slot is available', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      program: {
+        topicId: 'topic_1',
+        title: 'Example research',
+        goalText: 'Establish the durable result',
+        goalSource: 'research-plan',
+        establishedAt: 1,
+      },
+      humanGate: {
+        gateId: 'gate_1',
+        kind: 'approval',
+        prompt: 'Approve the bounded experiment',
+        createdAt: 1,
+      },
+      latestProgress: progress({ nextAction: 'Evaluate the result' }),
+    }));
+
+    expect(slots.map((slot) => slot.kind)).toEqual([
+      'project',
+      'cycle',
+      'attention',
+      'next',
+    ]);
+  });
+
+  it('projects Goal, Plan milestone, Line, Question, and the current Research cycle', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      goalSummary: {
+        goalId: 'goal_1',
+        objective: 'Validate the bounded result',
+        status: 'active',
+      },
+      researchPlanV2: {
+        schema: 'hakimi/research-plan-0.2',
+        planId: 'plan_1',
+        revision: 2,
+        goalId: 'goal_1',
+        programId: 'topic_1',
+        programObservedRevision: 1,
+        goalRelation: 'goal_milestone_in_program',
+        objective: 'Run the multi-loop validation',
+        milestones: [{
+          milestoneId: 'm1',
+          title: 'Validate the first bounded comparison',
+          objective: 'Compare the fixed cases',
+          completionCriterion: 'The comparison is checked',
+          evidenceRequirements: [],
+        }],
+        evidenceRequirements: [],
+        decisionPoints: [],
+        assumptions: [],
+        currentMilestoneId: 'm1',
+        stopConditions: [],
+        replanConditions: [],
+        status: 'active',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      currentLineSlug: 'main',
+      lines: [{
+        slug: 'main', title: 'Main line', status: 'active', createdAt: 1, revision: 1,
+      }],
+      currentQuestion: question({ wording: 'Does the first comparison pass?' }),
+      period: {
+        id: 'period_1', lineSlug: 'main', startedAt: 1, loopCount: 6,
+      },
+      currentWorkstreamBinding: {
+        lineSlug: 'main', status: 'unbound', reason: 'Explicit confirmation is required.',
+      },
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'project')).toMatchObject({
+      kind: 'project',
+      goalStatus: 'active',
+      planStatus: 'active',
+      milestone: 'Validate the first bounded comparison',
+      line: 'Main line',
+      question: 'Does the first comparison pass?',
+      questionWorkflow: 'active',
+      questionEpistemic: 'candidate',
+    });
+    expect(slots.find((slot) => slot.kind === 'cycle')).toEqual({
+      kind: 'cycle',
+      stage: 'next_ready',
+      researchTurns: 6,
+      mode: 'ready',
+      loopStatus: 'active',
+      planningPolicy: 'collaborative',
+      continuationState: undefined,
+      continuationAvailable: false,
+      actionStatus: undefined,
+      current: {
+        source: 'question',
+        text: 'Does the first comparison pass?',
+      },
+    });
+  });
+
+  it('omits the goal slot when only a Goal milestone exists', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      goalSummary: {
+        objective: 'Finish the current milestone',
+        status: 'active',
+      },
+    }));
+
+    expect(slots).not.toContainEqual(expect.objectContaining({ kind: 'goal' }));
+  });
+
+  it('does not duplicate the observed AITP Program goal in compact slots', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      program: {
+        topicId: 'topic_1',
+        title: 'Example research',
+        goalText: 'Establish the durable result',
+        goalSource: 'research-plan',
+        establishedAt: 1,
+      },
+      goalSummary: {
+        objective: 'Finish a different milestone',
+        status: 'active',
+      },
+    }));
+
+    expect(slots).not.toContainEqual(expect.objectContaining({ kind: 'goal' }));
+    expect(slots.find((slot) => slot.kind === 'project')).toMatchObject({
+      goalStatus: 'active',
+    });
+  });
+
+  it('uses the unresolved human gate as primary attention when every source is present', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      humanGate: {
+        gateId: 'gate_1',
+        kind: 'approval',
+        prompt: 'Approve the bounded experiment',
+        createdAt: 1,
+      },
+      aitpMaintenance: degradedMaintenance('adapter_degraded'),
+      alerts: [{
+        fingerprint: 'alert_1',
+        kind: 'blocked',
+        state: 'active',
+        message: 'The evidence is blocked',
+        createdAt: 1,
+      }],
+      aitpHealth: { phase: 'degraded', lastError: 'Adapter unavailable' },
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
+      kind: 'attention',
+      source: 'human_gate',
+      text: 'Approve the bounded experiment',
+      additionalCount: 3,
+    });
+  });
+
+  it('uses degraded maintenance as attention when the human gate is resolved', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      humanGate: {
+        gateId: 'gate_1',
+        kind: 'approval',
+        prompt: 'Historical decision',
+        createdAt: 1,
+        resolvedAt: 2,
+        resolution: 'approved',
+      },
+      aitpMaintenance: degradedMaintenance('check_unavailable'),
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
+      kind: 'attention',
+      source: 'maintenance',
+      text: 'check_unavailable',
+      additionalCount: 0,
+    });
+  });
+
+  it('prioritizes action recovery, checkpoint, then Goal alignment attention', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      phase: 'gap_analysis',
+      goalSummary: {
+        goalId: 'goal_1',
+        objective: 'Finish the milestone',
+        status: 'active',
+      },
+      goalAlignment: {
+        status: 'confirmation_required',
+        reason: 'Confirm the Goal and observed Research Program relationship.',
+      },
+      currentAction: action({
+        actionId: 'action_stale',
+        status: 'in_progress',
+      }),
+      pendingCheckpoint: {
+        checkpointId: 'checkpoint_pending',
+        idempotencyKey: 'checkpoint_pending_key',
+        persistence: 'pending_commit',
+        createdAt: 2,
+      },
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
+      kind: 'attention',
+      source: 'action_recovery',
+      text: expect.stringContaining('action_stale is in_progress'),
+      additionalCount: 2,
+    });
+  });
+
+  it('uses the core continuation hold as the primary board state and preserves its cause', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      researchGoal: {
+        schema: 'hakimi/research-goal-0.1',
+        goalId: 'goal_1',
+        objective: 'Finish the milestone',
+        scope: {},
+        nonGoals: [],
+        budget: {
+          tokenBudget: null,
+          turnBudget: null,
+          wallClockBudgetMs: null,
+          remainingTokens: null,
+          remainingTurns: null,
+          remainingWallClockMs: null,
+          tokenBudgetReached: false,
+          turnBudgetReached: false,
+          wallClockBudgetReached: false,
+          overBudget: false,
+        },
+        stopConditions: [],
+        status: 'active',
+        continuation: {
+          state: 'held',
+          owner: 'aitpResearch',
+          reason: 'A research checkpoint is pending commit.',
+        },
+        programRelation: {
+          status: 'confirmation_required',
+          reason: 'Confirm the Goal and observed Research Program relationship.',
+        },
+        humanGates: [],
+        persistenceGuards: [],
+        researchRevision: 2,
+      },
+      goalAlignment: {
+        status: 'confirmation_required',
+        reason: 'Confirm the Goal and observed Research Program relationship.',
+      },
+      pendingCheckpoint: {
+        checkpointId: 'checkpoint_pending',
+        idempotencyKey: 'checkpoint_pending_key',
+        persistence: 'pending_commit',
+        createdAt: 2,
+      },
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'project')).toMatchObject({
+      goalStatus: 'active',
+      goalContinuationState: 'held',
+    });
+    expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
+      kind: 'attention',
+      source: 'goal_continuation',
+      owner: 'aitpResearch',
+      text: 'A research checkpoint is pending commit.',
+      additionalCount: 1,
+    });
+  });
+
+  it('labels older-revision checkpoints as historical and preserves the core cleanup step', () => {
+    const currentQuestion = question({
+      id: 'question_current',
+      lineSlug: 'main',
+      revision: 3,
+    });
+    const input = snapshot({
+      currentLineSlug: 'main',
+      currentQuestion,
+      currentFocus: { questionId: currentQuestion.id, revision: 3 },
+      questions: [currentQuestion],
+      pendingCheckpoint: {
+        checkpointId: 'checkpoint_historical',
+        questionId: currentQuestion.id,
+        questionRevision: 2,
+        lineSlug: 'main',
+        idempotencyKey: 'checkpoint_historical_key',
+        persistence: 'pending_commit',
+        createdAt: 2,
+      },
+      effectiveNextStep: {
+        text: 'Historical checkpoint checkpoint_historical was proposed for question revision 2, but the current revision is 3; do not commit it as current evidence. Explicitly undo its proposal before automatic continuation.',
+        source: 'aitp_maintenance',
+        freshness: 'blocked',
+        observedAt: 2,
+        derivedFrom: { questionId: currentQuestion.id, lineSlug: 'main' },
+      },
+    });
+
+    expect(isResearchCheckpointHistorical(input)).toBe(true);
+    expect(buildResearchBoardCompactSlots(input).find((slot) => slot.kind === 'attention'))
+      .toMatchObject({
+        source: 'checkpoint',
+        text: expect.stringContaining('do not commit it as current evidence'),
+      });
+  });
+
+  it('separates AITP read readiness from atomic checkpoint-write capability', () => {
+    expect(presentResearchAitpAdapterCapabilities(snapshot({
+      aitpHealth: { phase: 'ready', contractVersion: '0.1' },
+    }))).toEqual({ read: 'ready', checkpointWrite: 'unavailable' });
+    expect(presentResearchAitpAdapterCapabilities(snapshot({
+      aitpHealth: { phase: 'ready', contractVersion: '0.2' },
+    }))).toEqual({ read: 'ready', checkpointWrite: 'ready' });
+    expect(presentResearchAitpAdapterCapabilities(snapshot({
+      aitpHealth: { phase: 'degraded', contractVersion: '0.2' },
+    }))).toEqual({ read: 'degraded_available', checkpointWrite: 'unavailable' });
+  });
+
+  it('prioritizes an unresolved human gate over Goal alignment and alerts', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      goalSummary: {
+        goalId: 'goal_1',
+        objective: 'Finish the milestone',
+        status: 'active',
+      },
+      goalAlignment: {
+        status: 'confirmation_required',
+        reason: 'Confirm the Goal and observed Research Program relationship.',
+      },
+      humanGate: {
+        gateId: 'gate_1',
+        kind: 'approval',
+        prompt: 'Approve the bounded experiment',
+        createdAt: 1,
+      },
+      alerts: [{
+        fingerprint: 'alert_1',
+        kind: 'blocked',
+        state: 'active',
+        message: 'The evidence is blocked',
+        createdAt: 1,
+      }],
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
+      kind: 'attention',
+      source: 'human_gate',
+      text: 'Approve the bounded experiment',
+      additionalCount: 2,
+    });
+  });
+
+  it('uses the first active alert when higher-priority attention is absent', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      alerts: [
+        {
+          fingerprint: 'alert_old',
+          kind: 'stale',
+          state: 'acknowledged',
+          message: 'Historical warning',
+          createdAt: 1,
+        },
+        {
+          fingerprint: 'alert_active',
+          kind: 'blocked',
+          state: 'active',
+          message: 'The current question is blocked',
+          createdAt: 2,
+        },
+      ],
+      aitpHealth: { phase: 'degraded', lastError: 'Adapter unavailable' },
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
+      kind: 'attention',
+      source: 'alert',
+      alertKind: 'blocked',
+      text: 'The current question is blocked',
+      additionalCount: 1,
+    });
+  });
+
+  it('prioritizes a current warning over a historical unresolved alert', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      alerts: [{
+        fingerprint: 'alert_historical',
+        kind: 'blocked',
+        classification: 'historical_unresolved',
+        state: 'active',
+        message: 'An earlier attempt remains unresolved',
+        createdAt: 1,
+      }, {
+        fingerprint: 'alert_warning',
+        kind: 'contradiction',
+        classification: 'warning',
+        state: 'active',
+        message: 'The current evidence needs review',
+        createdAt: 2,
+      }],
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
+      kind: 'attention',
+      source: 'alert',
+      alertKind: 'contradiction',
+      text: 'The current evidence needs review',
+      additionalCount: 1,
+    });
+  });
+
+  it('treats a legacy unclassified blocked alert as current attention', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      aitpMaintenance: degradedMaintenance('adapter_degraded'),
+      alerts: [
+        {
+          fingerprint: 'alert_historical',
+          kind: 'blocked',
+          classification: 'historical_unresolved',
+          state: 'active',
+          message: 'An earlier failure remains unresolved',
+          createdAt: 1,
+        },
+        {
+          fingerprint: 'alert_current',
+          kind: 'blocked',
+          state: 'active',
+          message: 'The current experiment is blocked',
+          createdAt: 2,
+        },
+      ],
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
+      kind: 'attention',
+      source: 'alert',
+      alertKind: 'blocked',
+      text: 'The current experiment is blocked',
+      additionalCount: 2,
+    });
+  });
+
+  it('presents legacy blocked alerts as active blockers in every board view', () => {
+    expect(presentResearchAlertClassification({
+      fingerprint: 'alert_legacy_blocked',
+      kind: 'blocked',
+      message: 'The current experiment is blocked',
+      createdAt: 1,
+    })).toBe('active_blocker');
+    expect(presentResearchAlertClassification({
+      fingerprint: 'alert_legacy_warning',
+      kind: 'stale',
+      message: 'The state may be stale',
+      createdAt: 1,
+    })).toBe('warning');
+  });
+
+  it('does not count a legacy acknowledged alert as compact attention', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      alerts: [{
+        fingerprint: 'alert_acknowledged',
+        kind: 'stale',
+        message: 'The stale alert was already acknowledged',
+        createdAt: 1,
+        acknowledgedAt: 2,
+      }],
+    }));
+
+    expect(slots).not.toContainEqual(expect.objectContaining({ kind: 'attention' }));
+  });
+
+  it('uses the adapter error when no higher-priority attention is active', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      aitpHealth: { phase: 'degraded', lastError: 'Adapter unavailable' },
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
+      kind: 'attention',
+      source: 'adapter',
+      text: 'Adapter unavailable',
+      additionalCount: 0,
+    });
+  });
+
+  it('surfaces an unavailable distillation handoff and preserves its expanded receipt', () => {
+    const distillationAttention = {
+      schema: 'hakimi/research-distillation-attention-0.1' as const,
+      status: 'handoff_unavailable' as const,
+      checkpointId: 'cp-distill',
+      entryId: 'entry-distill',
+      reason: 'The external Skill is hidden.',
+      recordedAt: 1000,
+    };
+    const input = snapshot({ distillationAttention });
+    expect(buildResearchBoardCompactSlots(input).find((slot) => slot.kind === 'attention'))
+      .toEqual({
+        kind: 'attention',
+        source: 'distillation',
+        text: 'Entry entry-distill: The external Skill is hidden.',
+        additionalCount: 0,
+      });
+    expect(selectResearchBoardExpandedRecord(input).distillationAttention)
+      .toEqual(distillationAttention);
+  });
+
+  it('uses an active run for the current cycle when lower-priority state exists', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      phase: 'action_executing',
+      currentRun: run({
+        campaign: 'spectrum_scan',
+        jobId: 'job_42',
+        stage: 'queued',
+        schedulerState: 'pending',
+      }),
+      currentAction: action({ status: 'in_progress' }),
+      latestProgress: progress(),
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
+      kind: 'cycle',
+      current: {
+      source: 'run',
+      text: 'spectrum_scan / job_42',
+      stage: 'queued',
+      schedulerState: 'pending',
+      },
+    });
+  });
+
+  it('uses the current action for the cycle when the current run is terminal', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      phase: 'action_planned',
+      currentRun: run({
+        stage: 'completed',
+        schedulerState: 'completed',
+        terminalState: 'completed',
+      }),
+      currentAction: action({
+        purpose: 'Analyze the completed spectrum',
+        status: 'planned',
+      }),
+      latestProgress: progress(),
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
+      kind: 'cycle',
+      current: {
+      source: 'action',
+      text: 'Analyze the completed spectrum',
+      status: 'planned',
+      },
+    });
+  });
+
+  it('uses the latest progress headline when execution is inactive', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      currentAction: action({ status: 'completed' }),
+      latestProgress: progress({ headline: 'The candidate survived the test' }),
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
+      current: { source: 'progress', text: 'The candidate survived the test' },
+    });
+  });
+
+  it('surfaces and bypasses a stale live action whose phase already moved on', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      phase: 'gap_analysis',
+      currentAction: action({
+        actionId: 'action_stale',
+        purpose: 'Commit an obsolete file set',
+        status: 'in_progress',
+        createdAt: 10,
+      }),
+      latestProgress: progress({
+        headline: 'The newer reciprocal-space cause is localized',
+        recordedAt: 20,
+      }),
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
+      kind: 'cycle',
+      stage: 'frame_hypothesis',
+      actionStatus: 'recovery_required',
+    });
+    expect(slots.find((slot) => slot.kind === 'attention')).toEqual({
+      kind: 'attention',
+      source: 'action_recovery',
+      text: expect.stringContaining('action_stale is in_progress while the Research phase is gap_analysis'),
+      additionalCount: 0,
+    });
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
+      current: { source: 'progress', text: 'The newer reciprocal-space cause is localized' },
+    });
+    expect(slots.find((slot) => slot.kind === 'next')).toEqual({
+      kind: 'next',
+      source: 'research_action',
+      text: 'Recover action action_stale: it is in_progress while the Research phase is gap_analysis; conclude or abandon it before starting another action.',
+      freshness: 'blocked',
+      observedAt: 10,
+      derivedFrom: {
+        actionId: 'action_stale',
+        questionId: undefined,
+        lineSlug: undefined,
+      },
+    });
+  });
+
+  it('uses the focused question for the cycle when higher-priority state is absent', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      currentLineSlug: 'main',
+      currentFocus: { questionId: 'question_focus', revision: 1 },
+      currentQuestion: question({
+        id: 'question_fallback',
+        wording: 'Fallback question',
+      }),
+      questions: [question({
+        id: 'question_focus',
+        wording: 'Focused research question',
+      })],
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
+      current: { source: 'question', text: 'Focused research question' },
+    });
+  });
+
+  it('uses the recent state change before the current line for the cycle', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      currentLineSlug: 'main',
+      lines: [{
+        slug: 'main',
+        title: 'Main research line',
+        status: 'active',
+        createdAt: 1,
+        revision: 1,
+      }],
+      recentStateChange: {
+        beforePhase: 'evaluating',
+        afterPhase: 'state_updated',
+        summary: 'The evidence changed the research state',
+        changedAt: 2,
+      },
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
+      current: { source: 'state_change', text: 'The evidence changed the research state' },
+    });
+  });
+
+  it('uses the current line title as the final cycle fallback', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      currentLineSlug: 'main',
+      lines: [{
+        slug: 'main',
+        title: 'Main research line',
+        status: 'active',
+        createdAt: 1,
+        revision: 1,
+      }],
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'cycle')).toMatchObject({
+      current: { source: 'line', text: 'Main research line' },
+    });
+  });
+
+  it('uses the effective next step when every next-action fallback exists', () => {
+    const focused = question({
+      id: 'question_focus',
+      nextBoundedAction: 'Question fallback',
+    });
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      effectiveNextStep: {
+        text: 'Current effective action',
+        source: 'research_run',
+        freshness: 'current',
+        observedAt: 1,
+        derivedFrom: {},
+      },
+      latestProgress: progress({ nextAction: 'Progress fallback' }),
+      currentFocus: {
+        questionId: 'question_focus',
+        boundedAction: 'Focus fallback',
+        revision: 1,
+      },
+      questions: [focused],
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'next')).toEqual({
+      kind: 'next',
+      source: 'research_run',
+      text: 'Current effective action',
+      freshness: 'current',
+      observedAt: 1,
+      derivedFrom: {},
+    });
+  });
+
+  it('uses the progress next action when no effective next step exists', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      latestProgress: progress({ nextAction: 'Evaluate the bounded result' }),
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'next')).toEqual({
+      kind: 'next',
+      source: 'progress',
+      text: 'Evaluate the bounded result',
+    });
+  });
+
+  it('uses the focused question action when progress has no next action', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      currentLineSlug: 'main',
+      latestProgress: progress(),
+      currentFocus: { questionId: 'question_focus', revision: 1 },
+      questions: [question({
+        id: 'question_focus',
+        nextBoundedAction: 'Run the falsification check',
+      })],
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'next')).toEqual({
+      kind: 'next',
+      source: 'question',
+      text: 'Run the falsification check',
+    });
+  });
+
+  it('uses the focus bounded action as the final next fallback', () => {
+    const slots = buildResearchBoardCompactSlots(snapshot({
+      currentFocus: {
+        questionId: 'missing_question',
+        boundedAction: 'Recover the focused question',
+        revision: 1,
+      },
+    }));
+
+    expect(slots.find((slot) => slot.kind === 'next')).toEqual({
+      kind: 'next',
+      source: 'focus',
+      text: 'Recover the focused question',
+    });
+  });
+
+  it('preserves the complete period, both plan layers, and status for the expanded board', () => {
+    const input = snapshot({
+      period: {
+        id: 'period_1',
+        lineSlug: 'main',
+        startedAt: 1,
+        endedAt: 2,
+        loopCount: 3,
+        currentQuestionId: 'question_1',
+        summary: 'The bounded cycle is complete',
+      },
+      researchPlan: {
+        planId: 'plan_1',
+        researchRevision: 4,
+        programId: 'program_1',
+        periodId: 'period_1',
+        lineSlug: 'main',
+        questionId: 'question_1',
+        lineRevision: 5,
+        questionRevision: 6,
+        objective: 'Resolve the bounded uncertainty',
+        steps: ['Collect evidence', 'Evaluate the result', 'Record the conclusion'],
+        expectedEvidence: ['Primary observation', 'Independent check'],
+        stopCondition: 'The conclusion meets the stated criterion',
+        status: 'finalized',
+        resolution: {
+          planId: 'plan_1',
+          planRevision: 2,
+          outcome: 'approved',
+          selectedLabel: 'Preferred route',
+        },
+      },
+      actionPlan: {
+        planId: 'plan_1',
+        researchRevision: 4,
+        objective: 'Resolve the bounded uncertainty',
+        steps: ['Collect evidence', 'Evaluate the result', 'Record the conclusion'],
+        expectedEvidence: ['Primary observation', 'Independent check'],
+        stopCondition: 'The conclusion meets the stated criterion',
+        status: 'finalized',
+      },
+      researchPlanV2: {
+        schema: 'hakimi/research-plan-0.2',
+        planId: 'research_plan_1',
+        revision: 2,
+        goalId: 'goal_1',
+        programId: 'program_1',
+        programObservedRevision: 1,
+        goalRelation: 'goal_milestone_in_program',
+        objective: 'Validate the current milestone',
+        completionCriterion: 'The evidence passes validation',
+        milestones: [{
+          milestoneId: 'milestone_1',
+          title: 'Validate evidence',
+          objective: 'Run one bounded check',
+          completionCriterion: 'The check passes',
+          evidenceRequirements: ['Primary observation'],
+        }],
+        evidenceRequirements: ['Reproducible result'],
+        decisionPoints: [],
+        assumptions: [],
+        currentMilestoneId: 'milestone_1',
+        stopConditions: ['Stop on failed validation'],
+        replanConditions: ['Replan on Program drift'],
+        status: 'active',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      status: {
+        currentLineSlug: 'main',
+        currentQuestionId: 'question_1',
+        currentActionId: 'action_1',
+        phase: 'evaluating',
+        nextStep: 'Record the conclusion',
+        health: 'attention',
+        attention: ['Check the uncertainty bound', 'Confirm the provenance'],
+      },
+    });
+
+    const record = selectResearchBoardExpandedRecord(input);
+
+    expect(record).toEqual({
+      planningPolicy: input.planningPolicy,
+      period: input.period,
+      plan: input.researchPlan,
+      actionPlan: input.actionPlan,
+      researchPlanV2: input.researchPlanV2,
+      status: input.status,
+    });
+    expect(record.plan?.steps).toHaveLength(3);
+    expect(record.plan?.expectedEvidence).toHaveLength(2);
+    expect(record.researchPlanV2?.milestones).toHaveLength(1);
+    expect(record.planningPolicy).toBe('collaborative');
+    expect(record.status?.attention).toHaveLength(2);
   });
 });

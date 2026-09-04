@@ -204,7 +204,7 @@ export const goalChangeStatsSchema = z.object({
 
 /** Protocol `GoalChange` — mirrored field-for-field. */
 export const goalChangeSchema = z.object({
-  kind: z.enum(['lifecycle', 'completion']),
+  kind: z.enum(['lifecycle', 'completion', 'continuation']),
   status: goalStatusSchema.optional(),
   reason: z.string().optional(),
   stats: goalChangeStatsSchema.optional(),

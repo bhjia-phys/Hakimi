@@ -1193,6 +1193,11 @@ export class SessionEventBroadcaster {
     const state = this.sessions.get(sessionId);
     if (state === undefined) return;
 
+    // The persisted Research world-clock op uses this Agent-bus fact only as
+    // an in-process post-apply signal. It is not part of the public v1 event
+    // contract and must consume neither a replay sequence nor journal space.
+    if (event.type === 'research.revision_advanced') return;
+
     // Map the native v2 activity state to the legacy v1 `agent.status.updated`
     // phase slice at the edge, so the v1 channel picks up the corrected
     // semantics (approval-set, idle-after-ended) without the core engine

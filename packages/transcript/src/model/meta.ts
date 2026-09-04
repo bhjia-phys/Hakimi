@@ -18,6 +18,12 @@ export interface GoalWaitLease {
   readonly policy: GoalWaitPolicy;
 }
 
+export interface GoalContinuationMeta {
+  readonly state: 'idle' | 'deciding' | 'enqueued' | 'running' | 'held' | 'waiting';
+  readonly owner?: string;
+  readonly reason?: string;
+}
+
 export interface GoalMeta {
   readonly objective: string;
   readonly status: GoalStatus;
@@ -25,6 +31,7 @@ export interface GoalMeta {
   readonly budgetUsed?: number;
   readonly budgetLimit?: number;
   readonly waitingFor?: GoalWaitLease;
+  readonly continuation?: GoalContinuationMeta;
 }
 
 /** Mode badges (plan mode, swarm mode) mirrored at session level. */

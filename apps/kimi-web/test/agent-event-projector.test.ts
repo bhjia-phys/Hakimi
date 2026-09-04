@@ -5,8 +5,51 @@
 
 import { describe, expect, it } from 'vitest';
 import { classifyFrame, createAgentProjector, subagentProgressText } from '../src/api/daemon/agentEventProjector';
+import { toAppGoal } from '../src/api/daemon/mappers';
 import { createInitialState, reduceAppEvent } from '../src/api/daemon/eventReducer';
 import type { AppTask } from '../src/api/types';
+
+describe('toAppGoal continuation projection', () => {
+  const snapshot = {
+    goalId: 'goal_1',
+    objective: 'Finish O1',
+    status: 'active',
+    turnsUsed: 1,
+    tokensUsed: 10,
+    wallClockMs: 100,
+    budget: {},
+  };
+
+  it('preserves a known held continuation with its owner and reason', () => {
+    expect(toAppGoal({
+      ...snapshot,
+      continuation: {
+        state: 'held',
+        owner: 'research',
+        reason: 'A research checkpoint is pending commit.',
+      },
+    })?.continuation).toEqual({
+      state: 'held',
+      owner: 'research',
+      reason: 'A research checkpoint is pending commit.',
+    });
+  });
+
+  it('preserves a legacy Goal while leaving missing continuation unavailable', () => {
+    expect(toAppGoal(snapshot)).toMatchObject({
+      goalId: 'goal_1',
+      status: 'active',
+      continuation: undefined,
+    });
+  });
+
+  it('drops an unknown continuation without dropping the Goal', () => {
+    expect(toAppGoal({
+      ...snapshot,
+      continuation: { state: 'future_state' },
+    })).toMatchObject({ goalId: 'goal_1', continuation: undefined });
+  });
+});
 
 describe('subagentProgressText', () => {
   it('drops turn.step.started as noise', () => {
@@ -427,6 +470,11 @@ describe('goal.updated', () => {
           objective: 'finish the work',
           status: 'active',
           waitingFor: { taskIds: ['task_1', 'task_2'], policy: 'any' },
+          continuation: {
+            state: 'held',
+            owner: 'aitpResearch',
+            reason: 'A research checkpoint is pending commit.',
+          },
         },
       },
       's1',
@@ -438,7 +486,34 @@ describe('goal.updated', () => {
       goal: expect.objectContaining({
         goalId: 'goal_1',
         waitingFor: { taskIds: ['task_1', 'task_2'], policy: 'any' },
+        continuation: {
+          state: 'held',
+          owner: 'aitpResearch',
+          reason: 'A research checkpoint is pending commit.',
+        },
       }),
+    });
+  });
+
+  it('degrades an unknown continuation projection without dropping the Goal', () => {
+    const projector = createAgentProjector();
+    const events = projector.project(
+      'goal.updated',
+      {
+        snapshot: {
+          goalId: 'goal_1',
+          objective: 'finish the work',
+          status: 'active',
+          continuation: { state: 'future_state' },
+        },
+      },
+      's1',
+    );
+
+    expect(events).toContainEqual({
+      type: 'goalUpdated',
+      sessionId: 's1',
+      goal: expect.objectContaining({ goalId: 'goal_1', continuation: undefined }),
     });
   });
 });
@@ -1003,6 +1078,8 @@ describe('research.updated projection', () => {
   const snapshot = {
     mode: 'ready',
     loopStatus: 'active',
+    planningPolicy: 'collaborative',
+    lineWorkstreamBindings: [],
     phase: 'idle',
     questions: [],
     lines: [],
@@ -1011,12 +1088,20 @@ describe('research.updated projection', () => {
     blockedQuestionCount: 0,
     alerts: [],
     aitpHealth: { phase: 'ready' },
+    program: {
+      topicId: 'topic-example',
+      title: 'Example research program',
+      goalText: 'Establish the bounded research result.',
+      goalSource: 'aitp-enter',
+      establishedAt: 1_700_000_000_000,
+    },
     revision: 3,
   } satisfies import('../src/api/types').ResearchStatusSnapshot;
 
   it('projects the raw agent event to a typed Research update', () => {
     const projector = createAgentProjector();
-    expect(projector.project('research.updated', { snapshot }, 's1')).toEqual([
+    const events = projector.project('research.updated', { snapshot }, 's1');
+    expect(events).toEqual([
       { type: 'researchUpdated', sessionId: 's1', snapshot },
     ]);
   });

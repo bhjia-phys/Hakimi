@@ -500,6 +500,31 @@ describe('SessionEventBroadcaster', () => {
     ]);
   });
 
+  it('drops the internal Research revision signal before sequencing or journaling', async () => {
+    const lc = new FakeLifecycle();
+    const main = lc.addAgent('main');
+    sessions.set('s1', lc);
+    const { target, envelopes } = collectingTarget();
+    await bc.subscribe('s1', target);
+
+    main.bus.emit(agentEvent('research.revision_advanced', { notifyGoal: true }));
+    main.bus.emit(agentEvent('research.updated', {
+      snapshot: { mode: 'ready', revision: 7 },
+    }));
+    const cursor = await bc.getCursor('s1');
+
+    expect(envelopes).toHaveLength(1);
+    expect(envelopes[0]).toMatchObject({
+      type: 'research.updated',
+      seq: 1,
+      payload: {
+        type: 'research.updated',
+        snapshot: { mode: 'ready', revision: 7 },
+      },
+    });
+    expect(cursor.seq).toBe(1);
+  });
+
   it('fans out volatile events with the current watermark + offset, not journaled', async () => {
     const lc = new FakeLifecycle();
     const main = lc.addAgent('main');

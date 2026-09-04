@@ -104,6 +104,7 @@ const V2_RECORD_TYPES: ReadonlySet<string> = new Set([
   'research.bind_checkpoint_entry',
   'research.bind_checkpoint_receipt',
   'research.commit_checkpoint',
+  'research.record_distillation_attention',
   'research.ack_checkpoint',
   'research.reopen_question',
   'research.upsert_alert',
@@ -119,9 +120,16 @@ const V2_RECORD_TYPES: ReadonlySet<string> = new Set([
   'research.request_human_decision',
   'research.resolve_human_decision',
   'research.set_program',
+  'research.confirm_goal_alignment',
+  'research.clear_goal_alignment',
+  'research.plan_v2.put',
+  'research.planning_policy.set',
+  'research.workstream_binding.confirm',
+  'research.workstream_binding.clear',
   'research.start_period',
   'research.update_period',
   'research.end_period',
+  'research.advance_revision',
 ]);
 
 describe('v1 wire vocabulary', () => {

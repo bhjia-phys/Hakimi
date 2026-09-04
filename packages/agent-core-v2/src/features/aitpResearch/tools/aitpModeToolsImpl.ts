@@ -32,7 +32,7 @@ const ENTER_DESCRIPTION = [
   'Do not simulate Research Mode by reading .aitp files directly while the mode is inactive.',
   '',
   'Parameters:',
-  '  line_slug (optional): The research line (workstream) to activate.',
+  '  line_slug (optional): The local Research Line to activate. It is never inferred to be an AITP workstream; confirm that binding separately.',
 ].join('\n');
 
 const EXIT_DESCRIPTION = [

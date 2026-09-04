@@ -930,11 +930,16 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
    * auth bypass, effective experimental flags, backend engine). Called on first
    * load and on every WS (re)connect. Config changes pass `failClosedFlags` so
    * persisted config never masquerades as effective flag state while this read
-   * is pending or unavailable.
+   * is pending or unavailable. Reconnects also pass `failClosedBackend` because
+   * the endpoint may now belong to a legacy server without v2-only routes.
    */
-  async function refreshServerMeta(failClosedFlags = false): Promise<void> {
+  async function refreshServerMeta(
+    failClosedFlags = false,
+    failClosedBackend = false,
+  ): Promise<void> {
     const requestId = ++serverMetaRequestId;
     if (failClosedFlags) rawState.experimentalFlags = {};
+    if (failClosedBackend) rawState.backend = 'v1';
     const m = await getKimiWebApi()
       .getMeta()
       .catch(() => null);

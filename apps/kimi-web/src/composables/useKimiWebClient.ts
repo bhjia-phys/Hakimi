@@ -301,8 +301,8 @@ export interface ExtendedState extends KimiClientState {
   /**
    * Engine generation of the connected server: `'v2'` = kap-server /
    * agent-core-v2, `'v1'` = an older (legacy) server binary. Read from `/meta`
-   * (`backend` field; older servers omit it ⇒ v1). Drives the dev-mode
-   * backend badge in the Sidebar.
+   * (`backend` field; older servers omit it ⇒ v1). Drives backend capability
+   * guards and the dev-mode backend badge in the Sidebar.
    */
   backend: 'v1' | 'v2';
   workspaceName: string;
@@ -741,12 +741,13 @@ async function refreshSessionGoal(sessionId: string): Promise<void> {
 async function refreshSessionResearch(
   sessionId: string,
 ): Promise<ResearchStatusSnapshot | null> {
+  // Research routes exist only on the v2 backend. Re-check the generation both
+  // before queueing and before issuing I/O because a dev-proxy backend switch
+  // can land while this read is waiting behind a mutation.
   if (rawState.backend !== 'v2') return null;
   try {
     return await researchRequests.read(rawState, sessionId, () => {
-      if (rawState.backend !== 'v2') {
-        return Promise.reject(new Error('Research unavailable'));
-      }
+      if (rawState.backend !== 'v2') return Promise.reject(new Error('Research unavailable'));
       return getKimiWebApi().getSessionResearch(sessionId);
     });
   } catch {
@@ -1175,12 +1176,12 @@ function connectEventsIfNeeded(): void {
         dismissWsError();
         // A (re)connect can mean the backend was restarted — or switched, when
         // the dev proxy was moved to the other engine. Re-read authoritative
-        // metadata and config plus auto-preset status: these process-global
-        // facts have no client replay cursor, so this closes the gap after both
-        // the first handshake and every reconnect. Fail closed to the legacy
+        // metadata and config plus auto-preset status: these process-global facts
+        // have no client replay cursor, so this closes the gap after both the
+        // first handshake and every reconnect. Fail closed to the legacy
         // capability set until this connection's metadata has been confirmed.
         rawState.backend = 'v1';
-        void workspaceState.refreshServerMeta(true);
+        void workspaceState.refreshServerMeta(true, true);
         void workspaceState.loadConfig();
         void refreshAutoSubagentPresetStatus();
       }
