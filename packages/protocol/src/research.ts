@@ -450,6 +450,15 @@ export const researchPhaseSchema = z.enum([
 ]);
 export type ResearchPhase = z.infer<typeof researchPhaseSchema>;
 
+export const awaitingHumanExitPhaseSchema = z.enum([
+  'idle',
+  'gap_analysis',
+  'action_planned',
+  'action_executing',
+  'evaluating',
+]);
+export type AwaitingHumanExitPhase = z.infer<typeof awaitingHumanExitPhaseSchema>;
+
 export const researchActionKindSchema = z.enum([
   'experiment',
   'derivation',
@@ -545,7 +554,9 @@ export const researchActionPlanBindingSchema = z.object({
 export const researchActionSpecSchema = z.object({
   actionId: z.string(),
   questionId: z.string().optional(),
+  questionRevision: z.number().int().positive().optional(),
   lineSlug: z.string().optional(),
+  lineRevision: z.number().int().positive().optional(),
   kind: researchActionKindSchema,
   purpose: researchLongTextSchema,
   expectedEvidence: researchStringListSchema,
@@ -1012,6 +1023,11 @@ export const researchCommandSchema = z.discriminatedUnion('kind', [
     nextAction: z.string().optional(),
   }),
   z.object({
+    kind: z.literal('discard_historical_checkpoint'),
+    checkpointId: z.string(),
+    expectedRevision: z.number().int().nonnegative(),
+  }).strict(),
+  z.object({
     kind: z.literal('commit_checkpoint'),
     checkpointId: z.string(),
     entryId: z.string(),
@@ -1020,7 +1036,7 @@ export const researchCommandSchema = z.discriminatedUnion('kind', [
     kind: z.literal('resolve_decision'),
     gateId: z.string(),
     resolution: researchShortTextSchema,
-    nextPhase: researchPhaseSchema,
+    nextPhase: awaitingHumanExitPhaseSchema,
   }),
   z.object({
     kind: z.literal('review_evidence'),

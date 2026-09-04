@@ -590,6 +590,8 @@ export default {
     proposeCheckpoint: '提议检查点',
     propose: '提议',
     commitCheckpoint: '提交检查点',
+    historicalCheckpointDiscardHint: '该提议属于旧问题 revision，且没有 AITP receipt；丢弃只会修改 Hakimi 工作状态。',
+    discardHistoricalCheckpoint: '丢弃历史提议',
     entryId: '账本条目 ID',
     entryIdHint: '必填；请从 AITP 账本复制明确的条目 ID。',
     commit: '提交',

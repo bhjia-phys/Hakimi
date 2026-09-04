@@ -60,7 +60,7 @@ After producing a plan the agent pauses for your review — you can approve it, 
 
 **YOLO mode** (`/yolo`) auto-approves regular tool calls, making it suitable for batch tasks you know are safe. It still asks before sensitive actions — accessing sensitive files such as `.env` or SSH keys, or exiting Plan mode — and the agent can still ask you questions.
 
-**Auto mode** (`/auto`) is the fully unattended mode: every tool approval is handled automatically, including sensitive files and plan exits, and the agent never asks you questions — it decides everything on its own.
+**Auto mode** (`/auto`) automatically handles every tool approval, including sensitive files and plan exits, and suppresses ordinary conversational questions. It does not override an explicit protocol-owned human decision: for example, a Research Mode scientific or AITP decision can still pause the workflow until you answer it.
 
 ::: warning
 YOLO mode skips confirmation for file writes and command execution. Only use it in working directories you trust.

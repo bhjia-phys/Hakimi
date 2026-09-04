@@ -21,7 +21,7 @@
 // owning model offloads inline media to blob storage), cross-reducers
 // (foreign models that also reduce this record on dispatch and replay).
 
-// Index (98 record types)
+// Index (99 record types)
 //   aitp_mode.enter                         aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   aitp_mode.exit                          aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   aitp_mode.set_line                      aitpMode                    persisted  src/features/aitpResearch/aitpResearchOps.ts
@@ -75,6 +75,7 @@
 //   research.confirm_goal_alignment         research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.create_line                    research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.create_question                research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
+//   research.discard_historical_checkpoint  research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.end_period                     research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.observe_run                    research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
 //   research.plan_action                    research                    persisted  src/features/aitpResearch/aitpResearchOps.ts
@@ -694,7 +695,9 @@ interface ResearchBeginActionPayload {
   _name: 'research.begin_action';
   actionId: string;
   questionId?: string;
+  questionRevision?: number;
   lineSlug?: string;
+  lineRevision?: number;
   kind: 'experiment' | 'derivation' | 'literature_review' | 'data_analysis' | 'simulation' | 'other';
   purpose: string;
   expectedEvidence: string[];
@@ -881,6 +884,12 @@ interface ResearchCreateQuestionPayload {
  * model: research · persisted
  * owner: src/features/aitpResearch/aitpResearchOps.ts
  */
+type ResearchDiscardHistoricalCheckpointPayload = { _name: 'research.discard_historical_checkpoint'; } & (object | object | object);
+
+/**
+ * model: research · persisted
+ * owner: src/features/aitpResearch/aitpResearchOps.ts
+ */
 interface ResearchEndPeriodPayload {
   _name: 'research.end_period';
   endedAt: number;
@@ -913,7 +922,9 @@ interface ResearchPlanActionPayload {
   _name: 'research.plan_action';
   actionId: string;
   questionId?: string;
+  questionRevision?: number;
   lineSlug?: string;
+  lineRevision?: number;
   kind: 'experiment' | 'derivation' | 'literature_review' | 'data_analysis' | 'simulation' | 'other';
   purpose: string;
   expectedEvidence: string[];
@@ -1597,6 +1608,7 @@ interface WirePayloadMap {
   "research.confirm_goal_alignment": ResearchConfirmGoalAlignmentPayload;
   "research.create_line": ResearchCreateLinePayload;
   "research.create_question": ResearchCreateQuestionPayload;
+  "research.discard_historical_checkpoint": ResearchDiscardHistoricalCheckpointPayload;
   "research.end_period": ResearchEndPeriodPayload;
   "research.observe_run": ResearchObserveRunPayload;
   "research.plan_action": ResearchPlanActionPayload;

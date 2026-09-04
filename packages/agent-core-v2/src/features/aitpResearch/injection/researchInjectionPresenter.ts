@@ -418,13 +418,16 @@ function appendGuidance(
   }
   if (planningPolicy === 'collaborative') {
     lines.push(
-      '- Planning policy is collaborative. Before preparing or revising Research Plan v2, ask through AskUserQuestion only when a consequential unknown cannot be resolved from the active Goal, current Research state, prior human direction, or checked evidence and the answer would materially change the plan. A dismissed, empty, or ambiguous answer is a no-op: do not revise or activate the plan and do not invent an assumption; wait for clear direction.',
+      '- Planning policy is collaborative. Before preparing or revising Research Plan v2, ask through AskUserQuestion only when a consequential unknown cannot be resolved from the active Goal, current Research state, prior human direction, or checked evidence and the answer would materially change the plan. If the host permission mode suppresses AskUserQuestion, do not guess a consequential scientific choice: keep the plan draft and either gather non-committing evidence or use RequestResearchDecision, which remains human-owned in every permission mode, for the genuinely non-delegable choice. A dismissed, empty, or ambiguous answer is a no-op.',
     );
   } else {
     lines.push(
-      '- Planning policy is dreaming. For unresolved choices, select only reversible, low-cost, in-scope defaults and record every chosen default in Research Plan v2 assumptions. Never dream through expensive or irreversible work, tool permissions, scientific-convention ambiguity, Goal or scope changes, or an AITP/human gate; stop for the appropriate human decision.',
+      '- Planning policy is dreaming. Once the Goal, scope, and completion criterion are clear, continue the project through Goal-owned Research turns without per-step confirmation. For unresolved choices, select only reversible, low-cost, in-scope defaults and record every chosen default in Research Plan v2 assumptions. Never dream through expensive or irreversible work, scientific-convention ambiguity, Goal or scope changes, or an AITP/human gate; use RequestResearchDecision for those non-delegable choices.',
     );
   }
+  lines.push(
+    '- Research planning policy and tool permission mode are orthogonal. auto removes routine tool-risk prompts and may suppress AskUserQuestion, but it cannot grant a Research capability, answer RequestResearchDecision or an AITP human gate, confirm Goal-to-Program meaning, widen scope, or bypass an action stop condition.',
+  );
   lines.push(
     '- Treat the active Goal objective, completion criterion, scope, confirmed Program relation, current Plan decisions, and prior explicit human direction as already supplied. Never ask the user to restate or re-approve them; continue autonomously when they determine a reversible, low-cost, in-scope next step.',
   );
@@ -433,6 +436,9 @@ function appendGuidance(
   );
   lines.push(
     '- Every bounded research action: declare it with BeginResearchAction (purpose, expected evidence, stop condition), perform only that work, then call ConcludeResearchAction once with the physical result, next step, and one explicit durability assessment. Do not repeat the same conclusion through RecordResearchProgress.',
+  );
+  lines.push(
+    '- In active Research Mode, allowed_tool_kinds is a runtime capability grant, not prose: use only workspace_read, workspace_write, web_search, web_fetch, shell, task, subagent, scheduler, or tool:<exact-tool-name>. BeginResearchAction and work tools must be in separate tool batches.',
   );
   lines.push(
     '- Use planning_level=simple only for a reversible one-step action. A non-trivial action must use planning_level=planned and bind the active Research Plan version, current milestone, and finalized local Action Plan version.',

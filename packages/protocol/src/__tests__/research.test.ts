@@ -885,21 +885,27 @@ describe('researchCommandRequestSchema', () => {
     })).toThrow();
   });
 
-  it('accepts human decision and alert acknowledgement commands', () => {
-    const resolved = researchCommandRequestSchema.parse({
-      command: {
-        kind: 'resolve_decision',
-        gateId: 'gate-1',
-        resolution: 'Proceed with the bounded experiment.',
-        nextPhase: 'action_planned',
-      },
-    });
-    expect(resolved.command).toMatchObject({
-      kind: 'resolve_decision',
-      gateId: 'gate-1',
-      resolution: 'Proceed with the bounded experiment.',
-      nextPhase: 'action_planned',
-    });
+  it('accepts only transition-authorized human decision recovery phases', () => {
+    for (const nextPhase of ['idle', 'gap_analysis', 'action_planned', 'action_executing', 'evaluating']) {
+      expect(researchCommandRequestSchema.parse({
+        command: {
+          kind: 'resolve_decision',
+          gateId: 'gate-1',
+          resolution: 'Proceed with the bounded experiment.',
+          nextPhase,
+        },
+      }).command).toMatchObject({ kind: 'resolve_decision', nextPhase });
+    }
+    for (const nextPhase of ['orienting', 'state_updated', 'checkpoint_pending', 'awaiting_human']) {
+      expect(() => researchCommandRequestSchema.parse({
+        command: {
+          kind: 'resolve_decision',
+          gateId: 'gate-1',
+          resolution: 'Reject invalid recovery phase.',
+          nextPhase,
+        },
+      })).toThrow();
+    }
 
     const acknowledged = researchCommandRequestSchema.parse({
       command: {

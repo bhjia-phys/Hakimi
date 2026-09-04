@@ -590,6 +590,8 @@ export default {
     proposeCheckpoint: 'Propose checkpoint',
     propose: 'Propose',
     commitCheckpoint: 'Commit checkpoint',
+    historicalCheckpointDiscardHint: 'This proposal targets an older question revision and has no AITP receipt. Discarding it changes only Hakimi working state.',
+    discardHistoricalCheckpoint: 'Discard historical proposal',
     entryId: 'Ledger entry ID',
     entryIdHint: 'Required; copy the explicit entry ID from the AITP ledger.',
     commit: 'Commit',

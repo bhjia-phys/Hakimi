@@ -188,7 +188,7 @@ export async function handleAutoCommand(host: SlashCommandHost, args: string): P
     }
     await session?.setPermission('auto');
     host.setAppState({ permissionMode: 'auto' });
-    host.showNotice('Auto mode: ON', 'All actions auto-approved; the agent will not ask you questions.');
+    host.showNotice('Auto mode: ON', 'Tool actions auto-approved; ordinary questions are suppressed, while explicit workflow decisions may still pause.');
     return;
   }
 
@@ -211,7 +211,7 @@ export async function handleAutoCommand(host: SlashCommandHost, args: string): P
   } else {
     await session?.setPermission('auto');
     host.setAppState({ permissionMode: 'auto' });
-    host.showNotice('Auto mode: ON', 'All actions auto-approved; the agent will not ask you questions.');
+    host.showNotice('Auto mode: ON', 'Tool actions auto-approved; ordinary questions are suppressed, while explicit workflow decisions may still pause.');
   }
 }
 

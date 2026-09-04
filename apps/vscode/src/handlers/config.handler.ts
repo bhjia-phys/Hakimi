@@ -24,7 +24,7 @@ const SLASH_COMMANDS: SlashCommandInfo[] = [
   {
     name: "auto",
     aliases: ["afk"],
-    description: "Toggle Auto mode (fully autonomous; the agent will not ask questions)",
+    description: "Toggle Auto mode (auto-approve tools and suppress ordinary questions; explicit workflow decisions may still pause)",
   },
   { name: "plan", aliases: [], description: "Toggle plan mode. Usage: /plan [on|off|view|clear]" },
   {

@@ -29,7 +29,7 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   save+show+check barrier、Goal complete guard）、mode/loop/Question/Focus/
   checkpoint 的单一完整 snapshot push、active step 的语义状态维护 guidance、
   protocol/node-sdk/kap-server/klient 公开表面、TUI `/research` Board/manager
-  与 stale-hydrate 防护均已实现。`/research` 与 `EnterAITPMode` 默认可发现；新 session 初始为 inactive，hydration 保留已持久化的 mode。inactive hydration/REST GET/SDK snapshot 读取只使用本地快照，不探测 AITP、不发生 AITP I/O，Board 和其他 Research/AITP 工具、plugin skill 保持隐藏；持久化为 active 的 session 在 cold restore 后仍保持 active，并重新 probe adapter、执行只读 `enter` → `check` maintenance。inactive session 只有显式 `/research on`、模型入口或 `enter_mode` 才会启动 probe；active undo/cold restore 也会重新 probe，ready probe 后只读执行 `enter` → `check`，不调度模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。旧 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`、`[experimental].aitp_research_mode` 与 master flag 对该能力均 inert no-op；backfill 不作为模型工具暴露。
+  与 stale-hydrate 防护均已实现。`/research` 与 `EnterAITPMode` 默认可发现；新 session 初始为 inactive，hydration 保留已持久化的 mode。inactive hydration/REST GET/SDK snapshot 读取只使用本地快照，不探测 AITP、不发生 AITP I/O，Board 和其他 Research/AITP 工具、plugin skill 保持隐藏；持久化为 active 的 session 在 cold restore 后仍保持 active，并重新 probe adapter、执行只读 `enter` → `check` maintenance。inactive session 只有显式 `/research` toggle、模型入口或 `enter_mode` 才会启动 probe；active undo/cold restore 也会重新 probe，ready probe 后只读执行 `enter` → `check`，不调度模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。旧 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`、`[experimental].aitp_research_mode` 与 master flag 对该能力均 inert no-op；backfill 不作为模型工具暴露。
   当前状态维护也已接通：进入模式、active undo/cold restore（均在 ready probe 后），以及 active、ready、loop-running 的 admitted Research turn 在 Research state 发生变化后的 turn end，都会只读执行 `enter` → `check`，不是 session-end automatic closeout。main-agent user prompt 由 prompt ingress 获得 transient `interactive_research` lease；只有 Goal engine 在现有 Research continuation guards 放行后生成的 typed continuation 才获得 `autonomous_research` lease。两者都进入 Research Loop 并接收 Research context；interactive lease 从不 enqueue continuation，Goal 仍是唯一 continuation owner。system/cron/subagent/unclassified、inactive、probing、paused 或 degraded turn abstain。maintenance receipt 和 context injection 只暴露安全摘要；完整 Research snapshot/API 或 expanded Board 仍可能包含 checkpoint、revision 和 adapter health 字段。合法的 check findings（包括 error finding）保持 ready；只有周期不可用或无效时显示 degraded。error finding 仍可按具体 checkpoint 的保存屏障阻止提交；不会自动 init/adopt/backfill，也不会自动写 semantic handoff、Entry 或 Note。该 coordinator 不是 H6b native method-distillation orchestration。Checkpoint 还会保留 prepare/save/check receipt、具体 Entry ID 和 pre-save finding baseline；commit 前用 `show` + scoped `check` 验证，旧 error 只作为可审计 warning，新 error 才阻止提交。Research alerts 使用稳定 fingerprint，并区分 active blocker、historical unresolved、superseded retry 和 warning；清除记录保留在 snapshot 中但不再注入模型。Research Loop 还实现 typed child evidence packet 的 main-agent-only review（review 本身 zero-write）和绑定当前 action 的显式 run observation；正常有界行动路径是 `BeginResearchAction` → 科研工作 → `ConcludeResearchAction`。Conclude 在一个 Research transition 中记录物理工作、结果、测试或推导、限制、主线影响、下一步和一次 main-agent durability assessment；`no_durable_delta` 不安排 S6 写入，`durable_delta` 只生成一个带现有 Entry kind、authority、provenance 与 rationale 的 pending commit candidate。它不提交/轮询 HPC、不创建 campaign 实体，也不把 RUNNING 当作科学结论。S7 已增加首次成功 checkpoint commit 后的一次无状态 same-turn handoff：只把 touched Entry 和 checkpoint 交给精确的外部 `distilling-methods` Skill；duplicate/unavailable 均为非阻塞 no-op。
   S5 还移除了 Research Line slug 自动成为 AITP workstream 的假设。Hakimi 只在无作用域 `enter` 观测当前 Topic 后，接受用户或 main agent 显式确认的本地、带 revision 的 Line→workstream binding；绝不从 slug、文本、路径或 ID 推断。每次确认带 server-owned `confirmationId`，clear 同时校验不回退的 public revision 与 exact identity。`unbound`/`unavailable`/`stale`/`conflict` Line 可继续低风险本地探索，但不能做 scoped durable checkpoint。maintenance 与 checkpoint prepare/save 都先重新观测 Topic 再校验精确 confirmed binding；canonical `show` 只接受 captured Topic 与唯一 captured workstream。S5.1 现以 AITP 0.9.0 `aitp/adapter-contract-0.2` 关闭原强写入隔离缺口：checkpoint save 自动传入 captured Topic 与 exact singleton workstream，由 AITP 在写锁内 compare-and-save；mismatch 零 canonical write，post-save `show`/scoped `check` 保持 defense in depth。save 与本地 binding 竞态仍保留 receipt 并 degraded，reset/exit mutation race仍需 canonical recovery。绑定状态已同步 snapshot、REST、WebSocket、SDK、klient、TUI 和 Web；S5 strong gate 已通过。
   S6 将上述 barrier 接到正常 Conclude 边界：`no_durable_delta` 保持零 S6 persistence/distillation I/O；`durable_delta` 以 additive `commitCandidate` 固定 source action、progress boundary、Entry kind、authority、provenance 和 rationale，并立即复用 prepare/fill/save/show/scoped-check/commit 路径。相同 retry 返回同一 pending candidate，不同 retry、provenance mismatch、重复 progress 与 pending 时的 Question/Line/Plan/Goal formal closure 均 fail closed。candidate 通过 REST、WebSocket、Node SDK、klient、TUI 与 Web 同步；AITP runtime/CLI/schema/adapter contract 不变。S7 conditional distillation handoff 已实现，但 H6b native coordinator 仍未实现。
@@ -63,6 +63,20 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   根据已有证据完成或放弃同一 Action。Hakimi 不从 UI 推断科学结果、不自动
   complete/abandon，也不为纯记账问题询问用户；这没有新增 AITP 或 public
   transport contract。
+  2026-09-05 的 Hakimi-only O4 针对真实 debug export 收敛恢复与执行归属：
+  无 receipt、无 committed Entry/history 痕迹且 captured Question revision 或
+  Program/binding 已 stale 的 historical pending checkpoint 可以安全自动或
+  显式 discard；任何可能跨过 canonical save 边界的 checkpoint 继续 fail
+  closed。unresolved human gate 与 phase 漂移只机械恢复到 `awaiting_human`，
+  不自动替人作决定；已 cleared alert 不再重复写入 clear op。Research Mode
+  active 时，统一 Tool Executor 的 before-execute veto 层直接把
+  Web/workspace/shell/task/subagent/scheduler/unknown plugin work 绑定到
+  fresh active Action 与其 runtime capability；Begin 与 work 必须分两个 batch，
+  post-action checkpoint draft 使用独立的窄 persistence lease。该策略不是
+  OS-level sandbox，`shell` 仍受通用 permission/host sandbox 约束。
+  `collaborative | dreaming` 是 Research planning policy，`auto` 是正交的工具
+  风险 permission；Goal 仍是唯一跨 turn continuation owner。AITP checkout
+  只读，0.9.0 CLI/schema/adapter-contract 0.2/Skill/human-decision 均不变。
   alerts 和 generic human gate 已实现，但 candidate confirmation 不是 `SetResearchFocus` 的 runtime 强制 guard，`ResolveResearchDecision` 不会自动写入 AITP decision Entry。degraded active Research Mode 会阻止 AITP writes 和 Goal completion；未解决 human gate 也会阻止 Goal completion，但本地 Question/Line mutation 仍可能发生，当前没有 automatic session-closeout。
   Hakimi 的本地 parser/contract 测试使用已 commit 的官方 AITP 0.8.0 golden fixtures：`enter.json`、`enter-after-save.json`、`list.json`、`show.json`、`check.json`、`check-workstream.json`；这些 read fixtures 在 S5.1 中保持逐字节不变，并已重新验证可由 AITP 0.9.0 消费。此外，2026-08-29 已在一次性 scratch store 中用 managed AITP 0.8.0 CLI 完成真实子进程 smoke test，覆盖作用域 `enter`/`check`、`record` 与 `note` prepare/save、`show`/`list`、重复 prepare 复用和最终 clean check；0.9.0 atomic-save 异常矩阵由当前 AITP/Hakimi deterministic suites 覆盖，完整跨平台 conformance 仍待补齐。
 - 完整兼容矩阵、假设核对与决策：
@@ -72,6 +86,10 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
 - Native method-distillation orchestration 设计：
   [`method-distillation-orchestration.md`](method-distillation-orchestration.md)
   （描述仍未实现的 native H6b；S7 的无状态同轮 Skill handoff 不属于该 coordinator）。
+- 面向研究者的最终形态、完整 Research Loop、职责边界、当前缺口和后续单阶段
+  Goal：[`theory-physics-collaborator-program.md`](theory-physics-collaborator-program.md)。
+  这是前向总体规划，不改变已经关闭的 S0–S10 状态，也不把 planned 能力写成
+  已实现事实。
 - Unified Research Mode 实施计划：
   [`unified-research-mode-program.md`](unified-research-mode-program.md)。S1 已将
   interactive/autonomous Research turn lease 分离；S2 新增可选的
@@ -161,13 +179,15 @@ side 的对应维护契约在 AITP 仓库 `docs/hakimi/README.md`。
    M1b、Hakimi contract）；
 2. AITP 仓库 `docs/hakimi/compatibility-matrix.md`（对方侧决策与假设核对）；
 3. 本目录 `compatibility-matrix.md` 与 `TRACKING.md`；
-4. 本目录 `theory-research-agent-design.md`（设计备忘录；H0–H4 已实现，H5 部分集成，H6b 未实现）；
-5. AITP `docs/archive/m1a-spec.md`、`docs/m1b-spec.md`、
+4. 本目录 `theory-physics-collaborator-program.md`（面向最终用户体验的前向总纲与
+   一次一个 Goal 的实施顺序）；
+5. 本目录 `theory-research-agent-design.md`（设计备忘录；H0–H4 已实现，H5 部分集成，H6b 未实现）；
+6. AITP `docs/archive/m1a-spec.md`、`docs/m1b-spec.md`、
    `docs/archive/m1c-workstreams-spec.md`、
    `docs/archive/m1d-workstream-health-spec.md`、
    `docs/archive/m1e-evidence-lifecycle-backfill-spec.md`、
    `docs/archive/collaborator-design.md`；
-6. 已安装插件的 `skills/using-aitp/SKILL.md`（Python 探测顺序、命令表）；
-7. AITP runtime：`plugins/aitp-research-protocol/scripts/aitp.py` +
+7. 已安装插件的 `skills/using-aitp/SKILL.md`（Python 探测顺序、命令表）；
+8. AITP runtime：`plugins/aitp-research-protocol/scripts/aitp.py` +
    `scripts/vendor/aitp/`；
-8. 本仓库 `AGENTS.md` / `README.md` / 架构代码（`packages/agent-core-v2/src/features/aitpResearch/`）。
+9. 本仓库 `AGENTS.md` / `README.md` / 架构代码（`packages/agent-core-v2/src/features/aitpResearch/`）。

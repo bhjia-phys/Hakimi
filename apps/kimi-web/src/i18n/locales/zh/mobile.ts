@@ -12,7 +12,7 @@ export default {
   sessionCount: '{n} 个会话',
   newSession: '新建会话',
   permManualSub: '每个工具都确认',
-  permAutoSub: '完全自主，不再提问',
+  permAutoSub: '自动工具，不问普通问题',
   permYoloSub: '自动批准工具，仍可能提问',
   planModeSub: '计划模式',
   swarmModeSub: 'Swarm 模式',

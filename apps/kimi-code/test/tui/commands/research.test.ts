@@ -85,9 +85,9 @@ function makeResearchHost(snapshot: ResearchStatusSnapshot = makeSnapshot()) {
 }
 
 describe('parseResearchCommand', () => {
-  it('parses empty args as status', () => {
-    expect(parseResearchCommand('')).toEqual({ kind: 'status' });
-    expect(parseResearchCommand('   ')).toEqual({ kind: 'status' });
+  it('parses empty args as a mode toggle', () => {
+    expect(parseResearchCommand('')).toEqual({ kind: 'toggle' });
+    expect(parseResearchCommand('   ')).toEqual({ kind: 'toggle' });
   });
 
   it('parses explicit status', () => {
@@ -146,6 +146,18 @@ describe('parseResearchCommand', () => {
 
   it('parses manage', () => {
     expect(parseResearchCommand('manage')).toEqual({ kind: 'manage' });
+  });
+
+  it('parses a historical checkpoint discard with its exact id', () => {
+    expect(parseResearchCommand('discard-checkpoint checkpoint-123')).toEqual({
+      kind: 'discard_checkpoint',
+      checkpointId: 'checkpoint-123',
+    });
+  });
+
+  it('rejects a checkpoint discard without exactly one id', () => {
+    expect(parseResearchCommand('discard-checkpoint').kind).toBe('error');
+    expect(parseResearchCommand('discard-checkpoint one two').kind).toBe('error');
   });
 
   it('parses line with slug', () => {
@@ -316,6 +328,45 @@ describe('parseResearchCommand', () => {
 });
 
 describe('handleResearchCommand manager actions', () => {
+  it('uses bare /research to enter an inactive mode', async () => {
+    const snapshot = makeSnapshot({ mode: 'inactive', aitpHealth: { phase: 'inactive' } });
+    const { host, session } = makeResearchHost(snapshot);
+
+    await handleResearchCommand(host, '');
+
+    expect(session.getResearch).toHaveBeenCalledOnce();
+    expect(session.commandResearch).toHaveBeenCalledWith({
+      kind: 'enter_mode',
+      actor: 'user',
+    });
+  });
+
+  it('uses bare /research to exit an active mode', async () => {
+    const snapshot = makeSnapshot({ mode: 'ready' });
+    const { host, session } = makeResearchHost(snapshot);
+
+    await handleResearchCommand(host, '');
+
+    expect(session.getResearch).toHaveBeenCalledOnce();
+    expect(session.commandResearch).toHaveBeenCalledWith({ kind: 'exit_mode' });
+  });
+
+  it('sends a historical checkpoint discard with the current snapshot revision', async () => {
+    const snapshot = makeSnapshot({ revision: 13 });
+    const { host, session } = makeResearchHost(snapshot);
+
+    await handleResearchCommand(host, 'discard-checkpoint checkpoint-123');
+
+    expect(session.commandResearch).toHaveBeenCalledWith({
+      kind: 'discard_historical_checkpoint',
+      checkpointId: 'checkpoint-123',
+      expectedRevision: 13,
+    });
+    expect(host.showStatus).toHaveBeenCalledWith(
+      'Historical checkpoint proposal checkpoint-123 discarded; AITP was unchanged.',
+    );
+  });
+
   it('sends explicit Goal alignment commands with checkpoint identities', async () => {
     const snapshot = makeSnapshot({
       goalSummary: { goalId: 'goal-1', objective: 'Parent goal', status: 'active' },

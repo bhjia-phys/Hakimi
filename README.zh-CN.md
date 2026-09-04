@@ -59,7 +59,13 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 
 ## Research Mode 与 AITP
 
-Research Mode 默认可发现，但每个新 session 都从 inactive 开始。对于持续工作，`theory-physics` 可以指导模型调用 `EnterAITPMode`、等待 authoritative probe status，并执行有界行动；inactive session 的 AITP I/O 为零。Research Board 和模型上下文会明确区分 Hakimi Goal、observed AITP Program（含其顶层 **Research goal**）和 Local Research Loop。Hakimi 只通过 AITP `enter` 观测该顶层目标，从不写 `TOPIC.md` 或 AITP Topic。Goal↔Program alignment 是仅在本地 checkpointed、由用户显式确认的 binding，不会根据文本相似度推断。在 active Research Mode 中，缺少 binding、binding stale 或明确 conflict 都会阻止 Goal completion 和 automatic continuation；inactive Goal 不受影响。进入 Research Mode 不会调度模型轮次，跨 turn continuation 仅由 Goal 负责，Plan 只是行动内短期 overlay；没有 Goal 时交互式 Research 仍可正常工作。TUI/Web 的紧凑 Board 统一为 Project、Current cycle、Attention、Next 四个位置，并把旧 period counter 准确标为 Research turn 数；健康 AITP 与 provenance 折叠到展开详情。存在 live Action/Run、checkpoint、human gate 或非 idle cycle 时会拒绝切换 Line，其他 Line 的 alert 也不会冒充当前 attention。默认 Goal engine 还会公开派生的 `idle`/`deciding`/`enqueued`/`running`/`held`/`waiting` continuation 状态，因此被 Research policy hold 的 active Goal 会显示为 `active · continuation held` 及其 owner/reason，而不会与 paused Goal 混淆。缺少该可选字段的旧 snapshot 会标为 unavailable，多 Line Board 状态则始终按当前选中 Line 隔离。replay 只修复可确定的 Action/phase 结构：同一个 Action 保持 live、阻止 Goal completion，并在下一次 interactive Research turn 中根据证据解决，不会被自动完成或自动放弃。在 `auto` 权限模式下，常规且任务范围内的 Research Action 使用统一的工具权限策略，不会再创建第二层 durable approval gate；旧 session 留下的 matching action approval 会以可审计的 standing auto authorization 继续执行。
+Research Mode 默认可发现，但每个新 session 都从 inactive 开始。对于持续工作，`theory-physics` 可以指导模型调用 `EnterAITPMode`、等待 authoritative probe status，并执行有界行动；inactive session 的 AITP I/O 为零。Research Board 和模型上下文会明确区分 Hakimi Goal、observed AITP Program（含其顶层 **Research goal**）和 Local Research Loop。Hakimi 只通过 AITP `enter` 观测该顶层目标，从不写 `TOPIC.md` 或 AITP Topic。Goal↔Program alignment 是仅在本地 checkpointed、由用户显式确认的 binding，不会根据文本相似度推断。在 active Research Mode 中，缺少 binding、binding stale 或明确 conflict 都会阻止 Goal completion 和 automatic continuation；inactive Goal 不受影响。进入 Research Mode 不会调度模型轮次，跨 turn continuation 仅由 Goal 负责，Plan 只是行动内短期 overlay；没有 Goal 时交互式 Research 仍可正常工作。TUI/Web 的紧凑 Board 统一为 Project、Current cycle、Attention、Next 四个位置，并把旧 period counter 准确标为 Research turn 数；健康 AITP 与 provenance 折叠到展开详情。存在 live Action/Run、checkpoint、human gate 或非 idle cycle 时会拒绝切换 Line，其他 Line 的 alert 也不会冒充当前 attention。默认 Goal engine 还会公开派生的 `idle`/`deciding`/`enqueued`/`running`/`held`/`waiting` continuation 状态，因此被 Research policy hold 的 active Goal 会显示为 `active · continuation held` 及其 owner/reason，而不会与 paused Goal 混淆。缺少该可选字段的旧 snapshot 会标为 unavailable，多 Line Board 状态则始终按当前选中 Line 隔离。每个 admitted Research turn 都会在注入模型上下文前执行一次确定性本地 reconciliation，因此可机械判定的 Line/Action/phase/period/cursor 漂移会在回答前修复；这不会额外跑一轮 AITP maintenance，也不推断科学结果。historical checkpoint 只有在 Hakimi 能够证明它没有 save receipt、committed Entry 或 committed-history 痕迹，且其捕获的 Question 或 Program binding 已 stale 时才会自动丢弃；任何含糊状态都保持 blocked，等待显式恢复。replay 只修复可确定的 Action/phase 结构：同一个 Action 保持 live、阻止 Goal completion，并在下一次 interactive Research turn 中根据证据解决，不会被自动完成或自动放弃。
+
+上段的 “Plan” 特指短期 Action-local Plan/Todo；带 revision 的 Research Plan 是跨多轮、可随证据演化的科学策略，但同样不拥有 continuation，也不能完成 Goal。
+
+Research 协作策略与工具权限模式相互正交。`collaborative` 只在会改变 Research Plan 的关键不确定性上询问研究者。`dreaming` 表示一旦 Goal、scope 和 completion criterion 已明确，Hakimi 就记录 reversible、low-cost、in-scope 的默认假设，并让 Goal 拥有的 continuation 在不逐步确认的情况下继续推进课题。两者在改变 Goal/scope、会影响结论的科学约定歧义、昂贵或不可逆操作，以及 AITP/其他 human decision 处都仍会停下。`auto` 只决定常规工具风险确认；因此 Goal + `dreaming` + `auto` 可以在已约定的科学与操作边界内自动推进，但不会获得新的科学决策权。
+
+Research Mode 一旦 active，Action 归属就由 Tool Executor 强制执行，不需要实验开关。由模型发起的科研工具必须属于一个 fresh、in-progress 的 bounded Action，并且拥有显式授权的 capability；control/recovery 和精确 checkpoint draft 持久化另有更窄的 lease。被拒绝的 `BeginResearchAction` 不能再被 Web、workspace、shell、subagent、scheduler 或未知 plugin/MCP 工具绕过，而创建 Action 与执行科研工具不能放在同一批次。这是 executor-enforced policy，不是 OS-level isolation：被授权的 shell capability 仍很宽，仍受通用 permission system 和 host sandbox 约束。
 
 Research Line 与 AITP workstream 也是两个不同的 identity。Hakimi 观测到当前 Topic 后，必须由用户或 main agent 显式确认一条带 revision 的本地 Line→workstream binding；slug、文本、路径或 ID 相同都不表示 membership。每次确认都有 server-owned opaque identity，clear 必须同时比较该 identity 与不随 undo 回退的 public Research revision。`unbound`、`unavailable`、`stale` 或 `conflict` 的 Line 仍可做低风险本地探索，但 scoped maintenance 和 Hakimi checkpoint adoption 必须使用精确的 confirmed binding。Hakimi 会在 scoped maintenance 与 checkpoint write 前重新做无作用域 Topic observation，post-save commit barrier 同时校验 captured Topic 与唯一一个 captured workstream。checkpoint-bound save 要求 AITP 0.9.0 adapter-contract 0.2：Hakimi 会把 captured Topic 与 exact singleton workstream 传给 atomic `record save`，因此 mismatch 不产生 canonical Entry；post-save `show` 和 scoped `check` 继续作为 defense in depth。重新绑定前必须先显式清除；undo 或 cold restore 会重新校验已保存的 Topic 与 observed revision，不会自动修复 binding。REST、WebSocket、Node SDK、klient、TUI 和 Web 投影同一个 binding status 与 typed durable-candidate state。
 
@@ -93,10 +99,10 @@ hakimi -p "Summarize the test failures in this repository."
 hakimi -c
 ```
 
-在交互式会话中，当工作需要时显式进入 Research Mode：
+在交互式会话中，当工作需要时直接切换 Research Mode：
 
 ```text
-/research on
+/research
 ```
 
 使用 `/login` 配置可用的 provider。配置 DeepSeek 时运行 `hakimi provider deepseek`。登录必须显式触发，Hakimi 不会在启动时自动开始 OAuth 登录。配置、session、日志和缓存默认保存在 `~/.hakimi`；设置 `HAKIMI_HOME` 可使用其他数据目录。
@@ -115,6 +121,8 @@ Windows 用户首次启动前请安装 [Git for Windows](https://gitforwindows.o
 - [快速开始](docs/zh/guides/getting-started.md)
 - [配置](docs/zh/configuration/config-files.md)
 - [Research Mode](docs/zh/guides/research-mode.md)
+- [理论物理合作者总体规划](docs/aitp/theory-physics-collaborator-program.md)
+- [理论物理合作者与 Research Loop 设计](docs/aitp/theory-research-agent-design.md)
 - [AITP 文档与兼容性记录](docs/aitp/)
 - [实现说明](IMPLEMENTATION.md)
 

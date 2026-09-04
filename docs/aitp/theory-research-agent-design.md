@@ -4,7 +4,7 @@
 >
 > 本文件是 Hakimi 侧的设计交接材料，不是 AITP canonical Entry 或 Note。当前 Hakimi 仓库没有初始化 `.aitp` store；不能自动 `init --adopt`，也不能绕过 AITP 的 `record/note prepare|save` 写入伪账本。待在已初始化的 AITP Topic workspace 中继续工作时，应把本备忘录压缩为真实的 `decision` 或 `working Note`，并按 AITP pin 规则保存。
 >
-> **已实现范围：** Hakimi adapter 的 H0–H4（strict contract discovery、Python probe、`enter`/`list`/`show`/`check`、scoped `--workstream`、`record`/`note prepare|save` 写入门控持久化）以及 Research state（Question/Line/Focus、三轴问题模型、revision-based human steering、pending checkpoint 与 save+show+check barrier、Goal complete guard）、mode/loop/Question/Focus/checkpoint 的单一完整 snapshot push、active step 的语义状态维护 guidance、protocol/node-sdk/kap-server/klient 公开表面、TUI `/research` Board/manager 与 stale-hydrate 防护已实现。H5 仅部分集成：adapter 只把 check finding code 作为 opaque string 投影，不暴露、不调用、不解析 `backfill-0.1` 成功 envelope，也不实现 `sha256-once:`/`check-policy` 语义。`/research on` 只激活 capability 和 Board，不调度模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。active、ready、loop-running 时，typed main-agent user prompt 获得 transient interactive Research lease；只有现有 continuation guards 放行后由 Goal engine 生成的 typed continuation 获得 autonomous lease。新 session 初始为 inactive，inactive hydration/GET/snapshot 读取零 AITP I/O；持久化为 active 的 session 在 cold restore 后仍保持 active，并重新 probe adapter、执行只读 `enter` → `check` maintenance。两类 admitted turn 在 Research state 发生变化后的 turn end 都执行只读 maintenance。不自动 init/adopt/inventory/backfill apply；backfill 不作为模型工具暴露。
+> **已实现范围：** Hakimi adapter 的 H0–H4（strict contract discovery、Python probe、`enter`/`list`/`show`/`check`、scoped `--workstream`、`record`/`note prepare|save` 写入门控持久化）以及 Research state（Question/Line/Focus、三轴问题模型、revision-based human steering、pending checkpoint 与 save+show+check barrier、Goal complete guard）、mode/loop/Question/Focus/checkpoint 的单一完整 snapshot push、active step 的语义状态维护 guidance、protocol/node-sdk/kap-server/klient 公开表面、TUI `/research` Board/manager 与 stale-hydrate 防护已实现。H5 仅部分集成：adapter 只把 check finding code 作为 opaque string 投影，不暴露、不调用、不解析 `backfill-0.1` 成功 envelope，也不实现 `sha256-once:`/`check-policy` 语义。`/research` 直接切换 capability 和 Board，但不调度模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。active、ready、loop-running 时，typed main-agent user prompt 获得 transient interactive Research lease；只有现有 continuation guards 放行后由 Goal engine 生成的 typed continuation 获得 autonomous lease。新 session 初始为 inactive，inactive hydration/GET/snapshot 读取零 AITP I/O；持久化为 active 的 session 在 cold restore 后仍保持 active，并重新 probe adapter、执行只读 `enter` → `check` maintenance。两类 admitted turn 在 Research state 发生变化后的 turn end 都执行只读 maintenance。不自动 init/adopt/inventory/backfill apply；backfill 不作为模型工具暴露。
 >
 > **S5 strong gate 已通过（S5.1）：** Research Line 与 AITP workstream 通过 Hakimi-local、revisioned 的显式 binding 连接；绝不从 slug、text、path 或 ID 推断。AITP 0.9.0 adapter-contract 0.2 提供成对 atomic expected-Topic/exact-workstream `record save` 前置条件，Hakimi 从 captured binding 自动传入；mismatch 不产生 canonical Entry，post-save `show`/scoped `check` 继续作为 defense in depth。不新增 file/read schema、backfill 或 registry。
 >
@@ -28,7 +28,7 @@ AITP 不是 Hakimi 的常驻行为，而是一个显式的、可恢复的科研 
 
 这里需要区分“架构分离”和“科研可靠性分离”：Research Loop 与 AITP adapter 是两个可测试、可替换的内部服务，但完整的 `AITP Research Mode` 不允许把 AITP 当作可有可无的旁路。没有 AITP 时可以进行有限的 exploratory work，却不能把它称为完整可靠的研究模式，也不能关闭关键问题、宣布正式 result 或完成阶段交接。
 
-Research Mode 不由实验性 Feature flag 门控：入口默认可发现，runtime mode 决定当前 main Agent 是否已经选择启用联合科研能力。每个新 session 初始为 inactive，hydration 保留已持久化的 mode；inactive hydration、GET 和 snapshot 读取不发生 AITP I/O。持久化为 active 的 session 在 cold restore 后仍保持 active，并重新 probe adapter、执行只读 `enter` → `check` maintenance。旧的 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 与 master flag 对该入口均为 inert 兼容输入，不会隐藏或启用 Research Mode。permission `auto` 只决定模型发起的 mode-entry 工具是否免除一次用户确认，不能授予模型 human authority、改变研究目标或批准高风险动作。H6b 若未来需要独立 gate，必须使用独立的 Feature flag，不能冒充当前 Research Mode flag；进入模式仍需 `/research on` 或模型入口，不自动 init/adopt/inventory/backfill。
+Research Mode 不由实验性 Feature flag 门控：入口默认可发现，runtime mode 决定当前 main Agent 是否已经选择启用联合科研能力。每个新 session 初始为 inactive，hydration 保留已持久化的 mode；inactive hydration、GET 和 snapshot 读取不发生 AITP I/O。持久化为 active 的 session 在 cold restore 后仍保持 active，并重新 probe adapter、执行只读 `enter` → `check` maintenance。旧的 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 与 master flag 对该入口均为 inert 兼容输入，不会隐藏或启用 Research Mode。permission `auto` 只决定模型发起的 mode-entry 工具是否免除一次用户确认，不能授予模型 human authority、改变研究目标或批准高风险动作。H6b 若未来需要独立 gate，必须使用独立的 Feature flag，不能冒充当前 Research Mode flag；进入模式使用 `/research` toggle 或模型入口，不自动 init/adopt/inventory/backfill。
 
 ## 2. 真相分层与边界
 
@@ -49,7 +49,7 @@ AITP mode 是 Agent-scope 的 main-agent capability state，采用可回放、�
 - active/probing：已请求联合科研模式，但还没有通过 AITP `enter/check`；只能进行入口准备和低风险 exploratory work，不能提交可靠 checkpoint。
 - active/ready：Research Loop 和 AITP adapter 同时可用，进入完整可靠的科研模式；关键阶段转换必须经过 AITP commit barrier。
 - active/degraded：Research Loop 可以保留当前问题、继续本地 Question/Line mutation 和生成临时 artifact，但不得把持久化失败伪装成成功。AITP writes 与 active Research Mode 的 Goal completion 被阻止；未解决 human gate 也阻止 Goal completion。需要 durable checkpoint 或可靠 closure 时应 pause/blocked，直到 AITP 恢复或研究者明确选择降级处理；当前没有 automatic session-closeout。
-- explicit user entry：通过 `/research on`、typed facade 或等价用户入口直接进入，不重复询问。
+- explicit user entry：通过 `/research` toggle、typed facade 或等价用户入口直接进入，不重复询问。
 - model entry：模型只能调用 `EnterAITPMode`；`auto` permission 可自动通过 entry gate，其他 permission posture 要求用户确认。这里的确认是 capability entry review，不等同于 AITP `authority: human` decision。
 - mode exit：撤销新 AITP 操作 admission、回收动态工具和 Research activation lease，不删除已经保存的 AITP 记录，也不自动取消或完成 Goal。
 - restore/undo：inactive restore 必须零 AITP I/O；active restore 不重复询问，但重新探测 adapter 并重建工具。conversation undo 只回滚 Hakimi mode/Research state，不回滚外部 AITP Entry/Note。
@@ -487,3 +487,91 @@ Board 默认只显示 current Line；其他 active/waiting/blocked Lines 用摘�
 - 需要用真实理论物理任务建立评估集，验证 Agent 是否真的根据新证据改变行动，而不是只增加日志、turn 或子 Agent 数量。
 - 需要冻结普通模式与 AITP mode 的 Skill visibility seam；仅隐藏静态 `aitp_*` tools 不足以阻止 `SkillTool` 间接触发 AITP 维护。
 - 需要明确非 `auto` permission 下的 mode-entry review 与普通 tool approval 的交互方式；当前 `EnterPlanMode` 在代码中是默认自动批准的，不能直接把它当作“必然询问用户”的实现样例。
+
+## 12. 理论物理合作者的用户可见形态（2026-09-05）
+
+用户面对的不应是一台要求人类手动推动 phase 的状态机，而应是一位能够说清“当前想区分什么、为什么做这个检验、证据改变了什么”的理论物理合作者。内部 lifecycle 、revision 和 lease 用于防止证据串线、恢复错位或工具绕过；它们默认应当折叠在审计详情中，不是科研叙事的主体。
+
+### 12.1 一轮真实科研怎样运转
+
+```mermaid
+flowchart LR
+  Q[明确当前问题] --> O[查 AITP、已有知识卡、文献和人类指导]
+  O --> H[形成候选解释或猜想]
+  H --> P[更新 Research Plan]
+  P --> T[选择一个最小判别性检验]
+  T --> A[Begin Action]
+  A --> W[自己执行或调用按需的 specialist]
+  W --> E[收集证据、反证和失败]
+  E --> J[Conclude：结果、限制、不确定性]
+  J --> D{durable delta?}
+  D -->|no| N[更新 Board 与下一步]
+  D -->|yes| L[AITP prepare/save/show/check/commit]
+  L --> M[仅对真实可复用经验做条件性蒸馏 review]
+  M --> N
+  N -->|critical unknown| H
+  N -->|human judgment| U[询问研究者]
+  N -->|external run| X[等待，或开始另一个独立 bounded action]
+  N -->|criterion met| C[阶段完成]
+```
+
+定向、提出猜想与选择 benchmark 不是一个空的“思考 phase”。这一段可以和研究者讨论，也可以读取 AITP 中已提交的结果、检索文献、查看方法卡，或者用 literature/derivation/skeptical/numerical/code 等 specialist 独立取证。specialist 是按需的视角算子，不是每轮强制运行的五个流水线智能体。主 Agent 始终负责选择判别性检验、综合冲突证据和与人类交互。
+
+AITP 在这个图里有两个精确位置：轮次开始的恢复/取证，以及 durable boundary 的提交。它不替 Agent 提猜想、不替研究者做科学决策、不每个小 step 强制写 Note，也不在后台创建另一条自治 loop。
+
+### 12.2 Goal、Research Plan、local Plan 和 Action
+
+| 对象 | 用户问题 | 拥有的职责 | 不拥有的职责 |
+|---|---|---|---|
+| Goal | 这个阶段什么时候算真正完成？ | objective、completion criterion、budget、pause/resume/cancel 和跨 turn continuation | 不代替科学问题、AITP Topic 或工具权限 |
+| Research Plan | 我们目前认为怎样能达到 Goal？ | 可修订的 milestones、候选路线、所需证据、假设、decision/replan/stop conditions | 不是不可更改的一次性 roadmap，不自动完成 Goal |
+| local Plan | 当前这个 Action 的实际步骤是什么？ | 短期 todo、工具顺序和执行检查 | 不是科学证据或 Research status |
+| Research Action | 这一轮要判别什么？ | purpose、expected evidence、stop condition、工具 capability 和 conclusion boundary | 不是整个课题，不能在失败后被普通工具绕过 |
+
+没有 Goal 时，active Research Mode 仍可以用于自然对话和单轮科研；它只是不会自动开启下一个 model turn。有 active Goal 时，Research Loop 每轮仍只做一个可收敛的 bounded Action，Goal engine 在该轮结束后决定是否排入下一轮。这避免 Research domain、AITP 和 scheduler 各自生成 continuation。
+
+### 12.3 collaborative、dreaming 与 auto
+
+| 维度 | collaborative | dreaming | auto permission |
+|---|---|---|---|
+| 决定什么 | 何时就关键科研不确定性询问人类 | Goal 明确后，哪些低成本、可逆、scope 内的假设可由 Agent 代为选择 | 工具风险确认是否自动通过 |
+| 会不会开启下一轮 | 由 Goal 决定 | 由 Goal 决定，通常继续 | 不会 |
+| 会不会修改科学权威 | 不会 | 不会 | 不会 |
+| 必须停下的边界 | Goal/scope 改变、关键 convention、昂贵/不可逆操作、human decision | 同左 | 不能覆盖 harness veto 或 human decision |
+
+因此“Goal + dreaming + auto”是一种有界自治配置：Goal 持续调度，dreaming 减少计划中的非必要提问，auto 减少工具层常规确认。三者叠加也不能自动确认 Goal↔Program、推断 Line↔workstream、改变物理 convention、替人类批准 Method card，或越过 Action stop condition。
+
+### 12.4 当前硬约束与软约束
+
+Research Mode active 时，统一 Tool Executor 的 `onBeforeExecuteTool` 会直接 fail closed 地强制 Action 归属，而不只是向 prompt 写要求：
+
+- status/control 和窄化的 mechanical recovery 不要求 active Action；
+- Web、workspace、shell、task、subagent、scheduler 等科研工作必须有 fresh `in_progress` Action、`action_executing` 归属、本 turn Research lease、fresh Line/Question/Plan binding 和对应 capability；
+- 未知 plugin/MCP tool 默认拒绝，只接受 `tool:<exact-name>` 授权；
+- `BeginResearchAction` 与科研工具不允许在同一 tool batch，避免 Begin 被拒绝时工作已经并发执行；
+- Action conclude 后，checkpoint persistence 只能使用当前 pending checkpoint ID、已 prepare 的精确 draft path 和当前 binding；
+- 直接读写 canonical `.aitp/topic` 文件始终拒绝；
+- mode degraded、loop paused、本 turn 无 lease、unresolved human gate、Action 或其 binding stale 都会立即撤销 capability。
+
+这些是默认生效的 executor-hard enforcement。“应该先提出哪个物理猜想”、“这份证据是否足以改变计划”、“是否出现 AITP Method-card trigger”仍依赖模型、domain Skill 和人类判断，属于软约束。当前实现也不是 OS-level sandbox：被 Action 授予的 `shell` 仍可以表达读、写、网络或远程命令，必须继续受通用 permission policy 与 host sandbox 约束。
+
+### 12.5 真实会话暴露的问题与当前修复
+
+2026-09-04 的三份真实 debug export 暴露了五个独立问题，不应统一归因为“phase 不对”：
+
+1. `BeginResearchAction` 被拒绝后，同一 turn 仍执行 WebSearch/FetchURL：现由 executor guard 和真实 hook 回归测试覆盖；
+2. Begin 与 work 在同一 batch 存在竞态：现采用简单可审计的“分两批”规则；
+3. 旧 Question revision 的无收据 checkpoint 永久占据 Next：现只在证明零 canonical-write 痕迹且 context stale 时自动或手动 discard，否则 fail closed；
+4. unresolved human gate 与 phase 漂移导致无法 resolve：现只机械恢复到 `awaiting_human`，不自动作决定；
+5. 同一 warning 反复产生数千个 clear op：现已清除的 fingerprint 不再重复 dispatch，Board 只展示当前 Line 真正需处理的 Attention。
+
+### 12.6 Board 只回答四个问题
+
+| 位置 | 用户应看到的内容 |
+|---|---|
+| Project | 当前 Goal/milestone、Line 以及整个课题距 completion criterion 还差什么 |
+| Current cycle | 当前 Question/猜想、正在做的判别性检验、是在思考/执行/评价/记录哪一段 |
+| Attention | 现在真正阻止结论或 continuation 的一件事，没有则不显示警告墙 |
+| Next | 下一个可执行的 bounded action，或明确的等待/人类判断 |
+
+一致性、receipt、revision、adapter version、hash 和 historical alert 放进 expanded audit，健康时不占用紧凑 Board。Board 是当前 Research snapshot 的投影，不是第二份需要 Agent 手工更新的记录；回答前 reconciliation 会先修复能机械证明的漂移，不能机械证明的科学结论才留给研究者。

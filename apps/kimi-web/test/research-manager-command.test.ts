@@ -7,6 +7,7 @@ import {
   researchManagerCheckpointDraftIsStale,
   researchManagerDraftTarget,
   researchManagerDraftTargetMatches,
+  researchManagerHistoricalCheckpointCanBeDiscarded,
   researchManagerLineDraftIsStale,
   researchManagerMutationAllowed,
   researchManagerQuestionDraftIsStale,
@@ -75,6 +76,73 @@ function bindingSnapshot(
 }
 
 describe('Research Manager command acknowledgements', () => {
+  it('offers historical checkpoint discard for every server-supported stale context only', () => {
+    const captured = {
+      confirmationId: 'confirmation-old',
+      lineSlug: 'line-a',
+      workstream: 'workstream-a',
+      topicId: 'topic-a',
+      observedRevision: 4,
+      confirmedBy: 'user' as const,
+      confirmedAt: 2,
+    };
+    const checkpoint = {
+      checkpointId: 'checkpoint-old',
+      questionId: 'q-1',
+      questionRevision: 1,
+      lineSlug: 'line-a',
+      workstreamBinding: captured,
+      idempotencyKey: 'checkpoint-key',
+      persistence: 'pending_commit' as const,
+      createdAt: 3,
+    };
+    const question = {
+      id: 'q-1',
+      lineSlug: 'line-a',
+      wording: 'Which result survives?',
+      state: 'active' as const,
+      epistemicStatus: 'candidate' as const,
+      persistence: 'pending_commit' as const,
+      priority: 0,
+      neededEvidence: [],
+      evidenceRefs: [],
+      createdAt: 1,
+      updatedAt: 2,
+      revision: 2,
+    };
+    const base = bindingSnapshot({
+      questions: [question],
+      pendingCheckpoint: checkpoint,
+      lineWorkstreamBindings: [captured],
+    });
+    expect(researchManagerHistoricalCheckpointCanBeDiscarded(base)).toBe(true);
+
+    const currentQuestion = { ...question, revision: 1 };
+    const changedBinding = { ...captured, confirmationId: 'confirmation-new', confirmedAt: 4 };
+    expect(researchManagerHistoricalCheckpointCanBeDiscarded({
+      ...base,
+      questions: [currentQuestion],
+      lineWorkstreamBindings: [changedBinding],
+    })).toBe(true);
+    expect(researchManagerHistoricalCheckpointCanBeDiscarded({
+      ...base,
+      questions: [currentQuestion],
+      program: { ...base.program!, observedRevision: 5 },
+    })).toBe(true);
+    expect(researchManagerHistoricalCheckpointCanBeDiscarded({
+      ...base,
+      questions: [currentQuestion],
+    })).toBe(false);
+    expect(researchManagerHistoricalCheckpointCanBeDiscarded({
+      ...base,
+      latestCommittedCheckpoint: {
+        checkpointId: checkpoint.checkpointId,
+        entryId: 'entry-old',
+        committedAt: 5,
+      },
+    })).toBe(false);
+  });
+
   it('maps draft-saving commands to their precise form and target', () => {
     expect(researchManagerDraftTarget({
       kind: 'update_line',

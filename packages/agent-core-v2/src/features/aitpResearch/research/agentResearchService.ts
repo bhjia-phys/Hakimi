@@ -64,10 +64,13 @@
  * automatic continuation for those same active-mode conditions — otherwise it
  * abstains, leaving the continuation decision to Goal. Also
  * registers an `onBeforeExecuteTool` veto that blocks AITP mutation tools on
- * subagents. Goal is the sole continuation owner. Bound at Agent scope.
+ * subagents and makes action capability ownership executor-authoritative for
+ * main-agent work tools while Research Mode is active. Goal is the sole
+ * continuation owner. Bound at Agent scope.
  */
 
 import { randomUUID } from 'node:crypto';
+import { posix } from 'node:path';
 
 import { Service } from '#/_base/di/service';
 import { Emitter } from '#/_base/event';
@@ -84,10 +87,14 @@ import { IAgentPlanService } from '#/features/plan/plan';
 import { IEventBus } from '#/app/event/eventBus';
 import { IWireService } from '#/wire/wire';
 import { denyToolExecution } from '#/agent/toolExecutor/beforeToolExecuteEvent';
-import type { BeforeToolExecuteEvent } from '#/agent/toolExecutor/toolHooks';
+import type {
+  BeforeToolExecuteEvent,
+  ToolDidExecuteContext,
+} from '#/agent/toolExecutor/toolHooks';
 import { ISessionAitpAdapter } from '#/features/aitpResearch/adapter/sessionAitpAdapter';
 import { ISessionAitpLifecycleCoordinator } from '#/features/aitpResearch/coordinator/sessionAitpLifecycleCoordinator';
 import { AitpResearchError, AitpResearchErrors } from '#/features/aitpResearch/errors';
+import { IResearchTurnAdmission } from '#/features/aitpResearch/loop/researchTurnAdmission';
 import type {
   HumanSteeringCommand,
   ResearchActionSpec,
@@ -144,6 +151,7 @@ import {
   researchSwitchLine,
   researchSteer,
   researchProposeCheckpoint,
+  researchDiscardHistoricalCheckpoint,
   researchBindCheckpointReceipt,
   researchAcknowledgeCheckpoint,
   researchReopenQuestion,
@@ -210,6 +218,11 @@ import {
   researchActionOwnedPhase,
 } from '#/features/aitpResearch/transitions/researchTransitionAuthority';
 import { MAIN_AGENT_ID } from '#/session/agentLifecycle/agentLifecycle';
+import {
+  classifyResearchTool,
+  researchCapabilityGranted,
+  type ResearchExecutionCapability,
+} from './researchExecutionPolicy';
 
 import {
   type ClearGoalAlignmentInput,
@@ -218,6 +231,7 @@ import {
   type ConfirmGoalAlignmentInput,
   type CommitCheckpointInput,
   type CommitCheckpointResult,
+  type DiscardHistoricalCheckpointInput,
   type ConcludeResearchActionInput,
   type ResearchActionConclusion,
   type CreateQuestionInput,
@@ -244,6 +258,7 @@ const AITP_MUTATION_TOOLS = new Set([
   'UpdateResearchQuestion',
   'SetResearchFocus',
   'ProposeResearchCheckpoint',
+  'DiscardHistoricalResearchCheckpoint',
   'CommitResearchCheckpoint',
   'PlanResearchAction',
   'BeginResearchAction',
@@ -316,6 +331,11 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   private researchPlanMutationTail: Promise<void> = Promise.resolve();
   private lastModeActive: boolean;
   private reservedResearchRevision = 0;
+  private distillationDraftLease?: {
+    readonly checkpointId: string;
+    readonly entryId: string;
+    readonly path: string;
+  };
 
   constructor(
     @IWireService private readonly wire: IWireService,
@@ -330,6 +350,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     @IAitpExternalFactService externalFact?: IAitpExternalFactService,
     @IAgentPlanService private readonly plan?: IAgentPlanService,
     @IAgentPermissionModeService private readonly permissionMode?: IAgentPermissionModeService,
+    @IResearchTurnAdmission private readonly turnAdmission?: IResearchTurnAdmission,
   ) {
     super();
     this.lastModeActive = this.mode.isActive;
@@ -355,8 +376,19 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       );
     }
     this._register(
-      toolExecutor.onBeforeExecuteTool((event) => this.guardToolExecution(event)),
+      toolExecutor.onBeforeExecuteTool((event) => {
+        this.guardToolExecution(event);
+      }),
     );
+    if (toolExecutor.hooks?.onDidExecuteTool !== undefined) {
+      this._register(toolExecutor.hooks.onDidExecuteTool.register(
+        'aitp-research-distillation-draft-lease',
+        async (ctx, next) => {
+          await next();
+          this.updateDistillationDraftLease(ctx);
+        },
+      ));
+    }
     this._register(
       this.eventBus.subscribe('research.revision_advanced', ({ notifyGoal }) => {
         this.eventBus.publish({ type: 'research.updated', snapshot: this.getSnapshot() });
@@ -382,6 +414,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this._register(
       this.eventBus.subscribe('aitp_mode.updated', () => {
         const modeActive = this.mode.isActive;
+        if (!modeActive) this.distillationDraftLease = undefined;
         if (!this.lastModeActive && modeActive && !this.wire.isRestoring()) {
           const state = this.wire.getModel(ResearchModel).current;
           if (state.program !== null || state.goalProgramBinding !== null) {
@@ -410,6 +443,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this._register(
       this.wire.hooks.onDidRestore.register('researchReconcile', async (_ctx, next) => {
         await next();
+        this.distillationDraftLease = undefined;
         if (!this.resumeActionWithAutoStandingApproval()) this.reconcile();
       }),
     );
@@ -1980,12 +2014,34 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       if (recoveryReason !== undefined) {
         this.markCheckpointSaveRecoveryRequired(
           pending.checkpointId,
-          receipt.save!.path,
+          receipt.save.path,
           recoveryReason,
         );
       }
     }
     return toCheckpoint(updated);
+  }
+
+  discardHistoricalCheckpoint(
+    input: DiscardHistoricalCheckpointInput,
+  ): ResearchCheckpoint {
+    this.assertStateMutationAllowed();
+    const researchRevision = this.currentResearchRevision();
+    if (input.expectedRevision !== 0 && input.expectedRevision !== researchRevision) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        `Research revision is stale. Expected ${input.expectedRevision}, got ${researchRevision}.`,
+      );
+    }
+    const discarded = this.discardHistoricalCheckpointIfSafe(input.checkpointId);
+    if (discarded === null) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
+        `Checkpoint ${input.checkpointId} is not a safely discardable historical proposal. Refresh Research state; current checkpoints and proposals with AITP receipts must be committed or recovered explicitly.`,
+      );
+    }
+    this.publishResearchUpdated();
+    return discarded;
   }
 
   async commitCheckpoint(input: CommitCheckpointInput): Promise<CommitCheckpointResult> {
@@ -2470,7 +2526,13 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       researchPlanAction({
         actionId,
         questionId: input.questionId,
+        questionRevision: input.questionId === undefined
+          ? undefined
+          : state.questions[input.questionId]?.revision,
         lineSlug: ownership.lineSlug,
+        lineRevision: ownership.lineSlug === undefined
+          ? undefined
+          : state.lines[ownership.lineSlug]?.revision,
         kind: input.kind,
         purpose: input.purpose,
         expectedEvidence: input.expectedEvidence !== undefined ? [...input.expectedEvidence] : [],
@@ -2521,7 +2583,13 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       researchBeginAction({
         actionId,
         questionId: input.questionId,
+        questionRevision: input.questionId === undefined
+          ? undefined
+          : state.questions[input.questionId]?.revision,
         lineSlug: ownership.lineSlug,
+        lineRevision: ownership.lineSlug === undefined
+          ? undefined
+          : state.lines[ownership.lineSlug]?.revision,
         kind: input.kind,
         purpose: input.purpose,
         expectedEvidence: input.expectedEvidence !== undefined ? [...input.expectedEvidence] : [],
@@ -3161,7 +3229,9 @@ export class AgentResearchService extends Service implements IAgentResearchServi
 
     for (const fingerprint of clear) {
       if (desired.has(fingerprint)) continue;
-      if (state.alerts.some((alert) => alert.fingerprint === fingerprint)) {
+      if (state.alerts.some(
+        (alert) => alert.fingerprint === fingerprint && alert.state !== 'cleared',
+      )) {
         this.wire.dispatch(researchClearAlert({ fingerprint }));
       }
     }
@@ -3191,10 +3261,13 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       `${ALERT_FINGERPRINTS.reopened}.`,
       ALERT_FINGERPRINTS.commitFailed,
     ]) {
-      if (alerts.some((alert) => alert.fingerprint === fingerprint || alert.fingerprint.startsWith(fingerprint))) {
+      if (alerts.some((alert) =>
+        alert.state !== 'cleared' &&
+        (alert.fingerprint === fingerprint || alert.fingerprint.startsWith(fingerprint))
+      )) {
         if (fingerprint.endsWith('.')) {
           for (const alert of alerts) {
-            if (alert.fingerprint.startsWith(fingerprint)) {
+            if (alert.state !== 'cleared' && alert.fingerprint.startsWith(fingerprint)) {
               this.wire.dispatch(researchClearAlert({ fingerprint: alert.fingerprint }));
             }
           }
@@ -3274,10 +3347,79 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   }
 
   private reconcile(): void {
+    this.reconcileCommittedCheckpoint();
+    this.reconcileHistoricalCheckpoint();
     this.reconcileResearchStructure();
     this.reconcilePeriodLifecycle();
-    this.reconcileCommittedCheckpoint();
     this.reconcileAlerts();
+  }
+
+  private reconcileHistoricalCheckpoint(): void {
+    const pending = this.wire.getModel(ResearchModel).current.pendingCheckpoint;
+    if (pending === null) return;
+    this.discardHistoricalCheckpointIfSafe(pending.checkpointId);
+  }
+
+  private discardHistoricalCheckpointIfSafe(
+    checkpointId: string,
+  ): ResearchCheckpoint | null {
+    const state = this.wire.getModel(ResearchModel).current;
+    const pending = state.pendingCheckpoint;
+    const committedCursor = this.externalFact.getCommittedCursor();
+    if (
+      pending === null ||
+      pending.checkpointId !== checkpointId ||
+      pending.committedEntryId !== undefined ||
+      pending.receipt !== undefined ||
+      committedCursor?.checkpointId === checkpointId ||
+      this.externalFact.getCommitHistory().some((commit) => commit.checkpointId === checkpointId)
+    ) return null;
+
+    const question = pending.questionId === undefined
+      ? undefined
+      : state.questions[pending.questionId];
+    const questionRevisionSuperseded = pending.questionRevision !== undefined &&
+      question !== undefined &&
+      question.revision !== pending.questionRevision;
+    const capturedBinding = pending.workstreamBinding;
+    const currentBinding = pending.lineSlug === undefined
+      ? undefined
+      : state.lineWorkstreamBindings?.[pending.lineSlug];
+    const program = state.program;
+    const workstreamBindingStale = capturedBinding !== undefined &&
+      pending.lineSlug === capturedBinding.lineSlug &&
+      currentBinding !== undefined &&
+      !sameLineWorkstreamBinding(currentBinding, capturedBinding);
+    const programContextStale = capturedBinding !== undefined &&
+      pending.lineSlug === capturedBinding.lineSlug &&
+      program !== null &&
+      (program.topicId !== capturedBinding.topicId ||
+        (program.observedRevision ?? 1) !== capturedBinding.observedRevision);
+    if (!questionRevisionSuperseded && !workstreamBindingStale && !programContextStale) return null;
+
+    const discarded = toCheckpoint(pending);
+    if (
+      questionRevisionSuperseded &&
+      question !== undefined &&
+      pending.questionRevision !== undefined
+    ) {
+      this.wire.dispatch(researchDiscardHistoricalCheckpoint({
+        checkpointId,
+        reason: 'question_revision',
+        questionId: question.id,
+        checkpointQuestionRevision: pending.questionRevision,
+        currentQuestionRevision: question.revision,
+      }));
+    } else {
+      this.wire.dispatch(researchDiscardHistoricalCheckpoint({
+        checkpointId,
+        reason: workstreamBindingStale ? 'workstream_binding' : 'program_context',
+        capturedWorkstreamBinding: capturedBinding!,
+      }));
+    }
+    return this.wire.getModel(ResearchModel).current.pendingCheckpoint === null
+      ? discarded
+      : null;
   }
 
   /**
@@ -3299,7 +3441,16 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       state = this.wire.getModel(ResearchModel).current;
     }
 
-    if (isUnresolvedHumanGate(state.humanGate)) return;
+    if (isUnresolvedHumanGate(state.humanGate)) {
+      if (state.phase !== 'awaiting_human') {
+        this.wire.dispatch(researchSetPhase({
+          phase: 'awaiting_human',
+          reason: `Recovered unresolved human gate ${state.humanGate.gateId} from phase ${state.phase}; the gate remains pending for an explicit resolution.`,
+          changedAt: now(),
+        }));
+      }
+      return;
+    }
     const actionOwnedPhase = researchActionOwnedPhase(state.currentAction);
     if (actionOwnedPhase !== undefined) {
       if (state.phase === actionOwnedPhase) return;
@@ -3735,8 +3886,8 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       objective: goal.objective,
       completionCriterion: goal.completionCriterion,
       status: goal.status,
-      turnBudget: turnBudget === null ? undefined : turnBudget,
-      remainingTurns: goal.budget.remainingTurns === null ? undefined : goal.budget.remainingTurns,
+      turnBudget: turnBudget ?? undefined,
+      remainingTurns: goal.budget.remainingTurns ?? undefined,
       terminalReason: goal.terminalReason,
       waitingFor: goal.waitingFor === undefined
         ? undefined
@@ -3789,14 +3940,267 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     if (goal !== null) this.continuationRetryEmitter.fire(goal.goalId);
   }
 
-  private async guardToolExecution(event: BeforeToolExecuteEvent): Promise<void> {
+  private guardToolExecution(event: BeforeToolExecuteEvent): void {
     if (this.scopeCtx.agentId !== MAIN_AGENT_ID && AITP_MUTATION_TOOLS.has(event.toolCall.name)) {
       event.veto(
         denyToolExecution(
           'AITP/Research mutation tools are only available on the main agent. Use typed packets to return results.',
         ),
       );
+      return;
     }
+    if (
+      this.scopeCtx.agentId !== MAIN_AGENT_ID ||
+      !this.mode.isActive
+    ) return;
+
+    const classification = classifyResearchTool(event.toolCall.name);
+    if (classification.kind === 'control') return;
+    if (classification.kind === 'checkpoint_persistence') {
+      const blocker = this.checkpointPersistenceBlocker(event);
+      if (blocker !== undefined) event.veto(denyToolExecution(blocker));
+      return;
+    }
+    if (classification.kind === 'distillation_persistence') {
+      const blocker = this.distillationPersistenceBlocker(event);
+      if (blocker !== undefined) event.veto(denyToolExecution(blocker));
+      return;
+    }
+
+    const checkpointDraft = this.checkpointDraftAccess(event);
+    if (checkpointDraft === true) return;
+    if (typeof checkpointDraft === 'string') {
+      event.veto(denyToolExecution(checkpointDraft));
+      return;
+    }
+
+    const blocker = this.actionWorkBlocker(
+      event,
+      classification.capability,
+    );
+    if (blocker !== undefined) event.veto(denyToolExecution(blocker));
+  }
+
+  private actionWorkBlocker(
+    event: BeforeToolExecuteEvent,
+    capability: ResearchExecutionCapability | `tool:${string}`,
+  ): string | undefined {
+    if (this.mode.phase !== 'ready') {
+      return `Research action policy denied ${event.toolCall.name}: AITP Research Mode is ${this.mode.phase}; only status or recovery tools may run.`;
+    }
+    if (this.mode.loopStatus !== 'active') {
+      return `Research action policy denied ${event.toolCall.name}: the Research Loop is paused.`;
+    }
+    if (this.turnAdmission?.leaseForTurn(event.turnId) === 'none' || this.turnAdmission === undefined) {
+      return `Research action policy denied ${event.toolCall.name}: this turn has no Research lease.`;
+    }
+
+    const state = this.wire.getModel(ResearchModel).current;
+    if (isUnresolvedHumanGate(state.humanGate)) {
+      return `Research action policy denied ${event.toolCall.name}: human gate ${state.humanGate.gateId} is unresolved.`;
+    }
+    if (event.toolCalls.some((call) => call.name === 'BeginResearchAction')) {
+      return `Research action policy denied ${event.toolCall.name}: BeginResearchAction and research work cannot share one tool batch. Begin the action first, then run its tools in the next batch.`;
+    }
+    const action = state.currentAction;
+    if (action === null || action.status !== 'in_progress') {
+      return `Research action policy denied ${event.toolCall.name}: no in-progress ResearchAction owns this work. Begin one bounded action first.`;
+    }
+    if (state.phase !== 'action_executing') {
+      return `Research action policy denied ${event.toolCall.name}: action ${action.actionId} is in progress but the Research phase is ${state.phase}.`;
+    }
+    const currentLineSlug = this.wire.getModel(AitpModeModel).current.currentLineSlug;
+    if (action.lineSlug !== undefined && action.lineSlug !== currentLineSlug) {
+      return `Research action policy denied ${event.toolCall.name}: action ${action.actionId} belongs to Research Line ${action.lineSlug}, not the current line ${currentLineSlug ?? 'none'}.`;
+    }
+    const question = action.questionId === undefined
+      ? undefined
+      : state.questions[action.questionId];
+    if (
+      action.questionId !== undefined &&
+      (question === undefined ||
+        (action.lineSlug !== undefined && question.lineSlug !== action.lineSlug))
+    ) {
+      return `Research action policy denied ${event.toolCall.name}: action ${action.actionId} has a stale Question or Line binding.`;
+    }
+    const line = action.lineSlug === undefined ? undefined : state.lines[action.lineSlug];
+    if (
+      action.lineSlug !== undefined &&
+      (action.lineRevision === undefined || line?.revision !== action.lineRevision)
+    ) {
+      return `Research action policy denied ${event.toolCall.name}: action ${action.actionId} cannot prove a fresh Research Line revision.`;
+    }
+    if (
+      action.questionId !== undefined &&
+      (action.questionRevision === undefined || question?.revision !== action.questionRevision)
+    ) {
+      return `Research action policy denied ${event.toolCall.name}: action ${action.actionId} cannot prove a fresh Research Question revision.`;
+    }
+    try {
+      this.assertActionPlanBindingsFresh(action);
+    } catch (error) {
+      return `Research action policy denied ${event.toolCall.name}: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    if (!researchCapabilityGranted(action.allowedToolKinds, event.toolCall.name, capability)) {
+      return `Research action policy denied ${event.toolCall.name}: action ${action.actionId} does not grant capability ${capability}. Start a correctly scoped action rather than widening it after execution begins.`;
+    }
+    return undefined;
+  }
+
+  private checkpointPersistenceBlocker(event: BeforeToolExecuteEvent): string | undefined {
+    if (this.mode.phase !== 'ready') {
+      return `Research checkpoint persistence denied ${event.toolCall.name}: AITP Research Mode is ${this.mode.phase}.`;
+    }
+    const state = this.wire.getModel(ResearchModel).current;
+    const checkpoint = state.pendingCheckpoint;
+    if (checkpoint === null) {
+      return `Research checkpoint persistence denied ${event.toolCall.name}: no pending checkpoint owns this write.`;
+    }
+    if (isHistoricalCheckpoint(checkpoint, Object.values(state.questions))) {
+      return `Research checkpoint persistence denied ${event.toolCall.name}: checkpoint ${checkpoint.checkpointId} is historical and must be discarded or explicitly recovered.`;
+    }
+    try {
+      this.assertCheckpointWorkstreamBindingCurrent(checkpoint, state);
+    } catch (error) {
+      return `Research checkpoint persistence denied ${event.toolCall.name}: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    const checkpointId = stringArg(event.args, 'checkpoint_id');
+    if (checkpointId !== checkpoint.checkpointId) {
+      return `Research checkpoint persistence denied ${event.toolCall.name}: checkpoint_id must equal ${checkpoint.checkpointId}.`;
+    }
+    if (event.toolCall.name === 'aitp_record_prepare') return undefined;
+    const prepare = checkpoint.receipt?.prepare;
+    if (prepare === undefined) {
+      return `Research checkpoint persistence denied ${event.toolCall.name}: prepare checkpoint ${checkpoint.checkpointId} in an earlier tool batch first.`;
+    }
+    if (
+      event.toolCall.name === 'aitp_record_save' &&
+      normalizeResearchPath(stringArg(event.args, 'draft_path')) !== normalizeResearchPath(prepare.path)
+    ) {
+      return `Research checkpoint persistence denied ${event.toolCall.name}: the draft path is not the one prepared for checkpoint ${checkpoint.checkpointId}.`;
+    }
+    if (event.toolCall.name === 'CommitResearchCheckpoint') {
+      const receipt = checkpoint.receipt;
+      if (receipt?.save === undefined || receipt.preSaveCheck === undefined) {
+        return `Research checkpoint persistence denied ${event.toolCall.name}: save checkpoint ${checkpoint.checkpointId} in an earlier tool batch first.`;
+      }
+    }
+    return undefined;
+  }
+
+  private checkpointDraftAccess(
+    event: BeforeToolExecuteEvent,
+  ): true | string | undefined {
+    if (!['Read', 'Edit', 'Write'].includes(event.toolCall.name)) return undefined;
+    const path = normalizeResearchPath(stringArg(event.args, 'path'));
+    if (path === undefined || !isAitpPath(path)) return undefined;
+    if (this.mode.phase !== 'ready') {
+      return `Research persistence denied ${event.toolCall.name}: AITP Research Mode is ${this.mode.phase}.`;
+    }
+    if (isCanonicalAitpPath(path)) {
+      return `Research persistence denied ${event.toolCall.name}: canonical AITP files must be accessed through AITP tools, never directly.`;
+    }
+
+    const state = this.wire.getModel(ResearchModel).current;
+    const checkpoint = state.pendingCheckpoint;
+    const preparedPath = normalizeResearchPath(checkpoint?.receipt?.prepare?.path);
+    if (
+      checkpoint !== null &&
+      preparedPath !== undefined &&
+      path === preparedPath &&
+      checkpoint.receipt?.save === undefined &&
+      !isHistoricalCheckpoint(checkpoint, Object.values(state.questions))
+    ) {
+      try {
+        this.assertCheckpointWorkstreamBindingCurrent(checkpoint, state);
+        return true;
+      } catch (error) {
+        return `Research persistence denied ${event.toolCall.name}: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    }
+
+    const distillation = this.wire.getModel(ResearchDistillationModel).attention;
+    const lease = this.distillationDraftLease;
+    if (
+      distillation?.status === 'review_requested' &&
+      lease?.checkpointId === distillation.checkpointId &&
+      lease.entryId === distillation.entryId &&
+      lease.path === path &&
+      isLocalAitpDraftPath(path)
+    ) {
+      return true;
+    }
+    return `Research persistence denied ${event.toolCall.name}: ${path} is not owned by the current checkpoint or distillation handoff.`;
+  }
+
+  private distillationPersistenceBlocker(event: BeforeToolExecuteEvent): string | undefined {
+    if (this.mode.phase !== 'ready') {
+      return `Research distillation persistence denied ${event.toolCall.name}: AITP Research Mode is ${this.mode.phase}.`;
+    }
+    const attention = this.wire.getModel(ResearchDistillationModel).attention;
+    const cursor = this.externalFact.getCommittedCursor();
+    if (
+      attention?.status !== 'review_requested' ||
+      cursor?.checkpointId !== attention.checkpointId ||
+      cursor.entryId !== attention.entryId
+    ) {
+      return `Research distillation persistence denied ${event.toolCall.name}: no current post-commit distillation handoff owns this Note.`;
+    }
+    if (event.toolCall.name === 'aitp_note_save') {
+      const draftPath = normalizeResearchPath(stringArg(event.args, 'draft_path'));
+      const lease = this.distillationDraftLease;
+      return draftPath !== undefined &&
+        isLocalAitpDraftPath(draftPath) &&
+        lease?.checkpointId === attention.checkpointId &&
+        lease.entryId === attention.entryId &&
+        lease.path === draftPath
+        ? undefined
+        : `Research distillation persistence denied ${event.toolCall.name}: save only the exact draft returned by aitp_note_prepare for the current handoff.`;
+    }
+    const alignment = this.getCurrentWorkstreamAlignment();
+    const workstreams = arrayStringArg(event.args, 'workstreams');
+    if (
+      alignment?.status !== 'bound' ||
+      alignment.binding === undefined ||
+      workstreams.length !== 1 ||
+      workstreams[0] !== alignment.binding.workstream
+    ) {
+      return `Research distillation persistence denied ${event.toolCall.name}: the Note must target exactly the current explicitly bound AITP workstream.`;
+    }
+    return undefined;
+  }
+
+  private updateDistillationDraftLease(ctx: ToolDidExecuteContext): void {
+    if (
+      this.scopeCtx.agentId !== MAIN_AGENT_ID ||
+      !this.mode.isActive
+    ) return;
+    if (ctx.toolCall.name === 'aitp_note_save') {
+      if (ctx.outcome === 'executed' && ctx.result.isError !== true) {
+        const path = normalizeResearchPath(stringArg(ctx.args, 'draft_path'));
+        if (path === this.distillationDraftLease?.path) this.distillationDraftLease = undefined;
+      }
+      return;
+    }
+    if (
+      ctx.toolCall.name !== 'aitp_note_prepare' ||
+      ctx.outcome !== 'executed' ||
+      ctx.result.isError === true
+    ) return;
+    const attention = this.wire.getModel(ResearchDistillationModel).attention;
+    const cursor = this.externalFact.getCommittedCursor();
+    if (
+      attention?.status !== 'review_requested' ||
+      cursor?.checkpointId !== attention.checkpointId ||
+      cursor.entryId !== attention.entryId
+    ) return;
+    const path = notePrepareResultPath(ctx.result.output);
+    if (path === undefined || !isLocalAitpDraftPath(path)) return;
+    this.distillationDraftLease = {
+      checkpointId: attention.checkpointId,
+      entryId: attention.entryId,
+      path,
+    };
   }
 
   private guardGoalCompletion(
@@ -4181,7 +4585,9 @@ function toActionSpec(r: ResearchActionSpecRecord): ResearchActionSpec {
   return {
     actionId: r.actionId,
     questionId: r.questionId,
+    questionRevision: r.questionRevision,
     lineSlug: r.lineSlug,
+    lineRevision: r.lineRevision,
     kind: r.kind,
     purpose: r.purpose,
     expectedEvidence: r.expectedEvidence,
@@ -4581,6 +4987,51 @@ function actionRecoveryStep(input: {
       lineSlug: action.lineSlug,
     },
   };
+}
+
+function stringArg(args: unknown, key: string): string | undefined {
+  if (args === null || typeof args !== 'object' || Array.isArray(args)) return undefined;
+  const value = (args as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function arrayStringArg(args: unknown, key: string): readonly string[] {
+  if (args === null || typeof args !== 'object' || Array.isArray(args)) return [];
+  const value = (args as Record<string, unknown>)[key];
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+    ? value
+    : [];
+}
+
+function normalizeResearchPath(path: string | undefined): string | undefined {
+  if (path === undefined) return undefined;
+  const normalized = posix.normalize(path.replaceAll('\\', '/'));
+  return normalized.startsWith('./') ? normalized.slice(2) : normalized;
+}
+
+function notePrepareResultPath(output: unknown): string | undefined {
+  if (typeof output !== 'string') return undefined;
+  try {
+    const result = JSON.parse(output) as unknown;
+    if (result === null || typeof result !== 'object' || Array.isArray(result)) return undefined;
+    const record = result as Record<string, unknown>;
+    if (record['status'] !== 'prepared' || typeof record['path'] !== 'string') return undefined;
+    return normalizeResearchPath(record['path']);
+  } catch {
+    return undefined;
+  }
+}
+
+function isAitpPath(path: string): boolean {
+  return path.startsWith('.aitp/') || path.includes('/.aitp/');
+}
+
+function isCanonicalAitpPath(path: string): boolean {
+  return path.startsWith('.aitp/topic/') || path.includes('/.aitp/topic/');
+}
+
+function isLocalAitpDraftPath(path: string): boolean {
+  return path.startsWith('.aitp/local/') || path.includes('/.aitp/local/');
 }
 
 type CheckpointQuestionRevision = Pick<ResearchQuestion, 'id' | 'revision'>;

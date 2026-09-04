@@ -11,6 +11,7 @@
 import { z } from 'zod';
 
 import { createDecorator } from '#/_base/di/instantiation';
+import { AWAITING_HUMAN_EXIT_PHASES } from '#/features/research/transitions/researchTransitionAuthority';
 import type { AgentTool } from '#/tool/toolContract';
 import { ResearchEvidencePacketSchema } from '../research/evidencePacket';
 import {
@@ -216,6 +217,27 @@ export interface IProposeResearchCheckpointTool
 export const IProposeResearchCheckpointTool =
   createDecorator<IProposeResearchCheckpointTool>('proposeResearchCheckpointTool');
 
+// ── DiscardHistoricalResearchCheckpoint ─────────────────────────────────
+
+export const DiscardHistoricalResearchCheckpointInputSchema = z
+  .object({
+    checkpoint_id: z.string(),
+    expected_revision: z.number().int().nonnegative(),
+  })
+  .strict();
+export type DiscardHistoricalResearchCheckpointInput = z.infer<
+  typeof DiscardHistoricalResearchCheckpointInputSchema
+>;
+
+export interface IDiscardHistoricalResearchCheckpointTool
+  extends AgentTool<DiscardHistoricalResearchCheckpointInput> {
+  readonly _serviceBrand: undefined;
+}
+export const IDiscardHistoricalResearchCheckpointTool =
+  createDecorator<IDiscardHistoricalResearchCheckpointTool>(
+    'discardHistoricalResearchCheckpointTool',
+  );
+
 // ── CommitResearchCheckpoint ─────────────────────────────────────────────
 
 export const CommitResearchCheckpointInputSchema = z
@@ -243,7 +265,13 @@ export const PlanResearchActionInputSchema = z
     line_slug: z.string().optional(),
     expected_evidence: z.array(z.string().min(1).max(500)).min(1).max(50),
     stop_condition: z.string().min(1).max(2000),
-    allowed_tool_kinds: z.array(z.string().max(100)).max(20).default([]),
+    allowed_tool_kinds: z
+      .array(z.string().max(100))
+      .max(20)
+      .default([])
+      .describe(
+        'Executor-authoritative capabilities in active Research Mode: workspace_read, workspace_write, web_search, web_fetch, shell, task, subagent, or scheduler. Use tool:<exact-tool-name> for one otherwise unclassified plugin or MCP tool. Descriptive labels such as simulation do not grant tool execution.',
+      ),
     retry_of_entry_id: z.string().optional(),
     planning_level: z.enum(['simple', 'planned']).optional(),
     research_plan_id: z.string().min(1).max(200).optional(),
@@ -252,7 +280,7 @@ export const PlanResearchActionInputSchema = z
     action_plan_id: z.string().min(1).max(200).optional(),
     action_plan_revision: z.number().int().positive().optional(),
     requires_human_approval: z.boolean().default(false).describe(
-      'Outside auto mode, use true only for a genuinely non-delegable human decision. Routine in-scope work, including remote tool execution covered by the active permission mode, must use false; auto mode is fully autonomous and normalizes this field to false.',
+      'Use only for an explicit action-execution approval, never as a substitute for a scientific or protocol decision. Routine in-scope work must use false; auto mode supplies standing execution approval and normalizes this field to false. Use RequestResearchDecision for a genuinely non-delegable scientific choice in every permission mode.',
     ),
   })
   .strict()
@@ -440,10 +468,10 @@ export const IObserveResearchRunTool =
 export const RequestResearchDecisionInputSchema = z
   .object({
     kind: z.enum(['approval', 'review', 'decision']).describe(
-      'Classify the human input needed when the active permission mode allows questions. Auto mode creates no new Research human gate and requires a reasonable in-scope default instead.',
+      'Classify genuinely non-delegable human input. The resulting Research gate remains human-owned in every permission mode, including auto.',
     ),
     prompt: z.string().min(10).max(8000).describe(
-      'Outside auto mode, ask only for a real scientific or protocol decision, never for routine in-scope or remote tool execution.',
+      'Ask only for a real scientific, protocol, review, or research-ownership decision, never for routine in-scope or remote tool execution.',
     ),
     action_id: z.string().max(200).optional(),
     question_id: z.string().max(200).optional(),
@@ -459,14 +487,13 @@ export const IRequestResearchDecisionTool =
 
 // ── ResolveResearchDecision ───────────────────────────────────────────────
 
+export const AwaitingHumanExitPhaseSchema = z.enum(AWAITING_HUMAN_EXIT_PHASES);
+
 export const ResolveResearchDecisionInputSchema = z
   .object({
     gate_id: z.string().min(1).max(200),
     resolution: z.string().min(1).max(2000),
-    next_phase: z.enum([
-      'idle', 'orienting', 'gap_analysis', 'action_planned', 'action_executing',
-      'evaluating', 'state_updated', 'checkpoint_pending', 'awaiting_human',
-    ]),
+    next_phase: AwaitingHumanExitPhaseSchema,
   })
   .strict();
 export type ResolveResearchDecisionInput = z.infer<typeof ResolveResearchDecisionInputSchema>;

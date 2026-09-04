@@ -33,6 +33,7 @@ import {
   IPlanResearchActionTool,
   IBeginResearchActionTool,
   IProposeResearchCheckpointTool,
+  IDiscardHistoricalResearchCheckpointTool,
   IRecordResearchProgressTool,
   IReviewResearchEvidenceTool,
   ReviewResearchEvidenceInputSchema,
@@ -59,6 +60,7 @@ import {
   PlanResearchActionInputSchema,
   BeginResearchActionInputSchema,
   ProposeResearchCheckpointInputSchema,
+  DiscardHistoricalResearchCheckpointInputSchema,
   RecordResearchProgressInputSchema,
   RequestResearchDecisionInputSchema,
   ResolveResearchDecisionInputSchema,
@@ -79,6 +81,7 @@ import {
   type PlanResearchActionInput,
   type BeginResearchActionInput,
   type ProposeResearchCheckpointInput,
+  type DiscardHistoricalResearchCheckpointInput,
   type RecordResearchProgressInput,
   type RequestResearchDecisionInput,
   type ResolveResearchDecisionInput,
@@ -504,6 +507,44 @@ export class ProposeResearchCheckpointTool implements IProposeResearchCheckpoint
   }
 }
 
+export class DiscardHistoricalResearchCheckpointTool
+  implements IDiscardHistoricalResearchCheckpointTool {
+  declare readonly _serviceBrand: undefined;
+  readonly name = 'DiscardHistoricalResearchCheckpoint' as const;
+  readonly description = 'Discard an uncommitted checkpoint proposal only when its captured Question, Line-to-workstream binding, or Program context is provably superseded and it has no AITP receipt or committed evidence.';
+  readonly parameters: Record<string, unknown> = toInputJsonSchema(
+    DiscardHistoricalResearchCheckpointInputSchema,
+  );
+
+  constructor(
+    @IAgentResearchService private readonly research: IAgentResearchService,
+    @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
+  ) {}
+
+  resolveExecution(args: DiscardHistoricalResearchCheckpointInput): ToolExecution {
+    return {
+      description: `Discarding historical checkpoint ${args.checkpoint_id}`,
+      approvalRule: this.name,
+      execute: async () => {
+        const inactive = requireActive(this.mode);
+        if (inactive !== undefined) return errorResult(inactive);
+        try {
+          const discarded = this.research.discardHistoricalCheckpoint({
+            checkpointId: args.checkpoint_id,
+            expectedRevision: args.expected_revision,
+          });
+          return {
+            output: `Discarded historical checkpoint proposal ${discarded.checkpointId}. No AITP canonical record was written or removed.`,
+          };
+        } catch (error) {
+          if (error instanceof AitpResearchError) return errorResult(error.message);
+          throw error;
+        }
+      },
+    };
+  }
+}
+
 export class CommitResearchCheckpointTool implements ICommitResearchCheckpointTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'CommitResearchCheckpoint' as const;
@@ -628,7 +669,7 @@ export class PlanResearchActionTool implements IPlanResearchActionTool {
 export class BeginResearchActionTool implements IBeginResearchActionTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'BeginResearchAction' as const;
-  readonly description = 'Plan and begin one bounded research action atomically. Human gates are only for non-delegable scientific or protocol decisions; routine in-scope and remote tool actions follow the active permission mode.';
+  readonly description = 'Plan and begin one bounded research action atomically. Routine execution approval follows the active permission mode; use RequestResearchDecision separately for a non-delegable scientific or protocol choice.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(BeginResearchActionInputSchema);
 
   constructor(
@@ -1081,13 +1122,12 @@ export class ResolveResearchDecisionTool implements IResolveResearchDecisionTool
 export class RequestResearchDecisionTool implements IRequestResearchDecisionTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'RequestResearchDecision' as const;
-  readonly description = 'When the permission mode allows questions, request a non-delegable human scientific or protocol decision and enter the awaiting-human phase. Auto mode creates no new gate and requires a reasonable in-scope default. Never use this for routine in-scope or remote tool actions.';
+  readonly description = 'Request a genuinely non-delegable human scientific or protocol decision and enter the awaiting-human phase. This remains human-owned in every tool permission mode, including auto. Never use it for routine in-scope or remote tool actions.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(RequestResearchDecisionInputSchema);
 
   constructor(
     @IAgentResearchService private readonly research: IAgentResearchService,
     @IAgentAitpModeService private readonly mode: IAgentAitpModeService,
-    @IAgentPermissionModeService private readonly permissionMode?: IAgentPermissionModeService,
   ) {}
 
   resolveExecution(args: RequestResearchDecisionInput): ToolExecution {
@@ -1097,15 +1137,6 @@ export class RequestResearchDecisionTool implements IRequestResearchDecisionTool
       execute: async () => {
         const inactive = requireActive(this.mode);
         if (inactive !== undefined) return errorResult(inactive);
-        if (this.permissionMode?.mode === 'auto') {
-          return {
-            output: [
-              'Auto permission mode is fully autonomous; no durable Research human gate was created.',
-              'Use the standing auto permission for routine in-scope work, including remote tool execution, make a reasonable in-scope default, and continue.',
-              'This is an auto-mode routing decision, not a per-action human approval.',
-            ].join('\n'),
-          };
-        }
         try {
           const gate = this.research.requestHumanDecision({
             kind: args.kind,

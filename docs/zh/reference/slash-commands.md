@@ -50,7 +50,7 @@
 | 命令 | 别名 | 说明 | 随时可用 |
 | --- | --- | --- | --- |
 | `/yolo [on\|off]` | `/yes` | 切换 YOLO 模式。不带参数时翻转；显式传 `on`/`off` 时强制设置。开启后跳过普通工具调用审批；Plan 模式的退出审批不受影响 | 是 |
-| `/auto [on\|off]` | — | 切换 auto 权限模式。开启后工具审批自动处理，Agent 不会向用户提问 | 是 |
+| `/auto [on\|off]` | — | 切换 auto 权限模式。开启后工具审批自动处理并抑制普通问题；显式协议级工作流决策仍可能暂停 | 是 |
 | `/plan [on\|off]` | — | 切换 Plan 模式。不带参数时翻转；显式传 `on`/`off` 时强制设置。单纯切换不会创建空计划文件 | 是 |
 | `/plan clear` | — | 清除当前 plan 方案 | 否 |
 | `/swarm on\|off` | — | 开启或关闭 swarm mode，但不发送提示词。 | 是 |
@@ -102,22 +102,23 @@ Prompt 模式在目标完成时以退出码 `0` 退出，在目标阻塞时以 `
 
 ## Research Mode
 
-`/research` 在 TUI 和 Web 中控制 AITP Research Mode——由 AITP 证据账本支撑的联合科研能力。该命令、Web **Modes** 入口和面向模型的 `EnterAITPMode` 能力默认可发现，但运行时初始为 `inactive`。inactive 状态下的 `getResearch` 读取、会话恢复加载和状态检查只使用本地快照：不会探测 AITP，不发生 AITP I/O，不显示 Research Board，也不会向模型暴露其他 Research/AITP 工具和 plugin skill。使用 `/research on`、在 Web 中选择 **Research**，或让模型调用 `EnterAITPMode`，才能显式进入；此时 Hakimi 才探测适配器，并在探测就绪后执行只读的 `enter` → `check` 维护周期。
+`/research` 在 TUI 和 Web 中直接切换 AITP Research Mode——由 AITP 证据账本支撑的联合科研能力。该命令、Web **Modes** 入口和面向模型的 `EnterAITPMode` 能力默认可发现，但运行时初始为 `inactive`。inactive 状态下的 `getResearch` 读取、会话恢复加载和状态检查只使用本地快照：不会探测 AITP，不发生 AITP I/O，不显示 Research Board，也不会向模型暴露其他 Research/AITP 工具和 plugin skill。运行 `/research`、在 Web 中选择 **Research**，或让模型调用 `EnterAITPMode`，即可显式进入；此时 Hakimi 才探测适配器，并在探测就绪后执行只读的 `enter` → `check` 维护周期。
 
 旧的 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 环境变量、`[experimental].aitp_research_mode` 和 `KIMI_CODE_EXPERIMENTAL_FLAG` 对这个正式开放的入口均不生效。旧开关输入仅为兼容保留，不会隐藏或启用 `/research`。从 `manual` 或 `yolo` 权限模式进入时，会提示是否先切换到 `auto` 或 `yolo`——在 `manual` 模式下循环可能因等待审批而暂停。
 
 ::: warning 注意
-`/research on` 只激活 adapter 与 Board，不会调度模型轮次或启动独立的多轮循环。跨轮次 continuation 只由 Goal 负责，`manual` 权限模式下的研究轮次仍可能等待审批。
+用 `/research` 进入时只激活 adapter 与 Board，不会调度模型轮次或启动独立的多轮循环。跨轮次 continuation 只由 Goal 负责，`manual` 权限模式下的研究轮次仍可能等待审批。
 :::
 
 TUI 与 Web 使用相同语法：保留子命令仅作为第一个 token 时生效，`--` 用于分隔参数和自由文本。Web 会把手工输入的 `/research` 路由到 Research endpoint，而不是作为模型提示词发送。
 
 | 命令 | 作用 | Surface / 可用性 |
 | --- | --- | --- |
-| `/research` 或 `/research status` | 刷新当前 snapshot。TUI 显示模式、循环、研究线、焦点和 AITP 健康；Web 展开刷新后的 Board | TUI 与 Web；随时可用 |
-| `/research on` | 进入 Research Mode。TUI 从 `manual` 或 `yolo` 进入时提示选择权限模式；Web 使用当前 session 权限模式 | TUI 与 Web；仅空闲时 |
+| `/research` | 切换 Research Mode：inactive 时进入，任一 active phase 时退出。TUI 从 `manual` 或 `yolo` 进入时提示选择权限模式；Web 使用当前 session 权限模式 | TUI 与 Web；仅空闲时 |
+| `/research status` | 刷新当前 snapshot。TUI 显示模式、循环、研究线、焦点和 AITP 健康；Web 展开刷新后的 Board | TUI 与 Web；随时可用 |
+| `/research on` | 显式进入 Research Mode 的兼容形式 | TUI 与 Web；仅空闲时 |
 | `/research on -- <line slug>` | 进入 Research Mode 并切换到指定研究线 | TUI 与 Web；仅空闲时 |
-| `/research off` | 退出 Research Mode、回收 AITP 工具权限并隐藏 Board；已保存的 AITP 记录保留 | TUI 与 Web；仅空闲时 |
+| `/research off` | 显式退出 Research Mode 的兼容形式；已保存的 AITP 记录保留 | TUI 与 Web；仅空闲时 |
 | `/research pause` | 暂停研究循环，不退出 AITP 模式 | TUI 与 Web；随时可用 |
 | `/research resume` | 恢复已暂停的研究循环 | TUI 与 Web；随时可用 |
 | `/research manage` | 打开 line-first Manager。TUI 使用键盘导航和动作键；Web 提供 Line、Question、Science 和 Checkpoint 区，包括 human decision、alert、evidence review 与 external run 控件 | TUI 与 Web；仅空闲时 |

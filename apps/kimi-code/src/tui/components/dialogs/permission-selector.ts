@@ -16,7 +16,7 @@ const PERMISSION_OPTIONS: readonly ChoiceOption[] = [
   {
     value: 'auto',
     label: 'Auto',
-    description: 'Fully autonomous — agent decides everything without asking.',
+    description: 'Auto-approves tools and suppresses ordinary questions; explicit workflow decisions may still pause.',
   },
 ];
 

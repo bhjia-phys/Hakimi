@@ -28,6 +28,7 @@ import {
   researchSwitchLine,
   researchSteer,
   researchProposeCheckpoint,
+  researchDiscardHistoricalCheckpoint,
   researchBindCheckpointEntry,
   researchBindCheckpointReceipt,
   researchCommitCheckpoint,
@@ -552,6 +553,80 @@ describe('aitpResearch ops (wire-backed)', () => {
           preSaveCheck: { status: 'clean', errors: 0 },
         },
       });
+    });
+
+    it('discards a line-only checkpoint when its captured Program context is stale and replays as a no-op', () => {
+      wire.dispatch(
+        researchCreateLine({ slug: 'main', title: 'Main', createdAt: 1 }),
+        researchSetProgram({
+          topicId: 'topic-1', title: 'Topic', goalText: 'Goal', goalSource: 'enter', establishedAt: 2,
+        }),
+      );
+      const binding = {
+        confirmationId: 'binding-1',
+        lineSlug: 'main',
+        workstream: 'main-workstream',
+        topicId: 'topic-1',
+        observedRevision: 1,
+        confirmedBy: 'user' as const,
+        confirmedAt: 3,
+      };
+      wire.dispatch(
+        researchConfirmWorkstreamBinding({
+          ...binding,
+          expectedRevision: wire.getModel(ResearchModel).current.revision,
+        }),
+        researchProposeCheckpoint({
+          checkpointId: 'cp-stale-program',
+          lineSlug: 'main',
+          workstreamBinding: binding,
+          idempotencyKey: 'key-stale-program',
+          createdAt: 4,
+        }),
+        researchSetProgram({
+          topicId: 'topic-2', title: 'Moved', goalText: 'Moved goal', goalSource: 'enter', establishedAt: 5,
+        }),
+      );
+
+      wire.dispatch(researchDiscardHistoricalCheckpoint({
+        checkpointId: 'cp-stale-program',
+        reason: 'program_context',
+        capturedWorkstreamBinding: binding,
+      }));
+      expect(wire.getModel(ResearchModel).current.pendingCheckpoint).toBeNull();
+      const revision = wire.getModel(ResearchModel).current.revision;
+
+      wire.dispatch(researchDiscardHistoricalCheckpoint({
+        checkpointId: 'cp-stale-program',
+        reason: 'program_context',
+        capturedWorkstreamBinding: binding,
+      }));
+      expect(wire.getModel(ResearchModel).current.revision).toBe(revision);
+    });
+
+    it('refuses historical discard without independently stale context or after an external receipt', () => {
+      wire.dispatch(researchProposeCheckpoint({
+        checkpointId: 'cp-current', idempotencyKey: 'key-current', createdAt: 1,
+      }));
+      wire.dispatch(researchDiscardHistoricalCheckpoint({
+        checkpointId: 'cp-current',
+        reason: 'program_context',
+        capturedWorkstreamBinding: {
+          confirmationId: 'binding-1', lineSlug: 'main', workstream: 'main-workstream',
+          topicId: 'topic-1', observedRevision: 1, confirmedBy: 'user', confirmedAt: 1,
+        },
+      }));
+      expect(wire.getModel(ResearchModel).current.pendingCheckpoint?.checkpointId).toBe('cp-current');
+
+      wire.dispatch(researchBindCheckpointReceipt({
+        checkpointId: 'cp-current',
+        receipt: {
+          prepare: {
+            status: 'prepared', id: 'entry-1', path: '.aitp/local/drafts/entry-1.md', idempotencyKey: 'key-current',
+          },
+        },
+      }));
+      expect(wire.getModel(ResearchModel).current.pendingCheckpoint?.receipt).toBeDefined();
     });
 
     it('proposeCheckpoint preserves the first pending checkpoint', () => {

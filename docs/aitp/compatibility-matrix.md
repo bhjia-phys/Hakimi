@@ -33,7 +33,7 @@ error finding 阻止 checkpoint cursor；exit 2 优先解析 stdout 的严格 AI
 mode。inactive hydration、REST GET 和 SDK snapshot read 只使用本地快照，不探测
 AITP、不发生 AITP I/O，Board 和其他 Research/AITP 工具、plugin skill 保持隐藏；
 持久化为 active 的 session 在 cold restore 后仍保持 active，并重新 probe adapter、
-执行只读 `enter` → `check` maintenance。inactive session 只有显式 `/research on`、模型入口
+执行只读 `enter` → `check` maintenance。inactive session 只有显式 `/research` toggle、模型入口
 或 REST/SDK `enter_mode` 才会启动 probe；active undo/cold restore 也会重新 probe，ready
 probe 后只读执行 `enter` → `check`，不调度模型 turn；Goal 仍是跨 turn continuation 的唯一 owner。
 旧 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE`、`[experimental].aitp_research_mode`
@@ -131,6 +131,28 @@ turn 收到 evidence-first 恢复指引，不会触发纯记账提问。`complet
 `abandoned` 的科学选择仍不自动推断。没有新增 public schema/REST mutation/
 AITP CLI、runtime、adapter contract、ledger write 或 human-decision 语义；H6b
 与 `outside_scope` projection 仍为 **planned，unavailable**。
+
+**Hakimi 侧更新（2026-09-05，Research action ownership/recovery O4）：**
+真实 debug export 中“`BeginResearchAction` 被拒绝后仍执行
+WebSearch/FetchURL”的路径现在由统一 Tool Executor 的 before-execute veto
+回归覆盖。Research Mode active 时，model-initiated
+Web/workspace/shell/task/subagent/scheduler/unknown plugin work 必须属于一个 fresh、
+`in_progress`、`action_executing` 的 Action，并由其 runtime capability 明确
+授权；Begin 与 work 同 batch、无 Research turn lease、loop paused、mode
+degraded、unresolved gate、stale Line/Question/Plan binding 均 fail closed。
+post-action checkpoint persistence 只接受当前 checkpoint ID、已 prepare 的
+exact draft 与当前 binding；canonical `.aitp/topic` 直接访问始终拒绝。该约束
+是 executor-enforced policy，不是 OS-level isolation；授予 `shell` 后仍须依赖
+通用 permission 和 host sandbox。
+
+同一 Hakimi slice 增加无 canonical-write 痕迹且 context provably stale 的
+historical checkpoint discard、unresolved human-gate phase 的机械恢复，以及
+cleared alert 幂等去重，并同步 discard command 与 additive Action revision
+pins 到 REST/WS/Node SDK/klient/TUI/Web。`collaborative | dreaming` 仍只决定
+科研不确定性如何与人协作；`auto` 只决定工具风险确认；Goal 仍独占跨 turn
+continuation。AITP 仓库未修改，0.9.0 CLI、file/read schema、
+`aitp/adapter-contract-0.2`、fixtures、Skill 与 human-decision 语义不变；H6b、
+自动科学结论与 OS-level Research sandbox 仍为 **planned / unavailable**。
 
 **Hakimi 侧更新（2026-08-28）：** Web 的实验性 Research UI 已接通：composer 中的 `/research` 走 Research command endpoint；live Board 展示 `probing`/`ready`/`degraded`、scientific phase、latest progress、current action/run、effective next step、human gate、active alerts 与 checkpoint；line-first Manager 的 Science 区可 resolve decision、acknowledge alert、review evidence 和 observe run，并在 stale revision 后刷新同一 session 的 authoritative snapshot。checkpoint commit 必须显式提供已有 AITP `entryId`，Web 不直接写 AITP。Web production source cutover 也已完成，`apps/kimi-web` 是唯一可编辑的 source；`dist-web` 与 `web-base.json` 是由 canonical build 生成并纳入 Git 的派生发布产物，受 schema v5 source/recipe-files/actual-toolchain/bundle provenance 约束，v4 native receipt 直接绑定 toolchain 与 binary hash。**本次未访问外部 AITP checkout**，因此 AITP HEAD `eae1bce5eba367a5f6db6ba73ff0912dd3a5e290`、0.8.0、CLI/schema/gate 与 154 tests 仍沿用最后核验事实，不作新的外部兼容性声明；H5 仍仅部分集成，H6 仍是 **planned，unavailable**。
 

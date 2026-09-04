@@ -39,7 +39,7 @@ export const ACP_MODES = [
   {
     id: 'auto',
     name: 'Auto',
-    description: 'Fully autonomous — agent decides everything without asking.',
+    description: 'Auto-approve tools and suppress ordinary questions; explicit workflow decisions may still pause.',
   },
   {
     id: 'yolo',

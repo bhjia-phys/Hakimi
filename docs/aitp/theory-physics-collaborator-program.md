@@ -1,0 +1,829 @@
+# Hakimi × AITP 理论物理合作者总体规划
+
+> 状态：面向未来的产品总纲与分阶段实施计划，2026-09-05。
+>
+> 本文不是运行时、wire schema、AITP canonical Entry/Note，也不宣称下列未来能力已经实现。已关闭的 S0–S10 基础程序仍以 [`unified-research-mode-program.md`](unified-research-mode-program.md) 为准；详细机制与历史决策见 [`theory-research-agent-design.md`](theory-research-agent-design.md)。本文只回答三个问题：最终要得到怎样的理论物理合作者、现状离它还差什么、接下来怎样在一个有限总 Goal 内以有独立验收条件的里程碑实现。
+>
+> 本规划由一个有终点的总 Goal 驱动，G0–G7 是其内部串行里程碑，不是八个彼此割裂的 Goal。每个里程碑仍必须单独验收、记录证据并允许按真实结果微调下一阶段；C1–C5 逐项做 trigger review，trigger 不成立就以可审计 no-op 关闭并保持 `planned / unavailable`。总 Goal 只有在最终真实课题验收通过且没有未处置的高严重度 harness 缺陷时才完成，因此它是有限交付 Goal，不是“完成全部未来愿景”的无限 Goal。
+
+## 1. 最终效果
+
+目标不是让研究者操作一台科研状态机，而是让 Hakimi 表现为一位可靠的理论物理合作者：
+
+- 能与研究者把模糊问题收敛为可证伪的当前问题和候选解释；
+- 会先查当前课题的 AITP 证据、相关方法卡和必要文献，再选择最小判别性检验；
+- 能维护一份随证据演化的 Research Plan，而不是机械执行一次性 roadmap；
+- 每轮只做一个有目的、预期证据和停止条件的 bounded Research Action；
+- 可以自己工作，也可以按需调用 literature、calculation、derivation、numerical critic、evidence auditor 或 writer operator；
+- 会区分人类提供的线索、工具观察、外部来源和经过验证的科学结论；
+- 在有 durable delta 时自动走 AITP 的可靠持久化边界，在没有 delta 时零写入；
+- 只在真实、非 trivial、可能复用的工程或方法经验出现时做一次条件性知识蒸馏 review；
+- 在阶段边界整理 Working Note、阶段总结或论文草稿，而不是每轮强制写文档；
+- 用简洁 Board 告诉研究者课题做到哪里、这一轮在判别什么、现在唯一需要注意什么、下一步是什么；
+- 有 Goal 时可以在明确边界内持续推进，没有 Goal 时仍能自然进行交互式 Research Loop；
+- 内部工程审计仍然严格，但 hash、receipt、revision、adapter contract 等细节默认留在 audit view，不占据物理研究叙事。
+
+成功的衡量标准不是“调用了多少工具、跑了多少轮、写了多少 Entry”，而是：新证据是否改变了候选解释、下一检验、限制或停止判断，并且这个变化能被研究者理解、恢复和审计。
+
+## 2. 一个完整的用户故事
+
+研究者进入一个理论物理项目，输入 `/research`。Hakimi 恢复当前 Program、Line、Question、Research Goal、Research Plan 和最近可靠证据；健康的 adapter 与历史审计细节保持折叠。
+
+研究者提出：“Si 的 QSGW head-wing 为什么在第一轮发散？”Hakimi 不立即把“跑一个计算”当成答案。它先做以下事情：
+
+1. 读取当前 Line 的 AITP handoff、相关 Entries/Notes 和适用的方法卡；
+2. 区分已验证事实、人类新提示、历史失败和仍待验证的推断；
+3. 必要时与研究者讨论 convention，或者定向检索文献、推导和既有 benchmark；
+4. 给出少量候选解释，例如 Fourier convention、错误的 WFC reader 路径或数值不稳定；
+5. 更新可修订的 Research Plan，说明每个候选需要什么判别证据；
+6. 选择成本最低、区分度最高的一项检验，建立 bounded Research Action；
+7. 主 Agent 自己做物理分析；编译、输入、输出、运行 provenance 和常见故障由 calculation operator 参考经过验证的方法卡处理；
+8. 主 Agent 评价结果，说明支持了什么、否定了什么、还不能声称什么；
+9. 如果结果是 durable delta，自动经 AITP CLI 保存并核验；如果只是无效尝试或没有改变判断，则只更新本地进度；
+10. 如果出现可复用 procedure 或关键 failure+workaround，只把本轮新证据交给 `distilling-methods` 做一次条件性 review；
+11. Board 更新为下一项物理问题，而不是显示一墙内部状态；
+12. 若 Goal 仍未达到且没有需要人类判断的边界，Goal engine 安排下一轮；否则等待研究者、外部计算或明确结束。
+
+若研究者开启 `dreaming` 并设置 Goal，Hakimi 可对低成本、可逆、scope 内的细节作出明确记录的假设，连续推进多个 Research turns。若只开启 Research Mode 而没有 Goal，完全相同的科研认知 loop 仍适用于自然对话，但不会自行排入下一轮模型调用。
+
+## 3. 科研主循环
+
+这是一组认知职责，不是一组要求研究者手动推动的 UI phase。简单问题可以合并多个节点；纯讨论可以停留在问题澄清；只有执行新的科研工作时才需要 Action。
+
+```mermaid
+flowchart TD
+  U[研究者的问题、指导或新结果] --> O[定向与恢复]
+  O -->|当前 Line| K1[第一阶段定向恢复：读取当前证据、Research Plan 与已知方法线索]
+  K1 --> H[与人讨论、查文献、推导并形成候选解释]
+  H --> K2[第二阶段精确复核：检查候选相关证据、知识卡、Skill 与 benchmark]
+  K2 --> R[修订 Research Plan 和判别条件]
+  R --> T[选择一个最小判别性检验]
+  T --> B[BeginResearchAction]
+  B --> X[主 Agent 执行或调用 bounded operators]
+  X --> E[证据、反证、失败与限制]
+  E --> C[ConcludeResearchAction]
+  C --> D{产生 durable delta?}
+  D -->|否| N[更新当前判断与 Board，AITP 零写入]
+  D -->|是| P[AITP prepare → save → show/check → checkpoint commit]
+  P --> M{出现真实方法蒸馏 trigger?}
+  M -->|否| N
+  M -->|是| V[只 review 本轮新证据；卡片仍需既有 trial 和 human gates]
+  V --> N
+  N --> S{下一选择}
+  S -->|关键未知仍在| H
+  S -->|需要人类科学判断| A[询问研究者]
+  S -->|等待外部计算| W[等待，或另开一个独立 bounded action]
+  S -->|到达阶段边界| Z[阶段 Note / 报告 / 论文材料]
+  S -->|完成条件满足| F[关闭阶段 Goal]
+```
+
+### 3.1 定向与候选解释
+
+`问题 → 猜想` 往往是科研中最重的一段，不能缩成一次无证据的模型猜测。检索分两次完成：候选形成前只恢复 current Line 的现状与已知方法线索，避免遗漏和串线；候选形成后再按候选语义精确复核适用卡片、Skill、反例与 benchmark，避免无目的扫描。任一阶段没有相关内容都安静 no-op。它允许：
+
+- 与研究者讨论问题、物理 convention、真正关心的 observable 和可接受的近似；
+- 回读当前 Line 已提交的 AITP evidence、failure、decision、working Note 与 handoff；
+- 只检索与当前缺口相关的方法卡，而不是扫描全库或建立 registry；
+- 定向搜索原始论文、官方文档和可信 benchmark；
+- 做推导、量纲分析、极限检查、对称性分析和数量级估计；
+- 让多个 perspective operator 独立提出支持证据、反例或判别实验。
+
+这一段的产物不是“答案”，而是少量候选解释、各自的可证伪预言、当前证据和关键未知。若候选之间没有可区分的观测，Research Plan 还没有收敛到可执行状态。
+
+### 3.2 最小判别性检验
+
+每轮优先选择最能改变判断的最小动作，而不是最完整或最昂贵的动作。选择次序是：
+
+1. 能否用已有证据、量纲、极限或小型解析推导判别；
+2. 能否用已有输出做只读后处理；
+3. 能否运行局部单元或最小输入；
+4. 能否做一个短 diagnostic run；
+5. 只有前面不足时才运行完整计算、参数扫描或远程作业。
+
+Action 必须提前说明 purpose、expected evidence、stop condition 和所需 capability。`BeginResearchAction → 实际工作 → ConcludeResearchAction` 是正常路径；同一结论不再额外调用 `RecordResearchProgress` 重复记录。
+
+### 3.3 评价与下一轮
+
+Conclude 不等于“工具成功”。主 Agent 必须回答：
+
+- 观测本身是什么，来源和验证层级是什么；
+- 它支持、削弱或排除了哪个候选；
+- 哪些替代解释仍成立；
+- 误差、收敛、近似和物理有效性边界是什么；
+- 是否改变 Research Plan、Question assessment 或停止判断；
+- 下一步为什么比其他动作更有判别力。
+
+运行失败也可能是有价值的科研证据，但 scheduler `COMPLETED`、程序退出 0、文件存在或哈希一致都不自动等价于科学成功。
+
+## 4. Goal、Research Goal、Plan 与 Action
+
+```mermaid
+flowchart TB
+  G[Generic Goal engine<br/>生命周期、预算、continuation] --> RG[Research Goal projection<br/>科研特化目标与完成条件]
+  RG --> RP[Research Plan<br/>可修订的多轮科学路线]
+  RP --> M[Current milestone / Question]
+  M --> AP[Local Plan / Todo<br/>本次动作的执行细节]
+  AP --> A[Bounded Research Action]
+  A --> CP[Evidence assessment / checkpoint]
+  CP --> RP
+```
+
+| 对象 | 回答的问题 | 拥有 | 明确不拥有 |
+|---|---|---|---|
+| Generic Goal | 何时继续、暂停或完成？ | objective、completion criterion、budget、pause/resume/cancel、跨 turn continuation | 科学证据、工具 capability、AITP Topic |
+| Research Goal | 这个 Goal 在科研语境中具体要完成什么？ | 同一 `goalId` 的科研 scope、criterion、guards 和 Program relation 投影 | 第二套 Goal engine 或第二个 scheduler |
+| Research Plan | 目前认为怎样才能达到 Goal？ | 可修订 milestones、候选路线、needed evidence、assumptions、decision/replan/stop conditions | 不可变 roadmap、Goal completion、AITP ledger |
+| Plan Mode | 怎样与人共同形成或修订计划？ | 一次交互式规划界面；把讨论结果转成或更新 Research Plan | Research Loop、continuation 或科学权威 |
+| Local Plan / Todo | 当前 Action 的细节顺序是什么？ | 临时步骤、工具顺序、局部验证 | 科研状态、durable evidence、Goal |
+| Research Action | 这一轮要判别什么？ | purpose、expected evidence、stop condition、capability、conclusion boundary | 整个课题或无限执行权 |
+| Question / Line | 当前未知属于哪条研究线？ | 科研组织、优先级、assessment 和 next action | AITP workstream identity 的自动推断 |
+
+Research Plan 可以一开始是猜测性的。它随着文献、推导、运行和人类修正逐渐清晰；每次只在新证据改变路线时修订。Plan Mode 可以在 Research Mode 中用于深入共同规划，但退出 Plan Mode 后仍由同一个 Research Loop 执行，不产生另一条生命周期。
+
+## 5. 三种正交控制：Research、dreaming 与 auto
+
+### 5.1 Research Mode
+
+`/research` 是进入或退出联合科研能力的直接 toggle。进入后，自然 user turn 与合法 Goal continuation 都使用 Research Loop；退出不删除 Goal 或 AITP 记录。
+
+Research Mode 决定“是否按科研 loop、evidence 和 Action 归属工作”。它不自行创建 Goal，也不自动产生下一 model turn。
+
+### 5.2 collaborative 与 dreaming
+
+它们是 Research planning policy：
+
+- `collaborative`：只在会改变 Goal、Research Plan、关键 convention、代价或结论的 consequential uncertainty 上询问研究者；普通可验证细节由 Agent 自己调查。
+- `dreaming`：Goal、scope 和 completion criterion 明确后，对低成本、可逆、scope 内的未知作出显式假设并继续；这些假设写入 Research Plan，后续证据可推翻。
+
+两种策略都必须停在以下边界：Goal/scope 的实质改变、影响结论的 convention 歧义、昂贵或不可逆操作、外部权限、AITP human decision、Method-card approval/publication 以及证据不足却要作正式结论。
+
+### 5.3 auto permission
+
+`auto` 只处理常规工具风险确认。它不授予 Research Action capability、不替代 Goal、不回答 human gate，也不改变科学权威。
+
+因此 `Goal + dreaming + auto` 表示：Goal 负责连续推进，dreaming 减少非必要科研提问，auto 减少常规工具确认；三者组合仍受已约定的科学、资源和人类决策边界约束。
+
+## 6. AITP 在循环中的精确位置
+
+AITP 是 local-first、canonical、可审计的科研记忆，不是思考引擎、planner 或计算平台。
+
+### 6.1 轮次开始与恢复
+
+Research Mode 进入、active session 冷恢复或真正需要当前证据时：
+
+1. 用 AITP public CLI 观测 Topic、handoff 与 health；
+2. 只在 current Line 有 explicit confirmed workstream binding 时做 scoped 读取；
+3. 检查将要依赖的具体证据，而不是相信旧 prompt、roadmap 或 Board 摘要；
+4. 按当前问题定向查找相关 Working Note、theory Note 和 `> method-card:`；
+5. 将 canonical evidence 与 Hakimi local working state 对齐。
+
+正常回答前只做轻量 reconciliation。可以机械证明的 stale period、历史无写入 checkpoint、重复 cleared alert 或 Action/phase 漂移由系统修复；Goal↔Program、Line↔workstream、科学 convention 和人类 decision 不能自动猜测。
+
+### 6.2 Action 结束与 durable boundary
+
+- `no_durable_delta`：只更新 Hakimi working state 和 Board；不写 AITP、不扫描卡片、不阻塞 continuation。
+- `durable_delta`：生成一个 checkpoint candidate，经现有 `record prepare → draft → record save → show/scoped check → CommitResearchCheckpoint` 保存。
+- AITP save 必须使用当前 0.9.0 `--expected-topic` + `--exact-workstream` compare-and-save contract；Hakimi 不直接写 canonical `.aitp` 文件。
+- 同一结论只有一个 progress/durability boundary；`state_updated` 不产生新的 Method-card trigger。
+- 保存失败、receipt 不清楚或 revision/binding stale 时 fail closed，不把本地状态展示成 canonical fact。
+
+### 6.3 人类提供的信息
+
+人类的话可能是目标、约定、经验、推断或已经验证的事实，不能混成同一 authority：
+
+1. 原始指导先保留 attribution 和上下文；
+2. 若它会影响科学结论，设计最小验证或查找可追溯来源；
+3. 将“人类断言”“工具/来源观察”“Agent 评价”分开；
+4. 只有经过检验并产生 durable delta 时才成为相应 Entry/Note 候选；
+5. 人类 decision 只能由明确的人类选择产生，模型不能把验证结果伪装成 `authority: human`。
+
+### 6.4 Method card、Skill 和工具
+
+三层职责保持固定：
+
+```text
+工具：执行真实命令、读取文件、跑计算或检索来源
+方法卡：记录经过证据支持、可复用的 procedure、适用范围、检查和停止条件
+Skill：在合适场景检索卡片、指导执行、review trigger，并处理人机决策顺序
+```
+
+Method card 继续使用现有 AITP theory Note 规则；不新增 card schema、registry、catalog、dispatcher、INDEX 或 vector DB。卡片只在当前 Line/workstream 和任务语义相关时定向检索。
+
+正式 trigger、`basis_refs`、post-card exact `sha256:` trial、revision、两步 human decision 和 publication 完全由当前 `distilling-methods` Skill 决定。Hakimi 只负责在新 durable Entry 首次 commit 后进行一次 bounded handoff；不能自动 approval、publish、跨 Topic 传播或用卡片解决 failure。
+
+当前 same-turn handoff 是 best-effort，不是 exactly-once。只有真实会话再次证明 crash/resume 会稳定漏掉高价值 review，才启动 native H6b 的独立设计 Goal。
+
+## 7. 内置 operator，而不是新的执行平台
+
+Operator 是 Research Mode 中按需使用的 bounded specialist preset。实现上可以使用子 Agent，但它不是持续运行的独立智能体，也没有自己的 Goal engine、ledger 或科学决策权。
+
+```mermaid
+flowchart LR
+  M[Main theoretical-physics collaborator] --> L[Literature operator]
+  M --> C[Calculation operator]
+  M --> D[Derivation / numerical critic]
+  M --> E[Evidence auditor]
+  M --> W[Writer]
+  L --> P[Typed evidence packet]
+  C --> P
+  D --> P
+  E --> P
+  W --> P
+  P --> M
+  M --> J[Scientific judgment and next action]
+```
+
+所有 operator：
+
+- 只接受当前 Action 的 bounded question、input cursor、allowed tools 和 stop condition；
+- 返回 typed evidence packet，包含 observation、refs、limitations、contradictions 和 verification；
+- 不直接修改 Question/Line/Goal，不直接写 AITP，不替研究者作决定；
+- 结果由 main Agent 串行综合，跨 Line 结果先进入 review，不异步改变当前结论。
+
+### 7.1 Calculation operator
+
+Calculation operator 的目的正是把工程负担从主物理合作者的前景中移开。它使用现有 workspace、Bash、SSH、scheduler 或已有 Hakimi 工具，并参考经过验证的 AITP 方法卡；当前不建设独立 runner、daemon、scheduler lifecycle、artifact database 或新执行平台。
+
+对 ABACUS/LibRPA，知识应按以下六层组织，但都仍是现有 theory Note/Method card：
+
+1. 总览：方法解决的问题及适用/不适用体系；
+2. 编译环境：源码、依赖、命令、环境和真实常见错误；
+3. 输入与参数：体系、泛函、赝势、基组、k-point、cutoff 和收敛选择；
+4. ABACUS–LibRPA 流程：输入输出、目录关系、顺序和中间结果；
+5. 后处理：observable、单位、解析和物理检查；
+6. 诊断：错误、未收敛、不兼容、体系越界和停止条件。
+
+只有真实执行过的命令、输入、错误、workaround 和验证依据可以入卡。主 Agent 默认只看：物理问题、输入科学假设、observable、数值质量、失败分类和结论边界；hash、binary identity、RPATH 和 receipt 在 operator evidence packet 与 audit view 中保留。
+
+### 7.2 Literature、derivation 与 critic operator
+
+- Literature operator：寻找原始来源、版本、关键假设和相互矛盾的结论，不生成无出处综述。
+- Derivation operator：独立推导、检查符号、规范、极限、量纲和对称性。
+- Numerical critic：检查离散化、收敛、误差传播、条件数、有限尺寸和 benchmark。
+- Evidence auditor：只评估 provenance、claim-evidence 对应和遗漏的 falsifier，不替主 Agent 写结论。
+
+这些 preset 一次只增加一个，并以真实重复需求为前置证据；不能预先建立一个庞大 agent zoo。
+
+## 8. Research Board
+
+默认 Board 只回答四个问题：
+
+| 区域 | 默认内容 | 不默认展示 |
+|---|---|---|
+| Project | 当前 Research Goal/milestone、Line、距 completion criterion 的主要缺口 | 完整 Program、所有 Line、schema/revision |
+| Current cycle | 当前 Question、候选解释、最小检验及处于思考/执行/评价/记录/等待哪一段 | 原始 phase 名和全部历史 action |
+| Attention | 现在真正阻止判断或 continuation 的至多一项 | cleared、historical、其他 Line 的 warning 墙 |
+| Next | 一个可执行 bounded action，或明确的等待/人类判断/阶段完成 | 多个互相竞争的内部 next 字段 |
+
+Expanded audit 才展示 adapter version、Goal alignment、Line binding、receipt、hash、revision、historical alerts、checkpoint history 和完整 evidence refs。
+
+### 8.1 warning 的处置规则
+
+| 情况 | 回答前行为 | Board 行为 |
+|---|---|---|
+| 可机械证明且无科学语义的漂移 | 幂等自动修复 | 不打扰用户，audit 留痕 |
+| 可由窄 recovery 操作安全恢复 | 自动恢复或给出一个明确 recovery next | 只显示当前 blocker |
+| 涉及 Goal/Program、Line/workstream 或科学 decision | 不猜测，不自动确认 | 用自然语言显示唯一需要研究者判断的事项 |
+| 历史失败已被新 retry supersede | 保留审计，不重新阻塞 | 默认隐藏 |
+| AITP read 可用但 scoped write 不可用 | 允许读和临时研究，禁止 durable claim | 显示“记录待绑定/恢复”，不说整个 adapter 坏了 |
+| 外部计算等待 | 保存 run observation；不伪装成无进展或完成 | Current cycle 显示等待对象和可做的独立思考 |
+
+Board 是同一 Research snapshot 的投影，不是第二份人工维护的状态。多个 Line 可以保存在一个 Topic 中，但当前 session 只有一个 foreground Line、Question、Action 和 persistence boundary；默认 Board 只消费该 Line，防止 NiO、Si 或其他课题串线。
+
+## 9. Note、项目总结与论文
+
+Method card 不是所有知识产物的替代品：
+
+| 产物 | 用途 | 触发 | 位置与权威 |
+|---|---|---|---|
+| Working Note | 跨 session 恢复当前判断、限制和下一步 | durable state 落后于真实进展 | AITP Note，经 public CLI 保存 |
+| Theory Note | 推导、概念结构、阶段性综合 | 推导已足够稳定且值得长期复用 | AITP theory Note |
+| Method card | 可复用 procedure 和验证锚点 | 严格遵循 `distilling-methods` trigger | AITP theory Note，始终先 agent draft |
+| Stage report | 一个 milestone 的问题、方法、证据和边界 | 阶段完成或方向切换 | 研究 workspace 文档，可由 AITP Entry/Note pin |
+| Paper draft | 面向发表的叙事、图表、推导和引用 | 科学结果达到研究者认可的完整度 | workspace/manuscript；必须人类审阅，不自动投稿 |
+
+等待外部计算时，可以开始一个独立 bounded action 来整理已提交证据、做更深推导或准备阶段 Note；不能借“等待”绕过当前 Action 或把尚未完成的 run 写成结果。文档生成必须从已验证 evidence refs 出发，不能用 Board 摘要代替来源。
+
+## 10. 真实架构与职责
+
+```text
+Hakimi App
+└── Session scope
+    ├── AITP adapter / lifecycle coordinator
+    │   └── 只调用 AITP CLI + files contract
+    └── Main Agent scope
+        ├── Research Mode admission / turn boundary
+        ├── Research Goal projection + generic Goal bridge
+        ├── Research Plan / Line / Question / Focus
+        ├── Action ownership policy
+        ├── Board projection
+        └── bounded operator children
+
+AITP Topic
+├── canonical Entries / Notes / evidence pins
+├── explicit workstream membership
+├── health / handoff / checkpoint evidence
+├── Method cards and trials
+└── human decisions
+```
+
+职责划分：
+
+- AITP：protocol、canonical ledger、Entry/Note、evidence pins、Method card、trial、human decision。
+- Hakimi：Research Loop、Goal continuation、Research Plan、Question/Line/Focus、session orchestration、工具调用、human interaction、恢复和 UX。
+- Operator/tool 层：真实文献检索、推导、编译、输入、运行、后处理和诊断；只返回 evidence packet。
+- 研究者：课题目标、关键物理 convention、资源与不可逆动作、方向归属、最终科学判断、卡片 approval/publication 和论文发布。
+
+不能把 AITP parser、validator 或 ledger 复制进 Hakimi，不能直接写 canonical `.aitp` 文件，不能把 Hakimi Goal/Line binding 写成伪 AITP 事实。
+
+## 11. 当前事实与缺口
+
+以下状态必须在每个阶段开始时以当前 HEAD、dirty status、version、CLI/help、schema、contract、fixtures、tests 和两侧 handoff 重新核验。
+
+| 能力 | 2026-09-05 事实层级 | 说明 |
+|---|---|---|
+| Interactive Research turn 与 Goal continuation 分离 | 已有基础 | Research Mode 可在无 Goal 时交互；Goal 是唯一跨 turn continuation owner |
+| Research Goal 投影、Research Plan v2、local Plan binding | 已有基础 | 不增加第二个 Goal engine；plan 可 revision |
+| collaborative / dreaming | 已有基础 | 与 permission `auto` 正交 |
+| Line/Question/Focus、单 foreground Action | 已有基础 | 多 Line 串行切换，不是并发 loop scheduler |
+| exact Topic/workstream checkpoint save | 已有基础 | 依赖 AITP 0.9.0、adapter-contract 0.2 |
+| `ConcludeResearchAction` durable candidate | 已有基础 | no-delta 零写入；durable delta 走 commit barrier |
+| same-turn distillation handoff | 已有基础但 best-effort | 不是 exactly-once，不拥有 Skill 语义 |
+| O4 executor Action ownership、historical discard、gate repair、warning 去重、bare `/research` toggle | 当前隔离工作树已实现并验证，尚待独立审查、提交、推送和本地重装 | 未交付前不能当作用户当前安装状态 |
+| Board 是否在真实长会话中足够清楚 | 部分完成 | 已有四区投影，需要三份 export replay 和 fresh/cold-session 使用验收 |
+| 每轮自动找到恰当 evidence/card 并指导物理选择 | 部分/主要依赖 Skill guidance | 没有 native contextual router；不应建 registry/vector DB |
+| 人类指导经验证后进入 durable evidence 与 card review | 流程组件存在，端到端体验未验收 | 必须区分 human assertion 与验证来源 |
+| ABACUS/LibRPA calculation operator | planned / unavailable | 先使用现有工具；需重复真实需求后实现薄 preset |
+| Literature/derivation/auditor/writer presets | planned / unavailable | 一次一个，自然需求驱动 |
+| H6b crash-safe/exactly-once distillation coordinator | planned / unavailable | 需要真实漏交付证据和 reviewed contract；当前 S7 不足以声称实现 |
+| 自动阶段 Note / paper workflow | planned / unavailable | 不等于 Method card；不能自动发表 |
+| Parallel Research Loops | planned / unavailable | 串行 loop 先通过真实验收 |
+| OS-level Research sandbox | unavailable | executor policy 只能约束模型工具调用；shell 仍依赖 host sandbox/permission |
+| AITP M2/M3/M4、cross-topic catalog/collaborator protocol | planned / unavailable | 只由各自 natural-demand evidence 启动，不能由本规划抢跑 |
+
+## 12. 总 Goal 的分阶段实施计划
+
+### 执行原则
+
+- 下列每一项都是总 Goal 内部有独立完成条件的串行里程碑；前一里程碑验收后才进入下一项。
+- 每个里程碑开始前重新核验两个仓库，并列出本轮 exact allowed files。
+- 一个阶段完成后先交付、安装并用真实场景验收；验收通过后由同一总 Goal 进入下一里程碑。
+- 如果现有实现已满足验收，阶段可以以证据充分的 no-op 关闭。
+- 任何阶段若要求新 AITP schema/CLI、改变 human authority 或建设新平台，立即停止，先做独立设计与授权。
+- 里程碑细节可以随真实证据调整，但不得暗中删除最终完成条件、扩大权限或把 `planned / unavailable` 伪装成已实现。
+
+### G0：交付并验收当前 O4 恢复与 Action 归属切片
+
+**Objective**
+
+将当前隔离工作树中已经实现的 O4 作为一个完整 Hakimi release slice 审查、提交、推送、本地重装，并证明三份真实 debug export 的 bypass、stale checkpoint、human-gate drift 和 warning storm 不再复现。
+
+**Completion criterion**
+
+- staged paths 精确属于 O4、bare `/research` toggle、对应文档/测试/changesets 和生成资产；
+- 开始交付前重新 fetch 并记录 live `origin/main`；若它已推进，只在新的 clean integration worktree 中做非破坏性合并和冲突审计，不覆盖原 dirty worktree；
+- targeted tests、typecheck、import lint、web assets check、docs build 与 diff check 通过；
+- commit/push 后从 clean delivery worktree 构建并重装；
+- fresh session 与一个 cold-restored anonymized fixture 中：被拒绝 Begin 后 Web/workspace/shell 不执行，安全 historical checkpoint 被清理，含 receipt 的模糊 checkpoint 保留，gate 恢复后可 resolve，Board 只显示一个 current attention；
+- 用户可直接 `/research` toggle，并确认默认 Board 可理解。
+
+**Scope**
+
+Hakimi-only：现有 O4 runtime、public transport、TUI/Web、docs、tests、changesets 和由官方脚本生成的 web assets。
+
+**Non-goals**
+
+不新增科学 loop 节点、operator、AITP 能力、卡片 router、H6b、parallel loop 或 OS sandbox。
+
+**允许修改**
+
+仅 Hakimi 当前 O4 已触及的 allowlist；AITP checkout 与 GW/LibRPA export 只读。最终 allowlist 必须在提交前从 diff 生成并人工审查。
+
+**验证命令**
+
+```sh
+pnpm exec vitest run packages/agent-core-v2/test/features/aitpResearch
+pnpm exec vitest run apps/kimi-code/test/tui/commands/research.test.ts
+pnpm exec vitest run apps/kimi-web/test/slash-menu.test.ts
+pnpm -C packages/agent-core-v2 typecheck
+pnpm -C packages/agent-core-v2 lint:imports
+pnpm -C apps/kimi-code typecheck
+pnpm -C apps/kimi-web typecheck
+pnpm run build:web-assets -- --check
+pnpm -C docs build
+git diff --check
+```
+
+**停止条件**
+
+dirty authorship 无法区分、upstream merge 冲突无法与用户改动安全分离、allowlist 不精确、AITP contract 事实冲突、生成资产不可复现、相关测试失败或安装源不是刚推送 commit 时停止。
+
+### G1：用真实会话验收“科学叙事优先”的串行 Research Loop
+
+**Objective**
+
+让自然对话在 Research Mode 中稳定表现为“问题/候选解释 → 最小检验 → 证据评价 → 下一步”，内部 phase 不再成为用户或模型的操作负担。
+
+**Completion criterion**
+
+- 三份 debug export 被匿名化为 replay/acceptance scenarios，而不是复制科研数据；
+- 无 Goal 的自然对话、active Goal continuation、外部 run 等待、失败后重试、纯讨论五种场景均能得到正确的 loop guidance；
+- 模型不会为纯记账问题打断用户，也不会在没有 bounded Action 时做新科研工作；
+- 每轮 Board 明确当前候选、检验、评价或等待位置，且只给一个 next；
+- 无需新增 public phase、wire schema 或 AITP contract 即通过验收；若现有 Skill/injection 已满足则以 no-op 关闭。
+
+**Scope**
+
+优先修改 `theory-physics` domain Skill、Research context presenter、derived Board copy 和 replay tests；只在代码证据表明缺口无法由现有字段表达时讨论更小接口。
+
+**Non-goals**
+
+不新增状态机 phase、每阶段强制工具、每阶段 AITP check/Note、自动科学判断或多 loop 并发。
+
+**允许修改**
+
+Hakimi theory-physics plugin/Skill、AITP Research injection/presenter、Board 纯投影及对应 tests/docs；AITP 只读。
+
+**验证命令**
+
+```sh
+pnpm exec vitest run packages/agent-core-v2/test/features/aitpResearch
+pnpm exec vitest run apps/kimi-code/test/tui/commands/research.test.ts
+pnpm exec vitest run apps/kimi-web/test --pool=forks --maxWorkers=1
+pnpm -C packages/agent-core-v2 typecheck
+pnpm run build:web-assets -- --check
+pnpm -C docs build
+git diff --check
+```
+
+**停止条件**
+
+若方案要求让 UI 推断科学结论、自动 complete/abandon Action、创建新的 phase machine、修改 AITP schema 或无法从真实 replay 证明用户收益，则停止并报告。
+
+### G2：收敛 Research Plan、Plan Mode 与 dreaming 的协作体验
+
+**Objective**
+
+让 Research Plan 真正成为可演化的科学路线：不确定时在 collaborative 下与人讨论，在 dreaming 下记录低风险假设并推进；Plan Mode 只作为共同规划入口。
+
+**Completion criterion**
+
+- 从模糊课题到 provisional plan、从新证据到 replan、从人类修正到 revised plan 三个场景通过；
+- Plan 明确列出候选路线、判别证据、assumptions、milestones、replan/stop conditions；
+- local Todo 只包含当前 Action 的执行细节，不出现在 evidence 或 Research status 中；
+- collaborative 只询问 consequential unknown，dreaming 对每项默认判断留痕；
+- Goal/scope、关键 convention、昂贵/不可逆行为与 human decision 始终停下。
+
+**Scope**
+
+现有 ResearchPlanV2、planning policy、AskUserQuestion broker、Plan Mode bridge、model injection 和 Board plan summary。
+
+**Non-goals**
+
+不创建第二个 planner/Goal engine，不让 Plan 自动完成 Goal，不自动确认 Goal↔Program 或 Line↔workstream。
+
+**允许修改**
+
+Hakimi Research planning service、Plan Mode bridge、injection、TUI/Web plan views、protocol 表面仅在现有字段确实不足且六端同步可同阶段完成时；AITP 只读。
+
+**验证命令**
+
+```sh
+pnpm exec vitest run packages/agent-core-v2/test/features/aitpResearch
+pnpm exec vitest run packages/agent-core-v2/test/agent/goal
+pnpm exec vitest run packages/kap-server/test/research.test.ts
+pnpm exec vitest run packages/klient/test/facade.test.ts
+pnpm -C packages/agent-core-v2 typecheck
+pnpm -C apps/kimi-code typecheck
+pnpm -C apps/kimi-web typecheck
+git diff --check
+```
+
+**停止条件**
+
+若需要改变 generic Goal ownership、Plan Mode 全局语义、human gate authority 或无法保持 REST/WS/SDK/klient/TUI/Web 一致，则先停止做独立接口设计。
+
+### G3：实现 current-Line 的定向 evidence 与 Method-card retrieval
+
+**Objective**
+
+在候选解释和 Action plan 形成前，自动但轻量地查找当前 Line 真正相关的 AITP evidence、working/theory Note 和方法卡，并把适用条件与验证锚点注入当前科研上下文。
+
+**Completion criterion**
+
+- retrieval 只在 Research turn 且与当前 Question/Action 相关时发生；
+- 只通过 AITP public read contract、`rg "^> method-card:"` 和现有 Skills 工作；
+- current Line 有 binding 时严格 scoped，无 binding 时不冒充 scoped completeness；
+- 零相关卡、已有卡完全覆盖、AITP unavailable 或 no-delta 时安静 no-op；
+- 不扫描全库、不建立 index/registry/catalog/vector DB、不把卡片当作工具自动执行；
+- ABACUS/LibRPA 六类知识卡用真实已有 evidence 验证 retrieval，但不凭空补卡。
+
+**Scope**
+
+Skill-first 的 Hakimi routing、现有 AITP adapter read calls、current-Line context injection 和 targeted tests。
+
+**Non-goals**
+
+不新增 AITP CLI/schema，不改卡片规则，不自动 draft/approve/publish，不做跨 Topic 推荐。
+
+**允许修改**
+
+Hakimi theory-physics/using-aitp invocation seam、Research injection/coordinator 及 tests/docs；若 AITP 当前 contract 不够，停止而不是修改 AITP。
+
+**验证命令**
+
+```sh
+pnpm exec vitest run packages/agent-core-v2/test/features/aitpResearch
+pnpm -C packages/agent-core-v2 typecheck
+pnpm -C packages/agent-core-v2 lint:imports
+pnpm -C docs build
+git diff --check
+```
+
+另用临时只读 fixture 验证：一张适用卡、一张 out-of-scope 卡、零卡、AITP degraded 和 legacy unscoped store。
+
+**停止条件**
+
+出现跨 Line 泄漏、需要语义 registry/vector DB、需要解析/复制 AITP validator、或 retrieval 无法给出 exact source refs 时停止。
+
+### G4：贯通“人类指导 → 验证 → durable evidence → 条件性蒸馏”
+
+**Objective**
+
+用真实对话证明研究者提供的经验只有在经过检验后才进入可靠记录，并在满足原有 trigger 时立即得到一张本地 Method-card candidate 或明确 no-op。
+
+**Completion criterion**
+
+- 至少覆盖：正确的人类 workaround、被实验否定的人类猜测、已有卡已覆盖、一次新失败但 trigger 不足四种路径；
+- human assertion、tool/source evidence、agent assessment 和 human decision authority 在 packet/Entry 中不混淆；
+- 正常路径只有一次 `Begin → work → Conclude` 和一次 durable boundary；
+- exact Topic/workstream save、show/check 和 checkpoint commit 完成后才 handoff；
+- `distilling-methods` 对本轮 exact Entry 进行一次 review，trigger 不成立时 no-op；
+- 不自动 approval、publish、cross-Topic propagate 或解决 failure。
+
+**Scope**
+
+现有 S6/S7、external `distilling-methods` Skill、AITP 0.9.0 contract 和真实 ABACUS/LibRPA 小型证据链。
+
+**Non-goals**
+
+不实现 H6b recovery，不新增卡片 schema/marker parser/registry，不批量扫描旧库，不伪造第二个 trial。
+
+**允许修改**
+
+优先 Hakimi tests/fixtures/Skill invocation glue 和 docs；AITP 规则只读。若发现 contract 缺口，先提交 evidence + minimal interface proposal，不直接实现。
+
+**验证命令**
+
+```sh
+pnpm exec vitest run packages/agent-core-v2/test/features/aitpResearch
+pnpm -C packages/agent-core-v2 typecheck
+git diff --check
+```
+
+在 AITP 临时 store 中再执行当前 CLI 的 `enter`、`check`、`record prepare/save`、`show` 和 scoped `check`；不得修改用户科研 store。
+
+**停止条件**
+
+任何需要模型冒充 human authority、需要直接写 `.aitp`、证据不是实际执行所得、或无法证明 exact touched Entry 时停止。
+
+### G5：实现一个薄的 ABACUS/LibRPA Calculation operator preset
+
+**Objective**
+
+让主 Agent 专注物理问题，把重复的编译、输入准备、流程、输出检查和诊断交给一个 bounded calculation operator，并返回可评价的 evidence packet。
+
+**Completion criterion**
+
+- 从真实重复任务中选一个最小 slice，例如“验证现有 binary + 固定 input + 解析一个 observable”，而非 `prepare/submit/collect` 全套 API；
+- operator 能查适用方法卡、执行现有工具、记录输入/输出/error/units/convergence/provenance，并遵守 Action capability；
+- main Agent 默认得到科学摘要、数值质量和限制；工程 hashes 进入 audit packet；
+- failure packet 能区分 environment/input/runtime/postprocess/scientific invalidity；
+- operator 不写 AITP、不修改 Research state、不拥有 continuation；
+- 一个真实 calculation replay 和一个 failure+workaround replay 通过。
+
+**Scope**
+
+Hakimi theory-physics plugin 中一个 preset、现有 subagent/tool infrastructure、typed child evidence packet 与当前 ABACUS/LibRPA cards。
+
+**Non-goals**
+
+不建设 daemon、runner service、scheduler lifecycle、artifact DB、campaign schema、远程资源平台或自动参数推荐系统。
+
+**允许修改**
+
+Hakimi plugin/preset、child evidence contract 的既有扩展点、tests/docs；科研仓库只在专门 scratch/fixture 中执行，AITP runtime 不改。
+
+**验证命令**
+
+```sh
+pnpm exec vitest run packages/agent-core-v2/test/features/aitpResearch
+pnpm -C packages/agent-core-v2 typecheck
+pnpm -C packages/agent-core-v2 lint:imports
+pnpm -C docs build
+git diff --check
+```
+
+另需一个真实、低成本、可重放的 operator acceptance packet；不能只用 mock 宣称科研可用。
+
+**停止条件**
+
+若一个薄 preset 无法完成且必须先建新平台、新 scheduler API、新 artifact schema，或真实步骤尚未重复证明需求，则阶段 no-op/blocked，不扩张范围。
+
+### G6：阶段 Note 与项目综合
+
+**Objective**
+
+在 milestone、方向切换或 closeout 时，从已提交 evidence 自动准备一份可审阅的 Working/Theory Note 或 stage report，同时保持 Method card、科学总结和论文材料的边界。
+
+**Completion criterion**
+
+- 只有 meaningful boundary 触发，不是每轮强制写 Note；
+- 每个主要 claim 可回到 exact Entry/source/run/code-change ref；
+- 明确 assumptions、negative results、limitations、open questions 和 next milestone；
+- AITP Note 使用 public prepare/save/check；workspace report 由 AITP record pin；
+- 人类可以编辑/拒绝，不自动发布或改写历史 Note。
+
+**Scope**
+
+现有 AITP Note contract、theory-physics writer guidance、Research Plan milestone 和 evidence projection。
+
+**Non-goals**
+
+不生成无证据论文、不自动投稿、不把 Board 当来源、不让 Method card 替代项目总结。
+
+**允许修改**
+
+Hakimi writer preset/Skill guidance、existing Note flow、tests/docs；AITP schema 不改。
+
+**验证命令**
+
+```sh
+pnpm exec vitest run packages/agent-core-v2/test/features/aitpResearch
+pnpm -C packages/agent-core-v2 typecheck
+pnpm -C docs build
+git diff --check
+```
+
+用一个已关闭 milestone fixture 核验每个 claim 的 ref 和零证据时 fail closed。
+
+**停止条件**
+
+若需要新 Note schema、无法追溯 claim、会覆盖旧 Note 或绕过人类审阅，则停止。
+
+### G7：真实长期科研验收与简化
+
+**Objective**
+
+用至少一个真实连续课题验证系统确实帮助科研，而不是只让 harness 更复杂，并删除或折叠无价值的状态噪声。
+
+**Completion criterion**
+
+- 覆盖自然对话、collaborative Goal、dreaming+auto Goal、等待计算、失败/重试、verified human guidance、跨 session 恢复和多 Line 切换；
+- 衡量 evidence-driven next-action change、重复动作、premature completion、无必要提问、Board 理解时间和遗漏持久化；
+- 研究者能在 compact Board 下说清项目位置、当前检验和下一步；
+- 所有 durable claims 可从 AITP 恢复；no-delta turn 不产生多余记录；
+- 形成一次 reviewed closeout，决定哪些后续 conditional goals 获得真实需求。
+
+**Scope**
+
+真实使用评估、replay harness、文档和小范围简化；不边评估边引入大平台。
+
+**Non-goals**
+
+不以 tool count、Entry count 或 loop count 作为成功代理，不宣称优于普通文件，当前 dormant external conformance suite 未评分前不作 superiority claim。
+
+**允许修改**
+
+Hakimi tests/docs/UX 小修；AITP 只通过现有 CLI 保存真实 evidence/feedback。任何协议变化另开 Goal。
+
+**验证命令**
+
+复跑 G0–G6 的相关 deterministic gates、两仓 `git diff --check`、AITP unchanged ledger tests，以及一份人工审阅的真实会话 acceptance report。
+
+**停止条件**
+
+研究者无法区分当前科学问题与内部状态、Board 仍需阅读大量 audit 才能理解、或 durable claims 不能可靠恢复时，不宣布总体串行体验完成。
+
+## 13. 总 Goal 内的条件性能力审查
+
+这些能力都必须在 G7 前后逐项审查，但实现与否取决于真实 trigger。trigger 成立且不违反 AITP gate 时，作为总 Goal 中新的有界里程碑实现；trigger 不成立时，保存证据充分的 no-op 结论并保持 `planned / unavailable`。它们不因被列出就成为必须开发的 runtime。
+
+### C1：native H6b crash/recovery distillation coordinator
+
+只在真实使用再次出现“checkpoint 已 commit，但 same-turn Skill handoff 因 crash/cold restore 丢失”且具有可复用价值时启动。需要先冻结最小 receipt/recovery contract，保持 Skill 为唯一 trigger authority。不能先假装 exactly-once。
+
+### C2：更多 operator presets
+
+Literature、derivation/numerical critic、evidence auditor 和 writer 必须各自有至少两次独立真实需求，再一次只实现一个。优先复用 Skill 与 typed evidence packet，不建立 preset zoo。
+
+### C3：论文草稿 workflow
+
+只有 stage reports 已稳定、claim-to-evidence 链可审计且研究者明确要求时启动。论文是 workspace artifact，AITP pin 其版本和依据；研究者拥有叙事、作者署名和发布决定。
+
+### C4：并行假设 Research Loops
+
+只有串行 loop 通过长期验收且真实课题证明并行候选能显著节约时间时启动。初始模型应保持一个 foreground authority：并行 children 使用 immutable input cursor 独立取证，返回 packets，由主 Agent 串行评价和提交；不能并发写 AITP，也不能让多个 Goal engines 争夺 continuation。
+
+### C5：AITP M2/M3/M4 或新 adapter surface
+
+reviewed artifacts、cross-topic links/catalog 和 collaborator protocol 继续由 AITP roadmap 的 natural-demand evidence 单独授权。Hakimi 发现缺口时先给出最小接口、真实失败证据、兼容矩阵和 non-goals；没有 shipped contract 就标记 `planned / unavailable`。
+
+## 14. 依赖关系与建议顺序
+
+```mermaid
+flowchart LR
+  G0["G0 交付 O4"] --> G1["G1 串行科学 loop 验收"]
+  G1 --> G2["G2 Research Plan 协作"]
+  G2 --> G3["G3 定向 evidence/card retrieval"]
+  G3 --> G4["G4 verified human knowledge + distillation"]
+  G4 --> G5["G5 Calculation operator"]
+  G5 --> G6["G6 阶段 Note / 综合"]
+  G6 --> G7["G7 长期真实验收"]
+  G7 -.真实需求.-> C1[H6b recovery]
+  G7 -.真实需求.-> C2[更多 operators]
+  G7 -.真实需求.-> C3[Paper workflow]
+  G7 -.真实需求.-> C4[Parallel loops]
+  G7 -.协议证据.-> C5[AITP future stages]
+```
+
+G0 是总 Goal 的第一个执行里程碑，因为当前工作树已经有尚未交付的 O4。G0 验收后同一总 Goal 自动进入 G1，而不是结束后等待重新创建 Goal；仍保持一次只执行一个 bounded milestone，避免让真实安装状态、dirty ownership 和用户体验证据混乱。
+
+## 15. 端到端验收场景
+
+最终串行体验至少要通过以下用户可见故事：
+
+1. **自然对话、无 Goal**：研究者开启 `/research`，讨论并完成一个 bounded test；系统更新 Board/AITP，但不自动开启下一 turn。
+2. **Collaborative Goal**：系统先问一个会改变路线的关键问题，Research Plan 形成后连续执行；普通细节不反复询问。
+3. **Dreaming + auto Goal**：低风险假设被记录并自动推进；到关键 convention 或昂贵提交时停下。
+4. **人类经验**：研究者给出 workaround；系统验证后记录来源，满足 trigger 才 review card，不满足时安静 no-op。
+5. **关键失败**：失败被评价为环境、输入、数值或科学问题；稳定 workaround 复现前不凭空写卡。
+6. **等待计算**：Board 显示等待对象和判断条件；系统可另做独立推导/证据整理，但不把 RUNNING 当结果。
+7. **旧会话恢复**：历史无写入 checkpoint 可安全清理；含 receipt 的状态 fail closed；Board 不重复历史 warning。
+8. **多个 Research Lines**：当前 Line 的 Question、alert、Action 和 AITP scope 不被其他 Line 污染。
+9. **AITP degraded**：允许明确标注的临时探索，阻止 durable closure；恢复后从 canonical cursor 对齐。
+10. **阶段完成**：completion criterion、evidence、limitations、Note 和 checkpoint 完整；Goal 才能 complete。
+
+## 16. 全局非目标
+
+本规划不授权：
+
+- 新的 AITP card schema、registry、catalog、dispatcher、INDEX 或 vector DB；
+- 复杂 `prepare/submit/collect` API、独立 runner、daemon、后台 service、scheduler lifecycle 或 artifact database；
+- 直接写 `.aitp` canonical files 或复制 AITP parser/validator/ledger；
+- 自动推断 Goal↔Program、Line↔workstream 或跨 Topic relation；
+- 自动 human decision、Method-card approval/publication、论文投稿或科学结论；
+- 每阶段强制 `aitp_check`、强制 Note、强制 method review、强制询问或额外 context injection；
+- 把两个 marker 当两个独立实验，把阶段结论当 trial，或让卡片自动解决 failure；
+- 在串行 loop 未通过真实验收前建设并行 loop；
+- 把 executor tool policy 宣称为 OS-level sandbox；
+- 为了 roadmap 完整而抢跑 AITP M2/M3/M4/H6b。
+
+## 17. 全局完成判据
+
+本规划中的“首个可用理论物理合作者”指同一有限总 Goal 内的 G0–G7 全部独立验收完成，并满足：
+
+- 自然交互和 Goal-driven 两种路径都稳定使用同一科研认知 loop；
+- Research Plan 会随证据更新，local Todo 不冒充科学状态；
+- bounded Action 不能被通用工具绕过；
+- AITP 读写、恢复和 scoped persistence 在用户层面顺畅但不喧宾夺主；
+- verified human knowledge 和真实可复用经验能进入一次正确的 conditional distillation review；
+- Calculation operator 至少在一个真实 ABACUS/LibRPA slice 中减轻工程负担；
+- Board 的四个位置足以让研究者理解课题、当前检验、阻碍和下一步；
+- 阶段 Note 能从 evidence refs 恢复；
+- 真实长期使用没有未处置的高严重度 bypass、串线或 premature completion。
+
+C1–C5 的审查是必做项，但代码实现不是无条件必做项。只有各自 trigger 成立、当前总 Goal 的授权与 AITP gate 都允许时才实现；否则以 no-op 证据关闭该项。这样既保留完整方向，也避免把愿景变成永远 active 的 Goal。
+
+## 18. 与此前讨论的逐项对照
+
+| 此前要求 | 本规划位置 | 当前处置 |
+|---|---|---|
+| Research Mode 下自然对话也走 Research Loop | §2、§3、§5 | 已有 turn 基础；G1 做真实体验验收 |
+| Goal 不是 Research Loop 的前置，只负责自治 continuation | §4、§5 | 保持 generic Goal 唯一 owner |
+| Research Goal 是科研特化 Goal | §4 | 采用同一 `goalId` projection，不建第二引擎 |
+| Research Plan 指导 loop 且可随研究更新 | §3、§4、G2 | Plan Mode 只负责共同形成/修订 |
+| collaborative 多讨论，dreaming 明确后自动推进 | §5、G2 | 与 `auto` permission 正交 |
+| 猜想前可与人讨论、查文献、查 AITP 和卡片 | §3.1、G3 | 定向检索，不建 catalog/vector DB |
+| 确认问题后再 plan、执行或分工 | §3、§7 | 一个 bounded Action；operator 按需 |
+| 等待计算时整理 AITP 或深入思考 | §3、§9 | 必须是独立 bounded action，不伪造 run 结果 |
+| 自动读写 AITP，但低冗余 | §6 | durable delta 才写；no-delta 零写入 |
+| 人类指导经过检验后可成为知识 | §6.3、G4 | authority 分离后进入 evidence/review |
+| 知识卡不能简单用 Skill 取代 | §6.4 | card 记录、Skill 路由、tool 执行 |
+| 自动调用适用卡片/Skill | §6.4、G3 | current-Line、任务相关、bounded retrieval |
+| 主物理 Agent 不被 hash/编译细节淹没 | §7.1、G5 | operator/audit 层承担，物理摘要前置 |
+| Calculation operator 是内置 bounded subagent preset | §7 | 可以用 subagent 实现，但无独立 authority |
+| Board 简洁、能看懂项目和当前 loop | §8、G1 | Project/Current cycle/Attention/Next |
+| warning 和不自洽状态回答前轻量修复 | §6.1、§8.1、G0 | 机械状态自动修；语义关系不猜测 |
+| 多课题线不能混 | §8、§10、验收 8 | 单 foreground Line；exact workstream binding |
+| 阶段整理 Note，最终可形成文章 | §9、G6、C3 | 与 Method card 分离；论文需人类 review |
+| 先串行 loop，以后再并行猜想 | §13 C4 | serial acceptance 是硬前置 |
+| 不希望产品像状态机门禁 | §1、§3、§8 | 内部安全约束折叠，用户看到科学叙事 |
+| 不使用实验性开关；`/research` 直接开关 | §5、G0 | 当前 O4/toggle slice 待交付验收 |
+| 交付前同步远程 main，但不破坏已有 dirty changes | G0 | fresh fetch + clean integration worktree + 精确 allowlist |
+
+## 19. 当前执行顺序与最终真实验收
+
+当前已创建覆盖本文全部范围的有限总 Goal。立即执行 **G0**：审查、交付、推送并从 pushed commit 本地重装当前 O4 切片；G0 验收后在同一 Goal 中依次完成 G1–G7，并对 C1–C5 做逐项 trigger review。
+
+最终验收使用只读导入的 `/home/bhjia/physics/quantum_chaos/Power_Law_Heisenberg_Chain/kimi-debug-session_-20260904-182916.zip` 恢复 `yangian-power-law-heisenberg-chain` 课题。先核验该非 Git 工作区的 AITP Topic、现有证据、当前 Research Goal/Plan/Line/Question 和真实 debug 输出，再完成至少一个有科学意义且有明确判据的 bounded milestone。把其 fresh/cold restore、Board、warning、Action、AITP persistence、distillation 和 Note 输出加入回归；发现的 P0/P1 harness 缺陷必须修复、测试、推送、重装并重放，直到不再复现。昂贵或不可逆计算、科学 convention 歧义和 human decision 仍按总 Goal 的停止条件暂停相关里程碑，不自动扩大权限。

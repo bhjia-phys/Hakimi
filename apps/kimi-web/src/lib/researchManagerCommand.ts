@@ -3,6 +3,7 @@ import type {
   ResearchPhase,
   ResearchRunState,
   ResearchSchedulerState,
+  ResearchStatusSnapshot,
 } from '../api/types';
 
 export type ResearchManagerEditorMode = 'create' | 'edit';
@@ -42,6 +43,57 @@ export interface ResearchManagerCommandAck extends ResearchManagerCommandRequest
 
 export function researchManagerMutationAllowed(busy: boolean): boolean {
   return !busy;
+}
+
+export function researchManagerHistoricalCheckpointCanBeDiscarded(
+  snapshot: ResearchStatusSnapshot | null,
+): boolean {
+  if (snapshot === null) return false;
+  const checkpoint = snapshot.pendingCheckpoint;
+  if (
+    checkpoint === undefined ||
+    checkpoint.committedEntryId !== undefined ||
+    checkpoint.receipt !== undefined ||
+    snapshot.latestCommittedCheckpoint?.checkpointId === checkpoint.checkpointId ||
+    snapshot.committedCheckpointHistory?.some(
+      (commit) => commit.checkpointId === checkpoint.checkpointId,
+    ) === true
+  ) return false;
+
+  const question = checkpoint.questionId === undefined
+    ? undefined
+    : snapshot.questions.find((item) => item.id === checkpoint.questionId);
+  const questionRevisionStale = checkpoint.questionRevision !== undefined &&
+    question !== undefined &&
+    checkpoint.questionRevision !== question.revision;
+  const captured = checkpoint.workstreamBinding;
+  const current = checkpoint.lineSlug === undefined
+    ? undefined
+    : snapshot.lineWorkstreamBindings.find((item) => item.lineSlug === checkpoint.lineSlug);
+  const bindingStale = captured !== undefined &&
+    checkpoint.lineSlug === captured.lineSlug &&
+    current !== undefined &&
+    !sameResearchWorkstreamBinding(current, captured);
+  const programStale = captured !== undefined &&
+    checkpoint.lineSlug === captured.lineSlug &&
+    snapshot.program !== undefined &&
+    (snapshot.program.topicId !== captured.topicId ||
+      (snapshot.program.observedRevision ?? 1) !== captured.observedRevision);
+  return questionRevisionStale || bindingStale || programStale;
+}
+
+function sameResearchWorkstreamBinding(
+  left: NonNullable<ResearchStatusSnapshot['pendingCheckpoint']>['workstreamBinding'],
+  right: NonNullable<ResearchStatusSnapshot['pendingCheckpoint']>['workstreamBinding'],
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return left.confirmationId === right.confirmationId &&
+    left.lineSlug === right.lineSlug &&
+    left.workstream === right.workstream &&
+    left.topicId === right.topicId &&
+    left.observedRevision === right.observedRevision &&
+    left.confirmedBy === right.confirmedBy &&
+    left.confirmedAt === right.confirmedAt;
 }
 
 export function researchManagerSessionIsCurrent(

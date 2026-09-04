@@ -224,8 +224,8 @@ describe('built-in slash command registry', () => {
     const research = findBuiltInSlashCommand('research');
     expect(research).toBeDefined();
     expect((research as KimiSlashCommand).experimentalFlag).toBeUndefined();
-    // status / pause / resume are always available
-    expect(resolveSlashCommandAvailability(research!, '')).toBe('always');
+    // status / pause / resume are always available; the bare toggle mutates.
+    expect(resolveSlashCommandAvailability(research!, '')).toBe('idle-only');
     expect(resolveSlashCommandAvailability(research!, 'status')).toBe('always');
     expect(resolveSlashCommandAvailability(research!, 'pause')).toBe('always');
     expect(resolveSlashCommandAvailability(research!, 'resume')).toBe('always');

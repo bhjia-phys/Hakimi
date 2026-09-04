@@ -50,7 +50,7 @@ Some commands are only available in the idle state. Executing these commands whi
 | Command | Alias | Description | Always available |
 | --- | --- | --- | --- |
 | `/yolo [on\|off]` | `/yes` | Toggle YOLO mode. Without arguments, flips the current state; explicitly passing `on`/`off` forces the setting. When enabled, skips approval for regular tool calls; Plan mode exit approval is not affected | Yes |
-| `/auto [on\|off]` | — | Toggle auto permission mode. When enabled, tool approvals are handled automatically and the Agent will not ask the user questions | Yes |
+| `/auto [on\|off]` | — | Toggle auto permission mode. Tool approvals are handled automatically and ordinary questions are suppressed; explicit protocol-owned workflow decisions may still pause | Yes |
 | `/plan [on\|off]` | — | Toggle Plan mode. Without arguments, flips the current state; explicitly passing `on`/`off` forces the setting. Simply toggling does not create an empty plan file | Yes |
 | `/plan clear` | — | Clear the current plan | No |
 | `/swarm on\|off` | — | Turn swarm mode on or off without sending a prompt. | Yes |
@@ -102,22 +102,23 @@ Prompt mode exits with code `0` when the goal completes, `3` when it blocks, and
 
 ## Research Mode
 
-`/research` controls AITP Research Mode, a joint research capability backed by the AITP evidence ledger in both TUI and Web. The command, the Web **Modes** entry, and the model-facing `EnterAITPMode` capability are discoverable by default, but the runtime starts `inactive`. Inactive `getResearch` reads, session hydration, and status checks use the local snapshot only: they do not probe AITP, perform AITP I/O, expose the Research Board, or expose the other Research/AITP tools and plugin skill. Use `/research on`, select **Research** in Web, or let the model call `EnterAITPMode` to enter explicitly; only then does Hakimi probe the adapter and, after a ready probe, run the read-only `enter` → `check` maintenance cycle.
+`/research` toggles AITP Research Mode, a joint research capability backed by the AITP evidence ledger in both TUI and Web. The command, the Web **Modes** entry, and the model-facing `EnterAITPMode` capability are discoverable by default, but the runtime starts `inactive`. Inactive `getResearch` reads, session hydration, and status checks use the local snapshot only: they do not probe AITP, perform AITP I/O, expose the Research Board, or expose the other Research/AITP tools and plugin skill. Run `/research`, select **Research** in Web, or let the model call `EnterAITPMode` to enter explicitly; only then does Hakimi probe the adapter and, after a ready probe, run the read-only `enter` → `check` maintenance cycle.
 
 The old `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` environment variable, `[experimental].aitp_research_mode`, and `KIMI_CODE_EXPERIMENTAL_FLAG` are inert for this graduated surface. The deprecated flag inputs do not hide or enable `/research`; they remain only for compatibility. When entering from `manual` or `yolo` permission mode, a prompt asks whether to switch to `auto` or `yolo` first — the loop may stop and wait for approvals under `manual` mode.
 
 ::: warning
-`/research on` activates the adapter and Board but does not schedule a model turn or start an independent multi-turn loop. Goal remains the sole cross-turn continuation owner, and research turns in `manual` permission mode may wait for approvals.
+Entering with `/research` activates the adapter and Board but does not schedule a model turn or start an independent multi-turn loop. Goal remains the sole cross-turn continuation owner, and research turns in `manual` permission mode may wait for approvals.
 :::
 
 The grammar is the same in TUI and Web: reserved subcommands are honored only as the first token, and `--` separates arguments from free text. Web routes a typed `/research` through the Research endpoint rather than sending it as a model prompt.
 
 | Command | Action | Surfaces / availability |
 | --- | --- | --- |
-| `/research` or `/research status` | Refresh the current snapshot. TUI prints mode, loop, line, focus, and AITP health; Web expands the refreshed Board | TUI and Web; always available |
-| `/research on` | Enter Research Mode. TUI prompts for a permission-mode choice when entering from `manual` or `yolo`; Web uses the current session permission mode | TUI and Web; idle only |
+| `/research` | Toggle Research Mode. Inactive enters; any active phase exits. TUI prompts for a permission-mode choice when entering from `manual` or `yolo`; Web uses the current session permission mode | TUI and Web; idle only |
+| `/research status` | Refresh the current snapshot. TUI prints mode, loop, line, focus, and AITP health; Web expands the refreshed Board | TUI and Web; always available |
+| `/research on` | Explicit compatibility form for entering Research Mode | TUI and Web; idle only |
 | `/research on -- <line slug>` | Enter Research Mode and switch to a specific research line | TUI and Web; idle only |
-| `/research off` | Exit Research Mode, revoke AITP tool admissions, and hide the Board; saved AITP records remain | TUI and Web; idle only |
+| `/research off` | Explicit compatibility form for exiting Research Mode; saved AITP records remain | TUI and Web; idle only |
 | `/research pause` | Pause the research loop without exiting AITP mode | TUI and Web; always available |
 | `/research resume` | Resume a paused research loop | TUI and Web; always available |
 | `/research manage` | Open the line-first Manager. TUI uses keyboard navigation and action keys; Web provides Line, Question, Science, and Checkpoint sections, including human-decision, alert, evidence-review, and external-run controls | TUI and Web; idle only |

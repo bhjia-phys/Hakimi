@@ -14,6 +14,7 @@
  */
 
 import { createDecorator } from '#/_base/di/instantiation';
+import type { AwaitingHumanExitPhase } from '#/features/research/types';
 
 import type { ResearchEvidencePacket, ResearchEvidenceReview } from './evidencePacket';
 import type {
@@ -92,6 +93,11 @@ export interface ProposeCheckpointInput {
 export interface CommitCheckpointInput {
   readonly checkpointId: string;
   readonly entryId: string;
+}
+
+export interface DiscardHistoricalCheckpointInput {
+  readonly checkpointId: string;
+  readonly expectedRevision: number;
 }
 
 export interface CommitCheckpointResult {
@@ -175,7 +181,7 @@ export interface RequestHumanDecisionInput {
 export interface ResolveHumanDecisionInput {
   readonly gateId: string;
   readonly resolution: string;
-  readonly nextPhase: ResearchPhase;
+  readonly nextPhase: AwaitingHumanExitPhase;
 }
 
 export interface PrepareResearchPlanInput {
@@ -300,6 +306,7 @@ export interface IAgentResearchService {
     receipt: ResearchCheckpointReceipt,
     expectedCheckpointId?: string,
   ): ResearchCheckpoint;
+  discardHistoricalCheckpoint(input: DiscardHistoricalCheckpointInput): ResearchCheckpoint;
   commitCheckpoint(input: CommitCheckpointInput): Promise<CommitCheckpointResult>;
 
   planAction(input: PlanActionInput): ResearchActionSpec;

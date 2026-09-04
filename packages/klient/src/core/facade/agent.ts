@@ -56,6 +56,7 @@ import type {
 import type {
   ClearGoalAlignmentInput,
   CommitCheckpointInput,
+  DiscardHistoricalCheckpointInput,
   ConfirmGoalAlignmentInput,
   ConcludeResearchActionInput,
   ResearchActionConclusion,
@@ -221,6 +222,7 @@ export interface ResearchFacade {
   acknowledgeAlert(fingerprint: string): Promise<void>;
   resolveHumanDecision(input: ResolveHumanDecisionInput): Promise<ResearchHumanGate>;
   proposeCheckpoint(input: ProposeCheckpointInput): Promise<ResearchCheckpoint>;
+  discardHistoricalCheckpoint(input: DiscardHistoricalCheckpointInput): Promise<ResearchCheckpoint>;
   commitCheckpoint(input: CommitCheckpointInput): Promise<void>;
   reviewEvidencePacket(packet: ResearchEvidencePacket, expectedRevision: number): Promise<ResearchEvidenceReview>;
   observeRun(input: ObserveResearchRunInput): Promise<ResearchRunState>;
@@ -417,6 +419,8 @@ export function createAgentFacade(call: ScopedCaller, scope: ScopeRef): AgentFac
         call(scope, 'agentResearchService', 'resolveHumanDecision', [input]) as Promise<ResearchHumanGate>,
       proposeCheckpoint: (input) =>
         call(scope, 'agentResearchService', 'proposeCheckpoint', [input]) as Promise<ResearchCheckpoint>,
+      discardHistoricalCheckpoint: (input) =>
+        call(scope, 'agentResearchService', 'discardHistoricalCheckpoint', [input]) as Promise<ResearchCheckpoint>,
       commitCheckpoint: (input) =>
         call(scope, 'agentResearchService', 'commitCheckpoint', [input]) as Promise<void>,
       reviewEvidencePacket: (packet, expectedRevision) =>

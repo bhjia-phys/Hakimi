@@ -180,7 +180,7 @@ export const BUILTIN_SLASH_COMMANDS = [
   {
     name: 'auto',
     aliases: [],
-    description: 'Toggle Auto mode: fully autonomous, agent decides everything without asking.',
+    description: 'Toggle Auto mode: auto-approve tools and suppress ordinary questions; explicit workflow decisions may still pause.',
     priority: 99,
     availability: 'always',
   },
@@ -347,16 +347,16 @@ export const BUILTIN_SLASH_COMMANDS = [
   {
     name: 'research',
     aliases: [],
-    description: 'Manage AITP Research Mode',
+    description: 'Toggle AITP Research Mode or use a Research subcommand',
     priority: 80,
     argumentHint:
       '[status|on|off|pause|resume|manage|align <relation>|edit|focus|defer|block|close|reopen|line] | <questionId>',
     completeArgs: researchArgumentCompletions,
-    // status / pause / resume are safe while streaming; on / off / manage /
-    // alignment / question actions start or steer a turn and so are idle-only.
+    // status / pause / resume are safe while streaming; the bare toggle,
+    // on / off / manage / alignment / question actions are idle-only.
     availability: (args) => {
       const trimmed = args.trim();
-      return trimmed === '' || trimmed === 'status' || trimmed === 'pause' || trimmed === 'resume'
+      return trimmed === 'status' || trimmed === 'pause' || trimmed === 'resume'
         ? 'always'
         : 'idle-only';
     },

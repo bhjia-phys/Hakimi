@@ -4,7 +4,8 @@
  * research facade calls: `getSnapshot` (read), `steer` (dispatch a
  * `HumanSteeringCommand`), `setFocus`, `createQuestion`, `createLine`,
  * `updateLine`, `updateQuestion`, `reopenQuestion`, `acknowledgeAlert`,
- * `resolveHumanDecision`, `proposeCheckpoint`, `commitCheckpoint` on the
+ * `resolveHumanDecision`, `proposeCheckpoint`, `discardHistoricalCheckpoint`,
+ * `commitCheckpoint` on the
  * research service; `enter`, `exit`, `pauseLoop`, `resumeLoop` on the mode
  * service. The `HumanSteeringCommand` union and the snapshot shape are
  * mirrored as zod schemas in `./researchSchemas.ts`.
@@ -44,6 +45,7 @@ import {
   researchActionConclusionSchema,
   type AitpModeEntryOptions,
   type CommitCheckpointInput,
+  type DiscardHistoricalCheckpointInput,
   type CreateQuestionInput,
   type ProposeCheckpointInput,
   type UpdateQuestionInput,
@@ -101,6 +103,11 @@ const commitCheckpointInputSchema = z.object({
   checkpointId: z.string(),
   entryId: z.string(),
 }) satisfies z.ZodType<CommitCheckpointInput>;
+
+const discardHistoricalCheckpointInputSchema = z.object({
+  checkpointId: z.string(),
+  expectedRevision: z.number().int().nonnegative(),
+}) satisfies z.ZodType<DiscardHistoricalCheckpointInput>;
 
 const confirmGoalAlignmentInputSchema = z.object({
   relation: z.enum(['same_program_goal', 'goal_parent_of_program', 'goal_milestone_in_program', 'unrelated']),
@@ -262,6 +269,10 @@ export const agentResearchContract = {
   },
   proposeCheckpoint: {
     input: z.tuple([proposeCheckpointInputSchema]),
+    output: researchCheckpointSchema,
+  },
+  discardHistoricalCheckpoint: {
+    input: z.tuple([discardHistoricalCheckpointInputSchema]),
     output: researchCheckpointSchema,
   },
   commitCheckpoint: {

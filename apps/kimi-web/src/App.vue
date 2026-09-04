@@ -920,6 +920,11 @@ async function handleResearchSlash(
     reportResearchIssue(resolutionError);
     return 'rejected';
   }
+  if (parsed.kind === 'toggle' && snapshot?.mode === 'inactive') {
+    const result = await enterResearchMode(sessionId);
+    reportResearchEnterResult(result);
+    return researchEnterSlashOutcome(result);
+  }
   const command = researchCommandFromSlash(parsed, snapshot);
   if (command === null) {
     reportResearchIssue('unresolved');

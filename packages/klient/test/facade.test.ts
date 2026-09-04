@@ -6,7 +6,10 @@ import type {
   KlientChannel,
   ScopeRef,
 } from '../src/core/channel.js';
-import { researchStatusSnapshotSchema } from '../src/contract/agent/researchSchemas.js';
+import {
+  researchStatusSnapshotSchema,
+  resolveHumanDecisionInputSchema,
+} from '../src/contract/agent/researchSchemas.js';
 import { createKlientFromChannel } from '../src/core/klient.js';
 import { KlientValidationError } from '../src/core/validation.js';
 
@@ -1139,6 +1142,21 @@ describe('research.updated event schema', () => {
   });
 });
 
+describe('human decision input validation', () => {
+  it('accepts only the five awaiting_human transition targets', () => {
+    for (const nextPhase of ['idle', 'gap_analysis', 'action_planned', 'action_executing', 'evaluating']) {
+      expect(resolveHumanDecisionInputSchema.parse({
+        gateId: 'gate-1', resolution: 'Continue.', nextPhase,
+      })).toMatchObject({ nextPhase });
+    }
+    for (const nextPhase of ['orienting', 'state_updated', 'checkpoint_pending', 'awaiting_human']) {
+      expect(resolveHumanDecisionInputSchema.safeParse({
+        gateId: 'gate-1', resolution: 'Reject.', nextPhase,
+      }).success).toBe(false);
+    }
+  });
+});
+
 describe('research facade routing', () => {
   const snapshot = {
     mode: 'inactive',
@@ -1211,6 +1229,32 @@ describe('research facade routing', () => {
       service: 'agentResearchService',
       method: 'steer',
       args: [{ kind: 'pause_loop', expectedRevision: 5 }],
+    });
+  });
+
+  it('routes historical checkpoint discard with both safety identities', async () => {
+    const channel = new FakeChannel();
+    const klient = createKlientFromChannel(channel);
+    channel.results.set('agentResearchService.discardHistoricalCheckpoint', {
+      checkpointId: 'checkpoint-old',
+      questionId: 'question-1',
+      questionRevision: 2,
+      lineSlug: 'main',
+      idempotencyKey: 'checkpoint-old-key',
+      persistence: 'pending_commit',
+      createdAt: 1,
+    });
+
+    const agent = klient.session('s1').agent('main');
+    await expect(agent.research.discardHistoricalCheckpoint({
+      checkpointId: 'checkpoint-old',
+      expectedRevision: 7,
+    })).resolves.toMatchObject({ checkpointId: 'checkpoint-old' });
+
+    expect(channel.calls[0]).toMatchObject({
+      service: 'agentResearchService',
+      method: 'discardHistoricalCheckpoint',
+      args: [{ checkpointId: 'checkpoint-old', expectedRevision: 7 }],
     });
   });
 

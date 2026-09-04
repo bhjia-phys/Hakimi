@@ -482,7 +482,7 @@ describe('Research slash command', () => {
   });
 
   it('parses control, line, edit, focus, and workflow actions', () => {
-    expect(parseResearchSlashCommand('')).toEqual({ kind: 'status' });
+    expect(parseResearchSlashCommand('')).toEqual({ kind: 'toggle' });
     expect(parseResearchSlashCommand('on -- line-a')).toEqual({ kind: 'on', lineSlug: 'line-a' });
     expect(parseResearchSlashCommand('off')).toEqual({ kind: 'off' });
     expect(parseResearchSlashCommand('pause')).toEqual({ kind: 'pause' });
@@ -514,7 +514,7 @@ describe('Research slash command', () => {
   });
 
   it.each([
-    ['', true],
+    ['', false],
     ['status', true],
     ['pause', true],
     ['resume', true],
@@ -571,6 +571,17 @@ describe('Research slash command', () => {
     expect(researchCommandFromSlash(parsed, null)).toEqual({
       kind: 'enter_mode', actor: 'user', lineSlug: 'new-line',
     });
+  });
+
+  it('resolves bare /research against a fresh snapshot as an enter/exit toggle', () => {
+    const parsed = parseResearchSlashCommand('');
+
+    expect(researchSlashNeedsSnapshot(parsed)).toBe(true);
+    expect(researchCommandResolutionError(parsed, null)).toBe('snapshot_unavailable');
+    expect(researchCommandFromSlash(parsed, inactiveSnapshot)).toEqual({
+      kind: 'enter_mode', actor: 'user',
+    });
+    expect(researchCommandFromSlash(parsed, snapshot)).toEqual({ kind: 'exit_mode' });
   });
 
   it('restores the original slash spelling only for rejected execution', () => {

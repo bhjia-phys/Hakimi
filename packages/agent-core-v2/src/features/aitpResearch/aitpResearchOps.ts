@@ -18,6 +18,7 @@
  *   `research.create_question` / `research.update_question` /
  *   `research.update_line` / `research.set_focus` / `research.switch_line` /
  *   `research.steer` / `research.propose_checkpoint` /
+ *   `research.discard_historical_checkpoint` /
  *   `research.ack_checkpoint` / `research.reopen_question` /
  *   `research.upsert_alert` / `research.clear_alert` /
  *   `research.ack_alert` / `research.create_line` ops, the
@@ -80,6 +81,7 @@ import {
   ResearchLineWorkstreamBindingSchema,
   ResearchPlanV2ActionBindingSchema,
 } from '#/features/research/types';
+import { sameLineWorkstreamBinding } from './research/workstreamBinding';
 
 import type {
   AitpModePhase,
@@ -325,7 +327,9 @@ export interface ResearchRunStateRecord extends ResearchRunState {}
 export interface ResearchActionSpecRecord {
   readonly actionId: string;
   readonly questionId?: string;
+  readonly questionRevision?: number;
   readonly lineSlug?: string;
+  readonly lineRevision?: number;
   readonly kind: ResearchActionKind;
   readonly purpose: string;
   readonly expectedEvidence: readonly string[];
@@ -504,6 +508,7 @@ declare module '#/wire/types' {
     'research.switch_line': typeof researchSwitchLine;
     'research.steer': typeof researchSteer;
     'research.propose_checkpoint': typeof researchProposeCheckpoint;
+    'research.discard_historical_checkpoint': typeof researchDiscardHistoricalCheckpoint;
     'research.bind_checkpoint_entry': typeof researchBindCheckpointEntry;
     'research.bind_checkpoint_receipt': typeof researchBindCheckpointReceipt;
     'research.commit_checkpoint': typeof researchCommitCheckpoint;
@@ -866,6 +871,90 @@ export const researchProposeCheckpoint = ResearchModel.defineOp('research.propos
   },
 });
 
+export const researchDiscardHistoricalCheckpoint = ResearchModel.defineOp(
+  'research.discard_historical_checkpoint',
+  {
+    schema: z.discriminatedUnion('reason', [
+      z.object({
+        checkpointId: z.string(),
+        reason: z.literal('question_revision'),
+        questionId: z.string(),
+        checkpointQuestionRevision: z.number().int().nonnegative(),
+        currentQuestionRevision: z.number().int().nonnegative(),
+      }),
+      z.object({
+        checkpointId: z.string(),
+        reason: z.literal('workstream_binding'),
+        capturedWorkstreamBinding: ResearchLineWorkstreamBindingSchema,
+      }),
+      z.object({
+        checkpointId: z.string(),
+        reason: z.literal('program_context'),
+        capturedWorkstreamBinding: ResearchLineWorkstreamBindingSchema,
+      }),
+    ]),
+    apply: (s, p) => {
+      const pending = s.current.pendingCheckpoint;
+      if (
+        pending === null ||
+        pending.checkpointId !== p.checkpointId ||
+        pending.committedEntryId !== undefined ||
+        pending.receipt !== undefined
+      ) return s;
+
+      const currentBinding = pending.lineSlug === undefined
+        ? undefined
+        : s.current.lineWorkstreamBindings?.[pending.lineSlug];
+      const program = s.current.program;
+      const sameCapturedBinding = 'capturedWorkstreamBinding' in p &&
+        pending.lineSlug === p.capturedWorkstreamBinding.lineSlug &&
+        pending.workstreamBinding !== undefined &&
+        sameLineWorkstreamBinding(pending.workstreamBinding, p.capturedWorkstreamBinding);
+      const workstreamBindingStale = p.reason === 'workstream_binding' &&
+        sameCapturedBinding &&
+        currentBinding !== undefined &&
+        !sameLineWorkstreamBinding(currentBinding, p.capturedWorkstreamBinding);
+      const programContextStale = p.reason === 'program_context' &&
+        sameCapturedBinding &&
+        program !== null &&
+        (program.topicId !== p.capturedWorkstreamBinding.topicId ||
+          (program.observedRevision ?? 1) !== p.capturedWorkstreamBinding.observedRevision);
+      const question = p.reason === 'question_revision'
+        ? s.current.questions[p.questionId]
+        : pending.questionId === undefined
+          ? undefined
+          : s.current.questions[pending.questionId];
+      const questionRevisionStale = p.reason === 'question_revision' &&
+        pending.questionId === p.questionId &&
+        pending.questionRevision === p.checkpointQuestionRevision &&
+        question !== undefined &&
+        question.revision === p.currentQuestionRevision &&
+        pending.questionRevision !== question.revision;
+      if (!questionRevisionStale && !workstreamBindingStale && !programContextStale) return s;
+
+      const questions = question !== undefined && question.persistence === 'pending_commit'
+        ? {
+            ...s.current.questions,
+            [question.id]: {
+              ...question,
+              persistence: 'working' as const,
+              revision: question.revision + 1,
+            },
+          }
+        : s.current.questions;
+      return {
+        ...s,
+        current: {
+          ...s.current,
+          questions,
+          pendingCheckpoint: null,
+          revision: s.current.revision + 1,
+        },
+      };
+    },
+  },
+);
+
 export const researchBindCheckpointEntry = ResearchModel.defineOp('research.bind_checkpoint_entry', {
   schema: z.object({
     checkpointId: z.string(),
@@ -1105,7 +1194,9 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
   schema: z.object({
     actionId: z.string(),
     questionId: z.string().optional(),
+    questionRevision: z.number().int().positive().optional(),
     lineSlug: z.string().optional(),
+    lineRevision: z.number().int().positive().optional(),
     kind: ResearchActionKindSchema,
     purpose: LongTextSchema,
     expectedEvidence: StringListSchema,
@@ -1128,7 +1219,9 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
     const action: ResearchActionSpecRecord = {
       actionId: p.actionId,
       questionId: p.questionId,
+      questionRevision: p.questionRevision,
       lineSlug: p.lineSlug,
+      lineRevision: p.lineRevision,
       kind: p.kind,
       purpose: p.purpose,
       expectedEvidence: p.expectedEvidence,
@@ -1164,7 +1257,9 @@ export const researchBeginAction = ResearchModel.defineOp('research.begin_action
   schema: z.object({
     actionId: z.string(),
     questionId: z.string().optional(),
+    questionRevision: z.number().int().positive().optional(),
     lineSlug: z.string().optional(),
+    lineRevision: z.number().int().positive().optional(),
     kind: ResearchActionKindSchema,
     purpose: LongTextSchema,
     expectedEvidence: StringListSchema,
@@ -1187,7 +1282,9 @@ export const researchBeginAction = ResearchModel.defineOp('research.begin_action
     const action: ResearchActionSpecRecord = {
       actionId: p.actionId,
       questionId: p.questionId,
+      questionRevision: p.questionRevision,
       lineSlug: p.lineSlug,
+      lineRevision: p.lineRevision,
       kind: p.kind,
       purpose: p.purpose,
       expectedEvidence: p.expectedEvidence,
@@ -1387,9 +1484,11 @@ export const researchSetPhase = ResearchModel.defineOp('research.set_phase', {
   apply: (s, p) => {
     const actionOwnedPhase = researchActionOwnedPhase(s.current.currentAction);
     const isStructuralRecovery = actionOwnedPhase !== undefined && p.phase === actionOwnedPhase;
-    if (actionOwnedPhase !== undefined && !isStructuralRecovery) return s;
+    const isHumanGateRecovery = isUnresolvedHumanGate(s.current.humanGate) &&
+      p.phase === 'awaiting_human';
+    if (actionOwnedPhase !== undefined && !isStructuralRecovery && !isHumanGateRecovery) return s;
     if (s.current.phase === p.phase) return s;
-    if (!isStructuralRecovery && !isPhaseTransitionValid(s.current.phase, p.phase)) return s;
+    if (!isStructuralRecovery && !isHumanGateRecovery && !isPhaseTransitionValid(s.current.phase, p.phase)) return s;
     const stateChange: ResearchStateChangeRecord = {
       beforePhase: s.current.phase,
       afterPhase: p.phase,

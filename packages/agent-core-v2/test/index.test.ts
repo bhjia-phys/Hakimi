@@ -101,6 +101,7 @@ const V2_RECORD_TYPES: ReadonlySet<string> = new Set([
   'research.switch_line',
   'research.steer',
   'research.propose_checkpoint',
+  'research.discard_historical_checkpoint',
   'research.bind_checkpoint_entry',
   'research.bind_checkpoint_receipt',
   'research.commit_checkpoint',

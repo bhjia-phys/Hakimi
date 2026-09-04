@@ -20,9 +20,18 @@ import type { IAgentPlanService } from '#/features/plan/plan';
 import type { GoalSnapshot, GoalStatus } from '#/agent/goal/types';
 import { GoalModel } from '#/agent/goal/goalOps';
 import { contextAppendMessage, contextUndo } from '#/agent/contextMemory/contextOps';
-import { makeAgentScopeContext } from '#/agent/scopeContext/scopeContext';
+import { IAgentScopeContext, makeAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { BeforeToolExecuteEventImpl } from '#/agent/toolExecutor/beforeToolExecuteEvent';
-import type { ResolvedToolExecutionHookContext } from '#/agent/toolExecutor/toolHooks';
+import { AgentToolExecutorService } from '#/agent/toolExecutor/toolExecutorService';
+import { AgentStateService } from '#/agent/state/agentStateService';
+import { AgentToolRegistryService } from '#/agent/toolRegistry/toolRegistryService';
+import type {
+  ResolvedToolExecutionHookContext,
+  ToolDidExecuteContext,
+} from '#/agent/toolExecutor/toolHooks';
+import { noopTelemetryService } from '#/app/telemetry/telemetry';
+import type { ExecutableTool } from '#/tool/toolContract';
+import { ToolAccesses } from '#/tool/toolContract';
 import type { TurnStartedEvent } from '#/agent/loop/turnEvents';
 import type { ToolExecution, RunnableToolExecution } from '#/tool/toolContract';
 import { IEventBus } from '#/app/event/eventBus';
@@ -53,7 +62,10 @@ import {
   researchRecordDistillationAttention,
   researchAcknowledgeCheckpoint,
   researchCreateLine,
+  researchCreateQuestion,
+  researchUpdateQuestion,
   researchSetProgram,
+  researchRequestHumanDecision,
 } from '#/features/aitpResearch/aitpResearchOps';
 import { PlanModel, planModeEnter, planModeExit, planResolution, planRevision } from '#/features/plan/planOps';
 import { ResearchPlanModel } from '#/features/aitpResearch/researchPlanOps';
@@ -88,7 +100,10 @@ import { IHostProcessService, type IHostProcess } from '#/os/interface/hostProce
 import { IAgentResearchService } from '#/features/aitpResearch/research/agentResearch';
 import type { AgentResearchService } from '#/features/aitpResearch/research/agentResearchService';
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
-import { ICommitResearchCheckpointTool } from '#/features/aitpResearch/tools/researchTools';
+import {
+  ICommitResearchCheckpointTool,
+  ResolveResearchDecisionInputSchema,
+} from '#/features/aitpResearch/tools/researchTools';
 import { CommitResearchCheckpointTool } from '#/features/aitpResearch/tools/researchToolsImpl';
 import { AppendLogStore } from '#/persistence/backends/node-fs/appendLogStore';
 import { InMemoryStorageService } from '#/persistence/backends/memory/inMemoryStorageService';
@@ -102,6 +117,7 @@ import type { WireRecord } from '#/wire/record';
 
 import { stubLog } from '../../_base/log/stubs';
 import { stubPermissionModeService } from '../../agent/permissionMode/stubs';
+import { stubToolExecutorEvents } from '../../agent/toolExecutor/stubs';
 import { stubSkill } from '../../app/skillCatalog/stubs';
 import { recordingWireLog, registerTestAgentWire, testWireScope } from '../../wire/stubs';
 
@@ -846,16 +862,49 @@ function bindCompleteCheckpointReceipt(
   );
 }
 
-function makeVetoEvent(toolName: string, args: unknown): BeforeToolExecuteEventImpl {
-  const ctx: ResolvedToolExecutionHookContext = {
+function makeToolHookContext(
+  toolName: string,
+  args: unknown,
+  batchToolNames: readonly string[] = [toolName],
+): ResolvedToolExecutionHookContext {
+  return {
     turnId: 1,
     signal: new AbortController().signal,
     toolCall: { type: 'function', id: 'tc1', name: toolName, arguments: JSON.stringify(args) },
-    toolCalls: [],
+    toolCalls: batchToolNames.map((name, index) => ({
+      type: 'function',
+      id: `tc${index + 1}`,
+      name,
+      arguments: '{}',
+    })),
     args,
     execution: {} as never,
   };
-  return new BeforeToolExecuteEventImpl(ctx);
+}
+
+function makeVetoEvent(
+  toolName: string,
+  args: unknown,
+  batchToolNames: readonly string[] = [toolName],
+): BeforeToolExecuteEventImpl {
+  return new BeforeToolExecuteEventImpl(makeToolHookContext(toolName, args, batchToolNames));
+}
+
+function makeDidToolContext(
+  toolName: string,
+  args: unknown,
+  output: string,
+): ToolDidExecuteContext {
+  const context = makeToolHookContext(toolName, args);
+  return {
+    turnId: context.turnId,
+    signal: context.signal,
+    toolCall: context.toolCall,
+    toolCalls: context.toolCalls,
+    args,
+    outcome: 'executed',
+    result: { output },
+  };
 }
 
 describe('AITP adapter zero-I/O when inactive', () => {
@@ -2617,7 +2666,20 @@ describe('Goal display projection', () => {
     });
   });
 
-  it('classifies a pending checkpoint from an older question revision as historical', async () => {
+  it('accepts only transition-authorized phase exits from the model human-gate tool', () => {
+    for (const next_phase of ['idle', 'gap_analysis', 'action_planned', 'action_executing', 'evaluating']) {
+      expect(ResolveResearchDecisionInputSchema.parse({
+        gate_id: 'gate-1', resolution: 'Continue.', next_phase,
+      })).toMatchObject({ next_phase });
+    }
+    for (const next_phase of ['orienting', 'state_updated', 'checkpoint_pending', 'awaiting_human']) {
+      expect(ResolveResearchDecisionInputSchema.safeParse({
+        gate_id: 'gate-1', resolution: 'Reject.', next_phase,
+      }).success).toBe(false);
+    }
+  });
+
+  it('automatically discards an unbound historical checkpoint at the mutation boundary', async () => {
     const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
     const svc = new AgentResearchService(
       wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true, phase: 'ready' }), makeStubAdapter(), makeToolExecutorStub(),
@@ -2636,23 +2698,180 @@ describe('Goal display projection', () => {
     svc.updateQuestion({ questionId: question.id, assessment: 'Newer evidence supersedes the proposal.' });
 
     const snapshot = svc.getSnapshot();
-    expect(snapshot.pendingCheckpoint).toMatchObject({
-      checkpointId: 'checkpoint-historical',
-      questionRevision: 2,
+    expect(snapshot.pendingCheckpoint).toBeUndefined();
+    expect(snapshot.currentQuestion).toMatchObject({
+      assessment: 'Newer evidence supersedes the proposal.',
+      persistence: 'working',
+      revision: 4,
     });
-    expect(snapshot.currentQuestion?.revision).toBe(3);
-    expect(snapshot.effectiveNextStep).toMatchObject({
-      source: 'aitp_maintenance',
-      freshness: 'blocked',
-      text: expect.stringContaining('Historical checkpoint checkpoint-historical'),
-    });
-    expect(snapshot.effectiveNextStep?.text).toContain('do not commit it as current evidence');
     expect(snapshot.researchGoal?.persistenceGuards.find(
       (guard) => guard.code === 'research.checkpoint.pending',
-    )?.reason).toContain('current revision is 3');
-    expect(snapshot.status?.attention.filter((message) =>
-      message.includes('Historical checkpoint checkpoint-historical'))).toHaveLength(1);
+    )).toMatchObject({ status: 'clear' });
+    expect(snapshot.status?.attention.some((message) =>
+      message.includes('checkpoint-historical'))).toBe(false);
+  });
 
+  it('discards a stale line-only checkpoint locally before allowing its binding to clear', async () => {
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const adapter = makeStubAdapter();
+    const enterSpy = vi.spyOn(adapter, 'enter');
+    const prepareSpy = vi.spyOn(adapter, 'recordPrepare');
+    const saveSpy = vi.spyOn(adapter, 'recordSave');
+    const binding = seedConfirmedWorkstreamBinding({ lineSlug: 'main' });
+    wire.dispatch(researchProposeCheckpoint({
+      checkpointId: 'checkpoint-line-only-stale',
+      lineSlug: 'main',
+      workstreamBinding: binding,
+      idempotencyKey: 'checkpoint-line-only-stale-key',
+      createdAt: 4,
+    }));
+    wire.dispatch(researchSetProgram({
+      topicId: 'topic-2', title: 'Replacement', goalText: 'Replacement goal', goalSource: 'enter', establishedAt: 5,
+    }));
+    const svc = new AgentResearchService(
+      wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true, phase: 'ready' }), adapter, makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('active')),
+    );
+
+    const discarded = svc.discardHistoricalCheckpoint({
+      checkpointId: 'checkpoint-line-only-stale',
+      expectedRevision: svc.getSnapshot().revision,
+    });
+    expect(discarded).toMatchObject({ checkpointId: 'checkpoint-line-only-stale', questionId: undefined });
+    expect(svc.getPendingCheckpoint()).toBeNull();
+    expect(enterSpy).not.toHaveBeenCalled();
+    expect(prepareSpy).not.toHaveBeenCalled();
+    expect(saveSpy).not.toHaveBeenCalled();
+
+    svc.clearLineWorkstreamBinding({
+      lineSlug: 'main',
+      expectedConfirmationId: binding.confirmationId,
+      expectedRevision: svc.getSnapshot().revision,
+    });
+    expect(svc.getSnapshot().lineWorkstreamBindings).toEqual([]);
+  });
+
+  it('discards a question-bound checkpoint when its captured binding is stale without revising the question', async () => {
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const adapter = makeStubAdapter();
+    const prepareSpy = vi.spyOn(adapter, 'recordPrepare');
+    const saveSpy = vi.spyOn(adapter, 'recordSave');
+    const binding = seedConfirmedWorkstreamBinding({ lineSlug: 'main' });
+    wire.dispatch(researchCreateQuestion({
+      id: 'question-binding-stale', lineSlug: 'main', wording: 'Does binding staleness release this proposal?', priority: 0, neededEvidence: [],
+    }));
+    wire.dispatch(researchProposeCheckpoint({
+      checkpointId: 'checkpoint-question-binding-stale',
+      questionId: 'question-binding-stale',
+      lineSlug: 'main',
+      workstreamBinding: binding,
+      idempotencyKey: 'checkpoint-question-binding-stale-key',
+      createdAt: 4,
+    }));
+    const questionRevision = wire.getModel(ResearchModel).current.questions['question-binding-stale']!.revision;
+    wire.dispatch(researchSetProgram({
+      topicId: 't1', title: 'Observed again', goalText: 'Changed observation', goalSource: 'enter', establishedAt: 5,
+    }));
+    const svc = new AgentResearchService(
+      wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true, phase: 'ready' }), adapter, makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('active')),
+    );
+
+    svc.discardHistoricalCheckpoint({
+      checkpointId: 'checkpoint-question-binding-stale',
+      expectedRevision: svc.getSnapshot().revision,
+    });
+    expect(svc.getPendingCheckpoint()).toBeNull();
+    expect(wire.getModel(ResearchModel).current.questions['question-binding-stale']).toMatchObject({
+      persistence: 'working',
+      revision: questionRevision + 1,
+    });
+    expect(prepareSpy).not.toHaveBeenCalled();
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses to discard a current checkpoint proposal', async () => {
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(
+      wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true, phase: 'ready' }), makeStubAdapter(), makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('active')),
+    );
+    svc.createLine({ slug: 'main', title: 'Main' });
+    const question = svc.createQuestion({ lineSlug: 'main', wording: 'Is this checkpoint current?' });
+    wire.dispatch(researchProposeCheckpoint({
+      checkpointId: 'checkpoint-current',
+      questionId: question.id,
+      lineSlug: 'main',
+      idempotencyKey: 'checkpoint-current-key',
+      createdAt: 3,
+    }));
+
+    expect(() => svc.discardHistoricalCheckpoint({
+      checkpointId: 'checkpoint-current',
+      expectedRevision: svc.getSnapshot().revision,
+    })).toThrow('not a safely discardable historical proposal');
+    expect(svc.getPendingCheckpoint()).toMatchObject({ checkpointId: 'checkpoint-current' });
+  });
+
+  it('retains a historical checkpoint after an AITP save receipt exists', async () => {
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(
+      wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true, phase: 'ready' }), makeStubAdapter(), makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('active')),
+    );
+    svc.createLine({ slug: 'main', title: 'Main' });
+    const question = svc.createQuestion({ lineSlug: 'main', wording: 'Did this save cross the boundary?' });
+    wire.dispatch(researchProposeCheckpoint({
+      checkpointId: 'checkpoint-saved',
+      questionId: question.id,
+      lineSlug: 'main',
+      idempotencyKey: 'checkpoint-saved-key',
+      createdAt: 3,
+    }));
+    bindCompleteCheckpointReceipt('checkpoint-saved', 'entry-saved');
+    svc.updateQuestion({ questionId: question.id, assessment: 'The question advanced after save.' });
+
+    expect(() => svc.discardHistoricalCheckpoint({
+      checkpointId: 'checkpoint-saved',
+      expectedRevision: svc.getSnapshot().revision,
+    })).toThrow('proposals with AITP receipts must be committed or recovered explicitly');
+    expect(svc.getPendingCheckpoint()).toMatchObject({
+      checkpointId: 'checkpoint-saved',
+      committedEntryId: 'entry-saved',
+      receipt: { save: { status: 'saved' } },
+    });
+
+  });
+
+  it('acknowledges a proposal whose checkpoint id is already in committed cursor history', async () => {
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(
+      wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true, phase: 'ready' }), makeStubAdapter(), makeToolExecutorStub(),
+      makeStubGoalService(makeGoalSnapshot('active')),
+    );
+    svc.createLine({ slug: 'main', title: 'Main' });
+    const question = svc.createQuestion({ lineSlug: 'main', wording: 'Did this checkpoint reach the committed cursor?' });
+    wire.dispatch(
+      researchProposeCheckpoint({
+        checkpointId: 'checkpoint-in-history', questionId: question.id, lineSlug: 'main',
+        idempotencyKey: 'checkpoint-in-history-key', createdAt: 3,
+      }),
+      researchCommitCheckpoint({ checkpointId: 'checkpoint-in-history', entryId: 'entry-history', committedAt: 4 }),
+    );
+    svc.updateQuestion({ questionId: question.id, assessment: 'The Question changed after the external commit.' });
+
+    expect(() => svc.discardHistoricalCheckpoint({
+      checkpointId: 'checkpoint-in-history',
+      expectedRevision: svc.getSnapshot().revision,
+    })).toThrow('not a safely discardable historical proposal');
+    expect(svc.getPendingCheckpoint()).toBeNull();
+    expect(svc.getCommittedCursor()).toMatchObject({
+      checkpointId: 'checkpoint-in-history',
+      entryId: 'entry-history',
+    });
+    expect(wire.getModel(ResearchModel).current.questions[question.id]).toMatchObject({
+      persistence: 'committed',
+    });
   });
 
   it('confirms explicitly different Goal and Program text, then detects goal and topic staleness', async () => {
@@ -3650,6 +3869,613 @@ describe('goal completion guard and subagent veto', () => {
     expect(result).toEqual({ allow: true });
   });
 
+  async function buildResearchSandboxHarness(opts?: {
+    readonly isActive?: boolean;
+    readonly lease?: 'none' | 'interactive_research' | 'autonomous_research';
+    readonly phase?: AitpAdapterHealth['phase'];
+    readonly loopStatus?: import('#/features/aitpResearch/types').ResearchLoopStatus;
+    readonly goal?: GoalSnapshot | null;
+  }) {
+    const executor = stubToolExecutorEvents();
+    const isActive = opts?.isActive ?? true;
+    const modeSvc = makeStubModeSvc({
+      isActive,
+      phase: opts?.phase ?? (isActive ? 'ready' : 'inactive'),
+      loopStatus: opts?.loopStatus ?? 'active',
+    });
+    const lease = opts?.lease ?? 'interactive_research';
+    const admission = {
+      _serviceBrand: undefined,
+      leaseForTurn: (turnId: number) => turnId === 1 ? lease : 'none',
+      currentLease: () => lease,
+      isTurnAdmitted: (turnId: number) => turnId === 1 && lease !== 'none',
+      isCurrentResearchTurn: () => lease !== 'none',
+    } as import('#/features/aitpResearch/loop/researchTurnAdmission').IResearchTurnAdmission;
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(
+      wire,
+      makeScopeCtx(),
+      eventBus,
+      modeSvc,
+      makeStubAdapter(),
+      executor.executor,
+      makeStubGoalService(opts?.goal),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      admission,
+    );
+    return { executor, modeSvc, svc };
+  }
+
+  async function buildResearchSandboxWithProductionExecutor() {
+    const registry = new AgentToolRegistryService();
+    const executor = new AgentToolExecutorService(
+      registry,
+      eventBus,
+      noopTelemetryService,
+      {
+        _serviceBrand: undefined,
+        truncateForModel: async (input) => input.result,
+      },
+      new AgentStateService(),
+      stubLog(),
+    );
+    const modeSvc = makeStubModeSvc({
+      isActive: true,
+      phase: 'ready',
+      loopStatus: 'active',
+    });
+    const admission = {
+      _serviceBrand: undefined,
+      leaseForTurn: (turnId: number) => turnId === 1 ? 'interactive_research' : 'none',
+      currentLease: () => 'interactive_research',
+      isTurnAdmitted: (turnId: number) => turnId === 1,
+      isCurrentResearchTurn: () => true,
+    } as import('#/features/aitpResearch/loop/researchTurnAdmission').IResearchTurnAdmission;
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const svc = new AgentResearchService(
+      wire,
+      makeScopeCtx(),
+      eventBus,
+      modeSvc,
+      makeStubAdapter(),
+      executor,
+      makeStubGoalService(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      admission,
+    );
+    return { executor, registry, svc };
+  }
+
+  async function beginSandboxAction(
+    svc: AgentResearchService,
+    allowedToolKinds: readonly string[],
+  ) {
+    svc.createLine({ slug: 'main', title: 'Main' });
+    wire.dispatch(aitpModeEnter({ actor: 'user', lineSlug: 'main' }));
+    const question = svc.createQuestion({ lineSlug: 'main', wording: 'Which bounded test distinguishes the hypotheses?' });
+    svc.setFocus(question.id, 'run one discriminating test');
+    return svc.planAndStartAction({
+      questionId: question.id,
+      kind: 'experiment',
+      purpose: 'Run one bounded discriminating test.',
+      expectedEvidence: ['One attributable observation.'],
+      stopCondition: 'The observation is captured or the declared gate fails.',
+      allowedToolKinds,
+    });
+  }
+
+  it('hard-vetoes WebSearch through the executor when no ResearchAction owns it', async () => {
+    const { executor } = await buildResearchSandboxHarness();
+
+    const decision = await executor.fireBeforeExecute(makeToolHookContext('WebSearch', { query: 'test' }));
+
+    expect(decision?.veto).toMatchObject({ isError: true });
+    expect(decision?.veto?.output).toContain('no in-progress ResearchAction');
+  });
+
+  it('prevents production executor callbacks for unowned web, workspace, and shell work', async () => {
+    const { executor, registry } = await buildResearchSandboxWithProductionExecutor();
+    const calls: string[] = [];
+    for (const name of ['WebSearch', 'Read', 'Bash']) {
+      const tool: ExecutableTool<Record<string, unknown>> = {
+        name,
+        description: `Count executions of ${name}.`,
+        parameters: { type: 'object', additionalProperties: true },
+        resolveExecution: () => ({
+          approvalRule: name,
+          accesses: ToolAccesses.all(),
+          execute: async () => {
+            calls.push(name);
+            return { output: `${name} executed` };
+          },
+        }),
+      };
+      registry.register(tool);
+    }
+
+    const results = [];
+    for await (const result of executor.execute(
+      ['WebSearch', 'Read', 'Bash'].map((name, index) => ({
+        type: 'function' as const,
+        id: `unowned-${index}`,
+        name,
+        arguments: '{}',
+      })),
+      { turnId: 1, signal: new AbortController().signal },
+    )) {
+      results.push(result.result);
+    }
+
+    expect(calls).toEqual([]);
+    expect(results).toHaveLength(3);
+    expect(results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ isError: true, output: expect.stringContaining('no in-progress ResearchAction') }),
+    ]));
+  });
+
+  it('recovers the exported stale-checkpoint and human-gate shape before denying unowned web work', async () => {
+    const { executor, svc } = await buildResearchSandboxHarness();
+    svc.createLine({ slug: 'main', title: 'Main' });
+    wire.dispatch(aitpModeEnter({ actor: 'user', lineSlug: 'main' }));
+    const question = svc.createQuestion({
+      lineSlug: 'main',
+      wording: 'Which bounded test distinguishes the physical explanations?',
+    });
+    svc.setFocus(question.id, 'run one discriminating test');
+    svc.setPhase('gap_analysis');
+    const action = svc.planAndStartAction({
+      questionId: question.id,
+      kind: 'experiment',
+      purpose: 'Run one bounded discriminating test.',
+      expectedEvidence: ['One attributable observation.'],
+      stopCondition: 'The observation is captured or the declared gate fails.',
+      allowedToolKinds: ['web_search'],
+    });
+    svc.completeAction(action.actionId, 'completed');
+    svc.recordProgress({
+      headline: 'The bounded action reached evaluation.',
+      motivation: 'Preserve the real export recovery shape.',
+      workPerformed: 'The previous action completed before checkpoint persistence.',
+      result: 'A checkpoint proposal remained local.',
+      mainlineImpact: 'The next turn must reconcile ownership before new research work.',
+      uncertainties: [],
+      phaseChange: { from: 'evaluating', to: 'state_updated' },
+    });
+
+    // The three user exports captured a revision-4 proposal beside revision 7,
+    // no receipt/history, an unresolved Question-bound gate, and a completed
+    // action. Dispatch the old journal shape without invoking live service
+    // boundaries, then let the normal turn-boundary reconciliation repair it.
+    svc.updateQuestion({ questionId: question.id, assessment: 'Revision two.' });
+    svc.updateQuestion({ questionId: question.id, assessment: 'Revision three.' });
+    wire.dispatch(researchProposeCheckpoint({
+      checkpointId: 'checkpoint-exported-stale',
+      questionId: question.id,
+      lineSlug: 'main',
+      idempotencyKey: 'checkpoint-exported-stale-key',
+      createdAt: 10,
+    }));
+    for (const assessment of ['Revision five.', 'Revision six.', 'Revision seven.']) {
+      const current = wire.getModel(ResearchModel).current.questions[question.id]!;
+      wire.dispatch(researchUpdateQuestion({
+        questionId: question.id,
+        expectedRevision: current.revision,
+        assessment,
+        actor: 'model',
+      }));
+    }
+    wire.dispatch(researchRequestHumanDecision({
+      gateId: 'gate-exported-unresolved',
+      kind: 'decision',
+      questionId: question.id,
+      prompt: 'Choose the next bounded scientific direction.',
+      createdAt: 11,
+    }));
+    const restored = wire.getModel(ResearchModel).current as unknown as {
+      phase: 'state_updated';
+    };
+    restored.phase = 'state_updated';
+
+    expect(wire.getModel(ResearchModel).current).toMatchObject({
+      phase: 'state_updated',
+      pendingCheckpoint: {
+        checkpointId: 'checkpoint-exported-stale',
+        questionRevision: 4,
+      },
+      questions: { [question.id]: { revision: 7 } },
+      currentAction: { actionId: action.actionId, status: 'completed' },
+      humanGate: { gateId: 'gate-exported-unresolved' },
+    });
+    expect(wire.getModel(ResearchModel).current.pendingCheckpoint?.receipt).toBeUndefined();
+    expect(wire.getModel(ResearchModel).current.humanGate?.resolvedAt).toBeUndefined();
+
+    svc.noteLoopBoundary();
+
+    expect(svc.getSnapshot()).toMatchObject({
+      phase: 'awaiting_human',
+      currentAction: { actionId: action.actionId, status: 'completed' },
+      humanGate: { gateId: 'gate-exported-unresolved', resolvedAt: undefined },
+    });
+    expect(svc.getPendingCheckpoint()).toBeNull();
+    svc.resolveHumanDecision({
+      gateId: 'gate-exported-unresolved',
+      resolution: 'Return to bounded gap analysis.',
+      nextPhase: 'gap_analysis',
+    });
+
+    const decision = await executor.fireBeforeExecute(makeToolHookContext(
+      'WebSearch',
+      { query: 'continue without a new action' },
+    ));
+    expect(decision?.veto).toMatchObject({ isError: true });
+    expect(decision?.veto?.output).toContain('no in-progress ResearchAction');
+  });
+
+  it('keeps the executor action policy inert while Research Mode is inactive', async () => {
+    const { executor } = await buildResearchSandboxHarness({ isActive: false });
+
+    const decision = await executor.fireBeforeExecute(makeToolHookContext('WebSearch', { query: 'test' }));
+
+    expect(decision).toBeUndefined();
+  });
+
+  it('does not let a held Goal continuation bypass action ownership with generic tools', async () => {
+    const { executor, svc } = await buildResearchSandboxHarness({
+      goal: makeGoalSnapshot('active'),
+      lease: 'autonomous_research',
+    });
+    wire.dispatch(researchProposeCheckpoint({
+      checkpointId: 'checkpoint-holds-goal',
+      idempotencyKey: 'checkpoint-holds-goal-key',
+      createdAt: 12,
+    }));
+
+    const continuation = await decideOf(svc)({
+      goalId: 'goal-1',
+      objective: 'Test goal',
+      turnsUsed: 1,
+    });
+    const decision = await executor.fireBeforeExecute(makeToolHookContext(
+      'Read',
+      { path: '/workspace/new-research-input.dat' },
+    ));
+
+    expect(continuation).toMatchObject({
+      decision: 'hold',
+      reason: expect.stringContaining('checkpoint is pending commit'),
+    });
+    expect(decision?.veto?.output).toContain('no in-progress ResearchAction');
+  });
+
+  it('denies BeginResearchAction and research work in the same tool batch', async () => {
+    const { executor } = await buildResearchSandboxHarness();
+
+    const decision = await executor.fireBeforeExecute(makeToolHookContext(
+      'WebSearch',
+      { query: 'test' },
+      ['BeginResearchAction', 'WebSearch'],
+    ));
+
+    expect(decision?.veto).toMatchObject({ isError: true });
+    expect(decision?.veto?.output).toContain('cannot share one tool batch');
+  });
+
+  it('allows only capabilities granted by the live bounded action', async () => {
+    const { executor, svc } = await buildResearchSandboxHarness();
+    await beginSandboxAction(svc, ['web_search', 'tool:mcp__papers__lookup']);
+
+    const search = await executor.fireBeforeExecute(makeToolHookContext('WebSearch', { query: 'test' }));
+    const fetch = await executor.fireBeforeExecute(makeToolHookContext('FetchURL', { url: 'https://example.test' }));
+    const exactMcp = await executor.fireBeforeExecute(makeToolHookContext('mcp__papers__lookup', { id: 'paper' }));
+    const unknownMcp = await executor.fireBeforeExecute(makeToolHookContext('mcp__compute__submit', { job: 'x' }));
+
+    expect(search).toBeUndefined();
+    expect(exactMcp).toBeUndefined();
+    expect(fetch?.veto?.output).toContain('does not grant capability web_fetch');
+    expect(unknownMcp?.veto?.output).toContain('tool:mcp__compute__submit');
+  });
+
+  it('revokes action work while a scientific human gate is unresolved', async () => {
+    const { executor, svc } = await buildResearchSandboxHarness();
+    const action = await beginSandboxAction(svc, ['web_search']);
+    const gate = svc.requestHumanDecision({
+      kind: 'decision',
+      actionId: action.actionId,
+      questionId: action.questionId,
+      prompt: 'Choose which physical convention the next calculation must use.',
+    });
+
+    const decision = await executor.fireBeforeExecute(makeToolHookContext(
+      'WebSearch',
+      { query: 'continue while the convention is undecided' },
+    ));
+
+    expect(decision?.veto?.output).toContain(`human gate ${gate.gateId} is unresolved`);
+  });
+
+  it('revokes a live action capability when its captured Question revision changes', async () => {
+    const { executor, svc } = await buildResearchSandboxHarness();
+    const action = await beginSandboxAction(svc, ['workspace_read']);
+    const question = svc.getQuestions().find((candidate) => candidate.id === action.questionId)!;
+    svc.updateQuestion({
+      questionId: question.id,
+      expectedRevision: question.revision,
+      assessment: 'New evidence changed the question context.',
+    });
+
+    const decision = await executor.fireBeforeExecute(makeToolHookContext('Read', {
+      path: '/workspace/result.dat',
+    }));
+
+    expect(decision?.veto?.output).toContain('cannot prove a fresh Research Question revision');
+  });
+
+  it.each([
+    { label: 'no Research turn lease', opts: { lease: 'none' as const }, message: 'no Research lease' },
+    { label: 'paused Research Loop', opts: { loopStatus: 'paused' as const }, message: 'Research Loop is paused' },
+    { label: 'degraded AITP mode', opts: { phase: 'degraded' as const }, message: 'AITP Research Mode is degraded' },
+  ])('revokes action work for $label', async ({ opts, message }) => {
+    const { executor } = await buildResearchSandboxHarness(opts);
+
+    const decision = await executor.fireBeforeExecute(makeToolHookContext('Read', { path: '/workspace/result.dat' }));
+
+    expect(decision?.veto?.output).toContain(message);
+  });
+
+  it('never treats direct canonical AITP file access as action work', async () => {
+    const { executor, svc } = await buildResearchSandboxHarness();
+    await beginSandboxAction(svc, ['workspace_read']);
+
+    const decision = await executor.fireBeforeExecute(makeToolHookContext('Read', {
+      path: '/workspace/.aitp/topic/entries/entry-test.md',
+    }));
+
+    expect(decision?.veto?.output).toContain('canonical AITP files must be accessed through AITP tools');
+
+    const traversal = await executor.fireBeforeExecute(makeToolHookContext('Read', {
+      path: '.aitp/local/../topic/entries/entry-test.md',
+    }));
+    expect(traversal?.veto?.output).toContain('canonical AITP files must be accessed through AITP tools');
+  });
+
+  it('limits post-action checkpoint persistence to the captured checkpoint and prepared draft', async () => {
+    const { executor } = await buildResearchSandboxHarness();
+    proposeBoundCheckpoint({ checkpointId: 'checkpoint-current', idempotencyKey: 'key-current', createdAt: 10 });
+
+    const prepare = await executor.fireBeforeExecute(makeToolHookContext('aitp_record_prepare', {
+      checkpoint_id: 'checkpoint-current',
+      kind: 'result',
+      created_by: 'agent:main',
+      workstreams: ['aitp-main'],
+    }));
+    const prematureSave = await executor.fireBeforeExecute(makeToolHookContext('aitp_record_save', {
+      checkpoint_id: 'checkpoint-current',
+      draft_path: '.aitp/local/drafts/entry-current.md',
+    }));
+    expect(prepare).toBeUndefined();
+    expect(prematureSave?.veto?.output).toContain('prepare checkpoint checkpoint-current in an earlier tool batch');
+
+    wire.dispatch(researchBindCheckpointReceipt({
+      checkpointId: 'checkpoint-current',
+      receipt: {
+        prepare: {
+          status: 'prepared',
+          id: 'entry-current',
+          path: '.aitp/local/drafts/entry-current.md',
+          idempotencyKey: 'key-current',
+          workstreams: ['aitp-main'],
+        },
+      },
+    }));
+    const draftEdit = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
+      path: '.aitp/local/drafts/entry-current.md',
+    }));
+    const otherDraft = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
+      path: '.aitp/local/drafts/entry-other.md',
+    }));
+    const exactSave = await executor.fireBeforeExecute(makeToolHookContext('aitp_record_save', {
+      checkpoint_id: 'checkpoint-current',
+      draft_path: '.aitp/local/drafts/entry-current.md',
+    }));
+    const prematureCommit = await executor.fireBeforeExecute(makeToolHookContext('CommitResearchCheckpoint', {
+      checkpoint_id: 'checkpoint-current',
+      entry_id: 'entry-current',
+    }));
+
+    expect(draftEdit).toBeUndefined();
+    expect(otherDraft?.veto?.output).toContain('not owned by the current checkpoint');
+    expect(exactSave).toBeUndefined();
+    expect(prematureCommit?.veto?.output).toContain('save checkpoint checkpoint-current in an earlier tool batch');
+
+    bindCompleteCheckpointReceipt('checkpoint-current', 'entry-current');
+    const commit = await executor.fireBeforeExecute(makeToolHookContext('CommitResearchCheckpoint', {
+      checkpoint_id: 'checkpoint-current',
+      entry_id: 'entry-current',
+    }));
+    expect(commit).toBeUndefined();
+  });
+
+  it('limits Note persistence to the current post-commit distillation handoff', async () => {
+    const { executor } = await buildResearchSandboxHarness();
+    const beforeHandoff = await executor.fireBeforeExecute(makeToolHookContext('aitp_note_prepare', {
+      mode: 'theory',
+      title: 'Method card: test',
+      created_by: 'agent:main',
+      workstreams: ['aitp-main'],
+    }));
+    expect(beforeHandoff?.veto?.output).toContain('no current post-commit distillation handoff');
+
+    seedCurrentConfirmedWorkstream({ workstream: 'aitp-main' });
+    wire.dispatch(researchCommitCheckpoint({
+      checkpointId: 'checkpoint-committed',
+      entryId: 'entry-committed',
+      committedAt: 20,
+    }));
+    wire.dispatch(researchRecordDistillationAttention({
+      status: 'review_requested',
+      checkpointId: 'checkpoint-committed',
+      entryId: 'entry-committed',
+      recordedAt: 21,
+      commitRevision: 1,
+    }));
+
+    const prepare = await executor.fireBeforeExecute(makeToolHookContext('aitp_note_prepare', {
+      mode: 'theory',
+      title: 'Method card: test',
+      created_by: 'agent:main',
+      workstreams: ['aitp-main'],
+    }));
+    const prematureSave = await executor.fireBeforeExecute(makeToolHookContext('aitp_note_save', {
+      draft_path: '.aitp/local/drafts/note-test.md',
+    }));
+    const wrongScope = await executor.fireBeforeExecute(makeToolHookContext('aitp_note_prepare', {
+      mode: 'theory',
+      title: 'Method card: test',
+      created_by: 'agent:main',
+      workstreams: ['other'],
+    }));
+    await executor.didExecuteSlot.run(makeDidToolContext(
+      'aitp_note_prepare',
+      {
+        mode: 'theory',
+        title: 'Method card: test',
+        created_by: 'agent:main',
+        workstreams: ['aitp-main'],
+      },
+      JSON.stringify({
+        status: 'prepared',
+        id: 'note-test',
+        path: '.aitp/local/drafts/note-test.md',
+        save_command: 'aitp note save .aitp/local/drafts/note-test.md',
+      }),
+    ));
+    const draftEdit = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
+      path: '.aitp/local/drafts/note-test.md',
+    }));
+    const otherDraftEdit = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
+      path: '.aitp/local/drafts/note-other.md',
+    }));
+    const save = await executor.fireBeforeExecute(makeToolHookContext('aitp_note_save', {
+      draft_path: '.aitp/local/drafts/note-test.md',
+    }));
+
+    expect(prepare).toBeUndefined();
+    expect(prematureSave?.veto?.output).toContain('exact draft returned by aitp_note_prepare');
+    expect(wrongScope?.veto?.output).toContain('exactly the current explicitly bound AITP workstream');
+    expect(draftEdit).toBeUndefined();
+    expect(otherDraftEdit?.veto?.output).toContain('not owned by the current checkpoint or distillation handoff');
+    expect(save).toBeUndefined();
+
+    await executor.didExecuteSlot.run(makeDidToolContext(
+      'aitp_note_save',
+      { draft_path: '.aitp/local/drafts/note-test.md' },
+      JSON.stringify({ status: 'saved', path: '.aitp/topic/notes/note-test.md' }),
+    ));
+    const repeatedSave = await executor.fireBeforeExecute(makeToolHookContext('aitp_note_save', {
+      draft_path: '.aitp/local/drafts/note-test.md',
+    }));
+    expect(repeatedSave?.veto?.output).toContain('exact draft returned by aitp_note_prepare');
+  });
+
+  it('does not retain a transient distillation draft lease across cold restore', async () => {
+    const { executor } = await buildResearchSandboxHarness();
+    seedCurrentConfirmedWorkstream({ workstream: 'aitp-main' });
+    wire.dispatch(researchCommitCheckpoint({
+      checkpointId: 'checkpoint-restored-distillation',
+      entryId: 'entry-restored-distillation',
+      committedAt: 30,
+    }));
+    wire.dispatch(researchRecordDistillationAttention({
+      status: 'review_requested',
+      checkpointId: 'checkpoint-restored-distillation',
+      entryId: 'entry-restored-distillation',
+      recordedAt: 31,
+      commitRevision: 1,
+    }));
+    const prepareArgs = {
+      mode: 'theory',
+      title: 'Method card: restored lease test',
+      created_by: 'agent:main',
+      workstreams: ['aitp-main'],
+    };
+    await executor.didExecuteSlot.run(makeDidToolContext(
+      'aitp_note_prepare',
+      prepareArgs,
+      JSON.stringify({
+        status: 'prepared',
+        id: 'note-restored-lease',
+        path: '.aitp/local/drafts/note-restored-lease.md',
+        save_command: 'aitp note save .aitp/local/drafts/note-restored-lease.md',
+      }),
+    ));
+    const beforeRestore = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
+      path: '.aitp/local/drafts/note-restored-lease.md',
+    }));
+    expect(beforeRestore).toBeUndefined();
+
+    await wire.flush();
+    await wire.restore();
+
+    const afterRestore = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
+      path: '.aitp/local/drafts/note-restored-lease.md',
+    }));
+    expect(afterRestore?.veto?.output).toContain('not owned by the current checkpoint or distillation handoff');
+  });
+
+  it('does not retain a transient distillation draft lease across mode exit and re-entry', async () => {
+    const { executor, modeSvc } = await buildResearchSandboxHarness();
+    seedCurrentConfirmedWorkstream({ workstream: 'aitp-main' });
+    wire.dispatch(researchCommitCheckpoint({
+      checkpointId: 'checkpoint-mode-exit-distillation',
+      entryId: 'entry-mode-exit-distillation',
+      committedAt: 40,
+    }));
+    wire.dispatch(researchRecordDistillationAttention({
+      status: 'review_requested',
+      checkpointId: 'checkpoint-mode-exit-distillation',
+      entryId: 'entry-mode-exit-distillation',
+      recordedAt: 41,
+      commitRevision: 1,
+    }));
+    await executor.didExecuteSlot.run(makeDidToolContext(
+      'aitp_note_prepare',
+      {
+        mode: 'theory',
+        title: 'Method card: mode exit lease test',
+        created_by: 'agent:main',
+        workstreams: ['aitp-main'],
+      },
+      JSON.stringify({
+        status: 'prepared',
+        id: 'note-mode-exit-lease',
+        path: '.aitp/local/drafts/note-mode-exit-lease.md',
+        save_command: 'aitp note save .aitp/local/drafts/note-mode-exit-lease.md',
+      }),
+    ));
+    const beforeExit = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
+      path: '.aitp/local/drafts/note-mode-exit-lease.md',
+    }));
+    expect(beforeExit).toBeUndefined();
+
+    modeSvc.isActive = false;
+    eventBus.publish({ type: 'aitp_mode.updated' });
+    modeSvc.isActive = true;
+    eventBus.publish({ type: 'aitp_mode.updated' });
+
+    const afterReentry = await executor.fireBeforeExecute(makeToolHookContext('Edit', {
+      path: '.aitp/local/drafts/note-mode-exit-lease.md',
+    }));
+    expect(afterReentry?.veto?.output).toContain('not owned by the current checkpoint or distillation handoff');
+  });
+
   it.each(['ResolveResearchDecision', 'AcknowledgeResearchAlert'] as const)('vetoes %s on subagents', async (toolName) => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
 
@@ -3662,7 +4488,7 @@ describe('goal completion guard and subagent veto', () => {
       fingerprint: 'research.alert.example',
       gate_id: 'g1', resolution: 'approved', next_phase: 'gap_analysis',
     });
-    await (svc as unknown as { guardToolExecution: (e: BeforeToolExecuteEventImpl) => Promise<void> }).guardToolExecution(event);
+    (svc as unknown as { guardToolExecution: (e: BeforeToolExecuteEventImpl) => void }).guardToolExecution(event);
 
     expect(event.vetoResult).toBeDefined();
     expect(event.vetoResult?.isError).toBe(true);
@@ -7255,6 +8081,39 @@ describe('Research Loop scientific state', () => {
     })).toThrow('Action wrong not found');
   });
 
+  it('restores awaiting_human before resolving a cold-replayed unresolved gate with phase drift', async () => {
+    const modeSvc = await buildRealModeService();
+    const svc = await buildRealResearchService(modeSvc);
+    await modeSvc.enter({ actor: 'user' });
+    svc.setPhase('orienting');
+    const gate = svc.requestHumanDecision({
+      kind: 'decision', prompt: 'Choose the next bounded research action',
+    });
+
+    const restored = wire.getModel(ResearchModel).current as unknown as {
+      phase: 'state_updated';
+    };
+    restored.phase = 'state_updated';
+
+    svc.noteLoopBoundary();
+
+    expect(svc.getSnapshot()).toMatchObject({
+      phase: 'awaiting_human',
+      humanGate: { gateId: gate.gateId, resolvedAt: undefined },
+      recentStateChange: {
+        beforePhase: 'state_updated',
+        afterPhase: 'awaiting_human',
+        summary: expect.stringContaining(`Recovered unresolved human gate ${gate.gateId}`),
+      },
+    });
+    svc.resolveHumanDecision({
+      gateId: gate.gateId,
+      resolution: 'Continue with the bounded evidence check.',
+      nextPhase: 'gap_analysis',
+    });
+    expect(svc.getSnapshot().phase).toBe('gap_analysis');
+  });
+
   it('requestHumanDecision rejects while a human gate is already pending', async () => {
     const modeSvc = await buildRealModeService();
     const svc = await buildRealResearchService(modeSvc);
@@ -7540,7 +8399,7 @@ describe('Research Loop scientific state', () => {
       gateId: 'wrong', resolution: 'ignored', nextPhase: 'idle',
     })).toThrow('No unresolved human gate');
     expect(() => svc.resolveHumanDecision({
-      gateId: gate.gateId, resolution: 'ignored', nextPhase: 'state_updated',
+      gateId: gate.gateId, resolution: 'ignored', nextPhase: 'state_updated' as never,
     })).toThrow('Invalid human-gate recovery phase');
     expect(svc.getSnapshot().humanGate?.resolvedAt).toBeUndefined();
   });
@@ -8267,7 +9126,7 @@ describe('Research Loop tool implementations', () => {
     expect(output).toContain('awaiting');
   });
 
-  it('RequestResearchDecision does not create a durable gate in auto mode', async () => {
+  it('RequestResearchDecision keeps non-delegable Research decisions human-owned in auto mode', async () => {
     const { modeSvc, researchSvc } = await buildToolHarness();
     researchSvc.setPhase('orienting');
     const tool = await makeTool(
@@ -8278,16 +9137,16 @@ describe('Research Loop tool implementations', () => {
     );
 
     const result = await runnableExecution(tool.resolveExecution({
-      kind: 'approval',
-      prompt: 'Approve submitting the routine remote diagnostic?',
+      kind: 'decision',
+      prompt: 'Which physical convention should define the observable?',
     })).execute({ turnId: 1, toolCallId: 'tc-auto-request', signal: new AbortController().signal });
 
     expect(result.isError).toBeFalsy();
-    expect(result.output).toContain('no durable Research human gate was created');
-    expect(result.output).toContain('make a reasonable in-scope default, and continue');
-    expect(result.output).toContain('not a per-action human approval');
-    expect(researchSvc.getSnapshot().phase).toBe('orienting');
-    expect(researchSvc.getSnapshot().humanGate).toBeUndefined();
+    expect(result.output).toContain('Human decision requested');
+    expect(result.output).toContain('Which physical convention should define the observable?');
+    expect(researchSvc.getSnapshot().phase).toBe('awaiting_human');
+    expect(researchSvc.getSnapshot().humanGate?.kind).toBe('decision');
+    expect(researchSvc.getSnapshot().humanGate?.prompt).toBe('Which physical convention should define the observable?');
   });
 
   it('ResolveResearchDecision reports the human decision and restored phase', async () => {
@@ -8507,7 +9366,8 @@ describe('injection Brief/Detail and scientific content', () => {
     expect(collaborativeText).toContain('Planning policy: collaborative');
     expect(collaborativeText).toContain('ask through AskUserQuestion only when a consequential unknown');
     expect(collaborativeText).toContain('cannot be resolved from the active Goal');
-    expect(collaborativeText).toContain('dismissed, empty, or ambiguous answer is a no-op');
+    expect(collaborativeText).toContain('permission mode suppresses AskUserQuestion');
+    expect(collaborativeText).toContain('remains human-owned in every permission mode');
     expect(collaborativeText).toContain('Never ask the user to restate or re-approve them');
 
     researchSvc.setPlanningPolicy('dreaming', collaborative.revision);
@@ -8515,9 +9375,13 @@ describe('injection Brief/Detail and scientific content', () => {
     expect(resolveResearchVerbosity({ isNewTurn: false, lastDisclosure: disclosure }, dreaming)).toBe('brief');
     const dreamingText = renderResearchInjection(dreaming, 'brief').content;
     expect(dreamingText).toContain('Planning policy: dreaming');
+    expect(dreamingText).toContain('continue the project through Goal-owned Research turns without per-step confirmation');
     expect(dreamingText).toContain('record every chosen default in Research Plan v2 assumptions');
     expect(dreamingText).toContain('Never dream through expensive or irreversible work');
     expect(dreamingText).toContain('AITP/human gate');
+    expect(dreamingText).toContain('Research planning policy and tool permission mode are orthogonal');
+    expect(dreamingText).toContain('auto removes routine tool-risk prompts');
+    expect(dreamingText).toContain('cannot grant a Research capability');
   });
 
   it('brief on new turn contains full guidance and scientific state', async () => {
@@ -11060,6 +11924,14 @@ describe('Research lifecycle alerts', () => {
         state: 'cleared',
       }),
     ]));
+
+    const dispatch = vi.spyOn(wire, 'dispatch');
+    dispatch.mockClear();
+    coordinatorUpdate.fire(current);
+    const replayedOpTypes = dispatch.mock.calls.flatMap((ops) =>
+      ops.map((op) => op.type),
+    );
+    expect(replayedOpTypes).not.toContain('research.clear_alert');
   });
 
   it('restores alert state through conversation undo, including cleared history', async () => {

@@ -12,9 +12,21 @@
  * Scope-agnostic.
  */
 
-import type { ResearchActionStatus, ResearchPhase } from '../types';
+import type {
+  AwaitingHumanExitPhase,
+  ResearchActionStatus,
+  ResearchPhase,
+} from '../types';
 
 export const RESEARCH_ACTION_RECOVERY_PREFIX = '[research-action-recovery]';
+
+export const AWAITING_HUMAN_EXIT_PHASES = [
+  'idle',
+  'gap_analysis',
+  'action_planned',
+  'action_executing',
+  'evaluating',
+] as const satisfies readonly AwaitingHumanExitPhase[];
 
 /**
  * The canonical Research phase transition table. A transition is valid when
@@ -30,7 +42,7 @@ export const RESEARCH_PHASE_TRANSITIONS: Readonly<Record<ResearchPhase, readonly
   evaluating: ['state_updated', 'idle', 'awaiting_human'],
   state_updated: ['checkpoint_pending', 'gap_analysis', 'idle', 'awaiting_human'],
   checkpoint_pending: ['idle', 'gap_analysis', 'awaiting_human'],
-  awaiting_human: ['idle', 'gap_analysis', 'action_planned', 'action_executing', 'evaluating'],
+  awaiting_human: AWAITING_HUMAN_EXIT_PHASES,
 };
 
 /** The phases from which a new research action may be planned. */

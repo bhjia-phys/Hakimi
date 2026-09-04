@@ -24,16 +24,16 @@
 
 Research Mode 不需要选择性启用开关。`/research` 命令和 `EnterAITPMode` 能力默认可发现。每个新建 session 初始都为 `inactive`，而 hydration 会保留已持久化的 mode。inactive 状态的恢复加载、`getResearch` 和 GET/快照读取只使用本地快照：不会发生 AITP I/O，不会探测 workspace，Research Board 也保持隐藏。持久化为 active 的 session 在 cold restore 后仍保持 active；cold restore 会重新探测适配器并执行只读的 `enter` → `check` 维护周期。其他 Research/AITP 工具以及 AITP plugin skill 仍仅在 active 状态下可见。
 
-旧的 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 环境变量、`[experimental].aitp_research_mode` 和 `KIMI_CODE_EXPERIMENTAL_FLAG` 对这个正式开放的能力均不生效，不会隐藏或启用入口；总开关对其他实验功能仍然有效。要从 inactive session 激活 AITP 支撑的能力，请用 `/research on` 显式进入、在 Web 中选择 **Research**，或让模型调用 `EnterAITPMode`。active conversation undo 和 cold restore 也会重新探测适配器，并在探测就绪后执行只读的 `enter` → `check` 维护周期。Research Mode 绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`。
+旧的 `KIMI_CODE_EXPERIMENTAL_AITP_RESEARCH_MODE` 环境变量、`[experimental].aitp_research_mode` 和 `KIMI_CODE_EXPERIMENTAL_FLAG` 对这个正式开放的能力均不生效，不会隐藏或启用入口；总开关对其他实验功能仍然有效。要从 inactive session 激活 AITP 支撑的能力，请直接用 `/research` 切换、在 Web 中选择 **Research**，或让模型调用 `EnterAITPMode`。active conversation undo 和 cold restore 也会重新探测适配器，并在探测就绪后执行只读的 `enter` → `check` 维护周期。Research Mode 绝不自动运行 `init`、`init --adopt`、`inventory` 或 `backfill --apply`。
 
 ## 启动与停止
 
 在 Web 中，打开 composer 的 **Modes** 菜单并选择 **Research**。共享快照处于 inactive 时，该入口会显式进入 Research Mode 并显示 Research Board；快照进入 `probing`、`ready` 或 `degraded` 后，同一行会保持 active，并打开 Research Manager。该按钮不会创建问题，也不会调度模型轮次。
 
-你也可以在 TUI 或 Web composer 中使用 `/research on`。Web 会把手工输入的 `/research` 路由到 Research command endpoint，而不是作为模型提示词发送。Hakimi 激活 AITP adapter 后会在检查 workspace 时进入 `probing`，随后通过 live Research Board 显示 `ready` 或 `degraded` 结果。进入后请提交研究问题、继续已有 Goal，或者让模型在处理科研请求时调用 `EnterAITPMode`。你也可以在进入时选择特定研究线：
+你可以在 TUI 或 Web composer 中使用 `/research` 直接切换模式。Web 会把这个命令路由到 Research command endpoint，而不是作为模型提示词发送。Hakimi 激活 AITP adapter 后会在检查 workspace 时进入 `probing`，随后通过 live Research Board 显示 `ready` 或 `degraded` 结果。进入后请提交研究问题、继续已有 Goal，或者让模型在处理科研请求时调用 `EnterAITPMode`。显式的 `on`/`off` 形式继续兼容，`on --` 仍可在进入时选择特定研究线：
 
 ```text
-/research on
+/research
 /research on -- boundary-zero-mode
 ```
 
@@ -41,20 +41,20 @@ Research Mode 不需要选择性启用开关。`/research` 命令和 `EnterAITPM
 
 当 Research Mode 为 active、`ready` 且未暂停时，每个经过 typed ingress 的 main-agent 用户 prompt 都会获得 transient `interactive_research` lease，并携带 Research context 进入一次 Research Loop iteration；它不会 enqueue 下一轮。只有现有 Research continuation guards 放行后，由 Goal engine 排入的 Goal-owned continuation 才会获得独立的 `autonomous_research` lease。system、cron、subagent、unclassified、inactive、probing、paused 和 degraded turn 都 abstain。两类 lease 都只存在于 runtime，不持久化，也不加入公开 wire schema。
 
-在 `auto` 下，模型发起的有界 Research Action 不会另行创建 durable approval gate：`requires_human_approval` 会被关闭，`RequestResearchDecision` 也不会创建新的 gate；模型必须在任务范围内采用合理默认值并继续。真正的 `Bash`、远程操作或其他操作仍经过统一的工具权限策略。恢复 session 或切换到 `auto` 时，只有在 Research Loop 处于 active 状态，Hakimi 才会把与当前 planned action 绑定的 unresolved approval 视为已有的 auto 授权并启动该 action；历史 review 或 scientific-decision gate 不会被自动解决，因为其中没有可直接采用的决定。
+在 `auto` 下，模型发起的有界 Research Action 不会另行创建常规执行审批 gate：`requires_human_approval` 会被关闭，普通工具风险提示也可能被抑制。但 `auto` 不替人做科学判断。真正不可委托的科学或协议选择仍使用 `RequestResearchDecision`，它在所有权限模式下都会创建 durable human gate。恢复 session 或切换到 `auto` 时，只有在 Research Loop active 的前提下，Hakimi 才把与当前 planned action 绑定的 unresolved approval 视为已有的 auto 执行授权并启动该 action；历史 review、无 action 的 approval 和 scientific-decision gate 永远不会被自动解决。
 
 ### Web 手动检查
 
 1. 从 inactive 且 session 空闲的状态打开 **Modes** 并选择 **Research**。确认 Board 出现并先进入 `probing`，随后进入 `ready` 或 `degraded`，且没有调度模型响应。
 2. 再次打开 **Modes**，点击 active 的 **Research** 行或 **管理**。确认打开 Research Manager，而不是退出研究模式。
-3. 运行 `/research off`。确认 Board 和 **Research** tag 消失，**Modes** 中的 Research 行恢复为启动操作。
+3. 再运行一次 `/research`。确认 Board 和 **Research** tag 消失，**Modes** 中的 Research 行恢复为启动操作。
 4. 从 inactive session 发送一条使模型调用 `EnterAITPMode` 的科研请求。确认同一个 Board 和 active **Research** 入口自动出现。
 5. 重启 Hakimi。确认 **Research** 行和 `/research` 斜杠菜单入口仍默认可发现，而新 session 初始为 inactive，显式进入前不会发生 AITP I/O。
 
 退出研究模式：
 
 ```text
-/research off
+/research
 ```
 
 退出时会撤销 AITP 工具授权，并在两个 surface 中隐藏 Research Board。已保存的 AITP 记录**不会**被删除——它们持久保留在账本中。
@@ -142,9 +142,7 @@ checkpoint、Goal–Program alignment，最后才是普通 question 或 maintena
 执行一次确定性的本地对账。它只能修复可机械判定的 Line、Action/phase、
 period、已提交 cursor 和 alert 结构；不会额外运行一次 AITP maintenance、
 推断科研结论、完成或放弃 Action，也不会替用户处理 checkpoint。若 pending
-checkpoint 捕获的 Question revision 早于当前 revision，Board 会把它标为历史
-提案并明确禁止作为当前证据提交；在显式 undo 该提案前，它仍会 hold 自动
-continuation。紧凑 Board 对同一阻塞原因只计数一次，完整记录仍保留在展开态
+checkpoint 捕获的 Question revision 或 Program / Line binding 已可证明过期，Board 会把它标为历史提案并明确禁止作为当前证据提交。只有同时不存在 `committedEntryId`、save receipt 和 committed cursor/history 痕迹时，reconciliation 才会自动 discard；`/research discard-checkpoint <id>` 暴露同一套守卫供显式恢复。只要有迹象表明 save 边界可能已经跨过，提案就会 fail closed 保留供检查。紧凑 Board 对同一阻塞原因只计数一次，完整记录仍保留在展开态
 各自所属的区域中。展开态 adapter health 还会把读取就绪与
 adapter-contract-0.2 的 scoped checkpoint 写入能力分开显示。
 
@@ -174,7 +172,7 @@ hold autonomous continuation，并把下一次 interactive Research turn 定向�
 
 规划有两个显式层级。additive `hakimi/research-plan-0.2` 是绑定 Goal 与 observed Program 的多轮 strategy，记录 milestones、evidence requirements、decision points、assumptions、current milestone 与 stop/replan conditions。旧 bounded `ResearchPlan` 保持 reviewed local Action Plan 的原义，并在兼容期同时以 `actionPlan` 投影。非 trivial action 必须同时捕获 active Research Plan milestone revision 与 approved local Plan revision；reversible one-step action 也会获得 explicit minimal Action Plan binding。任一层或其 Goal/Program/Line/Question context stale 时，action 不能 start 或 conclude。完成 plan 不会关闭 Question、写 AITP 或完成 Goal。
 
-checkpointed planning policy 与这两个层级正交。默认 `collaborative` 只有在 consequential unknown 无法从 active Goal、当前 Research state、此前明确的人类指导或已检验证据中解决，并且答案会实质改变 Research Plan 时，才把它交给既有 `AskUserQuestion` UI。Agent 不得要求用户重述或重新批准已经存在的 Goal、completion criterion、scope、已确认 Program relation 或 Plan decision；dismiss、空答或含糊答复都保持 Plan 不变。`dreaming` 只允许 Agent 选择 reversible、low-cost、in-scope 的默认项，并必须把每项默认判断记录进 Plan 的 `assumptions`。无论哪种策略，昂贵或不可逆动作、tool permission、科学约定歧义、Goal/scope 变化以及 AITP/human-decision gate 都不能被自动回答或绕过。切换策略是带 revision 的 Hakimi state mutation，不写 AITP；Manager 的 Plan 视图负责切换，展开 Board 负责显示。
+checkpointed planning policy 与这两个层级正交。默认 `collaborative` 只有在 consequential unknown 无法从 active Goal、当前 Research state、此前明确的人类指导或已检验证据中解决，并且答案会实质改变 Research Plan 时，才把它交给既有 `AskUserQuestion` UI。如果 `auto` 抑制了 `AskUserQuestion`，Agent 必须继续收集不承诺路线的证据，或对真正不可委托的选择使用 `RequestResearchDecision`，不能直接猜测。Agent 不得要求用户重述或重新批准已经存在的 Goal、completion criterion、scope、已确认 Program relation 或 Plan decision；dismiss、空答或含糊答复都保持 Plan 不变。`dreaming` 是 Goal 驱动的自主规划策略：Goal、scope 与 completion criterion 明确后，它会在 Goal-owned Research turns 中持续选择下一个 reversible、low-cost、in-scope 步骤，不逐步征求确认，并把每项默认判断记录进 Plan 的 `assumptions`。无论哪种策略，昂贵或不可逆动作、科学约定歧义、Goal/scope 变化以及 AITP/human-decision gate 都不能被自动回答或绕过。工具权限模式保持独立：`auto` 可以消除常规执行提示，但不能产生 Research capability 或替人回答 `RequestResearchDecision`。切换 planning policy 是带 revision 的 Hakimi state mutation，不写 AITP；Manager 的 Plan 视图负责切换，展开 Board 负责显示。
 
 TUI 还会把当前 session 的 `TodoList` 投影到展开态的 **External Todo actions** 中。Todo 状态仍与 Research Question 和 AITP ledger 分离：完成一个 action 不会改变 epistemic 状态，也不会创建 AITP Entry。在 TUI 中按 `Ctrl-O` 可展开或折叠 Board；`Ctrl-T` 仍是非研究模式下的 Todo 快捷键。在 Web 中点击 Board 上的 **Expand** 或 **Collapse**；Web 使用按钮和表单，不使用这些 TUI 键盘快捷键。
 
@@ -252,6 +250,7 @@ active Research Goal 要完成或自动继续前，必须显式确认它与 obse
 | `/research close <questionId> [-- <原因>]` | 关闭一个问题 |
 | `/research reopen <questionId> [-- <原因>]` | 重新打开已关闭的问题 |
 | `/research line <slug>` | 切换当前研究线 |
+| `/research discard-checkpoint <checkpointId>` | 只丢弃可证明已过期且从未提交的 checkpoint 提案 |
 | `/research align same_program_goal\|goal_parent_of_program\|goal_milestone_in_program\|unrelated` | 显式确认本地 Goal–Program 关系 |
 | `/research align clear` | 清除本地 Goal–Program binding |
 
@@ -262,6 +261,16 @@ active Research Goal 要完成或自动继续前，必须显式确认它与 obse
 ```
 
 ## 保存、查看与检查屏障
+
+### Action 作用域工具强制
+
+Research Mode active 时，Research Action 归属直接成为 admitted Research turn 上由统一 Tool Executor 强制的策略，不需要实验开关。
+
+启用后，状态/控制工具和严格限定的恢复工具可以在没有 active Action 时运行。新的科研工作则必须具有处于 `action_executing` 的 `in_progress` Action、fresh 的 Line/Question/Plan binding、没有 unresolved human gate，并取得与 `allowed_tool_kinds` 匹配的 capability。已知 capability 为 `workspace_read`、`workspace_write`、`web_search`、`web_fetch`、`shell`、`task`、`subagent` 和 `scheduler`；其他未知 plugin/MCP 工具必须取得精确的 `tool:<小写工具名>` 授权，否则默认拒绝。同一个 tool-call batch 中的 `BeginResearchAction` 与工作工具会被拒绝，避免 Begin 失败时未归属的工作先行执行。
+
+Action 以 durable delta 结束后，checkpoint 持久化使用另一条只绑定 pending checkpoint、精确 AITP Topic/workstream 与精确 draft path 的窄 lease。Note/Method-card 持久化同样只使用成功 `note prepare` 返回的精确 draft path，并在 save、退出模式、undo 或 cold restore 后撤销。直接访问 canonical `.aitp/topic` 文件仍被拒绝；canonical write 仍只能经过 AITP adapter 与 CLI contract。
+
+这属于 Tool Executor policy，不是操作系统级 sandbox。获准的 `shell` capability 本身仍很宽，host 的常规 command approval 和文件系统/网络隔离才是更底层的安全边界。该策略阻止标准模型工具调用绕过 Research Action 归属，但不声称能够隔离已被攻陷的 subprocess 或外部程序。
 
 `EnterAITPMode` 始终默认可发现，是显式进入模式的工具。进入后使用 `GetResearchStatus` 读取 authoritative snapshot；如果仍为 `probing`，应等待其收敛为 `ready` 或 `degraded`，不得重复调用、忙轮询或改用裸 CLI。模式 active 后，其余 Research 和 AITP 工具再按适配器健康状态分层开放。`theory-physics` skill 不会持久化普通 turn progress：只有 durable delta 才转交外部 AITP skill。填写可能可复用的执行证据之前，Agent 会检索相关 card 并遵循 `distilling-methods`，使 Entry 在创建时带上该 Skill 要求的 exact card pin 或 observation marker。首次 commit 后，Hakimi 再为 touched Entry 加载一次精确的 AITP plugin Skill 做有界 review；是否满足 trigger 只由 Skill 判断。否则只保留 method candidate 与证据，不得声称已完成蒸馏或发布。当前只读取所选 Line / Question 的状态；无关研究线只贡献已蒸馏的方法。
 

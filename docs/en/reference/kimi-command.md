@@ -21,7 +21,7 @@ All flags are optional — run `hakimi` directly to enter an interactive session
 | `--prompt <prompt>` | `-p` | Run a single prompt non-interactively and stream the Assistant output to stdout. This mode does not open the TUI |
 | `--output-format <format>` | | Set the non-interactive output format; supports `text` and `stream-json`. Can only be used with `--prompt`; defaults to `text` |
 | `--yolo` | `-y` | Auto-approve regular tool calls, skipping approval requests |
-| `--auto` | | Start with auto permission mode; tool approvals are handled automatically and the Agent will not ask the user questions |
+| `--auto` | | Start with auto permission mode; tool approvals are handled automatically and ordinary conversational questions are suppressed, while explicit protocol-owned workflow decisions may still pause |
 | `--plan` | | Start a new session in Plan mode — the AI will prioritize read-only tools for exploration and planning |
 | `--skills-dir <dir>` | | Load Skills from the specified directory, replacing the automatically discovered user and project directories. Can be repeated |
 | `--agent <name>` | | Start a new session with the specified agent as the main Agent. Cannot be combined with `--session`/`--continue` |
@@ -72,7 +72,7 @@ Skip approval prompts — suitable for batch tasks that are known to be safe:
 hakimi --yolo
 ```
 
-Let the Agent handle everything autonomously, without asking the user questions:
+Let the Agent handle tool approvals and ordinary reversible choices autonomously; explicit protocol-owned workflow decisions may still pause:
 
 ```sh
 hakimi --auto

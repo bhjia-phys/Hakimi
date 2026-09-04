@@ -240,7 +240,7 @@ describe('approval adapter', () => {
         response: 'approved',
         selected_label: 'auto',
         description:
-          'Best if you want Hakimi to keep working while you are away. Tools are approved automatically, and questions are skipped.',
+          'Best if you want Hakimi to keep working while you are away. Tools are approved automatically, ordinary questions are skipped, and explicit workflow decisions may still pause.',
       },
       {
         label: 'Switch to YOLO and start',
@@ -284,7 +284,7 @@ describe('approval adapter', () => {
         response: 'approved',
         selected_label: 'auto',
         description:
-          'Best if you want Hakimi to keep working while you are away. Tools are approved automatically, and questions are skipped.',
+          'Best if you want Hakimi to keep working while you are away. Tools are approved automatically, ordinary questions are skipped, and explicit workflow decisions may still pause.',
       },
       {
         label: 'Keep YOLO and start',

@@ -493,7 +493,9 @@ export interface WireResearchEvidencePacket {
 export interface WireResearchActionSpec {
   actionId: string;
   questionId?: string;
+  questionRevision?: number;
   lineSlug?: string;
+  lineRevision?: number;
   kind: WireResearchActionKind;
   purpose: string;
   expectedEvidence: string[];
@@ -780,6 +782,7 @@ export type WireResearchCommand =
   | { kind: 'create_line'; slug: string; title: string; objective?: string; assessment?: string }
   | { kind: 'update_line'; lineSlug: string; expectedRevision: number; title?: string; objective?: string; status?: WireResearchLineStatus; assessment?: string; reason?: string }
   | { kind: 'propose_checkpoint'; expectedRevision: number; questionId?: string; lineSlug?: string; assessment?: string; nextAction?: string }
+  | { kind: 'discard_historical_checkpoint'; checkpointId: string; expectedRevision: number }
   | { kind: 'commit_checkpoint'; checkpointId: string; entryId: string }
   | { kind: 'confirm_goal_alignment'; relation: 'same_program_goal' | 'goal_parent_of_program' | 'goal_milestone_in_program' | 'unrelated'; expectedRevision: number; goalId: string; topicId: string; observedRevision: number }
   | { kind: 'clear_goal_alignment'; expectedRevision: number; goalId: string; topicId: string; observedRevision: number }

@@ -59,6 +59,7 @@ import {
   IAcknowledgeResearchAlertTool,
   IBeginResearchActionTool,
   IProposeResearchCheckpointTool,
+  IDiscardHistoricalResearchCheckpointTool,
   IRecordResearchProgressTool,
   IReviewResearchEvidenceTool,
   IObserveResearchRunTool,
@@ -80,6 +81,7 @@ import {
   AcknowledgeResearchAlertTool,
   BeginResearchActionTool,
   ProposeResearchCheckpointTool,
+  DiscardHistoricalResearchCheckpointTool,
   RecordResearchProgressTool,
   ReviewResearchEvidenceTool,
   ObserveResearchRunTool,
@@ -242,6 +244,15 @@ export class AitpResearchFeature extends Feature {
       domain: 'aitpResearch',
       when: isAitpModeActive,
     });
+    this.contributeTool(
+      IDiscardHistoricalResearchCheckpointTool,
+      DiscardHistoricalResearchCheckpointTool,
+      {
+        name: 'DiscardHistoricalResearchCheckpoint',
+        domain: 'aitpResearch',
+        when: isAitpModeActive,
+      },
+    );
     this.contributeTool(ICommitResearchCheckpointTool, CommitResearchCheckpointTool, {
       name: 'CommitResearchCheckpoint',
       domain: 'aitpResearch',

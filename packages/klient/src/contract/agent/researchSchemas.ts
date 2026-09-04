@@ -432,6 +432,14 @@ export const researchPhaseSchema = z.enum([
   'awaiting_human',
 ]);
 
+export const awaitingHumanExitPhaseSchema = z.enum([
+  'idle',
+  'gap_analysis',
+  'action_planned',
+  'action_executing',
+  'evaluating',
+]);
+
 export const researchActionKindSchema = z.enum([
   'experiment',
   'derivation',
@@ -529,7 +537,9 @@ export const researchActionPlanBindingSchema = z.object({
 export const researchActionSpecSchema = z.object({
   actionId: z.string(),
   questionId: z.string().optional(),
+  questionRevision: z.number().int().positive().optional(),
   lineSlug: z.string().optional(),
+  lineRevision: z.number().int().positive().optional(),
   kind: researchActionKindSchema,
   purpose: researchLongTextSchema,
   expectedEvidence: researchStringListSchema,
@@ -954,7 +964,7 @@ export const researchAlertFingerprintSchema = z.string().min(1);
 export const resolveHumanDecisionInputSchema = z.object({
   gateId: z.string(),
   resolution: researchShortTextSchema,
-  nextPhase: researchPhaseSchema,
+  nextPhase: awaitingHumanExitPhaseSchema,
 }).strict();
 export type ResolveHumanDecisionInput = z.infer<typeof resolveHumanDecisionInputSchema>;
 
@@ -1081,6 +1091,11 @@ export type ProposeCheckpointInput = {
 export type CommitCheckpointInput = {
   readonly checkpointId: string;
   readonly entryId: string;
+};
+
+export type DiscardHistoricalCheckpointInput = {
+  readonly checkpointId: string;
+  readonly expectedRevision: number;
 };
 
 export type AitpModeEntryOptions = {

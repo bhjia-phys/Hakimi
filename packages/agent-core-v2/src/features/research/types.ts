@@ -25,6 +25,11 @@ export type ResearchPhase =
   | 'checkpoint_pending'
   | 'awaiting_human';
 
+export type AwaitingHumanExitPhase = Extract<
+  ResearchPhase,
+  'idle' | 'gap_analysis' | 'action_planned' | 'action_executing' | 'evaluating'
+>;
+
 export type ResearchActionKind =
   | 'experiment'
   | 'derivation'

@@ -12,7 +12,7 @@ export default {
   sessionCount: '{n} sessions',
   newSession: 'New session',
   permManualSub: 'confirm every tool',
-  permAutoSub: 'fully autonomous, never asks',
+  permAutoSub: 'auto tools, no ordinary questions',
   permYoloSub: 'auto-approve tools, may still ask',
   planModeSub: 'Plan mode',
   swarmModeSub: 'Swarm mode',

@@ -18,6 +18,7 @@ import {
   researchEvidenceDraftTargetKey,
   researchManagerAckMatchesDraft,
   researchManagerCheckpointDraftIsStale,
+  researchManagerHistoricalCheckpointCanBeDiscarded,
   researchManagerDraftTarget,
   researchManagerLineDraftIsStale,
   researchManagerQuestionDraftIsStale,
@@ -192,6 +193,12 @@ const checkpointBaseTargetKey = computed(() =>
 const currentPendingCheckpointId = computed(() =>
   props.snapshot?.pendingCheckpoint?.checkpointId ?? null,
 );
+const safelyDiscardableHistoricalCheckpoint = computed(() => {
+  const checkpoint = props.snapshot?.pendingCheckpoint;
+  return researchManagerHistoricalCheckpointCanBeDiscarded(props.snapshot)
+    ? checkpoint ?? null
+    : null;
+});
 const lineStale = computed(() => researchManagerLineDraftIsStale(
   lineDirty.value,
   lineEditorMode.value === 'edit',
@@ -921,6 +928,17 @@ function commitCheckpoint(): void {
   });
 }
 
+function discardHistoricalCheckpoint(): void {
+  const snapshot = props.snapshot;
+  const checkpoint = safelyDiscardableHistoricalCheckpoint.value;
+  if (snapshot === null || checkpoint === null) return;
+  emitManagerCommand({
+    kind: 'discard_historical_checkpoint',
+    checkpointId: checkpoint.checkpointId,
+    expectedRevision: snapshot.revision,
+  });
+}
+
 function textLines(value: string): string[] {
   return value.split('\n').map((line) => line.trim()).filter(Boolean);
 }
@@ -1627,6 +1645,12 @@ function acknowledgeAlert(fingerprint: string): void {
                 <h3>{{ t('research.manager.commitCheckpoint') }}</h3>
                 <code>{{ snapshot?.pendingCheckpoint?.checkpointId ?? t('research.none') }}</code>
               </div>
+              <Banner v-if="safelyDiscardableHistoricalCheckpoint" variant="warning">
+                <span>{{ t('research.manager.historicalCheckpointDiscardHint') }}</span>
+                <Button variant="secondary" size="sm" @click="discardHistoricalCheckpoint">
+                  {{ t('research.manager.discardHistoricalCheckpoint') }}
+                </Button>
+              </Banner>
               <Field
                 :label="t('research.manager.entryId')"
                 :hint="t('research.manager.entryIdHint')"

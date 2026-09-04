@@ -59,12 +59,14 @@ type ResearchGoalAlignmentRelation = Extract<
 >['relation'];
 
 export type ParsedResearchCommand =
+  | { readonly kind: 'toggle' }
   | { readonly kind: 'status' }
   | { readonly kind: 'on'; readonly lineSlug?: string }
   | { readonly kind: 'off' }
   | { readonly kind: 'pause' }
   | { readonly kind: 'resume' }
   | { readonly kind: 'manage' }
+  | { readonly kind: 'discard_checkpoint'; readonly checkpointId: string }
   | { readonly kind: 'align'; readonly relation: ResearchGoalAlignmentRelation }
   | { readonly kind: 'clear_alignment' }
   | {
@@ -134,19 +136,32 @@ const GOAL_ALIGNMENT_RELATIONS = new Set<ResearchGoalAlignmentRelation>([
  * Parses the deterministic `/research` command grammar.
  *
  * Reserved subcommands (`on`/`off`/`pause`/`resume`/`manage`/`status`/`align`/
- * `edit`/`focus`/`defer`/`block`/`close`/`reopen`/`line`) are only honored as
+ * `discard-checkpoint`/`edit`/`focus`/`defer`/`block`/`close`/`reopen`/`line`) are only honored as
  * the first token. Free text after `--` separates the subcommand arguments
  * from the user's free-form input (wording, bounded action, reason).
  */
 export function parseResearchCommand(rawArgs: string): ParsedResearchCommand {
   const args = rawArgs.trim();
-  if (args.length === 0 || args === 'status') return { kind: 'status' };
+  if (args.length === 0) return { kind: 'toggle' };
+  if (args === 'status') return { kind: 'status' };
 
   const tokens = args.split(/\s+/);
   const first = tokens[0];
 
   if (first !== undefined && CONTROL_SUBCOMMANDS.has(first) && tokens.length === 1) {
     return { kind: first as 'on' | 'off' | 'pause' | 'resume' | 'manage' };
+  }
+
+  if (first === 'discard-checkpoint') {
+    if (tokens.length === 2 && tokens[1] !== undefined) {
+      return { kind: 'discard_checkpoint', checkpointId: tokens[1] };
+    }
+    return {
+      kind: 'error',
+      severity: 'hint',
+      restoreInput: true,
+      message: 'Use `/research discard-checkpoint <checkpointId>`.',
+    };
   }
 
   if (first === 'align') {
@@ -212,7 +227,7 @@ export function parseResearchCommand(rawArgs: string): ParsedResearchCommand {
   return {
     kind: 'error',
     restoreInput: true,
-    message: `Unknown /research subcommand: ${first ?? ''}. Use \`/research status\`, \`/research on\`, \`/research off\`, \`/research pause\`, \`/research resume\`, \`/research manage\`, or \`/research <edit|focus|defer|block|close|reopen> <questionId> -- <text>\`.`,
+    message: `Unknown /research subcommand: ${first ?? ''}. Use \`/research status\`, \`/research on\`, \`/research off\`, \`/research pause\`, \`/research resume\`, \`/research manage\`, \`/research discard-checkpoint <checkpointId>\`, or \`/research <edit|focus|defer|block|close|reopen> <questionId> -- <text>\`.`,
   };
 }
 
@@ -310,6 +325,9 @@ export async function handleResearchCommand(
       if (parsed.restoreInput === true && canRestoreSubmittedInput(host))
         host.restoreInputText(`/research ${args}`);
       return;
+    case 'toggle':
+      await toggleResearchMode(host);
+      return;
     case 'status':
       await showResearchStatus(host);
       return;
@@ -327,6 +345,9 @@ export async function handleResearchCommand(
       return;
     case 'manage':
       await showResearchManager(host);
+      return;
+    case 'discard_checkpoint':
+      await discardHistoricalCheckpoint(host, parsed.checkpointId);
       return;
     case 'align':
       await alignResearchGoals(host, parsed.relation);
@@ -362,6 +383,26 @@ export async function handleResearchCommand(
 // Handlers
 // ---------------------------------------------------------------------------
 
+async function toggleResearchMode(host: SlashCommandHost): Promise<void> {
+  const session = host.requireSession();
+  const token = beginResearchRequest(host, session);
+  if (token === undefined) return;
+  let snapshot: ResearchStatusSnapshot;
+  try {
+    snapshot = await session.getResearch();
+  } catch (error) {
+    if (!isResearchRequestCurrent(host, token)) return;
+    host.showError(`Failed to read research status: ${formatErrorMessage(error)}`);
+    return;
+  }
+  if (!host.researchController.applySnapshot(token, snapshot)) return;
+  if (snapshot.mode === 'inactive') {
+    await enterResearchMode(host, undefined, '/research');
+    return;
+  }
+  await exitResearchMode(host);
+}
+
 async function showResearchStatus(host: SlashCommandHost): Promise<void> {
   const session = host.requireSession();
   const token = beginResearchRequest(host, session);
@@ -389,6 +430,32 @@ async function showResearchStatus(host: SlashCommandHost): Promise<void> {
   host.state.ui.requestRender();
 }
 
+async function discardHistoricalCheckpoint(
+  host: ResearchCommandHost,
+  checkpointId: string,
+): Promise<void> {
+  const session = host.requireSession();
+  const token = beginResearchRequest(host, session);
+  if (token === undefined) return;
+  let snapshot: ResearchStatusSnapshot;
+  try {
+    snapshot = await session.getResearch();
+    if (!host.researchController.applySnapshot(token, snapshot)) return;
+    const response = await session.commandResearch({
+      kind: 'discard_historical_checkpoint',
+      checkpointId,
+      expectedRevision: snapshot.revision,
+    });
+    if (!applyResearchResponse(host, token, response)) return;
+  } catch (error) {
+    if (!isResearchRequestCurrent(host, token)) return;
+    host.showError(`Failed to discard historical checkpoint: ${formatErrorMessage(error)}`);
+    return;
+  }
+  host.track('research_checkpoint_discarded', { checkpointId });
+  host.showStatus(`Historical checkpoint proposal ${checkpointId} discarded; AITP was unchanged.`);
+}
+
 async function alignResearchGoals(
   host: ResearchCommandHost,
   relation?: ResearchGoalAlignmentRelation,
@@ -406,7 +473,7 @@ async function alignResearchGoals(
   }
   if (!host.researchController.applySnapshot(token, snapshot)) return;
   if (snapshot.mode === 'inactive') {
-    host.showStatus('No active research mode. Use `/research on` first.');
+    host.showStatus('No active research mode. Run `/research` to start it.');
     return;
   }
   const program = snapshot.program;
@@ -453,12 +520,13 @@ async function alignResearchGoals(
 async function enterResearchMode(
   host: SlashCommandHost,
   lineSlug?: string,
+  commandText?: string,
 ): Promise<void> {
   if (
     host.state.appState.permissionMode === 'manual' ||
     host.state.appState.permissionMode === 'yolo'
   ) {
-    showResearchStartPermissionPrompt(host, lineSlug);
+    showResearchStartPermissionPrompt(host, lineSlug, commandText);
     return;
   }
   await startResearchMode(host, lineSlug);
@@ -467,10 +535,11 @@ async function enterResearchMode(
 function showResearchStartPermissionPrompt(
   host: SlashCommandHost,
   lineSlug?: string,
+  sourceCommand?: string,
 ): void {
-  const commandText = lineSlug !== undefined
+  const commandText = sourceCommand ?? (lineSlug !== undefined
     ? `/research on -- ${lineSlug}`
-    : '/research on';
+    : '/research');
   const cancelStart = (): void => {
     host.restoreInputText(commandText);
     host.showStatus('Research mode not started.');
@@ -489,7 +558,7 @@ function showResearchStartPermissionPrompt(
           value: 'auto',
           label: 'Switch to Auto and start',
           description:
-            'Tools are approved automatically and questions are skipped — best for unattended research.',
+            'Tools are approved automatically and ordinary questions are skipped; explicit scientific decisions may still pause.',
         },
         {
           value: 'yolo',
@@ -661,7 +730,7 @@ async function resumeResearchLoop(host: SlashCommandHost): Promise<void> {
 async function switchResearchLine(host: SlashCommandHost, slug: string): Promise<void> {
   const revision = getExpectedRevision(host);
   if (revision === undefined) {
-    host.showStatus('No active research mode. Use `/research on` first.');
+    host.showStatus('No active research mode. Run `/research` to start it.');
     return;
   }
   const session = host.requireSession();
@@ -690,7 +759,7 @@ async function focusResearchQuestion(
 ): Promise<void> {
   const revision = getExpectedRevision(host);
   if (revision === undefined) {
-    host.showStatus('No active research mode. Use `/research on` first.');
+    host.showStatus('No active research mode. Run `/research` to start it.');
     return;
   }
   const session = host.requireSession();
@@ -720,7 +789,7 @@ async function steerQuestion(
 ): Promise<void> {
   const revision = getExpectedRevision(host);
   if (revision === undefined) {
-    host.showStatus('No active research mode. Use `/research on` first.');
+    host.showStatus('No active research mode. Run `/research` to start it.');
     return;
   }
   const session = host.requireSession();
@@ -775,7 +844,7 @@ async function showResearchManager(
   // snapshot before any optimistic-concurrency action is emitted.
   if (!host.researchController.applySnapshot(token, snapshot)) return;
   if (snapshot.mode === 'inactive') {
-    host.showStatus('Research mode is inactive. Use `/research on` first.');
+    host.showStatus('Research mode is inactive. Run `/research` to start it.');
     return;
   }
   host.track('research_manage');
@@ -856,7 +925,7 @@ async function handleResearchManagerActionCore(
   const session = host.requireSession();
   const revision = getExpectedRevision(host);
   if (revision === undefined) {
-    host.showStatus('No active research mode. Use `/research on` first.');
+    host.showStatus('No active research mode. Run `/research` to start it.');
     return;
   }
 
@@ -1012,7 +1081,7 @@ async function sendQuestionManagerCommand(
 ): Promise<ResearchStatusSnapshot | void> {
   const revision = getExpectedRevision(host);
   if (revision === undefined) {
-    host.showStatus('No active research mode. Use `/research on` first.');
+    host.showStatus('No active research mode. Run `/research` to start it.');
     return;
   }
   const session = host.requireSession();
@@ -1075,7 +1144,7 @@ async function showResearchEditDialog(
   }
   if (!host.researchController.applySnapshot(token, snapshot)) return;
   if (snapshot.mode === 'inactive') {
-    host.showStatus('No active research mode. Use `/research on` first.');
+    host.showStatus('No active research mode. Run `/research` to start it.');
     return;
   }
 
@@ -1129,7 +1198,7 @@ async function handleResearchEditResult(
   }
 
   if (getExpectedRevision(host) === undefined) {
-    host.showStatus('No active research mode. Use `/research on` first.');
+    host.showStatus('No active research mode. Run `/research` to start it.');
     return;
   }
   const session = host.requireSession();
@@ -1181,7 +1250,7 @@ async function showResearchLineEditDialog(
   }
   if (!host.researchController.applySnapshot(token, snapshot)) return;
   if (snapshot.mode === 'inactive') {
-    host.showStatus('No active research mode. Use `/research on` first.');
+    host.showStatus('No active research mode. Run `/research` to start it.');
     return;
   }
   const line = snapshot.lines.find((item) => item.slug === lineSlug);
@@ -1211,7 +1280,7 @@ async function handleResearchLineEditResult(
     return;
   }
   if (getExpectedRevision(host) === undefined) {
-    host.showStatus('No active research mode. Use `/research on` first.');
+    host.showStatus('No active research mode. Run `/research` to start it.');
     return;
   }
   const session = host.requireSession();

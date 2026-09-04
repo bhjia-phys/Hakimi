@@ -880,7 +880,9 @@ export interface ResearchEvidencePacket {
 export interface ResearchActionSpec {
   actionId: string;
   questionId?: string;
+  questionRevision?: number;
   lineSlug?: string;
+  lineRevision?: number;
   kind: ResearchActionKind;
   purpose: string;
   expectedEvidence: string[];
@@ -1208,6 +1210,11 @@ export type ResearchCommand =
       lineSlug?: string;
       assessment?: string;
       nextAction?: string;
+    }
+  | {
+      kind: 'discard_historical_checkpoint';
+      checkpointId: string;
+      expectedRevision: number;
     }
   | { kind: 'commit_checkpoint'; checkpointId: string; entryId: string }
   | { kind: 'confirm_goal_alignment'; relation: ResearchGoalAlignmentRelation; expectedRevision: number; goalId: string; topicId: string; observedRevision: number }

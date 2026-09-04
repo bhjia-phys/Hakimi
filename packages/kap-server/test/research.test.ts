@@ -22,6 +22,7 @@ import {
 
 import { type RunningServer, startServer } from '../src/start';
 import { agentEventSchema } from '../src/protocol/events-zod';
+import { researchCommandSchema } from '../src/protocol/research';
 import { TEST_HOST_IDENTITY } from './helpers/hostIdentity';
 import { authHeaders } from './helpers/auth';
 
@@ -356,6 +357,21 @@ describe('Research agent event schemas', () => {
       },
     };
     expect(agentEventSchema.parse(event)).toEqual(event);
+  });
+});
+
+describe('research command protocol', () => {
+  it('accepts only the five legal awaiting_human exit targets', () => {
+    for (const nextPhase of ['idle', 'gap_analysis', 'action_planned', 'action_executing', 'evaluating']) {
+      expect(researchCommandSchema.parse({
+        kind: 'resolve_decision', gateId: 'gate-1', resolution: 'Continue.', nextPhase,
+      })).toMatchObject({ nextPhase });
+    }
+    for (const nextPhase of ['orienting', 'state_updated', 'checkpoint_pending', 'awaiting_human']) {
+      expect(() => researchCommandSchema.parse({
+        kind: 'resolve_decision', gateId: 'gate-1', resolution: 'Reject.', nextPhase,
+      })).toThrow();
+    }
   });
 });
 
@@ -694,6 +710,45 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
     expect(status).toBe(200);
     expect(body.code).toBe(40001);
     expect(body.details).toBeDefined();
+  });
+
+  it('POST validates and dispatches historical checkpoint discard', async () => {
+    const sessionId = await createSession();
+    const liveSession = await resumeSessionById(server!.core.accessor, sessionId);
+    const agent = await ensureMainAgent(liveSession!);
+    const research = agent.accessor.get(IAgentResearchService);
+    const discard = vi.spyOn(research, 'discardHistoricalCheckpoint').mockReturnValue({
+      checkpointId: 'checkpoint-old',
+      questionId: 'question-1',
+      questionRevision: 2,
+      lineSlug: 'main',
+      idempotencyKey: 'checkpoint-old-key',
+      persistence: 'pending_commit',
+      createdAt: 1,
+    });
+
+    const missingRevision = await postJson<unknown>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      { command: { kind: 'discard_historical_checkpoint', checkpointId: 'checkpoint-old' } },
+    );
+    expect(missingRevision.body.code).toBe(40001);
+    expect(discard).not.toHaveBeenCalled();
+
+    const discarded = await postJson<{ snapshot: ResearchSnapshot }>(
+      `/api/v1/sessions/${sessionId}/research/command`,
+      {
+        command: {
+          kind: 'discard_historical_checkpoint',
+          checkpointId: 'checkpoint-old',
+          expectedRevision: 7,
+        },
+      },
+    );
+    expect(discarded.body.code).toBe(0);
+    expect(discard).toHaveBeenCalledWith({
+      checkpointId: 'checkpoint-old',
+      expectedRevision: 7,
+    });
   });
 
   it('POST rejects a body missing the command field', async () => {

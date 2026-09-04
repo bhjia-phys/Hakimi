@@ -214,6 +214,7 @@ export type ResearchSlashErrorCode =
   | 'invalid_alignment';
 
 export type ParsedResearchSlashCommand =
+  | { kind: 'toggle' }
   | { kind: 'status' }
   | { kind: 'on'; lineSlug?: string }
   | { kind: 'off' }
@@ -247,7 +248,8 @@ export function researchSlashAllowedWhileBusy(
 
 export function parseResearchSlashCommand(rawArgs: string): ParsedResearchSlashCommand {
   const args = rawArgs.trim();
-  if (args.length === 0 || args === 'status') return { kind: 'status' };
+  if (args.length === 0) return { kind: 'toggle' };
+  if (args === 'status') return { kind: 'status' };
 
   const tokens = args.split(/\p{White_Space}+/u);
   const first = tokens[0];
@@ -339,6 +341,7 @@ export type ResearchSlashResolutionError =
 
 export function researchSlashNeedsSnapshot(parsed: ParsedResearchSlashCommand): boolean {
   switch (parsed.kind) {
+    case 'toggle':
     case 'pause':
     case 'resume':
     case 'line':
@@ -442,6 +445,12 @@ export function researchCommandFromSlash(
     case 'status':
     case 'manage':
       return null;
+    case 'toggle':
+      return snapshot === null
+        ? null
+        : snapshot.mode === 'inactive'
+          ? { kind: 'enter_mode', actor: 'user' }
+          : { kind: 'exit_mode' };
     case 'align': {
       const goal = snapshot?.researchGoal ?? snapshot?.goalSummary;
       const program = snapshot?.program;

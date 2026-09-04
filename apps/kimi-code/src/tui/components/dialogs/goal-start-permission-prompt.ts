@@ -18,7 +18,7 @@ export const GOAL_START_MANUAL_OPTIONS: readonly StartPermissionOption[] = [
     value: 'auto',
     label: 'Switch to Auto and start',
     description:
-      `Best if you want ${PRODUCT_NAME} to keep working while you are away. Tools are approved automatically, and questions are skipped.`,
+      `Best if you want ${PRODUCT_NAME} to keep working while you are away. Tools are approved automatically, ordinary questions are skipped, and explicit workflow decisions may still pause.`,
   },
   {
     value: 'yolo',
@@ -44,7 +44,7 @@ export const GOAL_START_YOLO_OPTIONS: readonly StartPermissionOption[] = [
     value: 'auto',
     label: 'Switch to Auto and start',
     description:
-      `Best if you want ${PRODUCT_NAME} to keep working while you are away. Tools are approved automatically, and questions are skipped.`,
+      `Best if you want ${PRODUCT_NAME} to keep working while you are away. Tools are approved automatically, ordinary questions are skipped, and explicit workflow decisions may still pause.`,
   },
   {
     value: 'yolo',
@@ -76,7 +76,7 @@ const MANUAL_NOTICE_LINES = [
 const YOLO_NOTICE_LINES = [
   'YOLO mode approves tools and plan changes automatically.',
   'YOLO mode can still stop for questions.',
-  'Switch to Auto if you want questions skipped during goal work.',
+  'Switch to Auto if you want ordinary questions skipped during goal work; explicit workflow decisions may still pause.',
 ] as const;
 
 export class GoalStartPermissionPromptComponent extends StartPermissionPromptComponent {

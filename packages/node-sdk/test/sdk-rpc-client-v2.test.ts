@@ -1776,6 +1776,49 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
     }
   });
 
+  it('commandResearch forwards historical checkpoint discard with concurrency identity', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-discard-home-'));
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-discard-work-'));
+    tempDirs.push(homeDir, workDir);
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+    const summary = await client.createSession({ id: 'ses_research_discard', workDir });
+    const session = new Session({
+      id: summary.id,
+      workDir: summary.workDir,
+      summary,
+      rpc: client,
+    });
+    try {
+      await session.commandResearch({ kind: 'enter_mode', actor: 'user' });
+      const liveSession = getLiveSessionById(client.engineAccessor, session.id);
+      const agent = await ensureMainAgent(liveSession!);
+      const research = agent.accessor.get(IAgentResearchService);
+      const discard = vi.spyOn(research, 'discardHistoricalCheckpoint').mockReturnValue({
+        checkpointId: 'checkpoint-old',
+        questionId: 'question-1',
+        questionRevision: 2,
+        lineSlug: 'main',
+        idempotencyKey: 'checkpoint-old-key',
+        persistence: 'pending_commit',
+        createdAt: 1,
+      });
+
+      await session.commandResearch({
+        kind: 'discard_historical_checkpoint',
+        checkpointId: 'checkpoint-old',
+        expectedRevision: 9,
+      });
+
+      expect(discard).toHaveBeenCalledWith({
+        checkpointId: 'checkpoint-old',
+        expectedRevision: 9,
+      });
+    } finally {
+      await session.close();
+      await client.close();
+    }
+  });
+
   it('commandResearch forwards Research Plan v2 and planned-action bindings exactly', async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-plan-home-'));
     const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-plan-work-'));

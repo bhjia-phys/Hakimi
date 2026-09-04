@@ -8,7 +8,7 @@ export default {
   permissionAuto: '完全自主',
   permissionYolo: '自动通过',
   permissionManualDesc: '每个工具操作都需要你手动确认',
-  permissionAutoDesc: '完全自主运行，智能体自己做决定，不再询问',
+  permissionAutoDesc: '自动批准工具并不问普通问题；显式工作流决策仍可能暂停',
   permissionYoloDesc: '自动批准工具操作，但遇到关键问题仍会询问',
   // 计划模式
   planLabel: '计划',

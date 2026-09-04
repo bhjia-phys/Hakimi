@@ -773,6 +773,28 @@ support an exactly-once claim. H6b therefore remains explicitly
 implemented fallback. A public `counts.outside_scope` projection likewise
 remains a separately reviewed option. The finite S0-S10 Program is closed.
 
+### Post-program O4 amendment (2026-09-05)
+
+Three real Research Mode debug exports exposed an executor bypass rather than
+another missing phase transition: a rejected `BeginResearchAction` could be
+followed by ordinary Web and workspace tools in the same turn. The Hakimi-only
+O4 slice makes Action ownership mandatory at the unified Tool Executor
+before-execute veto seam whenever Research Mode is active. Model-initiated work needs a fresh live
+Action, a Research turn lease, current Line/Question/Plan bindings, and an
+explicit runtime capability. Begin and work must use separate tool batches;
+unknown plugin/MCP tools require an exact grant. Checkpoint draft persistence
+uses a separate exact checkpoint/path lease. This is executor enforcement, not
+OS-level isolation.
+
+O4 also ports the conservative historical-checkpoint discard and human-gate
+phase recovery slice, makes cleared-alert reconciliation idempotent, and keeps
+the compact Board focused on Project, Current cycle, Attention, and Next.
+`collaborative | dreaming` remains a Research planning policy, orthogonal to
+the generic permission mode; `auto` does not grant Research capability or
+human scientific authority. Generic Goal remains the sole continuation owner.
+No AITP runtime, CLI, schema, adapter contract, Skill, ledger, or human-decision
+semantic changes in this amendment.
+
 ## Global verification matrix
 
 Use the narrowest live package scripts first, then the cross-package gate

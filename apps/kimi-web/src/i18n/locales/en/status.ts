@@ -8,7 +8,7 @@ export default {
   permissionAuto: 'Auto',
   permissionYolo: 'YOLO',
   permissionManualDesc: 'Ask for approval on every tool action',
-  permissionAutoDesc: 'Fully autonomous — agent decides everything without asking',
+  permissionAutoDesc: 'Auto-approves tools and suppresses ordinary questions; explicit workflow decisions may still pause',
   permissionYoloDesc: 'Auto-approve tool actions, but agent may still ask questions',
   // Plan mode pill
   planLabel: 'Plan',

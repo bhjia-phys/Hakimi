@@ -2358,6 +2358,12 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
           nextAction: cmd.nextAction,
         });
         break;
+      case 'discard_historical_checkpoint':
+        research.discardHistoricalCheckpoint({
+          checkpointId: cmd.checkpointId,
+          expectedRevision: cmd.expectedRevision,
+        });
+        break;
       case 'commit_checkpoint':
         await research.commitCheckpoint({
           checkpointId: cmd.checkpointId,
