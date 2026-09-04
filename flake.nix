@@ -156,6 +156,7 @@
                   ./build
                   ./.npmrc
                   ./.nvmrc
+                  ./flake.lock
                   ./package.json
                   ./pnpm-lock.yaml
                   ./pnpm-workspace.yaml

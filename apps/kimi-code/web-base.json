@@ -1234,7 +1234,7 @@
       },
       {
         "path": "flake.nix",
-        "sha256": "9a351955de9a10c94fa7aba87f26178c5799fde9b475666bfb83d34c00f24be4"
+        "sha256": "1a4b9fb1461e4bd1308e0ef189b05605f965501374696f58f4b590c8146131cd"
       },
       {
         "path": "package.json",
@@ -1249,7 +1249,7 @@
         "sha256": "6b1650f1828ba578ffde5180f443e5d40461777abcfca7cb64f225c8a535404f"
       }
     ],
-    "sha256": "8b221a0d7eb158d7667116dee50841923ff269c2a9836392b5e44112f0a24b93"
+    "sha256": "5983bfaf05e5e15526311e8576ccb827eeb6a86411da8cd48d2b6613818202b1"
   },
   "brandingPatchVersion": 1,
   "bundle": {
