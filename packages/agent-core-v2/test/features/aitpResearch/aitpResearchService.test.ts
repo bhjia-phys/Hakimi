@@ -210,6 +210,8 @@ function completedProcess(stdoutText: string): IHostProcess {
 }
 
 function buildManagedPluginAdapter(options?: {
+  readonly catalog?: InMemorySkillCatalog;
+  readonly catalogReady?: Promise<void>;
   readonly contract?: unknown;
   readonly manifest?: unknown;
   readonly skillPath?: string;
@@ -247,8 +249,8 @@ function buildManagedPluginAdapter(options?: {
     strict: true,
     additionalServices: (reg) => {
       reg.definePartialInstance(ISessionSkillCatalog, {
-        catalog,
-        ready: Promise.resolve(),
+        catalog: options?.catalog ?? catalog,
+        ready: options?.catalogReady ?? Promise.resolve(),
       });
       reg.definePartialInstance(IHostFileSystem, {
         readText: async (path) => {
@@ -282,6 +284,57 @@ function buildManagedPluginAdapter(options?: {
 }
 
 describe('AITP managed plugin contract discovery', () => {
+  it('waits for cold-restore skill discovery before deciding the contract is unavailable', async () => {
+    const catalog = new InMemorySkillCatalog();
+    let release!: () => void;
+    const loaded = new Promise<void>((resolve) => { release = resolve; });
+    const ready = loaded.then(() => {
+      catalog.register(stubSkill('aitp', {
+        path: `${SKILL_DIR}/SKILL.md`,
+        dir: SKILL_DIR,
+        source: 'extra',
+        plugin: { id: 'aitp-research-protocol' },
+      }));
+    });
+    const { adapter, spawn } = buildManagedPluginAdapter({ catalog, catalogReady: ready });
+    const probe = adapter.probe();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(adapter.health.phase).toBe('probing');
+    expect(spawn).not.toHaveBeenCalled();
+    release();
+    await expect(probe).resolves.toMatchObject({ phase: 'ready', contractVersion: '0.1' });
+    expect(spawn).toHaveBeenCalledOnce();
+  });
+
+  it('cancels a pending catalog wait on reset and never revives its probe', async () => {
+    let release!: () => void;
+    const loaded = new Promise<void>((resolve) => { release = resolve; });
+    const { adapter, spawn } = buildManagedPluginAdapter({ catalogReady: loaded });
+    const oldProbe = adapter.probe();
+    const cancelled = expect(oldProbe).rejects.toMatchObject({
+      code: AitpResearchErrors.codes.AITP_ADAPTER_OPERATION_CANCELLED,
+    });
+    adapter.reset();
+    await cancelled;
+    expect(adapter.health.phase).toBe('inactive');
+    expect(spawn).not.toHaveBeenCalled();
+    const newProbe = adapter.probe();
+    release();
+    await expect(newProbe).resolves.toMatchObject({ phase: 'ready' });
+    expect(spawn).toHaveBeenCalledOnce();
+  });
+
+  it('reports catalog initialization failure without probing Python', async () => {
+    const { adapter, spawn } = buildManagedPluginAdapter({
+      catalogReady: Promise.reject(new Error('Skill catalog initialization failed')),
+    });
+    await expect(adapter.probe()).resolves.toMatchObject({
+      phase: 'degraded',
+      lastError: 'Skill catalog initialization failed',
+    });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   it('resolves the legacy 0.8/contract-0.1 layout and probes Python', async () => {
     const { adapter, spawn } = buildManagedPluginAdapter();
 

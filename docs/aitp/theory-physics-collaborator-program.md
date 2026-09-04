@@ -998,3 +998,15 @@ G1–G6 的当前工程切片已作为 `4c242d626` 提交并推送到隔离 feat
 core/CLI typecheck、core import guard（1,297 files）、四个改动代码文件的 type-aware lint（零 warning/error）、changeset status 和 diff check 均通过；docs build 通过，保留旧 ES2024/chunk-size warnings。修复后的默认-home源码启动实际 probe 到 AITP 0.9.0/contract 0.2，并发现受管 Theory Physics Skill；这是启动诊断，不冒充安装版模型复测。
 
 首次原始提示、工具输出与结果留在隔离 worktree 的 gitignored `.tmp/research-acceptance-20260905/natural-orient-r2/`；不提交私人会话或把工作日志当科研 evidence。修复版的正式安装与真实复测尚待完成，G7 继续 active。下一唯一最小 Action：交付修复版并从正确 home 重跑真实只读恢复，确认 AITP 与领域 Skill 可用后，再预声明一个低成本判别性科学检验；随后完成其计算/评价、必要 Entry/Note 和 Goal/恢复观察。
+
+### 19.12 G7 安装版首次进入通过、冷恢复发现独立时序缺陷
+
+启动目录修复已作为 `c9e69df38` 推送并从干净工作树构建、pack、重装。安装 main bundle 与构建一致；Web assets/provenance 校验通过，doctor 指向正确 Hakimi home。默认配置模型的实际请求连续返回 HTTP 429，未执行工具，已主动停止该次重试；没有改账户或全局配置。随后用已有配置的另一条模型路径作显式单次选择，48 秒内经 4 次工具调用完成 EnterAITPMode → GetResearchStatus/Skill → aitp_show：mode ready、AITP 0.9.0/contract 0.2、Theory Physics 可用、指定 failure Entry 已读取。报告保留了“失败尝试不构成 L=7/8 非零证书”的边界。
+
+这不是同模型 A/B：旧 home 中默认模型与 Hakimi home 默认模型不同；不能用两次回答直接比较模型优劣。原始调用仍保存在 gitignored acceptance 目录，`natural-orient-r3` 是零工具的 429 中止，`native-readiness-r4` 是真实首次进入通过。
+
+恢复 r4 的同一会话后，`natural-orient-r5` 再次报告找不到 AITP contract。它实际加载了两份 Skill，AITP enter/check 失败后完成一次 provisional Action（18 次工具，4 分 27 秒），且如实说明未完成 fresh ledger check；未计算、未修改科研文件、未保存 Entry/Note。源码时序与新增 red regressions 对应：cold restore 的 adapter probe 可在 session Skill catalog 初始化完成前读取空 catalog。首次创建时可用不代表冷恢复可用，故这项缺陷不能关闭。
+
+最小修复复用 `ISessionSkillCatalog.ready` 和既有 abortable helper：发现前等待 catalog，退出/reset 立即取消等待，等待后复核 lifecycle generation；不会自动 retry、增加 check、放宽 contract 或新建服务。两个 red 用例分别复现过早 degraded 和忽略 catalog 初始化失败；另一个测试覆盖取消旧 wait、无 Python spawn、后续新 probe 独立成功。Research service 文件 507 项通过；core typecheck/import guard 通过，原有 86 条 lint warning 保留，没有修改无关代码。初版测试误用了当前 TS lib 不含的 Promise.withResolvers，已改为现有 Promise/deferred 写法，未改编译配置。
+
+最终定向验证为 core bootstrap/Research service 共 521 项通过，AITP 官方 contract/atomic-save 21 项通过；lint JSON 与 diff hunks 对照确认 86 条 warning 均不在改动行。docs build、changeset status 与 diff check 通过。修复版尚待交付与真实 cold-restore 复测。G7 仍未完成新科学 milestone；Goal/Plan、受归属保护的 Entry/Note、operator 和其他真实情景验收继续保留。下一唯一最小 Action：安装本次修复并复测同一会话 cold restore，之后执行预声明的低成本 near-HS 诊断，而不是重复只读调查。

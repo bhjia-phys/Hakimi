@@ -20,6 +20,7 @@
 import { dirname, isAbsolute, join } from 'pathe';
 
 import { Service } from '#/_base/di/service';
+import { abortable } from '#/_base/utils/abort';
 import { IHostProcessService } from '#/os/interface/hostProcess';
 import { IHostFileSystem } from '#/os/interface/hostFileSystem';
 import { ILogService } from '#/_base/log/log';
@@ -404,6 +405,8 @@ export class SessionAitpAdapterService extends Service implements ISessionAitpAd
   }
 
   private async resolveIdentityFromCatalog(operation: LifecycleOperation): Promise<AitpContractIdentity | null> {
+    this.assertCurrent(operation);
+    await abortable(this.skillCatalog.ready, operation.signal);
     this.assertCurrent(operation);
     const skill = this.skillCatalog.catalog.getPluginSkill(AITP_PLUGIN_ID, AITP_SKILL_NAME);
     if (skill === undefined) return null;
