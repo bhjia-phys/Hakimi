@@ -1,10 +1,14 @@
 # AITP 状态跟踪与交接清单
 
-2026-09-05 Goal 预算恢复（源码修复，尚未安装）：恢复已耗尽的 paused/blocked
+2026-09-05 Goal 预算恢复（已交付并 clean-build 安装）：恢复已耗尽的 paused/blocked
 Goal 时先报告未恢复，不短暂 active、不新建立即到期的 deadline；模型可以按
 原有预算收尾约束说明原因，不能自行加预算。用量、预算、已有 blocker 和异常
 退出时间结算规则保留。安装版 r3 恢复在 26.9 秒后失败，81 个受审文件未变，
-没有新科研记录；详见合作者规划 §19.39。G1–G7/C1–C5 不缩减、不据此关闭。
+没有新科研记录。`fd6e0e731` 已推送到既有开发分支，安装 CLI 仍为 0.21.0，
+patch changeset 未消费。入口、521 个 Web 文件、provenance 和原生 PTY 核验
+一致；安装版固定 provider 进程回归 5.130 秒正常解释未恢复，0 条新增 Goal
+记录，预算和用量不变，不是实际模型或科学验收。详见合作者规划 §19.39。
+宿主总 Goal 当前 paused；G1–G7/C1–C5 不缩减、不据此关闭。
 无 Research/AITP schema、CLI、Skill 或 human decision 变化；对方 dirty 保留。
 
 2026-09-05 TUI SIGTERM 修复：清理 Session 期间保留信号监听，防止

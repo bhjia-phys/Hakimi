@@ -1235,7 +1235,7 @@ TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，�
 
 随后按本节五个使用故事补齐剩余 G1–G7：Heisenberg 验证科学里程碑和 Goal，LibRPA 独立验证工程执行/交接与六层知识的真实覆盖；人类指导四类情景、条件性蒸馏、阶段 Note、无 Goal 探索/等待和简洁 Board 均保留。每次执行前指出本次填补的具体缺口，结束后只更新新增证据支持的条目。同一段自然工作可支持多项验收，不因此变成多个独立 trial。新缺陷只有影响原验收时才进入本 Goal；额外功能与非关键润色另列，不滚动扩版。
 
-**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。r3 只读审查已完成；另行限定的 300 秒恢复 case 在 26.9 秒后失败，原 81 文件未变，不能继续把恢复收尾列成尚未尝试。[§19.39](#goal-budget-resume-preflight) 保留失败并修复“预算耗尽仍先报告 resumed、随后取消”的执行顺序。下一唯一最小 Action 是完成该源码切片的交付安装和独立进程恢复结果验证，不提高原 Goal 的 600 秒预算、不重写其已结算用量、不再次重算已有产物。之后回到本节剩余科研验收；原矩阵/Note 持久化、计划同步和 Heisenberg 有限里程碑仍未通过，不以恢复拒绝正确或软件测试全绿代替科学收尾。不得以新真实观测替代 r2 的停止与另行授权条件。Heisenberg 继续保持 §19.13 的归属依赖，不重复询问或由测试代签。父侧 operator 指导见 [§19.30](#operator-caller-guidance)，有限交接成功不等于全部 G5 通过。不新增工具、Action 类型、scheduler、schema、硬性科研门禁或额外逐阶段注入。
+**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。r3 只读审查已完成；另行限定的 300 秒恢复 case 在 26.9 秒后失败，原 81 文件未变，不能继续把恢复收尾列成尚未尝试。[§19.39](#goal-budget-resume-preflight) 保留失败并修复“预算耗尽仍先报告 resumed、随后取消”的执行顺序，已交付安装且安装版进程回归通过；不提高原 Goal 的 600 秒预算、不重写其已结算用量、不再次重算已有产物。当前宿主总 Goal 为 paused，本次授权仅完成修复交付；恢复后下一唯一最小 Action 回到 Heisenberg 有限科学里程碑的正常科研验收，不再重复生命周期夹具。原矩阵/Note 持久化、计划同步和 Heisenberg 有限里程碑仍未通过，不以恢复拒绝正确或软件测试全绿代替科学收尾。不得以新真实观测替代 r2 的停止与另行授权条件。Heisenberg 继续保持 §19.13 的归属依赖，不重复询问或由测试代签。父侧 operator 指导见 [§19.30](#operator-caller-guidance)，有限交接成功不等于全部 G5 通过。不新增工具、Action 类型、scheduler、schema、硬性科研门禁或额外逐阶段注入。
 
 该 Action 开始前先写明要填补的证据缺口和资源上限；结束后分别评价科学结果、operator 交接、主 Agent 的解释与必要持久化、Board 的一致性。数值成功不能掩盖交接或收尾失败，配额、超时或未获确认也不能记为验收通过。只更新获得新证据的矩阵条目，若失败则选择一个已定位缺陷作为下一切片，不再次扩写总规划或无依据重跑全部 case。这是当前总 Goal 内的执行约定，不是新增 Research runtime 门禁。
 
@@ -1595,8 +1595,12 @@ r14 从 07:27:55.495Z 到 07:29:42.687Z，107.192 秒、9 次调用、exit 0，�
 
 **最小实现。** 原 Goal service 在 paused/blocked 恢复前用现有预算报告检查；已耗尽时不 active、不 enqueue、不挂新 deadline。paused 转为预算 blocked，原本 blocked 保留其既有原因；重复拒绝不重复追加 Goal 记录。模型发起的拒绝仍绑定现有 turn 的预算收尾限制，保留最后说明机会并拒绝之后的工具加预算，不把说明 turn 计成新自主科研。`UpdateGoal` 根据实际返回值报告未恢复，不再无条件声称成功。原在途硬截止、未耗尽恢复、turn/token 计数、异常恢复、waiting 与人类预算授权语义保持。
 
-**修改与验收。** 允许修改仅为 Goal service、UpdateGoal 实现/描述、既有 Goal 测试、`GOAL.md`、双语 README、本侧三个 AITP handoff、本规划及 CLI patch changeset。没有新公共 schema/API、Research phase、Skill、AITP CLI/contract 或人类决定；AITP 和原 Hakimi checkout 的用户 dirty 不动。本地测试使用真实 DI Goal/loop/executor，18 项状态/预算/调用入口矩阵与真实耗时形状的恢复回归先证明旧行为失败；集成夹具首轮误用了不存在的 hook 名，纠正后复现零毫秒 deadline，不能把夹具错误计为产品故障。已完成源码验证不等于安装验证；本节交付尚未完成，原科研案例也仍失败。
+**修改与验收。** 允许修改仅为 Goal service、UpdateGoal 实现/描述、既有 Goal 测试、`GOAL.md`、双语 README、本侧三个 AITP handoff、本规划及 CLI patch changeset。没有新公共 schema/API、Research phase、Skill、AITP CLI/contract 或人类决定；AITP 和原 Hakimi checkout 的用户 dirty 不动。本地测试使用真实 DI Goal/loop/executor，18 项状态/预算/调用入口矩阵与真实耗时形状的恢复回归先证明旧行为失败；集成夹具首轮误用了不存在的 hook 名，纠正后复现零毫秒 deadline，不能把夹具错误计为产品故障。源码验证与安装验证分开记录，最终交付见下文；原科研案例仍失败。
 
-下一步只有该最小修复的交付安装与独立进程验收；之后回到 §19.24 的科学收尾和 Heisenberg，而不是重复扩写规划。既有记录错误、计划错位、缺失 Note、六层知识真实复用及其余 G1–G7 检查均保留原完成条件；C1–C5 不因这次 Goal 生命周期修复获得授权。
+该最小修复交付后回到 §19.24 的科学收尾和 Heisenberg，而不是重复扩写规划。既有记录错误、计划错位、缺失 Note、六层知识真实复用及其余 G1–G7 检查均保留原完成条件；C1–C5 不因这次 Goal 生命周期修复获得授权。
 
 **聚焦进程复测。** 按用户要求收紧测试范围，修复源码通过正规 CLI build，521 个 Web 文件/provenance 校验通过且没有新增 tracked 资产变化。仅用本地固定 HTTP 回复测试实际 CLI/工具/冷恢复/退出链，不调用真实模型或接触科研目录：首进程通过既有工具设置显式 1 秒预算并在到期后退出，第二进程恢复该会话，明确报告未恢复并正常说完原因，4.967 秒 exit 0。恢复没有任何新增 Goal op，原 journal 前缀、1000 ms 预算及 1001 ms 用量保留，工作区为空。回执 `/tmp/hakimi-budget-recovery-cxH4SF/acceptance.json`；相邻 seed/recovery/requests 文件保留原始观测。初次夹具错误组合 `--prompt --auto`，813 ms 启动前失败，纠正参数后通过；不算产品失败。此结果是源码构建版进程回归，不是安装版或科学验收；下一步无需重跑这个 case，只在交付后的安装边界做必要核验，再回科研主线。
+
+**交付与安装（2026-09-05）。** 12 个允许文件提交为 `fd6e0e731a53ec73c22c2c1470412fd6fddd2b77`，已推送至既有 `merge/pr-9-auto-subagent-preset` 分支，未合并 main。174 项 Goal 测试、core typecheck、imports lint 通过；未重复全仓测试。该提交的 `git archive` 在 `/tmp/hakimi-goal-budget-install.sNhf8z/checkout` 串行完成 frozen dependencies、packages build、CLI build/smoke、docs build 和 pack；npm 安装仅显式允许本次 `node-pty` 构建，无全局配置变化。全部 5,415 个 tracked 源文件与提交 blob 核验一致；安装入口 SHA256 `b8aa7ce536977400b2f9a093baa25e1a13dd29a8ad7bc0786933321de56c495e`、521 个 Web 文件、provenance、help/version 和原生 PTY 与干净构建一致，回执为同目录 `installation-verification.json`。CLI 仍为 0.21.0，CLI patch changeset 未消费；用户旧进程未重启。
+
+安装边界只增加一次固定 provider 进程回归，回执 `/tmp/hakimi-budget-recovery-SauKEE/acceptance.json`：seed 6.161 秒按预期预算到期退出，recovery 5.130 秒 exit 0，明确说明未恢复，没有 `Goal resumed.` 或 cancelled explanation；原 journal 前缀保持，0 条新增 Goal op，1000 ms 预算和 1000 ms 用量不变，工作区为空。这不是实际模型或科学验证，也没有改变原 r3 失败结论。AITP HEAD `eae1bce5eba3`/20 条 dirty 与原 Hakimi HEAD `892733a00582`/156 条 dirty 保留，无新 AITP 写入。宿主总 Goal 当前 paused；本次只完成已授权交付，恢复后按 §19.24 回到真实科研，不为这段交付回执重建安装。

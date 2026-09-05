@@ -1,11 +1,16 @@
 # AITP integration handoff
 
-Goal budget recovery (2026-09-05, source fix; not yet installed): an exhausted
+Goal budget recovery (2026-09-05, delivered and clean-installed): an exhausted
 paused/blocked Goal is rejected before activation or deadline scheduling. The
 model receives a truthful not-resumed result and can explain it under the existing
 budget-stop guard. Usage, limits, earlier blockers and crash-time accounting are
 preserved. The installed r3 recovery failed after 26.9 seconds; no scientific
-closure is claimed. Evidence and next delivery step: collaborator program
+closure is claimed. Commit `fd6e0e731` is pushed to the existing development
+branch and installed as CLI 0.21.0 (patch changeset not consumed). Installed
+entry, 521 Web files, provenance and native PTY match the clean build. A local
+fixed-provider process regression returns a truthful explanation in 5.130 seconds
+with no added Goal records or budget changes; this is not real-model scientific
+acceptance. The overall host Goal is paused. Evidence: collaborator program
 [§19.39](theory-physics-collaborator-program.md#goal-budget-resume-preflight).
 No Research/AITP contract or human-decision changes; counterpart dirty files stay
 protected.
