@@ -1,5 +1,7 @@
 export default {
   title: 'Research',
+  panelTitle: 'Research board',
+  hidePanel: 'Hide research board',
   phase: {
     inactive: 'Inactive',
     probing: 'Probing',

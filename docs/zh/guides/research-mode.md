@@ -119,7 +119,7 @@ Research Mode 与 Goal 相互关联，但不拥有同一套生命周期：
 Goal–Program alignment 约束自动续跑和完成，但不能遮住当前 bounded
 action 的恢复工作。
 
-研究模式激活后，**研究面板**（Research Board）会同时出现在 TUI 和 Web 的输入区上方。默认紧凑 Board 只保留一眼就需要判断的信息：
+研究模式激活后，TUI 的 **研究面板**（Research Board）仍在输入区上方。Web 则在对话右侧显示默认收起的 **研究看板** 按钮，点击后打开可独立滚动的浮层，不挤占对话或输入框空间。点击 **收起研究看板**，或在面板内按 Esc，即可收起；这不会暂停 Research 或 Goal。实时更新不会自动弹开面板，切换会话后重新收起。面板内的 **展开** 用于查看详细审计记录。紧凑 Board 只保留一眼就需要判断的信息：
 
 - **Project**：存在 Goal 时显示其 lifecycle/continuation；没有 Goal 时明确显示交互式 Research；当前 Research Plan 里程碑、Line 和焦点 Question 的 workflow/epistemic 状态都只在这里出现
 - **Current cycle**：显示一个仅用于呈现的科研节点（`问题框定 / 假设`、`检验 / 行动`、`评估`、`记录` 或 `下一步 / 就绪`）、当前 action/run/progress 摘要、Research mode、规划策略，并把旧字段 `period.loopCount` 准确标为 **Research turn 数**，不再称作已完成的科学循环数

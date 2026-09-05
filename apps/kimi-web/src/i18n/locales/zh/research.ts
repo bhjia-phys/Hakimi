@@ -1,5 +1,7 @@
 export default {
   title: '研究',
+  panelTitle: '研究看板',
+  hidePanel: '收起研究看板',
   phase: {
     inactive: '未启用',
     probing: '探测中',

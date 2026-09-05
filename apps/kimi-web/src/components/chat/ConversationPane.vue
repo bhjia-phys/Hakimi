@@ -11,7 +11,7 @@ import ChatPane from './ChatPane.vue';
 import ChatHeader from './ChatHeader.vue';
 import Composer from './Composer.vue';
 import ChatDock from './ChatDock.vue';
-import ResearchBoard from './ResearchBoard.vue';
+import ResearchBoardPanel from './ResearchBoardPanel.vue';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
 import Icon from '../ui/Icon.vue';
 import Spinner from '../ui/Spinner.vue';
@@ -1351,6 +1351,16 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
     />
 
     <div class="chat-layout">
+      <ResearchBoardPanel
+        v-if="research && research.mode !== 'inactive' && !sessionLoading"
+        :key="sessionId"
+        :snapshot="research"
+        :force-expanded="researchExpandSignal"
+        :style="{ '--research-dock-height': `${dockHeight}px` }"
+        @manage="emit('manageResearch')"
+        @align="emit('alignResearch', $event)"
+        @clear-alignment="emit('clearResearchAlignment')"
+      />
       <div
         :ref="bindChatPane"
         class="panes chat-scroll"
@@ -1426,15 +1436,6 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
                 <span>{{ t('conversation.addWorkspace') }}</span>
               </button>
             </div>
-            <ResearchBoard
-              v-if="research && research.mode !== 'inactive'"
-              class="empty-research-board"
-              :snapshot="research"
-              :force-expanded="researchExpandSignal"
-              @manage="emit('manageResearch')"
-              @align="emit('alignResearch', $event)"
-              @clear-alignment="emit('clearResearchAlignment')"
-            />
             <Composer
               ref="emptyComposerRef"
               class="empty-composer"
@@ -1539,7 +1540,6 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
         :goal="goal"
         :goal-expand-signal="goalExpandSignal"
         :research="research"
-        :research-expand-signal="researchExpandSignal"
         :dock-panel="dockPanel"
         :bash-tasks="bashTasks"
         :subagent-tasks="subagentTasks"
@@ -1563,8 +1563,6 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
         @control-goal="emit('controlGoal', $event)"
         @start-research="emit('startResearch')"
         @manage-research="emit('manageResearch')"
-        @align-research="emit('alignResearch', $event)"
-        @clear-research-alignment="emit('clearResearchAlignment')"
         @submit="handleComposerSubmit"
         @steer="emit('steer', $event)"
         @command="emit('command', $event)"
@@ -1682,11 +1680,6 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
 
 /* Empty-workspace spacers: push the centred Composer to the vertical middle. */
 .empty-spacer { flex: 1; }
-.empty-research-board {
-  --dock-inline-left: var(--space-4);
-  --dock-inline-right: var(--space-4);
-  flex: none;
-}
 
 /* Empty-session hint above the centred composer */
 .empty-hint {

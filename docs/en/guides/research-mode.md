@@ -119,7 +119,7 @@ cross-turn continuation. When one exists, Research Goal projects it rather
 than replacing it, and Goal–Program alignment guards automatic continuation
 and completion without suppressing the current bounded action's recovery.
 
-When Research Mode is active, a **Research Board** appears above the input area in both TUI and Web. The default compact Board is deliberately limited to the decisions needed at a glance:
+When Research Mode is active, the TUI **Research Board** appears above the input area. In Web, click **Research board** at the right edge of the conversation to open a floating panel. It starts collapsed, scrolls independently, and never resizes the conversation or composer. Use **Hide research board** (or Escape while focused inside it) to collapse it; this does not pause Research or the Goal. Live updates do not reopen it, and switching sessions resets it to collapsed. Inside the panel, **Expand** opens the detailed audit view. The compact Board is deliberately limited to the decisions needed at a glance:
 
 - **Project**: Goal lifecycle/continuation when a Goal exists, otherwise an explicit interactive-without-Goal state; the current Research Plan milestone, Line, and focused Question workflow/epistemic state live here
 - **Current cycle**: one display-only scientific stage (`Frame / hypothesis`, `Test / action`, `Evaluate`, `Record`, or `Next / ready`), the current action or run/progress summary, Research mode and planning policy, and the legacy `period.loopCount` labelled accurately as **Research turns**, not completed scientific cycles

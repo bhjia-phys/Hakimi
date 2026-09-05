@@ -402,6 +402,7 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
             <Icon :name="expanded ? 'chevron-up' : 'chevron-down'" size="sm" />
             {{ expanded ? t('research.collapse') : t('research.expand') }}
           </Button>
+          <slot name="panel-actions" />
         </div>
       </div>
     </template>
@@ -1576,7 +1577,7 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
 
 <style scoped>
 .research-board {
-  margin: var(--space-2) var(--dock-inline-right) var(--space-1) var(--dock-inline-left);
+  container: research-board / inline-size;
 }
 
 .research-board :deep(.ui-card__body) {
@@ -1945,7 +1946,7 @@ code {
   border: 0;
 }
 
-@media (max-width: 760px) {
+@container research-board (max-width: 760px) {
   .research-head {
     grid-template-columns: minmax(0, 1fr) auto;
   }
@@ -1976,7 +1977,7 @@ code {
   }
 }
 
-@media (max-width: 520px) {
+@container research-board (max-width: 520px) {
   .research-head {
     display: flex;
     align-items: flex-start;
