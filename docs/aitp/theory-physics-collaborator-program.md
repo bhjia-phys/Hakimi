@@ -1231,11 +1231,11 @@ TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，�
 
 **当前执行位置。** simple Action/milestone 已在 `f6487d990` 交付；后续 Question 上下文修复 `152dbf131` 已提交、推送到既有开发分支并 clean-build 安装（CLI 0.21.0），Theory Physics 0.2.3、AITP 0.9.0/contract-0.2 不变。[§19.33](#simple-action-milestone) 的安装 CLI ready-AITP fixture 已验证该关联、stale 拒绝、REST/WS、进程恢复和 no-delta 收尾；[§19.35](#question-context-projection) 补齐真实 r2 会话的 Question/next 恢复，均不能代替真实模型跨 turn。本地结论、retained-run、等待目的 Board 和 [§19.32](#print-goal-shutdown) 信号退出的既有证据继续沿用，不重复来代替科研。原两个 checkout 的 dirty changes 与科研目录继续保留。
 
-**新 Goal 的实际优先级。** simple Action 关联与 Question 上下文修复已交付安装，不再是待开发项。§19.34 证明单 turn 有限 Goal 收尾；[§19.36](#goal-continuation-exit-review) 新增一次 `/goal resume` 后三个真实自动 continuation turns，但整次运行在外部时限退出，退出前 journal 仍保留 active Goal 和未收尾 Action。因此先审查 TUI 退出时的暂停与保存，再验证完整的继续、计划同步与合理停止，不重复证明“能发起下一 turn”。正常科研提示不指定内部工具或 phase；不能靠人为拆 turn、控制器代为完成 Goal，或 cold restore 补暂停获得通过。Heisenberg 正式归属沿用已有确认，缺失部分保持明确依赖，不以 fixture 模拟确认替代。该依赖尚未解决时可以推进独立缺陷修复，但不据此关闭 Heisenberg 验收。
+**新 Goal 的实际优先级。** simple Action 关联与 Question 上下文修复已交付安装，不再是待开发项。§19.34 证明单 turn 有限 Goal 收尾；[§19.36](#goal-continuation-exit-review) 新增一次 `/goal resume` 后三个真实自动 continuation turns，但整次运行在外部时限退出，退出前 journal 仍保留 active Goal 和未收尾 Action。该 TERM 退出竞争已在 [§19.37](#tui-sigterm-shutdown) 修复、交付安装并独立进程复测；现在回到 r3 产物审查和必要收尾，不重复证明“能发起下一 turn”。SIGHUP、idle/held Goal 关闭及计划漂移仍保留，不因本次 TERM 修复关闭 G2。正常科研提示不指定内部工具或 phase；不能靠人为拆 turn、控制器代为完成 Goal，或 cold restore 补暂停获得通过。Heisenberg 正式归属沿用已有确认，缺失部分保持明确依赖，不以 fixture 模拟确认替代。
 
 随后按本节五个使用故事补齐剩余 G1–G7：Heisenberg 验证科学里程碑和 Goal，LibRPA 独立验证工程执行/交接与六层知识的真实覆盖；人类指导四类情景、条件性蒸馏、阶段 Note、无 Goal 探索/等待和简洁 Board 均保留。每次执行前指出本次填补的具体缺口，结束后只更新新增证据支持的条目。同一段自然工作可支持多项验收，不因此变成多个独立 trial。新缺陷只有影响原验收时才进入本 Goal；额外功能与非关键润色另列，不滚动扩版。
 
-**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。下一唯一最小 Action 是保全 §19.36 的退出前证据，用同一安装 TUI 入口和有界本地 provider fixture 定位 TERM 退出后的 active Goal/未结束 turn；先核验信号与持久化链，再决定最小修复。完成判据是能解释原失败，并在无需 cold restore 的独立进程验证中保存正确的暂停/取消状态，同时保留未完成科学 Action、既有 Entry 与原 print 退出行为。根因或文件边界不明时只报告，不扩大超时、重跑科研或自动完成/放弃 Action。不得以新真实观测替代 r2 已约定的停止与另行授权条件。Heisenberg 继续保持 §19.13 的归属依赖，不重复询问或由测试代签。父侧 operator 指导见 [§19.30](#operator-caller-guidance)，有限交接成功不等于全部 G5 通过。不新增工具、Action 类型、scheduler、schema、硬性科研门禁或额外逐阶段注入。
+**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。下一唯一最小 Action 是保全 r3 的退出前 journal，独立审查六份已有产物与已提交 Entry，再核验冷恢复后的 Action/Plan/Goal。完成判据是明确已完成的科学工作、尚缺的记录和计划更新，以及旧文件保护情况；不把超时改成正常完成，也不自动完成/放弃 Action。此项不启动新的模型或计算、不改写科研产物；需要恢复收尾时另定有界 case，并与原失败分开计数，不延长原 600 秒验收。不得以新真实观测替代 r2 已约定的停止与另行授权条件。Heisenberg 继续保持 §19.13 的归属依赖，不重复询问或由测试代签。父侧 operator 指导见 [§19.30](#operator-caller-guidance)，有限交接成功不等于全部 G5 通过。不新增工具、Action 类型、scheduler、schema、硬性科研门禁或额外逐阶段注入。
 
 该 Action 开始前先写明要填补的证据缺口和资源上限；结束后分别评价科学结果、operator 交接、主 Agent 的解释与必要持久化、Board 的一致性。数值成功不能掩盖交接或收尾失败，配额、超时或未获确认也不能记为验收通过。只更新获得新证据的矩阵条目，若失败则选择一个已定位缺陷作为下一切片，不再次扩写总规划或无依据重跑全部 case。这是当前总 Goal 内的执行约定，不是新增 Research runtime 门禁。
 
@@ -1313,7 +1313,7 @@ G1 后续优先复用现有字段和 Skill；本轮不新增 public phase、wire
 | 简单 Action 无需 Goal/完整计划；复杂工作使用 local Plan；Todo 不充当证据 | R `prepareResearchPlan`、`resolveActionPlanBindings`；RT `executes a reviewed local Action Plan without inventing a Goal or Research Plan` 与 simple milestone 回归 | E10 的首次拒绝保留为失败；§19.33 已交付安装，软件 fixture 验证关联和进程恢复，E11 真实模型自然选择 simple+milestone 并完成 Goal。E12 已真实跨 turn，但第二项工作沿用第一里程碑；复杂工作 reviewed Plan、计划同步与完整跨 turn 收尾仍待验收 |
 | collaborative 问关键问题；dreaming 可修订假设；auto 不冒充人类决定 | RT `routes collaborative planning`、`non-delegable Research decisions human-owned in auto mode`；S；G | E10 在明确测试 scope 下使用 dreaming+auto，实际修订假设，未生成 human decision；没有跨 turn 或真实 collaborative 决策体验，不能据此关闭验收 |
 | 外部等待、持久化不可用、重复无进展分别处理 | R live-run guard、`observeRun`；G continuation；§19.23/19.25 | 本地结果保留和终态补录已实测。**当前 Action 已关闭但 run 仍 live 时，任何新 Action 仍被拒绝**；现有 Action 内的已授权工作/回读不能等同于新的独立工作。等待期间整理/推导的完整体验尚未闭合，不将其归入 C4 后延期 |
-| 用户暂停/取消、科学约定/资源/范围变化时合理停止 | G pause/cancel/budget/restore；R Goal guard/human gate | print 信号退出有 §19.32 的独立进程证据；E12 的 TUI 外部时限退出仍留下 active Goal 和未结束 turn，必须单独定位，不能借 cold restore 补暂停算通过。完整继续→等待/恢复→完成或必要提问未验收；Heisenberg 归属依赖不由测试代签 |
+| 用户暂停/取消、科学约定/资源/范围变化时合理停止 | G pause/cancel/budget/restore；R Goal guard/human gate | print 信号退出有 §19.32 的独立进程证据；E12 的 TERM 竞争已在 §19.37 交付修复，安装 TUI 在 cold restore 前保存暂停和取消。SIGHUP、idle/held 关闭及完整继续→等待/恢复→完成或必要提问仍未验收；Heisenberg 归属依赖不由测试代签 |
 
 #### G3：相关证据、Method card 与 Skill 检索
 
@@ -1565,4 +1565,8 @@ r14 从 07:27:55.495Z 到 07:29:42.687Z，107.192 秒、9 次调用、exit 0，�
 
 源码定向测试四文件 134 项通过，包含两个新增信号竞争回归、TUI startup、run-shell 与原 print 退出路径；CLI typecheck 通过。两个修改文件的单线程 type-aware lint 初次暴露三条新增测试 warning，已修正；最终只剩两条未改动代码的 warning、零 errors。仓库没有 `oxfmt`，未安装新的格式化依赖。组合 startup 测试输出了进程异常监听器数量 warning，不把测试通过描述成零 warning。
 
-官方 CLI 构建通过，521 个 Web 文件/provenance 未产生 tracked 变化。源码构建的独立 PTY 复测在 `/tmp/hakimi-tui-signal-cyCnQr/`：直接 TERM exit 143、清理约 105 ms；timeout exit 124。两者在任何 cold restore 前已经保存 `Paused after interruption` 与 cancelled turn，且各只有一次本地 fixture 请求。独立比较脚本确认旧版失败和新版终态，不依赖脚本退出码判定成功。这里只证明运行中 Goal 的 TERM 退出链，不证明 SIGHUP、idle/held Goal 的所有关闭路径、Research Action 的语义收尾或 G2/G7 完成。干净提交交付、安装字节和安装版复测结果后续追加。
+官方 CLI 构建通过，521 个 Web 文件/provenance 未产生 tracked 变化。源码构建的独立 PTY 复测在 `/tmp/hakimi-tui-signal-cyCnQr/`：直接 TERM exit 143、清理约 105 ms；timeout exit 124。两者在任何 cold restore 前已经保存 `Paused after interruption` 与 cancelled turn，且各只有一次本地 fixture 请求。独立比较脚本确认旧版失败和新版终态，不依赖脚本退出码判定成功。这里只证明运行中 Goal 的 TERM 退出链，不证明 SIGHUP、idle/held Goal 的所有关闭路径、Research Action 的语义收尾或 G2/G7 完成。
+
+**交付与安装。** `74743f2594a217ee31f859112694d110b0dc1f4d` 已提交、推送到既有 `merge/pr-9-auto-subagent-preset` 分支。干净源码来自该提交的 `git archive`，在 `/tmp/hakimi-tui-sigterm-install.5fpkzg/checkout` 串行完成 frozen dependencies、单 workspace 并发 packages build、CLI build/smoke、docs build 和 pack。npm 12 安装时仅为 `node-pty` 显式允许本次安装脚本，未修改全局配置；其原生构建通过。安装核验把全部 5,414 个 tracked 源文件与该提交 blob 比较，并验证入口、521 个 Web 文件、provenance、help/version 与原生 PTY；回执为该目录的 `installation-verification.json`。入口 SHA256 为 `8d13f3de39198d61525f4c1ecc27550a14f4f09ffb5497afd525339435ae7338`。CLI 仍为 0.21.0，patch changeset 未消费；新启动进程使用新版本内容，三个用户旧进程未被重启。
+
+安装版用匹配提交 SDK 的新独立进程复测在 `/tmp/hakimi-tui-signal-UFjifx/`：TERM exit 143、清理约 105 ms，timeout exit 124；两条原 journal 均有 paused Goal 与 cancelled turn，无 cold restore 补写。独立检查也验证复测入口 hash 与安装回执相同。此时未改动或恢复 r3 科研会话，原失败证据、产物与未完成 Action 保留。后续回到 §19.24 的 r3 独立审查，不重做 TERM 夹具或以此次软件交付代替完整科学验收。
