@@ -6,6 +6,12 @@ be complete and fresh; omission does not infer ownership. This is a Hakimi-only
 fix using existing public fields, not a new planner or AITP contract. Verification
 and delivery status are in collaborator program [§19.33](theory-physics-collaborator-program.md#simple-action-milestone).
 
+Commit `f6487d990` is pushed to the development branch and clean-installed.
+Installed entry, Web provenance and PTY match; a ready-AITP temporary fixture
+passes stale-parent rejection, REST/WS association, independent-process restore
+and no-delta closeout without completing its parent or Goal. No model request
+or human scientific confirmation was made. Real cross-turn acceptance is next.
+
 The Goal/Plan acceptance in collaborator program §19.31 saved two valid
 conditional derivations but timed out before final Goal closure. Native print
 shutdown now uses the existing Goal pause, prompt cancellation, loop settlement

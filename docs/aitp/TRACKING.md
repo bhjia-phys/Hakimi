@@ -6,6 +6,11 @@
 交付安装分开记录于合作者规划 §19.33，不能据软件测试关闭 G2/G7 或真实跨 turn
 验收。AITP 0.9.0/contract-0.2 与对方 dirty handoff 均不变。
 
+`f6487d990` 已推送到开发分支并 clean-build 安装，入口/521 Web 文件/provenance/
+原生 PTY 一致。安装 CLI 的 ready-AITP 临时 fixture 通过 stale 拒绝、REST/WS、
+独立进程恢复和 no-delta 收尾；0 次模型请求，不完成父 Plan/Goal，不代签真实课题。
+下一项是实际模型跨 turn 及 Heisenberg 有限验收，不重复本轮软件 fixture。
+
 2026-09-05 print 退出持久化（已交付安装）：`49f51fbdc` 已推送到开发分支，
 从 clean commit 构建安装，入口、521 个 Web 文件、provenance 和真实 PTY 通过。
 三个独立 CLI 进程在 SIGINT/TERM/HUP 退出前保存 paused Goal 与 cancelled turn，

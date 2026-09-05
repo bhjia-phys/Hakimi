@@ -1229,13 +1229,13 @@ TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，�
 
 重型测试、构建和真实模型验收串行进行。实验资源上限在执行前按该 case 确定，不因一次超时自动加大；重复同一失败前先定位原因，保留失败输出，只有修复或新证据支持时才重试。复用可核验的数值产物与记录，不用重复计算证明文档或 Board 文案改变；只在产品发生变化的交付点构建安装，再验证受影响路径。文档优化不触发新版本、重装或科研执行。
 
-**当前执行位置。** 基线为隔离 worktree `742a5f262`；安装版来自 `49f51fbdc`（CLI 0.21.0），Theory Physics 0.2.3、AITP 0.9.0/contract-0.2。本地结论、retained-run 和等待目的 Board 的既有交付沿用各节证据；[§19.32](#print-goal-shutdown) 的安装进程信号退出也已通过，不重测来代替科研。simple Action/milestone 源码修正和回归已开始，最新验证、未通过项与交付状态集中在 [§19.33](#simple-action-milestone)；不能提前描述成安装版已可用。原两个 checkout 的 dirty changes 与科研目录继续保留。
+**当前执行位置。** simple Action/milestone 已在 `f6487d990` 提交、推送到既有开发分支并 clean-build 安装（CLI 0.21.0），Theory Physics 0.2.3、AITP 0.9.0/contract-0.2 不变。[§19.33](#simple-action-milestone) 的安装 CLI ready-AITP fixture 已验证该关联、stale 拒绝、REST/WS、进程恢复和 no-delta 收尾，不能代替真实模型跨 turn。本地结论、retained-run、等待目的 Board 和 [§19.32](#print-goal-shutdown) 信号退出的既有证据继续沿用，不重复来代替科研。原两个 checkout 的 dirty changes 与科研目录继续保留。
 
-**新 Goal 的实际优先级。** 先收尾当前两文件修改：simple Action 可显式关联 fresh 的 active Research Plan/milestone，不要求 reviewed local Action Plan；部分关联、过期计划、错误 scope 和人类决定仍按原边界处理。验收正常关联、拒绝路径、执行/收尾期间 freshness、undo/replay 和六端已有字段投影，完成 scoped 交付安装后，立即转向真实模型跨 turn 的继续与合理停止。正常科研提示不指定内部工具或 phase；不能靠人为拆 turn 或控制器代为完成 Goal 获得通过。Heisenberg 正式归属沿用已有确认，缺失部分保持明确依赖，不以 fixture 模拟确认替代。该依赖尚未解决时可以先验证独立的真实跨 turn 流程，但不重复已验证的只读/报告恢复，也不据此关闭 Heisenberg 验收。
+**新 Goal 的实际优先级。** simple Action 关联修复已交付安装；立即转向真实模型跨 turn 的继续与合理停止，不再列成待实现项。正常科研提示不指定内部工具或 phase；不能靠人为拆 turn 或控制器代为完成 Goal 获得通过。Heisenberg 正式归属沿用已有确认，缺失部分保持明确依赖，不以 fixture 模拟确认替代。该依赖尚未解决时可以先验证独立的真实跨 turn 流程，但不重复已验证的只读/报告恢复，也不据此关闭 Heisenberg 验收。
 
 随后按本节五个使用故事补齐剩余 G1–G7：Heisenberg 验证科学里程碑和 Goal，LibRPA 独立验证工程执行/交接与六层知识的真实覆盖；人类指导四类情景、条件性蒸馏、阶段 Note、无 Goal 探索/等待和简洁 Board 均保留。每次执行前指出本次填补的具体缺口，结束后只更新新增证据支持的条目。同一段自然工作可支持多项验收，不因此变成多个独立 trial。新缺陷只有影响原验收时才进入本 Goal；额外功能与非关键润色另列，不滚动扩版。
 
-**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。Heisenberg 正式归属仍沿用 §19.13 已提出的确认依赖，不重复询问或由测试代签。下一唯一最小 Action 是完成当前 simple Action/milestone 关联修改的测试、相关文档和 scoped 交付安装；之前的父侧 operator 指导已在 [§19.30](#operator-caller-guidance) 实施并观察，不再列成待开发事项，但不将有限的交接成功夸大为全部 G5 通过。本次不新增工具、Action 类型、scheduler、schema、硬性科研门禁或额外逐阶段注入。
+**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。下一唯一最小 Action 是安装版真实模型的有限 Goal 跨 turn 验收：先核验 Heisenberg 当前已有归属确认；缺失则保持 §19.13 的既有依赖，不重复询问或由测试代签，可验证独立的有限科学问题，但不能以此关闭 Heisenberg。之前的父侧 operator 指导已在 [§19.30](#operator-caller-guidance) 实施并观察，不再列成待开发事项，但不将有限的交接成功夸大为全部 G5 通过。不新增工具、Action 类型、scheduler、schema、硬性科研门禁或额外逐阶段注入。
 
 该 Action 开始前先写明要填补的证据缺口和资源上限；结束后分别评价科学结果、operator 交接、主 Agent 的解释与必要持久化、Board 的一致性。数值成功不能掩盖交接或收尾失败，配额、超时或未获确认也不能记为验收通过。只更新获得新证据的矩阵条目，若失败则选择一个已定位缺陷作为下一切片，不再次扩写总规划或无依据重跑全部 case。这是当前总 Goal 内的执行约定，不是新增 Research runtime 门禁。
 
@@ -1308,7 +1308,7 @@ G1 后续优先复用现有字段和 Skill；本轮不新增 public phase、wire
 | 原验收条目 | 实现/回归定位 | 模型与剩余验收 |
 |---|---|---|
 | 模糊问题→provisional Plan；新证据/人类修改→replan | R `prepareResearchPlanV2`/`activateResearchPlanV2`；RT `persists and undoes Research Plan v2 revisions` | E10 实际创建并依据反例修订 Plan，最终 revision 7 completed；提示已明确要求两段检验，不是模糊问题的自主拆解或人类修改验收。跨 turn 与 Goal 最终收尾仍未通过 |
-| 简单 Action 无需 Goal/完整计划；复杂工作使用 local Plan；Todo 不充当证据 | R `prepareResearchPlan`、`resolveActionPlanBindings`；RT `executes a reviewed local Action Plan without inventing a Goal or Research Plan` 与 simple milestone 回归 | E10 的首次拒绝保留为失败；§19.33 解耦总计划归属与详细执行计划，源码回归已通过，交付和安装版自然复测仍待验收。自然复杂度选择和 reviewed Plan 仍待验收 |
+| 简单 Action 无需 Goal/完整计划；复杂工作使用 local Plan；Todo 不充当证据 | R `prepareResearchPlan`、`resolveActionPlanBindings`；RT `executes a reviewed local Action Plan without inventing a Goal or Research Plan` 与 simple milestone 回归 | E10 的首次拒绝保留为失败；§19.33 已交付安装，软件 fixture 验证里程碑关联和独立进程恢复。安装版自然复杂度选择、reviewed Plan 与真实跨 turn 仍待验收 |
 | collaborative 问关键问题；dreaming 可修订假设；auto 不冒充人类决定 | RT `routes collaborative planning`、`non-delegable Research decisions human-owned in auto mode`；S；G | E10 在明确测试 scope 下使用 dreaming+auto，实际修订假设，未生成 human decision；没有跨 turn 或真实 collaborative 决策体验，不能据此关闭验收 |
 | 外部等待、持久化不可用、重复无进展分别处理 | R live-run guard、`observeRun`；G continuation；§19.23/19.25 | 本地结果保留和终态补录已实测。**当前 Action 已关闭但 run 仍 live 时，任何新 Action 仍被拒绝**；现有 Action 内的已授权工作/回读不能等同于新的独立工作。等待期间整理/推导的完整体验尚未闭合，不将其归入 C4 后延期 |
 | 用户暂停/取消、科学约定/资源/范围变化时合理停止 | G pause/cancel/budget/restore；R Goal guard/human gate | 有软件测试，无真实跨 turn 的继续→等待/恢复→完成或必要提问验收；Heisenberg 正式归属确认仍等待人类，不重问已提出的问题 |
@@ -1495,4 +1495,8 @@ r14 从 07:27:55.495Z 到 07:29:42.687Z，107.192 秒、9 次调用、exit 0，�
 
 文档构建通过（13.33 秒，保留既有 ES2024/chunk-size warnings），`git diff --check` 通过。AITP 当前 CLI help、0.9.0/contract-0.2 与官方 adapter-contract/atomic-save 21 项复核通过（2.38 秒，仓库 `.venv/bin/python`；首次通用 Python 缺少 pytest，未安装新依赖）。Changeset status 的累计 CLI minor/SDK major 来自已有条目，本片仍仅新增 CLI patch，没有自动升级版本或修改依赖。
 
-当前交付状态：源码/测试/文档尚未提交、推送或重新安装，安装版仍为 §19.32 的 `49f51fbdc`。下一唯一最小 Action 是审查这个明确 allowlist 后完成 scoped 交付和 clean 安装复测，再立即回到真实跨 turn 与 Heisenberg 有限科学验收；不重做已通过的信号退出、恢复报告或增加新门禁。G2/G7 及总 Goal 仍未完成。
+交付与安装（2026-09-05）：12 文件已提交为 `f6487d99047be527ddd50b39e88e6761b3b0ad7f`，推送至 `merge/pr-9-auto-subagent-preset`，没有合并到 main。远程 main `015763451d8b6ec01a9954ae2239e76005952581` 仍是祖先。clean worktree `/tmp/hakimi-simple-milestone-install.z3EZLG/checkout` 串行完成 frozen dependencies、packages build、CLI build/smoke、docs 和 pack；安装只允许 `node-pty` 的一次性原生构建，无全局配置修改。入口 SHA256 `19e3452327b690c4dfd460d4bd34df0f0ebc63be283ee56f8f433c31469ff09a`、521 个 Web 文件、provenance、help 和真实 PTY 与构建一致，版本仍为 0.21.0，回执 `installation-verification.json` 保存在同一临时目录，旧包保留。
+
+安装版公开复测：`/tmp/hakimi-simple-milestone-smoke.y4Joy3/acceptance.json`，使用独立 home/Topic、官方 AITP init 与公开 SDK 安装 0.9.0 插件，测试控制器只确认 fixture 归属。安装 CLI 的两个独立 `web` 进程通过 ready 状态、stale parent 零 Action 创建、simple parent+minimal/no local Plan、REST/WS 同步、active Action 冷恢复与 no-delta 收尾；父 Plan 保持 active、Goal 保持 paused、无 checkpoint，0 次模型请求。仅关闭本测试创建的两个进程，没有关闭用户会话。该结果不是模型跨 turn，也不代替 Heisenberg 人类确认。
+
+夹具调试保留：首次 `ws` 从错误 workspace 包解析失败，第二次空 home 缺少默认模型，第三次误将内部 service 的 nested progress 传给要求平铺字段的公开 REST；都修正为既有公开 contract，没有改产品迎合脚本。第三次失败的请求记录在 `/tmp/hakimi-simple-milestone-smoke.poSWc9/requests.json`，不计为完整通过。下一唯一 Action 是 §19.24 的真实跨 turn 与 Heisenberg 有限科学验收；不重做已通过的软件 fixture 或增加新门禁。G2/G7 及总 Goal 仍未完成。

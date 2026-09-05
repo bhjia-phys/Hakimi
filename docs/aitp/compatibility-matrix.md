@@ -8,6 +8,11 @@ freshness, execution and human-decision rules stay in force. No AITP CLI/schema/
 contract/Skill or counterpart dirty-file change. Source and installed acceptance
 are distinguished in collaborator program §19.33; real Goal continuation remains open.
 
+Delivered and clean-installed from `f6487d990` on the existing development branch.
+A temporary ready-AITP installed-CLI fixture passes REST/WS projection, stale
+rejection, independent-process restore and no-delta closeout with zero model
+requests. This does not confirm a real project's scope or close G2/G7.
+
 **Hakimi-only print shutdown (2026-09-05):** the default CLI pauses active Goals,
 cancels outstanding turns and flushes its own journal before disposal. No AITP
 CLI/schema/contract/Skill, canonical write, human decision or Research Action
