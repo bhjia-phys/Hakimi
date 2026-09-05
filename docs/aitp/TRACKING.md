@@ -1,13 +1,16 @@
 # AITP 状态跟踪与交接清单
 
-2026-09-05 未绑定结论恢复（代码实现，交付验收中）：Conclude 现在可关闭仍
+2026-09-05 未绑定结论恢复（已交付安装，原会话收尾及冷恢复通过）：Conclude 可关闭仍
 fresh 的未绑定 Action，并完整保留一个 checkpointed `localConclusion`，
 不生成 AITP Entry/receipt 或写权限。公开 `propose_checkpoint` 通过精确
 local conclusion ID、当前 revision 和 `confirmedBy: user` 接纳到明确确认
 的目标 Line/workstream；原结论不改写，科学上下文变化仍拒绝。六端同步投影；
 模型工具不能冒充该人工确认。AITP 0.9.0/contract 0.2、canonical save 与
-human-decision 契约不变，对方 20 条 dirty paths 保留。安装版原会话收尾
-复测尚未完成，详见合作者规划 §19.22。
+human-decision 契约不变，对方 20 条 dirty paths 保留。代码 `06b8524102df`
+已推送并从 clean commit 安装；真实 r7 会话恢复用 4 次工具调用完成旧 Action，
+未重算、未重复进度、未写 AITP。随后 SDK cold restore 保留原本地结论与唯一
+归属下一步。模型有一处把解释修正误归于未改动报告的措辞，不能当作科学审定；
+正常绑定记录和跨 turn Goal 验收仍未完成，详见合作者规划 §19.23。
 
 2026-09-05 阶段 Note 顺序与维护归属补充：已安装模型的既有证据综合出现
 两次 Note prepare 拒绝和重复 session-start 检查。Hakimi 将 Question evidence

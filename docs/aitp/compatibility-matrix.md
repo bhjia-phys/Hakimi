@@ -1,6 +1,6 @@
 # Hakimi × AITP compatibility matrix and decisions
 
-**Hakimi-only retained-result recovery (2026-09-05; implementation under verification):**
+**Hakimi-only retained-result recovery (2026-09-05; delivered, installed recovery verified):**
 A fresh unbound Action can conclude durable work into one checkpointed local
 `localConclusion`, not an AITP Entry, receipt, or pending checkpoint. Public
 `propose_checkpoint` adds optional `localConclusionId` and `confirmedBy: user`
@@ -10,8 +10,14 @@ context fails closed. REST/event schemas, SDK, klient and TUI/Web expose the
 same distinction. The model-facing proposal tool cannot assert this human
 confirmation. No AITP CLI/schema/contract/Skill changes or new canonical writes;
 normal prepare/exact save/show/check/commit and human decisions remain intact.
-The counterpart's 20 dirty paths remain untouched. Installed-session replay
-is still pending; source tests are not real scientific workflow acceptance.
+The counterpart's 20 dirty paths remain untouched. Commit `06b8524102df` was
+pushed and installed from a clean checkout. The original Heisenberg session
+closed its stranded Action with four tool calls, no repeated calculation or
+duplicate progress, and no AITP write; a separate SDK cold restore retained the local
+result. This is recovery acceptance, not bound scientific persistence or Goal
+continuation acceptance. One model observation misattributes a corrected
+interpretation to the unchanged old report; the evidence record explicitly
+preserves that discrepancy. See collaborator program §19.23.
 
 **Hakimi-only stage Note guidance amendment (2026-09-05):** Begin describes
 settling canonical Question evidence refs before capturing its revision for a

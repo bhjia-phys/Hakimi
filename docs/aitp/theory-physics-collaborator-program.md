@@ -1164,3 +1164,19 @@ TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，�
 正式 `build:web-assets` 和 `--check` 通过，521 文件逐字节一致，耗时分别 22.40/22.86 秒，峰值 RSS 约 2.21 GiB；未发生 OOM，既有 chunk warnings 保留。source identity `f0589660be03261607e9b29a8d0cb3e73c781bfe937a8519eed9531d5c112825`，recipe identity `e242351ea791477e571a8d49cff178ff7bcfd569628322d2fb3e1b850c5b082e`。生成目录只由官方脚本替换；临时浏览器及其依赖均不进入提交，也不安装系统包。远程 main 仍为 `015763451d8b6ec01a9954ae2239e76005952581`，已是当前分支祖先。
 
 下一唯一最小 Action：将该已验证切片 scoped 交付并从 clean commit 本地安装，然后只恢复 r7 已存在的结果完成收尾，单独保存安装版行为证据；正常绑定下的科学记录和 Goal 自动推进验收随后继续。总 Goal 保持 active，安装与真实原会话收尾在此记录时仍未完成。
+
+### 19.23 本地结论交付与原会话恢复验收
+
+2026-09-05，§19.22 切片提交为 `06b8524102df93bab404de4495391772848b033d` 并推送到 `merge/pr-9-auto-subagent-preset`，远程 ref 核验一致。从该 commit 的新 detached clean worktree 安装 frozen lockfile，串行构建 packages、CLI、运行 bundle smoke，再经正式 prepack 打包安装。CLI 仍为 0.21.0；未执行 changeset version 或 npm publish。安装 main 与 clean build 的 SHA-256 同为 `cb7f2f46c643ef0d9479bede2c8af59b30f47bcdf7cf4459200ce5a007388241`，521 个 Web 文件逐字节相同、源码侧正式 provenance checker 通过。安装包不含开发用 checker，直接从安装目录调用曾报 MODULE_NOT_FOUND；改为源码 checker 加安装文件比对，不把它记作产品缺陷或跳过验证。CLI/help/doctor 通过，真实 PTY 输出 `hakimi-local-result-pty-ok` 且 exit 0。
+
+精确 tarball 安装先 dry-run，只有 Hakimi 与四个依赖变更；仅为该安装允许 node-pty lifecycle，串行编译。未调用全局包名 rebuild。另一全局应用的原生文件前后 SHA 相同。Theory Physics 0.2.1、AITP 0.9.0/contract 0.2 未变，源与 managed contract digest 相同。构建无 OOM；既有 dependency lifecycle、TSDoc/TypeScript 和 chunk warnings 不被清除。原 Hakimi HEAD `892733a005` 的 156 个 dirty paths、AITP HEAD `eae1bce5eb` 的 20 个 dirty paths 保留。
+
+安装后真实运行 `heisenberg-local-conclusion-recovery-r8`，恢复原 session `session_e0d6533b-dba6-4e7a-8fbe-5d1264013dc1`，模型仍为 `openai-codex/gpt-5.6-sol`。提示明确限定为恢复已有结果而非正常自然科研验收：不重算、不改科研文件、不创建新 Goal/Line/Question/Action、不猜测归属、不写 canonical AITP。03:52:23.354Z 到 03:53:57.759Z，94.405 秒，exit 0；仅 `GetResearchStatus`、两次 `Read` 和一次 `ConcludeResearchAction`。旧 Action `1117a7a6-012b-469f-815c-88428c8732cc` 成功 completed，phase 为 state_updated，原结果/证据/限制作为 local durable conclusion 保留；没有 RecordResearchProgress、no-delta 降格、新 checkpoint 或 AITP 写权限。模型自然语言收尾明确区分诊断失败、有限 Arb sanity pass、尚未验证的 witness 和记录归属。
+
+另用同一 clean commit 构建的 SDK 执行只读 cold resume/getResearch，无模型调用；snapshot revision 13、mode ready、Action completed、本地结论保留、无 pending checkpoint。effectiveNextStep 明确要求确认记录归属后再提议 scoped checkpoint，并禁止重复实验或结论。科研源码、测试、quarantined data/report 的四个保护 digest 不变；canonical `.aitp/topic` 全文件清单及 bytes 前后相同。官方 enter/check 前后逐字节相同：当前 symmetry-operator-search scope 25 Entries/0 Notes，0 errors、13 historical-pin-drift warnings；scope 外 24 errors/250 warnings 保留，不能宣称全库健康。本轮无 Entry、Note、card、trial、human decision 或 failure resolution；旧 spectral-rmt 的单个 observation marker 不为本次恢复提供蒸馏 trigger。
+
+将该真实 cold-restored snapshot 交给同 commit 的 TUI Board component，在 100 列下输出六行：interactive/no Goal、当前诊断结论、一次归属 attention 和唯一 adopt-conclusion 下一步，没有旧 Action 执行状态或展开审计洪流。这是实际 snapshot 的 renderer 验证，不是另一次实时 TUI 交互。临时 standalone harness 初次以 CommonJS 加载导致 YAML import 失败；改用 ESM `.mts` 与仓库既有 raw-text loader 后通过，没有修改产品构建或测试标准。
+
+**模型内容误差保留：** Conclude 的一条 observations 称旧报告已采用修正后的边界，但旧 `primitive_audit.md` 仍含 “directly invalidates every J0/J1/J2” 的过强措辞；修正来自恢复提示及本轮评价，不是旧文件。主要 result/limitations 已采用“依赖该 primitive 的计算需逐项复核”的窄声明，但不能因此把该错误归因视为已验证事实。旧证据与本地结论均不被暗改，后续正式记录前须将原文、修正解释和未验证项分开；显式归属也不等于批准科学内容。此恢复成功不计作正常绑定记录或 Goal 自动推进通过。
+
+运行提示、完整模型输出、工具结果与退出回执保存在忽略目录 `.tmp/research-acceptance-20260905/heisenberg-local-conclusion-recovery-r8/`；clean install、snapshot 和保护清单在 `/tmp/hakimi-local-result-install.4JcVXK/`，均不打包入产品。下一唯一最小 Action：按优化后的 B 步逐项核对 G1–G7 的代码、测试与安装版行为证据，明确剩余正常主流程/跨 turn 验收，不重复已通过的原会话恢复。需要归属确认的正式科研仍保留该依赖；总 Goal active，未宣称全部完成。
