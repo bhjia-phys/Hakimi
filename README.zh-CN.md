@@ -63,6 +63,8 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 
 Print mode 退出时会先暂停 active Goal 并刷出日志，再释放运行时，包括 SIGINT、SIGTERM 和 SIGHUP。已经停止的 Goal 不变；中断不会完成科研工作或写入 AITP 记录。原有有界清理不能保证 SIGKILL 或存储写入卡住时的持久化。详见[非交互执行](docs/zh/reference/kimi-command.md#非交互执行)。
 
+干净构建安装版已通过独立进程信号测试和真实 PTY 验证。这证明退出持久化，不代表跨 turn 科研验收完成；详见[交付证据](docs/aitp/theory-physics-collaborator-program.md#print-goal-shutdown)。
+
 冷恢复时，AITP discovery 会等待会话 Skill catalog 就绪。退出或 reset 会取消等待，迟到结果不能恢复旧权限；插件缺失、不兼容或 catalog 初始化失败仍如实显示不可用，不额外添加 maintenance 重试。
 
 委派的 operator 不拥有共享 AITP 生命周期：子 agent 的恢复或 undo 不能 reset 主研究者的 adapter 或 maintenance 状态。进入或恢复 active Research Mode 时，也会为旧 tool allowlist 补齐已有的 evidence review、run observation 和 historical checkpoint discard 工具；这些修复不批准证据、不改变 checkpoint 或 human decision 语义。

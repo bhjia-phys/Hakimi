@@ -8,6 +8,12 @@ conclusion, AITP record, CLI/files contract, Skill or human decision. The AITP
 checkout and its dirty handoffs remain protected; this is a Hakimi host-lifecycle
 fix, not H6b or complete G2/G7 acceptance.
 
+Delivered and installed from clean commit `49f51fbdc` (2026-09-05).
+Installed entry/Web provenance and native PTY checks pass. Three independent
+CLI processes persisted paused Goal and cancelled turn before SIGINT/TERM/HUP
+exit, without cold restore or a real model. See §19.32 for receipts and the
+one-time `node-pty` install-script repair; scientific continuation remains open.
+
 Theory Physics 0.2.3 exposes whole-task budget, parent-review time and single
 packet delivery guidance in the existing parent-facing agent description.
 The 0.2.2 natural test did not read the delegation reference and still timed

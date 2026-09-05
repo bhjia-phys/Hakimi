@@ -61,6 +61,8 @@ Human review and reproducible verification are part of the research loop, not a 
 
 Print-mode shutdown now pauses an active Goal and flushes its journal before releasing the runtime, including on SIGINT, SIGTERM and SIGHUP. Already stopped Goals are unchanged; interruption does not complete scientific work or write AITP records. The existing bounded cleanup cannot guarantee persistence after SIGKILL or a stalled storage write. See [non-interactive execution](docs/en/reference/kimi-command.md#non-interactive-execution).
 
+The clean-installed build has passed independent-process signal tests and native PTY verification. This verifies shutdown persistence, not completion of cross-turn scientific acceptance; see the [delivery evidence](docs/aitp/theory-physics-collaborator-program.md#print-goal-shutdown).
+
 Native sessions and print mode use the same home as the Hakimi SDK: explicit `homeDir`, then `HAKIMI_HOME`, then legacy `KIMI_CODE_HOME`, then `~/.hakimi`. This fixes a real research acceptance failure where the native engine opened the old Kimi home and could not find the installed AITP contract. No old configuration, plugins, or sessions are migrated or merged; to open a session created in the old home, select that home explicitly. Real-project acceptance and remaining limitations are tracked in the [collaborator program](docs/aitp/theory-physics-collaborator-program.md#1911-g7-首次真实运行与启动目录修复).
 
 AITP discovery also waits for the session Skill catalog during cold restore. Exiting or resetting Research Mode cancels that wait; a late catalog result cannot restore old permissions. A missing/incompatible plugin or failed catalog initialization still reports unavailable, without extra maintenance retries.

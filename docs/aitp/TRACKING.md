@@ -1,5 +1,13 @@
 # AITP 状态跟踪与交接清单
 
+2026-09-05 print 退出持久化（已交付安装）：`49f51fbdc` 已推送到开发分支，
+从 clean commit 构建安装，入口、521 个 Web 文件、provenance 和真实 PTY 通过。
+三个独立 CLI 进程在 SIGINT/TERM/HUP 退出前保存 paused Goal 与 cancelled turn，
+无需下一次恢复补暂停；使用本地 provider fixture，不是跨 turn 科研验收。
+首次安装被 npm 拦截的 `node-pty` 脚本已用一次性依赖许可补齐，没有修改全局配置。
+AITP runtime/CLI/schema/contract/Skill 与 human decision 均不变，对方 dirty
+handoff 保留。原 Goal/Plan 超时仍记录为失败，详见合作者规划 §19.31–19.32。
+
 2026-09-05 等待期间的科研目的展示（已交付安装）：TUI/Web
 紧凑 Board 同时保留 live Action 的目的与其 running 作业观察，明确的其他 Line
 Action/run 不再通过旧单 Line fallback 混入当前视图。同一 Action 内的已有授权

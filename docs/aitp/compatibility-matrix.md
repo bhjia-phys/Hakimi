@@ -7,6 +7,11 @@ completion changes. Real Goal/Plan evidence and shutdown verification are in
 the collaborator program §19.31–19.32; neither closes G2/G7. The protected AITP
 worktree and its dirty handoffs are unchanged.
 
+Commit `49f51fbdc` is pushed and clean-installed. Installed entry, 521 Web files,
+provenance and native PTY pass; independent CLI SIGINT/TERM/HUP exits persist
+paused Goal and cancelled turn before any cold restore. These local-provider
+fixtures do not count as real-model Goal continuation or Research acceptance.
+
 **Hakimi-only operator guidance (2026-09-05):** Theory Physics 0.2.3 puts
 whole-task timing, parent review/closeout and single-packet delivery guidance
 in the existing parent-facing agent description. The 0.2.2 natural test still
