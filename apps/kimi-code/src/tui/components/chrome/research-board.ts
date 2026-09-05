@@ -1015,10 +1015,10 @@ function renderExpandedEvidenceRows(
   const rows: string[] = [];
   const current = snap.currentQuestion;
   if (current === undefined) {
-    rows.push(`  ${chalk.hex(colors.textDim)('Focused-question evidence:')} ${chalk.hex(colors.textMuted)('none selected')}`);
+    rows.push(`  ${chalk.hex(colors.textDim)('Current-question evidence:')} ${chalk.hex(colors.textMuted)('none selected')}`);
   } else {
     rows.push(
-      `  ${chalk.hex(colors.textStrong).bold('Focused-question evidence')} ${chalk.hex(colors.textMuted)(`${String(current.neededEvidence.length)} needed · ${String(current.evidenceRefs.length)} found · ${String(current.falsifierRefs.length)} falsifiers`)}`,
+      `  ${chalk.hex(colors.textStrong).bold('Current-question evidence')} ${chalk.hex(colors.textMuted)(`${String(current.neededEvidence.length)} needed · ${String(current.evidenceRefs.length)} found · ${String(current.falsifierRefs.length)} falsifiers`)}`,
     );
     rows.push(...renderNamedList('Needed evidence', current.neededEvidence, colors));
     rows.push(...renderNamedList('Evidence refs', current.evidenceRefs, colors, true));

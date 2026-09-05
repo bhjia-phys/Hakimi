@@ -1,5 +1,14 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**Hakimi-only Question projection (2026-09-05; source verification, not yet
+delivered):** the existing optional current Question may come from the foreground
+Action's explicit same-Line reference when there is no Focus. Explicit Focus wins;
+the projection never creates one. Status and existing post-commit synthesis
+guidance share it, and the Question's next step precedes historical progress once
+operational work settles. Public fields and AITP 0.9.0/contract-0.2, ledger,
+Skills and human decisions are unchanged. Counterpart dirty handoffs stay
+protected. Evidence and remaining verification: collaborator program §19.35.
+
 **Hakimi-only simple milestone association (2026-09-05):** a simple Action may
 explicitly bind a fresh active Research Plan/milestone while retaining its minimal
 local binding. The existing optional parent fields and two independent snapshot

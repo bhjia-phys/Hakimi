@@ -72,6 +72,30 @@ describe('scientific purpose while a job runs', () => {
 });
 
 describe('retained local conclusion Board', () => {
+  it('uses the projected Question next step without inventing a Focus', () => {
+    const state: ResearchStatusSnapshot = {
+      ...snapshot(), localConclusion: undefined, currentAction: undefined, latestProgress: undefined,
+      currentLineSlug: 'test-line', currentFocus: undefined,
+      currentQuestion: {
+        id: 'question', lineSlug: 'test-line', wording: 'Does the limiting case discriminate?',
+        priority: 1, neededEvidence: [], evidenceRefs: ['entry-test'], falsifierRefs: [],
+        nextBoundedAction: 'Stop; the finite test is complete.',
+        workflow: 'closed', epistemic: 'supported', persistence: 'committed', revision: 4,
+      },
+      effectiveNextStep: {
+        text: 'Stop; the finite test is complete.', source: 'question', freshness: 'current',
+        observedAt: 2, derivedFrom: { questionId: 'question', lineSlug: 'test-line' },
+      },
+    };
+    state.questions = [state.currentQuestion!];
+    const before = structuredClone(state);
+    expect(buildResearchBoardCompactSlots(state).find((slot) => slot.kind === 'next')).toMatchObject({
+      text: 'Stop; the finite test is complete.',
+      derivedFrom: { questionId: 'question', lineSlug: 'test-line' },
+    });
+    expect(state).toEqual(before);
+  });
+
   it('shows the result, terminal action, ownership next step and no false AITP commit', () => {
     const slots = buildResearchBoardCompactSlots(snapshot());
     expect(slots).toHaveLength(4);

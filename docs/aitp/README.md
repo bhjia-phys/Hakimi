@@ -1,5 +1,14 @@
 # AITP integration handoff
 
+Question-context repair (2026-09-05, source verification; delivery pending):
+without explicit Focus, the shared snapshot can project the foreground Action's
+explicit same-Line Question. Existing Focus is never created or overridden.
+After operational work settles, the Question's explicit next step wins over
+historical progress. This also restores the existing revision-aware post-commit
+synthesis guidance; it does not write a scientific assessment. See collaborator
+program [§19.35](theory-physics-collaborator-program.md#question-context-projection).
+No public fields, AITP CLI/contract/Skills or counterpart dirty files change.
+
 Simple Actions now accept an explicit current Research Plan/milestone binding
 without requiring a reviewed local Action Plan. The existing parent triple must
 be complete and fresh; omission does not infer ownership. This is a Hakimi-only

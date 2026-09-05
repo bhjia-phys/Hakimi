@@ -715,11 +715,31 @@ describe('ResearchBoardComponent', () => {
     expect(output).toContain('Lines (2)');
     expect(output).toContain('current assessment');
     expect(output).toContain('Todo actions');
-    expect(output).toContain('Focused-question evidence 2 needed · 1 found · 1 falsifiers');
+    expect(output).toContain('Current-question evidence 2 needed · 1 found · 1 falsifiers');
     expect(output).toContain('Pending: pending-1');
     expect(output).toContain('entry-1');
     expect(output).toContain('refresh evidence');
     expect(output).not.toContain('…');
+  });
+
+  it('renders the explicitly projected Question and next step without claiming a Focus', () => {
+    const board = new ResearchBoardComponent();
+    board.setSnapshot(makeSnapshot({
+      phase: 'state_updated', currentFocus: undefined,
+      currentQuestion: { ...makeSnapshot().currentQuestion!, nextBoundedAction: 'Stop; the finite test is complete.' },
+      effectiveNextStep: {
+        text: 'Stop; the finite test is complete.', source: 'question', freshness: 'current',
+        observedAt: 2, derivedFrom: { questionId: 'q1', lineSlug: 'test-line' },
+      },
+    }));
+    const compact = board.render(120).map(stripAnsi).join('\n');
+    expect(compact).toContain('Stop; the finite test is complete.');
+    board.setExpanded(true);
+    const expanded = board.render(120).map(stripAnsi).join('\n');
+    expect(expanded).toContain('Current question: What is the mechanism?');
+    expect(expanded).toContain('Current-question evidence');
+    expect(expanded).not.toContain('Focus provenance:');
+    expect(expanded).not.toContain('Focused-question evidence');
   });
 
   it('truncates lines to width for narrow terminals', () => {

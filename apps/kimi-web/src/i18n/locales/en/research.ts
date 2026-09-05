@@ -371,7 +371,7 @@ export default {
     review: 'Review',
     decision: 'Decision',
   },
-  focusedQuestionEvidence: 'Focused-question evidence',
+  focusedQuestionEvidence: 'Current-question evidence',
   progressEvidence: 'Progress evidence',
   noneRecorded: 'Nothing recorded',
   assumptions: 'Assumptions',

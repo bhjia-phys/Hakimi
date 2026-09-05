@@ -502,7 +502,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     const focusedQuestion = state.focus
       ? questions.find((q) => q.id === state.focus!.questionId)
       : undefined;
-    const currentQuestion = focusedQuestion?.lineSlug === currentLineSlug
+    const scopedFocusedQuestion = focusedQuestion?.lineSlug === currentLineSlug
       ? focusedQuestion
       : undefined;
     const storedLineWorkstreamBindings = state.lineWorkstreamBindings ?? {};
@@ -522,6 +522,12 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       questions,
       lines,
     });
+    const actionQuestion = scopedCurrentAction?.questionId === undefined
+      ? undefined
+      : questions.find((question) => question.id === scopedCurrentAction.questionId);
+    const currentQuestion = state.focus !== null
+      ? scopedFocusedQuestion
+      : actionQuestion?.lineSlug === currentLineSlug ? actionQuestion : undefined;
     const scopedCurrentRun = currentLineRun(scopedCurrentAction, currentRun);
     const latestProgress = state.latestProgress === null ? undefined : toProgressReport(state.latestProgress);
     const humanGate = state.humanGate === null ? undefined : toHumanGate(state.humanGate);
@@ -565,7 +571,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       currentLineSlug,
       currentWorkstreamBinding,
       lineWorkstreamBindings,
-      currentFocus: state.focus !== null && currentQuestion !== undefined
+      currentFocus: state.focus !== null && scopedFocusedQuestion !== undefined
         ? {
             questionId: state.focus.questionId,
             boundedAction: state.focus.boundedAction,
@@ -611,6 +617,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
             currentLineSlug,
             focus: state.focus,
             questions: state.questions,
+            currentQuestion,
             currentAction: scopedCurrentAction,
             effectiveNextStep,
             pendingCheckpoint: state.pendingCheckpoint === null ? undefined : toCheckpoint(state.pendingCheckpoint),
@@ -5491,19 +5498,6 @@ function deriveEffectiveNextStep(input: {
     };
   }
 
-  if (input.latestProgress?.nextAction !== undefined) {
-    return {
-      text: input.latestProgress.nextAction,
-      source: 'question',
-      freshness: 'current',
-      observedAt: input.latestProgress.recordedAt,
-      derivedFrom: {
-        questionId: input.currentQuestion?.id,
-        lineSlug: input.currentQuestion?.lineSlug,
-      },
-    };
-  }
-
   if (input.currentQuestion?.nextBoundedAction !== undefined) {
     return {
       text: input.currentQuestion.nextBoundedAction,
@@ -5513,6 +5507,19 @@ function deriveEffectiveNextStep(input: {
       derivedFrom: {
         questionId: input.currentQuestion.id,
         lineSlug: input.currentQuestion.lineSlug,
+      },
+    };
+  }
+
+  if (input.latestProgress?.nextAction !== undefined) {
+    return {
+      text: input.latestProgress.nextAction,
+      source: 'question',
+      freshness: 'current',
+      observedAt: input.latestProgress.recordedAt,
+      derivedFrom: {
+        questionId: input.currentQuestion?.id,
+        lineSlug: input.currentQuestion?.lineSlug,
       },
     };
   }
@@ -5552,6 +5559,7 @@ function deriveStatusProjection(input: {
   readonly currentLineSlug?: string;
   readonly focus: ResearchFocusRecord | null;
   readonly questions: Readonly<Record<string, ResearchQuestionRecord>>;
+  readonly currentQuestion?: ResearchQuestion;
   readonly currentAction?: ResearchActionSpec;
   readonly effectiveNextStep?: ResearchEffectiveNextStep;
   readonly pendingCheckpoint?: ResearchCheckpoint;
@@ -5570,7 +5578,7 @@ function deriveStatusProjection(input: {
   const focusOutsideWorkstream = focusQuestion !== undefined &&
     input.currentLineSlug !== undefined &&
     focusQuestion.lineSlug !== input.currentLineSlug;
-  const currentQuestionId = focusOutsideWorkstream ? undefined : focusQuestion?.id;
+  const currentQuestionId = focusOutsideWorkstream ? undefined : input.currentQuestion?.id;
   const actionMatchesWorkstream = input.currentAction !== undefined && (
     input.currentAction.lineSlug === undefined ||
     input.currentAction.lineSlug === input.currentLineSlug ||
@@ -5590,12 +5598,11 @@ function deriveStatusProjection(input: {
   const actionRecoveryBlocked = input.effectiveNextStep?.source === 'research_action' &&
     input.effectiveNextStep.freshness === 'blocked';
   const checkpointBlocked = input.pendingCheckpoint !== undefined;
-  const focusBlocked =
-    focusQuestion !== undefined && !focusOutsideWorkstream && focusQuestion.workflow === 'blocked';
+  const questionBlocked = input.currentQuestion?.workflow === 'blocked';
   let health: ResearchStatusHealth = 'ok';
   if (
     input.localConclusion !== undefined || actionRecoveryBlocked || checkpointBlocked || alignmentBlocked ||
-    humanGateUnresolved || hasBlocker || focusBlocked
+    humanGateUnresolved || hasBlocker || questionBlocked
   ) {
     health = 'blocked';
   } else if (input.modePhase === 'degraded') {

@@ -69,6 +69,7 @@ import {
   researchCreateLine,
   researchCreateQuestion,
   researchUpdateQuestion,
+  researchSetFocus,
   researchSetProgram,
   researchRequestHumanDecision,
   researchObserveRun,
@@ -161,13 +162,13 @@ let disposables: DisposableStore;
 let wire: IWireService;
 let eventBus: IEventBus;
 
-function buildWire(key: string): IWireService {
+function buildWire(key: string, records?: WireRecord[]): IWireService {
   const ix = disposables.add(new TestInstantiationService());
   ix.stub(IFileSystemStorageService, new InMemoryStorageService());
   ix.set(IAppendLogStore, new SyncDescriptor(AppendLogStore));
   ix.set(IEventBus, new SyncDescriptor(EventBusService));
   return registerTestAgentWire(ix, testWireScope(SCOPE, key), {
-    log: ix.get(IAppendLogStore),
+    log: records === undefined ? ix.get(IAppendLogStore) : recordingWireLog(records),
     eventBus,
   });
 }
@@ -3339,6 +3340,100 @@ describe('line and focus coordination', () => {
     expect(snapshot.currentFocus).toBeUndefined();
     expect(snapshot.currentQuestion).toBeUndefined();
     expect(snapshot.status?.currentQuestionId).toBeUndefined();
+  });
+
+  it.each([
+    'no_action', 'unscoped_action', 'planned', 'in_progress', 'completed',
+    'explicit_focus', 'foreign_action', 'foreign_focus', 'blocked_question',
+  ] as const)('projects only the explicit foreground Question without writing Focus, including cold restore: %s', async (scenario) => {
+    const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const records: WireRecord[] = [];
+    const resolveServices = (source: IWireService) => {
+      const ix = createServices(disposables, {
+        additionalServices: (reg) => {
+          reg.defineInstance(IWireService, source);
+          reg.defineInstance(IAgentScopeContext, makeScopeCtx());
+          reg.defineInstance(IEventBus, eventBus);
+          reg.defineInstance(IAgentProfileService, makeProfileServiceStub());
+          reg.defineInstance(ISessionAitpAdapter, makeStubAdapter());
+          reg.defineInstance(IAgentToolExecutorService, makeToolExecutorStub());
+          reg.defineInstance(IAgentGoalService, makeStubGoalService());
+          reg.define(IAgentAitpModeService, AgentAitpModeService);
+          reg.define(IAgentResearchService, AgentResearchService);
+        },
+      });
+      return { mode: ix.get(IAgentAitpModeService), research: ix.get(IAgentResearchService) };
+    };
+    wire = buildWire('question-context', records);
+    const { mode, research } = resolveServices(wire);
+    await mode.enter({ actor: 'user', lineSlug: 'main' });
+    research.createLine({ slug: 'alt', title: 'Alternative' });
+    const question = research.createQuestion({ lineSlug: 'main', wording: 'Test the finite-size candidate.' });
+    const other = research.createQuestion({ lineSlug: 'main', wording: 'Check an independent explanation.' });
+    const foreign = research.createQuestion({ lineSlug: 'alt', wording: 'An unrelated problem.' });
+    if (scenario !== 'no_action') {
+      const action = research.planAction({
+        lineSlug: 'main', questionId: scenario === 'unscoped_action' ? undefined : question.id,
+        kind: 'derivation', purpose: 'Check a limiting case.', stopCondition: 'The limiting case is classified.',
+      });
+      if (scenario !== 'planned') research.startAction(action.actionId);
+      if (['completed', 'explicit_focus', 'foreign_focus', 'foreign_action', 'blocked_question'].includes(scenario)) {
+        research.concludeAction({
+          actionId: action.actionId, status: 'completed',
+          progress: {
+            headline: 'Limiting case reviewed', motivation: 'Check the candidate.',
+            workPerformed: 'Reviewed the known limiting case.', result: 'No new result.',
+            mainlineImpact: 'No scientific assessment changed.', nextAction: 'Historical progress next.',
+          },
+          durability: { status: 'no_durable_delta', rationale: 'Existing evidence already covers this result.' },
+        });
+      }
+    }
+    if (scenario === 'explicit_focus') research.setFocus(other.id);
+    if (scenario === 'completed') research.updateQuestion({
+      questionId: question.id, nextBoundedAction: 'Stop; the finite test is complete.',
+    });
+    if (scenario === 'blocked_question') research.updateQuestion({ questionId: question.id, workflow: 'blocked' });
+    if (scenario === 'foreign_action') {
+      research.setPhase('idle');
+      research.switchLine('alt');
+    }
+    if (scenario === 'foreign_focus') {
+      wire.dispatch(researchSetFocus({ questionId: foreign.id, expectedRevision: 0 }));
+    }
+    const expectedQuestionId = scenario === 'explicit_focus' ? other.id
+      : ['no_action', 'unscoped_action', 'foreign_action', 'foreign_focus'].includes(scenario)
+        ? undefined : question.id;
+    const focusBefore = wire.getModel(ResearchModel).current.focus;
+    const assertProjection = (svc: IAgentResearchService, source: IWireService) => {
+      const before = source.getModel(ResearchModel);
+      const snapshot = svc.getSnapshot();
+      expect(snapshot.currentQuestion?.id).toBe(expectedQuestionId);
+      expect(snapshot.status?.currentQuestionId).toBe(expectedQuestionId);
+      expect(snapshot.currentFocus?.questionId).toBe(scenario === 'explicit_focus' ? other.id : undefined);
+      expect(source.getModel(ResearchModel)).toEqual(before);
+      expect(source.getModel(ResearchModel).current.focus).toEqual(focusBefore);
+      if (scenario === 'blocked_question') expect(snapshot.status?.health).toBe('blocked');
+      if (scenario === 'completed') {
+        expect(snapshot.effectiveNextStep).toMatchObject({
+          text: 'Stop; the finite test is complete.', source: 'question',
+          derivedFrom: { questionId: question.id, lineSlug: 'main' },
+        });
+        expect(snapshot.latestProgress?.nextAction).toBe('Historical progress next.');
+      }
+      if (scenario === 'planned' || scenario === 'in_progress') {
+        expect(snapshot.effectiveNextStep).toMatchObject({
+          source: 'research_action', derivedFrom: { questionId: question.id, lineSlug: 'main' },
+        });
+      }
+    };
+    assertProjection(research, wire);
+    await wire.flush();
+    const restoredWire = buildWire('question-context-cold-restore', [...records]);
+    const restored = resolveServices(restoredWire);
+    await restoredWire.restore();
+    assertProjection(restored.research, restoredWire);
   });
 });
 
@@ -9193,7 +9288,7 @@ describe('Research Loop scientific state', () => {
     })).toThrow("not in 'in_progress' status");
   });
 
-  it('carries a concluded candidate through prepare, save, show, check, and checkpoint commit', async () => {
+  it.each([true, false])('carries a concluded candidate through prepare, save, show, check, and checkpoint commit with explicit Focus=%s', async (hasFocus) => {
     const check = vi.fn(async ({ workstream }: { workstream?: string } = {}): Promise<AitpCheckReport> => ({
       schema: workstream === undefined ? 'aitp/check-report-0.1' : 'aitp/check-report-0.2',
       root: '/workspace',
@@ -9268,7 +9363,7 @@ describe('Research Loop scientific state', () => {
       assessment: 'The bounded output has not yet been checked.',
       neededEvidence: ['Checked output', 'Independent physical convergence'],
     });
-    svc.setFocus(question.id);
+    if (hasFocus) svc.setFocus(question.id);
     svc.setPhase('gap_analysis');
     const action = svc.planAndStartAction({
       lineSlug: 'main',
@@ -9286,6 +9381,7 @@ describe('Research Loop scientific state', () => {
         workPerformed: 'Produced and checked the bounded output.',
         result: 'The bounded output passed its validation check.',
         mainlineImpact: 'The checked output advances the active line.',
+        nextAction: 'Save the checked output before choosing another test.',
       },
       durability: {
         status: 'durable_delta',
@@ -9316,6 +9412,10 @@ describe('Research Loop scientific state', () => {
 
     expect(committed.isError).toBeFalsy();
     const afterCommit = svc.getSnapshot().currentQuestion!;
+    expect(afterCommit?.id).toBe(question.id);
+    expect(svc.getSnapshot().currentFocus?.questionId).toBe(hasFocus ? question.id : undefined);
+    expect(wire.getModel(ResearchModel).current.focus?.questionId).toBe(hasFocus ? question.id : undefined);
+    expect(svc.getSnapshot().status?.currentQuestionId).toBe(question.id);
     expect(committed.output).toContain(`question_id=${question.id}, expected_revision=${afterCommit.revision}`);
     expect(committed.output).toContain('saved Entry entry-durable');
     expect(afterCommit.assessment).toBe(question.assessment);
@@ -9334,6 +9434,15 @@ describe('Research Loop scientific state', () => {
       evidenceRefs: ['entry-durable'], neededEvidence: ['Independent physical convergence'],
       epistemic: question.epistemic,
     });
+    expect(svc.getSnapshot().effectiveNextStep).toMatchObject({
+      text: 'Choose a discriminating convergence test, not a repeat of this output check.',
+      source: 'question',
+      derivedFrom: { questionId: question.id, lineSlug: 'main' },
+    });
+    expect(svc.getSnapshot().status?.nextStep).toBe(svc.getSnapshot().effectiveNextStep?.text);
+    expect(svc.getSnapshot().latestProgress?.nextAction).toBe(
+      'Save the checked output before choosing another test.',
+    );
     expect(check).toHaveBeenCalledTimes(checksBeforeSynthesis);
     expect(svc.getPendingCheckpoint()).toBeNull();
     expect(svc.getCommittedCursor()).toMatchObject({

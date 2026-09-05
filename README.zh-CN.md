@@ -99,6 +99,8 @@ AITP degraded 时，用户指导的 Research 回合仍可在 fresh bounded Actio
 
 证据保存并不等于科学 Question 已更新。持久结果的收尾指引先完成捕获的 checkpoint；首次提交成功后，再提示模型有条件地综合仍属当前上下文的 Question：评价、相关证据、剩余未知和下一步。重复提交或上下文已变化时不重复该定向提示。综合仍由模型通过现有 Question 工具完成；receipt 不会自动提升科学可信度或关闭 Question。
 
+当前问题优先尊重显式 Focus；没有 Focus 时，可使用前台 Action 明确引用且属于当前 Line 的 Question，不设置 Focus，也不猜测归属。更高优先级的行动、作业、决定和持久化事项处理完后，Question 明确保存的下一步优先于历史 progress。Snapshot、status 和提交后的指引共用该上下文。详见 [Question 上下文修复与验证状态](docs/aitp/theory-physics-collaborator-program.md#question-context-projection)。
+
 从既有证据整理阶段 Note 时，模型应先确定 Question 的 canonical evidence refs，再开始捕获该 revision 的 Note Action。现有上下文也会在 Topic 与已确认绑定匹配时标明原生 scoped maintenance 已完成；仅加载 Skill 不要求再做一次 `enter/check`。证据回读、真正过期后的刷新及必要的保存验证仍须执行。这是指引修正，不是新增阶段或自动科学判断。
 
 可选 Theory Physics 插件包含 `calculation-operator` agent profile，用于限定范围的编译、输入、数值计算和后处理。主 agent 给出科学检验与范围，审查现有 typed evidence packet，并独占 Research/AITP mutation。这个角色不同于 `/preset` 的模型路由池；不安装 runner 或 scheduler，也不提供 OS 级隔离。真实科研验收单独记录在合作者计划中。

@@ -371,7 +371,7 @@ export default {
     review: '评审',
     decision: '决策',
   },
-  focusedQuestionEvidence: '焦点问题证据',
+  focusedQuestionEvidence: '当前问题证据',
   progressEvidence: '进展证据',
   noneRecorded: '尚无记录',
   assumptions: '假设',
