@@ -1076,3 +1076,9 @@ core/CLI typecheck、core import guard（1,297 files）、四个改动代码文�
 Theory Physics 0.2.1 只作有证据的指引修正：受托保存 packet 时预留调用预算，未尝试不能称工具缺失，主 agent 区分实际错误与未经验证的原因；不为了补报告重跑已完成计算。没有新增工具、公开 schema、AITP contract 或 runtime enforcement。现有 PluginManager 安装/discovery 测试 34 项、AITP 官方 contract/atomic-save 21 项通过；新的真实报告复测仍待进行，不能由提示文字或这两组测试推断行为改善。首次误用了当前 Vitest 不支持的 `--minWorkers`，查实际 help 后以 `--maxWorkers=1 --no-file-parallelism` 运行通过；未修改依赖或测试来掩盖错误。
 
 总 Goal active，真实 Heisenberg milestone 仍待明确归属后执行。本阶段下一唯一最小 Action：安装本次已提交插件，使用既有输出做一次新的有归属报告任务，观察真实 Write/回传/主 agent review；不再次构建或计算，不伪称独立物理 trial。
+
+本次指引交付已提交并推送为 `a6631ca03`，从该 commit 的干净 worktree 通过正式 PluginManager 更新受管 Theory Physics 为 0.2.1。安装前确认六个旧受管文件与上次交付一致，未覆盖用户插件修改；安装后六个文件与新源文件一致。marketplace ZIP 的六个成员逐字节验证通过；首次检查漏写 ZIP 顶层目录导致路径查找失败，按实际成员路径校正后全部通过。Skill validation、changeset status、docs build（9.25 秒）和 doctor 通过；保留 docs 既有 ES2024/chunk warning。CLI engine 和 Web 未修改，安装版仍为 0.21.0，main hash 保持 `d7754430e76c8cca63402c53065954bf1851b49a1eeaa305f6ca2e5b54ee1012`。本轮新增 CLI patch changeset，未消费既有累计 CLI minor/SDK major，也未重跑无接口变化的全套跨端测试。AITP protected dirty handoff 未修改，无新 AITP 兼容性或协议声明。
+
+`operator-report-replay-r7` 在新进程中使用已安装 0.2.1，wire 确认 child 已加载新指引。主 agent 15 次、child 5 次工具调用，6 分 48.39 秒、exit 0：先成功 Begin，child 仅 Read 三个既有文件、Write 一份新的 Action-specific report、一次 sha256sum；主 agent Read 实际文件、确认 adapter ready、正式 Review、Conclude 一次并以新的工程恢复事实走 prepare/fill/save/Commit。报告 digest 由 child 实测，官方 save 与独立审计一致；没有额外手动 check/show、重复进度或新计算。最终 scope 为三条 Entries（两条旧 failure 和一条新工程 result）、零 Notes、零 errors/warnings，pending 清除，scope 外测试 Topic 警告保留。旧 failure 没有 resolves/supersedes，未因新成功倒填原失败原因；没有 marker、card、trial 或 human decision。
+
+这里的提示已经给出测试输入、预算和非收敛边界；r7 的报告-only任务也比 r5 的完整 build/run 任务更窄。因此证据支持“当前报告写入/回传/持久化路径可用”，不支持文字修改单独造成行为提升、原长任务不会再漏报告或自主科研能力整体已通过。原遗漏仍作为观察到但未归因的失败保留。G5 的真实数值执行和报告恢复已有正向证据，总 Goal 仍不能关闭；下一唯一最小 Action 是在该独立 Topic 用已提交证据验证一次 bounded 阶段 Note 的生成与恢复，继续 G4/G6，而不是等待确认时重跑同一 H2O 计算。
