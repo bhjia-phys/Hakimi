@@ -14,6 +14,63 @@ function snapshot(): ResearchStatusSnapshot {
   };
 }
 
+describe('scientific purpose while a job runs', () => {
+  function runningSnapshot(): ResearchStatusSnapshot {
+    return {
+      ...snapshot(), localConclusion: undefined, latestProgress: undefined,
+      currentLineSlug: 'test-line', phase: 'action_executing',
+      currentAction: {
+        actionId: 'gap-test', lineSlug: 'test-line', kind: 'simulation',
+        purpose: 'Compare gaps while awaiting the sample', expectedEvidence: ['Gap comparison'],
+        stopCondition: 'One discriminating result', allowedToolKinds: ['workspace_read'],
+        requiresHumanApproval: false, status: 'in_progress', createdAt: 1,
+      },
+      currentRun: {
+        actionId: 'gap-test', campaign: 'sample-campaign', jobId: '1234',
+        stage: 'scf', schedulerState: 'running', lastObservedAt: 2, artifactRefs: [],
+      },
+    };
+  }
+
+  it('retains both the scientific purpose and its own observed job without mutating state', () => {
+    const state = runningSnapshot();
+    const before = structuredClone(state);
+    expect(buildResearchBoardCompactSlots(state).find((slot) => slot.kind === 'cycle')).toMatchObject({
+      current: { source: 'run', actionPurpose: state.currentAction!.purpose,
+        jobId: '1234', stage: 'scf', schedulerState: 'running' },
+      actionStatus: 'in_progress',
+    });
+    expect(state).toEqual(before);
+  });
+
+  it('does not project a completed Action as ongoing research', () => {
+    const state = runningSnapshot();
+    state.currentAction!.status = 'completed';
+    state.phase = 'state_updated';
+    const cycle = buildResearchBoardCompactSlots(state).find((slot) => slot.kind === 'cycle');
+    expect(cycle).toMatchObject({ current: { source: 'run', actionPurpose: undefined }, actionStatus: undefined });
+  });
+
+  it.each([1, 2])('hides an explicitly foreign Action and run with %s Lines', (count) => {
+    const state = runningSnapshot();
+    state.currentAction!.lineSlug = 'other-line';
+    state.lines = ['test-line', 'other-line'].slice(0, count).map((slug) => ({
+      slug, title: slug, status: 'active', createdAt: 1, revision: 1,
+    }));
+    const cycle = buildResearchBoardCompactSlots(state).find((slot) => slot.kind === 'cycle');
+    expect(cycle?.current?.source).not.toBe('run');
+    expect(JSON.stringify(cycle)).not.toContain('Compare gaps');
+  });
+
+  it('does not attach a mismatched run to the scientific purpose', () => {
+    const state = runningSnapshot();
+    state.currentRun!.actionId = 'another-action';
+    expect(buildResearchBoardCompactSlots(state).find((slot) => slot.kind === 'cycle')).toMatchObject({
+      current: { source: 'action', text: state.currentAction!.purpose },
+    });
+  });
+});
+
 describe('retained local conclusion Board', () => {
   it('shows the result, terminal action, ownership next step and no false AITP commit', () => {
     const slots = buildResearchBoardCompactSlots(snapshot());

@@ -93,6 +93,8 @@ export type ResearchBoardCycleCurrent =
   | {
       source: 'run';
       text: string;
+      actionPurpose?: string;
+      jobId: string;
       stage: ResearchRunStage;
       schedulerState: ResearchSchedulerState;
     }
@@ -259,7 +261,9 @@ function currentAction(snapshot: ResearchStatusSnapshot) {
 
 function currentRun(snapshot: ResearchStatusSnapshot) {
   const action = currentAction(snapshot);
-  if (action === undefined) return snapshot.lines.length <= 1 ? snapshot.currentRun : undefined;
+  if (action === undefined) {
+    return snapshot.currentAction === undefined && snapshot.lines.length <= 1 ? snapshot.currentRun : undefined;
+  }
   if (action.run?.actionId === action.actionId) return action.run;
   return snapshot.currentRun?.actionId === action.actionId ? snapshot.currentRun : undefined;
 }
@@ -575,6 +579,9 @@ function cycleCurrent(snapshot: ResearchStatusSnapshot): ResearchBoardCycleCurre
     return {
       source: 'run',
       text: `${run.campaign} / ${run.jobId}`,
+      actionPurpose: action?.status === 'planned' || action?.status === 'in_progress'
+        ? presentText(action.purpose) : undefined,
+      jobId: run.jobId,
       stage: run.stage,
       schedulerState: run.schedulerState,
     };

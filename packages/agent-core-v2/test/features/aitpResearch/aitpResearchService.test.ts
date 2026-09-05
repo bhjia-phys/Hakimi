@@ -4556,7 +4556,7 @@ describe('goal completion guard and subagent veto', () => {
     expect(svc.getSnapshot().pendingCheckpoint).toBeUndefined();
   });
 
-  it('revalidates source Entries after cold restore instead of restoring old Note draft permission', async () => {
+  it.each([false, true])('revalidates source Entries after cold restore instead of restoring old Note draft permission with a retained run=%s', async (withRun) => {
     const records: WireRecord[] = [];
     const openWire = () => {
       eventBus = new EventBusService();
@@ -4568,7 +4568,11 @@ describe('goal completion guard and subagent veto', () => {
     wire = openWire();
     const original = await buildResearchSandboxHarness();
     const { svc, adapter } = original;
-    beginEvidenceNoteAction(svc);
+    const action = beginEvidenceNoteAction(svc);
+    if (withRun) svc.observeRun({
+      actionId: action.actionId, expectedRevision: svc.getSnapshot().revision,
+      campaign: 'fixture-campaign', jobId: 'fixture-job', stage: 'running', schedulerState: 'running',
+    });
     const shown = vi.spyOn(adapter, 'show');
     await svc.prepareReviewNote(reviewNoteInput);
     await wire.flush();
@@ -4579,12 +4583,14 @@ describe('goal completion guard and subagent veto', () => {
     await wire.restore();
     expect(restored.svc.getSnapshot().questions).toEqual(before.questions);
     expect(restored.svc.getSnapshot().currentAction).toEqual(before.currentAction);
+    expect(restored.svc.getSnapshot().currentRun).toEqual(before.currentRun);
     expect((await restored.executor.fireBeforeExecute(makeToolHookContext('Edit', { path: '.aitp/local/drafts/note-test.md' })))?.veto).toBeDefined();
     await expect(restored.svc.saveReviewNote({ draftPath: '.aitp/local/drafts/note-test.md' })).rejects.toThrow('no current post-commit');
     expect(await restored.executor.fireBeforeExecute(makeToolHookContext('aitp_note_prepare', reviewNoteToolArgs))).toBeUndefined();
     await expect(restored.svc.prepareReviewNote(reviewNoteInput)).resolves.toMatchObject({ status: 'prepared' });
     expect(shown).toHaveBeenCalledTimes(2);
     await expect(restored.svc.saveReviewNote({ draftPath: '.aitp/local/drafts/note-test.md' })).resolves.toMatchObject({ status: 'saved' });
+    expect(restored.svc.getSnapshot().currentRun).toEqual(before.currentRun);
   });
 
   it.each([
@@ -4669,6 +4675,68 @@ describe('goal completion guard and subagent veto', () => {
     const saved = await execute([{ name: 'aitp_note_save', args: { draft_path: '.aitp/local/drafts/note-test.md' } }]);
     expect(saved[0]?.isError).not.toBe(true);
     expect(save).toHaveBeenCalledOnce();
+  });
+
+  it('executes already authorized evidence work and Note synthesis while the same Action retains a running job', async () => {
+    const { svc, adapter, modeSvc, executor, registry } = await buildResearchSandboxWithProductionExecutor();
+    adapter._setHealth({ phase: 'ready', contractVersion: '0.2', pluginVersion: '0.9.0' });
+    const action = beginEvidenceNoteAction(svc, {
+      allowedToolKinds: ['workspace_read', 'shell', 'tool:aitp_note_prepare', 'tool:aitp_note_save'],
+    });
+    svc.observeRun({
+      actionId: action.actionId, expectedRevision: svc.getSnapshot().revision,
+      campaign: 'fixture-campaign', jobId: 'fixture-job', stage: 'running', schedulerState: 'running',
+      nextCheckAt: Date.now() + 60_000,
+    });
+    const before = svc.getSnapshot();
+    const cursor = svc.getCommittedCursor();
+    const record = vi.spyOn(adapter, 'recordPrepare');
+    const saveRecord = vi.spyOn(adapter, 'recordSave');
+    const saveNote = vi.spyOn(adapter, 'noteSave');
+    const tools = await buildNoteTools(adapter, modeSvc, svc);
+    registry.register(tools.prepare);
+    registry.register(tools.save);
+    const calls: string[] = [];
+    for (const name of ['Read', 'Bash', 'Edit', 'WebSearch']) {
+      registry.register({
+        name, description: 'Count fixture tool execution.', parameters: { type: 'object' },
+        resolveExecution: () => ({
+          approvalRule: name, accesses: ToolAccesses.all(),
+          execute: async () => { calls.push(name); return { output: 'Fixture evidence only; no actual calculation.' }; },
+        }),
+      });
+    }
+    const execute = async (name: string, args: unknown) => {
+      const results = [];
+      for await (const item of executor.execute([{
+        type: 'function', id: `waiting-${name}`, name, arguments: JSON.stringify(args),
+      }], { turnId: 1, signal: new AbortController().signal })) results.push(item.result);
+      return results;
+    };
+    for (const name of ['Read', 'Bash']) {
+      expect(await execute(name, { path: 'analysis/previous-result.txt', command: 'python derive_fixture.py' }))
+        .toEqual([expect.not.objectContaining({ isError: true })]);
+    }
+    expect(await execute('WebSearch', { query: 'An ungranted independent investigation' }))
+      .toEqual([expect.objectContaining({ isError: true })]);
+    expect(await execute('aitp_note_prepare', { ...reviewNoteToolArgs, mode: 'working', title: 'Recorded evidence while awaiting the fixture job' }))
+      .toEqual([expect.not.objectContaining({ isError: true })]);
+    expect(await execute('Edit', { path: '.aitp/local/drafts/note-test.md' }))
+      .toEqual([expect.not.objectContaining({ isError: true })]);
+    expect(await execute('Edit', { path: 'producer.py' }))
+      .toEqual([expect.objectContaining({ isError: true })]);
+    expect(await execute('aitp_note_save', { draft_path: '.aitp/local/drafts/note-test.md' }))
+      .toEqual([expect.not.objectContaining({ isError: true })]);
+    expect(calls).toEqual(['Read', 'Bash', 'Edit']);
+    expect(saveNote).toHaveBeenCalledOnce();
+    expect(record).not.toHaveBeenCalled();
+    expect(saveRecord).not.toHaveBeenCalled();
+    expect(svc.getCommittedCursor()).toEqual(cursor);
+    expect(svc.getSnapshot()).toMatchObject({
+      currentAction: before.currentAction, currentRun: before.currentRun, phase: 'action_executing',
+    });
+    expect(svc.getSnapshot().latestProgress).toEqual(before.latestProgress);
+    expect(svc.getSnapshot().pendingCheckpoint).toBeUndefined();
   });
 
   it.each(['gate', 'paused', 'degraded', 'concluded'] as const)(

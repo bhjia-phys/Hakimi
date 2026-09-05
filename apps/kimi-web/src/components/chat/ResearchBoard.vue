@@ -215,8 +215,17 @@ const cycleSummary = computed(() => {
     : slot.actionStatus === 'recovery_required'
       ? t('research.actionRecoveryRequired')
       : t('research.actionStatus.' + slot.actionStatus);
-  const current = slot.current?.text ?? t('research.nowNotRecorded');
+  const current = (slot.current?.source === 'run' ? slot.current.actionPurpose : undefined)
+    ?? slot.current?.text ?? t('research.nowNotRecorded');
   return [current, action].filter((part) => part !== undefined).join(' · ');
+});
+const cycleRunSummary = computed(() => {
+  const current = cycleSlot.value?.current;
+  if (current?.source !== 'run') return undefined;
+  return [
+    current.actionPurpose === undefined ? undefined : current.jobId,
+    `${t('research.schedulerState.' + current.schedulerState)} / ${t('research.runStage.' + current.stage)}`,
+  ].filter((part) => part !== undefined).join(' · ');
 });
 const maintenanceFreshness = computed(() => {
   const maintenance = props.snapshot.aitpMaintenance;
@@ -433,7 +442,10 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
           <Badge size="sm" variant="info">
             {{ cycleSlot ? t('research.cycleStage.' + cycleSlot.stage) : t('research.cycleNotEstablished') }}
           </Badge>
-          <span class="research-slot-copy">{{ cycleSummary }}</span>
+          <span class="research-cycle-work">
+            <span class="research-slot-copy" :title="cycleSummary">{{ cycleSummary }}</span>
+            <span v-if="cycleRunSummary" class="research-slot-copy research-muted">{{ cycleRunSummary }}</span>
+          </span>
         </span>
         <Badge
           v-if="cycleSlot"
@@ -1671,6 +1683,12 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.research-cycle-work {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
 }
 
 .research-compact-attention {

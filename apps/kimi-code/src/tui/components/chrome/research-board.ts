@@ -113,7 +113,7 @@ export class ResearchBoardComponent implements Component {
 
     const contentRows = this.expanded
       ? buildExpandedRows(snap, this.todos, colors)
-      : buildCompactRows(snap, colors);
+      : buildCompactRows(snap, colors, safeWidth);
     if (this.expanded) {
       lines.push(...contentRows.flatMap((row) => row.length === 0 ? [''] : wrapBoardRow(row, safeWidth)));
     } else {
@@ -448,7 +448,9 @@ function currentLineAction(
 
 function currentLineRun(snap: ResearchStatusSnapshot) {
   const action = currentLineAction(snap);
-  if (action === undefined) return snap.lines.length <= 1 ? snap.currentRun : undefined;
+  if (action === undefined) {
+    return snap.currentAction === undefined && snap.lines.length <= 1 ? snap.currentRun : undefined;
+  }
   if (action.run?.actionId === action.actionId) return action.run;
   return snap.currentRun?.actionId === action.actionId ? snap.currentRun : undefined;
 }
@@ -489,7 +491,7 @@ function cycleStage(snap: ResearchStatusSnapshot): string {
   }
 }
 
-function compactCurrentWork(snap: ResearchStatusSnapshot): string {
+function compactCurrentWork(snap: ResearchStatusSnapshot, width: number): string {
   const actionRecoveryRequired = actionNeedsRecovery(snap);
   const action = currentLineAction(snap);
   const run = currentLineRun(snap);
@@ -497,7 +499,14 @@ function compactCurrentWork(snap: ResearchStatusSnapshot): string {
     !actionRecoveryRequired && run !== undefined &&
     (run.schedulerState === 'pending' || run.schedulerState === 'running')
   ) {
-    return `job ${normalizeSummary(run.jobId)} · ${run.schedulerState} / ${run.stage}`;
+    const observation = `job ${normalizeSummary(run.jobId)} · ${run.schedulerState} / ${run.stage}`;
+    const purpose = normalizeSummary(action?.purpose);
+    if (purpose && (action?.status === 'planned' || action?.status === 'in_progress')) {
+      // Reserve the observed job before truncating a long scientific purpose.
+      const purposeWidth = Math.max(1, width - visibleWidth(observation) - 3);
+      return `${truncateToWidth(purpose, purposeWidth, '…')} · ${observation}`;
+    }
+    return observation;
   }
   if (
     !actionRecoveryRequired && action !== undefined &&
@@ -538,6 +547,7 @@ function renderCompactProjectStage(
 function renderCompactCurrentCycle(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
+  width: number,
 ): string {
   const local = snap.localConclusion;
   const action = currentLineAction(snap);
@@ -558,7 +568,9 @@ function renderCompactCurrentCycle(
     return `  ${chalk.hex(colors.primary)('↻')} ${chalk.hex(colors.textDim)('Current cycle:')} ${chalk.hex(colors.text)(normalizeSummary(local.progress.headline))} · ${chalk.hex(colors.textMuted)(`${mode} · action ${local.action.status}`)} · ${chalk.hex(colors.warning)('retained locally, not recorded in AITP')}`;
   }
   const warning = actionNeedsRecovery(snap) || snap.loopStatus === 'paused' || continuation === 'held';
-  return `  ${chalk.hex(warning ? colors.warning : colors.primary)('↻')} ${chalk.hex(colors.textDim)('Current cycle:')} ${chalk.hex(colors.primary)(cycleStage(snap))} · ${chalk.hex(colors.text)(compactCurrentWork(snap))} · ${chalk.hex(warning ? colors.warning : colors.textMuted)(`${mode} · ${actionState}`)}`;
+  const prefix = `  ${chalk.hex(warning ? colors.warning : colors.primary)('↻')} ${chalk.hex(colors.textDim)('Current cycle:')} ${chalk.hex(colors.primary)(cycleStage(snap))} · `;
+  const work = compactCurrentWork(snap, Math.max(0, width - visibleWidth(prefix) - 1));
+  return `${prefix}${chalk.hex(colors.text)(work)} · ${chalk.hex(warning ? colors.warning : colors.textMuted)(`${mode} · ${actionState}`)}`;
 }
 
 function renderCompactAttention(
@@ -744,8 +756,9 @@ function renderCompactNext(
 function buildCompactRows(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
+  width: number,
 ): string[] {
-  const rows = [renderCompactProjectStage(snap, colors), renderCompactCurrentCycle(snap, colors)];
+  const rows = [renderCompactProjectStage(snap, colors), renderCompactCurrentCycle(snap, colors, width)];
   const attention = renderCompactAttention(snap, colors);
   if (attention !== undefined) rows.push(attention);
   rows.push(renderCompactNext(snap, colors));

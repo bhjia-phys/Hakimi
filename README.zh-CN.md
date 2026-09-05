@@ -77,7 +77,7 @@ Research Mode 默认可发现，但每个新 session 都从 inactive 开始。�
 
 上段的 “Plan” 特指短期 Action-local Plan/Todo；带 revision 的 Research Plan 是跨多轮、可随证据演化的科学策略，但同样不拥有 continuation，也不能完成 Goal。经审阅的 local Action Plan 可以独立执行，不强制创建 Goal 或完整 Research Plan；如果已有 draft/active Research Plan，planned action 仍须同时绑定其 active milestone 和经审阅的小计划，缺项或过期 binding 继续拒绝执行。
 
-紧凑 Board 优先显示当前研究线、科学目标或里程碑，以及正在做的工作。turn 计数和明确分类的历史失败保留在展开审计中，不冒充科学进展或当前阻塞。Action 结论没有待保存 checkpoint 时显示“下一步／就绪”，Goal 明确等待时显示“等待”。Research 上下文不再仅因预算计数或内部 revision 变化重复整段提示，但范围、完成条件、续跑和预算上限等实质变化仍会刷新。这些显示修复只是[合作者总体规划](docs/aitp/theory-physics-collaborator-program.md)的一部分，不代表整个科研工作流已经验收。
+紧凑 Board 优先显示当前研究线、科学目标或里程碑，以及正在做的工作。live Action 的目的与其运行中的作业同时可见；明确属于其他 Line 的 Action/run 不混入当前研究线，旧单 Line 视图也一样。turn 计数和明确分类的历史失败保留在展开审计中，不冒充科学进展或当前阻塞。Action 结论没有待保存 checkpoint 时显示“下一步／就绪”，Goal 明确等待时显示“等待”。Research 上下文不再仅因预算计数或内部 revision 变化重复整段提示，但范围、完成条件、续跑和预算上限等实质变化仍会刷新。这些显示修复只是[合作者总体规划](docs/aitp/theory-physics-collaborator-program.md)的一部分，不代表整个科研工作流已经验收。
 
 Research 协作策略与工具权限模式相互正交。`collaborative` 只在会改变 Research Plan 的关键不确定性上询问研究者。`dreaming` 表示一旦 Goal、scope 和 completion criterion 已明确，Hakimi 就记录 reversible、low-cost、in-scope 的默认假设，并让 Goal 拥有的 continuation 在不逐步确认的情况下继续推进课题。两者在改变 Goal/scope、会影响结论的科学约定歧义、昂贵或不可逆操作，以及 AITP/其他 human decision 处都仍会停下。`auto` 只决定常规工具风险确认；因此 Goal + `dreaming` + `auto` 可以在已约定的科学与操作边界内自动推进，但不会获得新的科学决策权。
 

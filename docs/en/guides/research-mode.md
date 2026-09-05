@@ -126,6 +126,8 @@ When Research Mode is active, a **Research Board** appears above the input area 
 - **Attention**: an exact Goal continuation hold, unresolved human gate, action/phase recovery requirement, pending checkpoint, active Goal–Program alignment or Line-workstream blocker, unavailable method-review handoff, current-Line alert, maintenance problem, or adapter error, plus a count when more items exist; healthy AITP, alignment, workstream, and provenance facts stay collapsed, and alerts owned by another Line never appear as current attention
 - **Next**: one effective next step with its source, or an explicit missing-next state
 
+While a current Action has a running job, Current cycle keeps its scientific purpose alongside the observed job and scheduler/stage. Long purposes are clipped without replacing them with job metadata; Web places the observation beneath the purpose. A completed Action is not presented as ongoing work, and an explicitly foreign Action/run is hidden even in a single-Line snapshot. This display does not infer an unrecorded scientific step or authorize new work while waiting.
+
 The **Hakimi Research Goal** shown in Project is an additive `hakimi/research-goal-0.1` projection of the one generic Goal that owns cross-turn continuation, not a second scheduler or an AITP Topic Goal. The expanded Board remains the audit surface for the complete Goal and observed AITP Program goal, Program/Line/Question scope, plans, evidence, checkpoints, and provenance. The legacy `goalSummary` remains a compatibility fallback. Long compact narratives are clipped to the available terminal width or two Web lines; expanding the Board restores the complete text.
 
 Goal lifecycle and continuation are separate. `active` means the objective is

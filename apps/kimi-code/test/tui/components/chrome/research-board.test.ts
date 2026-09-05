@@ -1102,6 +1102,86 @@ describe('ResearchBoardComponent', () => {
     expect(output).not.toContain('action-1');
   });
 
+  describe('scientific purpose while a job runs', () => {
+    function runningSnapshot(): ResearchStatusSnapshot {
+      return makeSnapshot({
+        currentAction: {
+          actionId: 'gap-test', lineSlug: 'test-line', kind: 'simulation',
+          purpose: 'Compare gaps and derive the finite-size correction while awaiting the sample',
+          expectedEvidence: ['Gap comparison'], stopCondition: 'One discriminating result',
+          allowedToolKinds: ['workspace_read'], requiresHumanApproval: false,
+          status: 'in_progress', createdAt: 1,
+        },
+        currentRun: {
+          actionId: 'gap-test', campaign: 'sample-campaign', jobId: '1234',
+          stage: 'scf', schedulerState: 'running', lastObservedAt: 2, artifactRefs: [],
+        },
+      });
+    }
+
+    it.each([80, 120, 180].flatMap((width) => ['Compare', '比较能隙'].map((prefix) => ({ width, prefix }))))(
+      'keeps $prefix and job visible at width $width without extra slots', ({ width, prefix }) => {
+        const board = new ResearchBoardComponent();
+        const original = runningSnapshot();
+        const snapshot = makeSnapshot({ ...original, currentAction: {
+          ...original.currentAction!,
+          purpose: prefix === '比较能隙'
+            ? '比较能隙并推导有限尺寸修正，同时等待当前计算样本' : original.currentAction!.purpose,
+        } });
+        const before = structuredClone(snapshot);
+        board.setSnapshot(snapshot);
+        const rows = board.render(width).map(stripAnsi);
+        const cycle = rows.find((row) => row.includes('Current cycle:'))!;
+        expect(cycle).toContain(prefix);
+        expect(cycle).toContain('job 1234');
+        expect(cycle).toContain('running / scf');
+        expect(cycle.indexOf(prefix)).toBeLessThan(cycle.indexOf('job 1234'));
+        expect(rows.length).toBeLessThanOrEqual(6);
+        for (const row of rows) expect(visibleWidth(row)).toBeLessThanOrEqual(width);
+        expect(snapshot).toEqual(before);
+    });
+
+    it('does not call a closed Action ongoing work even when its job still runs', () => {
+      const original = runningSnapshot();
+      const snapshot = makeSnapshot({ ...original,
+        currentAction: { ...original.currentAction!, status: 'completed' }, phase: 'state_updated',
+      });
+      const board = new ResearchBoardComponent();
+      board.setSnapshot(snapshot);
+      const output = board.render(180).map(stripAnsi).join('\n');
+      expect(output).toContain('job 1234');
+      expect(output).toContain('no live action');
+      expect(output).not.toContain('Compare gaps');
+    });
+
+    it.each([1, 2])('hides an explicitly foreign Action and its run with %s Lines', (count) => {
+      const original = runningSnapshot();
+      const snapshot = makeSnapshot({ ...original,
+        currentAction: { ...original.currentAction!, lineSlug: 'other-line' },
+        lines: ['test-line', 'other-line'].slice(0, count).map((slug) => ({
+          slug, title: slug, status: 'active', createdAt: 1, revision: 1,
+        })),
+      });
+      const board = new ResearchBoardComponent();
+      board.setSnapshot(snapshot);
+      const output = board.render(180).map(stripAnsi).join('\n');
+      expect(output).not.toContain('Compare gaps');
+      expect(output).not.toContain('1234');
+    });
+
+    it('does not attach a mismatched run to the current scientific purpose', () => {
+      const original = runningSnapshot();
+      const snapshot = makeSnapshot({ ...original,
+        currentRun: { ...original.currentRun!, actionId: 'another-action' },
+      });
+      const board = new ResearchBoardComponent();
+      board.setSnapshot(snapshot);
+      const output = board.render(180).map(stripAnsi).join('\n');
+      expect(output).toContain('Compare gaps');
+      expect(output).not.toContain('1234');
+    });
+  });
+
   it('compact shows human gate at the top when unresolved', () => {
     const board = new ResearchBoardComponent();
     board.setSnapshot(

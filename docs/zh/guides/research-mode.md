@@ -126,6 +126,8 @@ action 的恢复工作。
 - **Attention**：依次显示精确的 Goal continuation hold、未解决人工门禁、action/phase 恢复要求、pending checkpoint、active Goal–Program 或 Line–workstream 阻塞、method-review handoff 不可用、当前 Line 的 alert、维护问题或适配器错误；健康的 AITP、alignment、workstream 和 provenance 默认折叠，其他 Line 的 alert 绝不冒充当前 attention
 - **Next**：只显示一个带来源的 effective next step；缺失时明确提示尚未记录
 
+当前 Action 有运行中的作业时，Current cycle 同时保留科研目的和已观察到的作业、调度状态与阶段。长目的可以截断，但不会被作业元数据替换；Web 将观察信息放在目的下方。已完成的 Action 不冒充正在进行的科研，明确属于其他 Line 的 Action/run 即使在单 Line 快照中也不会显示。这只是展示，不推断未记录的科研步骤，也不授予等待期间开展新工作的权限。
+
 Project 中的 **Hakimi Research Goal** 是唯一负责跨轮次 continuation 的 generic Goal 的 additive `hakimi/research-goal-0.1` 投影，不是第二套 scheduler，也不是 AITP Topic Goal。展开 Board 仍是完整审计面：显示完整 Goal 与 observed AITP Program goal、Program/Line/Question scope、两层计划、证据、checkpoint 和 provenance；旧 `goalSummary` 继续作为兼容 fallback。紧凑态的长叙事会按终端可用宽度或 Web 两行截断；展开 Board 后会恢复完整文本。
 
 Goal lifecycle 与 continuation 是两个维度。`active` 表示 objective 仍可

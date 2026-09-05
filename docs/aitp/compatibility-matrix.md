@@ -1,5 +1,13 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**Hakimi-only waiting-work presentation (2026-09-05; source/regression verified, delivery pending):**
+Compact TUI/Web keep the live Action's scientific purpose with its job observation
+and exclude explicitly foreign Action/run metadata even in single-Line snapshots.
+Executor/cold-restore fixtures cover already authorized same-Action work, not new
+independent Actions or real-model scientific acceptance. Public wire schemas and
+AITP CLI/contract/Skills are unchanged; counterpart dirty handoffs stay untouched.
+Delivery and remaining acceptance are tracked in collaborator program §19.27.
+
 **Hakimi-only retained-run recovery (2026-09-05; delivered, installed process recovery verified):**
 The existing `ObserveResearchRun` path can update the same external job retained
 by a closed Action, including after restart or while paused. Live validation

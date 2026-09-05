@@ -1,5 +1,12 @@
 # AITP 状态跟踪与交接清单
 
+2026-09-05 等待期间的科研目的展示（源码与回归已更新，交付待验）：TUI/Web
+紧凑 Board 同时保留 live Action 的目的与其 running 作业观察，明确的其他 Line
+Action/run 不再通过旧单 Line fallback 混入当前视图。同一 Action 内的已有授权
+工作和 Note 路径有 executor/冷恢复 fixture；这不授权新的独立 Action，也不证明
+真实模型等待、科研或 canonical Note 保存。无公共 wire、AITP CLI/contract/Skill
+变化，对方 dirty handoff 保留。后续交付与自然验收见合作者规划 §19.27。
+
 2026-09-05 外部作业观察恢复（已交付安装，独立进程恢复通过）：公开 SDK 复现了
 running run 的 Action 已 Conclude，但终态 observation 和下一 Action 均被拒绝。
 Hakimi 让既有 `ObserveResearchRun` 对 closed Action 的同一作业继续登记观察，

@@ -816,7 +816,7 @@ C1–C5 的审查是必做项，但代码实现不是无条件必做项。只有
 | collaborative 多讨论，dreaming 明确后自动推进 | §5、G2 | 与 `auto` permission 正交 |
 | 猜想前可与人讨论、查文献、查 AITP 和卡片 | §3.1、G3 | 定向检索，不建 catalog/vector DB |
 | 确认问题后再 plan、执行或分工 | §3、§7 | 一个 bounded Action；operator 按需 |
-| 等待计算时整理 AITP 或深入思考 | §3、§9 | 必须是独立 bounded action，不伪造 run 结果 |
+| 等待计算时整理 AITP 或深入思考 | §3、§9、G2 | 先验收当前 Action 内已约定工作；关闭后开展独立工作仍有缺口，不伪造 run 结果 |
 | 自动读写 AITP，但低冗余 | §6 | durable delta 才写；no-delta 零写入 |
 | 人类指导经过检验后可成为知识 | §6.3、G4 | authority 分离后进入 evidence/review |
 | 知识卡不能简单用 Skill 取代 | §6.4 | card 记录、Skill 路由、tool 执行 |
@@ -836,7 +836,7 @@ C1–C5 的审查是必做项，但代码实现不是无条件必做项。只有
 
 当前已按用户要求重新创建覆盖本文全部范围的有限总 Goal。核心 objective 是“交付首个可用串行理论物理合作者，并用指定真实课题继续科研、观察输出、修复和验收”。G0 的开发交付证据保留，后续执行 G1–G7；细节可按真实证据调整，C1–C5 做逐项 trigger review。
 
-当前 Goal 的续行顺序与验收收敛方式见 [§19.24](#goal-execution-refinement)。该节更新执行安排，不重建 Goal、不清空已有证据，也不表示下列功能已全部验收。
+当前 Goal 的续行顺序与验收收敛方式见 [§19.24](#goal-execution-refinement)，已有证据和未完成项见 [§19.26](#acceptance-evidence-matrix)。执行采用这两处当前记录，不重复 Goal 创建时已经完成的旧下一步；优化安排不重建 Goal、不清空证据，也不表示功能已全部验收。
 
 最终验收使用只读导入的 `/home/bhjia/physics/quantum_chaos/Power_Law_Heisenberg_Chain/kimi-debug-session_-20260904-182916.zip` 恢复 `yangian-power-law-heisenberg-chain` 课题。先核验该非 Git 工作区的 AITP Topic、现有证据、当前 Research Goal/Plan/Line/Question 和真实 debug 输出，再完成至少一个有科学意义且有明确判据的 bounded milestone。把其 fresh/cold restore、Board、warning、Action、AITP persistence、distillation 和 Note 输出加入回归；发现的 P0/P1 harness 缺陷必须修复、测试、推送、重装并重放，直到不再复现。昂贵或不可逆计算、科学 convention 歧义和 human decision 仍按总 Goal 的停止条件暂停相关里程碑，不自动扩大权限。
 
@@ -1191,23 +1191,45 @@ TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，�
 
 **续行依据。** 原 Goal 正文里的“当前修复尚未交付”等进度描述是设置时的快照；后续推进采用本文件的最新验收记录，不能因此重做 §19.23 已交付的切片。宿主当前只开放 Goal 创建、查询和完成/阻塞状态更新，不支持改写未完成 Goal 的 objective；因此保留 active Goal，通过它已经引用的本文细化计划，不把未完成 Goal 假标 complete 后重建，也不手改宿主存储。
 
+**2026-09-05 优化起点。** A 的本地结论恢复已交付，外部作业终态补录见 [§19.25](#retained-run-recovery)，B 的逐项证据盘点也已在 [§19.26](#acceptance-evidence-matrix) 完成。当前不是重做 A 或再写一份总盘点，而是补齐 B 暴露的具体缺口，然后完成 C/D 的正常科研与真实 Goal 验收。下述验收包组织已有要求，不另加产品能力或科研状态机；一个包可以分成多个有明确结果的开发 Action。
+
 执行顺序保持 A–E，但每一步先看已有证据，不机械重复：
 
 1. **A：沿用已交付结果。** §19.23 的本地结论收尾及冷恢复不再重复；它仅证明恢复，不代替正常绑定记录或跨 turn Goal 推进。
-2. **B：收敛剩余工作。** 对 G1–G7 的原验收条目分别标明代码路径、定向测试、安装版模型行为和剩余缺口；保留失败与未测。功能已具备时不新增机制，证据缺失时安排最小验收，不先扩写更多规划。
+2. **B：补齐已定位的剩余工作。** 复用 §19.26 的代码、测试、安装版行为与缺口清单；每次只更新发生变化的条目，保留失败与未测。功能已具备时不新增机制，证据缺失时安排最小验收，不再全量盘点或先扩写更多规划。
 3. **C：验收正常科研。** 在明确确认的 Program/Line/Question 下，从真实未决问题出发，经过必要的讨论、检索或推导，选一个判别性检验，评价结果和反证，更新 Research Plan、必要 AITP Entry/Note 与 Board。验收提示只给科学问题、约束和成果，不逐条指定内部工具。
 4. **D：独立验收自动继续与停止。** 实际观察 Goal 跨 turn 选择下一步、等待外部工作、恢复、达到完成条件或请求必要人类判断；无 Goal 的自然科研同样要成立。重放状态或调用一次工具不能代替这一项。
 5. **E：按缺陷回到最小修复。** 合法科研无法继续、归属错误、结果丢失或误记、重复写入、提前完成等问题，先保存复现，再修复和复测受影响场景。只重新交付发生产品变化的切片；非关键体验建议另列，不无限延长本 Goal。
 
 这不是 A–E 必须走完才允许修复的流程：若 B 已证实一个会阻断 C/D 的缺陷，下一 Action 就处理该缺陷，之后回到尚未验收的条目。等待外部计算与“没有新证据却重复相同操作”必须分开；前者保持真实等待，后者先诊断或调整方法。一次只推进一个有明确结果的小切片，不因等待人类归属确认而重跑已有计算或替人确认。
 
+**剩余验收按使用故事组合。** 不为每个功能各造一套课题或记录。同一段真实输出可以支持多个条目，但必须指出分别支持什么；同一执行链不能因此变成两个独立 trial。
+
+| 验收包 | 需要实际看见的行为 | 对应原范围 |
+|---|---|---|
+| 自然探索与等待 | 无 Goal 时能讨论、回读、比较解释并选择小检验；等待已有作业时能做范围内有价值的工作，Board 同时讲清科研目的和等待对象 | G1、G2、G3；已关闭 Action 后的新工作限制单独验证 |
+| Heisenberg 正常科研与 Goal | 明确归属后，由科学问题形成可修订计划，真实跨 turn 推进、评价反证，完成一个有限里程碑及必要记录；暂停、等待与恢复不伪装为持续运行 | G2、G7，并复用 G1/G3/G6 的相关证据 |
+| 人类指导与知识复用 | 对照原四类情景检验指导、反驳猜测、复用已有卡片和不足条件时 no-op；只有真实 trigger 才进入现有蒸馏流程 | G3、G4；不为验收凑卡片、trial 或批准 |
+| LibRPA 工程交接 | 主 agent 给出科学任务和适用条件，operator 完成真实执行及证据包，主 agent 解释 observable、反例和限制；旧数值成功与旧交接失败均保留 | G5，并与 G3/G4 共用相关方法证据；不能由 Heisenberg 代替 |
+| 综合、恢复与交付 | 新的阶段 Note 顺序正确，冷恢复后可回读且不重复写；三个 GW 导出逐个映射到故障回归；最终安装版完成受影响流程复测 | G1、G6、G7 和 E；不把 fixture 当模型自然科研 |
+
+每个包先补缺失证据，不重跑已经足够的部分。验收提示只给科学问题、已确认的范围、资源限制和预期成果，不告诉模型应调用哪些 Research 工具或如何过 phase；排障时可以使用强指导提示，但必须单列为诊断。每个 case 绑定当时的交付 commit、实际输入和完整输出，不能用旧版本的一次成功覆盖新版本尚未运行的路径。
+
+**科研效果与工程正确性分开判断。** 科研验收要能回答：这一轮减少了哪个未知？候选解释为什么值得检验？检验是否有区分力、前提是否成立？证据支持到哪里、还有什么反证和限制？下一步为什么由这些结果推出？基础代码检验发现反例可以是有效诊断，但不等于解决原物理问题，也不自动证明 Goal、计划和持久化通过。工程验收另查归属、恢复、重复写入和工具执行边界；不以工具数、记录数、warning 清零或测试全绿替代科研进展。
+
 **完成条件。** 同时满足：G1–G7 各自的验收要求有可定位证据；C1–C5 有需求结论而不是强行实现；交付版本可以对应到源码 commit；正常科研、异常恢复和跨 turn continuation 分别验证；真实 Heisenberg 里程碑达到预先写明的判据并完成必要记录。支持、反证或符合预定诊断标准的未决结论均可作为科学结果，但 Action/Board 僵住、只写了记录或测试全绿均不算工作流完成。LibRPA 的工程执行与报告证据仍单独用于 G5，不由 Heisenberg 代替。
+
+总 Goal 的有限终点是上述条件，不是所有开放物理问题得到肯定答案，也不是知识卡数量达到某个指标。原有必验项不能改称可选项来关 Goal；原有条件性项目则按真实需求决定 no-op，保持未实现状态。影响这些验收的关键缺陷必须修复并复测；不影响验收的额外功能或润色进入后续清单，不滚动加入本 Goal。
 
 **轻量与判断边界。** 科学问题、猜想、文献判断、检验设计和结论由合作者式的主 agent 负责，必要时与研究者讨论；工具及薄 operator 承担工程执行和审计细节。AITP 负责 canonical 证据与知识记录，蒸馏仍只走当前 `distilling-methods` 的条件性路径，无 trigger 就 no-op。Board 默认只保留课题位置、本轮问题/检验/结果、必要 attention 和唯一 next。恢复不增加每阶段扫描、强制 Note、第二套 Goal 或自动人类决定。
 
 **允许修改与验证。** 本次计划优化仅修改本文件，不修改产品运行时、科研项目或 AITP dirty changes。后续每个实现切片继续按总 Goal 在隔离 Hakimi worktree 列出精确文件 allowlist，检查六端一致性；AITP surface 需要改变时另行停止设计评审，不在本次顺带扩展。文档运行 `NODE_OPTIONS=--max-old-space-size=3072 pnpm --dir docs run build` 与 `git diff --check`；代码切片使用相应包的定向 `vitest run <files> --maxWorkers=1 --no-file-parallelism`、typecheck 及受影响的 contract/fixtures，再验证安装版行为。构建和大型测试串行；每个真实实验预先写明资源、时限与停止边界，mock、故障重放和真实计算分开报告。
 
-**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。下一唯一最小 Action 是 B 的逐项证据对照，输出一份剩余验收清单及最先需要处理的具体缺口；不新建 Goal，不重复 A，不把重新整理计划本身当作科研验收。
+重型测试、构建和真实模型验收串行进行。实验资源上限在执行前按该 case 确定，不因一次超时自动加大；重复同一失败前先定位原因，保留失败输出，只有修复或新证据支持时才重试。复用可核验的数值产物与记录，不用重复计算证明文档或 Board 文案改变；只在产品发生变化的交付点构建安装，再验证受影响路径。文档优化不触发新版本、重装或科研执行。
+
+**当前执行位置。** 同一 Action 内等待期间的授权工作、Note 整理和冷恢复已有 fixture；TUI/Web 覆盖科研目的的展示缺口也已修复，并补上旧单 Line 快照中明确 foreign Action/run 的隔离。完整 Research 测试、两端展示和浏览器验证见 [§19.27](#waiting-purpose-board)。这些证明软件路径与展示，不证明真实推导、计算或 canonical Note 保存；此切片尚待 scoped 交付安装，不因更新规划而重做已有测试或科学计算。
+
+**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。Heisenberg 正式归属仍沿用 §19.13 已提出的确认依赖，不重复询问或由测试代签。下一唯一最小 Action 是审查并 scoped 提交、推送 §19.27 的 Board/回归切片，从 clean commit 本地安装并核验对应的终端入口与 Web 资产。之后继续自然使用验收，不能用本次规划或 fixture 替代 G1–G7 的剩余要求；不启动真实作业，不新建 Action 类型、scheduler 或 schema。
 
 ### 19.25 已关闭 Action 的外部作业观察恢复 {#retained-run-recovery}
 
@@ -1332,3 +1354,23 @@ G1 后续优先复用现有字段和 Skill；本轮不新增 public phase、wire
 文档首次构建因五个指向站点外 Markdown 的相对链接失败；改为固定交付 commit 的源码链接后构建通过，没有禁用 dead-link 检查。其余源码链接也固定到同一 commit，避免站点将其当作本地页面。`lint:imports` 检查 1,299 文件通过，`git diff --check` 通过；现有 ES2024/大 chunk 构建提示保留。原 Hakimi HEAD `892733a00582` 的 156 条 dirty paths 与 AITP HEAD `eae1bce5eba3` 的 20 条 dirty paths 未纳入修改。
 
 **唯一下一 Action。** 先验收 G1/G2 的“等待时继续有价值工作”是否可由已有 Action 内授权路径承担：在隔离 fixture 保留同一 live run，验证已授权回读/独立推导或既有 Note 整理、Board 的等待/当前工作表达以及恢复后的 run 归属；与“已关闭 Action 后不能新开”的已知限制分开。如果现有路径足够则 no-op；否则提交带复现的最小 Hakimi 设计，不先建第二 foreground owner、scheduler 或新 schema。科学项目仍只读，不为测试伪造 run 终态、课题绑定或人类决定。该项不依赖尚待确认的 Heisenberg 归属，不重做已完成数值，也不把本次矩阵更新算作科研验收。
+
+### 19.27 等待期间保留科研目的的 Board 修复 {#waiting-purpose-board}
+
+2026-09-05，按 §19.24 继续现有总 Goal，没有新建 Goal 或缩小 G1–G7。基线为隔离分支 `1baa93e38a04c1af52ec9530758a67c9c0de663e`；远程 main `015763451d8b6ec01a9954ae2239e76005952581` 已是祖先，不重复 merge。原 Hakimi checkout、AITP 的 20 条 dirty paths 和科研目录均未修改。
+
+先验证现有执行路径：running run 不会禁止同一 fresh Action 内已授权的回读、shell 工具或基于既有证据的 Note 整理。生产 executor 配合测试工具执行体、模拟 AITP adapter，验证允许的工作执行、未授权搜索与 producer Edit 拒绝、Note draft 的窄权限、原 run/Action/progress/cursor 不被改写。冷恢复分别带/不带 run，旧草稿权限不恢复，重新验证来源后才能准备/保存。没有执行真实 Python 推导、作业或 canonical Note；不把 fixture 当成科学试验，也不据此创建 Method card。已关闭 Action 后的新独立工作限制仍未解决，不以“同一 Action 可用”代替该验收。
+
+显示缺口由两端回归复现：TUI 和 Web 的 run-first 投影遮住当前 Action 的科研目的，旧单 Line fallback 还会漏出明确属于另一 Line 的 run。修复只改投影与布局：TUI 在原 Current cycle 行给目的和作业预留宽度，不增加语义行；Web 保留目的，把作业 ID、调度状态和阶段作为其下方的附属信息。已关闭 Action 不显示为 ongoing purpose，Action/run 身份不匹配或明确 foreign 时不混入当前紧凑视图。展开态仍保留完整原始审计记录。没有用 UI 推断新的微步骤、修改科研状态或授予权限。
+
+源码范围为 TUI `research-board.ts`、Web `researchBoardPresentation.ts` 与 `ResearchBoard.vue`；测试扩展现有 TUI Board、Web local-conclusion Board 和 core Research 文件。同步两份 README、双语 Research guide、Hakimi TRACKING/compatibility matrix、本文件，以及仅 CLI patch 的 `research-waiting-purpose` changeset。Web helper 新字段仅属浏览器内部投影；REST/WS、Node SDK、klient、AITP CLI/schema/adapter-contract/Skill 均无变化，AITP protected handoff 不写入。
+
+验证：core Research 563 项、TUI Board 91 项（含 80/120/180 列中英文）、Web Board/Manager 39 项通过；三包 typecheck 和 core `lint:imports`（1,299 files）通过。新 TUI fixture 首次 typecheck 因修改 readonly snapshot 失败，已改为构造新快照，未放宽类型。定向六文件 type-aware oxlint 为 0 errors、86 warnings，不声称全仓 lint clean。Web style 为 baseline 模式 28 findings，本次修改文件不在 findings 中。AITP 官方 `.venv` 的 adapter-contract/atomic-save 21 项及官方 help 复验通过；没有再次跑不受影响的六端完整协议测试。
+
+真实 Chromium 渲染生产 Board，覆盖中英文 × 明暗主题 × 1180/390px 共 8 项，目的、作业与调度状态可同时阅读，无页面错误或横向溢出，hover/键盘焦点正常；另验证单 Line 下 foreign run 隐藏。截图与原始报告保存在 `/tmp/hakimi-waiting-board.n1FPsm/`。首次浏览器启动因默认缓存未找到 executable 失败；复用此前隔离浏览器和 runtime-libs 后通过，没有安装系统依赖。原始 UI fixture 没有连接科研后端，不能当作真实研究者的理解或 Goal 验收。
+
+正式 `build:web-assets` 与 `--check` 通过，521 个资产逐字节可复现，source identity 为 `e03683e079afc712ca006aa06ad14faf55b9259572779602b54a0dc18973d257`，recipe 为 `e242351ea791477e571a8d49cff178ff7bcfd569628322d2fb3e1b850c5b082e`。只由正式脚本替换带 hash 的生成文件，旧资产仍可从 Git 恢复；既有大 chunk 警告保留。浏览器、类型检查和重型构建串行，未启动真实计算。
+
+文档构建 14.80 秒通过，既有 ES2024/chunk warnings 保留，`git diff --check` 通过。新 changeset 仅 CLI patch；累计发布集合仍因既有授权条目显示 CLI minor/SDK major，未执行 version 或发布。
+
+此记录时源码与资产已验证，但尚未提交、推送或本地安装。下一唯一最小 Action 为 scoped 交付与 clean-commit 安装；G1/G2 的自然等待、真实 Goal、G3/G4 知识复用与蒸馏等剩余验收继续保留，C1–C5 状态不变，总 Goal 保持 active。
