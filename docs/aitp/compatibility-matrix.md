@@ -1,5 +1,14 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**Hakimi-only stage Note guidance amendment (2026-09-05):** Begin describes
+settling canonical Question evidence refs before capturing its revision for a
+Note Action. Existing Research context identifies a completed native read only
+for the matching current Topic and confirmed Line/workstream, observed after
+confirmation. Skill loading alone does not repeat that read; findings, evidence
+review, genuinely stale/external-change refresh and save verification remain.
+No AITP CLI/schema/contract/Skill, runtime gate or public interface changes.
+The counterpart's existing dirty handoffs remain protected.
+
 **Hakimi-only Question synthesis amendment (2026-09-05):** durable Conclude
 guidance finishes the captured checkpoint before changing its Question revision.
 A first successful model-tool commit then prompts conditional synthesis only for

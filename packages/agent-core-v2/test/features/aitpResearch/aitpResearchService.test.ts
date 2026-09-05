@@ -4304,6 +4304,37 @@ describe('goal completion guard and subagent veto', () => {
     expect(record).not.toHaveBeenCalled();
   });
 
+  it('requires evidence refs before a fresh Note Action instead of retargeting the captured Question revision', async () => {
+    const { svc, adapter, executor } = await buildResearchSandboxHarness();
+    const action = beginEvidenceNoteAction(svc, { evidenceRefs: [] });
+    const prepare = vi.spyOn(adapter, 'notePrepare');
+    const record = vi.spyOn(adapter, 'recordPrepare');
+    const denied = await executor.fireBeforeExecute(makeToolHookContext('aitp_note_prepare', reviewNoteToolArgs));
+    expect(denied?.veto?.output).toContain('before beginning a fresh Question-bound Note Action');
+    svc.updateQuestion({ questionId: action.questionId!, evidenceRefs: ['e1'] });
+    expect((await executor.fireBeforeExecute(makeToolHookContext('aitp_note_prepare', reviewNoteToolArgs)))?.veto).toBeDefined();
+    expect(prepare).not.toHaveBeenCalled();
+    svc.concludeAction({
+      actionId: action.actionId, status: 'abandoned',
+      progress: {
+        headline: 'Rebind synthesis to the selected evidence', motivation: 'Organize existing records.',
+        workPerformed: 'Selected the canonical source Entry.', result: 'No Note was prepared.',
+        mainlineImpact: 'Scientific evidence remains unchanged.',
+      },
+      durability: { status: 'no_durable_delta', rationale: 'Only the local evidence selection changed.' },
+    });
+    svc.planAndStartAction({
+      questionId: action.questionId, kind: 'other', purpose: 'Synthesize the selected records.',
+      expectedEvidence: ['One scoped working Note.'], stopCondition: 'Save the Note or stop on inconsistent evidence.',
+      allowedToolKinds: ['tool:aitp_note_prepare', 'tool:aitp_note_save'],
+    });
+    expect(await executor.fireBeforeExecute(makeToolHookContext('aitp_note_prepare', reviewNoteToolArgs))).toBeUndefined();
+    await expect(svc.prepareReviewNote(reviewNoteInput)).resolves.toMatchObject({ status: 'prepared' });
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(record).not.toHaveBeenCalled();
+    expect(svc.getSnapshot().pendingCheckpoint).toBeUndefined();
+  });
+
   it('revalidates source Entries after cold restore instead of restoring old Note draft permission', async () => {
     const records: WireRecord[] = [];
     const openWire = () => {
@@ -9771,6 +9802,10 @@ describe('Research Loop tool implementations', () => {
       (await import('#/features/aitpResearch/tools/researchToolsImpl')).BeginResearchActionTool,
       researchSvc, modeSvc,
     );
+    expect(tool.description).toContain('first read the relevant canonical Entries');
+    expect(tool.description).toContain('through UpdateResearchQuestion, then begin a fresh Question-bound Note Action');
+    expect(tool.description).toContain('changing its refs afterward invalidates that scope');
+    expect(tool.description).toContain('Reuse an adequate existing Note when there is no durable delta');
     const exec = tool.resolveExecution({
       kind: 'simulation',
       purpose: 'Run the bounded simulation for the current hypothesis',

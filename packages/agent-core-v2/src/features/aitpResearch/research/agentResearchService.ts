@@ -4332,7 +4332,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     const context = this.currentNoteReviewContext()
       ?? (toolName === 'aitp_note_prepare' ? this.actionNoteReviewCandidate() : undefined);
     if (context === undefined) {
-      return `Research Note persistence denied ${toolName}: no current post-commit distillation handoff or bounded Note Action owns this Note. To organize existing evidence after restore, start one fresh Question-bound Action with canonical Entry IDs in evidenceRefs/falsifierRefs and exact tool:aitp_note_prepare and tool:aitp_note_save grants. Old attention never restores draft permission.`;
+      return `Research Note persistence denied ${toolName}: no current post-commit distillation handoff or bounded Note Action owns this Note. To organize existing evidence after restore, read the relevant canonical Entries and update the Question evidenceRefs/falsifierRefs before beginning a fresh Question-bound Note Action with exact tool:aitp_note_prepare and tool:aitp_note_save grants. Updating the Question after Begin makes that Action stale; conclude any existing reading Action before updating and starting the Note Action. Old attention never restores draft permission.`;
     }
     if (toolName === 'aitp_note_save') {
       const draftPath = normalizeResearchPath(stringArg(args, 'draft_path'));

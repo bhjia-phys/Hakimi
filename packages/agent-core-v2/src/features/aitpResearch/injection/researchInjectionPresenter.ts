@@ -320,6 +320,10 @@ function appendAttention(lines: string[], snapshot: ResearchStatusSnapshot): voi
 
   const receipt = snapshot.aitpMaintenance;
   if (receipt === undefined) return;
+  const maintainedWorkstream = maintainedScope(snapshot);
+  if (maintainedWorkstream !== undefined) {
+    lines.push(`Native AITP maintenance: enter/check completed for the confirmed current workstream ${maintainedWorkstream}. Reuse this recorded read result for orientation unless new external changes or stale evidence require refresh; it is not a claim of perpetual health. Loading a Skill, compaction, or a phase change alone does not require another enter/check. Preserve required checkpoint and Note pre/post-save verification and inspect the evidence you rely on.`);
+  }
   if (receipt.status === 'degraded') {
     lines.push(receipt.degradedReason === 'workstream_unbound'
       ? 'AITP maintenance: degraded — no explicit Line-to-workstream binding is available.'
@@ -349,6 +353,24 @@ function maintenanceIssues(receipt: AitpMaintenanceReceipt): readonly string[] {
     issues.push(`Warnings: ${receipt.warningSummaries.map((warning) => warning.code).join(', ')}`);
   }
   return issues;
+}
+
+function maintainedScope(snapshot: ResearchStatusSnapshot): string | undefined {
+  const receipt = snapshot.aitpMaintenance;
+  const alignment = snapshot.currentWorkstreamBinding;
+  const binding = alignment?.binding;
+  const program = snapshot.program;
+  if (
+    snapshot.mode !== 'ready' || receipt?.status !== 'ready' ||
+    receipt.check.status === 'unavailable' ||
+    alignment?.status !== 'bound' || binding === undefined || program === undefined ||
+    alignment.lineSlug !== snapshot.currentLineSlug || binding.lineSlug !== snapshot.currentLineSlug ||
+    binding.topicId !== program.topicId || binding.observedRevision !== program.observedRevision ||
+    receipt.workstream !== binding.workstream || receipt.topic?.id !== program.topicId ||
+    receipt.topic.title !== program.title || receipt.topic.goalText !== program.goalText ||
+    receipt.topic.goalSource !== program.goalSource || receipt.refreshedAt < binding.confirmedAt
+  ) return undefined;
+  return binding.workstream;
 }
 
 function renderRunDigest(run: ResearchRunState): string {
@@ -461,7 +483,7 @@ function appendGuidance(
     '- Update Research state only on a semantic change; resolve pending human gates with ResolveResearchDecision, and read AITP entries through aitp_show (never Read the Markdown file directly).',
   );
   lines.push(
-    '- Follow the using-aitp Skill before current-state maintenance and before executing a potentially covered procedure: retrieve applicable Method cards by their generic marker and inspect their pinned basis. This summary is read-only and never auto-writes AITP.',
+    '- Follow the using-aitp Skill, including its native-coordinator versus fallback ownership rule. Reuse a completed, applicable native enter/check receipt rather than repeating session-start maintenance merely to load or re-read the Skill; absent, degraded, out-of-scope or stale receipts and new external changes still require appropriate refresh. Before executing a potentially covered procedure, retrieve applicable Method cards by their generic marker and inspect their pinned basis. This summary is read-only and never auto-writes AITP.',
   );
   lines.push(
     '- A no_durable_delta conclusion is a strict no-op for AITP. A durable_delta conclusion already emits one pending candidate: continue in the same turn when possible with candidate-exact aitp_record_prepare, model-authored draft fill, aitp_record_save, and CommitResearchCheckpoint. For reusable execution evidence, load and follow the external distilling-methods Skill before filling the Entry; that Skill alone decides exact-card trial pins, observation-marker eligibility, triggers, revisions, and human gates. A first successful commit schedules one same-turn best-effort review of only the touched Entry; a duplicate commit or unavailable Skill is a non-blocking no-op. Keep human assertions/decisions in their own human-authority Entry, separate from agent/tool/source verification. Use ProposeResearchCheckpoint only for recovery or a durable boundary outside the normal conclude path.',
@@ -610,10 +632,12 @@ function attentionFingerprint(snapshot: ResearchStatusSnapshot): string | undefi
   const receipt = snapshot.aitpMaintenance;
   const degraded = snapshot.mode === 'degraded' || receipt?.status === 'degraded';
   const issues = receipt === undefined ? [] : maintenanceIssues(receipt);
-  if (alerts.length === 0 && !degraded && issues.length === 0) return undefined;
+  const maintainedWorkstream = maintainedScope(snapshot);
+  if (alerts.length === 0 && !degraded && issues.length === 0 && maintainedWorkstream === undefined) return undefined;
   return stableJson({
     alerts,
     degraded,
+    maintainedWorkstream,
     maintenance: receipt === undefined ? undefined : {
       status: receipt.status,
       issues,

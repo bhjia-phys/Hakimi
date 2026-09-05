@@ -698,7 +698,7 @@ export class PlanResearchActionTool implements IPlanResearchActionTool {
 export class BeginResearchActionTool implements IBeginResearchActionTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'BeginResearchAction' as const;
-  readonly description = 'Plan and begin one bounded research action atomically. Routine execution approval follows the active permission mode; use RequestResearchDecision separately for a non-delegable scientific or protocol choice.';
+  readonly description = 'Plan and begin one bounded research action atomically. Routine execution approval follows the active permission mode; use RequestResearchDecision separately for a non-delegable scientific or protocol choice. For a stage Note from existing evidence, first read the relevant canonical Entries and settle the Question assessment and evidenceRefs/falsifierRefs through UpdateResearchQuestion, then begin a fresh Question-bound Note Action with exact tool:aitp_note_prepare and tool:aitp_note_save grants. Begin captures the Question revision: changing its refs afterward invalidates that scope. If evidence gathering needs an Action, conclude that reading Action before updating the Question and beginning the Note Action. Reuse an adequate existing Note when there is no durable delta; do not manufacture an Entry to obtain Note permission.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(BeginResearchActionInputSchema);
 
   constructor(

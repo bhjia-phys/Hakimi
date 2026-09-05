@@ -1104,3 +1104,11 @@ Theory Physics 0.2.1 只作有证据的指引修正：受托保存 packet 时预
 新 working Note `note-bbd42696c91843e3860afb4789b3875b` 以四个现有 immutable artifact 的 exact pins 综合三条既有 Entry。H2O Question 从测试前的 revision 6 推进至 revision 9，明确关联三条 canonical refs，并由模型将限定的固定回归问题设为 closed/supported；不是 ack 自动提升，也不等于物理收敛或整个 Goal 完成。旧 binary failure 和 packet-omission failure 的 bytes/hash 不变，仍 unresolved。最终 scoped enter/check 为三条 Entries、一份 Note、零 errors/warnings，scope 外一个测试 Topic warning 保留；没有 duplicate Entry、trial、card、decision、resolves 或 supersedes。最后 Action completed、no-delta，不产生新 pending checkpoint。
 
 证据支持“旧 Question 可由模型综合，现有证据可形成阶段 Note，拒绝后能自行恢复”；不支持“首次 Commit 提示已由真实新结果验证”或“阶段综合已无摩擦”。实际还出现两次本可避免的 Note 拒绝和重复 session-start Skill/enter/check；第一次 GetResearchStatus 已带当前 ready/clean scoped maintenance。下一唯一最小 Action：根据这条轨迹，将既有 Note Action 前置的 evidence-ref/revision 顺序在现有 model-facing 指引中讲清，并区分原生已完成维护与真正必要的新检查，再复测既有证据综合路径；不削弱 ownership/freshness、不新增阶段、schema、强制扫描或卡片触发。Heisenberg 的真实科学 milestone、首次真实新 commit 的综合提示以及新增 Note 的 session cold-restore 行为仍须按总 Goal 验证。
+
+### 19.19 G6 阶段 Note 前置顺序与维护回执复用
+
+针对 §19.18 的实测摩擦，Hakimi 的 Begin 描述提前说明：先回读 canonical Entries、确定 Question 的 assessment 与 evidence/falsifier refs，再开始捕获该 revision 的 Note Action；需要独立证据调查时，先收尾 reading Action。拒绝信息同步说明这一次序，不会自动重绑旧 Action。既有充分 Note 且无 delta 时直接复用，不制造 Entry 来取得 Note 权限。
+
+现有 Research 注入在 ready read receipt 与当前 Program 内容、observed revision、Line/workstream 确认绑定匹配且读取时间不早于确认时，说明 native enter/check 已完成。它只是已记录读取的适用范围，不保证外部状态永久不变；真正 stale／external change、证据回读和必要保存验证仍保留。findings 继续显示；相同范围只有 refreshedAt 改变不再注入新内容。未增加状态、工具、阶段、执行 gate、维护 I/O、AITP schema 或 card trigger。
+
+定向单 worker 557 项通过（526 service、31 presenter）；新增恢复测试保留 “缺 refs 拒绝 → 事后补 refs 仍 stale → 收尾旧 Action → 新 Note Action 可 prepare” 的安全语义。首次类型检查发现测试夹具误用了 memory_status ready，已改为官方 available 后通过；新增 veto 断言也按真实 output 形状修正，未削弱生产拒绝。imports 1,297 文件通过，四文件 lint 0 errors／1 warning；官方 AITP contract／atomic-save 21 项和 docs build 通过（既有 ES2024/chunk warnings 保留）。CLI patch changeset 不消费版本；本次无公开接口变化，不声称重新跑过 REST/WS/SDK/klient/TUI/Web 全矩阵。安装后仍需真实模型复测，单元测试不能证明摩擦已经消失。总 Goal 和 Heisenberg 科学验收继续保留。

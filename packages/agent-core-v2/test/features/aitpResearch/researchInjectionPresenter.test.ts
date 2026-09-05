@@ -67,7 +67,90 @@ function subsequentVerbosity(before: ResearchStatusSnapshot, after: ResearchStat
   }, after);
 }
 
+function maintainedSnapshot(): ResearchStatusSnapshot {
+  const topic = {
+    id: 'spin-chain', title: 'Finite-size symmetry',
+    goalText: 'Distinguish candidate symmetries', goalSource: '.aitp/topic/TOPIC.md',
+  };
+  return snapshot({
+    program: { ...topic, topicId: topic.id, establishedAt: 1, observedRevision: 2 },
+    currentWorkstreamBinding: {
+      status: 'bound', lineSlug: 'spin-chain', reason: 'Explicitly confirmed',
+      binding: {
+        confirmationId: 'confirmed', lineSlug: 'spin-chain', workstream: 'symmetry',
+        topicId: topic.id, observedRevision: 2, confirmedBy: 'user', confirmedAt: 10,
+      },
+    },
+    aitpMaintenance: {
+      status: 'ready', refreshedAt: 20, memoryStatus: 'available', topic, workstream: 'symmetry',
+      activeNewerThanWorkingNote: false, unresolvedFailureCount: 0, unresolvedFailures: [],
+      warningSummaries: [], check: { status: 'clean', findingCodes: [] },
+    },
+  });
+}
+
 describe('Research injection semantic projection', () => {
+  it('identifies completed native scoped reads without suppressing evidence and save verification', () => {
+    const state = maintainedSnapshot();
+    const before = structuredClone(state);
+    const content = renderResearchInjection(state, 'brief').content;
+    expect(content).toContain('Native AITP maintenance: enter/check completed');
+    expect(content).toContain('confirmed current workstream symmetry');
+    expect(content).toContain('new external changes or stale evidence require refresh');
+    expect(content).toContain('Preserve required checkpoint and Note pre/post-save verification');
+    expect(content).toContain('Loading a Skill, compaction, or a phase change alone');
+    expect(content).toContain('native-coordinator versus fallback ownership');
+    expect(state).toEqual(before);
+  });
+
+  it.each([
+    'missing', 'degraded', 'unavailable_check', 'wrong_workstream', 'wrong_topic',
+    'changed_goal', 'before_confirmation', 'unbound', 'stale_binding', 'other_line', 'degraded_mode',
+  ])('does not advertise a reusable native read for %s', (condition) => {
+    const valid = maintainedSnapshot();
+    const receipt = valid.aitpMaintenance!;
+    const alignment = valid.currentWorkstreamBinding!;
+    const binding = alignment.binding!;
+    const changes: Record<string, Partial<ResearchStatusSnapshot>> = {
+      missing: { aitpMaintenance: undefined },
+      degraded: { aitpMaintenance: { ...receipt, status: 'degraded' } },
+      unavailable_check: { aitpMaintenance: { ...receipt, check: { status: 'unavailable', findingCodes: [] } } },
+      wrong_workstream: { aitpMaintenance: { ...receipt, workstream: 'other' } },
+      wrong_topic: { aitpMaintenance: { ...receipt, topic: { ...receipt.topic!, id: 'other' } } },
+      changed_goal: { program: { ...valid.program!, goalText: 'A different scientific goal' } },
+      before_confirmation: { aitpMaintenance: { ...receipt, refreshedAt: 9 } },
+      unbound: { currentWorkstreamBinding: { ...alignment, status: 'unbound' } },
+      stale_binding: { currentWorkstreamBinding: { ...alignment, binding: { ...binding, observedRevision: 1 } } },
+      other_line: { currentLineSlug: 'other' },
+      degraded_mode: { mode: 'degraded' },
+    };
+    const state = { ...valid, ...changes[condition] };
+    expect(renderResearchInjection(state, 'brief').content).not.toContain('Native AITP maintenance: enter/check completed');
+  });
+
+  it('keeps findings visible alongside a completed native read', () => {
+    const state = maintainedSnapshot();
+    const content = renderResearchInjection({ ...state, aitpMaintenance: {
+      ...state.aitpMaintenance!, activeNewerThanWorkingNote: true, unresolvedFailureCount: 2,
+      warningSummaries: [{ level: 'warning', code: 'historical_pin_drift' }],
+      check: { status: 'findings', findingCodes: ['historical_pin_drift'] },
+    } }, 'delta').content;
+    expect(content).toContain('Native AITP maintenance: enter/check completed');
+    expect(content).toContain('Active entries are newer');
+    expect(content).toContain('2 unresolved failure(s). Historical context');
+    expect(content).toContain('historical_pin_drift');
+  });
+
+  it('discloses receipt availability changes but not same-scope refresh timestamp churn', () => {
+    const ready = maintainedSnapshot();
+    const absent = { ...ready, aitpMaintenance: undefined };
+    expect(subsequentVerbosity(absent, ready)).toBe('delta');
+    expect(subsequentVerbosity(ready, absent)).toBe('delta');
+    const refreshed = { ...ready, aitpMaintenance: { ...ready.aitpMaintenance!, refreshedAt: 30 } };
+    expect(subsequentVerbosity(ready, refreshed)).toBeUndefined();
+    expect(renderResearchInjection(ready, 'brief').content).toBe(renderResearchInjection(refreshed, 'brief').content);
+  });
+
   it('discloses degraded provisional work once and refreshes when AITP recovers', () => {
     const ready = snapshot();
     const degraded = snapshot({ mode: 'degraded' });

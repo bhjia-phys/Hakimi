@@ -1,5 +1,12 @@
 # AITP 状态跟踪与交接清单
 
+2026-09-05 阶段 Note 顺序与维护归属补充：已安装模型的既有证据综合出现
+两次 Note prepare 拒绝和重复 session-start 检查。Hakimi 将 Question evidence
+refs 必须先于 Note Action 确定的现有契约提前到 Begin 描述，并在既有注入中
+识别与当前 Topic、Line 确认绑定匹配且确认后完成的 native read receipt。
+只讲明复用范围，不隐藏 findings，不移除 save 验证，不增加维护调用或新 gate。
+AITP CLI/schema/contract/Skill 未变；对方既有 dirty handoff 保留。
+
 2026-09-05 Question synthesis 补充：真实临时 H2O 验收暴露 "Entry 已提交但
 Question 仍为测试前总结"。Hakimi 只调整现有工具收尾指引：先完成 captured
 checkpoint，再为仍匹配当前 Line/Question/revision/cursor 的首次 commit 提示
