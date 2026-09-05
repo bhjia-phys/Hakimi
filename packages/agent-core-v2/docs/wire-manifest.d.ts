@@ -998,6 +998,8 @@ interface ResearchProposeCheckpointPayload {
   _name: 'research.propose_checkpoint';
   checkpointId: string;
   committedEntryId?: string;
+  localConclusionId?: string;
+  confirmedBy?: 'user';
   questionId?: string;
   lineSlug?: string;
   workstreamBinding?: {
@@ -1035,6 +1037,14 @@ type ResearchRecordDistillationAttentionPayload = { _name: 'research.record_dist
  */
 interface ResearchRecordProgressPayload {
   _name: 'research.record_progress';
+  localDurability?: {
+    sourceActionId: string;
+    progressRecordedAt: number;
+    entryKind: 'observation' | 'result' | 'failure' | 'decision' | 'source' | 'code_change' | 'run' | 'closeout';
+    authority: 'human' | 'agent' | 'source' | 'tool';
+    provenance: 'agent_verification' | 'tool_verification' | 'source_assessment' | 'human_assertion' | 'human_decision';
+    rationale: string;
+  };
   headline: string;
   question?: string;
   motivation: string;

@@ -8,11 +8,13 @@
  * AITP I/O, while explicit enter_mode performs the activation path.
  * Run: `pnpm --filter @moonshot-ai/kap-server exec vitest run test/research.test.ts`.
  */
+import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { WebSocket } from 'ws';
 
 import {
   IAgentResearchService,
@@ -384,6 +386,7 @@ describe('research command protocol', () => {
 });
 
 describe('server-v2 /api/v1/sessions/{sid}/research', () => {
+  const connections: WebSocket[] = [];
   let server: RunningServer | undefined;
   let home: string | undefined;
   let workDir: string | undefined;
@@ -404,6 +407,12 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
   });
 
   afterEach(async () => {
+    for (const connection of connections.splice(0)) {
+      if (connection.readyState === WebSocket.CLOSED) continue;
+      const closed = once(connection, 'close');
+      connection.terminate();
+      await closed;
+    }
     if (server !== undefined) {
       await server.close();
       server = undefined;
@@ -1168,6 +1177,86 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
       result: 'The identity holds for the chosen representation.',
       mainlineImpact: 'The result supports the current symmetry hypothesis.',
     });
+  });
+
+  it('POST retains an unscoped durable conclusion and forwards explicit ownership adoption', async () => {
+    const sessionId = await createSession();
+    const route = `/api/v1/sessions/${sessionId}/research/command`;
+    const entered = await postJson<{ snapshot: ResearchSnapshot }>(route, {
+      command: { kind: 'enter_mode', actor: 'user' },
+    });
+    expect(entered.body.code).toBe(0);
+    const begun = await postJson<{ snapshot: ResearchSnapshot }>(route, {
+      command: {
+        kind: 'begin_action', actionKind: 'derivation', purpose: 'Check a primitive identity',
+        expectedEvidence: ['An exact identity or counterexample'], stopCondition: 'Stop after the local check',
+      },
+    });
+    expect(begun.body.code).toBe(0);
+    const actionId = begun.body.data.snapshot.currentAction!.actionId;
+    const command = {
+      kind: 'conclude_action', actionId, status: 'completed', headline: 'Primitive counterexample',
+      motivation: 'Check the representation', workPerformed: 'Compared exact basis-state actions',
+      result: 'Squared identity fails', mainlineImpact: 'Revalidate affected calculations',
+      nextAction: 'Check a bounded correction',
+      durability: {
+        status: 'durable_delta', entryKind: 'failure', authority: 'agent',
+        provenance: 'agent_verification', rationale: 'Exact counterexample',
+      },
+    };
+    type LocalSnapshot = ResearchSnapshot & {
+      localConclusion?: { candidate: { sourceActionId: string }; progress: { result: string } };
+      pendingCheckpoint?: unknown;
+    };
+    const frames: Array<{ type: string; id?: string; session_id?: string;
+      payload?: { accepted_subscriptions?: string[]; snapshot?: LocalSnapshot } }> = [];
+    const token = server!.authTokenService.getToken();
+    const connection = new WebSocket(`${base.replace('http:', 'ws:')}/api/v1/ws`, [`kimi-code.bearer.${token}`]);
+    connections.push(connection);
+    connection.on('message', (data) => {
+      frames.push(JSON.parse((data as Buffer).toString()) as (typeof frames)[number]);
+    });
+    await once(connection, 'open');
+    connection.send(JSON.stringify({ type: 'client_hello', id: 'local-result-subscription',
+      payload: { token, client_id: 'cli', subscriptions: [sessionId] } }));
+    await expect.poll(() => frames.find((frame) => frame.type === 'ack' && frame.id === 'local-result-subscription'))
+      .toMatchObject({ payload: { accepted_subscriptions: [sessionId] } });
+    const concluded = await postJson<{ snapshot: LocalSnapshot }>(route, { command });
+    expect(concluded.body.code).toBe(0);
+    const snapshot = concluded.body.data.snapshot;
+    expect(snapshot.currentAction?.status).toBe('completed');
+    expect(snapshot.phase).toBe('state_updated');
+    expect(snapshot.localConclusion).toMatchObject({
+      candidate: { sourceActionId: actionId }, progress: { result: command.result },
+    });
+    expect(snapshot.pendingCheckpoint).toBeUndefined();
+    const event = { type: 'research.updated', snapshot };
+    expect(agentEventSchema.parse(event)).toEqual(event);
+    await expect.poll(() => frames.find((frame) => frame.type === 'research.updated'
+      && frame.payload?.snapshot?.localConclusion?.candidate.sourceActionId === actionId))
+      .toMatchObject({ session_id: sessionId, payload: { snapshot: {
+        revision: snapshot.revision, phase: 'state_updated',
+        localConclusion: snapshot.localConclusion, currentAction: snapshot.currentAction,
+      } } });
+    const read = await getJson<LocalSnapshot>(`/api/v1/sessions/${sessionId}/research`);
+    expect(read.body.data.localConclusion).toEqual(snapshot.localConclusion);
+
+    const liveSession = await resumeSessionById(server!.core.accessor, sessionId);
+    const agent = await ensureMainAgent(liveSession!);
+    const research = agent.accessor.get(IAgentResearchService);
+    const propose = vi.spyOn(research, 'proposeCheckpoint');
+    const rejected = await postJson<unknown>(route, { command: {
+      kind: 'propose_checkpoint', expectedRevision: snapshot.revision,
+      localConclusionId: actionId, confirmedBy: 'user', lineSlug: 'missing-line',
+    } });
+    expect(propose).toHaveBeenCalledOnce();
+    expect(propose.mock.calls[0]?.[0]).toMatchObject({
+      expectedRevision: snapshot.revision, localConclusionId: actionId,
+      confirmedBy: 'user', lineSlug: 'missing-line',
+    });
+    expect(rejected.body.code).not.toBe(0);
+    expect((await getJson<LocalSnapshot>(`/api/v1/sessions/${sessionId}/research`)).body.data.localConclusion)
+      .toEqual(snapshot.localConclusion);
   });
 
   it('POST prepares and discards a ResearchPlan through the public command surface', async () => {

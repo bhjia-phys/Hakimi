@@ -68,6 +68,20 @@ describe('MCP timeout contract validation', () => {
 });
 
 describe('Research checkpoint contract validation', () => {
+  it('preserves explicit user ownership adoption and rejects an invented confirmer', () => {
+    const input = {
+      expectedRevision: 8, localConclusionId: 'primitive-audit', confirmedBy: 'user',
+      lineSlug: 'spin-audit', questionId: 'spin-question',
+    };
+    expect(agentResearchContract.proposeCheckpoint.input.parse([input])).toEqual([input]);
+    expect(agentResearchContract.proposeCheckpoint.input.safeParse([
+      { ...input, confirmedBy: 'main_agent' },
+    ]).success).toBe(false);
+    expect(agentResearchContract.proposeCheckpoint.input.safeParse([
+      { ...input, localConclusionId: '' },
+    ]).success).toBe(false);
+  });
+
   it('rejects a checkpoint proposal without expectedRevision', () => {
     expect(agentResearchContract.proposeCheckpoint.input.safeParse([{}]).success).toBe(false);
   });

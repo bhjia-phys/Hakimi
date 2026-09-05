@@ -289,6 +289,9 @@ function renderDelta(snapshot: ResearchStatusSnapshot): string {
 }
 
 function appendAttention(lines: string[], snapshot: ResearchStatusSnapshot): void {
+  if (snapshot.localConclusion !== undefined) {
+    lines.push(`Local durable conclusion ${snapshot.localConclusion.candidate.sourceActionId}: ${snapshot.localConclusion.progress.headline}. The Action is closed and its full result is retained in local Research state, not recorded in AITP. Ask once for explicit record ownership; do not repeat work, downgrade durability, or call RecordResearchProgress. Adoption uses the human Research command, then the existing scoped checkpoint path.`);
+  }
   const alerts = activeAlerts(snapshot.alerts, snapshot.currentLineSlug);
   if (alerts.length > 0) {
     lines.push('Attention:');
@@ -314,7 +317,7 @@ function appendAttention(lines: string[], snapshot: ResearchStatusSnapshot): voi
     );
   }
 
-  if (snapshot.mode === 'degraded') {
+  if (snapshot.mode === 'degraded' && snapshot.localConclusion === undefined) {
     lines.push('Provisional research: user-directed bounded Actions may continue with their existing scope and tool permissions. AITP writes, automatic Goal continuation and completion remain blocked; do not claim recorded state is freshly verified or turn adapter repair into a repeated prerequisite for exploration.');
   }
 

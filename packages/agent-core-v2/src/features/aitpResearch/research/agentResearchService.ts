@@ -143,6 +143,7 @@ import type {
   ResearchLineWorkstreamAlignment,
   ResearchLineWorkstreamBinding,
   ResearchDurableCommitCandidate,
+  ResearchLocalConclusion,
   ResearchDistillationAttention,
   AitpNotePrepareResult,
   AitpNoteSaveResult,
@@ -213,6 +214,7 @@ import {
 import { IAitpExternalFactService } from './externalFact';
 import { createExternalFactFacade, toWireCheckpointReceipt } from './externalFactService';
 import { IDurableCommitService } from './durableCommit';
+import { localConclusionAdoptionProblem } from './localConclusion';
 import {
   deriveLineWorkstreamAlignment,
   isMaintenanceReceiptAligned,
@@ -542,6 +544,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       currentAction: scopedCurrentAction,
       currentRun: scopedCurrentRun,
       pendingCheckpoint: state.pendingCheckpoint === null ? undefined : toCheckpoint(state.pendingCheckpoint),
+      localConclusion: state.localConclusion,
       latestProgress,
       currentQuestion,
       humanGate: scopedHumanGate,
@@ -584,6 +587,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         ? undefined
         : toCheckpoint(state.pendingCheckpoint),
       latestCommittedCheckpoint: cursor ?? undefined,
+      localConclusion: state.localConclusion,
       committedCheckpointHistory: commitHistory,
       distillationAttention,
       phase: state.phase,
@@ -608,6 +612,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
             currentAction: scopedCurrentAction,
             effectiveNextStep,
             pendingCheckpoint: state.pendingCheckpoint === null ? undefined : toCheckpoint(state.pendingCheckpoint),
+            localConclusion: state.localConclusion,
             humanGate: scopedHumanGate,
             goalAlignment,
             workstreamAlignment: currentWorkstreamBinding,
@@ -1806,6 +1811,13 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     this.assertMutationAllowed();
     const state = this.wire.getModel(ResearchModel).current;
     const researchRevision = this.currentResearchRevision();
+    const adopting = state.localConclusion !== undefined || input.localConclusionId !== undefined || input.confirmedBy !== undefined;
+    if (adopting && (input.expectedRevision === 0 || input.expectedRevision !== researchRevision)) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+        'Local conclusion adoption requires the exact current Research revision; refresh the snapshot before confirming.',
+      );
+    }
     if (input.expectedRevision !== 0 && input.expectedRevision !== researchRevision) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
@@ -1844,12 +1856,28 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       );
     }
     const workstreamBinding = this.requireCurrentLineWorkstreamBinding(lineSlug);
+    if (adopting) {
+      const problem = localConclusionAdoptionProblem(state, { ...input, workstreamBinding });
+      if (problem !== undefined) {
+        throw new AitpResearchError(AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED, problem);
+      }
+      this.assertActionPlanBindingsFresh(state.localConclusion!.action, state.localConclusion);
+      const currentLineSlug = this.wire.getModel(AitpModeModel).current.currentLineSlug;
+      if (currentLineSlug !== undefined && currentLineSlug !== lineSlug) {
+        throw new AitpResearchError(
+          AitpResearchErrors.codes.AITP_CHECKPOINT_DEGRADED,
+          'Adoption cannot replace another foreground Line. Retain the conclusion and inspect its original scope.',
+        );
+      }
+    }
     const checkpointId = randomUUID();
     const idempotencyKey = randomUUID();
     const createdAt = Date.now();
     this.wire.dispatch(
       researchProposeCheckpoint({
         checkpointId,
+        localConclusionId: input.localConclusionId,
+        confirmedBy: input.confirmedBy,
         questionId: input.questionId,
         lineSlug,
         workstreamBinding,
@@ -1865,6 +1893,9 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
         `Checkpoint ${checkpointId} could not become pending`,
       );
+    }
+    if (adopting && this.wire.getModel(AitpModeModel).current.currentLineSlug === undefined) {
+      this.wire.dispatch(aitpModeSetLine({ lineSlug }));
     }
     this.publishResearchUpdated();
     return toCheckpoint(pending);
@@ -2439,6 +2470,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     input: PlanActionInput,
     state: ResearchWorkingState,
   ): { readonly lineSlug?: string } {
+    this.assertNoLocalConclusion(state);
     if (state.pendingCheckpoint !== null) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.AITP_CHECKPOINT_PENDING,
@@ -2615,7 +2647,10 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     };
   }
 
-  private assertActionPlanBindingsFresh(action: ResearchActionSpecRecord): void {
+  private assertActionPlanBindingsFresh(
+    action: ResearchActionSpecRecord,
+    adoptingConclusion?: ResearchLocalConclusion,
+  ): void {
     if (action.researchPlanBinding !== undefined) {
       const binding = action.researchPlanBinding;
       const researchPlan = this.requireResearchPlanV2(binding.planId, binding.planRevision);
@@ -2646,19 +2681,21 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         `Action ${action.actionId} is bound to a stale local Action Plan revision.`,
       );
     }
-    this.assertActionPlanContextFresh(actionPlan);
+    this.assertActionPlanContextFresh(actionPlan, adoptingConclusion);
   }
 
-  private assertActionPlanContextFresh(plan: ResearchPlan): void {
+  private assertActionPlanContextFresh(plan: ResearchPlan, adoptingConclusion?: ResearchLocalConclusion): void {
     const state = this.wire.getModel(ResearchModel).current;
     const modeState = this.wire.getModel(AitpModeModel).current;
     const line = plan.lineSlug === undefined ? undefined : state.lines[plan.lineSlug];
     const question = plan.questionId === undefined ? undefined : state.questions[plan.questionId];
+    const planProgramId = adoptingConclusion === undefined ? state.program?.topicId : adoptingConclusion.program?.topicId;
+    const planLineRevision = adoptingConclusion === undefined ? line?.revision : adoptingConclusion.line?.revision;
     if (
-      state.program?.topicId !== plan.programId ||
+      planProgramId !== plan.programId ||
       state.period?.id !== plan.periodId ||
       modeState.currentLineSlug !== plan.lineSlug ||
-      line?.revision !== plan.lineRevision ||
+      planLineRevision !== plan.lineRevision ||
       question?.revision !== plan.questionRevision ||
       (question !== undefined && question.lineSlug !== plan.lineSlug)
     ) {
@@ -2847,18 +2884,20 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     if (action.status !== 'in_progress') {
       const progress = state.latestProgress;
       const commitCandidate = state.pendingCheckpoint?.commitCandidate;
+      const localConclusion = state.localConclusion;
       if (
         action.status === input.status &&
         progress !== null &&
         state.recentStateChange?.actionId === action.actionId &&
         state.recentStateChange.changedAt === progress.recordedAt &&
         sameConclusionProgress(progress, input) &&
-        sameDurabilityAssessment(commitCandidate, input, progress.recordedAt)
+        sameDurabilityAssessment(localConclusion?.candidate ?? commitCandidate, input, progress.recordedAt)
       ) {
         return {
           action: toActionSpec(action),
           progress: toProgressReport(progress),
           commitCandidate,
+          localConclusion,
         };
       }
       throw new AitpResearchError(
@@ -2874,6 +2913,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     }
     this.assertActionPlanBindingsFresh(action);
 
+    this.assertNoLocalConclusion(state);
     let checkpointContext: {
       readonly questionId?: string;
       readonly lineSlug: string;
@@ -2900,12 +2940,10 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         ?? question?.lineSlug
         ?? this.wire.getModel(AitpModeModel).current.currentLineSlug;
       const line = lineSlug === undefined ? undefined : state.lines[lineSlug];
-      if (lineSlug === undefined || line === undefined) {
+      if (lineSlug !== undefined && line === undefined) {
         throw new AitpResearchError(
           AitpResearchErrors.codes.RESEARCH_LINE_NOT_FOUND,
-          lineSlug === undefined
-            ? 'A durable conclusion requires a current Line with an explicit workstream binding.'
-            : `Line ${lineSlug} not found`,
+          `Line ${lineSlug} not found`,
         );
       }
       if (question !== undefined && question.lineSlug !== lineSlug) {
@@ -2914,21 +2952,43 @@ export class AgentResearchService extends Service implements IAgentResearchServi
           `Line ${lineSlug} does not own question ${question.id}`,
         );
       }
-      checkpointContext = {
-        questionId: question?.id,
-        lineSlug,
-        workstreamBinding: this.requireCurrentLineWorkstreamBinding(lineSlug),
-      };
+      if (
+        (action.questionRevision !== undefined && action.questionRevision !== question?.revision) ||
+        (action.lineRevision !== undefined && action.lineRevision !== line?.revision)
+      ) {
+        throw new AitpResearchError(
+          AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
+          `Action ${action.actionId} has stale Question or Line context; inspect its evidence before concluding.`,
+        );
+      }
+      if (lineSlug !== undefined && this.getLineWorkstreamAlignment(lineSlug).status !== 'unbound') {
+        checkpointContext = {
+          questionId: question?.id,
+          lineSlug,
+          workstreamBinding: this.requireCurrentLineWorkstreamBinding(lineSlug),
+        };
+      }
     }
 
     const completedAt = Date.now();
     const recordedAt = Date.now();
+    const proposedCandidate: ResearchDurableCommitCandidate | undefined = input.durability.status === 'durable_delta'
+      ? {
+          sourceActionId: input.actionId,
+          progressRecordedAt: recordedAt,
+          entryKind: input.durability.entryKind,
+          authority: input.durability.authority,
+          provenance: input.durability.provenance,
+          rationale: input.durability.rationale,
+        }
+      : undefined;
     const complete = researchCompleteAction({
       actionId: input.actionId,
       status: input.status,
       completedAt,
     });
     const record = researchRecordProgress({
+      localDurability: checkpointContext === undefined ? proposedCandidate : undefined,
       headline: input.progress.headline,
       question: input.progress.question,
       motivation: input.progress.motivation,
@@ -2950,18 +3010,9 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       },
       recordedAt,
     });
-    let proposedCandidate: ResearchDurableCommitCandidate | undefined;
     if (checkpointContext === undefined || input.durability.status === 'no_durable_delta') {
       this.wire.dispatch(complete, record);
     } else {
-      proposedCandidate = {
-        sourceActionId: input.actionId,
-        progressRecordedAt: recordedAt,
-        entryKind: input.durability.entryKind,
-        authority: input.durability.authority,
-        provenance: input.durability.provenance,
-        rationale: input.durability.rationale,
-      };
       this.wire.dispatch(
         complete,
         record,
@@ -2992,7 +3043,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       progress.recordedAt !== recordedAt ||
       next.phase !== 'state_updated' ||
       (proposedCandidate !== undefined &&
-        !sameCommitCandidate(next.pendingCheckpoint?.commitCandidate, proposedCandidate))
+        !sameCommitCandidate(next.localConclusion?.candidate ?? next.pendingCheckpoint?.commitCandidate, proposedCandidate))
     ) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
@@ -3003,12 +3054,14 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       action: toActionSpec(completedAction),
       progress: toProgressReport(progress),
       commitCandidate: next.pendingCheckpoint?.commitCandidate,
+      localConclusion: next.localConclusion,
     };
   }
 
   recordProgress(input: RecordProgressInput): ResearchProgressReport {
     this.assertMutationAllowed();
     const state = this.wire.getModel(ResearchModel).current;
+    this.assertNoLocalConclusion(state);
     if (isLiveForegroundAction(state.currentAction)) {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
@@ -3629,6 +3682,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   }
 
   private assertLineSwitchSafe(state: ResearchWorkingState, nextLineSlug: string): void {
+    this.assertNoLocalConclusion(state);
     this.assertNoNotePersistenceInFlight();
     const pending = state.pendingCheckpoint;
     if (pending !== null) {
@@ -4176,6 +4230,9 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     if (isUnresolvedHumanGate(state.humanGate)) {
       return `Research action policy denied ${toolName}: human gate ${state.humanGate.gateId} is unresolved.`;
     }
+    if (state.localConclusion !== undefined) {
+      return `Research action policy denied ${toolName}: a completed Action has a retained local conclusion. Confirm its record ownership before starting new work.`;
+    }
     if (beginsInBatch) {
       return `Research action policy denied ${toolName}: BeginResearchAction and research work cannot share one tool batch. Begin the action first, then run its tools in the next batch.`;
     }
@@ -4430,10 +4487,27 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     );
   }
 
+  private assertNoLocalConclusion(state: ResearchWorkingState): void {
+    if (state.localConclusion === undefined) return;
+    throw new AitpResearchError(
+      AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+      `Local conclusion ${state.localConclusion.candidate.sourceActionId} is retained but not recorded in AITP. Confirm its record ownership before replacing it with new work.`,
+    );
+  }
+
   private guardGoalCompletion(
     input: import('#/agent/goal/goalContribution').GoalCompletionGuardInput,
   ): import('#/agent/goal/goalContribution').GoalCompletionGuardResult {
     if (!this.mode.isActive) return { allow: true };
+    if (this.wire.getModel(ResearchModel).current.localConclusion !== undefined) {
+      return {
+        allow: false,
+        owner: 'aitpResearch',
+        code: 'research.local-conclusion.pending',
+        reason: 'Goal completion is blocked: a local durable conclusion has not been recorded in AITP. Confirm its record ownership and finish the scoped checkpoint.',
+        nextStep: 'GetResearchStatus',
+      };
+    }
     const pending = this.getPendingCheckpoint();
     if (pending !== null) {
       const questions = this.getQuestions();
@@ -4526,6 +4600,13 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     // The participant only weighs in while Research Mode is active; an
     // inactive mode leaves the automatic continuation decision to Goal.
     if (!this.mode.isActive) return { decision: 'abstain' };
+    if (this.wire.getModel(ResearchModel).current.localConclusion !== undefined) {
+      return {
+        decision: 'hold',
+        owner: 'aitpResearch',
+        reason: 'A completed Action has a local durable conclusion awaiting explicit record ownership. Retain it and confirm its checkpoint scope before automatic continuation.',
+      };
+    }
     if (this.mode.loopStatus !== 'active') {
       return {
         decision: 'hold',
@@ -5280,6 +5361,7 @@ function deriveEffectiveNextStep(input: {
   readonly currentAction?: ResearchActionSpec;
   readonly currentRun?: ResearchRunState;
   readonly pendingCheckpoint?: ResearchCheckpoint;
+  readonly localConclusion?: ResearchLocalConclusion;
   readonly latestProgress?: ResearchProgressReport;
   readonly currentQuestion?: ResearchQuestion;
   readonly humanGate?: ResearchHumanGate;
@@ -5303,6 +5385,20 @@ function deriveEffectiveNextStep(input: {
     };
   }
 
+  if (input.localConclusion !== undefined) {
+    const local = input.localConclusion;
+    return {
+      text: `Local conclusion ${local.candidate.sourceActionId} is retained, not recorded in AITP. Confirm its record ownership to propose a scoped checkpoint; do not repeat the experiment or its conclusion.`,
+      source: 'aitp_maintenance',
+      freshness: 'blocked',
+      observedAt: local.progress.recordedAt,
+      derivedFrom: {
+        actionId: local.action.actionId,
+        questionId: local.action.questionId,
+        lineSlug: local.action.lineSlug,
+      },
+    };
+  }
   const recovery = actionRecoveryStep(input);
   if (recovery !== undefined) return recovery;
 
@@ -5463,6 +5559,7 @@ function deriveStatusProjection(input: {
   readonly currentAction?: ResearchActionSpec;
   readonly effectiveNextStep?: ResearchEffectiveNextStep;
   readonly pendingCheckpoint?: ResearchCheckpoint;
+  readonly localConclusion?: ResearchLocalConclusion;
   readonly humanGate?: ResearchHumanGate;
   readonly goalAlignment?: ResearchGoalAlignment;
   readonly workstreamAlignment?: ResearchLineWorkstreamAlignment;
@@ -5501,7 +5598,7 @@ function deriveStatusProjection(input: {
     focusQuestion !== undefined && !focusOutsideWorkstream && focusQuestion.workflow === 'blocked';
   let health: ResearchStatusHealth = 'ok';
   if (
-    actionRecoveryBlocked || checkpointBlocked || alignmentBlocked ||
+    input.localConclusion !== undefined || actionRecoveryBlocked || checkpointBlocked || alignmentBlocked ||
     humanGateUnresolved || hasBlocker || focusBlocked
   ) {
     health = 'blocked';
@@ -5531,6 +5628,7 @@ function deriveStatusProjection(input: {
     ? [goalAlignmentBlockerText(input.goalAlignment)]
     : [];
   const attention = deduplicateAttention([
+    ...(input.localConclusion !== undefined && input.effectiveNextStep !== undefined ? [input.effectiveNextStep.text] : []),
     ...recoveryAttention,
     ...checkpointAttention,
     ...alignmentAttention,

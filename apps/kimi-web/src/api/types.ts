@@ -830,6 +830,14 @@ export interface ResearchCommittedCursor {
   committedAt: number;
 }
 
+export interface ResearchLocalConclusion {
+  action: ResearchActionSpec;
+  progress: ResearchProgressReport;
+  candidate: ResearchDurableCommitCandidate;
+  program?: ResearchProgram;
+  line?: ResearchLine;
+}
+
 export interface ResearchCheckpoint {
   checkpointId: string;
   committedEntryId?: string;
@@ -1112,6 +1120,7 @@ export interface ResearchStatusSnapshot {
   aitpHealth: ResearchAdapterHealth;
   aitpMaintenance?: AitpMaintenanceReceipt;
   pendingCheckpoint?: ResearchCheckpoint;
+  localConclusion?: ResearchLocalConclusion;
   latestCommittedCheckpoint?: ResearchCommittedCursor;
   committedCheckpointHistory?: ResearchCommittedCursor[];
   distillationAttention?: ResearchDistillationAttention;
@@ -1205,6 +1214,8 @@ export type ResearchCommand =
     }
   | {
       kind: 'propose_checkpoint';
+      localConclusionId?: string;
+      confirmedBy?: 'user';
       expectedRevision: number;
       questionId?: string;
       lineSlug?: string;

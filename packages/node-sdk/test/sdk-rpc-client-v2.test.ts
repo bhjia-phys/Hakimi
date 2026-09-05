@@ -1735,6 +1735,60 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
     }
   });
 
+  it('commandResearch retains an unscoped durable result and preserves its explicit adoption identity', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'sdk-local-result-home-'));
+    const workDir = await mkdtemp(join(tmpdir(), 'sdk-local-result-work-'));
+    tempDirs.push(homeDir, workDir);
+    const client = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+    const summary = await client.createSession({ id: 'ses_local_result', workDir });
+    const session = new Session({ id: summary.id, workDir, summary, rpc: client });
+    const researchEvents: Event[] = [];
+    const unsubscribe = session.onEvent((event) => {
+      if (event.type === 'research.updated') researchEvents.push(event);
+    });
+    try {
+      await session.commandResearch({ kind: 'enter_mode', actor: 'user' });
+      const begun = await session.commandResearch({
+        kind: 'begin_action', actionKind: 'derivation', purpose: 'Check a primitive identity',
+        expectedEvidence: ['Exact counterexample or identity'], stopCondition: 'Stop after the local check',
+      });
+      const actionId = begun.snapshot.currentAction!.actionId;
+      const concluded = await session.commandResearch({
+        kind: 'conclude_action', actionId, status: 'completed', headline: 'Primitive counterexample',
+        motivation: 'Check the representation', workPerformed: 'Compared exact basis-state actions',
+        result: 'Squared identity fails', mainlineImpact: 'Revalidate affected calculations',
+        durability: {
+          status: 'durable_delta', entryKind: 'failure', authority: 'agent',
+          provenance: 'agent_verification', rationale: 'Exact counterexample',
+        },
+      });
+      expect(concluded.snapshot.currentAction?.status).toBe('completed');
+      expect(concluded.snapshot.localConclusion?.candidate.sourceActionId).toBe(actionId);
+      expect(concluded.snapshot.pendingCheckpoint).toBeUndefined();
+      const updated = researchEvents.findLast((event) =>
+        event.type === 'research.updated' && event.snapshot.localConclusion?.candidate.sourceActionId === actionId);
+      expect(updated).toMatchObject({ type: 'research.updated', snapshot: {
+        revision: concluded.snapshot.revision, localConclusion: concluded.snapshot.localConclusion,
+      } });
+      const liveSession = getLiveSessionById(client.engineAccessor, session.id);
+      const agent = await ensureMainAgent(liveSession!);
+      const research = agent.accessor.get(IAgentResearchService);
+      const propose = vi.spyOn(research, 'proposeCheckpoint');
+      await expect(session.commandResearch({
+        kind: 'propose_checkpoint', expectedRevision: concluded.snapshot.revision,
+        localConclusionId: actionId, confirmedBy: 'user', lineSlug: 'missing-line',
+      })).rejects.toBeDefined();
+      expect(propose.mock.calls[0]?.[0]).toMatchObject({
+        localConclusionId: actionId, confirmedBy: 'user', lineSlug: 'missing-line',
+      });
+      expect((await session.getResearch()).localConclusion).toEqual(concluded.snapshot.localConclusion);
+    } finally {
+      unsubscribe();
+      await session.close();
+      await client.close();
+    }
+  });
+
   it('commandResearch returns the post-mutation snapshot for synchronous mutations', async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-sync-home-'));
     const workDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-research-sync-work-'));

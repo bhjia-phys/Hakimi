@@ -278,7 +278,7 @@ Research Mode active 时，Research Action 归属直接成为 admitted Research 
 
 回读已有知识是一项严格限定的只读例外，不是开展新的 Action 工作。模式为 `ready` 时，`Read` 可以读取一个精确的 workspace-relative `.aitp/topic/notes/note-<id>.md`；AITP `show` 只支持 Entry，不支持 Note。`Grep` 可以在 `.aitp/topic/notes/` 下发现通用 `^> method-card:` 标记，或在 `.aitp/topic/entries/` 下发现 `^> method-observation:`；两者也可在 `.aitp/topic/` 下检索，但仅允许 `files_with_matches` 输出。这些读取无需 live Action，包括 commit 后以及 Goal/loop 暂停时。它们不授予一般搜索、跨工作区的绝对 Note 路径、Entry 文件读取、shell 或写权限。适用性和依据仍由 Skill 检查；标记数量不是证据，runtime 不会主动扫描。
 
-Action 以 durable delta 结束后，checkpoint 持久化使用另一条只绑定 pending checkpoint、精确 AITP Topic/workstream 与精确 draft path 的窄 lease。Note/Method-card 持久化同样只使用成功 `note prepare` 返回的精确 draft path，并在 save、退出模式、undo 或 cold restore 后撤销。其他直接访问 canonical `.aitp/topic` 文件仍被拒绝；canonical write 仍只能经过 AITP adapter 与 CLI contract。
+已绑定的 Action 以 durable delta 结束后，checkpoint 持久化使用另一条只绑定 pending checkpoint、精确 AITP Topic/workstream 与精确 draft path 的窄 lease。未绑定的本地结论不授予 draft 或 canonical-write 权限。Note/Method-card 持久化同样只使用成功 `note prepare` 返回的精确 draft path，并在 save、退出模式、undo 或 cold restore 后撤销。其他直接访问 canonical `.aitp/topic` 文件仍被拒绝；canonical write 仍只能经过 AITP adapter 与 CLI contract。
 
 这属于 Tool Executor policy，不是操作系统级 sandbox。获准的 `shell` capability 本身仍很宽，host 的常规 command approval 和文件系统/网络隔离才是更底层的安全边界。该策略阻止标准模型工具调用绕过 Research Action 归属，但不声称能够隔离已被攻陷的 subprocess 或外部程序。
 
@@ -292,6 +292,14 @@ Action 以 durable delta 结束后，checkpoint 持久化使用另一条只绑�
 Web Manager 的 Checkpoint 表单保留这一边界。**Propose** 只创建 pending Research working state，且要求当前 Line 具有精确的 `bound` workstream confirmation。只有存在 pending checkpoint 且你显式填写已有 AITP ledger `entryId` 时，**Commit** 才可用；该 ID 必须来自 Agent 或官方 AITP CLI 完成 canonical save flow 后的 Entry。Web 只把该 ID 发送给 Research command endpoint 以关联 checkpoint；它不会调用 `record`/`note`、写 `.aitp` 文件或创建 canonical Entry。Entry 与 scoped check 仍必须匹配 pending checkpoint 捕获的 binding，因此填写 ID 也不能绕过 save → show → check 屏障。
 
 `aitp_check` 把退出码 0 视为 clean，把退出码 1 视为成功返回 findings。findings 会保留展示，但不会使适配器降级。新增的 error finding 会让相关 checkpoint 保持 pending；已有的 error 会作为可审计的 receipt warning 保留。finding code 只作为 opaque string 投影；适配器不实现 AITP 的 `sha256-once:` 或 `check-policy` 语义。在进入或恢复时的维护周期中，合法的 error finding 仍保持 Research Mode receipt 为 `ready`；只有维护周期不可用或无效时才是 `degraded`。退出码 2 表示命令失败：有效的 AITP JSON 错误或无效的 check transport 会使适配器降级，参数解析错误则只报告为工具错误，不会污染整个会话。全文 `Grep` 可以定位候选记录，但完整的 canonical Entry 必须通过 `aitp_show` 读取；`aitp_show` 失败后，绝不能改用直接解析 Markdown 来模拟成功。
+
+### 保留的本地结论
+
+一次已完成的检验可能先得到证据，之后才能明确记录归属。如果 Action 本身仍 fresh，但没有 Line 或该 Line 尚未绑定，`ConcludeResearchAction` 会关闭 Action，并在本地 Research working state 保留完整结果、证据细节、限制与 durability assessment。Board 显示真实结果并请求确认归属。这不是 AITP Entry，也不是 pending checkpoint，不能改称 no durable delta，更不能再用 `RecordResearchProgress` 重复记录。
+
+要保存该结果，先在 Research Manager 选择已有目标 Line，明确确认其 AITP workstream；再到 Web 的 Checkpoint 区检查原结论，选择确认归属并准备 checkpoint。终端中可在 Manager 用 `W` 确认绑定后，执行 `/research adopt-conclusion <localConclusionId> <lineSlug> [questionId]`。该操作保留原结果，只生成现有 scoped checkpoint；它不会保存 Entry、批准科学结论，也不会确认 Goal–Program alignment。
+
+请求必须携带精确的当前 snapshot revision。已经属于某条 Line 的结果不能转移到其他 Line；Question、Program 或 reviewed Plan 的上下文真正变化时，请求会被拒绝，原证据仍保留。首次确认 Line 绑定本身不算科研内容变化。本地结论可从冷启动恢复，也跟随 conversation undo，但不会恢复工具或 draft 权限。归属确认前，新 Action 不能覆盖它，Goal continuation/completion 保持 held；普通讨论和状态查看仍可继续。
 
 ## 降级模式
 

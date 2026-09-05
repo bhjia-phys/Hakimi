@@ -85,6 +85,17 @@ function makeResearchHost(snapshot: ResearchStatusSnapshot = makeSnapshot()) {
 }
 
 describe('parseResearchCommand', () => {
+  it('requires an explicit result and Line for local-conclusion adoption', () => {
+    expect(parseResearchCommand('adopt-conclusion result-1 line-a')).toEqual({
+      kind: 'adopt_conclusion', localConclusionId: 'result-1', lineSlug: 'line-a', questionId: undefined,
+    });
+    expect(parseResearchCommand('adopt-conclusion result-1 line-a q-1')).toEqual({
+      kind: 'adopt_conclusion', localConclusionId: 'result-1', lineSlug: 'line-a', questionId: 'q-1',
+    });
+    for (const text of ['adopt-conclusion', 'adopt-conclusion result-1', 'adopt-conclusion r l q extra']) {
+      expect(parseResearchCommand(text)).toMatchObject({ kind: 'error', restoreInput: true });
+    }
+  });
   it('parses empty args as a mode toggle', () => {
     expect(parseResearchCommand('')).toEqual({ kind: 'toggle' });
     expect(parseResearchCommand('   ')).toEqual({ kind: 'toggle' });
@@ -365,6 +376,36 @@ describe('handleResearchCommand manager actions', () => {
     expect(host.showStatus).toHaveBeenCalledWith(
       'Historical checkpoint proposal checkpoint-123 discarded; AITP was unchanged.',
     );
+  });
+
+  it('sends explicit ownership adoption at the freshly observed revision, without rewriting the result', async () => {
+    const { host, session } = makeResearchHost(makeSnapshot({ revision: 13 }));
+    await handleResearchCommand(host, 'adopt-conclusion result-1 line-a q-1');
+    expect(session.getResearch).toHaveBeenCalledOnce();
+    expect(session.commandResearch).toHaveBeenCalledExactlyOnceWith({
+      kind: 'propose_checkpoint', localConclusionId: 'result-1', confirmedBy: 'user',
+      lineSlug: 'line-a', questionId: 'q-1', expectedRevision: 13,
+    });
+    expect(host.showStatus).toHaveBeenCalledWith(
+      'Local conclusion adopted into a scoped checkpoint; AITP has not been written yet.',
+    );
+  });
+
+  it('does not report adoption success or retry when the server rejects stale ownership', async () => {
+    const { host, session } = makeResearchHost();
+    session.commandResearch.mockRejectedValueOnce(new Error('Stale captured Question revision'));
+    await handleResearchCommand(host, 'adopt-conclusion result-1 line-a');
+    expect(session.commandResearch).toHaveBeenCalledOnce();
+    expect(host.showStatus).not.toHaveBeenCalled();
+    expect(host.showError).toHaveBeenCalledWith(expect.stringContaining('Stale captured Question revision'));
+  });
+
+  it('does not adopt after the snapshot response belongs to an obsolete session request', async () => {
+    const { host, session, researchController } = makeResearchHost();
+    researchController.applySnapshot.mockReturnValueOnce(false);
+    await handleResearchCommand(host, 'adopt-conclusion result-1 line-a');
+    expect(session.commandResearch).not.toHaveBeenCalled();
+    expect(host.showStatus).not.toHaveBeenCalled();
   });
 
   it('sends explicit Goal alignment commands with checkpoint identities', async () => {

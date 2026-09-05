@@ -443,6 +443,14 @@ export interface WireResearchCommittedCursor {
   committedAt: number;
 }
 
+export interface WireResearchLocalConclusion {
+  action: WireResearchActionSpec;
+  progress: WireResearchProgressReport;
+  candidate: WireResearchDurableCommitCandidate;
+  program?: WireResearchProgram;
+  line?: WireResearchLine;
+}
+
 export interface WireResearchCheckpoint {
   checkpointId: string;
   committedEntryId?: string;
@@ -730,6 +738,7 @@ export interface WireResearchStatusSnapshot {
   aitpHealth: WireAitpAdapterHealth;
   aitpMaintenance?: WireAitpMaintenanceReceipt;
   pendingCheckpoint?: WireResearchCheckpoint;
+  localConclusion?: WireResearchLocalConclusion;
   latestCommittedCheckpoint?: WireResearchCommittedCursor;
   committedCheckpointHistory?: WireResearchCommittedCursor[];
   distillationAttention?: WireResearchDistillationAttention;
@@ -781,7 +790,7 @@ export type WireResearchCommand =
   | { kind: 'close_question'; questionId: string; expectedRevision: number; reason?: string }
   | { kind: 'create_line'; slug: string; title: string; objective?: string; assessment?: string }
   | { kind: 'update_line'; lineSlug: string; expectedRevision: number; title?: string; objective?: string; status?: WireResearchLineStatus; assessment?: string; reason?: string }
-  | { kind: 'propose_checkpoint'; expectedRevision: number; questionId?: string; lineSlug?: string; assessment?: string; nextAction?: string }
+  | { kind: 'propose_checkpoint'; expectedRevision: number; localConclusionId?: string; confirmedBy?: 'user'; questionId?: string; lineSlug?: string; assessment?: string; nextAction?: string }
   | { kind: 'discard_historical_checkpoint'; checkpointId: string; expectedRevision: number }
   | { kind: 'commit_checkpoint'; checkpointId: string; entryId: string }
   | { kind: 'confirm_goal_alignment'; relation: 'same_program_goal' | 'goal_parent_of_program' | 'goal_milestone_in_program' | 'unrelated'; expectedRevision: number; goalId: string; topicId: string; observedRevision: number }

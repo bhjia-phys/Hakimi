@@ -93,6 +93,8 @@ const updateLineInputSchema = researchLineUpdateInputSchema satisfies z.ZodType<
 
 const proposeCheckpointInputSchema = z.object({
   expectedRevision: z.number(),
+  localConclusionId: z.string().min(1).optional(),
+  confirmedBy: z.literal('user').optional(),
   questionId: z.string().optional(),
   lineSlug: z.string().optional(),
   assessment: z.string().optional(),

@@ -67,6 +67,7 @@ export type ParsedResearchCommand =
   | { readonly kind: 'resume' }
   | { readonly kind: 'manage' }
   | { readonly kind: 'discard_checkpoint'; readonly checkpointId: string }
+  | { readonly kind: 'adopt_conclusion'; readonly localConclusionId: string; readonly lineSlug: string; readonly questionId?: string }
   | { readonly kind: 'align'; readonly relation: ResearchGoalAlignmentRelation }
   | { readonly kind: 'clear_alignment' }
   | {
@@ -136,7 +137,7 @@ const GOAL_ALIGNMENT_RELATIONS = new Set<ResearchGoalAlignmentRelation>([
  * Parses the deterministic `/research` command grammar.
  *
  * Reserved subcommands (`on`/`off`/`pause`/`resume`/`manage`/`status`/`align`/
- * `discard-checkpoint`/`edit`/`focus`/`defer`/`block`/`close`/`reopen`/`line`) are only honored as
+ * `discard-checkpoint`/`adopt-conclusion`/`edit`/`focus`/`defer`/`block`/`close`/`reopen`/`line`) are only honored as
  * the first token. Free text after `--` separates the subcommand arguments
  * from the user's free-form input (wording, bounded action, reason).
  */
@@ -161,6 +162,16 @@ export function parseResearchCommand(rawArgs: string): ParsedResearchCommand {
       severity: 'hint',
       restoreInput: true,
       message: 'Use `/research discard-checkpoint <checkpointId>`.',
+    };
+  }
+
+  if (first === 'adopt-conclusion') {
+    if ((tokens.length === 3 || tokens.length === 4) && tokens[1] !== undefined && tokens[2] !== undefined) {
+      return { kind: 'adopt_conclusion', localConclusionId: tokens[1], lineSlug: tokens[2], questionId: tokens[3] };
+    }
+    return {
+      kind: 'error', severity: 'hint', restoreInput: true,
+      message: 'Use `/research adopt-conclusion <localConclusionId> <lineSlug> [questionId]` to explicitly confirm record ownership.',
     };
   }
 
@@ -227,7 +238,7 @@ export function parseResearchCommand(rawArgs: string): ParsedResearchCommand {
   return {
     kind: 'error',
     restoreInput: true,
-    message: `Unknown /research subcommand: ${first ?? ''}. Use \`/research status\`, \`/research on\`, \`/research off\`, \`/research pause\`, \`/research resume\`, \`/research manage\`, \`/research discard-checkpoint <checkpointId>\`, or \`/research <edit|focus|defer|block|close|reopen> <questionId> -- <text>\`.`,
+    message: `Unknown /research subcommand: ${first ?? ''}. Use \`/research status\`, \`/research on\`, \`/research off\`, \`/research pause\`, \`/research resume\`, \`/research manage\`, \`/research discard-checkpoint <checkpointId>\`, \`/research adopt-conclusion <localConclusionId> <lineSlug> [questionId]\`, or \`/research <edit|focus|defer|block|close|reopen> <questionId> -- <text>\`.`,
   };
 }
 
@@ -349,6 +360,9 @@ export async function handleResearchCommand(
     case 'discard_checkpoint':
       await discardHistoricalCheckpoint(host, parsed.checkpointId);
       return;
+    case 'adopt_conclusion':
+      await adoptLocalConclusion(host, parsed);
+      return;
     case 'align':
       await alignResearchGoals(host, parsed.relation);
       return;
@@ -454,6 +468,29 @@ async function discardHistoricalCheckpoint(
   }
   host.track('research_checkpoint_discarded', { checkpointId });
   host.showStatus(`Historical checkpoint proposal ${checkpointId} discarded; AITP was unchanged.`);
+}
+
+async function adoptLocalConclusion(
+  host: ResearchCommandHost,
+  input: Extract<ParsedResearchCommand, { kind: 'adopt_conclusion' }>,
+): Promise<void> {
+  const session = host.requireSession();
+  const token = beginResearchRequest(host, session);
+  if (token === undefined) return;
+  try {
+    const snapshot = await session.getResearch();
+    if (!host.researchController.applySnapshot(token, snapshot)) return;
+    const response = await session.commandResearch({
+      kind: 'propose_checkpoint', expectedRevision: snapshot.revision,
+      localConclusionId: input.localConclusionId, confirmedBy: 'user',
+      lineSlug: input.lineSlug, questionId: input.questionId,
+    });
+    if (!applyResearchResponse(host, token, response)) return;
+    host.showStatus('Local conclusion adopted into a scoped checkpoint; AITP has not been written yet.');
+  } catch (error) {
+    if (!isResearchRequestCurrent(host, token)) return;
+    host.showError(`Failed to adopt local conclusion: ${formatErrorMessage(error)}`);
+  }
 }
 
 async function alignResearchGoals(

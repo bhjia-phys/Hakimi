@@ -70,6 +70,7 @@
  */
 
 import { z } from 'zod';
+import { localConclusionAdoptionProblem } from './research/localConclusion';
 
 import {
   defineCheckpointedModel,
@@ -95,6 +96,7 @@ import type {
   ResearchAlert,
   ResearchCheckpointReceipt,
   ResearchDurableCommitCandidate,
+  ResearchLocalConclusion,
   ResearchCommittedCursor,
   ResearchDistillationAttention,
   ResearchHumanGateKind,
@@ -255,6 +257,7 @@ export interface ResearchWorkingState {
   readonly lines: Readonly<Record<string, ResearchLineRecord>>;
   readonly focus: ResearchFocusRecord | null;
   readonly pendingCheckpoint: ResearchCheckpointRecord | null;
+  readonly localConclusion?: ResearchLocalConclusion;
   readonly alerts: readonly ResearchAlert[];
   readonly revision: number;
   readonly phase: ResearchPhase;
@@ -713,6 +716,7 @@ export const researchSwitchLine = ResearchModel.defineOp('research.switch_line',
     expectedRevision: z.number(),
   }),
   apply: (s, p) => {
+    if (s.current.localConclusion !== undefined) return s;
     if (s.current.lines[p.lineSlug] === undefined) return s;
     if (p.expectedRevision !== 0 && s.current.revision !== p.expectedRevision) return s;
     return {
@@ -815,6 +819,8 @@ export const researchProposeCheckpoint = ResearchModel.defineOp('research.propos
   schema: z.object({
     checkpointId: z.string(),
     committedEntryId: z.string().optional(),
+    localConclusionId: z.string().optional(),
+    confirmedBy: z.literal('user').optional(),
     questionId: z.string().optional(),
     lineSlug: z.string().optional(),
     workstreamBinding: ResearchLineWorkstreamBindingSchema.optional(),
@@ -826,6 +832,10 @@ export const researchProposeCheckpoint = ResearchModel.defineOp('research.propos
   }),
   apply: (s, p) => {
     if (s.current.pendingCheckpoint !== null) return s;
+    const local = s.current.localConclusion;
+    if (local !== undefined || p.localConclusionId !== undefined || p.confirmedBy !== undefined) {
+      if (localConclusionAdoptionProblem(s.current, p) !== undefined || p.committedEntryId !== undefined) return s;
+    }
     const question = p.questionId === undefined ? undefined : s.current.questions[p.questionId];
     const line = p.lineSlug === undefined ? undefined : s.current.lines[p.lineSlug];
     if (
@@ -842,9 +852,9 @@ export const researchProposeCheckpoint = ResearchModel.defineOp('research.propos
         : question.revision + (question.persistence === 'pending_commit' ? 0 : 1),
       lineSlug: p.lineSlug,
       workstreamBinding: p.workstreamBinding,
-      commitCandidate: p.commitCandidate,
-      assessment: p.assessment,
-      nextAction: p.nextAction,
+      commitCandidate: local?.candidate ?? p.commitCandidate,
+      assessment: local === undefined ? p.assessment : local.progress.mainlineImpact,
+      nextAction: local === undefined ? p.nextAction : local.progress.nextAction,
       idempotencyKey: p.idempotencyKey,
       persistence: 'pending_commit',
       createdAt: p.createdAt,
@@ -866,6 +876,7 @@ export const researchProposeCheckpoint = ResearchModel.defineOp('research.propos
         ...s.current,
         questions,
         pendingCheckpoint: checkpoint,
+        localConclusion: undefined,
         revision: s.current.revision + 1,
       },
     };
@@ -1210,6 +1221,7 @@ export const researchPlanAction = ResearchModel.defineOp('research.plan_action',
     createdAt: z.number(),
   }),
   apply: (s, p) => {
+    if (s.current.localConclusion !== undefined) return s;
     if (!PLAN_ACTION_PHASES.includes(s.current.phase)) return s;
     if (s.current.pendingCheckpoint !== null) return s;
     if (isLiveResearchRun(s.current.currentRun) || isLiveResearchRun(s.current.currentAction?.run)) return s;
@@ -1275,6 +1287,7 @@ export const researchBeginAction = ResearchModel.defineOp('research.begin_action
     createdAt: z.number(),
   }),
   apply: (s, p) => {
+    if (s.current.localConclusion !== undefined) return s;
     if (!PLAN_ACTION_PHASES.includes(s.current.phase)) return s;
     if (s.current.pendingCheckpoint !== null) return s;
     if (isLiveResearchRun(s.current.currentRun) || isLiveResearchRun(s.current.currentAction?.run)) return s;
@@ -1414,6 +1427,7 @@ export const researchObserveRun = ResearchModel.defineOp('research.observe_run',
 
 export const researchRecordProgress = ResearchModel.defineOp('research.record_progress', {
   schema: z.object({
+    localDurability: ResearchDurableCommitCandidateSchema.optional(),
     headline: ShortTextSchema,
     question: ShortTextSchema.optional(),
     motivation: LongTextSchema,
@@ -1441,6 +1455,15 @@ export const researchRecordProgress = ResearchModel.defineOp('research.record_pr
   }),
   apply: (s, p) => {
     if (isLiveForegroundAction(s.current.currentAction)) return s;
+    if (s.current.localConclusion !== undefined) return s;
+    const action = s.current.currentAction;
+    if (p.localDurability !== undefined && (
+      s.current.pendingCheckpoint !== null || action === null ||
+      (action.status !== 'completed' && action.status !== 'abandoned') ||
+      p.localDurability.sourceActionId !== action.actionId ||
+      p.localDurability.progressRecordedAt !== p.recordedAt ||
+      p.phaseChange?.to !== 'state_updated'
+    )) return s;
     const phase = p.phaseChange !== undefined
       ? (isPhaseTransitionValid(p.phaseChange.from, p.phaseChange.to) ? p.phaseChange.to : s.current.phase)
       : s.current.phase;
@@ -1473,6 +1496,16 @@ export const researchRecordProgress = ResearchModel.defineOp('research.record_pr
         ...s.current,
         phase,
         latestProgress: progress,
+        localConclusion: p.localDurability === undefined || action === null ? undefined : {
+          action,
+          progress,
+          candidate: p.localDurability,
+          line: action.lineSlug === undefined ? undefined : s.current.lines[action.lineSlug],
+          program: s.current.program === null ? undefined : {
+            ...s.current.program,
+            observedRevision: s.current.program.observedRevision ?? 1,
+          },
+        },
         recentStateChange: stateChange,
         revision: s.current.revision + 1,
       },

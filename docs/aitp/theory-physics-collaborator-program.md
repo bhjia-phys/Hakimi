@@ -849,7 +849,7 @@ C1–C5 的审查是必做项，但代码实现不是无条件必做项。只有
 | G4 人类指导与蒸馏 | 进行中；六类 provenance 保存链与一次 handoff 回归通过，修复了 saved Entry 与 candidate 的身份漂移漏检 | 四类真实正反情景 + touched Entry 路径；结构测试不证明人类内容已经验证，卡片不足条件时不伪造 trial |
 | G5 计算 operator | 进行中；0.2.0 的真实失败诊断、原 checkpoint 恢复与修复后的 bounded child 回读均已执行；三项实际 lifecycle 缺陷已修复，见 §19.14–19.15 | 正常计算 replay 与 failure/workaround 验收仍未闭合，不以回读或 harness 成功替代 |
 | G6 阶段综合 | 进行中；已有证据的 bounded Note Action 路径及冷恢复已定向测试，真实综合内容未验收 | 使用已有 Note contract，生成可回溯的阶段总结，区分论文材料与发表 |
-| G7 真实课题运行 | 已完成安装版自然只读调查与 cold restore 复测，修复两个实际启动缺陷；未执行新科学里程碑 | 在确认的 Topic/workstream 下执行有限科学检验和必要记录，继续 §19.2 的其他真实情景 |
+| G7 真实课题运行 | 已完成安装版调查、cold restore 和 primitive audit；32/84 个 exact 反例属于诊断，未绑定收尾暴露缺口（§19.21–19.22） | 先交付收尾修复并恢复原结果；再分别验收明确归属的正常科研、跨 turn Goal 推进及异常恢复，不以诊断替代总验收 |
 | C1–C5 | 本次需求审查 no-op，依据见 §19.13；不宣布未来能力可用 | G7 后续若出现新自然需求再审查，不凭重复回合或已有 roadmap 扩大范围 |
 
 ### 19.2 真实课题验收办法
@@ -1120,3 +1120,47 @@ Theory Physics 0.2.1 只作有证据的指引修正：受托保存 packet 时预
 已安装进程 cold-resume 同一临时 Topic/session，`note-reuse-after-restore-r10` 从 01:26:14.484Z 到 01:27:41.306Z，86.822 秒、7 次工具调用、exit 0：一次 Skill、Begin、Read 已有 Note、三次 canonical show、Conclude completed/no-delta。真实 wire 中有 native maintenance 复用提示；模型未调用 enter/check、prepare/save、Bash、子 agent 或 Question mutation，没有拒绝或重复写。控制方的结束 enter/check 验证仍为三条 Entries、一份 Note、scope 内零 findings、scope 外一个测试 Topic warning；四份 canonical 文件哈希均不变，两个 failure 均 unresolved。支持旧 Note 的 session cold-restore 和这次只读复用路径；因本轮没有新 Note 或新 Entry，不算新 Note 准备顺序或首次 Commit 综合提示的真实正向测试，也不是速度/行为优势的对照实验。
 
 回答正确区分固定两次 update 的回归可重复性与未验证的物理收敛，并认为不应重跑已完成的小课题。但其条件性下一步仍把 “是否未发起 Write” 当作待判定：这一点已在旧 failure 的 limitations 中明示，真正未明的是未发起的原因。该表达不足保留，不能声称研究者视角的下一步已完全准确。下一唯一最小 Action：回到 G7，使用已安装版本对指定 Heisenberg 项目做现有证据的只读定向恢复，收敛尚未解决、低成本的科学检验；未获确认的 Goal/Program 或 Line/workstream 语义不自动补写，不以临时 H2O 验收替代真实课题 milestone。
+
+### 19.21 G7 真实自旋代数诊断与未绑定结果的收尾缺口
+
+2026-09-05 使用 §19.20 的已安装版本，cold-resume 同一个真实 Heisenberg 验收会话，执行 `heisenberg-primitive-bridge-r7`。本次不再以 orientation 收尾：预先限定为 L=7/8 后端的单自旋 exact 代数与少量 exact-field→Arb 恒等式检查，不运行多体矩阵、projector、witness、优化器、谱统计或远程任务。该科研目录不是 Git 仓库；旧 symbolic 环境实际为 Python 3.10.12，与项目的 ≥3.12 要求不一致。控制方在新临时目录准备 Python 3.12.13、SymPy 1.13.3、python-flint 0.9.0，保留旧环境。模型只在该临时目录写脚本、日志、JSON 和报告，运行受单 CPU、2 GiB 虚拟内存和每命令 120 秒约束，使用 `-B` 避免改动原项目缓存。
+
+真实检查得到可复现的负结果：当前 backend `spin` 的 `x` 分支没有处理 up→down，故 `Sx|up>=0`，而约定要求 `(1/2)|down>`；`Sx²|down>=0` 也不等于 `(1/4)|down>`。两个数域、各两个 site 的 84 项 exact 检查中，52 项通过、32 项失败，包含直接作用、Hermiticity、平方和 SU(2) 对易关系。控制方另用独立短探针重复这两个反例，0.44 秒、峰值 RSS 65,232 KiB、exit 0。所选 minimal-polynomial reduction、零/非零、加乘与复共轭的 Arb 原生 contains/overlaps 检查在 128/256/512 bits 下均通过；这是有限 sanity suite，不是完整数域正确性证明。84 项检查不是 84 次独立研究 trial，两次同脚本运行也不算两个 trial。
+
+这定位了修复和独立复验前不能依赖的自旋算符路径，不证明每个复合矩阵元素都错误，不证明历史 exact-zero/ball 矛盾的全部原因，也不认证或反驳 L7/8 obstruction。模型发现初版报告把独立的 H/projector 路径说得过强后，修正临时报告说明并重跑该廉价脚本；未测试的 H/projector 路径及独立 L6 结论均保持原证据边界。新诊断没有使用 float-based `ball_info` 作判据，没有修复原 backend，也没有修改原四份 script/test/data/report（前后 digest 相同）。临时 JSON 的自描述标签仅属于本次测试文件，不是新 Hakimi/AITP artifact schema。
+
+同时实测复现了 §19.7 已知、尚未解决的产品缺口。一次成功 Begin 后，模型完成实际工作，以 `durable_delta` 调用 Conclude，被拒为 “A durable conclusion requires a current Line with an explicit workstream binding.”；它尝试 RecordResearchProgress 暂存，也因 Action 仍 `in_progress` 被拒。最终读取的 snapshot 仍是 `action_executing`，latestProgress 仍是前次未执行诊断的 orientation，没有 pending checkpoint。模型没有伪造 no-delta、自动绑定、直接写 canonical 或重试同一个 Conclude。两个拒绝保住了写入与归属边界，但没能让完成的科研事实进入可恢复的本地结论/Board。既有对应单 worker 回归实跑为 1 passed、525 skipped，它断言的正是此拒绝行为，不能把该测试通过称作体验缺口已修复。
+
+整次已安装模型运行从 01:40:27.760Z 到 01:50:27.819Z，27 次工具调用，达到预设十分钟上限后只中断测试进程，exit 130。诊断、修正文案和第二次廉价运行已保存；没有最终自然语言收尾，不能宣称用户交互验收通过。记录了两次 Skill 加载和较长 JSON 的多次回读，未据此声称检验成本或交互效率已优化。AITP preflight 的当前 `symmetry-operator-search` scope 为零 errors、13 个 historical-pin-drift warnings；scope 外 24 errors/250 warnings 明确保留，不声称全库健康。没有新增 Entry、Note、card、trial、decision 或 failure resolution。源与测试材料留在 `/tmp/hakimi-heisenberg-primitive-audit.8sUqgC/`，提示、完整工具结果与退出回执留在忽略目录 `.tmp/research-acceptance-20260905/heisenberg-primitive-bridge-r7/`。
+
+#### 下一切片的最小契约：本地结论与正式入库分离
+
+以下是基于本次复现的待实现设计，仍为 **planned/unavailable**；不把未绑定旧 checkpoint 当作已经支持的新能力，不改变 AITP 的任何契约。
+
+1. **一个真实结论边界。** 继续复用 Conclude 的显式 durability 判断。在缺少正式入库归属、但 Action 自身身份和 revision 仍有效时，应能原子保存完整本地结论、关闭该 Action 并撤销其工作权限；不得降格为 no-delta，不再要求调用一次 RecordResearchProgress。
+2. **只保留一个受控待归属结果。** 使用 Agent 的现有 checkpointed Research working state/wire 记录 source Action、完整 progress/durability、实际已知的 Program/Line/Question/revision 和证据位置，未知归属明确为空。它不是 AITP Entry、不是可直接 save 的 checkpoint，也不是新 artifact 数据库、ledger、scheduler 或后台队列。新结果不能覆盖该待处理结果；普通对话、必要状态读取与恢复不因此伪装为计算仍在运行。
+3. **明确恢复后才生成正式 checkpoint。** 正式目标 Line/workstream 必须由现有的人类确认语义取得；无 Line 的旧结果不能因为后来出现了同名 Line 就自动吸附。先追踪现有绑定/恢复接口，冻结最小的显式结果归属操作及 expected-revision 契约，再实现：复核来源、目标、当前上下文和未越过 prepare/save 边界后，只生成现有 bound checkpoint，仍经官方 AITP prepare/fill/exact save/check/commit。不得自动 approval、Goal alignment、failure resolution 或 trial 认定。
+4. **Board 只说真正状态。** 显示已得到的科学结论及 “未入库：待确认归属”，唯一下一步来自真实恢复依赖；不能显示旧 orientation 作为最新结果。Goal 的自动推进/完成按未处理持久化依赖 hold，不能靠改 Goal 状态掩盖本地结论缺失。
+5. **保留旧安全边界。** 已绑定 durable/no-delta、旧 checkpoint discard、receipt/cursor、两步 human decision 和精确 workstream save 语义保持不变。新本地结果的冷恢复、undo、幂等与冲突重试、Program/Line/Question 变化、能力撤销、重复结论和跨 Line 反例须有定向回归；公开投影或恢复操作改变时同时验证 REST/WS/SDK/klient/TUI/Web。
+
+总 Goal 仍 active；本次科学诊断有新证据，但正式 AITP Entry/阶段 Note、Goal 自动科研与整套 G7 体验未完成。下一唯一最小 Action：按上述边界完成未绑定 durable 结论的最小接口设计和实现，再从已保存的 r7 结果恢复收尾进行安装版复测；不重新做 orientation，不重跑昂贵 witness，不靠人工手改 Board、伪造 no-delta 或推断绑定通过验收。
+
+本轮仅修改本节验收记录和待实现设计，没有修改生产代码或公开接口，也没有 commit/push/reinstall。docs build 9.07 秒通过（既有 ES2024/chunk warnings 保留），diff check 通过。结束时官方 CLI 的 scoped enter 为 18 active/7 superseded/1 unresolved failure，scoped check 与前述 counts 相同；没有以退出码 1 的历史 warnings 冒充 clean。未重跑无变更的 REST/WS/SDK/klient/TUI/Web 全矩阵或 AITP 全套 ledger tests。原 Hakimi HEAD `892733a005` 的 156 个 dirty paths、AITP HEAD `eae1bce5eb` 的 20 个 dirty paths 保留；隔离 worktree 在 `0c58849d4` 上只有本计划文档的一处跟踪文件修改。
+
+### 19.22 总 Goal 优化与本地结论恢复实现
+
+2026-09-05 按用户要求优化总 Goal，继承 G0–G7、条件性 C1–C5、既有交付与失败证据，不重新计算通过项、不缩成单独 UI 修复。先交付 §19.21 的收尾缺口，再继续功能/行为证据清单；正常科研流程、异常恢复和真正跨 turn Goal 推进分别验收。自然验收提示只给科学问题、约束和预期成果，不手把手指定内部工具或 phase。终点是首个可用版本及一个有限真实科学里程碑，不要求解决全部 Heisenberg 开放问题；关键缺陷必须修复复测，非关键建议进入后续清单。
+
+本切片只修改隔离 Hakimi worktree。Conclude 在 Action 身份及已知科研上下文仍有效、但无 Line 或 Line unbound 时，原子关闭 Action、写唯一 progress，并保留原 Action、完整结果/限制/证据 detail、durability candidate 和已知 Program/Line。`localConclusion` 使用现有 checkpointed Research working state，跟随 undo、可 cold replay；它不是第二账本、正式 pending checkpoint 或持久化 lease。重复相同结论幂等，冲突结果和后续科研工作不能覆盖它；Goal continuation/completion hold，状态读取和讨论仍可用。
+
+显式归属复用现有公开 `propose_checkpoint`，只增加可选 local conclusion ID 与 `confirmedBy: user`，并要求精确非零 public revision、已有目标 Line 和 fresh confirmed workstream。已经绑定来源 Line 的结果不能转移；原 assessment/next 不可被替换。首次绑定带来的 Line revision +1 单独验证，不视为科研内容改变；原 Program/Question 或 reviewed Plan 内容、身份、revision 变化仍拒绝且保留原结果。模型侧 Propose schema 未开放这些人工字段。接纳只生成旧 bound checkpoint，随后仍走 AITP prepare/fill/exact-save/show/scoped-check/commit。
+
+TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，不显示旧工作仍在执行。Web Checkpoint 区展示只读原结论并提供显式确认，未有前景 Line 时可先选择目标并确认 binding，不偷偷切换 Line。TUI 使用 `/research adopt-conclusion <localConclusionId> <lineSlug> [questionId]`；已有 Manager 的 `W` 控件可对所选 Line 确认 binding。REST、共享事件、SDK 与 klient 同步新增可选投影和恢复字段；不增加 AITP schema/CLI/contract、自动绑定、approval、publication 或 trial。
+
+已验证 core Research 542 项及生成的 wire/state manifest 4 项、protocol 45 项、REST Research 31 项、SDK Research 14 项、klient memory/IPC 实际传输各 1 项、Web 34 项、TUI 138 项。core 与六个公开客户端/传输包 typecheck 均通过，core import boundary 通过（1,298 files），文档构建 13.03 秒通过；既有 ES2024/chunk warnings 保留。Web style 以 baseline mode 返回 28 条 findings，不能称为零问题。新 changeset 为 CLI patch/SDK additive minor；累计待发布集合仍为 CLI minor/SDK major，未执行 version。diff check 通过，浏览器明暗主题/焦点、正式 Web 资产生成和交付安装仍 pending。新 Plan 归属边界先由两个失败回归复现，再以正反场景修复，不降低普通 Action 的版本守卫。AITP checkout 20 条已有修改未触碰，真实科研文件未改，尚未安装本切片，也未重跑 r7 科学计算。
+
+后续交付前验证：真实浏览器渲染上述中性 fixture 的 Board/Manager，明暗主题、hover/focus、未绑定禁用、显式绑定后接纳、原结果不改写、精确 revision/目标及 pending 防重复提交均通过，页面无脚本异常。新增长按钮曾使 390px 窄屏结果区溢出，双语按钮收短为确认结果归属后结果区不再溢出；既有五页签栏仍有约 17px 局部溢出，作为 G1 非关键 UI 后续项保留，不宣称整个移动端无问题。此浏览器验证没有连接科研后端或写 AITP。REST Research 31 项再次通过，其中同一结论现在由真实 `/api/v1/ws` 订阅收取，并与 REST GET 比较完整原结论、Action 终态及 revision；不再只有事件 schema 解析证据。Web 34 项与 Web/kap-server typecheck 复验通过。35 个修改的 TS/Vue 文件定向 type-aware lint 为 0 errors、100 warnings，warning 均不在本次变更行；不宣称全仓 lint clean。AITP 仓库环境的 contract/atomic-save 21 项通过，官方 help 和 0.9.0/contract 0.2 再核验，未修改该仓库。
+
+正式 `build:web-assets` 和 `--check` 通过，521 文件逐字节一致，耗时分别 22.40/22.86 秒，峰值 RSS 约 2.21 GiB；未发生 OOM，既有 chunk warnings 保留。source identity `f0589660be03261607e9b29a8d0cb3e73c781bfe937a8519eed9531d5c112825`，recipe identity `e242351ea791477e571a8d49cff178ff7bcfd569628322d2fb3e1b850c5b082e`。生成目录只由官方脚本替换；临时浏览器及其依赖均不进入提交，也不安装系统包。远程 main 仍为 `015763451d8b6ec01a9954ae2239e76005952581`，已是当前分支祖先。
+
+下一唯一最小 Action：将该已验证切片 scoped 交付并从 clean commit 本地安装，然后只恢复 r7 已存在的结果完成收尾，单独保存安装版行为证据；正常绑定下的科学记录和 Goal 自动推进验收随后继续。总 Goal 保持 active，安装与真实原会话收尾在此记录时仍未完成。

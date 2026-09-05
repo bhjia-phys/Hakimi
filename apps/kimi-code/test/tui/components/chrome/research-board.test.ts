@@ -81,6 +81,45 @@ function makeMaintenance(
 }
 
 describe('ResearchBoardComponent', () => {
+  it('retains an unscoped conclusion as completed local science, not a live action or AITP receipt', () => {
+    const local: NonNullable<ResearchStatusSnapshot['localConclusion']> = {
+      action: {
+        actionId: 'primitive-audit', kind: 'experiment', status: 'completed',
+        purpose: 'Check primitive spin algebra', expectedEvidence: ['Exact counterexample'],
+        stopCondition: 'Primitive mismatch', allowedToolKinds: ['Bash'],
+        requiresHumanApproval: false, createdAt: 1, completedAt: 3,
+      },
+      progress: {
+        headline: 'Spin primitive counterexample retained', motivation: 'Validate assumptions',
+        workPerformed: 'Checked the two basis states', result: 'Squared identity fails',
+        mainlineImpact: 'Revalidate affected calculations', uncertainties: ['Not a full-project proof'],
+        nextAction: 'Validate the corrected primitive', recordedAt: 3,
+      },
+      candidate: {
+        sourceActionId: 'primitive-audit', progressRecordedAt: 3, entryKind: 'failure',
+        authority: 'agent', provenance: 'agent_verification', rationale: 'Exact counterexample',
+      },
+    };
+    const board = new ResearchBoardComponent();
+    board.setSnapshot(makeSnapshot({
+      currentLineSlug: undefined, currentQuestion: undefined, currentFocus: undefined,
+      phase: 'state_updated', currentAction: local.action, latestProgress: local.progress,
+      localConclusion: local,
+      goalSummary: {
+        goalId: 'goal', objective: 'Audit the primitive', status: 'active',
+        continuation: { state: 'held', owner: 'aitpResearch', reason: 'Local result ownership required' },
+      },
+    }));
+    const output = stripAnsi(board.render(180).join('\n'));
+    expect(output).toContain(local.progress.headline);
+    expect(output).toContain('action completed');
+    expect(output).toContain('ready · collaborative · continuation held');
+    expect(output).toContain('retained locally, not recorded in AITP');
+    expect(output).toContain('/research adopt-conclusion primitive-audit <lineSlug>');
+    expect(output).not.toContain('Validate the corrected primitive');
+    expect(output).not.toContain('action in progress');
+    expect(output.match(/Attention:/gu)).toHaveLength(1);
+  });
   it('is empty when no snapshot', () => {
     const board = new ResearchBoardComponent();
     expect(board.isEmpty()).toBe(true);

@@ -160,6 +160,14 @@ export interface ResearchDurableCommitCandidate {
   readonly rationale: string;
 }
 
+export interface ResearchLocalConclusion {
+  readonly action: ResearchActionSpec;
+  readonly progress: ResearchProgressReport;
+  readonly candidate: ResearchDurableCommitCandidate;
+  readonly program?: ResearchProgram;
+  readonly line?: ResearchLine;
+}
+
 export interface ResearchCheckpoint {
   readonly checkpointId: string;
   readonly committedEntryId?: string;
@@ -455,6 +463,7 @@ export interface ResearchStatusSnapshot {
   readonly aitpHealth: AitpAdapterHealth;
   readonly aitpMaintenance?: AitpMaintenanceReceipt;
   readonly pendingCheckpoint?: ResearchCheckpoint;
+  readonly localConclusion?: ResearchLocalConclusion;
   readonly latestCommittedCheckpoint?: ResearchCommittedCursor;
   readonly committedCheckpointHistory?: readonly ResearchCommittedCursor[];
   readonly distillationAttention?: ResearchDistillationAttention;

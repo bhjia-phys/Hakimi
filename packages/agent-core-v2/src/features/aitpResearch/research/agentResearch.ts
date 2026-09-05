@@ -61,6 +61,7 @@ import type {
   AitpAuthority,
   ResearchCommitProvenance,
   ResearchDurableCommitCandidate,
+  ResearchLocalConclusion,
   AitpNotePrepareResult,
   AitpNoteSaveResult,
 } from '../types';
@@ -93,6 +94,8 @@ export interface UpdateQuestionInput {
 
 export interface ProposeCheckpointInput {
   readonly expectedRevision: number;
+  readonly localConclusionId?: string;
+  readonly confirmedBy?: 'user';
   readonly questionId?: string;
   readonly lineSlug?: string;
   readonly assessment?: string;
@@ -177,6 +180,7 @@ export interface ResearchActionConclusion {
   readonly action: ResearchActionSpec;
   readonly progress: ResearchProgressReport;
   readonly commitCandidate?: ResearchDurableCommitCandidate;
+  readonly localConclusion?: ResearchLocalConclusion;
 }
 
 export interface RequestHumanDecisionInput {

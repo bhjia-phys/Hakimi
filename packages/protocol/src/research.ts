@@ -637,6 +637,15 @@ export const researchProgramSchema = z.object({
 }).strict();
 export type ResearchProgram = z.infer<typeof researchProgramSchema>;
 
+export const researchLocalConclusionSchema = z.object({
+  action: researchActionSpecSchema,
+  progress: researchProgressReportSchema,
+  candidate: researchDurableCommitCandidateSchema,
+  program: researchProgramSchema.optional(),
+  line: researchLineSchema.optional(),
+}).strict();
+export type ResearchLocalConclusion = z.infer<typeof researchLocalConclusionSchema>;
+
 export const researchGoalAlignmentSchema = z.object({
   status: z.enum(['unavailable', 'confirmation_required', 'aligned', 'stale', 'conflict']),
   reason: z.string(),
@@ -885,6 +894,7 @@ export const researchStatusSnapshotSchema = z.object({
   aitpHealth: aitpAdapterHealthSchema,
   aitpMaintenance: aitpMaintenanceReceiptSchema.optional(),
   pendingCheckpoint: researchCheckpointSchema.optional(),
+  localConclusion: researchLocalConclusionSchema.optional(),
   latestCommittedCheckpoint: researchCommittedCursorSchema.optional(),
   committedCheckpointHistory: z.array(researchCommittedCursorSchema).optional(),
   distillationAttention: researchDistillationAttentionSchema.optional(),
@@ -1016,6 +1026,8 @@ export const researchCommandSchema = z.discriminatedUnion('kind', [
   }),
   z.object({
     kind: z.literal('propose_checkpoint'),
+    localConclusionId: z.string().min(1).optional(),
+    confirmedBy: z.literal('user').optional(),
     expectedRevision: z.number(),
     questionId: z.string().optional(),
     lineSlug: z.string().optional(),

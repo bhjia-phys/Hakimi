@@ -4,6 +4,7 @@ import {
   researchCheckpointDraftTargetKey,
   researchEvidenceDraftTargetKey,
   researchManagerAckMatchesDraft,
+  researchManagerAdoptLocalConclusionCommand,
   researchManagerCheckpointDraftIsStale,
   researchManagerDraftTarget,
   researchManagerDraftTargetMatches,
@@ -21,6 +22,7 @@ import {
   researchLineWorkstreamBindingCommand,
 } from '../src/lib/researchCommand';
 import type { ResearchStatusSnapshot } from '../src/api/types';
+import { localConclusion } from './fixtures/local-conclusion';
 
 const evidenceTargetKey = researchEvidenceDraftTargetKey({
   questionId: 'q_1',
@@ -76,6 +78,54 @@ function bindingSnapshot(
 }
 
 describe('Research Manager command acknowledgements', () => {
+  it('adopts an unscoped retained result only through an exact human ownership command', () => {
+    const snapshot = bindingSnapshot({
+      currentLineSlug: undefined, phase: 'state_updated', localConclusion,
+      lineWorkstreamBindings: [{
+        confirmationId: 'binding-1', lineSlug: 'line-a', workstream: 'spin-audit',
+        topicId: 'topic-a', observedRevision: 4, confirmedBy: 'user', confirmedAt: 5,
+      }],
+    });
+    const before = structuredClone(snapshot);
+    const command = researchManagerAdoptLocalConclusionCommand(
+      snapshot, { lineSlug: 'line-a' }, 7, 'primitive-audit',
+    );
+    expect(command).toEqual({
+      kind: 'propose_checkpoint', expectedRevision: 7, localConclusionId: 'primitive-audit',
+      confirmedBy: 'user', lineSlug: 'line-a', questionId: undefined,
+    });
+    expect(snapshot).toEqual(before);
+    for (const invalid of [
+      { ...snapshot, revision: 8 },
+      { ...snapshot, localConclusion: undefined },
+      { ...snapshot, currentLineSlug: 'other' },
+      { ...snapshot, loopStatus: 'paused' as const },
+      { ...snapshot, mode: 'degraded' as const },
+      { ...snapshot, phase: 'action_executing' as const },
+      { ...snapshot, lineWorkstreamBindings: [] },
+      { ...snapshot, program: { ...snapshot.program!, observedRevision: 5 } },
+    ]) {
+      expect(researchManagerAdoptLocalConclusionCommand(
+        invalid, { lineSlug: 'line-a' }, 7, 'primitive-audit',
+      )).toBeNull();
+    }
+    expect(researchManagerAdoptLocalConclusionCommand(snapshot, null, 7, 'primitive-audit')).toBeNull();
+    expect(researchManagerAdoptLocalConclusionCommand(snapshot, { lineSlug: 'line-a' }, 0, 'primitive-audit')).toBeNull();
+    expect(researchManagerAdoptLocalConclusionCommand(snapshot, { lineSlug: 'line-a' }, 7, 'other')).toBeNull();
+    expect(researchManagerAdoptLocalConclusionCommand(snapshot, { lineSlug: 'line-a', questionId: 'foreign' }, 7, 'primitive-audit')).toBeNull();
+  });
+
+  it('does not acknowledge another local result or another ownership target', () => {
+    const target = researchManagerDraftTarget({
+      kind: 'propose_checkpoint', expectedRevision: 7, localConclusionId: 'primitive-audit',
+      confirmedBy: 'user', lineSlug: 'line-a', questionId: 'q_1',
+    })!;
+    expect(target.mode).toBe('adopt');
+    expect(researchManagerDraftTargetMatches(target, { ...context, localConclusionId: 'primitive-audit' })).toBe(true);
+    expect(researchManagerDraftTargetMatches(target, { ...context, localConclusionId: 'different' })).toBe(false);
+    expect(researchManagerDraftTargetMatches(target, { ...context, localConclusionId: 'primitive-audit', selectedLineSlug: 'other' })).toBe(false);
+  });
+
   it('offers historical checkpoint discard for every server-supported stale context only', () => {
     const captured = {
       confirmationId: 'confirmation-old',

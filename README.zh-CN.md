@@ -40,7 +40,7 @@ Hakimi 不是一次性回答机器。它以有界的工作追问一个理论物�
 
 - **科研界面：** TUI 和 Web 提供 Research Board 与 Research Manager，用于追踪和引导进行中的工作。
 - **科研结构：** Research Line、Question 和 Focus 让当前未知、假设与优先级可见。
-- **有界行动：** `BeginResearchAction` 与 `ConcludeResearchAction` 以结果、限制、下一步和一次显式 durability assessment 框定科研工作。没有 durable delta 时不做账本持久化；存在 durable delta 时只生成一个 typed pending candidate，并复用现有 AITP commit barrier。
+- **有界行动：** `BeginResearchAction` 与 `ConcludeResearchAction` 以结果、限制、下一步和一次显式 durability assessment 框定科研工作。没有 durable delta 时不做账本持久化；已绑定的 durable delta 只生成一个 typed pending candidate，并复用现有 AITP commit barrier。未绑定的结果会关闭 Action 并保留为本地结论，不冒充 AITP 记录，等待研究者明确确认归属。
 - **科学优先的进展：** 进展围绕证据与不确定性组织，而非工具活动或 transcript 数量。
 - **审阅与人工控制：** human gate 与 alert 支持明确判断，类型化的子 Agent 证据审阅使委派工作可检查。
 - **外部计算观察：** Hakimi 可以记录外部 HPC 工作的结构化观察，同时严格区分 scheduler 状态与科学证据。它不调度任务、不轮询至结束，也不认证成功。Goal 是跨 turn continuation 的唯一 owner。
@@ -66,6 +66,8 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 委派的 operator 不拥有共享 AITP 生命周期：子 agent 的恢复或 undo 不能 reset 主研究者的 adapter 或 maintenance 状态。进入或恢复 active Research Mode 时，也会为旧 tool allowlist 补齐已有的 evidence review、run observation 和 historical checkpoint discard 工具；这些修复不批准证据、不改变 checkpoint 或 human decision 语义。
 
 上一动作已经收束后，新的显式 `BeginResearchAction` 可以直接从 `state_updated` 开始，不再要求改 phase、改 Focus 或重复写进度。pending checkpoint、live action/run、未决 human gate 和过期计划仍阻止替换。这修复的是动作衔接，不替代科学判断，也不另行调度 Goal。
+
+未绑定的结果会在 Board 显示真实结论并请求确认记录归属，不再把已结束的工作标成运行中。目标 Line/workstream 明确确认后，可以在 Research Manager 或通过 `/research adopt-conclusion <localConclusionId> <lineSlug> [questionId]` 接纳原结果。这只生成 pending checkpoint，AITP 保存和验证仍是独立步骤。新科研 Action 与 Goal continuation 会等待，防止覆盖待处理结果。详见[恢复说明](docs/zh/guides/research-mode.md#保留的本地结论)。
 
 Research Mode 默认可发现，但每个新 session 都从 inactive 开始。对于持续工作，`theory-physics` 可以指导模型调用 `EnterAITPMode`、等待 authoritative probe status，并执行有界行动；inactive session 的 AITP I/O 为零。Research Board 和模型上下文会明确区分 Hakimi Goal、observed AITP Program（含其顶层 **Research goal**）和 Local Research Loop。Hakimi 只通过 AITP `enter` 观测该顶层目标，从不写 `TOPIC.md` 或 AITP Topic。Goal↔Program alignment 是仅在本地 checkpointed、由用户显式确认的 binding，不会根据文本相似度推断。在 active Research Mode 中，缺少 binding、binding stale 或明确 conflict 都会阻止 Goal completion 和 automatic continuation；inactive Goal 不受影响。进入 Research Mode 不会调度模型轮次，跨 turn continuation 仅由 Goal 负责，Plan 只是行动内短期 overlay；没有 Goal 时交互式 Research 仍可正常工作。TUI/Web 的紧凑 Board 统一为 Project、Current cycle、Attention、Next 四个位置，并把旧 period counter 准确标为 Research turn 数；健康 AITP 与 provenance 折叠到展开详情。存在 live Action/Run、checkpoint、human gate 或非 idle cycle 时会拒绝切换 Line，其他 Line 的 alert 也不会冒充当前 attention。默认 Goal engine 还会公开派生的 `idle`/`deciding`/`enqueued`/`running`/`held`/`waiting` continuation 状态，因此被 Research policy hold 的 active Goal 会显示为 `active · continuation held` 及其 owner/reason，而不会与 paused Goal 混淆。缺少该可选字段的旧 snapshot 会标为 unavailable，多 Line Board 状态则始终按当前选中 Line 隔离。每个 admitted Research turn 都会在注入模型上下文前执行一次确定性本地 reconciliation，因此可机械判定的 Line/Action/phase/period/cursor 漂移会在回答前修复；这不会额外跑一轮 AITP maintenance，也不推断科学结果。historical checkpoint 只有在 Hakimi 能够证明它没有 save receipt、committed Entry 或 committed-history 痕迹，且其捕获的 Question 或 Program binding 已 stale 时才会自动丢弃；任何含糊状态都保持 blocked，等待显式恢复。replay 只修复可确定的 Action/phase 结构：同一个 Action 保持 live、阻止 Goal completion，并在下一次 interactive Research turn 中根据证据解决，不会被自动完成或自动放弃。
 

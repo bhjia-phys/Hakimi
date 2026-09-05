@@ -627,12 +627,6 @@ export const concludeActionInputSchema = z.object({
 }).strict();
 export type ConcludeActionInput = z.infer<typeof concludeActionInputSchema>;
 
-export const researchActionConclusionSchema = z.object({
-  action: researchActionSpecSchema,
-  progress: researchProgressReportSchema,
-  commitCandidate: researchDurableCommitCandidateSchema.optional(),
-}).strict();
-
 export const researchStateChangeSchema = z.object({
   beforePhase: researchPhaseSchema,
   afterPhase: researchPhaseSchema,
@@ -663,6 +657,22 @@ export const researchProgramSchema = z.object({
   observedRevision: z.number().int().positive(),
 }).strict();
 export type ResearchProgram = z.infer<typeof researchProgramSchema>;
+
+export const researchLocalConclusionSchema = z.object({
+  action: researchActionSpecSchema,
+  progress: researchProgressReportSchema,
+  candidate: researchDurableCommitCandidateSchema,
+  program: researchProgramSchema.optional(),
+  line: researchLineSchema.optional(),
+}).strict();
+export type ResearchLocalConclusion = z.infer<typeof researchLocalConclusionSchema>;
+
+export const researchActionConclusionSchema = z.object({
+  action: researchActionSpecSchema,
+  progress: researchProgressReportSchema,
+  commitCandidate: researchDurableCommitCandidateSchema.optional(),
+  localConclusion: researchLocalConclusionSchema.optional(),
+}).strict();
 
 export const researchGoalAlignmentSchema = z.object({
   status: z.enum(['unavailable', 'confirmation_required', 'aligned', 'stale', 'conflict']),
@@ -930,6 +940,7 @@ export const researchStatusSnapshotSchema = z.object({
   aitpHealth: aitpAdapterHealthSchema,
   aitpMaintenance: aitpMaintenanceReceiptSchema.optional(),
   pendingCheckpoint: researchCheckpointSchema.optional(),
+  localConclusion: researchLocalConclusionSchema.optional(),
   latestCommittedCheckpoint: researchCommittedCursorSchema.optional(),
   committedCheckpointHistory: z.array(researchCommittedCursorSchema).optional(),
   distillationAttention: researchDistillationAttentionSchema.optional(),

@@ -925,7 +925,11 @@ export class ConcludeResearchActionTool implements IConcludeResearchActionTool {
           lines.push(`Action ${conclusion.action.actionId} is ${conclusion.action.status}; Research phase is state_updated.`);
           lines.push('Question synthesis and epistemic state were not changed automatically.');
           const candidate = conclusion.commitCandidate;
-          if (candidate === undefined) {
+          if (conclusion.localConclusion !== undefined) {
+            lines.push(`Durability: local durable conclusion (${conclusion.localConclusion.candidate.rationale}).`);
+            lines.push(`Local conclusion ID: ${conclusion.localConclusion.candidate.sourceActionId}. The full result is retained in Research working state, not in the AITP ledger. No checkpoint was proposed and no AITP write permission was granted.`);
+            lines.push('Ask the researcher once to confirm record ownership through the Research Manager before adopting this conclusion into a scoped checkpoint. Do not invent a Line/workstream binding, repeat the experiment, call RecordResearchProgress, or label this result no_durable_delta.');
+          } else if (candidate === undefined) {
             lines.push(`Durability: no durable delta (${args.durability.rationale}).`);
             lines.push('AITP action: none. Do not call AITP persistence or method-card review for this conclusion.');
             lines.push('Before the next action, update the local Question only where its assessment, evidence, or next step is behind this outcome; otherwise no-op. Do not infer scientific acceptance from action completion.');

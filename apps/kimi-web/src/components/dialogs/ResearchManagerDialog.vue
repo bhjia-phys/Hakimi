@@ -17,6 +17,7 @@ import {
   researchCheckpointDraftTargetKey,
   researchEvidenceDraftTargetKey,
   researchManagerAckMatchesDraft,
+  researchManagerAdoptLocalConclusionCommand,
   researchManagerCheckpointDraftIsStale,
   researchManagerHistoricalCheckpointCanBeDiscarded,
   researchManagerDraftTarget,
@@ -118,6 +119,8 @@ const checkpointBaseTarget = ref<{
   lineSlug?: string;
 } | null>(null);
 const checkpointBasePendingCheckpointId = ref<string | null>(null);
+const checkpointBaseLocalConclusionId = ref<string | null>(null);
+const checkpointPendingCommandId = ref<number | null>(null);
 const decisionBaseGateId = ref<string | null>(null);
 const evidenceBaseTarget = ref<{
   questionId?: string;
@@ -156,13 +159,18 @@ const selectedLine = computed(() =>
 const currentLine = computed(() =>
   props.snapshot?.lines.find((line) => line.slug === props.snapshot?.currentLineSlug),
 );
+// An unscoped retained result can be assigned explicitly without switching the foreground.
+const bindingLine = computed(() => currentLine.value
+  ?? (props.snapshot?.localConclusion !== undefined ? selectedLine.value : undefined));
 const currentWorkstreamPresentation = computed(() =>
-  presentResearchWorkstreamBinding(props.snapshot?.currentWorkstreamBinding),
+  presentResearchWorkstreamBinding(bindingLine.value?.slug === props.snapshot?.currentLineSlug
+    ? props.snapshot?.currentWorkstreamBinding : undefined),
 );
 const currentWorkstreamRecord = computed(() =>
-  props.snapshot?.currentWorkstreamBinding?.binding
+  (bindingLine.value?.slug === props.snapshot?.currentLineSlug
+    ? props.snapshot?.currentWorkstreamBinding?.binding : undefined)
     ?? props.snapshot?.lineWorkstreamBindings?.find(
-      (binding) => binding.lineSlug === props.snapshot?.currentLineSlug,
+      (binding) => binding.lineSlug === bindingLine.value?.slug,
     ),
 );
 const lineQuestions = computed(() =>
@@ -178,7 +186,7 @@ const currentCheckpointTarget = computed<{
   if (props.snapshot === null || selectedLineSlug.value === '') return null;
   return selectedQuestion.value === undefined
     ? { lineSlug: selectedLineSlug.value }
-    : { questionId: selectedQuestion.value.id };
+    : { questionId: selectedQuestion.value.id, lineSlug: selectedLineSlug.value };
 });
 const currentCheckpointTargetKey = computed(() =>
   currentCheckpointTarget.value === null
@@ -221,7 +229,13 @@ const checkpointStale = computed(() => researchManagerCheckpointDraftIsStale(
   currentCheckpointTargetKey.value,
   checkpointBasePendingCheckpointId.value,
   currentPendingCheckpointId.value,
-));
+) || checkpointBaseLocalConclusionId.value !== (props.snapshot?.localConclusion?.candidate.sourceActionId ?? null));
+const adoptLocalConclusionCommand = computed(() => checkpointStale.value
+  || checkpointPendingCommandId.value !== null ? null
+  : researchManagerAdoptLocalConclusionCommand(
+      props.snapshot, checkpointBaseTarget.value, checkpointBaseRevision.value,
+      checkpointBaseLocalConclusionId.value,
+    ));
 const currentDecisionGateId = computed(() => {
   const gate = props.snapshot?.humanGate;
   return gate !== undefined && gate.resolvedAt === undefined ? gate.gateId : null;
@@ -269,7 +283,7 @@ const runStale = computed(() => researchManagerScienceDraftIsStale(
 const modeActive = computed(() => props.snapshot !== null && props.snapshot.mode !== 'inactive');
 const canConfirmWorkstream = computed(() => {
   const snapshot = props.snapshot;
-  const lineSlug = snapshot?.currentLineSlug;
+  const lineSlug = bindingLine.value?.slug;
   return lineSlug !== undefined
     && workstreamPendingCommandId.value === null
     && researchLineWorkstreamBindingCommand({
@@ -280,7 +294,7 @@ const canConfirmWorkstream = computed(() => {
 });
 const canClearWorkstream = computed(() => {
   const snapshot = props.snapshot;
-  const lineSlug = snapshot?.currentLineSlug;
+  const lineSlug = bindingLine.value?.slug;
   return lineSlug !== undefined
     && workstreamPendingCommandId.value === null
     && researchLineWorkstreamBindingCommand({ kind: 'clear', lineSlug }, snapshot) !== null;
@@ -299,7 +313,10 @@ const canSteerQuestion = computed(() =>
 const canProposeCheckpoint = computed(() =>
   checkpointBaseRevision.value !== null
   && checkpointBaseTarget.value !== null
-  && !checkpointStale.value,
+  && !checkpointStale.value
+  && props.snapshot?.localConclusion === undefined
+  && props.snapshot?.pendingCheckpoint === undefined
+  && checkpointPendingCommandId.value === null,
 );
 const canCommitCheckpoint = computed(() =>
   checkpointBasePendingCheckpointId.value !== null
@@ -367,7 +384,7 @@ function resetWorkstreamForm(): void {
   try {
     workstreamInput.value = currentWorkstreamRecord.value?.workstream ?? '';
     workstreamInputDirty.value = false;
-    workstreamBaseLineSlug.value = props.snapshot?.currentLineSlug ?? null;
+    workstreamBaseLineSlug.value = bindingLine.value?.slug ?? null;
   } finally {
     resettingWorkstream = false;
   }
@@ -414,6 +431,7 @@ function resetCheckpointForm(): void {
       ? null
       : { ...currentCheckpointTarget.value };
     checkpointBasePendingCheckpointId.value = currentPendingCheckpointId.value;
+    checkpointBaseLocalConclusionId.value = props.snapshot?.localConclusion?.candidate.sourceActionId ?? null;
     checkpointAssessment.value = '';
     checkpointNextAction.value = '';
     checkpointEntryId.value = '';
@@ -519,7 +537,7 @@ watch(
       resetLineForm();
     }
     if (
-      workstreamBaseLineSlug.value !== (snapshot.currentLineSlug ?? null)
+      workstreamBaseLineSlug.value !== (bindingLine.value?.slug ?? null)
       || !workstreamInputDirty.value
     ) {
       resetWorkstreamForm();
@@ -538,6 +556,7 @@ watch(
 
 watch(selectedLineSlug, () => {
   selectedQuestionId.value = preferredQuestionId();
+  if (workstreamBaseLineSlug.value !== (bindingLine.value?.slug ?? null)) resetWorkstreamForm();
   resetLineForm();
   resetQuestionForm();
   if (!checkpointDirty.value) resetCheckpointForm();
@@ -585,6 +604,7 @@ function draftContext() {
     evidenceTargetKey: evidenceBaseTargetKey.value ?? '',
     runActionId: runBaseActionId.value ?? '',
     checkpointEntryId: checkpointEntryId.value,
+    localConclusionId: checkpointBaseLocalConclusionId.value ?? undefined,
   };
 }
 
@@ -604,6 +624,7 @@ function emitManagerCommand(command: ResearchCommand): number {
   if (target?.form === 'decision') decisionPendingCommandId.value = request.id;
   else if (target?.form === 'evidence') evidencePendingCommandId.value = request.id;
   else if (target?.form === 'run') runPendingCommandId.value = request.id;
+  else if (target?.form === 'checkpoint') checkpointPendingCommandId.value = request.id;
   emit('command', request);
   return request.id;
 }
@@ -641,6 +662,7 @@ watch(
     if (decisionPendingCommandId.value === ack.id) decisionPendingCommandId.value = null;
     if (evidencePendingCommandId.value === ack.id) evidencePendingCommandId.value = null;
     if (runPendingCommandId.value === ack.id) runPendingCommandId.value = null;
+    if (checkpointPendingCommandId.value === ack.id) checkpointPendingCommandId.value = null;
 
     const draft = ack.draft;
     if (!open.value || !ack.succeeded || draft === undefined) return;
@@ -790,7 +812,7 @@ function emitSwitchLine(): void {
 
 function confirmWorkstreamBinding(): void {
   const snapshot = props.snapshot;
-  const lineSlug = snapshot?.currentLineSlug;
+  const lineSlug = bindingLine.value?.slug;
   if (lineSlug === undefined) return;
   const command = researchLineWorkstreamBindingCommand({
     kind: 'confirm',
@@ -803,7 +825,7 @@ function confirmWorkstreamBinding(): void {
 
 function clearWorkstreamBinding(): void {
   const snapshot = props.snapshot;
-  const lineSlug = snapshot?.currentLineSlug;
+  const lineSlug = bindingLine.value?.slug;
   if (lineSlug === undefined) return;
   const command = researchLineWorkstreamBindingCommand({ kind: 'clear', lineSlug }, snapshot);
   if (command === null) return;
@@ -915,6 +937,11 @@ function proposeCheckpoint(): void {
     assessment: optionalText(checkpointAssessment.value),
     nextAction: optionalText(checkpointNextAction.value),
   });
+}
+
+function adoptLocalConclusion(): void {
+  const command = adoptLocalConclusionCommand.value;
+  if (command !== null) emitManagerCommand(command);
 }
 
 function commitCheckpoint(): void {
@@ -1087,7 +1114,7 @@ function acknowledgeAlert(fingerprint: string): void {
                 <Button
                   variant="secondary"
                   size="sm"
-                  :disabled="snapshot?.currentLineSlug === selectedLine.slug"
+                  :disabled="snapshot?.currentLineSlug === selectedLine.slug || snapshot?.localConclusion !== undefined"
                   @click="emitSwitchLine"
                 >
                   {{ t('research.manager.switchLine') }}
@@ -1104,7 +1131,7 @@ function acknowledgeAlert(fingerprint: string): void {
               <div class="section-heading">
                 <div class="binding-heading-copy">
                   <h3>{{ t('research.manager.workstreamBinding') }}</h3>
-                  <code v-if="currentLine">{{ currentLine.slug }}</code>
+                  <code v-if="bindingLine">{{ bindingLine.slug }}</code>
                 </div>
                 <Badge
                   v-if="currentWorkstreamPresentation"
@@ -1114,10 +1141,13 @@ function acknowledgeAlert(fingerprint: string): void {
                   {{ t('research.workstreamBindingStatus.' + currentWorkstreamPresentation.status) }}
                 </Badge>
               </div>
-              <Banner v-if="!currentLine" variant="info">
+              <Banner v-if="!bindingLine" variant="info">
                 {{ t('research.manager.noCurrentLineForBinding') }}
               </Banner>
               <template v-else>
+                <Banner v-if="!currentLine && snapshot.localConclusion" variant="info">
+                  {{ t('research.manager.localBindingTarget') }}
+                </Banner>
                 <div v-if="snapshot.program" class="binding-record">
                   <strong>{{ t('research.manager.observedTopic') }}</strong>
                   <span>{{ snapshot.program.title }}</span>
@@ -1129,9 +1159,9 @@ function acknowledgeAlert(fingerprint: string): void {
                 <Banner v-else variant="warning">
                   {{ t('research.manager.topicUnavailableForBinding') }}
                 </Banner>
-                <div v-if="currentWorkstreamPresentation" class="binding-record">
+                <div v-if="currentWorkstreamPresentation || currentWorkstreamRecord" class="binding-record">
                   <strong>{{ t('research.manager.currentBinding') }}</strong>
-                  <span>{{ currentWorkstreamPresentation.reason }}</span>
+                  <span v-if="currentWorkstreamPresentation">{{ currentWorkstreamPresentation.reason }}</span>
                   <span v-if="currentWorkstreamRecord" class="binding-meta">
                     <span>{{ t('research.workstream') }} <code>{{ currentWorkstreamRecord.workstream }}</code></span>
                     <span>{{ t('research.topicId') }} <code>{{ currentWorkstreamRecord.topicId }}</code></span>
@@ -1618,7 +1648,7 @@ function acknowledgeAlert(fingerprint: string): void {
           </section>
 
           <section v-else-if="section === 'checkpoint'" class="editor-section">
-            <h3>{{ t('research.manager.proposeCheckpoint') }}</h3>
+            <h3>{{ t(snapshot?.localConclusion ? 'research.manager.localConclusion' : 'research.manager.proposeCheckpoint') }}</h3>
             <Banner v-if="checkpointStale" variant="warning">
               <span>{{ t('research.manager.staleCheckpoint') }}</span>
               <Button variant="secondary" size="sm" @click="resetCheckpointForm">
@@ -1628,6 +1658,23 @@ function acknowledgeAlert(fingerprint: string): void {
             <p class="section-note">
               {{ selectedQuestion?.wording ?? selectedLine?.title ?? t('research.none') }}
             </p>
+            <template v-if="snapshot?.localConclusion">
+              <Banner variant="info">{{ t('research.manager.localConclusionHint') }}</Banner>
+              <div class="binding-record">
+                <strong>{{ snapshot.localConclusion.progress.headline }}</strong>
+                <p>{{ snapshot.localConclusion.progress.result }}</p>
+                <p>{{ snapshot.localConclusion.progress.mainlineImpact }}</p>
+                <p v-for="limitation in snapshot.localConclusion.progress.detail?.limitations ?? []" :key="limitation">
+                  {{ limitation }}
+                </p>
+                <code>{{ snapshot.localConclusion.candidate.sourceActionId }}</code>
+              </div>
+              <p class="section-note">{{ t('research.manager.adoptLocalConclusionHint') }}</p>
+              <Button :disabled="adoptLocalConclusionCommand === null" @click="adoptLocalConclusion">
+                {{ t('research.manager.adoptLocalConclusion') }}
+              </Button>
+            </template>
+            <template v-else>
             <Field :label="t('research.manager.assessment')" control-id="research-manager-checkpoint-assessment">
               <Textarea id="research-manager-checkpoint-assessment" v-model="checkpointAssessment" :rows="3" />
             </Field>
@@ -1639,6 +1686,7 @@ function acknowledgeAlert(fingerprint: string): void {
                 {{ t('research.manager.propose') }}
               </Button>
             </div>
+            </template>
 
             <div class="checkpoint-commit">
               <div class="section-heading">

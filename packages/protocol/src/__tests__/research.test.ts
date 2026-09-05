@@ -60,6 +60,52 @@ const degradedMaintenanceReceipt = {
 };
 
 describe('researchStatusSnapshotSchema', () => {
+  it('preserves a retained local conclusion without manufacturing a checkpoint or receipt', () => {
+    const localConclusion = {
+      action: {
+        actionId: 'primitive-audit', kind: 'experiment', status: 'completed',
+        purpose: 'Check a spin identity', expectedEvidence: ['Exact coefficients'],
+        stopCondition: 'Stop at a primitive counterexample', allowedToolKinds: ['Bash'],
+        requiresHumanApproval: false, createdAt: 1, completedAt: 3,
+      },
+      progress: {
+        headline: 'Primitive counterexample', motivation: 'Validate the representation',
+        workPerformed: 'Compared exact basis-state actions', result: 'Squared identity fails',
+        mainlineImpact: 'Revalidate affected calculations', uncertainties: ['Not a full-project proof'],
+        detail: { limitations: ['No many-body witness evaluated'] }, recordedAt: 3,
+      },
+      candidate: {
+        sourceActionId: 'primitive-audit', progressRecordedAt: 3,
+        entryKind: 'failure', authority: 'agent', provenance: 'agent_verification',
+        rationale: 'Exact counterexample',
+      },
+    };
+    const snapshot = researchStatusSnapshotSchema.parse({
+      ...validSnapshot, mode: 'ready', phase: 'state_updated', revision: 8,
+      localConclusion, currentAction: localConclusion.action, latestProgress: localConclusion.progress,
+    });
+    expect(snapshot.localConclusion).toEqual(localConclusion);
+    expect(snapshot.pendingCheckpoint).toBeUndefined();
+    expect(researchStatusSnapshotSchema.safeParse({
+      ...snapshot, localConclusion: { ...localConclusion, receipt: {} },
+    }).success).toBe(false);
+  });
+
+  it('preserves exact explicit ownership adoption fields in the public command', () => {
+    const command = {
+      kind: 'propose_checkpoint', expectedRevision: 8, localConclusionId: 'primitive-audit',
+      confirmedBy: 'user', lineSlug: 'spin-audit', questionId: 'spin-question',
+    };
+    expect(researchCommandRequestSchema.parse({ command }).command).toEqual(command);
+    for (const invalid of [
+      { ...command, confirmedBy: 'main_agent' },
+      { ...command, localConclusionId: '' },
+    ]) expect(researchCommandRequestSchema.safeParse({ command: invalid }).success).toBe(false);
+    expect(researchCommandRequestSchema.parse({
+      command: { ...command, committedEntryId: 'invented-entry' },
+    }).command).toEqual(command);
+  });
+
   it('accepts a minimal valid snapshot', () => {
     const parsed = researchStatusSnapshotSchema.parse(validSnapshot);
     expect(parsed.mode).toBe('inactive');

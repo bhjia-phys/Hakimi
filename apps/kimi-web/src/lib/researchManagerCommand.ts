@@ -25,6 +25,7 @@ export type ResearchManagerDraftTarget =
   | { form: 'evidence'; mode: 'review'; key: string }
   | { form: 'run'; mode: 'observe'; key: string }
   | { form: 'checkpoint'; mode: 'propose'; key: string }
+  | { form: 'checkpoint'; mode: 'adopt'; key: string }
   | { form: 'checkpoint'; mode: 'commit'; key: string };
 
 export interface ResearchManagerCommandRequest {
@@ -43,6 +44,39 @@ export interface ResearchManagerCommandAck extends ResearchManagerCommandRequest
 
 export function researchManagerMutationAllowed(busy: boolean): boolean {
   return !busy;
+}
+
+/** Build only an explicit human ownership request; the service validates captured provenance. */
+export function researchManagerAdoptLocalConclusionCommand(
+  snapshot: ResearchStatusSnapshot | null,
+  target: { lineSlug?: string; questionId?: string } | null,
+  expectedRevision: number | null,
+  localConclusionId: string | null,
+): ResearchCommand | null {
+  if (snapshot === null || target === null || target.lineSlug === undefined
+    || expectedRevision === null || expectedRevision <= 0
+    || expectedRevision !== snapshot.revision
+    || localConclusionId === null
+    || snapshot.localConclusion?.candidate.sourceActionId !== localConclusionId
+    || snapshot.pendingCheckpoint !== undefined
+    || snapshot.mode !== 'ready' || snapshot.loopStatus !== 'active'
+    || snapshot.phase !== 'state_updated'
+    || (snapshot.humanGate !== undefined && snapshot.humanGate.resolvedAt === undefined)
+    || !snapshot.lines.some((line) => line.slug === target.lineSlug)) return null;
+  const source = snapshot.localConclusion.action;
+  if ((snapshot.currentLineSlug !== undefined && snapshot.currentLineSlug !== target.lineSlug)
+    || (source.lineSlug !== undefined && source.lineSlug !== target.lineSlug)
+    || (source.questionId !== undefined && source.questionId !== target.questionId)) return null;
+  if (target.questionId !== undefined && !snapshot.questions.some((question) =>
+    question.id === target.questionId && question.lineSlug === target.lineSlug)) return null;
+  const binding = snapshot.lineWorkstreamBindings.find((item) => item.lineSlug === target.lineSlug);
+  if (binding === undefined || snapshot.program === undefined
+    || binding.topicId !== snapshot.program.topicId
+    || binding.observedRevision !== (snapshot.program.observedRevision ?? 1)) return null;
+  return {
+    kind: 'propose_checkpoint', expectedRevision, localConclusionId, confirmedBy: 'user',
+    lineSlug: target.lineSlug, questionId: target.questionId,
+  };
 }
 
 export function researchManagerHistoricalCheckpointCanBeDiscarded(
@@ -209,6 +243,7 @@ export interface ResearchManagerDraftContext {
   evidenceTargetKey: string;
   runActionId: string;
   checkpointEntryId: string;
+  localConclusionId?: string;
 }
 
 export function researchManagerDraftTarget(
@@ -238,6 +273,12 @@ export function researchManagerDraftTarget(
     case 'observe_run':
       return { form: 'run', mode: 'observe', key: command.actionId };
     case 'propose_checkpoint':
+      if (command.localConclusionId !== undefined) {
+        return {
+          form: 'checkpoint', mode: 'adopt',
+          key: `${command.localConclusionId}|${researchEvidenceDraftTargetKey(command)}`,
+        };
+      }
       return {
         form: 'checkpoint',
         mode: 'propose',
@@ -270,6 +311,12 @@ export function researchManagerDraftTargetMatches(
     case 'run':
       return context.runActionId === target.key;
     case 'checkpoint':
+      if (target.mode === 'adopt') {
+        return target.key === `${context.localConclusionId ?? ''}|${researchEvidenceDraftTargetKey({
+          lineSlug: context.selectedLineSlug || undefined,
+          questionId: context.selectedQuestionId || undefined,
+        })}`;
+      }
       if (target.mode === 'commit') return context.checkpointEntryId.trim() === target.key;
       return target.key === (context.selectedQuestionId === ''
         ? `line:${context.selectedLineSlug}`

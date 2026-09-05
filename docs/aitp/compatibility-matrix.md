@@ -1,5 +1,18 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**Hakimi-only retained-result recovery (2026-09-05; implementation under verification):**
+A fresh unbound Action can conclude durable work into one checkpointed local
+`localConclusion`, not an AITP Entry, receipt, or pending checkpoint. Public
+`propose_checkpoint` adds optional `localConclusionId` and `confirmedBy: user`
+for exact-revision explicit adoption into an already confirmed target Line and
+workstream. Original evidence and known scope remain fixed; stale scientific
+context fails closed. REST/event schemas, SDK, klient and TUI/Web expose the
+same distinction. The model-facing proposal tool cannot assert this human
+confirmation. No AITP CLI/schema/contract/Skill changes or new canonical writes;
+normal prepare/exact save/show/check/commit and human decisions remain intact.
+The counterpart's 20 dirty paths remain untouched. Installed-session replay
+is still pending; source tests are not real scientific workflow acceptance.
+
 **Hakimi-only stage Note guidance amendment (2026-09-05):** Begin describes
 settling canonical Question evidence refs before capturing its revision for a
 Note Action. Existing Research context identifies a completed native read only

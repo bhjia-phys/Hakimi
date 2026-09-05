@@ -381,6 +381,48 @@ export function defineKlientConformance(
       }
     });
 
+    it('research local conclusions round-trip without becoming canonical checkpoints', async () => {
+      const workDir = await mkdtemp(join(tmpdir(), 'klient-local-result-'));
+      const created = await target.klient.global.sessions.create({ workDir, title: 'Local research result' });
+      try {
+        const agent = target.klient.session(created.id).agent('main');
+        await agent.aitpMode.enter({ actor: 'user' });
+        const action = await agent.research.planAndStartAction({
+          kind: 'derivation', purpose: 'Check one limiting case.',
+          expectedEvidence: ['Exact identity or counterexample'], stopCondition: 'The comparison is decided.',
+        });
+        const conclusion = await agent.research.concludeAction({
+          actionId: action.actionId, status: 'completed',
+          progress: {
+            headline: 'Exact counterexample', motivation: 'Check the convention.',
+            workPerformed: 'Compared exact coefficients.', result: 'The coefficients disagree.',
+            mainlineImpact: 'Revalidate this convention.',
+            detail: { limitations: ['Not a many-body obstruction proof.'] },
+          },
+          durability: {
+            status: 'durable_delta', entryKind: 'failure', authority: 'agent',
+            provenance: 'agent_verification', rationale: 'Verified counterexample.',
+          },
+        });
+        expect(conclusion.action.status).toBe('completed');
+        expect(conclusion.localConclusion?.candidate.sourceActionId).toBe(action.actionId);
+        const snapshot = await agent.research.getSnapshot();
+        expect(snapshot.localConclusion).toEqual(conclusion.localConclusion);
+        expect(snapshot.pendingCheckpoint).toBeUndefined();
+        expect(await agent.research.getPendingCheckpoint()).toBeUndefined();
+        const error = await captureRejection(agent.research.proposeCheckpoint({
+          expectedRevision: snapshot.revision, localConclusionId: action.actionId,
+          confirmedBy: 'user', lineSlug: 'missing-line',
+        }));
+        expect(error.code).toBe(40001);
+        expect(error.details).toEqual({ code: 'research.line_not_found' });
+        expect((await agent.research.getSnapshot()).localConclusion).toEqual(conclusion.localConclusion);
+      } finally {
+        await target.klient.session(created.id).close();
+        await rm(workDir, { recursive: true, force: true });
+      }
+    });
+
     it('goal lifecycle round-trips through the facade and goal.updated events', async () => {
       const created = await target.klient.global.sessions.create({
         workDir: process.cwd(),

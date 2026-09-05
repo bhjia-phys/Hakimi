@@ -539,6 +539,7 @@ function renderCompactCurrentCycle(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
 ): string {
+  const local = snap.localConclusion;
   const action = currentLineAction(snap);
   const actionState = actionNeedsRecovery(snap)
     ? 'action recovery required'
@@ -553,6 +554,9 @@ function renderCompactCurrentCycle(
       ? ''
       : ` · continuation ${continuation}`;
   const mode = `${snap.mode}${snap.loopStatus === 'paused' ? ' · paused' : ''} · ${snap.planningPolicy}${continuationLabel}`;
+  if (local !== undefined && (local.action.lineSlug === undefined || local.action.lineSlug === snap.currentLineSlug)) {
+    return `  ${chalk.hex(colors.primary)('↻')} ${chalk.hex(colors.textDim)('Current cycle:')} ${chalk.hex(colors.text)(normalizeSummary(local.progress.headline))} · ${chalk.hex(colors.textMuted)(`${mode} · action ${local.action.status}`)} · ${chalk.hex(colors.warning)('retained locally, not recorded in AITP')}`;
+  }
   const warning = actionNeedsRecovery(snap) || snap.loopStatus === 'paused' || continuation === 'held';
   return `  ${chalk.hex(warning ? colors.warning : colors.primary)('↻')} ${chalk.hex(colors.textDim)('Current cycle:')} ${chalk.hex(colors.primary)(cycleStage(snap))} · ${chalk.hex(colors.text)(compactCurrentWork(snap))} · ${chalk.hex(warning ? colors.warning : colors.textMuted)(`${mode} · ${actionState}`)}`;
 }
@@ -561,6 +565,10 @@ function renderCompactAttention(
   snap: ResearchStatusSnapshot,
   colors: ColorPalette,
 ): string | undefined {
+  const localGate = currentLineHumanGate(snap);
+  if (snap.localConclusion !== undefined && (localGate === undefined || localGate.resolvedAt !== undefined)) {
+    return `  ${chalk.hex(colors.warning).bold('! Attention:')} ${chalk.hex(colors.text)('Record ownership needs confirmation; the scientific result is retained.')}`;
+  }
   const alerts = currentLineAlerts(snap);
   const hasMaintenanceIssue = snap.aitpMaintenance?.degradedReason !== undefined;
   const hasAdapterError = snap.aitpHealth.lastError !== undefined;
@@ -709,6 +717,11 @@ function selectEffectiveNextStep(
 }
 
 function selectNextAction(snap: ResearchStatusSnapshot): string | undefined {
+  const gate = currentLineHumanGate(snap);
+  if (snap.localConclusion !== undefined && (gate === undefined || gate.resolvedAt !== undefined)) {
+    const local = snap.localConclusion;
+    return `Confirm ownership: /research adopt-conclusion ${local.candidate.sourceActionId} ${local.action.lineSlug ?? '<lineSlug>'}${local.action.questionId === undefined ? '' : ` ${local.action.questionId}`} (requires a confirmed workstream binding).`;
+  }
   return normalizeSummary(selectEffectiveNextStep(snap)?.text)
     || normalizeSummary(snap.latestProgress?.nextAction)
     || normalizeSummary(snap.currentQuestion?.nextBoundedAction)

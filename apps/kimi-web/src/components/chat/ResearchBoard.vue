@@ -186,6 +186,7 @@ const attentionTitle = computed(() => {
   if (slot?.source === 'alignment') return t('research.goalAlignment');
   if (slot?.source === 'action_recovery') return t('research.actionRecoveryRequired');
   if (slot?.source === 'checkpoint') return t('research.pendingCheckpoint');
+  if (slot?.source === 'local_conclusion') return t('research.manager.localConclusion');
   if (slot?.source === 'workstream') return t('research.workstreamBinding');
   if (slot?.source === 'human_gate') return t('research.humanGate');
   if (slot?.source === 'distillation') return t('research.methodReviewHandoff');

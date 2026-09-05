@@ -70,6 +70,7 @@ export type ResearchBoardCycleStage =
   | 'test_action'
   | 'evaluate'
   | 'record'
+  | 'confirm_ownership'
   | 'waiting'
   | 'next_ready';
 
@@ -101,7 +102,7 @@ export type ResearchBoardCycleCurrent =
       status: Extract<ResearchActionStatus, 'planned' | 'in_progress'>;
     }
   | {
-      source: 'progress' | 'question' | 'state_change' | 'line';
+      source: 'progress' | 'question' | 'state_change' | 'line' | 'local_conclusion';
       text: string;
     };
 
@@ -141,7 +142,7 @@ type ResearchBoardAttentionValue =
       text: string;
     }
   | {
-      source: 'checkpoint';
+      source: 'checkpoint' | 'local_conclusion';
       text: string;
     }
   | {
@@ -315,6 +316,7 @@ function projectSlot(snapshot: ResearchStatusSnapshot): ResearchBoardProjectSlot
 }
 
 function cycleStage(snapshot: ResearchStatusSnapshot): ResearchBoardCycleStage {
+  if (snapshot.localConclusion !== undefined) return 'confirm_ownership';
   const goal = snapshot.researchGoal ?? snapshot.goalSummary;
   if (goal?.status === 'active' && goal.continuation?.state === 'waiting') return 'waiting';
   switch (snapshot.phase) {
@@ -351,7 +353,11 @@ function cycleSlot(snapshot: ResearchStatusSnapshot): ResearchBoardCycleSlot {
     planningPolicy: snapshot.planningPolicy,
     continuationState: goal?.continuation?.state,
     continuationAvailable: goal === undefined ? undefined : goal.continuation !== undefined,
-    actionStatus: actionNeedsRecovery(snapshot)
+    actionStatus: snapshot.localConclusion !== undefined
+      && (snapshot.localConclusion.action.lineSlug === undefined
+        || snapshot.localConclusion.action.lineSlug === snapshot.currentLineSlug)
+      ? snapshot.localConclusion.action.status
+      : actionNeedsRecovery(snapshot)
       ? 'recovery_required'
       : action?.status === 'planned' || action?.status === 'in_progress'
         ? action.status
@@ -363,6 +369,13 @@ function cycleSlot(snapshot: ResearchStatusSnapshot): ResearchBoardCycleSlot {
 function attentionSlot(
   snapshot: ResearchStatusSnapshot,
 ): ResearchBoardAttentionSlot | undefined {
+  const gate = currentHumanGate(snapshot);
+  if (snapshot.localConclusion !== undefined && (gate === undefined || gate.resolvedAt !== undefined)) {
+    return {
+      kind: 'attention', source: 'local_conclusion', additionalCount: 0,
+      text: 'Record ownership needs confirmation; the scientific result is retained locally, not recorded in AITP.',
+    };
+  }
   const candidates: ResearchBoardAttentionValue[] = [];
   const causeKeys = new Set<string>();
   const messages = new Set<string>();
@@ -550,6 +563,10 @@ function runIsActive(
 }
 
 function cycleCurrent(snapshot: ResearchStatusSnapshot): ResearchBoardCycleCurrent | undefined {
+  const local = snapshot.localConclusion;
+  if (local !== undefined && (local.action.lineSlug === undefined || local.action.lineSlug === snapshot.currentLineSlug)) {
+    return { source: 'local_conclusion', text: local.progress.headline };
+  }
   const actionRecoveryRequired = actionNeedsRecovery(snapshot);
   const action = currentAction(snapshot);
   const run = (actionRecoveryRequired ? [] : [currentRun(snapshot)])
@@ -616,6 +633,18 @@ function currentEffectiveNextStep(snapshot: ResearchStatusSnapshot) {
 }
 
 function nextSlot(snapshot: ResearchStatusSnapshot): ResearchBoardNextSlot | undefined {
+  const local = snapshot.localConclusion;
+  const gate = currentHumanGate(snapshot);
+  if (local !== undefined && (gate === undefined || gate.resolvedAt !== undefined)) {
+    return {
+      kind: 'next', source: 'aitp_maintenance', freshness: 'blocked',
+      text: 'In Research Manager, explicitly confirm the result’s target Line/workstream, then adopt the unchanged conclusion into a checkpoint. AITP has not been written yet.',
+      observedAt: local.progress.recordedAt,
+      derivedFrom: {
+        actionId: local.action.actionId, lineSlug: local.action.lineSlug, questionId: local.action.questionId,
+      },
+    };
+  }
   if (actionNeedsRecovery(snapshot)) {
     const action = currentAction(snapshot)!;
     const projected = currentEffectiveNextStep(snapshot);
