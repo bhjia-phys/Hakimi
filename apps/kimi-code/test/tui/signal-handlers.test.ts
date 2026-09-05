@@ -56,8 +56,8 @@ function makeHarness() {
   };
 }
 
-function makeDriver(): { driver: SignalDriver; tui: KimiTUI } {
-  const tui = new KimiTUI(makeHarness() as never, makeStartupInput());
+function makeDriver(harness = makeHarness()): { driver: SignalDriver; tui: KimiTUI } {
+  const tui = new KimiTUI(harness as never, makeStartupInput());
   const driver = tui as unknown as SignalDriver;
   return { driver, tui };
 }
@@ -322,6 +322,69 @@ describe('KimiTUI signal handlers', () => {
     expect(uiStop).toHaveBeenCalledOnce();
     expect(tui.onExit).toHaveBeenCalledOnce();
     expect(events).toEqual(['drain', 'ui.stop', 'exit']);
+  });
+
+  it('keeps SIGTERM ownership until asynchronous shutdown has finished', async () => {
+    let finishClose!: () => void;
+    const harness = makeHarness();
+    harness.close.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishClose = resolve;
+        }),
+    );
+    const { driver, tui } = makeDriver(harness);
+    vi.spyOn(driver.state.terminal, 'drainInput').mockResolvedValue(undefined);
+    vi.spyOn(driver.state.ui, 'stop').mockImplementation(() => {});
+    const before = process.listenerCount('SIGTERM');
+    driver.registerSignalHandlers();
+    const closing = tui.stop();
+    try {
+      await vi.waitFor(() => {
+        expect(harness.close).toHaveBeenCalledOnce();
+      });
+      // signal-exit checks this count after the TUI's prepended handler runs.
+      expect(process.listenerCount('SIGTERM')).toBe(before + 1);
+    } finally {
+      finishClose();
+      await closing;
+      driver.unregisterSignalHandlers();
+    }
+    expect(process.listenerCount('SIGTERM')).toBe(before);
+  });
+
+  it('does not force exit on another SIGTERM while the session is closing', async () => {
+    let finishClose!: () => void;
+    const harness = makeHarness();
+    harness.close.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishClose = resolve;
+        }),
+    );
+    const { driver } = makeDriver(harness);
+    vi.spyOn(driver.state.terminal, 'drainInput').mockResolvedValue(undefined);
+    vi.spyOn(driver.state.ui, 'stop').mockImplementation(() => {});
+    const captured = captureHandlers(driver);
+    const sigterm = captured.signalHandlers.get('SIGTERM')!;
+    try {
+      sigterm();
+      await vi.waitFor(() => {
+        expect(harness.close).toHaveBeenCalledOnce();
+      });
+      sigterm();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(exitSpy).not.toHaveBeenCalled();
+      finishClose();
+      await vi.waitFor(() => {
+        expect(exitSpy).toHaveBeenCalledExactlyOnceWith(143);
+      });
+    } finally {
+      finishClose();
+      captured.restore();
+      driver.unregisterSignalHandlers();
+    }
   });
 
   it('start() unregisters signal handlers when initialization throws', async () => {

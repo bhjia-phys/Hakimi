@@ -1,5 +1,12 @@
 # AITP 状态跟踪与交接清单
 
+2026-09-05 TUI SIGTERM 修复：清理 Session 期间保留信号监听，防止
+signal-exit 重发 TERM，在 active turn 取消和 Goal 暂停保存前杀死进程。
+重复 TERM 不绕过清理；源码构建的直接 TERM 与 timeout 进程夹具通过。
+交付状态与仍未覆盖的 SIGHUP／终端失效见合作者规划 §19.37。
+不自动完成科研 Action，不写 AITP，不改公共字段、Skill 或人类决定；
+AITP dirty handoff 保留。此项不是 G2/G7 完整科研验收。
+
 2026-09-05 Question 上下文修复（已交付安装，原 r2 会话恢复通过）：无显式 Focus 时，
 共享投影使用前台 Action 明确引用的当前 Line Question，不写回 Focus。
 操作性事项收尾后，Question 的明确下一步优先于旧 progress；既有提交指引

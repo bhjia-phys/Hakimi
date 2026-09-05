@@ -1,5 +1,14 @@
 # AITP integration handoff
 
+TUI SIGTERM repair (2026-09-05): retain the handler until Session cleanup has
+finished, so signal helpers cannot terminate the process before cancellation and
+Goal persistence. Repeated SIGTERM does not bypass cleanup. Source-build process
+tests cover direct TERM and the original timeout shape; installation and remaining
+SIGHUP/dead-terminal limits are tracked in collaborator program
+[§19.37](theory-physics-collaborator-program.md#tui-sigterm-shutdown).
+No Research conclusion, AITP record, contract, Skill or human decision is changed;
+the counterpart checkout and its dirty handoffs remain protected.
+
 Question-context repair (2026-09-05, delivered and clean-installed):
 without explicit Focus, the shared snapshot can project the foreground Action's
 explicit same-Line Question. Existing Focus is never created or overridden.

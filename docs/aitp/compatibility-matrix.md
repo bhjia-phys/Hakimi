@@ -1,5 +1,13 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**TUI SIGTERM lifecycle repair (2026-09-05):** signal ownership now survives
+asynchronous Session cleanup. This prevents the bundled signal-exit helper from
+re-sending TERM before a running turn's cancellation and Goal pause are persisted.
+Direct TERM and timeout process fixtures pass on the source build; delivery and
+the unchanged SIGHUP/dead-terminal limitation are recorded in collaborator
+program §19.37. No public fields, AITP surface, Skill, scientific conclusion or
+human-decision semantics change; the counterpart dirty files stay untouched.
+
 **Hakimi-only Question projection (2026-09-05; delivered and clean-installed):**
 the existing optional current Question may come from the foreground
 Action's explicit same-Line reference when there is no Focus. Explicit Focus wins;

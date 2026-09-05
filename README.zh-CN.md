@@ -65,6 +65,8 @@ Print mode 退出时会先暂停 active Goal 并刷出日志，再释放运行�
 
 干净构建安装版已通过独立进程信号测试和真实 PTY 验证。这证明退出持久化，不代表跨 turn 科研验收完成；详见[交付证据](docs/aitp/theory-physics-collaborator-program.md#print-goal-shutdown)。
 
+交互式 TUI 收到 SIGTERM 后，会保留信号监听直至 Session 清理完成，避免信号辅助库在 active turn 的取消和 Goal 暂停保存前终止进程。重复 SIGTERM 不会跳过清理。SIGHUP／终端失效的紧急退出以及 SIGKILL 不在此保证范围；详见 [TUI 退出验证与交付状态](docs/aitp/theory-physics-collaborator-program.md#tui-sigterm-shutdown)。
+
 冷恢复时，AITP discovery 会等待会话 Skill catalog 就绪。退出或 reset 会取消等待，迟到结果不能恢复旧权限；插件缺失、不兼容或 catalog 初始化失败仍如实显示不可用，不额外添加 maintenance 重试。
 
 委派的 operator 不拥有共享 AITP 生命周期：子 agent 的恢复或 undo 不能 reset 主研究者的 adapter 或 maintenance 状态。进入或恢复 active Research Mode 时，也会为旧 tool allowlist 补齐已有的 evidence review、run observation 和 historical checkpoint discard 工具；这些修复不批准证据、不改变 checkpoint 或 human decision 语义。

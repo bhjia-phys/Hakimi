@@ -994,7 +994,8 @@ export class KimiTUI {
   async stop(exitCode?: number): Promise<void> {
     if (this.isShuttingDown) return;
     this.isShuttingDown = true;
-    this.unregisterSignalHandlers();
+    // Keep signal ownership until asynchronous cleanup finishes. Otherwise
+    // signal-exit can re-send SIGTERM before the session has been persisted.
     this.aborted = true;
     // Give the startup provider-model refresh a brief chance to finish before
     // the harness closes (and the process exits): its config writes are each
@@ -1046,6 +1047,7 @@ export class KimiTUI {
       } catch {
         // best effort terminal restore.
       }
+      this.unregisterSignalHandlers();
     }
     if (this.onExit) {
       await this.onExit(exitCode);
@@ -1089,6 +1091,7 @@ export class KimiTUI {
           this.emergencyTerminalExit();
           return;
         }
+        if (this.isShuttingDown) return;
         // Registering a SIGTERM listener disables Node's default exit(143),
         // so we must reinstate it after stop() or on failure.
         this.stop(143).then(
