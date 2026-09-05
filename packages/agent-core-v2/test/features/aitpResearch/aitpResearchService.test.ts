@@ -3246,6 +3246,112 @@ describe('Goal display projection', () => {
 });
 
 describe('line and focus coordination', () => {
+  async function settledLineServices(records: WireRecord[] = [], restore = false) {
+    const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const source = buildWire('settled-line-switch', records);
+    const adapter = makeStubAdapter();
+    const save = vi.spyOn(adapter, 'recordSave');
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.defineInstance(IWireService, source);
+        reg.defineInstance(IAgentScopeContext, makeScopeCtx());
+        reg.defineInstance(IEventBus, eventBus);
+        reg.defineInstance(IAgentProfileService, makeProfileServiceStub());
+        reg.defineInstance(ISessionAitpAdapter, adapter);
+        reg.defineInstance(IAgentToolExecutorService, makeToolExecutorStub());
+        reg.defineInstance(IAgentGoalService, makeStubGoalService());
+        reg.define(IAgentAitpModeService, AgentAitpModeService);
+        reg.define(IAgentResearchService, AgentResearchService);
+      },
+    });
+    const mode = ix.get(IAgentAitpModeService);
+    const svc = ix.get(IAgentResearchService);
+    if (restore) await source.restore();
+    return { source, mode, svc, save };
+  }
+
+  it.each([
+    ['switchLine', 'completed', false], ['switchLine', 'abandoned', true],
+    ['setFocus', 'completed', false], ['setFocus', 'completed', true],
+    ['steer', 'completed', false], ['steer', 'completed', true],
+  ] as const)('closes a settled cycle when %s changes Lines (%s, cold restore %s)', async (method, status, restore) => {
+    const records: WireRecord[] = [];
+    let { source, mode, svc, save } = await settledLineServices(records);
+    await mode.enter({ actor: 'user', lineSlug: 'main' });
+    svc.createLine({ slug: 'alt', title: 'Alternative' });
+    const current = svc.createQuestion({ lineSlug: 'main', wording: 'Review an established limiting case' });
+    const next = svc.createQuestion({ lineSlug: 'alt', wording: 'Inspect a different candidate' });
+    svc.setFocus(current.id);
+    svc.noteLoopBoundary();
+    const action = svc.planAction({
+      lineSlug: 'main', questionId: current.id, kind: 'derivation',
+      purpose: 'Explain a previously recorded identity', stopCondition: 'The explanation is complete',
+    });
+    svc.startAction(action.actionId);
+    svc.concludeAction({
+      actionId: action.actionId, status,
+      progress: {
+        headline: 'Established identity reviewed', motivation: 'Clarify the existing result',
+        workPerformed: 'Reviewed the recorded derivation', result: 'No new scientific claim',
+        mainlineImpact: 'Ready to discuss the alternative', nextAction: 'Inspect the other candidate',
+      },
+      durability: { status: 'no_durable_delta', rationale: 'The result was already recorded' },
+    });
+    expect(svc.getSnapshot()).toMatchObject({ phase: 'state_updated', currentAction: { status } });
+    if (restore) {
+      await source.flush();
+      ({ source, mode, svc, save } = await settledLineServices([...records], true));
+    }
+    expect(svc.getSnapshot().phase).toBe('state_updated');
+    const before = structuredClone(source.getModel(ResearchModel).current);
+    const cursor = structuredClone(source.getModel(ResearchCursorModel));
+    const revision = svc.getSnapshot().revision;
+    if (method === 'setFocus') svc.setFocus(next.id, 'One alternative check', revision);
+    else if (method === 'steer') svc.steer({ kind: 'switch_line', lineSlug: 'alt', expectedRevision: revision });
+    else svc.switchLine('alt', revision);
+    const after = svc.getSnapshot();
+    expect(after).toMatchObject({ currentLineSlug: 'alt', phase: 'idle' });
+    expect(after.currentAction).toBeUndefined();
+    expect(after.latestProgress).toBeUndefined();
+    expect(after.currentFocus?.questionId).toBe(method === 'setFocus' ? next.id : undefined);
+    expect(source.getModel(ResearchModel).current.periodHistory.at(-1)).toMatchObject({
+      lineSlug: 'main', currentQuestionId: current.id, summary: before.latestProgress?.headline,
+      endedAt: expect.any(Number),
+    });
+    expect(source.getModel(ResearchModel).current.questions).toEqual(before.questions);
+    expect(source.getModel(ResearchModel).current.lineWorkstreamBindings).toEqual(before.lineWorkstreamBindings);
+    expect(source.getModel(ResearchCursorModel)).toEqual(cursor);
+    expect(save).not.toHaveBeenCalled();
+    const selected = structuredClone(source.getModel(ResearchModel));
+    svc.switchLine('alt', after.revision);
+    expect(source.getModel(ResearchModel)).toEqual(selected);
+  });
+
+  it('does not close or archive a settled cycle for stale or invalid selection requests', async () => {
+    const { source, mode, svc } = await settledLineServices();
+    await mode.enter({ actor: 'user', lineSlug: 'main' });
+    svc.createLine({ slug: 'alt', title: 'Alternative' });
+    const question = svc.createQuestion({ lineSlug: 'alt', wording: 'Alternative question' });
+    const action = svc.planAction({ kind: 'derivation', purpose: 'Review an existing result', stopCondition: 'Reviewed' });
+    svc.startAction(action.actionId);
+    svc.concludeAction({
+      actionId: action.actionId, status: 'completed',
+      progress: {
+        headline: 'Reviewed', motivation: 'Explain the result', workPerformed: 'Read existing evidence',
+        result: 'No change', mainlineImpact: 'No change', nextAction: 'Discuss the alternative',
+      },
+      durability: { status: 'no_durable_delta', rationale: 'Already recorded' },
+    });
+    const before = structuredClone(source.getModel(ResearchModel));
+    const stale = svc.getSnapshot().revision - 1;
+    expect(() => svc.switchLine('missing')).toThrow('Line missing not found');
+    expect(() => svc.setFocus('missing')).toThrow('Question missing not found');
+    expect(() => svc.switchLine('alt', stale)).toThrow('Research revision is stale');
+    expect(() => svc.setFocus(question.id, undefined, stale)).toThrow('Research revision is stale');
+    expect(source.getModel(ResearchModel)).toEqual(before);
+  });
+
   it('setFocus automatically selects the question line and publishes a consistent snapshot', async () => {
     const modeSvc = await buildRealModeService();
     const svc = await buildRealResearchService(modeSvc);

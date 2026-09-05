@@ -158,10 +158,12 @@ adapter-contract-0.2 的 scoped checkpoint 写入能力分开显示。
 
 模式、循环、问题、焦点和检查点变化会向两个 surface 发布一个完整快照。TUI 会拒绝 stale cold hydration；Web 会串行处理同一 session 的 mutation，并阻止较旧的 HTTP response 覆盖更新的 live WebSocket update。
 
-切换 Line 是显式的 cycle boundary。存在 foreground Action/Run、pending
-checkpoint、未解决 human gate 或非 `idle` scientific phase 时，Hakimi 会
-拒绝切线并只给出一条恢复指令；cycle 解决后，旧 period 会先归档焦点 Question
-和最新 progress 摘要，再打开新 Line。Hakimi 只会 reconcile 可确定、保持语义
+切换 Line 是显式的 cycle boundary。已经收尾的 `state_updated` cycle 可以直接
+切线：现有切线操作会回到 `idle`，先归档旧 period 的焦点 Question 和最新
+progress 摘要，再打开新 Line，无需手动重置 phase 或写入 AITP。存在 live
+Action/Run、pending checkpoint、未归档 local conclusion、进行中的 Note
+持久化、未解决 human gate，或其他非 `idle` phase 时仍拒绝切线。目标无效或
+revision 过期时不会收尾或归档原 cycle。Hakimi 只会 reconcile 可确定、保持语义
 不变的本地引用和 receipt；不会猜测 AITP workstream membership、写 AITP
 状态或自动修补科学含义。
 

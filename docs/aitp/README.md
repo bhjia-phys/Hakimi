@@ -1,5 +1,46 @@
 # AITP integration handoff
 
+Goal usage / Research revision repair (2026-09-06; source-only, not installed):
+ordinary token, turn and elapsed-time accounting publishes the full Research
+snapshot without advancing its optimistic-concurrency revision. Goal identity,
+objective/criterion, lifecycle, budget limits/exhaustion, waiting and continuation
+controls still invalidate old requests, as do existing Research/Topic/Line,
+binding, maintenance and undo boundaries. This fixes the observed
+status-read → Goal token accounting → stale workstream-confirmation loop without
+guessing revisions, bypassing CAS or inventing human confirmation. Real Goal,
+usage and Research services cover the regression, with lifecycle and budget
+negative cases; existing clients accept equal-revision snapshot refreshes.
+No public schema, AITP contract/runtime/Skill, canonical ledger, session or Goal
+is changed. The counterpart checkout's dirty files remain untouched.
+Validation: single-worker Goal/Research tests 849 passed (9 new regressions),
+REST 32, TUI controller 22 and Web projection/reducer/manager 134; core typecheck,
+import-boundary lint and diff checks passed. AITP's existing Python 3.12 venv
+passes all 6 adapter-contract tests; the standalone Python launcher lacks pytest.
+The new changeset is CLI patch only. Existing CLI minor / SDK major entries in
+the aggregate changeset status are unchanged. No build/install or real-session
+resume was performed.
+
+Settled-cycle Line switching (2026-09-06; locally installed, uncommitted): the
+shared `switchLine` / cross-Line `setFocus` path accepts `state_updated` after
+all existing live-work, pending-persistence and human-gate checks pass. The
+existing switch operation archives the old period and clears foreground state
+to `idle`; invalid targets and stale revisions remain zero-mutation failures.
+This corrects the O2 non-idle rule below for settled `state_updated` only, including
+cold restore. No Action is completed or abandoned automatically. No public fields,
+AITP CLI/schema/contract/Skills, ledger or human-decision semantics change;
+counterpart dirty files and the user's live session remain untouched.
+CLI 0.21.0 is rebuilt from `cdc1082c6` plus this uncommitted fix; no changeset
+versioning, commit or push was performed. Installed entry, worker, 521 Web files
+and native PTY pass verification. An isolated installed Web process retains the
+completed cycle through shutdown/cold restore, rejects live work and stale
+nonzero revisions, then switches the settled cycle to the other Line. The
+existing zero-revision sentinel is unchanged. No matching production Web daemon
+was found to restart. Local receipt:
+`/tmp/hakimi-settled-line-install.050tcF/installation-verification.json`.
+Install repair caveat: npm's global name-based node-pty rebuild also rebuilt the
+same-version node-pty dependency under devspace; future targeted rebuilds must
+use the exact dependency directory, not its global package name.
+
 Goal budget recovery (2026-09-05, delivered and clean-installed): an exhausted
 paused/blocked Goal is rejected before activation or deadline scheduling. The
 model receives a truthful not-resumed result and can explain it under the existing

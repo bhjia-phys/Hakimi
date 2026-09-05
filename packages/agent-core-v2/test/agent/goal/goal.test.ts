@@ -3800,6 +3800,120 @@ describe('AITP Research goal contribution integration', () => {
     });
   }
 
+  it('keeps Research binding revisions usable across real Goal usage accounting', async () => {
+    const loopService = stubLoopWithHooks();
+    const { goals, mode, research } = await createResearchGoalAgent(true, loopService);
+    await mode.enter({ actor: 'user', lineSlug: 'main' });
+    observeResearchProgram();
+    await goals.createGoal({ objective: 'Complete a bounded derivation' });
+    await goals.setBudgetLimits({ budgetLimits: { tokenBudget: 1000, turnBudget: 10 } });
+    confirmResearchGoalAlignment(research, goals);
+    const turn = makeTurn(71);
+    const eventBus = ctx!.get(IEventBus);
+    eventBus.publish({ type: 'turn.started', turnId: turn.id, origin: USER_PROMPT_ORIGIN });
+    await loopService.hooks.onWillBeginStep.run({
+      turnId: turn.id, step: 1, firstStepOfTurn: true, signal: turn.signal,
+    });
+    const before = research.getSnapshot();
+    expect(before.revision).toBeGreaterThan(0);
+    expect(before.currentWorkstreamBinding?.status).toBe('unbound');
+    const snapshots: ReturnType<IAgentResearchService['getSnapshot']>[] = [];
+    const subscription = eventBus.subscribe('research.updated', ({ snapshot }) => snapshots.push(snapshot));
+    try {
+      recordStepUsage(ctx!.get(IAgentUsageService), goals, turn, { ...zeroUsage, output: 41 });
+      recordStepUsage(ctx!.get(IAgentUsageService), goals, turn, { ...zeroUsage, output: 23 });
+
+      expect(goals.getGoal().goal?.tokensUsed).toBe(64);
+      expect(goals.getGoal().goal?.budget.remainingTokens).toBe(936);
+      expect(snapshots).toHaveLength(2);
+      expect(snapshots.map(({ revision }) => revision)).toEqual([before.revision, before.revision]);
+      expect(snapshots.at(-1)?.goalSummary?.status).toBe('active');
+      await expect(research.confirmLineWorkstreamBinding({
+        lineSlug: 'main', workstream: 'main',
+        expectedRevision: before.revision, confirmedBy: 'main_agent',
+      })).resolves.toMatchObject({ lineSlug: 'main', workstream: 'main', confirmedBy: 'main_agent' });
+      expect(research.getSnapshot().currentWorkstreamBinding?.status).toBe('bound');
+      expect(research.getSnapshot().revision).toBeGreaterThan(before.revision);
+    } finally {
+      subscription.dispose();
+    }
+  });
+
+  it('refreshes Research turn counters without invalidating its binding revision', async () => {
+    const { goals, mode, research } = await createResearchGoalAgent(true, stubLoopWithHooks());
+    await mode.enter({ actor: 'user', lineSlug: 'main' });
+    observeResearchProgram();
+    await goals.createGoal({ objective: 'Complete a bounded derivation' });
+    await goals.setBudgetLimits({ budgetLimits: { turnBudget: 10 } });
+    const before = research.getSnapshot();
+
+    await (goals as GoalServiceTestManager).incrementTurn();
+
+    expect(research.getSnapshot()).toMatchObject({
+      revision: before.revision,
+      goalSummary: { remainingTurns: 9 },
+    });
+    await expect(research.confirmLineWorkstreamBinding({
+      lineSlug: 'main', workstream: 'main',
+      expectedRevision: before.revision, confirmedBy: 'main_agent',
+    })).resolves.toMatchObject({ workstream: 'main' });
+  });
+
+  it('invalidates a Research binding revision when Goal usage exhausts its budget', async () => {
+    const { goals, mode, research } = await createResearchGoalAgent(true, stubLoopWithHooks());
+    await mode.enter({ actor: 'user', lineSlug: 'main' });
+    observeResearchProgram();
+    await goals.createGoal({ objective: 'Complete a bounded derivation' });
+    await goals.setBudgetLimits({ budgetLimits: { tokenBudget: 64 } });
+    const before = research.getSnapshot();
+
+    await (goals as GoalServiceTestManager).recordTokenUsage(64);
+
+    expect(goals.getGoal().goal).toMatchObject({ status: 'blocked', budget: { overBudget: true } });
+    expect(research.getSnapshot().revision).toBeGreaterThan(before.revision);
+    await expect(research.confirmLineWorkstreamBinding({
+      lineSlug: 'main', workstream: 'main',
+      expectedRevision: before.revision, confirmedBy: 'main_agent',
+    })).rejects.toMatchObject({ code: AitpResearchErrors.codes.RESEARCH_REVISION_STALE });
+  });
+
+  it.each(['pause', 'block', 'budget', 'replace', 'clear'] as const)(
+    'still rejects old Research binding revisions after Goal %s', async (change) => {
+      const { goals, mode, research } = await createResearchGoalAgent(true, stubLoopWithHooks());
+      await mode.enter({ actor: 'user', lineSlug: 'main' });
+      observeResearchProgram();
+      await goals.createGoal({ objective: 'Original objective' });
+      const before = research.getSnapshot();
+      if (change === 'pause') await goals.pauseGoal();
+      if (change === 'block') await goals.markBlocked({ reason: 'Required external input' });
+      if (change === 'budget') await goals.setBudgetLimits({ budgetLimits: { tokenBudget: 100 } });
+      if (change === 'replace') await goals.createGoal({ objective: 'Replacement objective', replace: true });
+      if (change === 'clear') await goals.cancelGoal();
+
+      expect(research.getSnapshot().revision).toBeGreaterThan(before.revision);
+      await expect(research.confirmLineWorkstreamBinding({
+        lineSlug: 'main', workstream: 'main',
+        expectedRevision: before.revision, confirmedBy: 'main_agent',
+      })).rejects.toMatchObject({ code: AitpResearchErrors.codes.RESEARCH_REVISION_STALE });
+      expect(research.getSnapshot().currentWorkstreamBinding?.status).toBe('unbound');
+    },
+  );
+
+  it('still rejects old binding revisions after a Research mutation with unchanged Goal state', async () => {
+    const { goals, mode, research } = await createResearchGoalAgent(true, stubLoopWithHooks());
+    await mode.enter({ actor: 'user', lineSlug: 'main' });
+    observeResearchProgram();
+    await goals.createGoal({ objective: 'Original objective' });
+    const before = research.getSnapshot();
+    research.createQuestion({ lineSlug: 'main', wording: 'A newly scoped question' });
+
+    await expect(research.confirmLineWorkstreamBinding({
+      lineSlug: 'main', workstream: 'main',
+      expectedRevision: before.revision, confirmedBy: 'main_agent',
+    })).rejects.toMatchObject({ code: AitpResearchErrors.codes.RESEARCH_REVISION_STALE });
+    expect(research.getSnapshot().currentWorkstreamBinding?.status).toBe('unbound');
+  });
+
   it('denies markComplete when the mode is active with an unresolved human gate', async () => {
     const { goals, mode, research } = await createResearchGoalAgent(true);
     await mode.enter({ actor: 'user' });

@@ -1,5 +1,34 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**Goal usage / Research revision (2026-09-06; source-only, not installed):**
+usage-only Goal updates emit equal-revision Research snapshots, preserving the
+existing revision token for a subsequent workstream confirmation. Goal control
+changes, budget exhaustion and actual Research mutations still invalidate it.
+REST/WS/SDK/klient/TUI/Web fields remain unchanged; transport ordering and client
+event generations remain separate from the Research concurrency token. No AITP
+0.9.0/contract-0.2, approval, persistence, replay vocabulary or ledger changes.
+The real-service regression covers accounting between status read and binding;
+this is software verification, not renewed scientific acceptance or an automatic
+resume/repair of the original session. Counterpart dirty handoffs are preserved.
+
+**Settled-cycle Line switching (2026-09-06; locally installed, uncommitted):**
+`state_updated` is a valid Line-switch boundary once existing Action/Run,
+checkpoint, local-conclusion, Note-I/O and human-gate guards pass. Direct switch,
+cross-Line focus and steering share the same service; stale revisions and invalid
+targets do not archive the old cycle. The existing switch operation returns to
+`idle`, preserving period history and committed AITP cursors. This narrowly
+supersedes O2's non-idle rejection below. REST/WS/SDK/klient schemas and AITP
+0.9.0/contract-0.2 remain unchanged; no ledger writes or semantic repair occur.
+Real-session journal inspection and synthetic cold replay cover the reported
+`state_updated` refusal; the original session has not been mutated or switched.
+Installed CLI 0.21.0 (`cdc1082c6` plus the uncommitted fix) passes an isolated
+real-process shutdown/cold-restore/switch test with live-work and stale nonzero
+revision guards. Zero remains the existing unchecked sentinel. Entry, worker,
+521 Web assets/provenance and native PTY match the local build. No matching
+production Web daemon was found to restart; no commit or push was performed.
+Installation receipt and the node-pty rebuild caveat are in this directory's
+README; AITP source/runtime and counterpart dirty handoffs remain unchanged.
+
 **Goal budget resume preflight (2026-09-05; delivered and clean-installed):**
 paused/blocked Goals with exhausted budgets do not enter active or arm a new
 deadline. Existing snapshots report blocked/budget exhaustion and the model tool

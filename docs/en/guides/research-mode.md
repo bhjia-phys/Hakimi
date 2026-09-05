@@ -164,11 +164,14 @@ checkpoint-write capability.
 
 Mode, loop, question, focus, and checkpoint changes publish one complete snapshot to both surfaces. TUI rejects stale cold hydration; Web serializes same-session mutations and prevents an older HTTP response from overwriting a newer live WebSocket update.
 
-Line changes are an explicit cycle boundary. Hakimi rejects a switch while a
-foreground Action or Run, pending checkpoint, unresolved human gate, or
-non-idle scientific phase remains. The error gives one recovery instruction;
-after the cycle is resolved, the old period archives its focused Question and
-latest progress summary before the new Line opens. Hakimi may reconcile only
+Line changes are an explicit cycle boundary. A settled `state_updated` cycle can
+switch directly: the existing switch operation returns it to `idle`, archiving
+the old period's focused Question and latest progress summary before the new Line
+opens. No manual phase reset or AITP write is required. Hakimi still rejects a
+switch while a live Action or Run, pending checkpoint, unfiled local conclusion,
+Note persistence operation, unresolved human gate, or any other non-`idle` phase
+remains. Invalid targets and stale revisions do not close or archive the cycle.
+Hakimi may reconcile only
 deterministic local references and receipts. It never guesses AITP workstream
 membership, rewrites AITP state, or repairs scientific meaning automatically.
 

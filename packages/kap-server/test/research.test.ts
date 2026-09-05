@@ -1175,7 +1175,7 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
     expect(next.currentAction?.actionId).not.toBe(actionId);
   }, 30_000);
 
-  it('POST runs a bounded action lifecycle through the high-level commands', async () => {
+  it('POST runs a bounded action lifecycle and switches Lines from its settled state', async () => {
     await server!.close();
     server = await startServer({
       hostIdentity: TEST_HOST_IDENTITY,
@@ -1244,6 +1244,34 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
       result: 'The identity holds for the chosen representation.',
       mainlineImpact: 'The result supports the current symmetry hypothesis.',
     });
+    const route = `/api/v1/sessions/${sessionId}/research/command`;
+    const created = await postJson<{ snapshot: ResearchSnapshot }>(route, {
+      command: { kind: 'create_line', slug: 'symmetry-operator-search', title: 'Symmetry operators' },
+    });
+    expect(created.body.code).toBe(0);
+    expect(created.body.data.snapshot.phase).toBe('state_updated');
+    const stale = await postJson<unknown>(route, {
+      command: {
+        kind: 'switch_line', lineSlug: 'symmetry-operator-search',
+        expectedRevision: concluded.body.data.snapshot.revision,
+      },
+    });
+    expect(stale.body.code).toBe(40001);
+    expect(research.getSnapshot().phase).toBe('state_updated');
+    const switched = await postJson<{ snapshot: ResearchSnapshot }>(route, {
+      command: {
+        kind: 'switch_line', lineSlug: 'symmetry-operator-search',
+        expectedRevision: created.body.data.snapshot.revision,
+      },
+    });
+    expect(switched.body.code).toBe(0);
+    expect(switched.body.data.snapshot).toMatchObject({
+      currentLineSlug: 'symmetry-operator-search', phase: 'idle',
+    });
+    expect(switched.body.data.snapshot.currentAction).toBeUndefined();
+    expect(switched.body.data.snapshot.latestProgress).toBeUndefined();
+    expect((await getJson<ResearchSnapshot>(`/api/v1/sessions/${sessionId}/research`)).body.data)
+      .toEqual(switched.body.data.snapshot);
   });
 
   it('POST retains an unscoped durable conclusion and forwards explicit ownership adoption', async () => {

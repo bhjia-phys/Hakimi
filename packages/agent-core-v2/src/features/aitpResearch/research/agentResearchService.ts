@@ -51,8 +51,10 @@
  * derived read. Additionally subscribes to `aitp_mode.updated`
  * (fired by each mode op's `toEvent` and by undo / cold restore) and
  * `goal.updated`, so mode, loop, undo, degraded, and Goal status/budget
- * transitions all produce a complete `research.updated` snapshot push. On an
- * inactive→active edge, the mode subscription first clears any checkpointed
+ * transitions all produce a complete `research.updated` snapshot push. Goal
+ * usage-only refreshes preserve the optimistic-concurrency revision; Goal
+ * identity, lifecycle, budget controls and continuation changes invalidate it.
+ * On an inactive→active edge, the mode subscription first clears any checkpointed
  * Program/Goal binding from the prior lifecycle; later maintenance can then
  * establish only the current AITP topic. Other subscription work only reads
  * state and publishes Research facts, so it cannot form an event cycle.
@@ -355,6 +357,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   );
   private researchPlanMutationTail: Promise<void> = Promise.resolve();
   private lastModeActive: boolean;
+  private lastGoalRevisionKey: string;
   private reservedResearchRevision = 0;
   private noteReviewContext?: ResearchNoteReviewContext;
   private notePersistenceInFlight = false;
@@ -380,6 +383,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   ) {
     super();
     this.lastModeActive = this.mode.isActive;
+    this.lastGoalRevisionKey = researchGoalRevisionKey(this.goal.getGoal().goal);
     // Manual construction (tests) may omit the facade; fall back to the
     // wire-backed projection so the cursor boundary is always enforced.
     this.externalFact = externalFact ?? createExternalFactFacade(this.wire);
@@ -455,8 +459,14 @@ export class AgentResearchService extends Service implements IAgentResearchServi
       );
     }
     this._register(
-      this.eventBus.subscribe('goal.updated', () => {
-        this.publishResearchUpdated(false);
+      this.eventBus.subscribe('goal.updated', ({ snapshot }) => {
+        const key = researchGoalRevisionKey(snapshot);
+        if (key !== this.lastGoalRevisionKey) {
+          this.lastGoalRevisionKey = key;
+          this.publishResearchUpdated(false);
+        } else {
+          this.eventBus.publish({ type: 'research.updated', snapshot: this.getSnapshot() });
+        }
       }),
     );
     this._register(
@@ -3713,7 +3723,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         `Cannot switch to Research Line ${nextLineSlug} while human gate ${state.humanGate.gateId} is unresolved. Resolve the gate before switching lines.`,
       );
     }
-    if (state.phase !== 'idle') {
+    if (state.phase !== 'idle' && state.phase !== 'state_updated') {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_PHASE_TRANSITION_INVALID,
         `Cannot switch to Research Line ${nextLineSlug} while the current Research phase is ${state.phase}. Return the current cycle to idle through a valid transition before switching lines.`,
@@ -4667,6 +4677,26 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     }
     return { decision: 'abstain' };
   }
+}
+
+function researchGoalRevisionKey(goal: GoalSnapshot | null): string {
+  if (goal === null) return 'null';
+  return JSON.stringify([
+    goal.goalId,
+    goal.objective,
+    goal.completionCriterion,
+    goal.status,
+    goal.budget.tokenBudget,
+    goal.budget.turnBudget,
+    goal.budget.wallClockBudgetMs,
+    goal.budget.tokenBudgetReached,
+    goal.budget.turnBudgetReached,
+    goal.budget.wallClockBudgetReached,
+    goal.budget.overBudget,
+    goal.waitingFor,
+    goal.continuation,
+    goal.terminalReason,
+  ]);
 }
 
 function toCheckpointCheckReceipt(
