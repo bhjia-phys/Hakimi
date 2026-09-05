@@ -1112,3 +1112,11 @@ Theory Physics 0.2.1 只作有证据的指引修正：受托保存 packet 时预
 现有 Research 注入在 ready read receipt 与当前 Program 内容、observed revision、Line/workstream 确认绑定匹配且读取时间不早于确认时，说明 native enter/check 已完成。它只是已记录读取的适用范围，不保证外部状态永久不变；真正 stale／external change、证据回读和必要保存验证仍保留。findings 继续显示；相同范围只有 refreshedAt 改变不再注入新内容。未增加状态、工具、阶段、执行 gate、维护 I/O、AITP schema 或 card trigger。
 
 定向单 worker 557 项通过（526 service、31 presenter）；新增恢复测试保留 “缺 refs 拒绝 → 事后补 refs 仍 stale → 收尾旧 Action → 新 Note Action 可 prepare” 的安全语义。首次类型检查发现测试夹具误用了 memory_status ready，已改为官方 available 后通过；新增 veto 断言也按真实 output 形状修正，未削弱生产拒绝。imports 1,297 文件通过，四文件 lint 0 errors／1 warning；官方 AITP contract／atomic-save 21 项和 docs build 通过（既有 ES2024/chunk warnings 保留）。CLI patch changeset 不消费版本；本次无公开接口变化，不声称重新跑过 REST/WS/SDK/klient/TUI/Web 全矩阵。安装后仍需真实模型复测，单元测试不能证明摩擦已经消失。总 Goal 和 Heisenberg 科学验收继续保留。
+
+### 19.20 G6 安装后恢复并复用阶段 Note
+
+`a0a4dacd6e07b67504451c442a63a03eda51e1a8` 已提交并推送 feature branch，从新 clean worktree 串行构建、打包后安装。CLI 仍为 0.21.0，main digest 为 `d2188abd7208c9d0f3e4cd4acf94144324443d5f71f66525c4554945dc9f61fd`；521 项 Web assets 校验通过。此次先预览 exact tarball install 的五项依赖变更，再只为该安装启用 node-pty lifecycle scripts；未使用全局包名 rebuild。安装日志只编译 Hakimi 的 node-pty，实际 PTY 输出与 exit 0 通过；另一全局应用的原生文件前后 digest 相同。Theory Physics 0.2.1 与 AITP 0.9.0/contract 0.2 未变，源与 managed contract digest 相同。原 Hakimi 156 条、AITP 20 条 dirty paths 保留。
+
+已安装进程 cold-resume 同一临时 Topic/session，`note-reuse-after-restore-r10` 从 01:26:14.484Z 到 01:27:41.306Z，86.822 秒、7 次工具调用、exit 0：一次 Skill、Begin、Read 已有 Note、三次 canonical show、Conclude completed/no-delta。真实 wire 中有 native maintenance 复用提示；模型未调用 enter/check、prepare/save、Bash、子 agent 或 Question mutation，没有拒绝或重复写。控制方的结束 enter/check 验证仍为三条 Entries、一份 Note、scope 内零 findings、scope 外一个测试 Topic warning；四份 canonical 文件哈希均不变，两个 failure 均 unresolved。支持旧 Note 的 session cold-restore 和这次只读复用路径；因本轮没有新 Note 或新 Entry，不算新 Note 准备顺序或首次 Commit 综合提示的真实正向测试，也不是速度/行为优势的对照实验。
+
+回答正确区分固定两次 update 的回归可重复性与未验证的物理收敛，并认为不应重跑已完成的小课题。但其条件性下一步仍把 “是否未发起 Write” 当作待判定：这一点已在旧 failure 的 limitations 中明示，真正未明的是未发起的原因。该表达不足保留，不能声称研究者视角的下一步已完全准确。下一唯一最小 Action：回到 G7，使用已安装版本对指定 Heisenberg 项目做现有证据的只读定向恢复，收敛尚未解决、低成本的科学检验；未获确认的 Goal/Program 或 Line/workstream 语义不自动补写，不以临时 H2O 验收替代真实课题 milestone。
