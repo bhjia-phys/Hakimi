@@ -49,6 +49,13 @@ omit an optional ID if the parent did not supply it. `kind` is `observation`,
 `medium` or `high`. `claim`, `evidence` and `method` are text; the remaining
 collection fields are arrays of text, not new nested artifact objects.
 
+If the task requests a saved packet, reserve enough of its tool/time budget
+to write that artifact with the available `Write` tool before returning;
+stop optional inspection first. Report an unattempted write as unattempted,
+not as a missing tool. Claim tool unavailability only from the actual exposed
+tool set or a returned error, preserving that evidence. A denied write is not
+permission to substitute shell output or another tool.
+
 Lead `claim` with the bounded scientific observation or why it is unavailable.
 In `evidence`, include actual commands, working directory, relevant input and
 code identity, output locations, measured values and checks. Put full logs in

@@ -38,7 +38,11 @@ nor pins a provider or model.
 Review the returned existing Research evidence packet with
 `ReviewResearchEvidence` at the current Research revision. Check the supplied
 scope IDs and actual artifacts before relying on the report. Packet validation
-is structural and zero-write, not scientific acceptance. Discuss only the
+is structural and zero-write, not scientific acceptance. A missing artifact
+does not establish the child's explanation for its absence: distinguish an
+unattempted operation, an observed tool error and an unverified cause. Keep a
+numerical result separate from a failed handoff; do not repeat a completed
+calculation merely to recover its report. Discuss only the
 observation, numerical quality, limitation and next test in the normal update;
 retain commands, hashes and diagnostic logs in the evidence/audit detail.
 Conclude once as the main agent. Use the normal durable checkpoint path only

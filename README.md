@@ -89,6 +89,8 @@ Opening Research Mode within a user turn now starts its Research context and one
 
 The optional Theory Physics plugin includes a `calculation-operator` agent profile for bounded build, input, numerical and postprocessing work. The main agent supplies the scientific test and scope, reviews the existing typed evidence packet, and owns all Research/AITP mutations. This role is distinct from the `/preset` model-routing pool; it installs no runner or scheduler and provides no OS-level isolation. Real scientific acceptance is tracked separately in the collaborator program.
 
+Theory Physics 0.2.1 clarifies requested packet saving and evidence-backed failure reporting: an unattempted write is not proof of a missing tool, and a failed handoff does not erase a numerical result. These are specialist/review instructions, not a runtime guarantee that a model will follow them.
+
 The checkpoint barrier also compares the saved Entry's kind, authority and creator with the concluded candidate before accepting it. A mismatch retains the saved record and receipt for review, leaves the checkpoint pending, and prevents the post-commit distillation handoff. This is a post-save identity check, not a semantic validation or an atomic pre-save authority guarantee.
 
 ## Install from source

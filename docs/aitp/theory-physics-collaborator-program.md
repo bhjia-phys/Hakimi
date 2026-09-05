@@ -1062,3 +1062,17 @@ core/CLI typecheck、core import guard（1,297 files）、四个改动代码文�
 `operator-child-replay-r4` 复用 r3 的同一提示和同一会话，真实模型用 8 次主工具调用、约 2 分 50 秒、exit 0 完成：status → 激活既有 Question 的 workflow（不改归属）→ Begin → 一个前台 calculation-operator → status → ReviewResearchEvidence → aitp_show → Conclude。直接核对 main/child wire：主工具零错误，一个原子 begin、一次 complete/progress；child 只有一次指定文件 Read，零 Research mutation。委派前后 mode 与 aitpHealth 都 ready；没有额外 SetPhase、Focus 修改或 RecordResearchProgress 工具调用。临时 store 仍恰好一条旧 failure Entry、零 Note，旧 Entry hash 不变，未产生 pending candidate、marker、card、trial 或 human decision。这关闭了本次 next-Begin 死锁与 child-reset 的安装版复现，不等于完成正常 ABACUS/LibRPA 数值 replay，也不证明更强科研能力或 OS isolation。
 
 总 Goal 仍 active。下一真实课题 Action 仍为已提出的有限 near-HS convention/primitive-spin/bridge 诊断；正式 Goal–Program 与验收 Line→`symmetry-operator-search` 的语义确认尚未收到，不以自动 continuation 冒充。原始 Hakimi HEAD `892733a005` 的 156 个 dirty paths、AITP HEAD `eae1bce5eb` 的 20 个 dirty paths 均保留，真实 Heisenberg/GW 科研文件与 ledger 没有被本轮测试修改。
+
+### 19.16 G5 新 driver 的真实 H2O 回归与报告遗漏恢复
+
+使用 §19.15 的已安装代码和同一独立临时 Topic，再用一次新的 Question/Action 执行既有 `qsgw_aims_mole_H2O_libri` 回归。原 LibRPA checkout 有 21 个 dirty/untracked paths，全部保留；只从既有提交 `7fc613eb2c043292a7dbf2f2b249b3761b553df8` 创建新 archive/source 副本，构建新的 driver，不使用已知身份冲突的旧 binary。一次性测试 fixture 限定单编译 worker、1 MPI、单线程、6 GiB 虚拟内存上限、一个 244 KiB 数据集、原始输入和比较器；没有新产品 runner、下载、源码改动、远程作业或容差修改。
+
+`operator-h2o-replay-r5` 的真实子 agent 调用完成一次 build 和一次 replay：build 1 分 32.76 秒、峰值 RSS 682,196 KiB；回归 0.97 秒、104,428 KiB，均 exit 0、零 swap，未观察到 OOM。受控 clean-environment `ldd` 有八个缺库，oneAPI 环境中全部解析。两次 QSGW update 的 gap 为 8.835008322884264 eV 和 10.154305710907652 eV；summary gap 最大差 1.954e-14 eV、residual 差 3.775e-15 Ha、eigenvalue trajectory 差 1.227e-14 Ha，均通过原比较器。初态 iteration 0 加两次 update 是三行，不是三次更新；`converged=0`，此处只验证固定回归复现，不证明物理收敛、普适正确性或生产可用。
+
+同一次验收的交接未通过：子 agent 在 15 次工具调用后未保存约定 packet，并声称 Write 不可用。直接核对 profile 和 LLM tool snapshot，Write 及其 schema 实际存在，与前次成功 Write 使用相同工具快照；没有 Write 调用或拒绝。因此 packet 缺失是事实，工具不可用不是已证实原因。主 agent 审查了回传文本、Conclude 一次并 prepare failure draft 后达到测试的十分钟上限，控制方仅中断自己的测试进程；未绕过 adapter 或重跑计算。
+
+`operator-h2o-recover-r6` 在同一会话恢复原 key/draft，用六次工具调用、1 分 55.50 秒、exit 0 完成 status → Read → Edit → save → CommitResearchCheckpoint → status。记录明确纠正了未验证的工具归因，保存真实 comparator/manifest pins；原生 barrier 执行 pre/post check 与 canonical show，模型没有额外重复 check/show。官方 CLI 独立复核两条 agent failure Entries、零 Note、当前 scope 零 errors/warnings，scope 外保留一个测试 Topic 警告；旧 binary failure hash 不变，无 resolves、card、trial 或 human decision。这证明恢复后持久化成功，不把原 r5 交接改写为成功。
+
+Theory Physics 0.2.1 只作有证据的指引修正：受托保存 packet 时预留调用预算，未尝试不能称工具缺失，主 agent 区分实际错误与未经验证的原因；不为了补报告重跑已完成计算。没有新增工具、公开 schema、AITP contract 或 runtime enforcement。现有 PluginManager 安装/discovery 测试 34 项、AITP 官方 contract/atomic-save 21 项通过；新的真实报告复测仍待进行，不能由提示文字或这两组测试推断行为改善。首次误用了当前 Vitest 不支持的 `--minWorkers`，查实际 help 后以 `--maxWorkers=1 --no-file-parallelism` 运行通过；未修改依赖或测试来掩盖错误。
+
+总 Goal active，真实 Heisenberg milestone 仍待明确归属后执行。本阶段下一唯一最小 Action：安装本次已提交插件，使用既有输出做一次新的有归属报告任务，观察真实 Write/回传/主 agent review；不再次构建或计算，不伪称独立物理 trial。
