@@ -6,7 +6,7 @@
 >
 > 本规划由一个有终点的总 Goal 驱动，G0–G7 是其内部串行里程碑，不是八个彼此割裂的 Goal。每个里程碑仍必须单独验收、记录证据并允许按真实结果微调下一阶段；C1–C5 逐项做 trigger review，trigger 不成立就以可审计 no-op 关闭并保持 `planned / unavailable`。总 Goal 只有在最终真实课题验收通过且没有未处置的高严重度 harness 缺陷时才完成，因此它是有限交付 Goal，不是“完成全部未来愿景”的无限 Goal。
 
-当前总 Goal 保持 active，不清零既有进展。执行时从 [续行与验收优化](#goal-execution-refinement) 进入，以 [逐项证据矩阵](#acceptance-evidence-matrix) 区分已测、未测与历史失败；[Board 交付回执](#waiting-purpose-board) 已覆盖等待期间科研目的显示。Goal 正文及历史段落中的“下一步”仅代表当时位置，不构成重复执行指令。[自然 operator 后处理验收](#natural-operator-postprocess-acceptance) 已产生正确结果，但超时后才恢复收尾。当前唯一下一 Action 是收敛既有 operator 指引中的时间预算传递与报告冗余，不重算该结果；正式 Heisenberg 科研与跨 turn Goal 验收仍未完成。
+当前总 Goal 保持 active，不清零既有进展。执行时从 [续行与验收优化](#goal-execution-refinement) 进入，以 [逐项证据矩阵](#acceptance-evidence-matrix) 区分已测、未测与历史失败；[Board 交付回执](#waiting-purpose-board) 已覆盖等待期间科研目的显示。Goal 正文及历史段落中的“下一步”仅代表当时位置，不构成重复执行指令。[自然 operator 后处理验收](#natural-operator-postprocess-acceptance) 已产生正确结果，但超时后才恢复收尾。[operator 预算与交接切片](#operator-budget-guidance) 已完成指引和定向验证；当前交付安装后须做独立自然复测，不重算旧结果。正式 Heisenberg 科研与跨 turn Goal 验收仍未完成。
 
 ## 1. 最终效果
 
@@ -1231,7 +1231,7 @@ TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，�
 
 **当前执行位置。** 同一 Action 内等待期间的授权工作、Note 整理和冷恢复已有 fixture；TUI/Web 覆盖科研目的的展示缺口也已修复，并补上旧单 Line 快照中明确 foreign Action/run 的隔离。完整 Research 测试、两端展示、浏览器验证及 `f6320758d` 的交付安装见 [§19.27](#waiting-purpose-board)。后续 [§19.28](#natural-operator-postprocess-acceptance) 用该安装版完成真实离线后处理，operator 产物通过独立核对；原次在 600 秒中断，正式审查、记录和 Question 收尾在另一次受控恢复中完成。科学结果与恢复有效，但自然端到端时限验收未通过，不能重标为成功或用它替代 Goal、长作业等待、Method card 与 Heisenberg 正式验收。
 
-**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。Heisenberg 正式归属仍沿用 §19.13 已提出的确认依赖，不重复询问或由测试代签。下一唯一最小 Action 是现有 operator 交接指引的有界收敛：透传整个任务的时间边界，为主 agent 审查和持久化留出时间；让单用途后处理与 packet 只保留必要内容，避免同一完整报告在文件、子任务返回和父审查中无谓重复。先核对并修改已有 profile/reference 及相应测试和发行资料，不新增工具、Action 类型、scheduler 或 schema，不削弱科学检查、父审查与 AITP save。§19.28 的结果和中断记录保持不变；后续安装版自然复测独立记账，不把此次恢复变成新数值 trial。
+**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。Heisenberg 正式归属仍沿用 §19.13 已提出的确认依赖，不重复询问或由测试代签。现有 operator 预算/交接指引与定向验证已在 [§19.29](#operator-budget-guidance) 完成，下一步是 scoped 交付安装及独立自然复测。不新增工具、Action 类型、scheduler 或 schema，不削弱科学检查、父审查与 AITP save。§19.28 的结果和中断记录保持不变；新的低成本检验独立记账，不把此次恢复变成新数值 trial，也不重跑 LibRPA。
 
 该 Action 开始前先写明要填补的证据缺口和资源上限；结束后分别评价科学结果、operator 交接、主 Agent 的解释与必要持久化、Board 的一致性。数值成功不能掩盖交接或收尾失败，配额、超时或未获确认也不能记为验收通过。只更新获得新证据的矩阵条目，若失败则选择一个已定位缺陷作为下一切片，不再次扩写总规划或无依据重跑全部 case。这是当前总 Goal 内的执行约定，不是新增 Research runtime 门禁。
 
@@ -1403,3 +1403,11 @@ G1 后续优先复用现有字段和 Skill；本轮不新增 public phase、wire
 **证据位置与结论。** `.tmp/research-acceptance-20260905/` 保留两个 case 的 prompt/stdout/stderr/result，r11 的 child wire 与 main 时间段副本、独立核对脚本及结果、三个时点的 snapshot/保护清单和两份 Board 文本。原始科研材料和用户进程未重启或修改。本轮只扩展该证据记录及忽略的验收材料，没有产品代码、public schema、AITP contract 或 Skill surface 变化，不重装同一 binary；文档检查另行记于交付报告。
 
 G5 的新后处理、实际 packet 落地、父审查和恢复已有实测，G1 的新结果/Board 更新也有局部证据，但完整自然交接的时限、G2 的真实 Goal、G3/G4 的卡片、G6 的新 Note 与 G7 的正式 Heisenberg 验收仍未通过。下一切片按 §19.24 收敛既有 operator 指引中的预算传递和输出重复；现有观察只支持这个薄改进，不证明它已经消除耗时，更不支持新执行平台。C1–C5 无新增需求证据，保持原状态；总 Goal active。
+
+### 19.29 Operator 整体预算与单份交接 {#operator-budget-guidance}
+
+2026-09-05，按 §19.28 的实际超时与重复报告证据，只调整已有 calculation-operator profile 和 delegation reference。主 agent 传递整个任务剩余时间及更早的 child 返回边界，为自身审阅和必要记录保留时间；单条 Bash timeout 不等于整体预算。没有给定截止时间时不伪造截止时间，不足以完成委派和审阅时缩小获授权的检查或报告未完成，不延长授权、不放宽判据。operator 使用适合固定输入的最小可复现分析，不为一次检查建设通用解析/报告框架；保存完整现有格式 packet 后简短返回路径、ID、结论和缺失检查，只有确需 inline 时才再返回整包。未要求文件时仍 inline 返回，字段契约与主 agent 的 Review 不变。
+
+本切片修改 allowlist：两份 profile/reference、`plugins/official/theory-physics/kimi.plugin.json` 与 `plugins/marketplace.json`（0.2.2）、两份根 README、Hakimi handoff README/compatibility matrix、本规划及 `.changeset/operator-handoff-budget.md`。外部 AITP 0.9.0 / contract-0.2、distilling-methods、科学判断和两步 human decision 均不改。原 Hakimi HEAD `892733a00582` 的 156 条 dirty paths、AITP HEAD `eae1bce5eb` 的 20 条 dirty paths 不动。没有 core/public schema/TUI/Web 源码或资产变化，不新增 deadline runtime、卡片规则或复杂 runner。
+
+现有真实 PluginManager 安装/发现/字节完整性与 agent profile loader 测试共 58 项通过，覆盖引用可达、版本一致、无子委派、无模型硬编码与原 tools；没有用新增文本匹配测试冒充行为保证。AITP 官方 adapter contract / atomic-save 21 项通过。文档构建 21.28 秒通过，既有 ES2024 warnings 保留；CDN 构建输出到新临时目录，changeset status 正常，新项只列 CLI patch，未执行 version 或 publish。六端 schema 未变，因此没有为此纯插件切片重复跑全部六端/typecheck/Web assets。这里证明安装与契约兼容，不证明新指引已经改善真实时限；干净提交的插件安装与自然复测仍须另记实测。

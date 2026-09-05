@@ -99,7 +99,7 @@ AITP degraded 时，用户指导的 Research 回合仍可在 fresh bounded Actio
 
 可选 Theory Physics 插件包含 `calculation-operator` agent profile，用于限定范围的编译、输入、数值计算和后处理。主 agent 给出科学检验与范围，审查现有 typed evidence packet，并独占 Research/AITP mutation。这个角色不同于 `/preset` 的模型路由池；不安装 runner 或 scheduler，也不提供 OS 级隔离。真实科研验收单独记录在合作者计划中。
 
-Theory Physics 0.2.1 明确了受托 packet 保存和有依据的失败报告：未尝试写入不能证明工具缺失，交接失败也不抹去实际数值结果。这是 specialist/review 指引，不是模型必然遵守的 runtime 保证。
+Theory Physics 0.2.2 将整个任务的时间预算传给计算助手，为主 agent 审阅与收尾留出时间；保存证据包后只需简短交接，不默认再返回一份完整副本。受托 packet 保存和有依据的失败报告仍然必要：未尝试写入不能证明工具缺失，交接失败也不抹去实际数值结果。这是 specialist/review 指引，不是 runtime 截止时间机制，也不保证模型必然遵守。
 
 checkpoint 屏障还会在接纳前将已保存 Entry 的 kind、authority 和 creator 与已结束 Action 的候选对照。不一致时保留实际记录和 receipt 供审查，checkpoint 保持 pending，不触发提交后的蒸馏 handoff。这是保存后的身份核对，不是内容语义验证，也不是保存前 authority 的原子保证。
 

@@ -18,6 +18,19 @@ the evidence. Supply:
 - The observable, conventions, baseline and numerical checks that matter.
 - Allowed working/output paths, commands or task scope, resource/time bounds,
   authorized retries and the stop condition. Preserve existing user changes.
+- The whole task's remaining time or deadline and an earlier child return
+  deadline, leaving time for your artifact review, scientific assessment and
+  any necessary durable closeout. Per-command timeouts do not cover model
+  reasoning, script generation or reporting. Do not invent a deadline when
+  none was given; choose a proportionate task bound within existing authority.
+
+Prefer exact input locations and the checks needed for this question over
+open-ended repository inspection or a general-purpose analysis framework.
+Choose one delivery form: a saved existing-format packet with a short return
+message, or an inline packet if no file is needed. Do not request both full
+copies by default. If the remaining budget cannot cover delegation and review,
+do a smaller authorized direct check or report the unfinished boundary; do not
+extend the deadline, lower the acceptance criterion or claim unreviewed success.
 
 Begin the Action successfully in an earlier tool batch with the `subagent`
 capability (or the exact `Agent` grant). Then use the existing `Agent` tool
@@ -36,10 +49,11 @@ select the model-routing pool separately; this pack neither changes that pool
 nor pins a provider or model.
 
 Review the returned existing Research evidence packet with
-`ReviewResearchEvidence` at the current Research revision. Check the supplied
-scope IDs and actual artifacts before relying on the report. Packet validation
-is structural and zero-write, not scientific acceptance. A missing artifact
-does not establish the child's explanation for its absence: distinguish an
+`ReviewResearchEvidence` at the current Research revision. For a file-backed
+handoff, read the saved packet rather than asking the child to reproduce it.
+Check the supplied scope IDs and actual artifacts before relying on the report.
+Packet validation is structural and zero-write, not scientific acceptance.
+A missing artifact does not establish the child's explanation for its absence: distinguish an
 unattempted operation, an observed tool error and an unverified cause. Keep a
 numerical result separate from a failed handoff; do not repeat a completed
 calculation merely to recover its report. Discuss only the

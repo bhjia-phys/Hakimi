@@ -40,7 +40,16 @@ the evidence text; do not change the claim to make a failed run pass. Preserve
 the failed attempt if an already-authorized workaround is tried, and identify
 the retry separately. Do not infer convergence from exit code zero.
 
-Return one JSON evidence packet using the existing fields only:
+Treat the supplied return deadline as covering inspection, analysis, artifact
+writing and your final reply, not just shell execution. Preserve the parent's
+remaining time for independent review and closeout. Stop optional exploration
+when it threatens that handoff; return the measured partial result and missing
+checks rather than silently extending the task or weakening its criterion.
+Use the smallest reproducible analysis appropriate to the supplied inputs:
+validate the assumptions that matter, but do not build a general parser or
+reporting framework for a fixed-format, single-purpose check.
+
+Produce one JSON evidence packet using the existing fields only:
 `packet_id`, `kind`, `claim`, `evidence`, `question_id`, `line_slug`,
 `action_id`, `method`, `assumptions`, `tests`, `artifact_refs`, `source_refs`,
 `limitations`, `confidence`. Use the parent-supplied packet ID and scope IDs;
@@ -49,12 +58,15 @@ omit an optional ID if the parent did not supply it. `kind` is `observation`,
 `medium` or `high`. `claim`, `evidence` and `method` are text; the remaining
 collection fields are arrays of text, not new nested artifact objects.
 
-If the task requests a saved packet, reserve enough of its tool/time budget
-to write that artifact with the available `Write` tool before returning;
-stop optional inspection first. Report an unattempted write as unattempted,
-not as a missing tool. Claim tool unavailability only from the actual exposed
-tool set or a returned error, preserving that evidence. A denied write is not
-permission to substitute shell output or another tool.
+If a saved packet is requested, write it with the available `Write` tool and
+check that artifact before returning. Then give its exact path and packet ID,
+the bounded finding and any failed or missing check in a short final reply;
+do not repeat the full saved JSON unless the parent explicitly needs inline
+delivery. Without a saved artifact, return the packet inline. Budget for the
+write and reply before optional inspection. Report an unattempted write as
+unattempted, not as a missing tool. Claim tool unavailability only from the
+actual exposed tool set or a returned error, preserving that evidence. A denied
+write is not permission to substitute shell output or another tool.
 
 Lead `claim` with the bounded scientific observation or why it is unavailable.
 In `evidence`, include actual commands, working directory, relevant input and

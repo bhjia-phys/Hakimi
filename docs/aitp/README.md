@@ -1,5 +1,14 @@
 # AITP integration handoff
 
+Theory Physics 0.2.2 narrows calculation delegation around the whole task's
+budget, parent-review time and one file-backed or inline packet delivery.
+It preserves the existing evidence packet and main-agent review/persistence;
+there is no deadline executor, new public interface or AITP contract/Skill
+change. The real timeout and separately measured recovery behind this guidance
+are recorded in collaborator program §19.28. The protected AITP checkout and
+its dirty handoffs remain untouched; behavioral acceptance is separate from
+plugin installation/discovery tests.
+
 The installed follow-up recovered the original operator failure checkpoint
 through review and official prepare/save/show/check/commit, but then exposed
 a settled-action deadlock: `BeginResearchAction` rejected `state_updated`

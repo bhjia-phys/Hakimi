@@ -1,5 +1,13 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**Hakimi-only operator guidance (2026-09-05):** Theory Physics 0.2.2 passes
+whole-task timing into delegation and reserves parent review/closeout, with
+one saved or inline evidence packet instead of duplicate full reports. This
+is profile/reference guidance, not enforced timing or scientific acceptance.
+Existing packet fields, REST/WS/SDK/klient/TUI/Web contracts, AITP CLI/contract,
+external Skills and human decisions are unchanged. Counterpart dirty files
+remain protected. Natural retesting is required beyond loader verification.
+
 **Hakimi-only waiting-work presentation (2026-09-05; delivered and installed):**
 Compact TUI/Web keep the live Action's scientific purpose with its job observation
 and exclude explicitly foreign Action/run metadata even in single-Line snapshots.

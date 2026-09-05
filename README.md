@@ -99,7 +99,7 @@ For a stage Note from existing evidence, the model should settle the Question's 
 
 The optional Theory Physics plugin includes a `calculation-operator` agent profile for bounded build, input, numerical and postprocessing work. The main agent supplies the scientific test and scope, reviews the existing typed evidence packet, and owns all Research/AITP mutations. This role is distinct from the `/preset` model-routing pool; it installs no runner or scheduler and provides no OS-level isolation. Real scientific acceptance is tracked separately in the collaborator program.
 
-Theory Physics 0.2.1 clarifies requested packet saving and evidence-backed failure reporting: an unattempted write is not proof of a missing tool, and a failed handoff does not erase a numerical result. These are specialist/review instructions, not a runtime guarantee that a model will follow them.
+Theory Physics 0.2.2 carries the whole task's time budget into calculation delegation, reserving parent review and closeout time. A saved evidence packet needs only a short return message, not a second full copy. Requested packet saving and evidence-backed failure reporting remain required: an unattempted write is not proof of a missing tool, and a failed handoff does not erase a numerical result. These are specialist/review instructions, not a runtime deadline or a guarantee that a model will follow them.
 
 The checkpoint barrier also compares the saved Entry's kind, authority and creator with the concluded candidate before accepting it. A mismatch retains the saved record and receipt for review, leaves the checkpoint pending, and prevents the post-commit distillation handoff. This is a post-save identity check, not a semantic validation or an atomic pre-save authority guarantee.
 
