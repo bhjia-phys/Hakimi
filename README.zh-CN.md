@@ -59,6 +59,8 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 
 ## Research Mode 与 AITP
 
+Goal 恢复前会先检查剩余预算。已耗尽时保持 blocked，明确告诉模型“未恢复”，不短暂切到 active，也不让立即到期的定时器取消收尾说明。原用量、预算和已有阻塞原因保留。源码验证与安装状态见[有界恢复修复](docs/aitp/theory-physics-collaborator-program.md#goal-budget-resume-preflight)。
+
 原生会话和 print mode 与 Hakimi SDK 使用同一 home：显式 `homeDir` → `HAKIMI_HOME` → 兼容的 `KIMI_CODE_HOME` → `~/.hakimi`。这修复了真实科研验收中原生引擎误用旧 Kimi home、找不到已安装 AITP contract 的问题。不会迁移或合并任何旧配置、插件或会话；旧目录中的会话需显式选择原 home 恢复。真实课题验收与剩余限制见[合作者规划](docs/aitp/theory-physics-collaborator-program.md#1911-g7-首次真实运行与启动目录修复)。
 
 Print mode 退出时会先暂停 active Goal 并刷出日志，再释放运行时，包括 SIGINT、SIGTERM 和 SIGHUP。已经停止的 Goal 不变；中断不会完成科研工作或写入 AITP 记录。原有有界清理不能保证 SIGKILL 或存储写入卡住时的持久化。详见[非交互执行](docs/zh/reference/kimi-command.md#非交互执行)。

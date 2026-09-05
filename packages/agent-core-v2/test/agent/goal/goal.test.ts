@@ -563,6 +563,65 @@ describe('AgentGoalService', () => {
   });
 
   describe('AgentGoalService accounting and budgets', () => {
+    it.each(
+      (['paused', 'blocked'] as const).flatMap((status) =>
+        (['turn', 'token', 'wall-clock'] as const).flatMap((budget) =>
+          [
+            { actor: 'model' as const, input: {}, continuation: false },
+            { actor: 'user' as const, input: {}, continuation: false },
+            {
+              actor: 'user' as const,
+              input: { continueIfPaused: true, continueIfBlocked: true },
+              continuation: true,
+            },
+          ].map((resume) => ({ status, budget, ...resume })),
+        ),
+      ),
+    )(
+      'preflights exhausted $budget budget before $actor resumes $status (continuation=$continuation)',
+      async ({ status, budget, actor, input }) => {
+        const budgetLimits = budget === 'turn'
+          ? { turnBudget: 1 }
+          : budget === 'token'
+            ? { tokenBudget: 100 }
+            : { wallClockBudgetMs: 600_000 };
+        await restoreGoalRecords(ctx, goals, [
+          { type: 'goal.create', goalId: 'recovery-goal', objective: 'finish bounded work' },
+          {
+            type: 'goal.update',
+            status,
+            reason: 'Interrupted before recovery',
+            turnsUsed: 1,
+            tokensUsed: 100,
+            wallClockMs: 3_983_870,
+            budgetLimits,
+          },
+        ]);
+        const before = goals.getGoal().goal!;
+        const eventOffset = events.length;
+
+        const resumed = await goals.resumeGoal(input, actor);
+
+        expect(resumed).toMatchObject({
+          status: 'blocked',
+          turnsUsed: before.turnsUsed,
+          tokensUsed: before.tokensUsed,
+          wallClockMs: before.wallClockMs,
+          budget: before.budget,
+          continuation: { state: 'idle' },
+        });
+        if (status === 'blocked') {
+          expect(resumed.terminalReason).toBe(before.terminalReason);
+        } else {
+          expect(resumed.terminalReason).toMatch(/^Blocked after goal budget reached:/);
+        }
+        expect(events.slice(eventOffset).some((event) => event.snapshot?.status === 'active')).toBe(false);
+        const repeatOffset = records.length;
+        expect(await goals.resumeGoal(input, actor)).toEqual(resumed);
+        expect(goalRecords(records.slice(repeatOffset))).toEqual([]);
+      },
+    );
+
     it('counts tokens and turns only while active', async () => {
       await goals.createGoal({ objective: 'work' });
       await goals.recordTokenUsage(30);
@@ -1975,6 +2034,63 @@ describe('goal pause classification on provider errors', () => {
 });
 
 describe('AgentGoalService hard wall-clock deadline', () => {
+  it('reports an exhausted restored goal without arming a deadline or cancelling its recovery answer', async () => {
+    const clock = new ManualGoalDeadlineScheduler();
+    const ctx = createTestAgent(appService(IGoalDeadlineScheduler, clock));
+    try {
+      ctx.configure({ tools: ['UpdateGoal'] });
+      const goals = ctx.get(IAgentGoalService);
+      await restoreGoalRecords(ctx, goals, [
+        { type: 'goal.create', goalId: 'recovery-goal', objective: 'finish bounded work' },
+        {
+          type: 'goal.update',
+          status: 'paused',
+          reason: 'Paused after agent resume',
+          wallClockMs: 3_983_870,
+          budgetLimits: { wallClockBudgetMs: 600_000 },
+        },
+      ]);
+      const schedule = vi.spyOn(clock, 'schedule');
+      const loop = ctx.get(IAgentLoopService);
+      const cancel = vi.spyOn(loop, 'cancel');
+      const advance = loop.hooks.onWillBeginStep.register('advance-recovery-clock', async (_step, next) => {
+        clock.advanceBy(1);
+        await next();
+      });
+      ctx.mockNextResponse({
+        type: 'function',
+        id: 'resume',
+        name: 'UpdateGoal',
+        arguments: JSON.stringify({ status: 'active' }),
+      });
+      ctx.mockNextResponse({ type: 'text', text: 'The goal was not resumed because its budget is exhausted.' });
+
+      await ctx.rpc.prompt({ input: [{ type: 'text', text: 'resume and report the outcome' }] });
+      const events = await ctx.untilTurnEnd();
+      advance.dispose();
+
+      expect(schedule).not.toHaveBeenCalled();
+      expect(cancel).not.toHaveBeenCalled();
+      expect(ctx.llmCalls).toHaveLength(2);
+      expect(events).toContainEqual(expect.objectContaining({
+        event: 'turn.ended',
+        args: expect.objectContaining({ reason: 'completed' }),
+      }));
+      const history = JSON.stringify(ctx.get(IAgentContextMemoryService).get());
+      expect(history).toContain('Goal not resumed: the goal budget is exhausted.');
+      expect(history).not.toContain('Goal resumed.');
+      expect(history).toContain('The goal was not resumed because its budget is exhausted.');
+      expect(goals.getGoal().goal).toMatchObject({
+        status: 'blocked',
+        wallClockMs: 3_983_870,
+        budget: { wallClockBudgetMs: 600_000 },
+        continuation: { state: 'idle' },
+      });
+    } finally {
+      await ctx.dispose();
+    }
+  });
+
   it('aborts an in-flight LLM request when the wall-clock budget expires', async () => {
     const clock = new ManualGoalDeadlineScheduler();
     const llm = blockingGenerate();
@@ -2286,6 +2402,50 @@ describe('AgentGoalService mid-turn budget stop', () => {
       expect(JSON.stringify(history)).not.toContain('This step should never run.');
       await vi.waitFor(() => expect(goals.getGoal().goal?.status).toBe('blocked'));
       expect(goals.getGoal().goal?.budget.turnBudget).toBe(1);
+    } finally {
+      await ctx.dispose();
+    }
+  });
+
+  it('keeps the budget guard after a rejected resume without replacing an earlier blocker', async () => {
+    const ctx = createTestAgent();
+    try {
+      ctx.configure({ tools: ['UpdateGoal', 'SetGoalBudget'] });
+      const goals = ctx.get(IAgentGoalService);
+      await restoreGoalRecords(ctx, goals, [
+        { type: 'goal.create', goalId: 'recovery-goal', objective: 'finish bounded work' },
+        {
+          type: 'goal.update',
+          status: 'blocked',
+          reason: 'Waiting for credentials',
+          turnsUsed: 1,
+          budgetLimits: { turnBudget: 1 },
+        },
+      ]);
+      ctx.mockNextResponse({
+        type: 'function', id: 'resume', name: 'UpdateGoal',
+        arguments: JSON.stringify({ status: 'active' }),
+      });
+      ctx.mockNextResponse({
+        type: 'function', id: 'raise-budget', name: 'SetGoalBudget',
+        arguments: JSON.stringify({ value: 5, unit: 'turns' }),
+      });
+      ctx.mockNextResponse({ type: 'text', text: 'This step should never run.' });
+
+      await ctx.rpc.prompt({ input: [{ type: 'text', text: 'resume the goal' }] });
+      await ctx.untilTurnEnd();
+
+      expect(ctx.llmCalls).toHaveLength(2);
+      const history = JSON.stringify(ctx.get(IAgentContextMemoryService).get());
+      expect(history).toContain('Goal not resumed: the goal budget is exhausted.');
+      expect(history).toContain('Goal budget exhausted; tool calls are rejected. Write your final message.');
+      expect(history).not.toContain('This step should never run.');
+      expect(goals.getGoal().goal).toMatchObject({
+        status: 'blocked',
+        terminalReason: 'Waiting for credentials',
+        turnsUsed: 1,
+        budget: { turnBudget: 1 },
+      });
     } finally {
       await ctx.dispose();
     }

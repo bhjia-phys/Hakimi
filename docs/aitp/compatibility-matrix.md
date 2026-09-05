@@ -1,5 +1,14 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**Goal budget resume preflight (2026-09-05; source only, installation pending):**
+paused/blocked Goals with exhausted budgets do not enter active or arm a new
+deadline. Existing snapshots report blocked/budget exhaustion and the model tool
+reports not resumed. Prior blocked reasons, counters, limits and crash-time
+accounting remain intact, as do the existing budget-stop tool restrictions.
+No REST/WS/SDK/klient/Research fields or AITP 0.9.0/contract-0.2 semantics change.
+The real installed r3 recovery remains a failure, not scientific acceptance;
+see collaborator program §19.39. Counterpart dirty handoffs remain untouched.
+
 **TUI SIGTERM lifecycle repair (2026-09-05):** signal ownership now survives
 asynchronous Session cleanup. This prevents the bundled signal-exit helper from
 re-sending TERM before a running turn's cancellation and Goal pause are persisted.

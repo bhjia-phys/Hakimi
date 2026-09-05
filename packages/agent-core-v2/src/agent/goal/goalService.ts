@@ -693,6 +693,19 @@ export class AgentGoalService extends Disposable implements IAgentGoalService {
         `Cannot resume a goal in status "${state.status}"`,
       );
     }
+    const budgetReason = goalBudgetBlockReason(this.toSnapshot(state).budget);
+    if (budgetReason !== undefined) {
+      if (actor === 'model' && this.liveTurnId !== undefined) {
+        this.goalTurnTargets.set(this.liveTurnId, state.goalId);
+        if (this.toSnapshot(state).budget.turnBudgetReached) {
+          this.exhaustedTurnBudgetGoals.set(this.liveTurnId, state.goalId);
+        }
+      }
+      if (state.status === 'blocked') {
+        return this.toSnapshot(state);
+      }
+      return this.applyLifecycle(state, 'blocked', budgetReason, 'runtime');
+    }
     const continuePaused =
       actor === 'user' && state.status === 'paused' && input.continueIfPaused === true;
     const shouldContinue =

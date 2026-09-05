@@ -85,7 +85,16 @@ export class UpdateGoalTool implements IUpdateGoalTool {
           };
         }
         if (status === 'active') {
-          await this.goal.resumeGoal({}, 'model');
+          const resumed = await this.goal.resumeGoal({}, 'model');
+          if (resumed.status !== 'active') {
+            const reason = resumed.budget.overBudget
+              ? 'the goal budget is exhausted.'
+              : resumed.terminalReason ?? resumed.status;
+            return {
+              isError: true,
+              output: `Goal not resumed: ${reason}`,
+            };
+          }
           return { output: 'Goal resumed.' };
         }
         if (status === 'complete') {

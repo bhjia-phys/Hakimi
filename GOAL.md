@@ -169,7 +169,7 @@ goal 预算包括：
 
 预算检查应发生在 goal turn 开始前和结束后。token budget 还应在 model step 后触发停止，避免超额后继续下一步。
 
-一旦达到预算，runtime 应直接把 goal 标记为 blocked，原因是配置预算已达到。这个 blocked 仍可恢复，但如果预算不变，恢复后可能立刻再次 blocked。
+一旦达到预算，runtime 应直接把 goal 标记为 blocked，原因是配置预算已达到。恢复 paused/blocked goal 前先检查现有预算；已耗尽时不短暂切到 active、不启动 continuation 或 deadline。paused goal 转为预算 blocked，原先已经 blocked 的 goal 保留旧阻塞原因，返回的 budget 同时说明耗尽。模型工具明确报告“未恢复”，保留收尾说明机会和原有预算后工具限制。恢复不重置用量或预算，只有用户明确授权调整预算后才可重新评估；已经执行中的硬截止与异常恢复的时间结算规则不变。
 
 ### 预算引导和最终统计
 

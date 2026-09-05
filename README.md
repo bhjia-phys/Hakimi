@@ -59,6 +59,8 @@ Human review and reproducible verification are part of the research loop, not a 
 
 ## Research Mode and AITP
 
+Goal recovery checks the remaining budget before restarting. An exhausted Goal stays blocked and the model is told it was not resumed, without a transient active state or an immediate deadline cancelling its explanation. Existing usage, budget limits and earlier blocker reasons are preserved. Source verification and installation status are tracked in the [bounded recovery fix](docs/aitp/theory-physics-collaborator-program.md#goal-budget-resume-preflight).
+
 Print-mode shutdown now pauses an active Goal and flushes its journal before releasing the runtime, including on SIGINT, SIGTERM and SIGHUP. Already stopped Goals are unchanged; interruption does not complete scientific work or write AITP records. The existing bounded cleanup cannot guarantee persistence after SIGKILL or a stalled storage write. See [non-interactive execution](docs/en/reference/kimi-command.md#non-interactive-execution).
 
 The clean-installed build has passed independent-process signal tests and native PTY verification. This verifies shutdown persistence, not completion of cross-turn scientific acceptance; see the [delivery evidence](docs/aitp/theory-physics-collaborator-program.md#print-goal-shutdown).

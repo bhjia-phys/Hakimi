@@ -1231,11 +1231,11 @@ TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，�
 
 **当前执行位置。** simple Action/milestone 已在 `f6487d990` 交付；后续 Question 上下文修复 `152dbf131` 已提交、推送到既有开发分支并 clean-build 安装（CLI 0.21.0），Theory Physics 0.2.3、AITP 0.9.0/contract-0.2 不变。[§19.33](#simple-action-milestone) 的安装 CLI ready-AITP fixture 已验证该关联、stale 拒绝、REST/WS、进程恢复和 no-delta 收尾；[§19.35](#question-context-projection) 补齐真实 r2 会话的 Question/next 恢复，均不能代替真实模型跨 turn。本地结论、retained-run、等待目的 Board 和 [§19.32](#print-goal-shutdown) 信号退出的既有证据继续沿用，不重复来代替科研。原两个 checkout 的 dirty changes 与科研目录继续保留。
 
-**新 Goal 的实际优先级。** simple Action 关联与 Question 上下文修复已交付安装，不再是待开发项。§19.34 证明单 turn 有限 Goal 收尾；[§19.36](#goal-continuation-exit-review) 新增一次 `/goal resume` 后三个真实自动 continuation turns，但整次运行在外部时限退出，退出前 journal 仍保留 active Goal 和未收尾 Action。该 TERM 退出竞争已在 [§19.37](#tui-sigterm-shutdown) 修复、交付安装并独立进程复测；现在回到 r3 产物审查和必要收尾，不重复证明“能发起下一 turn”。SIGHUP、idle/held Goal 关闭及计划漂移仍保留，不因本次 TERM 修复关闭 G2。正常科研提示不指定内部工具或 phase；不能靠人为拆 turn、控制器代为完成 Goal，或 cold restore 补暂停获得通过。Heisenberg 正式归属沿用已有确认，缺失部分保持明确依赖，不以 fixture 模拟确认替代。
+**新 Goal 的实际优先级。** simple Action 关联与 Question 上下文修复已交付安装，不再是待开发项。§19.34 证明单 turn 有限 Goal 收尾；[§19.36](#goal-continuation-exit-review) 新增一次 `/goal resume` 后三个真实自动 continuation turns，但整次运行在外部时限退出，退出前 journal 仍保留 active Goal 和未收尾 Action。该 TERM 退出竞争已在 [§19.37](#tui-sigterm-shutdown) 修复、交付安装并独立进程复测。[§19.38](#goal-continuation-artifact-audit) 已独立核对 r3 的六份产物、Entry 和冷恢复，确认数值可用但矩阵/笔记持久化与计划同步未完成；现在只做必要恢复收尾，不重复计算或证明“能发起下一 turn”。SIGHUP、idle/held Goal 关闭及计划漂移仍保留，不因本次 TERM 修复关闭 G2。正常科研提示不指定内部工具或 phase；不能靠人为拆 turn、控制器代为完成 Goal，或 cold restore 补暂停获得通过。Heisenberg 正式归属沿用已有确认，缺失部分保持明确依赖，不以 fixture 模拟确认替代。
 
 随后按本节五个使用故事补齐剩余 G1–G7：Heisenberg 验证科学里程碑和 Goal，LibRPA 独立验证工程执行/交接与六层知识的真实覆盖；人类指导四类情景、条件性蒸馏、阶段 Note、无 Goal 探索/等待和简洁 Board 均保留。每次执行前指出本次填补的具体缺口，结束后只更新新增证据支持的条目。同一段自然工作可支持多项验收，不因此变成多个独立 trial。新缺陷只有影响原验收时才进入本 Goal；额外功能与非关键润色另列，不滚动扩版。
 
-**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。下一唯一最小 Action 是保全 r3 的退出前 journal，独立审查六份已有产物与已提交 Entry，再核验冷恢复后的 Action/Plan/Goal。完成判据是明确已完成的科学工作、尚缺的记录和计划更新，以及旧文件保护情况；不把超时改成正常完成，也不自动完成/放弃 Action。此项不启动新的模型或计算、不改写科研产物；需要恢复收尾时另定有界 case，并与原失败分开计数，不延长原 600 秒验收。不得以新真实观测替代 r2 已约定的停止与另行授权条件。Heisenberg 继续保持 §19.13 的归属依赖，不重复询问或由测试代签。父侧 operator 指导见 [§19.30](#operator-caller-guidance)，有限交接成功不等于全部 G5 通过。不新增工具、Action 类型、scheduler、schema、硬性科研门禁或额外逐阶段注入。
+**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。r3 只读审查已完成；另行限定的 300 秒恢复 case 在 26.9 秒后失败，原 81 文件未变，不能继续把恢复收尾列成尚未尝试。[§19.39](#goal-budget-resume-preflight) 保留失败并修复“预算耗尽仍先报告 resumed、随后取消”的执行顺序。下一唯一最小 Action 是完成该源码切片的交付安装和独立进程恢复结果验证，不提高原 Goal 的 600 秒预算、不重写其已结算用量、不再次重算已有产物。之后回到本节剩余科研验收；原矩阵/Note 持久化、计划同步和 Heisenberg 有限里程碑仍未通过，不以恢复拒绝正确或软件测试全绿代替科学收尾。不得以新真实观测替代 r2 的停止与另行授权条件。Heisenberg 继续保持 §19.13 的归属依赖，不重复询问或由测试代签。父侧 operator 指导见 [§19.30](#operator-caller-guidance)，有限交接成功不等于全部 G5 通过。不新增工具、Action 类型、scheduler、schema、硬性科研门禁或额外逐阶段注入。
 
 该 Action 开始前先写明要填补的证据缺口和资源上限；结束后分别评价科学结果、operator 交接、主 Agent 的解释与必要持久化、Board 的一致性。数值成功不能掩盖交接或收尾失败，配额、超时或未获确认也不能记为验收通过。只更新获得新证据的矩阵条目，若失败则选择一个已定位缺陷作为下一切片，不再次扩写总规划或无依据重跑全部 case。这是当前总 Goal 内的执行约定，不是新增 Research runtime 门禁。
 
@@ -1310,7 +1310,7 @@ G1 后续优先复用现有字段和 Skill；本轮不新增 public phase、wire
 | 原验收条目 | 实现/回归定位 | 模型与剩余验收 |
 |---|---|---|
 | 模糊问题→provisional Plan；新证据/人类修改→replan | R `prepareResearchPlanV2`/`activateResearchPlanV2`；RT `persists and undoes Research Plan v2 revisions` | E10 实际创建并依据反例修订 Plan，最终 revision 7 completed；提示已明确要求两段检验，不是模糊问题的自主拆解或人类修改验收。跨 turn 与 Goal 最终收尾仍未通过 |
-| 简单 Action 无需 Goal/完整计划；复杂工作使用 local Plan；Todo 不充当证据 | R `prepareResearchPlan`、`resolveActionPlanBindings`；RT `executes a reviewed local Action Plan without inventing a Goal or Research Plan` 与 simple milestone 回归 | E10 的首次拒绝保留为失败；§19.33 已交付安装，软件 fixture 验证关联和进程恢复，E11 真实模型自然选择 simple+milestone 并完成 Goal。E12 已真实跨 turn，但第二项工作沿用第一里程碑；复杂工作 reviewed Plan、计划同步与完整跨 turn 收尾仍待验收 |
+| 简单 Action 无需 Goal/完整计划；复杂工作使用 local Plan；Todo 不充当证据 | R `prepareResearchPlan`、`resolveActionPlanBindings`；RT `executes a reviewed local Action Plan without inventing a Goal or Research Plan` 与 simple milestone 回归 | E10 的首次拒绝保留为失败；§19.33 已交付安装，软件 fixture 验证关联和进程恢复，E11 真实模型自然选择 simple+milestone 并完成 Goal。E12 已真实跨 turn，但第二项工作沿用第一里程碑；§19.38 冷恢复仍保留该偏差和 live Action，没有语义自动修正。复杂工作 reviewed Plan、计划同步与完整跨 turn 收尾仍待验收 |
 | collaborative 问关键问题；dreaming 可修订假设；auto 不冒充人类决定 | RT `routes collaborative planning`、`non-delegable Research decisions human-owned in auto mode`；S；G | E10 在明确测试 scope 下使用 dreaming+auto，实际修订假设，未生成 human decision；没有跨 turn 或真实 collaborative 决策体验，不能据此关闭验收 |
 | 外部等待、持久化不可用、重复无进展分别处理 | R live-run guard、`observeRun`；G continuation；§19.23/19.25 | 本地结果保留和终态补录已实测。**当前 Action 已关闭但 run 仍 live 时，任何新 Action 仍被拒绝**；现有 Action 内的已授权工作/回读不能等同于新的独立工作。等待期间整理/推导的完整体验尚未闭合，不将其归入 C4 后延期 |
 | 用户暂停/取消、科学约定/资源/范围变化时合理停止 | G pause/cancel/budget/restore；R Goal guard/human gate | print 信号退出有 §19.32 的独立进程证据；E12 的 TERM 竞争已在 §19.37 交付修复，安装 TUI 在 cold restore 前保存暂停和取消。SIGHUP、idle/held 关闭及完整继续→等待/恢复→完成或必要提问仍未验收；Heisenberg 归属依赖不由测试代签 |
@@ -1570,3 +1570,33 @@ r14 从 07:27:55.495Z 到 07:29:42.687Z，107.192 秒、9 次调用、exit 0，�
 **交付与安装。** `74743f2594a217ee31f859112694d110b0dc1f4d` 已提交、推送到既有 `merge/pr-9-auto-subagent-preset` 分支。干净源码来自该提交的 `git archive`，在 `/tmp/hakimi-tui-sigterm-install.5fpkzg/checkout` 串行完成 frozen dependencies、单 workspace 并发 packages build、CLI build/smoke、docs build 和 pack。npm 12 安装时仅为 `node-pty` 显式允许本次安装脚本，未修改全局配置；其原生构建通过。安装核验把全部 5,414 个 tracked 源文件与该提交 blob 比较，并验证入口、521 个 Web 文件、provenance、help/version 与原生 PTY；回执为该目录的 `installation-verification.json`。入口 SHA256 为 `8d13f3de39198d61525f4c1ecc27550a14f4f09ffb5497afd525339435ae7338`。CLI 仍为 0.21.0，patch changeset 未消费；新启动进程使用新版本内容，三个用户旧进程未被重启。
 
 安装版用匹配提交 SDK 的新独立进程复测在 `/tmp/hakimi-tui-signal-UFjifx/`：TERM exit 143、清理约 105 ms，timeout exit 124；两条原 journal 均有 paused Goal 与 cancelled turn，无 cold restore 补写。独立检查也验证复测入口 hash 与安装回执相同。此时未改动或恢复 r3 科研会话，原失败证据、产物与未完成 Action 保留。后续回到 §19.24 的 r3 独立审查，不重做 TERM 夹具或以此次软件交付代替完整科学验收。
+
+### 19.38 r3 产物、记录与冷恢复的独立审查 {#goal-continuation-artifact-audit}
+
+本切片完成 §19.24 的只读审查，不运行新模型或科研计算。原 r3 退出前 journal 先保存在 `.tmp/research-acceptance-20260905/goal-continuation-r3/pre-restore-wire.jsonl`；同目录的 `independent-audit.json`、`cold-restore.json` 和 `restore-delta.json` 分别保存产物审查、公开 SDK 冷恢复快照和恢复新增事件。审查脚本为相邻的 `audit-goal-continuation-r3.mjs`，使用单进程、1 GiB Node 堆和 60 秒外层时限，正常退出。原科研文件不改写；这些临时证据不提交进产品仓库。
+
+独立 JavaScript oracle 与原始 trace 对照两种最优平移、gap 和 48 个逐 band 残差行，共 212 项浮点比较，最大绝对差 `8.881784197001252e-16` eV，小于数值解析比较容限 `1e-10` eV。两个 minimax 剩余量为 5.448885332/4.202212518 eV，最佳 RMS 为 2.177334348/1.705085154 eV；这不是物理不确定度、原收敛判据变更或新 QSGW 执行。矩阵反例的特征多项式、差矩阵平方、范数和正交变换独立代回成立；它明确使用固定共同正交基，不是 H2O Hamiltonian 观测。谱移最优性、零点不变性和固定 frontier 的 gap 界经本轮 agent 逐式审查成立，不是人类审阅或真实物理收敛验收。
+
+六份产物均与原模型执行末尾报告的 bytes 一致；此前 manifest 中 74 个受保护文件全部未变。新增仅六份产物与一条 spectral result Entry，共 81 个受审文件；旧 source/build 展开树不在该 manifest 内，不能声称核验了整个工作区。官方 AITP `show` 确认该 Entry active、exact singleton workstream、没有 resolves/supersedes，只 pin 两份原始 trace；`check --workstream operator-audit` 为 9 Entries、1 Note、0 scoped findings，scope 外保留 1 warning。卡片及 observation marker 检索均为空，本次不制造蒸馏候选、trial 或新的科研记录。
+
+审查明确了三项缺口。第一，矩阵反例与本地短笔记尚未保存为 canonical 记录；笔记末句声称“最终 AITP record pins 这些 snapshots 和 note”，当时并未发生，保留原文而不认可该陈述。第二，已保存的谱移 Entry 只 pin 原始输入，三份生成的分析产物仍缺独立的保存版本锚点；输入 pins 有效不等于产物 snapshots 已被固定。第三，矩阵 Action 仍绑定 Plan revision 2 的 `spectrum`，不是路线中的 `matrix-note`；原 `currentMilestoneId` 没有随工作切换。不能根据字符串相似性由 runtime 自动判定科学里程碑完成或重分配归属。
+
+冷恢复使用安装源码提交 `74743f259` 对应的已构建公开 SDK，以 memory transport 通过现有 contract 读取，不冒充一次安装 CLI 的真实模型运行。恢复前 journal 最后 Goal 为 active，三个 continuation prompt 只有两个 `turn.ended`；恢复后原 Goal 服务写入 `Paused after agent resume`，第三 Action 仍 `in_progress`、phase 仍 `action_executing`、Plan 仍 revision 2/current `spectrum`，没有 pending checkpoint。所有原事件保持为新增日志的前缀，没有新增 prompt、LLM request、Action 完成、Plan 提交或 checkpoint commit；受审 81 文件仍未变。恢复时 wall-clock 结算为 3,983,870 ms，包含旧退出缺口之后的离线区间，不能当作实际模型科研耗时。这也不能把原超时或退出失败改成通过。
+
+当前 source Board 直接投影 Plan 的 current milestone、Action 和 paused Goal；不会从短笔记推断路线已经推进。本切片只追踪其投影代码与实际 snapshot，没有增加浏览器或人类理解验收。下一步是 §19.24 单独限定的 300 秒恢复收尾，不重算已核验数据、不重复冷恢复来代替收尾。已有的计划绑定 freshness 约束保持，不新增语义状态机或逐阶段检查；G2/G6/G7 继续保留未验收项。
+
+### 19.39 r3 恢复失败与 Goal 预算恢复前检查 {#goal-budget-resume-preflight}
+
+总 Goal 仍是首个可用串行理论物理合作者及 Heisenberg 有限科研验收，完整继承 G1–G7/C1–C5。Goal 机制中 simple Action 初稿与旧安装基线已落后于 §19.33–19.38；本节更新执行位置，不新建或缩减总 Goal，不重做已交付部分。本轮只处理影响 G2/G7 实际恢复的一个已复现故障。
+
+**实际失败。** 安装提交 `74743f259` 的原 r3 会话于 2026-09-05 13:24:58.025Z 开始独立恢复，在 13:25:24.925Z 退出 1，实际 26.9 秒。外层上限 300 秒未触发，Node 堆限制 1 GiB，无 OOM 证据；仅调用 `GetGoal` 和 `UpdateGoal`。日志先显示 `Goal resumed.`，随后 `Prompt turn ended with reason: cancelled`。输入、输出、退出和审查保存在 `.tmp/research-acceptance-20260905/goal-continuation-r3-recovery/`，不提交科研原件进产品。81 个受审文件全部未变，没有新产物、canonical Entry/Note、Action 结论或 Plan 更新；官方 scoped check 仍是 9 Entries、1 Note、0 findings，scope 外保留 1 warning。失败后的独立 SDK 恢复只用于审查，不能记为新的模型验收。
+
+**原因与边界。** 旧 Goal 的 `wallClockMs` 已结算为 3,983,870 ms，超过其 600,000 ms 预算。源码显式使用持久 epoch anchor 保守结算异常退出区间；这不是本切片能擅自改成“不计离线”的缺陷。真正需要修正的是 `resumeGoal({}, 'model')` 先 active、绑定当前 turn 并挂零剩余时间的 deadline，工具无条件说恢复成功；下一请求随即被硬截止取消。修复不清除预算、不回写用量、不延长原案例，也不完成科研 Action。
+
+**最小实现。** 原 Goal service 在 paused/blocked 恢复前用现有预算报告检查；已耗尽时不 active、不 enqueue、不挂新 deadline。paused 转为预算 blocked，原本 blocked 保留其既有原因；重复拒绝不重复追加 Goal 记录。模型发起的拒绝仍绑定现有 turn 的预算收尾限制，保留最后说明机会并拒绝之后的工具加预算，不把说明 turn 计成新自主科研。`UpdateGoal` 根据实际返回值报告未恢复，不再无条件声称成功。原在途硬截止、未耗尽恢复、turn/token 计数、异常恢复、waiting 与人类预算授权语义保持。
+
+**修改与验收。** 允许修改仅为 Goal service、UpdateGoal 实现/描述、既有 Goal 测试、`GOAL.md`、双语 README、本侧三个 AITP handoff、本规划及 CLI patch changeset。没有新公共 schema/API、Research phase、Skill、AITP CLI/contract 或人类决定；AITP 和原 Hakimi checkout 的用户 dirty 不动。本地测试使用真实 DI Goal/loop/executor，18 项状态/预算/调用入口矩阵与真实耗时形状的恢复回归先证明旧行为失败；集成夹具首轮误用了不存在的 hook 名，纠正后复现零毫秒 deadline，不能把夹具错误计为产品故障。已完成源码验证不等于安装验证；本节交付尚未完成，原科研案例也仍失败。
+
+下一步只有该最小修复的交付安装与独立进程验收；之后回到 §19.24 的科学收尾和 Heisenberg，而不是重复扩写规划。既有记录错误、计划错位、缺失 Note、六层知识真实复用及其余 G1–G7 检查均保留原完成条件；C1–C5 不因这次 Goal 生命周期修复获得授权。
+
+**聚焦进程复测。** 按用户要求收紧测试范围，修复源码通过正规 CLI build，521 个 Web 文件/provenance 校验通过且没有新增 tracked 资产变化。仅用本地固定 HTTP 回复测试实际 CLI/工具/冷恢复/退出链，不调用真实模型或接触科研目录：首进程通过既有工具设置显式 1 秒预算并在到期后退出，第二进程恢复该会话，明确报告未恢复并正常说完原因，4.967 秒 exit 0。恢复没有任何新增 Goal op，原 journal 前缀、1000 ms 预算及 1001 ms 用量保留，工作区为空。回执 `/tmp/hakimi-budget-recovery-cxH4SF/acceptance.json`；相邻 seed/recovery/requests 文件保留原始观测。初次夹具错误组合 `--prompt --auto`，813 ms 启动前失败，纠正参数后通过；不算产品失败。此结果是源码构建版进程回归，不是安装版或科学验收；下一步无需重跑这个 case，只在交付后的安装边界做必要核验，再回科研主线。

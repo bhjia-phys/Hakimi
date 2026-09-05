@@ -1,5 +1,15 @@
 # AITP integration handoff
 
+Goal budget recovery (2026-09-05, source fix; not yet installed): an exhausted
+paused/blocked Goal is rejected before activation or deadline scheduling. The
+model receives a truthful not-resumed result and can explain it under the existing
+budget-stop guard. Usage, limits, earlier blockers and crash-time accounting are
+preserved. The installed r3 recovery failed after 26.9 seconds; no scientific
+closure is claimed. Evidence and next delivery step: collaborator program
+[§19.39](theory-physics-collaborator-program.md#goal-budget-resume-preflight).
+No Research/AITP contract or human-decision changes; counterpart dirty files stay
+protected.
+
 TUI SIGTERM repair (2026-09-05): retain the handler until Session cleanup has
 finished, so signal helpers cannot terminate the process before cancellation and
 Goal persistence. Repeated SIGTERM does not bypass cleanup. Source-build process
