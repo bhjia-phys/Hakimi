@@ -6,6 +6,8 @@
 >
 > 本规划由一个有终点的总 Goal 驱动，G0–G7 是其内部串行里程碑，不是八个彼此割裂的 Goal。每个里程碑仍必须单独验收、记录证据并允许按真实结果微调下一阶段；C1–C5 逐项做 trigger review，trigger 不成立就以可审计 no-op 关闭并保持 `planned / unavailable`。总 Goal 只有在最终真实课题验收通过且没有未处置的高严重度 harness 缺陷时才完成，因此它是有限交付 Goal，不是“完成全部未来愿景”的无限 Goal。
 
+当前总 Goal 保持 active，不清零既有进展。执行时从 [续行与验收优化](#goal-execution-refinement) 进入，以 [逐项证据矩阵](#acceptance-evidence-matrix) 区分已测、未测与历史失败；[Board 交付回执](#waiting-purpose-board) 已覆盖等待期间科研目的显示。Goal 正文及历史段落中的“下一步”仅代表当时位置，不构成重复执行指令。[自然 operator 后处理验收](#natural-operator-postprocess-acceptance) 已产生正确结果，但超时后才恢复收尾。当前唯一下一 Action 是收敛既有 operator 指引中的时间预算传递与报告冗余，不重算该结果；正式 Heisenberg 科研与跨 turn Goal 验收仍未完成。
+
 ## 1. 最终效果
 
 目标不是让研究者操作一台科研状态机，而是让 Hakimi 表现为一位可靠的理论物理合作者：
@@ -1227,9 +1229,11 @@ TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，�
 
 重型测试、构建和真实模型验收串行进行。实验资源上限在执行前按该 case 确定，不因一次超时自动加大；重复同一失败前先定位原因，保留失败输出，只有修复或新证据支持时才重试。复用可核验的数值产物与记录，不用重复计算证明文档或 Board 文案改变；只在产品发生变化的交付点构建安装，再验证受影响路径。文档优化不触发新版本、重装或科研执行。
 
-**当前执行位置。** 同一 Action 内等待期间的授权工作、Note 整理和冷恢复已有 fixture；TUI/Web 覆盖科研目的的展示缺口也已修复，并补上旧单 Line 快照中明确 foreign Action/run 的隔离。完整 Research 测试、两端展示、浏览器验证及 `f6320758d` 的交付安装见 [§19.27](#waiting-purpose-board)。这些证明软件路径与展示，不证明真实推导、计算或 canonical Note 保存；后续补自然使用证据，不因更新规划而重做已有测试或科学计算。
+**当前执行位置。** 同一 Action 内等待期间的授权工作、Note 整理和冷恢复已有 fixture；TUI/Web 覆盖科研目的的展示缺口也已修复，并补上旧单 Line 快照中明确 foreign Action/run 的隔离。完整 Research 测试、两端展示、浏览器验证及 `f6320758d` 的交付安装见 [§19.27](#waiting-purpose-board)。后续 [§19.28](#natural-operator-postprocess-acceptance) 用该安装版完成真实离线后处理，operator 产物通过独立核对；原次在 600 秒中断，正式审查、记录和 Question 收尾在另一次受控恢复中完成。科学结果与恢复有效，但自然端到端时限验收未通过，不能重标为成功或用它替代 Goal、长作业等待、Method card 与 Heisenberg 正式验收。
 
-**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。Heisenberg 正式归属仍沿用 §19.13 已提出的确认依赖，不重复询问或由测试代签。下一唯一最小 Action 是安装版的自然 operator 交接验收：沿用隔离 LibRPA 验收环境，预定一个低成本 case 的科学问题、资源和成果边界，不指定内部工具顺序，观察等待期间的有效工作及最终 evidence packet/收尾。这用于补 G1/G5 的真实行为缺口，不为证明 Board 文案而重算旧结果；不新建 Action 类型、scheduler 或 schema，也不替代 Heisenberg 正式科研与 Goal 验收。
+**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。Heisenberg 正式归属仍沿用 §19.13 已提出的确认依赖，不重复询问或由测试代签。下一唯一最小 Action 是现有 operator 交接指引的有界收敛：透传整个任务的时间边界，为主 agent 审查和持久化留出时间；让单用途后处理与 packet 只保留必要内容，避免同一完整报告在文件、子任务返回和父审查中无谓重复。先核对并修改已有 profile/reference 及相应测试和发行资料，不新增工具、Action 类型、scheduler 或 schema，不削弱科学检查、父审查与 AITP save。§19.28 的结果和中断记录保持不变；后续安装版自然复测独立记账，不把此次恢复变成新数值 trial。
+
+该 Action 开始前先写明要填补的证据缺口和资源上限；结束后分别评价科学结果、operator 交接、主 Agent 的解释与必要持久化、Board 的一致性。数值成功不能掩盖交接或收尾失败，配额、超时或未获确认也不能记为验收通过。只更新获得新证据的矩阵条目，若失败则选择一个已定位缺陷作为下一切片，不再次扩写总规划或无依据重跑全部 case。这是当前总 Goal 内的执行约定，不是新增 Research runtime 门禁。
 
 ### 19.25 已关闭 Action 的外部作业观察恢复 {#retained-run-recovery}
 
@@ -1277,8 +1281,9 @@ B 的等待/恢复对照发现一个可以由现有公开 SDK 确定性复现的
 | E4 Note/复用 | `question-synthesis-note-r8`、`question-synthesis-note-r9`、`note-reuse-after-restore-r10` | r8 无工具且因安装问题中断；r9 保存 Note 但经历 prepare 拒绝；r10 在 86.822 秒内回读已有 Note/Entries 并 no-delta 收尾，未运行新 Note prepare |
 | E5 Heisenberg 诊断 | `heisenberg-primitive-bridge-r7`、`heisenberg-local-conclusion-recovery-r8` | 原诊断 600 秒中断；后续 94.405 秒完成既有本地结论收尾；既不证明 L7/8 witness，也不证明 Goal 或 AITP 持久化 |
 | E6 作业恢复 | §19.25 的 installed-run-recovery JSON | 真实 CLI 独立进程、公开 REST/WS 和冷恢复通过；没有真实模型、scheduler 作业或 ready-mode AITP，不与 E1–E5 混算 |
+| E7 自然后处理与恢复 | `operator-natural-postprocess-r11`、`operator-natural-postprocess-recovery-r12`；[§19.28](#natural-operator-postprocess-acceptance) | 新离线后处理与 packet 有独立核对；自然提示下 600 秒超时，另用 424.506 秒恢复审查、Entry 与 Question。没有新 QSGW run 或 Goal，不把恢复倒算为原次通过 |
 
-本轮检查的上述 15 个模型 case 中，没有 `CreateGoal`、`UpdateGoal`、`PrepareResearchPlanV2` 或 Plan mode 变更调用；多份提示还明确禁止设置 Goal。因此没有证据可把它们记为 G2/D 的真实 Goal/Plan 验收。另一方面，D 可以把 Skill 内容作为 tool delivery 交给模型，不能仅凭没有显式 `Skill(distilling-methods)` 调用就断言 handoff 未发生。
+E1–E5 的 15 个模型 case 中，没有 `CreateGoal`、`UpdateGoal`、`PrepareResearchPlanV2` 或 Plan mode 变更调用；多份提示还明确禁止设置 Goal。新增 E7 的两个 case 同样没有这些调用。因此没有证据可把它们记为 G2/D 的真实 Goal/Plan 验收。另一方面，D 可以把 Skill 内容作为 tool delivery 交给模型，不能仅凭没有显式 `Skill(distilling-methods)` 调用就断言 handoff 未发生。
 
 #### G1：探索、串行科学叙事与 Board
 
@@ -1325,7 +1330,7 @@ G1 后续优先复用现有字段和 Skill；本轮不新增 public phase、wire
 |---|---|---|
 | 现有 preset/工具执行，parent 审查 packet；child 不拥有 Goal/ledger | [profile](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/plugins/official/theory-physics/agents/calculation-operator.md)、[delegation](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/plugins/official/theory-physics/references/calculation-delegation.md)、R/P 与 evidence packet 回归 | E2/E3 有真实 parent/child 调用、结构审查和官方持久化；模型选择来自用户 routing，不是新 runner |
 | 输入/输出、单位、数值检查、失败分类、工程审计折叠 | profile/evidence-reporting；B | E3 的 gaps、oracle residual、2 updates 与 `converged=0` 分开解释；不能据 exit 0 宣称物理收敛。主 agent 原本仍承担过遗漏报告/pin 的恢复成本 |
-| 正常数值 replay 与 failure/workaround | E2/E3 的原始命令与产物，§19.14–19.16 | 真实 H2O 数值成功、环境/binary 失败与 report-only workaround 都已发生；但 r5 交接失败，r7 未重跑数值。0.2.1 下完整新任务的自然工程交接仍待验收，不能作因果优越性声明 |
+| 正常数值 replay 与 failure/workaround | E2/E3 的原始命令与产物，§19.14–19.16；E7 | 真实 H2O 数值成功、环境/binary 失败与 report-only workaround 都已发生；r5 交接失败，r7 未重跑数值。0.2.1 的 r11 新后处理/packet 成功但原次超时，r12 才完成正式审查和记录；完整自然工程交接的时限验收仍未通过，不能作因果优越性声明 |
 | 已有知识复用、范围不符停止、失败独立记录不强制蒸馏 | profile/S；RT provenance/persistence | 原失败保留；真实 Method card 的复用和适用范围不符情景尚缺，与 G3/G4 共用最小验收，不能用 Heisenberg 替代 |
 
 这里的硬约束是父 `Agent` 调用的 Action policy，以及 child 暴露的工具集合；child 的 Bash/文件范围仍依赖指令与现有工具风险规则。它不是继承的逐命令 Action 权限或 OS-level sandbox。不能把 `shell` capability、`auto` 或未知工具的精确 grant 描述为文件/网络隔离。
@@ -1378,3 +1383,23 @@ G1 后续优先复用现有字段和 Skill；本轮不新增 public phase、wire
 交付回执：切片已提交并推送为 `f6320758d303e6e96bdc66c4c8cdd2b9568ffb2a`，远程 ref 核验一致。134 个精确暂存路径经 Git rename 识别为 79 个变更文件，未混入其他工作。从 `/tmp/hakimi-waiting-board-install.Y832Sf/checkout` detached clean commit 构建：frozen 依赖 5.5 秒、单 workspace 并发的包构建 57.8 秒、CLI 28.2 秒、smoke 4.0 秒、正式 prepack/pack 25.4 秒，均 exit 0，构建后工作树 clean。dry-run 确认全局安装只替换 Hakimi 及其四个同版本依赖；仅一次性允许 node-pty lifecycle，实际 make 为 `--jobs 1`。npm 对 jobs 环境变量发出未来兼容警告，未修改用户 npm 配置，也未使用无目标的全局 rebuild。
 
 安装版本仍为 0.21.0，入口 SHA-256 为 `340a446d5d8cef2787900d58f4109818a151fbba28ee5b57afaa22192adb4d18`，与 clean build 逐字节相同；521 个 Web 文件及 provenance 也逐字节一致。官方源码 checker、安装 CLI/help 和真实 PTY 均通过；PTY 输出 `hakimi-waiting-board-pty-ok`。原始核验回执为上述临时目录的 `installation-verification.json`。managed Theory Physics 0.2.1、AITP 0.9.0/contract-0.2 未变，原 Hakimi HEAD `892733a00582` 的 156 条 dirty paths 保留。没有重启用户已有进程、改科研文件或执行真实科学 run。总 Goal 继续 active，下一 Action 采用 §19.24 的自然 operator 交接验收。
+
+### 19.28 自然 operator 后处理与中断恢复验收 {#natural-operator-postprocess-acceptance}
+
+2026-09-05，在已安装 `f6320758d`（CLI 0.21.0、Theory Physics 0.2.1、AITP 0.9.0/contract-0.2）上继续隔离 `operator-acceptance` Topic / `operator-audit` Line。安装入口 digest、六份相关 managed profile/Skill/reference 与交付源码逐字节核对，AITP contract 与当前 canonical checkout 相同。原 Hakimi 与 AITP dirty changes 不动。复用已有会话的明确测试绑定，不为真实 Heisenberg 课题代签归属。
+
+**问题与授权。** 这不是重复固定 oracle 或再补旧 packet：独立后处理已有 H2O 能谱，判断两次更新中残差下降是否满足实际停止判据，或足以支持收敛推断。提示只给科学问题、输入/输出范围、资源和成果，不指定 Research 工具或 phase 顺序；但会话历史含先前强指导案例，因此这是自然任务提示下的持续会话验收，不是无历史的盲测。新文件仅位于临时 `data/h2o-convergence.irFLhY/`；单条分析命令 30 秒、512 MiB、单进程单线程，全次 600 秒。不编译、不运行 LibRPA、不增加迭代、不改旧数据、不访问其他科研项目。此例没有长作业等待，也没有 Goal。
+
+**原次未通过端到端验收。** `operator-natural-postprocess-r11` 从 06:33:11.751Z 到 06:43:11.824Z，按上限 SIGINT 后 exit 130。主 agent 自行创建新 Question、Focus 和 Action，再委派现有 calculation-operator；没有 Begin 拒绝后通用工具绕过。主 agent 10 次、child 30 次工具调用。child 在约第 127 秒开始、第 566 秒返回；24 次读取/检索之后生成 452 行、约 19 KB 的单用途脚本，分析命令成功，并写出 result 和 typed packet。主 agent 读三份产物、再次 hash，但尚未 Review、Conclude 或持久化就到达上限。冷恢复为 ready、Action in_progress，无 pending checkpoint；这不能解释成已完成，也不能因为子任务完成就自动替主 agent 作科学接受。
+
+**真实科学结果。** 未向被测模型提供的独立 Node 核对从 72 个能谱值重算 gap 与相邻最大本征值差，结果与助手脚本一致。gap 为 7.1680295730 → 8.8350083229 → 10.1543057109 eV；最大本征值变化为 9.0367613210 → 7.0557815652 eV。第二次/第一次 residual L2 与 max 比值分别约 0.7846411、0.7807372。输入与所读实现的停止条件为 iteration ≥ 2 且 max_delta < 1e-4 eV；最终更新仍为阈值的 70557.8 倍，converged=false，达到的是 max_iter=2。gap 和本征值变化可由能谱交叉核对；没有逐迭代 Hamiltonian 矩阵，不能独立复算残差范数。两次更新不证明渐近收敛、下一次继续下降或物理有效性。主 agent 开头把 gap 也说成下降，child 和最终结论纠正为 gap 增加、增量减小；保留该初始误述，不宣称全过程判断正确。此 postprocess 不是新的 QSGW run、Method-card trial 或 Heisenberg 结果。
+
+**恢复单独计量。** `operator-natural-postprocess-recovery-r12` 从 06:45:16.608Z 到 06:52:21.114Z，424.506 秒、13 次工具调用、exit 0，无重新委派、分析或 Bash。首次 Review 使用中断前 revision 76，被当前 81 正确拒绝；GetResearchStatus 后同一 packet 重审通过。随后一次 Conclude，经官方 prepare/fill/save 和 Commit 保存 `entry-8fa315b378ff41549ae2a99281092372`，更新原 Question 为 closed / contradicted / committed。这里的 contradicted 是否定“现有证据足以支持该判断”，不是证明迭代永不收敛。原 Action completed，无 pending。恢复前后的失败与结果各自保留，不能把两次加起来改称一次顺畅成功。
+
+主 agent 额外调用了 `aitp_show`、`aitp_check` 和末尾 `aitp_enter`；当前 `commitCheckpoint` 本身仍执行 exact Entry show 与 post-save scoped check，故不能以“没有重复检查”描述本次。`distillationAttention=review_requested` 只证明 touched-Entry handoff，不证明语义 review 已完成；未新增 marker、Method card、trial、human decision 或 Note。不得据这个字段关闭 G4。既有两条 failure 的 resolves/supersedes 均未改变。
+
+**记录与 Board。** 独立官方 check 为 4 Entries、1 Note、0 scoped errors/warnings，scope 外保留原有 1 warning；新 Entry active，并 exact-sha256 pin 三份新产物及原始输入/trace。before/after/recovered 清单中原有 54 个被保护文件（旧 ledger、数据、日志和 source archive；不包含完整展开 source/build 树）逐字节未变，只新增三份分析产物和该 Entry。工具 trace 和脚本检查另验证 source 只读、无额外计算/写路径，不夸大为 OS 隔离。独立 SDK 冷恢复 revision 87 保留终态、receipt 和 Question。相同交付源码的 TUI renderer 在 100 列把 `test / action` 更新为 `next / ready`，并显示唯一条件性下一步；它仍显示一条 Working Note 年龄 warning，没有自动解决历史 failure。这是实录快照渲染，不是实时浏览器或研究者理解测试，也不能把结构性 Note 年龄提醒解释成必须再写 Note。
+
+**证据位置与结论。** `.tmp/research-acceptance-20260905/` 保留两个 case 的 prompt/stdout/stderr/result，r11 的 child wire 与 main 时间段副本、独立核对脚本及结果、三个时点的 snapshot/保护清单和两份 Board 文本。原始科研材料和用户进程未重启或修改。本轮只扩展该证据记录及忽略的验收材料，没有产品代码、public schema、AITP contract 或 Skill surface 变化，不重装同一 binary；文档检查另行记于交付报告。
+
+G5 的新后处理、实际 packet 落地、父审查和恢复已有实测，G1 的新结果/Board 更新也有局部证据，但完整自然交接的时限、G2 的真实 Goal、G3/G4 的卡片、G6 的新 Note 与 G7 的正式 Heisenberg 验收仍未通过。下一切片按 §19.24 收敛既有 operator 指引中的预算传递和输出重复；现有观察只支持这个薄改进，不证明它已经消除耗时，更不支持新执行平台。C1–C5 无新增需求证据，保持原状态；总 Goal active。
