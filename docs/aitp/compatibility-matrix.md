@@ -1,6 +1,6 @@
 # Hakimi × AITP compatibility matrix and decisions
 
-**Goal usage / Research revision (2026-09-06; source-only, not installed):**
+**Goal usage / Research revision (2026-09-06; delivered and clean-installed):**
 usage-only Goal updates emit equal-revision Research snapshots, preserving the
 existing revision token for a subsequent workstream confirmation. Goal control
 changes, budget exhaustion and actual Research mutations still invalidate it.
@@ -10,8 +10,13 @@ event generations remain separate from the Research concurrency token. No AITP
 The real-service regression covers accounting between status read and binding;
 this is software verification, not renewed scientific acceptance or an automatic
 resume/repair of the original session. Counterpart dirty handoffs are preserved.
+Clean code commit `172875fa2` is pushed to the existing development branch and
+installed as CLI 0.21.0 with both patch changesets retained. Entry, worker,
+521 Web files/provenance, canonical rebuild and native PTY pass. Installation
+does not hot-reload running processes or resume a blocked Goal; restart the
+owning Hakimi process before retrying. The receipt is in this directory's README.
 
-**Settled-cycle Line switching (2026-09-06; locally installed, uncommitted):**
+**Settled-cycle Line switching (2026-09-06; delivered and clean-installed):**
 `state_updated` is a valid Line-switch boundary once existing Action/Run,
 checkpoint, local-conclusion, Note-I/O and human-gate guards pass. Direct switch,
 cross-Line focus and steering share the same service; stale revisions and invalid
@@ -21,13 +26,14 @@ supersedes O2's non-idle rejection below. REST/WS/SDK/klient schemas and AITP
 0.9.0/contract-0.2 remain unchanged; no ledger writes or semantic repair occur.
 Real-session journal inspection and synthetic cold replay cover the reported
 `state_updated` refusal; the original session has not been mutated or switched.
-Installed CLI 0.21.0 (`cdc1082c6` plus the uncommitted fix) passes an isolated
+Installed CLI 0.21.0 (clean commit `172875fa2`) passes an isolated
 real-process shutdown/cold-restore/switch test with live-work and stale nonzero
 revision guards. Zero remains the existing unchecked sentinel. Entry, worker,
-521 Web assets/provenance and native PTY match the local build. No matching
-production Web daemon was found to restart; no commit or push was performed.
-Installation receipt and the node-pty rebuild caveat are in this directory's
-README; AITP source/runtime and counterpart dirty handoffs remain unchanged.
+521 Web assets/provenance and native PTY match the clean build. The test issued
+zero model requests, stopped both temporary processes normally, and did not
+modify the original session. The installation receipt and historical node-pty
+rebuild caveat are in this directory's README; AITP source/runtime and counterpart
+dirty handoffs remain unchanged.
 
 **Goal budget resume preflight (2026-09-05; delivered and clean-installed):**
 paused/blocked Goals with exhausted budgets do not enter active or arm a new

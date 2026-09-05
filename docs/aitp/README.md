@@ -1,6 +1,6 @@
 # AITP integration handoff
 
-Goal usage / Research revision repair (2026-09-06; source-only, not installed):
+Goal usage / Research revision repair (2026-09-06; delivered and clean-installed):
 ordinary token, turn and elapsed-time accounting publishes the full Research
 snapshot without advancing its optimistic-concurrency revision. Goal identity,
 objective/criterion, lifecycle, budget limits/exhaustion, waiting and continuation
@@ -17,10 +17,18 @@ REST 32, TUI controller 22 and Web projection/reducer/manager 134; core typechec
 import-boundary lint and diff checks passed. AITP's existing Python 3.12 venv
 passes all 6 adapter-contract tests; the standalone Python launcher lacks pytest.
 The new changeset is CLI patch only. Existing CLI minor / SDK major entries in
-the aggregate changeset status are unchanged. No build/install or real-session
-resume was performed.
+the aggregate changeset status are unchanged. Commit `172875fa2` is pushed to
+`merge/pr-9-auto-subagent-preset` and installed as CLI 0.21.0 from its clean
+worktree; changesets were not consumed. Entry, worker, all 521 Web files,
+provenance and native PTY match. The canonical Web rebuild check also passes.
+The usage regression is covered by real-service tests; installed-process tests
+cover the settled-Line fix below, not real-model scientific continuation.
+The one-off npm install allowed node-pty scripts without changing user config;
+no global name-based dependency rebuild was used. No real session or Goal was
+resumed. Running Hakimi processes must restart to load the new code. Receipt:
+`/tmp/hakimi-research-revision-install.xCnZ59/installation-verification.json`.
 
-Settled-cycle Line switching (2026-09-06; locally installed, uncommitted): the
+Settled-cycle Line switching (2026-09-06; delivered and clean-installed): the
 shared `switchLine` / cross-Line `setFocus` path accepts `state_updated` after
 all existing live-work, pending-persistence and human-gate checks pass. The
 existing switch operation archives the old period and clears foreground state
@@ -29,17 +37,18 @@ This corrects the O2 non-idle rule below for settled `state_updated` only, inclu
 cold restore. No Action is completed or abandoned automatically. No public fields,
 AITP CLI/schema/contract/Skills, ledger or human-decision semantics change;
 counterpart dirty files and the user's live session remain untouched.
-CLI 0.21.0 is rebuilt from `cdc1082c6` plus this uncommitted fix; no changeset
-versioning, commit or push was performed. Installed entry, worker, 521 Web files
-and native PTY pass verification. An isolated installed Web process retains the
+CLI 0.21.0 is built from clean commit `172875fa2` together with the usage repair
+above. Installed entry, worker, 521 Web files and native PTY pass verification.
+An isolated installed Web process retains the
 completed cycle through shutdown/cold restore, rejects live work and stale
 nonzero revisions, then switches the settled cycle to the other Line. The
-existing zero-revision sentinel is unchanged. No matching production Web daemon
-was found to restart. Local receipt:
+existing zero-revision sentinel is unchanged. Both isolated processes stopped
+normally; the original user session was not modified. The receipt above
+supersedes the earlier uncommitted-build rehearsal at
 `/tmp/hakimi-settled-line-install.050tcF/installation-verification.json`.
-Install repair caveat: npm's global name-based node-pty rebuild also rebuilt the
-same-version node-pty dependency under devspace; future targeted rebuilds must
-use the exact dependency directory, not its global package name.
+Historical install caveat: that earlier rehearsal's global name-based node-pty
+rebuild also rebuilt devspace's same-version dependency. This delivery did not
+repeat that operation; any future rebuild must use the exact dependency directory.
 
 Goal budget recovery (2026-09-05, delivered and clean-installed): an exhausted
 paused/blocked Goal is rejected before activation or deadline scheduling. The

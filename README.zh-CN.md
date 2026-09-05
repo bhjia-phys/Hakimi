@@ -59,7 +59,7 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 
 ## Research Mode 与 AITP
 
-Goal 的纯用量更新保持 Research revision 不变，同时继续刷新 Board。读取状态与确认 workstream 之间的 token 记账不再使确认请求过期；Goal 控制状态变化和实际 Research 修改仍使旧请求失效，不会自动推断或确认绑定。此项源码修复尚未安装，见[集成交接](docs/aitp/README.md)。
+Goal 的纯用量更新保持 Research revision 不变，同时继续刷新 Board。读取状态与确认 workstream 之间的 token 记账不再使确认请求过期；Goal 控制状态变化和实际 Research 修改仍使旧请求失效，不会自动推断或确认绑定。已从 `172875fa2` 本地安装，运行中的 Hakimi 需重启加载；不会自动恢复 Goal。见[集成交接](docs/aitp/README.md)。
 
 Goal 恢复前会先检查剩余预算。已耗尽时保持 blocked，明确告诉模型“未恢复”，不短暂切到 active，也不让立即到期的定时器取消收尾说明。原用量、预算和已有阻塞原因保留。源码验证与安装状态见[有界恢复修复](docs/aitp/theory-physics-collaborator-program.md#goal-budget-resume-preflight)。
 
