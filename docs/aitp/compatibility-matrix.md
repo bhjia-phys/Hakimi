@@ -1,12 +1,14 @@
 # Hakimi × AITP compatibility matrix and decisions
 
-**Hakimi-only operator guidance (2026-09-05):** Theory Physics 0.2.2 passes
-whole-task timing into delegation and reserves parent review/closeout, with
-one saved or inline evidence packet instead of duplicate full reports. This
-is profile/reference guidance, not enforced timing or scientific acceptance.
+**Hakimi-only operator guidance (2026-09-05):** Theory Physics 0.2.3 puts
+whole-task timing, parent review/closeout and single-packet delivery guidance
+in the existing parent-facing agent description. The 0.2.2 natural test still
+timed out without reading its delegation reference. Visibility is now tested
+through the Agent tool, not just the child profile; compliance still needs
+real-model observation. This is not enforced timing or scientific acceptance.
 Existing packet fields, REST/WS/SDK/klient/TUI/Web contracts, AITP CLI/contract,
 external Skills and human decisions are unchanged. Counterpart dirty files
-remain protected. Natural retesting is required beyond loader verification.
+remain protected. Natural retesting is required beyond description verification.
 
 **Hakimi-only waiting-work presentation (2026-09-05; delivered and installed):**
 Compact TUI/Web keep the live Action's scientific purpose with its job observation

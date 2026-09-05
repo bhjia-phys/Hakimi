@@ -6,7 +6,7 @@
 >
 > 本规划由一个有终点的总 Goal 驱动，G0–G7 是其内部串行里程碑，不是八个彼此割裂的 Goal。每个里程碑仍必须单独验收、记录证据并允许按真实结果微调下一阶段；C1–C5 逐项做 trigger review，trigger 不成立就以可审计 no-op 关闭并保持 `planned / unavailable`。总 Goal 只有在最终真实课题验收通过且没有未处置的高严重度 harness 缺陷时才完成，因此它是有限交付 Goal，不是“完成全部未来愿景”的无限 Goal。
 
-当前总 Goal 保持 active，不清零既有进展。执行时从 [续行与验收优化](#goal-execution-refinement) 进入，以 [逐项证据矩阵](#acceptance-evidence-matrix) 区分已测、未测与历史失败；[Board 交付回执](#waiting-purpose-board) 已覆盖等待期间科研目的显示。Goal 正文及历史段落中的“下一步”仅代表当时位置，不构成重复执行指令。[自然 operator 后处理验收](#natural-operator-postprocess-acceptance) 已产生正确结果，但超时后才恢复收尾。[operator 预算与交接切片](#operator-budget-guidance) 已完成指引和定向验证；当前交付安装后须做独立自然复测，不重算旧结果。正式 Heisenberg 科研与跨 turn Goal 验收仍未完成。
+总 Goal 未完成，不清零既有进展；是否正在续行以宿主 Goal 的实时状态为准，本文件不替代 active/paused 状态。执行时从 [续行与验收优化](#goal-execution-refinement) 进入，以 [逐项证据矩阵](#acceptance-evidence-matrix) 区分已测、未测与历史失败；[Board 交付回执](#waiting-purpose-board) 已覆盖等待期间科研目的显示。Goal 正文及历史段落中的“下一步”仅代表当时位置，不构成重复执行指令。[自然 operator 后处理验收](#natural-operator-postprocess-acceptance) 已产生正确结果，但超时后才恢复收尾。[operator 预算与交接切片](#operator-budget-guidance) 已交付安装；新谱移检查结果正确、恢复可用，但原次仍超时，父 agent 未读取新 delegation 指引。当前从 [父侧调用入口](#operator-caller-guidance) 完成交付与独立验证，不重算两个已完成结果。正式 Heisenberg 科研与跨 turn Goal 验收仍未完成。
 
 ## 1. 最终效果
 
@@ -1231,7 +1231,7 @@ TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，�
 
 **当前执行位置。** 同一 Action 内等待期间的授权工作、Note 整理和冷恢复已有 fixture；TUI/Web 覆盖科研目的的展示缺口也已修复，并补上旧单 Line 快照中明确 foreign Action/run 的隔离。完整 Research 测试、两端展示、浏览器验证及 `f6320758d` 的交付安装见 [§19.27](#waiting-purpose-board)。后续 [§19.28](#natural-operator-postprocess-acceptance) 用该安装版完成真实离线后处理，operator 产物通过独立核对；原次在 600 秒中断，正式审查、记录和 Question 收尾在另一次受控恢复中完成。科学结果与恢复有效，但自然端到端时限验收未通过，不能重标为成功或用它替代 Goal、长作业等待、Method card 与 Heisenberg 正式验收。
 
-**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。Heisenberg 正式归属仍沿用 §19.13 已提出的确认依赖，不重复询问或由测试代签。现有 operator 预算/交接指引与定向验证已在 [§19.29](#operator-budget-guidance) 完成，下一步是 scoped 交付安装及独立自然复测。不新增工具、Action 类型、scheduler 或 schema，不削弱科学检查、父审查与 AITP save。§19.28 的结果和中断记录保持不变；新的低成本检验独立记账，不把此次恢复变成新数值 trial，也不重跑 LibRPA。
+**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。Heisenberg 正式归属仍沿用 §19.13 已提出的确认依赖，不重复询问或由测试代签。[§19.29](#operator-budget-guidance) 的 0.2.2 已交付安装，但实测表明父 agent 没有重新读取 delegation reference，仍要求完整重复报告且未传整体预算；新结果又经另次恢复才完成记录。下一唯一最小 Action 是沿现有 `Agent` 的父侧 profile 描述消费路径，使必要的精简交接指导在调用时可见，并验证新上下文与旧会话的实际调用。不新增工具、Action 类型、scheduler、schema、硬性科研门禁或额外逐阶段注入。父审查、AITP save、原失败证据与总验收范围不变；复用已验证产物检查交接，不重跑 LibRPA 或已完成的后处理。
 
 该 Action 开始前先写明要填补的证据缺口和资源上限；结束后分别评价科学结果、operator 交接、主 Agent 的解释与必要持久化、Board 的一致性。数值成功不能掩盖交接或收尾失败，配额、超时或未获确认也不能记为验收通过。只更新获得新证据的矩阵条目，若失败则选择一个已定位缺陷作为下一切片，不再次扩写总规划或无依据重跑全部 case。这是当前总 Goal 内的执行约定，不是新增 Research runtime 门禁。
 
@@ -1282,8 +1282,9 @@ B 的等待/恢复对照发现一个可以由现有公开 SDK 确定性复现的
 | E5 Heisenberg 诊断 | `heisenberg-primitive-bridge-r7`、`heisenberg-local-conclusion-recovery-r8` | 原诊断 600 秒中断；后续 94.405 秒完成既有本地结论收尾；既不证明 L7/8 witness，也不证明 Goal 或 AITP 持久化 |
 | E6 作业恢复 | §19.25 的 installed-run-recovery JSON | 真实 CLI 独立进程、公开 REST/WS 和冷恢复通过；没有真实模型、scheduler 作业或 ready-mode AITP，不与 E1–E5 混算 |
 | E7 自然后处理与恢复 | `operator-natural-postprocess-r11`、`operator-natural-postprocess-recovery-r12`；[§19.28](#natural-operator-postprocess-acceptance) | 新离线后处理与 packet 有独立核对；自然提示下 600 秒超时，另用 424.506 秒恢复审查、Entry 与 Question。没有新 QSGW run 或 Goal，不把恢复倒算为原次通过 |
+| E8 新谱移检查与恢复 | `operator-orbital-shifts-r13`、`operator-orbital-shifts-recovery-r14`；[§19.29](#operator-budget-guidance) | 0.2.2 安装版的四组刚性 benchmark 与 28 个数值独立核对一致；原次 600 秒至 prepared draft，另用 107.192 秒保存并完成 Question。父侧未重读新 reference，仍复制完整报告；有一次 83 秒 compaction。没有新 LibRPA run 或 Goal，未通过自然时限验收 |
 
-E1–E5 的 15 个模型 case 中，没有 `CreateGoal`、`UpdateGoal`、`PrepareResearchPlanV2` 或 Plan mode 变更调用；多份提示还明确禁止设置 Goal。新增 E7 的两个 case 同样没有这些调用。因此没有证据可把它们记为 G2/D 的真实 Goal/Plan 验收。另一方面，D 可以把 Skill 内容作为 tool delivery 交给模型，不能仅凭没有显式 `Skill(distilling-methods)` 调用就断言 handoff 未发生。
+E1–E5 的 15 个模型 case 中，没有 `CreateGoal`、`UpdateGoal`、`PrepareResearchPlanV2` 或 Plan mode 变更调用；多份提示还明确禁止设置 Goal。新增 E7/E8 的四个 case 同样没有这些调用。因此没有证据可把它们记为 G2/D 的真实 Goal/Plan 验收。另一方面，D 可以把 Skill 内容作为 tool delivery 交给模型，不能仅凭没有显式 `Skill(distilling-methods)` 调用就断言 handoff 未发生。
 
 #### G1：探索、串行科学叙事与 Board
 
@@ -1410,4 +1411,30 @@ G5 的新后处理、实际 packet 落地、父审查和恢复已有实测，G1 
 
 本切片修改 allowlist：两份 profile/reference、`plugins/official/theory-physics/kimi.plugin.json` 与 `plugins/marketplace.json`（0.2.2）、两份根 README、Hakimi handoff README/compatibility matrix、本规划及 `.changeset/operator-handoff-budget.md`。外部 AITP 0.9.0 / contract-0.2、distilling-methods、科学判断和两步 human decision 均不改。原 Hakimi HEAD `892733a00582` 的 156 条 dirty paths、AITP HEAD `eae1bce5eb` 的 20 条 dirty paths 不动。没有 core/public schema/TUI/Web 源码或资产变化，不新增 deadline runtime、卡片规则或复杂 runner。
 
-现有真实 PluginManager 安装/发现/字节完整性与 agent profile loader 测试共 58 项通过，覆盖引用可达、版本一致、无子委派、无模型硬编码与原 tools；没有用新增文本匹配测试冒充行为保证。AITP 官方 adapter contract / atomic-save 21 项通过。文档构建 21.28 秒通过，既有 ES2024 warnings 保留；CDN 构建输出到新临时目录，changeset status 正常，新项只列 CLI patch，未执行 version 或 publish。六端 schema 未变，因此没有为此纯插件切片重复跑全部六端/typecheck/Web assets。这里证明安装与契约兼容，不证明新指引已经改善真实时限；干净提交的插件安装与自然复测仍须另记实测。
+现有真实 PluginManager 安装/发现/字节完整性与 agent profile loader 测试共 58 项通过，覆盖引用可达、版本一致、无子委派、无模型硬编码与原 tools；没有用新增文本匹配测试冒充行为保证。AITP 官方 adapter contract / atomic-save 21 项通过。文档构建 21.28 秒通过，最终文档复验 12.80 秒通过，既有 ES2024 warnings 保留；CDN 构建输出到新临时目录，changeset status 正常，新项只列 CLI patch，未执行 version 或 publish。六端 schema 未变，因此没有为此纯插件切片重复跑全部六端/typecheck/Web assets。这里证明安装与契约兼容，不证明新指引已经改善真实时限。
+
+**交付。** 精确 10 文件提交 `26d2706ddf2a233586c29ff29609a03e2fb8273f` 已推送，远程 ref 一致。通过既有 PluginManager 从 `/tmp/hakimi-operator-budget-delivery.aVuFTC/checkout` 的 detached clean commit 安装 0.2.2；安装前校验旧 managed 0.2.1 与父提交六文件一致，安装后六文件与新源码及正式 CDN zip 逐字节相同。未重装未变化的 CLI 0.21.0，其 `f6320758d` 入口 digest 仍为 `340a446d5d8cef2787900d58f4109818a151fbba28ee5b57afaa22192adb4d18`；AITP 0.9.0/contract-0.2 未变。安装、CDN 与文档回执在该临时 delivery 目录。
+
+**独立新问题，而非重跑旧分析。** r13 在同一明确测试绑定的 `operator-audit` 会话，使用两个既有 H2O trace 检查 0→1、1→2 的占据/非占据固定 band 标签是否各自刚性移动；每组以 max|Δε−mean(Δε)| / max|Δε| ≤ 0.01 为预定描述性 benchmark。该阈值不是物理精度或 QSGW 收敛标准，固定标签也不代表跨迭代同一波函数。自然提示给出问题、两份输入、输出与资源范围，不指定内部 Research 工具/phase；已有会话包含强指导历史，不是盲测。唯一新输出在临时 `data/h2o-orbital-shifts.tA05Bl/`，512 MiB、单进程单线程、单命令 30 秒、整次 600 秒；没有 LibRPA rerun、编译、网络或原课题访问。
+
+**原次仍未通过时限。** 07:16:32.944Z 到 07:26:32.986Z，600.042 秒、exit 130。主 agent 16 次调用，child 9 次；开头有一次 provider overloaded 自动重试。Action `887b7d78-ed0b-419d-a836-b6547c6c4720` 正常创建，child 在第 124 秒开始、第 404 秒返回，已写 334 行脚本、1203 行结果 JSON 和完整 packet。父侧没有 Read 新的 delegation reference；其 Agent prompt 只有单命令限制和自行给定的 10 次工具上限，没有整体剩余时间或提前返回边界，却明确要求完整统计及完整 typed packet。child final result 约 12 KB，仍与保存文件重复。不能因改过 reference 就声称它实际指导了该父侧调用。
+
+父审阅后的 context 从宿主记录的 231015 tokens 压缩到 46988，compaction 实际耗时 83.185 秒；这不是模型计费 token 统计，也不单独证明本次新增报告造成全部压缩成本。之后主 agent 又加载一次 using-aitp，第 548 秒完成 Review、第 583 秒完成一次 Conclude、第 591 秒 prepare，第 597 秒读草稿；截止时尚未 save。冷恢复 revision 98 为 Action completed、同一 checkpoint pending，Board 正确显示 record，不再显示旧 Action 执行。纯改指引未解决该旧会话成本，不能把不同问题、较少读取或后续恢复当成因果改善证据。
+
+**数值与恢复。** 独立 Node oracle 从原两份 trace 重算分类、四组统计和 gap 对照；28 项与 operator 一致，最大差 1.7764e-15 eV（容差 1e-10）。三轮均 5 occupied / 19 unoccupied，frontier 标签 4/5；两次 occupied 比率为 0.701913659、0.700955354，unoccupied 为 0.327721202、0.330551836，四组均不满足 1%。实际 gap 增量 1.666978750 / 1.319297388 eV，不等于两组平均移动差 3.944852242 / 3.106020664 eV。支持固定标签非刚性的描述结论，不证明轨道身份、物理有效性或收敛。
+
+r14 从 07:27:55.495Z 到 07:29:42.687Z，107.192 秒、9 次调用、exit 0，只恢复同一 candidate。没有再次 Review/Conclude、Bash、child 或新科学 Action；沿原 draft 保存并提交 `entry-77df1eaf542e4360b345c1a75405b7c7`，Question `b90fc5d6-8cba-48de-9ea1-39ba9496edea` 更新为 closed / supported / committed；supported 指确认非刚性结果，不是确认刚性假设。原 checkpoint `c2b02983-e961-4d78-8cc5-9e4bc5d79060` 保留相同 prepare/save/commit 链。额外 model-facing show/check/enter 仍存在，不宣称重复维护问题已消失。
+
+独立官方 check 为 5 Entries、1 Note、0 scoped findings，scope 外保留 1 warning。新 Entry active，exact-sha256 pin 三份新产物和两份输入，resolves/supersedes 为空。SDK cold restore revision 106 无 pending、原 Action completed；100 列 TUI renderer 为六行、next / ready，唯一下一步是仅在需要物理轨道归属时另取 overlap/character 证据，仍保留 Working Note 年龄 attention。它是实际 snapshot 渲染，不是浏览器或人类理解验收。原有 58 个受保护文件逐字节未变；只新增三份产物和该 Entry。无新 Note、marker、card、trial 或 human decision；`review_requested` 仍只证明 handoff，不能证明语义蒸馏完成。未将同一链的后处理子问题当作独立 trial。
+
+两次 prompt/stdout/stderr/result、r13 main/child wire 副本、独立 oracle/comparison、三个时点 snapshot/文件保护清单及 Board 文本保存在 `.tmp/research-acceptance-20260905/`。G5 的新结果与恢复证据增加，但自然完整时限、G2 Goal/Plan、G3/G4 卡片及 G7 正式 Heisenberg 均未完成。下一唯一 Action：核对并修正当前 `Agent` 实际公开的 profile `description` / `whenToUse` 入口与精简交接规则的连接，再验证调用者和 specialist 的实际行为；不再仅修改未被读取的长 reference，不新建 API、状态机或额外逐阶段注入。C1–C5 无新增独立授权，维持原状态，总 Goal active。
+
+### 19.30 父侧调用入口的指导触达 {#operator-caller-guidance}
+
+2026-09-05，继续同一总 Goal。上轮状态答复时宿主为 paused，本次 continuation 已恢复 active；不因文档的历史 active 字样推断存在运行中任务。§19.29 的失败表明父侧未读 delegation reference，而 `agent/tools/agent/agentTool.ts` 的 `buildProfileDescriptions` 只将 `description` 和 `whenToUse` 送入父侧可用 agent 类型说明。因此只把已有预算、精简单份交接与父审阅要点放入 calculation-operator 的 `whenToUse`；不加重复 reference、自动注入、定时器或流程 gate。详细 child prompt、packet 格式、工具权限和模型路由不变。
+
+本切片 exact allowlist：`plugins/official/theory-physics/agents/calculation-operator.md`、`plugins/official/theory-physics/kimi.plugin.json`、`plugins/marketplace.json`（0.2.3）；`packages/agent-core-v2/test/tool/tool.test.ts`、`packages/agent-core-v2/test/app/plugin/manager-consumption.test.ts`；`README.md`、`README.zh-CN.md`、`docs/aitp/README.md`、`docs/aitp/compatibility-matrix.md`、本文件；`.changeset/operator-caller-guidance.md`（仅 CLI patch）。AITP 两份 dirty handoff 和其余用户工作树不动；六端 public schema、CLI contract、fixtures、Web 源码/资产不改。
+
+**确定性证据。** `agent-core-dev` 要求的 production 路径回归读取真实 profile，经原 parser/factory 和 DI 工具 registry 生成父侧工具描述；catalog ready 前后均包含 whole remaining time、earlier return、parent review 与单份 packet 要点，且没有渲染 child system prompt。PluginManager 回归另外核验 installed-copy frontmatter 保留这些字段。这证明触达位置，不证明模型遵从。相关三个文件首次完整运行 151 passed / 1 failed；失败是既有 user-tool wire snapshot 的 input token 144→186 差异，随后在 clean `f6320758d` 上独立复现，且该提交的 core 目录与基线 `26d2706dd` 无差异。保留原快照，不修改无关测试。新测试初次 typecheck 的 fixture 类型错误已修正；最终 typecheck、1,299-file import guard 和 Agent description 14 项通过。官方 AITP 两文件测试使用仓库 `.venv/bin/python` 为 21 passed；系统 Python 无 pytest 的尝试不算测试结果，也未安装依赖。
+
+**验收终点和边界。** 从明确交付 commit 安装插件，验证新上下文及旧会话实际收到父侧说明；用现有已完成报告观察预算传递、单份交接和父审查，不重算 LibRPA/后处理。新时间应独立记录，不能与不同科学问题的 r13 作因果提速比较；强指导交接诊断也不能代替自然科研或 G2 Goal 验收。若仅文字触达却不遵从，保留失败后再定位，不以放宽时间/判据关闭验收。未完成的 G1–G7 和 C1–C5 全部保留。

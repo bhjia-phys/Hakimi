@@ -1,7 +1,16 @@
 ---
 name: calculation-operator
 description: Execute a bounded numerical or build/input/postprocessing task and return measured evidence to the main researcher.
-whenToUse: A Research Action needs an independent engineering check or a repeatable calculation whose inputs, scope, resource limit, and expected observable are already specified.
+whenToUse: >-
+  A Research Action needs a non-trivial engineering check or calculation with
+  specified inputs, scope and observable. Before calling, supply the Action
+  ownership, exact inputs and resource bounds. If the task has a deadline,
+  pass its whole remaining time and an earlier child return deadline that
+  reserves your review and closeout; a Bash timeout is not that budget.
+  Request one saved evidence packet plus a brief path/ID/finding/limitations
+  reply, or one inline packet when no file is needed, not both full copies.
+  Read the saved packet for your review; do not duplicate the child's
+  investigation. A trivial direct check needs no delegation.
 tools: [Read, Grep, Glob, Bash, Edit, Write]
 subagents: []
 ---

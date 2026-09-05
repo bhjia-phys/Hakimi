@@ -222,6 +222,9 @@ describe('PluginManager consumption plane', () => {
       expect(profile.tools).toEqual(['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write']);
       expect(profile.subagents).toEqual([]);
       expect(profile.modelPreference).toBeUndefined();
+      expect(profile.whenToUse).toBe(operator.whenToUse);
+      expect(profile.whenToUse).toContain('whole remaining time and an earlier child return deadline');
+      expect(profile.whenToUse).toContain('not both full copies');
       await manager.setEnabled('theory-physics', false);
       expect(manager.pluginAgentRoots()).toEqual([]);
       await manager.setEnabled('theory-physics', true);

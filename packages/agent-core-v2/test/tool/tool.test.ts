@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Readable, type Writable } from 'node:stream';
 import { LifecycleScope } from '#/app/scopes';
 import { type IAgentScopeHandle } from '#/_base/di/scope';
@@ -66,6 +67,8 @@ import { ITelemetryService, noopTelemetryService } from '#/app/telemetry/telemet
 import { ISessionCronService } from '#/session/cron/sessionCronService';
 import { ISessionMetadata, type AgentMeta } from '#/session/sessionMetadata/sessionMetadata';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
+import { parseAgentFileText } from '#/workspace/workspaceAgentProfileLoader/internal/agentFile';
+import { agentProfileFromFile } from '#/workspace/workspaceAgentProfileLoader/internal/agentProfileFromFile';
 import type {
   ISessionSwarmService,
   SessionSwarmRunArgs,
@@ -628,6 +631,45 @@ describe('Agent tool description', () => {
 
     expect(description).toContain('Tools: Bash, Read, ReadMediaFile, Glob, Grep, WebSearch, FetchURL');
     expect(description).toContain('Tools: Bash, CronCreate, CronDelete, CronList, Edit');
+  });
+
+  it('delivers official-profile delegation guidance to the caller without reading the child prompt', async () => {
+    const path = fileURLToPath(new URL(
+      '../../../../plugins/official/theory-physics/agents/calculation-operator.md',
+      import.meta.url,
+    ));
+    const definition = parseAgentFileText({ path, source: 'plugin', text: readFileSync(path, 'utf8') });
+    const basePrompt = vi.fn(() => ({
+      text: 'child-only prompt',
+      environment: { cwd: '/test', date: { disclosed: false as const } },
+    }));
+    const operator = agentProfileFromFile(definition, basePrompt);
+    const caller = normalizeAgentProfile({ name: 'orchestrator', systemPrompt: () => 'caller' });
+    const catalog: ISessionAgentProfileCatalog = {
+      _serviceBrand: undefined,
+      ready: Promise.resolve(),
+      onDidChange: Event.None as ISessionAgentProfileCatalog['onDidChange'],
+      get: (name) => [caller, operator].find((profile) => profile.name === name),
+      getDefault: () => caller,
+      list: () => [operator],
+      inspect: () => undefined,
+      profileSource: () => 'file',
+      load: async () => {},
+      reload: async () => {},
+    };
+    ctx = createTestAgent(sessionService(ISessionAgentProfileCatalog, catalog));
+    const beforeReady = agentDescription();
+    await catalog.ready;
+    const description = agentDescription();
+    expect(description).toBe(beforeReady);
+    expect(description).toContain(operator.whenToUse);
+    expect(description).toContain('whole remaining time and an earlier child return deadline');
+    expect(description).toContain('reserves your review and closeout');
+    expect(description).toContain('not both full copies');
+    expect(description).toContain('Read the saved packet for your review');
+    expect(description).toContain('Tools: Read, Grep, Glob, Bash, Edit, Write');
+    expect(description).not.toContain('child-only prompt');
+    expect(basePrompt).not.toHaveBeenCalled();
   });
 
   it('renders global tool restrictions in subagent type descriptions', () => {

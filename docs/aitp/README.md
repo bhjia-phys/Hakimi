@@ -1,13 +1,12 @@
 # AITP integration handoff
 
-Theory Physics 0.2.2 narrows calculation delegation around the whole task's
-budget, parent-review time and one file-backed or inline packet delivery.
-It preserves the existing evidence packet and main-agent review/persistence;
-there is no deadline executor, new public interface or AITP contract/Skill
-change. The real timeout and separately measured recovery behind this guidance
-are recorded in collaborator program §19.28. The protected AITP checkout and
-its dirty handoffs remain untouched; behavioral acceptance is separate from
-plugin installation/discovery tests.
+Theory Physics 0.2.3 exposes whole-task budget, parent-review time and single
+packet delivery guidance in the existing parent-facing agent description.
+The 0.2.2 natural test did not read the delegation reference and still timed
+out; see collaborator program §19.29–19.30. No new injection, deadline executor,
+public interface, AITP contract/Skill or packet format is introduced. The
+protected AITP checkout and its dirty handoffs remain untouched. Description
+delivery tests prove visibility, not model compliance or scientific acceptance.
 
 The installed follow-up recovered the original operator failure checkpoint
 through review and official prepare/save/show/check/commit, but then exposed
