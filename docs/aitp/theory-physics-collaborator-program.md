@@ -1223,4 +1223,8 @@ B 的等待/恢复对照发现一个可以由现有公开 SDK 确定性复现的
 
 补充验证：protocol 45 项、TUI 三文件 160 项、Web 两文件 34 项、SDK Research 定向 18 项通过（其余 43 项未运行），klient 主包与 examples typecheck 通过。AITP 官方 adapter-contract/atomic-record-save 21 项在仓库 `.venv` 通过；通用 Python 未安装 pytest 的首次尝试不是测试结果。定向单线程 oxlint 零 errors、88 warnings，安装基线相同文件亦为 88 warnings 且按规则计数一致；新 helper 的一处非严格比较已修正。文档构建通过，保留现有 ES2024/大 chunk 提示；521 个 Web 资产可重现且无需修改，`git diff --check` 通过。新增 changeset 仅 CLI patch；累计 changeset status 中的 CLI minor/SDK major 来自既有授权条目，不在此改版或发布。
 
-当前状态：代码、定向运行时与文档验证完成，交付安装检查尚未完成，总 Goal 保持 active。下一唯一最小 Action 是完成本切片的 scoped 交付安装与公开调用复测，再回到 B 的其余 G1–G7 证据矩阵。正常绑定科研、跨 turn Goal continuation 和人类归属确认依赖不变。
+交付回执：14 个 allowlisted 文件提交为 `f6ea828a1af80fa8c8fb3c61861943e7b4c40447`，已推送到 `origin/merge/pr-9-auto-subagent-preset`。从 `/tmp/hakimi-retained-run-install.gbkTaY/checkout` clean commit 串行构建内部包、CLI 与 tarball 后安装，版本仍为 0.21.0；安装入口与构建入口逐字节相同，SHA256 为 `5bed7ee8269ce2c558a0c82fa352f65351dabd0ab336f2c4d72de7749c877abc`。Node 24.18.0、pnpm 10.33.0；构建后工作树 clean。npm 12 首次安装跳过 node-pty 脚本，原生模块加载失败；随后仅对已安装 node-pty 的精确目录执行一次带 `--allow-scripts=node-pty` 的 global rebuild，未改用户 npm 配置。真实 PTY 子进程输出 `hakimi-pty-smoke`、exit 0，安装入口内容不变；其他全局包脚本未获放行。
+
+安装后通过实际 `/home/bhjia/.local/bin/hakimi web` 启动独立临时 home/workspace 的进程，用公开 REST 登记 running 并结束 Action，关闭进程后重新启动。恢复 revision 6 的 completed Action/running run；暂停 loop 后可在 revision 8 补录同一作业终态，保留 pins、原 progress、phase 和 paused 状态；真实 WS 收到相同终态。显式 resume 后 revision 10 接受下一 Action，随后 fixture 收尾，两个临时服务器均正常退出。原始输出为 `/tmp/hakimi-retained-run-install.gbkTaY/installed-run-recovery.json`。该 home 无 AITP plugin、mode 为 degraded，没有模型调用、实际作业或 `.aitp` 创建；ready 路径由前述 DI 回归覆盖，不把两类证据合并为正常科学流程通过。
+
+当前状态：本恢复切片已交付安装并完成公开调用复测，总 Goal 保持 active。下一唯一最小 Action 是回到 B，完成其余 G1–G7 的代码/测试/安装版行为证据矩阵，定位尚未验收的最小事项。正常绑定科研、跨 turn Goal continuation 和人类归属确认依赖不变。

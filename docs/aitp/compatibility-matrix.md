@@ -1,6 +1,6 @@
 # Hakimi × AITP compatibility matrix and decisions
 
-**Hakimi-only retained-run recovery (2026-09-05; development validation, not installed):**
+**Hakimi-only retained-run recovery (2026-09-05; delivered, installed process recovery verified):**
 The existing `ObserveResearchRun` path can update the same external job retained
 by a closed Action, including after restart or while paused. Live validation
 and replay share identity/terminal checks; the original conclusion, human gate
@@ -8,7 +8,11 @@ and execution permissions stay unchanged. REST restart and WS projection have
 a regression. There is no new public schema, AITP CLI/contract/Skill change,
 poller, scheduler or canonical write. Independent work during an external wait
 and real Goal continuation remain separate incomplete acceptance items.
-The counterpart's dirty handoffs remain untouched. See collaborator program §19.25.
+Commit `f6ea828a1af8` was pushed and installed from a clean checkout. The installed
+CLI passed independent-process restart, paused terminal observation, WS update
+and next-Action checks in a degraded fixture home without an AITP plugin; this
+is not ready-mode scientific acceptance. The counterpart's dirty handoffs remain
+untouched. See collaborator program §19.25.
 
 **Hakimi-only retained-result recovery (2026-09-05; delivered, installed recovery verified):**
 A fresh unbound Action can conclude durable work into one checkpointed local

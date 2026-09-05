@@ -1,11 +1,14 @@
 # AITP 状态跟踪与交接清单
 
-2026-09-05 外部作业观察恢复（开发验证中，尚未安装）：公开 SDK 复现了
+2026-09-05 外部作业观察恢复（已交付安装，独立进程恢复通过）：公开 SDK 复现了
 running run 的 Action 已 Conclude，但终态 observation 和下一 Action 均被拒绝。
 Hakimi 让既有 `ObserveResearchRun` 对 closed Action 的同一作业继续登记观察，
 service 与 replay 共享身份/终态校验，不重开 Action、不改变原 progress/gate，
 也不授予轮询、通用工具或 AITP 写权限。REST 服务重启与 WS 终态投影已有回归。
 没有新增公开 schema、AITP CLI/contract/Skill；对方 dirty changes 保留。
+代码 `f6ea828a1af8` 已推送并从 clean commit 安装；安装版 CLI 的独立进程
+重启、paused 补录终态、WS 同步及下一 Action 通过。临时环境无 AITP plugin，
+该公开复测是 degraded fixture，不冒充 ready 科研或真实计算。
 这不关闭独立科研等待、多 Action 编排或真实 Goal continuation 的验收，见合作者规划 §19.25。
 
 2026-09-05 未绑定结论恢复（已交付安装，原会话收尾及冷恢复通过）：Conclude 可关闭仍
