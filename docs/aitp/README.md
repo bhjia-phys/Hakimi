@@ -1,5 +1,13 @@
 # AITP integration handoff
 
+The Goal/Plan acceptance in collaborator program §19.31 saved two valid
+conditional derivations but timed out before final Goal closure. Native print
+shutdown now uses the existing Goal pause, prompt cancellation, loop settlement
+and wire flush APIs before disposal (§19.32). This changes no Research Action
+conclusion, AITP record, CLI/files contract, Skill or human decision. The AITP
+checkout and its dirty handoffs remain protected; this is a Hakimi host-lifecycle
+fix, not H6b or complete G2/G7 acceptance.
+
 Theory Physics 0.2.3 exposes whole-task budget, parent-review time and single
 packet delivery guidance in the existing parent-facing agent description.
 The 0.2.2 natural test did not read the delegation reference and still timed

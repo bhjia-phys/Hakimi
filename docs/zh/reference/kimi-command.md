@@ -117,6 +117,8 @@ hakimi -p "Summarize the current repository status"
 
 输出采用 transcript 样式：thinking 内容和 Assistant 正文都以 `• ` 开头，换行后两个空格缩进。Assistant 正文输出到 stdout；thinking、工具进度和"恢复会话"提示输出到 stderr。`-p` 模式不会请求人工审批，普通工具调用按 `auto` 权限策略处理，静态 deny 规则仍然生效。
 
+退出时，默认运行时会先暂停仍为 active 的 Goal，再取消剩余回合并刷出会话日志。SIGINT、SIGTERM 和 SIGHUP 同样走这条路径，退出码分别保持为 130、143 和 129。已经 completed、paused 或 blocked 的 Goal 不改写。退出不会把 Research Action 标为完成、解决人类决定或保存 AITP 证据。清理仍以八秒为上限：SIGKILL、进程崩溃或存储写入卡住可能导致状态未能持久化，因此冷恢复只是后备处理，不能证明上次已正常退出。
+
 临时切换模型：
 
 ```sh

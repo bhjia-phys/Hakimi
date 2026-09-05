@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   IAgentGoalService,
   IAgentLifecycleService,
+  IAgentLoopService,
   IAgentPermissionModeService,
   IAgentProfileService,
   IAgentPromptService,
@@ -21,11 +22,18 @@ import {
   ISessionIndex,
   ISessionManager,
   ITelemetryService,
+  IWireService,
   type BootstrapInput,
   type DomainEvent,
 } from '@moonshot-ai/agent-core-v2';
 
 import { runV2Print } from '../../src/cli/v2/run-v2-print';
+import type { PromptProcess } from '../../src/cli/run-prompt';
+import { PROMPT_CLEANUP_TIMEOUT_MS } from '../../src/constant/app';
+import {
+  createTestAgent,
+  InMemoryWireRecordPersistence,
+} from '../../../../packages/agent-core-v2/test/harness';
 
 const mocks = vi.hoisted(() => ({
   bootstrap: vi.fn(),
@@ -102,6 +110,12 @@ function writer() {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
 function opts(overrides: Record<string, unknown> = {}) {
   return {
     session: undefined,
@@ -150,6 +164,7 @@ function makeFakeHarness() {
     [
       IAgentPromptService,
       {
+        clear: vi.fn(),
         enqueue: vi.fn(async () => {
           // Emit a native assistant delta on the main agent bus, then complete.
           for (const listener of [...eventListeners]) {
@@ -165,7 +180,13 @@ function makeFakeHarness() {
       },
     ],
     [IAgentTaskService, { list: vi.fn(() => []) }],
-    [IAgentGoalService, { createGoal: vi.fn(), getGoal: vi.fn() }],
+    [IAgentGoalService, { createGoal: vi.fn(), getGoal: vi.fn(() => ({ goal: null })), pauseGoal: vi.fn() }],
+    [IAgentLoopService, {
+      status: vi.fn(() => ({ pendingTurnIds: [] })),
+      cancel: vi.fn(),
+      settled: vi.fn(async () => {}),
+    }],
+    [IWireService, { flush: vi.fn(async () => {}) }],
   ]);
   const agent = fakeScope('main', agentServices);
 
@@ -258,6 +279,182 @@ describe('runV2Print', () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+
+  it('persists interruption before cold restore with the real Goal, prompt, loop and wire services', async () => {
+    const persistence = new InMemoryWireRecordPersistence();
+    const generating = deferred<void>();
+    const ctx = createTestAgent({
+      persistence,
+      generate: async (_provider, _systemPrompt, _tools, _history, _callbacks, options) => {
+        const signal = options?.signal;
+        if (signal === undefined) throw new Error('Expected generation cancellation signal');
+        options?.onRequestStart?.();
+        generating.resolve();
+        return new Promise((_resolve, reject) => {
+          if (signal.aborted) reject(signal.reason);
+          else signal.addEventListener('abort', () => { reject(signal.reason); }, { once: true });
+        });
+      },
+    });
+    const restored = createTestAgent();
+    try {
+      const goals = ctx.get(IAgentGoalService);
+      await goals.createGoal({ objective: 'Complete the bounded test' });
+      const { app, agent, agentServices } = makeFakeHarness();
+      agentServices.set(IAgentGoalService, goals);
+      agentServices.set(IAgentPromptService, ctx.get(IAgentPromptService));
+      agentServices.set(IAgentLoopService, ctx.get(IAgentLoopService));
+      agentServices.set(IWireService, ctx.wire);
+      agentServices.set(IEventBus, ctx.get(IEventBus));
+      mocks.bootstrap.mockReturnValue({ app });
+      mocks.ensureMainAgent.mockResolvedValue(agent);
+      const callbacks = new Map<NodeJS.Signals, () => Promise<void>>();
+      const promptProcess: PromptProcess = {
+        once: (name, callback) => callbacks.set(name, callback),
+        off: (name) => callbacks.delete(name),
+        exit: vi.fn(),
+      };
+      const run = runV2Print(opts() as never, '1.2.3-test', {
+        stdout: writer(), stderr: writer(), process: promptProcess,
+      }).catch((error: unknown) => error);
+      await Promise.race([generating.promise, run.then((error: unknown) => { throw error; })]);
+      await callbacks.get('SIGINT')!();
+      expect(await run).toBeInstanceOf(Error);
+      const paused = goals.getGoal().goal;
+      expect(paused).toMatchObject({ status: 'paused', terminalReason: 'Paused when print mode exited' });
+      expect(persistence.records.findLast((record) => record.type === 'goal.update')).toMatchObject({
+        status: 'paused', reason: 'Paused when print mode exited', actor: 'system',
+      });
+      expect(persistence.records).toContainEqual(expect.objectContaining({ type: 'turn.ended', reason: 'cancelled' }));
+      expect(promptProcess.exit).toHaveBeenCalledExactlyOnceWith(130);
+      vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3_600_000);
+      const restoredGoals = restored.get(IAgentGoalService);
+      await restored.restore(persistence.records);
+      expect(restoredGoals.getGoal().goal).toMatchObject({
+        status: 'paused', terminalReason: 'Paused when print mode exited', wallClockMs: paused?.wallClockMs,
+      });
+      expect(restored.llmCalls).toHaveLength(0);
+    } finally {
+      vi.restoreAllMocks();
+      await ctx.dispose();
+      await restored.dispose();
+    }
+  });
+
+  it.each(['missing', 'paused', 'blocked', 'complete'] as const)(
+    'does not rewrite a %s Goal during normal cleanup', async (status) => {
+      const ctx = createTestAgent();
+      try {
+        const goals = ctx.get(IAgentGoalService);
+        if (status !== 'missing') {
+          await goals.createGoal({ objective: 'Bounded task' });
+          if (status === 'paused') await goals.pauseGoal({ reason: 'User paused' });
+          if (status === 'blocked') await goals.markBlocked({ reason: 'Explicit dependency' });
+          if (status === 'complete') await goals.markComplete({ reason: 'Evidence accepted' });
+        }
+        const before = goals.getGoal();
+        const { app, agent, agentServices } = makeFakeHarness();
+        agentServices.set(IAgentGoalService, goals);
+        agentServices.set(IWireService, ctx.wire);
+        mocks.bootstrap.mockReturnValue({ app });
+        mocks.ensureMainAgent.mockResolvedValue(agent);
+        await runV2Print(opts() as never, '1.2.3-test', { stdout: writer(), stderr: writer() });
+        expect(goals.getGoal()).toEqual(before);
+        expect(app.dispose).toHaveBeenCalledOnce();
+      } finally {
+        await ctx.dispose();
+      }
+    },
+  );
+
+  it('flushes the pause before a wedged loop reaches the existing cleanup time limit', async () => {
+    vi.useFakeTimers();
+    const { app, agent, agentServices } = makeFakeHarness();
+    mocks.bootstrap.mockReturnValue({ app });
+    mocks.ensureMainAgent.mockResolvedValue(agent);
+    const settled = deferred<void>();
+    const loop = agentServices.get(IAgentLoopService) as IAgentLoopService;
+    vi.mocked(loop.settled).mockReturnValue(settled.promise);
+    const wire = agentServices.get(IWireService) as IWireService;
+    const run = runV2Print(opts() as never, '1.2.3-test', { stdout: writer(), stderr: writer() });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(wire.flush).toHaveBeenCalledOnce();
+    expect(app.dispose).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(PROMPT_CLEANUP_TIMEOUT_MS);
+    await run;
+    settled.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(wire.flush).toHaveBeenCalledTimes(2);
+    expect(app.dispose).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+    ['SIGHUP', 129],
+  ] as const)('settles and flushes the active goal before %s exits', async (signal, code) => {
+    const { app, agent, agentServices } = makeFakeHarness();
+    mocks.bootstrap.mockReturnValue({ app });
+    mocks.ensureMainAgent.mockResolvedValue(agent);
+    const events: string[] = [];
+    const result = deferred<{ type: 'cancelled'; steps: number; reason: Error }>();
+    const flushed = deferred<void>();
+    const callbacks = new Map<NodeJS.Signals, () => Promise<void>>();
+    const promptProcess: PromptProcess = {
+      once: (name, callback) => callbacks.set(name, callback),
+      off: (name) => callbacks.delete(name),
+      exit: vi.fn(() => { events.push('exit'); }),
+    };
+    const goals = agentServices.get(IAgentGoalService) as IAgentGoalService;
+    vi.mocked(goals.getGoal).mockReturnValue({ goal: { status: 'active' } } as ReturnType<IAgentGoalService['getGoal']>);
+    vi.mocked(goals.pauseGoal).mockImplementation(async () => {
+      events.push('pause');
+      return { status: 'paused' } as Awaited<ReturnType<IAgentGoalService['pauseGoal']>>;
+    });
+    const prompts = agentServices.get(IAgentPromptService) as IAgentPromptService;
+    vi.mocked(prompts.enqueue).mockResolvedValue({
+      launched: Promise.resolve({ id: 1, result: result.promise }),
+    } as Awaited<ReturnType<IAgentPromptService['enqueue']>>);
+    vi.mocked(prompts.clear).mockImplementation(() => { events.push('clear'); });
+    const loop = agentServices.get(IAgentLoopService) as IAgentLoopService;
+    vi.mocked(loop.status).mockReturnValue({ state: 'running', hasPendingRequests: true, pendingTurnIds: [2] });
+    vi.mocked(loop.cancel).mockImplementation((turnId) => {
+      events.push(`cancel:${turnId ?? 'active'}`);
+      if (turnId === undefined) {
+        result.resolve({ type: 'cancelled', steps: 1, reason: new Error('interrupted') });
+      }
+      return true;
+    });
+    vi.mocked(loop.settled).mockImplementation(async () => { events.push('settled'); });
+    const wire = agentServices.get(IWireService) as IWireService;
+    vi.mocked(wire.flush)
+      .mockImplementationOnce(async () => { events.push('flush:pause'); await flushed.promise; })
+      .mockImplementationOnce(async () => { events.push('flush:turn'); });
+    app.dispose.mockImplementation(() => { events.push('dispose'); });
+
+    const run = runV2Print(opts() as never, '1.2.3-test', {
+      stdout: writer(), stderr: writer(), process: promptProcess,
+    }).catch((error: unknown) => error);
+    await vi.waitFor(() => { expect(prompts.enqueue).toHaveBeenCalledOnce(); });
+    const terminate = callbacks.get(signal)!;
+    const stopping = terminate();
+    await vi.waitFor(() => { expect(events).toContain('flush:pause'); });
+    expect(promptProcess.exit).not.toHaveBeenCalled();
+    expect(app.dispose).not.toHaveBeenCalled();
+    await terminate();
+    flushed.resolve();
+    await stopping;
+    expect(await run).toBeInstanceOf(Error);
+    expect(goals.pauseGoal).toHaveBeenCalledExactlyOnceWith(
+      { reason: 'Paused when print mode exited' }, 'system',
+    );
+    expect(events).toEqual([
+      'pause', 'clear', 'cancel:2', 'cancel:active', 'flush:pause',
+      'settled', 'flush:turn', 'dispose', 'exit',
+    ]);
+    expect(promptProcess.exit).toHaveBeenCalledExactlyOnceWith(code);
   });
 
   it('submits a prompt, renders native events, awaits completion, and drains', async () => {

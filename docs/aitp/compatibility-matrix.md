@@ -1,5 +1,12 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**Hakimi-only print shutdown (2026-09-05):** the default CLI pauses active Goals,
+cancels outstanding turns and flushes its own journal before disposal. No AITP
+CLI/schema/contract/Skill, canonical write, human decision or Research Action
+completion changes. Real Goal/Plan evidence and shutdown verification are in
+the collaborator program §19.31–19.32; neither closes G2/G7. The protected AITP
+worktree and its dirty handoffs are unchanged.
+
 **Hakimi-only operator guidance (2026-09-05):** Theory Physics 0.2.3 puts
 whole-task timing, parent review/closeout and single-packet delivery guidance
 in the existing parent-facing agent description. The 0.2.2 natural test still

@@ -61,6 +61,8 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 
 原生会话和 print mode 与 Hakimi SDK 使用同一 home：显式 `homeDir` → `HAKIMI_HOME` → 兼容的 `KIMI_CODE_HOME` → `~/.hakimi`。这修复了真实科研验收中原生引擎误用旧 Kimi home、找不到已安装 AITP contract 的问题。不会迁移或合并任何旧配置、插件或会话；旧目录中的会话需显式选择原 home 恢复。真实课题验收与剩余限制见[合作者规划](docs/aitp/theory-physics-collaborator-program.md#1911-g7-首次真实运行与启动目录修复)。
 
+Print mode 退出时会先暂停 active Goal 并刷出日志，再释放运行时，包括 SIGINT、SIGTERM 和 SIGHUP。已经停止的 Goal 不变；中断不会完成科研工作或写入 AITP 记录。原有有界清理不能保证 SIGKILL 或存储写入卡住时的持久化。详见[非交互执行](docs/zh/reference/kimi-command.md#非交互执行)。
+
 冷恢复时，AITP discovery 会等待会话 Skill catalog 就绪。退出或 reset 会取消等待，迟到结果不能恢复旧权限；插件缺失、不兼容或 catalog 初始化失败仍如实显示不可用，不额外添加 maintenance 重试。
 
 委派的 operator 不拥有共享 AITP 生命周期：子 agent 的恢复或 undo 不能 reset 主研究者的 adapter 或 maintenance 状态。进入或恢复 active Research Mode 时，也会为旧 tool allowlist 补齐已有的 evidence review、run observation 和 historical checkpoint discard 工具；这些修复不批准证据、不改变 checkpoint 或 human decision 语义。

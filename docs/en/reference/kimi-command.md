@@ -117,6 +117,8 @@ hakimi -p "Summarize the current repository status"
 
 Output uses a transcript style: thinking content and Assistant text are both prefixed with `• `, and wrapped lines are indented by two spaces. Assistant text goes to stdout; thinking, tool progress, and "resuming session" notices go to stderr. In `-p` mode, no human approval is requested — regular tool calls are handled under the `auto` permission policy, while static deny rules remain in effect.
 
+On exit, the default runtime pauses any still-active Goal before cancelling remaining turns and flushing the session journal. This also applies to SIGINT, SIGTERM and SIGHUP; their exit codes remain 130, 143 and 129. Completed, paused and blocked Goals are not rewritten. Shutdown does not mark Research Actions complete, resolve human decisions or save AITP evidence. Cleanup remains bounded to eight seconds: SIGKILL, process crashes or a stalled storage write may prevent persistence, so cold recovery remains a fallback rather than proof of a graceful exit.
+
 Temporarily switch the model:
 
 ```sh
