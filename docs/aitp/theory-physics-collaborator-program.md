@@ -842,17 +842,19 @@ C1–C5 的审查是必做项，但代码实现不是无条件必做项。只有
 
 ### 19.1 实施与验收台账
 
+本表按 §19.26 的逐项证据更新；“软件通过”“受控模型运行”和“自然科研体验通过”是不同结论。G1–G7 均未整体关闭，不能用较早的阶段快照覆盖后续成功或失败。
+
 | 范围 | 当前证据与状态 | 下一交付要求 |
 |---|---|---|
 | G0 开发交付 | `93c5954` 已 push/clean install，原 dirty checkout 保留 | 不重做；旧会话真实模型 replay 未完成，不算行为通过 |
-| G1 串行探索与 Board | 进行中；科学优先 Board、正确记录/等待投影、提示去重及 degraded 临时探索已有定向测试，整体行为未验收 | 继续模式入口与探索/Action 真实情景验收，不能把 UI 测试视作科研能力通过 |
-| G2 Goal/Plan 协作 | 进行中；local-only reviewed Action Plan 路径已修复并测试 | 继续无 Goal 探索、按需计划、外部等待和无进展重规划的真实情景验收 |
-| G3 定向检索 | 进行中；Note/marker 回读、post-commit 来源归属及 bounded Note Action 恢复已定向测试，整体模型行为未验收 | 按问题和当前 Line 检索；真实课题验收从所选证据重新 prepare，而不是复活旧 attention 权限 |
-| G4 人类指导与蒸馏 | 进行中；六类 provenance 保存链与一次 handoff 回归通过，修复了 saved Entry 与 candidate 的身份漂移漏检 | 四类真实正反情景 + touched Entry 路径；结构测试不证明人类内容已经验证，卡片不足条件时不伪造 trial |
-| G5 计算 operator | 进行中；0.2.0 的真实失败诊断、原 checkpoint 恢复与修复后的 bounded child 回读均已执行；三项实际 lifecycle 缺陷已修复，见 §19.14–19.15 | 正常计算 replay 与 failure/workaround 验收仍未闭合，不以回读或 harness 成功替代 |
-| G6 阶段综合 | 进行中；已有证据的 bounded Note Action 路径及冷恢复已定向测试，真实综合内容未验收 | 使用已有 Note contract，生成可回溯的阶段总结，区分论文材料与发表 |
-| G7 真实课题运行 | 已完成安装版调查、cold restore 和 primitive audit；32/84 个 exact 反例属于诊断，未绑定收尾暴露缺口（§19.21–19.22） | 先交付收尾修复并恢复原结果；再分别验收明确归属的正常科研、跨 turn Goal 推进及异常恢复，不以诊断替代总验收 |
-| C1–C5 | 本次需求审查 no-op，依据见 §19.13；不宣布未来能力可用 | G7 后续若出现新自然需求再审查，不凭重复回合或已有 roadmap 扩大范围 |
+| G1 串行探索与 Board | 入口与冷恢复、无 Goal 的受控探索、本地结论收尾已有安装版证据；简洁 Board 与三份导出的共同故障形状有回归 | 自然五类情景、三个导出各自的覆盖映射及研究者理解验收仍需补齐；不以渲染测试代替 |
+| G2 Goal/Plan 协作 | reviewed local Plan、Research Plan v2、auto/人类决定分离有回归；作业终态补录已交付（§19.25） | 真正的计划/重规划、跨 turn Goal 与等待时独立工作未验收；已有 live run 仍阻止新 Action |
+| G3 定向检索 | 当前 scope 的 canonical Entry 与阶段 Note 已由安装模型回读（§19.20）；marker/权限/撤销有回归 | 相关 Method card 的实际选择、六层 ABACUS/LibRPA 知识复用、空/重复/越界内容的自然处理仍待验收 |
+| G4 人类指导与蒸馏 | provenance/authority/kind 保存链与一次 handoff 有回归，saved Entry 与 candidate 的身份匹配已修复 | 四类真实正反情景 + touched Entry 路径；结构测试不证明人类内容已经验证，卡片不足条件时不伪造 trial |
+| G5 计算 operator | 真实 H2O 两轮数值回归通过，但原报告遗漏；之后完成 failure 保存与 report-only 恢复（§19.16），operator 已为 0.2.1 | 不再称“数值未运行”，也不把报告恢复当作重新跑通完整新计算链；Method-card 复用、自然交接仍待验收 |
+| G6 阶段综合 | 安装模型已保存 working Note，并在冷恢复后复用，未新增重复记录（§19.18–19.20） | 新 Note 的正确前置顺序、首次新 checkpoint 后的 Question 综合指引及人类审阅仍待验收；旧运行发生过两次 prepare 拒绝 |
+| G7 真实课题运行 | Heisenberg primitive audit 的反证已安全收尾并冷恢复（§19.23）；这是无 Goal、未写 AITP 的诊断 | 不重做 A；继续明确归属的正常科研、真实 Goal 推进与必要记录；正式归属确认依赖不变 |
+| C1–C5 | §19.13 的 no-op 经 §19.26 复核仍成立；阶段 Note 不是正式论文，报告恢复不是 H6b 丢失 | 原 trigger 不变；等待期间的串行工作问题不能统统推给 C4 并行 loops |
 
 ### 19.2 真实课题验收办法
 
@@ -1228,3 +1230,105 @@ B 的等待/恢复对照发现一个可以由现有公开 SDK 确定性复现的
 安装后通过实际 `/home/bhjia/.local/bin/hakimi web` 启动独立临时 home/workspace 的进程，用公开 REST 登记 running 并结束 Action，关闭进程后重新启动。恢复 revision 6 的 completed Action/running run；暂停 loop 后可在 revision 8 补录同一作业终态，保留 pins、原 progress、phase 和 paused 状态；真实 WS 收到相同终态。显式 resume 后 revision 10 接受下一 Action，随后 fixture 收尾，两个临时服务器均正常退出。原始输出为 `/tmp/hakimi-retained-run-install.gbkTaY/installed-run-recovery.json`。该 home 无 AITP plugin、mode 为 degraded，没有模型调用、实际作业或 `.aitp` 创建；ready 路径由前述 DI 回归覆盖，不把两类证据合并为正常科学流程通过。
 
 当前状态：本恢复切片已交付安装并完成公开调用复测，总 Goal 保持 active。下一唯一最小 Action 是回到 B，完成其余 G1–G7 的代码/测试/安装版行为证据矩阵，定位尚未验收的最小事项。正常绑定科研、跨 turn Goal continuation 和人类归属确认依赖不变。
+
+### 19.26 G1–G7 验收证据矩阵 {#acceptance-evidence-matrix}
+
+本轮完成 B 的证据盘点，不宣布 B 所包含的剩余功能已经实现。核验基线为隔离 worktree `6f9a2b61eebefc16dddb9c7587bbe500fe48a403`，产品安装来自 `f6ea828a1af80fa8c8fb3c61861943e7b4c40447`（0.21.0）；此前模型运行分别使用其当时安装版本，不能统称在最新版本上重测通过。AITP 工作树为 0.9.0 / contract-0.2，HEAD 与 dirty 差异保留，未改其运行时、Skill 或科研 ledger。
+
+**证据怎么读。** 下列“实现/回归”只说明代码与软件约束；“模型实测”说明某次真实输出；“未验收”保留原 completion criterion，不降低标准。调用次数、exit 0、Entry 数、测试总数均不是科研能力评分。测试只模拟人类决定时，不能据此声称真实研究者已确认课题归属。
+
+代码与测试定位采用以下缩写，避免每格重复长路径：
+
+- **R**：[Research service](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/packages/agent-core-v2/src/features/aitpResearch/research/agentResearchService.ts)，含 Action、Plan、归属、Note 权限与恢复；**RT**：[对应回归](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/packages/agent-core-v2/test/features/aitpResearch/aitpResearchService.test.ts)。下文给出函数或测试名关键词。
+- **L**：[turn admission](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/packages/agent-core-v2/src/features/aitpResearch/loop/researchTurnAdmission.ts) 与 [loop coordinator](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/packages/agent-core-v2/src/features/aitpResearch/loop/researchLoopCoordinator.ts)；**P**：[execution policy](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/packages/agent-core-v2/src/features/aitpResearch/research/researchExecutionPolicy.ts)。L 不替模型做科学判断，也不拥有 Goal continuation。
+- **G**：[generic Goal service](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/packages/agent-core-v2/src/agent/goal/goalService.ts) 与 [Goal 回归](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/packages/agent-core-v2/test/agent/goal/goal.test.ts)；**S**：[theory-physics Skill](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/plugins/official/theory-physics/skills/theory-physics/SKILL.md) 及其 [routing](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/plugins/official/theory-physics/references/research-routing.md)、[evidence reporting](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/plugins/official/theory-physics/references/evidence-reporting.md)。S 的科学指导仍是模型协议，不是确定性物理判定。
+- **B**：[TUI Board](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/apps/kimi-code/src/tui/components/chrome/research-board.ts) / [回归](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/apps/kimi-code/test/tui/components/chrome/research-board.test.ts)，[Web 投影](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/apps/kimi-web/src/lib/researchBoardPresentation.ts) / [本地结论回归](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/apps/kimi-web/test/research-local-conclusion-board.test.ts)。渲染通过不等于研究者理解通过。
+- **D**：[checkpoint 工具](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/packages/agent-core-v2/src/features/aitpResearch/tools/researchToolsImpl.ts) 与 [same-turn handoff](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/packages/agent-core-v2/src/features/aitpResearch/research/distillationHandoffService.ts)。正式卡片规则只来自 AITP 当前 `distilling-methods`，不在本表复制另一套。
+
+**原始模型证据索引。** 本轮逐条读取了 `.tmp/research-acceptance-20260905/` 中下表的 `prompt.md`、`stdout.jsonl` 和 `result.json` 的相关内容；JSONL 逐行提取调用，未整批加载会话或扫描科研库。原始文件不提交进产品仓库，科学解释与产物核验沿用 §19.11–19.23 的具体记录。下表只是可定位的验收索引，不是卡片 catalog。
+
+| 证据组 | 原始 case | 实际结果和不能推出的结论 |
+|---|---|---|
+| E1 入口/探索 | `native-readiness-r4`、`natural-orient-r5`、`native-readiness-r6` | ready、degraded 临时探索、cold restore 均有真实调用；提示明确限制无 Goal/只读，不能替代自主长期科研 |
+| E2 operator 失败/恢复 | `operator-failure-r1`、`operator-recovery-r2`、`operator-child-replay-r3`、`operator-child-replay-r4` | 原 binary/environment 失败、持久化恢复、旧 phase 拒绝及修复后新 Action/child 回读；r3 exit 130，保留失败 |
+| E3 数值/报告 | `operator-h2o-replay-r5`、`operator-h2o-recover-r6`、`operator-report-replay-r7` | 数值确实运行并通过固定 oracle；r5 因报告遗漏/收尾未完成在 600 秒中断，r6 完成 failure 保存，r7 仅恢复报告并保存 result；不是新完整计算链成功的复测 |
+| E4 Note/复用 | `question-synthesis-note-r8`、`question-synthesis-note-r9`、`note-reuse-after-restore-r10` | r8 无工具且因安装问题中断；r9 保存 Note 但经历 prepare 拒绝；r10 在 86.822 秒内回读已有 Note/Entries 并 no-delta 收尾，未运行新 Note prepare |
+| E5 Heisenberg 诊断 | `heisenberg-primitive-bridge-r7`、`heisenberg-local-conclusion-recovery-r8` | 原诊断 600 秒中断；后续 94.405 秒完成既有本地结论收尾；既不证明 L7/8 witness，也不证明 Goal 或 AITP 持久化 |
+| E6 作业恢复 | §19.25 的 installed-run-recovery JSON | 真实 CLI 独立进程、公开 REST/WS 和冷恢复通过；没有真实模型、scheduler 作业或 ready-mode AITP，不与 E1–E5 混算 |
+
+本轮检查的上述 15 个模型 case 中，没有 `CreateGoal`、`UpdateGoal`、`PrepareResearchPlanV2` 或 Plan mode 变更调用；多份提示还明确禁止设置 Goal。因此没有证据可把它们记为 G2/D 的真实 Goal/Plan 验收。另一方面，D 可以把 Skill 内容作为 tool delivery 交给模型，不能仅凭没有显式 `Skill(distilling-methods)` 调用就断言 handoff 未发生。
+
+#### G1：探索、串行科学叙事与 Board
+
+| 原验收条目 | 实现/回归定位 | 模型与剩余验收 |
+|---|---|---|
+| 三个 GW 导出的复现；无归属工具不可绕过 | RT `recovers the exported stale-checkpoint and human-gate shape`、`denies BeginResearchAction and research work in the same tool batch`；P/R executor veto | 共同的 revision-4/7、gate/phase 漂移及绕过形状有确定性回归；两个 journal fixtures 另覆盖旧字段和双 Line。尚缺三份导出逐个故障→场景的完整映射，不称“三会话端到端通过” |
+| 无 Goal、Goal continuation、等待、失败/retry、纯讨论五类 guidance | L/S；RT user-turn admission、held continuation；G waiting/pause/cancel | E1/E2/E5 覆盖受控探索、失败/恢复；E6 仅作业元数据。真正 Goal、自然外部等待、纯讨论不被额外登记等仍未完整验收 |
+| 未定猜想先探索；一个科学 loop 可有多个 Action | R `assertActionCanBePlanned`、S routing；RT `planAndStartAction begins directly from idle` 及 concluded-candidate→next Action | E1/E2 有探索和先前结论后的新 Action；跨多个候选的自然叙事仍待观察；不能把 turn 数当科学 loop 数 |
+| 不为记账打断人；科学内容、位置、唯一 next、折叠细节 | B `shows record after a conclusion only while a checkpoint actually needs persistence`、`renders the single effective next step`、跨 Line/compact 回归 | E5 恢复快照可渲染短 Board；真实用户理解时间未测，不能填 0。E3/E4 的恢复摩擦保留，未声称提示负担已消失 |
+
+G1 后续优先复用现有字段和 Skill；本轮不新增 public phase、wire schema 或 AITP contract。
+
+#### G2：Goal、可修订计划与协作
+
+| 原验收条目 | 实现/回归定位 | 模型与剩余验收 |
+|---|---|---|
+| 模糊问题→provisional Plan；新证据/人类修改→replan | R `prepareResearchPlanV2`/`activateResearchPlanV2`；RT `persists and undoes Research Plan v2 revisions` | milestones/evidence/decisionPoints/assumptions/replan/stop 可表达；替代路线的内容靠模型。上述 15 case 没有实际 Plan 创建或修改，三类行为均未验收 |
+| 简单 Action 无需 Goal/完整计划；复杂工作使用 local Plan；Todo 不充当证据 | R `prepareResearchPlan`、`resolveActionPlanBindings`；RT `executes a reviewed local Action Plan without inventing a Goal or Research Plan` | E3 有 simple Action，但提示明确指定该路径；自然复杂度选择和 reviewed Plan 仍待验收 |
+| collaborative 问关键问题；dreaming 可修订假设；auto 不冒充人类决定 | RT `routes collaborative planning`、`non-delegable Research decisions human-owned in auto mode`；S；G | 软件分离成立；真实 collaborative Goal/dreaming+auto Goal、授权问题是否适量未验收，不能由默认 permission 推出自动科研通过 |
+| 外部等待、持久化不可用、重复无进展分别处理 | R live-run guard、`observeRun`；G continuation；§19.23/19.25 | 本地结果保留和终态补录已实测。**当前 Action 已关闭但 run 仍 live 时，任何新 Action 仍被拒绝**；现有 Action 内的已授权工作/回读不能等同于新的独立工作。等待期间整理/推导的完整体验尚未闭合，不将其归入 C4 后延期 |
+| 用户暂停/取消、科学约定/资源/范围变化时合理停止 | G pause/cancel/budget/restore；R Goal guard/human gate | 有软件测试，无真实跨 turn 的继续→等待/恢复→完成或必要提问验收；Heisenberg 正式归属确认仍等待人类，不重问已提出的问题 |
+
+#### G3：相关证据、Method card 与 Skill 检索
+
+| 原验收条目 | 实现/回归定位 | 模型与剩余验收 |
+|---|---|---|
+| 当前问题的 canonical Entry/Note 回读与正确 scope | P `isResearchRecordInspection`、S routing、R binding/Note context；RT exact Note/marker/foreign scope/undo 回归 | E1/E4 在当前范围回读 Entry 与 working Note；E4 冷恢复已有事实零重复写。尚不能证明模型总会选到最相关证据 |
+| 卡片适用性、generic marker、Skill 路由；无 index/整库逐阶段扫描 | P 精确记录读许可；S 调用外部 `using-aitp` | generic marker 许可有测试，E1 有发现操作；未见本次模型完成真实 Method card 的 basis/适用性/验证边界审查后用于计算 |
+| 空结果、重复覆盖、degraded/unbound、无 delta 时合理 no-op | R degraded/local conclusion；D duplicate/unavailable；S | E1/E5 证明部分 degraded/unbound 路径，E4 证明已有 Note 复用；空卡库、已有卡覆盖和无新 delta 不妨碍新问题取证仍需自然场景验证 |
+| ABACUS/LibRPA 六层知识逐步复用 | S / calculation-delegation 的 exact card 输入；AITP theory Note 原规则 | 总览、编译环境、输入参数、ABACUS–LibRPA 流程、后处理、诊断的实际卡片覆盖矩阵尚缺。E3 的 BUILD-AND-REPLAY 说明是验收步骤，不冒充 canonical Method card；不凭示例补造六张卡 |
+
+#### G4：人类指导、核验、记录与条件性蒸馏
+
+| 原验收条目 | 实现/回归定位 | 模型与剩余验收 |
+|---|---|---|
+| 人类建议、工具/来源、agent 核验、人类 decision 保留归因 | R `assertDurableCommitProvenance`；RT `rejects inconsistent candidate provenance` 及 save/candidate 身份匹配 | 结构约束不能证明内容真的经验证；现有受控 operator 提示不能代替“真实人类建议被确认或反驳” |
+| 一次 Begin/work/Conclude；durable candidate 经官方 save/receipt/commit | R `concludeAction`；D；RT `carries a concluded candidate through prepare, save, show, check, and checkpoint commit` | E2/E3 已实际保存失败与结果；E5 原收尾失败和 E4 两次 prepare 拒绝仍列为历史失败，不从最终绿色抹去 |
+| first commit 后只 review touched Entry；duplicate/unavailable/no-trigger 不阻塞 | D `CommitResearchCheckpointTool` / `AitpDistillationHandoffService`；RT handoff/no-op/Note ownership | 有软件回归及真实提交回执；没有 qualifying card/trial 链的完整模型验收。`review_requested` 不是已产卡；E4 新指导后的首次新 checkpoint→Question 综合亦未复测 |
+| 四类实际情景：正确 workaround、反驳猜测、已有卡覆盖、一次失败不足触发 | S / 外部 `distilling-methods` | **四项均未按原要求完成验收**；一次真实失败已保存只证明记录，不自动证明第四类的模型 trigger 判断通过。没有为凑数制造 card、trial 或人类批准 |
+
+#### G5：薄 calculation operator
+
+| 原验收条目 | 实现/回归定位 | 模型与剩余验收 |
+|---|---|---|
+| 现有 preset/工具执行，parent 审查 packet；child 不拥有 Goal/ledger | [profile](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/plugins/official/theory-physics/agents/calculation-operator.md)、[delegation](https://github.com/bhjia-phys/hakimi/blob/f6ea828a1af80fa8c8fb3c61861943e7b4c40447/plugins/official/theory-physics/references/calculation-delegation.md)、R/P 与 evidence packet 回归 | E2/E3 有真实 parent/child 调用、结构审查和官方持久化；模型选择来自用户 routing，不是新 runner |
+| 输入/输出、单位、数值检查、失败分类、工程审计折叠 | profile/evidence-reporting；B | E3 的 gaps、oracle residual、2 updates 与 `converged=0` 分开解释；不能据 exit 0 宣称物理收敛。主 agent 原本仍承担过遗漏报告/pin 的恢复成本 |
+| 正常数值 replay 与 failure/workaround | E2/E3 的原始命令与产物，§19.14–19.16 | 真实 H2O 数值成功、环境/binary 失败与 report-only workaround 都已发生；但 r5 交接失败，r7 未重跑数值。0.2.1 下完整新任务的自然工程交接仍待验收，不能作因果优越性声明 |
+| 已有知识复用、范围不符停止、失败独立记录不强制蒸馏 | profile/S；RT provenance/persistence | 原失败保留；真实 Method card 的复用和适用范围不符情景尚缺，与 G3/G4 共用最小验收，不能用 Heisenberg 替代 |
+
+这里的硬约束是父 `Agent` 调用的 Action policy，以及 child 暴露的工具集合；child 的 Bash/文件范围仍依赖指令与现有工具风险规则。它不是继承的逐命令 Action 权限或 OS-level sandbox。不能把 `shell` capability、`auto` 或未知工具的精确 grant 描述为文件/网络隔离。
+
+#### G6：阶段 Note 与项目综合
+
+| 原验收条目 | 实现/回归定位 | 模型与剩余验收 |
+|---|---|---|
+| 有意义的边界才综合，claim 连到已有证据；负结果/限制/下一步不遗漏 | S evidence-reporting，R bounded Note Action | E4 已保存一份 working Note，联系三条 Entry 和固定报告；不是只实现工具，也不是论文质量或人类审阅已通过 |
+| 官方 Note prepare/save；artifact 引用；恢复不覆盖旧内容 | R Note context/draft lease；RT `revokes a prepared Note`、`executes Note tools for the unchanged post-commit scope` | E4 冷恢复回读成功。r9 因 refs 缺失和 Begin 后修改 Question 导致两次拒绝；后续改进目前仅验证 r10 回读，**未验证新 Note prepare 的改进顺序** |
+| 不按回合强制 Note；现有内容覆盖时零写；人类可改/拒绝、不自动发表 | S，AITP 现有 supersession/decision 边界 | E4 r10 零新增记录提供有限行为证据；人类修改/拒绝的实际过程未测。正式 paper workflow 仍 C3，不为关闭 G6 自动写论文 |
+
+#### G7：真实科研、连续推进与人的体验
+
+| 原验收条目 | 已有证据 | 未完成的总验收 |
+|---|---|---|
+| 自然/协作/dreaming/等待/失败/human guidance/cold restore/多 Line | E1–E6 + RT 两 Line 与旧 journal 回归 | 正常绑定 Heisenberg 科研、真实 Goal、多 Line 自然切换与 verified human guidance 尚未完成；fixture 不冒充用户课题 |
+| 有科学判据的有限里程碑，必要记录可恢复 | E5 的基础代数 exact 反证、本地结论与 cold restore | 诊断有效，但无 Goal、未进 AITP；正式 scope 确认后再按原路径保存与继续，不能把本地结论说成已持久化到 ledger |
+| evidence-driven next、重复、提前完成、提问、Board 理解、遗漏持久化 | E2/E3/E4/E5 保留失败、重复 prepare、原错误归因和恢复记录；B 单一 next 回归 | 尚无完整逐场景人工评分。r10 提出再次查“Write 是否调用”的疑问，而旧 failure 已记录未调用；这是仍需核对的重复/归因摩擦，不称完全消除 |
+| durable claims 都可从 AITP 恢复、no-delta 零多余记录、reviewed closeout | E2/E3/E4 的临时 operator Topic；E4 r10 零写 | E5 仍为 localConclusion，不能算全部 durable claim 已入 ledger；尚无研究者认可的总 closeout，Goal 继续 active |
+
+**C1–C5 本次需求复核。** C1：没有本轮新增的“已 commit 后 crash 导致 touched-Entry handoff 丢失”证据，packet 遗漏和 Note prepare 拒绝不是该触发；C2：未证明每个新角色各有两次独立需求；C3：阶段 Note 已有实测，但没有正式论文的明确请求/稳定审阅链；C4：串行体验尚未通过，不启动多假设并行；C5：所见问题仍属于 Hakimi 编排、模型归因和验收，没有证明需要新 AITP surface。五项本次均 no-op，能力保持 planned / unavailable；以后出现原 trigger 时再审查，不能从这次 no-op 推导为永久取消。
+
+**本轮范围与验证。** 只更新本文的当前台账和证据矩阵，不改产品代码、模型 prompt、科研产物、原 dirty checkout 或 AITP。使用真实代码/测试、15 份现存模型调用记录与 §19.25 的安装进程回执；没有新模型调用或科研计算。定向重跑 RT 的导出形状、同 batch 拒绝、held Goal、provenance/持久化、local Plan、Research Plan v2、human decision、Note 撤销、本地结论与 retained-run 恢复共 18 项通过，其余 543 项本轮未运行；上一切片的六端和 AITP 21 项结果仍按 §19.25 的版本/命令限定，不伪称本轮全量重测。本文无 CLI/schema/contract/Skill surface 变化，按 `gen-changesets` 的 docs-only 规则不新增 changeset，也无需重装相同 binary。
+
+文档首次构建因五个指向站点外 Markdown 的相对链接失败；改为固定交付 commit 的源码链接后构建通过，没有禁用 dead-link 检查。其余源码链接也固定到同一 commit，避免站点将其当作本地页面。`lint:imports` 检查 1,299 文件通过，`git diff --check` 通过；现有 ES2024/大 chunk 构建提示保留。原 Hakimi HEAD `892733a00582` 的 156 条 dirty paths 与 AITP HEAD `eae1bce5eba3` 的 20 条 dirty paths 未纳入修改。
+
+**唯一下一 Action。** 先验收 G1/G2 的“等待时继续有价值工作”是否可由已有 Action 内授权路径承担：在隔离 fixture 保留同一 live run，验证已授权回读/独立推导或既有 Note 整理、Board 的等待/当前工作表达以及恢复后的 run 归属；与“已关闭 Action 后不能新开”的已知限制分开。如果现有路径足够则 no-op；否则提交带复现的最小 Hakimi 设计，不先建第二 foreground owner、scheduler 或新 schema。科学项目仍只读，不为测试伪造 run 终态、课题绑定或人类决定。该项不依赖尚待确认的 Heisenberg 归属，不重做已完成数值，也不把本次矩阵更新算作科研验收。
