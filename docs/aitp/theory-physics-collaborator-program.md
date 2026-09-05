@@ -1092,3 +1092,15 @@ Theory Physics 0.2.1 只作有证据的指引修正：受托保存 packet 时预
 首次 Commit 的定向提示仅在 ready/active、无 pending、exact committed cursor、同一当前 Line/Question 且 revision 只发生本次 ack 的递增时出现。它带当前 Question ID/revision 和已保存 Entry ID，要求保留相关旧 evidence refs、有依据地更新 assessment、剩余 needed evidence 和 next action；若已准确则 no-op。重复提交、切线/换 Question、进一步 revision 变化、暂停/degraded、新 pending 或 cursor 变化均不重复该提示。没有新增状态字段、工具、公开 schema、扫描、AITP I/O、强制 Note、科学接受/关闭或 failure resolution；外部蒸馏规则和原 checkpoint barrier 不变。
 
 新增回归先复现四项预期失败，修复后 Research service 525 项单 worker 测试通过。真实 service 路径覆盖 prepare/save/show/check/commit 后原科学字段仍不被自动覆盖，再用现有 Question 接口成功综合且没有额外 check。类型检查发现测试使用了 CreateQuestion 不支持的字段，删除该误用后 typecheck 通过；import boundary 1,297 files 通过，changeset status 保持既有累计 CLI minor/SDK major，本次仅新增 CLI patch。源代码层通过不代表模型实际完成收尾；下一验证是从该提交重新安装，在既有独立临时 H2O Topic 对已保存输出做低成本解释，不再次构建或计算，观察首次 Commit 后的 Question 更新，再进行阶段 Note。真实 Heisenberg milestone 和整个 Goal 仍未完成。
+
+### 19.18 G6 已安装模型的阶段 Note 与恢复摩擦
+
+`3e8edc6e5969e3cd0aeca3bb0f5c3066d1430945` 已推送到当前 feature branch，并从新 clean worktree 串行构建、打包和本地安装。CLI 仍为 0.21.0（未消费 changesets），main digest 为 `d8aac95eae80055c3b0d65b0a9436889c4b7d9fc78677ff4a25d06b8a5573c79`；Theory Physics 0.2.1、AITP 0.9.0/contract 0.2 不变。官方 AITP contract/atomic-save 21 项、docs build、CLI/assets 检查通过。生产和测试文件 lint 为 0 errors、86 warnings，未声称全绿；未重跑本次未改变的公开接口全矩阵。
+
+安装验证发现 npm 拦截 `node-pty` install script，version/doctor 虽通过，直接加载原生模块却失败。控制方中断自己的 r8 进程（零模型工具调用，exit 130）。project-scoped allow-scripts rebuild 被 npm 拒绝；随后 global 按包名 rebuild 成功，但也意外重编译了另一个全局应用中的同名依赖。这是本次操作的越界副作用，已向用户报告，不能声称其产物未变；没有擅自回滚或修改全局 npm policy，后续不得使用该全局包名匹配命令。Hakimi 的精确依赖加载及真实 PTY 子进程输出 `hakimi-pty-ok`、exit 0 后才重启验收。原 Hakimi 156 条、AITP 20 条 dirty paths 保留。
+
+`question-synthesis-note-r9` 由已安装 Hakimi 在同一独立临时 Topic 运行，提示只要求解释已有证据并写一份可恢复的阶段 working Note，没有指定 `UpdateResearchQuestion` 或要求制造新 Entry 来测试首个 Commit。7 分 50.58 秒、32 次模型工具调用、exit 0，无子 agent、Bash、重编译或数值重跑。首次 Note prepare 因 Question evidenceRefs 为空而拒绝；模型补 refs 后因已运行 Action 捕获旧 Question revision 再次被拒。它没有直接写 canonical 文件或循环重试，而是将旧 Action 无 delta 地 abandoned、完成 Question 综合、以新 revision 开始第二个 bounded Note Action，随后 prepare/Read/Edit/save 成功并正常 Conclude。
+
+新 working Note `note-bbd42696c91843e3860afb4789b3875b` 以四个现有 immutable artifact 的 exact pins 综合三条既有 Entry。H2O Question 从测试前的 revision 6 推进至 revision 9，明确关联三条 canonical refs，并由模型将限定的固定回归问题设为 closed/supported；不是 ack 自动提升，也不等于物理收敛或整个 Goal 完成。旧 binary failure 和 packet-omission failure 的 bytes/hash 不变，仍 unresolved。最终 scoped enter/check 为三条 Entries、一份 Note、零 errors/warnings，scope 外一个测试 Topic warning 保留；没有 duplicate Entry、trial、card、decision、resolves 或 supersedes。最后 Action completed、no-delta，不产生新 pending checkpoint。
+
+证据支持“旧 Question 可由模型综合，现有证据可形成阶段 Note，拒绝后能自行恢复”；不支持“首次 Commit 提示已由真实新结果验证”或“阶段综合已无摩擦”。实际还出现两次本可避免的 Note 拒绝和重复 session-start Skill/enter/check；第一次 GetResearchStatus 已带当前 ready/clean scoped maintenance。下一唯一最小 Action：根据这条轨迹，将既有 Note Action 前置的 evidence-ref/revision 顺序在现有 model-facing 指引中讲清，并区分原生已完成维护与真正必要的新检查，再复测既有证据综合路径；不削弱 ownership/freshness、不新增阶段、schema、强制扫描或卡片触发。Heisenberg 的真实科学 milestone、首次真实新 commit 的综合提示以及新增 Note 的 session cold-restore 行为仍须按总 Goal 验证。
