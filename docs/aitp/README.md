@@ -1,6 +1,6 @@
 # AITP integration handoff
 
-Question-context repair (2026-09-05, source verification; delivery pending):
+Question-context repair (2026-09-05, delivered and clean-installed):
 without explicit Focus, the shared snapshot can project the foreground Action's
 explicit same-Line Question. Existing Focus is never created or overridden.
 After operational work settles, the Question's explicit next step wins over
@@ -8,6 +8,14 @@ historical progress. This also restores the existing revision-aware post-commit
 synthesis guidance; it does not write a scientific assessment. See collaborator
 program [§19.35](theory-physics-collaborator-program.md#question-context-projection).
 No public fields, AITP CLI/contract/Skills or counterpart dirty files change.
+
+Commit `152dbf131` is pushed on the existing development branch. Installed CLI
+entry, all 521 Web files, provenance and native PTY pass. An independent process
+using the matching clean-build SDK restores the real r2 session's Question and
+explicit next step; original progress, committed cursor and 74 known research
+files remain unchanged. Scoped AITP check stays at zero errors/warnings, with one
+outside-scope historical warning retained. This is recovery evidence with no
+model request or new computation, not real cross-turn or Heisenberg acceptance.
 
 Simple Actions now accept an explicit current Research Plan/milestone binding
 without requiring a reviewed local Action Plan. The existing parent triple must

@@ -1,11 +1,18 @@
 # AITP 状态跟踪与交接清单
 
-2026-09-05 Question 上下文修复（源码验证中，未交付安装）：无显式 Focus 时，
+2026-09-05 Question 上下文修复（已交付安装，原 r2 会话恢复通过）：无显式 Focus 时，
 共享投影使用前台 Action 明确引用的当前 Line Question，不写回 Focus。
 操作性事项收尾后，Question 的明确下一步优先于旧 progress；既有提交指引
 因此能取得正确 Question revision。不同 Focus、跨 Line、pending 和重复提交
 限制保留，不自动综合或接受科学结论。详见合作者规划 §19.35；无新公共字段、
 AITP CLI/contract/Skill 或对方 dirty 文件变化。
+
+代码 `152dbf131` 已推送到既有开发分支并 clean-build 安装（CLI 0.21.0；
+patch changeset 尚未消费）。入口、521 个 Web 文件、provenance 和原生 PTY
+核验一致；匹配提交的独立 SDK 进程恢复到正确的 Question revision 4 与唯一
+next，旧 progress/cursor 和 74 个已知科研文件不变，scoped check 仍为 0/0。
+原 scope 外历史 warning 保留；无模型请求、重算、Note 或人类决定。恢复不能
+替代 G2 跨 turn 或 G7 Heisenberg 验收；总 Goal 保持 active。
 
 2026-09-05 simple Action/milestone 关联：小检验现在可以显式关联 fresh active
 总计划里程碑，不要求额外 reviewed local Action Plan；不自动绑定，不新增字段。

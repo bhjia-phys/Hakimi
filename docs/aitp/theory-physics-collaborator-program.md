@@ -1229,13 +1229,13 @@ TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，�
 
 重型测试、构建和真实模型验收串行进行。实验资源上限在执行前按该 case 确定，不因一次超时自动加大；重复同一失败前先定位原因，保留失败输出，只有修复或新证据支持时才重试。复用可核验的数值产物与记录，不用重复计算证明文档或 Board 文案改变；只在产品发生变化的交付点构建安装，再验证受影响路径。文档优化不触发新版本、重装或科研执行。
 
-**当前执行位置。** simple Action/milestone 已在 `f6487d990` 提交、推送到既有开发分支并 clean-build 安装（CLI 0.21.0），Theory Physics 0.2.3、AITP 0.9.0/contract-0.2 不变。[§19.33](#simple-action-milestone) 的安装 CLI ready-AITP fixture 已验证该关联、stale 拒绝、REST/WS、进程恢复和 no-delta 收尾，不能代替真实模型跨 turn。本地结论、retained-run、等待目的 Board 和 [§19.32](#print-goal-shutdown) 信号退出的既有证据继续沿用，不重复来代替科研。原两个 checkout 的 dirty changes 与科研目录继续保留。
+**当前执行位置。** simple Action/milestone 已在 `f6487d990` 交付；后续 Question 上下文修复 `152dbf131` 已提交、推送到既有开发分支并 clean-build 安装（CLI 0.21.0），Theory Physics 0.2.3、AITP 0.9.0/contract-0.2 不变。[§19.33](#simple-action-milestone) 的安装 CLI ready-AITP fixture 已验证该关联、stale 拒绝、REST/WS、进程恢复和 no-delta 收尾；[§19.35](#question-context-projection) 补齐真实 r2 会话的 Question/next 恢复，均不能代替真实模型跨 turn。本地结论、retained-run、等待目的 Board 和 [§19.32](#print-goal-shutdown) 信号退出的既有证据继续沿用，不重复来代替科研。原两个 checkout 的 dirty changes 与科研目录继续保留。
 
-**新 Goal 的实际优先级。** simple Action 关联修复已交付安装；§19.34 的真实模型已自然使用该绑定并完成有限 Goal，但仍只有一个 user turn，不证明跨 turn。先修复本次暴露的 checkpoint Question 上下文与 Board next 漂移，再回到跨 turn 的继续与合理停止。正常科研提示不指定内部工具或 phase；不能靠人为拆 turn 或控制器代为完成 Goal 获得通过。Heisenberg 正式归属沿用已有确认，缺失部分保持明确依赖，不以 fixture 模拟确认替代。该依赖尚未解决时可以先验证独立的真实跨 turn 流程，但不重复已验证的只读/报告恢复，也不据此关闭 Heisenberg 验收。
+**新 Goal 的实际优先级。** simple Action 关联修复已交付安装；§19.34 的真实模型已自然使用该绑定并完成有限 Goal，但仍只有一个 user turn，不证明跨 turn。它暴露的 checkpoint Question 上下文与 Board next 漂移已在 §19.35 修复并用原会话恢复验证，现在回到跨 turn 的继续与合理停止。正常科研提示不指定内部工具或 phase；不能靠人为拆 turn 或控制器代为完成 Goal 获得通过。Heisenberg 正式归属沿用已有确认，缺失部分保持明确依赖，不以 fixture 模拟确认替代。该依赖尚未解决时可以先验证独立的真实跨 turn 流程，但不重复已验证的只读/报告恢复，也不据此关闭 Heisenberg 验收。
 
 随后按本节五个使用故事补齐剩余 G1–G7：Heisenberg 验证科学里程碑和 Goal，LibRPA 独立验证工程执行/交接与六层知识的真实覆盖；人类指导四类情景、条件性蒸馏、阶段 Note、无 Goal 探索/等待和简洁 Board 均保留。每次执行前指出本次填补的具体缺口，结束后只更新新增证据支持的条目。同一段自然工作可支持多项验收，不因此变成多个独立 trial。新缺陷只有影响原验收时才进入本 Goal；额外功能与非关键润色另列，不滚动扩版。
 
-**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。下一唯一最小 Action 是 §19.34 的显式 Question 上下文修复：提交回执能指向刚保存的 Question/revision，Board 不再把已被该 Question 明确更新的历史 next 显示为当前。保留 Focus 的显式选择、跨 Line 隔离与 revision 校验；完成后回到真实跨 turn。Heisenberg 本次只读核验仍无新归属确认，继续保持 §19.13 的依赖，不重复询问或由测试代签。之前的父侧 operator 指导已在 [§19.30](#operator-caller-guidance) 实施并观察，不再列成待开发事项，但不将有限的交接成功夸大为全部 G5 通过。不新增工具、Action 类型、scheduler、schema、硬性科研门禁或额外逐阶段注入。
+**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。下一唯一最小 Action 是在当前安装版开展一次预先限定问题、成果与资源的真实模型跨 turn Goal 验收，实际观察续行和合理停止，不再重跑 §19.35 的恢复或把单 turn 成功改称跨 turn。不得以新真实观测替代 r2 已约定的停止与另行授权条件。Heisenberg 本次只读核验仍无新归属确认，继续保持 §19.13 的依赖，不重复询问或由测试代签。之前的父侧 operator 指导已在 [§19.30](#operator-caller-guidance) 实施并观察，不再列成待开发事项，但不将有限的交接成功夸大为全部 G5 通过。不新增工具、Action 类型、scheduler、schema、硬性科研门禁或额外逐阶段注入。
 
 该 Action 开始前先写明要填补的证据缺口和资源上限；结束后分别评价科学结果、operator 交接、主 Agent 的解释与必要持久化、Board 的一致性。数值成功不能掩盖交接或收尾失败，配额、超时或未获确认也不能记为验收通过。只更新获得新证据的矩阵条目，若失败则选择一个已定位缺陷作为下一切片，不再次扩写总规划或无依据重跑全部 case。这是当前总 Goal 内的执行约定，不是新增 Research runtime 门禁。
 
@@ -1518,7 +1518,7 @@ r14 从 07:27:55.495Z 到 07:29:42.687Z，107.192 秒、9 次调用、exit 0，�
 
 ### 19.35 显式 Question 上下文与下一步投影 {#question-context-projection}
 
-本切片修复 §19.34 的实际缺陷，不重算第三点推导，也不重复已安装的 simple Action/milestone 改动。基线是隔离分支 `1bcd7aeda6f5014b77ca1a495f401188ea183965`；当前安装仍来自 `f6487d990`。本节新增代码处于源码验证阶段，尚未提交、推送或重装，不能把源码测试视为安装版修复。
+本切片修复 §19.34 的实际缺陷，不重算第三点推导，也不重复已安装的 simple Action/milestone 改动。起点是隔离分支 `1bcd7aeda6f5014b77ca1a495f401188ea183965` 与原安装 `f6487d990`；修复代码 `152dbf13110eb11d2be27623ec27af27445a0aa7` 已推送到 `merge/pr-9-auto-subagent-preset` 并从干净提交构建安装。下列源码、显示 fixture、安装一致性和原会话恢复分别记录，不将其合并声称新的科研验收。
 
 `AgentResearchService.getSnapshot()` 仍优先尊重显式 Focus；只有没有 Focus 时，才投影前台 Action 明确引用且属于当前 Line 的 Question。它不自动设置 Focus，不选取第一个问题，也不将相同 slug 当作归属确认。Status 使用相同 Question，包括已有的 blocked 状态；既有首次 checkpoint 提交指引因此能获得正确的 Question/revision，仍由模型判断是否需要综合。更高优先级的 Action、run、human decision、pending checkpoint 等事项保留；这些事项处理完后，Question 明确保存的下一步优先于历史 progress。旧 progress 内容不改写，receipt 不自动更新科学评价、关闭问题或解决 failure。
 
@@ -1532,4 +1532,8 @@ r14 从 07:27:55.495Z 到 07:29:42.687Z，107.192 秒、9 次调用、exit 0，�
 
 浏览器用真实 r2 快照及预期只读投影验证当前 Web 源码，中英文、明暗主题、1180/390 像素共 8 个紧凑视图及 4 个展开视图，检查 next、证据标题、键盘 Focus 和无横向溢出，0 page errors；人工检查桌面浅色与窄屏深色截图。原 Working Note 年龄 warning 保留。结果在 `/tmp/hakimi-question-context-visual.CVQAaH/report.json`；这是显示 fixture，不是安装版后端或新的科研验收。首次脚本遗漏既有临时 browser/runtime-libs 路径，补齐环境后又发现旧 selector 点中了 Manage；改用组件已有 `aria-expanded` 选择展开按钮后通过，没有修改产品迎合脚本。临时浏览器与 Vite 服务已退出。
 
-下一步是同一切片的允许清单提交、干净构建安装，再用该提交的 SDK 对原 r2 会话作独立进程恢复，检查实际 Question/next、旧 progress/cursor、74 个已知科研文件和 AITP scoped check 不变。这个恢复不请求模型、不重算、不制造卡片、Note 或人类确认；验证交付后回到 G2 真实跨 turn 及 G7 有限 Heisenberg 验收，总 Goal 继续 active。
+交付验证：精确暂存允许清单后，`changeset status --since=HEAD` 通过，仅计划 CLI patch `0.21.0 → 0.21.1`，未消费 changeset。干净构建在 `/tmp/hakimi-question-context-install.y6ehJv/checkout`：frozen dependencies、单 workspace 并发的 packages build、CLI build/smoke、docs build 与 pack 均通过；本地安装仍显示 CLI `0.21.0`。安装入口 SHA256 `9d960007c00ccbfde417380d90b7e56a7d2db0dfb98967a0fde79944057a30f6` 与该提交构建一致，521 个 Web 文件及 provenance 逐字节一致，CLI help/version 和原生 PTY 通过。回执为该目录的 `installation-verification.json`；没有重启三个用户 Hakimi 进程。
+
+匹配干净提交的 SDK 独立进程恢复原 r2 会话通过，回执 `question-context-restore.json`：snapshot revision 76，仍无 Focus，但 current Question 为 revision 4，status 与 Board 的唯一 next 来自该 Question，正确保留“停止；未来真实观测另行授权”的科研边界。旧 progress 和 committed cursor 保持不变，无 pending checkpoint，Action/Plan 已完成且 Goal 为 null；74 个已知科研文件内容不变。AITP 官方 scoped check 前后相同：8 Entries / 1 Note / 0 errors / 0 warnings，scope 外 1 条历史 warning 保留。恢复不请求模型、不重算、不制造卡片、Note 或人类确认；这是 clean-build SDK 恢复加单独安装字节验证，不冒称安装 CLI 新模型科研。首次脚本比较 live SDK 的显式 `undefined` 可选字段与 JSON 存档省略字段而失败；改为两边相同 JSON 表示后检查所有实际内容，不修改产品或删除历史。
+
+本切片完成，下一步回到 G2 真实跨 turn 及 G7 有限 Heisenberg 验收；总 Goal 继续 active，§19.26 的其余未完成项不因此关闭。
