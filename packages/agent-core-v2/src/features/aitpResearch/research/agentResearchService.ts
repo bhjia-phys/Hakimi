@@ -240,6 +240,8 @@ import {
   type ResearchExecutionCapability,
 } from './researchExecutionPolicy';
 
+import { admitRunObservation } from './runObservation';
+
 import {
   type ClearGoalAlignmentInput,
   type ClearLineWorkstreamBindingInput,
@@ -1328,7 +1330,7 @@ export class AgentResearchService extends Service implements IAgentResearchServi
   }
 
   observeRun(input: ObserveResearchRunInput): ResearchRunState {
-    this.assertMutationAllowed();
+    this.assertStateMutationAllowed();
     const state = this.wire.getModel(ResearchModel).current;
     const researchRevision = this.currentResearchRevision();
     if (input.expectedRevision !== researchRevision) {
@@ -1343,25 +1345,22 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         `Run observation targets action ${input.actionId}, which is not the current Research action.`,
       );
     }
-    if (input.terminalState === undefined && ['completed', 'failed', 'cancelled'].includes(input.schedulerState)) {
+    const admission = admitRunObservation(state, input);
+    if (admission.kind === 'denied') {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
-        `Terminal scheduler state ${input.schedulerState} requires an explicit terminal state.`,
+        admission.reason,
       );
     }
-    if (state.phase !== 'action_executing' || state.currentAction.status !== 'in_progress') {
-      throw new AitpResearchError(
-        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
-        `Run observation requires an in-progress action in the action_executing phase.`,
-      );
-    }
+    if (admission.kind === 'active') this.assertMutationAllowed();
+    const retained = admission.kind === 'retained' ? admission.run : undefined;
     const observedAt = now();
     this.wire.dispatch(researchObserveRun({
       actionId: input.actionId,
       campaign: input.campaign,
       jobId: input.jobId,
-      sourcePin: input.sourcePin,
-      binaryPin: input.binaryPin,
+      sourcePin: input.sourcePin ?? retained?.sourcePin,
+      binaryPin: input.binaryPin ?? retained?.binaryPin,
       stage: input.stage,
       schedulerState: input.schedulerState,
       lastObservedAt: observedAt,

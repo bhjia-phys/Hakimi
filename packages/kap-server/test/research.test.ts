@@ -72,6 +72,7 @@ interface ResearchSnapshot {
     schedulerState: string;
     lastObservedAt: number;
     nextCheckAt?: number;
+    terminalState?: 'completed' | 'failed' | 'cancelled';
     artifactRefs: string[];
   };
   humanGate?: {
@@ -1107,6 +1108,72 @@ describe('server-v2 /api/v1/sessions/{sid}/research', () => {
       artifactRefs: ['scf.log'],
     });
   });
+
+  it('recovers a concluded run through REST after server restart and publishes the same terminal state over WS', async () => {
+    const sessionId = await createSession();
+    const route = `/api/v1/sessions/${sessionId}/research/command`;
+    const send = async (command: Record<string, unknown>) => {
+      const result = await postJson<{ snapshot: ResearchSnapshot }>(route, { command });
+      expect(result.body.code).toBe(0);
+      return result.body.data.snapshot;
+    };
+    await send({ kind: 'enter_mode', actor: 'user' });
+    const begun = await send({
+      kind: 'begin_action', actionKind: 'simulation', purpose: 'Inspect an already running fixture job.',
+      stopCondition: 'Inspect only; never submit external work.',
+    });
+    const actionId = begun.currentAction!.actionId;
+    const observation = {
+      kind: 'observe_run', actionId, campaign: 'fixture-campaign', jobId: 'fixture-job',
+      sourcePin: 'source-a', binaryPin: 'binary-a', stage: 'running', schedulerState: 'running', artifactRefs: [],
+    };
+    await send({ ...observation, expectedRevision: begun.revision });
+    const concluded = await send({
+      kind: 'conclude_action', actionId, status: 'completed', headline: 'Inspection ended; job remains running',
+      motivation: 'The external job outlives one inspection.', workPerformed: 'Re-read a fixture observation.',
+      result: 'No terminal result is known.', mainlineImpact: 'Retain the existing job for subsequent observation.',
+      durability: { status: 'no_durable_delta', rationale: 'Fixture-only observation of existing state.' },
+    });
+    await server!.close();
+    server = await startServer({
+      hostIdentity: TEST_HOST_IDENTITY, host: '127.0.0.1', port: 0, homeDir: home!, logLevel: 'silent',
+    });
+    base = `http://127.0.0.1:${server.port}`;
+    const restored = await getJson<ResearchSnapshot>(`/api/v1/sessions/${sessionId}/research`);
+    expect(restored.body.code).toBe(0);
+    expect(restored.body.data.currentAction?.status).toBe('completed');
+    expect(restored.body.data.currentRun).toEqual(concluded.currentRun);
+    const frames: Array<{ type: string; id?: string; payload?: {
+      accepted_subscriptions?: string[]; snapshot?: ResearchSnapshot;
+    } }> = [];
+    const token = server.authTokenService.getToken();
+    const connection = new WebSocket(`${base.replace('http:', 'ws:')}/api/v1/ws`, [`kimi-code.bearer.${token}`]);
+    connections.push(connection);
+    connection.on('message', (data) => frames.push(JSON.parse((data as Buffer).toString()) as (typeof frames)[number]));
+    await once(connection, 'open');
+    connection.send(JSON.stringify({ type: 'client_hello', id: 'run-recovery-subscription',
+      payload: { token, client_id: 'cli', subscriptions: [sessionId] } }));
+    await expect.poll(() => frames.find((frame) => frame.type === 'ack' && frame.id === 'run-recovery-subscription'))
+      .toMatchObject({ payload: { accepted_subscriptions: [sessionId] } });
+    const terminal = await send({
+      ...observation, expectedRevision: restored.body.data.revision,
+      stage: 'completed', schedulerState: 'completed', terminalState: 'completed',
+    });
+    expect(terminal.currentRun).toMatchObject({ actionId, jobId: 'fixture-job', terminalState: 'completed' });
+    expect(terminal.currentAction?.status).toBe('completed');
+    expect(terminal.latestProgress).toEqual(concluded.latestProgress);
+    await expect.poll(() => frames.find((frame) => frame.type === 'research.updated'
+      && frame.payload?.snapshot?.currentRun?.terminalState === 'completed'))
+      .toMatchObject({ payload: { snapshot: {
+        revision: terminal.revision, currentRun: terminal.currentRun, currentAction: terminal.currentAction,
+      } } });
+    const next = await send({
+      kind: 'begin_action', actionKind: 'data_analysis', purpose: 'Evaluate the observed result.',
+      stopCondition: 'One bounded analysis.',
+    });
+    expect(next.currentAction?.status).toBe('in_progress');
+    expect(next.currentAction?.actionId).not.toBe(actionId);
+  }, 30_000);
 
   it('POST runs a bounded action lifecycle through the high-level commands', async () => {
     await server!.close();

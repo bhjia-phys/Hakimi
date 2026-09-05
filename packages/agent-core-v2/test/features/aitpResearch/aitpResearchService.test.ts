@@ -71,6 +71,7 @@ import {
   researchUpdateQuestion,
   researchSetProgram,
   researchRequestHumanDecision,
+  researchObserveRun,
 } from '#/features/aitpResearch/aitpResearchOps';
 import { PlanModel, planModeEnter, planModeExit, planResolution, planRevision } from '#/features/plan/planOps';
 import { ResearchPlanModel } from '#/features/aitpResearch/researchPlanOps';
@@ -107,10 +108,11 @@ import type { AgentResearchService } from '#/features/aitpResearch/research/agen
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import {
   ICommitResearchCheckpointTool,
+  IObserveResearchRunTool,
   BeginResearchActionInputSchema,
   ResolveResearchDecisionInputSchema,
 } from '#/features/aitpResearch/tools/researchTools';
-import { CommitResearchCheckpointTool } from '#/features/aitpResearch/tools/researchToolsImpl';
+import { CommitResearchCheckpointTool, ObserveResearchRunTool } from '#/features/aitpResearch/tools/researchToolsImpl';
 import { AppendLogStore } from '#/persistence/backends/node-fs/appendLogStore';
 import { InMemoryStorageService } from '#/persistence/backends/memory/inMemoryStorageService';
 import { IAppendLogStore } from '#/persistence/interface/appendLogStore';
@@ -1194,6 +1196,225 @@ describe('typed research evidence packets', () => {
 });
 
 describe('research run observations', () => {
+  async function buildRunServices() {
+    const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const { AgentAitpModeService } = await import('#/features/aitpResearch/mode/agentAitpModeService');
+    const adapter = makeStubAdapter();
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.defineInstance(IWireService, wire);
+        reg.defineInstance(IAgentScopeContext, makeScopeCtx());
+        reg.defineInstance(IEventBus, eventBus);
+        reg.defineInstance(ISessionAitpAdapter, adapter);
+        reg.defineInstance(IAgentProfileService, makeProfileServiceStub());
+        reg.defineInstance(IAgentToolExecutorService, makeToolExecutorStub());
+        reg.defineInstance(IAgentGoalService, makeStubGoalService());
+        reg.define(IAgentAitpModeService, AgentAitpModeService);
+        reg.define(IAgentResearchService, AgentResearchService);
+      },
+    });
+    const mode = ix.get(IAgentAitpModeService);
+    const svc = ix.get(IAgentResearchService);
+    return { svc, mode, adapter };
+  }
+
+  async function buildObservedRun(status: 'completed' | 'abandoned') {
+    const { svc, mode, adapter } = await buildRunServices();
+    await mode.enter({ actor: 'user' });
+    expect(svc.getSnapshot().mode).toBe('ready');
+    const action = svc.planAndStartAction({
+      kind: 'simulation', purpose: 'Inspect one externally owned job.',
+      stopCondition: 'Record this inspection; do not submit a job.',
+    });
+    const observation = {
+      actionId: action.actionId, campaign: 'fixture-campaign', jobId: 'fixture-job',
+      sourcePin: 'source-a', binaryPin: 'binary-a', stage: 'running' as const,
+      schedulerState: 'running' as const, artifactRefs: ['run/initial-observation.txt'],
+    };
+    svc.observeRun({ ...observation, expectedRevision: svc.getSnapshot().revision });
+    svc.concludeAction({
+      actionId: action.actionId, status,
+      progress: {
+        headline: 'Inspection ended; the external job is still running',
+        motivation: 'The external job outlives this bounded inspection.',
+        workPerformed: 'Read the existing observation without submitting work.',
+        result: 'No terminal or scientific result is available.',
+        mainlineImpact: 'Keep the existing job identity for a later observation.',
+        nextAction: 'Observe the same job when fresh status is available.',
+      },
+      durability: { status: 'no_durable_delta', rationale: 'Re-read of an existing running observation.' },
+    });
+    return { svc, mode, adapter, observation };
+  }
+
+  it.each(['completed', 'abandoned'] as const)(
+    'recovers the same run after its action is %s without reopening or rewriting the conclusion', async (status) => {
+      const { svc, observation } = await buildObservedRun(status);
+      const before = svc.getSnapshot();
+      const run = svc.observeRun({
+        ...observation, expectedRevision: before.revision,
+        stage: 'completed', schedulerState: 'completed', terminalState: 'completed',
+        artifactRefs: ['run/terminal-observation.txt'],
+      });
+      expect(run).toMatchObject({
+        actionId: observation.actionId, jobId: observation.jobId, terminalState: 'completed',
+      });
+      const after = svc.getSnapshot();
+      expect(after.phase).toBe(before.phase);
+      expect(after.currentAction).toEqual({ ...before.currentAction, run });
+      expect(after.latestProgress).toEqual(before.latestProgress);
+      expect(after.recentStateChange).toEqual(before.recentStateChange);
+      expect(after.pendingCheckpoint).toEqual(before.pendingCheckpoint);
+      expect(svc.planAndStartAction({
+        kind: 'data_analysis', purpose: 'Evaluate the observed result.', stopCondition: 'One bounded evaluation.',
+      }).status).toBe('in_progress');
+    },
+  );
+
+  it.each([
+    { campaign: 'different-campaign' },
+    { jobId: 'different-job' },
+    { sourcePin: 'different-source' },
+    { binaryPin: 'different-binary' },
+    { actionId: 'different-action' },
+  ])('rejects a different retained identity in live validation and replay: %j', async (change) => {
+    const { svc, observation } = await buildObservedRun('completed');
+    const before = structuredClone(wire.getModel(ResearchModel).current);
+    const input = { ...observation, ...change, expectedRevision: svc.getSnapshot().revision };
+    expect(() => svc.observeRun(input)).toThrow();
+    const { expectedRevision: _, ...payload } = input;
+    wire.dispatch(researchObserveRun({ ...payload, lastObservedAt: Date.now() }));
+    expect(wire.getModel(ResearchModel).current).toEqual(before);
+  });
+
+  it('retains omitted source and binary pins when updating an existing closed-action run', async () => {
+    const { svc, observation } = await buildObservedRun('completed');
+    expect(svc.observeRun({
+      ...observation, expectedRevision: svc.getSnapshot().revision,
+      sourcePin: undefined, binaryPin: undefined,
+    })).toMatchObject({ sourcePin: observation.sourcePin, binaryPin: observation.binaryPin });
+    expect(svc.getSnapshot().currentAction?.status).toBe('completed');
+  });
+
+  it.each(['completed', 'failed', 'cancelled'] as const)(
+    'does not reopen or replace a retained %s terminal outcome', async (terminalState) => {
+      const { svc, observation } = await buildObservedRun('completed');
+      svc.observeRun({
+        ...observation, expectedRevision: svc.getSnapshot().revision,
+        stage: terminalState === 'completed' ? 'completed' : 'failed',
+        schedulerState: terminalState, terminalState,
+      });
+      const before = structuredClone(wire.getModel(ResearchModel).current);
+      expect(() => svc.observeRun({ ...observation, expectedRevision: svc.getSnapshot().revision })).toThrow('cannot be reopened');
+      expect(() => svc.observeRun({
+        ...observation, expectedRevision: svc.getSnapshot().revision,
+        schedulerState: terminalState === 'failed' ? 'completed' : 'failed',
+        terminalState: terminalState === 'failed' ? 'completed' : 'failed',
+      })).toThrow('different terminal outcome');
+      wire.dispatch(researchObserveRun({ ...observation, lastObservedAt: Date.now() }));
+      expect(wire.getModel(ResearchModel).current).toEqual(before);
+    },
+  );
+
+  it('rejects stale revisions, contradictory terminal evidence and missing or conflicting retained runs', async () => {
+    const { svc, observation } = await buildObservedRun('completed');
+    const before = structuredClone(wire.getModel(ResearchModel).current);
+    expect(() => svc.observeRun({ ...observation, expectedRevision: svc.getSnapshot().revision - 1 })).toThrow('revision is stale');
+    expect(() => svc.observeRun({
+      ...observation, expectedRevision: svc.getSnapshot().revision, terminalState: 'completed',
+    })).toThrow('must agree');
+    expect(wire.getModel(ResearchModel).current).toEqual(before);
+
+    const state = wire.getModel(ResearchModel).current;
+    Object.assign(state, { currentAction: { ...state.currentAction, run: { ...state.currentRun, jobId: 'conflicting-job' } } });
+    expect(() => svc.observeRun({ ...observation, expectedRevision: svc.getSnapshot().revision })).toThrow('disagree');
+    Object.assign(state, { currentRun: null, currentAction: { ...before.currentAction, run: undefined } });
+    expect(() => svc.observeRun({ ...observation, expectedRevision: svc.getSnapshot().revision })).toThrow('cannot introduce');
+  });
+
+  it.each([
+    { stage: 'completed' as const },
+    { stage: 'failed' as const },
+    { stage: 'completed' as const, schedulerState: 'failed' as const, terminalState: 'failed' as const },
+  ])('rejects a terminal stage without consistent retained-run evidence: %j', async (change) => {
+    const { svc, observation } = await buildObservedRun('completed');
+    const before = structuredClone(wire.getModel(ResearchModel).current);
+    const input = { ...observation, ...change, expectedRevision: svc.getSnapshot().revision };
+    expect(() => svc.observeRun(input)).toThrow('consistent explicit terminal evidence');
+    const { expectedRevision: _, ...payload } = input;
+    wire.dispatch(researchObserveRun({ ...payload, lastObservedAt: Date.now() }));
+    expect(wire.getModel(ResearchModel).current).toEqual(before);
+  });
+
+  it('keeps live-action run registration blocked while the loop is paused', async () => {
+    const { svc, mode } = await buildRunServices();
+    await mode.enter({ actor: 'user' });
+    const action = svc.planAndStartAction({
+      kind: 'simulation', purpose: 'Inspect a run.', stopCondition: 'No new job.',
+    });
+    wire.dispatch(aitpModeSetLoopStatus({ loopStatus: 'paused' }));
+    const before = structuredClone(wire.getModel(ResearchModel).current);
+    expect(() => svc.observeRun({
+      actionId: action.actionId, expectedRevision: svc.getSnapshot().revision,
+      campaign: 'fixture-campaign', jobId: 'fixture-job', stage: 'running',
+      schedulerState: 'running', artifactRefs: [],
+    })).toThrow();
+    expect(wire.getModel(ResearchModel).current).toEqual(before);
+  });
+
+  it('allows retained observations while paused without resolving a human gate or granting new work', async () => {
+    const { svc, mode, observation } = await buildObservedRun('abandoned');
+    wire.dispatch(researchRequestHumanDecision({
+      gateId: 'fixture-human-gate', kind: 'review', prompt: 'Review the scientific interpretation.', createdAt: Date.now(),
+    }));
+    wire.dispatch(aitpModeSetLoopStatus({ loopStatus: 'paused' }));
+    const before = svc.getSnapshot();
+    svc.observeRun({
+      ...observation, expectedRevision: before.revision,
+      schedulerState: 'failed', stage: 'failed', terminalState: 'failed',
+    });
+    const after = svc.getSnapshot();
+    expect(after.humanGate).toEqual(before.humanGate);
+    expect(after.phase).toBe(before.phase);
+    expect(after.latestProgress).toEqual(before.latestProgress);
+    expect(after.currentAction?.status).toBe('abandoned');
+    expect(() => svc.planAndStartAction({
+      kind: 'experiment', purpose: 'Not authorized while paused.', stopCondition: 'Do not execute.',
+    })).toThrow();
+    await mode.exit();
+    expect(() => svc.observeRun({
+      ...observation, expectedRevision: svc.getSnapshot().revision,
+    })).toThrow();
+  });
+
+  it('restores the full running/concluded journal and retains the subsequent terminal observation', async () => {
+    const records: WireRecord[] = [];
+    const log = recordingWireLog(records);
+    const originalContainer = disposables.add(new TestInstantiationService());
+    wire = registerTestAgentWire(originalContainer, testWireScope(SCOPE, 'run-original'), { log, eventBus });
+    const { svc, observation } = await buildObservedRun('completed');
+    const original = structuredClone(wire.getModel(ResearchModel).current);
+    await wire.flush();
+
+    const restoredContainer = disposables.add(new TestInstantiationService());
+    wire = registerTestAgentWire(restoredContainer, testWireScope(SCOPE, 'run-restored'), { log, eventBus });
+    await wire.restore();
+    expect(wire.getModel(ResearchModel).current).toEqual(original);
+    const restored = await buildRunServices();
+    restored.svc.observeRun({
+      ...observation, expectedRevision: restored.svc.getSnapshot().revision,
+      stage: 'completed', schedulerState: 'completed', terminalState: 'completed',
+    });
+    const terminal = structuredClone(wire.getModel(ResearchModel).current);
+    await wire.flush();
+    const terminalContainer = disposables.add(new TestInstantiationService());
+    wire = registerTestAgentWire(terminalContainer, testWireScope(SCOPE, 'run-terminal-restored'), { log, eventBus });
+    await wire.restore();
+    expect(wire.getModel(ResearchModel).current).toEqual(terminal);
+    expect(terminal.currentAction?.status).toBe('completed');
+    expect(terminal.latestProgress).toEqual(svc.getSnapshot().latestProgress);
+  });
+
   it('records a bounded HPC observation and derives a wait-next-step without polling', async () => {
     wire.dispatch(aitpModeEnter({ actor: 'user' }));
     const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
@@ -4721,6 +4942,53 @@ describe('goal completion guard and subagent veto', () => {
 
     expect(decision?.veto).toMatchObject({ isError: true });
     expect(decision?.veto?.output).toContain('no in-progress ResearchAction');
+  });
+
+  it('executes retained run observation through the executor without restoring closed-action work permissions', async () => {
+    const { svc, modeSvc, executor, registry } = await buildResearchSandboxWithProductionExecutor();
+    const action = svc.planAndStartAction({
+      kind: 'simulation', purpose: 'Inspect an external fixture job.',
+      stopCondition: 'One inspection.', allowedToolKinds: ['shell'],
+    });
+    svc.observeRun({
+      actionId: action.actionId, expectedRevision: svc.getSnapshot().revision,
+      campaign: 'fixture-campaign', jobId: 'fixture-job', stage: 'running', schedulerState: 'running',
+    });
+    svc.concludeAction({
+      actionId: action.actionId, status: 'completed',
+      progress: {
+        headline: 'Inspection ended', motivation: 'Inspect a long-lived job.',
+        workPerformed: 'Read one existing observation.', result: 'The job is still running.',
+        mainlineImpact: 'Retain its identity, not an execution permission.',
+      },
+      durability: { status: 'no_durable_delta', rationale: 'No new scientific evidence.' },
+    });
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.defineInstance(IAgentResearchService, svc);
+        reg.defineInstance(IAgentAitpModeService, modeSvc);
+        reg.define(IObserveResearchRunTool, ObserveResearchRunTool);
+      },
+    });
+    registry.register(ix.get(IObserveResearchRunTool));
+    const shell = vi.fn(async () => ({ output: 'Must not execute.' }));
+    registry.register({
+      name: 'Bash', description: 'Count executions.', parameters: { type: 'object' },
+      resolveExecution: () => ({ approvalRule: 'Bash', accesses: ToolAccesses.all(), execute: shell }),
+    });
+    const results = [];
+    for await (const result of executor.execute([
+      { type: 'function', id: 'retained-observation', name: 'ObserveResearchRun', arguments: JSON.stringify({
+        action_id: action.actionId, expected_revision: svc.getSnapshot().revision,
+        campaign: 'fixture-campaign', job_id: 'fixture-job', stage: 'completed',
+        scheduler_state: 'completed', terminal_state: 'completed', artifact_refs: [],
+      }) },
+      { type: 'function', id: 'closed-action-shell', name: 'Bash', arguments: '{}' },
+    ], { turnId: 1, signal: new AbortController().signal })) results.push(result.result);
+    expect(results.filter((result) => result.isError !== true)).toHaveLength(1);
+    expect(svc.getSnapshot().currentRun?.terminalState).toBe('completed');
+    expect(svc.getSnapshot().currentAction?.status).toBe('completed');
+    expect(shell).not.toHaveBeenCalled();
   });
 
   it('executes narrow recorded-knowledge inspection but prevents unowned web, workspace, and shell callbacks', async () => {

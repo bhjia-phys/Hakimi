@@ -836,6 +836,8 @@ C1–C5 的审查是必做项，但代码实现不是无条件必做项。只有
 
 当前已按用户要求重新创建覆盖本文全部范围的有限总 Goal。核心 objective 是“交付首个可用串行理论物理合作者，并用指定真实课题继续科研、观察输出、修复和验收”。G0 的开发交付证据保留，后续执行 G1–G7；细节可按真实证据调整，C1–C5 做逐项 trigger review。
 
+当前 Goal 的续行顺序与验收收敛方式见 [§19.24](#goal-execution-refinement)。该节更新执行安排，不重建 Goal、不清空已有证据，也不表示下列功能已全部验收。
+
 最终验收使用只读导入的 `/home/bhjia/physics/quantum_chaos/Power_Law_Heisenberg_Chain/kimi-debug-session_-20260904-182916.zip` 恢复 `yangian-power-law-heisenberg-chain` 课题。先核验该非 Git 工作区的 AITP Topic、现有证据、当前 Research Goal/Plan/Line/Question 和真实 debug 输出，再完成至少一个有科学意义且有明确判据的 bounded milestone。把其 fresh/cold restore、Board、warning、Action、AITP persistence、distillation 和 Note 输出加入回归；发现的 P0/P1 harness 缺陷必须修复、测试、推送、重装并重放，直到不再复现。昂贵或不可逆计算、科学 convention 歧义和 human decision 仍按总 Goal 的停止条件暂停相关里程碑，不自动扩大权限。
 
 ### 19.1 实施与验收台账
@@ -1180,3 +1182,45 @@ TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，�
 **模型内容误差保留：** Conclude 的一条 observations 称旧报告已采用修正后的边界，但旧 `primitive_audit.md` 仍含 “directly invalidates every J0/J1/J2” 的过强措辞；修正来自恢复提示及本轮评价，不是旧文件。主要 result/limitations 已采用“依赖该 primitive 的计算需逐项复核”的窄声明，但不能因此把该错误归因视为已验证事实。旧证据与本地结论均不被暗改，后续正式记录前须将原文、修正解释和未验证项分开；显式归属也不等于批准科学内容。此恢复成功不计作正常绑定记录或 Goal 自动推进通过。
 
 运行提示、完整模型输出、工具结果与退出回执保存在忽略目录 `.tmp/research-acceptance-20260905/heisenberg-local-conclusion-recovery-r8/`；clean install、snapshot 和保护清单在 `/tmp/hakimi-local-result-install.4JcVXK/`，均不打包入产品。下一唯一最小 Action：按优化后的 B 步逐项核对 G1–G7 的代码、测试与安装版行为证据，明确剩余正常主流程/跨 turn 验收，不重复已通过的原会话恢复。需要归属确认的正式科研仍保留该依赖；总 Goal active，未宣称全部完成。
+
+### 19.24 当前 Goal 的续行与验收优化 {#goal-execution-refinement}
+
+本节把既有总 Goal 收敛为可逐项验收的交付任务，不另起第二个 Goal，也不改变 G0–G7 的范围或 C1–C5 的独立需求条件。Goal 的 objective 仍是交付首个可用的串行理论物理合作者，并在指定 Heisenberg 课题完成一个有限、可复查的科学里程碑；不是完成全部开放物理问题，也不是把每个候选平台能力实现一遍。
+
+**续行依据。** 原 Goal 正文里的“当前修复尚未交付”等进度描述是设置时的快照；后续推进采用本文件的最新验收记录，不能因此重做 §19.23 已交付的切片。宿主当前只开放 Goal 创建、查询和完成/阻塞状态更新，不支持改写未完成 Goal 的 objective；因此保留 active Goal，通过它已经引用的本文细化计划，不把未完成 Goal 假标 complete 后重建，也不手改宿主存储。
+
+执行顺序保持 A–E，但每一步先看已有证据，不机械重复：
+
+1. **A：沿用已交付结果。** §19.23 的本地结论收尾及冷恢复不再重复；它仅证明恢复，不代替正常绑定记录或跨 turn Goal 推进。
+2. **B：收敛剩余工作。** 对 G1–G7 的原验收条目分别标明代码路径、定向测试、安装版模型行为和剩余缺口；保留失败与未测。功能已具备时不新增机制，证据缺失时安排最小验收，不先扩写更多规划。
+3. **C：验收正常科研。** 在明确确认的 Program/Line/Question 下，从真实未决问题出发，经过必要的讨论、检索或推导，选一个判别性检验，评价结果和反证，更新 Research Plan、必要 AITP Entry/Note 与 Board。验收提示只给科学问题、约束和成果，不逐条指定内部工具。
+4. **D：独立验收自动继续与停止。** 实际观察 Goal 跨 turn 选择下一步、等待外部工作、恢复、达到完成条件或请求必要人类判断；无 Goal 的自然科研同样要成立。重放状态或调用一次工具不能代替这一项。
+5. **E：按缺陷回到最小修复。** 合法科研无法继续、归属错误、结果丢失或误记、重复写入、提前完成等问题，先保存复现，再修复和复测受影响场景。只重新交付发生产品变化的切片；非关键体验建议另列，不无限延长本 Goal。
+
+这不是 A–E 必须走完才允许修复的流程：若 B 已证实一个会阻断 C/D 的缺陷，下一 Action 就处理该缺陷，之后回到尚未验收的条目。等待外部计算与“没有新证据却重复相同操作”必须分开；前者保持真实等待，后者先诊断或调整方法。一次只推进一个有明确结果的小切片，不因等待人类归属确认而重跑已有计算或替人确认。
+
+**完成条件。** 同时满足：G1–G7 各自的验收要求有可定位证据；C1–C5 有需求结论而不是强行实现；交付版本可以对应到源码 commit；正常科研、异常恢复和跨 turn continuation 分别验证；真实 Heisenberg 里程碑达到预先写明的判据并完成必要记录。支持、反证或符合预定诊断标准的未决结论均可作为科学结果，但 Action/Board 僵住、只写了记录或测试全绿均不算工作流完成。LibRPA 的工程执行与报告证据仍单独用于 G5，不由 Heisenberg 代替。
+
+**轻量与判断边界。** 科学问题、猜想、文献判断、检验设计和结论由合作者式的主 agent 负责，必要时与研究者讨论；工具及薄 operator 承担工程执行和审计细节。AITP 负责 canonical 证据与知识记录，蒸馏仍只走当前 `distilling-methods` 的条件性路径，无 trigger 就 no-op。Board 默认只保留课题位置、本轮问题/检验/结果、必要 attention 和唯一 next。恢复不增加每阶段扫描、强制 Note、第二套 Goal 或自动人类决定。
+
+**允许修改与验证。** 本次计划优化仅修改本文件，不修改产品运行时、科研项目或 AITP dirty changes。后续每个实现切片继续按总 Goal 在隔离 Hakimi worktree 列出精确文件 allowlist，检查六端一致性；AITP surface 需要改变时另行停止设计评审，不在本次顺带扩展。文档运行 `NODE_OPTIONS=--max-old-space-size=3072 pnpm --dir docs run build` 与 `git diff --check`；代码切片使用相应包的定向 `vitest run <files> --maxWorkers=1 --no-file-parallelism`、typecheck 及受影响的 contract/fixtures，再验证安装版行为。构建和大型测试串行；每个真实实验预先写明资源、时限与停止边界，mock、故障重放和真实计算分开报告。
+
+**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。下一唯一最小 Action 是 B 的逐项证据对照，输出一份剩余验收清单及最先需要处理的具体缺口；不新建 Goal，不重复 A，不把重新整理计划本身当作科研验收。
+
+### 19.25 已关闭 Action 的外部作业观察恢复 {#retained-run-recovery}
+
+B 的等待/恢复对照发现一个可以由现有公开 SDK 确定性复现的死锁：登记 running 作业后结束本次 Action，后续终态观察被拒绝，而下一 Action 又被尚未终结的作业阻止。恢复会话后仍然如此。这是控制流程的 fixture 诊断，没有提交真实作业，也不是新的 Heisenberg 科学验收；基线来自安装所用的 `06b8524102df`。原始输出保存在 `/tmp/hakimi-research-evidence-audit.KqoQq9/run-recovery.json`。
+
+本切片的 objective 是让已经获得的同一作业观察能够补录，保留原 Action 结论并解除“终态无法登记”的死锁。完成判据是正常及 paused 恢复、身份不匹配拒绝、终态不可重开、完整 journal 恢复、公开 REST 重启与 WS 投影通过，并在交付安装版复查。它不实现自动轮询、scheduler、多 foreground Action，或等待期间独立科研；这些仍属于 G1/G2 的后续验收，不能由此次修复冒充通过。
+
+实现沿用现有边界：Agent-scope `IAgentResearchService.observeRun` 与 `ResearchModel` 的 `research.observe_run` reducer 共用 scope-agnostic `runObservation.ts` 判断，不新增 service、wire payload 或公开 schema。仅当前 completed/abandoned Action 的既有 run 可走恢复路径；Action、campaign、job、已有 source/binary identity 必须一致，省略 pins 时保留原值。两份 run 投影冲突、stale revision、终态与 scheduler/stage 矛盾、把旧终态改回运行或另一结果均拒绝。正常 executing Action 的原有要求保留。
+
+恢复只更新观察，不改变原 progress、Action status、phase、human gate 或 AITP checkpoint。paused 时可补录该元数据，但不恢复执行权限；mode exit 后仍拒绝。实际 executor 回归确认：同 batch 的合法 `ObserveResearchRun` 可以执行，但没有 live Action 的 `Bash` 执行体调用次数为零。已有普通工具授权、安全边界与人类决定不由观察替代。
+
+精确修改范围为 `packages/agent-core-v2/src/features/aitpResearch/` 内的 `research/runObservation.ts`、`research/agentResearchService.ts`、`aitpResearchOps.ts`、`tools/researchToolsImpl.ts`，以及现有 core Research 与 kap-server Research 测试文件；同步两份 README、双语 Research guide、Hakimi `TRACKING.md`/compatibility matrix、本节及一个 CLI patch changeset。没有修改科研目录、AITP runtime/CLI/contract/Skill 或对方 20 条 dirty paths，也没有因本 fixture 生成知识卡。
+
+验证中保留失败而非只记最终绿色：两个 ready-mode DI 回归先在旧实现的 action-status 检查处失败，随后修复；最终 core Research、Goal、wire/state manifest 四文件共 719 项通过，core/kap-server typecheck 与 core `lint:imports` 通过。REST 原默认 5 秒测试/10 秒清理时限曾出现 9 项失败，包括超时后清理影响后续用例；安装基线的同一既有用例也复现超时。显式使用 `--testTimeout=30000 --hookTimeout=30000` 后，基线单项通过（测试区间 4.95 秒），修改版全文件 32 项通过（测试区间 66.96 秒）；没有更改既有断言或全局 timeout，也不据此声称所有服务器关闭耗时问题已解决。新真实服务器重启用例单独设置 30 秒上限。
+
+补充验证：protocol 45 项、TUI 三文件 160 项、Web 两文件 34 项、SDK Research 定向 18 项通过（其余 43 项未运行），klient 主包与 examples typecheck 通过。AITP 官方 adapter-contract/atomic-record-save 21 项在仓库 `.venv` 通过；通用 Python 未安装 pytest 的首次尝试不是测试结果。定向单线程 oxlint 零 errors、88 warnings，安装基线相同文件亦为 88 warnings 且按规则计数一致；新 helper 的一处非严格比较已修正。文档构建通过，保留现有 ES2024/大 chunk 提示；521 个 Web 资产可重现且无需修改，`git diff --check` 通过。新增 changeset 仅 CLI patch；累计 changeset status 中的 CLI minor/SDK major 来自既有授权条目，不在此改版或发布。
+
+当前状态：代码、定向运行时与文档验证完成，交付安装检查尚未完成，总 Goal 保持 active。下一唯一最小 Action 是完成本切片的 scoped 交付安装与公开调用复测，再回到 B 的其余 G1–G7 证据矩阵。正常绑定科研、跨 turn Goal continuation 和人类归属确认依赖不变。

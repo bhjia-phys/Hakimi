@@ -116,6 +116,7 @@ import {
   AitpEntryKindSchema,
   ResearchCommitProvenanceSchema,
 } from './types';
+import { admitRunObservation } from './research/runObservation';
 import {
   PLAN_ACTION_PHASES,
   RESEARCH_ACTION_RECOVERY_PREFIX,
@@ -1394,15 +1395,15 @@ export const researchObserveRun = ResearchModel.defineOp('research.observe_run',
     artifactRefs: StringListSchema,
   }).strict(),
   apply: (s, p) => {
-    if (s.current.phase !== 'action_executing') return s;
-    if (s.current.currentAction?.actionId !== p.actionId) return s;
-    if (s.current.currentAction.status !== 'in_progress') return s;
+    const admission = admitRunObservation(s.current, p);
+    if (admission.kind === 'denied') return s;
+    const retained = admission.kind === 'retained' ? admission.run : undefined;
     const currentRun: ResearchRunStateRecord = {
       actionId: p.actionId,
       campaign: p.campaign,
       jobId: p.jobId,
-      sourcePin: p.sourcePin,
-      binaryPin: p.binaryPin,
+      sourcePin: p.sourcePin ?? retained?.sourcePin,
+      binaryPin: p.binaryPin ?? retained?.binaryPin,
       stage: p.stage,
       schedulerState: p.schedulerState,
       lastObservedAt: p.lastObservedAt,

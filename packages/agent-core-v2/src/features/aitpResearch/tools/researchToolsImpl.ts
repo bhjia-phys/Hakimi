@@ -1068,7 +1068,7 @@ export class ReviewResearchEvidenceTool implements IReviewResearchEvidenceTool {
 export class ObserveResearchRunTool implements IObserveResearchRunTool {
   declare readonly _serviceBrand: undefined;
   readonly name = 'ObserveResearchRun' as const;
-  readonly description = 'Record a read-only observation of an external HPC or scheduler run. This does not submit, poll, or claim scientific success.';
+  readonly description = 'Record an already obtained observation of an external HPC or scheduler run. An executing action can register a run; a completed or abandoned action can still observe its same retained job, including its terminal state, without reopening the action or changing its conclusion. Use a fresh Research revision and preserve the campaign/job/source/binary identity. This does not submit, poll, authorize work, or claim scientific success.';
   readonly parameters: Record<string, unknown> = toInputJsonSchema(ObserveResearchRunInputSchema);
 
   constructor(
