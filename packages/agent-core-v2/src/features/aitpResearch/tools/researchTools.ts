@@ -276,7 +276,7 @@ export const PlanResearchActionInputSchema = z
       ),
     retry_of_entry_id: z.string().optional(),
     planning_level: z.enum(['simple', 'planned']).optional().describe(
-      'Simple actions use a minimal bounded plan. Planned actions require a finalized local Action Plan; also bind the current Research Plan and milestone when a non-terminal Research Plan exists. A Goal is not required for local exploration.',
+      'Simple actions use a minimal bounded plan and may explicitly bind the current active Research Plan milestone without a local Action Plan. Planned actions require a finalized local Action Plan; also bind the current Research Plan and milestone when a non-terminal Research Plan exists. A Goal is not required for local exploration.',
     ),
     research_plan_id: z.string().min(1).max(200).optional(),
     research_plan_revision: z.number().int().positive().optional(),
@@ -289,13 +289,18 @@ export const PlanResearchActionInputSchema = z
   })
   .strict()
   .superRefine((input, ctx) => {
-    if (input.planning_level !== 'planned') return;
     for (const key of ['action_plan_id', 'action_plan_revision'] as const) {
-      if (input[key] === undefined) {
+      if (input.planning_level === 'planned' && input[key] === undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: [key],
           message: `${key} is required for a planned action.`,
+        });
+      } else if (input.planning_level !== 'planned' && input[key] !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: 'A simple Research action cannot carry a reviewed local Action Plan binding.',
         });
       }
     }

@@ -1,5 +1,13 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**Hakimi-only simple milestone association (2026-09-05):** a simple Action may
+explicitly bind a fresh active Research Plan/milestone while retaining its minimal
+local binding. The existing optional parent fields and two independent snapshot
+bindings are unchanged across REST/WS/SDK/klient/TUI/Web. Reviewed local-plan,
+freshness, execution and human-decision rules stay in force. No AITP CLI/schema/
+contract/Skill or counterpart dirty-file change. Source and installed acceptance
+are distinguished in collaborator program §19.33; real Goal continuation remains open.
+
 **Hakimi-only print shutdown (2026-09-05):** the default CLI pauses active Goals,
 cancels outstanding turns and flushes its own journal before disposal. No AITP
 CLI/schema/contract/Skill, canonical write, human decision or Research Action

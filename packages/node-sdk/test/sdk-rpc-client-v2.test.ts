@@ -1973,6 +1973,25 @@ describe('SDKRpcClientV2 AITP Research Mode', () => {
         actionPlanId: 'local-plan',
         actionPlanRevision: 1,
       }));
+      await session.commandResearch({
+        kind: 'begin_action',
+        actionKind: 'derivation',
+        purpose: 'Check one limiting case for the active milestone.',
+        stopCondition: 'Stop after the comparison.',
+        planningLevel: 'simple',
+        researchPlanId: 'research-plan-1',
+        researchPlanRevision: 2,
+        milestoneId: 'm1',
+      });
+      expect(planAndStart).toHaveBeenLastCalledWith(expect.objectContaining({
+        kind: 'derivation',
+        planningLevel: 'simple',
+        researchPlanId: 'research-plan-1',
+        researchPlanRevision: 2,
+        milestoneId: 'm1',
+        actionPlanId: undefined,
+        actionPlanRevision: undefined,
+      }));
     } finally {
       await session.close();
       await client.close();

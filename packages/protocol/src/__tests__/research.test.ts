@@ -262,7 +262,7 @@ describe('researchStatusSnapshotSchema', () => {
     })).toThrow();
   });
 
-  it('accepts Research Plan v2, Action Plan alias, and action bindings after a JSON round-trip', () => {
+  it.each(['minimal', 'reviewed_plan'] as const)('accepts Research Plan v2 and %s action bindings after a JSON round-trip', (bindingKind) => {
     const actionPlan = {
       planId: 'action-plan-1',
       researchRevision: 8,
@@ -323,20 +323,21 @@ describe('researchStatusSnapshotSchema', () => {
       researchPlanBinding: { planId: 'research-plan-1', planRevision: 2, milestoneId: 'm1' },
       actionPlanBinding: {
         schema: 'hakimi/action-plan-binding-0.1' as const,
-        kind: 'reviewed_plan' as const,
-        planId: 'action-plan-1',
+        kind: bindingKind,
+        planId: bindingKind === 'minimal' ? 'minimal:action-1' : 'action-plan-1',
         planRevision: 1,
       },
     };
     const parsed = researchStatusSnapshotSchema.parse(JSON.parse(JSON.stringify({
       ...validSnapshot,
-      researchPlan: actionPlan,
-      actionPlan,
+      researchPlan: bindingKind === 'minimal' ? undefined : actionPlan,
+      actionPlan: bindingKind === 'minimal' ? undefined : actionPlan,
       researchPlanV2,
       currentAction,
     })));
     expect(parsed.researchPlanV2).toEqual(researchPlanV2);
-    expect(parsed.actionPlan).toEqual(actionPlan);
+    expect(parsed.actionPlan).toEqual(bindingKind === 'minimal' ? undefined : actionPlan);
+    expect(parsed.currentAction?.actionPlanBinding).toEqual(currentAction.actionPlanBinding);
     expect(parsed.currentAction?.researchPlanBinding?.planRevision).toBe(2);
   });
 
@@ -1113,6 +1114,9 @@ describe('researchCommandRequestSchema', () => {
     };
     expect(researchCommandRequestSchema.parse({ command: plannedAction }).command)
       .toMatchObject(plannedAction);
+    const { actionPlanId: _id, actionPlanRevision: _revision, ...parentBoundAction } = plannedAction;
+    const simpleAction = { ...parentBoundAction, planningLevel: 'simple' as const };
+    expect(researchCommandRequestSchema.parse({ command: simpleAction }).command).toEqual(simpleAction);
   });
 
   it('accepts only revisioned collaborative or dreaming planning-policy commands', () => {

@@ -1,5 +1,11 @@
 # AITP integration handoff
 
+Simple Actions now accept an explicit current Research Plan/milestone binding
+without requiring a reviewed local Action Plan. The existing parent triple must
+be complete and fresh; omission does not infer ownership. This is a Hakimi-only
+fix using existing public fields, not a new planner or AITP contract. Verification
+and delivery status are in collaborator program [§19.33](theory-physics-collaborator-program.md#simple-action-milestone).
+
 The Goal/Plan acceptance in collaborator program §19.31 saved two valid
 conditional derivations but timed out before final Goal closure. Native print
 shutdown now uses the existing Goal pause, prompt cancellation, loop settlement
@@ -190,7 +196,8 @@ AITP adapter 前应阅读两侧的交接文档；AITP stage/CLI/schema 状态变
   作为 additive `actionPlan` alias 显式保留。G2 的后续修正允许 reviewed local
   Action Plan 独立执行，不强制创建 Goal 或完整 Research Plan；已有 draft/active
   Research Plan 时仍须绑定 active milestone，且 parent ID/revision/milestone
-  必须全部提供。simple 小型可逆 action 使用 immutable minimal-plan binding；任一 binding stale 时
+  必须全部提供。simple 小型可逆 action 使用 immutable minimal-plan binding，
+  可显式关联当前 active milestone，不要求 reviewed local Action Plan；任一 binding stale 时
   start/conclude fail closed。Plan lifecycle 不会关闭 Question、写 AITP 或完成
   Goal；REST、WebSocket、SDK、klient、TUI 与 Web 使用同一版本化投影。
   S4 又增加 checkpointed、Hakimi-local 的 `collaborative | dreaming`

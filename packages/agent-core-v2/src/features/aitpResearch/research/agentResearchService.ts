@@ -2542,34 +2542,14 @@ export class AgentResearchService extends Service implements IAgentResearchServi
     const planningLevel = input.planningLevel ?? 'simple';
     if (planningLevel === 'simple') {
       if (
-        input.researchPlanId !== undefined ||
-        input.researchPlanRevision !== undefined ||
-        input.milestoneId !== undefined ||
         input.actionPlanId !== undefined ||
         input.actionPlanRevision !== undefined
       ) {
         throw new AitpResearchError(
           AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
-          'A simple Research action cannot carry reviewed-plan bindings.',
+          'A simple Research action cannot carry a reviewed local Action Plan binding.',
         );
       }
-      return {
-        actionPlanBinding: {
-          schema: 'hakimi/action-plan-binding-0.1',
-          kind: 'minimal',
-          planId: `minimal:${actionId}`,
-          planRevision: 1,
-        },
-      };
-    }
-    if (
-      input.actionPlanId === undefined ||
-      input.actionPlanRevision === undefined
-    ) {
-      throw new AitpResearchError(
-        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
-        'A planned Research action requires a reviewed Action Plan ID and revision.',
-      );
     }
     const parentProvided = input.researchPlanId !== undefined ||
       input.researchPlanRevision !== undefined || input.milestoneId !== undefined;
@@ -2599,10 +2579,27 @@ export class AgentResearchService extends Service implements IAgentResearchServi
         planRevision: researchPlan.revision,
         milestoneId: researchPlan.currentMilestoneId,
       };
-    } else if (currentParent !== null && currentParent.status !== 'completed' && currentParent.status !== 'discarded') {
+    } else if (planningLevel === 'planned' && currentParent !== null && currentParent.status !== 'completed' && currentParent.status !== 'discarded') {
       throw new AitpResearchError(
         AitpResearchErrors.codes.RESEARCH_REVISION_STALE,
         'The current Research Plan must be active and explicitly bound to its current milestone before a planned action can begin.',
+      );
+    }
+    if (planningLevel === 'simple') {
+      return {
+        researchPlanBinding,
+        actionPlanBinding: {
+          schema: 'hakimi/action-plan-binding-0.1',
+          kind: 'minimal',
+          planId: `minimal:${actionId}`,
+          planRevision: 1,
+        },
+      };
+    }
+    if (input.actionPlanId === undefined || input.actionPlanRevision === undefined) {
+      throw new AitpResearchError(
+        AitpResearchErrors.codes.RESEARCH_ACTION_STATUS_INVALID,
+        'A planned Research action requires a reviewed Action Plan ID and revision.',
       );
     }
     const actionPlan = this.getResearchPlan();

@@ -1,5 +1,11 @@
 # AITP 状态跟踪与交接清单
 
+2026-09-05 simple Action/milestone 关联：小检验现在可以显式关联 fresh active
+总计划里程碑，不要求额外 reviewed local Action Plan；不自动绑定，不新增字段。
+现有归属、revision、工具权限、人类决定、undo/replay 边界保留。源码回归与
+交付安装分开记录于合作者规划 §19.33，不能据软件测试关闭 G2/G7 或真实跨 turn
+验收。AITP 0.9.0/contract-0.2 与对方 dirty handoff 均不变。
+
 2026-09-05 print 退出持久化（已交付安装）：`49f51fbdc` 已推送到开发分支，
 从 clean commit 构建安装，入口、521 个 Web 文件、provenance 和真实 PTY 通过。
 三个独立 CLI 进程在 SIGINT/TERM/HUP 退出前保存 paused Goal 与 cancelled turn，

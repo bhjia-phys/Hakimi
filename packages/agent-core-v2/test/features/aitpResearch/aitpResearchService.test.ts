@@ -76,6 +76,7 @@ import {
 import { PlanModel, planModeEnter, planModeExit, planResolution, planRevision } from '#/features/plan/planOps';
 import { ResearchPlanModel } from '#/features/aitpResearch/researchPlanOps';
 import { researchPutPlanV2 } from '#/features/aitpResearch/researchPlanV2Ops';
+import { ResearchPlanV2Schema } from '#/features/research/types';
 import { researchConfirmWorkstreamBinding } from '#/features/aitpResearch/researchWorkstreamBindingOps';
 import { AitpResearchError, AitpResearchErrors } from '#/features/aitpResearch/errors';
 import {
@@ -13870,12 +13871,34 @@ describe('ResearchPlan bridge', () => {
       observedRevision: 1,
     }));
     const { AgentResearchService } = await import('#/features/aitpResearch/research/agentResearchService');
+    const { IAgentPermissionModeService } = await import('#/agent/permissionMode/permissionMode');
     const plan = planService();
-    const service = new AgentResearchService(
-      wire, makeScopeCtx(), eventBus, makeStubModeSvc({ isActive: true }), makeStubAdapter(),
-      makeToolExecutorStub(), makeStubGoalService(makeGoalSnapshot('active', 3)),
-      undefined, undefined, undefined, plan,
-    );
+    const executor = stubToolExecutorEvents();
+    const ix = createServices(disposables, {
+      strict: true,
+      additionalServices: (reg) => {
+        reg.defineInstance(IWireService, wire);
+        reg.defineInstance(IAgentScopeContext, makeScopeCtx());
+        reg.defineInstance(IEventBus, eventBus);
+        reg.defineInstance(IAgentAitpModeService, makeStubModeSvc({ isActive: true }));
+        reg.defineInstance(ISessionAitpAdapter, makeStubAdapter());
+        reg.defineInstance(IAgentToolExecutorService, executor.executor);
+        reg.defineInstance(IAgentGoalService, makeStubGoalService(makeGoalSnapshot('active', 3)));
+        reg.definePartialInstance(ISessionAitpLifecycleCoordinator, {
+          onDidUpdate: () => ({ dispose: () => {} }),
+          snapshot: () => undefined,
+        });
+        reg.definePartialInstance(IDurableCommitService, {});
+        reg.defineInstance(IAitpExternalFactService, createExternalFactFacade(wire));
+        reg.defineInstance(IAgentPlanService, plan);
+        reg.defineInstance(IAgentPermissionModeService, stubPermissionModeService(() => 'auto'));
+        reg.definePartialInstance(IResearchTurnAdmission, {
+          leaseForTurn: (turnId) => turnId === 1 ? 'interactive_research' : 'none',
+        });
+        reg.define(IAgentResearchService, AgentResearchService);
+      },
+    });
+    const service = ix.get(IAgentResearchService);
     service.createLine({ slug: 'main', title: 'Main' });
     const question = service.createQuestion({ lineSlug: 'main', wording: 'Q1' });
     service.setFocus(question.id);
@@ -13913,8 +13936,220 @@ describe('ResearchPlan bridge', () => {
       planId: draft.planId,
       expectedRevision: draft.revision,
     });
-    return { service, plan, question, active };
+    const input = {
+      questionId: question.id,
+      lineSlug: 'main',
+      kind: 'derivation' as const,
+      purpose: 'Check one limiting-case equality for the current milestone.',
+      expectedEvidence: ['One checked equality'],
+      stopCondition: 'Stop after the limiting-case comparison.',
+      planningLevel: 'simple' as const,
+      researchPlanId: active.planId,
+      researchPlanRevision: active.revision,
+      milestoneId: active.currentMilestoneId,
+      allowedToolKinds: ['workspace_read'],
+    };
+    return { service, plan, question, active, input, executor };
   }
+
+  it.each([undefined, 'simple'] as const)('binds a simple action to a Research milestone without a local Plan (level=%s)', async (planningLevel) => {
+    const { service, active, input, executor } = await setupResearchPlanV2();
+    const action = service.planAndStartAction({ ...input, planningLevel });
+    expect(action).toMatchObject({
+      status: 'in_progress',
+      researchPlanBinding: { planId: active.planId, planRevision: active.revision, milestoneId: 'm1' },
+      actionPlanBinding: { kind: 'minimal', planRevision: 1 },
+    });
+    expect(service.getResearchPlan()).toBeNull();
+    expect(wire.getModel(PlanModel).current.active).toBe(false);
+    const read = await executor.fireBeforeExecute(makeToolHookContext('Read', { path: 'derivation.md' }));
+    expect(read?.veto).toBeUndefined();
+    const denied = await executor.fireBeforeExecute(makeToolHookContext('WebSearch', { query: 'new work' }));
+    expect(denied?.veto?.output).toContain('does not grant capability web_search');
+    expect(() => service.completeResearchPlanV2({ planId: active.planId, expectedRevision: active.revision }))
+      .toThrow('cannot change while action');
+    service.concludeAction({
+      actionId: action.actionId, status: 'completed',
+      progress: {
+        headline: 'The limiting case reproduces the existing equality.',
+        motivation: 'Check the convention before advancing the milestone.',
+        workPerformed: 'Compared the existing equivalent expressions.',
+        result: 'No new claim beyond the recorded limiting case.',
+        mainlineImpact: 'The current convention remains consistent with this check.',
+      },
+      durability: { status: 'no_durable_delta', rationale: 'Only reproduces existing evidence.' },
+    });
+    expect(service.getSnapshot().currentAction).toMatchObject({ status: 'completed', researchPlanBinding: action.researchPlanBinding });
+    expect(service.getPendingCheckpoint()).toBeNull();
+    expect(service.getResearchPlanV2()?.status).toBe('active');
+  });
+
+  it.each(['researchPlanId', 'researchPlanRevision', 'milestoneId'] as const)(
+    'rejects a simple action missing parent field %s without changing state', async (field) => {
+      const { service, input } = await setupResearchPlanV2();
+      const before = service.getSnapshot();
+      expect(() => service.planAndStartAction({ ...input, [field]: undefined })).toThrow('together');
+      expect(service.getSnapshot()).toEqual(before);
+    },
+  );
+
+  it('retains a simple milestone result without inferring AITP ownership or completing its parent', async () => {
+    const { service, active, input } = await setupResearchPlanV2();
+    const action = service.planAndStartAction(input);
+    const conclusionInput: ConcludeResearchActionInput = {
+      actionId: action.actionId, status: 'completed',
+      progress: {
+        headline: 'The limiting case refutes the candidate.', motivation: 'Discriminate between candidate explanations.',
+        workPerformed: 'Evaluated the declared limiting case.', result: 'A nonzero residual contradicts the candidate.',
+        mainlineImpact: 'Revise the candidate before the next milestone.',
+      },
+      durability: {
+        status: 'durable_delta', entryKind: 'failure', authority: 'agent', provenance: 'agent_verification',
+        rationale: 'A new counterexample changes the candidate assessment.',
+      },
+    };
+    const conclusion = service.concludeAction(conclusionInput);
+    expect(conclusion.localConclusion?.action.researchPlanBinding).toEqual(action.researchPlanBinding);
+    expect(conclusion.localConclusion?.candidate.entryKind).toBe('failure');
+    expect(service.getPendingCheckpoint()).toBeNull();
+    expect(service.getResearchPlanV2()).toEqual(active);
+    expect(service.getSnapshot().researchGoal?.status).toBe('active');
+    const beforeRetry = service.getSnapshot();
+    expect(service.concludeAction(conclusionInput)).toEqual(conclusion);
+    expect(service.getSnapshot()).toEqual(beforeRetry);
+  });
+
+  it.each(['actionPlanId', 'actionPlanRevision'] as const)(
+    'rejects simple action local-plan field %s without changing state', async (field) => {
+      const { service, input } = await setupResearchPlanV2();
+      const before = service.getSnapshot();
+      expect(() => service.planAndStartAction({ ...input, [field]: field === 'actionPlanId' ? 'local-plan' : 1 }))
+        .toThrow('reviewed local Action Plan');
+      expect(service.getSnapshot()).toEqual(before);
+    },
+  );
+
+  it.each(['researchPlanId', 'researchPlanRevision', 'milestoneId'] as const)(
+    'rejects a simple action with mismatched parent field %s', async (field) => {
+      const { service, input } = await setupResearchPlanV2();
+      const before = service.getSnapshot();
+      expect(() => service.planAndStartAction({ ...input, [field]: field === 'researchPlanRevision' ? 99 : 'other' }))
+        .toThrow();
+      expect(service.getSnapshot()).toEqual(before);
+    },
+  );
+
+  it.each(['draft', 'completed', 'discarded'] as const)('rejects a simple action bound to a %s Research Plan', async (status) => {
+    const { service, active, input } = await setupResearchPlanV2();
+    wire.dispatch(researchPutPlanV2(ResearchPlanV2Schema.parse({ ...active, status, revision: active.revision + 1 })));
+    const before = service.getSnapshot();
+    expect(() => service.planAndStartAction({ ...input, researchPlanRevision: active.revision + 1 }))
+      .toThrow('not active');
+    expect(service.getSnapshot()).toEqual(before);
+  });
+
+  it('does not implicitly bind a simple action to an existing Research Plan', async () => {
+    const { service, input } = await setupResearchPlanV2();
+    const action = service.planAndStartAction({
+      ...input, researchPlanId: undefined, researchPlanRevision: undefined, milestoneId: undefined,
+    });
+    expect(action.researchPlanBinding).toBeUndefined();
+    expect(action.actionPlanBinding?.kind).toBe('minimal');
+  });
+
+  it.each(['plan', 'program', 'question', 'line', 'gate'] as const)(
+    'revokes a milestone-bound simple action after %s changes', async (drift) => {
+      const { service, active, input, question, executor } = await setupResearchPlanV2();
+      const action = service.planAndStartAction(input);
+      if (drift === 'plan') wire.dispatch(researchPutPlanV2(ResearchPlanV2Schema.parse({ ...active, revision: active.revision + 1 })));
+      if (drift === 'program') wire.dispatch(researchSetProgram({
+        topicId: 'topic-1', title: 'Topic', goalText: 'A different research goal',
+        goalSource: 'enter', establishedAt: 1, observedRevision: 2,
+      }));
+      if (drift === 'question') service.updateQuestion({ questionId: question.id, assessment: 'A revised scientific assessment.' });
+      if (drift === 'line') service.updateLine({ slug: 'main', objective: 'A different scientific question.' });
+      if (drift === 'gate') service.requestHumanDecision({ kind: 'decision', actionId: action.actionId, prompt: 'Confirm the changed scientific convention.' });
+      const before = service.getSnapshot();
+      const read = await executor.fireBeforeExecute(makeToolHookContext('Read', { path: 'derivation.md' }));
+      expect(read?.veto).toBeDefined();
+      expect(() => service.concludeAction({
+        actionId: action.actionId, status: 'completed',
+        progress: {
+          headline: 'A proposed result', motivation: 'Check the limit', workPerformed: 'Compared expressions',
+          result: 'This conclusion must not be accepted with changed context.', mainlineImpact: 'Reassess scope first.',
+        },
+        durability: {
+          status: 'durable_delta', entryKind: 'result', authority: 'agent',
+          provenance: 'agent_verification', rationale: 'A stale action cannot establish current evidence.',
+        },
+      })).toThrow();
+      expect(service.getSnapshot()).toEqual(before);
+    },
+  );
+
+  it.each(['question', 'line'] as const)('allows explicit no-delta abandonment after %s changes without creating evidence', async (drift) => {
+    const { service, input, question } = await setupResearchPlanV2();
+    const action = service.planAndStartAction(input);
+    if (drift === 'question') service.updateQuestion({ questionId: question.id, assessment: 'A revised scientific assessment.' });
+    if (drift === 'line') service.updateLine({ slug: 'main', objective: 'A revised scientific objective.' });
+    service.concludeAction({
+      actionId: action.actionId, status: 'abandoned',
+      progress: {
+        headline: 'The old limiting-case check was abandoned.', motivation: 'The research context changed.',
+        workPerformed: 'Stopped the old check without accepting a result.', result: 'No new scientific evidence.',
+        mainlineImpact: 'Plan a new check against the current context.',
+      },
+      durability: { status: 'no_durable_delta', rationale: 'Explicitly abandons the old check without a scientific claim.' },
+    });
+    expect(service.getSnapshot().currentAction?.status).toBe('abandoned');
+    expect(service.getPendingCheckpoint()).toBeNull();
+    expect(service.getSnapshot().localConclusion).toBeUndefined();
+  });
+
+  it('revalidates a simple action parent revision between plan and start', async () => {
+    const { service, active, input } = await setupResearchPlanV2();
+    const action = service.planAction(input);
+    wire.dispatch(researchPutPlanV2(ResearchPlanV2Schema.parse({ ...active, revision: active.revision + 1 })));
+    expect(() => { service.startAction(action.actionId); }).toThrow('stale');
+    expect(service.getSnapshot().currentAction?.status).toBe('planned');
+  });
+
+  it('replays and undoes a simple milestone binding without inventing a local Plan', async () => {
+    const records: WireRecord[] = [];
+    const log = recordingWireLog(records);
+    const recordingIx = disposables.add(new TestInstantiationService());
+    wire = registerTestAgentWire(recordingIx, testWireScope(SCOPE, 'simple-milestone'), { log, eventBus });
+    const { service, active, input } = await setupResearchPlanV2();
+    wire.dispatch(contextAppendMessage({ message: { role: 'user', content: [], toolCalls: [], origin: { kind: 'user' } } }));
+    const action = service.planAndStartAction(input);
+    await wire.flush();
+    const replayIx = disposables.add(new TestInstantiationService());
+    const restored = registerTestAgentWire(replayIx, testWireScope(SCOPE, 'simple-milestone'), { log, eventBus: new EventBusService() });
+    await restored.restore();
+    expect(restored.getModel(ResearchModel).current.currentAction).toMatchObject({
+      actionId: action.actionId, status: 'in_progress', researchPlanBinding: action.researchPlanBinding,
+      actionPlanBinding: action.actionPlanBinding,
+    });
+    expect(restored.getModel(ResearchPlanModel).current).toBeNull();
+    wire.dispatch(contextUndo({ count: 1 }));
+    expect(service.getSnapshot().currentAction).toBeUndefined();
+    expect(service.getResearchPlanV2()).toEqual(active);
+  });
+
+  it.each([undefined, 'simple'] as const)('validates optional simple milestone bindings at the model boundary (level=%s)', (planningLevel) => {
+    const input = {
+      kind: 'derivation', purpose: 'Check one limiting-case equality.', expected_evidence: ['One checked equality'],
+      stop_condition: 'Stop after the comparison.', planning_level: planningLevel,
+      research_plan_id: 'parent', research_plan_revision: 2, milestone_id: 'm1',
+    };
+    expect(BeginResearchActionInputSchema.safeParse(input).success).toBe(true);
+    for (const key of ['research_plan_id', 'research_plan_revision', 'milestone_id']) {
+      expect(BeginResearchActionInputSchema.safeParse({ ...input, [key]: undefined }).success).toBe(false);
+    }
+    for (const extra of [{ action_plan_id: 'local' }, { action_plan_revision: 1 }]) {
+      expect(BeginResearchActionInputSchema.safeParse({ ...input, ...extra }).success).toBe(false);
+    }
+  });
 
   async function finalizeReviewedActionPlan(
     service: IAgentResearchService,
