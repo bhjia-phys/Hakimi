@@ -1084,3 +1084,11 @@ Theory Physics 0.2.1 只作有证据的指引修正：受托保存 packet 时预
 这里的提示已经给出测试输入、预算和非收敛边界；r7 的报告-only任务也比 r5 的完整 build/run 任务更窄。因此证据支持“当前报告写入/回传/持久化路径可用”，不支持文字修改单独造成行为提升、原长任务不会再漏报告或自主科研能力整体已通过。原遗漏仍作为观察到但未归因的失败保留。G5 的真实数值执行和报告恢复已有正向证据，总 Goal 仍不能关闭；下一唯一最小 Action 是在该独立 Topic 用已提交证据验证一次 bounded 阶段 Note 的生成与恢复，继续 G4/G6，而不是等待确认时重跑同一 H2O 计算。
 
 最后的原始 snapshot 审计补充了 G4/G6 的前置缺口：H2O Question revision 已到 6、persistence 为 committed，但 assessment/nextBoundedAction 仍是测试前的计划，evidenceRefs 为空；三个已提交记录并不等于 Question 已综合。`research.ack_checkpoint` 的当前 reducer 只更新 persistence/revision 并清除 pending，不改科学评价或 evidenceRefs。与此同时，`effectiveNextStep` 正确采用 latestProgress 的不重跑建议，不能据此声称整个 Board 都在指挥重跑。下一唯一最小 Action 因该真实证据调整为：追踪提交后的 Question 评价/证据关联与 Board 来源投影，复现哪些字段会误导；明确机械关联与主 agent 科学综合的边界后作最小修复/引导，再进入阶段 Note。不能凭 receipt 自动宣布科研接受、把其他 Line 的记录搬入当前 Question，或新增每阶段门禁。
+
+### 19.17 G4 提交后的 Question 综合时序
+
+代码追踪确认：Conclude 原先在 pending checkpoint 形成时就提示仅在科学解释变化后更新 Question，而首次 Commit 仅给出蒸馏交接。前者容易遗漏工程证据或下一步已经变化的情况；若提前更新 captured Question revision，还会使原 checkpoint 过期。最小修复只调整现有工具输出：no-delta 可在本地按需综合；durable 先完成原 checkpoint，再由 main agent 根据已保存证据更新现有 Question，而不是由 ack reducer 自动裁定科研状态。
+
+首次 Commit 的定向提示仅在 ready/active、无 pending、exact committed cursor、同一当前 Line/Question 且 revision 只发生本次 ack 的递增时出现。它带当前 Question ID/revision 和已保存 Entry ID，要求保留相关旧 evidence refs、有依据地更新 assessment、剩余 needed evidence 和 next action；若已准确则 no-op。重复提交、切线/换 Question、进一步 revision 变化、暂停/degraded、新 pending 或 cursor 变化均不重复该提示。没有新增状态字段、工具、公开 schema、扫描、AITP I/O、强制 Note、科学接受/关闭或 failure resolution；外部蒸馏规则和原 checkpoint barrier 不变。
+
+新增回归先复现四项预期失败，修复后 Research service 525 项单 worker 测试通过。真实 service 路径覆盖 prepare/save/show/check/commit 后原科学字段仍不被自动覆盖，再用现有 Question 接口成功综合且没有额外 check。类型检查发现测试使用了 CreateQuestion 不支持的字段，删除该误用后 typecheck 通过；import boundary 1,297 files 通过，changeset status 保持既有累计 CLI minor/SDK major，本次仅新增 CLI patch。源代码层通过不代表模型实际完成收尾；下一验证是从该提交重新安装，在既有独立临时 H2O Topic 对已保存输出做低成本解释，不再次构建或计算，观察首次 Commit 后的 Question 更新，再进行阶段 Note。真实 Heisenberg milestone 和整个 Goal 仍未完成。

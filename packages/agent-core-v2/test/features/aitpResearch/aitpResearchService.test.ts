@@ -8747,9 +8747,16 @@ describe('Research Loop scientific state', () => {
     const svc = ix.get(IAgentResearchService);
     await modeSvc.enter({ actor: 'user' });
     seedCurrentConfirmedWorkstream({ lineSlug: 'main', workstream: 'verified-work' });
+    const question = svc.createQuestion({
+      lineSlug: 'main', wording: 'Does the bounded output reproduce the fixed reference?',
+      assessment: 'The bounded output has not yet been checked.',
+      neededEvidence: ['Checked output', 'Independent physical convergence'],
+    });
+    svc.setFocus(question.id);
     svc.setPhase('gap_analysis');
     const action = svc.planAndStartAction({
       lineSlug: 'main',
+      questionId: question.id,
       kind: 'simulation',
       purpose: 'Produce one checked durable result.',
       stopCondition: 'The result and check are available.',
@@ -8792,6 +8799,26 @@ describe('Research Loop scientific state', () => {
       .resolveExecution({ checkpoint_id: checkpointId, entry_id: 'entry-durable' })).execute(context);
 
     expect(committed.isError).toBeFalsy();
+    const afterCommit = svc.getSnapshot().currentQuestion!;
+    expect(committed.output).toContain(`question_id=${question.id}, expected_revision=${afterCommit.revision}`);
+    expect(committed.output).toContain('saved Entry entry-durable');
+    expect(afterCommit.assessment).toBe(question.assessment);
+    expect(afterCommit.evidenceRefs).toEqual([]);
+    expect(afterCommit.epistemic).toBe(question.epistemic);
+    const checksBeforeSynthesis = check.mock.calls.length;
+    svc.updateQuestion({
+      questionId: question.id, expectedRevision: afterCommit.revision,
+      assessment: 'Reference reproduced; physical convergence remains untested.',
+      evidenceRefs: ['entry-durable'],
+      neededEvidence: ['Independent physical convergence'],
+      nextBoundedAction: 'Choose a discriminating convergence test, not a repeat of this output check.',
+    });
+    expect(svc.getSnapshot().currentQuestion).toMatchObject({
+      assessment: 'Reference reproduced; physical convergence remains untested.',
+      evidenceRefs: ['entry-durable'], neededEvidence: ['Independent physical convergence'],
+      epistemic: question.epistemic,
+    });
+    expect(check).toHaveBeenCalledTimes(checksBeforeSynthesis);
     expect(svc.getPendingCheckpoint()).toBeNull();
     expect(svc.getCommittedCursor()).toMatchObject({
       checkpointId,
@@ -9866,6 +9893,8 @@ describe('Research Loop tool implementations', () => {
     expect(output).toContain('Mainline impact');
     expect(researchSvc.getSnapshot().phase).toBe('state_updated');
     expect(researchSvc.getSnapshot().currentAction?.status).toBe('completed');
+    expect(output).toContain('update the local Question only where its assessment, evidence, or next step is behind');
+    expect(output).not.toContain('Finish this checkpoint before updating');
   });
 
   it('ConcludeResearchAction returns the exact same-turn durable commit route', async () => {
@@ -9920,6 +9949,77 @@ describe('Research Loop tool implementations', () => {
     expect(output).toContain('external distilling-methods Skill');
     expect(output).toContain('exact-pins a retrieved card or carries an observation marker');
     expect(output).toContain('Do not call RecordResearchProgress again');
+    expect(output).toContain('Finish this checkpoint before updating its captured Question');
+    expect(output).not.toContain('only if the scientific interpretation changed');
+  });
+
+  it.each([
+    'current', 'other_line', 'other_question', 'new_revision', 'pending_again',
+    'new_cursor', 'paused', 'degraded', 'no_question',
+  ])('scopes post-commit Question synthesis guidance to the settled current context: %s', async (scenario) => {
+    const { researchSvc } = await buildToolHarness();
+    const question = researchSvc.createQuestion({
+      wording: 'Does the fixed benchmark reproduce?', lineSlug: 'main',
+      assessment: 'Not yet checked.',
+    });
+    const checkpoint: ResearchCheckpoint = {
+      checkpointId: 'cp-synthesis', questionId: scenario === 'no_question' ? undefined : question.id,
+      questionRevision: question.revision, lineSlug: 'main', idempotencyKey: 'synthesis-key',
+      persistence: 'pending_commit', createdAt: 1,
+    };
+    const snapshot: ResearchStatusSnapshot = {
+      ...researchSvc.getSnapshot(),
+      mode: scenario === 'degraded' ? 'degraded' : 'ready',
+      loopStatus: scenario === 'paused' ? 'paused' : 'active',
+      currentLineSlug: scenario === 'other_line' ? 'other' : 'main',
+      currentQuestion: {
+        ...question, id: scenario === 'other_question' ? 'another-question' : question.id,
+        revision: question.revision + (scenario === 'new_revision' ? 2 : 1),
+      },
+      pendingCheckpoint: scenario === 'pending_again' ? checkpoint : undefined,
+      latestCommittedCheckpoint: {
+        checkpointId: scenario === 'new_cursor' ? 'new-checkpoint' : checkpoint.checkpointId,
+        entryId: 'entry-synthesis', committedAt: 2,
+      },
+    };
+    const before = structuredClone(snapshot);
+    const commitCheckpoint = vi.fn()
+      .mockResolvedValueOnce({ status: 'committed' })
+      .mockResolvedValueOnce({ status: 'already_committed' });
+    const updateQuestion = vi.fn();
+    const ix = createServices(disposables, {
+      additionalServices: (reg) => {
+        reg.definePartialInstance(IAgentResearchService, {
+          commitCheckpoint, updateQuestion,
+          getPendingCheckpoint: () => checkpoint,
+          getSnapshot: () => snapshot,
+        });
+        reg.definePartialInstance(IAgentAitpModeService, { isActive: true });
+        reg.definePartialInstance(IAitpDistillationHandoffService, {
+          prepare: async () => ({ status: 'unavailable', reason: 'Fixture has no Skill.' }),
+        });
+        reg.define(ICommitResearchCheckpointTool, CommitResearchCheckpointTool);
+      },
+    });
+    const result = await runnableExecution(await ix.get(ICommitResearchCheckpointTool).resolveExecution({
+      checkpoint_id: checkpoint.checkpointId, entry_id: 'entry-synthesis',
+    })).execute({ turnId: 1, toolCallId: 'tc-synthesis', signal: new AbortController().signal });
+    expect(result.isError).toBeFalsy();
+    if (scenario === 'current') {
+      expect(result.output).toContain(`question_id=${question.id}, expected_revision=${question.revision + 1}`);
+      expect(result.output).toContain('saved Entry entry-synthesis');
+      expect(result.output).toContain('preserve relevant existing evidence_refs');
+      expect(result.output).toContain('not scientific acceptance');
+    } else {
+      expect(result.output).not.toContain('UpdateResearchQuestion');
+    }
+    expect(updateQuestion).not.toHaveBeenCalled();
+    expect(snapshot).toEqual(before);
+    const duplicate = await runnableExecution(await ix.get(ICommitResearchCheckpointTool).resolveExecution({
+      checkpoint_id: checkpoint.checkpointId, entry_id: 'entry-synthesis',
+    })).execute({ turnId: 1, toolCallId: 'tc-synthesis-duplicate', signal: new AbortController().signal });
+    expect(duplicate.output).toContain('no-op for this duplicate commit');
+    expect(duplicate.output).not.toContain('UpdateResearchQuestion');
   });
 
   it('schedules one bounded post-commit handoff and no-ops on a duplicate commit', async () => {
@@ -9936,6 +10036,7 @@ describe('Research Loop tool implementations', () => {
       additionalServices: (reg) => {
         reg.definePartialInstance(IAgentResearchService, {
           commitCheckpoint,
+          getPendingCheckpoint: () => null,
         });
         reg.definePartialInstance(IAgentAitpModeService, { isActive: true });
         reg.definePartialInstance(IAitpDistillationHandoffService, { prepare });
@@ -9963,6 +10064,7 @@ describe('Research Loop tool implementations', () => {
     expect(first.output).toContain('one bounded review scheduled for touched Entry entry-s7');
     expect(duplicate.delivery).toBeUndefined();
     expect(duplicate.output).toContain('no-op for this duplicate commit');
+    expect(duplicate.output).not.toContain('UpdateResearchQuestion');
     expect(prepare).toHaveBeenCalledOnce();
     expect(prepare).toHaveBeenCalledWith({ checkpointId: 'cp-s7', entryId: 'entry-s7' });
   });

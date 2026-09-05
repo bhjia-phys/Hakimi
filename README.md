@@ -87,6 +87,8 @@ When AITP is degraded, user-directed Research turns may still perform provisiona
 
 Opening Research Mode within a user turn now starts its Research context and one local boundary as entry settles, without requiring another prompt. Pause/exit revokes admission; mode recovery never grants autonomous Goal continuation.
 
+Saving evidence does not itself update the scientific Question. Durable-action guidance finishes the captured checkpoint first, then the first successful commit prompts conditional synthesis for the still-current Question: assessment, relevant evidence, remaining unknowns, and next action. Duplicate commits or changed context do not repeat that targeted prompt. The model performs this synthesis through the existing Question tool; receipts never automatically promote scientific confidence or close a Question.
+
 The optional Theory Physics plugin includes a `calculation-operator` agent profile for bounded build, input, numerical and postprocessing work. The main agent supplies the scientific test and scope, reviews the existing typed evidence packet, and owns all Research/AITP mutations. This role is distinct from the `/preset` model-routing pool; it installs no runner or scheduler and provides no OS-level isolation. Real scientific acceptance is tracked separately in the collaborator program.
 
 Theory Physics 0.2.1 clarifies requested packet saving and evidence-backed failure reporting: an unattempted write is not proof of a missing tool, and a failed handoff does not erase a numerical result. These are specialist/review instructions, not a runtime guarantee that a model will follow them.

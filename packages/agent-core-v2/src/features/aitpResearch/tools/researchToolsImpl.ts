@@ -9,7 +9,8 @@
  * with what was done, the result, the mainline impact, and the next step rather
  * than raw ids or revisions. Successful first-time checkpoint commits hand one
  * touched Entry to the external distillation Skill through the stateless
- * `aitpResearch` handoff capability. Bound at Agent scope.
+ * `aitpResearch` handoff capability and guide conditional Question synthesis
+ * after persistence, without changing scientific judgments. Bound at Agent scope.
  */
 
 import type { ToolExecution } from '#/tool/toolContract';
@@ -19,6 +20,7 @@ import { IAgentResearchService } from '#/features/aitpResearch/research/agentRes
 import { IAgentAitpModeService } from '#/features/aitpResearch/mode/agentAitpMode';
 import { AitpResearchError } from '#/features/aitpResearch/errors';
 import { IAitpDistillationHandoffService } from '#/features/aitpResearch/research/distillationHandoff';
+import type { ResearchCheckpoint } from '#/features/aitpResearch/types';
 
 import {
   ICommitResearchCheckpointTool,
@@ -566,6 +568,7 @@ export class CommitResearchCheckpointTool implements ICommitResearchCheckpointTo
         const inactive = requireActive(this.mode);
         if (inactive !== undefined) return errorResult(inactive);
         try {
+          const checkpoint = this.research.getPendingCheckpoint();
           const committed = await this.research.commitCheckpoint({
             checkpointId: args.checkpoint_id,
             entryId: args.entry_id,
@@ -575,9 +578,14 @@ export class CommitResearchCheckpointTool implements ICommitResearchCheckpointTo
               output: `Checkpoint ${args.checkpoint_id} was already committed. Distillation handoff: no-op for this duplicate commit.`,
             };
           }
+          const output = (handoff: string): string => [
+            `Checkpoint ${args.checkpoint_id} committed.`,
+            this.questionSynthesisGuidance(checkpoint, args),
+            handoff,
+          ].filter(Boolean).join('\n');
           if (this.distillation === undefined) {
             return {
-              output: `Checkpoint ${args.checkpoint_id} committed. Distillation handoff: unavailable and non-blocking.`,
+              output: output('Distillation handoff: unavailable and non-blocking.'),
             };
           }
           const handoff = await this.distillation.prepare({
@@ -586,11 +594,11 @@ export class CommitResearchCheckpointTool implements ICommitResearchCheckpointTo
           });
           if (handoff.status === 'unavailable') {
             return {
-              output: `Checkpoint ${args.checkpoint_id} committed. Distillation handoff: unavailable and non-blocking. ${handoff.reason}`,
+              output: output(`Distillation handoff: unavailable and non-blocking. ${handoff.reason}`),
             };
           }
           return {
-            output: `Checkpoint ${args.checkpoint_id} committed. Distillation handoff: one bounded review scheduled for touched Entry ${args.entry_id}; the external Skill may no-op when its trigger does not hold.`,
+            output: output(`Distillation handoff: one bounded review scheduled for touched Entry ${args.entry_id}; the external Skill may no-op when its trigger does not hold.`),
             delivery: handoff.delivery,
           };
         } catch (error) {
@@ -599,6 +607,27 @@ export class CommitResearchCheckpointTool implements ICommitResearchCheckpointTo
         }
       },
     };
+  }
+
+  private questionSynthesisGuidance(
+    checkpoint: ResearchCheckpoint | null,
+    args: CommitResearchCheckpointInput,
+  ): string {
+    if (checkpoint?.checkpointId !== args.checkpoint_id || checkpoint.questionId === undefined) return '';
+    const snapshot = this.research.getSnapshot();
+    const question = snapshot.currentQuestion;
+    if (
+      snapshot.mode !== 'ready' || snapshot.loopStatus !== 'active' ||
+      snapshot.pendingCheckpoint !== undefined ||
+      snapshot.latestCommittedCheckpoint?.checkpointId !== args.checkpoint_id ||
+      snapshot.latestCommittedCheckpoint.entryId !== args.entry_id ||
+      question?.id !== checkpoint.questionId ||
+      question.lineSlug !== checkpoint.lineSlug ||
+      snapshot.currentLineSlug !== checkpoint.lineSlug ||
+      checkpoint.questionRevision === undefined ||
+      question.revision !== checkpoint.questionRevision + 1
+    ) return '';
+    return `Question synthesis: before choosing the next action, compare the saved Entry ${args.entry_id} with this Question's current understanding. If its assessment, evidence, remaining needed_evidence, or next_bounded_action is behind the verified outcome, use UpdateResearchQuestion (question_id=${question.id}, expected_revision=${question.revision}); preserve relevant existing evidence_refs and add this Entry only where it supports the synthesis. Keep unresolved limits explicit. Persistence is not scientific acceptance: do not infer epistemic promotion, closure, or failure resolution from this receipt. If already current, no-op; do not repeat RecordResearchProgress or create another checkpoint for the same conclusion.`;
   }
 }
 
@@ -894,11 +923,12 @@ export class ConcludeResearchActionTool implements IConcludeResearchActionTool {
           }
           if (progress.nextAction !== undefined) lines.push(`Next step: ${progress.nextAction}`);
           lines.push(`Action ${conclusion.action.actionId} is ${conclusion.action.status}; Research phase is state_updated.`);
-          lines.push('Assessment and epistemic state were not changed automatically; update the Research question only if the scientific interpretation changed.');
+          lines.push('Question synthesis and epistemic state were not changed automatically.');
           const candidate = conclusion.commitCandidate;
           if (candidate === undefined) {
             lines.push(`Durability: no durable delta (${args.durability.rationale}).`);
             lines.push('AITP action: none. Do not call AITP persistence or method-card review for this conclusion.');
+            lines.push('Before the next action, update the local Question only where its assessment, evidence, or next step is behind this outcome; otherwise no-op. Do not infer scientific acceptance from action completion.');
           } else {
             const checkpoint = this.research.getPendingCheckpoint();
             const workstream = checkpoint?.workstreamBinding?.workstream;
@@ -907,6 +937,7 @@ export class ConcludeResearchActionTool implements IConcludeResearchActionTool {
             lines.push(
               `Continue in this turn when possible: call aitp_record_prepare with kind=${candidate.entryKind}, authority=${candidate.authority}, ${candidate.authority === 'agent' ? 'created_by=agent:main, ' : ''}workstreams=[${workstream ?? 'captured-workstream'}], checkpoint_id=${checkpoint?.checkpointId ?? 'pending-checkpoint'}; fill the draft with the assessed evidence; call aitp_record_save with the same checkpoint_id; then call CommitResearchCheckpoint with the saved Entry ID.`,
             );
+            lines.push('Finish this checkpoint before updating its captured Question: changing that revision now would stale the proposal. After commit, reconcile the Question summary, relevant evidence refs, remaining unknowns, and next action with the verified outcome; persistence alone does not establish scientific acceptance.');
             lines.push('If this Entry records potentially reusable execution evidence, load and follow the external distilling-methods Skill before filling it; that Skill alone decides whether the Entry exact-pins a retrieved card or carries an observation marker.');
             lines.push('Do not call RecordResearchProgress again for this conclusion. Keep human assertions or decisions in a separate human-authority Entry from agent/tool/source verification.');
           }

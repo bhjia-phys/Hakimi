@@ -1,5 +1,17 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**Hakimi-only Question synthesis amendment (2026-09-05):** durable Conclude
+guidance finishes the captured checkpoint before changing its Question revision.
+A first successful model-tool commit then prompts conditional synthesis only for
+the same still-current Question/Line/revision and exact committed cursor, with
+no pending checkpoint and ready/active Research state. Duplicate commits or
+changed context omit this prompt. The model updates assessment, applicable refs,
+remaining evidence and next action through the existing Question interface;
+receipts do not perform scientific acceptance or closure. No extra maintenance,
+ledger write, public schema, AITP contract, or Method-card rule is added. The AITP
+checkout's existing dirty handoffs remain untouched; this is a Hakimi tool-output
+correction, not a new cross-repository compatibility claim.
+
 Baseline audited **2026-08-08** against AITP HEAD
 `8658f6827288f4bb61e5c193a346f0f73ebbe3b2`。两侧（Hakimi 本目录与 AITP
 `docs/hakimi/compatibility-matrix.md`）交叉核对一致；AITP HEAD 越过该基线后

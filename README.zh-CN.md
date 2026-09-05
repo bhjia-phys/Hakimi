@@ -87,6 +87,8 @@ AITP degraded 时，用户指导的 Research 回合仍可在 fresh bounded Actio
 
 同一用户回合内打开 Research Mode 后，入口收敛即开始 Research context 和一次本地 boundary，无需再发提示。暂停或退出会撤销准入，模式恢复不会赋予自动 Goal continuation。
 
+证据保存并不等于科学 Question 已更新。持久结果的收尾指引先完成捕获的 checkpoint；首次提交成功后，再提示模型有条件地综合仍属当前上下文的 Question：评价、相关证据、剩余未知和下一步。重复提交或上下文已变化时不重复该定向提示。综合仍由模型通过现有 Question 工具完成；receipt 不会自动提升科学可信度或关闭 Question。
+
 可选 Theory Physics 插件包含 `calculation-operator` agent profile，用于限定范围的编译、输入、数值计算和后处理。主 agent 给出科学检验与范围，审查现有 typed evidence packet，并独占 Research/AITP mutation。这个角色不同于 `/preset` 的模型路由池；不安装 runner 或 scheduler，也不提供 OS 级隔离。真实科研验收单独记录在合作者计划中。
 
 Theory Physics 0.2.1 明确了受托 packet 保存和有依据的失败报告：未尝试写入不能证明工具缺失，交接失败也不抹去实际数值结果。这是 specialist/review 指引，不是模型必然遵守的 runtime 保证。

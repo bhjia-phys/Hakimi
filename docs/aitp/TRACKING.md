@@ -1,5 +1,13 @@
 # AITP 状态跟踪与交接清单
 
+2026-09-05 Question synthesis 补充：真实临时 H2O 验收暴露 "Entry 已提交但
+Question 仍为测试前总结"。Hakimi 只调整现有工具收尾指引：先完成 captured
+checkpoint，再为仍匹配当前 Line/Question/revision/cursor 的首次 commit 提示
+条件性综合；duplicate 或上下文变化不重复提示。科学评价和证据选择仍由 main
+agent 决定，不增加状态、AITP I/O、公开 schema 或科学自动接受。AITP HEAD
+`eae1bce5…` 的既有 20 条 dirty paths 保留，working tree 0.9.0/contract 0.2
+与官方 CLI 重新核对；对方 dirty handoff 不改，不声称新的 AITP 能力。
+
 ## 状态跟踪表
 
 | 核对日期 | AITP HEAD | active stage | 备注 |
