@@ -1227,9 +1227,9 @@ TUI/Web 紧凑 Board 显示真实本地结论和一次待确认归属提示，�
 
 重型测试、构建和真实模型验收串行进行。实验资源上限在执行前按该 case 确定，不因一次超时自动加大；重复同一失败前先定位原因，保留失败输出，只有修复或新证据支持时才重试。复用可核验的数值产物与记录，不用重复计算证明文档或 Board 文案改变；只在产品发生变化的交付点构建安装，再验证受影响路径。文档优化不触发新版本、重装或科研执行。
 
-**当前执行位置。** 同一 Action 内等待期间的授权工作、Note 整理和冷恢复已有 fixture；TUI/Web 覆盖科研目的的展示缺口也已修复，并补上旧单 Line 快照中明确 foreign Action/run 的隔离。完整 Research 测试、两端展示和浏览器验证见 [§19.27](#waiting-purpose-board)。这些证明软件路径与展示，不证明真实推导、计算或 canonical Note 保存；此切片尚待 scoped 交付安装，不因更新规划而重做已有测试或科学计算。
+**当前执行位置。** 同一 Action 内等待期间的授权工作、Note 整理和冷恢复已有 fixture；TUI/Web 覆盖科研目的的展示缺口也已修复，并补上旧单 Line 快照中明确 foreign Action/run 的隔离。完整 Research 测试、两端展示、浏览器验证及 `f6320758d` 的交付安装见 [§19.27](#waiting-purpose-board)。这些证明软件路径与展示，不证明真实推导、计算或 canonical Note 保存；后续补自然使用证据，不因更新规划而重做已有测试或科学计算。
 
-**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。Heisenberg 正式归属仍沿用 §19.13 已提出的确认依赖，不重复询问或由测试代签。下一唯一最小 Action 是审查并 scoped 提交、推送 §19.27 的 Board/回归切片，从 clean commit 本地安装并核验对应的终端入口与 Web 资产。之后继续自然使用验收，不能用本次规划或 fixture 替代 G1–G7 的剩余要求；不启动真实作业，不新建 Action 类型、scheduler 或 schema。
+**停止条件与唯一下一步。** 用户暂停/取消、需要新科学约定或人类决定、超出资源/文件授权、无法区分 dirty changes、需要新协议时停止相关动作并报告依赖；安全独立项可以继续，不冒充整个 Goal 已完成。Heisenberg 正式归属仍沿用 §19.13 已提出的确认依赖，不重复询问或由测试代签。下一唯一最小 Action 是安装版的自然 operator 交接验收：沿用隔离 LibRPA 验收环境，预定一个低成本 case 的科学问题、资源和成果边界，不指定内部工具顺序，观察等待期间的有效工作及最终 evidence packet/收尾。这用于补 G1/G5 的真实行为缺口，不为证明 Board 文案而重算旧结果；不新建 Action 类型、scheduler 或 schema，也不替代 Heisenberg 正式科研与 Goal 验收。
 
 ### 19.25 已关闭 Action 的外部作业观察恢复 {#retained-run-recovery}
 
@@ -1374,3 +1374,7 @@ G1 后续优先复用现有字段和 Skill；本轮不新增 public phase、wire
 文档构建 14.80 秒通过，既有 ES2024/chunk warnings 保留，`git diff --check` 通过。新 changeset 仅 CLI patch；累计发布集合仍因既有授权条目显示 CLI minor/SDK major，未执行 version 或发布。
 
 此记录时源码与资产已验证，但尚未提交、推送或本地安装。下一唯一最小 Action 为 scoped 交付与 clean-commit 安装；G1/G2 的自然等待、真实 Goal、G3/G4 知识复用与蒸馏等剩余验收继续保留，C1–C5 状态不变，总 Goal 保持 active。
+
+交付回执：切片已提交并推送为 `f6320758d303e6e96bdc66c4c8cdd2b9568ffb2a`，远程 ref 核验一致。134 个精确暂存路径经 Git rename 识别为 79 个变更文件，未混入其他工作。从 `/tmp/hakimi-waiting-board-install.Y832Sf/checkout` detached clean commit 构建：frozen 依赖 5.5 秒、单 workspace 并发的包构建 57.8 秒、CLI 28.2 秒、smoke 4.0 秒、正式 prepack/pack 25.4 秒，均 exit 0，构建后工作树 clean。dry-run 确认全局安装只替换 Hakimi 及其四个同版本依赖；仅一次性允许 node-pty lifecycle，实际 make 为 `--jobs 1`。npm 对 jobs 环境变量发出未来兼容警告，未修改用户 npm 配置，也未使用无目标的全局 rebuild。
+
+安装版本仍为 0.21.0，入口 SHA-256 为 `340a446d5d8cef2787900d58f4109818a151fbba28ee5b57afaa22192adb4d18`，与 clean build 逐字节相同；521 个 Web 文件及 provenance 也逐字节一致。官方源码 checker、安装 CLI/help 和真实 PTY 均通过；PTY 输出 `hakimi-waiting-board-pty-ok`。原始核验回执为上述临时目录的 `installation-verification.json`。managed Theory Physics 0.2.1、AITP 0.9.0/contract-0.2 未变，原 Hakimi HEAD `892733a00582` 的 156 条 dirty paths 保留。没有重启用户已有进程、改科研文件或执行真实科学 run。总 Goal 继续 active，下一 Action 采用 §19.24 的自然 operator 交接验收。
