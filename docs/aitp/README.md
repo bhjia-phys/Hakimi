@@ -1,6 +1,6 @@
 # AITP integration handoff
 
-Web Research observatory (2026-09-06; implemented, not yet installed): a temporary
+Web Research observatory (2026-09-06; delivered and locally installed): a temporary
 deep-space palette, static wireframe planet/orbit marks and instrument-style frames,
 an authoritative Dreaming violet variant, non-persistent automatic sidebar collapse,
 compact floating Board and cross-session navigation over already-observed snapshots.
@@ -28,6 +28,15 @@ fan-out, formula/code readability, policy-palette isolation and Escape-without-i
 Canonical assets were regenerated and
 `pnpm run build:web-assets -- --check` reproduces all 521 files. The new changeset
 is CLI minor only; pre-existing SDK changesets were not edited or consumed.
+Delivery: source commit `d23654b61` was pushed to
+`merge/pr-9-auto-subagent-preset` and packed/installed locally at version `0.21.0`;
+no registry release was performed. All 521 installed Web files and the main/search
+worker bundles match the committed-source build. An isolated-home installed Web
+server served matching HTML/JS/CSS with no user session or model request. npm blocked
+the optional `node-pty` install script; its inspected local install script was run
+only in the installed Hakimi dependency, then an actual PTY spawn passed. No global
+script policy was changed. Restart existing Web processes when idle and refresh the
+browser to load the new UI; no running research process was interrupted.
 
 Goal usage / Research revision repair (2026-09-06; delivered and clean-installed):
 ordinary token, turn and elapsed-time accounting publishes the full Research

@@ -72,8 +72,10 @@ browser for older sessions; it is not a complete global active-project index. Th
 Research GET cold-resumes an agent, so the navigator deliberately does not probe every
 session. Collaborative/Dreaming uses the existing revision-checked command when idle;
 it does not change Goal continuation, tool permissions or human decisions. Closing the
-picker with Escape does not interrupt the background turn. This UI change is source-only
-until rebuilt/reinstalled; no AITP, SDK or transport contract changes are required.
+picker with Escape does not interrupt the background turn. Locally installed from
+`d23654b61` (package version remains `0.21.0`, no npm release); restart existing Web
+processes when idle and refresh the browser. Installed Web assets and PTY startup
+were verified; no AITP, SDK or transport contract changes are required.
 
 Goal usage-only updates keep the Research revision stable while still refreshing the Board. Token accounting between a status read and workstream confirmation no longer makes that confirmation stale. Goal control changes and actual Research mutations still invalidate old requests; no binding is inferred or confirmed automatically. Locally installed from `172875fa2`; restart running Hakimi processes to load it. No Goal is automatically resumed. See the [integration handoff](docs/aitp/README.md).
 

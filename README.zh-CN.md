@@ -68,8 +68,9 @@ Web 开启 Research 后进入深空研究工作台：临时深蓝配色、静态
 「浏览全部会话」找到；这还不是完整的全局活跃课题索引。现有 Research GET 会
 恢复 Agent，因此导航不会在后台逐个探查历史会话。Collaborative／Dreaming
 在空闲时通过现有带 revision 的命令切换，不改变 Goal 续行、工具权限或人工决策。
-Escape 关闭选择框不会中断后台工作。本次为源码变更，安装后才会在已有安装版
-生效；不改变 AITP、SDK 或传输契约。
+Escape 关闭选择框不会中断后台工作。已从 `d23654b61` 本地重装（包版本仍为
+`0.21.0`，未发布 npm 新版本）；请在空闲时重启已有 Web 进程并刷新浏览器。
+安装后的 Web 资源和 PTY 启动均已验证；不改变 AITP、SDK 或传输契约。
 
 Goal 的纯用量更新保持 Research revision 不变，同时继续刷新 Board。读取状态与确认 workstream 之间的 token 记账不再使确认请求过期；Goal 控制状态变化和实际 Research 修改仍使旧请求失效，不会自动推断或确认绑定。已从 `172875fa2` 本地安装，运行中的 Hakimi 需重启加载；不会自动恢复 Goal。见[集成交接](docs/aitp/README.md)。
 

@@ -1,6 +1,6 @@
 # Hakimi × AITP compatibility matrix and decisions
 
-**Web Research observatory (2026-09-06; not installed):** presentation-only workspace,
+**Web Research observatory (2026-09-06; locally installed from `d23654b61`):** presentation-only workspace,
 observed-session navigation and a shortcut to the existing revision-checked planning
 policy command. REST/WS/SDK/klient/TUI contracts, AITP 0.9.0/contract-0.2 and all ledger,
 checkpoint, human-decision and Goal semantics are unchanged. No background Research
