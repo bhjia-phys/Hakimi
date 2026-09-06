@@ -12,6 +12,11 @@ import ChatHeader from './ChatHeader.vue';
 import Composer from './Composer.vue';
 import ChatDock from './ChatDock.vue';
 import ResearchBoardPanel from './ResearchBoardPanel.vue';
+import ResearchWorkspaceBar from './ResearchWorkspaceBar.vue';
+import ResearchStarfield from './ResearchStarfield.vue';
+import ResearchOrbitMark from './ResearchOrbitMark.vue';
+import type { ResearchSessionLink } from '../../lib/researchWorkspace';
+import { openDialogCount } from '../../composables/dialogStack';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
 import Icon from '../ui/Icon.vue';
 import Spinner from '../ui/Spinner.vue';
@@ -41,6 +46,8 @@ const props = defineProps<{
   research?: ResearchStatusSnapshot | null;
   researchEnabled?: boolean;
   researchExpandSignal?: number;
+  researchSessions?: ResearchSessionLink[];
+  researchPolicyDisabled?: boolean;
   activationBadges?: ActivationBadges;
   status: ConversationStatus;
   thinking?: ThinkingLevel;
@@ -151,6 +158,9 @@ const emit = defineEmits<{
   controlGoal: [action: 'pause' | 'resume' | 'cancel'];
   startResearch: [];
   manageResearch: [];
+  selectResearchSession: [id: string];
+  browseResearchSessions: [];
+  setResearchPolicy: [policy: string];
   alignResearch: [relation: ResearchGoalAlignmentRelation];
   clearResearchAlignment: [];
   compact: [];
@@ -1214,6 +1224,9 @@ function handleInterrupt(): void {
 }
 
 function onKeyDown(event: KeyboardEvent): void {
+  // A foreground dialog owns Escape. Closing a Research session picker must
+  // never also interrupt the scientific work behind it.
+  if (event.defaultPrevented || openDialogCount.value > 0) return;
   if (event.key === 'Escape' && (props.running || props.working)) {
     event.preventDefault();
     handleInterrupt();
@@ -1350,7 +1363,16 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
       @select="scrollToTurn"
     />
 
+    <ResearchWorkspaceBar
+      v-if="research && research.mode !== 'inactive' && !sessionLoading"
+      :snapshot="research" :session-id="sessionId" :sessions="researchSessions ?? []"
+      :policy-disabled="researchPolicyDisabled"
+      @select-session="emit('selectResearchSession', $event)"
+      @browse-sessions="emit('browseResearchSessions')"
+      @set-policy="emit('setResearchPolicy', $event)"
+    />
     <div class="chat-layout">
+      <ResearchStarfield v-if="research && research.mode !== 'inactive' && !sessionLoading" />
       <ResearchBoardPanel
         v-if="research && research.mode !== 'inactive' && !sessionLoading"
         :key="sessionId"
@@ -1378,12 +1400,13 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
           <template v-if="shouldShowEmptyConversation(turns.length, sessionLoading ?? false)">
             <!-- Empty session: Composer rendered in the centre of the pane -->
             <div class="empty-spacer" />
-            <div class="empty-hint">
+            <div class="empty-hint" :class="{ 'research-empty-hint': research && research.mode !== 'inactive' }">
+              <ResearchOrbitMark v-if="research && research.mode !== 'inactive' && !starting" large :dreaming="research.planningPolicy === 'dreaming'" />
               <span class="empty-hint-title" :class="{ 'is-starting': starting }">
                 <Spinner v-if="starting" size="sm" />
-                <span>{{ starting ? t('conversation.starting') : t('composer.emptyConversationTitle') }}</span>
+                <span>{{ starting ? t('conversation.starting') : research && research.mode !== 'inactive' ? t('research.workspace.emptyTitle') : t('composer.emptyConversationTitle') }}</span>
               </span>
-              <span v-if="!starting" class="empty-hint-text">{{ t('composer.emptyConversation') }}</span>
+              <span v-if="!starting" class="empty-hint-text">{{ research && research.mode !== 'inactive' ? t('research.workspace.emptyDescription') : t('composer.emptyConversation') }}</span>
               <!-- Workspace picker: choose where this new conversation starts.
                    Hidden while starting — a workspace is already committed. -->
               <div v-if="hasWorkspaces && !starting" class="ws-pick">
@@ -1714,6 +1737,9 @@ defineExpose({ loadComposerForEdit, focusComposer, copyConversation, copyFinalSu
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.research-empty-hint { gap: var(--space-3); padding-bottom: var(--space-6); }
+.research-empty-hint .empty-hint-title { font-size: var(--text-2xl); font-weight: var(--weight-medium); letter-spacing: 0.04em; }
+.research-empty-hint .empty-hint-text { white-space: normal; line-height: var(--leading-relaxed); }
 .empty-add-workspace {
   display: inline-flex;
   align-items: center;

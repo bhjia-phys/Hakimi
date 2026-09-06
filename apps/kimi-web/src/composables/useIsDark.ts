@@ -13,6 +13,7 @@ const isDark = ref(false);
 let started = false;
 
 function compute(): boolean {
+  if (document.documentElement.hasAttribute('data-research-workspace')) return true;
   const scheme = document.documentElement.dataset.colorScheme;
   if (scheme === 'dark') return true;
   if (scheme === 'light') return false;
@@ -27,7 +28,7 @@ export function useIsDark(): Ref<boolean> {
       isDark.value = compute();
     }).observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ['data-color-scheme'],
+      attributeFilter: ['data-color-scheme', 'data-research-workspace'],
     });
     window
       .matchMedia('(prefers-color-scheme: dark)')

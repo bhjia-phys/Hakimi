@@ -59,6 +59,22 @@ Human review and reproducible verification are part of the research loop, not a 
 
 ## Research Mode and AITP
 
+Web Research Mode now opens a deep-space observatory with a temporary navy palette,
+static stars, a wireframe planet, orbit-compass marks and instrument-style frames.
+Dreaming adds a pale-violet accent variant; the decoration has no moving background
+or fictional telemetry. The ordinary sidebar collapses automatically. Leaving Research
+restores the saved theme and sidebar preference. The floating, collapsible Board keeps
+Project, Current cycle, Attention and Next; its closed launcher still shows the cycle
+stage. **Research sessions** switches between sessions/workspaces without starting,
+pausing or resuming scientific work. It shows only Research snapshots already observed
+by this browser, labels unread sessions explicitly, and offers the ordinary session
+browser for older sessions; it is not a complete global active-project index. The existing
+Research GET cold-resumes an agent, so the navigator deliberately does not probe every
+session. Collaborative/Dreaming uses the existing revision-checked command when idle;
+it does not change Goal continuation, tool permissions or human decisions. Closing the
+picker with Escape does not interrupt the background turn. This UI change is source-only
+until rebuilt/reinstalled; no AITP, SDK or transport contract changes are required.
+
 Goal usage-only updates keep the Research revision stable while still refreshing the Board. Token accounting between a status read and workstream confirmation no longer makes that confirmation stale. Goal control changes and actual Research mutations still invalidate old requests; no binding is inferred or confirmed automatically. Locally installed from `172875fa2`; restart running Hakimi processes to load it. No Goal is automatically resumed. See the [integration handoff](docs/aitp/README.md).
 
 Goal recovery checks the remaining budget before restarting. An exhausted Goal stays blocked and the model is told it was not resumed, without a transient active state or an immediate deadline cancelling its explanation. Existing usage, budget limits and earlier blocker reasons are preserved. Source verification and installation status are tracked in the [bounded recovery fix](docs/aitp/theory-physics-collaborator-program.md#goal-budget-resume-preflight).

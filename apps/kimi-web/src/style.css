@@ -946,6 +946,83 @@ body {
   font-size: var(--ui-font-size-xs);
 }
 
+/* Research observatory: temporary dark palette, not a saved theme preference.
+   Tokens also reach teleported dialogs and native controls. No gradients,
+   animated starfield or glass: the reading surface stays quiet and legible. */
+html[data-research-workspace] {
+  color-scheme: dark;
+  --accent-primary: #8dcde8;
+  --accent-secondary: #a8b7ca;
+  --surface-dark: #0a1322;
+  --color-bg: var(--surface-dark);
+  --color-surface: #101e31;
+  --color-surface-raised: #16283e;
+  --color-surface-sunken: #0c1829;
+  --color-sidebar-bg: var(--color-surface-sunken);
+  --color-text: #e1eaf4;
+  --color-text-muted: #acbed2;
+  --color-text-faint: #92a9c1;
+  --color-text-on-accent: #0a1322;
+  --color-line: #294058;
+  --color-line-strong: #526d89;
+  --color-selected: #ffffff14;
+  --color-hover: #ffffff0d;
+  --color-accent: var(--accent-primary);
+  --color-accent-hover: #b5e1f3;
+  --color-accent-soft: #193549;
+  --color-accent-bd: #507d96;
+  --color-info: var(--color-accent);
+  --color-success: #7bd8a9;
+  --color-success-soft: #17382d;
+  --color-success-bd: #386952;
+  --color-warning: #efc77c;
+  --color-warning-soft: #3c3020;
+  --color-warning-bd: #735c35;
+  --color-danger: #ffaaa4;
+  --color-danger-soft: #412830;
+  --color-danger-bd: #885158;
+  --color-done: #c2acf3;
+  --color-done-soft: #302643;
+  --color-done-bd: #635181;
+  --bg: var(--color-bg);
+  --canvas: var(--color-surface-sunken);
+  --panel: var(--color-surface);
+  --panel2: var(--color-surface-raised);
+  --dim: var(--color-text-muted);
+  --muted: var(--color-text-muted);
+  --faint: var(--color-text-faint);
+  --line: var(--color-line);
+  --line2: var(--color-line);
+  --blue: var(--color-accent);
+  --blue2: var(--color-accent-hover);
+  --bluebg: var(--color-accent-soft);
+  --blueln: var(--color-accent-bd);
+  --soft: var(--color-accent-soft);
+  --bd: var(--color-accent-bd);
+  --logo: var(--color-accent);
+  --hover: var(--color-hover);
+  --ok: var(--color-success);
+  --warn: var(--color-warning);
+  --err: var(--color-danger);
+  --p-selection: #8dcde833;
+}
+
+/* Dreaming is an observed planning policy, not an autonomous execution state.
+   Only its accent/surfaces change; warnings and scientific meanings do not. */
+html[data-research-workspace][data-research-policy="dreaming"] {
+  --accent-primary: #c8b9ff;
+  --surface-dark: #131326;
+  --color-surface: #1a1b33;
+  --color-surface-raised: #24253f;
+  --color-surface-sunken: #15172d;
+  --color-line: #393852;
+  --color-line-strong: #74718f;
+  --color-accent-hover: #ded4ff;
+  --color-accent-soft: #302c4c;
+  --color-accent-bd: #8175af;
+  --p-selection: #c8b9ff33;
+}
+
 @media (max-width: 640px) {
   .u-bub .u-text,
   .a-msg .msg,

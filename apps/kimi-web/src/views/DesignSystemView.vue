@@ -1223,6 +1223,13 @@ onUnmounted(() => {
             </p>
 
             <h3 class="sub">Color seeds</h3>
+            <p>Research Mode adds a temporary <b>observatory palette</b>: deep navy surfaces,
+              pale cyan accents, sparse static stars, a wireframe planet and orbit-compass marks.
+              Instrument-style corner frames and bearing ticks are decorative, never fictional
+              telemetry. The observed Dreaming policy switches accents to pale violet. It uses the
+              same primitives and tokens, including dialogs and code themes. No gradients, glow,
+              moving backgrounds or glass. Leaving Research restores the saved color scheme; entering it collapses
+              ordinary navigation without overwriting the user's sidebar preference.</p>
             <p>Day-to-day customization only needs these 4 seeds; the whole site's neutrals and accent change with them:</p>
             <div class="panel panel-pad" style="margin:16px 0">
               <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">

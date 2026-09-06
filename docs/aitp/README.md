@@ -1,5 +1,34 @@
 # AITP integration handoff
 
+Web Research observatory (2026-09-06; implemented, not yet installed): a temporary
+deep-space palette, static wireframe planet/orbit marks and instrument-style frames,
+an authoritative Dreaming violet variant, non-persistent automatic sidebar collapse,
+compact floating Board and cross-session navigation over already-observed snapshots.
+Unread sessions are explicitly unknown; the ordinary browser remains available.
+The navigator performs no background per-session Research GET because that existing
+route resumes the session/main Agent. It is not a global active-project index or
+parallel-loop scheduler. Session identity/workspace boundaries are preserved; selection
+uses the existing navigation path and sends no scientific lifecycle command.
+The planning-policy picker uses the existing `set_planning_policy` command with its
+captured session/revision, only when idle/ready/connected, with authoritative error
+recovery. The palette follows the confirmed policy and resets on session/mode changes;
+it does not imply live telemetry or introduce ongoing decorative animation. Goal,
+auto permission, record ownership and human decisions are unchanged.
+Dialog Escape now stays out of the background interrupt handler. No AITP runtime,
+CLI, schema, Skills, ledger, user session or counterpart dirty file is modified.
+The Web-only release entry affects the CLI bundle, not the public SDK. Browser fixture
+checks are UI acceptance, not live-model scientific acceptance.
+Verification: 222 single-worker Web tests pass (workspace projection, planning
+commands, existing request ordering/reducers and Board); Web typecheck and diff
+checks pass. The style scan retains its 28 existing findings, with no new rules
+violated. Both isolated browser scripts (`research-panel/check.mjs` and
+`research-panel/workspace.mjs`) pass, including light/dark preference restoration,
+hover/focus, narrow layouts, session isolation, failed policy rollback, no GET
+fan-out, formula/code readability, policy-palette isolation and Escape-without-interrupt.
+Canonical assets were regenerated and
+`pnpm run build:web-assets -- --check` reproduces all 521 files. The new changeset
+is CLI minor only; pre-existing SDK changesets were not edited or consumed.
+
 Goal usage / Research revision repair (2026-09-06; delivered and clean-installed):
 ordinary token, turn and elapsed-time accounting publishes the full Research
 snapshot without advancing its optimistic-concurrency revision. Goal identity,

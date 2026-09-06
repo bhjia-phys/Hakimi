@@ -2,7 +2,7 @@
 // Layout: resizable session column. ResizeHandle owns the column width (with
 // localStorage persistence); we mirror it here to drive the App grid.
 
-import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue';
+import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
 import { safeGetString, safeSetString, STORAGE_KEYS } from '../lib/storage';
 import { PREVIEW_MIN } from './useDetailPanel';
 import { clampPanelWidth, panelMaxWidth, useViewportWidth } from './useViewportWidth';
@@ -24,12 +24,17 @@ export interface UseSidebarLayoutOptions {
   /** True while the right-side detail/preview panel is open, so the sidebar
    *  reserves room for it in addition to the conversation pane. */
   previewOpen?: MaybeRefOrGetter<boolean>;
+  researchActive?: MaybeRefOrGetter<boolean>;
 }
 
 export function useSidebarLayout(options: UseSidebarLayoutOptions = {}) {
   const { viewportWidth } = useViewportWidth();
   const sessionColWidth = ref(SIDEBAR_DEFAULT);
-  const sidebarCollapsed = ref(false);
+  const normalCollapsed = ref(false);
+  const researchOverride = ref<boolean>();
+  const sidebarCollapsed = computed(() => toValue(options.researchActive)
+    ? researchOverride.value ?? true : normalCollapsed.value);
+  watch(() => toValue(options.researchActive), () => { researchOverride.value = undefined; });
   // True while the sidebar ResizeHandle is being dragged — the sidebar disables
   // its width transition so it follows the pointer 1:1 (mirrors panelDragging
   // in useDetailPanel).
@@ -53,22 +58,26 @@ export function useSidebarLayout(options: UseSidebarLayoutOptions = {}) {
 
   function loadSidebarCollapsed(): void {
     try {
-      sidebarCollapsed.value = safeGetString(SIDEBAR_COLLAPSED_KEY) === 'true';
+      normalCollapsed.value = safeGetString(SIDEBAR_COLLAPSED_KEY) === 'true';
     } catch {
-      sidebarCollapsed.value = false;
+      normalCollapsed.value = false;
     }
   }
 
   function saveSidebarCollapsed(): void {
     try {
-      safeSetString(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed.value));
+      safeSetString(SIDEBAR_COLLAPSED_KEY, String(normalCollapsed.value));
     } catch {
       // ignore
     }
   }
 
   function toggleSidebarCollapse(): void {
-    sidebarCollapsed.value = !sidebarCollapsed.value;
+    if (toValue(options.researchActive)) {
+      researchOverride.value = !sidebarCollapsed.value;
+      return;
+    }
+    normalCollapsed.value = !normalCollapsed.value;
     saveSidebarCollapsed();
   }
 

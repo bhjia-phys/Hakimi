@@ -44,6 +44,7 @@ import { useTaskPoller } from './client/useTaskPoller';
 import { useModelProviderState } from './client/useModelProviderState';
 import { useSideChat } from './client/useSideChat';
 import { createResearchRequestCoordinator } from './client/researchRequest';
+import { researchSessionLinks } from '../lib/researchWorkspace';
 import {
   forgetLocalTurnState,
   SESSIONS_INITIAL_PAGE_SIZE,
@@ -2122,6 +2123,8 @@ const goal = computed<AppGoal | null>(() => {
 
 // Research Mode graduated from its experimental flag and is available on v2.
 const researchEnabled = computed<boolean>(() => rawState.backend === 'v2');
+const researchSessions = computed(() => researchEnabled.value
+  ? researchSessionLinks(rawState.sessions, rawState.researchBySession) : []);
 const research = computed<ResearchStatusSnapshot | null>(() => {
   if (!researchEnabled.value) return null;
   const sid = rawState.activeSessionId;
@@ -2905,6 +2908,7 @@ export function useKimiWebClient() {
     goal,
     research,
     researchEnabled,
+    researchSessions,
     swarms,
     swarmMembersByToolCallId,
     activationBadges,

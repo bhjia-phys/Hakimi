@@ -1,5 +1,13 @@
 # Hakimi × AITP compatibility matrix and decisions
 
+**Web Research observatory (2026-09-06; not installed):** presentation-only workspace,
+observed-session navigation and a shortcut to the existing revision-checked planning
+policy command. REST/WS/SDK/klient/TUI contracts, AITP 0.9.0/contract-0.2 and all ledger,
+checkpoint, human-decision and Goal semantics are unchanged. No background Research
+GET fan-out: unread sessions remain unknown, not inferred inactive or healthy. A
+complete cold-session Research directory is unavailable; it would need a separately
+reviewed lightweight read surface. See the [handoff](README.md).
+
 **Goal usage / Research revision (2026-09-06; delivered and clean-installed):**
 usage-only Goal updates emit equal-revision Research snapshots, preserving the
 existing revision token for a subsequent workstream confirmation. Goal control

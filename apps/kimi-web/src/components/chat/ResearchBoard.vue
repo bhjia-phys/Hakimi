@@ -365,13 +365,13 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
         <div class="research-identity">
           <Icon name="target" size="md" />
           <span class="research-title">{{ t('research.title') }}</span>
-          <Badge :variant="phaseVariant" size="sm" dot>
+          <Badge v-if="expanded || snapshot.mode !== 'ready'" :variant="phaseVariant" size="sm" dot>
             {{ t('research.modeStatus', { status: t('research.phase.' + snapshot.mode) }) }}
           </Badge>
-          <Badge v-if="snapshot.status" :variant="workflowVariant" size="sm">
+          <Badge v-if="snapshot.status && (expanded || snapshot.status.health !== 'ok')" :variant="workflowVariant" size="sm">
             {{ t('research.workflowStatus', { status: t('research.statusHealth.' + snapshot.status.health) }) }}
           </Badge>
-          <Badge :variant="snapshot.loopStatus === 'paused' ? 'warning' : 'neutral'" size="sm">
+          <Badge v-if="expanded || snapshot.loopStatus === 'paused'" :variant="snapshot.loopStatus === 'paused' ? 'warning' : 'neutral'" size="sm">
             {{ t('research.loop.' + snapshot.loopStatus) }}
           </Badge>
         </div>
@@ -448,13 +448,6 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
             <span v-if="cycleRunSummary" class="research-slot-copy research-muted">{{ cycleRunSummary }}</span>
           </span>
         </span>
-        <Badge
-          v-if="cycleSlot"
-          size="sm"
-          :variant="cycleSlot.loopStatus === 'paused' || cycleSlot.continuationState === 'held' ? 'warning' : 'neutral'"
-        >
-          {{ t('research.planningPolicyValue.' + cycleSlot.planningPolicy) }}
-        </Badge>
       </div>
 
       <Banner v-if="attentionSlot" class="research-compact-attention" variant="warning">
@@ -1692,6 +1685,11 @@ function lineAssessmentLabel(lineSlug: string, assessment: string): string {
   gap: var(--space-1);
 }
 
+.research-compact-row:nth-child(2) .research-slot-value {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
 .research-compact-attention {
   margin: var(--space-2) var(--space-3);
 }
@@ -1996,6 +1994,14 @@ code {
     width: 100%;
     justify-content: flex-end;
   }
+
+  .research-board:not(.is-expanded) .research-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .research-board:not(.is-expanded) .research-actions { width: auto; }
 
   .research-compact-row,
   .research-compact-attention :deep(.ui-banner__text) {

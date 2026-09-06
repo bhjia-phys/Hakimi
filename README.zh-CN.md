@@ -59,6 +59,18 @@ Hakimi 可以帮助构建论证、计算、代码、检索和测试，但这些�
 
 ## Research Mode 与 AITP
 
+Web 开启 Research 后进入深空研究工作台：临时深蓝配色、静态星点、线框行星、
+轨道罗盘标识与仪器式边框；Dreaming 使用淡紫色变体，不加入持续运动的背景或
+虚构读数。普通侧栏自动收起；退出后恢复原主题和侧栏偏好。右侧看板可收起，保留课题、
+当前循环、需要注意和下一步；收起时仍显示循环阶段。顶部「研究会话」可以跨
+会话和工作区跳转，仅切换查看，不启动、暂停或恢复科研。列表只展示本浏览器
+已经观察到的 Research 状态，其他会话明确标为「状态未读取」，旧会话可通过
+「浏览全部会话」找到；这还不是完整的全局活跃课题索引。现有 Research GET 会
+恢复 Agent，因此导航不会在后台逐个探查历史会话。Collaborative／Dreaming
+在空闲时通过现有带 revision 的命令切换，不改变 Goal 续行、工具权限或人工决策。
+Escape 关闭选择框不会中断后台工作。本次为源码变更，安装后才会在已有安装版
+生效；不改变 AITP、SDK 或传输契约。
+
 Goal 的纯用量更新保持 Research revision 不变，同时继续刷新 Board。读取状态与确认 workstream 之间的 token 记账不再使确认请求过期；Goal 控制状态变化和实际 Research 修改仍使旧请求失效，不会自动推断或确认绑定。已从 `172875fa2` 本地安装，运行中的 Hakimi 需重启加载；不会自动恢复 Goal。见[集成交接](docs/aitp/README.md)。
 
 Goal 恢复前会先检查剩余预算。已耗尽时保持 blocked，明确告诉模型“未恢复”，不短暂切到 active，也不让立即到期的定时器取消收尾说明。原用量、预算和已有阻塞原因保留。源码验证与安装状态见[有界恢复修复](docs/aitp/theory-physics-collaborator-program.md#goal-budget-resume-preflight)。

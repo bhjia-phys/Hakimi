@@ -44,6 +44,8 @@ import type { TurnAttachment } from './types';
 import { useAuthGate } from './composables/useAuthGate';
 import { usePageTitle } from './composables/usePageTitle';
 import { useSidebarLayout } from './composables/useSidebarLayout';
+import { useResearchAppearance } from './composables/useResearchAppearance';
+import { researchPolicyCommand } from './lib/researchWorkspace';
 import { useFilePreview, type DetailTarget } from './composables/useFilePreview';
 import { useDetailPanel } from './composables/useDetailPanel';
 import { useIsMobile } from './composables/useIsMobile';
@@ -301,6 +303,10 @@ const {
 // (the real occupant) rather than previewTarget, which can stay set after the
 // panel is hidden.
 const previewOpen = computed(() => detailTarget.value !== null);
+const researchWorkspaceActive = computed(() => client.researchEnabled.value
+  && !client.sessionLoading.value && !!client.research.value
+  && client.research.value.mode !== 'inactive');
+useResearchAppearance(researchWorkspaceActive, () => client.research.value?.planningPolicy);
 
 // ---------------------------------------------------------------------------
 // Layout: resizable session column. ResizeHandle owns the column width (with
@@ -317,7 +323,12 @@ const {
   sideWidth,
   loadSidebarCollapsed,
   toggleSidebarCollapse,
-} = useSidebarLayout({ previewOpen });
+} = useSidebarLayout({ previewOpen, researchActive: researchWorkspaceActive });
+
+function browseResearchSessions(): void {
+  if (isMobile.value) showMobileSwitcher.value = true;
+  else if (sidebarCollapsed.value) toggleSidebarCollapse();
+}
 
 // ---------------------------------------------------------------------------
 // Unified right-side detail layer (thinking / compaction / agent / diff / web
@@ -380,6 +391,7 @@ const researchExpandSignal = ref(0);
 const researchStartInFlight = new Set<string>();
 const managerSessionId = ref<string | null>(null);
 const researchManagerCommandAck = ref<ResearchManagerCommandAck | null>(null);
+const researchPolicyPending = ref<string | null>(null);
 const researchIdleOnlyBusy = computed(() =>
   isResearchIdleOnlyBusy(
     client.working.value,
@@ -937,6 +949,22 @@ async function handleResearchSlash(
   );
 }
 
+async function handleResearchPolicy(policy: string): Promise<void> {
+  const sessionId = client.activeSessionId.value;
+  if (!sessionId || researchPolicyPending.value !== null
+    || !client.researchEnabled.value || client.connection.value !== 'connected') return;
+  const command = researchPolicyCommand(client.research.value, policy, researchIdleOnlyBusy.value);
+  if (command === null) return;
+  researchPolicyPending.value = sessionId;
+  try {
+    // Pin both session and revision before awaiting. The existing coordinator
+    // handles stale responses/recovery; this never touches Goal or permissions.
+    await client.commandResearchById(sessionId, command);
+  } finally {
+    researchPolicyPending.value = null;
+  }
+}
+
 async function handleResearchAlignment(
   relation?: ResearchGoalAlignmentRelation,
 ): Promise<void> {
@@ -1228,6 +1256,7 @@ function openPr(url: string): void {
         mobile: isMobile,
         'sidebar-collapsed': sidebarCollapsed && !isMobile,
         'macos-desktop': isMacosDesktop,
+        'research-workspace': researchWorkspaceActive,
       }"
       :style="{ '--preview-w': previewPanelWidth + 'px' }"
     >
@@ -1306,6 +1335,8 @@ function openPr(url: string): void {
       :research="client.research.value"
       :research-enabled="client.researchEnabled.value"
       :research-expand-signal="researchExpandSignal"
+      :research-sessions="client.researchSessions.value"
+      :research-policy-disabled="researchIdleOnlyBusy || researchPolicyPending !== null || client.research.value?.mode !== 'ready' || client.connection.value !== 'connected'"
       :activation-badges="client.activationBadges.value"
       :status="client.status.value"
       :thinking="client.thinking.value"
@@ -1377,6 +1408,9 @@ function openPr(url: string): void {
       @control-goal="client.controlGoal($event)"
       @start-research="handleStartResearch"
       @manage-research="openResearchManager"
+      @select-research-session="client.selectSession($event)"
+      @browse-research-sessions="browseResearchSessions"
+      @set-research-policy="handleResearchPolicy"
       @align-research="(relation) => handleResearchAlignment(relation)"
       @clear-research-alignment="() => handleResearchAlignment()"
       @refresh-git-status="client.activeSessionId.value && client.loadGitStatus(client.activeSessionId.value)"
