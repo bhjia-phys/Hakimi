@@ -1,5 +1,47 @@
 # @bhjia-phys/hakimi-sdk
 
+## 1.0.0
+
+### Major Changes
+
+- [`6452a09`](https://github.com/bhjia-phys/Hakimi/commit/6452a0934429b7110707a4582a722226437b1b78) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Require each bounded Research conclusion to classify its durable evidence and route eligible results through the existing AITP checkpoint barrier.
+
+### Minor Changes
+
+- [`6452a09`](https://github.com/bhjia-phys/Hakimi/commit/6452a0934429b7110707a4582a722226437b1b78) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add versioned multi-loop Research Plans with exact Action Plan bindings, stale-revision guards, a persisted collaborative or dreaming planning policy, and consistent Research Board and Manager controls across TUI, Web, REST, and the SDK.
+
+- [`93c5954`](https://github.com/bhjia-phys/Hakimi/commit/93c5954c578deb11a9c33b4a10b8cbdc6f548fc4) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add guarded automatic and manual cleanup for historical uncommitted Research checkpoint proposals. Run `/research discard-checkpoint <id>` when explicit recovery is needed.
+
+- [`93c5954`](https://github.com/bhjia-phys/Hakimi/commit/93c5954c578deb11a9c33b4a10b8cbdc6f548fc4) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Enforce bounded Research Action ownership during active Research Mode, with low-noise recovery and clearer planning-policy semantics.
+
+- [`7d8a2c5`](https://github.com/bhjia-phys/Hakimi/commit/7d8a2c52246c7f947399ccc4fd752595efb8b6d8) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add AITP Research Mode to the TUI, Web UI, and SDK with a science-first progress Board, explicit action phases, human steering, and verified current-state maintenance. Run `/research on` or open Research from Web Composer Modes.
+
+- [`6452a09`](https://github.com/bhjia-phys/Hakimi/commit/6452a0934429b7110707a4582a722226437b1b78) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add explicit Research Line-to-AITP workstream binding across the Research Manager, Board, and SDK. Bindings carry a server-owned confirmation identity, clear uses exact identity plus a non-rewinding public revision, and scoped checkpoint adoption fails closed when the canonical Entry is not in exactly the captured Topic and single workstream.
+
+- [`6452a09`](https://github.com/bhjia-phys/Hakimi/commit/6452a0934429b7110707a4582a722226437b1b78) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Expose the latest exact post-commit method-review handoff as an optional Research snapshot and Board receipt without claiming semantic review completion.
+
+- [`c5ed378`](https://github.com/bhjia-phys/Hakimi/commit/c5ed378eba98f19a8f33aacc03a8aba292f5706f) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add ChatGPT subscription login through OpenAI Codex OAuth. Run `/login` and choose OpenAI Codex.
+
+- [`c50ac6d`](https://github.com/bhjia-phys/Hakimi/commit/c50ac6dcedb73ed44bfd3c6636fd347615557d83) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add provider-usage and preset tools, explainable weighted automatic Preset routing with persistent manual locks, cooldown and circuit breakers, REST/SDK decision status and events, and TUI/Web routing details. Configure candidate order in Settings > Agent or `[subagent.auto_preset]`; manual choices stay pinned until automatic selection resumes.
+
+- [`18d78af`](https://github.com/bhjia-phys/Hakimi/commit/18d78afe2cd61b72a92724fc3692e5991700c809) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Add bounded Research Loop planning with nested Plan mode review, explicit action lifecycle, and science-first progress summaries. Use `/research` to inspect the active research state and plan the next bounded step.
+
+- [`06b8524`](https://github.com/bhjia-phys/Hakimi/commit/06b8524102df93bab404de4495391772848b033d) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Retain completed Research results without confirmed record ownership, and expose explicit adoption into a scoped checkpoint without claiming an AITP save.
+
+- [`55a7017`](https://github.com/bhjia-phys/Hakimi/commit/55a7017a367b10af2cf9daff326c7df6087678d6) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Expose the derived Goal continuation state across the SDK, terminal, and Web so an active objective that is held reports the owning participant and exact reason instead of appearing to be silently paused.
+
+### Patch Changes
+
+- [`2b2636f`](https://github.com/bhjia-phys/Hakimi/commit/2b2636fd6c2a6c84268e44edae2b66f7a7215e3c) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Keep Goal continuation aligned with the current Research Program and expose explicit alignment commands across the CLI, Web, and SDK. Use `/research align <relation>` or `/research align clear` while idle.
+
+- [`74852ae`](https://github.com/bhjia-phys/Hakimi/commit/74852ae1af30c7baa50ec3d460a8bc8aae7db4d1) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Let active Goals wait for selected background tasks without polling, then resume once when the wait condition is satisfied.
+
+- [`18d78af`](https://github.com/bhjia-phys/Hakimi/commit/18d78afe2cd61b72a92724fc3692e5991700c809) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Publish the Hakimi TypeScript SDK under the public `@bhjia-phys/hakimi-sdk` package name.
+
+- [`34480c7`](https://github.com/bhjia-phys/Hakimi/commit/34480c767717f5136553854f8d2bd71456fc7ebb) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Fix model-selection and missing-session errors for clients using the v2 runtime.
+
+- [`6fc9e38`](https://github.com/bhjia-phys/Hakimi/commit/6fc9e3806b92254fb582931102b9949e3739dfa8) Thanks [@bhjia-phys](https://github.com/bhjia-phys)! - Fix explicit Goal resume requests so v2 can wake an already-active but idle goal without adding a synthetic user message, while preserving the legacy fallback.
+
 Entries below `0.19.0` predate the Hakimi package rename and retain their original upstream package names, links, and credits as release history.
 
 ## 0.18.0
